@@ -132,7 +132,7 @@ fn write_docs_production(engine: &Engine, start: usize, count: usize, batch: usi
             .map(|i| PreparedWrite::Node {
                 kind: "doc".to_string(),
                 body: format!("doc-{}", start + written + i),
-                source_id: None,
+                source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
@@ -330,7 +330,7 @@ fn panicking_embedder_does_not_wedge_drain() {
         .map(|i| PreparedWrite::Node {
             kind: "doc".to_string(),
             body: format!("panic-doc-{i}"),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,

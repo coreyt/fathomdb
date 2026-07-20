@@ -41,7 +41,8 @@ fn ac_059a_projection_cursor_is_monotonic_non_decreasing() {
                 .write(&[PreparedWrite::Node {
                     kind: "doc".to_string(),
                     body: format!("doc {i}"),
-                    source_id: None,
+                    source_id: fathomdb_engine::SourceId::new("test:fixture")
+                        .expect("test source id"),
                     logical_id: None,
                     state: fathomdb_engine::InitialState::Active,
                     reason: None,
@@ -66,7 +67,7 @@ fn ac_059b_write_cursor_is_satisfied_by_projection_cursor_and_queryable() {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "findable phase seven document".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
@@ -100,7 +101,7 @@ fn failed_commit_does_not_publish_projection_cursor() {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "first".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
@@ -113,7 +114,7 @@ fn failed_commit_does_not_publish_projection_cursor() {
         .write(&[PreparedWrite::Node {
             kind: "force_storage_failure_for_test".to_string(),
             body: "allowed".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
@@ -127,7 +128,7 @@ fn failed_commit_does_not_publish_projection_cursor() {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "must fail".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
@@ -147,7 +148,7 @@ fn concurrent_search_does_not_observe_speculative_failed_cursor() {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "first".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
@@ -167,7 +168,7 @@ fn concurrent_search_does_not_observe_speculative_failed_cursor() {
             .write(&[PreparedWrite::Node {
                 kind: "doc".to_string(),
                 body: "must fail".to_string(),
-                source_id: None,
+                source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,

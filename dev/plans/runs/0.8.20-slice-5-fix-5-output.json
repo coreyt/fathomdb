@@ -1,0 +1,98 @@
+{
+  "slice": "0.8.20-slice-5-fix-5",
+  "branch": "orch-0.8.20-s5",
+  "worktree": "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5",
+  "baseline": "9c87d758a5a72f7c685a2d420f311177d118200a",
+  "status": "COMPLETE",
+  "head": "1820317f049ff8f935c1278cc0cab984cdb9abbd",
+  "commits": [
+    {
+      "sha": "93eca45a96d11dce65b293b98199f56a9a60fc00",
+      "task": "A",
+      "subject": "fix(0.8.20): cfg-gate is_erasure_bookkeeping_collection to silence non-operator dead_code",
+      "files": ["src/rust/crates/fathomdb-engine/src/lib.rs"]
+    },
+    {
+      "sha": "1820317f049ff8f935c1278cc0cab984cdb9abbd",
+      "task": "B+C",
+      "subject": "docs(0.8.20): Slice-5 re-close — multi-doc attribution regression fixed, isolated Python verification",
+      "files": [
+        "dev/plans/runs/STATUS-0.8.20.md",
+        "dev/todos-and-considerations-ledger.jsonl",
+        "dev/todos-and-considerations-ledger.jsonl.seq",
+        "dev/plans/runs/0.8.20-slice-5-fix-4-output.json"
+      ]
+    }
+  ],
+  "task_a": {
+    "change": "Added #[cfg(feature = \"operator\")] to is_erasure_bookkeeping_collection (engine/src/lib.rs:196 pre-edit), matching its sole call site inside the operator-gated excise_collection_record. Doc comment explains the gate. No #[allow(dead_code)] used.",
+    "behavior_changed": false,
+    "warning_before": "warning: function `is_erasure_bookkeeping_collection` is never used --> src/rust/crates/fathomdb-engine/src/lib.rs:196:4 (note: #[warn(dead_code)] on by default)",
+    "warning_after_non_operator": "NONE — `cargo clippy -p fathomdb-engine --all-targets 2>&1 | grep -i dead_code` returns nothing (grep rc=1), clippy rc=0",
+    "still_compiled_under_operator": "YES — `cargo clippy -p fathomdb-engine --all-targets --features operator` rc=0; guard test erasure_bookkeeping_collections_are_not_excisable PASSES",
+    "no_new_rustdoc_warnings": "verified — cargo doc -p fathomdb-engine --no-deps warning count unchanged at 26; no warning mentions is_erasure_bookkeeping_collection"
+  },
+  "gates": [
+    {"gate": "cargo clippy --workspace --all-targets", "exit_code": 0},
+    {"gate": "cargo check --workspace --all-targets", "exit_code": 0},
+    {"gate": "cargo test -p fathomdb-engine --features operator --test erasure_projection_registry", "exit_code": 0, "result": "4 passed"},
+    {"gate": "cargo test -p fathomdb-engine --features operator --test erasure_completeness", "exit_code": 0, "result": "10 passed"},
+    {"gate": "cargo test -p fathomdb-engine --features operator --test provenance_mandatory", "exit_code": 0, "result": "3 passed"},
+    {"gate": "cargo test -p fathomdb-engine --test multidoc_extractor_provenance", "exit_code": 0, "result": "5 passed"},
+    {"gate": "cargo test -p fathomdb --test sdk_only_erasure", "exit_code": 0, "result": "3 passed", "note": "explicit non-operator invocation per TC-25; reports 3 not a vacuous 0"},
+    {"gate": "cargo test -p fathomdb --test no_recovery_surface (AC-041)", "exit_code": 0, "result": "1 passed"},
+    {"gate": "cargo test -p fathomdb --test governed_surface", "exit_code": 0, "result": "3 passed"},
+    {"gate": "cargo test -p fathomdb-schema", "exit_code": 0, "result": "all targets green (12/6/1/3/3/4/3/3/5/2 + empty targets)"},
+    {"gate": "cargo test -p fathomdb-cli", "exit_code": 0, "result": "all targets green; 25/14/12/12/5/5/3/1 passed, 7 ignored"}
+  ],
+  "gate_note": "All exit codes read via $? / PIPESTATUS on the actual command, never a trailing echo.",
+  "prohibitions_honored": {
+    "only_src_change_is_task_a": true,
+    "no_maturin_develop_or_pip_install_e": true,
+    "no_python_suite_run_in_this_worktree": true,
+    "no_eu7_real_corpus_ac_run": true,
+    "ledger_not_hand_edited": "committed as-is; 3 orchestrator-appended entries seq 45=TC-31, 46=TC-32, 47=TC-27-update; .seq=47",
+    "ac_079_not_marked_signed": "board still reads AWAITING HITL SIGN-OFF, NOT SIGNED",
+    "no_git_push": true,
+    "no_stash_clean_or_checkout_dashdash": true,
+    "other_worktrees_untouched": true
+  },
+  "facts_verified_before_writing_board": {
+    "engine_byte_identical_across_fix_4": "CONFIRMED — git diff 9898fd8e..9c87d758 -- src/rust/crates/fathomdb-engine/src/lib.rs is EMPTY",
+    "fix_4_commit_range": "9898fd8e (ledger TC-30 + docs), then ff2d641c / 9550bcde / 265c54c0 / 9c87d758 = fix-4",
+    "resolve_provenance": "closure at engine/src/lib.rs:3933-3943 (post-fix-5 numbering); single-element batch short-circuits, else echo REQUIRED and must match a caller id. Entity loop at :3972, resolves at :3979",
+    "harness_symmetric_backfill": "elps_live_harness.py:233-237 backfills BOTH entity and edge source_doc_id",
+    "stub_entities_is_now_a_function": "elps_live_harness.py:99 `_stub_entities(doc_id)` returns fresh dicts (:107)",
+    "per_entity_requirement_in_prompt_schema": "elps_live_harness.py:42, :46, :70",
+    "eu7_ignore": "eu7_real_corpus_ac.rs:760 `#[ignore = \"TC-20: ...\"]`",
+    "conftest_guard": "src/python/tests/conftest.py:77 _REBUILD_OPT_IN = \"FATHOMDB_TESTS_ALLOW_REBUILD\"",
+    "py_search_hit_source_id": "fathomdb-py/src/lib.rs:537-539 — doc says set only for graph-arm hits, None for every two-arm hit"
+  },
+  "discrepancy_found": {
+    "severity": "minor — line-number imprecision only, substance CONFIRMED",
+    "detail": "The task cited resolve_provenance at engine/src/lib.rs:3946-3956. The closure actually lives at :3933-3943 (post-fix-5); :3946-3956 is the entities/raw_edges extraction. The cited entity-loop line :3972 IS correct. The substantive claim (echo admitted only as a selector; multi-doc batch must name a caller id or fail) is confirmed verbatim by the code. Board was written with the VERIFIED line numbers, not the cited ones."
+  },
+  "board_updates": [
+    "header: terminal HEAD 8e09b950 marked SUPERSEDED; now 9c87d758 + two fix-5 commits",
+    "§1: codex PASS reframed — 'a PASS is not a run'; Blocks updated (Python X1 discharged, TC-20/TC-27 shipped)",
+    "§2 ladder: Slice 5 row re-pointed at 9c87d758+fix-5, first closure marked re-opened",
+    "§4: #9 (TC-20) and #11 (TC-27) marked guard-SHIPPED; #10 (TC-22) marked DISCHARGED with the isolated-clone number; NEW #13 (TC-31) and #14 (TC-32)",
+    "§7: worktree HEAD updated",
+    "§8: new top entry — post-closure regression, engine not the defect, contract change, lesson",
+    "§11 head: full post-8e09b950 commit table",
+    "§11.1: fix-4 and fix-5 rows added",
+    "§11.3: gates re-run at fix-5; added provenance_mandatory, multidoc_extractor_provenance, fathomdb-cli, and an honest Python row pointing at §11.8",
+    "§11.5: owed list extended to #7–#14 with TC-31/TC-32",
+    "§11.6: nine closure artifacts, TC-23 rationale",
+    "§11.7 NEW: the fix-4 regression — mechanism, engine-not-the-defect proof, the four-part fix incl. the latent _STUB_ENTITIES aliasing bug, the contract change, the single-doc-only coverage gap",
+    "§11.8 NEW: honest Python number 2 failed / 754 passed / 7 skipped, why it is not a regression, why 755/1 was unreachable, proof the regression IS fixed, TC-31 shared root cause, skip accounting, shared .venv integrity, TC-20 inspection-only attestation"
+  ],
+  "git_status_clean": true,
+  "next_steps": [
+    "Orchestrator runs codex §9 on the fix-5 range (or on the fix-4+fix-5 range) per TC-RUBRIC-7, transcript to dev/plans/runs/codex/0.8.20/",
+    "Steward lands orch-0.8.20-s5 (TC-RUBRIC-5 dedicated checkout)",
+    "AC-079 HITL sign-off still BLOCKS publish",
+    "TC-31 read-side fix (populate source_id on every arm) — likely closes both residual Python failures",
+    "TC-32 entity-dedupe erasure gap — entity-identity design decision, not a fix round"
+  ]
+}

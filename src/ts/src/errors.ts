@@ -151,6 +151,22 @@ export class NotLifecycleAddressableError extends FathomDbError {
   }
 }
 
+// 0.8.20 Slice 5b (R-20-E5) — an erasure verb (`purge` / `excise_source`)
+// deleted its rows but could NOT complete the erasure AT REST: typically
+// `wal_checkpoint(TRUNCATE)` stayed busy because a concurrent reader is pinning
+// a WAL snapshot, so the erased bytes are still readable in the `-wal` file.
+// Retryable — re-run the verb once the reader has finished. `stage` names the
+// uncompleted step (`"wal_checkpoint"` / `"telemetry_redaction"`).
+export class ErasureIncompleteError extends FathomDbError {
+  readonly stage: string;
+  readonly detail: string;
+  constructor(message: string, stage: string, detail: string) {
+    super(message);
+    this.stage = stage;
+    this.detail = detail;
+  }
+}
+
 // 0.8.18 Slice 5 (#5 vector-equivalence probe) — the open-time self-check found a
 // vector-equivalence divergence beyond the D4 floor, so every vector-dependent arm
 // refuses at query time. The text-only/FTS-only path (`searchTextOnly`) stays
@@ -207,6 +223,8 @@ type ErrorCode =
   // OPP-12 Phase-1 (0.8.19 Slice 10) — lifecycle-verb typed errors.
   | "FDB_ILLEGAL_TRANSITION"
   | "FDB_NOT_LIFECYCLE_ADDRESSABLE"
+  // 0.8.20 Slice 5b (R-20-E5) — erasure verb could not finish at rest.
+  | "FDB_ERASURE_INCOMPLETE"
   | "FDB_PANIC";
 
 interface Envelope {
@@ -316,6 +334,12 @@ function build(envelope: Envelope): Error {
       return new NotLifecycleAddressableError(
         envelope.message,
         String(p.idSpace ?? ""),
+      );
+    case "FDB_ERASURE_INCOMPLETE":
+      return new ErasureIncompleteError(
+        envelope.message,
+        String(p.stage ?? ""),
+        String(p.detail ?? ""),
       );
     case "FDB_PANIC":
       return new FathomDbPanicError(envelope.message);

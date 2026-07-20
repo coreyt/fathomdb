@@ -93,6 +93,14 @@ const GOVERNED_SURFACE_ALLOWLIST: &[&str] = &[
     "Explanation",
     "QueryTrace",
     "PerHitExplain",
+    // 0.8.20 Slice 5c/5d (R-20-E3/E4, erasure) — AWAITING HITL SIGN-OFF (AC-079).
+    // `SourceId` is the provenance newtype that replaced `source_id:
+    // Option<String>` on `PreparedWrite`; it MUST be here because without the
+    // constructor a facade consumer cannot perform a canonical write at all.
+    // `ExciseReport` is the return type of the net-new governed
+    // `Engine::erase_source`, so it moved out of the operator-gated block.
+    "SourceId",
+    "ExciseReport",
 ];
 
 /// The permanent five-name recovery denylist. Identical to the single shared
@@ -150,11 +158,14 @@ fn t_074_rust_governed_surface_resolves() {
     let _ = type_name::<fathomdb::Explanation>();
     let _ = type_name::<fathomdb::QueryTrace>();
     let _ = type_name::<fathomdb::PerHitExplain>();
+    // 0.8.20 Slice 5c/5d (R-20-E3/E4) — erasure types
+    let _ = type_name::<fathomdb::SourceId>();
+    let _ = type_name::<fathomdb::ExciseReport>();
 
     assert_eq!(
         GOVERNED_SURFACE_ALLOWLIST.len(),
-        29,
-        "GOVERNED_SURFACE_ALLOWLIST must list exactly the 29 resolved governed types"
+        31,
+        "GOVERNED_SURFACE_ALLOWLIST must list exactly the 31 resolved governed types"
     );
 }
 
@@ -214,11 +225,16 @@ fn t_074_operator_seam_resolves_with_feature() {
     let _ = type_name::<fathomdb::Finding>();
     let _ = type_name::<fathomdb::MeanRecomputeReport>();
     let _ = type_name::<fathomdb::Section>();
+    // 0.8.20 Slice 5d (R-20-E8) — `doctor orphan-provenance` report types.
+    // CLI-only, no SDK parity (same posture as `dump-mutations`).
+    let _ = type_name::<fathomdb::OrphanProvenanceReport>();
+    let _ = type_name::<fathomdb::OrphanProvenanceSource>();
 
     // The operator/recovery METHODS resolve (as fn-item paths; not called).
     let _ = fathomdb::Engine::rebuild_projections;
     let _ = fathomdb::Engine::rebuild_vec0;
     let _ = fathomdb::Engine::excise_source;
+    let _ = fathomdb::Engine::orphan_provenance;
     let _ = fathomdb::Engine::check_integrity;
     let _ = fathomdb::Engine::safe_export;
     let _ = fathomdb::Engine::trace_source_ref;

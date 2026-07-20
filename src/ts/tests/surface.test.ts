@@ -290,7 +290,10 @@ test("Engine.open accepts engineConfig with camelCase knobs", async () => {
 test("write returns a typed receipt with cursor", async () => {
   const engine = await Engine.open(freshDbPath());
   try {
-    const receipt = await engine.write([{ kind: "doc", body: "{}" }]);
+    const receipt = await engine.write([
+      // 0.8.20 (R-20-E3): `sourceId` is mandatory on every canonical write.
+      { kind: "doc", body: "{}", sourceId: "ts-test:surface" },
+    ]);
     assert.equal(typeof receipt.cursor, "number");
   } finally {
     await engine.close();

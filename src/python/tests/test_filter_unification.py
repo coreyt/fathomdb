@@ -23,6 +23,7 @@ import pytest
 from fathomdb import Engine, Filter, SearchFilter, read
 from fathomdb.errors import InvalidFilterError
 from fathomdb.filter import (
+
     CreatedAfter,
     Json,
     Kind,
@@ -30,6 +31,10 @@ from fathomdb.filter import (
     Status,
     from_search_filter,
 )
+
+# 0.8.20 (R-20-E3): `source_id` is mandatory on every canonical write.
+_SOURCE_ID = "py-test:filter-unification"
+
 
 
 def _seed_todo_nodes(engine: Engine) -> None:
@@ -40,7 +45,12 @@ def _seed_todo_nodes(engine: Engine) -> None:
     ]
     for r in rows:
         engine.write([
-            {"kind": "todo", "body": json.dumps(r["body"]), "logical_id": r["logical_id"]}
+            {
+                "kind": "todo",
+                "body": json.dumps(r["body"]),
+                "logical_id": r["logical_id"],
+                "source_id": _SOURCE_ID,
+            }
         ])
 
 

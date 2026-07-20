@@ -24,7 +24,9 @@ nav:
   - Concepts: concepts/index.md
   - Default Embedder: embedder.md
   - Compatibility: compatibility/index.md
-  - Operations: operations/index.md
+  - Operations:
+      - Overview: operations/index.md
+      - Erasure: operations/erasure.md
   - Guides:
       - Overview: guides/index.md
       - Structured Search Hits: guides/structured-search-hits.md

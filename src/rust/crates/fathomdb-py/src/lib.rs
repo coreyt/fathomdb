@@ -38,16 +38,17 @@ use fathomdb_engine::{
     rerank_passages as rust_rerank_passages, ComparisonOp as RustComparisonOp,
     ConsolidateAxis as RustConsolidateAxis, ConsolidateReceipt as RustConsolidateReceipt,
     CorruptionDetail, CorruptionKind, EmbedderChoice, Engine as RustEngine,
-    EngineError as RustEngineError, EngineOpenError, Explanation as RustExplanation,
-    ExtractDocument as RustExtractDocument, Filter as RustFilter, FilterTerm as RustFilterTerm,
-    IdSpace as RustIdSpace, IngestWithExtractorReceipt as RustIngestWithExtractorReceipt,
-    InitialState, LifecycleState as RustLifecycleState, NodeRecord as RustNodeRecord,
+    EngineError as RustEngineError, EngineOpenError, ExciseReport as RustExciseReport,
+    Explanation as RustExplanation, ExtractDocument as RustExtractDocument, Filter as RustFilter,
+    FilterTerm as RustFilterTerm, IdSpace as RustIdSpace,
+    IngestWithExtractorReceipt as RustIngestWithExtractorReceipt, InitialState,
+    LifecycleState as RustLifecycleState, NodeRecord as RustNodeRecord,
     OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage,
     PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
     QueryTrace as RustQueryTrace, ScalarValue as RustScalarValue,
     SearchExpandResult as RustSearchExpandResult, SearchFilter as RustSearchFilter,
     SearchHit as RustSearchHit, SearchResult as RustSearchResult, SoftFallback as RustSoftFallback,
-    SoftFallbackBranch, TraversalDirection as RustTraversalDirection,
+    SoftFallbackBranch, SourceId, TraversalDirection as RustTraversalDirection,
     WriteReceipt as RustWriteReceipt,
 };
 use fathomdb_schema::MigrationStepReport as RustMigrationStepReport;
@@ -97,6 +98,11 @@ create_exception!(_fathomdb, InvalidArgumentError, EngineError);
 // (carries `id_space`). Field names are parity-safe (S7 — `from` is reserved).
 create_exception!(_fathomdb, IllegalTransitionError, EngineError);
 create_exception!(_fathomdb, NotLifecycleAddressableError, EngineError);
+// 0.8.20 Slice 5b (R-20-E5) — an erasure verb deleted its rows but could not
+// complete the erasure AT REST (carries `stage`/`detail`). Raised instead of
+// returning success: an erasure verb must never report success on an incomplete
+// erasure.
+create_exception!(_fathomdb, ErasureIncompleteError, EngineError);
 
 // ===== String validation (AC-068a / AC-068b) =========================
 
@@ -227,6 +233,17 @@ fn engine_error_to_py(err: RustEngineError) -> PyErr {
             ));
             Python::attach(|py| {
                 let _ = exc.value(py).setattr("id_space", id_space.as_str());
+            });
+            exc
+        }
+        RustEngineError::ErasureIncomplete { stage, detail } => {
+            let exc = ErasureIncompleteError::new_err(format!(
+                "erasure incomplete at stage '{stage}': {detail}"
+            ));
+            Python::attach(|py| {
+                let v = exc.value(py);
+                let _ = v.setattr("stage", stage.clone());
+                let _ = v.setattr("detail", detail.clone());
             });
             exc
         }
@@ -371,6 +388,36 @@ impl PyWriteReceipt {
             cursor: r.cursor,
             row_cursors: r.row_cursors,
             dangling_edge_endpoints: r.dangling_edge_endpoints,
+        }
+    }
+}
+
+/// 0.8.20 Slice 5d (R-20-E4) — outcome of the `erase_source` lifecycle verb.
+/// Mirrors the Rust `ExciseReport` field-for-field. `projections_invalidated`
+/// counts the row-owned projection rows (FTS5 + vec0 + `search_index_v2`)
+/// dropped alongside the canonical rows.
+#[pyclass(
+    module = "fathomdb._fathomdb",
+    name = "EraseReport",
+    frozen,
+    get_all,
+    skip_from_py_object
+)]
+#[derive(Clone)]
+struct PyEraseReport {
+    source_ref: String,
+    nodes_excised: u64,
+    edges_excised: u64,
+    projections_invalidated: u64,
+}
+
+impl PyEraseReport {
+    fn from_rust(r: RustExciseReport) -> Self {
+        Self {
+            source_ref: r.source_ref,
+            nodes_excised: r.nodes_excised,
+            edges_excised: r.edges_excised,
+            projections_invalidated: r.projections_invalidated,
         }
     }
 }
@@ -1300,6 +1347,35 @@ fn purge(py: Python<'_>, engine: &PyEngine, logical_id: &Bound<'_, PyAny>) -> Py
     call_engine(py, move || inner.purge(&logical_id))
 }
 
+/// 0.8.20 Slice 5d (R-20-E4, design §4 item 9b) — the `erase_source` lifecycle
+/// verb. Deletes every canonical row carrying `source_id`, plus its row-owned
+/// projections, and finishes the erasure at rest.
+///
+/// The COMPANION to `purge`, not a duplicate of it: `purge` addresses a
+/// governed node by `logical_id`; `erase_source` addresses ANONYMOUS content
+/// (rows with no `logical_id`) by its provenance, which `purge` cannot reach.
+/// Together they make every canonical row erasable from the SDK alone, with no
+/// CLI on `PATH` (R-20-E4).
+///
+/// NOT a recovery verb: `erase_source` carries no REQ-054 denylist name
+/// (`recover`/`restore`/`repair`/`fix`/`rebuild`), so AC-041 is unaffected.
+///
+/// Raises `WriteValidationError` for an empty, whitespace-only or reserved
+/// (`_`-prefixed) `source_id` — the engine's reserved namespace is reachable
+/// only through the CLI recovery seam.
+#[pyfunction]
+#[pyo3(signature = (engine, source_id))]
+fn erase_source(
+    py: Python<'_>,
+    engine: &PyEngine,
+    source_id: &Bound<'_, PyAny>,
+) -> PyResult<PyEraseReport> {
+    let source_id = extract_validated_str(source_id)?;
+    let inner = Arc::clone(&engine.inner);
+    let report = call_engine(py, move || inner.erase_source(&source_id))?;
+    Ok(PyEraseReport::from_rust(report))
+}
+
 #[pyfunction]
 #[pyo3(signature = (engine, logical_id))]
 fn read_get(
@@ -1505,6 +1581,29 @@ fn dict_str_required(d: &Bound<'_, PyDict>, key: &str) -> PyResult<String> {
     })
 }
 
+/// 0.8.20 Slice 5c (R-20-E3) — `source_id` is now MANDATORY on every canonical
+/// write. Rust makes its absence inexpressible via the `SourceId` newtype;
+/// Python has no such type system at the boundary, so the binding raises
+/// `WriteValidationError` for a missing, empty or reserved (`_`-prefixed) id.
+/// This is the Python arm of "an un-provenanced write does not compile / raises".
+///
+/// The rationale is not tidiness: `excise_source` addresses rows BY `source_id`,
+/// so a row written without one is reachable by no erasure call — un-erasable.
+fn dict_source_id_required(d: &Bound<'_, PyDict>, kind: &str) -> PyResult<SourceId> {
+    let raw = dict_str(d, "source_id")?.ok_or_else(|| {
+        WriteValidationError::new_err(format!(
+            "{kind} write item missing required field \"source_id\": provenance is mandatory \
+             since 0.8.20 — a row written without it can never be erased by excise_source"
+        ))
+    })?;
+    SourceId::new(raw).map_err(|_| {
+        WriteValidationError::new_err(
+            "\"source_id\" must be a non-empty identifier outside the engine's reserved \
+             \"_\"-prefixed namespace",
+        )
+    })
+}
+
 fn translate_write_item(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
     let dict = item
         .cast::<PyDict>()
@@ -1534,7 +1633,7 @@ fn translate_node(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
         .map_err(|_| WriteValidationError::new_err("node write item must be a dict"))?;
     let kind = dict_str_required(dict, "kind")?;
     let body = dict_str(dict, "body")?.unwrap_or_else(|| "{}".to_string());
-    let source_id = dict_str(dict, "source_id")?;
+    let source_id = dict_source_id_required(dict, "node")?;
     let logical_id = dict_str(dict, "logical_id")?;
     // OPP-12 Phase-1 (0.8.19 Slice 5) — create-time existence state + advisory
     // reason (X1 parity with the N-API binding). `state` defaults to `active`; an
@@ -1559,7 +1658,7 @@ fn translate_edge(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
     let kind = dict_str_required(dict, "kind")?;
     let from = dict_str_required(dict, "from")?;
     let to = dict_str_required(dict, "to")?;
-    let source_id = dict_str(dict, "source_id")?;
+    let source_id = dict_source_id_required(dict, "edge")?;
     let logical_id = dict_str(dict, "logical_id")?;
     // Edge body (the relation text) — optional. Projected into `search_index_edges`
     // so the C1 graph arm can seed from edge-fact FTS (`source A`). NULL = not indexed.
@@ -1951,6 +2050,7 @@ fn force_panic_for_test() -> PyResult<()> {
 fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyEngine>()?;
     m.add_class::<PyWriteReceipt>()?;
+    m.add_class::<PyEraseReport>()?;
     m.add_class::<PyIngestWithExtractorReceipt>()?;
     // 0.8.12 Slice 15 (OPP-2) — consolidation receipt.
     m.add_class::<PyConsolidateReceipt>()?;
@@ -1976,6 +2076,7 @@ fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     // OPP-12 Phase-1 (0.8.19 Slice 10) — lifecycle verbs.
     m.add_function(wrap_pyfunction!(transition, &m)?)?;
     m.add_function(wrap_pyfunction!(purge, &m)?)?;
+    m.add_function(wrap_pyfunction!(erase_source, &m)?)?;
     // Slice 30 — governed read.* native fns (G2/G3).
     m.add_function(wrap_pyfunction!(read_get, &m)?)?;
     m.add_function(wrap_pyfunction!(read_get_many, &m)?)?;
@@ -2021,6 +2122,7 @@ fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     m.add("VectorEquivalenceMismatchError", py.get_type::<VectorEquivalenceMismatchError>())?;
     m.add("IllegalTransitionError", py.get_type::<IllegalTransitionError>())?;
     m.add("NotLifecycleAddressableError", py.get_type::<NotLifecycleAddressableError>())?;
+    m.add("ErasureIncompleteError", py.get_type::<ErasureIncompleteError>())?;
     Ok(())
 }
 
@@ -2101,7 +2203,7 @@ mod tests {
                 PreparedWrite::Node {
                     kind: "doc".to_string(),
                     body: "zephyr anchor entity".to_string(),
-                    source_id: None,
+                    source_id: SourceId::new("test:fixture").expect("test source id"),
                     logical_id: Some("zephyr".to_string()),
                     state: InitialState::Active,
                     reason: None,
@@ -2109,7 +2211,7 @@ mod tests {
                 PreparedWrite::Node {
                     kind: "doc".to_string(),
                     body: "beta reachable payload node".to_string(),
-                    source_id: None,
+                    source_id: SourceId::new("test:fixture").expect("test source id"),
                     logical_id: Some("beta".to_string()),
                     state: InitialState::Active,
                     reason: None,
@@ -2118,7 +2220,7 @@ mod tests {
                     kind: "link".to_string(),
                     from: "zephyr".to_string(),
                     to: "beta".to_string(),
-                    source_id: None,
+                    source_id: SourceId::new("test:fixture").expect("test source id"),
                     logical_id: Some("e-zb".to_string()),
                     body: Some("collaboration record".to_string()),
                     t_valid: None,

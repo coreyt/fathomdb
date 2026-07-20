@@ -18,6 +18,9 @@ import pytest
 from fathomdb import Engine
 from fathomdb.types import SearchFilter
 
+# 0.8.20 (R-20-E3): `source_id` is mandatory on every canonical write.
+_SOURCE_ID = "py-test:functional-reranker"
+
 
 @pytest.fixture()
 def engine_with_docs(tmp_path):
@@ -25,9 +28,9 @@ def engine_with_docs(tmp_path):
     db = tmp_path / "reranker_test.fathomdb"
     eng = Engine.open(str(db))
     docs = [
-        {"kind": "doc", "body": "cross encoder reranker alpha document"},
-        {"kind": "doc", "body": "cross encoder reranker beta document"},
-        {"kind": "doc", "body": "cross encoder reranker gamma document"},
+        {"kind": "doc", "body": "cross encoder reranker alpha document", "source_id": _SOURCE_ID},
+        {"kind": "doc", "body": "cross encoder reranker beta document", "source_id": _SOURCE_ID},
+        {"kind": "doc", "body": "cross encoder reranker gamma document", "source_id": _SOURCE_ID},
     ]
     for doc in docs:
         eng.write([doc])

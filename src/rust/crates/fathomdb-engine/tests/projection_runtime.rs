@@ -133,7 +133,7 @@ fn ac_024a_second_open_rejects_quickly_with_pending_vector_work() {
             .write(&[PreparedWrite::Node {
                 kind: "doc".to_string(),
                 body: format!("doc {i}"),
-                source_id: None,
+                source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
@@ -183,7 +183,7 @@ fn ac_025_drop_with_pending_vector_work_returns_promptly() {
             .write(&[PreparedWrite::Node {
                 kind: "doc".to_string(),
                 body: format!("doc {i}"),
-                source_id: None,
+                source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
@@ -222,7 +222,8 @@ fn ac_029_canonical_writes_complete_under_projection_stall() {
                 .write(&[PreparedWrite::Node {
                     kind: "doc".to_string(),
                     body: format!("baseline {trial}-{i}"),
-                    source_id: None,
+                    source_id: fathomdb_engine::SourceId::new("test:fixture")
+                        .expect("test source id"),
                     logical_id: None,
                     state: fathomdb_engine::InitialState::Active,
                     reason: None,
@@ -244,7 +245,8 @@ fn ac_029_canonical_writes_complete_under_projection_stall() {
                 .write(&[PreparedWrite::Node {
                     kind: "doc".to_string(),
                     body: format!("stalled {trial}-{i}"),
-                    source_id: None,
+                    source_id: fathomdb_engine::SourceId::new("test:fixture")
+                        .expect("test source id"),
                     logical_id: None,
                     state: fathomdb_engine::InitialState::Active,
                     reason: None,
@@ -275,7 +277,7 @@ fn ac_031_hybrid_search_surfaces_vector_soft_fallback_when_projection_lags() {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "phase nine hybrid search".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
@@ -304,7 +306,7 @@ fn hybrid_search_returns_vector_results_when_text_branch_has_no_match() {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "vector-only document".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
@@ -330,7 +332,7 @@ fn hybrid_search_deduplicates_rows_seen_by_text_and_vector_branches() {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "hybrid retrieval document".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
@@ -358,7 +360,7 @@ fn ac_032a_drain_succeeds_when_timeout_is_sufficient() {
             .write(&[PreparedWrite::Node {
                 kind: "doc".to_string(),
                 body: format!("doc {i}"),
-                source_id: None,
+                source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
@@ -390,7 +392,7 @@ fn ac_032b_drain_returns_typed_timeout_when_work_does_not_finish() {
             .write(&[PreparedWrite::Node {
                 kind: "doc".to_string(),
                 body: format!("doc {i}"),
-                source_id: None,
+                source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
@@ -469,7 +471,7 @@ fn ac_063a_exhausted_projection_failure_is_recorded_once_and_vector_stays_absent
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "will fail projection".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
@@ -500,7 +502,7 @@ fn ac_063b_restart_does_not_retry_terminal_projection_failures() {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "still failed after restart".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
@@ -535,7 +537,7 @@ fn projection_status_is_tracked_per_kind_not_just_global_cursor() {
         .write(&[PreparedWrite::Node {
             kind: "note".to_string(),
             body: "already projected".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
@@ -548,7 +550,7 @@ fn projection_status_is_tracked_per_kind_not_just_global_cursor() {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "still pending".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,

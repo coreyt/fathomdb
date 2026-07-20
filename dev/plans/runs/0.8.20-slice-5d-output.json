@@ -1,0 +1,278 @@
+{
+  "slice": "0.8.20-slice-5d",
+  "title": "erase_source SDK lifecycle verb + doctor orphan-provenance + governed-surface delta + docs; FU-5c-1 landing blocker cleared",
+  "branch": "orch-0.8.20-s5",
+  "baseline": "875017a2b93142445a92e6f806feed53d1915180",
+  "head": "4b78658d974d4ff49bda8db515c794673b7fd760",
+  "status": "COMPLETE — all four tasks (A/B/C/D) landed; one HITL escalation owed (AC-079) and one Python verification debt explicitly OWED, both itemized below",
+  "requirements": {
+    "R-20-E4": "erase_source as a first-class SDK lifecycle verb (Py + TS + Rust facade), one engine path with excise_source — DONE",
+    "R-20-E8": "doctor orphan-provenance lists per-source_id counts — DONE",
+    "design_items": "§4 items 9b, 11, 12 — all DONE"
+  },
+  "commits": [
+    {
+      "sha": "20752637606f7b88b41e53ea7d3ddb28c6c80373",
+      "subject": "test(0.8.20): TS fixture sweep — mandatory sourceId on every canonical write (FU-5c-1)"
+    },
+    {
+      "sha": "7c5e4eee33ebecce077d59adff29ee3d5d8f8d0a",
+      "subject": "test(0.8.20): Python fixture sweep — mandatory source_id on every canonical write (FU-5c-1)"
+    },
+    {
+      "sha": "e5bdbe387802028af33650f2e0f6cbe18ace9825",
+      "subject": "feat(0.8.20): erase_source SDK verb (Rust) + doctor orphan-provenance (R-20-E4/E8)"
+    },
+    {
+      "sha": "3685fdb5d00b567f1a17154e9b7575b3b630b712",
+      "subject": "feat(0.8.20): erase_source Py + TS bindings + governed-surface delta (R-20-E4)"
+    },
+    {
+      "sha": "4b78658d974d4ff49bda8db515c794673b7fd760",
+      "subject": "docs(0.8.20): erasure boundary + corrected non-PII source_id rationale (item 12)"
+    }
+  ],
+
+  "task_a_fu_5c_1_sweep": {
+    "blocker": "FU-5c-1 — 5c made provenance structurally mandatory (SourceId newtype); every pre-existing Py/TS fixture writing without source_id now raises WriteValidationError",
+    "status": "CLEARED for TypeScript by EXECUTION; CLEARED for Python by STATIC CHECK ONLY",
+
+    "typescript_VERIFIED_BY_EXECUTION": {
+      "how_it_became_runnable": "`npm install` inside src/ts is directory-local (creates no shared state, rebinds nothing) and is permitted; it exited 0, after which the napi debug artifact, tsc and the node test runner all work in this worktree",
+      "baseline_failure_observed": "node --test dist/tests/*.test.js -> exit 1; 125 failing assertions across 16 test files, all `WriteValidationError: node write item missing required field \"sourceId\"`",
+      "files_swept": 17,
+      "after": {
+        "npm_install_exit": 0,
+        "napi_build_native_debug_exit": 0,
+        "tsc_noEmit_exit": 0,
+        "node_test_exit": 0,
+        "passing": 170,
+        "failing": 0
+      },
+      "note": "170 = 164 (the swept pre-existing suite) + 6 net-new in tests/erase-source.test.ts"
+    },
+
+    "python_STATICALLY_CHECKED_ONLY": {
+      "why_not_executed": "`maturin develop` / `pip install -e` are HARD-PROHIBITED from this worktree — they rebind the SHARED /home/coreyt/projects/fathomdb/.venv. The native extension therefore cannot be built or imported here, so pytest cannot run. NO GREEN IS CLAIMED FOR PYTHON.",
+      "files_swept": "17 test modules + 5 src/python/eval harnesses (7 write sites)",
+      "evidence_obtained": {
+        "py_compile": "exit 0 over every touched file",
+        "ruff_check_src_python": "exit 0 — this IS the repo gate (scripts/agent-lint.sh:28)",
+        "ast_residual_audit": "a deliberately over-approximating AST scan for write-item dict literals lacking source_id returned 5 hits, ALL correct-by-design: 2 = the intentional negative tests in test_provenance_mandatory.py (which MUST omit it), 3 = embedder event-shape dicts in test_runtime_event_shape.py (not write items)",
+        "pyright": "8 errors, ALL PRE-EXISTING — verified by re-running agent-typecheck.sh against the baseline src/python tree and diffing the error sets: ZERO new errors introduced. Positively, pyright now RESOLVES `engine.erase_source(...)` and its EraseReport return (it could not at baseline), which is genuine static evidence the Python binding + .pyi + wrapper are correctly wired end-to-end at the type level."
+      },
+      "DEBT_OWED": "A main-tree pytest run under R-20-X1 is still OWED for the Python half. This is the single largest unverified surface in this sub-slice and the orchestrator should treat it as such."
+    },
+
+    "two_honesty_fixes_not_mechanical": "Two sites in EACH language asserted a rejection that would now pass for the WRONG reason (missing provenance rather than the field under test). Both were given a VALID source_id so the assertion stays attributable: (1) ffi-safety / test_ffi_safety 'embedded NUL in node kind'; (2) opp12-existence-axis / test_opp12_existence_axis 'state=deleted/purged/bogus is not creatable'. Without this the tests would have been vacuously green.",
+
+    "eval_harness_collateral": "5 src/python/eval harnesses (graph_arm_recall, r2_parity_eval x3 sites, r6_index_key_enrichment, p0a_base_retrieval, exp_cov1_sweep) would have broken at runtime on 5c's change. Swept using the REAL corpus doc/session id already in scope as provenance rather than a fixture constant — strictly better, since eval rows stay excise_source-addressable per document. NOT executed (eval harnesses are not part of any gate, and eu7 is prohibited)."
+  },
+
+  "red_evidence": {
+    "honest_accounting": "Task B's subject is NET-NEW API, so its RED is a COMPILE error, not a failing assertion. That is stated plainly rather than dressed up. Task C's RED is a genuine runtime failure. Task A's RED is a genuine runtime failure observed at baseline.",
+    "task_a_ts_fixtures": {
+      "command": "node --test dist/tests/*.test.js (at baseline 875017a2)",
+      "exit": 1,
+      "observed": "125 failures / 16 files. Verbatim: `Error [WriteValidationError]: node write item missing required field \"sourceId\": provenance is mandatory since 0.8.20 — a row written without it can never be erased by excise_source`",
+      "kind": "runtime assertion failure"
+    },
+    "task_b_erase_source": {
+      "command": "cargo test -p fathomdb --test sdk_only_erasure (at baseline)",
+      "exit": 101,
+      "observed": "7 x `error[E0599]: no method named `erase_source` found for struct `Engine` in the current scope`",
+      "kind": "COMPILE error — net-new API. Stated honestly: there was no assertion to fail because the verb did not exist.",
+      "non_vacuity_proven_positively": "The test file was first made to compile against everything EXCEPT the new verb (the write-signature and InitialState mismatches were fixed first), so the final RED was reduced to exactly the missing-verb error and nothing else — i.e. the failure is attributable solely to the absent API, not to incidental breakage.",
+      "green_after": "3 passed; 0 failed; exit 0"
+    },
+    "task_c_doctor_orphan_provenance": {
+      "command": "cargo test -p fathomdb-cli --test doctor_orphan_provenance (at baseline)",
+      "exit": 101,
+      "observed": "3 failed. Verbatim stderr: `error: unrecognized subcommand 'orphan-provenance'` / `Usage: fathomdb doctor <COMMAND>`",
+      "kind": "runtime failure — the binary compiled and ran, the verb simply did not exist",
+      "green_after": "3 passed; 0 failed; exit 0"
+    }
+  },
+
+  "gates": {
+    "CLIPPY_EXIT": 0,
+    "CLIPPY_COMMAND": "cargo clippy --workspace --all-targets",
+    "CLIPPY_WARNINGS": 0,
+    "CHECK_EXIT": 0,
+    "CHECK_COMMAND": "cargo check --workspace --all-targets",
+    "how_read": "via $? immediately after the command; NEVER a trailing echo. Re-run on the final committed tree.",
+    "cargo_fmt_all_check": 0,
+    "engine_suite_features_operator": {
+      "command": "cargo test -p fathomdb-engine --features operator",
+      "exit": 0,
+      "passed": 501,
+      "failed": 0,
+      "ignored": 13
+    },
+    "cli_suite": { "command": "cargo test -p fathomdb-cli", "exit": 0, "passed": 74, "failed": 0 },
+    "facade_default": { "command": "cargo test -p fathomdb", "exit": 0, "passed": 12, "failed": 0 },
+    "facade_operator": { "command": "cargo test -p fathomdb --features operator", "exit": 0, "passed": 7, "failed": 0 },
+    "schema_crate": { "command": "cargo test -p fathomdb-schema", "exit": 0, "passed": 42, "failed": 0 },
+    "typescript": { "tsc_noEmit": 0, "node_test": 0, "passed": 170, "failed": 0 },
+    "mkdocs_build_strict": 0,
+    "agent_lint_md": 0,
+    "agent_lint_docs": 0,
+    "ruff_check_src_python": 0,
+    "agent_typecheck_sh": {
+      "exit": 1,
+      "verdict": "PRE-EXISTING, NOT MINE — 8 pyright errors, error-set-diffed against the baseline src/python tree: ZERO new. The script also exits 1 at baseline."
+    },
+    "agent_test_sh_aggregate": "NOT USED as a verdict. Per the brief it exits 1 wholesale on the pre-existing dead publish dry-run assertion (TC-16, dead since 0.8.14) and `set -e` aborts downstream steps, so individual suites were run and read individually, as recorded above."
+  },
+
+  "ac_041_named_gate": {
+    "result": "GREEN",
+    "rust": {
+      "command": "cargo test -p fathomdb --test no_recovery_surface",
+      "exit": 0,
+      "result": "1 passed; 0 failed"
+    },
+    "typescript": {
+      "command": "node --test dist/tests/no-recovery-surface.test.js",
+      "exit": 0,
+      "result": "4 passed; 0 failed"
+    },
+    "python": {
+      "status": "STATICALLY REVIEWED ONLY — cannot execute (see task_a python note)",
+      "review": "src/python/tests/test_no_recovery_surface.py is UNMODIFIED by this slice; its FORBIDDEN set is unchanged and `erase_source` is not a member of it"
+    },
+    "vacuity_check_performed": "A full-suite TS run prints `[skip] RELEASE_SURFACE_TESTS!=1`. I traced that line and confirmed it comes from the SEPARATE, pre-existing release-surface.test.ts (a documented gate on a slow cargo build), NOT from no-recovery-surface.test.ts, which is not env-gated. AC-041 was therefore not a vacuous pass — it was run in isolation and reported 4/4.",
+    "denylist_contents_observed": ["recover", "restore", "repair", "fix", "rebuild"],
+    "denylist_length_observed": 5,
+    "denylist_source_of_truth": "src/conformance/governed-surface-allowlist.json key `recovery_denylist`",
+    "denylist_modified": false,
+    "denylist_diff_evidence": "`git diff src/conformance/governed-surface-allowlist.json` produces NO line touching `recovery_denylist` — the only changes to that file are the `_comment` change-log entry and two `allowlist` additions",
+    "erase_source_in_denylist": false,
+    "erase_source_is_legitimate": "`erase_source` is not one of the five REQ-054 names, so adding it does not touch AC-041"
+  },
+
+  "governed_surface_delta_AWAITING_HITL_SIGN_OFF": {
+    "status": "PROPOSED — NOT SIGNED. The string 'HITL-SIGNED' was NOT written anywhere. The `_comment` change log says '***0.8.20 Slice 5d (R-20-E4, erasure) — AWAITING HITL SIGN-OFF, NOT SIGNED.***' verbatim.",
+    "why_the_edit_was_made_at_all": "The allowlist is a POSITIVE allowlist (live surface must be a SUBSET of it), so shipping the verb without allowlisting it turns the branch red in three suites. The edit is the minimum needed to keep the branch green and is clearly marked as a proposal.",
+    "additions_to_src_conformance_governed_surface_allowlist_json": ["erase_source", "eraseSource"],
+    "additions_to_rust_GOVERNED_SURFACE_ALLOWLIST": {
+      "SourceId": "5c's provenance newtype — carried per 5c follow-up FU-5c-2. MUST be public: the facade re-exports PreparedWrite and Engine::write is public, so without the constructor a facade consumer cannot perform a canonical write at all.",
+      "ExciseReport": "erase_source's return type; MOVED from the operator-gated re-export block to the always-present one",
+      "count_change": "29 -> 31"
+    },
+    "non_command_types_added": {
+      "python": "fathomdb._fathomdb.EraseReport",
+      "typescript": "EraseReport",
+      "rust_operator_only": "OrphanProvenanceReport, OrphanProvenanceSource (CLI-only, no SDK parity — same posture as dump-mutations)"
+    },
+    "operator_seam_type_count": "unchanged at 20 — ExciseReport moved OUT as OrphanProvenanceReport/Source moved IN",
+    "deliberately_NOT_allowlisted": "`excise_source` remains CLI-only. It stays the recovery seam and is the ONLY verb permitted to address the engine's reserved `_`-prefixed provenance namespace.",
+    "recovery_denylist_touched": false
+  },
+
+  "implementation": {
+    "item_9b_erase_source": {
+      "shape": "Engine::excise_source was split into a shared private `erase_source_shared(verb, source_id)` with TWO public spellings over ONE engine path, per the design's 'one engine path with excise_source'. `excise_source_inner` was un-gated (still private) so both spellings share it; nothing is duplicated.",
+      "erase_source": "UNGATED (governed SDK). Available on the default, operator-OFF facade.",
+      "excise_source": "still `#[cfg(feature = \"operator\")]`, behaviour unchanged.",
+      "JUDGEMENT_CALL_FOR_REVIEW — asymmetric validation": {
+        "what": "`erase_source` validates via `SourceId::new` (construct-to-validate) and therefore REJECTS the reserved `_`-prefixed namespace; `excise_source` keeps its old permissive `is_empty()` check.",
+        "why_it_is_not_an_oversight": "R-20-E8 REQUIRES an operator to be able to run `excise_source('_legacy:pre-0.8.20')`, and 5c pins exactly that at provenance_mandatory.rs:162. Making the two validate identically would have broken that pin. Conversely, letting the GOVERNED verb reach `_legacy:pre-0.8.20` would let one SDK call erase every pre-0.8.20 anonymous row at once. The asymmetry is the safety boundary, and it is documented at the call site, in the docs, and in the commit message.",
+        "reviewer_should_confirm": "that this asymmetry is intended and correctly located"
+      },
+      "drain_constant": "erase_source_shared uses LIFECYCLE_DRAIN_TIMEOUT_MS (ungated, 30s) rather than REBUILD_DRAIN_TIMEOUT_MS (operator-gated, also 30s). Same budget; the swap is required because the shared path is no longer operator-only.",
+      "bindings": "Python: free #[pyfunction] taking `engine`, matching the purge/transition pattern, registered via wrap_pyfunction!; errors bridge through call_engine -> engine_error_to_py. TypeScript: async #[napi] method on the engine class + a public wrapper wrapping this.#native.eraseSource in intercept(). Both are thin pass-throughs with no client-side logic.",
+      "test": "sdk_only_consumer_erases_without_cli (the design's named test) in src/rust/crates/fathomdb/tests/sdk_only_erasure.rs, file-gated `#![cfg(not(feature = \"operator\"))]` — i.e. it asserts the property in the exact build where an SDK-only consumer lives. Run it with `cargo test -p fathomdb --test sdk_only_erasure` (a feature-unified --workspace run turns `operator` ON and compiles this file to nothing, same as no_recovery_surface.rs)."
+    },
+    "item_11_doctor_orphan_provenance": {
+      "engine": "Engine::orphan_provenance() -> OrphanProvenanceReport, operator-gated, SELECT-only, opens no transaction. One `UNION ALL` over canonical_nodes + canonical_edges GROUP BY source_id, so a source spanning both tables reports as ONE bucket; the governed subtotal is SUMmed in the same query rather than counted separately so the two figures cannot drift.",
+      "semantics_chosen": "`unerasable_rows` = rows with NEITHER source_id NOR logical_id. Rationale: purge keys on logical_id and erase_source keys on source_id, so such a row is reachable by no erasure verb and can never be deleted on request. This is the invariant 5c + migration step 21 established, and the verb is the operator-facing proof that it holds on a REAL database rather than only a fresh one.",
+      "exit_code": "DOCTOR_FOUND_ISSUES (65) iff unerasable_rows > 0; OK (0) otherwise. `_legacy:` rows are REPORTED but are explicitly NOT an issue — they are fully erasable through the CLI recovery seam, merely not attributable.",
+      "posture": "CLI-only, no SDK parity (same as dump-mutations / the dump-* family), so it adds nothing to the governed SDK surface.",
+      "tests": "doctor_lists_per_source_counts (the design's named test), orphan_provenance_is_read_only (two consecutive runs must report an identical census — a verb that mutated would drift), orphan_provenance_help_exits_zero_with_usage. Also added to the shared DOCTOR_VERBS table (operator_cli.rs) and the parser verb table so AC-036/037/040a/040b now cover it — those suites re-ran 25 and 14 passed."
+    },
+    "item_12_docs": {
+      "new": "docs/operations/erasure.md",
+      "erasure_boundary_negative_half": "Explicitly documents what erase_source does NOT guarantee: copies you exported/replicated; SQLite FREE PAGES in the main db file absent a VACUUM; copy-on-write / wear-levelled / snapshotted filesystems; BACKUPS predating the erasure; the audit record itself; and the reserved namespace.",
+      "non_pii_rationale_CORRECTED": "The rule stands; its stated basis is replaced. v4 §3.6's premise ('the audit row retains source_id permanently, by design') is recorded as VERIFIED FALSE (defect D-A) and v4 §3.6 is called out as SUPERSEDED IN PART rather than quietly rewritten. The doc gives the correct basis — an erasure-audit row may not have been swept YET — and notes that 5b's retention exemption has since made the stronger premise actually true.",
+      "defect_D_C_included": "derive_logical_id = SHA256(lowercase(kind) + ':' + lowercase(name)); the case-folding is load-bearing for identity collapse but SHRINKS the preimage space, strengthening the dictionary-attack caution.",
+      "changelog": "A real `### Changed — BREAKING` section covering all three user-visible breaks: (1) mandatory source_id / SourceId newtype, with the deliberate no-shim rationale and a migration recipe; (2) 5a's projections_invalidated / rows_invalidated count INCREASE (v2 deletions now counted) — framed as the data-leak defect it was, not a cosmetic change; (3) 5b's retention `cap` now bounding SWEEPABLE rows.",
+      "also_updated": "docs/reference/cli.md (orphan-provenance verb, exit codes, --json example), docs/reference/python-api.md + typescript-api.md (erase_source / eraseSource), mkdocs.yml (Operations promoted to a section), docs/operations/index.md, dev/DOC-INDEX.md (5 rows)."
+    }
+  },
+
+  "non_regression": {
+    "erasure_projection_registry": "4 passed (5a) — expected 4",
+    "erasure_completeness": "7 passed (5b) — expected 7",
+    "provenance_mandatory": "3 passed (5c)",
+    "excise_source": "6 passed — the operator seam is unchanged by the split",
+    "fathomdb_schema_migrations": "42 passed across the crate's targets, exit 0",
+    "operator_cli": "25 passed",
+    "parser": "14 passed",
+    "verdict": "no regressions in any 5a/5b/5c suite"
+  },
+
+  "INCIDENT_self_reported": {
+    "what_happened": "While probing whether the pyright errors were pre-existing, I ran `git stash push -u` followed by `git stash drop`. The `-u` swept the three UNTRACKED prior-sub-slice artifacts dev/plans/runs/0.8.20-slice-5{a,b,c}-output.json into the stash, and the drop deleted them from the worktree.",
+    "detected": "immediately, by running `git status --porcelain` and noticing the three untracked entries had vanished",
+    "recovered": "YES — fully. The dropped stash commit (1761b4c5a4ea703f1d9f05d0d22a7810d6d955af) was still reachable in the object store; its third parent (380febca8f680a5aa90b94fed667412a51f38907) is the untracked-files commit. All three files were restored from their blobs and verified BYTE-IDENTICAL via `git hash-object` against the stash blob shas (3341e942…, 51b89fcb…, 4ba3030c…) and re-parsed as valid JSON.",
+    "current_state": "all three files present and untracked, exactly as they were at baseline; no other file was affected (my own work was already committed)",
+    "lesson": "This is a variant of the trap the brief warned about ('5a destroyed its own uncommitted implementation with git checkout --'). My own work survived only because it was already committed. `git stash -u` is destructive to a sibling's untracked artifacts; a scoped `git stash push -- <paths>` or a throwaway clone would have been correct.",
+    "reported_because": "the orchestrator should know these three files were briefly destroyed and restored, rather than discovering an unexplained mtime change"
+  },
+
+  "prohibitions_observed": {
+    "maturin_develop_or_pip_install_e": "NEVER RUN. The shared .venv at /home/coreyt/projects/fathomdb/.venv was not rebound. This is exactly why the Python half is static-only.",
+    "npm_install": "RUN, and permitted — directory-local to src/ts, creates no shared state. It is what made the TS half genuinely verifiable.",
+    "eu7_real_corpus_ac": "NOT RUN in any form, at any N, on any backend. No corpus symlink was created. For the record, the `cargo test -p fathomdb-engine --features operator` sweep did link the eu7 target, and it executed `running 0 tests` (gated out) — so zero eu7 test bodies ran.",
+    "hitl_signed_string": "NOT written anywhere",
+    "recovery_denylist": "NOT modified",
+    "plan_board_ac_files": "dev/plans/plan-0.8.20.md, dev/plans/runs/STATUS-0.8.20.md and dev/acceptance.md were NOT touched",
+    "git_push": "NOT run",
+    "main_repo": "/home/coreyt/projects/fathomdb NOT touched",
+    "branch_verified_before_every_commit": "`git rev-parse --abbrev-ref HEAD` == orch-0.8.20-s5, checked before each of the 5 commits"
+  },
+
+  "blockers_and_follow_ups": [
+    {
+      "id": "FU-5d-1",
+      "severity": "HITL DECISION OWED — orchestrator to escalate",
+      "title": "AC-079 governed-surface delta is PROPOSED, NOT SIGNED",
+      "detail": "See governed_surface_delta_AWAITING_HITL_SIGN_OFF above for the exact additions. The allowlist edit was made only so the branch is not red; the `_comment` change log is explicit that it awaits sign-off."
+    },
+    {
+      "id": "FU-5d-2",
+      "severity": "VERIFICATION DEBT — landing gate",
+      "title": "The Python half of the FU-5c-1 sweep + test_erase_source.py have never been EXECUTED",
+      "detail": "Static evidence is strong (py_compile 0, ruff 0, AST residual audit clean, pyright shows zero new errors AND now resolves engine.erase_source), but no pytest process has run these files. A main-tree R-20-X1 pytest run is required before this can be called green. I decline to claim a green I did not observe.",
+      "recommendation": "run pytest for src/python/tests in the main tree (or any environment where the native extension can be built) before the release gate"
+    },
+    {
+      "id": "FU-5d-3",
+      "severity": "for reviewer attention",
+      "title": "Asymmetric validation between erase_source and excise_source",
+      "detail": "See implementation.item_9b_erase_source.JUDGEMENT_CALL_FOR_REVIEW. It is deliberate and forced by R-20-E8 + the 5c pin, but it is the one place a reviewer should confirm intent rather than assume it."
+    },
+    {
+      "id": "FU-5d-4",
+      "severity": "informational",
+      "title": "sdk_only_erasure.rs does not run under a feature-unified --workspace test",
+      "detail": "The file is `#![cfg(not(feature = \"operator\"))]` because that is the only build where the SDK-only property is meaningful. `cargo test --workspace` turns `operator` ON via fathomdb-cli and compiles it to nothing. It must be invoked as `cargo test -p fathomdb --test sdk_only_erasure`. This mirrors the existing no_recovery_surface.rs situation, but CI should carry the explicit invocation or the test is silently inert."
+    },
+    {
+      "id": "FU-5d-5",
+      "severity": "informational — pre-existing, NOT introduced here",
+      "title": "scripts/agent-typecheck.sh exits 1 on 8 pre-existing pyright errors",
+      "detail": "Error-set-diffed against baseline: zero new. Not fixed here (out of scope), but flagged because the script's non-zero exit could otherwise be misread as this slice's fault."
+    }
+  ],
+
+  "files_added": [
+    "src/rust/crates/fathomdb/tests/sdk_only_erasure.rs",
+    "src/rust/crates/fathomdb-cli/tests/doctor_orphan_provenance.rs",
+    "src/ts/tests/erase-source.test.ts",
+    "src/python/tests/test_erase_source.py",
+    "docs/operations/erasure.md"
+  ],
+  "new_dev_dependency": "tempfile = \"3\" added to src/rust/crates/fathomdb/Cargo.toml [dev-dependencies] for sdk_only_erasure.rs — TEST-ONLY, same posture as the existing trybuild entry; never linked into the published facade. Cargo.lock updated."
+}

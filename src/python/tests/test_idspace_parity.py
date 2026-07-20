@@ -19,6 +19,9 @@ import time
 
 from fathomdb import Engine, IdSpace, SearchHit
 
+# 0.8.20 (R-20-E3): `source_id` is mandatory on every canonical write.
+_SOURCE_ID = "py-test:idspace-parity"
+
 # The id-space prefixes (mirror the engine `IdSpaceKind::prefix`). No SDK helper
 # yields the prefixed form, so a consumer keying real-gold reconstructs it as
 # `{prefix}{value}` — this must be byte-identical to the pre-0.8.19 `stable_id`.
@@ -46,7 +49,14 @@ def test_governed_hit_id_is_logical_space(db_path: str) -> None:
     engine = Engine.open(db_path)
     try:
         engine.write(
-            [{"kind": "person", "body": "idspace governed entity payload", "logical_id": "gov-py-1"}]
+            [
+                {
+                    "kind": "person",
+                    "body": "idspace governed entity payload",
+                    "logical_id": "gov-py-1",
+                    "source_id": _SOURCE_ID,
+                }
+            ]
         )
         engine.drain(timeout_s=30)
         hits = _search_after_projection(engine, "governed")
@@ -69,7 +79,7 @@ def test_doc_seeded_hit_id_is_content_space(db_path: str) -> None:
     engine = Engine.open(db_path)
     try:
         body = "idspace anonymous docseeded xyzzy"
-        engine.write([{"kind": "doc", "body": body}])
+        engine.write([{"kind": "doc", "body": body, "source_id": _SOURCE_ID}])
         engine.drain(timeout_s=30)
         hits = _search_after_projection(engine, "docseeded")
         assert hits, "expected a doc-seeded hit"
@@ -91,8 +101,17 @@ def test_id_is_non_null_and_space_total(db_path: str) -> None:
     try:
         engine.write(
             [
-                {"kind": "person", "body": "idspace total governed totalterm", "logical_id": "tot-1"},
-                {"kind": "doc", "body": "idspace total anonymous totalterm"},
+                {
+                    "kind": "person",
+                    "body": "idspace total governed totalterm",
+                    "logical_id": "tot-1",
+                    "source_id": _SOURCE_ID,
+                },
+                {
+                    "kind": "doc",
+                    "body": "idspace total anonymous totalterm",
+                    "source_id": _SOURCE_ID,
+                },
             ]
         )
         engine.drain(timeout_s=30)

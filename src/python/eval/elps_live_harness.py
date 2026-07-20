@@ -39,8 +39,12 @@ You are an information-extraction engine. From the single document supplied by t
 
 ENTITIES
 - Identify the real-world entities mentioned (people, organizations, places, artifacts, concepts, etc.).
-- Each entity has a `name`, a `type`, and optional `aliases` (other surface forms used for the same entity in this document).
+- Each entity has a `name`, a `type`, optional `aliases` (other surface forms used for the same entity in this document), and a `source_doc_id`.
 - Be conservative about identity: when two mentions MIGHT refer to different real-world entities, emit them as DISTINCT entities rather than merging them. Do not collapse homonyms.
+
+ATTRIBUTION (load-bearing — a missing value fails the whole ingest)
+- EVERY entity AND every edge MUST carry a `source_doc_id` set to the exact `doc_id` given in the user message. Copy it verbatim; never invent, abbreviate or alter it.
+- This is how the store knows which document each fact came from, and therefore which facts to delete when that document is erased. An element without it cannot be attributed and is REJECTED — the store will not guess an attribution, because guessing would file the fact under the wrong document and leave it behind on erasure.
 
 EDGES (directed, dated facts)
 - Each edge is a single fact: `from_entity` -> `to_entity` with a short, lowercase `relation` label (e.g. `works_at`, `founded`, `located_in`).
@@ -63,7 +67,7 @@ SOURCE SPANS
 
 Return ONLY valid JSON matching this exact schema — no markdown fences, no prose:
 {
-  "entities": [{"name": str, "type": str, "aliases": list[str]}],
+  "entities": [{"name": str, "type": str, "aliases": list[str], "source_doc_id": str}],
   "edges": [
     {
       "from_entity": str,
@@ -92,7 +96,15 @@ body:
 # Canned stub response for ELPS_STUB_MODE=1
 # ---------------------------------------------------------------------------
 
-_STUB_ENTITIES = [{"name": "TestEntity", "type": "concept", "aliases": []}]
+def _stub_entities(doc_id: str) -> list[dict[str, Any]]:
+    """Canned entities, attributed to `doc_id`.
+
+    A FUNCTION returning fresh dicts, not a module-level constant: the engine
+    batches several documents into one extract request, and a shared list would
+    be handed out (and then attributed) once per document, so the last document
+    processed would silently overwrite every earlier document's provenance.
+    """
+    return [{"name": "TestEntity", "type": "concept", "aliases": [], "source_doc_id": doc_id}]
 
 
 def _stub_edges(doc_id: str) -> list[dict[str, Any]]:
@@ -189,7 +201,7 @@ def _extract_single_doc(doc: dict[str, Any]) -> tuple[list[dict], list[dict], li
     doc_id = doc["source_doc_id"]
 
     if _STUB_MODE:
-        return _STUB_ENTITIES, _stub_edges(doc_id), []
+        return _stub_entities(doc_id), _stub_edges(doc_id), []
 
     try:
         result = _call_llm_httpx(doc)
@@ -209,6 +221,17 @@ def _extract_single_doc(doc: dict[str, Any]) -> tuple[list[dict], list[dict], li
             and str(e.get("from_entity", "")).strip()
             and str(e.get("to_entity", "")).strip()
         ]
+        # Attribution backfill (R-20-E2). Every element we hand back must name
+        # the document it came from, because the engine batches documents and
+        # then requires each entity/edge to select its own source among the
+        # batch's caller-supplied ids -- an unattributed element fails the whole
+        # ingest with EngineError::Extractor. This is safe to do here and ONLY
+        # here: `_extract_single_doc` is scoped to exactly one document, so
+        # `doc_id` is the true source, not a guess. The engine deliberately
+        # refuses to make that guess itself.
+        for entity in entities:
+            if not entity.get("source_doc_id"):
+                entity["source_doc_id"] = doc_id
         for edge in edges:
             if not edge.get("source_doc_id"):
                 edge["source_doc_id"] = doc_id

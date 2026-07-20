@@ -75,6 +75,17 @@ run_capped test-cargo-skew bash dev/release/tests/cargo_skew.sh
 run_capped test-pip-skew bash dev/release/tests/pip_skew.sh
 
 # Rust
+#
+# TC-20 invariant: this line must NEVER reach `eu7_real_corpus_ac_validation`,
+# a ~1.5h real-corpus embed measurement. Do NOT add `--all-features` here.
+# Three gates keep it out, in order of what a change is most likely to break:
+#   1. `required-features = ["operator"]` on the test target — not built at all
+#      under the workspace default feature set (`default = []`);
+#   2. file-level `#![cfg(feature = "default-embedder")]` — compiles to zero
+#      tests even when `operator` IS on (e.g. the engine's operator suite);
+#   3. `#[ignore]` on the test itself — holds no matter which features are
+#      selected, so `--all-features` still would not run the body.
+# Verify by inspection only (`-- --list --ignored`), never by running it.
 run_capped test-rust cargo test --workspace --quiet --no-fail-fast
 
 # Python
@@ -86,7 +97,23 @@ elif command -v python3 >/dev/null 2>&1; then
 fi
 
 if [ -n "$python_bin" ] && "$python_bin" -c 'import pytest' >/dev/null 2>&1 && [ -d src/python/tests ]; then
-  run_capped test-python "$python_bin" -m pytest -q src/python/tests
+  # TC-27 (0.8.20 Slice 5 fix-6): the editable binding built by the documented
+  # `pip install -e 'src/python[dev]'` has no `test-hooks` surface, so
+  # `tests/conftest.py` may rebuild it with `maturin develop` — which REBINDS the
+  # active virtualenv to this source tree. This is the repo's own sanctioned dev
+  # loop, so it authorizes that rebuild, but ONLY when the interpreter we picked
+  # is the `.venv` INSIDE this checkout (`cd_repo_root` above, so in a linked
+  # worktree that is the worktree's own venv). If we fell back to a system
+  # `python3` — or to any environment that is not ours to rebind — we stay
+  # silent and conftest degrades to visibly SKIPPING the hook-dependent tests
+  # rather than repointing a shared venv. conftest re-checks venv ownership
+  # itself; this is the outer half of a belt-and-suspenders pair.
+  if [ "$python_bin" = ".venv/bin/python" ]; then
+    run_capped test-python env FATHOMDB_TESTS_ALLOW_REBUILD=1 \
+      "$python_bin" -m pytest -q src/python/tests
+  else
+    run_capped test-python "$python_bin" -m pytest -q src/python/tests
+  fi
 else
   skip_notice test-python "pytest not installed or no tests dir"
 fi

@@ -17,6 +17,9 @@ import pytest
 
 import fathomdb
 
+# 0.8.20 (R-20-E3): `source_id` is mandatory on every canonical write.
+_SOURCE_ID = "py-test:functional-graph-arm"
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -28,7 +31,7 @@ def open_engine(path: str) -> fathomdb.Engine:
 
 
 def _node(logical_id: str, body: str, kind: str = "doc") -> dict:
-    return {"kind": kind, "body": body, "logical_id": logical_id}
+    return {"kind": kind, "body": body, "logical_id": logical_id, "source_id": _SOURCE_ID}
 
 
 def _edge(
@@ -44,6 +47,7 @@ def _edge(
         "from": from_id,
         "to": to_id,
         "logical_id": logical_id,
+        "source_id": _SOURCE_ID,
     }
     if t_invalid is not None:
         item["t_invalid"] = t_invalid

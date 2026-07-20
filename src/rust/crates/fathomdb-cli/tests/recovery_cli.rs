@@ -52,7 +52,7 @@ fn db_with_sources() -> (TempDir, PathBuf) {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "alpha".to_string(),
-            source_id: Some("src-a".to_string()),
+            source_id: fathomdb::SourceId::new("src-a").expect("test source id"),
             logical_id: None,
             state: fathomdb::InitialState::Active,
             reason: None,
@@ -63,7 +63,7 @@ fn db_with_sources() -> (TempDir, PathBuf) {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "beta".to_string(),
-            source_id: Some("src-a".to_string()),
+            source_id: fathomdb::SourceId::new("src-a").expect("test source id"),
             logical_id: None,
             state: fathomdb::InitialState::Active,
             reason: None,
@@ -74,7 +74,7 @@ fn db_with_sources() -> (TempDir, PathBuf) {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "gamma".to_string(),
-            source_id: Some("src-b".to_string()),
+            source_id: fathomdb::SourceId::new("src-b").expect("test source id"),
             logical_id: None,
             state: fathomdb::InitialState::Active,
             reason: None,
@@ -91,6 +91,129 @@ fn run_json(args: &[&str]) -> (Option<i32>, Value) {
     let parsed: Value = serde_json::from_str(stdout.trim())
         .unwrap_or_else(|e| panic!("stdout must be JSON; err={e} stdout={stdout}"));
     (output.status.code(), parsed)
+}
+
+/// Raw op-store row count — design §3 Rule 1 (assert on RAW tables, never on a
+/// verb's own report).
+fn raw_collection_row_count(path: &std::path::Path, collection: &str) -> u64 {
+    let conn = rusqlite::Connection::open(path).expect("probe connection");
+    conn.query_row(
+        "SELECT COUNT(*) FROM operational_mutations WHERE collection_name = ?1",
+        [collection],
+        |row| row.get(0),
+    )
+    .expect("count collection rows")
+}
+
+/// **codex §9 round-3 P1, CLI half.** codex named the CLI as the reachable path:
+/// `recover --accept-data-loss --excise-collection erasure_pending_redaction
+/// --excise-record-key excise_source` deleted the durable record of a telemetry
+/// redaction the engine still owed, after which the next erasure verb reported
+/// SUCCESS while the erased stable ids were still in the telemetry sink
+/// (R-20-E5). The erasure-audit collections are refused on the same footing —
+/// the HITL ruling requires an auditable record of the deletion event.
+///
+/// Engine-side witness (including that the obligation is still discharged
+/// afterwards) is
+/// `fathomdb-engine/tests/erasure_completeness.rs::erasure_bookkeeping_collections_are_not_excisable`.
+#[cfg(unix)]
+#[test]
+fn t_erasure_bookkeeping_collections_refused_via_cli() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = TempDir::new().expect("tempdir");
+    let db = dir.path().join("recovery.sqlite");
+    let sink_dir = dir.path().join("sink");
+    std::fs::create_dir(&sink_dir).expect("create sink dir");
+    let sink = sink_dir.join("telemetry.jsonl");
+
+    let opened = Engine::open(db.clone()).expect("open");
+    opened.engine.enable_telemetry(sink.to_str().unwrap()).expect("enable telemetry");
+    opened
+        .engine
+        .write(&[PreparedWrite::Node {
+            kind: "doc".to_string(),
+            body: "alpha zeta".to_string(),
+            source_id: fathomdb::SourceId::new("src-a").expect("test source id"),
+            logical_id: Some("victim-1".to_string()),
+            state: fathomdb::InitialState::Active,
+            reason: None,
+        }])
+        .expect("write");
+    opened.engine.drain(10_000).expect("drain");
+    opened.engine.search("zeta").expect("search");
+    assert!(
+        std::fs::read_to_string(&sink).expect("read sink").contains("l:victim-1"),
+        "fixture: the victim id must reach the sink"
+    );
+
+    // Freeze the sink directory so the redaction cannot complete: the erasure
+    // commits its deletes and leaves a DURABLE pending-redaction obligation.
+    std::fs::set_permissions(&sink_dir, std::fs::Permissions::from_mode(0o555)).expect("chmod");
+    let probe = sink_dir.join("write-probe");
+    if std::fs::write(&probe, b"x").is_ok() {
+        let _ = std::fs::remove_file(&probe);
+        std::fs::set_permissions(&sink_dir, std::fs::Permissions::from_mode(0o755))
+            .expect("chmod restore");
+        panic!("cannot inject a redaction failure (running as root?) — this test would be vacuous");
+    }
+    opened.engine.excise_source("src-a").expect_err("redaction must fail");
+    std::fs::set_permissions(&sink_dir, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    opened.engine.close().expect("close");
+    drop(opened);
+
+    assert_eq!(
+        raw_collection_row_count(&db, "erasure_pending_redaction"),
+        1,
+        "fixture: one durable pending-redaction obligation"
+    );
+
+    let (_code, parsed) = run_json(&[
+        "recover",
+        "--accept-data-loss",
+        "--excise-collection",
+        "erasure_pending_redaction",
+        "--excise-record-key",
+        "excise_source",
+        db.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        parsed.get("status").and_then(Value::as_str),
+        Some("error"),
+        "the CLI must REFUSE to excise the engine-internal pending-redaction queue: {parsed}"
+    );
+    assert_eq!(
+        raw_collection_row_count(&db, "erasure_pending_redaction"),
+        1,
+        "the CLI deleted an outstanding erasure obligation; the next erasure verb would then \
+         report success with the erased ids still in the telemetry sink (R-20-E5)"
+    );
+
+    assert_eq!(
+        raw_collection_row_count(&db, "excise_source_audit"),
+        1,
+        "fixture: one erasure-audit row"
+    );
+    let (_code, parsed) = run_json(&[
+        "recover",
+        "--accept-data-loss",
+        "--excise-collection",
+        "excise_source_audit",
+        "--excise-record-key",
+        "src-a",
+        db.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        parsed.get("status").and_then(Value::as_str),
+        Some("error"),
+        "the CLI must REFUSE to excise the erasure-audit collection: {parsed}"
+    );
+    assert_eq!(
+        raw_collection_row_count(&db, "excise_source_audit"),
+        1,
+        "the CLI deleted the auditable record of the deletion event"
+    );
+    drop(dir);
 }
 
 #[test]

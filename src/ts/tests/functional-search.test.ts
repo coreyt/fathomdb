@@ -33,6 +33,10 @@ const FIXTURE_PATH = join(
   "functional_search_fixture.json",
 );
 
+// 0.8.20 (R-20-E3): `sourceId` is mandatory on every canonical write. Inert
+// for search — ranking and filtering never read provenance.
+const SOURCE_ID = "ts-test:functional-search";
+
 interface Fixture {
   corpus: { kind: string; body: string }[];
   queries: { query: string; expected_bodies: string[] }[];
@@ -64,7 +68,7 @@ test("functional search: structured hit shape across the FFI", async () => {
   const engine = await Engine.open(freshDbPath());
   try {
     for (const doc of fixture.corpus) {
-      await engine.write([{ kind: doc.kind, body: doc.body }]);
+      await engine.write([{ kind: doc.kind, body: doc.body, sourceId: SOURCE_ID }]);
     }
     await engine.drain(30_000);
 
@@ -97,7 +101,7 @@ test("functional search: cross-binding equivalence with the Python harness", asy
   const engine = await Engine.open(freshDbPath());
   try {
     for (const doc of fixture.corpus) {
-      await engine.write([{ kind: doc.kind, body: doc.body }]);
+      await engine.write([{ kind: doc.kind, body: doc.body, sourceId: SOURCE_ID }]);
     }
     await engine.drain(30_000);
 
@@ -133,7 +137,7 @@ test("functional search: RRF-fused order matches the Python binding", async () =
   const engine = await Engine.open(freshDbPath());
   try {
     for (const doc of fixture.corpus) {
-      await engine.write([{ kind: doc.kind, body: doc.body }]);
+      await engine.write([{ kind: doc.kind, body: doc.body, sourceId: SOURCE_ID }]);
     }
     await engine.drain(30_000);
 
@@ -158,17 +162,17 @@ test("functional write: rowCursors are 1:1 with the batch (Py ≡ TS)", async ()
   const engine = await Engine.open(freshDbPath());
   try {
     const first = await engine.write([
-      { kind: "doc", body: "rc-a" },
-      { kind: "doc", body: "rc-b" },
-      { kind: "doc", body: "rc-c" },
+      { kind: "doc", body: "rc-a", sourceId: SOURCE_ID },
+      { kind: "doc", body: "rc-b", sourceId: SOURCE_ID },
+      { kind: "doc", body: "rc-c", sourceId: SOURCE_ID },
     ]);
     assert.deepEqual(first.rowCursors, [1, 2, 3]);
     assert.equal(first.cursor, 3);
     assert.equal(first.rowCursors[first.rowCursors.length - 1], first.cursor);
 
     const second = await engine.write([
-      { kind: "doc", body: "rc-d" },
-      { kind: "doc", body: "rc-e" },
+      { kind: "doc", body: "rc-d", sourceId: SOURCE_ID },
+      { kind: "doc", body: "rc-e", sourceId: SOURCE_ID },
     ]);
     assert.deepEqual(second.rowCursors, [4, 5]);
     assert.equal(second.cursor, 5);
@@ -184,8 +188,12 @@ test("functional write: rowCursors are 1:1 with the batch (Py ≡ TS)", async ()
 test("functional write: a supersession write surfaces its row cursor", async () => {
   const engine = await Engine.open(freshDbPath());
   try {
-    const v1 = await engine.write([{ kind: "doc", body: "fact v1", logicalId: "L1" }]);
-    const v2 = await engine.write([{ kind: "doc", body: "fact v2", logicalId: "L1" }]);
+    const v1 = await engine.write([
+      { kind: "doc", body: "fact v1", logicalId: "L1", sourceId: SOURCE_ID },
+    ]);
+    const v2 = await engine.write([
+      { kind: "doc", body: "fact v2", logicalId: "L1", sourceId: SOURCE_ID },
+    ]);
     assert.deepEqual(v1.rowCursors, [1]);
     assert.deepEqual(v2.rowCursors, [2]);
     assert.ok(v2.cursor > v1.cursor);
@@ -204,16 +212,16 @@ test("functional write: dangling-edge count (Py ≡ TS)", async () => {
     // Clean batch: the edge's endpoints resolve to live logicalId nodes inserted
     // later in the SAME batch (cross-row) -> 0 dangling.
     const clean = await engine.write([
-      { kind: "doc", body: "n1", logicalId: "N1" },
-      { kind: "doc", body: "n2", logicalId: "N2" },
-      { edge: { kind: "rel", from: "N1", to: "N2" } },
+      { kind: "doc", body: "n1", logicalId: "N1", sourceId: SOURCE_ID },
+      { kind: "doc", body: "n2", logicalId: "N2", sourceId: SOURCE_ID },
+      { edge: { kind: "rel", from: "N1", to: "N2", sourceId: SOURCE_ID } },
     ]);
     assert.equal(clean.danglingEdgeEndpoints, 0);
 
     // Dangling batch: both endpoints reference missing logicalIds -> 2
     // (flag-and-count: the write still succeeds).
     const dangling = await engine.write([
-      { edge: { kind: "rel", from: "GHOST_A", to: "GHOST_B" } },
+      { edge: { kind: "rel", from: "GHOST_A", to: "GHOST_B", sourceId: SOURCE_ID } },
     ]);
     assert.equal(dangling.danglingEdgeEndpoints, 2);
   } finally {
@@ -226,7 +234,7 @@ test("functional search: a SearchFilter prunes results", async () => {
   const engine = await Engine.open(freshDbPath());
   try {
     for (const doc of fixture.corpus) {
-      await engine.write([{ kind: doc.kind, body: doc.body }]);
+      await engine.write([{ kind: doc.kind, body: doc.body, sourceId: SOURCE_ID }]);
     }
     await engine.drain(30_000);
 

@@ -12,7 +12,10 @@ import { freshDbPath } from "./helpers.js";
 test("cursor advances on write", async () => {
   const engine = await Engine.open(freshDbPath());
   try {
-    const receipt = await engine.write([{ kind: "doc", body: "{}" }]);
+    const receipt = await engine.write([
+      // 0.8.20 (R-20-E3): `sourceId` is mandatory on every canonical write.
+      { kind: "doc", body: "{}", sourceId: "ts-test:scaffold" },
+    ]);
     assert.equal(receipt.cursor, 1);
   } finally {
     await engine.close();

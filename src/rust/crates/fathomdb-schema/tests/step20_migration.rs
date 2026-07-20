@@ -70,22 +70,22 @@ fn index_set(conn: &Connection, table: &str) -> Vec<(String, Option<String>)> {
     out
 }
 
-/// R-EX-1 / R-MIG-1 — after the full migration set the head is 20, step-20 is
-/// last, and `canonical_nodes` carries `state` (NOT NULL DEFAULT 'active') +
-/// `reason` (nullable) with the active-only partial index.
+/// R-EX-1 / R-MIG-1 — after the full migration set `canonical_nodes` carries
+/// `state` (NOT NULL DEFAULT 'active') + `reason` (nullable) with the
+/// active-only partial index. The head pin moved to step-21 in 0.8.20 Slice 5c
+/// (legacy provenance backfill, R-20-E8); step-20's columns are unaffected.
 #[test]
-fn s20_existence_columns_present_and_schema_version_is_20() {
+fn s20_existence_columns_present_and_schema_version_is_head() {
     register_sqlite_vec_once();
     let conn = Connection::open_in_memory().unwrap();
     set_user_version(&conn, 1);
     migrate_with_steps(&conn, MIGRATIONS).expect("migration must succeed");
 
     assert_eq!(user_version(&conn), SCHEMA_VERSION);
-    assert_eq!(SCHEMA_VERSION, 20, "SCHEMA_VERSION must be 20 (step-20 OPP-12 existence axis)");
     assert_eq!(
         MIGRATIONS.last().expect("at least one migration").step_id,
-        20,
-        "step-20 (OPP-12 Phase-1 existence axis) must be the last (head) migration"
+        21,
+        "step-21 (legacy provenance backfill, R-20-E8) must be the last (head) migration"
     );
 
     let shape = table_shape(&conn, "canonical_nodes");
@@ -121,10 +121,14 @@ fn s20_existence_columns_present_and_schema_version_is_20() {
 fn s20_fresh_equals_upgrade_from_19() {
     register_sqlite_vec_once();
 
-    // Path A — fresh create: migrate the full set from scratch.
+    // Path A — fresh create at 20. Bounded to steps <= 20 so this stays a
+    // fresh-AT-20 vs upgrade-TO-20 comparison as the ladder grows past 20
+    // (0.8.20 Slice 5c added step 21); migrating the full set would compare a
+    // v21 shape against a v20 one.
     let fresh = Connection::open_in_memory().unwrap();
     set_user_version(&fresh, 1);
-    migrate_with_steps(&fresh, MIGRATIONS).expect("fresh migrate to head");
+    let steps_to_20: Vec<_> = MIGRATIONS.iter().filter(|m| m.step_id <= 20).cloned().collect();
+    migrate_with_steps(&fresh, &steps_to_20).expect("fresh migrate to 20");
     assert_eq!(user_version(&fresh), 20);
 
     // Path B — upgrade from 19: migrate to v19, seed a legacy row, then apply

@@ -95,6 +95,9 @@ from fathomdb._fathomdb import (
 from fathomdb._fathomdb import (
     NotLifecycleAddressableError as _NotLifecycleAddressableError,
 )
+from fathomdb._fathomdb import (
+    ErasureIncompleteError as _ErasureIncompleteError,
+)
 
 EngineError = _EngineError
 StorageError = _StorageError
@@ -128,6 +131,11 @@ VectorEquivalenceMismatchError = _VectorEquivalenceMismatchError
 # field names (S7): `from_state`/`to_state` (never `from`, a Python keyword).
 IllegalTransitionError = _IllegalTransitionError
 NotLifecycleAddressableError = _NotLifecycleAddressableError
+# 0.8.20 Slice 5b (R-20-E5) — an erasure verb (`purge` / `excise_source`) deleted
+# its rows but could not complete the erasure AT REST, typically because a
+# concurrent reader pinned a WAL snapshot and `wal_checkpoint(TRUNCATE)` stayed
+# busy. Retryable: re-run the verb once the reader has finished.
+ErasureIncompleteError = _ErasureIncompleteError
 
 
 def _install_typed_init(cls: type, fields: tuple[str, ...]) -> None:
@@ -158,6 +166,8 @@ _install_typed_init(VectorEquivalenceMismatchError, ("reason",))
 # OPP-12 Phase-1 (0.8.19 Slice 10) — lifecycle-verb payloads.
 _install_typed_init(IllegalTransitionError, ("from_state", "to_state", "legal"))
 _install_typed_init(NotLifecycleAddressableError, ("id_space",))
+# 0.8.20 Slice 5b — the incomplete-erasure refusal carries the uncompleted stage.
+_install_typed_init(ErasureIncompleteError, ("stage", "detail"))
 
 
 __all__ = [
@@ -170,6 +180,7 @@ __all__ = [
     "EmbedderNotConfiguredError",
     "ConsolidatorError",
     "EngineError",
+    "ErasureIncompleteError",
     "ExtractorError",
     "IllegalTransitionError",
     "IncompatibleSchemaVersionError",

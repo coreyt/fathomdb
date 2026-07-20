@@ -24,7 +24,7 @@ fn doc_node(body: &str) -> PreparedWrite {
     PreparedWrite::Node {
         kind: "doc".to_string(),
         body: body.to_string(),
-        source_id: None,
+        source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
         logical_id: None,
         state: fathomdb_engine::InitialState::Active,
         reason: None,
@@ -36,7 +36,7 @@ fn entity_node(body: &str, logical_id: &str) -> PreparedWrite {
     PreparedWrite::Node {
         kind: "doc".to_string(),
         body: body.to_string(),
-        source_id: None,
+        source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
         logical_id: Some(logical_id.to_string()),
         state: fathomdb_engine::InitialState::Active,
         reason: None,
@@ -54,7 +54,8 @@ fn edge_with_source(
         kind: "link".to_string(),
         from: from.to_string(),
         to: to.to_string(),
-        source_id: source_id.map(str::to_string),
+        source_id: fathomdb_engine::SourceId::new(source_id.unwrap_or("test:fixture"))
+            .expect("test source id"),
         logical_id: Some(logical_id.to_string()),
         body: Some(format!("{from} links to {to}")),
         t_valid: None,
@@ -270,19 +271,39 @@ fn test_graph_arm_source_id_deterministic_with_multiple_edges() {
 // §C-5: a NULL-source_id edge yields a graph hit with source_id==None (no panic)
 // ---------------------------------------------------------------------------
 
+/// 0.8.20 Slice 5c note. A NULL `source_id` is no longer WRITABLE — R-20-E3 made
+/// provenance structurally mandatory on `PreparedWrite`. It remains READABLE,
+/// and this guard still matters, because two classes of stored row legitimately
+/// carry NULL: rows written before 0.8.20, and — permanently, by the TC-11 pin —
+/// GOVERNED legacy rows, which the step-21 backfill deliberately spares so they
+/// stay `purge`-addressable by `logical_id`.
+///
+/// The NULL is therefore introduced the only way it now can be: by writing a
+/// provenanced edge and clearing the column with raw SQL, simulating exactly
+/// such a stored row. The assertion is unchanged — the graph arm must surface
+/// `source_id == None` rather than panic or skip the hit.
 #[test]
 fn test_graph_hit_source_id_none_fallback() {
     let dir = TempDir::new().unwrap();
-    let opened = Engine::open(db_path(&dir, "source_none_fallback")).expect("open");
+    let path = db_path(&dir, "source_none_fallback");
+    let opened = Engine::open(&path).expect("open");
     opened
         .engine
         .write(&[
             entity_node("eve anchor entity for search", "eve"),
             entity_node("frank neighbor reachable node", "frank"),
-            // Edge with NULL source_id.
-            edge_with_source("eve", "frank", "edge-ef", None),
+            edge_with_source("eve", "frank", "edge-ef", Some("doc-to-be-nulled")),
         ])
         .expect("write");
+
+    // Simulate a pre-0.8.20 / TC-11-spared governed row: NULL provenance at rest.
+    {
+        let conn = rusqlite::Connection::open(&path).expect("open raw");
+        let updated = conn
+            .execute("UPDATE canonical_edges SET source_id = NULL", [])
+            .expect("null the edge provenance");
+        assert!(updated >= 1, "the fixture must actually produce a NULL-provenance edge");
+    }
 
     let result = opened
         .engine

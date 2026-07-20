@@ -164,7 +164,7 @@ fn rrf_end_to_end_order_is_deterministic() {
             .write(&[PreparedWrite::Node {
                 kind: "doc".to_string(),
                 body: body.to_string(),
-                source_id: None,
+                source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
@@ -202,7 +202,7 @@ fn vector_empty_soft_fallback_signal_survives_fusion() {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "phase nine hybrid search".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,

@@ -161,7 +161,7 @@ fn ac_002_no_log_files_without_subscriber() {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "hello".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
@@ -233,7 +233,7 @@ fn ac_003a_writer_events_flow_to_subscriber() {
     let _ = engine.write(&[PreparedWrite::Node {
         kind: "doc".to_string(),
         body: "hello".to_string(),
-        source_id: None,
+        source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
         logical_id: None,
         state: fathomdb_engine::InitialState::Active,
         reason: None,
@@ -321,7 +321,7 @@ fn ac_004b_counter_delta_exact_over_mixed_ops() {
             .write(&[PreparedWrite::Node {
                 kind: "doc".to_string(),
                 body: "hello".to_string(),
-                source_id: None,
+                source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
@@ -465,7 +465,7 @@ fn ac_006_interior_page_corruption_emits_sqlite_corrupt() {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "interior".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,

@@ -21,12 +21,16 @@ async function openEngine(path: string): Promise<Engine> {
   return Engine.open(path, { useDefaultEmbedder: false });
 }
 
+// 0.8.20 (R-20-E3): `sourceId` is mandatory on every canonical write. Inert
+// for traversal — `graph.neighbors` keys on edges, never on provenance.
+const SOURCE_ID = "ts-test:functional-graph";
+
 function nodeItem(logicalId: string, body: string, kind = "doc"): object {
-  return { kind, body, logicalId };
+  return { kind, body, logicalId, sourceId: SOURCE_ID };
 }
 
 function edgeItem(from: string, to: string, logicalId: string): object {
-  return { edge: { kind: "link", from, to, logicalId } };
+  return { edge: { kind: "link", from, to, logicalId, sourceId: SOURCE_ID } };
 }
 
 async function seedSmallGraph(engine: Engine): Promise<void> {

@@ -25,10 +25,35 @@ fn engine_error_runtime_variants_exist() {
         EngineError::SchemaValidation,
         EngineError::Overloaded,
         EngineError::Closing,
+        // 0.8.20 Slice 5b (R-20-E5) — an erasure verb refusing to report success
+        // over an erasure it could not complete at rest.
+        EngineError::ErasureIncomplete {
+            stage: "wal_checkpoint".to_string(),
+            detail: "checkpoint reported BUSY".to_string(),
+        },
     ];
     for err in &variants {
         assert!(!err.to_string().is_empty(), "Display must be non-empty");
         let _: &dyn std::error::Error = err;
+    }
+}
+
+/// 0.8.20 Slice 5b (R-20-E5) — the incomplete-erasure refusal must carry the
+/// uncompleted STAGE, not just an opaque failure: the remedy differs
+/// (`wal_checkpoint` ⇒ retry once the concurrent reader is gone;
+/// `telemetry_redaction` ⇒ fix the sink path).
+#[test]
+fn erasure_incomplete_carries_stage_and_detail() {
+    let err = EngineError::ErasureIncomplete {
+        stage: "wal_checkpoint".to_string(),
+        detail: "reader pinned a WAL snapshot".to_string(),
+    };
+    let rendered = err.to_string();
+    assert!(rendered.contains("wal_checkpoint"), "Display must name the stage: {rendered}");
+    assert!(rendered.contains("reader pinned"), "Display must carry the detail: {rendered}");
+    match err {
+        EngineError::ErasureIncomplete { stage, .. } => assert_eq!(stage, "wal_checkpoint"),
+        other => panic!("expected ErasureIncomplete, got {other:?}"),
     }
 }
 

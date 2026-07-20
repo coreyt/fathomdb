@@ -22,7 +22,7 @@ fn entity_node(body: &str, logical_id: &str) -> PreparedWrite {
     PreparedWrite::Node {
         kind: "doc".to_string(),
         body: body.to_string(),
-        source_id: None,
+        source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
         logical_id: Some(logical_id.to_string()),
         state: fathomdb_engine::InitialState::Active,
         reason: None,
@@ -44,7 +44,8 @@ fn edge(
         kind: "link".to_string(),
         from: from.to_string(),
         to: to.to_string(),
-        source_id: source_id.map(str::to_string),
+        source_id: fathomdb_engine::SourceId::new(source_id.unwrap_or("test:fixture"))
+            .expect("test source id"),
         logical_id: Some(logical_id.to_string()),
         body: Some(body.to_string()),
         t_valid: None,

@@ -121,6 +121,89 @@ const SEARCH_INDEX_TOKENIZER_SCHEMA_VERSION: u32 = 11;
 const SEARCH_INDEX_TOKENIZER_REPROJECT_MARKER_KEY: &str =
     "search_index_tokenizer_reproject_complete";
 const DEFAULT_PROVENANCE_ROW_CAP: u64 = 1_000_000;
+/// 0.8.20 Slice 5b (R-20-E5) — how many times an erasure verb re-tries
+/// `PRAGMA wal_checkpoint(TRUNCATE)` before refusing with
+/// [`EngineError::ErasureIncomplete`]. Deliberately small: a concurrent reader
+/// pinning a WAL snapshot can hold it for an unbounded time, and an erasure verb
+/// must fail loudly rather than block a caller indefinitely.
+const ERASURE_WAL_TRUNCATE_ATTEMPTS: u32 = 5;
+/// 0.8.20 Slice 5b (R-20-E5) — pause between WAL-truncation attempts
+/// (~100 ms total budget across [`ERASURE_WAL_TRUNCATE_ATTEMPTS`]).
+const ERASURE_WAL_TRUNCATE_BACKOFF_MS: u64 = 25;
+/// 0.8.20 Slice 5b (R-20-E6) — the sentinel that replaces an erased
+/// `result_stable_ids` element in the telemetry sink. Positional alignment with
+/// the parallel `result_ids` array is preserved, so a redacted sink stays
+/// parseable by the gold pipeline.
+const REDACTED_STABLE_ID: &str = "[erased]";
+/// 0.8.20 Slice 5b (design `0.8.20-slice0-erasure-design.md` §2 defect D-A,
+/// HITL-ruled 2026-07-19: *"there must be an auditable record of deletion
+/// event."*) — op-store collections holding ERASURE-AUDIT records.
+///
+/// These rows are **exempt from [`enforce_provenance_retention`]**. Before this
+/// slice they were swept like any other op-store row: cap-first, oldest-`id`
+/// first, with no collection filter — and because the audit row is written
+/// *before* the workload that follows it, it was among the FIRST evicted. The
+/// proof of erasure was therefore destructible, and shared a retention pool with
+/// the very payloads it must prove erased. Accountability (demonstrating *that*
+/// an erasure occurred) is a distinct obligation from erasure itself, and a
+/// retention sweep must not silently discharge it.
+///
+/// **Guarantee:** a row in one of these collections is never removed by the
+/// retention sweep, and (0.8.20 Slice 5 fix-3) never by
+/// [`Engine::excise_collection_record`] either — see
+/// [`is_erasure_bookkeeping_collection`].
+const ERASURE_AUDIT_COLLECTIONS: &[&str] = &["excise_source_audit", "excise_record_audit"];
+/// 0.8.20 Slice 5 fix-1 (codex §9 P2) — the `operational_mutations` collection
+/// holding the DURABLE record of a telemetry redaction that is owed but not yet
+/// performed. See [`Engine::discharge_pending_redactions`].
+///
+/// Like the audit collections it is exempt from the retention sweep: an
+/// outstanding erasure obligation must not be discharged by cap pressure.
+const ERASURE_PENDING_REDACTION_COLLECTION: &str = "erasure_pending_redaction";
+/// 0.8.20 Slice 5 fix-3 (codex §9 round-3 P1) — true for the op-store
+/// collections that hold the engine's ERASURE BOOKKEEPING: the durable
+/// pending-redaction queue and the erasure-audit trail.
+///
+/// These are engine-owned invariants that happen to be *stored* as op-store
+/// records. They are not caller data, and the generic record-erasure verb
+/// [`Engine::excise_collection_record`] must refuse to target them:
+///
+/// * **The pending queue** ([`ERASURE_PENDING_REDACTION_COLLECTION`]) records a
+///   telemetry redaction the engine still OWES. Deleting the entry makes
+///   [`Engine::complete_erasure_at_rest`] see no outstanding work, so the next
+///   erasure verb reports SUCCESS while the erased `l:`/`h:` ids are still in
+///   the telemetry sink. That is the exact R-20-E5 violation — *an erasure verb
+///   must never report success on an incomplete erasure* — that the queue was
+///   introduced to close, and the verb re-opened it through an
+///   operator-reachable path (`--excise-collection erasure_pending_redaction
+///   --excise-record-key <verb>`).
+/// * **The audit trail** ([`ERASURE_AUDIT_COLLECTIONS`]) is protected by the
+///   HITL ruling of 2026-07-19: *"there must be an auditable record of deletion
+///   event."* Deleting audit rows one-by-one defeats that ruled-on guarantee as
+///   surely as a retention sweep would. Accountability is a distinct obligation
+///   from erasure, and no verb may silently discharge it.
+///
+/// Neither carries erasable payload, so refusing them costs a caller nothing: a
+/// pending-queue row holds only stable ids the engine is about to remove from
+/// the sink (and deletes itself on discharge), and an audit row holds a
+/// `source_id` bound by the non-PII rule or a SHA-256 record digest.
+///
+/// The refusal is TYPED ([`EngineError::InvalidArgument`]), never a silent
+/// no-op — an operator who aimed at the wrong collection must be told. The shape
+/// mirrors the slice's existing precedent: [`Engine::erase_source`] refuses the
+/// reserved `_`-prefixed provenance namespace while [`Engine::excise_source`]
+/// stays permissive.
+///
+/// Gated on `feature = "operator"` to match its only call site,
+/// [`Engine::excise_collection_record`], which is itself operator-only: without
+/// the matching `cfg` a non-`operator` build emits a `dead_code` warning for a
+/// helper that has nothing to guard, because the verb it guards does not exist
+/// in that build.
+#[cfg(feature = "operator")]
+fn is_erasure_bookkeeping_collection(collection: &str) -> bool {
+    collection == ERASURE_PENDING_REDACTION_COLLECTION
+        || ERASURE_AUDIT_COLLECTIONS.contains(&collection)
+}
 const PROJECTION_CURSOR_KEY: &str = "projection_cursor";
 const PROJECTION_WORKERS: usize = 2;
 /// PR-9 — ADR-0.6.0-embedder-protocol **Invariant 5** default per-`embed()`
@@ -2006,6 +2089,124 @@ pub struct ConsolidateReceipt {
     pub edges_superseded: u64,
 }
 
+/// 0.8.20 Slice 5c (R-20-E3) — the provenance of a canonical row: which source
+/// document it is attributable to, and therefore what `excise_source` must erase
+/// when that source is withdrawn.
+///
+/// **Why a newtype and not `Option<String>`.** Erasure runs through provenance:
+/// a row whose `source_id` is NULL is reachable by NO `excise_source` call and
+/// is therefore **un-erasable**. Before 0.8.20 the public `PreparedWrite`
+/// carried `source_id: Option<String>`, so a caller could express "no
+/// provenance" and silently create such a row. A *runtime* rejection would not
+/// have closed this: the facade crate re-exports `PreparedWrite` and
+/// `Engine::write` is `pub`, so a caller can build the value directly and skip
+/// any validation the engine performs. Replacing the field's type is what makes
+/// the absence of provenance **inexpressible** rather than merely rejected —
+/// the guarantee is enforced by `rustc`, not by a branch. `tests/ui/` in the
+/// facade crate holds the compile-fail witness.
+///
+/// **This is a BREAKING change**, shipped ON by default as part of the 0.8.20
+/// coordinated breaking-pair release. There is deliberately no compatibility
+/// shim and no deprecation window: a shim would re-open the hole it closes.
+///
+/// **Reserved namespace.** Ids beginning with `_` belong to the engine and are
+/// rejected by [`SourceId::new`]. Two are currently minted internally:
+///
+/// * [`SourceId::ENGINE_PREFIX`] (`_engine:`) — rows the engine derives for
+///   itself (EXP-S coverage/graph substrate rows), which never pass through
+///   `PreparedWrite` (design §4 item 6).
+/// * [`SourceId::LEGACY_PRE_0_8_20`] (`_legacy:pre-0.8.20`) — stamped by schema
+///   migration step 21 onto pre-0.8.20 rows that were stored with NULL
+///   provenance, so they become erasable (R-20-E8). **Gated to UNGOVERNED rows
+///   only** (`logical_id IS NULL`); a governed row keeps NULL `source_id` and
+///   stays `purge`-addressable by its `logical_id` (TC-11 pin).
+///
+/// **`source_id` must not be PII.** It survives the erasure it authorises: the
+/// `excise_source` audit row in `operational_mutations` records it verbatim, and
+/// while 0.8.20 makes that audit row durable (design §2 defect D-A) the rule was
+/// always that the handle you erase BY must not itself be the thing needing
+/// erasure. Use an opaque document id, not an email address.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SourceId(String);
+
+impl SourceId {
+    /// Reserved prefix for engine-derived rows (design §4 item 6).
+    pub const ENGINE_PREFIX: &'static str = "_engine:";
+
+    /// Reserved provenance stamped by schema migration step 21 onto pre-0.8.20
+    /// UNGOVERNED rows that were stored with NULL provenance (R-20-E8).
+    pub const LEGACY_PRE_0_8_20: &'static str = "_legacy:pre-0.8.20";
+
+    /// The single public constructor. Rejects the two ways a caller could
+    /// express "effectively no provenance":
+    ///
+    /// * an empty or whitespace-only id — it names no source, and
+    ///   `excise_source` already refuses the empty string, so such a row would
+    ///   be un-erasable in practice;
+    /// * an id in the engine's reserved `_`-prefixed namespace — a caller who
+    ///   could mint `_legacy:pre-0.8.20` could hide rows among the migration's
+    ///   back-filled ones, or mint `_engine:` rows that read as engine
+    ///   substrate.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::WriteValidation`] for either rejection above.
+    pub fn new(id: impl Into<String>) -> Result<Self, EngineError> {
+        let id = id.into();
+        if id.trim().is_empty() || id.starts_with('_') {
+            return Err(EngineError::WriteValidation);
+        }
+        Ok(Self(id))
+    }
+
+    /// Mint a reserved `_engine:*` provenance for an engine-derived row. Crate
+    /// -internal by construction: the reserved namespace is exactly what
+    /// [`SourceId::new`] refuses, so a caller cannot reach this spelling.
+    pub(crate) fn engine_derived(role: &str) -> Self {
+        Self(format!("{}{role}", Self::ENGINE_PREFIX))
+    }
+
+    /// The on-disk `source_id` text.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Consume into the owned on-disk text.
+    #[must_use]
+    pub fn into_string(self) -> String {
+        self.0
+    }
+}
+
+impl AsRef<str> for SourceId {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Display for SourceId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for SourceId {
+    type Error = EngineError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl TryFrom<&str> for SourceId {
+    type Error = EngineError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
 /// Batch input shape for [`Engine::write`].
 ///
 /// Marked `#[non_exhaustive]` per ADR-0.6.0-prepared-write-shape; new
@@ -2017,11 +2218,12 @@ pub enum PreparedWrite {
     Node {
         kind: String,
         body: String,
-        /// REQ-026 / AC-028 / AC-042 recovery seam. `None` is the
-        /// back-compat default and lands as NULL on disk; callers that
-        /// participate in `excise_source` / `trace_source_ref` must
-        /// supply a stable identifier.
-        source_id: Option<String>,
+        /// REQ-026 / AC-028 / AC-042 recovery seam, made **structurally
+        /// mandatory** in 0.8.20 (R-20-E3). Was `Option<String>`; a `None`
+        /// landed NULL on disk and produced a row no `excise_source` call could
+        /// reach. See [`SourceId`] for why the fix is a type change rather than
+        /// a validation check.
+        source_id: SourceId,
         /// G0 (Slice 15) — stable cross-re-ingestion identity. `Some(id)`
         /// makes this write a transaction-time supersession of the prior
         /// active version of `(logical_id, kind)` (tombstone-then-insert).
@@ -2047,8 +2249,9 @@ pub enum PreparedWrite {
         kind: String,
         from: String,
         to: String,
-        /// REQ-026 / AC-028 / AC-042 recovery seam — see Node.
-        source_id: Option<String>,
+        /// REQ-026 / AC-028 / AC-042 recovery seam — see Node. Structurally
+        /// mandatory since 0.8.20 (R-20-E3).
+        source_id: SourceId,
         /// G0 (Slice 15) — see Node. Supersession semantics are identical on
         /// edges (keyed by `(logical_id, kind)`).
         logical_id: Option<String>,
@@ -2570,6 +2773,30 @@ pub enum EngineError {
     NotLifecycleAddressable {
         id_space: IdSpaceKind,
     },
+    /// 0.8.20 Slice 5b (R-20-E5, design `0.8.20-slice0-erasure-design.md` §4
+    /// item 4) — an erasure verb (`purge` / `excise_source` /
+    /// `excise_collection_record`) deleted its rows but could NOT complete the
+    /// erasure **at rest**, so it refuses to report success.
+    ///
+    /// The motivating case is the write-ahead log. `PRAGMA secure_delete=ON`
+    /// zeroes pages freed inside the database file, but the erased content also
+    /// sits in the WAL as committed frames from the ORIGINAL insert: an erasure
+    /// DELETE appends new frames, it never rewrites old ones. Only a
+    /// `wal_checkpoint(TRUNCATE)` removes them, and a concurrent reader pinning a
+    /// WAL snapshot makes that checkpoint return `busy`. After a bounded retry
+    /// the verb raises THIS error rather than returning `Ok` over erased bytes
+    /// that are still `grep`-able on disk.
+    ///
+    /// **Contract: an erasure verb must never report success on an incomplete
+    /// erasure.** The row deletions are committed and durable when this is
+    /// raised; what failed is the at-rest scrub. The remedy is to retry the verb
+    /// (or `recover --truncate-wal`) once the blocking reader has finished.
+    /// `stage` names the uncompleted step (e.g. `"wal_checkpoint"`,
+    /// `"telemetry_redaction"`); `detail` is a human-readable summary.
+    ErasureIncomplete {
+        stage: String,
+        detail: String,
+    },
 }
 
 impl Display for EngineError {
@@ -2614,6 +2841,11 @@ impl Display for EngineError {
                 id_space,
                 id_space.prefix(),
             ),
+            Self::ErasureIncomplete { stage, detail } => write!(
+                f,
+                "erasure incomplete at stage '{stage}': the rows were deleted but the erasure \
+                 could not be completed at rest ({detail})",
+            ),
         }
     }
 }
@@ -2645,6 +2877,7 @@ impl EngineError {
             Self::VectorEquivalenceMismatch { .. } => "VectorEquivalenceMismatchError",
             Self::IllegalTransition { .. } => "IllegalTransitionError",
             Self::NotLifecycleAddressable { .. } => "NotLifecycleAddressableError",
+            Self::ErasureIncomplete { .. } => "ErasureIncompleteError",
         }
     }
 }
@@ -2756,6 +2989,24 @@ pub struct ExciseReport {
     pub projections_invalidated: u64,
 }
 
+/// 0.8.20 Slice 5b (R-20-E7) — outcome of
+/// [`Engine::excise_collection_record`]. `records_excised` counts the erased
+/// `operational_mutations` versions (an append-only-log collection keeps every
+/// version of a key); `state_rows_excised` counts the erased
+/// `operational_state` row (0 or 1).
+///
+/// `record_digest` is `SHA-256(collection + 0x1F + record_key)` — the audit
+/// handle. The raw `record_key` is deliberately NOT carried: it is arbitrary
+/// caller-supplied text and may itself be the identifier being erased, so
+/// echoing it into a durable audit row would defeat the erasure.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExciseRecordReport {
+    pub collection: String,
+    pub record_digest: String,
+    pub records_excised: u64,
+    pub state_rows_excised: u64,
+}
+
 /// Typed outcome of [`Engine::verify_embedder`]. Mismatches do not raise
 /// `EngineError`; the operator workflow needs to see the stored vs.
 /// supplied pair to decide on next action.
@@ -2810,6 +3061,53 @@ pub struct TableRowCount {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DumpRowCountsReport {
     pub counts: Vec<TableRowCount>,
+}
+
+/// 0.8.20 Slice 5d (R-20-E8) — one `source_id` bucket in an
+/// [`OrphanProvenanceReport`]. `source_id` is `None` for the NULL-provenance
+/// bucket, which after migration step 21 should contain ONLY governed NODES.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrphanProvenanceSource {
+    /// `None` = the NULL-`source_id` bucket.
+    pub source_id: Option<String>,
+    /// Canonical rows (nodes + edges) carrying this provenance.
+    pub rows: u64,
+    /// How many of `rows` carry a `logical_id`.
+    ///
+    /// NOT the same thing as "purge-addressable": only a NODE's `logical_id`
+    /// confers purge-addressability. An EDGE's `logical_id` is a supersession
+    /// identity and reaches no erasure verb (see
+    /// [`Engine::orphan_provenance`]), so governed edges are counted here but
+    /// are NOT subtracted from
+    /// [`OrphanProvenanceReport::unerasable_rows`].
+    pub governed_rows: u64,
+    /// True for the engine's reserved `_`-prefixed namespace (`_engine:*`,
+    /// `_legacy:pre-0.8.20`). Reserved buckets are reachable only through the
+    /// operator seam `excise_source`, never through the governed
+    /// [`Engine::erase_source`].
+    pub reserved: bool,
+}
+
+/// Result of [`Engine::orphan_provenance`] — the per-`source_id` census behind
+/// `fathomdb doctor orphan-provenance` (design §4 item 11).
+///
+/// `unerasable_rows` is the load-bearing field: canonical rows carrying
+/// NEITHER a `source_id` NOR a `logical_id`. Such a row is reachable by no
+/// erasure verb at all — `purge` keys on `logical_id`, `erase_source` keys on
+/// `source_id` — so it can never be deleted on request. Slice 5c made that
+/// state unwritable and migration step 21 back-filled the historical cases, so
+/// a non-zero count means the invariant has been violated and the verb exits
+/// `DOCTOR_FOUND_ISSUES`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrphanProvenanceReport {
+    /// Per-`source_id` buckets, ordered by descending `rows` then `source_id`
+    /// so the output is deterministic (a diagnostic that reorders between runs
+    /// cannot be diffed).
+    pub sources: Vec<OrphanProvenanceSource>,
+    /// Total canonical rows surveyed.
+    pub total_rows: u64,
+    /// Rows with NO `source_id` AND NO `logical_id` — un-erasable by any verb.
+    pub unerasable_rows: u64,
 }
 
 /// Result of [`Engine::dump_profile`]. Mirrors the open-time embedder
@@ -3607,6 +3905,43 @@ impl Engine {
             let result = session
                 .request(&request_id, vec![("documents".to_string(), Value::Array(docs_json))])?;
 
+            // R-20-E2 (0.8.20 Slice 5c, design §4 item 10) — every row this batch
+            // produces takes its provenance from the CALLER's
+            // `ExtractDocument.source_doc_id`, NEVER from the model's echo of that
+            // field. The echo is attacker-/error-controlled: a harness that omits
+            // it used to yield rows with NULL `source_id`, which no
+            // `excise_source` call can reach — the model could make a row
+            // permanently un-erasable simply by dropping a key.
+            //
+            // `resolve_provenance` therefore admits the echo only as a SELECTOR
+            // among ids the caller already supplied in THIS batch, and never as a
+            // value:
+            //
+            //   * single-document batch — attribution is unambiguous, so the
+            //     caller's id is used and the echo is ignored outright;
+            //   * multi-document batch — the echo must name one of the batch's
+            //     caller-supplied ids (the caller's own copy of the string is
+            //     then stored). An absent or unrecognised echo is a protocol
+            //     violation and fails the ingest LOUDLY with
+            //     `EngineError::Extractor`, because the alternative — guessing an
+            //     attribution — would silently mis-file the row under a document
+            //     whose erasure would then not remove it.
+            let batch_provenance = batch
+                .iter()
+                .map(|d| SourceId::new(d.source_doc_id.clone()))
+                .collect::<Result<Vec<_>, _>>()?;
+            let resolve_provenance = |echo: Option<&str>| -> Result<SourceId, EngineError> {
+                if let [only] = batch_provenance.as_slice() {
+                    return Ok(only.clone());
+                }
+                let echo = echo.ok_or(EngineError::Extractor)?;
+                batch_provenance
+                    .iter()
+                    .find(|caller_id| caller_id.as_str() == echo)
+                    .cloned()
+                    .ok_or(EngineError::Extractor)
+            };
+
             // --- map entities → PreparedWrite::Node with stable logical_id ---
             let entities =
                 result.get("entities").and_then(|v| v.as_array()).cloned().unwrap_or_default();
@@ -3640,10 +3975,10 @@ impl Engine {
                     .map(|entity| -> Result<PreparedWrite, EngineError> {
                         let name = entity.get("name").and_then(|v| v.as_str()).unwrap_or("");
                         let kind = entity.get("type").and_then(|v| v.as_str()).unwrap_or("entity");
-                        let source_doc_id = entity
-                            .get("source_doc_id")
-                            .and_then(|v| v.as_str())
-                            .map(str::to_string);
+                        // R-20-E2: caller-grounded, echo used only as a selector.
+                        let source_doc_id = resolve_provenance(
+                            entity.get("source_doc_id").and_then(|v| v.as_str()),
+                        )?;
                         // fix-34 [P1]: derive_logical_id now rejects an empty name
                         // or a ':' in kind — inputs that would collide distinct
                         // entities onto one identity and silently drop one.
@@ -3767,8 +4102,9 @@ impl Engine {
                             }
                             c => c,
                         };
+                        // R-20-E2: caller-grounded, echo used only as a selector.
                         let source_doc_id =
-                            edge.get("source_doc_id").and_then(|v| v.as_str()).map(str::to_string);
+                            resolve_provenance(edge.get("source_doc_id").and_then(|v| v.as_str()))?;
 
                         // fix-33 [P1]: resolve each endpoint via the entities[]
                         // index (by name or alias) → the entity's canonical
@@ -5186,7 +5522,7 @@ impl Engine {
         self.write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "poison-fixture-seed".to_string(),
-            source_id: None,
+            source_id: SourceId::engine_derived("poison-fixture"),
             logical_id: None,
             state: InitialState::Active,
             reason: None,
@@ -5209,7 +5545,7 @@ impl Engine {
                 let _ = self.write(&[PreparedWrite::Node {
                     kind: "doc".to_string(),
                     body: "writer-progress".to_string(),
-                    source_id: None,
+                    source_id: SourceId::engine_derived("poison-fixture"),
                     logical_id: None,
                     state: InitialState::Active,
                     reason: None,
@@ -5440,17 +5776,32 @@ impl Engine {
         let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
         let connection = connection.as_mut().ok_or(EngineError::Closing)?;
 
+        // R-20-E3 / design §4 item 6 — this writer BYPASSES `PreparedWrite`, so
+        // the `SourceId` newtype cannot reach it; before 0.8.20 it inserted a
+        // literal NULL `source_id` and produced a row that no `excise_source`
+        // call could reach. Engine-derived rows instead take a reserved
+        // `_engine:*` provenance, keyed by the structural role that produced
+        // them, so they are both erasable and distinguishable from caller data.
+        let engine_provenance = SourceId::engine_derived(row_kind.as_str());
+
         let cursor = self.next_cursor.load(Ordering::SeqCst).saturating_add(1);
         let enqueued = {
             let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
             tx.execute(
                 "INSERT INTO canonical_nodes(write_cursor, kind, body, source_id, logical_id, row_kind)
-                 VALUES(?1, ?2, ?3, NULL, NULL, ?4)",
-                params![cursor, kind, body, row_kind.as_str()],
+                 VALUES(?1, ?2, ?3, ?4, NULL, ?5)",
+                params![cursor, kind, body, engine_provenance.as_str(), row_kind.as_str()],
             )
             .map_err(|_| EngineError::Storage)?;
-            let enqueued = project_canonical_node_row(&tx, cursor, kind, body, row_kind)
-                .map_err(|_| EngineError::Storage)?;
+            let enqueued = project_canonical_node_row(
+                &tx,
+                cursor,
+                kind,
+                body,
+                row_kind,
+                ProjectionPass::Write,
+            )
+            .map_err(|_| EngineError::Storage)?;
             advance_projection_cursor(&tx).map_err(|_| EngineError::Storage)?;
             tx.commit().map_err(|_| EngineError::Storage)?;
             enqueued
@@ -6158,9 +6509,19 @@ impl Engine {
         self.projection_runtime.set_frozen(true);
         let outcome = self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS).and_then(|()| self.purge_inner(&lid));
         self.projection_runtime.set_frozen(false);
-        outcome
+        // 0.8.20 Slice 5b (R-20-E5/E6) — the rows are gone from the tables; now
+        // finish the erasure AT REST (telemetry sink + `-wal` bytes) before
+        // reporting success. Runs after the connection guard inside
+        // `purge_inner` has been dropped: `complete_erasure_at_rest` re-acquires
+        // it for the checkpoint.
+        outcome?;
+        self.complete_erasure_at_rest("purge")
     }
 
+    /// The erased rows' prefixed stable ids ([`IdSpace::to_prefixed`]) are NOT
+    /// returned: they are enqueued for redaction inside this transaction (see
+    /// [`enqueue_pending_redaction`]), because a caller-held vector is lost on the
+    /// retry path that codex Â§9 P2 found.
     fn purge_inner(&self, lid: &str) -> Result<(), EngineError> {
         let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
         let connection = connection.as_mut().ok_or(EngineError::Closing)?;
@@ -6219,24 +6580,22 @@ impl Engine {
             rows.collect::<rusqlite::Result<Vec<_>>>().map_err(|_| EngineError::Storage)?
         };
 
-        // Erase the row-owned projection shadows for every collected cursor. vec0
-        // rowid == the canonical row's write_cursor (see `_fathomdb_vector_rows`).
+        // 0.8.20 Slice 5b (R-20-E6) — the stable ids the telemetry sink may have
+        // persisted for these rows, collected BEFORE the DELETEs.
+        let erased_stable_ids = collect_erased_stable_ids(
+            &tx,
+            "SELECT logical_id, body FROM canonical_nodes WHERE logical_id = ?1",
+            "SELECT logical_id, body FROM canonical_edges WHERE from_id = ?1 OR to_id = ?1",
+            lid,
+        )?;
+
+        // Erase the row-owned projection shadows for every collected cursor.
+        // 0.8.20 Slice 5a (R-20-E1): registry-driven — the hand-rolled delete
+        // list is gone, so a newly registered projection table is erased here
+        // without touching this site. vec0 rowid == the canonical row's
+        // write_cursor (see `_fathomdb_vector_rows`).
         for cursor in node_cursors.iter().chain(edge_cursors.iter()) {
-            tx.execute("DELETE FROM search_index WHERE write_cursor = ?1", [cursor])
-                .map_err(|_| EngineError::Storage)?;
-            tx.execute("DELETE FROM search_index_edges WHERE write_cursor = ?1", [cursor])
-                .map_err(|_| EngineError::Storage)?;
-            tx.execute("DELETE FROM search_index_v2 WHERE write_cursor = ?1", [cursor])
-                .map_err(|_| EngineError::Storage)?;
-            tx.execute("DELETE FROM vector_default WHERE rowid = ?1", [cursor])
-                .map_err(|_| EngineError::Storage)?;
-            tx.execute("DELETE FROM _fathomdb_vector_rows WHERE write_cursor = ?1", [cursor])
-                .map_err(|_| EngineError::Storage)?;
-            tx.execute(
-                "DELETE FROM _fathomdb_projection_terminal WHERE write_cursor = ?1",
-                [cursor],
-            )
-            .map_err(|_| EngineError::Storage)?;
+            erase_row_projections(&tx, *cursor).map_err(|_| EngineError::Storage)?;
         }
 
         // Erase the canonical rows: all node versions + all touching edges
@@ -6246,26 +6605,93 @@ impl Engine {
         tx.execute("DELETE FROM canonical_edges WHERE from_id = ?1 OR to_id = ?1", params![lid])
             .map_err(|_| EngineError::Storage)?;
 
+        // 0.8.20 Slice 5 fix-1 (codex §9 P2) — durably record the redaction this
+        // erasure now owes, atomically with the deletes above. Only when a sink
+        // is attached: with telemetry never enabled there is no file the ids
+        // could have leaked into, so there is nothing to owe.
+        let pending_cursor = self.next_cursor.load(Ordering::SeqCst).saturating_add(1);
+        let enqueued =
+            self.telemetry_enabled.load(Ordering::Acquire) && !erased_stable_ids.is_empty();
+        if enqueued {
+            enqueue_pending_redaction(&tx, "purge", &erased_stable_ids, pending_cursor)?;
+        }
+
         tx.commit().map_err(|_| EngineError::Storage)?;
+        if enqueued {
+            self.next_cursor.store(pending_cursor, Ordering::SeqCst);
+        }
         self.counters.record_admin();
         Ok(())
     }
 
-    /// Phase 9 Pack B / AC-028a/b/c source excise. Drains in-flight
-    /// projection work, then deletes every canonical row attributable
-    /// to `source_id` plus the FTS5 + vec0 shadow rows that referenced
-    /// those cursors, and appends an audit row to the
-    /// `excise_source_audit` operational collection.
+    /// 0.8.20 Slice 5d (R-20-E4, design §4 item 9b) — the **governed SDK
+    /// erasure verb**. Deletes every canonical row attributable to `source_id`,
+    /// plus its row-owned projections, and finishes the erasure at rest.
+    ///
+    /// This is NOT `operator`-gated: erasing content a consumer wrote is an
+    /// application obligation, not a recovery workflow. Before this slice the
+    /// only erasure path was [`Engine::excise_source`], which lives behind the
+    /// operator feature (i.e. the CLI), so an SDK-only consumer holding a
+    /// deletion obligation over ANONYMOUS content — content with no
+    /// `logical_id`, therefore not reachable by [`Engine::purge`] — had no way
+    /// to discharge it at all. That gap is what R-20-E4 closes.
+    ///
+    /// **One engine path.** `erase_source` and `excise_source` are the SAME
+    /// operation: both delegate to [`Engine::erase_source_shared`]. They are
+    /// not competing implementations, and no behaviour is duplicated.
+    ///
+    /// **Validation differs, deliberately.** `erase_source` admits only ids
+    /// [`SourceId::new`] would admit, so a caller cannot aim the governed verb
+    /// at the engine's reserved `_`-prefixed namespace (`_engine:*` substrate,
+    /// or the `_legacy:pre-0.8.20` cohort migration step 21 back-filled — a
+    /// single call against which would erase every pre-0.8.20 anonymous row).
+    /// `excise_source` stays permissive precisely BECAUSE it is the recovery
+    /// seam: R-20-E8 requires an operator to be able to excise `_legacy:`.
+    ///
+    /// **Not a recovery verb.** `erase_source` carries no REQ-054
+    /// recovery-denylist name (`{recover, restore, repair, fix, rebuild}`); it
+    /// is a lifecycle verb alongside `transition`/`purge`. AC-041 is unaffected.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::WriteValidation`] for an empty, whitespace-only or
+    /// reserved `source_id`; [`EngineError::ErasureIncomplete`] if the erasure
+    /// could not be completed at rest (see [`Engine::complete_erasure_at_rest`]).
+    pub fn erase_source(&self, source_id: &str) -> Result<ExciseReport, EngineError> {
+        // Construct-to-validate: reuse the newtype's rule rather than restating
+        // it, so the erasure boundary and the write boundary cannot drift.
+        let _validated = SourceId::new(source_id)?;
+        self.erase_source_shared("erase_source", source_id)
+    }
+
+    /// Phase 9 Pack B / AC-028a/b/c source excise — the **operator/recovery**
+    /// spelling of [`Engine::erase_source`], sharing one engine path with it.
+    ///
+    /// Kept `operator`-gated and kept permissive about reserved ids: this is
+    /// the seam an operator uses to excise `_legacy:pre-0.8.20` (R-20-E8) or
+    /// `_engine:*` substrate, which the governed SDK verb refuses.
+    #[cfg(feature = "operator")]
+    pub fn excise_source(&self, source_id: &str) -> Result<ExciseReport, EngineError> {
+        if source_id.is_empty() {
+            self.ensure_open()?;
+            return Err(EngineError::WriteValidation);
+        }
+        self.erase_source_shared("excise_source", source_id)
+    }
+
+    /// The single erasure implementation behind [`Engine::erase_source`] and
+    /// [`Engine::excise_source`]. `verb` names the caller for the telemetry
+    /// redaction record only; the deletion semantics are identical.
     ///
     /// Non-perturbation: rows from other sources (and rows with NULL
     /// `source_id`) are untouched; the projection cursor is NOT reset
     /// and no blanket projection rebuild is issued.
-    #[cfg(feature = "operator")]
-    pub fn excise_source(&self, source_id: &str) -> Result<ExciseReport, EngineError> {
+    fn erase_source_shared(
+        &self,
+        verb: &'static str,
+        source_id: &str,
+    ) -> Result<ExciseReport, EngineError> {
         self.ensure_open()?;
-        if source_id.is_empty() {
-            return Err(EngineError::WriteValidation);
-        }
 
         // Drain MUST succeed before the excise transaction. SQLite-WAL
         // would otherwise allow a worker that already dequeued a job
@@ -6273,11 +6699,30 @@ impl Engine {
         // _fathomdb_vector_rows after our DELETE releases the writer
         // lock, leaving residue and breaking AC-028b. Surface the
         // timeout instead of swallowing it (Pack A pattern).
+        //
+        // ORDER IS LOAD-BEARING, exactly as in `purge`: settle every pending
+        // projection FIRST (UNFROZEN), and only THEN freeze the scanner and
+        // confirm idle. Freezing first parks the dispatcher, so a row written
+        // moments ago can never be scanned and enqueued — while `drain` ->
+        // `wait_for_idle` keeps seeing it via
+        // `database_has_pending_projection_work`, which reads the DATABASE and
+        // not the queue. The result is that the ordinary sequence "write a
+        // vector-indexed row, then erase it" stalls for the whole
+        // LIFECYCLE_DRAIN_TIMEOUT_MS and fails with `Scheduler`.
+        // (codex §9 [P2]; `erase_source_drains_before_freezing`.)
+        self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS)?;
         self.projection_runtime.set_frozen(true);
-        let drain_result = self.drain(REBUILD_DRAIN_TIMEOUT_MS);
-        let outcome = drain_result.and_then(|()| self.excise_source_inner(source_id));
+        let drain_result = self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS);
+        let outcome = drain_result.and_then(|()| self.excise_source_inner(verb, source_id));
         self.projection_runtime.set_frozen(false);
-        outcome
+        // 0.8.20 Slice 5b (R-20-E5/E6) — finish the erasure AT REST before
+        // reporting success: redact the erased stable ids out of the telemetry
+        // sink, then truncate the `-wal` so the erased bytes are not still
+        // readable on disk. On persistent checkpoint BUSY this returns
+        // `ErasureIncomplete` rather than an `ExciseReport`.
+        let report = outcome?;
+        self.complete_erasure_at_rest(verb)?;
+        Ok(report)
     }
 
     /// Doctor `verify-embedder` seam (AC-040a). Compares the
@@ -6345,6 +6790,109 @@ impl Engine {
         Ok(DumpRowCountsReport { counts })
     }
 
+    /// 0.8.20 Slice 5d (R-20-E8, design §4 item 11) — doctor
+    /// `orphan-provenance` seam: a **read-only** per-`source_id` census over
+    /// `canonical_nodes` + `canonical_edges`.
+    ///
+    /// Answers the operator question the erasure work made askable: *"for this
+    /// database, is every row actually reachable by some erasure verb?"* A row
+    /// is reachable by `erase_source` / `excise_source` via `source_id`, or —
+    /// **if it is a NODE** — by `purge` via `logical_id`. A row with neither is
+    /// un-erasable, and is counted into
+    /// [`OrphanProvenanceReport::unerasable_rows`].
+    ///
+    /// The node/edge asymmetry is load-bearing and mirrors migration step 21:
+    /// an EDGE's `logical_id` is a supersession identity only and confers no
+    /// purge-addressability, so a NULL-`source_id` edge is un-erasable however
+    /// governed it looks. See the query comment below.
+    ///
+    /// CLI-only (no SDK parity), matching the `dump-*` diagnostic family.
+    ///
+    /// Read-only by construction: this method issues SELECTs exclusively and
+    /// opens no transaction.
+    #[cfg(feature = "operator")]
+    pub fn orphan_provenance(&self) -> Result<OrphanProvenanceReport, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+
+        // One UNION ALL over both canonical tables so a source that spans nodes
+        // AND edges reports as a single bucket.
+        //
+        // TWO DIFFERENT SUMS, and the difference is the whole point:
+        //
+        // * `governed` counts `logical_id` carriers — a reporting figure;
+        // * `purge_addressable` counts rows that `purge` can actually reach,
+        //   and it is NODE-ONLY (the edge arm contributes a literal 0).
+        //
+        // This is the same node/edge asymmetry migration step 21 carries, for
+        // the same reason, and the two must stay in step: `purge_inner`
+        // resolves its target exclusively through `canonical_nodes` (`SELECT
+        // state FROM canonical_nodes WHERE logical_id = ?1`) and then erases
+        // edges by ENDPOINT (`from_id`/`to_id`). It NEVER resolves an edge by
+        // edge `logical_id` — an edge `logical_id` is only a SUPERSESSION
+        // identity and confers no purge-addressability whatsoever.
+        //
+        // Crediting an edge's `logical_id` here made the diagnostic subtract
+        // exactly the rows it exists to find: a NULL-`source_id` edge is
+        // reachable by no erasure verb at all, yet `orphan-provenance` would
+        // exit CLEAN on precisely the legacy/corrupt shape step 21 closes.
+        // False assurance from a governance verb is worse than no verb.
+        // (codex §9 [P2]; `null_source_governed_edge_counts_as_unerasable`.)
+        let mut stmt = connection
+            .prepare(
+                "SELECT source_id,
+                        COUNT(*) AS rows_total,
+                        SUM(CASE WHEN logical_id IS NOT NULL THEN 1 ELSE 0 END) AS governed,
+                        SUM(purge_addressable) AS purge_addressable
+                   FROM (SELECT source_id,
+                                logical_id,
+                                CASE WHEN logical_id IS NOT NULL THEN 1 ELSE 0 END
+                                    AS purge_addressable
+                           FROM canonical_nodes
+                         UNION ALL
+                         SELECT source_id, logical_id, 0 AS purge_addressable
+                           FROM canonical_edges)
+                  GROUP BY source_id
+                  ORDER BY rows_total DESC, source_id",
+            )
+            .map_err(|_| EngineError::Storage)?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                let source_id: Option<String> = row.get(0)?;
+                let rows: i64 = row.get(1)?;
+                let governed: i64 = row.get(2)?;
+                let purge_addressable: i64 = row.get(3)?;
+                Ok((source_id, rows, governed, purge_addressable))
+            })
+            .map_err(|_| EngineError::Storage)?;
+
+        let mut sources = Vec::new();
+        let mut total_rows: u64 = 0;
+        let mut unerasable_rows: u64 = 0;
+        for row in rows {
+            let (source_id, rows, governed, purge_addressable) =
+                row.map_err(|_| EngineError::Storage)?;
+            let rows = u64::try_from(rows).unwrap_or(0);
+            let governed_rows = u64::try_from(governed).unwrap_or(0);
+            let purge_addressable = u64::try_from(purge_addressable).unwrap_or(0);
+            total_rows = total_rows.saturating_add(rows);
+            if source_id.is_none() {
+                // No provenance: only the PURGE-ADDRESSABLE subset (governed
+                // NODES) is reachable. The remainder — including every governed
+                // EDGE, whose `logical_id` reaches nothing — is reachable by no
+                // erasure verb at all.
+                unerasable_rows =
+                    unerasable_rows.saturating_add(rows - purge_addressable.min(rows));
+            }
+            let reserved = source_id.as_deref().is_some_and(|s| s.starts_with('_'));
+            sources.push(OrphanProvenanceSource { source_id, rows, governed_rows, reserved });
+        }
+
+        Ok(OrphanProvenanceReport { sources, total_rows, unerasable_rows })
+    }
+
     /// Doctor `dump-profile` seam (AC-040a). Returns the stored
     /// embedder identity + dimension plus the registered vectorized
     /// kinds from `_fathomdb_vector_kinds`.
@@ -6378,13 +6926,58 @@ impl Engine {
     #[cfg(feature = "operator")]
     pub fn truncate_wal(&self) -> Result<TruncateWalReport, EngineError> {
         self.ensure_open()?;
+        // The operator verb keeps SQLite's own busy handler: `recover
+        // --truncate-wal` is an explicit, foreground operator act, so waiting out
+        // a transient reader is the helpful behaviour.
+        self.wal_checkpoint_truncate_once(true)
+    }
+
+    /// One `PRAGMA wal_checkpoint(TRUNCATE)` on the writer connection.
+    ///
+    /// NOT operator-gated: the erasure verbs (`purge` is a default-feature verb)
+    /// need it too, and a `#[cfg(feature = "operator")]` helper would break the
+    /// default build. Acquires the connection mutex, so callers must NOT already
+    /// hold it — every erasure verb calls this AFTER its transaction has
+    /// committed and the guard has been dropped.
+    ///
+    /// `honor_busy_timeout = false` suppresses SQLite's busy handler for the
+    /// duration of the checkpoint. rusqlite installs a **5 s** default
+    /// `busy_timeout`, so a blocked checkpoint sits for 5 s before reporting
+    /// `busy` — under the erasure verbs' bounded retry that compounds to a ~25 s
+    /// stall on a verb that is supposed to fail fast. The erasure path therefore
+    /// takes the immediate `busy` answer and runs its OWN short backoff; the
+    /// prior value is restored before returning, on every path.
+    fn wal_checkpoint_truncate_once(
+        &self,
+        honor_busy_timeout: bool,
+    ) -> Result<TruncateWalReport, EngineError> {
         let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
         let connection = connection.as_ref().ok_or(EngineError::Closing)?;
-        let (busy, log_frames, checkpointed_frames): (i64, i64, i64) = connection
-            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
+
+        let restore_timeout_ms: Option<i64> = if honor_busy_timeout {
+            None
+        } else {
+            let previous: i64 = connection
+                .query_row("PRAGMA busy_timeout", [], |row| row.get(0))
+                .map_err(|_| EngineError::Storage)?;
+            connection.busy_timeout(Duration::ZERO).map_err(|_| EngineError::Storage)?;
+            Some(previous)
+        };
+
+        let checkpoint: rusqlite::Result<(i64, i64, i64)> =
+            connection.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
                 Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-            })
-            .map_err(|_| EngineError::Storage)?;
+            });
+
+        if let Some(previous) = restore_timeout_ms {
+            let previous = u64::try_from(previous.max(0)).unwrap_or(0);
+            connection
+                .busy_timeout(Duration::from_millis(previous))
+                .map_err(|_| EngineError::Storage)?;
+        }
+
+        let (busy, log_frames, checkpointed_frames) =
+            checkpoint.map_err(|_| EngineError::Storage)?;
         let status = if busy == 0 { TruncateWalStatus::Done } else { TruncateWalStatus::Busy };
         Ok(TruncateWalReport {
             status,
@@ -6394,8 +6987,287 @@ impl Engine {
         })
     }
 
-    #[cfg(feature = "operator")]
-    fn excise_source_inner(&self, source_id: &str) -> Result<ExciseReport, EngineError> {
+    /// 0.8.20 Slice 5b (R-20-E5) — complete an erasure **at rest** after the
+    /// erasing transaction has committed. Two obligations, in order:
+    ///
+    /// 1. **Telemetry redaction** — drop the erased stable ids out of the opt-in
+    ///    telemetry sink. Driven from the DURABLE pending queue
+    ///    ([`Engine::discharge_pending_redactions`]), NOT from the ids the caller
+    ///    happens to be holding, so a retry after a failed redaction still knows
+    ///    what it owes.
+    /// 2. **WAL truncation** — `wal_checkpoint(TRUNCATE)` with a BOUNDED retry.
+    ///    `PRAGMA secure_delete=ON` zeroes pages freed inside the database file,
+    ///    but the erased content also lives in the write-ahead log as committed
+    ///    frames from the ORIGINAL insert; the erasure DELETE appends new frames
+    ///    rather than rewriting old ones, so without a truncating checkpoint the
+    ///    erased body stays `grep`-able in `<db>-wal`.
+    ///
+    /// A concurrent reader pinning a WAL snapshot makes the checkpoint report
+    /// `busy`. After [`ERASURE_WAL_TRUNCATE_ATTEMPTS`] tries the verb raises
+    /// [`EngineError::ErasureIncomplete`] — **an erasure verb must never report
+    /// success on an incomplete erasure.** The retry budget is deliberately small
+    /// (~100 ms total): the caller retries the verb, the verb does not block.
+    fn complete_erasure_at_rest(&self, verb: &'static str) -> Result<(), EngineError> {
+        // The ids are NOT passed in: they were persisted inside the erasing
+        // transaction, and this drains that queue. The WAL truncation below then
+        // runs AFTER the pending rows have been deleted, so the freed pages
+        // holding them (zeroed by `secure_delete=ON`) are checkpointed out too.
+        self.discharge_pending_redactions(verb)?;
+
+        let mut last: Option<TruncateWalReport> = None;
+        for attempt in 0..ERASURE_WAL_TRUNCATE_ATTEMPTS {
+            let report = self.wal_checkpoint_truncate_once(false)?;
+            if report.status == TruncateWalStatus::Done {
+                return Ok(());
+            }
+            last = Some(report);
+            if attempt + 1 < ERASURE_WAL_TRUNCATE_ATTEMPTS {
+                std::thread::sleep(Duration::from_millis(ERASURE_WAL_TRUNCATE_BACKOFF_MS));
+            }
+        }
+        let frames = last.map_or(0, |r| r.log_frames);
+        Err(EngineError::ErasureIncomplete {
+            stage: "wal_checkpoint".to_string(),
+            detail: format!(
+                "`{verb}` deleted its rows, but `wal_checkpoint(TRUNCATE)` reported BUSY on all \
+                 {ERASURE_WAL_TRUNCATE_ATTEMPTS} attempts ({frames} frames still in the log) — a \
+                 concurrent reader is pinning a WAL snapshot, so the erased bytes remain readable \
+                 in the `-wal` file. Retry once the reader has finished."
+            ),
+        })
+    }
+
+    /// 0.8.20 Slice 5 fix-1 (codex §9 P2) — perform every telemetry redaction the
+    /// engine still OWES, from the durable pending queue.
+    ///
+    /// **The defect this closes.** Redaction necessarily runs after the erasing
+    /// transaction commits (the sink is a file, not a table, so it cannot join
+    /// the transaction). When it failed, the verb correctly raised
+    /// `ErasureIncomplete { stage: "telemetry_redaction" }` and told the operator
+    /// to retry — but the retry recomputed the id set by querying the canonical
+    /// tables, whose rows the FIRST call had already deleted. It therefore got an
+    /// EMPTY set, hit the empty-id fast path in
+    /// [`Engine::redact_telemetry_stable_ids`], and returned success while the
+    /// leaked `l:`/`h:` ids were still sitting in the sink. An erasure verb
+    /// reporting success on an incomplete erasure is precisely what R-20-E5
+    /// forbids, and it is the worst failure mode available to this slice: silent,
+    /// and indistinguishable from a real erasure.
+    ///
+    /// **The mechanism — an intent log.** The ids are captured BEFORE the deletes
+    /// (they are derived from `logical_id`/`body`, which the deletes destroy) and
+    /// written into [`ERASURE_PENDING_REDACTION_COLLECTION`] INSIDE the same
+    /// transaction, so "the rows are gone" and "a redaction is owed for them"
+    /// commit atomically. There is no window in which the rows are deleted and
+    /// the obligation is unrecorded. A pending row is deleted only once its
+    /// redaction has actually been performed, so the obligation survives process
+    /// death, and the empty-id fast path is unreachable while one is outstanding:
+    /// this drains the QUEUE, never the caller's id vector.
+    ///
+    /// The queue is drained by EVERY erasure verb, not just a retry of the one
+    /// that failed — an outstanding obligation is the engine's, not one call's.
+    ///
+    /// **Honest refusal.** If a redaction is owed but no telemetry sink is
+    /// attached to this `Engine` (only reachable if the process restarted between
+    /// the failure and the retry without re-enabling telemetry), the ids really
+    /// are still in the sink file and this returns `ErasureIncomplete` rather
+    /// than guessing. Re-enable telemetry on the same sink and retry.
+    ///
+    /// **Exposure tradeoff, stated plainly.** A pending row holds the stable ids
+    /// in the database for the window between the delete and the redaction. That
+    /// is a strict improvement: those ids are, during exactly that window,
+    /// already readable in the telemetry sink — which is the leak being closed —
+    /// and the pending row is deleted the moment the sink is clean, on pages
+    /// `secure_delete=ON` zeroes and the subsequent `TRUNCATE` checkpoint clears
+    /// from the log.
+    fn discharge_pending_redactions(&self, verb: &'static str) -> Result<(), EngineError> {
+        let pending = self.load_pending_redactions()?;
+        if pending.is_empty() {
+            return Ok(());
+        }
+
+        let mut ids: Vec<String> =
+            pending.iter().flat_map(|(_, ids)| ids.iter().cloned()).collect();
+        ids.sort_unstable();
+        ids.dedup();
+
+        // A queue entry exists ⇒ a sink was attached when the rows were deleted ⇒
+        // the ids are in that file. Never clear the queue without redacting.
+        if !self.telemetry_enabled.load(Ordering::Acquire) {
+            return Err(EngineError::ErasureIncomplete {
+                stage: "telemetry_redaction".to_string(),
+                detail: format!(
+                    "`{verb}` has {} outstanding telemetry redaction(s) covering {} erased \
+                     stable id(s), but no telemetry sink is attached to this engine — the ids \
+                     cannot be removed from the sink file. Re-enable telemetry on the same sink \
+                     path and retry.",
+                    pending.len(),
+                    ids.len()
+                ),
+            });
+        }
+
+        // On failure the queue rows stay put and the error propagates: the verb
+        // does not report success, and the next call retries the same obligation.
+        self.redact_telemetry_stable_ids(verb, &ids)?;
+
+        let row_ids: Vec<i64> = pending.iter().map(|(row_id, _)| *row_id).collect();
+        self.clear_pending_redactions(&row_ids)
+    }
+
+    /// Read the outstanding redaction queue: `(operational_mutations.id, ids)`.
+    fn load_pending_redactions(&self) -> Result<Vec<(i64, Vec<String>)>, EngineError> {
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        let mut stmt = connection
+            .prepare(
+                "SELECT id, payload_json FROM operational_mutations \
+                 WHERE collection_name = ?1 ORDER BY id",
+            )
+            .map_err(|_| EngineError::Storage)?;
+        let rows = stmt
+            .query_map([ERASURE_PENDING_REDACTION_COLLECTION], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|_| EngineError::Storage)?;
+        let mut pending = Vec::new();
+        for row in rows {
+            let (row_id, payload) = row.map_err(|_| EngineError::Storage)?;
+            // A payload we cannot parse is an obligation we cannot discharge;
+            // keeping it (empty) is safe — it never unblocks a false success,
+            // and `discharge_pending_redactions` still refuses.
+            let ids = serde_json::from_str::<serde_json::Value>(&payload)
+                .ok()
+                .and_then(|v| v.get("erased_stable_ids").cloned())
+                .and_then(|v| serde_json::from_value::<Vec<String>>(v).ok())
+                .unwrap_or_default();
+            pending.push((row_id, ids));
+        }
+        Ok(pending)
+    }
+
+    /// Retire queue entries whose redaction has been PERFORMED. Committed before
+    /// the caller's WAL truncation so the freed pages are checkpointed out.
+    fn clear_pending_redactions(&self, row_ids: &[i64]) -> Result<(), EngineError> {
+        if row_ids.is_empty() {
+            return Ok(());
+        }
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        let mut stmt = connection
+            .prepare("DELETE FROM operational_mutations WHERE id = ?1")
+            .map_err(|_| EngineError::Storage)?;
+        for row_id in row_ids {
+            stmt.execute([row_id]).map_err(|_| EngineError::Storage)?;
+        }
+        Ok(())
+    }
+
+    /// 0.8.20 Slice 5b (R-20-E6) — SELECTIVE redaction of erased stable ids from
+    /// the opt-in telemetry sink.
+    ///
+    /// `capture_telemetry` persists `result_stable_ids` — `l:`/`h:` prefixed ids
+    /// — into a JSONL file that outlives the erased rows, and nothing in the
+    /// engine could previously remove them. A retained `l:` id is not inert:
+    /// [`derive_logical_id`] is `SHA256(lowercase(kind) + ":" + lowercase(name))`,
+    /// and the case-folding of BOTH inputs shrinks the preimage space, so a
+    /// surviving id is dictionary-attackable back to the natural key it was
+    /// derived from. An `h:` id is a plain `SHA256(body)`, confirmable against a
+    /// guessed body.
+    ///
+    /// **This MUST NOT truncate the sink.** `sink_path` is CALLER-SUPPLIED and
+    /// may hold unrelated operator eval history that the erasure obligation never
+    /// covered; the v3 truncation approach was rejected as unsafe. Only the
+    /// matching `result_stable_ids` ELEMENTS are replaced with
+    /// [`REDACTED_STABLE_ID`], preserving record count, record order and
+    /// positional alignment with the parallel `result_ids` array. Lines that are
+    /// not engine-authored JSON events are copied through verbatim.
+    ///
+    /// **Crash safety.** The rewrite is write-temp-then-`rename`: a sibling
+    /// `.redact.tmp` is written and fsynced, then atomically renamed over the
+    /// sink, so a crash leaves either the old file or the new one — never a
+    /// half-rewritten sink. The telemetry mutex is held across the whole rewrite,
+    /// so no in-process `capture_telemetry` can append into the window; an
+    /// out-of-process appender is handled by re-reading and folding in the tail
+    /// delta before the rename (bounded retry).
+    ///
+    /// The privacy contract is unchanged: query TEXT and `source_id` are never
+    /// captured (ADR-0.8.8 §C), so there is nothing else in the sink to redact.
+    /// The fast-OFF atomic guard is preserved — when telemetry was never enabled
+    /// this is a single relaxed-ordering load and no mutex acquisition.
+    fn redact_telemetry_stable_ids(
+        &self,
+        verb: &'static str,
+        erased_stable_ids: &[String],
+    ) -> Result<(), EngineError> {
+        // Fast OFF path — mirrors `capture_telemetry`. No mutex, no I/O.
+        if erased_stable_ids.is_empty() || !self.telemetry_enabled.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        let guard = self.telemetry.lock().map_err(|_| EngineError::Storage)?;
+        let Some(sink) = guard.as_ref() else { return Ok(()) };
+        let erased: std::collections::HashSet<&str> =
+            erased_stable_ids.iter().map(String::as_str).collect();
+
+        match redact_jsonl_stable_ids(&sink.path, &erased) {
+            Ok(()) => Ok(()),
+            // 0.8.20 Slice 5 fix-3 (codex §9 round-3 P2) — `NotFound` is NOT a
+            // discharge. It previously returned `Ok(())` ("the sink is gone,
+            // nothing to redact"), which cleared the durable pending queue and
+            // let the verb report success. That inference does not hold: a path
+            // cannot distinguish `rm` from `mv`, and log rotation of a
+            // caller-supplied sink is an ordinary operational event that leaves
+            // the erased `l:`/`h:` ids fully readable under the rotated name.
+            //
+            // The burden of proof is on DISCHARGING the obligation, and the
+            // engine cannot meet it here: `TelemetrySink` holds a PATH, not an
+            // open handle, so there is no `nlink == 0` witness that the inode was
+            // actually unlinked — and even that would not cover a copy taken
+            // before the deletion. So there is no narrow provable case to carve
+            // out, and `NotFound` fails closed.
+            //
+            // This cannot fire spuriously for a sink that never existed:
+            // `enable_telemetry` CREATES the file before arming capture, so for
+            // any engine with telemetry enabled the sink demonstrably existed and
+            // `NotFound` means it existed and then vanished.
+            Err(err) => Err(EngineError::ErasureIncomplete {
+                stage: "telemetry_redaction".to_string(),
+                detail: if err.kind() == std::io::ErrorKind::NotFound {
+                    format!(
+                        "`{verb}` deleted its rows, but the telemetry sink {} no longer exists, \
+                         so the erased stable ids could not be redacted from it. A missing path \
+                         does NOT prove the sink was deleted — if it was rotated or moved aside, \
+                         the erased ids are still readable under its new name. The pending \
+                         redaction is durable: restore the sink at this path and retry (if the \
+                         sink really was destroyed, an empty file at this path discharges the \
+                         obligation).",
+                        sink.path.display()
+                    )
+                } else {
+                    format!(
+                        "`{verb}` deleted its rows, but the erased stable ids could not be \
+                         redacted from the telemetry sink {}: {err}",
+                        sink.path.display()
+                    )
+                },
+            }),
+        }
+    }
+
+    /// The erased rows' prefixed stable ids ([`IdSpace::to_prefixed`]) are NOT
+    /// returned to the caller for redaction (R-20-E6). They are enqueued INSIDE
+    /// this transaction via [`enqueue_pending_redaction`]: a caller-held vector
+    /// is lost on the retry path, which is exactly the false-success codex §9 P2
+    /// found. Only the report comes back.
+    ///
+    /// 0.8.20 Slice 5d (R-20-E4): no longer `operator`-gated — it is the shared
+    /// body behind BOTH `erase_source` (governed SDK) and `excise_source`
+    /// (operator seam). Still private; the gate that matters is on the two
+    /// public spellings.
+    fn excise_source_inner(
+        &self,
+        verb: &'static str,
+        source_id: &str,
+    ) -> Result<ExciseReport, EngineError> {
         let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
         let connection = connection.as_mut().ok_or(EngineError::Closing)?;
         let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
@@ -6421,33 +7293,26 @@ impl Engine {
             rows.collect::<rusqlite::Result<Vec<_>>>().map_err(|_| EngineError::Storage)?
         };
 
+        // 0.8.20 Slice 5b (R-20-E6) — stable ids the telemetry sink may hold for
+        // these rows, collected BEFORE the DELETEs.
+        let erased_stable_ids = collect_erased_stable_ids(
+            &tx,
+            "SELECT logical_id, body FROM canonical_nodes WHERE source_id = ?1",
+            "SELECT logical_id, body FROM canonical_edges WHERE source_id = ?1",
+            source_id,
+        )?;
+
+        // 0.8.20 Slice 5a (R-20-E1) — registry-driven erasure. The previous
+        // hand-rolled list here OMITTED `search_index_v2`, a CONTENT-STORING
+        // FTS5 table (no `content=''`) that keeps the document body verbatim:
+        // after `excise_source` the erased body was still on disk, invisible to
+        // every functional test because both v2 read paths discard candidates
+        // lacking a live `canonical_nodes` row. `erase_row_projections` covers
+        // every registered projection, so the omission cannot recur.
         let mut shadow_invalidated: u64 = 0;
         for cursor in node_cursors.iter().chain(edge_cursors.iter()) {
             shadow_invalidated = shadow_invalidated.saturating_add(
-                tx.execute("DELETE FROM search_index WHERE write_cursor = ?1", [cursor])
-                    .map_err(|_| EngineError::Storage)? as u64,
-            );
-            // fix-26 [P2]: also excise edge FTS rows (G11 search_index_edges).
-            shadow_invalidated = shadow_invalidated.saturating_add(
-                tx.execute("DELETE FROM search_index_edges WHERE write_cursor = ?1", [cursor])
-                    .map_err(|_| EngineError::Storage)? as u64,
-            );
-            // vec0 rowid is the canonical row's write_cursor (see
-            // `_fathomdb_vector_rows.write_cursor UNIQUE`).
-            shadow_invalidated = shadow_invalidated.saturating_add(
-                tx.execute("DELETE FROM vector_default WHERE rowid = ?1", [cursor])
-                    .map_err(|_| EngineError::Storage)? as u64,
-            );
-            shadow_invalidated = shadow_invalidated.saturating_add(
-                tx.execute("DELETE FROM _fathomdb_vector_rows WHERE write_cursor = ?1", [cursor])
-                    .map_err(|_| EngineError::Storage)? as u64,
-            );
-            shadow_invalidated = shadow_invalidated.saturating_add(
-                tx.execute(
-                    "DELETE FROM _fathomdb_projection_terminal WHERE write_cursor = ?1",
-                    [cursor],
-                )
-                .map_err(|_| EngineError::Storage)? as u64,
+                erase_row_projections(&tx, *cursor).map_err(|_| EngineError::Storage)?,
             );
         }
 
@@ -6460,6 +7325,26 @@ impl Engine {
 
         // AC-028a audit row: a single append on the
         // `excise_source_audit` collection naming the excised source.
+        //
+        // DURABILITY (0.8.20 Slice 5b, design v5 §2 defect D-A; HITL-ruled
+        // 2026-07-19: *"there must be an auditable record of deletion event."*).
+        // This row lands in `operational_mutations`, the same table the retention
+        // sweep drains — and it is written BEFORE the workload that follows it,
+        // so an oldest-`id`-first sweep evicted it FIRST. It is now protected:
+        // `excise_source_audit` is in `ERASURE_AUDIT_COLLECTIONS`, which
+        // `enforce_provenance_retention` excludes. The proof of erasure is no
+        // longer destructible by ordinary retention pressure.
+        //
+        // NON-PII `source_id` (rationale corrected in this slice). v4 §3.6
+        // justified the "`source_id` must not be PII" rule by claiming the audit
+        // row retains it *permanently, by design*. That premise was FALSE — the
+        // row was sweepable. The rule stands on a different and simpler footing:
+        // this row persists the caller's raw `source_id` verbatim, and an
+        // `excise_source` that erased the payload while keeping an identifying
+        // source label would not be an erasure. The exemption above makes the
+        // retention now genuinely indefinite, which makes the rule MORE
+        // load-bearing, not less.
+        //
         // `next_cursor` after a prior write holds the LAST committed cursor;
         // mirror the vec writer pattern (load + 1, then store post-commit)
         // so the audit row's `write_cursor` is strictly greater than every
@@ -6482,6 +7367,13 @@ impl Engine {
         )
         .map_err(|_| EngineError::Storage)?;
 
+        // 0.8.20 Slice 5 fix-1 (codex §9 P2) — durably record the redaction this
+        // erasure owes, atomically with the deletes. Shares `audit_cursor`: one
+        // erasure event, and this row is retired as soon as the sink is clean.
+        if self.telemetry_enabled.load(Ordering::Acquire) {
+            enqueue_pending_redaction(&tx, verb, &erased_stable_ids, audit_cursor)?;
+        }
+
         tx.commit().map_err(|_| EngineError::Storage)?;
         self.next_cursor.store(audit_cursor, Ordering::SeqCst);
         Ok(ExciseReport {
@@ -6489,6 +7381,122 @@ impl Engine {
             nodes_excised,
             edges_excised,
             projections_invalidated: shadow_invalidated,
+        })
+    }
+
+    /// 0.8.20 Slice 5b (R-20-E7) — erase ONE op-store record, by collection and
+    /// record key, from both op-store shapes: every `operational_mutations`
+    /// version of the key (append-only-log collections) and its
+    /// `operational_state` row (latest-state collections).
+    ///
+    /// **Refuses the engine's own erasure bookkeeping** (0.8.20 Slice 5 fix-3,
+    /// codex §9 round-3 P1): a `collection` for which
+    /// [`is_erasure_bookkeeping_collection`] holds raises
+    /// [`EngineError::InvalidArgument`] before anything is deleted. Aimed at the
+    /// pending-redaction queue this verb otherwise destroys an outstanding
+    /// erasure obligation, after which the next erasure verb reports success with
+    /// the erased ids still in the telemetry sink; aimed at the audit trail it
+    /// destroys the auditable record of the deletion event.
+    ///
+    /// Before this slice the op-store had NO record-level delete at all:
+    /// [`enforce_provenance_retention`] is a cap sweep, not an erasure verb, so a
+    /// caller holding an erasure obligation over an op-store record had no way to
+    /// discharge it. Idempotent — erasing an absent key is a zero-count success.
+    ///
+    /// Like the other erasure verbs this finishes at rest (telemetry is not
+    /// involved — op-store record keys never reach the telemetry sink — but the
+    /// `-wal` is), so it can return [`EngineError::ErasureIncomplete`].
+    ///
+    /// AUDIT (D-A). Appends a row to the retention-exempt `excise_record_audit`
+    /// collection. Unlike `source_id`, a `record_key` carries NO non-PII rule:
+    /// it is arbitrary caller-supplied text and may itself be the identifier
+    /// being erased. The audit therefore records a SHA-256 digest of
+    /// `collection` + `record_key`, never the key — enough to prove *that* a
+    /// specific record was erased to anyone who already knows the key, and
+    /// useless to anyone who does not.
+    #[cfg(feature = "operator")]
+    pub fn excise_collection_record(
+        &self,
+        collection: &str,
+        record_key: &str,
+    ) -> Result<ExciseRecordReport, EngineError> {
+        self.ensure_open()?;
+        if collection.is_empty() || record_key.is_empty() {
+            return Err(EngineError::WriteValidation);
+        }
+        // 0.8.20 Slice 5 fix-3 (codex §9 round-3 P1) — the engine's own erasure
+        // bookkeeping is not caller data and is not excisable. See
+        // `is_erasure_bookkeeping_collection` for why each member is protected.
+        // Checked BEFORE any deletion so the refusal is total, not partial.
+        if is_erasure_bookkeeping_collection(collection) {
+            return Err(EngineError::InvalidArgument {
+                msg: format!(
+                    "`{collection}` is engine-internal erasure bookkeeping and cannot be excised \
+                     by `excise_collection_record`. The pending-redaction queue records an \
+                     erasure the engine still owes (deleting it would let a later verb report \
+                     success on an incomplete erasure, R-20-E5), and the erasure-audit \
+                     collections are the auditable record of the deletion event. Pending \
+                     redactions retire themselves once performed; retry the erasure verb instead."
+                ),
+            });
+        }
+        let report = self.excise_collection_record_inner(collection, record_key)?;
+        self.complete_erasure_at_rest("excise_collection_record")?;
+        Ok(report)
+    }
+
+    #[cfg(feature = "operator")]
+    fn excise_collection_record_inner(
+        &self,
+        collection: &str,
+        record_key: &str,
+    ) -> Result<ExciseRecordReport, EngineError> {
+        let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+        let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
+
+        let records_excised = tx
+            .execute(
+                "DELETE FROM operational_mutations
+                 WHERE collection_name = ?1 AND record_key = ?2",
+                params![collection, record_key],
+            )
+            .map_err(|_| EngineError::Storage)? as u64;
+        let state_rows_excised = tx
+            .execute(
+                "DELETE FROM operational_state
+                 WHERE collection_name = ?1 AND record_key = ?2",
+                params![collection, record_key],
+            )
+            .map_err(|_| EngineError::Storage)? as u64;
+
+        let record_digest = digest_record_identity(collection, record_key);
+        let excised_at = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+        let payload = serde_json::json!({
+            "collection": collection,
+            "record_digest": record_digest,
+            "excised_at": excised_at,
+            "records_excised": records_excised,
+            "state_rows_excised": state_rows_excised,
+        })
+        .to_string();
+        let audit_cursor = self.next_cursor.load(Ordering::SeqCst).saturating_add(1);
+        tx.execute(
+            "INSERT INTO operational_mutations(
+                collection_name, record_key, op_kind, payload_json, schema_id, write_cursor
+             ) VALUES('excise_record_audit', ?1, 'append', ?2, NULL, ?3)",
+            params![record_digest, payload, audit_cursor],
+        )
+        .map_err(|_| EngineError::Storage)?;
+
+        tx.commit().map_err(|_| EngineError::Storage)?;
+        self.next_cursor.store(audit_cursor, Ordering::SeqCst);
+        self.counters.record_admin();
+        Ok(ExciseRecordReport {
+            collection: collection.to_string(),
+            record_digest,
+            records_excised,
+            state_rows_excised,
         })
     }
 
@@ -6520,64 +7528,70 @@ impl Engine {
         let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
         let connection = connection.as_mut().ok_or(EngineError::Closing)?;
         let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
-        let mut rows_invalidated: u64 = 0;
-        if include_fts {
-            let n = tx.execute("DELETE FROM search_index", []).map_err(|_| EngineError::Storage)?;
-            rows_invalidated = rows_invalidated.saturating_add(n as u64);
-            // fix-26 [P2]: also truncate edge FTS shadow (G11 search_index_edges).
-            let n = tx
-                .execute("DELETE FROM search_index_edges", [])
-                .map_err(|_| EngineError::Storage)?;
-            rows_invalidated = rows_invalidated.saturating_add(n as u64);
-        }
-        let n = tx.execute("DELETE FROM vector_default", []).map_err(|_| EngineError::Storage)?;
-        rows_invalidated = rows_invalidated.saturating_add(n as u64);
-        let n = tx
-            .execute("DELETE FROM _fathomdb_vector_rows", [])
-            .map_err(|_| EngineError::Storage)?;
-        rows_invalidated = rows_invalidated.saturating_add(n as u64);
-        let n = tx
-            .execute("DELETE FROM _fathomdb_projection_terminal", [])
-            .map_err(|_| EngineError::Storage)?;
-        rows_invalidated = rows_invalidated.saturating_add(n as u64);
+        // 0.8.20 Slice 5a (R-20-E1) — registry-driven invalidation. A full
+        // rebuild truncates EVERY row-owned projection (the previous hand-rolled
+        // list omitted `search_index_v2`, so a rebuild neither dropped stale v2
+        // rows nor repopulated the table); a vec0-only rebuild truncates the
+        // vector + readiness classes exactly as before. Kind-owned watermark
+        // state (`_fathomdb_projection_state`) is deliberately NOT truncated —
+        // readiness is reset by rewinding the projection cursor below.
+        let rows_invalidated = if include_fts {
+            truncate_all_row_projections(&tx).map_err(|_| EngineError::Storage)?
+        } else {
+            truncate_row_projections_in(&tx, &[ProjectionClass::Vector, ProjectionClass::Readiness])
+                .map_err(|_| EngineError::Storage)?
+        };
         store_projection_cursor(&tx, 0).map_err(|_| EngineError::Storage)?;
+        // 0.8.20 Slice 5a (R-20-E1, work item 1) — the replay runs through the
+        // SAME two projectors the write path uses, so the rebuilt projections
+        // are identical to what a re-write would have produced. `include_fts`
+        // selects the pass: a vec0-only rebuild must not write FTS rows.
+        let pass = if include_fts { ProjectionPass::Write } else { ProjectionPass::VectorOnly };
         let mut rows_rebuilt: u64 = 0;
-        if include_fts {
-            for row in canonical_node_rows(&tx).map_err(|_| EngineError::Storage)? {
-                tx.execute(
-                    "INSERT INTO search_index(body, kind, write_cursor) VALUES(?1, ?2, ?3)",
-                    params![row.body, row.kind, row.cursor],
-                )
+        for row in canonical_node_rows(&tx).map_err(|_| EngineError::Storage)? {
+            project_canonical_node_row(&tx, row.cursor, &row.kind, &row.body, row.row_kind, pass)
                 .map_err(|_| EngineError::Storage)?;
+            if include_fts {
                 rows_rebuilt = rows_rebuilt.saturating_add(1);
             }
-            // fix-26 [P2]: rebuild edge FTS shadow from active canonical_edges
-            // with non-null bodies (G11 search_index_edges).
-            // 0.8.12 Slice A (R-CON-2 named default-ON blocker; Slice-20 codex
-            // §9 [P2]): mirror the graph-traversal recency filter
-            // (`t_invalid IS NULL OR datetime(t_invalid) > datetime('now')`)
-            // here too, so a full rebuild does not re-surface an edge that
-            // recency consolidation already invalidated.
+        }
+        // fix-26 [P2]: rebuild the edge shadows from active canonical_edges
+        // (G11 search_index_edges).
+        // 0.8.12 Slice A (R-CON-2 named default-ON blocker; Slice-20 codex
+        // §9 [P2]): mirror the graph-traversal recency filter
+        // (`t_invalid IS NULL OR datetime(t_invalid) > datetime('now')`)
+        // here too, so a full rebuild does not re-surface an edge that
+        // recency consolidation already invalidated.
+        // 0.8.20 Slice 5a: body-less structural edges are now included in the
+        // replay. They project no FTS/vector row, but the write path DOES record
+        // their readiness terminal — which this rebuild truncated and (before
+        // this slice) never restored, stalling `advance_projection_cursor`.
+        let edge_rows: Vec<(i64, String, Option<String>)> = {
             let mut edge_stmt = tx
                 .prepare(
                     "SELECT write_cursor, kind, body FROM canonical_edges \
-                     WHERE superseded_at IS NULL AND body IS NOT NULL \
+                     WHERE superseded_at IS NULL \
                        AND (t_invalid IS NULL OR datetime(t_invalid) > datetime('now'))",
                 )
                 .map_err(|_| EngineError::Storage)?;
-            let edge_rows: Vec<(i64, String, String)> = edge_stmt
+            let rows = edge_stmt
                 .query_map([], |row| {
-                    Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                    ))
                 })
                 .map_err(|_| EngineError::Storage)?
                 .collect::<rusqlite::Result<_>>()
                 .map_err(|_| EngineError::Storage)?;
-            for (cursor, kind, body) in edge_rows {
-                tx.execute(
-                    "INSERT INTO search_index_edges(body, kind, write_cursor) VALUES(?1, ?2, ?3)",
-                    params![body, kind, cursor],
-                )
+            rows
+        };
+        for (cursor, kind, body) in edge_rows {
+            let has_body = body.is_some();
+            project_canonical_edge_row(&tx, cursor as u64, &kind, body.as_deref(), pass)
                 .map_err(|_| EngineError::Storage)?;
+            if include_fts && has_body {
                 rows_rebuilt = rows_rebuilt.saturating_add(1);
             }
         }
@@ -6854,6 +7868,110 @@ fn append_jsonl(path: &Path, value: &serde_json::Value) -> std::io::Result<()> {
     let mut file = std::fs::OpenOptions::new().create(true).append(true).open(path)?;
     writeln!(file, "{value}")?;
     Ok(())
+}
+
+/// 0.8.20 Slice 5b (R-20-E6) — rewrite a telemetry JSONL sink with every
+/// `result_stable_ids` element in `erased` replaced by [`REDACTED_STABLE_ID`].
+///
+/// **Selective, never truncating.** Every line is carried across: records that
+/// reference no erased id are byte-identical, records that do keep their shape
+/// and only lose the matching id VALUES, and a line that is not an
+/// engine-authored JSON event (an operator note, a hand-appended record) is
+/// copied through verbatim. The sink is a caller-supplied path that may hold
+/// unrelated eval history; destroying it is not part of any erasure obligation.
+///
+/// **Crash safety.** Write-temp-then-`rename`: the redacted content goes to a
+/// sibling `<sink>.redact.tmp`, is `sync_all`ed, and is then atomically renamed
+/// over the sink. A crash at any point leaves either the intact old file or the
+/// complete new one — never a half-rewritten sink. `rename` is atomic because
+/// the temp file is a sibling (same directory ⇒ same filesystem).
+///
+/// **Concurrent appends.** The caller holds the telemetry mutex, so no
+/// in-process `capture_telemetry` can append into the window. An out-of-process
+/// appender is still possible (the sink is just a file), so before renaming we
+/// re-check the source length: if it grew, the tail delta is read, redacted and
+/// appended, and the check repeats — bounded, so a pathologically hot external
+/// writer surfaces as an error rather than an unbounded loop.
+fn redact_jsonl_stable_ids(
+    path: &Path,
+    erased: &std::collections::HashSet<&str>,
+) -> std::io::Result<()> {
+    /// Bound on the re-check loop for an out-of-process appender.
+    const MAX_TAIL_FOLDS: usize = 8;
+
+    let mut source = std::fs::read(path)?;
+    let mut redacted = redact_jsonl_bytes(&source, erased);
+
+    for _ in 0..MAX_TAIL_FOLDS {
+        let current = std::fs::read(path)?;
+        if current.len() == source.len() {
+            let mut tmp_name = path.file_name().unwrap_or_default().to_os_string();
+            tmp_name.push(".redact.tmp");
+            let tmp = path.with_file_name(tmp_name);
+            {
+                let mut file = std::fs::File::create(&tmp)?;
+                file.write_all(&redacted)?;
+                file.sync_all()?;
+            }
+            std::fs::rename(&tmp, path)?;
+            return Ok(());
+        }
+        // Someone appended while we were building the replacement: fold the
+        // delta in (redacted) rather than dropping it, then re-check.
+        if current.len() > source.len() && current.starts_with(&source) {
+            redacted.extend_from_slice(&redact_jsonl_bytes(&current[source.len()..], erased));
+        } else {
+            // The file was rewritten under us, not appended to. Start over.
+            redacted = redact_jsonl_bytes(&current, erased);
+        }
+        source = current;
+    }
+    Err(std::io::Error::other(format!(
+        "telemetry sink {} is being appended to faster than it can be redacted",
+        path.display()
+    )))
+}
+
+/// Line-wise redaction of a JSONL byte buffer. Non-JSON and non-event lines are
+/// passed through unchanged, as is a trailing partial line (no terminating
+/// newline) — the sink is append-only, so a partial tail is a torn write, not
+/// ours to normalize.
+fn redact_jsonl_bytes(bytes: &[u8], erased: &std::collections::HashSet<&str>) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut rest = bytes;
+    while !rest.is_empty() {
+        let (line, tail) = match rest.iter().position(|b| *b == b'\n') {
+            Some(idx) => (&rest[..idx], &rest[idx + 1..]),
+            // No trailing newline: a torn/partial final line. Pass it through.
+            None => {
+                out.extend_from_slice(rest);
+                break;
+            }
+        };
+        match redact_jsonl_line(line, erased) {
+            Some(replacement) => out.extend_from_slice(replacement.as_bytes()),
+            None => out.extend_from_slice(line),
+        }
+        out.push(b'\n');
+        rest = tail;
+    }
+    out
+}
+
+/// `Some(replacement)` when the line is an engine-authored telemetry event whose
+/// `result_stable_ids` referenced an erased id; `None` to pass it through.
+fn redact_jsonl_line(line: &[u8], erased: &std::collections::HashSet<&str>) -> Option<String> {
+    let text = std::str::from_utf8(line).ok()?;
+    let mut value: serde_json::Value = serde_json::from_str(text).ok()?;
+    let ids = value.get_mut("result_stable_ids")?.as_array_mut()?;
+    let mut touched = false;
+    for id in ids.iter_mut() {
+        if id.as_str().is_some_and(|s| erased.contains(s)) {
+            *id = serde_json::Value::from(REDACTED_STABLE_ID);
+            touched = true;
+        }
+    }
+    touched.then(|| value.to_string())
 }
 
 /// G9 — fuse the vector and text branches with Reciprocal Rank Fusion.
@@ -9495,6 +10613,7 @@ struct CanonicalNodeRow {
     cursor: u64,
     kind: String,
     body: String,
+    row_kind: RowKind,
 }
 
 /// 0.8.0 Slice 5 (G1) — re-tokenize `search_index` from the canonical source
@@ -9516,13 +10635,23 @@ fn reproject_search_index_after_tokenizer_upgrade(connection: &Connection) -> ru
     let rows = canonical_node_rows(connection)?;
     connection.execute_batch("BEGIN IMMEDIATE")?;
     let result = (|| {
-        connection.execute("DELETE FROM search_index", [])?;
-        {
-            let mut statement = connection
-                .prepare("INSERT INTO search_index(body, kind, write_cursor) VALUES(?1, ?2, ?3)")?;
-            for row in &rows {
-                statement.execute(params![row.body, row.kind, row.cursor])?;
-            }
+        // 0.8.20 Slice 5a (R-20-E1) — registry-driven: re-tokenize EVERY
+        // node-FTS projection, not just `search_index`. `search_index_v2` uses
+        // the SAME tokenizer (`porter unicode61 remove_diacritics 2`), so it is
+        // equally invalidated by a tokenizer-default upgrade; before this slice
+        // it was neither cleared nor re-tokenized here. Edge FTS is out of scope
+        // for this open-path repair (it postdates the step-11 upgrade and is
+        // rebuilt by `rebuild_projections`).
+        truncate_row_projections_in(connection, &[ProjectionClass::NodeFts])?;
+        for row in &rows {
+            project_canonical_node_row(
+                connection,
+                row.cursor,
+                &row.kind,
+                &row.body,
+                row.row_kind,
+                ProjectionPass::FtsOnly,
+            )?;
         }
         connection.execute(
             "INSERT INTO _fathomdb_open_state(key, value) VALUES(?1, ?2)
@@ -9571,16 +10700,31 @@ fn search_index_tokenizer_reproject_complete(connection: &Connection) -> rusqlit
 }
 
 fn canonical_node_rows(connection: &Connection) -> rusqlite::Result<Vec<CanonicalNodeRow>> {
-    let mut statement = connection
-        .prepare("SELECT write_cursor, kind, body FROM canonical_nodes ORDER BY write_cursor")?;
+    let mut statement = connection.prepare(
+        "SELECT write_cursor, kind, body, row_kind FROM canonical_nodes ORDER BY write_cursor",
+    )?;
     let rows = statement.query_map([], |row| {
         Ok(CanonicalNodeRow {
             cursor: row.get::<_, u64>(0)?,
             kind: row.get::<_, String>(1)?,
             body: row.get::<_, String>(2)?,
+            row_kind: row_kind_from_column(&row.get::<_, String>(3)?),
         })
     })?;
     rows.collect()
+}
+
+/// 0.8.20 Slice 5a — inverse of [`RowKind::as_str`] for the stored
+/// `canonical_nodes.row_kind` column. An unrecognized spelling degrades to
+/// `Leaf`, the column DEFAULT and the shape every pre-EXP-S row carries; that
+/// keeps a projector replay behavior-identical to the pre-registry rebuild,
+/// which ignored `row_kind` entirely.
+fn row_kind_from_column(value: &str) -> RowKind {
+    match value {
+        "coverage" => RowKind::Coverage,
+        "graph" => RowKind::Graph,
+        _ => RowKind::Leaf,
+    }
 }
 
 #[cfg(feature = "operator")]
@@ -10067,28 +11211,156 @@ fn recompute_mean_in_tx_inner(
     })
 }
 
+/// Cap sweep over the op-store mutation log: keeps the newest `cap` SWEEPABLE
+/// rows, dropping the oldest by `id`.
+///
+/// **Pending-redaction exemption (0.8.20 Slice 5 fix-1).**
+/// [`ERASURE_PENDING_REDACTION_COLLECTION`] is exempt on the same principle for a
+/// stronger reason: that row is not a record of a discharged obligation but an
+/// UNDISCHARGED one. Sweeping it would silently drop an erasure the engine still
+/// owes, and the next retry would then report success with the leaked stable ids
+/// still in the telemetry sink — exactly the R-20-E5 violation this mechanism
+/// exists to prevent.
+///
+/// **Erasure-audit exemption (0.8.20 Slice 5b, design v5 §2 defect D-A;
+/// HITL-ruled 2026-07-19: *"there must be an auditable record of deletion
+/// event."*).** Rows in [`ERASURE_AUDIT_COLLECTIONS`] are excluded from BOTH the
+/// count and the DELETE, and are therefore **never removed by retention
+/// pressure**. Previously this swept `operational_mutations` cap-first,
+/// oldest-`id`-first, with no collection filter — so the `excise_source_audit`
+/// row proving an erasure occurred shared one retention pool with the very
+/// payloads it must prove erased, and (being written before whatever workload
+/// followed) was among the first evicted. Accountability is a distinct
+/// obligation from erasure; a sweep must not silently discharge it.
+///
+/// Consequence of excluding audit rows from the count: `cap` is a cap on
+/// SWEEPABLE rows, not on the physical table size. That is deliberate — the
+/// alternative (counting exempt rows toward the cap) would let a growing audit
+/// trail evict ordinary provenance ever more aggressively, and in the limit
+/// leave nothing sweepable while the sweep churned every write.
 fn enforce_provenance_retention(connection: &Connection, cap: u64) -> rusqlite::Result<()> {
     if cap == 0 {
         return Ok(());
     }
+    // Static, engine-internal identifiers — no caller input reaches this SQL.
+    let exempt = ERASURE_AUDIT_COLLECTIONS
+        .iter()
+        .copied()
+        .chain(std::iter::once(ERASURE_PENDING_REDACTION_COLLECTION))
+        .map(|name| format!("'{name}'"))
+        .collect::<Vec<_>>()
+        .join(", ");
     let slack = cap.max(20) / 20;
     let upper = cap.saturating_add(slack.max(1));
-    let count: u64 =
-        connection.query_row("SELECT COUNT(*) FROM operational_mutations", [], |row| row.get(0))?;
+    let count: u64 = connection.query_row(
+        &format!(
+            "SELECT COUNT(*) FROM operational_mutations
+             WHERE collection_name NOT IN ({exempt})"
+        ),
+        [],
+        |row| row.get(0),
+    )?;
     if count <= upper {
         return Ok(());
     }
     let to_delete = count.saturating_sub(cap);
     connection.execute(
-        "DELETE FROM operational_mutations
-         WHERE id IN (
-             SELECT id FROM operational_mutations
-             ORDER BY id
-             LIMIT ?1
-         )",
+        &format!(
+            "DELETE FROM operational_mutations
+             WHERE id IN (
+                 SELECT id FROM operational_mutations
+                 WHERE collection_name NOT IN ({exempt})
+                 ORDER BY id
+                 LIMIT ?1
+             )"
+        ),
         [to_delete],
     )?;
     Ok(())
+}
+
+/// 0.8.20 Slice 5b (R-20-E6) — the prefixed stable ids
+/// ([`IdSpace::to_prefixed`]) of the canonical rows an erasure verb is about to
+/// delete, so they can be redacted from the telemetry sink.
+///
+/// Must be called INSIDE the erasing transaction and BEFORE the DELETEs — after
+/// them the rows, and with them the `logical_id`/`body` the ids derive from, are
+/// gone. Both queries take one bound parameter (`?1`), applied to nodes and
+/// edges respectively; `derive_stable_id` reproduces exactly what
+/// `capture_telemetry` wrote into `result_stable_ids`.
+fn collect_erased_stable_ids(
+    tx: &Connection,
+    node_sql: &str,
+    edge_sql: &str,
+    bind: &str,
+) -> Result<Vec<String>, EngineError> {
+    let mut ids = Vec::new();
+    for sql in [node_sql, edge_sql] {
+        let mut stmt = tx.prepare(sql).map_err(|_| EngineError::Storage)?;
+        let rows = stmt
+            .query_map(params![bind], |row| {
+                Ok((row.get::<_, Option<String>>(0)?, row.get::<_, Option<String>>(1)?))
+            })
+            .map_err(|_| EngineError::Storage)?;
+        for row in rows {
+            let (logical_id, body) = row.map_err(|_| EngineError::Storage)?;
+            ids.push(
+                derive_stable_id(logical_id.as_deref(), body.as_deref().unwrap_or(""))
+                    .to_prefixed(),
+            );
+        }
+    }
+    ids.sort_unstable();
+    ids.dedup();
+    Ok(ids)
+}
+
+/// 0.8.20 Slice 5 fix-1 (codex §9 P2) — record, INSIDE the erasing transaction,
+/// that a telemetry redaction is owed for `erased_stable_ids`.
+///
+/// Must be called in the same transaction as the DELETEs. That is the whole
+/// point: "the rows are gone" and "a redaction is owed for them" then commit
+/// atomically, so no crash or failure can leave the first true and the second
+/// unrecorded. [`Engine::discharge_pending_redactions`] drains the queue and
+/// deletes the entry only once the sink has actually been rewritten.
+///
+/// `record_key` is the VERB, never a stable id — the ids live in the payload,
+/// which is deleted on discharge.
+fn enqueue_pending_redaction(
+    tx: &Connection,
+    verb: &str,
+    erased_stable_ids: &[String],
+    write_cursor: u64,
+) -> Result<(), EngineError> {
+    if erased_stable_ids.is_empty() {
+        return Ok(());
+    }
+    let payload =
+        serde_json::json!({ "verb": verb, "erased_stable_ids": erased_stable_ids }).to_string();
+    tx.execute(
+        "INSERT INTO operational_mutations(
+            collection_name, record_key, op_kind, payload_json, schema_id, write_cursor
+         ) VALUES(?1, ?2, 'append', ?3, NULL, ?4)",
+        params![ERASURE_PENDING_REDACTION_COLLECTION, verb, payload, write_cursor],
+    )
+    .map_err(|_| EngineError::Storage)?;
+    Ok(())
+}
+
+/// 0.8.20 Slice 5b (R-20-E7) — the audit handle for an erased op-store record:
+/// `SHA-256(collection + 0x1F + record_key)`, lowercase hex.
+///
+/// A record key is arbitrary caller-supplied text and may itself be the
+/// identifier being erased, so a durable audit row must not echo it. `0x1F`
+/// (ASCII unit separator) is the delimiter because it cannot appear in a
+/// well-formed collection name, keeping the pairing unambiguous.
+#[cfg(feature = "operator")]
+fn digest_record_identity(collection: &str, record_key: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(collection.as_bytes());
+    hasher.update([0x1f_u8]);
+    hasher.update(record_key.as_bytes());
+    hasher.finalize().iter().map(|b| format!("{b:02x}")).collect()
 }
 
 fn projection_status(
@@ -11578,15 +12850,13 @@ fn validate_write(
     write: &PreparedWrite,
 ) -> Result<WritePlan, EngineError> {
     match write {
-        PreparedWrite::Node { kind, body, source_id, logical_id, .. } => {
+        PreparedWrite::Node { kind, body, logical_id, .. } => {
             if kind.trim().is_empty() || body.trim().is_empty() {
                 return Err(EngineError::WriteValidation);
             }
-            if let Some(source_id) = source_id {
-                if source_id.is_empty() {
-                    return Err(EngineError::WriteValidation);
-                }
-            }
+            // R-20-E3: `source_id` needs no emptiness check here — `SourceId`
+            // cannot hold an empty or reserved id, so the check has moved from
+            // this branch into the type's constructor.
             // G0 — an explicit logical_id must be non-empty (NULL/None is the
             // legacy default; an empty string is never a valid identity).
             // Also reject char(30) = \x1e (ASCII RS), which is the BFS cycle-guard
@@ -11598,7 +12868,7 @@ fn validate_write(
             }
             Ok(WritePlan::Node)
         }
-        PreparedWrite::Edge { kind, from, to, source_id, logical_id, .. } => {
+        PreparedWrite::Edge { kind, from, to, logical_id, .. } => {
             if kind.trim().is_empty() || from.trim().is_empty() || to.trim().is_empty() {
                 return Err(EngineError::WriteValidation);
             }
@@ -11607,11 +12877,7 @@ fn validate_write(
             if from.contains('\x1e') || to.contains('\x1e') {
                 return Err(EngineError::WriteValidation);
             }
-            if let Some(source_id) = source_id {
-                if source_id.is_empty() {
-                    return Err(EngineError::WriteValidation);
-                }
-            }
+            // R-20-E3: see the Node branch — emptiness is a `SourceId` invariant.
             if let Some(logical_id) = logical_id {
                 if logical_id.is_empty() || logical_id.contains('\x1e') {
                     return Err(EngineError::WriteValidation);
@@ -11736,6 +13002,168 @@ struct IndexTargetSet {
     vector: bool,
 }
 
+/// 0.8.20 Slice 5a (R-20-E1) — the class a row-owned projection table belongs
+/// to, so the four maintenance sites can each truncate exactly the subset they
+/// own without re-deriving a hand-rolled table list.
+///
+/// - `NodeFts` — same-txn lexical projection of a canonical NODE body.
+/// - `EdgeFts` — same-txn lexical projection of a canonical EDGE body.
+/// - `Vector` — the async vec0 materialization (written by the embed worker,
+///   not by the write path — see [`project_canonical_node_row`]).
+/// - `Readiness` — the terminal-cursor bookkeeping that lets
+///   `advance_projection_cursor` walk past a row.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ProjectionClass {
+    NodeFts,
+    EdgeFts,
+    Vector,
+    Readiness,
+}
+
+/// 0.8.20 Slice 5a (R-20-E1) — one ROW-OWNED projection table: a shadow whose
+/// rows are 1:1 with a canonical row's `write_cursor` and therefore MUST die
+/// with that row.
+#[derive(Clone, Copy, Debug)]
+struct RowOwnedProjection {
+    /// Table name. `'static` and never caller-derived: safe to interpolate.
+    table: &'static str,
+    /// The column carrying the owning canonical row's `write_cursor`. For the
+    /// vec0 table this is `rowid` — vec0 rowid IS the write_cursor (see the
+    /// `_fathomdb_vector_rows.write_cursor UNIQUE` identity).
+    cursor_column: &'static str,
+    class: ProjectionClass,
+}
+
+/// 0.8.20 Slice 5a (R-20-E1) — **the** registry of row-owned projections.
+///
+/// Every table here is 1:1 with a canonical `write_cursor` and is erased by
+/// [`erase_row_projections`] whenever that canonical row is erased. Adding a
+/// projection table WITHOUT registering it here re-opens the defect this slice
+/// closes (`search_index_v2` was written by one site and deleted by one site,
+/// out of five that maintain projections — so `excise_source` left the erased
+/// body on disk in a content-storing FTS5 table). The `guard_row_owned_registry`
+/// unit test introspects `sqlite_master` and fails if a `write_cursor`-keyed
+/// table is missing from this list.
+///
+/// **NOT here, deliberately (design v5 §1.1): `_fathomdb_projection_state`.**
+/// That table is KIND-owned — keyed by `kind`, holding a per-kind enqueue
+/// watermark. Erasing one row must NOT rewind a whole kind's watermark, so it
+/// must never be deleted per-cursor. A rebuild resets it deliberately; erasure
+/// leaves it alone.
+const ROW_OWNED_PROJECTIONS: &[RowOwnedProjection] = &[
+    RowOwnedProjection {
+        table: "search_index",
+        cursor_column: "write_cursor",
+        class: ProjectionClass::NodeFts,
+    },
+    RowOwnedProjection {
+        table: "search_index_v2",
+        cursor_column: "write_cursor",
+        class: ProjectionClass::NodeFts,
+    },
+    RowOwnedProjection {
+        table: "search_index_edges",
+        cursor_column: "write_cursor",
+        class: ProjectionClass::EdgeFts,
+    },
+    RowOwnedProjection {
+        table: "vector_default",
+        cursor_column: "rowid",
+        class: ProjectionClass::Vector,
+    },
+    RowOwnedProjection {
+        table: "_fathomdb_vector_rows",
+        cursor_column: "write_cursor",
+        class: ProjectionClass::Vector,
+    },
+    RowOwnedProjection {
+        table: "_fathomdb_projection_terminal",
+        cursor_column: "write_cursor",
+        class: ProjectionClass::Readiness,
+    },
+];
+
+/// 0.8.20 Slice 5a (R-20-E1) — erase EVERY row-owned projection for one
+/// canonical `write_cursor`. Returns the number of shadow rows deleted.
+///
+/// This is the single erasure primitive: `purge_inner` and `excise_source_inner`
+/// both call it, so a new projection table becomes erasable by registering it in
+/// [`ROW_OWNED_PROJECTIONS`] — not by remembering to patch two hand-rolled
+/// delete lists (the omission that left erased bodies in `search_index_v2`).
+fn erase_row_projections(tx: &Connection, write_cursor: i64) -> rusqlite::Result<u64> {
+    let mut deleted: u64 = 0;
+    for projection in ROW_OWNED_PROJECTIONS {
+        let sql =
+            format!("DELETE FROM {} WHERE {} = ?1", projection.table, projection.cursor_column);
+        deleted = deleted.saturating_add(tx.execute(&sql, [write_cursor])? as u64);
+    }
+    Ok(deleted)
+}
+
+/// 0.8.20 Slice 5a (R-20-E1) — truncate the row-owned projections in `classes`.
+/// Returns the number of shadow rows deleted.
+fn truncate_row_projections_in(
+    tx: &Connection,
+    classes: &[ProjectionClass],
+) -> rusqlite::Result<u64> {
+    let mut deleted: u64 = 0;
+    for projection in ROW_OWNED_PROJECTIONS.iter().filter(|p| classes.contains(&p.class)) {
+        let sql = format!("DELETE FROM {}", projection.table);
+        deleted = deleted.saturating_add(tx.execute(&sql, [])? as u64);
+    }
+    Ok(deleted)
+}
+
+/// 0.8.20 Slice 5a (R-20-E1) — truncate EVERY row-owned projection (the full
+/// `rebuild_projections` invalidation). Kind-owned watermark state
+/// (`_fathomdb_projection_state`) is deliberately untouched; the rebuild resets
+/// readiness by rewinding the projection cursor instead.
+#[cfg(feature = "operator")]
+fn truncate_all_row_projections(tx: &Connection) -> rusqlite::Result<u64> {
+    truncate_row_projections_in(
+        tx,
+        &[
+            ProjectionClass::NodeFts,
+            ProjectionClass::EdgeFts,
+            ProjectionClass::Vector,
+            ProjectionClass::Readiness,
+        ],
+    )
+}
+
+/// 0.8.20 Slice 5a (R-20-E1) — which half of a projector's work a call site
+/// wants. The projectors are TOTAL (they own every row-owned projection for a
+/// canonical row); the pass selects the subset a replay site is rebuilding, so
+/// no call site re-implements projection SQL inline.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ProjectionPass {
+    /// The write path: same-txn FTS **and** async vector enqueue / readiness
+    /// termination.
+    Write,
+    /// Lexical replay only (the open-path tokenizer reproject). Readiness and
+    /// vector state are already correct and must not be perturbed.
+    FtsOnly,
+    /// Readiness + async-vector replay only (`rebuild_vec0`, i.e. a rebuild with
+    /// `include_fts = false`): the FTS shadows are not being rebuilt in this
+    /// pass, so they must not be written.
+    ///
+    /// Only the `operator` rebuild seam constructs this pass, so the DEFAULT
+    /// (recovery-clean) build sees it as unconstructed — same gate rationale as
+    /// the operator methods themselves (feature = gate, not delete).
+    #[cfg_attr(not(feature = "operator"), allow(dead_code))]
+    VectorOnly,
+}
+
+impl ProjectionPass {
+    fn writes_fts(self) -> bool {
+        matches!(self, ProjectionPass::Write | ProjectionPass::FtsOnly)
+    }
+
+    fn writes_vector_state(self) -> bool {
+        matches!(self, ProjectionPass::Write | ProjectionPass::VectorOnly)
+    }
+}
+
 /// EXP-S (0.8.14 Slice 5) — the `row_kind -> index-target set` dispatch
 /// (ADR-0.8.14 §D2), and the OPP-12 forward-compat seam (ADR-0.8.14 §D5(a) /
 /// ledger `TC-1`).
@@ -11782,9 +13210,10 @@ fn project_canonical_node_row(
     kind: &str,
     body: &str,
     row_kind: RowKind,
+    pass: ProjectionPass,
 ) -> rusqlite::Result<bool> {
     let targets = index_targets_for_row_kind(row_kind);
-    if targets.fts {
+    if targets.fts && pass.writes_fts() {
         tx.execute(
             "INSERT INTO search_index(body, kind, write_cursor) VALUES(?1, ?2, ?3)",
             params![body, kind, cursor],
@@ -11816,17 +13245,85 @@ fn project_canonical_node_row(
         )?;
     }
     let enqueue_vector = targets.vector && kind_is_vector_indexed(tx, kind).unwrap_or(false);
-    if enqueue_vector {
-        tx.execute(
-            "INSERT INTO _fathomdb_projection_state(kind, last_enqueued_cursor, updated_at)
-             VALUES(?1, ?2, 0)
-             ON CONFLICT(kind) DO UPDATE SET last_enqueued_cursor = excluded.last_enqueued_cursor",
-            params![kind, cursor],
-        )?;
-    } else {
-        // Never-vector-projected rows terminate the cursor up-front so
-        // `advance_projection_cursor` can advance the readiness watermark.
-        record_projection_terminal(tx, cursor, "up_to_date")?;
+    if pass.writes_vector_state() {
+        if enqueue_vector {
+            tx.execute(
+                "INSERT INTO _fathomdb_projection_state(kind, last_enqueued_cursor, updated_at)
+                 VALUES(?1, ?2, 0)
+                 ON CONFLICT(kind) DO UPDATE SET last_enqueued_cursor = excluded.last_enqueued_cursor",
+                params![kind, cursor],
+            )?;
+        } else {
+            // Never-vector-projected rows terminate the cursor up-front so
+            // `advance_projection_cursor` can advance the readiness watermark.
+            record_projection_terminal(tx, cursor, "up_to_date")?;
+        }
+    }
+    Ok(enqueue_vector)
+}
+
+/// 0.8.20 Slice 5a (R-20-E1, work item 1) — the EDGE half of the total
+/// projector, extracted verbatim from the inlined `commit_batch` edge arm.
+///
+/// Before this extraction there was NO edge projector function: `commit_batch`
+/// inlined the edge FTS insert + the edge vector enqueue, and
+/// `rebuild_shadow_state` re-implemented a SUBSET of it (edge FTS only, and only
+/// for body-carrying edges), so a projector-replay rebuild silently dropped the
+/// rest — notably the `up_to_date` readiness terminal that the write path
+/// records for a body-less structural edge. With both sites now calling this one
+/// function, the write path and the rebuild path produce identical edge
+/// projections by construction.
+///
+/// Mirrors [`project_canonical_node_row`]'s split (ADR-0.8.14 §D5(b)): FTS in
+/// THIS transaction; vector work only ENQUEUED, embedded later by the worker
+/// pool. Edge bodies enqueue under the fixed kind `"edge_fact"` so
+/// `resolve_source_type` maps them to `source_type = "edge_fact"` in
+/// `vector_default` (partition correctness); that kind is auto-registered in
+/// `_fathomdb_vector_kinds` (idempotent).
+///
+/// Returns `true` iff async vector work was enqueued.
+fn project_canonical_edge_row(
+    tx: &Connection,
+    cursor: u64,
+    kind: &str,
+    body: Option<&str>,
+    pass: ProjectionPass,
+) -> rusqlite::Result<bool> {
+    // G11 — edge FTS projection into `search_index_edges` (separate table from
+    // node-body `search_index` — Option B partition). Body-less structural
+    // edges carry no lexical content and project no FTS row.
+    if pass.writes_fts() {
+        if let Some(edge_body) = body {
+            tx.execute(
+                "INSERT INTO search_index_edges(body, kind, write_cursor)
+                 VALUES(?1, ?2, ?3)",
+                params![edge_body, kind, cursor],
+            )?;
+        }
+    }
+    let enqueue_vector = body.is_some();
+    if pass.writes_vector_state() {
+        if enqueue_vector {
+            let now_unix =
+                SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
+            tx.execute(
+                "INSERT OR IGNORE INTO _fathomdb_vector_kinds(kind, profile, created_at)
+                 VALUES('edge_fact', 'default', ?1)",
+                params![now_unix],
+            )?;
+            tx.execute(
+                "INSERT INTO _fathomdb_projection_state(
+                     kind, last_enqueued_cursor, updated_at
+                 ) VALUES('edge_fact', ?1, 0)
+                 ON CONFLICT(kind) DO UPDATE
+                     SET last_enqueued_cursor = excluded.last_enqueued_cursor",
+                params![cursor],
+            )?;
+            // Do NOT call record_projection_terminal — let the scheduler embed
+            // the body and mark it terminal after projection.
+        } else {
+            record_projection_terminal(tx, cursor, "up_to_date")?;
+        }
     }
     Ok(enqueue_vector)
 }
@@ -12088,13 +13585,20 @@ fn commit_batch(
                 tx.execute(
                     "INSERT INTO canonical_nodes(write_cursor, kind, body, source_id, logical_id, row_kind, state, reason)
                      VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                    params![cursor, kind, body, source_id, logical_id, RowKind::Leaf.as_str(), state.as_str(), reason],
+                    params![cursor, kind, body, source_id.as_str(), logical_id, RowKind::Leaf.as_str(), state.as_str(), reason],
                 )?;
                 // EXP-S (D2/D5) — per-row_kind index-target dispatch. For `leaf`
                 // this is behavior-identical to the pre-EXP-S inline path: FTS
                 // (sync, in-tx) + vector (async, gated by kind_is_vector_indexed);
                 // else the cursor is terminated up-front.
-                project_canonical_node_row(&tx, cursor, kind, body, RowKind::Leaf)?;
+                project_canonical_node_row(
+                    &tx,
+                    cursor,
+                    kind,
+                    body,
+                    RowKind::Leaf,
+                    ProjectionPass::Write,
+                )?;
             }
             (
                 PreparedWrite::Edge {
@@ -12173,7 +13677,7 @@ fn commit_batch(
                         kind,
                         from,
                         to,
-                        source_id,
+                        source_id.as_str(),
                         logical_id,
                         body,
                         t_valid,
@@ -12183,41 +13687,16 @@ fn commit_batch(
                         temporal_fallback_i
                     ],
                 )?;
-                // G11 — edge FTS projection into `search_index_edges` (separate
-                // table from node-body `search_index` — Option B partition).
-                if let Some(edge_body) = body.as_ref() {
-                    tx.execute(
-                        "INSERT INTO search_index_edges(body, kind, write_cursor)
-                         VALUES(?1, ?2, ?3)",
-                        params![edge_body, kind, cursor],
-                    )?;
-                }
-                // G11 — edge vector projection: enqueue for projection scheduler
-                // under a fixed kind `"edge_fact"` (so resolve_source_type maps it
-                // to `source_type = "edge_fact"` in vector_default). Auto-register
-                // "edge_fact" in _fathomdb_vector_kinds (idempotent).
-                if body.is_some() {
-                    let now_unix =
-                        SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
-                            as i64;
-                    tx.execute(
-                        "INSERT OR IGNORE INTO _fathomdb_vector_kinds(kind, profile, created_at)
-                         VALUES('edge_fact', 'default', ?1)",
-                        params![now_unix],
-                    )?;
-                    tx.execute(
-                        "INSERT INTO _fathomdb_projection_state(
-                             kind, last_enqueued_cursor, updated_at
-                         ) VALUES('edge_fact', ?1, 0)
-                         ON CONFLICT(kind) DO UPDATE
-                             SET last_enqueued_cursor = excluded.last_enqueued_cursor",
-                        params![cursor],
-                    )?;
-                    // Do NOT call record_projection_terminal — let the scheduler
-                    // embed the body and mark it terminal after projection.
-                } else {
-                    record_projection_terminal(&tx, cursor, "up_to_date")?;
-                }
+                // 0.8.20 Slice 5a (R-20-E1, work item 1) — edge projection is no
+                // longer inlined here: the write path and the rebuild replay
+                // share ONE projector, so they cannot drift.
+                project_canonical_edge_row(
+                    &tx,
+                    cursor,
+                    kind,
+                    body.as_deref(),
+                    ProjectionPass::Write,
+                )?;
             }
             (
                 PreparedWrite::AdminSchema { name, kind, schema_json, retention_json },
@@ -12796,10 +14275,115 @@ unsafe extern "C" fn profile_callback_trampoline(
 mod tests {
     use super::{
         derive_stable_id, resolve_source_type, Engine, IdSpace, IdSpaceKind, PreparedWrite,
-        KIND_TO_SOURCE_TYPE_CASE_SQL,
+        KIND_TO_SOURCE_TYPE_CASE_SQL, ROW_OWNED_PROJECTIONS,
     };
     use rusqlite::Connection;
     use tempfile::TempDir;
+
+    /// 0.8.20 Slice 5a (R-20-E1, work item 2) — the registry GUARD.
+    ///
+    /// Introspects `sqlite_master` on a freshly migrated database and asserts
+    /// that EVERY `write_cursor`-keyed table is accounted for: either it is a
+    /// registered row-owned projection, or it is one of the explicitly named
+    /// canonical / operational tables that are sources of truth, not shadows.
+    /// A future projection table therefore cannot be added without either
+    /// registering it in [`ROW_OWNED_PROJECTIONS`] (making it erasable at every
+    /// maintenance site at once) or consciously failing this test.
+    ///
+    /// **`_fathomdb_projection_state` is allowlisted as KIND-owned** (design v5
+    /// §1.1): it is keyed by `kind`, not by `write_cursor`, and holds a per-kind
+    /// enqueue watermark. Erasing one row must not rewind a whole kind's
+    /// watermark, so it must NEVER be deleted per-cursor. The test asserts both
+    /// halves of that claim — that it carries no `write_cursor` column, and that
+    /// it is absent from the row-owned registry.
+    #[test]
+    fn guard_row_owned_registry() {
+        /// Canonical + operational tables: `write_cursor`-carrying SOURCES OF
+        /// TRUTH, never row-owned projections of another row.
+        const NON_PROJECTION_CURSOR_TABLES: &[&str] =
+            &["canonical_nodes", "canonical_edges", "operational_mutations", "operational_state"];
+
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("registry_guard.fathomdb");
+        Engine::open(&path).expect("open").engine.close().expect("close");
+        let conn = Connection::open(&path).expect("open sqlite");
+
+        let table_names: Vec<String> = conn
+            .prepare(
+                "SELECT name FROM sqlite_master
+                 WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+            )
+            .expect("prepare")
+            .query_map([], |row| row.get::<_, String>(0))
+            .expect("query")
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .expect("collect");
+        assert!(table_names.len() > 5, "sqlite_master introspection returned nothing useful");
+
+        let has_write_cursor = |table: &str| -> bool {
+            conn.prepare(&format!("PRAGMA table_info({table})"))
+                .and_then(|mut stmt| {
+                    let names = stmt
+                        .query_map([], |row| row.get::<_, String>(1))?
+                        .collect::<rusqlite::Result<Vec<_>>>()?;
+                    Ok(names.iter().any(|n| n == "write_cursor"))
+                })
+                .unwrap_or(false)
+        };
+
+        let registered: Vec<&str> = ROW_OWNED_PROJECTIONS.iter().map(|p| p.table).collect();
+
+        // (1) Every write_cursor-keyed table is registered or explicitly excused.
+        for table in &table_names {
+            if !has_write_cursor(table) {
+                continue;
+            }
+            assert!(
+                registered.contains(&table.as_str())
+                    || NON_PROJECTION_CURSOR_TABLES.contains(&table.as_str()),
+                "table `{table}` is keyed by write_cursor but is neither registered in \
+                 ROW_OWNED_PROJECTIONS nor listed as a non-projection source of truth. \
+                 If it is a projection, register it — otherwise erasure will leave its \
+                 rows on disk (the `search_index_v2` defect)."
+            );
+        }
+
+        // (2) Every registered projection actually exists and is erasable by its
+        //     declared cursor column (vec0's `rowid` included).
+        for projection in ROW_OWNED_PROJECTIONS {
+            assert!(
+                table_names.iter().any(|t| t == projection.table),
+                "registered projection `{}` does not exist in the schema",
+                projection.table
+            );
+            conn.query_row(
+                &format!(
+                    "SELECT COUNT(*) FROM {} WHERE {} = 0",
+                    projection.table, projection.cursor_column
+                ),
+                [],
+                |row| row.get::<_, u64>(0),
+            )
+            .unwrap_or_else(|err| {
+                panic!(
+                    "registered projection `{}` is not erasable by `{}`: {err}",
+                    projection.table, projection.cursor_column
+                )
+            });
+        }
+
+        // (3) `_fathomdb_projection_state` is KIND-owned, not row-owned.
+        assert!(
+            !has_write_cursor("_fathomdb_projection_state"),
+            "_fathomdb_projection_state gained a write_cursor column — re-decide its ownership \
+             class before treating it as kind-owned"
+        );
+        assert!(
+            !registered.contains(&"_fathomdb_projection_state"),
+            "_fathomdb_projection_state is KIND-owned (per-kind enqueue watermark) and must \
+             never be deleted per-cursor: erasing one row would rewind a whole kind's watermark"
+        );
+    }
 
     /// Cause-A (0.8.11.2) / C-2 (0.8.19) — `derive_stable_id` id-space contract:
     /// a present `logical_id` yields a `Logical` (`"l:"`) [`IdSpace`]; a NULL or
@@ -12925,7 +14509,7 @@ mod tests {
             .write(&[PreparedWrite::Node {
                 kind: "doc".to_string(),
                 body: "hello".to_string(),
-                source_id: None,
+                source_id: crate::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: None,
                 state: crate::InitialState::Active,
                 reason: None,

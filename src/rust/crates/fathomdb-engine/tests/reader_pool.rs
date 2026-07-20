@@ -114,7 +114,7 @@ fn concurrent_searches_route_to_workers_without_loss_or_duplication() {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "hello world".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,

@@ -101,7 +101,7 @@ fn embeds_are_serialized_engine_side() {
         .map(|i| PreparedWrite::Node {
             kind: "doc".to_string(),
             body: format!("serialize-doc-{i}"),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,

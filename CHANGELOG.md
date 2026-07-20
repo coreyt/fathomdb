@@ -10,6 +10,149 @@ AC-050c) gates merges against this invariant.
 
 (rolls into the next cut after 0.8.9.)
 
+### Changed — BREAKING
+
+- **Multi-document `ingest_with_extractor` batches now require per-entity
+  attribution (0.8.20, R-20-E2).** Provenance is taken from the caller's
+  `ExtractDocument.source_doc_id`; the model's echo of that field is accepted
+  only as a *selector* among the ids the caller supplied in the same batch, and
+  never as a value.
+
+  - **Single-document batches are unaffected.** Attribution is unambiguous, so
+    the echo is ignored and the caller's id is used even if the model omits it.
+  - **Multi-document batches** must carry a `source_doc_id` on **every entity
+    and every edge**, naming one of that batch's documents. An absent or
+    unrecognised value now fails the whole ingest with `ExtractorError`
+    (Rust: `EngineError::Extractor`).
+
+  *Why it fails instead of defaulting:* with several documents in flight the
+  engine cannot know which one an entity came from, and every fallback would
+  silently file the row under the wrong document — leaving it behind when that
+  document is erased. That is the un-erasable-row defect this release closes, so
+  the engine refuses to guess.
+
+  *Migration:* have your extractor set `source_doc_id` on each element it
+  returns. **If it cannot attribute its output, submit single-document
+  batches** — one `ExtractDocument` per call. See
+  [Erasure](https://fathomdb.dev/operations/erasure/).
+
+- **`source_id` (provenance) is now MANDATORY on every canonical write
+  (0.8.20, R-20-E3).** On the Rust surface `PreparedWrite::Node.source_id` and
+  `PreparedWrite::Edge.source_id` changed from `Option<String>` to the new
+  `SourceId` newtype, so an un-provenanced write is now a **compile error** for
+  facade consumers rather than a runtime rejection. In Python and TypeScript a
+  write item lacking `source_id` / `sourceId` raises `WriteValidationError`.
+  `SourceId::new` additionally rejects empty/whitespace-only ids and the whole
+  reserved `_`-prefixed namespace.
+
+  *Why, and why no deprecation window:* `excise_source` addresses rows **by**
+  `source_id`. A row written without one was reachable by no erasure call at
+  all — permanently un-erasable. A compatibility shim would have re-opened
+  exactly the hole this closes, so 0.8.20 takes the break deliberately as the
+  approved coordinated breaking-pair release.
+
+  *Migration:* add a `source_id` to every write. Use an opaque document or
+  tenant id — **not** personal data; see
+  [Erasure](https://fathomdb.dev/operations/erasure/). Schema migration step 21
+  back-fills `source_id = '_legacy:pre-0.8.20'` onto pre-existing rows that had
+  NULL provenance **and** no `logical_id`, so historical anonymous rows become
+  erasable; governed rows keep NULL provenance and stay `purge`-addressable.
+  Audit any database with `fathomdb doctor orphan-provenance`.
+
+- **`ExciseReport.projections_invalidated` / `RebuildReport.rows_invalidated`
+  now report higher counts (0.8.20, R-20-E1).** Both figures previously omitted
+  `search_index_v2` deletions, because the erasure and rebuild paths carried
+  hand-maintained projection lists that had drifted from the actual schema. They
+  are now registry-driven and total. The counts were under-reporting real work;
+  code that asserts an exact value will need re-baselining.
+
+  *This was a data-leak defect, not a cosmetic one:* `search_index_v2` stores
+  the body, so before this fix an excised body survived erasure in that table.
+  It never surfaced in search results (both read paths gate on
+  `canonical_nodes`), which is precisely why it went unnoticed.
+
+- **Retention `cap` semantics changed (0.8.20, R-20-E7/D-A).** The
+  `enforce_provenance_retention` cap now bounds the **sweepable** rows in
+  `operational_mutations`, not every row in the table: the erasure-audit
+  collections (`excise_source_audit`, `excise_record_audit`) and the engine's
+  pending-redaction intent queue (`erasure_pending_redaction`) are exempt from
+  the sweep. A database with audit rows will therefore retain more total
+  op-store rows than the configured cap. An operator who sized `cap` against a
+  physical row count should re-check that assumption.
+
+  *Why:* accountability — demonstrating *that* an erasure occurred — is a
+  distinct obligation from erasure itself, and the previous behaviour let a
+  retention cap silently destroy the proof. The pending-redaction queue is
+  exempt for a second reason: it records an *undischarged* erasure obligation,
+  so sweeping it under cap pressure would silently convert a pending redaction
+  into a reported success.
+
+- **Schema version 20 → 21 (0.8.20).** Migration step 21 back-fills legacy
+  NULL provenance (see the `source_id` entry above). The bump is one-way: an
+  engine older than 0.8.20 refuses to open a migrated database.
+
+  The back-fill predicate is **asymmetric between the two canonical tables**,
+  deliberately. On `canonical_nodes` it is
+  `source_id IS NULL AND logical_id IS NULL`; on `canonical_edges` it is
+  `source_id IS NULL` alone. The `logical_id` gate exists so that a governed
+  row — which `purge` can already reach by `logical_id` — is not made
+  collateral of an `excise_source('_legacy:pre-0.8.20')` call. That rationale
+  holds for nodes and **not** for edges: `purge` resolves its target only
+  through `canonical_nodes` and then erases edges by *endpoint*, never by edge
+  `logical_id`. Gating edges on `logical_id` would therefore have left legacy
+  edges reachable by no erasure verb at all.
+
+### Added
+
+- **`erase_source` / `eraseSource` — provenance-addressed erasure as a
+  first-class SDK verb (0.8.20, R-20-E4).** Available in Python, TypeScript and
+  the Rust facade. `purge` addresses a governed node by `logical_id`;
+  `erase_source` addresses anonymous content — rows with no `logical_id` — by
+  its provenance. Previously the only provenance-addressed erasure was the
+  operator CLI, so an SDK-only consumer with no `fathomdb` binary on `PATH`
+  could not delete anonymous content at all. `excise_source` remains CLI-only
+  and is still the only verb that may address the engine's reserved namespace.
+  Not a recovery-denylist name; the REQ-054 five-name denylist is unchanged.
+
+- **`fathomdb doctor orphan-provenance` (0.8.20, R-20-E8).** Read-only
+  per-`source_id` census over the canonical tables. Reports each provenance
+  bucket and, load-bearingly, `unerasable_rows` — rows carrying neither a
+  `source_id` nor a `logical_id`, which no erasure verb can reach. Exits `65`
+  (`DOCTOR_FOUND_ISSUES`) when that count is non-zero.
+
+- **Erasure completeness at rest (0.8.20, R-20-E5/E6).** Erasure verbs now
+  truncate the write-ahead log (the erased bytes were previously still
+  `grep`-able in `<db>-wal`, since a `DELETE` appends frames rather than
+  rewriting them) and selectively redact the erased ids from the telemetry sink,
+  leaving unrelated sink records intact. On a persistent checkpoint `BUSY`, on
+  a telemetry sink that could not be redacted, and on a sink that has since
+  been **rotated** (a rotated file is not a redacted file — the erased ids may
+  still be in the rotated copy), the verb raises the typed `ErasureIncomplete`
+  rather than reporting success. An erasure verb must never report success on
+  an incomplete erasure. A redaction that cannot be completed in-line is
+  recorded as a durable pending-redaction obligation rather than dropped.
+
+- **`excise_collection_record(collection, record_key)` (0.8.20, R-20-E7).**
+  Record-level op-store erasure. The op-store previously had no record-level
+  delete at all, so a caller holding an erasure obligation over an op-store
+  record had no way to discharge it. It **refuses** to address the engine's
+  own erasure bookkeeping (the audit collections and the pending-redaction
+  queue), which would otherwise let an operator destroy the proof of an
+  erasure, or an undischarged obligation, through a normal-looking call.
+
+- **New public types.** Rust: `SourceId`, `OrphanProvenanceReport`,
+  `OrphanProvenanceSource`; `ExciseReport` is no longer behind the `operator`
+  feature (it is `erase_source`'s return type). Python: `EraseReport`.
+  TypeScript: `EraseReport`.
+
+### Documentation
+
+- **[Erasure](https://fathomdb.dev/operations/erasure/) (new).** What
+  `erase_source` guarantees, and — explicitly — what it does **not**: copies,
+  SQLite free pages absent a `VACUUM`, copy-on-write/snapshotted filesystems,
+  and backups. Also documents the erasure-audit record and the non-PII
+  `source_id` rule.
+
 ### Maintenance
 
 - **Library Sweep #1 (0.8.11.1, label-only).** Contained dependency-hygiene bumps,

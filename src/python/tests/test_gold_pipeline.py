@@ -30,10 +30,13 @@ from eval.gold_capture import (
 )
 from fathomdb import Engine, SearchHit
 
+# 0.8.20 (R-20-E3): `source_id` is mandatory on every canonical write.
+_SOURCE_ID = "py-test:gold-pipeline"
+
 # FTS-only corpus (mirrors test_telemetry_parity.py).
 _CORPUS = [
-    {"kind": "doc", "body": "hybrid retrieval alpha"},
-    {"kind": "doc", "body": "hybrid retrieval beta"},
+    {"kind": "doc", "body": "hybrid retrieval alpha", "source_id": _SOURCE_ID},
+    {"kind": "doc", "body": "hybrid retrieval beta", "source_id": _SOURCE_ID},
 ]
 
 

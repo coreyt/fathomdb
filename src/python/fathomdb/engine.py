@@ -16,7 +16,9 @@ from typing import Any, cast
 
 from fathomdb._fathomdb import ConsolidateReceipt
 from fathomdb._fathomdb import Engine as _NativeEngine
+from fathomdb._fathomdb import EraseReport
 from fathomdb._fathomdb import IngestWithExtractorReceipt
+from fathomdb._fathomdb import erase_source as _native_erase_source
 from fathomdb._fathomdb import purge as _native_purge
 from fathomdb._fathomdb import transition as _native_transition
 from fathomdb.config import EngineConfig
@@ -191,6 +193,34 @@ class Engine:
         id is a no-op success). Keys on the bare ``logical_id`` (``l:`` only) — a
         non-``l:`` id raises ``NotLifecycleAddressableError``. Thin pass-through."""
         _native_purge(self._native, logical_id)
+
+    def erase_source(self, source_id: str) -> EraseReport:
+        """0.8.20 (R-20-E4) — the ``erase_source`` lifecycle verb.
+
+        Erase every canonical row carrying ``source_id``, together with its
+        row-owned projections (FTS5, vec0, ``search_index_v2``), and finish the
+        erasure at rest (telemetry redaction + WAL truncation).
+
+        The COMPANION to :meth:`purge`, not a duplicate of it. ``purge``
+        addresses a *governed* node by ``logical_id``; ``erase_source``
+        addresses *anonymous* content — rows written with no ``logical_id``,
+        which ``purge`` cannot reach at all. Together they make every canonical
+        row erasable from the SDK alone, with no CLI on ``PATH``.
+
+        Idempotent: erasing an absent or already-erased source is a zero-count
+        success, so an interrupted erasure obligation can be retried without a
+        pre-check.
+
+        Raises ``WriteValidationError`` for an empty, whitespace-only or
+        reserved (``_``-prefixed) ``source_id``. The engine's reserved
+        namespace (``_engine:*`` substrate and the ``_legacy:pre-0.8.20``
+        migration cohort) is reachable ONLY through the CLI recovery seam
+        ``fathomdb recover --excise-source``; a single governed call against it
+        would erase every pre-0.8.20 anonymous row.
+
+        NOT a recovery verb: ``erase_source`` carries no REQ-054
+        recovery-denylist name, so AC-041 is unaffected. Thin pass-through."""
+        return _native_erase_source(self._native, source_id)
 
     def embed(self, text: str) -> list[float]:
         """Embed ``text`` with the engine's pinned default embedder

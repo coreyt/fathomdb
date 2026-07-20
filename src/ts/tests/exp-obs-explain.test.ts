@@ -44,9 +44,12 @@ async function searchAfterProjection(
   return last;
 }
 
+// 0.8.20 (R-20-E3): `sourceId` is mandatory on every canonical write.
+const SOURCE_ID = "ts-test:exp-obs-explain";
+
 async function seed(engine: Engine): Promise<void> {
   for (const body of ["hybrid retrieval alpha", "hybrid retrieval beta", "hybrid retrieval gamma"]) {
-    await engine.write([{ kind: "doc", body }]);
+    await engine.write([{ kind: "doc", body, sourceId: SOURCE_ID }]);
   }
   await engine.drain(30_000);
 }

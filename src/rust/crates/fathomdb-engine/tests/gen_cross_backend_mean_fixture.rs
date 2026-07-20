@@ -90,7 +90,7 @@ fn write_docs(engine: &Engine, count: usize, batch: usize) {
             .map(|i| PreparedWrite::Node {
                 kind: "doc".to_string(),
                 body: body(written + i),
-                source_id: None,
+                source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,

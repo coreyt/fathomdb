@@ -66,7 +66,7 @@ fn node(body: &str, logical_id: &str) -> PreparedWrite {
     PreparedWrite::Node {
         kind: "doc".to_string(),
         body: body.to_string(),
-        source_id: None,
+        source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
         logical_id: Some(logical_id.to_string()),
         state: InitialState::Active,
         reason: None,
@@ -78,7 +78,7 @@ fn edge(logical_id: &str, from: &str, to: &str, body: &str) -> PreparedWrite {
         kind: "link".to_string(),
         from: from.to_string(),
         to: to.to_string(),
-        source_id: None,
+        source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
         logical_id: Some(logical_id.to_string()),
         body: Some(body.to_string()),
         t_valid: None,
@@ -121,7 +121,7 @@ fn transition_legal_moves_and_reason_semantics() {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "quarantined body".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: Some("p1".to_string()),
             state: InitialState::Pending,
             reason: Some("awaiting-review".to_string()),
@@ -140,7 +140,7 @@ fn transition_legal_moves_and_reason_semantics() {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "spam body".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: Some("p2".to_string()),
             state: InitialState::Pending,
             reason: None,
@@ -186,7 +186,7 @@ fn illegal_transitions_return_typed_error_with_legal_targets() {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "quarantined body".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: Some("pend".to_string()),
             state: InitialState::Pending,
             reason: None,

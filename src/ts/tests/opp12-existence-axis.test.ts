@@ -20,11 +20,20 @@ import { Engine, read } from "../src/index.js";
 import { WriteValidationError } from "../src/errors.js";
 import { freshDbPath } from "./helpers.js";
 
+// 0.8.20 (R-20-E3): `sourceId` is mandatory on every canonical write. It is
+// orthogonal to the existence axis this suite pins.
+const SOURCE_ID = "ts-test:opp12-existence-axis";
+
 test("existence axis: state/reason round-trip; pending excluded from default reads", async () => {
   const engine = await Engine.open(freshDbPath());
   try {
     await engine.write([
-      { kind: "doc", body: "zephyrunique active payload", logicalId: "act1" },
+      {
+        kind: "doc",
+        body: "zephyrunique active payload",
+        logicalId: "act1",
+        sourceId: SOURCE_ID,
+      },
     ]);
     await engine.write([
       {
@@ -33,11 +42,18 @@ test("existence axis: state/reason round-trip; pending excluded from default rea
         logicalId: "pen1",
         state: "pending",
         reason: "awaiting-review",
+        sourceId: SOURCE_ID,
       },
     ]);
     // Explicit state: "active" is value-identical to the default.
     await engine.write([
-      { kind: "doc", body: "zephyrunique second active", logicalId: "act2", state: "active" },
+      {
+        kind: "doc",
+        body: "zephyrunique second active",
+        logicalId: "act2",
+        state: "active",
+        sourceId: SOURCE_ID,
+      },
     ]);
 
     // R-EX-2 default search excludes the pending node.
@@ -65,7 +81,10 @@ for (const badState of ["deleted", "purged", "bogus"]) {
     const engine = await Engine.open(freshDbPath());
     try {
       await assert.rejects(
-        () => engine.write([{ kind: "doc", body: "x", logicalId: "n1", state: badState }]),
+        () =>
+          engine.write([
+            { kind: "doc", body: "x", logicalId: "n1", state: badState, sourceId: SOURCE_ID },
+          ]),
         (err: unknown) => {
           assert.ok(err instanceof WriteValidationError, "must be WriteValidationError");
           return true;
@@ -82,7 +101,12 @@ test("existence axis: state='active' is a no-op on an all-active corpus", async 
   try {
     for (let i = 0; i < 5; i++) {
       await engine.write([
-        { kind: "doc", body: `commonterm doc number ${i}`, logicalId: `id${i}` },
+        {
+          kind: "doc",
+          body: `commonterm doc number ${i}`,
+          logicalId: `id${i}`,
+          sourceId: SOURCE_ID,
+        },
       ]);
     }
     const hits = (await engine.search("commonterm")).results.filter((h) =>

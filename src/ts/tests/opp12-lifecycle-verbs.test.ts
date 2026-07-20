@@ -27,6 +27,10 @@ import {
 } from "../src/errors.js";
 import { freshDbPath } from "./helpers.js";
 
+// 0.8.20 (R-20-E3): `sourceId` is mandatory on every canonical write. It is
+// orthogonal to the lifecycle axis (transition/purge key on `logicalId`).
+const SOURCE_ID = "ts-test:opp12-lifecycle-verbs";
+
 test("legal transitions + reason clear-on-admit / set-on-exclude", async () => {
   const engine = await Engine.open(freshDbPath());
   try {
@@ -37,13 +41,14 @@ test("legal transitions + reason clear-on-admit / set-on-exclude", async () => {
         logicalId: "p1",
         state: "pending",
         reason: "awaiting-review",
+        sourceId: SOURCE_ID,
       },
     ]);
     assert.equal(await read.get(engine, "p1"), null);
     await engine.transition("p1", "active");
     assert.notEqual(await read.get(engine, "p1"), null);
 
-    await engine.write([{ kind: "doc", body: "live", logicalId: "a1" }]);
+    await engine.write([{ kind: "doc", body: "live", logicalId: "a1", sourceId: SOURCE_ID }]);
     await engine.transition("a1", "deleted", "user-deleted");
     assert.equal(await read.get(engine, "a1"), null);
     await engine.transition("a1", "active");
@@ -56,7 +61,7 @@ test("legal transitions + reason clear-on-admit / set-on-exclude", async () => {
 test("illegal transition is a typed error with fromState/toState/legal", async () => {
   const engine = await Engine.open(freshDbPath());
   try {
-    await engine.write([{ kind: "doc", body: "x", logicalId: "a1" }]);
+    await engine.write([{ kind: "doc", body: "x", logicalId: "a1", sourceId: SOURCE_ID }]);
     await assert.rejects(
       () => engine.transition("a1", "purged"),
       (err: unknown) => {
@@ -107,7 +112,7 @@ for (const badId of ["h:deadbeef", "p:7"]) {
 test("purge requires deleted-first and is idempotent", async () => {
   const engine = await Engine.open(freshDbPath());
   try {
-    await engine.write([{ kind: "doc", body: "x", logicalId: "a1" }]);
+    await engine.write([{ kind: "doc", body: "x", logicalId: "a1", sourceId: SOURCE_ID }]);
     await assert.rejects(
       () => engine.purge("a1"),
       (err: unknown) => {

@@ -65,8 +65,8 @@ fn s18_importance_column_present_and_schema_version_is_18() {
     // 0.8.18 Slice 5 moved the head to step-19 (#5 vector-equivalence probe);
     // step-18 (F9 importance) is no longer the head but MUST still be present.
     assert_eq!(
-        SCHEMA_VERSION, 20,
-        "SCHEMA_VERSION must be 20 (step-20 OPP-12 Phase-1 existence axis)"
+        SCHEMA_VERSION, 21,
+        "SCHEMA_VERSION must be 21 (step-21 legacy provenance backfill, R-20-E8)"
     );
     assert!(
         MIGRATIONS.iter().any(|m| m.step_id == 18),

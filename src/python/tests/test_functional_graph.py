@@ -17,6 +17,9 @@ import pytest
 import fathomdb
 from fathomdb import ExpandedNode, NodeRecord, SearchExpandResult
 
+# 0.8.20 (R-20-E3): `source_id` is mandatory on every canonical write.
+_SOURCE_ID = "py-test:functional-graph"
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -28,12 +31,20 @@ def open_engine(path: str) -> fathomdb.Engine:
 
 
 def _node(logical_id: str, body: str, kind: str = "doc") -> dict:
-    return {"kind": kind, "body": body, "logical_id": logical_id}
+    return {"kind": kind, "body": body, "logical_id": logical_id, "source_id": _SOURCE_ID}
 
 
 def _edge(from_id: str, to_id: str, logical_id: str) -> dict:
     """Edge write item — must be wrapped under the ``"edge"`` key."""
-    return {"edge": {"kind": "link", "from": from_id, "to": to_id, "logical_id": logical_id}}
+    return {
+        "edge": {
+            "kind": "link",
+            "from": from_id,
+            "to": to_id,
+            "logical_id": logical_id,
+            "source_id": _SOURCE_ID,
+        }
+    }
 
 
 def _seed_small_graph(engine: fathomdb.Engine) -> None:

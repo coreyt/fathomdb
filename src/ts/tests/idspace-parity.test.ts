@@ -50,11 +50,21 @@ async function searchAfterProjection(
   return last;
 }
 
+// 0.8.20 (R-20-E3): `sourceId` is mandatory on every canonical write. It does
+// NOT participate in id derivation, so the byte-identical stableId assertions
+// below are unaffected.
+const SOURCE_ID = "ts-test:idspace-parity";
+
 test("idspace: governed hit id is the logical space", async () => {
   const engine = await Engine.open(freshDbPath());
   try {
     await engine.write([
-      { kind: "person", body: "idspace governed entity payload", logicalId: "gov-ts-1" },
+      {
+        kind: "person",
+        body: "idspace governed entity payload",
+        logicalId: "gov-ts-1",
+        sourceId: SOURCE_ID,
+      },
     ]);
     await engine.drain(30_000);
     const hits = await searchAfterProjection(engine, "governed");
@@ -77,7 +87,7 @@ test("idspace: doc-seeded hit id is the content space", async () => {
   const engine = await Engine.open(freshDbPath());
   try {
     const body = "idspace anonymous docseeded xyzzy";
-    await engine.write([{ kind: "doc", body }]);
+    await engine.write([{ kind: "doc", body, sourceId: SOURCE_ID }]);
     await engine.drain(30_000);
     const hits = await searchAfterProjection(engine, "docseeded");
     assert.ok(hits.length > 0, "expected a doc-seeded hit");
@@ -98,8 +108,13 @@ test("idspace: every hit id is non-null and space-total", async () => {
   const engine = await Engine.open(freshDbPath());
   try {
     await engine.write([
-      { kind: "person", body: "idspace total governed totalterm", logicalId: "tot-ts-1" },
-      { kind: "doc", body: "idspace total anonymous totalterm" },
+      {
+        kind: "person",
+        body: "idspace total governed totalterm",
+        logicalId: "tot-ts-1",
+        sourceId: SOURCE_ID,
+      },
+      { kind: "doc", body: "idspace total anonymous totalterm", sourceId: SOURCE_ID },
     ]);
     await engine.drain(30_000);
     const hits = await searchAfterProjection(engine, "totalterm");

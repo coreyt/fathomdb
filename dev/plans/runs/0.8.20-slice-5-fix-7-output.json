@@ -1,0 +1,118 @@
+{
+  "slice": "0.8.20-slice-5-fix-7",
+  "branch": "orch-0.8.20-s5",
+  "worktree": "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5",
+  "baseline": "d710721a6229d07e41dc8df156ca1d75fc1f8f93",
+  "status": "COMPLETE",
+  "head": "e19c5095",
+  "commits": [
+    {
+      "sha": "7c353ac5",
+      "type": "task_a_code",
+      "subject": "fix(0.8.20): probe all three test-hook symbols so a partial binding degrades (verification finding)",
+      "files": [
+        "src/python/tests/_test_hooks_gate.py",
+        "src/python/tests/conftest.py",
+        "src/python/tests/test_test_hooks_gate.py"
+      ]
+    },
+    {
+      "sha": "e19c5095",
+      "type": "task_b_docs",
+      "subject": "docs(0.8.20): final Slice-5 board update — fix-6/fix-7, TC-27 resolved, TC-16 corrected",
+      "files": [
+        "dev/plans/runs/STATUS-0.8.20.md",
+        "dev/todos-and-considerations-ledger.jsonl",
+        "dev/todos-and-considerations-ledger.jsonl.seq",
+        "dev/plans/runs/0.8.20-slice-5-fix-5-output.json",
+        "dev/plans/runs/codex/0.8.20/slice-5-fix-4-5-delta-20260720T022544Z.log",
+        "dev/plans/runs/codex/0.8.20/slice-5-fix-6-rereview-20260720T024726Z.log"
+      ]
+    }
+  ],
+  "task_a": {
+    "defect": "_binding_has_test_hooks() probed only Engine._write_vector_for_test, while the gate it drives protects three test-hooks symbols. A partial binding (both Engine methods present, module-level force_panic_for_test absent) read as PROCEED, so requires_test_hooks skips did not apply and test_panic_surfaces_as_python_exception failed on a missing import instead of skipping cleanly.",
+    "symbols_now_probed": [
+      "Engine._configure_vector_kind_for_test",
+      "Engine._write_vector_for_test",
+      "force_panic_for_test"
+    ],
+    "rust_source_confirmed": "src/rust/crates/fathomdb-py/src/lib.rs — cfg(any(test, feature=\"test-hooks\")) at :1238/:1239, :1246/:1247, :2036/:2038. NOTE: the task cited path fathomdb-py/src/lib.rs; actual path is src/rust/crates/fathomdb-py/src/lib.rs. Line numbers matched exactly.",
+    "design": "TEST_HOOK_SYMBOLS + probe_source() + missing_symbols_from_probe() + partial_binding_note() live in _test_hooks_gate.py next to the policy, so the probed set cannot drift from the gated set. Surface counts as present only if ALL symbols are. Crashed/unparseable probe fails safe to whole-surface-absent => DEGRADED, never PROCEED. Partial binding leads the DEGRADED reason with what is actually missing.",
+    "three_requirements_reverified": {
+      "default_path_still_collects_and_runs": "EXECUTED — pytest --collect-only on this worktree (hook-less) collected 20 items with no import-time raise; degraded banner printed in the header.",
+      "tc27_ownership_check_unoverridable": "UNTOUCHED by this change — venv_belongs_to_source_tree() and decide() ordering not modified; the existing exhaustive 32-cell decision-table test still passes.",
+      "no_vacuous_green": "EXECUTED — degraded banner + real pytest.mark.skip with reason; only marker-carrying tests are skipped; a partial binding now yields DEGRADED rather than PROCEED."
+    },
+    "cosmetic_item": "NOT DONE, deliberately. The three test_verify_embed_db.py tests were left unmarked because that file is currently byte-identical to origin/main, and that identity is load-bearing evidence for the TC-31 pre-existing-failure attribution the board records. Editing it for presentation would have falsified a board fact. They already skip VISIBLY (via the module-scoped fixture), so this is presentation only. Recorded on the board in §11.10."
+  },
+  "gates": [
+    { "gate": "cargo clippy --workspace --all-targets", "exit": 0, "method": "PIPESTATUS" },
+    { "gate": "cargo check --workspace --all-targets", "exit": 0, "method": "PIPESTATUS" },
+    { "gate": "ruff check src/python", "exit": 0, "method": "$?" },
+    { "gate": "python3 -m py_compile (all 3 touched files)", "exit": 0, "method": "$?" },
+    { "gate": "cargo test -p fathomdb-engine --features operator --test erasure_projection_registry", "exit": 0, "result": "4 passed", "method": "PIPESTATUS" },
+    { "gate": "cargo test -p fathomdb-engine --features operator --test provenance_mandatory", "exit": 0, "result": "3 passed", "method": "PIPESTATUS" },
+    { "gate": "cargo test -p fathomdb --test sdk_only_erasure", "exit": 0, "result": "3 passed", "method": "PIPESTATUS" },
+    { "gate": "pytest tests/test_test_hooks_gate.py (gate policy only)", "exit": 0, "result": "20 passed", "method": "PIPESTATUS" },
+    { "gate": "bash scripts/agent-lint-md.sh dev/plans/runs/STATUS-0.8.20.md", "exit": 0, "method": "PIPESTATUS" }
+  ],
+  "gate_note": "All exit codes read via $? / PIPESTATUS on the actual command, never a trailing echo.",
+  "gate_invocation_correction": "The task listed erasure_projection_registry and provenance_mandatory under -p fathomdb; they are actually test targets of fathomdb-engine (bare -p fathomdb exits 101 with 'no test target named ... in fathomdb'). The --features operator requirement was correct. sdk_only_erasure IS in fathomdb, as stated. Corrected invocations recorded on the board §11.3.",
+  "verified_by_execution_vs_reasoning": {
+    "by_execution": [
+      "The probe against a SYNTHETIC partial binding (both Engine methods, no force_panic_for_test) => missing == ('force_panic_for_test',) and decide() => DEGRADED, not PROCEED. This is the reported failure mode, reproduced and closed without needing a compiled extension.",
+      "The probe against a synthetic complete binding => () (PROCEED-eligible), and against an import-failure binding => whole surface reported missing.",
+      "Fail-safe parsing: empty / traceback / malformed-JSON / '[]' / 'null' probe output all yield the whole surface missing.",
+      "conftest.py imports cleanly on a hook-less tree; module-level decision == 'degraded'; live probe reports all three symbols missing; banner rendered in the pytest header.",
+      "conftest._annotate_partial leads the reason with the PARTIAL diagnosis for a partial set, and leaves the reason unchanged for a wholly-absent set and for PROCEED.",
+      "All Rust/ruff/py_compile/md gates above.",
+      "TC-16 mechanism: agent-test.sh line 63 is the test_actionlint_fixture.sh call; set -euo pipefail is on line 3; run_capped (scripts/lib/agent-output.sh:18) returns the child's rc, so under set -e the script aborts there and never reaches the Rust/Python steps.",
+      "git diff origin/main...HEAD is EMPTY over src/python/tests/test_verify_embed_db.py, src/python/tests/test_option2_elps_pipeline.py and eval/r2_parity_eval.py; and over scripts/tests/test_actionlint_fixture.sh and .github/workflows/release.yml (agent-test.sh itself DIFFERS, as expected from fix-6).",
+      "Ledger seq-48 (TC-27 resolved) and seq-49 (TC-16 open/correction) read back from the working diff before citing them on the board; .seq == 49; entries contiguous."
+    ],
+    "by_reasoning_only": [
+      "The Python suite numbers written into the board (775 collected; 1 failed/762 passed/12 skipped default and degraded; 2 failed/766 passed/7 skipped with hooks; cargo test --workspace exit 0 across 148 binaries; shared .venv integrity) are TRANSCRIBED from the orchestrator's isolated-clone verification run at d710721a. They were NOT re-executed here — running the Python suite and agent-test.sh in this worktree is prohibited. The board attributes them to that run.",
+      "That the partial-binding state arises specifically from a stale/interrupted build — plausible mechanism, stated as 'usually' on the board, not asserted as proven."
+    ]
+  },
+  "prohibitions_honored": {
+    "src_changes_limited_to_task_a": true,
+    "no_maturin_develop_or_pip_install_e": true,
+    "no_full_python_suite_run": "Only tests/test_test_hooks_gate.py was run, with FATHOMDB_TESTS_NO_REBUILD=1 and a system interpreter (sys.prefix=/usr, therefore NOT venv-owned), so a rebuild was doubly impossible.",
+    "no_agent_test_sh_execution": true,
+    "no_eu7_run": "eu7_real_corpus_ac untouched; #[ignore] gate intact.",
+    "ownership_check_not_weakened": true,
+    "ledger_not_hand_edited": "seq-48/49 committed exactly as appended by the orchestrator.",
+    "ac079_not_marked_signed": "Board still reads 'BUILT, AWAITING HITL SIGN-OFF — NOT SIGNED'; publish still blocked.",
+    "no_push": true,
+    "no_other_trees_touched": true,
+    "no_stash_clean_or_checkout_discard": "Untracked closure artifacts were staged and committed, never discarded."
+  },
+  "discrepancy_found": {
+    "item": "The task said the BOARD says agent-test.sh 'FAILS LOUDLY' and tells verification runners to export FATHOMDB_TESTS_ALLOW_REBUILD, and to remove it.",
+    "finding": "That text is NOT on the board. Exhaustive grep for 'FAILS LOUDLY' / 'loudly' / 'export' / 'FATHOMDB_TESTS' found no such guidance in STATUS-0.8.20.md. It lives in ledger seq-47, which ledger seq-48 explicitly supersedes as STALE.",
+    "action": "Did not fabricate a removal. The board DID carry a separate stale TC-27 statement (§4 #11: 'conftest.py now refuses to auto-run maturin develop without FATHOMDB_TESTS_ALLOW_REBUILD=1 (conftest.py:77)'), which is the wrong description post-fix-6; that is the statement corrected, and the commit message records the distinction."
+  },
+  "board_updates": [
+    "Header: terminal HEAD 9c87d758+fix-5 -> d710721a (fix-6) + fix-7.",
+    "§1 status + §2 ladder + §7 worktree table: HEAD refreshed to d710721a+fix-7.",
+    "§4 #11 TC-27: restated positively; ownership check named as load-bearing and un-overridable by the env var; marked RESOLVED (seq-48).",
+    "§10 #7 TC-16: correction recorded (seq-49) — wrong script named; agent-test.sh aborts at line 63 so its exit code is not a suite verdict; confirmed pre-existing.",
+    "§11 + §11.1: fix-6 (5452016f, d710721a) and fix-7 (7c353ac5) added to both commit tables.",
+    "§11.2: codex history — rounds 1-4 full-branch (P1+P2 -> P2+P2 -> P1+P2 -> PASS), round 5 fix-4/5 delta (P2), round 6 fix-6 delta (terminal PASS); explicit note that fix-7 has NOT been through codex.",
+    "§11.3: gates re-run at fix-7; added the --features operator / -p fathomdb-engine invocation warning; added the agent-test.sh-exit-code-is-not-a-verdict warning.",
+    "§11.8: Python numbers replaced with the three-state d710721a run; added the 'hook-dependent tests genuinely RAN and PASSED' check and the 'not a session-wide self-skip' evidence; TC-31 bullet strengthened with the empty-diff proof.",
+    "NEW §11.9: fix-6 — codex P2 in our own TC-27 guard, and why the ownership check (not the env var) is load-bearing.",
+    "NEW §11.10: fix-7 — the probe was narrower than the surface it gated; includes the deliberately-unfixed cosmetic item and why.",
+    "§8 timeline: two new entries (fix-7, fix-6) with their lessons.",
+    "AC-079 left untouched: AWAITING HITL SIGN-OFF, NOT SIGNED."
+  ],
+  "git_status_clean": "Clean at commit time (verified after e19c5095). This closure artifact itself is written AFTER the final commit per the task's 'output.json LAST' instruction, so it is the single untracked file remaining — matching the established pattern (fix-5's artifact was likewise committed by the following round).",
+  "next_steps": [
+    "Orchestrator: cherry-pick / land 7c353ac5 + e19c5095, and commit this fix-7 closure artifact with the landing.",
+    "fix-7 has NOT been reviewed by codex; the terminal PASS covers the fix-6 delta. Decide whether a delta review of 7c353ac5 (test-harness-only, no shipped-code change) is required before land.",
+    "Still owed before publish: AC-079 HITL sign-off (blocks publish) and the §4 #7-#14 HITL decisions.",
+    "TC-16 and TC-31 remain OPEN and pre-existing; both out of scope for Slice 5."
+  ]
+}

@@ -21,6 +21,10 @@ import pytest
 from fathomdb import Engine, read
 from fathomdb.errors import WriteValidationError
 
+# 0.8.20 (R-20-E3): `source_id` is mandatory on every canonical write.
+_SOURCE_ID = "py-test:opp12-existence-axis"
+
+
 
 def test_state_and_reason_round_trip_and_pending_excluded(db_path: str) -> None:
     engine = Engine.open(db_path)
@@ -28,7 +32,8 @@ def test_state_and_reason_round_trip_and_pending_excluded(db_path: str) -> None:
         # active (default reason NULL) + explicit pending with a reason; both
         # share the FTS token `zephyrunique` so both are FTS candidates.
         engine.write([
-            {"kind": "doc", "body": "zephyrunique active payload", "logical_id": "act1"},
+            {"kind": "doc", "body": "zephyrunique active payload", "logical_id": "act1",
+             "source_id": _SOURCE_ID},
         ])
         engine.write([
             {
@@ -37,12 +42,13 @@ def test_state_and_reason_round_trip_and_pending_excluded(db_path: str) -> None:
                 "logical_id": "pen1",
                 "state": "pending",
                 "reason": "awaiting-review",
+                "source_id": _SOURCE_ID,
             }
         ])
         # An explicit state="active" is value-identical to the default.
         engine.write([
             {"kind": "doc", "body": "zephyrunique second active", "logical_id": "act2",
-             "state": "active"},
+             "state": "active", "source_id": _SOURCE_ID},
         ])
 
         # R-EX-2 default search excludes the pending node.
@@ -70,7 +76,10 @@ def test_deleted_and_purged_are_not_creatable(db_path: str, bad_state: str) -> N
     try:
         with pytest.raises(WriteValidationError):
             engine.write([
-                {"kind": "doc", "body": "x", "logical_id": "n1", "state": bad_state}
+                # A VALID `source_id` so the rejection is attributable to the
+                # state, not to missing provenance (0.8.20 R-20-E3).
+                {"kind": "doc", "body": "x", "logical_id": "n1", "state": bad_state,
+                 "source_id": _SOURCE_ID}
             ])
     finally:
         engine.close()
@@ -81,7 +90,8 @@ def test_no_op_on_all_active_corpus(db_path: str) -> None:
     try:
         for i in range(5):
             engine.write([
-                {"kind": "doc", "body": f"commonterm doc number {i}", "logical_id": f"id{i}"}
+                {"kind": "doc", "body": f"commonterm doc number {i}",
+                 "logical_id": f"id{i}", "source_id": _SOURCE_ID}
             ])
         hits = [h for h in engine.search("commonterm").results if "commonterm" in h.body]
         assert len(hits) == 5

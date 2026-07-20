@@ -425,7 +425,10 @@ def _build_fathomdb_variant(
         items = list(documents.items())
         for start in range(0, len(items), batch):
             chunk = items[start : start + batch]
-            receipt = engine.write([{"kind": "doc", "body": body} for _, body in chunk])
+            # 0.8.20 (R-20-E3): provenance is mandatory; the corpus doc id IS it.
+            receipt = engine.write(
+                [{"kind": "doc", "body": body, "source_id": doc_id} for doc_id, body in chunk]
+            )
             for (sid, _body), cursor in zip(chunk, receipt.row_cursors):
                 cursor_to_doc[int(cursor)] = sid
         # ``drain`` returns as soon as the projection queue is empty; the large

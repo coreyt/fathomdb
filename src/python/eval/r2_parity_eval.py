@@ -1123,7 +1123,13 @@ def _build_fathomdb(
             # Pass 1: write doc nodes for all ELPS-sample docs
             for start in range(0, len(elps_sample), batch):
                 chunk = elps_sample[start : start + batch]
-                receipt = engine.write([{"kind": "doc", "body": body} for _, body in chunk])
+                # 0.8.20 (R-20-E3): provenance is mandatory; the corpus doc id IS it.
+                receipt = engine.write(
+                    [
+                        {"kind": "doc", "body": body, "source_id": doc_id}
+                        for doc_id, body in chunk
+                    ]
+                )
                 for (doc_id, _body), cursor in zip(chunk, receipt.row_cursors):
                     cursor_to_doc[int(cursor)] = session_id_of(doc_id)
 
@@ -1142,7 +1148,13 @@ def _build_fathomdb(
             # Remainder docs: plain write only (no ELPS extraction)
             for start in range(0, len(remainder), batch):
                 chunk = remainder[start : start + batch]
-                receipt = engine.write([{"kind": "doc", "body": body} for _, body in chunk])
+                # 0.8.20 (R-20-E3): provenance is mandatory; the corpus doc id IS it.
+                receipt = engine.write(
+                    [
+                        {"kind": "doc", "body": body, "source_id": doc_id}
+                        for doc_id, body in chunk
+                    ]
+                )
                 for (doc_id, _body), cursor in zip(chunk, receipt.row_cursors):
                     cursor_to_doc[int(cursor)] = session_id_of(doc_id)
 
@@ -1159,7 +1171,13 @@ def _build_fathomdb(
             items = list(documents.items())
             for start in range(0, len(items), batch):
                 chunk = items[start : start + batch]
-                receipt = engine.write([{"kind": "doc", "body": body} for _, body in chunk])
+                # 0.8.20 (R-20-E3): provenance is mandatory; the corpus doc id IS it.
+                receipt = engine.write(
+                    [
+                        {"kind": "doc", "body": body, "source_id": doc_id}
+                        for doc_id, body in chunk
+                    ]
+                )
                 for (doc_id, _body), cursor in zip(chunk, receipt.row_cursors):
                     cursor_to_doc[int(cursor)] = session_id_of(doc_id)
             engine.drain(timeout_s=120)

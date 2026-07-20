@@ -37,6 +37,7 @@ recovery semantics owned by `dev/design/recovery.md`.
 | `dump-row-counts` | `fathomdb doctor dump-row-counts`                                              | `0` / `65` / `70` / `71` |
 | `dump-profile`    | `fathomdb doctor dump-profile`                                                 | `0` / `65` / `70` / `71` |
 | `dump-mutations`  | `fathomdb doctor dump-mutations <collection> [--after-id <n>] [--limit <n>] [--json] <db_path>` | `0` / `70` / `71` |
+| `orphan-provenance` | `fathomdb doctor orphan-provenance [--json] <db_path>`                        | `0` / `65` / `70` / `71` |
 
 `check-integrity --full` may emit doctor-only finding codes such as
 `E_CORRUPT_INTEGRITY_CHECK`.
@@ -75,6 +76,39 @@ fathomdb doctor dump-mutations events --limit 2 --json ./store.sqlite
 
 Resume the next page with `--after-id 2`. When a page is short (fewer rows than
 `--limit`), `next_after_id` is `null` — the log is exhausted at that cursor.
+
+### `orphan-provenance` — per-`source_id` census
+
+Read-only. Reports every provenance bucket in the canonical tables and, load-
+bearingly, how many rows are reachable by **no** erasure verb.
+
+```bash
+fathomdb doctor orphan-provenance --json ./app.sqlite
+```
+
+```json
+{
+  "verb": "orphan-provenance",
+  "sources": [
+    { "source_id": "tenant-a", "rows": 3, "governed_rows": 0, "reserved": false },
+    { "source_id": "tenant-b", "rows": 2, "governed_rows": 1, "reserved": false },
+    { "source_id": "_legacy:pre-0.8.20", "rows": 9, "governed_rows": 0, "reserved": true }
+  ],
+  "total_rows": 14,
+  "unerasable_rows": 0
+}
+```
+
+`unerasable_rows` counts canonical rows carrying **neither** a `source_id` nor a
+`logical_id`. `purge` keys on `logical_id` and `erase_source` keys on
+`source_id`, so such a row can never be deleted on request. It exits `65`
+(`DOCTOR_FOUND_ISSUES`) when that count is non-zero, `0` otherwise.
+
+`reserved: true` marks the engine's `_`-prefixed namespace. Those buckets are
+erasable only through `fathomdb recover --excise-source`, never through the SDK
+`erase_source` verb. They are reported, but they are **not** an issue.
+
+See [Erasure](../operations/erasure.md) for the full erasure boundary.
 
 ## Recover root
 

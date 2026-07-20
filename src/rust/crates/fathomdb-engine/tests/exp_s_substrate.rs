@@ -80,7 +80,7 @@ fn write_fixture(engine: &Engine) {
         .map(|i| PreparedWrite::Node {
             kind: "doc".to_string(),
             body: format!("leaf body {i} alpha bravo charlie token-{i}"),
-            source_id: Some(format!("leaf-{i}")),
+            source_id: fathomdb_engine::SourceId::new(format!("leaf-{i}")).expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,

@@ -19,10 +19,14 @@ import { Engine } from "../src/index.js";
 import type { SearchHit } from "../src/index.js";
 import { freshDbPath } from "./helpers.js";
 
+// 0.8.20 (R-20-E3): `sourceId` is mandatory on every canonical write. Inert
+// for reranking.
+const SOURCE_ID = "ts-test:functional-reranker";
+
 const CORPUS = [
-  { kind: "doc", body: "cross encoder reranker alpha document" },
-  { kind: "doc", body: "cross encoder reranker beta document" },
-  { kind: "doc", body: "cross encoder reranker gamma document" },
+  { kind: "doc", body: "cross encoder reranker alpha document", sourceId: SOURCE_ID },
+  { kind: "doc", body: "cross encoder reranker beta document", sourceId: SOURCE_ID },
+  { kind: "doc", body: "cross encoder reranker gamma document", sourceId: SOURCE_ID },
 ];
 
 async function openEngineWithDocs(): Promise<Engine> {

@@ -46,7 +46,7 @@ fn active_node(kind: &str, body: &str, logical_id: &str) -> PreparedWrite {
     PreparedWrite::Node {
         kind: kind.to_string(),
         body: body.to_string(),
-        source_id: None,
+        source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
         logical_id: Some(logical_id.to_string()),
         state: InitialState::Active,
         reason: None,
@@ -57,7 +57,7 @@ fn pending_node(kind: &str, body: &str, logical_id: &str, reason: &str) -> Prepa
     PreparedWrite::Node {
         kind: kind.to_string(),
         body: body.to_string(),
-        source_id: None,
+        source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
         logical_id: Some(logical_id.to_string()),
         state: InitialState::Pending,
         reason: Some(reason.to_string()),
@@ -193,7 +193,7 @@ fn r_ex_2_graph_traversal_excludes_pending_neighbor() {
         kind: "link".to_string(),
         from: "root".to_string(),
         to: "nbr".to_string(),
-        source_id: None,
+        source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
         logical_id: Some("e1".to_string()),
         body: None,
         t_valid: None,
@@ -223,7 +223,7 @@ fn r_ex_2_graph_traversal_excludes_pending_neighbor() {
         kind: "link".to_string(),
         from: "root".to_string(),
         to: "nbr".to_string(),
-        source_id: None,
+        source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
         logical_id: Some("e1".to_string()),
         body: None,
         t_valid: None,
@@ -269,7 +269,7 @@ fn r_ex_2_vector_search_excludes_superseded_node_version() {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "quokka original stale body".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: Some("L".to_string()),
             state: InitialState::Active,
             reason: None,
@@ -284,7 +284,7 @@ fn r_ex_2_vector_search_excludes_superseded_node_version() {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "quokka revised fresh body".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: Some("L".to_string()),
             state: InitialState::Active,
             reason: None,

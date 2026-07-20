@@ -106,7 +106,7 @@ fn seed_ac020_fixture(engine: &Engine) {
             .write(&[PreparedWrite::Node {
                 kind: "doc".to_string(),
                 body: format!("vector-doc-{i}"),
-                source_id: None,
+                source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
@@ -116,7 +116,7 @@ fn seed_ac020_fixture(engine: &Engine) {
             .write(&[PreparedWrite::Node {
                 kind: "doc".to_string(),
                 body: format!("hybrid doc hybrid-{i}"),
-                source_id: None,
+                source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
@@ -329,7 +329,7 @@ fn seed_ac012_corpus(engine: &Engine, n: usize) -> Duration {
             batch.push(PreparedWrite::Node {
                 kind: "doc".to_string(),
                 body: synth_chunk_body(&mut rng, &vocab, &cumulative),
-                source_id: None,
+                source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
@@ -441,7 +441,7 @@ fn seed_ac013_corpus(engine: &Engine, n: usize) -> Duration {
             batch.push(PreparedWrite::Node {
                 kind: "doc".to_string(),
                 body: synth_chunk_body(&mut rng, &vocab, &cumulative),
-                source_id: None,
+                source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
@@ -844,7 +844,7 @@ fn ac_013_vector_read_path_smoke() {
         .map(|b| PreparedWrite::Node {
             kind: "doc".to_string(),
             body: b.clone(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
@@ -914,7 +914,7 @@ fn ac_017_vector_projection_freshness_p99_le_five_seconds() {
             .write(&[PreparedWrite::Node {
                 kind: "doc".to_string(),
                 body: format!("projection doc {i}"),
-                source_id: None,
+                source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
@@ -958,7 +958,7 @@ fn ac_018_drain_of_100_vectors_le_two_seconds() {
             .write(&[PreparedWrite::Node {
                 kind: "doc".to_string(),
                 body: format!("doc {i}"),
-                source_id: None,
+                source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,

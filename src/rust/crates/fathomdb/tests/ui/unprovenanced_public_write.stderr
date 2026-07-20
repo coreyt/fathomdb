@@ -1,0 +1,8 @@
+error[E0308]: mismatched types
+  --> tests/ui/unprovenanced_public_write.rs:17:20
+   |
+17 |         source_id: None,
+   |                    ^^^^ expected `SourceId`, found `Option<_>`
+   |
+   = note: expected struct `SourceId`
+                found enum `Option<_>`

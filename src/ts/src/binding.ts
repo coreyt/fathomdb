@@ -65,6 +65,14 @@ interface NativeWriteReceipt {
   danglingEdgeEndpoints: number;
 }
 
+/** 0.8.20 Slice 5d (R-20-E4) — native `eraseSource` outcome. */
+interface NativeEraseReport {
+  sourceRef: string;
+  nodesExcised: number;
+  edgesExcised: number;
+  projectionsInvalidated: number;
+}
+
 interface NativeSoftFallback {
   branch: string;
 }
@@ -290,6 +298,8 @@ export interface NativeEngine {
     reason?: string | null,
   ): Promise<void>;
   purge(logicalId: string): Promise<void>;
+  // 0.8.20 Slice 5d (R-20-E4) — provenance-addressed erasure.
+  eraseSource(sourceId: string): Promise<NativeEraseReport>;
   search(
     query: string,
     filter?: NativeSearchFilter,

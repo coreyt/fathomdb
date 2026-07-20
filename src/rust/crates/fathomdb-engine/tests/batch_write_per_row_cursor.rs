@@ -72,7 +72,7 @@ fn batched_write_produces_one_vec0_row_per_node() {
         .map(|i| PreparedWrite::Node {
             kind: "doc".to_string(),
             body: format!("body-{i} unique-token-{i}"),
-            source_id: Some(format!("id-{i}")),
+            source_id: fathomdb_engine::SourceId::new(format!("id-{i}")).expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
@@ -99,7 +99,7 @@ fn batched_write_each_node_searchable_by_body() {
         .map(|(i, body)| PreparedWrite::Node {
             kind: "doc".to_string(),
             body: body.clone(),
-            source_id: Some(format!("id-{i}")),
+            source_id: fathomdb_engine::SourceId::new(format!("id-{i}")).expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,

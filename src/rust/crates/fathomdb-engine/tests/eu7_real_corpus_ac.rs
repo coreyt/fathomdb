@@ -402,7 +402,7 @@ fn seed_slice(engine: &Engine, bodies: &[String], from: usize, to: usize) -> Dur
             .map(|b| PreparedWrite::Node {
                 kind: "doc".to_string(),
                 body: b.clone(),
-                source_id: None,
+                source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
@@ -735,7 +735,29 @@ fn measure_stress(
 
 // ── Driver ─────────────────────────────────────────────────────────────
 
+/// **TC-20 hard gate (0.8.20 Slice 5 fix-4).** `#[ignore]` — this body NEVER runs
+/// unless a human explicitly asks for it with `-- --ignored`.
+///
+/// The measurement seeds the real BGE embedder through the projection pipeline
+/// at ~1.3 docs/sec, i.e. ~1.5 h of wall clock for the full corpus. It must not
+/// be reachable by an agent's routine `cargo test --workspace`.
+///
+/// Two independent gates, deliberately: the `default-embedder` feature gate
+/// (file-level `#![cfg]`) already keeps this out of the default build, but that
+/// is implicit — a future `--all-features` run, or feature unification via
+/// another crate, would silently arm it. `#[ignore]` holds regardless of which
+/// features are selected.
+///
+/// The `AGENT_LONG` early-return below is kept as a third layer rather than
+/// replaced: an explicit `--ignored` run on a box without the corpus should
+/// still skip rather than fail.
+///
+/// This does NOT create a vacuous green: R-20-EU7 was CLOSED by HITL decision,
+/// so this test no longer gates anything. Run:
+///   AGENT_LONG=1 cargo test -p fathomdb-engine --features default-embedder \
+///     --test eu7_real_corpus_ac -- --ignored --nocapture
 #[test]
+#[ignore = "TC-20: EU-7 real-corpus measurement is ~1.5h of wall clock; opt in with --ignored"]
 fn eu7_real_corpus_ac_validation() {
     if std::env::var_os("AGENT_LONG").is_none() {
         eprintln!("[skip] AGENT_LONG not set; EU-7 real-corpus measurement is opt-in");

@@ -19,8 +19,12 @@ import { freshDbPath } from "./helpers.js";
 // Helpers
 // ---------------------------------------------------------------------------
 
+// 0.8.20 (R-20-E3): `sourceId` is mandatory on every canonical write. Inert
+// for the graph arm — seeding and traversal never read provenance.
+const SOURCE_ID = "ts-test:functional-graph-arm";
+
 function node(logicalId: string, body: string, kind = "doc") {
-  return { kind, body, logicalId };
+  return { kind, body, logicalId, sourceId: SOURCE_ID };
 }
 
 function edge(
@@ -29,7 +33,7 @@ function edge(
   logicalId: string,
   opts: { tInvalid?: string } = {},
 ) {
-  const e: Record<string, unknown> = { kind: "link", from, to, logicalId };
+  const e: Record<string, unknown> = { kind: "link", from, to, logicalId, sourceId: SOURCE_ID };
   if (opts.tInvalid !== undefined) e.tInvalid = opts.tInvalid;
   return { edge: e };
 }

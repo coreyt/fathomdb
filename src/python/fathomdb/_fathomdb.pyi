@@ -242,6 +242,15 @@ def transition(
     reason: str | None = ...,
 ) -> None: ...
 def purge(engine: Engine, logical_id: str) -> None: ...
+
+# 0.8.20 Slice 5d (R-20-E4) — the `erase_source` lifecycle verb + its report.
+class EraseReport:
+    source_ref: str
+    nodes_excised: int
+    edges_excised: int
+    projections_invalidated: int
+
+def erase_source(engine: Engine, source_id: str) -> EraseReport: ...
 def read_get(engine: Engine, logical_id: str) -> NodeRecord | None: ...
 def read_get_many(engine: Engine, logical_ids: list[str]) -> list[NodeRecord | None]: ...
 def read_collection(
@@ -421,3 +430,10 @@ class IllegalTransitionError(EngineError):
 
 class NotLifecycleAddressableError(EngineError):
     id_space: str
+
+# 0.8.20 Slice 5b (R-20-E5) — an erasure verb deleted its rows but could not
+# complete the erasure at rest (typically a WAL checkpoint blocked by a
+# concurrent reader). `stage` names the uncompleted step.
+class ErasureIncompleteError(EngineError):
+    stage: str
+    detail: str

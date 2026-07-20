@@ -28,6 +28,9 @@ from fathomdb import (
     read,
 )
 
+# 0.8.20 (R-20-E3): `source_id` is mandatory on every canonical write.
+_SOURCE_ID = "py-test:surface"
+
 
 def _load_governed_surface_contract() -> dict[str, list[str]]:
     """Load the *single shared* governed-surface contract (AC-074 / REQ-053).
@@ -303,7 +306,7 @@ def test_engine_open_rejects_kwargs_and_config_together(db_path: str) -> None:
 def test_write_receipt_carries_cursor(db_path: str) -> None:
     engine = Engine.open(db_path)
     try:
-        receipt = engine.write([{"kind": "doc", "body": "{}"}])
+        receipt = engine.write([{"kind": "doc", "body": "{}", "source_id": _SOURCE_ID}])
         assert isinstance(receipt, WriteReceipt)
         assert isinstance(receipt.cursor, int)
     finally:

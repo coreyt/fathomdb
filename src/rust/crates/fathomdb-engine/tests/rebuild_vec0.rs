@@ -61,7 +61,7 @@ fn rebuild_vec0_resets_vector_rows_and_preserves_fts() {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "fts content survives".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,

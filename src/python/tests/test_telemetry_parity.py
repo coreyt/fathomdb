@@ -20,12 +20,15 @@ import pytest
 
 from fathomdb import Engine, SearchHit
 
+# 0.8.20 (R-20-E3): `source_id` is mandatory on every canonical write.
+_SOURCE_ID = "py-test:telemetry-parity"
+
 # FTS-only corpus. Both query words ("hybrid", "retrieval") must NOT be
 # substrings of any JSONL key the sink emits (type/query_id/result_ids/arm_of/
 # label_source/branch names) so the privacy assertions are meaningful.
 _CORPUS = [
-    {"kind": "doc", "body": "hybrid retrieval alpha"},
-    {"kind": "doc", "body": "hybrid retrieval beta"},
+    {"kind": "doc", "body": "hybrid retrieval alpha", "source_id": _SOURCE_ID},
+    {"kind": "doc", "body": "hybrid retrieval beta", "source_id": _SOURCE_ID},
 ]
 
 

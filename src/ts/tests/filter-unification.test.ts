@@ -27,6 +27,9 @@ import {
 import { InvalidFilterError } from "../src/errors.js";
 import { freshDbPath } from "./helpers.js";
 
+// 0.8.20 (R-20-E3): `sourceId` is mandatory on every canonical write.
+const SOURCE_ID = "ts-test:filter-unification";
+
 async function seedTodoNodes(engine: Engine): Promise<void> {
   const rows = [
     { logicalId: "A", body: { status: "open", created_at: 100, priority: 5 } },
@@ -34,7 +37,9 @@ async function seedTodoNodes(engine: Engine): Promise<void> {
     { logicalId: "C", body: { status: "open", created_at: 300, priority: 9 } },
   ];
   for (const r of rows) {
-    await engine.write([{ kind: "todo", body: JSON.stringify(r.body), logicalId: r.logicalId }]);
+    await engine.write([
+      { kind: "todo", body: JSON.stringify(r.body), logicalId: r.logicalId, sourceId: SOURCE_ID },
+    ]);
   }
 }
 

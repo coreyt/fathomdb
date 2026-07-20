@@ -27,7 +27,7 @@ fn hit(id: u64, body: &str, score: f64) -> SearchHit {
         body: body.to_string(),
         score,
         branch: SoftFallbackBranch::Vector,
-        source_id: None,
+        source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
         // 0.8.5 — additive CE score; None until set inside `ce_rerank` for in-pool hits.
         ce_score: None,
     }

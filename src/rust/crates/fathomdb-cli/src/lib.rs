@@ -12,9 +12,10 @@ use std::path::PathBuf;
 use clap::{Args, Parser, Subcommand};
 use fathomdb::{
     CheckIntegrityOpts, CorruptionLocator, DumpProfileReport, DumpRowCountsReport,
-    DumpSchemaReport, Engine, EngineError, EngineOpenError, ExciseReport, Finding, IntegrityReport,
-    MeanRecomputeReport, RebuildKind, RebuildReport, SafeExportArtifact, SchemaObject, Section,
-    TraceReport, TruncateWalReport, TruncateWalStatus, VerifyEmbedderReport, VerifyEmbedderStatus,
+    DumpSchemaReport, Engine, EngineError, EngineOpenError, ExciseRecordReport, ExciseReport,
+    Finding, IntegrityReport, MeanRecomputeReport, OrphanProvenanceReport, RebuildKind,
+    RebuildReport, SafeExportArtifact, SchemaObject, Section, TraceReport, TruncateWalReport,
+    TruncateWalStatus, VerifyEmbedderReport, VerifyEmbedderStatus,
 };
 use serde_json::{json, Value};
 
@@ -95,6 +96,17 @@ pub struct RecoverArgs {
     #[arg(long)]
     pub excise_source: Option<String>,
 
+    /// 0.8.20 Slice 5b (R-20-E7) — op-store collection holding the record to
+    /// excise. Paired with `--excise-record-key`; both are required together.
+    #[arg(long, requires = "excise_record_key")]
+    pub excise_collection: Option<String>,
+
+    /// 0.8.20 Slice 5b (R-20-E7) — record key to excise from
+    /// `--excise-collection`. Erases every append-only-log version of the key
+    /// plus its latest-state row.
+    #[arg(long, requires = "excise_collection")]
+    pub excise_record_key: Option<String>,
+
     /// Emit machine-readable JSON output.
     #[arg(long)]
     pub json: bool,
@@ -135,6 +147,13 @@ pub enum DoctorCommand {
     /// `ADR-0.6.0-cli-scope`), NOT the rejected `search`/`get`/`list`
     /// application query surface. CLI-only; no SDK parity.
     DumpMutations(DumpMutationsArgs),
+    /// 0.8.20 Slice 5d (R-20-E8) — read-only per-`source_id` census over the
+    /// canonical tables. Reports which provenance buckets exist and, load-
+    /// bearingly, how many rows are reachable by NO erasure verb (neither a
+    /// `source_id` for `erase_source` nor a `logical_id` for `purge`). A
+    /// non-zero un-erasable count exits `DOCTOR_FOUND_ISSUES` (65).
+    /// CLI-only; no SDK parity.
+    OrphanProvenance(SimpleDoctorArgs),
 }
 
 /// EU-5b — `fathomdb doctor warm-cache` argument set.
@@ -331,6 +350,24 @@ pub fn outcome_to_exit_code(outcome: CliOutcome) -> i32 {
 pub fn engine_error_to_outcome(err: &EngineError) -> CliOutcome {
     match err {
         EngineError::Closing => CliOutcome::LockHeld,
+        // 0.8.20 Slice 5b (R-20-E5) — `LOCK_HELD` (71), NOT `UNRECOVERABLE` (70).
+        //
+        // `LOCK_HELD` is documented as "lock-held or equivalent
+        // precondition-blocked outcome", and that is exactly this case: the
+        // erasure verb's row deletions committed, and the only step that failed
+        // — `wal_checkpoint(TRUNCATE)` — failed because a CONCURRENT READER is
+        // pinning a WAL snapshot. It is precondition-blocked and retryable, so
+        // `UNRECOVERABLE` would tell an operator's script the opposite of the
+        // truth and invite a destructive escalation instead of a retry.
+        //
+        // Non-zero either way, so the "an erasure verb must never report success
+        // on an incomplete erasure" contract holds under both mappings; 71 is
+        // chosen for the ACTIONABILITY of the signal. Caveat (accepted): the
+        // rarer `stage = "telemetry_redaction"` failure is a sink I/O error
+        // rather than a lock, and it also lands on 71; the JSON envelope carries
+        // `code` + `detail` naming the real stage, so the precise cause is not
+        // lost.
+        EngineError::ErasureIncomplete { .. } => CliOutcome::LockHeld,
         _ => CliOutcome::Unrecoverable,
     }
 }
@@ -384,6 +421,16 @@ fn run_recover(args: RecoverArgs) -> i32 {
     if let Some(source_id) = args.excise_source.as_deref() {
         return wire_recover(&args.db_path, "excise-source", |e| {
             e.excise_source(source_id).map(|r| excise_report_json(&r))
+        });
+    }
+    // 0.8.20 Slice 5b (R-20-E7) — op-store record erasure. Clap's `requires`
+    // pairing guarantees both flags arrive together.
+    if let (Some(collection), Some(record_key)) =
+        (args.excise_collection.as_deref(), args.excise_record_key.as_deref())
+    {
+        return wire_recover(&args.db_path, "excise-record", |e| {
+            e.excise_collection_record(collection, record_key)
+                .map(|r| excise_record_report_json(&r))
         });
     }
     if args.truncate_wal {
@@ -451,6 +498,22 @@ fn run_doctor(cmd: DoctorCommand) -> i32 {
         DoctorCommand::DumpProfile(args) => run_doctor_verb(&args.db_path, "dump-profile", |e| {
             e.dump_profile().map(|r| (dump_profile_report_json(&r), CliOutcome::Clean))
         }),
+        DoctorCommand::OrphanProvenance(args) => {
+            run_doctor_verb(&args.db_path, "orphan-provenance", |e| {
+                e.orphan_provenance().map(|r| {
+                    // An un-erasable row is actionable non-clean state: the
+                    // database holds content no erasure request can reach.
+                    // Everything else (including `_legacy:` rows, which ARE
+                    // erasable through the operator seam) is merely reported.
+                    let outcome = if r.unerasable_rows > 0 {
+                        CliOutcome::Findings
+                    } else {
+                        CliOutcome::Clean
+                    };
+                    (orphan_provenance_report_json(&r), outcome)
+                })
+            })
+        }
         DoctorCommand::WarmCache(args) => run_doctor_warm_cache(args),
         DoctorCommand::RecomputeMean(args) => {
             run_doctor_verb(&args.db_path, "recompute-mean", |e| {
@@ -729,6 +792,8 @@ fn engine_error_code(err: &EngineError) -> &'static str {
         // OPP-12 Phase-1 (0.8.19 Slice 10) — lifecycle-verb typed errors.
         EngineError::IllegalTransition { .. } => "IllegalTransitionError",
         EngineError::NotLifecycleAddressable { .. } => "NotLifecycleAddressableError",
+        // 0.8.20 Slice 5b (R-20-E5) — erasure verb could not finish at rest.
+        EngineError::ErasureIncomplete { .. } => "ErasureIncompleteError",
     }
 }
 
@@ -850,6 +915,20 @@ fn excise_report_json(r: &ExciseReport) -> Value {
     })
 }
 
+/// 0.8.20 Slice 5b (R-20-E7). Emits the audit DIGEST, never the erased
+/// `record_key` — a record key is arbitrary caller-supplied text and may itself
+/// be the identifier being erased, so echoing it into CLI output (and thence
+/// into an operator's shell history or log pipeline) would defeat the erasure.
+fn excise_record_report_json(r: &ExciseRecordReport) -> Value {
+    json!({
+        "verb": "excise-record",
+        "collection": r.collection,
+        "record_digest": r.record_digest,
+        "records_excised": r.records_excised,
+        "state_rows_excised": r.state_rows_excised,
+    })
+}
+
 fn verify_embedder_report_json(r: &VerifyEmbedderReport) -> Value {
     let status = match r.status {
         VerifyEmbedderStatus::Match => "match",
@@ -901,6 +980,20 @@ fn dump_row_counts_report_json(r: &DumpRowCountsReport) -> Value {
             "name": c.name,
             "rows": c.rows,
         })).collect::<Vec<_>>(),
+    })
+}
+
+fn orphan_provenance_report_json(r: &OrphanProvenanceReport) -> Value {
+    json!({
+        "verb": "orphan-provenance",
+        "sources": r.sources.iter().map(|s| json!({
+            "source_id": s.source_id,
+            "rows": s.rows,
+            "governed_rows": s.governed_rows,
+            "reserved": s.reserved,
+        })).collect::<Vec<_>>(),
+        "total_rows": r.total_rows,
+        "unerasable_rows": r.unerasable_rows,
     })
 }
 

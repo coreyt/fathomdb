@@ -33,6 +33,9 @@ import typing
 from fathomdb import Engine, Explanation, PerHitExplain, QueryTrace, SearchResult
 from fathomdb.types import SoftFallbackBranch
 
+# 0.8.20 (R-20-E3): `source_id` is mandatory on every canonical write.
+_SOURCE_ID = "py-test:exp-obs-explain"
+
 
 def _search_after_projection(engine: Engine, query: str, *, explain: bool) -> SearchResult:
     deadline = time.monotonic() + 10.0
@@ -47,7 +50,7 @@ def _search_after_projection(engine: Engine, query: str, *, explain: bool) -> Se
 
 def _seed(engine: Engine) -> None:
     for body in ["hybrid retrieval alpha", "hybrid retrieval beta", "hybrid retrieval gamma"]:
-        engine.write([{"kind": "doc", "body": body}])
+        engine.write([{"kind": "doc", "body": body, "source_id": _SOURCE_ID}])
     engine.drain(timeout_s=30)
 
 

@@ -31,7 +31,7 @@ fn node(kind: &str, body: &str, logical_id: &str) -> PreparedWrite {
     PreparedWrite::Node {
         kind: kind.to_string(),
         body: body.to_string(),
-        source_id: None,
+        source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
         logical_id: Some(logical_id.to_string()),
         state: fathomdb_engine::InitialState::Active,
         reason: None,
@@ -43,7 +43,7 @@ fn edge(from: &str, to: &str, logical_id: &str) -> PreparedWrite {
         kind: "link".to_string(),
         from: from.to_string(),
         to: to.to_string(),
-        source_id: None,
+        source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
         logical_id: Some(logical_id.to_string()),
         body: None,
         t_valid: None,
@@ -59,7 +59,7 @@ fn edge_with_t_invalid(from: &str, to: &str, logical_id: &str, t_invalid: &str) 
         kind: "link".to_string(),
         from: from.to_string(),
         to: to.to_string(),
-        source_id: None,
+        source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
         logical_id: Some(logical_id.to_string()),
         body: None,
         t_valid: None,
@@ -411,7 +411,7 @@ fn t_invalid_tformat_edge_correctly_excluded() {
                 logical_id: None,
                 from: a_id.to_string(),
                 to: b_id.to_string(),
-                source_id: None,
+                source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 kind: "expired_link".to_string(),
                 // t_invalid in the past using ISO-8601 T-format
                 t_invalid: Some("2020-01-01T00:00:00Z".to_string()),
@@ -576,7 +576,7 @@ fn search_expand_anon_node_hit_does_not_crash() {
             PreparedWrite::Node {
                 kind: "doc".to_string(),
                 body: "anon shimmer unique probe alpha node".to_string(),
-                source_id: None,
+                source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: None, // anonymous — no logical_id
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
@@ -616,7 +616,7 @@ fn write_rejects_logical_id_containing_record_separator() {
     let result = engine.write(&[PreparedWrite::Node {
         kind: "doc".to_string(),
         body: "body".to_string(),
-        source_id: None,
+        source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
         logical_id: Some(bad_id.to_string()),
         state: fathomdb_engine::InitialState::Active,
         reason: None,
@@ -639,7 +639,7 @@ fn write_rejects_edge_endpoint_containing_record_separator() {
         kind: "link".to_string(),
         from: "A".to_string(),
         to: "B\x1eC".to_string(), // contains char(30)
-        source_id: None,
+        source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
         logical_id: None,
         body: None,
         t_valid: None,

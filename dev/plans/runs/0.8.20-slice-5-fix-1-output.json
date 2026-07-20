@@ -1,0 +1,220 @@
+{
+  "slice": "0.8.20-slice-5-fix-1",
+  "title": "codex §9 review-gate remediation — P1 legacy edges erasable by no verb + P2 telemetry-redaction retry falsely reports success",
+  "branch": "orch-0.8.20-s5",
+  "baseline": "4b78658d974d4ff49bda8db515c794673b7fd760",
+  "head": "00b46b84f5c1026b8b5d630753c06bc020b463e0",
+  "status": "COMPLETE — both findings fixed, each with a test that produced a genuine runtime RED at baseline. No blockers. Two pre-existing non-regressions itemized under non_regression.pre_existing_failures.",
+  "review_transcript": "dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log",
+
+  "commits": [
+    {
+      "sha": "40f0c05f6b39fd3ac6bd8bcb13feffcf45dd6e96",
+      "subject": "test(0.8.20): RED — legacy governed edges erasable by no verb + redaction retry falsely reports success (codex P1/P2)",
+      "kind": "test-only (RED)"
+    },
+    {
+      "sha": "989fd7eff0f42d349680595a221f76671270fd25",
+      "subject": "fix(0.8.20): backfill legacy edge provenance — edge logical_id is not purge-addressable (codex P1)",
+      "kind": "fix (finding 1)"
+    },
+    {
+      "sha": "230e0ee33159f01d9d3a59f479aa9b1df644ffc9",
+      "subject": "fix(0.8.20): durable pending-redaction queue — a retry must finish the erasure, not forget it (codex P2)",
+      "kind": "fix (finding 2)"
+    },
+    {
+      "sha": "00b46b84f5c1026b8b5d630753c06bc020b463e0",
+      "subject": "refactor(0.8.20): drop the now-dead erased-id return from the erasure inner fns",
+      "kind": "cleanup made necessary by finding 2 (see implementation.finding_2.dead_plumbing_removed)"
+    }
+  ],
+
+  "finding_1": {
+    "codex_severity": "P1",
+    "claim": "Legacy canonical_edges rows with source_id IS NULL AND logical_id IS NOT NULL are erasable by NO verb.",
+    "independently_reconfirmed_from_source": true,
+    "mechanism": "Migration step 21 applied the SAME predicate `WHERE source_id IS NULL AND logical_id IS NULL` to canonical_nodes and canonical_edges. The gate's stated rationale is that a governed row keeps NULL source_id because purge reaches it BY logical_id. That is TRUE FOR NODES and FALSE FOR EDGES: purge_inner resolves its lifecycle target exclusively via `SELECT state FROM canonical_nodes WHERE logical_id = ?1 AND superseded_at IS NULL`, then erases edges by ENDPOINT (from_id/to_id) — it never resolves an edge by edge logical_id. Edge logical_id is only a supersession identity. So such an edge was skipped by the backfill (unreachable by excise_source/erase_source) AND not purge-addressable, defeating R-20-E8.",
+    "fix": {
+      "canonical_nodes": "UNCHANGED — predicate remains `WHERE source_id IS NULL AND logical_id IS NULL`. Governed nodes keep NULL source_id exactly as before.",
+      "canonical_edges": "`WHERE source_id IS NULL` alone, regardless of logical_id.",
+      "migration_mechanics": "Step 21 AMENDED IN PLACE. No step 22 was added. Step 21 has not shipped and SCHEMA_VERSION already read 21, so one-migration-per-release (I-6) holds and SCHEMA_VERSION is unchanged at 21 (asserted green by s21_is_head_and_schema_version_is_21).",
+      "doc_comment": "Existing doc-comment shape kept; prose rewritten to state the node/edge asymmetry and its reason (edge logical_id confers no purge-addressability), and to record that back-filling source_id touches neither of the TC-11 pin's prohibitions."
+    },
+    "tc11_pin": "NOT re-opened and NOT weakened. The pin forbids populating logical_id on an existing row and forbids re-deriving a stored row's id-space. This writes only source_id, and only on edges. s21_backfill_populates_no_logical_id remains green unmodified.",
+    "files": [
+      "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/rust/crates/fathomdb-schema/src/lib.rs",
+      "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/rust/crates/fathomdb-schema/tests/step21_migration.rs"
+    ]
+  },
+
+  "finding_2": {
+    "codex_severity": "P2",
+    "assessed_actual_severity": "P1-class in effect — an erasure verb returning success while erased stable ids remain readable in the telemetry sink, silently and indistinguishably from a real erasure (R-20-E5: 'an erasure verb must NEVER report success on an incomplete erasure').",
+    "independently_reconfirmed_from_source": true,
+    "mechanism": "Redaction necessarily runs AFTER the erasing transaction commits (the sink is a file and cannot join the transaction). On failure the verb correctly raised ErasureIncomplete{stage:'telemetry_redaction'} and told the operator to retry — but the retry recomputed erased_stable_ids by querying canonical_nodes/canonical_edges, whose rows the first call had already deleted. It therefore obtained an EMPTY id set, hit the empty-id fast path in redact_telemetry_stable_ids (lib.rs:6952-6953 at baseline) and returned Ok with the leaked l:/h: ids still in the sink.",
+    "durable_pending_redaction_design": {
+      "shape": "An intent log (write-ahead obligation record), not a retry counter.",
+      "storage": "operational_mutations, collection_name = 'erasure_pending_redaction' (new const ERASURE_PENDING_REDACTION_COLLECTION). No new table and no schema change — SCHEMA_VERSION stays 21.",
+      "enqueue": "enqueue_pending_redaction() is called INSIDE the erasing transaction, after the DELETEs and before COMMIT, in both purge_inner and excise_source_inner. The ids were already collected before the DELETEs (they derive from logical_id/body, which the DELETEs destroy). Because enqueue shares the transaction, 'the rows are gone' and 'a redaction is owed for them' commit atomically — there is no window, crash-induced or otherwise, in which the first is true and the second unrecorded.",
+      "payload": "{\"verb\": <verb>, \"erased_stable_ids\": [...]}. record_key is the VERB, never a stable id.",
+      "discharge": "complete_erasure_at_rest no longer accepts an id vector at all; it calls discharge_pending_redactions(verb), which loads the QUEUE, unions+dedupes the ids, redacts, and only then deletes the queue entries. The empty-id fast path is therefore unreachable while an obligation is outstanding, because the caller's (empty) vector is no longer an input.",
+      "drained_by_every_verb": "Any erasure verb drains the whole queue, not just a retry of the one that failed — an outstanding erasure obligation belongs to the engine, not to one call.",
+      "failure_semantics": "If redaction fails, the queue rows stay put and the error propagates; the verb does not report success and the next call retries the same obligation. NotFound on the sink is still a legitimate success (sink deleted/moved ⇒ nothing to redact) and retires the entry.",
+      "honest_refusal": "If a redaction is owed but no telemetry sink is attached to this Engine (only reachable if the process restarted between the failure and the retry without re-enabling telemetry), the ids genuinely are still in the sink file, so discharge returns ErasureIncomplete naming the outstanding count rather than guessing. There is no disable-telemetry API, so this cannot arise within a single process lifetime.",
+      "ordering_vs_wal": "Queue entries are cleared (committed) BEFORE the wal_checkpoint(TRUNCATE) that follows in complete_erasure_at_rest, so the freed pages holding the ids — zeroed by the standing PRAGMA secure_delete=ON — are checkpointed out of the log rather than left as committed frames.",
+      "retention_exemption": "ERASURE_PENDING_REDACTION_COLLECTION is excluded from enforce_provenance_retention alongside ERASURE_AUDIT_COLLECTIONS, on a strictly stronger justification: an audit row records a DISCHARGED obligation, whereas a pending row records an UNdischarged one. Sweeping it would drop an erasure the engine still owes and let the next retry report success — i.e. it would re-create precisely this defect through cap pressure.",
+      "enqueue_precondition": "Enqueued only when telemetry is enabled and the id set is non-empty. With no sink there is no file the ids could have leaked into, so nothing is owed; this also preserves the existing fast-OFF posture for the common case.",
+      "exposure_tradeoff_stated": "A pending row holds the stable ids in the database for the window between the delete and the redaction. This is a strict improvement, not a new leak: during exactly that window those same ids are already readable in the telemetry sink (the leak being closed), the row is deleted the moment the sink is clean, and the freed pages are zeroed by secure_delete=ON and then truncated out of the WAL. Documented in-line on discharge_pending_redactions rather than left implicit.",
+      "unparseable_payload": "A payload that cannot be parsed yields an empty id list but the entry is RETAINED, so it can never unblock a false success; discharge still refuses."
+    },
+    "files": [
+      "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/rust/crates/fathomdb-engine/src/lib.rs",
+      "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/rust/crates/fathomdb-engine/tests/erasure_completeness.rs"
+    ],
+    "dead_plumbing_removed": "With the queue carrying the obligation, purge_inner and excise_source_inner no longer need to return their stable ids — every caller bound them to `_`. They were removed (purge_inner -> Result<(), _>; excise_source_inner -> Result<ExciseReport, _>) because returning them invites exactly this defect: it implies the caller's vector is the source of truth for what redaction is owed, when on the retry path that vector is empty and the queue is not. Behaviour unchanged; commit 00b46b84."
+  },
+
+  "red_evidence": {
+    "discipline": "Both findings are defects in already-written code, so a genuine runtime RED was expected and BOTH were obtained. Neither is a claimed-but-unobserved RED.",
+    "finding_1": {
+      "test": "legacy_backfill_covers_governed_edges (src/rust/crates/fathomdb-schema/tests/step21_migration.rs)",
+      "command": "cargo test -p fathomdb-schema --test step21_migration",
+      "exit_code_at_baseline": 101,
+      "result_line": "test result: FAILED. 3 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out",
+      "assertion_output_verbatim": "thread 'legacy_backfill_covers_governed_edges' panicked at src/rust/crates/fathomdb-schema/tests/step21_migration.rs:199:5:\nassertion `left == right` failed: a legacy edge with NULL provenance and a non-NULL `logical_id` must be back-filled: edge `logical_id` is NOT purge-addressable, so without this the row is erasable by no verb at all (R-20-E8)\n  left: None\n right: Some(\"_legacy:pre-0.8.20\")",
+      "second_red": {
+        "test": "legacy_backfill_spares_governed_rows",
+        "note": "Its EDGE assertion encoded the defect (asserting a governed edge keeps NULL source_id) and was corrected in the same RED commit, so it also went red at baseline. Its NODE assertions were left untouched and the test is green after the fix, as required.",
+        "assertion_output_verbatim": "thread 'legacy_backfill_spares_governed_rows' panicked at src/rust/crates/fathomdb-schema/tests/step21_migration.rs:133:5:\nassertion `left == right` failed: an edge `logical_id` is not purge-addressable, so a governed edge must still be back-filled or it is erasable by no verb at all\n  left: None\n right: Some(\"_legacy:pre-0.8.20\")"
+      },
+      "assertion_target": "RAW TABLE CONTENTS — SELECT source_id FROM canonical_edges WHERE write_cursor = ? (design §3 Rule 1). Never via search results.",
+      "non_vacuity_guard": "The test asserts the seed row is genuinely the codex shape (source_id NULL, logical_id = 'lid-edge-governed') before migrating, and asserts step 21 exists in the ladder (an empty step list makes migrate_with_steps a no-op)."
+    },
+    "finding_2": {
+      "test": "telemetry_redaction_retry_completes_after_failure (src/rust/crates/fathomdb-engine/tests/erasure_completeness.rs)",
+      "command": "cargo test -p fathomdb-engine --features operator --test erasure_completeness telemetry_redaction_retry_completes_after_failure",
+      "exit_code_at_baseline": 101,
+      "result_line": "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out",
+      "assertion_output_verbatim": "thread 'telemetry_redaction_retry_completes_after_failure' panicked at src/rust/crates/fathomdb-engine/tests/erasure_completeness.rs:359:5:\nthe retry reported SUCCESS while the erased stable id is STILL in the telemetry sink — an erasure verb must never report success on an incomplete erasure (R-20-E5):\n{\"arm_of\":{\"1\":\"text\"},\"query_chars\":4,\"query_id\":\"q0-0\",\"result_ids\":[1],\"result_stable_ids\":[\"l:victim-1\"],\"schema_version\":1,\"ts_monotonic_ms\":3,\"type\":\"event\"}\n{\"arm_of\":{\"2\":\"text\"},\"query_chars\":5,\"query_id\":\"q0-1\",\"result_ids\":[2],\"result_stable_ids\":[\"l:control-1\"],\"schema_version\":1,\"ts_monotonic_ms\":3,\"type\":\"event\"}",
+      "red_reconfirmed_with_final_test": "YES. The RED was re-run against the pre-fix source (git show HEAD~1:.../lib.rs restored over the working copy, everything already committed) using the FINAL version of the test, and reproduced the identical primary assertion. The output above is that second, definitive run. The source was then restored with git checkout HEAD -- (safe: fully committed).",
+      "failure_injection": "The sink's own directory (separate from the database, so the db/-wal are never frozen) is chmod 0o555, so redact_jsonl_stable_ids cannot create its .redact.tmp sibling — PermissionDenied, deliberately NOT NotFound, since NotFound is a legitimate 'sink is gone, nothing to redact' success.",
+      "assertion_target": "RAW FILE contents of the telemetry sink, plus a raw SQL COUNT over canonical_nodes on an independent connection to prove the delete transaction committed. Never via search results.",
+      "non_vacuity_guards": [
+        "Asserts the first call fails with stage == 'telemetry_redaction' specifically, not merely ErasureIncomplete — so the test cannot pass by failing somewhere else.",
+        "Asserts, between the two attempts, that the canonical rows are gone AND the leaked id is still in the sink — i.e. the exact precondition that makes the naive retry recompute an empty id set.",
+        "Panics with an explicit message if the 0o555 mode is not honoured (e.g. running as root), rather than passing vacuously.",
+        "Asserts l:control-1 SURVIVES, so the fix cannot pass by truncating the sink. (This assertion initially failed on the fixed code because the test had not captured the control id — the test was corrected to search for it, not the assertion weakened.)"
+      ]
+    }
+  },
+
+  "gates": {
+    "method": "Exit codes read from PIPESTATUS/$?. No trailing echo was used to synthesize a status.",
+    "CLIPPY_EXIT": 0,
+    "CLIPPY_COMMAND": "cargo clippy --workspace --all-targets",
+    "CHECK_EXIT": 0,
+    "CHECK_COMMAND": "cargo check --workspace --all-targets",
+    "both_rerun_after_final_commit": true,
+    "cargo_fmt": "clean — enforced by the repo pre-commit hook, which rejected one commit attempt on formatting and was satisfied before landing.",
+    "agent_test_sh": "NOT run as an aggregate. Per the mandate it exits 1 wholesale on the pre-existing dead publish dry-run assertion (TC-16, dead since 0.8.14) and set -e aborts there; downstream steps were run individually and are reported per-suite below."
+  },
+
+  "schema_version_pin": {
+    "value": 21,
+    "changed_by_this_fix": false,
+    "reason": "Step 21 was amended in place rather than superseded by a step 22.",
+    "asserted_by": "s21_is_head_and_schema_version_is_21 (green)",
+    "fathomdb_schema_suite": "cargo test -p fathomdb-schema — ALL GREEN (step21_migration 5/5 including the two REDs now green; 12 + 6 + 5 + 4 + 3 + 3 + 3 + 2 + 1 + 1 across the remaining targets; 0 failed anywhere)"
+  },
+
+  "non_regression": {
+    "instruction": "Explicitly required: MUST NOT regress any prior sub-slice.",
+    "named_suites_required_by_mandate": [
+      {"suite": "cargo test -p fathomdb-engine --features operator --test erasure_projection_registry", "expected": 4, "result": "ok. 4 passed; 0 failed", "sub_slice": "5a"},
+      {"suite": "cargo test -p fathomdb-engine --features operator --test erasure_completeness", "expected": "7 prior + 1 new", "result": "ok. 8 passed; 0 failed", "sub_slice": "5b + this fix"},
+      {"suite": "cargo test -p fathomdb-engine --features operator --test provenance_mandatory", "result": "ok. 3 passed; 0 failed", "sub_slice": "5c"},
+      {"suite": "cargo test -p fathomdb-engine --features operator --test source_id_writes", "result": "ok. 4 passed; 0 failed", "sub_slice": "5c"},
+      {"suite": "cargo test -p fathomdb-schema --test step21_migration", "result": "ok. 5 passed; 0 failed (4 prior + 1 new)", "sub_slice": "5c migration"},
+      {"suite": "cargo test -p fathomdb --test sdk_only_erasure", "expected": 3, "result": "ok. 3 passed; 0 failed", "note": "Run EXPLICITLY as its own invocation — the target is #![cfg(not(feature = \"operator\"))], so a feature-unified workspace run compiles it to nothing.", "sub_slice": "5d"},
+      {"suite": "cargo test -p fathomdb --test no_recovery_surface", "result": "ok. 1 passed; 0 failed", "gate": "AC-041"},
+      {"suite": "cargo test -p fathomdb --test governed_surface", "result": "ok. 3 passed; 0 failed", "sub_slice": "5d"}
+    ],
+    "engine_suite_full": {
+      "command": "cargo test -p fathomdb-engine --features operator --test <T> for every test target",
+      "targets_run": 98,
+      "targets_failed": 0,
+      "targets_skipped": 1,
+      "skipped": "eu7_real_corpus_ac — DELIBERATELY NOT RUN in any form, at any N, on any backend (CLOSED BY HITL DECISION). NOTE FOR THE ORCHESTRATOR: this target is NOT #[ignore]-gated, so a bare `cargo test -p fathomdb-engine --features operator` or `cargo test --workspace` WILL execute it. The suite was therefore run target-by-target with that one excluded, rather than wholesale.",
+      "additionally_green": ["excise_source 6/6", "opp12_lifecycle_verbs 8/8", "opp12_existence_axis 6/6", "lifecycle_reliability 4/4 (3 ignored)", "telemetry_capture 3/3", "op_store 7/7"]
+    },
+    "other_packages": {
+      "fathomdb-schema": "all green, 0 failed",
+      "fathomdb": "all green, 0 failed",
+      "fathomdb-cli": "all green, 0 failed (7 ignored, pre-existing)",
+      "fathomdb-napi": "all green, 0 failed",
+      "note": "Run per-package rather than via cargo test --workspace, because a workspace run would execute the forbidden eu7 target."
+    },
+    "pre_existing_failures": [
+      {
+        "target": "pr_g10_reranker_ce",
+        "symptom": "Does not COMPILE under --features default-reranker: 11 errors, all of the form `can't compare IdSpace with {integer}` / `cannot move out of h.id`.",
+        "verdict": "PRE-EXISTING, NOT MINE, NOT A REGRESSION.",
+        "evidence": "The file is byte-identical to the slice-5 baseline 4b78658d (verified by diffing git show 4b78658d:<path> against the working tree). The errors stem from 0.8.19 commit 6616db93 (C-2 typed SearchHit.id u64 -> IdSpace). It is invisible to cargo clippy/check --workspace --all-targets because default-reranker is not a default feature, so the target is feature-gated out of the workspace build.",
+        "action_taken": "None — out of scope for this fix. Flagged here as a follow-up candidate."
+      },
+      {
+        "target": "pr_e2_rerank_passages",
+        "symptom": "Refuses to run without --features default-reranker (cargo target feature requirement), not a test failure.",
+        "verdict": "PRE-EXISTING harness gating. Passes 4/4 when run as `--features operator,default-reranker`."
+      }
+    ]
+  },
+
+  "prohibitions_observed": {
+    "maturin_develop_or_pip_install_e": "NOT run. The shared .venv was never touched.",
+    "eu7_real_corpus_ac": "NOT run in any form, at any N, on any backend. data/corpus-data/ was not symlinked.",
+    "recovery_denylist": "NOT touched. AC-041 (no_recovery_surface) re-run green.",
+    "hitl_signed": "The string 'HITL-SIGNED' was not written anywhere.",
+    "orchestrator_owned_docs": "dev/plans/plan-0.8.20.md, STATUS-0.8.20.md and dev/acceptance.md were NOT edited.",
+    "git_push": "NOT performed.",
+    "main_repo": "/home/coreyt/projects/fathomdb was NOT touched. All work confined to the orch-0.8.20-s5 worktree.",
+    "branch_verified_before_every_commit": "YES — git rev-parse --abbrev-ref HEAD returned orch-0.8.20-s5 before each of the 4 commits.",
+    "destructive_git": "No git stash, no git clean, and no git checkout -- on uncommitted source. The one `git checkout HEAD -- <file>` used to restore the source after the RED re-verification was performed with the working tree FULLY COMMITTED, and the four untracked dev/plans/runs/0.8.20-slice-5*-output.json artifacts plus the codex log were confirmed intact afterwards via git status.",
+    "no_worktree_or_branch_created": true,
+    "no_subagent_spawned": true
+  },
+
+  "scope_discipline": {
+    "in_scope": "Exactly the two codex findings plus their tests, plus the dead-plumbing removal that finding 2's fix directly caused.",
+    "nothing_else_refactored": true,
+    "spec_deviations": "None. Nothing in the mandate was found ambiguous or impossible; no spec was silently changed."
+  },
+
+  "blockers_and_follow_ups": [
+    {
+      "id": "FU-FIX1-1",
+      "severity": "advisory",
+      "item": "pr_g10_reranker_ce has not compiled under --features default-reranker since 0.8.19 (C-2 IdSpace swap, 6616db93). Invisible to the workspace clippy/check gate because default-reranker is not a default feature. Worth a scheduled fix and, more importantly, a gate that would have caught it."
+    },
+    {
+      "id": "FU-FIX1-2",
+      "severity": "advisory",
+      "item": "eu7_real_corpus_ac carries no #[ignore] and no env gate, so any wholesale `cargo test --workspace` or `cargo test -p fathomdb-engine --features operator` runs it despite the standing HITL closure. The prohibition currently depends on every agent remembering it. Per the standing 'fix the tooling, not the actor' norm this should become a mechanical gate (#[ignore] or an env-var guard), not a repeated instruction."
+    },
+    {
+      "id": "FU-FIX1-3",
+      "severity": "advisory",
+      "item": "The erasure_pending_redaction collection lives in operational_mutations and is therefore, in principle, readable by op-store read paths during the (normally sub-millisecond) window it exists — the same posture as the existing excise_source_audit row. Called out for the reviewer rather than left implicit; not believed to warrant a separate mechanism."
+    }
+  ],
+
+  "files_changed": [
+    "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/rust/crates/fathomdb-schema/src/lib.rs",
+    "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/rust/crates/fathomdb-schema/tests/step21_migration.rs",
+    "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/rust/crates/fathomdb-engine/src/lib.rs",
+    "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/rust/crates/fathomdb-engine/tests/erasure_completeness.rs"
+  ],
+  "files_added": [],
+  "new_dependencies": "None."
+}

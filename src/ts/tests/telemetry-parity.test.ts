@@ -21,9 +21,13 @@ import { freshDbPath } from "./helpers.js";
 // FTS-only corpus. Both query words ("hybrid", "retrieval") must NOT be
 // substrings of any JSONL key the sink emits so the privacy assertions are
 // meaningful.
+// 0.8.20 (R-20-E3): `sourceId` is mandatory on every canonical write. This
+// suite asserts the telemetry sink NEVER carries it (privacy, ADR §C).
+const SOURCE_ID = "ts-test:telemetry-parity";
+
 const CORPUS = [
-  { kind: "doc", body: "hybrid retrieval alpha" },
-  { kind: "doc", body: "hybrid retrieval beta" },
+  { kind: "doc", body: "hybrid retrieval alpha", sourceId: SOURCE_ID },
+  { kind: "doc", body: "hybrid retrieval beta", sourceId: SOURCE_ID },
 ];
 
 async function searchAfterProjection(
