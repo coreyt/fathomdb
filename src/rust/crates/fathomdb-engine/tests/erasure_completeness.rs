@@ -268,8 +268,9 @@ fn unrelated_sink_records_survive() {
 ///
 /// Failure is injected by making the sink's directory read-only, so
 /// `redact_jsonl_stable_ids` cannot create its `.redact.tmp` sibling
-/// (`PermissionDenied`, not `NotFound` — the latter is a legitimate "sink is
-/// gone, nothing to redact" success).
+/// (`PermissionDenied`). `NotFound` would work too since fix-3 — it is no longer
+/// treated as a discharge (see `rotated_telemetry_sink_is_not_treated_as_redacted`)
+/// — but `PermissionDenied` keeps this test's injection independent of that path.
 #[cfg(unix)]
 #[test]
 fn telemetry_redaction_retry_completes_after_failure() {

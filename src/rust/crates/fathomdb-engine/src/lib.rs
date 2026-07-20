@@ -149,9 +149,9 @@ const REDACTED_STABLE_ID: &str = "[erased]";
 /// retention sweep must not silently discharge it.
 ///
 /// **Guarantee:** a row in one of these collections is never removed by the
-/// retention sweep. It can still be removed deliberately, by
-/// [`Engine::excise_collection_record`] — an explicit operator act that is
-/// itself audited.
+/// retention sweep, and (0.8.20 Slice 5 fix-3) never by
+/// [`Engine::excise_collection_record`] either — see
+/// [`is_erasure_bookkeeping_collection`].
 const ERASURE_AUDIT_COLLECTIONS: &[&str] = &["excise_source_audit", "excise_record_audit"];
 /// 0.8.20 Slice 5 fix-1 (codex §9 P2) — the `operational_mutations` collection
 /// holding the DURABLE record of a telemetry redaction that is owed but not yet
@@ -160,6 +160,43 @@ const ERASURE_AUDIT_COLLECTIONS: &[&str] = &["excise_source_audit", "excise_reco
 /// Like the audit collections it is exempt from the retention sweep: an
 /// outstanding erasure obligation must not be discharged by cap pressure.
 const ERASURE_PENDING_REDACTION_COLLECTION: &str = "erasure_pending_redaction";
+/// 0.8.20 Slice 5 fix-3 (codex §9 round-3 P1) — true for the op-store
+/// collections that hold the engine's ERASURE BOOKKEEPING: the durable
+/// pending-redaction queue and the erasure-audit trail.
+///
+/// These are engine-owned invariants that happen to be *stored* as op-store
+/// records. They are not caller data, and the generic record-erasure verb
+/// [`Engine::excise_collection_record`] must refuse to target them:
+///
+/// * **The pending queue** ([`ERASURE_PENDING_REDACTION_COLLECTION`]) records a
+///   telemetry redaction the engine still OWES. Deleting the entry makes
+///   [`Engine::complete_erasure_at_rest`] see no outstanding work, so the next
+///   erasure verb reports SUCCESS while the erased `l:`/`h:` ids are still in
+///   the telemetry sink. That is the exact R-20-E5 violation — *an erasure verb
+///   must never report success on an incomplete erasure* — that the queue was
+///   introduced to close, and the verb re-opened it through an
+///   operator-reachable path (`--excise-collection erasure_pending_redaction
+///   --excise-record-key <verb>`).
+/// * **The audit trail** ([`ERASURE_AUDIT_COLLECTIONS`]) is protected by the
+///   HITL ruling of 2026-07-19: *"there must be an auditable record of deletion
+///   event."* Deleting audit rows one-by-one defeats that ruled-on guarantee as
+///   surely as a retention sweep would. Accountability is a distinct obligation
+///   from erasure, and no verb may silently discharge it.
+///
+/// Neither carries erasable payload, so refusing them costs a caller nothing: a
+/// pending-queue row holds only stable ids the engine is about to remove from
+/// the sink (and deletes itself on discharge), and an audit row holds a
+/// `source_id` bound by the non-PII rule or a SHA-256 record digest.
+///
+/// The refusal is TYPED ([`EngineError::InvalidArgument`]), never a silent
+/// no-op — an operator who aimed at the wrong collection must be told. The shape
+/// mirrors the slice's existing precedent: [`Engine::erase_source`] refuses the
+/// reserved `_`-prefixed provenance namespace while [`Engine::excise_source`]
+/// stays permissive.
+fn is_erasure_bookkeeping_collection(collection: &str) -> bool {
+    collection == ERASURE_PENDING_REDACTION_COLLECTION
+        || ERASURE_AUDIT_COLLECTIONS.contains(&collection)
+}
 const PROJECTION_CURSOR_KEY: &str = "projection_cursor";
 const PROJECTION_WORKERS: usize = 2;
 /// PR-9 — ADR-0.6.0-embedder-protocol **Invariant 5** default per-`embed()`
@@ -7166,15 +7203,45 @@ impl Engine {
 
         match redact_jsonl_stable_ids(&sink.path, &erased) {
             Ok(()) => Ok(()),
-            // The operator deleted or moved the sink: nothing to redact.
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            // 0.8.20 Slice 5 fix-3 (codex §9 round-3 P2) — `NotFound` is NOT a
+            // discharge. It previously returned `Ok(())` ("the sink is gone,
+            // nothing to redact"), which cleared the durable pending queue and
+            // let the verb report success. That inference does not hold: a path
+            // cannot distinguish `rm` from `mv`, and log rotation of a
+            // caller-supplied sink is an ordinary operational event that leaves
+            // the erased `l:`/`h:` ids fully readable under the rotated name.
+            //
+            // The burden of proof is on DISCHARGING the obligation, and the
+            // engine cannot meet it here: `TelemetrySink` holds a PATH, not an
+            // open handle, so there is no `nlink == 0` witness that the inode was
+            // actually unlinked — and even that would not cover a copy taken
+            // before the deletion. So there is no narrow provable case to carve
+            // out, and `NotFound` fails closed.
+            //
+            // This cannot fire spuriously for a sink that never existed:
+            // `enable_telemetry` CREATES the file before arming capture, so for
+            // any engine with telemetry enabled the sink demonstrably existed and
+            // `NotFound` means it existed and then vanished.
             Err(err) => Err(EngineError::ErasureIncomplete {
                 stage: "telemetry_redaction".to_string(),
-                detail: format!(
-                    "`{verb}` deleted its rows, but the erased stable ids could not be redacted \
-                     from the telemetry sink {}: {err}",
-                    sink.path.display()
-                ),
+                detail: if err.kind() == std::io::ErrorKind::NotFound {
+                    format!(
+                        "`{verb}` deleted its rows, but the telemetry sink {} no longer exists, \
+                         so the erased stable ids could not be redacted from it. A missing path \
+                         does NOT prove the sink was deleted — if it was rotated or moved aside, \
+                         the erased ids are still readable under its new name. The pending \
+                         redaction is durable: restore the sink at this path and retry (if the \
+                         sink really was destroyed, an empty file at this path discharges the \
+                         obligation).",
+                        sink.path.display()
+                    )
+                } else {
+                    format!(
+                        "`{verb}` deleted its rows, but the erased stable ids could not be \
+                         redacted from the telemetry sink {}: {err}",
+                        sink.path.display()
+                    )
+                },
             }),
         }
     }
@@ -7315,6 +7382,15 @@ impl Engine {
     /// version of the key (append-only-log collections) and its
     /// `operational_state` row (latest-state collections).
     ///
+    /// **Refuses the engine's own erasure bookkeeping** (0.8.20 Slice 5 fix-3,
+    /// codex §9 round-3 P1): a `collection` for which
+    /// [`is_erasure_bookkeeping_collection`] holds raises
+    /// [`EngineError::InvalidArgument`] before anything is deleted. Aimed at the
+    /// pending-redaction queue this verb otherwise destroys an outstanding
+    /// erasure obligation, after which the next erasure verb reports success with
+    /// the erased ids still in the telemetry sink; aimed at the audit trail it
+    /// destroys the auditable record of the deletion event.
+    ///
     /// Before this slice the op-store had NO record-level delete at all:
     /// [`enforce_provenance_retention`] is a cap sweep, not an erasure verb, so a
     /// caller holding an erasure obligation over an op-store record had no way to
@@ -7340,6 +7416,22 @@ impl Engine {
         self.ensure_open()?;
         if collection.is_empty() || record_key.is_empty() {
             return Err(EngineError::WriteValidation);
+        }
+        // 0.8.20 Slice 5 fix-3 (codex §9 round-3 P1) — the engine's own erasure
+        // bookkeeping is not caller data and is not excisable. See
+        // `is_erasure_bookkeeping_collection` for why each member is protected.
+        // Checked BEFORE any deletion so the refusal is total, not partial.
+        if is_erasure_bookkeeping_collection(collection) {
+            return Err(EngineError::InvalidArgument {
+                msg: format!(
+                    "`{collection}` is engine-internal erasure bookkeeping and cannot be excised \
+                     by `excise_collection_record`. The pending-redaction queue records an \
+                     erasure the engine still owes (deleting it would let a later verb report \
+                     success on an incomplete erasure, R-20-E5), and the erasure-audit \
+                     collections are the auditable record of the deletion event. Pending \
+                     redactions retire themselves once performed; retry the erasure verb instead."
+                ),
+            });
         }
         let report = self.excise_collection_record_inner(collection, record_key)?;
         self.complete_erasure_at_rest("excise_collection_record")?;
