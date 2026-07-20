@@ -474,6 +474,243 @@ fn count_audit_rows(engine: &Engine) -> u64 {
     rows.len() as u64
 }
 
+// ===== 0.8.20 Slice 5 fix-3 · protecting the erasure bookkeeping ======
+
+/// Raw count of rows in an op-store collection. **Rule 1** — the witness reads
+/// the physical table, never a verb's own report and never `search()`.
+fn raw_collection_row_count(path: &Path, collection: &str) -> u64 {
+    let conn = Connection::open(path).expect("probe connection");
+    let count: u64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM operational_mutations WHERE collection_name = ?1",
+            [collection],
+            |row| row.get(0),
+        )
+        .expect("count collection rows");
+    count
+}
+
+/// Drive an erasure to the point where a telemetry redaction is OWED but not
+/// performed, leaving a durable row in `erasure_pending_redaction`.
+///
+/// Failure is injected by making the sink's directory read-only, so
+/// `redact_jsonl_stable_ids` cannot create its `.redact.tmp` sibling
+/// (`PermissionDenied`). That injection is deliberately INDEPENDENT of the
+/// `NotFound` path this slice also changes, so the caller's RED is attributable.
+#[cfg(unix)]
+fn pending_redaction_fixture(
+    name: &str,
+) -> (TempDir, PathBuf, PathBuf, fathomdb_engine::OpenedEngine) {
+    use std::os::unix::fs::PermissionsExt;
+
+    fn chmod(dir: &Path, mode: u32) {
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(mode)).expect("chmod");
+    }
+
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, name);
+    let sink_dir = dir.path().join("sink");
+    std::fs::create_dir(&sink_dir).expect("create sink dir");
+    let sink = sink_dir.join("telemetry.jsonl");
+
+    let opened = Engine::open(&path).expect("open");
+    opened.engine.enable_telemetry(sink.to_str().unwrap()).expect("enable telemetry");
+
+    write_node(&opened.engine, "erasable zeta payload", "S1", Some("victim-1"));
+    write_node(&opened.engine, "retained omega payload", "S2", Some("control-1"));
+    opened.engine.drain(10_000).expect("drain");
+    opened.engine.search("zeta").expect("search zeta");
+    opened.engine.search("omega").expect("search omega");
+    assert!(
+        std::fs::read_to_string(&sink).expect("read sink").contains("l:victim-1"),
+        "fixture: the victim id must be on disk in the sink before the erasure"
+    );
+
+    chmod(&sink_dir, 0o555);
+    let probe = sink_dir.join("write-probe");
+    if std::fs::write(&probe, b"x").is_ok() {
+        let _ = std::fs::remove_file(&probe);
+        chmod(&sink_dir, 0o755);
+        panic!(
+            "cannot inject a redaction failure: the sink directory is still writable at mode \
+             0555 (running as root?) — this fixture would be vacuous"
+        );
+    }
+    let err = opened
+        .engine
+        .excise_source("S1")
+        .expect_err("excise must not report success while the sink cannot be redacted");
+    assert!(
+        matches!(&err, EngineError::ErasureIncomplete { stage, .. } if stage == "telemetry_redaction"),
+        "fixture: expected ErasureIncomplete{{telemetry_redaction}}, got {err:?}"
+    );
+    chmod(&sink_dir, 0o755);
+
+    let pending = raw_collection_row_count(&path, "erasure_pending_redaction");
+    assert_eq!(pending, 1, "fixture: exactly one durable pending-redaction obligation");
+    (dir, path, sink, opened)
+}
+
+/// **codex §9 round-3 P1 — `excise_collection_record` must not be able to delete
+/// the erasure-durability guarantee.**
+///
+/// `erasure_pending_redaction` is the DURABLE record of a telemetry redaction the
+/// engine still owes. `excise_collection_record` is a generic op-store record
+/// delete reachable by an operator through
+/// `--excise-collection erasure_pending_redaction --excise-record-key <verb>`.
+/// Aimed there it removes the obligation, after which `complete_erasure_at_rest`
+/// sees an empty queue and every subsequent erasure verb reports SUCCESS while
+/// the erased `l:`/`h:` ids are still sitting in the telemetry sink — the exact
+/// R-20-E5 violation ("an erasure verb must NEVER report success on an
+/// incomplete erasure") that the queue was introduced to close, re-opened
+/// through an operator-reachable path.
+///
+/// The erasure-AUDIT collections are protected on the same footing: the HITL
+/// ruling of 2026-07-19 is that *"there must be an auditable record of deletion
+/// event"*, and a per-record delete of audit rows would defeat a ruled-on
+/// guarantee just as surely as a retention sweep would.
+///
+/// Precedent for the shape: `erase_source` refuses the reserved `_`-prefixed
+/// provenance namespace while `excise_source` stays permissive. Refusal is a
+/// TYPED error, never a silent no-op.
+#[cfg(unix)]
+#[test]
+fn erasure_bookkeeping_collections_are_not_excisable() {
+    let (_dir, path, sink, opened) = pending_redaction_fixture("bookkeeping_protected");
+
+    // --- The pending queue must refuse to be excised. ---
+    let err = opened
+        .engine
+        .excise_collection_record("erasure_pending_redaction", "excise_source")
+        .expect_err(
+            "excise_collection_record must REFUSE the engine-internal pending-redaction queue: \
+             deleting an outstanding erasure obligation lets the next verb report success on an \
+             incomplete erasure (R-20-E5)",
+        );
+    assert!(
+        format!("{err:?}").to_lowercase().contains("erasure"),
+        "the refusal must name the erasure-bookkeeping reason, got {err:?}"
+    );
+    assert_eq!(
+        raw_collection_row_count(&path, "erasure_pending_redaction"),
+        1,
+        "the durable pending-redaction obligation was deleted by excise_collection_record"
+    );
+
+    // --- The erasure audit must refuse to be excised. ---
+    let audit_before = raw_collection_row_count(&path, "excise_source_audit");
+    assert_eq!(audit_before, 1, "fixture: one excise_source_audit row");
+    opened
+        .engine
+        .excise_collection_record("excise_source_audit", "S1")
+        .expect_err("excise_collection_record must REFUSE the erasure-audit collection");
+    assert_eq!(
+        raw_collection_row_count(&path, "excise_source_audit"),
+        1,
+        "the erasure audit row was deleted one-by-one by excise_collection_record; the HITL \
+         ruling requires an auditable record of the deletion event"
+    );
+    opened
+        .engine
+        .excise_collection_record("excise_record_audit", "anything")
+        .expect_err("excise_collection_record must REFUSE the record-erasure audit collection");
+
+    // --- The obligation is still dischargeable, and IS discharged. ---
+    opened.engine.excise_source("S1").expect("the retry must complete the pending redaction");
+    let after = std::fs::read_to_string(&sink).expect("read sink after retry");
+    assert!(
+        !after.contains("l:victim-1"),
+        "an erasure verb reported SUCCESS while the erased stable id is STILL in the telemetry \
+         sink — the pending obligation was lost (R-20-E5):\n{after}"
+    );
+    assert!(after.contains("l:control-1"), "the retry destroyed a retained id's record:\n{after}");
+    assert_eq!(
+        raw_collection_row_count(&path, "erasure_pending_redaction"),
+        0,
+        "a discharged obligation must be retired from the queue"
+    );
+
+    // Ordinary op-store collections stay excisable — this is a targeted refusal,
+    // not a disabling of the verb.
+    register_collection(&opened.engine, "events", "append_only_log");
+    append_op_record(&opened.engine, "events", "subject-a", r#"{"pii":"BODY"}"#);
+    opened
+        .engine
+        .excise_collection_record("events", "subject-a")
+        .expect("ordinary op-store records must remain excisable");
+
+    opened.engine.close().unwrap();
+}
+
+/// **codex §9 round-3 P2 — a MOVED (rotated) sink is not a redacted sink.**
+///
+/// `redact_jsonl_stable_ids` surfaces `NotFound` when the sink path does not
+/// exist. Treating that as "nothing to redact" and clearing the pending queue is
+/// unsound: `enable_telemetry` CREATES the sink, so within the life of an armed
+/// engine `NotFound` means the file was created and then vanished — and a path
+/// cannot distinguish `rm` from `mv`. Log rotation is an ordinary operational
+/// event, and after it the erased `l:`/`h:` ids are fully readable under the
+/// rotated name. The burden of proof is on DISCHARGING the obligation, so
+/// `NotFound` must remain `ErasureIncomplete`.
+#[test]
+fn rotated_telemetry_sink_is_not_treated_as_redacted() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "sink_rotated");
+    let sink_dir = dir.path().join("sink");
+    std::fs::create_dir(&sink_dir).expect("create sink dir");
+    let sink = sink_dir.join("telemetry.jsonl");
+
+    let opened = Engine::open(&path).expect("open");
+    opened.engine.enable_telemetry(sink.to_str().unwrap()).expect("enable telemetry");
+    write_node(&opened.engine, "erasable zeta payload", "S1", Some("victim-1"));
+    write_node(&opened.engine, "retained omega payload", "S2", Some("control-1"));
+    opened.engine.drain(10_000).expect("drain");
+    opened.engine.search("zeta").expect("search zeta");
+    opened.engine.search("omega").expect("search omega");
+    assert!(
+        std::fs::read_to_string(&sink).expect("read sink").contains("l:victim-1"),
+        "fixture: the victim id must be in the sink before rotation"
+    );
+
+    // Log rotation: the sink is MOVED aside, not deleted. Its contents — the
+    // erased ids included — remain fully readable under the rotated name.
+    let rotated = sink_dir.join("telemetry.jsonl.1");
+    std::fs::rename(&sink, &rotated).expect("rotate sink");
+
+    let err = opened.engine.excise_source("S1").expect_err(
+        "a moved/rotated sink must NOT be treated as successfully redacted: the erased stable \
+         ids are still readable under the rotated name, so the erasure is incomplete",
+    );
+    match &err {
+        EngineError::ErasureIncomplete { stage, .. } => {
+            assert_eq!(stage, "telemetry_redaction", "wrong stage for a rotated sink")
+        }
+        other => panic!("expected ErasureIncomplete{{telemetry_redaction}}, got {other:?}"),
+    }
+
+    // The leak is real, not hypothetical: the ids are readable right now.
+    let rotated_body = std::fs::read_to_string(&rotated).expect("read rotated sink");
+    assert!(
+        rotated_body.contains("l:victim-1"),
+        "fixture: the rotated file must still hold the erased id, else the test proves nothing"
+    );
+    // And the obligation survived, so it can still be discharged.
+    assert_eq!(
+        raw_collection_row_count(&path, "erasure_pending_redaction"),
+        1,
+        "the pending obligation must survive a NotFound sink, not be cleared by it"
+    );
+
+    // Restoring the sink at the expected path lets the retry finish the job.
+    std::fs::rename(&rotated, &sink).expect("restore sink");
+    opened.engine.excise_source("S1").expect("retry after restoring the sink");
+    let after = std::fs::read_to_string(&sink).expect("read sink after retry");
+    assert!(!after.contains("l:victim-1"), "the retry left the erased id in the sink:\n{after}");
+    assert!(after.contains("l:control-1"), "the retry destroyed a retained id's record:\n{after}");
+
+    opened.engine.close().unwrap();
+}
+
 /// Guard: the bounded WAL retry must not wedge a verb for an unbounded time.
 #[test]
 fn erasure_wal_retry_is_bounded() {
