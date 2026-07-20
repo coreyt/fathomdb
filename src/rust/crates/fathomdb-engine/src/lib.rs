@@ -1666,10 +1666,40 @@ pub struct BoundaryCrossing {
     pub became_invalid_at: Option<i64>,
 }
 
+/// 0.8.20 Slice 15b fix-3 (F2) — how many times [`current_epoch_seconds`] has
+/// been called in this process. Test-only observation; see
+/// [`clock_reads_for_test`].
+static CLOCK_READS: AtomicU64 = AtomicU64::new(0);
+
+/// Test seam — the process-wide count of wall-clock reads on the validity path.
+/// Kept OFF the governed surface (`#[doc(hidden)]`, `_for_test`), mirroring the
+/// sanctioned `set_vector_stage_only_for_test` / `vector_phase1_sql_for_test`
+/// pattern; it is never re-exported from the `fathomdb` facade.
+///
+/// The counter is PROCESS-WIDE, so a test asserting on a delta must hold a
+/// lock that excludes every other clock-reading test in its binary (test
+/// binaries are separate processes, so only intra-binary contention matters).
+/// `slice15b_search_validity_recall.rs` does this with a file-local mutex.
+#[doc(hidden)]
+#[must_use]
+pub fn clock_reads_for_test() -> u64 {
+    CLOCK_READS.load(Ordering::Relaxed)
+}
+
 /// Wall-clock now as INTEGER epoch SECONDS (UTC), saturating at 0 before the
 /// Unix epoch. The single place the node-validity path reads the clock — and it
 /// is read in RUST, then BOUND, never inlined into SQL as `datetime('now')`.
 fn current_epoch_seconds() -> i64 {
+    // 0.8.20 Slice 15b fix-3 (F2) — meter every wall-clock read on the validity
+    // path. R-20-NV requires `:now` to bind ONCE PER QUERY (not per row, not per
+    // ARM): if two arms of one query each resolve *now*, a query that straddles
+    // a validity boundary can have its arms disagree about which side they are
+    // on. That is invisible to a result-shape assertion and unreachable by a
+    // deterministic test — you cannot assert on a race. Counting the reads makes
+    // the property testable WITHOUT racing the clock, and keeps failing for any
+    // arm added later that re-reads it. `Relaxed` is sufficient: the counter is
+    // an observation, never a synchronization point.
+    CLOCK_READS.fetch_add(1, Ordering::Relaxed);
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
