@@ -65,6 +65,8 @@ fn rebuild_vec0_resets_vector_rows_and_preserves_fts() {
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("write");
     opened.engine.drain(10_000).expect("drain");

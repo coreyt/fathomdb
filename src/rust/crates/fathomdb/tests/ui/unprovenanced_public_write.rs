@@ -18,5 +18,7 @@ fn main() {
         logical_id: None,
         state: InitialState::Active,
         reason: None,
+        valid_from: None,
+        valid_until: None,
     };
 }

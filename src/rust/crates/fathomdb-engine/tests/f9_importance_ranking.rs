@@ -137,6 +137,8 @@ fn importance_write_read_roundtrip_and_range_validation() {
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("write");
     let cursor = receipt.cursor;
@@ -172,6 +174,8 @@ fn seed_two_docs(engine: &Engine) -> (u64, u64) {
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("write a")
         .cursor;
@@ -183,6 +187,8 @@ fn seed_two_docs(engine: &Engine) -> (u64, u64) {
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("write b")
         .cursor;
@@ -280,6 +286,8 @@ fn entity_node(body: &str, logical_id: &str) -> PreparedWrite {
         logical_id: Some(logical_id.to_string()),
         state: fathomdb_engine::InitialState::Active,
         reason: None,
+        valid_from: None,
+        valid_until: None,
     }
 }
 

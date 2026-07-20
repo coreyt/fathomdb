@@ -21,6 +21,8 @@ fn ac_039a_manifest_digest_matches_export_bytes() {
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("write");
 
@@ -58,6 +60,8 @@ fn ac_039b_one_byte_tamper_detected_by_recompute() {
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("write");
 

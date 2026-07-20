@@ -105,6 +105,8 @@ fn filter_prunes_vector_candidates_by_kind() {
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
+                valid_from: None,
+                valid_until: None,
             },
             PreparedWrite::Node {
                 kind: "note".to_string(),
@@ -113,6 +115,8 @@ fn filter_prunes_vector_candidates_by_kind() {
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
+                valid_from: None,
+                valid_until: None,
             },
         ])
         .expect("write");
@@ -151,6 +155,8 @@ fn status_filter_prunes_all_because_population_is_null_only() {
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("write");
     opened.engine.drain(10_000).expect("drain");

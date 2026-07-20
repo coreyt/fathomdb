@@ -176,6 +176,19 @@ class Engine:
     # them on the public stub would imply they are callable by end users,
     # which is false.
     def open_report(self) -> OpenReport: ...
+    # Write items are loose mappings, not typed structs, so the stub cannot
+    # express their shape. A NODE item accepts:
+    #   kind: str (required)        body: str
+    #   source_id: str (required, 0.8.20 R-20-E3)
+    #   logical_id: str | None      state: "pending" | "active" | None
+    #   reason: str | None
+    #   valid_from: int | None      valid_until: int | None
+    # 0.8.20 Slice 15b (TC-34): `valid_from`/`valid_until` are the world-time
+    # validity window in INTEGER epoch SECONDS, half-open
+    # [valid_from, valid_until). Absent/None = unbounded on that side, which is
+    # the back-compat default (valid at every instant). `valid_from >=
+    # valid_until` raises InvalidArgumentError; a non-integer (including bool)
+    # raises WriteValidationError. See `fathomdb.engine.Engine.write`.
     def write(self, batch: Iterable[Any]) -> WriteReceipt: ...
     def embed(self, text: str) -> list[float]: ...
     def search(

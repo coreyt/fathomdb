@@ -1741,7 +1741,46 @@ fn translate_node(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
         None => InitialState::Active,
     };
     let reason = dict_str(dict, "reason")?;
-    Ok(PreparedWrite::Node { kind, body, source_id, logical_id, state, reason })
+    // 0.8.20 Slice 15b (TC-34) — world-time validity window (X1 parity with the
+    // N-API binding). INTEGER epoch seconds; absent or `None` means unbounded on
+    // that side, which lands NULL and reproduces pre-slice behaviour exactly. The
+    // half-open pair is validated in the ENGINE (`validate_write`), so Rust,
+    // Python and TypeScript share one rule and cannot drift.
+    let valid_from = dict_epoch_seconds(dict, "valid_from")?;
+    let valid_until = dict_epoch_seconds(dict, "valid_until")?;
+    Ok(PreparedWrite::Node {
+        kind,
+        body,
+        source_id,
+        logical_id,
+        state,
+        reason,
+        valid_from,
+        valid_until,
+    })
+}
+
+/// 0.8.20 Slice 15b (TC-34) — read an optional INTEGER epoch-second field from a
+/// write item. Absent or `None` yields `None` (the `dict_str` convention).
+///
+/// `bool` is rejected EXPLICITLY. Python's `bool` is a subclass of `int`, so a
+/// bare `extract::<i64>()` would silently accept `True` as the instant `1` —
+/// a silent coercion of exactly the kind this field must never perform. Floats
+/// are rejected by `extract::<i64>()` itself.
+fn dict_epoch_seconds(d: &Bound<'_, PyDict>, key: &str) -> PyResult<Option<i64>> {
+    let Some(v) = dict_get(d, key)?.filter(|v| !v.is_none()) else {
+        return Ok(None);
+    };
+    if v.is_instance_of::<pyo3::types::PyBool>() {
+        return Err(WriteValidationError::new_err(format!(
+            "field {key:?} must be an integer (epoch seconds) or None, not a bool"
+        )));
+    }
+    v.extract::<i64>().map(Some).map_err(|_| {
+        WriteValidationError::new_err(format!(
+            "field {key:?} must be an integer (epoch seconds) or None"
+        ))
+    })
 }
 
 fn translate_edge(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
@@ -2321,6 +2360,8 @@ mod tests {
                     logical_id: Some("zephyr".to_string()),
                     state: InitialState::Active,
                     reason: None,
+                    valid_from: None,
+                    valid_until: None,
                 },
                 PreparedWrite::Node {
                     kind: "doc".to_string(),
@@ -2329,6 +2370,8 @@ mod tests {
                     logical_id: Some("beta".to_string()),
                     state: InitialState::Active,
                     reason: None,
+                    valid_from: None,
+                    valid_until: None,
                 },
                 PreparedWrite::Edge {
                     kind: "link".to_string(),

@@ -61,6 +61,8 @@ fn projection_cursor_bounds_observed_row_count() {
                     logical_id: None,
                     state: fathomdb_engine::InitialState::Active,
                     reason: None,
+                    valid_from: None,
+                    valid_until: None,
                 }]);
                 thread::sleep(Duration::from_micros(50));
             }

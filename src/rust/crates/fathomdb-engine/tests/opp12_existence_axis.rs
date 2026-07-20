@@ -52,6 +52,8 @@ fn active_node(kind: &str, body: &str, logical_id: &str) -> PreparedWrite {
         logical_id: Some(logical_id.to_string()),
         state: InitialState::Active,
         reason: None,
+        valid_from: None,
+        valid_until: None,
     }
 }
 
@@ -63,6 +65,8 @@ fn pending_node(kind: &str, body: &str, logical_id: &str, reason: &str) -> Prepa
         logical_id: Some(logical_id.to_string()),
         state: InitialState::Pending,
         reason: Some(reason.to_string()),
+        valid_from: None,
+        valid_until: None,
     }
 }
 
@@ -275,6 +279,8 @@ fn r_ex_2_vector_search_excludes_superseded_node_version() {
             logical_id: Some("L".to_string()),
             state: InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("write v1");
     engine.drain(10_000).expect("drain v1");
@@ -290,6 +296,8 @@ fn r_ex_2_vector_search_excludes_superseded_node_version() {
             logical_id: Some("L".to_string()),
             state: InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("write v2");
     engine.drain(10_000).expect("drain v2");

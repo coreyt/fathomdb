@@ -158,6 +158,30 @@ class Engine:
         return self._config
 
     def write(self, batch: list[Any] | None = None) -> WriteReceipt:
+        """Write a batch of items.
+
+        ``source_id`` is MANDATORY on every canonical item (0.8.20 R-20-E3) —
+        a row written without it can never be erased by :meth:`erase_source`.
+
+        A node item is ``{"kind", "body", "source_id", "logical_id"?, "state"?,
+        "reason"?, "valid_from"?, "valid_until"?}``; an edge item is
+        ``{"edge": {"kind", "from", "to", "source_id", ...}}``.
+
+        ``valid_from`` / ``valid_until`` (0.8.20 Slice 15b, TC-34) author the
+        node's WORLD-TIME validity window as INTEGER epoch SECONDS. The window
+        is HALF-OPEN — ``valid_from`` is inclusive, ``valid_until`` is exclusive
+        — and an omitted (or ``None``) bound means unbounded on that side, so
+        omitting both (the default) makes the node valid at every instant. Read
+        it back through the ``valid_as_of`` field of a
+        :class:`~fathomdb.types.ReadView`, or ask which nodes crossed a boundary
+        with :func:`fathomdb.read.crossed_boundary_since`.
+
+        Because the window is half-open, ``valid_from >= valid_until`` describes
+        a window no instant can satisfy; that pair raises
+        ``InvalidArgumentError`` rather than being silently stored. A
+        non-integer bound raises ``WriteValidationError`` — it is never coerced
+        (``True`` is rejected too, even though ``bool`` subclasses ``int``).
+        """
         receipt = self._native.write(batch or [])
         return WriteReceipt(
             cursor=receipt.cursor,

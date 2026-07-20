@@ -43,6 +43,8 @@ fn ac_040a_dump_row_counts_reflects_canonical_writes() {
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("write");
     let report = opened.engine.dump_row_counts().expect("dump_row_counts");

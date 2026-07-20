@@ -378,6 +378,8 @@ mod cdf_runner_impl {
                         logical_id: None,
                         state: fathomdb_engine::InitialState::Active,
                         reason: None,
+                        valid_from: None,
+                        valid_until: None,
                     })
                     .collect();
                 engine.write(&batch).expect("seed write");

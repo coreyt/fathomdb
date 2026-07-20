@@ -634,6 +634,8 @@ fn post_open_registration_serves_in_session_and_baselines_at_next_open() {
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("write must not block on / be gated by the probe");
     assert!(!engine.dense_disabled(), "in-session serving is safe (same live backend)");

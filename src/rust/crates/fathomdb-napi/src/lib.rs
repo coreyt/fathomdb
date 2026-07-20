@@ -764,6 +764,8 @@ mod per_hit_explain_tests {
                     logical_id: Some("zephyr".to_string()),
                     state: InitialState::Active,
                     reason: None,
+                    valid_from: None,
+                    valid_until: None,
                 },
                 EngPreparedWrite::Node {
                     kind: "doc".to_string(),
@@ -773,6 +775,8 @@ mod per_hit_explain_tests {
                     logical_id: Some("beta".to_string()),
                     state: InitialState::Active,
                     reason: None,
+                    valid_from: None,
+                    valid_until: None,
                 },
                 EngPreparedWrite::Edge {
                     kind: "link".to_string(),
@@ -2126,7 +2130,59 @@ fn translate_node(item: &JsonValue) -> Result<PreparedWrite> {
         None => InitialState::Active,
     };
     let reason = json_str_alt(item, "reason", "reason")?;
-    Ok(PreparedWrite::Node { kind, body, source_id, logical_id, state, reason })
+    // 0.8.20 Slice 15b (TC-34) — world-time validity window (X1 parity with the
+    // pyo3 binding). INTEGER epoch seconds; absent or `null` means unbounded on
+    // that side, which lands NULL and reproduces pre-slice behaviour exactly.
+    // Both spellings are accepted, exactly as `tValid`/`t_valid` are on edges.
+    // The half-open pair is validated in the ENGINE (`validate_write`), so Rust,
+    // Python and TypeScript share one rule and cannot drift.
+    let valid_from = json_i64_alt(item, "validFrom", "valid_from")?;
+    let valid_until = json_i64_alt(item, "validUntil", "valid_until")?;
+    Ok(PreparedWrite::Node {
+        kind,
+        body,
+        source_id,
+        logical_id,
+        state,
+        reason,
+        valid_from,
+        valid_until,
+    })
+}
+
+/// 0.8.20 Slice 15b (TC-34) — read an optional INTEGER epoch-second field.
+///
+/// JavaScript has ONE number type, so `10.5` and `true` both arrive where an
+/// integer was meant. Both are refused with a typed write-validation error
+/// rather than truncated or coerced: a silently truncated instant is a wrong
+/// answer that only surfaces at the window boundary. `serde_json`'s `as_i64`
+/// returns `None` for any non-integral number, which is exactly the test wanted.
+fn json_i64(v: &JsonValue, key: &str) -> Result<Option<i64>> {
+    match json_get(v, key) {
+        Some(JsonValue::Null) | None => Ok(None),
+        Some(JsonValue::Number(n)) => n.as_i64().map(Some).ok_or_else(|| {
+            typed_error(
+                CODE_WRITE_VALIDATION,
+                format!("field {key:?} must be an integer (epoch seconds), not {n}"),
+                JsonValue::Null,
+            )
+        }),
+        Some(_other) => Err(typed_error(
+            CODE_WRITE_VALIDATION,
+            format!("field {key:?} must be an integer (epoch seconds) or null"),
+            JsonValue::Null,
+        )),
+    }
+}
+
+/// The `json_str_alt` analogue for integers: accept the camelCase spelling
+/// first, then the snake_case one, so a caller porting from the Python stub
+/// keeps working. See [`json_str_alt`].
+fn json_i64_alt(item: &JsonValue, camel: &str, snake: &str) -> Result<Option<i64>> {
+    if let Some(v) = json_i64(item, camel)? {
+        return Ok(Some(v));
+    }
+    json_i64(item, snake)
 }
 
 fn translate_edge(item: &JsonValue) -> Result<PreparedWrite> {

@@ -632,6 +632,29 @@ export class Engine {
     return new Engine(inner, options.engineConfig ?? {});
   }
 
+  /**
+   * Write a batch of items. `sourceId` is MANDATORY on every canonical item
+   * (0.8.20 R-20-E3) — a row written without it can never be erased by
+   * `eraseSource`. Every field below accepts BOTH the camelCase and the
+   * snake_case spelling.
+   *
+   * A node item is `{ kind, body, sourceId, logicalId?, state?, reason?,
+   * validFrom?, validUntil? }`; an edge item is `{ edge: { kind, from, to,
+   * sourceId, ... } }`.
+   *
+   * `validFrom` / `validUntil` (0.8.20 Slice 15b, TC-34) author the node's
+   * WORLD-TIME validity window as INTEGER epoch SECONDS. The window is
+   * HALF-OPEN — `validFrom` is inclusive, `validUntil` is exclusive — and an
+   * OMITTED bound means unbounded on that side, so omitting both (the default)
+   * makes the node valid at every instant. Read it back with
+   * `read.get`/`read.list`'s `validAsOf` view, or ask which nodes crossed a
+   * boundary with `read.crossedBoundarySince`.
+   *
+   * Because the window is half-open, `validFrom >= validUntil` describes a
+   * window no instant can satisfy; that pair is rejected with
+   * `InvalidArgumentError` rather than silently stored. A non-integer bound
+   * raises `WriteValidationError` — it is never truncated or coerced.
+   */
   async write(batch: unknown[] = []): Promise<WriteReceipt> {
     validateFfiTree(batch);
     return intercept(() => this.#native.write(batch));

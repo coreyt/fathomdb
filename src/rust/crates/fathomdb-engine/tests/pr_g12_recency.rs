@@ -107,6 +107,8 @@ fn recency_flag_off_by_default_e2e() {
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
+                valid_from: None,
+                valid_until: None,
             }])
             .expect("write");
     }

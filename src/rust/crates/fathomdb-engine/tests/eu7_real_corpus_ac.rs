@@ -406,6 +406,8 @@ fn seed_slice(engine: &Engine, bodies: &[String], from: usize, to: usize) -> Dur
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
+                valid_from: None,
+                valid_until: None,
             })
             .collect();
         engine.write(&batch).expect("seed write");

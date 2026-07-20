@@ -33,6 +33,8 @@ fn node_write(kind: &str, body: &str, logical_id: &str) -> PreparedWrite {
         logical_id: Some(logical_id.to_string()),
         state: fathomdb_engine::InitialState::Active,
         reason: None,
+        valid_from: None,
+        valid_until: None,
     }
 }
 

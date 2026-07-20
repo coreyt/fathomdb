@@ -2416,6 +2416,29 @@ pub enum PreparedWrite {
         /// verbatim in `canonical_nodes.reason`. Engine never interprets it. `None`
         /// lands NULL (the back-compat default).
         reason: Option<String>,
+        /// 0.8.20 Slice 15b (TC-34) — world-time validity window, INCLUSIVE lower
+        /// bound, INTEGER epoch SECONDS UTC. `None` lands NULL = unbounded below.
+        ///
+        /// Slice 10b added the `valid_from`/`valid_until` columns, the [`ReadView`]
+        /// validity predicate and [`Engine::crossed_boundary_since`] but NO writer,
+        /// so a window could only be authored with raw SQL. These two fields are
+        /// that writer. They are deliberately FIELDS rather than a new verb,
+        /// exactly as [`PreparedWrite::Edge`] already carries `t_valid`/`t_invalid`:
+        /// the governed command surface is unchanged.
+        ///
+        /// The pair is validated together — see `valid_until`.
+        valid_from: Option<i64>,
+        /// 0.8.20 Slice 15b (TC-34) — world-time validity window, EXCLUSIVE upper
+        /// bound, INTEGER epoch SECONDS UTC. `None` lands NULL = unbounded above.
+        ///
+        /// The window is half-open `[valid_from, valid_until)`, matching the read
+        /// predicate in `ReadView::validity_sql` exactly. Because it is half-open,
+        /// a pair with `valid_from >= valid_until` describes an EMPTY window that no
+        /// instant can ever satisfy — so [`Engine::write`] refuses it with
+        /// [`EngineError::InvalidArgument`] rather than storing a row that no
+        /// default read could ever return. A ONE-SIDED window is never empty and is
+        /// never refused, however extreme its single bound.
+        valid_until: Option<i64>,
     },
     Edge {
         kind: String,
@@ -4162,6 +4185,8 @@ impl Engine {
                             logical_id: Some(logical_id),
                             state: InitialState::Active,
                             reason: None,
+                            valid_from: None,
+                            valid_until: None,
                         })
                     })
                     .collect::<Result<Vec<_>, _>>()?;
@@ -5758,6 +5783,8 @@ impl Engine {
             logical_id: None,
             state: InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])?;
 
         let poison_outcome: Mutex<Option<EngineError>> = Mutex::new(None);
@@ -5781,6 +5808,8 @@ impl Engine {
                     logical_id: None,
                     state: InitialState::Active,
                     reason: None,
+                    valid_from: None,
+                    valid_until: None,
                 }]);
             });
             // One poison thread — empty batch is a deterministic
@@ -6019,6 +6048,15 @@ impl Engine {
         let cursor = self.next_cursor.load(Ordering::SeqCst).saturating_add(1);
         let enqueued = {
             let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
+            // 0.8.20 Slice 15b (TC-34) — this writer takes NO validity window, and
+            // that is deliberate rather than an oversight. It is a `#[doc(hidden)]`
+            // test-only writer for the internal `coverage`/`graph` row kinds, which
+            // have no public SDK surface at all (see the doc comment above); the
+            // caller-facing authoring path is `PreparedWrite::Node`, handled in
+            // `commit_batch`. Omitting the columns binds NULL — the migration
+            // step-22 default and the UNBOUNDED reading — so engine-derived rows
+            // stay valid at every instant, which is the only correct answer for a
+            // structural row that no caller can address a window to.
             tx.execute(
                 "INSERT INTO canonical_nodes(write_cursor, kind, body, source_id, logical_id, row_kind)
                  VALUES(?1, ?2, ?3, ?4, NULL, ?5)",
@@ -13228,9 +13266,31 @@ fn validate_write(
     write: &PreparedWrite,
 ) -> Result<WritePlan, EngineError> {
     match write {
-        PreparedWrite::Node { kind, body, logical_id, .. } => {
+        PreparedWrite::Node { kind, body, logical_id, valid_from, valid_until, .. } => {
             if kind.trim().is_empty() || body.trim().is_empty() {
                 return Err(EngineError::WriteValidation);
+            }
+            // 0.8.20 Slice 15b (TC-34) — the validity window is HALF-OPEN
+            // `[valid_from, valid_until)`, so a pair with `from >= until` selects
+            // no instant at all: the row would be written but no default read
+            // could ever return it. Silently accepting that is a trap, so it is a
+            // typed refusal carrying the offending bounds. `InvalidArgument` (not
+            // the message-less `WriteValidation`) is deliberate — a caller has to
+            // be able to tell WHICH pair was rejected, and it already maps to
+            // `InvalidArgumentError` in both bindings.
+            //
+            // Only the PAIR can be empty. A one-sided window is unbounded on the
+            // missing side and can never be empty, so it is never refused.
+            if let (Some(from), Some(until)) = (valid_from, valid_until) {
+                if from >= until {
+                    return Err(EngineError::InvalidArgument {
+                        msg: format!(
+                            "invalid validity window: valid_from ({from}) must be strictly less \
+                             than valid_until ({until}); the window is half-open \
+                             [valid_from, valid_until), so this pair can never match any instant"
+                        ),
+                    });
+                }
             }
             // R-20-E3: `source_id` needs no emptiness check here — `SourceId`
             // cannot hold an empty or reserved id, so the check has moved from
@@ -13932,7 +13992,16 @@ fn commit_batch(
         let cursor = base_cursor.saturating_add((i as u64).saturating_add(1));
         match (write, plan) {
             (
-                PreparedWrite::Node { kind, body, source_id, logical_id, state, reason },
+                PreparedWrite::Node {
+                    kind,
+                    body,
+                    source_id,
+                    logical_id,
+                    state,
+                    reason,
+                    valid_from,
+                    valid_until,
+                },
                 WritePlan::Node,
             ) => {
                 // G0 — supersession is tombstone-then-insert in this same txn:
@@ -13960,10 +14029,16 @@ fn commit_batch(
                 // (the default) writes `state = 'active'`, value-identical to the
                 // migration step-20 column DEFAULT; `Pending` quarantines the node
                 // out of default retrieval (the `state = 'active'` read exclusion).
+                // 0.8.20 Slice 15b (TC-34) — persist the world-time validity
+                // window. A `None` binds SQL NULL, which is what the migration
+                // step-22 columns already hold for every pre-existing row and what
+                // `ReadView::validity_sql` reads as UNBOUNDED on that side. So a
+                // write that omits the window is byte-identical on disk to a
+                // pre-slice write, and default-view visibility cannot drift.
                 tx.execute(
-                    "INSERT INTO canonical_nodes(write_cursor, kind, body, source_id, logical_id, row_kind, state, reason)
-                     VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                    params![cursor, kind, body, source_id.as_str(), logical_id, RowKind::Leaf.as_str(), state.as_str(), reason],
+                    "INSERT INTO canonical_nodes(write_cursor, kind, body, source_id, logical_id, row_kind, state, reason, valid_from, valid_until)
+                     VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                    params![cursor, kind, body, source_id.as_str(), logical_id, RowKind::Leaf.as_str(), state.as_str(), reason, valid_from, valid_until],
                 )?;
                 // EXP-S (D2/D5) — per-row_kind index-target dispatch. For `leaf`
                 // this is behavior-identical to the pre-EXP-S inline path: FTS
@@ -14891,6 +14966,8 @@ mod tests {
                 logical_id: None,
                 state: crate::InitialState::Active,
                 reason: None,
+                valid_from: None,
+                valid_until: None,
             }])
             .expect("write should succeed");
 

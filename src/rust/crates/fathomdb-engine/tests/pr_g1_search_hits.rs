@@ -74,6 +74,8 @@ fn ac_g1_hit_shape_text_branch() {
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("write");
     opened.engine.drain(10_000).expect("drain");
@@ -113,6 +115,8 @@ fn ac_g1_hit_shape_vector_branch() {
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("write");
     opened.engine.drain(10_000).expect("drain");
@@ -145,6 +149,8 @@ fn ac_g1_dedup_on_body_and_vector_first_order() {
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("write 1");
     let r2 = opened
@@ -156,6 +162,8 @@ fn ac_g1_dedup_on_body_and_vector_first_order() {
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("write 2");
     opened.engine.drain(10_000).expect("drain");
@@ -208,6 +216,8 @@ fn ac_g1_no_eq_but_partial_eq() {
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("write");
     opened.engine.drain(10_000).expect("drain");
@@ -243,6 +253,8 @@ fn cause_a_doc_node_stable_id_is_content_hash() {
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("write");
     opened.engine.drain(10_000).expect("drain");
@@ -286,6 +298,8 @@ fn cause_a_doc_node_stable_id_survives_reingest() {
                     logical_id: None,
                     state: fathomdb_engine::InitialState::Active,
                     reason: None,
+                    valid_from: None,
+                    valid_until: None,
                 }])
                 .expect("pad");
         }
@@ -298,6 +312,8 @@ fn cause_a_doc_node_stable_id_survives_reingest() {
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
+                valid_from: None,
+                valid_until: None,
             }])
             .expect("write");
         opened.engine.drain(10_000).expect("drain");
@@ -336,6 +352,8 @@ fn cause_a_logical_id_node_is_l_tagged() {
             logical_id: Some("entity-cause-a-42".to_string()),
             state: fathomdb_engine::InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("write");
     opened.engine.drain(10_000).expect("drain");
@@ -381,6 +399,8 @@ fn supersession_search_excludes_superseded_node_version() {
             logical_id: Some(logical_id.to_string()),
             state: fathomdb_engine::InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("write v1");
     opened.engine.drain(10_000).expect("drain v1");
@@ -396,6 +416,8 @@ fn supersession_search_excludes_superseded_node_version() {
             logical_id: Some(logical_id.to_string()),
             state: fathomdb_engine::InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("write v2");
     opened.engine.drain(10_000).expect("drain v2");
@@ -438,6 +460,8 @@ fn cause_a_distinct_bodies_distinct_stable_ids() {
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("w1");
     let r2 = opened
@@ -449,6 +473,8 @@ fn cause_a_distinct_bodies_distinct_stable_ids() {
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("w2");
     opened.engine.drain(10_000).expect("drain");

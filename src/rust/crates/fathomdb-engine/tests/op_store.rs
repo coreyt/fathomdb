@@ -91,6 +91,8 @@ fn ac_060b_schema_validation_failure_leaves_no_batch_residue() {
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
+                valid_from: None,
+                valid_until: None,
             },
             PreparedWrite::OpStore {
                 collection: "validated".to_string(),

@@ -94,6 +94,8 @@ fn write_docs(engine: &Engine, count: usize, batch: usize) {
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
+                valid_from: None,
+                valid_until: None,
             })
             .collect();
         engine.write(&nodes).expect("production write");
