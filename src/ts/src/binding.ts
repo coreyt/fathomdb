@@ -90,7 +90,11 @@ interface NativeSearchHit {
   body: string;
   score: number;
   branch: string;
-  /** G0 Phase-2 — source-document provenance; set only for graph-arm hits. */
+  /**
+   * G0 Phase-2 — source-document provenance (the `eraseSource` argument).
+   * TC-31 (0.8.20): set on EVERY hit path, not just the graph arm; null/absent
+   * only for a row with genuinely NULL provenance.
+   */
   sourceId?: string | null;
   /** 0.8.5 (EXP-0) — CE score (sigmoid of the cross-encoder logit) for in-pool
    * reranked hits; null otherwise. */

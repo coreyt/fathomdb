@@ -169,8 +169,13 @@ export interface SearchHit {
   score: number;
   branch: SoftFallbackBranch;
   /**
-   * G0 Phase-2 — source-document provenance. The traversed edge's `source_id`
-   * for a graph-arm hit; `null` for every two-arm hit.
+   * G0 Phase-2 — source-document provenance, the identifier `eraseSource`
+   * consumes. TC-31 (0.8.20): populated on EVERY hit path, not just the graph
+   * arm. Node hits (text/vector) carry the node's own `source_id`; edge hits
+   * (edge-FTS, vector edge-fact) carry the edge's own; graph-arm hits carry the
+   * traversed edge's (unchanged). `null` only when the stored row really has
+   * NULL provenance: written before 0.8.20, or a governed row spared by the
+   * step-21 backfill under the TC-11 pin.
    */
   sourceId: string | null;
   /**

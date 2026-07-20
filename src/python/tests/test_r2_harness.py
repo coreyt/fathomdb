@@ -48,9 +48,18 @@ class _StubHit:
 
 
 def test_chunked_session_source_resolves_to_bare_session_id() -> None:
-    """G0 Phase-2 §E — a graph-arm hit's chunked ``source_id`` (``sess#c2``)
-    resolves to the bare gold session id, and ``doc_id_of`` prefers ``source_id``
-    over the cursor map; a two-arm hit (source_id=None) falls back to the map."""
+    """G0 Phase-2 §E — a hit's chunked ``source_id`` (``sess#c2``) resolves to
+    the bare gold session id, and ``doc_id_of`` prefers ``source_id`` over the
+    cursor map; a hit with NO ``source_id`` falls back to the map.
+
+    TC-31 (0.8.20 Slice 10a) narrowed which hits reach that fallback. It used to
+    be every two-arm (text/vector) hit, because only the graph arm carried
+    provenance; now EVERY hit path carries its own canonical ``source_id``, so
+    the fallback serves only genuinely NULL-provenance rows (written before
+    0.8.20, or a governed row spared by the step-21 backfill under the TC-11
+    pin). The fallback itself is unchanged and still required — hence the
+    ``source_id=None`` stubs below, which stand in for such a legacy row rather
+    than for a two-arm hit."""
     assert session_id_of("sess_42#c0") == "sess_42"
     assert session_id_of("sess_42#c17") == "sess_42"
     assert session_id_of("sess_42") == "sess_42"  # idempotent / no suffix
@@ -58,9 +67,10 @@ def test_chunked_session_source_resolves_to_bare_session_id() -> None:
     cursor_to_doc = {7: "cursor_session"}
     doc_id_of = _make_doc_id_of(cursor_to_doc)
 
-    # Graph-arm hit: carries a chunked source_id → canonicalized, map ignored.
+    # Provenanced hit: carries a chunked source_id → canonicalized, map ignored.
+    # Post-TC-31 this is the path EVERY real hit takes.
     assert doc_id_of(_StubHit(id=7, source_id="sess_42#c2")) == "sess_42"
-    # Two-arm hit: no source_id → cursor map.
+    # Legacy NULL-provenance row: no source_id → cursor map.
     assert doc_id_of(_StubHit(id=7, source_id=None)) == "cursor_session"
     # Unknown cursor, no source_id → stringified id fallback.
     assert doc_id_of(_StubHit(id=99, source_id=None)) == "99"

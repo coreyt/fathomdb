@@ -350,7 +350,7 @@ interface SearchHit {
   body: string;
   score: number; // G9 RRF-fused relevance (Σ 1/(60+rank)); higher = better
   branch: SoftFallbackBranch; // "vector" | "text" | "text_edge" | "graph_arm"
-  sourceId: string | null; // G0 Phase-2 provenance; set only for graph-arm hits
+  sourceId: string | null; // provenance (`eraseSource` arg); set on EVERY hit (TC-31)
   ceScore: number | null; // 0.8.5 CE score (sigmoid logit) for in-pool reranked hits
 }
 ```
@@ -361,6 +361,15 @@ on **rank**, never compared raw (they are not comparable). `branch` tags which
 branch produced the representative hit (vector-first when both surface a body).
 `ceScore` (0.8.5 / EXP-0) is the per-candidate cross-encoder score
 (`sigmoid(ce_logit)`) for hits inside the reranked pool, `null` otherwise.
+
+`sourceId` carries the hit's source-document provenance — the identifier
+`engine.eraseSource` consumes. **TC-31 (0.8.20): it is populated on
+every hit path**, not just the graph arm, so a caller can always resolve a hit
+back to the document it came from. Node hits (text/vector) carry the node's own
+`sourceId`; edge hits (edge-FTS, vector edge-fact) carry the edge's own;
+graph-arm hits carry the traversed edge's. It is `null` only when the stored row
+genuinely has NULL provenance — written before 0.8.20, or a governed row spared
+by the step-21 backfill. `sourceId` never participates in ranking.
 
 ### `SearchFilter`
 

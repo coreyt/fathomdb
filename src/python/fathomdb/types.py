@@ -80,8 +80,13 @@ class SearchHit:
     branch, `bm25()` for the text branch); the two are not comparable raw.
     `branch` tags which retrieval branch produced the hit.
 
-    `source_id` (G0 Phase-2) carries source-document provenance: the traversed
-    edge's `source_id` for a graph-arm hit, `None` for every two-arm hit.
+    `source_id` (G0 Phase-2) carries source-document provenance — the identifier
+    `erase_source` consumes. TC-31 (0.8.20): populated on EVERY hit path, not
+    just the graph arm. Node hits (text/vector) carry the node's own
+    `source_id`; edge hits (edge-FTS, vector edge-fact) carry the edge's own;
+    graph-arm hits carry the traversed edge's (unchanged). `None` only when the
+    stored row really has NULL provenance: written before 0.8.20, or a governed
+    row spared by the step-21 backfill under the TC-11 pin.
 
     `ce_score` (0.8.5 / EXP-0) is the per-candidate cross-encoder score
     (`ce_norm = sigmoid(ce_logit)`), set only for hits inside the reranked pool;
