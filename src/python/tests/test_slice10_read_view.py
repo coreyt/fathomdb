@@ -408,7 +408,7 @@ def test_graph_neighbors_honours_the_view_in_every_direction(db_path: str) -> No
         engine.transition("II", "deleted", "t")
         engine.drain(timeout_s=30)
 
-        cases = [
+        cases: list[tuple[graph.TraversalDirection, ReadView, list[str]]] = [
             ("outgoing", ReadView(), ["OA"]),
             ("outgoing", ReadView(include_inactive=True), ["OA", "OI"]),
             ("incoming", ReadView(), ["IA"]),
