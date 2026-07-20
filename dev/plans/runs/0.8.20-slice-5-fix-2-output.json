@@ -1,0 +1,197 @@
+{
+  "slice": "0.8.20-slice-5-fix-2",
+  "title": "codex §9 re-review remediation — P2 doctor false assurance on unerasable edges + P2 erase_source freezes before draining",
+  "branch": "orch-0.8.20-s5",
+  "baseline": "00b46b84f5c1026b8b5d630753c06bc020b463e0",
+  "head": "7be20ec3dca5cb3cae6b3facee02779099d8ffb6",
+  "status": "COMPLETE — both P2 findings fixed, each with a test that produced a genuine runtime RED at baseline for the predicted reason. No blockers. Two pre-existing non-regressions itemized under non_regression.pre_existing_failures.",
+  "review_transcript": "dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log",
+
+  "commits": [
+    {
+      "sha": "248cb507",
+      "subject": "fix(0.8.20): doctor counts NULL-source edges as unerasable (codex P2)",
+      "kind": "fix + tests (finding 1)"
+    },
+    {
+      "sha": "7be20ec3dca5cb3cae6b3facee02779099d8ffb6",
+      "subject": "fix(0.8.20): erase_source drains BEFORE freezing the projection scanner (codex P2)",
+      "kind": "fix + tests (finding 2)"
+    }
+  ],
+  "commit_split_note": "Both fixes touch fathomdb-engine/src/lib.rs. They were split into two scoped commits by staging the drain-ordering hunk out of the index with `git apply --cached --reverse` of an extracted single-hunk patch. That touches ONLY the index; the working tree was never rewound, so no untracked artifact was at risk.",
+
+  "finding_1": {
+    "codex_severity": "P2",
+    "claim": "doctor orphan-provenance gives FALSE ASSURANCE: a canonical_edges row with source_id IS NULL but a non-NULL logical_id is counted as purge-addressable and subtracted from unerasable_rows, so the verb exits clean on the exact legacy/corrupt shape the migration comments call out.",
+    "independently_reconfirmed_from_source": true,
+    "mechanism": "The census query summed `CASE WHEN logical_id IS NOT NULL THEN 1 ELSE 0 END` over a UNION ALL of canonical_nodes and canonical_edges, and the unerasable math subtracted that single `governed` figure from the NULL-source bucket. That conflates two different things. purge_inner resolves its lifecycle target exclusively through canonical_nodes (`SELECT state FROM canonical_nodes WHERE logical_id = ?1 AND superseded_at IS NULL`) and then erases edges by ENDPOINT (from_id/to_id); it never resolves an edge by edge logical_id. An edge logical_id is only a SUPERSESSION identity and confers no purge-addressability. So the reporting surface still encoded the assumption that fix-1's P1 already corrected in migration step 21 — meaning the diagnostic reported CLEAN for precisely the hole step 21 now closes.",
+    "fix": {
+      "query": "The subselect now carries a third column, `purge_addressable`: `CASE WHEN logical_id IS NOT NULL THEN 1 ELSE 0 END` on the canonical_nodes arm and a LITERAL 0 on the canonical_edges arm. The outer SELECT sums both `governed` (logical_id carriers) and `purge_addressable` (node-only).",
+      "accounting": "unerasable_rows for the NULL-source bucket now subtracts `purge_addressable`, not `governed`. A NULL-source edge is therefore counted un-erasable regardless of its logical_id.",
+      "node_side_unchanged": "A node's logical_id genuinely does confer purge-addressability, so the node accounting is bit-for-bit what it was. Pinned against over-correction by null_source_governed_node_stays_erasable.",
+      "governed_rows_field_retained": "OrphanProvenanceSource.governed_rows still reports logical_id carriers (nodes AND edges) — it is a reporting figure and dropping edges from it would lose information. Its doc comment now states explicitly that it is NOT the same thing as purge-addressability and is NOT what the unerasable math keys on. No public struct field was added or removed, so no SDK/CLI JSON shape changed.",
+      "conceptual_link_recorded": "The query comment names migration step 21, states the node/edge asymmetry and its reason, and names the pinning test, so the migration and the doctor cannot drift apart again. The Engine::orphan_provenance doc comment and the CLI test module doc were corrected in the same way — both previously said flatly 'a row is reachable by purge via logical_id'."
+    },
+    "files": [
+      "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/rust/crates/fathomdb-engine/src/lib.rs",
+      "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/rust/crates/fathomdb-cli/tests/doctor_orphan_provenance.rs",
+      "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/rust/crates/fathomdb-cli/Cargo.toml"
+    ],
+    "new_dev_dependency": "fathomdb-cli gains `rusqlite = { version = \"0.31\", features = [\"bundled\"] }` as a DEV-dependency only (same pin the engine test suite already uses; Cargo.lock +1 line). No supported write path can produce a NULL-provenance row after 5c, so raw SQL is the only way to build the fixture, and design §3 Rule 1 requires the witness to assert on raw state / the doctor's own report rather than via search. No runtime dependency was added."
+  },
+
+  "finding_2": {
+    "codex_severity": "P2",
+    "assessed_actual_severity": "High practical impact — the failing sequence is 'write a vector-indexed row, then erase it', i.e. ordinary first use of this slice's headline governed SDK verb erase_source (R-20-E4), and it fails only after a 30-second stall.",
+    "independently_reconfirmed_from_source": true,
+    "mechanism": "erase_source_shared called projection_runtime.set_frozen(true) and only THEN drain(LIFECYCLE_DRAIN_TIMEOUT_MS). drain -> wait_for_idle consults database_has_pending_projection_work, which reads the DATABASE (canonical_nodes joined to _fathomdb_vector_kinds, left-joined to _fathomdb_projection_terminal), not the in-memory queue. A row written moments earlier is 'pending' by that probe until a worker projects it. But projection_dispatcher_loop parks on its condvar while state.frozen is set, so it can never scan and enqueue that row. wait_for_idle therefore spins to its deadline and drain returns EngineError::Scheduler after the full 30s LIFECYCLE_DRAIN_TIMEOUT_MS.",
+    "fix": "Copied purge's known-good ordering verbatim rather than inventing a new one: `self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS)?;` BEFORE `set_frozen(true)`, then the existing freeze + second drain + erase. purge already carried this ordering with a comment naming this exact failure mode ('Freezing before the first drain would stall projection of any just-written row -> database_has_pending_projection_work never clears -> drain times out into Scheduler'). The pre-freeze drain's `?` returns before anything is frozen, so there is no path that leaves the scanner frozen on early return. The post-freeze drain, the WAL/AC-028b rationale and complete_erasure_at_rest are all unchanged — only the ordering changed.",
+    "covers_both_verbs": "erase_source (governed SDK) and excise_source (operator) share erase_source_shared, so one fix covers both; each is pinned by its own test because the two are separately reachable and a future refactor could split the path.",
+    "files": [
+      "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/rust/crates/fathomdb-engine/src/lib.rs",
+      "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/rust/crates/fathomdb-engine/tests/erasure_drain_ordering.rs"
+    ]
+  },
+
+  "red_evidence": {
+    "discipline": "Both findings are defects in already-written code, so a genuine runtime RED was expected and BOTH were obtained at baseline 00b46b84, each failing for the predicted reason. Neither is a claimed-but-unobserved RED.",
+    "finding_1": {
+      "test": "null_source_governed_edge_counts_as_unerasable (src/rust/crates/fathomdb-cli/tests/doctor_orphan_provenance.rs)",
+      "command": "cargo test -p fathomdb-cli --test doctor_orphan_provenance",
+      "exit_code_at_baseline": 101,
+      "result_line": "test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out",
+      "assertion_output_verbatim": "thread 'null_source_governed_edge_counts_as_unerasable' panicked at src/rust/crates/fathomdb-cli/tests/doctor_orphan_provenance.rs:180:5:\nassertion `left == right` failed: a canonical_edges row with NULL source_id is erasable by NO verb — an edge logical_id is not purge-addressable; report=Object {\n    \"sources\": Array [\n        Object { \"governed_rows\": Number(0), \"reserved\": Bool(false), \"rows\": Number(3), \"source_id\": String(\"tenant-a\") },\n        Object { \"governed_rows\": Number(1), \"reserved\": Bool(false), \"rows\": Number(2), \"source_id\": String(\"tenant-b\") },\n        Object { \"governed_rows\": Number(1), \"reserved\": Bool(false), \"rows\": Number(1), \"source_id\": Null },\n    ],\n    \"total_rows\": Number(6),\n    \"unerasable_rows\": Number(0),\n    \"verb\": String(\"orphan-provenance\"),\n}\n  left: Some(0)\n right: Some(1)",
+      "red_is_for_the_right_reason": "The captured baseline report shows the mechanism directly: the NULL-source bucket holds 1 row with governed_rows = 1, and unerasable_rows is 0 — the edge's logical_id was subtracted as purge-addressable, exactly as codex described.",
+      "second_assertion_also_red_at_baseline": "The exit-code assertion (DOCTOR_FOUND_ISSUES = 65) is downstream of the same defect: with unerasable_rows == 0 the CLI returns CliOutcome::Clean and exits 0. It is unreached at baseline only because the census assertion fires first.",
+      "assertion_target": "The doctor's own JSON report plus the process exit code — design §3 Rule 1 honoured (raw state / raw report, never via search results). The fixture row is injected with raw SQL and read back through the verb.",
+      "non_vacuity_guard": "null_source_governed_node_stays_erasable is the paired control: it injects the NODE analogue (NULL source_id, non-NULL logical_id) and asserts unerasable_rows stays 0 and the exit stays OK. It PASSED at baseline and still passes, so the fix is proven not to have over-corrected into the node side. The three pre-existing tests in the file also passed at baseline and after."
+    },
+    "finding_2": {
+      "tests": [
+        "erase_source_drains_before_freezing (src/rust/crates/fathomdb-engine/tests/erasure_drain_ordering.rs)",
+        "excise_source_drains_before_freezing (same file)"
+      ],
+      "command": "cargo test -p fathomdb-engine --features operator --test erasure_drain_ordering -- --test-threads=1",
+      "exit_code_at_baseline": 101,
+      "result_line": "test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 60.11s",
+      "assertion_output_verbatim": "thread 'erase_source_drains_before_freezing' panicked at src/rust/crates/fathomdb-engine/tests/erasure_drain_ordering.rs:144:5:\nerase_source froze the projection scanner before draining, so the dispatcher could never enqueue the 96 just-written rows and drain timed out into Scheduler after 30.000784078s\n\nthread 'excise_source_drains_before_freezing' panicked at src/rust/crates/fathomdb-engine/tests/erasure_drain_ordering.rs:198:5:\nexcise_source froze the projection scanner before draining; drain timed out into Scheduler after 30.00085197s",
+      "red_is_for_the_right_reason": "Both failed with EXACTLY the predicted signature: Err(EngineError::Scheduler) at 30.0008s — i.e. the full LIFECYCLE_DRAIN_TIMEOUT_MS of 30_000ms, not an incidental failure.",
+      "ordering_sensitivity": "The fixture strands projection work DETERMINISTICALLY rather than racing the dispatcher. A GatedEmbedder blocks every embed() on a condvar until the test opens the gate (from a helper thread, 150ms after the erasure verb is entered), so no projection job can complete beforehand and the dispatcher parks once it has filled PROJECTION_INFLIGHT_LIMIT (PROJECTION_WORKERS 2 × PROJECTION_COMMIT_BATCH 16 = 32) in-flight slots. The fixture seeds 96 rows, so at least 64 are provably UNSCANNED at the instant the verb runs. A test that wrote one or two rows would race the dispatcher and could pass on the broken code — worthless, per the mandate.",
+      "green_path_is_fast": "After the fix the same two tests pass in 0.25s total (the 150ms gate hold plus projection). The green path does NOT depend on waiting out any timeout; the 30s stall is the FAILURE path only. The assertion is doubly explicit: it rejects Err(Scheduler) by variant AND requires elapsed < 15s.",
+      "additional_non_vacuity_guards": [
+        "Asserts report.nodes_excised > 0, so the test cannot pass on an erasure that removed nothing.",
+        "Asserts an AtomicBool set inside embed(), proving the gated embedder was actually exercised and the claimed backlog really existed — otherwise the fixture could silently no-op if the vector kind were misconfigured."
+      ]
+    }
+  },
+
+  "gates": {
+    "method": "Exit codes read from PIPESTATUS. No trailing echo was used to synthesize a status.",
+    "CLIPPY_EXIT": 0,
+    "CLIPPY_COMMAND": "cargo clippy --workspace --all-targets",
+    "CHECK_EXIT": 0,
+    "CHECK_COMMAND": "cargo check --workspace --all-targets",
+    "cargo_fmt": "cargo fmt --all run before committing; the repo pre-commit hook's `cargo fmt --check` passed on both commits.",
+    "agent_test_sh": "NOT run as an aggregate. Per the mandate it exits 1 wholesale on the pre-existing dead publish dry-run assertion (TC-16, dead since 0.8.14) and set -e aborts there; the downstream suites were run individually and are reported per-suite below."
+  },
+
+  "schema_version_pin": {
+    "value": 21,
+    "changed_by_this_fix": false,
+    "reason": "Neither fix touches the migration ladder. Finding 1 changes only a read-only SELECT in the engine; finding 2 changes only statement ordering.",
+    "asserted_by": "s21_is_head_and_schema_version_is_21 (green)"
+  },
+
+  "non_regression": {
+    "instruction": "Explicitly required: MUST NOT regress any prior sub-slice.",
+    "named_suites_required_by_mandate": [
+      {"suite": "cargo test -p fathomdb-engine --features operator --test erasure_projection_registry", "expected": 4, "result": "ok. 4 passed; 0 failed", "sub_slice": "5a"},
+      {"suite": "cargo test -p fathomdb-engine --features operator --test erasure_completeness", "expected": "7 prior + 1 from fix-1", "result": "ok. 8 passed; 0 failed", "sub_slice": "5b + fix-1"},
+      {"suite": "cargo test -p fathomdb-engine --features operator --test provenance_mandatory", "result": "ok. 3 passed; 0 failed", "sub_slice": "5c"},
+      {"suite": "cargo test -p fathomdb-schema (whole crate)", "result": "ALL GREEN, 0 failed — includes step21_migration 5/5 with fix-1's legacy_backfill_covers_governed_edges and legacy_backfill_spares_governed_rows both green", "sub_slice": "5c migration + fix-1"},
+      {"suite": "cargo test -p fathomdb --test sdk_only_erasure", "expected": 3, "result": "ok. 3 passed; 0 failed", "note": "Run EXPLICITLY as its own invocation — the target is #![cfg(not(feature = \"operator\"))] and compiles to zero tests under any operator/unified run.", "sub_slice": "5d"},
+      {"suite": "cargo test -p fathomdb --test no_recovery_surface", "result": "ok. 1 passed; 0 failed", "gate": "AC-041"},
+      {"suite": "cargo test -p fathomdb --test governed_surface", "result": "ok. 3 passed; 0 failed", "sub_slice": "5d"},
+      {"suite": "cargo test -p fathomdb-cli (full CLI suite)", "result": "ALL GREEN, 0 failed (7 ignored, pre-existing). operator_cli 25/25, recovery_cli 11/11, parser 14/14, perf_regression_check 12/12, doctor_orphan_provenance 5/5 (3 pre-existing + 2 new).", "sub_slice": "5d"}
+    ],
+    "engine_suite_full": {
+      "command": "cargo test -p fathomdb-engine --features operator -- --skip eu7_real_corpus_ac_validation",
+      "exit_code": 0,
+      "targets_failed": 0,
+      "note": "Every engine test target under --features operator, with the single forbidden test filtered out by exact name. No FAILED line anywhere; process exit 0 read from PIPESTATUS.",
+      "new_target": "erasure_drain_ordering 2/2 green"
+    },
+    "other_packages": {
+      "fathomdb (default features)": "all green, 0 failed",
+      "fathomdb (--features operator)": "all green, 0 failed",
+      "fathomdb-schema": "all green, 0 failed",
+      "fathomdb-cli": "all green, 0 failed"
+    },
+    "pre_existing_failures": [
+      {
+        "target": "pr_g10_reranker_ce",
+        "verdict": "PRE-EXISTING, NOT MINE, NOT A REGRESSION — and deliberately NOT 'fixed'.",
+        "symptom": "Does not COMPILE under --features default-reranker since 0.8.19's C-2 typed SearchHit.id u64 -> IdSpace swap (commit 6616db93). File byte-identical to baseline.",
+        "invisibility": "Not caught by cargo clippy/check --workspace --all-targets because default-reranker is not a default feature.",
+        "action_taken": "None."
+      },
+      {
+        "target": "scripts/agent-test.sh",
+        "verdict": "PRE-EXISTING, NOT MINE, NOT 'fixed'.",
+        "symptom": "Exits 1 wholesale on the dead publish dry-run assertion (TC-16, dead since 0.8.14); set -e aborts the script there.",
+        "action_taken": "Not run as an aggregate; downstream steps run individually and reported above."
+      }
+    ]
+  },
+
+  "prohibitions_observed": {
+    "maturin_develop_or_pip_install_e": "NOT run. The shared .venv was never touched.",
+    "eu7_real_corpus_ac": "NOT run in any form, at any N, on any backend. The one wholesale engine invocation carried `-- --skip eu7_real_corpus_ac_validation`, which filters the test out in every test binary; data/corpus-data/ was not symlinked. `cargo test --workspace` was never issued.",
+    "recovery_denylist": "NOT touched. AC-041 (no_recovery_surface) re-run green.",
+    "hitl_signed": "The string 'HITL-SIGNED' was not written anywhere.",
+    "orchestrator_owned_docs": "dev/plans/plan-0.8.20.md, STATUS-0.8.20.md, dev/acceptance.md and dev/todos-and-considerations-ledger.jsonl were NOT edited. (The ledger's pre-existing uncommitted modification was left exactly as found and was NOT committed.)",
+    "git_push": "NOT performed.",
+    "main_repo": "/home/coreyt/projects/fathomdb was NOT touched. All work confined to the orch-0.8.20-s5 worktree.",
+    "branch_verified_before_every_commit": "YES — git rev-parse --abbrev-ref HEAD returned orch-0.8.20-s5 before both commits.",
+    "destructive_git": "NONE. No git stash, no git clean, no git checkout --. The commit split used `git apply --cached --reverse`, which mutates only the index. All SIX pre-existing untracked artifacts (five dev/plans/runs/0.8.20-slice-5*-output.json plus two codex logs) were confirmed intact by git status after the final commit.",
+    "no_worktree_or_branch_created": true,
+    "no_subagent_spawned": true
+  },
+
+  "scope_discipline": {
+    "in_scope": "Exactly the two codex P2 findings plus their tests. The only adjacent edits are three stale doc comments that asserted the very claim finding 1 disproves ('a row is reachable by purge via logical_id') and the rusqlite dev-dependency the finding-1 fixture requires.",
+    "nothing_else_refactored": true,
+    "public_api_changed": false,
+    "spec_deviations": "None. Neither finding was ambiguous or impossible; no spec was silently changed."
+  },
+
+  "blockers_and_follow_ups": [
+    {
+      "id": "FU-FIX2-1",
+      "severity": "advisory",
+      "item": "Re-raising fix-1's FU-FIX1-2 because this fix hit it again: eu7_real_corpus_ac carries no #[ignore] and no env gate, so compliance with the standing HITL closure depends on every agent remembering to filter it. Per the standing 'fix the tooling, not the actor' norm this should become a mechanical gate."
+    },
+    {
+      "id": "FU-FIX2-2",
+      "severity": "advisory",
+      "item": "The class of defect behind BOTH of this round's findings is a lifecycle verb that freezes the projection scanner and then waits on a DATABASE-derived idleness probe. purge and (now) erase_source_shared are correct; run_rebuild (lib.rs, `fn run_rebuild`) still freezes before its only drain. It is likely benign in practice because a rebuild is an operator action rather than a write-then-immediately-act sequence, but it is the same shape and was NOT touched here (out of scope). Worth a deliberate look rather than leaving it as the last instance of the pattern."
+    },
+    {
+      "id": "FU-FIX2-3",
+      "severity": "advisory",
+      "item": "doctor orphan-provenance now reports governed_rows (logical_id carriers, nodes AND edges) alongside unerasable_rows, which for a NULL-source bucket containing a governed edge reads as governed_rows=1 AND unerasable_rows=1. That is correct and informative, but an operator could find it surprising. A future surface change could split governed_rows into node/edge columns; deliberately NOT done here to avoid changing the CLI JSON shape inside a fix commit."
+    }
+  ],
+
+  "files_changed": [
+    "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/rust/crates/fathomdb-engine/src/lib.rs",
+    "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/rust/crates/fathomdb-cli/tests/doctor_orphan_provenance.rs",
+    "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/rust/crates/fathomdb-cli/Cargo.toml",
+    "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/Cargo.lock"
+  ],
+  "files_added": [
+    "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/rust/crates/fathomdb-engine/tests/erasure_drain_ordering.rs"
+  ],
+  "new_dependencies": "fathomdb-cli DEV-dependency rusqlite 0.31 (bundled) only — same pin already used by the engine test suite. No runtime dependency added."
+}

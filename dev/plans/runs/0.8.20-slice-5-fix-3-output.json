@@ -1,0 +1,251 @@
+{
+  "slice": "0.8.20-slice-5-fix-3",
+  "title": "codex §9 round-3 remediation — P1 excise_collection_record can delete the erasure-durability guarantee + P2 a moved/rotated telemetry sink is treated as redacted",
+  "branch": "orch-0.8.20-s5",
+  "baseline": "7be20ec3dca5cb3cae6b3facee02779099d8ffb6",
+  "head": "8e09b950",
+  "status": "COMPLETE — both findings fixed. Each produced a genuine runtime RED at baseline 7be20ec3 for the predicted reason (three REDs total: engine P1, engine P2, CLI P1). No blockers. Two pre-existing non-regressions plus one newly-characterised pre-existing flake itemized under non_regression.",
+  "review_transcript": "dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log",
+
+  "commits": [
+    {
+      "sha": "ac935c3d",
+      "subject": "test(0.8.20): RED — pending-redaction queue excisable by operator + rotated sink counts as redacted (codex P1/P2)",
+      "kind": "RED tests only (committed at baseline behaviour, all three failing)"
+    },
+    {
+      "sha": "8e09b950",
+      "subject": "fix(0.8.20): refuse excising engine-internal erasure bookkeeping + a rotated sink is not a redacted sink (codex P1/P2)",
+      "kind": "both fixes + doc corrections"
+    }
+  ],
+  "commit_split_note": "Split RED-then-GREEN rather than per-finding. Both fixes land in the same file (fathomdb-engine/src/lib.rs) within ~180 lines of each other and the P1 fixture depends on the pending queue that P2 also governs; a per-finding index split would have produced two commits neither of which was independently green. No destructive git was used — no stash, no clean, no checkout --. All eight pre-existing untracked artifacts confirmed intact by git status after the final commit.",
+
+  "finding_1": {
+    "codex_severity": "P1",
+    "claim": "excise_collection_record aimed at the internal erasure_pending_redaction collection deletes the durable queue entry that tells retries which telemetry stable IDs still need redaction; complete_erasure_at_rest then sees no pending work and can report success while the telemetry sink still contains erased IDs. Reachable via --excise-collection erasure_pending_redaction --excise-record-key <verb>.",
+    "independently_reconfirmed_from_source": true,
+    "mechanism": "excise_collection_record_inner issues an unfiltered `DELETE FROM operational_mutations WHERE collection_name = ?1 AND record_key = ?2`. The pending-redaction queue is stored as ordinary operational_mutations rows with collection_name = 'erasure_pending_redaction' and record_key = the erasing VERB (enqueue_pending_redaction), so both bind parameters are guessable and the row is an ordinary target. Once deleted, load_pending_redactions returns empty, discharge_pending_redactions short-circuits on `if pending.is_empty() { return Ok(()) }`, and every subsequent erasure verb reports success. The canonical rows are already gone, so the naive recomputation path cannot regenerate the ids either — this is exactly the false-success R-20-E5 violation fix-1 was commissioned to close, re-opened through an operator-reachable CLI path.",
+    "fix": {
+      "shape": "A typed pre-flight refusal in the PUBLIC verb Engine::excise_collection_record, before excise_collection_record_inner is called — so the refusal is total, never partial. Precedent followed deliberately: erase_source refuses the reserved `_`-prefixed provenance namespace via a construct-to-validate check while excise_source stays permissive.",
+      "predicate": "New crate-private fn is_erasure_bookkeeping_collection(collection: &str) -> bool, true for ERASURE_PENDING_REDACTION_COLLECTION and for every member of ERASURE_AUDIT_COLLECTIONS. Written as a predicate over the two EXISTING constants rather than a third hand-written list, so a future audit collection is protected automatically and the retention exemption and the excise refusal cannot drift apart.",
+      "whole_family_covered": "Per the mandate's instruction to consider the family, not just the collection codex named: excise_source_audit and excise_record_audit are refused alongside erasure_pending_redaction. The audit collections stand on the HITL ruling of 2026-07-19 ('there must be an auditable record of deletion event') — allowing an operator to delete audit rows one-by-one defeats that ruled-on guarantee just as surely as the retention sweep did (defect D-A), and the retention exemption landed in 5b would have been trivially bypassable while this verb stayed permissive.",
+      "error_variant": "EngineError::InvalidArgument { msg } — a typed refusal, never a silent no-op. See error_variant_rationale below for why no NEW variant was added.",
+      "costs_a_caller_nothing": "Neither protected collection carries erasable caller payload. A pending-queue row holds only stable ids the engine is about to remove from the sink, and deletes itself on discharge. An audit row holds either a source_id bound by the non-PII rule or a SHA-256 record digest (digest_record_identity) — never a raw record key. So the refusal removes no legitimate erasure capability.",
+      "targeted_not_disabling": "Ordinary op-store collections remain fully excisable; the test asserts this positively so the fix cannot silently have broken R-20-E7.",
+      "doc_corrections": "The ERASURE_AUDIT_COLLECTIONS doc comment previously stated the OPPOSITE of the new behaviour — 'It can still be removed deliberately, by Engine::excise_collection_record — an explicit operator act that is itself audited.' That sentence was the written-down form of the defect and is now corrected. The Engine::excise_collection_record doc comment gained the refusal contract."
+    },
+    "error_variant_rationale": {
+      "chosen": "EngineError::InvalidArgument { msg }",
+      "rejected": "A dedicated variant (e.g. ErasureBookkeepingProtected)",
+      "why": "engine_error_code in fathomdb-cli matches EngineError EXHAUSTIVELY (no catch-all arm), and fathomdb-py / fathomdb-napi both carry per-variant mapping arms. A new variant is therefore a four-crate change with public error-taxonomy consequences — a scope expansion inside a fix commit, and one that changes the SDK error surface for a verb that is operator-gated and not in the SDK at all. InvalidArgument is already documented as 'intentionally non-exhaustive so the binding layer can forward it as a ValueError / TypeError', already maps to the stable code InvalidArgumentError, and carries the full explanatory message. If a reviewer prefers a dedicated variant it is a mechanical follow-up; recorded as FU-FIX3-1 rather than decided unilaterally here."
+    },
+    "files": [
+      "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/rust/crates/fathomdb-engine/src/lib.rs",
+      "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/rust/crates/fathomdb-engine/tests/erasure_completeness.rs",
+      "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/rust/crates/fathomdb-cli/tests/recovery_cli.rs"
+    ]
+  },
+
+  "finding_2": {
+    "codex_severity": "P2",
+    "claim": "If a pending redaction exists but the telemetry sink path has been moved or rotated away, the NotFound => Ok(()) path clears the pending queue as if the IDs were redacted, even though the old file may still exist under its rotated name with the erased result_stable_ids.",
+    "independently_reconfirmed_from_source": true,
+    "mechanism": "redact_telemetry_stable_ids carried `Err(err) if err.kind() == NotFound => Ok(())` with the comment 'The operator deleted or moved the sink: nothing to redact' — the comment itself named the moved case and then discharged it anyway. On Ok, discharge_pending_redactions proceeds to clear_pending_redactions, so the durable obligation is retired without any redaction having occurred, and the verb returns success.",
+    "notfound_discharge_burden_reasoning": {
+      "instruction": "The mandate put the burden of proof on DISCHARGING, and asked for the reasoning to be stated explicitly.",
+      "verdict": "NotFound is now UNCONDITIONALLY ErasureIncomplete { stage: \"telemetry_redaction\" }. No provable-deletion carve-out was constructed, because the engine cannot currently meet the burden.",
+      "why_no_carve_out_exists": [
+        "TelemetrySink holds a PathBuf, not an open file handle (capture_telemetry re-opens by path on every append). With only a path, NotFound is information-theoretically identical for `rm` and for `mv` — there is no observable that separates them after the fact.",
+        "The one mechanism that WOULD constitute proof — holding an fd open from enable_telemetry and checking st_nlink == 0 on it, which proves the inode was unlinked with no remaining links — requires adding a persistent handle to the telemetry sink and is (a) unix-only, (b) a change to the telemetry hot path, and (c) out of scope for a two-finding fix round. It is recorded as FU-FIX3-2, not done silently.",
+        "Even nlink == 0 would be incomplete proof: it says nothing about a COPY of the sink taken before the deletion (`cp`, a backup, a shipped log). Log shipping is as ordinary as log rotation. So the strongest available witness would still not fully discharge the obligation, which further weakens the case for carving one out.",
+        "Directionally: the cost of failing closed is an operator sees a retryable typed error with instructions; the cost of failing open is a silent R-20-E5 violation on a GDPR-facing verb. Asymmetric, so fail closed."
+      ],
+      "no_spurious_firing": "This cannot fire for a sink that never existed. enable_telemetry CREATES the sink (OpenOptions::new().create(true).append(true)) before arming the telemetry_enabled flag, so for any engine with telemetry enabled the sink demonstrably existed. NotFound therefore always means 'existed, then vanished' — precisely the ambiguous case. This was verified against the source, not assumed.",
+      "escape_hatch_documented": "The error message tells the operator to restore the sink at the path and retry, and states explicitly that if the sink really was destroyed an EMPTY file at that path discharges the obligation (the redaction then trivially succeeds and the queue clears). So an operator whose sink is genuinely gone is not permanently wedged — but the discharge is now a deliberate, recorded operator act rather than an inference the engine makes on their behalf."
+    },
+    "fix": "The NotFound guard arm was removed; NotFound now falls into the error branch. The detail string is specialised for NotFound to name the rotation hazard, state that the pending redaction is durable, and give the restore-and-retry instruction. The non-NotFound message is byte-unchanged. Nothing else in the function changed — the fast-OFF atomic guard, the mutex acquisition, the selective (never truncating) redaction and the write-temp-then-rename crash safety are all untouched.",
+    "stale_comment_corrected": "telemetry_redaction_retry_completes_after_failure's doc comment asserted 'PermissionDenied, not NotFound — the latter is a legitimate \"sink is gone, nothing to redact\" success'. That claim is now false; the comment was corrected to say PermissionDenied is used to keep that test's injection INDEPENDENT of the NotFound path, which is why it remains the right injection there.",
+    "files": [
+      "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/rust/crates/fathomdb-engine/src/lib.rs",
+      "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/rust/crates/fathomdb-engine/tests/erasure_completeness.rs"
+    ]
+  },
+
+  "red_evidence": {
+    "discipline": "Both findings are defects in already-written code, so genuine runtime REDs were expected and THREE were obtained at baseline 7be20ec3 (engine P1, engine P2, CLI P1), each failing for the predicted reason. None is a claimed-but-unobserved RED. All three were committed in ac935c3d BEFORE any source change.",
+    "finding_1_engine": {
+      "test": "erasure_bookkeeping_collections_are_not_excisable (src/rust/crates/fathomdb-engine/tests/erasure_completeness.rs)",
+      "command": "cargo test -p fathomdb-engine --features operator --test erasure_completeness -- erasure_bookkeeping_collections_are_not_excisable",
+      "exit_code_at_baseline": 101,
+      "result_line": "test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.06s (run jointly with the finding-2 test)",
+      "assertion_output_verbatim": "thread 'erasure_bookkeeping_collections_are_not_excisable' panicked at src/rust/crates/fathomdb-engine/tests/erasure_completeness.rs:583:10:\nexcise_collection_record must REFUSE the engine-internal pending-redaction queue: deleting an outstanding erasure obligation lets the next verb report success on an incomplete erasure (R-20-E5): ExciseRecordReport { collection: \"erasure_pending_redaction\", record_digest: \"3e8bfb99e74636c50a07b0967773afa2ab19fc555a701fe3afdc6e9b752a01c5\", records_excised: 1, state_rows_excised: 0 }",
+      "red_is_for_the_right_reason": "The baseline return value shows the mechanism directly and unambiguously: records_excised = 1 — the verb really did delete the outstanding erasure obligation, and returned Ok rather than refusing.",
+      "assertion_target": "RAW table contents — raw_collection_row_count() opens an independent rusqlite Connection and counts operational_mutations rows by collection_name. Never search(), never a verb's own report. Design §3 Rule 1 honoured.",
+      "obligation_still_discharged_afterwards": "Required by the mandate and asserted: after the refusals, excise_source('S1') is retried, must return Ok, the sink must no longer contain l:victim-1, the retained id l:control-1 must survive (selectivity), and the pending-queue row count must return to 0.",
+      "non_vacuity_guards": [
+        "The fixture asserts the victim id is physically in the sink file before the erasure, so the post-assertion is not vacuous.",
+        "The fixture asserts exactly ONE pending row exists before the excise attempt — otherwise a refusal that protected nothing would pass.",
+        "The chmod 0555 injection is probed with an actual write attempt; if the sandbox ignores mode bits (running as root) the test PANICS with an explicit 'this fixture would be vacuous' message rather than passing.",
+        "A positive control at the end excises an ordinary 'events' collection record and requires it to SUCCEED, so the fix cannot pass by disabling the verb."
+      ]
+    },
+    "finding_1_cli": {
+      "test": "t_erasure_bookkeeping_collections_refused_via_cli (src/rust/crates/fathomdb-cli/tests/recovery_cli.rs)",
+      "why_a_separate_cli_red": "codex named the CLI as the reachable path, so the engine-level refusal alone would not have answered the finding as stated. This test drives the real built `fathomdb` binary end-to-end.",
+      "command": "cargo test -p fathomdb-cli --test recovery_cli -- t_erasure_bookkeeping_collections_refused_via_cli",
+      "exit_code_at_baseline": 101,
+      "assertion_output_verbatim": "thread 't_erasure_bookkeeping_collections_refused_via_cli' panicked at src/rust/crates/fathomdb-cli/tests/recovery_cli.rs:180:5:\nassertion `left == right` failed: the CLI must REFUSE to excise the engine-internal pending-redaction queue: {\"collection\":\"erasure_pending_redaction\",\"record_digest\":\"3e8bfb99e74636c50a07b0967773afa2ab19fc555a701fe3afdc6e9b752a01c5\",\"records_excised\":1,\"state_rows_excised\":0,\"verb\":\"excise-record\"}\n  left: None\n right: Some(\"error\")",
+      "red_is_for_the_right_reason": "The CLI emitted a SUCCESS envelope with records_excised = 1 through exactly the flag pair codex named (--excise-collection erasure_pending_redaction --excise-record-key excise_source), confirming operator reachability rather than a theoretical engine-API concern.",
+      "assertion_target": "The CLI's own JSON envelope status field PLUS a raw rusqlite count of operational_mutations rows taken between CLI invocations. Rule 1 honoured.",
+      "covers_audit_too": "The same test then aims the CLI at excise_source_audit and requires status=error with the audit row still physically present."
+    },
+    "finding_2": {
+      "test": "rotated_telemetry_sink_is_not_treated_as_redacted (src/rust/crates/fathomdb-engine/tests/erasure_completeness.rs)",
+      "command": "cargo test -p fathomdb-engine --features operator --test erasure_completeness -- rotated_telemetry_sink_is_not_treated_as_redacted",
+      "exit_code_at_baseline": 101,
+      "assertion_output_verbatim": "thread 'rotated_telemetry_sink_is_not_treated_as_redacted' panicked at src/rust/crates/fathomdb-engine/tests/erasure_completeness.rs:678:49:\na moved/rotated sink must NOT be treated as successfully redacted: the erased stable ids are still readable under the rotated name, so the erasure is incomplete: ExciseReport { source_ref: \"S1\", nodes_excised: 1, edges_excised: 0, projections_invalidated: 3 }",
+      "red_is_for_the_right_reason": "At baseline the verb returned Ok(ExciseReport) — an unqualified success — on a sink that had been renamed aside seconds earlier with the erased ids still in it. Exactly the false success codex described.",
+      "leak_proven_not_hypothetical": "Required by the mandate and asserted: the test reads the MOVED-ASIDE file after the erasure and requires it to still contain l:victim-1. The leak is demonstrated by direct file read, not inferred.",
+      "obligation_survival_asserted": "raw_collection_row_count(erasure_pending_redaction) must still be 1 after the failure — proving NotFound no longer clears the queue, which is the actual defect (the error return alone would not prove the obligation survived).",
+      "recovery_path_asserted": "The sink is then renamed back and the erasure retried; it must succeed, must remove l:victim-1, and must preserve l:control-1. This pins that the fix does not permanently wedge an operator and that the retry stays selective.",
+      "rotation_is_a_real_rename": "std::fs::rename, i.e. the same syscall logrotate uses — not a delete, so the RED models the operational event codex named rather than a contrived one."
+    }
+  },
+
+  "gates": {
+    "method": "Exit codes read from PIPESTATUS / $?. No trailing echo was used to synthesize a status.",
+    "CLIPPY_EXIT": 0,
+    "CLIPPY_COMMAND": "cargo clippy --workspace --all-targets",
+    "CHECK_EXIT": 0,
+    "CHECK_COMMAND": "cargo check --workspace --all-targets",
+    "cargo_fmt": "cargo fmt --all run before each commit; the repo pre-commit hook's `cargo fmt --check` passed on both commits (it correctly REJECTED the first commit attempt on an over-long fn signature, which was then formatted).",
+    "agent_test_sh": "NOT run as an aggregate — per the mandate it aborts under set -e at the dead TC-16 publish dry-run assertion. Its downstream steps were run individually: test-rust replaced by the filtered per-package runs below (agent-test.sh's own `cargo test --workspace` would EXECUTE the forbidden eu7 target), test-ts run and green, test-python NOT run (see prohibitions)."
+  },
+
+  "schema_version_pin": {
+    "value": 21,
+    "changed_by_this_fix": false,
+    "reason": "Neither fix touches the migration ladder, any table definition, or any stored shape. Finding 1 adds a pre-flight predicate; finding 2 removes a match arm.",
+    "asserted_by": "s21_is_head_and_schema_version_is_21 (green in the fathomdb-schema run below)"
+  },
+
+  "non_regression": {
+    "instruction": "Explicitly required: MUST NOT regress any prior sub-slice.",
+    "named_suites_required_by_mandate": [
+      {"suite": "cargo test -p fathomdb-engine --features operator --test erasure_projection_registry", "expected": 4, "result": "ok. 4 passed; 0 failed", "sub_slice": "5a"},
+      {"suite": "cargo test -p fathomdb-engine --features operator --test erasure_completeness", "expected": "8 prior", "result": "ok. 10 passed; 0 failed (8 prior all green + 2 new from this fix)", "sub_slice": "5b + fix-1 + fix-3"},
+      {"suite": "cargo test -p fathomdb-engine --features operator --test provenance_mandatory", "expected": 3, "result": "ok. 3 passed; 0 failed", "sub_slice": "5c"},
+      {"suite": "cargo test -p fathomdb-schema (whole crate)", "result": "ALL GREEN, 0 failed across 13 targets — includes step21_migration with fix-1's legacy_backfill_covers_governed_edges green", "sub_slice": "5c migration + fix-1"},
+      {"suite": "cargo test -p fathomdb-engine --features operator --test erasure_drain_ordering", "expected": 2, "result": "ok. 2 passed; 0 failed", "sub_slice": "fix-2"},
+      {"suite": "cargo test -p fathomdb-cli --test doctor_orphan_provenance", "result": "ok, 0 failed (run inside the full CLI suite)", "sub_slice": "fix-2 doctor"},
+      {"suite": "cargo test -p fathomdb --test sdk_only_erasure", "expected": 3, "result": "ok. 3 passed; 0 failed", "note": "Run EXPLICITLY as its own invocation — the target is #![cfg(not(feature = \"operator\"))] and compiles to zero tests under any operator/unified run.", "sub_slice": "5d"},
+      {"suite": "cargo test -p fathomdb --test no_recovery_surface", "expected": 1, "result": "ok. 1 passed; 0 failed", "gate": "AC-041"},
+      {"suite": "cargo test -p fathomdb --test governed_surface", "expected": 3, "result": "ok. 3 passed; 0 failed", "sub_slice": "5d"},
+      {"suite": "cargo test -p fathomdb-cli (full CLI suite)", "result": "GREEN on 3 consecutive full-suite runs, 0 failed binaries. recovery_cli 12/12 (11 prior + 1 new), operator_cli 25/25. One earlier run hit a pre-existing cross-binary lock flake — characterised below, not a regression.", "sub_slice": "5d"},
+      {"suite": "cargo test -p fathomdb-engine --features operator --test excise_source", "expected": 6, "result": "ok. 6 passed; 0 failed"},
+      {"suite": "cargo test -p fathomdb-engine --features operator --test op_store", "expected": 7, "result": "ok. 7 passed; 0 failed", "why": "The verb this fix constrains is the op-store record-erasure verb; this pins that ordinary op-store behaviour is untouched."}
+    ],
+    "engine_suite_full": {
+      "command": "cargo test -p fathomdb-engine --features operator -- --skip eu7_real_corpus_ac_validation",
+      "exit_code": 0,
+      "aggregate": "passed=506 failed=0 ignored=13",
+      "failed_target_count": 0,
+      "note": "Every engine test target under --features operator with the single forbidden test filtered by exact name; the eu7_real_corpus_ac binary reported 'running 0 tests'. Exit code read from $? of the cargo invocation itself, not a trailing echo."
+    },
+    "other_packages": {
+      "fathomdb (default features)": "0 FAILED targets",
+      "fathomdb (--features operator)": "0 FAILED targets",
+      "fathomdb-schema": "0 FAILED targets",
+      "fathomdb-cli": "0 FAILED targets (3 consecutive full-suite runs)",
+      "src/ts (npm test)": "170 passed, 0 failed, exit 0 — run because the fix touches an engine error path, though no binding surface changed"
+    },
+    "pre_existing_failures": [
+      {
+        "target": "pr_g10_reranker_ce",
+        "verdict": "PRE-EXISTING, NOT MINE, NOT A REGRESSION — and deliberately NOT 'fixed'.",
+        "symptom": "Does not COMPILE under --features default-reranker since 0.8.19's C-2 typed SearchHit.id u64 -> IdSpace swap. File byte-identical to baseline; untouched by this fix.",
+        "action_taken": "None."
+      },
+      {
+        "target": "scripts/agent-test.sh",
+        "verdict": "PRE-EXISTING, NOT MINE, NOT 'fixed'.",
+        "symptom": "Exits 1 wholesale on the dead publish dry-run assertion (TC-16, dead since 0.8.14); set -e aborts the script there.",
+        "action_taken": "Not run as an aggregate; downstream steps run individually and reported above."
+      },
+      {
+        "target": "fathomdb-cli :: operator_cli :: t_s34_dump_mutations_lock_held_exits_71",
+        "verdict": "PRE-EXISTING FLAKE, NOT MINE, NOT 'fixed' — newly characterised here so the next reviewer is not surprised by it.",
+        "symptom": "Failed ONCE during the first full `cargo test -p fathomdb-cli` run with `engine open (lock holder): DatabaseLocked { holder_pid: Some(3748096) }` at operator_cli.rs:719. The test deliberately spawns a lock holder to assert exit 71; when cargo runs sibling test binaries concurrently, another binary can hold the DB lock at that instant and the test's OWN lock-holder open fails.",
+        "evidence_it_is_not_mine": "Passed 25/25 in isolation immediately afterwards, and the full CLI suite then ran GREEN three consecutive times. The test exercises `dump-mutations` and touches no erasure code path, no telemetry, and neither collection this fix protects.",
+        "action_taken": "None. Reported, not patched — fixing cross-binary lock contention is out of this fix's scope."
+      }
+    ]
+  },
+
+  "queue_design_assessment": {
+    "why_recorded": "The mandate asked me to say plainly, rather than patch around, if I concluded the pending-redaction queue's DESIGN — rather than its edge cases — is the problem, since it has now attracted three findings across two rounds.",
+    "verdict": "The design is SOUND. I am not escalating. The mechanism is a transactional outbox / intent log: capture the ids before the DELETEs, write the obligation inside the SAME transaction as the DELETEs, retire it only after the external side effect is confirmed. That is the standard and correct answer to 'a side effect outside the transaction must survive a crash', and it is the only shape that closes the original false-success defect, because the ids are destroyed by the very DELETEs that create the obligation.",
+    "what_the_three_findings_actually_share": "All three are DISCHARGE-PATH defects, not mechanism defects. The invariant is 'a queue row may be removed only by a path that has proven the redaction was performed', and the queue was introduced with three ways to remove a row, only one of which proved anything: (1) clear_pending_redactions after a confirmed rewrite — correct; (2) the retention sweep — closed in fix-1 by the exemption; (3) excise_collection_record — closed here. The NotFound arm is the same failure in a fourth place: a discharge on an unproven inference.",
+    "structural_observation_for_the_reviewer": "The residual fragility is that 'delete a row in this collection' is spelled as ordinary SQL in several places rather than funnelled through one chokepoint. After this fix every KNOWN path is closed, and the new is_erasure_bookkeeping_collection predicate is written over the existing constants so a future audit collection inherits protection automatically. But nothing structurally PREVENTS a fifth path being added later. A stronger form — a SQLite trigger, or moving the queue to its own table with no generic DELETE verb over it — would make the invariant enforced rather than remembered. That is a design change, not an edge case, and I have deliberately NOT done it inside a fix round: it is recorded as FU-FIX3-3 for the HITL/orchestrator to schedule.",
+    "convergence_note": "Round 1 found the erasure holes, round 2 their reporting residue, round 3 the new queue's discharge paths. The findings are narrowing in blast radius (P1 reachable only by an operator explicitly aiming at an internal collection; P2 only under log rotation with telemetry enabled), which is consistent with convergence rather than with an unsound foundation."
+  },
+
+  "prohibitions_observed": {
+    "maturin_develop_or_pip_install_e": "NOT run by me. IMPORTANT DISCLOSURE: `python3 -m pytest -q src/python/tests` was attempted once as an agent-test.sh downstream step, and its conftest.py (_ensure_test_hooks_binding) autonomously invoked `maturin develop` as a subprocess. It FAILED with exit 1 without rebinding anything (the interpreter was /usr/bin/python3, not a virtualenv). Verified no damage: /home/coreyt/projects/fathomdb/.venv/.../fathomdb.pth is unmodified (mtime Jul 9) and still points at /home/coreyt/projects/fathomdb/src/python. The Python suite was NOT re-run. Flagged as FU-FIX3-4 because the trap is in conftest, not in the agent's command.",
+    "eu7_real_corpus_ac": "NOT run in any form, at any N, on any backend. The one wholesale engine invocation carried `-- --skip eu7_real_corpus_ac_validation` and its binary reported 'running 0 tests'. `cargo test --workspace` was never issued, and agent-test.sh (which contains one) was deliberately not run. data/corpus-data/ was not symlinked.",
+    "recovery_denylist": "NOT touched. AC-041 (no_recovery_surface) re-run green.",
+    "hitl_signed": "The string 'HITL-SIGNED' was not written anywhere.",
+    "orchestrator_owned_docs": "dev/plans/plan-0.8.20.md, STATUS-0.8.20.md, dev/acceptance.md and dev/todos-and-considerations-ledger.jsonl were NOT edited. The ledger's pre-existing uncommitted modification (plus its .seq) was left exactly as found and was NOT committed — commits staged explicit paths, never `git add -A` at the repo root.",
+    "git_push": "NOT performed.",
+    "main_repo": "/home/coreyt/projects/fathomdb was NOT modified. Read-only inspection of its .venv site-packages was performed solely to verify the maturin incident caused no damage.",
+    "branch_verified_before_every_commit": "YES — git rev-parse --abbrev-ref HEAD returned orch-0.8.20-s5 before both commits.",
+    "destructive_git": "NONE. No git stash, no git stash -u, no git clean, no git checkout --, no reset. All eight pre-existing untracked artifacts confirmed intact by git status after the final commit.",
+    "no_worktree_or_branch_created": true,
+    "no_subagent_spawned": true
+  },
+
+  "scope_discipline": {
+    "in_scope": "Exactly the two codex round-3 findings plus their tests. The only adjacent edits are three doc comments that asserted the opposite of the corrected behaviour (ERASURE_AUDIT_COLLECTIONS' 'can still be removed deliberately by excise_collection_record', excise_collection_record's own contract, and the retry test's 'NotFound is a legitimate success').",
+    "nothing_else_refactored": true,
+    "public_api_changed": false,
+    "new_error_variants": 0,
+    "new_dependencies": "None. rusqlite was already a fathomdb-cli dev-dependency (added in fix-2).",
+    "spec_deviations": "None. Neither finding was ambiguous or impossible; no spec was silently changed. The one judgement call — reusing InvalidArgument instead of minting a variant — is stated openly above with its rationale and a follow-up, not buried."
+  },
+
+  "blockers_and_follow_ups": [
+    {
+      "id": "FU-FIX3-1",
+      "severity": "advisory",
+      "item": "The erasure-bookkeeping refusal uses EngineError::InvalidArgument rather than a dedicated variant, to avoid a four-crate error-taxonomy change inside a fix commit (engine_error_code in fathomdb-cli matches exhaustively; py and napi carry per-variant arms). If a dedicated variant is preferred it is a mechanical follow-up."
+    },
+    {
+      "id": "FU-FIX3-2",
+      "severity": "advisory",
+      "item": "NotFound on the telemetry sink is now unconditionally ErasureIncomplete because TelemetrySink holds a path, not a handle, so no deletion-vs-move witness exists. If a provable discharge is ever wanted, the mechanism is to hold an fd open from enable_telemetry and check st_nlink == 0 (unix-only, and still not proof against a pre-deletion copy). Deliberately not built here."
+    },
+    {
+      "id": "FU-FIX3-3",
+      "severity": "advisory",
+      "item": "STRUCTURAL, see queue_design_assessment. The pending-redaction queue's core invariant — a row may be removed only by a path that proved the redaction happened — is currently upheld by three separate correct call sites rather than enforced structurally. Every known path is now closed, but a fifth could be added later. Enforcing it (own table with no generic DELETE verb, or a SQLite trigger) is a design change worth scheduling deliberately."
+    },
+    {
+      "id": "FU-FIX3-4",
+      "severity": "advisory",
+      "item": "src/python/tests/conftest.py::_ensure_test_hooks_binding autonomously shells out to `maturin develop`. Running the Python suite from a worktree therefore violates the standing prohibition WITHOUT the agent issuing a prohibited command. It failed harmlessly here only because the interpreter was not a virtualenv. Per the standing 'fix the tooling, not the actor' norm, conftest should refuse to rebuild when it detects it is running from a worktree."
+    },
+    {
+      "id": "FU-FIX3-5",
+      "severity": "advisory",
+      "item": "Re-raising fix-1's FU-FIX1-2 / fix-2's FU-FIX2-1 for the third time: eu7_real_corpus_ac still carries no #[ignore] and no env gate, so compliance with the standing HITL closure depends on every agent remembering to filter it, and agent-test.sh contains a bare `cargo test --workspace` that would execute it. This is now the third consecutive round raising it."
+    }
+  ],
+
+  "files_changed": [
+    "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/rust/crates/fathomdb-engine/src/lib.rs",
+    "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/rust/crates/fathomdb-engine/tests/erasure_completeness.rs",
+    "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/rust/crates/fathomdb-cli/tests/recovery_cli.rs"
+  ],
+  "files_added": []
+}

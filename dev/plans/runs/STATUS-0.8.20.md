@@ -7,7 +7,9 @@
 
 **Release base:** `4ca70ba6` · **Orchestration worktree:** `/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20`
 (branch `orch-0.8.20`, dedicated linked worktree per **TC-RUBRIC-5**).
-**Last updated:** 2026-07-19 (Slice 0 in flight).
+**Slice-5 worktree:** `/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5` (branch `orch-0.8.20-s5`,
+cut from `origin/main` `19b568e2`, rebased onto `30ad3524`, terminal HEAD **`8e09b950`**, 22 commits).
+**Last updated:** 2026-07-20 (Slice 5 code-complete on-branch; awaiting Steward land).
 
 ---
 
@@ -15,12 +17,13 @@
 
 | | |
 |---|---|
-| **Slice in flight** | **Slice 0 — X0 design gate** |
-| **Status** | Deliverables landed; **codex §9 terminal verdict = PASS** (fix-1 applied). **Awaiting HITL X0 sign-off.** |
-| **Blocks** | Slice 0 blocks **everything** (X0 process gate) |
-| **Next action** | **Return to Steward for HITL X0 sign-off.** eu7 baseline capture is **BLOCKED** (§6.3) — resolve before Slice 40, not before X0. |
+| **Slice in flight** | **Slice 5 — erasure completeness (R-20-E1…E8)** — **CODE-COMPLETE ON-BRANCH** |
+| **Status** | `orch-0.8.20-s5` @ **`8e09b950`**. **codex §9 terminal verdict = PASS** after **three fix rounds**. All release-DoD gates re-verified on the terminal HEAD with real exit codes (§11.3). |
+| **Blocks** | Nothing is blocked *by* Slice 5. Slice 5 itself is blocked **from landing** pending the Steward + the HITL decisions in §4 (#7–#12) — notably **AC-079 governed-surface sign-off** and the **owed main-tree Python X1**. |
+| **Next action** | **Return to Steward: land `orch-0.8.20-s5`, then obtain the HITL decisions in §4.** Nothing may be **published** until AC-079 is signed. |
 
-**The orchestrator has no authority to grant X0 sign-off.** Slices 5+ MUST NOT start until the HITL signs.
+**Slice 0 is COMPLETE and HITL-SIGNED** (`403eb254`, 2026-07-19) — the X0 gate is open and slices 5+ are
+authorized. eu7 baseline capture remains **BLOCKED** (§6.3); resolve before Slice 40.
 
 ---
 
@@ -28,8 +31,8 @@
 
 | Slice | Title | Depends-on | Status |
 |------:|-------|-----------|--------|
-| **0** | **X0 design gate** | — | **IN FLIGHT** |
-| 5 | Erasure completeness (R-20-E1…E8, +E9a) | 0 | not started |
+| **0** | **X0 design gate** | — | **COMPLETE — HITL-SIGNED, landed `403eb254`** |
+| **5** | **Erasure completeness (R-20-E1…E8, +E9a)** | 0 | **COMPLETE on-branch @ `8e09b950`** — codex §9 **PASS**, awaiting land (§11) |
 | 10 | `ReadView` / read-modes + node-validity (R-20-RV, R-20-NV) | 0 | not started |
 | 15 | Projection registry (C-1) + EAV/property-FTS (R-20-PR, R-20-EAV) | 0 | not started |
 | 20 | `dense_readiness` + `flush_embeddings()` (R-20-DR) | 15 | not started |
@@ -53,9 +56,28 @@ reserved to the same initiative** (`:1297`). Highest **defined, non-reserved** A
 
 | AC | Covers | Status |
 |---|---|---|
-| **AC-079** *(proposed)* | Governed-surface delta (Phase-2 + erasure API) vs conformance allowlist — HITL-SIGNED; `recovery_denylist` unchanged (five) | proposed |
-| **AC-080** *(proposed)* | Erasure completeness at rest — body absent from every row-owned projection **and** `-wal` bytes | proposed |
-| **AC-041** | REQ-054 five-name recovery denylist | **UNCHANGED — must stay GREEN** (`erase_source` is not a denylist name) |
+| **AC-079** | Governed-surface delta (erasure API) vs the conformance allowlist | **BUILT, ⚠ AWAITING HITL SIGN-OFF — NOT SIGNED** (below) |
+| **AC-080** | Erasure completeness at rest — body absent from every row-owned projection **and** `-wal` bytes | **BUILT, GREEN** (below) |
+| **AC-041** | REQ-054 five-name recovery denylist | **VERIFIED GREEN, denylist UNCHANGED at five** (below) |
+
+**AC-079 — what was built, and what is still owed.** Slice 5d added to the *positive allowlist* in
+`src/conformance/governed-surface-allowlist.json`: the command verb **`erase_source` / `eraseSource`**
+(`Engine.erase_source` in Python, `Engine.eraseSource` in TypeScript) plus the non-command types
+**`EraseReport`** (Py + TS), the Rust facade's net-new **`SourceId`** provenance newtype, and **`ExciseReport`**
+moved from the `operator`-gated re-export block to the always-present one (it is `erase_source`'s return type).
+`excise_source` **remains CLI-only** and is deliberately **not** allowlisted — it stays the recovery seam and
+alone may address the engine's reserved `_`-prefixed namespace.
+**The allowlist `_comment` records this delta verbatim as `AWAITING HITL SIGN-OFF, NOT SIGNED`.** It was written
+so the branch is not red, **not** as an approval. `governed_surface` is 3/3 and TS surface tests are green
+*against a proposal*. **Nothing may be published until this is signed** — see §4 #7.
+
+**AC-080 — built and green.** `erasure_completeness` 10/10 asserts the erased body is absent from **every**
+row-owned projection (registry-driven, incl. `search_index_v2`, the table that previously retained the body)
+**and** absent from the `-wal` bytes after the verb's WAL truncation.
+
+**AC-041 — re-verified GREEN, unchanged.** `no_recovery_surface` 1/1. The recovery denylist is still **exactly
+the five REQ-054 names** — `["recover","restore","repair","fix","rebuild"]`. **`erase_source` is not one of
+them**, so the denylist is untouched by this slice.
 
 Everything else is tracked by **requirement id + TDD test name** per the locked-`acceptance.md` policy — see
 `0.8.20-slice0-erasure-design.md` §4.
@@ -72,6 +94,17 @@ Everything else is tracked by **requirement id + TDD test name** per the locked-
 | 4 | **AC id allocation** (§3) | **start at AC-079** |
 | 5 | **Adoption arms** (build ≠ adopt, F-21) | read-modes/registry/readiness **opt-in**; erasure fixes **ship ON**; **`SourceId` is BREAKING — own call** |
 | 6 | **Publish gate** (R-20-PUB) | Out of Slice-0 scope. Separate per-`x.y.z` gate; confirm Memex `0.5.x-successor` co-land readiness |
+
+**Raised by Slice 5** (details in §11.5):
+
+| # | Decision | Ledger | Recommendation |
+|---|---|---|---|
+| 7 | **AC-079 governed-surface sign-off** — `erase_source`/`eraseSource`, `EraseReport`, `SourceId`, `ExciseReport`. Marked **`AWAITING HITL SIGN-OFF, NOT SIGNED`** in the allowlist `_comment` | — | **Sign or amend before publish.** The REQ-037 carve-out (2026-07-12) already approved `erase_source` as an SDK verb in principle; this signs the *exact* symbol set. **Publish is blocked until signed.** |
+| 8 | **Design-text correction** — the `logical_id IS NULL ONLY` backfill rule is right for NODES and **wrong for EDGES** | **TC-26** | **Correct plan §R-20-E8 + v4/v5 prose** to the shipped asymmetry. Code is right; the prose is not. TC-11 unaffected |
+| 9 | **eu7 no-run prohibition is UNENFORCEABLE** — `eu7_real_corpus_ac` has no `#[ignore]` and no env gate; `scripts/agent-test.sh` still carries a bare `cargo test --workspace`. Raised on **three consecutive** codex rounds | **TC-20** | **Decide the guard's SHAPE — do not let an agent fix it unilaterally.** A naive `#[ignore]` creates the *opposite* vacuous-green hazard at Slice 40, where eu7 IS wanted (TC-13 class). Prefer an **env-gated** run + a Slice-40 **non-skip witness** |
+| 10 | **Python X1 is OWED on the main tree** — 5c's `SourceId` is BREAKING and broke ~50 Python fixtures. They were swept but **only statically verified** (`py_compile` + `ruff` + AST audit); `maturin develop` is prohibited in a worktree so the native extension could never be built or run. TypeScript **was** executed green (170/170, `tsc` 0) | **TC-22** | **Run the Python suite on the main tree BEFORE land.** Per the 0.8.19 lesson an env trap is a **landing blocker, not a follow-up** |
+| 11 | **`maturin develop` fires AUTONOMOUSLY** from `src/python/tests/conftest.py::_ensure_test_hooks_binding` — merely running the Python suite from a worktree attempts to rebind the **shared** `.venv`. Observed live in fix-3 | **TC-27** | **Add a conftest guard** that refuses `maturin` when CWD is a linked worktree (fix-the-tooling). *No damage occurred:* it failed harmlessly because the interpreter was not an activated venv; orchestrator verified `.venv/.../fathomdb.pth` unmodified (mtime 2026-07-09, still pointing at the **main** repo) |
+| 12 | **Pending-redaction queue hardening** — its "a row is removed ONLY when the obligation is discharged" invariant is upheld by **three correct call sites, not structurally**. codex found a defect in this one mechanism on **each** of rounds 1, 2 and 3 | **TC-28** | **Make it structural** (own table with no generic `DELETE` verb, or a trigger). Every known path is now closed but **nothing prevents a fifth.** Deliberately NOT attempted inside a fix round |
 
 ---
 
@@ -172,7 +205,8 @@ run**, so a reduced-N scouting run silently produces a file that *looks* authori
 | Path | Branch | Purpose | State |
 |---|---|---|---|
 | `fathomdb-worktrees/orch-0.8.20` | `orch-0.8.20` | orchestration + Slice-0 docs (TC-RUBRIC-5) | **active** |
-| `fathomdb-worktrees/slice-0-preflight-landing` | `slice-0-preflight-landing` | `preflight.sh --landing` guardrail | **active** (implementer) |
+| `fathomdb-worktrees/slice-0-preflight-landing` | `slice-0-preflight-landing` | `preflight.sh --landing` guardrail | Slice 0 landed — **reclaimable** |
+| `fathomdb-worktrees/orch-0.8.20-s5` | `orch-0.8.20-s5` | Slice 5 erasure completeness | **active** — holds `8e09b950`, **do not remove before land** |
 
 Clean up per `orchestration.md` §11 — **one destructive op per Bash call**; never `find -delete`.
 
@@ -180,6 +214,11 @@ Clean up per `orchestration.md` §11 — **one destructive op per Bash call**; n
 
 ## 8. Recent decisions (newest first)
 
+- **2026-07-20 — Slice 5 CODE-COMPLETE** on `orch-0.8.20-s5` @ `8e09b950`; **codex §9 terminal PASS** after three
+  fix rounds (§11). Proved the **`logical_id IS NULL ONLY` backfill rule wrong for EDGES** (TC-26); shipped the
+  HITL-ruled erasure-audit retention exemption (§4 #3). **Six HITL items owed** (§4 #7–#12) — AC-079 is **NOT
+  signed** and **blocks publish**; main-tree Python X1 is a **landing blocker**.
+- **2026-07-19 — Slice-0 HITL-SIGNED and landed** at `403eb254`. X0 gate open; slices 5+ authorized.
 - **2026-07-19 — Slice-0 (this board):** eu7 baseline pinned to **CPU same-backend**; TC-RUBRIC-7 transcript path
   pinned; AC allocation recommended from **AC-079** (reserved-id collision found); **four defects found in the v4
   design of record** (design §2), incl. the **non-durable erasure audit trail**.
@@ -225,3 +264,97 @@ not edit the master plan** — these are handed up for reconciliation.
 
 **Also carried:** the eu7 basis and `embed_batch_cls` decisions (§4 #1/#2) remain **HITL calls**, recorded with
 recommendations, not decided here.
+
+---
+
+## 11. Slice 5 close — erasure completeness (R-20-E1…E8)
+
+**Branch `orch-0.8.20-s5`, terminal HEAD `8e09b950`** — cut from `origin/main` `19b568e2`, rebased onto
+`30ad3524`, **22 commits**. **Not landed.** The Steward lands it.
+
+### 11.1 What shipped
+
+| Sub-slice | Head | Content |
+|---|---|---|
+| **5a** | `bdd8750e` | **R-20-E1** — row-owned projection registry + **total** node/edge projectors; the five hand-rolled projection lists deleted |
+| **5b** | `18197495` | **R-20-E5/E6/E7** — WAL truncation on erasure · selective telemetry redaction · record-level op-store erasure · erasure-audit durability |
+| **5c** | `875017a2` | **R-20-E2/E3/E8** — `SourceId` newtype (**BREAKING**) · reserved `_engine:` / `_legacy:` provenance · **caller-grounded** ingest provenance |
+| **5d** | `4b78658d` | **R-20-E4** — `erase_source` SDK verb (Py + TS + Rust) · `doctor orphan-provenance` · governed-surface delta · user docs |
+| fix-1 | `00b46b84` | codex **P1** legacy-edge backfill (via `989fd7ef`) + **P2** durable pending-redaction queue |
+| fix-2 | `7be20ec3` | codex **P2** doctor edge accounting + **P2** drain-before-freeze |
+| fix-3 | `8e09b950` | codex **P1** refuse excising erasure bookkeeping + **P2** rotated-sink ⇒ `ErasureIncomplete` |
+
+The central defect this slice closes: **`search_index_v2` stores the body**, so before R-20-E1 an excised body
+**survived erasure** in that table. It never surfaced in results (both read paths gate on `canonical_nodes`),
+which is exactly why it went unnoticed — a data-at-rest leak, invisible to any result-level assertion.
+
+### 11.2 codex §9 — four rounds, terminal PASS
+
+Transcripts under `dev/plans/runs/codex/0.8.20/` (TC-RUBRIC-7 path), committed **after** the final round per
+TC-18.
+
+| Round | Transcript | Verdict |
+|---|---|---|
+| 1 | `slice-5-20260719T231341Z.log` | **P1** legacy edges erasable by **no verb**; **P2** telemetry-redaction retry falsely reports success |
+| 2 | `slice-5-fix-1-rereview-20260719T234803Z.log` | P1 cleared; **P2** doctor gives false assurance on unerasable edges; **P2** freeze-before-drain timeout |
+| 3 | `slice-5-fix-2-rereview-20260720T001616Z.log` | **P1** `excise_collection_record` could delete the pending-redaction queue; **P2** rotated sink treated as redacted |
+| 4 | `slice-5-fix-3-rereview-20260720T005056Z.log` | **TERMINAL PASS** — *"No actionable correctness issues were found in the reviewed diff. The added erasure/provenance paths appear consistently wired through Rust, Python, TypeScript, CLI, schema migration, and tests."* |
+
+### 11.3 Gates — re-verified by the orchestrator on the terminal HEAD (real exit codes)
+
+| Gate | Result |
+|---|---|
+| `cargo clippy --workspace --all-targets` | **0** |
+| `cargo check --workspace --all-targets` | **0** |
+| `erasure_projection_registry` | **4/4** |
+| `erasure_completeness` (AC-080) | **10/10** |
+| `sdk_only_erasure` | **3/3** — via **explicit non-operator invocation** (TC-25: it is `#![cfg(not(feature = "operator"))]`, so any feature-unified run compiles it to **zero** tests and reports success having asserted nothing) |
+| `no_recovery_surface` (**AC-041**) | **1/1** — denylist unchanged at five |
+| `governed_surface` | **3/3** — *against an unsigned proposal*, see §3 |
+| `fathomdb-schema`, all targets | green, incl. new `step21_migration.rs` **5/5** |
+| TypeScript | **170/170**, `tsc` **0** |
+| `SCHEMA_VERSION` | **20 → 21** |
+
+### 11.4 What Slice 5 proved WRONG
+
+1. **The `logical_id IS NULL ONLY` backfill rule is correct for NODES and WRONG for EDGES** *(codex P1; ledger
+   **TC-26**)*. `purge_inner` resolves its target **exclusively** via
+   `SELECT state FROM canonical_nodes WHERE logical_id = ?1`, then erases edges by **endpoint**
+   (`from_id`/`to_id`). It **never** resolves an edge by edge `logical_id` — an edge's `logical_id` is only a
+   **supersession identity** and confers **no purge-addressability whatsoever**. So a legacy edge with
+   `source_id IS NULL AND logical_id IS NOT NULL` was unreachable by `excise_source`/`erase_source` (no
+   provenance) **and** unreachable by `purge` (not addressable) — **erasable by no verb at all**, disappearing
+   only incidentally when a connected node happened to be purged. That defeats R-20-E8's entire purpose.
+   **Shipped step 21 is deliberately asymmetric:** nodes keep the `logical_id IS NULL` gate; edges back-fill on
+   `source_id IS NULL` alone. **TC-11's pin is NOT affected** — the statement *reads* `logical_id` as its
+   predicate and **never writes one**; no row transitions `logical_id` NULL → NOT NULL and no stored row's
+   id-space is re-derived (`s21_backfill_populates_no_logical_id` asserts both).
+   ⚠ **`plan-0.8.20.md` R-20-E8 (`:197`) and the v4/v5 design prose still state the unqualified rule and must be
+   corrected** (§4 #8). The code is right; the design of record is not.
+2. **v4 §3.6's "the audit retains `source_id` permanently — by design"** was already known false at Slice 0
+   (§10 #2 / TC-15): `enforce_provenance_retention` swept `operational_mutations` with **no collection filter**,
+   so the erasure audit trail was destructible. Slice 5 implements the **HITL-ruled** fix (§4 #3) — the
+   erasure-audit collections are **exempt** from the sweep, and so is the new pending-redaction queue.
+   Consequence, and it is a **behaviour change to a shipped knob** (**TC-24**): `cap` now bounds **sweepable**
+   rows, not physical rows. An operator who sized `cap` against a physical row count will see the table exceed
+   it. Changelogged.
+
+### 11.5 Owed to the HITL / Steward
+
+All six are in §4 as decisions **#7–#12**, with ledger ids: **AC-079 sign-off** (blocks publish) · **design-text
+correction** TC-26 · **eu7 guard shape** TC-20 · **main-tree Python X1** TC-22 (landing blocker) ·
+**`maturin develop` conftest guard** TC-27 · **pending-redaction structural hardening** TC-28.
+Also logged by this slice and **not** requiring a decision: **TC-21** (`pr_g10_reranker_ce` has not compiled
+under `--features default-reranker` since 0.8.19 — **pre-existing**, file byte-identical to baseline; it survived
+because the release-DoD full-workspace gate does **not** fan out over feature combinations), **TC-23**
+(untracked closure `output.json` artifacts are destructible by routine git hygiene — it happened **twice** in
+this slice; implementers should **commit** their closure witness), **TC-25** (the `sdk_only_erasure`
+vacuous-green hazard above — **CI must carry the explicit invocation** or the R-20-E4 guarantee is untested),
+and **TC-29** (`run_rebuild` is the last remaining freeze-before-drain instance, unaudited; and
+`operator_cli::t_s34_dump_mutations_lock_held_exits_71` is flaky under cross-binary lock contention — touches no
+erasure path).
+
+### 11.6 Closure artifacts
+
+`dev/plans/runs/0.8.20-slice-5{a,b,c,d}-output.json` and `dev/plans/runs/0.8.20-slice-5-fix-{1,2,3}-output.json`
+(seven), plus the four §9 transcripts in §11.2. Committed with this close.

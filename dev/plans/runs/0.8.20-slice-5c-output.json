@@ -1,0 +1,230 @@
+{
+  "slice": "0.8.20-slice-5c",
+  "title": "Provenance becomes structurally mandatory (design v5 §4 items 5, 6, 7, 10)",
+  "branch": "orch-0.8.20-s5",
+  "baseline": "181974950b7bdc842267f9fd117c0e0a40ed4fac",
+  "head": "875017a2b93142445a92e6f806feed53d1915180",
+  "status": "COMPLETE_WITH_FLAGGED_FOLLOW_UP",
+  "requirements": ["R-20-E2", "R-20-E3", "R-20-E8"],
+  "commits": [
+    {
+      "sha": "58c19b0f",
+      "kind": "RED",
+      "summary": "8 failing tests + provenance_omitting_harness.py fixture + trybuild dev-dep"
+    },
+    {
+      "sha": "7b9400d9",
+      "kind": "GREEN",
+      "summary": "SourceId newtype, _engine:/_legacy: reserved provenance, schema step 21 (20->21), caller-grounded ingest provenance"
+    },
+    {
+      "sha": "875017a2",
+      "kind": "TEST",
+      "summary": "Py + TS assertions that an un-provenanced write raises (NOT executed here — see caveats)"
+    }
+  ],
+
+  "gates": {
+    "clippy_workspace_all_targets": { "command": "cargo clippy --workspace --all-targets", "CLIPPY_EXIT": 0 },
+    "clippy_workspace_operator": { "command": "cargo clippy --workspace --all-targets --features fathomdb-engine/operator", "CLIPPY_EXIT": 0 },
+    "check_workspace_all_targets": { "command": "cargo check --workspace --all-targets", "CHECK_EXIT": 0 },
+    "test_workspace": { "command": "cargo test --workspace", "TEST_EXIT": 0, "note": "144 'test result: ok' lines, zero failures" },
+    "test_engine_operator": { "command": "cargo test -p fathomdb-engine --features operator", "TEST_EXIT": 0 },
+    "exit_codes_read_from": "PIPESTATUS / $? — never a trailing echo",
+    "agent_test_sh": "NOT run as an aggregate: it exits 1 wholesale on the pre-existing dead TC-16 publish dry-run assertion (dead since 0.8.14) and `set -e` aborts the downstream steps. The individual gates above were run directly instead."
+  },
+
+  "non_regression": {
+    "slice_5a_erasure_projection_registry": "4 passed / 0 failed",
+    "slice_5b_erasure_completeness": "7 passed / 0 failed",
+    "excise_source": "6 passed / 0 failed",
+    "schema_crate_full_suite": "all targets pass after the SCHEMA_VERSION 20->21 pin sweep"
+  },
+
+  "red_evidence": [
+    {
+      "test": "unprovenanced_public_write_does_not_compile",
+      "target": "-p fathomdb --test compile_fail_provenance (trybuild)",
+      "item": 5,
+      "kind": "real RED — compile-fail harness",
+      "baseline_output": "test tests/ui/unprovenanced_public_write.rs ... error\nExpected test case to fail to compile, but it succeeded.\n\nthread 'unprovenanced_public_write_does_not_compile' panicked at trybuild-1.0.118/src/run.rs:102:13:\n1 of 1 tests failed",
+      "why_right_reason": "At baseline `PreparedWrite::Node { source_id: None, .. }` is a legal expression, which IS the defect: 'no provenance' was expressible on the public type. This is the strongest available RED for item 5 — it is the requirement itself, negated.",
+      "green_output": "error[E0308]: mismatched types\n  --> tests/ui/unprovenanced_public_write.rs:17:20\n   |\n17 |         source_id: None,\n   |                    ^^^^ expected `SourceId`, found `Option<_>`\n   |\n   = note: expected struct `SourceId`\n                found enum `Option<_>`"
+    },
+    {
+      "test": "no_canonical_row_has_null_source_id",
+      "target": "-p fathomdb-engine --features operator --test provenance_mandatory",
+      "item": 6,
+      "kind": "real RED — failing assertion",
+      "baseline_output": "assertion `left == right` failed: every stored canonical_nodes row must carry provenance; a NULL source_id row is unreachable by excise_source and therefore un-erasable\n  left: 2\n right: 0",
+      "why_right_reason": "The 2 NULL rows are exactly the engine-derived (EXP-S coverage + graph) rows written by `write_canonical_row_with_kind_for_test`, which bypasses `PreparedWrite` and inserted a literal NULL. Asserted over STORED rows via raw SQL, not the write path."
+    },
+    {
+      "test": "legacy_backfill_spares_governed_rows",
+      "target": "-p fathomdb-schema --test step21_migration",
+      "item": 7,
+      "kind": "real RED — failing assertion",
+      "baseline_output": "assertion `left == right` failed: step-21 (legacy provenance backfill) must exist\n  left: 0\n right: 1",
+      "why_right_reason": "Head was 20; the migration did not exist. The explicit existence assertion is a non-vacuity guard: `migrate_with_steps` on an empty step list is a SILENT no-op, so without it the test would pass trivially on a ladder lacking step 21."
+    },
+    {
+      "test": "s21_backfill_populates_no_logical_id",
+      "target": "-p fathomdb-schema --test step21_migration",
+      "item": 7,
+      "kind": "real RED — failing assertion (after a non-vacuity fix; see note)",
+      "baseline_output": "assertion `left == right` failed: step-21 must exist for this guard to mean anything\n  left: 0\n right: 1",
+      "why_right_reason": "TC-11 pin invariant (R-20-SUR): rows transitioning `logical_id` NULL -> NOT NULL must be 0.",
+      "honesty_note": "As FIRST written this test PASSED at baseline — vacuously, because filtering MIGRATIONS for step 21 yielded an empty list and `migrate_with_steps` on an empty list is a no-op. Per the rubric ('a RED test that passes at baseline is a broken test') it was investigated and given an explicit step-21-exists assertion, after which it is RED for the right reason. Both states are recorded here rather than only the fixed one."
+    },
+    {
+      "test": "s21_is_head_and_schema_version_is_21",
+      "target": "-p fathomdb-schema --test step21_migration",
+      "item": 7,
+      "kind": "real RED — failing assertion",
+      "baseline_output": "assertion `left == right` failed: SCHEMA_VERSION must be 21 (step-21 legacy provenance backfill)\n  left: 20\n right: 21"
+    },
+    {
+      "test": "s21_passes_accretion_guard_without_marker",
+      "target": "-p fathomdb-schema --test step21_migration",
+      "item": 7,
+      "kind": "real RED — panic on missing step",
+      "baseline_output": "panicked at step21_migration.rs:227:10:\nstep 21 (legacy provenance backfill) must exist"
+    },
+    {
+      "test": "excise_legacy_source_deletes_no_governed_row",
+      "target": "-p fathomdb-engine --features operator --test provenance_mandatory",
+      "item": 7,
+      "kind": "real RED — failing assertion",
+      "baseline_output": "panicked at provenance_mandatory.rs:179:5:\nthe backfilled ungoverned legacy row must be excisable by `_legacy:pre-0.8.20`; removed 0 node(s)",
+      "why_right_reason": "The 'governed row survives' half of this test is VACUOUSLY true at baseline (no row carries `_legacy:` provenance at all). The load-bearing, non-vacuous half is that the UNGOVERNED row IS erased — which is what fails. This is stated in the test's own doc comment so a later reader cannot mistake the vacuous half for the guarantee."
+    },
+    {
+      "test": "extractor_omitting_source_doc_id_still_excisable",
+      "target": "-p fathomdb-engine --features operator --test provenance_mandatory",
+      "item": 10,
+      "kind": "real RED — failing assertion",
+      "baseline_output": "assertion `left == right` failed: every ingested node must carry the CALLER's source_doc_id, not the model's echo\n  left: 2\n right: 0",
+      "why_right_reason": "New fixture harness `provenance_omitting_harness.py` speaks fathomdb.extract.v1 correctly but never echoes `source_doc_id`; at baseline the engine read provenance from that echo, so both entity rows landed NULL — un-erasable. The model could make a row permanently un-erasable by dropping one key."
+    }
+  ],
+
+  "new_dev_dependency": {
+    "crate": "trybuild",
+    "version": "1.0",
+    "added_to": "src/rust/crates/fathomdb/Cargo.toml [dev-dependencies]",
+    "flagged_because": "the task requires it be called out explicitly for review",
+    "shipped": false,
+    "justification": "The design names trybuild for `unprovenanced_public_write_does_not_compile`. It was chosen over the sanctioned structural-argument alternative because it produced a genuine RED at baseline (the ui case COMPILED, which is the defect stated as a test) rather than a compile error I would have had to describe in prose. The facade crate previously had zero dev-dependencies, so the addition is contained.",
+    "known_cost": "trybuild diff-matches rustc's full diagnostic text against the checked-in `.stderr`, so a rustc release that rewords the type-mismatch diagnostic turns this test red. That failure is cosmetic but LOUD, never silent; the regeneration command (`TRYBUILD=overwrite`) is documented in the test file's header. The captured diagnostic is 6 lines and about as stable as rustc output gets.",
+    "used_compile_fail_test": true,
+    "used_structural_route_instead": false
+  },
+
+  "implementation": {
+    "item_5_source_id_newtype": {
+      "type": "pub struct SourceId(String) in fathomdb-engine, re-exported from the fathomdb facade",
+      "fields_changed": "PreparedWrite::Node.source_id and PreparedWrite::Edge.source_id: Option<String> -> SourceId",
+      "inexpressibility_mechanism": "private field + a single public fallible constructor. `SourceId::new` rejects empty/whitespace ids and the whole reserved `_`-prefixed namespace. `SourceId::engine_derived` is pub(crate) and mints exactly the spelling `new` refuses, so a caller cannot forge engine provenance.",
+      "write_path_checks_removed": "the two `if source_id.is_empty()` branches in the write validator were DELETED, not duplicated — the invariant moved into the type rather than being enforced twice",
+      "breaking": true,
+      "shim_or_deprecation_window": "none, deliberately — a shim would re-open the hole it closes; 0.8.20 is the approved coordinated breaking-pair release"
+    },
+    "item_6_engine_provenance": {
+      "site": "Engine::write_canonical_row_with_kind_for_test (the EXP-S coverage/graph substrate writer — the only engine-internal canonical INSERT that bypassed PreparedWrite)",
+      "before": "INSERT ... source_id = NULL",
+      "after": "SourceId::engine_derived(row_kind) -> `_engine:coverage` / `_engine:graph`",
+      "also": "the debug-only one-thread-poison fixture now uses `_engine:poison-fixture`"
+    },
+    "item_7_migration": {
+      "step_id": 21,
+      "schema_version": "20 -> 21",
+      "sql": "UPDATE canonical_nodes SET source_id = '_legacy:pre-0.8.20' WHERE source_id IS NULL AND logical_id IS NULL;  (same for canonical_edges)",
+      "accretion_marker": "NONE — pure data UPDATE, no CREATE TABLE / ADD COLUMN, so the guard does not fire (precedent: step 13). `s21_passes_accretion_guard_without_marker` pins this, so folding a schema change into step 21 later forces an explicit marker.",
+      "one_migration_per_release": "yes (I-6) — exactly one step added",
+      "tc11_compliance": "the statement READS logical_id as its predicate and NEVER writes one. `s21_backfill_populates_no_logical_id` asserts the full before/after logical_id vector is identical and that rows transitioning NULL -> NOT NULL == 0."
+    },
+    "item_10_ingest_provenance": {
+      "rule": "provenance comes from the caller's ExtractDocument.source_doc_id; the model's echo is admitted ONLY as a selector among ids the caller supplied in the same batch, never as a value",
+      "single_doc_batch": "echo ignored outright; the caller's id is used",
+      "multi_doc_batch": "echo must name one of the batch's caller-supplied ids; the caller's own copy of that string is stored",
+      "unmatched_or_absent_echo_in_multi_doc_batch": "EngineError::Extractor — fails loudly",
+      "judgement_call_for_review": "The loud failure is a deliberate behaviour change and the one place the design left room. Guessing an attribution would silently mis-file the row under a document whose erasure then would NOT remove it — the same class of defect one layer down — so a wrong-but-quiet answer was rejected. Previously such a harness silently produced NULL-provenance, un-erasable rows, so the prior behaviour was not a working path worth preserving. In-tree harnesses echo correctly and all suites pass."
+    }
+  },
+
+  "collateral_changes_reviewers_should_look_at": [
+    {
+      "file": "src/rust/crates/fathomdb-engine/tests/source_id_writes.rs",
+      "change": "`phase9_pack_b_source_id_default_none_persists_as_null` REPLACED by `every_write_stores_a_non_null_source_id`; `phase9_pack_b_empty_source_id_is_validation_error` REPLACED by `empty_or_reserved_source_id_is_rejected_by_the_constructor`",
+      "why": "the first asserted the pre-0.8.20 contract that an omitted source_id persists as NULL — that contract WAS the defect, so it is inverted rather than patched. The second's rejection did not disappear, it MOVED from the (bypassable) write path into the only constructor that can produce the value; the replacement asserts it there, plus the reserved-namespace rejections."
+    },
+    {
+      "file": "src/rust/crates/fathomdb-engine/tests/pr_g0_phase2_frontier.rs",
+      "change": "`test_graph_hit_source_id_none_fallback` keeps its assertion but now introduces the NULL with raw SQL after a provenanced write",
+      "why": "a NULL source_id is no longer WRITABLE but remains READABLE — pre-0.8.20 rows have it, and TC-11-spared GOVERNED rows have it permanently — so the read-path must still tolerate it. The test asserts the UPDATE affected >= 1 row so it cannot go vacuous."
+    },
+    {
+      "file": "src/rust/crates/fathomdb-schema/tests/step20_migration.rs",
+      "change": "`s20_fresh_equals_upgrade_from_19` bounds its fresh path to steps <= 20",
+      "why": "migrating the full ladder would compare a v21 shape against a v20 one, silently weakening the fresh==upgrade oracle"
+    },
+    {
+      "file": "SCHEMA_VERSION pin sweep",
+      "change": "step14/15-17/16/17/18/19/20 migration tests, migrations.rs, compatibility.rs, vector_equivalence_probe.rs",
+      "why": "the 20->21 bump. Swept by grep, then verified by running the full schema crate suite AND the full workspace suite — not by inspection."
+    },
+    {
+      "file": "~170 source_id call sites across tests/examples",
+      "change": "`source_id: None` -> `SourceId::new(\"test:fixture\")`, `source_id: Some(x)` -> `SourceId::new(x)`",
+      "why": "mechanical consequence of the type change. Fully qualified (`fathomdb_engine::SourceId` / `fathomdb::SourceId`) to avoid touching import blocks. NOTE for review: the sweep initially over-reached and rewrote 6 `SearchHit { source_id: None }` literals — SearchHit.source_id CORRECTLY stays Option<String> (governed legacy rows read NULL). Those were reverted; the compiler caught every one."
+    }
+  ],
+
+  "blockers_and_follow_ups": [
+    {
+      "id": "FU-5c-1",
+      "severity": "LANDING BLOCKER for R-20-X1",
+      "title": "~50 Python + ~60 TypeScript existing test fixtures write nodes/edges without source_id and will now raise",
+      "detail": "R-20-E3 makes provenance mandatory in the Py and TS bindings (implemented, compiles, gates green). Every pre-existing py/ts test that writes `{\"kind\": ..., \"body\": ...}` without a source_id will now get WriteValidationError. Inventory: ~49 `{\"kind\":` literals + 4 `\"edge\":` literals across src/python/tests/*.py; ~61 `kind:` sites across src/ts/tests/*.ts, several of them multi-line object literals a regex cannot safely reach.",
+      "why_not_done_here": "This worktree is HARD-PROHIBITED from `maturin develop` / `pip install -e` (it would rebind the shared .venv), and src/ts/node_modules is absent, so neither pytest nor the node test runner nor tsc can run here. A blind sweep of 110 heterogeneous multi-line literals in two languages I cannot execute or typecheck would manufacture precisely the unverifiable green the rubric warns about, and would be indistinguishable from a real pass until X1.",
+      "recommendation": "Do this sweep in an environment where pytest and the TS runner actually execute — 5d, or the R-20-X1 harness owner. It is mechanical once the tests can be run.",
+      "note": "Per the standing memory 'an env trap is a landing blocker, not a follow-up', this is flagged as a BLOCKER on the release gate, not as optional cleanup."
+    },
+    {
+      "id": "FU-5c-2",
+      "severity": "for 5d / AC-079",
+      "title": "SourceId is a NEW public type on the governed Rust surface",
+      "detail": "`SourceId` is re-exported from the fathomdb facade and MUST be (without the constructor a facade consumer cannot perform a canonical write at all). `src/conformance/governed-surface-allowlist.json` and GOVERNED_SURFACE_ALLOWLIST in fathomdb/tests/governed_surface.rs were NOT touched, per instruction — that surface is HITL-signed and belongs to 5d.",
+      "does_it_currently_fail": "No. The conformance test is a POSITIVE allowlist (every listed name must resolve), not an exhaustive no-extra-types check, so it passes today. The governed-surface DELTA for AC-079 must nonetheless record SourceId.",
+      "recovery_denylist_touched": false
+    },
+    {
+      "id": "FU-5c-3",
+      "severity": "informational",
+      "title": "Multi-doc extract batches with a non-echoing harness now fail loudly",
+      "detail": "See implementation.item_10_ingest_provenance.judgement_call_for_review. Worth an explicit reviewer nod since it is a behaviour change the design did not spell out. Documented in a long comment at the resolve_provenance site and in the commit message.",
+      "docs_impact": "the BYO-LLM extract protocol doc should state that source_doc_id echo is required for multi-document requests — docs are 5d scope, not touched here."
+    }
+  ],
+
+  "prohibitions_observed": {
+    "eu7_real_corpus_ac": "NOT run in any form, at any N, on any backend. data/corpus-data/ not symlinked. No eu7 number was needed or produced.",
+    "maturin_develop_or_pip_install_e": "NOT run",
+    "tc11_reopened": "No. The h: pin is untouched: anonymous/doc-seeded nodes keep h:<content-hash>, the step-21 backfill is gated WHERE logical_id IS NULL ONLY, and s21_backfill_populates_no_logical_id asserts no row's logical_id changes.",
+    "dev_plans_status_acceptance_edited": "No — only this output.json under dev/plans/runs/",
+    "governed_surface_allowlist_json": "not modified",
+    "git_push": "not performed",
+    "main_checkout_touched": "no — all work in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5"
+  },
+
+  "files_added": [
+    "src/rust/crates/fathomdb-engine/tests/provenance_mandatory.rs",
+    "src/rust/crates/fathomdb-engine/tests/fixtures/slice15_byo_llm/provenance_omitting_harness.py",
+    "src/rust/crates/fathomdb-schema/tests/step21_migration.rs",
+    "src/rust/crates/fathomdb/tests/compile_fail_provenance.rs",
+    "src/rust/crates/fathomdb/tests/ui/unprovenanced_public_write.rs",
+    "src/rust/crates/fathomdb/tests/ui/unprovenanced_public_write.stderr",
+    "src/python/tests/test_provenance_mandatory.py",
+    "src/ts/tests/provenance-mandatory.test.ts"
+  ]
+}

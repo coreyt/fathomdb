@@ -1,0 +1,63 @@
+{
+  "phase": "0.8.20-slice-5a",
+  "baseline_sha": "19b568e21287b1f8b5bcace972ac358ced47c76f",
+  "branch": "orch-0.8.20-s5",
+  "head_sha": "e0e40da300453fcba3ed345e920e21b3d62cfaa2",
+  "commits": [
+    "6b44c3d2f1b1ffcc52bfb917d0bfc9ddb7eb3290: test(0.8.20): RED — search_index_v2 leak at excise/rebuild/tokenizer + edge projector gap (R-20-E1)",
+    "e0e40da300453fcba3ed345e920e21b3d62cfaa2: feat(0.8.20): row-owned projection registry + total node/edge projectors (R-20-E1)"
+  ],
+  "findings_addressed": [
+    "D-B (design v5 §2) — modified `rebuild_shadow_state` (:6515), NOT `rebuild_projections` (:5949). v4's anchor would have patched the wrong function.",
+    "D-D (design v5 §2) — extracted `project_canonical_edge_row` from the inlined edge projection in `commit_batch` (verified at :12186-12220 at baseline, not v4's :12166). `prune_edge_projection_shadows` (:4127) only deletes and was left untouched.",
+    "§1 matrix — `search_index_v2` (content-storing FTS5, no `content=''`) is now deleted/rebuilt at ALL FIVE maintenance sites, not just WRITE + PURGE.",
+    "§1.1 refinement — registry models row-owned vs kind-owned. `_fathomdb_projection_state` is deliberately NOT registered (kind-keyed enqueue watermark); erasure never rewinds a kind's watermark. Confirmed at baseline that `last_enqueued_cursor` is write-only bookkeeping: `next_pending_projection_jobs` (:9375) and `database_has_pending_projection_work` (:9438) key off the projection cursor + `_fathomdb_projection_terminal` + `_fathomdb_vector_kinds`, never off `_fathomdb_projection_state`.",
+    "§3 Rule 1 — every erasure witness asserts on RAW TABLE CONTENTS via a reopened `rusqlite::Connection`; no test in this slice proves erasure via search results."
+  ],
+  "red_evidence": {
+    "method": "All four integration witnesses were written and run at baseline 19b568e2 BEFORE any src/ change; `cargo test -p fathomdb-engine --features operator --test erasure_projection_registry` exited 101 with 0 passed / 4 failed.",
+    "excise_source_clears_search_index_v2_raw": "panicked at tests/erasure_projection_registry.rs:131: assertion `left == right` failed: search_index_v2 residue for excised cursor 1: the erased body is still on disk\n  left: 1\n right: 0",
+    "rebuild_repopulates_search_index_v2_raw": "panicked at tests/erasure_projection_registry.rs:202: rebuild must drop the orphan search_index_v2 row: [\"rebuild body beta\", \"rebuild body gamma\", \"STALEV2ORPHANTOKEN\"]  (the injected orphan survived the rebuild AND the deleted legitimate row was never restored)",
+    "tokenizer_reproject_covers_v2": "panicked at tests/erasure_projection_registry.rs:268: assertion `left == right` failed: the tokenizer reproject must also re-tokenize search_index_v2\n  left: 1\n right: 2  (control assertion on search_index passed in the same run, so the reproject did run)",
+    "rebuild_edge_projection_matches_write_path": "panicked at tests/erasure_projection_registry.rs:379: assertion `left == right` failed: _fathomdb_projection_terminal diverged after rebuild: the rebuild path does not replay the write path's projector\n  left: [(1, \"up_to_date\")]\n right: [(1, \"up_to_date\"), (2, \"up_to_date\")]  (the body-less structural edge's readiness terminal is truncated by the rebuild and never restored)",
+    "guard_row_owned_registry": "NOT runtime-RED at baseline by construction: its subject (`ROW_OWNED_PROJECTIONS`) does not exist at 19b568e2, so at baseline it is a compile error (E0432/E0425, unresolved import `super::ROW_OWNED_PROJECTIONS`). Non-vacuity was instead proven POSITIVELY against the implemented code: de-registering `search_index_v2` from ROW_OWNED_PROJECTIONS makes the guard fail with `table \\`search_index_v2\\` is keyed by write_cursor but is neither registered in ROW_OWNED_PROJECTIONS nor listed as a non-projection source of truth.` The registry entry was restored afterwards."
+  },
+  "blockers_encountered": [
+    {
+      "id": "SELF-INFLICTED-REVERT",
+      "description": "While proving guard non-vacuity I ran `git checkout -- src/rust/crates/fathomdb-engine/src/lib.rs` to undo the temporary de-registration. lib.rs was still UNCOMMITTED at that point, so the checkout discarded the entire implementation, not just the experiment.",
+      "resolution": "Fully re-applied every edit verbatim from the session transcript and re-verified all five tests GREEN before committing. No work lost; the committed tree is the verified tree. Process note for future slices: commit (or stash) before running a destructive-revert experiment."
+    }
+  ],
+  "additional_changes_made_in_scope": [
+    "`ProjectionPass` {Write, FtsOnly, VectorOnly} — one enum selects which half of the total projector a replay site is rebuilding. Required because the three replay sites differ: `commit_batch` needs both halves; the open-path tokenizer reproject must NOT perturb readiness/vector state; `rebuild_vec0` (include_fts = false) must NOT write FTS rows. Without it, 'call the projectors exclusively' would have changed rebuild_vec0/tokenizer semantics.",
+    "`canonical_node_rows` now also selects `canonical_nodes.row_kind` (+ private `row_kind_from_column`, unknown spelling degrades to Leaf) so the replay dispatches through the real per-row `index_targets_for_row_kind`. Behavior-neutral for FTS (all three row_kinds are fts:true), and more faithful than the previous rebuild, which ignored row_kind entirely.",
+    "`rebuild_shadow_state`'s edge replay query dropped its `body IS NOT NULL` filter (superseded + t_invalid recency filters PRESERVED verbatim) so body-less structural edges regain the `up_to_date` readiness terminal the write path records. Before this, a rebuild truncated `_fathomdb_projection_terminal` and never restored those rows, so `advance_projection_cursor` could not walk past a body-less edge.",
+    "Counting semantics deliberately preserved: `rows_rebuilt` still counts only FTS-projected rows (rebuild_report.rs asserts rows_rebuilt == 0 for a vec0-only rebuild). `rows_invalidated` / `projections_invalidated` now additionally count `search_index_v2` deletions — a strict increase; the only assertions on those fields are `> 0` (rebuild_report.rs) and field-presence (recovery_cli.rs), both still satisfied.",
+    "`ProjectionPass::VectorOnly` carries `#[cfg_attr(not(feature = \"operator\"), allow(dead_code))]` — only the operator rebuild seam constructs it, so the default recovery-clean build would otherwise warn."
+  ],
+  "agent_verify_result": "pass",
+  "gates": {
+    "CLIPPY_EXIT": 0,
+    "CHECK_EXIT": 0,
+    "CLIPPY_ENGINE_OPERATOR_EXIT": 0,
+    "commands": [
+      "cargo clippy --workspace --all-targets  -> CLIPPY_EXIT=0 (read via PIPESTATUS, not a trailing echo)",
+      "cargo check --workspace --all-targets   -> CHECK_EXIT=0",
+      "cargo clippy -p fathomdb-engine --all-targets --features operator -> 0 (the default-feature workspace gate SKIPS the operator-gated test targets, so this extra run is what actually compiles the new test target)"
+    ]
+  },
+  "tests": {
+    "cargo test -p fathomdb-engine --features operator --test erasure_projection_registry": "ok. 4 passed; 0 failed (excise_source_clears_search_index_v2_raw, rebuild_repopulates_search_index_v2_raw, tokenizer_reproject_covers_v2, rebuild_edge_projection_matches_write_path)",
+    "cargo test -p fathomdb-engine --lib guard_row_owned_registry": "ok. 1 passed; 0 failed",
+    "cargo test -p fathomdb-engine --features operator": "exit 0 — full engine suite green, including the regression-sensitive targets rebuild_projections (3), rebuild_report, rebuild_vec0, excise_source (6), consolidate_provider (12), opp12_existence_axis (6), opp12_lifecycle_verbs (8), pr_g1_tokenizer_crash_recovery, f5_bm25f (3), exp_s_substrate (3)",
+    "cargo test -p fathomdb-cli -p fathomdb -p fathomdb-schema -p fathomdb-query": "exit 0 — all green"
+  },
+  "eu7_status": "NOT RUN in any form, at any N, on any backend (CLOSED BY HITL). `data/corpus-data/` was not symlinked. The `eu7_real_corpus_ac` target was COMPILED as part of the full engine suite and reported `0 passed; 0 failed; 0 filtered out` — i.e. it executed zero tests and measured nothing.",
+  "out_of_scope_untouched": [
+    "No SourceId newtype, no erase_source SDK verb, no WAL/checkpoint work, no telemetry redaction, no migration (SCHEMA version unchanged) — sub-slices 5b/5c/5d.",
+    "src/conformance/governed-surface-allowlist.json unchanged. The registry adds NO public Rust surface: ROW_OWNED_PROJECTIONS, RowOwnedProjection, ProjectionClass, ProjectionPass and both projectors are private; the guard test lives in the in-crate `#[cfg(test)] mod tests` precisely so the registry need not be exported.",
+    "dev/plans/**, dev/plans/runs/STATUS-0.8.20.md and dev/acceptance.md untouched (this output.json excepted). No push; primary checkout untouched."
+  ],
+  "next_step_for_orchestrator": "Run codex §9 review on e0e40da3 (diff vs 19b568e2 = 2 files: fathomdb-engine/src/lib.rs + tests/erasure_projection_registry.rs, plus the Cargo.toml [[test]] entry), then cherry-pick. Two judgement calls to put in front of the reviewer: (1) the edge replay now includes body-less edges so their readiness terminal is restored — confirm no consumer depended on those cursors staying non-terminal; (2) `projections_invalidated` / `rows_invalidated` now include search_index_v2 deletions, a user-visible count increase in the CLI excise/rebuild reports — flag for the changelog. Slice 5b (SourceId newtype / erase_source verb) can start from this head."
+}

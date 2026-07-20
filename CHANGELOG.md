@@ -50,13 +50,33 @@ AC-050c) gates merges against this invariant.
 - **Retention `cap` semantics changed (0.8.20, R-20-E7/D-A).** The
   `enforce_provenance_retention` cap now bounds the **sweepable** rows in
   `operational_mutations`, not every row in the table: the erasure-audit
-  collections (`excise_source_audit`, `excise_record_audit`) are exempt from the
-  sweep. A database with audit rows will therefore retain more total op-store
-  rows than the configured cap.
+  collections (`excise_source_audit`, `excise_record_audit`) and the engine's
+  pending-redaction intent queue (`erasure_pending_redaction`) are exempt from
+  the sweep. A database with audit rows will therefore retain more total
+  op-store rows than the configured cap. An operator who sized `cap` against a
+  physical row count should re-check that assumption.
 
   *Why:* accountability — demonstrating *that* an erasure occurred — is a
   distinct obligation from erasure itself, and the previous behaviour let a
-  retention cap silently destroy the proof.
+  retention cap silently destroy the proof. The pending-redaction queue is
+  exempt for a second reason: it records an *undischarged* erasure obligation,
+  so sweeping it under cap pressure would silently convert a pending redaction
+  into a reported success.
+
+- **Schema version 20 → 21 (0.8.20).** Migration step 21 back-fills legacy
+  NULL provenance (see the `source_id` entry above). The bump is one-way: an
+  engine older than 0.8.20 refuses to open a migrated database.
+
+  The back-fill predicate is **asymmetric between the two canonical tables**,
+  deliberately. On `canonical_nodes` it is
+  `source_id IS NULL AND logical_id IS NULL`; on `canonical_edges` it is
+  `source_id IS NULL` alone. The `logical_id` gate exists so that a governed
+  row — which `purge` can already reach by `logical_id` — is not made
+  collateral of an `excise_source('_legacy:pre-0.8.20')` call. That rationale
+  holds for nodes and **not** for edges: `purge` resolves its target only
+  through `canonical_nodes` and then erases edges by *endpoint*, never by edge
+  `logical_id`. Gating edges on `logical_id` would therefore have left legacy
+  edges reachable by no erasure verb at all.
 
 ### Added
 
@@ -80,14 +100,21 @@ AC-050c) gates merges against this invariant.
   truncate the write-ahead log (the erased bytes were previously still
   `grep`-able in `<db>-wal`, since a `DELETE` appends frames rather than
   rewriting them) and selectively redact the erased ids from the telemetry sink,
-  leaving unrelated sink records intact. On a persistent checkpoint `BUSY` the
-  verb now raises the typed `ErasureIncomplete` rather than reporting success —
-  an erasure verb must never report success on an incomplete erasure.
+  leaving unrelated sink records intact. On a persistent checkpoint `BUSY`, on
+  a telemetry sink that could not be redacted, and on a sink that has since
+  been **rotated** (a rotated file is not a redacted file — the erased ids may
+  still be in the rotated copy), the verb raises the typed `ErasureIncomplete`
+  rather than reporting success. An erasure verb must never report success on
+  an incomplete erasure. A redaction that cannot be completed in-line is
+  recorded as a durable pending-redaction obligation rather than dropped.
 
 - **`excise_collection_record(collection, record_key)` (0.8.20, R-20-E7).**
   Record-level op-store erasure. The op-store previously had no record-level
   delete at all, so a caller holding an erasure obligation over an op-store
-  record had no way to discharge it.
+  record had no way to discharge it. It **refuses** to address the engine's
+  own erasure bookkeeping (the audit collections and the pending-redaction
+  queue), which would otherwise let an operator destroy the proof of an
+  erasure, or an undischarged obligation, through a normal-looking call.
 
 - **New public types.** Rust: `SourceId`, `OrphanProvenanceReport`,
   `OrphanProvenanceSource`; `ExciseReport` is no longer behind the `operator`
