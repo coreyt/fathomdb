@@ -42,6 +42,7 @@ from eval.r2_parity_eval import (
     NaiveRAGAdapter,
     RetrievalAdapter,
     _format_lme_session,
+    _make_doc_id_of,
     _match,
     normalize_answer,
 )
@@ -458,9 +459,17 @@ def _build_fathomdb_variant(
         else:
             engine.drain(timeout_s=600)  # FTS-only: no vector work, returns promptly
 
+        # TC-31 (0.8.20 Slice 10a): use the shared resolver. The former inline
+        # lambda called `int(sh.id)`, which has raised `TypeError` on every hit
+        # since 0.8.19 retyped `SearchHit.id` to `IdSpace`. Making it merely
+        # non-raising is NOT enough: `cursor_to_doc` is keyed by int and
+        # `write_cursor` is no longer surfaced to the SDK, so an IdSpace-safe
+        # cursor lookup would miss every time and silently score recall as zero.
+        # `_make_doc_id_of` prefers the hit's own `source_id`, which TC-31 now
+        # populates on every arm — the only remaining hit → document route.
         adapter = FathomDBAdapter(
             engine,
-            doc_id_of=lambda sh: cursor_to_doc.get(int(sh.id), str(sh.id)),
+            doc_id_of=_make_doc_id_of(cursor_to_doc),
             use_graph_arm=False,
         )
         return adapter, None

@@ -175,7 +175,17 @@ def build_condition_engine(
         sid = getattr(sh, "source_id", None)
         if sid:
             return _session_id_of(str(sid))
-        return cursor_to_doc.get(int(sh.id), str(sh.id))
+        # TC-31 (0.8.20 Slice 10a): `sh.id` is an `IdSpace` since 0.8.19, so the
+        # former `int(sh.id)` raised `TypeError` here. Key the legacy cursor map
+        # by int only when the id is genuinely integral; never raise. Reached
+        # only for a genuinely NULL-provenance row now that TC-31 populates
+        # `source_id` on every arm.
+        raw = getattr(sh, "id", None)
+        key = getattr(raw, "value", raw)
+        try:
+            return cursor_to_doc.get(int(key), str(key))
+        except (TypeError, ValueError):
+            return str(key)
 
     return engine, doc_id_of, {
         "n_docs": len(items), "n_edges_reported": n_edges, "drain": drain_note,
