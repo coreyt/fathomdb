@@ -1,0 +1,96 @@
+{
+  "slice": "15d",
+  "title": "Projection registry (C-1 co-land) + EAV / property-FTS (R-20-PR, R-20-EAV)",
+  "branch": "orch-0.8.20-s15d",
+  "head_sha": "dfc8b69b2b536a5fba6cb64cfe3c32e4011d5e78",
+  "status": "COMPLETE — RED→GREEN, all gates green, X1 parity verified by execution",
+  "commits": [
+    { "sha": "06a4a154", "kind": "RED", "summary": "test(0.8.20): RED — schema step 24 real; engine verbs stubbed; 10/11 engine tests fail" },
+    { "sha": "d1af5758", "kind": "GREEN", "summary": "feat(0.8.20): GREEN — configure_projections + read_projections + EAV/property-FTS + ROW_OWNED registration + boot re-derive" },
+    { "sha": "0d887f85", "kind": "feat", "summary": "Slice 15d X1 SDK parity — pyo3 + napi + Python/TS packages + allowlist + interface docs" },
+    { "sha": "32078492", "kind": "fix", "summary": "boot re-derive tolerates pre-step-24 schemas + head=24 test churn" },
+    { "sha": "95107213", "kind": "feat", "summary": "Rust facade re-exports Projection* types" },
+    { "sha": "dfc8b69b", "kind": "fix", "summary": "TS read.projections wraps native via intercept (fresh-clone tsc fix)" }
+  ],
+  "gates": {
+    "cargo_clippy_workspace_all_targets": { "exit": 0 },
+    "cargo_check_workspace_all_targets": { "exit": 0 },
+    "cargo_test_engine_schema": {
+      "exit": 0,
+      "passed": 598,
+      "failed": 0,
+      "ignored": 13,
+      "baseline": "580 passed / 0 failed / 13 ignored",
+      "note": "run with --test-threads=1 --no-fail-fast, explicit long timeout; +18 net-new tests (11 engine integration + 6 schema step24 + 1 lib guard-bites)"
+    },
+    "operator_erasure_tests": {
+      "exit": 0,
+      "note": "erasure_projection_registry 10, erasure_completeness 4, excise_source 6, rebuild_projections 3 — all pass with the two new row-owned tables registered"
+    },
+    "ac_041_recovery_denylist": { "exit": 0, "note": "fathomdb no_recovery_surface + governed_surface pass; recovery_denylist unchanged (five names); new verbs do not collide" },
+    "python_execution_fresh_clone": {
+      "exit": 0,
+      "passed": 23,
+      "note": "fresh git clone + own venv + maturin develop --features pyo3/extension-module; pytest test_slice15d_projection_registry.py (6) + test_surface.py (17). Surface test recognizes configure_projections + read.projections as live governed commands; no env trap."
+    },
+    "typescript_execution_fresh_clone": {
+      "exit": 0,
+      "passed": 18,
+      "note": "fresh clone; napi build --platform (debug, test-hooks,default-embedder) + tsc + node --test; slice15d-projection-registry (6) + surface (12). Surface parity (TS/Py share one allowlist) green."
+    },
+    "eu7": { "note": "ZERO eu7 runs — eu7_real_corpus_ac stays #[ignore]d (13 ignored). R-20-EU7 CLOSED BY DECISION; not run." }
+  },
+  "as_built_projection_spec_shape": {
+    "public_rust": "ProjectionSpec { name: String, roles: BTreeSet<ProjectionRole>, fts: Option<ProjectionFts>, vector: Option<ProjectionVector> }",
+    "projection_role": "enum ProjectionRole { Filterable, Rankable, Searchable } — EXACTLY three members; searchable->FTS / searchable->vector are tier labels carried by the fts/vector sub-objects, NOT enum members",
+    "roles_semantics": "Set semantics (BTreeSet: dedup + membership + order-independent). An attribute can be Filterable AND Searchable.",
+    "fts_sub_object": "ProjectionFts { tokenizer: Option<String> } — presence selects the searchable->FTS sub-target; None tokenizer = engine default",
+    "vector_sub_object": "ProjectionVector { embedder: Option<String> } — STORED by 15d (registry columns vector_declared + vector_embedder), builds nothing here",
+    "delta": "ProjectionDelta { built, dropped, deferred: Vec<String>, unchanged: bool }; destructive change is Err(ProjectionDestructive{name,delta}), not a delta",
+    "dense_readiness_attach_point": "Slice 20 (R-20-DR) adds a `dense_readiness` field to ProjectionVector (the `vector` sub-object). The on-disk registry already round-trips the sub-object via _fathomdb_projection_registry.vector_declared + .vector_embedder, so the attach is purely additive — no persisted-shape change is needed in Slice 20. StoredProjection::to_spec/from_spec and the SDK ProjectionSpec.vector flag are the seam."
+  },
+  "eav_property_fts_schema_step_24": {
+    "schema_version": "23 -> 24 (SCHEMA_VERSION bumped; step 24 is head)",
+    "no_data_migration": "HITL 2026-07-21 — shape only; tables come up EMPTY; configure_projections + boot re-derive populate them",
+    "tables": [
+      "_fathomdb_projection_registry(name PK, roles TEXT, fts_tokenizer TEXT nullable [NULL=no fts / ''=fts+default tokenizer / non-empty=custom], vector_embedder TEXT nullable, vector_declared INTEGER) — durable derived-cache source (Q5)",
+      "canonical_attributes(write_cursor INTEGER, attr_name TEXT, attr_value TEXT) + index (attr_name, attr_value) + index (write_cursor) — row-owned EAV attribute store, values derived from node body JSON $.<name>, rebuild-durable",
+      "property_search_index USING fts5(attr_value, attr_name UNINDEXED, write_cursor UNINDEXED, tokenize='porter unicode61 remove_diacritics 2') — row-owned property-FTS shadow"
+    ],
+    "marker": "-- MIGRATION-ACCRETION-EXEMPTION present (additive CREATE TABLE)"
+  },
+  "row_owned_projections_added": {
+    "entries": [
+      "{ table: 'canonical_attributes', cursor_column: 'write_cursor', class: Attribute }",
+      "{ table: 'property_search_index', cursor_column: 'write_cursor', class: PropertyFts }"
+    ],
+    "new_projection_classes": ["Attribute", "PropertyFts"],
+    "also": "both classes added to truncate_all_row_projections so a full rebuild clears+re-derives them; erase_row_projections (purge/excise_source) now reaches attribute values at rest",
+    "guard_proof": "lib test guard_row_owned_registry passes with both tables registered; net-new lib test slice15d_attribute_projections_registered_and_guard_bites proves (1) both are registered and (2) the guard predicate REJECTS either if hypothetically unregistered. Engine test erase_source_reaches_attribute_projections asserts erased attribute values do not survive on disk in canonical_attributes or property_search_index."
+  },
+  "reregistration_noop_and_explicit_drop": {
+    "idempotent_noop": "idempotent_reregistration_is_a_noop: second apply of the identical spec => ProjectionDelta.unchanged=true, built/dropped/deferred empty (StoredProjection PartialEq diff)",
+    "explicit_drop": "role_add_builds_and_explicit_drop_drops_exactly_one: omission of a live projection does NOT drop (C3); an explicit drop:[name] removes exactly that name's registry row + EAV rows + property-FTS rows; the un-dropped projection is untouched",
+    "destructive_refusal": "destructive_change_requires_explicit_drop: removing a role (or changing tokenizer/embedder) without a drop => Err(ProjectionDestructive); with drop:[name] it rebuilds fresh. A refused change does not partially apply.",
+    "boot_rederive": "boot_rederive_converges_after_simulated_crash: registry row survives but EAV/property-FTS rows wiped => next open rebuilds them from canonical state; a second open does not duplicate (idempotent). rederive_projections_on_boot runs on the writer connection after ensure_vector_partition, gated on registry-table existence (safe on every pre-24 schema)."
+  },
+  "x1_parity": {
+    "python": { "verb_names": ["Engine.configure_projections", "read.projections"], "types": ["fathomdb.types.ProjectionSpec/ProjectionRole/ProjectionDelta", "fathomdb.errors.ProjectionDestructiveError"], "result": "23 passed by execution in a fresh clone" },
+    "typescript": { "verb_names": ["Engine.configureProjections", "read.projections"], "types": ["ProjectionSpec/ProjectionRole/ProjectionDelta", "ProjectionDestructiveError (FDB_PROJECTION_DESTRUCTIVE)"], "result": "18 passed by execution in a fresh clone" },
+    "allowlist": "+configure_projections, +configureProjections, +read.projections — recorded PROPOSED / NOT SIGNED (AC-079 UNMINTED; gated by requirement-id + TDD test names). recovery_denylist unchanged (five names)."
+  },
+  "contract_or_plan_deviations": [
+    "The EAV store is DERIVED FROM the node body JSON ($.<name>), not populated by a net-new attribute-write verb. Rationale: no attribute-write verb is in 15d scope (the Memex set_entity_attribute repoint is >=0.9.x / out of scope per C-1 Q2), yet R-20-EAV requires a populated, testable EAV store. Deriving from the body makes the store rebuild-durable (satisfies projection-registry §2 'projections are re-derivable from the canonical graph') AND row-owned/erasable, and reuses the shipped 'extract $.status from body' pattern (search_index_v2). The registry drives which attributes are extracted. This threads the C-1 contract ('the canonical interpretive values live in engine storage') without inventing an out-of-scope write verb.",
+    "`canonical_attributes` is named with the `canonical_` prefix but is classified as a ROW-OWNED PROJECTION (in ROW_OWNED_PROJECTIONS, NOT in schema CANONICAL_TABLES). This is deliberate: it holds attribute VALUES at rest that must be erased with the node, so it must be reachable by erasure. The name reflects that it holds the canonical attribute values; the classification reflects that they are rebuild-durable from the body.",
+    "fts_tokenizer registry column is tri-valued (NULL=no fts sub-object, ''=fts+engine-default, non-empty=custom) to durably distinguish `searchable+FTS with default tokenizer` from `searchable with no FTS`. Custom tokenizers are recorded but NOT honoured in 15d (the property-FTS table uses the default tokenizer); per-attr custom tokenizers are the >=0.9.x multi-field FTS work, grafting later via the same idempotent configure_projections (same graceful-graft as rankable / Q6a).",
+    "read.projections is exposed as a read-namespace verb in BOTH bindings (single allowlist name `read.projections`), while configure_projections is a top-level Engine method (two allowlist names for the two casings). This matches api-surface.md (configure_projections is a verb; read.projections is folded into read.*)."
+  ],
+  "blockers": [],
+  "unblocks": ["Slice 20 (R-20-DR dense_readiness/flush_embeddings attaches to the vector sub-object)", "Slice 25 (R-20-SUR surrogate minting for registry-admitted governed entities)"],
+  "notes_for_orchestrator": [
+    "Codex §9 review + cherry-pick are the orchestrator's next steps (this implementer did neither).",
+    "A separate orch-0.8.20-s15b worktree runs fix-5 concurrently; this slice did not touch the TC-33 timestamp helpers.",
+    "The fresh clone used for Py/TS execution is at scratchpad/s15d-clone (disposable; not committed).",
+    "Governed-surface delta is PROPOSED / NOT SIGNED — AC-079 remains UNMINTED; escalate for HITL sign-off at the Slice-40 close, not now."
+  ]
+}
