@@ -118,7 +118,7 @@ fn fix6_dropped_edge_vector_sidecar_is_removed() {
     assert!(sidecar_has(&conn, 5), "precondition: edge sidecar exists before step 23");
 
     migrate_with_steps(&conn, MIGRATIONS).expect("migrate v22 -> head (step 23)");
-    assert_eq!(user_version(&conn), 23, "step 23 must have applied");
+    assert_eq!(user_version(&conn), 24, "migrations must have applied to head");
 
     assert!(
         !sidecar_has(&conn, 5),
