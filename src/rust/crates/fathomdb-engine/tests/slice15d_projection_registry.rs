@@ -1012,3 +1012,194 @@ fn backslash_projection_name_is_rejected() {
 
     opened.engine.close().unwrap();
 }
+
+// ===========================================================================
+// fix-6 — duplicate-name diffing + config-apply edge-case audit
+// ===========================================================================
+
+/// **fix-6 finding [P2].** A request naming the SAME projection `name` more than
+/// once in one `specs` slice is ambiguous/malformed: every spec was diffed
+/// against the ONE pre-loop registry snapshot, so on a fresh DB
+/// `[status(searchable+fts), status(rankable-only)]` backfilled the first spec
+/// (`built`), then the None-branch fired AGAIN for the second (the snapshot never
+/// saw the first spec's just-persisted row), OVERWROTE the registry with the
+/// rankable-only spec and cleared the EAV the first built — yet the returned
+/// `ProjectionDelta` still reported `built = ["status"]`. Registry (rankable-only,
+/// builds nothing) and delta (claims `status` built) DIVERGE from the accepted
+/// input, breaking the fix-4 "accept ⟹ correct" contract.
+///
+/// Chosen fix = REJECT the duplicate up front with a typed
+/// [`EngineError::InvalidArgument`] naming the offending name, before any write.
+/// RED against pre-fix-6 code (which returned `Ok` with the divergent delta).
+#[test]
+fn duplicate_projection_name_in_one_request_is_rejected() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "dup_name");
+    let opened = Engine::open(path.clone()).unwrap();
+    let engine = &opened.engine;
+    engine.write(&[node("N1", "src:1", r#"{"status":"open"}"#)]).unwrap();
+
+    let err = engine
+        .configure_projections(
+            &[
+                spec("status", &[ProjectionRole::Searchable], true, false),
+                spec("status", &[ProjectionRole::Rankable], false, false),
+            ],
+            &[],
+        )
+        .unwrap_err();
+    match err {
+        EngineError::InvalidArgument { msg } => assert!(
+            msg.contains("status") && msg.contains("duplicate"),
+            "the typed refusal must name the duplicated projection, got: {msg}"
+        ),
+        other => panic!("expected InvalidArgument for a duplicate name, got {other:?}"),
+    }
+
+    // The refused call registered NOTHING and built no attribute at rest — no
+    // partial apply, no registry/delta divergence.
+    assert!(
+        engine.read_projections().unwrap().is_empty(),
+        "a refused duplicate-name request must not partially register"
+    );
+    opened.engine.drain(5_000).unwrap();
+    opened.engine.close().unwrap();
+    assert!(
+        eav_values(&path, "status").is_empty(),
+        "a refused duplicate-name request must write no EAV value"
+    );
+}
+
+/// **fix-6.** A duplicate ENTRY in the `drop` list has the same stale-snapshot
+/// bug: the pre-loop `before_drop` snapshot still contained the name on the
+/// second pass, so the delta reported the drop TWICE (`dropped = ["status",
+/// "status"]`) though the registry row was removed once. Rejected up front.
+#[test]
+fn duplicate_drop_entry_in_one_request_is_rejected() {
+    let dir = TempDir::new().unwrap();
+    let opened = Engine::open(db_path(&dir, "dup_drop")).unwrap();
+    let engine = &opened.engine;
+    engine.write(&[node("N1", "src:1", r#"{"status":"open"}"#)]).unwrap();
+    engine
+        .configure_projections(&[spec("status", &[ProjectionRole::Filterable], false, false)], &[])
+        .unwrap();
+
+    let err = engine
+        .configure_projections(&[], &["status".to_string(), "status".to_string()])
+        .unwrap_err();
+    match err {
+        EngineError::InvalidArgument { msg } => assert!(
+            msg.contains("status") && msg.contains("duplicate"),
+            "the typed refusal must name the duplicated drop, got: {msg}"
+        ),
+        other => panic!("expected InvalidArgument for a duplicate drop, got {other:?}"),
+    }
+
+    // The refused call left the projection intact (no partial drop).
+    assert_eq!(
+        engine.read_projections().unwrap().len(),
+        1,
+        "a refused duplicate-drop request must not partially drop"
+    );
+    opened.engine.close().unwrap();
+}
+
+/// **fix-6 (deliberate design guard).** A name that appears in BOTH `specs` and
+/// `drop` is NOT a duplicate error: it is the documented drop-then-rebuild-fresh
+/// pattern (`apply_projection_config` applies drops first). Rejecting it would
+/// break `destructive_change_requires_explicit_drop`. This asserts the fix leaves
+/// that supported rebuild working — the delta reports BOTH the drop and the fresh
+/// build, and the registry reflects the re-declared spec.
+#[test]
+fn name_in_both_specs_and_drop_is_the_supported_rebuild() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "both_lists");
+    let opened = Engine::open(path.clone()).unwrap();
+    let engine = &opened.engine;
+    engine.write(&[node("N1", "src:1", r#"{"status":"open"}"#)]).unwrap();
+    engine
+        .configure_projections(
+            &[spec(
+                "status",
+                &[ProjectionRole::Filterable, ProjectionRole::Searchable],
+                true,
+                false,
+            )],
+            &[],
+        )
+        .unwrap();
+
+    // Destructive rebuild: drop `status` and re-declare it filterable-only in ONE
+    // call. Supported — drops apply first, then the fresh spec builds.
+    let d = engine
+        .configure_projections(
+            &[spec("status", &[ProjectionRole::Filterable], false, false)],
+            &["status".to_string()],
+        )
+        .unwrap();
+    assert_eq!(d.dropped, vec!["status".to_string()], "the explicit drop is reported");
+    assert_eq!(d.built, vec!["status".to_string()], "the re-declared spec is (re)built");
+    assert_eq!(
+        engine.read_projections().unwrap()[0].roles,
+        roles(&[ProjectionRole::Filterable]),
+        "the registry reflects the re-declared (reduced) role set"
+    );
+    opened.engine.drain(5_000).unwrap();
+    opened.engine.close().unwrap();
+}
+
+/// **fix-6 audit — empty request.** `specs=[] , drop=[]` is a clean no-op:
+/// `unchanged=true`, an empty delta, nothing built or dropped.
+#[test]
+fn empty_request_is_a_noop() {
+    let dir = TempDir::new().unwrap();
+    let opened = Engine::open(db_path(&dir, "empty_req")).unwrap();
+    let engine = &opened.engine;
+    engine.write(&[node("N1", "src:1", r#"{"status":"open"}"#)]).unwrap();
+
+    let d = engine.configure_projections(&[], &[]).unwrap();
+    assert_eq!(d, fathomdb_engine::ProjectionDelta { unchanged: true, ..Default::default() });
+    assert!(engine.read_projections().unwrap().is_empty(), "an empty request declares nothing");
+    opened.engine.close().unwrap();
+}
+
+/// **fix-6 audit — drop of an absent name.** Dropping a name not in the registry
+/// is an idempotent no-op (not an error): empty delta, `unchanged=true`.
+#[test]
+fn dropping_an_absent_name_is_a_clean_noop() {
+    let dir = TempDir::new().unwrap();
+    let opened = Engine::open(db_path(&dir, "drop_absent")).unwrap();
+    let engine = &opened.engine;
+    engine.write(&[node("N1", "src:1", r#"{"status":"open"}"#)]).unwrap();
+
+    let d = engine.configure_projections(&[], &["ghost".to_string()]).unwrap();
+    assert!(d.dropped.is_empty(), "dropping an absent name reports no drop");
+    assert!(d.unchanged, "dropping an absent name is a no-op");
+    opened.engine.close().unwrap();
+}
+
+/// **fix-6 audit — registry/delta alignment after a duplicate is REJECTED.** The
+/// invariant: after any ACCEPTED call, `read_projections()` reflects exactly what
+/// the delta said. A rejected duplicate leaves both untouched (asserted above);
+/// this guards the accepted-idempotent path for a rankable-only (deferred) spec,
+/// which must diff to a no-op on the second identical apply.
+#[test]
+fn idempotent_reregistration_holds_for_deferred_rankable() {
+    let dir = TempDir::new().unwrap();
+    let opened = Engine::open(db_path(&dir, "idem_rankable")).unwrap();
+    let engine = &opened.engine;
+    engine.write(&[node("N1", "src:1", r#"{"importance":"high"}"#)]).unwrap();
+
+    let s = spec("importance", &[ProjectionRole::Rankable], false, false);
+    let first = engine.configure_projections(std::slice::from_ref(&s), &[]).unwrap();
+    assert_eq!(first.deferred, vec!["importance".to_string()], "first apply defers rankable");
+    assert!(!first.unchanged);
+
+    let second = engine.configure_projections(std::slice::from_ref(&s), &[]).unwrap();
+    assert!(second.unchanged, "identical rankable re-registration must diff to a no-op");
+    assert!(
+        second.built.is_empty() && second.dropped.is_empty() && second.deferred.is_empty(),
+        "no redundant deferral re-report on an idempotent rankable re-apply"
+    );
+    opened.engine.close().unwrap();
+}
