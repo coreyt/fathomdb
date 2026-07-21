@@ -693,6 +693,32 @@ pub const MIGRATIONS: &[Migration] = &[
     //      `canonical_edges` still returns one row, whose `MAX` is NULL, which
     //      violates `_fathomdb_open_state.value NOT NULL` — i.e. without it the
     //      step fails on EVERY fresh database.
+    //   3. `write_cursor` is a SINGLE global sequence shared across nodes AND
+    //      edges, and `advance_projection_cursor` (engine) walks the readiness
+    //      watermark forward ONE value at a time, ONLY while the next cursor has
+    //      a `_fathomdb_projection_terminal` row. A body-bearing edge whose
+    //      vector projection had NOT completed at upgrade has NO terminal row; if
+    //      step 23 dropped it we would leave a cursor value with no terminal and
+    //      no owning row, so the projection cursor STALLS PERMANENTLY at that gap
+    //      — and because the sequence is shared this also freezes advancement
+    //      past SURVIVING node projections (every upgraded DB's `wait_for_idle` /
+    //      search-freshness wedges). So BEFORE the DROP — while `canonical_edges`
+    //      still exists to read — a terminal is recorded for every edge cursor
+    //      that lacks one. This is projection-cursor STATE bookkeeping, NOT data
+    //      preservation: the edge rows still do not survive; we only reconcile
+    //      the engine's cursor state machine so it does not dangle on cursors
+    //      whose rows we correctly dropped. It is COMPLEMENTARY to (2): (2) stops
+    //      cursor REUSE below the old high-water mark; (3) stops cursor STALL on
+    //      the dropped cursors themselves. Both are needed.
+    //      The state token is `'up_to_date'`, NOT `'superseded'`. The terminal
+    //      table (step 7) carries `CHECK(state IN ('failed','up_to_date'))` and
+    //      the writer is `INSERT OR IGNORE`; under SQLite, `OR IGNORE` SKIPS a
+    //      CHECK-violating row and returns no error, so a `'superseded'` backfill
+    //      would be SILENTLY DROPPED and the cursor would still stall (a vacuous
+    //      green). `'up_to_date'` is the CHECK-valid, non-`'failed'` terminal
+    //      that honestly means "nothing left to project here" for a deleted row,
+    //      and `INSERT OR IGNORE` leaves any already-present terminal untouched
+    //      (the write_cursor PRIMARY KEY conflict is ignored).
     //
     // The recreate restores the full step-1→22 column set IN ORDER (positional
     // `row.get(i)` sites depend on it) and all four indexes, which `DROP TABLE`
@@ -713,6 +739,14 @@ pub const MIGRATIONS: &[Migration] = &[
                   FROM canonical_edges
                   HAVING MAX(write_cursor) IS NOT NULL;
               DELETE FROM search_index_edges;
+              -- fix-4 (TC-33): mark every edge cursor terminal BEFORE the DROP so
+              -- the SHARED projection cursor can walk past rows this recreate
+              -- removes; a pending edge (no terminal) would otherwise strand the
+              -- cursor and freeze surviving node projections too. 'up_to_date' is
+              -- the CHECK-valid token ('superseded' would be swallowed by
+              -- OR IGNORE). Complementary to the reserved-high-water fix above.
+              INSERT OR IGNORE INTO _fathomdb_projection_terminal(write_cursor, state)
+                  SELECT write_cursor, 'up_to_date' FROM canonical_edges;
               DROP TABLE canonical_edges;
               CREATE TABLE canonical_edges(
                   write_cursor INTEGER NOT NULL,
