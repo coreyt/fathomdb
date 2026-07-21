@@ -15122,6 +15122,23 @@ fn apply_projection_config(
     drop: &[String],
 ) -> Result<ProjectionDelta, EngineError> {
     // Validate up-front so a bad name aborts before any write.
+    //
+    // fix-6 finding [P2] — REJECT a duplicate projection `name` within `specs`
+    // (and a duplicate entry within `drop`) up front. The diff loop below diffs
+    // every spec against the ONE pre-loop registry snapshot, so a name repeated
+    // in `specs` diffed the SECOND spec against state that never saw the first
+    // spec's just-persisted row: on a fresh DB `[status(searchable+fts),
+    // status(rankable-only)]` reported `built=[status]` in the delta while the
+    // registry ended rankable-only (which builds nothing) — the returned delta
+    // DIVERGED from the persisted registry, breaking the fix-4 "accept ⟹ correct"
+    // contract. A duplicate `drop` entry likewise reported the drop twice though
+    // the row was removed once. A single request naming the same projection twice
+    // is ambiguous/malformed, so we refuse it (rejection, not last-wins coalesce)
+    // — a rejected request is a total no-op, keeping the registry and delta
+    // consistent with the accepted input. A name that appears in BOTH `specs` and
+    // `drop` is NOT a duplicate: that is the documented drop-then-rebuild-fresh
+    // pattern (drops apply first, then the fresh spec builds), so it is allowed.
+    let mut seen_spec_names: BTreeSet<&str> = BTreeSet::new();
     for spec in specs {
         if !is_valid_attribute_name(&spec.name) {
             return Err(EngineError::InvalidArgument {
@@ -15133,11 +15150,22 @@ fn apply_projection_config(
                 msg: format!("projection '{}' declares no roles", spec.name),
             });
         }
+        if !seen_spec_names.insert(spec.name.as_str()) {
+            return Err(EngineError::InvalidArgument {
+                msg: format!("duplicate projection name in one request: '{}'", spec.name),
+            });
+        }
     }
+    let mut seen_drop_names: BTreeSet<&str> = BTreeSet::new();
     for name in drop {
         if !is_valid_attribute_name(name) {
             return Err(EngineError::InvalidArgument {
                 msg: format!("invalid projection drop name: {name:?}"),
+            });
+        }
+        if !seen_drop_names.insert(name.as_str()) {
+            return Err(EngineError::InvalidArgument {
+                msg: format!("duplicate projection drop in one request: '{name}'"),
             });
         }
     }
