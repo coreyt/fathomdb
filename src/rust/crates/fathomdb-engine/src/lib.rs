@@ -6756,6 +6756,10 @@ impl Engine {
                 body,
                 row_kind,
                 ProjectionPass::Write,
+                // This #[doc(hidden)] writer inserts with the column DEFAULT
+                // `state = 'active'` (no state column in its INSERT), so the row
+                // is always active and its attributes project.
+                true,
             )
             .map_err(|_| EngineError::Storage)?;
             advance_projection_cursor(&tx).map_err(|_| EngineError::Storage)?;
@@ -7357,8 +7361,16 @@ impl Engine {
     /// Keys on the BARE `logical_id` (`l:` space only); a `Content`(`h:`) or
     /// `Passage`(`p:`) id raises [`EngineError::NotLifecycleAddressable`].
     /// The state flip mutates the single active (`superseded_at IS NULL`) row; a
-    /// `deleted` row STAYS indexed (gap-5) — only the `state='active'` default
-    /// filter excludes it, so an undelete needs no re-projection.
+    /// `deleted` row STAYS node-FTS / vector indexed (gap-5) — only the
+    /// `state='active'` default filter excludes those shadows, so an undelete
+    /// needs no re-projection there.
+    ///
+    /// 0.8.20 Slice 15d fix-2 [P2] — the row-owned ATTRIBUTE projection
+    /// (`canonical_attributes` / `property_search_index`) is the exception: it has
+    /// NO read-side lifecycle filter (the property-FTS5 table cannot carry one), so
+    /// it is maintained AT REST to track the backfill's set
+    /// (projected ⟺ active ∧ non-superseded). Promote/undelete PROJECT the declared
+    /// attributes; soft-delete PURGES them; reject is a no-op.
     pub fn transition(
         &self,
         logical_id: &str,
@@ -7381,20 +7393,22 @@ impl Engine {
 
         // The lifecycle state lives on the single active (superseded_at IS NULL)
         // version; a `deleted` row is still that active version, just flagged.
-        let current: Option<String> = tx
+        // fix-2 [P2] — also read its `write_cursor` + `body` so the row-owned
+        // attribute projection can be maintained after the state flip.
+        let current: Option<(String, i64, String)> = tx
             .query_row(
-                "SELECT state FROM canonical_nodes \
+                "SELECT state, write_cursor, body FROM canonical_nodes \
                  WHERE logical_id = ?1 AND superseded_at IS NULL",
                 params![lid],
-                |r| r.get::<_, String>(0),
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?)),
             )
             .optional()
             .map_err(|_| EngineError::Storage)?;
 
         // A missing active row is an absent/purged node — the terminal `Purged`
         // state for legality purposes (nothing is a legal target from there).
-        let from_state = match current {
-            Some(s) => LifecycleState::from_str_opt(&s).ok_or(EngineError::Storage)?,
+        let from_state = match &current {
+            Some((s, _, _)) => LifecycleState::from_str_opt(s).ok_or(EngineError::Storage)?,
             None => LifecycleState::Purged,
         };
 
@@ -7418,6 +7432,33 @@ impl Engine {
             params![to_state.as_str(), new_reason, lid],
         )
         .map_err(|_| EngineError::Storage)?;
+
+        // fix-2 [P2] — maintain the row-owned attribute projection so it keeps
+        // tracking the backfill's set (projected ⟺ active ∧ non-superseded). The
+        // transitioned row is the single non-superseded version, so the invariant
+        // reduces to `projected ⟺ to_state == Active`. We PURGE unconditionally
+        // (idempotent — a no-op on the never-projected pending / already-purged
+        // deleted arms) then RE-PROJECT when landing `Active`. This covers every
+        // legal move: promote (pending→active) projects the withheld attributes;
+        // soft-delete (active→deleted) purges; undelete (deleted→active)
+        // re-projects; reject (pending→deleted) is a no-op. The property tables
+        // (`canonical_attributes` / `property_search_index`) carry NO read-side
+        // lifecycle filter — unlike node-FTS / vector shadows, which the canonical
+        // read path already excludes when non-active — so they MUST be maintained
+        // at rest, the same rationale as fix-1's purge-on-supersede. Node-FTS /
+        // vector shadows are deliberately left intact (gap-5: a deleted row STAYS
+        // indexed; only the `state='active'` default read filter hides it).
+        if let Some((cursor, body)) = current.as_ref().map(|(_, c, b)| (*c, b.as_str())) {
+            purge_row_projections_for_cursor_in(
+                &tx,
+                cursor,
+                &[ProjectionClass::Attribute, ProjectionClass::PropertyFts],
+            )
+            .map_err(|_| EngineError::Storage)?;
+            if matches!(to_state, LifecycleState::Active) {
+                project_node_attributes(&tx, cursor, body).map_err(|_| EngineError::Storage)?;
+            }
+        }
         tx.commit().map_err(|_| EngineError::Storage)?;
         self.counters.record_admin();
         Ok(())
@@ -8555,8 +8596,19 @@ impl Engine {
         let pass = if include_fts { ProjectionPass::Write } else { ProjectionPass::VectorOnly };
         let mut rows_rebuilt: u64 = 0;
         for row in canonical_node_rows(&tx).map_err(|_| EngineError::Storage)? {
-            project_canonical_node_row(&tx, row.cursor, &row.kind, &row.body, row.row_kind, pass)
-                .map_err(|_| EngineError::Storage)?;
+            project_canonical_node_row(
+                &tx,
+                row.cursor,
+                &row.kind,
+                &row.body,
+                row.row_kind,
+                pass,
+                // fix-2 [P2]: the attribute half of the replay tracks the backfill's
+                // active-and-non-superseded row set; FTS / vector shadows still
+                // rebuild for every row (read-side lifecycle filter, unchanged).
+                row.attr_projected,
+            )
+            .map_err(|_| EngineError::Storage)?;
             if include_fts {
                 rows_rebuilt = rows_rebuilt.saturating_add(1);
             }
@@ -11964,6 +12016,13 @@ struct CanonicalNodeRow {
     kind: String,
     body: String,
     row_kind: RowKind,
+    /// fix-2 [P2] — whether this row is in the attribute projection's row set
+    /// (`state = 'active' AND superseded_at IS NULL`, the exact `backfill_attribute`
+    /// predicate). A projector-replay rebuild uses this to gate the attribute
+    /// projection so it does not re-surface a pending / superseded node's values.
+    /// Node-FTS / vector shadows are rebuilt for every row (their stale versions
+    /// are excluded by the read-side lifecycle join, unchanged from before).
+    attr_projected: bool,
 }
 
 /// 0.8.0 Slice 5 (G1) — re-tokenize `search_index` from the canonical source
@@ -12001,6 +12060,11 @@ fn reproject_search_index_after_tokenizer_upgrade(connection: &Connection) -> ru
                 &row.body,
                 row.row_kind,
                 ProjectionPass::FtsOnly,
+                // FtsOnly never touches the attribute store (predates step 24), so
+                // `node_active` is inert here; forward the row's flag anyway (it is
+                // the backfill's active-and-non-superseded predicate) so the field
+                // has a reader in every build configuration.
+                row.attr_projected,
             )?;
         }
         connection.execute(
@@ -12050,15 +12114,24 @@ fn search_index_tokenizer_reproject_complete(connection: &Connection) -> rusqlit
 }
 
 fn canonical_node_rows(connection: &Connection) -> rusqlite::Result<Vec<CanonicalNodeRow>> {
+    // fix-2 [P2] — also read `state` + `superseded_at` so a replay rebuild can gate
+    // the attribute projection to the backfill's row set. `attr_projected` mirrors
+    // the exact `backfill_attribute` predicate (`state = 'active' AND
+    // superseded_at IS NULL`): a NULL/foreign state is NOT 'active' and so is
+    // excluded, identical to the SQL equality.
     let mut statement = connection.prepare(
-        "SELECT write_cursor, kind, body, row_kind FROM canonical_nodes ORDER BY write_cursor",
+        "SELECT write_cursor, kind, body, row_kind, state, superseded_at \
+         FROM canonical_nodes ORDER BY write_cursor",
     )?;
     let rows = statement.query_map([], |row| {
+        let state: Option<String> = row.get::<_, Option<String>>(4)?;
+        let superseded_at: Option<i64> = row.get::<_, Option<i64>>(5)?;
         Ok(CanonicalNodeRow {
             cursor: row.get::<_, u64>(0)?,
             kind: row.get::<_, String>(1)?,
             body: row.get::<_, String>(2)?,
             row_kind: row_kind_from_column(&row.get::<_, String>(3)?),
+            attr_projected: state.as_deref() == Some("active") && superseded_at.is_none(),
         })
     })?;
     rows.collect()
@@ -15185,6 +15258,7 @@ fn project_canonical_node_row(
     body: &str,
     row_kind: RowKind,
     pass: ProjectionPass,
+    node_active: bool,
 ) -> rusqlite::Result<bool> {
     let targets = index_targets_for_row_kind(row_kind);
     if targets.fts && pass.writes_fts() {
@@ -15224,7 +15298,20 @@ fn project_canonical_node_row(
     // registry/attribute tables; VectorOnly rebuilds only vector shadows. A full
     // operator FTS rebuild uses `Write`, so it re-derives attributes after the
     // truncate.
-    if pass.writes_attributes() {
+    //
+    // fix-2 [P2]: gated on `node_active`. The at-rest attribute projection tracks
+    // EXACTLY the backfill's row set — `state = 'active' AND superseded_at IS NULL`
+    // (see `backfill_attribute`). Unlike node-FTS / vector shadows (whose stale
+    // versions are excluded by the canonical read path's `superseded_at IS NULL`
+    // / `state = 'active'` join), the property tables carry NO read-side lifecycle
+    // filter (`property_search_index` is an FTS5 table that cannot), so a pending
+    // or superseded node's attribute values would otherwise LEAK into a
+    // same-session property filter / property-FTS. The write path passes
+    // `state == Active`; a projector-replay rebuild passes `active ∧ non-superseded`
+    // per row. Lifecycle transitions maintain the store directly (see
+    // `Engine::transition`). Passes where `writes_attributes()` is false ignore the
+    // flag entirely.
+    if pass.writes_attributes() && node_active {
         project_node_attributes(tx, cursor as i64, body)?;
     }
     let enqueue_vector = targets.vector && kind_is_vector_indexed(tx, kind).unwrap_or(false);
@@ -15612,6 +15699,14 @@ fn commit_batch(
                 // this is behavior-identical to the pre-EXP-S inline path: FTS
                 // (sync, in-tx) + vector (async, gated by kind_is_vector_indexed);
                 // else the cursor is terminated up-front.
+                // fix-2 [P2]: gate the attribute projection on the create-time
+                // state. A fresh insert is always non-superseded, so the backfill
+                // predicate (`state = 'active' AND superseded_at IS NULL`) reduces
+                // to `state == Active` here. A `Pending` node is quarantined out of
+                // the canonical read model — its declared attributes must NOT reach
+                // the property store until a `transition(pending → active)` promotes
+                // it (which projects them then). Node-FTS / vector shadows are left
+                // to their read-side lifecycle filter, exactly as for supersession.
                 project_canonical_node_row(
                     &tx,
                     cursor,
@@ -15619,6 +15714,7 @@ fn commit_batch(
                     body,
                     RowKind::Leaf,
                     ProjectionPass::Write,
+                    matches!(state, InitialState::Active),
                 )?;
             }
             (
