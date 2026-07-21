@@ -4992,11 +4992,21 @@ impl Engine {
                     // on the wire and is normalised here with the SAME hard
                     // rejection. Previously the raw string went straight into the
                     // UPDATE with no validation whatsoever.
+                    // fix-3 [P2]: consolidation is a BYO-LLM PROVIDER boundary, so
+                    // a malformed / non-string `t_invalid` is a PROVIDER protocol
+                    // fault → `Consolidator`, NOT the extractor/user `InvalidArgument`
+                    // that `normalize_extractor_timestamp` emits. Remap it to match
+                    // the two sibling failure modes on this same value (missing key
+                    // and null/unparseable-to-None, both `Consolidator`). Consistent,
+                    // not a diagnostic loss: `Consolidator` is a unit variant and the
+                    // adjacent `.ok_or(EngineError::Consolidator)` cases already
+                    // discard any message.
                     let ts = normalize_extractor_timestamp(
                         &tx,
                         "t_invalid",
                         Some(v.get("t_invalid").ok_or(EngineError::Consolidator)?),
-                    )?
+                    )
+                    .map_err(|_| EngineError::Consolidator)?
                     .ok_or(EngineError::Consolidator)?;
                     tx.execute(
                         "UPDATE canonical_edges SET t_invalid = ?1 \
