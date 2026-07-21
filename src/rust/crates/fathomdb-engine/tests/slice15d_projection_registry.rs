@@ -962,3 +962,51 @@ fn pending_reject_projects_nothing() {
 
     opened.engine.close().unwrap();
 }
+
+/// **fix-4 finding 1 [P2].** A projection `name` that `configure_projections`
+/// ACCEPTS must be populatable. A name carrying a BACKSLASH was accepted by the
+/// name validator (which guarded only empty / `"` / NUL) yet the write-path JSON
+/// path `$."<name>"` never matched the body key, so the attribute silently NEVER
+/// populated `canonical_attributes` — an accept-then-never-populate footgun.
+///
+/// Chosen fix = REJECT at the boundary: a name that cannot be safely used as a
+/// SQLite JSON-path double-quoted key is refused with a typed
+/// [`EngineError::InvalidArgument`] naming the offending name. The `drop` list is
+/// validated by the same rule, so this asserts BOTH arms. RED against pre-fix-4
+/// code (which returned `Ok`).
+#[test]
+fn backslash_projection_name_is_rejected() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "backslash_name");
+    let opened = Engine::open(path.clone()).unwrap();
+    let engine = &opened.engine;
+
+    // A backslash-bearing name is refused at the spec boundary.
+    let err = engine
+        .configure_projections(&[spec("a\\b", &[ProjectionRole::Filterable], false, false)], &[])
+        .unwrap_err();
+    match err {
+        EngineError::InvalidArgument { msg } => {
+            assert!(
+                msg.contains("a\\b"),
+                "the typed refusal must name the offending projection name, got: {msg}"
+            );
+        }
+        other => panic!("expected InvalidArgument for a backslash name, got {other:?}"),
+    }
+
+    // The same rule guards the `drop` list.
+    let drop_err = engine.configure_projections(&[], &["c\\d".to_string()]).unwrap_err();
+    assert!(
+        matches!(drop_err, EngineError::InvalidArgument { .. }),
+        "a backslash drop name must be refused too, got {drop_err:?}"
+    );
+
+    // Nothing was registered by the refused calls.
+    assert!(
+        engine.read_projections().unwrap().is_empty(),
+        "a refused unsafe-name config must not partially register"
+    );
+
+    opened.engine.close().unwrap();
+}
