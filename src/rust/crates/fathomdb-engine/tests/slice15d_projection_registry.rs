@@ -20,8 +20,8 @@
 //!   `body`-FTS behaviour is UNCHANGED (no silent drift).
 
 use fathomdb_engine::{
-    Engine, EngineError, InitialState, ProjectionFts, ProjectionRole, ProjectionSpec,
-    ProjectionVector, SourceId,
+    Engine, EngineError, InitialState, LifecycleState, ProjectionFts, ProjectionRole,
+    ProjectionSpec, ProjectionVector, SourceId,
 };
 use fathomdb_schema::SQLITE_SUFFIX;
 use std::collections::BTreeSet;
@@ -64,6 +64,40 @@ fn node(logical_id: &str, source: &str, body_json: &str) -> fathomdb_engine::Pre
         valid_from: None,
         valid_until: None,
     }
+}
+
+/// A governed node write in an explicit create-time lifecycle state (the
+/// `node` helper hardcodes `Active`; this one exercises `Pending`).
+fn node_state(
+    logical_id: &str,
+    source: &str,
+    body_json: &str,
+    state: InitialState,
+) -> fathomdb_engine::PreparedWrite {
+    fathomdb_engine::PreparedWrite::Node {
+        kind: "doc".to_string(),
+        body: body_json.to_string(),
+        source_id: SourceId::new(source).expect("source id"),
+        logical_id: Some(logical_id.to_string()),
+        state,
+        reason: None,
+        valid_from: None,
+        valid_until: None,
+    }
+}
+
+/// The single active (`superseded_at IS NULL`) write_cursor for a logical_id —
+/// the cursor the property projections key on. Read mid-session (WAL readers see
+/// committed data).
+fn active_cursor(path: &Path, logical_id: &str) -> i64 {
+    let conn = ro(path);
+    conn.query_row(
+        "SELECT write_cursor FROM canonical_nodes \
+         WHERE logical_id = ?1 AND superseded_at IS NULL",
+        [logical_id],
+        |r| r.get::<_, i64>(0),
+    )
+    .unwrap()
 }
 
 fn ro(path: &Path) -> rusqlite::Connection {
@@ -747,4 +781,184 @@ fn boot_rederive_converges_after_simulated_crash() {
         2,
         "boot re-derive is idempotent — a second open must not duplicate rows"
     );
+}
+
+// ===========================================================================
+// R-20-EAV — fix-2: the at-rest projection is lifecycle-gated
+// (projected ⟺ active ∧ non-superseded), maintained across the write path AND
+// every legal `transition` move. The backfill only projects
+// `state = 'active' AND superseded_at IS NULL`; the write path and lifecycle
+// transitions must track EXACTLY that row set.
+// ===========================================================================
+
+/// **fix-2 [P2] — write-path gate + promote.** A node created `Pending` is
+/// quarantined out of the canonical read model, so its declared attributes must
+/// NOT reach the EAV / property-FTS store (the backfill's `state = 'active'`
+/// rule). Pre-fix the write path projected UNCONDITIONALLY, so a same-session
+/// property filter / property-FTS saw a pending node's values. Promotion
+/// (`pending → active`) must then PROJECT the withheld attribute. Asserted on the
+/// RAW tables (property is at rest), mid-session (WAL readers see committed data).
+#[test]
+fn pending_node_is_not_projected_until_promoted() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "pending_gate");
+    let opened = Engine::open(path.clone()).unwrap();
+    let engine = &opened.engine;
+
+    engine
+        .configure_projections(
+            &[spec(
+                "status",
+                &[ProjectionRole::Filterable, ProjectionRole::Searchable],
+                true,
+                false,
+            )],
+            &[],
+        )
+        .unwrap();
+
+    // A PENDING node carrying a declared attribute.
+    engine
+        .write(&[node_state("P", "src:p", r#"{"status":"quarantined"}"#, InitialState::Pending)])
+        .unwrap();
+    engine.drain(5_000).unwrap();
+
+    // fix-2: a pending node must NOT project — it is hidden by the canonical read
+    // model, and the property store must not surface it.
+    assert!(
+        eav_values(&path, "status").is_empty(),
+        "a pending node must NOT project attributes into canonical_attributes"
+    );
+    assert_eq!(
+        property_fts_rowcount(&path, "status"),
+        0,
+        "a pending node must NOT populate property_search_index"
+    );
+
+    // Promote: pending → active projects the previously-withheld attribute.
+    engine.transition("P", LifecycleState::Active, None).unwrap();
+    engine.drain(5_000).unwrap();
+    let cursor = active_cursor(&path, "P");
+
+    assert_eq!(
+        eav_values(&path, "status"),
+        vec!["quarantined".to_string()],
+        "promotion (pending → active) must project the withheld attribute"
+    );
+    assert_eq!(
+        eav_filter(&path, "status", "quarantined"),
+        vec![cursor],
+        "promoted node's attribute must be filter-matchable"
+    );
+    assert_eq!(
+        property_fts_match(&path, "status", "quarantined"),
+        vec![cursor],
+        "promotion must populate property_search_index"
+    );
+
+    opened.engine.close().unwrap();
+}
+
+/// **fix-2 [P2] — soft-delete purge + undelete re-project.** A node written
+/// `Active` projects at write (the control — non-vacuous). A soft-delete
+/// (`active → deleted`) takes it OUT of the backfill's `state = 'active'` set, so
+/// its attribute / property-FTS rows must be PURGED at rest (the property tables
+/// carry no read-side state filter, exactly as with supersession in fix-1). An
+/// undelete (`deleted → active`) must RE-PROJECT. Asserted on the RAW tables,
+/// mid-session.
+#[test]
+fn active_delete_purges_and_undelete_reprojects() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "delete_undelete");
+    let opened = Engine::open(path.clone()).unwrap();
+    let engine = &opened.engine;
+
+    engine
+        .configure_projections(
+            &[spec(
+                "status",
+                &[ProjectionRole::Filterable, ProjectionRole::Searchable],
+                true,
+                false,
+            )],
+            &[],
+        )
+        .unwrap();
+
+    // CONTROL: an Active node projects at write (non-vacuous).
+    engine.write(&[node("A", "src:a", r#"{"status":"live"}"#)]).unwrap();
+    engine.drain(5_000).unwrap();
+    let cursor = active_cursor(&path, "A");
+    assert_eq!(
+        eav_values(&path, "status"),
+        vec!["live".to_string()],
+        "control: an active node projects at write"
+    );
+    assert_eq!(
+        property_fts_match(&path, "status", "live"),
+        vec![cursor],
+        "control: an active node populates property_search_index at write"
+    );
+
+    // Soft-delete: active → deleted must PURGE the attribute / property-FTS rows.
+    engine.transition("A", LifecycleState::Deleted, Some("removed".to_string())).unwrap();
+    engine.drain(5_000).unwrap();
+    assert!(
+        eav_values(&path, "status").is_empty(),
+        "soft-delete (active → deleted) must purge canonical_attributes rows"
+    );
+    assert_eq!(
+        property_fts_rowcount(&path, "status"),
+        0,
+        "soft-delete must purge property_search_index rows"
+    );
+
+    // Undelete: deleted → active must RE-PROJECT.
+    engine.transition("A", LifecycleState::Active, None).unwrap();
+    engine.drain(5_000).unwrap();
+    let cursor = active_cursor(&path, "A");
+    assert_eq!(
+        eav_values(&path, "status"),
+        vec!["live".to_string()],
+        "undelete (deleted → active) must re-project the attribute"
+    );
+    assert_eq!(
+        property_fts_match(&path, "status", "live"),
+        vec![cursor],
+        "undelete must re-populate property_search_index"
+    );
+
+    opened.engine.close().unwrap();
+}
+
+/// **fix-2 [P2] — reject is a no-op for the projection.** A pending node was
+/// never projected (write-path gate), so rejecting it (`pending → deleted`) has
+/// nothing to purge and must leave the projection empty (no spurious row, no
+/// error). Confirms the unified rule (`projected ⟺ to_state == active`) is safe
+/// on the never-projected arm.
+#[test]
+fn pending_reject_projects_nothing() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "reject");
+    let opened = Engine::open(path.clone()).unwrap();
+    let engine = &opened.engine;
+
+    engine
+        .configure_projections(&[spec("status", &[ProjectionRole::Filterable], false, false)], &[])
+        .unwrap();
+
+    engine
+        .write(&[node_state("P", "src:p", r#"{"status":"spam"}"#, InitialState::Pending)])
+        .unwrap();
+    engine.drain(5_000).unwrap();
+    assert!(eav_values(&path, "status").is_empty(), "pending write projects nothing");
+
+    engine.transition("P", LifecycleState::Deleted, Some("rejected".to_string())).unwrap();
+    engine.drain(5_000).unwrap();
+    assert!(
+        eav_values(&path, "status").is_empty(),
+        "reject (pending → deleted) must leave the projection empty"
+    );
+
+    opened.engine.close().unwrap();
 }
