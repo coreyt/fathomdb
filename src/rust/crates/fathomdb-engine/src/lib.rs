@@ -9633,10 +9633,24 @@ fn read_search_in_tx(
              WHERE write_cursor = ?1 AND superseded_at IS NULL AND state = 'active'\
              {node_validity} LIMIT 1"
         ))?;
-        let mut edge_stmt = tx.prepare(
+        // fix-2 (codex §9 [P2]): an edge body projected into `vector_default`
+        // (kind = "edge_fact") is hydrated HERE by write_cursor. Gating on
+        // `superseded_at` alone let an EXPIRED edge (`t_invalid <= :now`) surface
+        // its body through the VECTOR arm — the same "validity enforced on
+        // traversal, not on search" gap Slice 15b closed for nodes, now on the
+        // edge-vector read path. Apply the shared `edge_validity_sql` predicate
+        // (the ONE generator every edge read site uses) so no arm can drift.
+        // `?1` is the rowid, so the edge `:now` binds at `?2`; the instant is the
+        // frozen `view.edge_now()` — a bound value, never `datetime('now')`
+        // (the :9161 no-inline-clock rule). edge_now is ALWAYS present, so unlike
+        // node validity this conjunct is unconditional (an edge invalidated in the
+        // past stays excluded even when node existence is relaxed).
+        let edge_validity = edge_validity_sql("canonical_edges", 2);
+        let mut edge_stmt = tx.prepare(&format!(
             "SELECT body, logical_id, source_id FROM canonical_edges \
-             WHERE write_cursor = ?1 AND superseded_at IS NULL AND body IS NOT NULL LIMIT 1",
-        )?;
+             WHERE write_cursor = ?1 AND superseded_at IS NULL AND body IS NOT NULL\
+             {edge_validity} LIMIT 1"
+        ))?;
         // The bound parameter list for the node lookup: the candidate rowid,
         // plus `:now` when (and only when) the view emitted a validity conjunct.
         // One instant for the whole query — resolved once, above, not per row.
@@ -9682,13 +9696,15 @@ fn read_search_in_tx(
                     source_id,
                     ce_score: None,
                 });
-            } else if let Ok((body, logical_id, source_id)) = edge_stmt.query_row([rowid], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, Option<String>>(1)?,
-                    row.get::<_, Option<String>>(2)?,
-                ))
-            }) {
+            } else if let Ok((body, logical_id, source_id)) =
+                edge_stmt.query_row(rusqlite::params![rowid, view.edge_now()], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                    ))
+                })
+            {
                 let id = derive_stable_id(logical_id.as_deref(), &body);
                 results.push(SearchHit {
                     id,
@@ -9932,31 +9948,48 @@ fn read_search_in_tx(
         // JOIN as `ce.logical_id` — one extra column, no extra query, no
         // row-set/ordering change. An edge hit carries the EDGE's own provenance,
         // matching the graph arm's edge-source semantics.
-        let edge_sql = "SELECT sei.body, sei.kind, sei.write_cursor, bm25(search_index_edges), \
+        // fix-2 (codex §9 [P2]): the JOIN already dropped superseded edge rows,
+        // but a body-bearing edge written with `t_invalid <= :now` (expired /
+        // invalidated) still MATCHed and surfaced its body through ordinary
+        // search — edge temporal validity was enforced on the graph-traversal and
+        // projection paths but NOT on this FTS read path. Apply the shared
+        // `edge_validity_sql` conjunct (the ONE generator every edge read site
+        // uses, so no path can drift). `?1` is the MATCH expression, so the edge
+        // `:now` binds at `?2`; the instant is the frozen `view.edge_now()` — a
+        // bound value, never `datetime('now')` (the :9161 no-inline-clock rule),
+        // and always present (edge invalidation is not relaxed by node existence
+        // relaxation).
+        let edge_validity = edge_validity_sql("ce", 2);
+        let edge_sql = format!(
+            "SELECT sei.body, sei.kind, sei.write_cursor, bm25(search_index_edges), \
              ce.logical_id, ce.source_id \
              FROM search_index_edges sei \
              JOIN canonical_edges ce ON ce.write_cursor = sei.write_cursor \
              WHERE search_index_edges MATCH ?1 \
-               AND ce.superseded_at IS NULL \
-             ORDER BY bm25(search_index_edges), sei.write_cursor";
+               AND ce.superseded_at IS NULL{edge_validity} \
+             ORDER BY bm25(search_index_edges), sei.write_cursor"
+        );
         // search_index_edges may not exist on very old DBs not yet at step-14;
         // ignore the error gracefully (returns empty slice).
-        if let Ok(mut stmt) = tx.prepare(edge_sql) {
-            if let Ok(rows) = stmt.query_map([compiled.match_expression.as_str()], |row| {
-                let body = row.get::<_, String>(0)?;
-                let logical_id = row.get::<_, Option<String>>(4)?;
-                Ok(SearchHit {
-                    id: derive_stable_id(logical_id.as_deref(), &body),
-                    body,
-                    kind: row.get::<_, String>(1)?,
-                    write_cursor: row.get::<_, i64>(2)? as u64,
-                    score: row.get::<_, f64>(3)?,
-                    branch: SoftFallbackBranch::TextEdge,
-                    // TC-31: the EDGE's own provenance.
-                    source_id: row.get::<_, Option<String>>(5)?,
-                    ce_score: None,
-                })
-            }) {
+        if let Ok(mut stmt) = tx.prepare(&edge_sql) {
+            if let Ok(rows) = stmt.query_map(
+                rusqlite::params![compiled.match_expression.as_str(), view.edge_now()],
+                |row| {
+                    let body = row.get::<_, String>(0)?;
+                    let logical_id = row.get::<_, Option<String>>(4)?;
+                    Ok(SearchHit {
+                        id: derive_stable_id(logical_id.as_deref(), &body),
+                        body,
+                        kind: row.get::<_, String>(1)?,
+                        write_cursor: row.get::<_, i64>(2)? as u64,
+                        score: row.get::<_, f64>(3)?,
+                        branch: SoftFallbackBranch::TextEdge,
+                        // TC-31: the EDGE's own provenance.
+                        source_id: row.get::<_, Option<String>>(5)?,
+                        ce_score: None,
+                    })
+                },
+            ) {
                 rows.flatten().collect()
             } else {
                 Vec::new()
