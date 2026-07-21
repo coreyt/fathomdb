@@ -377,6 +377,35 @@ Gaps `1–4, 6–9, 11–14, 16–19, 21–24, 26–29, 31–39` absorb unplanne
 > `temporal_fallback` is matched by **string equality** against `substituted_t_valid`
 > (`engine:4253`, `:4434`) — a representation change silently stops flagging fallback edges, so that
 > comparison must be re-grounded, not left to drift.
+>
+> ### ✅ HITL-RATIFIED 2026-07-21 — TC-46: the 15e vec0 reshape is NON-DESTRUCTIVE (Option 1)
+>
+> The vec0 `filterable` pre-KNN reshape (15e) is built as a **non-destructive re-insert**, not a wipe.
+> **This DISSOLVES TC-46** — no embedding-loss, so no `configure_projections` reshape-acknowledgement
+> parameter is minted, and **no new governed surface** is added for the reshape. (Decision 4's
+> no-preservation stays scoped to the **cross-version 0.8.9→0.8.20 schema step**, as HITL stated it;
+> it does **not** reach a runtime reconfiguration of a live DB.) `filterable` **already works** via the
+> Slice-15d row-owned EAV table (`canonical_attributes`); 15e adds the **pre-KNN vector-path** routing
+> only (ADR-0.8.11 D3). The tree already ships this exact operation as
+> `migrate_vector_partition_pack1_to_pack2` (`engine:13492-13529`) — **follow that precedent.**
+>
+> **The four load-bearing conditions (steward-investigated against code; all MUST hold or query results
+> go silently wrong):**
+>
+> 1. **List `rowid` explicitly** in the re-insert — a vec0 row maps to its node by `rowid == write_cursor`
+>    (`engine:7086`, `:10005`); letting vec0 auto-assign rowids silently decouples every embedding.
+> 2. **New attribute column is plain metadata OR a partition key — NEVER a vec0 `aux`/`+` column.** An aux
+>    column hard-**errors** every filtered KNN query (`engine:13460-13464`).
+> 3. **Back-fill old rows with the `''` sentinel** (vec0 TEXT metadata is NOT-NULL-able, `engine:7091`) so
+>    they cleanly fail-to-match a filter rather than erroring.
+> 4. **Copy `embedding_bin` verbatim via `vec_bit(...)` — do NOT re-quantize.** Re-deriving bits from the
+>    raw `embedding` leaves old rows quantized **un-centered** while new rows stay mean-centered ⇒
+>    incomparable Hamming distances, silent recall corruption, no error (`engine:13514-13527`, and the
+>    anti-pattern to avoid at `:13584-13599`).
+>
+> Idempotent re-registration still diffs to a **no-op**; a shape-changing reshape is an **explicit**
+> drop (`api-surface.md:26-30`), never a silent boot-time wipe. `run_pin_and_requantize_pass` is a
+> **separate same-shape** re-quantize and is untouched by the reshape.
 
 **The REMAINDER of Slice 15 — projection registry (C-1 co-land) + EAV/property-FTS (R-20-PR, R-20-EAV), plus
 TC-33.** It is the Phase-2 keystone: 20 and 25 both depend on it. Slice 30 (H7) additionally depends on
