@@ -342,6 +342,42 @@ Gaps `1–4, 6–9, 11–14, 16–19, 21–24, 26–29, 31–39` absorb unplanne
 
 ## 9. Immediate next slice
 
+> ### ✅ HITL-RATIFIED 2026-07-21 — the four decisions that unblock the registry
+>
+> All three steward positions were **verified by codex against ground truth** before ratification
+> (transcript: `dev/plans/runs/codex/0.8.20/slice-15-steward-positions-verify-20260721T041028Z.log`).
+>
+> 1. **`ProjectionSpec` gains the `fts?:{tokenizer}` / `vector?:{embedder}` sub-objects — APPROVED.**
+>    The ratified C-1 contract has exactly three roles (`filterable`, `rankable`, `searchable`); the
+>    FTS-vs-vector distinction is carried by these **sub-objects**, not by extra roles. `searchable→FTS`
+>    and `searchable→vector` are **tier labels, not enum members** — **do NOT invent them as roles.**
+>    `roles` must carry **set semantics** (`Set<ProjectionRole>`); no contract line mandates a literal
+>    array encoding. **This is where Slice 20's `dense_readiness` attaches.** Change is ADDITIVE.
+> 2. **`filterable` stays PRE-KNN — APPROVED; no ADR deviation.** `ADR-0.8.11 D3`
+>    (`dev/adr/ADR-0.8.11-filter-grammar-unification.md:213-225`) forbids demoting an indexed-metadata
+>    predicate to a post-KNN `json_extract`. **Honour it.** Reshape the vec0 table rather than scoping
+>    `filterable` down to the read/EAV backend.
+> 3. **TC-33 → INTEGER epoch in storage and in the governed SDK — APPROVED.** The BYO-LLM extractor
+>    boundary keeps ISO-8601 with **engine-side hard-reject** normalisation — APPROVED.
+> 4. **NO DATA MIGRATION (HITL, 2026-07-21).** *"No data migration is supported, so if 'migration'
+>    relates to data, it is unneeded."* Schema steps may define the **new shape**; they must **NOT**
+>    convert, backfill, or preserve existing rows. FathomDB is pre-1.0 beta and 0.8.20 is a breaking
+>    pair — users do not carry data across it. **Consequence: the vec0 reshape does not stage/reinsert
+>    blobs, and TC-33 does not convert stored ISO values.** *(Steward note, not a question: shipped
+>    step 21 — the `_legacy:` provenance backfill — IS a data migration and predates this ruling. It is
+>    left as-is; the ruling is read as forward-looking.)*
+>
+> **P3 hard-reject requirement (HITL Note 1) — "reduce failure mode":** the fail-open path is the
+> defect. An unparseable timestamp must **never** coerce to SQL `NULL`, because a NULL `t_invalid`
+> reads as **"still valid"** (`fathomdb-schema/src/lib.rs:339`; relied on at `engine:9910`, `:10059`,
+> `:10455`) — i.e. junk silently **resurrects an invalidated edge**. Required, defence in depth:
+> **enforce `strftime('%s', <user value>)` and reject a NULL result with a typed error at the write
+> boundary**, plus schema-level `NOT NULL`/`CHECK` constraints so the invariant is structural rather
+> than upheld by call sites, plus a RED test proving malformed input **fails loudly**. Note
+> `temporal_fallback` is matched by **string equality** against `substituted_t_valid`
+> (`engine:4253`, `:4434`) — a representation change silently stops flagging fallback edges, so that
+> comparison must be re-grounded, not left to drift.
+
 **The REMAINDER of Slice 15 — projection registry (C-1 co-land) + EAV/property-FTS (R-20-PR, R-20-EAV), plus
 TC-33.** It is the Phase-2 keystone: 20 and 25 both depend on it. Slice 30 (H7) additionally depends on
 10/15/20/25.
