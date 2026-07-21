@@ -799,7 +799,7 @@ fn upgrade_from_v18_with_kind_and_pinned_mean_establishes_baseline_and_checks() 
         "establishing the baseline at the upgrade open is never degraded"
     );
     assert_eq!(opened.report.schema_version_before, 18, "upgrade started at v18");
-    assert_eq!(opened.report.schema_version_after, 22, "upgrade reached head (v22)");
+    assert_eq!(opened.report.schema_version_after, 23, "upgrade reached head (v23)");
     opened.engine.close().unwrap();
 
     let conn = rusqlite::Connection::open(&path).unwrap();

@@ -63,13 +63,13 @@ fn s17_search_index_v2_present_and_schema_version_is_17() {
 
     assert_eq!(user_version(&conn), SCHEMA_VERSION);
     assert_eq!(
-        SCHEMA_VERSION, 22,
-        "SCHEMA_VERSION must be 22 (step-22 node validity window, R-20-NV)"
+        SCHEMA_VERSION, 23,
+        "SCHEMA_VERSION must be 23 (step-23 edge temporal → INTEGER epoch, TC-33)"
     );
     assert_eq!(
         MIGRATIONS.last().expect("at least one migration").step_id,
-        22,
-        "step-22 (node validity window, R-20-NV) must be the last (head) migration"
+        23,
+        "step-23 (edge temporal → INTEGER epoch, TC-33) must be the last (head) migration"
     );
 
     // The v2 table carries the three BM25F fields kind/body/status (+ the

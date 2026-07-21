@@ -65,8 +65,8 @@ fn s18_importance_column_present_and_schema_version_is_18() {
     // 0.8.18 Slice 5 moved the head to step-19 (#5 vector-equivalence probe);
     // step-18 (F9 importance) is no longer the head but MUST still be present.
     assert_eq!(
-        SCHEMA_VERSION, 22,
-        "SCHEMA_VERSION must be 22 (step-22 node validity window, R-20-NV)"
+        SCHEMA_VERSION, 23,
+        "SCHEMA_VERSION must be 23 (step-23 edge temporal → INTEGER epoch, TC-33)"
     );
     assert!(
         MIGRATIONS.iter().any(|m| m.step_id == 18),

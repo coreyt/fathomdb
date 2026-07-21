@@ -79,8 +79,9 @@ accepts two optional validity keys:
 
 **BOTH spellings are accepted** for each bound. The camelCase spelling is
 consulted first and the snake_case spelling is the fallback, mirroring the
-existing edge `tValid` / `t_valid` precedent, so a caller porting from the
-Python surface keeps working.
+existing edge `tValid` / `t_valid` precedent (which TC-33 aligns to the same
+INTEGER epoch-seconds units — see below), so a caller porting from the Python
+surface keeps working.
 
 ```typescript
 await engine.write([
@@ -113,6 +114,46 @@ identical across Rust / Python / TypeScript and cannot drift):
 
 These are keys on an existing verb, not a new verb: the runtime-verb surface
 above is unchanged. The fields-only delta is **PROPOSED, NOT SIGNED**.
+
+## Edge temporal fields (0.8.20 Slice 15c, TC-33)
+
+An **edge** item accepts two optional temporal keys. As of TC-33
+(HITL-RATIFIED 2026-07-21) these are **INTEGER epoch seconds (UTC)** — the same
+representation as the node validity window and as storage — NOT ISO-8601
+strings, which they used to be:
+
+- `tValid` / `t_valid` — `number | null`, event valid-time. `null` = unknown /
+  still valid.
+- `tInvalid` / `t_invalid` — `number | null`, event invalid-time. `null` =
+  **still valid**.
+
+**BOTH spellings are accepted** for each field (camelCase first, snake_case
+fallback), exactly as for the node window.
+
+```typescript
+await engine.write([
+  {
+    kind: "works_for",
+    from: "bob",
+    to: "acme",
+    sourceId: "s1",
+    tValid: 1_546_300_800, // 2019-01-01T00:00:00Z
+    tInvalid: null,        // still valid
+  },
+]);
+```
+
+`null`/omitted is the ONLY way to say "unknown"; it lands SQL NULL, which reads
+as **still valid**. A non-integral field rejects with `WriteValidationError` and
+is never coerced — the same `json_i64_alt` validator serves the node window and
+the edge fields, so the old string-accepting `json_str_alt` no longer applies.
+
+**Layering note.** This is the GOVERNED SDK write surface. ISO-8601 survives
+ONLY on the **BYO-LLM extractor wire** (`fathomdb.extract.v1`), where the engine
+normalises each timestamp to epoch seconds with a HARD REJECTION of any value it
+cannot parse — an unparseable timestamp must never coerce to NULL, because a
+NULL `t_invalid` reads as "still valid" and would resurrect an invalidated edge.
+Fields-only delta, **PROPOSED, NOT SIGNED**.
 
 ## Errors
 

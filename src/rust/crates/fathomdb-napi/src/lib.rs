@@ -2211,9 +2211,19 @@ fn translate_edge(item: &JsonValue) -> Result<PreparedWrite> {
     // so the C1 graph arm can seed from edge-fact FTS (`source A`). NULL = not indexed.
     let body = json_serialised(item, "body")?;
     // R3 (Slice 30) — temporal validity fields accepted from user-facing write API.
-    // `t_valid`/`tValid` and `t_invalid`/`tInvalid` are ISO 8601 datetime strings (optional).
-    let t_valid = json_str_alt(item, "tValid", "t_valid")?;
-    let t_invalid = json_str_alt(item, "tInvalid", "t_invalid")?;
+    //
+    // TC-33 (HITL-RATIFIED 2026-07-21) — `tValid`/`t_valid` and
+    // `tInvalid`/`t_invalid` are **INTEGER epoch seconds (UTC)**, not ISO-8601
+    // strings. This is the GOVERNED SDK WRITE SURFACE, which carries the same
+    // representation as storage; ISO-8601 survives ONLY on the BYO-LLM extractor
+    // wire, where the engine normalises it with hard rejection. Reuses the same
+    // `json_i64_alt` helper as the node `validFrom`/`validUntil` window, so both
+    // temporal axes validate identically — and unlike the old `json_str_alt`
+    // (which did NO format validation at all) a wrong-typed value is rejected.
+    //
+    // `None` = "still valid"; that semantic is load-bearing and unchanged.
+    let t_valid = json_i64_alt(item, "tValid", "t_valid")?;
+    let t_invalid = json_i64_alt(item, "tInvalid", "t_invalid")?;
     Ok(PreparedWrite::Edge {
         kind,
         from,

@@ -45,7 +45,7 @@ function edgeItem(
   to: string,
   logicalId: string,
   body: string,
-  tValid: string,
+  tValid: number, // TC-33: INTEGER epoch seconds (UTC), not ISO-8601
 ): object {
   return { edge: { kind: "works_for", from, to, logicalId, body, tValid, sourceId: SOURCE_ID } };
 }
@@ -64,8 +64,8 @@ async function seedCompetingEdges(engine: Engine): Promise<void> {
     nodeItem("bob", "Bob (subject)"),
     nodeItem("acme", "Acme (org)"),
     nodeItem("globex", "Globex (org)"),
-    edgeItem("bob", "acme", "edge-acme", "Bob works for Acme", "2019-01-01T00:00:00Z"),
-    edgeItem("bob", "globex", "edge-globex", "Bob works for Globex", "2022-01-01T00:00:00Z"),
+    edgeItem("bob", "acme", "edge-acme", "Bob works for Acme", 1_546_300_800), // 2019-01-01T00:00:00Z
+    edgeItem("bob", "globex", "edge-globex", "Bob works for Globex", 1_640_995_200), // 2022-01-01T00:00:00Z
   ]);
 }
 

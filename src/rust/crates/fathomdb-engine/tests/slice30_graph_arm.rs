@@ -38,7 +38,8 @@ fn node_write(kind: &str, body: &str, logical_id: &str) -> PreparedWrite {
     }
 }
 
-fn edge_with_t_invalid(from: &str, to: &str, logical_id: &str, t_invalid: &str) -> PreparedWrite {
+/// TC-33: `t_invalid` is INTEGER epoch seconds (UTC), not ISO-8601.
+fn edge_with_t_invalid(from: &str, to: &str, logical_id: &str, t_invalid: i64) -> PreparedWrite {
     PreparedWrite::Edge {
         kind: "link".to_string(),
         from: from.to_string(),
@@ -47,7 +48,7 @@ fn edge_with_t_invalid(from: &str, to: &str, logical_id: &str, t_invalid: &str) 
         logical_id: Some(logical_id.to_string()),
         body: Some(format!("{from} links to {to}")),
         t_valid: None,
-        t_invalid: Some(t_invalid.to_string()),
+        t_invalid: Some(t_invalid),
         confidence: None,
         extractor_model_id: None,
         temporal_fallback: None,
@@ -78,7 +79,7 @@ fn temporal_fallback_edge(from: &str, to: &str, logical_id: &str) -> PreparedWri
         source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
         logical_id: Some(logical_id.to_string()),
         body: Some(format!("{from} links to {to}")),
-        t_valid: Some("2024-01-01T00:00:00Z".to_string()),
+        t_valid: Some(1_704_067_200), // 2024-01-01T00:00:00Z
         t_invalid: None,
         confidence: None,
         extractor_model_id: None,
@@ -120,7 +121,7 @@ fn write_inline_stub(dir: &TempDir, doc_id: &str, result_json: &str) -> String {
 /// Setup:
 ///   - Node A ("alice anchor text for search")
 ///   - Node B ("bob target node unreachable via dead edge")
-///   - Edge A->B with t_invalid = "2000-01-01T00:00:00Z" (expired in the past)
+///   - Edge A->B with t_invalid = 946684800 (2000-01-01T00:00:00Z — expired in the past)
 ///
 /// With use_graph_arm=true, searching for "alice anchor" should find node A
 /// (via text/vector) but should NOT produce B in the graph arm (the edge is
@@ -138,7 +139,12 @@ fn graph_arm_drops_invalidated_edges() {
             node_write("doc", "alice anchor text for search", "alice"),
             node_write("doc", "bob target node unreachable via dead edge", "bob"),
             // Edge expired 25 years ago — must be excluded from graph arm traversal.
-            edge_with_t_invalid("alice", "bob", "edge-ab", "2000-01-01T00:00:00Z"),
+            edge_with_t_invalid(
+                "alice",
+                "bob",
+                "edge-ab",
+                946_684_800, /* 2000-01-01T00:00:00Z */
+            ),
         ])
         .expect("write");
 

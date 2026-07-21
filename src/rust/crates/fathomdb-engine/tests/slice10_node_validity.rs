@@ -643,7 +643,7 @@ fn r_20_nv_edge_temporal_filter_is_unchanged() {
                 body: None,
                 t_valid: None,
                 // ISO-8601 TEXT, in the past — the shipped edge semantics.
-                t_invalid: Some("2000-01-01T00:00:00Z".to_string()),
+                t_invalid: Some(946_684_800), // TC-33 epoch: 2000-01-01T00:00:00Z
                 confidence: None,
                 extractor_model_id: None,
                 temporal_fallback: None,

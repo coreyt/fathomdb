@@ -60,13 +60,13 @@ fn s19_embed_probe_table_present_and_schema_version_is_19() {
 
     assert_eq!(user_version(&conn), SCHEMA_VERSION);
     assert_eq!(
-        SCHEMA_VERSION, 22,
-        "SCHEMA_VERSION must be 22 (step-22 node validity window, R-20-NV)"
+        SCHEMA_VERSION, 23,
+        "SCHEMA_VERSION must be 23 (step-23 edge temporal → INTEGER epoch, TC-33)"
     );
     assert_eq!(
         MIGRATIONS.last().expect("at least one migration").step_id,
-        22,
-        "step-22 (node validity window, R-20-NV) must be the last (head) migration"
+        23,
+        "step-23 (edge temporal → INTEGER epoch, TC-33) must be the last (head) migration"
     );
 
     let cols = column_names(&conn, "_fathomdb_embed_probe");

@@ -55,7 +55,8 @@ fn fact_edge(
     to: &str,
     logical_id: &str,
     body: &str,
-    t_valid: &str,
+    // TC-33: INTEGER epoch seconds (UTC), not ISO-8601.
+    t_valid: i64,
     confidence: f64,
 ) -> PreparedWrite {
     PreparedWrite::Edge {
@@ -65,7 +66,7 @@ fn fact_edge(
         source_id: fathomdb_engine::SourceId::new(format!("doc-{to}")).expect("test source id"),
         logical_id: Some(logical_id.to_string()),
         body: Some(body.to_string()),
-        t_valid: Some(t_valid.to_string()),
+        t_valid: Some(t_valid),
         t_invalid: None,
         confidence: Some(confidence),
         extractor_model_id: Some("stub-extractor-v1".to_string()),
@@ -84,7 +85,7 @@ fn seed_competing_edges(engine: &Engine) {
         "acme",
         "edge-acme",
         "Bob works for Acme",
-        "2019-01-01T00:00:00Z",
+        1_546_300_800, // 2019-01-01T00:00:00Z
         0.90,
     );
     let newer = fact_edge(
@@ -93,7 +94,7 @@ fn seed_competing_edges(engine: &Engine) {
         "globex",
         "edge-globex",
         "Bob works for Globex",
-        "2022-01-01T00:00:00Z",
+        1_640_995_200, // 2022-01-01T00:00:00Z
         0.80,
     );
     engine.write(&[older, newer]).expect("seed two competing edges");
@@ -110,8 +111,19 @@ fn edge_fts_count(conn: &Connection, term: &str) -> u64 {
     .expect("search_index_edges must exist and be queryable")
 }
 
-fn edge_row(conn: &Connection, logical_id: &str) -> (Option<String>, Option<String>, Option<i64>) {
-    // (body, t_invalid, superseded_at) for the row with this logical_id.
+/// TC-33: wall-clock now as INTEGER epoch seconds — the test-side mirror of the
+/// engine's bound `:now` seam. Edge validity is an integer comparison now, so
+/// these probes no longer go through `datetime('now')`.
+fn now_epoch() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// (body, t_invalid, superseded_at) for the row with this logical_id.
+/// TC-33: `t_invalid` is INTEGER epoch seconds (UTC), not ISO-8601 TEXT.
+fn edge_row(conn: &Connection, logical_id: &str) -> (Option<String>, Option<i64>, Option<i64>) {
     conn.query_row(
         "SELECT body, t_invalid, superseded_at FROM canonical_edges WHERE logical_id = ?1",
         [logical_id],
@@ -160,9 +172,11 @@ fn recency_consolidation_invalidates_older_edge() {
     // preserved (NOT a content rewrite; NOT deleted; NOT tombstoned).
     let (acme_body, acme_t_invalid, acme_superseded) = edge_row(&conn, "edge-acme");
     assert_eq!(
-        acme_t_invalid.as_deref(),
-        Some("2022-01-01T00:00:00Z"),
-        "older edge must be invalidated at the newer edge's t_valid (correct temporal bound)"
+        acme_t_invalid,
+        Some(1_640_995_200), // 2022-01-01T00:00:00Z
+        "older edge must be invalidated at the newer edge's t_valid (correct temporal bound). \
+         TC-33: the harness WIRE is still ISO-8601 — the engine renders the candidate's t_valid \
+         out as ISO and normalises the verdict's t_invalid back to epoch seconds on the way in."
     );
     assert_eq!(
         acme_body.as_deref(),
@@ -190,8 +204,8 @@ fn recency_consolidation_invalidates_older_edge() {
         .query_row(
             "SELECT COUNT(*) FROM canonical_edges \
              WHERE kind = 'works_for' AND superseded_at IS NULL \
-               AND (t_invalid IS NULL OR datetime(t_invalid) > datetime('now'))",
-            [],
+               AND (t_invalid IS NULL OR t_invalid > ?1)",
+            [now_epoch()],
             |r| r.get(0),
         )
         .unwrap();

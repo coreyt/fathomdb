@@ -39,7 +39,8 @@ fn edge(
     logical_id: &str,
     body: &str,
     source_id: Option<&str>,
-    t_invalid: Option<&str>,
+    // TC-33: INTEGER epoch seconds (UTC), not ISO-8601.
+    t_invalid: Option<i64>,
     temporal_fallback: Option<bool>,
 ) -> PreparedWrite {
     PreparedWrite::Edge {
@@ -51,7 +52,7 @@ fn edge(
         logical_id: Some(logical_id.to_string()),
         body: Some(body.to_string()),
         t_valid: None,
-        t_invalid: t_invalid.map(str::to_string),
+        t_invalid,
         confidence: None,
         extractor_model_id: None,
         temporal_fallback,
@@ -223,7 +224,7 @@ fn test_seed_excludes_temporal_fallback_and_expired_edges() {
                 "exp",
                 "treaty negotiation summit",
                 None,
-                Some("2000-01-01T00:00:00Z"),
+                Some(946_684_800), // 2000-01-01T00:00:00Z
                 None,
             ),
         ])

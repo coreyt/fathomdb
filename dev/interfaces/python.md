@@ -106,6 +106,41 @@ identical across Rust / Python / TypeScript and cannot drift):
 These are keys on an existing verb, not a new verb: the runtime-verb surface
 above is unchanged. The fields-only delta is **PROPOSED, NOT SIGNED**.
 
+## Edge temporal fields (0.8.20 Slice 15c, TC-33)
+
+An **edge** item accepts two optional temporal keys. As of TC-33
+(HITL-RATIFIED 2026-07-21) these are **INTEGER epoch seconds (UTC)**, the same
+representation as the node validity window above and as storage — NOT ISO-8601
+strings:
+
+- `t_valid` — `int | None`, event valid-time. `None` = unknown / still valid.
+- `t_invalid` — `int | None`, event invalid-time. `None` = **still valid**.
+
+```python
+engine.write([
+    {
+        "kind": "works_for",
+        "from": "bob",
+        "to": "acme",
+        "source_id": "s1",
+        "t_valid": 1_546_300_800,   # 2019-01-01T00:00:00Z
+        "t_invalid": None,          # still valid
+    },
+])
+```
+
+`None`/omitted is the ONLY way to say "unknown"; it lands SQL NULL, which reads
+as **still valid**. A non-integer bound raises `WriteValidationError` and is
+never coerced (`bool` rejected explicitly, as for the node window) — the same
+`dict_epoch_seconds` validator serves both axes.
+
+**Layering note.** This is the GOVERNED SDK write surface. ISO-8601 survives
+ONLY on the **BYO-LLM extractor wire** (`fathomdb.extract.v1`), where the engine
+normalises each timestamp to epoch seconds with a HARD REJECTION of any value
+`strftime('%s', ?)` cannot parse — an unparseable timestamp must never coerce to
+NULL, because a NULL `t_invalid` reads as "still valid" and would resurrect an
+invalidated edge. Fields-only delta, **PROPOSED, NOT SIGNED**.
+
 ## Errors
 
 Python exposes one catch-all base class plus one concrete subclass per canonical

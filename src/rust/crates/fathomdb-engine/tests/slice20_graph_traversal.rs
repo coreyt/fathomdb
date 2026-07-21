@@ -56,7 +56,8 @@ fn edge(from: &str, to: &str, logical_id: &str) -> PreparedWrite {
     }
 }
 
-fn edge_with_t_invalid(from: &str, to: &str, logical_id: &str, t_invalid: &str) -> PreparedWrite {
+/// TC-33: `t_invalid` is INTEGER epoch seconds (UTC), not ISO-8601.
+fn edge_with_t_invalid(from: &str, to: &str, logical_id: &str, t_invalid: i64) -> PreparedWrite {
     PreparedWrite::Edge {
         kind: "link".to_string(),
         from: from.to_string(),
@@ -65,7 +66,7 @@ fn edge_with_t_invalid(from: &str, to: &str, logical_id: &str, t_invalid: &str) 
         logical_id: Some(logical_id.to_string()),
         body: None,
         t_valid: None,
-        t_invalid: Some(t_invalid.to_string()),
+        t_invalid: Some(t_invalid),
         confidence: None,
         extractor_model_id: None,
         temporal_fallback: None,
@@ -251,7 +252,8 @@ fn graph_neighbors_valid_time_filter_drops_invalidated() {
 
     // Edge A→B is invalidated (t_invalid is in the past).
     // Edge A→C is still valid (t_invalid IS NULL).
-    let past = "2000-01-01T00:00:00Z";
+    // TC-33: INTEGER epoch seconds (UTC).
+    let past = 946_684_800; // 2000-01-01T00:00:00Z
     opened
         .engine
         .write(&[
@@ -390,14 +392,30 @@ fn search_expand_deduplicates() {
     opened.engine.close().unwrap();
 }
 
-// ===== fix-1: t_invalid datetime normalization =================================
+// ===== TC-33: t_invalid representation ========================================
 
-/// An edge stored with `t_invalid` in ISO-8601 `T`-format (e.g. `2026-06-13T00:00:01Z`)
-/// must NOT be traversed once it has expired. Previously the lexicographic comparison
-/// `e.t_invalid > datetime('now')` could fail when the `T` separator vs. the space
-/// separator in `datetime('now')` caused a same-day expired edge to appear valid.
+/// **This test used to be `t_invalid_tformat_edge_correctly_excluded`.** Its
+/// original docstring read:
+///
+/// > An edge stored with `t_invalid` in ISO-8601 `T`-format (e.g.
+/// > `2026-06-13T00:00:01Z`) must NOT be traversed once it has expired.
+/// > Previously the lexicographic comparison `e.t_invalid > datetime('now')`
+/// > could fail when the `T` separator vs. the space separator in
+/// > `datetime('now')` caused a same-day expired edge to appear valid.
+///
+/// That is DIRECT EVIDENCE that the TEXT representation had already bitten once:
+/// a real bug shipped because two spellings of the same instant did not compare
+/// correctly. TC-33 removes the representation that made it possible — under
+/// INTEGER epoch seconds there is no separator, no lexicographic comparison, and
+/// no format to get wrong, so the original test is VACUOUS (it can no longer
+/// distinguish a pass from a fail).
+///
+/// It is kept, renamed, as the traversal-level assertion that an edge
+/// invalidated in the past is excluded — the property the old test was reaching
+/// for. The representation-level guarantees it can no longer express live in
+/// `tc33_edge_temporal_epoch.rs`.
 #[test]
-fn t_invalid_tformat_edge_correctly_excluded() {
+fn expired_edge_is_excluded_from_traversal() {
     let dir = TempDir::new().unwrap();
     let opened =
         Engine::open(dir.path().join(format!("fix1{SQLITE_SUFFIX}"))).expect("engine open");
@@ -416,8 +434,8 @@ fn t_invalid_tformat_edge_correctly_excluded() {
                 to: b_id.to_string(),
                 source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 kind: "expired_link".to_string(),
-                // t_invalid in the past using ISO-8601 T-format
-                t_invalid: Some("2020-01-01T00:00:00Z".to_string()),
+                // TC-33: INTEGER epoch seconds, in the past.
+                t_invalid: Some(1_577_836_800), // 2020-01-01T00:00:00Z
                 body: None,
                 t_valid: None,
                 confidence: None,
@@ -431,7 +449,7 @@ fn t_invalid_tformat_edge_correctly_excluded() {
         .engine
         .graph_neighbors(a_id, 1, TraversalDirection::Outgoing, &ReadView::default())
         .expect("graph_neighbors");
-    assert!(result.is_empty(), "expired T-format edge must be excluded; got {result:?}");
+    assert!(result.is_empty(), "expired edge must be excluded from traversal; got {result:?}");
 
     opened.engine.close().unwrap();
 }

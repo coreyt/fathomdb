@@ -1635,7 +1635,13 @@ impl ReadView {
     /// This is the ONLY constructor of a `FrozenView`, and therefore the only
     /// point on the search path where the wall clock is read.
     fn freeze(self) -> FrozenView {
-        FrozenView { view: self, now: self.now_param() }
+        // TC-33: resolve the instant ONCE, unconditionally, and derive both
+        // axes from it. `valid_as_of.unwrap_or_else(current_epoch_seconds)` is
+        // exactly what `now_param()` computes, so the clock is read the same
+        // number of times as before on every path that reads it at all.
+        let resolved = self.valid_as_of.unwrap_or_else(current_epoch_seconds);
+        let now = if self.include_out_of_window { None } else { Some(resolved) };
+        FrozenView { view: self, now, edge_now: resolved }
     }
 
     /// 0.8.20 Slice 15b fix-2 — the `search` path honours the VALIDITY axis of a
@@ -1698,6 +1704,13 @@ struct FrozenView {
     /// The instant resolved at freeze time. `None` ⇔ the view relaxes validity
     /// entirely, in which case no conjunct is emitted and nothing is bound.
     now: Option<i64>,
+    /// TC-33 — the instant EDGE validity is evaluated at. Always present.
+    ///
+    /// The EXISTENCE-relaxation flag `include_out_of_window` belongs to the NODE
+    /// validity axis and does NOT relax edge recency: an edge invalidated in the
+    /// past stays excluded regardless. So this is the resolved instant even when
+    /// `now` is `None`, and it is resolved from the SAME clock read.
+    edge_now: i64,
 }
 
 impl FrozenView {
@@ -1706,6 +1719,18 @@ impl FrozenView {
     /// cannot yield a different answer, and it never touches the clock.
     fn now_param(&self) -> Option<i64> {
         self.now
+    }
+
+    /// TC-33 — the instant to bind for the EDGE-validity conjunct
+    /// ([`edge_validity_sql`]). Frozen, like [`FrozenView::now_param`].
+    ///
+    /// Honouring `valid_as_of` here is what finally UNIFIES the node and edge
+    /// temporal axes: step 22 recorded "the shipped EDGE path still inlines
+    /// `datetime('now')`" as the reason they could not be unified. For the
+    /// DEFAULT view (`valid_as_of == None`) this is the wall clock, i.e. exactly
+    /// the pre-TC-33 behaviour.
+    fn edge_now(&self) -> i64 {
+        self.edge_now
     }
 
     /// The validity conjunct — delegated to the one generator every read site
@@ -1753,6 +1778,145 @@ fn current_epoch_seconds() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
         .unwrap_or(0)
+}
+
+/// TC-33 — the edge-validity conjunct, bound to positional parameter
+/// `?{now_idx}`. THE one generator for "is this edge valid at `:now`", so no
+/// read site can drift from another (the same discipline
+/// [`ReadView::validity_sql`] applies to node validity).
+///
+/// An edge is valid at `t` iff it has no invalid-time, or its invalid-time is
+/// strictly in the future. `t_invalid` is INTEGER epoch seconds since step 23,
+/// so this is a direct integer comparison — no `datetime()` conversion per row.
+///
+/// **`:now` is a BOUND PARAMETER, never `datetime('now')`.** Before TC-33 every
+/// edge read site inlined `datetime('now')`, which made the predicate
+/// non-deterministic, untestable, and re-evaluated per row; step 22's comment
+/// flagged that as the reason node and edge validity could not be unified. They
+/// are unified now.
+///
+/// Always begins with ` AND `, so every call site must already have a preceding
+/// `WHERE` predicate.
+fn edge_validity_sql(alias: &str, now_idx: usize) -> String {
+    format!(" AND ({alias}.t_invalid IS NULL OR {alias}.t_invalid > ?{now_idx})")
+}
+
+/// TC-33 — parse one ISO-8601 timestamp to INTEGER epoch seconds using SQLite's
+/// own date parser, via a BOUND parameter.
+///
+/// Returns `None` when SQLite cannot resolve the value — `strftime` yields SQL
+/// NULL for junk (`'not a date'`, `''`, `'2020-13-45T99:99:99Z'`, a bare epoch
+/// string, whitespace-padded input, non-ASCII digits) and a digit string for
+/// anything it understands.
+///
+/// **Why SQLite and not a date crate:** there is no `chrono`/`time` dependency
+/// anywhere in the workspace, and HITL directed this spelling rather than adding
+/// one. The value is BOUND, never interpolated.
+///
+/// **This does not violate the inline-clock rule.** That rule forbids
+/// `datetime('now')` / `strftime('%s','now')` — an inline CLOCK. Parsing a bound
+/// user value is deterministic and reads no clock. The current instant still
+/// comes from the bound `:now` seam ([`current_epoch_seconds`]).
+///
+/// The `CAST` matters: `strftime('%s', ...)` returns TEXT (a digit string), not
+/// an integer, and the column is `typeof(...) = 'integer'`-checked.
+fn iso8601_to_epoch_seconds(connection: &Connection, raw: &str) -> Option<i64> {
+    connection
+        .query_row("SELECT CAST(strftime('%s', ?1) AS INTEGER)", params![raw], |r| {
+            r.get::<_, Option<i64>>(0)
+        })
+        .ok()
+        .flatten()
+}
+
+/// TC-33 — render INTEGER epoch seconds back to an ISO-8601 UTC string for the
+/// BYO-LLM wire. The exact inverse of [`iso8601_to_epoch_seconds`].
+///
+/// Storage and the governed SDK are epoch seconds, but the harness protocols
+/// (`fathomdb.extract.v1` and the consolidation harness) carry ISO-8601 — LLMs
+/// reason about dates as text, and pushing epoch integers onto them would make
+/// the wire hostile to the very providers it exists to serve. So the boundary
+/// converts in BOTH directions and the representation split stays a boundary
+/// concern rather than leaking into the protocol.
+fn epoch_seconds_to_iso8601(connection: &Connection, epoch: i64) -> Option<String> {
+    connection
+        .query_row("SELECT strftime('%Y-%m-%dT%H:%M:%SZ', ?1, 'unixepoch')", params![epoch], |r| {
+            r.get::<_, Option<String>>(0)
+        })
+        .ok()
+        .flatten()
+}
+
+/// The JSON type name of `value`, for diagnosing a mistyped extractor field.
+fn json_type_name(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "null",
+        Value::Bool(_) => "boolean",
+        Value::Number(_) => "number",
+        Value::String(_) => "string",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
+    }
+}
+
+/// TC-33 — normalise one timestamp arriving on the **BYO-LLM extractor
+/// boundary** (`fathomdb.extract.v1`) into the INTEGER epoch seconds the storage
+/// and governed-SDK layers use. **HARD-REJECTS** anything it cannot normalise.
+///
+/// This is the layering boundary HITL ratified on 2026-07-21:
+/// - the **extractor wire format stays ISO-8601 strings** — LLMs emit text, and
+///   this function is the one place that changes;
+/// - **storage and the governed SDK surface are INTEGER epoch seconds.**
+///
+/// # Why rejection, not coercion — fail-open is the defect
+///
+/// A NULL `t_invalid` means **"still valid"**. So any path that turns an
+/// unparseable timestamp into NULL silently **resurrects an invalidated edge**.
+/// Two distinct fail-opens are closed here:
+///
+/// 1. **Malformed strings.** Previously NOTHING parsed or validated these; junk
+///    went verbatim into the INSERT. Under the old TEXT column it then failed
+///    CLOSED by accident (`datetime('junk')` → NULL ⇒ the read disjunct is
+///    falsy ⇒ the row vanished). Under INTEGER that polarity would INVERT.
+/// 2. **Non-string JSON — a fail-open that PREDATES TC-33.** The old site read
+///    `edge.get("t_invalid").and_then(|v| v.as_str())`, and `as_str()` returns
+///    `None` for a JSON number/bool/object. So `"t_invalid": 1710000000` — a
+///    plausible mistake, and exactly the epoch form storage now uses — had its
+///    invalidation SILENTLY DISCARDED and the edge stored as "still valid".
+///
+/// `None`/JSON `null`/absent is the ONLY sanctioned way to say "unknown"; it
+/// maps to `Ok(None)` and keeps the NULL-means-still-valid semantic.
+///
+/// Follows the typed-`InvalidArgument`-carrying-the-offending-value pattern of
+/// the `validate_write` `Node` branch's `valid_from >= valid_until` check.
+fn normalize_extractor_timestamp(
+    connection: &Connection,
+    field: &str,
+    raw: Option<&Value>,
+) -> Result<Option<i64>, EngineError> {
+    match raw {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(text)) => match iso8601_to_epoch_seconds(connection, text) {
+            Some(epoch) => Ok(Some(epoch)),
+            None => Err(EngineError::InvalidArgument {
+                msg: format!(
+                    "extractor edge field `{field}` must be an ISO-8601 timestamp SQLite can \
+                     parse; got {text:?}, which `strftime('%s', ?)` resolves to NULL. REJECTED \
+                     rather than stored as NULL: a NULL `t_invalid` reads as \"still valid\" and \
+                     would silently resurrect an invalidated edge. Use JSON null for \"unknown\"."
+                ),
+            }),
+        },
+        Some(other) => Err(EngineError::InvalidArgument {
+            msg: format!(
+                "extractor edge field `{field}` must be an ISO-8601 string or JSON null; got a \
+                 JSON {kind} ({other}). The `fathomdb.extract.v1` wire format carries ISO-8601 at \
+                 this boundary — INTEGER epoch seconds are the STORAGE representation, not the \
+                 wire one. REJECTED rather than coerced to NULL, which reads as \"still valid\".",
+                kind = json_type_name(other)
+            ),
+        }),
+    }
 }
 
 /// Slice 30 (G3) — one `operational_mutations` row returned by `read.collection`
@@ -2334,10 +2498,14 @@ pub struct ConsolidateCandidateEdge {
     pub edge_ref: String,
     /// The fact/relationship text (never rewritten by consolidation — §2.1).
     pub body: Option<String>,
-    /// Event valid-time (ISO-8601), if known.
-    pub t_valid: Option<String>,
-    /// Event invalid-time (ISO-8601), if already invalidated.
-    pub t_invalid: Option<String>,
+    /// Event valid-time as INTEGER epoch seconds (UTC), if known.
+    ///
+    /// TC-33: epoch seconds, NOT ISO-8601. ISO-8601 lives only on the BYO-LLM
+    /// extractor wire; `normalize_extractor_timestamp` is the one boundary.
+    pub t_valid: Option<i64>,
+    /// Event invalid-time as INTEGER epoch seconds (UTC), if already
+    /// invalidated. `None` = still valid.
+    pub t_invalid: Option<i64>,
     /// Extraction confidence ∈ [0.0, 1.0], if known.
     pub confidence: Option<f64>,
     /// Provenance: originating document id.
@@ -2562,10 +2730,21 @@ pub enum PreparedWrite {
         /// the projection scheduler (kind `"edge_fact"`). Also triggers
         /// invalidate-not-accumulate on `(from_id, to_id, kind)`.
         body: Option<String>,
-        /// G11 (Slice 15) — event valid-time (ISO-8601). NULL = unknown / still valid.
-        t_valid: Option<String>,
-        /// G11 (Slice 15) — event invalid-time (ISO-8601). NULL = still valid.
-        t_invalid: Option<String>,
+        /// G11 (Slice 15) — event valid-time. NULL = unknown / still valid.
+        ///
+        /// **TC-33 (HITL-RATIFIED 2026-07-21): INTEGER epoch seconds (UTC), not
+        /// ISO-8601.** This is the GOVERNED SDK WRITE SURFACE, which carries the
+        /// same representation as storage. ISO-8601 survives ONLY on the BYO-LLM
+        /// extractor wire (`fathomdb.extract.v1`), where
+        /// `normalize_extractor_timestamp` converts it with hard rejection.
+        t_valid: Option<i64>,
+        /// G11 (Slice 15) — event invalid-time. NULL = still valid.
+        ///
+        /// **TC-33: INTEGER epoch seconds (UTC)** — see `t_valid`. The
+        /// NULL-means-still-valid semantic is load-bearing and unchanged, which
+        /// is why the schema pins the type with a `typeof` CHECK rather than
+        /// `NOT NULL`.
+        t_invalid: Option<i64>,
         /// G11 (Slice 15) — extraction confidence ∈ [0.0, 1.0]. NULL for
         /// non-BYO-LLM-ingested edges.
         confidence: Option<f64>,
@@ -4254,7 +4433,11 @@ impl Engine {
             // temporal_fallback warnings. An edge whose t_valid matches one of
             // these values had its event time defaulted to created_at (not
             // text-grounded) and must be flagged so BFS can exclude it.
-            let fallback_dates: std::collections::HashSet<String> = result
+            //
+            // TC-33: kept as RAW `Value`s here and normalised below, together
+            // with the edge side, through the SAME function. See the
+            // normalisation block for why that is load-bearing.
+            let raw_fallback_dates: Vec<&Value> = result
                 .get("warnings")
                 .and_then(|v| v.as_array())
                 .map(|ws| {
@@ -4262,11 +4445,7 @@ impl Engine {
                         .filter(|w| {
                             w.get("kind").and_then(|k| k.as_str()) == Some("temporal_fallback")
                         })
-                        .filter_map(|w| {
-                            w.get("substituted_t_valid")
-                                .and_then(|v| v.as_str())
-                                .map(str::to_string)
-                        })
+                        .filter_map(|w| w.get("substituted_t_valid"))
                         .collect()
                 })
                 .unwrap_or_default();
@@ -4386,9 +4565,75 @@ impl Engine {
                     }
                 }
 
+                // TC-33 — normalise EVERY extractor timestamp here, in ONE pass,
+                // under ONE connection lock, BEFORE any edge is built. Both the
+                // edge side (`t_valid`/`t_invalid`) and the temporal_fallback
+                // warning side (`substituted_t_valid`) go through the SAME
+                // function, and any value that cannot be normalised HARD-REJECTS
+                // the whole ingest.
+                //
+                // **Normalising both sides is load-bearing, and nothing would
+                // have caught it.** `temporal_fallback` is decided by comparing
+                // the edge's t_valid against the warnings' substituted_t_valid.
+                // That was a RAW BYTE-FOR-BYTE STRING MATCH with
+                // `.unwrap_or(false)` on the miss path, and `substituted_t_valid`
+                // is a FREE-FORM JSON key on the ELPS warnings envelope, not a
+                // Rust struct field. So normalising only the edge side would
+                // leave the set never matching, `.unwrap_or(false)` firing, and
+                // EVERY fallback edge silently becoming a TRUSTED edge — with no
+                // compile error anywhere. That flag is the only thing excluding
+                // untrustworthy-time edges from graph BFS and graph seeding.
+                //
+                // Normalising both sides also FIXES a pre-existing brittleness:
+                // `2025-03-20T09:30:00Z` and `2025-03-20T09:30:00+00:00` are the
+                // same instant but MISS each other under a byte comparison. They
+                // now compare equal as epochs.
+                //
+                // A malformed `substituted_t_valid` rejects rather than being
+                // skipped: skipping it would leave the edge unflagged, i.e.
+                // treated as TRUSTED — the same fail-open in a different place.
+                //
+                // The lock is taken and released HERE; `self.write(...)` below
+                // re-acquires it, so no lock is held across the write.
+                // (t_valid, t_invalid) epoch pair per edge, in `raw_edges` order.
+                type EdgeTimes = Vec<(Option<i64>, Option<i64>)>;
+                let (edge_times, fallback_epochs): (EdgeTimes, std::collections::HashSet<i64>) = {
+                    let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+                    let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+
+                    let mut times = Vec::with_capacity(raw_edges.len());
+                    for edge in &raw_edges {
+                        times.push((
+                            normalize_extractor_timestamp(
+                                connection,
+                                "t_valid",
+                                edge.get("t_valid"),
+                            )?,
+                            normalize_extractor_timestamp(
+                                connection,
+                                "t_invalid",
+                                edge.get("t_invalid"),
+                            )?,
+                        ));
+                    }
+
+                    let mut epochs = std::collections::HashSet::new();
+                    for raw in &raw_fallback_dates {
+                        if let Some(epoch) = normalize_extractor_timestamp(
+                            connection,
+                            "substituted_t_valid",
+                            Some(raw),
+                        )? {
+                            epochs.insert(epoch);
+                        }
+                    }
+                    (times, epochs)
+                };
+
                 let edge_batch: Vec<PreparedWrite> = raw_edges
                     .iter()
-                    .map(|edge| -> Result<PreparedWrite, EngineError> {
+                    .zip(&edge_times)
+                    .map(|(edge, &(t_valid, t_invalid))| -> Result<PreparedWrite, EngineError> {
                         let from_entity =
                             edge.get("from_entity").and_then(|v| v.as_str()).unwrap_or("");
                         let to_entity =
@@ -4396,10 +4641,9 @@ impl Engine {
                         let relation =
                             edge.get("relation").and_then(|v| v.as_str()).unwrap_or("related_to");
                         let body = edge.get("body").and_then(|v| v.as_str()).map(str::to_string);
-                        let t_valid =
-                            edge.get("t_valid").and_then(|v| v.as_str()).map(str::to_string);
-                        let t_invalid =
-                            edge.get("t_invalid").and_then(|v| v.as_str()).map(str::to_string);
+                        // TC-33: `t_valid`/`t_invalid` were normalised (and any
+                        // malformed or non-string value hard-rejected) in the
+                        // pass above; they arrive here as epoch seconds.
                         // fix-26 [P2]: validate confidence is in [0.0, 1.0] at the
                         // protocol boundary; reject out-of-range values.
                         let confidence = match edge.get("confidence").and_then(|v| v.as_f64()) {
@@ -4431,10 +4675,11 @@ impl Engine {
                         let edge_key = format!("{from_lid}:{to_lid}:{relation}");
                         let edge_lid = derive_logical_id("edge", &edge_key)?;
 
-                        let is_temporal_fallback = t_valid
-                            .as_deref()
-                            .map(|tv| fallback_dates.contains(tv))
-                            .unwrap_or(false);
+                        // TC-33: BOTH sides are now epochs from the SAME
+                        // normalisation, so this compares instants rather than
+                        // byte strings.
+                        let is_temporal_fallback =
+                            t_valid.is_some_and(|tv| fallback_epochs.contains(&tv));
                         Ok(PreparedWrite::Edge {
                             kind: relation.to_string(),
                             from: from_lid,
@@ -4528,20 +4773,33 @@ impl Engine {
             //    protocol/type/request_id and validates type=="result" + matching
             //    request_id. Any transport/protocol fault → Consolidator.
             let request_id = format!("req-{i}");
-            let edges_json: Vec<Value> = cluster
-                .iter()
-                .map(|e| {
-                    serde_json::json!({
-                        "edge_ref": e.edge_ref,
-                        "body": e.body,
-                        "t_valid": e.t_valid,
-                        "t_invalid": e.t_invalid,
-                        "confidence": e.confidence,
-                        "source_doc_id": e.source_doc_id,
-                        "extractor_model_id": e.extractor_model_id,
+            // TC-33: storage and `ConsolidateCandidateEdge` are INTEGER epoch
+            // seconds, but the harness WIRE is ISO-8601 — the same split as the
+            // extractor boundary. Render on the way out; the verdict's
+            // `t_invalid` is normalised back on the way in. Without this the
+            // harness would receive epoch integers and (since the reference stub
+            // echoes the winner's `t_valid` straight back as `t_invalid`) its
+            // reply would be rejected by our own inbound normaliser.
+            let edges_json: Vec<Value> = {
+                let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+                let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+                cluster
+                    .iter()
+                    .map(|e| {
+                        serde_json::json!({
+                            "edge_ref": e.edge_ref,
+                            "body": e.body,
+                            "t_valid": e.t_valid
+                                .and_then(|ts| epoch_seconds_to_iso8601(connection, ts)),
+                            "t_invalid": e.t_invalid
+                                .and_then(|ts| epoch_seconds_to_iso8601(connection, ts)),
+                            "confidence": e.confidence,
+                            "source_doc_id": e.source_doc_id,
+                            "extractor_model_id": e.extractor_model_id,
+                        })
                     })
-                })
-                .collect();
+                    .collect()
+            };
             let cluster_json = serde_json::json!({
                 "subject": axis.subject_logical_id,
                 "relation": axis.relation,
@@ -4648,10 +4906,18 @@ impl Engine {
                 "invalidate" => {
                     // Recency metadata: set t_invalid; the row and its body are
                     // left intact (this is NOT a destructive content rewrite).
-                    let ts = v
-                        .get("t_invalid")
-                        .and_then(|x| x.as_str())
-                        .ok_or(EngineError::Consolidator)?;
+                    //
+                    // TC-33: the CONSOLIDATION harness is the same class of
+                    // BYO-LLM boundary as the extractor, so it carries ISO-8601
+                    // on the wire and is normalised here with the SAME hard
+                    // rejection. Previously the raw string went straight into the
+                    // UPDATE with no validation whatsoever.
+                    let ts = normalize_extractor_timestamp(
+                        &tx,
+                        "t_invalid",
+                        Some(v.get("t_invalid").ok_or(EngineError::Consolidator)?),
+                    )?
+                    .ok_or(EngineError::Consolidator)?;
                     tx.execute(
                         "UPDATE canonical_edges SET t_invalid = ?1 \
                          WHERE logical_id = ?2 AND superseded_at IS NULL",
@@ -4661,17 +4927,18 @@ impl Engine {
                     // fix-1 [P1]: prune the STATIC projection shadow rows so the
                     // consolidated-away edge stops surfacing in FTS/vector — but
                     // ONLY when the edge is ended as of the engine's "now",
-                    // mirroring the graph-traversal filter
-                    // `t_invalid IS NULL OR datetime(t_invalid) > datetime('now')`.
+                    // mirroring the graph-traversal filter `edge_validity_sql`.
                     // A future-dated t_invalid keeps the edge valid ⇒ keep the
                     // projection. NON-DESTRUCTIVE: the canonical_edges row + body
                     // survive (ADR-0.8.12 §2.1).
+                    //
+                    // TC-33: this used to be `SELECT datetime(?1) <= datetime('now')`
+                    // — an inline clock, AND a misleading error class: junk made
+                    // the SELECT yield SQL NULL, so `r.get::<bool>` failed as
+                    // `EngineError::Storage`. Both timestamps are integers now, so
+                    // the comparison is plain Rust against the bound `:now` seam.
                     if let Some(cursor) = active_cursor {
-                        let ended: bool = tx
-                            .query_row("SELECT datetime(?1) <= datetime('now')", params![ts], |r| {
-                                r.get(0)
-                            })
-                            .map_err(|_| EngineError::Storage)?;
+                        let ended = ts <= current_epoch_seconds();
                         if ended {
                             // fix-2 [P2]: KEEP the projection terminal row. The
                             // canonical_edges row stays NON-superseded (invalidate
@@ -4764,8 +5031,9 @@ impl Engine {
     /// (`rebuild_shadow_state`), the vec projection queue
     /// (`next_pending_projection_jobs`), and the pending-work probe
     /// (`database_has_pending_projection_work`) now all carry the same
-    /// `t_invalid IS NULL OR datetime(t_invalid) > datetime('now')` filter as
-    /// graph traversal, so a rebuild is durable across the recency exclusion.
+    /// `edge_validity_sql` filter as graph traversal (TC-33: INTEGER compare
+    /// against the bound `:now`, formerly `datetime(t_invalid) > datetime('now')`),
+    /// so a rebuild is durable across the recency exclusion.
     fn prune_edge_projection_shadows(
         tx: &rusqlite::Transaction<'_>,
         cursor: i64,
@@ -8029,23 +8297,23 @@ impl Engine {
         // (G11 search_index_edges).
         // 0.8.12 Slice A (R-CON-2 named default-ON blocker; Slice-20 codex
         // §9 [P2]): mirror the graph-traversal recency filter
-        // (`t_invalid IS NULL OR datetime(t_invalid) > datetime('now')`)
-        // here too, so a full rebuild does not re-surface an edge that
-        // recency consolidation already invalidated.
+        // (`edge_validity_sql`) here too, so a full rebuild does not re-surface
+        // an edge that recency consolidation already invalidated.
         // 0.8.20 Slice 5a: body-less structural edges are now included in the
         // replay. They project no FTS/vector row, but the write path DOES record
         // their readiness terminal — which this rebuild truncated and (before
         // this slice) never restored, stalling `advance_projection_cursor`.
+        // TC-33: the filter is generated by `edge_validity_sql` and `:now` is
+        // bound (?1) rather than inlined as `datetime('now')`.
         let edge_rows: Vec<(i64, String, Option<String>)> = {
-            let mut edge_stmt = tx
-                .prepare(
-                    "SELECT write_cursor, kind, body FROM canonical_edges \
-                     WHERE superseded_at IS NULL \
-                       AND (t_invalid IS NULL OR datetime(t_invalid) > datetime('now'))",
-                )
-                .map_err(|_| EngineError::Storage)?;
+            let edge_sql = format!(
+                "SELECT write_cursor, kind, body FROM canonical_edges \
+                 WHERE superseded_at IS NULL{}",
+                edge_validity_sql("canonical_edges", 1)
+            );
+            let mut edge_stmt = tx.prepare(&edge_sql).map_err(|_| EngineError::Storage)?;
             let rows = edge_stmt
-                .query_map([], |row| {
+                .query_map(params![current_epoch_seconds()], |row| {
                     Ok((
                         row.get::<_, i64>(0)?,
                         row.get::<_, String>(1)?,
@@ -9901,19 +10169,20 @@ fn bfs_graph_arm_candidates(
         // the edge's `source_id` provenance and (F9) `confidence`. `search_index_edges`
         // may be absent on very old DBs (< step-14) — degrade to no edge seeds rather
         // than error.
-        if let Ok(mut edge_seed_stmt) = tx.prepare(
+        // TC-33: `?1` MATCH, `?2` LIMIT ⇒ the edge `:now` binds at `?3`.
+        if let Ok(mut edge_seed_stmt) = tx.prepare(&format!(
             "SELECT ce.from_id, ce.to_id, ce.source_id, ce.confidence \
              FROM search_index_edges sei \
              JOIN canonical_edges ce ON ce.write_cursor = sei.write_cursor \
              WHERE search_index_edges MATCH ?1 \
-               AND ce.superseded_at IS NULL \
-               AND (ce.t_invalid IS NULL OR datetime(ce.t_invalid) > datetime('now')) \
+               AND ce.superseded_at IS NULL{} \
                AND (ce.temporal_fallback IS NULL OR ce.temporal_fallback = 0) \
              ORDER BY bm25(search_index_edges), sei.write_cursor \
              LIMIT ?2",
-        ) {
+            edge_validity_sql("ce", 3)
+        )) {
             let rows = edge_seed_stmt.query_map(
-                rusqlite::params![match_expression, SEED_FTS_N as i64],
+                rusqlite::params![match_expression, SEED_FTS_N as i64, view.edge_now()],
                 |row| {
                     Ok((
                         row.get::<_, String>(0)?,
@@ -10052,14 +10321,17 @@ fn bfs_graph_arm_candidates(
         // the reached node (keyed downstream by the node's `write_cursor`). Same
         // determinism as `source_id`: the earliest-written edge wins the `visited`
         // dedup, so the reached node's confidence is the winning-`bfs_rank` edge's.
-        "SELECT e.from_id, e.to_id, e.source_id, e.confidence \
-         FROM canonical_edges e \
-         WHERE (e.from_id = ?1 OR e.to_id = ?1) \
-           AND e.superseded_at IS NULL \
-           AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now')) \
-           AND (e.temporal_fallback IS NULL OR e.temporal_fallback = 0) \
-         ORDER BY e.write_cursor \
-         LIMIT 64",
+        // TC-33: `?1` is the anchor logical_id ⇒ the edge `:now` binds at `?2`.
+        &format!(
+            "SELECT e.from_id, e.to_id, e.source_id, e.confidence \
+             FROM canonical_edges e \
+             WHERE (e.from_id = ?1 OR e.to_id = ?1) \
+               AND e.superseded_at IS NULL{} \
+               AND (e.temporal_fallback IS NULL OR e.temporal_fallback = 0) \
+             ORDER BY e.write_cursor \
+             LIMIT 64",
+            edge_validity_sql("e", 2)
+        ),
     )?;
     // Fetch write_cursor alongside kind+body so graph-arm hits carry a real id
     // for apply_recency_reweight (id=0 would force min_id=0 and distort span).
@@ -10083,7 +10355,7 @@ fn bfs_graph_arm_candidates(
         // traversing edge's `source_id` (BLOCK-2 provenance carry) and (F9)
         // `confidence` (the reweight input for the reached node).
         let neighbors: Vec<(String, Option<String>, Option<f64>)> = {
-            let rows = edge_stmt.query_map([&lid], |row| {
+            let rows = edge_stmt.query_map(params![&lid, view.edge_now()], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
@@ -10400,10 +10672,11 @@ const GRAPH_NEIGHBORS_HARD_CAP: usize = 50;
 /// `view.node_sql(...)` is written once per position and applying to all three
 /// directions is structural rather than a thing to remember.
 ///
-/// **The `canonical_edges` temporal filter is deliberately UNCHANGED**, still
-/// `datetime(e.t_invalid) > datetime('now')` inline: edge validity is ISO-8601
-/// TEXT and out of scope for this slice. Only the NODE validity predicate is
-/// parameterised.
+/// **TC-33: the `canonical_edges` temporal filter is now parameterised too.** It
+/// was `datetime(e.t_invalid) > datetime('now')` inline, deliberately left alone
+/// while edge validity was ISO-8601 TEXT. Edge timestamps are INTEGER epoch
+/// seconds now, so the predicate is generated by [`edge_validity_sql`] and binds
+/// the frozen instant at `?4` — no inline clock remains in this template.
 fn build_bfs_sql(direction: TraversalDirection, view: &ReadView) -> String {
     let cap = GRAPH_NEIGHBORS_HARD_CAP;
     // cte_cap: the SQLite CTE LIMIT counts path-rows, not distinct nodes. In a
@@ -10422,6 +10695,10 @@ fn build_bfs_sql(direction: TraversalDirection, view: &ReadView) -> String {
     // `?3` is the node-validity instant. Positional (not named), so the repeated
     // occurrences across the three node positions all bind the SAME value once.
     const NOW_IDX: usize = 3;
+    // TC-33: `?4` is the EDGE-validity instant, bound separately because the node
+    // instant is `Option` (relaxed by `include_out_of_window`) while edge recency
+    // is always applied.
+    const EDGE_NOW_IDX: usize = 4;
 
     // The ONLY two things that differ between directions.
     let (edge_join, target_expr) = match direction {
@@ -10438,6 +10715,7 @@ fn build_bfs_sql(direction: TraversalDirection, view: &ReadView) -> String {
     let anchor_node = view.node_sql("n", NOW_IDX);
     let next_node = view.node_sql("next_n", NOW_IDX);
     let projection_node = view.node_sql("n", NOW_IDX);
+    let edge_valid = edge_validity_sql("e", EDGE_NOW_IDX);
 
     format!(
         "WITH RECURSIVE
@@ -10451,8 +10729,7 @@ fn build_bfs_sql(direction: TraversalDirection, view: &ReadView) -> String {
     JOIN canonical_edges e ON {edge_join}
     JOIN canonical_nodes next_n ON next_n.logical_id = {target_expr}{next_node}
     WHERE t.depth < ?2
-      AND e.superseded_at IS NULL
-      AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now'))
+      AND e.superseded_at IS NULL{edge_valid}
       AND instr(t.visited, char(30) || {target_expr} || char(30)) = 0
     LIMIT {cte_cap}
   )
@@ -10472,6 +10749,10 @@ LIMIT {cap}"
 fn build_bfs_with_depth_sql() -> String {
     let cap = GRAPH_NEIGHBORS_HARD_CAP;
     let cte_cap = cap * cap; // same multigraph-safe headroom as build_bfs_sql
+                             // TC-33: `?1` anchor, `?2` depth ⇒ the edge `:now` binds at `?3`. This is a
+                             // SECOND, separate BFS template — the edge-validity predicate has to be
+                             // re-grounded here too or `search_expand` silently keeps the old semantics.
+    let edge_valid = edge_validity_sql("e", 3);
     format!(
         "WITH RECURSIVE
   traversal(logical_id, depth, visited) AS (
@@ -10489,8 +10770,7 @@ fn build_bfs_with_depth_sql() -> String {
       ON next_n.logical_id = CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END
       AND next_n.superseded_at IS NULL AND next_n.state = 'active'
     WHERE t.depth < ?2
-      AND e.superseded_at IS NULL
-      AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now'))
+      AND e.superseded_at IS NULL{edge_valid}
       AND instr(t.visited,
             char(30) || CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END || char(30)) = 0
     LIMIT {cte_cap}
@@ -10571,15 +10851,21 @@ fn graph_neighbors_in_tx(
     let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
     let depth_i64 = depth as i64;
     let mut statement = tx.prepare(&sql)?;
-    // ?1 root, ?2 depth, then ?3 = the validity instant (omitted when relaxed,
-    // in which case `build_bfs_sql` emitted no `?3` either).
-    let mut binds: Vec<rusqlite::types::Value> = vec![
+    // ?1 root, ?2 depth, ?3 = the NODE validity instant, ?4 = the EDGE validity
+    // instant (TC-33).
+    //
+    // ?3 is bound UNCONDITIONALLY even when the view relaxes node validity and
+    // `build_bfs_sql` emitted no `?3`: the template still references ?4, so
+    // SQLite's parameter count is 4 and the positions must not shift. Binding an
+    // index the SQL never reads is harmless; letting ?4's value slide into ?3
+    // would silently compare edge times against a placeholder.
+    let frozen = (*view).freeze();
+    let binds: Vec<rusqlite::types::Value> = vec![
         rusqlite::types::Value::Text(root_logical_id.to_string()),
         rusqlite::types::Value::Integer(depth_i64),
+        rusqlite::types::Value::Integer(frozen.now_param().unwrap_or_default()),
+        rusqlite::types::Value::Integer(frozen.edge_now()),
     ];
-    if let Some(now) = view.now_param() {
-        binds.push(rusqlite::types::Value::Integer(now));
-    }
     let rows = statement.query_map(rusqlite::params_from_iter(binds.iter()), |row| {
         Ok(NodeRecord {
             logical_id: row.get(0)?,
@@ -10671,17 +10957,22 @@ fn search_expand_in_tx(
 
     if depth > 0 {
         let mut bfs_stmt = tx.prepare(&bfs_sql)?;
+        // TC-33: `?3` is the edge-validity instant. `search_expand` has no
+        // `ReadView` in scope, so it uses the default (strict) semantics —
+        // resolved ONCE here, not per root, so every root in one call agrees.
+        let edge_now = current_epoch_seconds();
         for root_id in hit_logical_ids.iter().flatten().filter(|s| !s.is_empty()) {
-            let neighbor_rows = bfs_stmt.query_map(params![root_id, depth_i64], |row| {
-                let node = NodeRecord {
-                    logical_id: row.get(0)?,
-                    kind: row.get(1)?,
-                    body: row.get(2)?,
-                    write_cursor: row.get::<_, i64>(3)? as u64,
-                };
-                let min_depth: i64 = row.get(4)?;
-                Ok((node, min_depth as u32))
-            })?;
+            let neighbor_rows =
+                bfs_stmt.query_map(params![root_id, depth_i64, edge_now], |row| {
+                    let node = NodeRecord {
+                        logical_id: row.get(0)?,
+                        kind: row.get(1)?,
+                        body: row.get(2)?,
+                        write_cursor: row.get::<_, i64>(3)? as u64,
+                    };
+                    let min_depth: i64 = row.get(4)?;
+                    Ok((node, min_depth as u32))
+                })?;
             for row_result in neighbor_rows {
                 let (node, hop_count) = row_result?;
                 if hit_id_set.contains(&node.logical_id) {
@@ -10745,10 +11036,14 @@ fn explain_graph_neighbors_in_tx(
     let mut statement = tx.prepare(&explain_sql)?;
     // EXPLAIN QUERY PLAN returns rows: (id, parent, notused, detail).
     // We collect the `detail` column (index 3).
-    // The strict view emits `?3` (the validity instant) at every node position.
-    let now = view.now_param().expect("the strict view always binds a validity instant");
+    // The strict view emits `?3` (the node-validity instant) at every node
+    // position; TC-33 adds `?4`, the edge-validity instant.
+    let frozen = view.freeze();
+    let now = frozen.now_param().expect("the strict view always binds a validity instant");
     let rows = statement
-        .query_map(params![root_logical_id, depth_i64, now], |row| row.get::<_, String>(3))?;
+        .query_map(params![root_logical_id, depth_i64, now, frozen.edge_now()], |row| {
+            row.get::<_, String>(3)
+        })?;
     let mut out = Vec::new();
     for row in rows {
         out.push(row?);
@@ -11279,15 +11574,15 @@ fn next_pending_projection_jobs(
                ON _fathomdb_projection_terminal.write_cursor = canonical_edges.write_cursor
              WHERE canonical_edges.write_cursor > ?1
                AND canonical_edges.body IS NOT NULL
-               AND canonical_edges.superseded_at IS NULL
-               AND (canonical_edges.t_invalid IS NULL
-                    OR datetime(canonical_edges.t_invalid) > datetime('now'))
+               AND canonical_edges.superseded_at IS NULL{edge_valid}
                AND _fathomdb_projection_terminal.write_cursor IS NULL
          ) ORDER BY write_cursor
-         LIMIT {sql_limit}"
+         LIMIT {sql_limit}",
+        // TC-33: `?1` is the projection cursor ⇒ the edge `:now` binds at `?2`.
+        edge_valid = edge_validity_sql("canonical_edges", 2)
     );
     let mut statement = connection.prepare_cached(&sql)?;
-    let rows = statement.query_map([cursor], |row| {
+    let rows = statement.query_map(params![cursor, current_epoch_seconds()], |row| {
         Ok(ProjectionJob { cursor: row.get(0)?, kind: row.get(1)?, body: row.get(2)? })
     })?;
     let mut jobs = Vec::with_capacity(max_jobs);
@@ -11342,16 +11637,19 @@ fn database_has_pending_projection_work(path: &Path) -> rusqlite::Result<bool> {
     // phantom-pending forever and `drain()`/`wait_for_idle` would hang.
     connection
         .query_row(
-            "SELECT 1
+            // TC-33: no other parameter here ⇒ the edge `:now` binds at `?1`.
+            &format!(
+                "SELECT 1
              FROM canonical_edges ce
              LEFT JOIN _fathomdb_projection_terminal pt
                ON pt.write_cursor = ce.write_cursor
              WHERE ce.body IS NOT NULL
-               AND ce.superseded_at IS NULL
-               AND (ce.t_invalid IS NULL OR datetime(ce.t_invalid) > datetime('now'))
+               AND ce.superseded_at IS NULL{}
                AND pt.write_cursor IS NULL
              LIMIT 1",
-            [],
+                edge_validity_sql("ce", 1)
+            ),
+            params![current_epoch_seconds()],
             |_row| Ok(true),
         )
         .or_else(|err| match err {
@@ -14614,7 +14912,31 @@ fn load_next_cursor(connection: &Connection) -> u64 {
     let edges = max_cursor(connection, "canonical_edges").unwrap_or(0);
     let mutations = max_cursor(connection, "operational_mutations").unwrap_or(0);
     let state = max_cursor(connection, "operational_state").unwrap_or(0);
-    nodes.max(edges).max(mutations).max(state)
+    // TC-33: schema step 23 RECREATES `canonical_edges` (no data migration), so
+    // the edge rows that used to hold the high-water mark are gone. Without this
+    // term the allocator can hand out a cursor a PREVIOUS edge already used —
+    // and stale `_fathomdb_projection_terminal` / `_fathomdb_vector_rows` / vec0
+    // rows still key on it, so a brand-new row would be treated as
+    // already-projected and never get indexed. Step 23 stashes the pre-drop
+    // maximum here; folding it in keeps cursors monotonic across the migration.
+    let reserved = reserved_write_cursor(connection);
+    nodes.max(edges).max(mutations).max(state).max(reserved)
+}
+
+/// The write-cursor high-water mark reserved by schema step 23, or 0 when the
+/// key is absent (fresh DB, or a DB that never had edges). Never fails the
+/// caller: a missing/unparseable value degrades to 0, which is the pre-TC-33
+/// behaviour.
+fn reserved_write_cursor(connection: &Connection) -> u64 {
+    connection
+        .query_row(
+            "SELECT value FROM _fathomdb_open_state WHERE key = ?1",
+            params![fathomdb_schema::RESERVED_WRITE_CURSOR_KEY],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+        .and_then(|raw| raw.parse::<u64>().ok())
+        .unwrap_or(0)
 }
 
 fn max_cursor(connection: &Connection, table: &str) -> rusqlite::Result<u64> {

@@ -254,7 +254,7 @@ fn slice_a_rebuild_projections_excludes_recency_invalidated_edge() {
             source_id: fathomdb_engine::SourceId::new("doc-acme").expect("test source id"),
             logical_id: Some("edge-acme".to_string()),
             body: Some("Bob works for Acme".to_string()),
-            t_valid: Some("2019-01-01T00:00:00Z".to_string()),
+            t_valid: Some(1_546_300_800), /* 2019-01-01T00:00:00Z */
             t_invalid: None,
             confidence: Some(0.9),
             extractor_model_id: Some("stub-extractor-v1".to_string()),
@@ -267,7 +267,7 @@ fn slice_a_rebuild_projections_excludes_recency_invalidated_edge() {
             source_id: fathomdb_engine::SourceId::new("doc-globex").expect("test source id"),
             logical_id: Some("edge-globex".to_string()),
             body: Some("Bob works for Globex".to_string()),
-            t_valid: Some("2022-01-01T00:00:00Z".to_string()),
+            t_valid: Some(1_640_995_200), /* 2022-01-01T00:00:00Z */
             t_invalid: None,
             confidence: Some(0.8),
             extractor_model_id: Some("stub-extractor-v1".to_string()),

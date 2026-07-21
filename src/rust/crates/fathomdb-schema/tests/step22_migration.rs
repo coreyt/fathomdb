@@ -18,13 +18,17 @@
 //!   leaves the DB at 21 with the columns absent, and a completed step never
 //!   re-runs (load-bearing: `ALTER TABLE … ADD COLUMN` has no `IF NOT EXISTS`).
 //!
-//! **INTEGER-vs-TEXT divergence (deliberate, flagged).** These node columns are
-//! INTEGER epoch seconds while the shipped `canonical_edges.t_valid` /
-//! `t_invalid` (step 14) are ISO-8601 TEXT. The edge columns are NOT changed and
-//! NOT unified here; `s22_edge_temporal_columns_are_untouched_text` pins that
-//! divergence so it is a recorded decision rather than a silent inconsistency.
+//! **INTEGER-vs-TEXT divergence (introduced here, RESOLVED by TC-33).** When
+//! step 22 shipped, these node columns were INTEGER epoch seconds while the
+//! shipped `canonical_edges.t_valid` / `t_invalid` (step 14) were ISO-8601 TEXT.
+//! Step 22 was node-only and left the edge columns alone. TC-33's **step 23**
+//! converts the edge columns to INTEGER epoch seconds too, closing the
+//! divergence; `s22_edge_temporal_columns_text_at_v22_become_integer_at_head`
+//! now pins the TRANSITION (TEXT at v22, INTEGER at head) rather than a frozen
+//! inconsistency.
 //!
-//! `SCHEMA_VERSION` advances 21 → 22. One migration per release (I-6).
+//! `SCHEMA_VERSION` advances 21 → 22 for this step. Head is now 23 (step 23,
+//! TC-33). One migration per release (I-6).
 
 use fathomdb_schema::{check_migration_accretion, migrate_with_steps, MIGRATIONS, SCHEMA_VERSION};
 use rusqlite::Connection;
@@ -205,10 +209,18 @@ fn s22_window_is_half_open_lower_inclusive_upper_exclusive() {
     assert_eq!(visible_at(2001), 0, "after the window: invisible");
 }
 
-/// The deliberate divergence: step 22 must NOT touch the edge temporal columns.
-/// They stay ISO-8601 TEXT. Pinned so the inconsistency is a recorded decision.
+/// **TC-33 update.** This test used to be
+/// `s22_edge_temporal_columns_are_untouched_text` and pinned the deliberate
+/// TEXT-vs-INTEGER divergence step 22 introduced as a "recorded decision".
+/// TC-33 (step 23) RESOLVES that divergence, so the test now pins the
+/// TRANSITION instead of a frozen inconsistency:
+///
+/// - AT v22 the edge columns are still ISO-8601 TEXT and step 22 leaves them
+///   alone (a real property of step 22 IN ISOLATION — it is node-only);
+/// - AT head (v23) they are INTEGER epoch seconds — the divergence is closed.
 #[test]
-fn s22_edge_temporal_columns_are_untouched_text() {
+fn s22_edge_temporal_columns_text_at_v22_become_integer_at_head() {
+    // --- at v22: still TEXT, and step 22 is node-only ---
     let conn = seed_v21();
     migrate_with_steps(&conn, &steps_through(22)).expect("migrate to v22");
 
@@ -218,8 +230,8 @@ fn s22_edge_temporal_columns_are_untouched_text() {
         assert_eq!(
             decl_type.to_ascii_uppercase(),
             "TEXT",
-            "canonical_edges.{column} must remain ISO-8601 TEXT — step 22 deliberately \
-             diverges (nodes are INTEGER) and must NOT unify or rewrite the edge columns"
+            "at v22 canonical_edges.{column} is still ISO-8601 TEXT — step 22 is node-only \
+             and does not touch the edge columns; TC-33's step 23 converts them"
         );
     }
     assert!(
@@ -230,6 +242,20 @@ fn s22_edge_temporal_columns_are_untouched_text() {
         column_info(&conn, "canonical_edges", "valid_until").is_none(),
         "step 22 is node-only: canonical_edges must NOT gain valid_until"
     );
+
+    // --- at head (v23): INTEGER epoch, divergence closed ---
+    let head = seed_v21();
+    migrate_with_steps(&head, MIGRATIONS).expect("migrate to head");
+    for column in ["t_valid", "t_invalid"] {
+        let (decl_type, _, _) = column_info(&head, "canonical_edges", column)
+            .unwrap_or_else(|| panic!("canonical_edges.{column} must still exist at head"));
+        assert_eq!(
+            decl_type.to_ascii_uppercase(),
+            "INTEGER",
+            "TC-33: at head canonical_edges.{column} is INTEGER epoch seconds — the step-22 \
+             divergence is resolved, not merely recorded"
+        );
+    }
 }
 
 /// P3 — a completed step never re-runs. Load-bearing because
@@ -238,8 +264,10 @@ fn s22_edge_temporal_columns_are_untouched_text() {
 #[test]
 fn s22_is_idempotent_across_repeated_migrate_calls() {
     let conn = seed_v21();
-    migrate_with_steps(&conn, &steps_through(22)).expect("first migrate to v22");
-    assert_eq!(user_version(&conn), 22);
+    // TC-33: v22 is no longer head (23 is), so migrate the WHOLE registry to
+    // head first; then re-running must be the true no-op this test guards.
+    migrate_with_steps(&conn, MIGRATIONS).expect("first migrate to head");
+    assert_eq!(user_version(&conn), SCHEMA_VERSION);
 
     // Re-running the whole registry must be a no-op, not a duplicate-column error.
     let report = migrate_with_steps(&conn, MIGRATIONS).expect("re-running migrate must be a no-op");
@@ -248,7 +276,7 @@ fn s22_is_idempotent_across_repeated_migrate_calls() {
         "no step may re-run once user_version is at head; ran {:?}",
         report.migration_steps
     );
-    assert_eq!(user_version(&conn), 22);
+    assert_eq!(user_version(&conn), SCHEMA_VERSION);
 }
 
 /// P3 — the step is atomic with its version bump: a poisoned batch leaves the
@@ -289,11 +317,14 @@ fn s22_is_head_and_schema_version_is_22() {
     migrate_with_steps(&conn, MIGRATIONS).expect("migration must succeed");
 
     assert_eq!(user_version(&conn), SCHEMA_VERSION);
-    assert_eq!(SCHEMA_VERSION, 22, "SCHEMA_VERSION must be 22 (step-22 node validity, R-20-NV)");
+    assert_eq!(
+        SCHEMA_VERSION, 23,
+        "SCHEMA_VERSION must be 23 (step-23 edge temporal → INTEGER epoch, TC-33)"
+    );
     assert_eq!(
         MIGRATIONS.last().expect("at least one migration").step_id,
-        22,
-        "step-22 must be the last (head) migration"
+        23,
+        "step-23 (edge temporal → INTEGER epoch, TC-33) must be the last (head) migration"
     );
 }
 

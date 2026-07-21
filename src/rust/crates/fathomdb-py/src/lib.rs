@@ -1824,9 +1824,18 @@ fn translate_edge(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
     // so the C1 graph arm can seed from edge-fact FTS (`source A`). NULL = not indexed.
     let body = dict_str(dict, "body")?;
     // R3 (Slice 30) — temporal validity fields accepted from user-facing write API.
-    // `t_valid` and `t_invalid` are ISO 8601 datetime strings (optional).
-    let t_valid = dict_str(dict, "t_valid")?;
-    let t_invalid = dict_str(dict, "t_invalid")?;
+    //
+    // TC-33 (HITL-RATIFIED 2026-07-21) — these are **INTEGER epoch seconds
+    // (UTC)**, not ISO-8601 strings. This is the GOVERNED SDK WRITE SURFACE,
+    // which carries the same representation as storage; ISO-8601 survives ONLY
+    // on the BYO-LLM extractor wire, where the engine normalises it with hard
+    // rejection. Reuses the same `dict_epoch_seconds` helper as the node
+    // `valid_from`/`valid_until` window, so both temporal axes now validate
+    // identically (and a bool is rejected rather than coerced to 0/1).
+    //
+    // `None` = "still valid"; that semantic is load-bearing and unchanged.
+    let t_valid = dict_epoch_seconds(dict, "t_valid")?;
+    let t_invalid = dict_epoch_seconds(dict, "t_invalid")?;
     Ok(PreparedWrite::Edge {
         kind,
         from,

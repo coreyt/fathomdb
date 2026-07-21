@@ -203,14 +203,9 @@ fn edge_canonical_edges_mapping() {
     let conn = Connection::open(&path).unwrap();
 
     // Check edge "Alice owns Project X" — no temporal, confidence 0.95.
+    // TC-33: t_valid/t_invalid are INTEGER epoch seconds, not ISO-8601 TEXT.
     #[allow(clippy::type_complexity)]
-    let owns_row: (
-        Option<String>,
-        Option<String>,
-        Option<String>,
-        Option<f64>,
-        Option<String>,
-    ) = conn
+    let owns_row: (Option<String>, Option<i64>, Option<i64>, Option<f64>, Option<String>) = conn
         .query_row(
             "SELECT body, t_valid, t_invalid, confidence, extractor_model_id
              FROM canonical_edges
@@ -230,7 +225,7 @@ fn edge_canonical_edges_mapping() {
     assert_eq!(owns_row.4.as_deref(), Some("stub-v1"), "extractor_model_id must be 'stub-v1'");
 
     // Check temporal edge "Bob works_for Acme Corp".
-    let works_row: (Option<String>, Option<String>) = conn
+    let works_row: (Option<i64>, Option<String>) = conn
         .query_row(
             "SELECT t_valid, extractor_model_id
          FROM canonical_edges
@@ -239,10 +234,16 @@ fn edge_canonical_edges_mapping() {
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .expect("'works_for' edge must exist");
+    // TC-33: this assertion used to read "t_valid must be PRESERVED from extract
+    // response". "Preserved" is exactly the contract TC-33 changes: the extractor
+    // wire stays ISO-8601, but the engine NORMALISES it at the boundary, so what
+    // lands in storage is the equivalent INTEGER epoch, not the original bytes.
+    // The fixture sends "2020-01-01T00:00:00Z".
     assert_eq!(
-        works_row.0.as_deref(),
-        Some("2020-01-01T00:00:00Z"),
-        "t_valid must be preserved from extract response"
+        works_row.0,
+        Some(1_577_836_800),
+        "t_valid must be NORMALISED-EQUIVALENT to the extract response: the ISO-8601 \
+         \"2020-01-01T00:00:00Z\" on the wire becomes epoch 1577836800 in storage"
     );
     assert_eq!(works_row.1.as_deref(), Some("stub-v1"), "extractor_model_id");
 }
