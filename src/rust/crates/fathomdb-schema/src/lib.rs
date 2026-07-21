@@ -675,11 +675,28 @@ pub const MIGRATIONS: &[Migration] = &[
     //   1. `search_index_edges` is edge-derived and would be left holding FTS
     //      rows for edges that no longer exist. Every reader JOINs it back to
     //      `canonical_edges` so orphans are inert, but they are dead weight and
-    //      are cleared here. (`vector_default` is deliberately NOT touched: it
-    //      is a vec0 virtual table created by the ENGINE's
-    //      `ensure_vector_partition` AFTER `migrate` returns, so on a fresh DB
-    //      it does not exist yet and referencing it here would fail the step.
-    //      Its orphaned rows are made harmless by (2).)
+    //      are cleared here.
+    //   1b. The VECTOR projection of the dropped edges is ALSO row-owned and
+    //      must be removed — it is NOT inert (fix-6, codex §9 P1). It has two
+    //      halves (see the engine's `ROW_OWNED_PROJECTIONS`, class `Vector`):
+    //        - `_fathomdb_vector_rows` — the sidecar/registry table (created by
+    //          migration step 6, so it ALWAYS exists here). Its dropped-edge
+    //          rows are deleted BELOW, scoped to edge cursors read from
+    //          `canonical_edges` while it still exists (it also holds NODE
+    //          sidecar rows, which MUST survive — so this is a scoped DELETE,
+    //          not a truncate like `search_index_edges`).
+    //        - `vector_default` — the vec0 virtual table that actually feeds
+    //          KNN candidate selection. It is created by the ENGINE's dim-aware
+    //          `ensure_vector_partition` AFTER `migrate` returns, so on a fresh
+    //          DB (and in the schema crate's own migration tests) it does not
+    //          exist yet and referencing it in this SQL would fail the step. Its
+    //          orphaned edge rows are therefore pruned by the ENGINE right after
+    //          `ensure_vector_partition`, matched against the sidecar this step
+    //          clears. These orphans are NOT "made harmless by (2)": (2) only
+    //          stops cursor REUSE; an orphaned `vector_default` row (whose
+    //          `canonical_edges` row is gone) still occupies a top-K KNN
+    //          candidate slot and is then discarded at hydration, silently
+    //          returning too few vector results on an upgraded DB.
     //   2. `load_next_cursor` takes MAX(write_cursor) across canonical_nodes /
     //      canonical_edges / operational_mutations / operational_state. Dropping
     //      the edge rows can LOWER that high-water mark, so freshly allocated
@@ -747,6 +764,18 @@ pub const MIGRATIONS: &[Migration] = &[
               -- OR IGNORE). Complementary to the reserved-high-water fix above.
               INSERT OR IGNORE INTO _fathomdb_projection_terminal(write_cursor, state)
                   SELECT write_cursor, 'up_to_date' FROM canonical_edges;
+              -- fix-6 (TC-33): delete the dropped edges' VECTOR sidecar rows
+              -- BEFORE the DROP, while canonical_edges still lists the edge
+              -- cursors. Scoped to edge cursors — _fathomdb_vector_rows also
+              -- holds NODE sidecar rows, which must survive. The vec0 table
+              -- vector_default is engine-created (dim-aware) and may not exist
+              -- here, so the engine prunes it to match right after
+              -- ensure_vector_partition. This is the third row-owned-projection
+              -- facet step 23 clears for every dropped edge (with the reserved
+              -- high-water mark and the terminal backfill above). NO DATA
+              -- MIGRATION: it deletes derived rows for already-dropped edges.
+              DELETE FROM _fathomdb_vector_rows
+                  WHERE write_cursor IN (SELECT write_cursor FROM canonical_edges);
               DROP TABLE canonical_edges;
               CREATE TABLE canonical_edges(
                   write_cursor INTEGER NOT NULL,

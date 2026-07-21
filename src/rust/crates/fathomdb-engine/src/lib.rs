@@ -120,6 +120,27 @@ const SEARCH_INDEX_TOKENIZER_SCHEMA_VERSION: u32 = 11;
 /// crash before commit leaves no marker and the next open re-runs.
 const SEARCH_INDEX_TOKENIZER_REPROJECT_MARKER_KEY: &str =
     "search_index_tokenizer_reproject_complete";
+/// 0.8.20 Slice 15c (TC-33) fix-6 — schema version at which the
+/// `canonical_edges` INTEGER-epoch recreate (migration step 23) runs. A DB
+/// migrated to (or past) this version has had every edge row DROPPED with NO
+/// DATA MIGRATION, and the migration removed the dropped edges'
+/// `_fathomdb_vector_rows` sidecar rows. The vec0 `vector_default` shadow it
+/// mirrors is engine-created and dim-parameterized, so the migration cannot
+/// touch it; the engine prunes the now-orphaned vec0 rows on open.
+const EDGE_TEMPORAL_EPOCH_SCHEMA_VERSION: u32 = 23;
+/// 0.8.20 Slice 15c (TC-33) fix-6 — `_fathomdb_open_state` key set once the
+/// one-time edge-vector prune commits durably (written in the SAME transaction
+/// as the vec0 DELETEs). Gating repair on this marker's ABSENCE — not on
+/// crossing the step-23 boundary — makes it crash-retryable: the step-23
+/// migration commits `user_version = 23` (edges dropped, sidecar cleared) in its
+/// own transaction, and the prune runs in a later transaction on open. A crash
+/// in that window leaves a durable `user_version = 23` with orphaned vec0 rows;
+/// a boundary-crossing gate (`before < 23`) would skip the prune forever on the
+/// next open (it sees `before == 23`). The marker is absent on any DB upgraded
+/// before this fix shipped, so the prune runs once and cleans the lingering
+/// orphans; thereafter the paired vec0/sidecar insert+delete keeps the invariant
+/// so no new orphans arise.
+const EDGE_VECTOR_PRUNE_MARKER_KEY: &str = "tc33_edge_vector_prune_complete";
 const DEFAULT_PROVENANCE_ROW_CAP: u64 = 1_000_000;
 /// 0.8.20 Slice 5b (R-20-E5) — how many times an erasure verb re-tries
 /// `PRAGMA wal_checkpoint(TRUNCATE)` before refusing with
@@ -4226,6 +4247,31 @@ impl Engine {
         ensure_vector_partition(&mut connection, embedder_identity.dimension).map_err(|_| {
             EngineOpenError::Io { message: "could not initialize vector partition".to_string() }
         })?;
+
+        // 0.8.20 Slice 15c (TC-33) fix-6 [codex §9 P1] — the step-23
+        // `canonical_edges` recreate drops every edge row (NO DATA MIGRATION) and
+        // removes their `_fathomdb_vector_rows` sidecar rows, but the vec0
+        // `vector_default` shadow those mirror is engine-created + dim-aware, so
+        // the migration cannot delete its rows. Left behind, an orphaned edge vec0
+        // row (whose `canonical_edges` row is gone) still occupies a top-K KNN
+        // candidate slot — `build_vector_phase1_sql` reads candidates DIRECTLY
+        // from `vector_default` before hydrating them through the canonical tables
+        // — and is then discarded at hydration, so an upgraded DB silently returns
+        // too few / no vector results. Prune the orphans now that
+        // `ensure_vector_partition` guarantees `vector_default` exists, BEFORE the
+        // mean-vec row-count recovery below (so the count excludes them). One-time
+        // and crash-retryable via the durable completion marker; a no-op on any
+        // healthy corpus (every vec0 row has a sidecar entry), so recall / eu7
+        // fidelity are unchanged on a DB that never dropped edges.
+        if migration.schema_version_after >= EDGE_TEMPORAL_EPOCH_SCHEMA_VERSION
+            && !edge_vector_prune_complete(&connection).map_err(|_| EngineOpenError::Io {
+                message: "could not read edge-vector prune marker".to_string(),
+            })?
+        {
+            prune_orphaned_edge_vectors(&connection).map_err(|_| EngineOpenError::Io {
+                message: "could not prune orphaned edge vector rows".to_string(),
+            })?;
+        }
 
         // EU-5f — recovery pin (`dev/design/embedder.md` §0.3, Hazard 4). If
         // the identity is MC-required, no mean is pinned, yet the workspace
@@ -11993,6 +12039,96 @@ fn search_index_tokenizer_reproject_complete(connection: &Connection) -> rusqlit
             Ok(true)
         }
         Err(err) => Err(err),
+    }
+}
+
+/// 0.8.20 Slice 15c (TC-33) fix-6 — has the one-time edge-vector prune committed
+/// durably on this DB? Keys off the [`EDGE_VECTOR_PRUNE_MARKER_KEY`] row written
+/// inside the prune transaction; its absence means the prune never ran (a DB
+/// upgraded before this fix shipped, or a crash between the step-23 commit and
+/// the prune commit) and must (re-)run.
+///
+/// A MISSING `_fathomdb_open_state` table is reported as "complete" (skip the
+/// prune) — that table is created by migration step 1, so its absence means the
+/// DB never ran our migrations (a synthetic/foreign shape rejected downstream);
+/// the prune must not run, and must not mask those errors, on it. Mirrors
+/// [`search_index_tokenizer_reproject_complete`].
+fn edge_vector_prune_complete(connection: &Connection) -> rusqlite::Result<bool> {
+    match connection.query_row(
+        "SELECT value FROM _fathomdb_open_state WHERE key = ?1",
+        [EDGE_VECTOR_PRUNE_MARKER_KEY],
+        |row| row.get::<_, String>(0),
+    ) {
+        Ok(value) => Ok(value == "1"),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(false),
+        Err(rusqlite::Error::SqliteFailure(_, Some(ref message)))
+            if message.contains("no such table") =>
+        {
+            Ok(true)
+        }
+        Err(err) => Err(err),
+    }
+}
+
+/// 0.8.20 Slice 15c (TC-33) fix-6 — delete every `vector_default` (vec0) row that
+/// has NO `_fathomdb_vector_rows` sidecar entry, then record the durable
+/// completion marker, all in one `BEGIN IMMEDIATE` transaction (crash-retryable:
+/// a crash before COMMIT leaves no marker and the next open re-runs).
+///
+/// A vec0 row and its sidecar row are written and deleted TOGETHER (same
+/// transaction) on every steady-state path, so a sidecar-less vec0 row is ONLY
+/// ever produced by the step-23 recreate, which drops the edge rows and their
+/// sidecar entries but cannot reach the engine-created vec0 table. So this
+/// targets exactly the dropped edges' orphans and touches NOTHING on a healthy
+/// corpus. Node vec0 rows keep their sidecar entry, so they are never pruned —
+/// node recall is unaffected.
+///
+/// The orphans are gathered with plain scans (both proven vec0 forms — a full
+/// `SELECT rowid FROM vector_default` and per-`rowid` `DELETE`) and diffed in
+/// Rust, rather than relying on a compound `DELETE ... WHERE rowid NOT IN (...)`
+/// over the virtual table.
+fn prune_orphaned_edge_vectors(connection: &Connection) -> rusqlite::Result<()> {
+    connection.execute_batch("BEGIN IMMEDIATE")?;
+    let result = (|| {
+        let sidecar: std::collections::HashSet<i64> = {
+            let mut statement =
+                connection.prepare("SELECT write_cursor FROM _fathomdb_vector_rows")?;
+            let rows = statement.query_map([], |row| row.get::<_, i64>(0))?;
+            let mut set = std::collections::HashSet::new();
+            for r in rows {
+                set.insert(r?);
+            }
+            set
+        };
+        let vec_rowids: Vec<i64> = {
+            let mut statement = connection.prepare("SELECT rowid FROM vector_default")?;
+            let rows = statement.query_map([], |row| row.get::<_, i64>(0))?;
+            let mut out = Vec::new();
+            for r in rows {
+                out.push(r?);
+            }
+            out
+        };
+        for rowid in vec_rowids {
+            if !sidecar.contains(&rowid) {
+                // vec0 rowid IS the canonical write_cursor; delete by rowid (the
+                // proven vec0 delete form, as `prune_edge_projection_shadows`).
+                connection.execute("DELETE FROM vector_default WHERE rowid = ?1", [rowid])?;
+            }
+        }
+        connection.execute(
+            "INSERT INTO _fathomdb_open_state(key, value) VALUES(?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![EDGE_VECTOR_PRUNE_MARKER_KEY, "1"],
+        )?;
+        Ok(())
+    })();
+    match result {
+        Ok(()) => connection.execute_batch("COMMIT"),
+        Err(err) => {
+            let _ = connection.execute_batch("ROLLBACK");
+            Err(err)
+        }
     }
 }
 

@@ -27,7 +27,7 @@
 //!
 //! Assertions are on RAW `vector_default` / `_fathomdb_vector_rows` contents (the
 //! property is at-rest): the orphaned edge vec0 row is gone AND the node vec0 row
-//! + its sidecar survive (proving the prune is scoped to orphans, not node
+//! plus its sidecar survive (proving the prune is scoped to orphans, not node
 //! recall).
 
 use std::sync::Arc;
