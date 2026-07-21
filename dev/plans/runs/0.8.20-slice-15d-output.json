@@ -321,6 +321,88 @@
     "rust_md_matches_reexport_list": true,
     "blockers": []
   },
+  "fix-5": {
+    "title": "codex §9 [P2]x2 (one class) — the new configure_projections bindings skipped the AC-068 FFI-string gate on ProjectionSpec string fields",
+    "head_sha": "7a345fa0",
+    "on_branch_baseline": "7a1002bd (Slice 15d fix-4 closure)",
+    "finding": "AC-068a/b requires every string crossing the FFI to be rejected (via validate_ffi_string) BEFORE the writer transaction opens. Both configure_projections binding paths copied the ProjectionSpec string fields into the Rust spec WITHOUT the gate: napi src/rust/crates/fathomdb-napi/src/lib.rs ProjectionSpec::to_rust (:504-508) and pyo3 src/rust/crates/fathomdb-py/src/lib.rs PyProjectionSpec::to_rust (:889-895). A NUL in fts_tokenizer / vector_embedder was persisted in _fathomdb_projection_registry (the two named P2s); a NUL in name / drop surfaced only the engine-layer InvalidArgument (fix-4), not the AC-068 binding-layer WriteValidationError required before the writer txn opens.",
+    "commits": [
+      { "sha": "9ca1d17c", "kind": "RED", "summary": "test(0.8.20): RED — Slice 15d fix-5 FFI validation on projection spec (4 Python + 4 TS binding tests)" },
+      { "sha": "7a345fa0", "kind": "GREEN", "summary": "fix(0.8.20): GREEN — Slice 15d fix-5 validate projection spec strings at both FFI boundaries" }
+    ],
+    "the_fix": {
+      "napi": "ProjectionSpec::to_rust now runs validate_ffi_string_napi on self.name, each role string (before from_str_opt), Option fts_tokenizer, and Option vector_embedder; configure_projections validates each drop entry — all BEFORE call_engine (before the writer transaction).",
+      "pyo3": "PyProjectionSpec::to_rust now runs validate_ffi_string_py on self.name, each role string, Option fts_tokenizer, and Option vector_embedder; the configure_projections pyfunction validates each drop entry — all BEFORE call_engine.",
+      "strings_now_validated_each_binding": ["ProjectionSpec.name", "each ProjectionSpec.role string", "ProjectionSpec.fts_tokenizer (when present)", "ProjectionSpec.vector_embedder (when present)", "each drop-list entry"],
+      "defense_in_depth": "Engine-side is_valid_attribute_name (fix-4) still rejects unsafe projection NAMES; fix-5 is the BINDING-layer gate that refuses the FULL spec string set BEFORE the writer transaction opens (AC-068) — both layers intact, no engine-side change.",
+      "no_new_error_variant": "Reuses the existing WRITE_VALIDATION typed error (WriteValidationError / FDB_WRITE_VALIDATION) already mapped in both bindings — no new variant, no governed-surface NAME change."
+    },
+    "red_evidence": {
+      "python": {
+        "command": "pytest src/python/tests/test_slice15d_projection_registry.py -k ffi_nul (fresh clone @9ca1d17c, own venv, pip install -e 'src/python[dev]')",
+        "result": "4 failed, 6 deselected",
+        "test_ffi_nul_in_projection_name_rejected_at_binding": "E   _fathomdb.InvalidArgumentError: invalid projection attribute name: \"a\\0b\"  (engine-layer InvalidArgument, NOT the AC-068 binding WriteValidationError)",
+        "test_ffi_nul_in_fts_tokenizer_rejected_at_binding": "E   Failed: DID NOT RAISE WriteValidationError  (the NUL tokenizer passed through and PERSISTED — the named P2 leak)",
+        "test_ffi_nul_in_vector_embedder_rejected_at_binding": "E   Failed: DID NOT RAISE WriteValidationError  (the NUL embedder passed through and PERSISTED — the named P2 leak)",
+        "test_ffi_nul_in_drop_entry_rejected_at_binding": "E   _fathomdb.InvalidArgumentError: invalid projection drop name: \"a\\0b\"  (engine-layer InvalidArgument, NOT the AC-068 binding WriteValidationError)"
+      },
+      "typescript": {
+        "command": "node --test dist/tests/slice15d-projection-registry.test.js (fresh clone @9ca1d17c, npm build:native:debug + tsc)",
+        "result": "4 of the fix-5 tests failed (✖)",
+        "fix-5 NUL in projection name": "AssertionError [ERR_ASSERTION]: must be WriteValidationError (got engine InvalidArgument)",
+        "fix-5 NUL in ftsTokenizer": "AssertionError [ERR_ASSERTION]: Missing expected rejection (NUL tokenizer PERSISTED — the named P2 leak)",
+        "fix-5 NUL in vectorEmbedder": "AssertionError [ERR_ASSERTION]: Missing expected rejection (NUL embedder PERSISTED — the named P2 leak)",
+        "fix-5 NUL in drop entry": "AssertionError [ERR_ASSERTION]: must be WriteValidationError (got engine InvalidArgument)"
+      }
+    },
+    "boundary_contract_audit": {
+      "scope": "Proactively audited the NEW projection surface (configure_projections + read.projections, both bindings) against the repo-wide binding contracts. No expansion into unrelated verbs.",
+      "ffi_string_validation": "CLOSED by fix-5 for NUL on BOTH bindings, typed as WriteValidationError before the writer txn. read.projections takes NO caller strings (only the engine handle) → nothing to validate; it returns engine-owned specs.",
+      "ac_068b_surrogate_residual": "Lone UTF-16 surrogate (AC-068b) is REJECTED and NEVER persisted on BOTH bindings (verified: _fathomdb_projection_registry COUNT(*)=0). napi types it as WriteValidationError via the same validate_ffi_string_napi 0xD800..=0xDFFF range check used on body/kind/filter. pyo3 rejects it EARLIER — at the PyProjectionSpec pyclass str->String extraction (PyO3's own UTF-8 decoder raises builtins.UnicodeEncodeError) BEFORE to_rust runs, so the safety invariant (reject-before-writer-txn, no persistence) holds but the error CLASS is Python's UnicodeEncodeError, not the typed WriteValidationError that search's manual extract_validated_str yields. Making the pyo3 surrogate TYPED would require replacing PyProjectionSpec's auto-extracting #[new]/from_py_object String fields with Bound<PyAny> manual extraction — a pyclass extraction-model change beyond 'validate the strings that reach the spec'. Left as an explicit, flagged residual (NOT a leak): the named findings + the realistic NUL case are fully typed on both bindings; surrogate is safe on both. Recommend a follow-up ONLY if the reviewer wants surrogate error-class parity on the pyo3 input pyclass.",
+      "error_mapping": "CONFORMANT — configure_projections / read_projections route through call_engine → engine_error_to_napi / the pyo3 mapper (no catch-all arm); ProjectionDestructiveError is typed + mapped (fix-3). No drift.",
+      "argument_validation": "CONFORMANT — role strings are validated against the enum (from_str_opt → InvalidArgument) AND now FFI-validated. No id/int fields on the projection surface, so the negative-id checked_ids_napi / _validate_id_list guard is N/A. specs / drop lists have no count contract that other verbs impose.",
+      "before_writer_txn_ordering": "CONFIRMED — in BOTH bindings the spec + drop validation runs synchronously before call_engine (which opens the writer transaction), satisfying AC-068's no-row-written invariant."
+    },
+    "gates": {
+      "cargo_clippy_workspace_all_targets": { "exit": 0 },
+      "cargo_check_workspace_all_targets": { "exit": 0 },
+      "cargo_test_engine_schema": {
+        "exit": 0,
+        "passed": 604,
+        "failed": 0,
+        "ignored": 13,
+        "baseline": "604 passed / 0 failed / 13 ignored (pre-fix-5)",
+        "note": "--test-threads=1, explicit 1800000ms timeout; aggregate summed from every `test result:` line via awk (real exit 0). UNCHANGED — fix-5's net-new tests are binding-layer Python/TS, not Rust engine/schema tests."
+      },
+      "ac_041_recovery_denylist": { "exit": 0, "note": "fathomdb governed_surface (3) / no_recovery_surface (1) pass; t_074_recovery_denylist_absent_from_governed_surface ok. recovery_denylist unchanged (five names); no governed-surface NAME change (reused WriteValidationError)." },
+      "python_execution_fresh_clone": {
+        "exit": 0,
+        "full_suite": "819 passed / 12 skipped (pytest src/python/tests) — real exit 0",
+        "projection_file": "10 passed (6 original + 4 net-new fix-5 tests) in test_slice15d_projection_registry.py",
+        "ffi_safety_file": "9 passed / 1 skipped (requires_test_hooks) in test_ffi_safety.py",
+        "note": "fresh git clone @7a345fa0 + own .venv + pip install -e 'src/python[dev]' (maturin builds pyo3). NEVER the shared .venv, NEVER from the worktree."
+      },
+      "typescript_execution_fresh_clone": {
+        "exit": 0,
+        "full_suite": "211 pass / 0 fail / 0 skipped (node --test dist/tests/*.test.js) — real exit 0",
+        "projection_file": "10 pass (6 original + 4 net-new fix-5 tests) in slice15d-projection-registry.test.js",
+        "tsc": { "exit": 0, "note": "npx tsc -p tsconfig.json — no type errors" },
+        "note": "same fresh clone @7a345fa0; npm run build:native:debug (napi --platform, test-hooks,default-embedder) + tsc + node --test."
+      },
+      "python_typecheck_pyright": {
+        "exit": 1,
+        "errors": 7,
+        "projection_surface_errors": 0,
+        "baseline": "7 pre-existing (fix-3 baseline: engine.py 531/535/539/652/653, graph.py:153, test_vector_equivalence_probe.py:32)",
+        "note": "pyright -p src/python in the fresh clone (native module built → errors, not stub warnings). Exit 1 is ONLY the 7 pre-existing non-projection baseline errors; ZERO new errors, ZERO projection-surface errors. No regression of fix-3's clean projection surface."
+      },
+      "eu7": { "note": "ZERO eu7 runs." },
+      "agent_lint_md": { "note": "NOT cited (TC-37 vacuous-in-worktree)." }
+    },
+    "binding_surface_touched": true,
+    "governed_surface": "UNCHANGED — no new verb / type / error; a tightening of the existing AC-068 FFI-string contract (WriteValidationError) applied to the projection binding surface. PROPOSED / NOT SIGNED status of Slice 15d's delta untouched; no AC minted; NOT HITL-SIGNED; recovery_denylist stays five.",
+    "blockers": []
+  },
   "blockers": [],
   "unblocks": ["Slice 20 (R-20-DR dense_readiness/flush_embeddings attaches to the vector sub-object)", "Slice 25 (R-20-SUR surrogate minting for registry-admitted governed entities)"],
   "notes_for_orchestrator": [
