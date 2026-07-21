@@ -338,5 +338,62 @@
     },
     "blockers": []
   },
+  "fix-5": {
+    "requirement_id": "TC-33",
+    "closes": "TC-44 (whole strftime-leniency class)",
+    "finding": "strftime('%s', ?) was standing in as an ISO-8601 VALIDATOR, but SQLite's date parser is MORE LENIENT than the HITL-ratified hard-reject-ISO-8601 contract. Two confirmed leaks (both non-NULL, both the WRONG instant, both accepted before this fix): (1) WIRE boundary — iso8601_to_epoch_seconds (lib.rs :1823-1830) let bare numeric strings through: strftime('%s','2451545.0')=946728000 (SQLite reads the bare number as a Julian DAY = year 2000); strftime('%s','0') resolves to a pre-year-0000 epoch — so '0'/'2451545.0' were stored as unrelated instants despite the hard-reject contract. (2) GOVERNED i64 boundary — reject_unrenderable_edge_epoch (lib.rs :1887-1906) guarded on RENDERABILITY (does epoch_seconds_to_iso8601 return Some?), but strftime(...,'unixepoch') renders a below-MIN epoch like -62167219201 to a NON-NULL string '-001-12-31T23:59:59Z', so pre-year-0000 values (outside declared years 0000..=9999) slipped through.",
+    "safety_context": "Neither leak produces a NULL t_invalid, so the safety-critical 'no resurrection via NULL' property (HITL Note 1 / P3) was already intact. fix-5 is a correctness/contract-completion fix, NOT a safety fix — and it opens NO NULL path (verified: shape-gate rejection returns None which triggers the existing hard-reject; range-check rejection returns a typed InvalidArgument; NULL/absent still maps to Ok(None) = 'still valid').",
+    "governed_surface_status": "PROPOSED / NOT SIGNED — no AC minted; tracked by requirement TC-33 + test names. NEVER HITL-SIGNED.",
+    "validator_choice": "HAND-ROLLED byte/char shape validator, NO new dependency. Verified: the workspace has NO chrono/time crate, and `regex` v1.12.3 is present ONLY as a transitive dependency (via jsonschema -> fancy-regex/regex-automata); it is NOT a direct dependency of fathomdb-engine (confirmed against crates/fathomdb-engine/Cargo.toml — deps are fathomdb-embedder/-api/-query/-schema, rusqlite, jsonschema, serde_json, sha2, sqlite-vec). Adding regex to [dependencies] would be a NEW direct dep, violating the 'no new dependency' constraint — so is_iso8601_shape() is hand-rolled on ASCII bytes (u8::is_ascii_digit, which also rejects non-ASCII digit look-alikes).",
+    "fix_a_wire_shape_gate": "Added fn is_iso8601_shape(&str)->bool and call it FIRST in iso8601_to_epoch_seconds (returns None -> existing hard-reject fires). Accepts EXACTLY: YYYY-MM-DD (date only); optionally (T | single space) HH:MM:SS; optional .fff fractional; optional zone Z | ±HH:MM | ±HHMM. Rejects bare numbers, partial junk, whitespace, non-ASCII digits, trailing junk. The gate does NOT replace SQLite's calendar math: a shape-valid-but-impossible date (2025-13-45T00:00:00Z) still None-s out via strftime -> hard-reject (kept).",
+    "fix_b_governed_range_check": "reject_unrenderable_edge_epoch now rejects any non-null t_valid/t_invalid outside the inclusive numeric range [MIN_RENDERABLE_EPOCH, MAX_RENDERABLE_EPOCH], not renderability. Connection param dropped (predicate is now pure integer arithmetic); both call sites (validate_write Edge branch) updated. Typed EngineError::InvalidArgument still names the value + the bound.",
+    "min_max_renderable_epoch_confirmed": {
+      "MIN_RENDERABLE_EPOCH": -62167219200,
+      "MAX_RENDERABLE_EPOCH": 253402300799,
+      "verification": "Verified DIRECTLY against SQLite (bundled parser semantics): strftime('%Y-%m-%dT%H:%M:%SZ', -62167219200, 'unixepoch') = '0000-01-01T00:00:00Z' EXACTLY; strftime(..., 253402300799, ...) = '9999-12-31T23:59:59Z' EXACTLY; MIN-1 (-62167219201) renders NON-NULL '-001-12-31T23:59:59Z' (the leak) and MAX+1 (253402300800) renders NULL. fix-1 set these consts correctly (years 0000..=9999); NO correction needed."
+    },
+    "red_set": "tc33_fix5_iso8601_shape_gate.rs — 8 tests: WIRE hard-reject via the fixture-keyed stub extractor (raw `SELECT count(*) FROM canonical_edges` == 0, not search): julian '2451545.0', bare '0'. GOVERNED i64 write of t_invalid=-62167219201 rejected + zero rows. Positive controls (gate not vacuous): '2025-03-20T09:30:00Z' (1742463000), '2025-03-20T09:30:00+00:00' (1742463000), date-only '2025-03-20' (1742428800), space-separated '2025-03-20 09:30:00' (1742463000) all still ACCEPTED at the correct epoch; MIN_RENDERABLE_EPOCH still storable. Added 6 stub-harness fixtures to tests/fixtures/slice15_byo_llm/fixture_result.json (append-only, existing fixtures byte-untouched: 174 insertions / 0 deletions).",
+    "commits": [
+      {
+        "sha": "f64ccf69",
+        "kind": "RED",
+        "summary": "tc33_fix5_iso8601_shape_gate.rs + 6 fixtures. RED: 3 failed / 5 passed."
+      },
+      {
+        "sha": "895b9df0",
+        "kind": "GREEN",
+        "summary": "is_iso8601_shape() shape gate before strftime in iso8601_to_epoch_seconds; reject_unrenderable_edge_epoch numeric MIN/MAX bounds check (Connection param dropped, both call sites updated)."
+      }
+    ],
+    "head_sha": "895b9df0ccb958cb3b7c3d65134c0ceab3d16caf",
+    "red_evidence": "At f64ccf69 (`cargo test -p fathomdb-engine --test tc33_fix5_iso8601_shape_gate -- --test-threads=1`) → `test result: FAILED. 5 passed; 3 failed; 0 ignored`, exit 101. tc33_fix5_bare_zero_string_hard_rejects panicked at :86:18: 'bare numeric string \"0\" (doc-tc33-zero-tvalid) is NOT ISO-8601 and MUST hard-reject at the extractor boundary, but ingest succeeded and wrote 1 edge(s).' tc33_fix5_julian_day_string_hard_rejects panicked at :86:18 (same, \"2451545.0\", wrote 1 edge). tc33_fix5_pre_year_0000_epoch_is_rejected panicked at :214:10: '...the numeric MIN/MAX bounds check must reject it: WriteReceipt { cursor: 1, row_cursors: [1], dangling_edge_endpoints: 2 }' (the governed write SUCCEEDED). The 5 passing = the 4 positive controls (already accepted correctly) + min_renderable_epoch_is_storable — proving the RED is not vacuously failing everything. Post-fix at 895b9df0: `test result: ok. 8 passed; 0 failed`, exit 0.",
+    "gates": [
+      { "gate": "cargo clippy --workspace --all-targets", "real_exit_code": 0, "note": "0 warnings, 0 errors (re-run after cargo fmt on the committed state)." },
+      { "gate": "cargo check --workspace --all-targets", "real_exit_code": 0 },
+      {
+        "gate": "cargo test -p fathomdb-engine -p fathomdb-schema -- --test-threads=1",
+        "real_exit_code": 0,
+        "passed": 588,
+        "failed": 0,
+        "ignored": 13,
+        "note": "580 (fix-4 GREEN) + 8 new fix-5 tests = 588. 13 ignored UNCHANGED. Run to completion with an explicit 1800000 ms timeout (suite exceeds the 2-min default); real aggregate summed from `^test result:` lines (every line 'ok', 0 failed). ZERO eu7 runs; eu7_real_corpus_ac stayed #[ignore]d."
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test tc33_fix5_iso8601_shape_gate -- --test-threads=1",
+        "real_exit_code": 0,
+        "passed": 8,
+        "failed": 0
+      }
+    ],
+    "ledger": "TC-44 advanced to status=resolved via dev/agent-tools/ledgerwrite/ledgerwrite.py (seq 66, kind=observation, refs seq:64 + git:895b9df0 + plan). TC-45 NOT touched (out of scope). 'resolved' matches this ledger's established terminal convention (4 prior uses).",
+    "invariants_confirmed": {
+      "AC-041_recovery_denylist": "unchanged — {recover, restore, repair, fix, rebuild}; diff touches only iso8601_to_epoch_seconds + is_iso8601_shape + reject_unrenderable_edge_epoch + its two call sites + the new test + 6 fixtures + ledger, no recovery/verb code.",
+      "eu7": "zero runs; eu7_real_corpus_ac left #[ignore]d.",
+      "governed_surface": "PROPOSED / NOT SIGNED; no AC minted; never HITL-SIGNED.",
+      "no_null_path_opened": "verified — shape-gate miss returns None (existing hard-reject), range-check miss returns typed InvalidArgument; NULL/absent still Ok(None); no new path can write a NULL t_invalid for an invalid input.",
+      "node_edge_asymmetry": "unchanged from fix-1 — nodes still get no range guard (no node->ISO render path); the wire shape gate is on the shared iso8601_to_epoch_seconds, which only the EDGE extractor path uses (normalize_extractor_timestamp)."
+    },
+    "blockers": []
+  },
   "blockers": []
 }
