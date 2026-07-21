@@ -15,10 +15,20 @@ import { DatabaseSync } from "node:sqlite";
 
 import { Engine, read } from "../src/index.js";
 import type { ProjectionSpec, ProjectionRole } from "../src/index.js";
-import { ProjectionDestructiveError } from "../src/errors.js";
+import {
+  FathomDbError,
+  ProjectionDestructiveError,
+  WriteValidationError,
+} from "../src/errors.js";
 import { freshDbPath } from "./helpers.js";
 
 const SOURCE = "ts-test:slice15d";
+
+// Slice 15d fix-5 (AC-068a) — an embedded NUL smuggled into a ProjectionSpec /
+// drop string. JS strings are UTF-16; a NUL codepoint is representable and the
+// napi conversion accepts it, so it must be rejected at the BINDING before the
+// writer transaction opens — never persisted in `_fathomdb_projection_registry`.
+const NUL = `a${String.fromCharCode(0)}b`;
 
 function node(logicalId: string, source: string, bodyJson: string): object {
   return { kind: "doc", body: bodyJson, logicalId, sourceId: source };
@@ -43,6 +53,19 @@ function eavValues(path: string, attrName: string): string[] {
         )
         .all(attrName) as { v: string }[]
     ).map((r) => r.v);
+  } finally {
+    db.close();
+  }
+}
+
+function registryNames(path: string): string[] {
+  const db = new DatabaseSync(path);
+  try {
+    return (
+      db
+        .prepare("SELECT name AS n FROM _fathomdb_projection_registry ORDER BY name")
+        .all() as { n: string }[]
+    ).map((r) => r.n);
   } finally {
     db.close();
   }
@@ -180,6 +203,88 @@ test("destructive change requires an explicit drop", async () => {
     ]);
     assert.deepEqual(ok.dropped, ["status"]);
     assert.deepEqual([...(await read.projections(engine))[0].roles], ["filterable"]);
+  } finally {
+    await engine.close();
+  }
+});
+
+test("fix-5 NUL in projection name rejected at binding, not persisted", async () => {
+  const path = freshDbPath();
+  const engine = await Engine.open(path);
+  try {
+    await assert.rejects(
+      () => engine.configureProjections([spec(NUL, ["filterable"])]),
+      (err: unknown) => {
+        assert.ok(err instanceof WriteValidationError, "must be WriteValidationError");
+        assert.ok(err instanceof FathomDbError, "must extend FathomDbError");
+        return true;
+      },
+    );
+  } finally {
+    await engine.close();
+  }
+  assert.deepEqual(registryNames(path), [], "no projection may be persisted when a NUL is rejected");
+});
+
+test("fix-5 NUL in ftsTokenizer rejected at binding, not persisted", async () => {
+  const path = freshDbPath();
+  const engine = await Engine.open(path);
+  try {
+    await assert.rejects(
+      () =>
+        engine.configureProjections([
+          { name: "status", roles: ["searchable"], fts: true, ftsTokenizer: NUL, vector: false },
+        ]),
+      (err: unknown) => {
+        assert.ok(err instanceof WriteValidationError, "must be WriteValidationError");
+        return true;
+      },
+    );
+  } finally {
+    await engine.close();
+  }
+  assert.deepEqual(registryNames(path), [], "no projection may be persisted when a NUL is rejected");
+});
+
+test("fix-5 NUL in vectorEmbedder rejected at binding, not persisted", async () => {
+  const path = freshDbPath();
+  const engine = await Engine.open(path);
+  try {
+    await assert.rejects(
+      () =>
+        engine.configureProjections([
+          { name: "summary", roles: ["searchable"], fts: false, vector: true, vectorEmbedder: NUL },
+        ]),
+      (err: unknown) => {
+        assert.ok(err instanceof WriteValidationError, "must be WriteValidationError");
+        return true;
+      },
+    );
+  } finally {
+    await engine.close();
+  }
+  assert.deepEqual(registryNames(path), [], "no projection may be persisted when a NUL is rejected");
+});
+
+test("fix-5 NUL in drop entry rejected at binding", async () => {
+  const path = freshDbPath();
+  const engine = await Engine.open(path);
+  try {
+    // A live projection exists so the drop path is non-vacuous.
+    await engine.write([node("A", "src:a", '{"status":"open"}')]);
+    await engine.configureProjections([spec("status", ["filterable"])]);
+    await assert.rejects(
+      () => engine.configureProjections([], [NUL]),
+      (err: unknown) => {
+        assert.ok(err instanceof WriteValidationError, "must be WriteValidationError");
+        return true;
+      },
+    );
+    assert.deepEqual(
+      (await read.projections(engine)).map((s) => s.name),
+      ["status"],
+      "the refused drop must not touch the live projection",
+    );
   } finally {
     await engine.close();
   }

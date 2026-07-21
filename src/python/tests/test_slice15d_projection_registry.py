@@ -17,9 +17,19 @@ import sqlite3
 import pytest
 
 from fathomdb import Engine, ProjectionRole, ProjectionSpec, read
-from fathomdb.errors import ProjectionDestructiveError
+from fathomdb.errors import (
+    EngineError,
+    ProjectionDestructiveError,
+    WriteValidationError,
+)
 
 _SOURCE_ID = "py-test:slice15d"
+
+# Slice 15d fix-5 (AC-068a) — an embedded NUL smuggled into a ProjectionSpec /
+# drop string. Representable in a Python `str`, valid UTF-8 (so PyO3 String
+# extraction accepts it), but must be rejected at the BINDING before the writer
+# transaction opens — never persisted in `_fathomdb_projection_registry`.
+_NUL = "a\x00b"
 
 
 def _open(path: str) -> Engine:
@@ -43,6 +53,20 @@ def _eav_values(path: str, attr_name: str) -> list[str]:
                 "SELECT attr_value FROM canonical_attributes"
                 " WHERE attr_name = ? ORDER BY attr_value",
                 (attr_name,),
+            ).fetchall()
+        ]
+    finally:
+        conn.close()
+
+
+def _registry_names(path: str) -> list[str]:
+    """READ oracle over the durable registry on a CLOSED database."""
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        return [
+            r[0]
+            for r in conn.execute(
+                "SELECT name FROM _fathomdb_projection_registry ORDER BY name"
             ).fetchall()
         ]
     finally:
@@ -164,6 +188,78 @@ def test_destructive_change_requires_explicit_drop(tmp_path) -> None:
         )
         assert ok.dropped == ["status"]
         assert read.projections(engine)[0].roles == frozenset({"filterable"})
+    finally:
+        engine.close()
+
+
+def test_ffi_nul_in_projection_name_rejected_at_binding(tmp_path) -> None:
+    """fix-5 (AC-068a) — a NUL in the projection `name` is rejected at the
+    binding (WriteValidationError) and no registry row is persisted."""
+    path = str(tmp_path / "ffi_name.sqlite")
+    engine = _open(path)
+    try:
+        with pytest.raises(WriteValidationError) as exc:
+            engine.configure_projections([_spec(_NUL, {ProjectionRole.FILTERABLE})])
+        assert isinstance(exc.value, EngineError)
+    finally:
+        engine.close()
+    assert _registry_names(path) == [], "no projection may be persisted when a NUL is rejected"
+
+
+def test_ffi_nul_in_fts_tokenizer_rejected_at_binding(tmp_path) -> None:
+    """fix-5 (AC-068a) — a NUL in `fts_tokenizer` is rejected at the binding
+    before it can be persisted in `_fathomdb_projection_registry.fts_tokenizer`."""
+    path = str(tmp_path / "ffi_tok.sqlite")
+    engine = _open(path)
+    try:
+        spec = ProjectionSpec(
+            name="status",
+            roles=frozenset({ProjectionRole.SEARCHABLE}),
+            fts=True,
+            fts_tokenizer=_NUL,
+        )
+        with pytest.raises(WriteValidationError) as exc:
+            engine.configure_projections([spec])
+        assert isinstance(exc.value, EngineError)
+    finally:
+        engine.close()
+    assert _registry_names(path) == [], "no projection may be persisted when a NUL is rejected"
+
+
+def test_ffi_nul_in_vector_embedder_rejected_at_binding(tmp_path) -> None:
+    """fix-5 (AC-068a) — a NUL in `vector_embedder` is rejected at the binding
+    before it can be persisted in `_fathomdb_projection_registry.vector_embedder`."""
+    path = str(tmp_path / "ffi_emb.sqlite")
+    engine = _open(path)
+    try:
+        spec = ProjectionSpec(
+            name="summary",
+            roles=frozenset({ProjectionRole.SEARCHABLE}),
+            vector=True,
+            vector_embedder=_NUL,
+        )
+        with pytest.raises(WriteValidationError) as exc:
+            engine.configure_projections([spec])
+        assert isinstance(exc.value, EngineError)
+    finally:
+        engine.close()
+    assert _registry_names(path) == [], "no projection may be persisted when a NUL is rejected"
+
+
+def test_ffi_nul_in_drop_entry_rejected_at_binding(tmp_path) -> None:
+    """fix-5 (AC-068a) — a NUL in a `drop` list entry is rejected at the binding
+    (the drop list is a caller FFI-string vector too)."""
+    path = str(tmp_path / "ffi_drop.sqlite")
+    engine = _open(path)
+    try:
+        # A live projection exists so the drop path is non-vacuous.
+        engine.write([_node("A", "src:a", '{"status":"open"}')])
+        engine.configure_projections([_spec("status", {ProjectionRole.FILTERABLE})])
+        with pytest.raises(WriteValidationError) as exc:
+            engine.configure_projections([], drop=[_NUL])
+        assert isinstance(exc.value, EngineError)
+        # The real projection is untouched by the refused call.
+        assert {s.name for s in read.projections(engine)} == {"status"}
     finally:
         engine.close()
 
