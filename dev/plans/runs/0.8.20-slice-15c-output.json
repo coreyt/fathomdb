@@ -160,5 +160,83 @@
     "consideration_resolved": "reject_unrenderable_edge_epoch could have been made generic over nodes too, but that would widen scope past the finding and guard a non-existent failure mode. Kept edge-only. No ledger TC written (the asymmetry is captured here + in the const/fn doc-comments in code; a ledger entry was judged not warranted since no cross-session ambiguity remains).",
     "blockers": []
   },
+  "fix-2": {
+    "requirement_id": "TC-33",
+    "finding": "codex §9 P2 CONCERN — 'The patch leaves at least one retrieval path able to return expired edge bodies, so edge temporal validity is not consistently enforced across search.' TC-33 defines edge_validity_sql (lib.rs :1800-1801) as the ONE shared read predicate ('t_invalid IS NULL OR t_invalid > :now') and already applies it on the graph-traversal, graph-seeding and projection paths — but two ordinary-search paths that hydrate an edge BODY gated on `superseded_at IS NULL` ALONE, so a body-bearing edge written with `t_invalid <= now` (expired/invalidated) still surfaced its body through search(). This is the edge-search twin of the Slice 15b 'validity enforced on traversal, not on search' gap.",
+    "governed_surface_status": "PROPOSED / NOT SIGNED — no AC minted; tracked by requirement TC-33 + test names.",
+    "edge_search_paths_inspected": [
+      {
+        "site": "lib.rs edge-body FTS branch (was :9855-9861 in the task, ~:9962-:9991 at fix-2 HEAD) — `search_index_edges sei JOIN canonical_edges ce`, appended to text_results as SoftFallbackBranch::TextEdge",
+        "pre_fix": "WHERE search_index_edges MATCH ?1 AND ce.superseded_at IS NULL — validity NOT applied",
+        "disposition": "CHANGED — added edge_validity_sql(\"ce\", 2); bound view.edge_now() at ?2 (was single-param [match_expression]). This is the site codex named.",
+        "surfaces_body": true
+      },
+      {
+        "site": "lib.rs vector-projected edge-fact hydration `edge_stmt` (~:9636-:9639 pre-fix) — the VECTOR arm hydrates an edge body from canonical_edges by write_cursor when a vector_default row (kind='edge_fact') ranks in the phase-2 pool",
+        "pre_fix": "WHERE write_cursor = ?1 AND superseded_at IS NULL AND body IS NOT NULL — validity NOT applied",
+        "disposition": "CHANGED — added edge_validity_sql(\"canonical_edges\", 2); bound view.edge_now() at ?2 (was [rowid]). This is the 'at least one' beyond the named site — the vector-projected edge path the TextEdge doc-comment (:1283-1295) warns edge hits also come from. My RED test exercises BOTH arms (ordinary search() fuses vector + edge-FTS), so both had to be fixed for GREEN.",
+        "surfaces_body": true
+      },
+      {
+        "site": "lib.rs graph-seeding edge-fact FTS (~:10253-:10262) — seeds the graph arm from matched edge endpoints",
+        "pre_fix": "already `AND ce.superseded_at IS NULL{edge_validity_sql(\"ce\",3)} AND temporal_fallback=0`",
+        "disposition": "LEFT — already validity-filtered (and fallback-filtered). Confirmed, not assumed.",
+        "surfaces_body": false
+      },
+      {
+        "site": "lib.rs search_expand_in_tx Step-1 edge existence re-check (~:10987-:10990) — `SELECT 1 FROM canonical_edges WHERE write_cursor=?1 AND superseded_at IS NULL` for a TextEdge hit",
+        "pre_fix": "superseded_at only",
+        "disposition": "LEFT — deliberately. This path reads NO body (SELECT 1); it only re-confirms an already-surfaced TextEdge hit still exists before skipping BFS, and it keeps the hit's ALREADY-captured body, it does not re-retrieve one. Every TextEdge hit in `search_hits` now comes from the two paths above, both of which filter validity, so an expired edge can no longer ENTER search_hits and therefore can never reach this re-check. Adding edge_validity here would be untested defence-in-depth against a mid-query expiry window; scoped out to avoid changing an un-covered gate. The BFS proper (build_bfs_with_depth_sql, bound at :11046) already carries edge_validity via edge_now.",
+        "surfaces_body": false
+      },
+      {
+        "site": "lib.rs assemble_consolidate_cluster (~:4906-:4921) — gathers competing fact-edges for one (subject,relation) axis for consolidation",
+        "pre_fix": "from_id/kind + superseded_at only, no validity",
+        "disposition": "LEFT — not a SEARCH retrieval path. Consolidation deliberately reasons over the full active competing set (including expired edges) to decide currency; filtering by validity here would hide the very edges consolidation must adjudicate. Out of the finding's scope (no search-surfacing).",
+        "surfaces_body": false
+      }
+    ],
+    "now_seam_note": "Both fixes bind the frozen `view.edge_now()` (a resolved i64 stored in FrozenView at freeze time) into a positional parameter — never `datetime('now')`/`strftime('%s','now')` (the :9161 no-inline-clock rule). edge_now is ALWAYS present (unlike node validity's Option<i64> now_param, which is None under existence-relaxation), so the edge-validity conjunct is unconditional: an edge invalidated in the past stays excluded even when the caller relaxes NODE existence. This matches the FrozenView::edge_now doc contract and the graph-seed/traversal call sites.",
+    "byte_stability_note": "NODE search hydration (text/BM25F + vector node branch) is byte-unchanged — only the edge-body SELECTs gained a conjunct. On any corpus whose edges never set t_invalid, `t_invalid IS NULL` is TRUE for every edge, so the row-set, bm25 ordering and scores of the edge arm are also unchanged; only edges explicitly invalidated in the past are now dropped.",
+    "commits": [
+      {
+        "sha": "d54ee2cd",
+        "kind": "RED",
+        "summary": "tests/tc33_fix2_edge_validity_on_search.rs — writes 3 body-bearing edges sharing FTS token 'tc33edgevalidity' (one t_invalid in the PAST, one t_invalid NULL, one t_invalid in the FUTURE), polls ordinary search() until the whole batch is projected AND the valid edge is present, then asserts the expired edge body is ABSENT while both still-valid edge bodies are PRESENT. Asserts on actual search() results."
+      },
+      {
+        "sha": "d0ca54da",
+        "kind": "GREEN",
+        "summary": "lib.rs — apply edge_validity_sql on the edge-body FTS branch and the vector-projected edge-fact hydration; bind view.edge_now() at ?2 on both. See edge_search_paths_inspected."
+      }
+    ],
+    "head_sha": "d0ca54da",
+    "red_evidence": "At d54ee2cd (RED test on top of unfixed lib.rs — captured by stashing the fix, running the test, then restoring): `cargo test -p fathomdb-engine --test tc33_fix2_edge_validity_on_search -- --test-threads=1` → `test result: FAILED. 0 passed; 1 failed`. Panic: `TC-33 fix-2: an EXPIRED edge (t_invalid in the past) must NOT surface its body through ordinary search — edge validity is not enforced on the search read path; got: [\"tc33edgevalidity expiredfact alpha\", \"tc33edgevalidity validnullfact beta\", \"tc33edgevalidity validfuturefact gamma\"]`. Exit 101. Crucially the TWO sibling assertions (validnullfact + validfuturefact must be present) PASSED before the panic — the failure is ONLY the expired-absent assertion, proving the fix is not a vacuous exclude-everything. (The panic line was reported as :130 against the pre-`cargo fmt` test source; the committed test is fmt-normalised — same three assertions, same logic. Post-fix at d0ca54da: `test result: ok. 1 passed; 0 failed`, exit 0.)",
+    "gates": [
+      { "gate": "cargo clippy --workspace --all-targets", "real_exit_code": 0, "note": "0 warnings, 0 errors." },
+      { "gate": "cargo check --workspace --all-targets", "real_exit_code": 0 },
+      {
+        "gate": "cargo test -p fathomdb-engine -p fathomdb-schema -- --test-threads=1",
+        "real_exit_code": 0,
+        "passed": 575,
+        "failed": 0,
+        "ignored": 13,
+        "note": "574 (fix-1 GREEN) + 1 new fix-2 test = 575. 13 ignored UNCHANGED from fix-1. eu7_real_corpus_ac stayed #[ignore]d / feature-gated (its test binary compiled 0 tests without --features default-embedder) — ZERO eu7 runs. Ignored set: _lock_acquire_probe_entry, _power_cut_victim_entry, ac_034c_os_crash_zero_committed_tx_loss, ac_020_concurrent_only, ac_020_sequential_only, ac_a3_counters_concurrent, ac_a3_explain_query_plan, ac_a3_threadsafe_and_compile_options, g3_5_cache_pressure_telemetry, child_fd_leak_open_close, child_open_and_close, child_open_close_print_after_close, child_second_open_locked_with_pending_vector."
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test tc33_fix2_edge_validity_on_search -- --test-threads=1",
+        "real_exit_code": 0,
+        "passed": 1,
+        "failed": 0
+      }
+    ],
+    "invariants_confirmed": {
+      "AC-041_recovery_denylist": "unchanged — {recover, restore, repair, fix, rebuild}; diff touches only the two edge-search SELECTs and the new test, no recovery/verb code.",
+      "eu7": "zero runs; eu7_real_corpus_ac left #[ignore]d/feature-gated.",
+      "node_search_byte_stability": "untouched — node text/vector hydration SELECTs are unchanged; only edge-body reads gained the conjunct.",
+      "inline_clock_rule_engine_9161": "honoured — edge :now is the bound view.edge_now(); no datetime('now')/strftime('%s','now') introduced."
+    },
+    "blockers": []
+  },
   "blockers": []
 }
