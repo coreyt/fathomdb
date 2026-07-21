@@ -512,6 +512,168 @@ fn erase_source_reaches_attribute_projections() {
 }
 
 // ===========================================================================
+// Slice 15d fix-1 — codex §9 [P2] correctness findings
+// ===========================================================================
+
+/// **fix-1 finding 1 [P2].** Non-string JSON scalar attribute values must
+/// project. A JSON number and a JSON bool are common filterable inputs; the
+/// original single-attribute projector read the extraction as `Option<String>`
+/// and silently dropped any non-string (the type conversion failed and
+/// `.unwrap_or(None)` treated it as absent), so a `score`/`flag` never populated
+/// `canonical_attributes` / `property_search_index`. Asserted on the RAW tables
+/// (property is at rest). Includes a string control so the test is non-vacuous.
+#[test]
+fn scalar_json_attributes_project_number_bool_and_string() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "scalars");
+    let opened = Engine::open(path.clone()).unwrap();
+    let engine = &opened.engine;
+
+    engine
+        .configure_projections(
+            &[
+                // number, searchable so we also exercise property-FTS on a number.
+                spec(
+                    "score",
+                    &[ProjectionRole::Filterable, ProjectionRole::Searchable],
+                    true,
+                    false,
+                ),
+                spec("flag", &[ProjectionRole::Filterable], false, false),
+                spec("label", &[ProjectionRole::Filterable], false, false),
+            ],
+            &[],
+        )
+        .unwrap();
+
+    // One node carrying a JSON number, a JSON bool, and a JSON string.
+    engine.write(&[node("N", "src:n", r#"{"score":3,"flag":true,"label":"open"}"#)]).unwrap();
+
+    opened.engine.drain(5_000).unwrap();
+    opened.engine.close().unwrap();
+
+    // String control (proves the test is non-vacuous — this already worked).
+    assert_eq!(
+        eav_values(&path, "label"),
+        vec!["open".to_string()],
+        "string control still projects"
+    );
+    // Finding 1: a JSON NUMBER must project (was silently dropped).
+    assert_eq!(
+        eav_values(&path, "score"),
+        vec!["3".to_string()],
+        "a JSON number attribute must project into canonical_attributes"
+    );
+    // Finding 1: a JSON BOOL must project (was silently dropped).
+    assert_eq!(
+        eav_values(&path, "flag"),
+        vec!["true".to_string()],
+        "a JSON bool attribute must project into canonical_attributes"
+    );
+    // Equality filter over the projected number matches the owning cursor.
+    assert_eq!(eav_filter(&path, "score", "3"), vec![1]);
+    assert_eq!(eav_filter(&path, "flag", "true"), vec![1]);
+    // The searchable number is in the property-FTS shadow too.
+    assert_eq!(
+        property_fts_match(&path, "score", "3"),
+        vec![1],
+        "a searchable JSON number must populate property_search_index"
+    );
+}
+
+/// **fix-1 finding 2 [P2].** Superseded attribute-projection rows must be purged
+/// on supersession, so the at-rest projection is active-only. Rewriting a node
+/// with an existing `logical_id` marks the OLD canonical row `superseded_at` but
+/// (pre-fix) never removed its `canonical_attributes` / `property_search_index`
+/// rows, so a same-session property filter / property-FTS saw BOTH the stale and
+/// the current value. Asserted on the RAW tables: zero rows reference the
+/// superseded cursor.
+#[test]
+fn supersession_purges_stale_attribute_projection_rows() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "supersede_purge");
+    let opened = Engine::open(path.clone()).unwrap();
+    let engine = &opened.engine;
+
+    engine
+        .configure_projections(
+            &[spec(
+                "status",
+                &[ProjectionRole::Filterable, ProjectionRole::Searchable],
+                true,
+                false,
+            )],
+            &[],
+        )
+        .unwrap();
+
+    // Write L=open, then REWRITE the same logical_id L=closed (supersedes).
+    engine.write(&[node("L", "src:l", r#"{"status":"open"}"#)]).unwrap();
+    engine.write(&[node("L", "src:l", r#"{"status":"closed"}"#)]).unwrap();
+
+    opened.engine.drain(5_000).unwrap();
+    opened.engine.close().unwrap();
+
+    let conn = ro(&path);
+    // Identify the superseded and active cursors from canonical state (robust to
+    // cursor numbering).
+    let superseded_cursor: i64 = conn
+        .query_row(
+            "SELECT write_cursor FROM canonical_nodes \
+             WHERE logical_id = 'L' AND superseded_at IS NOT NULL",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let active_cursor: i64 = conn
+        .query_row(
+            "SELECT write_cursor FROM canonical_nodes \
+             WHERE logical_id = 'L' AND superseded_at IS NULL AND state = 'active'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+
+    // The active row shows only the current value.
+    assert_eq!(
+        eav_values(&path, "status"),
+        vec!["closed".to_string()],
+        "only the active value must survive at rest"
+    );
+    // ZERO rows reference the superseded cursor in EITHER projected table.
+    let stale_eav: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM canonical_attributes WHERE write_cursor = ?1",
+            [superseded_cursor],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(stale_eav, 0, "the superseded cursor's EAV rows must be purged");
+    let stale_fts: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM property_search_index WHERE write_cursor = ?1",
+            [superseded_cursor],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(stale_fts, 0, "the superseded cursor's property-FTS rows must be purged");
+
+    // Property filter / property-FTS return ONLY the active value.
+    assert_eq!(
+        eav_filter(&path, "status", "open"),
+        Vec::<i64>::new(),
+        "the stale 'open' value must not filter-match after supersession"
+    );
+    assert_eq!(eav_filter(&path, "status", "closed"), vec![active_cursor]);
+    assert_eq!(
+        property_fts_match(&path, "status", "open"),
+        Vec::<i64>::new(),
+        "the stale 'open' property-FTS row must not match after supersession"
+    );
+    assert_eq!(property_fts_match(&path, "status", "closed"), vec![active_cursor]);
+}
+
+// ===========================================================================
 // R-20-PR — boot re-derive (crash-safe + idempotent)
 // ===========================================================================
 
