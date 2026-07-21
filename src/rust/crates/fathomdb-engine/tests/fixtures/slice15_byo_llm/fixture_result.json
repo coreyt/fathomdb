@@ -68,7 +68,9 @@
       {
         "name": "Carol",
         "type": "person",
-        "aliases": ["C. Smith"],
+        "aliases": [
+          "C. Smith"
+        ],
         "source_doc_id": "doc-multi"
       },
       {
@@ -92,7 +94,7 @@
         "body": "Carol leads DataCo",
         "t_valid": null,
         "t_invalid": null,
-        "confidence": 0.90,
+        "confidence": 0.9,
         "source_doc_id": "doc-multi"
       },
       {
@@ -115,6 +117,217 @@
       {
         "kind": "no_facts",
         "source_doc_id": "doc-nofacts"
+      }
+    ]
+  },
+  "doc-tc33-bad-tvalid": {
+    "entities": [
+      {
+        "name": "Dana",
+        "type": "person",
+        "aliases": [],
+        "source_doc_id": "doc-tc33-bad-tvalid"
+      },
+      {
+        "name": "Globex",
+        "type": "organization",
+        "aliases": [],
+        "source_doc_id": "doc-tc33-bad-tvalid"
+      }
+    ],
+    "edges": [
+      {
+        "from_entity": "Dana",
+        "relation": "works_for",
+        "to_entity": "Globex",
+        "body": "Dana works_for Globex",
+        "t_valid": "not a date",
+        "t_invalid": null,
+        "confidence": 0.9,
+        "source_doc_id": "doc-tc33-bad-tvalid"
+      }
+    ],
+    "warnings": []
+  },
+  "doc-tc33-bad-tinvalid": {
+    "entities": [
+      {
+        "name": "Dana",
+        "type": "person",
+        "aliases": [],
+        "source_doc_id": "doc-tc33-bad-tinvalid"
+      },
+      {
+        "name": "Globex",
+        "type": "organization",
+        "aliases": [],
+        "source_doc_id": "doc-tc33-bad-tinvalid"
+      }
+    ],
+    "edges": [
+      {
+        "from_entity": "Dana",
+        "relation": "works_for",
+        "to_entity": "Globex",
+        "body": "Dana works_for Globex",
+        "t_valid": null,
+        "t_invalid": "yesterday sometime",
+        "confidence": 0.9,
+        "source_doc_id": "doc-tc33-bad-tinvalid"
+      }
+    ],
+    "warnings": []
+  },
+  "doc-tc33-empty-tvalid": {
+    "entities": [
+      {
+        "name": "Dana",
+        "type": "person",
+        "aliases": [],
+        "source_doc_id": "doc-tc33-empty-tvalid"
+      },
+      {
+        "name": "Globex",
+        "type": "organization",
+        "aliases": [],
+        "source_doc_id": "doc-tc33-empty-tvalid"
+      }
+    ],
+    "edges": [
+      {
+        "from_entity": "Dana",
+        "relation": "works_for",
+        "to_entity": "Globex",
+        "body": "Dana works_for Globex",
+        "t_valid": "",
+        "t_invalid": null,
+        "confidence": 0.9,
+        "source_doc_id": "doc-tc33-empty-tvalid"
+      }
+    ],
+    "warnings": []
+  },
+  "doc-tc33-numeric-tinvalid": {
+    "entities": [
+      {
+        "name": "Dana",
+        "type": "person",
+        "aliases": [],
+        "source_doc_id": "doc-tc33-numeric-tinvalid"
+      },
+      {
+        "name": "Globex",
+        "type": "organization",
+        "aliases": [],
+        "source_doc_id": "doc-tc33-numeric-tinvalid"
+      }
+    ],
+    "edges": [
+      {
+        "from_entity": "Dana",
+        "relation": "works_for",
+        "to_entity": "Globex",
+        "body": "Dana works_for Globex",
+        "t_valid": null,
+        "t_invalid": 1710000000,
+        "confidence": 0.9,
+        "source_doc_id": "doc-tc33-numeric-tinvalid"
+      }
+    ],
+    "warnings": []
+  },
+  "doc-tc33-bool-tvalid": {
+    "entities": [
+      {
+        "name": "Dana",
+        "type": "person",
+        "aliases": [],
+        "source_doc_id": "doc-tc33-bool-tvalid"
+      },
+      {
+        "name": "Globex",
+        "type": "organization",
+        "aliases": [],
+        "source_doc_id": "doc-tc33-bool-tvalid"
+      }
+    ],
+    "edges": [
+      {
+        "from_entity": "Dana",
+        "relation": "works_for",
+        "to_entity": "Globex",
+        "body": "Dana works_for Globex",
+        "t_valid": true,
+        "t_invalid": null,
+        "confidence": 0.9,
+        "source_doc_id": "doc-tc33-bool-tvalid"
+      }
+    ],
+    "warnings": []
+  },
+  "doc-tc33-object-tvalid": {
+    "entities": [
+      {
+        "name": "Dana",
+        "type": "person",
+        "aliases": [],
+        "source_doc_id": "doc-tc33-object-tvalid"
+      },
+      {
+        "name": "Globex",
+        "type": "organization",
+        "aliases": [],
+        "source_doc_id": "doc-tc33-object-tvalid"
+      }
+    ],
+    "edges": [
+      {
+        "from_entity": "Dana",
+        "relation": "works_for",
+        "to_entity": "Globex",
+        "body": "Dana works_for Globex",
+        "t_valid": {
+          "iso": "2020-01-01T00:00:00Z"
+        },
+        "t_invalid": null,
+        "confidence": 0.9,
+        "source_doc_id": "doc-tc33-object-tvalid"
+      }
+    ],
+    "warnings": []
+  },
+  "doc-tc33-fallback-tzform": {
+    "entities": [
+      {
+        "name": "Erin",
+        "type": "person",
+        "aliases": [],
+        "source_doc_id": "doc-tc33-fallback-tzform"
+      },
+      {
+        "name": "Initech",
+        "type": "organization",
+        "aliases": [],
+        "source_doc_id": "doc-tc33-fallback-tzform"
+      }
+    ],
+    "edges": [
+      {
+        "from_entity": "Erin",
+        "relation": "works_for",
+        "to_entity": "Initech",
+        "body": "Erin works_for Initech",
+        "t_valid": "2025-03-20T09:30:00+00:00",
+        "t_invalid": null,
+        "confidence": 0.9,
+        "source_doc_id": "doc-tc33-fallback-tzform"
+      }
+    ],
+    "warnings": [
+      {
+        "kind": "temporal_fallback",
+        "substituted_t_valid": "2025-03-20T09:30:00Z",
+        "source_doc_id": "doc-tc33-fallback-tzform"
       }
     ]
   }
