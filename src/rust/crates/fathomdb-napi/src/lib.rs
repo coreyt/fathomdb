@@ -488,8 +488,19 @@ impl ProjectionSpec {
     }
 
     fn to_rust(&self) -> Result<RustProjectionSpec> {
+        // AC-068a/b — reject every string crossing the FFI into the spec BEFORE
+        // the engine (writer transaction) is reached. Mirrors the per-string
+        // gate applied at every other napi call site (e.g. `:1141`).
+        validate_ffi_string_napi(&self.name)?;
+        if let Some(tokenizer) = &self.fts_tokenizer {
+            validate_ffi_string_napi(tokenizer)?;
+        }
+        if let Some(embedder) = &self.vector_embedder {
+            validate_ffi_string_napi(embedder)?;
+        }
         let mut roles = std::collections::BTreeSet::new();
         for r in &self.roles {
+            validate_ffi_string_napi(r)?;
             let role = RustProjectionRole::from_str_opt(r).ok_or_else(|| {
                 typed_error(
                     CODE_INVALID_ARGUMENT,
@@ -1270,6 +1281,11 @@ impl Engine {
         let rust_specs: Vec<RustProjectionSpec> =
             specs.iter().map(ProjectionSpec::to_rust).collect::<Result<_>>()?;
         let drop = drop.unwrap_or_default();
+        // AC-068a/b — the `drop` list is a caller-supplied FFI-string vector too;
+        // validate each entry before the engine call, like the spec strings.
+        for name in &drop {
+            validate_ffi_string_napi(name)?;
+        }
         let engine = Arc::clone(&self.inner);
         let delta = call_engine(move || engine.configure_projections(&rust_specs, &drop)).await?;
         Ok(ProjectionDelta::from_rust(&delta))

@@ -877,8 +877,19 @@ impl PyProjectionSpec {
     }
 
     fn to_rust(&self) -> PyResult<RustProjectionSpec> {
+        // AC-068a/b — reject every string crossing the FFI into the spec BEFORE
+        // the engine (writer transaction) is reached. Mirrors the per-string
+        // gate applied at every other pyo3 call site (e.g. `validate_ffi_string_py`).
+        validate_ffi_string_py(&self.name)?;
+        if let Some(tokenizer) = &self.fts_tokenizer {
+            validate_ffi_string_py(tokenizer)?;
+        }
+        if let Some(embedder) = &self.vector_embedder {
+            validate_ffi_string_py(embedder)?;
+        }
         let mut roles = std::collections::BTreeSet::new();
         for r in &self.roles {
+            validate_ffi_string_py(r)?;
             let role = RustProjectionRole::from_str_opt(r).ok_or_else(|| {
                 InvalidArgumentError::new_err(format!(
                     "unknown projection role {r:?}: expected filterable/rankable/searchable"
@@ -1617,6 +1628,11 @@ fn configure_projections(
     let rust_specs: Vec<RustProjectionSpec> =
         specs.iter().map(PyProjectionSpec::to_rust).collect::<PyResult<_>>()?;
     let drop = drop.unwrap_or_default();
+    // AC-068a/b — the `drop` list is a caller-supplied FFI-string vector too;
+    // validate each entry before the engine call, like the spec strings.
+    for name in &drop {
+        validate_ffi_string_py(name)?;
+    }
     let inner = Arc::clone(&engine.inner);
     let delta = call_engine(py, move || inner.configure_projections(&rust_specs, &drop))?;
     Ok(PyProjectionDelta::from_rust(&delta))
