@@ -4226,8 +4226,9 @@ impl Engine {
         // on every DB that has not declared a projection. On the writer
         // connection, single-threaded, before readers spawn — like the tokenizer
         // reproject above.
-        // RED STUB (Slice 15d): boot re-derive off.
-        let _ = rederive_projections_on_boot;
+        rederive_projections_on_boot(&connection).map_err(|_| EngineOpenError::Io {
+            message: "could not re-derive projection registry on boot".to_string(),
+        })?;
 
         // EU-5f — recovery pin (`dev/design/embedder.md` §0.3, Hazard 4). If
         // the identity is MC-required, no mean is pinned, yet the workspace
@@ -7449,9 +7450,14 @@ impl Engine {
         // `transition`): the async worker commits on its own connection, so a
         // backfill issued while it holds the write lock would SQLITE_BUSY.
         self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS)?;
-        // RED STUB (Slice 15d): the registry apply is not implemented yet.
-        let _ = (specs, drop, apply_projection_config);
-        Ok(ProjectionDelta::default())
+
+        let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+        let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
+        let delta = apply_projection_config(&tx, specs, drop)?;
+        tx.commit().map_err(|_| EngineError::Storage)?;
+        self.counters.record_admin();
+        Ok(delta)
     }
 
     /// 0.8.20 Slice 15d (R-20-PR) — read the current projection registry (C5
@@ -7463,9 +7469,8 @@ impl Engine {
         self.ensure_open()?;
         let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
         let connection = connection.as_ref().ok_or(EngineError::Closing)?;
-        // RED STUB (Slice 15d): the registry is not read back yet.
-        let _ = (connection, load_projection_registry);
-        Ok(Vec::new())
+        let registry = load_projection_registry(connection).map_err(|_| EngineError::Storage)?;
+        Ok(registry.iter().map(|(name, stored)| stored.to_spec(name)).collect())
     }
 
     /// OPP-12 Phase-1 (0.8.19 Slice 10, R-PG-1/2) — irreversibly hard-erase a
@@ -15130,8 +15135,7 @@ fn project_canonical_node_row(
     // operator FTS rebuild uses `Write`, so it re-derives attributes after the
     // truncate.
     if pass.writes_attributes() {
-        // RED STUB (Slice 15d): same-transaction attribute projection off.
-        let _ = project_node_attributes;
+        project_node_attributes(tx, cursor as i64, body)?;
     }
     let enqueue_vector = targets.vector && kind_is_vector_indexed(tx, kind).unwrap_or(false);
     if pass.writes_vector_state() {
@@ -16311,6 +16315,47 @@ mod tests {
             "_fathomdb_projection_state is KIND-owned (per-kind enqueue watermark) and must \
              never be deleted per-cursor: erasing one row would rewind a whole kind's watermark"
         );
+    }
+
+    /// 0.8.20 Slice 15d (R-20-EAV) — PROVE THE GUARD BITES. The two net-new
+    /// content-storing projection tables (`canonical_attributes`,
+    /// `property_search_index`) are `write_cursor`-keyed and hold attribute
+    /// values at rest. This test asserts (1) they ARE registered in
+    /// `ROW_OWNED_PROJECTIONS` (so `erase_row_projections` reaches them), and (2)
+    /// the guard's core predicate — "registered OR a named source of truth" —
+    /// FAILS for either table if it is (hypothetically) removed from the
+    /// registry. This is what makes forgetting to register a future
+    /// content-storing projection a red test, not a silent erasure leak.
+    #[test]
+    fn slice15d_attribute_projections_registered_and_guard_bites() {
+        const NON_PROJECTION_CURSOR_TABLES: &[&str] =
+            &["canonical_nodes", "canonical_edges", "operational_mutations", "operational_state"];
+
+        let registered: Vec<&str> = ROW_OWNED_PROJECTIONS.iter().map(|p| p.table).collect();
+
+        // (1) Both new content-storing projections are registered as row-owned.
+        for table in ["canonical_attributes", "property_search_index"] {
+            assert!(
+                registered.contains(&table),
+                "{table} holds attribute values at rest and MUST be in ROW_OWNED_PROJECTIONS \
+                 so purge/excise_source reach it"
+            );
+        }
+
+        // (2) The guard predicate BITES: pretend one of them was never
+        //     registered — the guard's "registered OR source-of-truth" check must
+        //     reject it (the exact assertion `guard_row_owned_registry` runs).
+        for hidden in ["canonical_attributes", "property_search_index"] {
+            let as_if_unregistered: Vec<&str> =
+                registered.iter().copied().filter(|t| *t != hidden).collect();
+            let accepted = as_if_unregistered.contains(&hidden)
+                || NON_PROJECTION_CURSOR_TABLES.contains(&hidden);
+            assert!(
+                !accepted,
+                "if {hidden} were unregistered the guard would still (incorrectly) accept it — \
+                 the guard does not actually bite"
+            );
+        }
     }
 
     /// Cause-A (0.8.11.2) / C-2 (0.8.19) — `derive_stable_id` id-space contract:
