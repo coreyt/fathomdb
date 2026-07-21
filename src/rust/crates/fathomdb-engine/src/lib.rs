@@ -1847,6 +1847,64 @@ fn epoch_seconds_to_iso8601(connection: &Connection, epoch: i64) -> Option<Strin
         .flatten()
 }
 
+/// TC-33 fix-1 — the inclusive epoch-seconds range SQLite's
+/// `strftime(..., 'unixepoch')` can render back to ISO-8601. SQLite's date
+/// functions cover years 0000..=9999 ONLY, so:
+/// - `MIN` = `0000-01-01T00:00:00Z`
+/// - `MAX` = `9999-12-31T23:59:59Z`
+///
+/// These bounds are used only to make the write-boundary rejection message
+/// name the limit. The rejection PREDICATE itself is renderability under
+/// [`epoch_seconds_to_iso8601`] (i.e. SQLite's own `strftime`), so the guard
+/// rejects EXACTLY the values that would later render to a silent `null` on the
+/// consolidation wire — the numbers below cannot drift out of agreement with
+/// the check they annotate.
+const MIN_RENDERABLE_EPOCH: i64 = -62_167_219_200; // 0000-01-01T00:00:00Z
+const MAX_RENDERABLE_EPOCH: i64 = 253_402_300_799; // 9999-12-31T23:59:59Z
+
+/// TC-33 fix-1 — reject an edge epoch that SQLite cannot render back to
+/// ISO-8601, at the governed write boundary, so it is UNSTORABLE.
+///
+/// # Why this is the primary layer
+///
+/// Storage and `PreparedWrite::Edge` carry INTEGER epoch seconds and accept an
+/// arbitrary `i64`. The consolidation path renders each candidate's
+/// `t_valid`/`t_invalid` to ISO-8601 for the LLM via `strftime(..., 'unixepoch')`,
+/// which only spans years 0000..=9999. An epoch outside that range renders to
+/// NULL, and the render site would then send a silent `null` for a timestamp
+/// that is actually stored NON-NULL — the OUTBOUND twin of the fail-open TC-33
+/// removes. A `null` `t_invalid` reads as "still valid", and the consolidation
+/// reference stub echoes a winner's `t_valid` straight back as the verdict's
+/// `t_invalid`, so the `null` round-trips through the inbound normaliser as
+/// "still valid": an invalidated edge silently resurrected.
+///
+/// Inbound ISO normalisation can never MINT such an epoch (a 4-digit-year ISO
+/// string maxes at 9999), so the governed integer surface is the only ingress —
+/// which is exactly where this guard sits. Mirrors the inbound
+/// [`normalize_extractor_timestamp`] hard-reject and the Node branch's
+/// `valid_from >= valid_until` refusal: a typed [`EngineError::InvalidArgument`]
+/// naming the offending value and the bound, never a silent coercion.
+fn reject_unrenderable_edge_epoch(
+    connection: &Connection,
+    field: &str,
+    value: Option<i64>,
+) -> Result<(), EngineError> {
+    if let Some(ts) = value {
+        if epoch_seconds_to_iso8601(connection, ts).is_none() {
+            return Err(EngineError::InvalidArgument {
+                msg: format!(
+                    "edge field `{field}` = {ts} is outside the epoch-seconds range SQLite can \
+                     render to ISO-8601 ([{MIN_RENDERABLE_EPOCH}, {MAX_RENDERABLE_EPOCH}], i.e. \
+                     years 0000..=9999). REJECTED rather than stored: such an epoch renders to a \
+                     silent NULL on the consolidation wire, and a NULL `t_invalid` reads as \
+                     \"still valid\" — resurrecting an invalidated edge."
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
 /// The JSON type name of `value`, for diagnosing a mistyped extractor field.
 fn json_type_name(value: &Value) -> &'static str {
     match value {
@@ -4783,22 +4841,44 @@ impl Engine {
             let edges_json: Vec<Value> = {
                 let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
                 let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+                // TC-33 fix-1 backstop [DEFENSIVE — unreachable]. A stored
+                // `Some(ts)` that fails to render must NOT become a silent
+                // `null`: that is exactly the "still valid" resurrection vector.
+                // With `reject_unrenderable_edge_epoch` guarding the write
+                // boundary, no unrenderable epoch can reach storage — so this is
+                // a hard-assert upholding that invariant STRUCTURALLY, not the
+                // primary defence. `None` (unknown) still renders to JSON null;
+                // only a NON-NULL stored epoch that fails to render is an error.
+                let render = |field: &str, value: Option<i64>| -> Result<Value, EngineError> {
+                    match value {
+                        None => Ok(Value::Null),
+                        Some(ts) => match epoch_seconds_to_iso8601(connection, ts) {
+                            Some(iso) => Ok(Value::from(iso)),
+                            None => Err(EngineError::InvalidArgument {
+                                msg: format!(
+                                    "INVARIANT VIOLATION (TC-33 fix-1): stored edge `{field}` = \
+                                     {ts} is unrenderable to ISO-8601 and would have gone to the \
+                                     consolidation wire as a silent null (\"still valid\"). The \
+                                     write boundary should have made this unstorable."
+                                ),
+                            }),
+                        },
+                    }
+                };
                 cluster
                     .iter()
                     .map(|e| {
-                        serde_json::json!({
+                        Ok::<Value, EngineError>(serde_json::json!({
                             "edge_ref": e.edge_ref,
                             "body": e.body,
-                            "t_valid": e.t_valid
-                                .and_then(|ts| epoch_seconds_to_iso8601(connection, ts)),
-                            "t_invalid": e.t_invalid
-                                .and_then(|ts| epoch_seconds_to_iso8601(connection, ts)),
+                            "t_valid": render("t_valid", e.t_valid)?,
+                            "t_invalid": render("t_invalid", e.t_invalid)?,
                             "confidence": e.confidence,
                             "source_doc_id": e.source_doc_id,
                             "extractor_model_id": e.extractor_model_id,
-                        })
+                        }))
                     })
-                    .collect()
+                    .collect::<Result<Vec<Value>, EngineError>>()?
             };
             let cluster_json = serde_json::json!({
                 "subject": axis.subject_logical_id,
@@ -13947,7 +14027,7 @@ fn validate_write(
             }
             Ok(WritePlan::Node)
         }
-        PreparedWrite::Edge { kind, from, to, logical_id, .. } => {
+        PreparedWrite::Edge { kind, from, to, logical_id, t_valid, t_invalid, .. } => {
             if kind.trim().is_empty() || from.trim().is_empty() || to.trim().is_empty() {
                 return Err(EngineError::WriteValidation);
             }
@@ -13962,6 +14042,15 @@ fn validate_write(
                     return Err(EngineError::WriteValidation);
                 }
             }
+            // TC-33 fix-1 (codex §9 P2) — an epoch SQLite cannot render to
+            // ISO-8601 must be UNSTORABLE. The governed integer surface is the
+            // only way to reach one (inbound ISO normalisation maxes at year
+            // 9999), so this write boundary is where it is stopped, before it
+            // can render to a silent `null` on the consolidation wire and
+            // resurrect an invalidated edge. Structural primary layer; the
+            // render site keeps a defensive hard-assert as the backstop.
+            reject_unrenderable_edge_epoch(connection, "t_valid", *t_valid)?;
+            reject_unrenderable_edge_epoch(connection, "t_invalid", *t_invalid)?;
             Ok(WritePlan::Edge)
         }
         PreparedWrite::AdminSchema { name, kind, schema_json, retention_json } => {
