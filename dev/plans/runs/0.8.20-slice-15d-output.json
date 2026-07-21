@@ -85,6 +85,61 @@
     "fts_tokenizer registry column is tri-valued (NULL=no fts sub-object, ''=fts+engine-default, non-empty=custom) to durably distinguish `searchable+FTS with default tokenizer` from `searchable with no FTS`. Custom tokenizers are recorded but NOT honoured in 15d (the property-FTS table uses the default tokenizer); per-attr custom tokenizers are the >=0.9.x multi-field FTS work, grafting later via the same idempotent configure_projections (same graceful-graft as rankable / Q6a).",
     "read.projections is exposed as a read-namespace verb in BOTH bindings (single allowlist name `read.projections`), while configure_projections is a top-level Engine method (two allowlist names for the two casings). This matches api-surface.md (configure_projections is a verb; read.projections is folded into read.*)."
   ],
+  "fix-1": {
+    "title": "codex §9 [P2]x2 — non-string scalar projection dropped + superseded projection rows never purged",
+    "head_sha": "5fe937b0",
+    "on_branch_baseline": "b90e3649 (Slice 15d closure witness)",
+    "commits": [
+      { "sha": "96550676", "kind": "RED", "summary": "test(0.8.20): RED — Slice 15d fix-1 non-string scalar projection + supersession purge (2 new tests in slice15d_projection_registry.rs)" },
+      { "sha": "5fe937b0", "kind": "GREEN", "summary": "feat(0.8.20): GREEN — Slice 15d fix-1 project scalars + purge superseded projections" }
+    ],
+    "red_evidence": {
+      "command": "cargo test -p fathomdb-engine --test slice15d_projection_registry -- --test-threads=1 scalar_json_attributes_project_number_bool_and_string supersession_purges_stale_attribute_projection_rows",
+      "result": "test result: FAILED. 0 passed; 2 failed; 0 ignored; 11 filtered out",
+      "finding_1_panic": "scalar_json_attributes_project_number_bool_and_string @ tests/slice15d_projection_registry.rs:558 — assertion `left == right` failed: a JSON number attribute must project into canonical_attributes; left: [] right: [\"3\"]  (the JSON number 3 was silently dropped)",
+      "finding_2_panic": "supersession_purges_stale_attribute_projection_rows @ tests/slice15d_projection_registry.rs:634 — assertion `left == right` failed: only the active value must survive at rest; left: [\"closed\", \"open\"] right: [\"closed\"]  (the superseded 'open' row survived at rest)"
+    },
+    "finding_1_fix": {
+      "site": "src/rust/crates/fathomdb-engine/src/lib.rs — project_one_attribute (single-attribute projector)",
+      "cause": "extraction read as Option<String>; for a JSON number/bool json_extract returns INTEGER/REAL, row.get::<Option<String>> FAILED the type conversion, and .unwrap_or(None) silently treated the attribute as absent — no canonical_attributes / property_search_index row.",
+      "fix": "replaced the SELECT with a json_type-keyed CASE that renders exactly one canonical TEXT form per JSON type; the single `value` binding then flows to BOTH canonical_attributes and property_search_index, so the two tables are consistent by construction.",
+      "scalar_bool_null_representation": {
+        "string": "text verbatim",
+        "integer": "decimal text via CAST(json_extract AS TEXT) — e.g. 3 -> \"3\"",
+        "real": "decimal text via CAST(json_extract AS TEXT) — e.g. 3.5 -> \"3.5\"",
+        "bool": "true -> \"true\", false -> \"false\" — the JSON literal, NOT SQLite's 1/0. Rationale: a bool filter should match the value the caller wrote, and it avoids a bare CAST collapsing JSON true and the number 1 to the same \"1\".",
+        "null": "JSON null OR absent path -> SQL NULL -> NO row (an absent attribute correctly never matches a filterable equality — same semantics as before)",
+        "object_array": "DELIBERATELY skipped -> SQL NULL -> no row. A composite value is not a scalar filter/FTS target in 15d; nested-field filtering is the >=0.9.x multi-field work. Skipping is deliberate (explicit CASE arm), not an accidental type-conversion drop — no scalar type is dropped."
+      }
+    },
+    "finding_2_fix": {
+      "site": "src/rust/crates/fathomdb-engine/src/lib.rs — commit_batch node write arm (the logical_id supersession UPDATE) + two new helpers",
+      "cause": "the write path marked the prior canonical_nodes row superseded_at but never removed its canonical_attributes / property_search_index rows; a same-session property filter / property-FTS saw BOTH the stale and current value until a boot re-derive / reconfigure cleared the table (violates the active-only projection invariant).",
+      "approach": "PURGE-ON-SUPERSEDE (the mandate's preferred option). Before the tombstone UPDATE the write path collects the prior active cursor(s) via new prior_node_cursors_by_logical_id (mirrors prior_edge_cursors_by_logical_id; partial-unique-active => at most one), then after the UPDATE purges each via new purge_row_projections_for_cursor_in(tx, cursor, [Attribute, PropertyFts]).",
+      "why_purge_not_read_side": "property_search_index is an FTS5 table with NO way to carry a `canonical_nodes WHERE superseded_at IS NULL` join, and property filters may read canonical_attributes directly (like vector_default) — so a read-side active-only filter cannot cover the FTS path. Purge-on-supersede keeps the at-rest table truthful.",
+      "class_scoping": "purge is scoped to Attribute + PropertyFts ONLY. NodeFts (search_index / search_index_v2) + Vector shadows are LEFT INTACT because the node read path already excludes their superseded rows via the canonical_nodes superseded_at IS NULL join; purging them here would be a behaviour change outside this fix's scope.",
+      "consistency_with_erasure": "purge_row_projections_for_cursor_in is the registry-driven sibling of erase_row_projections — it iterates ROW_OWNED_PROJECTIONS filtered by class and deletes by the declared cursor_column, so an unregistered content table is unreachable here exactly as with erasure. guard_row_owned_registry unchanged; erasure tests (erasure_projection_registry 10, erasure_completeness 4, excise_source 6, rebuild_projections 3) all green.",
+      "at_rest_active_only_proof": "supersession_purges_stale_attribute_projection_rows asserts on RAW tables: after rewriting L=open->L=closed, eav_values('status')==[\"closed\"], and COUNT(*) WHERE write_cursor=<superseded cursor> is 0 in BOTH canonical_attributes and property_search_index; eav_filter('status','open')==[] and property_fts_match('status','open')==[]; closed maps only to the active cursor. The superseded/active cursors are read from canonical_nodes (not hardcoded)."
+    },
+    "gates": {
+      "cargo_clippy_workspace_all_targets": { "exit": 0 },
+      "cargo_check_workspace_all_targets": { "exit": 0 },
+      "cargo_test_engine_schema": {
+        "exit": 0,
+        "passed": 600,
+        "failed": 0,
+        "ignored": 13,
+        "baseline": "598 passed / 0 failed / 13 ignored (pre-fix-1)",
+        "note": "--test-threads=1, explicit 1800000ms timeout; +2 net-new engine tests (scalar_json_attributes_project_number_bool_and_string, supersession_purges_stale_attribute_projection_rows). Aggregate summed from every `test result:` line (real exit 0)."
+      },
+      "operator_erasure_tests": { "exit": 0, "note": "erasure_projection_registry 10 / erasure_completeness 4 / excise_source 6 / rebuild_projections 3 — all pass; purge helper is consistent with erase_row_projections." },
+      "ac_041_recovery_denylist": { "exit": 0, "note": "no_recovery_surface 3 / governed_surface 1 / sdk_only_erasure 1 / reexports 3 pass; recovery_denylist unchanged (five names); no governed surface change." },
+      "python_ts_execution": { "skipped": true, "reason": "engine-internal projection logic ONLY — git diff since b90e3649 touches only fathomdb-engine/src/lib.rs + its test file; NO binding surface (fathomdb-py / fathomdb-napi) and NO governed signature change, so X1 re-run is not required." },
+      "eu7": { "note": "ZERO eu7 runs." }
+    },
+    "governed_surface": "UNCHANGED — no new verb, no AC minted, PROPOSED/NOT-SIGNED status of Slice 15d's own delta untouched. recovery_denylist stays five.",
+    "blockers": []
+  },
   "blockers": [],
   "unblocks": ["Slice 20 (R-20-DR dense_readiness/flush_embeddings attaches to the vector sub-object)", "Slice 25 (R-20-SUR surrogate minting for registry-admitted governed entities)"],
   "notes_for_orchestrator": [
