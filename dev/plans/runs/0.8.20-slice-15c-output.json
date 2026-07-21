@@ -238,5 +238,54 @@
     },
     "blockers": []
   },
+  "fix-3": {
+    "requirement_id": "TC-33",
+    "finding": "codex §9 P2 — 'error-taxonomy regression on malformed consolidation verdicts ... a caller-visible contract break.' At the `invalidate` verdict arm of the consolidation apply loop (lib.rs :4995-5000), the verdict's `t_invalid` is normalised through `normalize_extractor_timestamp`, whose `?` propagated its `EngineError::InvalidArgument { msg }` verbatim for a malformed/non-string timestamp. Consolidation is a BYO-LLM PROVIDER boundary whose documented leaf is `EngineError::Consolidator` (\"ConsolidatorError\"), so a provider protocol fault (the LLM consolidator emitted a bad t_invalid) was MISCLASSIFIED as a user bad-argument — exactly the bad-timestamp scenario TC-33 hardens. The two SIBLING failure modes on the same value were already correct: missing key → Consolidator (:4998), null/unparseable-to-None → Consolidator (:5000). Only the malformed/non-string case leaked InvalidArgument.",
+    "governed_surface_status": "PROPOSED / NOT SIGNED — no AC minted; tracked by requirement TC-33 + test names. NEVER HITL-SIGNED.",
+    "site_changed": "src/rust/crates/fathomdb-engine/src/lib.rs — the `invalidate` verdict arm of the consolidation apply loop (was :4995-5000). Inserted `.map_err(|_| EngineError::Consolidator)` between the normalise call and the trailing `.ok_or(EngineError::Consolidator)?`, with a WHY comment (consolidation is a provider boundary → Consolidator, not the extractor/user InvalidArgument; Consolidator is a unit variant and the adjacent .ok_or cases already discard any message, so this is consistent with the two siblings, not a diagnostic loss).",
+    "other_consolidation_verdict_timestamp_sites": "ENUMERATED — grep for normalize_extractor_timestamp found 4 call sites: :4665 / :4670 / :4680 are all on the EXTRACTOR ingest path (raw_edges t_valid/t_invalid and raw_fallback_dates substituted_t_valid); :4995 is the ONLY consolidation-verdict site. The consolidation verdict carries a single timestamp (t_invalid on the invalidate verdict) — no t_valid or second verdict-kind timestamp exists. Only :4995 was changed.",
+    "extractor_path_untouched": "The extractor call sites (:4665-4684) STILL return EngineError::InvalidArgument { msg } naming t_valid/t_invalid — deliberately unchanged so the pinned 15c tests (tc33_edge_temporal_epoch.rs) stay GREEN. Scope guard honoured: consolidation site only.",
+    "extractor_taxonomy_question_ledger_id": "TC-43",
+    "extractor_taxonomy_question_note": "Recorded via dev/agent-tools/ledgerwrite as TC-43 (kind=question, status=open, seq 63): the extractor is ALSO a BYO-LLM provider boundary with its own EngineError::Extractor leaf, so a malformed EXTRACTOR timestamp could symmetrically be argued a provider fault (Extractor) not InvalidArgument. A broader taxonomy call for HITL/steward; DEFERRED — changing it would break the pinned 15c tests. NOT resolved here.",
+    "commits": [
+      {
+        "sha": "d32a4496",
+        "kind": "RED",
+        "summary": "tests/tc33_fix3_consolidation_timestamp_taxonomy.rs — drives ordinary consolidate_with_provider() against an inline harness that rules `invalidate` on edge-acme with (a) a malformed STRING t_invalid ('not-a-timestamp') and (b) a non-string JSON number (12345), asserting the result is Err(EngineError::Consolidator) in both. RED against unpatched code (both leaked InvalidArgument)."
+      },
+      {
+        "sha": "5e52b174",
+        "kind": "GREEN",
+        "summary": "lib.rs — .map_err(|_| EngineError::Consolidator) on the consolidation invalidate-verdict timestamp normalise; + ledger TC-43. See site_changed."
+      }
+    ],
+    "head_sha": "5e52b174c6060eb9a563248fe70088e35a616820",
+    "red_evidence": "At d32a4496 (`cargo test -p fathomdb-engine --test tc33_fix3_consolidation_timestamp_taxonomy -- --test-threads=1`) → `test result: FAILED. 0 passed; 2 failed`, exit 101. malformed_string_t_invalid_is_a_consolidator_fault panicked: `a malformed consolidation t_invalid must return Err(Consolidator) (provider boundary), got Err(InvalidArgument { msg: \"extractor edge field `t_invalid` must be an ISO-8601 timestamp SQLite can parse; got \\\"not-a-timestamp\\\", which `strftime('%s', ?)` resolves to NULL. REJECTED rather than stored as NULL: a NULL `t_invalid` reads as \\\"still valid\\\" and would silently resurrect an invalidated edge. Use JSON null for \\\"unknown\\\".\" })`. non_string_t_invalid_is_a_consolidator_fault panicked: `... got Err(InvalidArgument { msg: \"extractor edge field `t_invalid` must be an ISO-8601 string or JSON null; got a JSON number (12345). ...\" })`. Post-fix at 5e52b174: `test result: ok. 2 passed; 0 failed`, exit 0.",
+    "gates": [
+      { "gate": "cargo clippy --workspace --all-targets", "real_exit_code": 0, "note": "0 warnings, 0 errors." },
+      { "gate": "cargo check --workspace --all-targets", "real_exit_code": 0 },
+      {
+        "gate": "cargo test -p fathomdb-engine -p fathomdb-schema -- --test-threads=1",
+        "real_exit_code": 0,
+        "passed": 577,
+        "failed": 0,
+        "ignored": 13,
+        "note": "575 (fix-2 GREEN) + 2 new fix-3 tests = 577. 13 ignored UNCHANGED. Aggregated from a full-suite run to a log (the suite exceeds the 2-min default; re-run to completion with a longer timeout). ZERO eu7 runs; eu7_real_corpus_ac stayed #[ignore]d."
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test tc33_fix3_consolidation_timestamp_taxonomy -- --test-threads=1",
+        "real_exit_code": 0,
+        "passed": 2,
+        "failed": 0
+      }
+    ],
+    "invariants_confirmed": {
+      "AC-041_recovery_denylist": "unchanged — {recover, restore, repair, fix, rebuild}; diff touches only the one consolidation-verdict error map + the new test + the ledger, no recovery/verb code.",
+      "eu7": "zero runs; eu7_real_corpus_ac left #[ignore]d.",
+      "governed_surface": "PROPOSED / NOT SIGNED; no AC minted; never HITL-SIGNED.",
+      "extractor_path_byte_stability": "untouched — the extractor normalise sites still return InvalidArgument { msg }; only the consolidation :4995 site remaps to Consolidator."
+    },
+    "blockers": []
+  },
   "blockers": []
 }
