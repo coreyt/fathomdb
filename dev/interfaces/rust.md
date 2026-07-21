@@ -54,8 +54,12 @@ which binds AC-074 — not a new AC id):
   `read_list`, `read_list_filter`, `graph_neighbors`) rather than shipped as five
   `*_with_view` sibling verbs, which is what keeps the delta at two TYPES and zero
   new verb names; `ReadView::default()` is the strict view and reproduces the
-  pre-slice read semantics exactly. Each resolves through the facade
-  at compile time (`type_name::<…>()`). The recovery /
+  pre-slice read semantics exactly. 0.8.20 Slice 15d (R-20-PR) adds the five
+  projection-registry types (`ProjectionSpec`, `ProjectionRole`, `ProjectionFts`,
+  `ProjectionVector`, `ProjectionDelta`) — **PROPOSED, NOT SIGNED** (see
+  § "Projection registry" below and
+  `src/conformance/governed-surface-allowlist.json`). Each resolves through the
+  facade at compile time (`type_name::<…>()`). The recovery /
   integrity / dump operator-seam report types in § "Recovery / operator seam
   re-exports" are deliberately **excluded** from this allowlist — they are
   CLI-only ergonomic symbols (the Rust analogue of "recovery is CLI-only, not an
@@ -254,6 +258,57 @@ or fully honouring are both defensible alternatives.
 The instant is INTEGER epoch SECONDS, read in Rust and BOUND as a positional
 parameter (never `datetime('now')`), once per query — the same `:now` seam as
 the read verbs, so search validity is deterministically testable.
+
+## Projection registry (0.8.20 Slice 15d, R-20-PR / C-1)
+
+**Status: PROPOSED / NOT SIGNED** (tracked in
+`src/conformance/governed-surface-allowlist.json`; AC-079 UNMINTED).
+
+Two net-new governed methods on `Engine` declare and inspect projections over
+interpretive attributes. The facade re-exports the five supporting
+`Projection*` types (all part of the public Rust surface):
+
+- `Engine::configure_projections(specs: &[ProjectionSpec], drop: &[String]) ->
+  Result<ProjectionDelta, EngineError>` — declarative, idempotent apply: the
+  engine is the SOLE projection authority (C-1) and diffs `specs` against the
+  durable registry, backfilling the difference in one write transaction. `drop`
+  is EXPLICIT — omitting a live projection from `specs` does NOT drop it; removal
+  requires naming it in `drop`. A destructive change (a role removal or a
+  tokenizer/embedder change) without a drop is refused with
+  `EngineError::ProjectionDestructive { name, delta }` — the delta names what the
+  caller must drop. Re-applying an unchanged spec returns
+  `ProjectionDelta { unchanged: true, .. }` with the vecs empty.
+- `Engine::read_projections() -> Result<Vec<ProjectionSpec>, EngineError>` — the
+  registry introspection (the Rust analogue of `read.projections`), sorted by
+  name. Pure read; never mutates.
+
+Types:
+
+- `ProjectionSpec { name: String, roles: BTreeSet<ProjectionRole>, fts:
+  Option<ProjectionFts>, vector: Option<ProjectionVector> }`. `roles` carries SET
+  semantics (an attribute can be `Filterable` AND `Searchable`).
+- `ProjectionRole` — exactly three variants: `Filterable`, `Rankable`,
+  `Searchable` (`searchable→FTS` and `searchable→vector` are tier labels carried
+  by the `fts`/`vector` sub-objects, not roles). `as_str` / `from_str_opt` give
+  the `"filterable" | "rankable" | "searchable"` wire spellings.
+- `ProjectionFts { tokenizer: Option<String> }` and `ProjectionVector { embedder:
+  Option<String> }` — the `searchable→FTS` / `searchable→vector` sub-target
+  selectors (`None` ⇒ engine default). Slice 20 attaches `dense_readiness` to
+  `ProjectionVector` additively.
+- `ProjectionDelta { built, dropped, deferred, unchanged }`. Cheap roles
+  (`filterable`, `searchable→FTS`) build same-transaction; `rankable` and the
+  `searchable→vector` sub-target are persisted-but-deferred (reported in
+  `deferred`, never an error).
+
+**Projection-name contract (0.8.20 Slice 15d fix-4).** A projection `name` is an
+app-declared identifier that becomes a SQLite JSON-path key (`$."<name>"`) at
+write time, so `configure_projections` REJECTS — with
+`EngineError::InvalidArgument` naming the offending value — any spec or `drop`
+name that cannot round-trip through that quoted-key form: an empty name, a name
+containing a double-quote `"`, a name containing a BACKSLASH `\`, or a name
+containing any ASCII control char. This upholds the invariant "a name the engine
+ACCEPTS is populatable" (accept ⟹ works); previously a backslash name was
+accepted yet silently never populated `canonical_attributes`.
 
 ## Errors
 

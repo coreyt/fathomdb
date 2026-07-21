@@ -67,13 +67,13 @@ fn s16_row_kind_column_present_and_schema_version_is_head() {
 
     assert_eq!(user_version(&conn), SCHEMA_VERSION);
     assert_eq!(
-        SCHEMA_VERSION, 23,
-        "SCHEMA_VERSION must be 23 (step-23 edge temporal → INTEGER epoch, TC-33)"
+        SCHEMA_VERSION, 24,
+        "SCHEMA_VERSION must be 24 (step-24 projection-registry EAV + property-FTS, Slice 15d)"
     );
     assert_eq!(
         MIGRATIONS.last().expect("at least one migration").step_id,
-        23,
-        "step-23 (edge temporal → INTEGER epoch, TC-33) must be the last (head) migration"
+        24,
+        "step-24 (projection-registry EAV + property-FTS, Slice 15d) must be the last (head) migration"
     );
 }
 

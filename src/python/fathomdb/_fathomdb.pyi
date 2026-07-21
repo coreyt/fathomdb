@@ -299,6 +299,35 @@ class EraseReport:
     projections_invalidated: int
 
 def erase_source(engine: Engine, source_id: str) -> EraseReport: ...
+
+# 0.8.20 Slice 15d (R-20-PR) — projection registry verbs + their types.
+class ProjectionSpec:
+    name: str
+    roles: list[str]
+    fts: bool
+    fts_tokenizer: str | None
+    vector: bool
+    vector_embedder: str | None
+    def __init__(
+        self,
+        name: str,
+        roles: list[str],
+        fts: bool = ...,
+        fts_tokenizer: str | None = ...,
+        vector: bool = ...,
+        vector_embedder: str | None = ...,
+    ) -> None: ...
+
+class ProjectionDelta:
+    built: list[str]
+    dropped: list[str]
+    deferred: list[str]
+    unchanged: bool
+
+def configure_projections(
+    engine: Engine, specs: list[ProjectionSpec], drop: list[str] | None = ...
+) -> ProjectionDelta: ...
+def read_projections(engine: Engine) -> list[ProjectionSpec]: ...
 def read_get(
     engine: Engine, logical_id: str, view: ReadView | None = None
 ) -> NodeRecord | None: ...
@@ -497,3 +526,11 @@ class NotLifecycleAddressableError(EngineError):
 class ErasureIncompleteError(EngineError):
     stage: str
     detail: str
+
+# 0.8.20 Slice 15d (R-20-PR) — `configure_projections` refused a DESTRUCTIVE
+# change to a live projection `name` (a role removal or tokenizer/embedder swap)
+# that was NOT accompanied by an explicit `drop`. `delta` names WHAT changed; the
+# caller re-issues with `drop: [name]` to consciously rebuild.
+class ProjectionDestructiveError(EngineError):
+    name: str
+    delta: str

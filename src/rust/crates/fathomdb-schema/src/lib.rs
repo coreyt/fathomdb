@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use rusqlite::Connection;
 
-pub const SCHEMA_VERSION: u32 = 23;
+pub const SCHEMA_VERSION: u32 = 24;
 
 /// SQLite `PRAGMA` name carrying the on-disk schema-version sentinel.
 ///
@@ -800,6 +800,73 @@ pub const MIGRATIONS: &[Migration] = &[
                   ON canonical_edges(from_id);
               CREATE INDEX IF NOT EXISTS canonical_edges_to_id_idx
                   ON canonical_edges(to_id);",
+    },
+    // 0.8.20 Slice 15d (R-20-PR / R-20-EAV) — the projection-registry EAV +
+    // property-FTS substrate the declarative `configure_projections` verb
+    // projects into. NET-NEW: before this step there is NO attribute/EAV store
+    // and NO property-FTS (only `body`-FTS `search_index`/`search_index_v2` +
+    // vector). Three tables:
+    //
+    //   1. `_fathomdb_projection_registry` — the DURABLE record of every declared
+    //      `ProjectionSpec` (Q5: the engine `ProjectionSpec` is a DERIVED cache
+    //      re-driven idempotently on boot; this table is what boot re-derive
+    //      reads). `roles` is a JSON array of `ProjectionRole` (set semantics —
+    //      dedup/membership, no order dependence). `fts_tokenizer` is non-NULL
+    //      iff a `searchable→FTS` sub-target was declared; `vector_embedder` +
+    //      `vector_declared` record the `searchable→vector` sub-object which is
+    //      STORED here but NOT built in 15d (Slice 20 R-20-DR attaches
+    //      `dense_readiness` onto exactly this `vector` sub-object — additive).
+    //
+    //   2. `canonical_attributes` — the EAV attribute store. A ROW-OWNED,
+    //      rebuild-durable projection: each row is 1:1 with the owning canonical
+    //      node's `write_cursor`, holds one declared attribute value at rest, and
+    //      MUST die with that node (registered in `ROW_OWNED_PROJECTIONS` so
+    //      `purge`/`excise_source` reach it — an unregistered content-storing
+    //      table re-opens the Slice-5 `search_index_v2` leak class). The values
+    //      are derived from the node `body` JSON (`$.<name>`), so the store is
+    //      re-derivable from canonical state (CQRS drift answer). `filterable`
+    //      queries hit the `(attr_name, attr_value)` composite index (cheap
+    //      equality/range, same-transaction).
+    //
+    //   3. `property_search_index` — the property-FTS5 shadow of the attribute
+    //      values (`searchable→FTS`, same-transaction). Also ROW-OWNED (keyed by
+    //      `write_cursor UNINDEXED`, same shape as `search_index_edges`). Default
+    //      tokenizer matches `body`-FTS (`porter unicode61 remove_diacritics 2`);
+    //      a per-attr custom tokenizer is the ≥0.9.x multi-field FTS work and is
+    //      recorded in the registry but not honoured here (graceful-graft later).
+    //
+    // NO DATA MIGRATION (HITL 2026-07-21): these steps define the new shape only.
+    // Nothing is backfilled at migrate time — `configure_projections` backfills
+    // per-declaration, and boot re-derive re-applies the persisted registry.
+    //
+    // Additive `CREATE TABLE` (no DROP) → the accretion guard REQUIRES the
+    // exemption marker. Crash-safety/idempotence are the runner's: `apply_one`
+    // wraps the batch + the `user_version` bump in one `BEGIN IMMEDIATE`.
+    Migration {
+        step_id: 24,
+        sql: "-- MIGRATION-ACCRETION-EXEMPTION: R-20-PR/R-20-EAV projection-registry EAV + property-FTS substrate (net-new _fathomdb_projection_registry durable derived-cache + canonical_attributes row-owned EAV projection + property_search_index FTS5 property-FTS). NO DATA MIGRATION (HITL 2026-07-21): shape only, no backfill.
+              CREATE TABLE _fathomdb_projection_registry(
+                  name TEXT PRIMARY KEY,
+                  roles TEXT NOT NULL,
+                  fts_tokenizer TEXT,
+                  vector_embedder TEXT,
+                  vector_declared INTEGER NOT NULL DEFAULT 0
+              );
+              CREATE TABLE canonical_attributes(
+                  write_cursor INTEGER NOT NULL,
+                  attr_name TEXT NOT NULL,
+                  attr_value TEXT
+              );
+              CREATE INDEX canonical_attributes_name_value_idx
+                  ON canonical_attributes(attr_name, attr_value);
+              CREATE INDEX canonical_attributes_cursor_idx
+                  ON canonical_attributes(write_cursor);
+              CREATE VIRTUAL TABLE property_search_index USING fts5(
+                  attr_value,
+                  attr_name UNINDEXED,
+                  write_cursor UNINDEXED,
+                  tokenize = 'porter unicode61 remove_diacritics 2'
+              );",
     },
 ];
 

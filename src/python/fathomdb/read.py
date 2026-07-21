@@ -33,9 +33,10 @@ from fathomdb._fathomdb import read_list as _native_list
 from fathomdb._fathomdb import read_list_filter as _native_list_filter
 from fathomdb._fathomdb import read_mutations as _native_mutations
 from fathomdb._fathomdb import crossed_boundary_since as _native_crossed_boundary_since
+from fathomdb._fathomdb import read_projections as _native_read_projections
 from fathomdb._fathomdb import ReadView as _NativeReadView
 from fathomdb._fathomdb import BoundaryCrossing as _NativeBoundaryCrossing
-from fathomdb.types import BoundaryCrossing, NodeRecord, OpStoreRow, ReadView
+from fathomdb.types import BoundaryCrossing, NodeRecord, OpStoreRow, ProjectionSpec, ReadView
 
 if TYPE_CHECKING:
     from fathomdb.engine import Engine
@@ -223,6 +224,27 @@ def crossed_boundary_since(
     return [_to_boundary_crossing(row) for row in rows]
 
 
+def projections(engine: "Engine") -> builtins.list[ProjectionSpec]:
+    """0.8.20 Slice 15d (R-20-PR) — ``read.projections`` introspection.
+
+    Returns every declared :class:`ProjectionSpec` (sorted by name), so a caller
+    can inspect current registry state — and the destructive delta a change would
+    cause — BEFORE calling ``Engine.configure_projections``. Pure read.
+    """
+
+    return [
+        ProjectionSpec(
+            name=s.name,
+            roles=frozenset(s.roles),
+            fts=s.fts,
+            fts_tokenizer=s.fts_tokenizer,
+            vector=s.vector,
+            vector_embedder=s.vector_embedder,
+        )
+        for s in _native_read_projections(engine._native)
+    ]
+
+
 def _validate_limit(limit: int) -> None:
     if not isinstance(limit, int) or isinstance(limit, bool):
         raise ValueError("read.collection/read.mutations require an integer limit")
@@ -230,4 +252,12 @@ def _validate_limit(limit: int) -> None:
         raise ValueError("read.collection/read.mutations limit must be non-negative")
 
 
-__all__ = ["get", "get_many", "collection", "mutations", "list", "crossed_boundary_since"]
+__all__ = [
+    "get",
+    "get_many",
+    "collection",
+    "mutations",
+    "list",
+    "crossed_boundary_since",
+    "projections",
+]

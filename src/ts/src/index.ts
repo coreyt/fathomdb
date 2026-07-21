@@ -94,6 +94,47 @@ export interface EraseReport {
   projectionsInvalidated: number;
 }
 
+/**
+ * 0.8.20 Slice 15d (R-20-PR) — the three projection roles (set members).
+ * `searchable→FTS` and `searchable→vector` are NOT roles — they are tier labels
+ * carried by the `fts`/`vector` sub-objects of a {@link ProjectionSpec}.
+ */
+export type ProjectionRole = "filterable" | "rankable" | "searchable";
+
+/**
+ * 0.8.20 Slice 15d (R-20-PR / C-1) — a declarative projection declaration.
+ * HITL-ratified shape `{ name, roles, fts?, vector? }`; `roles` carries SET
+ * semantics. `fts` selects the `searchable→FTS` sub-target (optional custom
+ * `ftsTokenizer`); `vector` selects `searchable→vector` (optional
+ * `vectorEmbedder`). The `vector` sub-object is stored by Slice 15d and built
+ * by Slice 20 (`denseReadiness` attaches to it). Mirrors the Python
+ * `ProjectionSpec` (cross-binding parity).
+ */
+export interface ProjectionSpec {
+  name: string;
+  roles: ProjectionRole[];
+  /** `true` when the `searchable→FTS` sub-target is declared. */
+  fts: boolean;
+  /** Optional custom tokenizer; omitted = engine default (only with `fts`). */
+  ftsTokenizer?: string | null;
+  /** `true` when the `searchable→vector` sub-target is declared. */
+  vector: boolean;
+  /** Optional embedder override; omitted = engine default (only with `vector`). */
+  vectorEmbedder?: string | null;
+}
+
+/**
+ * 0.8.20 Slice 15d (R-20-PR) — the diff `configureProjections` applied.
+ * Idempotent re-registration yields `unchanged: true` with all arrays empty; a
+ * destructive change without an explicit drop throws instead of returning.
+ */
+export interface ProjectionDelta {
+  built: string[];
+  dropped: string[];
+  deferred: string[];
+  unchanged: boolean;
+}
+
 /** G11 (Slice 15) — BYO-LLM ingest receipt. */
 export interface IngestWithExtractorReceipt {
   /** Number of `canonical_nodes` rows written (new insertions only). */
@@ -725,6 +766,32 @@ export class Engine {
   async eraseSource(sourceId: string): Promise<EraseReport> {
     validateFfiString(sourceId);
     return intercept(() => this.#native.eraseSource(sourceId));
+  }
+
+  /**
+   * 0.8.20 Slice 15d (R-20-PR / C-1) — the `configureProjections` governed verb.
+   * Declaratively apply projection declarations: the engine is the SOLE
+   * projection authority and diffs `specs` against the durable registry,
+   * backfilling the difference in one transaction. Cheap projections
+   * (`filterable`, `searchable→FTS`) build same-transaction; `rankable` and the
+   * `searchable→vector` sub-target are persisted-but-deferred (F9 / Slice 20).
+   *
+   * `drop` is EXPLICIT: omitting a live projection from `specs` does NOT drop
+   * it; removal requires naming it in `drop`. A destructive change to a live
+   * projection (a role removal or a tokenizer/embedder change) that is NOT in
+   * `drop` throws a typed `FDB_PROJECTION_DESTRUCTIVE` error carrying
+   * `{ name, delta }` — never silent data loss. Re-applying an unchanged spec
+   * returns `{ unchanged: true }`.
+   *
+   * Pair with `read.projections` to inspect current state first.
+   */
+  async configureProjections(
+    specs: ProjectionSpec[],
+    drop?: string[],
+  ): Promise<ProjectionDelta> {
+    return intercept(() =>
+      this.#native.configureProjections(specs, drop ?? null),
+    );
   }
 
   async search(

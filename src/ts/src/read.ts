@@ -26,7 +26,13 @@ import {
 } from "./binding.js";
 import { InvalidArgumentError, rethrowTyped } from "./errors.js";
 import { validateFfiString } from "./validation.js";
-import type { Engine, Filter, FilterTerm } from "./index.js";
+import type {
+  Engine,
+  Filter,
+  FilterTerm,
+  ProjectionRole,
+  ProjectionSpec,
+} from "./index.js";
 
 /** Slice 30 (G2) — an active canonical node row from `read.get`/`read.getMany`. */
 /**
@@ -336,6 +342,24 @@ export const read = {
       // on `BoundaryCrossing`).
       becameValidAt: c.becameValidAt ?? null,
       becameInvalidAt: c.becameInvalidAt ?? null,
+    }));
+  },
+
+  /**
+   * 0.8.20 Slice 15d (R-20-PR) — `read.projections` introspection. Returns every
+   * declared {@link ProjectionSpec} (sorted by name), so a caller can inspect
+   * current registry state — and the destructive delta a change would cause —
+   * BEFORE calling `Engine.configureProjections`. Pure read.
+   */
+  async projections(engine: Engine): Promise<ProjectionSpec[]> {
+    const specs = await intercept(() => engine._native.readProjections());
+    return specs.map((s) => ({
+      name: s.name,
+      roles: s.roles as ProjectionRole[],
+      fts: s.fts,
+      ftsTokenizer: s.ftsTokenizer ?? null,
+      vector: s.vector,
+      vectorEmbedder: s.vectorEmbedder ?? null,
     }));
   },
 };

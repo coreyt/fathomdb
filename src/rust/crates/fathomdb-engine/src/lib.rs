@@ -3482,6 +3482,17 @@ pub enum EngineError {
         stage: String,
         detail: String,
     },
+    /// 0.8.20 Slice 15d (R-20-PR) — `configure_projections` refused an
+    /// incompatible/DESTRUCTIVE change to an existing projection `name` that was
+    /// NOT accompanied by an explicit `drop`. Omission from the spec never drops
+    /// (C3, `api-surface.md:27`); a role REMOVAL or a tokenizer/embedder change
+    /// on a live projection would silently discard an expensive-to-rebuild
+    /// resource, so it is refused with the destructive `delta` surfaced. The
+    /// caller re-issues with `drop: [name]` to consciously rebuild.
+    ProjectionDestructive {
+        name: String,
+        delta: String,
+    },
 }
 
 impl Display for EngineError {
@@ -3531,6 +3542,11 @@ impl Display for EngineError {
                 "erasure incomplete at stage '{stage}': the rows were deleted but the erasure \
                  could not be completed at rest ({detail})",
             ),
+            Self::ProjectionDestructive { name, delta } => write!(
+                f,
+                "configure_projections refused a destructive change to projection '{name}' \
+                 without an explicit drop ({delta}); re-issue with drop: [\"{name}\"] to rebuild",
+            ),
         }
     }
 }
@@ -3563,6 +3579,7 @@ impl EngineError {
             Self::IllegalTransition { .. } => "IllegalTransitionError",
             Self::NotLifecycleAddressable { .. } => "NotLifecycleAddressableError",
             Self::ErasureIncomplete { .. } => "ErasureIncompleteError",
+            Self::ProjectionDestructive { .. } => "ProjectionDestructiveError",
         }
     }
 }
@@ -3672,6 +3689,105 @@ pub struct ExciseReport {
     pub nodes_excised: u64,
     pub edges_excised: u64,
     pub projections_invalidated: u64,
+}
+
+/// 0.8.20 Slice 15d (R-20-PR, C-1) — one member of a [`ProjectionSpec`]'s role
+/// set. **Exactly three members** (HITL-ratified S8, `api-surface.md:87`):
+/// `searchable→FTS` and `searchable→vector` are NOT roles — they are tier labels
+/// carried by the `fts`/`vector` sub-objects of the spec, so an attribute is
+/// `Searchable` once and the sub-objects select FTS-only / vector-only / both.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum ProjectionRole {
+    /// Projects into the EAV store + its `(attr_name, attr_value)` composite
+    /// index — cheap equality/range, built same-transaction.
+    Filterable,
+    /// The F9 importance/recency signal. **Graceful-absent (Q6a):** declaring
+    /// it is legal and never errors, but the engine DEFERS the build until F9
+    /// exists and grafts it on the next idempotent `configure_projections`.
+    Rankable,
+    /// Full-text / dense recall of the meaning text. The `fts`/`vector`
+    /// sub-objects select the sub-target.
+    Searchable,
+}
+
+impl ProjectionRole {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ProjectionRole::Filterable => "filterable",
+            ProjectionRole::Rankable => "rankable",
+            ProjectionRole::Searchable => "searchable",
+        }
+    }
+
+    #[must_use]
+    pub fn from_str_opt(value: &str) -> Option<Self> {
+        match value {
+            "filterable" => Some(ProjectionRole::Filterable),
+            "rankable" => Some(ProjectionRole::Rankable),
+            "searchable" => Some(ProjectionRole::Searchable),
+            _ => None,
+        }
+    }
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — the `searchable→FTS` sub-target selector.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ProjectionFts {
+    /// Optional tokenizer override; `None` ⇒ the engine default FTS5 tokenizer
+    /// (`body`-FTS's `porter unicode61 remove_diacritics 2`). A custom
+    /// per-attr tokenizer is the ≥0.9.x multi-field FTS work — recorded but
+    /// not honoured here (graceful-graft later, same as `rankable`).
+    pub tokenizer: Option<String>,
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — the `searchable→vector` sub-target selector.
+///
+/// **Slice 20 (R-20-DR) attaches `dense_readiness` HERE, additively:** this
+/// sub-object is STORED by 15d (so the shape exists and a caller can declare a
+/// vector projection) but 15d builds NO embedding / readiness machinery. Slice
+/// 20 adds a `dense_readiness` field to this struct and the async flip logic;
+/// nothing in 15d's persisted shape has to change for that (the registry column
+/// `vector_embedder` + `vector_declared` already round-trip the sub-object).
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ProjectionVector {
+    /// Optional embedder override; `None` ⇒ the engine's shipped default.
+    pub embedder: Option<String>,
+}
+
+/// 0.8.20 Slice 15d (R-20-PR / C-1) — a single declarative projection
+/// declaration. HITL-ratified shape (`api-surface.md:85-89`):
+/// `{ name, roles: Set<ProjectionRole>, fts?, vector? }`. `roles` carries SET
+/// semantics (dedup + membership; an attribute can be `Filterable` AND
+/// `Searchable`) — encoded here as a sorted, de-duplicated `BTreeSet`. Named
+/// `roles`, not `kind` (`kind` is the node/edge type discriminator).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProjectionSpec {
+    pub name: String,
+    pub roles: BTreeSet<ProjectionRole>,
+    pub fts: Option<ProjectionFts>,
+    pub vector: Option<ProjectionVector>,
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — the diff [`Engine::configure_projections`]
+/// applied. Idempotent re-registration yields `unchanged == true` with all
+/// vecs empty (the "re-registration is a no-op" acceptance signal). A
+/// destructive change without an explicit `drop` is an `Err`, not a delta.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ProjectionDelta {
+    /// Attribute names whose same-transaction projections (EAV / property-FTS)
+    /// were (re)built by this apply.
+    pub built: Vec<String>,
+    /// Attribute names dropped (explicit `drop` list) — their EAV + property-FTS
+    /// rows and registry row removed.
+    pub dropped: Vec<String>,
+    /// Attribute names whose declared roles were persisted but NOT built:
+    /// `rankable` (F9 not yet live) and the `searchable→vector` sub-target
+    /// (Slice 20). These graft on a future idempotent apply. No error.
+    pub deferred: Vec<String>,
+    /// True iff nothing was built, dropped, or newly deferred — the whole apply
+    /// diffed to a no-op.
+    pub unchanged: bool,
 }
 
 /// 0.8.20 Slice 5b (R-20-E7) — outcome of
@@ -4272,6 +4388,19 @@ impl Engine {
                 message: "could not prune orphaned edge vector rows".to_string(),
             })?;
         }
+
+        // 0.8.20 Slice 15d (R-20-PR, Q5) — boot re-derive the projection registry
+        // (the engine `ProjectionSpec` is a derived cache). For every persisted
+        // declaration, clear + backfill its EAV / property-FTS rows from the
+        // canonical nodes so a crash window (registry row survives, projection
+        // rows partial) self-heals idempotently. A no-op single empty-table read
+        // on every DB that has not declared a projection. On the writer
+        // connection, single-threaded, before readers spawn — like the tokenizer
+        // reproject above. Runs after the fix-6 edge-vector prune above; the two
+        // are independent boot reconciliations.
+        rederive_projections_on_boot(&connection).map_err(|_| EngineOpenError::Io {
+            message: "could not re-derive projection registry on boot".to_string(),
+        })?;
 
         // EU-5f — recovery pin (`dev/design/embedder.md` §0.3, Hazard 4). If
         // the identity is MC-required, no mean is pinned, yet the workspace
@@ -6799,6 +6928,10 @@ impl Engine {
                 body,
                 row_kind,
                 ProjectionPass::Write,
+                // This #[doc(hidden)] writer inserts with the column DEFAULT
+                // `state = 'active'` (no state column in its INSERT), so the row
+                // is always active and its attributes project.
+                true,
             )
             .map_err(|_| EngineError::Storage)?;
             advance_projection_cursor(&tx).map_err(|_| EngineError::Storage)?;
@@ -7400,8 +7533,16 @@ impl Engine {
     /// Keys on the BARE `logical_id` (`l:` space only); a `Content`(`h:`) or
     /// `Passage`(`p:`) id raises [`EngineError::NotLifecycleAddressable`].
     /// The state flip mutates the single active (`superseded_at IS NULL`) row; a
-    /// `deleted` row STAYS indexed (gap-5) — only the `state='active'` default
-    /// filter excludes it, so an undelete needs no re-projection.
+    /// `deleted` row STAYS node-FTS / vector indexed (gap-5) — only the
+    /// `state='active'` default filter excludes those shadows, so an undelete
+    /// needs no re-projection there.
+    ///
+    /// 0.8.20 Slice 15d fix-2 [P2] — the row-owned ATTRIBUTE projection
+    /// (`canonical_attributes` / `property_search_index`) is the exception: it has
+    /// NO read-side lifecycle filter (the property-FTS5 table cannot carry one), so
+    /// it is maintained AT REST to track the backfill's set
+    /// (projected ⟺ active ∧ non-superseded). Promote/undelete PROJECT the declared
+    /// attributes; soft-delete PURGES them; reject is a no-op.
     pub fn transition(
         &self,
         logical_id: &str,
@@ -7424,20 +7565,22 @@ impl Engine {
 
         // The lifecycle state lives on the single active (superseded_at IS NULL)
         // version; a `deleted` row is still that active version, just flagged.
-        let current: Option<String> = tx
+        // fix-2 [P2] — also read its `write_cursor` + `body` so the row-owned
+        // attribute projection can be maintained after the state flip.
+        let current: Option<(String, i64, String)> = tx
             .query_row(
-                "SELECT state FROM canonical_nodes \
+                "SELECT state, write_cursor, body FROM canonical_nodes \
                  WHERE logical_id = ?1 AND superseded_at IS NULL",
                 params![lid],
-                |r| r.get::<_, String>(0),
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?)),
             )
             .optional()
             .map_err(|_| EngineError::Storage)?;
 
         // A missing active row is an absent/purged node — the terminal `Purged`
         // state for legality purposes (nothing is a legal target from there).
-        let from_state = match current {
-            Some(s) => LifecycleState::from_str_opt(&s).ok_or(EngineError::Storage)?,
+        let from_state = match &current {
+            Some((s, _, _)) => LifecycleState::from_str_opt(s).ok_or(EngineError::Storage)?,
             None => LifecycleState::Purged,
         };
 
@@ -7461,9 +7604,86 @@ impl Engine {
             params![to_state.as_str(), new_reason, lid],
         )
         .map_err(|_| EngineError::Storage)?;
+
+        // fix-2 [P2] — maintain the row-owned attribute projection so it keeps
+        // tracking the backfill's set (projected ⟺ active ∧ non-superseded). The
+        // transitioned row is the single non-superseded version, so the invariant
+        // reduces to `projected ⟺ to_state == Active`. We PURGE unconditionally
+        // (idempotent — a no-op on the never-projected pending / already-purged
+        // deleted arms) then RE-PROJECT when landing `Active`. This covers every
+        // legal move: promote (pending→active) projects the withheld attributes;
+        // soft-delete (active→deleted) purges; undelete (deleted→active)
+        // re-projects; reject (pending→deleted) is a no-op. The property tables
+        // (`canonical_attributes` / `property_search_index`) carry NO read-side
+        // lifecycle filter — unlike node-FTS / vector shadows, which the canonical
+        // read path already excludes when non-active — so they MUST be maintained
+        // at rest, the same rationale as fix-1's purge-on-supersede. Node-FTS /
+        // vector shadows are deliberately left intact (gap-5: a deleted row STAYS
+        // indexed; only the `state='active'` default read filter hides it).
+        if let Some((cursor, body)) = current.as_ref().map(|(_, c, b)| (*c, b.as_str())) {
+            purge_row_projections_for_cursor_in(
+                &tx,
+                cursor,
+                &[ProjectionClass::Attribute, ProjectionClass::PropertyFts],
+            )
+            .map_err(|_| EngineError::Storage)?;
+            if matches!(to_state, LifecycleState::Active) {
+                project_node_attributes(&tx, cursor, body).map_err(|_| EngineError::Storage)?;
+            }
+        }
         tx.commit().map_err(|_| EngineError::Storage)?;
         self.counters.record_admin();
         Ok(())
+    }
+
+    /// 0.8.20 Slice 15d (R-20-PR / C-1) — the projection registry as a
+    /// DECLARATIVE, IDEMPOTENT apply. The engine is the SOLE projection authority
+    /// (Q3): it diffs the supplied `specs` against the durable registry and
+    /// backfills the difference in ONE transaction. Cheap projections
+    /// (`filterable`, `searchable→FTS`) are built same-transaction; `rankable`
+    /// and the `searchable→vector` sub-target are PERSISTED but deferred (F9 /
+    /// Slice 20) — declaring them never errors (graceful-absent, Q6a).
+    ///
+    /// `drop` is EXPLICIT (C3, `api-surface.md:27`): omission of a live
+    /// projection from `specs` does NOT drop it; removal requires naming it in
+    /// `drop`. An incompatible/destructive change to a live projection that is
+    /// NOT in `drop` is refused with [`EngineError::ProjectionDestructive`], the
+    /// destructive delta surfaced — never silent data loss. Re-applying an
+    /// unchanged spec diffs to a no-op ([`ProjectionDelta::unchanged`]).
+    ///
+    /// Pair with [`Engine::read_projections`] to see current state before
+    /// applying.
+    pub fn configure_projections(
+        &self,
+        specs: &[ProjectionSpec],
+        drop: &[String],
+    ) -> Result<ProjectionDelta, EngineError> {
+        self.ensure_open()?;
+        // Settle in-flight async projection work first (same rationale as
+        // `transition`): the async worker commits on its own connection, so a
+        // backfill issued while it holds the write lock would SQLITE_BUSY.
+        self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS)?;
+
+        let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+        let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
+        let delta = apply_projection_config(&tx, specs, drop)?;
+        tx.commit().map_err(|_| EngineError::Storage)?;
+        self.counters.record_admin();
+        Ok(delta)
+    }
+
+    /// 0.8.20 Slice 15d (R-20-PR) — read the current projection registry (C5
+    /// introspection: `read.projections`). Returns every declared
+    /// [`ProjectionSpec`] sorted by name, so a caller can inspect current state
+    /// (and the destructive delta a change would cause) BEFORE applying. Pure
+    /// read; never mutates.
+    pub fn read_projections(&self) -> Result<Vec<ProjectionSpec>, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        let registry = load_projection_registry(connection).map_err(|_| EngineError::Storage)?;
+        Ok(registry.iter().map(|(name, stored)| stored.to_spec(name)).collect())
     }
 
     /// OPP-12 Phase-1 (0.8.19 Slice 10, R-PG-1/2) — irreversibly hard-erase a
@@ -8548,8 +8768,19 @@ impl Engine {
         let pass = if include_fts { ProjectionPass::Write } else { ProjectionPass::VectorOnly };
         let mut rows_rebuilt: u64 = 0;
         for row in canonical_node_rows(&tx).map_err(|_| EngineError::Storage)? {
-            project_canonical_node_row(&tx, row.cursor, &row.kind, &row.body, row.row_kind, pass)
-                .map_err(|_| EngineError::Storage)?;
+            project_canonical_node_row(
+                &tx,
+                row.cursor,
+                &row.kind,
+                &row.body,
+                row.row_kind,
+                pass,
+                // fix-2 [P2]: the attribute half of the replay tracks the backfill's
+                // active-and-non-superseded row set; FTS / vector shadows still
+                // rebuild for every row (read-side lifecycle filter, unchanged).
+                row.attr_projected,
+            )
+            .map_err(|_| EngineError::Storage)?;
             if include_fts {
                 rows_rebuilt = rows_rebuilt.saturating_add(1);
             }
@@ -11957,6 +12188,13 @@ struct CanonicalNodeRow {
     kind: String,
     body: String,
     row_kind: RowKind,
+    /// fix-2 [P2] — whether this row is in the attribute projection's row set
+    /// (`state = 'active' AND superseded_at IS NULL`, the exact `backfill_attribute`
+    /// predicate). A projector-replay rebuild uses this to gate the attribute
+    /// projection so it does not re-surface a pending / superseded node's values.
+    /// Node-FTS / vector shadows are rebuilt for every row (their stale versions
+    /// are excluded by the read-side lifecycle join, unchanged from before).
+    attr_projected: bool,
 }
 
 /// 0.8.0 Slice 5 (G1) — re-tokenize `search_index` from the canonical source
@@ -11994,6 +12232,11 @@ fn reproject_search_index_after_tokenizer_upgrade(connection: &Connection) -> ru
                 &row.body,
                 row.row_kind,
                 ProjectionPass::FtsOnly,
+                // FtsOnly never touches the attribute store (predates step 24), so
+                // `node_active` is inert here; forward the row's flag anyway (it is
+                // the backfill's active-and-non-superseded predicate) so the field
+                // has a reader in every build configuration.
+                row.attr_projected,
             )?;
         }
         connection.execute(
@@ -12133,15 +12376,24 @@ fn prune_orphaned_edge_vectors(connection: &Connection) -> rusqlite::Result<()> 
 }
 
 fn canonical_node_rows(connection: &Connection) -> rusqlite::Result<Vec<CanonicalNodeRow>> {
+    // fix-2 [P2] — also read `state` + `superseded_at` so a replay rebuild can gate
+    // the attribute projection to the backfill's row set. `attr_projected` mirrors
+    // the exact `backfill_attribute` predicate (`state = 'active' AND
+    // superseded_at IS NULL`): a NULL/foreign state is NOT 'active' and so is
+    // excluded, identical to the SQL equality.
     let mut statement = connection.prepare(
-        "SELECT write_cursor, kind, body, row_kind FROM canonical_nodes ORDER BY write_cursor",
+        "SELECT write_cursor, kind, body, row_kind, state, superseded_at \
+         FROM canonical_nodes ORDER BY write_cursor",
     )?;
     let rows = statement.query_map([], |row| {
+        let state: Option<String> = row.get::<_, Option<String>>(4)?;
+        let superseded_at: Option<i64> = row.get::<_, Option<i64>>(5)?;
         Ok(CanonicalNodeRow {
             cursor: row.get::<_, u64>(0)?,
             kind: row.get::<_, String>(1)?,
             body: row.get::<_, String>(2)?,
             row_kind: row_kind_from_column(&row.get::<_, String>(3)?),
+            attr_projected: state.as_deref() == Some("active") && superseded_at.is_none(),
         })
     })?;
     rows.collect()
@@ -14449,6 +14701,24 @@ fn prior_edge_cursors_by_logical_id(
     rows.collect()
 }
 
+/// 0.8.20 Slice 15d fix-1 finding 2 [P2] — the active (non-superseded) NODE
+/// cursors for a `logical_id`, collected BEFORE the tombstone-then-insert
+/// supersession UPDATE so the caller can purge the about-to-be-superseded row's
+/// row-owned attribute projections. Mirrors [`prior_edge_cursors_by_logical_id`].
+/// The partial-unique-active index means this is at most one cursor; a `Vec`
+/// keeps it robust and symmetric with the edge path.
+fn prior_node_cursors_by_logical_id(
+    tx: &rusqlite::Transaction<'_>,
+    logical_id: &str,
+) -> rusqlite::Result<Vec<i64>> {
+    let mut s = tx.prepare_cached(
+        "SELECT write_cursor FROM canonical_nodes \
+         WHERE logical_id = ?1 AND superseded_at IS NULL",
+    )?;
+    let rows = s.query_map(params![logical_id], |r| r.get(0))?;
+    rows.collect()
+}
+
 fn prior_edge_cursors_by_triple(
     tx: &rusqlite::Transaction<'_>,
     from: &str,
@@ -14490,6 +14760,12 @@ enum ProjectionClass {
     EdgeFts,
     Vector,
     Readiness,
+    /// 0.8.20 Slice 15d (R-20-EAV) — the EAV attribute store (`filterable` +
+    /// the value-at-rest for `searchable`). Same-transaction, row-owned.
+    Attribute,
+    /// 0.8.20 Slice 15d (R-20-EAV) — the property-FTS5 shadow of attribute
+    /// values (`searchable→FTS`). Same-transaction, row-owned.
+    PropertyFts,
 }
 
 /// 0.8.20 Slice 5a (R-20-E1) — one ROW-OWNED projection table: a shadow whose
@@ -14553,6 +14829,24 @@ const ROW_OWNED_PROJECTIONS: &[RowOwnedProjection] = &[
         cursor_column: "write_cursor",
         class: ProjectionClass::Readiness,
     },
+    // 0.8.20 Slice 15d (R-20-EAV) — the EAV attribute store and its property-FTS
+    // shadow both hold declared attribute VALUES at rest (potential PII), keyed
+    // 1:1 with the owning node's write_cursor. They MUST be reachable by
+    // `purge`/`excise_source`: registering them here is what makes
+    // `erase_row_projections` delete them without a hand-rolled list (an
+    // unregistered content-storing table is exactly the `search_index_v2` leak
+    // class this registry closes). The `guard_row_owned_registry` unit test
+    // FAILS if either is left unregistered.
+    RowOwnedProjection {
+        table: "canonical_attributes",
+        cursor_column: "write_cursor",
+        class: ProjectionClass::Attribute,
+    },
+    RowOwnedProjection {
+        table: "property_search_index",
+        cursor_column: "write_cursor",
+        class: ProjectionClass::PropertyFts,
+    },
 ];
 
 /// 0.8.20 Slice 5a (R-20-E1) — erase EVERY row-owned projection for one
@@ -14565,6 +14859,29 @@ const ROW_OWNED_PROJECTIONS: &[RowOwnedProjection] = &[
 fn erase_row_projections(tx: &Connection, write_cursor: i64) -> rusqlite::Result<u64> {
     let mut deleted: u64 = 0;
     for projection in ROW_OWNED_PROJECTIONS {
+        let sql =
+            format!("DELETE FROM {} WHERE {} = ?1", projection.table, projection.cursor_column);
+        deleted = deleted.saturating_add(tx.execute(&sql, [write_cursor])? as u64);
+    }
+    Ok(deleted)
+}
+
+/// 0.8.20 Slice 15d fix-1 finding 2 [P2] — purge the row-owned projections in
+/// `classes` for ONE canonical `write_cursor`. Same registry-driven mechanism as
+/// [`erase_row_projections`] (iterate [`ROW_OWNED_PROJECTIONS`], delete by the
+/// declared cursor column) but scoped to a class SUBSET, so the write path can
+/// drop a SUPERSEDED node's `Attribute` + `PropertyFts` rows — making the at-rest
+/// property projection active-only — WITHOUT touching the `NodeFts`/`Vector`
+/// shadows, whose stale rows the node read path already excludes by joining
+/// `canonical_nodes WHERE superseded_at IS NULL`. Consistent with the erasure
+/// model: an unregistered table is unreachable here, exactly as with erasure.
+fn purge_row_projections_for_cursor_in(
+    tx: &Connection,
+    write_cursor: i64,
+    classes: &[ProjectionClass],
+) -> rusqlite::Result<u64> {
+    let mut deleted: u64 = 0;
+    for projection in ROW_OWNED_PROJECTIONS.iter().filter(|p| classes.contains(&p.class)) {
         let sql =
             format!("DELETE FROM {} WHERE {} = ?1", projection.table, projection.cursor_column);
         deleted = deleted.saturating_add(tx.execute(&sql, [write_cursor])? as u64);
@@ -14599,6 +14916,8 @@ fn truncate_all_row_projections(tx: &Connection) -> rusqlite::Result<u64> {
             ProjectionClass::EdgeFts,
             ProjectionClass::Vector,
             ProjectionClass::Readiness,
+            ProjectionClass::Attribute,
+            ProjectionClass::PropertyFts,
         ],
     )
 }
@@ -14633,6 +14952,572 @@ impl ProjectionPass {
 
     fn writes_vector_state(self) -> bool {
         matches!(self, ProjectionPass::Write | ProjectionPass::VectorOnly)
+    }
+
+    /// 0.8.20 Slice 15d (R-20-EAV) — whether this pass (re)projects the declared
+    /// attribute set into the EAV store + property-FTS. Only the full `Write`
+    /// pass does: the `FtsOnly` tokenizer-upgrade reproject predates step 24 (no
+    /// registry/attribute tables exist at that migration point, so it must not
+    /// touch them), and `VectorOnly` rebuilds only the async vector shadows. The
+    /// operator FTS rebuild uses `Write`, so a full `rebuild_projections`
+    /// re-derives attributes cleanly after `truncate_all_row_projections` clears
+    /// the two attribute classes.
+    fn writes_attributes(self) -> bool {
+        matches!(self, ProjectionPass::Write)
+    }
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — the on-disk registry row for one declared
+/// projection, read back from `_fathomdb_projection_registry`.
+///
+/// **On-disk encoding of the optional sub-objects.** The `fts_tokenizer` column
+/// is tri-valued: SQL `NULL` = no `fts` sub-object; empty string `""` = `fts`
+/// present with the engine-default tokenizer; a non-empty string = `fts` with a
+/// custom tokenizer. This is what lets `searchable→FTS with default tokenizer`
+/// be distinguished durably from `searchable` with no FTS sub-target. `vector`
+/// mirrors it with an explicit `vector_declared` bit plus a nullable
+/// `vector_embedder`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct StoredProjection {
+    roles: BTreeSet<ProjectionRole>,
+    fts_present: bool,
+    /// `Some(custom)` custom tokenizer; `None` = engine default (only
+    /// meaningful when `fts_present`).
+    fts_tokenizer: Option<String>,
+    vector_declared: bool,
+    vector_embedder: Option<String>,
+}
+
+impl StoredProjection {
+    /// True iff the declared roles want the attribute VALUE stored at rest in
+    /// the EAV store: `filterable` (the value IS the filter target) or
+    /// `searchable` (the value is the retrievable meaning, and Slice 20's vector
+    /// embed will read it from here). `rankable`-only wants no value at rest.
+    fn wants_eav(&self) -> bool {
+        self.roles.contains(&ProjectionRole::Filterable)
+            || self.roles.contains(&ProjectionRole::Searchable)
+    }
+
+    /// True iff a `searchable→FTS` property-FTS row should be written: the
+    /// `searchable` role AND an `fts` sub-object.
+    fn wants_property_fts(&self) -> bool {
+        self.roles.contains(&ProjectionRole::Searchable) && self.fts_present
+    }
+
+    /// The `fts_tokenizer` column value: `None` (SQL NULL) when no `fts`
+    /// sub-object, else the custom tokenizer or `""` for engine-default.
+    fn fts_column(&self) -> Option<String> {
+        if self.fts_present {
+            Some(self.fts_tokenizer.clone().unwrap_or_default())
+        } else {
+            None
+        }
+    }
+
+    /// Build from the public [`ProjectionSpec`].
+    fn from_spec(spec: &ProjectionSpec) -> Self {
+        StoredProjection {
+            roles: spec.roles.clone(),
+            fts_present: spec.fts.is_some(),
+            fts_tokenizer: spec
+                .fts
+                .as_ref()
+                .and_then(|f| f.tokenizer.clone())
+                .filter(|t| !t.is_empty()),
+            vector_declared: spec.vector.is_some(),
+            vector_embedder: spec
+                .vector
+                .as_ref()
+                .and_then(|v| v.embedder.clone())
+                .filter(|e| !e.is_empty()),
+        }
+    }
+
+    /// Reconstruct the public [`ProjectionSpec`] for `read_projections`.
+    fn to_spec(&self, name: &str) -> ProjectionSpec {
+        ProjectionSpec {
+            name: name.to_string(),
+            roles: self.roles.clone(),
+            fts: if self.fts_present {
+                Some(ProjectionFts { tokenizer: self.fts_tokenizer.clone() })
+            } else {
+                None
+            },
+            vector: if self.vector_declared {
+                Some(ProjectionVector { embedder: self.vector_embedder.clone() })
+            } else {
+                None
+            },
+        }
+    }
+
+    /// The set of ROLE spellings this declaration DEFERS rather than builds:
+    /// `rankable` (F9 not live) and, since 15d builds no embedding, the
+    /// `searchable→vector` sub-target. Used to populate `ProjectionDelta.deferred`.
+    fn has_deferred(&self) -> bool {
+        self.roles.contains(&ProjectionRole::Rankable) || self.vector_declared
+    }
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — is `name` a well-formed attribute name?
+///
+/// Establishes the invariant "a name that `configure_projections` ACCEPTS must be
+/// POPULATABLE": the write-path extraction compiles the SQLite JSON path
+/// `$."<name>"` (double-quoted key). A name must therefore round-trip through
+/// that quoted-key form unchanged. Rejects:
+///   - empty;
+///   - a double-quote `"` (would terminate the quoted key early → malformed path,
+///     ERRORing inside the write transaction);
+///   - a BACKSLASH `\` (fix-4 finding 1 [P2]): SQLite treats `\` as an escape
+///     introducer inside the double-quoted JSON-path key, so a body key literally
+///     containing `\` (e.g. `a\b`) is NOT matched by `$."a\b"`. Pre-fix the name
+///     was accepted yet the attribute silently NEVER populated
+///     `canonical_attributes` — an accept-then-never-populate footgun. Rejecting
+///     it keeps the accept ⟹ works contract (mirrors the TC-33 hard-reject
+///     philosophy);
+///   - any ASCII control char (incl. NUL): not a safe/legible key spelling and
+///     not reliably matchable through the quoted-key form.
+///
+/// Projection names are app-declared identifiers, so this charset restriction is
+/// a legitimate contract. Caller-supplied, so it is validated at
+/// `configure_projections` time (spec names AND the `drop` list).
+fn is_valid_attribute_name(name: &str) -> bool {
+    !name.is_empty()
+        && !name.contains('"')
+        && !name.contains('\\')
+        && !name.chars().any(|c| c.is_control())
+}
+
+/// 0.8.20 Slice 15d — the SQLite JSON path that extracts attribute `name` from a
+/// node body. `name` is pre-validated by [`is_valid_attribute_name`]; the path
+/// is bound as a PARAMETER (never interpolated into SQL), so this is not an
+/// injection surface even before that validation.
+fn attribute_json_path(name: &str) -> String {
+    format!("$.\"{name}\"")
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — load the durable projection registry
+/// (`_fathomdb_projection_registry`) into a name→[`StoredProjection`] map. This
+/// is the derived-cache source (Q5) that boot re-derive and every
+/// `configure_projections` diff read.
+fn load_projection_registry(
+    conn: &Connection,
+) -> rusqlite::Result<BTreeMap<String, StoredProjection>> {
+    let mut out = BTreeMap::new();
+    // The registry table is created by schema step 24; a DB migrated to a
+    // pre-24 head (e.g. a compatibility/partial-migration test open) does not
+    // have it. Absent ⇒ no projections declared ⇒ empty registry, not an error.
+    // This keeps boot re-derive and the write-path attribute projector safe on
+    // every pre-24 schema.
+    let table_exists: bool = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_fathomdb_projection_registry'",
+            [],
+            |_| Ok(true),
+        )
+        .optional()?
+        .unwrap_or(false);
+    if !table_exists {
+        return Ok(out);
+    }
+    let mut stmt = conn.prepare(
+        "SELECT name, roles, fts_tokenizer, vector_embedder, vector_declared
+         FROM _fathomdb_projection_registry",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        let name: String = row.get(0)?;
+        let roles_json: String = row.get(1)?;
+        let fts_tokenizer: Option<String> = row.get(2)?;
+        let vector_embedder: Option<String> = row.get(3)?;
+        let vector_declared: i64 = row.get(4)?;
+        Ok((name, roles_json, fts_tokenizer, vector_embedder, vector_declared))
+    })?;
+    for row in rows {
+        let (name, roles_json, fts_col, vector_embedder, vector_declared) = row?;
+        let roles: BTreeSet<ProjectionRole> = parse_roles_json(&roles_json);
+        let fts_present = fts_col.is_some();
+        let fts_tokenizer = fts_col.filter(|t| !t.is_empty());
+        out.insert(
+            name,
+            StoredProjection {
+                roles,
+                fts_present,
+                fts_tokenizer,
+                vector_declared: vector_declared != 0,
+                vector_embedder,
+            },
+        );
+    }
+    Ok(out)
+}
+
+/// Roles are persisted as a compact, sorted, comma-separated list (set
+/// semantics; order-independent). Unknown tokens are ignored (forward-compat).
+fn parse_roles_json(s: &str) -> BTreeSet<ProjectionRole> {
+    s.split(',').filter_map(|t| ProjectionRole::from_str_opt(t.trim())).collect()
+}
+
+fn roles_to_storage(roles: &BTreeSet<ProjectionRole>) -> String {
+    roles.iter().map(|r| r.as_str()).collect::<Vec<_>>().join(",")
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — write/overwrite one registry row.
+fn persist_projection_row(
+    tx: &Connection,
+    name: &str,
+    stored: &StoredProjection,
+) -> rusqlite::Result<()> {
+    tx.execute(
+        "INSERT INTO _fathomdb_projection_registry
+             (name, roles, fts_tokenizer, vector_embedder, vector_declared)
+         VALUES(?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(name) DO UPDATE SET
+             roles = excluded.roles,
+             fts_tokenizer = excluded.fts_tokenizer,
+             vector_embedder = excluded.vector_embedder,
+             vector_declared = excluded.vector_declared",
+        params![
+            name,
+            roles_to_storage(&stored.roles),
+            stored.fts_column(),
+            stored.vector_embedder,
+            i64::from(stored.vector_declared),
+        ],
+    )?;
+    Ok(())
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — delete one registry row.
+fn remove_projection_row(tx: &Connection, name: &str) -> rusqlite::Result<()> {
+    tx.execute("DELETE FROM _fathomdb_projection_registry WHERE name = ?1", params![name])?;
+    Ok(())
+}
+
+/// 0.8.20 Slice 15d (R-20-EAV) — delete every EAV + property-FTS row for one
+/// attribute `name` (all owning nodes). The idempotent-rebuild primitive: a
+/// changed or dropped projection clears its rows before (re)backfill.
+fn clear_attribute_projection(tx: &Connection, name: &str) -> rusqlite::Result<()> {
+    tx.execute("DELETE FROM property_search_index WHERE attr_name = ?1", params![name])?;
+    tx.execute("DELETE FROM canonical_attributes WHERE attr_name = ?1", params![name])?;
+    Ok(())
+}
+
+/// 0.8.20 Slice 15d (R-20-EAV) — project ONE attribute value for ONE node row
+/// into the EAV store and (if `searchable→FTS`) the property-FTS shadow. Skips a
+/// NULL/absent extraction (an absent attribute means no row, so a `filterable`
+/// equality simply never matches it — correct). Shared by the write path and
+/// the backfill so they cannot drift.
+fn project_one_attribute(
+    tx: &Connection,
+    cursor: i64,
+    body: &str,
+    name: &str,
+    stored: &StoredProjection,
+) -> rusqlite::Result<()> {
+    if !stored.wants_eav() {
+        return Ok(());
+    }
+    let path = attribute_json_path(name);
+    // json_extract over a non-JSON body would error; guard with json_valid so a
+    // plain-text body simply yields no attribute rows.
+    //
+    // fix-1 finding 1 [P2] — project EVERY JSON scalar type, not just strings.
+    // The prior form read the extraction as `Option<String>`; for a JSON number
+    // or bool, `json_extract` returns an INTEGER/REAL, the `get::<Option<String>>`
+    // conversion FAILED, and `.unwrap_or(None)` silently treated the attribute as
+    // absent — so a numeric/boolean filterable value never projected. We now
+    // render a single canonical TEXT form per JSON type, keyed on `json_type` so
+    // the stored value is deterministic and the SAME value flows to BOTH
+    // `canonical_attributes` and `property_search_index` (consistency by
+    // construction — one `value` binding below):
+    //   - string  -> the text verbatim
+    //   - integer -> decimal text (CAST AS TEXT); e.g. 3 -> "3"
+    //   - real    -> decimal text (CAST AS TEXT); e.g. 3.5 -> "3.5"
+    //   - true    -> "true", false -> "false"  (preserve the JSON literal, NOT the
+    //                SQLite `1`/`0` that a bare `CAST(json_extract(...) AS TEXT)`
+    //                would yield — so a bool filter matches the value the caller
+    //                wrote, and "true" never collides with the number 1).
+    //   - null / absent path -> SQL NULL -> no row (an absent attribute correctly
+    //                never matches a `filterable` equality).
+    //   - object / array -> DELIBERATELY SKIPPED (SQL NULL -> no row): a composite
+    //                value is not a scalar filter/FTS target in 15d; projecting its
+    //                raw JSON text would be a footgun (nested-field filtering is the
+    //                >=0.9.x multi-field work). Skipping is deliberate, not an
+    //                accidental type-conversion drop — no scalar type is dropped.
+    let value: Option<String> = tx
+        .query_row(
+            "SELECT CASE WHEN json_valid(?1) THEN
+                 CASE json_type(?1, ?2)
+                     WHEN 'true'   THEN 'true'
+                     WHEN 'false'  THEN 'false'
+                     WHEN 'null'   THEN NULL
+                     WHEN 'object' THEN NULL
+                     WHEN 'array'  THEN NULL
+                     ELSE CAST(json_extract(?1, ?2) AS TEXT)
+                 END
+             END",
+            params![body, path],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .unwrap_or(None);
+    let Some(value) = value else {
+        return Ok(());
+    };
+    tx.execute(
+        "INSERT INTO canonical_attributes(write_cursor, attr_name, attr_value)
+         VALUES(?1, ?2, ?3)",
+        params![cursor, name, value],
+    )?;
+    if stored.wants_property_fts() {
+        tx.execute(
+            "INSERT INTO property_search_index(attr_value, attr_name, write_cursor)
+             VALUES(?1, ?2, ?3)",
+            params![value, name, cursor],
+        )?;
+    }
+    Ok(())
+}
+
+/// 0.8.20 Slice 15d (R-20-EAV) — the write-path attribute projector: for a
+/// just-inserted node, project EVERY declared attribute (reading the live
+/// registry from `tx`). Same-transaction, so the node is filter/FTS-retrievable
+/// on commit. A no-op when the registry is empty (the pre-`configure_projections`
+/// default), so it costs one empty-table scan per node and is behaviour-neutral
+/// until a projection is declared.
+fn project_node_attributes(tx: &Connection, cursor: i64, body: &str) -> rusqlite::Result<()> {
+    let registry = load_projection_registry(tx)?;
+    for (name, stored) in &registry {
+        project_one_attribute(tx, cursor, body, name, stored)?;
+    }
+    Ok(())
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — backfill ONE attribute across every ACTIVE,
+/// non-superseded canonical node. Called by `configure_projections` when a
+/// projection is added/changed (after `clear_attribute_projection`), and by boot
+/// re-derive. Idempotent when paired with the clear.
+fn backfill_attribute(
+    tx: &Connection,
+    name: &str,
+    stored: &StoredProjection,
+) -> rusqlite::Result<()> {
+    if !stored.wants_eav() {
+        return Ok(());
+    }
+    let rows: Vec<(i64, String)> = {
+        let mut stmt = tx.prepare(
+            "SELECT write_cursor, body FROM canonical_nodes
+             WHERE superseded_at IS NULL AND state = 'active'",
+        )?;
+        let collected = stmt
+            .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        collected
+    };
+    for (cursor, body) in rows {
+        project_one_attribute(tx, cursor, &body, name, stored)?;
+    }
+    Ok(())
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — is `desired` an INCOMPATIBLE/DESTRUCTIVE change
+/// to a live `existing` projection? A destructive change discards an
+/// expensive-to-rebuild resource and so REQUIRES an explicit `drop` (C3): a role
+/// REMOVAL, dropping the `fts`/`vector` sub-target, or changing the tokenizer /
+/// embedder. Purely ADDITIVE changes (adding a role, adding an `fts`/`vector`
+/// sub-object) are non-destructive and applied in place.
+fn is_destructive_projection_change(
+    existing: &StoredProjection,
+    desired: &StoredProjection,
+) -> bool {
+    if existing.roles.iter().any(|r| !desired.roles.contains(r)) {
+        return true;
+    }
+    if existing.fts_present
+        && (!desired.fts_present || existing.fts_tokenizer != desired.fts_tokenizer)
+    {
+        return true;
+    }
+    if existing.vector_declared
+        && (!desired.vector_declared || existing.vector_embedder != desired.vector_embedder)
+    {
+        return true;
+    }
+    false
+}
+
+/// Human-readable summary of the destructive delta, surfaced in
+/// [`EngineError::ProjectionDestructive`] so the caller sees WHAT it must drop.
+fn describe_projection_delta(existing: &StoredProjection, desired: &StoredProjection) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    for r in &existing.roles {
+        if !desired.roles.contains(r) {
+            parts.push(format!("role '{}' removed", r.as_str()));
+        }
+    }
+    if existing.fts_present && !desired.fts_present {
+        parts.push("fts sub-target removed".to_string());
+    } else if existing.fts_present && existing.fts_tokenizer != desired.fts_tokenizer {
+        parts.push("fts tokenizer changed".to_string());
+    }
+    if existing.vector_declared && !desired.vector_declared {
+        parts.push("vector sub-target removed".to_string());
+    } else if existing.vector_declared && existing.vector_embedder != desired.vector_embedder {
+        parts.push("vector embedder changed".to_string());
+    }
+    if parts.is_empty() {
+        "incompatible change".to_string()
+    } else {
+        parts.join("; ")
+    }
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — the declarative, idempotent diff+backfill apply
+/// that backs [`Engine::configure_projections`]. Runs inside the caller's write
+/// transaction `tx`. Order: apply `drop`s first (so a drop+re-declare in one
+/// call rebuilds fresh), then diff each spec. Idempotent re-registration diffs to
+/// an empty delta (`unchanged`). A destructive change without an explicit drop is
+/// refused with [`EngineError::ProjectionDestructive`].
+fn apply_projection_config(
+    tx: &Connection,
+    specs: &[ProjectionSpec],
+    drop: &[String],
+) -> Result<ProjectionDelta, EngineError> {
+    // Validate up-front so a bad name aborts before any write.
+    //
+    // fix-6 finding [P2] — REJECT a duplicate projection `name` within `specs`
+    // (and a duplicate entry within `drop`) up front. The diff loop below diffs
+    // every spec against the ONE pre-loop registry snapshot, so a name repeated
+    // in `specs` diffed the SECOND spec against state that never saw the first
+    // spec's just-persisted row: on a fresh DB `[status(searchable+fts),
+    // status(rankable-only)]` reported `built=[status]` in the delta while the
+    // registry ended rankable-only (which builds nothing) — the returned delta
+    // DIVERGED from the persisted registry, breaking the fix-4 "accept ⟹ correct"
+    // contract. A duplicate `drop` entry likewise reported the drop twice though
+    // the row was removed once. A single request naming the same projection twice
+    // is ambiguous/malformed, so we refuse it (rejection, not last-wins coalesce)
+    // — a rejected request is a total no-op, keeping the registry and delta
+    // consistent with the accepted input. A name that appears in BOTH `specs` and
+    // `drop` is NOT a duplicate: that is the documented drop-then-rebuild-fresh
+    // pattern (drops apply first, then the fresh spec builds), so it is allowed.
+    let mut seen_spec_names: BTreeSet<&str> = BTreeSet::new();
+    for spec in specs {
+        if !is_valid_attribute_name(&spec.name) {
+            return Err(EngineError::InvalidArgument {
+                msg: format!("invalid projection attribute name: {:?}", spec.name),
+            });
+        }
+        if spec.roles.is_empty() {
+            return Err(EngineError::InvalidArgument {
+                msg: format!("projection '{}' declares no roles", spec.name),
+            });
+        }
+        if !seen_spec_names.insert(spec.name.as_str()) {
+            return Err(EngineError::InvalidArgument {
+                msg: format!("duplicate projection name in one request: '{}'", spec.name),
+            });
+        }
+    }
+    let mut seen_drop_names: BTreeSet<&str> = BTreeSet::new();
+    for name in drop {
+        if !is_valid_attribute_name(name) {
+            return Err(EngineError::InvalidArgument {
+                msg: format!("invalid projection drop name: {name:?}"),
+            });
+        }
+        if !seen_drop_names.insert(name.as_str()) {
+            return Err(EngineError::InvalidArgument {
+                msg: format!("duplicate projection drop in one request: '{name}'"),
+            });
+        }
+    }
+
+    let mut delta = ProjectionDelta::default();
+
+    // (1) Explicit drops. Omission never drops (C3); only this list does.
+    let before_drop = load_projection_registry(tx).map_err(|_| EngineError::Storage)?;
+    for name in drop {
+        if before_drop.contains_key(name) {
+            clear_attribute_projection(tx, name).map_err(|_| EngineError::Storage)?;
+            remove_projection_row(tx, name).map_err(|_| EngineError::Storage)?;
+            delta.dropped.push(name.clone());
+        }
+        // dropping an absent projection is an idempotent no-op, not an error.
+    }
+
+    // (2) Diff each spec against the post-drop registry.
+    let current = load_projection_registry(tx).map_err(|_| EngineError::Storage)?;
+    for spec in specs {
+        let desired = StoredProjection::from_spec(spec);
+        match current.get(&spec.name) {
+            Some(existing) if existing == &desired => {
+                // Idempotent re-registration — no-op (the keystone acceptance).
+            }
+            Some(existing) => {
+                if is_destructive_projection_change(existing, &desired) {
+                    return Err(EngineError::ProjectionDestructive {
+                        name: spec.name.clone(),
+                        delta: describe_projection_delta(existing, &desired),
+                    });
+                }
+                persist_projection_row(tx, &spec.name, &desired)
+                    .map_err(|_| EngineError::Storage)?;
+                clear_attribute_projection(tx, &spec.name).map_err(|_| EngineError::Storage)?;
+                backfill_attribute(tx, &spec.name, &desired).map_err(|_| EngineError::Storage)?;
+                if desired.wants_eav() {
+                    delta.built.push(spec.name.clone());
+                }
+                if desired.has_deferred() && !existing.has_deferred() {
+                    delta.deferred.push(spec.name.clone());
+                }
+            }
+            None => {
+                persist_projection_row(tx, &spec.name, &desired)
+                    .map_err(|_| EngineError::Storage)?;
+                clear_attribute_projection(tx, &spec.name).map_err(|_| EngineError::Storage)?;
+                backfill_attribute(tx, &spec.name, &desired).map_err(|_| EngineError::Storage)?;
+                if desired.wants_eav() {
+                    delta.built.push(spec.name.clone());
+                }
+                if desired.has_deferred() {
+                    delta.deferred.push(spec.name.clone());
+                }
+            }
+        }
+    }
+
+    delta.unchanged =
+        delta.built.is_empty() && delta.dropped.is_empty() && delta.deferred.is_empty();
+    Ok(delta)
+}
+
+/// 0.8.20 Slice 15d (R-20-PR, Q5) — BOOT re-derive: the engine `ProjectionSpec`
+/// is a DERIVED cache, re-driven idempotently on boot. For every persisted
+/// registry declaration, clear + backfill its EAV / property-FTS rows from the
+/// canonical nodes — so a DB whose registry row survives but whose projection
+/// rows are missing/partial (a crash window, a restored registry) CONVERGES on
+/// the next open. A no-op (single empty-table read) when no projections are
+/// declared — which is every pre-`configure_projections` DB. Runs on the writer
+/// connection, single-threaded, before readers spawn.
+fn rederive_projections_on_boot(conn: &Connection) -> rusqlite::Result<()> {
+    let registry = load_projection_registry(conn)?;
+    if registry.is_empty() {
+        return Ok(());
+    }
+    conn.execute_batch("BEGIN IMMEDIATE")?;
+    let result = (|| {
+        for (name, stored) in &registry {
+            clear_attribute_projection(conn, name)?;
+            backfill_attribute(conn, name, stored)?;
+        }
+        Ok(())
+    })();
+    match result {
+        Ok(()) => conn.execute_batch("COMMIT"),
+        Err(err) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            Err(err)
+        }
     }
 }
 
@@ -14683,6 +15568,7 @@ fn project_canonical_node_row(
     body: &str,
     row_kind: RowKind,
     pass: ProjectionPass,
+    node_active: bool,
 ) -> rusqlite::Result<bool> {
     let targets = index_targets_for_row_kind(row_kind);
     if targets.fts && pass.writes_fts() {
@@ -14715,6 +15601,28 @@ fn project_canonical_node_row(
              )",
             params![kind, body, cursor],
         )?;
+    }
+    // 0.8.20 Slice 15d (R-20-EAV) — same-transaction attribute projection. Only
+    // the full `Write` pass re-derives attributes (see `writes_attributes`): the
+    // FtsOnly tokenizer reproject predates step 24 and must not touch the
+    // registry/attribute tables; VectorOnly rebuilds only vector shadows. A full
+    // operator FTS rebuild uses `Write`, so it re-derives attributes after the
+    // truncate.
+    //
+    // fix-2 [P2]: gated on `node_active`. The at-rest attribute projection tracks
+    // EXACTLY the backfill's row set — `state = 'active' AND superseded_at IS NULL`
+    // (see `backfill_attribute`). Unlike node-FTS / vector shadows (whose stale
+    // versions are excluded by the canonical read path's `superseded_at IS NULL`
+    // / `state = 'active'` join), the property tables carry NO read-side lifecycle
+    // filter (`property_search_index` is an FTS5 table that cannot), so a pending
+    // or superseded node's attribute values would otherwise LEAK into a
+    // same-session property filter / property-FTS. The write path passes
+    // `state == Active`; a projector-replay rebuild passes `active ∧ non-superseded`
+    // per row. Lifecycle transitions maintain the store directly (see
+    // `Engine::transition`). Passes where `writes_attributes()` is false ignore the
+    // flag entirely.
+    if pass.writes_attributes() && node_active {
+        project_node_attributes(tx, cursor as i64, body)?;
     }
     let enqueue_vector = targets.vector && kind_is_vector_indexed(tx, kind).unwrap_or(false);
     if pass.writes_vector_state() {
@@ -15046,11 +15954,34 @@ fn commit_batch(
                 // the same logical_id SUPERSEDES, never forks. No-op when logical_id
                 // is None (legacy/own-identity insert, behavior-identical to 0.7.x).
                 if let Some(logical_id) = logical_id {
+                    // fix-1 finding 2 [P2]: collect the prior active cursor(s)
+                    // BEFORE tombstoning so we can purge the superseded row's
+                    // row-owned attribute projections and keep the at-rest EAV /
+                    // property-FTS store ACTIVE-ONLY. Without this, a same-session
+                    // property filter / property-FTS saw BOTH the stale and the
+                    // current value until a boot re-derive/reconfigure cleared the
+                    // table — a stale read that violates the active-only invariant.
+                    let prior_g0 = prior_node_cursors_by_logical_id(&tx, logical_id)?;
                     tx.execute(
                         "UPDATE canonical_nodes SET superseded_at = ?1
                          WHERE logical_id = ?2 AND superseded_at IS NULL",
                         params![cursor, logical_id],
                     )?;
+                    // Purge only the Attribute + PropertyFts classes: those tables
+                    // have NO `superseded_at IS NULL` read-side filter (the FTS5
+                    // `property_search_index` cannot carry one), so their stale rows
+                    // MUST be deleted at rest. The NodeFts (`search_index` /
+                    // `search_index_v2`) + Vector shadows are left intact — the node
+                    // read path already excludes their superseded rows via the
+                    // `canonical_nodes WHERE superseded_at IS NULL` join, so purging
+                    // them here would be a behaviour change outside this fix's scope.
+                    for sc in &prior_g0 {
+                        purge_row_projections_for_cursor_in(
+                            &tx,
+                            *sc,
+                            &[ProjectionClass::Attribute, ProjectionClass::PropertyFts],
+                        )?;
+                    }
                 }
                 // EXP-S (0.8.14 Slice 5, D1) — a `PreparedWrite::Node` is the
                 // `leaf` structural row_kind (a normal record). coverage/graph
@@ -15078,6 +16009,14 @@ fn commit_batch(
                 // this is behavior-identical to the pre-EXP-S inline path: FTS
                 // (sync, in-tx) + vector (async, gated by kind_is_vector_indexed);
                 // else the cursor is terminated up-front.
+                // fix-2 [P2]: gate the attribute projection on the create-time
+                // state. A fresh insert is always non-superseded, so the backfill
+                // predicate (`state = 'active' AND superseded_at IS NULL`) reduces
+                // to `state == Active` here. A `Pending` node is quarantined out of
+                // the canonical read model — its declared attributes must NOT reach
+                // the property store until a `transition(pending → active)` promotes
+                // it (which projects them then). Node-FTS / vector shadows are left
+                // to their read-side lifecycle filter, exactly as for supersession.
                 project_canonical_node_row(
                     &tx,
                     cursor,
@@ -15085,6 +16024,7 @@ fn commit_batch(
                     body,
                     RowKind::Leaf,
                     ProjectionPass::Write,
+                    matches!(state, InitialState::Active),
                 )?;
             }
             (
@@ -15894,6 +16834,47 @@ mod tests {
             "_fathomdb_projection_state is KIND-owned (per-kind enqueue watermark) and must \
              never be deleted per-cursor: erasing one row would rewind a whole kind's watermark"
         );
+    }
+
+    /// 0.8.20 Slice 15d (R-20-EAV) — PROVE THE GUARD BITES. The two net-new
+    /// content-storing projection tables (`canonical_attributes`,
+    /// `property_search_index`) are `write_cursor`-keyed and hold attribute
+    /// values at rest. This test asserts (1) they ARE registered in
+    /// `ROW_OWNED_PROJECTIONS` (so `erase_row_projections` reaches them), and (2)
+    /// the guard's core predicate — "registered OR a named source of truth" —
+    /// FAILS for either table if it is (hypothetically) removed from the
+    /// registry. This is what makes forgetting to register a future
+    /// content-storing projection a red test, not a silent erasure leak.
+    #[test]
+    fn slice15d_attribute_projections_registered_and_guard_bites() {
+        const NON_PROJECTION_CURSOR_TABLES: &[&str] =
+            &["canonical_nodes", "canonical_edges", "operational_mutations", "operational_state"];
+
+        let registered: Vec<&str> = ROW_OWNED_PROJECTIONS.iter().map(|p| p.table).collect();
+
+        // (1) Both new content-storing projections are registered as row-owned.
+        for table in ["canonical_attributes", "property_search_index"] {
+            assert!(
+                registered.contains(&table),
+                "{table} holds attribute values at rest and MUST be in ROW_OWNED_PROJECTIONS \
+                 so purge/excise_source reach it"
+            );
+        }
+
+        // (2) The guard predicate BITES: pretend one of them was never
+        //     registered — the guard's "registered OR source-of-truth" check must
+        //     reject it (the exact assertion `guard_row_owned_registry` runs).
+        for hidden in ["canonical_attributes", "property_search_index"] {
+            let as_if_unregistered: Vec<&str> =
+                registered.iter().copied().filter(|t| *t != hidden).collect();
+            let accepted = as_if_unregistered.contains(&hidden)
+                || NON_PROJECTION_CURSOR_TABLES.contains(&hidden);
+            assert!(
+                !accepted,
+                "if {hidden} were unregistered the guard would still (incorrectly) accept it — \
+                 the guard does not actually bite"
+            );
+        }
     }
 
     /// Cause-A (0.8.11.2) / C-2 (0.8.19) — `derive_stable_id` id-space contract:

@@ -84,8 +84,8 @@ fn s20_existence_columns_present_and_schema_version_is_head() {
     assert_eq!(user_version(&conn), SCHEMA_VERSION);
     assert_eq!(
         MIGRATIONS.last().expect("at least one migration").step_id,
-        23,
-        "step-23 (edge temporal → INTEGER epoch, TC-33) must be the last (head) migration"
+        24,
+        "step-24 (projection-registry EAV + property-FTS, Slice 15d) must be the last (head) migration"
     );
 
     let shape = table_shape(&conn, "canonical_nodes");

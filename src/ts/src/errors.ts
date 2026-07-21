@@ -179,6 +179,19 @@ export class VectorEquivalenceMismatchError extends FathomDbError {
   }
 }
 
+// 0.8.20 Slice 15d (R-20-PR) — `configureProjections` refused a destructive
+// change to a live projection without an explicit `drop` (carries the
+// projection `name` and the `delta` describing what would be lost).
+export class ProjectionDestructiveError extends FathomDbError {
+  readonly name: string;
+  readonly delta: string;
+  constructor(message: string, name: string, delta: string) {
+    super(message);
+    this.name = name;
+    this.delta = delta;
+  }
+}
+
 // Panic is a contract bug, not a typed engine outcome — intentionally
 // NOT a FathomDbError subclass so callers that catch FathomDbError do
 // not silently swallow it. Mirrors PyO3 PanicException in 11a.
@@ -225,6 +238,8 @@ type ErrorCode =
   | "FDB_NOT_LIFECYCLE_ADDRESSABLE"
   // 0.8.20 Slice 5b (R-20-E5) — erasure verb could not finish at rest.
   | "FDB_ERASURE_INCOMPLETE"
+  // 0.8.20 Slice 15d (R-20-PR) — configure_projections destructive-change refusal.
+  | "FDB_PROJECTION_DESTRUCTIVE"
   | "FDB_PANIC";
 
 interface Envelope {
@@ -340,6 +355,12 @@ function build(envelope: Envelope): Error {
         envelope.message,
         String(p.stage ?? ""),
         String(p.detail ?? ""),
+      );
+    case "FDB_PROJECTION_DESTRUCTIVE":
+      return new ProjectionDestructiveError(
+        envelope.message,
+        String(p.name ?? ""),
+        String(p.delta ?? ""),
       );
     case "FDB_PANIC":
       return new FathomDbPanicError(envelope.message);

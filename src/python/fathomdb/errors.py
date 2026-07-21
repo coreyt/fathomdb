@@ -98,6 +98,9 @@ from fathomdb._fathomdb import (
 from fathomdb._fathomdb import (
     ErasureIncompleteError as _ErasureIncompleteError,
 )
+from fathomdb._fathomdb import (
+    ProjectionDestructiveError as _ProjectionDestructiveError,
+)
 
 EngineError = _EngineError
 StorageError = _StorageError
@@ -136,6 +139,9 @@ NotLifecycleAddressableError = _NotLifecycleAddressableError
 # concurrent reader pinned a WAL snapshot and `wal_checkpoint(TRUNCATE)` stayed
 # busy. Retryable: re-run the verb once the reader has finished.
 ErasureIncompleteError = _ErasureIncompleteError
+# 0.8.20 Slice 15d (R-20-PR) — `configure_projections` refused a destructive
+# change to a live projection without an explicit `drop`; carries `name`/`delta`.
+ProjectionDestructiveError = _ProjectionDestructiveError
 
 
 def _install_typed_init(cls: type, fields: tuple[str, ...]) -> None:
@@ -168,6 +174,8 @@ _install_typed_init(IllegalTransitionError, ("from_state", "to_state", "legal"))
 _install_typed_init(NotLifecycleAddressableError, ("id_space",))
 # 0.8.20 Slice 5b — the incomplete-erasure refusal carries the uncompleted stage.
 _install_typed_init(ErasureIncompleteError, ("stage", "detail"))
+# 0.8.20 Slice 15d — the destructive-projection refusal carries name/delta.
+_install_typed_init(ProjectionDestructiveError, ("name", "delta"))
 
 
 __all__ = [
@@ -191,6 +199,7 @@ __all__ = [
     "NotLifecycleAddressableError",
     "OpStoreError",
     "OverloadedError",
+    "ProjectionDestructiveError",
     "ProjectionError",
     "SchedulerError",
     "SchemaValidationError",
