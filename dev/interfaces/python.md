@@ -141,6 +141,33 @@ normalises each timestamp to epoch seconds with a HARD REJECTION of any value
 NULL, because a NULL `t_invalid` reads as "still valid" and would resurrect an
 invalidated edge. Fields-only delta, **PROPOSED, NOT SIGNED**.
 
+## Projection registry (0.8.20 Slice 15d, R-20-PR / C-1)
+
+Two net-new governed verbs declare and inspect projections over interpretive
+attributes. **PROPOSED, NOT SIGNED.**
+
+- `engine.configure_projections(specs, drop=None)` → `ProjectionDelta`.
+  Declarative, idempotent apply: the engine diffs `specs` against the durable
+  registry and backfills the difference in one transaction. `drop` is EXPLICIT —
+  omitting a live projection from `specs` does NOT drop it; removal requires
+  naming it in `drop`. A destructive change (a role removal or a
+  tokenizer/embedder change) without a drop raises `ProjectionDestructiveError`
+  (`name`/`delta` attributes). Re-applying an unchanged spec returns
+  `ProjectionDelta(unchanged=True)`.
+- `read.projections(engine)` → `list[ProjectionSpec]`, sorted by name — the
+  registry introspection (folded into `read.*`).
+
+`ProjectionSpec` (`fathomdb.types.ProjectionSpec`) is
+`{ name, roles: frozenset[str], fts, fts_tokenizer, vector, vector_embedder }`.
+`ProjectionRole` (`fathomdb.types.ProjectionRole`) has exactly three members —
+`FILTERABLE`, `RANKABLE`, `SEARCHABLE`; `searchable→FTS` and `searchable→vector`
+are tier labels carried by the `fts`/`vector` sub-object flags, not roles. Cheap
+roles (`filterable`, `searchable→FTS`) build same-transaction; `rankable` and the
+`searchable→vector` sub-target are persisted-but-deferred (reported in
+`ProjectionDelta.deferred`). The `vector` sub-object is stored here for Slice 20
+to attach `dense_readiness` to. `ProjectionDelta` is
+`{ built, dropped, deferred, unchanged }`.
+
 ## Errors
 
 Python exposes one catch-all base class plus one concrete subclass per canonical

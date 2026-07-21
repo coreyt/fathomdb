@@ -46,8 +46,8 @@ fn spec(name: &str, rs: &[ProjectionRole], fts: bool, vector: bool) -> Projectio
     ProjectionSpec {
         name: name.to_string(),
         roles: roles(rs),
-        fts: fts.then(|| ProjectionFts { tokenizer: None }),
-        vector: vector.then(|| ProjectionVector { embedder: None }),
+        fts: fts.then_some(ProjectionFts { tokenizer: None }),
+        vector: vector.then_some(ProjectionVector { embedder: None }),
     }
 }
 
@@ -155,7 +155,7 @@ fn configure_and_read_projections_round_trip() {
     let engine = &opened.engine;
 
     let s = spec("status", &[ProjectionRole::Filterable, ProjectionRole::Searchable], true, false);
-    engine.configure_projections(&[s.clone()], &[]).unwrap();
+    engine.configure_projections(std::slice::from_ref(&s), &[]).unwrap();
 
     let back = engine.read_projections().unwrap();
     assert_eq!(back, vec![s], "read.projections must round-trip the declared spec verbatim");
@@ -172,11 +172,11 @@ fn idempotent_reregistration_is_a_noop() {
     engine.write(&[node("N1", "src:1", r#"{"status":"open"}"#)]).unwrap();
 
     let s = spec("status", &[ProjectionRole::Filterable], false, false);
-    let first = engine.configure_projections(&[s.clone()], &[]).unwrap();
+    let first = engine.configure_projections(std::slice::from_ref(&s), &[]).unwrap();
     assert!(!first.unchanged, "first apply builds the projection");
     assert_eq!(first.built, vec!["status".to_string()]);
 
-    let second = engine.configure_projections(&[s.clone()], &[]).unwrap();
+    let second = engine.configure_projections(std::slice::from_ref(&s), &[]).unwrap();
     assert!(second.unchanged, "identical re-registration must diff to a no-op");
     assert!(second.built.is_empty() && second.dropped.is_empty() && second.deferred.is_empty());
 }
@@ -328,7 +328,7 @@ fn vector_subobject_is_stored_not_built() {
 
     // searchable with a VECTOR sub-target only (no fts).
     let s = spec("summary", &[ProjectionRole::Searchable], false, true);
-    let d = engine.configure_projections(&[s.clone()], &[]).unwrap();
+    let d = engine.configure_projections(std::slice::from_ref(&s), &[]).unwrap();
     assert_eq!(d.deferred, vec!["summary".to_string()], "the vector sub-target defers to Slice 20");
 
     // The vector sub-object round-trips through read.projections (Slice 20 hangs

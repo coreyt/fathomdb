@@ -45,7 +45,10 @@ use fathomdb_engine::{
     InitialState, LifecycleState as RustLifecycleState, NodeRecord as RustNodeRecord,
     OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage,
     PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
-    QueryTrace as RustQueryTrace, ReadView as RustReadView, ScalarValue as RustScalarValue,
+    ProjectionDelta as RustProjectionDelta, ProjectionFts as RustProjectionFts,
+    ProjectionRole as RustProjectionRole, ProjectionSpec as RustProjectionSpec,
+    ProjectionVector as RustProjectionVector, QueryTrace as RustQueryTrace,
+    ReadView as RustReadView, ScalarValue as RustScalarValue,
     SearchExpandResult as RustSearchExpandResult, SearchFilter as RustSearchFilter,
     SearchHit as RustSearchHit, SearchResult as RustSearchResult, SoftFallback as RustSoftFallback,
     SoftFallbackBranch, SourceId, TraversalDirection as RustTraversalDirection,
@@ -103,6 +106,11 @@ create_exception!(_fathomdb, NotLifecycleAddressableError, EngineError);
 // returning success: an erasure verb must never report success on an incomplete
 // erasure.
 create_exception!(_fathomdb, ErasureIncompleteError, EngineError);
+// 0.8.20 Slice 15d (R-20-PR) — `configure_projections` refused a destructive
+// change to a live projection without an explicit `drop` (carries `name` +
+// `delta`). Omission never drops; a role removal / tokenizer / embedder change
+// requires an explicit drop.
+create_exception!(_fathomdb, ProjectionDestructiveError, EngineError);
 
 // ===== String validation (AC-068a / AC-068b) =========================
 
@@ -244,6 +252,18 @@ fn engine_error_to_py(err: RustEngineError) -> PyErr {
                 let v = exc.value(py);
                 let _ = v.setattr("stage", stage.clone());
                 let _ = v.setattr("detail", detail.clone());
+            });
+            exc
+        }
+        RustEngineError::ProjectionDestructive { name, delta } => {
+            let exc = ProjectionDestructiveError::new_err(format!(
+                "configure_projections refused a destructive change to '{name}': {delta}; \
+                 re-issue with drop: [\"{name}\"]"
+            ));
+            Python::attach(|py| {
+                let v = exc.value(py);
+                let _ = v.setattr("name", name.clone());
+                let _ = v.setattr("delta", delta.clone());
             });
             exc
         }
@@ -808,6 +828,98 @@ impl PyBoundaryCrossing {
             node: PyNodeRecord::from_rust(&c.node),
             became_valid_at: c.became_valid_at,
             became_invalid_at: c.became_invalid_at,
+        }
+    }
+}
+
+// 0.8.20 Slice 15d (R-20-PR) — the Python face of a `ProjectionSpec`. Flat at
+// the native boundary (the Python `fathomdb.types.ProjectionSpec` dataclass
+// translates the nested `fts?`/`vector?` shape to/from these fields). `fts` /
+// `vector` booleans carry the SUB-OBJECT PRESENCE; the optional tokenizer /
+// embedder carry the value (None = engine default).
+#[pyclass(module = "fathomdb._fathomdb", name = "ProjectionSpec", get_all, from_py_object)]
+#[derive(Clone)]
+struct PyProjectionSpec {
+    name: String,
+    roles: Vec<String>,
+    fts: bool,
+    fts_tokenizer: Option<String>,
+    vector: bool,
+    vector_embedder: Option<String>,
+}
+
+#[pymethods]
+impl PyProjectionSpec {
+    #[new]
+    #[pyo3(signature = (name, roles, fts = false, fts_tokenizer = None, vector = false, vector_embedder = None))]
+    fn new(
+        name: String,
+        roles: Vec<String>,
+        fts: bool,
+        fts_tokenizer: Option<String>,
+        vector: bool,
+        vector_embedder: Option<String>,
+    ) -> Self {
+        Self { name, roles, fts, fts_tokenizer, vector, vector_embedder }
+    }
+}
+
+impl PyProjectionSpec {
+    fn from_rust(s: &RustProjectionSpec) -> Self {
+        Self {
+            name: s.name.clone(),
+            roles: s.roles.iter().map(|r| r.as_str().to_string()).collect(),
+            fts: s.fts.is_some(),
+            fts_tokenizer: s.fts.as_ref().and_then(|f| f.tokenizer.clone()),
+            vector: s.vector.is_some(),
+            vector_embedder: s.vector.as_ref().and_then(|v| v.embedder.clone()),
+        }
+    }
+
+    fn to_rust(&self) -> PyResult<RustProjectionSpec> {
+        let mut roles = std::collections::BTreeSet::new();
+        for r in &self.roles {
+            let role = RustProjectionRole::from_str_opt(r).ok_or_else(|| {
+                InvalidArgumentError::new_err(format!(
+                    "unknown projection role {r:?}: expected filterable/rankable/searchable"
+                ))
+            })?;
+            roles.insert(role);
+        }
+        Ok(RustProjectionSpec {
+            name: self.name.clone(),
+            roles,
+            fts: self.fts.then(|| RustProjectionFts { tokenizer: self.fts_tokenizer.clone() }),
+            vector: self
+                .vector
+                .then(|| RustProjectionVector { embedder: self.vector_embedder.clone() }),
+        })
+    }
+}
+
+// 0.8.20 Slice 15d (R-20-PR) — the Python face of the apply diff.
+#[pyclass(
+    module = "fathomdb._fathomdb",
+    name = "ProjectionDelta",
+    frozen,
+    get_all,
+    skip_from_py_object
+)]
+#[derive(Clone)]
+struct PyProjectionDelta {
+    built: Vec<String>,
+    dropped: Vec<String>,
+    deferred: Vec<String>,
+    unchanged: bool,
+}
+
+impl PyProjectionDelta {
+    fn from_rust(d: &RustProjectionDelta) -> Self {
+        Self {
+            built: d.built.clone(),
+            dropped: d.dropped.clone(),
+            deferred: d.deferred.clone(),
+            unchanged: d.unchanged,
         }
     }
 }
@@ -1487,6 +1599,37 @@ fn erase_source(
     let inner = Arc::clone(&engine.inner);
     let report = call_engine(py, move || inner.erase_source(&source_id))?;
     Ok(PyEraseReport::from_rust(report))
+}
+
+/// 0.8.20 Slice 15d (R-20-PR / C-1) — the `configure_projections` governed verb.
+/// Declarative + idempotent: the engine diffs `specs` against the durable
+/// registry and backfills the difference. `drop` is EXPLICIT (omission never
+/// drops); a destructive change to a live projection without a drop raises
+/// `ProjectionDestructiveError`.
+#[pyfunction]
+#[pyo3(signature = (engine, specs, drop = None))]
+fn configure_projections(
+    py: Python<'_>,
+    engine: &PyEngine,
+    specs: Vec<PyProjectionSpec>,
+    drop: Option<Vec<String>>,
+) -> PyResult<PyProjectionDelta> {
+    let rust_specs: Vec<RustProjectionSpec> =
+        specs.iter().map(PyProjectionSpec::to_rust).collect::<PyResult<_>>()?;
+    let drop = drop.unwrap_or_default();
+    let inner = Arc::clone(&engine.inner);
+    let delta = call_engine(py, move || inner.configure_projections(&rust_specs, &drop))?;
+    Ok(PyProjectionDelta::from_rust(&delta))
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — `read.projections` introspection. Returns every
+/// declared `ProjectionSpec` (sorted by name).
+#[pyfunction]
+#[pyo3(signature = (engine))]
+fn read_projections(py: Python<'_>, engine: &PyEngine) -> PyResult<Vec<PyProjectionSpec>> {
+    let inner = Arc::clone(&engine.inner);
+    let specs = call_engine(py, move || inner.read_projections())?;
+    Ok(specs.iter().map(PyProjectionSpec::from_rust).collect())
 }
 
 #[pyfunction]
@@ -2264,6 +2407,11 @@ fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(transition, &m)?)?;
     m.add_function(wrap_pyfunction!(purge, &m)?)?;
     m.add_function(wrap_pyfunction!(erase_source, &m)?)?;
+    // 0.8.20 Slice 15d — projection registry (R-20-PR).
+    m.add_function(wrap_pyfunction!(configure_projections, &m)?)?;
+    m.add_function(wrap_pyfunction!(read_projections, &m)?)?;
+    m.add_class::<PyProjectionSpec>()?;
+    m.add_class::<PyProjectionDelta>()?;
     // Slice 30 — governed read.* native fns (G2/G3).
     m.add_function(wrap_pyfunction!(read_get, &m)?)?;
     m.add_function(wrap_pyfunction!(read_get_many, &m)?)?;
@@ -2313,6 +2461,7 @@ fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     m.add("IllegalTransitionError", py.get_type::<IllegalTransitionError>())?;
     m.add("NotLifecycleAddressableError", py.get_type::<NotLifecycleAddressableError>())?;
     m.add("ErasureIncompleteError", py.get_type::<ErasureIncompleteError>())?;
+    m.add("ProjectionDestructiveError", py.get_type::<ProjectionDestructiveError>())?;
     Ok(())
 }
 

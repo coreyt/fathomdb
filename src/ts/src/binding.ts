@@ -73,6 +73,24 @@ interface NativeEraseReport {
   projectionsInvalidated: number;
 }
 
+/** 0.8.20 Slice 15d (R-20-PR) — native projection spec (flat FFI shape). */
+export interface NativeProjectionSpec {
+  name: string;
+  roles: string[];
+  fts: boolean;
+  ftsTokenizer?: string | null;
+  vector: boolean;
+  vectorEmbedder?: string | null;
+}
+
+/** 0.8.20 Slice 15d (R-20-PR) — native configure_projections diff. */
+export interface NativeProjectionDelta {
+  built: string[];
+  dropped: string[];
+  deferred: string[];
+  unchanged: boolean;
+}
+
 interface NativeSoftFallback {
   branch: string;
 }
@@ -342,6 +360,12 @@ export interface NativeEngine {
   purge(logicalId: string): Promise<void>;
   // 0.8.20 Slice 5d (R-20-E4) — provenance-addressed erasure.
   eraseSource(sourceId: string): Promise<NativeEraseReport>;
+  // 0.8.20 Slice 15d (R-20-PR) — projection registry.
+  configureProjections(
+    specs: NativeProjectionSpec[],
+    drop?: string[] | null,
+  ): Promise<NativeProjectionDelta>;
+  readProjections(): Promise<NativeProjectionSpec[]>;
   search(
     query: string,
     filter?: NativeSearchFilter,

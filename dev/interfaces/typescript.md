@@ -155,6 +155,33 @@ cannot parse — an unparseable timestamp must never coerce to NULL, because a
 NULL `t_invalid` reads as "still valid" and would resurrect an invalidated edge.
 Fields-only delta, **PROPOSED, NOT SIGNED**.
 
+## Projection registry (0.8.20 Slice 15d, R-20-PR / C-1)
+
+Two net-new governed verbs declare and inspect projections over interpretive
+attributes. **PROPOSED, NOT SIGNED.**
+
+- `engine.configureProjections(specs, drop?)` → `Promise<ProjectionDelta>`.
+  Declarative, idempotent apply: the engine diffs `specs` against the durable
+  registry and backfills the difference in one transaction. `drop` is EXPLICIT —
+  omitting a live projection from `specs` does NOT drop it; removal requires
+  naming it in `drop`. A destructive change (a role removal or a
+  tokenizer/embedder change) without a drop throws `ProjectionDestructiveError`
+  (`name`/`delta` fields, mapped from the `FDB_PROJECTION_DESTRUCTIVE` envelope).
+  Re-applying an unchanged spec resolves to `{ unchanged: true }`.
+- `read.projections(engine)` → `Promise<ProjectionSpec[]>`, sorted by name — the
+  registry introspection (folded into `read.*`).
+
+`ProjectionSpec` is
+`{ name, roles: ProjectionRole[], fts, ftsTokenizer?, vector, vectorEmbedder? }`.
+`ProjectionRole` is the string union `"filterable" | "rankable" | "searchable"`;
+`searchable→FTS` and `searchable→vector` are tier labels carried by the
+`fts`/`vector` sub-object flags, not roles. Cheap roles (`filterable`,
+`searchable→FTS`) build same-transaction; `rankable` and the `searchable→vector`
+sub-target are persisted-but-deferred (reported in `ProjectionDelta.deferred`).
+The `vector` sub-object is stored here for Slice 20 to attach `denseReadiness`
+to. `ProjectionDelta` is `{ built, dropped, deferred, unchanged }`. Field names
+are camelCase per this file's casing rule.
+
 ## Errors
 
 TypeScript exposes one concrete leaf class per canonical row in

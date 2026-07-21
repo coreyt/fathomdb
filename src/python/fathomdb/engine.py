@@ -18,6 +18,8 @@ from fathomdb._fathomdb import ConsolidateReceipt
 from fathomdb._fathomdb import Engine as _NativeEngine
 from fathomdb._fathomdb import EraseReport
 from fathomdb._fathomdb import IngestWithExtractorReceipt
+from fathomdb._fathomdb import ProjectionSpec as _NativeProjectionSpec
+from fathomdb._fathomdb import configure_projections as _native_configure_projections
 from fathomdb._fathomdb import erase_source as _native_erase_source
 from fathomdb._fathomdb import purge as _native_purge
 from fathomdb._fathomdb import transition as _native_transition
@@ -30,6 +32,8 @@ from fathomdb.types import (
     MigrationStepReport,
     OpenReport,
     PerHitExplain,
+    ProjectionDelta,
+    ProjectionSpec,
     QueryTrace,
     ReadView,
     SearchFilter,
@@ -252,6 +256,48 @@ class Engine:
         NOT a recovery verb: ``erase_source`` carries no REQ-054
         recovery-denylist name, so AC-041 is unaffected. Thin pass-through."""
         return _native_erase_source(self._native, source_id)
+
+    def configure_projections(
+        self,
+        specs: list[ProjectionSpec],
+        drop: list[str] | None = None,
+    ) -> ProjectionDelta:
+        """0.8.20 Slice 15d (R-20-PR / C-1) — the ``configure_projections`` verb.
+
+        Declaratively apply projection declarations. The engine is the SOLE
+        projection authority: it diffs ``specs`` against the durable registry and
+        backfills the difference in ONE transaction. Cheap projections
+        (``filterable``, ``searchable→FTS``) build same-transaction; ``rankable``
+        and the ``searchable→vector`` sub-target are persisted-but-deferred (F9 /
+        Slice 20).
+
+        ``drop`` is EXPLICIT: omitting a live projection from ``specs`` does NOT
+        drop it; removal requires naming it in ``drop``. A destructive change to a
+        live projection (a role removal or a tokenizer/embedder change) that is
+        NOT in ``drop`` raises ``ProjectionDestructiveError`` with the destructive
+        delta — never silent data loss. Re-applying an unchanged spec returns a
+        ``ProjectionDelta`` with ``unchanged=True``.
+
+        Pair with :func:`fathomdb.read.projections` to inspect current state
+        first. Thin pass-through."""
+        native_specs = [
+            _NativeProjectionSpec(
+                s.name,
+                list(s.roles),
+                s.fts,
+                s.fts_tokenizer,
+                s.vector,
+                s.vector_embedder,
+            )
+            for s in specs
+        ]
+        delta = _native_configure_projections(self._native, native_specs, drop)
+        return ProjectionDelta(
+            built=list(delta.built),
+            dropped=list(delta.dropped),
+            deferred=list(delta.deferred),
+            unchanged=delta.unchanged,
+        )
 
     def embed(self, text: str) -> list[float]:
         """Embed ``text`` with the engine's pinned default embedder

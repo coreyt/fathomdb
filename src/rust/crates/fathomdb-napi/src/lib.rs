@@ -41,7 +41,10 @@ use fathomdb_engine::{
     LifecycleState as RustLifecycleState, NodeRecord as RustNodeRecord,
     OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage,
     PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
-    QueryTrace as RustQueryTrace, ReadView as RustReadView, ScalarValue as RustScalarValue,
+    ProjectionDelta as RustProjectionDelta, ProjectionFts as RustProjectionFts,
+    ProjectionRole as RustProjectionRole, ProjectionSpec as RustProjectionSpec,
+    ProjectionVector as RustProjectionVector, QueryTrace as RustQueryTrace,
+    ReadView as RustReadView, ScalarValue as RustScalarValue,
     SearchExpandResult as RustSearchExpandResult, SearchFilter as RustSearchFilter,
     SearchHit as RustSearchHit, SearchResult as RustSearchResult, SoftFallbackBranch, SourceId,
     TraversalDirection as RustTraversalDirection, WriteReceipt as RustWriteReceipt,
@@ -93,6 +96,9 @@ const CODE_NOT_LIFECYCLE_ADDRESSABLE: &str = "FDB_NOT_LIFECYCLE_ADDRESSABLE";
 // 0.8.20 Slice 5b (R-20-E5) — an erasure verb deleted its rows but could not
 // complete the erasure at rest.
 const CODE_ERASURE_INCOMPLETE: &str = "FDB_ERASURE_INCOMPLETE";
+// 0.8.20 Slice 15d (R-20-PR) — configure_projections refused a destructive
+// change without an explicit drop.
+const CODE_PROJECTION_DESTRUCTIVE: &str = "FDB_PROJECTION_DESTRUCTIVE";
 const CODE_PANIC: &str = "FDB_PANIC";
 
 // ===== Typed-error encoder ============================================
@@ -251,6 +257,14 @@ fn engine_error_to_napi(err: RustEngineError) -> Error {
             CODE_ERASURE_INCOMPLETE,
             format!("erasure incomplete at stage '{stage}': {detail}"),
             json!({ "stage": stage, "detail": detail }),
+        ),
+        RustEngineError::ProjectionDestructive { name, delta } => typed_error(
+            CODE_PROJECTION_DESTRUCTIVE,
+            format!(
+                "configure_projections refused a destructive change to '{name}': {delta}; \
+                 re-issue with drop: [\"{name}\"]"
+            ),
+            json!({ "name": name, "delta": delta }),
         ),
     }
 }
@@ -443,6 +457,77 @@ impl EraseReport {
             nodes_excised: r.nodes_excised as i64,
             edges_excised: r.edges_excised as i64,
             projections_invalidated: r.projections_invalidated as i64,
+        }
+    }
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — a declarative projection declaration. Flat at
+/// the FFI boundary; `fts`/`vector` booleans carry the sub-object PRESENCE and
+/// the optional tokenizer/embedder carry the value. JS field names are
+/// camelCase (`ftsTokenizer` / `vectorEmbedder`).
+#[napi(object)]
+pub struct ProjectionSpec {
+    pub name: String,
+    pub roles: Vec<String>,
+    pub fts: bool,
+    pub fts_tokenizer: Option<String>,
+    pub vector: bool,
+    pub vector_embedder: Option<String>,
+}
+
+impl ProjectionSpec {
+    fn from_rust(s: &RustProjectionSpec) -> Self {
+        Self {
+            name: s.name.clone(),
+            roles: s.roles.iter().map(|r| r.as_str().to_string()).collect(),
+            fts: s.fts.is_some(),
+            fts_tokenizer: s.fts.as_ref().and_then(|f| f.tokenizer.clone()),
+            vector: s.vector.is_some(),
+            vector_embedder: s.vector.as_ref().and_then(|v| v.embedder.clone()),
+        }
+    }
+
+    fn to_rust(&self) -> Result<RustProjectionSpec> {
+        let mut roles = std::collections::BTreeSet::new();
+        for r in &self.roles {
+            let role = RustProjectionRole::from_str_opt(r).ok_or_else(|| {
+                typed_error(
+                    CODE_INVALID_ARGUMENT,
+                    format!(
+                        "unknown projection role {r:?}: expected filterable/rankable/searchable"
+                    ),
+                    JsonValue::Null,
+                )
+            })?;
+            roles.insert(role);
+        }
+        Ok(RustProjectionSpec {
+            name: self.name.clone(),
+            roles,
+            fts: self.fts.then(|| RustProjectionFts { tokenizer: self.fts_tokenizer.clone() }),
+            vector: self
+                .vector
+                .then(|| RustProjectionVector { embedder: self.vector_embedder.clone() }),
+        })
+    }
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — the diff `configureProjections` applied.
+#[napi(object)]
+pub struct ProjectionDelta {
+    pub built: Vec<String>,
+    pub dropped: Vec<String>,
+    pub deferred: Vec<String>,
+    pub unchanged: bool,
+}
+
+impl ProjectionDelta {
+    fn from_rust(d: &RustProjectionDelta) -> Self {
+        Self {
+            built: d.built.clone(),
+            dropped: d.dropped.clone(),
+            deferred: d.deferred.clone(),
+            unchanged: d.unchanged,
         }
     }
 }
@@ -1169,6 +1254,34 @@ impl Engine {
         let engine = Arc::clone(&self.inner);
         let report = call_engine(move || engine.erase_source(&source_id)).await?;
         Ok(EraseReport::from_rust(report))
+    }
+
+    /// 0.8.20 Slice 15d (R-20-PR / C-1) — the `configureProjections` governed
+    /// verb. Declarative + idempotent: the engine diffs `specs` against the
+    /// durable registry and backfills the difference. `drop` is EXPLICIT
+    /// (omission never drops); a destructive change to a live projection without
+    /// a drop throws a `FDB_PROJECTION_DESTRUCTIVE` error carrying `{name, delta}`.
+    #[napi]
+    pub async fn configure_projections(
+        &self,
+        specs: Vec<ProjectionSpec>,
+        drop: Option<Vec<String>>,
+    ) -> Result<ProjectionDelta> {
+        let rust_specs: Vec<RustProjectionSpec> =
+            specs.iter().map(ProjectionSpec::to_rust).collect::<Result<_>>()?;
+        let drop = drop.unwrap_or_default();
+        let engine = Arc::clone(&self.inner);
+        let delta = call_engine(move || engine.configure_projections(&rust_specs, &drop)).await?;
+        Ok(ProjectionDelta::from_rust(&delta))
+    }
+
+    /// 0.8.20 Slice 15d (R-20-PR) — `read.projections` introspection. Returns
+    /// every declared `ProjectionSpec` (sorted by name).
+    #[napi]
+    pub async fn read_projections(&self) -> Result<Vec<ProjectionSpec>> {
+        let engine = Arc::clone(&self.inner);
+        let specs = call_engine(move || engine.read_projections()).await?;
+        Ok(specs.iter().map(ProjectionSpec::from_rust).collect())
     }
 
     #[napi]
