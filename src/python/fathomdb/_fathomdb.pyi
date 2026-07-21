@@ -526,3 +526,11 @@ class NotLifecycleAddressableError(EngineError):
 class ErasureIncompleteError(EngineError):
     stage: str
     detail: str
+
+# 0.8.20 Slice 15d (R-20-PR) — `configure_projections` refused a DESTRUCTIVE
+# change to a live projection `name` (a role removal or tokenizer/embedder swap)
+# that was NOT accompanied by an explicit `drop`. `delta` names WHAT changed; the
+# caller re-issues with `drop: [name]` to consciously rebuild.
+class ProjectionDestructiveError(EngineError):
+    name: str
+    delta: str
