@@ -352,7 +352,7 @@ export const read = {
    * BEFORE calling `Engine.configureProjections`. Pure read.
    */
   async projections(engine: Engine): Promise<ProjectionSpec[]> {
-    const specs = await rethrowTyped(() => engine._native.readProjections());
+    const specs = await intercept(() => engine._native.readProjections());
     return specs.map((s) => ({
       name: s.name,
       roles: s.roles as ProjectionRole[],
