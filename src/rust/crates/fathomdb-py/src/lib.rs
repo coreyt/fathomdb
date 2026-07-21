@@ -1236,7 +1236,13 @@ impl PyEngine {
             || created_after.is_some()
             || status.is_some()
         {
-            Some(RustSearchFilter { source_type, kind, created_after, status })
+            Some(RustSearchFilter {
+                source_type,
+                kind,
+                created_after,
+                status,
+                ..Default::default()
+            })
         } else {
             None
         };
@@ -2156,12 +2162,15 @@ fn search_expand(
     let source_type = extract_opt_validated_str(source_type.as_ref())?;
     let kind = extract_opt_validated_str(kind.as_ref())?;
     let status = extract_opt_validated_str(status.as_ref())?;
-    let filter =
-        if source_type.is_some() || kind.is_some() || created_after.is_some() || status.is_some() {
-            Some(RustSearchFilter { source_type, kind, created_after, status })
-        } else {
-            None
-        };
+    let filter = if source_type.is_some()
+        || kind.is_some()
+        || created_after.is_some()
+        || status.is_some()
+    {
+        Some(RustSearchFilter { source_type, kind, created_after, status, ..Default::default() })
+    } else {
+        None
+    };
     let inner = Arc::clone(&engine.inner);
     let result = call_engine(py, move || inner.search_expand(&query, filter, depth))?;
     Ok(PySearchExpandResult::from_rust(result))

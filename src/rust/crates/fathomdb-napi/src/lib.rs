@@ -1361,6 +1361,7 @@ impl Engine {
                 kind: f.kind,
                 created_after: f.created_after,
                 status: f.status,
+                ..Default::default()
             };
             if rust.source_type.is_none()
                 && rust.kind.is_none()
@@ -2073,12 +2074,15 @@ pub async fn search_expand(
     status: Option<String>,
 ) -> Result<SearchExpandResult> {
     validate_ffi_string_napi(&query)?;
-    let filter =
-        if source_type.is_some() || kind.is_some() || created_after.is_some() || status.is_some() {
-            Some(RustSearchFilter { source_type, kind, created_after, status })
-        } else {
-            None
-        };
+    let filter = if source_type.is_some()
+        || kind.is_some()
+        || created_after.is_some()
+        || status.is_some()
+    {
+        Some(RustSearchFilter { source_type, kind, created_after, status, ..Default::default() })
+    } else {
+        None
+    };
     let inner = Arc::clone(&engine.inner);
     let result = call_engine(move || inner.search_expand(&query, filter, depth)).await?;
     Ok(SearchExpandResult::from_rust(result))

@@ -2462,6 +2462,14 @@ pub struct SearchFilter {
     pub kind: Option<String>,
     pub created_after: Option<i64>,
     pub status: Option<String>,
+    /// 0.8.20 Slice 15e (R-20-PR, ADR-0.8.11 D3) — declared-`filterable`-attribute
+    /// equality predicates, each `(attribute_name, value)`. Lowered into the
+    /// **indexed pre-KNN** vec0 metadata column `attr_<hex>` by
+    /// [`vector_filter_clause`] (NOT a post-KNN `json_extract`). Empty ⇒ the
+    /// byte-identical unfiltered path is preserved. `attribute_name` is the
+    /// registry projection name; the encoded column is derived by
+    /// [`attr_vec0_column`].
+    pub attributes: Vec<(String, String)>,
 }
 
 impl SearchFilter {
@@ -7356,6 +7364,53 @@ impl Engine {
                 row.get::<_, Vec<u8>>(0)
             })
             .map_err(|_| EngineError::Storage)
+    }
+
+    /// 0.8.20 Slice 15e — read a row's raw `embedding_bin` blob bytes (the
+    /// sign-quantized vector). Used to prove the non-destructive reshape copies the
+    /// bits VERBATIM (condition #4): the pre-reshape and post-reshape bytes must be
+    /// byte-identical.
+    #[doc(hidden)]
+    pub fn read_vector_bin_for_test(&self, rowid: i64) -> Result<Vec<u8>, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        connection
+            .query_row(
+                "SELECT embedding_bin FROM vector_default WHERE rowid = ?1",
+                [rowid],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
+            .map_err(|_| EngineError::Storage)
+    }
+
+    /// 0.8.20 Slice 15e — run an arbitrary read-only SELECT on the ENGINE
+    /// connection (which has the vec0 extension loaded, unlike a bare
+    /// `Connection::open`) and collect column 0 as `i64`. Lets a test run a
+    /// phase-1-style KNN `MATCH ... {attr clause}` and observe which `rowid`s
+    /// survive the pre-KNN filter.
+    #[doc(hidden)]
+    pub fn query_i64_col_for_test(&self, sql: &str) -> Result<Vec<i64>, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        let mut stmt = connection.prepare(sql).map_err(|_| EngineError::Storage)?;
+        let rows =
+            stmt.query_map([], |row| row.get::<_, i64>(0)).map_err(|_| EngineError::Storage)?;
+        rows.collect::<rusqlite::Result<Vec<i64>>>().map_err(|_| EngineError::Storage)
+    }
+
+    /// 0.8.20 Slice 15e — as [`query_i64_col_for_test`] but collects column 0 as
+    /// `String` (e.g. an `attr_<hex>` metadata column's stored value).
+    #[doc(hidden)]
+    pub fn query_text_col_for_test(&self, sql: &str) -> Result<Vec<String>, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        let mut stmt = connection.prepare(sql).map_err(|_| EngineError::Storage)?;
+        let rows =
+            stmt.query_map([], |row| row.get::<_, String>(0)).map_err(|_| EngineError::Storage)?;
+        rows.collect::<rusqlite::Result<Vec<String>>>().map_err(|_| EngineError::Storage)
     }
 
     #[doc(hidden)]
