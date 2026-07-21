@@ -395,5 +395,84 @@
     },
     "blockers": []
   },
+  "fix-6": {
+    "requirement_id": "TC-33",
+    "finding": "codex §9 P1 — 'The schema migration leaves stale edge vector projection rows behind after dropping the canonical edge rows, which can silently degrade vector search results on upgraded databases.' Step 23 (canonical_edges recreate) cleared the edge FTS projection (search_index_edges) and recorded projection terminals (fix-4), but never removed the dropped edges' rows from the VECTOR projection. Vector search reads candidates DIRECTLY from vector_default (build_vector_phase1_sql: `embedding_bin MATCH ... ORDER BY distance LIMIT top_k`) before hydrating them through canonical_nodes/canonical_edges, so an orphaned edge vector (whose canonical_edges row is gone) consumes a top-K candidate slot and is discarded at hydration — an upgraded DB returns too few / no vector results even though valid node vectors sit just below the cutoff. The prior step-23 comment's claim that these orphans were 'made harmless by (2)' was the actual bug: consequence (2) only reserves the write-cursor high-water mark to stop cursor REUSE; it does nothing about the orphaned rows already sitting in vector_default.",
+    "root_cause_framing": "Step 23's cleanup of the dropped edges' ROW-OWNED projections was PARTIAL. The authoritative list is the engine's ROW_OWNED_PROJECTIONS (fathomdb-engine/src/lib.rs:14389). For EDGES the row-owned projections are: search_index_edges (class EdgeFts — already cleared), _fathomdb_projection_terminal (class Readiness — fix-4), and the VECTOR class's TWO tables: _fathomdb_vector_rows (sidecar/registry) + vector_default (the vec0 vtab). fix-6 completes the Vector class. Node-FTS tables (search_index, search_index_v2) are class NodeFts and hold node projections only — deliberately NOT touched.",
+    "governed_surface_status": "PROPOSED / NOT SIGNED — no AC minted; tracked by requirement TC-33 + test names. NEVER HITL-SIGNED.",
+    "split_and_why": "The two Vector-class tables are cleaned in DIFFERENT places, forced by a hard constraint the recon/task SQL did not resolve: `vector_default` is a vec0 VIRTUAL TABLE created by the ENGINE's dim-aware ensure_vector_partition AFTER migrate() returns (see fathomdb-schema step-9 comment: Migration is a &'static str with no runtime dim parameterization). On a fresh DB — and in the schema crate's own migration tests, which never create it — vector_default DOES NOT EXIST during step 23, so an unguarded `DELETE FROM vector_default` in the migration SQL fails to prepare ('no such table') and would break every schema migration test that crosses step 23. `_fathomdb_vector_rows`, by contrast, is created by migration step 6 and ALWAYS exists during migration. So: (a) the SIDECAR delete goes in the MIGRATION (step 23, before the DROP, scoped to edge cursors read from canonical_edges — matching the fix-4 terminal-backfill ordering); (b) the vec0 delete goes in the ENGINE, right after ensure_vector_partition guarantees vector_default exists.",
+    "migration_change": {
+      "site": "src/rust/crates/fathomdb-schema/src/lib.rs — step 23 SQL string, inserted between the fix-4 terminal INSERT and `DROP TABLE canonical_edges`.",
+      "sql_added": "DELETE FROM _fathomdb_vector_rows WHERE write_cursor IN (SELECT write_cursor FROM canonical_edges);",
+      "scoped_not_truncate": "_fathomdb_vector_rows holds BOTH node and edge sidecar rows (kind column), so unlike the `DELETE FROM search_index_edges` truncate (edge-only table) this is a SCOPED delete keyed on edge cursors. Node sidecar rows survive.",
+      "comment_fix": "The step-23 doc-block consequence (1) parenthetical that claimed vector_default 'is deliberately NOT touched ... Its orphaned rows are made harmless by (2)' was CORRECTED to a new item (1b) explaining the Vector class has two halves, that the vec0 orphans are NOT inert (they occupy KNN candidate slots), and that the engine prunes them. -- MIGRATION-ACCRETION-EXEMPTION marker unchanged (the DELETE adds no CREATE/DROP)."
+    },
+    "engine_change": {
+      "site": "src/rust/crates/fathomdb-engine/src/lib.rs — Engine::open, immediately after ensure_vector_partition (before the mean-vec row-count recovery), plus two new consts and two new fns.",
+      "consts": "EDGE_TEMPORAL_EPOCH_SCHEMA_VERSION = 23; EDGE_VECTOR_PRUNE_MARKER_KEY = 'tc33_edge_vector_prune_complete'.",
+      "gate": "if migration.schema_version_after >= EDGE_TEMPORAL_EPOCH_SCHEMA_VERSION && !edge_vector_prune_complete(&connection)? { prune_orphaned_edge_vectors(&connection)? }.",
+      "prune_logic": "prune_orphaned_edge_vectors: in one BEGIN IMMEDIATE, gather the _fathomdb_vector_rows.write_cursor set + all vector_default rowids via plain scans, DELETE each vec0 rowid NOT in the sidecar set (per-rowid `DELETE FROM vector_default WHERE rowid = ?1`, the proven vec0 delete form — same as prune_edge_projection_shadows), then write the marker. Deliberately avoids a compound `DELETE ... WHERE rowid NOT IN (subquery)` over the virtual table.",
+      "why_no_sidecar_means_orphan": "A vec0 row and its _fathomdb_vector_rows sidecar row are INSERTed together and DELETEd together in the same transaction on every steady-state path (verified: insert at lib.rs ~6907/6917 under one tx; delete at prune_edge_projection_shadows / erase_row_projections together). So a sidecar-less vec0 row is ONLY ever produced by the step-23 sidecar delete, which cannot reach the engine-created vec0 table. The prune therefore targets EXACTLY the dropped edges' orphans and is a no-op on any healthy corpus.",
+      "crash_safety": "Gated on the marker's ABSENCE, not on crossing the step-23 boundary (mirrors the search_index tokenizer reproject). Step 23 commits user_version=23 (edges dropped, sidecar cleared) in its own tx; the prune runs in a later tx on open. A crash in that window leaves durable v23 + orphaned vec0 rows; a boundary gate (before < 23) would skip forever (next open sees before==23). The marker is absent on any DB upgraded before fix-6 shipped, so the prune runs once and cleans lingering orphans; thereafter paired insert/delete keeps the invariant so no new orphans arise."
+    },
+    "three_facets_complete": "Step 23 now removes the dropped edges' row-owned projections COMPLETELY for every edge: (1) reserved write-cursor high-water mark (fix-1) — stops cursor REUSE below the lowered MAX; (2) _fathomdb_projection_terminal backfill (fix-4) — stops the SHARED projection cursor STALLING on the dropped cursors; (3) VECTOR projection prune (fix-6) — search_index_edges truncated + _fathomdb_vector_rows edge rows deleted in the migration + vector_default orphan rows pruned by the engine. EdgeFts + Readiness + Vector are the only classes ROW_OWNED_PROJECTIONS assigns to edges; NodeFts holds no edges. The engine test's noop control + the node-survival assertions prove node projections (NodeFts + node Vector rows) are untouched.",
+    "node_vectors_untouched_confirmation": "PROVEN by two guards. Schema test fix6_node_vector_sidecar_survives_step_23: the node's _fathomdb_vector_rows row (cursor 6) survives step 23 while the edge's (cursor 5) is deleted. Engine test fix6_orphaned_edge_vector_is_pruned_on_open: after the prune, the node's vector_default vec0 row AND its _fathomdb_vector_rows sidecar both survive (count==1) while the orphaned edge vec0 row is gone (count==0). Engine test fix6_prune_is_a_noop_without_orphans: on a healthy corpus the prune deletes ZERO vec0 rows (before==after) — so recall / eu7 fidelity are unchanged on any DB that never dropped edges.",
+    "tables_and_sql_added": {
+      "migration_step_23": "DELETE FROM _fathomdb_vector_rows WHERE write_cursor IN (SELECT write_cursor FROM canonical_edges);",
+      "engine_prune": "per-orphan `DELETE FROM vector_default WHERE rowid = ?1` for every vector_default rowid absent from `SELECT write_cursor FROM _fathomdb_vector_rows`; then INSERT ... ON CONFLICT marker."
+    },
+    "commits": [
+      {
+        "sha": "7a521ff5",
+        "kind": "RED",
+        "summary": "schema tests/tc33_fix6_edge_vector_sidecar.rs (2 tests: dropped-edge sidecar removed; node sidecar survives) + engine tests/tc33_fix6_edge_vector_prune.rs (2 tests: orphaned edge vec0 pruned on open; prune is a no-op without orphans). Source at baseline (schema change stashed for the RED capture)."
+      },
+      {
+        "sha": "cd50cb53",
+        "kind": "GREEN",
+        "summary": "schema step 23 deletes edge _fathomdb_vector_rows sidecar rows + comment fix; engine prunes orphaned vector_default vec0 rows after ensure_vector_partition (marker-gated, crash-retryable) + two consts + edge_vector_prune_complete / prune_orphaned_edge_vectors."
+      }
+    ],
+    "head_sha": "cd50cb53",
+    "red_evidence": "SCHEMA at 7a521ff5 (`cargo test -p fathomdb-schema --test tc33_fix6_edge_vector_sidecar -- --test-threads=1`, source at baseline via stash) → `test result: FAILED. 0 passed; 2 failed; 0 ignored`, exit 101. fix6_dropped_edge_vector_sidecar_is_removed panicked at :123: 'step 23 must delete the dropped edge's _fathomdb_vector_rows sidecar row (cursor 5); leaving it orphans the vec0 candidate on every upgraded DB'. fix6_node_vector_sidecar_survives_step_23 panicked at :144: 'edge sidecar (cursor 5) still must be gone' (the node-survival sibling assertion PASSED first, proving non-vacuous). ENGINE at 7a521ff5 (`cargo test -p fathomdb-engine --test tc33_fix6_edge_vector_prune -- --test-threads=1`) → `test result: FAILED. 1 passed; 1 failed`, exit 101. fix6_orphaned_edge_vector_is_pruned_on_open panicked at :177: 'assertion left == right failed: the orphaned edge vec0 row (cursor 2) must be pruned on open ...  left: 1  right: 0' — the orphan survived reopen on unfixed engine. fix6_prune_is_a_noop_without_orphans PASSED (positive control, no orphan to leak). Post-GREEN at cd50cb53: schema 2 passed / 0 failed; engine 2 passed / 0 failed; exit 0.",
+    "gates": [
+      { "gate": "cargo clippy --workspace --all-targets", "real_exit_code": 0, "note": "0 warnings, 0 errors (one clippy::doc_lazy_continuation on a test-module doc line beginning with '+' was resolved by rewording to 'plus')." },
+      { "gate": "cargo check --workspace --all-targets", "real_exit_code": 0 },
+      {
+        "gate": "cargo test -p fathomdb-engine -p fathomdb-schema -- --test-threads=1",
+        "real_exit_code": 0,
+        "passed": 592,
+        "failed": 0,
+        "ignored": 13,
+        "note": "588 (fix-5 GREEN) + 4 new fix-6 tests = 592. 13 ignored UNCHANGED (incl. eu7_real_corpus_ac — ZERO eu7 runs). Run to completion with an explicit 1800000 ms timeout (suite exceeds the 2-min default); real aggregate summed from `^test result:` lines (every line 'ok', 0 failed), SUITE_EXIT=0."
+      },
+      {
+        "gate": "cargo test -p fathomdb-schema --test tc33_fix6_edge_vector_sidecar -- --test-threads=1",
+        "real_exit_code": 0,
+        "passed": 2,
+        "failed": 0
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test tc33_fix6_edge_vector_prune -- --test-threads=1",
+        "real_exit_code": 0,
+        "passed": 2,
+        "failed": 0
+      }
+    ],
+    "invariants_confirmed": {
+      "AC-041_recovery_denylist": "unchanged — {recover, restore, repair, fix, rebuild}; diff touches only step 23's SQL string, the engine open path + two prune helpers, and the two new test files, no recovery/verb code.",
+      "eu7": "zero runs; eu7_real_corpus_ac left #[ignore]d; the prune is a proven no-op on a healthy corpus so vec0 contents / recall / fidelity are byte-stable on any DB that never dropped edges.",
+      "governed_surface": "PROPOSED / NOT SIGNED; no AC minted; never HITL-SIGNED.",
+      "crash_safety_idempotence": "preserved — migration DELETE is inside step 23's single BEGIN IMMEDIATE (crash rolls back to user_version 22, whole step replays); engine prune is in its own BEGIN IMMEDIATE with a durable completion marker written in the same tx (crash before COMMIT leaves no marker, next open re-runs).",
+      "accretion_guard": "unaffected — the migration DELETE adds no CREATE/DROP; step 23 still names both CREATE TABLE and DROP TABLE and keeps its -- MIGRATION-ACCRETION-EXEMPTION marker.",
+      "guard_row_owned_registry": "unaffected — no new projection table added; ROW_OWNED_PROJECTIONS is unchanged (fix-6 completes cleanup of tables already registered there).",
+      "no_data_migration": "compliant — deletes derived projection rows for ALREADY-DROPPED edges (consistency), preserves/converts no user rows; fits the HITL 2026-07-21 ruling exactly like the search_index_edges clear and the fix-4 terminals."
+    },
+    "plan_or_recon_corrections": [
+      "The task's proposed migration SQL (`DELETE FROM vector_default WHERE rowid IN (SELECT write_cursor FROM canonical_edges)` in step 23) is NOT viable as written: vector_default is a vec0 virtual table created by the engine's dim-aware ensure_vector_partition AFTER migrate() returns, so it does not exist during step 23 on a fresh DB or in the schema crate's migration tests — an unguarded reference fails to prepare and breaks every schema migration test crossing step 23. RESOLUTION: the sidecar half (_fathomdb_vector_rows, always present) is deleted in the migration; the vec0 half (vector_default) is pruned by the engine right after ensure_vector_partition, matched against the sidecar. This is a strictly-necessary split, not scope creep — the existing step-23 comment already documented that vector_default cannot be referenced in the migration (its error was only in claiming the orphans were harmless).",
+      "The vec0 prune keys on 'vec0 row with no _fathomdb_vector_rows sidecar entry' rather than re-deriving edge cursors (which are gone after the DROP). This is exact because the vec0/sidecar pair is maintained atomically everywhere, so the only sidecar-less vec0 rows are the step-23 edge orphans — the prune is both complete and non-over-reaching without needing to know 'edge' specifically."
+    ],
+    "blockers": []
+  },
   "blockers": []
 }
