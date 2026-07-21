@@ -330,5 +330,179 @@
         "source_doc_id": "doc-tc33-fallback-tzform"
       }
     ]
+  },
+  "doc-tc33-julian-tvalid": {
+    "entities": [
+      {
+        "name": "Dana",
+        "type": "person",
+        "aliases": [],
+        "source_doc_id": "doc-tc33-julian-tvalid"
+      },
+      {
+        "name": "Globex",
+        "type": "organization",
+        "aliases": [],
+        "source_doc_id": "doc-tc33-julian-tvalid"
+      }
+    ],
+    "edges": [
+      {
+        "from_entity": "Dana",
+        "relation": "works_for",
+        "to_entity": "Globex",
+        "body": "Dana works_for Globex",
+        "t_valid": "2451545.0",
+        "t_invalid": null,
+        "confidence": 0.9,
+        "source_doc_id": "doc-tc33-julian-tvalid"
+      }
+    ],
+    "warnings": []
+  },
+  "doc-tc33-zero-tvalid": {
+    "entities": [
+      {
+        "name": "Dana",
+        "type": "person",
+        "aliases": [],
+        "source_doc_id": "doc-tc33-zero-tvalid"
+      },
+      {
+        "name": "Globex",
+        "type": "organization",
+        "aliases": [],
+        "source_doc_id": "doc-tc33-zero-tvalid"
+      }
+    ],
+    "edges": [
+      {
+        "from_entity": "Dana",
+        "relation": "works_for",
+        "to_entity": "Globex",
+        "body": "Dana works_for Globex",
+        "t_valid": "0",
+        "t_invalid": null,
+        "confidence": 0.9,
+        "source_doc_id": "doc-tc33-zero-tvalid"
+      }
+    ],
+    "warnings": []
+  },
+  "doc-tc33-iso-z": {
+    "entities": [
+      {
+        "name": "Dana",
+        "type": "person",
+        "aliases": [],
+        "source_doc_id": "doc-tc33-iso-z"
+      },
+      {
+        "name": "Globex",
+        "type": "organization",
+        "aliases": [],
+        "source_doc_id": "doc-tc33-iso-z"
+      }
+    ],
+    "edges": [
+      {
+        "from_entity": "Dana",
+        "relation": "works_for",
+        "to_entity": "Globex",
+        "body": "Dana works_for Globex",
+        "t_valid": "2025-03-20T09:30:00Z",
+        "t_invalid": null,
+        "confidence": 0.9,
+        "source_doc_id": "doc-tc33-iso-z"
+      }
+    ],
+    "warnings": []
+  },
+  "doc-tc33-iso-offset": {
+    "entities": [
+      {
+        "name": "Dana",
+        "type": "person",
+        "aliases": [],
+        "source_doc_id": "doc-tc33-iso-offset"
+      },
+      {
+        "name": "Globex",
+        "type": "organization",
+        "aliases": [],
+        "source_doc_id": "doc-tc33-iso-offset"
+      }
+    ],
+    "edges": [
+      {
+        "from_entity": "Dana",
+        "relation": "works_for",
+        "to_entity": "Globex",
+        "body": "Dana works_for Globex",
+        "t_valid": "2025-03-20T09:30:00+00:00",
+        "t_invalid": null,
+        "confidence": 0.9,
+        "source_doc_id": "doc-tc33-iso-offset"
+      }
+    ],
+    "warnings": []
+  },
+  "doc-tc33-iso-dateonly": {
+    "entities": [
+      {
+        "name": "Dana",
+        "type": "person",
+        "aliases": [],
+        "source_doc_id": "doc-tc33-iso-dateonly"
+      },
+      {
+        "name": "Globex",
+        "type": "organization",
+        "aliases": [],
+        "source_doc_id": "doc-tc33-iso-dateonly"
+      }
+    ],
+    "edges": [
+      {
+        "from_entity": "Dana",
+        "relation": "works_for",
+        "to_entity": "Globex",
+        "body": "Dana works_for Globex",
+        "t_valid": "2025-03-20",
+        "t_invalid": null,
+        "confidence": 0.9,
+        "source_doc_id": "doc-tc33-iso-dateonly"
+      }
+    ],
+    "warnings": []
+  },
+  "doc-tc33-iso-spacesep": {
+    "entities": [
+      {
+        "name": "Dana",
+        "type": "person",
+        "aliases": [],
+        "source_doc_id": "doc-tc33-iso-spacesep"
+      },
+      {
+        "name": "Globex",
+        "type": "organization",
+        "aliases": [],
+        "source_doc_id": "doc-tc33-iso-spacesep"
+      }
+    ],
+    "edges": [
+      {
+        "from_entity": "Dana",
+        "relation": "works_for",
+        "to_entity": "Globex",
+        "body": "Dana works_for Globex",
+        "t_valid": "2025-03-20 09:30:00",
+        "t_invalid": null,
+        "confidence": 0.9,
+        "source_doc_id": "doc-tc33-iso-spacesep"
+      }
+    ],
+    "warnings": []
   }
 }
