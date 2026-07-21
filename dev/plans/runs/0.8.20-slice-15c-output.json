@@ -287,5 +287,56 @@
     },
     "blockers": []
   },
+  "fix-4": {
+    "requirement_id": "TC-33",
+    "finding": "codex §9 P1 — 'The schema migration can leave projection-terminal gaps for dropped edge rows that were pending projection, which can permanently block projection cursor advancement after upgrade.' `write_cursor` is a SINGLE global sequence shared across nodes AND edges; `advance_projection_cursor` (engine) walks the readiness watermark forward ONE value at a time, only while the next cursor has a `_fathomdb_projection_terminal` row. Step 23 (TC-33 canonical_edges recreate) DROPs every edge row. A body-bearing edge whose vector projection had NOT completed at upgrade has NO terminal row; step 23 dropped that row but left its cursor value with no terminal and no owning row, so the projection cursor STALLED PERMANENTLY at that gap — and because the sequence is shared, this froze advancement past SURVIVING node projections too, wedging wait_for_idle / search-freshness on every upgraded DB.",
+    "not_a_data_migration": "This is projection-cursor STATE bookkeeping, NOT data preservation. The NO-DATA-MIGRATION ruling (HITL 2026-07-21) forbids preserving/converting user ROWS; the edge rows still do not survive. The fix only reconciles the engine's internal cursor state machine so it does not dangle on cursors whose rows the recreate correctly dropped.",
+    "governed_surface_status": "PROPOSED / NOT SIGNED — no AC minted; tracked by requirement TC-33 + test names. NEVER HITL-SIGNED.",
+    "fix": "In step 23's SQL string (src/rust/crates/fathomdb-schema/src/lib.rs), BEFORE `DROP TABLE canonical_edges` (while the table still exists to read) and after `DELETE FROM search_index_edges`, inserted: `INSERT OR IGNORE INTO _fathomdb_projection_terminal(write_cursor, state) SELECT write_cursor, 'up_to_date' FROM canonical_edges;`. Sits inside the same step batch, which apply_one wraps with the PRAGMA user_version bump in one BEGIN IMMEDIATE — crash-safety/idempotence unchanged (a crash rolls back to user_version 22 and the whole step replays). The doc-block consequences list gained item (3) and the SQL carries an inline WHY comment; the -- MIGRATION-ACCRETION-EXEMPTION: marker is unchanged (the INSERT adds no CREATE/DROP so check_migration_accretion is unaffected).",
+    "terminal_state_token_chosen": "'up_to_date'",
+    "terminal_state_token_why": "NOT 'superseded' (the token the engine uses on the supersession path at :14867/:14890). The `_fathomdb_projection_terminal` table (schema step 7) carries a STRUCTURAL `CHECK(state IN ('failed', 'up_to_date'))`, and record_projection_terminal / the backfill both use `INSERT OR IGNORE`. Under SQLite, OR IGNORE SKIPS a row that violates a CHECK and returns NO error — so a 'superseded' backfill would be SILENTLY DROPPED, no terminal recorded, and the cursor would STILL stall (a vacuous green). This is proven empirically by test fix4_superseded_token_is_rejected_by_check_so_or_ignore_drops_it (inserting 'superseded' via OR IGNORE leaves zero rows; 'up_to_date' persists). The only CHECK-valid, non-'failed' token is 'up_to_date', which honestly means 'nothing left to project here' for a deleted row and keeps projection_status out of the Failed arm (:12568 special-cases only 'failed'; advance_projection_cursor at :12102 only checks terminal EXISTENCE, not the state string). NOTE (out of scope, not fixed): the engine's own fix-32 'superseded' terminals at :14867/:14890 are therefore ALSO silently swallowed by the same OR-IGNORE+CHECK interaction — a latent P2 in the engine, distinct from this P1 finding; not addressed here.",
+    "edge_node_cursor_disjointness_confirmed": "write_cursor is globally unique per row from a single shared allocator; an edge cursor and a node cursor can never share a value. The backfill SELECTs write_cursor FROM canonical_edges only, so it inserts terminals exclusively for edge cursors and never fabricates one for a node cursor. Proven by fix4_backfill_touches_only_edge_cursors_not_node_cursors: an unprojected NODE at cursor 7 is NOT given a terminal by the edge backfill, while the dropped edge at cursor 5 is.",
+    "fix1_fix4_complementary_confirmed": "fix-1 (high-water reservation into RESERVED_WRITE_CURSOR_KEY, consequences item 2) solves cursor REUSE: dropping edge rows lowers load_next_cursor's MAX(write_cursor), so a freshly allocated cursor could COLLIDE with stale shadow rows below the old high-water mark. fix-4 (terminal backfill, consequences item 3) solves cursor STALL on the dropped cursors THEMSELVES. Both are retained; a comment in step 23 and doc item (3) state their complementarity for future readers. fix-4 does not disturb the fix-1 reservation INSERT.",
+    "commits": [
+      {
+        "sha": "ee287655",
+        "kind": "RED",
+        "summary": "src/rust/crates/fathomdb-schema/tests/tc33_fix4_projection_cursor_stall.rs — seeds a v22 DB with a body-bearing edge at cursor 5 (NO terminal = pending projection), a projected node at cursor 6 (terminal 'up_to_date'), projection watermark parked at 4; applies step 23; asserts a terminal now exists for cursor 5 and that a faithful replica of advance_projection_cursor walks 4→6 (past the dropped edge). Plus a disjointness test and the OR-IGNORE-swallows-'superseded' evidence test."
+      },
+      {
+        "sha": "16be63ac",
+        "kind": "GREEN",
+        "summary": "src/rust/crates/fathomdb-schema/src/lib.rs — step 23 backfills a terminal ('up_to_date') for every edge cursor before the DROP; doc-block consequences item (3) + inline WHY comment added."
+      }
+    ],
+    "head_sha": "16be63ac",
+    "red_evidence": "At ee287655 (`cargo test -p fathomdb-schema --test tc33_fix4_projection_cursor_stall -- --test-threads=1`) → `test result: FAILED. 1 passed; 2 failed; 0 ignored`, exit 101. fix4_dropped_pending_edge_does_not_strand_the_projection_cursor panicked at :155: 'step 23 must record a projection terminal for the dropped pending edge at cursor 5 BEFORE dropping canonical_edges; without it the shared cursor stalls'. fix4_backfill_touches_only_edge_cursors_not_node_cursors panicked at :191: 'edge cursor 5 must be backfilled'. fix4_superseded_token_is_rejected_by_check_so_or_ignore_drops_it PASSED (proving 'superseded' is silently dropped and 'up_to_date' persists — the token-choice evidence). Post-fix at 16be63ac: `test result: ok. 3 passed; 0 failed`, exit 0.",
+    "gates": [
+      { "gate": "cargo clippy --workspace --all-targets", "real_exit_code": 0, "note": "0 warnings, 0 errors." },
+      { "gate": "cargo check --workspace --all-targets", "real_exit_code": 0 },
+      {
+        "gate": "cargo test -p fathomdb-engine -p fathomdb-schema -- --test-threads=1",
+        "real_exit_code": 0,
+        "passed": 580,
+        "failed": 0,
+        "ignored": 13,
+        "note": "577 (fix-3 GREEN) + 3 new fix-4 tests = 580. 13 ignored UNCHANGED. Run to completion with an explicit 1800000 ms timeout (suite exceeds the 2-min default); real aggregate summed from `^test result:` lines. ZERO eu7 runs; eu7_real_corpus_ac stayed #[ignore]d."
+      },
+      {
+        "gate": "cargo test -p fathomdb-schema --test tc33_fix4_projection_cursor_stall -- --test-threads=1",
+        "real_exit_code": 0,
+        "passed": 3,
+        "failed": 0
+      }
+    ],
+    "invariants_confirmed": {
+      "AC-041_recovery_denylist": "unchanged — {recover, restore, repair, fix, rebuild}; diff touches only step 23's SQL string (one INSERT + comments) and the new test, no recovery/verb code.",
+      "eu7": "zero runs; eu7_real_corpus_ac left #[ignore]d.",
+      "governed_surface": "PROPOSED / NOT SIGNED; no AC minted; never HITL-SIGNED.",
+      "crash_safety_idempotence": "preserved — the INSERT is inside step 23's single BEGIN IMMEDIATE batch; a crash rolls back to user_version 22 and the whole step replays. Confirmed by the existing s22_is_idempotent_across_repeated_migrate_calls (still GREEN in the suite).",
+      "accretion_guard": "unaffected — the INSERT adds no CREATE/DROP; step 23 still names both CREATE TABLE and DROP TABLE and keeps its -- MIGRATION-ACCRETION-EXEMPTION: marker (s22_carries_the_accretion_exemption_marker unaffected)."
+    },
+    "blockers": []
+  },
   "blockers": []
 }
