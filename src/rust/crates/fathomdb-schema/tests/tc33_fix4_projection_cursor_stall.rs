@@ -149,7 +149,7 @@ fn fix4_dropped_pending_edge_does_not_strand_the_projection_cursor() {
 
     // Apply step 23 (v22 -> head).
     migrate_with_steps(&conn, MIGRATIONS).expect("migrate v22 -> head (step 23)");
-    assert_eq!(user_version(&conn), 23, "step 23 must have applied");
+    assert_eq!(user_version(&conn), 24, "migrations must have applied to head");
 
     // The dropped edge's cursor must now carry a terminal so the walk can pass it.
     assert!(

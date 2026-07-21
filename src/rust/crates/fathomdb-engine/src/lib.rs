@@ -3336,6 +3336,17 @@ pub enum EngineError {
         stage: String,
         detail: String,
     },
+    /// 0.8.20 Slice 15d (R-20-PR) — `configure_projections` refused an
+    /// incompatible/DESTRUCTIVE change to an existing projection `name` that was
+    /// NOT accompanied by an explicit `drop`. Omission from the spec never drops
+    /// (C3, `api-surface.md:27`); a role REMOVAL or a tokenizer/embedder change
+    /// on a live projection would silently discard an expensive-to-rebuild
+    /// resource, so it is refused with the destructive `delta` surfaced. The
+    /// caller re-issues with `drop: [name]` to consciously rebuild.
+    ProjectionDestructive {
+        name: String,
+        delta: String,
+    },
 }
 
 impl Display for EngineError {
@@ -3385,6 +3396,11 @@ impl Display for EngineError {
                 "erasure incomplete at stage '{stage}': the rows were deleted but the erasure \
                  could not be completed at rest ({detail})",
             ),
+            Self::ProjectionDestructive { name, delta } => write!(
+                f,
+                "configure_projections refused a destructive change to projection '{name}' \
+                 without an explicit drop ({delta}); re-issue with drop: [\"{name}\"] to rebuild",
+            ),
         }
     }
 }
@@ -3417,6 +3433,7 @@ impl EngineError {
             Self::IllegalTransition { .. } => "IllegalTransitionError",
             Self::NotLifecycleAddressable { .. } => "NotLifecycleAddressableError",
             Self::ErasureIncomplete { .. } => "ErasureIncompleteError",
+            Self::ProjectionDestructive { .. } => "ProjectionDestructiveError",
         }
     }
 }
@@ -3526,6 +3543,105 @@ pub struct ExciseReport {
     pub nodes_excised: u64,
     pub edges_excised: u64,
     pub projections_invalidated: u64,
+}
+
+/// 0.8.20 Slice 15d (R-20-PR, C-1) — one member of a [`ProjectionSpec`]'s role
+/// set. **Exactly three members** (HITL-ratified S8, `api-surface.md:87`):
+/// `searchable→FTS` and `searchable→vector` are NOT roles — they are tier labels
+/// carried by the `fts`/`vector` sub-objects of the spec, so an attribute is
+/// `Searchable` once and the sub-objects select FTS-only / vector-only / both.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum ProjectionRole {
+    /// Projects into the EAV store + its `(attr_name, attr_value)` composite
+    /// index — cheap equality/range, built same-transaction.
+    Filterable,
+    /// The F9 importance/recency signal. **Graceful-absent (Q6a):** declaring
+    /// it is legal and never errors, but the engine DEFERS the build until F9
+    /// exists and grafts it on the next idempotent `configure_projections`.
+    Rankable,
+    /// Full-text / dense recall of the meaning text. The `fts`/`vector`
+    /// sub-objects select the sub-target.
+    Searchable,
+}
+
+impl ProjectionRole {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ProjectionRole::Filterable => "filterable",
+            ProjectionRole::Rankable => "rankable",
+            ProjectionRole::Searchable => "searchable",
+        }
+    }
+
+    #[must_use]
+    pub fn from_str_opt(value: &str) -> Option<Self> {
+        match value {
+            "filterable" => Some(ProjectionRole::Filterable),
+            "rankable" => Some(ProjectionRole::Rankable),
+            "searchable" => Some(ProjectionRole::Searchable),
+            _ => None,
+        }
+    }
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — the `searchable→FTS` sub-target selector.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ProjectionFts {
+    /// Optional tokenizer override; `None` ⇒ the engine default FTS5 tokenizer
+    /// (`body`-FTS's `porter unicode61 remove_diacritics 2`). A custom
+    /// per-attr tokenizer is the ≥0.9.x multi-field FTS work — recorded but
+    /// not honoured here (graceful-graft later, same as `rankable`).
+    pub tokenizer: Option<String>,
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — the `searchable→vector` sub-target selector.
+///
+/// **Slice 20 (R-20-DR) attaches `dense_readiness` HERE, additively:** this
+/// sub-object is STORED by 15d (so the shape exists and a caller can declare a
+/// vector projection) but 15d builds NO embedding / readiness machinery. Slice
+/// 20 adds a `dense_readiness` field to this struct and the async flip logic;
+/// nothing in 15d's persisted shape has to change for that (the registry column
+/// `vector_embedder` + `vector_declared` already round-trip the sub-object).
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ProjectionVector {
+    /// Optional embedder override; `None` ⇒ the engine's shipped default.
+    pub embedder: Option<String>,
+}
+
+/// 0.8.20 Slice 15d (R-20-PR / C-1) — a single declarative projection
+/// declaration. HITL-ratified shape (`api-surface.md:85-89`):
+/// `{ name, roles: Set<ProjectionRole>, fts?, vector? }`. `roles` carries SET
+/// semantics (dedup + membership; an attribute can be `Filterable` AND
+/// `Searchable`) — encoded here as a sorted, de-duplicated `BTreeSet`. Named
+/// `roles`, not `kind` (`kind` is the node/edge type discriminator).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProjectionSpec {
+    pub name: String,
+    pub roles: BTreeSet<ProjectionRole>,
+    pub fts: Option<ProjectionFts>,
+    pub vector: Option<ProjectionVector>,
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — the diff [`Engine::configure_projections`]
+/// applied. Idempotent re-registration yields `unchanged == true` with all
+/// vecs empty (the "re-registration is a no-op" acceptance signal). A
+/// destructive change without an explicit `drop` is an `Err`, not a delta.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ProjectionDelta {
+    /// Attribute names whose same-transaction projections (EAV / property-FTS)
+    /// were (re)built by this apply.
+    pub built: Vec<String>,
+    /// Attribute names dropped (explicit `drop` list) — their EAV + property-FTS
+    /// rows and registry row removed.
+    pub dropped: Vec<String>,
+    /// Attribute names whose declared roles were persisted but NOT built:
+    /// `rankable` (F9 not yet live) and the `searchable→vector` sub-target
+    /// (Slice 20). These graft on a future idempotent apply. No error.
+    pub deferred: Vec<String>,
+    /// True iff nothing was built, dropped, or newly deferred — the whole apply
+    /// diffed to a no-op.
+    pub unchanged: bool,
 }
 
 /// 0.8.20 Slice 5b (R-20-E7) — outcome of
@@ -4101,6 +4217,17 @@ impl Engine {
         ensure_vector_partition(&mut connection, embedder_identity.dimension).map_err(|_| {
             EngineOpenError::Io { message: "could not initialize vector partition".to_string() }
         })?;
+
+        // 0.8.20 Slice 15d (R-20-PR, Q5) — boot re-derive the projection registry
+        // (the engine `ProjectionSpec` is a derived cache). For every persisted
+        // declaration, clear + backfill its EAV / property-FTS rows from the
+        // canonical nodes so a crash window (registry row survives, projection
+        // rows partial) self-heals idempotently. A no-op single empty-table read
+        // on every DB that has not declared a projection. On the writer
+        // connection, single-threaded, before readers spawn — like the tokenizer
+        // reproject above.
+        // RED STUB (Slice 15d): boot re-derive off.
+        let _ = rederive_projections_on_boot;
 
         // EU-5f — recovery pin (`dev/design/embedder.md` §0.3, Hazard 4). If
         // the identity is MC-required, no mean is pinned, yet the workspace
@@ -7293,6 +7420,52 @@ impl Engine {
         tx.commit().map_err(|_| EngineError::Storage)?;
         self.counters.record_admin();
         Ok(())
+    }
+
+    /// 0.8.20 Slice 15d (R-20-PR / C-1) — the projection registry as a
+    /// DECLARATIVE, IDEMPOTENT apply. The engine is the SOLE projection authority
+    /// (Q3): it diffs the supplied `specs` against the durable registry and
+    /// backfills the difference in ONE transaction. Cheap projections
+    /// (`filterable`, `searchable→FTS`) are built same-transaction; `rankable`
+    /// and the `searchable→vector` sub-target are PERSISTED but deferred (F9 /
+    /// Slice 20) — declaring them never errors (graceful-absent, Q6a).
+    ///
+    /// `drop` is EXPLICIT (C3, `api-surface.md:27`): omission of a live
+    /// projection from `specs` does NOT drop it; removal requires naming it in
+    /// `drop`. An incompatible/destructive change to a live projection that is
+    /// NOT in `drop` is refused with [`EngineError::ProjectionDestructive`], the
+    /// destructive delta surfaced — never silent data loss. Re-applying an
+    /// unchanged spec diffs to a no-op ([`ProjectionDelta::unchanged`]).
+    ///
+    /// Pair with [`Engine::read_projections`] to see current state before
+    /// applying.
+    pub fn configure_projections(
+        &self,
+        specs: &[ProjectionSpec],
+        drop: &[String],
+    ) -> Result<ProjectionDelta, EngineError> {
+        self.ensure_open()?;
+        // Settle in-flight async projection work first (same rationale as
+        // `transition`): the async worker commits on its own connection, so a
+        // backfill issued while it holds the write lock would SQLITE_BUSY.
+        self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS)?;
+        // RED STUB (Slice 15d): the registry apply is not implemented yet.
+        let _ = (specs, drop, apply_projection_config);
+        Ok(ProjectionDelta::default())
+    }
+
+    /// 0.8.20 Slice 15d (R-20-PR) — read the current projection registry (C5
+    /// introspection: `read.projections`). Returns every declared
+    /// [`ProjectionSpec`] sorted by name, so a caller can inspect current state
+    /// (and the destructive delta a change would cause) BEFORE applying. Pure
+    /// read; never mutates.
+    pub fn read_projections(&self) -> Result<Vec<ProjectionSpec>, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        // RED STUB (Slice 15d): the registry is not read back yet.
+        let _ = (connection, load_projection_registry);
+        Ok(Vec::new())
     }
 
     /// OPP-12 Phase-1 (0.8.19 Slice 10, R-PG-1/2) — irreversibly hard-erase a
@@ -14229,6 +14402,12 @@ enum ProjectionClass {
     EdgeFts,
     Vector,
     Readiness,
+    /// 0.8.20 Slice 15d (R-20-EAV) — the EAV attribute store (`filterable` +
+    /// the value-at-rest for `searchable`). Same-transaction, row-owned.
+    Attribute,
+    /// 0.8.20 Slice 15d (R-20-EAV) — the property-FTS5 shadow of attribute
+    /// values (`searchable→FTS`). Same-transaction, row-owned.
+    PropertyFts,
 }
 
 /// 0.8.20 Slice 5a (R-20-E1) — one ROW-OWNED projection table: a shadow whose
@@ -14292,6 +14471,24 @@ const ROW_OWNED_PROJECTIONS: &[RowOwnedProjection] = &[
         cursor_column: "write_cursor",
         class: ProjectionClass::Readiness,
     },
+    // 0.8.20 Slice 15d (R-20-EAV) — the EAV attribute store and its property-FTS
+    // shadow both hold declared attribute VALUES at rest (potential PII), keyed
+    // 1:1 with the owning node's write_cursor. They MUST be reachable by
+    // `purge`/`excise_source`: registering them here is what makes
+    // `erase_row_projections` delete them without a hand-rolled list (an
+    // unregistered content-storing table is exactly the `search_index_v2` leak
+    // class this registry closes). The `guard_row_owned_registry` unit test
+    // FAILS if either is left unregistered.
+    RowOwnedProjection {
+        table: "canonical_attributes",
+        cursor_column: "write_cursor",
+        class: ProjectionClass::Attribute,
+    },
+    RowOwnedProjection {
+        table: "property_search_index",
+        cursor_column: "write_cursor",
+        class: ProjectionClass::PropertyFts,
+    },
 ];
 
 /// 0.8.20 Slice 5a (R-20-E1) — erase EVERY row-owned projection for one
@@ -14338,6 +14535,8 @@ fn truncate_all_row_projections(tx: &Connection) -> rusqlite::Result<u64> {
             ProjectionClass::EdgeFts,
             ProjectionClass::Vector,
             ProjectionClass::Readiness,
+            ProjectionClass::Attribute,
+            ProjectionClass::PropertyFts,
         ],
     )
 }
@@ -14372,6 +14571,475 @@ impl ProjectionPass {
 
     fn writes_vector_state(self) -> bool {
         matches!(self, ProjectionPass::Write | ProjectionPass::VectorOnly)
+    }
+
+    /// 0.8.20 Slice 15d (R-20-EAV) — whether this pass (re)projects the declared
+    /// attribute set into the EAV store + property-FTS. Only the full `Write`
+    /// pass does: the `FtsOnly` tokenizer-upgrade reproject predates step 24 (no
+    /// registry/attribute tables exist at that migration point, so it must not
+    /// touch them), and `VectorOnly` rebuilds only the async vector shadows. The
+    /// operator FTS rebuild uses `Write`, so a full `rebuild_projections`
+    /// re-derives attributes cleanly after `truncate_all_row_projections` clears
+    /// the two attribute classes.
+    fn writes_attributes(self) -> bool {
+        matches!(self, ProjectionPass::Write)
+    }
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — the on-disk registry row for one declared
+/// projection, read back from `_fathomdb_projection_registry`.
+///
+/// **On-disk encoding of the optional sub-objects.** The `fts_tokenizer` column
+/// is tri-valued: SQL `NULL` = no `fts` sub-object; empty string `""` = `fts`
+/// present with the engine-default tokenizer; a non-empty string = `fts` with a
+/// custom tokenizer. This is what lets `searchable→FTS with default tokenizer`
+/// be distinguished durably from `searchable` with no FTS sub-target. `vector`
+/// mirrors it with an explicit `vector_declared` bit plus a nullable
+/// `vector_embedder`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct StoredProjection {
+    roles: BTreeSet<ProjectionRole>,
+    fts_present: bool,
+    /// `Some(custom)` custom tokenizer; `None` = engine default (only
+    /// meaningful when `fts_present`).
+    fts_tokenizer: Option<String>,
+    vector_declared: bool,
+    vector_embedder: Option<String>,
+}
+
+impl StoredProjection {
+    /// True iff the declared roles want the attribute VALUE stored at rest in
+    /// the EAV store: `filterable` (the value IS the filter target) or
+    /// `searchable` (the value is the retrievable meaning, and Slice 20's vector
+    /// embed will read it from here). `rankable`-only wants no value at rest.
+    fn wants_eav(&self) -> bool {
+        self.roles.contains(&ProjectionRole::Filterable)
+            || self.roles.contains(&ProjectionRole::Searchable)
+    }
+
+    /// True iff a `searchable→FTS` property-FTS row should be written: the
+    /// `searchable` role AND an `fts` sub-object.
+    fn wants_property_fts(&self) -> bool {
+        self.roles.contains(&ProjectionRole::Searchable) && self.fts_present
+    }
+
+    /// The `fts_tokenizer` column value: `None` (SQL NULL) when no `fts`
+    /// sub-object, else the custom tokenizer or `""` for engine-default.
+    fn fts_column(&self) -> Option<String> {
+        if self.fts_present {
+            Some(self.fts_tokenizer.clone().unwrap_or_default())
+        } else {
+            None
+        }
+    }
+
+    /// Build from the public [`ProjectionSpec`].
+    fn from_spec(spec: &ProjectionSpec) -> Self {
+        StoredProjection {
+            roles: spec.roles.clone(),
+            fts_present: spec.fts.is_some(),
+            fts_tokenizer: spec
+                .fts
+                .as_ref()
+                .and_then(|f| f.tokenizer.clone())
+                .filter(|t| !t.is_empty()),
+            vector_declared: spec.vector.is_some(),
+            vector_embedder: spec
+                .vector
+                .as_ref()
+                .and_then(|v| v.embedder.clone())
+                .filter(|e| !e.is_empty()),
+        }
+    }
+
+    /// Reconstruct the public [`ProjectionSpec`] for `read_projections`.
+    fn to_spec(&self, name: &str) -> ProjectionSpec {
+        ProjectionSpec {
+            name: name.to_string(),
+            roles: self.roles.clone(),
+            fts: if self.fts_present {
+                Some(ProjectionFts { tokenizer: self.fts_tokenizer.clone() })
+            } else {
+                None
+            },
+            vector: if self.vector_declared {
+                Some(ProjectionVector { embedder: self.vector_embedder.clone() })
+            } else {
+                None
+            },
+        }
+    }
+
+    /// The set of ROLE spellings this declaration DEFERS rather than builds:
+    /// `rankable` (F9 not live) and, since 15d builds no embedding, the
+    /// `searchable→vector` sub-target. Used to populate `ProjectionDelta.deferred`.
+    fn has_deferred(&self) -> bool {
+        self.roles.contains(&ProjectionRole::Rankable) || self.vector_declared
+    }
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — is `name` a well-formed attribute name? Rejects
+/// empty, and any name carrying a double-quote or NUL, so the JSON path
+/// `$."<name>"` compiled below is always well-formed (a malformed json path
+/// would ERROR inside the write transaction, not merely miss). Caller-supplied,
+/// so this is validated at `configure_projections` time.
+fn is_valid_attribute_name(name: &str) -> bool {
+    !name.is_empty() && !name.contains('"') && !name.contains('\0')
+}
+
+/// 0.8.20 Slice 15d — the SQLite JSON path that extracts attribute `name` from a
+/// node body. `name` is pre-validated by [`is_valid_attribute_name`]; the path
+/// is bound as a PARAMETER (never interpolated into SQL), so this is not an
+/// injection surface even before that validation.
+fn attribute_json_path(name: &str) -> String {
+    format!("$.\"{name}\"")
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — load the durable projection registry
+/// (`_fathomdb_projection_registry`) into a name→[`StoredProjection`] map. This
+/// is the derived-cache source (Q5) that boot re-derive and every
+/// `configure_projections` diff read.
+fn load_projection_registry(
+    conn: &Connection,
+) -> rusqlite::Result<BTreeMap<String, StoredProjection>> {
+    let mut out = BTreeMap::new();
+    let mut stmt = conn.prepare(
+        "SELECT name, roles, fts_tokenizer, vector_embedder, vector_declared
+         FROM _fathomdb_projection_registry",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        let name: String = row.get(0)?;
+        let roles_json: String = row.get(1)?;
+        let fts_tokenizer: Option<String> = row.get(2)?;
+        let vector_embedder: Option<String> = row.get(3)?;
+        let vector_declared: i64 = row.get(4)?;
+        Ok((name, roles_json, fts_tokenizer, vector_embedder, vector_declared))
+    })?;
+    for row in rows {
+        let (name, roles_json, fts_col, vector_embedder, vector_declared) = row?;
+        let roles: BTreeSet<ProjectionRole> = parse_roles_json(&roles_json);
+        let fts_present = fts_col.is_some();
+        let fts_tokenizer = fts_col.filter(|t| !t.is_empty());
+        out.insert(
+            name,
+            StoredProjection {
+                roles,
+                fts_present,
+                fts_tokenizer,
+                vector_declared: vector_declared != 0,
+                vector_embedder,
+            },
+        );
+    }
+    Ok(out)
+}
+
+/// Roles are persisted as a compact, sorted, comma-separated list (set
+/// semantics; order-independent). Unknown tokens are ignored (forward-compat).
+fn parse_roles_json(s: &str) -> BTreeSet<ProjectionRole> {
+    s.split(',').filter_map(|t| ProjectionRole::from_str_opt(t.trim())).collect()
+}
+
+fn roles_to_storage(roles: &BTreeSet<ProjectionRole>) -> String {
+    roles.iter().map(|r| r.as_str()).collect::<Vec<_>>().join(",")
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — write/overwrite one registry row.
+fn persist_projection_row(
+    tx: &Connection,
+    name: &str,
+    stored: &StoredProjection,
+) -> rusqlite::Result<()> {
+    tx.execute(
+        "INSERT INTO _fathomdb_projection_registry
+             (name, roles, fts_tokenizer, vector_embedder, vector_declared)
+         VALUES(?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(name) DO UPDATE SET
+             roles = excluded.roles,
+             fts_tokenizer = excluded.fts_tokenizer,
+             vector_embedder = excluded.vector_embedder,
+             vector_declared = excluded.vector_declared",
+        params![
+            name,
+            roles_to_storage(&stored.roles),
+            stored.fts_column(),
+            stored.vector_embedder,
+            i64::from(stored.vector_declared),
+        ],
+    )?;
+    Ok(())
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — delete one registry row.
+fn remove_projection_row(tx: &Connection, name: &str) -> rusqlite::Result<()> {
+    tx.execute("DELETE FROM _fathomdb_projection_registry WHERE name = ?1", params![name])?;
+    Ok(())
+}
+
+/// 0.8.20 Slice 15d (R-20-EAV) — delete every EAV + property-FTS row for one
+/// attribute `name` (all owning nodes). The idempotent-rebuild primitive: a
+/// changed or dropped projection clears its rows before (re)backfill.
+fn clear_attribute_projection(tx: &Connection, name: &str) -> rusqlite::Result<()> {
+    tx.execute("DELETE FROM property_search_index WHERE attr_name = ?1", params![name])?;
+    tx.execute("DELETE FROM canonical_attributes WHERE attr_name = ?1", params![name])?;
+    Ok(())
+}
+
+/// 0.8.20 Slice 15d (R-20-EAV) — project ONE attribute value for ONE node row
+/// into the EAV store and (if `searchable→FTS`) the property-FTS shadow. Skips a
+/// NULL/absent extraction (an absent attribute means no row, so a `filterable`
+/// equality simply never matches it — correct). Shared by the write path and
+/// the backfill so they cannot drift.
+fn project_one_attribute(
+    tx: &Connection,
+    cursor: i64,
+    body: &str,
+    name: &str,
+    stored: &StoredProjection,
+) -> rusqlite::Result<()> {
+    if !stored.wants_eav() {
+        return Ok(());
+    }
+    let path = attribute_json_path(name);
+    // json_extract over a non-JSON body would error; guard with json_valid so a
+    // plain-text body simply yields no attribute rows.
+    let value: Option<String> = tx
+        .query_row(
+            "SELECT CASE WHEN json_valid(?1) THEN json_extract(?1, ?2) END",
+            params![body, path],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .unwrap_or(None);
+    let Some(value) = value else {
+        return Ok(());
+    };
+    tx.execute(
+        "INSERT INTO canonical_attributes(write_cursor, attr_name, attr_value)
+         VALUES(?1, ?2, ?3)",
+        params![cursor, name, value],
+    )?;
+    if stored.wants_property_fts() {
+        tx.execute(
+            "INSERT INTO property_search_index(attr_value, attr_name, write_cursor)
+             VALUES(?1, ?2, ?3)",
+            params![value, name, cursor],
+        )?;
+    }
+    Ok(())
+}
+
+/// 0.8.20 Slice 15d (R-20-EAV) — the write-path attribute projector: for a
+/// just-inserted node, project EVERY declared attribute (reading the live
+/// registry from `tx`). Same-transaction, so the node is filter/FTS-retrievable
+/// on commit. A no-op when the registry is empty (the pre-`configure_projections`
+/// default), so it costs one empty-table scan per node and is behaviour-neutral
+/// until a projection is declared.
+fn project_node_attributes(tx: &Connection, cursor: i64, body: &str) -> rusqlite::Result<()> {
+    let registry = load_projection_registry(tx)?;
+    for (name, stored) in &registry {
+        project_one_attribute(tx, cursor, body, name, stored)?;
+    }
+    Ok(())
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — backfill ONE attribute across every ACTIVE,
+/// non-superseded canonical node. Called by `configure_projections` when a
+/// projection is added/changed (after `clear_attribute_projection`), and by boot
+/// re-derive. Idempotent when paired with the clear.
+fn backfill_attribute(
+    tx: &Connection,
+    name: &str,
+    stored: &StoredProjection,
+) -> rusqlite::Result<()> {
+    if !stored.wants_eav() {
+        return Ok(());
+    }
+    let rows: Vec<(i64, String)> = {
+        let mut stmt = tx.prepare(
+            "SELECT write_cursor, body FROM canonical_nodes
+             WHERE superseded_at IS NULL AND state = 'active'",
+        )?;
+        let collected = stmt
+            .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        collected
+    };
+    for (cursor, body) in rows {
+        project_one_attribute(tx, cursor, &body, name, stored)?;
+    }
+    Ok(())
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — is `desired` an INCOMPATIBLE/DESTRUCTIVE change
+/// to a live `existing` projection? A destructive change discards an
+/// expensive-to-rebuild resource and so REQUIRES an explicit `drop` (C3): a role
+/// REMOVAL, dropping the `fts`/`vector` sub-target, or changing the tokenizer /
+/// embedder. Purely ADDITIVE changes (adding a role, adding an `fts`/`vector`
+/// sub-object) are non-destructive and applied in place.
+fn is_destructive_projection_change(
+    existing: &StoredProjection,
+    desired: &StoredProjection,
+) -> bool {
+    if existing.roles.iter().any(|r| !desired.roles.contains(r)) {
+        return true;
+    }
+    if existing.fts_present
+        && (!desired.fts_present || existing.fts_tokenizer != desired.fts_tokenizer)
+    {
+        return true;
+    }
+    if existing.vector_declared
+        && (!desired.vector_declared || existing.vector_embedder != desired.vector_embedder)
+    {
+        return true;
+    }
+    false
+}
+
+/// Human-readable summary of the destructive delta, surfaced in
+/// [`EngineError::ProjectionDestructive`] so the caller sees WHAT it must drop.
+fn describe_projection_delta(existing: &StoredProjection, desired: &StoredProjection) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    for r in &existing.roles {
+        if !desired.roles.contains(r) {
+            parts.push(format!("role '{}' removed", r.as_str()));
+        }
+    }
+    if existing.fts_present && !desired.fts_present {
+        parts.push("fts sub-target removed".to_string());
+    } else if existing.fts_present && existing.fts_tokenizer != desired.fts_tokenizer {
+        parts.push("fts tokenizer changed".to_string());
+    }
+    if existing.vector_declared && !desired.vector_declared {
+        parts.push("vector sub-target removed".to_string());
+    } else if existing.vector_declared && existing.vector_embedder != desired.vector_embedder {
+        parts.push("vector embedder changed".to_string());
+    }
+    if parts.is_empty() {
+        "incompatible change".to_string()
+    } else {
+        parts.join("; ")
+    }
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — the declarative, idempotent diff+backfill apply
+/// that backs [`Engine::configure_projections`]. Runs inside the caller's write
+/// transaction `tx`. Order: apply `drop`s first (so a drop+re-declare in one
+/// call rebuilds fresh), then diff each spec. Idempotent re-registration diffs to
+/// an empty delta (`unchanged`). A destructive change without an explicit drop is
+/// refused with [`EngineError::ProjectionDestructive`].
+fn apply_projection_config(
+    tx: &Connection,
+    specs: &[ProjectionSpec],
+    drop: &[String],
+) -> Result<ProjectionDelta, EngineError> {
+    // Validate up-front so a bad name aborts before any write.
+    for spec in specs {
+        if !is_valid_attribute_name(&spec.name) {
+            return Err(EngineError::InvalidArgument {
+                msg: format!("invalid projection attribute name: {:?}", spec.name),
+            });
+        }
+        if spec.roles.is_empty() {
+            return Err(EngineError::InvalidArgument {
+                msg: format!("projection '{}' declares no roles", spec.name),
+            });
+        }
+    }
+    for name in drop {
+        if !is_valid_attribute_name(name) {
+            return Err(EngineError::InvalidArgument {
+                msg: format!("invalid projection drop name: {name:?}"),
+            });
+        }
+    }
+
+    let mut delta = ProjectionDelta::default();
+
+    // (1) Explicit drops. Omission never drops (C3); only this list does.
+    let before_drop = load_projection_registry(tx).map_err(|_| EngineError::Storage)?;
+    for name in drop {
+        if before_drop.contains_key(name) {
+            clear_attribute_projection(tx, name).map_err(|_| EngineError::Storage)?;
+            remove_projection_row(tx, name).map_err(|_| EngineError::Storage)?;
+            delta.dropped.push(name.clone());
+        }
+        // dropping an absent projection is an idempotent no-op, not an error.
+    }
+
+    // (2) Diff each spec against the post-drop registry.
+    let current = load_projection_registry(tx).map_err(|_| EngineError::Storage)?;
+    for spec in specs {
+        let desired = StoredProjection::from_spec(spec);
+        match current.get(&spec.name) {
+            Some(existing) if existing == &desired => {
+                // Idempotent re-registration — no-op (the keystone acceptance).
+            }
+            Some(existing) => {
+                if is_destructive_projection_change(existing, &desired) {
+                    return Err(EngineError::ProjectionDestructive {
+                        name: spec.name.clone(),
+                        delta: describe_projection_delta(existing, &desired),
+                    });
+                }
+                persist_projection_row(tx, &spec.name, &desired)
+                    .map_err(|_| EngineError::Storage)?;
+                clear_attribute_projection(tx, &spec.name).map_err(|_| EngineError::Storage)?;
+                backfill_attribute(tx, &spec.name, &desired).map_err(|_| EngineError::Storage)?;
+                if desired.wants_eav() {
+                    delta.built.push(spec.name.clone());
+                }
+                if desired.has_deferred() && !existing.has_deferred() {
+                    delta.deferred.push(spec.name.clone());
+                }
+            }
+            None => {
+                persist_projection_row(tx, &spec.name, &desired)
+                    .map_err(|_| EngineError::Storage)?;
+                clear_attribute_projection(tx, &spec.name).map_err(|_| EngineError::Storage)?;
+                backfill_attribute(tx, &spec.name, &desired).map_err(|_| EngineError::Storage)?;
+                if desired.wants_eav() {
+                    delta.built.push(spec.name.clone());
+                }
+                if desired.has_deferred() {
+                    delta.deferred.push(spec.name.clone());
+                }
+            }
+        }
+    }
+
+    delta.unchanged =
+        delta.built.is_empty() && delta.dropped.is_empty() && delta.deferred.is_empty();
+    Ok(delta)
+}
+
+/// 0.8.20 Slice 15d (R-20-PR, Q5) — BOOT re-derive: the engine `ProjectionSpec`
+/// is a DERIVED cache, re-driven idempotently on boot. For every persisted
+/// registry declaration, clear + backfill its EAV / property-FTS rows from the
+/// canonical nodes — so a DB whose registry row survives but whose projection
+/// rows are missing/partial (a crash window, a restored registry) CONVERGES on
+/// the next open. A no-op (single empty-table read) when no projections are
+/// declared — which is every pre-`configure_projections` DB. Runs on the writer
+/// connection, single-threaded, before readers spawn.
+fn rederive_projections_on_boot(conn: &Connection) -> rusqlite::Result<()> {
+    let registry = load_projection_registry(conn)?;
+    if registry.is_empty() {
+        return Ok(());
+    }
+    conn.execute_batch("BEGIN IMMEDIATE")?;
+    let result = (|| {
+        for (name, stored) in &registry {
+            clear_attribute_projection(conn, name)?;
+            backfill_attribute(conn, name, stored)?;
+        }
+        Ok(())
+    })();
+    match result {
+        Ok(()) => conn.execute_batch("COMMIT"),
+        Err(err) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            Err(err)
+        }
     }
 }
 
@@ -14454,6 +15122,16 @@ fn project_canonical_node_row(
              )",
             params![kind, body, cursor],
         )?;
+    }
+    // 0.8.20 Slice 15d (R-20-EAV) — same-transaction attribute projection. Only
+    // the full `Write` pass re-derives attributes (see `writes_attributes`): the
+    // FtsOnly tokenizer reproject predates step 24 and must not touch the
+    // registry/attribute tables; VectorOnly rebuilds only vector shadows. A full
+    // operator FTS rebuild uses `Write`, so it re-derives attributes after the
+    // truncate.
+    if pass.writes_attributes() {
+        // RED STUB (Slice 15d): same-transaction attribute projection off.
+        let _ = project_node_attributes;
     }
     let enqueue_vector = targets.vector && kind_is_vector_indexed(tx, kind).unwrap_or(false);
     if pass.writes_vector_state() {
