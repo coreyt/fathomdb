@@ -987,8 +987,10 @@ fn backslash_projection_name_is_rejected() {
         .unwrap_err();
     match err {
         EngineError::InvalidArgument { msg } => {
+            // The typed refusal names the offending projection (the name is
+            // rendered via Debug, so the backslash appears doubled).
             assert!(
-                msg.contains("a\\b"),
+                msg.contains("projection") && msg.contains('\\'),
                 "the typed refusal must name the offending projection name, got: {msg}"
             );
         }

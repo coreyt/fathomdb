@@ -14797,13 +14797,33 @@ impl StoredProjection {
     }
 }
 
-/// 0.8.20 Slice 15d (R-20-PR) — is `name` a well-formed attribute name? Rejects
-/// empty, and any name carrying a double-quote or NUL, so the JSON path
-/// `$."<name>"` compiled below is always well-formed (a malformed json path
-/// would ERROR inside the write transaction, not merely miss). Caller-supplied,
-/// so this is validated at `configure_projections` time.
+/// 0.8.20 Slice 15d (R-20-PR) — is `name` a well-formed attribute name?
+///
+/// Establishes the invariant "a name that `configure_projections` ACCEPTS must be
+/// POPULATABLE": the write-path extraction compiles the SQLite JSON path
+/// `$."<name>"` (double-quoted key). A name must therefore round-trip through
+/// that quoted-key form unchanged. Rejects:
+///   - empty;
+///   - a double-quote `"` (would terminate the quoted key early → malformed path,
+///     ERRORing inside the write transaction);
+///   - a BACKSLASH `\` (fix-4 finding 1 [P2]): SQLite treats `\` as an escape
+///     introducer inside the double-quoted JSON-path key, so a body key literally
+///     containing `\` (e.g. `a\b`) is NOT matched by `$."a\b"`. Pre-fix the name
+///     was accepted yet the attribute silently NEVER populated
+///     `canonical_attributes` — an accept-then-never-populate footgun. Rejecting
+///     it keeps the accept ⟹ works contract (mirrors the TC-33 hard-reject
+///     philosophy);
+///   - any ASCII control char (incl. NUL): not a safe/legible key spelling and
+///     not reliably matchable through the quoted-key form.
+///
+/// Projection names are app-declared identifiers, so this charset restriction is
+/// a legitimate contract. Caller-supplied, so it is validated at
+/// `configure_projections` time (spec names AND the `drop` list).
 fn is_valid_attribute_name(name: &str) -> bool {
-    !name.is_empty() && !name.contains('"') && !name.contains('\0')
+    !name.is_empty()
+        && !name.contains('"')
+        && !name.contains('\\')
+        && !name.chars().any(|c| c.is_control())
 }
 
 /// 0.8.20 Slice 15d — the SQLite JSON path that extracts attribute `name` from a
