@@ -1,0 +1,70 @@
+{
+  "slice": "15e",
+  "title": "Gated vec0 filterable pre-KNN reshape (ADR-0.8.11 D3; plan-0.8.20 §9 decisions 2 + 4)",
+  "branch": "orch-0.8.20-s15b",
+  "head_sha": "282a03f7179d354eac62dfa7c5a2305e9000d8ae",
+  "status": "BLOCKED — DECOMPOSITION PROPOSED. Not half-built. Zero code commits; worktree left pristine (git status clean, head unchanged). Per mandate: STOP + propose decomposition rather than land a partial vertical across ~6 vec0 INSERT sites + bindings + an unresolved gating-acknowledgement design question.",
+  "commits": [],
+  "gates_note": "No gates run to green because no code was written. Base is clean (clippy/check exit 0; 622 pass / 0 fail / 13 ignored per the task). The two probe artifacts used to establish ground truth were REMOVED before exit; `git status --porcelain` is empty and HEAD is unchanged at 282a03f7.",
+  "why_blocked": "Two vec0 constraints discovered by direct probe (below) plus an unresolved acknowledgement-channel design question make this a multi-site vertical (>=6 INSERT sites + body plumbing + governed filter-predicate surface reaching Py/TS bindings + a Steward direction call). It cannot land as ONE coherent, fully-verified RED→GREEN without half-building. The plan itself invites the gating question to be escalated ('that is a direction call, not an implementation detail').",
+  "ground_truth_probed": {
+    "method": "Throwaway integration test on the real engine connection (sqlite-vec loaded) via a temporary execute_raw_for_test seam returning the raw rusqlite error string. Both the probe test and the seam were reverted before exit.",
+    "finding_1_no_quoted_vec0_columns": "vec0's CREATE VIRTUAL TABLE DDL parser REJECTS a quoted metadata-column identifier: `CREATE VIRTUAL TABLE ... USING vec0(..., \"attr_prio rity\" TEXT)` -> Err(\"vec0 constructor error: Could not parse '\\\"attr_prio rity\\\" TEXT'\"). Same for a unicode quoted name `\"attr_café\"`. An UNQUOTED plain identifier `attr_foo TEXT` is accepted, inserts fine, and is constrainable under a KNN MATCH ... WHERE. CONSEQUENCE: attribute columns CANNOT be named `attr_<literal-name>` because Slice-15d-validated attribute names legitimately contain spaces / unicode / '-' (is_valid_attribute_name only forbids '\"', '\\\\', and control chars). A SAFE, always-unquoted, collision-free, deterministic encoding is required — recommend `attr_` + lowercase-hex of the name's UTF-8 bytes (injective, reversible, always matches ^attr_[0-9a-f]+$, cannot collide with the built-ins source_type/kind/created_at/status/embedding/embedding_bin).",
+    "finding_2_no_partial_vec0_insert": "vec0 REJECTS a partial-column INSERT that omits a TEXT metadata column: after adding `attr_foo TEXT`, `INSERT INTO probe_v(rowid,embedding,embedding_bin,source_type,kind,created_at,status) VALUES(...)` -> Err(\"Expected text for TEXT metadata column attr_foo, received NULL\"). CONSEQUENCE: EVERY existing `INSERT INTO vector_default(...)` site must be rebuilt to bind a value for EVERY attribute column of the current shape. This is why the reshape is inherently multi-site, not a localized change.",
+    "finding_3_async_worker_has_no_body": "The async projection worker's ProjectionOutcome::Success carries only {cursor, kind, blob, bin_blob} (lib.rs:12663) — NOT the node body. Populating attribute columns on the write path therefore requires the worker (commit_projection_outcomes, lib.rs:12636) to additionally `SELECT body FROM canonical_nodes WHERE write_cursor = ?` inside its commit tx, load the registry filterable set, and extract each attribute (reuse project_one_attribute's json_type-aware scalar rendering, lib.rs:15210) — net-new plumbing.",
+    "finding_4_boot_reshape_tension": "Decision 4 (NO blob preservation) + the contract's 'boot re-derive MUST NOT reshape/wipe' are only mutually consistent if configure_projections is the SOLE writer that changes BOTH the registry filterable set AND the vec0 shape, atomically in one tx, so they can never diverge; ensure_vector_partition on boot must then only VERIFY shape==registry-filterable-set and no-op (never reshape). A crash between the registry write and the vec0 recreate must be inside one tx so it cannot leave a divergent shape that boot would be tempted to 'fix' by wiping. Buildable, but must be designed deliberately — the existing ensure_vector_partition 3-way shape-sentinel (lib.rs:13422) has no notion of the registry and would need the filterable set threaded in."
+  },
+  "design_question_needs_steward_direction": {
+    "id": "TC-15E-ACK",
+    "summary": "How is a filterable-SET-CHANGE reshape ACKNOWLEDGED for an ADD, given the reshape wipes ALL embeddings (decision 4)?",
+    "detail": "The contract says a shape-changing reshape is 'a destructive delta requiring an EXPLICIT acknowledged drop, surfaced first via the existing ProjectionDestructive mechanism.' That mechanism (lib.rs:15456, is_destructive_projection_change) gates a REMOVAL/incompatible change by requiring the affected projection NAME in the `drop: &[String]` list. That maps cleanly to REMOVING `filterable` from an attribute (role removal is already destructive). But it does NOT map to (a) ADDING `filterable` to an existing attribute, or (b) declaring a NET-NEW filterable attribute — both of which are ADDITIVE at the projection level (is_destructive_projection_change returns false) yet under 15e are SHAPE-CHANGING (a vec0 recreate that wipes every existing embedding, since there is no blob preservation). There is nothing to 'drop' for a net-new add, so the drop-list acknowledgement channel is undefined for the ADD case. RESOLUTION OPTIONS: (1) add an explicit acknowledgement parameter to configure_projections (e.g. `acknowledge_vector_reshape: bool` / a typed Ack) — clean semantics but a GOVERNED-SURFACE signature change reaching Py+TS bindings + .pyi + TS types (TC-39 interface-doc obligation, X1 re-run); (2) overload the drop-then-readd idiom (name the attr in BOTH `drop` and `specs`; dropping an absent projection is already a no-op at lib.rs:15445) as the reshape acknowledgement — no signature change but surprising semantics for a net-new add; (3) scope 15e to only REMOVE-and-change reshapes (acknowledged via the existing drop) and DEFER the additive-reshape gating. This is a direction call, not an implementation detail — the plan itself flags such calls for Steward escalation.",
+    "recommendation": "Option (1) — a typed reshape acknowledgement on configure_projections — is the only channel that is total across ADD and REMOVE and cannot be mis-triggered; accept the governed-surface delta (PROPOSED / NOT SIGNED) and the X1 re-run cost. Confirm before building."
+  },
+  "insert_sites_requiring_dynamic_columns": [
+    "commit_projection_outcomes async worker — lib.rs:12712 (also needs body SELECT + registry + attr extraction)",
+    "embedder-profile mean-pin write path — lib.rs:7096",
+    "run_pin_and_requantize_pass DELETE+INSERT — lib.rs:8973 (must read back + PRESERVE attr cols; this is same-shape re-quantize, NOT the decision-4 reshape, so preservation is REQUIRED here)",
+    "migrate_vector_partition_pack1_to_pack2 — lib.rs:13521",
+    "migrate_vector_partition_to_pack1 — lib.rs:13585",
+    "rebuild_vec0 insert path — lib.rs:7441 (re-extract attrs from body on rebuild; this is the decision-4 re-embed path a reshape leaves behind)"
+  ],
+  "proposed_decomposition": {
+    "rationale": "There is direct precedent for shipping a vec0 metadata column with a sentinel value FIRST and populating it in a later slice: Slice 10 shipped `status TEXT` with an empty-string sentinel '' and NO population source ('reserved-gap candidate 13'), and the pr_g10 test status_filter_prunes_all_because_population_is_null_only pins exactly that deferred-population state. That precedent lets 15e's shape+gating+filter-compile land coherently with attr columns at the '' sentinel, WITHOUT the ~6-site body-extraction population being a silent hole — it becomes an explicitly-documented deferred state, not a half-build.",
+    "sub_slices": [
+      {
+        "id": "15e-1",
+        "title": "vec0 shape parameterization + gated reshape + pre-KNN filter COMPILE (attr cols ship '' sentinel; population deferred, mirroring status@Slice-10)",
+        "delivers": "Parameterize vector_partition_create_sql(dimension, if_not_exists, filterable_attrs) with attr_+hex naming; thread the registry filterable set into ensure_vector_partition (boot verify==no-op); configure_projections detects a filterable-SET change and performs a gated destructive reshape (recreate vec0 empty, NO blob preservation) via the acknowledgement channel decided by TC-15E-ACK, same-set => no-op, boot => no-op; update ALL insert sites to bind the '' sentinel for every attr col (so the reshaped table is writable); extend vector_filter_clause/vector_filter_values so a filterable-attr predicate COMPILES into the phase-1 vec0 MATCH clause (D3), typed-rejecting where it cannot.",
+        "acceptance": "ALL FOUR task acceptance signals: (1) filterable-attr predicate compiles into phase-1 vec0 MATCH clause (SQL assertion; does not require population); (2) same-set re-registration is a no-op (vec0 untouched); (3) set-change without ack is ProjectionDestructive, with ack reshapes without staging blobs; (4) pr_g10_filtered_knn stays green incl. unfiltered_phase1_sql_byte_identical_to_0_7_2. End-to-end attr-prune is bounded by sentinel population exactly as status is today (documented deferred state).",
+        "surface": "If TC-15E-ACK resolves to option 1, a governed configure_projections signature delta (bindings). The filter-predicate CARRIER (SearchFilter gains an attribute-predicate field, or a FilterTerm attr variant) is ALSO governed and reaches bindings — could be engine-internal-only if the acceptance is asserted purely on generated SQL via the vector_phase1_sql_for_test seam, deferring the binding-facing filter term to 15e-2."
+      },
+      {
+        "id": "15e-2",
+        "title": "Write-path + rebuild population of attr columns from the node body",
+        "delivers": "Async worker + embedder-pin + rebuild_vec0 extract each filterable attr from the node body (shared project_one_attribute rendering) and bind the real value; run_pin_and_requantize_pass and both legacy migrations read back + preserve attr cols. Retires the '' sentinel for attr columns.",
+        "acceptance": "End-to-end: a filterable-attr equality prunes vec0 candidates pre-KNN on real writes; a reshape+rebuild re-populates attr cols."
+      },
+      {
+        "id": "15e-3 (fold into 15e-1 or 15e-2 depending on TC-15E-ACK)",
+        "title": "Governed filter-predicate + configure_projections ack surface across Py/TS bindings",
+        "delivers": "pyo3 + napi + .pyi + TS types for the new filter term and/or the reshape acknowledgement; X1 + pyright in a FRESH clone (never the shared .venv); AGENTS.md:25 interface-doc entry (TC-39); do NOT reintroduce a .pyi stub gap (Slice 15d fix-3 scar).",
+        "acceptance": "X1 green by execution in a fresh clone; pyright clean; allowlist + interface docs updated; governed-surface delta PROPOSED / NOT SIGNED."
+      }
+    ]
+  },
+  "plan_contract_corrections": [
+    "The task's requirement-3 ('the filterable attribute value populates its vec0 metadata column on the write/projection path') cannot land in the SAME coherent RED→GREEN as requirements 1/2/4 without a ~6-site body-plumbing change (finding_2 + finding_3). It should be its own sub-slice (15e-2), mirroring how Slice 10 shipped the `status` column with a sentinel and deferred population.",
+    "The task's naming guidance ('validated names from Slice 15d fix-4 ... ensure no collision with the built-ins') is necessary but INSUFFICIENT: finding_1 shows validated names are not always valid UNQUOTED vec0 identifiers and quoted identifiers are rejected by vec0's DDL parser, so a byte-safe ENCODING (attr_+hex) is mandatory — raw names cannot be used as columns.",
+    "The 'existing ProjectionDestructive mechanism' the task points to gates REMOVALS via the drop-list; it has NO acknowledgement channel for an ADDITIVE-but-shape-changing reshape (net-new filterable attr) — see TC-15E-ACK. This is a genuine gap in the ratified contract, not an implementation detail, and needs a Steward direction call before code.",
+    "run_pin_and_requantize_pass (lib.rs:8973) is a SAME-SHAPE re-quantize that must PRESERVE attr cols — it is NOT covered by decision-4's 'no preservation', which applies ONLY to the filterable-SET-change reshape. Conflating the two would wrongly wipe attr values on every mean-pin. The reshape and the requantize are different operations and must be treated differently."
+  ],
+  "gates": {
+    "cargo_clippy_workspace_all_targets": {"exit": null, "note": "not run — no code written"},
+    "cargo_check_workspace_all_targets": {"exit": null, "note": "not run — no code written"},
+    "cargo_test_engine_schema": {"exit": null, "note": "not run — no code written; base per task = 622 pass / 0 fail / 13 ignored"},
+    "pr_g10_filtered_knn": {"exit": null, "note": "not run — unchanged at base"},
+    "worktree_pristine": {"git_status_porcelain": "empty", "head_sha": "282a03f7179d354eac62dfa7c5a2305e9000d8ae", "branch": "orch-0.8.20-s15b"}
+  },
+  "no_eu7_runs": true,
+  "recovery_denylist_unchanged": true
+}
