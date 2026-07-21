@@ -140,6 +140,69 @@
     "governed_surface": "UNCHANGED — no new verb, no AC minted, PROPOSED/NOT-SIGNED status of Slice 15d's own delta untouched. recovery_denylist stays five.",
     "blockers": []
   },
+  "fix-2": {
+    "title": "codex §9 [P2] — the same-transaction attribute projection ignored lifecycle visibility for pending nodes (exposed rows the canonical read model hides)",
+    "head_sha": "4824963b",
+    "on_branch_baseline": "89f06a7a (Slice 15d fix-1 closure)",
+    "finding": "The write-path call to project_node_attributes (lib.rs, PreparedWrite::Node arm) projected into canonical_attributes / property_search_index UNCONDITIONALLY, even for a node written InitialState::Pending. The backfill (backfill_attribute) and boot re-derive only include `state='active' AND superseded_at IS NULL` rows. So a pending (quarantined) node's declared attribute values leaked into same-session property filters / property-FTS — surviving until a boot re-derive or reconfigure cleared them. Also: the `transition` verb never maintained the property store, and the operator rebuild (rebuild_shadow_state) re-projected EVERY canonical row (re-surfacing pending + superseded attribute values).",
+    "root_framing": "The at-rest attribute projection must track EXACTLY the backfill's row set: projected ⟺ (state='active' ∧ superseded_at IS NULL). fix-1 enforced the supersession half at write time (purge-on-supersede); fix-2 enforces the existence/state half and keeps the invariant across the FULL lifecycle (write path + every legal transition + operator rebuild). Maintained as at-rest work (consistent with fix-1 + the backfill), NOT a read-side join — the property_search_index FTS5 table cannot carry a `superseded_at IS NULL` / `state='active'` join, and property filters may read canonical_attributes directly, so a read-side filter cannot cover the property paths.",
+    "commits": [
+      { "sha": "cca89820", "kind": "RED", "summary": "test(0.8.20): RED — Slice 15d fix-2 lifecycle-gated projection (3 new engine tests in slice15d_projection_registry.rs)" },
+      { "sha": "4824963b", "kind": "GREEN", "summary": "feat(0.8.20): GREEN — projection tracks active+non-superseded across the write path, transition verb, and operator rebuild (+1 operator rebuild-consistency test)" }
+    ],
+    "red_evidence": {
+      "command": "cargo test -p fathomdb-engine --test slice15d_projection_registry -- --test-threads=1 pending_node_is_not_projected_until_promoted active_delete_purges_and_undelete_reprojects pending_reject_projects_nothing",
+      "result": "test result: FAILED. 0 passed; 3 failed; 0 ignored; 13 filtered out",
+      "panic_1_write_gate": "pending_node_is_not_projected_until_promoted @ slice15d_projection_registry.rs:828 — panicked: a pending node must NOT project attributes into canonical_attributes (the write path projected the Pending node's attribute unconditionally).",
+      "panic_2_delete_purge": "active_delete_purges_and_undelete_reprojects @ slice15d_projection_registry.rs:906 — panicked: soft-delete (active → deleted) must purge canonical_attributes rows (the transition verb left stale attribute rows at rest).",
+      "panic_3_reject_gate": "pending_reject_projects_nothing @ slice15d_projection_registry.rs:957 — panicked: pending write projects nothing (same write-path gate gap — pending values present at rest)."
+    },
+    "tests_added": {
+      "default_feature": [
+        "pending_node_is_not_projected_until_promoted — a Pending node's declared attribute is NOT in canonical_attributes / property_search_index at write (raw SELECT == 0); then transition(pending→active) projects it (raw SELECT now present + filter/FTS matchable). Mid-session raw reads (WAL readers see committed data).",
+        "active_delete_purges_and_undelete_reprojects — CONTROL: an active node projects at write (non-vacuous); transition(active→deleted) purges the attribute/property-FTS rows (raw == 0); transition(deleted→active) re-projects (raw present again).",
+        "pending_reject_projects_nothing — a pending node projects nothing; transition(pending→deleted) leaves the projection empty (no spurious row, no error) — the never-projected arm of the unified rule."
+      ],
+      "operator_feature": [
+        "slice15d_fix2_rebuild_projects_only_active_non_superseded_attributes (tests/rebuild_projections.rs) — after a full rebuild_projections(), the raw canonical_attributes hold EXACTLY {active-val, new-val}; a pending node's value and a superseded prior version's value are NOT re-surfaced; property_search_index mirrors the set. Proves the projector-replay rebuild tracks the backfill's row set."
+      ]
+    },
+    "fix_sites": {
+      "write_path_gate": "project_canonical_node_row gains a `node_active: bool` param; the attribute projection is now `if pass.writes_attributes() && node_active`. The FTS/vector shadows are UNCHANGED (their stale/pending versions are excluded by the canonical read-path lifecycle join — same class-scoping as fix-1). The PreparedWrite::Node write arm passes `matches!(state, InitialState::Active)` (a fresh insert is always non-superseded, so the backfill predicate reduces to state==Active).",
+      "rebuild_consistency": "CanonicalNodeRow gains `attr_projected` = (state.as_deref()==Some(\"active\") && superseded_at.is_none()) — the exact backfill predicate; canonical_node_rows now SELECTs state + superseded_at. rebuild_shadow_state passes row.attr_projected so the attribute half of the projector replay tracks active∧non-superseded (FTS/vector still replay every row). The always-compiled tokenizer-reproject caller forwards row.attr_projected too (inert under FtsOnly, but gives the field a reader in every build config → no dead_code warning). The doc-hidden coverage/graph test writer passes `true` (its INSERT uses the column DEFAULT state='active').",
+      "transition_maintenance": "transition() now SELECTs (state, write_cursor, body) of the single non-superseded row. After the state UPDATE (before commit) it PURGES the row's Attribute+PropertyFts projections unconditionally (idempotent — a no-op on the never-projected pending / already-purged deleted arms) via fix-1's purge_row_projections_for_cursor_in, then RE-PROJECTS via project_node_attributes when to_state==Active. Unified rule (projected ⟺ to_state==Active, valid because the transitioned row is always non-superseded): promote (pending→active) projects the withheld attrs; soft-delete (active→deleted) purges; undelete (deleted→active) re-projects; reject (pending→deleted) is a no-op."
+    },
+    "transitions_hooked": {
+      "pending_to_active_promote": "PROJECT — project_node_attributes(tx, cursor, body) after the UPDATE (attributes were withheld while pending).",
+      "active_to_deleted_soft_delete": "PURGE — purge_row_projections_for_cursor_in(tx, cursor, [Attribute, PropertyFts]) (a deleted node is out of the backfill set).",
+      "deleted_to_active_undelete": "RE-PROJECT — purge (no-op; already purged on delete) then project.",
+      "pending_to_deleted_reject": "NO-OP — purge is a harmless no-op (never projected); no project. Confirmed by pending_reject_projects_nothing."
+    },
+    "invariant_confirmation": "The at-rest attribute projection now tracks EXACTLY (state='active' AND superseded_at IS NULL) at every maintenance point: the write path (state==Active), each legal transition (unified purge-then-reproject-if-active), and the operator rebuild (per-row attr_projected mirrors the backfill predicate). fix-1 already covers supersession at write time. Node-FTS / vector shadows are deliberately left to their read-side lifecycle filter (gap-5: a deleted row STAYS indexed), unchanged.",
+    "validity_scope_guard": "CONFIRMED — NO node-validity (valid_from / valid_until, Slice 10) filtering was added to the projection. The backfill does not filter on validity, so the 15d projection model stays existence-based (active/superseded), not validity-based. attr_projected keys ONLY on state + superseded_at. Consideration (not built): if validity-window visibility should ever gate the property store, it must be added to the backfill FIRST (else a new write-path-vs-backfill inconsistency) — out of scope for fix-2.",
+    "gates": {
+      "cargo_clippy_workspace_all_targets": { "exit": 0 },
+      "cargo_check_workspace_all_targets": { "exit": 0 },
+      "cargo_clippy_engine_operator_feature": { "exit": 0, "note": "cargo clippy -p fathomdb-engine --all-targets --features operator — covers the operator-gated rebuild_shadow_state edit + the new rebuild test." },
+      "cargo_test_engine_schema": {
+        "exit": 0,
+        "passed": 603,
+        "failed": 0,
+        "ignored": 13,
+        "baseline": "600 passed / 0 failed / 13 ignored (pre-fix-2)",
+        "note": "--test-threads=1, explicit long timeout; aggregate summed from every `test result:` line via awk (real exit 0). +3 net-new DEFAULT-feature engine tests. The 4th new test (rebuild-consistency) is operator-gated and not in this count."
+      },
+      "operator_rebuild_and_erasure_tests": {
+        "exit": 0,
+        "note": "cargo test -p fathomdb-engine --features operator for rebuild_projections (4, incl. the new slice15d_fix2 rebuild test), rebuild_report (4), rebuild_vec0 (6), erasure_projection_registry (10), erasure_completeness (4), excise_source (2) — wait totals: 10/4/6/4/2/1 across the six targets, all `test result: ok`. Confirms the rebuild change + purge-helper reuse stay consistent with erasure."
+      },
+      "ac_041_recovery_denylist": { "exit": 0, "note": "fathomdb no_recovery_surface (3) / governed_surface (1) / sdk_only_erasure (1) / reexports (3) all ok; t_074_recovery_denylist_absent_from_governed_surface passes. recovery_denylist unchanged (five names); no governed surface change." },
+      "python_ts_execution": { "skipped": true, "reason": "engine-internal ONLY — git diff since the RED commit touches only fathomdb-engine/src/lib.rs + tests/rebuild_projections.rs (+ the RED commit's slice15d test file). The `transition` PUBLIC signature is UNCHANGED (only its internal at-rest maintenance changed); no binding surface (fathomdb-py / fathomdb-napi) and no governed signature change, so X1 re-run is not required." },
+      "eu7": { "note": "ZERO eu7 runs." }
+    },
+    "governed_surface": "UNCHANGED — no new verb, transition() signature untouched, no AC minted; PROPOSED/NOT-SIGNED status of Slice 15d's delta untouched. recovery_denylist stays five.",
+    "blockers": []
+  },
   "blockers": [],
   "unblocks": ["Slice 20 (R-20-DR dense_readiness/flush_embeddings attaches to the vector sub-object)", "Slice 25 (R-20-SUR surrogate minting for registry-admitted governed entities)"],
   "notes_for_orchestrator": [
