@@ -14708,6 +14708,22 @@ fn load_projection_registry(
     conn: &Connection,
 ) -> rusqlite::Result<BTreeMap<String, StoredProjection>> {
     let mut out = BTreeMap::new();
+    // The registry table is created by schema step 24; a DB migrated to a
+    // pre-24 head (e.g. a compatibility/partial-migration test open) does not
+    // have it. Absent ⇒ no projections declared ⇒ empty registry, not an error.
+    // This keeps boot re-derive and the write-path attribute projector safe on
+    // every pre-24 schema.
+    let table_exists: bool = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_fathomdb_projection_registry'",
+            [],
+            |_| Ok(true),
+        )
+        .optional()?
+        .unwrap_or(false);
+    if !table_exists {
+        return Ok(out);
+    }
     let mut stmt = conn.prepare(
         "SELECT name, roles, fts_tokenizer, vector_embedder, vector_declared
          FROM _fathomdb_projection_registry",
