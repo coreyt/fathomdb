@@ -115,5 +115,50 @@
     "eu7": "zero runs; eu7_real_corpus_ac left #[ignore]d",
     "inline_clock_rule_engine_9161": "honoured — strftime('%s', ?1) is on a BOUND user value, not 'now'; the current instant stays on the bound :now seam. No new datetime('now')/strftime('%s','now') introduced on the edge path."
   },
+  "fix-1": {
+    "requirement_id": "TC-33",
+    "finding": "codex §9 P2 CONCERN — the consolidation edges_json render (lib.rs :4792-4795) used `e.t_valid.and_then(|ts| epoch_seconds_to_iso8601(connection, ts))`, so a stored NON-NULL epoch outside SQLite's strftime('%s','unixepoch') renderable range (> 253402300799 = year >= 10000, or before year 0) rendered to a silent `null` on the consolidation wire. A `null` t_invalid reads as \"still valid\"; the reference stub echoes the winner's t_valid back as the verdict's t_invalid, so the null round-trips through the inbound normaliser as \"still valid\" — the outbound twin of the fail-open TC-33 removes, resurrecting an invalidated edge via the consolidation path.",
+    "reachability": "The governed integer surface (PreparedWrite::Edge, arbitrary i64) is the ONLY ingress. Inbound ISO normalisation (normalize_extractor_timestamp) can never mint such an epoch — a 4-digit-year ISO string maxes at 9999.",
+    "governed_surface_status": "PROPOSED / NOT SIGNED — no AC minted; tracked by requirement TC-33 + test names.",
+    "commits": [
+      {
+        "sha": "56e2eb4a",
+        "kind": "RED",
+        "summary": "tests/tc33_fix1_unrenderable_epoch.rs — writes an edge with t_valid/t_invalid = 253402300800 (year 10000, one past the renderable max) through engine.write() and asserts a typed InvalidArgument naming the field + zero rows. Plus a precision guard that the max renderable instant (9999-12-31T23:59:59Z = 253402300799) STAYS storable."
+      },
+      {
+        "sha": "39f35108",
+        "kind": "GREEN",
+        "summary": "Two layers in fathomdb-engine/src/lib.rs. See layers_implemented."
+      }
+    ],
+    "head_sha": "39f35108",
+    "layers_implemented": {
+      "primary_structural": "validate_write's Edge branch (destructure now binds t_valid/t_invalid) calls reject_unrenderable_edge_epoch for each non-null timestamp. The rejection PREDICATE is renderability under epoch_seconds_to_iso8601 itself (SQLite's own strftime — derive-from-SQLite, EXACT, cannot drift), returning EngineError::InvalidArgument naming the offending value and the bound. MIN_RENDERABLE_EPOCH=-62167219200 (0000-01-01T00:00:00Z) / MAX_RENDERABLE_EPOCH=253402300799 (9999-12-31T23:59:59Z) consts carry the year-0000..9999 rationale and are used only to name the bound in the message. Mirrors the inbound normalize_extractor_timestamp hard-reject and the Node branch's valid_from>=valid_until refusal.",
+      "backstop_defensive": "The consolidation edges_json render (lib.rs, formerly :4792-4795) closure is now fallible: a local `render(field, Option<i64>)` returns Value::Null for None (unknown, unchanged) but a typed EngineError::InvalidArgument labelled INVARIANT VIOLATION for a Some(ts) that fails to render, collected via `.collect::<Result<Vec<Value>, EngineError>>()?`. Commented as an unreachable hard-assert upholding the invariant structurally, NOT the primary path — the write-boundary guard makes an unrenderable stored epoch impossible."
+    },
+    "red_evidence": "At 56e2eb4a: `cargo test -p fathomdb-engine --test tc33_fix1_unrenderable_epoch -- --test-threads=1` → 1 passed; 2 failed. Both failures were `TC-33 fix-1: an unrenderable epoch MUST be rejected at the governed write boundary, but the write succeeded.` (tc33_fix1_unrenderable_t_invalid_is_rejected @ :73:18 and tc33_fix1_unrenderable_t_valid_is_rejected @ :73:18). tc33_fix1_max_renderable_epoch_is_storable already passed (precision guard). Exit 101. Post-fix (39f35108): all 3 pass, exit 0.",
+    "gates": [
+      { "gate": "cargo clippy --workspace --all-targets", "real_exit_code": 0, "note": "0 warnings." },
+      { "gate": "cargo check --workspace --all-targets", "real_exit_code": 0 },
+      {
+        "gate": "cargo test -p fathomdb-engine -p fathomdb-schema -- --test-threads=1",
+        "real_exit_code": 0,
+        "passed": 574,
+        "failed": 0,
+        "ignored": 13,
+        "note": "571 (pre-fix GREEN) + 3 new fix-1 tests. 13 ignored unchanged (incl. eu7_real_corpus_ac — zero eu7 runs)."
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test tc33_fix1_unrenderable_epoch -- --test-threads=1",
+        "real_exit_code": 0,
+        "passed": 3,
+        "failed": 0
+      }
+    ],
+    "node_edge_asymmetry_note": "canonical_nodes.valid_from/valid_until are ALSO INTEGER epoch and get NO renderable-range guard — deliberately. Nodes are never rendered to ISO for an LLM boundary (grep confirms: no epoch_seconds_to_iso8601 call on the node path; the consolidation render is edge-only), so they lack this outbound fail-open. Per the task's explicit direction, NO node-side guard was added (no real node-timestamp render path exists). The asymmetry is: the guard tracks the RENDER surface, not the storage type — edges render to ISO (consolidation wire) so they are guarded; nodes do not so they are not. If a future slice adds a node→ISO render path, that path needs the same guard.",
+    "consideration_resolved": "reject_unrenderable_edge_epoch could have been made generic over nodes too, but that would widen scope past the finding and guard a non-existent failure mode. Kept edge-only. No ledger TC written (the asymmetry is captured here + in the const/fn doc-comments in code; a ledger entry was judged not warranted since no cross-session ambiguity remains).",
+    "blockers": []
+  },
   "blockers": []
 }
