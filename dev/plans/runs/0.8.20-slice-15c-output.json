@@ -1,0 +1,119 @@
+{
+  "slice": "15c",
+  "requirement_id": "TC-33",
+  "title": "edge temporal representation → INTEGER epoch seconds, with a hard-reject normalisation boundary",
+  "branch": "orch-0.8.20-s15b",
+  "baseline_commit": "782604d7",
+  "status": "COMPLETE",
+  "governed_surface_status": "PROPOSED / NOT SIGNED",
+  "commits": [
+    {
+      "sha": "bbf305a0",
+      "kind": "RED",
+      "summary": "10 failing + 1 already-passing TC-33 tests in tc33_edge_temporal_epoch.rs; malformed-string / non-string-JSON / schema-CHECK / temporal_fallback / positive-normalisation properties"
+    },
+    {
+      "sha": "a61f3272",
+      "kind": "GREEN",
+      "summary": "INTEGER epoch storage + governed SDK; schema step 23 recreate with typeof CHECKs; extractor+consolidation hard-reject normalisation boundary; edge read path unified with node :now seam; bindings + interface docs; all pre-existing tests updated"
+    }
+  ],
+  "head_sha": "a61f327212e3596b9f7f73c3c63dbe5219fe0c6f",
+  "gates": [
+    {
+      "gate": "cargo clippy --workspace --all-targets",
+      "real_exit_code": 0,
+      "note": "0 warnings, 0 errors. One initial clippy::type_complexity warning was resolved with a local `type EdgeTimes` alias."
+    },
+    {
+      "gate": "cargo check --workspace --all-targets",
+      "real_exit_code": 0
+    },
+    {
+      "gate": "cargo test -p fathomdb-engine -p fathomdb-schema -- --test-threads=1",
+      "real_exit_code": 0,
+      "passed": 571,
+      "failed": 0,
+      "ignored": 13,
+      "note": "13 ignored includes eu7_real_corpus_ac (#[ignore]d, R-20-EU7 CLOSED BY HITL — left untouched, zero eu7 runs)."
+    },
+    {
+      "gate": "cargo test -p fathomdb-engine --test tc33_edge_temporal_epoch -- --test-threads=1",
+      "real_exit_code": 0,
+      "passed": 11,
+      "failed": 0
+    }
+  ],
+  "tc33_representation_as_built": {
+    "storage": "canonical_edges.t_valid / t_invalid are INTEGER epoch seconds (UTC); NULL = still valid",
+    "schema_step": "23 (SCHEMA_VERSION 22 → 23); recreate canonical_edges with `INTEGER ... CHECK (x IS NULL OR typeof(x) = 'integer')` on both columns",
+    "governed_sdk_surface": "PreparedWrite::Edge.t_valid/t_invalid and ConsolidateCandidateEdge.t_valid/t_invalid are Option<i64>; py dict_epoch_seconds, napi json_i64_alt",
+    "extractor_wire": "fathomdb.extract.v1 keeps ISO-8601 strings; engine-side normalize_extractor_timestamp() converts to epoch with hard rejection",
+    "consolidation_wire": "ISO-8601 both directions — epoch_seconds_to_iso8601() outbound, normalize_extractor_timestamp() inbound on the invalidate verdict's t_invalid",
+    "not_not_null": "the structural spelling is a typeof CHECK, NOT `NOT NULL`, so NULL-means-still-valid survives (asserted by tc33_p4_null_timestamp_remains_storable_and_means_still_valid)"
+  },
+  "fail_loud_evidence": {
+    "red_at_bbf305a0": "malformed strings ('not a date', 'yesterday sometime', '') each ingested successfully and wrote 1 edge; JSON-number/bool/object t_valid/t_invalid each ingested and wrote 1 edge (the pre-existing as_str()->None->NULL coercion); P3 InvalidColumnType(0,'t_valid',Text); P4 raw INSERT of 'not a date' succeeded and UPDATE overwriting a past t_invalid with junk succeeded (the resurrection vector); P5 InvalidColumnType(1,'t_valid',Text).",
+    "green_at_a61f3272": "all 11 pass. A malformed/non-string extractor timestamp now returns EngineError::InvalidArgument naming t_valid/t_invalid and writes ZERO edge rows (asserted by assert_hard_reject's edge_count == 0). The schema CHECK rejects a raw TEXT INSERT as a constraint violation, and rejects an UPDATE that would overwrite a past integer t_invalid with junk — the invalidation survives as integer 1577836800 (tc33_p4_junk_cannot_resurrect_an_invalidated_edge).",
+    "polarity": "junk NEVER becomes NULL t_invalid: it is rejected at the write boundary AND is structurally unstorable, so an invalidated edge cannot be silently resurrected."
+  },
+  "temporal_fallback_regrounding": {
+    "problem": "match was a raw byte-for-byte string compare of edge t_valid against the free-form ELPS warnings key substituted_t_valid, with .unwrap_or(false) on the miss path. Normalising only the edge side would leave the set never matching, silently turning every fallback edge into a trusted edge — no compile error.",
+    "fix": "both the edge t_valid/t_invalid AND every substituted_t_valid warning are normalised through normalize_extractor_timestamp() in ONE pass under one connection lock BEFORE the edges are built; the fallback set is HashSet<i64> of epochs and the match is is_some_and(|tv| fallback_epochs.contains(&tv)). A malformed substituted_t_valid REJECTS (not skips) — skipping would leave the edge unflagged = treated as trusted, the same fail-open elsewhere.",
+    "bonus_fix": "'2025-03-20T09:30:00Z' and '2025-03-20T09:30:00+00:00' are the same instant but missed each other under the old byte compare; as epochs they match. Proven by tc33_p5 (fixture spells the two sides differently).",
+    "guarded_by": "tc33_p5_temporal_fallback_still_flags_after_normalisation; the flag still gates slice30_graph_arm.rs and pr_c1_graph_seeding.rs (both GREEN)."
+  },
+  "preexisting_tests_changed": [
+    {
+      "file": "engine/tests/slice20_graph_traversal.rs",
+      "change": "t_invalid_tformat_edge_correctly_excluded RENAMED expired_edge_is_excluded_from_traversal; its old docstring (T-vs-space separator broke the raw TEXT comparison) preserved as evidence the TEXT representation already bit once. Under INTEGER the representation-level property is vacuous; kept as the traversal-exclusion assertion. edge_with_t_invalid helper now takes i64.",
+      "why": "TC-33 removes the representation the test existed to guard."
+    },
+    {
+      "file": "engine/tests/slice15_byo_llm_ingest.rs",
+      "change": "'t_valid must be preserved from extract response' → asserts normalised equivalence (ISO 2020-01-01T00:00:00Z on the wire → epoch 1577836800 in storage); owns_row/works_row column types String→i64.",
+      "why": "'preserved' is the exact contract TC-33 changes; the extractor wire stays ISO but the engine normalises it."
+    },
+    {
+      "file": "schema/tests/step22_migration.rs",
+      "change": "s22_edge_temporal_columns_are_untouched_text RENAMED ..._text_at_v22_become_integer_at_head — pins TEXT at v22 (step 22 is node-only) AND INTEGER at head (step 23 resolves the divergence). Module docstring updated. s22_is_idempotent_across_repeated_migrate_calls now migrates the whole registry to head (v22 is no longer head).",
+      "why": "the divergence step 22 recorded is now resolved, not frozen."
+    },
+    {
+      "file": "schema/tests/step14_migration.rs",
+      "change": "s14_legacy_rows_null_safe_for_g11_columns scoped to steps 14..=22 (was 14..head) with an explicit comment.",
+      "why": "a pre-G11 edge row cannot survive the step-23 recreate under NO-DATA-MIGRATION; the property under test (step-14 additive nullability) holds for 14..=22."
+    },
+    {
+      "file": "schema/tests/{migrations,step15_to_17,step16,step17,step18,step19,step20,step21}_migration.rs + engine/tests/{compatibility,vector_equivalence_probe}.rs",
+      "change": "head-version pins 22→23, migration step-id lists gain 23, migration count 21→22, compatibility event list gains 23.",
+      "why": "mechanical head bump."
+    },
+    {
+      "file": "engine/tests/{consolidate_provider,consolidation_value_test,pr_c1_graph_seeding,slice10_node_validity,slice30_graph_arm,rebuild_projections,erasure_projection_registry}.rs",
+      "change": "edge temporal test fixtures converted from ISO strings to epoch integers; helper signatures String→i64; consolidate_provider gained now_epoch() and integer temporal-liveness probes; edge_row reads t_invalid as Option<i64>. Consolidation VERDICT JSON (harness wire) stays ISO — the engine renders candidates out to ISO and normalises the verdict back.",
+      "why": "governed-write fixtures must carry epoch integers now; extractor/consolidation wire fixtures stay ISO."
+    },
+    {
+      "file": "src/ts/tests/{functional-graph-arm,functional-consolidate}.test.ts + src/python/tests/test_functional_graph_arm.py",
+      "change": "governed-write tInvalid/tValid/t_invalid fixtures converted from ISO strings to epoch integers; helper param types string→number/int. test_option2_elps_pipeline.py:119 ('t_valid' in edge) left as-is — it asserts the EXTRACTOR wire, which stays ISO.",
+      "why": "napi json_i64_alt / py dict_epoch_seconds now reject a string on the governed write surface.",
+      "caveat": "INSPECTED AND UPDATED BY HAND, NOT EXECUTED — the cross-language suites require a native rebuild (maturin/napi), which is forbidden from this worktree. No compile-time protection on the JSON wire."
+    }
+  ],
+  "plan_or_recon_corrections": [
+    "Recon said schema :630 is the step-22 SQL string with 'which are unchanged' prose; correct. I left the applied SQL text verbatim and corrected the Rust comment at :596-611 plus the step-14 comment, as directed.",
+    "NEW HAZARD not in recon: step 23 DROPs canonical_edges, which lowers load_next_cursor's MAX(write_cursor) high-water mark. A reused cursor collides with stale _fathomdb_projection_terminal / _fathomdb_vector_rows / vec0 rows, silently marking a new row as already-projected. Handled by reserving the pre-drop MAX into _fathomdb_open_state (RESERVED_WRITE_CURSOR_KEY) and folding it into load_next_cursor. This is NOT a data migration — it keeps an identifier counter monotonic.",
+    "NEW: the reservation INSERT needed `HAVING MAX(write_cursor) IS NOT NULL` — a bare aggregate over an empty canonical_edges returns one NULL row, which violates _fathomdb_open_state.value NOT NULL, i.e. it failed on EVERY fresh DB until fixed (caught by the first GREEN test run, not by review).",
+    "NEW: the CONSOLIDATION harness wire is a second ISO-8601 boundary the recon did not call out for the OUTBOUND direction. The reference stub echoes the winner's t_valid straight back as the verdict t_invalid, so candidates had to be rendered epoch→ISO on the way out or our own inbound normaliser would reject the reply. Added epoch_seconds_to_iso8601().",
+    "Recon listed 7 comparison sites; there are effectively 8 edge-validity predicates once build_bfs_with_depth_sql (the search_expand template) is counted — recon flagged its sibling :10493 but the depth variant is a separate template that also needed re-grounding. Both were fixed.",
+    "The extractor parse site also had a THIRD implicit fail-open surface beyond string/number: a JSON object/array. All non-string, non-null values now hard-reject uniformly via json_type_name()."
+  ],
+  "no_data_migration_compliance": "No row-conversion SQL was written. Step 23 is a plain recreate; existing edge rows do not survive; no stored ISO value is converted. The structural-CHECK requirement and the NO-DATA-MIGRATION ruling did NOT conflict — SQLite cannot add a CHECK or change column type in place, so a recreate is required regardless, and the ruling makes it a plain (non-staging) recreate.",
+  "invariants_confirmed": {
+    "AC-041_recovery_denylist": "unchanged — {recover, restore, repair, fix, rebuild}",
+    "eu7": "zero runs; eu7_real_corpus_ac left #[ignore]d",
+    "inline_clock_rule_engine_9161": "honoured — strftime('%s', ?1) is on a BOUND user value, not 'now'; the current instant stays on the bound :now seam. No new datetime('now')/strftime('%s','now') introduced on the edge path."
+  },
+  "blockers": []
+}
