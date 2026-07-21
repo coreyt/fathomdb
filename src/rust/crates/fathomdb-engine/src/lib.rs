@@ -1820,13 +1820,131 @@ fn edge_validity_sql(alias: &str, now_idx: usize) -> String {
 ///
 /// The `CAST` matters: `strftime('%s', ...)` returns TEXT (a digit string), not
 /// an integer, and the column is `typeof(...) = 'integer'`-checked.
+///
+/// # TC-33 fix-5 — strict ISO-8601 SHAPE gate before delegating to SQLite
+///
+/// `strftime('%s', ?)` alone is NOT an ISO-8601 validator: SQLite's date parser
+/// is MORE lenient than the declared wire contract. A bare number is read as a
+/// **Julian day** (`strftime('%s','2451545.0')` → `946728000`, i.e. year 2000)
+/// and `strftime('%s','0')` resolves to a pre-year-0000 epoch — so non-ISO input
+/// was ACCEPTED and stored as an unrelated instant despite the "hard-reject
+/// ISO-8601" contract HITL ratified (2026-07-21). [`is_iso8601_shape`] runs
+/// FIRST and returns `None` for anything that is not a strict ISO-8601
+/// date/datetime shape, so the existing hard-reject path fires. The shape gate
+/// does NOT replace SQLite's calendar math — a shape-valid but impossible date
+/// (`2025-13-45T00:00:00Z`) still `None`s out via `strftime` and hard-rejects.
 fn iso8601_to_epoch_seconds(connection: &Connection, raw: &str) -> Option<i64> {
+    if !is_iso8601_shape(raw) {
+        return None;
+    }
     connection
         .query_row("SELECT CAST(strftime('%s', ?1) AS INTEGER)", params![raw], |r| {
             r.get::<_, Option<i64>>(0)
         })
         .ok()
         .flatten()
+}
+
+/// TC-33 fix-5 — strict ISO-8601 date/datetime SHAPE gate. Hand-rolled on ASCII
+/// bytes (NO new dependency: the workspace has no `chrono`/`time`, and `regex`
+/// is only a transitive dep of `jsonschema`, not a direct one — adding either as
+/// a direct dep would violate the "no new dependency" constraint).
+///
+/// Accepts EXACTLY:
+/// - `YYYY-MM-DD` (date only); optionally followed by
+/// - a `T` **or** a single space separator, then `HH:MM:SS`; optionally followed
+///   by `.fff` fractional seconds (one or more digits); optionally followed by
+///   a zone: `Z`, or `±HH:MM`, or `±HHMM`.
+///
+/// Rejects bare numbers (`0`, `2451545.0`), partial junk, whitespace, non-ASCII
+/// digits, and anything with trailing characters. All digit positions require
+/// ASCII `0..=9` (`u8::is_ascii_digit`), so non-ASCII digit look-alikes cannot
+/// slip through. This is a SHAPE check only — calendar validity (e.g. month 13,
+/// day 45) is still enforced by SQLite's `strftime` after this gate passes.
+fn is_iso8601_shape(s: &str) -> bool {
+    let b = s.as_bytes();
+    let d = |c: u8| c.is_ascii_digit();
+
+    // Date: YYYY-MM-DD (exactly 10 bytes).
+    if b.len() < 10 {
+        return false;
+    }
+    if !(d(b[0])
+        && d(b[1])
+        && d(b[2])
+        && d(b[3])
+        && b[4] == b'-'
+        && d(b[5])
+        && d(b[6])
+        && b[7] == b'-'
+        && d(b[8])
+        && d(b[9]))
+    {
+        return false;
+    }
+    if b.len() == 10 {
+        return true; // date-only
+    }
+
+    // Separator (`T` or a single space) + time HH:MM:SS (indices 10..=18).
+    if b[10] != b'T' && b[10] != b' ' {
+        return false;
+    }
+    if b.len() < 19 {
+        return false;
+    }
+    if !(d(b[11])
+        && d(b[12])
+        && b[13] == b':'
+        && d(b[14])
+        && d(b[15])
+        && b[16] == b':'
+        && d(b[17])
+        && d(b[18]))
+    {
+        return false;
+    }
+
+    let mut i = 19;
+
+    // Optional fractional seconds `.fff` (one or more digits).
+    if i < b.len() && b[i] == b'.' {
+        i += 1;
+        let start = i;
+        while i < b.len() && d(b[i]) {
+            i += 1;
+        }
+        if i == start {
+            return false; // `.` with no digits
+        }
+    }
+
+    // Optional zone.
+    if i == b.len() {
+        return true; // no zone
+    }
+    match b[i] {
+        b'Z' => i += 1,
+        b'+' | b'-' => {
+            i += 1;
+            // `HH`
+            if i + 2 > b.len() || !d(b[i]) || !d(b[i + 1]) {
+                return false;
+            }
+            i += 2;
+            // `:MM` or `MM`
+            if i < b.len() && b[i] == b':' {
+                i += 1;
+            }
+            if i + 2 > b.len() || !d(b[i]) || !d(b[i + 1]) {
+                return false;
+            }
+            i += 2;
+        }
+        _ => return false,
+    }
+
+    i == b.len() // no trailing junk
 }
 
 /// TC-33 — render INTEGER epoch seconds back to an ISO-8601 UTC string for the
@@ -1853,12 +1971,16 @@ fn epoch_seconds_to_iso8601(connection: &Connection, epoch: i64) -> Option<Strin
 /// - `MIN` = `0000-01-01T00:00:00Z`
 /// - `MAX` = `9999-12-31T23:59:59Z`
 ///
-/// These bounds are used only to make the write-boundary rejection message
-/// name the limit. The rejection PREDICATE itself is renderability under
-/// [`epoch_seconds_to_iso8601`] (i.e. SQLite's own `strftime`), so the guard
-/// rejects EXACTLY the values that would later render to a silent `null` on the
-/// consolidation wire — the numbers below cannot drift out of agreement with
-/// the check they annotate.
+/// TC-33 fix-5 makes these the ACTUAL rejection predicate (a numeric
+/// `[MIN, MAX]` bounds check), not just message text. Renderability was too
+/// weak: `strftime(..., 'unixepoch')` renders a below-`MIN` value like
+/// `-62_167_219_201` to `-001-12-31T23:59:59Z` (NON-NULL), so a pre-year-0000
+/// epoch slipped the renderability guard even though it is outside the declared
+/// years 0000..=9999. Both bounds are verified against SQLite to correspond
+/// EXACTLY to the first/last renderable instant:
+/// `strftime('%Y-%m-%dT%H:%M:%SZ', MIN, 'unixepoch') = 0000-01-01T00:00:00Z` and
+/// `= 9999-12-31T23:59:59Z` for `MAX` (`MAX+1` and `MIN-1` are the first
+/// out-of-range instants).
 const MIN_RENDERABLE_EPOCH: i64 = -62_167_219_200; // 0000-01-01T00:00:00Z
 const MAX_RENDERABLE_EPOCH: i64 = 253_402_300_799; // 9999-12-31T23:59:59Z
 
@@ -1884,20 +2006,23 @@ const MAX_RENDERABLE_EPOCH: i64 = 253_402_300_799; // 9999-12-31T23:59:59Z
 /// [`normalize_extractor_timestamp`] hard-reject and the Node branch's
 /// `valid_from >= valid_until` refusal: a typed [`EngineError::InvalidArgument`]
 /// naming the offending value and the bound, never a silent coercion.
-fn reject_unrenderable_edge_epoch(
-    connection: &Connection,
-    field: &str,
-    value: Option<i64>,
-) -> Result<(), EngineError> {
+fn reject_unrenderable_edge_epoch(field: &str, value: Option<i64>) -> Result<(), EngineError> {
+    // TC-33 fix-5 — an explicit numeric MIN/MAX bounds check, NOT a renderability
+    // test. `strftime(..., 'unixepoch')` renders a below-`MIN` epoch (e.g.
+    // `-62_167_219_201`, year -0001) to a NON-NULL string, so a renderability
+    // guard would let pre-year-0000 values through even though they are outside
+    // the declared years 0000..=9999. No `Connection` is needed now that the
+    // predicate is pure integer arithmetic.
     if let Some(ts) = value {
-        if epoch_seconds_to_iso8601(connection, ts).is_none() {
+        if !(MIN_RENDERABLE_EPOCH..=MAX_RENDERABLE_EPOCH).contains(&ts) {
             return Err(EngineError::InvalidArgument {
                 msg: format!(
                     "edge field `{field}` = {ts} is outside the epoch-seconds range SQLite can \
                      render to ISO-8601 ([{MIN_RENDERABLE_EPOCH}, {MAX_RENDERABLE_EPOCH}], i.e. \
                      years 0000..=9999). REJECTED rather than stored: such an epoch renders to a \
-                     silent NULL on the consolidation wire, and a NULL `t_invalid` reads as \
-                     \"still valid\" — resurrecting an invalidated edge."
+                     silent NULL (or a nonsensical out-of-range instant) on the consolidation \
+                     wire, and a NULL `t_invalid` reads as \"still valid\" — resurrecting an \
+                     invalidated edge."
                 ),
             });
         }
@@ -14092,8 +14217,8 @@ fn validate_write(
             // can render to a silent `null` on the consolidation wire and
             // resurrect an invalidated edge. Structural primary layer; the
             // render site keeps a defensive hard-assert as the backstop.
-            reject_unrenderable_edge_epoch(connection, "t_valid", *t_valid)?;
-            reject_unrenderable_edge_epoch(connection, "t_invalid", *t_invalid)?;
+            reject_unrenderable_edge_epoch("t_valid", *t_valid)?;
+            reject_unrenderable_edge_epoch("t_invalid", *t_invalid)?;
             Ok(WritePlan::Edge)
         }
         PreparedWrite::AdminSchema { name, kind, schema_json, retention_json } => {
