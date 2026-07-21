@@ -14366,6 +14366,24 @@ fn prior_edge_cursors_by_logical_id(
     rows.collect()
 }
 
+/// 0.8.20 Slice 15d fix-1 finding 2 [P2] — the active (non-superseded) NODE
+/// cursors for a `logical_id`, collected BEFORE the tombstone-then-insert
+/// supersession UPDATE so the caller can purge the about-to-be-superseded row's
+/// row-owned attribute projections. Mirrors [`prior_edge_cursors_by_logical_id`].
+/// The partial-unique-active index means this is at most one cursor; a `Vec`
+/// keeps it robust and symmetric with the edge path.
+fn prior_node_cursors_by_logical_id(
+    tx: &rusqlite::Transaction<'_>,
+    logical_id: &str,
+) -> rusqlite::Result<Vec<i64>> {
+    let mut s = tx.prepare_cached(
+        "SELECT write_cursor FROM canonical_nodes \
+         WHERE logical_id = ?1 AND superseded_at IS NULL",
+    )?;
+    let rows = s.query_map(params![logical_id], |r| r.get(0))?;
+    rows.collect()
+}
+
 fn prior_edge_cursors_by_triple(
     tx: &rusqlite::Transaction<'_>,
     from: &str,
@@ -14506,6 +14524,29 @@ const ROW_OWNED_PROJECTIONS: &[RowOwnedProjection] = &[
 fn erase_row_projections(tx: &Connection, write_cursor: i64) -> rusqlite::Result<u64> {
     let mut deleted: u64 = 0;
     for projection in ROW_OWNED_PROJECTIONS {
+        let sql =
+            format!("DELETE FROM {} WHERE {} = ?1", projection.table, projection.cursor_column);
+        deleted = deleted.saturating_add(tx.execute(&sql, [write_cursor])? as u64);
+    }
+    Ok(deleted)
+}
+
+/// 0.8.20 Slice 15d fix-1 finding 2 [P2] — purge the row-owned projections in
+/// `classes` for ONE canonical `write_cursor`. Same registry-driven mechanism as
+/// [`erase_row_projections`] (iterate [`ROW_OWNED_PROJECTIONS`], delete by the
+/// declared cursor column) but scoped to a class SUBSET, so the write path can
+/// drop a SUPERSEDED node's `Attribute` + `PropertyFts` rows — making the at-rest
+/// property projection active-only — WITHOUT touching the `NodeFts`/`Vector`
+/// shadows, whose stale rows the node read path already excludes by joining
+/// `canonical_nodes WHERE superseded_at IS NULL`. Consistent with the erasure
+/// model: an unregistered table is unreachable here, exactly as with erasure.
+fn purge_row_projections_for_cursor_in(
+    tx: &Connection,
+    write_cursor: i64,
+    classes: &[ProjectionClass],
+) -> rusqlite::Result<u64> {
+    let mut deleted: u64 = 0;
+    for projection in ROW_OWNED_PROJECTIONS.iter().filter(|p| classes.contains(&p.class)) {
         let sql =
             format!("DELETE FROM {} WHERE {} = ?1", projection.table, projection.cursor_column);
         deleted = deleted.saturating_add(tx.execute(&sql, [write_cursor])? as u64);
@@ -14824,9 +14865,42 @@ fn project_one_attribute(
     let path = attribute_json_path(name);
     // json_extract over a non-JSON body would error; guard with json_valid so a
     // plain-text body simply yields no attribute rows.
+    //
+    // fix-1 finding 1 [P2] — project EVERY JSON scalar type, not just strings.
+    // The prior form read the extraction as `Option<String>`; for a JSON number
+    // or bool, `json_extract` returns an INTEGER/REAL, the `get::<Option<String>>`
+    // conversion FAILED, and `.unwrap_or(None)` silently treated the attribute as
+    // absent — so a numeric/boolean filterable value never projected. We now
+    // render a single canonical TEXT form per JSON type, keyed on `json_type` so
+    // the stored value is deterministic and the SAME value flows to BOTH
+    // `canonical_attributes` and `property_search_index` (consistency by
+    // construction — one `value` binding below):
+    //   - string  -> the text verbatim
+    //   - integer -> decimal text (CAST AS TEXT); e.g. 3 -> "3"
+    //   - real    -> decimal text (CAST AS TEXT); e.g. 3.5 -> "3.5"
+    //   - true    -> "true", false -> "false"  (preserve the JSON literal, NOT the
+    //                SQLite `1`/`0` that a bare `CAST(json_extract(...) AS TEXT)`
+    //                would yield — so a bool filter matches the value the caller
+    //                wrote, and "true" never collides with the number 1).
+    //   - null / absent path -> SQL NULL -> no row (an absent attribute correctly
+    //                never matches a `filterable` equality).
+    //   - object / array -> DELIBERATELY SKIPPED (SQL NULL -> no row): a composite
+    //                value is not a scalar filter/FTS target in 15d; projecting its
+    //                raw JSON text would be a footgun (nested-field filtering is the
+    //                >=0.9.x multi-field work). Skipping is deliberate, not an
+    //                accidental type-conversion drop — no scalar type is dropped.
     let value: Option<String> = tx
         .query_row(
-            "SELECT CASE WHEN json_valid(?1) THEN json_extract(?1, ?2) END",
+            "SELECT CASE WHEN json_valid(?1) THEN
+                 CASE json_type(?1, ?2)
+                     WHEN 'true'   THEN 'true'
+                     WHEN 'false'  THEN 'false'
+                     WHEN 'null'   THEN NULL
+                     WHEN 'object' THEN NULL
+                     WHEN 'array'  THEN NULL
+                     ELSE CAST(json_extract(?1, ?2) AS TEXT)
+                 END
+             END",
             params![body, path],
             |row| row.get::<_, Option<String>>(0),
         )
@@ -15483,11 +15557,34 @@ fn commit_batch(
                 // the same logical_id SUPERSEDES, never forks. No-op when logical_id
                 // is None (legacy/own-identity insert, behavior-identical to 0.7.x).
                 if let Some(logical_id) = logical_id {
+                    // fix-1 finding 2 [P2]: collect the prior active cursor(s)
+                    // BEFORE tombstoning so we can purge the superseded row's
+                    // row-owned attribute projections and keep the at-rest EAV /
+                    // property-FTS store ACTIVE-ONLY. Without this, a same-session
+                    // property filter / property-FTS saw BOTH the stale and the
+                    // current value until a boot re-derive/reconfigure cleared the
+                    // table — a stale read that violates the active-only invariant.
+                    let prior_g0 = prior_node_cursors_by_logical_id(&tx, logical_id)?;
                     tx.execute(
                         "UPDATE canonical_nodes SET superseded_at = ?1
                          WHERE logical_id = ?2 AND superseded_at IS NULL",
                         params![cursor, logical_id],
                     )?;
+                    // Purge only the Attribute + PropertyFts classes: those tables
+                    // have NO `superseded_at IS NULL` read-side filter (the FTS5
+                    // `property_search_index` cannot carry one), so their stale rows
+                    // MUST be deleted at rest. The NodeFts (`search_index` /
+                    // `search_index_v2`) + Vector shadows are left intact — the node
+                    // read path already excludes their superseded rows via the
+                    // `canonical_nodes WHERE superseded_at IS NULL` join, so purging
+                    // them here would be a behaviour change outside this fix's scope.
+                    for sc in &prior_g0 {
+                        purge_row_projections_for_cursor_in(
+                            &tx,
+                            *sc,
+                            &[ProjectionClass::Attribute, ProjectionClass::PropertyFts],
+                        )?;
+                    }
                 }
                 // EXP-S (0.8.14 Slice 5, D1) — a `PreparedWrite::Node` is the
                 // `leaf` structural row_kind (a normal record). coverage/graph
