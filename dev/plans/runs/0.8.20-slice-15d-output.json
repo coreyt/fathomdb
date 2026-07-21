@@ -273,6 +273,54 @@
     "governed_surface": "UNCHANGED — no new verb, no signature change, no AC minted; PROPOSED / NOT SIGNED status untouched. recovery_denylist stays five.",
     "blockers": []
   },
+  "fix-4": {
+    "title": "codex §9 [P2]x2 — projection name accepted but never populates (JSON-path escaping gap) + stale rust.md interface doc (TC-39)",
+    "head_sha": "293cd356",
+    "on_branch_baseline": "f9e46d90 (Slice 15d fix-3 closure)",
+    "commits": [
+      { "sha": "dfa6d00d", "kind": "RED", "summary": "test(0.8.20): RED — Slice 15d fix-4 projection-name validation (1 new engine test backslash_projection_name_is_rejected)" },
+      { "sha": "d3a35fb3", "kind": "GREEN", "summary": "fix(0.8.20): GREEN — Slice 15d fix-4 reject unsafe projection names (is_valid_attribute_name adds backslash + control-char rejection)" },
+      { "sha": "293cd356", "kind": "docs", "summary": "docs(0.8.20): Slice 15d fix-4 — rust.md projection surface (new '## Projection registry' section + P1 note)" }
+    ],
+    "finding_1": {
+      "site": "src/rust/crates/fathomdb-engine/src/lib.rs — is_valid_attribute_name (called by apply_projection_config for every spec.name AND every drop name) + attribute_json_path",
+      "cause": "is_valid_attribute_name guarded only empty / double-quote / NUL. A name carrying a BACKSLASH (e.g. `a\\b`) was ACCEPTED, but the write-path extraction compiles the SQLite JSON path `$.\"<name>\"` (double-quoted key) and SQLite treats `\\` as an escape introducer inside that quoted key, so a body key literally containing `\\` is NOT matched — the attribute was registered (built) yet silently NEVER populated canonical_attributes / property_search_index. Accept-then-never-populate.",
+      "choice": "REJECT AT THE BOUNDARY (the mandate's preferred option). Chosen over escaping because SQLite JSON-path double-quoted-key escape handling is version-sensitive and hard to prove round-trips across versions; a charset restriction on app-declared projection identifiers is a legitimate contract and mirrors the TC-33 hard-reject philosophy (accept ⟹ works). is_valid_attribute_name now rejects: empty, any double-quote, any BACKSLASH, and any ASCII control char (is_control, which subsumes the prior NUL check). Both the spec-name loop and the drop-name loop in apply_projection_config already call it, so both arms are covered; the typed refusal is the EXISTING EngineError::InvalidArgument naming the offending value — no new error variant.",
+      "no_new_error_variant": "InvalidArgument already exists (lib.rs:3275) and already maps to InvalidArgumentError in both bindings (lib.rs:3431). Only the validation predicate tightened."
+    },
+    "finding_2": {
+      "site": "dev/interfaces/rust.md",
+      "cause": "fathomdb/src/lib.rs:46-47 re-exports the five Projection* types (ProjectionDelta, ProjectionFts, ProjectionRole, ProjectionSpec, ProjectionVector) making them public Rust facade; python.md/typescript.md carry a '## Projection registry' section but rust.md had none — violating the AGENTS.md:25 / TC-39 same-change invariant for a public Rust API surface.",
+      "fix": "Added a '## Projection registry (0.8.20 Slice 15d, R-20-PR / C-1)' section (PROPOSED / NOT SIGNED) documenting Engine::configure_projections + Engine::read_projections signatures and all five Projection* types (matching python.md/typescript.md detail, Rust-spelled), PLUS the fix-4 projection-name contract, and a one-line PROPOSED note in the P1 allowlist narrative (mirrors the ReadView/BoundaryCrossing precedent).",
+      "reexport_list_verified": "CONFIRMED against fathomdb/src/lib.rs:42-50 always-present re-export block: the five Projection* names documented are EXACTLY those re-exported (ProjectionDelta, ProjectionFts, ProjectionRole, ProjectionSpec, ProjectionVector); none is invented and none re-exported is missed. Type field/variant shapes cross-checked against the pub defs at lib.rs:3554-3643."
+    },
+    "red_evidence": {
+      "command": "cargo test -p fathomdb-engine --test slice15d_projection_registry backslash_projection_name_is_rejected -- --exact",
+      "result": "test result: FAILED. 0 passed; 1 failed; 0 ignored; 16 filtered out",
+      "panic": "backslash_projection_name_is_rejected @ tests/slice15d_projection_registry.rs:990 — called `Result::unwrap_err()` on an `Ok` value: ProjectionDelta { built: [\"a\\\\b\"], dropped: [], deferred: [], unchanged: false }",
+      "interpretation": "RED proves the accept-then-never-populate path: the backslash name `a\\b` was ACCEPTED (returned Ok with built:[\"a\\b\"], i.e. registered) instead of refused — a registry entry that the write-path JSON path can never populate."
+    },
+    "gates": {
+      "cargo_clippy_workspace_all_targets": { "exit": 0 },
+      "cargo_check_workspace_all_targets": { "exit": 0 },
+      "cargo_test_engine_schema": {
+        "exit": 0,
+        "passed": 604,
+        "failed": 0,
+        "ignored": 13,
+        "baseline": "603 passed / 0 failed / 13 ignored (pre-fix-4)",
+        "note": "--test-threads=1, explicit 1800000ms timeout; aggregate summed from every `test result:` line via awk (real exit 0). +1 net-new engine test (backslash_projection_name_is_rejected)."
+      },
+      "ac_041_recovery_denylist": { "exit": 0, "note": "UNAFFECTED — no governed-surface NAME change (validation predicate tightened only; no new verb/type/error). recovery_denylist still exactly the five REQ-054 names; no name collides with recover/restore/repair/fix/rebuild." },
+      "python_ts_execution_and_pyright": { "skipped": true, "reason": "NO binding surface touched. finding-1 reuses the existing InvalidArgument/InvalidArgumentError (already stubbed + mapped in Py/TS — no new variant), and the git diff since f9e46d90 is fathomdb-engine/src/lib.rs + its test file + dev/interfaces/rust.md ONLY. No .pyi / .ts / stub change → no pyright/tsc re-run required (fix-3's .pyi gap class is not reintroduced: nothing was added to the Python/TS error or type surface)." },
+      "eu7": { "note": "ZERO eu7 runs." },
+      "agent_lint_md": { "note": "NOT cited (TC-37 vacuous-in-worktree). rust.md passed the commit-time md-safe-fix pre-commit hook." }
+    },
+    "binding_surface_touched": false,
+    "governed_surface": "UNCHANGED — no new verb/type/error; the projection-name charset is a tightening of an existing InvalidArgument contract. PROPOSED / NOT SIGNED status of Slice 15d's delta untouched; no AC minted; recovery_denylist stays five.",
+    "rust_md_matches_reexport_list": true,
+    "blockers": []
+  },
   "blockers": [],
   "unblocks": ["Slice 20 (R-20-DR dense_readiness/flush_embeddings attaches to the vector sub-object)", "Slice 25 (R-20-SUR surrogate minting for registry-admitted governed entities)"],
   "notes_for_orchestrator": [
