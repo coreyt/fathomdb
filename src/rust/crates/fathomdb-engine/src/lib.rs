@@ -9981,6 +9981,52 @@ fn text_hit_passes_filter(
             }
         }
     }
+    // 0.8.20 Slice 15e fix-1 finding 1 [P2] — enforce the declared-`filterable`
+    // attribute-equality predicates on the TEXT/FTS arm too (D3 total dispatch).
+    if !hit_attributes_pass_filter(tx, id, filter)? {
+        return Ok(false);
+    }
+    Ok(true)
+}
+
+/// 0.8.20 Slice 15e fix-1 finding 1 [P2] — do a TEXT/FTS hit's `filterable`
+/// attributes satisfy `filter.attributes`?
+///
+/// The vector arm enforces each `(attr_name, value)` pre-KNN as `attr_<hex>=?`
+/// against the vec0 metadata column. The FTS/text arm must enforce the SAME
+/// equality so a hybrid RRF fusion is coherent (ADR-0.8.11 D3 — every filter term
+/// has a defined outcome on EVERY surface; no arm silently ignores it). Without
+/// this, a doc returned by the FTS arm that FAILS the attribute filter still
+/// surfaces in a hybrid search — a false positive.
+///
+/// The value is read from the row-owned `canonical_attributes` EAV table (keyed
+/// by the hit's `write_cursor` + `attr_name`), which Slice 15d keeps active-only
+/// and populates via the SAME [`extract_scalar_attribute`] that fills the vec0
+/// `attr_<hex>` column — so the two arms see IDENTICAL values by construction. An
+/// absent attribute has no `canonical_attributes` row; it reads as the `''`
+/// sentinel, exactly mirroring the vec0 column, so a non-empty equality
+/// fails-to-match (and never false-matches).
+fn hit_attributes_pass_filter(
+    tx: &rusqlite::Transaction<'_>,
+    id: u64,
+    filter: &SearchFilter,
+) -> rusqlite::Result<bool> {
+    for (name, want) in &filter.attributes {
+        let stored: Option<String> = tx
+            .query_row(
+                "SELECT attr_value FROM canonical_attributes \
+                 WHERE write_cursor = ?1 AND attr_name = ?2 LIMIT 1",
+                params![id as i64, name],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .optional()?
+            .flatten();
+        // Mirror the vec0 pre-KNN arm exactly: an absent attribute is the `''`
+        // sentinel, so a non-empty `want` fails-to-match.
+        if stored.unwrap_or_default().as_str() != want.as_str() {
+            return Ok(false);
+        }
+    }
     Ok(true)
 }
 
@@ -10049,6 +10095,16 @@ fn edge_fts_hit_passes_filter(
                 return Ok(false);
             }
         }
+    }
+    // 0.8.20 Slice 15e fix-1 finding 1 [P2] — an edge body is projected into
+    // vector_default (rowid = write_cursor) with the same `attr_<hex>` pre-KNN
+    // columns as a node, and Slice 15d projects an edge's `filterable` attributes
+    // into `canonical_attributes` keyed by its write_cursor. Enforce the same
+    // attribute equality here so the edge-FTS arm matches the vector arm (D3 total
+    // dispatch). An edge that carries no such attribute reads the `''` sentinel and
+    // fails a non-empty equality, exactly as on the vector arm.
+    if !hit_attributes_pass_filter(tx, write_cursor, filter)? {
+        return Ok(false);
     }
     Ok(true)
 }
@@ -13832,9 +13888,12 @@ fn reconcile_vector_attr_columns(conn: &Connection, dimension: u32) -> rusqlite:
 ///   2. each attribute column is PLAIN `TEXT` metadata (via
 ///      [`vector_partition_create_sql`]), never a vec0 `aux`/`+` column (aux
 ///      hard-errors a filtered KNN);
-///   3. a DESIRED column with no ACTUAL predecessor back-fills the `''` sentinel
-///      (vec0 TEXT metadata is NOT-NULL-able) so a pre-existing row cleanly
-///      fails-to-match a filter instead of erroring;
+///   3. a DESIRED column with no ACTUAL predecessor back-fills each row from the
+///      already-populated `canonical_attributes` (fix-1 finding 2) so a
+///      pre-existing row whose body carries the attribute is immediately
+///      filterable; the `''` sentinel (vec0 TEXT metadata is NOT-NULL-able) is
+///      used ONLY where the attribute is genuinely absent, so an absent row
+///      cleanly fails-to-match instead of erroring;
 ///   4. `embedding_bin` is copied VERBATIM via `vec_bit(...)` — NOT re-quantized —
 ///      so old rows keep their (possibly mean-centered) bits and stay Hamming-
 ///      comparable to new rows.
@@ -13877,8 +13936,9 @@ fn reshape_vector_partition_nondestructive(
 
     // Re-insert. `rowid` explicit (condition #1); `vec_bit(embedding_bin)`
     // verbatim, never re-quantized (condition #4); `status` and each surviving
-    // attribute column carried forward; each NEW desired column back-fills the
-    // `''` sentinel (condition #3).
+    // attribute column carried forward; each NEW desired column back-fills from
+    // `canonical_attributes` (the `''` sentinel only where genuinely absent —
+    // condition #3).
     let mut insert_cols =
         String::from("rowid, embedding, embedding_bin, source_type, kind, created_at, status");
     let mut select_exprs = String::from(
@@ -13891,8 +13951,31 @@ fn reshape_vector_partition_nondestructive(
             // metadata is `''`-sentinelled, but COALESCE defends the stage table).
             select_exprs.push_str(&format!(", COALESCE({col}, '')"));
         } else {
-            // New column — back-fill the empty-string sentinel (condition #3).
-            select_exprs.push_str(", ''");
+            // New column — back-fill from the ALREADY-populated `canonical_attributes`
+            // (fix-1 finding 2 [P2]). `configure_projections` runs `backfill_attribute`
+            // (which fills `canonical_attributes` from each active row's body) BEFORE
+            // this reshape, so a pre-existing row whose body carries the attribute is
+            // immediately filterable — no false negative until a re-embed. The `''`
+            // sentinel (condition #3) is used ONLY where the attribute is genuinely
+            // ABSENT for that row (no `canonical_attributes` row ⇒ COALESCE → '').
+            // The EAV value equals the vec0 write-time value by construction (both go
+            // through `extract_scalar_attribute`), so pre-existing and freshly-written
+            // rows share one filter semantics.
+            match decode_attr_vec0_column(col) {
+                Some(name) => {
+                    // vec0/execute_batch takes no bind params; embed the decoded name
+                    // as a SQL string literal, escaping single quotes.
+                    let escaped = name.replace('\'', "''");
+                    select_exprs.push_str(&format!(
+                        ", COALESCE((SELECT ca.attr_value FROM canonical_attributes ca \
+                         WHERE ca.write_cursor = _fathomdb_vector_reshape_stage.rowid \
+                           AND ca.attr_name = '{escaped}' LIMIT 1), '')"
+                    ));
+                }
+                // A desired column always decodes (built by `attr_vec0_column`); if it
+                // somehow does not, fall back to the sentinel rather than panic.
+                None => select_exprs.push_str(", ''"),
+            }
         }
     }
     conn.execute_batch(&format!(
