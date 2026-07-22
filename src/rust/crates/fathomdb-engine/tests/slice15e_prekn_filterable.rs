@@ -93,6 +93,22 @@ fn node(logical: &str, body_json: &str) -> PreparedWrite {
     }
 }
 
+fn edge(logical: &str, from: &str, to: &str, body_json: &str) -> PreparedWrite {
+    PreparedWrite::Edge {
+        kind: "link".to_string(),
+        from: from.to_string(),
+        to: to.to_string(),
+        source_id: SourceId::new("test:15e").expect("source id"),
+        logical_id: Some(logical.to_string()),
+        body: Some(body_json.to_string()),
+        t_valid: None,
+        t_invalid: None,
+        confidence: None,
+        extractor_model_id: None,
+        temporal_fallback: None,
+    }
+}
+
 fn filterable_spec(name: &str) -> ProjectionSpec {
     let mut roles = BTreeSet::new();
     roles.insert(ProjectionRole::Filterable);
@@ -117,10 +133,10 @@ fn table_sql(path: &std::path::Path) -> String {
 fn filterable_predicate_compiles_into_prekn_match_clause() {
     // Attribute-only filter: the attr predicate lands at ?3 (after ?1 sign-quant
     // query, ?2 f32 rerank query), INSIDE the phase-1 candidates `MATCH ... WHERE`.
-    let filter = SearchFilter {
-        attributes: vec![("priority".to_string(), "high".to_string())],
-        ..Default::default()
-    };
+    // `SearchFilter` is `#[non_exhaustive]` (0.8.20 Slice 15e fix-2); build from
+    // `default()` (downstream crates, incl. this test crate, cannot struct-literal).
+    let mut filter = SearchFilter::default();
+    filter.attributes = vec![("priority".to_string(), "high".to_string())];
     let sql = vector_phase1_sql_for_test(Some(&filter));
     let col = attr_col("priority"); // attr_7072696f72697479
     assert_eq!(col, "attr_7072696f72697479", "byte-safe hex encoding of the name");
@@ -140,21 +156,17 @@ fn filterable_predicate_compiles_into_prekn_match_clause() {
 
     // Combined with a shipped metadata field: metadata keeps canonical order, the
     // attribute is appended AFTER it (kind ?3, attr ?4).
-    let combined = SearchFilter {
-        kind: Some("doc".to_string()),
-        attributes: vec![("priority".to_string(), "high".to_string())],
-        ..Default::default()
-    };
+    let mut combined = SearchFilter::default();
+    combined.kind = Some("doc".to_string());
+    combined.attributes = vec![("priority".to_string(), "high".to_string())];
     let csql = vector_phase1_sql_for_test(Some(&combined));
     assert!(csql.contains("AND kind=?3"), "metadata field keeps ?3:\n{csql}");
     assert!(csql.contains(&format!("AND {col}=?4")), "attribute appended at ?4:\n{csql}");
 
     // A name with a space (Slice-15d validated names allow spaces/unicode) must
     // still yield a bare, unquoted, byte-safe identifier vec0 accepts.
-    let spaced = SearchFilter {
-        attributes: vec![("due date".to_string(), "2020".to_string())],
-        ..Default::default()
-    };
+    let mut spaced = SearchFilter::default();
+    spaced.attributes = vec![("due date".to_string(), "2020".to_string())];
     let ssql = vector_phase1_sql_for_test(Some(&spaced));
     let scol = attr_col("due date"); // attr_6475652064617465
     assert_eq!(scol, "attr_6475652064617465");
@@ -406,10 +418,9 @@ fn hybrid_fts_arm_applies_attribute_filter() {
         .expect("read MISS vec0 attr");
     assert_eq!(miss_vec_val, vec!["low".to_string()], "MISS vec0 column populated from body");
 
-    let filter = SearchFilter {
-        attributes: vec![("priority".to_string(), "high".to_string())],
-        ..Default::default()
-    };
+    // `#[non_exhaustive]` (0.8.20 Slice 15e fix-2): build from `default()`.
+    let mut filter = SearchFilter::default();
+    filter.attributes = vec![("priority".to_string(), "high".to_string())];
     let res = engine.search_filtered("vectors", Some(filter)).expect("search");
     let bodies: Vec<String> = res.results.iter().map(|h| h.body.clone()).collect();
 
@@ -485,10 +496,9 @@ fn existing_row_backfilled_from_canonical_attributes_not_blanket_sentinel() {
 
     // A pre-KNN filter `priority == high` must RETURN the pre-existing PRESENT row
     // and exclude ABSENT (results-level assertion).
-    let filter = SearchFilter {
-        attributes: vec![("priority".to_string(), "high".to_string())],
-        ..Default::default()
-    };
+    // `#[non_exhaustive]` (0.8.20 Slice 15e fix-2): build from `default()`.
+    let mut filter = SearchFilter::default();
+    filter.attributes = vec![("priority".to_string(), "high".to_string())];
     let res = engine.search_filtered("vectors", Some(filter)).expect("search");
     let bodies: Vec<String> = res.results.iter().map(|h| h.body.clone()).collect();
     assert!(
@@ -498,6 +508,138 @@ fn existing_row_backfilled_from_canonical_attributes_not_blanket_sentinel() {
     assert!(
         !bodies.iter().any(|b| b.contains("beta record")),
         "genuinely-absent row must fail-to-match: {bodies:?}"
+    );
+
+    engine.close().unwrap();
+}
+
+// ===========================================================================
+// fix-2 (Finding 1 → HITL ruling (A)) — PIN: an attribute filter is NODE-SCOPED
+// and therefore EXCLUDES edge hits on BOTH retrieval arms (edge-FTS AND
+// edge-vector). This is a CHARACTERIZATION / pin test, not a RED→GREEN — the
+// behaviour is already correct post-fix-1 and this test locks it against silent
+// regression toward any of the reserved widenings (B: edges pass through; C:
+// project edge attributes; D: endpoint-node filtering).
+//
+// Mechanism this pins:
+//   * Attribute projection is `PreparedWrite::Node`-gated (`collect_projection_jobs`
+//     / `project_one_attribute`), so an EDGE is NEVER projected into
+//     `canonical_attributes` NOR carries a populated vec0 `attr_<hex>` column —
+//     even when the edge body itself names the attribute (this edge body carries
+//     `"priority":"high"` and is STILL excluded).
+//   * edge-vector arm: the edge IS a `vector_default` candidate (rowid =
+//     write_cursor, kind `edge_fact`), but its `attr_<hex>` column is the `''`
+//     sentinel (the async worker reads the body from `canonical_nodes`, which has
+//     no row for an edge cursor), so the pre-KNN `attr_<hex>='high'` predicate
+//     prunes it.
+//   * edge-FTS arm: the edge IS a `search_index_edges` candidate, but
+//     `edge_fts_hit_passes_filter` → `hit_attributes_pass_filter` finds no
+//     `canonical_attributes` row for the edge's write_cursor, reads the `''`
+//     sentinel, and fails the non-empty equality.
+//
+// `search_filtered` fuses both arms, so a regression that let edges through on
+// EITHER arm would make the edge body reappear in the filtered results and fail
+// this test — that is how the single fused-search assertion guards BOTH arms. The
+// raw per-arm state assertions below additionally pin each arm's exclusion
+// mechanism independently.
+// ===========================================================================
+
+#[test]
+fn attribute_filter_excludes_edge_hits_on_both_arms() {
+    let (_dir, path) = fixture("s15e_edge_excluded_both_arms");
+    let opened = open(&path);
+    let engine = &opened.engine;
+
+    // Declare the filterable projection FIRST, so every subsequently-embedded row
+    // is written against a `vector_default` that already carries the `attr_<hex>`
+    // column (nodes populate it from their body; edges get the `''` sentinel).
+    engine.configure_projections(&[filterable_spec("priority")], &[]).expect("configure");
+
+    // A NODE carrying priority=high (the non-vacuous control — it must SURVIVE the
+    // filter), the two edge endpoints, and an EDGE whose body ALSO names
+    // priority=high yet is node-scope-excluded. All three content rows share the
+    // FTS token "sharedtoken" and, in a tiny corpus, are all vector candidates.
+    engine
+        .write(&[
+            node("ENTFROM", r#"{"title":"origin entity"}"#),
+            node("ENTTO", r#"{"title":"target entity"}"#),
+            node("NODEMATCH", r#"{"title":"sharedtoken alpha node","priority":"high"}"#),
+            edge(
+                "EDGEFACT",
+                "ENTFROM",
+                "ENTTO",
+                r#"{"fact":"sharedtoken edgefact beta","priority":"high"}"#,
+            ),
+        ])
+        .expect("write");
+    engine.drain(10_000).expect("drain");
+
+    // The edge's write_cursor keys every one of its projection shadow rows.
+    let edge_cursor = engine
+        .query_i64_col_for_test(
+            "SELECT write_cursor FROM canonical_edges WHERE logical_id='EDGEFACT'",
+        )
+        .expect("edge cursor");
+    assert_eq!(edge_cursor.len(), 1, "exactly one edge row");
+    let ec = edge_cursor[0];
+    let col = attr_col("priority");
+
+    // --- edge-VECTOR arm mechanism: candidate present, attr col is the sentinel.
+    let edge_vec_rowid = engine
+        .query_i64_col_for_test(&format!("SELECT rowid FROM vector_default WHERE rowid={ec}"))
+        .expect("edge vector candidate");
+    assert_eq!(edge_vec_rowid, vec![ec], "edge IS a vector_default candidate (rowid=write_cursor)");
+    let edge_attr = engine
+        .query_text_col_for_test(&format!("SELECT {col} FROM vector_default WHERE rowid={ec}"))
+        .expect("edge attr col");
+    assert_eq!(
+        edge_attr,
+        vec![String::new()],
+        "edge's vec0 attr column is the '' sentinel (edges are not attribute-projected), \
+         so the pre-KNN attr_<hex>='high' predicate prunes it"
+    );
+
+    // --- edge-FTS arm mechanism: candidate present, but NO canonical_attributes row.
+    let edge_fts_rows = engine
+        .query_i64_col_for_test(&format!(
+            "SELECT COUNT(*) FROM search_index_edges WHERE write_cursor={ec}"
+        ))
+        .expect("edge fts candidate");
+    assert_eq!(edge_fts_rows, vec![1], "edge IS a search_index_edges (FTS) candidate");
+    let edge_eav_rows = engine
+        .query_i64_col_for_test(&format!(
+            "SELECT COUNT(*) FROM canonical_attributes WHERE write_cursor={ec}"
+        ))
+        .expect("edge eav count");
+    assert_eq!(
+        edge_eav_rows,
+        vec![0],
+        "edge has NO canonical_attributes row (attribute projection is Node-gated), \
+         so hit_attributes_pass_filter reads '' and the FTS arm excludes it"
+    );
+
+    // --- CONTROL (unfiltered): the edge IS retrievable through search, so the
+    // filtered-absence below is a real exclusion, not a never-indexed edge.
+    let unfiltered = engine.search_filtered("sharedtoken", None).expect("unfiltered search");
+    let ub: Vec<String> = unfiltered.results.iter().map(|h| h.body.clone()).collect();
+    assert!(ub.iter().any(|b| b.contains("edgefact")), "edge is retrievable unfiltered: {ub:?}");
+    assert!(ub.iter().any(|b| b.contains("alpha node")), "node is retrievable unfiltered: {ub:?}");
+
+    // --- FILTERED: node with priority=high SURVIVES; edge (node-scope-excluded on
+    // BOTH arms) is DROPPED, even though its own body names priority=high.
+    // `#[non_exhaustive]` (0.8.20 Slice 15e fix-2): build from `default()`.
+    let mut filter = SearchFilter::default();
+    filter.attributes = vec![("priority".to_string(), "high".to_string())];
+    let filtered = engine.search_filtered("sharedtoken", Some(filter)).expect("filtered search");
+    let fb: Vec<String> = filtered.results.iter().map(|h| h.body.clone()).collect();
+    assert!(
+        fb.iter().any(|b| b.contains("alpha node")),
+        "the matching NODE with the attribute must still appear (non-vacuous control): {fb:?}"
+    );
+    assert!(
+        !fb.iter().any(|b| b.contains("edgefact")),
+        "(A) edges are EXCLUDED: an attribute filter is node-scoped, so the edge hit must NOT \
+         appear via the edge-FTS arm NOR the edge-vector arm: {fb:?}"
     );
 
     engine.close().unwrap();
