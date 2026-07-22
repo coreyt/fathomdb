@@ -406,6 +406,41 @@ Gaps `1–4, 6–9, 11–14, 16–19, 21–24, 26–29, 31–39` absorb unplanne
 > Idempotent re-registration still diffs to a **no-op**; a shape-changing reshape is an **explicit**
 > drop (`api-surface.md:26-30`), never a silent boot-time wipe. `run_pin_and_requantize_pass` is a
 > **separate same-shape** re-quantize and is untouched by the reshape.
+>
+> ### ✅ HITL-RATIFIED 2026-07-22 — Finding 1: attribute-filter × edge-hit semantics = **(A), with (D) reserved**
+>
+> **Ship (A) — edges excluded — as 0.8.20's behavior.** An attribute filter returns only attributed node
+> rows; edge hits are dropped consistently on both arms (already the shipped behavior after 15e fix-1).
+> **Document it as deliberate and pin a test.** **(B) declined, (C) not built.**
+>
+> - **Not consumer-reachable in 0.8.20 (verified):** `attributes` is **not** on the Py/TS `search` wire
+>   (`fathomdb-napi SearchFilterInput`, `fathomdb-py search` carry only `source_type/kind/created_after/
+>   status`); attribute-filtering is **engine-internal only** (comment `engine:5561` — "a later slice adds
+>   that surface"). So the edge-semantics choice governs a feature no consumer can call this release; (A)
+>   forecloses nothing and is a pure query-time behavior with **zero stored-data and zero wire commitment**.
+> - **(B) raw pass-through — DECLINED.** Predicate-honest failure (Memex): returning rows never evaluated
+>   against the filter is a bug-factory for agent-memory consumers feeding results to an LLM as vetted
+>   context; and it **reopens the 15e fix-1 [P2]** + is **RRF-surprising** (edges inherit the dominant text
+>   weight 3.0 and can outrank a node that satisfied the filter). If pass-through is ever wanted, use the
+>   coherent variants **B′ (filter-nodes-first-then-edges)** or **B″ (edges as a labeled sidecar)** via the
+>   existing `TextEdge` branch tag — **never raw B.**
+> - **(C) edge-attribute projection — NOT BUILT.** The only **one-way door** (stored-data commitment; a
+>   retroactive backfill the 0.8.20 no-migration posture forbids), and Memex explicitly does not need it.
+> - **(D) edges filtered by their ENDPOINT NODES' attributes — RESERVED, documented, not built.** The
+>   principled widening (Memex): "the relationship connects things you asked for" is explainable, unlike
+>   (B)'s "the relationship was exempt." **(A) is (D) with an empty endpoint rule, so shipping (A) forecloses
+>   nothing.** The both-vs-either endpoint fork is a real semantic choice — leave it to the first consumer
+>   that needs it. **No per-query opt-out flag** (Memex: it defers the call into every call site).
+>
+> **Two Memex consult requirements carried to the SDK-surface slice** (the slice that puts `attributes` on
+> the `search` wire — NOT 0.8.20, since the filter isn't callable yet):
+>
+> 1. **Dropped-edge count MUST be observable** (in the result or under `explain=True`). A filter that drops
+>    material with no trace is "indistinguishable from a corpus that never had it." Do **not** repeat the
+>    `quality_counts`-hardcoded-to-zero anti-pattern.
+> 2. **Node-side pushdown is where the consumer value is, not edge semantics.** The registry (15d) is the
+>    mechanism that makes `entity_type`/`pinned`/`expires_at`/… filterable; keep node attribute pushdown
+>    solid + well-documented. This is the steer that says **don't spend budget on (C).**
 
 **The REMAINDER of Slice 15 — projection registry (C-1 co-land) + EAV/property-FTS (R-20-PR, R-20-EAV), plus
 TC-33.** It is the Phase-2 keystone: 20 and 25 both depend on it. Slice 30 (H7) additionally depends on
