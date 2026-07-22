@@ -378,6 +378,18 @@ Gaps `1–4, 6–9, 11–14, 16–19, 21–24, 26–29, 31–39` absorb unplanne
 > (`engine:4253`, `:4434`) — a representation change silently stops flagging fallback edges, so that
 > comparison must be re-grounded, not left to drift.
 >
+> **TC-47 (steward-ruled 2026-07-22, within the Note-1 hard-reject mandate; HITL-veto-available):**
+> `strftime('%s', …)` is a **leaky** ISO validator — it has now silently mis-stored input twice: Julian-day
+> numeric strings (TC-44) and **calendar rollover** (`2025-02-30` → `2025-03-02`, `2025-04-31` → `2025-05-01`;
+> well-formatted, non-NULL, *wrong instant*). A shape gate cannot catch a well-shaped-but-invalid date. Fix
+> is a **round-trip completeness check** — parse to epoch, format the epoch back, reject if it does not equal
+> the input — which is **complete by construction** (accepts exactly the strings whose parsed instant
+> reproduces the input) and **also subsumes the TC-44 Julian-day class**, in pure SQL, **no `chrono`/`time`
+> dependency** (option (c) is therefore unnecessary). Safety was never breached — a rolled-over date is a
+> valid instant, not NULL, so the "no resurrection via NULL" property held throughout; this closes the
+> **wrong-instant** residue. *If a temporal class ever survives the round-trip check, THAT is the trigger to
+> escalate the "strftime is the wrong tool → add a date library" architecture question to the HITL.*
+>
 > ### ✅ HITL-RATIFIED 2026-07-21 — TC-46: the 15e vec0 reshape is NON-DESTRUCTIVE (Option 1)
 >
 > The vec0 `filterable` pre-KNN reshape (15e) is built as a **non-destructive re-insert**, not a wipe.
