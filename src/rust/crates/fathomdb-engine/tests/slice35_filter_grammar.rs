@@ -364,6 +364,7 @@ fn searchfilter_struct_shape_unchanged() {
         kind: Some("note".to_string()),
         created_after: Some(1000),
         status: Some("open".to_string()),
+        ..Default::default()
     };
     assert_eq!(sf2.source_type.as_deref(), Some("doc"));
     assert_eq!(sf2.kind.as_deref(), Some("note"));

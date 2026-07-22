@@ -90,6 +90,7 @@ fn searchfilter_sugar_lowers_and_round_trips() {
         kind: Some("todo".to_string()),
         created_after: Some(1000),
         status: Some("open".to_string()),
+        ..Default::default()
     };
     let unified = Filter::from(&sf);
     assert_eq!(

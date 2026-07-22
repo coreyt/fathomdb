@@ -2481,6 +2481,7 @@ impl SearchFilter {
             && self.kind.is_none()
             && self.created_after.is_none()
             && self.status.is_none()
+            && self.attributes.is_empty()
     }
 }
 
@@ -4410,6 +4411,29 @@ impl Engine {
             message: "could not re-derive projection registry on boot".to_string(),
         })?;
 
+        // 0.8.20 Slice 15e — reconcile the live `vector_default` attribute columns
+        // with the registry's `filterable` set. On a DB whose vec0 shape already
+        // matches the registry (the common case, incl. every reopen of a DB that
+        // declared filterable projections in a prior session) this is a pure
+        // no-op: the diff is empty, so boot never re-inserts and NEVER silently
+        // wipes the corpus. It converges only a shape that drifted from the
+        // registry (e.g. a restored registry row). A no-op when the table is
+        // absent (no embedder). Runs on the writer connection, single-threaded,
+        // before readers spawn — like the boot re-derive above.
+        {
+            let tx = connection.transaction().map_err(|_| EngineOpenError::Io {
+                message: "could not begin vector-attr reconcile on boot".to_string(),
+            })?;
+            reconcile_vector_attr_columns(&tx, embedder_identity.dimension).map_err(|_| {
+                EngineOpenError::Io {
+                    message: "could not reconcile vector attribute columns on boot".to_string(),
+                }
+            })?;
+            tx.commit().map_err(|_| EngineOpenError::Io {
+                message: "could not commit vector-attr reconcile on boot".to_string(),
+            })?;
+        }
+
         // EU-5f — recovery pin (`dev/design/embedder.md` §0.3, Hazard 4). If
         // the identity is MC-required, no mean is pinned, yet the workspace
         // already holds >= MEAN_VEC_PIN_THRESHOLD vector rows (e.g. a crash
@@ -5532,7 +5556,20 @@ impl Engine {
         // canonical-order-preserving, so the produced phase-1 SQL stays
         // byte-identical to 0.7.2 on the `None`/all-`None` path. `SearchFilter`
         // never carries a `Json` term, so `to_search_filter` never rejects here.
-        let lowered = filter.map(|sf| Filter::from(&sf).to_search_filter()).transpose()?;
+        //
+        // 0.8.20 Slice 15e — the unified `Filter`/`FilterTerm` grammar does not yet
+        // carry `filterable`-attribute terms (a later slice adds that surface), so
+        // the round-trip would drop `SearchFilter.attributes`. Carry them across
+        // explicitly: they already route pre-KNN through `vector_filter_clause`.
+        let lowered = filter
+            .map(|sf| {
+                let attributes = sf.attributes.clone();
+                Filter::from(&sf).to_search_filter().map(|mut lo| {
+                    lo.attributes = attributes;
+                    lo
+                })
+            })
+            .transpose()?;
         // FIX-6: delegate to search_reranked(depth=0, use_graph_arm=false) to eliminate the
         // ~26-line duplicate body that would otherwise drift with search_reranked.
         // 0.8.5: depth=0 is inert, so the α/pool_n defaults (0.3, 0) never reach the blend.
@@ -7095,18 +7132,32 @@ impl Engine {
             params![cursor, kind, cursor],
         )
         .map_err(|_| EngineError::Storage)?;
-        tx.execute(
-            // Slice 10 / G10 — `status` ships an empty-string sentinel only:
-            // vec0 TEXT metadata columns are NOT NULL-able ("Expected text for
-            // TEXT metadata column"), so the "no real population yet" state is
-            // `''`, not NULL (deviation from the prompt's "NULL plumbing" wording,
-            // forced by vec0; reserved-gap candidate 13 is the real source).
+        // Slice 10 / G10 — `status` ships an empty-string sentinel only: vec0 TEXT
+        // metadata columns are NOT NULL-able ("Expected text for TEXT metadata
+        // column"), so the "no real population yet" state is `''`, not NULL.
+        //
+        // 0.8.20 Slice 15e — this test helper carries no JSON body, so every live
+        // `filterable` `attr_<hex>` column binds the `''` sentinel (an empty body
+        // extracts nothing). When the table has no attr columns the statement is
+        // byte-identical to the shipped form.
+        let (cols_sql, ph_sql, attr_vals) =
+            vector_attr_insert_fragments(&tx, "", 7).map_err(|_| EngineError::Storage)?;
+        let sql = format!(
             "INSERT INTO vector_default(
-                rowid, embedding, embedding_bin, source_type, kind, created_at, status
-             ) VALUES(?1, ?2, vec_quantize_binary(?3), ?4, ?5, ?6, '')",
-            params![cursor, blob, bin_blob, source_type, kind, now_unix],
-        )
-        .map_err(|_| EngineError::Storage)?;
+                rowid, embedding, embedding_bin, source_type, kind, created_at, status{cols_sql}
+             ) VALUES(?1, ?2, vec_quantize_binary(?3), ?4, ?5, ?6, ''{ph_sql})"
+        );
+        let mut pv: Vec<rusqlite::types::Value> = vec![
+            rusqlite::types::Value::Integer(cursor as i64),
+            rusqlite::types::Value::Blob(blob.clone()),
+            rusqlite::types::Value::Blob(bin_blob.clone()),
+            rusqlite::types::Value::Text(source_type.to_string()),
+            rusqlite::types::Value::Text(kind.to_string()),
+            rusqlite::types::Value::Integer(now_unix),
+        ];
+        pv.extend(attr_vals);
+        tx.execute(&sql, rusqlite::params_from_iter(pv.iter()))
+            .map_err(|_| EngineError::Storage)?;
 
         let mut emitted_event: Option<EmbedderEvent> = None;
         if let Some(mean_vec) = pin_event {
@@ -9017,20 +9068,60 @@ fn run_pin_and_requantize_pass(
             )
             .map_err(|_| EngineError::Storage)?;
 
+        // 0.8.20 Slice 15e — this DELETE+INSERT re-quantize (its BIT-subtype
+        // workaround, condition #4's SEPARATE same-shape op) must PRESERVE every
+        // `filterable` `attr_<hex>` value, not just re-`''` them: a projection may
+        // have been declared before the pin. Read the live attr columns + this
+        // row's values BEFORE the DELETE, then re-bind them. Empty ⇒ the INSERT is
+        // byte-identical to the shipped statement.
+        let attr_cols = actual_vector_attr_columns(tx).map_err(|_| EngineError::Storage)?;
+        let attr_vals: Vec<String> = if attr_cols.is_empty() {
+            Vec::new()
+        } else {
+            let select = attr_cols.join(", ");
+            tx.query_row(
+                &format!("SELECT {select} FROM vector_default WHERE rowid = ?1"),
+                params![rowid],
+                |row| {
+                    let mut vals = Vec::with_capacity(attr_cols.len());
+                    for i in 0..attr_cols.len() {
+                        vals.push(row.get::<_, String>(i)?);
+                    }
+                    Ok(vals)
+                },
+            )
+            .map_err(|_| EngineError::Storage)?
+        };
+
         tx.execute("DELETE FROM vector_default WHERE rowid = ?1", params![rowid])
             .map_err(|_| EngineError::Storage)?;
 
-        tx.execute(
-            // Slice 10 / G10 — `status` ships the empty-string sentinel (vec0
-            // TEXT metadata is NOT NULL-able). The re-quantize pass runs at
-            // mean-pin time when every `status` is the `''` sentinel anyway, so
-            // re-inserting `''` is loss-free today (reserved-gap candidate 13).
+        // Slice 10 / G10 — `status` ships the empty-string sentinel (vec0 TEXT
+        // metadata is NOT NULL-able).
+        let mut cols_sql = String::new();
+        let mut ph_sql = String::new();
+        for (i, col) in attr_cols.iter().enumerate() {
+            cols_sql.push_str(&format!(", {col}"));
+            ph_sql.push_str(&format!(", ?{}", 7 + i));
+        }
+        let sql = format!(
             "INSERT INTO vector_default(
-                rowid, embedding, embedding_bin, source_type, kind, created_at, status
-             ) VALUES(?1, ?2, vec_quantize_binary(?3), ?4, ?5, ?6, '')",
-            params![rowid, blob, centered_blob, source_type, kind, created_at],
-        )
-        .map_err(|_| EngineError::Storage)?;
+                rowid, embedding, embedding_bin, source_type, kind, created_at, status{cols_sql}
+             ) VALUES(?1, ?2, vec_quantize_binary(?3), ?4, ?5, ?6, ''{ph_sql})"
+        );
+        let mut pv: Vec<rusqlite::types::Value> = vec![
+            rusqlite::types::Value::Integer(*rowid),
+            rusqlite::types::Value::Blob(blob.clone()),
+            rusqlite::types::Value::Blob(centered_blob),
+            rusqlite::types::Value::Text(source_type),
+            rusqlite::types::Value::Text(kind),
+            rusqlite::types::Value::Integer(created_at),
+        ];
+        for v in attr_vals {
+            pv.push(rusqlite::types::Value::Text(v));
+        }
+        tx.execute(&sql, rusqlite::params_from_iter(pv.iter()))
+            .map_err(|_| EngineError::Storage)?;
 
         updated = updated.saturating_add(1);
     }
@@ -9733,8 +9824,10 @@ impl CandleCrossEncoder {
 /// G10 — the `AND col=?n` predicate fragment appended to the phase-1 candidates
 /// `WHERE` for the present filter fields. Placeholders are numbered from `?3`
 /// (`?1` = sign-quant query, `?2` = f32 rerank query). Field order is canonical
-/// (`source_type`, `kind`, `created_after`, `status`) and is mirrored exactly by
-/// [`vector_filter_values`]. Empty for `None`/all-`None` (byte-identity path).
+/// (`source_type`, `kind`, `created_after`, `status`), THEN the Slice-15e
+/// `filterable`-attribute predicates (`attr_<hex>=?n`) in `attributes` order, and
+/// is mirrored exactly by [`vector_filter_values`]. Empty for `None`/all-`None`
+/// (byte-identity path).
 fn vector_filter_clause(filter: Option<&SearchFilter>) -> String {
     let Some(filter) = filter else {
         return String::new();
@@ -9742,18 +9835,26 @@ fn vector_filter_clause(filter: Option<&SearchFilter>) -> String {
     if filter.is_unfiltered() {
         return String::new();
     }
-    let mut cols: Vec<(&str, &str)> = Vec::new();
+    // 0.8.20 Slice 15e — the attribute predicates encode the (arbitrary,
+    // possibly space/unicode-bearing) registry name into the byte-safe
+    // `attr_<hex>` column vec0 accepts (vec0 rejects quoted identifiers). Owned
+    // strings so they live past the closure; the shipped metadata columns are
+    // static `&str`.
+    let mut cols: Vec<(String, &str)> = Vec::new();
     if filter.source_type.is_some() {
-        cols.push(("source_type", "="));
+        cols.push(("source_type".to_string(), "="));
     }
     if filter.kind.is_some() {
-        cols.push(("kind", "="));
+        cols.push(("kind".to_string(), "="));
     }
     if filter.created_after.is_some() {
-        cols.push(("created_at", ">="));
+        cols.push(("created_at".to_string(), ">="));
     }
     if filter.status.is_some() {
-        cols.push(("status", "="));
+        cols.push(("status".to_string(), "="));
+    }
+    for (name, _value) in &filter.attributes {
+        cols.push((attr_vec0_column(name), "="));
     }
     let mut clause = String::new();
     for (i, (col, op)) in cols.iter().enumerate() {
@@ -9785,6 +9886,11 @@ fn vector_filter_values(filter: Option<&SearchFilter>) -> Vec<rusqlite::types::V
     }
     if let Some(s) = &filter.status {
         out.push(Value::Text(s.clone()));
+    }
+    // 0.8.20 Slice 15e — attribute values, in the SAME order the clause appended
+    // the `attr_<hex>` columns (after the four metadata fields).
+    for (_name, value) in &filter.attributes {
+        out.push(Value::Text(value.clone()));
     }
     out
 }
@@ -12760,15 +12866,52 @@ fn commit_projection_outcomes(
                     }
                     _ => bin_blob.clone(),
                 };
-                tx.execute(
-                    // Slice 10 / G10 — `status` ships the empty-string sentinel
-                    // (vec0 TEXT metadata is NOT NULL-able); no real population
-                    // source yet (reserved-gap candidate 13).
-                    "INSERT OR IGNORE INTO vector_default(
-                        rowid, embedding, embedding_bin, source_type, kind, created_at, status
-                     ) VALUES(?1, ?2, vec_quantize_binary(?3), ?4, ?5, ?6, '')",
-                    params![cursor, blob, centered_blob, source_type, kind, now_unix],
-                )?;
+                // Slice 10 / G10 — `status` ships the empty-string sentinel (vec0
+                // TEXT metadata is NOT NULL-able); no real population source yet
+                // (reserved-gap candidate 13).
+                //
+                // 0.8.20 Slice 15e — when the live `vector_default` carries
+                // `filterable` `attr_<hex>` columns, EVERY column must be bound
+                // (vec0 rejects a partial-column INSERT). Bind each from the node
+                // body's scalar extraction (or the `''` sentinel). The body is not
+                // carried on the embed job, so it is read from `canonical_nodes` by
+                // `write_cursor` (== rowid) — but ONLY when attr columns exist, so
+                // the common no-filterable hot path stays byte-identical and does
+                // NO extra lookup.
+                if actual_vector_attr_columns(&tx)?.is_empty() {
+                    tx.execute(
+                        "INSERT OR IGNORE INTO vector_default(
+                            rowid, embedding, embedding_bin, source_type, kind, created_at, status
+                         ) VALUES(?1, ?2, vec_quantize_binary(?3), ?4, ?5, ?6, '')",
+                        params![cursor, blob, centered_blob, source_type, kind, now_unix],
+                    )?;
+                } else {
+                    let body: String = tx
+                        .query_row(
+                            "SELECT body FROM canonical_nodes WHERE write_cursor = ?1 LIMIT 1",
+                            [*cursor as i64],
+                            |row| row.get(0),
+                        )
+                        .optional()?
+                        .unwrap_or_default();
+                    let (cols_sql, ph_sql, attr_vals) =
+                        vector_attr_insert_fragments(&tx, &body, 7)?;
+                    let sql = format!(
+                        "INSERT OR IGNORE INTO vector_default(
+                            rowid, embedding, embedding_bin, source_type, kind, created_at, status{cols_sql}
+                         ) VALUES(?1, ?2, vec_quantize_binary(?3), ?4, ?5, ?6, ''{ph_sql})"
+                    );
+                    let mut pv: Vec<rusqlite::types::Value> = vec![
+                        rusqlite::types::Value::Integer(*cursor as i64),
+                        rusqlite::types::Value::Blob(blob.clone()),
+                        rusqlite::types::Value::Blob(centered_blob.clone()),
+                        rusqlite::types::Value::Text(source_type.to_string()),
+                        rusqlite::types::Value::Text(kind.to_string()),
+                        rusqlite::types::Value::Integer(now_unix),
+                    ];
+                    pv.extend(attr_vals);
+                    tx.execute(&sql, rusqlite::params_from_iter(pv.iter()))?;
+                }
                 record_projection_terminal(&tx, *cursor, "up_to_date")?;
 
                 // EU-5f — this row crossed the threshold: pin the mean and
@@ -13517,8 +13660,22 @@ fn ensure_vector_partition(connection: &mut Connection, dimension: u32) -> rusql
 /// hard-error under a KNN `WHERE`, and the G10 filter constrains `status` in the
 /// phase-1 KNN statement. `status` ships NULL plumbing only (no population source
 /// yet).
-fn vector_partition_create_sql(dimension: u32, if_not_exists: bool) -> String {
+///
+/// 0.8.20 Slice 15e — `attr_cols` are the declared-`filterable` attribute columns
+/// (byte-safe `attr_<hex>` identifiers, see [`attr_vec0_column`]), each a PLAIN
+/// `TEXT` metadata column (never aux `+`), appended after `status`. **When
+/// `attr_cols` is empty the produced SQL is byte-identical to the shipped shape**
+/// — every existing caller passes `&[]`, so no shipped behaviour changes.
+fn vector_partition_create_sql(
+    dimension: u32,
+    if_not_exists: bool,
+    attr_cols: &[String],
+) -> String {
     let guard = if if_not_exists { "IF NOT EXISTS " } else { "" };
+    let mut attrs = String::new();
+    for col in attr_cols {
+        attrs.push_str(&format!(",{col} TEXT"));
+    }
     format!(
         "CREATE VIRTUAL TABLE {guard}{DEFAULT_VECTOR_PARTITION} USING vec0(\
             embedding float[{dimension}],\
@@ -13526,13 +13683,224 @@ fn vector_partition_create_sql(dimension: u32, if_not_exists: bool) -> String {
             source_type TEXT partition key,\
             kind TEXT,\
             created_at INTEGER,\
-            status TEXT\
+            status TEXT{attrs}\
          )"
     )
 }
 
 fn create_vector_partition(connection: &Connection, dimension: u32) -> rusqlite::Result<()> {
-    connection.execute_batch(&vector_partition_create_sql(dimension, true))
+    connection.execute_batch(&vector_partition_create_sql(dimension, true, &[]))
+}
+
+/// 0.8.20 Slice 15e — encode an arbitrary registry attribute NAME into a vec0-safe
+/// column identifier: `attr_` + lowercase hex of the name's UTF-8 bytes.
+///
+/// vec0 rejects quoted column identifiers, and a Slice-15d-validated attribute
+/// name may contain spaces / unicode / `-`, so the raw name cannot be a column
+/// identifier. Hex is injective (so the map is reversible by
+/// [`decode_attr_vec0_column`]), matches `^attr_[0-9a-f]+$`, and can never collide
+/// with a built-in metadata column (`embedding`, `embedding_bin`, `source_type`,
+/// `kind`, `created_at`, `status` — none carry the `attr_` prefix followed by an
+/// even-length hex string of the name).
+fn attr_vec0_column(name: &str) -> String {
+    let mut s = String::from("attr_");
+    for b in name.as_bytes() {
+        s.push_str(&format!("{b:02x}"));
+    }
+    s
+}
+
+/// 0.8.20 Slice 15e — inverse of [`attr_vec0_column`]. Returns the original
+/// attribute name for an `attr_<hex>` column, or `None` if `col` is not a
+/// well-formed encoded attribute column (so the built-in metadata columns and any
+/// vec0 shadow columns are skipped when enumerating a live table's attribute set).
+fn decode_attr_vec0_column(col: &str) -> Option<String> {
+    let hex = col.strip_prefix("attr_")?;
+    if hex.is_empty() || hex.len() % 2 != 0 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let mut bytes = Vec::with_capacity(hex.len() / 2);
+    let raw = hex.as_bytes();
+    let mut i = 0;
+    while i < raw.len() {
+        let hi = (raw[i] as char).to_digit(16)?;
+        let lo = (raw[i + 1] as char).to_digit(16)?;
+        bytes.push((hi * 16 + lo) as u8);
+        i += 2;
+    }
+    String::from_utf8(bytes).ok()
+}
+
+/// 0.8.20 Slice 15e — the DESIRED `attr_<hex>` columns implied by the durable
+/// projection registry: one per `filterable` projection, sorted by attribute name
+/// (⇒ sorted by column, since hex encoding preserves byte order). This is the
+/// derived-cache source the reshape reconciles the live vec0 shape against.
+fn desired_vector_attr_columns(conn: &Connection) -> rusqlite::Result<Vec<String>> {
+    let registry = load_projection_registry(conn)?;
+    let mut cols: Vec<String> = registry
+        .iter()
+        .filter(|(_, stored)| stored.roles.contains(&ProjectionRole::Filterable))
+        .map(|(name, _)| attr_vec0_column(name))
+        .collect();
+    cols.sort();
+    Ok(cols)
+}
+
+/// 0.8.20 Slice 15e — the `attr_<hex>` columns actually present on the live
+/// `vector_default` vec0 table, parsed from its `CREATE VIRTUAL TABLE` SQL and
+/// sorted. Empty when the table is absent. Parsing the SQL (rather than a PRAGMA)
+/// keeps this robust across vec0 versions and shadow-table layouts.
+fn actual_vector_attr_columns(conn: &Connection) -> rusqlite::Result<Vec<String>> {
+    let sql: Option<String> = conn
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name=?1",
+            [DEFAULT_VECTOR_PARTITION],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    let Some(sql) = sql else {
+        return Ok(Vec::new());
+    };
+    let mut cols: Vec<String> = Vec::new();
+    // Tokenize on any non-identifier byte; a token is an attribute column iff it
+    // decodes as a well-formed `attr_<hex>` identifier.
+    let mut token = String::new();
+    let flush = |token: &mut String, cols: &mut Vec<String>| {
+        if !token.is_empty() {
+            if decode_attr_vec0_column(token).is_some() && !cols.contains(token) {
+                cols.push(token.clone());
+            }
+            token.clear();
+        }
+    };
+    for ch in sql.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '_' {
+            token.push(ch);
+        } else {
+            flush(&mut token, &mut cols);
+        }
+    }
+    flush(&mut token, &mut cols);
+    cols.sort();
+    Ok(cols)
+}
+
+/// 0.8.20 Slice 15e — reconcile the live `vector_default` attribute columns with
+/// the registry's `filterable` set (TC-46: HITL-ratified NON-DESTRUCTIVE reshape,
+/// following the shipped `migrate_vector_partition_pack1_to_pack2` precedent).
+///
+/// Diffs the DESIRED columns (from the registry) against the ACTUAL columns (on
+/// the live table). When they already match — which is EVERY idempotent
+/// re-registration and every boot re-derive that replays the same set — this is a
+/// pure no-op: no reshape, no re-insert, vec0 untouched (so boot never silently
+/// wipes a corpus). When they differ, performs ONE non-destructive reshape.
+///
+/// Returns `true` iff a reshape was performed. Runs the DDL directly on the passed
+/// connection/transaction (no nested transaction), so a caller already inside a
+/// write transaction (`configure_projections`) gets the reshape atomically with
+/// its registry mutation. A no-op (and returns `false`) when `vector_default` does
+/// not exist (a DB opened without an embedder).
+fn reconcile_vector_attr_columns(conn: &Connection, dimension: u32) -> rusqlite::Result<bool> {
+    let table_exists: bool = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1",
+            [DEFAULT_VECTOR_PARTITION],
+            |_| Ok(true),
+        )
+        .optional()?
+        .unwrap_or(false);
+    if !table_exists {
+        return Ok(false);
+    }
+    let desired = desired_vector_attr_columns(conn)?;
+    let actual = actual_vector_attr_columns(conn)?;
+    if desired == actual {
+        return Ok(false);
+    }
+    reshape_vector_partition_nondestructive(conn, dimension, &desired, &actual)?;
+    Ok(true)
+}
+
+/// 0.8.20 Slice 15e — the NON-DESTRUCTIVE reshape itself. Stages every live row
+/// (base columns + all ACTUAL attribute columns), drops + recreates
+/// `vector_default` at the DESIRED shape, then re-inserts each row.
+///
+/// THE FOUR LOAD-BEARING CONDITIONS (any one broken ⇒ silently wrong results):
+///   1. `rowid` is listed EXPLICITLY in the re-insert (a vec0 row maps to its node
+///      by `rowid == write_cursor`; auto-assigned rowids would decouple every
+///      embedding from its node);
+///   2. each attribute column is PLAIN `TEXT` metadata (via
+///      [`vector_partition_create_sql`]), never a vec0 `aux`/`+` column (aux
+///      hard-errors a filtered KNN);
+///   3. a DESIRED column with no ACTUAL predecessor back-fills the `''` sentinel
+///      (vec0 TEXT metadata is NOT-NULL-able) so a pre-existing row cleanly
+///      fails-to-match a filter instead of erroring;
+///   4. `embedding_bin` is copied VERBATIM via `vec_bit(...)` — NOT re-quantized —
+///      so old rows keep their (possibly mean-centered) bits and stay Hamming-
+///      comparable to new rows.
+///
+/// Runs on `conn` directly (the caller owns the transaction). Transactional
+/// atomicity + reader isolation are the caller's responsibility, exactly as for
+/// `migrate_vector_partition_pack1_to_pack2`.
+fn reshape_vector_partition_nondestructive(
+    conn: &Connection,
+    dimension: u32,
+    desired_cols: &[String],
+    actual_cols: &[String],
+) -> rusqlite::Result<()> {
+    // Stage: base columns + every ACTUAL attribute column (so no at-rest value is
+    // lost, even for a column being dropped).
+    let mut stage_defs = String::new();
+    let mut stage_names =
+        String::from("rowid, embedding, embedding_bin, source_type, kind, created_at, status");
+    for col in actual_cols {
+        stage_defs.push_str(&format!(",\n             {col} TEXT"));
+        stage_names.push_str(&format!(", {col}"));
+    }
+    conn.execute_batch(&format!(
+        "CREATE TABLE _fathomdb_vector_reshape_stage (
+             rowid         INTEGER PRIMARY KEY,
+             embedding     BLOB NOT NULL,
+             embedding_bin BLOB NOT NULL,
+             source_type   TEXT,
+             kind          TEXT,
+             created_at    INTEGER,
+             status        TEXT{stage_defs}
+         );
+         INSERT INTO _fathomdb_vector_reshape_stage({stage_names})
+             SELECT {stage_names} FROM {DEFAULT_VECTOR_PARTITION};
+         DROP TABLE {DEFAULT_VECTOR_PARTITION};"
+    ))?;
+
+    // Recreate at the DESIRED shape (plain TEXT attr columns — condition #2).
+    conn.execute_batch(&vector_partition_create_sql(dimension, false, desired_cols))?;
+
+    // Re-insert. `rowid` explicit (condition #1); `vec_bit(embedding_bin)`
+    // verbatim, never re-quantized (condition #4); `status` and each surviving
+    // attribute column carried forward; each NEW desired column back-fills the
+    // `''` sentinel (condition #3).
+    let mut insert_cols =
+        String::from("rowid, embedding, embedding_bin, source_type, kind, created_at, status");
+    let mut select_exprs = String::from(
+        "rowid, embedding, vec_bit(embedding_bin), source_type, kind, created_at, status",
+    );
+    for col in desired_cols {
+        insert_cols.push_str(&format!(", {col}"));
+        if actual_cols.iter().any(|a| a == col) {
+            // Surviving column — carry its value forward (never NULL: vec0 TEXT
+            // metadata is `''`-sentinelled, but COALESCE defends the stage table).
+            select_exprs.push_str(&format!(", COALESCE({col}, '')"));
+        } else {
+            // New column — back-fill the empty-string sentinel (condition #3).
+            select_exprs.push_str(", ''");
+        }
+    }
+    conn.execute_batch(&format!(
+        "INSERT INTO {DEFAULT_VECTOR_PARTITION}({insert_cols})
+             SELECT {select_exprs} FROM _fathomdb_vector_reshape_stage;
+         DROP TABLE _fathomdb_vector_reshape_stage;"
+    ))?;
+    Ok(())
 }
 
 /// Slice 10 / G10 — stage + recreate + back-fill upgrade of an existing
@@ -13565,7 +13933,7 @@ fn migrate_vector_partition_pack1_to_pack2(
              FROM vector_default;
          DROP TABLE vector_default;",
     )?;
-    tx.execute_batch(&vector_partition_create_sql(dimension, false))?;
+    tx.execute_batch(&vector_partition_create_sql(dimension, false, &[]))?;
     // `vec_bit(...)` re-tags the staged blob with the BIT subtype vec0's bit
     // column requires (a raw blob loses the subtype and fails the type check).
     // This preserves the existing (possibly mean-centered) bits verbatim — no
@@ -13631,7 +13999,7 @@ fn migrate_vector_partition_to_pack1(
     )?;
     // Slice 10 / G10 — recreate directly at the Pack-2 shape (adds `status`), so
     // a legacy single-column DB lands the current shape in one reshape.
-    tx.execute_batch(&vector_partition_create_sql(dimension, false))?;
+    tx.execute_batch(&vector_partition_create_sql(dimension, false, &[]))?;
     // `status` back-fills the empty-string sentinel (vec0 TEXT metadata is NOT
     // NULL-able; reserved-gap candidate 13). Legacy single-column DBs predate
     // mean-centering, so re-quantizing from the un-centered `embedding` is
@@ -15272,9 +15640,11 @@ fn project_one_attribute(
     if !stored.wants_eav() {
         return Ok(());
     }
-    let path = attribute_json_path(name);
     // json_extract over a non-JSON body would error; guard with json_valid so a
-    // plain-text body simply yields no attribute rows.
+    // plain-text body simply yields no attribute rows. The canonical scalar
+    // extraction is shared with the Slice-15e vec0 pre-KNN column via
+    // [`extract_scalar_attribute`], so the EAV value and the `attr_<hex>` value
+    // are IDENTICAL by construction.
     //
     // fix-1 finding 1 [P2] — project EVERY JSON scalar type, not just strings.
     // The prior form read the extraction as `Option<String>`; for a JSON number
@@ -15299,23 +15669,7 @@ fn project_one_attribute(
     //                raw JSON text would be a footgun (nested-field filtering is the
     //                >=0.9.x multi-field work). Skipping is deliberate, not an
     //                accidental type-conversion drop — no scalar type is dropped.
-    let value: Option<String> = tx
-        .query_row(
-            "SELECT CASE WHEN json_valid(?1) THEN
-                 CASE json_type(?1, ?2)
-                     WHEN 'true'   THEN 'true'
-                     WHEN 'false'  THEN 'false'
-                     WHEN 'null'   THEN NULL
-                     WHEN 'object' THEN NULL
-                     WHEN 'array'  THEN NULL
-                     ELSE CAST(json_extract(?1, ?2) AS TEXT)
-                 END
-             END",
-            params![body, path],
-            |row| row.get::<_, Option<String>>(0),
-        )
-        .unwrap_or(None);
-    let Some(value) = value else {
+    let Some(value) = extract_scalar_attribute(tx, body, name)? else {
         return Ok(());
     };
     tx.execute(
@@ -15331,6 +15685,65 @@ fn project_one_attribute(
         )?;
     }
     Ok(())
+}
+
+/// 0.8.20 Slice 15e — extract the canonical TEXT form of attribute `name` from a
+/// node `body`, using the SAME `json_type` CASE as [`project_one_attribute`] so
+/// the vec0 pre-KNN `attr_<hex>` column value equals the EAV
+/// `canonical_attributes` value (consistency by construction — a `filterable`
+/// filter routed pre-KNN sees exactly what the EAV path stored). Returns `None`
+/// for an absent / null / object / array / non-JSON extraction (⇒ the `''`
+/// sentinel at the vec0 column, ⇒ fail-to-match).
+fn extract_scalar_attribute(
+    conn: &Connection,
+    body: &str,
+    name: &str,
+) -> rusqlite::Result<Option<String>> {
+    let path = attribute_json_path(name);
+    let value: Option<String> = conn
+        .query_row(
+            "SELECT CASE WHEN json_valid(?1) THEN
+                 CASE json_type(?1, ?2)
+                     WHEN 'true'   THEN 'true'
+                     WHEN 'false'  THEN 'false'
+                     WHEN 'null'   THEN NULL
+                     WHEN 'object' THEN NULL
+                     WHEN 'array'  THEN NULL
+                     ELSE CAST(json_extract(?1, ?2) AS TEXT)
+                 END
+             END",
+            params![body, path],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .unwrap_or(None);
+    Ok(value)
+}
+
+/// 0.8.20 Slice 15e — for a node `body`, build the `, attr_<hex>` column suffix,
+/// the `, ?N` placeholder suffix (numbered from `start_idx`), and the bound TEXT
+/// values for EVERY attribute column CURRENTLY on the live `vector_default` (read
+/// from the table's own SQL, so the INSERT always matches the table shape exactly —
+/// vec0 rejects a partial-column INSERT). Each value is the body's canonical
+/// scalar extraction, or the `''` sentinel when absent. Returns empty fragments
+/// (and no values) when the table has no attribute columns, so the INSERT stays
+/// byte-identical to the shipped statement.
+fn vector_attr_insert_fragments(
+    conn: &Connection,
+    body: &str,
+    start_idx: usize,
+) -> rusqlite::Result<(String, String, Vec<rusqlite::types::Value>)> {
+    let cols = actual_vector_attr_columns(conn)?;
+    let mut col_sql = String::new();
+    let mut ph_sql = String::new();
+    let mut values: Vec<rusqlite::types::Value> = Vec::new();
+    for (i, col) in cols.iter().enumerate() {
+        let name = decode_attr_vec0_column(col).unwrap_or_default();
+        let value = extract_scalar_attribute(conn, body, &name)?.unwrap_or_default();
+        col_sql.push_str(&format!(", {col}"));
+        ph_sql.push_str(&format!(", ?{}", start_idx + i));
+        values.push(rusqlite::types::Value::Text(value));
+    }
+    Ok((col_sql, ph_sql, values))
 }
 
 /// 0.8.20 Slice 15d (R-20-EAV) — the write-path attribute projector: for a
@@ -15539,6 +15952,18 @@ fn apply_projection_config(
                 }
             }
         }
+    }
+
+    // 0.8.20 Slice 15e — after the registry mutations, reconcile the live vec0
+    // shape with the (possibly changed) `filterable` set: a NON-DESTRUCTIVE
+    // reshape adds/removes the `attr_<hex>` pre-KNN columns preserving every
+    // row's embedding (TC-46, HITL Option 1). Runs on the caller's write
+    // transaction, so the reshape commits atomically with the registry row. On an
+    // idempotent re-registration the desired set equals the live set, so this is a
+    // no-op (vec0 untouched) and `delta.unchanged` above is unaffected. Skipped
+    // when there is no embedder profile (⇒ no `vector_default` to reshape).
+    if let Ok(dimension) = default_profile_dimension(tx) {
+        reconcile_vector_attr_columns(tx, dimension).map_err(|_| EngineError::Storage)?;
     }
 
     delta.unchanged =
