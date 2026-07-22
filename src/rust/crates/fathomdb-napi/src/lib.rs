@@ -1356,13 +1356,15 @@ impl Engine {
         // G10 — build the closed filter; an all-`None` (or omitted) filter stays
         // the unfiltered, byte-identical path.
         let filter = filter.and_then(|f| {
-            let rust = RustSearchFilter {
-                source_type: f.source_type,
-                kind: f.kind,
-                created_after: f.created_after,
-                status: f.status,
-                ..Default::default()
-            };
+            // `RustSearchFilter` is `#[non_exhaustive]` (0.8.20 Slice 15e fix-2),
+            // so an out-of-crate struct literal (even with `..Default::default()`)
+            // is rejected; build from `default()` and set the four legacy fields.
+            // `attributes` is NOT on the TS wire in 0.8.20 (engine-internal).
+            let mut rust = RustSearchFilter::default();
+            rust.source_type = f.source_type;
+            rust.kind = f.kind;
+            rust.created_after = f.created_after;
+            rust.status = f.status;
             if rust.source_type.is_none()
                 && rust.kind.is_none()
                 && rust.created_after.is_none()
@@ -2074,15 +2076,19 @@ pub async fn search_expand(
     status: Option<String>,
 ) -> Result<SearchExpandResult> {
     validate_ffi_string_napi(&query)?;
-    let filter = if source_type.is_some()
-        || kind.is_some()
-        || created_after.is_some()
-        || status.is_some()
-    {
-        Some(RustSearchFilter { source_type, kind, created_after, status, ..Default::default() })
-    } else {
-        None
-    };
+    let filter =
+        if source_type.is_some() || kind.is_some() || created_after.is_some() || status.is_some() {
+            // `#[non_exhaustive]` (0.8.20 Slice 15e fix-2): no out-of-crate struct
+            // literal; build from `default()`. `attributes` stays engine-internal.
+            let mut f = RustSearchFilter::default();
+            f.source_type = source_type;
+            f.kind = kind;
+            f.created_after = created_after;
+            f.status = status;
+            Some(f)
+        } else {
+            None
+        };
     let inner = Arc::clone(&engine.inner);
     let result = call_engine(move || inner.search_expand(&query, filter, depth)).await?;
     Ok(SearchExpandResult::from_rust(result))

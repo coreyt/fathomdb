@@ -2456,7 +2456,16 @@ pub struct SearchExpandResult {
 /// "NULL plumbing"; a real population source is reserved-gap candidate 13). A
 /// `status = Some("open")`-style filter therefore prunes every row until that
 /// population slice lands.
+// 0.8.20 Slice 15e fix-2 (Finding 2) — `#[non_exhaustive]`: the `attributes`
+// field was added additively in 0.8.20. Marking the struct non-exhaustive means
+// EXTERNAL crates can no longer use a struct literal `SearchFilter { .. }` and
+// must go through `..Default::default()` (or a constructor), so a FUTURE field
+// add is not a source break for them. Internal (in-workspace) construction is
+// unaffected — `#[non_exhaustive]` only constrains other crates — and every
+// in-crate literal already spreads `..Default::default()`. Governed-surface
+// status: PROPOSED / NOT SIGNED.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[non_exhaustive]
 pub struct SearchFilter {
     pub source_type: Option<String>,
     pub kind: Option<String>,
@@ -10006,6 +10015,25 @@ fn text_hit_passes_filter(
 /// absent attribute has no `canonical_attributes` row; it reads as the `''`
 /// sentinel, exactly mirroring the vec0 column, so a non-empty equality
 /// fails-to-match (and never false-matches).
+///
+/// # 0.8.20 semantics (Finding 1 → HITL ruling (A)): attribute filters are NODE-scoped
+///
+/// Attribute projection is `PreparedWrite::Node`-gated (see `collect_projection_jobs`
+/// / [`project_one_attribute`]): an EDGE is never projected into
+/// `canonical_attributes`, and its `vector_default` row (kind `edge_fact`) carries
+/// the `''` sentinel in every `attr_<hex>` column (the async worker reads the body
+/// from `canonical_nodes`, which has no row for an edge cursor). Therefore an
+/// attribute filter **excludes every edge hit** — on BOTH the edge-FTS arm (this
+/// helper, keyed by the edge's write_cursor, reads `''`) and the edge-vector arm
+/// (the pre-KNN `attr_<hex>='…'` predicate prunes the `''`-sentinel edge row) —
+/// even when the edge body itself names the attribute. This is the intended
+/// 0.8.20 behaviour, pinned by `attribute_filter_excludes_edge_hits_on_both_arms`.
+///
+/// The reserved widening is **(D) endpoint-node filtering** (an edge passes iff its
+/// endpoint node(s) satisfy the attribute predicate): **(A) is (D) with an empty
+/// endpoint rule.** (B) edges-pass-through and (C) project-edge-attributes are the
+/// other reserved options. None are implemented in 0.8.20 — do not add a per-query
+/// flag; a widening is a deliberate, separately-governed later slice.
 fn hit_attributes_pass_filter(
     tx: &rusqlite::Transaction<'_>,
     id: u64,

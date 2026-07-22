@@ -1236,13 +1236,17 @@ impl PyEngine {
             || created_after.is_some()
             || status.is_some()
         {
-            Some(RustSearchFilter {
-                source_type,
-                kind,
-                created_after,
-                status,
-                ..Default::default()
-            })
+            // `RustSearchFilter` is `#[non_exhaustive]` (0.8.20 Slice 15e fix-2),
+            // so an out-of-defining-crate struct literal — even with
+            // `..Default::default()` — is rejected; build from `default()` and
+            // set the four legacy metadata fields. `attributes` is NOT exposed on
+            // the Py wire in 0.8.20 (engine-internal), so it is left at its default.
+            let mut f = RustSearchFilter::default();
+            f.source_type = source_type;
+            f.kind = kind;
+            f.created_after = created_after;
+            f.status = status;
+            Some(f)
         } else {
             None
         };
@@ -2162,15 +2166,19 @@ fn search_expand(
     let source_type = extract_opt_validated_str(source_type.as_ref())?;
     let kind = extract_opt_validated_str(kind.as_ref())?;
     let status = extract_opt_validated_str(status.as_ref())?;
-    let filter = if source_type.is_some()
-        || kind.is_some()
-        || created_after.is_some()
-        || status.is_some()
-    {
-        Some(RustSearchFilter { source_type, kind, created_after, status, ..Default::default() })
-    } else {
-        None
-    };
+    let filter =
+        if source_type.is_some() || kind.is_some() || created_after.is_some() || status.is_some() {
+            // `#[non_exhaustive]` (0.8.20 Slice 15e fix-2): no out-of-crate struct
+            // literal; build from `default()`. `attributes` stays engine-internal.
+            let mut f = RustSearchFilter::default();
+            f.source_type = source_type;
+            f.kind = kind;
+            f.created_after = created_after;
+            f.status = status;
+            Some(f)
+        } else {
+            None
+        };
     let inner = Arc::clone(&engine.inner);
     let result = call_engine(py, move || inner.search_expand(&query, filter, depth))?;
     Ok(PySearchExpandResult::from_rust(result))

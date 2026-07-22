@@ -310,6 +310,25 @@ containing any ASCII control char. This upholds the invariant "a name the engine
 ACCEPTS is populatable" (accept ⟹ works); previously a backslash name was
 accepted yet silently never populated `canonical_attributes`.
 
+**Attribute filters on `SearchFilter` (0.8.20 Slice 15e, R-20-PR / ADR-0.8.11 D3).**
+`SearchFilter` gains a public field `attributes: Vec<(String, String)>` — each
+`(attribute_name, value)` is an equality predicate over a declared-`filterable`
+projection, lowered pre-KNN into the indexed vec0 metadata column `attr_<hex>`
+(never a post-KNN `json_extract`). Empty ⇒ the byte-identical unfiltered path is
+preserved. The struct is now `#[non_exhaustive]`, so EXTERNAL crates must
+construct it through `..Default::default()` (a further additive field is then not
+a source break). Allowlist MEMBERSHIP in
+`src/conformance/governed-surface-allowlist.json` is byte-unchanged (`SearchFilter`
+was already a re-exported type; this is a fields-only + attribute delta, the same
+pattern as `PreparedWrite::Node`'s validity fields). Semantics are **node-scoped**:
+an attribute filter EXCLUDES every edge hit on both retrieval arms (edges are never
+attribute-projected), which is HITL ruling (A) — `(A)` is `(D)` endpoint-node
+filtering with an empty endpoint rule; (B)/(C)/(D) are reserved widenings, none
+implemented in 0.8.20. **This whole delta is PROPOSED, NOT SIGNED.** `attributes`
+stays engine-internal in 0.8.20 — there is NO Py/TS wire exposure (that is a later
+slice), so `SearchFilterInput` / the Python `SearchFilter` binding input are
+unchanged.
+
 ## Errors
 
 Rust exposes typed open/runtime errors without message parsing:
