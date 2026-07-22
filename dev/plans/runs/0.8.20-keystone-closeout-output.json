@@ -1,0 +1,94 @@
+{
+  "slice": "0.8.20-keystone-closeout",
+  "branch": "orch-0.8.20-s15b",
+  "baseline_head": "255ac75acd13bff2eca8688c707aa5bf598ce8b5",
+  "head_sha": "4cc3ca6d802a1b13b366951918c9c8b2a3333057",
+  "status": "COMPLETE — both HITL-ruled terminal codex P2s closed; all gates green",
+  "commits": {
+    "red": "8cb523855b69df5dc7cca27939e9cf97730c5f71",
+    "green": "4cc3ca6d802a1b13b366951918c9c8b2a3333057",
+    "note": "GREEN was amended once to fold in an error-message accuracy refinement (engine-only string, asserted by no test); the TS fresh-clone gate was re-run at the final SHA after the amend."
+  },
+  "findings": {
+    "F1_temporal_round_trip": {
+      "class": "TC-47 — calendar-impossible DAY rollover residue behind the TC-44 strftime-leniency class",
+      "bug": "strftime('%s', ?) ROLLS OVER a shape-valid but impossible DAY instead of returning NULL: 2025-02-30T00:00:00Z -> epoch for 2025-03-02; 2025-04-31T00:00:00Z -> 2025-05-01. TC-44's is_iso8601_shape gate checks FORMAT not calendar validity, so Feb-30 passed the gate and stored a DIFFERENT instant than the provider supplied — bypassing the ratified hard-reject contract. (Impossible MONTHS like 2025-13-01 and impossible TIMES like 25:00:00 / :60 / :61 already NULL out; only impossible DAYS roll over — the sole residue.)",
+      "fix_location": "src/rust/crates/fathomdb-engine/src/lib.rs — iso8601_to_epoch_seconds (the shared parse used by normalize_extractor_timestamp for both t_valid and t_invalid at the fathomdb.extract.v1 write boundary).",
+      "round_trip_sql": "SELECT CAST(strftime('%s', ?1) AS INTEGER) WHERE strftime('%Y-%m-%d', substr(?1, 1, 10)) IS substr(?1, 1, 10)",
+      "sql_rationale": "The WHERE clause is the round-trip: the literal calendar DATE component of the input (substr(?1,1,10) = the YYYY-MM-DD the shape gate guarantees present) must survive SQLite's own calendar math UNCHANGED. On a DAY rollover, strftime('%Y-%m-%d', substr) differs from the literal substring, the WHERE yields zero rows, query_row -> QueryReturnedNoRows -> .ok().flatten() -> None, and the EXISTING hard-reject Err path in normalize_extractor_timestamp fires. The shape gate is KEPT for its early clear message; the round-trip is the completeness backstop behind it (defence in depth).",
+      "why_date_component_not_raw_or_utc_render": "A raw-string comparison or a strftime(...,'unixepoch') UTC re-render would FALSE-REJECT valid equivalent forms, because the UTC render shifts the wall clock for a non-UTC offset and its date can differ from the input's literal date. Comparing ONLY the literal DATE field (substr 1..10) is timezone-INVARIANT — the offset never alters the input's own YYYY-MM-DD text — while still catching every DAY rollover, because the rollover happens in the calendar math BEFORE the offset is applied. This is the tz trap the mandate warned about, engineered out.",
+      "completeness_superset": "The round-trip is a SUPERSET of the shape gate for the Julian case: substr('2451545.0',1,10) = '2451545.0' renders via strftime('%Y-%m-%d',...) to '2000-01-01', which != '2451545.0' -> rejected. So the TC-44 Julian string is rejected by the round-trip independently of the shape gate.",
+      "no_date_crate": "CONFIRMED — pure SQL. No chrono/time (or any date crate) added; the workspace still has none. That option was OFF the table per mandate.",
+      "null_reject_path_untouched": "CONFIRMED — the None/JSON-null/absent -> Ok(None) arm of normalize_extractor_timestamp (NULL means 'still valid') is byte-unchanged. The fix only widened the set of String inputs that iso8601_to_epoch_seconds returns None for (rolled-over DAYS), which routes into the EXISTING hard-reject Err path — never into the NULL/Ok(None) path. No resurrection-via-NULL surface was opened.",
+      "surviving_class_escalation": "NONE. No malformed-but-well-shaped temporal value survives the round-trip: impossible MONTHS and impossible TIMES already NULL out via strftime; impossible DAYS are caught by the DATE round-trip; the Julian string is caught by both the shape gate and the round-trip. No fix-N past the round-trip was added; no escalation to 'add a date library' was triggered.",
+      "positive_forms_accepted_not_false_rejected": {
+        "2025-03-20T09:30:00Z": 1742463000,
+        "2025-03-20T09:30:00+00:00": 1742463000,
+        "2025-03-20T09:30:00+05:00": 1742445000,
+        "2025-03-20 (date-only)": 1742428800,
+        "2025-03-20T09:30:00.500Z (fractional)": 1742463000,
+        "proof": "All five ACCEPTED and stored at the CORRECT epoch, asserted at the raw at-rest edge table (t_valid, typeof=integer) in tc47_timestamp_round_trip.rs. The +05:00 case (1742445000) is the load-bearing tz-trap control: its epoch differs from the +00:00/Z case (1742463000) by exactly 5h, proving the offset is honoured and not false-rejected."
+      }
+    },
+    "F2_ts_projection_ffi_guard": {
+      "class": "AC-068 / TC-47 — TS configureProjections skipped the JS-side FFI surrogate guard",
+      "bug": "src/ts/src/index.ts configureProjections did NOT call the FFI string guard before the native call. napi-rs silently replaces a lone UTF-16 surrogate with U+FFFD BEFORE the Rust-side guard runs, so a JS caller passing a name/role/ftsTokenizer/vectorEmbedder/drop entry with a lone surrogate got U+FFFD persisted instead of WriteValidationError. (A NUL survives the napi UTF-8 path as a real byte and was already caught Rust-side — which is why the pre-existing NUL tests passed but the surrogate leaked.)",
+      "fix_location": "src/ts/src/index.ts — configureProjections now calls validateFfiTree(specs) and validateFfiTree(drop) BEFORE this.#native.configureProjections(...). validateFfiTree recursively validates every string in the tree: projection name, each role, ftsTokenizer, vectorEmbedder, and each drop entry. Mirrors the existing write() call site (validateFfiTree(batch)) and the AC-068b surrogate handling in validation.ts."
+    }
+  },
+  "red_evidence": {
+    "engine_F1": {
+      "cmd": "cargo test -p fathomdb-engine --test tc47_timestamp_round_trip -- --test-threads=1 (at RED 8cb52385)",
+      "result": "test result: FAILED. 6 passed; 2 failed; 0 ignored; exit 101",
+      "failures": [
+        "tc47_feb30_rolls_over_and_must_hard_reject panicked at tc47_timestamp_round_trip.rs:70:18 — 'impossible day \"2025-02-30T00:00:00Z\" (doc-tc47-feb30-tvalid) is a calendar-impossible date and MUST hard-reject at the extractor boundary, but ingest succeeded and wrote 1 edge(s). strftime ROLLED IT OVER to a neighbouring instant instead of returning NULL.'",
+        "tc47_apr31_rolls_over_and_must_hard_reject panicked at :70:18 — same for \"2025-04-31T00:00:00Z\" (doc-tc47-apr31-tvalid), wrote 1 edge."
+      ],
+      "positive_controls_green_at_red": "The 6 passing at RED = julian-still-rejects + the 5 valid-form positive controls (Z, +00:00, +05:00, date-only, fractional) — proving the RED is not vacuously failing everything and the tz-trap controls were already correct before the fix."
+    },
+    "ts_F2": {
+      "cmd": "fresh clone at RED 8cb52385: npm ci -> napi build:native:debug -> tsc -> node --test dist/tests/slice15d-projection-registry.test.js",
+      "result": "5 TC-47 surrogate tests FAILED (name / ftsTokenizer / vectorEmbedder / role / drop); node --test exit 1",
+      "detail": "AssertionError [ERR_ASSERTION]: Missing expected rejection. { actual: undefined, operator: 'rejects' } — configureProjections RESOLVED (persisting the U+FFFD) instead of rejecting with WriteValidationError."
+    }
+  },
+  "gates": {
+    "cargo_clippy_workspace_all_targets": { "exit": 0 },
+    "cargo_check_workspace_all_targets": { "exit": 0 },
+    "cargo_test_engine_schema": {
+      "cmd": "cargo test -p fathomdb-engine -p fathomdb-schema -- --test-threads=1",
+      "exit": 0,
+      "aggregate": "639 passed / 0 failed / 13 ignored",
+      "pre_closeout_baseline": "631 passed / 0 failed / 13 ignored (delta +8 = the 8 new tc47_timestamp_round_trip tests)",
+      "named_pins_confirmed": [
+        "pr_g10_filtered_knn: 6 passed incl unfiltered_phase1_sql_byte_identical_to_0_7_2 ... ok",
+        "slice15e_prekn_filterable: 9 passed incl attribute_filter_excludes_edge_hits_on_both_arms ... ok",
+        "tc33_fix5_iso8601_shape_gate: 8 passed; tc33_edge_temporal_epoch: 8 passed; tc33_fix3_consolidation_timestamp_taxonomy: 2 passed; slice15_byo_llm_ingest: 21 passed"
+      ],
+      "eu7": "eu7_real_corpus_ac stays IGNORED (13 ignored unchanged); ZERO eu7 runs."
+    },
+    "ts_fresh_clone_execution": {
+      "clone": "fresh --no-local clone of the worktree branch, own npm + own target/; napi build:native:debug + tsc + node --test — re-run at final SHA 4cc3ca6d after the GREEN amend",
+      "napi_build_exit": 0,
+      "tsc_exit": 0,
+      "node_test": { "exit": 0, "tests": 216, "pass": 216, "fail": 0, "skipped": 0 },
+      "note": "slice15d-projection-registry.test.js now 15/15 incl the 5 TC-47 surrogate tests (name/ftsTokenizer/vectorEmbedder/role/drop)."
+    },
+    "python": "UNAFFECTED by construction — no Python code changed; the engine round-trip is internal and only NEWLY REJECTS calendar-impossible DAYS. A repo-wide scan for calendar-impossible dates (-02-3[01], -04-31, -06/09/11-31, -02-29) in existing Rust/Python tests found ONLY the two new tc47 fixtures — no existing test feeds an impossible date expecting acceptance, so no regression. pytest not built (maturin develop is forbidden from this worktree per mandate)."
+  },
+  "invariants": {
+    "AC-041": "GREEN — no recovery/verb code touched; recovery_denylist stays five {recover, restore, repair, fix, rebuild}. Diff is confined to iso8601_to_epoch_seconds + its hard-reject message + TS configureProjections + the new test + 4 fixtures.",
+    "SearchFilter_non_exhaustive": "INTACT — untouched.",
+    "governed_surface": "PROPOSED / NOT SIGNED — no AC minted, never 'HITL-SIGNED'.",
+    "no_date_crate": "CONFIRMED — no chrono/time/regex direct dep added.",
+    "null_reject_path": "UNTOUCHED — see F1.null_reject_path_untouched."
+  },
+  "files_changed": {
+    "src/rust/crates/fathomdb-engine/src/lib.rs": "iso8601_to_epoch_seconds — added the calendar-DATE round-trip WHERE clause + TC-47 doc; normalize_extractor_timestamp — refined the hard-reject message to name both the NULL and rollover causes.",
+    "src/rust/crates/fathomdb-engine/tests/tc47_timestamp_round_trip.rs": "NEW — 8 tests (2 rollover hard-reject, 1 Julian-still-rejects, 5 valid-form positive controls incl the +05:00 tz-trap control).",
+    "src/rust/crates/fathomdb-engine/tests/fixtures/slice15_byo_llm/fixture_result.json": "APPEND-ONLY — 4 new stub-harness fixtures (doc-tc47-feb30-tvalid, doc-tc47-apr31-tvalid, doc-tc47-iso-offset5, doc-tc47-iso-frac); existing fixtures byte-identical (verified json round-trip).",
+    "src/ts/src/index.ts": "configureProjections — added validateFfiTree(specs) + validateFfiTree(drop) before the native call.",
+    "src/ts/tests/slice15d-projection-registry.test.ts": "added SURROGATE const + 5 TC-47 surrogate tests mirroring the existing NUL tests."
+  },
+  "next_step_for_orchestrator": "Re-run codex (§9) review on branch orch-0.8.20-s15b at HEAD 4cc3ca6d (the keystone closeout: F1 timestamp round-trip + F2 TS projection FFI guard). If clean, cherry-pick 8cb52385 (RED) + 4cc3ca6d (GREEN) onto the keystone. No surviving temporal class -> the TC-47 escalation-to-date-library trigger did NOT fire; strftime + the calendar-DATE round-trip is sufficient. Governed surface remains PROPOSED/NOT SIGNED."
+}
