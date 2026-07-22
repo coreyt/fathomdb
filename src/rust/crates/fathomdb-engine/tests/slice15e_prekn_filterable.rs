@@ -852,3 +852,96 @@ fn empty_string_attribute_value_vs_absent_both_arms_fused() {
 
     engine.close().unwrap();
 }
+
+// ===========================================================================
+// fix-2 finding 1 [P2] — an UNDECLARED filter attribute is a TYPED rejection on
+// BOTH arms, never a raw `no such column` backend crash (vector arm) nor a silent
+// no-match (text arm). ADR-0.8.11 D3: every filter term has a DEFINED outcome —
+// "compiles" or "typed rejection" — IDENTICAL across arms.
+//
+// Pre-fix: a filter naming an attribute with NO declared `filterable` projection
+// emitted `AND attr_<hex>=?` into the vec0 phase-1 KNN for a column that does not
+// exist, so SQLite failed with `no such column` and the whole search returned an
+// opaque `Storage` error — while the FTS arm's `hit_attributes_pass_filter`
+// probed `canonical_attributes`, found no row, and silently NO-MATCHED. A caller
+// typo (or a filter issued before `configure_projections`) therefore became a
+// storage/search FAILURE that diverged between arms. The fix validates every
+// filter attribute name against the declared `filterable` registry set BEFORE any
+// arm runs, returning a typed `InvalidFilter` naming the attribute — so the fused
+// two-arm `search_filtered` (which exercises BOTH arms) yields ONE consistent
+// typed rejection.
+// ===========================================================================
+
+#[test]
+fn undeclared_filter_attribute_is_typed_rejection_on_both_arms() {
+    use fathomdb_engine::EngineError;
+    let (_dir, path) = fixture("s15e_undeclared_attr");
+    let opened = open(&path);
+    let engine = &opened.engine;
+
+    // A declared `filterable` projection (the control name) + a corpus that is
+    // BOTH vector-indexed (embedder present, drained) AND FTS-indexed (they share
+    // the token "sharedtoken"), so a filtered `search_filtered` exercises BOTH
+    // retrieval arms.
+    engine.configure_projections(&[filterable_spec("priority")], &[]).expect("configure");
+    engine
+        .write(&[
+            node("A", r#"{"title":"sharedtoken alpha","priority":"high"}"#),
+            node("B", r#"{"title":"sharedtoken beta","priority":"low"}"#),
+        ])
+        .expect("write");
+    engine.drain(10_000).expect("drain");
+
+    // (1) UNDECLARED attribute name → typed InvalidFilter naming the attribute.
+    //     The fused `search_filtered` runs BOTH arms, so this single rejection is
+    //     the joint both-arms proof: neither the vector arm's `no such column`
+    //     crash nor the FTS arm's silent no-match survives — both are pre-empted by
+    //     the pre-dispatch validation.
+    let mut bad = SearchFilter::default();
+    bad.attributes = vec![("nonexistent".to_string(), "x".to_string())];
+    match engine.search_filtered("sharedtoken", Some(bad)) {
+        Err(EngineError::InvalidFilter { reason }) => assert!(
+            reason.contains("nonexistent"),
+            "the typed rejection must NAME the undeclared attribute, got: {reason}"
+        ),
+        Err(other) => panic!(
+            "an undeclared filter attribute must be a typed InvalidFilter rejection, not \
+             an opaque error: got {other:?}"
+        ),
+        Ok(r) => panic!(
+            "an undeclared filter attribute must be a typed InvalidFilter rejection, not a \
+             silent Ok with {} result(s)",
+            r.results.len()
+        ),
+    }
+
+    // (2) CONTROL — a DECLARED attribute whose value is simply ABSENT on the rows
+    //     still NO-MATCHES (fix-3 behaviour UNCHANGED): it is an `Ok` result that
+    //     excludes the non-matching rows, NOT a rejection.
+    let mut declared_absent = SearchFilter::default();
+    declared_absent.attributes = vec![("priority".to_string(), "nonesuch".to_string())];
+    let res = engine
+        .search_filtered("sharedtoken", Some(declared_absent))
+        .expect("a DECLARED attribute with an absent value must NO-MATCH, never reject");
+    let absent_bodies: Vec<String> = res.results.iter().map(|h| h.body.clone()).collect();
+    assert!(
+        !absent_bodies.iter().any(|b| b.contains("alpha") || b.contains("beta")),
+        "declared-but-absent value excludes the non-matching rows (fix-3 no-match path): \
+         {absent_bodies:?}"
+    );
+
+    // (3) CONTROL — the declared value that IS present still MATCHES (non-vacuous:
+    //     proves the fix did not turn every attribute filter into a rejection).
+    let mut declared_present = SearchFilter::default();
+    declared_present.attributes = vec![("priority".to_string(), "high".to_string())];
+    let ok = engine
+        .search_filtered("sharedtoken", Some(declared_present))
+        .expect("a declared present value must search normally");
+    let present_bodies: Vec<String> = ok.results.iter().map(|h| h.body.clone()).collect();
+    assert!(
+        present_bodies.iter().any(|b| b.contains("alpha")),
+        "the declared present value still matches its row: {present_bodies:?}"
+    );
+
+    engine.close().unwrap();
+}

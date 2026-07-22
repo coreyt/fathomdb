@@ -1203,3 +1203,75 @@ fn idempotent_reregistration_holds_for_deferred_rankable() {
     );
     opened.engine.close().unwrap();
 }
+
+/// **fix-2 finding 2 [P2].** A DEFERRED-ONLY registry mutation (e.g. `rankable` →
+/// `rankable + vector`) PERSISTS a changed registry row, yet pre-fix returned an
+/// EMPTY delta with `unchanged = true` — an accepted mutation reported to SDK
+/// callers as an idempotent no-op (a lie about what happened). The delta must
+/// reflect reality: when the persisted registry row actually CHANGES,
+/// `unchanged` is `false` and the change appears in `delta` (here
+/// `delta.deferred`). A GENUINE no-op (identical spec) still diffs to
+/// `unchanged = true`.
+///
+/// Mechanism: the `Some(existing) =>` non-destructive persist branch of
+/// `apply_projection_config` gated the `delta.deferred` push on
+/// `!existing.has_deferred()`, so a change that STAYED deferred (adding the
+/// deferred vector sub-target to an already-deferred rankable) persisted the row
+/// but suppressed the delta. Because every valid non-empty spec has `wants_eav()`
+/// OR `has_deferred()`, mirroring the fresh-registration push
+/// (`if desired.has_deferred()`) makes the changed branch always report the
+/// change, so `unchanged` can never be `true` on a real mutation.
+#[test]
+fn deferred_only_mutation_is_reported_not_unchanged() {
+    let dir = TempDir::new().unwrap();
+    let opened = Engine::open(db_path(&dir, "deferred_mutation")).unwrap();
+    let engine = &opened.engine;
+    engine.write(&[node("N1", "src:1", r#"{"importance":"high"}"#)]).unwrap();
+
+    // Declare rankable-only (deferred, builds nothing).
+    let first = engine
+        .configure_projections(
+            &[spec("importance", &[ProjectionRole::Rankable], false, false)],
+            &[],
+        )
+        .unwrap();
+    assert_eq!(first.deferred, vec!["importance".to_string()], "first apply defers rankable");
+    assert!(!first.unchanged);
+
+    // Add a deferred VECTOR sub-target: rankable → rankable+vector. Non-destructive
+    // (nothing removed), NO EAV build (still deferred-only), but the registry row
+    // DID change (vector_declared false→true) — so it is NOT a no-op.
+    let second = engine
+        .configure_projections(&[spec("importance", &[ProjectionRole::Rankable], false, true)], &[])
+        .unwrap();
+    assert!(
+        !second.unchanged,
+        "a deferred-only mutation that persisted a changed registry row must NOT report \
+         unchanged, got {second:?}"
+    );
+    assert!(
+        second.deferred.contains(&"importance".to_string()),
+        "the deferred-only change must appear in delta.deferred, got {second:?}"
+    );
+
+    // registry/delta alignment: read_projections reflects the persisted new spec.
+    let read = engine.read_projections().unwrap();
+    assert_eq!(read.len(), 1, "exactly one projection declared");
+    assert!(
+        read[0].vector.is_some(),
+        "the persisted registry row carries the newly-declared vector sub-target: {read:?}"
+    );
+
+    // CONTROL — re-registering the SAME (rankable+vector) spec is still a TRUE
+    // no-op: identical spec ⇒ the idempotent arm ⇒ empty delta, unchanged=true.
+    let third = engine
+        .configure_projections(&[spec("importance", &[ProjectionRole::Rankable], false, true)], &[])
+        .unwrap();
+    assert!(third.unchanged, "identical re-registration must still diff to a no-op, got {third:?}");
+    assert!(
+        third.built.is_empty() && third.dropped.is_empty() && third.deferred.is_empty(),
+        "the same-spec re-registration delta must be empty, got {third:?}"
+    );
+
+    opened.engine.close().unwrap();
+}
