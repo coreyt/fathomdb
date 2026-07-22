@@ -267,6 +267,76 @@
       "dev/plans/runs/0.8.20-slice-15e-output.json — this fix-2 witness section"
     ]
   },
+  "fix-3": {
+    "title": "Close ONE codex §9 [P2]: the `''` empty-string vec0 sentinel meant BOTH \"attribute absent\" AND \"attribute present with value ''\", so a `status == \"\"` equality filter false-matched every ABSENT row on BOTH arms. Distinguish ABSENT from PRESENT-EMPTY on the FILTER path only.",
+    "branch": "orch-0.8.20-s15b",
+    "baseline_head": "d8bf3759 (Slice 15e fix-2 closure witness)",
+    "commits": [
+      {
+        "sha": "e395d626",
+        "kind": "RED",
+        "subject": "test(0.8.20): RED — Slice 15e fix-3 empty-string attribute value vs absent",
+        "tests_added": [
+          "empty_string_attribute_value_vs_absent_vector_arm",
+          "empty_string_attribute_value_vs_absent_both_arms_fused"
+        ],
+        "red_evidence": "Both FAILED at this commit (real captured output, `cargo test -p fathomdb-engine --test slice15e_prekn_filterable empty_string_attribute_value -- --test-threads=1`, EXIT=101):\n  empty_string_attribute_value_vs_absent_vector_arm — panicked at slice15e_prekn_filterable.rs:694 'assertion `left == right` failed: present-empty encodes to the marker (enc(\"\")), NOT the '' absent sentinel  left: [\"\"]  right: [\"\\u{1}\"]'. The `{\"status\":\"\"}` present-empty row stored the bare `''` vec0 sentinel — indistinguishable from ABSENT at rest.\n  empty_string_attribute_value_vs_absent_both_arms_fused — panicked at slice15e_prekn_filterable.rs:806 'ABSENT must NOT false-match status='' on EITHER arm: [\"{\\\"title\\\":\\\"sharedtoken beta\\\"}\", \"{\\\"title\\\":\\\"sharedtoken alpha\\\",\\\"status\\\":\\\"\\\"}\"]'. The ABSENT row (`sharedtoken beta`, no `status` key) leaked into the fused `status==''` results alongside the legitimate present-empty `sharedtoken alpha` — the false-positive the [P2] describes, on both the vector pre-KNN arm and the FTS arm."
+      },
+      {
+        "sha": "c37f61fb",
+        "kind": "GREEN",
+        "subject": "feat(0.8.20): GREEN — Slice 15e fix-3 distinguish absent from present-empty on the attribute filter"
+      }
+    ],
+    "mechanism_chosen": {
+      "which": "PREFERRED (lowest-ripple): vec0 arm = injective marker-byte ENCODING of PRESENT values; text/FTS arm = canonical_attributes row EXISTENCE. Did NOT encode `canonical_attributes.attr_value` (the alternative), so no consumer of the RAW EAV value breaks and there is zero ripple to Slice-15d storage.",
+      "why": "vec0 TEXT metadata is NOT-NULL-able (TC-46 condition #3), so ABSENT cannot be `NULL`; the only way to distinguish it from PRESENT-EMPTY in a NOT-NULL column is to make the PRESENT value-space DISJOINT from the ABSENT sentinel. Present values are arbitrary user strings (incl. `''`), so a scheme that keeps present values RAW is impossible — a leading marker byte `enc(V) = \"\\x01\" || V` is injective and non-empty for ALL V (including V=\"\", whose encoding is the bare marker `\\x01`), while ABSENT stays the bare `''`. Encoding `canonical_attributes.attr_value` instead was rejected because grep shows it is read RAW by the property-FTS shadow expectation and by the fix-1 text-arm compare; row-existence gives the same absent/present-empty distinction with byte-unchanged EAV storage.",
+      "columns_touched": "ONLY the vec0 `attr_<hex>` filter column (write path + reshape re-insert) and the filter-value lowering (`vector_filter_values`). `canonical_attributes.attr_value` and `property_search_index` are byte-UNCHANGED / RAW.",
+      "property_search_index_raw_confirmed": "CONFIRMED RAW — `project_one_attribute` writes `property_search_index(attr_value,...)` and `canonical_attributes(attr_value,...)` from the SAME single `value` binding (the RAW canonical scalar). fix-3 did NOT touch `project_one_attribute`; FTS search over property_search_index still sees the real text.",
+      "four_tc46_conditions_hold": "UNCHANGED. (1) rowid explicit — reshape re-insert still lists `rowid` verbatim. (2) plain-metadata-not-aux — `vector_partition_create_sql` still appends `{col} TEXT`, never `+{col}`; `filtered_knn_over_attr_column_does_not_hard_error` green. (3) sentinel-for-absent — ABSENT is still the bare `''` (COALESCE default / `None => String::new()`); only PRESENT values gained the marker. (4) embedding_bin verbatim — the reshape re-insert still copies `vec_bit(embedding_bin)`; my only reshape edit was `ca.attr_value` -> `char(1) || ca.attr_value` in the NEW-attr-column back-fill SELECT; `reshape_is_nondestructive_preserves_bits_rowids_and_sentinel` green (byte-identical bits + unchanged Hamming)."
+    },
+    "both_arms_agree_proof": {
+      "vector_arm": "PRESENT value V is stored `\\x01 || V` in `attr_<hex>` (`vector_attr_insert_fragments` at write time; reshape back-fills `char(1) || ca.attr_value` for pre-existing rows). ABSENT is `''`. `vector_filter_values` lowers the filter value V to `\\x01 || V`, so the pre-KNN predicate `attr_<hex> = enc(\"\")` (= `\\x01`) matches present-empty but never the `''`-absent rows. Pinned RAW at-rest: present-empty col == [\"\\u{1}\"], absent col == [\"\"], present-'open' col == [\"\\u{1}open\"]; and a raw pre-KNN SQL `... AND attr_<hex>=char(1)||'' ...` matches present-empty's rowid, NOT absent's, NOT present-'open''s.",
+      "fts_arm": "`hit_attributes_pass_filter` reads `canonical_attributes.attr_value` with row EXISTENCE as the discriminator: `Some(Some(v)) if v == want` passes (present, incl. present-empty where v==\"\"); a no-row (`None`) or NULL falls through to fail. Pinned: present-empty HAS a row (COUNT==1, attr_value RAW \"\"), absent has NONE (COUNT==0).",
+      "identical_verdicts": "present-empty matches `(\"status\",\"\")` on BOTH arms; ABSENT matches NOTHING (incl. `\"\"`) on BOTH; present-'open' matches `(\"status\",\"open\")` and NOT `(\"status\",\"\")` on BOTH. The `both_arms_fused` test proves this jointly: `search_filtered` fuses vector+FTS as a UNION, so 'ABSENT does not appear in a status=='' search' can only hold if BOTH arms exclude it — a regression on EITHER arm would resurface it and fail the pin. Non-vacuous controls: present-empty (alpha) and present-'open' (gamma) survive their matching filters."
+    },
+    "consumer_safety": {
+      "vec0_attr_column_consumers": "The only readers of the vec0 `attr_<hex>` column are (a) the pre-KNN filter predicate `vector_filter_clause` (whose bound value is now equally encoded via `vector_filter_values`) and (b) the reshape stage carry-forward `COALESCE({col}, '')` (opaque copy — encoded value carried verbatim). `run_pin_and_requantize_pass` re-binds existing column values opaquely (no decode). No consumer decodes or displays the vec0 attr value, so the marker is never surfaced to a caller.",
+      "canonical_attributes_attr_value_consumers": "Read RAW by `hit_attributes_pass_filter` (fix-3 compares RAW), the reshape back-fill (now wraps with `char(1) ||` ONLY for the vec0 column it writes — the EAV row itself is untouched), and erasure/rebuild paths. All see the unchanged RAW value; none broke (full engine+schema suite green, incl. operator-feature rebuild/erasure via the whole-suite run)."
+    },
+    "gates": {
+      "cargo_clippy_workspace_all_targets": { "command": "cargo clippy --workspace --all-targets", "exit_code": 0 },
+      "cargo_check_workspace_all_targets": { "command": "cargo check --workspace --all-targets", "exit_code": 0 },
+      "cargo_test_engine_schema": {
+        "command": "cargo test -p fathomdb-engine -p fathomdb-schema -- --test-threads=1",
+        "exit_code": 0,
+        "aggregate": "631 passed / 0 failed / 13 ignored",
+        "pre_fix3_was": "629 passed / 0 failed / 13 ignored",
+        "delta": "+2 = the two fix-3 tests in tests/slice15e_prekn_filterable.rs (slice15e now 9 tests). The fix-1/fix-2 tests + the (A) pin (attribute_filter_excludes_edge_hits_on_both_arms) all still pass."
+      },
+      "pr_g10_filtered_knn": {
+        "command": "cargo test -p fathomdb-engine --test pr_g10_filtered_knn -- --test-threads=1",
+        "exit_code": 0,
+        "aggregate": "6 passed / 0 failed",
+        "unfiltered_phase1_sql_byte_identical_to_0_7_2": "PASS — fix-3 touches only the attribute filter-value lowering and the vec0 attr-column value source; the UNFILTERED pre-KNN SQL (no attributes) is byte-unchanged.",
+        "other_named": "aux_status_column_hard_errors_under_knn_where PASS; filtered_phase1_sql_appends_present_predicates_only PASS; sentinel_backfills_status_on_simulated_pack1_db PASS; filter_prunes_vector_candidates_by_kind PASS; status_filter_prunes_all_because_population_is_null_only PASS."
+      },
+      "recovery_denylist_ac_041": {
+        "command": "cargo test -p fathomdb --test no_recovery_surface -- --test-threads=1",
+        "exit_code": 0,
+        "note": "AC-041 GREEN — recovery denylist {recover, restore, repair, fix, rebuild} = exactly five, byte-frozen; no denylist file touched."
+      },
+      "eu7": "ZERO eu7 runs. eu7_real_corpus_ac stays #[ignore]d (one of the unchanged 13 ignored).",
+      "bindings_X1_pyright": "NOT required and NOT run — CORRECTLY skipped. fix-3 changes are 100% engine-internal: `git diff --stat` for the GREEN commit = 2 files (src/rust/crates/fathomdb-engine/src/lib.rs +, tests/slice15e_prekn_filterable.rs). No binding crate (fathomdb-py / fathomdb-napi) touched, no schema crate touched, no new SearchFilter field, SearchFilter.attributes still NOT reachable from the Py/TS wire. Per the mandate, no binding surface change ⇒ no fresh-clone X1/pyright.",
+      "governed_surface": "PROPOSED / NOT SIGNED — no new PUBLIC API (the two new symbols ATTR_VEC0_PRESENT_MARKER + encode_attr_vec0_present are PRIVATE), no new AC minted, never HITL-SIGNED. Conformance allowlist byte-unchanged.",
+      "md_lint_not_cited": "TC-37 honored — agent-lint-md.sh NOT cited as a gate. TC-16 honored — real per-run PIPESTATUS/$? captured for every gate above; agent-test.sh aggregate exit NOT trusted."
+    },
+    "files_touched": [
+      "src/rust/crates/fathomdb-engine/src/lib.rs — ATTR_VEC0_PRESENT_MARKER + encode_attr_vec0_present (new private const+fn); vector_attr_insert_fragments (encode present, '' for absent); vector_filter_values (encode filter value); reshape_vector_partition_nondestructive (new-attr-column back-fill char(1) || ca.attr_value); hit_attributes_pass_filter (row-existence + RAW compare) + updated doc",
+      "src/rust/crates/fathomdb-engine/tests/slice15e_prekn_filterable.rs — 2 new fix-3 tests; updated 3 at-rest RAW vec0 assertions to the marker-encoded present value (new_val, miss_vec_val, present_val) + 1 raw KNN SQL literal (char(1)||'high') to reflect the vec0 encoding; canonical_attributes assertions confirm attr_value stays RAW ''",
+      "dev/plans/runs/0.8.20-slice-15e-output.json — this fix-3 witness section"
+    ]
+  },
   "follow_ups_non_blocking": [
     "Perf: when attr columns exist, the async worker does `SELECT body FROM canonical_nodes WHERE write_cursor=?` per insert; there is no index on canonical_nodes(write_cursor) (per the shipped fix-3 note), so this is a scan bounded by corpus size. Opt-in (only with a filterable projection declared). A write_cursor index is a candidate future optimization.",
     "Surface: a user-facing unified FilterTerm::Attribute variant (so callers can request an attribute filter through the Filter grammar / bindings) is deferred to a later slice; 15e delivers the routing mechanism reachable via SearchFilter.attributes + the generated-SQL seam.",
