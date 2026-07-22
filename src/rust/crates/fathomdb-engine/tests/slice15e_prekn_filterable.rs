@@ -264,7 +264,13 @@ fn reshape_is_nondestructive_preserves_bits_rowids_and_sentinel() {
     let new_val = engine
         .query_text_col_for_test(&format!("SELECT {col} FROM vector_default WHERE rowid={new_id}"))
         .expect("new attr value");
-    assert_eq!(new_val, vec!["high".to_string()], "new row's attr column populated from body");
+    // fix-3 [P2] — the vec0 filter column stores a PRESENT value encoded `\x01 || V`
+    // (disjoint from the `''`-absent sentinel). RAW `canonical_attributes` stays "high".
+    assert_eq!(
+        new_val,
+        vec!["\u{1}high".to_string()],
+        "new row's attr column populated from body (fix-3 marker-encoded)"
+    );
 
     // Coherence: old + new Hamming distances are on the SAME scale [0, dim] — the
     // old bits were NOT re-quantized under a different centering.
@@ -292,7 +298,7 @@ fn reshape_is_nondestructive_preserves_bits_rowids_and_sentinel() {
         .query_i64_col_for_test(&format!(
             "SELECT rowid FROM vector_default \
              WHERE embedding_bin MATCH vec_quantize_binary(vec_f32('[1,0,0,0,0,0,0,0]')) \
-               AND {col}='high' ORDER BY distance LIMIT 10"
+               AND {col}=char(1)||'high' ORDER BY distance LIMIT 10"
         ))
         .expect("filtered KNN must not error (plain column, not aux)");
     assert_eq!(matched, vec![new_id], "filter matches only the populated new row");
@@ -416,7 +422,12 @@ fn hybrid_fts_arm_applies_attribute_filter() {
              WHERE n.logical_id = 'MISS'"
         ))
         .expect("read MISS vec0 attr");
-    assert_eq!(miss_vec_val, vec!["low".to_string()], "MISS vec0 column populated from body");
+    // fix-3 [P2] — vec0 filter column stores the PRESENT value marker-encoded.
+    assert_eq!(
+        miss_vec_val,
+        vec!["\u{1}low".to_string()],
+        "MISS vec0 column populated from body (fix-3 marker-encoded)"
+    );
 
     // `#[non_exhaustive]` (0.8.20 Slice 15e fix-2): build from `default()`.
     let mut filter = SearchFilter::default();
@@ -470,7 +481,8 @@ fn existing_row_backfilled_from_canonical_attributes_not_blanket_sentinel() {
     let col = attr_col("priority");
 
     // RAW vec0 assertion — the load-bearing one for the reshape back-fill:
-    // PRESENT reads its real value "high" (NOT the blanket '' sentinel).
+    // PRESENT reads its real value (marker-encoded "\x01high", fix-3), NOT the
+    // blanket '' absent sentinel.
     let present_val = engine
         .query_text_col_for_test(&format!(
             "SELECT v.{col} FROM vector_default v \
@@ -480,8 +492,9 @@ fn existing_row_backfilled_from_canonical_attributes_not_blanket_sentinel() {
         .expect("read PRESENT vec0 attr");
     assert_eq!(
         present_val,
-        vec!["high".to_string()],
-        "pre-existing row whose body HAS the attribute must back-fill its real value, not ''"
+        vec!["\u{1}high".to_string()],
+        "pre-existing row whose body HAS the attribute must back-fill its real value \
+         (fix-3 marker-encoded), not the '' absent sentinel"
     );
 
     // The genuinely-absent row still gets the '' sentinel (condition #3 holds).
@@ -709,25 +722,31 @@ fn empty_string_attribute_value_vs_absent_vector_arm() {
 
     // ---- canonical_attributes (the FTS-arm data basis): present-empty HAS a row
     // (attr_value='' RAW, unchanged); absent has NO row.
-    let eav = |logical: &str, what: &str| {
+    let eav_value = |logical: &str| {
         engine
             .query_text_col_for_test(&format!(
-                "SELECT {what} FROM canonical_attributes ca \
+                "SELECT ca.attr_value FROM canonical_attributes ca \
                  JOIN canonical_nodes n ON n.write_cursor = ca.write_cursor \
                  WHERE n.logical_id = '{logical}' AND ca.attr_name='status'"
             ))
-            .expect("eav read")
+            .expect("eav value read")
     };
+    let eav_count = |logical: &str| {
+        engine
+            .query_i64_col_for_test(&format!(
+                "SELECT COUNT(*) FROM canonical_attributes ca \
+                 JOIN canonical_nodes n ON n.write_cursor = ca.write_cursor \
+                 WHERE n.logical_id = '{logical}' AND ca.attr_name='status'"
+            ))
+            .expect("eav count read")
+    };
+    assert_eq!(eav_count("PRESENTEMPTY"), vec![1], "present-empty HAS a canonical_attributes row");
     assert_eq!(
-        eav("PRESENTEMPTY", "ca.attr_value"),
+        eav_value("PRESENTEMPTY"),
         vec![String::new()],
-        "present-empty has a canonical_attributes row whose attr_value is RAW '' (NOT encoded)"
+        "present-empty canonical_attributes.attr_value is RAW '' (NOT encoded)"
     );
-    assert_eq!(
-        eav("ABSENT", "COUNT(*)"),
-        vec!["0".to_string()],
-        "absent has NO canonical_attributes row"
-    );
+    assert_eq!(eav_count("ABSENT"), vec![0], "absent has NO canonical_attributes row");
 
     // ---- vector arm INDEPENDENTLY (raw pre-KNN SQL, production `char(1)||V`
     // encoding): filter status="" matches ONLY present-empty; absent is pruned.

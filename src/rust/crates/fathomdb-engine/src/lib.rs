@@ -9897,9 +9897,12 @@ fn vector_filter_values(filter: Option<&SearchFilter>) -> Vec<rusqlite::types::V
         out.push(Value::Text(s.clone()));
     }
     // 0.8.20 Slice 15e — attribute values, in the SAME order the clause appended
-    // the `attr_<hex>` columns (after the four metadata fields).
+    // the `attr_<hex>` columns (after the four metadata fields). fix-3 [P2] — the
+    // filter value is encoded `\x01 || V` to match the encoded PRESENT column
+    // value, so `attr_<hex> = enc("")` matches present-empty but NEVER the
+    // `''`-absent rows.
     for (_name, value) in &filter.attributes {
-        out.push(Value::Text(value.clone()));
+        out.push(Value::Text(encode_attr_vec0_present(value)));
     }
     out
 }
@@ -10011,10 +10014,19 @@ fn text_hit_passes_filter(
 /// The value is read from the row-owned `canonical_attributes` EAV table (keyed
 /// by the hit's `write_cursor` + `attr_name`), which Slice 15d keeps active-only
 /// and populates via the SAME [`extract_scalar_attribute`] that fills the vec0
-/// `attr_<hex>` column — so the two arms see IDENTICAL values by construction. An
-/// absent attribute has no `canonical_attributes` row; it reads as the `''`
-/// sentinel, exactly mirroring the vec0 column, so a non-empty equality
-/// fails-to-match (and never false-matches).
+/// `attr_<hex>` column — so the two arms see IDENTICAL values by construction.
+///
+/// # fix-3 [P2]: ABSENT vs PRESENT-EMPTY
+///
+/// A real empty-string value (`{"status":""}`) is DISTINCT from an absent
+/// attribute. On this (FTS/text) arm the distinction is ROW EXISTENCE: a present
+/// attribute (even value `''`) has a `canonical_attributes` row; an absent one has
+/// NONE. So a filter `("status","")` matches present-empty (row exists, RAW value
+/// `''`) but NOT absent (no row), and `("status","open")` matches only the
+/// `open` row. The vec0 arm reaches the SAME verdict via its `\x01`-marker
+/// encoding (see [`ATTR_VEC0_PRESENT_MARKER`]): present-empty is the bare marker,
+/// absent is `''`, so `attr_<hex> = enc("")` matches present-empty but never
+/// absent. `canonical_attributes.attr_value` and `property_search_index` stay RAW.
 ///
 /// # 0.8.20 semantics (Finding 1 → HITL ruling (A)): attribute filters are NODE-scoped
 ///
@@ -10040,19 +10052,26 @@ fn hit_attributes_pass_filter(
     filter: &SearchFilter,
 ) -> rusqlite::Result<bool> {
     for (name, want) in &filter.attributes {
-        let stored: Option<String> = tx
+        // fix-3 [P2] — distinguish ABSENT from PRESENT-EMPTY by ROW EXISTENCE: a
+        // present attribute (including one whose value is a real empty string `''`)
+        // has a `canonical_attributes` row; an absent one has NONE. The outer
+        // `Option` is row existence; the RAW `attr_value` is compared verbatim.
+        // This mirrors the vec0 arm exactly (present-empty matches `("k","")`;
+        // absent matches nothing, including `""`), so a fused hybrid search is
+        // coherent. `canonical_attributes.attr_value` stays RAW (unencoded).
+        let stored: Option<Option<String>> = tx
             .query_row(
                 "SELECT attr_value FROM canonical_attributes \
                  WHERE write_cursor = ?1 AND attr_name = ?2 LIMIT 1",
                 params![id as i64, name],
                 |row| row.get::<_, Option<String>>(0),
             )
-            .optional()?
-            .flatten();
-        // Mirror the vec0 pre-KNN arm exactly: an absent attribute is the `''`
-        // sentinel, so a non-empty `want` fails-to-match.
-        if stored.unwrap_or_default().as_str() != want.as_str() {
-            return Ok(false);
+            .optional()?;
+        match stored {
+            // Present (row exists) and the RAW value equals the filter value.
+            Some(Some(v)) if v.as_str() == want.as_str() => {}
+            // Absent (no row), present-but-NULL, or present-but-different ⇒ fail.
+            _ => return Ok(false),
         }
     }
     Ok(true)
@@ -13993,9 +14012,17 @@ fn reshape_vector_partition_nondestructive(
                 Some(name) => {
                     // vec0/execute_batch takes no bind params; embed the decoded name
                     // as a SQL string literal, escaping single quotes.
+                    //
+                    // fix-3 [P2] — a PRESENT row (a canonical_attributes row exists)
+                    // encodes its RAW `attr_value` as `\x01 || attr_value` (`char(1) ||
+                    // ca.attr_value`), matching the write-time vec0 encoding so a
+                    // pre-existing present-empty row (attr_value='') becomes the bare
+                    // marker, NOT `''`. An ABSENT row (no canonical_attributes row) is
+                    // the COALESCE default `''` (condition #3). `canonical_attributes`
+                    // itself stays RAW — only this vec0 column is encoded.
                     let escaped = name.replace('\'', "''");
                     select_exprs.push_str(&format!(
-                        ", COALESCE((SELECT ca.attr_value FROM canonical_attributes ca \
+                        ", COALESCE((SELECT char(1) || ca.attr_value FROM canonical_attributes ca \
                          WHERE ca.write_cursor = _fathomdb_vector_reshape_stage.rowid \
                            AND ca.attr_name = '{escaped}' LIMIT 1), '')"
                     ));
@@ -15798,6 +15825,36 @@ fn project_one_attribute(
     Ok(())
 }
 
+/// 0.8.20 Slice 15e fix-3 [P2] — the leading marker byte that the vec0
+/// `attr_<hex>` FILTER column prepends to every PRESENT scalar value, so that
+/// PRESENT and ABSENT are DISJOINT in a NOT-NULL TEXT column.
+///
+/// The `''` empty-string sentinel used to mean BOTH "attribute absent" AND
+/// "attribute present with value `''`", so a `status == ""` equality filter
+/// false-matched every absent row. vec0 TEXT metadata is NOT-NULL-able (TC-46
+/// condition #3), so absent cannot be `NULL`; instead absent stays `''` and every
+/// PRESENT value `V` is encoded `enc(V) = "\x01" || V`. This is injective and
+/// non-empty for ALL `V` (including `V=""`, whose encoding is the bare marker),
+/// so `attr_<hex> = enc("")` matches present-empty but NEVER the `''`-absent rows.
+///
+/// This encoding is CONFINED to the vec0 filter column and the filter-value
+/// lowering ([`vector_filter_values`]). `property_search_index` (the searchable→FTS
+/// projection) and `canonical_attributes.attr_value` keep the RAW value — the FTS
+/// arm distinguishes absent from present-empty by canonical_attributes row
+/// EXISTENCE instead (see [`hit_attributes_pass_filter`]).
+const ATTR_VEC0_PRESENT_MARKER: char = '\u{1}';
+
+/// 0.8.20 Slice 15e fix-3 — encode a PRESENT scalar value for the vec0 filter
+/// column / filter-value lowering (see [`ATTR_VEC0_PRESENT_MARKER`]). ABSENT is
+/// NOT encoded (it stays the bare `''` sentinel), so this is only ever called on a
+/// value known to be present.
+fn encode_attr_vec0_present(value: &str) -> String {
+    let mut s = String::with_capacity(value.len() + 1);
+    s.push(ATTR_VEC0_PRESENT_MARKER);
+    s.push_str(value);
+    s
+}
+
 /// 0.8.20 Slice 15e — extract the canonical TEXT form of attribute `name` from a
 /// node `body`, using the SAME `json_type` CASE as [`project_one_attribute`] so
 /// the vec0 pre-KNN `attr_<hex>` column value equals the EAV
@@ -15849,7 +15906,13 @@ fn vector_attr_insert_fragments(
     let mut values: Vec<rusqlite::types::Value> = Vec::new();
     for (i, col) in cols.iter().enumerate() {
         let name = decode_attr_vec0_column(col).unwrap_or_default();
-        let value = extract_scalar_attribute(conn, body, &name)?.unwrap_or_default();
+        // fix-3 [P2] — a PRESENT scalar value is encoded `\x01 || V` so it is
+        // DISJOINT from the `''`-absent sentinel (present-empty ⇒ the bare marker,
+        // never `''`). Absent stays the bare `''` sentinel.
+        let value = match extract_scalar_attribute(conn, body, &name)? {
+            Some(v) => encode_attr_vec0_present(&v),
+            None => String::new(),
+        };
         col_sql.push_str(&format!(", {col}"));
         ph_sql.push_str(&format!(", ?{}", start_idx + i));
         values.push(rusqlite::types::Value::Text(value));
