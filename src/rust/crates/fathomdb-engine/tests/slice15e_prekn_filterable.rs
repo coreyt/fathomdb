@@ -362,3 +362,143 @@ fn filtered_knn_over_attr_column_does_not_hard_error() {
 
     engine.close().unwrap();
 }
+
+// ===========================================================================
+// fix-1 finding 1 [P2] — TOTAL backend-dispatch: the attribute-equality filter
+// is applied on the TEXT/FTS arm too, so a doc that MATCHES the FTS query but
+// FAILS the attribute filter does NOT leak through the FTS arm of a hybrid
+// search (ADR-0.8.11 D3 — every filter term has a defined outcome on EVERY
+// surface). Isolated to the FTS arm: the projection is declared BEFORE the docs
+// are written, so the vec0 `attr_<hex>` column is populated at write time and
+// the vector arm already prunes the MISS row — the ONLY way it can appear is via
+// the (previously unfiltered) FTS arm.
+// ===========================================================================
+
+#[test]
+fn hybrid_fts_arm_applies_attribute_filter() {
+    let (_dir, path) = fixture("s15e_hybrid_totality");
+    let opened = open(&path);
+    let engine = &opened.engine;
+
+    // Declare the filterable projection FIRST, so the vec0 attr column is
+    // populated from each body at write time (async worker path).
+    engine.configure_projections(&[filterable_spec("priority")], &[]).expect("configure");
+
+    // Two docs, BOTH matching the FTS term "vectors", differing ONLY in the
+    // filterable attribute: MATCH has priority=high, MISS has priority=low.
+    engine
+        .write(&[
+            node("MATCH", r#"{"title":"alpha vectors document","priority":"high"}"#),
+            node("MISS", r#"{"title":"beta vectors document","priority":"low"}"#),
+        ])
+        .expect("write");
+    engine.drain(10_000).expect("drain");
+
+    // Sanity: the vec0 attr column IS populated at write time (so the vector arm
+    // prunes MISS on its own; any MISS in results can ONLY come from the FTS arm).
+    let col = attr_col("priority");
+    let miss_vec_val = engine
+        .query_text_col_for_test(&format!(
+            "SELECT v.{col} FROM vector_default v \
+             JOIN canonical_nodes n ON n.write_cursor = v.rowid \
+             WHERE n.logical_id = 'MISS'"
+        ))
+        .expect("read MISS vec0 attr");
+    assert_eq!(miss_vec_val, vec!["low".to_string()], "MISS vec0 column populated from body");
+
+    let filter = SearchFilter {
+        attributes: vec![("priority".to_string(), "high".to_string())],
+        ..Default::default()
+    };
+    let res = engine.search_filtered("vectors", Some(filter)).expect("search");
+    let bodies: Vec<String> = res.results.iter().map(|h| h.body.clone()).collect();
+
+    // The matching (priority=high) doc must be present.
+    assert!(
+        bodies.iter().any(|b| b.contains("alpha vectors")),
+        "the priority=high doc must be present: {bodies:?}"
+    );
+    // The MISS doc matches the FTS query but FAILS the attribute filter; it must
+    // NOT leak through the FTS arm.
+    assert!(
+        !bodies.iter().any(|b| b.contains("beta vectors")),
+        "priority=low doc must NOT leak through the FTS arm: {bodies:?}"
+    );
+
+    engine.close().unwrap();
+}
+
+// ===========================================================================
+// fix-1 finding 2 [P2] — a PRE-EXISTING row whose body HAS the attribute is
+// back-filled from the already-populated `canonical_attributes` (not the blanket
+// `''` sentinel), so it is IMMEDIATELY filterable after the projection is
+// declared. A genuinely-absent row still gets `''` and correctly fails-to-match.
+// ===========================================================================
+
+#[test]
+fn existing_row_backfilled_from_canonical_attributes_not_blanket_sentinel() {
+    let (_dir, path) = fixture("s15e_existing_backfill");
+    let opened = open(&path);
+    let engine = &opened.engine;
+
+    // PRE-EXISTING rows written + embedded BEFORE the projection is declared.
+    // PRESENT: body carries priority=high. ABSENT: body has no priority at all.
+    engine
+        .write(&[
+            node("PRESENT", r#"{"title":"vectors alpha record","priority":"high"}"#),
+            node("ABSENT", r#"{"title":"vectors beta record"}"#),
+        ])
+        .expect("write");
+    engine.drain(10_000).expect("drain");
+
+    // Declare the filterable projection: `configure_projections` backfills
+    // `canonical_attributes` from the bodies FIRST, THEN reshapes vec0. The
+    // reshape must back-fill the new attr column from `canonical_attributes`.
+    engine.configure_projections(&[filterable_spec("priority")], &[]).expect("configure");
+
+    let col = attr_col("priority");
+
+    // RAW vec0 assertion — the load-bearing one for the reshape back-fill:
+    // PRESENT reads its real value "high" (NOT the blanket '' sentinel).
+    let present_val = engine
+        .query_text_col_for_test(&format!(
+            "SELECT v.{col} FROM vector_default v \
+             JOIN canonical_nodes n ON n.write_cursor = v.rowid \
+             WHERE n.logical_id = 'PRESENT'"
+        ))
+        .expect("read PRESENT vec0 attr");
+    assert_eq!(
+        present_val,
+        vec!["high".to_string()],
+        "pre-existing row whose body HAS the attribute must back-fill its real value, not ''"
+    );
+
+    // The genuinely-absent row still gets the '' sentinel (condition #3 holds).
+    let absent_val = engine
+        .query_text_col_for_test(&format!(
+            "SELECT v.{col} FROM vector_default v \
+             JOIN canonical_nodes n ON n.write_cursor = v.rowid \
+             WHERE n.logical_id = 'ABSENT'"
+        ))
+        .expect("read ABSENT vec0 attr");
+    assert_eq!(absent_val, vec![String::new()], "genuinely-absent row keeps the '' sentinel");
+
+    // A pre-KNN filter `priority == high` must RETURN the pre-existing PRESENT row
+    // and exclude ABSENT (results-level assertion).
+    let filter = SearchFilter {
+        attributes: vec![("priority".to_string(), "high".to_string())],
+        ..Default::default()
+    };
+    let res = engine.search_filtered("vectors", Some(filter)).expect("search");
+    let bodies: Vec<String> = res.results.iter().map(|h| h.body.clone()).collect();
+    assert!(
+        bodies.iter().any(|b| b.contains("alpha record")),
+        "pre-existing PRESENT row must be filterable immediately: {bodies:?}"
+    );
+    assert!(
+        !bodies.iter().any(|b| b.contains("beta record")),
+        "genuinely-absent row must fail-to-match: {bodies:?}"
+    );
+
+    engine.close().unwrap();
+}
