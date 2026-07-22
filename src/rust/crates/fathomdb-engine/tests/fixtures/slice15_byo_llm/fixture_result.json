@@ -504,5 +504,121 @@
       }
     ],
     "warnings": []
+  },
+  "doc-tc47-feb30-tvalid": {
+    "entities": [
+      {
+        "name": "Dana",
+        "type": "person",
+        "aliases": [],
+        "source_doc_id": "doc-tc47-feb30-tvalid"
+      },
+      {
+        "name": "Globex",
+        "type": "organization",
+        "aliases": [],
+        "source_doc_id": "doc-tc47-feb30-tvalid"
+      }
+    ],
+    "edges": [
+      {
+        "from_entity": "Dana",
+        "relation": "works_for",
+        "to_entity": "Globex",
+        "body": "Dana works_for Globex",
+        "t_valid": "2025-02-30T00:00:00Z",
+        "t_invalid": null,
+        "confidence": 0.9,
+        "source_doc_id": "doc-tc47-feb30-tvalid"
+      }
+    ],
+    "warnings": []
+  },
+  "doc-tc47-apr31-tvalid": {
+    "entities": [
+      {
+        "name": "Dana",
+        "type": "person",
+        "aliases": [],
+        "source_doc_id": "doc-tc47-apr31-tvalid"
+      },
+      {
+        "name": "Globex",
+        "type": "organization",
+        "aliases": [],
+        "source_doc_id": "doc-tc47-apr31-tvalid"
+      }
+    ],
+    "edges": [
+      {
+        "from_entity": "Dana",
+        "relation": "works_for",
+        "to_entity": "Globex",
+        "body": "Dana works_for Globex",
+        "t_valid": "2025-04-31T00:00:00Z",
+        "t_invalid": null,
+        "confidence": 0.9,
+        "source_doc_id": "doc-tc47-apr31-tvalid"
+      }
+    ],
+    "warnings": []
+  },
+  "doc-tc47-iso-offset5": {
+    "entities": [
+      {
+        "name": "Dana",
+        "type": "person",
+        "aliases": [],
+        "source_doc_id": "doc-tc47-iso-offset5"
+      },
+      {
+        "name": "Globex",
+        "type": "organization",
+        "aliases": [],
+        "source_doc_id": "doc-tc47-iso-offset5"
+      }
+    ],
+    "edges": [
+      {
+        "from_entity": "Dana",
+        "relation": "works_for",
+        "to_entity": "Globex",
+        "body": "Dana works_for Globex",
+        "t_valid": "2025-03-20T09:30:00+05:00",
+        "t_invalid": null,
+        "confidence": 0.9,
+        "source_doc_id": "doc-tc47-iso-offset5"
+      }
+    ],
+    "warnings": []
+  },
+  "doc-tc47-iso-frac": {
+    "entities": [
+      {
+        "name": "Dana",
+        "type": "person",
+        "aliases": [],
+        "source_doc_id": "doc-tc47-iso-frac"
+      },
+      {
+        "name": "Globex",
+        "type": "organization",
+        "aliases": [],
+        "source_doc_id": "doc-tc47-iso-frac"
+      }
+    ],
+    "edges": [
+      {
+        "from_entity": "Dana",
+        "relation": "works_for",
+        "to_entity": "Globex",
+        "body": "Dana works_for Globex",
+        "t_valid": "2025-03-20T09:30:00.500Z",
+        "t_invalid": null,
+        "confidence": 0.9,
+        "source_doc_id": "doc-tc47-iso-frac"
+      }
+    ],
+    "warnings": []
   }
 }

@@ -30,6 +30,16 @@ const SOURCE = "ts-test:slice15d";
 // writer transaction opens — never persisted in `_fathomdb_projection_registry`.
 const NUL = `a${String.fromCharCode(0)}b`;
 
+// TC-47 (keystone terminal codex P2) — a lone UTF-16 high surrogate smuggled
+// into a ProjectionSpec / drop string. Unlike a NUL (which survives the napi
+// UTF-8 conversion as a real byte and is caught Rust-side), napi-rs silently
+// replaces a lone surrogate with U+FFFD BEFORE the Rust guard runs, so the guard
+// never sees it. `configureProjections` must therefore run `validateFfiTree`
+// JS-side — exactly like `write` — or the mangled U+FFFD is persisted instead of
+// raising WriteValidationError. Mirrors the AC-068b surrogate cases in
+// `ffi-safety.test.ts`.
+const SURROGATE = `a${String.fromCharCode(0xd800)}b`;
+
 function node(logicalId: string, source: string, bodyJson: string): object {
   return { kind: "doc", body: bodyJson, logicalId, sourceId: source };
 }
@@ -275,6 +285,129 @@ test("fix-5 NUL in drop entry rejected at binding", async () => {
     await engine.configureProjections([spec("status", ["filterable"])]);
     await assert.rejects(
       () => engine.configureProjections([], [NUL]),
+      (err: unknown) => {
+        assert.ok(err instanceof WriteValidationError, "must be WriteValidationError");
+        return true;
+      },
+    );
+    assert.deepEqual(
+      (await read.projections(engine)).map((s) => s.name),
+      ["status"],
+      "the refused drop must not touch the live projection",
+    );
+  } finally {
+    await engine.close();
+  }
+});
+
+// --- TC-47: lone UTF-16 surrogate must be rejected JS-side (napi → U+FFFD) ---
+
+test("TC-47 surrogate in projection name rejected at binding, not persisted", async () => {
+  const path = freshDbPath();
+  const engine = await Engine.open(path);
+  try {
+    await assert.rejects(
+      () => engine.configureProjections([spec(SURROGATE, ["filterable"])]),
+      (err: unknown) => {
+        assert.ok(err instanceof WriteValidationError, "must be WriteValidationError");
+        assert.ok(err instanceof FathomDbError, "must extend FathomDbError");
+        return true;
+      },
+    );
+  } finally {
+    await engine.close();
+  }
+  assert.deepEqual(
+    registryNames(path),
+    [],
+    "no projection may be persisted when a surrogate is rejected",
+  );
+});
+
+test("TC-47 surrogate in ftsTokenizer rejected at binding, not persisted", async () => {
+  const path = freshDbPath();
+  const engine = await Engine.open(path);
+  try {
+    await assert.rejects(
+      () =>
+        engine.configureProjections([
+          { name: "status", roles: ["searchable"], fts: true, ftsTokenizer: SURROGATE, vector: false },
+        ]),
+      (err: unknown) => {
+        assert.ok(err instanceof WriteValidationError, "must be WriteValidationError");
+        return true;
+      },
+    );
+  } finally {
+    await engine.close();
+  }
+  assert.deepEqual(
+    registryNames(path),
+    [],
+    "no projection may be persisted when a surrogate is rejected",
+  );
+});
+
+test("TC-47 surrogate in vectorEmbedder rejected at binding, not persisted", async () => {
+  const path = freshDbPath();
+  const engine = await Engine.open(path);
+  try {
+    await assert.rejects(
+      () =>
+        engine.configureProjections([
+          { name: "summary", roles: ["searchable"], fts: false, vector: true, vectorEmbedder: SURROGATE },
+        ]),
+      (err: unknown) => {
+        assert.ok(err instanceof WriteValidationError, "must be WriteValidationError");
+        return true;
+      },
+    );
+  } finally {
+    await engine.close();
+  }
+  assert.deepEqual(
+    registryNames(path),
+    [],
+    "no projection may be persisted when a surrogate is rejected",
+  );
+});
+
+test("TC-47 surrogate in projection role rejected at binding, not persisted", async () => {
+  const path = freshDbPath();
+  const engine = await Engine.open(path);
+  try {
+    await assert.rejects(
+      // A lone surrogate as a role value — validateFfiTree must walk the roles
+      // array too. Cast through unknown: an invalid role string is exactly the
+      // hostile input the FFI guard exists to reject before native.
+      () =>
+        engine.configureProjections([
+          { name: "status", roles: [SURROGATE as unknown as ProjectionRole], fts: false, vector: false },
+        ]),
+      (err: unknown) => {
+        assert.ok(err instanceof WriteValidationError, "must be WriteValidationError");
+        return true;
+      },
+    );
+  } finally {
+    await engine.close();
+  }
+  assert.deepEqual(
+    registryNames(path),
+    [],
+    "no projection may be persisted when a surrogate is rejected",
+  );
+});
+
+test("TC-47 surrogate in drop entry rejected at binding", async () => {
+  const path = freshDbPath();
+  const engine = await Engine.open(path);
+  try {
+    // A live projection exists so the drop path is non-vacuous.
+    await engine.write([node("A", "src:a", '{"status":"open"}')]);
+    await engine.configureProjections([spec("status", ["filterable"])]);
+    await assert.rejects(
+      () => engine.configureProjections([], [SURROGATE]),
       (err: unknown) => {
         assert.ok(err instanceof WriteValidationError, "must be WriteValidationError");
         return true;
