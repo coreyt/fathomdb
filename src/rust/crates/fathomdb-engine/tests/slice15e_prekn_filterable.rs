@@ -644,3 +644,192 @@ fn attribute_filter_excludes_edge_hits_on_both_arms() {
 
     engine.close().unwrap();
 }
+
+// ===========================================================================
+// fix-3 [P2] — a REAL empty-string attribute value (`{"status":""}`) must be
+// distinguished from an ABSENT attribute. The `''` empty-string vec0 sentinel
+// used to mean BOTH "absent" AND "present-and-equal-to-''", so an equality filter
+// `status == ""` false-matched every absent row on BOTH arms. fix-3 encodes a
+// PRESENT value `V` in the vec0 `attr_<hex>` column as `\x01 || V` (marker byte),
+// reserving `''` for ABSENT; the FTS arm distinguishes by canonical_attributes
+// row EXISTENCE (present-empty has a row with attr_value='' ; absent has no row).
+// The two arms produce IDENTICAL pass/fail. property_search_index / the RAW
+// canonical_attributes.attr_value are UNCHANGED (only the vec0 filter column and
+// the filter-value lowering are encoded).
+// ===========================================================================
+
+#[test]
+fn empty_string_attribute_value_vs_absent_vector_arm() {
+    let (_dir, path) = fixture("s15e_empty_vs_absent_vec");
+    let opened = open(&path);
+    let engine = &opened.engine;
+
+    // Declare filterable FIRST so the vec0 attr column is populated at write time.
+    engine.configure_projections(&[filterable_spec("status")], &[]).expect("configure");
+
+    // PRESENTEMPTY: status is a real empty string. ABSENT: no status key at all.
+    // PRESENTOPEN: status = "open". All share the FTS token "sharedtoken".
+    engine
+        .write(&[
+            node("PRESENTEMPTY", r#"{"title":"sharedtoken alpha","status":""}"#),
+            node("ABSENT", r#"{"title":"sharedtoken beta"}"#),
+            node("PRESENTOPEN", r#"{"title":"sharedtoken gamma","status":"open"}"#),
+        ])
+        .expect("write");
+    engine.drain(10_000).expect("drain");
+
+    let col = attr_col("status");
+    let marker = "\u{1}"; // vec0 present-marker (fix-3): enc(V) = "\x01" || V
+
+    // ---- RAW at-rest, vec0 arm: PRESENT values carry the marker; ABSENT stays ''.
+    let read_col = |logical: &str| {
+        engine
+            .query_text_col_for_test(&format!(
+                "SELECT v.{col} FROM vector_default v \
+                 JOIN canonical_nodes n ON n.write_cursor = v.rowid \
+                 WHERE n.logical_id = '{logical}'"
+            ))
+            .expect("read vec0 attr")
+    };
+    assert_eq!(
+        read_col("PRESENTEMPTY"),
+        vec![marker.to_string()],
+        "present-empty encodes to the marker (enc(\"\")), NOT the '' absent sentinel"
+    );
+    assert_eq!(
+        read_col("ABSENT"),
+        vec![String::new()],
+        "absent stays the '' sentinel (disjoint from every present value)"
+    );
+    assert_eq!(
+        read_col("PRESENTOPEN"),
+        vec![format!("{marker}open")],
+        "present 'open' encodes to marker||'open'"
+    );
+
+    // ---- canonical_attributes (the FTS-arm data basis): present-empty HAS a row
+    // (attr_value='' RAW, unchanged); absent has NO row.
+    let eav = |logical: &str, what: &str| {
+        engine
+            .query_text_col_for_test(&format!(
+                "SELECT {what} FROM canonical_attributes ca \
+                 JOIN canonical_nodes n ON n.write_cursor = ca.write_cursor \
+                 WHERE n.logical_id = '{logical}' AND ca.attr_name='status'"
+            ))
+            .expect("eav read")
+    };
+    assert_eq!(
+        eav("PRESENTEMPTY", "ca.attr_value"),
+        vec![String::new()],
+        "present-empty has a canonical_attributes row whose attr_value is RAW '' (NOT encoded)"
+    );
+    assert_eq!(
+        eav("ABSENT", "COUNT(*)"),
+        vec!["0".to_string()],
+        "absent has NO canonical_attributes row"
+    );
+
+    // ---- vector arm INDEPENDENTLY (raw pre-KNN SQL, production `char(1)||V`
+    // encoding): filter status="" matches ONLY present-empty; absent is pruned.
+    let cursor = |logical: &str| {
+        engine
+            .query_i64_col_for_test(&format!(
+                "SELECT write_cursor FROM canonical_nodes WHERE logical_id='{logical}'"
+            ))
+            .expect("cursor")[0]
+    };
+    let (pe, ab, po) = (cursor("PRESENTEMPTY"), cursor("ABSENT"), cursor("PRESENTOPEN"));
+
+    let match_empty = engine
+        .query_i64_col_for_test(&format!(
+            "SELECT rowid FROM vector_default \
+             WHERE embedding_bin MATCH vec_quantize_binary(vec_f32('[1,0,0,0,0,0,0,0]')) \
+               AND {col}=char(1)||'' ORDER BY distance LIMIT 10"
+        ))
+        .expect("vector arm empty filter");
+    assert!(match_empty.contains(&pe), "status='' matches present-empty on the vector arm");
+    assert!(!match_empty.contains(&ab), "status='' must NOT match ABSENT on the vector arm");
+    assert!(
+        !match_empty.contains(&po),
+        "status='' must NOT match present-'open' on the vector arm"
+    );
+
+    let match_open = engine
+        .query_i64_col_for_test(&format!(
+            "SELECT rowid FROM vector_default \
+             WHERE embedding_bin MATCH vec_quantize_binary(vec_f32('[1,0,0,0,0,0,0,0]')) \
+               AND {col}=char(1)||'open' ORDER BY distance LIMIT 10"
+        ))
+        .expect("vector arm open filter");
+    assert!(match_open.contains(&po), "status='open' matches present-'open'");
+    assert!(!match_open.contains(&pe), "status='open' must NOT match present-empty");
+    assert!(!match_open.contains(&ab), "status='open' must NOT match ABSENT");
+
+    engine.close().unwrap();
+}
+
+#[test]
+fn empty_string_attribute_value_vs_absent_both_arms_fused() {
+    let (_dir, path) = fixture("s15e_empty_vs_absent_fused");
+    let opened = open(&path);
+    let engine = &opened.engine;
+
+    engine.configure_projections(&[filterable_spec("status")], &[]).expect("configure");
+    engine
+        .write(&[
+            node("PRESENTEMPTY", r#"{"title":"sharedtoken alpha","status":""}"#),
+            node("ABSENT", r#"{"title":"sharedtoken beta"}"#),
+            node("PRESENTOPEN", r#"{"title":"sharedtoken gamma","status":"open"}"#),
+        ])
+        .expect("write");
+    engine.drain(10_000).expect("drain");
+
+    // search_filtered fuses the vector AND the FTS arms (a union). "ABSENT does NOT
+    // appear" therefore requires BOTH arms to exclude it — a joint both-arms proof
+    // (if EITHER arm false-matched absent, the fused result would surface it).
+    let search = |value: &str| -> Vec<String> {
+        let mut filter = SearchFilter::default();
+        filter.attributes = vec![("status".to_string(), value.to_string())];
+        engine
+            .search_filtered("sharedtoken", Some(filter))
+            .expect("search")
+            .results
+            .iter()
+            .map(|h| h.body.clone())
+            .collect()
+    };
+
+    // filter status="" : present-empty matches; absent must NOT false-match;
+    // present-'open' must NOT match.
+    let empty = search("");
+    assert!(
+        empty.iter().any(|b| b.contains("alpha")),
+        "present-empty must match status='' (non-vacuous control): {empty:?}"
+    );
+    assert!(
+        !empty.iter().any(|b| b.contains("beta")),
+        "ABSENT must NOT false-match status='' on EITHER arm: {empty:?}"
+    );
+    assert!(
+        !empty.iter().any(|b| b.contains("gamma")),
+        "present-'open' must NOT match status='': {empty:?}"
+    );
+
+    // filter status="open" : only present-'open' (non-vacuous; the empty filter
+    // above must not be the only discriminator).
+    let open = search("open");
+    assert!(
+        open.iter().any(|b| b.contains("gamma")),
+        "present-'open' must match status='open': {open:?}"
+    );
+    assert!(
+        !open.iter().any(|b| b.contains("alpha")),
+        "present-empty must NOT match status='open': {open:?}"
+    );
+    assert!(
+        !open.iter().any(|b| b.contains("beta")),
+        "ABSENT must NOT match status='open': {open:?}"
+    );
+
+    engine.close().unwrap();
+}
