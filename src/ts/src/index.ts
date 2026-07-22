@@ -789,6 +789,15 @@ export class Engine {
     specs: ProjectionSpec[],
     drop?: string[],
   ): Promise<ProjectionDelta> {
+    // TC-47 (keystone terminal codex P2) — every string in the spec/drop tree
+    // (projection name, each role, ftsTokenizer, vectorEmbedder, each drop entry)
+    // crosses to native. napi-rs silently replaces a lone UTF-16 surrogate with
+    // U+FFFD BEFORE the Rust-side guard runs, so — exactly like `write` — the
+    // surrogate check must happen JS-side or the mangled U+FFFD is persisted
+    // instead of raising WriteValidationError. (A NUL survives the napi UTF-8
+    // path as a real byte and is already caught Rust-side; the surrogate is not.)
+    validateFfiTree(specs);
+    if (drop !== undefined) validateFfiTree(drop);
     return intercept(() =>
       this.#native.configureProjections(specs, drop ?? null),
     );

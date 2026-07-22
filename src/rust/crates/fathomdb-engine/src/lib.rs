@@ -1854,14 +1854,47 @@ fn edge_validity_sql(alias: &str, now_idx: usize) -> String {
 /// date/datetime shape, so the existing hard-reject path fires. The shape gate
 /// does NOT replace SQLite's calendar math — a shape-valid but impossible date
 /// (`2025-13-45T00:00:00Z`) still `None`s out via `strftime` and hard-rejects.
+///
+/// # TC-47 — the calendar-DATE ROUND-TRIP backstop (keystone terminal codex P2)
+///
+/// The shape gate checks FORMAT, not CALENDAR VALIDITY, and `strftime('%s', ?)`
+/// does NOT fully validate the calendar: it **rolls over an impossible DAY**
+/// rather than returning NULL — `strftime('%s','2025-02-30T00:00:00Z')` yields
+/// the epoch for `2025-03-02`, and `2025-04-31` yields `2025-05-01`. So a
+/// shape-valid Feb-30 would parse to a DIFFERENT instant than the provider
+/// supplied, bypassing the hard-reject contract. (An impossible MONTH like
+/// `2025-13-01`, and impossible TIMES like `25:00:00` / `:60` / `:61`, already
+/// NULL out; only impossible DAYS roll over — that is the sole residue.)
+///
+/// The `WHERE` clause is the round-trip: the literal calendar DATE component of
+/// the input (`substr(?1, 1, 10)` — the `YYYY-MM-DD` the shape gate guarantees is
+/// present) must survive SQLite's own calendar math UNCHANGED. If it rolled over,
+/// `strftime('%Y-%m-%d', substr(?1,1,10))` differs from the literal substring and
+/// the `WHERE` yields zero rows => `query_row` -> `QueryReturnedNoRows` -> `None`
+/// => the existing hard-reject fires. This is a superset of the shape gate: it
+/// also rejects the TC-44 Julian string `2451545.0` (its `substr(1,10)` renders
+/// to `2000-01-01`, not itself).
+///
+/// **Why the DATE component and not the raw string or the UTC-rendered instant:**
+/// a raw-string or `unixepoch`-rendered comparison would FALSE-REJECT valid
+/// equivalent forms. `Z` vs `+00:00`, a non-UTC offset like `+05:00`, date-only,
+/// and fractional seconds are all valid and store the correct (offset-shifted)
+/// epoch — but a UTC re-render shifts the wall clock, so its date can differ from
+/// the input's literal date. Comparing ONLY the literal DATE field is
+/// tz-INVARIANT (the offset never alters the input's own `YYYY-MM-DD` text) while
+/// still catching every DAY rollover, because the rollover happens in the
+/// calendar math BEFORE any offset is applied. **Pure SQL — no date crate.**
 fn iso8601_to_epoch_seconds(connection: &Connection, raw: &str) -> Option<i64> {
     if !is_iso8601_shape(raw) {
         return None;
     }
     connection
-        .query_row("SELECT CAST(strftime('%s', ?1) AS INTEGER)", params![raw], |r| {
-            r.get::<_, Option<i64>>(0)
-        })
+        .query_row(
+            "SELECT CAST(strftime('%s', ?1) AS INTEGER) \
+             WHERE strftime('%Y-%m-%d', substr(?1, 1, 10)) IS substr(?1, 1, 10)",
+            params![raw],
+            |r| r.get::<_, Option<i64>>(0),
+        )
         .ok()
         .flatten()
 }
@@ -2104,10 +2137,13 @@ fn normalize_extractor_timestamp(
             Some(epoch) => Ok(Some(epoch)),
             None => Err(EngineError::InvalidArgument {
                 msg: format!(
-                    "extractor edge field `{field}` must be an ISO-8601 timestamp SQLite can \
-                     parse; got {text:?}, which `strftime('%s', ?)` resolves to NULL. REJECTED \
-                     rather than stored as NULL: a NULL `t_invalid` reads as \"still valid\" and \
-                     would silently resurrect an invalidated edge. Use JSON null for \"unknown\"."
+                    "extractor edge field `{field}` must be a valid, calendar-real ISO-8601 \
+                     timestamp; got {text:?}, which either `strftime('%s', ?)` resolves to NULL \
+                     or fails the calendar round-trip (a shape-valid but impossible DAY like \
+                     `2025-02-30` that SQLite would silently ROLL OVER to a different instant). \
+                     REJECTED rather than stored: a NULL `t_invalid` reads as \"still valid\" and \
+                     a rolled-over date stores the WRONG instant — both breach the hard-reject \
+                     contract. Use JSON null for \"unknown\"."
                 ),
             }),
         },
