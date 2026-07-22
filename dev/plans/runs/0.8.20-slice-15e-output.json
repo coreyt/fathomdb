@@ -168,6 +168,105 @@
       "src/rust/crates/fathomdb-engine/tests/slice15e_prekn_filterable.rs — 2 new tests (F1, F2)"
     ]
   },
+  "fix-2": {
+    "title": "Finding-1 (A) closeout + Finding-2. HITL ruled Finding 1 -> (A) edges EXCLUDED by an attribute filter (node-scoped). Deliver a deliberate pin-test + a doc naming (D) as the reserved widening; and mark the public facade struct SearchFilter #[non_exhaustive] (Finding 2). NO behaviour change (A already holds post-fix-1); NO fix-1 reopen; NO dropped-edge telemetry; NO attributes SDK-wire.",
+    "branch": "orch-0.8.20-s15b",
+    "baseline_head": "e7175a61 (Slice 15e fix-1 closure witness)",
+    "commits": [
+      {
+        "sha": "12a6c8266982f7d86ebf51a23d25c608e4f71dfb",
+        "kind": "TEST (characterization / pin — passes at first run, NOT a RED->GREEN)",
+        "subject": "test(0.8.20): Slice 15e fix-2 — pin (A) edges-excluded semantics",
+        "pin_test_name": "attribute_filter_excludes_edge_hits_on_both_arms",
+        "pin_test_file": "src/rust/crates/fathomdb-engine/tests/slice15e_prekn_filterable.rs",
+        "pin_test_passes": true,
+        "first_run_evidence": "Ran at the moment it was written (before the #[non_exhaustive] change): 'test attribute_filter_excludes_edge_hits_on_both_arms ... ok' (1 passed). Confirms the (A) behaviour is ALREADY correct post-fix-1, so this is a lock-in pin, not RED->GREEN — exactly as the mandate anticipated."
+      },
+      {
+        "sha": "80ecf12c564d6dc4bda5e702a77431eec7165f73",
+        "kind": "FEAT",
+        "subject": "feat(0.8.20): Slice 15e fix-2 — non_exhaustive SearchFilter + (A) doc"
+      }
+    ],
+    "finding_1_A_pin": {
+      "ruling": "(A) edges are EXCLUDED by an attribute filter — KEEP the current post-fix-1 behaviour; pin + document it. Did NOT build (B) edges-pass-through, (C) project-edge-attributes, or (D) endpoint-node filtering; added NO per-query flag; did NOT reopen the fix-1 [P2].",
+      "why_A_already_holds": "Attribute projection is PreparedWrite::Node-gated (collect_projection_jobs pushes ProjectionJob only for PreparedWrite::Node; project_canonical_edge_row writes ONLY FTS + vector-state for edges, never project_one_attribute). So an EDGE is never projected into canonical_attributes, and its vector_default row (kind edge_fact, rowid=write_cursor) carries the '' sentinel in every attr_<hex> column (the async worker's attr-binding reads `SELECT body FROM canonical_nodes WHERE write_cursor=edge_cursor`, which has NO row for an edge cursor, so extract_scalar_attribute sees an empty body -> '').",
+      "both_arms_mechanism": {
+        "edge_vector_arm": "The edge IS a vector_default candidate, but its attr_<hex> column is '' -> the pre-KNN `attr_<hex>='high'` predicate (vector_filter_clause) prunes it. Pinned by the raw assertion `SELECT attr_<hex> FROM vector_default WHERE rowid=edge_cursor` == [''] plus `SELECT rowid FROM vector_default WHERE rowid=edge_cursor` == [edge_cursor] (candidate really exists).",
+        "edge_fts_arm": "The edge IS a search_index_edges candidate, but edge_fts_hit_passes_filter -> hit_attributes_pass_filter finds no canonical_attributes row for the edge write_cursor, reads '', and fails the non-empty equality. Pinned by `SELECT COUNT(*) FROM search_index_edges WHERE write_cursor=edge_cursor` == 1 and `SELECT COUNT(*) FROM canonical_attributes WHERE write_cursor=edge_cursor` == 0.",
+        "outcome_and_control": "CONTROL (unfiltered search_filtered('sharedtoken', None)): both the edge body ('edgefact') AND the matching node body ('alpha node') are present -> the edge is genuinely retrievable, so the filtered-absence is a real exclusion. FILTERED (attributes=[('priority','high')]): the matching NODE survives (non-vacuous control) and the edge is ABSENT — even though the edge's OWN body names priority=high. Because search_filtered fuses both arms, a regression that let edges through on EITHER arm would resurface the edge and fail the pin — that is how the single fused-search assertion guards both arms, backed by the per-arm raw-state assertions."
+      },
+      "A_doc_site": "src/rust/crates/fathomdb-engine/src/lib.rs — doc block on `hit_attributes_pass_filter` (the shared node-scoped attribute-filter site, wired into both text_hit_passes_filter and edge_fts_hit_passes_filter) states the intended 0.8.20 semantics: attribute filters are node-scoped; edge hits carry no projected attributes and are therefore excluded; and names the reserved widening: '(A) is (D) with an empty endpoint rule'. Doc only — D NOT implemented, no per-query flag. Mirrored in dev/interfaces/rust.md."
+    },
+    "finding_2_non_exhaustive": {
+      "change": "Added #[non_exhaustive] to `pub struct SearchFilter` (src/rust/crates/fathomdb-engine/src/lib.rs ~:2469). External Rust struct literals can no longer add the pub `attributes` field (or any future field) as a source break.",
+      "mandate_premise_corrected": "The mandate stated '#[non_exhaustive] only constrains EXTERNAL crates, so the workspace still compiles ... if any in-crate literal breaks, fix it with ..Default::default()'. That premise is factually wrong per the Rust reference: #[non_exhaustive] forbids struct-literal construction from EVERY non-defining crate (not only external ones), and the functional-update form `..Default::default()` is ALSO forbidden downstream — so it is NOT a valid fix. Integration-test crates and the two binding crates count as separate (non-defining) crates. cargo clippy/check therefore FAILED at first with E0639 'cannot create non-exhaustive struct using struct expression' at the binding sites AND every engine integration-test literal.",
+      "fix_applied": "Converted every downstream struct-literal to field-assignment on a default() base (fields are pub): `let mut f = SearchFilter::default(); f.kind = ...;`. This adds NO new public API (no constructor, no builder), keeping the governed delta to exactly `attributes` + `#[non_exhaustive]`. clippy::field_reassign_with_default did NOT fire (clippy suppresses it for foreign #[non_exhaustive] structs), and there is no deny(warnings) in the workspace regardless.",
+      "sites_converted": {
+        "bindings_4": [
+          "src/rust/crates/fathomdb-py/src/lib.rs (search + search_expand filter build)",
+          "src/rust/crates/fathomdb-napi/src/lib.rs (search + search_expand filter build)"
+        ],
+        "engine_test_crates": [
+          "tests/slice15e_prekn_filterable.rs (5 pre-existing literals + the 1 new pin-test literal)",
+          "tests/pr_g10_filtered_knn.rs (3)",
+          "tests/slice15_byo_llm_ingest.rs (5)",
+          "tests/slice35_filter_grammar.rs (1)",
+          "tests/slice40_filter_unification.rs (1)"
+        ],
+        "attributes_left_default_downstream": "In every binding site `attributes` is left at its default (empty) — it is NOT populated from Py/JS. attributes stays engine-internal in 0.8.20."
+      }
+    },
+    "governed_surface_delta": {
+      "status": "PROPOSED / NOT SIGNED (never HITL-SIGNED; no AC minted).",
+      "engine_public_api": "SearchFilter is now #[non_exhaustive] and its pub `attributes: Vec<(String,String)>` field (added in Slice 15e core) is documented as node-scoped. No new re-exported type, no new public method.",
+      "conformance_allowlist_untouched": "src/conformance/governed-surface-allowlist.json is byte-unchanged — SearchFilter was already an allowlisted re-exported TYPE; this is a fields-only + attribute delta (same pattern as PreparedWrite::Node's validity fields), and `attributes` is NOT on the Py/TS wire, so SearchFilterInput / the Python SearchFilter binding input are unchanged. Confirmed no src/conformance/* file was touched.",
+      "rust_md_updated": "dev/interfaces/rust.md — new note under the Projection registry section documenting SearchFilter.attributes + #[non_exhaustive] + node-scoped (A) semantics, marked PROPOSED / NOT SIGNED."
+    },
+    "explicit_out_of_scope_confirmations": {
+      "no_dropped_edge_count_or_telemetry": "Confirmed — added NO count/telemetry for excluded edges.",
+      "no_attributes_sdk_wire": "Confirmed — added NO Py/TS `attributes` search argument. Did NOT touch SearchFilterInput or the Python SearchFilter binding input. `attributes` stays engine-internal; wire exposure is a later slice.",
+      "no_fix1_reopen": "Confirmed — fix-1's total-filter helper and reshape back-fill are untouched; no fix-1 [P2] reopened."
+    },
+    "gates": {
+      "cargo_clippy_workspace_all_targets": { "command": "cargo clippy --workspace --all-targets", "exit_code": 0, "note": "Clean, no warnings (field_reassign_with_default suppressed for foreign non_exhaustive)." },
+      "cargo_check_workspace_all_targets": { "command": "cargo check --workspace --all-targets", "exit_code": 0 },
+      "cargo_test_engine_schema": {
+        "command": "cargo test -p fathomdb-engine -p fathomdb-schema -- --test-threads=1",
+        "exit_code": 0,
+        "aggregate": "629 passed / 0 failed / 13 ignored",
+        "pre_fix2_was": "628 passed / 0 failed / 13 ignored",
+        "delta": "+1 = the pin-test attribute_filter_excludes_edge_hits_on_both_arms (slice15e now 7 tests)."
+      },
+      "pr_g10_filtered_knn": {
+        "command": "cargo test -p fathomdb-engine --test pr_g10_filtered_knn -- --test-threads=1",
+        "exit_code": 0,
+        "aggregate": "6 passed / 0 failed",
+        "unfiltered_phase1_sql_byte_identical_to_0_7_2": "PASS (still green — fix-2 touches no vector SQL generation)."
+      },
+      "recovery_denylist": {
+        "command": "cargo test -p fathomdb --test no_recovery_surface -- --test-threads=1",
+        "exit_code": 0,
+        "note": "AC-041 GREEN — recovery denylist {recover, restore, repair, fix, rebuild} = exactly five, byte-frozen; no denylist file touched. (The byte-frozen enforcement lives in the fathomdb facade package, not fathomdb-engine.)"
+      },
+      "eu7": "ZERO eu7 runs. eu7_real_corpus_ac stays #[ignore]d — one of the unchanged 13 ignored.",
+      "bindings_X1_pyright": "NOT required and NOT run. No binding SURFACE change: SearchFilterInput / the Python SearchFilter input are unchanged, `attributes` is not exposed to Py/TS, and the only binding .rs edits are behaviour-neutral construction-glue forced by #[non_exhaustive]. Per the mandate, no binding surface change => X1/pyright not required.",
+      "md_lint": "Not cited as a gate (TC-37). The docs pre-commit hook (md-safe-fix, AST-guarded) ran on the staged rust.md at commit time without objection.",
+      "aggregate_exit_trust": "Real per-run PIPESTATUS/$? captured for every gate above (TC-16 — did NOT trust an agent-test.sh aggregate exit)."
+    },
+    "files_touched": [
+      "src/rust/crates/fathomdb-engine/src/lib.rs — #[non_exhaustive] on SearchFilter + (A) node-scoped doc on hit_attributes_pass_filter",
+      "src/rust/crates/fathomdb-engine/tests/slice15e_prekn_filterable.rs — new pin-test attribute_filter_excludes_edge_hits_on_both_arms + edge() helper + field-assignment conversions",
+      "src/rust/crates/fathomdb-engine/tests/pr_g10_filtered_knn.rs — field-assignment conversions",
+      "src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs — field-assignment conversions",
+      "src/rust/crates/fathomdb-engine/tests/slice35_filter_grammar.rs — field-assignment conversion",
+      "src/rust/crates/fathomdb-engine/tests/slice40_filter_unification.rs — field-assignment conversion",
+      "src/rust/crates/fathomdb-py/src/lib.rs — RustSearchFilter field-assignment (2 sites)",
+      "src/rust/crates/fathomdb-napi/src/lib.rs — RustSearchFilter field-assignment (2 sites)",
+      "dev/interfaces/rust.md — PROPOSED/NOT-SIGNED governed-surface note",
+      "dev/plans/runs/0.8.20-slice-15e-output.json — this fix-2 witness section"
+    ]
+  },
   "follow_ups_non_blocking": [
     "Perf: when attr columns exist, the async worker does `SELECT body FROM canonical_nodes WHERE write_cursor=?` per insert; there is no index on canonical_nodes(write_cursor) (per the shipped fix-3 note), so this is a scan bounded by corpus size. Opt-in (only with a filterable projection declared). A write_cursor index is a candidate future optimization.",
     "Surface: a user-facing unified FilterTerm::Attribute variant (so callers can request an attribute filter through the Filter grammar / bindings) is deferred to a later slice; 15e delivers the routing mechanism reachable via SearchFilter.attributes + the generated-SQL seam.",
