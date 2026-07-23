@@ -6200,25 +6200,27 @@ impl Engine {
             return Err(EngineError::WriteValidation);
         }
 
-        // 0.8.20 Slice 15e fix-2 finding 1 [P2] — validate every filter attribute
-        // name against the declared `filterable` registry set BEFORE any arm runs.
-        // An UNDECLARED name would otherwise emit `AND attr_<hex>=?` into the vec0
-        // phase-1 KNN for a column that does not exist → SQLite `no such column` →
-        // an opaque `Storage` error on the vector arm, while the FTS arm silently
-        // no-matched (`hit_attributes_pass_filter` finds no `canonical_attributes`
-        // row) — a divergent, un-typed outcome. ADR-0.8.11 D3 requires every filter
-        // term a DEFINED outcome ("compiles" or "typed rejection") IDENTICAL across
-        // arms; validating once here, before dispatch, makes BOTH arms see the SAME
-        // typed `InvalidFilter` rejection. Cheap: skipped entirely when the filter
-        // carries no attribute terms (the common path).
-        if let Some(f) = filter.as_ref() {
-            if !f.attributes.is_empty() {
-                let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
-                let connection = connection.as_ref().ok_or(EngineError::Closing)?;
-                validate_filter_attributes_declared(connection, f)?;
-            }
-        }
-
+        // 0.8.20 Slice 15e fix-2 finding 1 [P2] — every filter attribute name is
+        // validated against the declared `filterable` registry set BEFORE any arm
+        // runs, so an UNDECLARED name is a typed `InvalidFilter` rejection instead
+        // of an opaque `no such column` `Storage` crash (vector arm) or a silent
+        // no-match (FTS arm). ADR-0.8.11 D3: every filter term has a DEFINED outcome
+        // ("compiles" or "typed rejection") IDENTICAL across arms.
+        //
+        // keystone closeout fix-3 (codex §9 [P2], TOCTOU): that validation is NO
+        // LONGER performed here on `self.connection` before dispatch. fix-2 checked
+        // the registry on the WRITER connection and then let the reader prepare the
+        // vec0 query on a DIFFERENT connection/snapshot — a `configure_projections`
+        // DROP landing in the window between the check and the reader snapshot could
+        // still make the `attr_<hex>` column vanish AFTER validation passed, i.e. the
+        // exact untyped `Storage` failure fix-2 meant to prevent. The check now runs
+        // INSIDE the reader's deferred transaction (see
+        // `validate_filter_attributes_on_snapshot`, called from `read_search_in_tx`),
+        // so the registry it reads and the vec0 columns the query compiles against are
+        // ONE snapshot — the race is closed and BOTH arms still see the same typed
+        // `InvalidFilter`. Moving it there also removes a per-filtered-search writer
+        // lock and the fix-2 concurrent-ADD false-reject (the reader snapshot sees a
+        // freshly-added declaration and accepts).
         let compiled = compile_text_query(query);
         // REQ-013 / AC-059b / REQ-055: the cursor returned with a search
         // MUST be derived from the same WAL snapshot the data was read
@@ -9988,8 +9990,10 @@ impl CandleCrossEncoder {
     }
 }
 
-/// 0.8.20 Slice 15e fix-2 finding 1 [P2] — reject a search filter that names an
-/// attribute with NO declared `filterable` projection, BEFORE any SQL is built.
+/// 0.8.20 Slice 15e fix-2 finding 1 [P2] + keystone closeout fix-3 (codex §9 [P2],
+/// TOCTOU) — reject a search filter that names an attribute with NO declared
+/// `filterable` projection, ON THE READER'S OWN SNAPSHOT, before the vec0 SQL is
+/// built.
 ///
 /// The vector arm lowers each `filter.attributes` term to `AND attr_<hex>=?`
 /// against a vec0 metadata column that exists ONLY for a declared `filterable`
@@ -9999,31 +10003,40 @@ impl CandleCrossEncoder {
 /// would fail with `no such column` (surfacing as an opaque `Storage` error),
 /// while the FTS arm ([`hit_attributes_pass_filter`]) would silently no-match. That
 /// divergence violates ADR-0.8.11 D3 (every filter term has a DEFINED, arm-uniform
-/// outcome). We validate against the registry's `filterable` set — the authority
-/// that is arm-INDEPENDENT (correct even with no embedder / no `vector_default`,
-/// where a declared-`filterable` term still filters legitimately via the row-owned
-/// `canonical_attributes` EAV store) — and return a typed [`EngineError::InvalidFilter`]
-/// naming the attribute, mirroring how D3 typed-rejects an unsupported `json`-path
-/// predicate on `search_filtered`. Both arms see the SAME rejection because it is
+/// outcome).
+///
+/// fix-3 snapshot contract: this is called from [`read_search_in_tx`] INSIDE the
+/// reader's `DEFERRED` transaction, so the `_fathomdb_projection_registry` it reads
+/// and the `vector_default` columns [`vector_filter_clause`] compiles against are
+/// the SAME WAL snapshot. A concurrent `configure_projections` DROP either commits
+/// before this snapshot is pinned (then BOTH the registry and the vec0 columns show
+/// the attribute gone ⇒ a consistent `InvalidFilter`) or after (then it is invisible
+/// to this transaction and BOTH still show it declared ⇒ the query runs against the
+/// column it validated). The registry's `filterable` set is the arm-INDEPENDENT
+/// authority (correct even with no embedder / no `vector_default`, where a
+/// declared-`filterable` term still filters legitimately via the row-owned
+/// `canonical_attributes` EAV store). The caller re-raises
+/// [`SearchReaderError::InvalidFilter`] as the EXISTING typed
+/// [`EngineError::InvalidFilter`], so both arms see the SAME rejection because it is
 /// raised before either runs.
-fn validate_filter_attributes_declared(
+fn validate_filter_attributes_on_snapshot(
     conn: &Connection,
     filter: &SearchFilter,
-) -> Result<(), EngineError> {
+) -> Result<(), SearchReaderError> {
     if filter.attributes.is_empty() {
         return Ok(());
     }
-    let registry = load_projection_registry(conn).map_err(|_| EngineError::Storage)?;
+    // `?` maps a registry-read failure to `SearchReaderError::Sqlite` (unchanged
+    // `Storage` semantics for a genuine backend fault) via the `From` impl.
+    let registry = load_projection_registry(conn)?;
     for (name, _value) in &filter.attributes {
         let declared_filterable =
             registry.get(name).is_some_and(|s| s.roles.contains(&ProjectionRole::Filterable));
         if !declared_filterable {
-            return Err(EngineError::InvalidFilter {
-                reason: format!(
-                    "filter attribute {name:?} is not a declared `filterable` projection; \
-                     declare it via configure_projections before filtering on it"
-                ),
-            });
+            return Err(SearchReaderError::InvalidFilter(format!(
+                "filter attribute {name:?} is not a declared `filterable` projection; \
+                 declare it via configure_projections before filtering on it"
+            )));
         }
     }
     Ok(())
@@ -10400,6 +10413,17 @@ fn read_search_in_tx(
     reader_search_hook::fire();
     let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
     let cursor = load_projection_cursor(&tx)?;
+    // fix-3 (codex §9 [P2], TOCTOU) — validate every filter attribute name on THIS
+    // reader transaction's snapshot, before `build_vector_phase1_sql` emits
+    // `AND attr_<hex>=?` and before the FTS arm probes `canonical_attributes`. The
+    // registry read and the vec0 query now share ONE snapshot (see
+    // `validate_filter_attributes_on_snapshot`), so a `configure_projections` DROP
+    // racing this search yields a consistent typed `InvalidFilter` — never the
+    // opaque `no such column` `Storage` error fix-2's writer-connection check could
+    // still leak. Skipped when the filter carries no attribute terms (common path).
+    if let Some(filter) = filter {
+        validate_filter_attributes_on_snapshot(&tx, filter)?;
+    }
     let vector_results = if let Some(query_vector) = query_vector {
         let mut rowids = Vec::new();
         let bin_vector = query_vector_bin.unwrap_or(query_vector);

@@ -896,7 +896,9 @@ fn undeclared_filter_attribute_is_typed_rejection_on_both_arms() {
     //     The fused `search_filtered` runs BOTH arms, so this single rejection is
     //     the joint both-arms proof: neither the vector arm's `no such column`
     //     crash nor the FTS arm's silent no-match survives — both are pre-empted by
-    //     the pre-dispatch validation.
+    //     the reader-snapshot validation (keystone closeout fix-3 moved the check
+    //     from a pre-dispatch writer-connection probe INTO the reader's deferred
+    //     transaction, so it still runs before either arm).
     let mut bad = SearchFilter::default();
     bad.attributes = vec![("nonexistent".to_string(), "x".to_string())];
     match engine.search_filtered("sharedtoken", Some(bad)) {
