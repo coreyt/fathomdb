@@ -172,5 +172,65 @@
       "src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs": "NEW test deferred_only_mutation_is_reported_not_unchanged (F2 + same-spec no-op control + registry/delta alignment)."
     },
     "next_step_for_orchestrator_fix2": "Re-run codex (§9) on orch-0.8.20-s15b at HEAD 486b4876 for the two non-temporal P2s (F1 undeclared-attr typed rejection + F2 honest deferred delta). If clean, cherry-pick d21a08c1 (RED) + 486b4876 (GREEN) onto the keystone alongside the fix-1 commits. Bindings unaffected (reused InvalidFilter, already mapped) — no fresh-clone binding re-run needed."
+  },
+  "fix_3": {
+    "scope": "0.8.20 keystone closeout fix-3 — the ONE non-temporal codex §9 [P2] TOCTOU race between attribute-filter validation and the reader snapshot. ADD-only on branch orch-0.8.20-s15b; fix-1 (temporal) and fix-2 (undeclared-attr + deferred delta) are untouched.",
+    "baseline_head": "37dd4f67102a8babdc7fc8195f30ca04ce4ac254 (fix-2 witness — head at which fix-3 was commissioned)",
+    "head_sha": "5ed843451ddf30aaebad69a6e6e59b3f2dc544b8",
+    "status": "COMPLETE — the race is closed via a snapshot-scoping change (validate INSIDE the reader's deferred transaction). NOT an architectural rewrite. TDD RED->GREEN; all gates green.",
+    "commits": {
+      "red": "f33774f5b706c3ef4985cc55dbafbc6f198a7b7a",
+      "green": "5ed843451ddf30aaebad69a6e6e59b3f2dc544b8"
+    },
+    "finding": {
+      "class": "[P2] TOCTOU — fix-2's undeclared-`filterable`-attribute validation (validate_filter_attributes_declared) ran in search_inner_with_stats on the WRITER connection (self.connection.lock()) and RELEASED that lock BEFORE the reader worker prepared+executed the vec0 phase-1 KNN on its OWN pooled connection/snapshot.",
+      "bug": "A configure_projections DROP of the filtered `filterable` projection, committed in the window between the writer-connection validation (which passed: attr still declared) and the moment the reader pinned its DEFERRED-tx snapshot, removed the attr_<hex> vec0 column. vector_filter_clause still emitted `AND attr_<hex>=?` for that now-absent column => SQLite `no such column` => the reader worker returned rusqlite::Error => search_inner_with_stats collapsed EVERY reader Err to EngineError::Storage — the exact opaque/untyped failure fix-2 was written to prevent, re-introduced by concurrency. Two connections => two potentially-divergent schema snapshots => the check and the query could disagree.",
+      "fix_location": "src/rust/crates/fathomdb-engine/src/lib.rs.",
+      "the_exact_txn_connection_change": "Validation MOVED from a pre-dispatch check on self.connection (the writer) INTO read_search_in_tx, the reader worker function that opens the DEFERRED read transaction and prepares+executes BOTH the vec0 phase-1 SQL and the FTS arm. NEW fn validate_filter_attributes_on_snapshot(&Connection, &SearchFilter) -> Result<(), SearchReaderError> is called immediately AFTER `let tx = reader.transaction_with_behavior(Deferred)?` and the snapshot-pinning `load_projection_cursor(&tx)?`, and BEFORE build_vector_phase1_sql (vector arm) and hit_attributes_pass_filter (FTS arm). It reads the projection registry from `&tx` — the SAME deferred transaction the vec0 query runs in — so SQLite WAL read-snapshot isolation guarantees the `_fathomdb_projection_registry` rows it checks and the `vector_default` columns the query compiles against are ONE consistent schema snapshot. The pre-dispatch writer-connection check was REMOVED (single snapshot authority).",
+      "snapshot_consistency_argument": "read_search_in_tx opens BEGIN DEFERRED (query_only reader); the snapshot pins on the first read (load_projection_cursor) and is frozen for the life of the tx. A concurrent configure_projections DROP on the writer connection either (a) commits BEFORE the snapshot pins => the reader's snapshot INCLUDES it => the in-tx registry read shows the attr no longer `filterable` AND the vec0 column is absent => validate_filter_attributes_on_snapshot returns InvalidFilter (consistent typed outcome); or (b) commits AFTER the snapshot pins => it is INVISIBLE to this tx => the registry still shows the attr declared AND the vec0 column still exists in that snapshot => the query runs against exactly the column it validated. There is no third case: the registry membership and the vec0 column existence can never disagree WITHIN one snapshot, so the `no such column` path is unreachable. The window fix-2 left open (validate on connection X, execute on connection Y) is gone because X == Y == the one reader tx.",
+      "both_arms_share_the_snapshot_proof": "validate_filter_attributes_on_snapshot runs ONCE at the top of read_search_in_tx, before EITHER arm: the vector arm (build_vector_phase1_sql / vector_filter_clause emitting attr_<hex>=?) and the FTS arm (hit_attributes_pass_filter probing canonical_attributes) both execute later in the SAME `tx`. So both arms are gated by the identical registry snapshot the vec0 query compiles against — a concurrent drop yields ONE consistent InvalidFilter across both arms, never a vector-arm Storage crash diverging from an FTS-arm silent no-match. search_text_only_view passes filter=None, so it carries no attribute surface (nothing to validate/diverge).",
+      "typed_rejection_mechanism": "NO new error variant. A new INTERNAL reader-channel error enum SearchReaderError { Sqlite(rusqlite::Error), InvalidFilter(String) } replaces the bare rusqlite::Error in the Search-path ReaderResponse alias (used ONLY by read_search_in_tx + its two caller sites; From<rusqlite::Error> keeps every existing `?` working). The two Search callers map SearchReaderError::InvalidFilter(reason) -> the EXISTING EngineError::InvalidFilter { reason } (already mapped by Py fathomdb-py/src/lib.rs -> InvalidFilterError and TS src/ts/src/errors.ts -> InvalidFilterError) and SearchReaderError::Sqlite -> emit_sqlite_internal_error + EngineError::Storage (prior behaviour verbatim).",
+      "not_a_regression_of_fix2_or_fix3": "fix-2 undeclared-attr rejection: undeclared_filter_attribute_is_typed_rejection_on_both_arms STILL PASSES — the non-concurrent undeclared name is now caught by the reader-snapshot check (which still runs before either arm) instead of the removed pre-dispatch check; the typed InvalidFilter reason string is byte-identical, so reason.contains(\"nonexistent\") holds. fix-3 declared-but-absent no-match + declared-present match controls (2) and (3) UNCHANGED and green. Removing the pre-dispatch writer check also eliminates a per-filtered-search writer-lock acquisition and fix-2's concurrent-ADD false-reject (the reader snapshot now sees a freshly-added declaration and accepts).",
+      "test_seam": "reader_search_hook (module + arm_reader_search_hook_for_test / clear_reader_search_hook_for_test, `#[doc(hidden)]`, OFF the governed surface, mirroring set_vector_stage_only_for_test). Fired at the TOP of read_search_in_tx, BEFORE the deferred snapshot pins, so a test can commit a concurrent DROP in the exact race window and make the TOCTOU deterministic. Disarmed by default: one Relaxed atomic load per search (same class as the four hot-path atomics already read there), fires at most once (the closure is take()n), no-op in production."
+    },
+    "red_evidence": {
+      "cmd": "cargo test -p fathomdb-engine --test slice15e_prekn_filterable -- --test-threads=1 undeclared_after_concurrent_drop (at RED f33774f5)",
+      "result": "test result: FAILED. 0 passed; 1 failed; 0 ignored; 10 filtered out; exit 101",
+      "panic": "panicked at slice15e_prekn_filterable.rs:1037:38 — 'TOCTOU: a configure_projections DROP racing the search made the vec0 attr_<hex> column vanish AFTER the pre-dispatch check passed on the writer connection, so the reader crashed with an opaque `no such column` Storage error. fix-3 must validate on the reader's OWN transaction snapshot so this is a typed InvalidFilter.'",
+      "what_it_asserts_and_why_it_captures_the_race": "The RED harness (SearchReaderError plumbing + reader_search_hook, but NO reader-side validation yet) parks the reader worker at the hook, DROPs `priority` on the writer connection in the exact validate->execute window, releases the reader, then asserts a typed EngineError::InvalidFilter. The pre-dispatch writer check ALREADY PASSED (priority declared when the search thread validated), and the reader then pins a post-drop snapshot where attr_<hex> is gone => today it hits Err(EngineError::Storage) (the panic arm). This is the strongest RED the mandate describes: a deterministic interleave (validate -> concurrent drop -> execute) that today yields Storage and after the fix yields InvalidFilter — the two connections are proven divergent."
+    },
+    "gates": {
+      "cargo_clippy_workspace_all_targets": { "exit": 0 },
+      "cargo_check_workspace_all_targets": { "exit": 0 },
+      "cargo_test_engine_schema": {
+        "cmd": "cargo test -p fathomdb-engine -p fathomdb-schema -- --test-threads=1",
+        "exit": 0,
+        "aggregate": "642 passed / 0 failed / 13 ignored",
+        "pre_fix3_baseline": "641 passed / 0 failed / 13 ignored (delta +1 = the new race test undeclared_after_concurrent_drop_is_typed_invalidfilter_not_storage_race)",
+        "named_pins_confirmed": [
+          "pr_g10_filtered_knn: 6 passed incl unfiltered_phase1_sql_byte_identical_to_0_7_2 ... ok",
+          "slice15e attribute_filter_excludes_edge_hits_on_both_arms (pin A) ... ok",
+          "slice15e undeclared_filter_attribute_is_typed_rejection_on_both_arms (fix-2) ... ok",
+          "slice15d R-20-PR idempotency: idempotent_reregistration_is_a_noop, idempotent_reregistration_holds_for_deferred_rankable, idempotent_refilterable_registration_is_vec0_noop, deferred_only_mutation_is_reported_not_unchanged ... ok"
+        ],
+        "eu7": "ZERO eu7 runs. eu7_real_corpus_ac stays IGNORED (13 ignored unchanged from the fix-2 641/13 baseline)."
+      },
+      "bindings": {
+        "decision": "SKIPPED fresh-clone X1 + pyright + TS suite per mandate — NO new error variant and NO binding/stub touched. The fix reuses EngineError::InvalidFilter (already mapped by BOTH bindings: fathomdb-py/src/lib.rs -> InvalidFilterError; src/ts/src/errors.ts -> InvalidFilterError). SearchReaderError is a crate-INTERNAL enum on the reader channel; it never crosses the FFI boundary. No Python/TS source changed.",
+        "non_exhaustive_SearchFilter": "INTACT — untouched."
+      }
+    },
+    "invariants": {
+      "AC-041": "GREEN — no recovery/verb code touched; recovery_denylist stays five {recover, restore, repair, fix, rebuild}. Diff confined to the reader-path validation move + the SearchReaderError channel enum + the reader_search_hook test seam + the one new test.",
+      "SearchFilter_non_exhaustive": "INTACT — untouched.",
+      "governed_surface": "PROPOSED / NOT SIGNED — no AC minted, never HITL-SIGNED.",
+      "no_new_error_variant": "CONFIRMED — reused EngineError::InvalidFilter; SearchReaderError is an internal reader-channel enum, not a public/binding surface.",
+      "no_architectural_escalation": "The race was closed by 'validate within the reader snapshot / hold one read transaction across validate+execute' exactly as the mandate scoped — NOT a larger rewrite. No STOP-and-report trigger fired."
+    },
+    "files_changed": {
+      "src/rust/crates/fathomdb-engine/src/lib.rs": "ReaderResponse alias now carries SearchReaderError (new internal enum + From<rusqlite::Error>); reader_search_hook module + arm/clear _for_test seams; read_search_in_tx fires the hook (pre-snapshot) then calls validate_filter_attributes_on_snapshot inside its deferred tx; validate_filter_attributes_declared (writer-conn, EngineError) replaced by validate_filter_attributes_on_snapshot (reader-conn, SearchReaderError); pre-dispatch validation block removed from search_inner_with_stats; both Search caller sites destructure SearchReaderError (InvalidFilter -> EngineError::InvalidFilter, Sqlite -> Storage).",
+      "src/rust/crates/fathomdb-engine/tests/slice15e_prekn_filterable.rs": "NEW test undeclared_after_concurrent_drop_is_typed_invalidfilter_not_storage_race (deterministic TOCTOU via reader_search_hook); fix-2 test comment updated to name the reader-snapshot validation (mechanism only; assertion unchanged)."
+    },
+    "next_step_for_orchestrator_fix3": "Re-run codex (§9) on orch-0.8.20-s15b at HEAD 5ed84345 for the fix-3 TOCTOU race (validate attribute filters on the reader snapshot). If clean, cherry-pick f33774f5 (RED) + 5ed84345 (GREEN) onto the keystone alongside the fix-1 + fix-2 commits. Bindings unaffected (reused InvalidFilter, already mapped; SearchReaderError is crate-internal) — no fresh-clone binding re-run needed. NOTE: fix-3 adds the reader_search_hook test seam (`#[doc(hidden)]` arm/clear _for_test); it is OFF the governed surface and disarmed in production."
   }
 }
