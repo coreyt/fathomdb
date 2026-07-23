@@ -17,6 +17,7 @@ import { Engine, read } from "../src/index.js";
 import type { ProjectionSpec, ProjectionRole } from "../src/index.js";
 import {
   FathomDbError,
+  InvalidArgumentError,
   ProjectionDestructiveError,
   WriteValidationError,
 } from "../src/errors.js";
@@ -418,6 +419,191 @@ test("TC-47 surrogate in drop entry rejected at binding", async () => {
       ["status"],
       "the refused drop must not touch the live projection",
     );
+  } finally {
+    await engine.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 0.8.20 keystone closeout fix-4 — projection-spec binding round-trip
+// consistency. A ProjectionSpec the binding ACCEPTS must round-trip through
+// `read.projections` IDENTICALLY; a shape that would be silently dropped or
+// normalized is refused at the binding boundary with the typed validation error
+// (InvalidArgumentError, the same variant the unknown-role rejection uses).
+// Mirrors the Python suite one-for-one (Py ≡ TS: both reject the same shapes).
+// ---------------------------------------------------------------------------
+
+test("fix-4 orphaned ftsTokenizer (fts:false) rejected at binding, not persisted", async () => {
+  const path = freshDbPath();
+  const engine = await Engine.open(path);
+  try {
+    await assert.rejects(
+      () =>
+        engine.configureProjections([
+          { name: "status", roles: ["searchable"], fts: false, ftsTokenizer: "unicode61", vector: false },
+        ]),
+      (err: unknown) => {
+        assert.ok(err instanceof InvalidArgumentError, "must be InvalidArgumentError");
+        assert.ok(err instanceof FathomDbError);
+        return true;
+      },
+    );
+  } finally {
+    await engine.close();
+  }
+  assert.deepEqual(registryNames(path), [], "a refused spec must persist no registry row");
+});
+
+test("fix-4 orphaned vectorEmbedder (vector:false) rejected at binding, not persisted", async () => {
+  const path = freshDbPath();
+  const engine = await Engine.open(path);
+  try {
+    await assert.rejects(
+      () =>
+        engine.configureProjections([
+          { name: "summary", roles: ["searchable"], fts: false, vector: false, vectorEmbedder: "bge-small" },
+        ]),
+      (err: unknown) => {
+        assert.ok(err instanceof InvalidArgumentError, "must be InvalidArgumentError");
+        return true;
+      },
+    );
+  } finally {
+    await engine.close();
+  }
+  assert.deepEqual(registryNames(path), [], "a refused spec must persist no registry row");
+});
+
+test("fix-4 empty ftsTokenizer (fts:true) rejected at binding, not persisted", async () => {
+  const path = freshDbPath();
+  const engine = await Engine.open(path);
+  try {
+    await assert.rejects(
+      () =>
+        engine.configureProjections([
+          { name: "status", roles: ["searchable"], fts: true, ftsTokenizer: "", vector: false },
+        ]),
+      (err: unknown) => {
+        assert.ok(err instanceof InvalidArgumentError, "must be InvalidArgumentError");
+        return true;
+      },
+    );
+  } finally {
+    await engine.close();
+  }
+  assert.deepEqual(registryNames(path), [], "a refused spec must persist no registry row");
+});
+
+test("fix-4 empty vectorEmbedder (vector:true) rejected at binding, not persisted", async () => {
+  const path = freshDbPath();
+  const engine = await Engine.open(path);
+  try {
+    await assert.rejects(
+      () =>
+        engine.configureProjections([
+          { name: "summary", roles: ["searchable"], fts: false, vector: true, vectorEmbedder: "" },
+        ]),
+      (err: unknown) => {
+        assert.ok(err instanceof InvalidArgumentError, "must be InvalidArgumentError");
+        return true;
+      },
+    );
+  } finally {
+    await engine.close();
+  }
+  assert.deepEqual(registryNames(path), [], "a refused spec must persist no registry row");
+});
+
+test("fix-4 duplicate role rejected at binding, not persisted", async () => {
+  const path = freshDbPath();
+  const engine = await Engine.open(path);
+  try {
+    await assert.rejects(
+      () =>
+        engine.configureProjections([
+          // The TS `roles` is a plain array (unlike the Python frozenset), so a
+          // duplicate spelling is reachable through the public SDK — and cannot
+          // round-trip the registry's de-duplicated set.
+          { name: "status", roles: ["searchable", "searchable"], fts: false, vector: false },
+        ]),
+      (err: unknown) => {
+        assert.ok(err instanceof InvalidArgumentError, "must be InvalidArgumentError");
+        return true;
+      },
+    );
+  } finally {
+    await engine.close();
+  }
+  assert.deepEqual(registryNames(path), [], "a refused spec must persist no registry row");
+});
+
+test("fix-4 CONTROL — a consistent spec round-trips verbatim via read.projections", async () => {
+  const path = freshDbPath();
+  const engine = await Engine.open(path);
+  try {
+    const sent: ProjectionSpec = {
+      name: "status",
+      roles: ["searchable"],
+      fts: true,
+      ftsTokenizer: "unicode61",
+      vector: true,
+      vectorEmbedder: "bge-small",
+    };
+    const delta = await engine.configureProjections([sent]);
+    assert.equal(delta.unchanged, false);
+    const back = await read.projections(engine);
+    assert.equal(back.length, 1);
+    // The full round-trip invariant: read-back equals what was sent.
+    assert.deepEqual(back[0], sent);
+  } finally {
+    await engine.close();
+  }
+});
+
+test("fix-4 AUDIT — fts/vector without the searchable role round-trips (inert but faithful)", async () => {
+  const path = freshDbPath();
+  const engine = await Engine.open(path);
+  try {
+    // A contradiction the engine treats as inert (no property-FTS built), but
+    // the declaration is stored + read back faithfully, so it round-trips and
+    // is NOT a binding-boundary violation — accepted, not rejected. (Rejecting
+    // it would be an engine-semantics change, out of scope for a round-trip
+    // fidelity fix.) Fields omitted (not null) to isolate this from the
+    // null-normalization round-trip covered separately below.
+    await engine.configureProjections([
+      { name: "status", roles: ["filterable"], fts: true, vector: true },
+    ]);
+    const got = (await read.projections(engine)).find((s) => s.name === "status");
+    assert.ok(got, "the projection must exist");
+    assert.equal(got.fts, true);
+    assert.equal(got.vector, true);
+    assert.deepEqual([...got.roles].sort(), ["filterable"]);
+  } finally {
+    await engine.close();
+  }
+});
+
+test("fix-4 read.projections output round-trips BACK into configureProjections (null≡None, Py≡TS)", async () => {
+  // The read→configure round-trip: `read.projections` emits `ftsTokenizer: null`
+  // / `vectorEmbedder: null` for a spec with no custom sub-field. Feeding that
+  // output straight back into `configureProjections` MUST be accepted as an
+  // idempotent no-op — otherwise `read.projections` produces a value its own
+  // `configureProjections` cannot consume. pyo3 accepts `None` natively; napi
+  // rejected an explicit `null` with an opaque `StringExpected`, diverging from
+  // Python and breaking this round-trip. fix-4 normalizes `null → None` at the
+  // TS binding boundary so the two bindings behave identically.
+  const path = freshDbPath();
+  const engine = await Engine.open(path);
+  try {
+    await engine.configureProjections([
+      { name: "status", roles: ["filterable", "searchable"], fts: true, vector: true },
+    ]);
+    const readBack = await read.projections(engine);
+    assert.equal(readBack.length, 1);
+    assert.equal(readBack[0].ftsTokenizer, null, "read output carries an explicit null sub-field");
+    // Re-applying the read output verbatim is a no-op — proves null round-trips.
+    const again = await engine.configureProjections(readBack);
+    assert.equal(again.unchanged, true, "read.projections output must re-apply as a no-op");
   } finally {
     await engine.close();
   }

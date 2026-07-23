@@ -17,8 +17,11 @@ import sqlite3
 import pytest
 
 from fathomdb import Engine, ProjectionRole, ProjectionSpec, read
+from fathomdb._fathomdb import ProjectionSpec as _NativeProjectionSpec
+from fathomdb._fathomdb import configure_projections as _native_configure_projections
 from fathomdb.errors import (
     EngineError,
+    InvalidArgumentError,
     ProjectionDestructiveError,
     WriteValidationError,
 )
@@ -260,6 +263,193 @@ def test_ffi_nul_in_drop_entry_rejected_at_binding(tmp_path) -> None:
         assert isinstance(exc.value, EngineError)
         # The real projection is untouched by the refused call.
         assert {s.name for s in read.projections(engine)} == {"status"}
+    finally:
+        engine.close()
+
+
+# ---------------------------------------------------------------------------
+# 0.8.20 keystone closeout fix-4 — projection-spec binding round-trip
+# consistency. A ProjectionSpec the binding ACCEPTS must round-trip through
+# `read.projections` IDENTICALLY; a shape that would be silently dropped or
+# normalized is refused at the binding boundary with the typed validation error
+# (InvalidArgumentError, the same variant the unknown-role rejection uses).
+# Mirrors the TS suite one-for-one (Py ≡ TS: both reject the same shapes).
+# ---------------------------------------------------------------------------
+
+
+def test_orphaned_fts_tokenizer_rejected_at_binding(tmp_path) -> None:
+    """fix-4 — `fts_tokenizer` supplied while `fts=False` is refused (else the
+    tokenizer is silently dropped: configure reports success but
+    read.projections cannot round-trip what the caller sent)."""
+    path = str(tmp_path / "orphan_tok.sqlite")
+    engine = _open(path)
+    try:
+        spec = ProjectionSpec(
+            name="status",
+            roles=frozenset({ProjectionRole.SEARCHABLE}),
+            fts=False,
+            fts_tokenizer="unicode61",
+        )
+        with pytest.raises(InvalidArgumentError) as exc:
+            engine.configure_projections([spec])
+        assert isinstance(exc.value, EngineError)
+    finally:
+        engine.close()
+    assert _registry_names(path) == [], "a refused spec must persist no registry row"
+
+
+def test_orphaned_vector_embedder_rejected_at_binding(tmp_path) -> None:
+    """fix-4 — `vector_embedder` supplied while `vector=False` is refused."""
+    path = str(tmp_path / "orphan_emb.sqlite")
+    engine = _open(path)
+    try:
+        spec = ProjectionSpec(
+            name="summary",
+            roles=frozenset({ProjectionRole.SEARCHABLE}),
+            vector=False,
+            vector_embedder="bge-small",
+        )
+        with pytest.raises(InvalidArgumentError) as exc:
+            engine.configure_projections([spec])
+        assert isinstance(exc.value, EngineError)
+    finally:
+        engine.close()
+    assert _registry_names(path) == [], "a refused spec must persist no registry row"
+
+
+def test_empty_fts_tokenizer_rejected_at_binding(tmp_path) -> None:
+    """fix-4 — an empty `fts_tokenizer` with `fts=True` is refused: the engine
+    normalizes `""` to the default, so it reads back as None (non-round-trip)."""
+    path = str(tmp_path / "empty_tok.sqlite")
+    engine = _open(path)
+    try:
+        spec = ProjectionSpec(
+            name="status",
+            roles=frozenset({ProjectionRole.SEARCHABLE}),
+            fts=True,
+            fts_tokenizer="",
+        )
+        with pytest.raises(InvalidArgumentError) as exc:
+            engine.configure_projections([spec])
+        assert isinstance(exc.value, EngineError)
+    finally:
+        engine.close()
+    assert _registry_names(path) == [], "a refused spec must persist no registry row"
+
+
+def test_empty_vector_embedder_rejected_at_binding(tmp_path) -> None:
+    """fix-4 — an empty `vector_embedder` with `vector=True` is refused (same
+    silent-normalize-to-default non-round-trip as the fts twin)."""
+    path = str(tmp_path / "empty_emb.sqlite")
+    engine = _open(path)
+    try:
+        spec = ProjectionSpec(
+            name="summary",
+            roles=frozenset({ProjectionRole.SEARCHABLE}),
+            vector=True,
+            vector_embedder="",
+        )
+        with pytest.raises(InvalidArgumentError) as exc:
+            engine.configure_projections([spec])
+        assert isinstance(exc.value, EngineError)
+    finally:
+        engine.close()
+    assert _registry_names(path) == [], "a refused spec must persist no registry row"
+
+
+def test_duplicate_role_rejected_at_binding(tmp_path) -> None:
+    """fix-4 — a duplicate role spelling in the flat list is refused. The SDK
+    dataclass uses a `frozenset` (which dedups), so this exercises the NATIVE
+    binding boundary directly, where the flat `roles: list[str]` COULD carry a
+    duplicate that the registry's de-duplicated BTreeSet cannot round-trip."""
+    path = str(tmp_path / "dup_role.sqlite")
+    engine = _open(path)
+    try:
+        native = _NativeProjectionSpec(
+            "status",
+            ["searchable", "searchable"],
+            False,
+            None,
+            False,
+            None,
+        )
+        with pytest.raises(InvalidArgumentError) as exc:
+            _native_configure_projections(engine._native, [native], None)
+        assert isinstance(exc.value, EngineError)
+    finally:
+        engine.close()
+    assert _registry_names(path) == [], "a refused spec must persist no registry row"
+
+
+def test_consistent_fts_spec_round_trips(tmp_path) -> None:
+    """fix-4 non-vacuous CONTROL — a CONSISTENT spec (`fts=True` WITH a real
+    custom tokenizer) is ACCEPTED and, read back via `read.projections`, equals
+    what was sent. Proves the gate rejects only inconsistent shapes, not every
+    tokenizer/embedder."""
+    engine = _open(str(tmp_path / "consistent.sqlite"))
+    try:
+        sent = ProjectionSpec(
+            name="status",
+            roles=frozenset({ProjectionRole.SEARCHABLE}),
+            fts=True,
+            fts_tokenizer="unicode61",
+            vector=True,
+            vector_embedder="bge-small",
+        )
+        delta = engine.configure_projections([sent])
+        assert delta.unchanged is False
+        back = read.projections(engine)
+        assert len(back) == 1
+        got = back[0]
+        # The full round-trip invariant: read-back equals what was sent.
+        assert got == sent
+        assert got.fts is True and got.fts_tokenizer == "unicode61"
+        assert got.vector is True and got.vector_embedder == "bge-small"
+    finally:
+        engine.close()
+
+
+def test_fts_without_searchable_role_round_trips(tmp_path) -> None:
+    """fix-4 AUDIT — an `fts` sub-object WITHOUT the `searchable` role is a
+    contradiction the engine treats as inert (no property-FTS built), BUT the
+    declaration is stored and read back FAITHFULLY, so it round-trips and is NOT
+    a binding-boundary violation. It is therefore ACCEPTED (making it a hard
+    error would be an engine-semantics change, out of scope for a round-trip
+    fidelity fix). Same for a `vector` sub-object without `searchable`."""
+    engine = _open(str(tmp_path / "fts_no_searchable.sqlite"))
+    try:
+        sent = ProjectionSpec(
+            name="status",
+            roles=frozenset({ProjectionRole.FILTERABLE}),
+            fts=True,
+            vector=True,
+        )
+        engine.configure_projections([sent])
+        got = next(s for s in read.projections(engine) if s.name == "status")
+        assert got == sent, "fts/vector-without-searchable must round-trip faithfully"
+        assert got.fts is True and got.vector is True
+        assert got.roles == frozenset({"filterable"})
+    finally:
+        engine.close()
+
+
+def test_read_projections_output_round_trips_back_into_configure(tmp_path) -> None:
+    """fix-4 — the read→configure round-trip: `read.projections` output fed
+    straight back into `configure_projections` must re-apply as an idempotent
+    no-op (the sub-field `None` must be accepted). pyo3 accepts `None` natively
+    (this is GREEN at RED for Python); the napi twin needed a `null → None`
+    normalization to match — the Py ≡ TS parity anchor for that fix."""
+    engine = _open(str(tmp_path / "read_configure_rt.sqlite"))
+    try:
+        engine.configure_projections(
+            [_spec("status", {ProjectionRole.FILTERABLE, ProjectionRole.SEARCHABLE}, fts=True, vector=True)]
+        )
+        read_back = read.projections(engine)
+        assert len(read_back) == 1
+        assert read_back[0].fts_tokenizer is None, "read output carries a None sub-field"
+        # Re-applying the read output verbatim is a no-op — proves None round-trips.
+        again = engine.configure_projections(list(read_back))
+        assert again.unchanged is True, "read.projections output must re-apply as a no-op"
     finally:
         engine.close()
 
