@@ -232,5 +232,110 @@
       "src/rust/crates/fathomdb-engine/tests/slice15e_prekn_filterable.rs": "NEW test undeclared_after_concurrent_drop_is_typed_invalidfilter_not_storage_race (deterministic TOCTOU via reader_search_hook); fix-2 test comment updated to name the reader-snapshot validation (mechanism only; assertion unchanged)."
     },
     "next_step_for_orchestrator_fix3": "Re-run codex (§9) on orch-0.8.20-s15b at HEAD 5ed84345 for the fix-3 TOCTOU race (validate attribute filters on the reader snapshot). If clean, cherry-pick f33774f5 (RED) + 5ed84345 (GREEN) onto the keystone alongside the fix-1 + fix-2 commits. Bindings unaffected (reused InvalidFilter, already mapped; SearchReaderError is crate-internal) — no fresh-clone binding re-run needed. NOTE: fix-3 adds the reader_search_hook test seam (`#[doc(hidden)]` arm/clear _for_test); it is OFF the governed surface and disarmed in production."
+  },
+  "fix_4": {
+    "scope": "0.8.20 keystone closeout fix-4 — comprehensive projection-spec BINDING round-trip consistency. codex §9 found BOTH bindings ACCEPT inconsistent ProjectionSpec shapes and silently drop caller data. Enforce the invariant: any ProjectionSpec a binding ACCEPTS must round-trip through read.projections IDENTICALLY, else reject at the binding boundary with the typed validation error. ADD-only on branch orch-0.8.20-s15b; fix-1/2/3 untouched. Bounded to the projection-spec / drop / configureProjections binding conversion surface — NO engine semantics change.",
+    "baseline_head": "29e61c0e (keystone closeout fix-3 witness — head at which fix-4 was commissioned)",
+    "head_sha": "cb1a4c5d043bd373fa3c12224abec652e56a22cc",
+    "status": "COMPLETE — the two named cases + the whole class closed adversarially at BOTH bindings via TDD (RED->GREEN by EXECUTION in a fresh clone); all gates green; Py and TS reject the same shapes the same way.",
+    "commits": {
+      "red": "01f74521637a2591a9327aab312955da9a111b9c",
+      "green": "cb1a4c5d043bd373fa3c12224abec652e56a22cc"
+    },
+    "invariant_enforced": "In each binding's ProjectionSpec::to_rust, BEFORE building the Rust spec (after the existing AC-068 FFI-string gate), reject any shape that cannot round-trip. Both bindings reuse the EXISTING typed variant the unknown-role rejection already uses (pyo3 InvalidArgumentError; napi typed_error(CODE_INVALID_ARGUMENT) — both map to InvalidArgumentError on their SDK side). NO new error variant. Py ≡ TS: identical conditions, identical messages, identical order.",
+    "named_findings": {
+      "pyo3_lib_rs_903_906": "PyProjectionSpec::to_rust built the Rust fts/vector sub-object only when the boolean was true (`self.fts.then(...)`), so `ProjectionSpec(fts=False, fts_tokenizer=\"x\")` (and the vector twin) was ACCEPTED and the tokenizer/embedder SILENTLY DROPPED — configure reported success but read.projections could not round-trip it. CLOSED.",
+      "napi_lib_rs_518_521": "ProjectionSpec::to_rust — identical accept-and-drop for `{ fts:false, ftsTokenizer:\"x\" }` / `{ vector:false, vectorEmbedder:\"x\" }`. CLOSED."
+    },
+    "audit_full_results": {
+      "1_orphaned_fts_tokenizer": "REJECTED at both bindings — fts_tokenizer/ftsTokenizer set while fts is false. (NAMED.) Non-round-trip: the tokenizer would be dropped.",
+      "2_orphaned_vector_embedder": "REJECTED at both bindings — vector_embedder/vectorEmbedder set while vector is false. (NAMED.) Non-round-trip: the embedder would be dropped.",
+      "3_empty_fts_tokenizer": "REJECTED at both bindings — an empty-string tokenizer while fts is true. Engine StoredProjection::from_spec `.filter(|t| !t.is_empty())` normalizes \"\" -> None, so read.projections returns None: silent-normalize non-round-trip. Refused (mandate: reject, don't silently normalize).",
+      "4_empty_vector_embedder": "REJECTED at both bindings — empty-string embedder while vector is true. Same silent-normalize-to-None as (3).",
+      "5_duplicate_role": "REJECTED at both bindings — a duplicate role spelling in the flat list. The registry stores a de-duplicated BTreeSet, so `[\"searchable\",\"searchable\"]` reads back as `[\"searchable\"]`: cannot round-trip. Detected via `!roles.insert(role)`. (In TS `roles` is a plain array ⇒ reachable through the public SDK; in Python the SDK dataclass uses a frozenset that dedups, so the Python test exercises the NATIVE _NativeProjectionSpec boundary directly — the actual conversion surface — for Py≡TS symmetry.)",
+      "6_role_reordering": "ACCEPTED (not rejected) — an unsorted-but-unique role list (e.g. [\"searchable\",\"filterable\"]) reads back in the registry's canonical sorted order. This is a CANONICALIZATION, not data loss: roles carry documented SET semantics (order is not meaningful), so it round-trips AS A SET. Rejecting mere reordering would be hostile and is not a round-trip-fidelity concern. The round-trip control tests use sorted-unique input so they also match literally.",
+      "7_fts_or_vector_without_searchable_role": "ACCEPTED (confirmed round-trips) — an fts/vector sub-object present without the `searchable` role is a contradiction the engine treats as INERT (wants_property_fts()/vector build never fires), BUT persist_projection_row stores fts_present/vector_declared UNCONDITIONALLY (not gated on searchable) and load/to_spec read them back faithfully, so the declaration round-trips exactly. It therefore does NOT violate the round-trip invariant. DECISION: do NOT reject at the binding — rejecting an inert-but-faithful shape would be a NEW engine-SEMANTICS policy (making a contradiction a hard error), which is a design question OUTSIDE round-trip fidelity. Proven by test_fts_without_searchable_role_round_trips (Py) / the AUDIT test (TS). FLAGGED as a semantics question for HITL/next review (see semantics_question_flagged), not decided here.",
+      "8_name_field": "ALREADY-CORRECT — forwarded and FFI/well-formed-name validated; round-trips.",
+      "9_unknown_role": "ALREADY-REJECTED — from_str_opt(None) -> InvalidArgumentError (pre-existing).",
+      "10_empty_roles": "ALREADY-REJECTED — engine apply_projection_config rejects roles.is_empty() with InvalidArgument (surfaces at the binding); left to the engine.",
+      "11_nul_surrogate_strings": "ALREADY-REJECTED — fix-5 (AC-068a NUL) + TC-47 (surrogate) guard every spec/drop string; unchanged.",
+      "12_drop_list": "IN-SURFACE, ALREADY-CORRECT — drop entries are FFI-validated and duplicate-drop is engine-rejected; drop names are not read back via read.projections (they remove rows) so carry no round-trip obligation beyond that.",
+      "13_null_vs_undefined_napi_codec": "REJECTED-DIVERGENCE now CLOSED (napi-only fix) — read.projections EMITS `ftsTokenizer/vectorEmbedder: null`, but napi-rs rejected an explicit `null` for an `Option<String>` field with an OPAQUE `StringExpected` error (JS value `Null` into rust type `String`), while pyo3 accepts `None` natively. So `read.projections()` output fed straight back into `configureProjections()` THREW on TS but was an idempotent no-op on Python — a cross-binding divergence AND a read→configure round-trip break. FIX: src/ts/src/index.ts configureProjections now maps `null -> undefined` (⇒ napi None) per spec (shallow copy, caller objects untouched) BEFORE the native call. Mechanical binding-boundary normalization, NO engine change; makes TS match pyo3 and makes read output re-appliable. Pinned by the read→configure round-trip test (Py green at RED — already correct; TS RED→GREEN)."
+    },
+    "semantics_question_flagged": "AUDIT case 7 (fts/vector sub-object declared WITHOUT the searchable role) round-trips faithfully but is INERT (the engine builds no property-FTS / vector for it). Whether such a contradictory-but-lossless declaration SHOULD be a hard error is an ENGINE-SEMANTICS/design decision, NOT a round-trip-fidelity fix. Per the mandate STOP clause it was NOT decided here: the binding ACCEPTS it (it round-trips). Flag for HITL/next review if a stricter 'reject inert declarations' policy is desired.",
+    "cross_binding_parity": "CONFIRMED Py ≡ TS. Both to_rust functions carry byte-identical validation logic (same four fts/vector match arms + the duplicate-role insert guard) and the SAME message text; both raise the SAME SDK class (InvalidArgumentError). The null→undefined normalization (case 13) brings TS's null-handling into parity with pyo3's native None. Mirror test suites assert the same shapes reject/accept in both languages (src/python/tests/test_slice15d_projection_registry.py ≡ src/ts/tests/slice15d-projection-registry.test.ts).",
+    "round_trip_invariant_proof": "CONTROL test (both bindings): a CONSISTENT spec — fts=true+fts_tokenizer=\"unicode61\", vector=true+vector_embedder=\"bge-small\", roles={searchable} — is ACCEPTED and, read back via read.projections, EQUALS what was sent (Python `got == sent` on the frozen dataclass; TS `assert.deepEqual(back[0], sent)`). Non-vacuous: it stays GREEN at RED and GREEN, proving the gate rejects ONLY inconsistent shapes, not every tokenizer/embedder. Plus the read→configure round-trip test (case 13) proves read.projections output re-applies as an idempotent no-op on BOTH bindings.",
+    "red_evidence": {
+      "method": "TDD by EXECUTION in a fresh `git clone --no-local` of the branch (own npm + own python venv; napi + pyo3 rebuilt from source; NEVER the shared .venv, NEVER from the worktree).",
+      "python": {
+        "cmd": "fresh clone @ RED 01f74521 -> maturin develop --features pyo3/extension-module,test-hooks,default-embedder,default-reranker -> python -m pytest tests/test_slice15d_projection_registry.py -q",
+        "result": "5 failed, 13 passed; exit 1",
+        "failures": [
+          "test_orphaned_fts_tokenizer_rejected_at_binding — Failed: DID NOT RAISE InvalidArgumentError",
+          "test_orphaned_vector_embedder_rejected_at_binding — DID NOT RAISE InvalidArgumentError",
+          "test_empty_fts_tokenizer_rejected_at_binding — DID NOT RAISE InvalidArgumentError",
+          "test_empty_vector_embedder_rejected_at_binding — DID NOT RAISE InvalidArgumentError",
+          "test_duplicate_role_rejected_at_binding — DID NOT RAISE InvalidArgumentError"
+        ],
+        "note": "The read→configure round-trip test PASSED at RED for Python — pyo3 already accepts None natively, so the null-round-trip divergence is TS-only (see audit case 13). The CONTROL + fts-without-searchable AUDIT tests also passed at RED (non-vacuous)."
+      },
+      "typescript": {
+        "cmd": "fresh clone @ RED 01f74521 -> npm ci -> napi build:native:debug -> tsc -> node --test dist/tests/slice15d-projection-registry.test.js",
+        "result": "6 failed, 17 passed (23 tests); node --test exit 1",
+        "failures": [
+          "fix-4 orphaned ftsTokenizer (fts:false) — AssertionError: Missing expected rejection { operator: 'rejects' }",
+          "fix-4 orphaned vectorEmbedder (vector:false) — Missing expected rejection",
+          "fix-4 empty ftsTokenizer (fts:true) — Missing expected rejection",
+          "fix-4 empty vectorEmbedder (vector:true) — Missing expected rejection",
+          "fix-4 duplicate role — Missing expected rejection",
+          "fix-4 read.projections output round-trips BACK into configureProjections — Error: Failed to convert JavaScript value `Null` into rust type `String` on ProjectionSpec.ftsTokenizer (code StringExpected)"
+        ]
+      }
+    },
+    "gates": {
+      "cargo_clippy_workspace_all_targets": { "exit": 0, "note": "fathomdb-napi + fathomdb-py both in the workspace check; re-confirmed napi via `cargo clippy -p fathomdb-napi --all-targets` exit 0." },
+      "cargo_check_workspace_all_targets": { "exit": 0 },
+      "cargo_test_engine_schema": {
+        "cmd": "cargo test -p fathomdb-engine -p fathomdb-schema -- --test-threads=1",
+        "exit": 0,
+        "aggregate": "642 passed / 0 failed / 13 ignored",
+        "pre_fix4_baseline": "642 passed / 0 failed / 13 ignored (delta 0 — fix-4 is BINDING-ONLY; no engine/schema code or test changed, so the engine aggregate is unchanged from the fix-3 642/13 baseline).",
+        "eu7": "ZERO eu7 runs; the 13-ignored count is unchanged (eu7_real_corpus_ac stays ignored)."
+      },
+      "python_fresh_clone_execution": {
+        "clone": "same fresh clone, checked out to GREEN cb1a4c5d; pyo3 rebuilt via maturin develop (own venv)",
+        "maturin_develop_exit": 0,
+        "pytest": { "cmd": "python -m pytest tests/test_slice15d_projection_registry.py -q", "exit": 0, "result": "18 passed" }
+      },
+      "ts_fresh_clone_execution": {
+        "clone": "same fresh clone at GREEN cb1a4c5d; napi rebuilt (build:native:debug) + tsc",
+        "napi_build_exit": 0,
+        "tsc_exit": 0,
+        "node_test_target_file": { "exit": 0, "tests": 23, "pass": 23, "fail": 0, "skipped": 0 },
+        "node_test_full_suite": { "cmd": "node --test dist/tests/*.test.js", "exit": 0, "tests": 224, "pass": 224, "fail": 0, "skipped": 0, "note": "216 pre-fix4 + 8 new fix-4 tests = 224." }
+      },
+      "pyright": {
+        "cmd": "pyright (config [tool.pyright] include=fathomdb,tests,eval) in the fresh clone venv with full dev deps installed (numpy/scipy/networkx/pyyaml/hypothesis)",
+        "exit": 1,
+        "errors": 7,
+        "warnings": 0,
+        "baseline_match": "EXACTLY the ~7 pre-existing baseline — 5 in fathomdb/engine.py (dense_disabled / dense_disabled_reason / vector_equivalence_refusal_count attribute-access), 1 in fathomdb/graph.py (IdSpace nominal-vs-native assignability), 1 in tests/test_vector_equivalence_probe.py (no param 'reason'). ZERO in the fix-4 test file and ZERO projection-related — no NEW errors. .pyi note: the existing fathomdb/_fathomdb.pyi ALREADY declares ProjectionSpec.__init__(name, roles, fts, fts_tokenizer, vector, vector_embedder) + configure_projections/read_projections, so the new native-boundary test imports resolve with NO stub gap and NO .pyi edit was needed."
+      }
+    },
+    "invariants": {
+      "AC-041": "GREEN — no recovery/verb code touched; recovery_denylist stays five {recover, restore, repair, fix, rebuild}. Diff confined to the two to_rust validation blocks + the TS null→undefined normalization + the two mirror test files.",
+      "SearchFilter_non_exhaustive": "INTACT — untouched.",
+      "governed_surface": "PROPOSED / NOT SIGNED — no AC minted, never HITL-SIGNED.",
+      "no_new_error_variant": "CONFIRMED — reused pyo3 InvalidArgumentError / napi CODE_INVALID_ARGUMENT (both already used by the sibling unknown-role rejection in the same to_rust).",
+      "no_engine_semantics_change": "CONFIRMED — engine StoredProjection/apply_projection_config bytes unchanged; fix-4 is pure binding-boundary INPUT validation + one TS null-codec normalization."
+    },
+    "files_changed": {
+      "src/rust/crates/fathomdb-py/src/lib.rs": "PyProjectionSpec::to_rust — added the fts/vector orphaned+empty round-trip gate (4 match arms) + the duplicate-role insert guard, all raising InvalidArgumentError, before building RustProjectionSpec.",
+      "src/rust/crates/fathomdb-napi/src/lib.rs": "ProjectionSpec::to_rust — byte-parallel gate raising typed_error(CODE_INVALID_ARGUMENT).",
+      "src/ts/src/index.ts": "configureProjections — normalize each spec's ftsTokenizer/vectorEmbedder null→undefined (⇒ napi None) before the native call, closing the read→configure divergence (audit case 13).",
+      "src/python/tests/test_slice15d_projection_registry.py": "NEW fix-4 tests: 5 rejection tests (orphaned/empty fts+vector, duplicate role via native boundary), a consistent-spec round-trip CONTROL, an fts/vector-without-searchable AUDIT round-trip, and a read→configure round-trip.",
+      "src/ts/tests/slice15d-projection-registry.test.ts": "NEW fix-4 tests mirroring Python one-for-one (5 rejections + CONTROL + AUDIT + read→configure)."
+    },
+    "next_step_for_orchestrator_fix4": "Re-run codex (§9) on orch-0.8.20-s15b at HEAD cb1a4c5d for fix-4 (projection-spec binding round-trip consistency, both bindings). If clean, cherry-pick 01f74521 (RED) + cb1a4c5d (GREEN) onto the keystone alongside fix-1/2/3. Bindings WERE changed (pyo3 + napi + TS index.ts) so the fresh-clone Py+TS execution + pyright were run and are GREEN (recorded above). One SEMANTICS question is FLAGGED (audit case 7 / semantics_question_flagged): whether an inert fts/vector-without-searchable declaration should be a hard error — left for HITL, not decided here."
   }
 }
