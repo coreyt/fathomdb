@@ -798,8 +798,22 @@ export class Engine {
     // path as a real byte and is already caught Rust-side; the surrogate is not.)
     validateFfiTree(specs);
     if (drop !== undefined) validateFfiTree(drop);
+    // 0.8.20 keystone closeout fix-4 — normalize an explicit `null` sub-field to
+    // `undefined` (⇒ napi `None`). `read.projections` EMITS `ftsTokenizer: null`
+    // / `vectorEmbedder: null` for a spec with no custom sub-field, but napi-rs
+    // rejects an explicit `null` for an `Option<String>` field with an opaque
+    // `StringExpected` — so feeding read output straight back into
+    // `configureProjections` threw, diverging from pyo3 (which accepts `None`)
+    // and breaking the read→configure round-trip. Mapping `null → undefined`
+    // here makes the two bindings behave identically and keeps the caller's
+    // objects untouched (a shallow copy per spec).
+    const nativeSpecs = specs.map((s) => ({
+      ...s,
+      ftsTokenizer: s.ftsTokenizer ?? undefined,
+      vectorEmbedder: s.vectorEmbedder ?? undefined,
+    }));
     return intercept(() =>
-      this.#native.configureProjections(specs, drop ?? null),
+      this.#native.configureProjections(nativeSpecs, drop ?? null),
     );
   }
 

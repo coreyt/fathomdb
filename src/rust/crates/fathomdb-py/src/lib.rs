@@ -887,6 +887,45 @@ impl PyProjectionSpec {
         if let Some(embedder) = &self.vector_embedder {
             validate_ffi_string_py(embedder)?;
         }
+        // 0.8.20 keystone closeout fix-4 — ROUND-TRIP CONSISTENCY GATE. A spec
+        // the binding ACCEPTS must round-trip through `read.projections`
+        // IDENTICALLY; otherwise reject it HERE with the typed validation error
+        // rather than let the engine silently drop or normalize a sub-field.
+        // Kept byte-for-byte in step with the napi binding (Py ≡ TS): the two
+        // must refuse the same shapes the same way. `fts`/`vector` carry the
+        // sub-object PRESENCE, so an `fts_tokenizer` supplied while `fts` is
+        // false (or an empty `""` that the engine collapses to the default)
+        // could never survive the round-trip and is refused.
+        match (self.fts, self.fts_tokenizer.as_deref()) {
+            (false, Some(_)) => {
+                return Err(InvalidArgumentError::new_err(format!(
+                    "projection {:?}: fts_tokenizer is set but fts is false — the tokenizer would be silently dropped and cannot round-trip; set fts=true or omit fts_tokenizer",
+                    self.name
+                )));
+            }
+            (true, Some("")) => {
+                return Err(InvalidArgumentError::new_err(format!(
+                    "projection {:?}: fts_tokenizer is an empty string, which the engine normalizes to the default and cannot round-trip; omit fts_tokenizer for the engine default",
+                    self.name
+                )));
+            }
+            _ => {}
+        }
+        match (self.vector, self.vector_embedder.as_deref()) {
+            (false, Some(_)) => {
+                return Err(InvalidArgumentError::new_err(format!(
+                    "projection {:?}: vector_embedder is set but vector is false — the embedder would be silently dropped and cannot round-trip; set vector=true or omit vector_embedder",
+                    self.name
+                )));
+            }
+            (true, Some("")) => {
+                return Err(InvalidArgumentError::new_err(format!(
+                    "projection {:?}: vector_embedder is an empty string, which the engine normalizes to the default and cannot round-trip; omit vector_embedder for the engine default",
+                    self.name
+                )));
+            }
+            _ => {}
+        }
         let mut roles = std::collections::BTreeSet::new();
         for r in &self.roles {
             validate_ffi_string_py(r)?;
@@ -895,7 +934,15 @@ impl PyProjectionSpec {
                     "unknown projection role {r:?}: expected filterable/rankable/searchable"
                 ))
             })?;
-            roles.insert(role);
+            // fix-4 — `roles` is a SET; a duplicate spelling in the flat list
+            // cannot round-trip (the registry stores a de-duplicated
+            // `BTreeSet`), so refuse it rather than silently coalesce.
+            if !roles.insert(role) {
+                return Err(InvalidArgumentError::new_err(format!(
+                    "projection {:?}: role {r:?} is repeated; roles is a set and duplicates cannot round-trip",
+                    self.name
+                )));
+            }
         }
         Ok(RustProjectionSpec {
             name: self.name.clone(),
