@@ -284,8 +284,8 @@ fn s21_is_in_registry_and_schema_version_is_head() {
     // validity window). Step-21 is no longer the last migration, but it MUST
     // still be in the registry and still run on the way to head.
     assert_eq!(
-        SCHEMA_VERSION, 22,
-        "SCHEMA_VERSION must be 22 (step-22 node validity window, R-20-NV)"
+        SCHEMA_VERSION, 24,
+        "SCHEMA_VERSION must be 24 (step-24 projection-registry EAV + property-FTS, Slice 15d)"
     );
     assert!(
         MIGRATIONS.iter().any(|m| m.step_id == 21),
@@ -293,8 +293,8 @@ fn s21_is_in_registry_and_schema_version_is_head() {
     );
     assert_eq!(
         MIGRATIONS.last().expect("at least one migration").step_id,
-        22,
-        "step-22 (node validity window, R-20-NV) must be the last (head) migration"
+        24,
+        "step-24 (projection-registry EAV + property-FTS, Slice 15d) must be the last (head) migration"
     );
 }
 

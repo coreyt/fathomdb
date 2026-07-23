@@ -79,8 +79,9 @@ accepts two optional validity keys:
 
 **BOTH spellings are accepted** for each bound. The camelCase spelling is
 consulted first and the snake_case spelling is the fallback, mirroring the
-existing edge `tValid` / `t_valid` precedent, so a caller porting from the
-Python surface keeps working.
+existing edge `tValid` / `t_valid` precedent (which TC-33 aligns to the same
+INTEGER epoch-seconds units — see below), so a caller porting from the Python
+surface keeps working.
 
 ```typescript
 await engine.write([
@@ -113,6 +114,73 @@ identical across Rust / Python / TypeScript and cannot drift):
 
 These are keys on an existing verb, not a new verb: the runtime-verb surface
 above is unchanged. The fields-only delta is **PROPOSED, NOT SIGNED**.
+
+## Edge temporal fields (0.8.20 Slice 15c, TC-33)
+
+An **edge** item accepts two optional temporal keys. As of TC-33
+(HITL-RATIFIED 2026-07-21) these are **INTEGER epoch seconds (UTC)** — the same
+representation as the node validity window and as storage — NOT ISO-8601
+strings, which they used to be:
+
+- `tValid` / `t_valid` — `number | null`, event valid-time. `null` = unknown /
+  still valid.
+- `tInvalid` / `t_invalid` — `number | null`, event invalid-time. `null` =
+  **still valid**.
+
+**BOTH spellings are accepted** for each field (camelCase first, snake_case
+fallback), exactly as for the node window.
+
+```typescript
+await engine.write([
+  {
+    kind: "works_for",
+    from: "bob",
+    to: "acme",
+    sourceId: "s1",
+    tValid: 1_546_300_800, // 2019-01-01T00:00:00Z
+    tInvalid: null,        // still valid
+  },
+]);
+```
+
+`null`/omitted is the ONLY way to say "unknown"; it lands SQL NULL, which reads
+as **still valid**. A non-integral field rejects with `WriteValidationError` and
+is never coerced — the same `json_i64_alt` validator serves the node window and
+the edge fields, so the old string-accepting `json_str_alt` no longer applies.
+
+**Layering note.** This is the GOVERNED SDK write surface. ISO-8601 survives
+ONLY on the **BYO-LLM extractor wire** (`fathomdb.extract.v1`), where the engine
+normalises each timestamp to epoch seconds with a HARD REJECTION of any value it
+cannot parse — an unparseable timestamp must never coerce to NULL, because a
+NULL `t_invalid` reads as "still valid" and would resurrect an invalidated edge.
+Fields-only delta, **PROPOSED, NOT SIGNED**.
+
+## Projection registry (0.8.20 Slice 15d, R-20-PR / C-1)
+
+Two net-new governed verbs declare and inspect projections over interpretive
+attributes. **PROPOSED, NOT SIGNED.**
+
+- `engine.configureProjections(specs, drop?)` → `Promise<ProjectionDelta>`.
+  Declarative, idempotent apply: the engine diffs `specs` against the durable
+  registry and backfills the difference in one transaction. `drop` is EXPLICIT —
+  omitting a live projection from `specs` does NOT drop it; removal requires
+  naming it in `drop`. A destructive change (a role removal or a
+  tokenizer/embedder change) without a drop throws `ProjectionDestructiveError`
+  (`name`/`delta` fields, mapped from the `FDB_PROJECTION_DESTRUCTIVE` envelope).
+  Re-applying an unchanged spec resolves to `{ unchanged: true }`.
+- `read.projections(engine)` → `Promise<ProjectionSpec[]>`, sorted by name — the
+  registry introspection (folded into `read.*`).
+
+`ProjectionSpec` is
+`{ name, roles: ProjectionRole[], fts, ftsTokenizer?, vector, vectorEmbedder? }`.
+`ProjectionRole` is the string union `"filterable" | "rankable" | "searchable"`;
+`searchable→FTS` and `searchable→vector` are tier labels carried by the
+`fts`/`vector` sub-object flags, not roles. Cheap roles (`filterable`,
+`searchable→FTS`) build same-transaction; `rankable` and the `searchable→vector`
+sub-target are persisted-but-deferred (reported in `ProjectionDelta.deferred`).
+The `vector` sub-object is stored here for Slice 20 to attach `denseReadiness`
+to. `ProjectionDelta` is `{ built, dropped, deferred, unchanged }`. Field names
+are camelCase per this file's casing rule.
 
 ## Errors
 

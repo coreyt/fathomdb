@@ -203,14 +203,9 @@ fn edge_canonical_edges_mapping() {
     let conn = Connection::open(&path).unwrap();
 
     // Check edge "Alice owns Project X" — no temporal, confidence 0.95.
+    // TC-33: t_valid/t_invalid are INTEGER epoch seconds, not ISO-8601 TEXT.
     #[allow(clippy::type_complexity)]
-    let owns_row: (
-        Option<String>,
-        Option<String>,
-        Option<String>,
-        Option<f64>,
-        Option<String>,
-    ) = conn
+    let owns_row: (Option<String>, Option<i64>, Option<i64>, Option<f64>, Option<String>) = conn
         .query_row(
             "SELECT body, t_valid, t_invalid, confidence, extractor_model_id
              FROM canonical_edges
@@ -230,7 +225,7 @@ fn edge_canonical_edges_mapping() {
     assert_eq!(owns_row.4.as_deref(), Some("stub-v1"), "extractor_model_id must be 'stub-v1'");
 
     // Check temporal edge "Bob works_for Acme Corp".
-    let works_row: (Option<String>, Option<String>) = conn
+    let works_row: (Option<i64>, Option<String>) = conn
         .query_row(
             "SELECT t_valid, extractor_model_id
          FROM canonical_edges
@@ -239,10 +234,16 @@ fn edge_canonical_edges_mapping() {
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .expect("'works_for' edge must exist");
+    // TC-33: this assertion used to read "t_valid must be PRESERVED from extract
+    // response". "Preserved" is exactly the contract TC-33 changes: the extractor
+    // wire stays ISO-8601, but the engine NORMALISES it at the boundary, so what
+    // lands in storage is the equivalent INTEGER epoch, not the original bytes.
+    // The fixture sends "2020-01-01T00:00:00Z".
     assert_eq!(
-        works_row.0.as_deref(),
-        Some("2020-01-01T00:00:00Z"),
-        "t_valid must be preserved from extract response"
+        works_row.0,
+        Some(1_577_836_800),
+        "t_valid must be NORMALISED-EQUIVALENT to the extract response: the ISO-8601 \
+         \"2020-01-01T00:00:00Z\" on the wire becomes epoch 1577836800 in storage"
     );
     assert_eq!(works_row.1.as_deref(), Some("stub-v1"), "extractor_model_id");
 }
@@ -743,7 +744,10 @@ fn edge_fts_kind_filter_applied() {
 
     // Filtered search with a kind that does NOT match any edge kind must return
     // zero edge hits (filter is applied to edge branch).
-    let filter = SearchFilter { kind: Some("person".to_string()), ..Default::default() };
+    // `SearchFilter` is `#[non_exhaustive]` (0.8.20 Slice 15e fix-2); build from
+    // `default()` (downstream crates cannot use a struct literal).
+    let mut filter = SearchFilter::default();
+    filter.kind = Some("person".to_string());
     let results_filtered =
         opened.engine.search_filtered("owns", Some(filter)).expect("search_filtered");
     let edge_hits_filtered: Vec<_> = results_filtered
@@ -804,8 +808,9 @@ fn edge_fts_source_type_filter_passes_edge_hits() {
 
     // 2. source_type="edge_fact": must PASS edge hits (the bug case — was
     //    silently rejecting them before fix-2).
-    let filter_edge =
-        SearchFilter { source_type: Some("edge_fact".to_string()), ..Default::default() };
+    // `#[non_exhaustive]` (0.8.20 Slice 15e fix-2): build from `default()`.
+    let mut filter_edge = SearchFilter::default();
+    filter_edge.source_type = Some("edge_fact".to_string());
     let results_edge_fact = opened
         .engine
         .search_filtered("owns", Some(filter_edge))
@@ -822,8 +827,9 @@ fn edge_fts_source_type_filter_passes_edge_hits() {
 
     // 3. source_type="node_body" (or any non-edge_fact value): must EXCLUDE
     //    edge hits (edge hits are not node_body).
-    let filter_node =
-        SearchFilter { source_type: Some("node_body".to_string()), ..Default::default() };
+    // `#[non_exhaustive]` (0.8.20 Slice 15e fix-2): build from `default()`.
+    let mut filter_node = SearchFilter::default();
+    filter_node.source_type = Some("node_body".to_string());
     let results_node_body = opened
         .engine
         .search_filtered("owns", Some(filter_node))
@@ -887,11 +893,10 @@ fn edge_fts_created_after_filter_checks_vector_default() {
 
     // 1. created_after=0: every projected edge has created_at > 0 (unix seconds),
     //    so this filter must PASS all edge hits.
-    let filter_pass = SearchFilter {
-        source_type: Some("edge_fact".to_string()),
-        created_after: Some(0),
-        ..Default::default()
-    };
+    // `#[non_exhaustive]` (0.8.20 Slice 15e fix-2): build from `default()`.
+    let mut filter_pass = SearchFilter::default();
+    filter_pass.source_type = Some("edge_fact".to_string());
+    filter_pass.created_after = Some(0);
     let results_pass = opened
         .engine
         .search_filtered("owns", Some(filter_pass))
@@ -905,11 +910,10 @@ fn edge_fts_created_after_filter_checks_vector_default() {
 
     // 2. created_after=i64::MAX: no row can satisfy created_at >= i64::MAX,
     //    so this filter must EXCLUDE all edge hits.
-    let filter_exclude = SearchFilter {
-        source_type: Some("edge_fact".to_string()),
-        created_after: Some(i64::MAX),
-        ..Default::default()
-    };
+    // `#[non_exhaustive]` (0.8.20 Slice 15e fix-2): build from `default()`.
+    let mut filter_exclude = SearchFilter::default();
+    filter_exclude.source_type = Some("edge_fact".to_string());
+    filter_exclude.created_after = Some(i64::MAX);
     let results_exclude = opened
         .engine
         .search_filtered("owns", Some(filter_exclude))

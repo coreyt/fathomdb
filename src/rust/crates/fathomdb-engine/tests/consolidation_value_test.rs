@@ -28,7 +28,8 @@ fn harness_cmd() -> Vec<String> {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn fact_edge(from: &str, to: &str, logical_id: &str, body: &str, t_valid: &str) -> PreparedWrite {
+/// TC-33: `t_valid` is INTEGER epoch seconds (UTC), not ISO-8601.
+fn fact_edge(from: &str, to: &str, logical_id: &str, body: &str, t_valid: i64) -> PreparedWrite {
     PreparedWrite::Edge {
         kind: "works_for".to_string(),
         from: from.to_string(),
@@ -37,7 +38,7 @@ fn fact_edge(from: &str, to: &str, logical_id: &str, body: &str, t_valid: &str) 
             .expect("test source id"),
         logical_id: Some(logical_id.to_string()),
         body: Some(body.to_string()),
-        t_valid: Some(t_valid.to_string()),
+        t_valid: Some(t_valid),
         t_invalid: None,
         confidence: Some(0.9),
         extractor_model_id: Some("stub-extractor-v1".to_string()),
@@ -65,14 +66,14 @@ fn seed(engine: &Engine) {
             stale,
             &format!("edge-{subj}-stale"),
             &format!("{subj} works for {stale}"),
-            "2019-01-01T00:00:00Z",
+            1_546_300_800, // 2019-01-01T00:00:00Z
         ));
         writes.push(fact_edge(
             subj,
             updated,
             &format!("edge-{subj}-updated"),
             &format!("{subj} works for {updated}"),
-            "2022-01-01T00:00:00Z",
+            1_640_995_200, // 2022-01-01T00:00:00Z
         ));
     }
     engine.write(&writes).expect("seed competing edges");

@@ -1,0 +1,341 @@
+{
+  "slice": "0.8.20-keystone-closeout",
+  "branch": "orch-0.8.20-s15b",
+  "baseline_head": "255ac75acd13bff2eca8688c707aa5bf598ce8b5",
+  "head_sha": "4cc3ca6d802a1b13b366951918c9c8b2a3333057",
+  "status": "COMPLETE — both HITL-ruled terminal codex P2s closed; all gates green",
+  "commits": {
+    "red": "8cb523855b69df5dc7cca27939e9cf97730c5f71",
+    "green": "4cc3ca6d802a1b13b366951918c9c8b2a3333057",
+    "note": "GREEN was amended once to fold in an error-message accuracy refinement (engine-only string, asserted by no test); the TS fresh-clone gate was re-run at the final SHA after the amend."
+  },
+  "findings": {
+    "F1_temporal_round_trip": {
+      "class": "TC-47 — calendar-impossible DAY rollover residue behind the TC-44 strftime-leniency class",
+      "bug": "strftime('%s', ?) ROLLS OVER a shape-valid but impossible DAY instead of returning NULL: 2025-02-30T00:00:00Z -> epoch for 2025-03-02; 2025-04-31T00:00:00Z -> 2025-05-01. TC-44's is_iso8601_shape gate checks FORMAT not calendar validity, so Feb-30 passed the gate and stored a DIFFERENT instant than the provider supplied — bypassing the ratified hard-reject contract. (Impossible MONTHS like 2025-13-01 and impossible TIMES like 25:00:00 / :60 / :61 already NULL out; only impossible DAYS roll over — the sole residue.)",
+      "fix_location": "src/rust/crates/fathomdb-engine/src/lib.rs — iso8601_to_epoch_seconds (the shared parse used by normalize_extractor_timestamp for both t_valid and t_invalid at the fathomdb.extract.v1 write boundary).",
+      "round_trip_sql": "SELECT CAST(strftime('%s', ?1) AS INTEGER) WHERE strftime('%Y-%m-%d', substr(?1, 1, 10)) IS substr(?1, 1, 10)",
+      "sql_rationale": "The WHERE clause is the round-trip: the literal calendar DATE component of the input (substr(?1,1,10) = the YYYY-MM-DD the shape gate guarantees present) must survive SQLite's own calendar math UNCHANGED. On a DAY rollover, strftime('%Y-%m-%d', substr) differs from the literal substring, the WHERE yields zero rows, query_row -> QueryReturnedNoRows -> .ok().flatten() -> None, and the EXISTING hard-reject Err path in normalize_extractor_timestamp fires. The shape gate is KEPT for its early clear message; the round-trip is the completeness backstop behind it (defence in depth).",
+      "why_date_component_not_raw_or_utc_render": "A raw-string comparison or a strftime(...,'unixepoch') UTC re-render would FALSE-REJECT valid equivalent forms, because the UTC render shifts the wall clock for a non-UTC offset and its date can differ from the input's literal date. Comparing ONLY the literal DATE field (substr 1..10) is timezone-INVARIANT — the offset never alters the input's own YYYY-MM-DD text — while still catching every DAY rollover, because the rollover happens in the calendar math BEFORE the offset is applied. This is the tz trap the mandate warned about, engineered out.",
+      "completeness_superset": "The round-trip is a SUPERSET of the shape gate for the Julian case: substr('2451545.0',1,10) = '2451545.0' renders via strftime('%Y-%m-%d',...) to '2000-01-01', which != '2451545.0' -> rejected. So the TC-44 Julian string is rejected by the round-trip independently of the shape gate.",
+      "no_date_crate": "CONFIRMED — pure SQL. No chrono/time (or any date crate) added; the workspace still has none. That option was OFF the table per mandate.",
+      "null_reject_path_untouched": "CONFIRMED — the None/JSON-null/absent -> Ok(None) arm of normalize_extractor_timestamp (NULL means 'still valid') is byte-unchanged. The fix only widened the set of String inputs that iso8601_to_epoch_seconds returns None for (rolled-over DAYS), which routes into the EXISTING hard-reject Err path — never into the NULL/Ok(None) path. No resurrection-via-NULL surface was opened.",
+      "surviving_class_escalation": "NONE. No malformed-but-well-shaped temporal value survives the round-trip: impossible MONTHS and impossible TIMES already NULL out via strftime; impossible DAYS are caught by the DATE round-trip; the Julian string is caught by both the shape gate and the round-trip. No fix-N past the round-trip was added; no escalation to 'add a date library' was triggered.",
+      "positive_forms_accepted_not_false_rejected": {
+        "2025-03-20T09:30:00Z": 1742463000,
+        "2025-03-20T09:30:00+00:00": 1742463000,
+        "2025-03-20T09:30:00+05:00": 1742445000,
+        "2025-03-20 (date-only)": 1742428800,
+        "2025-03-20T09:30:00.500Z (fractional)": 1742463000,
+        "proof": "All five ACCEPTED and stored at the CORRECT epoch, asserted at the raw at-rest edge table (t_valid, typeof=integer) in tc47_timestamp_round_trip.rs. The +05:00 case (1742445000) is the load-bearing tz-trap control: its epoch differs from the +00:00/Z case (1742463000) by exactly 5h, proving the offset is honoured and not false-rejected."
+      }
+    },
+    "F2_ts_projection_ffi_guard": {
+      "class": "AC-068 / TC-47 — TS configureProjections skipped the JS-side FFI surrogate guard",
+      "bug": "src/ts/src/index.ts configureProjections did NOT call the FFI string guard before the native call. napi-rs silently replaces a lone UTF-16 surrogate with U+FFFD BEFORE the Rust-side guard runs, so a JS caller passing a name/role/ftsTokenizer/vectorEmbedder/drop entry with a lone surrogate got U+FFFD persisted instead of WriteValidationError. (A NUL survives the napi UTF-8 path as a real byte and was already caught Rust-side — which is why the pre-existing NUL tests passed but the surrogate leaked.)",
+      "fix_location": "src/ts/src/index.ts — configureProjections now calls validateFfiTree(specs) and validateFfiTree(drop) BEFORE this.#native.configureProjections(...). validateFfiTree recursively validates every string in the tree: projection name, each role, ftsTokenizer, vectorEmbedder, and each drop entry. Mirrors the existing write() call site (validateFfiTree(batch)) and the AC-068b surrogate handling in validation.ts."
+    }
+  },
+  "red_evidence": {
+    "engine_F1": {
+      "cmd": "cargo test -p fathomdb-engine --test tc47_timestamp_round_trip -- --test-threads=1 (at RED 8cb52385)",
+      "result": "test result: FAILED. 6 passed; 2 failed; 0 ignored; exit 101",
+      "failures": [
+        "tc47_feb30_rolls_over_and_must_hard_reject panicked at tc47_timestamp_round_trip.rs:70:18 — 'impossible day \"2025-02-30T00:00:00Z\" (doc-tc47-feb30-tvalid) is a calendar-impossible date and MUST hard-reject at the extractor boundary, but ingest succeeded and wrote 1 edge(s). strftime ROLLED IT OVER to a neighbouring instant instead of returning NULL.'",
+        "tc47_apr31_rolls_over_and_must_hard_reject panicked at :70:18 — same for \"2025-04-31T00:00:00Z\" (doc-tc47-apr31-tvalid), wrote 1 edge."
+      ],
+      "positive_controls_green_at_red": "The 6 passing at RED = julian-still-rejects + the 5 valid-form positive controls (Z, +00:00, +05:00, date-only, fractional) — proving the RED is not vacuously failing everything and the tz-trap controls were already correct before the fix."
+    },
+    "ts_F2": {
+      "cmd": "fresh clone at RED 8cb52385: npm ci -> napi build:native:debug -> tsc -> node --test dist/tests/slice15d-projection-registry.test.js",
+      "result": "5 TC-47 surrogate tests FAILED (name / ftsTokenizer / vectorEmbedder / role / drop); node --test exit 1",
+      "detail": "AssertionError [ERR_ASSERTION]: Missing expected rejection. { actual: undefined, operator: 'rejects' } — configureProjections RESOLVED (persisting the U+FFFD) instead of rejecting with WriteValidationError."
+    }
+  },
+  "gates": {
+    "cargo_clippy_workspace_all_targets": { "exit": 0 },
+    "cargo_check_workspace_all_targets": { "exit": 0 },
+    "cargo_test_engine_schema": {
+      "cmd": "cargo test -p fathomdb-engine -p fathomdb-schema -- --test-threads=1",
+      "exit": 0,
+      "aggregate": "639 passed / 0 failed / 13 ignored",
+      "pre_closeout_baseline": "631 passed / 0 failed / 13 ignored (delta +8 = the 8 new tc47_timestamp_round_trip tests)",
+      "named_pins_confirmed": [
+        "pr_g10_filtered_knn: 6 passed incl unfiltered_phase1_sql_byte_identical_to_0_7_2 ... ok",
+        "slice15e_prekn_filterable: 9 passed incl attribute_filter_excludes_edge_hits_on_both_arms ... ok",
+        "tc33_fix5_iso8601_shape_gate: 8 passed; tc33_edge_temporal_epoch: 8 passed; tc33_fix3_consolidation_timestamp_taxonomy: 2 passed; slice15_byo_llm_ingest: 21 passed"
+      ],
+      "eu7": "eu7_real_corpus_ac stays IGNORED (13 ignored unchanged); ZERO eu7 runs."
+    },
+    "ts_fresh_clone_execution": {
+      "clone": "fresh --no-local clone of the worktree branch, own npm + own target/; napi build:native:debug + tsc + node --test — re-run at final SHA 4cc3ca6d after the GREEN amend",
+      "napi_build_exit": 0,
+      "tsc_exit": 0,
+      "node_test": { "exit": 0, "tests": 216, "pass": 216, "fail": 0, "skipped": 0 },
+      "note": "slice15d-projection-registry.test.js now 15/15 incl the 5 TC-47 surrogate tests (name/ftsTokenizer/vectorEmbedder/role/drop)."
+    },
+    "python": "UNAFFECTED by construction — no Python code changed; the engine round-trip is internal and only NEWLY REJECTS calendar-impossible DAYS. A repo-wide scan for calendar-impossible dates (-02-3[01], -04-31, -06/09/11-31, -02-29) in existing Rust/Python tests found ONLY the two new tc47 fixtures — no existing test feeds an impossible date expecting acceptance, so no regression. pytest not built (maturin develop is forbidden from this worktree per mandate)."
+  },
+  "invariants": {
+    "AC-041": "GREEN — no recovery/verb code touched; recovery_denylist stays five {recover, restore, repair, fix, rebuild}. Diff is confined to iso8601_to_epoch_seconds + its hard-reject message + TS configureProjections + the new test + 4 fixtures.",
+    "SearchFilter_non_exhaustive": "INTACT — untouched.",
+    "governed_surface": "PROPOSED / NOT SIGNED — no AC minted, never 'HITL-SIGNED'.",
+    "no_date_crate": "CONFIRMED — no chrono/time/regex direct dep added.",
+    "null_reject_path": "UNTOUCHED — see F1.null_reject_path_untouched."
+  },
+  "files_changed": {
+    "src/rust/crates/fathomdb-engine/src/lib.rs": "iso8601_to_epoch_seconds — added the calendar-DATE round-trip WHERE clause + TC-47 doc; normalize_extractor_timestamp — refined the hard-reject message to name both the NULL and rollover causes.",
+    "src/rust/crates/fathomdb-engine/tests/tc47_timestamp_round_trip.rs": "NEW — 8 tests (2 rollover hard-reject, 1 Julian-still-rejects, 5 valid-form positive controls incl the +05:00 tz-trap control).",
+    "src/rust/crates/fathomdb-engine/tests/fixtures/slice15_byo_llm/fixture_result.json": "APPEND-ONLY — 4 new stub-harness fixtures (doc-tc47-feb30-tvalid, doc-tc47-apr31-tvalid, doc-tc47-iso-offset5, doc-tc47-iso-frac); existing fixtures byte-identical (verified json round-trip).",
+    "src/ts/src/index.ts": "configureProjections — added validateFfiTree(specs) + validateFfiTree(drop) before the native call.",
+    "src/ts/tests/slice15d-projection-registry.test.ts": "added SURROGATE const + 5 TC-47 surrogate tests mirroring the existing NUL tests."
+  },
+  "next_step_for_orchestrator": "Re-run codex (§9) review on branch orch-0.8.20-s15b at HEAD 4cc3ca6d (the keystone closeout: F1 timestamp round-trip + F2 TS projection FFI guard). If clean, cherry-pick 8cb52385 (RED) + 4cc3ca6d (GREEN) onto the keystone. No surviving temporal class -> the TC-47 escalation-to-date-library trigger did NOT fire; strftime + the calendar-DATE round-trip is sufficient. Governed surface remains PROPOSED/NOT SIGNED.",
+  "fix_2": {
+    "scope": "0.8.20 keystone closeout fix-2 — the two NON-temporal codex §9 P2s from the terminal full-stack review (projection/filter handling). ADD-only on branch orch-0.8.20-s15b; the temporal path (fix-1) is untouched.",
+    "baseline_head": "6bd0040d (keystone closeout witness — head at which fix-2 was commissioned)",
+    "head_sha": "486b4876419efe21aba158d29cb99168d9b0af4d",
+    "status": "COMPLETE — both P2s closed via TDD (RED->GREEN); all gates green; front-load self-audit clean.",
+    "commits": {
+      "red": "d21a08c1b4a3b77a7cc9ce748be63e14954fa3ec",
+      "green": "486b4876419efe21aba158d29cb99168d9b0af4d"
+    },
+    "findings": {
+      "F1_undeclared_filter_attribute": {
+        "class": "[P2] a filter on an UNDECLARED attribute emits raw SQL -> `no such column` crash; text arm diverges (silent no-match). ADR-0.8.11 D3 total-dispatch violation.",
+        "bug": "vector_filter_clause lowered every SearchFilter.attributes term to `AND attr_<hex>=?` in the vec0 phase-1 KNN. For a name that is NOT a declared `filterable` projection there is no such vec0 column -> SQLite `no such column` -> the reader worker Err propagated as an opaque EngineError::Storage on the vector arm; meanwhile the FTS arm's hit_attributes_pass_filter probed canonical_attributes, found no row, and silently NO-MATCHED. A caller typo (or a filter issued before configure_projections) therefore became a divergent storage/search FAILURE instead of a stable, arm-uniform typed outcome.",
+        "fix_location": "src/rust/crates/fathomdb-engine/src/lib.rs — NEW fn validate_filter_attributes_declared(conn, filter) called ONCE in Engine::search_inner_with_stats, after the empty-query check and BEFORE the reader dispatch (so it precedes BOTH arms). Validates each attribute name against the declared `filterable` registry set (load_projection_registry -> ProjectionRole::Filterable membership).",
+        "typed_rejection_mechanism": "Reuses the EXISTING EngineError::InvalidFilter { reason } variant (the same variant D3 uses to typed-reject an unsupported json-path predicate on search_filtered). reason names the attribute: `filter attribute \"nonexistent\" is not a declared `filterable` projection; declare it via configure_projections before filtering on it`. NO new error variant.",
+        "both_arms_agree_proof": "The validation runs before ReaderPool dispatch, so NEITHER arm executes on an undeclared name -> the fused two-arm search_filtered (which exercises BOTH the vector and FTS arms) returns ONE consistent InvalidFilter. Pinned by undeclared_filter_attribute_is_typed_rejection_on_both_arms (slice15e_prekn_filterable.rs): assertion (1) matches Err(InvalidFilter{reason}) with reason.contains(\"nonexistent\"); pre-fix this arm got EngineError::Storage (the raw `no such column`).",
+        "why_registry_set_not_actual_columns": "The registry `filterable` set is the arm-INDEPENDENT authority: it is correct even with no embedder / no vector_default table, where a declared-`filterable` term still filters legitimately via the row-owned canonical_attributes EAV store (the FTS arm). Gating solely on actual_vector_attr_columns would over-reject a valid declared-filterable text-arm filter when no embedder is configured. reconcile_vector_attr_columns keeps the live vec0 shape == desired_vector_attr_columns (== the registry filterable set) on every configure_projections AND on boot (open-time reconcile at lib.rs ~4459), so a registry-`filterable` name always has its vec0 column when the vector arm runs.",
+        "controls": "Control (2): a DECLARED attribute with an ABSENT value still NO-MATCHES (Ok result excluding the rows) — fix-3 behaviour UNCHANGED, NOT a rejection. Control (3): the declared present value still MATCHES (non-vacuous — the fix did not turn every attribute filter into a rejection). Both green pre- and post-fix."
+      },
+      "F2_deferred_only_mutation_reported_unchanged": {
+        "class": "[P2] a deferred-only registry mutation is reported as `unchanged` — an accepted mutation lies to SDK callers as an idempotent no-op.",
+        "bug": "apply_projection_config's Some(existing)-changed (non-destructive persist) branch gated the delta.deferred push on `desired.has_deferred() && !existing.has_deferred()`. For a change that STAYED deferred (rankable -> rankable+vector: vector_declared false->true, adds a deferred vector sub-target, builds no EAV) the row WAS persisted but !existing.has_deferred() was false AND wants_eav() was false, so built/deferred/dropped were all empty -> delta.unchanged computed true.",
+        "fix_location": "src/rust/crates/fathomdb-engine/src/lib.rs (~16148) — dropped the `&& !existing.has_deferred()` guard; the changed branch now pushes delta.deferred `if desired.has_deferred()`, mirroring the fresh-registration (None) branch.",
+        "completeness_argument": "Every valid non-empty spec has wants_eav() (filterable||searchable) OR has_deferred() (rankable||vector_declared) — a spec with none has empty roles and is rejected up front. The changed branch runs ONLY when existing != desired. So on a real change at least one of built/deferred is now populated => delta.unchanged can never be true on a persisted change. No sibling remains.",
+        "no_op_preserved_proof": "Re-registering the IDENTICAL spec takes the `Some(existing) if existing == &desired` idempotent arm (untouched) => empty delta, unchanged=true. Pinned by deferred_only_mutation_is_reported_not_unchanged control (third apply: unchanged=true, empty delta) AND the pre-existing idempotent_reregistration_is_a_noop / idempotent_reregistration_holds_for_deferred_rankable / idempotent_refilterable_registration_is_vec0_noop tests (all still green).",
+        "registry_delta_alignment": "The F2 test asserts read_projections() after the accepted mutation reflects the new vector sub-target (read[0].vector.is_some()) AND delta.deferred names it — exactly what the delta claimed."
+      }
+    },
+    "red_evidence": {
+      "F1": {
+        "cmd": "cargo test -p fathomdb-engine --test slice15e_prekn_filterable -- --test-threads=1 undeclared_filter_attribute_is_typed_rejection_on_both_arms (at RED d21a08c1)",
+        "result": "test result: FAILED. 0 passed; 1 failed. exit 101",
+        "panic": "panicked at slice15e_prekn_filterable.rs:907:23: an undeclared filter attribute must be a typed InvalidFilter rejection, not an opaque error: got Storage"
+      },
+      "F2": {
+        "cmd": "cargo test -p fathomdb-engine --test slice15d_projection_registry -- --test-threads=1 deferred_only_mutation_is_reported_not_unchanged (at RED d21a08c1)",
+        "result": "test result: FAILED. 0 passed; 1 failed. exit 101",
+        "panic": "panicked at slice15d_projection_registry.rs:1250:5: a deferred-only mutation that persisted a changed registry row must NOT report unchanged, got ProjectionDelta { built: [], dropped: [], deferred: [], unchanged: true }"
+      }
+    },
+    "gates": {
+      "cargo_clippy_workspace_all_targets": { "exit": 0 },
+      "cargo_check_workspace_all_targets": { "exit": 0 },
+      "cargo_test_engine_schema": {
+        "cmd": "cargo test -p fathomdb-engine -p fathomdb-schema -- --test-threads=1",
+        "exit": 0,
+        "aggregate": "641 passed / 0 failed / 13 ignored",
+        "pre_fix2_baseline": "639 passed / 0 failed / 13 ignored (delta +2 = the 2 new fix-2 tests: undeclared_filter_attribute_is_typed_rejection_on_both_arms + deferred_only_mutation_is_reported_not_unchanged)",
+        "named_pins_confirmed": [
+          "pr_g10_filtered_knn incl unfiltered_phase1_sql_byte_identical_to_0_7_2 ... ok",
+          "slice15e attribute_filter_excludes_edge_hits_on_both_arms (pin A) ... ok",
+          "R-20-PR idempotency/no-op: idempotent_reregistration_is_a_noop, idempotent_reregistration_holds_for_deferred_rankable, idempotent_refilterable_registration_is_vec0_noop ... ok",
+          "TC-33 fix1/fix2/fix3/fix5/fix6 + TC-44 fix5 shape-gate suite + TC-47 tc47_timestamp_round_trip (8) ... ok"
+        ],
+        "eu7": "ZERO eu7 runs. eu7_real_corpus_ac is a SEPARATE test target requiring the `operator` cargo feature (NOT enabled by the standard -p fathomdb-engine run) AND #[ignore] AND AGENT_LONG — so it is never compiled/run here; the 13-ignored count is unchanged from baseline."
+      },
+      "bindings": {
+        "decision": "SKIPPED fresh-clone X1 + pyright + TS suite per mandate — the fix RETURNS an EXISTING typed variant (EngineError::InvalidFilter) that is ALREADY mapped by BOTH bindings: fathomdb-py/src/lib.rs:207 -> InvalidFilterError; src/ts/src/errors.ts:334 -> InvalidFilterError. No NEW variant, no signature change, no .pyi/.d.ts stub gap introduced. No TS/Python source touched.",
+        "verification": "grep-confirmed the InvalidFilter -> InvalidFilterError mapping pre-exists in fathomdb-py and src/ts; F2 touches only ProjectionDelta field population (delta.unchanged already surfaced by bindings, no shape change)."
+      }
+    },
+    "self_audit": {
+      "searchTextOnly_undeclared_attr": "ALREADY-CORRECT — search_text_only / search_text_only_view take NO filter parameter, so they carry no attribute-filter surface and cannot receive an undeclared attribute name. Nothing to reject.",
+      "empty_attributes_list_unfiltered_byte_identical": "ALREADY-CORRECT (deliberate) — both the call site (`if !f.attributes.is_empty()`) and validate_filter_attributes_declared short-circuit on an empty attributes list, so the metadata-only/unfiltered path never locks the connection nor validates; unfiltered_phase1_sql_byte_identical_to_0_7_2 still green.",
+      "drop_that_changes_deferred_set": "ALREADY-CORRECT — a drop reports delta.dropped; REDUCING a deferred target (removing the rankable role or the vector sub-object) is is_destructive_projection_change => ProjectionDestructive error requiring an explicit drop => the drop+rebuild is reported in dropped + built/deferred. destructive_change_requires_explicit_drop and name_in_both_specs_and_drop_is_the_supported_rebuild stay green.",
+      "read_projections_matches_delta": "VERIFIED — F2 test asserts read_projections() after the accepted deferred mutation carries the new vector sub-target, aligned with delta.deferred. The accept => registry==delta invariant holds.",
+      "sibling_embedder_only_change_on_deferred_spec": "NOT-A-SIBLING (already an error path) — rankable+vector(embedderA) -> rankable+vector(embedderB) is is_destructive (existing.vector_embedder != desired.vector_embedder) => ProjectionDestructive error, never a silent unchanged. So the F2 completeness argument (built OR deferred always populated on a non-destructive change) has no residue.",
+      "sibling_other_search_entry_points": "COVERED — every filtered-search entry point (search, search_view, search_reranked[_view], search_explained, search_filter, search_filtered) funnels through search_reranked_with_explain -> search_inner -> search_inner_with_stats; search_expand calls search_inner directly. The single validation point in search_inner_with_stats therefore guards ALL of them. No read.list/read.collection sibling: those use the unified read Filter path and do not emit attr_<hex> vec0 predicates (out of the mandated projection/filter surface anyway)."
+    },
+    "invariants": {
+      "AC-041": "GREEN — no recovery/verb code touched; recovery_denylist stays five {recover, restore, repair, fix, rebuild}. Diff confined to the search-filter validation + the projection-delta condition + the 2 new tests.",
+      "SearchFilter_non_exhaustive": "INTACT — untouched.",
+      "governed_surface": "PROPOSED / NOT SIGNED — no AC minted, never HITL-SIGNED.",
+      "no_new_error_variant": "CONFIRMED — reused EngineError::InvalidFilter."
+    },
+    "files_changed": {
+      "src/rust/crates/fathomdb-engine/src/lib.rs": "F1: new validate_filter_attributes_declared + its call in search_inner_with_stats before dispatch. F2: dropped the `&& !existing.has_deferred()` guard on the changed-branch delta.deferred push.",
+      "src/rust/crates/fathomdb-engine/tests/slice15e_prekn_filterable.rs": "NEW test undeclared_filter_attribute_is_typed_rejection_on_both_arms (F1 + declared-absent + declared-present controls).",
+      "src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs": "NEW test deferred_only_mutation_is_reported_not_unchanged (F2 + same-spec no-op control + registry/delta alignment)."
+    },
+    "next_step_for_orchestrator_fix2": "Re-run codex (§9) on orch-0.8.20-s15b at HEAD 486b4876 for the two non-temporal P2s (F1 undeclared-attr typed rejection + F2 honest deferred delta). If clean, cherry-pick d21a08c1 (RED) + 486b4876 (GREEN) onto the keystone alongside the fix-1 commits. Bindings unaffected (reused InvalidFilter, already mapped) — no fresh-clone binding re-run needed."
+  },
+  "fix_3": {
+    "scope": "0.8.20 keystone closeout fix-3 — the ONE non-temporal codex §9 [P2] TOCTOU race between attribute-filter validation and the reader snapshot. ADD-only on branch orch-0.8.20-s15b; fix-1 (temporal) and fix-2 (undeclared-attr + deferred delta) are untouched.",
+    "baseline_head": "37dd4f67102a8babdc7fc8195f30ca04ce4ac254 (fix-2 witness — head at which fix-3 was commissioned)",
+    "head_sha": "5ed843451ddf30aaebad69a6e6e59b3f2dc544b8",
+    "status": "COMPLETE — the race is closed via a snapshot-scoping change (validate INSIDE the reader's deferred transaction). NOT an architectural rewrite. TDD RED->GREEN; all gates green.",
+    "commits": {
+      "red": "f33774f5b706c3ef4985cc55dbafbc6f198a7b7a",
+      "green": "5ed843451ddf30aaebad69a6e6e59b3f2dc544b8"
+    },
+    "finding": {
+      "class": "[P2] TOCTOU — fix-2's undeclared-`filterable`-attribute validation (validate_filter_attributes_declared) ran in search_inner_with_stats on the WRITER connection (self.connection.lock()) and RELEASED that lock BEFORE the reader worker prepared+executed the vec0 phase-1 KNN on its OWN pooled connection/snapshot.",
+      "bug": "A configure_projections DROP of the filtered `filterable` projection, committed in the window between the writer-connection validation (which passed: attr still declared) and the moment the reader pinned its DEFERRED-tx snapshot, removed the attr_<hex> vec0 column. vector_filter_clause still emitted `AND attr_<hex>=?` for that now-absent column => SQLite `no such column` => the reader worker returned rusqlite::Error => search_inner_with_stats collapsed EVERY reader Err to EngineError::Storage — the exact opaque/untyped failure fix-2 was written to prevent, re-introduced by concurrency. Two connections => two potentially-divergent schema snapshots => the check and the query could disagree.",
+      "fix_location": "src/rust/crates/fathomdb-engine/src/lib.rs.",
+      "the_exact_txn_connection_change": "Validation MOVED from a pre-dispatch check on self.connection (the writer) INTO read_search_in_tx, the reader worker function that opens the DEFERRED read transaction and prepares+executes BOTH the vec0 phase-1 SQL and the FTS arm. NEW fn validate_filter_attributes_on_snapshot(&Connection, &SearchFilter) -> Result<(), SearchReaderError> is called immediately AFTER `let tx = reader.transaction_with_behavior(Deferred)?` and the snapshot-pinning `load_projection_cursor(&tx)?`, and BEFORE build_vector_phase1_sql (vector arm) and hit_attributes_pass_filter (FTS arm). It reads the projection registry from `&tx` — the SAME deferred transaction the vec0 query runs in — so SQLite WAL read-snapshot isolation guarantees the `_fathomdb_projection_registry` rows it checks and the `vector_default` columns the query compiles against are ONE consistent schema snapshot. The pre-dispatch writer-connection check was REMOVED (single snapshot authority).",
+      "snapshot_consistency_argument": "read_search_in_tx opens BEGIN DEFERRED (query_only reader); the snapshot pins on the first read (load_projection_cursor) and is frozen for the life of the tx. A concurrent configure_projections DROP on the writer connection either (a) commits BEFORE the snapshot pins => the reader's snapshot INCLUDES it => the in-tx registry read shows the attr no longer `filterable` AND the vec0 column is absent => validate_filter_attributes_on_snapshot returns InvalidFilter (consistent typed outcome); or (b) commits AFTER the snapshot pins => it is INVISIBLE to this tx => the registry still shows the attr declared AND the vec0 column still exists in that snapshot => the query runs against exactly the column it validated. There is no third case: the registry membership and the vec0 column existence can never disagree WITHIN one snapshot, so the `no such column` path is unreachable. The window fix-2 left open (validate on connection X, execute on connection Y) is gone because X == Y == the one reader tx.",
+      "both_arms_share_the_snapshot_proof": "validate_filter_attributes_on_snapshot runs ONCE at the top of read_search_in_tx, before EITHER arm: the vector arm (build_vector_phase1_sql / vector_filter_clause emitting attr_<hex>=?) and the FTS arm (hit_attributes_pass_filter probing canonical_attributes) both execute later in the SAME `tx`. So both arms are gated by the identical registry snapshot the vec0 query compiles against — a concurrent drop yields ONE consistent InvalidFilter across both arms, never a vector-arm Storage crash diverging from an FTS-arm silent no-match. search_text_only_view passes filter=None, so it carries no attribute surface (nothing to validate/diverge).",
+      "typed_rejection_mechanism": "NO new error variant. A new INTERNAL reader-channel error enum SearchReaderError { Sqlite(rusqlite::Error), InvalidFilter(String) } replaces the bare rusqlite::Error in the Search-path ReaderResponse alias (used ONLY by read_search_in_tx + its two caller sites; From<rusqlite::Error> keeps every existing `?` working). The two Search callers map SearchReaderError::InvalidFilter(reason) -> the EXISTING EngineError::InvalidFilter { reason } (already mapped by Py fathomdb-py/src/lib.rs -> InvalidFilterError and TS src/ts/src/errors.ts -> InvalidFilterError) and SearchReaderError::Sqlite -> emit_sqlite_internal_error + EngineError::Storage (prior behaviour verbatim).",
+      "not_a_regression_of_fix2_or_fix3": "fix-2 undeclared-attr rejection: undeclared_filter_attribute_is_typed_rejection_on_both_arms STILL PASSES — the non-concurrent undeclared name is now caught by the reader-snapshot check (which still runs before either arm) instead of the removed pre-dispatch check; the typed InvalidFilter reason string is byte-identical, so reason.contains(\"nonexistent\") holds. fix-3 declared-but-absent no-match + declared-present match controls (2) and (3) UNCHANGED and green. Removing the pre-dispatch writer check also eliminates a per-filtered-search writer-lock acquisition and fix-2's concurrent-ADD false-reject (the reader snapshot now sees a freshly-added declaration and accepts).",
+      "test_seam": "reader_search_hook (module + arm_reader_search_hook_for_test / clear_reader_search_hook_for_test, `#[doc(hidden)]`, OFF the governed surface, mirroring set_vector_stage_only_for_test). Fired at the TOP of read_search_in_tx, BEFORE the deferred snapshot pins, so a test can commit a concurrent DROP in the exact race window and make the TOCTOU deterministic. Disarmed by default: one Relaxed atomic load per search (same class as the four hot-path atomics already read there), fires at most once (the closure is take()n), no-op in production."
+    },
+    "red_evidence": {
+      "cmd": "cargo test -p fathomdb-engine --test slice15e_prekn_filterable -- --test-threads=1 undeclared_after_concurrent_drop (at RED f33774f5)",
+      "result": "test result: FAILED. 0 passed; 1 failed; 0 ignored; 10 filtered out; exit 101",
+      "panic": "panicked at slice15e_prekn_filterable.rs:1037:38 — 'TOCTOU: a configure_projections DROP racing the search made the vec0 attr_<hex> column vanish AFTER the pre-dispatch check passed on the writer connection, so the reader crashed with an opaque `no such column` Storage error. fix-3 must validate on the reader's OWN transaction snapshot so this is a typed InvalidFilter.'",
+      "what_it_asserts_and_why_it_captures_the_race": "The RED harness (SearchReaderError plumbing + reader_search_hook, but NO reader-side validation yet) parks the reader worker at the hook, DROPs `priority` on the writer connection in the exact validate->execute window, releases the reader, then asserts a typed EngineError::InvalidFilter. The pre-dispatch writer check ALREADY PASSED (priority declared when the search thread validated), and the reader then pins a post-drop snapshot where attr_<hex> is gone => today it hits Err(EngineError::Storage) (the panic arm). This is the strongest RED the mandate describes: a deterministic interleave (validate -> concurrent drop -> execute) that today yields Storage and after the fix yields InvalidFilter — the two connections are proven divergent."
+    },
+    "gates": {
+      "cargo_clippy_workspace_all_targets": { "exit": 0 },
+      "cargo_check_workspace_all_targets": { "exit": 0 },
+      "cargo_test_engine_schema": {
+        "cmd": "cargo test -p fathomdb-engine -p fathomdb-schema -- --test-threads=1",
+        "exit": 0,
+        "aggregate": "642 passed / 0 failed / 13 ignored",
+        "pre_fix3_baseline": "641 passed / 0 failed / 13 ignored (delta +1 = the new race test undeclared_after_concurrent_drop_is_typed_invalidfilter_not_storage_race)",
+        "named_pins_confirmed": [
+          "pr_g10_filtered_knn: 6 passed incl unfiltered_phase1_sql_byte_identical_to_0_7_2 ... ok",
+          "slice15e attribute_filter_excludes_edge_hits_on_both_arms (pin A) ... ok",
+          "slice15e undeclared_filter_attribute_is_typed_rejection_on_both_arms (fix-2) ... ok",
+          "slice15d R-20-PR idempotency: idempotent_reregistration_is_a_noop, idempotent_reregistration_holds_for_deferred_rankable, idempotent_refilterable_registration_is_vec0_noop, deferred_only_mutation_is_reported_not_unchanged ... ok"
+        ],
+        "eu7": "ZERO eu7 runs. eu7_real_corpus_ac stays IGNORED (13 ignored unchanged from the fix-2 641/13 baseline)."
+      },
+      "bindings": {
+        "decision": "SKIPPED fresh-clone X1 + pyright + TS suite per mandate — NO new error variant and NO binding/stub touched. The fix reuses EngineError::InvalidFilter (already mapped by BOTH bindings: fathomdb-py/src/lib.rs -> InvalidFilterError; src/ts/src/errors.ts -> InvalidFilterError). SearchReaderError is a crate-INTERNAL enum on the reader channel; it never crosses the FFI boundary. No Python/TS source changed.",
+        "non_exhaustive_SearchFilter": "INTACT — untouched."
+      }
+    },
+    "invariants": {
+      "AC-041": "GREEN — no recovery/verb code touched; recovery_denylist stays five {recover, restore, repair, fix, rebuild}. Diff confined to the reader-path validation move + the SearchReaderError channel enum + the reader_search_hook test seam + the one new test.",
+      "SearchFilter_non_exhaustive": "INTACT — untouched.",
+      "governed_surface": "PROPOSED / NOT SIGNED — no AC minted, never HITL-SIGNED.",
+      "no_new_error_variant": "CONFIRMED — reused EngineError::InvalidFilter; SearchReaderError is an internal reader-channel enum, not a public/binding surface.",
+      "no_architectural_escalation": "The race was closed by 'validate within the reader snapshot / hold one read transaction across validate+execute' exactly as the mandate scoped — NOT a larger rewrite. No STOP-and-report trigger fired."
+    },
+    "files_changed": {
+      "src/rust/crates/fathomdb-engine/src/lib.rs": "ReaderResponse alias now carries SearchReaderError (new internal enum + From<rusqlite::Error>); reader_search_hook module + arm/clear _for_test seams; read_search_in_tx fires the hook (pre-snapshot) then calls validate_filter_attributes_on_snapshot inside its deferred tx; validate_filter_attributes_declared (writer-conn, EngineError) replaced by validate_filter_attributes_on_snapshot (reader-conn, SearchReaderError); pre-dispatch validation block removed from search_inner_with_stats; both Search caller sites destructure SearchReaderError (InvalidFilter -> EngineError::InvalidFilter, Sqlite -> Storage).",
+      "src/rust/crates/fathomdb-engine/tests/slice15e_prekn_filterable.rs": "NEW test undeclared_after_concurrent_drop_is_typed_invalidfilter_not_storage_race (deterministic TOCTOU via reader_search_hook); fix-2 test comment updated to name the reader-snapshot validation (mechanism only; assertion unchanged)."
+    },
+    "next_step_for_orchestrator_fix3": "Re-run codex (§9) on orch-0.8.20-s15b at HEAD 5ed84345 for the fix-3 TOCTOU race (validate attribute filters on the reader snapshot). If clean, cherry-pick f33774f5 (RED) + 5ed84345 (GREEN) onto the keystone alongside the fix-1 + fix-2 commits. Bindings unaffected (reused InvalidFilter, already mapped; SearchReaderError is crate-internal) — no fresh-clone binding re-run needed. NOTE: fix-3 adds the reader_search_hook test seam (`#[doc(hidden)]` arm/clear _for_test); it is OFF the governed surface and disarmed in production."
+  },
+  "fix_4": {
+    "scope": "0.8.20 keystone closeout fix-4 — comprehensive projection-spec BINDING round-trip consistency. codex §9 found BOTH bindings ACCEPT inconsistent ProjectionSpec shapes and silently drop caller data. Enforce the invariant: any ProjectionSpec a binding ACCEPTS must round-trip through read.projections IDENTICALLY, else reject at the binding boundary with the typed validation error. ADD-only on branch orch-0.8.20-s15b; fix-1/2/3 untouched. Bounded to the projection-spec / drop / configureProjections binding conversion surface — NO engine semantics change.",
+    "baseline_head": "29e61c0e (keystone closeout fix-3 witness — head at which fix-4 was commissioned)",
+    "head_sha": "cb1a4c5d043bd373fa3c12224abec652e56a22cc",
+    "status": "COMPLETE — the two named cases + the whole class closed adversarially at BOTH bindings via TDD (RED->GREEN by EXECUTION in a fresh clone); all gates green; Py and TS reject the same shapes the same way.",
+    "commits": {
+      "red": "01f74521637a2591a9327aab312955da9a111b9c",
+      "green": "cb1a4c5d043bd373fa3c12224abec652e56a22cc"
+    },
+    "invariant_enforced": "In each binding's ProjectionSpec::to_rust, BEFORE building the Rust spec (after the existing AC-068 FFI-string gate), reject any shape that cannot round-trip. Both bindings reuse the EXISTING typed variant the unknown-role rejection already uses (pyo3 InvalidArgumentError; napi typed_error(CODE_INVALID_ARGUMENT) — both map to InvalidArgumentError on their SDK side). NO new error variant. Py ≡ TS: identical conditions, identical messages, identical order.",
+    "named_findings": {
+      "pyo3_lib_rs_903_906": "PyProjectionSpec::to_rust built the Rust fts/vector sub-object only when the boolean was true (`self.fts.then(...)`), so `ProjectionSpec(fts=False, fts_tokenizer=\"x\")` (and the vector twin) was ACCEPTED and the tokenizer/embedder SILENTLY DROPPED — configure reported success but read.projections could not round-trip it. CLOSED.",
+      "napi_lib_rs_518_521": "ProjectionSpec::to_rust — identical accept-and-drop for `{ fts:false, ftsTokenizer:\"x\" }` / `{ vector:false, vectorEmbedder:\"x\" }`. CLOSED."
+    },
+    "audit_full_results": {
+      "1_orphaned_fts_tokenizer": "REJECTED at both bindings — fts_tokenizer/ftsTokenizer set while fts is false. (NAMED.) Non-round-trip: the tokenizer would be dropped.",
+      "2_orphaned_vector_embedder": "REJECTED at both bindings — vector_embedder/vectorEmbedder set while vector is false. (NAMED.) Non-round-trip: the embedder would be dropped.",
+      "3_empty_fts_tokenizer": "REJECTED at both bindings — an empty-string tokenizer while fts is true. Engine StoredProjection::from_spec `.filter(|t| !t.is_empty())` normalizes \"\" -> None, so read.projections returns None: silent-normalize non-round-trip. Refused (mandate: reject, don't silently normalize).",
+      "4_empty_vector_embedder": "REJECTED at both bindings — empty-string embedder while vector is true. Same silent-normalize-to-None as (3).",
+      "5_duplicate_role": "REJECTED at both bindings — a duplicate role spelling in the flat list. The registry stores a de-duplicated BTreeSet, so `[\"searchable\",\"searchable\"]` reads back as `[\"searchable\"]`: cannot round-trip. Detected via `!roles.insert(role)`. (In TS `roles` is a plain array ⇒ reachable through the public SDK; in Python the SDK dataclass uses a frozenset that dedups, so the Python test exercises the NATIVE _NativeProjectionSpec boundary directly — the actual conversion surface — for Py≡TS symmetry.)",
+      "6_role_reordering": "ACCEPTED (not rejected) — an unsorted-but-unique role list (e.g. [\"searchable\",\"filterable\"]) reads back in the registry's canonical sorted order. This is a CANONICALIZATION, not data loss: roles carry documented SET semantics (order is not meaningful), so it round-trips AS A SET. Rejecting mere reordering would be hostile and is not a round-trip-fidelity concern. The round-trip control tests use sorted-unique input so they also match literally.",
+      "7_fts_or_vector_without_searchable_role": "ACCEPTED (confirmed round-trips) — an fts/vector sub-object present without the `searchable` role is a contradiction the engine treats as INERT (wants_property_fts()/vector build never fires), BUT persist_projection_row stores fts_present/vector_declared UNCONDITIONALLY (not gated on searchable) and load/to_spec read them back faithfully, so the declaration round-trips exactly. It therefore does NOT violate the round-trip invariant. DECISION: do NOT reject at the binding — rejecting an inert-but-faithful shape would be a NEW engine-SEMANTICS policy (making a contradiction a hard error), which is a design question OUTSIDE round-trip fidelity. Proven by test_fts_without_searchable_role_round_trips (Py) / the AUDIT test (TS). FLAGGED as a semantics question for HITL/next review (see semantics_question_flagged), not decided here.",
+      "8_name_field": "ALREADY-CORRECT — forwarded and FFI/well-formed-name validated; round-trips.",
+      "9_unknown_role": "ALREADY-REJECTED — from_str_opt(None) -> InvalidArgumentError (pre-existing).",
+      "10_empty_roles": "ALREADY-REJECTED — engine apply_projection_config rejects roles.is_empty() with InvalidArgument (surfaces at the binding); left to the engine.",
+      "11_nul_surrogate_strings": "ALREADY-REJECTED — fix-5 (AC-068a NUL) + TC-47 (surrogate) guard every spec/drop string; unchanged.",
+      "12_drop_list": "IN-SURFACE, ALREADY-CORRECT — drop entries are FFI-validated and duplicate-drop is engine-rejected; drop names are not read back via read.projections (they remove rows) so carry no round-trip obligation beyond that.",
+      "13_null_vs_undefined_napi_codec": "REJECTED-DIVERGENCE now CLOSED (napi-only fix) — read.projections EMITS `ftsTokenizer/vectorEmbedder: null`, but napi-rs rejected an explicit `null` for an `Option<String>` field with an OPAQUE `StringExpected` error (JS value `Null` into rust type `String`), while pyo3 accepts `None` natively. So `read.projections()` output fed straight back into `configureProjections()` THREW on TS but was an idempotent no-op on Python — a cross-binding divergence AND a read→configure round-trip break. FIX: src/ts/src/index.ts configureProjections now maps `null -> undefined` (⇒ napi None) per spec (shallow copy, caller objects untouched) BEFORE the native call. Mechanical binding-boundary normalization, NO engine change; makes TS match pyo3 and makes read output re-appliable. Pinned by the read→configure round-trip test (Py green at RED — already correct; TS RED→GREEN)."
+    },
+    "semantics_question_flagged": "AUDIT case 7 (fts/vector sub-object declared WITHOUT the searchable role) round-trips faithfully but is INERT (the engine builds no property-FTS / vector for it). Whether such a contradictory-but-lossless declaration SHOULD be a hard error is an ENGINE-SEMANTICS/design decision, NOT a round-trip-fidelity fix. Per the mandate STOP clause it was NOT decided here: the binding ACCEPTS it (it round-trips). Flag for HITL/next review if a stricter 'reject inert declarations' policy is desired.",
+    "cross_binding_parity": "CONFIRMED Py ≡ TS. Both to_rust functions carry byte-identical validation logic (same four fts/vector match arms + the duplicate-role insert guard) and the SAME message text; both raise the SAME SDK class (InvalidArgumentError). The null→undefined normalization (case 13) brings TS's null-handling into parity with pyo3's native None. Mirror test suites assert the same shapes reject/accept in both languages (src/python/tests/test_slice15d_projection_registry.py ≡ src/ts/tests/slice15d-projection-registry.test.ts).",
+    "round_trip_invariant_proof": "CONTROL test (both bindings): a CONSISTENT spec — fts=true+fts_tokenizer=\"unicode61\", vector=true+vector_embedder=\"bge-small\", roles={searchable} — is ACCEPTED and, read back via read.projections, EQUALS what was sent (Python `got == sent` on the frozen dataclass; TS `assert.deepEqual(back[0], sent)`). Non-vacuous: it stays GREEN at RED and GREEN, proving the gate rejects ONLY inconsistent shapes, not every tokenizer/embedder. Plus the read→configure round-trip test (case 13) proves read.projections output re-applies as an idempotent no-op on BOTH bindings.",
+    "red_evidence": {
+      "method": "TDD by EXECUTION in a fresh `git clone --no-local` of the branch (own npm + own python venv; napi + pyo3 rebuilt from source; NEVER the shared .venv, NEVER from the worktree).",
+      "python": {
+        "cmd": "fresh clone @ RED 01f74521 -> maturin develop --features pyo3/extension-module,test-hooks,default-embedder,default-reranker -> python -m pytest tests/test_slice15d_projection_registry.py -q",
+        "result": "5 failed, 13 passed; exit 1",
+        "failures": [
+          "test_orphaned_fts_tokenizer_rejected_at_binding — Failed: DID NOT RAISE InvalidArgumentError",
+          "test_orphaned_vector_embedder_rejected_at_binding — DID NOT RAISE InvalidArgumentError",
+          "test_empty_fts_tokenizer_rejected_at_binding — DID NOT RAISE InvalidArgumentError",
+          "test_empty_vector_embedder_rejected_at_binding — DID NOT RAISE InvalidArgumentError",
+          "test_duplicate_role_rejected_at_binding — DID NOT RAISE InvalidArgumentError"
+        ],
+        "note": "The read→configure round-trip test PASSED at RED for Python — pyo3 already accepts None natively, so the null-round-trip divergence is TS-only (see audit case 13). The CONTROL + fts-without-searchable AUDIT tests also passed at RED (non-vacuous)."
+      },
+      "typescript": {
+        "cmd": "fresh clone @ RED 01f74521 -> npm ci -> napi build:native:debug -> tsc -> node --test dist/tests/slice15d-projection-registry.test.js",
+        "result": "6 failed, 17 passed (23 tests); node --test exit 1",
+        "failures": [
+          "fix-4 orphaned ftsTokenizer (fts:false) — AssertionError: Missing expected rejection { operator: 'rejects' }",
+          "fix-4 orphaned vectorEmbedder (vector:false) — Missing expected rejection",
+          "fix-4 empty ftsTokenizer (fts:true) — Missing expected rejection",
+          "fix-4 empty vectorEmbedder (vector:true) — Missing expected rejection",
+          "fix-4 duplicate role — Missing expected rejection",
+          "fix-4 read.projections output round-trips BACK into configureProjections — Error: Failed to convert JavaScript value `Null` into rust type `String` on ProjectionSpec.ftsTokenizer (code StringExpected)"
+        ]
+      }
+    },
+    "gates": {
+      "cargo_clippy_workspace_all_targets": { "exit": 0, "note": "fathomdb-napi + fathomdb-py both in the workspace check; re-confirmed napi via `cargo clippy -p fathomdb-napi --all-targets` exit 0." },
+      "cargo_check_workspace_all_targets": { "exit": 0 },
+      "cargo_test_engine_schema": {
+        "cmd": "cargo test -p fathomdb-engine -p fathomdb-schema -- --test-threads=1",
+        "exit": 0,
+        "aggregate": "642 passed / 0 failed / 13 ignored",
+        "pre_fix4_baseline": "642 passed / 0 failed / 13 ignored (delta 0 — fix-4 is BINDING-ONLY; no engine/schema code or test changed, so the engine aggregate is unchanged from the fix-3 642/13 baseline).",
+        "eu7": "ZERO eu7 runs; the 13-ignored count is unchanged (eu7_real_corpus_ac stays ignored)."
+      },
+      "python_fresh_clone_execution": {
+        "clone": "same fresh clone, checked out to GREEN cb1a4c5d; pyo3 rebuilt via maturin develop (own venv)",
+        "maturin_develop_exit": 0,
+        "pytest": { "cmd": "python -m pytest tests/test_slice15d_projection_registry.py -q", "exit": 0, "result": "18 passed" }
+      },
+      "ts_fresh_clone_execution": {
+        "clone": "same fresh clone at GREEN cb1a4c5d; napi rebuilt (build:native:debug) + tsc",
+        "napi_build_exit": 0,
+        "tsc_exit": 0,
+        "node_test_target_file": { "exit": 0, "tests": 23, "pass": 23, "fail": 0, "skipped": 0 },
+        "node_test_full_suite": { "cmd": "node --test dist/tests/*.test.js", "exit": 0, "tests": 224, "pass": 224, "fail": 0, "skipped": 0, "note": "216 pre-fix4 + 8 new fix-4 tests = 224." }
+      },
+      "pyright": {
+        "cmd": "pyright (config [tool.pyright] include=fathomdb,tests,eval) in the fresh clone venv with full dev deps installed (numpy/scipy/networkx/pyyaml/hypothesis)",
+        "exit": 1,
+        "errors": 7,
+        "warnings": 0,
+        "baseline_match": "EXACTLY the ~7 pre-existing baseline — 5 in fathomdb/engine.py (dense_disabled / dense_disabled_reason / vector_equivalence_refusal_count attribute-access), 1 in fathomdb/graph.py (IdSpace nominal-vs-native assignability), 1 in tests/test_vector_equivalence_probe.py (no param 'reason'). ZERO in the fix-4 test file and ZERO projection-related — no NEW errors. .pyi note: the existing fathomdb/_fathomdb.pyi ALREADY declares ProjectionSpec.__init__(name, roles, fts, fts_tokenizer, vector, vector_embedder) + configure_projections/read_projections, so the new native-boundary test imports resolve with NO stub gap and NO .pyi edit was needed."
+      }
+    },
+    "invariants": {
+      "AC-041": "GREEN — no recovery/verb code touched; recovery_denylist stays five {recover, restore, repair, fix, rebuild}. Diff confined to the two to_rust validation blocks + the TS null→undefined normalization + the two mirror test files.",
+      "SearchFilter_non_exhaustive": "INTACT — untouched.",
+      "governed_surface": "PROPOSED / NOT SIGNED — no AC minted, never HITL-SIGNED.",
+      "no_new_error_variant": "CONFIRMED — reused pyo3 InvalidArgumentError / napi CODE_INVALID_ARGUMENT (both already used by the sibling unknown-role rejection in the same to_rust).",
+      "no_engine_semantics_change": "CONFIRMED — engine StoredProjection/apply_projection_config bytes unchanged; fix-4 is pure binding-boundary INPUT validation + one TS null-codec normalization."
+    },
+    "files_changed": {
+      "src/rust/crates/fathomdb-py/src/lib.rs": "PyProjectionSpec::to_rust — added the fts/vector orphaned+empty round-trip gate (4 match arms) + the duplicate-role insert guard, all raising InvalidArgumentError, before building RustProjectionSpec.",
+      "src/rust/crates/fathomdb-napi/src/lib.rs": "ProjectionSpec::to_rust — byte-parallel gate raising typed_error(CODE_INVALID_ARGUMENT).",
+      "src/ts/src/index.ts": "configureProjections — normalize each spec's ftsTokenizer/vectorEmbedder null→undefined (⇒ napi None) before the native call, closing the read→configure divergence (audit case 13).",
+      "src/python/tests/test_slice15d_projection_registry.py": "NEW fix-4 tests: 5 rejection tests (orphaned/empty fts+vector, duplicate role via native boundary), a consistent-spec round-trip CONTROL, an fts/vector-without-searchable AUDIT round-trip, and a read→configure round-trip.",
+      "src/ts/tests/slice15d-projection-registry.test.ts": "NEW fix-4 tests mirroring Python one-for-one (5 rejections + CONTROL + AUDIT + read→configure)."
+    },
+    "next_step_for_orchestrator_fix4": "Re-run codex (§9) on orch-0.8.20-s15b at HEAD cb1a4c5d for fix-4 (projection-spec binding round-trip consistency, both bindings). If clean, cherry-pick 01f74521 (RED) + cb1a4c5d (GREEN) onto the keystone alongside fix-1/2/3. Bindings WERE changed (pyo3 + napi + TS index.ts) so the fresh-clone Py+TS execution + pyright were run and are GREEN (recorded above). One SEMANTICS question is FLAGGED (audit case 7 / semantics_question_flagged): whether an inert fts/vector-without-searchable declaration should be a hard error — left for HITL, not decided here."
+  }
+}

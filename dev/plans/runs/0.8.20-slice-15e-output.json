@@ -1,0 +1,345 @@
+{
+  "slice": "15e",
+  "title": "Pre-KNN vector-path routing for a registry `filterable` attribute, via a NON-DESTRUCTIVE vec0 reshape (ADR-0.8.11 D3; TC-46 HITL Option 1)",
+  "branch": "orch-0.8.20-s15b",
+  "baseline_sha": "ff2feb56915c0a6e4ffd59a9bd8761b92a98cd24",
+  "head_sha": "66564d9c3af06f767f8061273368e71e4d5221e1",
+  "status": "COMPLETE — landed whole as one coherent RED->GREEN. TC-46 (reshape acknowledgement channel) was RESOLVED by HITL to Option 1 (NON-DESTRUCTIVE reshape) at the baseline commit ff2feb56, which dissolved the prior decomposition's blocker: a non-destructive reshape preserves embeddings, so an additive filterable ADD is NOT a ProjectionDestructive event and needs no acknowledgement parameter and no new governed surface.",
+  "commits": [
+    {
+      "sha": "76e4a287bfcb50d15f88df97ce7ddd159fe425d3",
+      "kind": "RED",
+      "subject": "test(0.8.20): RED — Slice 15e pre-KNN filterable vec0 routing",
+      "red_evidence": "3 of 4 tests fail behaviourally at this commit (real output captured): filterable predicate does NOT compile into the phase-1 pre-KNN MATCH clause (generated SQL had no `AND attr_...=?3`); declaring a filterable projection does NOT reshape vector_default (table SQL = the shipped 6-column shape, no attr col); a filtered KNN over the absent attr column errs (Err(Storage)). The 4th (idempotent no-op) is vacuously green pre-reshape and becomes load-bearing post-GREEN."
+    },
+    {
+      "sha": "66564d9c3af06f767f8061273368e71e4d5221e1",
+      "kind": "GREEN",
+      "subject": "feat(0.8.20): GREEN — Slice 15e non-destructive vec0 reshape + pre-KNN filterable routing"
+    }
+  ],
+  "gates": {
+    "cargo_clippy_workspace_all_targets": { "command": "cargo clippy --workspace --all-targets", "exit_code": 0 },
+    "cargo_check_workspace_all_targets": { "command": "cargo check --workspace --all-targets", "exit_code": 0 },
+    "cargo_test_engine_schema": {
+      "command": "cargo test -p fathomdb-engine -p fathomdb-schema -- --test-threads=1",
+      "exit_code": 0,
+      "aggregate": "626 passed / 0 failed / 13 ignored",
+      "base_was": "622 passed / 0 failed / 13 ignored",
+      "delta": "+4 = the four Slice-15e tests in tests/slice15e_prekn_filterable.rs"
+    },
+    "pr_g10_filtered_knn": {
+      "command": "cargo test -p fathomdb-engine --test pr_g10_filtered_knn -- --test-threads=1",
+      "exit_code": 0,
+      "explicit_named": {
+        "unfiltered_phase1_sql_byte_identical_to_0_7_2": "PASS — the shipped {SourceType,Kind,CreatedAfter,Status} pre-KNN behaviour is byte-unchanged (attr_cols empty => byte-identical SQL invariant holds)",
+        "aux_status_column_hard_errors_under_knn_where": "PASS",
+        "filtered_phase1_sql_appends_present_predicates_only": "PASS"
+      }
+    },
+    "operator_feature_rebuild_erasure": {
+      "command": "cargo test -p fathomdb-engine --features operator --test rebuild_vec0 --test rebuild_projections --test erasure_projection_registry --test erasure_completeness -- --test-threads=1",
+      "exit_code": 0,
+      "note": "Sanity-run because these recreate/rebuild vector_default via the async worker INSERT path I made dynamic. 10+4+4+1 = 19 passed / 0 failed."
+    },
+    "eu7": "ZERO eu7 runs (R-20-EU7 CLOSED by HITL). eu7_real_corpus_ac stays #[ignore]d — it is one of the 13 ignored; a reshape/re-insert must not and did not run it.",
+    "ac_041_recovery_denylist": "UNCHANGED — {recover, restore, repair, fix, rebuild}; no denylist file touched."
+  },
+  "reshape_mechanism_as_built": {
+    "kind": "engine-runtime reshape (NO schema-version bump; SCHEMA_VERSION stays 24). Follows the shipped migrate_vector_partition_pack1_to_pack2 precedent.",
+    "encoding_scheme": "attr_vec0_column(name) = 'attr_' + lowercase hex of the name's UTF-8 bytes. Injective (reversible by decode_attr_vec0_column), matches ^attr_[0-9a-f]+$, and cannot collide with the built-ins (embedding, embedding_bin, source_type, kind, created_at, status). vec0 rejects quoted identifiers and Slice-15d names allow spaces/unicode/'-', so a bare byte-safe identifier is mandatory. Examples pinned by the test: 'priority' -> attr_7072696f72697479, 'due date' -> attr_6475652064617465.",
+    "reconcile": "reconcile_vector_attr_columns(conn, dim) diffs the registry-DESIRED columns (desired_vector_attr_columns: one per Filterable projection, sorted) against the live-ACTUAL columns (actual_vector_attr_columns: parsed from vector_default's CREATE SQL, sorted). desired==actual => pure no-op (no reshape, no re-insert, vec0 untouched). Differ => ONE non-destructive reshape. No-op when vector_default is absent (no embedder).",
+    "non_destructive_reshape": "reshape_vector_partition_nondestructive: stage (base cols + every ACTUAL attr col) -> DROP vector_default -> recreate at DESIRED shape via vector_partition_create_sql(dim, false, desired_cols) -> re-insert. Runs on the caller's connection/tx (no nested tx), so configure_projections gets the reshape atomically with its registry mutation.",
+    "triggers": [
+      "configure_projections: apply_projection_config calls reconcile after the registry mutations, inside the same write tx (drain()-gated, so no async worker is mid-write). Atomic registry+shape change => they can never diverge.",
+      "boot open: a new reconcile step after rederive_projections_on_boot, wrapped in its own tx. On a DB whose shape already matches the registry (every reopen of a DB that declared filterable projections) the diff is empty => no-op => NEVER a silent boot-time wipe."
+    ]
+  },
+  "four_conditions_proof": {
+    "condition_1_rowid_explicit": "The re-insert lists `rowid` verbatim in both the INSERT column list and the SELECT (INSERT INTO vector_default(rowid, embedding, embedding_bin, ...) SELECT rowid, ... FROM stage). Proven by reshape_is_nondestructive_preserves_bits_rowids_and_sentinel: `after_rowids == old_rowids` (the exact same rowids survive; no auto-assign).",
+    "condition_2_plain_metadata_not_aux": "vector_partition_create_sql appends `,{col} TEXT` (plain metadata), never `+{col}` (aux). Proven two ways: the reshape test asserts the table SQL contains `attr_7072696f72697479 TEXT` and NOT `+attr_7072696f72697479`; and filtered_knn_over_attr_column_does_not_hard_error runs a real `... MATCH ... AND attr_<hex>='low' ORDER BY distance` and gets Ok (an aux column would hard-error, exactly as pr_g10's aux_status regression documents).",
+    "condition_3_sentinel_backfill": "A DESIRED column with no ACTUAL predecessor back-fills `''` in the re-insert SELECT (vec0 TEXT metadata is NOT-NULL-able). Proven: after declaring the projection, all pre-existing rows read `''` in the new column, and the filtered KNN (`AND attr_<hex>='high'`) SKIPS every sentinel old row while MATCHING the populated new row.",
+    "condition_4_verbatim_bits_THE_TRAP": "embedding_bin is copied VERBATIM via `vec_bit(embedding_bin)` in the re-insert — NEVER re-derived from the raw `embedding`. Proven directly: reshape_is_nondestructive_preserves_bits_rowids_and_sentinel snapshots each old row's embedding_bin bytes BEFORE the reshape and asserts they are BYTE-IDENTICAL after (read_vector_bin_for_test), AND that each old row's vec_distance_hamming to a fixed query is UNCHANGED across the reshape, AND that old + new Hamming distances all lie in [0, dim] (same comparable scale). This is the silently-wrong trap the mandate flagged; the test would go red if the bits were re-quantized under a different centering. run_pin_and_requantize_pass (the SEPARATE same-shape re-quantize op) was left with its re-quantize logic untouched — only its INSERT was extended to PRESERVE existing attr-col values."
+  },
+  "prekn_compile_proof": {
+    "seam": "vector_phase1_sql_for_test(Some(&SearchFilter{ attributes: vec![(\"priority\",\"high\")], ..default }))",
+    "generated_sql_attribute_only": "WITH candidates AS ( SELECT rowid FROM vector_default WHERE embedding_bin MATCH vec_quantize_binary(vec_f32(?1)) AND attr_7072696f72697479=?3 ORDER BY distance LIMIT 192 ) SELECT c.rowid, vec_distance_l2(v.embedding, vec_f32(?2)) AS l2 FROM candidates c JOIN vector_default v ON v.rowid = c.rowid ORDER BY l2 LIMIT 10",
+    "assertions": "The `AND attr_7072696f72697479=?3` predicate sits INSIDE the phase-1 candidates MATCH block (before ORDER BY distance) => pre-KNN, D3-conformant. The generated SQL contains NO `json_extract` (never demoted post-KNN). Combined with a metadata field, canonical order is preserved: `AND kind=?3` then `AND attr_...=?4`. A space-containing name ('due date') encodes to attr_6475652064617465 with no quoted identifier."
+  },
+  "idempotency_proof": {
+    "test": "idempotent_refilterable_registration_is_vec0_noop",
+    "what": "Declare filterable('priority') twice. First apply: delta.built contains 'priority' (reshape happens). Second identical apply: delta.unchanged == true, AND the table SQL is byte-unchanged, AND the rowids are byte-unchanged, AND every row's embedding_bin is byte-unchanged (no re-insert). Structural (diff vs the live vec0 columns), so boot re-derive replaying the same set is the same no-op."
+  },
+  "enumerated_insert_sites": {
+    "made_dynamic": [
+      "async embed worker commit_projection_outcomes (INSERT OR IGNORE) — binds attr cols from the node body, read from canonical_nodes by write_cursor ONLY when attr cols exist (the common no-filterable hot path stays byte-identical and does NO extra lookup).",
+      "write_vector_for_test (#[doc(hidden)] test helper) — no JSON body, so binds the '' sentinel for every attr col.",
+      "run_pin_and_requantize_pass (DELETE+INSERT re-quantize) — reads the live attr cols + this row's values BEFORE the DELETE and re-binds them; the re-quantize (centering) logic is untouched. This is the SEPARATE same-shape op the mandate said to leave alone re: bits — its INSERT still had to bind every column or vec0 errors."
+    ],
+    "left_base_shape_no_binding": [
+      "migrate_vector_partition_pack1_to_pack2 — a 0.8.9-era pack1 DB predates the projection registry (schema step 24), so it has no filterable set => base shape; create_sql passes &[]. Boot reconcile adds any attr cols afterwards if the registry warrants.",
+      "migrate_vector_partition_to_pack1 — same rationale; passes &[]."
+    ],
+    "invariant": "Every dynamic INSERT and vector_partition_create_sql produces BYTE-IDENTICAL SQL to the shipped statement when the attr-column set is empty (verified by the whole 622-test base staying green plus the byte-identity pin)."
+  },
+  "search_reachability": {
+    "carrier": "SearchFilter gained a pub `attributes: Vec<(String,String)>` field (name,value). vector_filter_clause/vector_filter_values lower each to `AND attr_<hex>=?n` AFTER the four metadata fields; is_unfiltered accounts for it (empty => unfiltered byte-identical path preserved). search_filtered carries attributes across the existing Filter round-trip (the unified Filter/FilterTerm grammar does NOT yet carry an attribute term — a later slice can add that user-facing surface; NOT in 15e scope).",
+    "note": "No FilterTerm variant was added, so slice40's `filterterm_enum_is_exactly_five_variants` stays green."
+  },
+  "governed_surface_delta": {
+    "status": "PROPOSED / NOT SIGNED",
+    "engine_public_api": "SearchFilter gained a pub field `attributes` (additive). New pub-but-#[doc(hidden)] test seams (read_vector_bin_for_test, query_i64_col_for_test, query_text_col_for_test). attr_vec0_column/decode are private.",
+    "bindings": "fathomdb-py + fathomdb-napi RustSearchFilter constructors updated to `..Default::default()` (4 sites). This is BEHAVIOUR-NEUTRAL glue: NO new user-facing filter field reaches the bindings (SearchFilterInput / the Python SearchFilter are UNCHANGED, still 4 fields), and `attributes` is never populated from JS/Py. Per the task's own qualifier ('a new filter term reaching the bindings' is what triggers X1), this is NOT a binding-surface change, so X1/pyright were NOT re-run. The glue is compile-verified by `cargo check --workspace --all-targets` (exit 0). FLAGGED for reviewer judgment: if the reviewer deems any binding-crate .rs edit to require X1, a fresh-clone X1 + pyright run is the follow-up (never in this worktree per the maturin/pip prohibition).",
+    "requirement_ids_and_tests": "R-20-PR / ADR-0.8.11 D3. Pinned by tests/slice15e_prekn_filterable.rs (4 tests). No new AC minted (per TC-42/acceptance-md-locked: track by requirement-id + TDD test names)."
+  },
+  "what_the_plan_or_prior_decomposition_got_wrong": [
+    "The prior decomposition (commit cf2f155c) assumed the reshape MUST wipe embeddings (its 'decision 4: NO blob preservation'), which forced an acknowledgement-channel design question (TC-15E-ACK) and a ~6-site + bindings vertical. TC-46's HITL resolution to a NON-DESTRUCTIVE reshape (embeddings preserved) dissolved that entirely: an additive filterable ADD preserves data => not ProjectionDestructive => no ack parameter, no governed configure_projections signature change. The slice landed whole.",
+    "The prior decomposition listed `rebuild_vec0 insert path — lib.rs:7441` and `embedder-profile mean-pin write path — lib.rs:7096` as distinct INSERT sites. In fact rebuild_vec0 re-enqueues embeds that flow through the SAME async-worker INSERT (commit_projection_outcomes), so making that one site dynamic covers rebuild; and lib.rs:7096 is write_vector_for_test (a test helper), not a mean-pin production path. The true distinct raw INSERT-INTO-vector_default sites are 5 (2 of which are pre-registry migrations that stay base-shape), so 3 needed dynamic binding — fewer than the '~6' estimate.",
+    "The reshape does NOT back-fill the new vec0 attr column from existing node bodies — it uses the '' sentinel (condition #3), so the pre-KNN filter only sees rows written AFTER the projection was declared. This is an intentional asymmetry with the Slice-15d EAV backfill (which DOES backfill canonical_attributes from bodies). It matches the mandate's condition #3 + the ALIGNMENT proof exactly, but consumers should know: for full pre-KNN coverage of pre-existing rows, a rebuild/re-embed (which re-extracts from the body on the async path) is required. Noted as a deliberate, documented deferred-population state (mirrors status@Slice-10)."
+  ],
+  "fix-1": {
+    "title": "Close TWO P2 codex §9 findings in the new attribute-filter path: (1) attribute filter not applied on the TEXT/FTS arm ⇒ hybrid false positives; (2) existing rows get the '' sentinel even when their body HAS the attribute ⇒ false negatives.",
+    "branch": "orch-0.8.20-s15b",
+    "baseline_head": "72e75317 (Slice 15e closure witness)",
+    "commits": [
+      {
+        "sha": "9f969958",
+        "kind": "RED",
+        "subject": "test(0.8.20): RED — Slice 15e fix-1 total attribute filter + existing-row backfill",
+        "tests_added": [
+          "hybrid_fts_arm_applies_attribute_filter (F1)",
+          "existing_row_backfilled_from_canonical_attributes_not_blanket_sentinel (F2)"
+        ],
+        "red_evidence": "Both FAILED at baseline (real captured output):\n  F1 hybrid_fts_arm_applies_attribute_filter — panicked 'priority=low doc must NOT leak through the FTS arm: [\"{...\\\"priority\\\":\\\"high\\\"}\", \"{...\\\"priority\\\":\\\"low\\\"}\"]'. The priority=low MISS doc matched the FTS query and, because text_hit_passes_filter checked only the four legacy metadata fields, leaked through the FTS arm of the hybrid search (the vector arm correctly pruned it — projection declared BEFORE the writes so vec0 attr_<hex> was populated at write time; the sanity assertion 'MISS vec0 column populated from body' == [\"low\"] passed, isolating the leak to the FTS arm).\n  F2 existing_row_backfilled... — panicked 'assertion `left == right` failed: pre-existing row whose body HAS the attribute must back-fill its real value, not \\'\\'  left: [\"\"]  right: [\"high\"]'. The PRESENT row (body priority=high, written+embedded BEFORE the projection) got the blanket '' sentinel in vec0 from reshape_vector_partition_nondestructive, so it was a pre-KNN false negative despite canonical_attributes having already been back-filled to 'high'."
+      },
+      {
+        "sha": "94072773",
+        "kind": "GREEN",
+        "subject": "feat(0.8.20): GREEN — Slice 15e fix-1 attribute filter total across arms + backfill existing rows"
+      }
+    ],
+    "finding_1_total_filter_across_arms": {
+      "problem": "SearchFilter.attributes was applied ONLY to the vector phase-1 pre-KNN SQL (attr_<hex>=? via vector_filter_clause). The FTS/text branches (text_hit_passes_filter / edge_fts_hit_passes_filter) checked only source_type/kind/created_after/status, so in a hybrid RRF search a doc returned by the FTS arm that FAILS the attribute filter still surfaced — violating ADR-0.8.11 D3 total backend-dispatch.",
+      "fix": "Added a shared private helper hit_attributes_pass_filter(tx, id, filter) that, for each (attr_name, value) in filter.attributes, reads attr_value from the canonical_attributes EAV table (SELECT attr_value FROM canonical_attributes WHERE write_cursor=?1 AND attr_name=?2 LIMIT 1). An absent attribute has no row ⇒ reads as the '' sentinel via unwrap_or_default(), so a non-empty equality fails-to-match. Wired into BOTH text_hit_passes_filter (keyed by node id) and edge_fts_hit_passes_filter (keyed by write_cursor) just before their `Ok(true)`.",
+      "match_with_vector_arm": "canonical_attributes is populated by project_one_attribute via the SAME extract_scalar_attribute that fills the vec0 attr_<hex> column, and (after finding 2) the reshape also back-fills the vec0 column from canonical_attributes — so the EAV value and the vec0 value are IDENTICAL by construction. Absent ⇒ '' on both arms. Hybrid RRF is therefore coherent: the exact same rows pass/fail on the FTS arm and the vector arm.",
+      "edges_verified": "Edge bodies ARE projected into vector_default (rowid == write_cursor) with the same attr_<hex> columns, and Slice 15d projects an edge's filterable attributes into canonical_attributes keyed by its write_cursor, so edge_fts_hit_passes_filter was extended too (same helper, keyed by write_cursor); an edge carrying no such attribute reads '' and fails a non-empty equality exactly as on the vector arm."
+    },
+    "finding_2_existing_row_backfill": {
+      "problem": "reshape_vector_partition_nondestructive filled EVERY newly-added attr column for existing rows with the blanket '' sentinel. But apply_projection_config runs backfill_attribute (which fills canonical_attributes from each active row's body) at lib.rs:15934/15946 BEFORE reconcile_vector_attr_columns triggers the reshape at :15966. So a pre-existing row whose body contained the attribute was written '' in vec0 and failed every pre-KNN attribute filter until re-embedded — an immediate false negative.",
+      "fix": "In the re-insert SELECT, a NEW desired column (no ACTUAL predecessor) now back-fills from the already-populated canonical_attributes instead of a blanket '': decode_attr_vec0_column(col) → attr_name, then COALESCE((SELECT ca.attr_value FROM canonical_attributes ca WHERE ca.write_cursor = _fathomdb_vector_reshape_stage.rowid AND ca.attr_name = '<escaped name>' LIMIT 1), ''). execute_batch takes no bind params, so the decoded name is embedded as a SQL string literal with single-quotes doubled; a column that fails to decode falls back to '' rather than panicking. The '' sentinel (condition #3) is now used ONLY where the attribute is genuinely absent (no canonical_attributes row).",
+      "condition_3_still_holds": "The genuinely-absent case still yields '' (COALESCE default), so vec0 TEXT metadata never NULLs/errors and an absent row cleanly fails-to-match. F2 proves both halves: PRESENT (body priority=high) vec0 attr col reads 'high'; ABSENT (no priority) reads '' and is excluded from a priority==high filter."
+    },
+    "four_tc46_conditions_still_hold": {
+      "condition_1_rowid_explicit": "UNCHANGED — the re-insert still lists `rowid` verbatim in both the INSERT column list and the SELECT. reshape_is_nondestructive_preserves_bits_rowids_and_sentinel stays green (after_rowids == old_rowids).",
+      "condition_2_plain_metadata_not_aux": "UNCHANGED — vector_partition_create_sql still appends `{col} TEXT`, never `+{col}`. filtered_knn_over_attr_column_does_not_hard_error stays green.",
+      "condition_3_sentinel_only_when_absent": "REFINED — sentinel is now the ABSENT case only (back-fill from canonical_attributes otherwise), exactly as the mandate specifies. reshape_is_nondestructive_...'s OLD1/OLD2 rows (bodies WITHOUT the attribute) still correctly read '' and are skipped by the filter, so that test stays green.",
+      "condition_4_verbatim_bits_THE_TRAP": "UNCHANGED — embedding_bin is still copied VERBATIM via `vec_bit(embedding_bin)` in the re-insert; NO re-quantization. My only change to the re-insert was the VALUE SOURCE of the new attr columns (canonical_attributes instead of blanket ''). reshape_is_nondestructive_preserves_bits_rowids_and_sentinel (byte-identical embedding_bin + unchanged Hamming distances across the reshape) stays green, confirming the silent-recall-corruption trap is not reopened."
+    },
+    "gates": {
+      "cargo_clippy_workspace_all_targets": { "command": "cargo clippy --workspace --all-targets", "exit_code": 0 },
+      "cargo_check_workspace_all_targets": { "command": "cargo check --workspace --all-targets", "exit_code": 0 },
+      "cargo_test_engine_schema": {
+        "command": "cargo test -p fathomdb-engine -p fathomdb-schema -- --test-threads=1",
+        "exit_code": 0,
+        "aggregate": "628 passed / 0 failed / 13 ignored",
+        "pre_fix1_was": "626 passed / 0 failed / 13 ignored",
+        "delta": "+2 = the two fix-1 tests in tests/slice15e_prekn_filterable.rs (slice15e now 6 tests)"
+      },
+      "pr_g10_filtered_knn": {
+        "command": "cargo test -p fathomdb-engine --test pr_g10_filtered_knn -- --test-threads=1",
+        "exit_code": 0,
+        "aggregate": "6 passed / 0 failed",
+        "unfiltered_phase1_sql_byte_identical_to_0_7_2": "PASS — the byte-identity of the unfiltered pre-KNN SQL is unchanged (fix-1 touches only the text/FTS filter check and the reshape re-insert VALUE source, not vector_filter_clause / build_vector_phase1_sql).",
+        "other_named": "aux_status_column_hard_errors_under_knn_where PASS; filtered_phase1_sql_appends_present_predicates_only PASS; sentinel_backfills_status_on_simulated_pack1_db PASS; filter_prunes_vector_candidates_by_kind PASS; status_filter_prunes_all_because_population_is_null_only PASS."
+      },
+      "operator_feature_rebuild_erasure": {
+        "command": "cargo test -p fathomdb-engine --features operator --test rebuild_vec0 --test rebuild_projections --test erasure_projection_registry --test erasure_completeness -- --test-threads=1",
+        "exit_code": 0,
+        "aggregate": "10+4+4+1 = 19 passed / 0 failed",
+        "note": "Sanity-run because finding 2 changes the reshape re-insert path that rebuild exercises."
+      },
+      "bindings_X1_pyright": "NOT re-run — CORRECTLY skipped. fix-1 changes are 100% engine-internal (only src/rust/crates/fathomdb-engine/src/lib.rs changed; `git diff --stat` = 1 file, +90/-7). No binding crate touched, no new SearchFilter field, SearchFilter.attributes remains NOT reachable from the binding input types (SearchFilterInput / Python SearchFilter unchanged). Per the mandate's own qualifier, this is not a binding-surface change ⇒ no fresh-clone X1/pyright, no .pyi gap reintroduced.",
+      "eu7": "ZERO eu7 runs. eu7_real_corpus_ac stays #[ignore]d (one of the unchanged 13 ignored).",
+      "ac_041_recovery_denylist": "UNCHANGED — {recover, restore, repair, fix, rebuild} = exactly five; no denylist file touched. AC-041 green.",
+      "governed_surface": "PROPOSED / NOT SIGNED — no new public API, no new AC minted, never HITL-SIGNED. The only new symbol is a private fn (hit_attributes_pass_filter)."
+    },
+    "files_touched": [
+      "src/rust/crates/fathomdb-engine/src/lib.rs — hit_attributes_pass_filter (new private fn); text_hit_passes_filter + edge_fts_hit_passes_filter (attr check wired in); reshape_vector_partition_nondestructive (new-column back-fill from canonical_attributes)",
+      "src/rust/crates/fathomdb-engine/tests/slice15e_prekn_filterable.rs — 2 new tests (F1, F2)"
+    ]
+  },
+  "fix-2": {
+    "title": "Finding-1 (A) closeout + Finding-2. HITL ruled Finding 1 -> (A) edges EXCLUDED by an attribute filter (node-scoped). Deliver a deliberate pin-test + a doc naming (D) as the reserved widening; and mark the public facade struct SearchFilter #[non_exhaustive] (Finding 2). NO behaviour change (A already holds post-fix-1); NO fix-1 reopen; NO dropped-edge telemetry; NO attributes SDK-wire.",
+    "branch": "orch-0.8.20-s15b",
+    "baseline_head": "e7175a61 (Slice 15e fix-1 closure witness)",
+    "commits": [
+      {
+        "sha": "12a6c8266982f7d86ebf51a23d25c608e4f71dfb",
+        "kind": "TEST (characterization / pin — passes at first run, NOT a RED->GREEN)",
+        "subject": "test(0.8.20): Slice 15e fix-2 — pin (A) edges-excluded semantics",
+        "pin_test_name": "attribute_filter_excludes_edge_hits_on_both_arms",
+        "pin_test_file": "src/rust/crates/fathomdb-engine/tests/slice15e_prekn_filterable.rs",
+        "pin_test_passes": true,
+        "first_run_evidence": "Ran at the moment it was written (before the #[non_exhaustive] change): 'test attribute_filter_excludes_edge_hits_on_both_arms ... ok' (1 passed). Confirms the (A) behaviour is ALREADY correct post-fix-1, so this is a lock-in pin, not RED->GREEN — exactly as the mandate anticipated."
+      },
+      {
+        "sha": "80ecf12c564d6dc4bda5e702a77431eec7165f73",
+        "kind": "FEAT",
+        "subject": "feat(0.8.20): Slice 15e fix-2 — non_exhaustive SearchFilter + (A) doc"
+      }
+    ],
+    "finding_1_A_pin": {
+      "ruling": "(A) edges are EXCLUDED by an attribute filter — KEEP the current post-fix-1 behaviour; pin + document it. Did NOT build (B) edges-pass-through, (C) project-edge-attributes, or (D) endpoint-node filtering; added NO per-query flag; did NOT reopen the fix-1 [P2].",
+      "why_A_already_holds": "Attribute projection is PreparedWrite::Node-gated (collect_projection_jobs pushes ProjectionJob only for PreparedWrite::Node; project_canonical_edge_row writes ONLY FTS + vector-state for edges, never project_one_attribute). So an EDGE is never projected into canonical_attributes, and its vector_default row (kind edge_fact, rowid=write_cursor) carries the '' sentinel in every attr_<hex> column (the async worker's attr-binding reads `SELECT body FROM canonical_nodes WHERE write_cursor=edge_cursor`, which has NO row for an edge cursor, so extract_scalar_attribute sees an empty body -> '').",
+      "both_arms_mechanism": {
+        "edge_vector_arm": "The edge IS a vector_default candidate, but its attr_<hex> column is '' -> the pre-KNN `attr_<hex>='high'` predicate (vector_filter_clause) prunes it. Pinned by the raw assertion `SELECT attr_<hex> FROM vector_default WHERE rowid=edge_cursor` == [''] plus `SELECT rowid FROM vector_default WHERE rowid=edge_cursor` == [edge_cursor] (candidate really exists).",
+        "edge_fts_arm": "The edge IS a search_index_edges candidate, but edge_fts_hit_passes_filter -> hit_attributes_pass_filter finds no canonical_attributes row for the edge write_cursor, reads '', and fails the non-empty equality. Pinned by `SELECT COUNT(*) FROM search_index_edges WHERE write_cursor=edge_cursor` == 1 and `SELECT COUNT(*) FROM canonical_attributes WHERE write_cursor=edge_cursor` == 0.",
+        "outcome_and_control": "CONTROL (unfiltered search_filtered('sharedtoken', None)): both the edge body ('edgefact') AND the matching node body ('alpha node') are present -> the edge is genuinely retrievable, so the filtered-absence is a real exclusion. FILTERED (attributes=[('priority','high')]): the matching NODE survives (non-vacuous control) and the edge is ABSENT — even though the edge's OWN body names priority=high. Because search_filtered fuses both arms, a regression that let edges through on EITHER arm would resurface the edge and fail the pin — that is how the single fused-search assertion guards both arms, backed by the per-arm raw-state assertions."
+      },
+      "A_doc_site": "src/rust/crates/fathomdb-engine/src/lib.rs — doc block on `hit_attributes_pass_filter` (the shared node-scoped attribute-filter site, wired into both text_hit_passes_filter and edge_fts_hit_passes_filter) states the intended 0.8.20 semantics: attribute filters are node-scoped; edge hits carry no projected attributes and are therefore excluded; and names the reserved widening: '(A) is (D) with an empty endpoint rule'. Doc only — D NOT implemented, no per-query flag. Mirrored in dev/interfaces/rust.md."
+    },
+    "finding_2_non_exhaustive": {
+      "change": "Added #[non_exhaustive] to `pub struct SearchFilter` (src/rust/crates/fathomdb-engine/src/lib.rs ~:2469). External Rust struct literals can no longer add the pub `attributes` field (or any future field) as a source break.",
+      "mandate_premise_corrected": "The mandate stated '#[non_exhaustive] only constrains EXTERNAL crates, so the workspace still compiles ... if any in-crate literal breaks, fix it with ..Default::default()'. That premise is factually wrong per the Rust reference: #[non_exhaustive] forbids struct-literal construction from EVERY non-defining crate (not only external ones), and the functional-update form `..Default::default()` is ALSO forbidden downstream — so it is NOT a valid fix. Integration-test crates and the two binding crates count as separate (non-defining) crates. cargo clippy/check therefore FAILED at first with E0639 'cannot create non-exhaustive struct using struct expression' at the binding sites AND every engine integration-test literal.",
+      "fix_applied": "Converted every downstream struct-literal to field-assignment on a default() base (fields are pub): `let mut f = SearchFilter::default(); f.kind = ...;`. This adds NO new public API (no constructor, no builder), keeping the governed delta to exactly `attributes` + `#[non_exhaustive]`. clippy::field_reassign_with_default did NOT fire (clippy suppresses it for foreign #[non_exhaustive] structs), and there is no deny(warnings) in the workspace regardless.",
+      "sites_converted": {
+        "bindings_4": [
+          "src/rust/crates/fathomdb-py/src/lib.rs (search + search_expand filter build)",
+          "src/rust/crates/fathomdb-napi/src/lib.rs (search + search_expand filter build)"
+        ],
+        "engine_test_crates": [
+          "tests/slice15e_prekn_filterable.rs (5 pre-existing literals + the 1 new pin-test literal)",
+          "tests/pr_g10_filtered_knn.rs (3)",
+          "tests/slice15_byo_llm_ingest.rs (5)",
+          "tests/slice35_filter_grammar.rs (1)",
+          "tests/slice40_filter_unification.rs (1)"
+        ],
+        "attributes_left_default_downstream": "In every binding site `attributes` is left at its default (empty) — it is NOT populated from Py/JS. attributes stays engine-internal in 0.8.20."
+      }
+    },
+    "governed_surface_delta": {
+      "status": "PROPOSED / NOT SIGNED (never HITL-SIGNED; no AC minted).",
+      "engine_public_api": "SearchFilter is now #[non_exhaustive] and its pub `attributes: Vec<(String,String)>` field (added in Slice 15e core) is documented as node-scoped. No new re-exported type, no new public method.",
+      "conformance_allowlist_untouched": "src/conformance/governed-surface-allowlist.json is byte-unchanged — SearchFilter was already an allowlisted re-exported TYPE; this is a fields-only + attribute delta (same pattern as PreparedWrite::Node's validity fields), and `attributes` is NOT on the Py/TS wire, so SearchFilterInput / the Python SearchFilter binding input are unchanged. Confirmed no src/conformance/* file was touched.",
+      "rust_md_updated": "dev/interfaces/rust.md — new note under the Projection registry section documenting SearchFilter.attributes + #[non_exhaustive] + node-scoped (A) semantics, marked PROPOSED / NOT SIGNED."
+    },
+    "explicit_out_of_scope_confirmations": {
+      "no_dropped_edge_count_or_telemetry": "Confirmed — added NO count/telemetry for excluded edges.",
+      "no_attributes_sdk_wire": "Confirmed — added NO Py/TS `attributes` search argument. Did NOT touch SearchFilterInput or the Python SearchFilter binding input. `attributes` stays engine-internal; wire exposure is a later slice.",
+      "no_fix1_reopen": "Confirmed — fix-1's total-filter helper and reshape back-fill are untouched; no fix-1 [P2] reopened."
+    },
+    "gates": {
+      "cargo_clippy_workspace_all_targets": { "command": "cargo clippy --workspace --all-targets", "exit_code": 0, "note": "Clean, no warnings (field_reassign_with_default suppressed for foreign non_exhaustive)." },
+      "cargo_check_workspace_all_targets": { "command": "cargo check --workspace --all-targets", "exit_code": 0 },
+      "cargo_test_engine_schema": {
+        "command": "cargo test -p fathomdb-engine -p fathomdb-schema -- --test-threads=1",
+        "exit_code": 0,
+        "aggregate": "629 passed / 0 failed / 13 ignored",
+        "pre_fix2_was": "628 passed / 0 failed / 13 ignored",
+        "delta": "+1 = the pin-test attribute_filter_excludes_edge_hits_on_both_arms (slice15e now 7 tests)."
+      },
+      "pr_g10_filtered_knn": {
+        "command": "cargo test -p fathomdb-engine --test pr_g10_filtered_knn -- --test-threads=1",
+        "exit_code": 0,
+        "aggregate": "6 passed / 0 failed",
+        "unfiltered_phase1_sql_byte_identical_to_0_7_2": "PASS (still green — fix-2 touches no vector SQL generation)."
+      },
+      "recovery_denylist": {
+        "command": "cargo test -p fathomdb --test no_recovery_surface -- --test-threads=1",
+        "exit_code": 0,
+        "note": "AC-041 GREEN — recovery denylist {recover, restore, repair, fix, rebuild} = exactly five, byte-frozen; no denylist file touched. (The byte-frozen enforcement lives in the fathomdb facade package, not fathomdb-engine.)"
+      },
+      "eu7": "ZERO eu7 runs. eu7_real_corpus_ac stays #[ignore]d — one of the unchanged 13 ignored.",
+      "bindings_X1_pyright": "NOT required and NOT run. No binding SURFACE change: SearchFilterInput / the Python SearchFilter input are unchanged, `attributes` is not exposed to Py/TS, and the only binding .rs edits are behaviour-neutral construction-glue forced by #[non_exhaustive]. Per the mandate, no binding surface change => X1/pyright not required.",
+      "md_lint": "Not cited as a gate (TC-37). The docs pre-commit hook (md-safe-fix, AST-guarded) ran on the staged rust.md at commit time without objection.",
+      "aggregate_exit_trust": "Real per-run PIPESTATUS/$? captured for every gate above (TC-16 — did NOT trust an agent-test.sh aggregate exit)."
+    },
+    "files_touched": [
+      "src/rust/crates/fathomdb-engine/src/lib.rs — #[non_exhaustive] on SearchFilter + (A) node-scoped doc on hit_attributes_pass_filter",
+      "src/rust/crates/fathomdb-engine/tests/slice15e_prekn_filterable.rs — new pin-test attribute_filter_excludes_edge_hits_on_both_arms + edge() helper + field-assignment conversions",
+      "src/rust/crates/fathomdb-engine/tests/pr_g10_filtered_knn.rs — field-assignment conversions",
+      "src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs — field-assignment conversions",
+      "src/rust/crates/fathomdb-engine/tests/slice35_filter_grammar.rs — field-assignment conversion",
+      "src/rust/crates/fathomdb-engine/tests/slice40_filter_unification.rs — field-assignment conversion",
+      "src/rust/crates/fathomdb-py/src/lib.rs — RustSearchFilter field-assignment (2 sites)",
+      "src/rust/crates/fathomdb-napi/src/lib.rs — RustSearchFilter field-assignment (2 sites)",
+      "dev/interfaces/rust.md — PROPOSED/NOT-SIGNED governed-surface note",
+      "dev/plans/runs/0.8.20-slice-15e-output.json — this fix-2 witness section"
+    ]
+  },
+  "fix-3": {
+    "title": "Close ONE codex §9 [P2]: the `''` empty-string vec0 sentinel meant BOTH \"attribute absent\" AND \"attribute present with value ''\", so a `status == \"\"` equality filter false-matched every ABSENT row on BOTH arms. Distinguish ABSENT from PRESENT-EMPTY on the FILTER path only.",
+    "branch": "orch-0.8.20-s15b",
+    "baseline_head": "d8bf3759 (Slice 15e fix-2 closure witness)",
+    "commits": [
+      {
+        "sha": "e395d626",
+        "kind": "RED",
+        "subject": "test(0.8.20): RED — Slice 15e fix-3 empty-string attribute value vs absent",
+        "tests_added": [
+          "empty_string_attribute_value_vs_absent_vector_arm",
+          "empty_string_attribute_value_vs_absent_both_arms_fused"
+        ],
+        "red_evidence": "Both FAILED at this commit (real captured output, `cargo test -p fathomdb-engine --test slice15e_prekn_filterable empty_string_attribute_value -- --test-threads=1`, EXIT=101):\n  empty_string_attribute_value_vs_absent_vector_arm — panicked at slice15e_prekn_filterable.rs:694 'assertion `left == right` failed: present-empty encodes to the marker (enc(\"\")), NOT the '' absent sentinel  left: [\"\"]  right: [\"\\u{1}\"]'. The `{\"status\":\"\"}` present-empty row stored the bare `''` vec0 sentinel — indistinguishable from ABSENT at rest.\n  empty_string_attribute_value_vs_absent_both_arms_fused — panicked at slice15e_prekn_filterable.rs:806 'ABSENT must NOT false-match status='' on EITHER arm: [\"{\\\"title\\\":\\\"sharedtoken beta\\\"}\", \"{\\\"title\\\":\\\"sharedtoken alpha\\\",\\\"status\\\":\\\"\\\"}\"]'. The ABSENT row (`sharedtoken beta`, no `status` key) leaked into the fused `status==''` results alongside the legitimate present-empty `sharedtoken alpha` — the false-positive the [P2] describes, on both the vector pre-KNN arm and the FTS arm."
+      },
+      {
+        "sha": "c37f61fb",
+        "kind": "GREEN",
+        "subject": "feat(0.8.20): GREEN — Slice 15e fix-3 distinguish absent from present-empty on the attribute filter"
+      }
+    ],
+    "mechanism_chosen": {
+      "which": "PREFERRED (lowest-ripple): vec0 arm = injective marker-byte ENCODING of PRESENT values; text/FTS arm = canonical_attributes row EXISTENCE. Did NOT encode `canonical_attributes.attr_value` (the alternative), so no consumer of the RAW EAV value breaks and there is zero ripple to Slice-15d storage.",
+      "why": "vec0 TEXT metadata is NOT-NULL-able (TC-46 condition #3), so ABSENT cannot be `NULL`; the only way to distinguish it from PRESENT-EMPTY in a NOT-NULL column is to make the PRESENT value-space DISJOINT from the ABSENT sentinel. Present values are arbitrary user strings (incl. `''`), so a scheme that keeps present values RAW is impossible — a leading marker byte `enc(V) = \"\\x01\" || V` is injective and non-empty for ALL V (including V=\"\", whose encoding is the bare marker `\\x01`), while ABSENT stays the bare `''`. Encoding `canonical_attributes.attr_value` instead was rejected because grep shows it is read RAW by the property-FTS shadow expectation and by the fix-1 text-arm compare; row-existence gives the same absent/present-empty distinction with byte-unchanged EAV storage.",
+      "columns_touched": "ONLY the vec0 `attr_<hex>` filter column (write path + reshape re-insert) and the filter-value lowering (`vector_filter_values`). `canonical_attributes.attr_value` and `property_search_index` are byte-UNCHANGED / RAW.",
+      "property_search_index_raw_confirmed": "CONFIRMED RAW — `project_one_attribute` writes `property_search_index(attr_value,...)` and `canonical_attributes(attr_value,...)` from the SAME single `value` binding (the RAW canonical scalar). fix-3 did NOT touch `project_one_attribute`; FTS search over property_search_index still sees the real text.",
+      "four_tc46_conditions_hold": "UNCHANGED. (1) rowid explicit — reshape re-insert still lists `rowid` verbatim. (2) plain-metadata-not-aux — `vector_partition_create_sql` still appends `{col} TEXT`, never `+{col}`; `filtered_knn_over_attr_column_does_not_hard_error` green. (3) sentinel-for-absent — ABSENT is still the bare `''` (COALESCE default / `None => String::new()`); only PRESENT values gained the marker. (4) embedding_bin verbatim — the reshape re-insert still copies `vec_bit(embedding_bin)`; my only reshape edit was `ca.attr_value` -> `char(1) || ca.attr_value` in the NEW-attr-column back-fill SELECT; `reshape_is_nondestructive_preserves_bits_rowids_and_sentinel` green (byte-identical bits + unchanged Hamming)."
+    },
+    "both_arms_agree_proof": {
+      "vector_arm": "PRESENT value V is stored `\\x01 || V` in `attr_<hex>` (`vector_attr_insert_fragments` at write time; reshape back-fills `char(1) || ca.attr_value` for pre-existing rows). ABSENT is `''`. `vector_filter_values` lowers the filter value V to `\\x01 || V`, so the pre-KNN predicate `attr_<hex> = enc(\"\")` (= `\\x01`) matches present-empty but never the `''`-absent rows. Pinned RAW at-rest: present-empty col == [\"\\u{1}\"], absent col == [\"\"], present-'open' col == [\"\\u{1}open\"]; and a raw pre-KNN SQL `... AND attr_<hex>=char(1)||'' ...` matches present-empty's rowid, NOT absent's, NOT present-'open''s.",
+      "fts_arm": "`hit_attributes_pass_filter` reads `canonical_attributes.attr_value` with row EXISTENCE as the discriminator: `Some(Some(v)) if v == want` passes (present, incl. present-empty where v==\"\"); a no-row (`None`) or NULL falls through to fail. Pinned: present-empty HAS a row (COUNT==1, attr_value RAW \"\"), absent has NONE (COUNT==0).",
+      "identical_verdicts": "present-empty matches `(\"status\",\"\")` on BOTH arms; ABSENT matches NOTHING (incl. `\"\"`) on BOTH; present-'open' matches `(\"status\",\"open\")` and NOT `(\"status\",\"\")` on BOTH. The `both_arms_fused` test proves this jointly: `search_filtered` fuses vector+FTS as a UNION, so 'ABSENT does not appear in a status=='' search' can only hold if BOTH arms exclude it — a regression on EITHER arm would resurface it and fail the pin. Non-vacuous controls: present-empty (alpha) and present-'open' (gamma) survive their matching filters."
+    },
+    "consumer_safety": {
+      "vec0_attr_column_consumers": "The only readers of the vec0 `attr_<hex>` column are (a) the pre-KNN filter predicate `vector_filter_clause` (whose bound value is now equally encoded via `vector_filter_values`) and (b) the reshape stage carry-forward `COALESCE({col}, '')` (opaque copy — encoded value carried verbatim). `run_pin_and_requantize_pass` re-binds existing column values opaquely (no decode). No consumer decodes or displays the vec0 attr value, so the marker is never surfaced to a caller.",
+      "canonical_attributes_attr_value_consumers": "Read RAW by `hit_attributes_pass_filter` (fix-3 compares RAW), the reshape back-fill (now wraps with `char(1) ||` ONLY for the vec0 column it writes — the EAV row itself is untouched), and erasure/rebuild paths. All see the unchanged RAW value; none broke (full engine+schema suite green, incl. operator-feature rebuild/erasure via the whole-suite run)."
+    },
+    "gates": {
+      "cargo_clippy_workspace_all_targets": { "command": "cargo clippy --workspace --all-targets", "exit_code": 0 },
+      "cargo_check_workspace_all_targets": { "command": "cargo check --workspace --all-targets", "exit_code": 0 },
+      "cargo_test_engine_schema": {
+        "command": "cargo test -p fathomdb-engine -p fathomdb-schema -- --test-threads=1",
+        "exit_code": 0,
+        "aggregate": "631 passed / 0 failed / 13 ignored",
+        "pre_fix3_was": "629 passed / 0 failed / 13 ignored",
+        "delta": "+2 = the two fix-3 tests in tests/slice15e_prekn_filterable.rs (slice15e now 9 tests). The fix-1/fix-2 tests + the (A) pin (attribute_filter_excludes_edge_hits_on_both_arms) all still pass."
+      },
+      "pr_g10_filtered_knn": {
+        "command": "cargo test -p fathomdb-engine --test pr_g10_filtered_knn -- --test-threads=1",
+        "exit_code": 0,
+        "aggregate": "6 passed / 0 failed",
+        "unfiltered_phase1_sql_byte_identical_to_0_7_2": "PASS — fix-3 touches only the attribute filter-value lowering and the vec0 attr-column value source; the UNFILTERED pre-KNN SQL (no attributes) is byte-unchanged.",
+        "other_named": "aux_status_column_hard_errors_under_knn_where PASS; filtered_phase1_sql_appends_present_predicates_only PASS; sentinel_backfills_status_on_simulated_pack1_db PASS; filter_prunes_vector_candidates_by_kind PASS; status_filter_prunes_all_because_population_is_null_only PASS."
+      },
+      "recovery_denylist_ac_041": {
+        "command": "cargo test -p fathomdb --test no_recovery_surface -- --test-threads=1",
+        "exit_code": 0,
+        "note": "AC-041 GREEN — recovery denylist {recover, restore, repair, fix, rebuild} = exactly five, byte-frozen; no denylist file touched."
+      },
+      "eu7": "ZERO eu7 runs. eu7_real_corpus_ac stays #[ignore]d (one of the unchanged 13 ignored).",
+      "bindings_X1_pyright": "NOT required and NOT run — CORRECTLY skipped. fix-3 changes are 100% engine-internal: `git diff --stat` for the GREEN commit = 2 files (src/rust/crates/fathomdb-engine/src/lib.rs +, tests/slice15e_prekn_filterable.rs). No binding crate (fathomdb-py / fathomdb-napi) touched, no schema crate touched, no new SearchFilter field, SearchFilter.attributes still NOT reachable from the Py/TS wire. Per the mandate, no binding surface change ⇒ no fresh-clone X1/pyright.",
+      "governed_surface": "PROPOSED / NOT SIGNED — no new PUBLIC API (the two new symbols ATTR_VEC0_PRESENT_MARKER + encode_attr_vec0_present are PRIVATE), no new AC minted, never HITL-SIGNED. Conformance allowlist byte-unchanged.",
+      "md_lint_not_cited": "TC-37 honored — agent-lint-md.sh NOT cited as a gate. TC-16 honored — real per-run PIPESTATUS/$? captured for every gate above; agent-test.sh aggregate exit NOT trusted."
+    },
+    "files_touched": [
+      "src/rust/crates/fathomdb-engine/src/lib.rs — ATTR_VEC0_PRESENT_MARKER + encode_attr_vec0_present (new private const+fn); vector_attr_insert_fragments (encode present, '' for absent); vector_filter_values (encode filter value); reshape_vector_partition_nondestructive (new-attr-column back-fill char(1) || ca.attr_value); hit_attributes_pass_filter (row-existence + RAW compare) + updated doc",
+      "src/rust/crates/fathomdb-engine/tests/slice15e_prekn_filterable.rs — 2 new fix-3 tests; updated 3 at-rest RAW vec0 assertions to the marker-encoded present value (new_val, miss_vec_val, present_val) + 1 raw KNN SQL literal (char(1)||'high') to reflect the vec0 encoding; canonical_attributes assertions confirm attr_value stays RAW ''",
+      "dev/plans/runs/0.8.20-slice-15e-output.json — this fix-3 witness section"
+    ]
+  },
+  "follow_ups_non_blocking": [
+    "Perf: when attr columns exist, the async worker does `SELECT body FROM canonical_nodes WHERE write_cursor=?` per insert; there is no index on canonical_nodes(write_cursor) (per the shipped fix-3 note), so this is a scan bounded by corpus size. Opt-in (only with a filterable projection declared). A write_cursor index is a candidate future optimization.",
+    "Surface: a user-facing unified FilterTerm::Attribute variant (so callers can request an attribute filter through the Filter grammar / bindings) is deferred to a later slice; 15e delivers the routing mechanism reachable via SearchFilter.attributes + the generated-SQL seam.",
+    "Coverage: backfilling the vec0 attr column for pre-existing rows (vs the '' sentinel) on a rebuild/re-embed, if full pre-KNN coverage of historical rows is wanted."
+  ]
+}

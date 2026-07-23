@@ -94,6 +94,47 @@ export interface EraseReport {
   projectionsInvalidated: number;
 }
 
+/**
+ * 0.8.20 Slice 15d (R-20-PR) — the three projection roles (set members).
+ * `searchable→FTS` and `searchable→vector` are NOT roles — they are tier labels
+ * carried by the `fts`/`vector` sub-objects of a {@link ProjectionSpec}.
+ */
+export type ProjectionRole = "filterable" | "rankable" | "searchable";
+
+/**
+ * 0.8.20 Slice 15d (R-20-PR / C-1) — a declarative projection declaration.
+ * HITL-ratified shape `{ name, roles, fts?, vector? }`; `roles` carries SET
+ * semantics. `fts` selects the `searchable→FTS` sub-target (optional custom
+ * `ftsTokenizer`); `vector` selects `searchable→vector` (optional
+ * `vectorEmbedder`). The `vector` sub-object is stored by Slice 15d and built
+ * by Slice 20 (`denseReadiness` attaches to it). Mirrors the Python
+ * `ProjectionSpec` (cross-binding parity).
+ */
+export interface ProjectionSpec {
+  name: string;
+  roles: ProjectionRole[];
+  /** `true` when the `searchable→FTS` sub-target is declared. */
+  fts: boolean;
+  /** Optional custom tokenizer; omitted = engine default (only with `fts`). */
+  ftsTokenizer?: string | null;
+  /** `true` when the `searchable→vector` sub-target is declared. */
+  vector: boolean;
+  /** Optional embedder override; omitted = engine default (only with `vector`). */
+  vectorEmbedder?: string | null;
+}
+
+/**
+ * 0.8.20 Slice 15d (R-20-PR) — the diff `configureProjections` applied.
+ * Idempotent re-registration yields `unchanged: true` with all arrays empty; a
+ * destructive change without an explicit drop throws instead of returning.
+ */
+export interface ProjectionDelta {
+  built: string[];
+  dropped: string[];
+  deferred: string[];
+  unchanged: boolean;
+}
+
 /** G11 (Slice 15) — BYO-LLM ingest receipt. */
 export interface IngestWithExtractorReceipt {
   /** Number of `canonical_nodes` rows written (new insertions only). */
@@ -725,6 +766,55 @@ export class Engine {
   async eraseSource(sourceId: string): Promise<EraseReport> {
     validateFfiString(sourceId);
     return intercept(() => this.#native.eraseSource(sourceId));
+  }
+
+  /**
+   * 0.8.20 Slice 15d (R-20-PR / C-1) — the `configureProjections` governed verb.
+   * Declaratively apply projection declarations: the engine is the SOLE
+   * projection authority and diffs `specs` against the durable registry,
+   * backfilling the difference in one transaction. Cheap projections
+   * (`filterable`, `searchable→FTS`) build same-transaction; `rankable` and the
+   * `searchable→vector` sub-target are persisted-but-deferred (F9 / Slice 20).
+   *
+   * `drop` is EXPLICIT: omitting a live projection from `specs` does NOT drop
+   * it; removal requires naming it in `drop`. A destructive change to a live
+   * projection (a role removal or a tokenizer/embedder change) that is NOT in
+   * `drop` throws a typed `FDB_PROJECTION_DESTRUCTIVE` error carrying
+   * `{ name, delta }` — never silent data loss. Re-applying an unchanged spec
+   * returns `{ unchanged: true }`.
+   *
+   * Pair with `read.projections` to inspect current state first.
+   */
+  async configureProjections(
+    specs: ProjectionSpec[],
+    drop?: string[],
+  ): Promise<ProjectionDelta> {
+    // TC-47 (keystone terminal codex P2) — every string in the spec/drop tree
+    // (projection name, each role, ftsTokenizer, vectorEmbedder, each drop entry)
+    // crosses to native. napi-rs silently replaces a lone UTF-16 surrogate with
+    // U+FFFD BEFORE the Rust-side guard runs, so — exactly like `write` — the
+    // surrogate check must happen JS-side or the mangled U+FFFD is persisted
+    // instead of raising WriteValidationError. (A NUL survives the napi UTF-8
+    // path as a real byte and is already caught Rust-side; the surrogate is not.)
+    validateFfiTree(specs);
+    if (drop !== undefined) validateFfiTree(drop);
+    // 0.8.20 keystone closeout fix-4 — normalize an explicit `null` sub-field to
+    // `undefined` (⇒ napi `None`). `read.projections` EMITS `ftsTokenizer: null`
+    // / `vectorEmbedder: null` for a spec with no custom sub-field, but napi-rs
+    // rejects an explicit `null` for an `Option<String>` field with an opaque
+    // `StringExpected` — so feeding read output straight back into
+    // `configureProjections` threw, diverging from pyo3 (which accepts `None`)
+    // and breaking the read→configure round-trip. Mapping `null → undefined`
+    // here makes the two bindings behave identically and keeps the caller's
+    // objects untouched (a shallow copy per spec).
+    const nativeSpecs = specs.map((s) => ({
+      ...s,
+      ftsTokenizer: s.ftsTokenizer ?? undefined,
+      vectorEmbedder: s.vectorEmbedder ?? undefined,
+    }));
+    return intercept(() =>
+      this.#native.configureProjections(nativeSpecs, drop ?? null),
+    );
   }
 
   async search(

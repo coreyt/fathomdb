@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use rusqlite::Connection;
 
-pub const SCHEMA_VERSION: u32 = 22;
+pub const SCHEMA_VERSION: u32 = 24;
 
 /// SQLite `PRAGMA` name carrying the on-disk schema-version sentinel.
 ///
@@ -336,8 +336,12 @@ pub const MIGRATIONS: &[Migration] = &[
     // Per `dev/adr/ADR-0.8.1-graph-substrate-g11-migration.md` (HITL-SIGNED
     // 2026-06-13). Five additive nullable columns on `canonical_edges`:
     //   `body`              — the fact/relationship text for FTS + vector projection
-    //   `t_valid`           — event valid-time (ISO-8601); NULL = "still valid"
-    //   `t_invalid`         — event invalid-time (ISO-8601); NULL = "still valid"
+    //   `t_valid`           — event valid-time; NULL = "still valid"
+    //   `t_invalid`         — event invalid-time; NULL = "still valid"
+    //     (SUPERSEDED BY STEP 23 / TC-33: both were ISO-8601 TEXT here and are
+    //     now INTEGER epoch seconds with a `typeof` CHECK. The "NULL = still
+    //     valid" semantic is UNCHANGED and load-bearing — see step 23 for why
+    //     `NOT NULL` would be the wrong structural spelling.)
     //   `confidence`        — extraction confidence ∈ [0.0, 1.0] from the harness
     //   `extractor_model_id`— opaque model id from BYO-LLM harness `ready.model`
     // All five are nullable; pre-G11 rows read NULL (no data migration required).
@@ -593,22 +597,25 @@ pub const MIGRATIONS: &[Migration] = &[
     // NULL/NULL is "valid for all time". This convention is stated once here and
     // is the same one `ReadView::valid_as_of` compiles to at every read site.
     //
-    // **UNITS: INTEGER epoch SECONDS (UTC).** This DELIBERATELY DIVERGES from
-    // `canonical_edges.t_valid`/`t_invalid` (step 14), which are ISO-8601 TEXT
-    // compared through `datetime(...)`. The divergence is intentional and the
-    // edge columns are NOT changed and NOT unified with these:
+    // **UNITS: INTEGER epoch SECONDS (UTC).** At the time this step shipped it
+    // DELIBERATELY DIVERGED from `canonical_edges.t_valid`/`t_invalid` (step 14),
+    // which were then ISO-8601 TEXT compared through `datetime(...)`. The
+    // divergence was intentional and flagged rather than silently resolved:
     //   (a) the release contract for R-20-NV specifies INTEGER windows;
     //   (b) INTEGER windows are directly comparable/indexable with no `datetime()`
     //       conversion per row, so the validity conjunct stays sargable against
     //       `canonical_nodes_validity_idx`;
     //   (c) the node-validity instant is a BOUND PARAMETER (`:now` seam), never a
     //       `datetime('now')` SQL literal, so node validity is deterministically
-    //       testable — whereas the shipped EDGE path still inlines
-    //       `datetime('now')`. Unifying the two would either re-litigate the
-    //       shipped edge semantics or force a data rewrite of `canonical_edges`,
-    //       both out of scope for this slice.
-    // The divergence is a KNOWN, FLAGGED inconsistency in the temporal model and
-    // is escalated with this slice rather than silently resolved.
+    //       testable — whereas the EDGE path then still inlined `datetime('now')`.
+    //
+    // **RESOLVED by step 23 (TC-33, HITL-RATIFIED 2026-07-21).** The divergence
+    // this step escalated is now CLOSED: the edge columns are INTEGER epoch
+    // seconds too, and the edge read sites bind the same `:now` seam described in
+    // (c). Reason (c)'s "the shipped EDGE path still inlines `datetime('now')`"
+    // and the step-22 SQL comment's "which are unchanged" are both HISTORICAL as
+    // of step 23 — the migration SQL string is left verbatim because applied SQL
+    // text is not rewritten, and this Rust comment carries the correction.
     //
     // Existing rows get NULL/NULL on both columns (SQLite `ADD COLUMN` with no
     // DEFAULT back-fills NULL in place, no table rewrite), i.e. unbounded ⇒
@@ -634,7 +641,244 @@ pub const MIGRATIONS: &[Migration] = &[
                   ON canonical_nodes(valid_from, valid_until)
                   WHERE superseded_at IS NULL AND state = 'active';",
     },
+    // 0.8.20 Slice 15c (TC-33) — edge temporal representation → INTEGER epoch
+    // seconds, closing the divergence step 22 deliberately flagged above.
+    // HITL-RATIFIED 2026-07-21 (`dev/plans/plan-0.8.20.md` §9 decision 3):
+    // `t_valid`/`t_invalid` are INTEGER epoch seconds in STORAGE and on the
+    // GOVERNED SDK SURFACE; the BYO-LLM EXTRACTOR boundary keeps ISO-8601 and is
+    // normalised engine-side with HARD REJECTION.
+    //
+    // **Why the CHECKs, and why NOT `NOT NULL`.** The failure mode this step
+    // exists to remove is FAIL-OPEN. A NULL `t_invalid` means "still valid", so
+    // an unparseable timestamp that coerces to NULL silently RESURRECTS an
+    // invalidated edge. Under the old TEXT column the junk failed CLOSED by
+    // accident (`datetime('junk')` → NULL ⇒ the disjunct is falsy ⇒ the row
+    // vanished from every read); moving to INTEGER would INVERT that polarity
+    // unless junk is made unstorable. So the invariant is STRUCTURAL — a
+    // `typeof(...)` CHECK — not merely upheld by call sites (cf. TC-28, an
+    // invariant held only by call sites; not repeated here).
+    // `NOT NULL` would be WRONG: NULL legitimately means "still valid" and that
+    // shipped semantic must survive. `typeof(x) = 'integer'` makes junk
+    // unstorable while preserving NULL-means-still-valid.
+    //
+    // **NO DATA MIGRATION (HITL 2026-07-21).** SQLite cannot change a column's
+    // type in place, and cannot add a CHECK via `ALTER TABLE`, so both INTEGER
+    // affinity and the structural CHECKs require RECREATING the table. Per the
+    // ruling this is a PLAIN RECREATE: existing `canonical_edges` rows DO NOT
+    // SURVIVE. Nothing is staged, converted, backfilled, or re-inserted, and no
+    // stored ISO-8601 value is converted. FathomDB is pre-1.0 beta and 0.8.20 is
+    // a coordinated breaking pair — users do not carry data across it.
+    //
+    // **Two consequences that DO need handling** (neither is a data migration —
+    // one clears derived state, the other preserves a monotonic counter):
+    //
+    //   1. `search_index_edges` is edge-derived and would be left holding FTS
+    //      rows for edges that no longer exist. Every reader JOINs it back to
+    //      `canonical_edges` so orphans are inert, but they are dead weight and
+    //      are cleared here.
+    //   1b. The VECTOR projection of the dropped edges is ALSO row-owned and
+    //      must be removed — it is NOT inert (fix-6, codex §9 P1). It has two
+    //      halves (see the engine's `ROW_OWNED_PROJECTIONS`, class `Vector`):
+    //        - `_fathomdb_vector_rows` — the sidecar/registry table (created by
+    //          migration step 6, so it ALWAYS exists here). Its dropped-edge
+    //          rows are deleted BELOW, scoped to edge cursors read from
+    //          `canonical_edges` while it still exists (it also holds NODE
+    //          sidecar rows, which MUST survive — so this is a scoped DELETE,
+    //          not a truncate like `search_index_edges`).
+    //        - `vector_default` — the vec0 virtual table that actually feeds
+    //          KNN candidate selection. It is created by the ENGINE's dim-aware
+    //          `ensure_vector_partition` AFTER `migrate` returns, so on a fresh
+    //          DB (and in the schema crate's own migration tests) it does not
+    //          exist yet and referencing it in this SQL would fail the step. Its
+    //          orphaned edge rows are therefore pruned by the ENGINE right after
+    //          `ensure_vector_partition`, matched against the sidecar this step
+    //          clears. These orphans are NOT "made harmless by (2)": (2) only
+    //          stops cursor REUSE; an orphaned `vector_default` row (whose
+    //          `canonical_edges` row is gone) still occupies a top-K KNN
+    //          candidate slot and is then discarded at hydration, silently
+    //          returning too few vector results on an upgraded DB.
+    //   2. `load_next_cursor` takes MAX(write_cursor) across canonical_nodes /
+    //      canonical_edges / operational_mutations / operational_state. Dropping
+    //      the edge rows can LOWER that high-water mark, so freshly allocated
+    //      cursors would REUSE values that stale `_fathomdb_projection_terminal`
+    //      / `_fathomdb_vector_rows` / vec0 rows still key on — silently marking
+    //      a brand-new row as already-projected, so it never gets indexed. The
+    //      old maximum is therefore RESERVED into `_fathomdb_open_state` and
+    //      `load_next_cursor` folds it in. This preserves NO user data; it keeps
+    //      an identifier counter monotonic.
+    //      The `HAVING` is load-bearing: a bare aggregate over an EMPTY
+    //      `canonical_edges` still returns one row, whose `MAX` is NULL, which
+    //      violates `_fathomdb_open_state.value NOT NULL` — i.e. without it the
+    //      step fails on EVERY fresh database.
+    //   3. `write_cursor` is a SINGLE global sequence shared across nodes AND
+    //      edges, and `advance_projection_cursor` (engine) walks the readiness
+    //      watermark forward ONE value at a time, ONLY while the next cursor has
+    //      a `_fathomdb_projection_terminal` row. A body-bearing edge whose
+    //      vector projection had NOT completed at upgrade has NO terminal row; if
+    //      step 23 dropped it we would leave a cursor value with no terminal and
+    //      no owning row, so the projection cursor STALLS PERMANENTLY at that gap
+    //      — and because the sequence is shared this also freezes advancement
+    //      past SURVIVING node projections (every upgraded DB's `wait_for_idle` /
+    //      search-freshness wedges). So BEFORE the DROP — while `canonical_edges`
+    //      still exists to read — a terminal is recorded for every edge cursor
+    //      that lacks one. This is projection-cursor STATE bookkeeping, NOT data
+    //      preservation: the edge rows still do not survive; we only reconcile
+    //      the engine's cursor state machine so it does not dangle on cursors
+    //      whose rows we correctly dropped. It is COMPLEMENTARY to (2): (2) stops
+    //      cursor REUSE below the old high-water mark; (3) stops cursor STALL on
+    //      the dropped cursors themselves. Both are needed.
+    //      The state token is `'up_to_date'`, NOT `'superseded'`. The terminal
+    //      table (step 7) carries `CHECK(state IN ('failed','up_to_date'))` and
+    //      the writer is `INSERT OR IGNORE`; under SQLite, `OR IGNORE` SKIPS a
+    //      CHECK-violating row and returns no error, so a `'superseded'` backfill
+    //      would be SILENTLY DROPPED and the cursor would still stall (a vacuous
+    //      green). `'up_to_date'` is the CHECK-valid, non-`'failed'` terminal
+    //      that honestly means "nothing left to project here" for a deleted row,
+    //      and `INSERT OR IGNORE` leaves any already-present terminal untouched
+    //      (the write_cursor PRIMARY KEY conflict is ignored).
+    //
+    // The recreate restores the full step-1→22 column set IN ORDER (positional
+    // `row.get(i)` sites depend on it) and all four indexes, which `DROP TABLE`
+    // removes with the table.
+    //
+    // Crash-safety/idempotence are the runner's, as for steps 20/22: `apply_one`
+    // wraps the batch AND the `PRAGMA user_version` bump in one `BEGIN
+    // IMMEDIATE`, so a crash mid-step rolls back to 22 and the step re-runs
+    // whole. `check_migration_accretion` does not fire (the SQL names both
+    // `CREATE TABLE` and `DROP TABLE`), but the exemption marker is carried for
+    // documentation, matching the convention of the surrounding steps.
+    Migration {
+        step_id: 23,
+        sql: "-- MIGRATION-ACCRETION-EXEMPTION: TC-33 edge temporal representation → INTEGER epoch seconds (recreate canonical_edges with INTEGER t_valid/t_invalid + typeof CHECKs so junk is UNSTORABLE; NULL still means \"still valid\"). NO DATA MIGRATION (HITL 2026-07-21): existing edge rows do NOT survive and no stored ISO-8601 value is converted.
+              INSERT OR REPLACE INTO _fathomdb_open_state(key, value)
+                  SELECT 'tc33_reserved_write_cursor',
+                         CAST(MAX(write_cursor) AS TEXT)
+                  FROM canonical_edges
+                  HAVING MAX(write_cursor) IS NOT NULL;
+              DELETE FROM search_index_edges;
+              -- fix-4 (TC-33): mark every edge cursor terminal BEFORE the DROP so
+              -- the SHARED projection cursor can walk past rows this recreate
+              -- removes; a pending edge (no terminal) would otherwise strand the
+              -- cursor and freeze surviving node projections too. 'up_to_date' is
+              -- the CHECK-valid token ('superseded' would be swallowed by
+              -- OR IGNORE). Complementary to the reserved-high-water fix above.
+              INSERT OR IGNORE INTO _fathomdb_projection_terminal(write_cursor, state)
+                  SELECT write_cursor, 'up_to_date' FROM canonical_edges;
+              -- fix-6 (TC-33): delete the dropped edges' VECTOR sidecar rows
+              -- BEFORE the DROP, while canonical_edges still lists the edge
+              -- cursors. Scoped to edge cursors — _fathomdb_vector_rows also
+              -- holds NODE sidecar rows, which must survive. The vec0 table
+              -- vector_default is engine-created (dim-aware) and may not exist
+              -- here, so the engine prunes it to match right after
+              -- ensure_vector_partition. This is the third row-owned-projection
+              -- facet step 23 clears for every dropped edge (with the reserved
+              -- high-water mark and the terminal backfill above). NO DATA
+              -- MIGRATION: it deletes derived rows for already-dropped edges.
+              DELETE FROM _fathomdb_vector_rows
+                  WHERE write_cursor IN (SELECT write_cursor FROM canonical_edges);
+              DROP TABLE canonical_edges;
+              CREATE TABLE canonical_edges(
+                  write_cursor INTEGER NOT NULL,
+                  kind TEXT NOT NULL,
+                  from_id TEXT NOT NULL,
+                  to_id TEXT NOT NULL,
+                  source_id TEXT,
+                  logical_id TEXT,
+                  superseded_at INTEGER,
+                  body TEXT,
+                  t_valid INTEGER CHECK (t_valid IS NULL OR typeof(t_valid) = 'integer'),
+                  t_invalid INTEGER CHECK (t_invalid IS NULL OR typeof(t_invalid) = 'integer'),
+                  confidence REAL,
+                  extractor_model_id TEXT,
+                  temporal_fallback INTEGER
+              );
+              CREATE INDEX IF NOT EXISTS canonical_edges_source_id_idx
+                  ON canonical_edges(source_id);
+              CREATE UNIQUE INDEX IF NOT EXISTS canonical_edges_logical_active_idx
+                  ON canonical_edges(logical_id) WHERE superseded_at IS NULL;
+              CREATE INDEX IF NOT EXISTS canonical_edges_from_id_idx
+                  ON canonical_edges(from_id);
+              CREATE INDEX IF NOT EXISTS canonical_edges_to_id_idx
+                  ON canonical_edges(to_id);",
+    },
+    // 0.8.20 Slice 15d (R-20-PR / R-20-EAV) — the projection-registry EAV +
+    // property-FTS substrate the declarative `configure_projections` verb
+    // projects into. NET-NEW: before this step there is NO attribute/EAV store
+    // and NO property-FTS (only `body`-FTS `search_index`/`search_index_v2` +
+    // vector). Three tables:
+    //
+    //   1. `_fathomdb_projection_registry` — the DURABLE record of every declared
+    //      `ProjectionSpec` (Q5: the engine `ProjectionSpec` is a DERIVED cache
+    //      re-driven idempotently on boot; this table is what boot re-derive
+    //      reads). `roles` is a JSON array of `ProjectionRole` (set semantics —
+    //      dedup/membership, no order dependence). `fts_tokenizer` is non-NULL
+    //      iff a `searchable→FTS` sub-target was declared; `vector_embedder` +
+    //      `vector_declared` record the `searchable→vector` sub-object which is
+    //      STORED here but NOT built in 15d (Slice 20 R-20-DR attaches
+    //      `dense_readiness` onto exactly this `vector` sub-object — additive).
+    //
+    //   2. `canonical_attributes` — the EAV attribute store. A ROW-OWNED,
+    //      rebuild-durable projection: each row is 1:1 with the owning canonical
+    //      node's `write_cursor`, holds one declared attribute value at rest, and
+    //      MUST die with that node (registered in `ROW_OWNED_PROJECTIONS` so
+    //      `purge`/`excise_source` reach it — an unregistered content-storing
+    //      table re-opens the Slice-5 `search_index_v2` leak class). The values
+    //      are derived from the node `body` JSON (`$.<name>`), so the store is
+    //      re-derivable from canonical state (CQRS drift answer). `filterable`
+    //      queries hit the `(attr_name, attr_value)` composite index (cheap
+    //      equality/range, same-transaction).
+    //
+    //   3. `property_search_index` — the property-FTS5 shadow of the attribute
+    //      values (`searchable→FTS`, same-transaction). Also ROW-OWNED (keyed by
+    //      `write_cursor UNINDEXED`, same shape as `search_index_edges`). Default
+    //      tokenizer matches `body`-FTS (`porter unicode61 remove_diacritics 2`);
+    //      a per-attr custom tokenizer is the ≥0.9.x multi-field FTS work and is
+    //      recorded in the registry but not honoured here (graceful-graft later).
+    //
+    // NO DATA MIGRATION (HITL 2026-07-21): these steps define the new shape only.
+    // Nothing is backfilled at migrate time — `configure_projections` backfills
+    // per-declaration, and boot re-derive re-applies the persisted registry.
+    //
+    // Additive `CREATE TABLE` (no DROP) → the accretion guard REQUIRES the
+    // exemption marker. Crash-safety/idempotence are the runner's: `apply_one`
+    // wraps the batch + the `user_version` bump in one `BEGIN IMMEDIATE`.
+    Migration {
+        step_id: 24,
+        sql: "-- MIGRATION-ACCRETION-EXEMPTION: R-20-PR/R-20-EAV projection-registry EAV + property-FTS substrate (net-new _fathomdb_projection_registry durable derived-cache + canonical_attributes row-owned EAV projection + property_search_index FTS5 property-FTS). NO DATA MIGRATION (HITL 2026-07-21): shape only, no backfill.
+              CREATE TABLE _fathomdb_projection_registry(
+                  name TEXT PRIMARY KEY,
+                  roles TEXT NOT NULL,
+                  fts_tokenizer TEXT,
+                  vector_embedder TEXT,
+                  vector_declared INTEGER NOT NULL DEFAULT 0
+              );
+              CREATE TABLE canonical_attributes(
+                  write_cursor INTEGER NOT NULL,
+                  attr_name TEXT NOT NULL,
+                  attr_value TEXT
+              );
+              CREATE INDEX canonical_attributes_name_value_idx
+                  ON canonical_attributes(attr_name, attr_value);
+              CREATE INDEX canonical_attributes_cursor_idx
+                  ON canonical_attributes(write_cursor);
+              CREATE VIRTUAL TABLE property_search_index USING fts5(
+                  attr_value,
+                  attr_name UNINDEXED,
+                  write_cursor UNINDEXED,
+                  tokenize = 'porter unicode61 remove_diacritics 2'
+              );",
+    },
 ];
+
+/// `_fathomdb_open_state` key under which step 23 reserved the pre-TC-33
+/// `canonical_edges` write-cursor high-water mark.
+///
+/// Step 23 recreates `canonical_edges` (no data migration), which can LOWER the
+/// `MAX(write_cursor)` the engine's cursor allocator derives from the canonical
+/// tables. Reusing a cursor would collide with stale projection shadow rows that
+/// still key on it, silently marking a new row as already-projected. The engine
+/// folds this reserved value into its allocation so cursors stay monotonic.
+pub const RESERVED_WRITE_CURSOR_KEY: &str = "tc33_reserved_write_cursor";
 
 pub fn migrate(conn: &Connection) -> Result<MigrationReport, MigrationError> {
     migrate_with_steps(conn, MIGRATIONS)

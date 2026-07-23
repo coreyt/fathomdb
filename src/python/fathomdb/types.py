@@ -128,6 +128,60 @@ class ReadView:
     valid_as_of: int | None = None
 
 
+class ProjectionRole:
+    """0.8.20 Slice 15d (R-20-PR) — the three projection roles (set members).
+
+    ``searchable→FTS`` and ``searchable→vector`` are NOT roles: they are tier
+    labels carried by the ``fts`` / ``vector`` sub-objects of a
+    :class:`ProjectionSpec`. Named ``roles``, not ``kind`` (``kind`` is the
+    node/edge type discriminator). Mirrors the Rust ``ProjectionRole`` and the
+    TypeScript ``ProjectionRole``.
+    """
+
+    FILTERABLE = "filterable"
+    RANKABLE = "rankable"
+    SEARCHABLE = "searchable"
+
+
+@dataclass(frozen=True)
+class ProjectionSpec:
+    """0.8.20 Slice 15d (R-20-PR / C-1) — a declarative projection declaration.
+
+    HITL-ratified shape ``{ name, roles: Set<ProjectionRole>, fts?, vector? }``.
+    ``roles`` carries SET semantics (dedup + membership; an attribute can be
+    filterable AND searchable). ``fts`` selects the ``searchable→FTS`` sub-target
+    (with an optional custom tokenizer); ``vector`` selects ``searchable→vector``
+    (with an optional embedder). The ``vector`` sub-object is STORED by Slice 15d
+    but built by Slice 20 (``dense_readiness`` attaches to it there).
+    """
+
+    name: str
+    roles: frozenset[str]
+    #: ``True`` when the ``searchable→FTS`` sub-target is declared.
+    fts: bool = False
+    #: Optional custom tokenizer; ``None`` = engine default (only with ``fts``).
+    fts_tokenizer: str | None = None
+    #: ``True`` when the ``searchable→vector`` sub-target is declared.
+    vector: bool = False
+    #: Optional embedder override; ``None`` = engine default (only with ``vector``).
+    vector_embedder: str | None = None
+
+
+@dataclass(frozen=True)
+class ProjectionDelta:
+    """0.8.20 Slice 15d (R-20-PR) — the diff ``configure_projections`` applied.
+
+    Idempotent re-registration yields ``unchanged=True`` with all lists empty.
+    A destructive change without an explicit drop raises
+    ``ProjectionDestructiveError`` rather than returning a delta.
+    """
+
+    built: list[str]
+    dropped: list[str]
+    deferred: list[str]
+    unchanged: bool
+
+
 @dataclass(frozen=True)
 class BoundaryCrossing:
     """0.8.20 Slice 10b (R-20-NV) — one node that crossed a validity boundary.

@@ -78,12 +78,18 @@ fn s14_legacy_rows_null_safe_for_g11_columns() {
     )
     .expect("legacy edge insert");
 
-    // Apply the remaining steps (step-14 onwards).
+    // Apply steps 14..=22. **Deliberately NOT to head:** TC-33's step 23
+    // RECREATES `canonical_edges` (no data migration — HITL 2026-07-21), so a
+    // pre-inserted row does NOT survive past step 23. This test is about step
+    // 14's ADDITIVE NULLABILITY (a legacy row reads NULL for the five G11
+    // columns), which is a property of steps 14..=22; the recreate at 23 is a
+    // separate, intentional breaking change covered by the step-23 / TC-33
+    // suite.
     {
         use fathomdb_schema::{migrate_with_steps, MIGRATIONS};
-        let steps_14_plus: Vec<_> =
-            MIGRATIONS.iter().filter(|m| m.step_id >= 14).cloned().collect();
-        migrate_with_steps(&conn, &steps_14_plus).expect("migrate step-14+");
+        let steps_14_to_22: Vec<_> =
+            MIGRATIONS.iter().filter(|m| m.step_id >= 14 && m.step_id <= 22).cloned().collect();
+        migrate_with_steps(&conn, &steps_14_to_22).expect("migrate step-14..=22");
     }
 
     // Legacy row must read NULL for all five G11 columns.
@@ -114,8 +120,8 @@ fn s14_schema_version_is_14() {
     migrate_fresh(&conn);
     assert_eq!(user_version(&conn), SCHEMA_VERSION, "fresh migrate must reach head SCHEMA_VERSION");
     assert_eq!(
-        SCHEMA_VERSION, 22,
-        "SCHEMA_VERSION constant must be 22 (step-22 node validity window, R-20-NV)"
+        SCHEMA_VERSION, 24,
+        "SCHEMA_VERSION constant must be 24 (step-24 projection-registry EAV + property-FTS, Slice 15d)"
     );
 }
 

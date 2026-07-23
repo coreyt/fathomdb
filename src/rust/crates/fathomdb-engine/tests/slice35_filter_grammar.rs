@@ -359,12 +359,13 @@ fn searchfilter_struct_shape_unchanged() {
     assert!(sf.status.is_none(), "status should be None by default");
 
     // Verify we can set and read all four fields (field-name spelling check).
-    let sf2 = SearchFilter {
-        source_type: Some("doc".to_string()),
-        kind: Some("note".to_string()),
-        created_after: Some(1000),
-        status: Some("open".to_string()),
-    };
+    // `SearchFilter` is `#[non_exhaustive]` (0.8.20 Slice 15e fix-2); build from
+    // `default()` (downstream crates cannot use a struct literal).
+    let mut sf2 = SearchFilter::default();
+    sf2.source_type = Some("doc".to_string());
+    sf2.kind = Some("note".to_string());
+    sf2.created_after = Some(1000);
+    sf2.status = Some("open".to_string());
     assert_eq!(sf2.source_type.as_deref(), Some("doc"));
     assert_eq!(sf2.kind.as_deref(), Some("note"));
     assert_eq!(sf2.created_after, Some(1000));

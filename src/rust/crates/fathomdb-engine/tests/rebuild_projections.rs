@@ -254,7 +254,7 @@ fn slice_a_rebuild_projections_excludes_recency_invalidated_edge() {
             source_id: fathomdb_engine::SourceId::new("doc-acme").expect("test source id"),
             logical_id: Some("edge-acme".to_string()),
             body: Some("Bob works for Acme".to_string()),
-            t_valid: Some("2019-01-01T00:00:00Z".to_string()),
+            t_valid: Some(1_546_300_800), /* 2019-01-01T00:00:00Z */
             t_invalid: None,
             confidence: Some(0.9),
             extractor_model_id: Some("stub-extractor-v1".to_string()),
@@ -267,7 +267,7 @@ fn slice_a_rebuild_projections_excludes_recency_invalidated_edge() {
             source_id: fathomdb_engine::SourceId::new("doc-globex").expect("test source id"),
             logical_id: Some("edge-globex".to_string()),
             body: Some("Bob works for Globex".to_string()),
-            t_valid: Some("2022-01-01T00:00:00Z".to_string()),
+            t_valid: Some(1_640_995_200), /* 2022-01-01T00:00:00Z */
             t_invalid: None,
             confidence: Some(0.8),
             extractor_model_id: Some("stub-extractor-v1".to_string()),
@@ -356,5 +356,112 @@ fn slice_a_rebuild_projections_excludes_recency_invalidated_edge() {
         vector_row_count(&conn, globex_cursor),
         1,
         "rebuild must keep the still-valid edge's vector row (guard against a vacuous test)"
+    );
+}
+
+/// 0.8.20 Slice 15d fix-2 [P2] — a full `rebuild_projections()` re-derives the
+/// row-owned ATTRIBUTE store from the SAME active-and-non-superseded row set the
+/// backfill uses (`state = 'active' AND superseded_at IS NULL`). Before this fix
+/// the projector replay iterated EVERY canonical row (including a `pending` node
+/// and a superseded prior version), so an operator rebuild re-surfaced attribute
+/// values the write path / lifecycle transitions had correctly withheld or
+/// purged — a truncate-then-repopulate round trip that broke the invariant.
+/// Asserts on the RAW EAV table after rebuild; includes an active + a live-latest
+/// value so the test is non-vacuous.
+#[test]
+fn slice15d_fix2_rebuild_projects_only_active_non_superseded_attributes() {
+    fn eav_values(conn: &Connection, attr: &str) -> Vec<String> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT attr_value FROM canonical_attributes \
+                 WHERE attr_name = ?1 ORDER BY attr_value",
+            )
+            .unwrap();
+        stmt.query_map([attr], |r| r.get::<_, String>(0)).unwrap().map(|r| r.unwrap()).collect()
+    }
+    fn node(logical_id: &str, state: fathomdb_engine::InitialState, status: &str) -> PreparedWrite {
+        PreparedWrite::Node {
+            kind: "doc".to_string(),
+            body: format!(r#"{{"status":"{status}"}}"#),
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("source id"),
+            logical_id: Some(logical_id.to_string()),
+            state,
+            reason: None,
+            valid_from: None,
+            valid_until: None,
+        }
+    }
+
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "rebuild_attr_lifecycle");
+    let opened = Engine::open(path.clone()).expect("open");
+    let engine = &opened.engine;
+
+    let mut roles = std::collections::BTreeSet::new();
+    roles.insert(fathomdb_engine::ProjectionRole::Filterable);
+    roles.insert(fathomdb_engine::ProjectionRole::Searchable);
+    engine
+        .configure_projections(
+            &[fathomdb_engine::ProjectionSpec {
+                name: "status".to_string(),
+                roles,
+                fts: Some(fathomdb_engine::ProjectionFts { tokenizer: None }),
+                vector: None,
+            }],
+            &[],
+        )
+        .expect("configure");
+
+    // An active node, a pending node, and a node whose first version is superseded
+    // by a rewrite (same logical_id).
+    engine.write(&[node("A", fathomdb_engine::InitialState::Active, "active-val")]).unwrap();
+    engine.write(&[node("P", fathomdb_engine::InitialState::Pending, "pending-val")]).unwrap();
+    engine.write(&[node("S", fathomdb_engine::InitialState::Active, "old-val")]).unwrap();
+    engine.write(&[node("S", fathomdb_engine::InitialState::Active, "new-val")]).unwrap();
+    engine.drain(10_000).unwrap();
+
+    // Full rebuild: truncate-all then projector replay.
+    engine.rebuild_projections().expect("rebuild_projections");
+    engine.drain(10_000).unwrap();
+    opened.engine.close().unwrap();
+
+    let conn = Connection::open(&path).unwrap();
+    // EXACTLY the active + non-superseded values survive the rebuild.
+    assert_eq!(
+        eav_values(&conn, "status"),
+        vec!["active-val".to_string(), "new-val".to_string()],
+        "rebuild must re-derive ONLY active + non-superseded attributes"
+    );
+    // The pending and superseded values must NOT be re-surfaced.
+    let pending_present: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM canonical_attributes WHERE attr_value = 'pending-val'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(pending_present, 0, "a pending node's attribute must not be re-surfaced by rebuild");
+    let superseded_present: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM canonical_attributes WHERE attr_value = 'old-val'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        superseded_present, 0,
+        "a superseded version's attribute must not be re-surfaced by rebuild"
+    );
+    // Property-FTS shadow mirrors the same set.
+    let fts_pending: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM property_search_index WHERE property_search_index MATCH 'pending'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        fts_pending, 0,
+        "pending value must not survive in property_search_index after rebuild"
     );
 }

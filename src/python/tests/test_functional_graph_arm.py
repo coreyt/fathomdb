@@ -39,7 +39,7 @@ def _edge(
     to_id: str,
     logical_id: str,
     *,
-    t_invalid: str | None = None,
+    t_invalid: int | None = None,  # TC-33: INTEGER epoch seconds (UTC), not ISO-8601
     body: str | None = None,
 ) -> dict:
     item: dict = {
@@ -145,7 +145,7 @@ def test_graph_arm_drops_expired_edge(db_path: str) -> None:
         engine.write([
             _node("n1", "sentinel query anchor"),
             _node("n2", "unreachable via expired edge zz99"),
-            _edge("n1", "n2", "e12", t_invalid="2000-01-01T00:00:00Z"),
+            _edge("n1", "n2", "e12", t_invalid=946_684_800),  # 2000-01-01T00:00:00Z
         ])
         result = engine.search("sentinel query", use_graph_arm=True)
         bodies = [h.body for h in result.results]

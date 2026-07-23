@@ -106,6 +106,68 @@ identical across Rust / Python / TypeScript and cannot drift):
 These are keys on an existing verb, not a new verb: the runtime-verb surface
 above is unchanged. The fields-only delta is **PROPOSED, NOT SIGNED**.
 
+## Edge temporal fields (0.8.20 Slice 15c, TC-33)
+
+An **edge** item accepts two optional temporal keys. As of TC-33
+(HITL-RATIFIED 2026-07-21) these are **INTEGER epoch seconds (UTC)**, the same
+representation as the node validity window above and as storage — NOT ISO-8601
+strings:
+
+- `t_valid` — `int | None`, event valid-time. `None` = unknown / still valid.
+- `t_invalid` — `int | None`, event invalid-time. `None` = **still valid**.
+
+```python
+engine.write([
+    {
+        "kind": "works_for",
+        "from": "bob",
+        "to": "acme",
+        "source_id": "s1",
+        "t_valid": 1_546_300_800,   # 2019-01-01T00:00:00Z
+        "t_invalid": None,          # still valid
+    },
+])
+```
+
+`None`/omitted is the ONLY way to say "unknown"; it lands SQL NULL, which reads
+as **still valid**. A non-integer bound raises `WriteValidationError` and is
+never coerced (`bool` rejected explicitly, as for the node window) — the same
+`dict_epoch_seconds` validator serves both axes.
+
+**Layering note.** This is the GOVERNED SDK write surface. ISO-8601 survives
+ONLY on the **BYO-LLM extractor wire** (`fathomdb.extract.v1`), where the engine
+normalises each timestamp to epoch seconds with a HARD REJECTION of any value
+`strftime('%s', ?)` cannot parse — an unparseable timestamp must never coerce to
+NULL, because a NULL `t_invalid` reads as "still valid" and would resurrect an
+invalidated edge. Fields-only delta, **PROPOSED, NOT SIGNED**.
+
+## Projection registry (0.8.20 Slice 15d, R-20-PR / C-1)
+
+Two net-new governed verbs declare and inspect projections over interpretive
+attributes. **PROPOSED, NOT SIGNED.**
+
+- `engine.configure_projections(specs, drop=None)` → `ProjectionDelta`.
+  Declarative, idempotent apply: the engine diffs `specs` against the durable
+  registry and backfills the difference in one transaction. `drop` is EXPLICIT —
+  omitting a live projection from `specs` does NOT drop it; removal requires
+  naming it in `drop`. A destructive change (a role removal or a
+  tokenizer/embedder change) without a drop raises `ProjectionDestructiveError`
+  (`name`/`delta` attributes). Re-applying an unchanged spec returns
+  `ProjectionDelta(unchanged=True)`.
+- `read.projections(engine)` → `list[ProjectionSpec]`, sorted by name — the
+  registry introspection (folded into `read.*`).
+
+`ProjectionSpec` (`fathomdb.types.ProjectionSpec`) is
+`{ name, roles: frozenset[str], fts, fts_tokenizer, vector, vector_embedder }`.
+`ProjectionRole` (`fathomdb.types.ProjectionRole`) has exactly three members —
+`FILTERABLE`, `RANKABLE`, `SEARCHABLE`; `searchable→FTS` and `searchable→vector`
+are tier labels carried by the `fts`/`vector` sub-object flags, not roles. Cheap
+roles (`filterable`, `searchable→FTS`) build same-transaction; `rankable` and the
+`searchable→vector` sub-target are persisted-but-deferred (reported in
+`ProjectionDelta.deferred`). The `vector` sub-object is stored here for Slice 20
+to attach `dense_readiness` to. `ProjectionDelta` is
+`{ built, dropped, deferred, unchanged }`.
+
 ## Errors
 
 Python exposes one catch-all base class plus one concrete subclass per canonical

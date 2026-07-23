@@ -305,7 +305,7 @@ fn rebuild_edge_projection_matches_write_path() {
         source_id: fathomdb_engine::SourceId::new("doc-1").expect("test source id"),
         logical_id: Some("edge-fact-1".to_string()),
         body: Some("Bob works for Acme".to_string()),
-        t_valid: Some("2020-01-01T00:00:00Z".to_string()),
+        t_valid: Some(1_577_836_800), /* 2020-01-01T00:00:00Z */
         t_invalid: None,
         confidence: Some(0.9),
         extractor_model_id: Some("stub-extractor-v1".to_string()),

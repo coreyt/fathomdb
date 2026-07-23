@@ -41,7 +41,10 @@ use fathomdb_engine::{
     LifecycleState as RustLifecycleState, NodeRecord as RustNodeRecord,
     OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage,
     PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
-    QueryTrace as RustQueryTrace, ReadView as RustReadView, ScalarValue as RustScalarValue,
+    ProjectionDelta as RustProjectionDelta, ProjectionFts as RustProjectionFts,
+    ProjectionRole as RustProjectionRole, ProjectionSpec as RustProjectionSpec,
+    ProjectionVector as RustProjectionVector, QueryTrace as RustQueryTrace,
+    ReadView as RustReadView, ScalarValue as RustScalarValue,
     SearchExpandResult as RustSearchExpandResult, SearchFilter as RustSearchFilter,
     SearchHit as RustSearchHit, SearchResult as RustSearchResult, SoftFallbackBranch, SourceId,
     TraversalDirection as RustTraversalDirection, WriteReceipt as RustWriteReceipt,
@@ -93,6 +96,9 @@ const CODE_NOT_LIFECYCLE_ADDRESSABLE: &str = "FDB_NOT_LIFECYCLE_ADDRESSABLE";
 // 0.8.20 Slice 5b (R-20-E5) — an erasure verb deleted its rows but could not
 // complete the erasure at rest.
 const CODE_ERASURE_INCOMPLETE: &str = "FDB_ERASURE_INCOMPLETE";
+// 0.8.20 Slice 15d (R-20-PR) — configure_projections refused a destructive
+// change without an explicit drop.
+const CODE_PROJECTION_DESTRUCTIVE: &str = "FDB_PROJECTION_DESTRUCTIVE";
 const CODE_PANIC: &str = "FDB_PANIC";
 
 // ===== Typed-error encoder ============================================
@@ -251,6 +257,14 @@ fn engine_error_to_napi(err: RustEngineError) -> Error {
             CODE_ERASURE_INCOMPLETE,
             format!("erasure incomplete at stage '{stage}': {detail}"),
             json!({ "stage": stage, "detail": detail }),
+        ),
+        RustEngineError::ProjectionDestructive { name, delta } => typed_error(
+            CODE_PROJECTION_DESTRUCTIVE,
+            format!(
+                "configure_projections refused a destructive change to '{name}': {delta}; \
+                 re-issue with drop: [\"{name}\"]"
+            ),
+            json!({ "name": name, "delta": delta }),
         ),
     }
 }
@@ -443,6 +457,155 @@ impl EraseReport {
             nodes_excised: r.nodes_excised as i64,
             edges_excised: r.edges_excised as i64,
             projections_invalidated: r.projections_invalidated as i64,
+        }
+    }
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — a declarative projection declaration. Flat at
+/// the FFI boundary; `fts`/`vector` booleans carry the sub-object PRESENCE and
+/// the optional tokenizer/embedder carry the value. JS field names are
+/// camelCase (`ftsTokenizer` / `vectorEmbedder`).
+#[napi(object)]
+pub struct ProjectionSpec {
+    pub name: String,
+    pub roles: Vec<String>,
+    pub fts: bool,
+    pub fts_tokenizer: Option<String>,
+    pub vector: bool,
+    pub vector_embedder: Option<String>,
+}
+
+impl ProjectionSpec {
+    fn from_rust(s: &RustProjectionSpec) -> Self {
+        Self {
+            name: s.name.clone(),
+            roles: s.roles.iter().map(|r| r.as_str().to_string()).collect(),
+            fts: s.fts.is_some(),
+            fts_tokenizer: s.fts.as_ref().and_then(|f| f.tokenizer.clone()),
+            vector: s.vector.is_some(),
+            vector_embedder: s.vector.as_ref().and_then(|v| v.embedder.clone()),
+        }
+    }
+
+    fn to_rust(&self) -> Result<RustProjectionSpec> {
+        // AC-068a/b — reject every string crossing the FFI into the spec BEFORE
+        // the engine (writer transaction) is reached. Mirrors the per-string
+        // gate applied at every other napi call site (e.g. `:1141`).
+        validate_ffi_string_napi(&self.name)?;
+        if let Some(tokenizer) = &self.fts_tokenizer {
+            validate_ffi_string_napi(tokenizer)?;
+        }
+        if let Some(embedder) = &self.vector_embedder {
+            validate_ffi_string_napi(embedder)?;
+        }
+        // 0.8.20 keystone closeout fix-4 — ROUND-TRIP CONSISTENCY GATE. A spec
+        // the binding ACCEPTS must round-trip through `read.projections`
+        // IDENTICALLY; otherwise reject it HERE with the typed validation error
+        // rather than let the engine silently drop or normalize a sub-field.
+        // Kept byte-for-byte in step with the pyo3 binding (Py ≡ TS): the two
+        // must refuse the same shapes the same way. `fts`/`vector` carry the
+        // sub-object PRESENCE, so an `ftsTokenizer` supplied while `fts` is
+        // false (or an empty `""` that the engine collapses to the default)
+        // could never survive the round-trip and is refused.
+        match (self.fts, self.fts_tokenizer.as_deref()) {
+            (false, Some(_)) => {
+                return Err(typed_error(
+                    CODE_INVALID_ARGUMENT,
+                    format!(
+                        "projection {:?}: fts_tokenizer is set but fts is false — the tokenizer would be silently dropped and cannot round-trip; set fts=true or omit fts_tokenizer",
+                        self.name
+                    ),
+                    JsonValue::Null,
+                ));
+            }
+            (true, Some("")) => {
+                return Err(typed_error(
+                    CODE_INVALID_ARGUMENT,
+                    format!(
+                        "projection {:?}: fts_tokenizer is an empty string, which the engine normalizes to the default and cannot round-trip; omit fts_tokenizer for the engine default",
+                        self.name
+                    ),
+                    JsonValue::Null,
+                ));
+            }
+            _ => {}
+        }
+        match (self.vector, self.vector_embedder.as_deref()) {
+            (false, Some(_)) => {
+                return Err(typed_error(
+                    CODE_INVALID_ARGUMENT,
+                    format!(
+                        "projection {:?}: vector_embedder is set but vector is false — the embedder would be silently dropped and cannot round-trip; set vector=true or omit vector_embedder",
+                        self.name
+                    ),
+                    JsonValue::Null,
+                ));
+            }
+            (true, Some("")) => {
+                return Err(typed_error(
+                    CODE_INVALID_ARGUMENT,
+                    format!(
+                        "projection {:?}: vector_embedder is an empty string, which the engine normalizes to the default and cannot round-trip; omit vector_embedder for the engine default",
+                        self.name
+                    ),
+                    JsonValue::Null,
+                ));
+            }
+            _ => {}
+        }
+        let mut roles = std::collections::BTreeSet::new();
+        for r in &self.roles {
+            validate_ffi_string_napi(r)?;
+            let role = RustProjectionRole::from_str_opt(r).ok_or_else(|| {
+                typed_error(
+                    CODE_INVALID_ARGUMENT,
+                    format!(
+                        "unknown projection role {r:?}: expected filterable/rankable/searchable"
+                    ),
+                    JsonValue::Null,
+                )
+            })?;
+            // fix-4 — `roles` is a SET; a duplicate spelling in the flat list
+            // cannot round-trip (the registry stores a de-duplicated
+            // `BTreeSet`), so refuse it rather than silently coalesce.
+            if !roles.insert(role) {
+                return Err(typed_error(
+                    CODE_INVALID_ARGUMENT,
+                    format!(
+                        "projection {:?}: role {r:?} is repeated; roles is a set and duplicates cannot round-trip",
+                        self.name
+                    ),
+                    JsonValue::Null,
+                ));
+            }
+        }
+        Ok(RustProjectionSpec {
+            name: self.name.clone(),
+            roles,
+            fts: self.fts.then(|| RustProjectionFts { tokenizer: self.fts_tokenizer.clone() }),
+            vector: self
+                .vector
+                .then(|| RustProjectionVector { embedder: self.vector_embedder.clone() }),
+        })
+    }
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — the diff `configureProjections` applied.
+#[napi(object)]
+pub struct ProjectionDelta {
+    pub built: Vec<String>,
+    pub dropped: Vec<String>,
+    pub deferred: Vec<String>,
+    pub unchanged: bool,
+}
+
+impl ProjectionDelta {
+    fn from_rust(d: &RustProjectionDelta) -> Self {
+        Self {
+            built: d.built.clone(),
+            dropped: d.dropped.clone(),
+            deferred: d.deferred.clone(),
+            unchanged: d.unchanged,
         }
     }
 }
@@ -1171,6 +1334,39 @@ impl Engine {
         Ok(EraseReport::from_rust(report))
     }
 
+    /// 0.8.20 Slice 15d (R-20-PR / C-1) — the `configureProjections` governed
+    /// verb. Declarative + idempotent: the engine diffs `specs` against the
+    /// durable registry and backfills the difference. `drop` is EXPLICIT
+    /// (omission never drops); a destructive change to a live projection without
+    /// a drop throws a `FDB_PROJECTION_DESTRUCTIVE` error carrying `{name, delta}`.
+    #[napi]
+    pub async fn configure_projections(
+        &self,
+        specs: Vec<ProjectionSpec>,
+        drop: Option<Vec<String>>,
+    ) -> Result<ProjectionDelta> {
+        let rust_specs: Vec<RustProjectionSpec> =
+            specs.iter().map(ProjectionSpec::to_rust).collect::<Result<_>>()?;
+        let drop = drop.unwrap_or_default();
+        // AC-068a/b — the `drop` list is a caller-supplied FFI-string vector too;
+        // validate each entry before the engine call, like the spec strings.
+        for name in &drop {
+            validate_ffi_string_napi(name)?;
+        }
+        let engine = Arc::clone(&self.inner);
+        let delta = call_engine(move || engine.configure_projections(&rust_specs, &drop)).await?;
+        Ok(ProjectionDelta::from_rust(&delta))
+    }
+
+    /// 0.8.20 Slice 15d (R-20-PR) — `read.projections` introspection. Returns
+    /// every declared `ProjectionSpec` (sorted by name).
+    #[napi]
+    pub async fn read_projections(&self) -> Result<Vec<ProjectionSpec>> {
+        let engine = Arc::clone(&self.inner);
+        let specs = call_engine(move || engine.read_projections()).await?;
+        Ok(specs.iter().map(ProjectionSpec::from_rust).collect())
+    }
+
     #[napi]
     #[allow(clippy::too_many_arguments)]
     pub async fn search(
@@ -1227,12 +1423,15 @@ impl Engine {
         // G10 — build the closed filter; an all-`None` (or omitted) filter stays
         // the unfiltered, byte-identical path.
         let filter = filter.and_then(|f| {
-            let rust = RustSearchFilter {
-                source_type: f.source_type,
-                kind: f.kind,
-                created_after: f.created_after,
-                status: f.status,
-            };
+            // `RustSearchFilter` is `#[non_exhaustive]` (0.8.20 Slice 15e fix-2),
+            // so an out-of-crate struct literal (even with `..Default::default()`)
+            // is rejected; build from `default()` and set the four legacy fields.
+            // `attributes` is NOT on the TS wire in 0.8.20 (engine-internal).
+            let mut rust = RustSearchFilter::default();
+            rust.source_type = f.source_type;
+            rust.kind = f.kind;
+            rust.created_after = f.created_after;
+            rust.status = f.status;
             if rust.source_type.is_none()
                 && rust.kind.is_none()
                 && rust.created_after.is_none()
@@ -1946,7 +2145,14 @@ pub async fn search_expand(
     validate_ffi_string_napi(&query)?;
     let filter =
         if source_type.is_some() || kind.is_some() || created_after.is_some() || status.is_some() {
-            Some(RustSearchFilter { source_type, kind, created_after, status })
+            // `#[non_exhaustive]` (0.8.20 Slice 15e fix-2): no out-of-crate struct
+            // literal; build from `default()`. `attributes` stays engine-internal.
+            let mut f = RustSearchFilter::default();
+            f.source_type = source_type;
+            f.kind = kind;
+            f.created_after = created_after;
+            f.status = status;
+            Some(f)
         } else {
             None
         };
@@ -2211,9 +2417,19 @@ fn translate_edge(item: &JsonValue) -> Result<PreparedWrite> {
     // so the C1 graph arm can seed from edge-fact FTS (`source A`). NULL = not indexed.
     let body = json_serialised(item, "body")?;
     // R3 (Slice 30) — temporal validity fields accepted from user-facing write API.
-    // `t_valid`/`tValid` and `t_invalid`/`tInvalid` are ISO 8601 datetime strings (optional).
-    let t_valid = json_str_alt(item, "tValid", "t_valid")?;
-    let t_invalid = json_str_alt(item, "tInvalid", "t_invalid")?;
+    //
+    // TC-33 (HITL-RATIFIED 2026-07-21) — `tValid`/`t_valid` and
+    // `tInvalid`/`t_invalid` are **INTEGER epoch seconds (UTC)**, not ISO-8601
+    // strings. This is the GOVERNED SDK WRITE SURFACE, which carries the same
+    // representation as storage; ISO-8601 survives ONLY on the BYO-LLM extractor
+    // wire, where the engine normalises it with hard rejection. Reuses the same
+    // `json_i64_alt` helper as the node `validFrom`/`validUntil` window, so both
+    // temporal axes validate identically — and unlike the old `json_str_alt`
+    // (which did NO format validation at all) a wrong-typed value is rejected.
+    //
+    // `None` = "still valid"; that semantic is load-bearing and unchanged.
+    let t_valid = json_i64_alt(item, "tValid", "t_valid")?;
+    let t_invalid = json_i64_alt(item, "tInvalid", "t_invalid")?;
     Ok(PreparedWrite::Edge {
         kind,
         from,

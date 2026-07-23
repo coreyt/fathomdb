@@ -45,7 +45,10 @@ use fathomdb_engine::{
     InitialState, LifecycleState as RustLifecycleState, NodeRecord as RustNodeRecord,
     OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage,
     PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
-    QueryTrace as RustQueryTrace, ReadView as RustReadView, ScalarValue as RustScalarValue,
+    ProjectionDelta as RustProjectionDelta, ProjectionFts as RustProjectionFts,
+    ProjectionRole as RustProjectionRole, ProjectionSpec as RustProjectionSpec,
+    ProjectionVector as RustProjectionVector, QueryTrace as RustQueryTrace,
+    ReadView as RustReadView, ScalarValue as RustScalarValue,
     SearchExpandResult as RustSearchExpandResult, SearchFilter as RustSearchFilter,
     SearchHit as RustSearchHit, SearchResult as RustSearchResult, SoftFallback as RustSoftFallback,
     SoftFallbackBranch, SourceId, TraversalDirection as RustTraversalDirection,
@@ -103,6 +106,11 @@ create_exception!(_fathomdb, NotLifecycleAddressableError, EngineError);
 // returning success: an erasure verb must never report success on an incomplete
 // erasure.
 create_exception!(_fathomdb, ErasureIncompleteError, EngineError);
+// 0.8.20 Slice 15d (R-20-PR) — `configure_projections` refused a destructive
+// change to a live projection without an explicit `drop` (carries `name` +
+// `delta`). Omission never drops; a role removal / tokenizer / embedder change
+// requires an explicit drop.
+create_exception!(_fathomdb, ProjectionDestructiveError, EngineError);
 
 // ===== String validation (AC-068a / AC-068b) =========================
 
@@ -244,6 +252,18 @@ fn engine_error_to_py(err: RustEngineError) -> PyErr {
                 let v = exc.value(py);
                 let _ = v.setattr("stage", stage.clone());
                 let _ = v.setattr("detail", detail.clone());
+            });
+            exc
+        }
+        RustEngineError::ProjectionDestructive { name, delta } => {
+            let exc = ProjectionDestructiveError::new_err(format!(
+                "configure_projections refused a destructive change to '{name}': {delta}; \
+                 re-issue with drop: [\"{name}\"]"
+            ));
+            Python::attach(|py| {
+                let v = exc.value(py);
+                let _ = v.setattr("name", name.clone());
+                let _ = v.setattr("delta", delta.clone());
             });
             exc
         }
@@ -812,6 +832,156 @@ impl PyBoundaryCrossing {
     }
 }
 
+// 0.8.20 Slice 15d (R-20-PR) — the Python face of a `ProjectionSpec`. Flat at
+// the native boundary (the Python `fathomdb.types.ProjectionSpec` dataclass
+// translates the nested `fts?`/`vector?` shape to/from these fields). `fts` /
+// `vector` booleans carry the SUB-OBJECT PRESENCE; the optional tokenizer /
+// embedder carry the value (None = engine default).
+#[pyclass(module = "fathomdb._fathomdb", name = "ProjectionSpec", get_all, from_py_object)]
+#[derive(Clone)]
+struct PyProjectionSpec {
+    name: String,
+    roles: Vec<String>,
+    fts: bool,
+    fts_tokenizer: Option<String>,
+    vector: bool,
+    vector_embedder: Option<String>,
+}
+
+#[pymethods]
+impl PyProjectionSpec {
+    #[new]
+    #[pyo3(signature = (name, roles, fts = false, fts_tokenizer = None, vector = false, vector_embedder = None))]
+    fn new(
+        name: String,
+        roles: Vec<String>,
+        fts: bool,
+        fts_tokenizer: Option<String>,
+        vector: bool,
+        vector_embedder: Option<String>,
+    ) -> Self {
+        Self { name, roles, fts, fts_tokenizer, vector, vector_embedder }
+    }
+}
+
+impl PyProjectionSpec {
+    fn from_rust(s: &RustProjectionSpec) -> Self {
+        Self {
+            name: s.name.clone(),
+            roles: s.roles.iter().map(|r| r.as_str().to_string()).collect(),
+            fts: s.fts.is_some(),
+            fts_tokenizer: s.fts.as_ref().and_then(|f| f.tokenizer.clone()),
+            vector: s.vector.is_some(),
+            vector_embedder: s.vector.as_ref().and_then(|v| v.embedder.clone()),
+        }
+    }
+
+    fn to_rust(&self) -> PyResult<RustProjectionSpec> {
+        // AC-068a/b — reject every string crossing the FFI into the spec BEFORE
+        // the engine (writer transaction) is reached. Mirrors the per-string
+        // gate applied at every other pyo3 call site (e.g. `validate_ffi_string_py`).
+        validate_ffi_string_py(&self.name)?;
+        if let Some(tokenizer) = &self.fts_tokenizer {
+            validate_ffi_string_py(tokenizer)?;
+        }
+        if let Some(embedder) = &self.vector_embedder {
+            validate_ffi_string_py(embedder)?;
+        }
+        // 0.8.20 keystone closeout fix-4 — ROUND-TRIP CONSISTENCY GATE. A spec
+        // the binding ACCEPTS must round-trip through `read.projections`
+        // IDENTICALLY; otherwise reject it HERE with the typed validation error
+        // rather than let the engine silently drop or normalize a sub-field.
+        // Kept byte-for-byte in step with the napi binding (Py ≡ TS): the two
+        // must refuse the same shapes the same way. `fts`/`vector` carry the
+        // sub-object PRESENCE, so an `fts_tokenizer` supplied while `fts` is
+        // false (or an empty `""` that the engine collapses to the default)
+        // could never survive the round-trip and is refused.
+        match (self.fts, self.fts_tokenizer.as_deref()) {
+            (false, Some(_)) => {
+                return Err(InvalidArgumentError::new_err(format!(
+                    "projection {:?}: fts_tokenizer is set but fts is false — the tokenizer would be silently dropped and cannot round-trip; set fts=true or omit fts_tokenizer",
+                    self.name
+                )));
+            }
+            (true, Some("")) => {
+                return Err(InvalidArgumentError::new_err(format!(
+                    "projection {:?}: fts_tokenizer is an empty string, which the engine normalizes to the default and cannot round-trip; omit fts_tokenizer for the engine default",
+                    self.name
+                )));
+            }
+            _ => {}
+        }
+        match (self.vector, self.vector_embedder.as_deref()) {
+            (false, Some(_)) => {
+                return Err(InvalidArgumentError::new_err(format!(
+                    "projection {:?}: vector_embedder is set but vector is false — the embedder would be silently dropped and cannot round-trip; set vector=true or omit vector_embedder",
+                    self.name
+                )));
+            }
+            (true, Some("")) => {
+                return Err(InvalidArgumentError::new_err(format!(
+                    "projection {:?}: vector_embedder is an empty string, which the engine normalizes to the default and cannot round-trip; omit vector_embedder for the engine default",
+                    self.name
+                )));
+            }
+            _ => {}
+        }
+        let mut roles = std::collections::BTreeSet::new();
+        for r in &self.roles {
+            validate_ffi_string_py(r)?;
+            let role = RustProjectionRole::from_str_opt(r).ok_or_else(|| {
+                InvalidArgumentError::new_err(format!(
+                    "unknown projection role {r:?}: expected filterable/rankable/searchable"
+                ))
+            })?;
+            // fix-4 — `roles` is a SET; a duplicate spelling in the flat list
+            // cannot round-trip (the registry stores a de-duplicated
+            // `BTreeSet`), so refuse it rather than silently coalesce.
+            if !roles.insert(role) {
+                return Err(InvalidArgumentError::new_err(format!(
+                    "projection {:?}: role {r:?} is repeated; roles is a set and duplicates cannot round-trip",
+                    self.name
+                )));
+            }
+        }
+        Ok(RustProjectionSpec {
+            name: self.name.clone(),
+            roles,
+            fts: self.fts.then(|| RustProjectionFts { tokenizer: self.fts_tokenizer.clone() }),
+            vector: self
+                .vector
+                .then(|| RustProjectionVector { embedder: self.vector_embedder.clone() }),
+        })
+    }
+}
+
+// 0.8.20 Slice 15d (R-20-PR) — the Python face of the apply diff.
+#[pyclass(
+    module = "fathomdb._fathomdb",
+    name = "ProjectionDelta",
+    frozen,
+    get_all,
+    skip_from_py_object
+)]
+#[derive(Clone)]
+struct PyProjectionDelta {
+    built: Vec<String>,
+    dropped: Vec<String>,
+    deferred: Vec<String>,
+    unchanged: bool,
+}
+
+impl PyProjectionDelta {
+    fn from_rust(d: &RustProjectionDelta) -> Self {
+        Self {
+            built: d.built.clone(),
+            dropped: d.dropped.clone(),
+            deferred: d.deferred.clone(),
+            unchanged: d.unchanged,
+        }
+    }
+}
+
 #[pyclass(module = "fathomdb._fathomdb", name = "OpStoreRow", frozen, get_all, skip_from_py_object)]
 #[derive(Clone)]
 struct PyOpStoreRow {
@@ -1113,7 +1283,17 @@ impl PyEngine {
             || created_after.is_some()
             || status.is_some()
         {
-            Some(RustSearchFilter { source_type, kind, created_after, status })
+            // `RustSearchFilter` is `#[non_exhaustive]` (0.8.20 Slice 15e fix-2),
+            // so an out-of-defining-crate struct literal — even with
+            // `..Default::default()` — is rejected; build from `default()` and
+            // set the four legacy metadata fields. `attributes` is NOT exposed on
+            // the Py wire in 0.8.20 (engine-internal), so it is left at its default.
+            let mut f = RustSearchFilter::default();
+            f.source_type = source_type;
+            f.kind = kind;
+            f.created_after = created_after;
+            f.status = status;
+            Some(f)
         } else {
             None
         };
@@ -1489,6 +1669,42 @@ fn erase_source(
     Ok(PyEraseReport::from_rust(report))
 }
 
+/// 0.8.20 Slice 15d (R-20-PR / C-1) — the `configure_projections` governed verb.
+/// Declarative + idempotent: the engine diffs `specs` against the durable
+/// registry and backfills the difference. `drop` is EXPLICIT (omission never
+/// drops); a destructive change to a live projection without a drop raises
+/// `ProjectionDestructiveError`.
+#[pyfunction]
+#[pyo3(signature = (engine, specs, drop = None))]
+fn configure_projections(
+    py: Python<'_>,
+    engine: &PyEngine,
+    specs: Vec<PyProjectionSpec>,
+    drop: Option<Vec<String>>,
+) -> PyResult<PyProjectionDelta> {
+    let rust_specs: Vec<RustProjectionSpec> =
+        specs.iter().map(PyProjectionSpec::to_rust).collect::<PyResult<_>>()?;
+    let drop = drop.unwrap_or_default();
+    // AC-068a/b — the `drop` list is a caller-supplied FFI-string vector too;
+    // validate each entry before the engine call, like the spec strings.
+    for name in &drop {
+        validate_ffi_string_py(name)?;
+    }
+    let inner = Arc::clone(&engine.inner);
+    let delta = call_engine(py, move || inner.configure_projections(&rust_specs, &drop))?;
+    Ok(PyProjectionDelta::from_rust(&delta))
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — `read.projections` introspection. Returns every
+/// declared `ProjectionSpec` (sorted by name).
+#[pyfunction]
+#[pyo3(signature = (engine))]
+fn read_projections(py: Python<'_>, engine: &PyEngine) -> PyResult<Vec<PyProjectionSpec>> {
+    let inner = Arc::clone(&engine.inner);
+    let specs = call_engine(py, move || inner.read_projections())?;
+    Ok(specs.iter().map(PyProjectionSpec::from_rust).collect())
+}
+
 #[pyfunction]
 #[pyo3(signature = (engine, logical_id, view = None))]
 fn read_get(
@@ -1824,9 +2040,18 @@ fn translate_edge(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
     // so the C1 graph arm can seed from edge-fact FTS (`source A`). NULL = not indexed.
     let body = dict_str(dict, "body")?;
     // R3 (Slice 30) — temporal validity fields accepted from user-facing write API.
-    // `t_valid` and `t_invalid` are ISO 8601 datetime strings (optional).
-    let t_valid = dict_str(dict, "t_valid")?;
-    let t_invalid = dict_str(dict, "t_invalid")?;
+    //
+    // TC-33 (HITL-RATIFIED 2026-07-21) — these are **INTEGER epoch seconds
+    // (UTC)**, not ISO-8601 strings. This is the GOVERNED SDK WRITE SURFACE,
+    // which carries the same representation as storage; ISO-8601 survives ONLY
+    // on the BYO-LLM extractor wire, where the engine normalises it with hard
+    // rejection. Reuses the same `dict_epoch_seconds` helper as the node
+    // `valid_from`/`valid_until` window, so both temporal axes now validate
+    // identically (and a bool is rejected rather than coerced to 0/1).
+    //
+    // `None` = "still valid"; that semantic is load-bearing and unchanged.
+    let t_valid = dict_epoch_seconds(dict, "t_valid")?;
+    let t_invalid = dict_epoch_seconds(dict, "t_invalid")?;
     Ok(PreparedWrite::Edge {
         kind,
         from,
@@ -1990,7 +2215,14 @@ fn search_expand(
     let status = extract_opt_validated_str(status.as_ref())?;
     let filter =
         if source_type.is_some() || kind.is_some() || created_after.is_some() || status.is_some() {
-            Some(RustSearchFilter { source_type, kind, created_after, status })
+            // `#[non_exhaustive]` (0.8.20 Slice 15e fix-2): no out-of-crate struct
+            // literal; build from `default()`. `attributes` stays engine-internal.
+            let mut f = RustSearchFilter::default();
+            f.source_type = source_type;
+            f.kind = kind;
+            f.created_after = created_after;
+            f.status = status;
+            Some(f)
         } else {
             None
         };
@@ -2255,6 +2487,11 @@ fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(transition, &m)?)?;
     m.add_function(wrap_pyfunction!(purge, &m)?)?;
     m.add_function(wrap_pyfunction!(erase_source, &m)?)?;
+    // 0.8.20 Slice 15d — projection registry (R-20-PR).
+    m.add_function(wrap_pyfunction!(configure_projections, &m)?)?;
+    m.add_function(wrap_pyfunction!(read_projections, &m)?)?;
+    m.add_class::<PyProjectionSpec>()?;
+    m.add_class::<PyProjectionDelta>()?;
     // Slice 30 — governed read.* native fns (G2/G3).
     m.add_function(wrap_pyfunction!(read_get, &m)?)?;
     m.add_function(wrap_pyfunction!(read_get_many, &m)?)?;
@@ -2304,6 +2541,7 @@ fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     m.add("IllegalTransitionError", py.get_type::<IllegalTransitionError>())?;
     m.add("NotLifecycleAddressableError", py.get_type::<NotLifecycleAddressableError>())?;
     m.add("ErasureIncompleteError", py.get_type::<ErasureIncompleteError>())?;
+    m.add("ProjectionDestructiveError", py.get_type::<ProjectionDestructiveError>())?;
     Ok(())
 }
 

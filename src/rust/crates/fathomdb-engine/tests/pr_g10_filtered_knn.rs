@@ -78,7 +78,11 @@ fn unfiltered_phase1_sql_byte_identical_to_0_7_2() {
 
 #[test]
 fn filtered_phase1_sql_appends_present_predicates_only() {
-    let filter = SearchFilter { kind: Some("doc".to_string()), ..Default::default() };
+    // `SearchFilter` is `#[non_exhaustive]` (0.8.20 Slice 15e fix-2) — downstream
+    // crates (this test crate included) cannot use a struct literal; build from
+    // `default()` and assign the pub field.
+    let mut filter = SearchFilter::default();
+    filter.kind = Some("doc".to_string());
     let sql = vector_phase1_sql_for_test(Some(&filter));
     assert!(sql.contains("AND kind=?3"), "present `kind` predicate appended at ?3:\n{sql}");
     assert!(!sql.contains("source_type=?"), "absent fields must not appear");
@@ -129,7 +133,11 @@ fn filter_prunes_vector_candidates_by_kind() {
     assert!(kinds.contains("doc") && kinds.contains("note"), "unfiltered surfaces both kinds");
 
     // Filtered to kind=doc: only doc hits survive (pruned in phase 1).
-    let filter = SearchFilter { kind: Some("doc".to_string()), ..Default::default() };
+    // `SearchFilter` is `#[non_exhaustive]` (0.8.20 Slice 15e fix-2) — downstream
+    // crates (this test crate included) cannot use a struct literal; build from
+    // `default()` and assign the pub field.
+    let mut filter = SearchFilter::default();
+    filter.kind = Some("doc".to_string());
     let only_doc = opened.engine.search_filtered("semantic", Some(filter)).expect("search");
     assert!(!only_doc.results.is_empty(), "doc kind still matches");
     assert!(
@@ -162,7 +170,9 @@ fn status_filter_prunes_all_because_population_is_null_only() {
     opened.engine.drain(10_000).expect("drain");
 
     // status ships NULL plumbing only: `status = 'open'` never matches.
-    let filter = SearchFilter { status: Some("open".to_string()), ..Default::default() };
+    // `#[non_exhaustive]` (0.8.20 Slice 15e fix-2): build from `default()`.
+    let mut filter = SearchFilter::default();
+    filter.status = Some("open".to_string());
     let filtered = opened.engine.search_filtered("status", Some(filter)).expect("search");
     assert!(
         filtered.results.iter().all(|h| h.body != "status probe document"),

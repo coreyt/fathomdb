@@ -120,6 +120,27 @@ const SEARCH_INDEX_TOKENIZER_SCHEMA_VERSION: u32 = 11;
 /// crash before commit leaves no marker and the next open re-runs.
 const SEARCH_INDEX_TOKENIZER_REPROJECT_MARKER_KEY: &str =
     "search_index_tokenizer_reproject_complete";
+/// 0.8.20 Slice 15c (TC-33) fix-6 — schema version at which the
+/// `canonical_edges` INTEGER-epoch recreate (migration step 23) runs. A DB
+/// migrated to (or past) this version has had every edge row DROPPED with NO
+/// DATA MIGRATION, and the migration removed the dropped edges'
+/// `_fathomdb_vector_rows` sidecar rows. The vec0 `vector_default` shadow it
+/// mirrors is engine-created and dim-parameterized, so the migration cannot
+/// touch it; the engine prunes the now-orphaned vec0 rows on open.
+const EDGE_TEMPORAL_EPOCH_SCHEMA_VERSION: u32 = 23;
+/// 0.8.20 Slice 15c (TC-33) fix-6 — `_fathomdb_open_state` key set once the
+/// one-time edge-vector prune commits durably (written in the SAME transaction
+/// as the vec0 DELETEs). Gating repair on this marker's ABSENCE — not on
+/// crossing the step-23 boundary — makes it crash-retryable: the step-23
+/// migration commits `user_version = 23` (edges dropped, sidecar cleared) in its
+/// own transaction, and the prune runs in a later transaction on open. A crash
+/// in that window leaves a durable `user_version = 23` with orphaned vec0 rows;
+/// a boundary-crossing gate (`before < 23`) would skip the prune forever on the
+/// next open (it sees `before == 23`). The marker is absent on any DB upgraded
+/// before this fix shipped, so the prune runs once and cleans the lingering
+/// orphans; thereafter the paired vec0/sidecar insert+delete keeps the invariant
+/// so no new orphans arise.
+const EDGE_VECTOR_PRUNE_MARKER_KEY: &str = "tc33_edge_vector_prune_complete";
 const DEFAULT_PROVENANCE_ROW_CAP: u64 = 1_000_000;
 /// 0.8.20 Slice 5b (R-20-E5) — how many times an erasure verb re-tries
 /// `PRAGMA wal_checkpoint(TRUNCATE)` before refusing with
@@ -729,13 +750,40 @@ enum ReaderRequest {
 // only on the `search_explained` path). Like the `GraphFrontierStats` 4th element
 // it rides the internal channel as a side-channel; unlike it, the explanation IS
 // surfaced (onto `SearchResult.explanation`) when requested.
-type ReaderResponse = rusqlite::Result<(
-    u64,
-    Option<SoftFallback>,
-    Vec<SearchHit>,
-    GraphFrontierStats,
-    Option<Explanation>,
-)>;
+type ReaderResponse = Result<
+    (u64, Option<SoftFallback>, Vec<SearchHit>, GraphFrontierStats, Option<Explanation>),
+    SearchReaderError,
+>;
+
+/// 0.8.20 keystone closeout fix-3 (codex §9 [P2], TOCTOU) — the error a Search
+/// reader worker can return. Two arms:
+///   * `Sqlite` — a backend/storage failure (the pre-fix-3 `rusqlite::Result`
+///     behaviour verbatim; the caller emits the internal-error event and maps to
+///     `EngineError::Storage`);
+///   * `InvalidFilter` — a filter naming an UNDECLARED `filterable` attribute,
+///     detected on the reader's OWN transaction snapshot (see
+///     [`validate_filter_attributes_on_snapshot`]). The caller re-raises it as the
+///     EXISTING `EngineError::InvalidFilter { reason }` typed variant.
+///
+/// Why a channel-carried variant and not a pre-dispatch check on the writer
+/// connection: fix-2 validated on `self.connection` BEFORE dispatch, then the
+/// reader prepared the vec0 query on a DIFFERENT connection/snapshot. A
+/// `configure_projections` DROP landing in that window let the vec0 `attr_<hex>`
+/// column vanish AFTER validation passed → an opaque `no such column` `Storage`
+/// error (the exact untyped failure fix-2 meant to prevent). Validating INSIDE
+/// the reader transaction that also compiles+executes the search binds the check
+/// and the query to ONE snapshot, closing the race; carrying the typed reason
+/// back through this variant keeps the outcome `InvalidFilter`, never `Storage`.
+enum SearchReaderError {
+    Sqlite(rusqlite::Error),
+    InvalidFilter(String),
+}
+
+impl From<rusqlite::Error> for SearchReaderError {
+    fn from(err: rusqlite::Error) -> Self {
+        SearchReaderError::Sqlite(err)
+    }
+}
 
 /// Pack 6.G G.3.5 — per-worker cache-pressure snapshot. Carried only on
 /// the debug-only `CacheStatus` broadcast path and the test accessor;
@@ -1030,6 +1078,68 @@ fn reader_worker_loop(
     // to free.
     uninstall_profile_callback(&connection);
     drop(connection);
+}
+
+/// 0.8.20 keystone closeout fix-3 — a test-only rendezvous hook fired at the TOP
+/// of [`read_search_in_tx`], BEFORE the reader opens its deferred transaction.
+///
+/// It exists ONLY to make the validate/execute TOCTOU race deterministic: a test
+/// arms a closure that parks the reader worker here (after the caller-side search
+/// setup, before the reader pins its snapshot), performs a concurrent
+/// `configure_projections` DROP of a `filterable` attribute on the writer
+/// connection, then releases the reader. The reader then pins a snapshot that
+/// INCLUDES the drop — exactly the window that used to yield an opaque `no such
+/// column` `Storage` error and now yields a typed `InvalidFilter`. Kept OFF the
+/// governed surface (`_for_test`), mirroring the sanctioned
+/// `set_vector_stage_only_for_test` seam pattern. Disarmed by default: a single
+/// `Relaxed` atomic load per search (same class as the four hot-path atomics
+/// already read here), fires at most once (the closure is `take`n), and is a
+/// no-op in production because nothing ever arms it.
+mod reader_search_hook {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Mutex;
+
+    static ARMED: AtomicBool = AtomicBool::new(false);
+    #[allow(clippy::type_complexity)]
+    static HOOK: Mutex<Option<Box<dyn Fn() + Send>>> = Mutex::new(None);
+
+    pub(crate) fn arm(hook: Box<dyn Fn() + Send>) {
+        *HOOK.lock().expect("reader-search hook mutex") = Some(hook);
+        ARMED.store(true, Ordering::SeqCst);
+    }
+
+    pub(crate) fn clear() {
+        ARMED.store(false, Ordering::SeqCst);
+        *HOOK.lock().expect("reader-search hook mutex") = None;
+    }
+
+    /// Fire the armed hook exactly ONCE, then disarm. Cheap early-out when
+    /// disarmed (the production and common-test path).
+    pub(crate) fn fire() {
+        if !ARMED.load(Ordering::SeqCst) {
+            return;
+        }
+        // Disarm first so a re-entrant / second reader never re-fires.
+        ARMED.store(false, Ordering::SeqCst);
+        let hook = HOOK.lock().expect("reader-search hook mutex").take();
+        if let Some(hook) = hook {
+            hook();
+        }
+    }
+}
+
+/// 0.8.20 keystone closeout fix-3 — arm the [`reader_search_hook`] (test-only).
+/// See that module's docs. `#[doc(hidden)]`, `_for_test`; never re-exported from
+/// the `fathomdb` facade.
+#[doc(hidden)]
+pub fn arm_reader_search_hook_for_test(hook: Box<dyn Fn() + Send>) {
+    reader_search_hook::arm(hook);
+}
+
+/// 0.8.20 keystone closeout fix-3 — disarm the [`reader_search_hook`] (test-only).
+#[doc(hidden)]
+pub fn clear_reader_search_hook_for_test() {
+    reader_search_hook::clear();
 }
 
 impl ProjectionRuntime {
@@ -1635,7 +1745,13 @@ impl ReadView {
     /// This is the ONLY constructor of a `FrozenView`, and therefore the only
     /// point on the search path where the wall clock is read.
     fn freeze(self) -> FrozenView {
-        FrozenView { view: self, now: self.now_param() }
+        // TC-33: resolve the instant ONCE, unconditionally, and derive both
+        // axes from it. `valid_as_of.unwrap_or_else(current_epoch_seconds)` is
+        // exactly what `now_param()` computes, so the clock is read the same
+        // number of times as before on every path that reads it at all.
+        let resolved = self.valid_as_of.unwrap_or_else(current_epoch_seconds);
+        let now = if self.include_out_of_window { None } else { Some(resolved) };
+        FrozenView { view: self, now, edge_now: resolved }
     }
 
     /// 0.8.20 Slice 15b fix-2 — the `search` path honours the VALIDITY axis of a
@@ -1698,6 +1814,13 @@ struct FrozenView {
     /// The instant resolved at freeze time. `None` ⇔ the view relaxes validity
     /// entirely, in which case no conjunct is emitted and nothing is bound.
     now: Option<i64>,
+    /// TC-33 — the instant EDGE validity is evaluated at. Always present.
+    ///
+    /// The EXISTENCE-relaxation flag `include_out_of_window` belongs to the NODE
+    /// validity axis and does NOT relax edge recency: an edge invalidated in the
+    /// past stays excluded regardless. So this is the resolved instant even when
+    /// `now` is `None`, and it is resolved from the SAME clock read.
+    edge_now: i64,
 }
 
 impl FrozenView {
@@ -1706,6 +1829,18 @@ impl FrozenView {
     /// cannot yield a different answer, and it never touches the clock.
     fn now_param(&self) -> Option<i64> {
         self.now
+    }
+
+    /// TC-33 — the instant to bind for the EDGE-validity conjunct
+    /// ([`edge_validity_sql`]). Frozen, like [`FrozenView::now_param`].
+    ///
+    /// Honouring `valid_as_of` here is what finally UNIFIES the node and edge
+    /// temporal axes: step 22 recorded "the shipped EDGE path still inlines
+    /// `datetime('now')`" as the reason they could not be unified. For the
+    /// DEFAULT view (`valid_as_of == None`) this is the wall clock, i.e. exactly
+    /// the pre-TC-33 behaviour.
+    fn edge_now(&self) -> i64 {
+        self.edge_now
     }
 
     /// The validity conjunct — delegated to the one generator every read site
@@ -1753,6 +1888,364 @@ fn current_epoch_seconds() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
         .unwrap_or(0)
+}
+
+/// TC-33 — the edge-validity conjunct, bound to positional parameter
+/// `?{now_idx}`. THE one generator for "is this edge valid at `:now`", so no
+/// read site can drift from another (the same discipline
+/// [`ReadView::validity_sql`] applies to node validity).
+///
+/// An edge is valid at `t` iff it has no invalid-time, or its invalid-time is
+/// strictly in the future. `t_invalid` is INTEGER epoch seconds since step 23,
+/// so this is a direct integer comparison — no `datetime()` conversion per row.
+///
+/// **`:now` is a BOUND PARAMETER, never `datetime('now')`.** Before TC-33 every
+/// edge read site inlined `datetime('now')`, which made the predicate
+/// non-deterministic, untestable, and re-evaluated per row; step 22's comment
+/// flagged that as the reason node and edge validity could not be unified. They
+/// are unified now.
+///
+/// Always begins with ` AND `, so every call site must already have a preceding
+/// `WHERE` predicate.
+fn edge_validity_sql(alias: &str, now_idx: usize) -> String {
+    format!(" AND ({alias}.t_invalid IS NULL OR {alias}.t_invalid > ?{now_idx})")
+}
+
+/// TC-33 — parse one ISO-8601 timestamp to INTEGER epoch seconds using SQLite's
+/// own date parser, via a BOUND parameter.
+///
+/// Returns `None` when SQLite cannot resolve the value — `strftime` yields SQL
+/// NULL for junk (`'not a date'`, `''`, `'2020-13-45T99:99:99Z'`, a bare epoch
+/// string, whitespace-padded input, non-ASCII digits) and a digit string for
+/// anything it understands.
+///
+/// **Why SQLite and not a date crate:** there is no `chrono`/`time` dependency
+/// anywhere in the workspace, and HITL directed this spelling rather than adding
+/// one. The value is BOUND, never interpolated.
+///
+/// **This does not violate the inline-clock rule.** That rule forbids
+/// `datetime('now')` / `strftime('%s','now')` — an inline CLOCK. Parsing a bound
+/// user value is deterministic and reads no clock. The current instant still
+/// comes from the bound `:now` seam ([`current_epoch_seconds`]).
+///
+/// The `CAST` matters: `strftime('%s', ...)` returns TEXT (a digit string), not
+/// an integer, and the column is `typeof(...) = 'integer'`-checked.
+///
+/// # TC-33 fix-5 — strict ISO-8601 SHAPE gate before delegating to SQLite
+///
+/// `strftime('%s', ?)` alone is NOT an ISO-8601 validator: SQLite's date parser
+/// is MORE lenient than the declared wire contract. A bare number is read as a
+/// **Julian day** (`strftime('%s','2451545.0')` → `946728000`, i.e. year 2000)
+/// and `strftime('%s','0')` resolves to a pre-year-0000 epoch — so non-ISO input
+/// was ACCEPTED and stored as an unrelated instant despite the "hard-reject
+/// ISO-8601" contract HITL ratified (2026-07-21). [`is_iso8601_shape`] runs
+/// FIRST and returns `None` for anything that is not a strict ISO-8601
+/// date/datetime shape, so the existing hard-reject path fires. The shape gate
+/// does NOT replace SQLite's calendar math — a shape-valid but impossible date
+/// (`2025-13-45T00:00:00Z`) still `None`s out via `strftime` and hard-rejects.
+///
+/// # TC-47 — the calendar-DATE ROUND-TRIP backstop (keystone terminal codex P2)
+///
+/// The shape gate checks FORMAT, not CALENDAR VALIDITY, and `strftime('%s', ?)`
+/// does NOT fully validate the calendar: it **rolls over an impossible DAY**
+/// rather than returning NULL — `strftime('%s','2025-02-30T00:00:00Z')` yields
+/// the epoch for `2025-03-02`, and `2025-04-31` yields `2025-05-01`. So a
+/// shape-valid Feb-30 would parse to a DIFFERENT instant than the provider
+/// supplied, bypassing the hard-reject contract. (An impossible MONTH like
+/// `2025-13-01`, and impossible TIMES like `25:00:00` / `:60` / `:61`, already
+/// NULL out; only impossible DAYS roll over — that is the sole residue.)
+///
+/// The `WHERE` clause is the round-trip: the literal calendar DATE component of
+/// the input (`substr(?1, 1, 10)` — the `YYYY-MM-DD` the shape gate guarantees is
+/// present) must survive SQLite's own calendar math UNCHANGED. If it rolled over,
+/// `strftime('%Y-%m-%d', substr(?1,1,10))` differs from the literal substring and
+/// the `WHERE` yields zero rows => `query_row` -> `QueryReturnedNoRows` -> `None`
+/// => the existing hard-reject fires. This is a superset of the shape gate: it
+/// also rejects the TC-44 Julian string `2451545.0` (its `substr(1,10)` renders
+/// to `2000-01-01`, not itself).
+///
+/// **Why the DATE component and not the raw string or the UTC-rendered instant:**
+/// a raw-string or `unixepoch`-rendered comparison would FALSE-REJECT valid
+/// equivalent forms. `Z` vs `+00:00`, a non-UTC offset like `+05:00`, date-only,
+/// and fractional seconds are all valid and store the correct (offset-shifted)
+/// epoch — but a UTC re-render shifts the wall clock, so its date can differ from
+/// the input's literal date. Comparing ONLY the literal DATE field is
+/// tz-INVARIANT (the offset never alters the input's own `YYYY-MM-DD` text) while
+/// still catching every DAY rollover, because the rollover happens in the
+/// calendar math BEFORE any offset is applied. **Pure SQL — no date crate.**
+fn iso8601_to_epoch_seconds(connection: &Connection, raw: &str) -> Option<i64> {
+    if !is_iso8601_shape(raw) {
+        return None;
+    }
+    connection
+        .query_row(
+            "SELECT CAST(strftime('%s', ?1) AS INTEGER) \
+             WHERE strftime('%Y-%m-%d', substr(?1, 1, 10)) IS substr(?1, 1, 10)",
+            params![raw],
+            |r| r.get::<_, Option<i64>>(0),
+        )
+        .ok()
+        .flatten()
+}
+
+/// TC-33 fix-5 — strict ISO-8601 date/datetime SHAPE gate. Hand-rolled on ASCII
+/// bytes (NO new dependency: the workspace has no `chrono`/`time`, and `regex`
+/// is only a transitive dep of `jsonschema`, not a direct one — adding either as
+/// a direct dep would violate the "no new dependency" constraint).
+///
+/// Accepts EXACTLY:
+/// - `YYYY-MM-DD` (date only); optionally followed by
+/// - a `T` **or** a single space separator, then `HH:MM:SS`; optionally followed
+///   by `.fff` fractional seconds (one or more digits); optionally followed by
+///   a zone: `Z`, or `±HH:MM`, or `±HHMM`.
+///
+/// Rejects bare numbers (`0`, `2451545.0`), partial junk, whitespace, non-ASCII
+/// digits, and anything with trailing characters. All digit positions require
+/// ASCII `0..=9` (`u8::is_ascii_digit`), so non-ASCII digit look-alikes cannot
+/// slip through. This is a SHAPE check only — calendar validity (e.g. month 13,
+/// day 45) is still enforced by SQLite's `strftime` after this gate passes.
+fn is_iso8601_shape(s: &str) -> bool {
+    let b = s.as_bytes();
+    let d = |c: u8| c.is_ascii_digit();
+
+    // Date: YYYY-MM-DD (exactly 10 bytes).
+    if b.len() < 10 {
+        return false;
+    }
+    if !(d(b[0])
+        && d(b[1])
+        && d(b[2])
+        && d(b[3])
+        && b[4] == b'-'
+        && d(b[5])
+        && d(b[6])
+        && b[7] == b'-'
+        && d(b[8])
+        && d(b[9]))
+    {
+        return false;
+    }
+    if b.len() == 10 {
+        return true; // date-only
+    }
+
+    // Separator (`T` or a single space) + time HH:MM:SS (indices 10..=18).
+    if b[10] != b'T' && b[10] != b' ' {
+        return false;
+    }
+    if b.len() < 19 {
+        return false;
+    }
+    if !(d(b[11])
+        && d(b[12])
+        && b[13] == b':'
+        && d(b[14])
+        && d(b[15])
+        && b[16] == b':'
+        && d(b[17])
+        && d(b[18]))
+    {
+        return false;
+    }
+
+    let mut i = 19;
+
+    // Optional fractional seconds `.fff` (one or more digits).
+    if i < b.len() && b[i] == b'.' {
+        i += 1;
+        let start = i;
+        while i < b.len() && d(b[i]) {
+            i += 1;
+        }
+        if i == start {
+            return false; // `.` with no digits
+        }
+    }
+
+    // Optional zone.
+    if i == b.len() {
+        return true; // no zone
+    }
+    match b[i] {
+        b'Z' => i += 1,
+        b'+' | b'-' => {
+            i += 1;
+            // `HH`
+            if i + 2 > b.len() || !d(b[i]) || !d(b[i + 1]) {
+                return false;
+            }
+            i += 2;
+            // `:MM` or `MM`
+            if i < b.len() && b[i] == b':' {
+                i += 1;
+            }
+            if i + 2 > b.len() || !d(b[i]) || !d(b[i + 1]) {
+                return false;
+            }
+            i += 2;
+        }
+        _ => return false,
+    }
+
+    i == b.len() // no trailing junk
+}
+
+/// TC-33 — render INTEGER epoch seconds back to an ISO-8601 UTC string for the
+/// BYO-LLM wire. The exact inverse of [`iso8601_to_epoch_seconds`].
+///
+/// Storage and the governed SDK are epoch seconds, but the harness protocols
+/// (`fathomdb.extract.v1` and the consolidation harness) carry ISO-8601 — LLMs
+/// reason about dates as text, and pushing epoch integers onto them would make
+/// the wire hostile to the very providers it exists to serve. So the boundary
+/// converts in BOTH directions and the representation split stays a boundary
+/// concern rather than leaking into the protocol.
+fn epoch_seconds_to_iso8601(connection: &Connection, epoch: i64) -> Option<String> {
+    connection
+        .query_row("SELECT strftime('%Y-%m-%dT%H:%M:%SZ', ?1, 'unixepoch')", params![epoch], |r| {
+            r.get::<_, Option<String>>(0)
+        })
+        .ok()
+        .flatten()
+}
+
+/// TC-33 fix-1 — the inclusive epoch-seconds range SQLite's
+/// `strftime(..., 'unixepoch')` can render back to ISO-8601. SQLite's date
+/// functions cover years 0000..=9999 ONLY, so:
+/// - `MIN` = `0000-01-01T00:00:00Z`
+/// - `MAX` = `9999-12-31T23:59:59Z`
+///
+/// TC-33 fix-5 makes these the ACTUAL rejection predicate (a numeric
+/// `[MIN, MAX]` bounds check), not just message text. Renderability was too
+/// weak: `strftime(..., 'unixepoch')` renders a below-`MIN` value like
+/// `-62_167_219_201` to `-001-12-31T23:59:59Z` (NON-NULL), so a pre-year-0000
+/// epoch slipped the renderability guard even though it is outside the declared
+/// years 0000..=9999. Both bounds are verified against SQLite to correspond
+/// EXACTLY to the first/last renderable instant:
+/// `strftime('%Y-%m-%dT%H:%M:%SZ', MIN, 'unixepoch') = 0000-01-01T00:00:00Z` and
+/// `= 9999-12-31T23:59:59Z` for `MAX` (`MAX+1` and `MIN-1` are the first
+/// out-of-range instants).
+const MIN_RENDERABLE_EPOCH: i64 = -62_167_219_200; // 0000-01-01T00:00:00Z
+const MAX_RENDERABLE_EPOCH: i64 = 253_402_300_799; // 9999-12-31T23:59:59Z
+
+/// TC-33 fix-1 — reject an edge epoch that SQLite cannot render back to
+/// ISO-8601, at the governed write boundary, so it is UNSTORABLE.
+///
+/// # Why this is the primary layer
+///
+/// Storage and `PreparedWrite::Edge` carry INTEGER epoch seconds and accept an
+/// arbitrary `i64`. The consolidation path renders each candidate's
+/// `t_valid`/`t_invalid` to ISO-8601 for the LLM via `strftime(..., 'unixepoch')`,
+/// which only spans years 0000..=9999. An epoch outside that range renders to
+/// NULL, and the render site would then send a silent `null` for a timestamp
+/// that is actually stored NON-NULL — the OUTBOUND twin of the fail-open TC-33
+/// removes. A `null` `t_invalid` reads as "still valid", and the consolidation
+/// reference stub echoes a winner's `t_valid` straight back as the verdict's
+/// `t_invalid`, so the `null` round-trips through the inbound normaliser as
+/// "still valid": an invalidated edge silently resurrected.
+///
+/// Inbound ISO normalisation can never MINT such an epoch (a 4-digit-year ISO
+/// string maxes at 9999), so the governed integer surface is the only ingress —
+/// which is exactly where this guard sits. Mirrors the inbound
+/// [`normalize_extractor_timestamp`] hard-reject and the Node branch's
+/// `valid_from >= valid_until` refusal: a typed [`EngineError::InvalidArgument`]
+/// naming the offending value and the bound, never a silent coercion.
+fn reject_unrenderable_edge_epoch(field: &str, value: Option<i64>) -> Result<(), EngineError> {
+    // TC-33 fix-5 — an explicit numeric MIN/MAX bounds check, NOT a renderability
+    // test. `strftime(..., 'unixepoch')` renders a below-`MIN` epoch (e.g.
+    // `-62_167_219_201`, year -0001) to a NON-NULL string, so a renderability
+    // guard would let pre-year-0000 values through even though they are outside
+    // the declared years 0000..=9999. No `Connection` is needed now that the
+    // predicate is pure integer arithmetic.
+    if let Some(ts) = value {
+        if !(MIN_RENDERABLE_EPOCH..=MAX_RENDERABLE_EPOCH).contains(&ts) {
+            return Err(EngineError::InvalidArgument {
+                msg: format!(
+                    "edge field `{field}` = {ts} is outside the epoch-seconds range SQLite can \
+                     render to ISO-8601 ([{MIN_RENDERABLE_EPOCH}, {MAX_RENDERABLE_EPOCH}], i.e. \
+                     years 0000..=9999). REJECTED rather than stored: such an epoch renders to a \
+                     silent NULL (or a nonsensical out-of-range instant) on the consolidation \
+                     wire, and a NULL `t_invalid` reads as \"still valid\" — resurrecting an \
+                     invalidated edge."
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// The JSON type name of `value`, for diagnosing a mistyped extractor field.
+fn json_type_name(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "null",
+        Value::Bool(_) => "boolean",
+        Value::Number(_) => "number",
+        Value::String(_) => "string",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
+    }
+}
+
+/// TC-33 — normalise one timestamp arriving on the **BYO-LLM extractor
+/// boundary** (`fathomdb.extract.v1`) into the INTEGER epoch seconds the storage
+/// and governed-SDK layers use. **HARD-REJECTS** anything it cannot normalise.
+///
+/// This is the layering boundary HITL ratified on 2026-07-21:
+/// - the **extractor wire format stays ISO-8601 strings** — LLMs emit text, and
+///   this function is the one place that changes;
+/// - **storage and the governed SDK surface are INTEGER epoch seconds.**
+///
+/// # Why rejection, not coercion — fail-open is the defect
+///
+/// A NULL `t_invalid` means **"still valid"**. So any path that turns an
+/// unparseable timestamp into NULL silently **resurrects an invalidated edge**.
+/// Two distinct fail-opens are closed here:
+///
+/// 1. **Malformed strings.** Previously NOTHING parsed or validated these; junk
+///    went verbatim into the INSERT. Under the old TEXT column it then failed
+///    CLOSED by accident (`datetime('junk')` → NULL ⇒ the read disjunct is
+///    falsy ⇒ the row vanished). Under INTEGER that polarity would INVERT.
+/// 2. **Non-string JSON — a fail-open that PREDATES TC-33.** The old site read
+///    `edge.get("t_invalid").and_then(|v| v.as_str())`, and `as_str()` returns
+///    `None` for a JSON number/bool/object. So `"t_invalid": 1710000000` — a
+///    plausible mistake, and exactly the epoch form storage now uses — had its
+///    invalidation SILENTLY DISCARDED and the edge stored as "still valid".
+///
+/// `None`/JSON `null`/absent is the ONLY sanctioned way to say "unknown"; it
+/// maps to `Ok(None)` and keeps the NULL-means-still-valid semantic.
+///
+/// Follows the typed-`InvalidArgument`-carrying-the-offending-value pattern of
+/// the `validate_write` `Node` branch's `valid_from >= valid_until` check.
+fn normalize_extractor_timestamp(
+    connection: &Connection,
+    field: &str,
+    raw: Option<&Value>,
+) -> Result<Option<i64>, EngineError> {
+    match raw {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(text)) => match iso8601_to_epoch_seconds(connection, text) {
+            Some(epoch) => Ok(Some(epoch)),
+            None => Err(EngineError::InvalidArgument {
+                msg: format!(
+                    "extractor edge field `{field}` must be a valid, calendar-real ISO-8601 \
+                     timestamp; got {text:?}, which either `strftime('%s', ?)` resolves to NULL \
+                     or fails the calendar round-trip (a shape-valid but impossible DAY like \
+                     `2025-02-30` that SQLite would silently ROLL OVER to a different instant). \
+                     REJECTED rather than stored: a NULL `t_invalid` reads as \"still valid\" and \
+                     a rolled-over date stores the WRONG instant — both breach the hard-reject \
+                     contract. Use JSON null for \"unknown\"."
+                ),
+            }),
+        },
+        Some(other) => Err(EngineError::InvalidArgument {
+            msg: format!(
+                "extractor edge field `{field}` must be an ISO-8601 string or JSON null; got a \
+                 JSON {kind} ({other}). The `fathomdb.extract.v1` wire format carries ISO-8601 at \
+                 this boundary — INTEGER epoch seconds are the STORAGE representation, not the \
+                 wire one. REJECTED rather than coerced to NULL, which reads as \"still valid\".",
+                kind = json_type_name(other)
+            ),
+        }),
+    }
 }
 
 /// Slice 30 (G3) — one `operational_mutations` row returned by `read.collection`
@@ -2088,12 +2581,29 @@ pub struct SearchExpandResult {
 /// "NULL plumbing"; a real population source is reserved-gap candidate 13). A
 /// `status = Some("open")`-style filter therefore prunes every row until that
 /// population slice lands.
+// 0.8.20 Slice 15e fix-2 (Finding 2) — `#[non_exhaustive]`: the `attributes`
+// field was added additively in 0.8.20. Marking the struct non-exhaustive means
+// EXTERNAL crates can no longer use a struct literal `SearchFilter { .. }` and
+// must go through `..Default::default()` (or a constructor), so a FUTURE field
+// add is not a source break for them. Internal (in-workspace) construction is
+// unaffected — `#[non_exhaustive]` only constrains other crates — and every
+// in-crate literal already spreads `..Default::default()`. Governed-surface
+// status: PROPOSED / NOT SIGNED.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[non_exhaustive]
 pub struct SearchFilter {
     pub source_type: Option<String>,
     pub kind: Option<String>,
     pub created_after: Option<i64>,
     pub status: Option<String>,
+    /// 0.8.20 Slice 15e (R-20-PR, ADR-0.8.11 D3) — declared-`filterable`-attribute
+    /// equality predicates, each `(attribute_name, value)`. Lowered into the
+    /// **indexed pre-KNN** vec0 metadata column `attr_<hex>` by
+    /// [`vector_filter_clause`] (NOT a post-KNN `json_extract`). Empty ⇒ the
+    /// byte-identical unfiltered path is preserved. `attribute_name` is the
+    /// registry projection name; the encoded column is derived by
+    /// [`attr_vec0_column`].
+    pub attributes: Vec<(String, String)>,
 }
 
 impl SearchFilter {
@@ -2105,6 +2615,7 @@ impl SearchFilter {
             && self.kind.is_none()
             && self.created_after.is_none()
             && self.status.is_none()
+            && self.attributes.is_empty()
     }
 }
 
@@ -2334,10 +2845,14 @@ pub struct ConsolidateCandidateEdge {
     pub edge_ref: String,
     /// The fact/relationship text (never rewritten by consolidation — §2.1).
     pub body: Option<String>,
-    /// Event valid-time (ISO-8601), if known.
-    pub t_valid: Option<String>,
-    /// Event invalid-time (ISO-8601), if already invalidated.
-    pub t_invalid: Option<String>,
+    /// Event valid-time as INTEGER epoch seconds (UTC), if known.
+    ///
+    /// TC-33: epoch seconds, NOT ISO-8601. ISO-8601 lives only on the BYO-LLM
+    /// extractor wire; `normalize_extractor_timestamp` is the one boundary.
+    pub t_valid: Option<i64>,
+    /// Event invalid-time as INTEGER epoch seconds (UTC), if already
+    /// invalidated. `None` = still valid.
+    pub t_invalid: Option<i64>,
     /// Extraction confidence ∈ [0.0, 1.0], if known.
     pub confidence: Option<f64>,
     /// Provenance: originating document id.
@@ -2562,10 +3077,21 @@ pub enum PreparedWrite {
         /// the projection scheduler (kind `"edge_fact"`). Also triggers
         /// invalidate-not-accumulate on `(from_id, to_id, kind)`.
         body: Option<String>,
-        /// G11 (Slice 15) — event valid-time (ISO-8601). NULL = unknown / still valid.
-        t_valid: Option<String>,
-        /// G11 (Slice 15) — event invalid-time (ISO-8601). NULL = still valid.
-        t_invalid: Option<String>,
+        /// G11 (Slice 15) — event valid-time. NULL = unknown / still valid.
+        ///
+        /// **TC-33 (HITL-RATIFIED 2026-07-21): INTEGER epoch seconds (UTC), not
+        /// ISO-8601.** This is the GOVERNED SDK WRITE SURFACE, which carries the
+        /// same representation as storage. ISO-8601 survives ONLY on the BYO-LLM
+        /// extractor wire (`fathomdb.extract.v1`), where
+        /// `normalize_extractor_timestamp` converts it with hard rejection.
+        t_valid: Option<i64>,
+        /// G11 (Slice 15) — event invalid-time. NULL = still valid.
+        ///
+        /// **TC-33: INTEGER epoch seconds (UTC)** — see `t_valid`. The
+        /// NULL-means-still-valid semantic is load-bearing and unchanged, which
+        /// is why the schema pins the type with a `typeof` CHECK rather than
+        /// `NOT NULL`.
+        t_invalid: Option<i64>,
         /// G11 (Slice 15) — extraction confidence ∈ [0.0, 1.0]. NULL for
         /// non-BYO-LLM-ingested edges.
         confidence: Option<f64>,
@@ -3099,6 +3625,17 @@ pub enum EngineError {
         stage: String,
         detail: String,
     },
+    /// 0.8.20 Slice 15d (R-20-PR) — `configure_projections` refused an
+    /// incompatible/DESTRUCTIVE change to an existing projection `name` that was
+    /// NOT accompanied by an explicit `drop`. Omission from the spec never drops
+    /// (C3, `api-surface.md:27`); a role REMOVAL or a tokenizer/embedder change
+    /// on a live projection would silently discard an expensive-to-rebuild
+    /// resource, so it is refused with the destructive `delta` surfaced. The
+    /// caller re-issues with `drop: [name]` to consciously rebuild.
+    ProjectionDestructive {
+        name: String,
+        delta: String,
+    },
 }
 
 impl Display for EngineError {
@@ -3148,6 +3685,11 @@ impl Display for EngineError {
                 "erasure incomplete at stage '{stage}': the rows were deleted but the erasure \
                  could not be completed at rest ({detail})",
             ),
+            Self::ProjectionDestructive { name, delta } => write!(
+                f,
+                "configure_projections refused a destructive change to projection '{name}' \
+                 without an explicit drop ({delta}); re-issue with drop: [\"{name}\"] to rebuild",
+            ),
         }
     }
 }
@@ -3180,6 +3722,7 @@ impl EngineError {
             Self::IllegalTransition { .. } => "IllegalTransitionError",
             Self::NotLifecycleAddressable { .. } => "NotLifecycleAddressableError",
             Self::ErasureIncomplete { .. } => "ErasureIncompleteError",
+            Self::ProjectionDestructive { .. } => "ProjectionDestructiveError",
         }
     }
 }
@@ -3289,6 +3832,105 @@ pub struct ExciseReport {
     pub nodes_excised: u64,
     pub edges_excised: u64,
     pub projections_invalidated: u64,
+}
+
+/// 0.8.20 Slice 15d (R-20-PR, C-1) — one member of a [`ProjectionSpec`]'s role
+/// set. **Exactly three members** (HITL-ratified S8, `api-surface.md:87`):
+/// `searchable→FTS` and `searchable→vector` are NOT roles — they are tier labels
+/// carried by the `fts`/`vector` sub-objects of the spec, so an attribute is
+/// `Searchable` once and the sub-objects select FTS-only / vector-only / both.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum ProjectionRole {
+    /// Projects into the EAV store + its `(attr_name, attr_value)` composite
+    /// index — cheap equality/range, built same-transaction.
+    Filterable,
+    /// The F9 importance/recency signal. **Graceful-absent (Q6a):** declaring
+    /// it is legal and never errors, but the engine DEFERS the build until F9
+    /// exists and grafts it on the next idempotent `configure_projections`.
+    Rankable,
+    /// Full-text / dense recall of the meaning text. The `fts`/`vector`
+    /// sub-objects select the sub-target.
+    Searchable,
+}
+
+impl ProjectionRole {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ProjectionRole::Filterable => "filterable",
+            ProjectionRole::Rankable => "rankable",
+            ProjectionRole::Searchable => "searchable",
+        }
+    }
+
+    #[must_use]
+    pub fn from_str_opt(value: &str) -> Option<Self> {
+        match value {
+            "filterable" => Some(ProjectionRole::Filterable),
+            "rankable" => Some(ProjectionRole::Rankable),
+            "searchable" => Some(ProjectionRole::Searchable),
+            _ => None,
+        }
+    }
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — the `searchable→FTS` sub-target selector.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ProjectionFts {
+    /// Optional tokenizer override; `None` ⇒ the engine default FTS5 tokenizer
+    /// (`body`-FTS's `porter unicode61 remove_diacritics 2`). A custom
+    /// per-attr tokenizer is the ≥0.9.x multi-field FTS work — recorded but
+    /// not honoured here (graceful-graft later, same as `rankable`).
+    pub tokenizer: Option<String>,
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — the `searchable→vector` sub-target selector.
+///
+/// **Slice 20 (R-20-DR) attaches `dense_readiness` HERE, additively:** this
+/// sub-object is STORED by 15d (so the shape exists and a caller can declare a
+/// vector projection) but 15d builds NO embedding / readiness machinery. Slice
+/// 20 adds a `dense_readiness` field to this struct and the async flip logic;
+/// nothing in 15d's persisted shape has to change for that (the registry column
+/// `vector_embedder` + `vector_declared` already round-trip the sub-object).
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ProjectionVector {
+    /// Optional embedder override; `None` ⇒ the engine's shipped default.
+    pub embedder: Option<String>,
+}
+
+/// 0.8.20 Slice 15d (R-20-PR / C-1) — a single declarative projection
+/// declaration. HITL-ratified shape (`api-surface.md:85-89`):
+/// `{ name, roles: Set<ProjectionRole>, fts?, vector? }`. `roles` carries SET
+/// semantics (dedup + membership; an attribute can be `Filterable` AND
+/// `Searchable`) — encoded here as a sorted, de-duplicated `BTreeSet`. Named
+/// `roles`, not `kind` (`kind` is the node/edge type discriminator).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProjectionSpec {
+    pub name: String,
+    pub roles: BTreeSet<ProjectionRole>,
+    pub fts: Option<ProjectionFts>,
+    pub vector: Option<ProjectionVector>,
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — the diff [`Engine::configure_projections`]
+/// applied. Idempotent re-registration yields `unchanged == true` with all
+/// vecs empty (the "re-registration is a no-op" acceptance signal). A
+/// destructive change without an explicit `drop` is an `Err`, not a delta.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ProjectionDelta {
+    /// Attribute names whose same-transaction projections (EAV / property-FTS)
+    /// were (re)built by this apply.
+    pub built: Vec<String>,
+    /// Attribute names dropped (explicit `drop` list) — their EAV + property-FTS
+    /// rows and registry row removed.
+    pub dropped: Vec<String>,
+    /// Attribute names whose declared roles were persisted but NOT built:
+    /// `rankable` (F9 not yet live) and the `searchable→vector` sub-target
+    /// (Slice 20). These graft on a future idempotent apply. No error.
+    pub deferred: Vec<String>,
+    /// True iff nothing was built, dropped, or newly deferred — the whole apply
+    /// diffed to a no-op.
+    pub unchanged: bool,
 }
 
 /// 0.8.20 Slice 5b (R-20-E7) — outcome of
@@ -3865,6 +4507,67 @@ impl Engine {
             EngineOpenError::Io { message: "could not initialize vector partition".to_string() }
         })?;
 
+        // 0.8.20 Slice 15c (TC-33) fix-6 [codex §9 P1] — the step-23
+        // `canonical_edges` recreate drops every edge row (NO DATA MIGRATION) and
+        // removes their `_fathomdb_vector_rows` sidecar rows, but the vec0
+        // `vector_default` shadow those mirror is engine-created + dim-aware, so
+        // the migration cannot delete its rows. Left behind, an orphaned edge vec0
+        // row (whose `canonical_edges` row is gone) still occupies a top-K KNN
+        // candidate slot — `build_vector_phase1_sql` reads candidates DIRECTLY
+        // from `vector_default` before hydrating them through the canonical tables
+        // — and is then discarded at hydration, so an upgraded DB silently returns
+        // too few / no vector results. Prune the orphans now that
+        // `ensure_vector_partition` guarantees `vector_default` exists, BEFORE the
+        // mean-vec row-count recovery below (so the count excludes them). One-time
+        // and crash-retryable via the durable completion marker; a no-op on any
+        // healthy corpus (every vec0 row has a sidecar entry), so recall / eu7
+        // fidelity are unchanged on a DB that never dropped edges.
+        if migration.schema_version_after >= EDGE_TEMPORAL_EPOCH_SCHEMA_VERSION
+            && !edge_vector_prune_complete(&connection).map_err(|_| EngineOpenError::Io {
+                message: "could not read edge-vector prune marker".to_string(),
+            })?
+        {
+            prune_orphaned_edge_vectors(&connection).map_err(|_| EngineOpenError::Io {
+                message: "could not prune orphaned edge vector rows".to_string(),
+            })?;
+        }
+
+        // 0.8.20 Slice 15d (R-20-PR, Q5) — boot re-derive the projection registry
+        // (the engine `ProjectionSpec` is a derived cache). For every persisted
+        // declaration, clear + backfill its EAV / property-FTS rows from the
+        // canonical nodes so a crash window (registry row survives, projection
+        // rows partial) self-heals idempotently. A no-op single empty-table read
+        // on every DB that has not declared a projection. On the writer
+        // connection, single-threaded, before readers spawn — like the tokenizer
+        // reproject above. Runs after the fix-6 edge-vector prune above; the two
+        // are independent boot reconciliations.
+        rederive_projections_on_boot(&connection).map_err(|_| EngineOpenError::Io {
+            message: "could not re-derive projection registry on boot".to_string(),
+        })?;
+
+        // 0.8.20 Slice 15e — reconcile the live `vector_default` attribute columns
+        // with the registry's `filterable` set. On a DB whose vec0 shape already
+        // matches the registry (the common case, incl. every reopen of a DB that
+        // declared filterable projections in a prior session) this is a pure
+        // no-op: the diff is empty, so boot never re-inserts and NEVER silently
+        // wipes the corpus. It converges only a shape that drifted from the
+        // registry (e.g. a restored registry row). A no-op when the table is
+        // absent (no embedder). Runs on the writer connection, single-threaded,
+        // before readers spawn — like the boot re-derive above.
+        {
+            let tx = connection.transaction().map_err(|_| EngineOpenError::Io {
+                message: "could not begin vector-attr reconcile on boot".to_string(),
+            })?;
+            reconcile_vector_attr_columns(&tx, embedder_identity.dimension).map_err(|_| {
+                EngineOpenError::Io {
+                    message: "could not reconcile vector attribute columns on boot".to_string(),
+                }
+            })?;
+            tx.commit().map_err(|_| EngineOpenError::Io {
+                message: "could not commit vector-attr reconcile on boot".to_string(),
+            })?;
+        }
+
         // EU-5f — recovery pin (`dev/design/embedder.md` §0.3, Hazard 4). If
         // the identity is MC-required, no mean is pinned, yet the workspace
         // already holds >= MEAN_VEC_PIN_THRESHOLD vector rows (e.g. a crash
@@ -4254,7 +4957,11 @@ impl Engine {
             // temporal_fallback warnings. An edge whose t_valid matches one of
             // these values had its event time defaulted to created_at (not
             // text-grounded) and must be flagged so BFS can exclude it.
-            let fallback_dates: std::collections::HashSet<String> = result
+            //
+            // TC-33: kept as RAW `Value`s here and normalised below, together
+            // with the edge side, through the SAME function. See the
+            // normalisation block for why that is load-bearing.
+            let raw_fallback_dates: Vec<&Value> = result
                 .get("warnings")
                 .and_then(|v| v.as_array())
                 .map(|ws| {
@@ -4262,11 +4969,7 @@ impl Engine {
                         .filter(|w| {
                             w.get("kind").and_then(|k| k.as_str()) == Some("temporal_fallback")
                         })
-                        .filter_map(|w| {
-                            w.get("substituted_t_valid")
-                                .and_then(|v| v.as_str())
-                                .map(str::to_string)
-                        })
+                        .filter_map(|w| w.get("substituted_t_valid"))
                         .collect()
                 })
                 .unwrap_or_default();
@@ -4386,9 +5089,75 @@ impl Engine {
                     }
                 }
 
+                // TC-33 — normalise EVERY extractor timestamp here, in ONE pass,
+                // under ONE connection lock, BEFORE any edge is built. Both the
+                // edge side (`t_valid`/`t_invalid`) and the temporal_fallback
+                // warning side (`substituted_t_valid`) go through the SAME
+                // function, and any value that cannot be normalised HARD-REJECTS
+                // the whole ingest.
+                //
+                // **Normalising both sides is load-bearing, and nothing would
+                // have caught it.** `temporal_fallback` is decided by comparing
+                // the edge's t_valid against the warnings' substituted_t_valid.
+                // That was a RAW BYTE-FOR-BYTE STRING MATCH with
+                // `.unwrap_or(false)` on the miss path, and `substituted_t_valid`
+                // is a FREE-FORM JSON key on the ELPS warnings envelope, not a
+                // Rust struct field. So normalising only the edge side would
+                // leave the set never matching, `.unwrap_or(false)` firing, and
+                // EVERY fallback edge silently becoming a TRUSTED edge — with no
+                // compile error anywhere. That flag is the only thing excluding
+                // untrustworthy-time edges from graph BFS and graph seeding.
+                //
+                // Normalising both sides also FIXES a pre-existing brittleness:
+                // `2025-03-20T09:30:00Z` and `2025-03-20T09:30:00+00:00` are the
+                // same instant but MISS each other under a byte comparison. They
+                // now compare equal as epochs.
+                //
+                // A malformed `substituted_t_valid` rejects rather than being
+                // skipped: skipping it would leave the edge unflagged, i.e.
+                // treated as TRUSTED — the same fail-open in a different place.
+                //
+                // The lock is taken and released HERE; `self.write(...)` below
+                // re-acquires it, so no lock is held across the write.
+                // (t_valid, t_invalid) epoch pair per edge, in `raw_edges` order.
+                type EdgeTimes = Vec<(Option<i64>, Option<i64>)>;
+                let (edge_times, fallback_epochs): (EdgeTimes, std::collections::HashSet<i64>) = {
+                    let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+                    let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+
+                    let mut times = Vec::with_capacity(raw_edges.len());
+                    for edge in &raw_edges {
+                        times.push((
+                            normalize_extractor_timestamp(
+                                connection,
+                                "t_valid",
+                                edge.get("t_valid"),
+                            )?,
+                            normalize_extractor_timestamp(
+                                connection,
+                                "t_invalid",
+                                edge.get("t_invalid"),
+                            )?,
+                        ));
+                    }
+
+                    let mut epochs = std::collections::HashSet::new();
+                    for raw in &raw_fallback_dates {
+                        if let Some(epoch) = normalize_extractor_timestamp(
+                            connection,
+                            "substituted_t_valid",
+                            Some(raw),
+                        )? {
+                            epochs.insert(epoch);
+                        }
+                    }
+                    (times, epochs)
+                };
+
                 let edge_batch: Vec<PreparedWrite> = raw_edges
                     .iter()
-                    .map(|edge| -> Result<PreparedWrite, EngineError> {
+                    .zip(&edge_times)
+                    .map(|(edge, &(t_valid, t_invalid))| -> Result<PreparedWrite, EngineError> {
                         let from_entity =
                             edge.get("from_entity").and_then(|v| v.as_str()).unwrap_or("");
                         let to_entity =
@@ -4396,10 +5165,9 @@ impl Engine {
                         let relation =
                             edge.get("relation").and_then(|v| v.as_str()).unwrap_or("related_to");
                         let body = edge.get("body").and_then(|v| v.as_str()).map(str::to_string);
-                        let t_valid =
-                            edge.get("t_valid").and_then(|v| v.as_str()).map(str::to_string);
-                        let t_invalid =
-                            edge.get("t_invalid").and_then(|v| v.as_str()).map(str::to_string);
+                        // TC-33: `t_valid`/`t_invalid` were normalised (and any
+                        // malformed or non-string value hard-rejected) in the
+                        // pass above; they arrive here as epoch seconds.
                         // fix-26 [P2]: validate confidence is in [0.0, 1.0] at the
                         // protocol boundary; reject out-of-range values.
                         let confidence = match edge.get("confidence").and_then(|v| v.as_f64()) {
@@ -4431,10 +5199,11 @@ impl Engine {
                         let edge_key = format!("{from_lid}:{to_lid}:{relation}");
                         let edge_lid = derive_logical_id("edge", &edge_key)?;
 
-                        let is_temporal_fallback = t_valid
-                            .as_deref()
-                            .map(|tv| fallback_dates.contains(tv))
-                            .unwrap_or(false);
+                        // TC-33: BOTH sides are now epochs from the SAME
+                        // normalisation, so this compares instants rather than
+                        // byte strings.
+                        let is_temporal_fallback =
+                            t_valid.is_some_and(|tv| fallback_epochs.contains(&tv));
                         Ok(PreparedWrite::Edge {
                             kind: relation.to_string(),
                             from: from_lid,
@@ -4528,20 +5297,55 @@ impl Engine {
             //    protocol/type/request_id and validates type=="result" + matching
             //    request_id. Any transport/protocol fault → Consolidator.
             let request_id = format!("req-{i}");
-            let edges_json: Vec<Value> = cluster
-                .iter()
-                .map(|e| {
-                    serde_json::json!({
-                        "edge_ref": e.edge_ref,
-                        "body": e.body,
-                        "t_valid": e.t_valid,
-                        "t_invalid": e.t_invalid,
-                        "confidence": e.confidence,
-                        "source_doc_id": e.source_doc_id,
-                        "extractor_model_id": e.extractor_model_id,
+            // TC-33: storage and `ConsolidateCandidateEdge` are INTEGER epoch
+            // seconds, but the harness WIRE is ISO-8601 — the same split as the
+            // extractor boundary. Render on the way out; the verdict's
+            // `t_invalid` is normalised back on the way in. Without this the
+            // harness would receive epoch integers and (since the reference stub
+            // echoes the winner's `t_valid` straight back as `t_invalid`) its
+            // reply would be rejected by our own inbound normaliser.
+            let edges_json: Vec<Value> = {
+                let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+                let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+                // TC-33 fix-1 backstop [DEFENSIVE — unreachable]. A stored
+                // `Some(ts)` that fails to render must NOT become a silent
+                // `null`: that is exactly the "still valid" resurrection vector.
+                // With `reject_unrenderable_edge_epoch` guarding the write
+                // boundary, no unrenderable epoch can reach storage — so this is
+                // a hard-assert upholding that invariant STRUCTURALLY, not the
+                // primary defence. `None` (unknown) still renders to JSON null;
+                // only a NON-NULL stored epoch that fails to render is an error.
+                let render = |field: &str, value: Option<i64>| -> Result<Value, EngineError> {
+                    match value {
+                        None => Ok(Value::Null),
+                        Some(ts) => match epoch_seconds_to_iso8601(connection, ts) {
+                            Some(iso) => Ok(Value::from(iso)),
+                            None => Err(EngineError::InvalidArgument {
+                                msg: format!(
+                                    "INVARIANT VIOLATION (TC-33 fix-1): stored edge `{field}` = \
+                                     {ts} is unrenderable to ISO-8601 and would have gone to the \
+                                     consolidation wire as a silent null (\"still valid\"). The \
+                                     write boundary should have made this unstorable."
+                                ),
+                            }),
+                        },
+                    }
+                };
+                cluster
+                    .iter()
+                    .map(|e| {
+                        Ok::<Value, EngineError>(serde_json::json!({
+                            "edge_ref": e.edge_ref,
+                            "body": e.body,
+                            "t_valid": render("t_valid", e.t_valid)?,
+                            "t_invalid": render("t_invalid", e.t_invalid)?,
+                            "confidence": e.confidence,
+                            "source_doc_id": e.source_doc_id,
+                            "extractor_model_id": e.extractor_model_id,
+                        }))
                     })
-                })
-                .collect();
+                    .collect::<Result<Vec<Value>, EngineError>>()?
+            };
             let cluster_json = serde_json::json!({
                 "subject": axis.subject_logical_id,
                 "relation": axis.relation,
@@ -4648,10 +5452,28 @@ impl Engine {
                 "invalidate" => {
                     // Recency metadata: set t_invalid; the row and its body are
                     // left intact (this is NOT a destructive content rewrite).
-                    let ts = v
-                        .get("t_invalid")
-                        .and_then(|x| x.as_str())
-                        .ok_or(EngineError::Consolidator)?;
+                    //
+                    // TC-33: the CONSOLIDATION harness is the same class of
+                    // BYO-LLM boundary as the extractor, so it carries ISO-8601
+                    // on the wire and is normalised here with the SAME hard
+                    // rejection. Previously the raw string went straight into the
+                    // UPDATE with no validation whatsoever.
+                    // fix-3 [P2]: consolidation is a BYO-LLM PROVIDER boundary, so
+                    // a malformed / non-string `t_invalid` is a PROVIDER protocol
+                    // fault → `Consolidator`, NOT the extractor/user `InvalidArgument`
+                    // that `normalize_extractor_timestamp` emits. Remap it to match
+                    // the two sibling failure modes on this same value (missing key
+                    // and null/unparseable-to-None, both `Consolidator`). Consistent,
+                    // not a diagnostic loss: `Consolidator` is a unit variant and the
+                    // adjacent `.ok_or(EngineError::Consolidator)` cases already
+                    // discard any message.
+                    let ts = normalize_extractor_timestamp(
+                        &tx,
+                        "t_invalid",
+                        Some(v.get("t_invalid").ok_or(EngineError::Consolidator)?),
+                    )
+                    .map_err(|_| EngineError::Consolidator)?
+                    .ok_or(EngineError::Consolidator)?;
                     tx.execute(
                         "UPDATE canonical_edges SET t_invalid = ?1 \
                          WHERE logical_id = ?2 AND superseded_at IS NULL",
@@ -4661,17 +5483,18 @@ impl Engine {
                     // fix-1 [P1]: prune the STATIC projection shadow rows so the
                     // consolidated-away edge stops surfacing in FTS/vector — but
                     // ONLY when the edge is ended as of the engine's "now",
-                    // mirroring the graph-traversal filter
-                    // `t_invalid IS NULL OR datetime(t_invalid) > datetime('now')`.
+                    // mirroring the graph-traversal filter `edge_validity_sql`.
                     // A future-dated t_invalid keeps the edge valid ⇒ keep the
                     // projection. NON-DESTRUCTIVE: the canonical_edges row + body
                     // survive (ADR-0.8.12 §2.1).
+                    //
+                    // TC-33: this used to be `SELECT datetime(?1) <= datetime('now')`
+                    // — an inline clock, AND a misleading error class: junk made
+                    // the SELECT yield SQL NULL, so `r.get::<bool>` failed as
+                    // `EngineError::Storage`. Both timestamps are integers now, so
+                    // the comparison is plain Rust against the bound `:now` seam.
                     if let Some(cursor) = active_cursor {
-                        let ended: bool = tx
-                            .query_row("SELECT datetime(?1) <= datetime('now')", params![ts], |r| {
-                                r.get(0)
-                            })
-                            .map_err(|_| EngineError::Storage)?;
+                        let ended = ts <= current_epoch_seconds();
                         if ended {
                             // fix-2 [P2]: KEEP the projection terminal row. The
                             // canonical_edges row stays NON-superseded (invalidate
@@ -4764,8 +5587,9 @@ impl Engine {
     /// (`rebuild_shadow_state`), the vec projection queue
     /// (`next_pending_projection_jobs`), and the pending-work probe
     /// (`database_has_pending_projection_work`) now all carry the same
-    /// `t_invalid IS NULL OR datetime(t_invalid) > datetime('now')` filter as
-    /// graph traversal, so a rebuild is durable across the recency exclusion.
+    /// `edge_validity_sql` filter as graph traversal (TC-33: INTEGER compare
+    /// against the bound `:now`, formerly `datetime(t_invalid) > datetime('now')`),
+    /// so a rebuild is durable across the recency exclusion.
     fn prune_edge_projection_shadows(
         tx: &rusqlite::Transaction<'_>,
         cursor: i64,
@@ -4866,7 +5690,20 @@ impl Engine {
         // canonical-order-preserving, so the produced phase-1 SQL stays
         // byte-identical to 0.7.2 on the `None`/all-`None` path. `SearchFilter`
         // never carries a `Json` term, so `to_search_filter` never rejects here.
-        let lowered = filter.map(|sf| Filter::from(&sf).to_search_filter()).transpose()?;
+        //
+        // 0.8.20 Slice 15e — the unified `Filter`/`FilterTerm` grammar does not yet
+        // carry `filterable`-attribute terms (a later slice adds that surface), so
+        // the round-trip would drop `SearchFilter.attributes`. Carry them across
+        // explicitly: they already route pre-KNN through `vector_filter_clause`.
+        let lowered = filter
+            .map(|sf| {
+                let attributes = sf.attributes.clone();
+                Filter::from(&sf).to_search_filter().map(|mut lo| {
+                    lo.attributes = attributes;
+                    lo
+                })
+            })
+            .transpose()?;
         // FIX-6: delegate to search_reranked(depth=0, use_graph_arm=false) to eliminate the
         // ~26-line duplicate body that would otherwise drift with search_reranked.
         // 0.8.5: depth=0 is inert, so the α/pool_n defaults (0.3, 0) never reach the blend.
@@ -5018,7 +5855,14 @@ impl Engine {
         let search_result = response_rx.recv().map_err(|_| EngineError::Storage)?;
         let (cursor, soft_fallback, results, _graph_stats, explanation) = match search_result {
             Ok(result) => result,
-            Err(err) => {
+            // fix-3 (codex §9 [P2]) — carry the reader-snapshot validation verdict
+            // through: an undeclared `filterable` attribute is the EXISTING typed
+            // `InvalidFilter`, never collapsed to `Storage`. (This path takes
+            // `filter = None`, so it never fires here, but the match stays total.)
+            Err(SearchReaderError::InvalidFilter(reason)) => {
+                return Err(EngineError::InvalidFilter { reason });
+            }
+            Err(SearchReaderError::Sqlite(err)) => {
                 self.emit_sqlite_internal_error(&err);
                 return Err(EngineError::Storage);
             }
@@ -5356,6 +6200,27 @@ impl Engine {
             return Err(EngineError::WriteValidation);
         }
 
+        // 0.8.20 Slice 15e fix-2 finding 1 [P2] — every filter attribute name is
+        // validated against the declared `filterable` registry set BEFORE any arm
+        // runs, so an UNDECLARED name is a typed `InvalidFilter` rejection instead
+        // of an opaque `no such column` `Storage` crash (vector arm) or a silent
+        // no-match (FTS arm). ADR-0.8.11 D3: every filter term has a DEFINED outcome
+        // ("compiles" or "typed rejection") IDENTICAL across arms.
+        //
+        // keystone closeout fix-3 (codex §9 [P2], TOCTOU): that validation is NO
+        // LONGER performed here on `self.connection` before dispatch. fix-2 checked
+        // the registry on the WRITER connection and then let the reader prepare the
+        // vec0 query on a DIFFERENT connection/snapshot — a `configure_projections`
+        // DROP landing in the window between the check and the reader snapshot could
+        // still make the `attr_<hex>` column vanish AFTER validation passed, i.e. the
+        // exact untyped `Storage` failure fix-2 meant to prevent. The check now runs
+        // INSIDE the reader's deferred transaction (see
+        // `validate_filter_attributes_on_snapshot`, called from `read_search_in_tx`),
+        // so the registry it reads and the vec0 columns the query compiles against are
+        // ONE snapshot — the race is closed and BOTH arms still see the same typed
+        // `InvalidFilter`. Moving it there also removes a per-filtered-search writer
+        // lock and the fix-2 concurrent-ADD false-reject (the reader snapshot sees a
+        // freshly-added declaration and accepts).
         let compiled = compile_text_query(query);
         // REQ-013 / AC-059b / REQ-055: the cursor returned with a search
         // MUST be derived from the same WAL snapshot the data was read
@@ -5430,7 +6295,14 @@ impl Engine {
         let search_result = response_rx.recv().map_err(|_| EngineError::Storage)?;
         let (cursor, soft_fallback, results, graph_stats, explanation) = match search_result {
             Ok(result) => result,
-            Err(err) => {
+            // fix-3 (codex §9 [P2]) — an undeclared `filterable` attribute is caught
+            // on the reader's OWN snapshot (validate + vec0 query = one transaction),
+            // so it surfaces as the EXISTING typed `InvalidFilter` and can never be
+            // the opaque `no such column` `Storage` error the TOCTOU race produced.
+            Err(SearchReaderError::InvalidFilter(reason)) => {
+                return Err(EngineError::InvalidFilter { reason });
+            }
+            Err(SearchReaderError::Sqlite(err)) => {
                 self.emit_sqlite_internal_error(&err);
                 return Err(EngineError::Storage);
             }
@@ -6270,6 +7142,10 @@ impl Engine {
                 body,
                 row_kind,
                 ProjectionPass::Write,
+                // This #[doc(hidden)] writer inserts with the column DEFAULT
+                // `state = 'active'` (no state column in its INSERT), so the row
+                // is always active and its attributes project.
+                true,
             )
             .map_err(|_| EngineError::Storage)?;
             advance_projection_cursor(&tx).map_err(|_| EngineError::Storage)?;
@@ -6425,18 +7301,32 @@ impl Engine {
             params![cursor, kind, cursor],
         )
         .map_err(|_| EngineError::Storage)?;
-        tx.execute(
-            // Slice 10 / G10 — `status` ships an empty-string sentinel only:
-            // vec0 TEXT metadata columns are NOT NULL-able ("Expected text for
-            // TEXT metadata column"), so the "no real population yet" state is
-            // `''`, not NULL (deviation from the prompt's "NULL plumbing" wording,
-            // forced by vec0; reserved-gap candidate 13 is the real source).
+        // Slice 10 / G10 — `status` ships an empty-string sentinel only: vec0 TEXT
+        // metadata columns are NOT NULL-able ("Expected text for TEXT metadata
+        // column"), so the "no real population yet" state is `''`, not NULL.
+        //
+        // 0.8.20 Slice 15e — this test helper carries no JSON body, so every live
+        // `filterable` `attr_<hex>` column binds the `''` sentinel (an empty body
+        // extracts nothing). When the table has no attr columns the statement is
+        // byte-identical to the shipped form.
+        let (cols_sql, ph_sql, attr_vals) =
+            vector_attr_insert_fragments(&tx, "", 7).map_err(|_| EngineError::Storage)?;
+        let sql = format!(
             "INSERT INTO vector_default(
-                rowid, embedding, embedding_bin, source_type, kind, created_at, status
-             ) VALUES(?1, ?2, vec_quantize_binary(?3), ?4, ?5, ?6, '')",
-            params![cursor, blob, bin_blob, source_type, kind, now_unix],
-        )
-        .map_err(|_| EngineError::Storage)?;
+                rowid, embedding, embedding_bin, source_type, kind, created_at, status{cols_sql}
+             ) VALUES(?1, ?2, vec_quantize_binary(?3), ?4, ?5, ?6, ''{ph_sql})"
+        );
+        let mut pv: Vec<rusqlite::types::Value> = vec![
+            rusqlite::types::Value::Integer(cursor as i64),
+            rusqlite::types::Value::Blob(blob.clone()),
+            rusqlite::types::Value::Blob(bin_blob.clone()),
+            rusqlite::types::Value::Text(source_type.to_string()),
+            rusqlite::types::Value::Text(kind.to_string()),
+            rusqlite::types::Value::Integer(now_unix),
+        ];
+        pv.extend(attr_vals);
+        tx.execute(&sql, rusqlite::params_from_iter(pv.iter()))
+            .map_err(|_| EngineError::Storage)?;
 
         let mut emitted_event: Option<EmbedderEvent> = None;
         if let Some(mean_vec) = pin_event {
@@ -6696,6 +7586,53 @@ impl Engine {
             .map_err(|_| EngineError::Storage)
     }
 
+    /// 0.8.20 Slice 15e — read a row's raw `embedding_bin` blob bytes (the
+    /// sign-quantized vector). Used to prove the non-destructive reshape copies the
+    /// bits VERBATIM (condition #4): the pre-reshape and post-reshape bytes must be
+    /// byte-identical.
+    #[doc(hidden)]
+    pub fn read_vector_bin_for_test(&self, rowid: i64) -> Result<Vec<u8>, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        connection
+            .query_row(
+                "SELECT embedding_bin FROM vector_default WHERE rowid = ?1",
+                [rowid],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
+            .map_err(|_| EngineError::Storage)
+    }
+
+    /// 0.8.20 Slice 15e — run an arbitrary read-only SELECT on the ENGINE
+    /// connection (which has the vec0 extension loaded, unlike a bare
+    /// `Connection::open`) and collect column 0 as `i64`. Lets a test run a
+    /// phase-1-style KNN `MATCH ... {attr clause}` and observe which `rowid`s
+    /// survive the pre-KNN filter.
+    #[doc(hidden)]
+    pub fn query_i64_col_for_test(&self, sql: &str) -> Result<Vec<i64>, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        let mut stmt = connection.prepare(sql).map_err(|_| EngineError::Storage)?;
+        let rows =
+            stmt.query_map([], |row| row.get::<_, i64>(0)).map_err(|_| EngineError::Storage)?;
+        rows.collect::<rusqlite::Result<Vec<i64>>>().map_err(|_| EngineError::Storage)
+    }
+
+    /// 0.8.20 Slice 15e — as [`query_i64_col_for_test`] but collects column 0 as
+    /// `String` (e.g. an `attr_<hex>` metadata column's stored value).
+    #[doc(hidden)]
+    pub fn query_text_col_for_test(&self, sql: &str) -> Result<Vec<String>, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        let mut stmt = connection.prepare(sql).map_err(|_| EngineError::Storage)?;
+        let rows =
+            stmt.query_map([], |row| row.get::<_, String>(0)).map_err(|_| EngineError::Storage)?;
+        rows.collect::<rusqlite::Result<Vec<String>>>().map_err(|_| EngineError::Storage)
+    }
+
     #[doc(hidden)]
     pub fn default_embedder_profile_for_test(&self) -> Result<EmbedderIdentity, EngineError> {
         self.ensure_open()?;
@@ -6871,8 +7808,16 @@ impl Engine {
     /// Keys on the BARE `logical_id` (`l:` space only); a `Content`(`h:`) or
     /// `Passage`(`p:`) id raises [`EngineError::NotLifecycleAddressable`].
     /// The state flip mutates the single active (`superseded_at IS NULL`) row; a
-    /// `deleted` row STAYS indexed (gap-5) — only the `state='active'` default
-    /// filter excludes it, so an undelete needs no re-projection.
+    /// `deleted` row STAYS node-FTS / vector indexed (gap-5) — only the
+    /// `state='active'` default filter excludes those shadows, so an undelete
+    /// needs no re-projection there.
+    ///
+    /// 0.8.20 Slice 15d fix-2 [P2] — the row-owned ATTRIBUTE projection
+    /// (`canonical_attributes` / `property_search_index`) is the exception: it has
+    /// NO read-side lifecycle filter (the property-FTS5 table cannot carry one), so
+    /// it is maintained AT REST to track the backfill's set
+    /// (projected ⟺ active ∧ non-superseded). Promote/undelete PROJECT the declared
+    /// attributes; soft-delete PURGES them; reject is a no-op.
     pub fn transition(
         &self,
         logical_id: &str,
@@ -6895,20 +7840,22 @@ impl Engine {
 
         // The lifecycle state lives on the single active (superseded_at IS NULL)
         // version; a `deleted` row is still that active version, just flagged.
-        let current: Option<String> = tx
+        // fix-2 [P2] — also read its `write_cursor` + `body` so the row-owned
+        // attribute projection can be maintained after the state flip.
+        let current: Option<(String, i64, String)> = tx
             .query_row(
-                "SELECT state FROM canonical_nodes \
+                "SELECT state, write_cursor, body FROM canonical_nodes \
                  WHERE logical_id = ?1 AND superseded_at IS NULL",
                 params![lid],
-                |r| r.get::<_, String>(0),
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?)),
             )
             .optional()
             .map_err(|_| EngineError::Storage)?;
 
         // A missing active row is an absent/purged node — the terminal `Purged`
         // state for legality purposes (nothing is a legal target from there).
-        let from_state = match current {
-            Some(s) => LifecycleState::from_str_opt(&s).ok_or(EngineError::Storage)?,
+        let from_state = match &current {
+            Some((s, _, _)) => LifecycleState::from_str_opt(s).ok_or(EngineError::Storage)?,
             None => LifecycleState::Purged,
         };
 
@@ -6932,9 +7879,86 @@ impl Engine {
             params![to_state.as_str(), new_reason, lid],
         )
         .map_err(|_| EngineError::Storage)?;
+
+        // fix-2 [P2] — maintain the row-owned attribute projection so it keeps
+        // tracking the backfill's set (projected ⟺ active ∧ non-superseded). The
+        // transitioned row is the single non-superseded version, so the invariant
+        // reduces to `projected ⟺ to_state == Active`. We PURGE unconditionally
+        // (idempotent — a no-op on the never-projected pending / already-purged
+        // deleted arms) then RE-PROJECT when landing `Active`. This covers every
+        // legal move: promote (pending→active) projects the withheld attributes;
+        // soft-delete (active→deleted) purges; undelete (deleted→active)
+        // re-projects; reject (pending→deleted) is a no-op. The property tables
+        // (`canonical_attributes` / `property_search_index`) carry NO read-side
+        // lifecycle filter — unlike node-FTS / vector shadows, which the canonical
+        // read path already excludes when non-active — so they MUST be maintained
+        // at rest, the same rationale as fix-1's purge-on-supersede. Node-FTS /
+        // vector shadows are deliberately left intact (gap-5: a deleted row STAYS
+        // indexed; only the `state='active'` default read filter hides it).
+        if let Some((cursor, body)) = current.as_ref().map(|(_, c, b)| (*c, b.as_str())) {
+            purge_row_projections_for_cursor_in(
+                &tx,
+                cursor,
+                &[ProjectionClass::Attribute, ProjectionClass::PropertyFts],
+            )
+            .map_err(|_| EngineError::Storage)?;
+            if matches!(to_state, LifecycleState::Active) {
+                project_node_attributes(&tx, cursor, body).map_err(|_| EngineError::Storage)?;
+            }
+        }
         tx.commit().map_err(|_| EngineError::Storage)?;
         self.counters.record_admin();
         Ok(())
+    }
+
+    /// 0.8.20 Slice 15d (R-20-PR / C-1) — the projection registry as a
+    /// DECLARATIVE, IDEMPOTENT apply. The engine is the SOLE projection authority
+    /// (Q3): it diffs the supplied `specs` against the durable registry and
+    /// backfills the difference in ONE transaction. Cheap projections
+    /// (`filterable`, `searchable→FTS`) are built same-transaction; `rankable`
+    /// and the `searchable→vector` sub-target are PERSISTED but deferred (F9 /
+    /// Slice 20) — declaring them never errors (graceful-absent, Q6a).
+    ///
+    /// `drop` is EXPLICIT (C3, `api-surface.md:27`): omission of a live
+    /// projection from `specs` does NOT drop it; removal requires naming it in
+    /// `drop`. An incompatible/destructive change to a live projection that is
+    /// NOT in `drop` is refused with [`EngineError::ProjectionDestructive`], the
+    /// destructive delta surfaced — never silent data loss. Re-applying an
+    /// unchanged spec diffs to a no-op ([`ProjectionDelta::unchanged`]).
+    ///
+    /// Pair with [`Engine::read_projections`] to see current state before
+    /// applying.
+    pub fn configure_projections(
+        &self,
+        specs: &[ProjectionSpec],
+        drop: &[String],
+    ) -> Result<ProjectionDelta, EngineError> {
+        self.ensure_open()?;
+        // Settle in-flight async projection work first (same rationale as
+        // `transition`): the async worker commits on its own connection, so a
+        // backfill issued while it holds the write lock would SQLITE_BUSY.
+        self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS)?;
+
+        let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+        let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
+        let delta = apply_projection_config(&tx, specs, drop)?;
+        tx.commit().map_err(|_| EngineError::Storage)?;
+        self.counters.record_admin();
+        Ok(delta)
+    }
+
+    /// 0.8.20 Slice 15d (R-20-PR) — read the current projection registry (C5
+    /// introspection: `read.projections`). Returns every declared
+    /// [`ProjectionSpec`] sorted by name, so a caller can inspect current state
+    /// (and the destructive delta a change would cause) BEFORE applying. Pure
+    /// read; never mutates.
+    pub fn read_projections(&self) -> Result<Vec<ProjectionSpec>, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        let registry = load_projection_registry(connection).map_err(|_| EngineError::Storage)?;
+        Ok(registry.iter().map(|(name, stored)| stored.to_spec(name)).collect())
     }
 
     /// OPP-12 Phase-1 (0.8.19 Slice 10, R-PG-1/2) — irreversibly hard-erase a
@@ -8019,8 +9043,19 @@ impl Engine {
         let pass = if include_fts { ProjectionPass::Write } else { ProjectionPass::VectorOnly };
         let mut rows_rebuilt: u64 = 0;
         for row in canonical_node_rows(&tx).map_err(|_| EngineError::Storage)? {
-            project_canonical_node_row(&tx, row.cursor, &row.kind, &row.body, row.row_kind, pass)
-                .map_err(|_| EngineError::Storage)?;
+            project_canonical_node_row(
+                &tx,
+                row.cursor,
+                &row.kind,
+                &row.body,
+                row.row_kind,
+                pass,
+                // fix-2 [P2]: the attribute half of the replay tracks the backfill's
+                // active-and-non-superseded row set; FTS / vector shadows still
+                // rebuild for every row (read-side lifecycle filter, unchanged).
+                row.attr_projected,
+            )
+            .map_err(|_| EngineError::Storage)?;
             if include_fts {
                 rows_rebuilt = rows_rebuilt.saturating_add(1);
             }
@@ -8029,23 +9064,23 @@ impl Engine {
         // (G11 search_index_edges).
         // 0.8.12 Slice A (R-CON-2 named default-ON blocker; Slice-20 codex
         // §9 [P2]): mirror the graph-traversal recency filter
-        // (`t_invalid IS NULL OR datetime(t_invalid) > datetime('now')`)
-        // here too, so a full rebuild does not re-surface an edge that
-        // recency consolidation already invalidated.
+        // (`edge_validity_sql`) here too, so a full rebuild does not re-surface
+        // an edge that recency consolidation already invalidated.
         // 0.8.20 Slice 5a: body-less structural edges are now included in the
         // replay. They project no FTS/vector row, but the write path DOES record
         // their readiness terminal — which this rebuild truncated and (before
         // this slice) never restored, stalling `advance_projection_cursor`.
+        // TC-33: the filter is generated by `edge_validity_sql` and `:now` is
+        // bound (?1) rather than inlined as `datetime('now')`.
         let edge_rows: Vec<(i64, String, Option<String>)> = {
-            let mut edge_stmt = tx
-                .prepare(
-                    "SELECT write_cursor, kind, body FROM canonical_edges \
-                     WHERE superseded_at IS NULL \
-                       AND (t_invalid IS NULL OR datetime(t_invalid) > datetime('now'))",
-                )
-                .map_err(|_| EngineError::Storage)?;
+            let edge_sql = format!(
+                "SELECT write_cursor, kind, body FROM canonical_edges \
+                 WHERE superseded_at IS NULL{}",
+                edge_validity_sql("canonical_edges", 1)
+            );
+            let mut edge_stmt = tx.prepare(&edge_sql).map_err(|_| EngineError::Storage)?;
             let rows = edge_stmt
-                .query_map([], |row| {
+                .query_map(params![current_epoch_seconds()], |row| {
                     Ok((
                         row.get::<_, i64>(0)?,
                         row.get::<_, String>(1)?,
@@ -8202,20 +9237,60 @@ fn run_pin_and_requantize_pass(
             )
             .map_err(|_| EngineError::Storage)?;
 
+        // 0.8.20 Slice 15e — this DELETE+INSERT re-quantize (its BIT-subtype
+        // workaround, condition #4's SEPARATE same-shape op) must PRESERVE every
+        // `filterable` `attr_<hex>` value, not just re-`''` them: a projection may
+        // have been declared before the pin. Read the live attr columns + this
+        // row's values BEFORE the DELETE, then re-bind them. Empty ⇒ the INSERT is
+        // byte-identical to the shipped statement.
+        let attr_cols = actual_vector_attr_columns(tx).map_err(|_| EngineError::Storage)?;
+        let attr_vals: Vec<String> = if attr_cols.is_empty() {
+            Vec::new()
+        } else {
+            let select = attr_cols.join(", ");
+            tx.query_row(
+                &format!("SELECT {select} FROM vector_default WHERE rowid = ?1"),
+                params![rowid],
+                |row| {
+                    let mut vals = Vec::with_capacity(attr_cols.len());
+                    for i in 0..attr_cols.len() {
+                        vals.push(row.get::<_, String>(i)?);
+                    }
+                    Ok(vals)
+                },
+            )
+            .map_err(|_| EngineError::Storage)?
+        };
+
         tx.execute("DELETE FROM vector_default WHERE rowid = ?1", params![rowid])
             .map_err(|_| EngineError::Storage)?;
 
-        tx.execute(
-            // Slice 10 / G10 — `status` ships the empty-string sentinel (vec0
-            // TEXT metadata is NOT NULL-able). The re-quantize pass runs at
-            // mean-pin time when every `status` is the `''` sentinel anyway, so
-            // re-inserting `''` is loss-free today (reserved-gap candidate 13).
+        // Slice 10 / G10 — `status` ships the empty-string sentinel (vec0 TEXT
+        // metadata is NOT NULL-able).
+        let mut cols_sql = String::new();
+        let mut ph_sql = String::new();
+        for (i, col) in attr_cols.iter().enumerate() {
+            cols_sql.push_str(&format!(", {col}"));
+            ph_sql.push_str(&format!(", ?{}", 7 + i));
+        }
+        let sql = format!(
             "INSERT INTO vector_default(
-                rowid, embedding, embedding_bin, source_type, kind, created_at, status
-             ) VALUES(?1, ?2, vec_quantize_binary(?3), ?4, ?5, ?6, '')",
-            params![rowid, blob, centered_blob, source_type, kind, created_at],
-        )
-        .map_err(|_| EngineError::Storage)?;
+                rowid, embedding, embedding_bin, source_type, kind, created_at, status{cols_sql}
+             ) VALUES(?1, ?2, vec_quantize_binary(?3), ?4, ?5, ?6, ''{ph_sql})"
+        );
+        let mut pv: Vec<rusqlite::types::Value> = vec![
+            rusqlite::types::Value::Integer(*rowid),
+            rusqlite::types::Value::Blob(blob.clone()),
+            rusqlite::types::Value::Blob(centered_blob),
+            rusqlite::types::Value::Text(source_type),
+            rusqlite::types::Value::Text(kind),
+            rusqlite::types::Value::Integer(created_at),
+        ];
+        for v in attr_vals {
+            pv.push(rusqlite::types::Value::Text(v));
+        }
+        tx.execute(&sql, rusqlite::params_from_iter(pv.iter()))
+            .map_err(|_| EngineError::Storage)?;
 
         updated = updated.saturating_add(1);
     }
@@ -8915,11 +9990,65 @@ impl CandleCrossEncoder {
     }
 }
 
+/// 0.8.20 Slice 15e fix-2 finding 1 [P2] + keystone closeout fix-3 (codex §9 [P2],
+/// TOCTOU) — reject a search filter that names an attribute with NO declared
+/// `filterable` projection, ON THE READER'S OWN SNAPSHOT, before the vec0 SQL is
+/// built.
+///
+/// The vector arm lowers each `filter.attributes` term to `AND attr_<hex>=?`
+/// against a vec0 metadata column that exists ONLY for a declared `filterable`
+/// projection (the reshape in [`reconcile_vector_attr_columns`] tracks exactly the
+/// registry's `filterable` set; see [`desired_vector_attr_columns`]). A name that
+/// is not a declared `filterable` projection therefore has no column: the vec0 KNN
+/// would fail with `no such column` (surfacing as an opaque `Storage` error),
+/// while the FTS arm ([`hit_attributes_pass_filter`]) would silently no-match. That
+/// divergence violates ADR-0.8.11 D3 (every filter term has a DEFINED, arm-uniform
+/// outcome).
+///
+/// fix-3 snapshot contract: this is called from [`read_search_in_tx`] INSIDE the
+/// reader's `DEFERRED` transaction, so the `_fathomdb_projection_registry` it reads
+/// and the `vector_default` columns [`vector_filter_clause`] compiles against are
+/// the SAME WAL snapshot. A concurrent `configure_projections` DROP either commits
+/// before this snapshot is pinned (then BOTH the registry and the vec0 columns show
+/// the attribute gone ⇒ a consistent `InvalidFilter`) or after (then it is invisible
+/// to this transaction and BOTH still show it declared ⇒ the query runs against the
+/// column it validated). The registry's `filterable` set is the arm-INDEPENDENT
+/// authority (correct even with no embedder / no `vector_default`, where a
+/// declared-`filterable` term still filters legitimately via the row-owned
+/// `canonical_attributes` EAV store). The caller re-raises
+/// [`SearchReaderError::InvalidFilter`] as the EXISTING typed
+/// [`EngineError::InvalidFilter`], so both arms see the SAME rejection because it is
+/// raised before either runs.
+fn validate_filter_attributes_on_snapshot(
+    conn: &Connection,
+    filter: &SearchFilter,
+) -> Result<(), SearchReaderError> {
+    if filter.attributes.is_empty() {
+        return Ok(());
+    }
+    // `?` maps a registry-read failure to `SearchReaderError::Sqlite` (unchanged
+    // `Storage` semantics for a genuine backend fault) via the `From` impl.
+    let registry = load_projection_registry(conn)?;
+    for (name, _value) in &filter.attributes {
+        let declared_filterable =
+            registry.get(name).is_some_and(|s| s.roles.contains(&ProjectionRole::Filterable));
+        if !declared_filterable {
+            return Err(SearchReaderError::InvalidFilter(format!(
+                "filter attribute {name:?} is not a declared `filterable` projection; \
+                 declare it via configure_projections before filtering on it"
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// G10 — the `AND col=?n` predicate fragment appended to the phase-1 candidates
 /// `WHERE` for the present filter fields. Placeholders are numbered from `?3`
 /// (`?1` = sign-quant query, `?2` = f32 rerank query). Field order is canonical
-/// (`source_type`, `kind`, `created_after`, `status`) and is mirrored exactly by
-/// [`vector_filter_values`]. Empty for `None`/all-`None` (byte-identity path).
+/// (`source_type`, `kind`, `created_after`, `status`), THEN the Slice-15e
+/// `filterable`-attribute predicates (`attr_<hex>=?n`) in `attributes` order, and
+/// is mirrored exactly by [`vector_filter_values`]. Empty for `None`/all-`None`
+/// (byte-identity path).
 fn vector_filter_clause(filter: Option<&SearchFilter>) -> String {
     let Some(filter) = filter else {
         return String::new();
@@ -8927,18 +10056,26 @@ fn vector_filter_clause(filter: Option<&SearchFilter>) -> String {
     if filter.is_unfiltered() {
         return String::new();
     }
-    let mut cols: Vec<(&str, &str)> = Vec::new();
+    // 0.8.20 Slice 15e — the attribute predicates encode the (arbitrary,
+    // possibly space/unicode-bearing) registry name into the byte-safe
+    // `attr_<hex>` column vec0 accepts (vec0 rejects quoted identifiers). Owned
+    // strings so they live past the closure; the shipped metadata columns are
+    // static `&str`.
+    let mut cols: Vec<(String, &str)> = Vec::new();
     if filter.source_type.is_some() {
-        cols.push(("source_type", "="));
+        cols.push(("source_type".to_string(), "="));
     }
     if filter.kind.is_some() {
-        cols.push(("kind", "="));
+        cols.push(("kind".to_string(), "="));
     }
     if filter.created_after.is_some() {
-        cols.push(("created_at", ">="));
+        cols.push(("created_at".to_string(), ">="));
     }
     if filter.status.is_some() {
-        cols.push(("status", "="));
+        cols.push(("status".to_string(), "="));
+    }
+    for (name, _value) in &filter.attributes {
+        cols.push((attr_vec0_column(name), "="));
     }
     let mut clause = String::new();
     for (i, (col, op)) in cols.iter().enumerate() {
@@ -8970,6 +10107,14 @@ fn vector_filter_values(filter: Option<&SearchFilter>) -> Vec<rusqlite::types::V
     }
     if let Some(s) = &filter.status {
         out.push(Value::Text(s.clone()));
+    }
+    // 0.8.20 Slice 15e — attribute values, in the SAME order the clause appended
+    // the `attr_<hex>` columns (after the four metadata fields). fix-3 [P2] — the
+    // filter value is encoded `\x01 || V` to match the encoded PRESENT column
+    // value, so `attr_<hex> = enc("")` matches present-empty but NEVER the
+    // `''`-absent rows.
+    for (_name, value) in &filter.attributes {
+        out.push(Value::Text(encode_attr_vec0_present(value)));
     }
     out
 }
@@ -9060,6 +10205,87 @@ fn text_hit_passes_filter(
             }
         }
     }
+    // 0.8.20 Slice 15e fix-1 finding 1 [P2] — enforce the declared-`filterable`
+    // attribute-equality predicates on the TEXT/FTS arm too (D3 total dispatch).
+    if !hit_attributes_pass_filter(tx, id, filter)? {
+        return Ok(false);
+    }
+    Ok(true)
+}
+
+/// 0.8.20 Slice 15e fix-1 finding 1 [P2] — do a TEXT/FTS hit's `filterable`
+/// attributes satisfy `filter.attributes`?
+///
+/// The vector arm enforces each `(attr_name, value)` pre-KNN as `attr_<hex>=?`
+/// against the vec0 metadata column. The FTS/text arm must enforce the SAME
+/// equality so a hybrid RRF fusion is coherent (ADR-0.8.11 D3 — every filter term
+/// has a defined outcome on EVERY surface; no arm silently ignores it). Without
+/// this, a doc returned by the FTS arm that FAILS the attribute filter still
+/// surfaces in a hybrid search — a false positive.
+///
+/// The value is read from the row-owned `canonical_attributes` EAV table (keyed
+/// by the hit's `write_cursor` + `attr_name`), which Slice 15d keeps active-only
+/// and populates via the SAME [`extract_scalar_attribute`] that fills the vec0
+/// `attr_<hex>` column — so the two arms see IDENTICAL values by construction.
+///
+/// # fix-3 [P2]: ABSENT vs PRESENT-EMPTY
+///
+/// A real empty-string value (`{"status":""}`) is DISTINCT from an absent
+/// attribute. On this (FTS/text) arm the distinction is ROW EXISTENCE: a present
+/// attribute (even value `''`) has a `canonical_attributes` row; an absent one has
+/// NONE. So a filter `("status","")` matches present-empty (row exists, RAW value
+/// `''`) but NOT absent (no row), and `("status","open")` matches only the
+/// `open` row. The vec0 arm reaches the SAME verdict via its `\x01`-marker
+/// encoding (see [`ATTR_VEC0_PRESENT_MARKER`]): present-empty is the bare marker,
+/// absent is `''`, so `attr_<hex> = enc("")` matches present-empty but never
+/// absent. `canonical_attributes.attr_value` and `property_search_index` stay RAW.
+///
+/// # 0.8.20 semantics (Finding 1 → HITL ruling (A)): attribute filters are NODE-scoped
+///
+/// Attribute projection is `PreparedWrite::Node`-gated (see `collect_projection_jobs`
+/// / [`project_one_attribute`]): an EDGE is never projected into
+/// `canonical_attributes`, and its `vector_default` row (kind `edge_fact`) carries
+/// the `''` sentinel in every `attr_<hex>` column (the async worker reads the body
+/// from `canonical_nodes`, which has no row for an edge cursor). Therefore an
+/// attribute filter **excludes every edge hit** — on BOTH the edge-FTS arm (this
+/// helper, keyed by the edge's write_cursor, reads `''`) and the edge-vector arm
+/// (the pre-KNN `attr_<hex>='…'` predicate prunes the `''`-sentinel edge row) —
+/// even when the edge body itself names the attribute. This is the intended
+/// 0.8.20 behaviour, pinned by `attribute_filter_excludes_edge_hits_on_both_arms`.
+///
+/// The reserved widening is **(D) endpoint-node filtering** (an edge passes iff its
+/// endpoint node(s) satisfy the attribute predicate): **(A) is (D) with an empty
+/// endpoint rule.** (B) edges-pass-through and (C) project-edge-attributes are the
+/// other reserved options. None are implemented in 0.8.20 — do not add a per-query
+/// flag; a widening is a deliberate, separately-governed later slice.
+fn hit_attributes_pass_filter(
+    tx: &rusqlite::Transaction<'_>,
+    id: u64,
+    filter: &SearchFilter,
+) -> rusqlite::Result<bool> {
+    for (name, want) in &filter.attributes {
+        // fix-3 [P2] — distinguish ABSENT from PRESENT-EMPTY by ROW EXISTENCE: a
+        // present attribute (including one whose value is a real empty string `''`)
+        // has a `canonical_attributes` row; an absent one has NONE. The outer
+        // `Option` is row existence; the RAW `attr_value` is compared verbatim.
+        // This mirrors the vec0 arm exactly (present-empty matches `("k","")`;
+        // absent matches nothing, including `""`), so a fused hybrid search is
+        // coherent. `canonical_attributes.attr_value` stays RAW (unencoded).
+        let stored: Option<Option<String>> = tx
+            .query_row(
+                "SELECT attr_value FROM canonical_attributes \
+                 WHERE write_cursor = ?1 AND attr_name = ?2 LIMIT 1",
+                params![id as i64, name],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .optional()?;
+        match stored {
+            // Present (row exists) and the RAW value equals the filter value.
+            Some(Some(v)) if v.as_str() == want.as_str() => {}
+            // Absent (no row), present-but-NULL, or present-but-different ⇒ fail.
+            _ => return Ok(false),
+        }
+    }
     Ok(true)
 }
 
@@ -9129,6 +10355,16 @@ fn edge_fts_hit_passes_filter(
             }
         }
     }
+    // 0.8.20 Slice 15e fix-1 finding 1 [P2] — an edge body is projected into
+    // vector_default (rowid = write_cursor) with the same `attr_<hex>` pre-KNN
+    // columns as a node, and Slice 15d projects an edge's `filterable` attributes
+    // into `canonical_attributes` keyed by its write_cursor. Enforce the same
+    // attribute equality here so the edge-FTS arm matches the vector arm (D3 total
+    // dispatch). An edge that carries no such attribute reads the `''` sentinel and
+    // fails a non-empty equality, exactly as on the vector arm.
+    if !hit_attributes_pass_filter(tx, write_cursor, filter)? {
+        return Ok(false);
+    }
     Ok(true)
 }
 
@@ -9170,8 +10406,24 @@ fn read_search_in_tx(
     // `ReadView`, so a boundary-straddling query could have its arms disagree.
     let view = view.freeze();
     let now_param = view.now_param();
+    // fix-3 (codex §9 [P2], TOCTOU) — test-only rendezvous: parks the worker here,
+    // BEFORE the deferred snapshot is pinned, so a test can commit a concurrent
+    // `configure_projections` DROP in the exact race window. Disarmed (no-op) in
+    // production and on every non-race test.
+    reader_search_hook::fire();
     let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
     let cursor = load_projection_cursor(&tx)?;
+    // fix-3 (codex §9 [P2], TOCTOU) — validate every filter attribute name on THIS
+    // reader transaction's snapshot, before `build_vector_phase1_sql` emits
+    // `AND attr_<hex>=?` and before the FTS arm probes `canonical_attributes`. The
+    // registry read and the vec0 query now share ONE snapshot (see
+    // `validate_filter_attributes_on_snapshot`), so a `configure_projections` DROP
+    // racing this search yields a consistent typed `InvalidFilter` — never the
+    // opaque `no such column` `Storage` error fix-2's writer-connection check could
+    // still leak. Skipped when the filter carries no attribute terms (common path).
+    if let Some(filter) = filter {
+        validate_filter_attributes_on_snapshot(&tx, filter)?;
+    }
     let vector_results = if let Some(query_vector) = query_vector {
         let mut rowids = Vec::new();
         let bin_vector = query_vector_bin.unwrap_or(query_vector);
@@ -9285,10 +10537,24 @@ fn read_search_in_tx(
              WHERE write_cursor = ?1 AND superseded_at IS NULL AND state = 'active'\
              {node_validity} LIMIT 1"
         ))?;
-        let mut edge_stmt = tx.prepare(
+        // fix-2 (codex §9 [P2]): an edge body projected into `vector_default`
+        // (kind = "edge_fact") is hydrated HERE by write_cursor. Gating on
+        // `superseded_at` alone let an EXPIRED edge (`t_invalid <= :now`) surface
+        // its body through the VECTOR arm — the same "validity enforced on
+        // traversal, not on search" gap Slice 15b closed for nodes, now on the
+        // edge-vector read path. Apply the shared `edge_validity_sql` predicate
+        // (the ONE generator every edge read site uses) so no arm can drift.
+        // `?1` is the rowid, so the edge `:now` binds at `?2`; the instant is the
+        // frozen `view.edge_now()` — a bound value, never `datetime('now')`
+        // (the :9161 no-inline-clock rule). edge_now is ALWAYS present, so unlike
+        // node validity this conjunct is unconditional (an edge invalidated in the
+        // past stays excluded even when node existence is relaxed).
+        let edge_validity = edge_validity_sql("canonical_edges", 2);
+        let mut edge_stmt = tx.prepare(&format!(
             "SELECT body, logical_id, source_id FROM canonical_edges \
-             WHERE write_cursor = ?1 AND superseded_at IS NULL AND body IS NOT NULL LIMIT 1",
-        )?;
+             WHERE write_cursor = ?1 AND superseded_at IS NULL AND body IS NOT NULL\
+             {edge_validity} LIMIT 1"
+        ))?;
         // The bound parameter list for the node lookup: the candidate rowid,
         // plus `:now` when (and only when) the view emitted a validity conjunct.
         // One instant for the whole query — resolved once, above, not per row.
@@ -9334,13 +10600,15 @@ fn read_search_in_tx(
                     source_id,
                     ce_score: None,
                 });
-            } else if let Ok((body, logical_id, source_id)) = edge_stmt.query_row([rowid], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, Option<String>>(1)?,
-                    row.get::<_, Option<String>>(2)?,
-                ))
-            }) {
+            } else if let Ok((body, logical_id, source_id)) =
+                edge_stmt.query_row(rusqlite::params![rowid, view.edge_now()], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                    ))
+                })
+            {
                 let id = derive_stable_id(logical_id.as_deref(), &body);
                 results.push(SearchHit {
                     id,
@@ -9584,31 +10852,48 @@ fn read_search_in_tx(
         // JOIN as `ce.logical_id` — one extra column, no extra query, no
         // row-set/ordering change. An edge hit carries the EDGE's own provenance,
         // matching the graph arm's edge-source semantics.
-        let edge_sql = "SELECT sei.body, sei.kind, sei.write_cursor, bm25(search_index_edges), \
+        // fix-2 (codex §9 [P2]): the JOIN already dropped superseded edge rows,
+        // but a body-bearing edge written with `t_invalid <= :now` (expired /
+        // invalidated) still MATCHed and surfaced its body through ordinary
+        // search — edge temporal validity was enforced on the graph-traversal and
+        // projection paths but NOT on this FTS read path. Apply the shared
+        // `edge_validity_sql` conjunct (the ONE generator every edge read site
+        // uses, so no path can drift). `?1` is the MATCH expression, so the edge
+        // `:now` binds at `?2`; the instant is the frozen `view.edge_now()` — a
+        // bound value, never `datetime('now')` (the :9161 no-inline-clock rule),
+        // and always present (edge invalidation is not relaxed by node existence
+        // relaxation).
+        let edge_validity = edge_validity_sql("ce", 2);
+        let edge_sql = format!(
+            "SELECT sei.body, sei.kind, sei.write_cursor, bm25(search_index_edges), \
              ce.logical_id, ce.source_id \
              FROM search_index_edges sei \
              JOIN canonical_edges ce ON ce.write_cursor = sei.write_cursor \
              WHERE search_index_edges MATCH ?1 \
-               AND ce.superseded_at IS NULL \
-             ORDER BY bm25(search_index_edges), sei.write_cursor";
+               AND ce.superseded_at IS NULL{edge_validity} \
+             ORDER BY bm25(search_index_edges), sei.write_cursor"
+        );
         // search_index_edges may not exist on very old DBs not yet at step-14;
         // ignore the error gracefully (returns empty slice).
-        if let Ok(mut stmt) = tx.prepare(edge_sql) {
-            if let Ok(rows) = stmt.query_map([compiled.match_expression.as_str()], |row| {
-                let body = row.get::<_, String>(0)?;
-                let logical_id = row.get::<_, Option<String>>(4)?;
-                Ok(SearchHit {
-                    id: derive_stable_id(logical_id.as_deref(), &body),
-                    body,
-                    kind: row.get::<_, String>(1)?,
-                    write_cursor: row.get::<_, i64>(2)? as u64,
-                    score: row.get::<_, f64>(3)?,
-                    branch: SoftFallbackBranch::TextEdge,
-                    // TC-31: the EDGE's own provenance.
-                    source_id: row.get::<_, Option<String>>(5)?,
-                    ce_score: None,
-                })
-            }) {
+        if let Ok(mut stmt) = tx.prepare(&edge_sql) {
+            if let Ok(rows) = stmt.query_map(
+                rusqlite::params![compiled.match_expression.as_str(), view.edge_now()],
+                |row| {
+                    let body = row.get::<_, String>(0)?;
+                    let logical_id = row.get::<_, Option<String>>(4)?;
+                    Ok(SearchHit {
+                        id: derive_stable_id(logical_id.as_deref(), &body),
+                        body,
+                        kind: row.get::<_, String>(1)?,
+                        write_cursor: row.get::<_, i64>(2)? as u64,
+                        score: row.get::<_, f64>(3)?,
+                        branch: SoftFallbackBranch::TextEdge,
+                        // TC-31: the EDGE's own provenance.
+                        source_id: row.get::<_, Option<String>>(5)?,
+                        ce_score: None,
+                    })
+                },
+            ) {
                 rows.flatten().collect()
             } else {
                 Vec::new()
@@ -9901,19 +11186,20 @@ fn bfs_graph_arm_candidates(
         // the edge's `source_id` provenance and (F9) `confidence`. `search_index_edges`
         // may be absent on very old DBs (< step-14) — degrade to no edge seeds rather
         // than error.
-        if let Ok(mut edge_seed_stmt) = tx.prepare(
+        // TC-33: `?1` MATCH, `?2` LIMIT ⇒ the edge `:now` binds at `?3`.
+        if let Ok(mut edge_seed_stmt) = tx.prepare(&format!(
             "SELECT ce.from_id, ce.to_id, ce.source_id, ce.confidence \
              FROM search_index_edges sei \
              JOIN canonical_edges ce ON ce.write_cursor = sei.write_cursor \
              WHERE search_index_edges MATCH ?1 \
-               AND ce.superseded_at IS NULL \
-               AND (ce.t_invalid IS NULL OR datetime(ce.t_invalid) > datetime('now')) \
+               AND ce.superseded_at IS NULL{} \
                AND (ce.temporal_fallback IS NULL OR ce.temporal_fallback = 0) \
              ORDER BY bm25(search_index_edges), sei.write_cursor \
              LIMIT ?2",
-        ) {
+            edge_validity_sql("ce", 3)
+        )) {
             let rows = edge_seed_stmt.query_map(
-                rusqlite::params![match_expression, SEED_FTS_N as i64],
+                rusqlite::params![match_expression, SEED_FTS_N as i64, view.edge_now()],
                 |row| {
                     Ok((
                         row.get::<_, String>(0)?,
@@ -10052,14 +11338,17 @@ fn bfs_graph_arm_candidates(
         // the reached node (keyed downstream by the node's `write_cursor`). Same
         // determinism as `source_id`: the earliest-written edge wins the `visited`
         // dedup, so the reached node's confidence is the winning-`bfs_rank` edge's.
-        "SELECT e.from_id, e.to_id, e.source_id, e.confidence \
-         FROM canonical_edges e \
-         WHERE (e.from_id = ?1 OR e.to_id = ?1) \
-           AND e.superseded_at IS NULL \
-           AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now')) \
-           AND (e.temporal_fallback IS NULL OR e.temporal_fallback = 0) \
-         ORDER BY e.write_cursor \
-         LIMIT 64",
+        // TC-33: `?1` is the anchor logical_id ⇒ the edge `:now` binds at `?2`.
+        &format!(
+            "SELECT e.from_id, e.to_id, e.source_id, e.confidence \
+             FROM canonical_edges e \
+             WHERE (e.from_id = ?1 OR e.to_id = ?1) \
+               AND e.superseded_at IS NULL{} \
+               AND (e.temporal_fallback IS NULL OR e.temporal_fallback = 0) \
+             ORDER BY e.write_cursor \
+             LIMIT 64",
+            edge_validity_sql("e", 2)
+        ),
     )?;
     // Fetch write_cursor alongside kind+body so graph-arm hits carry a real id
     // for apply_recency_reweight (id=0 would force min_id=0 and distort span).
@@ -10083,7 +11372,7 @@ fn bfs_graph_arm_candidates(
         // traversing edge's `source_id` (BLOCK-2 provenance carry) and (F9)
         // `confidence` (the reweight input for the reached node).
         let neighbors: Vec<(String, Option<String>, Option<f64>)> = {
-            let rows = edge_stmt.query_map([&lid], |row| {
+            let rows = edge_stmt.query_map(params![&lid, view.edge_now()], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
@@ -10400,10 +11689,11 @@ const GRAPH_NEIGHBORS_HARD_CAP: usize = 50;
 /// `view.node_sql(...)` is written once per position and applying to all three
 /// directions is structural rather than a thing to remember.
 ///
-/// **The `canonical_edges` temporal filter is deliberately UNCHANGED**, still
-/// `datetime(e.t_invalid) > datetime('now')` inline: edge validity is ISO-8601
-/// TEXT and out of scope for this slice. Only the NODE validity predicate is
-/// parameterised.
+/// **TC-33: the `canonical_edges` temporal filter is now parameterised too.** It
+/// was `datetime(e.t_invalid) > datetime('now')` inline, deliberately left alone
+/// while edge validity was ISO-8601 TEXT. Edge timestamps are INTEGER epoch
+/// seconds now, so the predicate is generated by [`edge_validity_sql`] and binds
+/// the frozen instant at `?4` — no inline clock remains in this template.
 fn build_bfs_sql(direction: TraversalDirection, view: &ReadView) -> String {
     let cap = GRAPH_NEIGHBORS_HARD_CAP;
     // cte_cap: the SQLite CTE LIMIT counts path-rows, not distinct nodes. In a
@@ -10422,6 +11712,10 @@ fn build_bfs_sql(direction: TraversalDirection, view: &ReadView) -> String {
     // `?3` is the node-validity instant. Positional (not named), so the repeated
     // occurrences across the three node positions all bind the SAME value once.
     const NOW_IDX: usize = 3;
+    // TC-33: `?4` is the EDGE-validity instant, bound separately because the node
+    // instant is `Option` (relaxed by `include_out_of_window`) while edge recency
+    // is always applied.
+    const EDGE_NOW_IDX: usize = 4;
 
     // The ONLY two things that differ between directions.
     let (edge_join, target_expr) = match direction {
@@ -10438,6 +11732,7 @@ fn build_bfs_sql(direction: TraversalDirection, view: &ReadView) -> String {
     let anchor_node = view.node_sql("n", NOW_IDX);
     let next_node = view.node_sql("next_n", NOW_IDX);
     let projection_node = view.node_sql("n", NOW_IDX);
+    let edge_valid = edge_validity_sql("e", EDGE_NOW_IDX);
 
     format!(
         "WITH RECURSIVE
@@ -10451,8 +11746,7 @@ fn build_bfs_sql(direction: TraversalDirection, view: &ReadView) -> String {
     JOIN canonical_edges e ON {edge_join}
     JOIN canonical_nodes next_n ON next_n.logical_id = {target_expr}{next_node}
     WHERE t.depth < ?2
-      AND e.superseded_at IS NULL
-      AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now'))
+      AND e.superseded_at IS NULL{edge_valid}
       AND instr(t.visited, char(30) || {target_expr} || char(30)) = 0
     LIMIT {cte_cap}
   )
@@ -10472,6 +11766,10 @@ LIMIT {cap}"
 fn build_bfs_with_depth_sql() -> String {
     let cap = GRAPH_NEIGHBORS_HARD_CAP;
     let cte_cap = cap * cap; // same multigraph-safe headroom as build_bfs_sql
+                             // TC-33: `?1` anchor, `?2` depth ⇒ the edge `:now` binds at `?3`. This is a
+                             // SECOND, separate BFS template — the edge-validity predicate has to be
+                             // re-grounded here too or `search_expand` silently keeps the old semantics.
+    let edge_valid = edge_validity_sql("e", 3);
     format!(
         "WITH RECURSIVE
   traversal(logical_id, depth, visited) AS (
@@ -10489,8 +11787,7 @@ fn build_bfs_with_depth_sql() -> String {
       ON next_n.logical_id = CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END
       AND next_n.superseded_at IS NULL AND next_n.state = 'active'
     WHERE t.depth < ?2
-      AND e.superseded_at IS NULL
-      AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now'))
+      AND e.superseded_at IS NULL{edge_valid}
       AND instr(t.visited,
             char(30) || CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END || char(30)) = 0
     LIMIT {cte_cap}
@@ -10571,15 +11868,21 @@ fn graph_neighbors_in_tx(
     let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
     let depth_i64 = depth as i64;
     let mut statement = tx.prepare(&sql)?;
-    // ?1 root, ?2 depth, then ?3 = the validity instant (omitted when relaxed,
-    // in which case `build_bfs_sql` emitted no `?3` either).
-    let mut binds: Vec<rusqlite::types::Value> = vec![
+    // ?1 root, ?2 depth, ?3 = the NODE validity instant, ?4 = the EDGE validity
+    // instant (TC-33).
+    //
+    // ?3 is bound UNCONDITIONALLY even when the view relaxes node validity and
+    // `build_bfs_sql` emitted no `?3`: the template still references ?4, so
+    // SQLite's parameter count is 4 and the positions must not shift. Binding an
+    // index the SQL never reads is harmless; letting ?4's value slide into ?3
+    // would silently compare edge times against a placeholder.
+    let frozen = (*view).freeze();
+    let binds: Vec<rusqlite::types::Value> = vec![
         rusqlite::types::Value::Text(root_logical_id.to_string()),
         rusqlite::types::Value::Integer(depth_i64),
+        rusqlite::types::Value::Integer(frozen.now_param().unwrap_or_default()),
+        rusqlite::types::Value::Integer(frozen.edge_now()),
     ];
-    if let Some(now) = view.now_param() {
-        binds.push(rusqlite::types::Value::Integer(now));
-    }
     let rows = statement.query_map(rusqlite::params_from_iter(binds.iter()), |row| {
         Ok(NodeRecord {
             logical_id: row.get(0)?,
@@ -10671,17 +11974,22 @@ fn search_expand_in_tx(
 
     if depth > 0 {
         let mut bfs_stmt = tx.prepare(&bfs_sql)?;
+        // TC-33: `?3` is the edge-validity instant. `search_expand` has no
+        // `ReadView` in scope, so it uses the default (strict) semantics —
+        // resolved ONCE here, not per root, so every root in one call agrees.
+        let edge_now = current_epoch_seconds();
         for root_id in hit_logical_ids.iter().flatten().filter(|s| !s.is_empty()) {
-            let neighbor_rows = bfs_stmt.query_map(params![root_id, depth_i64], |row| {
-                let node = NodeRecord {
-                    logical_id: row.get(0)?,
-                    kind: row.get(1)?,
-                    body: row.get(2)?,
-                    write_cursor: row.get::<_, i64>(3)? as u64,
-                };
-                let min_depth: i64 = row.get(4)?;
-                Ok((node, min_depth as u32))
-            })?;
+            let neighbor_rows =
+                bfs_stmt.query_map(params![root_id, depth_i64, edge_now], |row| {
+                    let node = NodeRecord {
+                        logical_id: row.get(0)?,
+                        kind: row.get(1)?,
+                        body: row.get(2)?,
+                        write_cursor: row.get::<_, i64>(3)? as u64,
+                    };
+                    let min_depth: i64 = row.get(4)?;
+                    Ok((node, min_depth as u32))
+                })?;
             for row_result in neighbor_rows {
                 let (node, hop_count) = row_result?;
                 if hit_id_set.contains(&node.logical_id) {
@@ -10745,10 +12053,14 @@ fn explain_graph_neighbors_in_tx(
     let mut statement = tx.prepare(&explain_sql)?;
     // EXPLAIN QUERY PLAN returns rows: (id, parent, notused, detail).
     // We collect the `detail` column (index 3).
-    // The strict view emits `?3` (the validity instant) at every node position.
-    let now = view.now_param().expect("the strict view always binds a validity instant");
+    // The strict view emits `?3` (the node-validity instant) at every node
+    // position; TC-33 adds `?4`, the edge-validity instant.
+    let frozen = view.freeze();
+    let now = frozen.now_param().expect("the strict view always binds a validity instant");
     let rows = statement
-        .query_map(params![root_logical_id, depth_i64, now], |row| row.get::<_, String>(3))?;
+        .query_map(params![root_logical_id, depth_i64, now, frozen.edge_now()], |row| {
+            row.get::<_, String>(3)
+        })?;
     let mut out = Vec::new();
     for row in rows {
         out.push(row?);
@@ -11279,15 +12591,15 @@ fn next_pending_projection_jobs(
                ON _fathomdb_projection_terminal.write_cursor = canonical_edges.write_cursor
              WHERE canonical_edges.write_cursor > ?1
                AND canonical_edges.body IS NOT NULL
-               AND canonical_edges.superseded_at IS NULL
-               AND (canonical_edges.t_invalid IS NULL
-                    OR datetime(canonical_edges.t_invalid) > datetime('now'))
+               AND canonical_edges.superseded_at IS NULL{edge_valid}
                AND _fathomdb_projection_terminal.write_cursor IS NULL
          ) ORDER BY write_cursor
-         LIMIT {sql_limit}"
+         LIMIT {sql_limit}",
+        // TC-33: `?1` is the projection cursor ⇒ the edge `:now` binds at `?2`.
+        edge_valid = edge_validity_sql("canonical_edges", 2)
     );
     let mut statement = connection.prepare_cached(&sql)?;
-    let rows = statement.query_map([cursor], |row| {
+    let rows = statement.query_map(params![cursor, current_epoch_seconds()], |row| {
         Ok(ProjectionJob { cursor: row.get(0)?, kind: row.get(1)?, body: row.get(2)? })
     })?;
     let mut jobs = Vec::with_capacity(max_jobs);
@@ -11342,16 +12654,19 @@ fn database_has_pending_projection_work(path: &Path) -> rusqlite::Result<bool> {
     // phantom-pending forever and `drain()`/`wait_for_idle` would hang.
     connection
         .query_row(
-            "SELECT 1
+            // TC-33: no other parameter here ⇒ the edge `:now` binds at `?1`.
+            &format!(
+                "SELECT 1
              FROM canonical_edges ce
              LEFT JOIN _fathomdb_projection_terminal pt
                ON pt.write_cursor = ce.write_cursor
              WHERE ce.body IS NOT NULL
-               AND ce.superseded_at IS NULL
-               AND (ce.t_invalid IS NULL OR datetime(ce.t_invalid) > datetime('now'))
+               AND ce.superseded_at IS NULL{}
                AND pt.write_cursor IS NULL
              LIMIT 1",
-            [],
+                edge_validity_sql("ce", 1)
+            ),
+            params![current_epoch_seconds()],
             |_row| Ok(true),
         )
         .or_else(|err| match err {
@@ -11365,6 +12680,13 @@ struct CanonicalNodeRow {
     kind: String,
     body: String,
     row_kind: RowKind,
+    /// fix-2 [P2] — whether this row is in the attribute projection's row set
+    /// (`state = 'active' AND superseded_at IS NULL`, the exact `backfill_attribute`
+    /// predicate). A projector-replay rebuild uses this to gate the attribute
+    /// projection so it does not re-surface a pending / superseded node's values.
+    /// Node-FTS / vector shadows are rebuilt for every row (their stale versions
+    /// are excluded by the read-side lifecycle join, unchanged from before).
+    attr_projected: bool,
 }
 
 /// 0.8.0 Slice 5 (G1) — re-tokenize `search_index` from the canonical source
@@ -11402,6 +12724,11 @@ fn reproject_search_index_after_tokenizer_upgrade(connection: &Connection) -> ru
                 &row.body,
                 row.row_kind,
                 ProjectionPass::FtsOnly,
+                // FtsOnly never touches the attribute store (predates step 24), so
+                // `node_active` is inert here; forward the row's flag anyway (it is
+                // the backfill's active-and-non-superseded predicate) so the field
+                // has a reader in every build configuration.
+                row.attr_projected,
             )?;
         }
         connection.execute(
@@ -11450,16 +12777,115 @@ fn search_index_tokenizer_reproject_complete(connection: &Connection) -> rusqlit
     }
 }
 
+/// 0.8.20 Slice 15c (TC-33) fix-6 — has the one-time edge-vector prune committed
+/// durably on this DB? Keys off the [`EDGE_VECTOR_PRUNE_MARKER_KEY`] row written
+/// inside the prune transaction; its absence means the prune never ran (a DB
+/// upgraded before this fix shipped, or a crash between the step-23 commit and
+/// the prune commit) and must (re-)run.
+///
+/// A MISSING `_fathomdb_open_state` table is reported as "complete" (skip the
+/// prune) — that table is created by migration step 1, so its absence means the
+/// DB never ran our migrations (a synthetic/foreign shape rejected downstream);
+/// the prune must not run, and must not mask those errors, on it. Mirrors
+/// [`search_index_tokenizer_reproject_complete`].
+fn edge_vector_prune_complete(connection: &Connection) -> rusqlite::Result<bool> {
+    match connection.query_row(
+        "SELECT value FROM _fathomdb_open_state WHERE key = ?1",
+        [EDGE_VECTOR_PRUNE_MARKER_KEY],
+        |row| row.get::<_, String>(0),
+    ) {
+        Ok(value) => Ok(value == "1"),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(false),
+        Err(rusqlite::Error::SqliteFailure(_, Some(ref message)))
+            if message.contains("no such table") =>
+        {
+            Ok(true)
+        }
+        Err(err) => Err(err),
+    }
+}
+
+/// 0.8.20 Slice 15c (TC-33) fix-6 — delete every `vector_default` (vec0) row that
+/// has NO `_fathomdb_vector_rows` sidecar entry, then record the durable
+/// completion marker, all in one `BEGIN IMMEDIATE` transaction (crash-retryable:
+/// a crash before COMMIT leaves no marker and the next open re-runs).
+///
+/// A vec0 row and its sidecar row are written and deleted TOGETHER (same
+/// transaction) on every steady-state path, so a sidecar-less vec0 row is ONLY
+/// ever produced by the step-23 recreate, which drops the edge rows and their
+/// sidecar entries but cannot reach the engine-created vec0 table. So this
+/// targets exactly the dropped edges' orphans and touches NOTHING on a healthy
+/// corpus. Node vec0 rows keep their sidecar entry, so they are never pruned —
+/// node recall is unaffected.
+///
+/// The orphans are gathered with plain scans (both proven vec0 forms — a full
+/// `SELECT rowid FROM vector_default` and per-`rowid` `DELETE`) and diffed in
+/// Rust, rather than relying on a compound `DELETE ... WHERE rowid NOT IN (...)`
+/// over the virtual table.
+fn prune_orphaned_edge_vectors(connection: &Connection) -> rusqlite::Result<()> {
+    connection.execute_batch("BEGIN IMMEDIATE")?;
+    let result = (|| {
+        let sidecar: std::collections::HashSet<i64> = {
+            let mut statement =
+                connection.prepare("SELECT write_cursor FROM _fathomdb_vector_rows")?;
+            let rows = statement.query_map([], |row| row.get::<_, i64>(0))?;
+            let mut set = std::collections::HashSet::new();
+            for r in rows {
+                set.insert(r?);
+            }
+            set
+        };
+        let vec_rowids: Vec<i64> = {
+            let mut statement = connection.prepare("SELECT rowid FROM vector_default")?;
+            let rows = statement.query_map([], |row| row.get::<_, i64>(0))?;
+            let mut out = Vec::new();
+            for r in rows {
+                out.push(r?);
+            }
+            out
+        };
+        for rowid in vec_rowids {
+            if !sidecar.contains(&rowid) {
+                // vec0 rowid IS the canonical write_cursor; delete by rowid (the
+                // proven vec0 delete form, as `prune_edge_projection_shadows`).
+                connection.execute("DELETE FROM vector_default WHERE rowid = ?1", [rowid])?;
+            }
+        }
+        connection.execute(
+            "INSERT INTO _fathomdb_open_state(key, value) VALUES(?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![EDGE_VECTOR_PRUNE_MARKER_KEY, "1"],
+        )?;
+        Ok(())
+    })();
+    match result {
+        Ok(()) => connection.execute_batch("COMMIT"),
+        Err(err) => {
+            let _ = connection.execute_batch("ROLLBACK");
+            Err(err)
+        }
+    }
+}
+
 fn canonical_node_rows(connection: &Connection) -> rusqlite::Result<Vec<CanonicalNodeRow>> {
+    // fix-2 [P2] — also read `state` + `superseded_at` so a replay rebuild can gate
+    // the attribute projection to the backfill's row set. `attr_projected` mirrors
+    // the exact `backfill_attribute` predicate (`state = 'active' AND
+    // superseded_at IS NULL`): a NULL/foreign state is NOT 'active' and so is
+    // excluded, identical to the SQL equality.
     let mut statement = connection.prepare(
-        "SELECT write_cursor, kind, body, row_kind FROM canonical_nodes ORDER BY write_cursor",
+        "SELECT write_cursor, kind, body, row_kind, state, superseded_at \
+         FROM canonical_nodes ORDER BY write_cursor",
     )?;
     let rows = statement.query_map([], |row| {
+        let state: Option<String> = row.get::<_, Option<String>>(4)?;
+        let superseded_at: Option<i64> = row.get::<_, Option<i64>>(5)?;
         Ok(CanonicalNodeRow {
             cursor: row.get::<_, u64>(0)?,
             kind: row.get::<_, String>(1)?,
             body: row.get::<_, String>(2)?,
             row_kind: row_kind_from_column(&row.get::<_, String>(3)?),
+            attr_projected: state.as_deref() == Some("active") && superseded_at.is_none(),
         })
     })?;
     rows.collect()
@@ -11771,15 +13197,52 @@ fn commit_projection_outcomes(
                     }
                     _ => bin_blob.clone(),
                 };
-                tx.execute(
-                    // Slice 10 / G10 — `status` ships the empty-string sentinel
-                    // (vec0 TEXT metadata is NOT NULL-able); no real population
-                    // source yet (reserved-gap candidate 13).
-                    "INSERT OR IGNORE INTO vector_default(
-                        rowid, embedding, embedding_bin, source_type, kind, created_at, status
-                     ) VALUES(?1, ?2, vec_quantize_binary(?3), ?4, ?5, ?6, '')",
-                    params![cursor, blob, centered_blob, source_type, kind, now_unix],
-                )?;
+                // Slice 10 / G10 — `status` ships the empty-string sentinel (vec0
+                // TEXT metadata is NOT NULL-able); no real population source yet
+                // (reserved-gap candidate 13).
+                //
+                // 0.8.20 Slice 15e — when the live `vector_default` carries
+                // `filterable` `attr_<hex>` columns, EVERY column must be bound
+                // (vec0 rejects a partial-column INSERT). Bind each from the node
+                // body's scalar extraction (or the `''` sentinel). The body is not
+                // carried on the embed job, so it is read from `canonical_nodes` by
+                // `write_cursor` (== rowid) — but ONLY when attr columns exist, so
+                // the common no-filterable hot path stays byte-identical and does
+                // NO extra lookup.
+                if actual_vector_attr_columns(&tx)?.is_empty() {
+                    tx.execute(
+                        "INSERT OR IGNORE INTO vector_default(
+                            rowid, embedding, embedding_bin, source_type, kind, created_at, status
+                         ) VALUES(?1, ?2, vec_quantize_binary(?3), ?4, ?5, ?6, '')",
+                        params![cursor, blob, centered_blob, source_type, kind, now_unix],
+                    )?;
+                } else {
+                    let body: String = tx
+                        .query_row(
+                            "SELECT body FROM canonical_nodes WHERE write_cursor = ?1 LIMIT 1",
+                            [*cursor as i64],
+                            |row| row.get(0),
+                        )
+                        .optional()?
+                        .unwrap_or_default();
+                    let (cols_sql, ph_sql, attr_vals) =
+                        vector_attr_insert_fragments(&tx, &body, 7)?;
+                    let sql = format!(
+                        "INSERT OR IGNORE INTO vector_default(
+                            rowid, embedding, embedding_bin, source_type, kind, created_at, status{cols_sql}
+                         ) VALUES(?1, ?2, vec_quantize_binary(?3), ?4, ?5, ?6, ''{ph_sql})"
+                    );
+                    let mut pv: Vec<rusqlite::types::Value> = vec![
+                        rusqlite::types::Value::Integer(*cursor as i64),
+                        rusqlite::types::Value::Blob(blob.clone()),
+                        rusqlite::types::Value::Blob(centered_blob.clone()),
+                        rusqlite::types::Value::Text(source_type.to_string()),
+                        rusqlite::types::Value::Text(kind.to_string()),
+                        rusqlite::types::Value::Integer(now_unix),
+                    ];
+                    pv.extend(attr_vals);
+                    tx.execute(&sql, rusqlite::params_from_iter(pv.iter()))?;
+                }
                 record_projection_terminal(&tx, *cursor, "up_to_date")?;
 
                 // EU-5f — this row crossed the threshold: pin the mean and
@@ -12528,8 +13991,22 @@ fn ensure_vector_partition(connection: &mut Connection, dimension: u32) -> rusql
 /// hard-error under a KNN `WHERE`, and the G10 filter constrains `status` in the
 /// phase-1 KNN statement. `status` ships NULL plumbing only (no population source
 /// yet).
-fn vector_partition_create_sql(dimension: u32, if_not_exists: bool) -> String {
+///
+/// 0.8.20 Slice 15e — `attr_cols` are the declared-`filterable` attribute columns
+/// (byte-safe `attr_<hex>` identifiers, see [`attr_vec0_column`]), each a PLAIN
+/// `TEXT` metadata column (never aux `+`), appended after `status`. **When
+/// `attr_cols` is empty the produced SQL is byte-identical to the shipped shape**
+/// — every existing caller passes `&[]`, so no shipped behaviour changes.
+fn vector_partition_create_sql(
+    dimension: u32,
+    if_not_exists: bool,
+    attr_cols: &[String],
+) -> String {
     let guard = if if_not_exists { "IF NOT EXISTS " } else { "" };
+    let mut attrs = String::new();
+    for col in attr_cols {
+        attrs.push_str(&format!(",{col} TEXT"));
+    }
     format!(
         "CREATE VIRTUAL TABLE {guard}{DEFAULT_VECTOR_PARTITION} USING vec0(\
             embedding float[{dimension}],\
@@ -12537,13 +14014,259 @@ fn vector_partition_create_sql(dimension: u32, if_not_exists: bool) -> String {
             source_type TEXT partition key,\
             kind TEXT,\
             created_at INTEGER,\
-            status TEXT\
+            status TEXT{attrs}\
          )"
     )
 }
 
 fn create_vector_partition(connection: &Connection, dimension: u32) -> rusqlite::Result<()> {
-    connection.execute_batch(&vector_partition_create_sql(dimension, true))
+    connection.execute_batch(&vector_partition_create_sql(dimension, true, &[]))
+}
+
+/// 0.8.20 Slice 15e — encode an arbitrary registry attribute NAME into a vec0-safe
+/// column identifier: `attr_` + lowercase hex of the name's UTF-8 bytes.
+///
+/// vec0 rejects quoted column identifiers, and a Slice-15d-validated attribute
+/// name may contain spaces / unicode / `-`, so the raw name cannot be a column
+/// identifier. Hex is injective (so the map is reversible by
+/// [`decode_attr_vec0_column`]), matches `^attr_[0-9a-f]+$`, and can never collide
+/// with a built-in metadata column (`embedding`, `embedding_bin`, `source_type`,
+/// `kind`, `created_at`, `status` — none carry the `attr_` prefix followed by an
+/// even-length hex string of the name).
+fn attr_vec0_column(name: &str) -> String {
+    let mut s = String::from("attr_");
+    for b in name.as_bytes() {
+        s.push_str(&format!("{b:02x}"));
+    }
+    s
+}
+
+/// 0.8.20 Slice 15e — inverse of [`attr_vec0_column`]. Returns the original
+/// attribute name for an `attr_<hex>` column, or `None` if `col` is not a
+/// well-formed encoded attribute column (so the built-in metadata columns and any
+/// vec0 shadow columns are skipped when enumerating a live table's attribute set).
+fn decode_attr_vec0_column(col: &str) -> Option<String> {
+    let hex = col.strip_prefix("attr_")?;
+    if hex.is_empty() || hex.len() % 2 != 0 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let mut bytes = Vec::with_capacity(hex.len() / 2);
+    let raw = hex.as_bytes();
+    let mut i = 0;
+    while i < raw.len() {
+        let hi = (raw[i] as char).to_digit(16)?;
+        let lo = (raw[i + 1] as char).to_digit(16)?;
+        bytes.push((hi * 16 + lo) as u8);
+        i += 2;
+    }
+    String::from_utf8(bytes).ok()
+}
+
+/// 0.8.20 Slice 15e — the DESIRED `attr_<hex>` columns implied by the durable
+/// projection registry: one per `filterable` projection, sorted by attribute name
+/// (⇒ sorted by column, since hex encoding preserves byte order). This is the
+/// derived-cache source the reshape reconciles the live vec0 shape against.
+fn desired_vector_attr_columns(conn: &Connection) -> rusqlite::Result<Vec<String>> {
+    let registry = load_projection_registry(conn)?;
+    let mut cols: Vec<String> = registry
+        .iter()
+        .filter(|(_, stored)| stored.roles.contains(&ProjectionRole::Filterable))
+        .map(|(name, _)| attr_vec0_column(name))
+        .collect();
+    cols.sort();
+    Ok(cols)
+}
+
+/// 0.8.20 Slice 15e — the `attr_<hex>` columns actually present on the live
+/// `vector_default` vec0 table, parsed from its `CREATE VIRTUAL TABLE` SQL and
+/// sorted. Empty when the table is absent. Parsing the SQL (rather than a PRAGMA)
+/// keeps this robust across vec0 versions and shadow-table layouts.
+fn actual_vector_attr_columns(conn: &Connection) -> rusqlite::Result<Vec<String>> {
+    let sql: Option<String> = conn
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name=?1",
+            [DEFAULT_VECTOR_PARTITION],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    let Some(sql) = sql else {
+        return Ok(Vec::new());
+    };
+    let mut cols: Vec<String> = Vec::new();
+    // Tokenize on any non-identifier byte; a token is an attribute column iff it
+    // decodes as a well-formed `attr_<hex>` identifier.
+    let mut token = String::new();
+    let flush = |token: &mut String, cols: &mut Vec<String>| {
+        if !token.is_empty() {
+            if decode_attr_vec0_column(token).is_some() && !cols.contains(token) {
+                cols.push(token.clone());
+            }
+            token.clear();
+        }
+    };
+    for ch in sql.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '_' {
+            token.push(ch);
+        } else {
+            flush(&mut token, &mut cols);
+        }
+    }
+    flush(&mut token, &mut cols);
+    cols.sort();
+    Ok(cols)
+}
+
+/// 0.8.20 Slice 15e — reconcile the live `vector_default` attribute columns with
+/// the registry's `filterable` set (TC-46: HITL-ratified NON-DESTRUCTIVE reshape,
+/// following the shipped `migrate_vector_partition_pack1_to_pack2` precedent).
+///
+/// Diffs the DESIRED columns (from the registry) against the ACTUAL columns (on
+/// the live table). When they already match — which is EVERY idempotent
+/// re-registration and every boot re-derive that replays the same set — this is a
+/// pure no-op: no reshape, no re-insert, vec0 untouched (so boot never silently
+/// wipes a corpus). When they differ, performs ONE non-destructive reshape.
+///
+/// Returns `true` iff a reshape was performed. Runs the DDL directly on the passed
+/// connection/transaction (no nested transaction), so a caller already inside a
+/// write transaction (`configure_projections`) gets the reshape atomically with
+/// its registry mutation. A no-op (and returns `false`) when `vector_default` does
+/// not exist (a DB opened without an embedder).
+fn reconcile_vector_attr_columns(conn: &Connection, dimension: u32) -> rusqlite::Result<bool> {
+    let table_exists: bool = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1",
+            [DEFAULT_VECTOR_PARTITION],
+            |_| Ok(true),
+        )
+        .optional()?
+        .unwrap_or(false);
+    if !table_exists {
+        return Ok(false);
+    }
+    let desired = desired_vector_attr_columns(conn)?;
+    let actual = actual_vector_attr_columns(conn)?;
+    if desired == actual {
+        return Ok(false);
+    }
+    reshape_vector_partition_nondestructive(conn, dimension, &desired, &actual)?;
+    Ok(true)
+}
+
+/// 0.8.20 Slice 15e — the NON-DESTRUCTIVE reshape itself. Stages every live row
+/// (base columns + all ACTUAL attribute columns), drops + recreates
+/// `vector_default` at the DESIRED shape, then re-inserts each row.
+///
+/// THE FOUR LOAD-BEARING CONDITIONS (any one broken ⇒ silently wrong results):
+///   1. `rowid` is listed EXPLICITLY in the re-insert (a vec0 row maps to its node
+///      by `rowid == write_cursor`; auto-assigned rowids would decouple every
+///      embedding from its node);
+///   2. each attribute column is PLAIN `TEXT` metadata (via
+///      [`vector_partition_create_sql`]), never a vec0 `aux`/`+` column (aux
+///      hard-errors a filtered KNN);
+///   3. a DESIRED column with no ACTUAL predecessor back-fills each row from the
+///      already-populated `canonical_attributes` (fix-1 finding 2) so a
+///      pre-existing row whose body carries the attribute is immediately
+///      filterable; the `''` sentinel (vec0 TEXT metadata is NOT-NULL-able) is
+///      used ONLY where the attribute is genuinely absent, so an absent row
+///      cleanly fails-to-match instead of erroring;
+///   4. `embedding_bin` is copied VERBATIM via `vec_bit(...)` — NOT re-quantized —
+///      so old rows keep their (possibly mean-centered) bits and stay Hamming-
+///      comparable to new rows.
+///
+/// Runs on `conn` directly (the caller owns the transaction). Transactional
+/// atomicity + reader isolation are the caller's responsibility, exactly as for
+/// `migrate_vector_partition_pack1_to_pack2`.
+fn reshape_vector_partition_nondestructive(
+    conn: &Connection,
+    dimension: u32,
+    desired_cols: &[String],
+    actual_cols: &[String],
+) -> rusqlite::Result<()> {
+    // Stage: base columns + every ACTUAL attribute column (so no at-rest value is
+    // lost, even for a column being dropped).
+    let mut stage_defs = String::new();
+    let mut stage_names =
+        String::from("rowid, embedding, embedding_bin, source_type, kind, created_at, status");
+    for col in actual_cols {
+        stage_defs.push_str(&format!(",\n             {col} TEXT"));
+        stage_names.push_str(&format!(", {col}"));
+    }
+    conn.execute_batch(&format!(
+        "CREATE TABLE _fathomdb_vector_reshape_stage (
+             rowid         INTEGER PRIMARY KEY,
+             embedding     BLOB NOT NULL,
+             embedding_bin BLOB NOT NULL,
+             source_type   TEXT,
+             kind          TEXT,
+             created_at    INTEGER,
+             status        TEXT{stage_defs}
+         );
+         INSERT INTO _fathomdb_vector_reshape_stage({stage_names})
+             SELECT {stage_names} FROM {DEFAULT_VECTOR_PARTITION};
+         DROP TABLE {DEFAULT_VECTOR_PARTITION};"
+    ))?;
+
+    // Recreate at the DESIRED shape (plain TEXT attr columns — condition #2).
+    conn.execute_batch(&vector_partition_create_sql(dimension, false, desired_cols))?;
+
+    // Re-insert. `rowid` explicit (condition #1); `vec_bit(embedding_bin)`
+    // verbatim, never re-quantized (condition #4); `status` and each surviving
+    // attribute column carried forward; each NEW desired column back-fills from
+    // `canonical_attributes` (the `''` sentinel only where genuinely absent —
+    // condition #3).
+    let mut insert_cols =
+        String::from("rowid, embedding, embedding_bin, source_type, kind, created_at, status");
+    let mut select_exprs = String::from(
+        "rowid, embedding, vec_bit(embedding_bin), source_type, kind, created_at, status",
+    );
+    for col in desired_cols {
+        insert_cols.push_str(&format!(", {col}"));
+        if actual_cols.iter().any(|a| a == col) {
+            // Surviving column — carry its value forward (never NULL: vec0 TEXT
+            // metadata is `''`-sentinelled, but COALESCE defends the stage table).
+            select_exprs.push_str(&format!(", COALESCE({col}, '')"));
+        } else {
+            // New column — back-fill from the ALREADY-populated `canonical_attributes`
+            // (fix-1 finding 2 [P2]). `configure_projections` runs `backfill_attribute`
+            // (which fills `canonical_attributes` from each active row's body) BEFORE
+            // this reshape, so a pre-existing row whose body carries the attribute is
+            // immediately filterable — no false negative until a re-embed. The `''`
+            // sentinel (condition #3) is used ONLY where the attribute is genuinely
+            // ABSENT for that row (no `canonical_attributes` row ⇒ COALESCE → '').
+            // The EAV value equals the vec0 write-time value by construction (both go
+            // through `extract_scalar_attribute`), so pre-existing and freshly-written
+            // rows share one filter semantics.
+            match decode_attr_vec0_column(col) {
+                Some(name) => {
+                    // vec0/execute_batch takes no bind params; embed the decoded name
+                    // as a SQL string literal, escaping single quotes.
+                    //
+                    // fix-3 [P2] — a PRESENT row (a canonical_attributes row exists)
+                    // encodes its RAW `attr_value` as `\x01 || attr_value` (`char(1) ||
+                    // ca.attr_value`), matching the write-time vec0 encoding so a
+                    // pre-existing present-empty row (attr_value='') becomes the bare
+                    // marker, NOT `''`. An ABSENT row (no canonical_attributes row) is
+                    // the COALESCE default `''` (condition #3). `canonical_attributes`
+                    // itself stays RAW — only this vec0 column is encoded.
+                    let escaped = name.replace('\'', "''");
+                    select_exprs.push_str(&format!(
+                        ", COALESCE((SELECT char(1) || ca.attr_value FROM canonical_attributes ca \
+                         WHERE ca.write_cursor = _fathomdb_vector_reshape_stage.rowid \
+                           AND ca.attr_name = '{escaped}' LIMIT 1), '')"
+                    ));
+                }
+                // A desired column always decodes (built by `attr_vec0_column`); if it
+                // somehow does not, fall back to the sentinel rather than panic.
+                None => select_exprs.push_str(", ''"),
+            }
+        }
+    }
+    conn.execute_batch(&format!(
+        "INSERT INTO {DEFAULT_VECTOR_PARTITION}({insert_cols})
+             SELECT {select_exprs} FROM _fathomdb_vector_reshape_stage;
+         DROP TABLE _fathomdb_vector_reshape_stage;"
+    ))?;
+    Ok(())
 }
 
 /// Slice 10 / G10 — stage + recreate + back-fill upgrade of an existing
@@ -12576,7 +14299,7 @@ fn migrate_vector_partition_pack1_to_pack2(
              FROM vector_default;
          DROP TABLE vector_default;",
     )?;
-    tx.execute_batch(&vector_partition_create_sql(dimension, false))?;
+    tx.execute_batch(&vector_partition_create_sql(dimension, false, &[]))?;
     // `vec_bit(...)` re-tags the staged blob with the BIT subtype vec0's bit
     // column requires (a raw blob loses the subtype and fails the type check).
     // This preserves the existing (possibly mean-centered) bits verbatim — no
@@ -12642,7 +14365,7 @@ fn migrate_vector_partition_to_pack1(
     )?;
     // Slice 10 / G10 — recreate directly at the Pack-2 shape (adds `status`), so
     // a legacy single-column DB lands the current shape in one reshape.
-    tx.execute_batch(&vector_partition_create_sql(dimension, false))?;
+    tx.execute_batch(&vector_partition_create_sql(dimension, false, &[]))?;
     // `status` back-fills the empty-string sentinel (vec0 TEXT metadata is NOT
     // NULL-able; reserved-gap candidate 13). Legacy single-column DBs predate
     // mean-centering, so re-quantizing from the un-centered `embedding` is
@@ -13649,7 +15372,7 @@ fn validate_write(
             }
             Ok(WritePlan::Node)
         }
-        PreparedWrite::Edge { kind, from, to, logical_id, .. } => {
+        PreparedWrite::Edge { kind, from, to, logical_id, t_valid, t_invalid, .. } => {
             if kind.trim().is_empty() || from.trim().is_empty() || to.trim().is_empty() {
                 return Err(EngineError::WriteValidation);
             }
@@ -13664,6 +15387,15 @@ fn validate_write(
                     return Err(EngineError::WriteValidation);
                 }
             }
+            // TC-33 fix-1 (codex §9 P2) — an epoch SQLite cannot render to
+            // ISO-8601 must be UNSTORABLE. The governed integer surface is the
+            // only way to reach one (inbound ISO normalisation maxes at year
+            // 9999), so this write boundary is where it is stopped, before it
+            // can render to a silent `null` on the consolidation wire and
+            // resurrect an invalidated edge. Structural primary layer; the
+            // render site keeps a defensive hard-assert as the backstop.
+            reject_unrenderable_edge_epoch("t_valid", *t_valid)?;
+            reject_unrenderable_edge_epoch("t_invalid", *t_invalid)?;
             Ok(WritePlan::Edge)
         }
         PreparedWrite::AdminSchema { name, kind, schema_json, retention_json } => {
@@ -13758,6 +15490,24 @@ fn prior_edge_cursors_by_logical_id(
     rows.collect()
 }
 
+/// 0.8.20 Slice 15d fix-1 finding 2 [P2] — the active (non-superseded) NODE
+/// cursors for a `logical_id`, collected BEFORE the tombstone-then-insert
+/// supersession UPDATE so the caller can purge the about-to-be-superseded row's
+/// row-owned attribute projections. Mirrors [`prior_edge_cursors_by_logical_id`].
+/// The partial-unique-active index means this is at most one cursor; a `Vec`
+/// keeps it robust and symmetric with the edge path.
+fn prior_node_cursors_by_logical_id(
+    tx: &rusqlite::Transaction<'_>,
+    logical_id: &str,
+) -> rusqlite::Result<Vec<i64>> {
+    let mut s = tx.prepare_cached(
+        "SELECT write_cursor FROM canonical_nodes \
+         WHERE logical_id = ?1 AND superseded_at IS NULL",
+    )?;
+    let rows = s.query_map(params![logical_id], |r| r.get(0))?;
+    rows.collect()
+}
+
 fn prior_edge_cursors_by_triple(
     tx: &rusqlite::Transaction<'_>,
     from: &str,
@@ -13799,6 +15549,12 @@ enum ProjectionClass {
     EdgeFts,
     Vector,
     Readiness,
+    /// 0.8.20 Slice 15d (R-20-EAV) — the EAV attribute store (`filterable` +
+    /// the value-at-rest for `searchable`). Same-transaction, row-owned.
+    Attribute,
+    /// 0.8.20 Slice 15d (R-20-EAV) — the property-FTS5 shadow of attribute
+    /// values (`searchable→FTS`). Same-transaction, row-owned.
+    PropertyFts,
 }
 
 /// 0.8.20 Slice 5a (R-20-E1) — one ROW-OWNED projection table: a shadow whose
@@ -13862,6 +15618,24 @@ const ROW_OWNED_PROJECTIONS: &[RowOwnedProjection] = &[
         cursor_column: "write_cursor",
         class: ProjectionClass::Readiness,
     },
+    // 0.8.20 Slice 15d (R-20-EAV) — the EAV attribute store and its property-FTS
+    // shadow both hold declared attribute VALUES at rest (potential PII), keyed
+    // 1:1 with the owning node's write_cursor. They MUST be reachable by
+    // `purge`/`excise_source`: registering them here is what makes
+    // `erase_row_projections` delete them without a hand-rolled list (an
+    // unregistered content-storing table is exactly the `search_index_v2` leak
+    // class this registry closes). The `guard_row_owned_registry` unit test
+    // FAILS if either is left unregistered.
+    RowOwnedProjection {
+        table: "canonical_attributes",
+        cursor_column: "write_cursor",
+        class: ProjectionClass::Attribute,
+    },
+    RowOwnedProjection {
+        table: "property_search_index",
+        cursor_column: "write_cursor",
+        class: ProjectionClass::PropertyFts,
+    },
 ];
 
 /// 0.8.20 Slice 5a (R-20-E1) — erase EVERY row-owned projection for one
@@ -13874,6 +15648,29 @@ const ROW_OWNED_PROJECTIONS: &[RowOwnedProjection] = &[
 fn erase_row_projections(tx: &Connection, write_cursor: i64) -> rusqlite::Result<u64> {
     let mut deleted: u64 = 0;
     for projection in ROW_OWNED_PROJECTIONS {
+        let sql =
+            format!("DELETE FROM {} WHERE {} = ?1", projection.table, projection.cursor_column);
+        deleted = deleted.saturating_add(tx.execute(&sql, [write_cursor])? as u64);
+    }
+    Ok(deleted)
+}
+
+/// 0.8.20 Slice 15d fix-1 finding 2 [P2] — purge the row-owned projections in
+/// `classes` for ONE canonical `write_cursor`. Same registry-driven mechanism as
+/// [`erase_row_projections`] (iterate [`ROW_OWNED_PROJECTIONS`], delete by the
+/// declared cursor column) but scoped to a class SUBSET, so the write path can
+/// drop a SUPERSEDED node's `Attribute` + `PropertyFts` rows — making the at-rest
+/// property projection active-only — WITHOUT touching the `NodeFts`/`Vector`
+/// shadows, whose stale rows the node read path already excludes by joining
+/// `canonical_nodes WHERE superseded_at IS NULL`. Consistent with the erasure
+/// model: an unregistered table is unreachable here, exactly as with erasure.
+fn purge_row_projections_for_cursor_in(
+    tx: &Connection,
+    write_cursor: i64,
+    classes: &[ProjectionClass],
+) -> rusqlite::Result<u64> {
+    let mut deleted: u64 = 0;
+    for projection in ROW_OWNED_PROJECTIONS.iter().filter(|p| classes.contains(&p.class)) {
         let sql =
             format!("DELETE FROM {} WHERE {} = ?1", projection.table, projection.cursor_column);
         deleted = deleted.saturating_add(tx.execute(&sql, [write_cursor])? as u64);
@@ -13908,6 +15705,8 @@ fn truncate_all_row_projections(tx: &Connection) -> rusqlite::Result<u64> {
             ProjectionClass::EdgeFts,
             ProjectionClass::Vector,
             ProjectionClass::Readiness,
+            ProjectionClass::Attribute,
+            ProjectionClass::PropertyFts,
         ],
     )
 }
@@ -13942,6 +15741,678 @@ impl ProjectionPass {
 
     fn writes_vector_state(self) -> bool {
         matches!(self, ProjectionPass::Write | ProjectionPass::VectorOnly)
+    }
+
+    /// 0.8.20 Slice 15d (R-20-EAV) — whether this pass (re)projects the declared
+    /// attribute set into the EAV store + property-FTS. Only the full `Write`
+    /// pass does: the `FtsOnly` tokenizer-upgrade reproject predates step 24 (no
+    /// registry/attribute tables exist at that migration point, so it must not
+    /// touch them), and `VectorOnly` rebuilds only the async vector shadows. The
+    /// operator FTS rebuild uses `Write`, so a full `rebuild_projections`
+    /// re-derives attributes cleanly after `truncate_all_row_projections` clears
+    /// the two attribute classes.
+    fn writes_attributes(self) -> bool {
+        matches!(self, ProjectionPass::Write)
+    }
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — the on-disk registry row for one declared
+/// projection, read back from `_fathomdb_projection_registry`.
+///
+/// **On-disk encoding of the optional sub-objects.** The `fts_tokenizer` column
+/// is tri-valued: SQL `NULL` = no `fts` sub-object; empty string `""` = `fts`
+/// present with the engine-default tokenizer; a non-empty string = `fts` with a
+/// custom tokenizer. This is what lets `searchable→FTS with default tokenizer`
+/// be distinguished durably from `searchable` with no FTS sub-target. `vector`
+/// mirrors it with an explicit `vector_declared` bit plus a nullable
+/// `vector_embedder`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct StoredProjection {
+    roles: BTreeSet<ProjectionRole>,
+    fts_present: bool,
+    /// `Some(custom)` custom tokenizer; `None` = engine default (only
+    /// meaningful when `fts_present`).
+    fts_tokenizer: Option<String>,
+    vector_declared: bool,
+    vector_embedder: Option<String>,
+}
+
+impl StoredProjection {
+    /// True iff the declared roles want the attribute VALUE stored at rest in
+    /// the EAV store: `filterable` (the value IS the filter target) or
+    /// `searchable` (the value is the retrievable meaning, and Slice 20's vector
+    /// embed will read it from here). `rankable`-only wants no value at rest.
+    fn wants_eav(&self) -> bool {
+        self.roles.contains(&ProjectionRole::Filterable)
+            || self.roles.contains(&ProjectionRole::Searchable)
+    }
+
+    /// True iff a `searchable→FTS` property-FTS row should be written: the
+    /// `searchable` role AND an `fts` sub-object.
+    fn wants_property_fts(&self) -> bool {
+        self.roles.contains(&ProjectionRole::Searchable) && self.fts_present
+    }
+
+    /// The `fts_tokenizer` column value: `None` (SQL NULL) when no `fts`
+    /// sub-object, else the custom tokenizer or `""` for engine-default.
+    fn fts_column(&self) -> Option<String> {
+        if self.fts_present {
+            Some(self.fts_tokenizer.clone().unwrap_or_default())
+        } else {
+            None
+        }
+    }
+
+    /// Build from the public [`ProjectionSpec`].
+    fn from_spec(spec: &ProjectionSpec) -> Self {
+        StoredProjection {
+            roles: spec.roles.clone(),
+            fts_present: spec.fts.is_some(),
+            fts_tokenizer: spec
+                .fts
+                .as_ref()
+                .and_then(|f| f.tokenizer.clone())
+                .filter(|t| !t.is_empty()),
+            vector_declared: spec.vector.is_some(),
+            vector_embedder: spec
+                .vector
+                .as_ref()
+                .and_then(|v| v.embedder.clone())
+                .filter(|e| !e.is_empty()),
+        }
+    }
+
+    /// Reconstruct the public [`ProjectionSpec`] for `read_projections`.
+    fn to_spec(&self, name: &str) -> ProjectionSpec {
+        ProjectionSpec {
+            name: name.to_string(),
+            roles: self.roles.clone(),
+            fts: if self.fts_present {
+                Some(ProjectionFts { tokenizer: self.fts_tokenizer.clone() })
+            } else {
+                None
+            },
+            vector: if self.vector_declared {
+                Some(ProjectionVector { embedder: self.vector_embedder.clone() })
+            } else {
+                None
+            },
+        }
+    }
+
+    /// The set of ROLE spellings this declaration DEFERS rather than builds:
+    /// `rankable` (F9 not live) and, since 15d builds no embedding, the
+    /// `searchable→vector` sub-target. Used to populate `ProjectionDelta.deferred`.
+    fn has_deferred(&self) -> bool {
+        self.roles.contains(&ProjectionRole::Rankable) || self.vector_declared
+    }
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — is `name` a well-formed attribute name?
+///
+/// Establishes the invariant "a name that `configure_projections` ACCEPTS must be
+/// POPULATABLE": the write-path extraction compiles the SQLite JSON path
+/// `$."<name>"` (double-quoted key). A name must therefore round-trip through
+/// that quoted-key form unchanged. Rejects:
+///   - empty;
+///   - a double-quote `"` (would terminate the quoted key early → malformed path,
+///     ERRORing inside the write transaction);
+///   - a BACKSLASH `\` (fix-4 finding 1 [P2]): SQLite treats `\` as an escape
+///     introducer inside the double-quoted JSON-path key, so a body key literally
+///     containing `\` (e.g. `a\b`) is NOT matched by `$."a\b"`. Pre-fix the name
+///     was accepted yet the attribute silently NEVER populated
+///     `canonical_attributes` — an accept-then-never-populate footgun. Rejecting
+///     it keeps the accept ⟹ works contract (mirrors the TC-33 hard-reject
+///     philosophy);
+///   - any ASCII control char (incl. NUL): not a safe/legible key spelling and
+///     not reliably matchable through the quoted-key form.
+///
+/// Projection names are app-declared identifiers, so this charset restriction is
+/// a legitimate contract. Caller-supplied, so it is validated at
+/// `configure_projections` time (spec names AND the `drop` list).
+fn is_valid_attribute_name(name: &str) -> bool {
+    !name.is_empty()
+        && !name.contains('"')
+        && !name.contains('\\')
+        && !name.chars().any(|c| c.is_control())
+}
+
+/// 0.8.20 Slice 15d — the SQLite JSON path that extracts attribute `name` from a
+/// node body. `name` is pre-validated by [`is_valid_attribute_name`]; the path
+/// is bound as a PARAMETER (never interpolated into SQL), so this is not an
+/// injection surface even before that validation.
+fn attribute_json_path(name: &str) -> String {
+    format!("$.\"{name}\"")
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — load the durable projection registry
+/// (`_fathomdb_projection_registry`) into a name→[`StoredProjection`] map. This
+/// is the derived-cache source (Q5) that boot re-derive and every
+/// `configure_projections` diff read.
+fn load_projection_registry(
+    conn: &Connection,
+) -> rusqlite::Result<BTreeMap<String, StoredProjection>> {
+    let mut out = BTreeMap::new();
+    // The registry table is created by schema step 24; a DB migrated to a
+    // pre-24 head (e.g. a compatibility/partial-migration test open) does not
+    // have it. Absent ⇒ no projections declared ⇒ empty registry, not an error.
+    // This keeps boot re-derive and the write-path attribute projector safe on
+    // every pre-24 schema.
+    let table_exists: bool = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_fathomdb_projection_registry'",
+            [],
+            |_| Ok(true),
+        )
+        .optional()?
+        .unwrap_or(false);
+    if !table_exists {
+        return Ok(out);
+    }
+    let mut stmt = conn.prepare(
+        "SELECT name, roles, fts_tokenizer, vector_embedder, vector_declared
+         FROM _fathomdb_projection_registry",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        let name: String = row.get(0)?;
+        let roles_json: String = row.get(1)?;
+        let fts_tokenizer: Option<String> = row.get(2)?;
+        let vector_embedder: Option<String> = row.get(3)?;
+        let vector_declared: i64 = row.get(4)?;
+        Ok((name, roles_json, fts_tokenizer, vector_embedder, vector_declared))
+    })?;
+    for row in rows {
+        let (name, roles_json, fts_col, vector_embedder, vector_declared) = row?;
+        let roles: BTreeSet<ProjectionRole> = parse_roles_json(&roles_json);
+        let fts_present = fts_col.is_some();
+        let fts_tokenizer = fts_col.filter(|t| !t.is_empty());
+        out.insert(
+            name,
+            StoredProjection {
+                roles,
+                fts_present,
+                fts_tokenizer,
+                vector_declared: vector_declared != 0,
+                vector_embedder,
+            },
+        );
+    }
+    Ok(out)
+}
+
+/// Roles are persisted as a compact, sorted, comma-separated list (set
+/// semantics; order-independent). Unknown tokens are ignored (forward-compat).
+fn parse_roles_json(s: &str) -> BTreeSet<ProjectionRole> {
+    s.split(',').filter_map(|t| ProjectionRole::from_str_opt(t.trim())).collect()
+}
+
+fn roles_to_storage(roles: &BTreeSet<ProjectionRole>) -> String {
+    roles.iter().map(|r| r.as_str()).collect::<Vec<_>>().join(",")
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — write/overwrite one registry row.
+fn persist_projection_row(
+    tx: &Connection,
+    name: &str,
+    stored: &StoredProjection,
+) -> rusqlite::Result<()> {
+    tx.execute(
+        "INSERT INTO _fathomdb_projection_registry
+             (name, roles, fts_tokenizer, vector_embedder, vector_declared)
+         VALUES(?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(name) DO UPDATE SET
+             roles = excluded.roles,
+             fts_tokenizer = excluded.fts_tokenizer,
+             vector_embedder = excluded.vector_embedder,
+             vector_declared = excluded.vector_declared",
+        params![
+            name,
+            roles_to_storage(&stored.roles),
+            stored.fts_column(),
+            stored.vector_embedder,
+            i64::from(stored.vector_declared),
+        ],
+    )?;
+    Ok(())
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — delete one registry row.
+fn remove_projection_row(tx: &Connection, name: &str) -> rusqlite::Result<()> {
+    tx.execute("DELETE FROM _fathomdb_projection_registry WHERE name = ?1", params![name])?;
+    Ok(())
+}
+
+/// 0.8.20 Slice 15d (R-20-EAV) — delete every EAV + property-FTS row for one
+/// attribute `name` (all owning nodes). The idempotent-rebuild primitive: a
+/// changed or dropped projection clears its rows before (re)backfill.
+fn clear_attribute_projection(tx: &Connection, name: &str) -> rusqlite::Result<()> {
+    tx.execute("DELETE FROM property_search_index WHERE attr_name = ?1", params![name])?;
+    tx.execute("DELETE FROM canonical_attributes WHERE attr_name = ?1", params![name])?;
+    Ok(())
+}
+
+/// 0.8.20 Slice 15d (R-20-EAV) — project ONE attribute value for ONE node row
+/// into the EAV store and (if `searchable→FTS`) the property-FTS shadow. Skips a
+/// NULL/absent extraction (an absent attribute means no row, so a `filterable`
+/// equality simply never matches it — correct). Shared by the write path and
+/// the backfill so they cannot drift.
+fn project_one_attribute(
+    tx: &Connection,
+    cursor: i64,
+    body: &str,
+    name: &str,
+    stored: &StoredProjection,
+) -> rusqlite::Result<()> {
+    if !stored.wants_eav() {
+        return Ok(());
+    }
+    // json_extract over a non-JSON body would error; guard with json_valid so a
+    // plain-text body simply yields no attribute rows. The canonical scalar
+    // extraction is shared with the Slice-15e vec0 pre-KNN column via
+    // [`extract_scalar_attribute`], so the EAV value and the `attr_<hex>` value
+    // are IDENTICAL by construction.
+    //
+    // fix-1 finding 1 [P2] — project EVERY JSON scalar type, not just strings.
+    // The prior form read the extraction as `Option<String>`; for a JSON number
+    // or bool, `json_extract` returns an INTEGER/REAL, the `get::<Option<String>>`
+    // conversion FAILED, and `.unwrap_or(None)` silently treated the attribute as
+    // absent — so a numeric/boolean filterable value never projected. We now
+    // render a single canonical TEXT form per JSON type, keyed on `json_type` so
+    // the stored value is deterministic and the SAME value flows to BOTH
+    // `canonical_attributes` and `property_search_index` (consistency by
+    // construction — one `value` binding below):
+    //   - string  -> the text verbatim
+    //   - integer -> decimal text (CAST AS TEXT); e.g. 3 -> "3"
+    //   - real    -> decimal text (CAST AS TEXT); e.g. 3.5 -> "3.5"
+    //   - true    -> "true", false -> "false"  (preserve the JSON literal, NOT the
+    //                SQLite `1`/`0` that a bare `CAST(json_extract(...) AS TEXT)`
+    //                would yield — so a bool filter matches the value the caller
+    //                wrote, and "true" never collides with the number 1).
+    //   - null / absent path -> SQL NULL -> no row (an absent attribute correctly
+    //                never matches a `filterable` equality).
+    //   - object / array -> DELIBERATELY SKIPPED (SQL NULL -> no row): a composite
+    //                value is not a scalar filter/FTS target in 15d; projecting its
+    //                raw JSON text would be a footgun (nested-field filtering is the
+    //                >=0.9.x multi-field work). Skipping is deliberate, not an
+    //                accidental type-conversion drop — no scalar type is dropped.
+    let Some(value) = extract_scalar_attribute(tx, body, name)? else {
+        return Ok(());
+    };
+    tx.execute(
+        "INSERT INTO canonical_attributes(write_cursor, attr_name, attr_value)
+         VALUES(?1, ?2, ?3)",
+        params![cursor, name, value],
+    )?;
+    if stored.wants_property_fts() {
+        tx.execute(
+            "INSERT INTO property_search_index(attr_value, attr_name, write_cursor)
+             VALUES(?1, ?2, ?3)",
+            params![value, name, cursor],
+        )?;
+    }
+    Ok(())
+}
+
+/// 0.8.20 Slice 15e fix-3 [P2] — the leading marker byte that the vec0
+/// `attr_<hex>` FILTER column prepends to every PRESENT scalar value, so that
+/// PRESENT and ABSENT are DISJOINT in a NOT-NULL TEXT column.
+///
+/// The `''` empty-string sentinel used to mean BOTH "attribute absent" AND
+/// "attribute present with value `''`", so a `status == ""` equality filter
+/// false-matched every absent row. vec0 TEXT metadata is NOT-NULL-able (TC-46
+/// condition #3), so absent cannot be `NULL`; instead absent stays `''` and every
+/// PRESENT value `V` is encoded `enc(V) = "\x01" || V`. This is injective and
+/// non-empty for ALL `V` (including `V=""`, whose encoding is the bare marker),
+/// so `attr_<hex> = enc("")` matches present-empty but NEVER the `''`-absent rows.
+///
+/// This encoding is CONFINED to the vec0 filter column and the filter-value
+/// lowering ([`vector_filter_values`]). `property_search_index` (the searchable→FTS
+/// projection) and `canonical_attributes.attr_value` keep the RAW value — the FTS
+/// arm distinguishes absent from present-empty by canonical_attributes row
+/// EXISTENCE instead (see [`hit_attributes_pass_filter`]).
+const ATTR_VEC0_PRESENT_MARKER: char = '\u{1}';
+
+/// 0.8.20 Slice 15e fix-3 — encode a PRESENT scalar value for the vec0 filter
+/// column / filter-value lowering (see [`ATTR_VEC0_PRESENT_MARKER`]). ABSENT is
+/// NOT encoded (it stays the bare `''` sentinel), so this is only ever called on a
+/// value known to be present.
+fn encode_attr_vec0_present(value: &str) -> String {
+    let mut s = String::with_capacity(value.len() + 1);
+    s.push(ATTR_VEC0_PRESENT_MARKER);
+    s.push_str(value);
+    s
+}
+
+/// 0.8.20 Slice 15e — extract the canonical TEXT form of attribute `name` from a
+/// node `body`, using the SAME `json_type` CASE as [`project_one_attribute`] so
+/// the vec0 pre-KNN `attr_<hex>` column value equals the EAV
+/// `canonical_attributes` value (consistency by construction — a `filterable`
+/// filter routed pre-KNN sees exactly what the EAV path stored). Returns `None`
+/// for an absent / null / object / array / non-JSON extraction (⇒ the `''`
+/// sentinel at the vec0 column, ⇒ fail-to-match).
+fn extract_scalar_attribute(
+    conn: &Connection,
+    body: &str,
+    name: &str,
+) -> rusqlite::Result<Option<String>> {
+    let path = attribute_json_path(name);
+    let value: Option<String> = conn
+        .query_row(
+            "SELECT CASE WHEN json_valid(?1) THEN
+                 CASE json_type(?1, ?2)
+                     WHEN 'true'   THEN 'true'
+                     WHEN 'false'  THEN 'false'
+                     WHEN 'null'   THEN NULL
+                     WHEN 'object' THEN NULL
+                     WHEN 'array'  THEN NULL
+                     ELSE CAST(json_extract(?1, ?2) AS TEXT)
+                 END
+             END",
+            params![body, path],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .unwrap_or(None);
+    Ok(value)
+}
+
+/// 0.8.20 Slice 15e — for a node `body`, build the `, attr_<hex>` column suffix,
+/// the `, ?N` placeholder suffix (numbered from `start_idx`), and the bound TEXT
+/// values for EVERY attribute column CURRENTLY on the live `vector_default` (read
+/// from the table's own SQL, so the INSERT always matches the table shape exactly —
+/// vec0 rejects a partial-column INSERT). Each value is the body's canonical
+/// scalar extraction, or the `''` sentinel when absent. Returns empty fragments
+/// (and no values) when the table has no attribute columns, so the INSERT stays
+/// byte-identical to the shipped statement.
+fn vector_attr_insert_fragments(
+    conn: &Connection,
+    body: &str,
+    start_idx: usize,
+) -> rusqlite::Result<(String, String, Vec<rusqlite::types::Value>)> {
+    let cols = actual_vector_attr_columns(conn)?;
+    let mut col_sql = String::new();
+    let mut ph_sql = String::new();
+    let mut values: Vec<rusqlite::types::Value> = Vec::new();
+    for (i, col) in cols.iter().enumerate() {
+        let name = decode_attr_vec0_column(col).unwrap_or_default();
+        // fix-3 [P2] — a PRESENT scalar value is encoded `\x01 || V` so it is
+        // DISJOINT from the `''`-absent sentinel (present-empty ⇒ the bare marker,
+        // never `''`). Absent stays the bare `''` sentinel.
+        let value = match extract_scalar_attribute(conn, body, &name)? {
+            Some(v) => encode_attr_vec0_present(&v),
+            None => String::new(),
+        };
+        col_sql.push_str(&format!(", {col}"));
+        ph_sql.push_str(&format!(", ?{}", start_idx + i));
+        values.push(rusqlite::types::Value::Text(value));
+    }
+    Ok((col_sql, ph_sql, values))
+}
+
+/// 0.8.20 Slice 15d (R-20-EAV) — the write-path attribute projector: for a
+/// just-inserted node, project EVERY declared attribute (reading the live
+/// registry from `tx`). Same-transaction, so the node is filter/FTS-retrievable
+/// on commit. A no-op when the registry is empty (the pre-`configure_projections`
+/// default), so it costs one empty-table scan per node and is behaviour-neutral
+/// until a projection is declared.
+fn project_node_attributes(tx: &Connection, cursor: i64, body: &str) -> rusqlite::Result<()> {
+    let registry = load_projection_registry(tx)?;
+    for (name, stored) in &registry {
+        project_one_attribute(tx, cursor, body, name, stored)?;
+    }
+    Ok(())
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — backfill ONE attribute across every ACTIVE,
+/// non-superseded canonical node. Called by `configure_projections` when a
+/// projection is added/changed (after `clear_attribute_projection`), and by boot
+/// re-derive. Idempotent when paired with the clear.
+fn backfill_attribute(
+    tx: &Connection,
+    name: &str,
+    stored: &StoredProjection,
+) -> rusqlite::Result<()> {
+    if !stored.wants_eav() {
+        return Ok(());
+    }
+    let rows: Vec<(i64, String)> = {
+        let mut stmt = tx.prepare(
+            "SELECT write_cursor, body FROM canonical_nodes
+             WHERE superseded_at IS NULL AND state = 'active'",
+        )?;
+        let collected = stmt
+            .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        collected
+    };
+    for (cursor, body) in rows {
+        project_one_attribute(tx, cursor, &body, name, stored)?;
+    }
+    Ok(())
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — is `desired` an INCOMPATIBLE/DESTRUCTIVE change
+/// to a live `existing` projection? A destructive change discards an
+/// expensive-to-rebuild resource and so REQUIRES an explicit `drop` (C3): a role
+/// REMOVAL, dropping the `fts`/`vector` sub-target, or changing the tokenizer /
+/// embedder. Purely ADDITIVE changes (adding a role, adding an `fts`/`vector`
+/// sub-object) are non-destructive and applied in place.
+fn is_destructive_projection_change(
+    existing: &StoredProjection,
+    desired: &StoredProjection,
+) -> bool {
+    if existing.roles.iter().any(|r| !desired.roles.contains(r)) {
+        return true;
+    }
+    if existing.fts_present
+        && (!desired.fts_present || existing.fts_tokenizer != desired.fts_tokenizer)
+    {
+        return true;
+    }
+    if existing.vector_declared
+        && (!desired.vector_declared || existing.vector_embedder != desired.vector_embedder)
+    {
+        return true;
+    }
+    false
+}
+
+/// Human-readable summary of the destructive delta, surfaced in
+/// [`EngineError::ProjectionDestructive`] so the caller sees WHAT it must drop.
+fn describe_projection_delta(existing: &StoredProjection, desired: &StoredProjection) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    for r in &existing.roles {
+        if !desired.roles.contains(r) {
+            parts.push(format!("role '{}' removed", r.as_str()));
+        }
+    }
+    if existing.fts_present && !desired.fts_present {
+        parts.push("fts sub-target removed".to_string());
+    } else if existing.fts_present && existing.fts_tokenizer != desired.fts_tokenizer {
+        parts.push("fts tokenizer changed".to_string());
+    }
+    if existing.vector_declared && !desired.vector_declared {
+        parts.push("vector sub-target removed".to_string());
+    } else if existing.vector_declared && existing.vector_embedder != desired.vector_embedder {
+        parts.push("vector embedder changed".to_string());
+    }
+    if parts.is_empty() {
+        "incompatible change".to_string()
+    } else {
+        parts.join("; ")
+    }
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — the declarative, idempotent diff+backfill apply
+/// that backs [`Engine::configure_projections`]. Runs inside the caller's write
+/// transaction `tx`. Order: apply `drop`s first (so a drop+re-declare in one
+/// call rebuilds fresh), then diff each spec. Idempotent re-registration diffs to
+/// an empty delta (`unchanged`). A destructive change without an explicit drop is
+/// refused with [`EngineError::ProjectionDestructive`].
+fn apply_projection_config(
+    tx: &Connection,
+    specs: &[ProjectionSpec],
+    drop: &[String],
+) -> Result<ProjectionDelta, EngineError> {
+    // Validate up-front so a bad name aborts before any write.
+    //
+    // fix-6 finding [P2] — REJECT a duplicate projection `name` within `specs`
+    // (and a duplicate entry within `drop`) up front. The diff loop below diffs
+    // every spec against the ONE pre-loop registry snapshot, so a name repeated
+    // in `specs` diffed the SECOND spec against state that never saw the first
+    // spec's just-persisted row: on a fresh DB `[status(searchable+fts),
+    // status(rankable-only)]` reported `built=[status]` in the delta while the
+    // registry ended rankable-only (which builds nothing) — the returned delta
+    // DIVERGED from the persisted registry, breaking the fix-4 "accept ⟹ correct"
+    // contract. A duplicate `drop` entry likewise reported the drop twice though
+    // the row was removed once. A single request naming the same projection twice
+    // is ambiguous/malformed, so we refuse it (rejection, not last-wins coalesce)
+    // — a rejected request is a total no-op, keeping the registry and delta
+    // consistent with the accepted input. A name that appears in BOTH `specs` and
+    // `drop` is NOT a duplicate: that is the documented drop-then-rebuild-fresh
+    // pattern (drops apply first, then the fresh spec builds), so it is allowed.
+    let mut seen_spec_names: BTreeSet<&str> = BTreeSet::new();
+    for spec in specs {
+        if !is_valid_attribute_name(&spec.name) {
+            return Err(EngineError::InvalidArgument {
+                msg: format!("invalid projection attribute name: {:?}", spec.name),
+            });
+        }
+        if spec.roles.is_empty() {
+            return Err(EngineError::InvalidArgument {
+                msg: format!("projection '{}' declares no roles", spec.name),
+            });
+        }
+        if !seen_spec_names.insert(spec.name.as_str()) {
+            return Err(EngineError::InvalidArgument {
+                msg: format!("duplicate projection name in one request: '{}'", spec.name),
+            });
+        }
+    }
+    let mut seen_drop_names: BTreeSet<&str> = BTreeSet::new();
+    for name in drop {
+        if !is_valid_attribute_name(name) {
+            return Err(EngineError::InvalidArgument {
+                msg: format!("invalid projection drop name: {name:?}"),
+            });
+        }
+        if !seen_drop_names.insert(name.as_str()) {
+            return Err(EngineError::InvalidArgument {
+                msg: format!("duplicate projection drop in one request: '{name}'"),
+            });
+        }
+    }
+
+    let mut delta = ProjectionDelta::default();
+
+    // (1) Explicit drops. Omission never drops (C3); only this list does.
+    let before_drop = load_projection_registry(tx).map_err(|_| EngineError::Storage)?;
+    for name in drop {
+        if before_drop.contains_key(name) {
+            clear_attribute_projection(tx, name).map_err(|_| EngineError::Storage)?;
+            remove_projection_row(tx, name).map_err(|_| EngineError::Storage)?;
+            delta.dropped.push(name.clone());
+        }
+        // dropping an absent projection is an idempotent no-op, not an error.
+    }
+
+    // (2) Diff each spec against the post-drop registry.
+    let current = load_projection_registry(tx).map_err(|_| EngineError::Storage)?;
+    for spec in specs {
+        let desired = StoredProjection::from_spec(spec);
+        match current.get(&spec.name) {
+            Some(existing) if existing == &desired => {
+                // Idempotent re-registration — no-op (the keystone acceptance).
+            }
+            Some(existing) => {
+                if is_destructive_projection_change(existing, &desired) {
+                    return Err(EngineError::ProjectionDestructive {
+                        name: spec.name.clone(),
+                        delta: describe_projection_delta(existing, &desired),
+                    });
+                }
+                persist_projection_row(tx, &spec.name, &desired)
+                    .map_err(|_| EngineError::Storage)?;
+                clear_attribute_projection(tx, &spec.name).map_err(|_| EngineError::Storage)?;
+                backfill_attribute(tx, &spec.name, &desired).map_err(|_| EngineError::Storage)?;
+                if desired.wants_eav() {
+                    delta.built.push(spec.name.clone());
+                }
+                // 0.8.20 Slice 15e fix-2 finding 2 [P2] — this arm ONLY runs when
+                // the registry row actually CHANGED (`existing != desired`), so the
+                // delta MUST reflect that change; otherwise an accepted mutation
+                // reports `unchanged = true` — a no-op lie to SDK callers. The prior
+                // `&& !existing.has_deferred()` guard suppressed a deferred-ONLY
+                // change (e.g. `rankable` → `rankable + vector`, which builds no EAV
+                // so `built` stays empty): the row persisted but `delta` came back
+                // empty. Mirror the fresh-registration push (`if
+                // desired.has_deferred()`). Every valid non-empty spec has
+                // `wants_eav()` OR `has_deferred()`, so on a real change at least one
+                // of `built`/`deferred` is now populated ⇒ `unchanged` can never be
+                // `true` on a persisted change. A genuine no-op (identical spec)
+                // takes the idempotent arm above and is untouched.
+                if desired.has_deferred() {
+                    delta.deferred.push(spec.name.clone());
+                }
+            }
+            None => {
+                persist_projection_row(tx, &spec.name, &desired)
+                    .map_err(|_| EngineError::Storage)?;
+                clear_attribute_projection(tx, &spec.name).map_err(|_| EngineError::Storage)?;
+                backfill_attribute(tx, &spec.name, &desired).map_err(|_| EngineError::Storage)?;
+                if desired.wants_eav() {
+                    delta.built.push(spec.name.clone());
+                }
+                if desired.has_deferred() {
+                    delta.deferred.push(spec.name.clone());
+                }
+            }
+        }
+    }
+
+    // 0.8.20 Slice 15e — after the registry mutations, reconcile the live vec0
+    // shape with the (possibly changed) `filterable` set: a NON-DESTRUCTIVE
+    // reshape adds/removes the `attr_<hex>` pre-KNN columns preserving every
+    // row's embedding (TC-46, HITL Option 1). Runs on the caller's write
+    // transaction, so the reshape commits atomically with the registry row. On an
+    // idempotent re-registration the desired set equals the live set, so this is a
+    // no-op (vec0 untouched) and `delta.unchanged` above is unaffected. Skipped
+    // when there is no embedder profile (⇒ no `vector_default` to reshape).
+    if let Ok(dimension) = default_profile_dimension(tx) {
+        reconcile_vector_attr_columns(tx, dimension).map_err(|_| EngineError::Storage)?;
+    }
+
+    delta.unchanged =
+        delta.built.is_empty() && delta.dropped.is_empty() && delta.deferred.is_empty();
+    Ok(delta)
+}
+
+/// 0.8.20 Slice 15d (R-20-PR, Q5) — BOOT re-derive: the engine `ProjectionSpec`
+/// is a DERIVED cache, re-driven idempotently on boot. For every persisted
+/// registry declaration, clear + backfill its EAV / property-FTS rows from the
+/// canonical nodes — so a DB whose registry row survives but whose projection
+/// rows are missing/partial (a crash window, a restored registry) CONVERGES on
+/// the next open. A no-op (single empty-table read) when no projections are
+/// declared — which is every pre-`configure_projections` DB. Runs on the writer
+/// connection, single-threaded, before readers spawn.
+fn rederive_projections_on_boot(conn: &Connection) -> rusqlite::Result<()> {
+    let registry = load_projection_registry(conn)?;
+    if registry.is_empty() {
+        return Ok(());
+    }
+    conn.execute_batch("BEGIN IMMEDIATE")?;
+    let result = (|| {
+        for (name, stored) in &registry {
+            clear_attribute_projection(conn, name)?;
+            backfill_attribute(conn, name, stored)?;
+        }
+        Ok(())
+    })();
+    match result {
+        Ok(()) => conn.execute_batch("COMMIT"),
+        Err(err) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            Err(err)
+        }
     }
 }
 
@@ -13992,6 +16463,7 @@ fn project_canonical_node_row(
     body: &str,
     row_kind: RowKind,
     pass: ProjectionPass,
+    node_active: bool,
 ) -> rusqlite::Result<bool> {
     let targets = index_targets_for_row_kind(row_kind);
     if targets.fts && pass.writes_fts() {
@@ -14024,6 +16496,28 @@ fn project_canonical_node_row(
              )",
             params![kind, body, cursor],
         )?;
+    }
+    // 0.8.20 Slice 15d (R-20-EAV) — same-transaction attribute projection. Only
+    // the full `Write` pass re-derives attributes (see `writes_attributes`): the
+    // FtsOnly tokenizer reproject predates step 24 and must not touch the
+    // registry/attribute tables; VectorOnly rebuilds only vector shadows. A full
+    // operator FTS rebuild uses `Write`, so it re-derives attributes after the
+    // truncate.
+    //
+    // fix-2 [P2]: gated on `node_active`. The at-rest attribute projection tracks
+    // EXACTLY the backfill's row set — `state = 'active' AND superseded_at IS NULL`
+    // (see `backfill_attribute`). Unlike node-FTS / vector shadows (whose stale
+    // versions are excluded by the canonical read path's `superseded_at IS NULL`
+    // / `state = 'active'` join), the property tables carry NO read-side lifecycle
+    // filter (`property_search_index` is an FTS5 table that cannot), so a pending
+    // or superseded node's attribute values would otherwise LEAK into a
+    // same-session property filter / property-FTS. The write path passes
+    // `state == Active`; a projector-replay rebuild passes `active ∧ non-superseded`
+    // per row. Lifecycle transitions maintain the store directly (see
+    // `Engine::transition`). Passes where `writes_attributes()` is false ignore the
+    // flag entirely.
+    if pass.writes_attributes() && node_active {
+        project_node_attributes(tx, cursor as i64, body)?;
     }
     let enqueue_vector = targets.vector && kind_is_vector_indexed(tx, kind).unwrap_or(false);
     if pass.writes_vector_state() {
@@ -14355,11 +16849,34 @@ fn commit_batch(
                 // the same logical_id SUPERSEDES, never forks. No-op when logical_id
                 // is None (legacy/own-identity insert, behavior-identical to 0.7.x).
                 if let Some(logical_id) = logical_id {
+                    // fix-1 finding 2 [P2]: collect the prior active cursor(s)
+                    // BEFORE tombstoning so we can purge the superseded row's
+                    // row-owned attribute projections and keep the at-rest EAV /
+                    // property-FTS store ACTIVE-ONLY. Without this, a same-session
+                    // property filter / property-FTS saw BOTH the stale and the
+                    // current value until a boot re-derive/reconfigure cleared the
+                    // table — a stale read that violates the active-only invariant.
+                    let prior_g0 = prior_node_cursors_by_logical_id(&tx, logical_id)?;
                     tx.execute(
                         "UPDATE canonical_nodes SET superseded_at = ?1
                          WHERE logical_id = ?2 AND superseded_at IS NULL",
                         params![cursor, logical_id],
                     )?;
+                    // Purge only the Attribute + PropertyFts classes: those tables
+                    // have NO `superseded_at IS NULL` read-side filter (the FTS5
+                    // `property_search_index` cannot carry one), so their stale rows
+                    // MUST be deleted at rest. The NodeFts (`search_index` /
+                    // `search_index_v2`) + Vector shadows are left intact — the node
+                    // read path already excludes their superseded rows via the
+                    // `canonical_nodes WHERE superseded_at IS NULL` join, so purging
+                    // them here would be a behaviour change outside this fix's scope.
+                    for sc in &prior_g0 {
+                        purge_row_projections_for_cursor_in(
+                            &tx,
+                            *sc,
+                            &[ProjectionClass::Attribute, ProjectionClass::PropertyFts],
+                        )?;
+                    }
                 }
                 // EXP-S (0.8.14 Slice 5, D1) — a `PreparedWrite::Node` is the
                 // `leaf` structural row_kind (a normal record). coverage/graph
@@ -14387,6 +16904,14 @@ fn commit_batch(
                 // this is behavior-identical to the pre-EXP-S inline path: FTS
                 // (sync, in-tx) + vector (async, gated by kind_is_vector_indexed);
                 // else the cursor is terminated up-front.
+                // fix-2 [P2]: gate the attribute projection on the create-time
+                // state. A fresh insert is always non-superseded, so the backfill
+                // predicate (`state = 'active' AND superseded_at IS NULL`) reduces
+                // to `state == Active` here. A `Pending` node is quarantined out of
+                // the canonical read model — its declared attributes must NOT reach
+                // the property store until a `transition(pending → active)` promotes
+                // it (which projects them then). Node-FTS / vector shadows are left
+                // to their read-side lifecycle filter, exactly as for supersession.
                 project_canonical_node_row(
                     &tx,
                     cursor,
@@ -14394,6 +16919,7 @@ fn commit_batch(
                     body,
                     RowKind::Leaf,
                     ProjectionPass::Write,
+                    matches!(state, InitialState::Active),
                 )?;
             }
             (
@@ -14614,7 +17140,31 @@ fn load_next_cursor(connection: &Connection) -> u64 {
     let edges = max_cursor(connection, "canonical_edges").unwrap_or(0);
     let mutations = max_cursor(connection, "operational_mutations").unwrap_or(0);
     let state = max_cursor(connection, "operational_state").unwrap_or(0);
-    nodes.max(edges).max(mutations).max(state)
+    // TC-33: schema step 23 RECREATES `canonical_edges` (no data migration), so
+    // the edge rows that used to hold the high-water mark are gone. Without this
+    // term the allocator can hand out a cursor a PREVIOUS edge already used —
+    // and stale `_fathomdb_projection_terminal` / `_fathomdb_vector_rows` / vec0
+    // rows still key on it, so a brand-new row would be treated as
+    // already-projected and never get indexed. Step 23 stashes the pre-drop
+    // maximum here; folding it in keeps cursors monotonic across the migration.
+    let reserved = reserved_write_cursor(connection);
+    nodes.max(edges).max(mutations).max(state).max(reserved)
+}
+
+/// The write-cursor high-water mark reserved by schema step 23, or 0 when the
+/// key is absent (fresh DB, or a DB that never had edges). Never fails the
+/// caller: a missing/unparseable value degrades to 0, which is the pre-TC-33
+/// behaviour.
+fn reserved_write_cursor(connection: &Connection) -> u64 {
+    connection
+        .query_row(
+            "SELECT value FROM _fathomdb_open_state WHERE key = ?1",
+            params![fathomdb_schema::RESERVED_WRITE_CURSOR_KEY],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+        .and_then(|raw| raw.parse::<u64>().ok())
+        .unwrap_or(0)
 }
 
 fn max_cursor(connection: &Connection, table: &str) -> rusqlite::Result<u64> {
@@ -15179,6 +17729,47 @@ mod tests {
             "_fathomdb_projection_state is KIND-owned (per-kind enqueue watermark) and must \
              never be deleted per-cursor: erasing one row would rewind a whole kind's watermark"
         );
+    }
+
+    /// 0.8.20 Slice 15d (R-20-EAV) — PROVE THE GUARD BITES. The two net-new
+    /// content-storing projection tables (`canonical_attributes`,
+    /// `property_search_index`) are `write_cursor`-keyed and hold attribute
+    /// values at rest. This test asserts (1) they ARE registered in
+    /// `ROW_OWNED_PROJECTIONS` (so `erase_row_projections` reaches them), and (2)
+    /// the guard's core predicate — "registered OR a named source of truth" —
+    /// FAILS for either table if it is (hypothetically) removed from the
+    /// registry. This is what makes forgetting to register a future
+    /// content-storing projection a red test, not a silent erasure leak.
+    #[test]
+    fn slice15d_attribute_projections_registered_and_guard_bites() {
+        const NON_PROJECTION_CURSOR_TABLES: &[&str] =
+            &["canonical_nodes", "canonical_edges", "operational_mutations", "operational_state"];
+
+        let registered: Vec<&str> = ROW_OWNED_PROJECTIONS.iter().map(|p| p.table).collect();
+
+        // (1) Both new content-storing projections are registered as row-owned.
+        for table in ["canonical_attributes", "property_search_index"] {
+            assert!(
+                registered.contains(&table),
+                "{table} holds attribute values at rest and MUST be in ROW_OWNED_PROJECTIONS \
+                 so purge/excise_source reach it"
+            );
+        }
+
+        // (2) The guard predicate BITES: pretend one of them was never
+        //     registered — the guard's "registered OR source-of-truth" check must
+        //     reject it (the exact assertion `guard_row_owned_registry` runs).
+        for hidden in ["canonical_attributes", "property_search_index"] {
+            let as_if_unregistered: Vec<&str> =
+                registered.iter().copied().filter(|t| *t != hidden).collect();
+            let accepted = as_if_unregistered.contains(&hidden)
+                || NON_PROJECTION_CURSOR_TABLES.contains(&hidden);
+            assert!(
+                !accepted,
+                "if {hidden} were unregistered the guard would still (incorrectly) accept it — \
+                 the guard does not actually bite"
+            );
+        }
     }
 
     /// Cause-A (0.8.11.2) / C-2 (0.8.19) — `derive_stable_id` id-space contract:

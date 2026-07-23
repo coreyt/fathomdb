@@ -1,0 +1,695 @@
+{
+  "slice": "15d",
+  "title": "Projection registry (C-1 co-land) + EAV / property-FTS (R-20-PR, R-20-EAV)",
+  "branch": "orch-0.8.20-s15d",
+  "head_sha": "a577c01cf356855fb44c2f46b9c55e740f6ba697",
+  "status": "COMPLETE \u2014 RED\u2192GREEN, all gates green, X1 parity verified by execution",
+  "commits": [
+    {
+      "sha": "06a4a154",
+      "kind": "RED",
+      "summary": "test(0.8.20): RED \u2014 schema step 24 real; engine verbs stubbed; 10/11 engine tests fail"
+    },
+    {
+      "sha": "d1af5758",
+      "kind": "GREEN",
+      "summary": "feat(0.8.20): GREEN \u2014 configure_projections + read_projections + EAV/property-FTS + ROW_OWNED registration + boot re-derive"
+    },
+    {
+      "sha": "0d887f85",
+      "kind": "feat",
+      "summary": "Slice 15d X1 SDK parity \u2014 pyo3 + napi + Python/TS packages + allowlist + interface docs"
+    },
+    {
+      "sha": "32078492",
+      "kind": "fix",
+      "summary": "boot re-derive tolerates pre-step-24 schemas + head=24 test churn"
+    },
+    {
+      "sha": "95107213",
+      "kind": "feat",
+      "summary": "Rust facade re-exports Projection* types"
+    },
+    {
+      "sha": "dfc8b69b",
+      "kind": "fix",
+      "summary": "TS read.projections wraps native via intercept (fresh-clone tsc fix)"
+    }
+  ],
+  "gates": {
+    "cargo_clippy_workspace_all_targets": {
+      "exit": 0
+    },
+    "cargo_check_workspace_all_targets": {
+      "exit": 0
+    },
+    "cargo_test_engine_schema": {
+      "exit": 0,
+      "passed": 598,
+      "failed": 0,
+      "ignored": 13,
+      "baseline": "580 passed / 0 failed / 13 ignored",
+      "note": "run with --test-threads=1 --no-fail-fast, explicit long timeout; +18 net-new tests (11 engine integration + 6 schema step24 + 1 lib guard-bites)"
+    },
+    "operator_erasure_tests": {
+      "exit": 0,
+      "note": "erasure_projection_registry 10, erasure_completeness 4, excise_source 6, rebuild_projections 3 \u2014 all pass with the two new row-owned tables registered"
+    },
+    "ac_041_recovery_denylist": {
+      "exit": 0,
+      "note": "fathomdb no_recovery_surface + governed_surface pass; recovery_denylist unchanged (five names); new verbs do not collide"
+    },
+    "python_execution_fresh_clone": {
+      "exit": 0,
+      "passed": 23,
+      "note": "fresh git clone + own venv + maturin develop --features pyo3/extension-module; pytest test_slice15d_projection_registry.py (6) + test_surface.py (17). Surface test recognizes configure_projections + read.projections as live governed commands; no env trap."
+    },
+    "typescript_execution_fresh_clone": {
+      "exit": 0,
+      "passed": 18,
+      "note": "fresh clone; napi build --platform (debug, test-hooks,default-embedder) + tsc + node --test; slice15d-projection-registry (6) + surface (12). Surface parity (TS/Py share one allowlist) green."
+    },
+    "eu7": {
+      "note": "ZERO eu7 runs \u2014 eu7_real_corpus_ac stays #[ignore]d (13 ignored). R-20-EU7 CLOSED BY DECISION; not run."
+    }
+  },
+  "as_built_projection_spec_shape": {
+    "public_rust": "ProjectionSpec { name: String, roles: BTreeSet<ProjectionRole>, fts: Option<ProjectionFts>, vector: Option<ProjectionVector> }",
+    "projection_role": "enum ProjectionRole { Filterable, Rankable, Searchable } \u2014 EXACTLY three members; searchable->FTS / searchable->vector are tier labels carried by the fts/vector sub-objects, NOT enum members",
+    "roles_semantics": "Set semantics (BTreeSet: dedup + membership + order-independent). An attribute can be Filterable AND Searchable.",
+    "fts_sub_object": "ProjectionFts { tokenizer: Option<String> } \u2014 presence selects the searchable->FTS sub-target; None tokenizer = engine default",
+    "vector_sub_object": "ProjectionVector { embedder: Option<String> } \u2014 STORED by 15d (registry columns vector_declared + vector_embedder), builds nothing here",
+    "delta": "ProjectionDelta { built, dropped, deferred: Vec<String>, unchanged: bool }; destructive change is Err(ProjectionDestructive{name,delta}), not a delta",
+    "dense_readiness_attach_point": "Slice 20 (R-20-DR) adds a `dense_readiness` field to ProjectionVector (the `vector` sub-object). The on-disk registry already round-trips the sub-object via _fathomdb_projection_registry.vector_declared + .vector_embedder, so the attach is purely additive \u2014 no persisted-shape change is needed in Slice 20. StoredProjection::to_spec/from_spec and the SDK ProjectionSpec.vector flag are the seam."
+  },
+  "eav_property_fts_schema_step_24": {
+    "schema_version": "23 -> 24 (SCHEMA_VERSION bumped; step 24 is head)",
+    "no_data_migration": "HITL 2026-07-21 \u2014 shape only; tables come up EMPTY; configure_projections + boot re-derive populate them",
+    "tables": [
+      "_fathomdb_projection_registry(name PK, roles TEXT, fts_tokenizer TEXT nullable [NULL=no fts / ''=fts+default tokenizer / non-empty=custom], vector_embedder TEXT nullable, vector_declared INTEGER) \u2014 durable derived-cache source (Q5)",
+      "canonical_attributes(write_cursor INTEGER, attr_name TEXT, attr_value TEXT) + index (attr_name, attr_value) + index (write_cursor) \u2014 row-owned EAV attribute store, values derived from node body JSON $.<name>, rebuild-durable",
+      "property_search_index USING fts5(attr_value, attr_name UNINDEXED, write_cursor UNINDEXED, tokenize='porter unicode61 remove_diacritics 2') \u2014 row-owned property-FTS shadow"
+    ],
+    "marker": "-- MIGRATION-ACCRETION-EXEMPTION present (additive CREATE TABLE)"
+  },
+  "row_owned_projections_added": {
+    "entries": [
+      "{ table: 'canonical_attributes', cursor_column: 'write_cursor', class: Attribute }",
+      "{ table: 'property_search_index', cursor_column: 'write_cursor', class: PropertyFts }"
+    ],
+    "new_projection_classes": [
+      "Attribute",
+      "PropertyFts"
+    ],
+    "also": "both classes added to truncate_all_row_projections so a full rebuild clears+re-derives them; erase_row_projections (purge/excise_source) now reaches attribute values at rest",
+    "guard_proof": "lib test guard_row_owned_registry passes with both tables registered; net-new lib test slice15d_attribute_projections_registered_and_guard_bites proves (1) both are registered and (2) the guard predicate REJECTS either if hypothetically unregistered. Engine test erase_source_reaches_attribute_projections asserts erased attribute values do not survive on disk in canonical_attributes or property_search_index."
+  },
+  "reregistration_noop_and_explicit_drop": {
+    "idempotent_noop": "idempotent_reregistration_is_a_noop: second apply of the identical spec => ProjectionDelta.unchanged=true, built/dropped/deferred empty (StoredProjection PartialEq diff)",
+    "explicit_drop": "role_add_builds_and_explicit_drop_drops_exactly_one: omission of a live projection does NOT drop (C3); an explicit drop:[name] removes exactly that name's registry row + EAV rows + property-FTS rows; the un-dropped projection is untouched",
+    "destructive_refusal": "destructive_change_requires_explicit_drop: removing a role (or changing tokenizer/embedder) without a drop => Err(ProjectionDestructive); with drop:[name] it rebuilds fresh. A refused change does not partially apply.",
+    "boot_rederive": "boot_rederive_converges_after_simulated_crash: registry row survives but EAV/property-FTS rows wiped => next open rebuilds them from canonical state; a second open does not duplicate (idempotent). rederive_projections_on_boot runs on the writer connection after ensure_vector_partition, gated on registry-table existence (safe on every pre-24 schema)."
+  },
+  "x1_parity": {
+    "python": {
+      "verb_names": [
+        "Engine.configure_projections",
+        "read.projections"
+      ],
+      "types": [
+        "fathomdb.types.ProjectionSpec/ProjectionRole/ProjectionDelta",
+        "fathomdb.errors.ProjectionDestructiveError"
+      ],
+      "result": "23 passed by execution in a fresh clone"
+    },
+    "typescript": {
+      "verb_names": [
+        "Engine.configureProjections",
+        "read.projections"
+      ],
+      "types": [
+        "ProjectionSpec/ProjectionRole/ProjectionDelta",
+        "ProjectionDestructiveError (FDB_PROJECTION_DESTRUCTIVE)"
+      ],
+      "result": "18 passed by execution in a fresh clone"
+    },
+    "allowlist": "+configure_projections, +configureProjections, +read.projections \u2014 recorded PROPOSED / NOT SIGNED (AC-079 UNMINTED; gated by requirement-id + TDD test names). recovery_denylist unchanged (five names)."
+  },
+  "contract_or_plan_deviations": [
+    "The EAV store is DERIVED FROM the node body JSON ($.<name>), not populated by a net-new attribute-write verb. Rationale: no attribute-write verb is in 15d scope (the Memex set_entity_attribute repoint is >=0.9.x / out of scope per C-1 Q2), yet R-20-EAV requires a populated, testable EAV store. Deriving from the body makes the store rebuild-durable (satisfies projection-registry \u00a72 'projections are re-derivable from the canonical graph') AND row-owned/erasable, and reuses the shipped 'extract $.status from body' pattern (search_index_v2). The registry drives which attributes are extracted. This threads the C-1 contract ('the canonical interpretive values live in engine storage') without inventing an out-of-scope write verb.",
+    "`canonical_attributes` is named with the `canonical_` prefix but is classified as a ROW-OWNED PROJECTION (in ROW_OWNED_PROJECTIONS, NOT in schema CANONICAL_TABLES). This is deliberate: it holds attribute VALUES at rest that must be erased with the node, so it must be reachable by erasure. The name reflects that it holds the canonical attribute values; the classification reflects that they are rebuild-durable from the body.",
+    "fts_tokenizer registry column is tri-valued (NULL=no fts sub-object, ''=fts+engine-default, non-empty=custom) to durably distinguish `searchable+FTS with default tokenizer` from `searchable with no FTS`. Custom tokenizers are recorded but NOT honoured in 15d (the property-FTS table uses the default tokenizer); per-attr custom tokenizers are the >=0.9.x multi-field FTS work, grafting later via the same idempotent configure_projections (same graceful-graft as rankable / Q6a).",
+    "read.projections is exposed as a read-namespace verb in BOTH bindings (single allowlist name `read.projections`), while configure_projections is a top-level Engine method (two allowlist names for the two casings). This matches api-surface.md (configure_projections is a verb; read.projections is folded into read.*)."
+  ],
+  "fix-1": {
+    "title": "codex \u00a79 [P2]x2 \u2014 non-string scalar projection dropped + superseded projection rows never purged",
+    "head_sha": "5fe937b0",
+    "on_branch_baseline": "b90e3649 (Slice 15d closure witness)",
+    "commits": [
+      {
+        "sha": "96550676",
+        "kind": "RED",
+        "summary": "test(0.8.20): RED \u2014 Slice 15d fix-1 non-string scalar projection + supersession purge (2 new tests in slice15d_projection_registry.rs)"
+      },
+      {
+        "sha": "5fe937b0",
+        "kind": "GREEN",
+        "summary": "feat(0.8.20): GREEN \u2014 Slice 15d fix-1 project scalars + purge superseded projections"
+      }
+    ],
+    "red_evidence": {
+      "command": "cargo test -p fathomdb-engine --test slice15d_projection_registry -- --test-threads=1 scalar_json_attributes_project_number_bool_and_string supersession_purges_stale_attribute_projection_rows",
+      "result": "test result: FAILED. 0 passed; 2 failed; 0 ignored; 11 filtered out",
+      "finding_1_panic": "scalar_json_attributes_project_number_bool_and_string @ tests/slice15d_projection_registry.rs:558 \u2014 assertion `left == right` failed: a JSON number attribute must project into canonical_attributes; left: [] right: [\"3\"]  (the JSON number 3 was silently dropped)",
+      "finding_2_panic": "supersession_purges_stale_attribute_projection_rows @ tests/slice15d_projection_registry.rs:634 \u2014 assertion `left == right` failed: only the active value must survive at rest; left: [\"closed\", \"open\"] right: [\"closed\"]  (the superseded 'open' row survived at rest)"
+    },
+    "finding_1_fix": {
+      "site": "src/rust/crates/fathomdb-engine/src/lib.rs \u2014 project_one_attribute (single-attribute projector)",
+      "cause": "extraction read as Option<String>; for a JSON number/bool json_extract returns INTEGER/REAL, row.get::<Option<String>> FAILED the type conversion, and .unwrap_or(None) silently treated the attribute as absent \u2014 no canonical_attributes / property_search_index row.",
+      "fix": "replaced the SELECT with a json_type-keyed CASE that renders exactly one canonical TEXT form per JSON type; the single `value` binding then flows to BOTH canonical_attributes and property_search_index, so the two tables are consistent by construction.",
+      "scalar_bool_null_representation": {
+        "string": "text verbatim",
+        "integer": "decimal text via CAST(json_extract AS TEXT) \u2014 e.g. 3 -> \"3\"",
+        "real": "decimal text via CAST(json_extract AS TEXT) \u2014 e.g. 3.5 -> \"3.5\"",
+        "bool": "true -> \"true\", false -> \"false\" \u2014 the JSON literal, NOT SQLite's 1/0. Rationale: a bool filter should match the value the caller wrote, and it avoids a bare CAST collapsing JSON true and the number 1 to the same \"1\".",
+        "null": "JSON null OR absent path -> SQL NULL -> NO row (an absent attribute correctly never matches a filterable equality \u2014 same semantics as before)",
+        "object_array": "DELIBERATELY skipped -> SQL NULL -> no row. A composite value is not a scalar filter/FTS target in 15d; nested-field filtering is the >=0.9.x multi-field work. Skipping is deliberate (explicit CASE arm), not an accidental type-conversion drop \u2014 no scalar type is dropped."
+      }
+    },
+    "finding_2_fix": {
+      "site": "src/rust/crates/fathomdb-engine/src/lib.rs \u2014 commit_batch node write arm (the logical_id supersession UPDATE) + two new helpers",
+      "cause": "the write path marked the prior canonical_nodes row superseded_at but never removed its canonical_attributes / property_search_index rows; a same-session property filter / property-FTS saw BOTH the stale and current value until a boot re-derive / reconfigure cleared the table (violates the active-only projection invariant).",
+      "approach": "PURGE-ON-SUPERSEDE (the mandate's preferred option). Before the tombstone UPDATE the write path collects the prior active cursor(s) via new prior_node_cursors_by_logical_id (mirrors prior_edge_cursors_by_logical_id; partial-unique-active => at most one), then after the UPDATE purges each via new purge_row_projections_for_cursor_in(tx, cursor, [Attribute, PropertyFts]).",
+      "why_purge_not_read_side": "property_search_index is an FTS5 table with NO way to carry a `canonical_nodes WHERE superseded_at IS NULL` join, and property filters may read canonical_attributes directly (like vector_default) \u2014 so a read-side active-only filter cannot cover the FTS path. Purge-on-supersede keeps the at-rest table truthful.",
+      "class_scoping": "purge is scoped to Attribute + PropertyFts ONLY. NodeFts (search_index / search_index_v2) + Vector shadows are LEFT INTACT because the node read path already excludes their superseded rows via the canonical_nodes superseded_at IS NULL join; purging them here would be a behaviour change outside this fix's scope.",
+      "consistency_with_erasure": "purge_row_projections_for_cursor_in is the registry-driven sibling of erase_row_projections \u2014 it iterates ROW_OWNED_PROJECTIONS filtered by class and deletes by the declared cursor_column, so an unregistered content table is unreachable here exactly as with erasure. guard_row_owned_registry unchanged; erasure tests (erasure_projection_registry 10, erasure_completeness 4, excise_source 6, rebuild_projections 3) all green.",
+      "at_rest_active_only_proof": "supersession_purges_stale_attribute_projection_rows asserts on RAW tables: after rewriting L=open->L=closed, eav_values('status')==[\"closed\"], and COUNT(*) WHERE write_cursor=<superseded cursor> is 0 in BOTH canonical_attributes and property_search_index; eav_filter('status','open')==[] and property_fts_match('status','open')==[]; closed maps only to the active cursor. The superseded/active cursors are read from canonical_nodes (not hardcoded)."
+    },
+    "gates": {
+      "cargo_clippy_workspace_all_targets": {
+        "exit": 0
+      },
+      "cargo_check_workspace_all_targets": {
+        "exit": 0
+      },
+      "cargo_test_engine_schema": {
+        "exit": 0,
+        "passed": 600,
+        "failed": 0,
+        "ignored": 13,
+        "baseline": "598 passed / 0 failed / 13 ignored (pre-fix-1)",
+        "note": "--test-threads=1, explicit 1800000ms timeout; +2 net-new engine tests (scalar_json_attributes_project_number_bool_and_string, supersession_purges_stale_attribute_projection_rows). Aggregate summed from every `test result:` line (real exit 0)."
+      },
+      "operator_erasure_tests": {
+        "exit": 0,
+        "note": "erasure_projection_registry 10 / erasure_completeness 4 / excise_source 6 / rebuild_projections 3 \u2014 all pass; purge helper is consistent with erase_row_projections."
+      },
+      "ac_041_recovery_denylist": {
+        "exit": 0,
+        "note": "no_recovery_surface 3 / governed_surface 1 / sdk_only_erasure 1 / reexports 3 pass; recovery_denylist unchanged (five names); no governed surface change."
+      },
+      "python_ts_execution": {
+        "skipped": true,
+        "reason": "engine-internal projection logic ONLY \u2014 git diff since b90e3649 touches only fathomdb-engine/src/lib.rs + its test file; NO binding surface (fathomdb-py / fathomdb-napi) and NO governed signature change, so X1 re-run is not required."
+      },
+      "eu7": {
+        "note": "ZERO eu7 runs."
+      }
+    },
+    "governed_surface": "UNCHANGED \u2014 no new verb, no AC minted, PROPOSED/NOT-SIGNED status of Slice 15d's own delta untouched. recovery_denylist stays five.",
+    "blockers": []
+  },
+  "fix-2": {
+    "title": "codex \u00a79 [P2] \u2014 the same-transaction attribute projection ignored lifecycle visibility for pending nodes (exposed rows the canonical read model hides)",
+    "head_sha": "4824963b",
+    "on_branch_baseline": "89f06a7a (Slice 15d fix-1 closure)",
+    "finding": "The write-path call to project_node_attributes (lib.rs, PreparedWrite::Node arm) projected into canonical_attributes / property_search_index UNCONDITIONALLY, even for a node written InitialState::Pending. The backfill (backfill_attribute) and boot re-derive only include `state='active' AND superseded_at IS NULL` rows. So a pending (quarantined) node's declared attribute values leaked into same-session property filters / property-FTS \u2014 surviving until a boot re-derive or reconfigure cleared them. Also: the `transition` verb never maintained the property store, and the operator rebuild (rebuild_shadow_state) re-projected EVERY canonical row (re-surfacing pending + superseded attribute values).",
+    "root_framing": "The at-rest attribute projection must track EXACTLY the backfill's row set: projected \u27fa (state='active' \u2227 superseded_at IS NULL). fix-1 enforced the supersession half at write time (purge-on-supersede); fix-2 enforces the existence/state half and keeps the invariant across the FULL lifecycle (write path + every legal transition + operator rebuild). Maintained as at-rest work (consistent with fix-1 + the backfill), NOT a read-side join \u2014 the property_search_index FTS5 table cannot carry a `superseded_at IS NULL` / `state='active'` join, and property filters may read canonical_attributes directly, so a read-side filter cannot cover the property paths.",
+    "commits": [
+      {
+        "sha": "cca89820",
+        "kind": "RED",
+        "summary": "test(0.8.20): RED \u2014 Slice 15d fix-2 lifecycle-gated projection (3 new engine tests in slice15d_projection_registry.rs)"
+      },
+      {
+        "sha": "4824963b",
+        "kind": "GREEN",
+        "summary": "feat(0.8.20): GREEN \u2014 projection tracks active+non-superseded across the write path, transition verb, and operator rebuild (+1 operator rebuild-consistency test)"
+      }
+    ],
+    "red_evidence": {
+      "command": "cargo test -p fathomdb-engine --test slice15d_projection_registry -- --test-threads=1 pending_node_is_not_projected_until_promoted active_delete_purges_and_undelete_reprojects pending_reject_projects_nothing",
+      "result": "test result: FAILED. 0 passed; 3 failed; 0 ignored; 13 filtered out",
+      "panic_1_write_gate": "pending_node_is_not_projected_until_promoted @ slice15d_projection_registry.rs:828 \u2014 panicked: a pending node must NOT project attributes into canonical_attributes (the write path projected the Pending node's attribute unconditionally).",
+      "panic_2_delete_purge": "active_delete_purges_and_undelete_reprojects @ slice15d_projection_registry.rs:906 \u2014 panicked: soft-delete (active \u2192 deleted) must purge canonical_attributes rows (the transition verb left stale attribute rows at rest).",
+      "panic_3_reject_gate": "pending_reject_projects_nothing @ slice15d_projection_registry.rs:957 \u2014 panicked: pending write projects nothing (same write-path gate gap \u2014 pending values present at rest)."
+    },
+    "tests_added": {
+      "default_feature": [
+        "pending_node_is_not_projected_until_promoted \u2014 a Pending node's declared attribute is NOT in canonical_attributes / property_search_index at write (raw SELECT == 0); then transition(pending\u2192active) projects it (raw SELECT now present + filter/FTS matchable). Mid-session raw reads (WAL readers see committed data).",
+        "active_delete_purges_and_undelete_reprojects \u2014 CONTROL: an active node projects at write (non-vacuous); transition(active\u2192deleted) purges the attribute/property-FTS rows (raw == 0); transition(deleted\u2192active) re-projects (raw present again).",
+        "pending_reject_projects_nothing \u2014 a pending node projects nothing; transition(pending\u2192deleted) leaves the projection empty (no spurious row, no error) \u2014 the never-projected arm of the unified rule."
+      ],
+      "operator_feature": [
+        "slice15d_fix2_rebuild_projects_only_active_non_superseded_attributes (tests/rebuild_projections.rs) \u2014 after a full rebuild_projections(), the raw canonical_attributes hold EXACTLY {active-val, new-val}; a pending node's value and a superseded prior version's value are NOT re-surfaced; property_search_index mirrors the set. Proves the projector-replay rebuild tracks the backfill's row set."
+      ]
+    },
+    "fix_sites": {
+      "write_path_gate": "project_canonical_node_row gains a `node_active: bool` param; the attribute projection is now `if pass.writes_attributes() && node_active`. The FTS/vector shadows are UNCHANGED (their stale/pending versions are excluded by the canonical read-path lifecycle join \u2014 same class-scoping as fix-1). The PreparedWrite::Node write arm passes `matches!(state, InitialState::Active)` (a fresh insert is always non-superseded, so the backfill predicate reduces to state==Active).",
+      "rebuild_consistency": "CanonicalNodeRow gains `attr_projected` = (state.as_deref()==Some(\"active\") && superseded_at.is_none()) \u2014 the exact backfill predicate; canonical_node_rows now SELECTs state + superseded_at. rebuild_shadow_state passes row.attr_projected so the attribute half of the projector replay tracks active\u2227non-superseded (FTS/vector still replay every row). The always-compiled tokenizer-reproject caller forwards row.attr_projected too (inert under FtsOnly, but gives the field a reader in every build config \u2192 no dead_code warning). The doc-hidden coverage/graph test writer passes `true` (its INSERT uses the column DEFAULT state='active').",
+      "transition_maintenance": "transition() now SELECTs (state, write_cursor, body) of the single non-superseded row. After the state UPDATE (before commit) it PURGES the row's Attribute+PropertyFts projections unconditionally (idempotent \u2014 a no-op on the never-projected pending / already-purged deleted arms) via fix-1's purge_row_projections_for_cursor_in, then RE-PROJECTS via project_node_attributes when to_state==Active. Unified rule (projected \u27fa to_state==Active, valid because the transitioned row is always non-superseded): promote (pending\u2192active) projects the withheld attrs; soft-delete (active\u2192deleted) purges; undelete (deleted\u2192active) re-projects; reject (pending\u2192deleted) is a no-op."
+    },
+    "transitions_hooked": {
+      "pending_to_active_promote": "PROJECT \u2014 project_node_attributes(tx, cursor, body) after the UPDATE (attributes were withheld while pending).",
+      "active_to_deleted_soft_delete": "PURGE \u2014 purge_row_projections_for_cursor_in(tx, cursor, [Attribute, PropertyFts]) (a deleted node is out of the backfill set).",
+      "deleted_to_active_undelete": "RE-PROJECT \u2014 purge (no-op; already purged on delete) then project.",
+      "pending_to_deleted_reject": "NO-OP \u2014 purge is a harmless no-op (never projected); no project. Confirmed by pending_reject_projects_nothing."
+    },
+    "invariant_confirmation": "The at-rest attribute projection now tracks EXACTLY (state='active' AND superseded_at IS NULL) at every maintenance point: the write path (state==Active), each legal transition (unified purge-then-reproject-if-active), and the operator rebuild (per-row attr_projected mirrors the backfill predicate). fix-1 already covers supersession at write time. Node-FTS / vector shadows are deliberately left to their read-side lifecycle filter (gap-5: a deleted row STAYS indexed), unchanged.",
+    "validity_scope_guard": "CONFIRMED \u2014 NO node-validity (valid_from / valid_until, Slice 10) filtering was added to the projection. The backfill does not filter on validity, so the 15d projection model stays existence-based (active/superseded), not validity-based. attr_projected keys ONLY on state + superseded_at. Consideration (not built): if validity-window visibility should ever gate the property store, it must be added to the backfill FIRST (else a new write-path-vs-backfill inconsistency) \u2014 out of scope for fix-2.",
+    "gates": {
+      "cargo_clippy_workspace_all_targets": {
+        "exit": 0
+      },
+      "cargo_check_workspace_all_targets": {
+        "exit": 0
+      },
+      "cargo_clippy_engine_operator_feature": {
+        "exit": 0,
+        "note": "cargo clippy -p fathomdb-engine --all-targets --features operator \u2014 covers the operator-gated rebuild_shadow_state edit + the new rebuild test."
+      },
+      "cargo_test_engine_schema": {
+        "exit": 0,
+        "passed": 603,
+        "failed": 0,
+        "ignored": 13,
+        "baseline": "600 passed / 0 failed / 13 ignored (pre-fix-2)",
+        "note": "--test-threads=1, explicit long timeout; aggregate summed from every `test result:` line via awk (real exit 0). +3 net-new DEFAULT-feature engine tests. The 4th new test (rebuild-consistency) is operator-gated and not in this count."
+      },
+      "operator_rebuild_and_erasure_tests": {
+        "exit": 0,
+        "note": "cargo test -p fathomdb-engine --features operator for rebuild_projections (4, incl. the new slice15d_fix2 rebuild test), rebuild_report (4), rebuild_vec0 (6), erasure_projection_registry (10), erasure_completeness (4), excise_source (2) \u2014 wait totals: 10/4/6/4/2/1 across the six targets, all `test result: ok`. Confirms the rebuild change + purge-helper reuse stay consistent with erasure."
+      },
+      "ac_041_recovery_denylist": {
+        "exit": 0,
+        "note": "fathomdb no_recovery_surface (3) / governed_surface (1) / sdk_only_erasure (1) / reexports (3) all ok; t_074_recovery_denylist_absent_from_governed_surface passes. recovery_denylist unchanged (five names); no governed surface change."
+      },
+      "python_ts_execution": {
+        "skipped": true,
+        "reason": "engine-internal ONLY \u2014 git diff since the RED commit touches only fathomdb-engine/src/lib.rs + tests/rebuild_projections.rs (+ the RED commit's slice15d test file). The `transition` PUBLIC signature is UNCHANGED (only its internal at-rest maintenance changed); no binding surface (fathomdb-py / fathomdb-napi) and no governed signature change, so X1 re-run is not required."
+      },
+      "eu7": {
+        "note": "ZERO eu7 runs."
+      }
+    },
+    "governed_surface": "UNCHANGED \u2014 no new verb, transition() signature untouched, no AC minted; PROPOSED/NOT-SIGNED status of Slice 15d's delta untouched. recovery_denylist stays five.",
+    "blockers": []
+  },
+  "fix-3": {
+    "head_sha": "853e7856",
+    "on_branch_baseline": "ffe0fcf3 (Slice 15d fix-2 closure)",
+    "finding": "codex \u00a79 P2 \u2014 src/python/fathomdb/errors.py:101-103 imports ProjectionDestructiveError from the native module fathomdb._fathomdb, but the type stub src/python/fathomdb/_fathomdb.pyi did NOT declare it, so pyright fails with \"ProjectionDestructiveError\" is unknown import symbol. The 15d X1 ran pytest-by-execution but did not close the pyright type-check gate.",
+    "commits": [
+      {
+        "sha": "853e7856",
+        "kind": "GREEN",
+        "summary": "fix(0.8.20): GREEN \u2014 Slice 15d fix-3 native type stubs for the projection surface (add ProjectionDestructiveError to _fathomdb.pyi)"
+      }
+    ],
+    "red_note": "Pure type-stub fix: the type-check gate IS the test, so there is no separate RED commit. RED evidence captured by running pyright -p src/python at baseline (ffe0fcf3) BEFORE the stub edit. No stub-presence unit test was added (pyright is the standing gate). GREEN is the single commit.",
+    "red_typecheck_evidence": {
+      "tool": "pyright (/home/coreyt/.nvm/versions/node/v25.9.0/bin/pyright) \u2014 global; scripts/agent-typecheck.sh prefers .venv/bin/pyright, absent in this worktree, and falls back to the global pyright on PATH (NOT a vacuous skip).",
+      "command": "pyright -p src/python (run in the worktree; the native module is not built here so pyright resolves the .pyi stub only \u2014 exactly the surface under test)",
+      "projection_surface_error": "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s15d/src/python/fathomdb/errors.py:102:5 - error: \"ProjectionDestructiveError\" is unknown import symbol (reportAttributeAccessIssue)",
+      "exit_code": 1,
+      "summary_line": "8 errors, 66 warnings, 0 informations",
+      "note": "The 66 reportMissingModuleSource warnings are because the compiled native module is not present in the worktree (pyright resolves the stub); they are pre-existing and unrelated."
+    },
+    "python_surface_audit": {
+      "method": "grepped every `from fathomdb._fathomdb import ...` across src/python/fathomdb/ (errors.py, engine.py, read.py, admin.py, graph.py, __init__.py) and cross-checked each native symbol against _fathomdb.pyi.",
+      "symbols_imported_by_python": [
+        "Engine",
+        "ConsolidateReceipt",
+        "IngestWithExtractorReceipt",
+        "EraseReport",
+        "ProjectionSpec",
+        "configure_projections",
+        "read_projections",
+        "erase_source",
+        "purge",
+        "transition",
+        "NodeRecord",
+        "OpStoreRow",
+        "ReadView",
+        "BoundaryCrossing",
+        "read_collection",
+        "read_get",
+        "read_get_many",
+        "read_list",
+        "read_list_filter",
+        "read_mutations",
+        "crossed_boundary_since",
+        "graph_neighbors",
+        "search_expand",
+        "admin_configure",
+        "embed_batch_cls",
+        "rerank",
+        "all EngineError subclasses in errors.py incl. ProjectionDestructiveError"
+      ],
+      "stub_gaps_found": [
+        "ProjectionDestructiveError"
+      ],
+      "already_present_in_stub": "Every other imported native symbol \u2014 including the full 15d projection surface (configure_projections @327, read_projections @330, ProjectionSpec @304, ProjectionDelta @321) \u2014 was already declared. ProjectionDestructiveError was the ONLY gap.",
+      "not_exposed_to_python": "ProjectionRole / ProjectionFts / ProjectionVector are re-exported by the Rust facade but are NOT imported by the Python surface \u2014 ProjectionSpec flattens roles (list[str]) + fts/fts_tokenizer + vector/vector_embedder to scalar fields, so no sub-type stub is needed. Confirmed by grep: zero Python imports of those names.",
+      "python_level_methods": "Engine.configure_projections (engine.py) and read.projections (read.py) are PYTHON wrappers over the native configure_projections / read_projections functions; they are not native symbols and correctly have no .pyi entry (the .pyi mirrors only the native _fathomdb surface)."
+    },
+    "fix": {
+      "file": "src/python/fathomdb/_fathomdb.pyi",
+      "added": "class ProjectionDestructiveError(EngineError): name: str; delta: str \u2014 mirrors the Rust EngineError::ProjectionDestructive { name: String, delta: String } (fathomdb-engine/src/lib.rs:3346) and its PyO3 setattr(\"name\")/setattr(\"delta\") (fathomdb-py/src/lib.rs:258-267), matching the sibling ErasureIncompleteError stub shape (fields only, no __init__; errors.py::_install_typed_init layers the kwargs init at runtime for both).",
+      "lines_changed": "+8 (one class block); no other file touched."
+    },
+    "pyright_baseline_vs_after": {
+      "before_fix3": {
+        "errors": 8,
+        "exit": 1,
+        "projection_surface_errors": 1
+      },
+      "after_fix3": {
+        "errors": 7,
+        "exit": 1,
+        "projection_surface_errors": 0
+      },
+      "delta": "The one projection-surface error (errors.py:102) is removed; count 8 \u2192 7. pyright still exits 1 on the 7 PRE-EXISTING baseline errors, NONE of which are projection-surface: engine.py:531/535/539 (Engine.dense_disabled / dense_disabled_reason / vector_equivalence_refusal_count attrs), engine.py:652/653 (OpenReport.dense_disabled / dense_disabled_reason), graph.py:153 (IdSpace fathomdb._fathomdb vs fathomdb.types nominal mismatch), test_vector_equivalence_probe.py:32 (No parameter named \"reason\"). Gate satisfied: no NEW/remaining projection-surface unknown-import error, and total count is strictly better than baseline (7 < 8)."
+    },
+    "ts_surface_status": "COMPLETE \u2014 no fix needed. The TS binding is TypeScript SOURCE (src/ts/src/*.ts), not a hand-written .d.ts, so tsc type-checks the surface directly. grep confirms the full 15d surface is declared: ProjectionSpec + ProjectionDelta (src/ts/src/index.ts:113/131), NativeProjectionSpec + NativeProjectionDelta + configureProjections + readProjections on the native binding interface (src/ts/src/binding.ts:77/87/364/368), ProjectionDestructiveError (src/ts/src/errors.ts:185 + mapper @360), Engine.configureProjections (index.ts:788) and read.projections (read.ts:354). No TS change made.",
+    "gates": {
+      "cargo_check_workspace_all_targets": {
+        "exit": 0,
+        "note": "Untouched by fix-3 (only a .pyi stub changed); ran to confirm no Rust breakage."
+      },
+      "cargo_clippy_workspace_all_targets": {
+        "exit": 0,
+        "note": "Both workspace gates exit 0 (real PIPESTATUS)."
+      },
+      "cargo_test_engine_schema": {
+        "exit": 0,
+        "passed": 603,
+        "failed": 0,
+        "ignored": 13,
+        "baseline": "603 passed / 0 failed / 13 ignored (pre-fix-3)",
+        "note": "Unchanged \u2014 aggregate summed from every `test result:` line via awk; long timeout. fix-3 is Python-stub-only so no Rust behavior changed."
+      },
+      "python_typecheck_pyright": {
+        "exit": 1,
+        "errors_before": 8,
+        "errors_after": 7,
+        "projection_surface_errors_after": 0,
+        "note": "Exit 1 is the 7 PRE-EXISTING non-projection baseline errors, NOT fix-3. The projection-surface error is gone; count improved. agent-typecheck.sh's python leg would run this same pyright (global fallback); it is NOT a vacuous skip here."
+      },
+      "python_ts_execution": {
+        "skipped": true,
+        "reason": "fix-3 changes ONLY the _fathomdb.pyi type stub \u2014 a compile-time-only artifact with zero runtime effect on import or behavior. The 15d X1 (Python 23 / TS 18 green) covers execution; a .pyi edit cannot change it. No TS types were touched (TS surface already complete), so no tsc/npm re-run required."
+      },
+      "ac_041_recovery_denylist": {
+        "exit": 0,
+        "note": "Not run again \u2014 fix-3 touches no Rust/governed surface; AC-041 was GREEN at fix-2 and the recovery_denylist (five names) + governed surface are unchanged."
+      },
+      "eu7": {
+        "note": "ZERO eu7 runs."
+      },
+      "agent_lint_md": {
+        "note": "NOT cited (TC-37 vacuous-in-worktree)."
+      }
+    },
+    "governed_surface": "UNCHANGED \u2014 no new verb, no signature change, no AC minted; PROPOSED / NOT SIGNED status untouched. recovery_denylist stays five.",
+    "blockers": []
+  },
+  "fix-4": {
+    "title": "codex \u00a79 [P2]x2 \u2014 projection name accepted but never populates (JSON-path escaping gap) + stale rust.md interface doc (TC-39)",
+    "head_sha": "293cd356",
+    "on_branch_baseline": "f9e46d90 (Slice 15d fix-3 closure)",
+    "commits": [
+      {
+        "sha": "dfa6d00d",
+        "kind": "RED",
+        "summary": "test(0.8.20): RED \u2014 Slice 15d fix-4 projection-name validation (1 new engine test backslash_projection_name_is_rejected)"
+      },
+      {
+        "sha": "d3a35fb3",
+        "kind": "GREEN",
+        "summary": "fix(0.8.20): GREEN \u2014 Slice 15d fix-4 reject unsafe projection names (is_valid_attribute_name adds backslash + control-char rejection)"
+      },
+      {
+        "sha": "293cd356",
+        "kind": "docs",
+        "summary": "docs(0.8.20): Slice 15d fix-4 \u2014 rust.md projection surface (new '## Projection registry' section + P1 note)"
+      }
+    ],
+    "finding_1": {
+      "site": "src/rust/crates/fathomdb-engine/src/lib.rs \u2014 is_valid_attribute_name (called by apply_projection_config for every spec.name AND every drop name) + attribute_json_path",
+      "cause": "is_valid_attribute_name guarded only empty / double-quote / NUL. A name carrying a BACKSLASH (e.g. `a\\b`) was ACCEPTED, but the write-path extraction compiles the SQLite JSON path `$.\"<name>\"` (double-quoted key) and SQLite treats `\\` as an escape introducer inside that quoted key, so a body key literally containing `\\` is NOT matched \u2014 the attribute was registered (built) yet silently NEVER populated canonical_attributes / property_search_index. Accept-then-never-populate.",
+      "choice": "REJECT AT THE BOUNDARY (the mandate's preferred option). Chosen over escaping because SQLite JSON-path double-quoted-key escape handling is version-sensitive and hard to prove round-trips across versions; a charset restriction on app-declared projection identifiers is a legitimate contract and mirrors the TC-33 hard-reject philosophy (accept \u27f9 works). is_valid_attribute_name now rejects: empty, any double-quote, any BACKSLASH, and any ASCII control char (is_control, which subsumes the prior NUL check). Both the spec-name loop and the drop-name loop in apply_projection_config already call it, so both arms are covered; the typed refusal is the EXISTING EngineError::InvalidArgument naming the offending value \u2014 no new error variant.",
+      "no_new_error_variant": "InvalidArgument already exists (lib.rs:3275) and already maps to InvalidArgumentError in both bindings (lib.rs:3431). Only the validation predicate tightened."
+    },
+    "finding_2": {
+      "site": "dev/interfaces/rust.md",
+      "cause": "fathomdb/src/lib.rs:46-47 re-exports the five Projection* types (ProjectionDelta, ProjectionFts, ProjectionRole, ProjectionSpec, ProjectionVector) making them public Rust facade; python.md/typescript.md carry a '## Projection registry' section but rust.md had none \u2014 violating the AGENTS.md:25 / TC-39 same-change invariant for a public Rust API surface.",
+      "fix": "Added a '## Projection registry (0.8.20 Slice 15d, R-20-PR / C-1)' section (PROPOSED / NOT SIGNED) documenting Engine::configure_projections + Engine::read_projections signatures and all five Projection* types (matching python.md/typescript.md detail, Rust-spelled), PLUS the fix-4 projection-name contract, and a one-line PROPOSED note in the P1 allowlist narrative (mirrors the ReadView/BoundaryCrossing precedent).",
+      "reexport_list_verified": "CONFIRMED against fathomdb/src/lib.rs:42-50 always-present re-export block: the five Projection* names documented are EXACTLY those re-exported (ProjectionDelta, ProjectionFts, ProjectionRole, ProjectionSpec, ProjectionVector); none is invented and none re-exported is missed. Type field/variant shapes cross-checked against the pub defs at lib.rs:3554-3643."
+    },
+    "red_evidence": {
+      "command": "cargo test -p fathomdb-engine --test slice15d_projection_registry backslash_projection_name_is_rejected -- --exact",
+      "result": "test result: FAILED. 0 passed; 1 failed; 0 ignored; 16 filtered out",
+      "panic": "backslash_projection_name_is_rejected @ tests/slice15d_projection_registry.rs:990 \u2014 called `Result::unwrap_err()` on an `Ok` value: ProjectionDelta { built: [\"a\\\\b\"], dropped: [], deferred: [], unchanged: false }",
+      "interpretation": "RED proves the accept-then-never-populate path: the backslash name `a\\b` was ACCEPTED (returned Ok with built:[\"a\\b\"], i.e. registered) instead of refused \u2014 a registry entry that the write-path JSON path can never populate."
+    },
+    "gates": {
+      "cargo_clippy_workspace_all_targets": {
+        "exit": 0
+      },
+      "cargo_check_workspace_all_targets": {
+        "exit": 0
+      },
+      "cargo_test_engine_schema": {
+        "exit": 0,
+        "passed": 604,
+        "failed": 0,
+        "ignored": 13,
+        "baseline": "603 passed / 0 failed / 13 ignored (pre-fix-4)",
+        "note": "--test-threads=1, explicit 1800000ms timeout; aggregate summed from every `test result:` line via awk (real exit 0). +1 net-new engine test (backslash_projection_name_is_rejected)."
+      },
+      "ac_041_recovery_denylist": {
+        "exit": 0,
+        "note": "UNAFFECTED \u2014 no governed-surface NAME change (validation predicate tightened only; no new verb/type/error). recovery_denylist still exactly the five REQ-054 names; no name collides with recover/restore/repair/fix/rebuild."
+      },
+      "python_ts_execution_and_pyright": {
+        "skipped": true,
+        "reason": "NO binding surface touched. finding-1 reuses the existing InvalidArgument/InvalidArgumentError (already stubbed + mapped in Py/TS \u2014 no new variant), and the git diff since f9e46d90 is fathomdb-engine/src/lib.rs + its test file + dev/interfaces/rust.md ONLY. No .pyi / .ts / stub change \u2192 no pyright/tsc re-run required (fix-3's .pyi gap class is not reintroduced: nothing was added to the Python/TS error or type surface)."
+      },
+      "eu7": {
+        "note": "ZERO eu7 runs."
+      },
+      "agent_lint_md": {
+        "note": "NOT cited (TC-37 vacuous-in-worktree). rust.md passed the commit-time md-safe-fix pre-commit hook."
+      }
+    },
+    "binding_surface_touched": false,
+    "governed_surface": "UNCHANGED \u2014 no new verb/type/error; the projection-name charset is a tightening of an existing InvalidArgument contract. PROPOSED / NOT SIGNED status of Slice 15d's delta untouched; no AC minted; recovery_denylist stays five.",
+    "rust_md_matches_reexport_list": true,
+    "blockers": []
+  },
+  "fix-5": {
+    "title": "codex \u00a79 [P2]x2 (one class) \u2014 the new configure_projections bindings skipped the AC-068 FFI-string gate on ProjectionSpec string fields",
+    "head_sha": "7a345fa0",
+    "on_branch_baseline": "7a1002bd (Slice 15d fix-4 closure)",
+    "finding": "AC-068a/b requires every string crossing the FFI to be rejected (via validate_ffi_string) BEFORE the writer transaction opens. Both configure_projections binding paths copied the ProjectionSpec string fields into the Rust spec WITHOUT the gate: napi src/rust/crates/fathomdb-napi/src/lib.rs ProjectionSpec::to_rust (:504-508) and pyo3 src/rust/crates/fathomdb-py/src/lib.rs PyProjectionSpec::to_rust (:889-895). A NUL in fts_tokenizer / vector_embedder was persisted in _fathomdb_projection_registry (the two named P2s); a NUL in name / drop surfaced only the engine-layer InvalidArgument (fix-4), not the AC-068 binding-layer WriteValidationError required before the writer txn opens.",
+    "commits": [
+      {
+        "sha": "9ca1d17c",
+        "kind": "RED",
+        "summary": "test(0.8.20): RED \u2014 Slice 15d fix-5 FFI validation on projection spec (4 Python + 4 TS binding tests)"
+      },
+      {
+        "sha": "7a345fa0",
+        "kind": "GREEN",
+        "summary": "fix(0.8.20): GREEN \u2014 Slice 15d fix-5 validate projection spec strings at both FFI boundaries"
+      }
+    ],
+    "the_fix": {
+      "napi": "ProjectionSpec::to_rust now runs validate_ffi_string_napi on self.name, each role string (before from_str_opt), Option fts_tokenizer, and Option vector_embedder; configure_projections validates each drop entry \u2014 all BEFORE call_engine (before the writer transaction).",
+      "pyo3": "PyProjectionSpec::to_rust now runs validate_ffi_string_py on self.name, each role string, Option fts_tokenizer, and Option vector_embedder; the configure_projections pyfunction validates each drop entry \u2014 all BEFORE call_engine.",
+      "strings_now_validated_each_binding": [
+        "ProjectionSpec.name",
+        "each ProjectionSpec.role string",
+        "ProjectionSpec.fts_tokenizer (when present)",
+        "ProjectionSpec.vector_embedder (when present)",
+        "each drop-list entry"
+      ],
+      "defense_in_depth": "Engine-side is_valid_attribute_name (fix-4) still rejects unsafe projection NAMES; fix-5 is the BINDING-layer gate that refuses the FULL spec string set BEFORE the writer transaction opens (AC-068) \u2014 both layers intact, no engine-side change.",
+      "no_new_error_variant": "Reuses the existing WRITE_VALIDATION typed error (WriteValidationError / FDB_WRITE_VALIDATION) already mapped in both bindings \u2014 no new variant, no governed-surface NAME change."
+    },
+    "red_evidence": {
+      "python": {
+        "command": "pytest src/python/tests/test_slice15d_projection_registry.py -k ffi_nul (fresh clone @9ca1d17c, own venv, pip install -e 'src/python[dev]')",
+        "result": "4 failed, 6 deselected",
+        "test_ffi_nul_in_projection_name_rejected_at_binding": "E   _fathomdb.InvalidArgumentError: invalid projection attribute name: \"a\\0b\"  (engine-layer InvalidArgument, NOT the AC-068 binding WriteValidationError)",
+        "test_ffi_nul_in_fts_tokenizer_rejected_at_binding": "E   Failed: DID NOT RAISE WriteValidationError  (the NUL tokenizer passed through and PERSISTED \u2014 the named P2 leak)",
+        "test_ffi_nul_in_vector_embedder_rejected_at_binding": "E   Failed: DID NOT RAISE WriteValidationError  (the NUL embedder passed through and PERSISTED \u2014 the named P2 leak)",
+        "test_ffi_nul_in_drop_entry_rejected_at_binding": "E   _fathomdb.InvalidArgumentError: invalid projection drop name: \"a\\0b\"  (engine-layer InvalidArgument, NOT the AC-068 binding WriteValidationError)"
+      },
+      "typescript": {
+        "command": "node --test dist/tests/slice15d-projection-registry.test.js (fresh clone @9ca1d17c, npm build:native:debug + tsc)",
+        "result": "4 of the fix-5 tests failed (\u2716)",
+        "fix-5 NUL in projection name": "AssertionError [ERR_ASSERTION]: must be WriteValidationError (got engine InvalidArgument)",
+        "fix-5 NUL in ftsTokenizer": "AssertionError [ERR_ASSERTION]: Missing expected rejection (NUL tokenizer PERSISTED \u2014 the named P2 leak)",
+        "fix-5 NUL in vectorEmbedder": "AssertionError [ERR_ASSERTION]: Missing expected rejection (NUL embedder PERSISTED \u2014 the named P2 leak)",
+        "fix-5 NUL in drop entry": "AssertionError [ERR_ASSERTION]: must be WriteValidationError (got engine InvalidArgument)"
+      }
+    },
+    "boundary_contract_audit": {
+      "scope": "Proactively audited the NEW projection surface (configure_projections + read.projections, both bindings) against the repo-wide binding contracts. No expansion into unrelated verbs.",
+      "ffi_string_validation": "CLOSED by fix-5 for NUL on BOTH bindings, typed as WriteValidationError before the writer txn. read.projections takes NO caller strings (only the engine handle) \u2192 nothing to validate; it returns engine-owned specs.",
+      "ac_068b_surrogate_residual": "Lone UTF-16 surrogate (AC-068b) is REJECTED and NEVER persisted on BOTH bindings (verified: _fathomdb_projection_registry COUNT(*)=0). napi types it as WriteValidationError via the same validate_ffi_string_napi 0xD800..=0xDFFF range check used on body/kind/filter. pyo3 rejects it EARLIER \u2014 at the PyProjectionSpec pyclass str->String extraction (PyO3's own UTF-8 decoder raises builtins.UnicodeEncodeError) BEFORE to_rust runs, so the safety invariant (reject-before-writer-txn, no persistence) holds but the error CLASS is Python's UnicodeEncodeError, not the typed WriteValidationError that search's manual extract_validated_str yields. Making the pyo3 surrogate TYPED would require replacing PyProjectionSpec's auto-extracting #[new]/from_py_object String fields with Bound<PyAny> manual extraction \u2014 a pyclass extraction-model change beyond 'validate the strings that reach the spec'. Left as an explicit, flagged residual (NOT a leak): the named findings + the realistic NUL case are fully typed on both bindings; surrogate is safe on both. Recommend a follow-up ONLY if the reviewer wants surrogate error-class parity on the pyo3 input pyclass.",
+      "error_mapping": "CONFORMANT \u2014 configure_projections / read_projections route through call_engine \u2192 engine_error_to_napi / the pyo3 mapper (no catch-all arm); ProjectionDestructiveError is typed + mapped (fix-3). No drift.",
+      "argument_validation": "CONFORMANT \u2014 role strings are validated against the enum (from_str_opt \u2192 InvalidArgument) AND now FFI-validated. No id/int fields on the projection surface, so the negative-id checked_ids_napi / _validate_id_list guard is N/A. specs / drop lists have no count contract that other verbs impose.",
+      "before_writer_txn_ordering": "CONFIRMED \u2014 in BOTH bindings the spec + drop validation runs synchronously before call_engine (which opens the writer transaction), satisfying AC-068's no-row-written invariant."
+    },
+    "gates": {
+      "cargo_clippy_workspace_all_targets": {
+        "exit": 0
+      },
+      "cargo_check_workspace_all_targets": {
+        "exit": 0
+      },
+      "cargo_test_engine_schema": {
+        "exit": 0,
+        "passed": 604,
+        "failed": 0,
+        "ignored": 13,
+        "baseline": "604 passed / 0 failed / 13 ignored (pre-fix-5)",
+        "note": "--test-threads=1, explicit 1800000ms timeout; aggregate summed from every `test result:` line via awk (real exit 0). UNCHANGED \u2014 fix-5's net-new tests are binding-layer Python/TS, not Rust engine/schema tests."
+      },
+      "ac_041_recovery_denylist": {
+        "exit": 0,
+        "note": "fathomdb governed_surface (3) / no_recovery_surface (1) pass; t_074_recovery_denylist_absent_from_governed_surface ok. recovery_denylist unchanged (five names); no governed-surface NAME change (reused WriteValidationError)."
+      },
+      "python_execution_fresh_clone": {
+        "exit": 0,
+        "full_suite": "819 passed / 12 skipped (pytest src/python/tests) \u2014 real exit 0",
+        "projection_file": "10 passed (6 original + 4 net-new fix-5 tests) in test_slice15d_projection_registry.py",
+        "ffi_safety_file": "9 passed / 1 skipped (requires_test_hooks) in test_ffi_safety.py",
+        "note": "fresh git clone @7a345fa0 + own .venv + pip install -e 'src/python[dev]' (maturin builds pyo3). NEVER the shared .venv, NEVER from the worktree."
+      },
+      "typescript_execution_fresh_clone": {
+        "exit": 0,
+        "full_suite": "211 pass / 0 fail / 0 skipped (node --test dist/tests/*.test.js) \u2014 real exit 0",
+        "projection_file": "10 pass (6 original + 4 net-new fix-5 tests) in slice15d-projection-registry.test.js",
+        "tsc": {
+          "exit": 0,
+          "note": "npx tsc -p tsconfig.json \u2014 no type errors"
+        },
+        "note": "same fresh clone @7a345fa0; npm run build:native:debug (napi --platform, test-hooks,default-embedder) + tsc + node --test."
+      },
+      "python_typecheck_pyright": {
+        "exit": 1,
+        "errors": 7,
+        "projection_surface_errors": 0,
+        "baseline": "7 pre-existing (fix-3 baseline: engine.py 531/535/539/652/653, graph.py:153, test_vector_equivalence_probe.py:32)",
+        "note": "pyright -p src/python in the fresh clone (native module built \u2192 errors, not stub warnings). Exit 1 is ONLY the 7 pre-existing non-projection baseline errors; ZERO new errors, ZERO projection-surface errors. No regression of fix-3's clean projection surface."
+      },
+      "eu7": {
+        "note": "ZERO eu7 runs."
+      },
+      "agent_lint_md": {
+        "note": "NOT cited (TC-37 vacuous-in-worktree)."
+      }
+    },
+    "binding_surface_touched": true,
+    "governed_surface": "UNCHANGED \u2014 no new verb / type / error; a tightening of the existing AC-068 FFI-string contract (WriteValidationError) applied to the projection binding surface. PROPOSED / NOT SIGNED status of Slice 15d's delta untouched; no AC minted; NOT HITL-SIGNED; recovery_denylist stays five.",
+    "blockers": []
+  },
+  "fix-6": {
+    "title": "Slice 15d fix-6 \u2014 reject duplicate projection names/drops + adversarial diff/apply/delta audit",
+    "head_sha": "a577c01cf356855fb44c2f46b9c55e740f6ba697",
+    "on_branch_baseline": "7c80ff88 (fix-5 closure)",
+    "finding": {
+      "codex_severity": "P2",
+      "site": "src/rust/crates/fathomdb-engine/src/lib.rs apply_projection_config diff/apply loop (was lib.rs:15159-15162)",
+      "summary": "When a caller supplies the same projection name more than once in one call, every spec is diffed against the ONE pre-loop registry snapshot rather than against rows persisted earlier in the same loop. On a fresh DB [status(searchable+fts), status(rankable-only)] backfilled the first spec then overwrote the registry with the second, but the returned ProjectionDelta still reported the first spec's build/defer outcome. Duplicate drop entries had the same stale-snapshot problem and were reported more than once. Registry and delta diverge from the accepted input."
+    },
+    "commits": {
+      "red": "ad3909f4 test(0.8.20): RED \u2014 Slice 15d fix-6 duplicate-name diffing + config-apply edge cases",
+      "green": "a577c01c fix(0.8.20): GREEN \u2014 Slice 15d fix-6 reject duplicate names + config-apply hardening"
+    },
+    "reject_vs_coalesce_choice": {
+      "choice": "REJECT",
+      "rationale": "A single request naming the same projection twice (or dropping the same name twice) is ambiguous/malformed. Rejection with a typed EngineError::InvalidArgument naming the offending name makes a rejected request a TOTAL no-op, which is the cleanest way to hold the fix-4 'accept => correct' contract: after any accepted call the registry AND the ProjectionDelta match the input. Coalescing (last-wins) was rejected because it would require proving both the registry and every delta vec reflect the coalesced result across all role/fts/vector/defer combinations, a strictly larger correctness surface for zero caller benefit (the caller can trivially send one spec per name).",
+      "done_in": "Engine (apply_projection_config), so all three bindings inherit it. Reuses the existing InvalidArgument variant \u2014 no new error type, no binding stub/type change.",
+      "name_in_both_specs_and_drop": "DELIBERATELY ALLOWED, not treated as a duplicate. A name in BOTH lists is the documented drop-then-rebuild-fresh pattern (drops apply first, then the fresh spec builds); rejecting it would break destructive_change_requires_explicit_drop. Guarded by the new name_in_both_specs_and_drop_is_the_supported_rebuild test."
+    },
+    "red_evidence": {
+      "cmd": "cargo test -p fathomdb-engine --test slice15d_projection_registry -- --test-threads=1 (pre-GREEN, at ad3909f4)",
+      "duplicate_projection_name_in_one_request_is_rejected": "panicked: called Result::unwrap_err() on an Ok value: ProjectionDelta { built: [\"status\"], dropped: [], deferred: [\"status\"], unchanged: false } \u2014 delta claims status BUILT (and deferred) while the registry ended rankable-only (which builds nothing): the divergence.",
+      "duplicate_drop_entry_in_one_request_is_rejected": "panicked: called Result::unwrap_err() on an Ok value: ProjectionDelta { built: [], dropped: [\"status\", \"status\"], deferred: [], unchanged: false } \u2014 the drop reported TWICE though the registry row was removed once.",
+      "result_line": "test result: FAILED. 4 passed; 2 failed; 0 ignored; 17 filtered out (the 4 sibling-audit guards passed pre-fix \u2014 those behaviors were already correct)."
+    },
+    "adversarial_audit": {
+      "scope": "configure_projections / apply_projection_config / describe/is_destructive delta computation / rederive_projections_on_boot. No expansion beyond the projection-config surface.",
+      "duplicate_name_in_specs": "BUG-FIXED (the P2). Rejected up front; test duplicate_projection_name_in_one_request_is_rejected asserts InvalidArgument names 'status' AND that nothing registered AND no EAV at rest.",
+      "duplicate_drop_entry": "BUG-FIXED (sibling of the P2, same stale-snapshot root). Rejected up front; test duplicate_drop_entry_in_one_request_is_rejected asserts InvalidArgument + no partial drop.",
+      "name_in_both_specs_and_drop": "ALREADY-CORRECT / DELIBERATE-DESIGN. The drop-then-rebuild-fresh pattern (drops apply first). Left working; new guard test asserts delta reports BOTH drop and build and the registry reflects the reduced role set. NOT rejected (would break destructive_change_requires_explicit_drop).",
+      "idempotency": "ALREADY-CORRECT. Re-running the exact same spec set yields unchanged=true, empty delta, no redundant backfill (existing idempotent_reregistration_is_a_noop). Extended to the DEFERRED rankable-only path (new idempotent_reregistration_holds_for_deferred_rankable): the second identical apply hits the existing==desired no-op branch, so no redundant deferral re-report \u2014 unchanged=true.",
+      "drop_semantics_absent": "ALREADY-CORRECT / DELIBERATE. Dropping a name not present is a clean idempotent no-op (before_drop.contains_key guard), not an error; empty delta, unchanged=true. New guard dropping_an_absent_name_is_a_clean_noop.",
+      "drop_semantics_present": "ALREADY-CORRECT. A drop that removes a projection clears canonical_attributes + property_search_index + registry row and reports it exactly once (existing role_add_builds_and_explicit_drop_drops_exactly_one asserts EAV/property-FTS rowcounts go to 0).",
+      "empty_roles": "ALREADY-CORRECT. A spec with empty roles is rejected up front with InvalidArgument 'declares no roles' (pre-existing validation loop). The new dup check runs AFTER the role check in the same loop.",
+      "fts_or_vector_without_searchable_role": "DELIBERATE-DESIGN (not a bug). from_spec stores fts_present/vector_declared regardless of role; wants_property_fts requires the Searchable role AND fts_present, so an fts/vector sub-object without searchable builds NO property-FTS/embedding. The sub-object is INERT config that round-trips through read.projections and activates only when Searchable is later added additively. No registry/delta divergence: the delta's built reflects only the EAV that filterable/searchable actually built. Left as-is; documented here rather than changed.",
+      "empty_request": "ALREADY-CORRECT. specs=[] + drop=[] => unchanged=true, empty delta, no-op. New guard empty_request_is_a_noop asserts the exact ProjectionDelta{unchanged:true,..default}.",
+      "registry_delta_alignment_invariant": "HOLDS after the fix. For every ACCEPTED call read_projections() reflects exactly what the delta said (built/dropped/deferred). The only path that broke it was the duplicate-name/duplicate-drop stale-snapshot, now rejected. Rankable/vector deferral, additive change, and drop paths all keep alignment (existing + new guards).",
+      "boot_rederive": "ALREADY-CORRECT. rederive_projections_on_boot iterates the registry clear+backfill per entry inside one IMMEDIATE txn with rollback-on-err; idempotent and duplicate-free by construction (registry is a name-keyed map, so no duplicate names can exist post-persist). No change needed."
+    },
+    "gates": {
+      "cargo_clippy_workspace_all_targets": {
+        "exit": 0
+      },
+      "cargo_check_workspace_all_targets": {
+        "exit": 0
+      },
+      "cargo_test_engine_schema": {
+        "exit": 0,
+        "passed": 610,
+        "failed": 0,
+        "ignored": 13,
+        "baseline": "604 passed / 0 failed / 13 ignored (pre-fix-6)",
+        "note": "--test-threads=1, explicit 1800000ms timeout; aggregate summed from every test-result line via awk (real exit 0 from PIPESTATUS). +6 net-new Rust tests (2 RED-then-GREEN dup cases + 4 sibling-audit guards)."
+      },
+      "ac_041_recovery_denylist": {
+        "exit": 0,
+        "note": "Covered by the workspace run; recovery_denylist unchanged (five names); no governed-surface NAME change (reused InvalidArgument)."
+      },
+      "python_ts_pyright": {
+        "run": false,
+        "note": "SKIPPED deliberately: the fix is engine-only and reuses the EXISTING InvalidArgument variant, which BOTH bindings already map (verified fix-3/fix-5). No new error variant, no .pyi/.d.ts change, no binding-surface code touched \u2014 so no new stub gap risk (does NOT reintroduce the fix-3 .pyi-gap class). git diff touches only src/rust/crates/fathomdb-engine/src/lib.rs + the engine test file."
+      },
+      "eu7": {
+        "note": "ZERO eu7 runs."
+      },
+      "agent_lint_md": {
+        "note": "NOT cited (TC-37)."
+      }
+    },
+    "binding_surface_touched": false,
+    "governed_surface": "UNCHANGED / PROPOSED \u2014 NOT SIGNED. No new verb/type/error; an up-front rejection of an ambiguous request via the existing InvalidArgument. No AC minted; NOT HITL-SIGNED; recovery_denylist stays five.",
+    "blockers": []
+  },
+  "blockers": [],
+  "unblocks": [
+    "Slice 20 (R-20-DR dense_readiness/flush_embeddings attaches to the vector sub-object)",
+    "Slice 25 (R-20-SUR surrogate minting for registry-admitted governed entities)"
+  ],
+  "notes_for_orchestrator": [
+    "Codex \u00a79 review + cherry-pick are the orchestrator's next steps (this implementer did neither).",
+    "A separate orch-0.8.20-s15b worktree runs fix-5 concurrently; this slice did not touch the TC-33 timestamp helpers.",
+    "The fresh clone used for Py/TS execution is at scratchpad/s15d-clone (disposable; not committed).",
+    "Governed-surface delta is PROPOSED / NOT SIGNED \u2014 AC-079 remains UNMINTED; escalate for HITL sign-off at the Slice-40 close, not now."
+  ]
+}

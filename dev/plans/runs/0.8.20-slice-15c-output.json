@@ -1,0 +1,478 @@
+{
+  "slice": "15c",
+  "requirement_id": "TC-33",
+  "title": "edge temporal representation → INTEGER epoch seconds, with a hard-reject normalisation boundary",
+  "branch": "orch-0.8.20-s15b",
+  "baseline_commit": "782604d7",
+  "status": "COMPLETE",
+  "governed_surface_status": "PROPOSED / NOT SIGNED",
+  "commits": [
+    {
+      "sha": "bbf305a0",
+      "kind": "RED",
+      "summary": "10 failing + 1 already-passing TC-33 tests in tc33_edge_temporal_epoch.rs; malformed-string / non-string-JSON / schema-CHECK / temporal_fallback / positive-normalisation properties"
+    },
+    {
+      "sha": "a61f3272",
+      "kind": "GREEN",
+      "summary": "INTEGER epoch storage + governed SDK; schema step 23 recreate with typeof CHECKs; extractor+consolidation hard-reject normalisation boundary; edge read path unified with node :now seam; bindings + interface docs; all pre-existing tests updated"
+    }
+  ],
+  "head_sha": "a61f327212e3596b9f7f73c3c63dbe5219fe0c6f",
+  "gates": [
+    {
+      "gate": "cargo clippy --workspace --all-targets",
+      "real_exit_code": 0,
+      "note": "0 warnings, 0 errors. One initial clippy::type_complexity warning was resolved with a local `type EdgeTimes` alias."
+    },
+    {
+      "gate": "cargo check --workspace --all-targets",
+      "real_exit_code": 0
+    },
+    {
+      "gate": "cargo test -p fathomdb-engine -p fathomdb-schema -- --test-threads=1",
+      "real_exit_code": 0,
+      "passed": 571,
+      "failed": 0,
+      "ignored": 13,
+      "note": "13 ignored includes eu7_real_corpus_ac (#[ignore]d, R-20-EU7 CLOSED BY HITL — left untouched, zero eu7 runs)."
+    },
+    {
+      "gate": "cargo test -p fathomdb-engine --test tc33_edge_temporal_epoch -- --test-threads=1",
+      "real_exit_code": 0,
+      "passed": 11,
+      "failed": 0
+    }
+  ],
+  "tc33_representation_as_built": {
+    "storage": "canonical_edges.t_valid / t_invalid are INTEGER epoch seconds (UTC); NULL = still valid",
+    "schema_step": "23 (SCHEMA_VERSION 22 → 23); recreate canonical_edges with `INTEGER ... CHECK (x IS NULL OR typeof(x) = 'integer')` on both columns",
+    "governed_sdk_surface": "PreparedWrite::Edge.t_valid/t_invalid and ConsolidateCandidateEdge.t_valid/t_invalid are Option<i64>; py dict_epoch_seconds, napi json_i64_alt",
+    "extractor_wire": "fathomdb.extract.v1 keeps ISO-8601 strings; engine-side normalize_extractor_timestamp() converts to epoch with hard rejection",
+    "consolidation_wire": "ISO-8601 both directions — epoch_seconds_to_iso8601() outbound, normalize_extractor_timestamp() inbound on the invalidate verdict's t_invalid",
+    "not_not_null": "the structural spelling is a typeof CHECK, NOT `NOT NULL`, so NULL-means-still-valid survives (asserted by tc33_p4_null_timestamp_remains_storable_and_means_still_valid)"
+  },
+  "fail_loud_evidence": {
+    "red_at_bbf305a0": "malformed strings ('not a date', 'yesterday sometime', '') each ingested successfully and wrote 1 edge; JSON-number/bool/object t_valid/t_invalid each ingested and wrote 1 edge (the pre-existing as_str()->None->NULL coercion); P3 InvalidColumnType(0,'t_valid',Text); P4 raw INSERT of 'not a date' succeeded and UPDATE overwriting a past t_invalid with junk succeeded (the resurrection vector); P5 InvalidColumnType(1,'t_valid',Text).",
+    "green_at_a61f3272": "all 11 pass. A malformed/non-string extractor timestamp now returns EngineError::InvalidArgument naming t_valid/t_invalid and writes ZERO edge rows (asserted by assert_hard_reject's edge_count == 0). The schema CHECK rejects a raw TEXT INSERT as a constraint violation, and rejects an UPDATE that would overwrite a past integer t_invalid with junk — the invalidation survives as integer 1577836800 (tc33_p4_junk_cannot_resurrect_an_invalidated_edge).",
+    "polarity": "junk NEVER becomes NULL t_invalid: it is rejected at the write boundary AND is structurally unstorable, so an invalidated edge cannot be silently resurrected."
+  },
+  "temporal_fallback_regrounding": {
+    "problem": "match was a raw byte-for-byte string compare of edge t_valid against the free-form ELPS warnings key substituted_t_valid, with .unwrap_or(false) on the miss path. Normalising only the edge side would leave the set never matching, silently turning every fallback edge into a trusted edge — no compile error.",
+    "fix": "both the edge t_valid/t_invalid AND every substituted_t_valid warning are normalised through normalize_extractor_timestamp() in ONE pass under one connection lock BEFORE the edges are built; the fallback set is HashSet<i64> of epochs and the match is is_some_and(|tv| fallback_epochs.contains(&tv)). A malformed substituted_t_valid REJECTS (not skips) — skipping would leave the edge unflagged = treated as trusted, the same fail-open elsewhere.",
+    "bonus_fix": "'2025-03-20T09:30:00Z' and '2025-03-20T09:30:00+00:00' are the same instant but missed each other under the old byte compare; as epochs they match. Proven by tc33_p5 (fixture spells the two sides differently).",
+    "guarded_by": "tc33_p5_temporal_fallback_still_flags_after_normalisation; the flag still gates slice30_graph_arm.rs and pr_c1_graph_seeding.rs (both GREEN)."
+  },
+  "preexisting_tests_changed": [
+    {
+      "file": "engine/tests/slice20_graph_traversal.rs",
+      "change": "t_invalid_tformat_edge_correctly_excluded RENAMED expired_edge_is_excluded_from_traversal; its old docstring (T-vs-space separator broke the raw TEXT comparison) preserved as evidence the TEXT representation already bit once. Under INTEGER the representation-level property is vacuous; kept as the traversal-exclusion assertion. edge_with_t_invalid helper now takes i64.",
+      "why": "TC-33 removes the representation the test existed to guard."
+    },
+    {
+      "file": "engine/tests/slice15_byo_llm_ingest.rs",
+      "change": "'t_valid must be preserved from extract response' → asserts normalised equivalence (ISO 2020-01-01T00:00:00Z on the wire → epoch 1577836800 in storage); owns_row/works_row column types String→i64.",
+      "why": "'preserved' is the exact contract TC-33 changes; the extractor wire stays ISO but the engine normalises it."
+    },
+    {
+      "file": "schema/tests/step22_migration.rs",
+      "change": "s22_edge_temporal_columns_are_untouched_text RENAMED ..._text_at_v22_become_integer_at_head — pins TEXT at v22 (step 22 is node-only) AND INTEGER at head (step 23 resolves the divergence). Module docstring updated. s22_is_idempotent_across_repeated_migrate_calls now migrates the whole registry to head (v22 is no longer head).",
+      "why": "the divergence step 22 recorded is now resolved, not frozen."
+    },
+    {
+      "file": "schema/tests/step14_migration.rs",
+      "change": "s14_legacy_rows_null_safe_for_g11_columns scoped to steps 14..=22 (was 14..head) with an explicit comment.",
+      "why": "a pre-G11 edge row cannot survive the step-23 recreate under NO-DATA-MIGRATION; the property under test (step-14 additive nullability) holds for 14..=22."
+    },
+    {
+      "file": "schema/tests/{migrations,step15_to_17,step16,step17,step18,step19,step20,step21}_migration.rs + engine/tests/{compatibility,vector_equivalence_probe}.rs",
+      "change": "head-version pins 22→23, migration step-id lists gain 23, migration count 21→22, compatibility event list gains 23.",
+      "why": "mechanical head bump."
+    },
+    {
+      "file": "engine/tests/{consolidate_provider,consolidation_value_test,pr_c1_graph_seeding,slice10_node_validity,slice30_graph_arm,rebuild_projections,erasure_projection_registry}.rs",
+      "change": "edge temporal test fixtures converted from ISO strings to epoch integers; helper signatures String→i64; consolidate_provider gained now_epoch() and integer temporal-liveness probes; edge_row reads t_invalid as Option<i64>. Consolidation VERDICT JSON (harness wire) stays ISO — the engine renders candidates out to ISO and normalises the verdict back.",
+      "why": "governed-write fixtures must carry epoch integers now; extractor/consolidation wire fixtures stay ISO."
+    },
+    {
+      "file": "src/ts/tests/{functional-graph-arm,functional-consolidate}.test.ts + src/python/tests/test_functional_graph_arm.py",
+      "change": "governed-write tInvalid/tValid/t_invalid fixtures converted from ISO strings to epoch integers; helper param types string→number/int. test_option2_elps_pipeline.py:119 ('t_valid' in edge) left as-is — it asserts the EXTRACTOR wire, which stays ISO.",
+      "why": "napi json_i64_alt / py dict_epoch_seconds now reject a string on the governed write surface.",
+      "caveat": "INSPECTED AND UPDATED BY HAND, NOT EXECUTED — the cross-language suites require a native rebuild (maturin/napi), which is forbidden from this worktree. No compile-time protection on the JSON wire."
+    }
+  ],
+  "plan_or_recon_corrections": [
+    "Recon said schema :630 is the step-22 SQL string with 'which are unchanged' prose; correct. I left the applied SQL text verbatim and corrected the Rust comment at :596-611 plus the step-14 comment, as directed.",
+    "NEW HAZARD not in recon: step 23 DROPs canonical_edges, which lowers load_next_cursor's MAX(write_cursor) high-water mark. A reused cursor collides with stale _fathomdb_projection_terminal / _fathomdb_vector_rows / vec0 rows, silently marking a new row as already-projected. Handled by reserving the pre-drop MAX into _fathomdb_open_state (RESERVED_WRITE_CURSOR_KEY) and folding it into load_next_cursor. This is NOT a data migration — it keeps an identifier counter monotonic.",
+    "NEW: the reservation INSERT needed `HAVING MAX(write_cursor) IS NOT NULL` — a bare aggregate over an empty canonical_edges returns one NULL row, which violates _fathomdb_open_state.value NOT NULL, i.e. it failed on EVERY fresh DB until fixed (caught by the first GREEN test run, not by review).",
+    "NEW: the CONSOLIDATION harness wire is a second ISO-8601 boundary the recon did not call out for the OUTBOUND direction. The reference stub echoes the winner's t_valid straight back as the verdict t_invalid, so candidates had to be rendered epoch→ISO on the way out or our own inbound normaliser would reject the reply. Added epoch_seconds_to_iso8601().",
+    "Recon listed 7 comparison sites; there are effectively 8 edge-validity predicates once build_bfs_with_depth_sql (the search_expand template) is counted — recon flagged its sibling :10493 but the depth variant is a separate template that also needed re-grounding. Both were fixed.",
+    "The extractor parse site also had a THIRD implicit fail-open surface beyond string/number: a JSON object/array. All non-string, non-null values now hard-reject uniformly via json_type_name()."
+  ],
+  "no_data_migration_compliance": "No row-conversion SQL was written. Step 23 is a plain recreate; existing edge rows do not survive; no stored ISO value is converted. The structural-CHECK requirement and the NO-DATA-MIGRATION ruling did NOT conflict — SQLite cannot add a CHECK or change column type in place, so a recreate is required regardless, and the ruling makes it a plain (non-staging) recreate.",
+  "invariants_confirmed": {
+    "AC-041_recovery_denylist": "unchanged — {recover, restore, repair, fix, rebuild}",
+    "eu7": "zero runs; eu7_real_corpus_ac left #[ignore]d",
+    "inline_clock_rule_engine_9161": "honoured — strftime('%s', ?1) is on a BOUND user value, not 'now'; the current instant stays on the bound :now seam. No new datetime('now')/strftime('%s','now') introduced on the edge path."
+  },
+  "fix-1": {
+    "requirement_id": "TC-33",
+    "finding": "codex §9 P2 CONCERN — the consolidation edges_json render (lib.rs :4792-4795) used `e.t_valid.and_then(|ts| epoch_seconds_to_iso8601(connection, ts))`, so a stored NON-NULL epoch outside SQLite's strftime('%s','unixepoch') renderable range (> 253402300799 = year >= 10000, or before year 0) rendered to a silent `null` on the consolidation wire. A `null` t_invalid reads as \"still valid\"; the reference stub echoes the winner's t_valid back as the verdict's t_invalid, so the null round-trips through the inbound normaliser as \"still valid\" — the outbound twin of the fail-open TC-33 removes, resurrecting an invalidated edge via the consolidation path.",
+    "reachability": "The governed integer surface (PreparedWrite::Edge, arbitrary i64) is the ONLY ingress. Inbound ISO normalisation (normalize_extractor_timestamp) can never mint such an epoch — a 4-digit-year ISO string maxes at 9999.",
+    "governed_surface_status": "PROPOSED / NOT SIGNED — no AC minted; tracked by requirement TC-33 + test names.",
+    "commits": [
+      {
+        "sha": "56e2eb4a",
+        "kind": "RED",
+        "summary": "tests/tc33_fix1_unrenderable_epoch.rs — writes an edge with t_valid/t_invalid = 253402300800 (year 10000, one past the renderable max) through engine.write() and asserts a typed InvalidArgument naming the field + zero rows. Plus a precision guard that the max renderable instant (9999-12-31T23:59:59Z = 253402300799) STAYS storable."
+      },
+      {
+        "sha": "39f35108",
+        "kind": "GREEN",
+        "summary": "Two layers in fathomdb-engine/src/lib.rs. See layers_implemented."
+      }
+    ],
+    "head_sha": "39f35108",
+    "layers_implemented": {
+      "primary_structural": "validate_write's Edge branch (destructure now binds t_valid/t_invalid) calls reject_unrenderable_edge_epoch for each non-null timestamp. The rejection PREDICATE is renderability under epoch_seconds_to_iso8601 itself (SQLite's own strftime — derive-from-SQLite, EXACT, cannot drift), returning EngineError::InvalidArgument naming the offending value and the bound. MIN_RENDERABLE_EPOCH=-62167219200 (0000-01-01T00:00:00Z) / MAX_RENDERABLE_EPOCH=253402300799 (9999-12-31T23:59:59Z) consts carry the year-0000..9999 rationale and are used only to name the bound in the message. Mirrors the inbound normalize_extractor_timestamp hard-reject and the Node branch's valid_from>=valid_until refusal.",
+      "backstop_defensive": "The consolidation edges_json render (lib.rs, formerly :4792-4795) closure is now fallible: a local `render(field, Option<i64>)` returns Value::Null for None (unknown, unchanged) but a typed EngineError::InvalidArgument labelled INVARIANT VIOLATION for a Some(ts) that fails to render, collected via `.collect::<Result<Vec<Value>, EngineError>>()?`. Commented as an unreachable hard-assert upholding the invariant structurally, NOT the primary path — the write-boundary guard makes an unrenderable stored epoch impossible."
+    },
+    "red_evidence": "At 56e2eb4a: `cargo test -p fathomdb-engine --test tc33_fix1_unrenderable_epoch -- --test-threads=1` → 1 passed; 2 failed. Both failures were `TC-33 fix-1: an unrenderable epoch MUST be rejected at the governed write boundary, but the write succeeded.` (tc33_fix1_unrenderable_t_invalid_is_rejected @ :73:18 and tc33_fix1_unrenderable_t_valid_is_rejected @ :73:18). tc33_fix1_max_renderable_epoch_is_storable already passed (precision guard). Exit 101. Post-fix (39f35108): all 3 pass, exit 0.",
+    "gates": [
+      { "gate": "cargo clippy --workspace --all-targets", "real_exit_code": 0, "note": "0 warnings." },
+      { "gate": "cargo check --workspace --all-targets", "real_exit_code": 0 },
+      {
+        "gate": "cargo test -p fathomdb-engine -p fathomdb-schema -- --test-threads=1",
+        "real_exit_code": 0,
+        "passed": 574,
+        "failed": 0,
+        "ignored": 13,
+        "note": "571 (pre-fix GREEN) + 3 new fix-1 tests. 13 ignored unchanged (incl. eu7_real_corpus_ac — zero eu7 runs)."
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test tc33_fix1_unrenderable_epoch -- --test-threads=1",
+        "real_exit_code": 0,
+        "passed": 3,
+        "failed": 0
+      }
+    ],
+    "node_edge_asymmetry_note": "canonical_nodes.valid_from/valid_until are ALSO INTEGER epoch and get NO renderable-range guard — deliberately. Nodes are never rendered to ISO for an LLM boundary (grep confirms: no epoch_seconds_to_iso8601 call on the node path; the consolidation render is edge-only), so they lack this outbound fail-open. Per the task's explicit direction, NO node-side guard was added (no real node-timestamp render path exists). The asymmetry is: the guard tracks the RENDER surface, not the storage type — edges render to ISO (consolidation wire) so they are guarded; nodes do not so they are not. If a future slice adds a node→ISO render path, that path needs the same guard.",
+    "consideration_resolved": "reject_unrenderable_edge_epoch could have been made generic over nodes too, but that would widen scope past the finding and guard a non-existent failure mode. Kept edge-only. No ledger TC written (the asymmetry is captured here + in the const/fn doc-comments in code; a ledger entry was judged not warranted since no cross-session ambiguity remains).",
+    "blockers": []
+  },
+  "fix-2": {
+    "requirement_id": "TC-33",
+    "finding": "codex §9 P2 CONCERN — 'The patch leaves at least one retrieval path able to return expired edge bodies, so edge temporal validity is not consistently enforced across search.' TC-33 defines edge_validity_sql (lib.rs :1800-1801) as the ONE shared read predicate ('t_invalid IS NULL OR t_invalid > :now') and already applies it on the graph-traversal, graph-seeding and projection paths — but two ordinary-search paths that hydrate an edge BODY gated on `superseded_at IS NULL` ALONE, so a body-bearing edge written with `t_invalid <= now` (expired/invalidated) still surfaced its body through search(). This is the edge-search twin of the Slice 15b 'validity enforced on traversal, not on search' gap.",
+    "governed_surface_status": "PROPOSED / NOT SIGNED — no AC minted; tracked by requirement TC-33 + test names.",
+    "edge_search_paths_inspected": [
+      {
+        "site": "lib.rs edge-body FTS branch (was :9855-9861 in the task, ~:9962-:9991 at fix-2 HEAD) — `search_index_edges sei JOIN canonical_edges ce`, appended to text_results as SoftFallbackBranch::TextEdge",
+        "pre_fix": "WHERE search_index_edges MATCH ?1 AND ce.superseded_at IS NULL — validity NOT applied",
+        "disposition": "CHANGED — added edge_validity_sql(\"ce\", 2); bound view.edge_now() at ?2 (was single-param [match_expression]). This is the site codex named.",
+        "surfaces_body": true
+      },
+      {
+        "site": "lib.rs vector-projected edge-fact hydration `edge_stmt` (~:9636-:9639 pre-fix) — the VECTOR arm hydrates an edge body from canonical_edges by write_cursor when a vector_default row (kind='edge_fact') ranks in the phase-2 pool",
+        "pre_fix": "WHERE write_cursor = ?1 AND superseded_at IS NULL AND body IS NOT NULL — validity NOT applied",
+        "disposition": "CHANGED — added edge_validity_sql(\"canonical_edges\", 2); bound view.edge_now() at ?2 (was [rowid]). This is the 'at least one' beyond the named site — the vector-projected edge path the TextEdge doc-comment (:1283-1295) warns edge hits also come from. My RED test exercises BOTH arms (ordinary search() fuses vector + edge-FTS), so both had to be fixed for GREEN.",
+        "surfaces_body": true
+      },
+      {
+        "site": "lib.rs graph-seeding edge-fact FTS (~:10253-:10262) — seeds the graph arm from matched edge endpoints",
+        "pre_fix": "already `AND ce.superseded_at IS NULL{edge_validity_sql(\"ce\",3)} AND temporal_fallback=0`",
+        "disposition": "LEFT — already validity-filtered (and fallback-filtered). Confirmed, not assumed.",
+        "surfaces_body": false
+      },
+      {
+        "site": "lib.rs search_expand_in_tx Step-1 edge existence re-check (~:10987-:10990) — `SELECT 1 FROM canonical_edges WHERE write_cursor=?1 AND superseded_at IS NULL` for a TextEdge hit",
+        "pre_fix": "superseded_at only",
+        "disposition": "LEFT — deliberately. This path reads NO body (SELECT 1); it only re-confirms an already-surfaced TextEdge hit still exists before skipping BFS, and it keeps the hit's ALREADY-captured body, it does not re-retrieve one. Every TextEdge hit in `search_hits` now comes from the two paths above, both of which filter validity, so an expired edge can no longer ENTER search_hits and therefore can never reach this re-check. Adding edge_validity here would be untested defence-in-depth against a mid-query expiry window; scoped out to avoid changing an un-covered gate. The BFS proper (build_bfs_with_depth_sql, bound at :11046) already carries edge_validity via edge_now.",
+        "surfaces_body": false
+      },
+      {
+        "site": "lib.rs assemble_consolidate_cluster (~:4906-:4921) — gathers competing fact-edges for one (subject,relation) axis for consolidation",
+        "pre_fix": "from_id/kind + superseded_at only, no validity",
+        "disposition": "LEFT — not a SEARCH retrieval path. Consolidation deliberately reasons over the full active competing set (including expired edges) to decide currency; filtering by validity here would hide the very edges consolidation must adjudicate. Out of the finding's scope (no search-surfacing).",
+        "surfaces_body": false
+      }
+    ],
+    "now_seam_note": "Both fixes bind the frozen `view.edge_now()` (a resolved i64 stored in FrozenView at freeze time) into a positional parameter — never `datetime('now')`/`strftime('%s','now')` (the :9161 no-inline-clock rule). edge_now is ALWAYS present (unlike node validity's Option<i64> now_param, which is None under existence-relaxation), so the edge-validity conjunct is unconditional: an edge invalidated in the past stays excluded even when the caller relaxes NODE existence. This matches the FrozenView::edge_now doc contract and the graph-seed/traversal call sites.",
+    "byte_stability_note": "NODE search hydration (text/BM25F + vector node branch) is byte-unchanged — only the edge-body SELECTs gained a conjunct. On any corpus whose edges never set t_invalid, `t_invalid IS NULL` is TRUE for every edge, so the row-set, bm25 ordering and scores of the edge arm are also unchanged; only edges explicitly invalidated in the past are now dropped.",
+    "commits": [
+      {
+        "sha": "d54ee2cd",
+        "kind": "RED",
+        "summary": "tests/tc33_fix2_edge_validity_on_search.rs — writes 3 body-bearing edges sharing FTS token 'tc33edgevalidity' (one t_invalid in the PAST, one t_invalid NULL, one t_invalid in the FUTURE), polls ordinary search() until the whole batch is projected AND the valid edge is present, then asserts the expired edge body is ABSENT while both still-valid edge bodies are PRESENT. Asserts on actual search() results."
+      },
+      {
+        "sha": "d0ca54da",
+        "kind": "GREEN",
+        "summary": "lib.rs — apply edge_validity_sql on the edge-body FTS branch and the vector-projected edge-fact hydration; bind view.edge_now() at ?2 on both. See edge_search_paths_inspected."
+      }
+    ],
+    "head_sha": "d0ca54da",
+    "red_evidence": "At d54ee2cd (RED test on top of unfixed lib.rs — captured by stashing the fix, running the test, then restoring): `cargo test -p fathomdb-engine --test tc33_fix2_edge_validity_on_search -- --test-threads=1` → `test result: FAILED. 0 passed; 1 failed`. Panic: `TC-33 fix-2: an EXPIRED edge (t_invalid in the past) must NOT surface its body through ordinary search — edge validity is not enforced on the search read path; got: [\"tc33edgevalidity expiredfact alpha\", \"tc33edgevalidity validnullfact beta\", \"tc33edgevalidity validfuturefact gamma\"]`. Exit 101. Crucially the TWO sibling assertions (validnullfact + validfuturefact must be present) PASSED before the panic — the failure is ONLY the expired-absent assertion, proving the fix is not a vacuous exclude-everything. (The panic line was reported as :130 against the pre-`cargo fmt` test source; the committed test is fmt-normalised — same three assertions, same logic. Post-fix at d0ca54da: `test result: ok. 1 passed; 0 failed`, exit 0.)",
+    "gates": [
+      { "gate": "cargo clippy --workspace --all-targets", "real_exit_code": 0, "note": "0 warnings, 0 errors." },
+      { "gate": "cargo check --workspace --all-targets", "real_exit_code": 0 },
+      {
+        "gate": "cargo test -p fathomdb-engine -p fathomdb-schema -- --test-threads=1",
+        "real_exit_code": 0,
+        "passed": 575,
+        "failed": 0,
+        "ignored": 13,
+        "note": "574 (fix-1 GREEN) + 1 new fix-2 test = 575. 13 ignored UNCHANGED from fix-1. eu7_real_corpus_ac stayed #[ignore]d / feature-gated (its test binary compiled 0 tests without --features default-embedder) — ZERO eu7 runs. Ignored set: _lock_acquire_probe_entry, _power_cut_victim_entry, ac_034c_os_crash_zero_committed_tx_loss, ac_020_concurrent_only, ac_020_sequential_only, ac_a3_counters_concurrent, ac_a3_explain_query_plan, ac_a3_threadsafe_and_compile_options, g3_5_cache_pressure_telemetry, child_fd_leak_open_close, child_open_and_close, child_open_close_print_after_close, child_second_open_locked_with_pending_vector."
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test tc33_fix2_edge_validity_on_search -- --test-threads=1",
+        "real_exit_code": 0,
+        "passed": 1,
+        "failed": 0
+      }
+    ],
+    "invariants_confirmed": {
+      "AC-041_recovery_denylist": "unchanged — {recover, restore, repair, fix, rebuild}; diff touches only the two edge-search SELECTs and the new test, no recovery/verb code.",
+      "eu7": "zero runs; eu7_real_corpus_ac left #[ignore]d/feature-gated.",
+      "node_search_byte_stability": "untouched — node text/vector hydration SELECTs are unchanged; only edge-body reads gained the conjunct.",
+      "inline_clock_rule_engine_9161": "honoured — edge :now is the bound view.edge_now(); no datetime('now')/strftime('%s','now') introduced."
+    },
+    "blockers": []
+  },
+  "fix-3": {
+    "requirement_id": "TC-33",
+    "finding": "codex §9 P2 — 'error-taxonomy regression on malformed consolidation verdicts ... a caller-visible contract break.' At the `invalidate` verdict arm of the consolidation apply loop (lib.rs :4995-5000), the verdict's `t_invalid` is normalised through `normalize_extractor_timestamp`, whose `?` propagated its `EngineError::InvalidArgument { msg }` verbatim for a malformed/non-string timestamp. Consolidation is a BYO-LLM PROVIDER boundary whose documented leaf is `EngineError::Consolidator` (\"ConsolidatorError\"), so a provider protocol fault (the LLM consolidator emitted a bad t_invalid) was MISCLASSIFIED as a user bad-argument — exactly the bad-timestamp scenario TC-33 hardens. The two SIBLING failure modes on the same value were already correct: missing key → Consolidator (:4998), null/unparseable-to-None → Consolidator (:5000). Only the malformed/non-string case leaked InvalidArgument.",
+    "governed_surface_status": "PROPOSED / NOT SIGNED — no AC minted; tracked by requirement TC-33 + test names. NEVER HITL-SIGNED.",
+    "site_changed": "src/rust/crates/fathomdb-engine/src/lib.rs — the `invalidate` verdict arm of the consolidation apply loop (was :4995-5000). Inserted `.map_err(|_| EngineError::Consolidator)` between the normalise call and the trailing `.ok_or(EngineError::Consolidator)?`, with a WHY comment (consolidation is a provider boundary → Consolidator, not the extractor/user InvalidArgument; Consolidator is a unit variant and the adjacent .ok_or cases already discard any message, so this is consistent with the two siblings, not a diagnostic loss).",
+    "other_consolidation_verdict_timestamp_sites": "ENUMERATED — grep for normalize_extractor_timestamp found 4 call sites: :4665 / :4670 / :4680 are all on the EXTRACTOR ingest path (raw_edges t_valid/t_invalid and raw_fallback_dates substituted_t_valid); :4995 is the ONLY consolidation-verdict site. The consolidation verdict carries a single timestamp (t_invalid on the invalidate verdict) — no t_valid or second verdict-kind timestamp exists. Only :4995 was changed.",
+    "extractor_path_untouched": "The extractor call sites (:4665-4684) STILL return EngineError::InvalidArgument { msg } naming t_valid/t_invalid — deliberately unchanged so the pinned 15c tests (tc33_edge_temporal_epoch.rs) stay GREEN. Scope guard honoured: consolidation site only.",
+    "extractor_taxonomy_question_ledger_id": "TC-43",
+    "extractor_taxonomy_question_note": "Recorded via dev/agent-tools/ledgerwrite as TC-43 (kind=question, status=open, seq 63): the extractor is ALSO a BYO-LLM provider boundary with its own EngineError::Extractor leaf, so a malformed EXTRACTOR timestamp could symmetrically be argued a provider fault (Extractor) not InvalidArgument. A broader taxonomy call for HITL/steward; DEFERRED — changing it would break the pinned 15c tests. NOT resolved here.",
+    "commits": [
+      {
+        "sha": "d32a4496",
+        "kind": "RED",
+        "summary": "tests/tc33_fix3_consolidation_timestamp_taxonomy.rs — drives ordinary consolidate_with_provider() against an inline harness that rules `invalidate` on edge-acme with (a) a malformed STRING t_invalid ('not-a-timestamp') and (b) a non-string JSON number (12345), asserting the result is Err(EngineError::Consolidator) in both. RED against unpatched code (both leaked InvalidArgument)."
+      },
+      {
+        "sha": "5e52b174",
+        "kind": "GREEN",
+        "summary": "lib.rs — .map_err(|_| EngineError::Consolidator) on the consolidation invalidate-verdict timestamp normalise; + ledger TC-43. See site_changed."
+      }
+    ],
+    "head_sha": "5e52b174c6060eb9a563248fe70088e35a616820",
+    "red_evidence": "At d32a4496 (`cargo test -p fathomdb-engine --test tc33_fix3_consolidation_timestamp_taxonomy -- --test-threads=1`) → `test result: FAILED. 0 passed; 2 failed`, exit 101. malformed_string_t_invalid_is_a_consolidator_fault panicked: `a malformed consolidation t_invalid must return Err(Consolidator) (provider boundary), got Err(InvalidArgument { msg: \"extractor edge field `t_invalid` must be an ISO-8601 timestamp SQLite can parse; got \\\"not-a-timestamp\\\", which `strftime('%s', ?)` resolves to NULL. REJECTED rather than stored as NULL: a NULL `t_invalid` reads as \\\"still valid\\\" and would silently resurrect an invalidated edge. Use JSON null for \\\"unknown\\\".\" })`. non_string_t_invalid_is_a_consolidator_fault panicked: `... got Err(InvalidArgument { msg: \"extractor edge field `t_invalid` must be an ISO-8601 string or JSON null; got a JSON number (12345). ...\" })`. Post-fix at 5e52b174: `test result: ok. 2 passed; 0 failed`, exit 0.",
+    "gates": [
+      { "gate": "cargo clippy --workspace --all-targets", "real_exit_code": 0, "note": "0 warnings, 0 errors." },
+      { "gate": "cargo check --workspace --all-targets", "real_exit_code": 0 },
+      {
+        "gate": "cargo test -p fathomdb-engine -p fathomdb-schema -- --test-threads=1",
+        "real_exit_code": 0,
+        "passed": 577,
+        "failed": 0,
+        "ignored": 13,
+        "note": "575 (fix-2 GREEN) + 2 new fix-3 tests = 577. 13 ignored UNCHANGED. Aggregated from a full-suite run to a log (the suite exceeds the 2-min default; re-run to completion with a longer timeout). ZERO eu7 runs; eu7_real_corpus_ac stayed #[ignore]d."
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test tc33_fix3_consolidation_timestamp_taxonomy -- --test-threads=1",
+        "real_exit_code": 0,
+        "passed": 2,
+        "failed": 0
+      }
+    ],
+    "invariants_confirmed": {
+      "AC-041_recovery_denylist": "unchanged — {recover, restore, repair, fix, rebuild}; diff touches only the one consolidation-verdict error map + the new test + the ledger, no recovery/verb code.",
+      "eu7": "zero runs; eu7_real_corpus_ac left #[ignore]d.",
+      "governed_surface": "PROPOSED / NOT SIGNED; no AC minted; never HITL-SIGNED.",
+      "extractor_path_byte_stability": "untouched — the extractor normalise sites still return InvalidArgument { msg }; only the consolidation :4995 site remaps to Consolidator."
+    },
+    "blockers": []
+  },
+  "fix-4": {
+    "requirement_id": "TC-33",
+    "finding": "codex §9 P1 — 'The schema migration can leave projection-terminal gaps for dropped edge rows that were pending projection, which can permanently block projection cursor advancement after upgrade.' `write_cursor` is a SINGLE global sequence shared across nodes AND edges; `advance_projection_cursor` (engine) walks the readiness watermark forward ONE value at a time, only while the next cursor has a `_fathomdb_projection_terminal` row. Step 23 (TC-33 canonical_edges recreate) DROPs every edge row. A body-bearing edge whose vector projection had NOT completed at upgrade has NO terminal row; step 23 dropped that row but left its cursor value with no terminal and no owning row, so the projection cursor STALLED PERMANENTLY at that gap — and because the sequence is shared, this froze advancement past SURVIVING node projections too, wedging wait_for_idle / search-freshness on every upgraded DB.",
+    "not_a_data_migration": "This is projection-cursor STATE bookkeeping, NOT data preservation. The NO-DATA-MIGRATION ruling (HITL 2026-07-21) forbids preserving/converting user ROWS; the edge rows still do not survive. The fix only reconciles the engine's internal cursor state machine so it does not dangle on cursors whose rows the recreate correctly dropped.",
+    "governed_surface_status": "PROPOSED / NOT SIGNED — no AC minted; tracked by requirement TC-33 + test names. NEVER HITL-SIGNED.",
+    "fix": "In step 23's SQL string (src/rust/crates/fathomdb-schema/src/lib.rs), BEFORE `DROP TABLE canonical_edges` (while the table still exists to read) and after `DELETE FROM search_index_edges`, inserted: `INSERT OR IGNORE INTO _fathomdb_projection_terminal(write_cursor, state) SELECT write_cursor, 'up_to_date' FROM canonical_edges;`. Sits inside the same step batch, which apply_one wraps with the PRAGMA user_version bump in one BEGIN IMMEDIATE — crash-safety/idempotence unchanged (a crash rolls back to user_version 22 and the whole step replays). The doc-block consequences list gained item (3) and the SQL carries an inline WHY comment; the -- MIGRATION-ACCRETION-EXEMPTION: marker is unchanged (the INSERT adds no CREATE/DROP so check_migration_accretion is unaffected).",
+    "terminal_state_token_chosen": "'up_to_date'",
+    "terminal_state_token_why": "NOT 'superseded' (the token the engine uses on the supersession path at :14867/:14890). The `_fathomdb_projection_terminal` table (schema step 7) carries a STRUCTURAL `CHECK(state IN ('failed', 'up_to_date'))`, and record_projection_terminal / the backfill both use `INSERT OR IGNORE`. Under SQLite, OR IGNORE SKIPS a row that violates a CHECK and returns NO error — so a 'superseded' backfill would be SILENTLY DROPPED, no terminal recorded, and the cursor would STILL stall (a vacuous green). This is proven empirically by test fix4_superseded_token_is_rejected_by_check_so_or_ignore_drops_it (inserting 'superseded' via OR IGNORE leaves zero rows; 'up_to_date' persists). The only CHECK-valid, non-'failed' token is 'up_to_date', which honestly means 'nothing left to project here' for a deleted row and keeps projection_status out of the Failed arm (:12568 special-cases only 'failed'; advance_projection_cursor at :12102 only checks terminal EXISTENCE, not the state string). NOTE (out of scope, not fixed): the engine's own fix-32 'superseded' terminals at :14867/:14890 are therefore ALSO silently swallowed by the same OR-IGNORE+CHECK interaction — a latent P2 in the engine, distinct from this P1 finding; not addressed here.",
+    "edge_node_cursor_disjointness_confirmed": "write_cursor is globally unique per row from a single shared allocator; an edge cursor and a node cursor can never share a value. The backfill SELECTs write_cursor FROM canonical_edges only, so it inserts terminals exclusively for edge cursors and never fabricates one for a node cursor. Proven by fix4_backfill_touches_only_edge_cursors_not_node_cursors: an unprojected NODE at cursor 7 is NOT given a terminal by the edge backfill, while the dropped edge at cursor 5 is.",
+    "fix1_fix4_complementary_confirmed": "fix-1 (high-water reservation into RESERVED_WRITE_CURSOR_KEY, consequences item 2) solves cursor REUSE: dropping edge rows lowers load_next_cursor's MAX(write_cursor), so a freshly allocated cursor could COLLIDE with stale shadow rows below the old high-water mark. fix-4 (terminal backfill, consequences item 3) solves cursor STALL on the dropped cursors THEMSELVES. Both are retained; a comment in step 23 and doc item (3) state their complementarity for future readers. fix-4 does not disturb the fix-1 reservation INSERT.",
+    "commits": [
+      {
+        "sha": "ee287655",
+        "kind": "RED",
+        "summary": "src/rust/crates/fathomdb-schema/tests/tc33_fix4_projection_cursor_stall.rs — seeds a v22 DB with a body-bearing edge at cursor 5 (NO terminal = pending projection), a projected node at cursor 6 (terminal 'up_to_date'), projection watermark parked at 4; applies step 23; asserts a terminal now exists for cursor 5 and that a faithful replica of advance_projection_cursor walks 4→6 (past the dropped edge). Plus a disjointness test and the OR-IGNORE-swallows-'superseded' evidence test."
+      },
+      {
+        "sha": "16be63ac",
+        "kind": "GREEN",
+        "summary": "src/rust/crates/fathomdb-schema/src/lib.rs — step 23 backfills a terminal ('up_to_date') for every edge cursor before the DROP; doc-block consequences item (3) + inline WHY comment added."
+      }
+    ],
+    "head_sha": "16be63ac",
+    "red_evidence": "At ee287655 (`cargo test -p fathomdb-schema --test tc33_fix4_projection_cursor_stall -- --test-threads=1`) → `test result: FAILED. 1 passed; 2 failed; 0 ignored`, exit 101. fix4_dropped_pending_edge_does_not_strand_the_projection_cursor panicked at :155: 'step 23 must record a projection terminal for the dropped pending edge at cursor 5 BEFORE dropping canonical_edges; without it the shared cursor stalls'. fix4_backfill_touches_only_edge_cursors_not_node_cursors panicked at :191: 'edge cursor 5 must be backfilled'. fix4_superseded_token_is_rejected_by_check_so_or_ignore_drops_it PASSED (proving 'superseded' is silently dropped and 'up_to_date' persists — the token-choice evidence). Post-fix at 16be63ac: `test result: ok. 3 passed; 0 failed`, exit 0.",
+    "gates": [
+      { "gate": "cargo clippy --workspace --all-targets", "real_exit_code": 0, "note": "0 warnings, 0 errors." },
+      { "gate": "cargo check --workspace --all-targets", "real_exit_code": 0 },
+      {
+        "gate": "cargo test -p fathomdb-engine -p fathomdb-schema -- --test-threads=1",
+        "real_exit_code": 0,
+        "passed": 580,
+        "failed": 0,
+        "ignored": 13,
+        "note": "577 (fix-3 GREEN) + 3 new fix-4 tests = 580. 13 ignored UNCHANGED. Run to completion with an explicit 1800000 ms timeout (suite exceeds the 2-min default); real aggregate summed from `^test result:` lines. ZERO eu7 runs; eu7_real_corpus_ac stayed #[ignore]d."
+      },
+      {
+        "gate": "cargo test -p fathomdb-schema --test tc33_fix4_projection_cursor_stall -- --test-threads=1",
+        "real_exit_code": 0,
+        "passed": 3,
+        "failed": 0
+      }
+    ],
+    "invariants_confirmed": {
+      "AC-041_recovery_denylist": "unchanged — {recover, restore, repair, fix, rebuild}; diff touches only step 23's SQL string (one INSERT + comments) and the new test, no recovery/verb code.",
+      "eu7": "zero runs; eu7_real_corpus_ac left #[ignore]d.",
+      "governed_surface": "PROPOSED / NOT SIGNED; no AC minted; never HITL-SIGNED.",
+      "crash_safety_idempotence": "preserved — the INSERT is inside step 23's single BEGIN IMMEDIATE batch; a crash rolls back to user_version 22 and the whole step replays. Confirmed by the existing s22_is_idempotent_across_repeated_migrate_calls (still GREEN in the suite).",
+      "accretion_guard": "unaffected — the INSERT adds no CREATE/DROP; step 23 still names both CREATE TABLE and DROP TABLE and keeps its -- MIGRATION-ACCRETION-EXEMPTION: marker (s22_carries_the_accretion_exemption_marker unaffected)."
+    },
+    "blockers": []
+  },
+  "fix-5": {
+    "requirement_id": "TC-33",
+    "closes": "TC-44 (whole strftime-leniency class)",
+    "finding": "strftime('%s', ?) was standing in as an ISO-8601 VALIDATOR, but SQLite's date parser is MORE LENIENT than the HITL-ratified hard-reject-ISO-8601 contract. Two confirmed leaks (both non-NULL, both the WRONG instant, both accepted before this fix): (1) WIRE boundary — iso8601_to_epoch_seconds (lib.rs :1823-1830) let bare numeric strings through: strftime('%s','2451545.0')=946728000 (SQLite reads the bare number as a Julian DAY = year 2000); strftime('%s','0') resolves to a pre-year-0000 epoch — so '0'/'2451545.0' were stored as unrelated instants despite the hard-reject contract. (2) GOVERNED i64 boundary — reject_unrenderable_edge_epoch (lib.rs :1887-1906) guarded on RENDERABILITY (does epoch_seconds_to_iso8601 return Some?), but strftime(...,'unixepoch') renders a below-MIN epoch like -62167219201 to a NON-NULL string '-001-12-31T23:59:59Z', so pre-year-0000 values (outside declared years 0000..=9999) slipped through.",
+    "safety_context": "Neither leak produces a NULL t_invalid, so the safety-critical 'no resurrection via NULL' property (HITL Note 1 / P3) was already intact. fix-5 is a correctness/contract-completion fix, NOT a safety fix — and it opens NO NULL path (verified: shape-gate rejection returns None which triggers the existing hard-reject; range-check rejection returns a typed InvalidArgument; NULL/absent still maps to Ok(None) = 'still valid').",
+    "governed_surface_status": "PROPOSED / NOT SIGNED — no AC minted; tracked by requirement TC-33 + test names. NEVER HITL-SIGNED.",
+    "validator_choice": "HAND-ROLLED byte/char shape validator, NO new dependency. Verified: the workspace has NO chrono/time crate, and `regex` v1.12.3 is present ONLY as a transitive dependency (via jsonschema -> fancy-regex/regex-automata); it is NOT a direct dependency of fathomdb-engine (confirmed against crates/fathomdb-engine/Cargo.toml — deps are fathomdb-embedder/-api/-query/-schema, rusqlite, jsonschema, serde_json, sha2, sqlite-vec). Adding regex to [dependencies] would be a NEW direct dep, violating the 'no new dependency' constraint — so is_iso8601_shape() is hand-rolled on ASCII bytes (u8::is_ascii_digit, which also rejects non-ASCII digit look-alikes).",
+    "fix_a_wire_shape_gate": "Added fn is_iso8601_shape(&str)->bool and call it FIRST in iso8601_to_epoch_seconds (returns None -> existing hard-reject fires). Accepts EXACTLY: YYYY-MM-DD (date only); optionally (T | single space) HH:MM:SS; optional .fff fractional; optional zone Z | ±HH:MM | ±HHMM. Rejects bare numbers, partial junk, whitespace, non-ASCII digits, trailing junk. The gate does NOT replace SQLite's calendar math: a shape-valid-but-impossible date (2025-13-45T00:00:00Z) still None-s out via strftime -> hard-reject (kept).",
+    "fix_b_governed_range_check": "reject_unrenderable_edge_epoch now rejects any non-null t_valid/t_invalid outside the inclusive numeric range [MIN_RENDERABLE_EPOCH, MAX_RENDERABLE_EPOCH], not renderability. Connection param dropped (predicate is now pure integer arithmetic); both call sites (validate_write Edge branch) updated. Typed EngineError::InvalidArgument still names the value + the bound.",
+    "min_max_renderable_epoch_confirmed": {
+      "MIN_RENDERABLE_EPOCH": -62167219200,
+      "MAX_RENDERABLE_EPOCH": 253402300799,
+      "verification": "Verified DIRECTLY against SQLite (bundled parser semantics): strftime('%Y-%m-%dT%H:%M:%SZ', -62167219200, 'unixepoch') = '0000-01-01T00:00:00Z' EXACTLY; strftime(..., 253402300799, ...) = '9999-12-31T23:59:59Z' EXACTLY; MIN-1 (-62167219201) renders NON-NULL '-001-12-31T23:59:59Z' (the leak) and MAX+1 (253402300800) renders NULL. fix-1 set these consts correctly (years 0000..=9999); NO correction needed."
+    },
+    "red_set": "tc33_fix5_iso8601_shape_gate.rs — 8 tests: WIRE hard-reject via the fixture-keyed stub extractor (raw `SELECT count(*) FROM canonical_edges` == 0, not search): julian '2451545.0', bare '0'. GOVERNED i64 write of t_invalid=-62167219201 rejected + zero rows. Positive controls (gate not vacuous): '2025-03-20T09:30:00Z' (1742463000), '2025-03-20T09:30:00+00:00' (1742463000), date-only '2025-03-20' (1742428800), space-separated '2025-03-20 09:30:00' (1742463000) all still ACCEPTED at the correct epoch; MIN_RENDERABLE_EPOCH still storable. Added 6 stub-harness fixtures to tests/fixtures/slice15_byo_llm/fixture_result.json (append-only, existing fixtures byte-untouched: 174 insertions / 0 deletions).",
+    "commits": [
+      {
+        "sha": "f64ccf69",
+        "kind": "RED",
+        "summary": "tc33_fix5_iso8601_shape_gate.rs + 6 fixtures. RED: 3 failed / 5 passed."
+      },
+      {
+        "sha": "895b9df0",
+        "kind": "GREEN",
+        "summary": "is_iso8601_shape() shape gate before strftime in iso8601_to_epoch_seconds; reject_unrenderable_edge_epoch numeric MIN/MAX bounds check (Connection param dropped, both call sites updated)."
+      }
+    ],
+    "head_sha": "895b9df0ccb958cb3b7c3d65134c0ceab3d16caf",
+    "red_evidence": "At f64ccf69 (`cargo test -p fathomdb-engine --test tc33_fix5_iso8601_shape_gate -- --test-threads=1`) → `test result: FAILED. 5 passed; 3 failed; 0 ignored`, exit 101. tc33_fix5_bare_zero_string_hard_rejects panicked at :86:18: 'bare numeric string \"0\" (doc-tc33-zero-tvalid) is NOT ISO-8601 and MUST hard-reject at the extractor boundary, but ingest succeeded and wrote 1 edge(s).' tc33_fix5_julian_day_string_hard_rejects panicked at :86:18 (same, \"2451545.0\", wrote 1 edge). tc33_fix5_pre_year_0000_epoch_is_rejected panicked at :214:10: '...the numeric MIN/MAX bounds check must reject it: WriteReceipt { cursor: 1, row_cursors: [1], dangling_edge_endpoints: 2 }' (the governed write SUCCEEDED). The 5 passing = the 4 positive controls (already accepted correctly) + min_renderable_epoch_is_storable — proving the RED is not vacuously failing everything. Post-fix at 895b9df0: `test result: ok. 8 passed; 0 failed`, exit 0.",
+    "gates": [
+      { "gate": "cargo clippy --workspace --all-targets", "real_exit_code": 0, "note": "0 warnings, 0 errors (re-run after cargo fmt on the committed state)." },
+      { "gate": "cargo check --workspace --all-targets", "real_exit_code": 0 },
+      {
+        "gate": "cargo test -p fathomdb-engine -p fathomdb-schema -- --test-threads=1",
+        "real_exit_code": 0,
+        "passed": 588,
+        "failed": 0,
+        "ignored": 13,
+        "note": "580 (fix-4 GREEN) + 8 new fix-5 tests = 588. 13 ignored UNCHANGED. Run to completion with an explicit 1800000 ms timeout (suite exceeds the 2-min default); real aggregate summed from `^test result:` lines (every line 'ok', 0 failed). ZERO eu7 runs; eu7_real_corpus_ac stayed #[ignore]d."
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test tc33_fix5_iso8601_shape_gate -- --test-threads=1",
+        "real_exit_code": 0,
+        "passed": 8,
+        "failed": 0
+      }
+    ],
+    "ledger": "TC-44 advanced to status=resolved via dev/agent-tools/ledgerwrite/ledgerwrite.py (seq 66, kind=observation, refs seq:64 + git:895b9df0 + plan). TC-45 NOT touched (out of scope). 'resolved' matches this ledger's established terminal convention (4 prior uses).",
+    "invariants_confirmed": {
+      "AC-041_recovery_denylist": "unchanged — {recover, restore, repair, fix, rebuild}; diff touches only iso8601_to_epoch_seconds + is_iso8601_shape + reject_unrenderable_edge_epoch + its two call sites + the new test + 6 fixtures + ledger, no recovery/verb code.",
+      "eu7": "zero runs; eu7_real_corpus_ac left #[ignore]d.",
+      "governed_surface": "PROPOSED / NOT SIGNED; no AC minted; never HITL-SIGNED.",
+      "no_null_path_opened": "verified — shape-gate miss returns None (existing hard-reject), range-check miss returns typed InvalidArgument; NULL/absent still Ok(None); no new path can write a NULL t_invalid for an invalid input.",
+      "node_edge_asymmetry": "unchanged from fix-1 — nodes still get no range guard (no node->ISO render path); the wire shape gate is on the shared iso8601_to_epoch_seconds, which only the EDGE extractor path uses (normalize_extractor_timestamp)."
+    },
+    "blockers": []
+  },
+  "fix-6": {
+    "requirement_id": "TC-33",
+    "finding": "codex §9 P1 — 'The schema migration leaves stale edge vector projection rows behind after dropping the canonical edge rows, which can silently degrade vector search results on upgraded databases.' Step 23 (canonical_edges recreate) cleared the edge FTS projection (search_index_edges) and recorded projection terminals (fix-4), but never removed the dropped edges' rows from the VECTOR projection. Vector search reads candidates DIRECTLY from vector_default (build_vector_phase1_sql: `embedding_bin MATCH ... ORDER BY distance LIMIT top_k`) before hydrating them through canonical_nodes/canonical_edges, so an orphaned edge vector (whose canonical_edges row is gone) consumes a top-K candidate slot and is discarded at hydration — an upgraded DB returns too few / no vector results even though valid node vectors sit just below the cutoff. The prior step-23 comment's claim that these orphans were 'made harmless by (2)' was the actual bug: consequence (2) only reserves the write-cursor high-water mark to stop cursor REUSE; it does nothing about the orphaned rows already sitting in vector_default.",
+    "root_cause_framing": "Step 23's cleanup of the dropped edges' ROW-OWNED projections was PARTIAL. The authoritative list is the engine's ROW_OWNED_PROJECTIONS (fathomdb-engine/src/lib.rs:14389). For EDGES the row-owned projections are: search_index_edges (class EdgeFts — already cleared), _fathomdb_projection_terminal (class Readiness — fix-4), and the VECTOR class's TWO tables: _fathomdb_vector_rows (sidecar/registry) + vector_default (the vec0 vtab). fix-6 completes the Vector class. Node-FTS tables (search_index, search_index_v2) are class NodeFts and hold node projections only — deliberately NOT touched.",
+    "governed_surface_status": "PROPOSED / NOT SIGNED — no AC minted; tracked by requirement TC-33 + test names. NEVER HITL-SIGNED.",
+    "split_and_why": "The two Vector-class tables are cleaned in DIFFERENT places, forced by a hard constraint the recon/task SQL did not resolve: `vector_default` is a vec0 VIRTUAL TABLE created by the ENGINE's dim-aware ensure_vector_partition AFTER migrate() returns (see fathomdb-schema step-9 comment: Migration is a &'static str with no runtime dim parameterization). On a fresh DB — and in the schema crate's own migration tests, which never create it — vector_default DOES NOT EXIST during step 23, so an unguarded `DELETE FROM vector_default` in the migration SQL fails to prepare ('no such table') and would break every schema migration test that crosses step 23. `_fathomdb_vector_rows`, by contrast, is created by migration step 6 and ALWAYS exists during migration. So: (a) the SIDECAR delete goes in the MIGRATION (step 23, before the DROP, scoped to edge cursors read from canonical_edges — matching the fix-4 terminal-backfill ordering); (b) the vec0 delete goes in the ENGINE, right after ensure_vector_partition guarantees vector_default exists.",
+    "migration_change": {
+      "site": "src/rust/crates/fathomdb-schema/src/lib.rs — step 23 SQL string, inserted between the fix-4 terminal INSERT and `DROP TABLE canonical_edges`.",
+      "sql_added": "DELETE FROM _fathomdb_vector_rows WHERE write_cursor IN (SELECT write_cursor FROM canonical_edges);",
+      "scoped_not_truncate": "_fathomdb_vector_rows holds BOTH node and edge sidecar rows (kind column), so unlike the `DELETE FROM search_index_edges` truncate (edge-only table) this is a SCOPED delete keyed on edge cursors. Node sidecar rows survive.",
+      "comment_fix": "The step-23 doc-block consequence (1) parenthetical that claimed vector_default 'is deliberately NOT touched ... Its orphaned rows are made harmless by (2)' was CORRECTED to a new item (1b) explaining the Vector class has two halves, that the vec0 orphans are NOT inert (they occupy KNN candidate slots), and that the engine prunes them. -- MIGRATION-ACCRETION-EXEMPTION marker unchanged (the DELETE adds no CREATE/DROP)."
+    },
+    "engine_change": {
+      "site": "src/rust/crates/fathomdb-engine/src/lib.rs — Engine::open, immediately after ensure_vector_partition (before the mean-vec row-count recovery), plus two new consts and two new fns.",
+      "consts": "EDGE_TEMPORAL_EPOCH_SCHEMA_VERSION = 23; EDGE_VECTOR_PRUNE_MARKER_KEY = 'tc33_edge_vector_prune_complete'.",
+      "gate": "if migration.schema_version_after >= EDGE_TEMPORAL_EPOCH_SCHEMA_VERSION && !edge_vector_prune_complete(&connection)? { prune_orphaned_edge_vectors(&connection)? }.",
+      "prune_logic": "prune_orphaned_edge_vectors: in one BEGIN IMMEDIATE, gather the _fathomdb_vector_rows.write_cursor set + all vector_default rowids via plain scans, DELETE each vec0 rowid NOT in the sidecar set (per-rowid `DELETE FROM vector_default WHERE rowid = ?1`, the proven vec0 delete form — same as prune_edge_projection_shadows), then write the marker. Deliberately avoids a compound `DELETE ... WHERE rowid NOT IN (subquery)` over the virtual table.",
+      "why_no_sidecar_means_orphan": "A vec0 row and its _fathomdb_vector_rows sidecar row are INSERTed together and DELETEd together in the same transaction on every steady-state path (verified: insert at lib.rs ~6907/6917 under one tx; delete at prune_edge_projection_shadows / erase_row_projections together). So a sidecar-less vec0 row is ONLY ever produced by the step-23 sidecar delete, which cannot reach the engine-created vec0 table. The prune therefore targets EXACTLY the dropped edges' orphans and is a no-op on any healthy corpus.",
+      "crash_safety": "Gated on the marker's ABSENCE, not on crossing the step-23 boundary (mirrors the search_index tokenizer reproject). Step 23 commits user_version=23 (edges dropped, sidecar cleared) in its own tx; the prune runs in a later tx on open. A crash in that window leaves durable v23 + orphaned vec0 rows; a boundary gate (before < 23) would skip forever (next open sees before==23). The marker is absent on any DB upgraded before fix-6 shipped, so the prune runs once and cleans lingering orphans; thereafter paired insert/delete keeps the invariant so no new orphans arise."
+    },
+    "three_facets_complete": "Step 23 now removes the dropped edges' row-owned projections COMPLETELY for every edge: (1) reserved write-cursor high-water mark (fix-1) — stops cursor REUSE below the lowered MAX; (2) _fathomdb_projection_terminal backfill (fix-4) — stops the SHARED projection cursor STALLING on the dropped cursors; (3) VECTOR projection prune (fix-6) — search_index_edges truncated + _fathomdb_vector_rows edge rows deleted in the migration + vector_default orphan rows pruned by the engine. EdgeFts + Readiness + Vector are the only classes ROW_OWNED_PROJECTIONS assigns to edges; NodeFts holds no edges. The engine test's noop control + the node-survival assertions prove node projections (NodeFts + node Vector rows) are untouched.",
+    "node_vectors_untouched_confirmation": "PROVEN by two guards. Schema test fix6_node_vector_sidecar_survives_step_23: the node's _fathomdb_vector_rows row (cursor 6) survives step 23 while the edge's (cursor 5) is deleted. Engine test fix6_orphaned_edge_vector_is_pruned_on_open: after the prune, the node's vector_default vec0 row AND its _fathomdb_vector_rows sidecar both survive (count==1) while the orphaned edge vec0 row is gone (count==0). Engine test fix6_prune_is_a_noop_without_orphans: on a healthy corpus the prune deletes ZERO vec0 rows (before==after) — so recall / eu7 fidelity are unchanged on any DB that never dropped edges.",
+    "tables_and_sql_added": {
+      "migration_step_23": "DELETE FROM _fathomdb_vector_rows WHERE write_cursor IN (SELECT write_cursor FROM canonical_edges);",
+      "engine_prune": "per-orphan `DELETE FROM vector_default WHERE rowid = ?1` for every vector_default rowid absent from `SELECT write_cursor FROM _fathomdb_vector_rows`; then INSERT ... ON CONFLICT marker."
+    },
+    "commits": [
+      {
+        "sha": "7a521ff5",
+        "kind": "RED",
+        "summary": "schema tests/tc33_fix6_edge_vector_sidecar.rs (2 tests: dropped-edge sidecar removed; node sidecar survives) + engine tests/tc33_fix6_edge_vector_prune.rs (2 tests: orphaned edge vec0 pruned on open; prune is a no-op without orphans). Source at baseline (schema change stashed for the RED capture)."
+      },
+      {
+        "sha": "cd50cb53",
+        "kind": "GREEN",
+        "summary": "schema step 23 deletes edge _fathomdb_vector_rows sidecar rows + comment fix; engine prunes orphaned vector_default vec0 rows after ensure_vector_partition (marker-gated, crash-retryable) + two consts + edge_vector_prune_complete / prune_orphaned_edge_vectors."
+      }
+    ],
+    "head_sha": "cd50cb53",
+    "red_evidence": "SCHEMA at 7a521ff5 (`cargo test -p fathomdb-schema --test tc33_fix6_edge_vector_sidecar -- --test-threads=1`, source at baseline via stash) → `test result: FAILED. 0 passed; 2 failed; 0 ignored`, exit 101. fix6_dropped_edge_vector_sidecar_is_removed panicked at :123: 'step 23 must delete the dropped edge's _fathomdb_vector_rows sidecar row (cursor 5); leaving it orphans the vec0 candidate on every upgraded DB'. fix6_node_vector_sidecar_survives_step_23 panicked at :144: 'edge sidecar (cursor 5) still must be gone' (the node-survival sibling assertion PASSED first, proving non-vacuous). ENGINE at 7a521ff5 (`cargo test -p fathomdb-engine --test tc33_fix6_edge_vector_prune -- --test-threads=1`) → `test result: FAILED. 1 passed; 1 failed`, exit 101. fix6_orphaned_edge_vector_is_pruned_on_open panicked at :177: 'assertion left == right failed: the orphaned edge vec0 row (cursor 2) must be pruned on open ...  left: 1  right: 0' — the orphan survived reopen on unfixed engine. fix6_prune_is_a_noop_without_orphans PASSED (positive control, no orphan to leak). Post-GREEN at cd50cb53: schema 2 passed / 0 failed; engine 2 passed / 0 failed; exit 0.",
+    "gates": [
+      { "gate": "cargo clippy --workspace --all-targets", "real_exit_code": 0, "note": "0 warnings, 0 errors (one clippy::doc_lazy_continuation on a test-module doc line beginning with '+' was resolved by rewording to 'plus')." },
+      { "gate": "cargo check --workspace --all-targets", "real_exit_code": 0 },
+      {
+        "gate": "cargo test -p fathomdb-engine -p fathomdb-schema -- --test-threads=1",
+        "real_exit_code": 0,
+        "passed": 592,
+        "failed": 0,
+        "ignored": 13,
+        "note": "588 (fix-5 GREEN) + 4 new fix-6 tests = 592. 13 ignored UNCHANGED (incl. eu7_real_corpus_ac — ZERO eu7 runs). Run to completion with an explicit 1800000 ms timeout (suite exceeds the 2-min default); real aggregate summed from `^test result:` lines (every line 'ok', 0 failed), SUITE_EXIT=0."
+      },
+      {
+        "gate": "cargo test -p fathomdb-schema --test tc33_fix6_edge_vector_sidecar -- --test-threads=1",
+        "real_exit_code": 0,
+        "passed": 2,
+        "failed": 0
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test tc33_fix6_edge_vector_prune -- --test-threads=1",
+        "real_exit_code": 0,
+        "passed": 2,
+        "failed": 0
+      }
+    ],
+    "invariants_confirmed": {
+      "AC-041_recovery_denylist": "unchanged — {recover, restore, repair, fix, rebuild}; diff touches only step 23's SQL string, the engine open path + two prune helpers, and the two new test files, no recovery/verb code.",
+      "eu7": "zero runs; eu7_real_corpus_ac left #[ignore]d; the prune is a proven no-op on a healthy corpus so vec0 contents / recall / fidelity are byte-stable on any DB that never dropped edges.",
+      "governed_surface": "PROPOSED / NOT SIGNED; no AC minted; never HITL-SIGNED.",
+      "crash_safety_idempotence": "preserved — migration DELETE is inside step 23's single BEGIN IMMEDIATE (crash rolls back to user_version 22, whole step replays); engine prune is in its own BEGIN IMMEDIATE with a durable completion marker written in the same tx (crash before COMMIT leaves no marker, next open re-runs).",
+      "accretion_guard": "unaffected — the migration DELETE adds no CREATE/DROP; step 23 still names both CREATE TABLE and DROP TABLE and keeps its -- MIGRATION-ACCRETION-EXEMPTION marker.",
+      "guard_row_owned_registry": "unaffected — no new projection table added; ROW_OWNED_PROJECTIONS is unchanged (fix-6 completes cleanup of tables already registered there).",
+      "no_data_migration": "compliant — deletes derived projection rows for ALREADY-DROPPED edges (consistency), preserves/converts no user rows; fits the HITL 2026-07-21 ruling exactly like the search_index_edges clear and the fix-4 terminals."
+    },
+    "plan_or_recon_corrections": [
+      "The task's proposed migration SQL (`DELETE FROM vector_default WHERE rowid IN (SELECT write_cursor FROM canonical_edges)` in step 23) is NOT viable as written: vector_default is a vec0 virtual table created by the engine's dim-aware ensure_vector_partition AFTER migrate() returns, so it does not exist during step 23 on a fresh DB or in the schema crate's migration tests — an unguarded reference fails to prepare and breaks every schema migration test crossing step 23. RESOLUTION: the sidecar half (_fathomdb_vector_rows, always present) is deleted in the migration; the vec0 half (vector_default) is pruned by the engine right after ensure_vector_partition, matched against the sidecar. This is a strictly-necessary split, not scope creep — the existing step-23 comment already documented that vector_default cannot be referenced in the migration (its error was only in claiming the orphans were harmless).",
+      "The vec0 prune keys on 'vec0 row with no _fathomdb_vector_rows sidecar entry' rather than re-deriving edge cursors (which are gone after the DROP). This is exact because the vec0/sidecar pair is maintained atomically everywhere, so the only sidecar-less vec0 rows are the step-23 edge orphans — the prune is both complete and non-over-reaching without needing to know 'edge' specifically."
+    ],
+    "blockers": []
+  },
+  "blockers": []
+}

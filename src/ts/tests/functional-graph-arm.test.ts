@@ -31,7 +31,7 @@ function edge(
   from: string,
   to: string,
   logicalId: string,
-  opts: { tInvalid?: string } = {},
+  opts: { tInvalid?: number } = {},
 ) {
   const e: Record<string, unknown> = { kind: "link", from, to, logicalId, sourceId: SOURCE_ID };
   if (opts.tInvalid !== undefined) e.tInvalid = opts.tInvalid;
@@ -106,7 +106,7 @@ test("useGraphArm=true excludes nodes reachable only via expired edges", async (
     await engine.write([
       node("n1", "sentinel query anchor ts"),
       node("n2", "unreachable via expired edge zz99 ts"),
-      edge("n1", "n2", "e12", { tInvalid: "2000-01-01T00:00:00Z" }),
+      edge("n1", "n2", "e12", { tInvalid: 946_684_800 }), // TC-33 epoch: 2000-01-01T00:00:00Z
     ]);
     await engine.drain(3000);
     const result = await engine.search("sentinel query", undefined, undefined, true);

@@ -85,12 +85,13 @@ fn filterterm_enum_is_exactly_five_variants() {
 /// (the byte-identical-vec0-SQL guarantee — same fields, same canonical order).
 #[test]
 fn searchfilter_sugar_lowers_and_round_trips() {
-    let sf = SearchFilter {
-        source_type: Some("todo".to_string()),
-        kind: Some("todo".to_string()),
-        created_after: Some(1000),
-        status: Some("open".to_string()),
-    };
+    // `SearchFilter` is `#[non_exhaustive]` (0.8.20 Slice 15e fix-2); build from
+    // `default()` (downstream crates cannot use a struct literal).
+    let mut sf = SearchFilter::default();
+    sf.source_type = Some("todo".to_string());
+    sf.kind = Some("todo".to_string());
+    sf.created_after = Some(1000);
+    sf.status = Some("open".to_string());
     let unified = Filter::from(&sf);
     assert_eq!(
         unified.terms,

@@ -794,6 +794,8 @@ fn engine_error_code(err: &EngineError) -> &'static str {
         EngineError::NotLifecycleAddressable { .. } => "NotLifecycleAddressableError",
         // 0.8.20 Slice 5b (R-20-E5) — erasure verb could not finish at rest.
         EngineError::ErasureIncomplete { .. } => "ErasureIncompleteError",
+        // 0.8.20 Slice 15d (R-20-PR) — destructive projection change refused.
+        EngineError::ProjectionDestructive { .. } => "ProjectionDestructiveError",
     }
 }
 
