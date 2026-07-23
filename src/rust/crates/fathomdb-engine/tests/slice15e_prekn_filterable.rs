@@ -945,3 +945,106 @@ fn undeclared_filter_attribute_is_typed_rejection_on_both_arms() {
 
     engine.close().unwrap();
 }
+
+// ===========================================================================
+// keystone closeout fix-3 (codex §9 [P2], TOCTOU) — the fix-2 undeclared-attr
+// validation ran on the WRITER connection BEFORE dispatch, then the reader
+// prepared the vec0 query on a DIFFERENT connection/snapshot. A
+// `configure_projections` DROP of the `filterable` projection landing in the
+// window between the check and the reader snapshot let the `attr_<hex>` vec0
+// column vanish AFTER validation passed → the reader crashed with an opaque
+// `no such column` `Storage` error: the exact untyped failure fix-2 meant to
+// prevent, re-introduced by concurrency.
+//
+// This test makes that race DETERMINISTIC with the `reader_search_hook` seam,
+// which parks the reader worker at the top of `read_search_in_tx` — after the
+// caller-side pre-dispatch validation has already passed, and BEFORE the reader
+// pins its deferred snapshot. While parked, the main thread commits the DROP on
+// the writer connection (the exact race window), then releases the reader, which
+// then pins a snapshot that INCLUDES the drop.
+//
+// Pre-fix-3: the reader has no validation on its own snapshot, so the vec0
+//   phase-1 SQL emits `AND attr_<hex>=?` for the dropped column → `no such
+//   column` → `EngineError::Storage`.  <-- RED asserts this must NOT happen.
+// Post-fix-3: `validate_filter_attributes_on_snapshot` runs INSIDE the reader's
+//   deferred transaction, so the registry it reads and the vec0 columns the query
+//   compiles against are ONE snapshot → a consistent, typed
+//   `EngineError::InvalidFilter` naming the attribute.
+// ===========================================================================
+
+#[test]
+fn undeclared_after_concurrent_drop_is_typed_invalidfilter_not_storage_race() {
+    use fathomdb_engine::{
+        arm_reader_search_hook_for_test, clear_reader_search_hook_for_test, EngineError,
+    };
+    use std::sync::mpsc;
+
+    let (_dir, path) = fixture("s15e_fix3_toctou");
+    let opened = open(&path);
+    let engine = &opened.engine;
+
+    // A declared `filterable` projection + a corpus that is BOTH vector-indexed
+    // (HashEmbedder, drained) and FTS-indexed (shared token), so the filtered
+    // `search_filtered` runs the vec0 arm that emits the `attr_<hex>=?` predicate.
+    engine.configure_projections(&[filterable_spec("priority")], &[]).expect("configure");
+    engine
+        .write(&[
+            node("A", r#"{"title":"sharedtoken alpha","priority":"high"}"#),
+            node("B", r#"{"title":"sharedtoken beta","priority":"low"}"#),
+        ])
+        .expect("write");
+    engine.drain(10_000).expect("drain");
+
+    // Rendezvous channels: `reached` fires when the reader parks at the hook (before
+    // its snapshot is pinned); `go` releases it after the concurrent drop commits.
+    let (reached_tx, reached_rx) = mpsc::channel::<()>();
+    let (go_tx, go_rx) = mpsc::channel::<()>();
+    // `Sender::send` / `Receiver::recv` take `&self`, so an `Fn` closure can drive
+    // both by shared reference — no need to move them out of the closure.
+    arm_reader_search_hook_for_test(Box::new(move || {
+        reached_tx.send(()).ok();
+        go_rx.recv().ok();
+    }));
+
+    let result = std::thread::scope(|s| {
+        let search = s.spawn(|| {
+            let mut f = SearchFilter::default();
+            f.attributes = vec![("priority".to_string(), "high".to_string())];
+            engine.search_filtered("sharedtoken", Some(f))
+        });
+
+        // Wait for the reader to park (pre-dispatch validation has already passed on
+        // the writer connection, and the reader has NOT yet pinned its snapshot).
+        reached_rx.recv().expect("reader must reach the pre-snapshot hook");
+        // The race: DROP `priority` on the writer connection NOW — this removes the
+        // `attr_<hex>` vec0 column that the in-flight search's filter still names.
+        engine
+            .configure_projections(&[], &["priority".to_string()])
+            .expect("concurrent DROP of the filterable projection");
+        // Release the parked reader; it now pins a snapshot that includes the drop.
+        go_tx.send(()).expect("release the parked reader");
+
+        search.join().expect("search thread joined")
+    });
+
+    clear_reader_search_hook_for_test();
+
+    match result {
+        Err(EngineError::InvalidFilter { reason }) => assert!(
+            reason.contains("priority"),
+            "the reader-snapshot rejection must NAME the now-undeclared attribute, got: {reason}"
+        ),
+        Err(EngineError::Storage) => panic!(
+            "TOCTOU: a configure_projections DROP racing the search made the vec0 attr_<hex> \
+             column vanish AFTER the pre-dispatch check passed on the writer connection, so the \
+             reader crashed with an opaque `no such column` Storage error. fix-3 must validate on \
+             the reader's OWN transaction snapshot so this is a typed InvalidFilter."
+        ),
+        other => panic!(
+            "expected a typed InvalidFilter after the concurrent drop (never a raw error / silent \
+             Ok), got {other:?}"
+        ),
+    }
+
+    engine.close().unwrap();
+}

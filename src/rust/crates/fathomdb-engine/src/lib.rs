@@ -750,13 +750,40 @@ enum ReaderRequest {
 // only on the `search_explained` path). Like the `GraphFrontierStats` 4th element
 // it rides the internal channel as a side-channel; unlike it, the explanation IS
 // surfaced (onto `SearchResult.explanation`) when requested.
-type ReaderResponse = rusqlite::Result<(
-    u64,
-    Option<SoftFallback>,
-    Vec<SearchHit>,
-    GraphFrontierStats,
-    Option<Explanation>,
-)>;
+type ReaderResponse = Result<
+    (u64, Option<SoftFallback>, Vec<SearchHit>, GraphFrontierStats, Option<Explanation>),
+    SearchReaderError,
+>;
+
+/// 0.8.20 keystone closeout fix-3 (codex §9 [P2], TOCTOU) — the error a Search
+/// reader worker can return. Two arms:
+///   * `Sqlite` — a backend/storage failure (the pre-fix-3 `rusqlite::Result`
+///     behaviour verbatim; the caller emits the internal-error event and maps to
+///     `EngineError::Storage`);
+///   * `InvalidFilter` — a filter naming an UNDECLARED `filterable` attribute,
+///     detected on the reader's OWN transaction snapshot (see
+///     [`validate_filter_attributes_on_snapshot`]). The caller re-raises it as the
+///     EXISTING `EngineError::InvalidFilter { reason }` typed variant.
+///
+/// Why a channel-carried variant and not a pre-dispatch check on the writer
+/// connection: fix-2 validated on `self.connection` BEFORE dispatch, then the
+/// reader prepared the vec0 query on a DIFFERENT connection/snapshot. A
+/// `configure_projections` DROP landing in that window let the vec0 `attr_<hex>`
+/// column vanish AFTER validation passed → an opaque `no such column` `Storage`
+/// error (the exact untyped failure fix-2 meant to prevent). Validating INSIDE
+/// the reader transaction that also compiles+executes the search binds the check
+/// and the query to ONE snapshot, closing the race; carrying the typed reason
+/// back through this variant keeps the outcome `InvalidFilter`, never `Storage`.
+enum SearchReaderError {
+    Sqlite(rusqlite::Error),
+    InvalidFilter(String),
+}
+
+impl From<rusqlite::Error> for SearchReaderError {
+    fn from(err: rusqlite::Error) -> Self {
+        SearchReaderError::Sqlite(err)
+    }
+}
 
 /// Pack 6.G G.3.5 — per-worker cache-pressure snapshot. Carried only on
 /// the debug-only `CacheStatus` broadcast path and the test accessor;
@@ -1051,6 +1078,68 @@ fn reader_worker_loop(
     // to free.
     uninstall_profile_callback(&connection);
     drop(connection);
+}
+
+/// 0.8.20 keystone closeout fix-3 — a test-only rendezvous hook fired at the TOP
+/// of [`read_search_in_tx`], BEFORE the reader opens its deferred transaction.
+///
+/// It exists ONLY to make the validate/execute TOCTOU race deterministic: a test
+/// arms a closure that parks the reader worker here (after the caller-side search
+/// setup, before the reader pins its snapshot), performs a concurrent
+/// `configure_projections` DROP of a `filterable` attribute on the writer
+/// connection, then releases the reader. The reader then pins a snapshot that
+/// INCLUDES the drop — exactly the window that used to yield an opaque `no such
+/// column` `Storage` error and now yields a typed `InvalidFilter`. Kept OFF the
+/// governed surface (`_for_test`), mirroring the sanctioned
+/// `set_vector_stage_only_for_test` seam pattern. Disarmed by default: a single
+/// `Relaxed` atomic load per search (same class as the four hot-path atomics
+/// already read here), fires at most once (the closure is `take`n), and is a
+/// no-op in production because nothing ever arms it.
+mod reader_search_hook {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Mutex;
+
+    static ARMED: AtomicBool = AtomicBool::new(false);
+    #[allow(clippy::type_complexity)]
+    static HOOK: Mutex<Option<Box<dyn Fn() + Send>>> = Mutex::new(None);
+
+    pub(crate) fn arm(hook: Box<dyn Fn() + Send>) {
+        *HOOK.lock().expect("reader-search hook mutex") = Some(hook);
+        ARMED.store(true, Ordering::SeqCst);
+    }
+
+    pub(crate) fn clear() {
+        ARMED.store(false, Ordering::SeqCst);
+        *HOOK.lock().expect("reader-search hook mutex") = None;
+    }
+
+    /// Fire the armed hook exactly ONCE, then disarm. Cheap early-out when
+    /// disarmed (the production and common-test path).
+    pub(crate) fn fire() {
+        if !ARMED.load(Ordering::SeqCst) {
+            return;
+        }
+        // Disarm first so a re-entrant / second reader never re-fires.
+        ARMED.store(false, Ordering::SeqCst);
+        let hook = HOOK.lock().expect("reader-search hook mutex").take();
+        if let Some(hook) = hook {
+            hook();
+        }
+    }
+}
+
+/// 0.8.20 keystone closeout fix-3 — arm the [`reader_search_hook`] (test-only).
+/// See that module's docs. `#[doc(hidden)]`, `_for_test`; never re-exported from
+/// the `fathomdb` facade.
+#[doc(hidden)]
+pub fn arm_reader_search_hook_for_test(hook: Box<dyn Fn() + Send>) {
+    reader_search_hook::arm(hook);
+}
+
+/// 0.8.20 keystone closeout fix-3 — disarm the [`reader_search_hook`] (test-only).
+#[doc(hidden)]
+pub fn clear_reader_search_hook_for_test() {
+    reader_search_hook::clear();
 }
 
 impl ProjectionRuntime {
@@ -5766,7 +5855,14 @@ impl Engine {
         let search_result = response_rx.recv().map_err(|_| EngineError::Storage)?;
         let (cursor, soft_fallback, results, _graph_stats, explanation) = match search_result {
             Ok(result) => result,
-            Err(err) => {
+            // fix-3 (codex §9 [P2]) — carry the reader-snapshot validation verdict
+            // through: an undeclared `filterable` attribute is the EXISTING typed
+            // `InvalidFilter`, never collapsed to `Storage`. (This path takes
+            // `filter = None`, so it never fires here, but the match stays total.)
+            Err(SearchReaderError::InvalidFilter(reason)) => {
+                return Err(EngineError::InvalidFilter { reason });
+            }
+            Err(SearchReaderError::Sqlite(err)) => {
                 self.emit_sqlite_internal_error(&err);
                 return Err(EngineError::Storage);
             }
@@ -6197,7 +6293,14 @@ impl Engine {
         let search_result = response_rx.recv().map_err(|_| EngineError::Storage)?;
         let (cursor, soft_fallback, results, graph_stats, explanation) = match search_result {
             Ok(result) => result,
-            Err(err) => {
+            // fix-3 (codex §9 [P2]) — an undeclared `filterable` attribute is caught
+            // on the reader's OWN snapshot (validate + vec0 query = one transaction),
+            // so it surfaces as the EXISTING typed `InvalidFilter` and can never be
+            // the opaque `no such column` `Storage` error the TOCTOU race produced.
+            Err(SearchReaderError::InvalidFilter(reason)) => {
+                return Err(EngineError::InvalidFilter { reason });
+            }
+            Err(SearchReaderError::Sqlite(err)) => {
                 self.emit_sqlite_internal_error(&err);
                 return Err(EngineError::Storage);
             }
@@ -10290,6 +10393,11 @@ fn read_search_in_tx(
     // `ReadView`, so a boundary-straddling query could have its arms disagree.
     let view = view.freeze();
     let now_param = view.now_param();
+    // fix-3 (codex §9 [P2], TOCTOU) — test-only rendezvous: parks the worker here,
+    // BEFORE the deferred snapshot is pinned, so a test can commit a concurrent
+    // `configure_projections` DROP in the exact race window. Disarmed (no-op) in
+    // production and on every non-race test.
+    reader_search_hook::fire();
     let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
     let cursor = load_projection_cursor(&tx)?;
     let vector_results = if let Some(query_vector) = query_vector {
