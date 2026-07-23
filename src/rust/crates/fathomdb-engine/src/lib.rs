@@ -6104,6 +6104,25 @@ impl Engine {
             return Err(EngineError::WriteValidation);
         }
 
+        // 0.8.20 Slice 15e fix-2 finding 1 [P2] — validate every filter attribute
+        // name against the declared `filterable` registry set BEFORE any arm runs.
+        // An UNDECLARED name would otherwise emit `AND attr_<hex>=?` into the vec0
+        // phase-1 KNN for a column that does not exist → SQLite `no such column` →
+        // an opaque `Storage` error on the vector arm, while the FTS arm silently
+        // no-matched (`hit_attributes_pass_filter` finds no `canonical_attributes`
+        // row) — a divergent, un-typed outcome. ADR-0.8.11 D3 requires every filter
+        // term a DEFINED outcome ("compiles" or "typed rejection") IDENTICAL across
+        // arms; validating once here, before dispatch, makes BOTH arms see the SAME
+        // typed `InvalidFilter` rejection. Cheap: skipped entirely when the filter
+        // carries no attribute terms (the common path).
+        if let Some(f) = filter.as_ref() {
+            if !f.attributes.is_empty() {
+                let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+                let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+                validate_filter_attributes_declared(connection, f)?;
+            }
+        }
+
         let compiled = compile_text_query(query);
         // REQ-013 / AC-059b / REQ-055: the cursor returned with a search
         // MUST be derived from the same WAL snapshot the data was read
@@ -9864,6 +9883,47 @@ impl CandleCrossEncoder {
             Err(_) => passages.iter().map(|p| self.score(query, p)).collect(),
         }
     }
+}
+
+/// 0.8.20 Slice 15e fix-2 finding 1 [P2] — reject a search filter that names an
+/// attribute with NO declared `filterable` projection, BEFORE any SQL is built.
+///
+/// The vector arm lowers each `filter.attributes` term to `AND attr_<hex>=?`
+/// against a vec0 metadata column that exists ONLY for a declared `filterable`
+/// projection (the reshape in [`reconcile_vector_attr_columns`] tracks exactly the
+/// registry's `filterable` set; see [`desired_vector_attr_columns`]). A name that
+/// is not a declared `filterable` projection therefore has no column: the vec0 KNN
+/// would fail with `no such column` (surfacing as an opaque `Storage` error),
+/// while the FTS arm ([`hit_attributes_pass_filter`]) would silently no-match. That
+/// divergence violates ADR-0.8.11 D3 (every filter term has a DEFINED, arm-uniform
+/// outcome). We validate against the registry's `filterable` set — the authority
+/// that is arm-INDEPENDENT (correct even with no embedder / no `vector_default`,
+/// where a declared-`filterable` term still filters legitimately via the row-owned
+/// `canonical_attributes` EAV store) — and return a typed [`EngineError::InvalidFilter`]
+/// naming the attribute, mirroring how D3 typed-rejects an unsupported `json`-path
+/// predicate on `search_filtered`. Both arms see the SAME rejection because it is
+/// raised before either runs.
+fn validate_filter_attributes_declared(
+    conn: &Connection,
+    filter: &SearchFilter,
+) -> Result<(), EngineError> {
+    if filter.attributes.is_empty() {
+        return Ok(());
+    }
+    let registry = load_projection_registry(conn).map_err(|_| EngineError::Storage)?;
+    for (name, _value) in &filter.attributes {
+        let declared_filterable =
+            registry.get(name).is_some_and(|s| s.roles.contains(&ProjectionRole::Filterable));
+        if !declared_filterable {
+            return Err(EngineError::InvalidFilter {
+                reason: format!(
+                    "filter attribute {name:?} is not a declared `filterable` projection; \
+                     declare it via configure_projections before filtering on it"
+                ),
+            });
+        }
+    }
+    Ok(())
 }
 
 /// G10 — the `AND col=?n` predicate fragment appended to the phase-1 candidates
@@ -16145,7 +16205,20 @@ fn apply_projection_config(
                 if desired.wants_eav() {
                     delta.built.push(spec.name.clone());
                 }
-                if desired.has_deferred() && !existing.has_deferred() {
+                // 0.8.20 Slice 15e fix-2 finding 2 [P2] — this arm ONLY runs when
+                // the registry row actually CHANGED (`existing != desired`), so the
+                // delta MUST reflect that change; otherwise an accepted mutation
+                // reports `unchanged = true` — a no-op lie to SDK callers. The prior
+                // `&& !existing.has_deferred()` guard suppressed a deferred-ONLY
+                // change (e.g. `rankable` → `rankable + vector`, which builds no EAV
+                // so `built` stays empty): the row persisted but `delta` came back
+                // empty. Mirror the fresh-registration push (`if
+                // desired.has_deferred()`). Every valid non-empty spec has
+                // `wants_eav()` OR `has_deferred()`, so on a real change at least one
+                // of `built`/`deferred` is now populated ⇒ `unchanged` can never be
+                // `true` on a persisted change. A genuine no-op (identical spec)
+                // takes the idempotent arm above and is untouched.
+                if desired.has_deferred() {
                     delta.deferred.push(spec.name.clone());
                 }
             }
