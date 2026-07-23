@@ -90,5 +90,87 @@
     "src/ts/src/index.ts": "configureProjections — added validateFfiTree(specs) + validateFfiTree(drop) before the native call.",
     "src/ts/tests/slice15d-projection-registry.test.ts": "added SURROGATE const + 5 TC-47 surrogate tests mirroring the existing NUL tests."
   },
-  "next_step_for_orchestrator": "Re-run codex (§9) review on branch orch-0.8.20-s15b at HEAD 4cc3ca6d (the keystone closeout: F1 timestamp round-trip + F2 TS projection FFI guard). If clean, cherry-pick 8cb52385 (RED) + 4cc3ca6d (GREEN) onto the keystone. No surviving temporal class -> the TC-47 escalation-to-date-library trigger did NOT fire; strftime + the calendar-DATE round-trip is sufficient. Governed surface remains PROPOSED/NOT SIGNED."
+  "next_step_for_orchestrator": "Re-run codex (§9) review on branch orch-0.8.20-s15b at HEAD 4cc3ca6d (the keystone closeout: F1 timestamp round-trip + F2 TS projection FFI guard). If clean, cherry-pick 8cb52385 (RED) + 4cc3ca6d (GREEN) onto the keystone. No surviving temporal class -> the TC-47 escalation-to-date-library trigger did NOT fire; strftime + the calendar-DATE round-trip is sufficient. Governed surface remains PROPOSED/NOT SIGNED.",
+  "fix_2": {
+    "scope": "0.8.20 keystone closeout fix-2 — the two NON-temporal codex §9 P2s from the terminal full-stack review (projection/filter handling). ADD-only on branch orch-0.8.20-s15b; the temporal path (fix-1) is untouched.",
+    "baseline_head": "6bd0040d (keystone closeout witness — head at which fix-2 was commissioned)",
+    "head_sha": "486b4876419efe21aba158d29cb99168d9b0af4d",
+    "status": "COMPLETE — both P2s closed via TDD (RED->GREEN); all gates green; front-load self-audit clean.",
+    "commits": {
+      "red": "d21a08c1b4a3b77a7cc9ce748be63e14954fa3ec",
+      "green": "486b4876419efe21aba158d29cb99168d9b0af4d"
+    },
+    "findings": {
+      "F1_undeclared_filter_attribute": {
+        "class": "[P2] a filter on an UNDECLARED attribute emits raw SQL -> `no such column` crash; text arm diverges (silent no-match). ADR-0.8.11 D3 total-dispatch violation.",
+        "bug": "vector_filter_clause lowered every SearchFilter.attributes term to `AND attr_<hex>=?` in the vec0 phase-1 KNN. For a name that is NOT a declared `filterable` projection there is no such vec0 column -> SQLite `no such column` -> the reader worker Err propagated as an opaque EngineError::Storage on the vector arm; meanwhile the FTS arm's hit_attributes_pass_filter probed canonical_attributes, found no row, and silently NO-MATCHED. A caller typo (or a filter issued before configure_projections) therefore became a divergent storage/search FAILURE instead of a stable, arm-uniform typed outcome.",
+        "fix_location": "src/rust/crates/fathomdb-engine/src/lib.rs — NEW fn validate_filter_attributes_declared(conn, filter) called ONCE in Engine::search_inner_with_stats, after the empty-query check and BEFORE the reader dispatch (so it precedes BOTH arms). Validates each attribute name against the declared `filterable` registry set (load_projection_registry -> ProjectionRole::Filterable membership).",
+        "typed_rejection_mechanism": "Reuses the EXISTING EngineError::InvalidFilter { reason } variant (the same variant D3 uses to typed-reject an unsupported json-path predicate on search_filtered). reason names the attribute: `filter attribute \"nonexistent\" is not a declared `filterable` projection; declare it via configure_projections before filtering on it`. NO new error variant.",
+        "both_arms_agree_proof": "The validation runs before ReaderPool dispatch, so NEITHER arm executes on an undeclared name -> the fused two-arm search_filtered (which exercises BOTH the vector and FTS arms) returns ONE consistent InvalidFilter. Pinned by undeclared_filter_attribute_is_typed_rejection_on_both_arms (slice15e_prekn_filterable.rs): assertion (1) matches Err(InvalidFilter{reason}) with reason.contains(\"nonexistent\"); pre-fix this arm got EngineError::Storage (the raw `no such column`).",
+        "why_registry_set_not_actual_columns": "The registry `filterable` set is the arm-INDEPENDENT authority: it is correct even with no embedder / no vector_default table, where a declared-`filterable` term still filters legitimately via the row-owned canonical_attributes EAV store (the FTS arm). Gating solely on actual_vector_attr_columns would over-reject a valid declared-filterable text-arm filter when no embedder is configured. reconcile_vector_attr_columns keeps the live vec0 shape == desired_vector_attr_columns (== the registry filterable set) on every configure_projections AND on boot (open-time reconcile at lib.rs ~4459), so a registry-`filterable` name always has its vec0 column when the vector arm runs.",
+        "controls": "Control (2): a DECLARED attribute with an ABSENT value still NO-MATCHES (Ok result excluding the rows) — fix-3 behaviour UNCHANGED, NOT a rejection. Control (3): the declared present value still MATCHES (non-vacuous — the fix did not turn every attribute filter into a rejection). Both green pre- and post-fix."
+      },
+      "F2_deferred_only_mutation_reported_unchanged": {
+        "class": "[P2] a deferred-only registry mutation is reported as `unchanged` — an accepted mutation lies to SDK callers as an idempotent no-op.",
+        "bug": "apply_projection_config's Some(existing)-changed (non-destructive persist) branch gated the delta.deferred push on `desired.has_deferred() && !existing.has_deferred()`. For a change that STAYED deferred (rankable -> rankable+vector: vector_declared false->true, adds a deferred vector sub-target, builds no EAV) the row WAS persisted but !existing.has_deferred() was false AND wants_eav() was false, so built/deferred/dropped were all empty -> delta.unchanged computed true.",
+        "fix_location": "src/rust/crates/fathomdb-engine/src/lib.rs (~16148) — dropped the `&& !existing.has_deferred()` guard; the changed branch now pushes delta.deferred `if desired.has_deferred()`, mirroring the fresh-registration (None) branch.",
+        "completeness_argument": "Every valid non-empty spec has wants_eav() (filterable||searchable) OR has_deferred() (rankable||vector_declared) — a spec with none has empty roles and is rejected up front. The changed branch runs ONLY when existing != desired. So on a real change at least one of built/deferred is now populated => delta.unchanged can never be true on a persisted change. No sibling remains.",
+        "no_op_preserved_proof": "Re-registering the IDENTICAL spec takes the `Some(existing) if existing == &desired` idempotent arm (untouched) => empty delta, unchanged=true. Pinned by deferred_only_mutation_is_reported_not_unchanged control (third apply: unchanged=true, empty delta) AND the pre-existing idempotent_reregistration_is_a_noop / idempotent_reregistration_holds_for_deferred_rankable / idempotent_refilterable_registration_is_vec0_noop tests (all still green).",
+        "registry_delta_alignment": "The F2 test asserts read_projections() after the accepted mutation reflects the new vector sub-target (read[0].vector.is_some()) AND delta.deferred names it — exactly what the delta claimed."
+      }
+    },
+    "red_evidence": {
+      "F1": {
+        "cmd": "cargo test -p fathomdb-engine --test slice15e_prekn_filterable -- --test-threads=1 undeclared_filter_attribute_is_typed_rejection_on_both_arms (at RED d21a08c1)",
+        "result": "test result: FAILED. 0 passed; 1 failed. exit 101",
+        "panic": "panicked at slice15e_prekn_filterable.rs:907:23: an undeclared filter attribute must be a typed InvalidFilter rejection, not an opaque error: got Storage"
+      },
+      "F2": {
+        "cmd": "cargo test -p fathomdb-engine --test slice15d_projection_registry -- --test-threads=1 deferred_only_mutation_is_reported_not_unchanged (at RED d21a08c1)",
+        "result": "test result: FAILED. 0 passed; 1 failed. exit 101",
+        "panic": "panicked at slice15d_projection_registry.rs:1250:5: a deferred-only mutation that persisted a changed registry row must NOT report unchanged, got ProjectionDelta { built: [], dropped: [], deferred: [], unchanged: true }"
+      }
+    },
+    "gates": {
+      "cargo_clippy_workspace_all_targets": { "exit": 0 },
+      "cargo_check_workspace_all_targets": { "exit": 0 },
+      "cargo_test_engine_schema": {
+        "cmd": "cargo test -p fathomdb-engine -p fathomdb-schema -- --test-threads=1",
+        "exit": 0,
+        "aggregate": "641 passed / 0 failed / 13 ignored",
+        "pre_fix2_baseline": "639 passed / 0 failed / 13 ignored (delta +2 = the 2 new fix-2 tests: undeclared_filter_attribute_is_typed_rejection_on_both_arms + deferred_only_mutation_is_reported_not_unchanged)",
+        "named_pins_confirmed": [
+          "pr_g10_filtered_knn incl unfiltered_phase1_sql_byte_identical_to_0_7_2 ... ok",
+          "slice15e attribute_filter_excludes_edge_hits_on_both_arms (pin A) ... ok",
+          "R-20-PR idempotency/no-op: idempotent_reregistration_is_a_noop, idempotent_reregistration_holds_for_deferred_rankable, idempotent_refilterable_registration_is_vec0_noop ... ok",
+          "TC-33 fix1/fix2/fix3/fix5/fix6 + TC-44 fix5 shape-gate suite + TC-47 tc47_timestamp_round_trip (8) ... ok"
+        ],
+        "eu7": "ZERO eu7 runs. eu7_real_corpus_ac is a SEPARATE test target requiring the `operator` cargo feature (NOT enabled by the standard -p fathomdb-engine run) AND #[ignore] AND AGENT_LONG — so it is never compiled/run here; the 13-ignored count is unchanged from baseline."
+      },
+      "bindings": {
+        "decision": "SKIPPED fresh-clone X1 + pyright + TS suite per mandate — the fix RETURNS an EXISTING typed variant (EngineError::InvalidFilter) that is ALREADY mapped by BOTH bindings: fathomdb-py/src/lib.rs:207 -> InvalidFilterError; src/ts/src/errors.ts:334 -> InvalidFilterError. No NEW variant, no signature change, no .pyi/.d.ts stub gap introduced. No TS/Python source touched.",
+        "verification": "grep-confirmed the InvalidFilter -> InvalidFilterError mapping pre-exists in fathomdb-py and src/ts; F2 touches only ProjectionDelta field population (delta.unchanged already surfaced by bindings, no shape change)."
+      }
+    },
+    "self_audit": {
+      "searchTextOnly_undeclared_attr": "ALREADY-CORRECT — search_text_only / search_text_only_view take NO filter parameter, so they carry no attribute-filter surface and cannot receive an undeclared attribute name. Nothing to reject.",
+      "empty_attributes_list_unfiltered_byte_identical": "ALREADY-CORRECT (deliberate) — both the call site (`if !f.attributes.is_empty()`) and validate_filter_attributes_declared short-circuit on an empty attributes list, so the metadata-only/unfiltered path never locks the connection nor validates; unfiltered_phase1_sql_byte_identical_to_0_7_2 still green.",
+      "drop_that_changes_deferred_set": "ALREADY-CORRECT — a drop reports delta.dropped; REDUCING a deferred target (removing the rankable role or the vector sub-object) is is_destructive_projection_change => ProjectionDestructive error requiring an explicit drop => the drop+rebuild is reported in dropped + built/deferred. destructive_change_requires_explicit_drop and name_in_both_specs_and_drop_is_the_supported_rebuild stay green.",
+      "read_projections_matches_delta": "VERIFIED — F2 test asserts read_projections() after the accepted deferred mutation carries the new vector sub-target, aligned with delta.deferred. The accept => registry==delta invariant holds.",
+      "sibling_embedder_only_change_on_deferred_spec": "NOT-A-SIBLING (already an error path) — rankable+vector(embedderA) -> rankable+vector(embedderB) is is_destructive (existing.vector_embedder != desired.vector_embedder) => ProjectionDestructive error, never a silent unchanged. So the F2 completeness argument (built OR deferred always populated on a non-destructive change) has no residue.",
+      "sibling_other_search_entry_points": "COVERED — every filtered-search entry point (search, search_view, search_reranked[_view], search_explained, search_filter, search_filtered) funnels through search_reranked_with_explain -> search_inner -> search_inner_with_stats; search_expand calls search_inner directly. The single validation point in search_inner_with_stats therefore guards ALL of them. No read.list/read.collection sibling: those use the unified read Filter path and do not emit attr_<hex> vec0 predicates (out of the mandated projection/filter surface anyway)."
+    },
+    "invariants": {
+      "AC-041": "GREEN — no recovery/verb code touched; recovery_denylist stays five {recover, restore, repair, fix, rebuild}. Diff confined to the search-filter validation + the projection-delta condition + the 2 new tests.",
+      "SearchFilter_non_exhaustive": "INTACT — untouched.",
+      "governed_surface": "PROPOSED / NOT SIGNED — no AC minted, never HITL-SIGNED.",
+      "no_new_error_variant": "CONFIRMED — reused EngineError::InvalidFilter."
+    },
+    "files_changed": {
+      "src/rust/crates/fathomdb-engine/src/lib.rs": "F1: new validate_filter_attributes_declared + its call in search_inner_with_stats before dispatch. F2: dropped the `&& !existing.has_deferred()` guard on the changed-branch delta.deferred push.",
+      "src/rust/crates/fathomdb-engine/tests/slice15e_prekn_filterable.rs": "NEW test undeclared_filter_attribute_is_typed_rejection_on_both_arms (F1 + declared-absent + declared-present controls).",
+      "src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs": "NEW test deferred_only_mutation_is_reported_not_unchanged (F2 + same-spec no-op control + registry/delta alignment)."
+    },
+    "next_step_for_orchestrator_fix2": "Re-run codex (§9) on orch-0.8.20-s15b at HEAD 486b4876 for the two non-temporal P2s (F1 undeclared-attr typed rejection + F2 honest deferred delta). If clean, cherry-pick d21a08c1 (RED) + 486b4876 (GREEN) onto the keystone alongside the fix-1 commits. Bindings unaffected (reused InvalidFilter, already mapped) — no fresh-clone binding re-run needed."
+  }
 }
