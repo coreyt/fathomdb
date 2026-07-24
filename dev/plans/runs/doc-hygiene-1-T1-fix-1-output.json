@@ -1,0 +1,18 @@
+{
+  "tranche": "T1-fix-1",
+  "commit_sha": "8006f65fd787d9370024de47a4a81c003c30f232",
+  "commit_sha_note": "This is the pre-amend intermediate SHA (see 'deviations' below and the identical caveat in dev/plans/runs/doc-hygiene-1-T1-output.json) -- a commit cannot contain its own final self-referential SHA. It is one `git commit --amend --no-edit` behind the true final HEAD, which I report in my closing message to the coordinator.",
+  "files_changed": [
+    "dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md",
+    "dev/plans/runs/doc-hygiene-1-T1-fix-1-output.json"
+  ],
+  "md_lint_exit": 0,
+  "items": {
+    "fix-1/1": "Section 3 table, the 0.8.19 OOB row (was '*(net-new; end of 0.8.x)*', described #13 benchmark-and-robustness harness + EXP-FT free-threaded-Python ladder). Struck through the superseded content and annotated it SUPERSEDED (F-19/F-20), noting 0.8.19 actually shipped as OPP-12 Phase-1 (COMPLETE, F-24) and that the #13/EXP-FT content moved to 0.8.21 -- matching the strikethrough + bold-annotation pattern already used elsewhere in Section 3 for the 0.8.7/0.8.9 rows. The row no longer contradicts Section 4.",
+    "fix-1/2": "Section 4, the 0.8.15 PARKED row: the re-open condition read `0.8.16->0.8.18->0.9.x-OPP-12`, which is stale (OPP-12 landed in 0.8.x at 0.8.19/0.8.20, not 0.9.x). Corrected only that one inline cross-reference to `0.8.16->0.8.18->0.8.19/0.8.20-OPP-12` with a parenthetical noting the correction and citing F-19/F-20. No other content in the row, and no other Section 4 rows, were touched."
+  },
+  "deviations": [
+    "Same structural constraint as the prior T1 closure JSON: the commit's own final SHA cannot be embedded inside a file that is part of that same commit (the SHA is a hash of the tree, which includes the file). I committed the single content change first, captured that HEAD SHA, wrote this JSON referencing it, then used `git commit --amend --no-edit` (same commit message, no new commit -- still exactly one commit for this fix) to fold the JSON in. `commit_sha` above is therefore the pre-amend intermediate SHA (`8006f65fd787d9370024de47a4a81c003c30f232`), one hop behind the true final HEAD reported in the closing message. Per the coordinator's explicit allowance ('you may omit commit_sha or state it as the pre-amend value again'), I am stating it as the pre-amend value again."
+  ],
+  "found_not_fixed": []
+}
