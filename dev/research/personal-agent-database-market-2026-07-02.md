@@ -9,7 +9,7 @@
 
 ---
 
-# FathomDB in the Personal-Agent-Database Market — Position & Next-Best Steps
+## FathomDB in the Personal-Agent-Database Market — Position & Next-Best Steps
 
 ## 1. Market map
 
@@ -94,7 +94,7 @@ The "personal agent database" / agent-memory category has exploded into ~60 play
 
 ---
 
-# Appendix A — Full player catalog
+## Appendix A — Full player catalog
 
 Every distinct product found across all eight survey agents (both rounds), deduplicated by name. **69 distinct players.** "Posture / what it is" and "Key features" are as the survey agents reported them from live pages; all URLs are the sources the agents fetched or cited. Names carry the survey agents' disambiguating parentheticals (vendor / GitHub owner) where given.
 
@@ -174,7 +174,7 @@ Every distinct product found across all eight survey agents (both rounds), dedup
 
 ---
 
-# Appendix B — Per-angle raw survey findings
+## Appendix B — Per-angle raw survey findings
 
 The eight survey agents each returned, alongside their product lists, a `featuresObserved` list (cross-cutting market patterns for that angle) and free-form `notes` (verification caveats, excluded/unverified names, and relevance-to-FathomDB observations). Grouped below by round and angle.
 
@@ -400,11 +400,11 @@ CAVEATS: The searchable web in this environment is dated mid-2026 and some entri
 
 ---
 
-# Appendix C — Full feature taxonomy
+## Appendix C — Full feature taxonomy
 
 *Complete output of the taxonomy agent (the report body §2 is a condensed version of this).*
 
-# Agent-Memory Database — Feature Taxonomy
+## Agent-Memory Database — Feature Taxonomy
 
 Tier placement is by prevalence and defensibility across the ~60 surveyed players: TABLE-STAKES = present in a large majority (its absence reads as incomplete); IMPORTANT = present in a meaningful subset and used to differentiate; EXCEPTIONAL = one-off or handful, cutting-edge, hard to copy.
 
@@ -472,11 +472,11 @@ Tier placement is by prevalence and defensibility across the ~60 surveyed player
 
 ---
 
-# Appendix D — Full FathomDB capability audit
+## Appendix D — Full FathomDB capability audit
 
 *Complete output of the audit agent, verified against the FathomDB repository (shipped code + roadmap), not the web. The report body §3 condenses this table.*
 
-# FathomDB Audit vs Agent-Memory Database Feature Taxonomy
+## FathomDB Audit vs Agent-Memory Database Feature Taxonomy
 
 **Method:** Verified against shipped code (`src/rust/crates/`, `src/python/fathomdb/`, `docs/reference/python-api.md`, `CHANGELOG.md`, schema `src/rust/crates/fathomdb-schema/src/lib.rs`) and roadmap (`dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md`, `dev/plans/plan-0.8.12.md`, memory index). Distinguishing published/merged (`main`, manifests at 0.8.9) from branch-built-but-unmerged and roadmap-planned.
 
@@ -567,7 +567,7 @@ Tier placement is by prevalence and defensibility across the ~60 surveyed player
 
 ---
 
-# Appendix E — Methodology & provenance
+## Appendix E — Methodology & provenance
 
 **Workflow shape.** An 11-agent orchestrated workflow across four phases:
 
