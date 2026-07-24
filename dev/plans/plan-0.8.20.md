@@ -342,6 +342,17 @@ Gaps `1–4, 6–9, 11–14, 16–19, 21–24, 26–29, 31–39` absorb unplanne
 
 ## 9. Immediate next slice
 
+**➡ IMMEDIATE NEXT SLICE: Slice 20 — `dense_readiness` + `flush_embeddings()` (R-20-DR).** Depends on Slice 15
+(**LANDED** — the Phase-2 keystone merged to `origin/main` at **`a2022957`**: R-20-PR + R-20-EAV + `filterable`
+pre-KNN + TC-33 + TC-34 + Finding-1 (A) + `#[non_exhaustive] SearchFilter`; SCHEMA →24). R-20-DR **attaches
+`dense_readiness` to the `ProjectionSpec.vector` sub-object** built in Slice 15d (see the ratified-decision #1
+below); the change is additive. Commission a `/goal complete 0.8.20` orchestrator for it. Remaining ladder:
+**20 → 25 → 30 → 40.** Board of record: `runs/STATUS-0.8.20.md`; open HITL decisions: §11.
+
+*(Everything below in §9 is retained as landed history — the Slice-15 ratified decisions and the pre-keystone
+"Slice 15 is OPEN" close notes describe the state before the keystone merged. Do not act on the "OPEN / BLOCKED"
+framing; 15 is landed and 20/25 are unblocked.)*
+
 > ### ✅ HITL-RATIFIED 2026-07-21 — the four decisions that unblock the registry
 >
 > All three steward positions were **verified by codex against ground truth** before ratification
@@ -455,10 +466,13 @@ Gaps `1–4, 6–9, 11–14, 16–19, 21–24, 26–29, 31–39` absorb unplanne
 >    solid + well-documented. This is the steer that says **don't spend budget on (C).**
 
 **The REMAINDER of Slice 15 — projection registry (C-1 co-land) + EAV/property-FTS (R-20-PR, R-20-EAV), plus
-TC-33.** It is the Phase-2 keystone: 20 and 25 both depend on it. Slice 30 (H7) additionally depends on
-10/15/20/25.
+TC-33 — ✅ LANDED in the keystone `a2022957`.** It is the Phase-2 keystone: 20 and 25 both depend on it and are
+now **UNBLOCKED**. Slice 30 (H7) additionally depends on 10/15/20/25.
 
-> **⚠ SLICE 15 IS OPEN. It had FOUR parts; ONE has closed.**
+> **✅ SUPERSEDED 2026-07-24 — Slice 15 is COMPLETE and LANDED (`a2022957`); all four parts closed.**
+> The blockquote below is the historical pre-keystone note.
+>
+> **⚠ (HISTORICAL) SLICE 15 IS OPEN. It had FOUR parts; ONE has closed.**
 >
 > **✅ TC-34 — CLOSED at `a8087dfb`** (branch `orch-0.8.20-s15`, docs/artifacts `cd5620be`; **not landed**).
 > Node-validity authoring shipped as **optional `valid_from`/`valid_until` fields on the existing node write
@@ -567,20 +581,55 @@ broken code (§0.1). **Mint ACs from AC-079** (§3). **Run NO eu7 — R-20-EU7 i
   Governed-surface delta **PROPOSED / NOT SIGNED**. **codex §9: FOUR rounds to a TERMINAL PASS, with no
   verdict overridden and every [P2] fixed.** **AC-079 remains UNMINTED and publish remains BLOCKED.**
   **⚠ Slice 15 is NOT complete** — R-20-PR, R-20-EAV and TC-33 are **not started**, so **Slices 20 and 25
-  stay blocked**.
+  stay blocked**. *(← SUPERSEDED 2026-07-24: the remainder landed in the keystone; 20/25 are now unblocked.)*
+- **2026-07-24 — Slice 10 LANDED at `3cfb3cda`** (merge). R-20-RV + R-20-NV closed; SCHEMA 21 → 22; TC-31
+  RESOLVED · **Steward**.
+- **2026-07-24 — Slice 15 KEYSTONE LANDED at `a2022957`** (merge; ledger tip `3264114a`, steward seq-98).
+  **R-20-PR + R-20-EAV + `filterable` pre-KNN + TC-33 + TC-34 + Finding-1 (A) + `#[non_exhaustive] SearchFilter`**;
+  **SCHEMA →24** (step 24); codex §9 **terminal-clean**; **gates re-verified by the Steward** (clippy 0, check 0,
+  (A) pin 1/1, AC-041 3/3, denylist five). **TC-46 + TC-47 RESOLVED; TC-11 + TC-32 CLOSED.** **Slices 20 and 25
+  are now UNBLOCKED; the immediate next slice is Slice 20 (R-20-DR).** Governed-surface delta still **PROPOSED /
+  NOT SIGNED** — **AC-079 sign-off gated to Slice 40** (§11 #1) · **Steward**.
 
 ---
 
-## 11. Open questions for the human (raise at Slice 0)
+## 11. Open HITL decision queue (as of 2026-07-24)
 
-> **Status: ALL RESOLVED at the X0 sign-off (HITL, 2026-07-19)** — see §10. Retained for the record.
+> The X0 questions (publish-gate / eu7-basis / `embed_batch_cls` / adoption arms) were resolved at the 2026-07-19
+> sign-off (§10). This is the **current** queue after the Slice-15 keystone landed. Each item:
+> **decision — description — options — recommendation — justification — when it's gated.**
+>
+> **Already settled — do NOT re-open:** **Finding-1 = (A)** (attribute-filter drops edge hits; (D) reserved,
+> B/C declined); **TC-46 + TC-47 = RESOLVED** (non-destructive vec0 reshape; round-trip ISO validator);
+> **TC-11 + TC-32 = CLOSED** (`h:` end-state pin; co-named-entity dedupe accepted as-is).
 
-1. **Publish gate.** 0.8.20 is the **first real publish** (`0.8.9 → 0.8.20`) and a **coordinated breaking pair**.
-   Confirm the cut, and confirm Memex `0.5.x-successor` is co-land ready. *(Publish is never implied by build.)*
-2. **eu7 basis** (F-22). ✅ **RESOLVED — CLOSED BY DECISION, ZERO runs authorized** (§3). *(The original text
-   "confirm no-op after Slice-40 proves it" is **withdrawn**: nothing is to be proven by running eu7.)*
-3. **`embed_batch_cls` TS-binding parity** (F-22): add-TS, or ratify Py-first? ✅ **RESOLVED — proceeds inside
-   X1 per recommendation.**
-4. **Adoption arms** (build ≠ adopt, F-21): does any Phase-2 item change **shipped default behavior**? Each such
-   item needs its own adoption call. *(Default expectation: read-modes/registry/readiness are opt-in;
-   the erasure fixes are defect repairs and ship ON.)*
+1. **AC-079 governed-surface sign-off** — the Phase-2 + erasure API delta (`erase_source`/`SourceId`/
+   `EraseReport`/`ExciseReport`, `configure_projections`/`ProjectionSpec`/`ProjectionRole`, `read.projections`,
+   `SearchFilter.attributes` + `#[non_exhaustive]`) is **PROPOSED / NOT SIGNED**; signing mints AC-079 and permits
+   publish. **Options:** (a) sign once at Slice 40 after the full surface + H7 are green; (b) sign per-slice now.
+   **Rec:** (a). **Why:** the surface still grows (20 adds `dense_readiness`, 25 adds surrogate); 0.8.19 signed at
+   its Slice-40 close. **Gated:** Slice 40 (publish precondition).
+2. **Adoption arms (build ≠ adopt, F-21)** — which Phase-2 features change shipped DEFAULT behavior vs opt-in.
+   **Options:** (a) registry / read-modes / `dense_readiness` / `filterable` OPT-IN, erasure fixes ON; (b) some
+   other subset ON. **Rec:** (a). **Why:** the erasure fixes correct shipped defects; the Phase-2 surface is
+   deliberate-adopt (Memex confirmed, on its own timeline). **Gated:** Slice 40.
+3. **Publish 0.8.20 breaking pair** — manifests `0.8.9 → 0.8.20`, the first real publish since 0.8.9, co-landing
+   with a Memex `0.5.x`-successor. **Options:** (a) publish when H7 is green + `#11`-full tag→publish rehearsed +
+   Memex ready; (b) hold. **Rec:** (a), subject to those hard prereqs. **Why:** a pushed `v*` tag auto-fires the
+   real crates/PyPI/npm publish. **Gated:** Slice 40.
+4. **`fts`/`vector` sub-object without the `searchable` role — reject or accept?** Currently accepted and
+   round-trips faithfully (not a bug). **Options:** (a) accept (permissive); (b) reject as an invalid spec.
+   **Rec:** (b) reject. **Why:** it is a meaningless config; fail-fast matches the hard-reject philosophy, and
+   additive strictness is safe pre-1.0. **Gated:** non-blocking — the next `configure_projections` slice.
+5. **`embed_batch_cls` TS-binding parity (F-22)** — py-only since 0.8.14. **Options:** (a) add the TS binding;
+   (b) ratify py-first as documented. **Rec:** (a). **Why:** the first published release since 0.8.9 should not
+   ship a Py/TS asymmetry; it is a small addition. **Gated:** X1 / Slice 40.
+6. **PLACEMENT — TC-16 dead publish dry-run guard** — red since 0.8.14; masks a real publish-workflow regression
+   in the very release that publishes. **Rec:** fold into Slice 40 with the `#11`-full rehearsal. **Why:** it is a
+   publish-workflow guard and Slice 40 owns publish. **Gated:** HITL confirms the slot.
+7. **PLACEMENT — TC-45 supersession-terminal CHECK defect** — terminals are silently dropped via
+   `state='superseded'` vs `CHECK('failed','up_to_date')` + `INSERT OR IGNORE`, so the cursor can stall. **Rec:**
+   0.8.21 own fixup. **Why:** not a 0.8.20 regression and not publish-blocking. **Gated:** HITL confirms the slot.
+8. **PENDING INPUT (not a decision) — Hermes consult** on the eventual **(D)** endpoint-node attribute-filter
+   widening. Memex already replied: **(A) now, (D) reserved**. **Why here:** it refines a future call and blocks
+   nothing. **Gated:** the future SDK-surface slice that widens (D), not 0.8.20.

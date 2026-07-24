@@ -7,14 +7,31 @@
 
 **Release base:** `4ca70ba6` · **Orchestration worktree:** `/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20`
 (branch `orch-0.8.20`, dedicated linked worktree per **TC-RUBRIC-5**).
-**Slice 5 is LANDED** at **`1f8ed8bf`** — it is in `origin/main`. *(This board previously described it as
-"awaiting Steward land"; that was stale. §11 is retained as the historical close record.)*
-**Slice-10 worktree:** `/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s10` (branch `orch-0.8.20-s10`,
-rebased onto `origin/main` `ae44770f`), terminal HEAD **`93a57b10`** — **COMPLETE on-branch, NOT landed.**
-**Slice-15 worktree:** `/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s15` (branch `orch-0.8.20-s15`,
-based on `29eba153`), terminal HEAD **`a8087dfb`** (docs/artifacts `cd5620be`) — **NOT landed.**
-**⚠ Slice 15 is PARTIAL: TC-34 closed; R-20-PR + R-20-EAV + TC-33 NOT STARTED; Slices 20/25 stay BLOCKED.**
-**Last updated:** 2026-07-20 (Slice 15b closed on-branch; §13).
+
+**✅ Slices 0, 5, 10 and 15 are all COMPLETE and LANDED on `origin/main`.**
+
+| Slice | Landed at |
+|------:|-----------|
+| **0** | **`403eb254`** — X0 design gate, HITL-SIGNED 2026-07-19 |
+| **5** | **`1f8ed8bf`** — erasure completeness (R-20-E1…E8) |
+| **10** | **`3cfb3cda`** (merge) — `ReadView`/read-modes + node-validity + TC-31 |
+| **15** | **`a2022957`** (merge) — Phase-2 keystone COMPLETE |
+
+**The Slice-15 keystone (`a2022957`) landed the full remainder:** registry **R-20-PR** + EAV **R-20-EAV** +
+`filterable` **pre-KNN** vec0 routing + **TC-33** (INTEGER-epoch harmonisation) + **TC-34** + **Finding-1 (A)**
+(attribute-filter × edge-hit = edges excluded) + **`#[non_exhaustive] SearchFilter`**. codex §9 **terminal-clean**;
+gates **re-verified by the Steward** (clippy 0, check 0, (A) pin 1/1, AC-041 3/3). **SCHEMA is now 24** (keystone
+step 24). Ledger tip **`3264114a`** (steward seq-98).
+
+**⚠ Slices 20 and 25 are NOW UNBLOCKED** — they depended on **R-20-PR**, which now exists on `origin/main`.
+
+> **⚠ SUPERSEDED FRAMING — do not act on it.** Earlier revisions of this board described Slice 15 as
+> "PARTIAL / IN PROGRESS (TC-34 only; R-20-PR/R-20-EAV/TC-33 not started)" and Slices 10 and 15 as "not landed."
+> **All of that is now false** — the keystone landed at `a2022957` and Slice 10 at `3cfb3cda`. The historical
+> close records (§11 Slice 5, §12 Slice 10, §13 Slice 15b) are retained **as history**; their "not landed" /
+> "Slice 15 OPEN" banners describe the on-branch state at the time they were written, **not** current truth.
+
+**Last updated:** 2026-07-24 (Slice 15 keystone landed).
 
 ---
 
@@ -22,15 +39,16 @@ based on `29eba153`), terminal HEAD **`a8087dfb`** (docs/artifacts `cd5620be`) �
 
 | | |
 |---|---|
-| **Slice in flight** | **Slice 15 — Phase-2 keystone** — **⚠ IN PROGRESS / PARTIAL.** Only **TC-34** (+ an unscoped search-validity coherence fix) has closed. **R-20-PR, R-20-EAV and TC-33 are NOT STARTED.** |
-| **Status** | `orch-0.8.20-s15` @ **`a8087dfb`** (docs/artifacts `cd5620be`), based on `29eba153`. **TC-34 CLOSED** — node-validity write-side authoring as **optional fields on the existing node write item**, **zero new commands** — plus **search-validity coherence**: `ReadView` now governs `search`, across **five** hydration sites, filtering **before** the vector cutoff and binding **one instant per query**. codex §9 ran **four rounds to a TERMINAL PASS**, **no verdict overridden**. Gates green at `a8087dfb` (§13.3). **Not landed — the Steward lands it.** **Slice 15 itself remains OPEN.** |
-| **Blocks** | **Slices 20 and 25 remain BLOCKED** — they depend on **R-20-PR (the projection registry), which does not exist**. TC-34 closing does **not** unblock them. Slice 30 (H7) depends on 10/15/20/25. **Publish remains blocked on AC-079**, which is **still unsigned**. |
-| **Next action** | **Return to Steward: land `orch-0.8.20-s10` and `orch-0.8.20-s15`, then commission the REMAINDER of Slice 15 — R-20-PR + R-20-EAV + TC-33.** Nine HITL decisions are owed — **TC-33**, the **Slice-10** and **Slice-15b** governed-surface deltas, the carried **AC-079 sign-off**, and **§4 #18–#22**. |
+| **Slice in flight** | **NONE — Slice 15 keystone just LANDED (`a2022957`).** The ladder is between slices, awaiting the next commission. |
+| **Status** | **Slices 0, 5, 10, 15 all COMPLETE and LANDED on `origin/main`** (header table). The keystone landed **R-20-PR + R-20-EAV + `filterable` pre-KNN + TC-33 + TC-34 + Finding-1 (A) + `#[non_exhaustive] SearchFilter`**; codex §9 **terminal-clean**; gates re-verified by the Steward (clippy 0, check 0, (A) pin 1/1, AC-041 3/3). **SCHEMA 24.** |
+| **Unblocks** | **Slices 20 and 25 are NOW UNBLOCKED** — R-20-PR (the projection registry) now exists. Slice 30 (H7) depends on 10/15/20/25. **Publish remains blocked on AC-079**, which is **still unsigned** — sign-off is gated to Slice 40 (§4 #1). |
+| **Immediate next action** | **Commission a `/goal complete 0.8.20` orchestrator for Slice 20** — `dense_readiness` + `flush_embeddings()` (**R-20-DR**), which attaches to the `ProjectionSpec.vector` sub-object built in Slice 15d. Then the remaining ladder **20 → 25 → 30 → 40**. Open HITL decisions live in `plan-0.8.20.md` §11 (eight items). |
 
-**Slice 5 is COMPLETE and LANDED** at **`1f8ed8bf`** (in `origin/main`). Its close record is §11.
-
-**Slice 0 is COMPLETE and HITL-SIGNED** (`403eb254`, 2026-07-19) — the X0 gate is open and slices 5+ are
-authorized. eu7 baseline capture remains **BLOCKED** (§6.3); resolve before Slice 40.
+**Slices 0, 5, 10, 15 close records** are §11 (Slice 5), §12 (Slice 10), §13 (Slice 15b — TC-34 only; the
+registry/EAV/TC-33 remainder that also landed in the keystone `a2022957` is summarised in §8 and in
+`plan-0.8.20.md` §9). Slice 0 was HITL-SIGNED (`403eb254`, 2026-07-19). **eu7 is CLOSED BY DECISION — ZERO runs,
+any backend, any N** (§6 / plan §10 F-28); the earlier "baseline capture BLOCKED" framing in §6.3 is superseded
+by that ruling.
 
 ---
 
@@ -40,17 +58,19 @@ authorized. eu7 baseline capture remains **BLOCKED** (§6.3); resolve before Sli
 |------:|-------|-----------|--------|
 | **0** | **X0 design gate** | — | **COMPLETE — HITL-SIGNED, landed `403eb254`** |
 | **5** | **Erasure completeness (R-20-E1…E8, +E9a)** | 0 | **COMPLETE — LANDED `1f8ed8bf`** (in `origin/main`). Close record §11 |
-| **10** | **`ReadView` / read-modes + node-validity (R-20-RV, R-20-NV)** | 0 | **COMPLETE on-branch @ `93a57b10`** — SCHEMA 21→22; **not landed** (§12) |
-| **15** | **Projection registry (C-1) + EAV/property-FTS (R-20-PR, R-20-EAV) + TC-34 + TC-33** | 0, 10 | **⚠ IN PROGRESS / PARTIAL** — **TC-34 CLOSED** on-branch @ `a8087dfb` (+ search-validity coherence; §13). **R-20-PR, R-20-EAV and TC-33 NOT STARTED — no code.** **Slice 15 stays OPEN** |
-| 20 | `dense_readiness` + `flush_embeddings()` (R-20-DR) | 15 | **BLOCKED on R-20-PR** (the registry does not exist) — not started |
-| 25 | Surrogate minting — governed entities ONLY (R-20-SUR) | 15 | **BLOCKED on R-20-PR** (the registry does not exist) — not started |
-| 30 | RUBRIC-H7 `can-i-deploy` contract gate (R-20-H7) | 10,15,20,25 | not started |
-| 40 | Verification + release readiness | 5,30 | not started |
+| **10** | **`ReadView` / read-modes + node-validity (R-20-RV, R-20-NV)** | 0 | **COMPLETE — LANDED `3cfb3cda`** (merge) — SCHEMA 21→22. Close record §12 |
+| **15** | **Projection registry (C-1) + EAV/property-FTS (R-20-PR, R-20-EAV) + TC-34 + TC-33 + Finding-1 (A) + `#[non_exhaustive] SearchFilter`** | 0, 10 | **COMPLETE — LANDED `a2022957`** (merge, Phase-2 keystone) — SCHEMA →24; codex §9 terminal-clean; Steward-verified gates. §13 = the TC-34 sub-part only; registry/EAV/TC-33 remainder summarised in §8 |
+| **20** | `dense_readiness` + `flush_embeddings()` (R-20-DR) | 15 | **UNBLOCKED — NEXT SLICE.** Attaches `dense_readiness` to the `ProjectionSpec.vector` sub-object (built in 15d) — not started |
+| **25** | Surrogate minting — governed entities ONLY (R-20-SUR) | 15 | **UNBLOCKED** (R-20-PR exists) — not started |
+| 30 | RUBRIC-H7 `can-i-deploy` contract gate (R-20-H7) | 10,15,20,25 | not started — publish precondition |
+| 40 | Verification + release readiness (publish-or-hold) | 5,30 | not started |
 
-**Parallelization.** `5 ∥ 10 ∥ 15` after Slice 0. Slice 5 fixes **defects in shipped code** and does not wait on
-the registry. All three touch `engine/src/lib.rs` ⇒ **serialize the merges** (rebase-then-merge one at a time).
-**One `maturin develop` at a time** (shared `.venv` mutex) — and **never from a worktree**.
-**Max 3 concurrent worktrees.** Canary the first launch of each new work-type before parallelizing.
+**Ladder remaining: 20 → 25 → 30 → 40.** Slices 0/5/10/15 are landed. **Immediate next: commission a
+`/goal complete 0.8.20` orchestrator for Slice 20 (R-20-DR).**
+
+**Merge discipline (still binding for 20/25).** Slices touching `engine/src/lib.rs` **serialize the merges**
+(rebase-then-merge one at a time). **One `maturin develop` at a time** (shared `.venv` mutex) — and **never from
+a worktree**. **Max 3 concurrent worktrees.** Canary the first launch of each new work-type before parallelizing.
 
 ---
 
@@ -147,7 +167,7 @@ for `Option::None` rather than emitting `null` — **measured, not reasoned**; d
 | 19 | **`search` view is scoped to the VALIDITY AXIS ONLY.** `include_superseded` / `include_inactive` on a **search** view are a **typed refusal** | — | **Accept.** Search hydrates from **projection indexes that are not version-complete**, so there is **no truthful answer** to give — a refusal is honest where a silent partial answer would not be. **Reversible via one guard function** if the indexes later become version-complete |
 | 20 | **Vector-cutoff limitation** (§13.2). Recall is restored **only within the 192-candidate bit-KNN pool**; with >192 expired near-neighbours the result set can still be short | — | **Either** accept the bounded-192-pool behaviour as the pre-existing ANN bound, **or** schedule the `canonical_nodes(write_cursor)` index + the `EXISTS` general fix. The latter is a **schema step**, and was **deliberately not taken inside a fix commit** |
 | 21 | **The five read verbs still call `view.now_param()` directly.** **Correct today** — they are single-arm queries — but it is the **same latent shape** as the fix-3 defect: an instant re-read per arm rather than bound once per query | — | **Follow-up, not scope creep.** ~**24 call sites**. Recommended as its own small slice rather than folded into a fix round |
-| 22 | **⚠ SLICE 15 IS INCOMPLETE.** **R-20-PR, R-20-EAV and TC-33 are NOT STARTED** — design work exists, **no code**. **Slices 20 and 25 remain BLOCKED** on the registry | — | **Commission the remainder of Slice 15.** TC-34 closing does **not** unblock 20/25 — only **R-20-PR** does. The board must not be read as the keystone having landed |
+| 22 | **✅ SUPERSEDED 2026-07-24 — RESOLVED.** *(Original, as of Slice 15b:)* Slice 15 incomplete; R-20-PR/R-20-EAV/TC-33 not started; Slices 20/25 blocked. **Now: the keystone LANDED at `a2022957`** — R-20-PR + R-20-EAV + TC-33 all shipped; **Slices 20 and 25 are UNBLOCKED** (§8) | — | Done — the remainder was commissioned and landed as the keystone. **Next: Slice 20 (R-20-DR).** |
 
 ---
 
@@ -245,19 +265,38 @@ run**, so a reduced-N scouting run silently produces a file that *looks* authori
 
 ## 7. Outstanding worktrees
 
+All Slice 0/5/10/15 worktrees are **reclaimable** — their work is landed on `origin/main`. The next commission
+(Slice 20) cuts a fresh dedicated worktree off a verified `origin/main` tip per **TC-RUBRIC-5**.
+
 | Path | Branch | Purpose | State |
 |---|---|---|---|
-| `fathomdb-worktrees/orch-0.8.20` | `orch-0.8.20` | orchestration + Slice-0 docs (TC-RUBRIC-5) | **active** |
+| `fathomdb-worktrees/orch-0.8.20` | `orch-0.8.20` | orchestration + Slice-0 docs (TC-RUBRIC-5) | **reclaimable** |
 | `fathomdb-worktrees/slice-0-preflight-landing` | `slice-0-preflight-landing` | `preflight.sh --landing` guardrail | Slice 0 landed — **reclaimable** |
 | `fathomdb-worktrees/orch-0.8.20-s5` | `orch-0.8.20-s5` | Slice 5 erasure completeness | Slice 5 **landed** (`1f8ed8bf`) — **reclaimable** |
-| `fathomdb-worktrees/orch-0.8.20-s10` | `orch-0.8.20-s10` | Slice 10 `ReadView` + node-validity | **active** — holds **`93a57b10`**, **do not remove before land** |
+| `fathomdb-worktrees/orch-0.8.20-s10` | `orch-0.8.20-s10` | Slice 10 `ReadView` + node-validity | Slice 10 **landed** (`3cfb3cda`) — **reclaimable** |
+| `fathomdb-worktrees/orch-0.8.20-s15` | `orch-0.8.20-s15` | Slice 15 keystone (registry/EAV/TC-33/TC-34) | Slice 15 **landed** (`a2022957`) — **reclaimable** |
 
-Clean up per `orchestration.md` §11 — **one destructive op per Bash call**; never `find -delete`.
+Clean up per `orchestration.md` §11 — **one destructive op per Bash call**; never `find -delete`. Verify the
+actual `git worktree list` before removing anything (this table is a snapshot, not live state).
 
 ---
 
 ## 8. Recent decisions (newest first)
 
+- **2026-07-24 — Slice 15 KEYSTONE LANDED** at **`a2022957`** (merge, in `origin/main`); ledger tip
+  **`3264114a`** (steward seq-98). The full Phase-2 keystone: **R-20-PR** (row-owned projection registry,
+  the C-1 co-land) + **R-20-EAV** (EAV / property-FTS via `canonical_attributes`, Slice 15d) + **`filterable`
+  pre-KNN** vec0 routing (Slice 15e, **non-destructive** reshape per TC-46 Option 1) + **TC-33** (temporal model
+  harmonised to **INTEGER epoch**; BYO-LLM extractor boundary keeps ISO-8601 with engine-side **hard-reject**
+  round-trip normalisation, **TC-47**) + **TC-34** (from Slice 15b) + **Finding-1 (A)** (attribute-filter drops
+  edge hits on both arms; **(D) reserved**, B/C declined) + **`#[non_exhaustive] SearchFilter`**. **SCHEMA →24**
+  (keystone step 24). codex §9 **terminal-clean**; **gates re-verified by the Steward** — clippy 0, check 0,
+  (A) pin 1/1, AC-041 3/3, denylist unchanged at five. **Slices 20 and 25 are NOW UNBLOCKED.** **TC-46, TC-47
+  RESOLVED; TC-11, TC-32 CLOSED — do not re-open.** Governed-surface delta still **PROPOSED / NOT SIGNED**;
+  **AC-079 sign-off gated to Slice 40** (plan §11 #1). **Immediate next: commission Slice 20 (R-20-DR).**
+- **2026-07-24 — Slice 10 LANDED** at **`3cfb3cda`** (merge, in `origin/main`). R-20-RV + R-20-NV closed;
+  **SCHEMA 21 → 22**; **TC-31 RESOLVED**; **TC-32 annotated** per the HITL ruling. Close record §12 (written
+  when it was on-branch at `93a57b10`; that "not landed" framing is superseded).
 - **2026-07-20 — Slice 10 COMPLETE on-branch** at **`93a57b10`**. **R-20-RV + R-20-NV closed**; **SCHEMA 21 → 22**
   (node validity window); **TC-31 RESOLVED** — `source_id` is now readable on **every** search-hit path, closing
   the measured "NO SDK EXPOSURE" erasure gap on the read side. **Two codex §9 terminal PASSes.** The Python
@@ -629,8 +668,11 @@ pre-existing-failure attribution above. Editing it for cosmetics would destroy t
 
 ## 12. Slice 10 close — `ReadView` / read-modes + node-validity (R-20-RV, R-20-NV)
 
+> **✅ SUPERSEDED 2026-07-24 — Slice 10 LANDED at `3cfb3cda`** (merge, in `origin/main`). This section is the
+> historical close record, written while the work was on-branch; its "NOT landed" banner is no longer current.
+
 **Branch `orch-0.8.20-s10`, terminal HEAD `93a57b10`** — rebased onto `origin/main` **`ae44770f`**.
-**COMPLETE on-branch. NOT landed — the Steward lands it.**
+**COMPLETE on-branch** *(landed 2026-07-24 at `3cfb3cda`; the "NOT landed" note below is historical)*.
 
 **R-20-RV and R-20-NV are CLOSED. TC-31 is RESOLVED. TC-32 is ANNOTATED** per the HITL ruling (accepted, no
 behavior change). **No AC was minted** — see §3.
@@ -749,15 +791,20 @@ hygiene.
 
 ## 13. Slice 15b close — TC-34 node-validity authoring + search-validity coherence
 
-**Branch `orch-0.8.20-s15`, terminal HEAD `a8087dfb`** (docs/artifacts at **`cd5620be`**), based on **`29eba153`**.
-**COMPLETE on-branch. NOT landed — the Steward lands it.**
+> **✅ SUPERSEDED 2026-07-24 — the FULL Slice 15 keystone LANDED at `a2022957`.** This section is the historical
+> close record of the **TC-34 sub-part only** (Slice 15b), written before the registry/EAV/TC-33 remainder was
+> built. That remainder (Slices 15d + 15e + TC-33 + TC-47 + Finding-1 (A) + `#[non_exhaustive] SearchFilter`)
+> **has since been built and landed** in the keystone merge — see §8 and `plan-0.8.20.md` §9. The "SLICE 15 IS
+> NOT COMPLETE" / "NOT STARTED" / "Slices 20 and 25 remain BLOCKED" banners below describe the on-branch state
+> **as of Slice 15b** and are **no longer current**: **20 and 25 are now UNBLOCKED.**
 
-> **⚠ SLICE 15 IS NOT COMPLETE. This close covers ONE of its four parts.**
+**Branch `orch-0.8.20-s15`, terminal HEAD `a8087dfb`** (docs/artifacts at **`cd5620be`**), based on **`29eba153`**.
+**COMPLETE on-branch** *(the TC-34 sub-part; folded into the landed keystone `a2022957`)*.
+
+> **⚠ HISTORICAL (as of Slice 15b) — SUPERSEDED, see the note above. This close covers ONE of its four parts.**
 > **TC-34 is CLOSED** (plus a search-validity coherence fix that was **not originally scoped**).
 > **R-20-PR (projection registry, the C-1 co-land), R-20-EAV (EAV / property-FTS) and TC-33 (temporal
-> harmonisation) are NOT STARTED — no code exists for any of them.** **Slice 15 remains OPEN**, and
-> **Slices 20 and 25 remain BLOCKED** on the registry that does not yet exist. Do not read this section as
-> the Phase-2 keystone landing.
+> harmonisation) were NOT STARTED at the time this was written.** *(All three have since landed in `a2022957`.)*
 
 ### 13.1 What shipped
 
