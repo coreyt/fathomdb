@@ -1,3 +1,11 @@
+---
+title: FathomDB 0.8.20 — Plan (state-machine ladder)
+subtitle: OPP-12 record-lifecycle Phase-2 + erasure completeness + the coordinated breaking-pair publish
+date: 2026-07-12
+status: ACTIVE
+target_release: 0.8.20
+---
+
 # FathomDB 0.8.20 — Plan (state-machine ladder) · **OPP-12 record-lifecycle Phase-2 + erasure completeness + the coordinated breaking-pair publish**
 
 > **DE-STALED 2026-07-12.** This file previously held the **Library Sweep / major-dependency-migration**

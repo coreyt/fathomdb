@@ -1,0 +1,44 @@
+{
+  "tranche": "DOC-HYGIENE-1 T3 fix-1 — frontmatter plan-0.8.20 and drop the lint carve-out",
+  "files_changed": [
+    "dev/plans/IR-C-passage-indexing-spec.md",
+    "dev/plans/IR-C-test-query-quality-instrumentation-plan.md",
+    "dev/plans/plan-0.8.20.md",
+    "scripts/lint-plans-status.sh",
+    "scripts/tests/test_plans_status_frontmatter.sh"
+  ],
+  "files_deleted": [],
+  "md_lint_exit": 0,
+  "agent_lint_md_exit": 0,
+  "lint_plans_status_exit": 0,
+  "test_plans_status_frontmatter_exit": 0,
+  "items": {
+    "plan-0.8.20-frontmatter": {
+      "status": "done",
+      "change": "added a title/subtitle/date/status/target_release YAML frontmatter block to dev/plans/plan-0.8.20.md, matching the plan-0.8.19.md/plan-0.8.21.md shape; status: ACTIVE, date: 2026-07-12 (the file's own 'DE-STALED + authored 2026-07-12' anchor), target_release: 0.8.20. Frontmatter only — verified via git diff that the H1 line, all prose, §11, and every slice row are byte-unchanged."
+    },
+    "lint_carve_out_removed": {
+      "status": "done",
+      "change": "removed the SKIP_FILES exception for dev/plans/plan-0.8.20.md from scripts/lint-plans-status.sh; the rule is now total over dev/plans/*.md (top-level) with zero filename-based exceptions. Updated the header comment and added a test arm (Arm 6) proving no exception resurfaces."
+    },
+    "UNKNOWN_status_value": {
+      "status": "done",
+      "change": "added UNKNOWN to the allowed status vocabulary (ACTIVE|COMPLETE|PROPOSED|SUPERSEDED|UNKNOWN) in scripts/lint-plans-status.sh, its header comment, and its FAIL messages; added a new test arm (Arm 4b) proving UNKNOWN is accepted. Necessary consequence of re-grading the two IR-C docs below to UNKNOWN under the same gate — without this the gate would have gone red on files carrying a status the coordinator explicitly authorized."
+    },
+    "IR-C_docs_regraded": {
+      "status": "done",
+      "files": [
+        "dev/plans/IR-C-passage-indexing-spec.md",
+        "dev/plans/IR-C-test-query-quality-instrumentation-plan.md"
+      ],
+      "change": "status changed from PROPOSED (T3, weaker-evidence guess) to UNKNOWN — neither doc is named in the master's §4 allocation table (unlike the rest of the 0.8.1 IR-C track, which shipped and IS in the master) and neither carries a closing/superseding banner of its own; PROPOSED was not sourceable and UNKNOWN is the honest value per the coordinator's direction."
+    }
+  },
+  "deviations": [],
+  "found_not_fixed": [
+    "dev/plans/IR-C-passage-indexing-spec.md and dev/plans/IR-C-test-query-quality-instrumentation-plan.md: status: UNKNOWN — true disposition (dead vs still-pending backlog) not sourceable from the master §4 table or either doc's own banners; needs a Steward/HITL look to resolve to a real value.",
+    "dev/plans/ci-deferred.md (status: SUPERSEDED, from T3): still points nowhere at the #13 benchmark-and-robustness work now tracked under the master's 0.8.21 row — a prose pointer banner is T1/T2 scope, not touched here.",
+    "dev/plans/README.md's staleness-index table still says '0.8.5 | IN FLIGHT' (stale prose, not frontmatter; T1/T2 scope, not touched here).",
+    "pre-existing scripts/tests/test_actionlint_fixture.sh red — coordinator-confirmed TC-16/F-30, already placed at 0.8.20 Slice 40 by HITL; not this tranche's to fix, reconfirmed unaffected (no changes to .github/workflows/release.yml in this fix)."
+  ]
+}

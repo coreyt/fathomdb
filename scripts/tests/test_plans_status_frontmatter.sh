@@ -5,10 +5,15 @@
 #   1. FAILS a dev/plans/*.md file with no YAML frontmatter at all.
 #   2. FAILS a dev/plans/*.md file with frontmatter but no `status:` key.
 #   3. FAILS a dev/plans/*.md file whose `status:` value is outside the
-#      allowed set (ACTIVE | COMPLETE | PROPOSED | SUPERSEDED).
+#      allowed set (ACTIVE | COMPLETE | PROPOSED | SUPERSEDED | UNKNOWN).
 #   4. PASSES a dev/plans/*.md file with a valid `status:` value.
+#   4b. PASSES a dev/plans/*.md file with status: UNKNOWN (T3 fix-1 — the
+#       honest "cannot be sourced" value; not a bypass, still requires the key).
 #   5. Does NOT scan dev/plans/runs/** or dev/plans/prompts/** (scope guard —
 #      a bad file planted there must not fail the gate).
+#   6. The rule is TOTAL — no filename-based exception (T3 fix-1 removed the
+#      dev/plans/plan-0.8.20.md carve-out; a same-named fixture file with no
+#      frontmatter must still fail).
 #
 # Builds a throwaway fixture repo under mktemp -d; never touches this
 # checkout's real dev/plans/.
@@ -125,8 +130,39 @@ else
   fail "scope guard broken: runs/ or prompts/ leaked into the scan (rc=$RC out=$OUT)"
 fi
 
+# --- Arm 4b: status: UNKNOWN is accepted (T3 fix-1) ----------------------
+setup_fixture
+cat >"$FIX/repo/dev/plans/unknown-status.md" <<'EOF'
+---
+title: Some plan whose true status could not be sourced
+status: UNKNOWN
+---
+
+# Some plan
+EOF
+run_lint
+if [ "$RC" -eq 0 ]; then
+  pass "status: UNKNOWN -> exit 0 (honest 'cannot be sourced', not a bypass)"
+else
+  fail "status: UNKNOWN unexpectedly failed: rc=$RC out=$OUT"
+fi
+
+# --- Arm 6: no filename-based exception (T3 fix-1 dropped the             -
+# plan-0.8.20.md carve-out) — a same-named fixture file with no frontmatter
+# must still fail, proving the rule is total, not name-keyed.
+setup_fixture
+cat >"$FIX/repo/dev/plans/plan-0.8.20.md" <<'EOF'
+# no frontmatter — must fail, there is no carve-out for this filename anymore
+EOF
+run_lint
+if [ "$RC" -ne 0 ] && grep -q "plan-0.8.20.md" <<<"$OUT"; then
+  pass "no filename-based exception — plan-0.8.20.md is scanned like any other plan"
+else
+  fail "unexpected exception resurfaced for plan-0.8.20.md: rc=$RC out=$OUT"
+fi
+
 if [ "$FAILED" -ne 0 ]; then
   printf '%d arm(s) failed\n' "$FAILED" >&2
   exit 1
 fi
-printf 'PASS  all arms — scripts/lint-plans-status.sh catches missing/invalid status and stays scoped to dev/plans/*.md\n'
+printf 'PASS  all arms — scripts/lint-plans-status.sh catches missing/invalid status, accepts UNKNOWN, stays scoped to dev/plans/*.md, and carries no filename exceptions\n'

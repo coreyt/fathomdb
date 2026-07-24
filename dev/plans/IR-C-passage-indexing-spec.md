@@ -1,5 +1,5 @@
 ---
-status: PROPOSED
+status: UNKNOWN
 ---
 
 # IR-C — Passage Indexing: design spec

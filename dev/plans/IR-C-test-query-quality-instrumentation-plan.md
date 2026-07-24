@@ -1,5 +1,5 @@
 ---
-status: PROPOSED
+status: UNKNOWN
 ---
 
 # IR-C — Test-query-quality instrumentation plan (items 1–3)

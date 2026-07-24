@@ -3,11 +3,16 @@
 #
 # Every top-level `dev/plans/*.md` file must carry YAML frontmatter with a
 # `status:` key whose value is one of ACTIVE | COMPLETE | PROPOSED | SUPERSEDED
-# — machine-readable so an agent can filter release plans without reading each
-# one. This is the recurrence guard for that convention (T3/9): a plan that
-# lands without a status, or with a value outside the allowed set, fails here
-# instead of silently drifting (the same "fix the tooling, not the people"
-# reasoning as TC-37).
+# | UNKNOWN — machine-readable so an agent can filter release plans without
+# reading each one. This is the recurrence guard for that convention (T3/9): a
+# plan that lands without a status, or with a value outside the allowed set,
+# fails here instead of silently drifting (the same "fix the tooling, not the
+# people" reasoning as TC-37).
+#
+# UNKNOWN (T3 fix-1, HITL 2026-07-24): reserved for a doc whose true status
+# genuinely cannot be sourced from the master's §4 allocation table or its own
+# banners — an honest "we don't know" beats guessing. Every UNKNOWN carries a
+# matching `found_not_fixed` entry in whichever closure JSON introduced it.
 #
 # Scope: dev/plans/*.md ONLY (top-level).
 #   - NOT dev/plans/runs/**   — slice logs / status boards / run artifacts, not plans.
@@ -18,30 +23,22 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-ALLOWED_RE='^(ACTIVE|COMPLETE|PROPOSED|SUPERSEDED)$'
+ALLOWED_RE='^(ACTIVE|COMPLETE|PROPOSED|SUPERSEDED|UNKNOWN)$'
 FAIL=0
 
-# EXCEPTION (single, explicit, documented — not a general carve-out mechanism):
-# dev/plans/plan-0.8.20.md is the live in-flight release board. DOC-HYGIENE-1
-# T3 landed while 0.8.20 is between slices and is explicitly forbidden from
-# touching plan-0.8.20.md / any 0.8.20-* artifact (F-7 collision rule — a wide
-# docs diff must not race a live release orchestrator's own edits to its own
-# board). Backfill this file's frontmatter at 0.8.20 close, mirroring the
-# already-landed plan-0.8.19.md / plan-0.8.21.md shape.
-SKIP_FILES=("dev/plans/plan-0.8.20.md")
+# No exceptions: the rule is total over dev/plans/*.md (top-level). An earlier
+# revision carved out dev/plans/plan-0.8.20.md while it was under a "do not
+# touch" hard constraint from the commissioning brief; that constraint was
+# lifted (DOC-HYGIENE-1 T3 fix-1) once plan-0.8.20.md got its frontmatter
+# (status: ACTIVE), and the carve-out was removed with it — a lint with a
+# hardcoded exception for one live plan is exactly the shape of gate that rots.
 
 shopt -s nullglob
 for f in dev/plans/*.md; do
-  skip=0
-  for s in "${SKIP_FILES[@]}"; do
-    [ "$f" = "$s" ] && skip=1 && break
-  done
-  [ "$skip" -eq 1 ] && continue
-
   first_line="$(head -n1 "$f")"
   if [ "$first_line" != "---" ]; then
     printf 'FAIL %s: no YAML frontmatter (must open with a `---` block and carry\n' "$f" >&2
-    printf '  status: ACTIVE|COMPLETE|PROPOSED|SUPERSEDED)\n' >&2
+    printf '  status: ACTIVE|COMPLETE|PROPOSED|SUPERSEDED|UNKNOWN)\n' >&2
     FAIL=1
     continue
   fi
@@ -59,7 +56,7 @@ for f in dev/plans/*.md; do
 
   value="$(printf '%s\n' "$status_line" | sed -E 's/^status:[[:space:]]*//; s/[[:space:]]+$//')"
   if ! grep -qE "$ALLOWED_RE" <<<"$value"; then
-    printf 'FAIL %s: status %s is not one of ACTIVE|COMPLETE|PROPOSED|SUPERSEDED\n' "$f" "$value" >&2
+    printf 'FAIL %s: status %s is not one of ACTIVE|COMPLETE|PROPOSED|SUPERSEDED|UNKNOWN\n' "$f" "$value" >&2
     FAIL=1
   fi
 done
