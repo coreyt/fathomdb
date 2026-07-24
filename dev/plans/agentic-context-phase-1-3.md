@@ -3,6 +3,7 @@ date: 2026-05-01
 source: dev/tmp/context-research-agentic-best-practices.md (Conclusion items 1–8)
 phases-in-scope: 1, 2, 3 (foundations + dev-loop + property-test scaffolding)
 phases-deferred: 4 (repo-map.sh — discoverability), 5 (prompt caching — gated on embedder)
+status: COMPLETE
 ---
 
 # Agentic context engineering — Phases 1–3 implementation plan

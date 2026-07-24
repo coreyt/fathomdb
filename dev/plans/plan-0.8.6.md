@@ -1,3 +1,7 @@
+---
+status: COMPLETE
+---
+
 # FathomDB 0.8.6 — Plan (state-machine ladder) · **Foundations & shippability**
 
 > **Plan-as-state-machine.** Mod-5 slice ladder + reserved-gap policy + the live "Immediate Next Slice"

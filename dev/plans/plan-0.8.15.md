@@ -1,3 +1,7 @@
+---
+status: PROPOSED
+---
+
 # FathomDB 0.8.15 — Plan (state-machine ladder) · **In-library dispatcher build (EXP-Fr)**
 
 > **Plan-as-state-machine.** Mod-5 ladder + reserved-gap policy + "Immediate Next Slice". Authoritative

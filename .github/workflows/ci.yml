@@ -390,6 +390,8 @@ jobs:
         run: ./node_modules/.bin/markdownlint-cli2
       - name: markdownlint docs/** (mirrors agent-lint-md.sh docs leg)
         run: bash scripts/agent-lint-docs.sh
+      - name: dev/plans/*.md status frontmatter (T3/8+9, mirrors agent-lint-md.sh leg)
+        run: bash scripts/lint-plans-status.sh
 
   # mkdocs --strict is the broader CI gate beyond agent-verify (per AGENTS.md §3).
   # Intentionally NOT gated on docs_only: it must run for docs/** changes (the

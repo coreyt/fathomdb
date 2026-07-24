@@ -1,3 +1,7 @@
+---
+status: COMPLETE
+---
+
 # FathomDB 0.8.4 — Plan: reach near-parity-or-better vs GraphRAG (sensemaking), S1 + G-HH-2
 
 > **What this version is — the RESOLUTION.** 0.8.4's success is a measured outcome: **FathomDB reaches

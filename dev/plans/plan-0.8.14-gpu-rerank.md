@@ -1,3 +1,7 @@
+---
+status: COMPLETE
+---
+
 # FathomDB 0.8.14 — Plan (GPU-rerank sub-part of EXP-S) · **opt-in GPU cross-encoder, default CPU unchanged**
 
 > ✅ **NUMBERING CONFLICT RESOLVED (2026-07-01 renumber).** Under the 0.8.x forward renumber

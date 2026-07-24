@@ -1,3 +1,7 @@
+---
+status: COMPLETE
+---
+
 # FathomDB 0.8.14 — Plan (state-machine ladder) · **Substrate & recall features**
 
 > **Plan-as-state-machine.** Mod-5 ladder + reserved-gap policy + "Immediate Next Slice". Authoritative

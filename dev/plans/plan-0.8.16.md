@@ -1,3 +1,7 @@
+---
+status: COMPLETE
+---
+
 # FathomDB 0.8.16 — Plan (state-machine ladder) · **Ranking signal & embedder reach**
 
 > **Plan-as-state-machine.** Mod-5 ladder + reserved-gap policy + "Immediate Next Slice". Authoritative

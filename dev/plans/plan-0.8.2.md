@@ -1,3 +1,7 @@
+---
+status: COMPLETE
+---
+
 # FathomDB 0.8.2 — Plan: M1 multi-hop answer-accuracy harness (graph adjudication, step 1 of 3)
 
 > **What this version is.** 0.8.2 is the **first of three versions that fairly adjudicate

@@ -1,3 +1,7 @@
+---
+status: COMPLETE
+---
+
 # FathomDB 0.8.9 — Plan (state-machine ladder) · **CI integrity micro (OUT-OF-BAND)**
 
 > **Plan-as-state-machine.** Mod-5 slice ladder + reserved-gap policy + "Immediate Next Slice".

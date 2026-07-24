@@ -1,3 +1,7 @@
+---
+status: PROPOSED
+---
+
 # IR-C — Test-query-quality instrumentation plan (items 1–3)
 
 Status: **in progress** · Drafted 2026-06-11 · Branch `claude/recent-changes-state-a6wth3`

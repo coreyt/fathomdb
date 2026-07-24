@@ -62,6 +62,15 @@ run_capped test-npm-inject-optional-deps bash scripts/tests/test_npm_inject_opti
 # actionlint binary present + rejects deliberately-broken fixture.
 run_capped test-actionlint-fixture bash scripts/tests/test_actionlint_fixture.sh
 
+# TC-37 recurrence guard: agent-lint-md.sh must HARD-fail (not skip_notice/exit 0)
+# when markdownlint-cli2 is genuinely unresolvable. Builds its own throwaway
+# fixture repo under mktemp -d; never touches this checkout's node_modules.
+run_capped test-lint-md-hard-fail-on-missing-linter bash scripts/tests/test_lint_md_hard_fail_on_missing_linter.sh
+
+# T3/9: dev/plans/*.md must carry a valid `status:` frontmatter value (recurrence
+# guard for archival banners drifting silently). RED-fixture proven inline.
+run_capped test-plans-status-frontmatter bash scripts/tests/test_plans_status_frontmatter.sh
+
 # Markdown generators (shell): context-clarity.sh / memory-clarity.sh emit
 # gate-compliant markdown. Their output trees (and the dev/plans/runs/** reports
 # from the Python generators) are markdownlint-ignored, so the normal md gate never

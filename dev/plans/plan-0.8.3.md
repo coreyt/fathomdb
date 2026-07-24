@@ -1,3 +1,7 @@
+---
+status: COMPLETE
+---
+
 # FathomDB 0.8.3 — Plan: reach near-parity-or-better vs Mem0 (agentic memory)
 
 > **What this version is — the RESOLUTION.** 0.8.3's success is no longer "does a retrieval lever beat

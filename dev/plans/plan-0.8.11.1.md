@@ -1,3 +1,7 @@
+---
+status: COMPLETE
+---
+
 # FathomDB 0.8.11.1 — Plan (Library Sweep #1) · **Contained dependency bumps**
 
 > **Plan-as-LBS-runbook.** This is a **Library Sweep**, not an engine release. Run via

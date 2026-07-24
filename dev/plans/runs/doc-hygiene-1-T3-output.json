@@ -1,0 +1,148 @@
+{
+  "tranche": "DOC-HYGIENE-1 T3 — recurrence guard",
+  "files_changed": [
+    ".github/workflows/ci.yml",
+    "dev/archive/README.md",
+    "dev/plans/0.6.0-Phase-9-Pack-5-performance-diagnostics.md",
+    "dev/plans/0.6.0-Phase-9-Pack-7-canonical-perf-measurement.md",
+    "dev/plans/0.6.0-Phase-9-Pack-B-source-id.md",
+    "dev/plans/0.6.0-Phase-9-Pack-C-robustness-fixtures.md",
+    "dev/plans/0.6.0-Phase-9-Pack-D-retrieval-perf-fixtures.md",
+    "dev/plans/0.6.0-implementation.md",
+    "dev/plans/0.6.1-implementation.md",
+    "dev/plans/0.7.0-HITL-recommendations.md",
+    "dev/plans/0.7.0-implementation.md",
+    "dev/plans/0.7.0-perf-experiments.md",
+    "dev/plans/0.7.1-implementation.md",
+    "dev/plans/0.8.0-GA-and-IR-eval-roadmap.md",
+    "dev/plans/0.8.0-implementation.md",
+    "dev/plans/0.8.0-plan.md",
+    "dev/plans/0.8.1-implementation.md",
+    "dev/plans/0.8.1-plan.md",
+    "dev/plans/0.8.11-implementation.md",
+    "dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md",
+    "dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md",
+    "dev/plans/0.9.x-roadmap-DRAFT.md",
+    "dev/plans/IR-C-passage-indexing-spec.md",
+    "dev/plans/IR-C-test-query-quality-instrumentation-plan.md",
+    "dev/plans/README.md",
+    "dev/plans/agentic-context-phase-1-3.md",
+    "dev/plans/ci-deferred.md",
+    "dev/plans/plan-0.8.11.1.md",
+    "dev/plans/plan-0.8.11.2.md",
+    "dev/plans/plan-0.8.11.md",
+    "dev/plans/plan-0.8.12.md",
+    "dev/plans/plan-0.8.14-gpu-rerank.md",
+    "dev/plans/plan-0.8.14.md",
+    "dev/plans/plan-0.8.15.md",
+    "dev/plans/plan-0.8.16.md",
+    "dev/plans/plan-0.8.17.md",
+    "dev/plans/plan-0.8.18.md",
+    "dev/plans/plan-0.8.2.md",
+    "dev/plans/plan-0.8.3.md",
+    "dev/plans/plan-0.8.4.md",
+    "dev/plans/plan-0.8.6.md",
+    "dev/plans/plan-0.8.7.md",
+    "dev/plans/plan-0.8.8.md",
+    "dev/plans/plan-0.8.9.md",
+    "scripts/agent-lint-docs.sh",
+    "scripts/agent-lint-md.sh",
+    "scripts/agent-test.sh",
+    "scripts/lint-plans-status.sh",
+    "scripts/tests/test_lint_md_hard_fail_on_missing_linter.sh",
+    "scripts/tests/test_plans_status_frontmatter.sh"
+  ],
+  "files_deleted": [
+    "dev/plans/runs/0.6.1-AC012-measure-output.json",
+    "dev/plans/runs/0.7.0-PERF-EXP-W1.1-canonical-output.json",
+    "dev/plans/runs/0.7.0-PERF-EXP-W4.1-ac013-canonical-output.json",
+    "dev/plans/runs/0.7.0-PERF-EXP-W4.1-stacked-O1-canonical-output.json",
+    "dev/plans/runs/0.7.0-PERF-EXP-W5.3-canonical-output.json",
+    "dev/plans/runs/0.8.12-fixcompile-output.json",
+    "dev/plans/runs/0.8.12-sliceA-output.json",
+    "dev/plans/runs/0.8.12-sliceB-output.json",
+    "dev/plans/runs/0.8.14-slice-10-output.json",
+    "dev/plans/runs/0.8.14-slice-20-migration-output.json",
+    "dev/plans/runs/0.8.14-slice-25-output.json",
+    "dev/plans/runs/0.8.14-slice-40-output.json",
+    "dev/plans/runs/0.8.14-slice-5-output.json",
+    "dev/plans/runs/EXP-COV-1-output.json",
+    "dev/plans/runs/EXP-COV-1-sweep-output.json",
+    "dev/plans/runs/expa-recall-output.json",
+    "dev/plans/runs/expaf-value-output.json",
+    "dev/plans/runs/expb-joint-tune-output.json",
+    "dev/plans/runs/expm4-ceiling-output.json",
+    "dev/plans/runs/fracc-base-output.json",
+    "dev/plans/runs/fracc-voi-output.json",
+    "dev/plans/runs/gate0-rescope-output.json",
+    "dev/plans/runs/gate2-oracle-output.json"
+  ],
+  "md_lint_exit": 0,
+  "agent_lint_md_exit": 0,
+  "tests_added": [
+    "scripts/tests/test_lint_md_hard_fail_on_missing_linter.sh",
+    "scripts/tests/test_plans_status_frontmatter.sh"
+  ],
+  "red_green_evidence": {
+    "test_lint_md_hard_fail_on_missing_linter.sh": {
+      "what_was_red": "pre-fix scripts/agent-lint-md.sh (skip_notice-then-exit-0 on absent markdownlint-cli2), reproduced by git-stashing the fix back out and re-running the test against the pre-fix script inside a throwaway fixture repo with no node_modules and a stripped PATH",
+      "red_exit": 1,
+      "red_reason": "test asserted the fixture invocation must be non-zero; pre-fix script actually exited 0 (vacuous green reproduced) so the test itself failed with exit 1",
+      "green_exit": 0,
+      "green_reason": "post-fix scripts/agent-lint-md.sh exits 1 with an actionable TC-37 message in the same fixture; all test assertions pass"
+    },
+    "test_plans_status_frontmatter.sh": {
+      "what_was_red": "scripts/lint-plans-status.sh temporarily replaced with a 3-line always-exit-0 stub (pre-implementation state), same file path, then the test run against that stub",
+      "red_exit": 1,
+      "red_reason": "3 of 5 arms failed (missing-frontmatter / missing-status-key / invalid-status-value all incorrectly reported rc=0 by the stub)",
+      "green_exit": 0,
+      "green_reason": "real scripts/lint-plans-status.sh restored; all 5 arms pass (3 failure-detection arms + 1 valid-pass arm + 1 runs//prompts/ scope-guard arm)"
+    }
+  },
+  "items": {
+    "T3/9b_TC-37": {
+      "status": "done",
+      "changed": [
+        "scripts/agent-lint-md.sh: lint-md-structure leg — absent markdownlint-cli2 now exits 1 with an actionable message (was skip_notice/exit 0)",
+        "scripts/agent-lint-docs.sh: same reasoning applied to its own residual silent-skip (absent binary after checking repo node_modules + primary-checkout node_modules + PATH) — now exits 1 instead of 0; this is the sibling invoked unconditionally from agent-lint-md.sh via lint-md-docs"
+      ],
+      "deliberately_left_alone": [
+        "scripts/agent-lint-md.sh: lint-md-links leg (lychee) — left as skip_notice/exit 0 on absent binary. Rationale documented inline in the script: lychee is a separate cargo-installed Rust binary (not part of the node_modules symlink convention that made markdownlint-cli2 trivially available), it is not the tool implicated in the TC-37 incident (that was markdownlint-cli2 missing 9 real structural errors), and its own online/offline modality already signals partial/best-effort coverage by design. Hard-failing it would break every worktree that has not run full scripts/bootstrap.sh for a check whose degraded-skip is an accepted, pre-existing product of its own design, not a regression."
+      ]
+    },
+    "T3/8_status_frontmatter": {
+      "status": "done",
+      "files_given_status": 42,
+      "files_already_conforming_untouched": ["dev/plans/plan-0.8.19.md", "dev/plans/plan-0.8.21.md"],
+      "files_explicitly_out_of_scope": ["dev/plans/plan-0.8.20.md"],
+      "derivation_basis": "master §4 allocation table (dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md) for shipped/COMPLETE releases; the master's own explicit SUPERSEDED-IN-PART banner for 0.9.x-roadmap-DRAFT.md; the handoff's explicit ACTIVE calls for the master itself and (by extension) dev/plans/README.md as the live index"
+    },
+    "T3/9_lint": {
+      "status": "done",
+      "script": "scripts/lint-plans-status.sh",
+      "wired_into": [
+        "scripts/agent-lint-md.sh (run_capped lint-plans-status, runs on every non-docs-only CI path via agent-verify.sh -> agent-lint.sh -> agent-lint-md.sh, and on every local ./scripts/agent-lint-md.sh)",
+        ".github/workflows/ci.yml markdownlint job (docs-only fast path) — added a dedicated step so a docs-only diff that touches dev/plans/*.md is still gated; this job does not invoke agent-lint-md.sh at all so without this step the fast path would silently bypass the new check"
+      ],
+      "known_exception": "dev/plans/plan-0.8.20.md is explicitly excluded by name inside lint-plans-status.sh (single hardcoded, documented carve-out — not a general skip mechanism), because the live-release board is under a hard 'do not touch plan-0.8.20.md' constraint from this same effort's brief; backfill deferred to 0.8.20 close"
+    },
+    "T3/10_prune": {
+      "status": "done",
+      "files_deleted_count": 23,
+      "scope": "dev/plans/runs/*-output.json for releases <= 0.8.19, excluding 0.8.20-*, codex/**, STATUS-*.md, all *.md, all .log, and this effort's own doc-hygiene-1-*-output.json artifacts",
+      "recorded_in": "dev/archive/README.md (new manifest-section note, 2026-07-24)"
+    }
+  },
+  "deviations": [
+    "T3/9b: hardened scripts/agent-lint-docs.sh's own residual silent-skip in addition to the literally-named scripts/agent-lint-md.sh check, because it is invoked unconditionally from agent-lint-md.sh and shares the exact TC-37 hazard shape (same tool, same 'a gate that cannot run must not report green' failure mode). This is broader than the brief's literal sentence but inside its explicit 'apply the same reasoning to any sibling check in that script' instruction.",
+    "T3/8+9: dev/plans/plan-0.8.20.md could not be given frontmatter (hard constraint: 'do not touch plan-0.8.20.md') even though the T3/9 lint's rule is otherwise universal over dev/plans/*.md. Resolved with a single, explicitly-documented, named exception inside scripts/lint-plans-status.sh rather than either violating the hard constraint or leaving the new gate permanently red on main. Flagged for the Steward: plan-0.8.20.md should get status: ACTIVE (mirroring the already-landed plan-0.8.19.md/plan-0.8.21.md shape) as part of the 0.8.20 close, and the exception list in lint-plans-status.sh should then be emptied.",
+    "T3/8: added ONLY the `status:` key (not the full title/subtitle/date/target_release shape modeled by plan-0.8.19.md/plan-0.8.21.md) to files that had no pre-existing frontmatter, to avoid inventing metadata (title/subtitle/date) I had not independently verified for ~40 files. Where a file already had a frontmatter block (7 files: 0.6.0-implementation.md, 0.6.1-implementation.md, 0.7.0-implementation.md, 0.7.0-perf-experiments.md, 0.8.0-GA-and-IR-eval-roadmap.md, agentic-context-phase-1-3.md, ci-deferred.md) only the status field was added/fixed; all other pre-existing keys were left untouched.",
+    "T3/10: used a plain enumerated `git rm` rather than scripts/repo-prune/'s classify-and-HITL-gate pipeline — that tooling is built for a broader distill-before-delete classification exercise (R1-R4/S1-S5 in scripts/repo-prune/README.md); this prune's scope was already fully specified by the brief (a narrow glob + explicit exclusions), so the heavier pipeline did not fit, per the brief's own fallback clause."
+  ],
+  "found_not_fixed": [
+    "dev/plans/IR-C-passage-indexing-spec.md and dev/plans/IR-C-test-query-quality-instrumentation-plan.md were marked status: PROPOSED on weaker evidence than the rest of the sweep: neither doc self-declares COMPLETE/SUPERSEDED, neither appears by name in the master's §4 release-allocation table (unlike the rest of the 0.8.1 IR-C track, which IS in the master via the R0-R4 roadmap and shipped), and I could not find a closing banner or a later doc that resolves their status. PROPOSED is the most defensible read (backlog specs, not committed to a release slot) but their true disposition (dead vs still-pending) deserves a Steward/HITL look, similar to how 0.9.x-roadmap-DRAFT.md's own SUPERSEDED-IN-PART banner was already unambiguous.",
+    "dev/plans/ci-deferred.md was marked SUPERSEDED (not merely status-fixed from lowercase 'active'): its own target_release (0.6.0) shipped long ago and two of its three tracked items (release.yml, set-version.sh) are explicitly resolved in its own body, but the third (benchmark-and-robustness.yml, 'DEMOTED to Pack 7 prerequisite') is still genuinely open work now tracked as #13 in the master's 0.8.21 row — this doc itself was never updated to point there. I did not add a pointer banner (that would be T1/T2 prose-sweep scope, not T3/8's frontmatter-only mandate) but flag it here so a future prose pass can add one.",
+    "dev/plans/README.md's own staleness-index table (§'Staleness index') still says '0.8.5 | IN FLIGHT' — clearly stale (the line has since shipped through 0.8.20-in-flight). Out of T3 scope (prose content, not frontmatter) but noted for T1/T2-style follow-up.",
+    "the pre-existing scripts/tests/test_actionlint_fixture.sh failure ('publish-rust-t1-embedder-api dry-run branch is not cargo publish --dry-run -p') was observed while running the full local test suite as a sanity check. Verified NOT caused by this tranche: .github/workflows/release.yml is byte-identical to this branch's pre-T3 HEAD (1f064d2f) — this failure predates T3 and is out of scope to fix here."
+  ]
+}

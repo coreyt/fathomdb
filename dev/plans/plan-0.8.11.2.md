@@ -1,3 +1,7 @@
+---
+status: COMPLETE
+---
+
 # FathomDB 0.8.11.2 — Plan (pico umbrella) · **OPP-1 / OPP-3 / OPP-6 + Cause-A**
 
 > **Plan-as-pico-umbrella.** This is a **calendar-decoupling landing vehicle**, not an engine release and

@@ -1,3 +1,7 @@
+---
+status: COMPLETE
+---
+
 # FathomDB 0.8.11 — Plan (state-machine ladder) · **Planner-router experiment ladder (discharge) + agent-feedback + agent router**
 
 > **Plan-as-state-machine.** Mod-5 ladder + reserved-gap policy + "Immediate Next Slice". Authoritative

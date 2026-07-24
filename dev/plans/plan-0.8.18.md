@@ -1,3 +1,7 @@
+---
+status: COMPLETE
+---
+
 # FathomDB 0.8.18 — Plan (state-machine ladder) · **Production-safety & CI hardening capstone**
 
 > **✅ COMPLETE — RELEASE-READY, label-only close (HITL 2026-07-09, `bce032a0`).** All mod-5 slices CLOSED

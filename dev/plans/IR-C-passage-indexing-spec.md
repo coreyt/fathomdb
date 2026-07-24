@@ -1,3 +1,7 @@
+---
+status: PROPOSED
+---
+
 # IR-C — Passage Indexing: design spec
 
 Status: draft / scoping. Motivation: the IR-C dense-arm investigation

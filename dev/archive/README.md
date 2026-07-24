@@ -27,3 +27,16 @@
 See also: the DELETE pass removed ~507 transient run artifacts (per-run `*-output.json`,
 codex `*-review-*` logs, `.log`, checkpoints) — those are not archived (recover from git
 history ≤ `25541d88`); their results are distilled in `dev/experiments-ledger.md`.
+
+**DOC-HYGIENE-1 T3/10 (2026-07-24):** a follow-on prune, same precedent, removed **23** more
+transient `dev/plans/runs/*-output.json` files — every raw per-run artifact for **closed
+releases ≤ 0.8.19** (0.6.1, 0.7.0, 0.8.12, 0.8.14, plus non-version-prefixed planner-router
+OOB experiments EXP-A/AF/B′/M4/COV-1, Fr-acc, Gate-0/2 — all part of the ≤ 0.8.11.2/0.8.14
+program, per `dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md` §4). **Excluded and untouched:**
+every `0.8.20-*` artifact (the live release), everything under `dev/plans/runs/codex/**`,
+every `STATUS-*.md`, every `*.md`, every `.log`, and this same effort's own
+`doc-hygiene-1-*-output.json` closure artifacts. Not archived — recoverable from git history
+at/below this pass's commit; the exact 23-file list is enumerated in
+`dev/plans/runs/doc-hygiene-1-T3-output.json` (`files_deleted`). Results of record for the
+pruned releases already live in `dev/experiments-ledger.md` / the release boards, unaffected
+by this prune.

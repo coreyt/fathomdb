@@ -1,3 +1,7 @@
+---
+status: PROPOSED
+---
+
 # FathomDB 0.8.17 — Plan (state-machine ladder) · **Router hardening / forks**
 
 > **Plan-as-state-machine.** Mod-5 ladder + reserved-gap policy + "Immediate Next Slice". Authoritative

@@ -15,7 +15,12 @@
 # discoverable there) and lint with `--config` pointing at the rule set.
 #
 # Pass: silent (or one-line ok). Fail: the markdownlint findings + nonzero exit.
-# Skips (exit 0 + notice) only when markdownlint-cli2 is genuinely absent.
+#
+# TC-37 follow-up: this used to skip (exit 0) when markdownlint-cli2 was genuinely
+# absent from all three resolution tiers below. Invoked unconditionally from
+# scripts/agent-lint-md.sh (the same script whose OWN direct absent-binary check
+# vacuously passed for three weeks), a residual silent-skip here is the same hazard
+# class, so it is now a hard failure too.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -33,8 +38,15 @@ for c in "$REPO_ROOT/node_modules/.bin/markdownlint-cli2" \
   [ -n "$c" ] && [ -x "$c" ] && BIN="$c" && break
 done
 if [ -z "$BIN" ]; then
-  echo "[lint-docs] SKIP — markdownlint-cli2 not installed (run scripts/bootstrap.sh)"
-  exit 0
+  {
+    echo "[lint-docs] FAIL — markdownlint-cli2 not found (checked repo node_modules, the"
+    echo "  primary checkout's node_modules, and PATH)."
+    echo "  A missing structural markdown linter must never report a silent pass (TC-37)."
+    echo "  Fix: run scripts/bootstrap.sh to install it, OR (inside a linked worktree)"
+    echo "  symlink the primary checkout's node_modules:"
+    echo "    ln -s /home/coreyt/projects/fathomdb/node_modules node_modules"
+  } >&2
+  exit 1
 fi
 
 if [ ! -d "$REPO_ROOT/docs" ]; then

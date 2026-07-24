@@ -1,3 +1,7 @@
+---
+status: COMPLETE
+---
+
 # FathomDB 0.8.12 — Plan of Record (Memory-quality) · Steward-owned
 
 > **This is the single source of truth for 0.8.12.** Owner: **Program Steward (PDS)**.

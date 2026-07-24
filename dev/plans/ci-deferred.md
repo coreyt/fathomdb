@@ -3,7 +3,7 @@ title: Deferred CI Work for 0.6.0
 date: 2026-05-12
 target_release: 0.6.0
 desc: CI workflows from pre-0.6.0 that were intentionally not restored at scaffold time
-status: active
+status: SUPERSEDED
 ---
 
 > 2026-05-12 — Release-process policy resolved. Two version axes
