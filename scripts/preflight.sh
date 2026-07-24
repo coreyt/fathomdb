@@ -29,6 +29,13 @@
 
 set -euo pipefail
 
+# Resolve this script's own directory BEFORE the toplevel cd below, so the
+# board-currency check (§7) can find its sibling script regardless of which
+# repo/worktree `cd` below lands us in (BASH_SOURCE is a file path, not
+# affected by cwd, but resolving it AFTER a cd elsewhere would be needless
+# fragility for no benefit).
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 cd "$(git rev-parse --show-toplevel)"
 CANON="$(pwd)"
 
@@ -155,6 +162,35 @@ if [ "$LANDING" -eq 1 ]; then
     hard "  -> re-run from a dedicated linked worktree: git worktree add <path> <branch>, then run this from <path>."
   else
     ok "TC-RUBRIC-5: running in a linked worktree ($CANON) — cleared for landing git-writes"
+  fi
+fi
+
+# --- 7. Board-currency gate (status-board-currency-enforcement design, item 2) --
+# Refuse a land that would leave dev/plans/runs/STATUS-0.8.z.md stale. The
+# incident: a slice's merge commit reached origin/main and the board kept saying
+# "not landed" for four days — nobody's explicit job to update it at land time
+# (an ownership seam between the orchestrator, who owns in-flight rows, and the
+# Steward, who lands). See dev/design/status-board-currency-enforcement.md and
+# orchestration.md §12.5 for the seam-ownership contract this gate enforces
+# mechanically.
+#
+# The predicate lives in scripts/check-board-currency.sh (see that file's header
+# for the full statement) so preflight and the CI drift job (item 3) share ONE
+# implementation and cannot diverge. --landing-only: mid-build the board
+# legitimately reads "in flight", so this must never run outside a land (that is
+# precommit's false-positive trap the design doc rejects).
+if [ "$LANDING" -eq 1 ]; then
+  BOARD_CHECK_OUT="$(bash "$SELF_DIR/check-board-currency.sh" --tip HEAD 2>&1)" || BOARD_CHECK_RC=$?
+  BOARD_CHECK_RC="${BOARD_CHECK_RC:-0}"
+  if [ "$BOARD_CHECK_RC" -ne 0 ]; then
+    while IFS= read -r line; do
+      case "$line" in
+        STALE*) hard "board-currency: $line" ;;
+        *)      info "board-currency: $line" ;;
+      esac
+    done <<<"$BOARD_CHECK_OUT"
+  else
+    ok "board-currency: live STATUS-0.8.z.md board(s) match git ancestry for this tip"
   fi
 fi
 

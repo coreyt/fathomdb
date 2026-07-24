@@ -83,6 +83,17 @@ literally; this file is the durable role contract that hand-off assumes.
 - **Verify the branch before EVERY commit or push** (`git rev-parse --abbrev-ref
   HEAD`) — the working tree is shared with orchestrator/implementer sessions;
   never assume `main`. You commit only docs/boards/ledger, never source.
+- **You own the board's LANDED row + next-slice pointer at land time
+  (status-board-currency-enforcement, 2026-07-24 HITL-directed).** The
+  orchestrator owns a phase board's *in-flight* rows while a slice is building
+  (`orchestration.md` §12.5); that ownership stops at land-time, which is yours.
+  When you land a slice merge, stamp the matching `STATUS-<phase>.md` row
+  `LANDED@<sha>` and move the "immediate next slice" pointer **inside the same
+  landing action** — never a trailing follow-up you might skip. This closes the
+  seam that let a board say "not landed" for four days after a real merge.
+  `scripts/preflight.sh --landing` mechanically refuses to certify a land whose
+  board does not cite the landing commit's SHA; treat a HARD fail there as the
+  board update you forgot, not a check to route around.
 - On any permission denial from the harness: STOP and escalate to coreyt.
 
 ## The loop (full detail in the hand-off §8)

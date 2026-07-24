@@ -393,6 +393,28 @@ jobs:
       - name: dev/plans/*.md status frontmatter (T3/8+9, mirrors agent-lint-md.sh leg)
         run: bash scripts/lint-plans-status.sh
 
+  # status-board-currency-enforcement item 3 — the non-bypassable CI backstop.
+  # `preflight.sh --landing` (item 2) is the PREVENT gate at land time, but it is
+  # a local, invocable check; this job is the DETECT gate that catches anything
+  # that slipped preflight or predates it (the exact 4-day drift the incident
+  # exhibited: a board that kept saying "not landed" after the merge commit was
+  # already on origin/main). Reuses scripts/check-board-currency.sh — the SAME
+  # script preflight.sh calls — so the two homes cannot diverge (see that
+  # script's header for the full predicate). Intentionally NOT gated on
+  # docs_only: a board can drift behind a non-docs-only push just as easily.
+  # fetch-depth 0 is required: the predicate walks full reachable git history
+  # for `merge(0.8.z): Slice N` commits, which a shallow (depth-1) checkout
+  # would hide entirely.
+  board-currency:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - name: Board/git-ancestry drift check (status-board-currency-enforcement item 3)
+        run: bash scripts/check-board-currency.sh --tip HEAD
+
   # mkdocs --strict is the broader CI gate beyond agent-verify (per AGENTS.md §3).
   # Intentionally NOT gated on docs_only: it must run for docs/** changes (the
   # fast path) AND alongside code changes, exactly as before.

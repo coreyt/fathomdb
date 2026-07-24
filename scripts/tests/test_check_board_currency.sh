@@ -1,0 +1,294 @@
+#!/usr/bin/env bash
+# scripts/tests/test_check_board_currency.sh — coverage for the shared board/git
+# ancestry drift predicate (status-board-currency-enforcement design, items 2+3)
+# AND for its wiring into `preflight.sh --landing`.
+#
+# The incident this closes: after a slice's merge commit reached `origin/main`,
+# `dev/plans/runs/STATUS-0.8.20.md` still narrated it "not landed" for four days
+# — nobody's explicit job to update the board at land time. Items 1-3 of
+# dev/design/status-board-currency-enforcement.md close the mechanism (not the
+# actor): a shared predicate script (`scripts/check-board-currency.sh`), invoked
+# both by `preflight.sh --landing` (PREVENT, this file's arms 3-5) and by CI on
+# `main` (DETECT, item 3 — same script, not duplicated).
+#
+# Predicate under test (see scripts/check-board-currency.sh header for the full
+# statement): a live (non-CLOSED-banner) STATUS-0.8.z.md board must contain the
+# short SHA of the most recent `merge(0.8.z): Slice N ...` commit reachable from
+# the tip being checked, for every slice N such a commit exists for. Missing =
+# STALE = HARD fail.
+#
+# Isolation: every arm runs against a throwaway repo built under mktemp -d. The
+# test never git-writes into the real checkout and does not depend on the
+# developer's tree being clean. Mirrors test_preflight_landing.sh's fixture
+# hygiene (neutralized global git config: gpgsign / core.hooksPath /
+# init.templateDir all defanged in the fixture's LOCAL config only).
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PREFLIGHT="$REPO_ROOT/scripts/preflight.sh"
+CHECKER="$REPO_ROOT/scripts/check-board-currency.sh"
+
+FAILED=0
+pass() { printf 'PASS  %s\n' "$1"; }
+fail() { printf 'FAIL  %s\n' "$1" >&2; FAILED=$((FAILED + 1)); }
+
+TMPROOT="$(mktemp -d)"
+cleanup() {
+  case "$TMPROOT" in
+    "${TMPDIR:-/tmp}"/*|/tmp/*) rm -rf "$TMPROOT" ;;
+    *) printf 'refusing to remove unexpected temp path: %s\n' "$TMPROOT" >&2 ;;
+  esac
+}
+trap cleanup EXIT
+
+NO_HOOKS="$TMPROOT/no-hooks"
+mkdir -p "$NO_HOOKS"
+
+# init_repo <dir> — bare repo with a neutralized local config (see header).
+init_repo() {
+  local dir="$1"
+  mkdir -p "$dir"
+  git init -q -b main "$dir"
+  git -C "$dir" config user.email board-currency-test@example.invalid
+  git -C "$dir" config user.name 'Board Currency Test'
+  git -C "$dir" config commit.gpgsign false
+  git -C "$dir" config core.hooksPath "$NO_HOOKS"
+}
+
+# commit_all <dir> <message>
+commit_all() {
+  local dir="$1" msg="$2"
+  git -C "$dir" add -A
+  git -C "$dir" commit -q -m "$msg" >/dev/null
+}
+
+# --- Fixture A: a "current" board — mentions the landing merge's SHA -----------
+CURRENT_REPO="$TMPROOT/current"
+init_repo "$CURRENT_REPO"
+mkdir -p "$CURRENT_REPO/dev/plans/runs" "$CURRENT_REPO/src" "$CURRENT_REPO/scripts"
+printf 'fixture\n' >"$CURRENT_REPO/src/keep.txt"
+printf '# STATUS — 0.8.99 fixture\n\nSlice 1: not started.\n' >"$CURRENT_REPO/dev/plans/runs/STATUS-0.8.99.md"
+commit_all "$CURRENT_REPO" 'fixture: initial commit'
+
+# Simulate the land: a feature branch merges, producing a merge commit with the
+# repo's own landing-merge subject convention.
+git -C "$CURRENT_REPO" checkout -q -b slice-1-fixture
+printf 'work\n' >"$CURRENT_REPO/src/slice1.txt"
+commit_all "$CURRENT_REPO" 'feat: slice 1 work'
+git -C "$CURRENT_REPO" checkout -q main
+git -C "$CURRENT_REPO" merge -q --no-ff -m 'merge(0.8.99): Slice 1 — fixture land' slice-1-fixture
+LANDING_SHA="$(git -C "$CURRENT_REPO" rev-parse HEAD)"
+SHORT_SHA="${LANDING_SHA:0:8}"
+
+# Board is updated IN THE SAME COMMIT as the merge (the contract this gate
+# enforces) — stamp LANDED@<sha> and commit.
+printf '# STATUS — 0.8.99 fixture\n\nSlice 1: **LANDED %s**.\n' "$SHORT_SHA" \
+  >"$CURRENT_REPO/dev/plans/runs/STATUS-0.8.99.md"
+commit_all "$CURRENT_REPO" "docs: stamp STATUS-0.8.99 Slice 1 LANDED $SHORT_SHA"
+
+# --- Fixture B: a STALE board — same land, board never touched -----------------
+# Built by replaying fixture A's history up to (and including) the merge, but
+# WITHOUT the board-stamping commit — reproduces the exact incident shape: the
+# merge commit is an ancestor of the tip, and the board still says "not started".
+STALE_REPO="$TMPROOT/stale"
+init_repo "$STALE_REPO"
+mkdir -p "$STALE_REPO/dev/plans/runs" "$STALE_REPO/src" "$STALE_REPO/scripts"
+printf 'fixture\n' >"$STALE_REPO/src/keep.txt"
+printf '# STATUS — 0.8.99 fixture\n\nSlice 1: not started.\n' >"$STALE_REPO/dev/plans/runs/STATUS-0.8.99.md"
+commit_all "$STALE_REPO" 'fixture: initial commit'
+git -C "$STALE_REPO" checkout -q -b slice-1-fixture
+printf 'work\n' >"$STALE_REPO/src/slice1.txt"
+commit_all "$STALE_REPO" 'feat: slice 1 work'
+git -C "$STALE_REPO" checkout -q main
+git -C "$STALE_REPO" merge -q --no-ff -m 'merge(0.8.99): Slice 1 — fixture land' slice-1-fixture
+STALE_LANDING_SHA="$(git -C "$STALE_REPO" rev-parse HEAD)"
+STALE_SHORT_SHA="${STALE_LANDING_SHA:0:8}"
+# Board deliberately left untouched — reproduces the 4-day incident.
+
+# --- Fixture C: a CLOSED-banner board — must never be flagged (frozen/skipped) -
+CLOSED_REPO="$TMPROOT/closed"
+init_repo "$CLOSED_REPO"
+mkdir -p "$CLOSED_REPO/dev/plans/runs" "$CLOSED_REPO/src" "$CLOSED_REPO/scripts"
+printf 'fixture\n' >"$CLOSED_REPO/src/keep.txt"
+printf '# STATUS — 0.8.99 fixture\n\n> CLOSED — historical record, archived in place.\n\nSlice 1: not started (historical).\n' \
+  >"$CLOSED_REPO/dev/plans/runs/STATUS-0.8.99.md"
+commit_all "$CLOSED_REPO" 'fixture: initial commit'
+git -C "$CLOSED_REPO" checkout -q -b slice-1-fixture
+printf 'work\n' >"$CLOSED_REPO/src/slice1.txt"
+commit_all "$CLOSED_REPO" 'feat: slice 1 work'
+git -C "$CLOSED_REPO" checkout -q main
+git -C "$CLOSED_REPO" merge -q --no-ff -m 'merge(0.8.99): Slice 1 — fixture land' slice-1-fixture
+
+# --- Fixture C2: CLOSED-banner board with YAML frontmatter pushing the banner
+# below line 5 — regression guard. Real repo shape: STATUS-0.8.9.1.md carries
+# T3 `status:` frontmatter, which pushes its CLOSED banner to line 10; a naive
+# `head -n 5` scan misses it and would wrongly treat a closed board as live.
+CLOSED_FM_REPO="$TMPROOT/closed-frontmatter"
+init_repo "$CLOSED_FM_REPO"
+mkdir -p "$CLOSED_FM_REPO/dev/plans/runs" "$CLOSED_FM_REPO/src" "$CLOSED_FM_REPO/scripts"
+printf 'fixture\n' >"$CLOSED_FM_REPO/src/keep.txt"
+{
+  printf -- '---\n'
+  printf 'title: STATUS fixture\n'
+  printf 'date: 2026-01-01\n'
+  printf 'desc: fixture\n'
+  printf 'status: complete\n'
+  printf -- '---\n\n'
+  printf '# 0.8.99 fixture — CLOSING STATUS\n\n'
+  printf '> CLOSED — historical record, archived in place.\n\n'
+  printf 'Slice 1: not started (historical).\n'
+} >"$CLOSED_FM_REPO/dev/plans/runs/STATUS-0.8.99.md"
+commit_all "$CLOSED_FM_REPO" 'fixture: initial commit'
+git -C "$CLOSED_FM_REPO" checkout -q -b slice-1-fixture
+printf 'work\n' >"$CLOSED_FM_REPO/src/slice1.txt"
+commit_all "$CLOSED_FM_REPO" 'feat: slice 1 work'
+git -C "$CLOSED_FM_REPO" checkout -q main
+git -C "$CLOSED_FM_REPO" merge -q --no-ff -m 'merge(0.8.99): Slice 1 — fixture land' slice-1-fixture
+
+# --- Fixture D: superseded-merge — only the NEWEST land per slice must be cited
+SUPERSEDED_REPO="$TMPROOT/superseded"
+init_repo "$SUPERSEDED_REPO"
+mkdir -p "$SUPERSEDED_REPO/dev/plans/runs" "$SUPERSEDED_REPO/src" "$SUPERSEDED_REPO/scripts"
+printf 'fixture\n' >"$SUPERSEDED_REPO/src/keep.txt"
+printf '# STATUS — 0.8.99 fixture\n\nSlice 1: not started.\n' >"$SUPERSEDED_REPO/dev/plans/runs/STATUS-0.8.99.md"
+commit_all "$SUPERSEDED_REPO" 'fixture: initial commit'
+git -C "$SUPERSEDED_REPO" checkout -q -b slice-1-partial
+printf 'partial\n' >"$SUPERSEDED_REPO/src/slice1-partial.txt"
+commit_all "$SUPERSEDED_REPO" 'feat: slice 1 partial work'
+git -C "$SUPERSEDED_REPO" checkout -q main
+git -C "$SUPERSEDED_REPO" merge -q --no-ff -m 'merge(0.8.99): Slice 1 PARTIAL — fixture partial land' slice-1-partial
+PARTIAL_SHA="$(git -C "$SUPERSEDED_REPO" rev-parse HEAD)"
+PARTIAL_SHORT="${PARTIAL_SHA:0:8}"
+printf '# STATUS — 0.8.99 fixture\n\nSlice 1: **PARTIAL %s**.\n' "$PARTIAL_SHORT" \
+  >"$SUPERSEDED_REPO/dev/plans/runs/STATUS-0.8.99.md"
+commit_all "$SUPERSEDED_REPO" "docs: stamp STATUS-0.8.99 Slice 1 PARTIAL $PARTIAL_SHORT"
+git -C "$SUPERSEDED_REPO" checkout -q -b slice-1-final
+printf 'final\n' >"$SUPERSEDED_REPO/src/slice1-final.txt"
+commit_all "$SUPERSEDED_REPO" 'feat: slice 1 final work'
+git -C "$SUPERSEDED_REPO" checkout -q main
+git -C "$SUPERSEDED_REPO" merge -q --no-ff -m 'merge(0.8.99): Slice 1 — fixture final land' slice-1-final
+FINAL_SHA="$(git -C "$SUPERSEDED_REPO" rev-parse HEAD)"
+FINAL_SHORT="${FINAL_SHA:0:8}"
+printf '# STATUS — 0.8.99 fixture\n\nSlice 1: **LANDED %s** (supersedes PARTIAL %s).\n' "$FINAL_SHORT" "$PARTIAL_SHORT" \
+  >"$SUPERSEDED_REPO/dev/plans/runs/STATUS-0.8.99.md"
+commit_all "$SUPERSEDED_REPO" "docs: stamp STATUS-0.8.99 Slice 1 LANDED $FINAL_SHORT"
+# Note: the PARTIAL commit's own SHA is deliberately never mentioned in the
+# final board text (only the LANDED sha is) — this must NOT be flagged stale.
+
+run_checker() {
+  local dir="$1"
+  set +e
+  OUT="$(cd "$dir" && bash "$CHECKER" 2>&1)"
+  RC=$?
+  set -e
+}
+
+run_preflight() {
+  local cwd="$1"; shift
+  set +e
+  OUT="$(cd "$cwd" && bash "$PREFLIGHT" "$@" 2>&1)"
+  RC=$?
+  set -e
+}
+
+# =========================== check-board-currency.sh ===========================
+
+# --- Arm 1: current board — checker exits 0 -------------------------------------
+run_checker "$CURRENT_REPO"
+if [ "$RC" -eq 0 ]; then
+  pass "check-board-currency.sh exits 0 on a current (SHA-stamped) board"
+else
+  fail "expected exit 0 on a current board; got rc=$RC, out: $OUT"
+fi
+
+# --- Arm 2: stale board — checker exits non-zero, names the sha ----------------
+run_checker "$STALE_REPO"
+if [ "$RC" -ne 0 ]; then
+  pass "check-board-currency.sh exits non-zero on a stale board"
+else
+  fail "expected non-zero exit on a stale board; got rc=0, out: $OUT"
+fi
+if printf '%s' "$OUT" | grep -q "STALE.*${STALE_SHORT_SHA}"; then
+  pass "stale output names the un-referenced landing SHA"
+else
+  fail "expected a STALE line naming $STALE_SHORT_SHA; got: $OUT"
+fi
+
+# --- Arm 3: CLOSED-banner board — never flagged even though board text is stale
+run_checker "$CLOSED_REPO"
+if [ "$RC" -eq 0 ]; then
+  pass "check-board-currency.sh skips a CLOSED-banner board (never flagged)"
+else
+  fail "a CLOSED-banner board must be skipped, not flagged; got rc=$RC, out: $OUT"
+fi
+
+# --- Arm 3b: CLOSED-banner board with YAML frontmatter — still skipped ---------
+run_checker "$CLOSED_FM_REPO"
+if [ "$RC" -eq 0 ]; then
+  pass "check-board-currency.sh skips a CLOSED-banner board even behind YAML frontmatter"
+else
+  fail "frontmatter must not defeat the CLOSED-banner skip; got rc=$RC, out: $OUT"
+fi
+
+# --- Arm 4: superseded partial merge — only the newest land is required --------
+run_checker "$SUPERSEDED_REPO"
+if [ "$RC" -eq 0 ]; then
+  pass "check-board-currency.sh does not require a superseded partial-merge SHA"
+else
+  fail "superseded-merge fixture should pass (only newest land required); got rc=$RC, out: $OUT"
+fi
+
+# ============================ preflight.sh --landing ============================
+# These arms are the RED-first proof: against the UNMODIFIED preflight.sh they
+# demonstrate the gap (stale board incorrectly clears landing); after the gate
+# is wired in they demonstrate the fix.
+
+# --- Arm 5: --landing in a stale-board linked worktree MUST hard-fail ----------
+STALE_LINKED="$TMPROOT/stale-linked"
+git -C "$STALE_REPO" worktree add -q -b stale-landing-fixture "$STALE_LINKED" >/dev/null 2>&1
+run_preflight "$STALE_LINKED" --landing
+if [ "$RC" -ne 0 ]; then
+  pass "--landing HARD-fails in a worktree whose board is stale vs git ancestry"
+else
+  fail "--landing MUST fail on a stale board; got rc=0 (this is the incident reproduced), out: $OUT"
+fi
+if printf '%s' "$OUT" | grep -q 'board-currency:'; then
+  pass "--landing failure output names the board-currency check"
+else
+  fail "expected the failure to name the board-currency check; got: $OUT"
+fi
+
+# --- Arm 6: --landing in a current-board linked worktree still passes ---------
+CURRENT_LINKED="$TMPROOT/current-linked"
+git -C "$CURRENT_REPO" worktree add -q -b current-landing-fixture "$CURRENT_LINKED" >/dev/null 2>&1
+run_preflight "$CURRENT_LINKED" --landing
+if [ "$RC" -eq 0 ]; then
+  pass "--landing still exits 0 in a worktree whose board is current"
+else
+  fail "--landing must not regress a current board; got rc=$RC, out: $OUT"
+fi
+
+# --- Arm 7: --landing in a CLOSED-board worktree still passes (skip, not flag) -
+CLOSED_LINKED="$TMPROOT/closed-linked"
+git -C "$CLOSED_REPO" worktree add -q -b closed-landing-fixture "$CLOSED_LINKED" >/dev/null 2>&1
+run_preflight "$CLOSED_LINKED" --landing
+if [ "$RC" -eq 0 ]; then
+  pass "--landing still exits 0 in a worktree whose only board is CLOSED-banner"
+else
+  fail "a CLOSED-banner board must not block a land; got rc=$RC, out: $OUT"
+fi
+
+# --- Arm 8: plain preflight (no --landing) never runs the board-currency check -
+run_preflight "$STALE_LINKED"
+if printf '%s' "$OUT" | grep -q 'board-currency:'; then
+  fail "board-currency check must be --landing-only; ran without --landing: $OUT"
+else
+  pass "regression guard: board-currency check is inert without --landing"
+fi
+
+if [ "$FAILED" -gt 0 ]; then
+  printf '\n%d test(s) failed\n' "$FAILED" >&2
+  exit 1
+fi
+printf '\nAll check-board-currency tests passed\n'

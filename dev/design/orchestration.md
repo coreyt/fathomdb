@@ -586,6 +586,31 @@ phase's live state. Update at every slice close. Includes:
 
 Worked example: `dev/plans/runs/STATUS-phase12.md`.
 
+**Seam-ownership contract (status-board-currency-enforcement,
+2026-07-24 HITL-directed).** Ownership of the board is split by
+phase, and the split must not leave a gap:
+
+- The **Orchestrator** owns the board's **in-flight** rows —
+  current slice, per-slice status table, scoreboard, next action —
+  updated at every slice close per the list above.
+- The **Steward** owns the board's **LANDED** row and the
+  **"immediate next slice" pointer**, stamped in the **same merge
+  that lands the slice** — never a trailing follow-up. A land is
+  one atomic checklist: `merge → stamp STATUS row LANDED@<sha> +
+  move the next-slice pointer → reconcile master §4/§6 → ledger →
+  push`.
+
+The orchestrator cannot set LANDED (it does not land, and has
+stopped by land-time); the Steward lands and must not treat the
+board update as someone else's job. `scripts/preflight.sh
+--landing` mechanically enforces the Steward's half of this
+contract — it refuses to certify a land whose board does not cite
+the landing commit's SHA (`scripts/check-board-currency.sh`); a CI
+job on `main` is the non-bypassable backstop for whatever slips
+that gate or predates it. See
+`dev/design/status-board-currency-enforcement.md` for the full
+design and the incident that motivated it.
+
 ### 12.6 Compaction discipline
 
 When main-thread context approaches limit:

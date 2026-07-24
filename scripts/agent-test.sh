@@ -18,6 +18,12 @@ run_capped test-verify-release-gates bash scripts/tests/test_verify_release_gate
 # repo + worktree under mktemp -d; never git-writes into this checkout.
 run_capped test-preflight-landing bash scripts/tests/test_preflight_landing.sh
 
+# Scripts (bash): status-board-currency-enforcement items 2+3 — the shared
+# scripts/check-board-currency.sh predicate plus its --landing wiring in
+# preflight.sh. Builds its own throwaway repos + worktrees under mktemp -d;
+# never git-writes into this checkout.
+run_capped test-check-board-currency bash scripts/tests/test_check_board_currency.sh
+
 # Scripts (bash): sibling-package co-tagging assert (AC-052). Offline via
 # python3 -m http.server fixture; never hits crates.io.
 run_capped test-assert-co-tagging bash scripts/tests/test_assert_co_tagging.sh
