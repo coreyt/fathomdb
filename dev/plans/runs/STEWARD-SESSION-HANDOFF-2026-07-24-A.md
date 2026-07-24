@@ -31,6 +31,16 @@ Slice 15 (landed). Cut a **dedicated linked worktree** off a verified `origin/ma
 
 **TC-11 + TC-32 are CLOSED; TC-46 + TC-47 are RESOLVED; Finding-1 = (A). Do NOT re-open them** (plan §11 header).
 
+**★ ALSO commission (HITL-directed 2026-07-24) — status-board currency enforcement, items 1–3.** When you
+commission the next orchestrator, **assign it the first effort of
+`dev/design/status-board-currency-enforcement.md` (scope = items 1–3):** (1) the seam-ownership contract line in
+`.claude/agents/steward.md` + `orchestration.md` §12.5 (Steward owns the **LANDED** row + next-slice pointer,
+updated in the landing merge); (2) a board-currency **gate in `scripts/preflight.sh --landing`** (refuse a land
+that leaves `STATUS-0.8.z.md` stale; RED-first test); (3) a **CI drift detector on `main`** (red when the board
+disagrees with git ancestry). This exists because the 0.8.20 board lied for four days post-land — the failure
+this closes. Item 4 (machine-derived table) is **later, only if drift persists**. It may ride alongside Slice 20
+or be its own micro-effort — your call; it is docs + scripts + one CI job, TDD-able, and touches no engine code.
+
 ---
 
 ## Verified state (git @ `origin/main` `a2022957`; ledger tip `3264114a`)

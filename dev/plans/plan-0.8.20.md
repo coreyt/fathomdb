@@ -602,6 +602,19 @@ broken code (§0.1). **Mint ACs from AC-079** (§3). **Run NO eu7 — R-20-EU7 i
 > **Already settled — do NOT re-open:** **Finding-1 = (A)** (attribute-filter drops edge hits; (D) reserved,
 > B/C declined); **TC-46 + TC-47 = RESOLVED** (non-destructive vec0 reshape; round-trip ISO validator);
 > **TC-11 + TC-32 = CLOSED** (`h:` end-state pin; co-named-entity dedupe accepted as-is).
+>
+> ### ✅ HITL RULINGS 2026-07-24 — items 1–8 decided
+>
+> 1. **(a)** — sign AC-079 **once at Slice 40**. 2. **(a)** — Phase-2 surface **opt-in**, erasure fixes **ON**.
+> 2. **(a)** — **publish at Slice 40**, subject to the H7-green / `#11`-rehearsal / Memex-ready prereqs.
+> 3. **(b) REJECT** — an `fts`/`vector` sub-object without the `searchable` role is an **invalid spec**; implement
+>    the rejection at the next `configure_projections` slice. 5. **(a)** — **add the `embed_batch_cls` TS binding**
+>    (X1 / Slice 40). 6. **TC-16 → fold into Slice 40** (with the `#11`-full rehearsal). 7. **TC-45 → HOLD as an
+>    OPEN item; placement UNDECIDED (0.8.20 or 0.8.20+)** — not yet slotted. 8. **Hermes consult** — still pending
+>    input, unchanged.
+>
+> Effect lands at **Slice 40** for 1/2/3/5/6; at the **next `configure_projections` slice** for 4; **item 7 stays
+> open** (revisit its slot before 0.8.20 publish); item 8 is a future-slice input.
 
 1. **AC-079 governed-surface sign-off** — the Phase-2 + erasure API delta (`erase_source`/`SourceId`/
    `EraseReport`/`ExciseReport`, `configure_projections`/`ProjectionSpec`/`ProjectionRole`, `read.projections`,
