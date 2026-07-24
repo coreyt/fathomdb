@@ -609,12 +609,12 @@ broken code (§0.1). **Mint ACs from AC-079** (§3). **Run NO eu7 — R-20-EU7 i
 > 2. **(a)** — **publish at Slice 40**, subject to the H7-green / `#11`-rehearsal / Memex-ready prereqs.
 > 3. **(b) REJECT** — an `fts`/`vector` sub-object without the `searchable` role is an **invalid spec**; implement
 >    the rejection at the next `configure_projections` slice. 5. **(a)** — **add the `embed_batch_cls` TS binding**
->    (X1 / Slice 40). 6. **TC-16 → fold into Slice 40** (with the `#11`-full rehearsal). 7. **TC-45 → HOLD as an
->    OPEN item; placement UNDECIDED (0.8.20 or 0.8.20+)** — not yet slotted. 8. **Hermes consult** — still pending
->    input, unchanged.
+>    (X1 / Slice 40). 6. **TC-16 → fold into Slice 40** (with the `#11`-full rehearsal). 7. **TC-45 → FIX IN
+>    0.8.20, folded into Slice 20** (HITL 2026-07-24 — supersedes the earlier "HOLD / placement UNDECIDED" and the
+>    Steward's "0.8.21 own fixup" recommendation). 8. **Hermes consult** — still pending input, unchanged.
 >
-> Effect lands at **Slice 40** for 1/2/3/5/6; at the **next `configure_projections` slice** for 4; **item 7 stays
-> open** (revisit its slot before 0.8.20 publish); item 8 is a future-slice input.
+> Effect lands at **Slice 40** for 1/2/3/5/6; at **Slice 20** for 7; at the **next `configure_projections` slice**
+> for 4; item 8 is a future-slice input.
 
 1. **AC-079 governed-surface sign-off** — the Phase-2 + erasure API delta (`erase_source`/`SourceId`/
    `EraseReport`/`ExciseReport`, `configure_projections`/`ProjectionSpec`/`ProjectionRole`, `read.projections`,
@@ -641,8 +641,15 @@ broken code (§0.1). **Mint ACs from AC-079** (§3). **Run NO eu7 — R-20-EU7 i
    in the very release that publishes. **Rec:** fold into Slice 40 with the `#11`-full rehearsal. **Why:** it is a
    publish-workflow guard and Slice 40 owns publish. **Gated:** HITL confirms the slot.
 7. **PLACEMENT — TC-45 supersession-terminal CHECK defect** — terminals are silently dropped via
-   `state='superseded'` vs `CHECK('failed','up_to_date')` + `INSERT OR IGNORE`, so the cursor can stall. **Rec:**
-   0.8.21 own fixup. **Why:** not a 0.8.20 regression and not publish-blocking. **Gated:** HITL confirms the slot.
+   `state='superseded'` vs `CHECK('failed','up_to_date')` + `INSERT OR IGNORE`, so the cursor can stall.
+   **✅ RULED 2026-07-24 (HITL): FIX IN 0.8.20 — folded into Slice 20.** This **overrides** the Steward's
+   "0.8.21 own fixup" recommendation. **Why:** 0.8.20 is the first real publish **and it publishes the projection
+   registry**, so deferring turns an internal defect into a published silent cursor-stall; the twin of this class
+   (TC-33 fix-4) was already fixed in-release; and "carried unfixed across releases" is the F-30 trap. **Fix
+   shape (implementer + codex micro-call):** prefer `'up_to_date'` at both `record_projection_terminal` call
+   sites (`engine:14867`/`:14890`) — **no migration** — over widening the terminal CHECK to admit `'superseded'`
+   (**a schema step + migration test**); escalate only if the terminal's semantics demand the distinct token.
+   RED-first, per the standing TDD rule. Ledger: todos seq 65. **Gated:** Slice 20.
 8. **PENDING INPUT (not a decision) — Hermes consult** on the eventual **(D)** endpoint-node attribute-filter
    widening. Memex already replied: **(A) now, (D) reserved**. **Why here:** it refines a future call and blocks
    nothing. **Gated:** the future SDK-surface slice that widens (D), not 0.8.20.
