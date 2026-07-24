@@ -1,5 +1,7 @@
 # STATUS — 0.8.11.2 pico umbrella (OPP-1 / OPP-3 / OPP-6 + Cause-A)
 
+> **CLOSED — historical record, archived in place.** **0.8.11.2** (no independently-verified ship date found in this doc); current state: `dev/plans/runs/STATUS-0.8.20.md` (live release board) + `dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md` (the master schedule-of-record).
+
 > Live verdict board + running `$` ledger for the autonomous `/goal complete` run.
 > Plan: `dev/plans/plan-0.8.11.2.md`. Branch: `0.8.11.2-pico-umbrella`
 > (worktree `/home/coreyt/projects/fathomdb-worktrees/0.8.11.2`, base main `34af4bbd`).

@@ -1,5 +1,7 @@
 # STATUS — 0.8.11 (live)
 
+> **CLOSED — historical record, archived in place.** **0.8.11** shipped 2026-06-28; current state: `dev/plans/runs/STATUS-0.8.20.md` (live release board) + `dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md` (the master schedule-of-record).
+
 > Orchestrator session `fathom-0.8.11-orchestrator-b`. Plan → `dev/plans/plan-0.8.11.md`;
 > contracts → `dev/plans/0.8.11-implementation.md`; deps → `0.8.6-0.8.16-PROGRAM-SEQUENCING.md` (F-11).
 > Branch: `0.8.11` (off `origin/main` @ `80c6b8b8` + F-11 plan rewrite). Goal: **complete Slices 0–40.**

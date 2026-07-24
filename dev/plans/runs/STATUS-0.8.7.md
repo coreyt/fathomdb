@@ -1,5 +1,7 @@
 # 0.8.7 — status (GPU embedder · OUT-OF-BAND)
 
+> **CLOSED — historical record, archived in place.** **0.8.7** (no independently-verified ship date found in this doc); current state: `dev/plans/runs/STATUS-0.8.20.md` (live release board) + `dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md` (the master schedule-of-record).
+
 > Live state for the 0.8.7 GPU-embedder release. Plan → `dev/plans/plan-0.8.7.md`.
 > Design → `dev/design/0.8.1-embedder-gpu-and-portability.md` §1. OOB: gates nothing,
 > gated by nothing. Branched from **main as of 0.8.5** (`0a8f3f1a`) on worktree branch

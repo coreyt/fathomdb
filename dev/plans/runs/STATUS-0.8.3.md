@@ -1,5 +1,7 @@
 # 0.8.3 — running $ ledger + status
 
+> **CLOSED — historical record, archived in place.** **0.8.3** closed 2026-06-23 (HITL "as-is"; SHIP-AT-PARITY recommendation); current state: `dev/plans/runs/STATUS-0.8.20.md` (live release board) + `dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md` (the master schedule-of-record).
+
 Budget discipline ([[0.8.1-budget-discipline-cheap-validate-and-ledger]],
 [[priced-runs-need-resilience-before-spend]]). Aggregate program target ≤ $30
 (design `0.8.3-mem0-parity.md` §7): three priced runs — D0b parity (Slice 10),

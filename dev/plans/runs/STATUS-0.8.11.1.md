@@ -1,5 +1,7 @@
 # STATUS — 0.8.11.1 (Library Sweep #1, contained bumps) · LBS ledger
 
+> **CLOSED — historical record, archived in place.** **0.8.11.1** (no independently-verified ship date found in this doc); current state: `dev/plans/runs/STATUS-0.8.20.md` (live release board) + `dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md` (the master schedule-of-record).
+
 > Live state for `plan-0.8.11.1.md`. Label-only pico (F-13): **NO manifest bump, NO `v*` tag, NO
 > publish.** Owned by the Library Bump Steward (LBS). Updated per slice.
 

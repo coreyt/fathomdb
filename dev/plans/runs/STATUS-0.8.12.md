@@ -1,5 +1,7 @@
 # STATUS — 0.8.12 · Memory-quality plumbing (orchestrator board)
 
+> **CLOSED — historical record, archived in place.** **0.8.12** wound down 2026-07-02 (label-only; manifests stayed `0.8.9`); current state: `dev/plans/runs/STATUS-0.8.20.md` (live release board) + `dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md` (the master schedule-of-record).
+
 > Live verdict board + running `$` ledger + per-slice X column for the `/goal complete 0.8.12`
 > orchestrator run. Plan: `dev/plans/plan-0.8.12.md`. Branch: `0.8.12-memory-quality`
 > (worktree `/home/coreyt/projects/fathomdb-worktrees/0.8.12`, **tip `63d19c2d`** as of 2026-07-02 Phase-3/4

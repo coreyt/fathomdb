@@ -1,5 +1,7 @@
 # STATUS — 0.8.2 (M1: multi-hop answer-accuracy harness)
 
+> **CLOSED — historical record, archived in place.** **0.8.2** closed NO-GO 2026-06-19 (HITL-signed verdict, not shipped); current state: `dev/plans/runs/STATUS-0.8.20.md` (live release board) + `dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md` (the master schedule-of-record).
+
 > Live state board for 0.8.2 / M1. Per `dev/design/orchestration.md` §12.5 the **orchestrator owns
 > this board** (one docs commit per transition); slice agents never edit it. **Witnesses (git +
 > `output.json` + verdict `.md`) win over this cache** on any conflict (§1.5 invariant 1).

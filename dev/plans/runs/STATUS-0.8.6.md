@@ -1,5 +1,7 @@
 # STATUS — 0.8.6 (Foundations & shippability)
 
+> **CLOSED — historical record, archived in place.** **0.8.6** shipped 2026-06-26; current state: `dev/plans/runs/STATUS-0.8.20.md` (live release board) + `dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md` (the master schedule-of-record).
+
 > Live state board for 0.8.6. Per `dev/design/orchestration.md` §12.5 the **orchestrator owns this
 > board** (one docs commit per transition); slice agents never edit it. **Witnesses (git +
 > `output.json` + verdict `.md`) win over this cache** on any conflict.

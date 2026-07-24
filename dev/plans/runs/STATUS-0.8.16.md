@@ -1,5 +1,7 @@
 # STATUS — 0.8.16 (Ranking signal & embedder reach: F9 + cross-vendor ONNX)
 
+> **CLOSED — historical record, archived in place.** **0.8.16** shipped 2026-07-08 (label-only, `8c6b92aa`); current state: `dev/plans/runs/STATUS-0.8.20.md` (live release board) + `dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md` (the master schedule-of-record).
+
 > Live state board (source of truth = git witnesses per orchestration.md §1.5; this is a cache).
 > Plan: `dev/plans/plan-0.8.16.md` · Slice-0 design: `dev/design/0.8.16-slice-0-f9-onnx-design.md` ·
 > ADRs: `dev/adr/ADR-0.8.16-f9-importance-confidence-ranking.md`,

@@ -1,5 +1,7 @@
 # STATUS — 0.8.14 (Substrate & recall: EXP-S + F5) · the schema-migration release
 
+> **CLOSED — historical record, archived in place.** **0.8.14** shipped 2026-07-05 (label-only, `465b43ac`); current state: `dev/plans/runs/STATUS-0.8.20.md` (live release board) + `dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md` (the master schedule-of-record).
+
 > Live state board (source of truth = git witnesses per orchestration.md §1.5; this is a cache).
 > Plan: `dev/plans/plan-0.8.14.md` · ADR: `dev/adr/ADR-0.8.14-exp-s-kind-tagged-coexisting-index-substrate.md`.
 > Build: **label-only** (manifests stay `0.8.9`; NO `v*` tag, NO publish). Push scope: fathomdb-only.

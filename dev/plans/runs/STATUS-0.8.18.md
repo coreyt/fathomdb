@@ -1,5 +1,7 @@
 # STATUS — 0.8.18 (Production-safety & CI hardening capstone: #5 vector-equivalence + #11-full publish + GA tag)
 
+> **CLOSED — historical record, archived in place.** **0.8.18** shipped 2026-07-09 (label-only, `bce032a0`); current state: `dev/plans/runs/STATUS-0.8.20.md` (live release board) + `dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md` (the master schedule-of-record).
+
 > Live state board (source of truth = git witnesses per orchestration.md §1.5; this is a cache).
 > Plan: `dev/plans/plan-0.8.18.md` · Slice-0 design: `dev/design/0.8.18-slice-0-vector-equivalence-publish-design.md` ·
 > ADRs: `dev/adr/ADR-0.8.18-vector-equivalence-self-check.md`, `dev/adr/ADR-0.8.18-full-publish-pipeline.md`.

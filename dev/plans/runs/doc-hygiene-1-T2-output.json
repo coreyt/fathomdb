@@ -1,0 +1,72 @@
+{
+  "tranche": "T2",
+  "files_changed": [
+    "dev/DOC-INDEX.md",
+    "dev/doc-index/dev.md",
+    "dev/doc-index/design.md",
+    "dev/doc-index/adr.md",
+    "dev/doc-index/plans.md",
+    "dev/doc-index/docs.md",
+    "dev/doc-index/corpus.md",
+    "dev/plans/prompts/README.md",
+    "dev/plans/0.6.0-implementation.md",
+    "dev/plans/0.6.1-implementation.md",
+    "dev/plans/0.7.0-implementation.md",
+    "dev/plans/0.7.1-implementation.md",
+    "dev/plans/0.8.0-implementation.md",
+    "dev/plans/0.8.1-implementation.md",
+    "dev/plans/0.8.11-implementation.md",
+    "dev/plans/runs/STATUS-0.8.0.md",
+    "dev/plans/runs/STATUS-0.8.1.md",
+    "dev/plans/runs/STATUS-0.8.2.md",
+    "dev/plans/runs/STATUS-0.8.3.md",
+    "dev/plans/runs/STATUS-0.8.4.md",
+    "dev/plans/runs/STATUS-0.8.6.md",
+    "dev/plans/runs/STATUS-0.8.7.md",
+    "dev/plans/runs/STATUS-0.8.8.md",
+    "dev/plans/runs/STATUS-0.8.9.md",
+    "dev/plans/runs/STATUS-0.8.9.1.md",
+    "dev/plans/runs/STATUS-0.8.11.md",
+    "dev/plans/runs/STATUS-0.8.11.1.md",
+    "dev/plans/runs/STATUS-0.8.11.2.md",
+    "dev/plans/runs/STATUS-0.8.12.md",
+    "dev/plans/runs/STATUS-0.8.14.md",
+    "dev/plans/runs/STATUS-0.8.16.md",
+    "dev/plans/runs/STATUS-0.8.18.md",
+    "dev/plans/runs/STATUS-0.8.19.md"
+  ],
+  "md_lint_exit": 0,
+  "doc_index_kb_before": 83.6,
+  "doc_index_kb_after": 33.03,
+  "rows_before": 199,
+  "rows_after": 206,
+  "paths_lost": [],
+  "items": [
+    {
+      "id": "T2/5",
+      "desc": "Split dev/DOC-INDEX.md into a thin cold-start map + 6 per-area detail files under dev/doc-index/ (dev.md, design.md, adr.md, plans.md, docs.md, corpus.md), one mirroring each existing top-level DOC-INDEX section. Path/owner/date columns kept byte-identical to the pre-split rows; only the Purpose cell was compressed to a single declarative clause (script-assisted extraction of each row's leading bold-title clause or first real sentence, then word-boundary-truncated to <=120 chars, with manual review of the output). The >=120-char rule + detail-file pointer is stated in DOC-INDEX.md's header block next to THE RULE. Added rows for the 6 new detail files + for the new prompts/README.md (T2/7). No path was dropped: 199 pre-existing row-cells all still appear verbatim in DOC-INDEX.md (verified by script, see closure report); 7 new rows added (6 detail files + prompts/README.md) for 206 total.",
+      "status": "done_with_deviation",
+      "deviation": "Size target (<=12KB) NOT met: DOC-INDEX.md is 33.03KB after the split (down from 83.6KB, a 60.5% reduction), not <=12KB. Reason (arithmetic, not effort-limited): the literal path-column text alone across the 199 preserved rows is ~8.9KB -- 74% of a 12KB budget -- before any Purpose/Owner/Date/header/table-syntax bytes are added. Owner-column text alone is another ~5.6KB and Date another ~2.4KB even with an EMPTY Purpose column, so the true floor for a same-row-count file is roughly 17-20KB before a single word of Purpose is written. Hitting <=12KB while satisfying the hard 'no doc may lose its row' invariant would require materially reducing row count below 199 (deeper glob-consolidation of already-consolidated rows) or dropping the Owner/Date columns, neither of which this brief authorized -- the brief explicitly said to stop and report rather than drop a path, and the row-preservation invariant is stated as harder than the KB target. I chose to preserve every row and get as small as reasonably achievable via Purpose-only compression, and am reporting the shortfall rather than silently under-delivering or violating the invariant."
+    },
+    {
+      "id": "T2/6",
+      "desc": "Added a one-line CLOSED banner immediately under the H1 of 25 closed-line boards/implementation docs: all STATUS-0.8.*.md boards <=0.8.19 (0.8.0, 0.8.1, 0.8.2, 0.8.3, 0.8.4, 0.8.6, 0.8.7, 0.8.8, 0.8.9, 0.8.9.1, 0.8.11, 0.8.11.1, 0.8.11.2, 0.8.12, 0.8.14, 0.8.16, 0.8.18, 0.8.19) plus every *-implementation.md doc in dev/plans/ (0.6.0, 0.6.1, 0.7.0, 0.7.1, 0.8.0, 0.8.1, 0.8.11 -- there is no separate literal '0.6.x/0.7.x/0.8.x-implementation.md' file; the brief's phrasing referred to this *-implementation.md family, confirmed by listing dev/plans/*.md). STATUS-0.8.20.md and all other 0.8.20 artifacts were explicitly left untouched (verified: git diff --stat on STATUS-0.8.20.md, plan-0.8.20.md, dev/acceptance.md, and the master dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md all produced zero output). Ship/close dates were taken ONLY from explicit statements inside each doc itself (e.g. STATUS-0.8.0.md's 'GA SHIPPED 2026-06-08', STATUS-0.8.3.md's 'CLOSED AS-IS (2026-06-23)', STATUS-0.8.9.1.md's frontmatter date) or from the master's Section 4 release-allocation table (0.8.14/0.8.16/0.8.18/0.8.19 dates). Where no such date could be verified in-doc (0.8.1, 0.8.4, 0.8.7, 0.8.8, 0.8.11.1, 0.8.11.2, 0.6.0, 0.7.0, 0.7.1, 0.8.1-implementation.md), the date clause was omitted per the brief's explicit instruction rather than guessed; the banner still states the CLOSED status and the current-state pointer. Fixed 2 pre-existing-adjacent MD028 (blank-line-inside-blockquote) markdownlint errors the banner insertion triggered in 0.8.0-implementation.md and 0.8.11-implementation.md (both had a blockquote as the very next line after H1) by inserting an HTML-comment separator between the two blockquotes.",
+      "status": "done"
+    },
+    {
+      "id": "T2/7",
+      "desc": "Added dev/plans/prompts/README.md (previously missing). States the archive-in-place convention and why (~120 prompt paths cross-referenced from ~140 files per dev/plans/README.md, so relocation breaks references), that the great majority (>90%, confirmed 216 total files in the directory vs 6 identified live entry points) of the directory is closed-line one-shot execution prompts, and lists the live prompts. All 6 candidate filenames from the brief were verified to exist before listing (0.8.x-STEWARD-HANDOFF.md, 0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md, DOC-HYGIENE-1-HANDOFF.md, LIBRARY-BUMP-STEWARD.md, LIBRARY-BUMP-ORCHESTRATOR-TEMPLATE.md, PLAN-TEMPLATE.md -- only one PLAN-TEMPLATE variant exists, not a glob-family, so it is listed singularly). Added the corresponding DOC-INDEX.md + dev/doc-index/plans.md rows per DOC-INDEX's own closing-commit rule.",
+      "status": "done"
+    }
+  ],
+  "deviations": [
+    "T2/5 size target (<=12KB) not met -- see items[0].deviation for the arithmetic reason and the row-preservation-over-size-target tradeoff made.",
+    "T2/6 'the other STATUS-0.8.*.md boards for releases <=0.8.19 plus the 0.6.x/0.7.x/0.8.x-implementation.md docs' was interpreted as the literal set of *-implementation.md files under dev/plans/ (0.6.0/0.6.1/0.7.0/0.7.1/0.8.0/0.8.1/0.8.11) since no separate '0.6.x-implementation.md' / '0.7.x-implementation.md' / '0.8.x-implementation.md' literal files exist in the repo; verified by directory listing before applying banners.",
+    "Purpose-cell compression in T2/5 is script-assisted (regex extraction of each row's leading bold-title clause, or its first real sentence, then word-boundary truncation to <=120 chars) with spot review, not a fully hand-authored single clause per row for all 199 rows -- given the row count this was the only way to complete T2/5 inside the tranche; quality was checked by re-reading the full generated output (docs/design/adr/plans/dev/corpus sections) before finalizing, and 0 rows exceeded the 120-char cap."
+  ],
+  "found_not_fixed": [
+    "dev/plans/README.md's own 'Staleness index' table (dev/plans/README.md § 'Staleness index') is itself stale -- it still lists 0.8.5 as 'IN FLIGHT' and does not mention any release past 0.8.5, even though the line has since progressed through 0.8.20. Out of T2/5-7's explicit scope (T2/5 only targets dev/DOC-INDEX.md; the brief did not ask for dev/plans/README.md edits) so left untouched, but flagged here since it is the doc T2/7's new prompts/README.md points back to for the archive convention.",
+    "Several STATUS-0.8.*.md boards (0.8.1, 0.8.4, 0.8.7, 0.8.8, 0.8.11.1, 0.8.11.2) and several *-implementation.md docs (0.6.0, 0.7.0, 0.7.1, 0.8.1) have no explicit, doc-internal 'shipped/closed <date>' statement -- their CLOSED banners omit the date clause per the brief's 'omit rather than guess' instruction. A future pass could recover these dates from git log / merge-commit history if a 'shipped when' figure is actually needed for them, but that is not 'the doc itself or the master's §4 table' per this brief's authorized sources.",
+    "docs/release-notes/0.6.0.md still literally says 'Status: pre-release... not yet been published to crates.io / PyPI / npm', which appears to be stale/contradicted by the fact that 0.6.1 (a patch release) exists and ships against a supposedly-unpublished 0.6.0 base. Not touched (out of T2 scope; docs/ is excluded from this effort per the brief's guardrails), but flagged as a likely-stale doc for a future hygiene pass."
+  ]
+}

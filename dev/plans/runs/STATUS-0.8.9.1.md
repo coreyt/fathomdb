@@ -7,6 +7,8 @@ status: complete
 
 # 0.8.9.1 — markdown-debt cleanup + anti-regression — CLOSING STATUS
 
+> **CLOSED — historical record, archived in place.** **0.8.9.1** closed 2026-06-28 (label-only pico); current state: `dev/plans/runs/STATUS-0.8.20.md` (live release board) + `dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md` (the master schedule-of-record).
+
 ## Outcome (the single success fact)
 
 `bash scripts/agent-lint-md.sh` **exits 0** — `markdownlint-cli2` (repo) clean, `docs/**` lint

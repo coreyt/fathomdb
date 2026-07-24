@@ -1,5 +1,7 @@
 # FathomDB 0.8.0 — Live status board
 
+> **CLOSED — historical record, archived in place.** **0.8.0** shipped 2026-06-08 (`v0.8.0` GA tag); current state: `dev/plans/runs/STATUS-0.8.20.md` (live release board) + `dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md` (the master schedule-of-record).
+
 > **★ PHASE 0.8.0 CLOSED — superseded by 0.8.1 (2026-06-12).** 0.8.0 GA shipped + tagged
 > (`v0.8.0` @ `5b606c5`, published live — see §1/§7). The post-GA **IR-eval / IR-C track**
 > ran to its conclusion on this board's watch: corpus reproduced + frozen

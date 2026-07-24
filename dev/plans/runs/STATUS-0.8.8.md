@@ -1,5 +1,7 @@
 # 0.8.8 — status (Observability & telemetry)
 
+> **CLOSED — historical record, archived in place.** **0.8.8** (no independently-verified ship date found in this doc); current state: `dev/plans/runs/STATUS-0.8.20.md` (live release board) + `dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md` (the master schedule-of-record).
+
 > Live state for the 0.8.8 release. Plan → `dev/plans/plan-0.8.8.md`.
 > Theme: make retrieval *legible* (EXP-OBS `explain` surface + telemetry/real-gold capture).
 > Carries an OOB security drop-in: the **pyo3 0.24.1 → 0.29.0** bump (RUSTSEC-2026-0176/0177)

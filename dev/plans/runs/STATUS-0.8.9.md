@@ -1,5 +1,7 @@
 # STATUS — 0.8.9 (CI integrity micro, OUT-OF-BAND) · live board
 
+> **CLOSED — historical record, archived in place.** **0.8.9** shipped 2026-06-28; current state: `dev/plans/runs/STATUS-0.8.20.md` (live release board) + `dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md` (the master schedule-of-record).
+
 > Plan: `dev/plans/plan-0.8.9.md`. Footprint: **$0** — CI/test-harness only; no library
 > query-path change, no priced runs. Verify-from-git discipline throughout.
 > Opened: 2026-06-27 (`/goal complete 0.8.9`, orchestrator session).

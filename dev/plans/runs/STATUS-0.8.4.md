@@ -1,5 +1,7 @@
 # 0.8.4 — running $ ledger + status (GraphRAG-parity resolution)
 
+> **CLOSED — historical record, archived in place.** **0.8.4** (no independently-verified ship date found in this doc); current state: `dev/plans/runs/STATUS-0.8.20.md` (live release board) + `dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md` (the master schedule-of-record).
+
 ## CURRENT STATE (2026-06-25) — supersedes earlier "GraphRAG wins" entries below
 
 The sensemaking axis resolved via the **Tier** path (almost-graph-free), not the original Leiden-S1 ladder.
