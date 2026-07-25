@@ -113,6 +113,13 @@ run_capped test-check-release-state-views bash scripts/tests/test_check_release_
 # worktrees dir as a child, and hardcoding the release each redden their own arm.
 run_capped test-steward-orient bash scripts/tests/test_steward_orient.sh
 
+# T3b: recurrence guard for the generated commission manifest — the arms that
+# carry the weight are "a cited path does not exist" and "zero citations
+# emitted" (TC-37), both of which must HARD-fail rather than emit a brief with a
+# dead pointer in it. Also asserts the real 0.8.20 Slice-20 manifest still
+# resolves end to end. RED fixtures built inline under mktemp -d.
+run_capped test-commission-manifest bash scripts/tests/test_commission_manifest.sh
+
 # Markdown generators (shell): context-clarity.sh / memory-clarity.sh emit
 # gate-compliant markdown. Their output trees (and the dev/plans/runs/** reports
 # from the Python generators) are markdownlint-ignored, so the normal md gate never
