@@ -62,6 +62,13 @@
 #   headings/symbols, never `file:line` (T1d RULE 1), and each is verified by
 #   literal match inside the file it names (T1d RULE 2). Swapping an unverified
 #   NUMBER for an unverified SYMBOL would just launder a bad pointer.
+# CHECK 3 — THE BASE SHA IS THE TARGET SLICE'S PREDECESSOR, never `max(landed)`.
+#   For any slice that is not the next one, the newest landed slice can BE the
+#   target (or later), and a manifest that says "branch from here" while naming
+#   the target's own merge is the agent-worktree-stale-base trap in printed
+#   form. §2 takes the greatest landed slice STRICTLY BELOW the target, marks a
+#   regeneration of an already-landed slice as HISTORICAL, and says plainly
+#   when no predecessor exists rather than emitting a blank or a wrong SHA.
 # GUARD — TC-37 VACUOUS PASS (this repo's named failure class). Zero design
 #   citations for the slice, zero citations overall, zero paths verified, or a
 #   sweep that discovers zero state files: all HARD failures. A manifest that is
@@ -382,18 +389,63 @@ def build(release, state_path, state, slice_no, entry):
     m.out()
 
     # ---- 2. BASE SHA (LBO "Branch from tip"; SLICE-TEMPLATE §0) ------------
+    # The base is the TARGET SLICE'S PREDECESSOR: the greatest LANDED slice
+    # STRICTLY BELOW slice_no. It is NOT max(landed). For any slice that is not
+    # the next one — a historical regeneration, an out-of-order brief — max()
+    # can select the target's OWN landing merge or a later one, i.e. tell an
+    # operator to branch from the very work they are being commissioned to do.
+    # A wrong branch point is this repo's named agent-worktree-stale-base trap
+    # (it has already cost two slices), and a confidently printed wrong SHA is
+    # exactly what defeats the human sanity check, so this is computed
+    # relative to the target and never to the tip of `landed`.
+    #
+    # `depends_on` is deliberately NOT the base. Dependencies state the MINIMUM
+    # ancestry a slice needs; branching from that minimum would silently drop
+    # every slice landed since — the same stale-base trap from the other side.
+    # The predecessor is the ancestry-maximal choice that still excludes the
+    # target itself, so dependencies are CROSS-CHECKED against it instead.
     m.out("## 2. BASE SHA + BRANCH POINT   [LBO 'Branch from tip'; SLICE-TEMPLATE §0]")
-    base_slice = max(landed) if landed else None
+    landed_nums = sorted({s for s in landed if isinstance(s, int)})
+    prior_landed = [s for s in landed_nums if s < slice_no]
+    later_landed = [s for s in landed_nums if s > slice_no]
+    base_slice = max(prior_landed) if prior_landed else None
     base_sha = (ladder.get(base_slice) or {}).get("sha") if base_slice is not None else None
+    if slice_no in landed_nums:
+        m.out("  ⚠ HISTORICAL     Slice %s is ITSELF LANDED (%s), so this is a regeneration:"
+              % (slice_no, (ladder.get(slice_no) or {}).get("sha") or "no sha recorded"))
+        m.out("                   the base below is that slice's PREDECESSOR, never its own merge.")
     if base_sha:
-        m.out("  base sha         %s  (Slice %s, the newest LANDED slice's landing merge)"
-              % (base_sha, base_slice))
+        m.out("  base sha         %s  (Slice %s — the newest LANDED slice STRICTLY BEFORE Slice %s)"
+              % (base_sha, base_slice, slice_no))
+    elif base_slice is not None:
+        m.out("  base sha         (Slice %s is the predecessor but records NO landing sha)"
+              % base_slice)
+        m.out("                   The state file is incomplete: take the branch point from")
+        m.out("                   `git log` for that landing and record it in output.json. Do NOT guess.")
     else:
-        m.out("  base sha         (none recorded — no slice has landed yet)")
+        m.out("  base sha         (none — NO landed slice precedes Slice %s)" % slice_no)
+        m.out("                   This is the first slice of the release to be cut, so there is no")
+        m.out("                   predecessor merge: branch from `git rev-parse origin/main` at STEP 0.")
+        if later_landed:
+            m.out("  ⚠ TIP IS AHEAD   Slice(s) %s landed AFTER this one, so origin/main already"
+                  % ", ".join(str(s) for s in later_landed))
+            m.out("                   carries work Slice %s never had. Branch from the tip only if that"
+                  % slice_no)
+            m.out("                   is intended; otherwise recover the point of cut from `git log`.")
+    dep_gap = [d for d in (entry.get("depends_on") or [])
+               if (ladder.get(d) or {}).get("status") == "LANDED"
+               and (base_slice is None or d > base_slice)]
+    if dep_gap:
+        m.out("  ⚠ DEP NOT IN BASE dependency Slice(s) %s are LANDED but do NOT sit at or below the"
+              % ", ".join(str(d) for d in dep_gap))
+        m.out("                   base slice, so the base merge does not contain them. Re-derive the")
+        m.out("                   branch point from `git log` before cutting the worktree.")
     m.out("  re-verify        `git rev-parse origin/main` at STEP 0 — a later landing may have")
     m.out("                   advanced the tip since the state file was written.")
     m.out("  landed so far    %s" % (", ".join(
-        "%s (%s)" % (s, (ladder.get(s) or {}).get("sha") or "no sha") for s in landed) or "none"))
+        "%s (%s)%s" % (s, (ladder.get(s) or {}).get("sha") or "no sha",
+                       " ⚠ at/after Slice %s" % slice_no if isinstance(s, int) and s >= slice_no else "")
+        for s in landed) or "none"))
     m.out("  SCHEMA           %s — %s"
           % (state.get("schema_version"),
              m.cite(schema_src_path(state), "pub const SCHEMA_VERSION", "schema source")))

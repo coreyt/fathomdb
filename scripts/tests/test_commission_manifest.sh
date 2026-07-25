@@ -26,6 +26,18 @@
 # mutant turns arms 1/1b RED, which is the evidence that a green here is
 # load-bearing rather than a script that merely exits 0.
 #
+# SECOND PREDICATE (codex §9 [P2], arms 8e-8j): the emitted base SHA is the
+# TARGET SLICE'S PREDECESSOR — the greatest LANDED slice strictly below it —
+# never max(landed). Measured RED against the pre-fix generator: with Slice 10
+# in `landed`, the manifest for Slice 10 printed
+#   `base sha  dddd5555  (Slice 10, the newest LANDED slice's landing merge)`
+# i.e. branch from the very work you are being commissioned to do; and with a
+# later slice landed it printed Slice 30's merge as the base for Slice 10. That
+# is the agent-worktree-stale-base trap in printed form, and it becomes live the
+# moment 0.8.20 Slice 20 lands. These arms assert the base LINE specifically,
+# because every landing SHA also appears in the `landed so far` roll-up and a
+# whole-output grep therefore cannot distinguish a right base from a wrong one.
+#
 # Isolation: fixtures are throwaway git repos under mktemp -d (the generator
 # does `cd "$(git rev-parse --show-toplevel)"`, so each fixture must BE a repo).
 # Nothing here writes into the real checkout — arm 9 asserts that mechanically.
@@ -267,6 +279,27 @@ run_gen() {
   set -e
 }
 
+# Structural edits to the fixture's state file (landed set, ladder statuses,
+# landing SHAs) for the base-SHA arms. python3 is already a hard precondition of
+# the generator, so using it here adds no dependency; hand-rolled perl over JSON
+# would be the fragile choice. `s` is the parsed state, `L` maps slice -> entry.
+mutate_state() {
+  python3 -c "
+import json
+p = '$FIX/dev/plans/release-state-9.9.9.json'
+s = json.load(open(p))
+L = {e['slice']: e for e in s['ladder']}
+$1
+json.dump(s, open(p, 'w'), indent=2)
+"
+}
+
+# The `base sha` line as the operator reads it. Asserting on THIS line, not on
+# the whole manifest, is the point: every landing SHA also appears in the
+# `landed so far` roll-up, so a whole-output grep cannot tell a correct base
+# from a wrong one.
+base_line() { grep -m1 '^  base sha' <<<"$OUT" || true; }
+
 # --- Arm 0: the BASELINE fixture is GREEN and NON-EMPTY --------------------
 # Without this, every RED arm below could be passing for an unrelated reason.
 setup_fixture
@@ -502,6 +535,102 @@ else
   fail "arm 8e (zero state files): rc=$RC out=$OUT"
 fi
 
+# --- Arm 8e: THE TARGET SLICE IS ITSELF LANDED -> base is its PREDECESSOR ---
+# codex §9 [P2]. The base used to be max(landed), which for a slice that is not
+# the next one selects the target's OWN landing merge (or a later one) — a brief
+# telling an operator to branch from the very work being commissioned. This is
+# the fixture form of the live case: it arrives the moment 0.8.20 Slice 20 lands
+# and someone regenerates its manifest. Slice 10 is landed here; the base MUST
+# be Slice 5's merge (bbbb2222) and MUST NOT be Slice 10's own (dddd5555).
+setup_fixture
+mutate_state "L[10]['status'] = 'LANDED'; L[10]['sha'] = 'dddd5555'; s['landed'] = [0, 5, 10]; s['next_slice'] = 30"
+run_gen 9.9.9 10
+BASE_LINE="$(base_line)"
+if [ "$RC" -eq 0 ] && grep -q 'bbbb2222' <<<"$BASE_LINE" && ! grep -q 'dddd5555' <<<"$BASE_LINE"; then
+  pass "target slice already landed — the base is its PREDECESSOR, never its own landing merge"
+else
+  fail "arm 8e (predecessor base): rc=$RC base=[$BASE_LINE]"
+fi
+
+# --- Arm 8f: and the regeneration is LABELLED, not silently reinterpreted ----
+# The reader has to know they asked for a slice that is already in the past;
+# a correct base printed without that context still misleads.
+if grep -qi 'HISTORICAL' <<<"$OUT"; then
+  pass "an already-landed target is marked HISTORICAL rather than briefed as if pending"
+else
+  fail "arm 8f (historical marker): out=$OUT"
+fi
+
+# --- Arm 8g: LATER slices landed too -> still the IMMEDIATE predecessor ------
+# max(landed) here is Slice 30, two slices past the target. The base must not
+# drift forward just because the release moved on.
+setup_fixture
+mutate_state "L[10]['status'] = 'LANDED'; L[10]['sha'] = 'dddd5555'
+L[30]['status'] = 'LANDED'; L[30]['sha'] = 'eeee6666'
+s['landed'] = [0, 5, 10, 30]; s['next_slice'] = None"
+run_gen 9.9.9 10
+BASE_LINE="$(base_line)"
+if [ "$RC" -eq 0 ] && grep -q 'bbbb2222' <<<"$BASE_LINE" \
+   && ! grep -q 'dddd5555' <<<"$BASE_LINE" && ! grep -q 'eeee6666' <<<"$BASE_LINE"; then
+  pass "later slices landed — the base stays the target's immediate predecessor"
+else
+  fail "arm 8g (no forward drift): rc=$RC base=[$BASE_LINE]"
+fi
+
+# --- Arm 8h: THE FIRST SLICE — nothing precedes it --------------------------
+# Documented behaviour: there is no predecessor merge, so the manifest says so
+# in words and sends the operator to `git rev-parse origin/main`. It must never
+# print an empty base, and it must never borrow a later slice's SHA.
+setup_fixture
+printf -- '---\nstatus: ACTIVE\n---\n\n# Slice 0 memo\n' >"$FIX/dev/design/9.9.9-slice-0-design.md"
+mutate_state "L[0]['status'] = 'UNBLOCKED'; L[0]['sha'] = None
+L[5]['status'] = 'NOT_STARTED'; L[5]['sha'] = None
+s['landed'] = []; s['next_slice'] = 0"
+run_gen 9.9.9 0
+BASE_LINE="$(base_line)"
+BASE_BLOCK="$(grep -m1 -A3 '^  base sha' <<<"$OUT" || true)"
+if [ "$RC" -eq 0 ] && grep -qi 'no landed slice precedes' <<<"$BASE_LINE" \
+   && ! grep -qE '[0-9a-f]{8}' <<<"$BASE_LINE" \
+   && grep -qi 'first slice' <<<"$BASE_BLOCK" && grep -q 'origin/main' <<<"$BASE_BLOCK"; then
+  pass "first slice — no predecessor is stated in words + branch-from-tip, not left blank"
+else
+  fail "arm 8h (first slice): rc=$RC base=[$BASE_LINE] block=[$BASE_BLOCK]"
+fi
+
+# --- Arm 8i: first slice, but LATER slices have landed -> the tip is AHEAD ---
+# Regenerating a historical first-slice brief: branching from the tip would pick
+# up work that slice never had, so the manifest has to say the tip has moved on
+# instead of implying the tip IS the point of cut.
+setup_fixture
+printf -- '---\nstatus: ACTIVE\n---\n\n# Slice 0 memo\n' >"$FIX/dev/design/9.9.9-slice-0-design.md"
+mutate_state "L[0]['status'] = 'UNBLOCKED'; L[0]['sha'] = None
+s['landed'] = [5]; s['next_slice'] = 0"
+run_gen 9.9.9 0
+BASE_LINE="$(base_line)"
+if [ "$RC" -eq 0 ] && ! grep -qE '[0-9a-f]{8}' <<<"$BASE_LINE" \
+   && grep -q 'TIP IS AHEAD' <<<"$OUT" && grep -q 'bbbb2222' <<<"$OUT"; then
+  pass "no predecessor but later landings exist — the manifest warns the tip is AHEAD"
+else
+  fail "arm 8i (tip ahead): rc=$RC base=[$BASE_LINE] out=$OUT"
+fi
+
+# --- Arm 8j: GAPS in `landed` -> the greatest landed slice BELOW the target --
+# Slice 5 never landed; the predecessor is Slice 10, not "the target minus one"
+# and not the oldest landing.
+setup_fixture
+printf -- '---\nstatus: ACTIVE\n---\n\n# Slice 30 memo\n' >"$FIX/dev/design/9.9.9-slice-30-design.md"
+mutate_state "L[5]['status'] = 'NOT_STARTED'; L[5]['sha'] = None
+L[10]['status'] = 'LANDED'; L[10]['sha'] = 'dddd5555'
+s['landed'] = [0, 10]; s['next_slice'] = 30"
+run_gen 9.9.9 30
+BASE_LINE="$(base_line)"
+if [ "$RC" -eq 0 ] && grep -q 'dddd5555' <<<"$BASE_LINE" \
+   && ! grep -q 'aaaa1111' <<<"$BASE_LINE" && ! grep -q 'bbbb2222' <<<"$BASE_LINE"; then
+  pass "gaps in \`landed\` — the base is the greatest landed slice strictly below the target"
+else
+  fail "arm 8j (gapped landed): rc=$RC base=[$BASE_LINE]"
+fi
+
 # --- Arm 9: the REAL repo — Slice 20 of 0.8.20 (the acceptance criterion) --
 # Every emitted path must resolve. This is the regression half of the pair and
 # the tranche's stated bar.
@@ -520,6 +649,19 @@ if ! grep -qE '`[A-Za-z_][A-Za-z0-9_.+-]*:[0-9]{3,}(-[0-9]+)?\+?`' <<<"$REAL_OUT
   pass "the real manifest emits section anchors only — no \`name:line\` pointers"
 else
   fail "arm 9b (real line-anchor ban): the manifest emitted a bare line anchor"
+fi
+
+# --- Arm 9d: the real repo's base SHA is Slice 15's merge, on the LINE ------
+# The live regression half of the predecessor fix. Slice 20 is not yet landed,
+# so predecessor and max(landed) agree TODAY — asserting the base LINE (not the
+# whole manifest, where every landing SHA appears in the roll-up) is what keeps
+# this honest the day Slice 20 lands.
+REAL_BASE_LINE="$(grep -m1 '^  base sha' <<<"$REAL_OUT" || true)"
+if grep -q 'a2022957' <<<"$REAL_BASE_LINE" && grep -q 'Slice 15' <<<"$REAL_BASE_LINE" \
+   && ! grep -qi 'HISTORICAL' <<<"$REAL_OUT"; then
+  pass "real repo — Slice 20's base is Slice 15's landing merge (a2022957), on the base line"
+else
+  fail "arm 9d (real base line): base=[$REAL_BASE_LINE]"
 fi
 
 # --- Arm 9c: the real repo's every-release sweep is green ------------------
