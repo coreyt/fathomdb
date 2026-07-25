@@ -524,6 +524,29 @@ jobs:
       - name: Recurrence guard for the gate itself
         run: bash scripts/tests/test_design_status_frontmatter.sh
 
+  # DOC-HYGIENE-2 T3a — the stateless Steward cold-start briefing.
+  #
+  # Deliberately carries NO `if:` and NO `needs:`. The briefing reads DOCS (the
+  # live board, the release-state file, both ledgers, the hand-offs), and a
+  # docs-only push takes the `docs_only` fast path that skips the heavy `verify`
+  # job — i.e. the only job that would otherwise run this suite via agent-test.sh.
+  # A guard that cannot run on the push that breaks it is decorative, so this
+  # runs on every push. Cheap: shell + python3 stdlib, no build.
+  #
+  # `gh` is unauthenticated here, so the briefing's open-PR line degrades to its
+  # documented `unavailable (...)` marker — an exempt section by design, which is
+  # exactly why the exemption is written down in the script header.
+  steward-orient:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - name: Steward cold-start briefing + its fixture arms (DOC-HYGIENE-2 T3a)
+        run: bash scripts/tests/test_steward_orient.sh
+
   # mkdocs --strict is the broader CI gate beyond agent-verify (per AGENTS.md §3).
   # Intentionally NOT gated on docs_only: it must run for docs/** changes (the
   # fast path) AND alongside code changes, exactly as before.

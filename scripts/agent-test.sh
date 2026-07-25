@@ -104,6 +104,15 @@ run_capped test-lint-plan-anchors bash scripts/tests/test_lint_plan_anchors.sh
 # fixtures built inline under mktemp -d; also asserts the CI job is always-on.
 run_capped test-check-release-state-views bash scripts/tests/test_check_release_state_views.sh
 
+# T3a: recurrence guard for the stateless Steward cold-start briefing — the
+# <=4096-byte cap, "writes no file", the zero-result hard fail, the release being
+# derived from the LIVE BOARD FILENAME (not a hardcoded version), the SIBLING
+# <root>-worktrees/ resolution, and the board-CLOSED predicate being SHARED with
+# check-board-currency.sh. Mutation-proven four ways: neutering the zero-result
+# guard reddens 7 arms; narrowing the shared window to `head -n 5`, resolving the
+# worktrees dir as a child, and hardcoding the release each redden their own arm.
+run_capped test-steward-orient bash scripts/tests/test_steward_orient.sh
+
 # Markdown generators (shell): context-clarity.sh / memory-clarity.sh emit
 # gate-compliant markdown. Their output trees (and the dev/plans/runs/** reports
 # from the Python generators) are markdownlint-ignored, so the normal md gate never

@@ -10,7 +10,8 @@
 #
 # STALENESS PREDICATE (evidence-based; no network; O(commits) + O(boards), cheap):
 #   For every dev/plans/runs/STATUS-0.8.*.md file that is NOT already banner-
-#   marked "CLOSED — historical record" in its first 5 lines (i.e. the
+#   marked "CLOSED — historical record" in its first 15 lines (the shared
+#   predicate in scripts/lib/board-closed.sh; see there for why 15) (i.e. the
 #   currently-live release board(s) — closed boards are frozen, nothing lands
 #   into them again, so they are out of scope and never scanned):
 #     1. Parse the release version from the filename (STATUS-0.8.20.md -> 0.8.20).
@@ -71,6 +72,14 @@
 #             zero landing merges (vacuous-pass guard, fix-1).
 set -euo pipefail
 
+# The CLOSED-board predicate is SHARED with scripts/steward-orient.sh (which
+# selects the live board and derives the release from its filename) so the two
+# cannot drift apart on which release is current. Resolved from this script's
+# own directory BEFORE the cd below, so it works from any cwd.
+_CBC_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib"
+# shellcheck source=lib/board-closed.sh
+. "$_CBC_LIB_DIR/board-closed.sh"
+
 cd "$(git rev-parse --show-toplevel)"
 
 TIP="HEAD"
@@ -94,12 +103,9 @@ STALE=0
 shopt -s nullglob
 for board in "$BOARDS_DIR"/STATUS-0.8.*.md; do
   # Closed boards are self-labelled and frozen -- never scanned (see predicate
-  # above). Header window is 15 lines, not 5: a board with T3 YAML frontmatter
-  # (--- ... ---) pushes the banner line further down (measured: line 10 on
-  # STATUS-0.8.9.1.md, vs line 3 on every frontmatter-less closed board) --
-  # still a "header region" scan, not a whole-file grep that could incidentally
-  # match a live board's own prose describing a DIFFERENT closed board.
-  if head -n 15 "$board" | grep -qiE 'CLOSED — historical record'; then
+  # above). The 15-line header window (not 5) and its rationale live in
+  # scripts/lib/board-closed.sh, sourced above and shared with steward-orient.sh.
+  if board_is_closed "$board"; then
     continue
   fi
 
