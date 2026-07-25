@@ -1,0 +1,2431 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f9ac3-8f82-7361-b3e2-4bd59030dc37
+--------
+user
+changes against '21634a0719667c9aa6c184241a8593a02285a99f'
+exec
+/bin/bash -lc "cat MEMORY.md 2>/dev/null; printf '\\n--- feedback files ---\\n'; for f in feedback_*.md; do [ -e \""'$f" ] && { echo "--- $f ---"; cat "$f"; }; done' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ exited 1 in 0ms:
+
+--- feedback files ---
+
+exec
+/bin/bash -lc 'git diff --stat 21634a0719667c9aa6c184241a8593a02285a99f && git diff --name-only 21634a0719667c9aa6c184241a8593a02285a99f' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+ .github/workflows/ci.yml                        |  20 ++
+ dev/agent-tools/ledgerwatch/ledgerwatch.py      | 109 ++++++-
+ dev/agent-tools/ledgerwatch/test_ledgerwatch.py | 134 +++++++++
+ dev/todos-and-considerations-ledger-readme.md   |  38 +--
+ scripts/agent-test.sh                           |  19 ++
+ scripts/check-ledgers.sh                        | 255 +++++++++++++++++
+ scripts/preflight.sh                            |  41 +++
+ scripts/tests/test_check_board_currency.sh      |  10 +
+ scripts/tests/test_check_ledgers.sh             | 362 ++++++++++++++++++++++++
+ scripts/tests/test_preflight_landing.sh         |   9 +-
+ 10 files changed, 979 insertions(+), 18 deletions(-)
+.github/workflows/ci.yml
+dev/agent-tools/ledgerwatch/ledgerwatch.py
+dev/agent-tools/ledgerwatch/test_ledgerwatch.py
+dev/todos-and-considerations-ledger-readme.md
+scripts/agent-test.sh
+scripts/check-ledgers.sh
+scripts/preflight.sh
+scripts/tests/test_check_board_currency.sh
+scripts/tests/test_check_ledgers.sh
+scripts/tests/test_preflight_landing.sh
+
+exec
+/bin/bash -lc 'git diff 21634a0719667c9aa6c184241a8593a02285a99f -- .github/workflows/ci.yml dev/agent-tools/ledgerwatch/ledgerwatch.py scripts/check-ledgers.sh scripts/preflight.sh scripts/agent-test.sh' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 94b60fb1..3db00440 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -415,6 +415,26 @@ jobs:
+       - name: Board/git-ancestry drift check (status-board-currency-enforcement item 3)
+         run: bash scripts/check-board-currency.sh --tip HEAD
+ 
++  # DOC-HYGIENE-2 T1b — the always-on ledger-integrity backstop.
++  # `preflight.sh --landing` is the PREVENT gate at land time; this job is the
++  # DETECT gate for whatever slips it. Reuses scripts/check-ledgers.sh — the
++  # SAME script preflight calls — so the two homes cannot diverge (see that
++  # script's header for the predicate: sidecar == max(seq), and seq contiguous).
++  #
++  # Deliberately carries NO `if:` condition. A docs_only-gated job never fires on
++  # a code push, and the measured incident (steward-ledger.jsonl.seq frozen at 80
++  # against max(seq) 98 for 19 commits / four days) spanned both docs and code
++  # pushes; the sidecar is tracked, so any clone taken in that window would have
++  # minted colliding seq numbers. Default (depth-1) checkout is sufficient: the
++  # predicate reads working-tree files only and walks no history.
++  ledger-integrity:
++    runs-on: ubuntu-latest
++    timeout-minutes: 5
++    steps:
++      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
++      - name: Ledger sidecar/seq integrity (DOC-HYGIENE-2 T1b)
++        run: bash scripts/check-ledgers.sh
++
+   # mkdocs --strict is the broader CI gate beyond agent-verify (per AGENTS.md §3).
+   # Intentionally NOT gated on docs_only: it must run for docs/** changes (the
+   # fast path) AND alongside code changes, exactly as before.
+diff --git a/dev/agent-tools/ledgerwatch/ledgerwatch.py b/dev/agent-tools/ledgerwatch/ledgerwatch.py
+index 79670a11..2ba8473a 100755
+--- a/dev/agent-tools/ledgerwatch/ledgerwatch.py
++++ b/dev/agent-tools/ledgerwatch/ledgerwatch.py
+@@ -30,10 +30,21 @@ even when --select would otherwise silently drop it). --validate runs a full-fil
+ JSONL integrity scan instead (0 clean / 3 corrupt / 2 error; no delta, no cursor
+ advance).
+ 
++--project folds an event-sourced ledger to its LATEST entry per `id` (the file
++is the event log; the fold is the state). Entries with no `id` are NOT an error
++— they are counted into an explicit, always-printed `unfoldable (no id): N`
++bucket. That bucket is the whole point: the recipe this mode replaces did
++`latest[r["id"]] = r` and died with KeyError on the first id-less entry, which
++is every entry of dev/steward/steward-ledger.jsonl. Like --prune and --validate
++it is a standalone READ/REPORT mode: it never writes the ledger and never reads
++or advances the cursor, so running a projection cannot silently consume the
++delta a later watch run is waiting for.
++
+ Flags: --json (structured envelope), --dry-run (compute delta without advancing
+ the cursor), --reset (discard cursor first), --select (tail field filter),
+ --strategy (override), --no-status (see below), --prune (drop cursors whose
+-source file is gone; takes no file argument), --validate (full-file JSONL scan).
++source file is gone; takes no file argument), --validate (full-file JSONL scan),
++--project (fold-to-latest-per-id projection).
+ 
+ Exit status is grep-style by default, so a poller can branch on it without
+ capturing stdout:
+@@ -402,6 +413,88 @@ def do_validate(path: str, as_json: bool, out, err) -> int:
+     return 0 if clean else 3
+ 
+ 
++def do_project(path: str, as_json: bool, out, err) -> int:
++    """Fold an event-sourced JSONL ledger to its latest entry per `id`.
++
++    These ledgers are event logs: an item's current state is the LAST entry
++    carrying its `id`, and every earlier entry for that id is history. This mode
++    computes that fold. Last occurrence in FILE order wins — the files are
++    append-ordered (and `check-ledgers.sh` gates that their seq runs are
++    contiguous), so file order is append order.
++
++    Entries with no usable `id` are a first-class, expected case, not an error:
++    dev/steward/steward-ledger.jsonl is a decision trail whose 107/107 entries
++    carry no `id` at all. They are counted into the `unfoldable (no id): N`
++    bucket, which is printed on EVERY run (including when it is 0) so a caller
++    can never mistake "nothing to fold" for "everything folded". A line that is
++    not valid JSON, or is valid JSON but not an object, goes to a separate
++    `malformed` bucket (use --validate for the line-by-line integrity report).
++
++    Read/report only: never writes the ledger, and — like --prune/--validate —
++    never touches the cursor state directory, so a projection cannot surprise a
++    caller by consuming the delta their next watch run is waiting for.
++
++    Text mode prints one compact JSON object per folded id on stdout, sorted
++    lexicographically by id; --json prints a single envelope. Exit codes are NOT
++    grep-style here (there is no "no change" notion for a projection):
++    0 = projection emitted (even if it is empty), 2 = read error.
++    """
++    try:
++        data = read_bytes(path)
++    except OSError as exc:
++        print(f"ledgerwatch: cannot read {path}: {exc}", file=err)
++        return 2
++
++    text = data.decode("utf-8", errors="replace")
++    latest: dict[str, dict] = {}
++    entries = 0
++    no_id = 0
++    malformed = 0
++
++    for raw in text.split("\n"):
++        if raw.strip() == "":
++            continue  # blank lines are not entries
++        entries += 1
++        try:
++            obj = json.loads(raw)
++        except Exception:
++            malformed += 1
++            continue
++        if not isinstance(obj, dict):
++            malformed += 1
++            continue
++        ident = obj.get("id")
++        if ident is None or str(ident) == "":
++            no_id += 1
++            continue
++        latest[str(ident)] = obj  # last write wins (file order == append order)
++
++    rows = [latest[key] for key in sorted(latest)]
++
++    if as_json:
++        envelope = {
++            "file": path,
++            "mode": "project",
++            "entries": entries,
++            "folded_ids": len(rows),
++            "unfoldable_no_id": no_id,
++            "malformed": malformed,
++            "latest": rows,
++        }
++        out.write(json.dumps(envelope) + "\n")
++    else:
++        for row in rows:
++            out.write(json.dumps(row, sort_keys=True) + "\n")
++
++    print(
++        f"ledgerwatch: --project {path}: {len(rows)} id(s) folded "
++        f"from {entries} entries; unfoldable (no id): {no_id}; "
++        f"malformed: {malformed}",
++        file=err,
++    )
++    return 0
++
++
+ # --- driver -----------------------------------------------------------------
+ 
+ 
+@@ -443,6 +536,14 @@ def run(argv, out=sys.stdout, err=sys.stderr) -> int:
+         help="JSONL integrity scan of the whole file (0 clean / 3 corrupt / 2 error); "
+         "no delta, no cursor advance",
+     )
++    parser.add_argument(
++        "--project",
++        action="store_true",
++        help="fold the ledger to its latest entry per id; entries with no id are "
++        "reported in an 'unfoldable (no id): N' bucket, never fatal. Read-only: "
++        "does NOT write the ledger and does NOT advance the cursor "
++        "(0 = projection emitted / 2 = read error)",
++    )
+     args = parser.parse_args(argv)
+ 
+     if args.prune:
+@@ -462,6 +563,12 @@ def run(argv, out=sys.stdout, err=sys.stderr) -> int:
+         # does not compute a delta or advance the cursor.
+         return do_validate(abspath, args.json, out, err)
+ 
++    # Fold-to-latest-per-id projection. Dispatched HERE, before the state dir is
++    # created below, so --project provably cannot create, read or advance a
++    # cursor (see do_project's docstring for why that is the safe choice).
++    if args.project:
++        return do_project(abspath, args.json, out, err)
++
+     try:
+         select = parse_select(args.select)
+     except ValueError as exc:
+diff --git a/scripts/agent-test.sh b/scripts/agent-test.sh
+index de3658df..d76fc43b 100755
+--- a/scripts/agent-test.sh
++++ b/scripts/agent-test.sh
+@@ -24,6 +24,13 @@ run_capped test-preflight-landing bash scripts/tests/test_preflight_landing.sh
+ # never git-writes into this checkout.
+ run_capped test-check-board-currency bash scripts/tests/test_check_board_currency.sh
+ 
++# Scripts (bash): DOC-HYGIENE-2 T1b — the shared scripts/check-ledgers.sh
++# predicate (sidecar == max(seq); seq contiguous), its --landing wiring in
++# preflight.sh, and a static assertion that its CI job is always-on. Fixture
++# roots are plain dirs under mktemp -d (plus throwaway git repos for the
++# preflight arms); no real .jsonl / .jsonl.seq is ever touched.
++run_capped test-check-ledgers bash scripts/tests/test_check_ledgers.sh
++
+ # Scripts (bash): sibling-package co-tagging assert (AC-052). Offline via
+ # python3 -m http.server fixture; never hits crates.io.
+ run_capped test-assert-co-tagging bash scripts/tests/test_assert_co_tagging.sh
+@@ -133,6 +140,18 @@ else
+   skip_notice test-python "pytest not installed or no tests dir"
+ fi
+ 
++# ledgerwatch (dev/agent-tools): pure-stdlib pytest suite, no fathomdb binding
++# needed, so it runs under whichever interpreter was resolved above without the
++# maturin-rebuild dance. Wired in by DOC-HYGIENE-2 T1b — the suite existed but
++# no harness ran it, so its --project arms (fold-to-latest-per-id, and the
++# "unfoldable (no id)" bucket that the deleted readme recipe crashed on) would
++# otherwise never have been exercised in CI.
++if [ -n "$python_bin" ] && "$python_bin" -c 'import pytest' >/dev/null 2>&1; then
++  run_capped test-ledgerwatch "$python_bin" -m pytest -q dev/agent-tools/ledgerwatch
++else
++  skip_notice test-ledgerwatch "pytest not installed"
++fi
++
+ # TypeScript
+ if [ -d src/ts/node_modules ]; then
+   run_capped test-ts bash -c 'cd src/ts && npm test --silent'
+diff --git a/scripts/check-ledgers.sh b/scripts/check-ledgers.sh
+new file mode 100755
+index 00000000..99367b3b
+--- /dev/null
++++ b/scripts/check-ledgers.sh
+@@ -0,0 +1,255 @@
++#!/usr/bin/env bash
++# check-ledgers.sh — ledger integrity gate (sidecar agreement + seq contiguity).
++#
++# Shared by two callers (DOC-HYGIENE-2 T1b), exactly like its sibling
++# scripts/check-board-currency.sh:
++#   * scripts/preflight.sh --landing        (PREVENT, land-time gate)
++#   * .github/workflows/ci.yml ledger-integrity job
++#                                           (DETECT, always-on CI backstop)
++# Reuse, not reimplementation: both callers invoke THIS script so the predicate
++# cannot diverge between the two homes.
++#
++# THE MEASURED FAILURE THIS CLOSES
++#   19 consecutive commits (f22e4947 -> 3264114a, four days) shipped
++#   `dev/steward/steward-ledger.jsonl.seq` frozen at 80 while max(seq) inside
++#   the ledger had already reached 98. The sidecar is a TRACKED file and is the
++#   only thing an appender reads to pick the next seq, so any clone taken in
++#   that window would have minted 81, 82, ... — colliding with 18 entries that
++#   already existed. Nothing in the repo checked that the sidecar agreed with
++#   the file it summarizes.
++#
++# PREDICATE — EXACTLY TWO CHECKS, per discovered ledger. This is deliberate and
++# is not a starting point to grow: the two below are the ones with a measured
++# failure behind them and a mechanical, vocabulary-free answer.
++#   (a) SIDECAR AGREEMENT: the integer in <ledger>.jsonl.seq equals max(seq)
++#       over the entries in <ledger>.jsonl.
++#   (b) CONTIGUITY: the seq values have no gaps and no duplicates.
++# Explicitly NOT checked (each was considered and ruled out): a status
++# vocabulary; a --summary length cap; an `id` field requirement (the steward
++# ledger is a decision trail — 107/107 entries carry no `id`, so demanding one
++# would fail every entry); and the ORDER seqs appear in the file (that would be
++# a third check — (b) is stated over the multiset, not the file order).
++#   Note (b) deliberately does NOT require min(seq)==1: a ledger whose head was
++# ever archived legitimately starts above 1, and pinning the floor would be a
++# third check with no measured failure behind it.
++#
++# SCOPE / DISCOVERY: every `*.jsonl.seq` sidecar found under the root, with
++# .git/, node_modules/, target/ and .venv/ pruned. Discovery is driven by the
++# SIDECAR, never by a hardcoded list, so a ledger added tomorrow is covered the
++# day it gets a sidecar — and a sidecar-less `*.jsonl` (dev/experiments/** run
++# output, test fixtures, golden corpora) is out of scope by construction.
++# Three ledgers qualify today:
++#   dev/steward/steward-ledger.jsonl
++#   dev/todos-and-considerations-ledger.jsonl
++#   dev/design/record-lifecycle-protocol/OPP-12-sub-ledger.jsonl
++#
++# VACUOUS-PASS GUARD (TC-37, this repo's named failure class — the same shape as
++# check-board-currency.sh's fix-1 guard): if discovery finds ZERO sidecars, the
++# per-ledger loop body never runs and the gate would pass green having vouched
++# for nothing. A gate that silently checks nothing is worse than no gate: it is
++# an active false assurance. Zero discovered ledgers is therefore a HARD
++# failure, never exit 0. This can only convert a silent pass into a loud
++# failure; it never fires once >=1 ledger is discovered.
++#
++# DETERMINISTIC EDGE-CASE HANDLING (documented so it is a contract, not an
++# accident of implementation):
++#   blank / whitespace-only line  -> IGNORED (never written by a well-behaved
++#       appender, harmless if present; mirrors ledgerwatch --validate).
++#   line that is not valid JSON   -> HARD fail naming <file>:<line>. The seq set
++#       cannot be trusted past a torn line, so skipping it would be a vacuous
++#       pass over the rest of the file.
++#   entry with no integer `seq`   -> HARD fail naming <file>:<line> (same
++#       reason; `true`/`false` are not integers here).
++#   EMPTY ledger (zero entries)   -> max(seq) is defined as 0, so the sidecar
++#       must read 0; any other value is an unbacked high-water mark and HARD
++#       fails. Contiguity is vacuously satisfied over zero entries — note this
++#       is NOT the vacuous-pass hole, which is about zero LEDGERS, not zero
++#       entries: the sidecar's existence is what puts the file in scope.
++#   sidecar not a non-negative integer (blank, "eighty", multi-line) -> HARD
++#       fail. A trailing newline IS tolerated (the three real sidecars have
++#       none, but an editor may add one).
++#   sidecar with no .jsonl beside it -> HARD fail (dangling sidecar).
++#
++# Usage:
++#   scripts/check-ledgers.sh [--root <dir>]
++#
++# --root exists so the test fixtures can be plain directories rather than
++# throwaway git repos; without it the script operates on the enclosing repo's
++# toplevel, exactly as both real callers invoke it.
++#
++# Requires python3 for JSON parsing. If it is absent this script exits 2 (env
++# error) LOUDLY rather than skipping — a skip here would be the TC-37 hole.
++#
++# Exit codes: 0 = every discovered ledger satisfies (a) and (b);
++#             1 = at least one integrity failure, OR zero ledgers discovered
++#                 (vacuous-pass guard); 2 = usage/environment error.
++set -euo pipefail
++
++ROOT=""
++
++while [ $# -gt 0 ]; do
++  case "$1" in
++    --root) ROOT="${2:?--root needs a dir}"; shift 2 ;;
++    *) printf 'check-ledgers: unknown arg %q\n' "$1" >&2; exit 2 ;;
++  esac
++done
++
++if [ -n "$ROOT" ]; then
++  if [ ! -d "$ROOT" ]; then
++    printf 'check-ledgers: --root %q is not a directory\n' "$ROOT" >&2
++    exit 2
++  fi
++  cd "$ROOT"
++else
++  if ! TOPLEVEL="$(git rev-parse --show-toplevel 2>/dev/null)"; then
++    printf 'check-ledgers: not inside a git repository (and no --root given)\n' >&2
++    exit 2
++  fi
++  cd "$TOPLEVEL"
++fi
++
++if ! command -v python3 >/dev/null 2>&1; then
++  printf 'check-ledgers: python3 is required to parse the ledgers and is not on PATH — refusing to report a pass it did not verify\n' >&2
++  exit 2
++fi
++
++# Discovery. `-print | sort` rather than `-print0 | sort -z` because `sort -z`
++# is GNU-only and this repo's scripts run on macOS too; ledger paths never
++# contain newlines (a path that did would be pathological, and `read -r` with a
++# cleared IFS still handles every other whitespace character).
++SIDECARS=()
++while IFS= read -r s; do
++  [ -n "$s" ] || continue
++  SIDECARS+=("${s#./}")
++done < <(
++  find . \
++    \( -name .git -o -name node_modules -o -name target -o -name .venv \) -prune -o \
++    -name '*.jsonl.seq' -type f -print | LC_ALL=C sort
++)
++
++if [ "${#SIDECARS[@]}" -eq 0 ]; then
++  printf 'BROKEN  discovery found no *.jsonl.seq ledger sidecars under %s — this gate cannot vouch for anything, so it fails loudly instead of reporting a vacuous ok (TC-37)\n' \
++    "$(pwd)" >&2
++  exit 1
++fi
++
++# The two checks. One python3 pass over all discovered ledgers, so the JSON is
++# genuinely parsed rather than regex-scraped for `"seq"`.
++set +e
++python3 - "${SIDECARS[@]}" >&2 <<'PY'
++import json
++import os
++import sys
++
++CAP = 5  # per-ledger cap on enumerated bad lines / gaps / duplicates
++failed = False
++
++
++def broken(msg):
++    global failed
++    failed = True
++    print("BROKEN  " + msg)
++
++
++for sidecar in sys.argv[1:]:
++    ledger = sidecar[: -len(".seq")]
++
++    # --- sidecar must be a single non-negative integer -----------------------
++    try:
++        with open(sidecar, "r", encoding="utf-8") as fh:
++            raw = fh.read()
++    except OSError as exc:
++        broken(f"{sidecar}: cannot read sidecar: {exc}")
++        continue
++    text = raw.strip()
++    if not text.isdigit():
++        broken(
++            f"{sidecar}: sidecar is not a non-negative integer (read {raw!r}) — "
++            "the next seq cannot be minted from it"
++        )
++        continue
++    claimed = int(text)
++
++    # --- the ledger must exist beside its sidecar ----------------------------
++    if not os.path.isfile(ledger):
++        broken(f"{sidecar}: dangling sidecar — no {os.path.basename(ledger)} beside it")
++        continue
++
++    # --- parse entries -------------------------------------------------------
++    seqs = []
++    bad_lines = []
++    with open(ledger, "r", encoding="utf-8", errors="replace") as fh:
++        for lineno, line in enumerate(fh, 1):
++            if not line.strip():
++                continue  # blank / whitespace-only: ignored, by contract
++            try:
++                obj = json.loads(line)
++            except Exception as exc:
++                bad_lines.append((lineno, f"not valid JSON: {exc}"))
++                continue
++            if not isinstance(obj, dict):
++                bad_lines.append((lineno, "entry is not a JSON object"))
++                continue
++            val = obj.get("seq")
++            if isinstance(val, bool) or not isinstance(val, int):
++                bad_lines.append((lineno, 'entry has no integer "seq" field'))
++                continue
++            seqs.append(val)
++
++    if bad_lines:
++        for lineno, why in bad_lines[:CAP]:
++            broken(f"{ledger}:{lineno}: {why}")
++        if len(bad_lines) > CAP:
++            broken(f"{ledger}: ...and {len(bad_lines) - CAP} more unparseable line(s)")
++        # The seq set is untrustworthy past a torn line, so (a) and (b) are not
++        # evaluated for this ledger — it is already a HARD failure.
++        continue
++
++    # --- check (a): sidecar agreement ---------------------------------------
++    observed_max = max(seqs) if seqs else 0
++    agrees = claimed == observed_max
++    if not agrees:
++        broken(
++            f"{sidecar}: sidecar says {claimed} but max(seq) is {observed_max} "
++            f"in {ledger} ({len(seqs)} entr{'y' if len(seqs) == 1 else 'ies'}) — "
++            "an appender trusting this sidecar would mint colliding seq numbers"
++        )
++
++    # --- check (b): contiguity (no gaps, no duplicates) ----------------------
++    if not seqs:
++        if agrees:
++            print(f"ok    {ledger}: empty ledger, sidecar reads 0 (consistent)")
++        continue
++
++    counts = {}
++    for v in seqs:
++        counts[v] = counts.get(v, 0) + 1
++    dups = sorted(v for v, n in counts.items() if n > 1)
++    if dups:
++        shown = ", ".join(f"{v} (appears {counts[v]}x)" for v in dups[:CAP])
++        more = f" ...and {len(dups) - CAP} more" if len(dups) > CAP else ""
++        broken(f"{ledger}: seq is not contiguous — duplicate seq: {shown}{more}")
++    lo, hi = min(seqs), max(seqs)
++    missing = sorted(set(range(lo, hi + 1)) - set(counts))
++    if missing:
++        shown = ", ".join(str(v) for v in missing[:CAP])
++        more = f" ...and {len(missing) - CAP} more" if len(missing) > CAP else ""
++        broken(f"{ledger}: seq is not contiguous — missing seq: {shown}{more}")
++
++    if agrees and not dups and not missing:
++        print(
++            f"ok    {ledger}: seq {lo}..{hi} contiguous ({len(seqs)} entries), "
++            "sidecar agrees"
++        )
++
++sys.exit(1 if failed else 0)
++PY
++RC=$?
++set -e
++
++if [ "$RC" -eq 0 ]; then
++  printf 'ok    ledgers: %d checked, sidecars agree with max(seq) and every seq run is contiguous\n' \
++    "${#SIDECARS[@]}" >&2
++fi
++
++exit "$RC"
+diff --git a/scripts/preflight.sh b/scripts/preflight.sh
+index aaee5e10..0bebb48b 100755
+--- a/scripts/preflight.sh
++++ b/scripts/preflight.sh
+@@ -194,6 +194,47 @@ if [ "$LANDING" -eq 1 ]; then
+   fi
+ fi
+ 
++# --- 8. Ledger-integrity gate (DOC-HYGIENE-2 T1b) --------------------------------
++# Refuse a land that would ship a `*.jsonl.seq` sidecar disagreeing with its
++# ledger. The incident: 19 consecutive commits (f22e4947 -> 3264114a, four days)
++# shipped dev/steward/steward-ledger.jsonl.seq frozen at 80 while max(seq) in
++# the ledger had reached 98. The sidecar is TRACKED and is the only thing an
++# appender reads to pick the next seq, so every clone taken in that window would
++# have minted colliding seq numbers.
++#
++# The predicate lives in scripts/check-ledgers.sh (see that file's header for
++# the full statement — exactly two checks: sidecar == max(seq), and seq
++# contiguous) so preflight and the always-on CI job share ONE implementation and
++# cannot diverge, exactly as §7 does for board-currency.
++#
++# --landing-only, mirroring §7's structure. The ledger invariant is in fact true
++# at all times (unlike a board, which legitimately reads "in flight" mid-build),
++# so an unconditional run would also be sound; it is kept behind --landing so
++# preflight's non-landing path stays exactly as lean as it was, and the CI job —
++# which is deliberately NOT docs_only-gated — is what covers every non-landing
++# push.
++if [ "$LANDING" -eq 1 ]; then
++  LEDGER_CHECK_OUT="$(bash "$SELF_DIR/check-ledgers.sh" 2>&1)" || LEDGER_CHECK_RC=$?
++  LEDGER_CHECK_RC="${LEDGER_CHECK_RC:-0}"
++  if [ "$LEDGER_CHECK_RC" -ne 0 ]; then
++    LEDGER_SAW_BROKEN=0
++    while IFS= read -r line; do
++      case "$line" in
++        BROKEN*) hard "ledger-integrity: $line"; LEDGER_SAW_BROKEN=1 ;;
++        *)       info "ledger-integrity: $line" ;;
++      esac
++    done <<<"$LEDGER_CHECK_OUT"
++    # Anti-fail-open: a non-zero rc with no BROKEN line means the checker itself
++    # could not run (exit 2 = usage/env, e.g. python3 absent) — that must still
++    # block the land, never degrade into INFO lines and a green summary.
++    if [ "$LEDGER_SAW_BROKEN" -eq 0 ]; then
++      hard "ledger-integrity: check-ledgers.sh exited $LEDGER_CHECK_RC without reporting a specific defect — refusing to certify this tree for landing"
++    fi
++  else
++    ok "ledger-integrity: every *.jsonl.seq sidecar agrees with its ledger and every seq run is contiguous"
++  fi
++fi
++
+ # --- Summary (JSON, last line) ---------------------------------------------------
+ json_arr() { local out="" x; for x in "$@"; do out="${out:+$out,}\"$(printf '%s' "$x" | sed 's/\\/\\\\/g; s/"/\\"/g')\""; done; printf '[%s]' "$out"; }
+ 
+
+exec
+/bin/bash -lc 'git diff 21634a0719667c9aa6c184241a8593a02285a99f -- dev/agent-tools/ledgerwatch/test_ledgerwatch.py scripts/tests/test_check_ledgers.sh scripts/tests/test_preflight_landing.sh scripts/tests/test_check_board_currency.sh dev/todos-and-considerations-ledger-readme.md' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+diff --git a/dev/agent-tools/ledgerwatch/test_ledgerwatch.py b/dev/agent-tools/ledgerwatch/test_ledgerwatch.py
+index 1f236481..706307db 100644
+--- a/dev/agent-tools/ledgerwatch/test_ledgerwatch.py
++++ b/dev/agent-tools/ledgerwatch/test_ledgerwatch.py
+@@ -693,3 +693,137 @@ def test_validate_json_envelope(tmp_path):
+ def test_validate_missing_file_exits_2(tmp_path):
+     rc, _, err = lw(tmp_path, str(tmp_path / "nope.jsonl"), "--validate")
+     assert rc == 2 and "no such file" in err
++
++
++# --------------------------------------------------------------------------
++# --project (fold-to-latest-per-id)
++#
++# RED-first: the recipe this mode replaces (dev/todos-and-considerations-ledger-
++# readme.md lines 222-237, deleted in the same commit) did
++# `latest[r["id"]] = r` and died with `KeyError: 'id'` on the first id-less
++# entry — reproduced against the real ledger before this mode existed. Every
++# arm below is therefore built around id-less entries being ROUTINE, not fatal.
++# --------------------------------------------------------------------------
++
++PROJECT_OK = 0
++
++
++def test_project_folds_to_latest_per_id(tmp_path):
++    f = tmp_path / "l.jsonl"
++    f.write_text(
++        '{"seq":1,"id":"TC-1","status":"open"}\n'
++        '{"seq":2,"id":"TC-2","status":"open"}\n'
++        '{"seq":3,"id":"TC-1","status":"resolved"}\n'
++    )
++    rc, out, _ = lw(tmp_path, str(f), "--project")
++    rows = [json.loads(line) for line in out.splitlines()]
++    assert rc == PROJECT_OK
++    assert [r["id"] for r in rows] == ["TC-1", "TC-2"]  # sorted by id
++    # TC-1's LATEST entry wins; its earlier "open" state is history.
++    assert rows[0]["status"] == "resolved" and rows[0]["seq"] == 3
++
++
++def test_project_entry_without_id_is_bucketed_not_fatal(tmp_path):
++    """The exact input that killed the old recipe with KeyError: 'id'."""
++    f = tmp_path / "l.jsonl"
++    f.write_text(
++        '{"seq":1,"id":"TC-1","status":"open"}\n'
++        '{"seq":2,"note":"a decision-trail entry with no id"}\n'
++        '{"seq":3,"id":"TC-1","status":"resolved"}\n'
++    )
++    rc, out, err = lw(tmp_path, str(f), "--project")
++    assert rc == PROJECT_OK  # not an error, and not a traceback
++    assert "unfoldable (no id): 1" in err
++    assert len(out.splitlines()) == 1
++
++
++def test_project_all_entries_id_less_is_not_an_error(tmp_path):
++    """dev/steward/steward-ledger.jsonl's real shape: no entry has an `id`."""
++    f = tmp_path / "steward.jsonl"
++    f.write_text('{"seq":1,"decision":"a"}\n{"seq":2,"decision":"b"}\n')
++    rc, out, err = lw(tmp_path, str(f), "--project")
++    assert rc == PROJECT_OK
++    assert out == ""  # nothing foldable
++    assert "0 id(s) folded" in err and "unfoldable (no id): 2" in err
++
++
++def test_project_bucket_is_printed_even_when_zero(tmp_path):
++    """Always printed, so 'nothing to fold' can never look like 'all folded'."""
++    f = tmp_path / "l.jsonl"
++    f.write_text('{"seq":1,"id":"TC-1"}\n')
++    _, _, err = lw(tmp_path, str(f), "--project")
++    assert "unfoldable (no id): 0" in err
++
++
++def test_project_does_not_advance_or_create_the_cursor(tmp_path):
++    f = tmp_path / "l.jsonl"
++    f.write_text('{"seq":1,"id":"TC-1"}\n')
++    lw(tmp_path, str(f), "--project")
++    state_dir = tmp_path / "state"
++    assert not state_dir.exists()  # no cursor created at all
++    # A subsequent watch run therefore still sees the whole file as new.
++    rc, out, _ = lw(tmp_path, str(f))
++    assert rc == CHANGED and '"id":"TC-1"' in out.replace(" ", "")
++
++
++def test_project_does_not_mutate_the_ledger(tmp_path):
++    f = tmp_path / "l.jsonl"
++    original = '{"seq":1,"id":"TC-1"}\n{"seq":2}\n'
++    f.write_text(original)
++    lw(tmp_path, str(f), "--project")
++    assert f.read_text() == original
++
++
++def test_project_malformed_line_is_bucketed_separately(tmp_path):
++    f = tmp_path / "l.jsonl"
++    f.write_text('{"seq":1,"id":"TC-1"}\nnot json at all\n[1,2,3]\n')
++    rc, out, err = lw(tmp_path, str(f), "--project")
++    assert rc == PROJECT_OK
++    assert "malformed: 2" in err  # torn line + a non-object JSON value
++    assert len(out.splitlines()) == 1
++
++
++def test_project_blank_lines_are_not_entries(tmp_path):
++    f = tmp_path / "l.jsonl"
++    f.write_text('{"seq":1,"id":"TC-1"}\n\n   \n{"seq":2,"id":"TC-2"}\n')
++    _, out, err = lw(tmp_path, str(f), "--project")
++    assert len(out.splitlines()) == 2
++    assert "from 2 entries" in err and "malformed: 0" in err
++
++
++def test_project_empty_file_is_an_empty_projection(tmp_path):
++    f = tmp_path / "l.jsonl"
++    f.write_text("")
++    rc, out, err = lw(tmp_path, str(f), "--project")
++    assert rc == PROJECT_OK and out == ""
++    assert "0 id(s) folded" in err and "unfoldable (no id): 0" in err
++
++
++def test_project_json_envelope(tmp_path):
++    f = tmp_path / "l.jsonl"
++    f.write_text(
++        '{"seq":1,"id":"TC-1","status":"open"}\n'
++        '{"seq":2,"note":"no id"}\n'
++        '{"seq":3,"id":"TC-1","status":"resolved"}\n'
++    )
++    rc, out, err = lw(tmp_path, str(f), "--project", "--json")
++    env = json.loads(out)
++    assert rc == PROJECT_OK
++    assert env["mode"] == "project"
++    assert env["entries"] == 3 and env["folded_ids"] == 1
++    assert env["unfoldable_no_id"] == 1 and env["malformed"] == 0
++    assert env["latest"][0]["status"] == "resolved"
++    assert "unfoldable (no id): 1" in err  # bucket printed in --json mode too
++
++
++def test_project_missing_file_exits_2(tmp_path):
++    rc, _, err = lw(tmp_path, str(tmp_path / "nope.jsonl"), "--project")
++    assert rc == ERROR and "no such file" in err
++
++
++def test_project_non_string_and_empty_ids(tmp_path):
++    f = tmp_path / "l.jsonl"
++    f.write_text('{"seq":1,"id":7}\n{"seq":2,"id":""}\n{"seq":3,"id":null}\n')
++    _, out, err = lw(tmp_path, str(f), "--project")
++    assert len(out.splitlines()) == 1  # id 7 folds under the key "7"
++    assert "unfoldable (no id): 2" in err  # "" and null are not usable ids
+diff --git a/dev/todos-and-considerations-ledger-readme.md b/dev/todos-and-considerations-ledger-readme.md
+index 76f4980c..591fd0e7 100644
+--- a/dev/todos-and-considerations-ledger-readme.md
++++ b/dev/todos-and-considerations-ledger-readme.md
+@@ -216,26 +216,32 @@ $LW $LEDGER --state-dir dev/.ledgerwatch-todos
+ $LW $LEDGER --validate
+ ```
+ 
+-**Deriving the live board (all open items):** fold to the latest entry per `id`, then drop
+-terminal statuses. A quick, dependency-free projection:
++**Deriving the current state:** fold the ledger to its latest entry per `id` with
++`--project`. The file is an event log; the fold is the state.
+ 
+ ```bash
+-python3 - <<'PY'
+-import json, collections
+-latest = {}
+-for line in open("dev/todos-and-considerations-ledger.jsonl"):
+-    line = line.strip()
+-    if not line: continue
+-    r = json.loads(line)
+-    latest[r["id"]] = r            # last write wins (file is in append/seq order)
+-TERMINAL = {"done", "wont-do", "superseded"}
+-live = [r for r in latest.values() if r.get("status") not in TERMINAL]
+-live.sort(key=lambda r: (r.get("priority","p9"), r["id"]))
+-for r in live:
+-    print(f'{r["id"]:7} [{r["kind"]:13}] {r.get("status",""):11} {r["summary"]}')
+-PY
++# Latest entry per id, one compact JSON object per line, sorted by id:
++$LW $LEDGER --project
++
++# Same, as a single envelope (adds the entries / folded_ids / unfoldable_no_id counts):
++$LW $LEDGER --project --json
+ ```
+ 
++`--project` is read-only: it never writes the ledger and never advances the watch cursor,
++so a projection cannot swallow the delta your next `$LW $LEDGER` run is waiting for.
++
++Every run prints an `unfoldable (no id): N` bucket. Entries with no `id` are **normal**,
++not an error — `dev/steward/steward-ledger.jsonl` is a decision trail in which *no* entry
++has one (107/107), and 16 of this ledger's 76 entries have none either. A previous recipe
++here folded with `latest[r["id"]] = r` and died with `KeyError: 'id'` on the first such
++entry; the bucket is what replaces that failure with a number you can see.
++
++Filter the projection with whatever you like (`jq 'select(.status=="open")'`) — the tool
++deliberately imposes no status vocabulary, because the statuses actually in use here are
++open-ended (`open`, `OPEN`, `resolved`, `closed`, `watching`, `RATIFIED`, `accepted`,
++`placed`, `in_progress`, `build-authorized`, `converged-pending-hitl`, and entries with
++no status at all).
++
+ > The `.ledgerwatch*` cursor dirs are **gitignored** (watcher state). Commit only the
+ > `.jsonl` and its `.seq` sidecar.
+ 
+diff --git a/scripts/tests/test_check_board_currency.sh b/scripts/tests/test_check_board_currency.sh
+index 933b29e8..bd9859e9 100755
+--- a/scripts/tests/test_check_board_currency.sh
++++ b/scripts/tests/test_check_board_currency.sh
+@@ -54,6 +54,16 @@ init_repo() {
+   git -C "$dir" config user.name 'Board Currency Test'
+   git -C "$dir" config commit.gpgsign false
+   git -C "$dir" config core.hooksPath "$NO_HOOKS"
++  # A minimal, CONSISTENT ledger + sidecar (committed by the first commit_all,
++  # which runs `git add -A`). The preflight arms below invoke `--landing`, which
++  # now also runs the ledger-integrity gate (DOC-HYGIENE-2 T1b); its TC-37
++  # vacuous-pass guard HARD-fails a tree in which it discovers zero ledgers, so
++  # these fixtures must model a real checkout and carry one. Nothing here is
++  # ledger-specific beyond its presence — the ledger arms live in
++  # scripts/tests/test_check_ledgers.sh.
++  mkdir -p "$dir/dev/steward"
++  printf '{"seq":1,"note":"fixture"}\n' >"$dir/dev/steward/steward-ledger.jsonl"
++  printf '%s' 1 >"$dir/dev/steward/steward-ledger.jsonl.seq"
+ }
+ 
+ # commit_all <dir> <message>
+diff --git a/scripts/tests/test_check_ledgers.sh b/scripts/tests/test_check_ledgers.sh
+new file mode 100644
+index 00000000..00822833
+--- /dev/null
++++ b/scripts/tests/test_check_ledgers.sh
+@@ -0,0 +1,362 @@
++#!/usr/bin/env bash
++# scripts/tests/test_check_ledgers.sh — coverage for the shared ledger-integrity
++# predicate (scripts/check-ledgers.sh) AND for its two wirings: `preflight.sh
++# --landing` (PREVENT) and the always-on CI job (DETECT).
++#
++# The incident this closes: 19 consecutive commits (f22e4947 -> 3264114a, four
++# days) shipped `dev/steward/steward-ledger.jsonl.seq` frozen at 80 while
++# max(seq) inside the ledger had reached 98. The sidecar is a TRACKED file, so
++# every clone taken in that window would have minted seq numbers starting at 81
++# — silently colliding with 18 already-recorded entries. Nothing in the repo
++# checked that the sidecar agreed with the file it summarizes.
++#
++# Predicate under test (see scripts/check-ledgers.sh header for the full
++# statement) — EXACTLY TWO checks, per ledger:
++#   (a) sidecar agreement: <ledger>.jsonl.seq == max(seq) over the entries.
++#   (b) contiguity:        the seq values have no gaps and no duplicates.
++# Plus the TC-37 vacuous-pass guard: discovering ZERO ledgers is itself a HARD
++# failure, never a silent exit 0.
++#
++# RED-first: both checks pass today on all three real ledgers, so asserting
++# against the real repo alone would prove nothing (a `true` script would pass
++# it). Every failure arm below therefore runs against a purpose-built CORRUPT
++# fixture root, so each arm can only go green because the predicate actually
++# fires. The real-repo arm is the regression half of the same pair.
++#
++# Isolation: fixtures are plain directories under mktemp -d (the checker takes
++# --root for exactly this reason); the preflight arms build throwaway git repos
++# + linked worktrees. Nothing here writes into the real checkout, and no real
++# .jsonl / .jsonl.seq is ever touched.
++set -euo pipefail
++
++SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
++CHECKER="$REPO_ROOT/scripts/check-ledgers.sh"
++PREFLIGHT="$REPO_ROOT/scripts/preflight.sh"
++CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
++
++FAILED=0
++pass() { printf 'PASS  %s\n' "$1"; }
++fail() { printf 'FAIL  %s\n' "$1" >&2; FAILED=$((FAILED + 1)); }
++
++TMPROOT="$(mktemp -d)"
++cleanup() {
++  case "$TMPROOT" in
++    "${TMPDIR:-/tmp}"/*|/tmp/*) rm -rf "$TMPROOT" ;;
++    *) printf 'refusing to remove unexpected temp path: %s\n' "$TMPROOT" >&2 ;;
++  esac
++}
++trap cleanup EXIT
++
++# mkroot <name> -> prints the fixture root's path (a plain dir, no git needed)
++mkroot() {
++  local d="$TMPROOT/$1"
++  mkdir -p "$d"
++  printf '%s' "$d"
++}
++
++# write_ledger <root> <relpath-without-ext> <sidecar-text> <seq...>
++# Writes <relpath>.jsonl with one entry per given seq, and the sidecar verbatim
++# (verbatim so a garbage / trailing-newline / stale sidecar can be expressed).
++write_ledger() {
++  local root="$1" rel="$2" sidecar="$3"; shift 3
++  mkdir -p "$(dirname "$root/$rel")"
++  : >"$root/$rel.jsonl"
++  local s
++  for s in "$@"; do
++    printf '{"seq":%s,"note":"entry %s"}\n' "$s" "$s" >>"$root/$rel.jsonl"
++  done
++  printf '%s' "$sidecar" >"$root/$rel.jsonl.seq"
++}
++
++run_checker() {
++  set +e
++  OUT="$(bash "$CHECKER" "$@" 2>&1)"
++  RC=$?
++  set -e
++}
++
++run_preflight() {
++  local cwd="$1"; shift
++  set +e
++  OUT="$(cd "$cwd" && bash "$PREFLIGHT" "$@" 2>&1)"
++  RC=$?
++  set -e
++}
++
++# expect_rc <expected-rc> <description>  (reads RC/OUT set by run_*)
++expect_rc() {
++  local want="$1" desc="$2"
++  if [ "$RC" -eq "$want" ]; then
++    pass "$desc"
++  else
++    fail "$desc — expected rc=$want, got rc=$RC; out: $OUT"
++  fi
++}
++
++# ============================== check-ledgers.sh ==============================
++
++# --- Arm 1: a clean fixture root (two ledgers, one nested) passes -------------
++R="$(mkroot clean)"
++write_ledger "$R" dev/steward/steward-ledger 3 1 2 3
++write_ledger "$R" dev/design/sub/OPP-12-sub-ledger 2 1 2
++run_checker --root "$R"
++expect_rc 0 "clean fixture (2 ledgers, one nested) exits 0"
++
++# --- Arm 2 (RED case "sidecar-mismatch"): the measured incident ---------------
++# Entries reach seq 3; the tracked sidecar still says 2 — exactly the shape of
++# the 80-vs-98 freeze. Check (a) alone must catch this (contiguity is fine).
++R="$(mkroot sidecar-mismatch)"
++write_ledger "$R" dev/steward/steward-ledger 2 1 2 3
++run_checker --root "$R"
++expect_rc 1 "sidecar disagreeing with max(seq) HARD-fails"
++if printf '%s' "$OUT" | grep -q 'BROKEN.*steward-ledger.jsonl.seq'; then
++  pass "sidecar-mismatch output names the offending sidecar"
++else
++  fail "expected a BROKEN line naming the sidecar; got: $OUT"
++fi
++if printf '%s' "$OUT" | grep -qE 'sidecar (says|reads) 2.*max\(seq\) (is )?3|2.*!=.*3'; then
++  pass "sidecar-mismatch output names both the sidecar value and max(seq)"
++else
++  fail "expected the message to name 2 and 3; got: $OUT"
++fi
++
++# --- Arm 3 (RED case "seq-gap") ----------------------------------------------
++# seq 1,2,4 — sidecar agrees with max(seq)=4, so ONLY check (b) can catch it.
++R="$(mkroot seq-gap)"
++write_ledger "$R" dev/steward/steward-ledger 4 1 2 4
++run_checker --root "$R"
++expect_rc 1 "a gap in seq HARD-fails even when the sidecar agrees with max(seq)"
++if printf '%s' "$OUT" | grep -q 'BROKEN.*[Mm]issing'; then
++  pass "seq-gap output names the missing seq"
++else
++  fail "expected a BROKEN line naming the missing seq; got: $OUT"
++fi
++
++# --- Arm 4 (RED case "seq-duplicate") ----------------------------------------
++# seq 1,2,2 — max(seq)=2 matches the sidecar, so again only check (b) fires.
++# This is the collision shape the frozen sidecar would have produced.
++R="$(mkroot seq-duplicate)"
++write_ledger "$R" dev/steward/steward-ledger 2 1 2 2
++run_checker --root "$R"
++expect_rc 1 "a duplicate seq HARD-fails even when the sidecar agrees with max(seq)"
++if printf '%s' "$OUT" | grep -q 'BROKEN.*[Dd]uplicate'; then
++  pass "seq-duplicate output names the duplicated seq"
++else
++  fail "expected a BROKEN line naming the duplicate; got: $OUT"
++fi
++
++# --- Arm 5 (RED case "zero-ledgers"): TC-37 vacuous-pass guard ----------------
++# A gate that discovers nothing and reports ok is worse than no gate: it is an
++# active false assurance. Zero discovered ledgers must be LOUD, never exit 0.
++R="$(mkroot zero-ledgers)"
++run_checker --root "$R"
++expect_rc 1 "discovering ZERO ledgers HARD-fails (TC-37 vacuous-pass guard)"
++if printf '%s' "$OUT" | grep -q 'BROKEN.*no .*ledger'; then
++  pass "zero-ledgers failure says loudly that it could not vouch for anything"
++else
++  fail "expected a BROKEN line about discovering no ledgers; got: $OUT"
++fi
++
++# --- Arm 6: malformed line — deterministic HARD fail, not a crash -------------
++R="$(mkroot malformed)"
++write_ledger "$R" dev/steward/steward-ledger 3 1 2 3
++printf '{"seq":4,"note":"torn\n' >>"$R/dev/steward/steward-ledger.jsonl"
++printf '%s' 4 >"$R/dev/steward/steward-ledger.jsonl.seq"
++run_checker --root "$R"
++expect_rc 1 "a malformed (non-JSON) line HARD-fails with a line number, not a crash"
++if printf '%s' "$OUT" | grep -q 'BROKEN.*:4:'; then
++  pass "malformed-line failure names the offending line number"
++else
++  fail "expected a BROKEN line naming line 4; got: $OUT"
++fi
++
++# --- Arm 7: blank lines are ignored (documented behaviour) -------------------
++R="$(mkroot blank-line)"
++write_ledger "$R" dev/steward/steward-ledger 3 1 2 3
++# Re-write with a blank line in the middle and a whitespace-only line at the end.
++printf '{"seq":1}\n\n{"seq":2}\n   \n{"seq":3}\n' >"$R/dev/steward/steward-ledger.jsonl"
++run_checker --root "$R"
++expect_rc 0 "blank / whitespace-only lines are ignored, not treated as corruption"
++
++# --- Arm 8: an entry with no integer seq HARD-fails --------------------------
++R="$(mkroot no-seq-field)"
++printf '{"seq":1}\n{"note":"no seq here"}\n' >"$R/x.jsonl"
++mkdir -p "$R" && printf '%s' 1 >"$R/x.jsonl.seq"
++run_checker --root "$R"
++expect_rc 1 "an entry with no integer seq HARD-fails (cannot be checked silently)"
++
++# --- Arm 9: empty ledger — sidecar must read 0 -------------------------------
++R="$(mkroot empty-ledger-zero)"
++mkdir -p "$R"
++: >"$R/x.jsonl"
++printf '%s' 0 >"$R/x.jsonl.seq"
++run_checker --root "$R"
++expect_rc 0 "an empty ledger whose sidecar reads 0 is consistent (max(seq) := 0)"
++
++R="$(mkroot empty-ledger-nonzero)"
++mkdir -p "$R"
++: >"$R/x.jsonl"
++printf '%s' 5 >"$R/x.jsonl.seq"
++run_checker --root "$R"
++expect_rc 1 "an empty ledger whose sidecar claims 5 HARD-fails (unbacked high-water mark)"
++
++# --- Arm 10: dangling sidecar (no .jsonl beside it) --------------------------
++R="$(mkroot dangling-sidecar)"
++mkdir -p "$R"
++printf '%s' 7 >"$R/x.jsonl.seq"
++run_checker --root "$R"
++expect_rc 1 "a sidecar with no .jsonl beside it HARD-fails"
++
++# --- Arm 11: sidecar formatting — trailing newline ok, garbage is not --------
++R="$(mkroot sidecar-trailing-newline)"
++write_ledger "$R" x $'3\n' 1 2 3
++run_checker --root "$R"
++expect_rc 0 "a sidecar with a trailing newline is accepted (real ones have none)"
++
++R="$(mkroot sidecar-garbage)"
++write_ledger "$R" x 'eighty' 1 2 3
++run_checker --root "$R"
++expect_rc 1 "a non-integer sidecar HARD-fails"
++
++R="$(mkroot sidecar-blank)"
++write_ledger "$R" x '' 1 2 3
++run_checker --root "$R"
++expect_rc 1 "an empty sidecar HARD-fails"
++
++# --- Arm 12: contiguity does not pin min(seq) to 1 (documented) --------------
++# A ledger whose head was archived legitimately starts above 1; the predicate
++# is "no gaps, no duplicates", not "starts at 1". Pinning min would be a THIRD
++# check, and this tranche ships exactly two.
++R="$(mkroot min-not-one)"
++write_ledger "$R" x 7 5 6 7
++run_checker --root "$R"
++expect_rc 0 "contiguity deliberately does not require min(seq)==1"
++
++# --- Arm 13: out-of-scope jsonl (no sidecar) is not checked ------------------
++# dev/experiments/** output jsonl have no sidecar and no seq; discovery is
++# driven by the SIDECAR, so they must be invisible to this gate.
++R="$(mkroot no-sidecar)"
++mkdir -p "$R/dev/experiments/out"
++printf '{"anything":"at all"}\n{"not":"a ledger"}\n' >"$R/dev/experiments/out/drift.jsonl"
++write_ledger "$R" dev/steward/steward-ledger 1 1
++run_checker --root "$R"
++expect_rc 0 "a .jsonl with no .seq sidecar is out of scope (never checked)"
++
++# --- Arm 14: usage errors are a DISTINCT exit code (2), never 0 --------------
++run_checker --not-a-flag
++expect_rc 2 "an unknown flag exits 2 (usage), distinct from an integrity failure"
++
++R="$(mkroot missing-root)"
++run_checker --root "$R/does-not-exist"
++expect_rc 2 "a --root that does not exist exits 2, never a silent 0"
++
++# ============================ the three REAL ledgers ==========================
++# The regression half: the predicate must be satisfiable, and it must discover
++# every sidecar-bearing ledger in this repo (3 today), not zero and not one.
++run_checker
++expect_rc 0 "the real repo's ledgers pass both checks"
++for real in dev/steward/steward-ledger.jsonl \
++            dev/todos-and-considerations-ledger.jsonl \
++            dev/design/record-lifecycle-protocol/OPP-12-sub-ledger.jsonl; do
++  if printf '%s' "$OUT" | grep -qF "$real"; then
++    pass "real-repo run reports $real"
++  else
++    fail "real-repo run never mentions $real (discovery hole?); out: $OUT"
++  fi
++done
++
++# ============================ preflight.sh --landing ==========================
++# These arms prove the PREVENT wiring. Pre-wiring they are the RED witness for
++# the gap: a repo carrying a corrupt ledger cleared `--landing` with exit 0.
++
++NO_HOOKS="$TMPROOT/no-hooks"
++mkdir -p "$NO_HOOKS"
++
++# make_repo <primary> <linked> <sidecar-text> <seq...> — a throwaway repo whose
++# only ledger is built from the given sidecar/seqs, plus a linked worktree
++# (TC-RUBRIC-5 forbids --landing in a primary checkout).
++make_repo() {
++  local primary="$1" linked="$2" sidecar="$3"; shift 3
++  mkdir -p "$primary"
++  git init -q -b main "$primary"
++  git -C "$primary" config user.email ledger-test@example.invalid
++  git -C "$primary" config user.name 'Ledger Test'
++  git -C "$primary" config commit.gpgsign false
++  git -C "$primary" config core.hooksPath "$NO_HOOKS"
++  mkdir -p "$primary/src" "$primary/scripts"
++  printf 'fixture\n' >"$primary/src/keep.txt"
++  write_ledger "$primary" dev/steward/steward-ledger "$sidecar" "$@"
++  git -C "$primary" add -A
++  git -C "$primary" commit -q -m 'fixture: initial commit'
++  git -C "$primary" worktree add -q -b landing-fixture "$linked" >/dev/null 2>&1
++}
++
++BROKEN_PRIMARY="$TMPROOT/repo-broken"
++BROKEN_LINKED="$TMPROOT/repo-broken-wt"
++make_repo "$BROKEN_PRIMARY" "$BROKEN_LINKED" 2 1 2 3
++
++CLEAN_PRIMARY="$TMPROOT/repo-clean"
++CLEAN_LINKED="$TMPROOT/repo-clean-wt"
++make_repo "$CLEAN_PRIMARY" "$CLEAN_LINKED" 3 1 2 3
++
++run_preflight "$BROKEN_LINKED" --landing
++if [ "$RC" -ne 0 ]; then
++  pass "--landing HARD-fails in a worktree whose ledger sidecar is stale"
++else
++  fail "--landing MUST fail on a stale sidecar (this is the incident reproduced); out: $OUT"
++fi
++if printf '%s' "$OUT" | grep -q 'HARD.*ledger-integrity:'; then
++  pass "--landing failure output names the ledger-integrity check"
++else
++  fail "expected a HARD line naming ledger-integrity; got: $OUT"
++fi
++
++run_preflight "$CLEAN_LINKED" --landing
++if [ "$RC" -eq 0 ]; then
++  pass "--landing still exits 0 in a worktree whose ledgers are consistent"
++else
++  fail "--landing must not regress a consistent tree; got rc=$RC, out: $OUT"
++fi
++
++# Mirrors the board-currency contract (test_check_board_currency.sh Arm 8):
++# the check is --landing-only, so plain preflight stays lean and unchanged.
++run_preflight "$BROKEN_LINKED"
++if printf '%s' "$OUT" | grep -q 'ledger-integrity:'; then
++  fail "ledger-integrity must be --landing-only; it ran without --landing: $OUT"
++else
++  pass "regression guard: ledger-integrity is inert without --landing"
++fi
++
++# ============================ CI wiring is ALWAYS-ON ==========================
++# A docs_only-gated job never fires on a code push, and a code push can freeze a
++# sidecar just as easily as a docs push (the measured incident spanned both).
++# Assert statically that the job exists, runs the SHARED script, and carries no
++# `if:` condition at all.
++CI_JOB_BLOCK="$(awk '
++  /^  ledger-integrity:/ { inblock = 1; print; next }
++  inblock && /^  [A-Za-z0-9_-]+:/ { inblock = 0 }
++  inblock { print }
++' "$CI_YML")"
++
++if [ -n "$CI_JOB_BLOCK" ]; then
++  pass "ci.yml defines a ledger-integrity job"
++else
++  fail "ci.yml has no ledger-integrity job"
++fi
++if printf '%s' "$CI_JOB_BLOCK" | grep -q 'scripts/check-ledgers.sh'; then
++  pass "the CI job runs the SHARED scripts/check-ledgers.sh (one predicate, two callers)"
++else
++  fail "the CI job must invoke scripts/check-ledgers.sh, not a reimplementation"
++fi
++if printf '%s' "$CI_JOB_BLOCK" | grep -qE '^\s*if:'; then
++  fail "the ledger-integrity job must be ALWAYS-ON (no if:/docs_only gate); block: $CI_JOB_BLOCK"
++else
++  pass "the ledger-integrity job is always-on (no if: condition, not docs_only-gated)"
++fi
++
++if [ "$FAILED" -gt 0 ]; then
++  printf '\n%d test(s) failed\n' "$FAILED" >&2
++  exit 1
++fi
++printf '\nAll check-ledgers tests passed\n'
+diff --git a/scripts/tests/test_preflight_landing.sh b/scripts/tests/test_preflight_landing.sh
+index 63ffd1dc..7e32b4e1 100755
+--- a/scripts/tests/test_preflight_landing.sh
++++ b/scripts/tests/test_preflight_landing.sh
+@@ -70,8 +70,15 @@ make_fixture() {
+   git -C "$primary" config user.name 'Preflight Test'
+   git -C "$primary" config commit.gpgsign false
+   git -C "$primary" config core.hooksPath "$NO_HOOKS"
+-  mkdir -p "$primary/src" "$primary/scripts"
++  mkdir -p "$primary/src" "$primary/scripts" "$primary/dev/steward"
+   printf 'fixture\n' >"$primary/src/keep.txt"
++  # A minimal, CONSISTENT ledger + sidecar. preflight.sh --landing now also runs
++  # the ledger-integrity gate (DOC-HYGIENE-2 T1b), whose TC-37 vacuous-pass
++  # guard HARD-fails a tree in which it discovers zero ledgers — a repo with no
++  # ledger at all cannot be vouched for. This fixture models a real checkout, so
++  # it carries one; its own corruption arms live in test_check_ledgers.sh.
++  printf '{"seq":1,"note":"fixture"}\n' >"$primary/dev/steward/steward-ledger.jsonl"
++  printf '%s' 1 >"$primary/dev/steward/steward-ledger.jsonl.seq"
+   git -C "$primary" add -A
+   git -C "$primary" commit -q -m 'fixture: initial commit'
+   git -C "$primary" worktree add -q -b landing-fixture "$linked" >/dev/null 2>&1
+
+exec
+/bin/bash -lc "sed -n '1,280p' scripts/preflight.sh && grep -R \"jsonl.seq\" -n --exclude-dir=.git | head -50 && find . -path ./.git -prune -o -name '*.jsonl.seq' -print -exec sh -c 'printf \"%s: \" \""'$1"; cat "$1"; echo'"' sh {} \\;" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+#!/usr/bin/env bash
+# preflight.sh — orchestrator-side gate, run BEFORE spawning an implementer.
+#
+# Codifies the checks whose absence has cost real slices:
+#   * agent-worktree-stale-base-trap — a worktree cut from a stale base (main had
+#     advanced ~206 commits) silently lost two slices. The --worktree check below
+#     fails loudly when a worktree's HEAD is neither current main nor a descendant
+#     of it.
+#   * dependency-not-actually-CLOSED — spawning a slice whose declared dependency
+#     never closed. The --expect-closed check greps the plan for the CLOSED block.
+#   * landing-in-the-primary-checkout — TC-RUBRIC-5 requires release orchestration
+#     and all landing git-writes to run in a dedicated linked worktree. --landing
+#     HARD-fails when invoked from the primary checkout.
+#
+# Witness-first (orchestration.md §1.5): every check derives from the repo on disk,
+# never from belief. Emits a one-line JSON summary; exits non-zero on any HARD fail.
+#
+# Usage:
+#   scripts/preflight.sh                              # general repo health (run anytime)
+#   scripts/preflight.sh --worktree /tmp/fdb-slice-5-... # + stale-base guard on a freshly cut WT
+#   scripts/preflight.sh --expect-closed 5 --plan dev/plans/plan-0.8.6.md
+#   scripts/preflight.sh --landing                    # TC-RUBRIC-5: refuse to land in the primary checkout
+#   scripts/preflight.sh --worktree <wt> --expect-closed 5 --plan <plan> --min-disk-gb 15
+#
+# --landing composes with every other flag and is inert unless passed: without it
+# the script behaves exactly as it did before the flag existed.
+#
+# Exit codes: 0 = all HARD checks pass (WARN/INFO may print); 1 = a HARD check failed.
+
+set -euo pipefail
+
+# Resolve this script's own directory BEFORE the toplevel cd below, so the
+# board-currency check (§7) can find its sibling script regardless of which
+# repo/worktree `cd` below lands us in (BASH_SOURCE is a file path, not
+# affected by cwd, but resolving it AFTER a cd elsewhere would be needless
+# fragility for no benefit).
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+cd "$(git rev-parse --show-toplevel)"
+CANON="$(pwd)"
+
+WT=""
+EXPECT_CLOSED=""
+PLAN=""
+MIN_DISK_GB=10
+LANDING=0
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --landing)       LANDING=1; shift ;;
+    --worktree)      WT="${2:?--worktree needs a path}"; shift 2 ;;
+    --expect-closed) EXPECT_CLOSED="${2:?--expect-closed needs a slice id}"; shift 2 ;;
+    --plan)          PLAN="${2:?--plan needs a file}"; shift 2 ;;
+    --min-disk-gb)   MIN_DISK_GB="${2:?--min-disk-gb needs a number}"; shift 2 ;;
+    *) printf 'preflight: unknown arg %q\n' "$1" >&2; exit 2 ;;
+  esac
+done
+
+HARD_FAILS=()
+WARNS=()
+
+hard() { HARD_FAILS+=("$1"); printf 'HARD  %s\n' "$1" >&2; }
+warn() { WARNS+=("$1");      printf 'WARN  %s\n' "$1" >&2; }
+info() { printf 'INFO  %s\n' "$1" >&2; }
+ok()   { printf 'ok    %s\n' "$1" >&2; }
+
+# Resolve an existing directory to its absolute, symlink-resolved path. Uses
+# cd+pwd -P rather than `readlink -f` so this works on macOS too. Prints nothing
+# (and returns non-zero) if the path is not a reachable directory.
+abs_dir() { ( cd "$1" 2>/dev/null && pwd -P ); }
+
+MAIN_SHA="$(git rev-parse main)"
+
+# --- 1. Canonical repo is not mid-operation -------------------------------------
+GITDIR="$(git rev-parse --git-dir)"
+if [ -d "$GITDIR/rebase-merge" ] || [ -d "$GITDIR/rebase-apply" ]; then
+  hard "canonical repo is mid-rebase — finish or abort before spawning"
+elif [ -f "$GITDIR/MERGE_HEAD" ]; then
+  hard "canonical repo is mid-merge — finish or abort before spawning"
+elif [ -f "$GITDIR/CHERRY_PICK_HEAD" ]; then
+  hard "canonical repo is mid-cherry-pick — finish or abort before spawning"
+else
+  ok "canonical repo is not mid-merge/rebase/cherry-pick"
+fi
+
+# --- 2. Tracked source is clean (dev/ docs churn is expected, so only gate src/) -
+DIRTY_SRC="$(git status --porcelain -- src/ scripts/ mkdocs.yml 2>/dev/null || true)"
+if [ -n "$DIRTY_SRC" ]; then
+  warn "tracked source dirty on canonical main (commit/stash before a worktree inherits a stale base):"
+  printf '%s\n' "$DIRTY_SRC" | sed 's/^/        /' >&2
+else
+  ok "tracked source (src/ scripts/ mkdocs.yml) is clean"
+fi
+
+# --- 3. Disk headroom (worktrees + per-worktree target/ are not free) ------------
+WT_PARENT="${WT:+$(dirname "$WT")}"; WT_PARENT="${WT_PARENT:-/tmp}"
+FREE_GB="$(df -BG --output=avail "$WT_PARENT" 2>/dev/null | tail -1 | tr -dc '0-9')"
+if [ -n "$FREE_GB" ] && [ "$FREE_GB" -lt "$MIN_DISK_GB" ]; then
+  hard "only ${FREE_GB}G free on $WT_PARENT (need >= ${MIN_DISK_GB}G; prune stale worktrees)"
+else
+  ok "disk headroom on $WT_PARENT: ${FREE_GB:-?}G free (>= ${MIN_DISK_GB}G)"
+fi
+
+# --- 4. Worktree stale-base guard (the load-bearing check) -----------------------
+if [ -n "$WT" ]; then
+  if [ ! -d "$WT" ]; then
+    hard "worktree path does not exist: $WT"
+  elif [ "$(git -C "$WT" rev-parse --show-toplevel 2>/dev/null || echo MISSING)" != "$WT" ]; then
+    hard "not a git worktree rooted at: $WT"
+  else
+    WT_HEAD="$(git -C "$WT" rev-parse HEAD)"
+    if [ "$WT_HEAD" = "$MAIN_SHA" ]; then
+      ok "worktree HEAD == current main ($MAIN_SHA) — freshly cut, no stale base"
+    elif [ "$(git merge-base "$MAIN_SHA" "$WT_HEAD")" = "$MAIN_SHA" ]; then
+      warn "worktree has advanced past main (main is an ancestor) — OK if it carries this slice's commits"
+    else
+      hard "STALE BASE: worktree HEAD ($WT_HEAD) is not current main and main is not its ancestor."
+      hard "  -> re-create the worktree off \$(git rev-parse main). See agent-worktree-stale-base-trap."
+    fi
+    # maturin/pip -e from a worktree rebinds the shared .venv to the worktree tree.
+    info "reminder: do NOT 'maturin develop' / 'pip install -e' from a worktree — build on the MAIN tree only."
+  fi
+fi
+
+# --- 5. Dependency-CLOSED gate ---------------------------------------------------
+if [ -n "$EXPECT_CLOSED" ]; then
+  if [ -z "$PLAN" ]; then
+    hard "--expect-closed $EXPECT_CLOSED given without --plan <file>"
+  elif [ ! -f "$PLAN" ]; then
+    hard "plan file not found: $PLAN"
+  elif grep -qiE "(Slice|Phase)[^A-Za-z0-9]*${EXPECT_CLOSED}[^0-9].*CLOSED|CLOSED.*(Slice|Phase)[^A-Za-z0-9]*${EXPECT_CLOSED}([^0-9]|$)" "$PLAN"; then
+    ok "dependency Slice/Phase $EXPECT_CLOSED has a CLOSED witness in $PLAN"
+  else
+    hard "dependency Slice/Phase $EXPECT_CLOSED has NO 'CLOSED' block in $PLAN — do not spawn dependents"
+  fi
+fi
+
+# --- 6. Landing-mode guard (TC-RUBRIC-5) -----------------------------------------
+# TC-RUBRIC-5 (HITL-ADOPTED 2026-07-11): release orchestration and ALL landing
+# git-writes run in a dedicated linked worktree, never in the primary checkout.
+#
+# primary checkout <=> --git-dir and --git-common-dir name the SAME directory
+# (a linked worktree's git-dir is <common>/worktrees/<name>).
+#
+# Both paths are canonicalized before comparing. git returns these relative or
+# absolute depending on cwd and version: from a subdirectory, git 2.43 returns an
+# ABSOLUTE --git-dir but a RELATIVE '../.git' --git-common-dir. Today the `cd` to
+# the toplevel above normalizes that away (both read '.git' there), so a raw
+# string compare would happen to work — but only by accident of that cd. Measured:
+# with the toplevel cd removed, a raw compare run from a subdirectory of the
+# primary checkout FAILS OPEN (exit 0, "cleared for landing"), while the
+# canonicalized compare below still correctly HARD-fails. Canonicalizing makes
+# this check self-sufficient rather than dependent on cwd, git version, and the
+# ordering of an unrelated line.
+if [ "$LANDING" -eq 1 ]; then
+  GITDIR_ABS="$(abs_dir "$(git rev-parse --git-dir)" || true)"
+  COMMONDIR_ABS="$(abs_dir "$(git rev-parse --git-common-dir)" || true)"
+  if [ -z "$GITDIR_ABS" ] || [ -z "$COMMONDIR_ABS" ]; then
+    hard "--landing: cannot resolve git-dir/git-common-dir — refusing to certify this tree for landing"
+  elif [ "$GITDIR_ABS" = "$COMMONDIR_ABS" ]; then
+    hard "TC-RUBRIC-5: --landing invoked in the PRIMARY checkout ($CANON) — landing git-writes are forbidden here."
+    hard "  -> re-run from a dedicated linked worktree: git worktree add <path> <branch>, then run this from <path>."
+  else
+    ok "TC-RUBRIC-5: running in a linked worktree ($CANON) — cleared for landing git-writes"
+  fi
+fi
+
+# --- 7. Board-currency gate (status-board-currency-enforcement design, item 2) --
+# Refuse a land that would leave dev/plans/runs/STATUS-0.8.z.md stale. The
+# incident: a slice's merge commit reached origin/main and the board kept saying
+# "not landed" for four days — nobody's explicit job to update it at land time
+# (an ownership seam between the orchestrator, who owns in-flight rows, and the
+# Steward, who lands). See dev/design/status-board-currency-enforcement.md and
+# orchestration.md §12.5 for the seam-ownership contract this gate enforces
+# mechanically.
+#
+# The predicate lives in scripts/check-board-currency.sh (see that file's header
+# for the full statement) so preflight and the CI drift job (item 3) share ONE
+# implementation and cannot diverge. --landing-only: mid-build the board
+# legitimately reads "in flight", so this must never run outside a land (that is
+# precommit's false-positive trap the design doc rejects).
+if [ "$LANDING" -eq 1 ]; then
+  BOARD_CHECK_OUT="$(bash "$SELF_DIR/check-board-currency.sh" --tip HEAD 2>&1)" || BOARD_CHECK_RC=$?
+  BOARD_CHECK_RC="${BOARD_CHECK_RC:-0}"
+  if [ "$BOARD_CHECK_RC" -ne 0 ]; then
+    while IFS= read -r line; do
+      case "$line" in
+        STALE*) hard "board-currency: $line" ;;
+        *)      info "board-currency: $line" ;;
+      esac
+    done <<<"$BOARD_CHECK_OUT"
+  else
+    ok "board-currency: live STATUS-0.8.z.md board(s) match git ancestry for this tip"
+  fi
+fi
+
+# --- 8. Ledger-integrity gate (DOC-HYGIENE-2 T1b) --------------------------------
+# Refuse a land that would ship a `*.jsonl.seq` sidecar disagreeing with its
+# ledger. The incident: 19 consecutive commits (f22e4947 -> 3264114a, four days)
+# shipped dev/steward/steward-ledger.jsonl.seq frozen at 80 while max(seq) in
+# the ledger had reached 98. The sidecar is TRACKED and is the only thing an
+# appender reads to pick the next seq, so every clone taken in that window would
+# have minted colliding seq numbers.
+#
+# The predicate lives in scripts/check-ledgers.sh (see that file's header for
+# the full statement — exactly two checks: sidecar == max(seq), and seq
+# contiguous) so preflight and the always-on CI job share ONE implementation and
+# cannot diverge, exactly as §7 does for board-currency.
+#
+# --landing-only, mirroring §7's structure. The ledger invariant is in fact true
+# at all times (unlike a board, which legitimately reads "in flight" mid-build),
+# so an unconditional run would also be sound; it is kept behind --landing so
+# preflight's non-landing path stays exactly as lean as it was, and the CI job —
+# which is deliberately NOT docs_only-gated — is what covers every non-landing
+# push.
+if [ "$LANDING" -eq 1 ]; then
+  LEDGER_CHECK_OUT="$(bash "$SELF_DIR/check-ledgers.sh" 2>&1)" || LEDGER_CHECK_RC=$?
+  LEDGER_CHECK_RC="${LEDGER_CHECK_RC:-0}"
+  if [ "$LEDGER_CHECK_RC" -ne 0 ]; then
+    LEDGER_SAW_BROKEN=0
+    while IFS= read -r line; do
+      case "$line" in
+        BROKEN*) hard "ledger-integrity: $line"; LEDGER_SAW_BROKEN=1 ;;
+        *)       info "ledger-integrity: $line" ;;
+      esac
+    done <<<"$LEDGER_CHECK_OUT"
+    # Anti-fail-open: a non-zero rc with no BROKEN line means the checker itself
+    # could not run (exit 2 = usage/env, e.g. python3 absent) — that must still
+    # block the land, never degrade into INFO lines and a green summary.
+    if [ "$LEDGER_SAW_BROKEN" -eq 0 ]; then
+      hard "ledger-integrity: check-ledgers.sh exited $LEDGER_CHECK_RC without reporting a specific defect — refusing to certify this tree for landing"
+    fi
+  else
+    ok "ledger-integrity: every *.jsonl.seq sidecar agrees with its ledger and every seq run is contiguous"
+  fi
+fi
+
+# --- Summary (JSON, last line) ---------------------------------------------------
+json_arr() { local out="" x; for x in "$@"; do out="${out:+$out,}\"$(printf '%s' "$x" | sed 's/\\/\\\\/g; s/"/\\"/g')\""; done; printf '[%s]' "$out"; }
+
+STATUS=$([ ${#HARD_FAILS[@]} -eq 0 ] && echo pass || echo fail)
+printf '{"preflight":"%s","main_sha":"%s","worktree":"%s","hard_fails":%s,"warnings":%s}\n' \
+  "$STATUS" "$MAIN_SHA" "${WT:-}" "$(json_arr "${HARD_FAILS[@]+"${HARD_FAILS[@]}"}")" "$(json_arr "${WARNS[@]+"${WARNS[@]}"}")"
+
+[ "$STATUS" = pass ]
+.github/workflows/ci.yml:425:  # a code push, and the measured incident (steward-ledger.jsonl.seq frozen at 80
+dev/plans/prompts/DOC-HYGIENE-2-HANDOFF.md:103:**Ship only two checks:** (a) each `.jsonl.seq` sidecar equals `max(seq)` in its file; (b) `seq` is
+dev/plans/runs/codex/0.8.20/slice-15-steward-positions-verify-20260721T041028Z.log:139: M dev/steward/steward-ledger.jsonl.seq
+dev/plans/runs/codex/0.8.20/keystone-terminal6-20260723T013559Z.log:46: dev/todos-and-considerations-ledger.jsonl.seq      |     2 +-
+dev/plans/runs/codex/0.8.20/keystone-terminal6-20260723T013559Z.log:133:dev/todos-and-considerations-ledger.jsonl.seq
+dev/plans/runs/codex/0.8.20/slice-5-fix-4-5-delta-20260720T022544Z.log:42: dev/todos-and-considerations-ledger.jsonl.seq      |    2 +-
+dev/plans/runs/codex/0.8.20/slice-5-fix-4-5-delta-20260720T022544Z.log:69:dev/todos-and-considerations-ledger.jsonl.seq
+dev/plans/runs/codex/0.8.20/slice-5-fix-4-5-delta-20260720T022544Z.log:2586:/bin/bash -lc "git diff 8e09b9506ce69060fa29bbed01f8f17b2f2dfd63 -- CHANGELOG.md dev/design/0.8.20-slice0-erasure-design.md dev/todos-and-considerations-ledger.jsonl dev/todos-and-considerations-ledger.jsonl.seq | sed -n '1,260p'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+dev/plans/runs/codex/0.8.20/slice-5-fix-4-5-delta-20260720T022544Z.log:2767:diff --git a/dev/todos-and-considerations-ledger.jsonl.seq b/dev/todos-and-considerations-ledger.jsonl.seq
+dev/plans/runs/codex/0.8.20/slice-5-fix-4-5-delta-20260720T022544Z.log:2769:--- a/dev/todos-and-considerations-ledger.jsonl.seq
+dev/plans/runs/codex/0.8.20/slice-5-fix-4-5-delta-20260720T022544Z.log:2770:+++ b/dev/todos-and-considerations-ledger.jsonl.seq
+dev/plans/runs/codex/0.8.20/keystone-terminal3-20260722T233037Z.log:48: dev/todos-and-considerations-ledger.jsonl.seq      |     2 +-
+dev/plans/runs/codex/0.8.20/keystone-terminal3-20260722T233037Z.log:135:dev/todos-and-considerations-ledger.jsonl.seq
+dev/plans/runs/codex/0.8.20/slice-15b-fix-3-rereview-20260720T213603Z.log:29: dev/todos-and-considerations-ledger.jsonl.seq      |   2 +-
+dev/plans/runs/codex/0.8.20/slice-15b-fix-3-rereview-20260720T213603Z.log:121:dev/todos-and-considerations-ledger.jsonl.seq
+dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal3-20260721T075024Z.log:27: dev/todos-and-considerations-ledger.jsonl.seq      |     2 +-
+dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal3-20260721T075024Z.log:70:dev/todos-and-considerations-ledger.jsonl.seq
+dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal5-20260721T090057Z.log:31: dev/todos-and-considerations-ledger.jsonl.seq      |     2 +-
+dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal5-20260721T090057Z.log:79:dev/todos-and-considerations-ledger.jsonl.seq
+dev/plans/runs/codex/0.8.20/keystone-terminal4-20260723T000440Z.log:89: dev/todos-and-considerations-ledger.jsonl.seq      |     2 +-
+dev/plans/runs/codex/0.8.20/keystone-terminal4-20260723T000440Z.log:176:dev/todos-and-considerations-ledger.jsonl.seq
+dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal2-20260721T071720Z.log:27: dev/todos-and-considerations-ledger.jsonl.seq      |     2 +-
+dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal2-20260721T071720Z.log:69:dev/todos-and-considerations-ledger.jsonl.seq
+dev/plans/runs/codex/0.8.20/keystone-terminal-20260722T221247Z.log:86: dev/todos-and-considerations-ledger.jsonl.seq      |     2 +-
+dev/plans/runs/codex/0.8.20/keystone-terminal-20260722T221247Z.log:168:dev/todos-and-considerations-ledger.jsonl.seq
+dev/plans/runs/codex/0.8.20/slice-5-fix-6-rereview-20260720T024726Z.log:38: dev/todos-and-considerations-ledger.jsonl.seq      |    2 +-
+dev/plans/runs/codex/0.8.20/slice-5-fix-6-rereview-20260720T024726Z.log:71:dev/todos-and-considerations-ledger.jsonl.seq
+dev/plans/runs/codex/0.8.20/slice-15b-fix-2-rereview-20260720T205344Z.log:56: M dev/todos-and-considerations-ledger.jsonl.seq
+dev/plans/runs/codex/0.8.20/slice-15b-fix-2-rereview-20260720T205344Z.log:68: dev/todos-and-considerations-ledger.jsonl.seq      |   2 +-
+dev/plans/runs/codex/0.8.20/keystone-terminal5-20260723T004757Z.log:49: dev/todos-and-considerations-ledger.jsonl.seq      |     2 +-
+dev/plans/runs/codex/0.8.20/keystone-terminal5-20260723T004757Z.log:136:dev/todos-and-considerations-ledger.jsonl.seq
+dev/plans/runs/codex/0.8.20/keystone-terminal2-20260722T224346Z.log:44: dev/todos-and-considerations-ledger.jsonl.seq      |     2 +-
+dev/plans/runs/codex/0.8.20/keystone-terminal2-20260722T224346Z.log:128:dev/todos-and-considerations-ledger.jsonl.seq
+dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal4-20260721T082814Z.log:71: dev/todos-and-considerations-ledger.jsonl.seq      |     2 +-
+dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal4-20260721T082814Z.log:117:dev/todos-and-considerations-ledger.jsonl.seq
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:63: M dev/todos-and-considerations-ledger.jsonl.seq
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:79: dev/todos-and-considerations-ledger.jsonl.seq      |    2 +-
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:236:dev/todos-and-considerations-ledger.jsonl.seq
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:24: dev/todos-and-considerations-ledger.jsonl.seq      |    2 +-
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:181:dev/todos-and-considerations-ledger.jsonl.seq
+dev/plans/runs/codex/0.8.20/slice-5-fix-7-rereview-20260720T032538Z.log:27: dev/todos-and-considerations-ledger.jsonl.seq      |    2 +-
+dev/plans/runs/codex/0.8.20/slice-5-fix-7-rereview-20260720T032538Z.log:59:+        "dev/todos-and-considerations-ledger.jsonl.seq",
+dev/plans/runs/codex/0.8.20/slice-5-fix-7-rereview-20260720T032538Z.log:457:+ dev/todos-and-considerations-ledger.jsonl.seq      |    2 +-
+dev/plans/runs/codex/0.8.20/slice-5-fix-7-rereview-20260720T032538Z.log:484:+dev/todos-and-considerations-ledger.jsonl.seq
+dev/plans/runs/codex/0.8.20/slice-5-fix-7-rereview-20260720T032538Z.log:3001:+/bin/bash -lc "git diff 8e09b9506ce69060fa29bbed01f8f17b2f2dfd63 -- CHANGELOG.md dev/design/0.8.20-slice0-erasure-design.md dev/todos-and-considerations-ledger.jsonl dev/todos-and-considerations-ledger.jsonl.seq | sed -n '1,260p'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+dev/plans/runs/codex/0.8.20/slice-5-fix-7-rereview-20260720T032538Z.log:3182:+diff --git a/dev/todos-and-considerations-ledger.jsonl.seq b/dev/todos-and-considerations-ledger.jsonl.seq
+dev/plans/runs/codex/0.8.20/slice-5-fix-7-rereview-20260720T032538Z.log:3184:+--- a/dev/todos-and-considerations-ledger.jsonl.seq
+dev/plans/runs/codex/0.8.20/slice-5-fix-7-rereview-20260720T032538Z.log:3185:++++ b/dev/todos-and-considerations-ledger.jsonl.seq
+dev/plans/runs/codex/0.8.20/slice-5-fix-7-rereview-20260720T032538Z.log:4371:+ dev/todos-and-considerations-ledger.jsonl.seq      |    2 +-
+dev/plans/runs/codex/0.8.20/slice-5-fix-7-rereview-20260720T032538Z.log:4404:+dev/todos-and-considerations-ledger.jsonl.seq
+./dev/design/record-lifecycle-protocol/OPP-12-sub-ledger.jsonl.seq
+./dev/design/record-lifecycle-protocol/OPP-12-sub-ledger.jsonl.seq: 10
+./dev/todos-and-considerations-ledger.jsonl.seq
+./dev/todos-and-considerations-ledger.jsonl.seq: 76
+./dev/steward/steward-ledger.jsonl.seq
+./dev/steward/steward-ledger.jsonl.seq: 107
+
+exec
+/bin/bash -lc 'bash scripts/check-ledgers.sh; python3 -m pytest -q dev/agent-tools/ledgerwatch; bash scripts/tests/test_check_ledgers.sh' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 1031ms:
+........................................................................ [ 93%]
+.....                                                                    [100%]
+77 passed in 0.23s
+PASS  clean fixture (2 ledgers, one nested) exits 0
+PASS  sidecar disagreeing with max(seq) HARD-fails
+PASS  sidecar-mismatch output names the offending sidecar
+PASS  sidecar-mismatch output names both the sidecar value and max(seq)
+PASS  a gap in seq HARD-fails even when the sidecar agrees with max(seq)
+PASS  seq-gap output names the missing seq
+PASS  a duplicate seq HARD-fails even when the sidecar agrees with max(seq)
+PASS  seq-duplicate output names the duplicated seq
+PASS  discovering ZERO ledgers HARD-fails (TC-37 vacuous-pass guard)
+PASS  zero-ledgers failure says loudly that it could not vouch for anything
+PASS  a malformed (non-JSON) line HARD-fails with a line number, not a crash
+PASS  malformed-line failure names the offending line number
+PASS  blank / whitespace-only lines are ignored, not treated as corruption
+PASS  an entry with no integer seq HARD-fails (cannot be checked silently)
+PASS  an empty ledger whose sidecar reads 0 is consistent (max(seq) := 0)
+PASS  an empty ledger whose sidecar claims 5 HARD-fails (unbacked high-water mark)
+PASS  a sidecar with no .jsonl beside it HARD-fails
+PASS  a sidecar with a trailing newline is accepted (real ones have none)
+PASS  a non-integer sidecar HARD-fails
+PASS  an empty sidecar HARD-fails
+PASS  contiguity deliberately does not require min(seq)==1
+PASS  a .jsonl with no .seq sidecar is out of scope (never checked)
+PASS  an unknown flag exits 2 (usage), distinct from an integrity failure
+PASS  a --root that does not exist exits 2, never a silent 0
+PASS  the real repo's ledgers pass both checks
+PASS  real-repo run reports dev/steward/steward-ledger.jsonl
+PASS  real-repo run reports dev/todos-and-considerations-ledger.jsonl
+PASS  real-repo run reports dev/design/record-lifecycle-protocol/OPP-12-sub-ledger.jsonl
+PASS  --landing HARD-fails in a worktree whose ledger sidecar is stale
+PASS  --landing failure output names the ledger-integrity check
+PASS  --landing still exits 0 in a worktree whose ledgers are consistent
+PASS  regression guard: ledger-integrity is inert without --landing
+PASS  ci.yml defines a ledger-integrity job
+PASS  the CI job runs the SHARED scripts/check-ledgers.sh (one predicate, two callers)
+PASS  the ledger-integrity job is always-on (no if: condition, not docs_only-gated)
+
+All check-ledgers tests passed
+
+exec
+/bin/bash -lc "sed -n '1,220p' dev/agent-tools/ledgerwatch/ledgerwatch.py && sed -n '220,430p' dev/agent-tools/ledgerwatch/ledgerwatch.py" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+#!/usr/bin/env python3
+"""ledgerwatch — emit only what changed in a monitored file since the last check.
+
+The point of this tool is to keep *context* small while watching files that grow
+without bound. It runs at the shell; only its (delta) stdout enters an agent's
+context. It persists a per-file cursor in a state directory so each run prints
+just what is new/changed and nothing else.
+
+Strategy is chosen by file extension (override with --strategy):
+
+  .jsonl/.ndjson/.log  -> tail    append-only positional cursor (byte offset),
+                                   made rotation/truncation-safe by a first-line
+                                   signature. Optional --select field filtering.
+  .md/.markdown        -> section content-hash per heading. Detects edits made
+                                   ANYWHERE in the document (intra-document), which
+                                   a positional cursor would miss.
+  everything else      -> diff    unified diff against a shadow copy.
+
+Each run reports a MODE so the consumer knows how much to trust the delta:
+  incremental  exact new/changed items since a valid cursor.
+  cold         first run (or unreadable state): output is a baseline, not events.
+  resync       cursor was invalidated (rotation/truncation/rewrite): output is a
+               re-read baseline, NOT a list of N new events. (tail only)
+In text mode the mode is announced on stderr only when it is not incremental; in
+--json mode it is always the "mode" field of the envelope.
+
+For the tail strategy, delta-validate is ON by default: any non-blank delta line
+that is not valid JSON is flagged on stderr (so a torn/corrupt line is surfaced
+even when --select would otherwise silently drop it). --validate runs a full-file
+JSONL integrity scan instead (0 clean / 3 corrupt / 2 error; no delta, no cursor
+advance).
+
+--project folds an event-sourced ledger to its LATEST entry per `id` (the file
+is the event log; the fold is the state). Entries with no `id` are NOT an error
+— they are counted into an explicit, always-printed `unfoldable (no id): N`
+bucket. That bucket is the whole point: the recipe this mode replaces did
+`latest[r["id"]] = r` and died with KeyError on the first id-less entry, which
+is every entry of dev/steward/steward-ledger.jsonl. Like --prune and --validate
+it is a standalone READ/REPORT mode: it never writes the ledger and never reads
+or advances the cursor, so running a projection cannot silently consume the
+delta a later watch run is waiting for.
+
+Flags: --json (structured envelope), --dry-run (compute delta without advancing
+the cursor), --reset (discard cursor first), --select (tail field filter),
+--strategy (override), --no-status (see below), --prune (drop cursors whose
+source file is gone; takes no file argument), --validate (full-file JSONL scan),
+--project (fold-to-latest-per-id projection).
+
+Exit status is grep-style by default, so a poller can branch on it without
+capturing stdout:
+  0  changed   — a delta was emitted on stdout
+  1  no change — nothing new (a normal idle tick, NOT a failure)
+  2  error     — missing file/argument, bad --select
+A no-change run is silent on stdout in both text and --json mode; the status is
+on the exit code. Pass --no-status to collapse 0/1 into 0 (success), reserving
+nonzero for real errors (2) — for callers whose harness treats any nonzero as a
+failure.
+"""
+
+import argparse
+import difflib
+import hashlib
+import json
+import os
+import re
+import sys
+
+HEADING_RE = re.compile(r"^#{1,6}\s")
+
+TAIL_EXTS = {".jsonl", ".ndjson", ".log"}
+SECTION_EXTS = {".md", ".markdown"}
+
+
+def sha1(data: bytes) -> str:
+    return hashlib.sha1(data).hexdigest()
+
+
+def read_bytes(path: str) -> bytes:
+    with open(path, "rb") as fh:
+        return fh.read()
+
+
+def read_text(path: str) -> str:
+    return read_bytes(path).decode("utf-8", errors="replace")
+
+
+def write_text(path: str, text: str) -> None:
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(text)
+
+
+# --- strategy selection -----------------------------------------------------
+
+
+def choose_strategy(path: str, override: str | None) -> str:
+    if override:
+        return override
+    ext = os.path.splitext(path)[1].lower()
+    if ext in TAIL_EXTS:
+        return "tail"
+    if ext in SECTION_EXTS:
+        return "section"
+    return "diff"
+
+
+# Each strategy is pure: it computes a structured payload + the next state and
+# never writes. The driver renders the payload (text or json) and commits state
+# (unless --dry-run). This split is what makes --json and --dry-run fall out for
+# free. Strategies return: (payload, new_state, changed, mode, shadow_content).
+
+
+# --- tail (append-only, rotation-safe) --------------------------------------
+
+
+def first_line_sig(data: bytes) -> str:
+    nl = data.find(b"\n")
+    seg = data if nl < 0 else data[:nl]
+    return sha1(seg)
+
+
+def is_json(line: str) -> bool:
+    """True if the line parses as JSON (used by delta-validate and --validate)."""
+    try:
+        json.loads(line)
+        return True
+    except Exception:
+        return False
+
+
+def match_select(line: str, select: dict) -> bool:
+    try:
+        obj = json.loads(line)
+    except Exception:
+        return False
+    for field, values in select.items():
+        if str(obj.get(field)) not in values:
+            return False
+    return True
+
+
+def strat_tail(path: str, state: dict, select: dict):
+    data = read_bytes(path)
+    size = len(data)
+    head_sig = first_line_sig(data)
+    prev_off = state.get("offset", 0)
+    prev_head = state.get("head_sig")
+
+    if prev_head is None:
+        mode = "cold"  # no usable prior cursor (first run / corrupt / reset)
+    elif prev_head != head_sig or prev_off > size:
+        # Rotation / truncation / in-place rewrite: the bytes we already
+        # committed are no longer a stable prefix. Re-read from the start so we
+        # never silently skip the replacement content.
+        mode = "resync"
+    else:
+        mode = "incremental"
+    start = 0 if mode != "incremental" else prev_off
+
+    # Only commit up to the last complete line; a partial trailing line (writer
+    # mid-append) is left for the next run so it is emitted exactly once.
+    last_nl = data.rfind(b"\n")
+    commit = last_nl + 1 if last_nl >= 0 else 0
+    if commit < start:
+        commit = start
+
+    chunk = data[start:commit]
+    raw_lines = chunk.decode("utf-8", errors="replace").splitlines()
+
+    # Delta-validate (default, tail only): flag any non-empty delta line that is
+    # not valid JSON, so a torn/corrupt line is surfaced even when --select would
+    # otherwise silently drop it. Scoped to the delta, so it never re-spams old
+    # corruption (which lies before the cursor).
+    lines_before = data[:start].count(b"\n")
+    invalid = [
+        {"line": lines_before + idx + 1, "text": ln[:120]}
+        for idx, ln in enumerate(raw_lines)
+        if ln.strip() and not is_json(ln)
+    ]
+
+    lines = raw_lines
+    if select:
+        lines = [ln for ln in raw_lines if match_select(ln, select)]
+
+    payload = {"lines": lines}
+    if invalid:
+        payload["invalid"] = invalid
+    new_state = {
+        "strategy": "tail",
+        "offset": commit,
+        "head_sig": head_sig,
+        "size": size,
+        "path": path,
+    }
+    return payload, new_state, bool(lines), mode, None
+
+
+# --- section (content-hash per heading, intra-document safe) -----------------
+
+
+def parse_sections(text: str):
+    blocks = []
+    cur_key = "(preamble)"
+    cur = []
+    for ln in text.splitlines(keepends=True):
+        if HEADING_RE.match(ln):
+            blocks.append((cur_key, "".join(cur)))
+            cur_key = ln.strip()
+            cur = [ln]
+        else:
+            cur.append(ln)
+    blocks.append((cur_key, "".join(cur)))
+
+    result = []
+    seen = {}
+    for key, body in blocks:
+        if key == "(preamble)" and not body.strip():
+            continue
+        seen[key] = seen.get(key, 0) + 1
+        disambiguated = key if seen[key] == 1 else f"{key} #{seen[key]}"
+        result.append((disambiguated, body))
+        result.append((disambiguated, body))
+    return result
+
+
+def strat_section(path: str, state: dict):
+    text = read_text(path)
+    current = parse_sections(text)
+    has_prev = "sections" in state
+    prev = state.get("sections", {})
+    mode = "incremental" if has_prev else "cold"  # content-addressed: never resyncs
+
+    cur_map = {}
+    sections = []
+    for key, body in current:
+        # Hash on stripped content so the blank line that separates sections
+        # (which re-attaches to a different section when sections are reordered)
+        # does not register as a spurious change.
+        digest = sha1(body.strip().encode("utf-8"))
+        cur_map[key] = digest
+        if key not in prev:
+            sections.append({"key": key, "kind": "new", "body": body.rstrip("\n")})
+        elif prev[key] != digest:
+            sections.append({"key": key, "kind": "changed", "body": body.rstrip("\n")})
+    for key in prev:
+        if key not in cur_map:
+            sections.append({"key": key, "kind": "removed", "body": ""})
+
+    payload = {"sections": sections}
+    new_state = {"strategy": "section", "sections": cur_map, "path": path}
+    return payload, new_state, bool(sections), mode, None
+
+
+# --- diff (shadow copy, works for any text file) ----------------------------
+
+
+def strat_diff(path: str, state: dict, shadow_path: str):
+    new = read_text(path)
+    has_shadow = os.path.exists(shadow_path)
+    old = read_text(shadow_path) if has_shadow else ""
+    mode = "incremental" if has_shadow else "cold"
+
+    diff = list(
+        difflib.unified_diff(
+            old.splitlines(keepends=True),
+            new.splitlines(keepends=True),
+            fromfile="prev",
+            tofile="cur",
+        )
+    )
+    payload = {"diff": "".join(diff)}
+    new_state = {
+        "strategy": "diff",
+        "shadow": os.path.basename(shadow_path),
+        "path": path,
+    }
+    # shadow_content is committed by the driver (skipped on --dry-run).
+    return payload, new_state, bool(diff), mode, new
+
+
+# --- rendering --------------------------------------------------------------
+
+
+def render_text(strategy: str, payload: dict) -> str:
+    if strategy == "tail":
+        lines = payload["lines"]
+        return ("\n".join(lines) + "\n") if lines else ""
+    if strategy == "section":
+        parts = []
+        for s in payload["sections"]:
+            if s["kind"] == "removed":
+                parts.append(f"===== {s['key']} [removed] =====\n")
+            else:
+                parts.append(f"===== {s['key']} [{s['kind']}] =====\n{s['body']}\n")
+        return "\n".join(parts)
+    return payload["diff"]
+
+
+# --- state I/O --------------------------------------------------------------
+
+
+def load_state(state_path: str) -> dict:
+    try:
+        with open(state_path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:
+        # Missing or corrupt state -> cold start. Never crash the monitor.
+        return {}
+
+
+def save_state(state_path: str, state: dict) -> None:
+    tmp = state_path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(state, fh)
+    os.replace(tmp, state_path)
+
+
+def parse_select(items):
+    select = {}
+    for item in items or []:
+        if "=" not in item:
+            raise ValueError(f"--select must be field=value[,value]: {item!r}")
+        field, values = item.split("=", 1)
+        select.setdefault(field, set()).update(v for v in values.split(",") if v)
+    return select
+
+
+def do_prune(state_dir: str, out, err) -> int:
+    """Drop cursor (+shadow) files whose recorded source path no longer exists.
+
+    Unparseable state files, and ones with no recorded path, are left untouched
+    (we cannot prove what they track). Safe to run anytime; `rm -rf` on the
+    state dir is an equally valid full reset.
+    """
+    if not os.path.isdir(state_dir):
+        print("ledgerwatch: pruned 0 stale cursor(s)", file=err)
+        return 0
+    pruned = []
+    for name in sorted(os.listdir(state_dir)):
+        if not name.endswith(".json"):
+            continue
+        st = load_state(os.path.join(state_dir, name))
+        path = st.get("path")
+        if not path or os.path.exists(path):
+            continue
+        os.remove(os.path.join(state_dir, name))
+        try:
+            os.remove(os.path.join(state_dir, name[:-5] + ".shadow"))
+        except FileNotFoundError:
+            pass
+        pruned.append(path)
+    for p in pruned:
+        print(f"ledgerwatch: pruned {p}", file=err)
+    print(f"ledgerwatch: pruned {len(pruned)} stale cursor(s)", file=err)
+    return 0
+
+
+def do_validate(path: str, as_json: bool, out, err) -> int:
+    """Full-file JSONL integrity scan (opt-in `--validate`).
+
+    Reports every non-blank line that is not valid JSON, plus an unterminated
+    final line, as a bounded summary. It reads the whole file (O(file) disk) but
+    caps its output so context stays O(problems), not O(file). Distinct exit code
+    so it never muddies the delta status: 0 = clean, 3 = corruption found,
+    2 = read error. Blank/whitespace-only lines are ignored (never written by a
+    well-behaved appender, harmless if present).
+    """
+    try:
+        data = read_bytes(path)
+    except OSError as exc:
+        print(f"ledgerwatch: cannot read {path}: {exc}", file=err)
+        return 2
+    text = data.decode("utf-8", errors="replace")
+    unterminated = bool(data) and not data.endswith(b"\n")
+    rows = text.split("\n")
+    invalid = []
+    last = len(rows) - 1
+    for i, ln in enumerate(rows):
+        if i == last and ln == "":
+            continue  # the empty tail produced by a final newline is not a line
+        if ln.strip() == "":
+            continue  # ignore blank lines
+        if not is_json(ln):
+            invalid.append((i + 1, ln[:120]))
+    clean = not invalid and not unterminated
+    cap = 20
+    shown = invalid[:cap]
+
+    if as_json:
+        envelope = {
+            "file": path,
+            "mode": "validate",
+            "valid": clean,
+            "invalid_count": len(invalid),
+            "invalid_lines": [{"line": n, "text": t} for n, t in shown],
+            "truncated": len(invalid) > cap,
+            "unterminated_final_line": unterminated,
+        }
+        out.write(json.dumps(envelope) + "\n")
+    elif clean:
+        print(f"ledgerwatch: {path}: valid (no invalid lines)", file=err)
+    else:
+        for n, t in shown:
+            print(f"ledgerwatch: {path}:{n} invalid JSON: {t}", file=err)
+        if len(invalid) > cap:
+            print(
+                f"ledgerwatch: ...and {len(invalid) - cap} more invalid line(s)",
+                file=err,
+            )
+        if unterminated:
+            print(
+                f"ledgerwatch: {path}: unterminated final line (no trailing newline)",
+                file=err,
+            )
+    return 0 if clean else 3
+
+
+def do_project(path: str, as_json: bool, out, err) -> int:
+    """Fold an event-sourced JSONL ledger to its latest entry per `id`.
+
+    These ledgers are event logs: an item's current state is the LAST entry
+    carrying its `id`, and every earlier entry for that id is history. This mode
+    computes that fold. Last occurrence in FILE order wins — the files are
+    append-ordered (and `check-ledgers.sh` gates that their seq runs are
+    contiguous), so file order is append order.
+
+    Entries with no usable `id` are a first-class, expected case, not an error:
+    dev/steward/steward-ledger.jsonl is a decision trail whose 107/107 entries
+    carry no `id` at all. They are counted into the `unfoldable (no id): N`
+    bucket, which is printed on EVERY run (including when it is 0) so a caller
+    can never mistake "nothing to fold" for "everything folded". A line that is
+    not valid JSON, or is valid JSON but not an object, goes to a separate
+
+exec
+/bin/bash -lc "git status --short && git ls-files '*.jsonl.seq' && find dev -name '*.jsonl.seq' -print | sort" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+dev/design/record-lifecycle-protocol/OPP-12-sub-ledger.jsonl.seq
+dev/steward/steward-ledger.jsonl.seq
+dev/todos-and-considerations-ledger.jsonl.seq
+dev/design/record-lifecycle-protocol/OPP-12-sub-ledger.jsonl.seq
+dev/steward/steward-ledger.jsonl.seq
+dev/todos-and-considerations-ledger.jsonl.seq
+
+exec
+/bin/bash -lc "nl -ba scripts/check-ledgers.sh | sed -n '140,230p'; nl -ba dev/agent-tools/ledgerwatch/ledgerwatch.py | sed -n '430,585p'; nl -ba scripts/preflight.sh | sed -n '190,245p'" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+   140	import json
+   141	import os
+   142	import sys
+   143	
+   144	CAP = 5  # per-ledger cap on enumerated bad lines / gaps / duplicates
+   145	failed = False
+   146	
+   147	
+   148	def broken(msg):
+   149	    global failed
+   150	    failed = True
+   151	    print("BROKEN  " + msg)
+   152	
+   153	
+   154	for sidecar in sys.argv[1:]:
+   155	    ledger = sidecar[: -len(".seq")]
+   156	
+   157	    # --- sidecar must be a single non-negative integer -----------------------
+   158	    try:
+   159	        with open(sidecar, "r", encoding="utf-8") as fh:
+   160	            raw = fh.read()
+   161	    except OSError as exc:
+   162	        broken(f"{sidecar}: cannot read sidecar: {exc}")
+   163	        continue
+   164	    text = raw.strip()
+   165	    if not text.isdigit():
+   166	        broken(
+   167	            f"{sidecar}: sidecar is not a non-negative integer (read {raw!r}) — "
+   168	            "the next seq cannot be minted from it"
+   169	        )
+   170	        continue
+   171	    claimed = int(text)
+   172	
+   173	    # --- the ledger must exist beside its sidecar ----------------------------
+   174	    if not os.path.isfile(ledger):
+   175	        broken(f"{sidecar}: dangling sidecar — no {os.path.basename(ledger)} beside it")
+   176	        continue
+   177	
+   178	    # --- parse entries -------------------------------------------------------
+   179	    seqs = []
+   180	    bad_lines = []
+   181	    with open(ledger, "r", encoding="utf-8", errors="replace") as fh:
+   182	        for lineno, line in enumerate(fh, 1):
+   183	            if not line.strip():
+   184	                continue  # blank / whitespace-only: ignored, by contract
+   185	            try:
+   186	                obj = json.loads(line)
+   187	            except Exception as exc:
+   188	                bad_lines.append((lineno, f"not valid JSON: {exc}"))
+   189	                continue
+   190	            if not isinstance(obj, dict):
+   191	                bad_lines.append((lineno, "entry is not a JSON object"))
+   192	                continue
+   193	            val = obj.get("seq")
+   194	            if isinstance(val, bool) or not isinstance(val, int):
+   195	                bad_lines.append((lineno, 'entry has no integer "seq" field'))
+   196	                continue
+   197	            seqs.append(val)
+   198	
+   199	    if bad_lines:
+   200	        for lineno, why in bad_lines[:CAP]:
+   201	            broken(f"{ledger}:{lineno}: {why}")
+   202	        if len(bad_lines) > CAP:
+   203	            broken(f"{ledger}: ...and {len(bad_lines) - CAP} more unparseable line(s)")
+   204	        # The seq set is untrustworthy past a torn line, so (a) and (b) are not
+   205	        # evaluated for this ledger — it is already a HARD failure.
+   206	        continue
+   207	
+   208	    # --- check (a): sidecar agreement ---------------------------------------
+   209	    observed_max = max(seqs) if seqs else 0
+   210	    agrees = claimed == observed_max
+   211	    if not agrees:
+   212	        broken(
+   213	            f"{sidecar}: sidecar says {claimed} but max(seq) is {observed_max} "
+   214	            f"in {ledger} ({len(seqs)} entr{'y' if len(seqs) == 1 else 'ies'}) — "
+   215	            "an appender trusting this sidecar would mint colliding seq numbers"
+   216	        )
+   217	
+   218	    # --- check (b): contiguity (no gaps, no duplicates) ----------------------
+   219	    if not seqs:
+   220	        if agrees:
+   221	            print(f"ok    {ledger}: empty ledger, sidecar reads 0 (consistent)")
+   222	        continue
+   223	
+   224	    counts = {}
+   225	    for v in seqs:
+   226	        counts[v] = counts.get(v, 0) + 1
+   227	    dups = sorted(v for v, n in counts.items() if n > 1)
+   228	    if dups:
+   229	        shown = ", ".join(f"{v} (appears {counts[v]}x)" for v in dups[:CAP])
+   230	        more = f" ...and {len(dups) - CAP} more" if len(dups) > CAP else ""
+   430	    not valid JSON, or is valid JSON but not an object, goes to a separate
+   431	    `malformed` bucket (use --validate for the line-by-line integrity report).
+   432	
+   433	    Read/report only: never writes the ledger, and — like --prune/--validate —
+   434	    never touches the cursor state directory, so a projection cannot surprise a
+   435	    caller by consuming the delta their next watch run is waiting for.
+   436	
+   437	    Text mode prints one compact JSON object per folded id on stdout, sorted
+   438	    lexicographically by id; --json prints a single envelope. Exit codes are NOT
+   439	    grep-style here (there is no "no change" notion for a projection):
+   440	    0 = projection emitted (even if it is empty), 2 = read error.
+   441	    """
+   442	    try:
+   443	        data = read_bytes(path)
+   444	    except OSError as exc:
+   445	        print(f"ledgerwatch: cannot read {path}: {exc}", file=err)
+   446	        return 2
+   447	
+   448	    text = data.decode("utf-8", errors="replace")
+   449	    latest: dict[str, dict] = {}
+   450	    entries = 0
+   451	    no_id = 0
+   452	    malformed = 0
+   453	
+   454	    for raw in text.split("\n"):
+   455	        if raw.strip() == "":
+   456	            continue  # blank lines are not entries
+   457	        entries += 1
+   458	        try:
+   459	            obj = json.loads(raw)
+   460	        except Exception:
+   461	            malformed += 1
+   462	            continue
+   463	        if not isinstance(obj, dict):
+   464	            malformed += 1
+   465	            continue
+   466	        ident = obj.get("id")
+   467	        if ident is None or str(ident) == "":
+   468	            no_id += 1
+   469	            continue
+   470	        latest[str(ident)] = obj  # last write wins (file order == append order)
+   471	
+   472	    rows = [latest[key] for key in sorted(latest)]
+   473	
+   474	    if as_json:
+   475	        envelope = {
+   476	            "file": path,
+   477	            "mode": "project",
+   478	            "entries": entries,
+   479	            "folded_ids": len(rows),
+   480	            "unfoldable_no_id": no_id,
+   481	            "malformed": malformed,
+   482	            "latest": rows,
+   483	        }
+   484	        out.write(json.dumps(envelope) + "\n")
+   485	    else:
+   486	        for row in rows:
+   487	            out.write(json.dumps(row, sort_keys=True) + "\n")
+   488	
+   489	    print(
+   490	        f"ledgerwatch: --project {path}: {len(rows)} id(s) folded "
+   491	        f"from {entries} entries; unfoldable (no id): {no_id}; "
+   492	        f"malformed: {malformed}",
+   493	        file=err,
+   494	    )
+   495	    return 0
+   496	
+   497	
+   498	# --- driver -----------------------------------------------------------------
+   499	
+   500	
+   501	def run(argv, out=sys.stdout, err=sys.stderr) -> int:
+   502	    parser = argparse.ArgumentParser(prog="ledgerwatch", add_help=True)
+   503	    parser.add_argument("file", nargs="?")
+   504	    parser.add_argument(
+   505	        "--state-dir", default=os.environ.get("LEDGERWATCH_STATE", ".ledgerwatch")
+   506	    )
+   507	    parser.add_argument("--strategy", choices=["tail", "section", "diff"], default=None)
+   508	    parser.add_argument(
+   509	        "--select",
+   510	        action="append",
+   511	        default=[],
+   512	        help="tail only: field=value[,value]; repeatable (AND across fields)",
+   513	    )
+   514	    parser.add_argument(
+   515	        "--json", action="store_true", help="emit a structured envelope"
+   516	    )
+   517	    parser.add_argument(
+   518	        "--dry-run",
+   519	        action="store_true",
+   520	        help="show the delta without advancing the cursor",
+   521	    )
+   522	    parser.add_argument(
+   523	        "--reset", action="store_true", help="discard saved cursor first"
+   524	    )
+   525	    parser.add_argument(
+   526	        "--no-status",
+   527	        action="store_true",
+   528	        help="opt out of grep-style codes: exit 0 on success (changed or not), 2 on error",
+   529	    )
+   530	    parser.add_argument(
+   531	        "--prune", action="store_true", help="drop cursors whose source file is gone"
+   532	    )
+   533	    parser.add_argument(
+   534	        "--validate",
+   535	        action="store_true",
+   536	        help="JSONL integrity scan of the whole file (0 clean / 3 corrupt / 2 error); "
+   537	        "no delta, no cursor advance",
+   538	    )
+   539	    parser.add_argument(
+   540	        "--project",
+   541	        action="store_true",
+   542	        help="fold the ledger to its latest entry per id; entries with no id are "
+   543	        "reported in an 'unfoldable (no id): N' bucket, never fatal. Read-only: "
+   544	        "does NOT write the ledger and does NOT advance the cursor "
+   545	        "(0 = projection emitted / 2 = read error)",
+   546	    )
+   547	    args = parser.parse_args(argv)
+   548	
+   549	    if args.prune:
+   550	        return do_prune(args.state_dir, out, err)
+   551	
+   552	    if not args.file:
+   553	        print("ledgerwatch: file argument required (or use --prune)", file=err)
+   554	        return 2
+   555	
+   556	    abspath = os.path.abspath(args.file)
+   557	    if not os.path.isfile(abspath):
+   558	        print(f"ledgerwatch: no such file: {args.file}", file=err)
+   559	        return 2
+   560	
+   561	    if args.validate:
+   562	        # Opt-in full-file integrity scan; a standalone mode (like --prune) that
+   563	        # does not compute a delta or advance the cursor.
+   564	        return do_validate(abspath, args.json, out, err)
+   565	
+   566	    # Fold-to-latest-per-id projection. Dispatched HERE, before the state dir is
+   567	    # created below, so --project provably cannot create, read or advance a
+   568	    # cursor (see do_project's docstring for why that is the safe choice).
+   569	    if args.project:
+   570	        return do_project(abspath, args.json, out, err)
+   571	
+   572	    try:
+   573	        select = parse_select(args.select)
+   574	    except ValueError as exc:
+   575	        print(f"ledgerwatch: {exc}", file=err)
+   576	        return 2
+   577	
+   578	    os.makedirs(args.state_dir, exist_ok=True)
+   579	    key = sha1(abspath.encode("utf-8"))
+   580	    state_path = os.path.join(args.state_dir, key + ".json")
+   581	    shadow_path = os.path.join(args.state_dir, key + ".shadow")
+   582	
+   583	    if args.reset:
+   584	        for p in (state_path, shadow_path):
+   585	            try:
+   190	      esac
+   191	    done <<<"$BOARD_CHECK_OUT"
+   192	  else
+   193	    ok "board-currency: live STATUS-0.8.z.md board(s) match git ancestry for this tip"
+   194	  fi
+   195	fi
+   196	
+   197	# --- 8. Ledger-integrity gate (DOC-HYGIENE-2 T1b) --------------------------------
+   198	# Refuse a land that would ship a `*.jsonl.seq` sidecar disagreeing with its
+   199	# ledger. The incident: 19 consecutive commits (f22e4947 -> 3264114a, four days)
+   200	# shipped dev/steward/steward-ledger.jsonl.seq frozen at 80 while max(seq) in
+   201	# the ledger had reached 98. The sidecar is TRACKED and is the only thing an
+   202	# appender reads to pick the next seq, so every clone taken in that window would
+   203	# have minted colliding seq numbers.
+   204	#
+   205	# The predicate lives in scripts/check-ledgers.sh (see that file's header for
+   206	# the full statement — exactly two checks: sidecar == max(seq), and seq
+   207	# contiguous) so preflight and the always-on CI job share ONE implementation and
+   208	# cannot diverge, exactly as §7 does for board-currency.
+   209	#
+   210	# --landing-only, mirroring §7's structure. The ledger invariant is in fact true
+   211	# at all times (unlike a board, which legitimately reads "in flight" mid-build),
+   212	# so an unconditional run would also be sound; it is kept behind --landing so
+   213	# preflight's non-landing path stays exactly as lean as it was, and the CI job —
+   214	# which is deliberately NOT docs_only-gated — is what covers every non-landing
+   215	# push.
+   216	if [ "$LANDING" -eq 1 ]; then
+   217	  LEDGER_CHECK_OUT="$(bash "$SELF_DIR/check-ledgers.sh" 2>&1)" || LEDGER_CHECK_RC=$?
+   218	  LEDGER_CHECK_RC="${LEDGER_CHECK_RC:-0}"
+   219	  if [ "$LEDGER_CHECK_RC" -ne 0 ]; then
+   220	    LEDGER_SAW_BROKEN=0
+   221	    while IFS= read -r line; do
+   222	      case "$line" in
+   223	        BROKEN*) hard "ledger-integrity: $line"; LEDGER_SAW_BROKEN=1 ;;
+   224	        *)       info "ledger-integrity: $line" ;;
+   225	      esac
+   226	    done <<<"$LEDGER_CHECK_OUT"
+   227	    # Anti-fail-open: a non-zero rc with no BROKEN line means the checker itself
+   228	    # could not run (exit 2 = usage/env, e.g. python3 absent) — that must still
+   229	    # block the land, never degrade into INFO lines and a green summary.
+   230	    if [ "$LEDGER_SAW_BROKEN" -eq 0 ]; then
+   231	      hard "ledger-integrity: check-ledgers.sh exited $LEDGER_CHECK_RC without reporting a specific defect — refusing to certify this tree for landing"
+   232	    fi
+   233	  else
+   234	    ok "ledger-integrity: every *.jsonl.seq sidecar agrees with its ledger and every seq run is contiguous"
+   235	  fi
+   236	fi
+   237	
+   238	# --- Summary (JSON, last line) ---------------------------------------------------
+   239	json_arr() { local out="" x; for x in "$@"; do out="${out:+$out,}\"$(printf '%s' "$x" | sed 's/\\/\\\\/g; s/"/\\"/g')\""; done; printf '[%s]' "$out"; }
+   240	
+   241	STATUS=$([ ${#HARD_FAILS[@]} -eq 0 ] && echo pass || echo fail)
+   242	printf '{"preflight":"%s","main_sha":"%s","worktree":"%s","hard_fails":%s,"warnings":%s}\n' \
+   243	  "$STATUS" "$MAIN_SHA" "${WT:-}" "$(json_arr "${HARD_FAILS[@]+"${HARD_FAILS[@]}"}")" "$(json_arr "${WARNS[@]+"${WARNS[@]}"}")"
+   244	
+   245	[ "$STATUS" = pass ]
+
+exec
+/bin/bash -lc "sed -n '360,455p' .github/workflows/ci.yml" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+            echo "| with-feature wheel (shipped, GATED) | ${FEAT} B |"
+            echo "| baseline | ${BASELINE} B |"
+            echo "| delta vs baseline | ${DELTA} B |"
+            echo "| budget (blocking) | ${BUDGET} B |"
+            echo "| no-feature wheel | ${NOFEAT} B (informational only) |"
+            echo "| with-feature delta vs no-feature | ${FEATDELTA} B (informational only) |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$DELTA" -gt "$BUDGET" ]; then
+            echo "::error title=wheel-size regression::with-feature wheel grew ${DELTA} B vs baseline ${BASELINE} B (budget ${BUDGET} B)"
+            exit 1
+          fi
+
+  # Docs-only fast-path md gate. Runs ONLY when the diff is markdown-only (the
+  # heavy `verify` job — which runs scripts/agent-verify.sh -> agent-lint-md.sh —
+  # is the md gate on every non-docs diff, so this avoids double-linting). Uses
+  # the SAME .markdownlint-cli2.jsonc config as local + CI, so the real markdown
+  # gate is preserved on the fast path (this is NOT a silent `paths-ignore` drop).
+  markdownlint:
+    needs: changes
+    if: needs.changes.outputs.docs_only == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+      - name: Install markdown tooling (markdownlint-cli2)
+        run: npm ci
+      - name: markdownlint-cli2 (repo markdown; same config as local + verify)
+        run: ./node_modules/.bin/markdownlint-cli2
+      - name: markdownlint docs/** (mirrors agent-lint-md.sh docs leg)
+        run: bash scripts/agent-lint-docs.sh
+      - name: dev/plans/*.md status frontmatter (T3/8+9, mirrors agent-lint-md.sh leg)
+        run: bash scripts/lint-plans-status.sh
+
+  # status-board-currency-enforcement item 3 — the non-bypassable CI backstop.
+  # `preflight.sh --landing` (item 2) is the PREVENT gate at land time, but it is
+  # a local, invocable check; this job is the DETECT gate that catches anything
+  # that slipped preflight or predates it (the exact 4-day drift the incident
+  # exhibited: a board that kept saying "not landed" after the merge commit was
+  # already on origin/main). Reuses scripts/check-board-currency.sh — the SAME
+  # script preflight.sh calls — so the two homes cannot diverge (see that
+  # script's header for the full predicate). Intentionally NOT gated on
+  # docs_only: a board can drift behind a non-docs-only push just as easily.
+  # fetch-depth 0 is required: the predicate walks full reachable git history
+  # for `merge(0.8.z): Slice N` commits, which a shallow (depth-1) checkout
+  # would hide entirely.
+  board-currency:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - name: Board/git-ancestry drift check (status-board-currency-enforcement item 3)
+        run: bash scripts/check-board-currency.sh --tip HEAD
+
+  # DOC-HYGIENE-2 T1b — the always-on ledger-integrity backstop.
+  # `preflight.sh --landing` is the PREVENT gate at land time; this job is the
+  # DETECT gate for whatever slips it. Reuses scripts/check-ledgers.sh — the
+  # SAME script preflight calls — so the two homes cannot diverge (see that
+  # script's header for the predicate: sidecar == max(seq), and seq contiguous).
+  #
+  # Deliberately carries NO `if:` condition. A docs_only-gated job never fires on
+  # a code push, and the measured incident (steward-ledger.jsonl.seq frozen at 80
+  # against max(seq) 98 for 19 commits / four days) spanned both docs and code
+  # pushes; the sidecar is tracked, so any clone taken in that window would have
+  # minted colliding seq numbers. Default (depth-1) checkout is sufficient: the
+  # predicate reads working-tree files only and walks no history.
+  ledger-integrity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Ledger sidecar/seq integrity (DOC-HYGIENE-2 T1b)
+        run: bash scripts/check-ledgers.sh
+
+  # mkdocs --strict is the broader CI gate beyond agent-verify (per AGENTS.md §3).
+  # Intentionally NOT gated on docs_only: it must run for docs/** changes (the
+  # fast path) AND alongside code changes, exactly as before.
+  docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - run: python3 -m pip install --upgrade pip mkdocs
+      - run: mkdocs build --strict
+
+exec
+/bin/bash -lc "sed -n '90,125p' dev/plans/prompts/DOC-HYGIENE-2-HANDOFF.md 2>/dev/null" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+no dirty/untracked files (`--untracked-files=all`) — then remove. If either holds unmerged work, **stop and
+report**; do not delete.
+
+### T1a — `ledgerwatch` invocation fix (prose only)
+
+`dev/steward/README.md` prescribes `--dry-run` with no `--state-dir`, which can never advance a cursor.
+Correct the prescribed invocation to advance by default (explicit `--state-dir` under `dev/steward/`), keep
+`--dry-run` documented as the *peek* mode only. No tool code change required for this tranche.
+
+### T1b — ledger integrity gate (TDD; §9)
+
+`scripts/check-ledgers.sh`, dual-homed exactly like `check-board-currency.sh` (invoked from
+`preflight.sh --landing` **and** a CI job — one script, two callers, so the predicate cannot diverge).
+**Ship only two checks:** (a) each `.jsonl.seq` sidecar equals `max(seq)` in its file; (b) `seq` is
+contiguous. Both pass today on all three ledgers, so include a **fixture-based RED** proving each check fails
+on a corrupted copy. *Why it matters:* 19 consecutive commits (`f22e4947`→`3264114a`, 4 days) shipped the
+steward ledger with `.seq` frozen at 80 against `max(seq)` 98, and `.seq` is tracked — any clone in that
+window mints colliding seqs.
+**Also** add a correct fold-to-latest `--project` mode to `ledgerwatch` with an explicit
+`unfoldable (no id): N` bucket, and **delete the broken recipe** at
+`dev/todos-and-considerations-ledger-readme.md:222-237` (it crashes with `KeyError: 'id'` and its `TERMINAL`
+vocabulary matches none of the real statuses). **Do NOT** add a status vocabulary, a `--summary` length cap,
+or an id requirement on the steward ledger — that file is a decision trail, and 105/105 entries have no id.
+
+### T1c — findings register (TDD; §9)
+
+In the master, **in place, no file split**:
+
+1. Promote each `- **F-n — …` bullet in §6 to a `### F-n — <title>` heading.
+2. Generate an index at §6's head (id · title · one line).
+3. **`scripts/lint-findings.sh`** — hard-fails on a **duplicate finding id**. Scope it to the master; exclude
+   `dev/archive/**` and `dev/plans/runs/codex/**`, which mint independent `F-0NN` namespaces.
+4. **RED→GREEN witness:** the duplicate `F-11` (L416/L418) is your RED. Run the lint, show it fail, then
+   **resolve the duplicate** per the disposition already ruled at
+   `dev/design/fathomdb-memex-overall-roadmap/00-priorities-and-misalignments.md:210-216` (`c6d3449a`), then
+   show it green. Keep every inbound `F-11` reference resolvable.
+
+codex
+The ledger gate can become non-terminating or exhaust memory on a single corrupt ledger with a large sequence gap, which undermines the new CI/preflight check.
+
+Review comment:
+
+- [P2] Avoid materializing the full missing seq range — /home/coreyt/projects/fathomdb-worktrees/dh2-t1b/scripts/check-ledgers.sh:236-236
+  When a ledger has a large accidental gap, e.g. seq `1` followed by `1000000000` with a matching sidecar, this builds a set containing every missing value before it can report the defect. That can hang or OOM the new CI/preflight gate instead of producing the intended bounded `BROKEN` output; compute only the first few missing values (up to `CAP`) without materializing the whole range.
+The ledger gate can become non-terminating or exhaust memory on a single corrupt ledger with a large sequence gap, which undermines the new CI/preflight check.
+
+Review comment:
+
+- [P2] Avoid materializing the full missing seq range — /home/coreyt/projects/fathomdb-worktrees/dh2-t1b/scripts/check-ledgers.sh:236-236
+  When a ledger has a large accidental gap, e.g. seq `1` followed by `1000000000` with a matching sidecar, this builds a set containing every missing value before it can report the defect. That can hang or OOM the new CI/preflight gate instead of producing the intended bounded `BROKEN` output; compute only the first few missing values (up to `CAP`) without materializing the whole range.
