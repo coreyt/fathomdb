@@ -235,6 +235,44 @@ if [ "$LANDING" -eq 1 ]; then
   fi
 fi
 
+# --- 9. Governed-surface pin gate (DOC-HYGIENE-2 T1e) ----------------------------
+# Refuse a land that would ship a governed surface the HITL has not signed. The
+# HITL PRE-SIGNED the accumulated delta of 0.8.20 Slices 5d+10b+15b+15d (AC-079)
+# pinned to the exact content of src/conformance/governed-surface-allowlist.json
+# as of 427d2712 — 30 allowlist members, recovery_denylist unchanged at the five
+# REQ-054 names. This gate makes that pin mechanical.
+#
+# The predicate lives in scripts/check-governed-surface-pin.sh (see that file's
+# header) so preflight and the always-on CI job share ONE implementation and
+# cannot diverge, exactly as §7 and §8 do. --landing-only, mirroring their
+# structure: the CI job — deliberately NOT docs_only-gated — covers every
+# non-landing push.
+#
+# Tripping this is CORRECT BEHAVIOUR, not a bug: Slices 20/25/30 are expected to
+# trip it, and that is exactly what routes a changed surface back to the HITL
+# instead of letting it land under a pre-sign that never covered it.
+if [ "$LANDING" -eq 1 ]; then
+  SURFACE_CHECK_OUT="$(bash "$SELF_DIR/check-governed-surface-pin.sh" 2>&1)" || SURFACE_CHECK_RC=$?
+  SURFACE_CHECK_RC="${SURFACE_CHECK_RC:-0}"
+  if [ "$SURFACE_CHECK_RC" -ne 0 ]; then
+    SURFACE_SAW_FAIL=0
+    while IFS= read -r line; do
+      case "$line" in
+        FAIL*) hard "governed-surface-pin: $line"; SURFACE_SAW_FAIL=1 ;;
+        *)     info "governed-surface-pin: $line" ;;
+      esac
+    done <<<"$SURFACE_CHECK_OUT"
+    # Anti-fail-open, as in §8: a non-zero rc with no FAIL line means the checker
+    # itself could not run (exit 2 = usage/env, e.g. python3 absent or an
+    # unreadable pin) — that must still block the land.
+    if [ "$SURFACE_SAW_FAIL" -eq 0 ]; then
+      hard "governed-surface-pin: check-governed-surface-pin.sh exited $SURFACE_CHECK_RC without reporting a specific defect — refusing to certify this tree for landing"
+    fi
+  else
+    ok "governed-surface-pin: the governed surface matches the AC-079 pre-signed pin"
+  fi
+fi
+
 # --- Summary (JSON, last line) ---------------------------------------------------
 json_arr() { local out="" x; for x in "$@"; do out="${out:+$out,}\"$(printf '%s' "$x" | sed 's/\\/\\\\/g; s/"/\\"/g')\""; done; printf '[%s]' "$out"; }
 

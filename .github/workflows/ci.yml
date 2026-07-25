@@ -464,6 +464,26 @@ jobs:
       - name: Recurrence guard for the gate itself (fixture arms)
         run: bash scripts/tests/test_lint_plan_anchors.sh
 
+  # DOC-HYGIENE-2 T1e — the always-on governed-surface pin backstop.
+  # `preflight.sh --landing` is the PREVENT gate at land time; this job is the
+  # DETECT gate for whatever slips it. Reuses scripts/check-governed-surface-pin.sh
+  # — the SAME script preflight calls — so the two homes cannot diverge (see that
+  # script's header for the predicate: content hash + member lists + counts +
+  # REQ-054, against scripts/governed-surface-pin.json).
+  #
+  # Deliberately carries NO `if:` condition and is NOT on the docs_only fast path:
+  # a governed-surface change is BY DEFINITION a code change, so a docs_only gate
+  # would make this job silently absent on exactly the pushes it exists to catch.
+  # Default (depth-1) checkout is sufficient: the predicate reads working-tree
+  # files only and walks no history.
+  governed-surface-pin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Governed-surface pin vs the AC-079 pre-sign (DOC-HYGIENE-2 T1e)
+        run: bash scripts/check-governed-surface-pin.sh
+
   # mkdocs --strict is the broader CI gate beyond agent-verify (per AGENTS.md §3).
   # Intentionally NOT gated on docs_only: it must run for docs/** changes (the
   # fast path) AND alongside code changes, exactly as before.

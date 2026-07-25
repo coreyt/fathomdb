@@ -31,6 +31,14 @@ run_capped test-check-board-currency bash scripts/tests/test_check_board_currenc
 # preflight arms); no real .jsonl / .jsonl.seq is ever touched.
 run_capped test-check-ledgers bash scripts/tests/test_check_ledgers.sh
 
+# Scripts (bash): DOC-HYGIENE-2 T1e — the shared scripts/check-governed-surface-pin.sh
+# predicate (content hash + member lists + counts + REQ-054 against
+# scripts/governed-surface-pin.json), its --landing wiring in preflight.sh, and a
+# static assertion that its CI job is always-on. Fixtures are COPIES of the
+# allowlist under mktemp -d (plus throwaway git repos for the preflight arms);
+# src/conformance/governed-surface-allowlist.json is never written.
+run_capped test-check-governed-surface-pin bash scripts/tests/test_check_governed_surface_pin.sh
+
 # Scripts (bash): sibling-package co-tagging assert (AC-052). Offline via
 # python3 -m http.server fixture; never hits crates.io.
 run_capped test-assert-co-tagging bash scripts/tests/test_assert_co_tagging.sh
