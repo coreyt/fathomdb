@@ -1,0 +1,2044 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f9adf-b4b9-7343-a2b9-dab7fe1f3717
+--------
+user
+changes against 'fc5c4ad1dc5551920a6162239752bc3a4cab9005'
+exec
+/bin/bash -lc "cat MEMORY.md 2>/dev/null; printf '\\n--- feedback files ---\\n'; ls feedback_*.md 2>/dev/null | xargs -r -n1 sh -c 'echo --- "'$0 ---; cat $0'"'" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+
+--- feedback files ---
+
+exec
+/bin/bash -lc 'git diff --stat fc5c4ad1dc5551920a6162239752bc3a4cab9005 && git diff --name-only fc5c4ad1dc5551920a6162239752bc3a4cab9005' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+ .github/workflows/ci.yml                     |  27 ++
+ dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md |  17 +-
+ scripts/agent-lint-md.sh                     |  11 +
+ scripts/agent-test.sh                        |   6 +
+ scripts/lint-plan-anchors.sh                 | 278 +++++++++++++++++++++
+ scripts/tests/test_lint_plan_anchors.sh      | 360 +++++++++++++++++++++++++++
+ 6 files changed, 691 insertions(+), 8 deletions(-)
+.github/workflows/ci.yml
+dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md
+scripts/agent-lint-md.sh
+scripts/agent-test.sh
+scripts/lint-plan-anchors.sh
+scripts/tests/test_lint_plan_anchors.sh
+
+exec
+/bin/bash -lc 'git diff --find-renames --find-copies fc5c4ad1dc5551920a6162239752bc3a4cab9005' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 71d963a5..684d6c80 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -394,6 +394,10 @@ jobs:
+         run: bash scripts/lint-plans-status.sh
+       - name: master §6 findings register — duplicate-id gate (T1c, mirrors agent-lint-md.sh leg)
+         run: bash scripts/lint-findings.sh
++      # NOTE: agent-lint-md.sh's `lint-plan-anchors` leg is deliberately NOT
++      # mirrored here. This job is `if: docs_only == 'true'`, and the event that
++      # breaks a symbol citation is a CODE push (a rename), which this job never
++      # sees. It has its own always-on `plan-anchors` job below instead.
+ 
+   # status-board-currency-enforcement item 3 — the non-bypassable CI backstop.
+   # `preflight.sh --landing` (item 2) is the PREVENT gate at land time, but it is
+@@ -437,6 +441,29 @@ jobs:
+       - name: Ledger sidecar/seq integrity (DOC-HYGIENE-2 T1b)
+         run: bash scripts/check-ledgers.sh
+ 
++  # DOC-HYGIENE-2 T1d — the always-on line-anchor / citation-integrity backstop.
++  #
++  # Deliberately carries NO `if:` and NO `needs:`. This is the whole point of the
++  # job, not boilerplate. The `markdownlint` job above is gated on
++  # `needs.changes.outputs.docs_only == 'true'`, so it fires only when a push
++  # touches docs and nothing else — but the event that BREAKS a symbol citation
++  # in an ACTIVE plan is a rename in `src/`, i.e. a code push, which docs_only
++  # excludes by construction. A citation gate that cannot run on the push that
++  # invalidates the citation is decorative. Same reasoning that put
++  # `board-currency` and `ledger-integrity` outside the docs_only fast path.
++  #
++  # Default (depth-1) checkout is sufficient: the predicate reads working-tree
++  # files only and walks no history.
++  plan-anchors:
++    runs-on: ubuntu-latest
++    timeout-minutes: 5
++    steps:
++      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
++      - name: ACTIVE-plan line-anchor ban + symbol-existence check (DOC-HYGIENE-2 T1d)
++        run: bash scripts/lint-plan-anchors.sh
++      - name: Recurrence guard for the gate itself (fixture arms)
++        run: bash scripts/tests/test_lint_plan_anchors.sh
++
+   # mkdocs --strict is the broader CI gate beyond agent-verify (per AGENTS.md §3).
+   # Intentionally NOT gated on docs_only: it must run for docs/** changes (the
+   # fast path) AND alongside code changes, exactly as before.
+diff --git a/dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md b/dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md
+index cf1060da..c3e69952 100644
+--- a/dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md
++++ b/dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md
+@@ -523,7 +523,7 @@ The vector stage is brute-force (two-phase bit-KNN: Hamming scan to `TOP_K_BIT_C
+ 
+ ### F-18 — Memex ranked-needs weighting: OPP-12 (≥0.9.x) is the single major FathomDB-side blocker for Memex
+ 
+-**F-18 — Memex ranked-needs weighting: OPP-12 (≥0.9.x) is the single major FathomDB-side blocker for Memex; the 0.8.15 dispatcher serves no top-5 Memex need and has ZERO OPP-12 dependency (Steward analysis 2026-07-07; the 0.8.15 resequence is HITL-pending).** Memex supplied a ranked "key needs from FathomDB" (memex `6f7456c` context). **Both P0 items are the OPP-12 record-lifecycle pair:** #1 the **Cause-A typed `SearchHit.id` round-trip** (C-2 / F-8a — typed `IdSpace` + `write_cursor→logical_id`; **verified NOT started** — `SearchHit.id` is `u64`, `stable_id` additive only; **TC-8**), and #2 the **OPP-12 net-new lifecycle build** (existence axis · node-validity · projection registry + EAV/property-FTS · `dense_readiness` · surrogate `logical_id`). #3 (`margin`/V-7) is P1 but **low Memex value** (gap ~0.03; cascade stays OFF regardless); #4 (adjudicator signals) is P2 enhancement (core signals landed); #5 (OPP-1 follow-on) is P3 (ball is Memex-side). **So essentially all remaining Memex need from FathomDB = OPP-12 @≥0.9.x** — a *forward-capability* blocker (Memex runs today on shipped FathomDB), gated behind the 0.8.x tail. **Memex-value critical path:** `0.8.16 (F9) → 0.8.18 (#11-full publish matrix) → open 0.9.0 (C-2 swap + existence axis) → 0.9.1 (projection registry + node-validity + C-1 co-land) → 0.9.2 (breaking-pair publish; Memex consumes)`. **Three consequences:** **(a) New forward edge — F9 (0.8.16) → OPP-12 `rankable` projection role (0.9.1):** F9's signal algebra is the `rankable` ranking contract (0.9.x draft §3), so **0.8.16's F9 must be specced with it in mind**, and 0.8.16 is thereby ON the Memex critical path. **(b) 0.8.15 (in-library dispatcher, OPP-10) is OFF the Memex critical path** — it appears in **none** of the top-5 needs (Memex is the sophisticated L1 driver; the in-library L2 is "batteries for thin consumers"), it is still gated on the **unrun V-7 leg**, and it has **ZERO OPP-12 dependency** (verified: the only "dispatcher" in the OPP-12 contract is the *async projection worker* `lib.rs:876-887`, already shipped — a naming collision with the 0.8.15 *routing* dispatcher; `route_recommend`/`search_routed`/`RouteDecision` appear nowhere in the OPP-12 design docs, and the 0.8.15 plan references OPP-12 nowhere). **HITL DECIDED 2026-07-07: PARK 0.8.15** (§4 row marked ⏸ PARKED) — next commission = **0.8.16**; re-open the dispatcher on a thin-consumer demand signal or after the Memex-critical releases. Parking it is zero-OPP-12-risk (and avoids a future `search_routed`↔`ReadView` retrofit). Focus pivots to **OPP-12**, starting with the **C-1 co-design (TC-7)** run as a bounded two-shot loop with Memex on `dev/design/record-lifecycle-protocol/OPP-12-sub-ledger.jsonl`. **(c) New near-term coordination — C-1 co-design timing (TC-7):** Memex's **Commission C (entity-schema-registry) is live 0.5.x work** that builds toward the hard C-1 `EntityTypeSpec→ProjectionSpec` seam; the co-design ADR should be agreed **before** Memex locks Commission C's registry shape, even though FathomDB's build is 0.9.1. **UPDATE 2026-07-07: C-1 CONVERGED** (bounded 2-shot loop; `dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md`) — the break-if-late `AttributeSpec.index` role hint is already **frozen inert in Memex Commission C** (memex `95ed450`); TC-7 → converged-pending-HITL; **C-1 timing risk retired**. Cross-refs TC-7/TC-8, steward-ledger `seq 36`, memex `6f7456c`, `dev/plans/0.9.x-roadmap-DRAFT.md §3/§5`. *Steward analysis from the Memex ranked-needs list, verified from git; the 0.8.15 resequence + C-1-timing are HITL-pending.*
++**F-18 — Memex ranked-needs weighting: OPP-12 (≥0.9.x) is the single major FathomDB-side blocker for Memex; the 0.8.15 dispatcher serves no top-5 Memex need and has ZERO OPP-12 dependency (Steward analysis 2026-07-07; the 0.8.15 resequence is HITL-pending).** Memex supplied a ranked "key needs from FathomDB" (memex `6f7456c` context). **Both P0 items are the OPP-12 record-lifecycle pair:** #1 the **Cause-A typed `SearchHit.id` round-trip** (C-2 / F-8a — typed `IdSpace` + `write_cursor→logical_id`; **verified NOT started** — `SearchHit.id` is `u64`, `stable_id` additive only; **TC-8**), and #2 the **OPP-12 net-new lifecycle build** (existence axis · node-validity · projection registry + EAV/property-FTS · `dense_readiness` · surrogate `logical_id`). #3 (`margin`/V-7) is P1 but **low Memex value** (gap ~0.03; cascade stays OFF regardless); #4 (adjudicator signals) is P2 enhancement (core signals landed); #5 (OPP-1 follow-on) is P3 (ball is Memex-side). **So essentially all remaining Memex need from FathomDB = OPP-12 @≥0.9.x** — a *forward-capability* blocker (Memex runs today on shipped FathomDB), gated behind the 0.8.x tail. **Memex-value critical path:** `0.8.16 (F9) → 0.8.18 (#11-full publish matrix) → open 0.9.0 (C-2 swap + existence axis) → 0.9.1 (projection registry + node-validity + C-1 co-land) → 0.9.2 (breaking-pair publish; Memex consumes)`. **Three consequences:** **(a) New forward edge — F9 (0.8.16) → OPP-12 `rankable` projection role (0.9.1):** F9's signal algebra is the `rankable` ranking contract (0.9.x draft §3), so **0.8.16's F9 must be specced with it in mind**, and 0.8.16 is thereby ON the Memex critical path. **(b) 0.8.15 (in-library dispatcher, OPP-10) is OFF the Memex critical path** — it appears in **none** of the top-5 needs (Memex is the sophisticated L1 driver; the in-library L2 is "batteries for thin consumers"), it is still gated on the **unrun V-7 leg**, and it has **ZERO OPP-12 dependency** (verified: the only "dispatcher" in the OPP-12 contract is the *async projection worker* (`fn projection_dispatcher_loop` / `fn projection_worker_loop` in `fathomdb-engine/src/lib.rs`), already shipped — a naming collision with the 0.8.15 *routing* dispatcher; `route_recommend`/`search_routed`/`RouteDecision` appear nowhere in the OPP-12 design docs, and the 0.8.15 plan references OPP-12 nowhere). **HITL DECIDED 2026-07-07: PARK 0.8.15** (§4 row marked ⏸ PARKED) — next commission = **0.8.16**; re-open the dispatcher on a thin-consumer demand signal or after the Memex-critical releases. Parking it is zero-OPP-12-risk (and avoids a future `search_routed`↔`ReadView` retrofit). Focus pivots to **OPP-12**, starting with the **C-1 co-design (TC-7)** run as a bounded two-shot loop with Memex on `dev/design/record-lifecycle-protocol/OPP-12-sub-ledger.jsonl`. **(c) New near-term coordination — C-1 co-design timing (TC-7):** Memex's **Commission C (entity-schema-registry) is live 0.5.x work** that builds toward the hard C-1 `EntityTypeSpec→ProjectionSpec` seam; the co-design ADR should be agreed **before** Memex locks Commission C's registry shape, even though FathomDB's build is 0.9.1. **UPDATE 2026-07-07: C-1 CONVERGED** (bounded 2-shot loop; `dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md`) — the break-if-late `AttributeSpec.index` role hint is already **frozen inert in Memex Commission C** (memex `95ed450`); TC-7 → converged-pending-HITL; **C-1 timing risk retired**. Cross-refs TC-7/TC-8, steward-ledger `seq 36`, memex `6f7456c`, `dev/plans/0.9.x-roadmap-DRAFT.md §3/§5`. *Steward analysis from the Memex ranked-needs list, verified from git; the 0.8.15 resequence + C-1-timing are HITL-pending.*
+ 
+ ### F-19 — HITL RESEQUENCE (2026-07-07): OPP-12 is PULLED INTO THE 0.8.x LINE and must be DONE before 0.9.0
+ 
+@@ -572,7 +572,7 @@ AC-074 sign-off + close all HITL-authorized 2026-07-10.* **→ TC-11 DISCHARGED
+ opened (HITL 2026-07-12; codex §9 ×3 rounds; `plan-0.8.20.md` de-staled + authored).**
+ **(1) TC-11 / F-23 guardrail — CLOSED.** `structural-lifecycle-contract.md §2(ii)` mandates an opaque
+ auto-assigned surrogate `logical_id` for *every anonymous node* — doc-chunks **named** (`:97-107`; restated
+-`README.md:108`). It is **OVERRULED for the anonymous class.** Anonymous/doc-seeded nodes stay
++at `engine-minted` in `dev/design/record-lifecycle-protocol/README.md`). It is **OVERRULED for the anonymous class.** Anonymous/doc-seeded nodes stay
+ `h:<content-hash>` **PERMANENTLY** — no backfill, no forward-mint, no split. The surrogate leg of the
+ "lands-together GATING" co-requisite (`api-surface.md:64`) is **CANCELLED, not deferred**; a surrogate serves
+ **only registry-admitted governed entities**, decided **at write time**, and a stored row's id-space is
+@@ -580,7 +580,7 @@ auto-assigned surrogate `logical_id` for *every anonymous node* — doc-chunks *
+ row — RED-testable as `NULL → NOT NULL` transitions == 0). **Grounds (code-verified):** an opaque surrogate is
+ **not re-derivable from content**, so re-ingest would mint a *different* id, destroying the re-ingest-stable
+ content-addressed identity `h:` provides (`same bytes ⇒ same handle` — the basis of gold keying, telemetry
+-`result_stable_ids`, explain-correlation); `derive_logical_id = SHA256("{kind}:{name}")` (`engine:11152`) is
++`result_stable_ids`, explain-correlation); `derive_logical_id = SHA256("{kind}:{name}")` (`fn derive_logical_id` in `fathomdb-engine/src/lib.rs`) is
+ **hashed**, so `:54`'s opaque-id precondition *definitionally excludes* it as "the surrogate mechanism" (§2:98
+ names it a **separate** mechanism); §2(ii) has **no consumer** (the contract itself states Memex's need is
+ closed by **(i) alone**, `:106`); and its goal is **already met** — the shipped C-2 `IdSpace` is **total**
+@@ -590,8 +590,8 @@ governed row for the same thing **both stay active and both surface in search**
+ a `logical_id` at write time is what makes a record governed. **(2) The erasure axis is PROVENANCE, not the
+ `l:`/`h:` id-space** — so the pin is **orthogonal to GDPR** and costs nothing there. **(3) REQ-037
+ lawful-erasure carve-out — APPROVED.** The project's real policy is *"**recovery-NAMED** verbs are CLI-only"*,
+-**not** "destructive ⇒ CLI-only": **`purge(logical_id)` is already an SDK verb** (`py:1297`, `napi:1102`,
+-0.8.19) *despite being named in REQ-037's forbidden list*, because **AC-041 tests only the REQ-054 five-name
++**not** "destructive ⇒ CLI-only": **`purge(logical_id)` is already an SDK verb** (`fn purge` in `fathomdb-py/src/lib.rs`,
++`pub async fn purge` in `fathomdb-napi/src/lib.rs`, 0.8.19) *despite being named in REQ-037's forbidden list*, because **AC-041 tests only the REQ-054 five-name
+ denylist**. The defect is an **asymmetry** — the `l:` axis has an application erasure verb, the `h:` axis (the
+ dominant corpus class) has none — compounded by the fact that **no CLI ships to SDK consumers** (the wheel
+ declares no `[project.scripts]`; npm no `"bin"`), so `excise_source` is **unreachable**. **Ruling:**
+@@ -601,8 +601,9 @@ declares no `[project.scripts]`; npm no `"bin"`), so `excise_source` is **unreac
+ REQ-037's prose gains the carve-out and `purge_logical_id` is **struck** from its forbidden list (shipped code
+ already contradicted it — *the amendment records reality rather than changing it*). **(4) ERASURE-COMPLETENESS
+ DEFECT CLASS (root cause: the row-owned projection table list is IMPLICIT and duplicated FIVE times).**
+-`search_index_v2` is a **content-storing** FTS5 (`schema:427`) holding the **body verbatim**, yet it is written
+-by the write path (`project_canonical_node_row:11806`) and deleted **only by `purge`** (`:6229`) —
++`search_index_v2` is a **content-storing** FTS5 (`CREATE VIRTUAL TABLE IF NOT EXISTS search_index_v2` in
++`fathomdb-schema/src/lib.rs`) holding the **body verbatim**, yet it is written
++by the write path (`fn project_canonical_node_row` in `fathomdb-engine/src/lib.rs`) and deleted **only by `purge`** (`:6229`) —
+ `excise_source_inner` (`:6398`), `rebuild_shadow_state` (`:6515`), and
+ `reproject_search_index_after_tokenizer_upgrade` (`:9515`) **never touch it**. Consequences: erased bodies
+ **survive on disk** (`secure_delete=ON` cannot help — it only zeroes pages freed by a real `DELETE`); the table
+@@ -711,7 +712,7 @@ Steward.*
+ every `publish-rust-<tier>` job block in `.github/workflows/release.yml` contains the literal
+ `cargo publish --dry-run -p` (with a trailing space). It fails on the **first** tier (`t1-embedder-api`), which makes
+ **`./scripts/agent-test.sh` exit 1 wholesale**. **The workflow is FINE; the TEST is STALE** (verified at
+-`4ca70ba6`): `release.yml:248` no longer inlines the command — it delegates to
++`4ca70ba6`): the `publish-rust-t1-embedder-api` job in `.github/workflows/release.yml` no longer inlines the command — it delegates to
+ `bash scripts/release/cargo-publish-if-new.sh --dry-run fathomdb-embedder-api`, and that helper **does** forward
+ to `cargo publish --dry-run -p <crate>` (`cargo-publish-if-new.sh:14`). **So publish BEHAVIOR is intact — this is
+ not a publish defect. The harm is the MASKED GATE:** a permanently-red assertion is a gate nobody reads, so a
+diff --git a/scripts/agent-lint-md.sh b/scripts/agent-lint-md.sh
+index a53d4f91..4a9a9e87 100755
+--- a/scripts/agent-lint-md.sh
++++ b/scripts/agent-lint-md.sh
+@@ -40,6 +40,17 @@ run_capped lint-plans-status "$SCRIPT_DIR/lint-plans-status.sh"
+ # the leg above: pure bash/awk, no external binary, so no absent-tool skip path.
+ run_capped lint-findings "$SCRIPT_DIR/lint-findings.sh"
+ 
++# T1d (DOC-HYGIENE-2): ACTIVE plans may not cite code by `<name>:<line>` — a
++# line number rots on the next commit, silently (plan-0.8.20.md's TC-45 pair was
++# ~2,100 lines off and git shows it was never correct) — and every symbol an
++# ACTIVE plan DOES cite must actually occur in the file it names. That second
++# half is the load-bearing one: swapping an unverified number for an unverified
++# symbol would launder the same bad pointer. Pure bash/perl, no external binary,
++# so no absent-tool skip path. Also runs always-on in CI (the `plan-anchors`
++# job) — the push that renames a symbol is a CODE push, which the docs_only
++# markdownlint job never sees.
++run_capped lint-plan-anchors "$SCRIPT_DIR/lint-plan-anchors.sh" --quiet
++
+ # docs/** structural lint. The repo .markdownlint-cli2.jsonc IGNORES docs/** (it is
+ # otherwise gated only by `mkdocs build --strict`, which does NOT enforce markdownlint
+ # style). agent-lint-docs.sh lints docs/** with the same .markdownlint.jsonc rules via
+diff --git a/scripts/agent-test.sh b/scripts/agent-test.sh
+index d76fc43b..3f652182 100755
+--- a/scripts/agent-test.sh
++++ b/scripts/agent-test.sh
+@@ -84,6 +84,12 @@ run_capped test-lint-md-hard-fail-on-missing-linter bash scripts/tests/test_lint
+ # guard for archival banners drifting silently). RED-fixture proven inline.
+ run_capped test-plans-status-frontmatter bash scripts/tests/test_plans_status_frontmatter.sh
+ 
++# T1d: recurrence guard for the ACTIVE-plan line-anchor ban AND — the arm that
++# carries the weight — for the mandatory symbol-existence check. Mutation-proven:
++# stubbing the existence check to always succeed turns this suite red, so a green
++# here is not vacuous. RED fixtures built inline under mktemp -d.
++run_capped test-lint-plan-anchors bash scripts/tests/test_lint_plan_anchors.sh
++
+ # Markdown generators (shell): context-clarity.sh / memory-clarity.sh emit
+ # gate-compliant markdown. Their output trees (and the dev/plans/runs/** reports
+ # from the Python generators) are markdownlint-ignored, so the normal md gate never
+diff --git a/scripts/lint-plan-anchors.sh b/scripts/lint-plan-anchors.sh
+new file mode 100755
+index 00000000..592512c3
+--- /dev/null
++++ b/scripts/lint-plan-anchors.sh
+@@ -0,0 +1,278 @@
++#!/usr/bin/env bash
++# scripts/lint-plan-anchors.sh — T1d enforcement (DOC-HYGIENE-2): the LINE-ANCHOR BAN.
++#
++# ---------------------------------------------------------------------------
++# WHY (measured, not hypothetical)
++# ---------------------------------------------------------------------------
++# `dev/plans/plan-0.8.20.md` carried 18 backticked `<name>:<line>` pointers. The
++# TC-45 pair (`engine:14867` / `engine:14890`) was ~2,100 lines off — the real
++# call sites were at 16963 / 16986 — and `git log` shows the anchors were
++# authored AFTER the merge they claimed to describe, so they were never correct,
++# not merely stale. A line number is a pointer with no referential integrity: it
++# rots on the very next commit that touches the file, silently, and nothing in
++# the repo notices. A symbol name does not rot, and — crucially — it can be
++# mechanically checked.
++#
++# Same class the master's own §6 findings keep re-discovering, and the same
++# remedy the standing rule prescribes: fix the tooling so it cannot recur for
++# anyone, rather than writing a "be careful with line numbers" note.
++#
++# ---------------------------------------------------------------------------
++# WHAT IT ENFORCES (two rules + one guard)
++# ---------------------------------------------------------------------------
++# RULE 1 — BARE LINE-ANCHOR BAN.
++#   A backticked token whose ENTIRE content is `<name>:<3-or-more digits>`
++#   (optionally a range, `lib.rs:876-887`, or an open end, `engine:12166+`) is a
++#   bare line anchor and is BANNED inside an ACTIVE plan.
++#
++#   The rule is a SHAPE, not a whitelist of known crate prefixes. An enumerated
++#   prefix list (engine|py|napi|schema|cli|…) is defeated by the very next name
++#   anyone invents — `fathomdb-cli:389` already escapes every enumeration that
++#   would plausibly have been written — so `<name>` here is any identifier-ish
++#   token: letters, digits, `_`, `.`, `-`, `+`.
++#
++#   Anchoring on the WHOLE backtick group is deliberate. It means the rule fires
++#   only on a token that is NOTHING BUT a name and a line number — i.e. a pure
++#   pointer — and never on prose or code that merely happens to contain a colon
++#   (`derive_logical_id = SHA256("{kind}:{name}")`, `bm25(idx, 1.0, 3.0)`).
++#
++#   Three digits is the floor because two-digit `:NN` suffixes are overwhelmingly
++#   section/clause references in this corpus (`§2:98`), not line numbers.
++#   KNOWN GAP, deliberately left open for a follow-on tranche: this shape does
++#   NOT catch (a) prefixless anchors `` `:6229` ``, (b) slashed paths
++#   `` `dev/acceptance.md:1147` ``, (c) spaced forms `` `engine lib.rs:6479` ``,
++#   or (d) sub-100 line numbers. Widening to any of those is a one-line change
++#   to ANCHOR_RE below, but it turns ~90 further sites red across the ACTIVE
++#   set and so needs its own conversion budget.
++#
++# RULE 2 — MANDATORY SYMBOL-EXISTENCE CHECK.
++#   This is the crux. A gate that merely swaps an unverified NUMBER for an
++#   unverified SYMBOL reproduces the exact failure mode above with better
++#   cosmetics — it launders a bad pointer as a good one — and is therefore worse
++#   than no gate at all. So every citation an ACTIVE plan makes is verified
++#   against the file it names.
++#
++#   THE CITATION FORM (precise, and the only form this lint vouches for):
++#
++#       `<needle>` in `<path>`
++#       `<needle>` / `<needle>` / … in `<path>`     (a `/`-separated chain)
++#
++#   * `<path>` must be file-path-shaped: `name.ext`, optionally slashed. It is
++#     resolved against the worktree — exactly, or by UNIQUE suffix match (plans
++#     write `fathomdb-engine/src/lib.rs`; the file lives at
++#     `src/rust/crates/fathomdb-engine/src/lib.rs`). Unresolvable => FAIL.
++#     Resolving to MORE THAN ONE file => FAIL as ambiguous: a citation nobody
++#     can resolve deterministically is not a citation. (This is why a bare
++#     `README.md` is rejected — cite the full path.)
++#   * `<needle>` is verified by LITERAL substring match (`grep -F`) in the
++#     resolved file. It is not required to be a Rust identifier: a quoted DDL
++#     fragment, a YAML job key or a heading phrase all work, which is what makes
++#     the form usable for the non-Rust targets ACTIVE plans cite
++#     (`.github/workflows/release.yml`, design `README.md`s).
++#   * A needle containing an ELISION PLACEHOLDER (`…` or `...`) cannot be
++#     matched literally. Rather than SKIP it — which would silently reintroduce
++#     the unverified-pointer class this gate exists to close — the lint FAILS
++#     and says the citation is unverifiable. Rewrite it to something greppable.
++#
++#   Prose is deliberately unconstrained: only the `` `x` in `y.ext` `` shape is
++#   read as a citation. `the … arm in `foo.rs`` or `Detail in `plan-0.8.8.md``
++#   are prose and are not checked — the lint is permissive about surrounding
++#   text and strict about the parts it verifies.
++#
++#   The extractor is WRAP-AWARE: a citation may straddle ONE line break, with an
++#   optional `>` blockquote marker on the continuation line. This is not a
++#   nicety. A first, line-based implementation of this lint silently missed four
++#   real citations in the ACTIVE set that markdown soft-wrap had split across
++#   lines (plan-0.8.20.md 150/151, 466/467, 704/705, and the `search_index_v2`
++#   DDL citation in the master). A checker that a line break can defeat is a
++#   checker whose green means nothing — the same vacuous-pass class as TC-37,
++#   just at a different granularity. Two line breaks or a blank line ends a
++#   citation: that is a paragraph boundary, not a wrap.
++#
++# VACUOUS-PASS GUARD (TC-37 — this repo's named failure class: a gate that
++# reports green without having run). If the scan discovers ZERO ACTIVE plans,
++# or verifies ZERO citations, the checking loops never execute and this script
++# would exit 0 having vouched for nothing. Both are HARD failures.
++#
++# ---------------------------------------------------------------------------
++# SCOPE
++# ---------------------------------------------------------------------------
++# `dev/plans/*.md` (TOP LEVEL) whose YAML frontmatter says `status: ACTIVE`.
++# Derived from frontmatter, never from a filename list.
++#
++# Everything else is out of scope BY CONSTRUCTION, not by exception:
++#   - a plan that is COMPLETE/SUPERSEDED/PROPOSED/UNKNOWN is a historical record;
++#     rewriting its anchors would be falsifying the record;
++#   - `dev/plans/runs/**` (slice logs, status boards, closure JSON) and
++#     `dev/plans/prompts/**` (one-shot execution prompts) are immutable run
++#     artifacts — the top-level glob excludes them structurally;
++#   - `dev/archive/**` is frozen and is not under `dev/plans/` at all.
++# Same scope split as scripts/lint-plans-status.sh; see dev/plans/README.md.
++#
++# Usage:  scripts/lint-plan-anchors.sh [--quiet]
++# Exit:   0 = every ACTIVE plan is anchor-free AND every citation it makes
++#             resolves and exists (and >=1 plan and >=1 citation were seen);
++#         1 = a violation, or a vacuous scan.
++set -euo pipefail
++cd "$(git rev-parse --show-toplevel)"
++
++QUIET=0
++[ "${1:-}" = "--quiet" ] && QUIET=1
++
++# RULE 1 shape. Widen HERE (single source) if the known gaps above get budget.
++ANCHOR_RE='`[A-Za-z_][A-Za-z0-9_.+-]*:[0-9]{3,}(-[0-9]+)?\+?`'
++
++# `perl` carries the wrap-aware citation extraction (it needs whole-file regex
++# with match offsets, which line-oriented grep/awk cannot do). If it is absent
++# the lint cannot run — and a gate that cannot run must fail loudly, never skip
++# (TC-37).
++if ! command -v perl >/dev/null 2>&1; then
++  echo "FAIL lint-plan-anchors: perl not found; the wrap-aware citation extractor" >&2
++  echo "  cannot run. A gate that cannot run must not report a pass (TC-37)." >&2
++  exit 1
++fi
++
++# Emit one `<line-number><TAB><whitespace-normalised citation>` record per
++# citation found in $1. `WS` permits at most ONE newline (plus an optional `>`
++# blockquote continuation marker), so soft-wrapped citations are found while a
++# blank line still terminates the match.
++extract_citations() {
++  perl -0777 -ne '
++    my $WS   = qr/(?:[ \t]*\n[ \t]*>?[ \t]*|[ \t]+)/;
++    my $TICK = qr/`[^`\n]+`/;
++    my $CIT  = qr/(?:$TICK$WS?\/$WS?)*$TICK${WS}in${WS}`[A-Za-z0-9._\/-]+\.[A-Za-z0-9]+`/;
++    while (/($CIT)/g) {
++      my $m = $1;
++      my $ln = (substr($_, 0, $-[0]) =~ tr/\n//) + 1;
++      $m =~ s/[ \t]*\n[ \t]*>?[ \t]*/ /g;
++      print "$ln\t$m\n";
++    }
++  ' "$1"
++}
++
++FAIL=0
++PLANS=()
++ANCHORS=0
++CITATIONS=0
++
++note() { [ "$QUIET" -eq 1 ] || printf '%s\n' "$*"; }
++
++# --- discover ACTIVE plans from frontmatter -------------------------------
++shopt -s nullglob
++for f in dev/plans/*.md; do
++  [ "$(head -n1 "$f")" = "---" ] || continue
++  status="$(awk 'NR==1{next} /^---$/{exit} /^status:[[:space:]]*/{sub(/^status:[[:space:]]*/,""); sub(/[[:space:]]+$/,""); print; exit}' "$f")"
++  [ "$status" = "ACTIVE" ] && PLANS+=("$f")
++done
++shopt -u nullglob
++
++# --- worktree file index, for citation path resolution --------------------
++INDEX="$(mktemp)"
++trap 'rm -f "$INDEX"' EXIT
++find . \( -name .git -o -name node_modules -o -name target -o -name .venv \) -prune \
++  -o -type f -print 2>/dev/null | sed 's|^\./||' | sort >"$INDEX"
++
++# Resolve a cited path to exactly one worktree file.
++# Prints the resolved path on success; prints nothing and returns
++# 1 = no match, 2 = ambiguous.
++resolve_path() {
++  local want="$1" hits
++  if [ -f "$want" ]; then printf '%s\n' "$want"; return 0; fi
++  hits="$(grep -F -x -e "$want" "$INDEX" || true)"
++  [ -n "$hits" ] || hits="$(grep -E "(^|/)$(sed -E 's/[][\.^$*+?(){}|/]/\\&/g' <<<"$want")\$" "$INDEX" || true)"
++  case "$(printf '%s' "$hits" | grep -c . || true)" in
++    0) return 1 ;;
++    1) printf '%s\n' "$hits"; return 0 ;;
++    *) return 2 ;;
++  esac
++}
++
++for plan in "${PLANS[@]}"; do
++  # ---- RULE 1: bare line anchors ----------------------------------------
++  while IFS= read -r hit; do
++    [ -n "$hit" ] || continue
++    ln="${hit%%:*}"; tok="${hit#*:}"
++    ANCHORS=$((ANCHORS + 1))
++    FAIL=1
++    {
++      printf 'FAIL %s:%s: bare line anchor %s\n' "$plan" "$ln" "$tok"
++      printf '  A `<name>:<line>` pointer has no referential integrity — it rots on the next\n'
++      printf '  commit that touches the file, silently. Cite a greppable symbol instead:\n'
++      printf '      `fn some_symbol` in `path/to/file.rs`\n'
++      printf '  (this lint then verifies that symbol actually occurs in that file).\n'
++    } >&2
++  done < <(grep -noE "$ANCHOR_RE" "$plan" || true)
++
++  # ---- RULE 2: every citation must resolve AND exist ---------------------
++  while IFS=$'\t' read -r ln match; do
++    [ -n "$match" ] || continue
++    mapfile -t groups < <(tr '`' '\n' <<<"$match" | awk 'NR%2==0')
++    (( ${#groups[@]} >= 2 )) || continue
++    cited="${groups[-1]}"
++    unset 'groups[-1]'
++
++    resolved=""; rc=0
++    resolved="$(resolve_path "$cited")" || rc=$?
++    if [ "$rc" -eq 1 ]; then
++      FAIL=1
++      printf 'FAIL %s:%s: citation names `%s`, which matches no file in the worktree.\n' \
++        "$plan" "$ln" "$cited" >&2
++      continue
++    elif [ "$rc" -eq 2 ]; then
++      FAIL=1
++      printf 'FAIL %s:%s: citation path `%s` is AMBIGUOUS (matches >1 file) — it cannot be\n' \
++        "$plan" "$ln" "$cited" >&2
++      printf '  verified mechanically. Cite the full repo-relative path.\n' >&2
++      continue
++    fi
++
++    for sym in "${groups[@]}"; do
++      case "$sym" in
++        *…*|*...*)
++          FAIL=1
++          printf 'FAIL %s:%s: citation `%s` in `%s` contains an elision placeholder, so it\n' \
++            "$plan" "$ln" "$sym" "$cited" >&2
++          printf '  cannot be matched literally. An unverifiable citation is not skipped here —\n' >&2
++          printf '  that is how an unverified pointer gets laundered as a verified one. Rewrite\n' >&2
++          printf '  it as a literal symbol or quoted fragment that greps.\n' >&2
++          continue ;;
++      esac
++      CITATIONS=$((CITATIONS + 1))
++      if ! grep -qF -- "$sym" "$resolved"; then
++        FAIL=1
++        printf 'FAIL %s:%s: cited symbol `%s` does NOT occur in `%s` (resolved: %s).\n' \
++          "$plan" "$ln" "$sym" "$cited" "$resolved" >&2
++        printf '  The symbol was renamed, moved, or never existed. Re-verify with\n' >&2
++        printf '      grep -n %s %s\n' "'$sym'" "$resolved" >&2
++      fi
++    done
++  done < <(extract_citations "$plan")
++done
++
++# --- vacuous-pass guard (TC-37) -------------------------------------------
++if [ "${#PLANS[@]}" -eq 0 ]; then
++  {
++    echo "FAIL lint-plan-anchors: ZERO ACTIVE plans discovered under dev/plans/*.md."
++    echo "  The scan loops never ran, so exiting 0 would vouch for nothing (TC-37)."
++    echo "  Either the frontmatter convention changed or the scan is pointed wrong."
++  } >&2
++  exit 1
++fi
++if [ "$CITATIONS" -eq 0 ]; then
++  {
++    echo "FAIL lint-plan-anchors: ZERO citations verified across ${#PLANS[@]} ACTIVE plan(s)."
++    echo "  The existence check — the whole point of this gate — did not execute, so a"
++    echo "  green here would be vacuous (TC-37). Either the citation form drifted away"
++    echo "  from \`sym\` in \`path\`, or the extractor is broken."
++  } >&2
++  exit 1
++fi
++
++if [ "$FAIL" -ne 0 ]; then
++  printf '\nlint-plan-anchors: %d bare line anchor(s); scanned %d ACTIVE plan(s), %d citation(s).\n' \
++    "$ANCHORS" "${#PLANS[@]}" "$CITATIONS" >&2
++  exit 1
++fi
++
++note "lint-plan-anchors: OK — ${#PLANS[@]} ACTIVE plan(s), 0 bare line anchors, ${CITATIONS} citation(s) verified to exist."
++exit 0
+diff --git a/scripts/tests/test_lint_plan_anchors.sh b/scripts/tests/test_lint_plan_anchors.sh
+new file mode 100755
+index 00000000..0f8370fc
+--- /dev/null
++++ b/scripts/tests/test_lint_plan_anchors.sh
+@@ -0,0 +1,360 @@
++#!/usr/bin/env bash
++# scripts/tests/test_lint_plan_anchors.sh — T1d recurrence guard (DOC-HYGIENE-2).
++#
++# Proves scripts/lint-plan-anchors.sh:
++#
++#   RULE 1 — bare line-anchor ban
++#     1.  FAILS an ACTIVE plan carrying a bare `<name>:<line>` anchor.
++#     1b. Is GENERIC, not an enumerated crate-prefix list: a name nobody would
++#         have thought to enumerate (`fathomdb-cli:389`, `wibble-frobnicator:4711`)
++#         fails just the same. This is the arm that matters — an enumeration is
++#         defeated by the next name anyone invents.
++#     1c. Accepts a range (`lib.rs:876-887`) and an open end (`engine:12166+`).
++#     1d. Does NOT fire on a colon inside ordinary code/prose
++#         (`SHA256("{kind}:{name}")`) or on a sub-100 `:NN` section reference —
++#         the documented floor.
++#
++#   RULE 2 — MANDATORY symbol-existence check (the crux of the tranche)
++#     2.  FAILS a citation whose symbol does NOT occur in the file it names.
++#         Without this arm the lint would only swap an unverified NUMBER for an
++#         unverified SYMBOL — the same broken pointer with better cosmetics.
++#     3.  PASSES a citation whose symbol DOES occur.
++#     3b. FAILS a citation naming a file that does not exist.
++#     3c. FAILS a citation whose path is AMBIGUOUS (resolves to >1 file).
++#     3d. FAILS a citation containing an elision placeholder (`…`/`...`) — an
++#         unverifiable citation is failed, never skipped.
++#     3e. Is WRAP-AWARE: a bad citation split across a line break (with or
++#         without a `>` blockquote marker) still FAILS. A checker a soft wrap
++#         can defeat is a checker whose green means nothing.
++#
++#   SCOPE FENCE
++#     4.  PASSES a NON-ACTIVE plan carrying a bare anchor (a COMPLETE plan is a
++#         historical record; rewriting its anchors would falsify the record).
++#     4b. Does not scan dev/plans/runs/** or dev/plans/prompts/** — immutable
++#         run artifacts.
++#
++#   VACUOUS-PASS GUARD (TC-37)
++#     5.  FAILS when ZERO ACTIVE plans are discovered.
++#     5b. FAILS when ZERO citations are verified across the ACTIVE plans.
++#
++# Builds a throwaway fixture repo under mktemp -d; never touches this checkout.
++set -euo pipefail
++
++SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
++LINT="${LINT_UNDER_TEST:-$REPO_ROOT/scripts/lint-plan-anchors.sh}"
++
++FIX="$(mktemp -d)"
++trap 'rm -rf "$FIX"' EXIT
++
++FAILED=0
++pass() { printf 'PASS  %s\n' "$1"; }
++fail() { printf 'FAIL  %s\n' "$1" >&2; FAILED=$((FAILED + 1)); }
++
++# Every fixture gets: a real source file to cite, and one ACTIVE plan holding a
++# valid citation — so the vacuity guards do not fire on arms that are testing
++# something else.
++setup_fixture() {
++  rm -rf "$FIX/repo"
++  mkdir -p "$FIX/repo/scripts" "$FIX/repo/dev/plans/runs" "$FIX/repo/dev/plans/prompts" \
++           "$FIX/repo/src/rust/crates/widget/src"
++  cp "$LINT" "$FIX/repo/scripts/lint-plan-anchors.sh"
++  chmod +x "$FIX/repo/scripts/lint-plan-anchors.sh"
++  cat >"$FIX/repo/src/rust/crates/widget/src/lib.rs" <<'EOF'
++pub fn real_symbol() -> u32 { 7 }
++fn another_real_symbol() {}
++EOF
++  (cd "$FIX/repo" && git init -q && git config user.email t@example.com && git config user.name t)
++}
++
++baseline_plan() {
++  cat >"$FIX/repo/dev/plans/baseline.md" <<'EOF'
++---
++status: ACTIVE
++---
++
++# Baseline
++
++The write path is `pub fn real_symbol` in `widget/src/lib.rs`.
++EOF
++}
++
++run_lint() {
++  set +e
++  OUT="$(cd "$FIX/repo" && bash scripts/lint-plan-anchors.sh 2>&1)"
++  RC=$?
++  set -e
++}
++
++# --- Arm 1: bare anchor in an ACTIVE plan -> FAIL ------------------------
++setup_fixture; baseline_plan
++cat >"$FIX/repo/dev/plans/offender.md" <<'EOF'
++---
++status: ACTIVE
++---
++
++The dispatcher lives at `engine:11152` today.
++EOF
++run_lint
++if [ "$RC" -ne 0 ] && grep -q 'offender.md:5' <<<"$OUT" && grep -q 'engine:11152' <<<"$OUT"; then
++  pass "bare anchor in an ACTIVE plan -> non-zero exit, names file:line and the anchor"
++else
++  fail "arm 1 (bare anchor): rc=$RC out=$OUT"
++fi
++
++# --- Arm 1b: the rule is a SHAPE, not an enumerated prefix list ----------
++setup_fixture; baseline_plan
++cat >"$FIX/repo/dev/plans/novel.md" <<'EOF'
++---
++status: ACTIVE
++---
++
++See `fathomdb-cli:389` and `wibble_frobnicator-v2.rs:4711` and `Z9:100`.
++EOF
++run_lint
++n_hits=$(grep -c '^FAIL .*bare line anchor' <<<"$OUT" || true)
++if [ "$RC" -ne 0 ] && [ "$n_hits" -eq 3 ] \
++   && grep -q 'fathomdb-cli:389' <<<"$OUT" \
++   && grep -q 'wibble_frobnicator-v2.rs:4711' <<<"$OUT" \
++   && grep -q 'Z9:100' <<<"$OUT"; then
++  pass "generic shape rule — unenumerable prefixes all caught (3/3), not a whitelist"
++else
++  fail "arm 1b (generic rule): rc=$RC hits=$n_hits out=$OUT"
++fi
++
++# --- Arm 1c: ranges and open ends are anchors too ------------------------
++setup_fixture; baseline_plan
++cat >"$FIX/repo/dev/plans/ranges.md" <<'EOF'
++---
++status: ACTIVE
++---
++
++Worker at `lib.rs:876-887`; edges inlined from `engine:12166+`.
++EOF
++run_lint
++n_hits=$(grep -c '^FAIL .*bare line anchor' <<<"$OUT" || true)
++if [ "$RC" -ne 0 ] && [ "$n_hits" -eq 2 ]; then
++  pass "ranges (\`lib.rs:876-887\`) and open ends (\`engine:12166+\`) are caught"
++else
++  fail "arm 1c (ranges/open ends): rc=$RC hits=$n_hits out=$OUT"
++fi
++
++# --- Arm 1d: no false positives on colons in code / sub-100 refs ---------
++setup_fixture; baseline_plan
++cat >"$FIX/repo/dev/plans/notanchors.md" <<'EOF'
++---
++status: ACTIVE
++---
++
++`derive_logical_id = SHA256("{kind}:{name}")` is hashed; see `§2:98` and
++`bm25(search_index_v2, 1.0, 3.0)` and `h:<content-hash>` and `12:345`.
++EOF
++run_lint
++if [ "$RC" -eq 0 ]; then
++  pass "no false positive on embedded colons, sub-100 \`:NN\` refs, or leading-digit tokens"
++else
++  fail "arm 1d (false positives): rc=$RC out=$OUT"
++fi
++
++# --- Arm 2: cited symbol DOES NOT EXIST -> FAIL (the crux) --------------
++setup_fixture; baseline_plan
++cat >"$FIX/repo/dev/plans/ghost.md" <<'EOF'
++---
++status: ACTIVE
++---
++
++The projector is `fn symbol_that_never_existed` in `widget/src/lib.rs`.
++EOF
++run_lint
++if [ "$RC" -ne 0 ] && grep -q 'does NOT occur' <<<"$OUT" \
++   && grep -q 'symbol_that_never_existed' <<<"$OUT"; then
++  pass "MANDATORY existence check: a cited symbol absent from the named file -> FAIL"
++else
++  fail "arm 2 (existence check) — THIS IS THE CRUX, the lint is laundering: rc=$RC out=$OUT"
++fi
++
++# --- Arm 3: cited symbol EXISTS -> PASS ---------------------------------
++setup_fixture; baseline_plan
++cat >"$FIX/repo/dev/plans/good.md" <<'EOF'
++---
++status: ACTIVE
++---
++
++`pub fn real_symbol` / `fn another_real_symbol` in `widget/src/lib.rs` both exist.
++EOF
++run_lint
++if [ "$RC" -eq 0 ] && grep -q 'citation(s) verified' <<<"$OUT"; then
++  pass "citations whose symbols exist (incl. a \`/\`-chain) -> exit 0"
++else
++  fail "arm 3 (valid citation): rc=$RC out=$OUT"
++fi
++
++# --- Arm 3b: cited file does not exist -> FAIL --------------------------
++setup_fixture; baseline_plan
++cat >"$FIX/repo/dev/plans/nofile.md" <<'EOF'
++---
++status: ACTIVE
++---
++
++See `pub fn real_symbol` in `gadget/src/nowhere.rs`.
++EOF
++run_lint
++if [ "$RC" -ne 0 ] && grep -q 'matches no file' <<<"$OUT"; then
++  pass "citation naming a nonexistent file -> FAIL"
++else
++  fail "arm 3b (missing file): rc=$RC out=$OUT"
++fi
++
++# --- Arm 3c: ambiguous cited path -> FAIL -------------------------------
++setup_fixture; baseline_plan
++mkdir -p "$FIX/repo/src/rust/crates/gadget/src"
++cp "$FIX/repo/src/rust/crates/widget/src/lib.rs" "$FIX/repo/src/rust/crates/gadget/src/lib.rs"
++cat >"$FIX/repo/dev/plans/ambiguous.md" <<'EOF'
++---
++status: ACTIVE
++---
++
++See `pub fn real_symbol` in `src/lib.rs`.
++EOF
++run_lint
++if [ "$RC" -ne 0 ] && grep -qi 'AMBIGUOUS' <<<"$OUT"; then
++  pass "citation path resolving to >1 file -> FAIL as ambiguous (not silently picked)"
++else
++  fail "arm 3c (ambiguous path): rc=$RC out=$OUT"
++fi
++
++# --- Arm 3d: elision placeholder -> FAIL, never skip --------------------
++setup_fixture; baseline_plan
++cat >"$FIX/repo/dev/plans/elided.md" <<'EOF'
++---
++status: ACTIVE
++---
++
++The `wire_recover(…, "truncate-wal", …)` in `widget/src/lib.rs` arm.
++EOF
++run_lint
++if [ "$RC" -ne 0 ] && grep -q 'elision placeholder' <<<"$OUT"; then
++  pass "unverifiable (elided) citation -> FAIL, not skipped"
++else
++  fail "arm 3d (elision): rc=$RC out=$OUT"
++fi
++
++# --- Arm 3e: a soft wrap must not defeat the existence check ------------
++setup_fixture; baseline_plan
++printf -- '---\nstatus: ACTIVE\n---\n\n' >"$FIX/repo/dev/plans/wrapped.md"
++printf 'Plain wrap: the projector is `fn ghost_alpha` in\n' >>"$FIX/repo/dev/plans/wrapped.md"
++printf '`widget/src/lib.rs` — and it is not there.\n\n' >>"$FIX/repo/dev/plans/wrapped.md"
++printf '> Blockquote wrap: `fn ghost_beta` in\n' >>"$FIX/repo/dev/plans/wrapped.md"
++printf '>   `widget/src/lib.rs` — also not there.\n\n' >>"$FIX/repo/dev/plans/wrapped.md"
++printf 'Split after the symbol: `fn ghost_gamma`\nin `widget/src/lib.rs`.\n' >>"$FIX/repo/dev/plans/wrapped.md"
++run_lint
++n_hits=$(grep -c 'does NOT occur' <<<"$OUT" || true)
++if [ "$RC" -ne 0 ] && [ "$n_hits" -eq 3 ] \
++   && grep -q 'ghost_alpha' <<<"$OUT" && grep -q 'ghost_beta' <<<"$OUT" \
++   && grep -q 'ghost_gamma' <<<"$OUT"; then
++  pass "wrap-aware: line-break-split bad citations (plain, blockquote, post-symbol) all caught (3/3)"
++else
++  fail "arm 3e (wrap-aware) — a soft wrap defeats the check: rc=$RC hits=$n_hits out=$OUT"
++fi
++
++# --- Arm 3f: a BLANK line terminates a citation (no runaway match) ------
++setup_fixture; baseline_plan
++cat >"$FIX/repo/dev/plans/paragraphs.md" <<'EOF'
++---
++status: ACTIVE
++---
++
++A paragraph ending in `fn ghost_delta`
++
++in `widget/src/lib.rs` is a new paragraph, not a citation.
++EOF
++run_lint
++if [ "$RC" -eq 0 ]; then
++  pass "a blank line terminates a citation — paragraph boundaries are not wraps"
++else
++  fail "arm 3f (paragraph boundary): rc=$RC out=$OUT"
++fi
++
++# --- Arm 4: NON-ACTIVE plan with a bare anchor -> PASS (scope fence) ----
++setup_fixture; baseline_plan
++cat >"$FIX/repo/dev/plans/historical.md" <<'EOF'
++---
++status: COMPLETE
++---
++
++Shipped against `engine:11152`, with `fn no_such_symbol` in `widget/src/lib.rs`.
++EOF
++cat >"$FIX/repo/dev/plans/proposed.md" <<'EOF'
++---
++status: PROPOSED
++---
++
++Also `napi:1102`.
++EOF
++run_lint
++if [ "$RC" -eq 0 ]; then
++  pass "scope fence — COMPLETE/PROPOSED plans are historical record, not scanned"
++else
++  fail "arm 4 (non-ACTIVE scope fence): rc=$RC out=$OUT"
++fi
++
++# --- Arm 4b: runs/ and prompts/ are never scanned -----------------------
++setup_fixture; baseline_plan
++cat >"$FIX/repo/dev/plans/runs/STATUS-0.8.20.md" <<'EOF'
++---
++status: ACTIVE
++---
++
++Run artifact citing `engine:11152` and `fn no_such_symbol` in `widget/src/lib.rs`.
++EOF
++cat >"$FIX/repo/dev/plans/prompts/SOME-PROMPT.md" <<'EOF'
++---
++status: ACTIVE
++---
++
++Prompt citing `napi:1102`.
++EOF
++run_lint
++if [ "$RC" -eq 0 ]; then
++  pass "runs/ and prompts/ are immutable run artifacts — never scanned"
++else
++  fail "arm 4b (runs/prompts scope fence): rc=$RC out=$OUT"
++fi
++
++# --- Arm 5: ZERO ACTIVE plans -> FAIL (vacuous-pass guard, TC-37) -------
++setup_fixture
++cat >"$FIX/repo/dev/plans/only-complete.md" <<'EOF'
++---
++status: COMPLETE
++---
++
++Nothing active here.
++EOF
++run_lint
++if [ "$RC" -ne 0 ] && grep -q 'ZERO ACTIVE plans' <<<"$OUT"; then
++  pass "vacuity guard — zero ACTIVE plans discovered -> hard FAIL, not a silent exit 0"
++else
++  fail "arm 5 (zero ACTIVE plans): rc=$RC out=$OUT"
++fi
++
++# --- Arm 5b: ZERO citations verified -> FAIL (vacuous-pass guard) -------
++setup_fixture
++cat >"$FIX/repo/dev/plans/no-citations.md" <<'EOF'
++---
++status: ACTIVE
++---
++
++An ACTIVE plan that cites nothing at all, so the existence check never runs.
++EOF
++run_lint
++if [ "$RC" -ne 0 ] && grep -q 'ZERO citations verified' <<<"$OUT"; then
++  pass "vacuity guard — zero citations verified -> hard FAIL (the check did not execute)"
++else
++  fail "arm 5b (zero citations): rc=$RC out=$OUT"
++fi
++
++if [ "$FAILED" -ne 0 ]; then
++  printf '%d arm(s) failed\n' "$FAILED" >&2
++  exit 1
++fi
++printf 'PASS  all arms — scripts/lint-plan-anchors.sh bans bare line anchors generically, VERIFIES every cited symbol against the file it names (incl. across soft wraps), stays scoped to ACTIVE dev/plans/*.md, and refuses to pass vacuously\n'
+
+exec
+/bin/bash -lc "nl -ba scripts/lint-plan-anchors.sh | sed -n '1,320p'
+printf '\\n--- tests rest ---\\n'
+nl -ba scripts/tests/test_lint_plan_anchors.sh | sed -n '1,390p'
+
+printf '\\n--- active plans ---\\n'; for f in dev/plans/*.md; do [ \""'$(head -n1 "$f")" = --- ] && awk '"'NR==1{next}/"'^---$/{exit}/''^status:/{print FILENAME":"$0}'"' \""'$f"; done' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+     1	#!/usr/bin/env bash
+     2	# scripts/lint-plan-anchors.sh — T1d enforcement (DOC-HYGIENE-2): the LINE-ANCHOR BAN.
+     3	#
+     4	# ---------------------------------------------------------------------------
+     5	# WHY (measured, not hypothetical)
+     6	# ---------------------------------------------------------------------------
+     7	# `dev/plans/plan-0.8.20.md` carried 18 backticked `<name>:<line>` pointers. The
+     8	# TC-45 pair (`engine:14867` / `engine:14890`) was ~2,100 lines off — the real
+     9	# call sites were at 16963 / 16986 — and `git log` shows the anchors were
+    10	# authored AFTER the merge they claimed to describe, so they were never correct,
+    11	# not merely stale. A line number is a pointer with no referential integrity: it
+    12	# rots on the very next commit that touches the file, silently, and nothing in
+    13	# the repo notices. A symbol name does not rot, and — crucially — it can be
+    14	# mechanically checked.
+    15	#
+    16	# Same class the master's own §6 findings keep re-discovering, and the same
+    17	# remedy the standing rule prescribes: fix the tooling so it cannot recur for
+    18	# anyone, rather than writing a "be careful with line numbers" note.
+    19	#
+    20	# ---------------------------------------------------------------------------
+    21	# WHAT IT ENFORCES (two rules + one guard)
+    22	# ---------------------------------------------------------------------------
+    23	# RULE 1 — BARE LINE-ANCHOR BAN.
+    24	#   A backticked token whose ENTIRE content is `<name>:<3-or-more digits>`
+    25	#   (optionally a range, `lib.rs:876-887`, or an open end, `engine:12166+`) is a
+    26	#   bare line anchor and is BANNED inside an ACTIVE plan.
+    27	#
+    28	#   The rule is a SHAPE, not a whitelist of known crate prefixes. An enumerated
+    29	#   prefix list (engine|py|napi|schema|cli|…) is defeated by the very next name
+    30	#   anyone invents — `fathomdb-cli:389` already escapes every enumeration that
+    31	#   would plausibly have been written — so `<name>` here is any identifier-ish
+    32	#   token: letters, digits, `_`, `.`, `-`, `+`.
+    33	#
+    34	#   Anchoring on the WHOLE backtick group is deliberate. It means the rule fires
+    35	#   only on a token that is NOTHING BUT a name and a line number — i.e. a pure
+    36	#   pointer — and never on prose or code that merely happens to contain a colon
+    37	#   (`derive_logical_id = SHA256("{kind}:{name}")`, `bm25(idx, 1.0, 3.0)`).
+    38	#
+    39	#   Three digits is the floor because two-digit `:NN` suffixes are overwhelmingly
+    40	#   section/clause references in this corpus (`§2:98`), not line numbers.
+    41	#   KNOWN GAP, deliberately left open for a follow-on tranche: this shape does
+    42	#   NOT catch (a) prefixless anchors `` `:6229` ``, (b) slashed paths
+    43	#   `` `dev/acceptance.md:1147` ``, (c) spaced forms `` `engine lib.rs:6479` ``,
+    44	#   or (d) sub-100 line numbers. Widening to any of those is a one-line change
+    45	#   to ANCHOR_RE below, but it turns ~90 further sites red across the ACTIVE
+    46	#   set and so needs its own conversion budget.
+    47	#
+    48	# RULE 2 — MANDATORY SYMBOL-EXISTENCE CHECK.
+    49	#   This is the crux. A gate that merely swaps an unverified NUMBER for an
+    50	#   unverified SYMBOL reproduces the exact failure mode above with better
+    51	#   cosmetics — it launders a bad pointer as a good one — and is therefore worse
+    52	#   than no gate at all. So every citation an ACTIVE plan makes is verified
+    53	#   against the file it names.
+    54	#
+    55	#   THE CITATION FORM (precise, and the only form this lint vouches for):
+    56	#
+    57	#       `<needle>` in `<path>`
+    58	#       `<needle>` / `<needle>` / … in `<path>`     (a `/`-separated chain)
+    59	#
+    60	#   * `<path>` must be file-path-shaped: `name.ext`, optionally slashed. It is
+    61	#     resolved against the worktree — exactly, or by UNIQUE suffix match (plans
+    62	#     write `fathomdb-engine/src/lib.rs`; the file lives at
+    63	#     `src/rust/crates/fathomdb-engine/src/lib.rs`). Unresolvable => FAIL.
+    64	#     Resolving to MORE THAN ONE file => FAIL as ambiguous: a citation nobody
+    65	#     can resolve deterministically is not a citation. (This is why a bare
+    66	#     `README.md` is rejected — cite the full path.)
+    67	#   * `<needle>` is verified by LITERAL substring match (`grep -F`) in the
+    68	#     resolved file. It is not required to be a Rust identifier: a quoted DDL
+    69	#     fragment, a YAML job key or a heading phrase all work, which is what makes
+    70	#     the form usable for the non-Rust targets ACTIVE plans cite
+    71	#     (`.github/workflows/release.yml`, design `README.md`s).
+    72	#   * A needle containing an ELISION PLACEHOLDER (`…` or `...`) cannot be
+    73	#     matched literally. Rather than SKIP it — which would silently reintroduce
+    74	#     the unverified-pointer class this gate exists to close — the lint FAILS
+    75	#     and says the citation is unverifiable. Rewrite it to something greppable.
+    76	#
+    77	#   Prose is deliberately unconstrained: only the `` `x` in `y.ext` `` shape is
+    78	#   read as a citation. `the … arm in `foo.rs`` or `Detail in `plan-0.8.8.md``
+    79	#   are prose and are not checked — the lint is permissive about surrounding
+    80	#   text and strict about the parts it verifies.
+    81	#
+    82	#   The extractor is WRAP-AWARE: a citation may straddle ONE line break, with an
+    83	#   optional `>` blockquote marker on the continuation line. This is not a
+    84	#   nicety. A first, line-based implementation of this lint silently missed four
+    85	#   real citations in the ACTIVE set that markdown soft-wrap had split across
+    86	#   lines (plan-0.8.20.md 150/151, 466/467, 704/705, and the `search_index_v2`
+    87	#   DDL citation in the master). A checker that a line break can defeat is a
+    88	#   checker whose green means nothing — the same vacuous-pass class as TC-37,
+    89	#   just at a different granularity. Two line breaks or a blank line ends a
+    90	#   citation: that is a paragraph boundary, not a wrap.
+    91	#
+    92	# VACUOUS-PASS GUARD (TC-37 — this repo's named failure class: a gate that
+    93	# reports green without having run). If the scan discovers ZERO ACTIVE plans,
+    94	# or verifies ZERO citations, the checking loops never execute and this script
+    95	# would exit 0 having vouched for nothing. Both are HARD failures.
+    96	#
+    97	# ---------------------------------------------------------------------------
+    98	# SCOPE
+    99	# ---------------------------------------------------------------------------
+   100	# `dev/plans/*.md` (TOP LEVEL) whose YAML frontmatter says `status: ACTIVE`.
+   101	# Derived from frontmatter, never from a filename list.
+   102	#
+   103	# Everything else is out of scope BY CONSTRUCTION, not by exception:
+   104	#   - a plan that is COMPLETE/SUPERSEDED/PROPOSED/UNKNOWN is a historical record;
+   105	#     rewriting its anchors would be falsifying the record;
+   106	#   - `dev/plans/runs/**` (slice logs, status boards, closure JSON) and
+   107	#     `dev/plans/prompts/**` (one-shot execution prompts) are immutable run
+   108	#     artifacts — the top-level glob excludes them structurally;
+   109	#   - `dev/archive/**` is frozen and is not under `dev/plans/` at all.
+   110	# Same scope split as scripts/lint-plans-status.sh; see dev/plans/README.md.
+   111	#
+   112	# Usage:  scripts/lint-plan-anchors.sh [--quiet]
+   113	# Exit:   0 = every ACTIVE plan is anchor-free AND every citation it makes
+   114	#             resolves and exists (and >=1 plan and >=1 citation were seen);
+   115	#         1 = a violation, or a vacuous scan.
+   116	set -euo pipefail
+   117	cd "$(git rev-parse --show-toplevel)"
+   118	
+   119	QUIET=0
+   120	[ "${1:-}" = "--quiet" ] && QUIET=1
+   121	
+   122	# RULE 1 shape. Widen HERE (single source) if the known gaps above get budget.
+   123	ANCHOR_RE='`[A-Za-z_][A-Za-z0-9_.+-]*:[0-9]{3,}(-[0-9]+)?\+?`'
+   124	
+   125	# `perl` carries the wrap-aware citation extraction (it needs whole-file regex
+   126	# with match offsets, which line-oriented grep/awk cannot do). If it is absent
+   127	# the lint cannot run — and a gate that cannot run must fail loudly, never skip
+   128	# (TC-37).
+   129	if ! command -v perl >/dev/null 2>&1; then
+   130	  echo "FAIL lint-plan-anchors: perl not found; the wrap-aware citation extractor" >&2
+   131	  echo "  cannot run. A gate that cannot run must not report a pass (TC-37)." >&2
+   132	  exit 1
+   133	fi
+   134	
+   135	# Emit one `<line-number><TAB><whitespace-normalised citation>` record per
+   136	# citation found in $1. `WS` permits at most ONE newline (plus an optional `>`
+   137	# blockquote continuation marker), so soft-wrapped citations are found while a
+   138	# blank line still terminates the match.
+   139	extract_citations() {
+   140	  perl -0777 -ne '
+   141	    my $WS   = qr/(?:[ \t]*\n[ \t]*>?[ \t]*|[ \t]+)/;
+   142	    my $TICK = qr/`[^`\n]+`/;
+   143	    my $CIT  = qr/(?:$TICK$WS?\/$WS?)*$TICK${WS}in${WS}`[A-Za-z0-9._\/-]+\.[A-Za-z0-9]+`/;
+   144	    while (/($CIT)/g) {
+   145	      my $m = $1;
+   146	      my $ln = (substr($_, 0, $-[0]) =~ tr/\n//) + 1;
+   147	      $m =~ s/[ \t]*\n[ \t]*>?[ \t]*/ /g;
+   148	      print "$ln\t$m\n";
+   149	    }
+   150	  ' "$1"
+   151	}
+   152	
+   153	FAIL=0
+   154	PLANS=()
+   155	ANCHORS=0
+   156	CITATIONS=0
+   157	
+   158	note() { [ "$QUIET" -eq 1 ] || printf '%s\n' "$*"; }
+   159	
+   160	# --- discover ACTIVE plans from frontmatter -------------------------------
+   161	shopt -s nullglob
+   162	for f in dev/plans/*.md; do
+   163	  [ "$(head -n1 "$f")" = "---" ] || continue
+   164	  status="$(awk 'NR==1{next} /^---$/{exit} /^status:[[:space:]]*/{sub(/^status:[[:space:]]*/,""); sub(/[[:space:]]+$/,""); print; exit}' "$f")"
+   165	  [ "$status" = "ACTIVE" ] && PLANS+=("$f")
+   166	done
+   167	shopt -u nullglob
+   168	
+   169	# --- worktree file index, for citation path resolution --------------------
+   170	INDEX="$(mktemp)"
+   171	trap 'rm -f "$INDEX"' EXIT
+   172	find . \( -name .git -o -name node_modules -o -name target -o -name .venv \) -prune \
+   173	  -o -type f -print 2>/dev/null | sed 's|^\./||' | sort >"$INDEX"
+   174	
+   175	# Resolve a cited path to exactly one worktree file.
+   176	# Prints the resolved path on success; prints nothing and returns
+   177	# 1 = no match, 2 = ambiguous.
+   178	resolve_path() {
+   179	  local want="$1" hits
+   180	  if [ -f "$want" ]; then printf '%s\n' "$want"; return 0; fi
+   181	  hits="$(grep -F -x -e "$want" "$INDEX" || true)"
+   182	  [ -n "$hits" ] || hits="$(grep -E "(^|/)$(sed -E 's/[][\.^$*+?(){}|/]/\\&/g' <<<"$want")\$" "$INDEX" || true)"
+   183	  case "$(printf '%s' "$hits" | grep -c . || true)" in
+   184	    0) return 1 ;;
+   185	    1) printf '%s\n' "$hits"; return 0 ;;
+   186	    *) return 2 ;;
+   187	  esac
+   188	}
+   189	
+   190	for plan in "${PLANS[@]}"; do
+   191	  # ---- RULE 1: bare line anchors ----------------------------------------
+   192	  while IFS= read -r hit; do
+   193	    [ -n "$hit" ] || continue
+   194	    ln="${hit%%:*}"; tok="${hit#*:}"
+   195	    ANCHORS=$((ANCHORS + 1))
+   196	    FAIL=1
+   197	    {
+   198	      printf 'FAIL %s:%s: bare line anchor %s\n' "$plan" "$ln" "$tok"
+   199	      printf '  A `<name>:<line>` pointer has no referential integrity — it rots on the next\n'
+   200	      printf '  commit that touches the file, silently. Cite a greppable symbol instead:\n'
+   201	      printf '      `fn some_symbol` in `path/to/file.rs`\n'
+   202	      printf '  (this lint then verifies that symbol actually occurs in that file).\n'
+   203	    } >&2
+   204	  done < <(grep -noE "$ANCHOR_RE" "$plan" || true)
+   205	
+   206	  # ---- RULE 2: every citation must resolve AND exist ---------------------
+   207	  while IFS=$'\t' read -r ln match; do
+   208	    [ -n "$match" ] || continue
+   209	    mapfile -t groups < <(tr '`' '\n' <<<"$match" | awk 'NR%2==0')
+   210	    (( ${#groups[@]} >= 2 )) || continue
+   211	    cited="${groups[-1]}"
+   212	    unset 'groups[-1]'
+   213	
+   214	    resolved=""; rc=0
+   215	    resolved="$(resolve_path "$cited")" || rc=$?
+   216	    if [ "$rc" -eq 1 ]; then
+   217	      FAIL=1
+   218	      printf 'FAIL %s:%s: citation names `%s`, which matches no file in the worktree.\n' \
+   219	        "$plan" "$ln" "$cited" >&2
+   220	      continue
+   221	    elif [ "$rc" -eq 2 ]; then
+   222	      FAIL=1
+   223	      printf 'FAIL %s:%s: citation path `%s` is AMBIGUOUS (matches >1 file) — it cannot be\n' \
+   224	        "$plan" "$ln" "$cited" >&2
+   225	      printf '  verified mechanically. Cite the full repo-relative path.\n' >&2
+   226	      continue
+   227	    fi
+   228	
+   229	    for sym in "${groups[@]}"; do
+   230	      case "$sym" in
+   231	        *…*|*...*)
+   232	          FAIL=1
+   233	          printf 'FAIL %s:%s: citation `%s` in `%s` contains an elision placeholder, so it\n' \
+   234	            "$plan" "$ln" "$sym" "$cited" >&2
+   235	          printf '  cannot be matched literally. An unverifiable citation is not skipped here —\n' >&2
+   236	          printf '  that is how an unverified pointer gets laundered as a verified one. Rewrite\n' >&2
+   237	          printf '  it as a literal symbol or quoted fragment that greps.\n' >&2
+   238	          continue ;;
+   239	      esac
+   240	      CITATIONS=$((CITATIONS + 1))
+   241	      if ! grep -qF -- "$sym" "$resolved"; then
+   242	        FAIL=1
+   243	        printf 'FAIL %s:%s: cited symbol `%s` does NOT occur in `%s` (resolved: %s).\n' \
+   244	          "$plan" "$ln" "$sym" "$cited" "$resolved" >&2
+   245	        printf '  The symbol was renamed, moved, or never existed. Re-verify with\n' >&2
+   246	        printf '      grep -n %s %s\n' "'$sym'" "$resolved" >&2
+   247	      fi
+   248	    done
+   249	  done < <(extract_citations "$plan")
+   250	done
+   251	
+   252	# --- vacuous-pass guard (TC-37) -------------------------------------------
+   253	if [ "${#PLANS[@]}" -eq 0 ]; then
+   254	  {
+   255	    echo "FAIL lint-plan-anchors: ZERO ACTIVE plans discovered under dev/plans/*.md."
+   256	    echo "  The scan loops never ran, so exiting 0 would vouch for nothing (TC-37)."
+   257	    echo "  Either the frontmatter convention changed or the scan is pointed wrong."
+   258	  } >&2
+   259	  exit 1
+   260	fi
+   261	if [ "$CITATIONS" -eq 0 ]; then
+   262	  {
+   263	    echo "FAIL lint-plan-anchors: ZERO citations verified across ${#PLANS[@]} ACTIVE plan(s)."
+   264	    echo "  The existence check — the whole point of this gate — did not execute, so a"
+   265	    echo "  green here would be vacuous (TC-37). Either the citation form drifted away"
+   266	    echo "  from \`sym\` in \`path\`, or the extractor is broken."
+   267	  } >&2
+   268	  exit 1
+   269	fi
+   270	
+   271	if [ "$FAIL" -ne 0 ]; then
+   272	  printf '\nlint-plan-anchors: %d bare line anchor(s); scanned %d ACTIVE plan(s), %d citation(s).\n' \
+   273	    "$ANCHORS" "${#PLANS[@]}" "$CITATIONS" >&2
+   274	  exit 1
+   275	fi
+   276	
+   277	note "lint-plan-anchors: OK — ${#PLANS[@]} ACTIVE plan(s), 0 bare line anchors, ${CITATIONS} citation(s) verified to exist."
+   278	exit 0
+
+--- tests rest ---
+     1	#!/usr/bin/env bash
+     2	# scripts/tests/test_lint_plan_anchors.sh — T1d recurrence guard (DOC-HYGIENE-2).
+     3	#
+     4	# Proves scripts/lint-plan-anchors.sh:
+     5	#
+     6	#   RULE 1 — bare line-anchor ban
+     7	#     1.  FAILS an ACTIVE plan carrying a bare `<name>:<line>` anchor.
+     8	#     1b. Is GENERIC, not an enumerated crate-prefix list: a name nobody would
+     9	#         have thought to enumerate (`fathomdb-cli:389`, `wibble-frobnicator:4711`)
+    10	#         fails just the same. This is the arm that matters — an enumeration is
+    11	#         defeated by the next name anyone invents.
+    12	#     1c. Accepts a range (`lib.rs:876-887`) and an open end (`engine:12166+`).
+    13	#     1d. Does NOT fire on a colon inside ordinary code/prose
+    14	#         (`SHA256("{kind}:{name}")`) or on a sub-100 `:NN` section reference —
+    15	#         the documented floor.
+    16	#
+    17	#   RULE 2 — MANDATORY symbol-existence check (the crux of the tranche)
+    18	#     2.  FAILS a citation whose symbol does NOT occur in the file it names.
+    19	#         Without this arm the lint would only swap an unverified NUMBER for an
+    20	#         unverified SYMBOL — the same broken pointer with better cosmetics.
+    21	#     3.  PASSES a citation whose symbol DOES occur.
+    22	#     3b. FAILS a citation naming a file that does not exist.
+    23	#     3c. FAILS a citation whose path is AMBIGUOUS (resolves to >1 file).
+    24	#     3d. FAILS a citation containing an elision placeholder (`…`/`...`) — an
+    25	#         unverifiable citation is failed, never skipped.
+    26	#     3e. Is WRAP-AWARE: a bad citation split across a line break (with or
+    27	#         without a `>` blockquote marker) still FAILS. A checker a soft wrap
+    28	#         can defeat is a checker whose green means nothing.
+    29	#
+    30	#   SCOPE FENCE
+    31	#     4.  PASSES a NON-ACTIVE plan carrying a bare anchor (a COMPLETE plan is a
+    32	#         historical record; rewriting its anchors would falsify the record).
+    33	#     4b. Does not scan dev/plans/runs/** or dev/plans/prompts/** — immutable
+    34	#         run artifacts.
+    35	#
+    36	#   VACUOUS-PASS GUARD (TC-37)
+    37	#     5.  FAILS when ZERO ACTIVE plans are discovered.
+    38	#     5b. FAILS when ZERO citations are verified across the ACTIVE plans.
+    39	#
+    40	# Builds a throwaway fixture repo under mktemp -d; never touches this checkout.
+    41	set -euo pipefail
+    42	
+    43	SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    44	REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+    45	LINT="${LINT_UNDER_TEST:-$REPO_ROOT/scripts/lint-plan-anchors.sh}"
+    46	
+    47	FIX="$(mktemp -d)"
+    48	trap 'rm -rf "$FIX"' EXIT
+    49	
+    50	FAILED=0
+    51	pass() { printf 'PASS  %s\n' "$1"; }
+    52	fail() { printf 'FAIL  %s\n' "$1" >&2; FAILED=$((FAILED + 1)); }
+    53	
+    54	# Every fixture gets: a real source file to cite, and one ACTIVE plan holding a
+    55	# valid citation — so the vacuity guards do not fire on arms that are testing
+    56	# something else.
+    57	setup_fixture() {
+    58	  rm -rf "$FIX/repo"
+    59	  mkdir -p "$FIX/repo/scripts" "$FIX/repo/dev/plans/runs" "$FIX/repo/dev/plans/prompts" \
+    60	           "$FIX/repo/src/rust/crates/widget/src"
+    61	  cp "$LINT" "$FIX/repo/scripts/lint-plan-anchors.sh"
+    62	  chmod +x "$FIX/repo/scripts/lint-plan-anchors.sh"
+    63	  cat >"$FIX/repo/src/rust/crates/widget/src/lib.rs" <<'EOF'
+    64	pub fn real_symbol() -> u32 { 7 }
+    65	fn another_real_symbol() {}
+    66	EOF
+    67	  (cd "$FIX/repo" && git init -q && git config user.email t@example.com && git config user.name t)
+    68	}
+    69	
+    70	baseline_plan() {
+    71	  cat >"$FIX/repo/dev/plans/baseline.md" <<'EOF'
+    72	---
+    73	status: ACTIVE
+    74	---
+    75	
+    76	# Baseline
+    77	
+    78	The write path is `pub fn real_symbol` in `widget/src/lib.rs`.
+    79	EOF
+    80	}
+    81	
+    82	run_lint() {
+    83	  set +e
+    84	  OUT="$(cd "$FIX/repo" && bash scripts/lint-plan-anchors.sh 2>&1)"
+    85	  RC=$?
+    86	  set -e
+    87	}
+    88	
+    89	# --- Arm 1: bare anchor in an ACTIVE plan -> FAIL ------------------------
+    90	setup_fixture; baseline_plan
+    91	cat >"$FIX/repo/dev/plans/offender.md" <<'EOF'
+    92	---
+    93	status: ACTIVE
+    94	---
+    95	
+    96	The dispatcher lives at `engine:11152` today.
+    97	EOF
+    98	run_lint
+    99	if [ "$RC" -ne 0 ] && grep -q 'offender.md:5' <<<"$OUT" && grep -q 'engine:11152' <<<"$OUT"; then
+   100	  pass "bare anchor in an ACTIVE plan -> non-zero exit, names file:line and the anchor"
+   101	else
+   102	  fail "arm 1 (bare anchor): rc=$RC out=$OUT"
+   103	fi
+   104	
+   105	# --- Arm 1b: the rule is a SHAPE, not an enumerated prefix list ----------
+   106	setup_fixture; baseline_plan
+   107	cat >"$FIX/repo/dev/plans/novel.md" <<'EOF'
+   108	---
+   109	status: ACTIVE
+   110	---
+   111	
+   112	See `fathomdb-cli:389` and `wibble_frobnicator-v2.rs:4711` and `Z9:100`.
+   113	EOF
+   114	run_lint
+   115	n_hits=$(grep -c '^FAIL .*bare line anchor' <<<"$OUT" || true)
+   116	if [ "$RC" -ne 0 ] && [ "$n_hits" -eq 3 ] \
+   117	   && grep -q 'fathomdb-cli:389' <<<"$OUT" \
+   118	   && grep -q 'wibble_frobnicator-v2.rs:4711' <<<"$OUT" \
+   119	   && grep -q 'Z9:100' <<<"$OUT"; then
+   120	  pass "generic shape rule — unenumerable prefixes all caught (3/3), not a whitelist"
+   121	else
+   122	  fail "arm 1b (generic rule): rc=$RC hits=$n_hits out=$OUT"
+   123	fi
+   124	
+   125	# --- Arm 1c: ranges and open ends are anchors too ------------------------
+   126	setup_fixture; baseline_plan
+   127	cat >"$FIX/repo/dev/plans/ranges.md" <<'EOF'
+   128	---
+   129	status: ACTIVE
+   130	---
+   131	
+   132	Worker at `lib.rs:876-887`; edges inlined from `engine:12166+`.
+   133	EOF
+   134	run_lint
+   135	n_hits=$(grep -c '^FAIL .*bare line anchor' <<<"$OUT" || true)
+   136	if [ "$RC" -ne 0 ] && [ "$n_hits" -eq 2 ]; then
+   137	  pass "ranges (\`lib.rs:876-887\`) and open ends (\`engine:12166+\`) are caught"
+   138	else
+   139	  fail "arm 1c (ranges/open ends): rc=$RC hits=$n_hits out=$OUT"
+   140	fi
+   141	
+   142	# --- Arm 1d: no false positives on colons in code / sub-100 refs ---------
+   143	setup_fixture; baseline_plan
+   144	cat >"$FIX/repo/dev/plans/notanchors.md" <<'EOF'
+   145	---
+   146	status: ACTIVE
+   147	---
+   148	
+   149	`derive_logical_id = SHA256("{kind}:{name}")` is hashed; see `§2:98` and
+   150	`bm25(search_index_v2, 1.0, 3.0)` and `h:<content-hash>` and `12:345`.
+   151	EOF
+   152	run_lint
+   153	if [ "$RC" -eq 0 ]; then
+   154	  pass "no false positive on embedded colons, sub-100 \`:NN\` refs, or leading-digit tokens"
+   155	else
+   156	  fail "arm 1d (false positives): rc=$RC out=$OUT"
+   157	fi
+   158	
+   159	# --- Arm 2: cited symbol DOES NOT EXIST -> FAIL (the crux) --------------
+   160	setup_fixture; baseline_plan
+   161	cat >"$FIX/repo/dev/plans/ghost.md" <<'EOF'
+   162	---
+   163	status: ACTIVE
+   164	---
+   165	
+   166	The projector is `fn symbol_that_never_existed` in `widget/src/lib.rs`.
+   167	EOF
+   168	run_lint
+   169	if [ "$RC" -ne 0 ] && grep -q 'does NOT occur' <<<"$OUT" \
+   170	   && grep -q 'symbol_that_never_existed' <<<"$OUT"; then
+   171	  pass "MANDATORY existence check: a cited symbol absent from the named file -> FAIL"
+   172	else
+   173	  fail "arm 2 (existence check) — THIS IS THE CRUX, the lint is laundering: rc=$RC out=$OUT"
+   174	fi
+   175	
+   176	# --- Arm 3: cited symbol EXISTS -> PASS ---------------------------------
+   177	setup_fixture; baseline_plan
+   178	cat >"$FIX/repo/dev/plans/good.md" <<'EOF'
+   179	---
+   180	status: ACTIVE
+   181	---
+   182	
+   183	`pub fn real_symbol` / `fn another_real_symbol` in `widget/src/lib.rs` both exist.
+   184	EOF
+   185	run_lint
+   186	if [ "$RC" -eq 0 ] && grep -q 'citation(s) verified' <<<"$OUT"; then
+   187	  pass "citations whose symbols exist (incl. a \`/\`-chain) -> exit 0"
+   188	else
+   189	  fail "arm 3 (valid citation): rc=$RC out=$OUT"
+   190	fi
+   191	
+   192	# --- Arm 3b: cited file does not exist -> FAIL --------------------------
+   193	setup_fixture; baseline_plan
+   194	cat >"$FIX/repo/dev/plans/nofile.md" <<'EOF'
+   195	---
+   196	status: ACTIVE
+   197	---
+   198	
+   199	See `pub fn real_symbol` in `gadget/src/nowhere.rs`.
+   200	EOF
+   201	run_lint
+   202	if [ "$RC" -ne 0 ] && grep -q 'matches no file' <<<"$OUT"; then
+   203	  pass "citation naming a nonexistent file -> FAIL"
+   204	else
+   205	  fail "arm 3b (missing file): rc=$RC out=$OUT"
+   206	fi
+   207	
+   208	# --- Arm 3c: ambiguous cited path -> FAIL -------------------------------
+   209	setup_fixture; baseline_plan
+   210	mkdir -p "$FIX/repo/src/rust/crates/gadget/src"
+   211	cp "$FIX/repo/src/rust/crates/widget/src/lib.rs" "$FIX/repo/src/rust/crates/gadget/src/lib.rs"
+   212	cat >"$FIX/repo/dev/plans/ambiguous.md" <<'EOF'
+   213	---
+   214	status: ACTIVE
+   215	---
+   216	
+   217	See `pub fn real_symbol` in `src/lib.rs`.
+   218	EOF
+   219	run_lint
+   220	if [ "$RC" -ne 0 ] && grep -qi 'AMBIGUOUS' <<<"$OUT"; then
+   221	  pass "citation path resolving to >1 file -> FAIL as ambiguous (not silently picked)"
+   222	else
+   223	  fail "arm 3c (ambiguous path): rc=$RC out=$OUT"
+   224	fi
+   225	
+   226	# --- Arm 3d: elision placeholder -> FAIL, never skip --------------------
+   227	setup_fixture; baseline_plan
+   228	cat >"$FIX/repo/dev/plans/elided.md" <<'EOF'
+   229	---
+   230	status: ACTIVE
+   231	---
+   232	
+   233	The `wire_recover(…, "truncate-wal", …)` in `widget/src/lib.rs` arm.
+   234	EOF
+   235	run_lint
+   236	if [ "$RC" -ne 0 ] && grep -q 'elision placeholder' <<<"$OUT"; then
+   237	  pass "unverifiable (elided) citation -> FAIL, not skipped"
+   238	else
+   239	  fail "arm 3d (elision): rc=$RC out=$OUT"
+   240	fi
+   241	
+   242	# --- Arm 3e: a soft wrap must not defeat the existence check ------------
+   243	setup_fixture; baseline_plan
+   244	printf -- '---\nstatus: ACTIVE\n---\n\n' >"$FIX/repo/dev/plans/wrapped.md"
+   245	printf 'Plain wrap: the projector is `fn ghost_alpha` in\n' >>"$FIX/repo/dev/plans/wrapped.md"
+   246	printf '`widget/src/lib.rs` — and it is not there.\n\n' >>"$FIX/repo/dev/plans/wrapped.md"
+   247	printf '> Blockquote wrap: `fn ghost_beta` in\n' >>"$FIX/repo/dev/plans/wrapped.md"
+   248	printf '>   `widget/src/lib.rs` — also not there.\n\n' >>"$FIX/repo/dev/plans/wrapped.md"
+   249	printf 'Split after the symbol: `fn ghost_gamma`\nin `widget/src/lib.rs`.\n' >>"$FIX/repo/dev/plans/wrapped.md"
+   250	run_lint
+   251	n_hits=$(grep -c 'does NOT occur' <<<"$OUT" || true)
+   252	if [ "$RC" -ne 0 ] && [ "$n_hits" -eq 3 ] \
+   253	   && grep -q 'ghost_alpha' <<<"$OUT" && grep -q 'ghost_beta' <<<"$OUT" \
+   254	   && grep -q 'ghost_gamma' <<<"$OUT"; then
+   255	  pass "wrap-aware: line-break-split bad citations (plain, blockquote, post-symbol) all caught (3/3)"
+   256	else
+   257	  fail "arm 3e (wrap-aware) — a soft wrap defeats the check: rc=$RC hits=$n_hits out=$OUT"
+   258	fi
+   259	
+   260	# --- Arm 3f: a BLANK line terminates a citation (no runaway match) ------
+   261	setup_fixture; baseline_plan
+   262	cat >"$FIX/repo/dev/plans/paragraphs.md" <<'EOF'
+   263	---
+   264	status: ACTIVE
+   265	---
+   266	
+   267	A paragraph ending in `fn ghost_delta`
+   268	
+   269	in `widget/src/lib.rs` is a new paragraph, not a citation.
+   270	EOF
+   271	run_lint
+   272	if [ "$RC" -eq 0 ]; then
+   273	  pass "a blank line terminates a citation — paragraph boundaries are not wraps"
+   274	else
+   275	  fail "arm 3f (paragraph boundary): rc=$RC out=$OUT"
+   276	fi
+   277	
+   278	# --- Arm 4: NON-ACTIVE plan with a bare anchor -> PASS (scope fence) ----
+   279	setup_fixture; baseline_plan
+   280	cat >"$FIX/repo/dev/plans/historical.md" <<'EOF'
+   281	---
+   282	status: COMPLETE
+   283	---
+   284	
+   285	Shipped against `engine:11152`, with `fn no_such_symbol` in `widget/src/lib.rs`.
+   286	EOF
+   287	cat >"$FIX/repo/dev/plans/proposed.md" <<'EOF'
+   288	---
+   289	status: PROPOSED
+   290	---
+   291	
+   292	Also `napi:1102`.
+   293	EOF
+   294	run_lint
+   295	if [ "$RC" -eq 0 ]; then
+   296	  pass "scope fence — COMPLETE/PROPOSED plans are historical record, not scanned"
+   297	else
+   298	  fail "arm 4 (non-ACTIVE scope fence): rc=$RC out=$OUT"
+   299	fi
+   300	
+   301	# --- Arm 4b: runs/ and prompts/ are never scanned -----------------------
+   302	setup_fixture; baseline_plan
+   303	cat >"$FIX/repo/dev/plans/runs/STATUS-0.8.20.md" <<'EOF'
+   304	---
+   305	status: ACTIVE
+   306	---
+   307	
+   308	Run artifact citing `engine:11152` and `fn no_such_symbol` in `widget/src/lib.rs`.
+   309	EOF
+   310	cat >"$FIX/repo/dev/plans/prompts/SOME-PROMPT.md" <<'EOF'
+   311	---
+   312	status: ACTIVE
+   313	---
+   314	
+   315	Prompt citing `napi:1102`.
+   316	EOF
+   317	run_lint
+   318	if [ "$RC" -eq 0 ]; then
+   319	  pass "runs/ and prompts/ are immutable run artifacts — never scanned"
+   320	else
+   321	  fail "arm 4b (runs/prompts scope fence): rc=$RC out=$OUT"
+   322	fi
+   323	
+   324	# --- Arm 5: ZERO ACTIVE plans -> FAIL (vacuous-pass guard, TC-37) -------
+   325	setup_fixture
+   326	cat >"$FIX/repo/dev/plans/only-complete.md" <<'EOF'
+   327	---
+   328	status: COMPLETE
+   329	---
+   330	
+   331	Nothing active here.
+   332	EOF
+   333	run_lint
+   334	if [ "$RC" -ne 0 ] && grep -q 'ZERO ACTIVE plans' <<<"$OUT"; then
+   335	  pass "vacuity guard — zero ACTIVE plans discovered -> hard FAIL, not a silent exit 0"
+   336	else
+   337	  fail "arm 5 (zero ACTIVE plans): rc=$RC out=$OUT"
+   338	fi
+   339	
+   340	# --- Arm 5b: ZERO citations verified -> FAIL (vacuous-pass guard) -------
+   341	setup_fixture
+   342	cat >"$FIX/repo/dev/plans/no-citations.md" <<'EOF'
+   343	---
+   344	status: ACTIVE
+   345	---
+   346	
+   347	An ACTIVE plan that cites nothing at all, so the existence check never runs.
+   348	EOF
+   349	run_lint
+   350	if [ "$RC" -ne 0 ] && grep -q 'ZERO citations verified' <<<"$OUT"; then
+   351	  pass "vacuity guard — zero citations verified -> hard FAIL (the check did not execute)"
+   352	else
+   353	  fail "arm 5b (zero citations): rc=$RC out=$OUT"
+   354	fi
+   355	
+   356	if [ "$FAILED" -ne 0 ]; then
+   357	  printf '%d arm(s) failed\n' "$FAILED" >&2
+   358	  exit 1
+   359	fi
+   360	printf 'PASS  all arms — scripts/lint-plan-anchors.sh bans bare line anchors generically, VERIFIES every cited symbol against the file it names (incl. across soft wraps), stays scoped to ACTIVE dev/plans/*.md, and refuses to pass vacuously\n'
+
+--- active plans ---
+dev/plans/0.6.0-Phase-9-Pack-5-performance-diagnostics.md:status: COMPLETE
+dev/plans/0.6.0-Phase-9-Pack-7-canonical-perf-measurement.md:status: COMPLETE
+dev/plans/0.6.0-Phase-9-Pack-B-source-id.md:status: COMPLETE
+dev/plans/0.6.0-Phase-9-Pack-C-robustness-fixtures.md:status: COMPLETE
+dev/plans/0.6.0-Phase-9-Pack-D-retrieval-perf-fixtures.md:status: COMPLETE
+dev/plans/0.6.0-implementation.md:status: COMPLETE
+dev/plans/0.6.1-implementation.md:status: COMPLETE
+dev/plans/0.7.0-HITL-recommendations.md:status: COMPLETE
+dev/plans/0.7.0-implementation.md:status: COMPLETE
+dev/plans/0.7.0-perf-experiments.md:status: COMPLETE
+dev/plans/0.7.1-implementation.md:status: COMPLETE
+dev/plans/0.8.0-GA-and-IR-eval-roadmap.md:status: COMPLETE
+dev/plans/0.8.0-implementation.md:status: COMPLETE
+dev/plans/0.8.0-plan.md:status: COMPLETE
+dev/plans/0.8.1-implementation.md:status: COMPLETE
+dev/plans/0.8.1-plan.md:status: COMPLETE
+dev/plans/0.8.11-implementation.md:status: COMPLETE
+dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md:status: COMPLETE
+dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md:status: ACTIVE
+dev/plans/0.9.x-roadmap-DRAFT.md:status: SUPERSEDED
+dev/plans/IR-C-passage-indexing-spec.md:status: UNKNOWN
+dev/plans/IR-C-test-query-quality-instrumentation-plan.md:status: UNKNOWN
+dev/plans/README.md:status: ACTIVE
+dev/plans/agentic-context-phase-1-3.md:status: COMPLETE
+dev/plans/ci-deferred.md:status: SUPERSEDED
+dev/plans/plan-0.8.11.1.md:status: COMPLETE
+dev/plans/plan-0.8.11.2.md:status: COMPLETE
+dev/plans/plan-0.8.11.md:status: COMPLETE
+dev/plans/plan-0.8.12.md:status: COMPLETE
+dev/plans/plan-0.8.14-gpu-rerank.md:status: COMPLETE
+dev/plans/plan-0.8.14.md:status: COMPLETE
+dev/plans/plan-0.8.15.md:status: PROPOSED
+dev/plans/plan-0.8.16.md:status: COMPLETE
+dev/plans/plan-0.8.17.md:status: PROPOSED
+dev/plans/plan-0.8.18.md:status: COMPLETE
+dev/plans/plan-0.8.19.md:status: COMPLETE
+dev/plans/plan-0.8.2.md:status: COMPLETE
+dev/plans/plan-0.8.20.md:status: ACTIVE
+dev/plans/plan-0.8.21.md:status: PROPOSED
+dev/plans/plan-0.8.3.md:status: COMPLETE
+dev/plans/plan-0.8.4.md:status: COMPLETE
+dev/plans/plan-0.8.6.md:status: COMPLETE
+dev/plans/plan-0.8.7.md:status: COMPLETE
+dev/plans/plan-0.8.8.md:status: COMPLETE
+dev/plans/plan-0.8.9.md:status: COMPLETE
+
+exec
+/bin/bash -lc 'bash scripts/lint-plan-anchors.sh; echo rc=$?' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 308ms:
+lint-plan-anchors: OK — 3 ACTIVE plan(s), 0 bare line anchors, 25 citation(s) verified to exist.
+rc=0
+
+exec
+/bin/bash -lc "nl -ba .github/workflows/ci.yml | sed -n '360,480p'
+
+nl -ba scripts/agent-lint-md.sh | sed -n '1,90p'
+nl -ba scripts/agent-test.sh | sed -n '1,120p'" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+   360	            echo "| with-feature wheel (shipped, GATED) | ${FEAT} B |"
+   361	            echo "| baseline | ${BASELINE} B |"
+   362	            echo "| delta vs baseline | ${DELTA} B |"
+   363	            echo "| budget (blocking) | ${BUDGET} B |"
+   364	            echo "| no-feature wheel | ${NOFEAT} B (informational only) |"
+   365	            echo "| with-feature delta vs no-feature | ${FEATDELTA} B (informational only) |"
+   366	          } >> "$GITHUB_STEP_SUMMARY"
+   367	          if [ "$DELTA" -gt "$BUDGET" ]; then
+   368	            echo "::error title=wheel-size regression::with-feature wheel grew ${DELTA} B vs baseline ${BASELINE} B (budget ${BUDGET} B)"
+   369	            exit 1
+   370	          fi
+   371	
+   372	  # Docs-only fast-path md gate. Runs ONLY when the diff is markdown-only (the
+   373	  # heavy `verify` job — which runs scripts/agent-verify.sh -> agent-lint-md.sh —
+   374	  # is the md gate on every non-docs diff, so this avoids double-linting). Uses
+   375	  # the SAME .markdownlint-cli2.jsonc config as local + CI, so the real markdown
+   376	  # gate is preserved on the fast path (this is NOT a silent `paths-ignore` drop).
+   377	  markdownlint:
+   378	    needs: changes
+   379	    if: needs.changes.outputs.docs_only == 'true'
+   380	    runs-on: ubuntu-latest
+   381	    timeout-minutes: 10
+   382	    steps:
+   383	      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+   384	      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+   385	        with:
+   386	          node-version: "22"
+   387	      - name: Install markdown tooling (markdownlint-cli2)
+   388	        run: npm ci
+   389	      - name: markdownlint-cli2 (repo markdown; same config as local + verify)
+   390	        run: ./node_modules/.bin/markdownlint-cli2
+   391	      - name: markdownlint docs/** (mirrors agent-lint-md.sh docs leg)
+   392	        run: bash scripts/agent-lint-docs.sh
+   393	      - name: dev/plans/*.md status frontmatter (T3/8+9, mirrors agent-lint-md.sh leg)
+   394	        run: bash scripts/lint-plans-status.sh
+   395	      - name: master §6 findings register — duplicate-id gate (T1c, mirrors agent-lint-md.sh leg)
+   396	        run: bash scripts/lint-findings.sh
+   397	      # NOTE: agent-lint-md.sh's `lint-plan-anchors` leg is deliberately NOT
+   398	      # mirrored here. This job is `if: docs_only == 'true'`, and the event that
+   399	      # breaks a symbol citation is a CODE push (a rename), which this job never
+   400	      # sees. It has its own always-on `plan-anchors` job below instead.
+   401	
+   402	  # status-board-currency-enforcement item 3 — the non-bypassable CI backstop.
+   403	  # `preflight.sh --landing` (item 2) is the PREVENT gate at land time, but it is
+   404	  # a local, invocable check; this job is the DETECT gate that catches anything
+   405	  # that slipped preflight or predates it (the exact 4-day drift the incident
+   406	  # exhibited: a board that kept saying "not landed" after the merge commit was
+   407	  # already on origin/main). Reuses scripts/check-board-currency.sh — the SAME
+   408	  # script preflight.sh calls — so the two homes cannot diverge (see that
+   409	  # script's header for the full predicate). Intentionally NOT gated on
+   410	  # docs_only: a board can drift behind a non-docs-only push just as easily.
+   411	  # fetch-depth 0 is required: the predicate walks full reachable git history
+   412	  # for `merge(0.8.z): Slice N` commits, which a shallow (depth-1) checkout
+   413	  # would hide entirely.
+   414	  board-currency:
+   415	    runs-on: ubuntu-latest
+   416	    timeout-minutes: 5
+   417	    steps:
+   418	      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+   419	        with:
+   420	          fetch-depth: 0
+   421	      - name: Board/git-ancestry drift check (status-board-currency-enforcement item 3)
+   422	        run: bash scripts/check-board-currency.sh --tip HEAD
+   423	
+   424	  # DOC-HYGIENE-2 T1b — the always-on ledger-integrity backstop.
+   425	  # `preflight.sh --landing` is the PREVENT gate at land time; this job is the
+   426	  # DETECT gate for whatever slips it. Reuses scripts/check-ledgers.sh — the
+   427	  # SAME script preflight calls — so the two homes cannot diverge (see that
+   428	  # script's header for the predicate: sidecar == max(seq), and seq contiguous).
+   429	  #
+   430	  # Deliberately carries NO `if:` condition. A docs_only-gated job never fires on
+   431	  # a code push, and the measured incident (steward-ledger.jsonl.seq frozen at 80
+   432	  # against max(seq) 98 for 19 commits / four days) spanned both docs and code
+   433	  # pushes; the sidecar is tracked, so any clone taken in that window would have
+   434	  # minted colliding seq numbers. Default (depth-1) checkout is sufficient: the
+   435	  # predicate reads working-tree files only and walks no history.
+   436	  ledger-integrity:
+   437	    runs-on: ubuntu-latest
+   438	    timeout-minutes: 5
+   439	    steps:
+   440	      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+   441	      - name: Ledger sidecar/seq integrity (DOC-HYGIENE-2 T1b)
+   442	        run: bash scripts/check-ledgers.sh
+   443	
+   444	  # DOC-HYGIENE-2 T1d — the always-on line-anchor / citation-integrity backstop.
+   445	  #
+   446	  # Deliberately carries NO `if:` and NO `needs:`. This is the whole point of the
+   447	  # job, not boilerplate. The `markdownlint` job above is gated on
+   448	  # `needs.changes.outputs.docs_only == 'true'`, so it fires only when a push
+   449	  # touches docs and nothing else — but the event that BREAKS a symbol citation
+   450	  # in an ACTIVE plan is a rename in `src/`, i.e. a code push, which docs_only
+   451	  # excludes by construction. A citation gate that cannot run on the push that
+   452	  # invalidates the citation is decorative. Same reasoning that put
+   453	  # `board-currency` and `ledger-integrity` outside the docs_only fast path.
+   454	  #
+   455	  # Default (depth-1) checkout is sufficient: the predicate reads working-tree
+   456	  # files only and walks no history.
+   457	  plan-anchors:
+   458	    runs-on: ubuntu-latest
+   459	    timeout-minutes: 5
+   460	    steps:
+   461	      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+   462	      - name: ACTIVE-plan line-anchor ban + symbol-existence check (DOC-HYGIENE-2 T1d)
+   463	        run: bash scripts/lint-plan-anchors.sh
+   464	      - name: Recurrence guard for the gate itself (fixture arms)
+   465	        run: bash scripts/tests/test_lint_plan_anchors.sh
+   466	
+   467	  # mkdocs --strict is the broader CI gate beyond agent-verify (per AGENTS.md §3).
+   468	  # Intentionally NOT gated on docs_only: it must run for docs/** changes (the
+   469	  # fast path) AND alongside code changes, exactly as before.
+   470	  docs:
+   471	    runs-on: ubuntu-latest
+   472	    timeout-minutes: 15
+   473	    steps:
+   474	      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+   475	      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+   476	        with:
+   477	          python-version: "3.12"
+   478	      - run: python3 -m pip install --upgrade pip mkdocs
+   479	      - run: mkdocs build --strict
+     1	#!/usr/bin/env bash
+     2	# Markdown lint + format check + link integrity.
+     3	# Pass: silent. Fail: structured diagnostic + spill path.
+     4	set -euo pipefail
+     5	
+     6	SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+     7	# shellcheck source=lib/agent-output.sh
+     8	. "$SCRIPT_DIR/lib/agent-output.sh"
+     9	cd_repo_root
+    10	
+    11	# markdownlint-cli2 — structural lint.
+    12	#
+    13	# TC-37 (fixed here): this used to skip_notice (exit 0) when the binary was absent —
+    14	# the NORMAL state inside an orchestration worktree — which hid a genuinely red `main`
+    15	# (9 markdown errors, 2026-07-02 -> 2026-07-24) for three weeks: every orchestrator ran
+    16	# this gate, saw green, and never knew it hadn't actually run. A gate that cannot run
+    17	# must say so loudly and fail, never report a silent pass. See scripts/tests/
+    18	# test_lint_md_hard_fail_on_missing_linter.sh for the recurrence-guard test.
+    19	if [ -d node_modules/.bin ] && [ -x node_modules/.bin/markdownlint-cli2 ]; then
+    20	  run_capped lint-md-structure ./node_modules/.bin/markdownlint-cli2
+    21	else
+    22	  {
+    23	    echo "FAIL lint-md-structure: markdownlint-cli2 not found at node_modules/.bin/markdownlint-cli2."
+    24	    echo "  A missing structural markdown linter must never report a silent pass (TC-37)."
+    25	    echo "  Fix: run scripts/bootstrap.sh to install it, OR (inside a linked worktree)"
+    26	    echo "  symlink the primary checkout's node_modules:"
+    27	    echo "    ln -s /home/coreyt/projects/fathomdb/node_modules node_modules"
+    28	  } >&2
+    29	  exit 1
+    30	fi
+    31	
+    32	# T3/8+9 (DOC-HYGIENE-1): every top-level dev/plans/*.md must carry a valid
+    33	# `status:` frontmatter value — the recurrence guard for that convention.
+    34	# Pure bash/grep; no external binary, so this leg has no absent-tool skip path.
+    35	run_capped lint-plans-status "$SCRIPT_DIR/lint-plans-status.sh"
+    36	
+    37	# T1c (DOC-HYGIENE-2): the master's §6 findings register must not mint two
+    38	# entries under one `F-n` id — an ambiguous id silently breaks every citation of
+    39	# it (a duplicate F-11 did exactly that for four weeks). Same class of guard as
+    40	# the leg above: pure bash/awk, no external binary, so no absent-tool skip path.
+    41	run_capped lint-findings "$SCRIPT_DIR/lint-findings.sh"
+    42	
+    43	# T1d (DOC-HYGIENE-2): ACTIVE plans may not cite code by `<name>:<line>` — a
+    44	# line number rots on the next commit, silently (plan-0.8.20.md's TC-45 pair was
+    45	# ~2,100 lines off and git shows it was never correct) — and every symbol an
+    46	# ACTIVE plan DOES cite must actually occur in the file it names. That second
+    47	# half is the load-bearing one: swapping an unverified number for an unverified
+    48	# symbol would launder the same bad pointer. Pure bash/perl, no external binary,
+    49	# so no absent-tool skip path. Also runs always-on in CI (the `plan-anchors`
+    50	# job) — the push that renames a symbol is a CODE push, which the docs_only
+    51	# markdownlint job never sees.
+    52	run_capped lint-plan-anchors "$SCRIPT_DIR/lint-plan-anchors.sh" --quiet
+    53	
+    54	# docs/** structural lint. The repo .markdownlint-cli2.jsonc IGNORES docs/** (it is
+    55	# otherwise gated only by `mkdocs build --strict`, which does NOT enforce markdownlint
+    56	# style). agent-lint-docs.sh lints docs/** with the same .markdownlint.jsonc rules via
+    57	# an out-of-tree copy (so the ignore does not apply). It self-skips if the binary is
+    58	# absent, so run it unconditionally.
+    59	run_capped lint-md-docs "$SCRIPT_DIR/agent-lint-docs.sh"
+    60	
+    61	# NOTE: prettier --check was REMOVED from the markdown gate (0.8.9.1, HITL 2026-06-28).
+    62	# prettier's markdown formatter is non-configurable for emphasis style and its *->_ reflow
+    63	# CORRUPTS multi-line / nested / adjacent-to-`code` emphasis spans (broken spans, snake_case
+    64	# `_` loss, word-joins that change tokenization). markdownlint-cli2 (AST/token-aware) above is
+    65	# the sole structural formatter; it does not have this failure mode. Neutrality of any future
+    66	# bulk markdown reformat is verified out-of-band by dev/tools/md-neutrality-guard (markdown-it-py
+    67	# AST visible-text diff), not by re-introducing prettier.
+    68	
+    69	# lychee — link integrity. Offline by default; pass AGENT_LINK_CHECK=online to hit the network.
+    70	#
+    71	# TC-37 follow-up (deliberately left as skip-on-absent, unlike lint-md-structure above):
+    72	# lychee is a separate Rust binary (cargo install), not part of the node_modules symlink
+    73	# convention that makes markdownlint-cli2 trivially available in a worktree, and it is not
+    74	# the tool implicated in the TC-37 incident (that was markdownlint-cli2 missing 9 real
+    75	# structural errors). Hard-failing here would break every worktree that has not run the
+    76	# full `scripts/bootstrap.sh` (which `cargo install`s lychee) for a check whose own online/
+    77	# offline modality already signals partial, best-effort coverage. Revisit if a lychee-only
+    78	# vacuous-green incident is ever observed.
+    79	if command -v lychee >/dev/null 2>&1; then
+    80	  if [ "${AGENT_LINK_CHECK:-offline}" = "online" ]; then
+    81	    run_capped lint-md-links lychee --offline=false --no-progress '**/*.md'
+    82	  else
+    83	    run_capped lint-md-links lychee --offline --no-progress '**/*.md'
+    84	  fi
+    85	else
+    86	  skip_notice lint-md-links "lychee not installed (run scripts/bootstrap.sh)"
+    87	fi
+     1	#!/usr/bin/env bash
+     2	# Run unit tests across language surfaces.
+     3	set -euo pipefail
+     4	
+     5	SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+     6	# shellcheck source=lib/agent-output.sh
+     7	. "$SCRIPT_DIR/lib/agent-output.sh"
+     8	cd_repo_root
+     9	
+    10	# Scripts (bash): set-version.sh two-axis enforcement.
+    11	run_capped test-set-version bash scripts/tests/test_set_version.sh
+    12	
+    13	# Scripts (bash): release-time preflight (tag/--check-files/CHANGELOG/metadata).
+    14	run_capped test-verify-release-gates bash scripts/tests/test_verify_release_gates.sh
+    15	
+    16	# Scripts (bash): TC-RUBRIC-5 landing guard — preflight.sh --landing must HARD-fail
+    17	# in the primary checkout and pass in a linked worktree. Builds its own throwaway
+    18	# repo + worktree under mktemp -d; never git-writes into this checkout.
+    19	run_capped test-preflight-landing bash scripts/tests/test_preflight_landing.sh
+    20	
+    21	# Scripts (bash): status-board-currency-enforcement items 2+3 — the shared
+    22	# scripts/check-board-currency.sh predicate plus its --landing wiring in
+    23	# preflight.sh. Builds its own throwaway repos + worktrees under mktemp -d;
+    24	# never git-writes into this checkout.
+    25	run_capped test-check-board-currency bash scripts/tests/test_check_board_currency.sh
+    26	
+    27	# Scripts (bash): DOC-HYGIENE-2 T1b — the shared scripts/check-ledgers.sh
+    28	# predicate (sidecar == max(seq); seq contiguous), its --landing wiring in
+    29	# preflight.sh, and a static assertion that its CI job is always-on. Fixture
+    30	# roots are plain dirs under mktemp -d (plus throwaway git repos for the
+    31	# preflight arms); no real .jsonl / .jsonl.seq is ever touched.
+    32	run_capped test-check-ledgers bash scripts/tests/test_check_ledgers.sh
+    33	
+    34	# Scripts (bash): sibling-package co-tagging assert (AC-052). Offline via
+    35	# python3 -m http.server fixture; never hits crates.io.
+    36	run_capped test-assert-co-tagging bash scripts/tests/test_assert_co_tagging.sh
+    37	
+    38	# Scripts (bash): Axis-E published-API drift guard (prevents the v0.8.9
+    39	# partial-publish — embedder-api surface moved without an Axis-E bump).
+    40	# Offline via a fixture http router; never hits crates.io.
+    41	run_capped test-embedder-api-no-drift bash scripts/tests/test_verify_embedder_api_no_drift.sh
+    42	
+    43	# Scripts (bash): structural shape of the post-publish smoke scripts.
+    44	# NOT integration — see test header for why behavior is exercised at tag
+    45	# time by the release workflow, not here.
+    46	run_capped test-smoke-scripts bash scripts/tests/test_smoke_scripts.sh
+    47	
+    48	# Scripts (bash): 0.8.18 Slice 20 (#11-full publish) — static release.yml scope
+    49	# assertions (matrix gated to x86_64-linux, tiered ordering, non-latest npm
+    50	# dist-tag). Pure python3+PyYAML parse; never runs the workflow.
+    51	run_capped test-release-workflow-scope bash scripts/tests/test_release_workflow_scope.sh
+    52	
+    53	# Scripts (bash): coordinated-publish resilience (R-REL-4b/4c) — REAL npm
+    54	# local-registry round-trip (publish -> query-no-op -> install -> loader) +
+    55	# crates.io SIMULATED (real crates registry infeasible in-harness). node-only.
+    56	run_capped test-idempotent-republish bash scripts/tests/test_idempotent_republish.sh
+    57	
+    58	# Scripts (bash): REAL PyPI round-trip (R-REL-4b) — genuine twine upload to a
+    59	# minimal local index -> query-sees-it -> re-run no-op. Self-provisions twine<6
+    60	# (twine 6 blocks --skip-existing on non-prod repos); SKIPS loudly if it cannot.
+    61	run_capped test-pypi-publish-roundtrip bash scripts/tests/test_pypi_publish_roundtrip.sh
+    62	
+    63	# Scripts (bash): Fix-1 publish-registry SAFETY — a staging/test run can never
+    64	# publish to prod (npm publish --registry $BASE; twine upload --repository-url).
+    65	run_capped test-publish-registry-safety bash scripts/tests/test_publish_registry_safety.sh
+    66	
+    67	# Scripts (bash): poll-for-resolvability guard that replaced the fixed 60s
+    68	# index-propagation sleep (R-REL-4c). Offline fixture http server.
+    69	run_capped test-wait-for-crate-version bash scripts/tests/test_wait_for_crate_version.sh
+    70	
+    71	# Scripts (bash): publish-time npm optionalDependencies injection (R-REL-4f) —
+    72	# napi per-platform split. Pure filesystem fixture; no registry.
+    73	run_capped test-npm-inject-optional-deps bash scripts/tests/test_npm_inject_optional_deps.sh
+    74	
+    75	# actionlint binary present + rejects deliberately-broken fixture.
+    76	run_capped test-actionlint-fixture bash scripts/tests/test_actionlint_fixture.sh
+    77	
+    78	# TC-37 recurrence guard: agent-lint-md.sh must HARD-fail (not skip_notice/exit 0)
+    79	# when markdownlint-cli2 is genuinely unresolvable. Builds its own throwaway
+    80	# fixture repo under mktemp -d; never touches this checkout's node_modules.
+    81	run_capped test-lint-md-hard-fail-on-missing-linter bash scripts/tests/test_lint_md_hard_fail_on_missing_linter.sh
+    82	
+    83	# T3/9: dev/plans/*.md must carry a valid `status:` frontmatter value (recurrence
+    84	# guard for archival banners drifting silently). RED-fixture proven inline.
+    85	run_capped test-plans-status-frontmatter bash scripts/tests/test_plans_status_frontmatter.sh
+    86	
+    87	# T1d: recurrence guard for the ACTIVE-plan line-anchor ban AND — the arm that
+    88	# carries the weight — for the mandatory symbol-existence check. Mutation-proven:
+    89	# stubbing the existence check to always succeed turns this suite red, so a green
+    90	# here is not vacuous. RED fixtures built inline under mktemp -d.
+    91	run_capped test-lint-plan-anchors bash scripts/tests/test_lint_plan_anchors.sh
+    92	
+    93	# Markdown generators (shell): context-clarity.sh / memory-clarity.sh emit
+    94	# gate-compliant markdown. Their output trees (and the dev/plans/runs/** reports
+    95	# from the Python generators) are markdownlint-ignored, so the normal md gate never
+    96	# sees a regenerated report. The Python generators (aggregate / m1_verdict_run /
+    97	# s15a_embedder_probe) are guarded by src/python/tests/test_md_generator_hygiene.py
+    98	# in the pytest step below.
+    99	run_capped test-md-generators bash scripts/tests/test_md_generators.sh
+   100	
+   101	# AC-051a / AC-051b: cross-ecosystem version-skew resolver fixtures.
+   102	run_capped test-cargo-skew bash dev/release/tests/cargo_skew.sh
+   103	run_capped test-pip-skew bash dev/release/tests/pip_skew.sh
+   104	
+   105	# Rust
+   106	#
+   107	# TC-20 invariant: this line must NEVER reach `eu7_real_corpus_ac_validation`,
+   108	# a ~1.5h real-corpus embed measurement. Do NOT add `--all-features` here.
+   109	# Three gates keep it out, in order of what a change is most likely to break:
+   110	#   1. `required-features = ["operator"]` on the test target — not built at all
+   111	#      under the workspace default feature set (`default = []`);
+   112	#   2. file-level `#![cfg(feature = "default-embedder")]` — compiles to zero
+   113	#      tests even when `operator` IS on (e.g. the engine's operator suite);
+   114	#   3. `#[ignore]` on the test itself — holds no matter which features are
+   115	#      selected, so `--all-features` still would not run the body.
+   116	# Verify by inspection only (`-- --list --ignored`), never by running it.
+   117	run_capped test-rust cargo test --workspace --quiet --no-fail-fast
+   118	
+   119	# Python
+   120	python_bin=""
+
+exec
+/bin/bash -lc 'bash scripts/tests/test_lint_plan_anchors.sh' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 705ms:
+PASS  ranges (`lib.rs:876-887`) and open ends (`engine:12166+`) are caught
+PASS  no false positive on embedded colons, sub-100 `:NN` refs, or leading-digit tokens
+PASS  MANDATORY existence check: a cited symbol absent from the named file -> FAIL
+PASS  citations whose symbols exist (incl. a `/`-chain) -> exit 0
+PASS  citation naming a nonexistent file -> FAIL
+PASS  citation path resolving to >1 file -> FAIL as ambiguous (not silently picked)
+PASS  unverifiable (elided) citation -> FAIL, not skipped
+PASS  wrap-aware: line-break-split bad citations (plain, blockquote, post-symbol) all caught (3/3)
+PASS  a blank line terminates a citation — paragraph boundaries are not wraps
+PASS  scope fence — COMPLETE/PROPOSED plans are historical record, not scanned
+PASS  runs/ and prompts/ are immutable run artifacts — never scanned
+PASS  vacuity guard — zero ACTIVE plans discovered -> hard FAIL, not a silent exit 0
+PASS  vacuity guard — zero citations verified -> hard FAIL (the check did not execute)
+PASS  all arms — scripts/lint-plan-anchors.sh bans bare line anchors generically, VERIFIES every cited symbol against the file it names (incl. across soft wraps), stays scoped to ACTIVE dev/plans/*.md, and refuses to pass vacuously
+
+exec
+/bin/bash -lc 'for f in dev/plans/*.md; do [ "$(head -n1 "$f")" = --- ] && grep -q '"'"'^status: ACTIVE'"' \""'$f" && echo '"'---' "'$f && perl -0777 -ne '"'my "'$WS=qr/(?:[ '"\\t]*\\n[ \\t]*>?[ \\t]*|[ \\t]+)/; my "'$TICK=qr/`[''^`'"\\n]+"'`/; my $CIT=qr/(?:$TICK$WS?'"\\/"'$WS?)*$TICK${WS}in${WS}`[A-Za-z0-9._'"\\/-]+\\.[A-Za-z0-9]+"'`/; while(/($CIT)/g){$m=$1; $ln=(substr($_,0,$-[0])=~tr/'"\\n//)+1; "'$m=~s/[ '"\\t]*\\n[ \\t]*>?[ \\t]*/ /g; print \""'$ln'"\\t"'$m'"\\n\"}' \""'$f"; fi; done' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ exited 2 in 0ms:
+/bin/bash: -c: line 1: syntax error near unexpected token `fi'
+/bin/bash: -c: line 1: `for f in dev/plans/*.md; do [ "$(head -n1 "$f")" = --- ] && grep -q '^status: ACTIVE' "$f" && echo '---' $f && perl -0777 -ne 'my $WS=qr/(?:[ \t]*\n[ \t]*>?[ \t]*|[ \t]+)/; my $TICK=qr/`[^`\n]+`/; my $CIT=qr/(?:$TICK$WS?\/$WS?)*$TICK${WS}in${WS}`[A-Za-z0-9._\/-]+\.[A-Za-z0-9]+`/; while(/($CIT)/g){$m=$1; $ln=(substr($_,0,$-[0])=~tr/\n//)+1; $m=~s/[ \t]*\n[ \t]*>?[ \t]*/ /g; print "$ln\t$m\n"}' "$f"; fi; done'
+
+exec
+/bin/bash -lc "grep -RnoE '"'`[''^`]*:[0-9]{3,}[''^`]*`'"' dev/plans/*.md | sed -n '1,120p'" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+dev/plans/0.6.0-Phase-9-Pack-5-performance-diagnostics.md:590:` assertion test is unreachable: SQLite docs (sqlite3.h:249-252) state `
+dev/plans/0.6.0-Phase-9-Pack-5-performance-diagnostics.md:759:`tests/perf_gates.rs:245`
+dev/plans/0.6.0-Phase-9-Pack-B-source-id.md:134:`dev/plans/0.6.0-implementation.md:185-245`
+dev/plans/0.6.0-Phase-9-Pack-B-source-id.md:141:`dev/design/errors.md:140-217`
+dev/plans/0.6.0-Phase-9-Pack-B-source-id.md:147:`dev/requirements.md:290-348`
+dev/plans/0.6.0-implementation.md:392:`design/recovery.md:153`
+dev/plans/0.6.1-implementation.md:182:`src/rust/crates/fathomdb-engine/src/lib.rs:541`
+dev/plans/0.6.1-implementation.md:292:`src/rust/crates/fathomdb-engine/src/lib.rs:541-548`
+dev/plans/0.6.1-implementation.md:319:`src/rust/crates/fathomdb-engine/src/lib.rs:541-548`
+dev/plans/0.7.0-HITL-recommendations.md:52:`tests/perf_gates.rs:245`
+dev/plans/0.7.0-perf-experiments.md:57:`src/rust/crates/fathomdb-engine/src/lib.rs:1264-1271`
+dev/plans/0.7.0-perf-experiments.md:234:`src/rust/crates/fathomdb-engine/src/lib.rs:2360`
+dev/plans/0.8.0-implementation.md:340:`fathomdb-schema/src/lib.rs:362`
+dev/plans/0.8.0-implementation.md:376:`eu7_real_corpus_ac.rs:477`
+dev/plans/0.8.0-implementation.md:376:`eu8_ir_validation.rs:325-326`
+dev/plans/0.8.0-implementation.md:405:`search_inner:1892`
+dev/plans/0.8.0-implementation.md:670:`lib.rs:5748-5751`
+dev/plans/0.8.0-implementation.md:686:`fathomdb-schema/src/lib.rs:294`
+dev/plans/0.8.0-implementation.md:688:`:251`
+dev/plans/0.8.0-implementation.md:688:`:833-849`
+dev/plans/0.8.0-implementation.md:688:`:5101`
+dev/plans/0.8.0-implementation.md:693:`:269`
+dev/plans/0.8.0-implementation.md:698:`lib.rs:5101`
+dev/plans/0.8.0-implementation.md:718:`:269-280`
+dev/plans/0.8.0-implementation.md:720:`:362-373`
+dev/plans/0.8.0-implementation.md:729:`:5113`
+dev/plans/0.8.0-implementation.md:730:`:794`
+dev/plans/0.8.0-implementation.md:730:`:1774`
+dev/plans/0.8.0-implementation.md:753:`:124`
+dev/plans/0.8.0-implementation.md:853:`lib.rs:5139-5146`
+dev/plans/0.8.0-implementation.md:854:`:794-796`
+dev/plans/0.8.0-implementation.md:855:`:1816`
+dev/plans/0.8.0-implementation.md:864:`lib.rs:5192-5194`
+dev/plans/0.8.0-implementation.md:876:`:794-796`
+dev/plans/0.8.0-implementation.md:876:`:1816`
+dev/plans/0.8.0-implementation.md:919:`:794-796`
+dev/plans/0.8.0-implementation.md:920:`:1816`
+dev/plans/0.8.0-implementation.md:944:`acceptance.md:1183`
+dev/plans/0.8.0-implementation.md:971:`dev/acceptance.md:1183`
+dev/plans/0.8.0-implementation.md:1017:`:882`
+dev/plans/0.8.0-implementation.md:1018:`dev/requirements.md:445`
+dev/plans/0.8.0-implementation.md:1020:`:215`
+dev/plans/0.8.0-implementation.md:1093:`:882`
+dev/plans/0.8.0-implementation.md:1094:`:445`
+dev/plans/0.8.0-implementation.md:1095:`acceptance.md:1183`
+dev/plans/0.8.0-implementation.md:1120:`lib.rs:329/410/538`
+dev/plans/0.8.0-implementation.md:1140:`lib.rs:350`
+dev/plans/0.8.0-implementation.md:1140:`:553`
+dev/plans/0.8.0-implementation.md:1141:`:389`
+dev/plans/0.8.0-implementation.md:1147:`lib.rs:2251/2285`
+dev/plans/0.8.0-implementation.md:1176:`lib.rs:329/410/500`
+dev/plans/0.8.0-implementation.md:1274:`lib.rs:2652`
+dev/plans/0.8.0-implementation.md:1274:`lib.rs:3261-3298`
+dev/plans/0.8.0-implementation.md:1292:`lib.rs:2652 trace_source_ref`
+dev/plans/0.8.0-implementation.md:1316:`lib.rs:3261-3298 search_index`
+dev/plans/0.8.0-plan.md:147:`lib.rs:5748-5751`
+dev/plans/0.8.1-implementation.md:137:`lib.rs:3707`
+dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md:35:`crates/fathomdb-engine/src/lib.rs:4973`
+dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md:36:`:4936`
+dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md:36:`:4966–4977`
+dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md:38:`:4956–4958`
+dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md:38:`:4951`
+dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md:39:`:4979–4991`
+dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md:40:`:4851`
+dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md:40:`:4894`
+dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md:42:`:651`
+dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md:42:`:639`
+dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md:43:`:1256–1308`
+dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md:44:`:759`
+dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md:44:`:763`
+dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md:44:`:812–818`
+dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md:45:`src/python/fathomdb/_fathomdb.pyi:100–109`
+dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md:45:`:207–223`
+dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md:46:`eval/rerank_tune_probe.py:171–212`
+dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md:48:`:162`
+dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md:67:` (lib.rs:4936)** — add params `
+dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md:68:`:4973`
+dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md:69:`:4951`
+dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md:73:`:4851`
+dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md:73:`:4894`
+dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md:77:`:639–690`
+dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md:77:`:1256–1308`
+dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md:77:`:763, 812–818`
+dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md:78:`:100–109`
+dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md:78:`:207–223`
+dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md:98:`:219`
+dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md:586:`:106`
+dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md:606:`:6229`
+dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md:607:`:6398`
+dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md:607:`:6515`
+dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md:608:`:9515`
+dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md:615:`:3644`
+dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md:615:`:3771`
+dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md:616:`:1934`
+dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md:616:`:3598`
+dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md:617:`:2024`
+dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md:617:`:2051`
+dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md:617:`:6379`
+dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md:618:`:4462`
+dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md:620:`:10083`
+dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md:650:`:6479`
+dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md:652:`engine lib.rs:6479`
+dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md:653:`:10070`
+dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md:654:`:10083-10089`
+dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md:698:`dev/acceptance.md:1147`
+dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md:698:`:1286`
+dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md:700:`:1297`
+dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md:703:`dev/acceptance.md:1286-1300`
+dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md:736:`:5186`
+dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md:736:`:5209`
+dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md:738:`src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs:405`
+dev/plans/0.9.x-roadmap-DRAFT.md:55:`engine:876-887`
+dev/plans/0.9.x-roadmap-DRAFT.md:116:`schema:300`
+dev/plans/0.9.x-roadmap-DRAFT.md:121:`:876-887`
+dev/plans/0.9.x-roadmap-DRAFT.md:256:`:187`
+dev/plans/0.9.x-roadmap-DRAFT.md:258:`:618`
+dev/plans/0.9.x-roadmap-DRAFT.md:260:`:2923`
+dev/plans/0.9.x-roadmap-DRAFT.md:260:`:2999`
+dev/plans/0.9.x-roadmap-DRAFT.md:260:`:3054`
+dev/plans/0.9.x-roadmap-DRAFT.md:260:`:3345`
+
+exec
+/bin/bash -lc "grep -R \"mapfile\\|\\[-1\\]\" -n scripts dev | sed -n '1,80p'" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+scripts/lint-plan-anchors.sh:209:    mapfile -t groups < <(tr '`' '\n' <<<"$match" | awk 'NR%2==0')
+scripts/lint-plan-anchors.sh:211:    cited="${groups[-1]}"
+scripts/lint-plan-anchors.sh:212:    unset 'groups[-1]'
+scripts/repo-prune/bin/memory-clarity.sh:24:mapfile -t FILES < <(find "$MEM" -maxdepth 1 -name '*.md' ! -name 'MEMORY.md' | sort)
+scripts/repo-prune/bin/memory-prune-verify.sh:24:mapfile -t FILES < <(find "$MEM" -maxdepth 1 -name '*.md' ! -name 'MEMORY.md' | sort)
+scripts/check-ledgers.sh:242:    lo, hi = distinct[0], distinct[-1]
+dev/plans/runs/codex/0.8.20/slice-5-fix-4-5-delta-20260720T022544Z.log:1710:        inner = lines[1:-1] if lines[-1].strip() == "```" else lines[1:]
+dev/plans/runs/codex/0.8.20/slice-5-fix-6-rereview-20260720T024726Z.log:2547:        inner = lines[1:-1] if lines[-1].strip() == "```" else lines[1:]
+dev/plans/runs/codex/0.8.20/slice-5-fix-6-rereview-20260720T024726Z.log:2930:    result = json.loads(output.strip().splitlines()[-1])
+dev/plans/runs/codex/0.8.20/slice-5-fix-6-rereview-20260720T024726Z.log:2961:    result = json.loads(output.strip().splitlines()[-1])
+dev/plans/runs/codex/0.8.20/slice-5-fix-7-rereview-20260720T032538Z.log:2125:+        inner = lines[1:-1] if lines[-1].strip() == "```" else lines[1:]
+dev/plans/runs/codex/0.8.20/slice-5-fix-7-rereview-20260720T032538Z.log:6880:+        inner = lines[1:-1] if lines[-1].strip() == "```" else lines[1:]
+dev/plans/runs/codex/0.8.20/slice-5-fix-7-rereview-20260720T032538Z.log:7263:+    result = json.loads(output.strip().splitlines()[-1])
+dev/plans/runs/codex/0.8.20/slice-5-fix-7-rereview-20260720T032538Z.log:7294:+    result = json.loads(output.strip().splitlines()[-1])
+dev/plans/runs/codex/0.8.20/slice-5-fix-7-rereview-20260720T032538Z.log:11457:    result = json.loads(output.strip().splitlines()[-1])
+dev/plans/runs/codex/DOC-HYGIENE-2/codex-T1b-rereview-20260725T194022Z.log:54:+    lo, hi = distinct[0], distinct[-1]
+dev/plans/runs/codex/DOC-HYGIENE-2/codex-T1b-rereview-20260725T194022Z.log:391:    lo, hi = distinct[0], distinct[-1]
+
+codex
+The added plan-anchor lint, tests, and CI wiring are coherent and pass against the current tree. I did not find a discrete introduced bug that would break existing behavior or the new gate.
+The added plan-anchor lint, tests, and CI wiring are coherent and pass against the current tree. I did not find a discrete introduced bug that would break existing behavior or the new gate.
