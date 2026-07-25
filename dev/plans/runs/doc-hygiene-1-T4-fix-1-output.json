@@ -1,0 +1,25 @@
+{
+  "tranche": "DOC-HYGIENE-1 T4 fix-1 — vacuous-pass guard for check-board-currency.sh (HITL-approved hardening)",
+  "files_changed": [
+    "scripts/check-board-currency.sh",
+    "scripts/tests/test_check_board_currency.sh",
+    "dev/plans/runs/doc-hygiene-1-T4-fix-1-output.json"
+  ],
+  "problem": "The T4 predicate keyed entirely on finding commits matching 'merge(0.8.z): Slice[- ]N ...'. If a live board's release ever had ZERO such matches reachable from the tip (convention drift: a squash-land, a reworded merge subject, a historical slash-style subject, or simply nothing landed yet), the per-slice loop body never ran, STALE stayed 0, and the board reported 'ok' — vouching for a board it never actually checked. Same failure class as TC-37 (agent-lint-md.sh's pre-fix vacuous exit-0 when markdownlint-cli2 was unresolvable).",
+  "fix": "scripts/check-board-currency.sh now tracks, per live (non-CLOSED, version-parseable) board, whether the SEEN_SLICE associative array gained ANY entry during the git-log walk. If it is empty after the walk, that board contributes zero real checks and is HARD-failed with a distinct, actionable message: 'STALE  <ver>: no landing merge matched the convention '\\''merge(<ver>): Slice[- ]N'\\'' reachable from <tip> — either nothing has landed for this live board, or the merge-subject convention drifted; the board-currency gate cannot vouch for it.' Only fires for boards that already passed the CLOSED-banner and version-parse scope filters (a CLOSED board or a non-standard filename is legitimately never scanned and does not trip this). Never fires once a board has >=1 matched slice — the guard can only convert silent-pass to loud-fail, never the reverse. The top-of-file PREDICATE comment block was updated with a new numbered step 5 plus a dedicated 'VACUOUS-PASS GUARD (fix-1...)' section documenting this as part of the contract, and the Exit-codes line now states the guard explicitly.",
+  "preflight_exit": 0,
+  "agent_lint_md_exit": 0,
+  "md_lint_exit": 0,
+  "check_board_currency_test_exit": 0,
+  "real_repo_checker_exit": 0,
+  "red_green_evidence": {
+    "method": "git stash push --keep-index -- scripts/check-board-currency.sh reverted ONLY the script (kept the new test arms staged/in-place), captured the RED run, then git stash pop restored the fix and captured the GREEN run. Neither STATUS-0.8.20.md nor any other tracked file was touched.",
+    "red_run": "bash scripts/tests/test_check_board_currency.sh against the pre-fix script exited 1 with exactly 2 real failures: 'FAIL  a live board with zero matched lands must not pass vacuously; got rc=0, out: ok    board-currency: no live STATUS-0.8.z.md board contradicts git ancestry' and 'FAIL  expected a STALE line naming the unmatched convention; got: ok ...'. This reproduces the exact hole described: a live board (release 0.8.97, fixture NOMATCH_REPO) whose reachable history contains zero commits matching the landing-merge convention passed with exit 0 and an 'ok' message, i.e. the gate silently vouched for a board it never checked. All 13 other arms (pre-existing T4 coverage + the new fix-1 regression-guard arms) still passed in this same run, confirming the failure was isolated to the intended hole.",
+    "green_run": "bash scripts/tests/test_check_board_currency.sh against the restored (fixed) script exits 0, 15/15 arms PASS, including the two that failed above ('check-board-currency.sh HARD-fails a live board with zero matched landing merges' and 'vacuous-pass failure names the convention + cannot-vouch reason') and two new explicit no-regression arms ('fix-1 regression guard: a live board with >=1 matched land still exits 0' using CURRENT_REPO, and '... with 2 slices' worth of matched lands still exits 0' using SUPERSEDED_REPO)."
+  },
+  "verification_against_live_repo": "bash scripts/check-board-currency.sh run directly against this worktree's real HEAD exits 0 ('ok    board-currency: no live STATUS-0.8.z.md board contradicts git ancestry') — STATUS-0.8.20.md (the only live board) has 4 real matched lands (Slice 0/5/10/15) so the new guard does not fire against it. STATUS-0.8.20.md was NOT modified. ./scripts/preflight.sh --landing separately confirms this (hard_fails: [], the board-currency line reports ok).",
+  "deviations": [],
+  "found_not_fixed": [
+    "None. The guard does not currently fire against any board in this repo (the one live board has real matched lands); it is proven only against the constructed NOMATCH_REPO fixture, per the coordinator's explicit instruction not to weaken it or force a pass by editing STATUS-0.8.20.md."
+  ]
+}

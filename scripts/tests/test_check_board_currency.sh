@@ -176,10 +176,30 @@ commit_all "$SUPERSEDED_REPO" "docs: stamp STATUS-0.8.99 Slice 1 LANDED $FINAL_S
 # Note: the PARTIAL commit's own SHA is deliberately never mentioned in the
 # final board text (only the LANDED sha is) — this must NOT be flagged stale.
 
+# --- Fixture E (fix-1): vacuous-pass hole — a LIVE board whose release has ZERO
+# commits matching the landing-merge convention anywhere in reachable history
+# (a squash-land, a reworded merge, convention drift, or just nothing landed
+# yet). Pre-fix, the per-slice loop body never runs for this board, STALE never
+# flips, and the checker reports "ok" — vouching for a board it never actually
+# checked. Deliberately uses a DIFFERENT release (0.8.97) so it cannot collide
+# with any other fixture's merge-subject matches.
+NOMATCH_REPO="$TMPROOT/nomatch"
+init_repo "$NOMATCH_REPO"
+mkdir -p "$NOMATCH_REPO/dev/plans/runs" "$NOMATCH_REPO/src" "$NOMATCH_REPO/scripts"
+printf 'fixture\n' >"$NOMATCH_REPO/src/keep.txt"
+printf '# STATUS — 0.8.97 fixture\n\nSlice 1: not started.\n' >"$NOMATCH_REPO/dev/plans/runs/STATUS-0.8.97.md"
+commit_all "$NOMATCH_REPO" 'fixture: initial commit'
+# Plain (non-merge, non-landing-convention) commits only -- no "merge(0.8.97):
+# Slice N" subject anywhere in this repo's history.
+printf 'more work\n' >"$NOMATCH_REPO/src/plain.txt"
+commit_all "$NOMATCH_REPO" 'feat: ordinary commit, not a landing merge'
+printf 'even more\n' >>"$NOMATCH_REPO/src/plain.txt"
+commit_all "$NOMATCH_REPO" 'chore: another ordinary commit'
+
 run_checker() {
-  local dir="$1"
+  local dir="$1" checker="${2:-$CHECKER}"
   set +e
-  OUT="$(cd "$dir" && bash "$CHECKER" 2>&1)"
+  OUT="$(cd "$dir" && bash "$checker" 2>&1)"
   RC=$?
   set -e
 }
@@ -237,6 +257,42 @@ if [ "$RC" -eq 0 ]; then
   pass "check-board-currency.sh does not require a superseded partial-merge SHA"
 else
   fail "superseded-merge fixture should pass (only newest land required); got rc=$RC, out: $OUT"
+fi
+
+# --- Arm 4b (fix-1): vacuous-pass guard — zero-matched live board HARD-fails --
+# The RED-first proof for this fix: pre-fix, this fixture's checker run passed
+# (exit 0, "ok") because the per-slice loop body never executed for it — the
+# gate silently vouched for a board it never actually checked. Post-fix it must
+# be a HARD failure with a distinct, actionable message.
+run_checker "$NOMATCH_REPO"
+if [ "$RC" -ne 0 ]; then
+  pass "check-board-currency.sh HARD-fails a live board with zero matched landing merges"
+else
+  fail "a live board with zero matched lands must not pass vacuously; got rc=0, out: $OUT"
+fi
+if printf '%s' "$OUT" | grep -q 'STALE.*no landing merge matched the convention'; then
+  pass "vacuous-pass failure names the convention + cannot-vouch reason"
+else
+  fail "expected a STALE line naming the unmatched convention; got: $OUT"
+fi
+
+# --- Arm 4c (fix-1): regression guard — a live board WITH >=1 matched land ------
+# still passes (the guard converts silent->loud ONLY for zero matches; it must
+# never fire once real evidence exists). Exercises a board with a single match
+# (CURRENT_REPO, already asserted in Arm 1) AND one with two matches across two
+# slices worth of history (SUPERSEDED_REPO, already asserted in Arm 4) via a
+# fresh, explicit assertion naming this fix directly.
+run_checker "$CURRENT_REPO"
+if [ "$RC" -eq 0 ]; then
+  pass "fix-1 regression guard: a live board with >=1 matched land still exits 0"
+else
+  fail "fix-1 must not fail a board with a real matched land; got rc=$RC, out: $OUT"
+fi
+run_checker "$SUPERSEDED_REPO"
+if [ "$RC" -eq 0 ]; then
+  pass "fix-1 regression guard: a live board with 2 slices' worth of matched lands still exits 0"
+else
+  fail "fix-1 must not fail a multi-slice board with real matched lands; got rc=$RC, out: $OUT"
 fi
 
 # ============================ preflight.sh --landing ============================

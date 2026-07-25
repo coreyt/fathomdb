@@ -29,6 +29,10 @@
 #        the merge commit is reachable from the tip) while its board never
 #        mentions the commit that landed it: a demonstrable contradiction,
 #        not a wording heuristic. HARD fail.
+#     5. Vacuous-pass guard (fix-1): if step 2 matches ZERO commits for a live
+#        board's release, that board contributed zero checks in steps 3-4 and
+#        the loop would otherwise pass it by default. HARD fail instead — see
+#        the dedicated section below.
 #
 # This is a floor, not a full semantic reader of the board's prose — it does
 # not parse "LANDED" / "IN FLIGHT" wording, which the current boards' own
@@ -45,11 +49,26 @@
 # release adopts a different merge-subject convention, extend the regex below
 # rather than adding a second predicate implementation.
 #
+# VACUOUS-PASS GUARD (fix-1, same failure class as TC-37's markdownlint-cli2
+# hole): the predicate above only fires when a landing-merge subject is FOUND.
+# If a LIVE (non-CLOSED, version-parseable) board's release has ZERO commits
+# matching the convention reachable from <tip> -- a squash-land, a reworded
+# merge, a historical slash-style subject, or simply nothing has landed yet --
+# the per-slice loop body never runs, STALE never flips, and the board passes
+# green while the gate has actually vouched for nothing. That is a silent
+# vacuous pass, not a real currency check, so it is itself a HARD failure:
+# every LIVE board must show at least one recognized land, or the gate must say
+# loudly that it could not vouch for it (see the "no landing merge matched"
+# message below), never report ok by default. This can only convert a silent
+# pass into a loud failure -- it never fires for a board with >=1 matched slice.
+#
 # Usage:
 #   scripts/check-board-currency.sh [--tip <ref>] [--boards-dir <dir>]
 #
 # Exit codes: 0 = every live board's most-recent per-slice land is referenced
-#             by SHA; 1 = at least one demonstrable board/git contradiction.
+#             by SHA (and every live board matched >=1 land); 1 = at least one
+#             demonstrable board/git contradiction, OR a live board matched
+#             zero landing merges (vacuous-pass guard, fix-1).
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
@@ -114,6 +133,12 @@ for board in "$BOARDS_DIR"/STATUS-0.8.*.md; do
   # measured: a merge commit is silently invisible with `-- .` appended. A full,
   # unfiltered `git log` does not simplify and always includes merge commits.
   done < <(git log "$TIP" --format='%H %s')
+
+  if [ "${#SEEN_SLICE[@]}" -eq 0 ]; then
+    printf 'STALE  %s: no landing merge matched the convention '\''merge(%s): Slice[- ]N'\'' reachable from %s — either nothing has landed for this live board, or the merge-subject convention drifted; the board-currency gate cannot vouch for it.\n' \
+      "$ver" "$ver" "$TIP" >&2
+    STALE=1
+  fi
   unset SEEN_SLICE
 done
 
