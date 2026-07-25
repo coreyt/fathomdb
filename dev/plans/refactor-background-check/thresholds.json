@@ -1,0 +1,63 @@
+{
+  "_provisional": "PLACEHOLDER for smoke-testing scan_file_sizes.py. Phase 1 research overwrites this file with sourced thresholds. Do not cite these numbers.",
+  "rust-src": {
+    "soft_loc": 500,
+    "hard_loc": 1000
+  },
+  "rust-test": {
+    "soft_loc": 600,
+    "hard_loc": 1200
+  },
+  "py-src": {
+    "soft_loc": 400,
+    "hard_loc": 800
+  },
+  "py-eval": {
+    "soft_loc": 500,
+    "hard_loc": 1000
+  },
+  "py-test": {
+    "soft_loc": 600,
+    "hard_loc": 1200
+  },
+  "ts-src": {
+    "soft_loc": 400,
+    "hard_loc": 800
+  },
+  "ts-test": {
+    "soft_loc": 500,
+    "hard_loc": 1000
+  },
+  "shell": {
+    "soft_loc": 300,
+    "hard_loc": 600
+  },
+  "shell-test": {
+    "soft_loc": 500,
+    "hard_loc": 1000
+  },
+  "design-doc": {
+    "soft_loc": 500,
+    "hard_loc": 1000
+  },
+  "plan-status-doc": {
+    "soft_loc": 800,
+    "hard_loc": 1600
+  },
+  "doc-other": {
+    "soft_loc": 500,
+    "hard_loc": 1000
+  },
+  "agent-file": {
+    "soft_loc": 200,
+    "hard_loc": 400
+  },
+  "py-stub": {
+    "soft_loc": 400,
+    "hard_loc": 800
+  },
+  "ci-workflow": {
+    "soft_loc": 300,
+    "hard_loc": 600
+  }
+}
