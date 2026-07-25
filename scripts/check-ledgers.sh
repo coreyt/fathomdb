@@ -229,14 +229,32 @@ for sidecar in sys.argv[1:]:
         shown = ", ".join(f"{v} (appears {counts[v]}x)" for v in dups[:CAP])
         more = f" ...and {len(dups) - CAP} more" if len(dups) > CAP else ""
         broken(f"{ledger}: seq is not contiguous — duplicate seq: {shown}{more}")
-    lo, hi = min(seqs), max(seqs)
-    missing = sorted(set(range(lo, hi + 1)) - set(counts))
-    if missing:
-        shown = ", ".join(str(v) for v in missing[:CAP])
-        more = f" ...and {len(missing) - CAP} more" if len(missing) > CAP else ""
+    # Missing values are enumerated by walking the SORTED DISTINCT seqs and
+    # looking at consecutive pairs, emitting at most CAP of them. It must never
+    # be `set(range(lo, hi + 1))`: a ledger with a large accidental gap — seq 1
+    # followed by 1000000000, with a sidecar that agrees — would make this gate
+    # build a billion-element set (~60 GiB, ~50 s, measured by extrapolation
+    # from 1e6/1e7) and hang or OOM on exactly the corruption it exists to
+    # report. The TOTAL is arithmetic, not enumeration: the closed range lo..hi
+    # holds (hi - lo + 1) slots and len(distinct) of them are occupied, so the
+    # reported count — and therefore the "...and N more" wording — is unchanged.
+    distinct = sorted(counts)
+    lo, hi = distinct[0], distinct[-1]
+    n_missing = (hi - lo + 1) - len(distinct)
+    missing = []
+    if n_missing:
+        for prev, nxt in zip(distinct, distinct[1:]):
+            if nxt - prev > 1:
+                room = CAP - len(missing)
+                missing.extend(range(prev + 1, min(nxt, prev + 1 + room)))
+                if len(missing) >= CAP:
+                    break
+    if n_missing:
+        shown = ", ".join(str(v) for v in missing)
+        more = f" ...and {n_missing - CAP} more" if n_missing > CAP else ""
         broken(f"{ledger}: seq is not contiguous — missing seq: {shown}{more}")
 
-    if agrees and not dups and not missing:
+    if agrees and not dups and not n_missing:
         print(
             f"ok    {ledger}: seq {lo}..{hi} contiguous ({len(seqs)} entries), "
             "sidecar agrees"

@@ -133,6 +133,67 @@ else
   fail "expected a BROKEN line naming the missing seq; got: $OUT"
 fi
 
+# --- Arm 3b (RED case "seq-gap-huge"): the report must be BOUNDED ------------
+# A ledger with a LARGE accidental gap — seq 1 then 1000000000, with a sidecar
+# that agrees with max(seq) — is exactly the corruption check (b) exists to
+# report, and it was the input that made the gate fall over. The pre-fix code
+# computed `sorted(set(range(lo, hi + 1)) - set(counts))`, i.e. it materialized
+# every missing value BEFORE it could print a bounded report.
+#
+# MEASURED RED WITNESS on this fixture against the pre-fix checker:
+#   `( ulimit -v 4000000; timeout 20 bash check-ledgers.sh --root <fixture> )`
+#   -> rc=1 after 2.5 s with a Python `MemoryError` traceback and NO BROKEN
+#      line at all. The 4 GiB address-space cap is a host guard, not the real
+#      ceiling: set(range()) costs ~60 B/element and ~0.05 s/1e6 (measured at
+#      1e6 and 1e7), so the uncapped run needs ~60 GiB and ~50 s — an OOM or a
+#      hang on the very defect the gate is meant to name.
+# GREEN: the same fixture must report BROKEN promptly, inside a bounded memory
+# cap, with a CAPPED list of missing values and a truthful total.
+# Which assertions below actually carried the RED (run against the pre-fix
+# checker, 3 FAIL / suite rc=1): the three that require a BROKEN missing-seq
+# line, its ascending enumeration, and its capped tail. The rc and elapsed
+# assertions passed VACUOUSLY there — under the address-space cap the old code
+# died fast and with rc=1 — so they are regression guards, not the RED signal.
+R="$(mkroot seq-gap-huge)"
+write_ledger "$R" x 1000000000 1 1000000000
+# `ulimit -v` is GNU/Linux; where the shell will not take it (macOS) the
+# timeout alone still bounds the arm.
+if ( ulimit -v 4000000 ) 2>/dev/null; then HUGE_LIMIT='ulimit -v 4000000'; else HUGE_LIMIT=':'; fi
+if command -v timeout >/dev/null 2>&1; then HUGE_TIMEOUT=(timeout 20); else HUGE_TIMEOUT=(); fi
+HUGE_START=$SECONDS
+set +e
+OUT="$( ( eval "$HUGE_LIMIT"; "${HUGE_TIMEOUT[@]}" bash "$CHECKER" --root "$R" ) 2>&1 )"
+RC=$?
+set -e
+HUGE_ELAPSED=$((SECONDS - HUGE_START))
+expect_rc 1 "a HUGE seq gap HARD-fails with the integrity exit code (not a timeout/OOM crash)"
+if [ "$HUGE_ELAPSED" -lt 10 ]; then
+  pass "a HUGE seq gap is reported promptly (${HUGE_ELAPSED}s, well inside the 20s timeout)"
+else
+  fail "a HUGE seq gap took ${HUGE_ELAPSED}s — the report is not bounded in time"
+fi
+HUGE_LINE="$(printf '%s\n' "$OUT" | grep 'BROKEN.*missing seq' || true)"
+if [ -n "$HUGE_LINE" ]; then
+  pass "a HUGE seq gap still produces the BROKEN missing-seq line"
+else
+  fail "expected a BROKEN line naming the missing seq; got: $OUT"
+fi
+if printf '%s' "$HUGE_LINE" | grep -q 'missing seq: 2, 3'; then
+  pass "the HUGE-gap report enumerates from the first missing value, ascending"
+else
+  fail "expected the enumeration to start at 2, 3; got: $HUGE_LINE"
+fi
+if printf '%s' "$HUGE_LINE" | grep -qE '\.\.\.and 999999993 more$'; then
+  pass "the HUGE-gap report caps the list and states the true remaining count"
+else
+  fail "expected the capped '...and N more' tail with the true total; got: $HUGE_LINE"
+fi
+if [ -n "$HUGE_LINE" ] && [ "${#HUGE_LINE}" -lt 300 ]; then
+  pass "the HUGE-gap report is bounded in size (${#HUGE_LINE} chars, not a billion values)"
+else
+  fail "the missing-seq line is ${#HUGE_LINE} chars — the report is not bounded"
+fi
+
 # --- Arm 4 (RED case "seq-duplicate") ----------------------------------------
 # seq 1,2,2 — max(seq)=2 matches the sidecar, so again only check (b) fires.
 # This is the collision shape the frozen sidecar would have produced.
