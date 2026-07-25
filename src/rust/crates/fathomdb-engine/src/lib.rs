@@ -16960,7 +16960,19 @@ fn commit_batch(
                         )?;
                         // fix-32 [P2]: record terminal so advance_projection_cursor
                         // can walk past this now-superseded cursor.
-                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+                        // TC-45: the token MUST be 'up_to_date', NOT 'superseded'.
+                        // The terminal table (schema step 7) carries
+                        // CHECK(state IN ('failed','up_to_date')) and the writer is
+                        // INSERT OR IGNORE, which SILENTLY SKIPS a CHECK-violating
+                        // row — so 'superseded' was dropped without error and this
+                        // cursor stalled forever (nothing backfills it: the job
+                        // query and the pending-work probe both exclude superseded
+                        // edges). 'up_to_date' is the CHECK-valid, non-'failed'
+                        // terminal and is semantically exact here: the row is
+                        // tombstoned and its vector shadow just deleted, so there is
+                        // no further projection work for this cursor. Same reasoning
+                        // and same token as the step-23 backfill (fix-4, TC-33).
+                        record_projection_terminal(&tx, *sc as u64, "up_to_date")?;
                     }
                 }
                 // G11 — invalidate-not-accumulate: for fact-edges (body IS NOT NULL),
@@ -16983,7 +16995,12 @@ fn commit_batch(
                             [sc],
                         )?;
                         // fix-32 [P2]: mark terminal so projection cursor can advance.
-                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+                        // TC-45: 'up_to_date', NOT 'superseded' — see the identical
+                        // note on the G0 prune loop above. The step-7 CHECK admits
+                        // only ('failed','up_to_date') and INSERT OR IGNORE swallows
+                        // a violating row, so 'superseded' never landed and wedged
+                        // the shared readiness watermark.
+                        record_projection_terminal(&tx, *sc as u64, "up_to_date")?;
                     }
                 }
                 let temporal_fallback_i: Option<i64> =
