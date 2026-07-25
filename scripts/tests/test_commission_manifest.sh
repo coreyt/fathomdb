@@ -591,7 +591,8 @@ BASE_LINE="$(base_line)"
 BASE_BLOCK="$(grep -m1 -A3 '^  base sha' <<<"$OUT" || true)"
 if [ "$RC" -eq 0 ] && grep -qi 'no landed slice precedes' <<<"$BASE_LINE" \
    && ! grep -qE '[0-9a-f]{8}' <<<"$BASE_LINE" \
-   && grep -qi 'first slice' <<<"$BASE_BLOCK" && grep -q 'origin/main' <<<"$BASE_BLOCK"; then
+   && grep -qi 'first slice' <<<"$BASE_BLOCK" \
+   && grep -q 'branch from `git rev-parse origin/main`' <<<"$BASE_BLOCK"; then
   pass "first slice — no predecessor is stated in words + branch-from-tip, not left blank"
 else
   fail "arm 8h (first slice): rc=$RC base=[$BASE_LINE] block=[$BASE_BLOCK]"
@@ -612,6 +613,23 @@ if [ "$RC" -eq 0 ] && ! grep -qE '[0-9a-f]{8}' <<<"$BASE_LINE" \
   pass "no predecessor but later landings exist — the manifest warns the tip is AHEAD"
 else
   fail "arm 8i (tip ahead): rc=$RC base=[$BASE_LINE] out=$OUT"
+fi
+
+# --- Arm 8i2: ...and the warning is not contradicted by an instruction ------
+# codex §9 [P2]. The warning alone was not enough: the no-predecessor branch ALSO
+# printed "branch from \`git rev-parse origin/main\`", so the same brief warned the
+# tip was ahead and then told the operator to branch from it anyway. An operator
+# follows the instruction, not the caveat beside it, so the two cases must be
+# mutually exclusive. Reuses arm 8i's run (same fixture, same $OUT).
+# NOTE: the generic "re-verify \`git rev-parse origin/main\`" line is a different
+# statement and stays; the assertion targets the BRANCH instruction only.
+if ! grep -q 'branch from `git rev-parse origin/main`' <<<"$OUT" \
+   && grep -q 'do NOT branch from the tip' <<<"$OUT" \
+   && grep -q 'NO correct automatic' <<<"$OUT" \
+   && grep -q 'git log' <<<"$OUT"; then
+  pass "a historical first-slice brief is never ALSO told to branch from the tip"
+else
+  fail "arm 8i2 (contradictory branch-from-tip instruction): rc=$RC out=$OUT"
 fi
 
 # --- Arm 8j: GAPS in `landed` -> the greatest landed slice BELOW the target --

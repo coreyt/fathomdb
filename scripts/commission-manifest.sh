@@ -424,14 +424,22 @@ def build(release, state_path, state, slice_no, entry):
         m.out("                   `git log` for that landing and record it in output.json. Do NOT guess.")
     else:
         m.out("  base sha         (none — NO landed slice precedes Slice %s)" % slice_no)
-        m.out("                   This is the first slice of the release to be cut, so there is no")
-        m.out("                   predecessor merge: branch from `git rev-parse origin/main` at STEP 0.")
+        # These two cases are MUTUALLY EXCLUSIVE. "No predecessor" means branch
+        # from the tip ONLY while the tip is still where this slice was cut. Once
+        # later slices have landed, origin/main carries their merges, so printing
+        # the branch-from-tip instruction beside the TIP IS AHEAD warning emits
+        # precisely the stale-base instruction this section exists to prevent —
+        # and an operator follows the instruction, not the caveat next to it.
         if later_landed:
             m.out("  ⚠ TIP IS AHEAD   Slice(s) %s landed AFTER this one, so origin/main already"
                   % ", ".join(str(s) for s in later_landed))
-            m.out("                   carries work Slice %s never had. Branch from the tip only if that"
+            m.out("                   carries work Slice %s never had. There is NO correct automatic"
                   % slice_no)
-            m.out("                   is intended; otherwise recover the point of cut from `git log`.")
+            m.out("                   base for this regeneration: do NOT branch from the tip. Recover")
+            m.out("                   the point of cut from `git log` and record it in output.json.")
+        else:
+            m.out("                   This is the first slice of the release to be cut, so there is no")
+            m.out("                   predecessor merge: branch from `git rev-parse origin/main` at STEP 0.")
     dep_gap = [d for d in (entry.get("depends_on") or [])
                if (ladder.get(d) or {}).get("status") == "LANDED"
                and (base_slice is None or d > base_slice)]
