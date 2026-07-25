@@ -1,0 +1,1666 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f9b0c-c3b4-7092-bf09-d4d612f0d334
+--------
+user
+changes against 'd56572e6b4527d0e3f89833ab98fce336735eae0'
+exec
+/bin/bash -lc 'ls && cat MEMORY.md 2>/dev/null || true && for f in feedback_*.md; do echo ---$f; cat "$f"; done 2>/dev/null' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ exited 1 in 0ms:
+AGENTS.md
+CHANGELOG.md
+Cargo.lock
+Cargo.toml
+LICENSE
+README.md
+deny.toml
+dev
+docs
+experiments
+lychee.toml
+mkdocs.yml
+package-lock.json
+package.json
+rust-toolchain.toml
+rustfmt.toml
+scripts
+src
+target
+test
+tests
+tools
+---feedback_*.md
+
+exec
+/bin/bash -lc 'git diff --stat d56572e6b4527d0e3f89833ab98fce336735eae0 && git diff --name-only d56572e6b4527d0e3f89833ab98fce336735eae0' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 0ms:
+ .github/workflows/ci.yml                   |  23 ++
+ dev/plans/prompts/0.8.x-STEWARD-HANDOFF.md |  36 +-
+ scripts/agent-test.sh                      |   9 +
+ scripts/check-board-currency.sh            |  20 +-
+ scripts/lib/board-closed.sh                |  36 ++
+ scripts/steward-orient.sh                  | 401 ++++++++++++++++++++++
+ scripts/tests/test_steward_orient.sh       | 525 +++++++++++++++++++++++++++++
+ 7 files changed, 1033 insertions(+), 17 deletions(-)
+.github/workflows/ci.yml
+dev/plans/prompts/0.8.x-STEWARD-HANDOFF.md
+scripts/agent-test.sh
+scripts/check-board-currency.sh
+scripts/lib/board-closed.sh
+scripts/steward-orient.sh
+scripts/tests/test_steward_orient.sh
+
+exec
+/bin/bash -lc 'git diff d56572e6b4527d0e3f89833ab98fce336735eae0 -- .github/workflows/ci.yml scripts/agent-test.sh scripts/check-board-currency.sh scripts/lib/board-closed.sh scripts/steward-orient.sh' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 0ms:
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index e1afbe5c..64128779 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -505,6 +505,29 @@ jobs:
+       - name: Recurrence guard for the gate itself (fixture arms)
+         run: bash scripts/tests/test_check_release_state_views.sh
+ 
++  # DOC-HYGIENE-2 T3a — the stateless Steward cold-start briefing.
++  #
++  # Deliberately carries NO `if:` and NO `needs:`. The briefing reads DOCS (the
++  # live board, the release-state file, both ledgers, the hand-offs), and a
++  # docs-only push takes the `docs_only` fast path that skips the heavy `verify`
++  # job — i.e. the only job that would otherwise run this suite via agent-test.sh.
++  # A guard that cannot run on the push that breaks it is decorative, so this
++  # runs on every push. Cheap: shell + python3 stdlib, no build.
++  #
++  # `gh` is unauthenticated here, so the briefing's open-PR line degrades to its
++  # documented `unavailable (...)` marker — an exempt section by design, which is
++  # exactly why the exemption is written down in the script header.
++  steward-orient:
++    runs-on: ubuntu-latest
++    timeout-minutes: 5
++    steps:
++      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
++      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
++        with:
++          python-version: "3.12"
++      - name: Steward cold-start briefing + its fixture arms (DOC-HYGIENE-2 T3a)
++        run: bash scripts/tests/test_steward_orient.sh
++
+   # mkdocs --strict is the broader CI gate beyond agent-verify (per AGENTS.md §3).
+   # Intentionally NOT gated on docs_only: it must run for docs/** changes (the
+   # fast path) AND alongside code changes, exactly as before.
+diff --git a/scripts/agent-test.sh b/scripts/agent-test.sh
+index 1a15c9ce..ba8d908a 100755
+--- a/scripts/agent-test.sh
++++ b/scripts/agent-test.sh
+@@ -104,6 +104,15 @@ run_capped test-lint-plan-anchors bash scripts/tests/test_lint_plan_anchors.sh
+ # fixtures built inline under mktemp -d; also asserts the CI job is always-on.
+ run_capped test-check-release-state-views bash scripts/tests/test_check_release_state_views.sh
+ 
++# T3a: recurrence guard for the stateless Steward cold-start briefing — the
++# <=4096-byte cap, "writes no file", the zero-result hard fail, the release being
++# derived from the LIVE BOARD FILENAME (not a hardcoded version), the SIBLING
++# <root>-worktrees/ resolution, and the board-CLOSED predicate being SHARED with
++# check-board-currency.sh. Mutation-proven four ways: neutering the zero-result
++# guard reddens 7 arms; narrowing the shared window to `head -n 5`, resolving the
++# worktrees dir as a child, and hardcoding the release each redden their own arm.
++run_capped test-steward-orient bash scripts/tests/test_steward_orient.sh
++
+ # Markdown generators (shell): context-clarity.sh / memory-clarity.sh emit
+ # gate-compliant markdown. Their output trees (and the dev/plans/runs/** reports
+ # from the Python generators) are markdownlint-ignored, so the normal md gate never
+diff --git a/scripts/check-board-currency.sh b/scripts/check-board-currency.sh
+index 23ae27a9..a6f032e1 100755
+--- a/scripts/check-board-currency.sh
++++ b/scripts/check-board-currency.sh
+@@ -10,7 +10,8 @@
+ #
+ # STALENESS PREDICATE (evidence-based; no network; O(commits) + O(boards), cheap):
+ #   For every dev/plans/runs/STATUS-0.8.*.md file that is NOT already banner-
+-#   marked "CLOSED — historical record" in its first 5 lines (i.e. the
++#   marked "CLOSED — historical record" in its first 15 lines (the shared
++#   predicate in scripts/lib/board-closed.sh; see there for why 15) (i.e. the
+ #   currently-live release board(s) — closed boards are frozen, nothing lands
+ #   into them again, so they are out of scope and never scanned):
+ #     1. Parse the release version from the filename (STATUS-0.8.20.md -> 0.8.20).
+@@ -71,6 +72,14 @@
+ #             zero landing merges (vacuous-pass guard, fix-1).
+ set -euo pipefail
+ 
++# The CLOSED-board predicate is SHARED with scripts/steward-orient.sh (which
++# selects the live board and derives the release from its filename) so the two
++# cannot drift apart on which release is current. Resolved from this script's
++# own directory BEFORE the cd below, so it works from any cwd.
++_CBC_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib"
++# shellcheck source=lib/board-closed.sh
++. "$_CBC_LIB_DIR/board-closed.sh"
++
+ cd "$(git rev-parse --show-toplevel)"
+ 
+ TIP="HEAD"
+@@ -94,12 +103,9 @@ STALE=0
+ shopt -s nullglob
+ for board in "$BOARDS_DIR"/STATUS-0.8.*.md; do
+   # Closed boards are self-labelled and frozen -- never scanned (see predicate
+-  # above). Header window is 15 lines, not 5: a board with T3 YAML frontmatter
+-  # (--- ... ---) pushes the banner line further down (measured: line 10 on
+-  # STATUS-0.8.9.1.md, vs line 3 on every frontmatter-less closed board) --
+-  # still a "header region" scan, not a whole-file grep that could incidentally
+-  # match a live board's own prose describing a DIFFERENT closed board.
+-  if head -n 15 "$board" | grep -qiE 'CLOSED — historical record'; then
++  # above). The 15-line header window (not 5) and its rationale live in
++  # scripts/lib/board-closed.sh, sourced above and shared with steward-orient.sh.
++  if board_is_closed "$board"; then
+     continue
+   fi
+ 
+diff --git a/scripts/lib/board-closed.sh b/scripts/lib/board-closed.sh
+new file mode 100644
+index 00000000..97c8da70
+--- /dev/null
++++ b/scripts/lib/board-closed.sh
+@@ -0,0 +1,36 @@
++#!/usr/bin/env bash
++# scripts/lib/board-closed.sh — the ONE board-CLOSED predicate.
++#
++# A `dev/plans/runs/STATUS-<version>.md` board is either LIVE (things still land
++# into it) or CLOSED (frozen historical record). Two callers need that split and
++# must never disagree about it:
++#
++#   * scripts/check-board-currency.sh — skips CLOSED boards, because a frozen
++#     board legitimately no longer tracks git ancestry.
++#   * scripts/steward-orient.sh       — selects the LIVE board, and derives the
++#     release number from its filename.
++#
++# Shared, not reimplemented: if the two ever drifted, one of them would be
++# quietly wrong about which release is current — check-board-currency would
++# either scan a frozen board (noise) or skip the live one (a silent vacuous
++# pass), and the briefing would report a closed release as current. So the
++# predicate lives here exactly once and both callers source this file.
++#
++# WINDOW = 15 LINES, NOT 5. The banner is a header-region marker, but YAML
++# frontmatter (`--- ... ---`) pushes it down: measured at line 10 on
++# STATUS-0.8.9.1.md, versus line 3 on every frontmatter-less closed board. 15
++# lines still bounds it to the header region — deliberately NOT a whole-file
++# grep, which could incidentally match a LIVE board's own prose describing some
++# OTHER closed board. Do not narrow this window without moving both callers.
++#
++# Sourced, never executed: `. "<dir>/lib/board-closed.sh"`.
++
++# Usage: board_is_closed <path-to-STATUS-board.md>
++# Exit 0 = CLOSED (frozen historical record); non-zero = LIVE.
++# The head output is fed to grep by HERE-STRING, not a pipe: both callers run
++# under `set -o pipefail`, where `grep -q` exiting early on a match can leave
++# `head` with SIGPIPE and turn a CLOSED board into a 141 (i.e. "LIVE"). No pipe,
++# no SIGPIPE, same predicate.
++board_is_closed() {
++  grep -qiE 'CLOSED — historical record' <<<"$(head -n 15 "$1")"
++}
+diff --git a/scripts/steward-orient.sh b/scripts/steward-orient.sh
+new file mode 100755
+index 00000000..4b90801a
+--- /dev/null
++++ b/scripts/steward-orient.sh
+@@ -0,0 +1,401 @@
++#!/usr/bin/env bash
++# scripts/steward-orient.sh — the stateless cold-start briefing (DOC-HYGIENE-2 T3a).
++#
++# WHY THIS EXISTS. Every Steward cold start re-paid for the same orientation:
++# which branch/HEAD, what is landed, what SCHEMA, what is next, what the ledgers
++# say, what is in flight. That state was narrated across a 5-12 file fan-out and
++# the live board alone is ~79 KB, so orientation cost either a large context bill
++# or a guess. This prints the whole picture in ONE read, from the writers of
++# record, in under 4 KB.
++#
++# ============================ THE TWO HARD LIMITS ============================
++# 1. <= 4096 bytes on stdout. Self-checked: over budget is a HARD failure, not a
++#    silent overrun, because the cap is a promise to the reader's context budget.
++#    Override for experiments only via $STEWARD_ORIENT_BUDGET.
++# 2. WRITES NOTHING. No repo file, no ledger, no cursor, no commit. The only
++#    filesystem touch is one mktemp -d sandbox, removed by an EXIT trap, used as
++#    an ephemeral ledgerwatch --state-dir so the Steward's REAL cursor is never
++#    read or advanced. Verified mechanically by scripts/tests/test_steward_orient.sh
++#    (fixture tree byte-identical before/after; the run's whole TMPDIR empty after).
++#
++# ========================== WHERE THE FACTS COME FROM ========================
++# LIVE repo facts are read live (branch, HEAD, dirty count, worktrees, orphan
++# checkout dirs, open-PR count). RELEASE facts are NOT re-scraped from git: they
++# are read from `dev/plans/release-state-<version>.json`, the single writer that
++# DOC-HYGIENE-2 T2a landed for landed-slices+SHAs, SCHEMA, and the next slice
++# (kept honest against its rendered views by scripts/check-release-state-views.sh).
++# Re-scraping them here would recreate the exact fan-out this effort removes.
++#
++# ======================= FOUR THINGS THAT ARE LOAD-BEARING ==================
++# (1) THE RELEASE IS DERIVED FROM THE LIVE BOARD FILENAME. A hardcoded `0.8.20`
++#     keeps working right up until 0.8.20 closes, then silently prints "nothing
++#     landed" forever — this repo's TC-37 vacuous-pass class. So: discover every
++#     dev/plans/runs/STATUS-<version>.md, drop the CLOSED ones, take the highest
++#     remaining version, and read release-state-<that version>.json. If no live
++#     board exists, or its state file does not, that is a HARD failure naming the
++#     missing path — never a quiet "nothing landed".
++# (2) `<repo-root>-worktrees/` IS A SIBLING OF THE REPO ROOT, NOT A CHILD. It is
++#     resolved from the MAIN worktree's root (via --git-common-dir, so running
++#     this from inside a linked worktree still resolves the same sibling) plus a
++#     `-worktrees` suffix. Resolving it as a child yields a silently empty
++#     section, which is precisely the failure mode this briefing exists to end.
++# (3) ANY ZERO-RESULT SECTION IS A HARD FAILURE. A briefing that silently omits a
++#     section is worse than no briefing: the reader cannot tell "nothing to
++#     report" from "I could not read it". The payload still prints (it is useful
++#     even when partial), then the run names every empty section on stderr and
++#     exits 1.
++#     DOCUMENTED EXEMPTIONS — sections with a legitimate empty state, each an
++#     explicit decision on the record rather than an accident:
++#       * open-PR count: zero open PRs is a real, healthy state. `gh` being
++#         absent or unauthenticated prints an explicit `unavailable (<reason>)`
++#         marker instead — a cold start must not fail because the operator is
++#         offline, but it must also never quietly show a wrong number.
++#       * orphan checkout dirs: zero orphans is the HEALTHY state. Prints
++#         `(none)` alongside the resolved path, so a mis-resolved directory is
++#         still visible to the reader.
++#       * dirty-file count: zero is the healthy state on a clean tree.
++#       * the todos fold's `unfoldable (no id)` bucket: zero is fine (and the
++#         count is always printed, so it can never be confused with "no data").
++# (4) THE BOARD-CLOSED PREDICATE IS SHARED with scripts/check-board-currency.sh
++#     via scripts/lib/board-closed.sh (window = `head -n 15`, NOT 5 — YAML
++#     frontmatter pushes the banner down). Sharing, not reimplementing, is what
++#     stops the two from disagreeing about which release is current.
++#
++# ========================== LEDGERS GO THROUGH ledgerwatch ==================
++# Never a raw `tail` of the .jsonl. Invocations:
++#   steward ledger: `--strategy tail --dry-run --no-status --state-dir <sandbox>`
++#   todos ledger:   `--project --json`
++# CURSOR SEMANTICS = PEEK, DELIBERATELY. A cold-start briefing must not disturb
++# the Steward's real cursor: consuming a delta here would silently drop it from
++# the next real `ledgerwatch` poll — a monitor that loses an event is the one
++# failure mode that tool is built to prevent. Two independent guarantees:
++# `--dry-run` computes the delta without advancing the cursor, AND `--state-dir`
++# points at a throwaway sandbox, so the real cursor is not even opened. (The
++# sandbox also means the tail run is always a `cold` baseline, which is what we
++# want: we need the last 5 entries, not "what changed since some other reader
++# last looked".) `--project` is read-only by construction — it never creates,
++# reads or advances a cursor at all.
++#
++# Exit codes: 0 = complete briefing within budget; 1 = at least one empty
++# section, and/or over budget (payload still printed); 2 = environment error.
++#
++# Usage: scripts/steward-orient.sh
++set -euo pipefail
++
++BUDGET_BYTES="${STEWARD_ORIENT_BUDGET:-4096}"
++
++SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++# shellcheck source=lib/board-closed.sh
++. "$SCRIPT_DIR/lib/board-closed.sh"
++
++if ! REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"; then
++  printf 'steward-orient: not inside a git worktree\n' >&2
++  exit 2
++fi
++cd "$REPO_ROOT"
++
++# The one filesystem touch, removed on EXIT. Guarded like the repo's test
++# harnesses so a surprising value can never turn cleanup into a destructive rm.
++SANDBOX="$(mktemp -d)"
++cleanup() {
++  case "$SANDBOX" in
++    "${TMPDIR:-/tmp}"/*|/tmp/*) rm -rf "$SANDBOX" ;;
++    *) printf 'steward-orient: refusing to remove unexpected temp path: %s\n' "$SANDBOX" >&2 ;;
++  esac
++}
++trap cleanup EXIT
++
++LEDGERWATCH="$REPO_ROOT/dev/agent-tools/ledgerwatch/ledgerwatch.py"
++STEWARD_LEDGER="dev/steward/steward-ledger.jsonl"
++TODOS_LEDGER="dev/todos-and-considerations-ledger.jsonl"
++
++OUT=""
++EMPTY=()
++add() { OUT+="$1"$'\n'; }
++note_empty() { EMPTY+=("$1"); }
++# Renders a helper's stdout, routing its `#EMPTY:<section>` markers to the
++# zero-result guard instead of the payload. Fed by here-string, NOT a pipe, so
++# note_empty mutates this shell's array rather than a subshell's copy.
++emit() {
++  local line
++  while IFS= read -r line; do
++    case "$line" in
++      '#EMPTY:'*) note_empty "${line#\#EMPTY:}" ;;
++      *)          add "$line" ;;
++    esac
++  done <<<"$1"
++}
++tilde() { printf '%s' "${1/#$HOME/\~}"; }
++
++# ------------------------------------------------------------------- REPO ---
++BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || printf '?')"
++HEAD_SHA="$(git rev-parse --short=8 HEAD 2>/dev/null || printf '?')"
++HEAD_SUBJ="$(git log -1 --format=%s 2>/dev/null | cut -c1-58 || printf '?')"
++DIRTY="$(git status --porcelain --untracked-files=all | wc -l | tr -d ' ')"
++
++add "STEWARD ORIENT $(date -u +%Y-%m-%dT%H:%MZ) · stateless · reads only · writes nothing"
++add "REPO   branch=$BRANCH head=$HEAD_SHA dirty=$DIRTY  \"$HEAD_SUBJ\""
++
++# -------------------------------------------------------------- WORKTREES ---
++mapfile -t WT_LINES < <(git worktree list 2>/dev/null || true)
++if [ "${#WT_LINES[@]}" -eq 0 ]; then
++  note_empty "worktrees (git worktree list returned nothing)"
++fi
++add "WORKTREES (${#WT_LINES[@]})"
++for w in "${WT_LINES[@]}"; do add "  $(tilde "$w")"; done
++
++# Correction 2: the checkout pool is a SIBLING of the MAIN worktree root.
++# --git-common-dir points at the main .git even from inside a linked worktree,
++# so this resolves the same pool no matter where the briefing is run from.
++GIT_COMMON="$(cd "$(git rev-parse --git-common-dir)" && pwd)"
++MAIN_ROOT="$(dirname "$GIT_COMMON")"
++WT_DIR="${MAIN_ROOT}-worktrees"
++REGISTERED="$(git worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' || true)"
++ORPHANS=""
++if [ -d "$WT_DIR" ]; then
++  for d in "$WT_DIR"/*/; do
++    [ -d "$d" ] || continue
++    p="${d%/}"
++    # Here-string, not a pipe: under pipefail an early `grep -q` exit would
++    # SIGPIPE the producer and misreport a REGISTERED worktree as an orphan.
++    if ! grep -qxF -- "$p" <<<"$REGISTERED"; then
++      ORPHANS+=" $(basename "$p")"
++    fi
++  done
++  # Exempt from the zero-result guard: no orphans is the HEALTHY state.
++  add "ORPHAN dirs in $(tilde "$WT_DIR"):${ORPHANS:- (none)}"
++else
++  add "ORPHAN dirs: $(tilde "$WT_DIR") does not exist"
++fi
++
++# ---------------------------------------------------------------- RELEASE ---
++# Correction 1: discover the live board, derive the release from its FILENAME.
++LIVE=""
++shopt -s nullglob
++for board in dev/plans/runs/STATUS-*.md; do
++  ver="$(basename "$board" .md | sed -n 's/^STATUS-\([0-9][0-9.]*\)$/\1/p')"
++  [ -n "$ver" ] || continue          # non-standard name (STATUS-phase12.md etc)
++  if board_is_closed "$board"; then continue; fi
++  LIVE+="$ver $board"$'\n'
++done
++shopt -u nullglob
++LIVE="$(printf '%s' "$LIVE" | sed '/^$/d' | sort -V)"
++
++BOARD=""
++VER=""
++if [ -z "$LIVE" ]; then
++  note_empty "live release board (no non-CLOSED dev/plans/runs/STATUS-<version>.md found)"
++  add "RELEASE (no live board found)"
++else
++  N_LIVE="$(printf '%s\n' "$LIVE" | wc -l | tr -d ' ')"
++  VER="$(printf '%s\n' "$LIVE" | tail -1 | cut -d' ' -f1)"
++  BOARD="$(printf '%s\n' "$LIVE" | tail -1 | cut -d' ' -f2)"
++  if [ "$N_LIVE" -gt 1 ]; then
++    add "NOTE   $N_LIVE live boards; using the highest version"
++  fi
++  STATE="dev/plans/release-state-$VER.json"
++  if [ ! -f "$STATE" ]; then
++    note_empty "release state for the live board — $STATE does not exist"
++    add "RELEASE $VER  board=$(basename "$BOARD")  STATE FILE MISSING: $STATE"
++  else
++    if STATE_OUT="$(python3 - "$STATE" "$VER" "$BOARD" <<'PY'
++import json, sys
++
++path, ver, board = sys.argv[1], sys.argv[2], sys.argv[3]
++try:
++    d = json.load(open(path, encoding="utf-8"))
++except Exception as exc:  # a corrupt single writer must be loud, never empty
++    print(f"RELEASE {ver}  state file UNREADABLE: {exc}")
++    print(f"#EMPTY:release state ({path} is not parseable)")
++    raise SystemExit(0)
++
++ladder = d.get("ladder") or []
++landed = [e for e in ladder if e.get("status") == "LANDED"]
++schema = d.get("schema_version", "?")
++nxt = d.get("next_slice")
++rem = d.get("remaining_ladder") or []
++
++print(f"RELEASE {ver}  SCHEMA {schema}  board={board.split('/')[-1]}  state={path.split('/')[-1]}")
++
++if landed:
++    cells = " ".join(f"{e.get('slice')}({e.get('sha') or '?'})" for e in landed)
++    print(f"  LANDED {cells}")
++else:
++    print("  LANDED (none)")
++    print(f"#EMPTY:landed slices (no ladder entry in {path} has status LANDED)")
++
++# The state file also carries a flat `landed` list; if its own two fields
++# disagree, the single writer is internally inconsistent and must say so.
++flat = d.get("landed")
++if flat is not None and sorted(flat) != sorted(e.get("slice") for e in landed):
++    print(f"  !! state file self-inconsistent: landed={flat} vs ladder LANDED")
++
++nxt_entry = next((e for e in ladder if e.get("slice") == nxt), None)
++title = ""
++if nxt_entry:
++    title = f" {nxt_entry.get('short') or ''} — {nxt_entry.get('title') or ''}"[:88]
++print(f"  NEXT   slice {nxt}{title}")
++print(f"  REMAIN {', '.join(str(s) for s in rem) or '(none)'}")
++PY
++    )"; then
++      emit "$STATE_OUT"
++    else
++      note_empty "release state ($STATE could not be rendered)"
++      add "RELEASE $VER  state file could not be rendered"
++    fi
++  fi
++fi
++
++# ------------------------------------------------------------ NEXT ACTION ---
++# Verbatim, markup and all: the board is the writer of record for this sentence,
++# and a paraphrase here would be exactly the second narration T2a removed.
++if [ -n "$BOARD" ]; then
++  ROW="$(grep -m1 -E '^\|[[:space:]]*\*\*Immediate next (action|step)\*\*[[:space:]]*\|' "$BOARD" || true)"
++  if [ -z "$ROW" ]; then
++    note_empty "board next action (no '| **Immediate next action** |' row in $BOARD)"
++    add "NEXT ACTION (row not found in $(basename "$BOARD"))"
++  else
++    CELL="${ROW#*|}"; CELL="${CELL#*|}"; CELL="${CELL%|}"
++    CELL="${CELL#"${CELL%%[![:space:]]*}"}"; CELL="${CELL%"${CELL##*[![:space:]]}"}"
++    if [ -z "$CELL" ]; then
++      note_empty "board next action (the row exists but its cell is empty)"
++      add "NEXT ACTION (empty cell)"
++    else
++      add "NEXT ACTION (verbatim, $(basename "$BOARD") §1)"
++      add "  $CELL"
++    fi
++  fi
++fi
++
++# ----------------------------------------------------------------- LEDGER ---
++# Peek, never consume — see the cursor-semantics note in the header.
++LW_STATE="$SANDBOX/ledgerwatch-state"
++mkdir -p "$LW_STATE"
++if [ ! -f "$STEWARD_LEDGER" ]; then
++  note_empty "steward ledger ($STEWARD_LEDGER does not exist)"
++  add "LEDGER (missing: $STEWARD_LEDGER)"
++elif LEDGER_RAW="$(python3 "$LEDGERWATCH" "$STEWARD_LEDGER" \
++      --strategy tail --dry-run --no-status --state-dir "$LW_STATE" 2>/dev/null)"; then
++  # The reader takes its program from `-c` and its DATA from stdin. A heredoc
++  # cannot carry the program here: it would occupy stdin, the reader would see
++  # no data, and the section would report "no entries" for a full ledger.
++  LEDGER_PY="$(cat <<'PY'
++import json, sys
++
++rows = [l for l in sys.stdin.read().split("\n") if l.strip()]
++if not rows:
++    print("LEDGER (no entries)")
++    print(f"#EMPTY:steward ledger ({sys.argv[1]} has no entries)")
++    raise SystemExit(0)
++
++last = rows[-5:]
++print(f"LEDGER last {len(last)} of {len(rows)} — {sys.argv[1].split('/')[-1]}")
++for line in last:
++    try:
++        e = json.loads(line)
++    except Exception:
++        print("  ?? unparseable entry")
++        continue
++    summary = " ".join(str(e.get("summary", "")).split())[:118]
++    print(f"  {e.get('seq', '?')} {e.get('kind', '?')}: {summary}")
++PY
++  )"
++  LEDGER_OUT="$(python3 -c "$LEDGER_PY" "$STEWARD_LEDGER" <<<"$LEDGER_RAW")"
++  emit "$LEDGER_OUT"
++else
++  note_empty "steward ledger (ledgerwatch could not read $STEWARD_LEDGER)"
++  add "LEDGER (unreadable)"
++fi
++
++# ------------------------------------------------------------------ TODOS ---
++# The fold is ledgerwatch's own --project (latest entry per id, with an explicit
++# `unfoldable (no id)` bucket). Not hand-rolled: a second fold implementation is
++# a second place for the ledger's semantics to be wrong.
++if [ ! -f "$TODOS_LEDGER" ]; then
++  note_empty "todos ledger ($TODOS_LEDGER does not exist)"
++  add "TODOS (missing: $TODOS_LEDGER)"
++elif TODOS_RAW="$(python3 "$LEDGERWATCH" "$TODOS_LEDGER" --project --json 2>/dev/null)"; then
++  TODOS_PY="$(cat <<'PY'
++import json, re, sys
++
++try:
++    env = json.loads(sys.stdin.read())
++except Exception:
++    print("TODOS (projection unreadable)")
++    print("#EMPTY:todos ledger (ledgerwatch --project produced no envelope)")
++    raise SystemExit(0)
++
++rows = env.get("latest") or []
++print(
++    f"TODOS  {env.get('folded_ids', 0)} ids folded from {env.get('entries', 0)} entries · "
++    f"unfoldable (no id): {env.get('unfoldable_no_id', 0)} · malformed: {env.get('malformed', 0)}"
++)
++if not rows:
++    print("#EMPTY:todos ledger (folded to zero ids)")
++    raise SystemExit(0)
++
++
++def natural(i):
++    m = re.search(r"(\d+)$", i)
++    return (re.sub(r"\d+$", "", i), int(m.group(1)) if m else 0)
++
++
++buckets = {}
++for r in rows:
++    buckets.setdefault(str(r.get("status", "?")), []).append(str(r.get("id")))
++for status in sorted(buckets, key=lambda s: (-len(buckets[s]), s)):
++    ids = " ".join(sorted(buckets[status], key=natural))
++    print(f"  {status}({len(buckets[status])}) {ids}")
++PY
++  )"
++  TODOS_OUT="$(python3 -c "$TODOS_PY" <<<"$TODOS_RAW")"
++  emit "$TODOS_OUT"
++else
++  note_empty "todos ledger (ledgerwatch --project failed on $TODOS_LEDGER)"
++  add "TODOS (unreadable)"
++fi
++
++# -------------------------------------------------------------------- PRS ---
++# Exempt from the zero-result guard: zero open PRs is a real state, and an
++# offline/unauthenticated host must degrade to an explicit marker, never to a
++# wrong number.
++if ! command -v gh >/dev/null 2>&1; then
++  PRS="unavailable (gh not on PATH)"
++elif PR_N="$(timeout 20 gh pr list --state open --limit 300 --json number --jq 'length' 2>/dev/null)" \
++     && [ -n "$PR_N" ]; then
++  PRS="$PR_N open"
++else
++  PRS="unavailable (gh unauthenticated, offline, or no remote)"
++fi
++
++# ---------------------------------------------------------------- HANDOFF ---
++# Newest by the dated filename, which is the naming convention of record
++# (STEWARD-SESSION-HANDOFF-YYYY-MM-DD-<A|B|...>.md), so lexicographic == newest.
++HANDOFF="$(ls -1 dev/plans/runs/STEWARD-SESSION-HANDOFF-*.md 2>/dev/null | sort | tail -1 || true)"
++if [ -z "$HANDOFF" ]; then
++  note_empty "steward hand-off (no dev/plans/runs/STEWARD-SESSION-HANDOFF-*.md found)"
++  add "PRs $PRS · HANDOFF (none found)"
++else
++  add "PRs $PRS · HANDOFF $HANDOFF"
++fi
++
++# ------------------------------------------------------------------ EMIT ----
++printf '%s' "$OUT"
++
++RC=0
++BYTES="$(printf '%s' "$OUT" | wc -c | tr -d ' ')"
++
++if [ "${#EMPTY[@]}" -gt 0 ]; then
++  printf 'steward-orient: INCOMPLETE BRIEFING — %d section(s) came back empty:\n' "${#EMPTY[@]}" >&2
++  for e in "${EMPTY[@]}"; do printf '  EMPTY: %s\n' "$e" >&2; done
++  printf 'A briefing that silently omits a section is worse than no briefing; fix the input or the reader above.\n' >&2
++  RC=1
++fi
++
++if [ "$BYTES" -gt "$BUDGET_BYTES" ]; then
++  printf 'steward-orient: BUDGET EXCEEDED — %s bytes on stdout, cap is %s. The cap is a promise to the reader'\''s context budget.\n' \
++    "$BYTES" "$BUDGET_BYTES" >&2
++  RC=1
++fi
++
++exit "$RC"
+
+exec
+/bin/bash -lc 'git diff d56572e6b4527d0e3f89833ab98fce336735eae0 -- scripts/tests/test_steward_orient.sh dev/plans/prompts/0.8.x-STEWARD-HANDOFF.md' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 0ms:
+diff --git a/dev/plans/prompts/0.8.x-STEWARD-HANDOFF.md b/dev/plans/prompts/0.8.x-STEWARD-HANDOFF.md
+index 95424c68..6f511ddc 100644
+--- a/dev/plans/prompts/0.8.x-STEWARD-HANDOFF.md
++++ b/dev/plans/prompts/0.8.x-STEWARD-HANDOFF.md
+@@ -26,9 +26,10 @@ reality moves, the master moves with it (HITL-gated), or you raise it.
+   **orchestrator** role (`/orchestrate`; `0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md`). You **commission and
+   verify** it (§9 — which is also where the **preferred mechanism** is ruled); you do not perform it.
+ 
+-You **subsume the sequencing watchdog** (`0.8.x-SEQUENCING-WATCH-HANDOFF.md`) as your **monitoring
+-function** — its drift taxonomy and report cadence are how you *detect* when the master has stopped
+-matching reality. Watching is one function of stewardship, not the whole job.
++You **subsume the sequencing watchdog** as your **monitoring function** — drift classification and report
++cadence are how you *detect* when the master has stopped matching reality. Watching is one function of
++stewardship, not the whole job. The watchdog's report format lives in **§10** of this document; the drift
++duties themselves are **§4 item 2**, and the dependency edges they are measured against are master **§2a**.
+ 
+ ## 2. Your single source of truth
+ 
+@@ -50,19 +51,34 @@ matching reality. Watching is one function of stewardship, not the whole job.
+ 
+ ## 3. Cold-start — read these first (in order)
+ 
++> **Run `scripts/steward-orient.sh` first.** It is a stateless, read-only briefing that prints the live
++> picture in **under 4 KB** and writes nothing — branch / HEAD / dirty count / worktrees **plus orphan
++> checkout dirs**, the live board's **next action verbatim**, **landed slices with their SHAs** and
++> `SCHEMA`, the **last 5 steward-ledger entries**, the **todos ledger folded to latest-per-`id`**, the
++> open-PR count, and the newest `STEWARD-SESSION-HANDOFF-*`. It reads release facts from the single
++> writer `dev/plans/release-state-<version>.json` rather than re-scraping git, derives the release from
++> the **live board's filename** (never a hardcoded version), and **hard-fails naming any section that
++> came back empty** — so it can be partial, but never *silently* partial. It covers items 2-3 below and
++> front-loads item 7; read the rest for the *reasoning* those facts sit inside.
++>
++> The former item 5 pointed at `0.8.x-SEQUENCING-WATCH-HANDOFF.md`, **a file that has never existed in
++> this repository** (`git log --all -- '*SEQUENCING-WATCH-HANDOFF*'` is empty). The pointer is removed
++> rather than restored: its report format is already §10 of this document, and the watchdog duties it
++> named are §1 and §4 item 2.
++
+ 1. `dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md` — the master (memorize §2a edges, §4 allocation, §5
+    by-when, §6 findings).
+-2. `git log --oneline -30` + `git status` + `git worktree list` — the actual repo state.
+-3. `dev/plans/runs/STATUS-0.8.*.md` — which slices are CLOSED / in-flight.
++2. `git log --oneline -30` + `git status` + `git worktree list` — the actual repo state. *(Covered by
++   `steward-orient.sh`, which also flags orphan checkout dirs `git worktree list` cannot see.)*
++3. `dev/plans/runs/STATUS-0.8.*.md` — which slices are CLOSED / in-flight. *(The live board's §1 next
++   action is printed verbatim by `steward-orient.sh`; open the board itself for the close records.)*
+ 4. The `plan-0.8.z.md` ladders that exist — confirm allocation still matches master §4.
+-5. `0.8.x-SEQUENCING-WATCH-HANDOFF.md` §4 (drift taxonomy) + §6 (report format) — your monitoring
+-   function's classification and output.
+-6. `dev/design/orchestration.md` §12.4 (plan-as-state-machine reconciliation) + §12.5 (boards), and
++5. `dev/design/orchestration.md` §12.4 (plan-as-state-machine reconciliation) + §12.5 (boards), and
+    `0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md` — the contract you commission.
+-7. The memory index (`…/memory/MEMORY.md`) — program context (M-work resolutions, footprint invariant,
++6. The memory index (`…/memory/MEMORY.md`) — program context (M-work resolutions, footprint invariant,
+    worktree traps). Recalled memories are background, and reflect what was true when written — re-verify
+    any file/flag they name before relying on it.
+-8. Your own last Steward report, if resuming — to compute "since last".
++7. Your own last Steward report, if resuming — to compute "since last".
+ 
+ ## 4. Responsibilities
+ 
+diff --git a/scripts/tests/test_steward_orient.sh b/scripts/tests/test_steward_orient.sh
+new file mode 100644
+index 00000000..82f32938
+--- /dev/null
++++ b/scripts/tests/test_steward_orient.sh
+@@ -0,0 +1,525 @@
++#!/usr/bin/env bash
++# scripts/tests/test_steward_orient.sh — recurrence guard for the stateless
++# cold-start briefing (DOC-HYGIENE-2 T3a, scripts/steward-orient.sh).
++#
++# The incident this closes: every Steward cold start re-paid for the same
++# orientation, because live state was narrated across a 5-12 file fan-out. The
++# briefing collapses that into ONE stateless read. What makes it trustworthy is
++# not that it prints something — it is that it CANNOT print a silently partial
++# picture, and that it cannot be quietly pinned to a release that has closed.
++#
++# Predicate under test (see scripts/steward-orient.sh's header for the full
++# statement):
++#   * output is <= 4096 bytes and NO file is written anywhere;
++#   * every load-bearing section is non-empty, or the run HARD-fails naming the
++#     section (the documented exemptions are the sections that have a legitimate
++#     empty state: open-PR count, orphan checkout dirs, dirty-file count);
++#   * the release is derived from the LIVE BOARD FILENAME, never hardcoded;
++#   * `<repo-root>-worktrees/` is resolved as a SIBLING of the repo root;
++#   * the board-CLOSED predicate is the SHARED one (head -n 15, not head -n 5).
++#
++# RED-first: the happy path passes on the real repo today, so asserting against
++# the real checkout alone would prove nothing (a `true` script would pass it).
++# Every failure arm below runs against a purpose-built fixture repo in which the
++# fault is deliberately planted, so an arm can only go green because the guard
++# actually fired. The real-repo arms are the regression half of the pair.
++#
++# NON-VACUITY: the suite honours $GATE_UNDER_TEST, so a MUTANT briefing (one
++# whose zero-result guard never fires) can be pointed at it. That mutant turns
++# arms 3/4/5/8 RED — which is the evidence that a green here is load-bearing
++# rather than a script that merely exits 0.
++#
++# Isolation: fixtures are throwaway git repos under mktemp -d (the briefing does
++# `cd "$(git rev-parse --show-toplevel)"`, so each fixture needs to BE a repo),
++# and each fixture is nested one directory deep so its SIBLING worktrees dir is
++# a real, writable path. Nothing here writes into the real checkout.
++set -euo pipefail
++
++SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
++GATE="${GATE_UNDER_TEST:-$REPO_ROOT/scripts/steward-orient.sh}"
++BOARD_CURRENCY="$REPO_ROOT/scripts/check-board-currency.sh"
++CLOSED_LIB="$REPO_ROOT/scripts/lib/board-closed.sh"
++LEDGERWATCH="$REPO_ROOT/dev/agent-tools/ledgerwatch/ledgerwatch.py"
++CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
++
++FAILED=0
++pass() { printf 'PASS  %s\n' "$1"; }
++fail() { printf 'FAIL  %s\n' "$1" >&2; FAILED=$((FAILED + 1)); }
++
++TMPROOT="$(mktemp -d)"
++cleanup() {
++  case "$TMPROOT" in
++    "${TMPDIR:-/tmp}"/*|/tmp/*) rm -rf "$TMPROOT" ;;
++    *) printf 'refusing to remove unexpected temp path: %s\n' "$TMPROOT" >&2 ;;
++  esac
++}
++trap cleanup EXIT
++
++# One directory deep so "$FIX"-worktrees is a sibling INSIDE $TMPROOT.
++FIX="$TMPROOT/parent/proj"
++WTDIR="$TMPROOT/parent/proj-worktrees"
++OUT=""
++ERR=""
++RC=0
++BYTES=0
++
++# ---------------------------------------------------------------- fixture ---
++# A minimal but REAL fixture repo carrying one of everything the briefing reads:
++# a live board with a next-action row, its release-state file, both ledgers, and
++# a dated Steward hand-off. Every arm mutates exactly ONE thing from this
++# baseline, so a red arm isolates a single fault.
++setup_fixture() {
++  rm -rf "$TMPROOT/parent"
++  mkdir -p "$FIX/dev/plans/runs" "$FIX/dev/steward" \
++           "$FIX/dev/agent-tools/ledgerwatch" "$WTDIR"
++  cp "$LEDGERWATCH" "$FIX/dev/agent-tools/ledgerwatch/ledgerwatch.py"
++
++  # The live board is 0.9.0 — deliberately NOT the release the real repo is on,
++  # so a hardcoded "0.8.20" implementation cannot pass any fixture arm.
++  cat >"$FIX/dev/plans/runs/STATUS-0.9.0.md" <<'EOF'
++# 0.9.0 — status board
++
++## 1. Current state
++
++| | |
++|---|---|
++| **Slice in flight** | NONE. |
++| **Immediate next action** | **Commission Slice 20** — the fixture's next action, recorded verbatim. |
++EOF
++
++  # A CLOSED board for a DIFFERENT release, with the banner behind YAML
++  # frontmatter so it sits at line 6-15 (the shared-predicate window arm).
++  cat >"$FIX/dev/plans/runs/STATUS-0.8.20.md" <<'EOF'
++---
++title: 0.8.20
++status: CLOSED
++target_release: 0.8.20
++---
++
++# 0.8.20 — status board
++
++> **CLOSED — historical record.** Nothing lands into this board again.
++
++| | |
++|---|---|
++| **Immediate next action** | Nothing — this release is closed. |
++EOF
++
++  cat >"$FIX/dev/plans/release-state-0.9.0.json" <<'EOF'
++{
++  "release": "0.9.0",
++  "board": "dev/plans/runs/STATUS-0.9.0.md",
++  "schema_version": 42,
++  "ladder": [
++    {"slice": 0,  "short": "X0",  "title": "design gate", "status": "LANDED",      "sha": "aaaa1111"},
++    {"slice": 5,  "short": "R-A", "title": "the first",   "status": "LANDED",      "sha": "bbbb2222"},
++    {"slice": 20, "short": "R-B", "title": "the next",    "status": "UNBLOCKED",   "sha": null},
++    {"slice": 30, "short": "PUB", "title": "publish",     "status": "NOT_STARTED", "sha": null}
++  ],
++  "landed": [0, 5],
++  "next_slice": 20,
++  "remaining_ladder": [20, 30]
++}
++EOF
++
++  # A stale state file for the CLOSED release: a hardcoded implementation that
++  # reads release-state-0.8.20.json would report THIS, which is the bug.
++  cat >"$FIX/dev/plans/release-state-0.8.20.json" <<'EOF'
++{
++  "release": "0.8.20",
++  "board": "dev/plans/runs/STATUS-0.8.20.md",
++  "schema_version": 24,
++  "ladder": [{"slice": 0, "short": "X0", "title": "old", "status": "LANDED", "sha": "cccc3333"}],
++  "landed": [0],
++  "next_slice": null,
++  "remaining_ladder": []
++}
++EOF
++
++  cat >"$FIX/dev/steward/steward-ledger.jsonl" <<'EOF'
++{"ts": "2026-01-01T00:00:00.000Z", "seq": 1, "kind": "decision", "summary": "fixture decision one"}
++{"ts": "2026-01-02T00:00:00.000Z", "seq": 2, "kind": "decision", "summary": "fixture decision two"}
++{"ts": "2026-01-03T00:00:00.000Z", "seq": 3, "kind": "note", "summary": "fixture note three"}
++{"ts": "2026-01-04T00:00:00.000Z", "seq": 4, "kind": "note", "summary": "fixture note four"}
++{"ts": "2026-01-05T00:00:00.000Z", "seq": 5, "kind": "note", "summary": "fixture note five"}
++{"ts": "2026-01-06T00:00:00.000Z", "seq": 6, "kind": "ruling", "summary": "fixture ruling six"}
++EOF
++
++  cat >"$FIX/dev/todos-and-considerations-ledger.jsonl" <<'EOF'
++{"ts": "2026-01-01T00:00:00.000Z", "seq": 1, "id": "TC-1", "kind": "todo", "status": "open", "summary": "one"}
++{"ts": "2026-01-02T00:00:00.000Z", "seq": 2, "id": "TC-2", "kind": "todo", "status": "open", "summary": "two"}
++{"ts": "2026-01-03T00:00:00.000Z", "seq": 3, "id": "TC-1", "kind": "todo", "status": "closed", "summary": "one, closed"}
++{"ts": "2026-01-04T00:00:00.000Z", "seq": 4, "kind": "observation", "summary": "no id here"}
++EOF
++
++  printf '# Steward hand-off\n\nFixture hand-off body.\n' \
++    >"$FIX/dev/plans/runs/STEWARD-SESSION-HANDOFF-2026-01-05-A.md"
++  printf '# Steward hand-off\n\nOlder fixture hand-off body.\n' \
++    >"$FIX/dev/plans/runs/STEWARD-SESSION-HANDOFF-2026-01-04-A.md"
++
++  (cd "$FIX" \
++     && git init -q \
++     && git config user.email t@example.com \
++     && git config user.name t \
++     && git config commit.gpgsign false \
++     && git add -A \
++     && git commit -qm 'fixture: baseline briefing inputs')
++}
++
++# Runs the briefing with cwd inside $1. stdout and stderr are captured
++# SEPARATELY so the byte cap is measured on the payload alone. TMPDIR is
++# redirected to a per-run sandbox so "writes no file" can be asserted.
++run_orient() {
++  local dir="$1"
++  local sandbox="$TMPROOT/sandbox"
++  rm -rf "$sandbox"
++  mkdir -p "$sandbox"
++  set +e
++  (cd "$dir" && TMPDIR="$sandbox" bash "$GATE") \
++    >"$TMPROOT/out.txt" 2>"$TMPROOT/err.txt"
++  RC=$?
++  set -e
++  OUT="$(cat "$TMPROOT/out.txt")"
++  ERR="$(cat "$TMPROOT/err.txt")"
++  BYTES="$(wc -c <"$TMPROOT/out.txt" | tr -d ' ')"
++  SANDBOX_RESIDUE="$(find "$sandbox" -mindepth 1 | head -5)"
++}
++
++tree_snapshot() { find "$1" -path '*/.git' -prune -o -printf '%p %s\n' | sort; }
++
++# --- Arm 0: BASELINE fixture is GREEN, under budget, every section present ---
++# Without this, every RED arm below could be passing for an unrelated reason.
++setup_fixture
++run_orient "$FIX"
++if [ "$RC" -eq 0 ]; then
++  pass "baseline fixture — complete briefing (exit 0)"
++else
++  fail "arm 0 (baseline green): rc=$RC err=$ERR out=$OUT"
++fi
++if [ "$BYTES" -le 4096 ] && [ "$BYTES" -gt 0 ]; then
++  pass "baseline fixture — payload is 1..4096 bytes ($BYTES)"
++else
++  fail "arm 0 (byte cap): $BYTES bytes"
++fi
++for needle in 'REPO ' 'WORKTREES' 'RELEASE 0.9.0' 'NEXT ACTION' 'LEDGER' 'TODOS' 'PR' 'HANDOFF'; do
++  if grep -qF "$needle" <<<"$OUT"; then
++    pass "baseline fixture — section present: $needle"
++  else
++    fail "arm 0: section missing: $needle; out=$OUT"
++  fi
++done
++
++# --- Arm 9a: the next action is reproduced VERBATIM -------------------------
++# A briefing that paraphrases the board's next action is a second narration of
++# the fact the whole effort exists to de-duplicate.
++if grep -qF '**Commission Slice 20** — the fixture'"'"'s next action, recorded verbatim.' <<<"$OUT"; then
++  pass "the board's next-action cell is reproduced verbatim (markup included)"
++else
++  fail "arm 9a (verbatim next action): out=$OUT"
++fi
++
++# --- Arm 9b: landed slices AND their SHAs come from the state file ----------
++if grep -qF 'aaaa1111' <<<"$OUT" && grep -qF 'bbbb2222' <<<"$OUT" \
++   && grep -qE 'SCHEMA[^0-9]*42' <<<"$OUT"; then
++  pass "landed slices + SHAs + SCHEMA are read from the release-state file"
++else
++  fail "arm 9b (state-file facts): out=$OUT"
++fi
++if grep -qF 'cccc3333' <<<"$OUT"; then
++  fail "arm 9b: the CLOSED release's state file was read (hardcoded-release bug)"
++else
++  pass "the CLOSED release's stale state file is NOT read"
++fi
++
++# --- Arm 6: HARDCODED-RELEASE regression (correction 1) --------------------
++# The named failure: a `0.8.20` literal keeps working right up until 0.8.20
++# closes, then silently prints "nothing landed" forever. This repo's TC-37
++# vacuous-pass class. The fixture's live board is 0.9.0 and its CLOSED board is
++# 0.8.20, so only a filename-derived implementation can report 0.9.0.
++if grep -qF 'RELEASE 0.9.0' <<<"$OUT" && ! grep -qF 'RELEASE 0.8.20' <<<"$OUT"; then
++  pass "release is derived from the LIVE board filename (0.9.0), not hardcoded"
++else
++  fail "arm 6 (release from board filename): out=$OUT"
++fi
++if grep -qF 'STATUS-0.9.0.md' <<<"$OUT"; then
++  pass "the briefing names the live board it read"
++else
++  fail "arm 6b (board named): out=$OUT"
++fi
++
++# --- Arm 8: board-CLOSED detector parity (correction 4) --------------------
++# The shared predicate's window is `head -n 15`, because YAML frontmatter pushes
++# the banner down (measured at line 10 on STATUS-0.8.9.1.md). Here the ONLY
++# board is CLOSED with its banner at line 9. A `head -n 5` reimplementation
++# would call it LIVE and the briefing would exit 0; the shared 15-line window
++# sees the banner, finds ZERO live boards, and HARD-fails.
++setup_fixture
++rm -f "$FIX/dev/plans/runs/STATUS-0.9.0.md" "$FIX/dev/plans/release-state-0.9.0.json"
++CLOSED_BANNER_LINE="$(grep -n 'CLOSED — historical record' "$FIX/dev/plans/runs/STATUS-0.8.20.md" | cut -d: -f1)"
++if [ "$CLOSED_BANNER_LINE" -gt 5 ] && [ "$CLOSED_BANNER_LINE" -le 15 ]; then
++  pass "arm 8 fixture really places the CLOSED banner at line 6-15 (line $CLOSED_BANNER_LINE)"
++else
++  fail "arm 8 fixture invalid: banner at line $CLOSED_BANNER_LINE"
++fi
++run_orient "$FIX"
++if [ "$RC" -ne 0 ] && grep -qiE 'live (release )?board' <<<"$ERR"; then
++  pass "a CLOSED board (banner at line 6-15) is skipped -> zero live boards HARD-fails"
++else
++  fail "arm 8 (closed-detector parity): rc=$RC err=$ERR"
++fi
++
++# --- Arm 8b: the predicate is SHARED, not reimplemented --------------------
++# Structural, because behaviour parity alone would not stop the two windows
++# drifting apart later.
++if grep -qF 'head -n 15' "$CLOSED_LIB" \
++   && grep -qF 'CLOSED — historical record' "$CLOSED_LIB"; then
++  pass "scripts/lib/board-closed.sh holds the head -n 15 predicate"
++else
++  fail "arm 8b: the shared predicate lib is missing or has the wrong window"
++fi
++for caller in "$GATE" "$BOARD_CURRENCY"; do
++  if grep -qF 'lib/board-closed.sh' "$caller"; then
++    pass "$(basename "$caller") sources the shared board-CLOSED predicate"
++  else
++    fail "arm 8b: $(basename "$caller") does not use lib/board-closed.sh"
++  fi
++  # Guarded on the file existing, so a MISSING caller cannot pass this by
++  # vacuously failing to match.
++  if [ -f "$caller" ] && ! grep -qE 'head -n (5|15) "\$board"' "$caller"; then
++    pass "$(basename "$caller") has no inline CLOSED-window reimplementation"
++  else
++    fail "arm 8b: $(basename "$caller") is missing or still inlines its own CLOSED window"
++  fi
++done
++
++# --- Arm 7: worktrees dir is a SIBLING of the repo root (correction 2) -----
++# `<root>-worktrees/` sits BESIDE the repo, not inside it. Resolving it as a
++# child yields a silently empty section — the exact class of failure this
++# briefing exists to make impossible. The fixture plants two ORPHAN checkout
++# dirs (present on disk, absent from `git worktree list`) in the sibling dir;
++# only a sibling-resolving implementation can name them.
++setup_fixture
++mkdir -p "$WTDIR/orphan-alpha" "$WTDIR/orphan-beta"
++mkdir -p "$FIX/proj-worktrees/decoy-child"   # the wrong (child) location
++run_orient "$FIX"
++if [ "$RC" -eq 0 ] && grep -qF 'orphan-alpha' <<<"$OUT" && grep -qF 'orphan-beta' <<<"$OUT"; then
++  pass "orphan checkout dirs in the SIBLING <root>-worktrees/ are found and named"
++else
++  fail "arm 7 (sibling worktrees dir): rc=$RC out=$OUT"
++fi
++# Requires a non-empty payload, so a script that produced NOTHING cannot pass
++# this arm by simply failing to mention the decoy.
++if [ -n "$OUT" ] && ! grep -qF 'decoy-child' <<<"$OUT"; then
++  pass "the child-path decoy is NOT enumerated (resolution is a sibling, not a child)"
++else
++  fail "arm 7: empty payload, or the child-path decoy was enumerated (resolved as a child)"
++fi
++if grep -qF "$WTDIR" <<<"$OUT"; then
++  pass "the briefing prints the resolved worktrees dir so a wrong path is visible"
++else
++  fail "arm 7: resolved worktrees dir not printed; out=$OUT"
++fi
++
++# --- Arm 3: ZERO landed slices -> HARD fail naming the section -------------
++setup_fixture
++perl -0777 -pi -e 's/"LANDED"/"NOT_STARTED"/g; s/"landed": \[0, 5\]/"landed": []/' \
++  "$FIX/dev/plans/release-state-0.9.0.json"
++run_orient "$FIX"
++if [ "$RC" -ne 0 ] && grep -qi 'landed' <<<"$ERR"; then
++  pass "zero landed slices -> HARD fail, and the message names the section"
++else
++  fail "arm 3 (zero landed slices): rc=$RC err=$ERR"
++fi
++
++# --- Arm 4: ZERO ledger entries -> HARD fail ------------------------------
++setup_fixture
++: >"$FIX/dev/steward/steward-ledger.jsonl"
++run_orient "$FIX"
++if [ "$RC" -ne 0 ] && grep -qi 'ledger' <<<"$ERR"; then
++  pass "zero steward-ledger entries -> HARD fail, and the message names the section"
++else
++  fail "arm 4 (zero ledger entries): rc=$RC err=$ERR"
++fi
++
++# --- Arm 4b: ZERO foldable todos -> HARD fail -----------------------------
++setup_fixture
++cat >"$FIX/dev/todos-and-considerations-ledger.jsonl" <<'EOF'
++{"ts": "2026-01-04T00:00:00.000Z", "seq": 1, "kind": "observation", "summary": "no id at all"}
++EOF
++run_orient "$FIX"
++if [ "$RC" -ne 0 ] && grep -qi 'todo' <<<"$ERR"; then
++  pass "a todos ledger that folds to zero ids -> HARD fail"
++else
++  fail "arm 4b (zero folded todos): rc=$RC err=$ERR"
++fi
++
++# --- Arm 5: NO STEWARD-SESSION-HANDOFF-* -> HARD fail ---------------------
++setup_fixture
++rm -f "$FIX"/dev/plans/runs/STEWARD-SESSION-HANDOFF-*.md
++run_orient "$FIX"
++if [ "$RC" -ne 0 ] && grep -qi 'hand-off\|handoff' <<<"$ERR"; then
++  pass "no STEWARD-SESSION-HANDOFF-* found -> HARD fail, and the message names it"
++else
++  fail "arm 5 (missing hand-off): rc=$RC err=$ERR"
++fi
++
++# --- Arm 5b: the NEWEST hand-off is the one reported ----------------------
++setup_fixture
++run_orient "$FIX"
++if grep -qF 'STEWARD-SESSION-HANDOFF-2026-01-05-A.md' <<<"$OUT" \
++   && ! grep -qF 'STEWARD-SESSION-HANDOFF-2026-01-04-A.md' <<<"$OUT"; then
++  pass "the NEWEST hand-off is reported (dated filename order), not an older one"
++else
++  fail "arm 5b (newest hand-off): out=$OUT"
++fi
++
++# --- Arm 5c: a board with no next-action row -> HARD fail -----------------
++setup_fixture
++perl -0777 -pi -e 's/\*\*Immediate next action\*\*/**Something else entirely**/' \
++  "$FIX/dev/plans/runs/STATUS-0.9.0.md"
++run_orient "$FIX"
++if [ "$RC" -ne 0 ] && grep -qi 'next action' <<<"$ERR"; then
++  pass "a board whose next-action row moved -> HARD fail, never a silent omission"
++else
++  fail "arm 5c (missing next-action row): rc=$RC err=$ERR"
++fi
++
++# --- Arm 5d: a missing release-state file -> HARD fail --------------------
++# The other half of correction 1: when the live board rolls to a release that
++# has no state file yet, the briefing must SAY SO, not print "nothing landed".
++setup_fixture
++rm -f "$FIX/dev/plans/release-state-0.9.0.json"
++run_orient "$FIX"
++if [ "$RC" -ne 0 ] && grep -qF 'release-state-0.9.0.json' <<<"$ERR"; then
++  pass "a live board with no matching release-state file -> HARD fail naming the path"
++else
++  fail "arm 5d (missing state file): rc=$RC err=$ERR"
++fi
++
++# --- Arm 1: OUTPUT OVER 4 KB -> HARD fail (the cap is mechanical) ---------
++# Enforced by the script itself, not only by this test: the cap is a promise the
++# tool makes to the reader's context budget, so it has to be self-checking.
++setup_fixture
++BIG="$(head -c 6000 /dev/zero | tr '\0' 'x')"
++perl -0777 -pi -e "s/the fixture's next action, recorded verbatim\\./$BIG/" \
++  "$FIX/dev/plans/runs/STATUS-0.9.0.md"
++run_orient "$FIX"
++if [ "$RC" -ne 0 ] && grep -qiE 'budget|4096|bytes' <<<"$ERR"; then
++  pass "a briefing over the 4096-byte cap HARD-fails and names the budget"
++else
++  fail "arm 1 (byte cap): rc=$RC bytes=$BYTES err=$ERR"
++fi
++if [ "$BYTES" -gt 4096 ]; then
++  pass "arm 1 fixture really produced an over-cap payload ($BYTES bytes)"
++else
++  fail "arm 1 fixture invalid: payload was only $BYTES bytes"
++fi
++
++# --- Arm 2: WRITES NO FILE ------------------------------------------------
++# Three independent proofs: the fixture tree is byte-identical before/after, the
++# real checkout's porcelain status is unchanged, and the process's entire TMPDIR
++# is empty afterwards (so the ledgerwatch cursor sandbox is not left behind).
++setup_fixture
++BEFORE="$(tree_snapshot "$TMPROOT/parent")"
++run_orient "$FIX"
++AFTER="$(tree_snapshot "$TMPROOT/parent")"
++# Guarded on a run having actually HAPPENED: a script that cannot start writes
++# no file either, and must not be able to green this arm.
++if [ "$RC" -ne 0 ] || [ -z "$OUT" ]; then
++  fail "arm 2 precondition: the briefing did not run (rc=$RC, ${BYTES} bytes) — 'writes nothing' is vacuous"
++else
++  pass "arm 2 precondition: the briefing really ran (rc=0, $BYTES bytes)"
++fi
++if [ "$BEFORE" = "$AFTER" ]; then
++  pass "writes no file — the fixture tree is byte-identical before/after"
++else
++  fail "arm 2 (fixture tree mutated): $(diff <(printf '%s' "$BEFORE") <(printf '%s' "$AFTER") | head -10)"
++fi
++if [ -z "$SANDBOX_RESIDUE" ]; then
++  pass "writes no file — the run's entire TMPDIR is empty afterwards"
++else
++  fail "arm 2 (TMPDIR residue): $SANDBOX_RESIDUE"
++fi
++if [ ! -d "$FIX/.ledgerwatch" ]; then
++  pass "writes no file — no default .ledgerwatch cursor dir is created in the repo"
++else
++  fail "arm 2: the briefing created $FIX/.ledgerwatch (a real cursor would be disturbed)"
++fi
++
++# --- Arm 10: the REAL repo is green (the regression half) ----------------
++REAL_BEFORE="$(git -C "$REPO_ROOT" status --porcelain --untracked-files=all)"
++run_orient "$REPO_ROOT"
++REAL_AFTER="$(git -C "$REPO_ROOT" status --porcelain --untracked-files=all)"
++if [ "$RC" -eq 0 ]; then
++  pass "the real checkout produces a complete briefing (exit 0)"
++else
++  fail "arm 10 (real repo green): rc=$RC err=$ERR out=$OUT"
++fi
++if [ "$BYTES" -le 4096 ] && [ "$BYTES" -gt 0 ]; then
++  pass "the real checkout's briefing is within the 4096-byte cap ($BYTES bytes)"
++else
++  fail "arm 10 (real byte cap): $BYTES bytes"
++fi
++if [ "$REAL_BEFORE" = "$REAL_AFTER" ]; then
++  pass "the real checkout's porcelain status is unchanged by the briefing"
++else
++  fail "arm 10: the briefing mutated the real checkout"
++fi
++if [ -z "$SANDBOX_RESIDUE" ]; then
++  pass "the real-repo run leaves no TMPDIR residue either"
++else
++  fail "arm 10 (TMPDIR residue): $SANDBOX_RESIDUE"
++fi
++
++# --- Arm 11: the CI job is ALWAYS-ON --------------------------------------
++# Same reasoning as release-state-views: the inputs this briefing reads (the
++# board, the state file, the ledgers, the hand-offs) are DOCS, and the
++# `markdownlint` job's docs_only fast path excludes the heavy `verify` job that
++# would otherwise run this suite. A guard that cannot run on the push that
++# breaks it is decorative.
++CI_JOB_BLOCK="$(awk '
++  /^  steward-orient:/ { inblock = 1; print; next }
++  inblock && /^  [A-Za-z0-9_-]+:/ { inblock = 0 }
++  inblock { print }
++' "$CI_YML")"
++if [ -n "$CI_JOB_BLOCK" ]; then
++  pass "ci.yml defines a steward-orient job"
++else
++  fail "ci.yml has no steward-orient job"
++fi
++if printf '%s' "$CI_JOB_BLOCK" | grep -q 'scripts/tests/test_steward_orient.sh'; then
++  pass "the CI job runs THIS suite (not a reimplementation)"
++else
++  fail "the CI job must invoke scripts/tests/test_steward_orient.sh"
++fi
++if printf '%s' "$CI_JOB_BLOCK" | grep -qE '^\s*(if|needs):'; then
++  fail "the steward-orient job must be ALWAYS-ON (no if:/needs:); block: $CI_JOB_BLOCK"
++else
++  pass "the steward-orient job is always-on (no if:, no needs:, not docs_only-gated)"
++fi
++
++# --- Arm 12: the documented exemptions are documented ---------------------
++# Correction 3 requires each legitimately-empty section to be an explicit
++# decision on the record, not an accident of implementation.
++if grep -qiE 'exempt' "$GATE"; then
++  pass "the script header records the zero-result exemptions explicitly"
++else
++  fail "arm 12: the script does not document its zero-result exemptions"
++fi
++if grep -qF -- '--dry-run' "$GATE" && grep -qF -- '--state-dir' "$GATE"; then
++  pass "ledger reads go through ledgerwatch with an explicit --state-dir + peek semantics"
++else
++  fail "arm 12: ledger reads must use ledgerwatch --state-dir with --dry-run peek semantics"
++fi
++if grep -qF -- '--project' "$GATE"; then
++  pass "the todos fold uses ledgerwatch --project (not a hand-rolled fold)"
++else
++  fail "arm 12: the todos fold must use ledgerwatch --project"
++fi
++
++if [ "$FAILED" -gt 0 ]; then
++  printf '\n%d test(s) failed\n' "$FAILED" >&2
++  exit 1
++fi
++printf '\nAll steward-orient tests passed\n'
+
+exec
+/bin/bash -lc 'bash scripts/tests/test_steward_orient.sh' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 3445ms:
+PASS  baseline fixture — complete briefing (exit 0)
+PASS  baseline fixture — payload is 1..4096 bytes (1002)
+PASS  baseline fixture — section present: REPO 
+PASS  baseline fixture — section present: WORKTREES
+PASS  baseline fixture — section present: RELEASE 0.9.0
+PASS  baseline fixture — section present: NEXT ACTION
+PASS  baseline fixture — section present: LEDGER
+PASS  baseline fixture — section present: TODOS
+PASS  baseline fixture — section present: PR
+PASS  baseline fixture — section present: HANDOFF
+PASS  the board's next-action cell is reproduced verbatim (markup included)
+PASS  landed slices + SHAs + SCHEMA are read from the release-state file
+PASS  the CLOSED release's stale state file is NOT read
+PASS  release is derived from the LIVE board filename (0.9.0), not hardcoded
+PASS  the briefing names the live board it read
+PASS  arm 8 fixture really places the CLOSED banner at line 6-15 (line 9)
+PASS  a CLOSED board (banner at line 6-15) is skipped -> zero live boards HARD-fails
+PASS  scripts/lib/board-closed.sh holds the head -n 15 predicate
+PASS  steward-orient.sh sources the shared board-CLOSED predicate
+PASS  steward-orient.sh has no inline CLOSED-window reimplementation
+PASS  check-board-currency.sh sources the shared board-CLOSED predicate
+PASS  check-board-currency.sh has no inline CLOSED-window reimplementation
+PASS  orphan checkout dirs in the SIBLING <root>-worktrees/ are found and named
+PASS  the child-path decoy is NOT enumerated (resolution is a sibling, not a child)
+PASS  the briefing prints the resolved worktrees dir so a wrong path is visible
+PASS  zero landed slices -> HARD fail, and the message names the section
+PASS  zero steward-ledger entries -> HARD fail, and the message names the section
+PASS  a todos ledger that folds to zero ids -> HARD fail
+PASS  no STEWARD-SESSION-HANDOFF-* found -> HARD fail, and the message names it
+PASS  the NEWEST hand-off is reported (dated filename order), not an older one
+PASS  a board whose next-action row moved -> HARD fail, never a silent omission
+PASS  a live board with no matching release-state file -> HARD fail naming the path
+PASS  a briefing over the 4096-byte cap HARD-fails and names the budget
+PASS  arm 1 fixture really produced an over-cap payload (6957 bytes)
+PASS  arm 2 precondition: the briefing really ran (rc=0, 1002 bytes)
+PASS  writes no file — the fixture tree is byte-identical before/after
+PASS  writes no file — the run's entire TMPDIR is empty afterwards
+PASS  writes no file — no default .ledgerwatch cursor dir is created in the repo
+PASS  the real checkout produces a complete briefing (exit 0)
+PASS  the real checkout's briefing is within the 4096-byte cap (3433 bytes)
+PASS  the real checkout's porcelain status is unchanged by the briefing
+PASS  the real-repo run leaves no TMPDIR residue either
+PASS  ci.yml defines a steward-orient job
+PASS  the CI job runs THIS suite (not a reimplementation)
+PASS  the steward-orient job is always-on (no if:, no needs:, not docs_only-gated)
+PASS  the script header records the zero-result exemptions explicitly
+PASS  ledger reads go through ledgerwatch with an explicit --state-dir + peek semantics
+PASS  the todos fold uses ledgerwatch --project (not a hand-rolled fold)
+
+All steward-orient tests passed
+
+exec
+/bin/bash -lc "sed -n '1,220p' scripts/check-board-currency.sh && printf '\\n--- orient output ---\\n' && bash scripts/steward-orient.sh" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 589ms:
+STEWARD ORIENT 2026-07-25T20:52Z · stateless · reads only · writes nothing
+REPO   branch=dh2-t3a head=7132c97c dirty=0  "feat(doc-hygiene-2): T3a scripts/steward-orient.sh — sta"
+WORKTREES (5)
+  ~/projects/fathomdb                              249edb6c [main]
+  ~/projects/fathomdb-worktrees/0.5.1-memex-build  1137c572 (detached HEAD)
+  ~/projects/fathomdb-worktrees/dh2-t1b            249edb6c [dh2-t2b]
+  ~/projects/fathomdb-worktrees/dh2-t1c            7132c97c [dh2-t3a]
+  ~/projects/fathomdb-worktrees/doc-hygiene-2      108e0594 [doc-hygiene-2]
+ORPHAN dirs in ~/projects/fathomdb-worktrees: verify-15b-fix2 verify-15b
+RELEASE 0.8.20  SCHEMA 24  board=STATUS-0.8.20.md  state=release-state-0.8.20.json
+  LANDED 0(403eb254) 5(1f8ed8bf) 10(3cfb3cda) 15(a2022957)
+  NEXT   slice 20 R-20-DR — dense_readiness + flush_embeddings() + the TC-45 supersession-terminal fix
+  REMAIN 20, 25, 30, 40
+NEXT ACTION (verbatim, STATUS-0.8.20.md §1)
+  **Commission the `DOC-HYGIENE-2` orchestrator FIRST — Slice 20 does not open until it lands** (**F-34**, HITL 2026-07-25). A wide docs diff must not run while a slice orchestrator is live (**F-7** collision rule), and DOC-HYGIENE-2 corrects **18 line-anchors in `plan-0.8.20.md` that misdirect the Slice-20 implementer** (`engine:14867`/`:14890` for TC-45 → the real call sites are `lib.rs:16963`/`:16986`). **Then** Slice 20 — `dense_readiness` + `flush_embeddings()` (**R-20-DR**) **+ the TC-45 supersession-terminal fix** (HITL 2026-07-24) — commissioned as an **orchestrator** (`/orchestrate`, or a Steward-spawned background orchestrator; **NOT `/goal`** — standing ruling `927ffb35`). Then **25 → 30 → 40, sequentially** (parallel 20∥25 was declined, F-34). **✅ The sequencing prerequisite is DISCHARGED:** the cross-cutting docs/tooling hygiene effort (DOC-HYGIENE-1, TC-48) that had to land FIRST — a wide docs diff that must not run while an orchestrator is live (F-7 collision rule) — **LANDED on `origin/main` 2026-07-25 (`f53b8c64..597738d9`, no pico label)**. Nothing now blocks the Slice-20 commission. Rulings for the eight-item queue are recorded in `plan-0.8.20.md` §11; master reconciliation = **F-32**, DOC-HYGIENE-1 = **F-33**.
+LEDGER last 5 of 107 — steward-ledger.jsonl
+  103 correction: STEWARD ERROR, corrected in the open: I reported /goal complete 0.8.z as a non-existent command and proposed sweeping 
+  104 decision: STANDING RULING (HITL 2026-07-25): the ORCHESTRATOR is the PREFERRED commissioning mechanism; /goal is NOT. Order: (1)
+  105 action: Idle worktree steward-0718 PRUNED (HITL-directed 2026-07-25). Pre-removal verification: 0 commits vs origin/main, bran
+  106 decision: RUN AUTHORIZATION (HITL 2026-07-25): 0.8.20 tail runs to completion under a STANDING STEWARD MANDATE. Sequence: DOC-HY
+  107 decision: STANDING RULE (HITL 2026-07-25): the fix-N remediation loop is BOUNDED and the bound is now quantified. An orchestrato
+TODOS  41 ids folded from 76 entries · unfoldable (no id): 16 · malformed: 0
+  open(30) TC-2 TC-3 TC-4 TC-5 TC-6 TC-9 TC-16 TC-20 TC-21 TC-22 TC-23 TC-24 TC-25 TC-26 TC-28 TC-29 TC-30 TC-33 TC-34 TC-35 TC-36 TC-37 TC-38 TC-39 TC-40 TC-41 TC-42 TC-43 TC-47 TC-50
+  resolved(5) TC-7 TC-27 TC-31 TC-44 TC-46
+  closed(2) TC-48 TC-49
+  accepted(1) TC-32
+  build-authorized(1) TC-8
+  placed(1) TC-45
+  watching(1) TC-1
+PRs 17 open · HANDOFF dev/plans/runs/STEWARD-SESSION-HANDOFF-2026-07-24-A.md
+
+exec
+/bin/bash -lc "grep -R \"actions/checkout@9c091\\|actions/setup-python@ece7\" -n .github/workflows/ci.yml | head -20 && grep -n \"uses: actions/checkout\" .github/workflows/ci.yml | head -5 && grep -n \"uses: actions/setup-python\" .github/workflows/ci.yml | head -5" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 0ms:
+34:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+55:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+66:      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+101:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+110:      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+134:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+198:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+225:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+307:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+308:      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+383:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+418:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+440:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+461:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+483:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+502:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+524:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+525:      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+538:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+539:      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+34:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+55:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+101:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+134:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+198:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+66:      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+110:      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+308:      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+525:      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+539:      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+
+exec
+/bin/bash -lc 'command -v shellcheck >/dev/null && shellcheck scripts/steward-orient.sh scripts/check-board-currency.sh scripts/tests/test_steward_orient.sh || true' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 0ms:
+exec
+/bin/bash -lc 'git rev-parse --show-toplevel; git rev-parse --git-dir; git rev-parse --git-common-dir; cd "$(git rev-parse --git-common-dir)" && pwd; dirname "$(cd "$(git rev-parse --git-common-dir)" && pwd)"' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 0ms:
+/home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+/home/coreyt/projects/fathomdb/.git/worktrees/dh2-t1c
+/home/coreyt/projects/fathomdb/.git
+/home/coreyt/projects/fathomdb/.git
+/home/coreyt/projects/fathomdb
+
+exec
+/bin/bash -lc "python3 dev/agent-tools/ledgerwatch/ledgerwatch.py --help | sed -n '1,200p'; sed -n '1,240p' dev/agent-tools/ledgerwatch/ledgerwatch.py" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 0ms:
+usage: ledgerwatch [-h] [--state-dir STATE_DIR]
+                   [--strategy {tail,section,diff}] [--select SELECT] [--json]
+                   [--dry-run] [--reset] [--no-status] [--prune] [--validate]
+                   [--project]
+                   [file]
+
+positional arguments:
+  file
+
+options:
+  -h, --help            show this help message and exit
+  --state-dir STATE_DIR
+  --strategy {tail,section,diff}
+  --select SELECT       tail only: field=value[,value]; repeatable (AND across
+                        fields)
+  --json                emit a structured envelope
+  --dry-run             show the delta without advancing the cursor
+  --reset               discard saved cursor first
+  --no-status           opt out of grep-style codes: exit 0 on success
+                        (changed or not), 2 on error
+  --prune               drop cursors whose source file is gone
+  --validate            JSONL integrity scan of the whole file (0 clean / 3
+                        corrupt / 2 error); no delta, no cursor advance
+  --project             fold the ledger to its latest entry per id; entries
+                        with no id are reported in an 'unfoldable (no id): N'
+                        bucket, never fatal. Read-only: does NOT write the
+                        ledger and does NOT advance the cursor (0 = projection
+                        emitted / 2 = read error)
+#!/usr/bin/env python3
+"""ledgerwatch — emit only what changed in a monitored file since the last check.
+
+The point of this tool is to keep *context* small while watching files that grow
+without bound. It runs at the shell; only its (delta) stdout enters an agent's
+context. It persists a per-file cursor in a state directory so each run prints
+just what is new/changed and nothing else.
+
+Strategy is chosen by file extension (override with --strategy):
+
+  .jsonl/.ndjson/.log  -> tail    append-only positional cursor (byte offset),
+                                   made rotation/truncation-safe by a first-line
+                                   signature. Optional --select field filtering.
+  .md/.markdown        -> section content-hash per heading. Detects edits made
+                                   ANYWHERE in the document (intra-document), which
+                                   a positional cursor would miss.
+  everything else      -> diff    unified diff against a shadow copy.
+
+Each run reports a MODE so the consumer knows how much to trust the delta:
+  incremental  exact new/changed items since a valid cursor.
+  cold         first run (or unreadable state): output is a baseline, not events.
+  resync       cursor was invalidated (rotation/truncation/rewrite): output is a
+               re-read baseline, NOT a list of N new events. (tail only)
+In text mode the mode is announced on stderr only when it is not incremental; in
+--json mode it is always the "mode" field of the envelope.
+
+For the tail strategy, delta-validate is ON by default: any non-blank delta line
+that is not valid JSON is flagged on stderr (so a torn/corrupt line is surfaced
+even when --select would otherwise silently drop it). --validate runs a full-file
+JSONL integrity scan instead (0 clean / 3 corrupt / 2 error; no delta, no cursor
+advance).
+
+--project folds an event-sourced ledger to its LATEST entry per `id` (the file
+is the event log; the fold is the state). Entries with no `id` are NOT an error
+— they are counted into an explicit, always-printed `unfoldable (no id): N`
+bucket. That bucket is the whole point: the recipe this mode replaces did
+`latest[r["id"]] = r` and died with KeyError on the first id-less entry, which
+is every entry of dev/steward/steward-ledger.jsonl. Like --prune and --validate
+it is a standalone READ/REPORT mode: it never writes the ledger and never reads
+or advances the cursor, so running a projection cannot silently consume the
+delta a later watch run is waiting for.
+
+Flags: --json (structured envelope), --dry-run (compute delta without advancing
+the cursor), --reset (discard cursor first), --select (tail field filter),
+--strategy (override), --no-status (see below), --prune (drop cursors whose
+source file is gone; takes no file argument), --validate (full-file JSONL scan),
+--project (fold-to-latest-per-id projection).
+
+Exit status is grep-style by default, so a poller can branch on it without
+capturing stdout:
+  0  changed   — a delta was emitted on stdout
+  1  no change — nothing new (a normal idle tick, NOT a failure)
+  2  error     — missing file/argument, bad --select
+A no-change run is silent on stdout in both text and --json mode; the status is
+on the exit code. Pass --no-status to collapse 0/1 into 0 (success), reserving
+nonzero for real errors (2) — for callers whose harness treats any nonzero as a
+failure.
+"""
+
+import argparse
+import difflib
+import hashlib
+import json
+import os
+import re
+import sys
+
+HEADING_RE = re.compile(r"^#{1,6}\s")
+
+TAIL_EXTS = {".jsonl", ".ndjson", ".log"}
+SECTION_EXTS = {".md", ".markdown"}
+
+
+def sha1(data: bytes) -> str:
+    return hashlib.sha1(data).hexdigest()
+
+
+def read_bytes(path: str) -> bytes:
+    with open(path, "rb") as fh:
+        return fh.read()
+
+
+def read_text(path: str) -> str:
+    return read_bytes(path).decode("utf-8", errors="replace")
+
+
+def write_text(path: str, text: str) -> None:
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(text)
+
+
+# --- strategy selection -----------------------------------------------------
+
+
+def choose_strategy(path: str, override: str | None) -> str:
+    if override:
+        return override
+    ext = os.path.splitext(path)[1].lower()
+    if ext in TAIL_EXTS:
+        return "tail"
+    if ext in SECTION_EXTS:
+        return "section"
+    return "diff"
+
+
+# Each strategy is pure: it computes a structured payload + the next state and
+# never writes. The driver renders the payload (text or json) and commits state
+# (unless --dry-run). This split is what makes --json and --dry-run fall out for
+# free. Strategies return: (payload, new_state, changed, mode, shadow_content).
+
+
+# --- tail (append-only, rotation-safe) --------------------------------------
+
+
+def first_line_sig(data: bytes) -> str:
+    nl = data.find(b"\n")
+    seg = data if nl < 0 else data[:nl]
+    return sha1(seg)
+
+
+def is_json(line: str) -> bool:
+    """True if the line parses as JSON (used by delta-validate and --validate)."""
+    try:
+        json.loads(line)
+        return True
+    except Exception:
+        return False
+
+
+def match_select(line: str, select: dict) -> bool:
+    try:
+        obj = json.loads(line)
+    except Exception:
+        return False
+    for field, values in select.items():
+        if str(obj.get(field)) not in values:
+            return False
+    return True
+
+
+def strat_tail(path: str, state: dict, select: dict):
+    data = read_bytes(path)
+    size = len(data)
+    head_sig = first_line_sig(data)
+    prev_off = state.get("offset", 0)
+    prev_head = state.get("head_sig")
+
+    if prev_head is None:
+        mode = "cold"  # no usable prior cursor (first run / corrupt / reset)
+    elif prev_head != head_sig or prev_off > size:
+        # Rotation / truncation / in-place rewrite: the bytes we already
+        # committed are no longer a stable prefix. Re-read from the start so we
+        # never silently skip the replacement content.
+        mode = "resync"
+    else:
+        mode = "incremental"
+    start = 0 if mode != "incremental" else prev_off
+
+    # Only commit up to the last complete line; a partial trailing line (writer
+    # mid-append) is left for the next run so it is emitted exactly once.
+    last_nl = data.rfind(b"\n")
+    commit = last_nl + 1 if last_nl >= 0 else 0
+    if commit < start:
+        commit = start
+
+    chunk = data[start:commit]
+    raw_lines = chunk.decode("utf-8", errors="replace").splitlines()
+
+    # Delta-validate (default, tail only): flag any non-empty delta line that is
+    # not valid JSON, so a torn/corrupt line is surfaced even when --select would
+    # otherwise silently drop it. Scoped to the delta, so it never re-spams old
+    # corruption (which lies before the cursor).
+    lines_before = data[:start].count(b"\n")
+    invalid = [
+        {"line": lines_before + idx + 1, "text": ln[:120]}
+        for idx, ln in enumerate(raw_lines)
+        if ln.strip() and not is_json(ln)
+    ]
+
+    lines = raw_lines
+    if select:
+        lines = [ln for ln in raw_lines if match_select(ln, select)]
+
+    payload = {"lines": lines}
+    if invalid:
+        payload["invalid"] = invalid
+    new_state = {
+        "strategy": "tail",
+        "offset": commit,
+        "head_sig": head_sig,
+        "size": size,
+        "path": path,
+    }
+    return payload, new_state, bool(lines), mode, None
+
+
+# --- section (content-hash per heading, intra-document safe) -----------------
+
+
+def parse_sections(text: str):
+    blocks = []
+    cur_key = "(preamble)"
+    cur = []
+    for ln in text.splitlines(keepends=True):
+        if HEADING_RE.match(ln):
+            blocks.append((cur_key, "".join(cur)))
+            cur_key = ln.strip()
+            cur = [ln]
+        else:
+            cur.append(ln)
+    blocks.append((cur_key, "".join(cur)))
+
+    result = []
+    seen = {}
+    for key, body in blocks:
+        if key == "(preamble)" and not body.strip():
+            continue
+        seen[key] = seen.get(key, 0) + 1
+        disambiguated = key if seen[key] == 1 else f"{key} #{seen[key]}"
+        result.append((disambiguated, body))
+    return result
+
+
+def strat_section(path: str, state: dict):
+    text = read_text(path)
+    current = parse_sections(text)
+    has_prev = "sections" in state
+    prev = state.get("sections", {})
+    mode = "incremental" if has_prev else "cold"  # content-addressed: never resyncs
+
+    cur_map = {}
+    sections = []
+    for key, body in current:
+        # Hash on stripped content so the blank line that separates sections
+        # (which re-attaches to a different section when sections are reordered)
+        # does not register as a spurious change.
+        digest = sha1(body.strip().encode("utf-8"))
+        cur_map[key] = digest
+        if key not in prev:
+            sections.append({"key": key, "kind": "new", "body": body.rstrip("\n")})
+
+exec
+/bin/bash -lc '(cd src && bash ../scripts/steward-orient.sh >/tmp/orient.out) && echo ok' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 585ms:
+ok
+
+exec
+/bin/bash -lc "nl -ba scripts/steward-orient.sh | sed -n '138,152p'" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 0ms:
+   138	
+   139	# -------------------------------------------------------------- WORKTREES ---
+   140	mapfile -t WT_LINES < <(git worktree list 2>/dev/null || true)
+   141	if [ "${#WT_LINES[@]}" -eq 0 ]; then
+   142	  note_empty "worktrees (git worktree list returned nothing)"
+   143	fi
+   144	add "WORKTREES (${#WT_LINES[@]})"
+   145	for w in "${WT_LINES[@]}"; do add "  $(tilde "$w")"; done
+   146	
+   147	# Correction 2: the checkout pool is a SIBLING of the MAIN worktree root.
+   148	# --git-common-dir points at the main .git even from inside a linked worktree,
+   149	# so this resolves the same pool no matter where the briefing is run from.
+   150	GIT_COMMON="$(cd "$(git rev-parse --git-common-dir)" && pwd)"
+   151	MAIN_ROOT="$(dirname "$GIT_COMMON")"
+   152	WT_DIR="${MAIN_ROOT}-worktrees"
+
+exec
+/bin/bash -lc "nl -ba scripts/steward-orient.sh | sed -n '126,138p'" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 0ms:
+   126	  done <<<"$1"
+   127	}
+   128	tilde() { printf '%s' "${1/#$HOME/\~}"; }
+   129	
+   130	# ------------------------------------------------------------------- REPO ---
+   131	BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || printf '?')"
+   132	HEAD_SHA="$(git rev-parse --short=8 HEAD 2>/dev/null || printf '?')"
+   133	HEAD_SUBJ="$(git log -1 --format=%s 2>/dev/null | cut -c1-58 || printf '?')"
+   134	DIRTY="$(git status --porcelain --untracked-files=all | wc -l | tr -d ' ')"
+   135	
+   136	add "STEWARD ORIENT $(date -u +%Y-%m-%dT%H:%MZ) · stateless · reads only · writes nothing"
+   137	add "REPO   branch=$BRANCH head=$HEAD_SHA dirty=$DIRTY  \"$HEAD_SUBJ\""
+   138	
+
+codex
+The new briefing is intended to be stateless/read-only, but it invokes a Git command that can write repository metadata and fail under read-only or locked-index conditions. That violates a load-bearing contract of the change.
+
+Review comment:
+
+- [P2] Avoid refreshing the index in the read-only briefing — /home/coreyt/projects/fathomdb-worktrees/dh2-t1c/scripts/steward-orient.sh:134-134
+  When the index stat cache is stale, `git status` refreshes and may rewrite `.git/index`, which violates this script's stated “writes nothing” contract; in a read-only checkout or while another process holds the index lock, this can also make the briefing exit because the pipeline runs under `pipefail`. Use `git --no-optional-locks status ...` or `GIT_OPTIONAL_LOCKS=0` for this dirty-count probe.
+The new briefing is intended to be stateless/read-only, but it invokes a Git command that can write repository metadata and fail under read-only or locked-index conditions. That violates a load-bearing contract of the change.
+
+Review comment:
+
+- [P2] Avoid refreshing the index in the read-only briefing — /home/coreyt/projects/fathomdb-worktrees/dh2-t1c/scripts/steward-orient.sh:134-134
+  When the index stat cache is stale, `git status` refreshes and may rewrite `.git/index`, which violates this script's stated “writes nothing” contract; in a read-only checkout or while another process holds the index lock, this can also make the briefing exit because the pipeline runs under `pipefail`. Use `git --no-optional-locks status ...` or `GIT_OPTIONAL_LOCKS=0` for this dirty-count probe.

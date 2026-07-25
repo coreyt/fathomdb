@@ -1,0 +1,2371 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f9b1d-e11a-73f3-aa4c-719f4a70c8b9
+--------
+user
+changes against '7132c97c64308bda2630d7ab2bae98bb645c61ab'
+exec
+/bin/bash -lc 'ls && cat MEMORY.md 2>/dev/null && for f in feedback_*.md; do echo ---$f; cat "$f"; done 2>/dev/null' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ exited 1 in 0ms:
+AGENTS.md
+CHANGELOG.md
+Cargo.lock
+Cargo.toml
+LICENSE
+README.md
+deny.toml
+dev
+docs
+experiments
+lychee.toml
+mkdocs.yml
+package-lock.json
+package.json
+rust-toolchain.toml
+rustfmt.toml
+scripts
+src
+target
+test
+tests
+tools
+
+exec
+/bin/bash -lc "find .. -maxdepth 2 -name 'MEMORY.md' -o -name 'feedback_*.md'" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 0ms:
+exec
+/bin/bash -lc 'git status --short && git diff --stat 7132c97c64308bda2630d7ab2bae98bb645c61ab && git diff --name-only 7132c97c64308bda2630d7ab2bae98bb645c61ab' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 0ms:
+ scripts/steward-orient.sh                     |  37 +++++--
+ scripts/tests/lib/governed-surface-fixture.sh | 133 ++++++++++++++++++++++++++
+ scripts/tests/test_check_board_currency.sh    |  21 ++++
+ scripts/tests/test_check_ledgers.sh           |   8 ++
+ scripts/tests/test_preflight_landing.sh       |  18 ++++
+ scripts/tests/test_steward_orient.sh          | 122 ++++++++++++++++++++++-
+ 6 files changed, 330 insertions(+), 9 deletions(-)
+scripts/steward-orient.sh
+scripts/tests/lib/governed-surface-fixture.sh
+scripts/tests/test_check_board_currency.sh
+scripts/tests/test_check_ledgers.sh
+scripts/tests/test_preflight_landing.sh
+scripts/tests/test_steward_orient.sh
+
+exec
+/bin/bash -lc 'git diff 7132c97c64308bda2630d7ab2bae98bb645c61ab -- scripts/steward-orient.sh scripts/tests/lib/governed-surface-fixture.sh scripts/tests/test_check_board_currency.sh scripts/tests/test_check_ledgers.sh scripts/tests/test_preflight_landing.sh scripts/tests/test_steward_orient.sh' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 0ms:
+diff --git a/scripts/steward-orient.sh b/scripts/steward-orient.sh
+index 4b90801a..2dcc4618 100755
+--- a/scripts/steward-orient.sh
++++ b/scripts/steward-orient.sh
+@@ -17,6 +17,20 @@
+ #    an ephemeral ledgerwatch --state-dir so the Steward's REAL cursor is never
+ #    read or advanced. Verified mechanically by scripts/tests/test_steward_orient.sh
+ #    (fixture tree byte-identical before/after; the run's whole TMPDIR empty after).
++#    ".git/index" IS A FILE THIS SCRIPT WRITES TOO, and it is the one the working
++#    tree's own contract lives in. `git status` REFRESHES a stale stat cache and
++#    then rewrites the index under .git/index.lock — measured on git 2.43:
++#    touching tracked files and running `git status --porcelain` changes the
++#    index's bytes. That is a repo-metadata write in a script whose whole promise
++#    is that it makes none, it can race a concurrent git command for the index
++#    lock, and it would fail in a read-only checkout. So EVERY git probe here runs
++#    with git's OPTIONAL locks disabled (GIT_OPTIONAL_LOCKS=0 plus an explicit
++#    --no-optional-locks at each call site): git then does all the same reads and
++#    simply declines to persist the refreshed cache. The env var covers git run by
++#    CHILD processes (gh, python3); the per-call flag keeps the intent legible and
++#    survives someone unsetting the environment. Asserted by the suite's
++#    ".git/index is byte-unchanged across a run with a deliberately staled stat
++#    cache" arm, plus a structural arm that no bare `git` call creeps back in.
+ #
+ # ========================== WHERE THE FACTS COME FROM ========================
+ # LIVE repo facts are read live (branch, HEAD, dirty count, worktrees, orphan
+@@ -82,13 +96,20 @@
+ # Usage: scripts/steward-orient.sh
+ set -euo pipefail
+ 
++# Hard limit 2, mechanically. Belongs BEFORE the first git call: with optional
++# locks disabled git never takes .git/index.lock, so a stale stat cache is
++# refreshed in memory and never written back, and a lock held by a concurrent
++# git command (or a read-only .git) cannot perturb this run. Exported so git
++# invoked by CHILD processes (gh, python3, ledgerwatch) inherits it.
++export GIT_OPTIONAL_LOCKS=0
++
+ BUDGET_BYTES="${STEWARD_ORIENT_BUDGET:-4096}"
+ 
+ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ # shellcheck source=lib/board-closed.sh
+ . "$SCRIPT_DIR/lib/board-closed.sh"
+ 
+-if ! REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"; then
++if ! REPO_ROOT="$(git --no-optional-locks rev-parse --show-toplevel 2>/dev/null)"; then
+   printf 'steward-orient: not inside a git worktree\n' >&2
+   exit 2
+ fi
+@@ -128,16 +149,16 @@ emit() {
+ tilde() { printf '%s' "${1/#$HOME/\~}"; }
+ 
+ # ------------------------------------------------------------------- REPO ---
+-BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || printf '?')"
+-HEAD_SHA="$(git rev-parse --short=8 HEAD 2>/dev/null || printf '?')"
+-HEAD_SUBJ="$(git log -1 --format=%s 2>/dev/null | cut -c1-58 || printf '?')"
+-DIRTY="$(git status --porcelain --untracked-files=all | wc -l | tr -d ' ')"
++BRANCH="$(git --no-optional-locks rev-parse --abbrev-ref HEAD 2>/dev/null || printf '?')"
++HEAD_SHA="$(git --no-optional-locks rev-parse --short=8 HEAD 2>/dev/null || printf '?')"
++HEAD_SUBJ="$(git --no-optional-locks log -1 --format=%s 2>/dev/null | cut -c1-58 || printf '?')"
++DIRTY="$(git --no-optional-locks status --porcelain --untracked-files=all | wc -l | tr -d ' ')"
+ 
+ add "STEWARD ORIENT $(date -u +%Y-%m-%dT%H:%MZ) · stateless · reads only · writes nothing"
+ add "REPO   branch=$BRANCH head=$HEAD_SHA dirty=$DIRTY  \"$HEAD_SUBJ\""
+ 
+ # -------------------------------------------------------------- WORKTREES ---
+-mapfile -t WT_LINES < <(git worktree list 2>/dev/null || true)
++mapfile -t WT_LINES < <(git --no-optional-locks worktree list 2>/dev/null || true)
+ if [ "${#WT_LINES[@]}" -eq 0 ]; then
+   note_empty "worktrees (git worktree list returned nothing)"
+ fi
+@@ -147,10 +168,10 @@ for w in "${WT_LINES[@]}"; do add "  $(tilde "$w")"; done
+ # Correction 2: the checkout pool is a SIBLING of the MAIN worktree root.
+ # --git-common-dir points at the main .git even from inside a linked worktree,
+ # so this resolves the same pool no matter where the briefing is run from.
+-GIT_COMMON="$(cd "$(git rev-parse --git-common-dir)" && pwd)"
++GIT_COMMON="$(cd "$(git --no-optional-locks rev-parse --git-common-dir)" && pwd)"
+ MAIN_ROOT="$(dirname "$GIT_COMMON")"
+ WT_DIR="${MAIN_ROOT}-worktrees"
+-REGISTERED="$(git worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' || true)"
++REGISTERED="$(git --no-optional-locks worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' || true)"
+ ORPHANS=""
+ if [ -d "$WT_DIR" ]; then
+   for d in "$WT_DIR"/*/; do
+diff --git a/scripts/tests/lib/governed-surface-fixture.sh b/scripts/tests/lib/governed-surface-fixture.sh
+new file mode 100644
+index 00000000..28b89ebb
+--- /dev/null
++++ b/scripts/tests/lib/governed-surface-fixture.sh
+@@ -0,0 +1,133 @@
++#!/usr/bin/env bash
++# scripts/tests/lib/governed-surface-fixture.sh — seeds a throwaway fixture repo
++# with a governed-surface allowlist + pin that are CONSISTENT with each other, so
++# `scripts/preflight.sh --landing` can be exercised inside a fixture.
++#
++# WHY THIS EXISTS. DOC-HYGIENE-2 T1e wired scripts/check-governed-surface-pin.sh
++# into `preflight.sh --landing` (§9). Every fixture repo that runs `--landing`
++# and does NOT carry a pin therefore hard-fails:
++#
++#   INFO  governed-surface-pin: cannot read the pin scripts/governed-surface-pin.json:
++#         [Errno 2] No such file or directory — the gate cannot run, so it refuses to pass
++#   HARD  governed-surface-pin: check-governed-surface-pin.sh exited 2 without reporting
++#         a specific defect — refusing to certify this tree for landing
++#
++# THE GATE IS RIGHT AND IS NOT WEAKENED HERE. Refusing to certify a tree whose
++# pin it cannot read is exactly the TC-37 anti-vacuity stance: a gate that cannot
++# see its subject must never report green. What was incomplete is the FIXTURES —
++# they did not model a real checkout. This is the same repair T1b made when its
++# ledger-integrity gate started hard-failing the same fixtures: give each fixture
++# builder a minimal, consistent instance of what the new gate reads. No bypass,
++# no env escape hatch, no `--skip`, no conditional that makes the gate inert.
++#
++# SYNTHETIC, NOT A COPY OF THE REAL PAIR — DELIBERATE. The pin's own suite
++# (scripts/tests/test_check_governed_surface_pin.sh) copies the REAL
++# src/conformance/governed-surface-allowlist.json + scripts/governed-surface-pin.json
++# into its fixtures, and must: the real pair IS its subject. The three suites that
++# use THIS helper are about board currency, ledger integrity and TC-RUBRIC-5 — the
++# governed surface is incidental to all of them. Copying the real pair would couple
++# them to the real pin's SIGNING STATE, and that state is expected to diverge: the
++# gate's own header records that 0.8.20 Slices 20/25/30 are EXPECTED to trip it
++# before a fresh HITL sign-off. On that day a legitimate, correct trip would turn
++# three unrelated suites red for a reason that has nothing to do with what they
++# test. A self-consistent synthetic pair is immune to that, and still exercises the
++# gate for the RIGHT reason: it runs, reads both files, and matches.
++#
++# WHAT THE GATE REQUIRES OF THE PAIR (see check-governed-surface-pin.sh's header):
++#   * the pin carries sha256 + git_blob_sha1 of the allowlist file's RAW BYTES;
++#   * the pin's allowlist/core/recovery_denylist lists equal the file's, element
++#     for element and in order;
++#   * counts.<list> is present, an integer, and equals len(<list>) in BOTH;
++#   * recovery_denylist is EXACTLY the five REQ-054 names, in BOTH.
++# All four are satisfied by construction below and then VERIFIED by running the
++# real gate against the pair (see seed_governed_surface_fixture).
++#
++# Usage — from a fixture builder, BEFORE its `git add -A`:
++#   . "$SCRIPT_DIR/lib/governed-surface-fixture.sh"
++#   seed_governed_surface_fixture "$primary"
++# The caller commits the files; a linked worktree added afterwards inherits them.
++
++# seed_governed_surface_fixture <repo-dir>
++# Writes <repo>/src/conformance/governed-surface-allowlist.json and
++# <repo>/scripts/governed-surface-pin.json, then proves the pair passes the real
++# gate. Returns non-zero (and says why) if it cannot — a fixture seeder that
++# silently produced an unusable pair would just move the confusion downstream.
++seed_governed_surface_fixture() {
++  local repo="${1:?seed_governed_surface_fixture needs a repo dir}"
++  local lib_dir repo_root
++  lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++  repo_root="$(cd "$lib_dir/../../.." && pwd)"
++
++  if ! command -v python3 >/dev/null 2>&1; then
++    printf 'seed_governed_surface_fixture: python3 is required to hash the fixture surface\n' >&2
++    return 2
++  fi
++
++  mkdir -p "$repo/src/conformance" "$repo/scripts"
++
++  python3 - "$repo" <<'PY' || return 1
++import hashlib
++import json
++import os
++import sys
++
++repo = sys.argv[1]
++
++# REQ-054 / AC-041: the recovery denylist is FIVE names, and the gate checks this
++# against a constant of its own in BOTH the file and the pin. A fixture that got
++# it wrong would fail for a reason that has nothing to do with the suite using it.
++REQ_054 = ["recover", "restore", "repair", "fix", "rebuild"]
++
++surface = {
++    "_comment": (
++        "FIXTURE governed surface — minimal and synthetic. Not the real "
++        "src/conformance/governed-surface-allowlist.json and not a statement about it."
++    ),
++    "allowlist": ["fixture_verb_one", "fixture_verb_two"],
++    "core": ["fixture_verb_one"],
++    "recovery_denylist": REQ_054,
++}
++raw = (json.dumps(surface, indent=2) + "\n").encode("utf-8")
++
++file_path = os.path.join(repo, "src/conformance/governed-surface-allowlist.json")
++with open(file_path, "wb") as fh:
++    fh.write(raw)
++
++LIST_KEYS = ["allowlist", "core", "recovery_denylist"]
++pin = {
++    "_comment": (
++        "FIXTURE pin over the fixture surface next to it. NOT a HITL sign-off and not "
++        "a copy of scripts/governed-surface-pin.json."
++    ),
++    "ac": "fixture pin (no HITL sign-off is implied)",
++    "pinned_at_commit_short": "fixture0",
++    # Hashed over the bytes just written, so the pair cannot drift apart.
++    "sha256": hashlib.sha256(raw).hexdigest(),
++    "git_blob_sha1": hashlib.sha1(b"blob %d\0" % len(raw) + raw).hexdigest(),
++    "counts": {k: len(surface[k]) for k in LIST_KEYS},
++}
++for k in LIST_KEYS:
++    pin[k] = surface[k]
++
++with open(os.path.join(repo, "scripts/governed-surface-pin.json"), "w", encoding="utf-8") as fh:
++    json.dump(pin, fh, indent=2)
++    fh.write("\n")
++PY
++
++  # Self-check: run the REAL gate against the pair just written. If the gate's
++  # predicate ever gains a requirement this seeder does not satisfy, the failure
++  # surfaces HERE, naming this helper, instead of as a baffling `--landing`
++  # failure in three unrelated suites.
++  local gate="$repo_root/scripts/check-governed-surface-pin.sh"
++  local out
++  if [ ! -f "$gate" ]; then
++    printf 'seed_governed_surface_fixture: %s is missing — cannot verify the seeded pair\n' "$gate" >&2
++    return 2
++  fi
++  if ! out="$(bash "$gate" \
++        --file "$repo/src/conformance/governed-surface-allowlist.json" \
++        --pin "$repo/scripts/governed-surface-pin.json" 2>&1)"; then
++    printf 'seed_governed_surface_fixture: the seeded pair does NOT satisfy check-governed-surface-pin.sh:\n%s\n' "$out" >&2
++    return 1
++  fi
++}
+diff --git a/scripts/tests/test_check_board_currency.sh b/scripts/tests/test_check_board_currency.sh
+index bd9859e9..824d7843 100755
+--- a/scripts/tests/test_check_board_currency.sh
++++ b/scripts/tests/test_check_board_currency.sh
+@@ -28,6 +28,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+ PREFLIGHT="$REPO_ROOT/scripts/preflight.sh"
+ CHECKER="$REPO_ROOT/scripts/check-board-currency.sh"
++# shellcheck source=lib/governed-surface-fixture.sh
++. "$SCRIPT_DIR/lib/governed-surface-fixture.sh"
+ 
+ FAILED=0
+ pass() { printf 'PASS  %s\n' "$1"; }
+@@ -64,6 +66,14 @@ init_repo() {
+   mkdir -p "$dir/dev/steward"
+   printf '{"seq":1,"note":"fixture"}\n' >"$dir/dev/steward/steward-ledger.jsonl"
+   printf '%s' 1 >"$dir/dev/steward/steward-ledger.jsonl.seq"
++  # Same story one gate later: `--landing` also runs the governed-surface pin
++  # gate (DOC-HYGIENE-2 T1e), which HARD-fails a tree whose pin it cannot read —
++  # correctly, on the same TC-37 grounds. So the fixture carries a minimal,
++  # self-consistent surface+pin pair as well. Seeded by the shared helper, which
++  # verifies the pair against the real gate; nothing here is surface-specific
++  # beyond its presence, and the gate's own arms live in
++  # scripts/tests/test_check_governed_surface_pin.sh.
++  seed_governed_surface_fixture "$dir"
+ }
+ 
+ # commit_all <dir> <message>
+@@ -334,6 +344,17 @@ if [ "$RC" -eq 0 ]; then
+ else
+   fail "--landing must not regress a current board; got rc=$RC, out: $OUT"
+ fi
++# ANTI-VACUITY for the fixture repair: the arm above must be green because every
++# --landing gate RAN and passed, never because one of them was absent or inert.
++# Both gates that hard-fail an incomplete fixture (T1b's ledger integrity, T1e's
++# governed-surface pin) must be visible in the output as an `ok` line.
++for gate_line in 'ledger-integrity:' 'governed-surface-pin:'; do
++  if printf '%s' "$OUT" | grep -qE "^ok +${gate_line}"; then
++    pass "the current-board --landing run really executed the $gate_line gate (ok, not skipped)"
++  else
++    fail "$gate_line did not report ok in a passing --landing run — the fixture may be clearing the gate by not carrying its input; out: $OUT"
++  fi
++done
+ 
+ # --- Arm 7: --landing in a CLOSED-board worktree still passes (skip, not flag) -
+ CLOSED_LINKED="$TMPROOT/closed-linked"
+diff --git a/scripts/tests/test_check_ledgers.sh b/scripts/tests/test_check_ledgers.sh
+index 396ed26b..53994b5a 100644
+--- a/scripts/tests/test_check_ledgers.sh
++++ b/scripts/tests/test_check_ledgers.sh
+@@ -34,6 +34,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+ CHECKER="$REPO_ROOT/scripts/check-ledgers.sh"
+ PREFLIGHT="$REPO_ROOT/scripts/preflight.sh"
+ CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
++# shellcheck source=lib/governed-surface-fixture.sh
++. "$SCRIPT_DIR/lib/governed-surface-fixture.sh"
+ 
+ FAILED=0
+ pass() { printf 'PASS  %s\n' "$1"; }
+@@ -348,6 +350,12 @@ make_repo() {
+   mkdir -p "$primary/src" "$primary/scripts"
+   printf 'fixture\n' >"$primary/src/keep.txt"
+   write_ledger "$primary" dev/steward/steward-ledger "$sidecar" "$@"
++  # `--landing` also runs the governed-surface pin gate (DOC-HYGIENE-2 T1e),
++  # which HARD-fails a tree whose pin it cannot read — the same TC-37 stance this
++  # suite's own gate takes, and equally correct. The fixture therefore carries a
++  # minimal, self-consistent surface + pin, so the only thing these arms can fail
++  # on is the LEDGER state they deliberately plant.
++  seed_governed_surface_fixture "$primary"
+   git -C "$primary" add -A
+   git -C "$primary" commit -q -m 'fixture: initial commit'
+   git -C "$primary" worktree add -q -b landing-fixture "$linked" >/dev/null 2>&1
+diff --git a/scripts/tests/test_preflight_landing.sh b/scripts/tests/test_preflight_landing.sh
+index 7e32b4e1..62273641 100755
+--- a/scripts/tests/test_preflight_landing.sh
++++ b/scripts/tests/test_preflight_landing.sh
+@@ -29,6 +29,8 @@ set -euo pipefail
+ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+ PREFLIGHT="$REPO_ROOT/scripts/preflight.sh"
++# shellcheck source=lib/governed-surface-fixture.sh
++. "$SCRIPT_DIR/lib/governed-surface-fixture.sh"
+ 
+ FAILED=0
+ pass() { printf 'PASS  %s\n' "$1"; }
+@@ -79,6 +81,12 @@ make_fixture() {
+   # it carries one; its own corruption arms live in test_check_ledgers.sh.
+   printf '{"seq":1,"note":"fixture"}\n' >"$primary/dev/steward/steward-ledger.jsonl"
+   printf '%s' 1 >"$primary/dev/steward/steward-ledger.jsonl.seq"
++  # And a minimal, self-consistent governed surface + pin: `--landing` also runs
++  # the governed-surface pin gate (DOC-HYGIENE-2 T1e), which HARD-fails a tree
++  # whose pin it cannot read — the same TC-37 stance as the ledger gate above, and
++  # equally correct. This fixture models a real checkout, so it carries one; the
++  # pin's own arms live in scripts/tests/test_check_governed_surface_pin.sh.
++  seed_governed_surface_fixture "$primary"
+   git -C "$primary" add -A
+   git -C "$primary" commit -q -m 'fixture: initial commit'
+   git -C "$primary" worktree add -q -b landing-fixture "$linked" >/dev/null 2>&1
+@@ -109,6 +117,16 @@ if printf '%s' "$OUT" | grep -q '"preflight":"pass"'; then
+ else
+   fail "expected \"preflight\":\"pass\" in summary; got: $OUT"
+ fi
++# ANTI-VACUITY: a "pass" must mean every --landing gate ran and cleared, not that
++# the fixture failed to carry a gate's input and the gate therefore said nothing.
++# These are the two gates that HARD-fail a tree whose input they cannot read.
++for gate_line in 'ledger-integrity:' 'governed-surface-pin:'; do
++  if printf '%s' "$OUT" | grep -qE "^ok +${gate_line}"; then
++    pass "the passing --landing run really executed the $gate_line gate (ok, not skipped)"
++  else
++    fail "$gate_line did not report ok in a passing --landing run; out: $OUT"
++  fi
++done
+ 
+ # --- Arm 2: --landing in the primary checkout => HARD fail, non-zero ----------
+ run_preflight "$PRIMARY" --landing
+diff --git a/scripts/tests/test_steward_orient.sh b/scripts/tests/test_steward_orient.sh
+index 82f32938..76173a0e 100644
+--- a/scripts/tests/test_steward_orient.sh
++++ b/scripts/tests/test_steward_orient.sh
+@@ -10,7 +10,9 @@
+ #
+ # Predicate under test (see scripts/steward-orient.sh's header for the full
+ # statement):
+-#   * output is <= 4096 bytes and NO file is written anywhere;
++#   * output is <= 4096 bytes and NO file is written anywhere — INCLUDING
++#     `.git/index`, which `git status` rewrites when it refreshes a stale stat
++#     cache (arms 2b-2d);
+ #   * every load-bearing section is non-empty, or the run HARD-fails naming the
+ #     section (the documented exemptions are the sections that have a legitimate
+ #     empty state: open-PR count, orphan checkout dirs, dirty-file count);
+@@ -447,6 +449,124 @@ else
+   fail "arm 2: the briefing created $FIX/.ledgerwatch (a real cursor would be disturbed)"
+ fi
+ 
++# --- Arm 2b: .git/index IS BYTE-UNCHANGED, EVEN WITH A STALE STAT CACHE ------
++# Arm 2's tree_snapshot PRUNES */.git, so it could never see this: `git status`
++# refreshes a stale stat cache and REWRITES .git/index under .git/index.lock.
++# That is a repo-metadata write by a script whose stated contract is that it
++# writes nothing at all, and it can race a concurrent git command for the lock.
++#
++# Staling technique: rewrite every tracked file's mtime to a FIXED PAST instant.
++# A fixed timestamp (rather than `touch` + sleep) puts the mtime well outside
++# git's racily-clean one-second window with no wall-clock cost, so every cache
++# entry is unambiguously stat-dirty.
++#
++# NON-VACUITY, and the RED witness carried inside the suite: a fixture where git
++# had nothing to refresh would green this arm no matter what the briefing does.
++# So the same staled fixture is COPIED (cp -a preserves the mtimes, so the copy
++# is staled identically) and probed with a PLAIN, lock-taking `git status` — the
++# exact call the briefing used to make. That copy's index MUST change. Only then
++# does "the briefing left the index alone" mean anything.
++setup_fixture
++find "$FIX" -path '*/.git' -prune -o -type f -print0 \
++  | xargs -0 touch -d '2026-01-01 00:00:00'
++
++WITNESS="$TMPROOT/parent/witness"
++cp -a "$FIX" "$WITNESS"
++WITNESS_BEFORE="$(sha256sum "$WITNESS/.git/index" | cut -d' ' -f1)"
++git -C "$WITNESS" status --porcelain --untracked-files=all >/dev/null 2>&1 || true
++WITNESS_AFTER="$(sha256sum "$WITNESS/.git/index" | cut -d' ' -f1)"
++if [ "$WITNESS_BEFORE" != "$WITNESS_AFTER" ]; then
++  pass "arm 2b witness: the stat cache really is stale — a plain \`git status\` rewrites .git/index"
++else
++  fail "arm 2b fixture invalid: a plain lock-taking \`git status\` did NOT rewrite .git/index, so this arm proves nothing"
++fi
++rm -rf "$WITNESS"
++
++INDEX_BEFORE="$(sha256sum "$FIX/.git/index" | cut -d' ' -f1)"
++INDEX_META_BEFORE="$(stat -c '%s %.9Y' "$FIX/.git/index")"
++run_orient "$FIX"
++INDEX_AFTER="$(sha256sum "$FIX/.git/index" | cut -d' ' -f1)"
++INDEX_META_AFTER="$(stat -c '%s %.9Y' "$FIX/.git/index")"
++# Guarded on the run having HAPPENED: a briefing that cannot start also writes
++# no index, and must not be able to green this.
++if [ "$RC" -eq 0 ] && [ -n "$OUT" ]; then
++  pass "arm 2b precondition: the briefing still completes on a stat-stale checkout (rc=0)"
++else
++  fail "arm 2b precondition: the briefing did not run (rc=$RC, $BYTES bytes) — the index assertion would be vacuous; err=$ERR"
++fi
++if [ "$INDEX_BEFORE" = "$INDEX_AFTER" ]; then
++  pass "writes no file — .git/index is BYTE-IDENTICAL across a run with a deliberately staled stat cache"
++else
++  fail "arm 2b: the briefing REWROTE .git/index ($INDEX_BEFORE -> $INDEX_AFTER) — it must run git with optional locks disabled"
++fi
++if [ "$INDEX_META_BEFORE" = "$INDEX_META_AFTER" ]; then
++  pass "writes no file — .git/index size+mtime are unchanged too (NANOSECOND mtime: it was not even reopened)"
++else
++  fail "arm 2b: .git/index metadata moved ($INDEX_META_BEFORE -> $INDEX_META_AFTER)"
++fi
++if [ ! -e "$FIX/.git/index.lock" ]; then
++  pass "writes no file — no .git/index.lock is left behind"
++else
++  fail "arm 2b: the briefing left a .git/index.lock behind"
++fi
++
++# --- Arm 2c: a HELD index lock does not perturb the briefing ----------------
++# HONEST SCOPE: measured on git 2.43, a plain `git status` tolerates a held
++# optional lock (it declines to write and still exits 0), so this arm is NOT a
++# RED witness for the fix — it is a forward guard. It is worth its cost because
++# the briefing runs under `set -euo pipefail`, where any future git probe that
++# DOES insist on the lock (or a git version that starts erroring) would abort the
++# whole cold-start briefing rather than degrade. With optional locks disabled the
++# lock is never contended for at all.
++setup_fixture
++find "$FIX" -path '*/.git' -prune -o -type f -print0 \
++  | xargs -0 touch -d '2026-01-01 00:00:00'
++: >"$FIX/.git/index.lock"
++LOCKED_INDEX_BEFORE="$(sha256sum "$FIX/.git/index" | cut -d' ' -f1)"
++run_orient "$FIX"
++LOCKED_INDEX_AFTER="$(sha256sum "$FIX/.git/index" | cut -d' ' -f1)"
++if [ "$RC" -eq 0 ] && [ -n "$OUT" ]; then
++  pass "a concurrently HELD .git/index.lock does not abort the briefing (rc=0)"
++else
++  fail "arm 2c: a held index lock broke the briefing (rc=$RC); err=$ERR"
++fi
++if [ "$LOCKED_INDEX_BEFORE" = "$LOCKED_INDEX_AFTER" ]; then
++  pass "a held index lock run still leaves .git/index byte-identical"
++else
++  fail "arm 2c: .git/index changed while its lock was held by another process"
++fi
++if [ -e "$FIX/.git/index.lock" ]; then
++  pass "the other process's .git/index.lock is still there — the briefing never touched it"
++else
++  fail "arm 2c: the briefing REMOVED another process's .git/index.lock"
++fi
++rm -f "$FIX/.git/index.lock"
++
++# --- Arm 2d: structural — EVERY git probe disables optional locks -----------
++# Behavioural arm 2b only covers the git calls on the paths it exercises. This
++# arm is the drift guard: a new `$(git ...)` added later without the flag would
++# silently reintroduce the index write. Counts every command substitution /
++# process substitution that starts a git command and requires all of them to
++# carry --no-optional-locks, plus the exported env var that covers git run by
++# CHILD processes (gh, python3).
++GIT_CALLS_ALL="$(grep -coE '(\$\(|<\()git ' "$GATE" || true)"
++GIT_CALLS_SAFE="$(grep -coE '(\$\(|<\()git --no-optional-locks ' "$GATE" || true)"
++if [ "$GIT_CALLS_ALL" -ge 8 ]; then
++  pass "arm 2d precondition: the briefing really does shell out to git ($GIT_CALLS_ALL call sites)"
++else
++  fail "arm 2d precondition: found only $GIT_CALLS_ALL git call sites — the count regex has drifted, so this arm proves nothing"
++fi
++if [ "$GIT_CALLS_ALL" -eq "$GIT_CALLS_SAFE" ]; then
++  pass "every git call site ($GIT_CALLS_SAFE/$GIT_CALLS_ALL) passes --no-optional-locks"
++else
++  fail "arm 2d: $((GIT_CALLS_ALL - GIT_CALLS_SAFE)) git call site(s) can still take .git/index.lock: $(grep -nE '(\$\(|<\()git ' "$GATE" | grep -v -- '--no-optional-locks')"
++fi
++if grep -qE '^export GIT_OPTIONAL_LOCKS=0$' "$GATE"; then
++  pass "GIT_OPTIONAL_LOCKS=0 is exported, so git in CHILD processes (gh, python3) cannot lock either"
++else
++  fail "arm 2d: the briefing must export GIT_OPTIONAL_LOCKS=0"
++fi
++
+ # --- Arm 10: the REAL repo is green (the regression half) ----------------
+ REAL_BEFORE="$(git -C "$REPO_ROOT" status --porcelain --untracked-files=all)"
+ run_orient "$REPO_ROOT"
+
+exec
+/bin/bash -lc "sed -n '1,260p' scripts/steward-orient.sh && sed -n '260,620p' scripts/steward-orient.sh" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 0ms:
+#!/usr/bin/env bash
+# scripts/steward-orient.sh — the stateless cold-start briefing (DOC-HYGIENE-2 T3a).
+#
+# WHY THIS EXISTS. Every Steward cold start re-paid for the same orientation:
+# which branch/HEAD, what is landed, what SCHEMA, what is next, what the ledgers
+# say, what is in flight. That state was narrated across a 5-12 file fan-out and
+# the live board alone is ~79 KB, so orientation cost either a large context bill
+# or a guess. This prints the whole picture in ONE read, from the writers of
+# record, in under 4 KB.
+#
+# ============================ THE TWO HARD LIMITS ============================
+# 1. <= 4096 bytes on stdout. Self-checked: over budget is a HARD failure, not a
+#    silent overrun, because the cap is a promise to the reader's context budget.
+#    Override for experiments only via $STEWARD_ORIENT_BUDGET.
+# 2. WRITES NOTHING. No repo file, no ledger, no cursor, no commit. The only
+#    filesystem touch is one mktemp -d sandbox, removed by an EXIT trap, used as
+#    an ephemeral ledgerwatch --state-dir so the Steward's REAL cursor is never
+#    read or advanced. Verified mechanically by scripts/tests/test_steward_orient.sh
+#    (fixture tree byte-identical before/after; the run's whole TMPDIR empty after).
+#    ".git/index" IS A FILE THIS SCRIPT WRITES TOO, and it is the one the working
+#    tree's own contract lives in. `git status` REFRESHES a stale stat cache and
+#    then rewrites the index under .git/index.lock — measured on git 2.43:
+#    touching tracked files and running `git status --porcelain` changes the
+#    index's bytes. That is a repo-metadata write in a script whose whole promise
+#    is that it makes none, it can race a concurrent git command for the index
+#    lock, and it would fail in a read-only checkout. So EVERY git probe here runs
+#    with git's OPTIONAL locks disabled (GIT_OPTIONAL_LOCKS=0 plus an explicit
+#    --no-optional-locks at each call site): git then does all the same reads and
+#    simply declines to persist the refreshed cache. The env var covers git run by
+#    CHILD processes (gh, python3); the per-call flag keeps the intent legible and
+#    survives someone unsetting the environment. Asserted by the suite's
+#    ".git/index is byte-unchanged across a run with a deliberately staled stat
+#    cache" arm, plus a structural arm that no bare `git` call creeps back in.
+#
+# ========================== WHERE THE FACTS COME FROM ========================
+# LIVE repo facts are read live (branch, HEAD, dirty count, worktrees, orphan
+# checkout dirs, open-PR count). RELEASE facts are NOT re-scraped from git: they
+# are read from `dev/plans/release-state-<version>.json`, the single writer that
+# DOC-HYGIENE-2 T2a landed for landed-slices+SHAs, SCHEMA, and the next slice
+# (kept honest against its rendered views by scripts/check-release-state-views.sh).
+# Re-scraping them here would recreate the exact fan-out this effort removes.
+#
+# ======================= FOUR THINGS THAT ARE LOAD-BEARING ==================
+# (1) THE RELEASE IS DERIVED FROM THE LIVE BOARD FILENAME. A hardcoded `0.8.20`
+#     keeps working right up until 0.8.20 closes, then silently prints "nothing
+#     landed" forever — this repo's TC-37 vacuous-pass class. So: discover every
+#     dev/plans/runs/STATUS-<version>.md, drop the CLOSED ones, take the highest
+#     remaining version, and read release-state-<that version>.json. If no live
+#     board exists, or its state file does not, that is a HARD failure naming the
+#     missing path — never a quiet "nothing landed".
+# (2) `<repo-root>-worktrees/` IS A SIBLING OF THE REPO ROOT, NOT A CHILD. It is
+#     resolved from the MAIN worktree's root (via --git-common-dir, so running
+#     this from inside a linked worktree still resolves the same sibling) plus a
+#     `-worktrees` suffix. Resolving it as a child yields a silently empty
+#     section, which is precisely the failure mode this briefing exists to end.
+# (3) ANY ZERO-RESULT SECTION IS A HARD FAILURE. A briefing that silently omits a
+#     section is worse than no briefing: the reader cannot tell "nothing to
+#     report" from "I could not read it". The payload still prints (it is useful
+#     even when partial), then the run names every empty section on stderr and
+#     exits 1.
+#     DOCUMENTED EXEMPTIONS — sections with a legitimate empty state, each an
+#     explicit decision on the record rather than an accident:
+#       * open-PR count: zero open PRs is a real, healthy state. `gh` being
+#         absent or unauthenticated prints an explicit `unavailable (<reason>)`
+#         marker instead — a cold start must not fail because the operator is
+#         offline, but it must also never quietly show a wrong number.
+#       * orphan checkout dirs: zero orphans is the HEALTHY state. Prints
+#         `(none)` alongside the resolved path, so a mis-resolved directory is
+#         still visible to the reader.
+#       * dirty-file count: zero is the healthy state on a clean tree.
+#       * the todos fold's `unfoldable (no id)` bucket: zero is fine (and the
+#         count is always printed, so it can never be confused with "no data").
+# (4) THE BOARD-CLOSED PREDICATE IS SHARED with scripts/check-board-currency.sh
+#     via scripts/lib/board-closed.sh (window = `head -n 15`, NOT 5 — YAML
+#     frontmatter pushes the banner down). Sharing, not reimplementing, is what
+#     stops the two from disagreeing about which release is current.
+#
+# ========================== LEDGERS GO THROUGH ledgerwatch ==================
+# Never a raw `tail` of the .jsonl. Invocations:
+#   steward ledger: `--strategy tail --dry-run --no-status --state-dir <sandbox>`
+#   todos ledger:   `--project --json`
+# CURSOR SEMANTICS = PEEK, DELIBERATELY. A cold-start briefing must not disturb
+# the Steward's real cursor: consuming a delta here would silently drop it from
+# the next real `ledgerwatch` poll — a monitor that loses an event is the one
+# failure mode that tool is built to prevent. Two independent guarantees:
+# `--dry-run` computes the delta without advancing the cursor, AND `--state-dir`
+# points at a throwaway sandbox, so the real cursor is not even opened. (The
+# sandbox also means the tail run is always a `cold` baseline, which is what we
+# want: we need the last 5 entries, not "what changed since some other reader
+# last looked".) `--project` is read-only by construction — it never creates,
+# reads or advances a cursor at all.
+#
+# Exit codes: 0 = complete briefing within budget; 1 = at least one empty
+# section, and/or over budget (payload still printed); 2 = environment error.
+#
+# Usage: scripts/steward-orient.sh
+set -euo pipefail
+
+# Hard limit 2, mechanically. Belongs BEFORE the first git call: with optional
+# locks disabled git never takes .git/index.lock, so a stale stat cache is
+# refreshed in memory and never written back, and a lock held by a concurrent
+# git command (or a read-only .git) cannot perturb this run. Exported so git
+# invoked by CHILD processes (gh, python3, ledgerwatch) inherits it.
+export GIT_OPTIONAL_LOCKS=0
+
+BUDGET_BYTES="${STEWARD_ORIENT_BUDGET:-4096}"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/board-closed.sh
+. "$SCRIPT_DIR/lib/board-closed.sh"
+
+if ! REPO_ROOT="$(git --no-optional-locks rev-parse --show-toplevel 2>/dev/null)"; then
+  printf 'steward-orient: not inside a git worktree\n' >&2
+  exit 2
+fi
+cd "$REPO_ROOT"
+
+# The one filesystem touch, removed on EXIT. Guarded like the repo's test
+# harnesses so a surprising value can never turn cleanup into a destructive rm.
+SANDBOX="$(mktemp -d)"
+cleanup() {
+  case "$SANDBOX" in
+    "${TMPDIR:-/tmp}"/*|/tmp/*) rm -rf "$SANDBOX" ;;
+    *) printf 'steward-orient: refusing to remove unexpected temp path: %s\n' "$SANDBOX" >&2 ;;
+  esac
+}
+trap cleanup EXIT
+
+LEDGERWATCH="$REPO_ROOT/dev/agent-tools/ledgerwatch/ledgerwatch.py"
+STEWARD_LEDGER="dev/steward/steward-ledger.jsonl"
+TODOS_LEDGER="dev/todos-and-considerations-ledger.jsonl"
+
+OUT=""
+EMPTY=()
+add() { OUT+="$1"$'\n'; }
+note_empty() { EMPTY+=("$1"); }
+# Renders a helper's stdout, routing its `#EMPTY:<section>` markers to the
+# zero-result guard instead of the payload. Fed by here-string, NOT a pipe, so
+# note_empty mutates this shell's array rather than a subshell's copy.
+emit() {
+  local line
+  while IFS= read -r line; do
+    case "$line" in
+      '#EMPTY:'*) note_empty "${line#\#EMPTY:}" ;;
+      *)          add "$line" ;;
+    esac
+  done <<<"$1"
+}
+tilde() { printf '%s' "${1/#$HOME/\~}"; }
+
+# ------------------------------------------------------------------- REPO ---
+BRANCH="$(git --no-optional-locks rev-parse --abbrev-ref HEAD 2>/dev/null || printf '?')"
+HEAD_SHA="$(git --no-optional-locks rev-parse --short=8 HEAD 2>/dev/null || printf '?')"
+HEAD_SUBJ="$(git --no-optional-locks log -1 --format=%s 2>/dev/null | cut -c1-58 || printf '?')"
+DIRTY="$(git --no-optional-locks status --porcelain --untracked-files=all | wc -l | tr -d ' ')"
+
+add "STEWARD ORIENT $(date -u +%Y-%m-%dT%H:%MZ) · stateless · reads only · writes nothing"
+add "REPO   branch=$BRANCH head=$HEAD_SHA dirty=$DIRTY  \"$HEAD_SUBJ\""
+
+# -------------------------------------------------------------- WORKTREES ---
+mapfile -t WT_LINES < <(git --no-optional-locks worktree list 2>/dev/null || true)
+if [ "${#WT_LINES[@]}" -eq 0 ]; then
+  note_empty "worktrees (git worktree list returned nothing)"
+fi
+add "WORKTREES (${#WT_LINES[@]})"
+for w in "${WT_LINES[@]}"; do add "  $(tilde "$w")"; done
+
+# Correction 2: the checkout pool is a SIBLING of the MAIN worktree root.
+# --git-common-dir points at the main .git even from inside a linked worktree,
+# so this resolves the same pool no matter where the briefing is run from.
+GIT_COMMON="$(cd "$(git --no-optional-locks rev-parse --git-common-dir)" && pwd)"
+MAIN_ROOT="$(dirname "$GIT_COMMON")"
+WT_DIR="${MAIN_ROOT}-worktrees"
+REGISTERED="$(git --no-optional-locks worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' || true)"
+ORPHANS=""
+if [ -d "$WT_DIR" ]; then
+  for d in "$WT_DIR"/*/; do
+    [ -d "$d" ] || continue
+    p="${d%/}"
+    # Here-string, not a pipe: under pipefail an early `grep -q` exit would
+    # SIGPIPE the producer and misreport a REGISTERED worktree as an orphan.
+    if ! grep -qxF -- "$p" <<<"$REGISTERED"; then
+      ORPHANS+=" $(basename "$p")"
+    fi
+  done
+  # Exempt from the zero-result guard: no orphans is the HEALTHY state.
+  add "ORPHAN dirs in $(tilde "$WT_DIR"):${ORPHANS:- (none)}"
+else
+  add "ORPHAN dirs: $(tilde "$WT_DIR") does not exist"
+fi
+
+# ---------------------------------------------------------------- RELEASE ---
+# Correction 1: discover the live board, derive the release from its FILENAME.
+LIVE=""
+shopt -s nullglob
+for board in dev/plans/runs/STATUS-*.md; do
+  ver="$(basename "$board" .md | sed -n 's/^STATUS-\([0-9][0-9.]*\)$/\1/p')"
+  [ -n "$ver" ] || continue          # non-standard name (STATUS-phase12.md etc)
+  if board_is_closed "$board"; then continue; fi
+  LIVE+="$ver $board"$'\n'
+done
+shopt -u nullglob
+LIVE="$(printf '%s' "$LIVE" | sed '/^$/d' | sort -V)"
+
+BOARD=""
+VER=""
+if [ -z "$LIVE" ]; then
+  note_empty "live release board (no non-CLOSED dev/plans/runs/STATUS-<version>.md found)"
+  add "RELEASE (no live board found)"
+else
+  N_LIVE="$(printf '%s\n' "$LIVE" | wc -l | tr -d ' ')"
+  VER="$(printf '%s\n' "$LIVE" | tail -1 | cut -d' ' -f1)"
+  BOARD="$(printf '%s\n' "$LIVE" | tail -1 | cut -d' ' -f2)"
+  if [ "$N_LIVE" -gt 1 ]; then
+    add "NOTE   $N_LIVE live boards; using the highest version"
+  fi
+  STATE="dev/plans/release-state-$VER.json"
+  if [ ! -f "$STATE" ]; then
+    note_empty "release state for the live board — $STATE does not exist"
+    add "RELEASE $VER  board=$(basename "$BOARD")  STATE FILE MISSING: $STATE"
+  else
+    if STATE_OUT="$(python3 - "$STATE" "$VER" "$BOARD" <<'PY'
+import json, sys
+
+path, ver, board = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    d = json.load(open(path, encoding="utf-8"))
+except Exception as exc:  # a corrupt single writer must be loud, never empty
+    print(f"RELEASE {ver}  state file UNREADABLE: {exc}")
+    print(f"#EMPTY:release state ({path} is not parseable)")
+    raise SystemExit(0)
+
+ladder = d.get("ladder") or []
+landed = [e for e in ladder if e.get("status") == "LANDED"]
+schema = d.get("schema_version", "?")
+nxt = d.get("next_slice")
+rem = d.get("remaining_ladder") or []
+
+print(f"RELEASE {ver}  SCHEMA {schema}  board={board.split('/')[-1]}  state={path.split('/')[-1]}")
+
+if landed:
+    cells = " ".join(f"{e.get('slice')}({e.get('sha') or '?'})" for e in landed)
+    print(f"  LANDED {cells}")
+else:
+    print("  LANDED (none)")
+    print(f"#EMPTY:landed slices (no ladder entry in {path} has status LANDED)")
+
+# The state file also carries a flat `landed` list; if its own two fields
+# disagree, the single writer is internally inconsistent and must say so.
+flat = d.get("landed")
+if flat is not None and sorted(flat) != sorted(e.get("slice") for e in landed):
+    print(f"  !! state file self-inconsistent: landed={flat} vs ladder LANDED")
+
+nxt_entry = next((e for e in ladder if e.get("slice") == nxt), None)
+title = ""
+if nxt_entry:
+    title = f" {nxt_entry.get('short') or ''} — {nxt_entry.get('title') or ''}"[:88]
+print(f"  NEXT   slice {nxt}{title}")
+print(f"  REMAIN {', '.join(str(s) for s in rem) or '(none)'}")
+PY
+PY
+    )"; then
+      emit "$STATE_OUT"
+    else
+      note_empty "release state ($STATE could not be rendered)"
+      add "RELEASE $VER  state file could not be rendered"
+    fi
+  fi
+fi
+
+# ------------------------------------------------------------ NEXT ACTION ---
+# Verbatim, markup and all: the board is the writer of record for this sentence,
+# and a paraphrase here would be exactly the second narration T2a removed.
+if [ -n "$BOARD" ]; then
+  ROW="$(grep -m1 -E '^\|[[:space:]]*\*\*Immediate next (action|step)\*\*[[:space:]]*\|' "$BOARD" || true)"
+  if [ -z "$ROW" ]; then
+    note_empty "board next action (no '| **Immediate next action** |' row in $BOARD)"
+    add "NEXT ACTION (row not found in $(basename "$BOARD"))"
+  else
+    CELL="${ROW#*|}"; CELL="${CELL#*|}"; CELL="${CELL%|}"
+    CELL="${CELL#"${CELL%%[![:space:]]*}"}"; CELL="${CELL%"${CELL##*[![:space:]]}"}"
+    if [ -z "$CELL" ]; then
+      note_empty "board next action (the row exists but its cell is empty)"
+      add "NEXT ACTION (empty cell)"
+    else
+      add "NEXT ACTION (verbatim, $(basename "$BOARD") §1)"
+      add "  $CELL"
+    fi
+  fi
+fi
+
+# ----------------------------------------------------------------- LEDGER ---
+# Peek, never consume — see the cursor-semantics note in the header.
+LW_STATE="$SANDBOX/ledgerwatch-state"
+mkdir -p "$LW_STATE"
+if [ ! -f "$STEWARD_LEDGER" ]; then
+  note_empty "steward ledger ($STEWARD_LEDGER does not exist)"
+  add "LEDGER (missing: $STEWARD_LEDGER)"
+elif LEDGER_RAW="$(python3 "$LEDGERWATCH" "$STEWARD_LEDGER" \
+      --strategy tail --dry-run --no-status --state-dir "$LW_STATE" 2>/dev/null)"; then
+  # The reader takes its program from `-c` and its DATA from stdin. A heredoc
+  # cannot carry the program here: it would occupy stdin, the reader would see
+  # no data, and the section would report "no entries" for a full ledger.
+  LEDGER_PY="$(cat <<'PY'
+import json, sys
+
+rows = [l for l in sys.stdin.read().split("\n") if l.strip()]
+if not rows:
+    print("LEDGER (no entries)")
+    print(f"#EMPTY:steward ledger ({sys.argv[1]} has no entries)")
+    raise SystemExit(0)
+
+last = rows[-5:]
+print(f"LEDGER last {len(last)} of {len(rows)} — {sys.argv[1].split('/')[-1]}")
+for line in last:
+    try:
+        e = json.loads(line)
+    except Exception:
+        print("  ?? unparseable entry")
+        continue
+    summary = " ".join(str(e.get("summary", "")).split())[:118]
+    print(f"  {e.get('seq', '?')} {e.get('kind', '?')}: {summary}")
+PY
+  )"
+  LEDGER_OUT="$(python3 -c "$LEDGER_PY" "$STEWARD_LEDGER" <<<"$LEDGER_RAW")"
+  emit "$LEDGER_OUT"
+else
+  note_empty "steward ledger (ledgerwatch could not read $STEWARD_LEDGER)"
+  add "LEDGER (unreadable)"
+fi
+
+# ------------------------------------------------------------------ TODOS ---
+# The fold is ledgerwatch's own --project (latest entry per id, with an explicit
+# `unfoldable (no id)` bucket). Not hand-rolled: a second fold implementation is
+# a second place for the ledger's semantics to be wrong.
+if [ ! -f "$TODOS_LEDGER" ]; then
+  note_empty "todos ledger ($TODOS_LEDGER does not exist)"
+  add "TODOS (missing: $TODOS_LEDGER)"
+elif TODOS_RAW="$(python3 "$LEDGERWATCH" "$TODOS_LEDGER" --project --json 2>/dev/null)"; then
+  TODOS_PY="$(cat <<'PY'
+import json, re, sys
+
+try:
+    env = json.loads(sys.stdin.read())
+except Exception:
+    print("TODOS (projection unreadable)")
+    print("#EMPTY:todos ledger (ledgerwatch --project produced no envelope)")
+    raise SystemExit(0)
+
+rows = env.get("latest") or []
+print(
+    f"TODOS  {env.get('folded_ids', 0)} ids folded from {env.get('entries', 0)} entries · "
+    f"unfoldable (no id): {env.get('unfoldable_no_id', 0)} · malformed: {env.get('malformed', 0)}"
+)
+if not rows:
+    print("#EMPTY:todos ledger (folded to zero ids)")
+    raise SystemExit(0)
+
+
+def natural(i):
+    m = re.search(r"(\d+)$", i)
+    return (re.sub(r"\d+$", "", i), int(m.group(1)) if m else 0)
+
+
+buckets = {}
+for r in rows:
+    buckets.setdefault(str(r.get("status", "?")), []).append(str(r.get("id")))
+for status in sorted(buckets, key=lambda s: (-len(buckets[s]), s)):
+    ids = " ".join(sorted(buckets[status], key=natural))
+    print(f"  {status}({len(buckets[status])}) {ids}")
+PY
+  )"
+  TODOS_OUT="$(python3 -c "$TODOS_PY" <<<"$TODOS_RAW")"
+  emit "$TODOS_OUT"
+else
+  note_empty "todos ledger (ledgerwatch --project failed on $TODOS_LEDGER)"
+  add "TODOS (unreadable)"
+fi
+
+# -------------------------------------------------------------------- PRS ---
+# Exempt from the zero-result guard: zero open PRs is a real state, and an
+# offline/unauthenticated host must degrade to an explicit marker, never to a
+# wrong number.
+if ! command -v gh >/dev/null 2>&1; then
+  PRS="unavailable (gh not on PATH)"
+elif PR_N="$(timeout 20 gh pr list --state open --limit 300 --json number --jq 'length' 2>/dev/null)" \
+     && [ -n "$PR_N" ]; then
+  PRS="$PR_N open"
+else
+  PRS="unavailable (gh unauthenticated, offline, or no remote)"
+fi
+
+# ---------------------------------------------------------------- HANDOFF ---
+# Newest by the dated filename, which is the naming convention of record
+# (STEWARD-SESSION-HANDOFF-YYYY-MM-DD-<A|B|...>.md), so lexicographic == newest.
+HANDOFF="$(ls -1 dev/plans/runs/STEWARD-SESSION-HANDOFF-*.md 2>/dev/null | sort | tail -1 || true)"
+if [ -z "$HANDOFF" ]; then
+  note_empty "steward hand-off (no dev/plans/runs/STEWARD-SESSION-HANDOFF-*.md found)"
+  add "PRs $PRS · HANDOFF (none found)"
+else
+  add "PRs $PRS · HANDOFF $HANDOFF"
+fi
+
+# ------------------------------------------------------------------ EMIT ----
+printf '%s' "$OUT"
+
+RC=0
+BYTES="$(printf '%s' "$OUT" | wc -c | tr -d ' ')"
+
+if [ "${#EMPTY[@]}" -gt 0 ]; then
+  printf 'steward-orient: INCOMPLETE BRIEFING — %d section(s) came back empty:\n' "${#EMPTY[@]}" >&2
+  for e in "${EMPTY[@]}"; do printf '  EMPTY: %s\n' "$e" >&2; done
+  printf 'A briefing that silently omits a section is worse than no briefing; fix the input or the reader above.\n' >&2
+  RC=1
+fi
+
+if [ "$BYTES" -gt "$BUDGET_BYTES" ]; then
+  printf 'steward-orient: BUDGET EXCEEDED — %s bytes on stdout, cap is %s. The cap is a promise to the reader'\''s context budget.\n' \
+    "$BYTES" "$BUDGET_BYTES" >&2
+  RC=1
+fi
+
+exit "$RC"
+
+exec
+/bin/bash -lc "sed -n '1,220p' scripts/check-governed-surface-pin.sh && grep -R \"governed-surface-pin\" -n scripts/preflight.sh scripts/check-governed-surface-pin.sh | head -50" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 0ms:
+#!/usr/bin/env bash
+# check-governed-surface-pin.sh — governed-surface pin gate (DOC-HYGIENE-2 T1e).
+#
+# Shared by two callers, exactly like its siblings scripts/check-ledgers.sh and
+# scripts/check-board-currency.sh:
+#   * scripts/preflight.sh --landing                 (PREVENT, land-time gate)
+#   * .github/workflows/ci.yml governed-surface-pin job
+#                                                    (DETECT, always-on backstop)
+# Reuse, not reimplementation: both callers invoke THIS script so the predicate
+# cannot diverge between the two homes.
+#
+# WHAT THIS ENFORCES
+#   The HITL PRE-SIGNED the accumulated governed-surface delta of 0.8.20 Slices
+#   5d + 10b + 15b + 15d (AC-079) — but pinned to the EXACT CONTENT of
+#   src/conformance/governed-surface-allowlist.json as of commit 427d2712:
+#   30 allowlist members, 5 core, and recovery_denylist unchanged at the five
+#   REQ-054 names. A pre-sign keyed to specific content is worth exactly as much
+#   as the mechanism that notices when that content moves. This is that
+#   mechanism: the signed content is recorded in scripts/governed-surface-pin.json
+#   and this gate HARD-fails the moment the file diverges from it, routing the
+#   reader back to the HITL for a fresh sign-off.
+#
+# TRIPPING THIS GATE IS CORRECT BEHAVIOUR, NOT A BUG. It is precisely what lets
+# 0.8.20 Slices 20 / 25 / 30 proceed WITHOUT stopping for a per-slice sign-off:
+# the pre-sign covers the pinned content, and anything else re-opens it. Slice 20
+# is EXPECTED to trip this. Re-pinning to make the gate green without a fresh
+# HITL sign-off is the failure mode the gate exists to prevent.
+#
+# PREDICATE — the pinned file must match the pin on ALL of:
+#   (a) CONTENT HASH: sha256 and git blob sha1 of the file's raw bytes equal the
+#       values recorded in the pin. Both are recorded so a reviewer can
+#       reproduce the pin either way (`git rev-parse 427d2712:<file>` gives the
+#       blob sha1 directly).
+#   (b) MEMBER LISTS: `allowlist`, `core` and `recovery_denylist` are compared
+#       element-by-element against the copies stored in the pin, so the failure
+#       can name WHICH member appeared or vanished — and so that updating only
+#       the hash in the pin (a lazy re-pin, to silence the gate) still fails.
+#   (c) COUNTS: 30 / 5 / 5, asserted separately from (b) against the pin's own
+#       `counts` block, so a pin whose lists and counts disagree is caught as an
+#       internally inconsistent (botched) re-pin rather than being trusted.
+#       EVERY one of the three counts must be PRESENT and an integer: a count the
+#       gate cannot read is a MALFORMED PIN (exit 2), never a skipped check. An
+#       absent count used to read back as None and silently disable both halves
+#       of (c) for that list, so a re-pin that DELETED a count, added a member
+#       and recomputed the hashes exited 0 — disarming the very backstop that
+#       makes a lazy re-pin (b) impossible to hide.
+#   (d) REQ-054: `recovery_denylist` is EXACTLY {recover, restore, repair, fix,
+#       rebuild}, checked against a constant HARDCODED BELOW — in the FILE and in
+#       the PIN. This rule (AC-041) is independently load-bearing: the recovery
+#       denylist is five names, and it must not silently widen even by way of an
+#       otherwise well-formed re-pin. This is the one check a re-pin cannot buy
+#       its way past.
+#
+# WHITESPACE / FORMATTING-ONLY CHANGES FAIL. DELIBERATE, DOCUMENTED CHOICE:
+#   (a) is a CONTENT hash over raw bytes, so re-indenting the file, reordering
+#   keys, or adding a trailing newline HARD-fails even though the parsed members
+#   are unchanged. The pin is a statement about a file's content at a commit, not
+#   about its abstract meaning — and a "harmless reformat" is the ideal cover for
+#   a member slipped in on an adjacent line. When only formatting moved, the
+#   failure says so explicitly (the parsed members are reported as identical), so
+#   the reader is never left guessing whether the surface actually changed.
+#
+# VACUOUS-PASS GUARD (TC-37, this repo's named failure class): if the pinned file
+# is MISSING or UNREADABLE, this gate HARD-fails — it never exits 0. A gate that
+# cannot see its subject and reports green is worse than no gate: it is an active
+# false assurance. A vanished governed-surface allowlist is also, on its face, the
+# largest possible change to the governed surface.
+#
+# Usage:
+#   scripts/check-governed-surface-pin.sh [--file <path>] [--pin <path>] [--help]
+#
+# --file/--pin exist so the test fixtures can point at COPIES under mktemp -d; the
+# real src/conformance/governed-surface-allowlist.json is never written by the
+# tests (mutating it is the exact thing this gate exists to catch). Both callers
+# invoke the script with no arguments. (--help mirrors scripts/set-version.sh, the
+# one sibling that offers it.)
+#
+# Requires python3 for JSON parsing and hashing. If it is absent this script exits
+# 2 (env error) LOUDLY rather than skipping — a skip here would be the TC-37 hole.
+#
+# Exit codes: 0 = the pinned file matches the pin on (a)-(d);
+#             1 = divergence from the pin, OR the pinned file is missing /
+#                 unreadable / unparseable (vacuous-pass guard), OR the pin
+#                 itself breaches REQ-054 or is internally inconsistent;
+#             2 = usage error, unreadable/unparseable/MALFORMED pin file, or
+#                 python3 absent (the gate could not run — never reported as a
+#                 pass). "Malformed" is structural: a missing/mistyped field the
+#                 predicate reads. That is deliberately NOT exit 1: exit 1 says
+#                 "the surface diverged, take it back to the HITL", whereas a
+#                 malformed pin means the gate has no trustworthy statement of
+#                 what was signed at all.
+set -euo pipefail
+
+SELF="$(basename "${BASH_SOURCE[0]}")"
+
+usage() {
+  cat <<EOF
+Usage: scripts/$SELF [--file <path>] [--pin <path>]
+
+Fails when src/conformance/governed-surface-allowlist.json diverges from the
+AC-079 pre-signed pin recorded in scripts/governed-surface-pin.json (pinned to
+the file's content as of commit 427d2712). See the header of this script for the
+full predicate and for why re-pinning without a fresh HITL sign-off is forbidden.
+
+  --file <path>  the governed-surface allowlist to check
+                 (default: src/conformance/governed-surface-allowlist.json)
+  --pin <path>   the pin record to check it against
+                 (default: scripts/governed-surface-pin.json)
+  --help         show this text
+
+Exit codes: 0 = matches the pin; 1 = divergence (or missing/unreadable file);
+            2 = usage/environment error.
+EOF
+}
+
+FILE="src/conformance/governed-surface-allowlist.json"
+PIN="scripts/governed-surface-pin.json"
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --file)    FILE="${2:?--file needs a path}"; shift 2 ;;
+    --pin)     PIN="${2:?--pin needs a path}"; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) printf '%s: unknown arg %q\n' "${SELF%.sh}" "$1" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
+# Both callers run from anywhere in the repo; defaults are repo-relative. An
+# absolute --file/--pin (what the fixtures pass) is unaffected by the cd.
+if TOPLEVEL="$(git rev-parse --show-toplevel 2>/dev/null)"; then
+  cd "$TOPLEVEL"
+fi
+
+if ! command -v python3 >/dev/null 2>&1; then
+  printf 'check-governed-surface-pin: python3 is required to parse and hash the governed surface and is not on PATH — refusing to report a pass it did not verify\n' >&2
+  exit 2
+fi
+
+set +e
+python3 - "$FILE" "$PIN" >&2 <<'PY'
+import hashlib
+import json
+import sys
+
+FILE, PIN = sys.argv[1], sys.argv[2]
+
+# REQ-054 / AC-041: the recovery denylist is FIVE names. Hardcoded here on
+# purpose — checked against both the file and the pin, so a re-pin cannot widen
+# it. See the "recovery denylist is five names" rule.
+REQ_054 = ["recover", "restore", "repair", "fix", "rebuild"]
+
+LIST_KEYS = ["allowlist", "core", "recovery_denylist"]
+CAP = 8  # cap on enumerated member names per difference line
+
+failures = []
+
+
+def fail(msg):
+    failures.append(msg)
+    print("FAIL  governed-surface-pin: " + msg)
+
+
+def die_env(msg):
+    print("check-governed-surface-pin: " + msg)
+    sys.exit(2)
+
+
+def show(names):
+    shown = ", ".join(sorted(names)[:CAP])
+    if len(names) > CAP:
+        shown += f" ...and {len(names) - CAP} more"
+    return shown
+
+
+# ---------------------------------------------------------------- the pin ----
+# An unusable pin is a broken GATE (exit 2), not a governed-surface divergence.
+try:
+    with open(PIN, "rb") as fh:
+        pin = json.loads(fh.read().decode("utf-8"))
+except OSError as exc:
+    die_env(f"cannot read the pin {PIN}: {exc} — the gate cannot run, so it refuses to pass")
+except Exception as exc:
+    die_env(f"the pin {PIN} is not valid JSON: {exc} — the gate cannot run, so it refuses to pass")
+
+if not isinstance(pin, dict):
+    die_env(f"the pin {PIN} is not a JSON object")
+for key in ["sha256", "git_blob_sha1", "counts"] + LIST_KEYS:
+    if key not in pin:
+        die_env(f"the pin {PIN} has no {key!r} field — it cannot vouch for anything")
+for key in LIST_KEYS:
+    if not isinstance(pin[key], list) or not all(isinstance(v, str) for v in pin[key]):
+        die_env(f"the pin {PIN}: {key!r} is not a list of strings")
+for key in ["sha256", "git_blob_sha1"]:
+    if not isinstance(pin[key], str) or not pin[key]:
+        die_env(
+            f"the pin {PIN}: {key!r} is {pin[key]!r}, not a non-empty string — the pin is MALFORMED "
+            "and cannot vouch for any content. Reported as a broken gate (exit 2), not as a surface "
+            "divergence (exit 1): a hash that is not a hash never equals the file's, so exit 1 would "
+            "send the reader to the HITL to re-sign a surface that may not have moved at all."
+        )
+if not isinstance(pin["counts"], dict):
+    die_env(f"the pin {PIN}: 'counts' is not an object")
+
+# EVERY pinned count must be PRESENT and an integer — a missing one is a hard
+# failure, never an implicit skip. Read permissively (dict.get) an absent entry
+# came back as None and BOTH count checks below skipped that list, so a re-pin
+# could delete a count, add a member to the surface, update the signed member
+# list and hashes to match, and still exit 0 — the count backstop that catches a
+# lazy re-pin, deleted. bool is excluded explicitly because isinstance(True, int)
+# is True in Python and `True == 1` would let a count of `true` masquerade as 1.
+for key in LIST_KEYS:
+    if key not in pin["counts"]:
+        die_env(
+            f"the pin {PIN}: 'counts' has no {key!r} entry — the pin is MALFORMED and cannot be "
+            f"trusted. counts.{key} is the backstop that catches a re-pin which updates the hashes "
+            "and the signed member list but not the counts; if it is absent the gate would silently "
+            "stop checking the size of that list altogether, which is how a pass gets bought rather "
+            "than earned. DO NOT 'fix' this by regenerating the pin: a pin is only regenerated from "
+            "a governed surface the HITL has SIGNED. Restore the pin from git instead."
+        )
+scripts/preflight.sh:245:# The predicate lives in scripts/check-governed-surface-pin.sh (see that file's
+scripts/preflight.sh:255:  SURFACE_CHECK_OUT="$(bash "$SELF_DIR/check-governed-surface-pin.sh" 2>&1)" || SURFACE_CHECK_RC=$?
+scripts/preflight.sh:261:        FAIL*) hard "governed-surface-pin: $line"; SURFACE_SAW_FAIL=1 ;;
+scripts/preflight.sh:262:        *)     info "governed-surface-pin: $line" ;;
+scripts/preflight.sh:269:      hard "governed-surface-pin: check-governed-surface-pin.sh exited $SURFACE_CHECK_RC without reporting a specific defect — refusing to certify this tree for landing"
+scripts/preflight.sh:272:    ok "governed-surface-pin: the governed surface matches the AC-079 pre-signed pin"
+scripts/check-governed-surface-pin.sh:2:# check-governed-surface-pin.sh — governed-surface pin gate (DOC-HYGIENE-2 T1e).
+scripts/check-governed-surface-pin.sh:7:#   * .github/workflows/ci.yml governed-surface-pin job
+scripts/check-governed-surface-pin.sh:19:#   mechanism: the signed content is recorded in scripts/governed-surface-pin.json
+scripts/check-governed-surface-pin.sh:70:#   scripts/check-governed-surface-pin.sh [--file <path>] [--pin <path>] [--help]
+scripts/check-governed-surface-pin.sh:101:AC-079 pre-signed pin recorded in scripts/governed-surface-pin.json (pinned to
+scripts/check-governed-surface-pin.sh:108:                 (default: scripts/governed-surface-pin.json)
+scripts/check-governed-surface-pin.sh:117:PIN="scripts/governed-surface-pin.json"
+scripts/check-governed-surface-pin.sh:135:  printf 'check-governed-surface-pin: python3 is required to parse and hash the governed surface and is not on PATH — refusing to report a pass it did not verify\n' >&2
+scripts/check-governed-surface-pin.sh:160:    print("FAIL  governed-surface-pin: " + msg)
+scripts/check-governed-surface-pin.sh:164:    print("check-governed-surface-pin: " + msg)
+scripts/check-governed-surface-pin.sh:361:        "NOTE  governed-surface-pin: the PARSED members are identical to the pin — this is a "
+scripts/check-governed-surface-pin.sh:389:    f"ok    governed-surface-pin: {FILE} matches the {pin.get('ac', 'pre-signed')} pin "
+
+exec
+/bin/bash -lc 'bash scripts/tests/test_steward_orient.sh' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 3977ms:
+PASS  baseline fixture — complete briefing (exit 0)
+PASS  baseline fixture — payload is 1..4096 bytes (1002)
+PASS  baseline fixture — section present: REPO 
+PASS  baseline fixture — section present: WORKTREES
+PASS  baseline fixture — section present: RELEASE 0.9.0
+PASS  baseline fixture — section present: NEXT ACTION
+PASS  baseline fixture — section present: LEDGER
+PASS  baseline fixture — section present: TODOS
+PASS  baseline fixture — section present: PR
+PASS  baseline fixture — section present: HANDOFF
+PASS  the board's next-action cell is reproduced verbatim (markup included)
+PASS  landed slices + SHAs + SCHEMA are read from the release-state file
+PASS  the CLOSED release's stale state file is NOT read
+PASS  release is derived from the LIVE board filename (0.9.0), not hardcoded
+PASS  the briefing names the live board it read
+PASS  arm 8 fixture really places the CLOSED banner at line 6-15 (line 9)
+PASS  a CLOSED board (banner at line 6-15) is skipped -> zero live boards HARD-fails
+PASS  scripts/lib/board-closed.sh holds the head -n 15 predicate
+PASS  steward-orient.sh sources the shared board-CLOSED predicate
+PASS  steward-orient.sh has no inline CLOSED-window reimplementation
+PASS  check-board-currency.sh sources the shared board-CLOSED predicate
+PASS  check-board-currency.sh has no inline CLOSED-window reimplementation
+PASS  orphan checkout dirs in the SIBLING <root>-worktrees/ are found and named
+PASS  the child-path decoy is NOT enumerated (resolution is a sibling, not a child)
+PASS  the briefing prints the resolved worktrees dir so a wrong path is visible
+PASS  zero landed slices -> HARD fail, and the message names the section
+PASS  zero steward-ledger entries -> HARD fail, and the message names the section
+PASS  a todos ledger that folds to zero ids -> HARD fail
+PASS  no STEWARD-SESSION-HANDOFF-* found -> HARD fail, and the message names it
+PASS  the NEWEST hand-off is reported (dated filename order), not an older one
+PASS  a board whose next-action row moved -> HARD fail, never a silent omission
+PASS  a live board with no matching release-state file -> HARD fail naming the path
+PASS  a briefing over the 4096-byte cap HARD-fails and names the budget
+PASS  arm 1 fixture really produced an over-cap payload (6957 bytes)
+PASS  arm 2 precondition: the briefing really ran (rc=0, 1002 bytes)
+PASS  writes no file — the fixture tree is byte-identical before/after
+PASS  writes no file — the run's entire TMPDIR is empty afterwards
+PASS  writes no file — no default .ledgerwatch cursor dir is created in the repo
+PASS  arm 2b witness: the stat cache really is stale — a plain `git status` rewrites .git/index
+PASS  arm 2b precondition: the briefing still completes on a stat-stale checkout (rc=0)
+PASS  writes no file — .git/index is BYTE-IDENTICAL across a run with a deliberately staled stat cache
+PASS  writes no file — .git/index size+mtime are unchanged too (NANOSECOND mtime: it was not even reopened)
+PASS  writes no file — no .git/index.lock is left behind
+PASS  a concurrently HELD .git/index.lock does not abort the briefing (rc=0)
+PASS  a held index lock run still leaves .git/index byte-identical
+PASS  the other process's .git/index.lock is still there — the briefing never touched it
+PASS  arm 2d precondition: the briefing really does shell out to git (8 call sites)
+PASS  every git call site (8/8) passes --no-optional-locks
+PASS  GIT_OPTIONAL_LOCKS=0 is exported, so git in CHILD processes (gh, python3) cannot lock either
+PASS  the real checkout produces a complete briefing (exit 0)
+PASS  the real checkout's briefing is within the 4096-byte cap (3433 bytes)
+PASS  the real checkout's porcelain status is unchanged by the briefing
+PASS  the real-repo run leaves no TMPDIR residue either
+PASS  ci.yml defines a steward-orient job
+PASS  the CI job runs THIS suite (not a reimplementation)
+PASS  the steward-orient job is always-on (no if:, no needs:, not docs_only-gated)
+PASS  the script header records the zero-result exemptions explicitly
+PASS  ledger reads go through ledgerwatch with an explicit --state-dir + peek semantics
+PASS  the todos fold uses ledgerwatch --project (not a hand-rolled fold)
+
+All steward-orient tests passed
+
+exec
+/bin/bash -lc 'bash scripts/tests/test_preflight_landing.sh && bash scripts/tests/test_check_board_currency.sh && bash scripts/tests/test_check_ledgers.sh' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 2527ms:
+PASS  --landing in a linked worktree exits 0
+PASS  --landing in a linked worktree reports "preflight":"pass"
+PASS  the passing --landing run really executed the ledger-integrity: gate (ok, not skipped)
+PASS  the passing --landing run really executed the governed-surface-pin: gate (ok, not skipped)
+PASS  --landing in the primary checkout exits non-zero
+PASS  --landing in the primary checkout emits a HARD line naming TC-RUBRIC-5
+PASS  --landing in the primary checkout reports "preflight":"fail"
+PASS  regression guard: primary checkout without --landing still exits 0
+PASS  regression guard: plain invocation says nothing about TC-RUBRIC-5
+PASS  --landing from a subdir of the primary checkout still fails (canonicalized)
+PASS  --landing from a subdir of a linked worktree still passes
+PASS  --landing composes with --worktree/--min-disk-gb in a linked worktree
+PASS  --landing composes with --worktree and still fails on the primary checkout
+PASS  preflight.sh documents/handles --landing
+PASS  landing check compares canonicalized paths (abs_dir), not raw git output
+PASS  landing check does not compare raw git rev-parse output
+PASS  fixture builds under a global config forcing gpgsign + a vetoing hooksPath
+PASS  hostile-config fixture: --landing in the linked worktree still exits 0
+PASS  hostile-config fixture: --landing in the primary checkout still fails
+
+All preflight --landing tests passed
+PASS  check-board-currency.sh exits 0 on a current (SHA-stamped) board
+PASS  check-board-currency.sh exits non-zero on a stale board
+PASS  stale output names the un-referenced landing SHA
+PASS  check-board-currency.sh skips a CLOSED-banner board (never flagged)
+PASS  check-board-currency.sh skips a CLOSED-banner board even behind YAML frontmatter
+PASS  check-board-currency.sh does not require a superseded partial-merge SHA
+PASS  check-board-currency.sh HARD-fails a live board with zero matched landing merges
+PASS  vacuous-pass failure names the convention + cannot-vouch reason
+PASS  fix-1 regression guard: a live board with >=1 matched land still exits 0
+PASS  fix-1 regression guard: a live board with 2 slices' worth of matched lands still exits 0
+PASS  --landing HARD-fails in a worktree whose board is stale vs git ancestry
+PASS  --landing failure output names the board-currency check
+PASS  --landing still exits 0 in a worktree whose board is current
+PASS  the current-board --landing run really executed the ledger-integrity: gate (ok, not skipped)
+PASS  the current-board --landing run really executed the governed-surface-pin: gate (ok, not skipped)
+PASS  --landing still exits 0 in a worktree whose only board is CLOSED-banner
+PASS  regression guard: board-currency check is inert without --landing
+
+All check-board-currency tests passed
+PASS  clean fixture (2 ledgers, one nested) exits 0
+PASS  sidecar disagreeing with max(seq) HARD-fails
+PASS  sidecar-mismatch output names the offending sidecar
+PASS  sidecar-mismatch output names both the sidecar value and max(seq)
+PASS  a gap in seq HARD-fails even when the sidecar agrees with max(seq)
+PASS  seq-gap output names the missing seq
+PASS  a HUGE seq gap HARD-fails with the integrity exit code (not a timeout/OOM crash)
+PASS  a HUGE seq gap is reported promptly (0s, well inside the 20s timeout)
+PASS  a HUGE seq gap still produces the BROKEN missing-seq line
+PASS  the HUGE-gap report enumerates from the first missing value, ascending
+PASS  the HUGE-gap report caps the list and states the true remaining count
+PASS  the HUGE-gap report is bounded in size (89 chars, not a billion values)
+PASS  a duplicate seq HARD-fails even when the sidecar agrees with max(seq)
+PASS  seq-duplicate output names the duplicated seq
+PASS  discovering ZERO ledgers HARD-fails (TC-37 vacuous-pass guard)
+PASS  zero-ledgers failure says loudly that it could not vouch for anything
+PASS  a malformed (non-JSON) line HARD-fails with a line number, not a crash
+PASS  malformed-line failure names the offending line number
+PASS  blank / whitespace-only lines are ignored, not treated as corruption
+PASS  an entry with no integer seq HARD-fails (cannot be checked silently)
+PASS  an empty ledger whose sidecar reads 0 is consistent (max(seq) := 0)
+PASS  an empty ledger whose sidecar claims 5 HARD-fails (unbacked high-water mark)
+PASS  a sidecar with no .jsonl beside it HARD-fails
+PASS  a sidecar with a trailing newline is accepted (real ones have none)
+PASS  a non-integer sidecar HARD-fails
+PASS  an empty sidecar HARD-fails
+PASS  contiguity deliberately does not require min(seq)==1
+PASS  a .jsonl with no .seq sidecar is out of scope (never checked)
+PASS  an unknown flag exits 2 (usage), distinct from an integrity failure
+PASS  a --root that does not exist exits 2, never a silent 0
+PASS  the real repo's ledgers pass both checks
+PASS  real-repo run reports dev/steward/steward-ledger.jsonl
+PASS  real-repo run reports dev/todos-and-considerations-ledger.jsonl
+PASS  real-repo run reports dev/design/record-lifecycle-protocol/OPP-12-sub-ledger.jsonl
+PASS  --landing HARD-fails in a worktree whose ledger sidecar is stale
+PASS  --landing failure output names the ledger-integrity check
+PASS  --landing still exits 0 in a worktree whose ledgers are consistent
+PASS  regression guard: ledger-integrity is inert without --landing
+PASS  ci.yml defines a ledger-integrity job
+PASS  the CI job runs the SHARED scripts/check-ledgers.sh (one predicate, two callers)
+PASS  the ledger-integrity job is always-on (no if: condition, not docs_only-gated)
+
+All check-ledgers tests passed
+
+exec
+/bin/bash -lc "sed -n '1,220p' scripts/tests/test_preflight_landing.sh && sed -n '1,120p' scripts/preflight.sh && sed -n '220,290p' scripts/preflight.sh" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 0ms:
+#!/usr/bin/env bash
+# scripts/tests/test_preflight_landing.sh — coverage for `preflight.sh --landing`.
+#
+# TC-RUBRIC-5 (HITL-ADOPTED 2026-07-11) requires that release orchestration and
+# ALL landing git-writes run in a dedicated linked worktree, never in the primary
+# checkout. `--landing` is the mechanical enforcement of that rule, per the
+# standing guardrail-failures-fix-tooling-not-people principle.
+#
+# Detection under test: primary checkout <=> `git rev-parse --git-dir` equals
+# `git rev-parse --git-common-dir`, compared AFTER resolving both to absolute,
+# symlink-resolved paths.
+#
+# On the canonicalization: on git 2.43 invoked from a SUBDIRECTORY, --git-dir
+# returns an absolute path while --git-common-dir returns a relative one
+# ('../.git'). preflight.sh cds to the repo toplevel before the check, which
+# normalizes that away today — so a raw string compare currently behaves the same
+# and the subdir arms below pass either way. The canonicalization still matters:
+# measured, with that toplevel cd removed, a RAW compare from a subdirectory of
+# the primary checkout fails OPEN (exit 0, "cleared for landing") while the
+# canonicalized compare still HARD-fails. Since no behavioral arm can distinguish
+# the two while the cd stands, Arm 7 asserts the canonicalization structurally —
+# same idiom as the 'User-Agent:' grep in test_assert_co_tagging.sh.
+#
+# Isolation: every arm runs against a throwaway repo built under mktemp -d. The
+# test never git-writes into the real checkout and does not care whether the
+# developer's tree is clean.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PREFLIGHT="$REPO_ROOT/scripts/preflight.sh"
+# shellcheck source=lib/governed-surface-fixture.sh
+. "$SCRIPT_DIR/lib/governed-surface-fixture.sh"
+
+FAILED=0
+pass() { printf 'PASS  %s\n' "$1"; }
+fail() { printf 'FAIL  %s\n' "$1" >&2; FAILED=$((FAILED + 1)); }
+
+TMPROOT="$(mktemp -d)"
+cleanup() {
+  # Only ever remove a path we created under the system temp dir.
+  case "$TMPROOT" in
+    "${TMPDIR:-/tmp}"/*|/tmp/*) rm -rf "$TMPROOT" ;;
+    *) printf 'refusing to remove unexpected temp path: %s\n' "$TMPROOT" >&2 ;;
+  esac
+}
+trap cleanup EXIT
+
+# --- Fixture: a throwaway primary checkout + a linked worktree inside it -------
+# preflight.sh does `git rev-parse main` under `set -euo pipefail`, so the fixture
+# repo must actually have a `main` branch with a commit.
+#
+# The fixture must not inherit the developer's/CI image's global git config: a
+# global `commit.gpgsign = true` makes the fixture commit try to GPG-sign with the
+# throwaway identity and abort (measured: exit 128, "failed to write commit
+# object"), and a global `core.hooksPath` — or an `init.templateDir` that seeds
+# .git/hooks — runs a foreign pre-commit hook that can veto it (measured: exit 1).
+# Either aborts the script before a single assertion runs, so an unrelated
+# user-local setting would fail agent-test.sh. All three are neutralized in the
+# fixture repo's LOCAL config; the real checkout's config is never touched.
+# Arm 8 is the regression guard. A linked worktree shares the common config file,
+# so the local settings cover it too — no separate treatment needed.
+NO_HOOKS="$TMPROOT/no-hooks"
+mkdir -p "$NO_HOOKS"
+
+# make_fixture <primary-dir> <linked-dir> — builds a self-contained repo + worktree.
+make_fixture() {
+  local primary="$1" linked="$2"
+  mkdir -p "$primary"
+  git init -q -b main "$primary"
+  git -C "$primary" config user.email preflight-test@example.invalid
+  git -C "$primary" config user.name 'Preflight Test'
+  git -C "$primary" config commit.gpgsign false
+  git -C "$primary" config core.hooksPath "$NO_HOOKS"
+  mkdir -p "$primary/src" "$primary/scripts" "$primary/dev/steward"
+  printf 'fixture\n' >"$primary/src/keep.txt"
+  # A minimal, CONSISTENT ledger + sidecar. preflight.sh --landing now also runs
+  # the ledger-integrity gate (DOC-HYGIENE-2 T1b), whose TC-37 vacuous-pass
+  # guard HARD-fails a tree in which it discovers zero ledgers — a repo with no
+  # ledger at all cannot be vouched for. This fixture models a real checkout, so
+  # it carries one; its own corruption arms live in test_check_ledgers.sh.
+  printf '{"seq":1,"note":"fixture"}\n' >"$primary/dev/steward/steward-ledger.jsonl"
+  printf '%s' 1 >"$primary/dev/steward/steward-ledger.jsonl.seq"
+  # And a minimal, self-consistent governed surface + pin: `--landing` also runs
+  # the governed-surface pin gate (DOC-HYGIENE-2 T1e), which HARD-fails a tree
+  # whose pin it cannot read — the same TC-37 stance as the ledger gate above, and
+  # equally correct. This fixture models a real checkout, so it carries one; the
+  # pin's own arms live in scripts/tests/test_check_governed_surface_pin.sh.
+  seed_governed_surface_fixture "$primary"
+  git -C "$primary" add -A
+  git -C "$primary" commit -q -m 'fixture: initial commit'
+  git -C "$primary" worktree add -q -b landing-fixture "$linked" >/dev/null 2>&1
+}
+
+PRIMARY="$TMPROOT/primary"
+LINKED="$TMPROOT/linked"
+make_fixture "$PRIMARY" "$LINKED"
+
+# run_preflight <cwd> [args...] -> sets RC and OUT (stdout+stderr merged)
+run_preflight() {
+  local cwd="$1"; shift
+  set +e
+  OUT="$(cd "$cwd" && bash "$PREFLIGHT" "$@" 2>&1)"
+  RC=$?
+  set -e
+}
+
+# --- Arm 1: --landing in a linked worktree => exit 0, JSON reports pass --------
+run_preflight "$LINKED" --landing
+if [ "$RC" -eq 0 ]; then
+  pass "--landing in a linked worktree exits 0"
+else
+  fail "--landing in a linked worktree should exit 0; got rc=$RC, out: $OUT"
+fi
+if printf '%s' "$OUT" | grep -q '"preflight":"pass"'; then
+  pass "--landing in a linked worktree reports \"preflight\":\"pass\""
+else
+  fail "expected \"preflight\":\"pass\" in summary; got: $OUT"
+fi
+# ANTI-VACUITY: a "pass" must mean every --landing gate ran and cleared, not that
+# the fixture failed to carry a gate's input and the gate therefore said nothing.
+# These are the two gates that HARD-fail a tree whose input they cannot read.
+for gate_line in 'ledger-integrity:' 'governed-surface-pin:'; do
+  if printf '%s' "$OUT" | grep -qE "^ok +${gate_line}"; then
+    pass "the passing --landing run really executed the $gate_line gate (ok, not skipped)"
+  else
+    fail "$gate_line did not report ok in a passing --landing run; out: $OUT"
+  fi
+done
+
+# --- Arm 2: --landing in the primary checkout => HARD fail, non-zero ----------
+run_preflight "$PRIMARY" --landing
+if [ "$RC" -ne 0 ]; then
+  pass "--landing in the primary checkout exits non-zero"
+else
+  fail "--landing in the primary checkout MUST fail; got rc=0, out: $OUT"
+fi
+if printf '%s' "$OUT" | grep -q '^HARD .*TC-RUBRIC-5'; then
+  pass "--landing in the primary checkout emits a HARD line naming TC-RUBRIC-5"
+else
+  fail "expected a HARD line naming TC-RUBRIC-5; got: $OUT"
+fi
+if printf '%s' "$OUT" | grep -q '"preflight":"fail"'; then
+  pass "--landing in the primary checkout reports \"preflight\":\"fail\""
+else
+  fail "expected \"preflight\":\"fail\" in summary; got: $OUT"
+fi
+
+# --- Arm 3: regression guard — no --landing, primary checkout still passes -----
+run_preflight "$PRIMARY"
+if [ "$RC" -eq 0 ]; then
+  pass "regression guard: primary checkout without --landing still exits 0"
+else
+  fail "plain invocation on the primary checkout must still pass; got rc=$RC, out: $OUT"
+fi
+if printf '%s' "$OUT" | grep -q 'TC-RUBRIC-5'; then
+  fail "plain invocation must not mention TC-RUBRIC-5; got: $OUT"
+else
+  pass "regression guard: plain invocation says nothing about TC-RUBRIC-5"
+fi
+
+# --- Arm 4: invoked from a SUBDIRECTORY of each tree --------------------------
+# Guards the cwd-independence of the check as a whole (the toplevel cd plus the
+# canonicalization). See the header for why this arm cannot, on its own,
+# distinguish a raw compare from a canonicalized one.
+run_preflight "$PRIMARY/scripts" --landing
+if [ "$RC" -ne 0 ]; then
+  pass "--landing from a subdir of the primary checkout still fails (canonicalized)"
+else
+  fail "subdir of primary MUST still fail (relative vs absolute git-dir); got rc=0, out: $OUT"
+fi
+
+mkdir -p "$LINKED/scripts"
+run_preflight "$LINKED/scripts" --landing
+if [ "$RC" -eq 0 ]; then
+  pass "--landing from a subdir of a linked worktree still passes"
+else
+  fail "subdir of a linked worktree should pass; got rc=$RC, out: $OUT"
+fi
+
+# --- Arm 5: --landing composes with the existing flags ------------------------
+run_preflight "$LINKED" --landing --worktree "$LINKED" --min-disk-gb 1
+if [ "$RC" -eq 0 ]; then
+  pass "--landing composes with --worktree/--min-disk-gb in a linked worktree"
+else
+  fail "--landing + --worktree should pass in a linked worktree; got rc=$RC, out: $OUT"
+fi
+
+run_preflight "$PRIMARY" --worktree "$LINKED" --landing --min-disk-gb 1
+if [ "$RC" -ne 0 ]; then
+  pass "--landing composes with --worktree and still fails on the primary checkout"
+else
+  fail "--landing must fail on primary even alongside --worktree; got rc=0, out: $OUT"
+fi
+
+# --- Arm 6: usage header documents --landing ----------------------------------
+if grep -q -- '--landing' "$PREFLIGHT"; then
+  pass "preflight.sh documents/handles --landing"
+else
+  fail "preflight.sh has no --landing handling"
+fi
+
+# --- Arm 7: structural — the landing compare is canonicalized, not raw --------
+# Regression guard for a fail-open no behavioral arm can currently reach: if the
+# comparands are ever reverted to raw `git rev-parse` output, removing or moving
+# the toplevel cd silently clears the primary checkout for landing.
+if grep -qE 'GITDIR_ABS="\$\(abs_dir ' "$PREFLIGHT" \
+  && grep -qE 'COMMONDIR_ABS="\$\(abs_dir ' "$PREFLIGHT"; then
+  pass "landing check compares canonicalized paths (abs_dir), not raw git output"
+else
+  fail "landing check must canonicalize both git-dir and git-common-dir via abs_dir"
+fi
+
+if grep -qE '^\s*GITDIR_ABS="\$\(git rev-parse' "$PREFLIGHT" \
+  || grep -qE '^\s*COMMONDIR_ABS="\$\(git rev-parse' "$PREFLIGHT"; then
+  fail "landing check compares RAW git rev-parse output — fails open without the toplevel cd"
+else
+  pass "landing check does not compare raw git rev-parse output"
+fi
+
+#!/usr/bin/env bash
+# preflight.sh — orchestrator-side gate, run BEFORE spawning an implementer.
+#
+# Codifies the checks whose absence has cost real slices:
+#   * agent-worktree-stale-base-trap — a worktree cut from a stale base (main had
+#     advanced ~206 commits) silently lost two slices. The --worktree check below
+#     fails loudly when a worktree's HEAD is neither current main nor a descendant
+#     of it.
+#   * dependency-not-actually-CLOSED — spawning a slice whose declared dependency
+#     never closed. The --expect-closed check greps the plan for the CLOSED block.
+#   * landing-in-the-primary-checkout — TC-RUBRIC-5 requires release orchestration
+#     and all landing git-writes to run in a dedicated linked worktree. --landing
+#     HARD-fails when invoked from the primary checkout.
+#
+# Witness-first (orchestration.md §1.5): every check derives from the repo on disk,
+# never from belief. Emits a one-line JSON summary; exits non-zero on any HARD fail.
+#
+# Usage:
+#   scripts/preflight.sh                              # general repo health (run anytime)
+#   scripts/preflight.sh --worktree /tmp/fdb-slice-5-... # + stale-base guard on a freshly cut WT
+#   scripts/preflight.sh --expect-closed 5 --plan dev/plans/plan-0.8.6.md
+#   scripts/preflight.sh --landing                    # TC-RUBRIC-5: refuse to land in the primary checkout
+#   scripts/preflight.sh --worktree <wt> --expect-closed 5 --plan <plan> --min-disk-gb 15
+#
+# --landing composes with every other flag and is inert unless passed: without it
+# the script behaves exactly as it did before the flag existed.
+#
+# Exit codes: 0 = all HARD checks pass (WARN/INFO may print); 1 = a HARD check failed.
+
+set -euo pipefail
+
+# Resolve this script's own directory BEFORE the toplevel cd below, so the
+# board-currency check (§7) can find its sibling script regardless of which
+# repo/worktree `cd` below lands us in (BASH_SOURCE is a file path, not
+# affected by cwd, but resolving it AFTER a cd elsewhere would be needless
+# fragility for no benefit).
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+cd "$(git rev-parse --show-toplevel)"
+CANON="$(pwd)"
+
+WT=""
+EXPECT_CLOSED=""
+PLAN=""
+MIN_DISK_GB=10
+LANDING=0
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --landing)       LANDING=1; shift ;;
+    --worktree)      WT="${2:?--worktree needs a path}"; shift 2 ;;
+    --expect-closed) EXPECT_CLOSED="${2:?--expect-closed needs a slice id}"; shift 2 ;;
+    --plan)          PLAN="${2:?--plan needs a file}"; shift 2 ;;
+    --min-disk-gb)   MIN_DISK_GB="${2:?--min-disk-gb needs a number}"; shift 2 ;;
+    *) printf 'preflight: unknown arg %q\n' "$1" >&2; exit 2 ;;
+  esac
+done
+
+HARD_FAILS=()
+WARNS=()
+
+hard() { HARD_FAILS+=("$1"); printf 'HARD  %s\n' "$1" >&2; }
+warn() { WARNS+=("$1");      printf 'WARN  %s\n' "$1" >&2; }
+info() { printf 'INFO  %s\n' "$1" >&2; }
+ok()   { printf 'ok    %s\n' "$1" >&2; }
+
+# Resolve an existing directory to its absolute, symlink-resolved path. Uses
+# cd+pwd -P rather than `readlink -f` so this works on macOS too. Prints nothing
+# (and returns non-zero) if the path is not a reachable directory.
+abs_dir() { ( cd "$1" 2>/dev/null && pwd -P ); }
+
+MAIN_SHA="$(git rev-parse main)"
+
+# --- 1. Canonical repo is not mid-operation -------------------------------------
+GITDIR="$(git rev-parse --git-dir)"
+if [ -d "$GITDIR/rebase-merge" ] || [ -d "$GITDIR/rebase-apply" ]; then
+  hard "canonical repo is mid-rebase — finish or abort before spawning"
+elif [ -f "$GITDIR/MERGE_HEAD" ]; then
+  hard "canonical repo is mid-merge — finish or abort before spawning"
+elif [ -f "$GITDIR/CHERRY_PICK_HEAD" ]; then
+  hard "canonical repo is mid-cherry-pick — finish or abort before spawning"
+else
+  ok "canonical repo is not mid-merge/rebase/cherry-pick"
+fi
+
+# --- 2. Tracked source is clean (dev/ docs churn is expected, so only gate src/) -
+DIRTY_SRC="$(git status --porcelain -- src/ scripts/ mkdocs.yml 2>/dev/null || true)"
+if [ -n "$DIRTY_SRC" ]; then
+  warn "tracked source dirty on canonical main (commit/stash before a worktree inherits a stale base):"
+  printf '%s\n' "$DIRTY_SRC" | sed 's/^/        /' >&2
+else
+  ok "tracked source (src/ scripts/ mkdocs.yml) is clean"
+fi
+
+# --- 3. Disk headroom (worktrees + per-worktree target/ are not free) ------------
+WT_PARENT="${WT:+$(dirname "$WT")}"; WT_PARENT="${WT_PARENT:-/tmp}"
+FREE_GB="$(df -BG --output=avail "$WT_PARENT" 2>/dev/null | tail -1 | tr -dc '0-9')"
+if [ -n "$FREE_GB" ] && [ "$FREE_GB" -lt "$MIN_DISK_GB" ]; then
+  hard "only ${FREE_GB}G free on $WT_PARENT (need >= ${MIN_DISK_GB}G; prune stale worktrees)"
+else
+  ok "disk headroom on $WT_PARENT: ${FREE_GB:-?}G free (>= ${MIN_DISK_GB}G)"
+fi
+
+# --- 4. Worktree stale-base guard (the load-bearing check) -----------------------
+if [ -n "$WT" ]; then
+  if [ ! -d "$WT" ]; then
+    hard "worktree path does not exist: $WT"
+  elif [ "$(git -C "$WT" rev-parse --show-toplevel 2>/dev/null || echo MISSING)" != "$WT" ]; then
+    hard "not a git worktree rooted at: $WT"
+  else
+    WT_HEAD="$(git -C "$WT" rev-parse HEAD)"
+    if [ "$WT_HEAD" = "$MAIN_SHA" ]; then
+      ok "worktree HEAD == current main ($MAIN_SHA) — freshly cut, no stale base"
+    elif [ "$(git merge-base "$MAIN_SHA" "$WT_HEAD")" = "$MAIN_SHA" ]; then
+      warn "worktree has advanced past main (main is an ancestor) — OK if it carries this slice's commits"
+    else
+      hard "STALE BASE: worktree HEAD ($WT_HEAD) is not current main and main is not its ancestor."
+      hard "  -> re-create the worktree off \$(git rev-parse main). See agent-worktree-stale-base-trap."
+    fi
+    # maturin/pip -e from a worktree rebinds the shared .venv to the worktree tree.
+    LEDGER_SAW_BROKEN=0
+    while IFS= read -r line; do
+      case "$line" in
+        BROKEN*) hard "ledger-integrity: $line"; LEDGER_SAW_BROKEN=1 ;;
+        *)       info "ledger-integrity: $line" ;;
+      esac
+    done <<<"$LEDGER_CHECK_OUT"
+    # Anti-fail-open: a non-zero rc with no BROKEN line means the checker itself
+    # could not run (exit 2 = usage/env, e.g. python3 absent) — that must still
+    # block the land, never degrade into INFO lines and a green summary.
+    if [ "$LEDGER_SAW_BROKEN" -eq 0 ]; then
+      hard "ledger-integrity: check-ledgers.sh exited $LEDGER_CHECK_RC without reporting a specific defect — refusing to certify this tree for landing"
+    fi
+  else
+    ok "ledger-integrity: every *.jsonl.seq sidecar agrees with its ledger and every seq run is contiguous"
+  fi
+fi
+
+# --- 9. Governed-surface pin gate (DOC-HYGIENE-2 T1e) ----------------------------
+# Refuse a land that would ship a governed surface the HITL has not signed. The
+# HITL PRE-SIGNED the accumulated delta of 0.8.20 Slices 5d+10b+15b+15d (AC-079)
+# pinned to the exact content of src/conformance/governed-surface-allowlist.json
+# as of 427d2712 — 30 allowlist members, recovery_denylist unchanged at the five
+# REQ-054 names. This gate makes that pin mechanical.
+#
+# The predicate lives in scripts/check-governed-surface-pin.sh (see that file's
+# header) so preflight and the always-on CI job share ONE implementation and
+# cannot diverge, exactly as §7 and §8 do. --landing-only, mirroring their
+# structure: the CI job — deliberately NOT docs_only-gated — covers every
+# non-landing push.
+#
+# Tripping this is CORRECT BEHAVIOUR, not a bug: Slices 20/25/30 are expected to
+# trip it, and that is exactly what routes a changed surface back to the HITL
+# instead of letting it land under a pre-sign that never covered it.
+if [ "$LANDING" -eq 1 ]; then
+  SURFACE_CHECK_OUT="$(bash "$SELF_DIR/check-governed-surface-pin.sh" 2>&1)" || SURFACE_CHECK_RC=$?
+  SURFACE_CHECK_RC="${SURFACE_CHECK_RC:-0}"
+  if [ "$SURFACE_CHECK_RC" -ne 0 ]; then
+    SURFACE_SAW_FAIL=0
+    while IFS= read -r line; do
+      case "$line" in
+        FAIL*) hard "governed-surface-pin: $line"; SURFACE_SAW_FAIL=1 ;;
+        *)     info "governed-surface-pin: $line" ;;
+      esac
+    done <<<"$SURFACE_CHECK_OUT"
+    # Anti-fail-open, as in §8: a non-zero rc with no FAIL line means the checker
+    # itself could not run (exit 2 = usage/env, e.g. python3 absent or an
+    # unreadable pin) — that must still block the land.
+    if [ "$SURFACE_SAW_FAIL" -eq 0 ]; then
+      hard "governed-surface-pin: check-governed-surface-pin.sh exited $SURFACE_CHECK_RC without reporting a specific defect — refusing to certify this tree for landing"
+    fi
+  else
+    ok "governed-surface-pin: the governed surface matches the AC-079 pre-signed pin"
+  fi
+fi
+
+# --- Summary (JSON, last line) ---------------------------------------------------
+json_arr() { local out="" x; for x in "$@"; do out="${out:+$out,}\"$(printf '%s' "$x" | sed 's/\\/\\\\/g; s/"/\\"/g')\""; done; printf '[%s]' "$out"; }
+
+STATUS=$([ ${#HARD_FAILS[@]} -eq 0 ] && echo pass || echo fail)
+printf '{"preflight":"%s","main_sha":"%s","worktree":"%s","hard_fails":%s,"warnings":%s}\n' \
+  "$STATUS" "$MAIN_SHA" "${WT:-}" "$(json_arr "${HARD_FAILS[@]+"${HARD_FAILS[@]}"}")" "$(json_arr "${WARNS[@]+"${WARNS[@]}"}")"
+
+[ "$STATUS" = pass ]
+
+exec
+/bin/bash -lc 'shellcheck scripts/steward-orient.sh scripts/tests/lib/governed-surface-fixture.sh scripts/tests/test_check_board_currency.sh scripts/tests/test_check_ledgers.sh scripts/tests/test_preflight_landing.sh scripts/tests/test_steward_orient.sh' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ exited 127 in 0ms:
+/bin/bash: line 1: shellcheck: command not found
+
+exec
+/bin/bash -lc 'grep -n "setup_fixture" -A120 -B20 scripts/tests/test_steward_orient.sh' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 0ms:
+54-  case "$TMPROOT" in
+55-    "${TMPDIR:-/tmp}"/*|/tmp/*) rm -rf "$TMPROOT" ;;
+56-    *) printf 'refusing to remove unexpected temp path: %s\n' "$TMPROOT" >&2 ;;
+57-  esac
+58-}
+59-trap cleanup EXIT
+60-
+61-# One directory deep so "$FIX"-worktrees is a sibling INSIDE $TMPROOT.
+62-FIX="$TMPROOT/parent/proj"
+63-WTDIR="$TMPROOT/parent/proj-worktrees"
+64-OUT=""
+65-ERR=""
+66-RC=0
+67-BYTES=0
+68-
+69-# ---------------------------------------------------------------- fixture ---
+70-# A minimal but REAL fixture repo carrying one of everything the briefing reads:
+71-# a live board with a next-action row, its release-state file, both ledgers, and
+72-# a dated Steward hand-off. Every arm mutates exactly ONE thing from this
+73-# baseline, so a red arm isolates a single fault.
+74:setup_fixture() {
+75-  rm -rf "$TMPROOT/parent"
+76-  mkdir -p "$FIX/dev/plans/runs" "$FIX/dev/steward" \
+77-           "$FIX/dev/agent-tools/ledgerwatch" "$WTDIR"
+78-  cp "$LEDGERWATCH" "$FIX/dev/agent-tools/ledgerwatch/ledgerwatch.py"
+79-
+80-  # The live board is 0.9.0 — deliberately NOT the release the real repo is on,
+81-  # so a hardcoded "0.8.20" implementation cannot pass any fixture arm.
+82-  cat >"$FIX/dev/plans/runs/STATUS-0.9.0.md" <<'EOF'
+83-# 0.9.0 — status board
+84-
+85-## 1. Current state
+86-
+87-| | |
+88-|---|---|
+89-| **Slice in flight** | NONE. |
+90-| **Immediate next action** | **Commission Slice 20** — the fixture's next action, recorded verbatim. |
+91-EOF
+92-
+93-  # A CLOSED board for a DIFFERENT release, with the banner behind YAML
+94-  # frontmatter so it sits at line 6-15 (the shared-predicate window arm).
+95-  cat >"$FIX/dev/plans/runs/STATUS-0.8.20.md" <<'EOF'
+96----
+97-title: 0.8.20
+98-status: CLOSED
+99-target_release: 0.8.20
+100----
+101-
+102-# 0.8.20 — status board
+103-
+104-> **CLOSED — historical record.** Nothing lands into this board again.
+105-
+106-| | |
+107-|---|---|
+108-| **Immediate next action** | Nothing — this release is closed. |
+109-EOF
+110-
+111-  cat >"$FIX/dev/plans/release-state-0.9.0.json" <<'EOF'
+112-{
+113-  "release": "0.9.0",
+114-  "board": "dev/plans/runs/STATUS-0.9.0.md",
+115-  "schema_version": 42,
+116-  "ladder": [
+117-    {"slice": 0,  "short": "X0",  "title": "design gate", "status": "LANDED",      "sha": "aaaa1111"},
+118-    {"slice": 5,  "short": "R-A", "title": "the first",   "status": "LANDED",      "sha": "bbbb2222"},
+119-    {"slice": 20, "short": "R-B", "title": "the next",    "status": "UNBLOCKED",   "sha": null},
+120-    {"slice": 30, "short": "PUB", "title": "publish",     "status": "NOT_STARTED", "sha": null}
+121-  ],
+122-  "landed": [0, 5],
+123-  "next_slice": 20,
+124-  "remaining_ladder": [20, 30]
+125-}
+126-EOF
+127-
+128-  # A stale state file for the CLOSED release: a hardcoded implementation that
+129-  # reads release-state-0.8.20.json would report THIS, which is the bug.
+130-  cat >"$FIX/dev/plans/release-state-0.8.20.json" <<'EOF'
+131-{
+132-  "release": "0.8.20",
+133-  "board": "dev/plans/runs/STATUS-0.8.20.md",
+134-  "schema_version": 24,
+135-  "ladder": [{"slice": 0, "short": "X0", "title": "old", "status": "LANDED", "sha": "cccc3333"}],
+136-  "landed": [0],
+137-  "next_slice": null,
+138-  "remaining_ladder": []
+139-}
+140-EOF
+141-
+142-  cat >"$FIX/dev/steward/steward-ledger.jsonl" <<'EOF'
+143-{"ts": "2026-01-01T00:00:00.000Z", "seq": 1, "kind": "decision", "summary": "fixture decision one"}
+144-{"ts": "2026-01-02T00:00:00.000Z", "seq": 2, "kind": "decision", "summary": "fixture decision two"}
+145-{"ts": "2026-01-03T00:00:00.000Z", "seq": 3, "kind": "note", "summary": "fixture note three"}
+146-{"ts": "2026-01-04T00:00:00.000Z", "seq": 4, "kind": "note", "summary": "fixture note four"}
+147-{"ts": "2026-01-05T00:00:00.000Z", "seq": 5, "kind": "note", "summary": "fixture note five"}
+148-{"ts": "2026-01-06T00:00:00.000Z", "seq": 6, "kind": "ruling", "summary": "fixture ruling six"}
+149-EOF
+150-
+151-  cat >"$FIX/dev/todos-and-considerations-ledger.jsonl" <<'EOF'
+152-{"ts": "2026-01-01T00:00:00.000Z", "seq": 1, "id": "TC-1", "kind": "todo", "status": "open", "summary": "one"}
+153-{"ts": "2026-01-02T00:00:00.000Z", "seq": 2, "id": "TC-2", "kind": "todo", "status": "open", "summary": "two"}
+154-{"ts": "2026-01-03T00:00:00.000Z", "seq": 3, "id": "TC-1", "kind": "todo", "status": "closed", "summary": "one, closed"}
+155-{"ts": "2026-01-04T00:00:00.000Z", "seq": 4, "kind": "observation", "summary": "no id here"}
+156-EOF
+157-
+158-  printf '# Steward hand-off\n\nFixture hand-off body.\n' \
+159-    >"$FIX/dev/plans/runs/STEWARD-SESSION-HANDOFF-2026-01-05-A.md"
+160-  printf '# Steward hand-off\n\nOlder fixture hand-off body.\n' \
+161-    >"$FIX/dev/plans/runs/STEWARD-SESSION-HANDOFF-2026-01-04-A.md"
+162-
+163-  (cd "$FIX" \
+164-     && git init -q \
+165-     && git config user.email t@example.com \
+166-     && git config user.name t \
+167-     && git config commit.gpgsign false \
+168-     && git add -A \
+169-     && git commit -qm 'fixture: baseline briefing inputs')
+170-}
+171-
+172-# Runs the briefing with cwd inside $1. stdout and stderr are captured
+173-# SEPARATELY so the byte cap is measured on the payload alone. TMPDIR is
+174-# redirected to a per-run sandbox so "writes no file" can be asserted.
+175-run_orient() {
+176-  local dir="$1"
+177-  local sandbox="$TMPROOT/sandbox"
+178-  rm -rf "$sandbox"
+179-  mkdir -p "$sandbox"
+180-  set +e
+181-  (cd "$dir" && TMPDIR="$sandbox" bash "$GATE") \
+182-    >"$TMPROOT/out.txt" 2>"$TMPROOT/err.txt"
+183-  RC=$?
+184-  set -e
+185-  OUT="$(cat "$TMPROOT/out.txt")"
+186-  ERR="$(cat "$TMPROOT/err.txt")"
+187-  BYTES="$(wc -c <"$TMPROOT/out.txt" | tr -d ' ')"
+188-  SANDBOX_RESIDUE="$(find "$sandbox" -mindepth 1 | head -5)"
+189-}
+190-
+191-tree_snapshot() { find "$1" -path '*/.git' -prune -o -printf '%p %s\n' | sort; }
+192-
+193-# --- Arm 0: BASELINE fixture is GREEN, under budget, every section present ---
+194-# Without this, every RED arm below could be passing for an unrelated reason.
+195:setup_fixture
+196-run_orient "$FIX"
+197-if [ "$RC" -eq 0 ]; then
+198-  pass "baseline fixture — complete briefing (exit 0)"
+199-else
+200-  fail "arm 0 (baseline green): rc=$RC err=$ERR out=$OUT"
+201-fi
+202-if [ "$BYTES" -le 4096 ] && [ "$BYTES" -gt 0 ]; then
+203-  pass "baseline fixture — payload is 1..4096 bytes ($BYTES)"
+204-else
+205-  fail "arm 0 (byte cap): $BYTES bytes"
+206-fi
+207-for needle in 'REPO ' 'WORKTREES' 'RELEASE 0.9.0' 'NEXT ACTION' 'LEDGER' 'TODOS' 'PR' 'HANDOFF'; do
+208-  if grep -qF "$needle" <<<"$OUT"; then
+209-    pass "baseline fixture — section present: $needle"
+210-  else
+211-    fail "arm 0: section missing: $needle; out=$OUT"
+212-  fi
+213-done
+214-
+215-# --- Arm 9a: the next action is reproduced VERBATIM -------------------------
+216-# A briefing that paraphrases the board's next action is a second narration of
+217-# the fact the whole effort exists to de-duplicate.
+218-if grep -qF '**Commission Slice 20** — the fixture'"'"'s next action, recorded verbatim.' <<<"$OUT"; then
+219-  pass "the board's next-action cell is reproduced verbatim (markup included)"
+220-else
+221-  fail "arm 9a (verbatim next action): out=$OUT"
+222-fi
+223-
+224-# --- Arm 9b: landed slices AND their SHAs come from the state file ----------
+225-if grep -qF 'aaaa1111' <<<"$OUT" && grep -qF 'bbbb2222' <<<"$OUT" \
+226-   && grep -qE 'SCHEMA[^0-9]*42' <<<"$OUT"; then
+227-  pass "landed slices + SHAs + SCHEMA are read from the release-state file"
+228-else
+229-  fail "arm 9b (state-file facts): out=$OUT"
+230-fi
+231-if grep -qF 'cccc3333' <<<"$OUT"; then
+232-  fail "arm 9b: the CLOSED release's state file was read (hardcoded-release bug)"
+233-else
+234-  pass "the CLOSED release's stale state file is NOT read"
+235-fi
+236-
+237-# --- Arm 6: HARDCODED-RELEASE regression (correction 1) --------------------
+238-# The named failure: a `0.8.20` literal keeps working right up until 0.8.20
+239-# closes, then silently prints "nothing landed" forever. This repo's TC-37
+240-# vacuous-pass class. The fixture's live board is 0.9.0 and its CLOSED board is
+241-# 0.8.20, so only a filename-derived implementation can report 0.9.0.
+242-if grep -qF 'RELEASE 0.9.0' <<<"$OUT" && ! grep -qF 'RELEASE 0.8.20' <<<"$OUT"; then
+243-  pass "release is derived from the LIVE board filename (0.9.0), not hardcoded"
+244-else
+245-  fail "arm 6 (release from board filename): out=$OUT"
+246-fi
+247-if grep -qF 'STATUS-0.9.0.md' <<<"$OUT"; then
+248-  pass "the briefing names the live board it read"
+249-else
+250-  fail "arm 6b (board named): out=$OUT"
+251-fi
+252-
+253-# --- Arm 8: board-CLOSED detector parity (correction 4) --------------------
+254-# The shared predicate's window is `head -n 15`, because YAML frontmatter pushes
+255-# the banner down (measured at line 10 on STATUS-0.8.9.1.md). Here the ONLY
+256-# board is CLOSED with its banner at line 9. A `head -n 5` reimplementation
+257-# would call it LIVE and the briefing would exit 0; the shared 15-line window
+258-# sees the banner, finds ZERO live boards, and HARD-fails.
+259:setup_fixture
+260-rm -f "$FIX/dev/plans/runs/STATUS-0.9.0.md" "$FIX/dev/plans/release-state-0.9.0.json"
+261-CLOSED_BANNER_LINE="$(grep -n 'CLOSED — historical record' "$FIX/dev/plans/runs/STATUS-0.8.20.md" | cut -d: -f1)"
+262-if [ "$CLOSED_BANNER_LINE" -gt 5 ] && [ "$CLOSED_BANNER_LINE" -le 15 ]; then
+263-  pass "arm 8 fixture really places the CLOSED banner at line 6-15 (line $CLOSED_BANNER_LINE)"
+264-else
+265-  fail "arm 8 fixture invalid: banner at line $CLOSED_BANNER_LINE"
+266-fi
+267-run_orient "$FIX"
+268-if [ "$RC" -ne 0 ] && grep -qiE 'live (release )?board' <<<"$ERR"; then
+269-  pass "a CLOSED board (banner at line 6-15) is skipped -> zero live boards HARD-fails"
+270-else
+271-  fail "arm 8 (closed-detector parity): rc=$RC err=$ERR"
+272-fi
+273-
+274-# --- Arm 8b: the predicate is SHARED, not reimplemented --------------------
+275-# Structural, because behaviour parity alone would not stop the two windows
+276-# drifting apart later.
+277-if grep -qF 'head -n 15' "$CLOSED_LIB" \
+278-   && grep -qF 'CLOSED — historical record' "$CLOSED_LIB"; then
+279-  pass "scripts/lib/board-closed.sh holds the head -n 15 predicate"
+280-else
+281-  fail "arm 8b: the shared predicate lib is missing or has the wrong window"
+282-fi
+283-for caller in "$GATE" "$BOARD_CURRENCY"; do
+284-  if grep -qF 'lib/board-closed.sh' "$caller"; then
+285-    pass "$(basename "$caller") sources the shared board-CLOSED predicate"
+286-  else
+287-    fail "arm 8b: $(basename "$caller") does not use lib/board-closed.sh"
+288-  fi
+289-  # Guarded on the file existing, so a MISSING caller cannot pass this by
+290-  # vacuously failing to match.
+291-  if [ -f "$caller" ] && ! grep -qE 'head -n (5|15) "\$board"' "$caller"; then
+292-    pass "$(basename "$caller") has no inline CLOSED-window reimplementation"
+293-  else
+294-    fail "arm 8b: $(basename "$caller") is missing or still inlines its own CLOSED window"
+295-  fi
+296-done
+297-
+298-# --- Arm 7: worktrees dir is a SIBLING of the repo root (correction 2) -----
+299-# `<root>-worktrees/` sits BESIDE the repo, not inside it. Resolving it as a
+300-# child yields a silently empty section — the exact class of failure this
+301-# briefing exists to make impossible. The fixture plants two ORPHAN checkout
+302-# dirs (present on disk, absent from `git worktree list`) in the sibling dir;
+303-# only a sibling-resolving implementation can name them.
+304:setup_fixture
+305-mkdir -p "$WTDIR/orphan-alpha" "$WTDIR/orphan-beta"
+306-mkdir -p "$FIX/proj-worktrees/decoy-child"   # the wrong (child) location
+307-run_orient "$FIX"
+308-if [ "$RC" -eq 0 ] && grep -qF 'orphan-alpha' <<<"$OUT" && grep -qF 'orphan-beta' <<<"$OUT"; then
+309-  pass "orphan checkout dirs in the SIBLING <root>-worktrees/ are found and named"
+310-else
+311-  fail "arm 7 (sibling worktrees dir): rc=$RC out=$OUT"
+312-fi
+313-# Requires a non-empty payload, so a script that produced NOTHING cannot pass
+314-# this arm by simply failing to mention the decoy.
+315-if [ -n "$OUT" ] && ! grep -qF 'decoy-child' <<<"$OUT"; then
+316-  pass "the child-path decoy is NOT enumerated (resolution is a sibling, not a child)"
+317-else
+318-  fail "arm 7: empty payload, or the child-path decoy was enumerated (resolved as a child)"
+319-fi
+320-if grep -qF "$WTDIR" <<<"$OUT"; then
+321-  pass "the briefing prints the resolved worktrees dir so a wrong path is visible"
+322-else
+323-  fail "arm 7: resolved worktrees dir not printed; out=$OUT"
+324-fi
+325-
+326-# --- Arm 3: ZERO landed slices -> HARD fail naming the section -------------
+327:setup_fixture
+328-perl -0777 -pi -e 's/"LANDED"/"NOT_STARTED"/g; s/"landed": \[0, 5\]/"landed": []/' \
+329-  "$FIX/dev/plans/release-state-0.9.0.json"
+330-run_orient "$FIX"
+331-if [ "$RC" -ne 0 ] && grep -qi 'landed' <<<"$ERR"; then
+332-  pass "zero landed slices -> HARD fail, and the message names the section"
+333-else
+334-  fail "arm 3 (zero landed slices): rc=$RC err=$ERR"
+335-fi
+336-
+337-# --- Arm 4: ZERO ledger entries -> HARD fail ------------------------------
+338:setup_fixture
+339-: >"$FIX/dev/steward/steward-ledger.jsonl"
+340-run_orient "$FIX"
+341-if [ "$RC" -ne 0 ] && grep -qi 'ledger' <<<"$ERR"; then
+342-  pass "zero steward-ledger entries -> HARD fail, and the message names the section"
+343-else
+344-  fail "arm 4 (zero ledger entries): rc=$RC err=$ERR"
+345-fi
+346-
+347-# --- Arm 4b: ZERO foldable todos -> HARD fail -----------------------------
+348:setup_fixture
+349-cat >"$FIX/dev/todos-and-considerations-ledger.jsonl" <<'EOF'
+350-{"ts": "2026-01-04T00:00:00.000Z", "seq": 1, "kind": "observation", "summary": "no id at all"}
+351-EOF
+352-run_orient "$FIX"
+353-if [ "$RC" -ne 0 ] && grep -qi 'todo' <<<"$ERR"; then
+354-  pass "a todos ledger that folds to zero ids -> HARD fail"
+355-else
+356-  fail "arm 4b (zero folded todos): rc=$RC err=$ERR"
+357-fi
+358-
+359-# --- Arm 5: NO STEWARD-SESSION-HANDOFF-* -> HARD fail ---------------------
+360:setup_fixture
+361-rm -f "$FIX"/dev/plans/runs/STEWARD-SESSION-HANDOFF-*.md
+362-run_orient "$FIX"
+363-if [ "$RC" -ne 0 ] && grep -qi 'hand-off\|handoff' <<<"$ERR"; then
+364-  pass "no STEWARD-SESSION-HANDOFF-* found -> HARD fail, and the message names it"
+365-else
+366-  fail "arm 5 (missing hand-off): rc=$RC err=$ERR"
+367-fi
+368-
+369-# --- Arm 5b: the NEWEST hand-off is the one reported ----------------------
+370:setup_fixture
+371-run_orient "$FIX"
+372-if grep -qF 'STEWARD-SESSION-HANDOFF-2026-01-05-A.md' <<<"$OUT" \
+373-   && ! grep -qF 'STEWARD-SESSION-HANDOFF-2026-01-04-A.md' <<<"$OUT"; then
+374-  pass "the NEWEST hand-off is reported (dated filename order), not an older one"
+375-else
+376-  fail "arm 5b (newest hand-off): out=$OUT"
+377-fi
+378-
+379-# --- Arm 5c: a board with no next-action row -> HARD fail -----------------
+380:setup_fixture
+381-perl -0777 -pi -e 's/\*\*Immediate next action\*\*/**Something else entirely**/' \
+382-  "$FIX/dev/plans/runs/STATUS-0.9.0.md"
+383-run_orient "$FIX"
+384-if [ "$RC" -ne 0 ] && grep -qi 'next action' <<<"$ERR"; then
+385-  pass "a board whose next-action row moved -> HARD fail, never a silent omission"
+386-else
+387-  fail "arm 5c (missing next-action row): rc=$RC err=$ERR"
+388-fi
+389-
+390-# --- Arm 5d: a missing release-state file -> HARD fail --------------------
+391-# The other half of correction 1: when the live board rolls to a release that
+392-# has no state file yet, the briefing must SAY SO, not print "nothing landed".
+393:setup_fixture
+394-rm -f "$FIX/dev/plans/release-state-0.9.0.json"
+395-run_orient "$FIX"
+396-if [ "$RC" -ne 0 ] && grep -qF 'release-state-0.9.0.json' <<<"$ERR"; then
+397-  pass "a live board with no matching release-state file -> HARD fail naming the path"
+398-else
+399-  fail "arm 5d (missing state file): rc=$RC err=$ERR"
+400-fi
+401-
+402-# --- Arm 1: OUTPUT OVER 4 KB -> HARD fail (the cap is mechanical) ---------
+403-# Enforced by the script itself, not only by this test: the cap is a promise the
+404-# tool makes to the reader's context budget, so it has to be self-checking.
+405:setup_fixture
+406-BIG="$(head -c 6000 /dev/zero | tr '\0' 'x')"
+407-perl -0777 -pi -e "s/the fixture's next action, recorded verbatim\\./$BIG/" \
+408-  "$FIX/dev/plans/runs/STATUS-0.9.0.md"
+409-run_orient "$FIX"
+410-if [ "$RC" -ne 0 ] && grep -qiE 'budget|4096|bytes' <<<"$ERR"; then
+411-  pass "a briefing over the 4096-byte cap HARD-fails and names the budget"
+412-else
+413-  fail "arm 1 (byte cap): rc=$RC bytes=$BYTES err=$ERR"
+414-fi
+415-if [ "$BYTES" -gt 4096 ]; then
+416-  pass "arm 1 fixture really produced an over-cap payload ($BYTES bytes)"
+417-else
+418-  fail "arm 1 fixture invalid: payload was only $BYTES bytes"
+419-fi
+420-
+421-# --- Arm 2: WRITES NO FILE ------------------------------------------------
+422-# Three independent proofs: the fixture tree is byte-identical before/after, the
+423-# real checkout's porcelain status is unchanged, and the process's entire TMPDIR
+424-# is empty afterwards (so the ledgerwatch cursor sandbox is not left behind).
+425:setup_fixture
+426-BEFORE="$(tree_snapshot "$TMPROOT/parent")"
+427-run_orient "$FIX"
+428-AFTER="$(tree_snapshot "$TMPROOT/parent")"
+429-# Guarded on a run having actually HAPPENED: a script that cannot start writes
+430-# no file either, and must not be able to green this arm.
+431-if [ "$RC" -ne 0 ] || [ -z "$OUT" ]; then
+432-  fail "arm 2 precondition: the briefing did not run (rc=$RC, ${BYTES} bytes) — 'writes nothing' is vacuous"
+433-else
+434-  pass "arm 2 precondition: the briefing really ran (rc=0, $BYTES bytes)"
+435-fi
+436-if [ "$BEFORE" = "$AFTER" ]; then
+437-  pass "writes no file — the fixture tree is byte-identical before/after"
+438-else
+439-  fail "arm 2 (fixture tree mutated): $(diff <(printf '%s' "$BEFORE") <(printf '%s' "$AFTER") | head -10)"
+440-fi
+441-if [ -z "$SANDBOX_RESIDUE" ]; then
+442-  pass "writes no file — the run's entire TMPDIR is empty afterwards"
+443-else
+444-  fail "arm 2 (TMPDIR residue): $SANDBOX_RESIDUE"
+445-fi
+446-if [ ! -d "$FIX/.ledgerwatch" ]; then
+447-  pass "writes no file — no default .ledgerwatch cursor dir is created in the repo"
+448-else
+449-  fail "arm 2: the briefing created $FIX/.ledgerwatch (a real cursor would be disturbed)"
+450-fi
+451-
+452-# --- Arm 2b: .git/index IS BYTE-UNCHANGED, EVEN WITH A STALE STAT CACHE ------
+453-# Arm 2's tree_snapshot PRUNES */.git, so it could never see this: `git status`
+454-# refreshes a stale stat cache and REWRITES .git/index under .git/index.lock.
+455-# That is a repo-metadata write by a script whose stated contract is that it
+456-# writes nothing at all, and it can race a concurrent git command for the lock.
+457-#
+458-# Staling technique: rewrite every tracked file's mtime to a FIXED PAST instant.
+459-# A fixed timestamp (rather than `touch` + sleep) puts the mtime well outside
+460-# git's racily-clean one-second window with no wall-clock cost, so every cache
+461-# entry is unambiguously stat-dirty.
+462-#
+463-# NON-VACUITY, and the RED witness carried inside the suite: a fixture where git
+464-# had nothing to refresh would green this arm no matter what the briefing does.
+465-# So the same staled fixture is COPIED (cp -a preserves the mtimes, so the copy
+466-# is staled identically) and probed with a PLAIN, lock-taking `git status` — the
+467-# exact call the briefing used to make. That copy's index MUST change. Only then
+468-# does "the briefing left the index alone" mean anything.
+469:setup_fixture
+470-find "$FIX" -path '*/.git' -prune -o -type f -print0 \
+471-  | xargs -0 touch -d '2026-01-01 00:00:00'
+472-
+473-WITNESS="$TMPROOT/parent/witness"
+474-cp -a "$FIX" "$WITNESS"
+475-WITNESS_BEFORE="$(sha256sum "$WITNESS/.git/index" | cut -d' ' -f1)"
+476-git -C "$WITNESS" status --porcelain --untracked-files=all >/dev/null 2>&1 || true
+477-WITNESS_AFTER="$(sha256sum "$WITNESS/.git/index" | cut -d' ' -f1)"
+478-if [ "$WITNESS_BEFORE" != "$WITNESS_AFTER" ]; then
+479-  pass "arm 2b witness: the stat cache really is stale — a plain \`git status\` rewrites .git/index"
+480-else
+481-  fail "arm 2b fixture invalid: a plain lock-taking \`git status\` did NOT rewrite .git/index, so this arm proves nothing"
+482-fi
+483-rm -rf "$WITNESS"
+484-
+485-INDEX_BEFORE="$(sha256sum "$FIX/.git/index" | cut -d' ' -f1)"
+486-INDEX_META_BEFORE="$(stat -c '%s %.9Y' "$FIX/.git/index")"
+487-run_orient "$FIX"
+488-INDEX_AFTER="$(sha256sum "$FIX/.git/index" | cut -d' ' -f1)"
+489-INDEX_META_AFTER="$(stat -c '%s %.9Y' "$FIX/.git/index")"
+490-# Guarded on the run having HAPPENED: a briefing that cannot start also writes
+491-# no index, and must not be able to green this.
+492-if [ "$RC" -eq 0 ] && [ -n "$OUT" ]; then
+493-  pass "arm 2b precondition: the briefing still completes on a stat-stale checkout (rc=0)"
+494-else
+495-  fail "arm 2b precondition: the briefing did not run (rc=$RC, $BYTES bytes) — the index assertion would be vacuous; err=$ERR"
+496-fi
+497-if [ "$INDEX_BEFORE" = "$INDEX_AFTER" ]; then
+498-  pass "writes no file — .git/index is BYTE-IDENTICAL across a run with a deliberately staled stat cache"
+499-else
+500-  fail "arm 2b: the briefing REWROTE .git/index ($INDEX_BEFORE -> $INDEX_AFTER) — it must run git with optional locks disabled"
+501-fi
+502-if [ "$INDEX_META_BEFORE" = "$INDEX_META_AFTER" ]; then
+503-  pass "writes no file — .git/index size+mtime are unchanged too (NANOSECOND mtime: it was not even reopened)"
+504-else
+505-  fail "arm 2b: .git/index metadata moved ($INDEX_META_BEFORE -> $INDEX_META_AFTER)"
+506-fi
+507-if [ ! -e "$FIX/.git/index.lock" ]; then
+508-  pass "writes no file — no .git/index.lock is left behind"
+509-else
+510-  fail "arm 2b: the briefing left a .git/index.lock behind"
+511-fi
+512-
+513-# --- Arm 2c: a HELD index lock does not perturb the briefing ----------------
+514-# HONEST SCOPE: measured on git 2.43, a plain `git status` tolerates a held
+515-# optional lock (it declines to write and still exits 0), so this arm is NOT a
+516-# RED witness for the fix — it is a forward guard. It is worth its cost because
+517-# the briefing runs under `set -euo pipefail`, where any future git probe that
+518-# DOES insist on the lock (or a git version that starts erroring) would abort the
+519-# whole cold-start briefing rather than degrade. With optional locks disabled the
+520-# lock is never contended for at all.
+521:setup_fixture
+522-find "$FIX" -path '*/.git' -prune -o -type f -print0 \
+523-  | xargs -0 touch -d '2026-01-01 00:00:00'
+524-: >"$FIX/.git/index.lock"
+525-LOCKED_INDEX_BEFORE="$(sha256sum "$FIX/.git/index" | cut -d' ' -f1)"
+526-run_orient "$FIX"
+527-LOCKED_INDEX_AFTER="$(sha256sum "$FIX/.git/index" | cut -d' ' -f1)"
+528-if [ "$RC" -eq 0 ] && [ -n "$OUT" ]; then
+529-  pass "a concurrently HELD .git/index.lock does not abort the briefing (rc=0)"
+530-else
+531-  fail "arm 2c: a held index lock broke the briefing (rc=$RC); err=$ERR"
+532-fi
+533-if [ "$LOCKED_INDEX_BEFORE" = "$LOCKED_INDEX_AFTER" ]; then
+534-  pass "a held index lock run still leaves .git/index byte-identical"
+535-else
+536-  fail "arm 2c: .git/index changed while its lock was held by another process"
+537-fi
+538-if [ -e "$FIX/.git/index.lock" ]; then
+539-  pass "the other process's .git/index.lock is still there — the briefing never touched it"
+540-else
+541-  fail "arm 2c: the briefing REMOVED another process's .git/index.lock"
+542-fi
+543-rm -f "$FIX/.git/index.lock"
+544-
+545-# --- Arm 2d: structural — EVERY git probe disables optional locks -----------
+546-# Behavioural arm 2b only covers the git calls on the paths it exercises. This
+547-# arm is the drift guard: a new `$(git ...)` added later without the flag would
+548-# silently reintroduce the index write. Counts every command substitution /
+549-# process substitution that starts a git command and requires all of them to
+550-# carry --no-optional-locks, plus the exported env var that covers git run by
+551-# CHILD processes (gh, python3).
+552-GIT_CALLS_ALL="$(grep -coE '(\$\(|<\()git ' "$GATE" || true)"
+553-GIT_CALLS_SAFE="$(grep -coE '(\$\(|<\()git --no-optional-locks ' "$GATE" || true)"
+554-if [ "$GIT_CALLS_ALL" -ge 8 ]; then
+555-  pass "arm 2d precondition: the briefing really does shell out to git ($GIT_CALLS_ALL call sites)"
+556-else
+557-  fail "arm 2d precondition: found only $GIT_CALLS_ALL git call sites — the count regex has drifted, so this arm proves nothing"
+558-fi
+559-if [ "$GIT_CALLS_ALL" -eq "$GIT_CALLS_SAFE" ]; then
+560-  pass "every git call site ($GIT_CALLS_SAFE/$GIT_CALLS_ALL) passes --no-optional-locks"
+561-else
+562-  fail "arm 2d: $((GIT_CALLS_ALL - GIT_CALLS_SAFE)) git call site(s) can still take .git/index.lock: $(grep -nE '(\$\(|<\()git ' "$GATE" | grep -v -- '--no-optional-locks')"
+563-fi
+564-if grep -qE '^export GIT_OPTIONAL_LOCKS=0$' "$GATE"; then
+565-  pass "GIT_OPTIONAL_LOCKS=0 is exported, so git in CHILD processes (gh, python3) cannot lock either"
+566-else
+567-  fail "arm 2d: the briefing must export GIT_OPTIONAL_LOCKS=0"
+568-fi
+569-
+570-# --- Arm 10: the REAL repo is green (the regression half) ----------------
+571-REAL_BEFORE="$(git -C "$REPO_ROOT" status --porcelain --untracked-files=all)"
+572-run_orient "$REPO_ROOT"
+573-REAL_AFTER="$(git -C "$REPO_ROOT" status --porcelain --untracked-files=all)"
+574-if [ "$RC" -eq 0 ]; then
+575-  pass "the real checkout produces a complete briefing (exit 0)"
+576-else
+577-  fail "arm 10 (real repo green): rc=$RC err=$ERR out=$OUT"
+578-fi
+579-if [ "$BYTES" -le 4096 ] && [ "$BYTES" -gt 0 ]; then
+580-  pass "the real checkout's briefing is within the 4096-byte cap ($BYTES bytes)"
+581-else
+582-  fail "arm 10 (real byte cap): $BYTES bytes"
+583-fi
+584-if [ "$REAL_BEFORE" = "$REAL_AFTER" ]; then
+585-  pass "the real checkout's porcelain status is unchanged by the briefing"
+586-else
+587-  fail "arm 10: the briefing mutated the real checkout"
+588-fi
+589-if [ -z "$SANDBOX_RESIDUE" ]; then
+590-  pass "the real-repo run leaves no TMPDIR residue either"
+591-else
+592-  fail "arm 10 (TMPDIR residue): $SANDBOX_RESIDUE"
+593-fi
+594-
+595-# --- Arm 11: the CI job is ALWAYS-ON --------------------------------------
+596-# Same reasoning as release-state-views: the inputs this briefing reads (the
+597-# board, the state file, the ledgers, the hand-offs) are DOCS, and the
+598-# `markdownlint` job's docs_only fast path excludes the heavy `verify` job that
+599-# would otherwise run this suite. A guard that cannot run on the push that
+600-# breaks it is decorative.
+601-CI_JOB_BLOCK="$(awk '
+602-  /^  steward-orient:/ { inblock = 1; print; next }
+603-  inblock && /^  [A-Za-z0-9_-]+:/ { inblock = 0 }
+604-  inblock { print }
+605-' "$CI_YML")"
+606-if [ -n "$CI_JOB_BLOCK" ]; then
+607-  pass "ci.yml defines a steward-orient job"
+608-else
+609-  fail "ci.yml has no steward-orient job"
+610-fi
+611-if printf '%s' "$CI_JOB_BLOCK" | grep -q 'scripts/tests/test_steward_orient.sh'; then
+612-  pass "the CI job runs THIS suite (not a reimplementation)"
+613-else
+614-  fail "the CI job must invoke scripts/tests/test_steward_orient.sh"
+615-fi
+616-if printf '%s' "$CI_JOB_BLOCK" | grep -qE '^\s*(if|needs):'; then
+617-  fail "the steward-orient job must be ALWAYS-ON (no if:/needs:); block: $CI_JOB_BLOCK"
+618-else
+619-  pass "the steward-orient job is always-on (no if:, no needs:, not docs_only-gated)"
+620-fi
+621-
+622-# --- Arm 12: the documented exemptions are documented ---------------------
+623-# Correction 3 requires each legitimately-empty section to be an explicit
+624-# decision on the record, not an accident of implementation.
+625-if grep -qiE 'exempt' "$GATE"; then
+626-  pass "the script header records the zero-result exemptions explicitly"
+627-else
+628-  fail "arm 12: the script does not document its zero-result exemptions"
+629-fi
+630-if grep -qF -- '--dry-run' "$GATE" && grep -qF -- '--state-dir' "$GATE"; then
+631-  pass "ledger reads go through ledgerwatch with an explicit --state-dir + peek semantics"
+632-else
+633-  fail "arm 12: ledger reads must use ledgerwatch --state-dir with --dry-run peek semantics"
+634-fi
+635-if grep -qF -- '--project' "$GATE"; then
+636-  pass "the todos fold uses ledgerwatch --project (not a hand-rolled fold)"
+637-else
+638-  fail "arm 12: the todos fold must use ledgerwatch --project"
+639-fi
+640-
+641-if [ "$FAILED" -gt 0 ]; then
+
+exec
+/bin/bash -lc 'git diff --check 7132c97c64308bda2630d7ab2bae98bb645c61ab' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 0ms:
+codex
+I did not identify any discrete, actionable bugs introduced by the changes. The updated shell tests covering the new fixture seeding and optional-lock behavior pass locally.
+I did not identify any discrete, actionable bugs introduced by the changes. The updated shell tests covering the new fixture seeding and optional-lock behavior pass locally.
