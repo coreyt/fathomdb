@@ -20,8 +20,8 @@
 //!   `body`-FTS behaviour is UNCHANGED (no silent drift).
 
 use fathomdb_engine::{
-    Engine, EngineError, InitialState, LifecycleState, ProjectionFts, ProjectionRole,
-    ProjectionSpec, ProjectionVector, SourceId,
+    DenseReadiness, Engine, EngineError, InitialState, LifecycleState, ProjectionFts,
+    ProjectionRole, ProjectionSpec, ProjectionVector, SourceId,
 };
 use fathomdb_schema::SQLITE_SUFFIX;
 use std::collections::BTreeSet;
@@ -367,9 +367,29 @@ fn vector_subobject_is_stored_not_built() {
     let d = engine.configure_projections(std::slice::from_ref(&s), &[]).unwrap();
     assert_eq!(d.deferred, vec!["summary".to_string()], "the vector sub-target defers to Slice 20");
 
-    // The vector sub-object round-trips through read.projections (Slice 20 hangs
-    // dense_readiness off exactly this).
-    assert_eq!(engine.read_projections().unwrap(), vec![s], "vector sub-object persists verbatim");
+    // The vector sub-object round-trips through read.projections. 0.8.20 Slice 20
+    // (R-20-DR) hung `dense_readiness` off exactly this sub-object, so read-back
+    // now differs from the sent spec by that ONE engine-set READ-METADATA field
+    // and by nothing else — the DECLARATION (embedder) still persists verbatim.
+    // (No engine is embedding here — `Engine::open` has no embedder — so the
+    // corpus has no outstanding vector work and readiness derives to `Ready`.)
+    let back = engine.read_projections().unwrap();
+    assert_eq!(
+        back,
+        vec![ProjectionSpec {
+            vector: Some(ProjectionVector {
+                embedder: None,
+                dense_readiness: Some(DenseReadiness::Ready),
+            }),
+            ..s.clone()
+        }],
+        "vector sub-object persists verbatim, plus the engine-set readiness"
+    );
+    assert_eq!(
+        back[0].vector.as_ref().unwrap().embedder,
+        s.vector.as_ref().unwrap().embedder,
+        "the declared part of the sub-object is unchanged by the readiness attach"
+    );
 
     opened.engine.drain(5_000).unwrap();
     opened.engine.close().unwrap();

@@ -938,6 +938,34 @@ impl PyProjectionSpec {
             }
             _ => {}
         }
+        // 0.8.20 Slice 20 (R-20-DR) — the SAME round-trip gate applied to the
+        // engine-set readiness field. It is READ METADATA, so its VALUE is inert
+        // on the way in (the engine always reports the derived truth, which is
+        // what keeps `read.projections` output re-appliable as a no-op — the
+        // fix-4 read→configure round-trip, pinned by a test in both bindings).
+        // But the two shapes that could NEVER round-trip are refused, exactly as
+        // for `vector_embedder`:
+        //   * supplied while `vector` is false — there is no vector sub-object
+        //     to carry it, so `read.projections` could not echo it back;
+        //   * an unrecognised spelling — `read.projections` only ever emits
+        //     `"ready"` / `"embedding"`, so anything else (notably `"pending"`,
+        //     which is RESERVED for the orthogonal admission axis, and `""`)
+        //     could not round-trip and is a caller mistake worth naming.
+        if let Some(readiness) = self.vector_dense_readiness.as_deref() {
+            validate_ffi_string_py(readiness)?;
+            if !self.vector {
+                return Err(InvalidArgumentError::new_err(format!(
+                    "projection {:?}: vector_dense_readiness is set but vector is false — readiness belongs to the vector sub-object and cannot round-trip without it; set vector=true or omit vector_dense_readiness",
+                    self.name
+                )));
+            }
+            if RustDenseReadiness::from_str_opt(readiness).is_none() {
+                return Err(InvalidArgumentError::new_err(format!(
+                    "projection {:?}: unknown vector_dense_readiness {readiness:?}: expected \"ready\" or \"embedding\" (\"pending\" is reserved for the admission axis and is never a readiness value). It is engine-set read metadata; omit it",
+                    self.name
+                )));
+            }
+        }
         let mut roles = std::collections::BTreeSet::new();
         for r in &self.roles {
             validate_ffi_string_py(r)?;

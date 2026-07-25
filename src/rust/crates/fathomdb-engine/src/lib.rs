@@ -3943,7 +3943,7 @@ impl DenseReadiness {
 /// Nothing in 15d's persisted shape changed (the registry columns
 /// `vector_embedder` + `vector_declared` still round-trip the declaration) —
 /// **readiness is DERIVED, never stored**, so there is no schema step and no
-/// separate flag that could tear.
+/// separate flag that could tear (see [`derive_dense_readiness`]).
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ProjectionVector {
     /// Optional embedder override; `None` ⇒ the engine's shipped default.
@@ -8023,7 +8023,7 @@ impl Engine {
     ///
     /// 0.8.20 Slice 20 (R-20-DR) — this is ALSO the surface that populates the
     /// engine-set [`ProjectionVector::dense_readiness`] READ METADATA. It is
-    /// derived here, on the way out; the durable
+    /// derived here, on the way out (see [`derive_dense_readiness`]); the durable
     /// registry stores no readiness. Only a spec that declares the
     /// `searchable→vector` sub-object carries one — `filterable` and
     /// `searchable→FTS` are same-transaction and have no readiness axis.
@@ -8032,7 +8032,27 @@ impl Engine {
         let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
         let connection = connection.as_ref().ok_or(EngineError::Closing)?;
         let registry = load_projection_registry(connection).map_err(|_| EngineError::Storage)?;
-        Ok(registry.iter().map(|(name, stored)| stored.to_spec(name)).collect())
+        // Derived ONCE per call, so every vector projection in one read reports a
+        // consistent readiness (they are all served by the one vector pipeline).
+        // Skipped entirely when no vector projection is declared, keeping the
+        // no-vector default path free of the extra probe.
+        let mut readiness: Option<DenseReadiness> = None;
+        let mut specs: Vec<ProjectionSpec> =
+            registry.iter().map(|(name, stored)| stored.to_spec(name)).collect();
+        for spec in &mut specs {
+            if let Some(vector) = spec.vector.as_mut() {
+                let value = match readiness {
+                    Some(value) => value,
+                    None => {
+                        let value = derive_dense_readiness(connection)?;
+                        readiness = Some(value);
+                        value
+                    }
+                };
+                vector.dense_readiness = Some(value);
+            }
+        }
+        Ok(specs)
     }
 
     /// OPP-12 Phase-1 (0.8.19 Slice 10, R-PG-1/2) — irreversibly hard-erase a
@@ -12692,7 +12712,19 @@ fn next_pending_projection_jobs(
 
 fn database_has_pending_projection_work(path: &Path) -> rusqlite::Result<bool> {
     let connection = open_runtime_connection(path)?;
-    let cursor = load_projection_cursor(&connection)?;
+    connection_has_pending_projection_work(&connection)
+}
+
+/// 0.8.20 Slice 20 (R-20-DR) — the body of
+/// [`database_has_pending_projection_work`], lifted so it can also run on a
+/// connection the caller ALREADY holds (the engine's own connection, inside
+/// [`Engine::read_projections`]) instead of opening a runtime connection from a
+/// path. Behaviour is byte-identical: the same two arms, the same predicates —
+/// which is the point. Readiness and `drain`/`wait_for_idle` must key off ONE
+/// definition of "outstanding embed", or readiness could report `ready` for work
+/// `drain` still waits on.
+fn connection_has_pending_projection_work(connection: &Connection) -> rusqlite::Result<bool> {
+    let cursor = load_projection_cursor(connection)?;
     // Check canonical_nodes for un-projected work.
     let has_node_work: bool = connection
         .query_row(
@@ -12747,6 +12779,51 @@ fn database_has_pending_projection_work(path: &Path) -> rusqlite::Result<bool> {
             rusqlite::Error::QueryReturnedNoRows => Ok(false),
             _ => Err(err),
         })
+}
+
+/// 0.8.20 Slice 20 (R-20-DR) — the `dense_readiness` of the `searchable→vector`
+/// projection, DERIVED. There is no stored flag, no schema step
+/// (`SCHEMA_VERSION` stays 24) and no `MIGRATIONS` change.
+///
+/// **Why derived is the design, not a shortcut.** §4.1 invariant 1 requires
+/// `{ vector-insert ∧ dense_readiness := ready }` to be ONE transaction, with a
+/// torn `ready`-without-vector FORBIDDEN. A stored flag is precisely the thing
+/// that can tear. Deriving it makes the invariant true **by construction**:
+/// readiness is a pure function of state that
+/// [`commit_projection_outcomes`] already writes inside a single transaction —
+/// the `vector_default` / `_fathomdb_vector_rows` INSERTs, the
+/// `_fathomdb_projection_terminal` row ([`record_projection_terminal`]) and the
+/// readiness watermark ([`advance_projection_cursor`], which only ever steps
+/// over cursors that ALREADY hold a terminal) all commit together or not at all.
+/// So `ready` cannot be observed before the vector is durable, and the only
+/// reachable torn state is the tolerated one (`embedding` with the vector
+/// absent — the dense arm simply reads as partial).
+///
+/// It reuses the EXACT predicate `drain`/`wait_for_idle` use
+/// ([`connection_has_pending_projection_work`]), so "readiness is `ready`" and
+/// "`drain` reports idle" cannot disagree.
+///
+/// **Scope note (honest boundary).** The predicate is corpus-wide, not
+/// per-attribute, because Slice 15d persists the `searchable→vector` sub-object
+/// but DEFERS building any per-attribute embedding (`ProjectionDelta::deferred`)
+/// — every declared vector projection is served by the one engine vector
+/// pipeline, so per-projection scoping has no distinct meaning yet. A stored
+/// column would not have been more specific; it would only have been tearable.
+/// When per-attribute embedding lands, this function is where the scoping goes.
+///
+/// **Failure boundary.** A row whose embed FAILED terminally records a `failed`
+/// terminal (no vector row), so it stops being outstanding and readiness returns
+/// to `ready`. That is the correct reading of a two-member vocabulary — the row
+/// will never embed, so reporting `embedding` forever would be a lie — and
+/// failures stay separately observable through the `projection_failures`
+/// collection. It is the one case where a `ready` corpus can lack a vector row,
+/// and it is NOT a torn write: no `up_to_date` terminal exists for it.
+fn derive_dense_readiness(connection: &Connection) -> Result<DenseReadiness, EngineError> {
+    if connection_has_pending_projection_work(connection).map_err(|_| EngineError::Storage)? {
+        Ok(DenseReadiness::Embedding)
+    } else {
+        Ok(DenseReadiness::Ready)
+    }
 }
 
 struct CanonicalNodeRow {
@@ -15918,7 +15995,7 @@ impl StoredProjection {
                 // readiness (it is DERIVED, never stored), so the durable shape
                 // reconstructs with `dense_readiness: None`.
                 // [`Engine::read_projections`] fills it from
-                // the readiness derivation on the way out.
+                // [`derive_dense_readiness`] on the way out.
                 Some(ProjectionVector {
                     embedder: self.vector_embedder.clone(),
                     dense_readiness: None,

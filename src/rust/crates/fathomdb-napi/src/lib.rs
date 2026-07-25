@@ -564,6 +564,37 @@ impl ProjectionSpec {
             }
             _ => {}
         }
+        // 0.8.20 Slice 20 (R-20-DR) — the SAME round-trip gate applied to the
+        // engine-set readiness field. It is READ METADATA, so its VALUE is inert
+        // on the way in (the engine always reports the derived truth, which is
+        // what keeps `read.projections` output re-appliable as a no-op — the
+        // fix-4 read→configure round-trip, pinned by a test in both bindings).
+        // But the two shapes that could NEVER round-trip are refused, exactly as
+        // for `vectorEmbedder`. Kept byte-for-byte in step with the pyo3 binding
+        // (Py ≡ TS): the two must refuse the same shapes the same way.
+        if let Some(readiness) = self.vector_dense_readiness.as_deref() {
+            validate_ffi_string_napi(readiness)?;
+            if !self.vector {
+                return Err(typed_error(
+                    CODE_INVALID_ARGUMENT,
+                    format!(
+                        "projection {:?}: vectorDenseReadiness is set but vector is false — readiness belongs to the vector sub-object and cannot round-trip without it; set vector=true or omit vectorDenseReadiness",
+                        self.name
+                    ),
+                    JsonValue::Null,
+                ));
+            }
+            if RustDenseReadiness::from_str_opt(readiness).is_none() {
+                return Err(typed_error(
+                    CODE_INVALID_ARGUMENT,
+                    format!(
+                        "projection {:?}: unknown vectorDenseReadiness {readiness:?}: expected \"ready\" or \"embedding\" (\"pending\" is reserved for the admission axis and is never a readiness value). It is engine-set read metadata; omit it",
+                        self.name
+                    ),
+                    JsonValue::Null,
+                ));
+            }
+        }
         let mut roles = std::collections::BTreeSet::new();
         for r in &self.roles {
             validate_ffi_string_napi(r)?;
