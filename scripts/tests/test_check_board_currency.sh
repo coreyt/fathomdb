@@ -28,6 +28,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PREFLIGHT="$REPO_ROOT/scripts/preflight.sh"
 CHECKER="$REPO_ROOT/scripts/check-board-currency.sh"
+# shellcheck source=lib/governed-surface-fixture.sh
+. "$SCRIPT_DIR/lib/governed-surface-fixture.sh"
 
 FAILED=0
 pass() { printf 'PASS  %s\n' "$1"; }
@@ -64,6 +66,14 @@ init_repo() {
   mkdir -p "$dir/dev/steward"
   printf '{"seq":1,"note":"fixture"}\n' >"$dir/dev/steward/steward-ledger.jsonl"
   printf '%s' 1 >"$dir/dev/steward/steward-ledger.jsonl.seq"
+  # Same story one gate later: `--landing` also runs the governed-surface pin
+  # gate (DOC-HYGIENE-2 T1e), which HARD-fails a tree whose pin it cannot read —
+  # correctly, on the same TC-37 grounds. So the fixture carries a minimal,
+  # self-consistent surface+pin pair as well. Seeded by the shared helper, which
+  # verifies the pair against the real gate; nothing here is surface-specific
+  # beyond its presence, and the gate's own arms live in
+  # scripts/tests/test_check_governed_surface_pin.sh.
+  seed_governed_surface_fixture "$dir"
 }
 
 # commit_all <dir> <message>
@@ -334,6 +344,17 @@ if [ "$RC" -eq 0 ]; then
 else
   fail "--landing must not regress a current board; got rc=$RC, out: $OUT"
 fi
+# ANTI-VACUITY for the fixture repair: the arm above must be green because every
+# --landing gate RAN and passed, never because one of them was absent or inert.
+# Both gates that hard-fail an incomplete fixture (T1b's ledger integrity, T1e's
+# governed-surface pin) must be visible in the output as an `ok` line.
+for gate_line in 'ledger-integrity:' 'governed-surface-pin:'; do
+  if printf '%s' "$OUT" | grep -qE "^ok +${gate_line}"; then
+    pass "the current-board --landing run really executed the $gate_line gate (ok, not skipped)"
+  else
+    fail "$gate_line did not report ok in a passing --landing run — the fixture may be clearing the gate by not carrying its input; out: $OUT"
+  fi
+done
 
 # --- Arm 7: --landing in a CLOSED-board worktree still passes (skip, not flag) -
 CLOSED_LINKED="$TMPROOT/closed-linked"

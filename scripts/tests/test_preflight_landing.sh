@@ -29,6 +29,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PREFLIGHT="$REPO_ROOT/scripts/preflight.sh"
+# shellcheck source=lib/governed-surface-fixture.sh
+. "$SCRIPT_DIR/lib/governed-surface-fixture.sh"
 
 FAILED=0
 pass() { printf 'PASS  %s\n' "$1"; }
@@ -79,6 +81,12 @@ make_fixture() {
   # it carries one; its own corruption arms live in test_check_ledgers.sh.
   printf '{"seq":1,"note":"fixture"}\n' >"$primary/dev/steward/steward-ledger.jsonl"
   printf '%s' 1 >"$primary/dev/steward/steward-ledger.jsonl.seq"
+  # And a minimal, self-consistent governed surface + pin: `--landing` also runs
+  # the governed-surface pin gate (DOC-HYGIENE-2 T1e), which HARD-fails a tree
+  # whose pin it cannot read — the same TC-37 stance as the ledger gate above, and
+  # equally correct. This fixture models a real checkout, so it carries one; the
+  # pin's own arms live in scripts/tests/test_check_governed_surface_pin.sh.
+  seed_governed_surface_fixture "$primary"
   git -C "$primary" add -A
   git -C "$primary" commit -q -m 'fixture: initial commit'
   git -C "$primary" worktree add -q -b landing-fixture "$linked" >/dev/null 2>&1
@@ -109,6 +117,16 @@ if printf '%s' "$OUT" | grep -q '"preflight":"pass"'; then
 else
   fail "expected \"preflight\":\"pass\" in summary; got: $OUT"
 fi
+# ANTI-VACUITY: a "pass" must mean every --landing gate ran and cleared, not that
+# the fixture failed to carry a gate's input and the gate therefore said nothing.
+# These are the two gates that HARD-fail a tree whose input they cannot read.
+for gate_line in 'ledger-integrity:' 'governed-surface-pin:'; do
+  if printf '%s' "$OUT" | grep -qE "^ok +${gate_line}"; then
+    pass "the passing --landing run really executed the $gate_line gate (ok, not skipped)"
+  else
+    fail "$gate_line did not report ok in a passing --landing run; out: $OUT"
+  fi
+done
 
 # --- Arm 2: --landing in the primary checkout => HARD fail, non-zero ----------
 run_preflight "$PRIMARY" --landing

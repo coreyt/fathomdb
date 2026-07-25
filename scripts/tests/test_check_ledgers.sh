@@ -34,6 +34,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 CHECKER="$REPO_ROOT/scripts/check-ledgers.sh"
 PREFLIGHT="$REPO_ROOT/scripts/preflight.sh"
 CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
+# shellcheck source=lib/governed-surface-fixture.sh
+. "$SCRIPT_DIR/lib/governed-surface-fixture.sh"
 
 FAILED=0
 pass() { printf 'PASS  %s\n' "$1"; }
@@ -348,6 +350,12 @@ make_repo() {
   mkdir -p "$primary/src" "$primary/scripts"
   printf 'fixture\n' >"$primary/src/keep.txt"
   write_ledger "$primary" dev/steward/steward-ledger "$sidecar" "$@"
+  # `--landing` also runs the governed-surface pin gate (DOC-HYGIENE-2 T1e),
+  # which HARD-fails a tree whose pin it cannot read — the same TC-37 stance this
+  # suite's own gate takes, and equally correct. The fixture therefore carries a
+  # minimal, self-consistent surface + pin, so the only thing these arms can fail
+  # on is the LEDGER state they deliberately plant.
+  seed_governed_surface_fixture "$primary"
   git -C "$primary" add -A
   git -C "$primary" commit -q -m 'fixture: initial commit'
   git -C "$primary" worktree add -q -b landing-fixture "$linked" >/dev/null 2>&1
