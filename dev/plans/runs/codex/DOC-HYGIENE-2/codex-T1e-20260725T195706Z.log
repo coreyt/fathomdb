@@ -1,0 +1,1942 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f9ada-5278-70e2-999c-81ecc700b856
+--------
+user
+changes against 'fc5c4ad1dc5551920a6162239752bc3a4cab9005'
+exec
+/bin/bash -lc "cat MEMORY.md 2>/dev/null; printf '\\n---feedback---\\n'; ls feedback_*.md 2>/dev/null | xargs -r -n1 sh -c 'echo --- "'$0 ---; cat "$0"'"'" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 0ms:
+
+---feedback---
+
+exec
+/bin/bash -lc 'git diff --stat fc5c4ad1dc5551920a6162239752bc3a4cab9005 && git diff --name-only fc5c4ad1dc5551920a6162239752bc3a4cab9005' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 0ms:
+ .github/workflows/ci.yml                         |  20 ++
+ scripts/agent-test.sh                            |   8 +
+ scripts/check-governed-surface-pin.sh            | 342 +++++++++++++++++++
+ scripts/governed-surface-pin.json                |  96 ++++++
+ scripts/preflight.sh                             |  38 +++
+ scripts/tests/test_check_governed_surface_pin.sh | 417 +++++++++++++++++++++++
+ 6 files changed, 921 insertions(+)
+.github/workflows/ci.yml
+scripts/agent-test.sh
+scripts/check-governed-surface-pin.sh
+scripts/governed-surface-pin.json
+scripts/preflight.sh
+scripts/tests/test_check_governed_surface_pin.sh
+
+exec
+/bin/bash -lc 'git diff --find-renames --find-copies fc5c4ad1dc5551920a6162239752bc3a4cab9005 -- .github/workflows/ci.yml scripts/agent-test.sh scripts/preflight.sh scripts/check-governed-surface-pin.sh scripts/governed-surface-pin.json' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 0ms:
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 71d963a5..2c9806c9 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -437,6 +437,26 @@ jobs:
+       - name: Ledger sidecar/seq integrity (DOC-HYGIENE-2 T1b)
+         run: bash scripts/check-ledgers.sh
+ 
++  # DOC-HYGIENE-2 T1e — the always-on governed-surface pin backstop.
++  # `preflight.sh --landing` is the PREVENT gate at land time; this job is the
++  # DETECT gate for whatever slips it. Reuses scripts/check-governed-surface-pin.sh
++  # — the SAME script preflight calls — so the two homes cannot diverge (see that
++  # script's header for the predicate: content hash + member lists + counts +
++  # REQ-054, against scripts/governed-surface-pin.json).
++  #
++  # Deliberately carries NO `if:` condition and is NOT on the docs_only fast path:
++  # a governed-surface change is BY DEFINITION a code change, so a docs_only gate
++  # would make this job silently absent on exactly the pushes it exists to catch.
++  # Default (depth-1) checkout is sufficient: the predicate reads working-tree
++  # files only and walks no history.
++  governed-surface-pin:
++    runs-on: ubuntu-latest
++    timeout-minutes: 5
++    steps:
++      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
++      - name: Governed-surface pin vs the AC-079 pre-sign (DOC-HYGIENE-2 T1e)
++        run: bash scripts/check-governed-surface-pin.sh
++
+   # mkdocs --strict is the broader CI gate beyond agent-verify (per AGENTS.md §3).
+   # Intentionally NOT gated on docs_only: it must run for docs/** changes (the
+   # fast path) AND alongside code changes, exactly as before.
+diff --git a/scripts/agent-test.sh b/scripts/agent-test.sh
+index d76fc43b..fee5e6e9 100755
+--- a/scripts/agent-test.sh
++++ b/scripts/agent-test.sh
+@@ -31,6 +31,14 @@ run_capped test-check-board-currency bash scripts/tests/test_check_board_currenc
+ # preflight arms); no real .jsonl / .jsonl.seq is ever touched.
+ run_capped test-check-ledgers bash scripts/tests/test_check_ledgers.sh
+ 
++# Scripts (bash): DOC-HYGIENE-2 T1e — the shared scripts/check-governed-surface-pin.sh
++# predicate (content hash + member lists + counts + REQ-054 against
++# scripts/governed-surface-pin.json), its --landing wiring in preflight.sh, and a
++# static assertion that its CI job is always-on. Fixtures are COPIES of the
++# allowlist under mktemp -d (plus throwaway git repos for the preflight arms);
++# src/conformance/governed-surface-allowlist.json is never written.
++run_capped test-check-governed-surface-pin bash scripts/tests/test_check_governed_surface_pin.sh
++
+ # Scripts (bash): sibling-package co-tagging assert (AC-052). Offline via
+ # python3 -m http.server fixture; never hits crates.io.
+ run_capped test-assert-co-tagging bash scripts/tests/test_assert_co_tagging.sh
+diff --git a/scripts/check-governed-surface-pin.sh b/scripts/check-governed-surface-pin.sh
+new file mode 100755
+index 00000000..7a2bb44f
+--- /dev/null
++++ b/scripts/check-governed-surface-pin.sh
+@@ -0,0 +1,342 @@
++#!/usr/bin/env bash
++# check-governed-surface-pin.sh — governed-surface pin gate (DOC-HYGIENE-2 T1e).
++#
++# Shared by two callers, exactly like its siblings scripts/check-ledgers.sh and
++# scripts/check-board-currency.sh:
++#   * scripts/preflight.sh --landing                 (PREVENT, land-time gate)
++#   * .github/workflows/ci.yml governed-surface-pin job
++#                                                    (DETECT, always-on backstop)
++# Reuse, not reimplementation: both callers invoke THIS script so the predicate
++# cannot diverge between the two homes.
++#
++# WHAT THIS ENFORCES
++#   The HITL PRE-SIGNED the accumulated governed-surface delta of 0.8.20 Slices
++#   5d + 10b + 15b + 15d (AC-079) — but pinned to the EXACT CONTENT of
++#   src/conformance/governed-surface-allowlist.json as of commit 427d2712:
++#   30 allowlist members, 5 core, and recovery_denylist unchanged at the five
++#   REQ-054 names. A pre-sign keyed to specific content is worth exactly as much
++#   as the mechanism that notices when that content moves. This is that
++#   mechanism: the signed content is recorded in scripts/governed-surface-pin.json
++#   and this gate HARD-fails the moment the file diverges from it, routing the
++#   reader back to the HITL for a fresh sign-off.
++#
++# TRIPPING THIS GATE IS CORRECT BEHAVIOUR, NOT A BUG. It is precisely what lets
++# 0.8.20 Slices 20 / 25 / 30 proceed WITHOUT stopping for a per-slice sign-off:
++# the pre-sign covers the pinned content, and anything else re-opens it. Slice 20
++# is EXPECTED to trip this. Re-pinning to make the gate green without a fresh
++# HITL sign-off is the failure mode the gate exists to prevent.
++#
++# PREDICATE — the pinned file must match the pin on ALL of:
++#   (a) CONTENT HASH: sha256 and git blob sha1 of the file's raw bytes equal the
++#       values recorded in the pin. Both are recorded so a reviewer can
++#       reproduce the pin either way (`git rev-parse 427d2712:<file>` gives the
++#       blob sha1 directly).
++#   (b) MEMBER LISTS: `allowlist`, `core` and `recovery_denylist` are compared
++#       element-by-element against the copies stored in the pin, so the failure
++#       can name WHICH member appeared or vanished — and so that updating only
++#       the hash in the pin (a lazy re-pin, to silence the gate) still fails.
++#   (c) COUNTS: 30 / 5 / 5, asserted separately from (b) against the pin's own
++#       `counts` block, so a pin whose lists and counts disagree is caught as an
++#       internally inconsistent (botched) re-pin rather than being trusted.
++#   (d) REQ-054: `recovery_denylist` is EXACTLY {recover, restore, repair, fix,
++#       rebuild}, checked against a constant HARDCODED BELOW — in the FILE and in
++#       the PIN. This rule (AC-041) is independently load-bearing: the recovery
++#       denylist is five names, and it must not silently widen even by way of an
++#       otherwise well-formed re-pin. This is the one check a re-pin cannot buy
++#       its way past.
++#
++# WHITESPACE / FORMATTING-ONLY CHANGES FAIL. DELIBERATE, DOCUMENTED CHOICE:
++#   (a) is a CONTENT hash over raw bytes, so re-indenting the file, reordering
++#   keys, or adding a trailing newline HARD-fails even though the parsed members
++#   are unchanged. The pin is a statement about a file's content at a commit, not
++#   about its abstract meaning — and a "harmless reformat" is the ideal cover for
++#   a member slipped in on an adjacent line. When only formatting moved, the
++#   failure says so explicitly (the parsed members are reported as identical), so
++#   the reader is never left guessing whether the surface actually changed.
++#
++# VACUOUS-PASS GUARD (TC-37, this repo's named failure class): if the pinned file
++# is MISSING or UNREADABLE, this gate HARD-fails — it never exits 0. A gate that
++# cannot see its subject and reports green is worse than no gate: it is an active
++# false assurance. A vanished governed-surface allowlist is also, on its face, the
++# largest possible change to the governed surface.
++#
++# Usage:
++#   scripts/check-governed-surface-pin.sh [--file <path>] [--pin <path>] [--help]
++#
++# --file/--pin exist so the test fixtures can point at COPIES under mktemp -d; the
++# real src/conformance/governed-surface-allowlist.json is never written by the
++# tests (mutating it is the exact thing this gate exists to catch). Both callers
++# invoke the script with no arguments. (--help mirrors scripts/set-version.sh, the
++# one sibling that offers it.)
++#
++# Requires python3 for JSON parsing and hashing. If it is absent this script exits
++# 2 (env error) LOUDLY rather than skipping — a skip here would be the TC-37 hole.
++#
++# Exit codes: 0 = the pinned file matches the pin on (a)-(d);
++#             1 = divergence from the pin, OR the pinned file is missing /
++#                 unreadable / unparseable (vacuous-pass guard), OR the pin
++#                 itself breaches REQ-054 or is internally inconsistent;
++#             2 = usage error, unreadable/unparseable pin file, or python3 absent
++#                 (the gate could not run — never reported as a pass).
++set -euo pipefail
++
++SELF="$(basename "${BASH_SOURCE[0]}")"
++
++usage() {
++  cat <<EOF
++Usage: scripts/$SELF [--file <path>] [--pin <path>]
++
++Fails when src/conformance/governed-surface-allowlist.json diverges from the
++AC-079 pre-signed pin recorded in scripts/governed-surface-pin.json (pinned to
++the file's content as of commit 427d2712). See the header of this script for the
++full predicate and for why re-pinning without a fresh HITL sign-off is forbidden.
++
++  --file <path>  the governed-surface allowlist to check
++                 (default: src/conformance/governed-surface-allowlist.json)
++  --pin <path>   the pin record to check it against
++                 (default: scripts/governed-surface-pin.json)
++  --help         show this text
++
++Exit codes: 0 = matches the pin; 1 = divergence (or missing/unreadable file);
++            2 = usage/environment error.
++EOF
++}
++
++FILE="src/conformance/governed-surface-allowlist.json"
++PIN="scripts/governed-surface-pin.json"
++
++while [ $# -gt 0 ]; do
++  case "$1" in
++    --file)    FILE="${2:?--file needs a path}"; shift 2 ;;
++    --pin)     PIN="${2:?--pin needs a path}"; shift 2 ;;
++    -h|--help) usage; exit 0 ;;
++    *) printf '%s: unknown arg %q\n' "${SELF%.sh}" "$1" >&2; usage >&2; exit 2 ;;
++  esac
++done
++
++# Both callers run from anywhere in the repo; defaults are repo-relative. An
++# absolute --file/--pin (what the fixtures pass) is unaffected by the cd.
++if TOPLEVEL="$(git rev-parse --show-toplevel 2>/dev/null)"; then
++  cd "$TOPLEVEL"
++fi
++
++if ! command -v python3 >/dev/null 2>&1; then
++  printf 'check-governed-surface-pin: python3 is required to parse and hash the governed surface and is not on PATH — refusing to report a pass it did not verify\n' >&2
++  exit 2
++fi
++
++set +e
++python3 - "$FILE" "$PIN" >&2 <<'PY'
++import hashlib
++import json
++import sys
++
++FILE, PIN = sys.argv[1], sys.argv[2]
++
++# REQ-054 / AC-041: the recovery denylist is FIVE names. Hardcoded here on
++# purpose — checked against both the file and the pin, so a re-pin cannot widen
++# it. See the "recovery denylist is five names" rule.
++REQ_054 = ["recover", "restore", "repair", "fix", "rebuild"]
++
++LIST_KEYS = ["allowlist", "core", "recovery_denylist"]
++CAP = 8  # cap on enumerated member names per difference line
++
++failures = []
++
++
++def fail(msg):
++    failures.append(msg)
++    print("FAIL  governed-surface-pin: " + msg)
++
++
++def die_env(msg):
++    print("check-governed-surface-pin: " + msg)
++    sys.exit(2)
++
++
++def show(names):
++    shown = ", ".join(sorted(names)[:CAP])
++    if len(names) > CAP:
++        shown += f" ...and {len(names) - CAP} more"
++    return shown
++
++
++# ---------------------------------------------------------------- the pin ----
++# An unusable pin is a broken GATE (exit 2), not a governed-surface divergence.
++try:
++    with open(PIN, "rb") as fh:
++        pin = json.loads(fh.read().decode("utf-8"))
++except OSError as exc:
++    die_env(f"cannot read the pin {PIN}: {exc} — the gate cannot run, so it refuses to pass")
++except Exception as exc:
++    die_env(f"the pin {PIN} is not valid JSON: {exc} — the gate cannot run, so it refuses to pass")
++
++if not isinstance(pin, dict):
++    die_env(f"the pin {PIN} is not a JSON object")
++for key in ["sha256", "git_blob_sha1", "counts"] + LIST_KEYS:
++    if key not in pin:
++        die_env(f"the pin {PIN} has no {key!r} field — it cannot vouch for anything")
++for key in LIST_KEYS:
++    if not isinstance(pin[key], list) or not all(isinstance(v, str) for v in pin[key]):
++        die_env(f"the pin {PIN}: {key!r} is not a list of strings")
++if not isinstance(pin["counts"], dict):
++    die_env(f"the pin {PIN}: 'counts' is not an object")
++
++WHERE = f"pinned at {pin.get('pinned_at_commit_short', '?')} under {pin.get('ac', 'the pre-sign')}"
++
++# (d) on the PIN: a re-pin may not widen or rename the recovery denylist.
++if pin["recovery_denylist"] != REQ_054:
++    fail(
++        f"{PIN} itself declares recovery_denylist {pin['recovery_denylist']!r}, which is not the "
++        f"five REQ-054 names {REQ_054!r}. That rule (AC-041) is independently load-bearing and is "
++        "not something a re-pin can change: the recovery denylist is five names."
++    )
++
++# (c) on the PIN: internally inconsistent pin (lists vs its own counts).
++for key in LIST_KEYS:
++    declared = pin["counts"].get(key)
++    if declared is not None and declared != len(pin[key]):
++        fail(
++            f"{PIN} is internally inconsistent: counts.{key} says {declared} but its {key!r} list "
++            f"holds {len(pin[key])} member(s) — a botched re-pin, not a usable signature record."
++        )
++
++# --------------------------------------------------------- the pinned file ----
++# TC-37 vacuous-pass guard: missing / unreadable is a HARD failure, never a pass.
++try:
++    with open(FILE, "rb") as fh:
++        raw = fh.read()
++except OSError as exc:
++    fail(
++        f"cannot read {FILE}: {exc}. The gate cannot see the surface it vouches for, so it fails "
++        "loudly instead of reporting a vacuous ok (TC-37) — and a governed-surface allowlist that "
++        "has moved or vanished is itself the largest possible change to the governed surface."
++    )
++    raw = None
++
++data = None
++if raw is not None:
++    try:
++        data = json.loads(raw.decode("utf-8"))
++    except Exception as exc:
++        fail(f"{FILE} is not valid UTF-8 JSON: {exc} — it cannot be compared against the pin.")
++    else:
++        if not isinstance(data, dict):
++            fail(f"{FILE} is not a JSON object.")
++            data = None
++
++hash_ok = False
++if raw is not None:
++    # (a) content hash. Both forms: sha256 over the raw bytes, and git's blob
++    # sha1 so `git rev-parse <commit>:<path>` reproduces the pin directly.
++    got_sha256 = hashlib.sha256(raw).hexdigest()
++    got_blob = hashlib.sha1(b"blob %d\0" % len(raw) + raw).hexdigest()
++    hash_ok = got_sha256 == pin["sha256"] and got_blob == pin["git_blob_sha1"]
++    if not hash_ok:
++        fail(
++            f"{FILE} content differs from the pin ({WHERE}).\n"
++            f"        pinned   sha256 {pin['sha256']}  git-blob {pin['git_blob_sha1']}\n"
++            f"        on disk  sha256 {got_sha256}  git-blob {got_blob}"
++        )
++
++members_identical = None
++if data is not None:
++    members_identical = True
++    # (b) member lists, element-by-element, so the failure can NAME the change.
++    for key in LIST_KEYS:
++        got = data.get(key)
++        if not isinstance(got, list) or not all(isinstance(v, str) for v in got):
++            members_identical = False
++            fail(f"{FILE}: {key!r} is missing or is not a list of strings.")
++            continue
++        want = pin[key]
++        if got == want:
++            continue
++        members_identical = False
++        added = [v for v in got if v not in want]
++        removed = [v for v in want if v not in got]
++        detail = []
++        if added:
++            detail.append(f"ADDED {show(added)}")
++        if removed:
++            detail.append(f"REMOVED {show(removed)}")
++        if not added and not removed:
++            detail.append("REORDERED (same members, different order)")
++        fail(
++            f"{FILE}: {key!r} diverges from the pin ({WHERE}): "
++            + "; ".join(detail)
++            + f". Pinned {len(want)} member(s), on disk {len(got)}."
++        )
++
++    # (c) counts, asserted against the pin's own counts block as well as (b), so
++    # a same-hash-different-meaning or partially-updated pin is still caught.
++    for key in LIST_KEYS:
++        declared = pin["counts"].get(key)
++        got = data.get(key)
++        if declared is None or not isinstance(got, list):
++            continue
++        if len(got) != declared:
++            members_identical = False
++            fail(
++                f"{FILE}: {key!r} holds {len(got)} member(s) but the pin's counts block says "
++                f"{declared} ({WHERE})."
++            )
++
++    # (d) on the FILE: REQ-054, independent of what the pin happens to say.
++    got_deny = data.get("recovery_denylist")
++    if isinstance(got_deny, list) and got_deny != REQ_054:
++        members_identical = False
++        extra = [v for v in got_deny if v not in REQ_054]
++        gone = [v for v in REQ_054 if v not in got_deny]
++        what = []
++        if extra:
++            what.append(f"WIDENED by {show(extra)}")
++        if gone:
++            what.append(f"DROPPED {show(gone)}")
++        if not extra and not gone:
++            what.append("REORDERED")
++        fail(
++            "recovery_denylist is no longer exactly the five REQ-054 names "
++            f"{REQ_054!r}: " + "; ".join(what) + ". This rule (AC-041) is independently "
++            "load-bearing — the recovery denylist is five names and must not silently widen."
++        )
++
++if failures and not hash_ok and members_identical is True:
++    print(
++        "NOTE  governed-surface-pin: the PARSED members are identical to the pin — this is a "
++        "formatting/whitespace-only change. It still fails, deliberately: the pin is a CONTENT "
++        "hash over the file's bytes (see this gate's header), because a 'harmless reformat' is "
++        "the ideal cover for a member slipped in on an adjacent line."
++    )
++
++if failures:
++    print(
++        "\n"
++        "  The governed surface has changed relative to the AC-079 pre-signed pin; this re-opens\n"
++        "  the HITL sign-off. The pre-sign covers exactly the pinned content and nothing else, so\n"
++        "  a changed surface is by definition unsigned.\n"
++        "\n"
++        "  DO NOT update the pin to make this pass unless the HITL has signed the new surface.\n"
++        f"  Once it is signed — and only then — update {PIN} in the SAME change that carries the\n"
++        "  new surface, so the signed member list and the shipped member list land together and a\n"
++        "  reviewer can diff them.\n"
++        "\n"
++        "  Silently re-pinning to make this gate green is the failure mode this gate exists to\n"
++        "  prevent.\n"
++        "\n"
++        "  (0.8.20 Slices 20/25/30 are EXPECTED to trip this. Tripping is CORRECT BEHAVIOUR, not a\n"
++        "  bug: this gate is what lets them proceed without a per-slice sign-off, by guaranteeing\n"
++        "  that any surface change routes back to the HITL.)"
++    )
++    sys.exit(1)
++
++print(
++    f"ok    governed-surface-pin: {FILE} matches the {pin.get('ac', 'pre-signed')} pin "
++    f"({pin['counts'].get('allowlist')} allowlist / {pin['counts'].get('core')} core / "
++    f"{pin['counts'].get('recovery_denylist')} recovery_denylist, {WHERE})"
++)
++PY
++RC=$?
++set -e
++
++exit "$RC"
+diff --git a/scripts/governed-surface-pin.json b/scripts/governed-surface-pin.json
+new file mode 100644
+index 00000000..2bc748fd
+--- /dev/null
++++ b/scripts/governed-surface-pin.json
+@@ -0,0 +1,96 @@
++{
++  "_comment": [
++    "GOVERNED-SURFACE PIN — the reviewable record of WHAT WAS PRE-SIGNED.",
++    "",
++    "This file is DATA, not a decision. It does not sign anything and it is not",
++    "itself a HITL sign-off: it records the exact content that an already-given",
++    "HITL pre-sign was keyed to, so that scripts/check-governed-surface-pin.sh can",
++    "make that pin mechanical instead of remembered.",
++    "",
++    "WHAT WAS PRE-SIGNED: the accumulated governed-surface delta of 0.8.20 Slices",
++    "5d + 10b + 15b + 15d (AC-079), pinned to the exact content of",
++    "src/conformance/governed-surface-allowlist.json as of commit 427d2712 —",
++    "30 allowlist members, 5 core, and recovery_denylist unchanged at the five",
++    "REQ-054 names (the 'recovery denylist is five names' rule, AC-041).",
++    "",
++    "WHY THE FULL MEMBER LISTS ARE COPIED HERE and not just a hash: a reviewer",
++    "must be able to SEE what was signed. A bare hash is unreviewable — nobody can",
++    "tell from 93ef3a86... whether `purge` was in the signed surface. Copying the",
++    "members also makes a lazy re-pin visible: updating only `sha256` to silence",
++    "the gate still fails, because the gate compares the member lists too.",
++    "",
++    "WHY THIS PIN EXISTS AT ALL: it is what lets 0.8.20 Slices 20 / 25 / 30",
++    "proceed WITHOUT stopping for a per-slice HITL sign-off. The pre-sign covers",
++    "exactly the content named here, so any divergence necessarily re-opens it.",
++    "Slice 20 is EXPECTED to trip the gate; tripping is CORRECT BEHAVIOUR.",
++    "",
++    "HOW TO CHANGE THIS FILE: only in the SAME change that carries the new",
++    "governed surface, and only AFTER the HITL has signed that new surface.",
++    "Re-pinning to make the gate green is the exact failure mode the gate exists",
++    "to prevent.",
++    "",
++    "REPRODUCE THE PIN FROM GIT:",
++    "  git rev-parse 427d2712:src/conformance/governed-surface-allowlist.json",
++    "    -> 93ef3a8616e460c443417cdffc1e9f711ceb12f8   (= git_blob_sha1 below)",
++    "  git show 427d2712:src/conformance/governed-surface-allowlist.json | sha256sum",
++    "    -> 555e6ae7f7d13e537170dbd63eed4a0433a82a0f7bdc03781ec4e0ef7692c02b"
++  ],
++  "ac": "AC-079",
++  "covers": "0.8.20 Slices 5d + 10b + 15b + 15d (accumulated governed-surface delta)",
++  "pinned_file": "src/conformance/governed-surface-allowlist.json",
++  "pinned_at_commit": "427d27127ec5226e64d9c307b90b1e42af0160a1",
++  "pinned_at_commit_short": "427d2712",
++  "git_blob_sha1": "93ef3a8616e460c443417cdffc1e9f711ceb12f8",
++  "sha256": "555e6ae7f7d13e537170dbd63eed4a0433a82a0f7bdc03781ec4e0ef7692c02b",
++  "counts": {
++    "allowlist": 30,
++    "core": 5,
++    "recovery_denylist": 5
++  },
++  "allowlist": [
++    "Engine.open",
++    "admin.configure",
++    "write",
++    "transition",
++    "purge",
++    "erase_source",
++    "eraseSource",
++    "search",
++    "search_text_only",
++    "searchTextOnly",
++    "close",
++    "read.get",
++    "read.get_many",
++    "read.collection",
++    "read.mutations",
++    "read.list",
++    "ingest_with_extractor",
++    "ingestWithExtractor",
++    "consolidate_with_provider",
++    "consolidateWithProvider",
++    "graph.neighbors",
++    "graph.search_expand",
++    "graph.searchExpand",
++    "rerank",
++    "embed",
++    "read.crossed_boundary_since",
++    "read.crossedBoundarySince",
++    "configure_projections",
++    "configureProjections",
++    "read.projections"
++  ],
++  "core": [
++    "Engine.open",
++    "admin.configure",
++    "write",
++    "search",
++    "close"
++  ],
++  "recovery_denylist": [
++    "recover",
++    "restore",
++    "repair",
++    "fix",
++    "rebuild"
++  ]
++}
+diff --git a/scripts/preflight.sh b/scripts/preflight.sh
+index 0bebb48b..de6e1519 100755
+--- a/scripts/preflight.sh
++++ b/scripts/preflight.sh
+@@ -235,6 +235,44 @@ if [ "$LANDING" -eq 1 ]; then
+   fi
+ fi
+ 
++# --- 9. Governed-surface pin gate (DOC-HYGIENE-2 T1e) ----------------------------
++# Refuse a land that would ship a governed surface the HITL has not signed. The
++# HITL PRE-SIGNED the accumulated delta of 0.8.20 Slices 5d+10b+15b+15d (AC-079)
++# pinned to the exact content of src/conformance/governed-surface-allowlist.json
++# as of 427d2712 — 30 allowlist members, recovery_denylist unchanged at the five
++# REQ-054 names. This gate makes that pin mechanical.
++#
++# The predicate lives in scripts/check-governed-surface-pin.sh (see that file's
++# header) so preflight and the always-on CI job share ONE implementation and
++# cannot diverge, exactly as §7 and §8 do. --landing-only, mirroring their
++# structure: the CI job — deliberately NOT docs_only-gated — covers every
++# non-landing push.
++#
++# Tripping this is CORRECT BEHAVIOUR, not a bug: Slices 20/25/30 are expected to
++# trip it, and that is exactly what routes a changed surface back to the HITL
++# instead of letting it land under a pre-sign that never covered it.
++if [ "$LANDING" -eq 1 ]; then
++  SURFACE_CHECK_OUT="$(bash "$SELF_DIR/check-governed-surface-pin.sh" 2>&1)" || SURFACE_CHECK_RC=$?
++  SURFACE_CHECK_RC="${SURFACE_CHECK_RC:-0}"
++  if [ "$SURFACE_CHECK_RC" -ne 0 ]; then
++    SURFACE_SAW_FAIL=0
++    while IFS= read -r line; do
++      case "$line" in
++        FAIL*) hard "governed-surface-pin: $line"; SURFACE_SAW_FAIL=1 ;;
++        *)     info "governed-surface-pin: $line" ;;
++      esac
++    done <<<"$SURFACE_CHECK_OUT"
++    # Anti-fail-open, as in §8: a non-zero rc with no FAIL line means the checker
++    # itself could not run (exit 2 = usage/env, e.g. python3 absent or an
++    # unreadable pin) — that must still block the land.
++    if [ "$SURFACE_SAW_FAIL" -eq 0 ]; then
++      hard "governed-surface-pin: check-governed-surface-pin.sh exited $SURFACE_CHECK_RC without reporting a specific defect — refusing to certify this tree for landing"
++    fi
++  else
++    ok "governed-surface-pin: the governed surface matches the AC-079 pre-signed pin"
++  fi
++fi
++
+ # --- Summary (JSON, last line) ---------------------------------------------------
+ json_arr() { local out="" x; for x in "$@"; do out="${out:+$out,}\"$(printf '%s' "$x" | sed 's/\\/\\\\/g; s/"/\\"/g')\""; done; printf '[%s]' "$out"; }
+ 
+
+exec
+/bin/bash -lc 'git diff fc5c4ad1dc5551920a6162239752bc3a4cab9005 -- scripts/tests/test_check_governed_surface_pin.sh' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 0ms:
+diff --git a/scripts/tests/test_check_governed_surface_pin.sh b/scripts/tests/test_check_governed_surface_pin.sh
+new file mode 100644
+index 00000000..93c691c0
+--- /dev/null
++++ b/scripts/tests/test_check_governed_surface_pin.sh
+@@ -0,0 +1,417 @@
++#!/usr/bin/env bash
++# scripts/tests/test_check_governed_surface_pin.sh — coverage for the governed-
++# surface pin gate (scripts/check-governed-surface-pin.sh) AND for its two
++# wirings: `preflight.sh --landing` (PREVENT) and the always-on CI job (DETECT).
++#
++# WHAT IS BEING PROTECTED: the HITL PRE-SIGNED the accumulated governed-surface
++# delta of 0.8.20 Slices 5d+10b+15b+15d (AC-079) — pinned to the exact content of
++# src/conformance/governed-surface-allowlist.json as of commit 427d2712 (30
++# allowlist members, 5 core, recovery_denylist unchanged at the five REQ-054
++# names). A pre-sign keyed to specific content is worth exactly as much as the
++# mechanism that notices when that content moves.
++#
++# RED-first: the file MATCHES the pin today, so asserting only against the real
++# repo would prove nothing — a `true` script would pass it. Every failure arm
++# below therefore runs against a purpose-built DIVERGENT FIXTURE, so each arm can
++# only go green because the predicate actually fires. The real-repo arm is the
++# regression half of the same pair.
++#
++# THE FIXTURES ARE COPIES. src/conformance/governed-surface-allowlist.json is
++# NEVER written by this suite — mutating it is the exact thing the gate exists to
++# catch. Copies live under mktemp -d (the checker takes --file/--pin for exactly
++# this reason); the preflight arms build throwaway git repos + linked worktrees.
++#
++# NOTE ON ARM 5 (whitespace-only): failing on a formatting-only change is a
++# DELIBERATE, DOCUMENTED property of a content-hash pin, not an accident — see
++# the gate's header. It is asserted here so the behaviour is a contract.
++set -euo pipefail
++
++SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
++CHECKER="$REPO_ROOT/scripts/check-governed-surface-pin.sh"
++PREFLIGHT="$REPO_ROOT/scripts/preflight.sh"
++CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
++REAL_FILE="$REPO_ROOT/src/conformance/governed-surface-allowlist.json"
++REAL_PIN="$REPO_ROOT/scripts/governed-surface-pin.json"
++
++# The no-argument arm exercises the checker's REPO-RELATIVE defaults, which it
++# resolves from `git rev-parse --show-toplevel` — i.e. from the cwd. Pin the cwd
++# to this checkout so that arm tests THIS tree no matter where the suite is
++# invoked from (agent-test.sh cd_repo_root's first; a bare `bash scripts/tests/...`
++# from a sibling checkout would otherwise silently check the wrong repo).
++cd "$REPO_ROOT"
++
++FAILED=0
++pass() { printf 'PASS  %s\n' "$1"; }
++fail() { printf 'FAIL  %s\n' "$1" >&2; FAILED=$((FAILED + 1)); }
++
++TMPROOT="$(mktemp -d)"
++cleanup() {
++  case "$TMPROOT" in
++    "${TMPDIR:-/tmp}"/*|/tmp/*) rm -rf "$TMPROOT" ;;
++    *) printf 'refusing to remove unexpected temp path: %s\n' "$TMPROOT" >&2 ;;
++  esac
++}
++trap cleanup EXIT
++
++# copy_file <name> -> prints the path of a fresh COPY of the real allowlist
++copy_file() {
++  local d="$TMPROOT/$1"
++  mkdir -p "$d"
++  cp "$REAL_FILE" "$d/governed-surface-allowlist.json"
++  printf '%s' "$d/governed-surface-allowlist.json"
++}
++
++# mutate <path> <python-body>  — edits the COPY in place. `d` is the parsed dict.
++mutate() {
++  local path="$1" body="$2"
++  python3 - "$path" <<PY
++import json, sys
++p = sys.argv[1]
++with open(p) as fh:
++    d = json.load(fh)
++$body
++with open(p, "w") as fh:
++    json.dump(d, fh, indent=2)
++    fh.write("\n")
++PY
++}
++
++run_checker() {
++  set +e
++  OUT="$(bash "$CHECKER" "$@" 2>&1)"
++  RC=$?
++  set -e
++}
++
++# check_fixture <file> [pin]  — always pins explicitly so the arm is independent
++# of the cwd the suite happens to run from.
++check_fixture() {
++  run_checker --file "$1" --pin "${2:-$REAL_PIN}"
++}
++
++expect_rc() {
++  local want="$1" desc="$2"
++  if [ "$RC" -eq "$want" ]; then
++    pass "$desc"
++  else
++    fail "$desc — expected rc=$want, got rc=$RC; out: $OUT"
++  fi
++}
++
++# expect_out <regex> <desc>
++expect_out() {
++  if printf '%s' "$OUT" | grep -qE "$1"; then
++    pass "$2"
++  else
++    fail "$2 — expected output matching /$1/; got: $OUT"
++  fi
++}
++
++# The HITL-routing block must appear on EVERY divergence, not just some of them:
++# a failure the reader cannot act on is how a gate gets silently re-pinned.
++expect_routes_to_hitl() {
++  local desc="$1"
++  local ok=1
++  printf '%s' "$OUT" | grep -q 'this re-opens' || ok=0
++  printf '%s' "$OUT" | grep -q 'HITL sign-off' || ok=0
++  printf '%s' "$OUT" | grep -q 'DO NOT update the pin to make this pass' || ok=0
++  printf '%s' "$OUT" | grep -q 'failure mode this gate exists to' || ok=0
++  if [ "$ok" -eq 1 ]; then
++    pass "$desc routes the reader to the HITL for a fresh sign-off"
++  else
++    fail "$desc did not print the full HITL-routing block; got: $OUT"
++  fi
++}
++
++# ======================= Arm 0: the real, unmodified tree =====================
++# Regression half. Also a standing assertion that the pinned artifact itself is
++# byte-unmodified — if this suite ever "fixes" a red arm by editing the real
++# allowlist, this arm goes red.
++run_checker
++expect_rc 0 "the real repo's governed surface matches the pin (default args)"
++expect_out 'ok +governed-surface-pin' "the passing run says ok"
++expect_out '30 allowlist / 5 core / 5 recovery_denylist' \
++  "the passing run states the pinned counts it verified"
++
++PIN_SHA="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["sha256"])' "$REAL_PIN")"
++REAL_SHA="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$REAL_FILE")"
++if [ "$PIN_SHA" = "$REAL_SHA" ]; then
++  pass "src/conformance/governed-surface-allowlist.json is byte-identical to the pin"
++else
++  fail "the real allowlist json no longer matches the pin's sha256 ($REAL_SHA vs $PIN_SHA)"
++fi
++
++# The pin must really be 427d2712's content, which is the whole provenance claim.
++# Skipped (loudly) on a shallow checkout where that commit is unreachable — the
++# hash arms above still carry the assertion, so this is not a vacuous pass.
++PIN_BLOB="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["git_blob_sha1"])' "$REAL_PIN")"
++if git -C "$REPO_ROOT" cat-file -e '427d2712^{commit}' 2>/dev/null; then
++  AT_PIN="$(git -C "$REPO_ROOT" rev-parse '427d2712:src/conformance/governed-surface-allowlist.json')"
++  if [ "$AT_PIN" = "$PIN_BLOB" ]; then
++    pass "the pin's git_blob_sha1 is exactly 427d2712's blob for the allowlist"
++  else
++    fail "pin git_blob_sha1 $PIN_BLOB != 427d2712's blob $AT_PIN — the provenance claim is false"
++  fi
++else
++  printf 'SKIP  427d2712 unreachable (shallow checkout) — provenance arm not run\n'
++fi
++
++# =================== Arm 7 (ordered early): unmodified COPY ===================
++# A byte-identical copy at a different path must pass, proving the gate compares
++# CONTENT and is not keyed to the path or to any repo state.
++F="$(copy_file unmodified)"
++check_fixture "$F"
++expect_rc 0 "an unmodified COPY of the allowlist passes"
++
++# ======================= Arm 1 (RED): added member (31) =======================
++F="$(copy_file added-member)"
++mutate "$F" 'd["allowlist"].append("shiny.new_verb")'
++check_fixture "$F"
++expect_rc 1 "an ADDED allowlist member (31) HARD-fails"
++expect_out "'allowlist' diverges from the pin" "added-member names the diverging key"
++expect_out 'ADDED shiny.new_verb' "added-member NAMES the member that appeared"
++expect_out 'Pinned 30 member\(s\), on disk 31' "added-member states pinned-vs-on-disk counts"
++expect_out 'content differs from the pin' "added-member reports the content-hash divergence too"
++expect_routes_to_hitl "added-member"
++
++# ====================== Arm 2 (RED): removed member (29) ======================
++F="$(copy_file removed-member)"
++mutate "$F" 'd["allowlist"].remove("purge")'
++check_fixture "$F"
++expect_rc 1 "a REMOVED allowlist member (29) HARD-fails"
++expect_out 'REMOVED purge' "removed-member NAMES the member that vanished"
++expect_out 'Pinned 30 member\(s\), on disk 29' "removed-member states pinned-vs-on-disk counts"
++expect_routes_to_hitl "removed-member"
++
++# =================== Arm 3 (RED): recovery_denylist widened ===================
++# AC-041 / REQ-054: the recovery denylist is five names. Widening it to six must
++# fail on the DENYLIST rule by name, not merely as "some list changed".
++F="$(copy_file denylist-widened)"
++mutate "$F" 'd["recovery_denylist"].append("reset")'
++check_fixture "$F"
++expect_rc 1 "a recovery_denylist widened to SIX HARD-fails"
++expect_out 'REQ-054' "denylist-widened cites the REQ-054 rule by name"
++expect_out 'recovery denylist is five names' "denylist-widened states the five-names rule"
++expect_out 'WIDENED by reset' "denylist-widened NAMES the added denylist entry"
++expect_routes_to_hitl "denylist-widened"
++
++# ================= Arm 4 (RED): recovery_denylist name changed ================
++# Still FIVE names, so every count assertion passes — only an exact-membership
++# check can catch this. That is precisely why counts are secondary, not the test.
++F="$(copy_file denylist-renamed)"
++mutate "$F" 'd["recovery_denylist"] = ["recover", "restore", "repair", "mend", "rebuild"]'
++check_fixture "$F"
++expect_rc 1 "a RENAMED recovery_denylist entry (still five) HARD-fails"
++expect_out 'REQ-054' "denylist-renamed cites the REQ-054 rule by name"
++expect_out 'WIDENED by mend' "denylist-renamed names the substituted entry"
++expect_out 'DROPPED fix' "denylist-renamed names the REQ-054 entry that went missing"
++expect_routes_to_hitl "denylist-renamed"
++
++# =================== Arm 5 (RED): whitespace / formatting only ================
++# Documented behaviour of a CONTENT-hash pin. The failure must ALSO say that the
++# parsed members are identical, so the reader is not left guessing.
++F="$(copy_file whitespace-only)"
++printf '\n' >>"$F"
++check_fixture "$F"
++expect_rc 1 "a whitespace/formatting-only change HARD-fails (content-hash pin, by design)"
++expect_out 'content differs from the pin' "whitespace-only reports a content-hash divergence"
++expect_out 'formatting/whitespace-only change' "whitespace-only says the change is formatting-only"
++expect_out 'CONTENT hash' "whitespace-only explains that the pin is a content hash (deliberate)"
++if printf '%s' "$OUT" | grep -qE 'ADDED|REMOVED|diverges from the pin'; then
++  fail "whitespace-only must NOT report a member divergence; got: $OUT"
++else
++  pass "whitespace-only reports no member divergence (members are genuinely unchanged)"
++fi
++expect_routes_to_hitl "whitespace-only"
++
++# ============= Arm 6 (RED): file missing — TC-37 vacuous-pass guard ===========
++# A gate that cannot see its subject and reports green is an active false
++# assurance. Missing/unreadable must be LOUD and must never exit 0.
++check_fixture "$TMPROOT/does-not-exist/governed-surface-allowlist.json"
++expect_rc 1 "a MISSING allowlist file HARD-fails (TC-37 vacuous-pass guard)"
++expect_out 'cannot read' "file-missing says it could not read the file"
++expect_out 'TC-37' "file-missing cites the vacuous-pass failure class"
++expect_out 'largest possible change to the governed surface' \
++  "file-missing explains why a vanished allowlist is itself a surface change"
++
++D="$TMPROOT/unreadable"
++mkdir -p "$D"
++cp "$REAL_FILE" "$D/governed-surface-allowlist.json"
++chmod 000 "$D/governed-surface-allowlist.json"
++if [ -r "$D/governed-surface-allowlist.json" ]; then
++  # root ignores the mode bits; the missing-file arm above already carries TC-37.
++  printf 'SKIP  running as root — chmod 000 is not enforced, unreadable arm not run\n'
++else
++  check_fixture "$D/governed-surface-allowlist.json"
++  expect_rc 1 "an UNREADABLE allowlist file HARD-fails (TC-37 vacuous-pass guard)"
++fi
++chmod 644 "$D/governed-surface-allowlist.json"
++
++# ================= Arm 8 (RED): the LAZY RE-PIN — hash-only update ============
++# The failure mode with teeth: a member is added to the surface and the pin's
++# hashes are updated to match, but the signed member lists/counts are left alone.
++# The gate must still fail, because the member lists are compared independently.
++F="$(copy_file lazy-repin)"
++mutate "$F" 'd["allowlist"].append("smuggled.verb")'
++LAZY_PIN="$TMPROOT/lazy-repin/pin.json"
++python3 - "$REAL_PIN" "$F" "$LAZY_PIN" <<'PY'
++import hashlib, json, sys
++pin = json.load(open(sys.argv[1]))
++raw = open(sys.argv[2], "rb").read()
++pin["sha256"] = hashlib.sha256(raw).hexdigest()
++pin["git_blob_sha1"] = hashlib.sha1(b"blob %d\0" % len(raw) + raw).hexdigest()
++json.dump(pin, open(sys.argv[3], "w"), indent=2)
++PY
++check_fixture "$F" "$LAZY_PIN"
++expect_rc 1 "a LAZY RE-PIN (hashes updated, signed member list untouched) still HARD-fails"
++expect_out 'ADDED smuggled.verb' "lazy-repin names the smuggled member"
++expect_out 'counts block says 30' "lazy-repin is also caught by the counts assertion"
++if printf '%s' "$OUT" | grep -q 'content differs from the pin'; then
++  fail "lazy-repin's hashes DO match by construction; a hash complaint means the arm is not testing what it claims: $OUT"
++else
++  pass "lazy-repin's hash check genuinely passes — only the member/count checks carry this arm"
++fi
++expect_routes_to_hitl "lazy-repin"
++
++# ============ Arm 9 (RED): a re-pin that widens the denylist in the PIN =======
++# REQ-054 is checked against a constant hardcoded in the gate, in the PIN as well
++# as in the file, so this is the one rule a re-pin cannot buy its way past.
++WIDE_PIN="$TMPROOT/wide-pin.json"
++python3 - "$REAL_PIN" "$WIDE_PIN" <<'PY'
++import json, sys
++pin = json.load(open(sys.argv[1]))
++pin["recovery_denylist"].append("reset")
++pin["counts"]["recovery_denylist"] = 6
++json.dump(pin, open(sys.argv[2], "w"), indent=2)
++PY
++check_fixture "$REAL_FILE" "$WIDE_PIN"
++expect_rc 1 "a PIN that itself widens recovery_denylist HARD-fails (REQ-054 is not re-pinnable)"
++expect_out 'itself declares recovery_denylist' "wide-pin failure points at the pin, not the file"
++expect_out 'not something a re-pin can change' "wide-pin says REQ-054 cannot be re-pinned"
++
++# ==================== Arm 10: usage / environment errors = 2 ==================
++run_checker --not-a-flag
++expect_rc 2 "an unknown flag exits 2 (usage), distinct from a divergence"
++
++check_fixture "$REAL_FILE" "$TMPROOT/no-such-pin.json"
++expect_rc 2 "a missing PIN exits 2 (the gate could not run) and never 0"
++expect_out 'the gate cannot run' "missing-pin says the gate could not run"
++
++run_checker --help
++expect_rc 0 "--help exits 0"
++expect_out 'Usage: scripts/check-governed-surface-pin.sh' "--help prints usage"
++
++# ======================== preflight.sh --landing wiring =======================
++# These arms prove the PREVENT wiring. Pre-wiring they are the RED witness for
++# the gap: a tree carrying an unsigned governed surface cleared --landing with 0.
++
++NO_HOOKS="$TMPROOT/no-hooks"
++mkdir -p "$NO_HOOKS"
++
++# make_repo <primary> <linked> — a throwaway repo carrying COPIES of the two
++# governed-surface files plus a consistent ledger (so preflight's §8 passes and
++# only §9 is under test), plus a linked worktree (TC-RUBRIC-5 forbids --landing
++# in a primary checkout).
++make_repo() {
++  local primary="$1" linked="$2"
++  mkdir -p "$primary/src/conformance" "$primary/scripts" "$primary/dev/steward"
++  git init -q -b main "$primary"
++  git -C "$primary" config user.email surface-test@example.invalid
++  git -C "$primary" config user.name 'Surface Test'
++  git -C "$primary" config commit.gpgsign false
++  git -C "$primary" config core.hooksPath "$NO_HOOKS"
++  cp "$REAL_FILE" "$primary/src/conformance/governed-surface-allowlist.json"
++  cp "$REAL_PIN" "$primary/scripts/governed-surface-pin.json"
++  printf '{"seq":1,"note":"fixture"}\n' >"$primary/dev/steward/steward-ledger.jsonl"
++  printf '%s' 1 >"$primary/dev/steward/steward-ledger.jsonl.seq"
++  git -C "$primary" add -A
++  git -C "$primary" commit -q -m 'fixture: initial commit'
++  git -C "$primary" worktree add -q -b landing-fixture "$linked" >/dev/null 2>&1
++}
++
++run_preflight() {
++  local cwd="$1"; shift
++  set +e
++  OUT="$(cd "$cwd" && bash "$PREFLIGHT" "$@" 2>&1)"
++  RC=$?
++  set -e
++}
++
++CLEAN_PRIMARY="$TMPROOT/repo-clean"; CLEAN_LINKED="$TMPROOT/repo-clean-wt"
++make_repo "$CLEAN_PRIMARY" "$CLEAN_LINKED"
++
++DIVERGED_PRIMARY="$TMPROOT/repo-diverged"; DIVERGED_LINKED="$TMPROOT/repo-diverged-wt"
++make_repo "$DIVERGED_PRIMARY" "$DIVERGED_LINKED"
++mutate "$DIVERGED_LINKED/src/conformance/governed-surface-allowlist.json" \
++  'd["allowlist"].append("unsigned.verb")'
++
++run_preflight "$DIVERGED_LINKED" --landing
++if [ "$RC" -ne 0 ]; then
++  pass "--landing HARD-fails in a worktree whose governed surface diverges from the pin"
++else
++  fail "--landing MUST fail on an unsigned governed surface; out: $OUT"
++fi
++if printf '%s' "$OUT" | grep -q 'HARD.*governed-surface-pin:'; then
++  pass "--landing failure output names the governed-surface-pin check"
++else
++  fail "expected a HARD line naming governed-surface-pin; got: $OUT"
++fi
++if printf '%s' "$OUT" | grep -q 'unsigned.verb'; then
++  pass "--landing failure carries the specific member through to the operator"
++else
++  fail "expected the HARD line to name unsigned.verb; got: $OUT"
++fi
++
++run_preflight "$CLEAN_LINKED" --landing
++if [ "$RC" -eq 0 ]; then
++  pass "--landing still exits 0 in a worktree whose governed surface matches the pin"
++else
++  fail "--landing must not regress a pinned-clean tree; got rc=$RC, out: $OUT"
++fi
++
++# Mirrors §7/§8's contract: --landing-only, so plain preflight stays lean.
++run_preflight "$DIVERGED_LINKED"
++if printf '%s' "$OUT" | grep -q 'governed-surface-pin:'; then
++  fail "governed-surface-pin must be --landing-only; it ran without --landing: $OUT"
++else
++  pass "regression guard: governed-surface-pin is inert without --landing"
++fi
++
++# ========================== CI wiring is ALWAYS-ON ============================
++# A docs_only-gated job never fires on a code push, and a governed-surface change
++# is BY DEFINITION a code change — so a docs_only gate would make this job absent
++# on exactly the pushes it exists to catch. Assert statically that the job exists,
++# runs the SHARED script, and carries no `if:` condition at all.
++CI_JOB_BLOCK="$(awk '
++  /^  governed-surface-pin:/ { inblock = 1; print; next }
++  inblock && /^  [A-Za-z0-9_-]+:/ { inblock = 0 }
++  inblock { print }
++' "$CI_YML")"
++
++if [ -n "$CI_JOB_BLOCK" ]; then
++  pass "ci.yml defines a governed-surface-pin job"
++else
++  fail "ci.yml has no governed-surface-pin job"
++fi
++if printf '%s' "$CI_JOB_BLOCK" | grep -q 'scripts/check-governed-surface-pin.sh'; then
++  pass "the CI job runs the SHARED scripts/check-governed-surface-pin.sh (one predicate, two callers)"
++else
++  fail "the CI job must invoke scripts/check-governed-surface-pin.sh, not a reimplementation"
++fi
++if printf '%s' "$CI_JOB_BLOCK" | grep -qE '^\s*if:'; then
++  fail "the governed-surface-pin job must be ALWAYS-ON (no if:/docs_only gate); block: $CI_JOB_BLOCK"
++else
++  pass "the governed-surface-pin job is always-on (no if: condition, not docs_only-gated)"
++fi
++if printf '%s' "$CI_JOB_BLOCK" | grep -qE '^\s*needs:'; then
++  fail "the governed-surface-pin job must not depend on the changes job; block: $CI_JOB_BLOCK"
++else
++  pass "the governed-surface-pin job has no needs: (does not ride the changes/docs_only fast path)"
++fi
++
++if [ "$FAILED" -gt 0 ]; then
++  printf '\n%d test(s) failed\n' "$FAILED" >&2
++  exit 1
++fi
++printf '\nAll check-governed-surface-pin tests passed\n'
+
+exec
+/bin/bash -lc 'bash scripts/check-governed-surface-pin.sh; echo rc:$?' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 0ms:
+ok    governed-surface-pin: src/conformance/governed-surface-allowlist.json matches the AC-079 pin (30 allowlist / 5 core / 5 recovery_denylist, pinned at 427d2712 under AC-079)
+rc:0
+
+exec
+/bin/bash -lc 'bash scripts/tests/test_check_governed_surface_pin.sh' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 778ms:
+PASS  an ADDED allowlist member (31) HARD-fails
+PASS  added-member names the diverging key
+PASS  added-member NAMES the member that appeared
+PASS  added-member states pinned-vs-on-disk counts
+PASS  added-member reports the content-hash divergence too
+PASS  added-member routes the reader to the HITL for a fresh sign-off
+PASS  a REMOVED allowlist member (29) HARD-fails
+PASS  removed-member NAMES the member that vanished
+PASS  removed-member states pinned-vs-on-disk counts
+PASS  removed-member routes the reader to the HITL for a fresh sign-off
+PASS  a recovery_denylist widened to SIX HARD-fails
+PASS  denylist-widened cites the REQ-054 rule by name
+PASS  denylist-widened states the five-names rule
+PASS  denylist-widened NAMES the added denylist entry
+PASS  denylist-widened routes the reader to the HITL for a fresh sign-off
+PASS  a RENAMED recovery_denylist entry (still five) HARD-fails
+PASS  denylist-renamed cites the REQ-054 rule by name
+PASS  denylist-renamed names the substituted entry
+PASS  denylist-renamed names the REQ-054 entry that went missing
+PASS  denylist-renamed routes the reader to the HITL for a fresh sign-off
+PASS  a whitespace/formatting-only change HARD-fails (content-hash pin, by design)
+PASS  whitespace-only reports a content-hash divergence
+PASS  whitespace-only says the change is formatting-only
+PASS  whitespace-only explains that the pin is a content hash (deliberate)
+PASS  whitespace-only reports no member divergence (members are genuinely unchanged)
+PASS  whitespace-only routes the reader to the HITL for a fresh sign-off
+PASS  a MISSING allowlist file HARD-fails (TC-37 vacuous-pass guard)
+PASS  file-missing says it could not read the file
+PASS  file-missing cites the vacuous-pass failure class
+PASS  file-missing explains why a vanished allowlist is itself a surface change
+PASS  an UNREADABLE allowlist file HARD-fails (TC-37 vacuous-pass guard)
+PASS  a LAZY RE-PIN (hashes updated, signed member list untouched) still HARD-fails
+PASS  lazy-repin names the smuggled member
+PASS  lazy-repin is also caught by the counts assertion
+PASS  lazy-repin's hash check genuinely passes — only the member/count checks carry this arm
+PASS  lazy-repin routes the reader to the HITL for a fresh sign-off
+PASS  a PIN that itself widens recovery_denylist HARD-fails (REQ-054 is not re-pinnable)
+PASS  wide-pin failure points at the pin, not the file
+PASS  wide-pin says REQ-054 cannot be re-pinned
+PASS  an unknown flag exits 2 (usage), distinct from a divergence
+PASS  a missing PIN exits 2 (the gate could not run) and never 0
+PASS  missing-pin says the gate could not run
+PASS  --help exits 0
+PASS  --help prints usage
+PASS  --landing HARD-fails in a worktree whose governed surface diverges from the pin
+PASS  --landing failure output names the governed-surface-pin check
+PASS  --landing failure carries the specific member through to the operator
+PASS  --landing still exits 0 in a worktree whose governed surface matches the pin
+PASS  regression guard: governed-surface-pin is inert without --landing
+PASS  ci.yml defines a governed-surface-pin job
+PASS  the CI job runs the SHARED scripts/check-governed-surface-pin.sh (one predicate, two callers)
+PASS  the governed-surface-pin job is always-on (no if: condition, not docs_only-gated)
+PASS  the governed-surface-pin job has no needs: (does not ride the changes/docs_only fast path)
+
+All check-governed-surface-pin tests passed
+
+exec
+/bin/bash -lc "sed -n '1,520p' .github/workflows/ci.yml && sed -n '1,310p' scripts/preflight.sh" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 0ms:
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+# H-4 (pre-0.6.0 security fix): scope workflow permissions to least privilege.
+# Default GITHUB_TOKEN has broader access that a compromised third-party action
+# could exploit.
+permissions:
+  contents: read
+
+jobs:
+  # Docs-only fast-path detector. Computes whether the diff touches ANY
+  # non-markdown file. A markdown/docs-only change then runs ONLY the lightweight
+  # `markdownlint` job (plus the always-on `docs` mkdocs gate) and skips the heavy
+  # verify / security / embedder / cross-OS / wheel jobs — so a trivial docs edit
+  # no longer burns the full matrix (and a single md finding no longer reds main
+  # via the heavy gate). The md gate itself is PRESERVED on the fast path; this is
+  # not a `paths-ignore` drop. paths-filter handles base-ref resolution for both
+  # push (before SHA) and pull_request (base branch).
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      # docs_only = true when NO changed file is outside markdown (i.e. every
+      # changed path is *.md). `nonmd` is true when at least one non-md file
+      # changed; docs_only is its negation. The bias is safe: a misread can only
+      # make heavy jobs RUN on a docs change (slower), never SKIP on a code change.
+      docs_only: ${{ steps.filter.outputs.nonmd == 'false' }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        id: filter
+        with:
+          filters: |
+            nonmd:
+              - '!**/*.md'
+
+  # Single agent-loop gate. Mirrors what scripts/agent-verify.sh does locally,
+  # so a green CI run = `verify` is green on the same toolchain set.
+  verify:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # H-5 (pre-0.6.0 security fix): pin third-party actions to commit SHAs.
+      # 0.8.9 Slice 1: fetch-depth 0 so the AC-050c removal-detect gate can
+      # resolve its base ref (v0.6.1 tag); the default shallow checkout has no
+      # tags, which made `git diff v0.6.1..HEAD` fail (`bad revision`) once the
+      # bootstrap un-mask let agent-security.sh actually reach AC-050c.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - name: Configure per-session TMPDIR
+        shell: bash
+        run: |
+          # Per-session TMPDIR root so cleanup is one rm -rf at job end (GH #40).
+          # Set via $GITHUB_ENV — runner.* context isn't available at job-env level.
+          TMPDIR="$RUNNER_TEMP/fathomdb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$TMPDIR"
+          echo "TMPDIR=$TMPDIR" >> "$GITHUB_ENV"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Bootstrap dev tooling
+        run: bash scripts/bootstrap.sh
+      - name: agent-verify (lint -> typecheck -> test)
+        run: bash scripts/agent-verify.sh
+
+  # Gate (n) — agent-security battery (AC-036/037/038/050a/050c).
+  #
+  # 0.8.0 Slice 40 (Q3/META): the agent-verify job above already runs
+  # STRICT=1 agent-security.sh, but on ubuntu-latest (24.04) AppArmor
+  # restricts unprivileged user namespaces, so the AC-037 netns-deny-egress
+  # fixture cannot actually create its userns there. This dedicated job pins
+  # the security battery to ubuntu-22.04, which permits unprivileged userns
+  # by default, so AC-037 genuinely exercises (the home of AC-037 per
+  # acceptance.md). STRICT=1 promotes any toolchain blocker to a hard
+  # failure — a blocker here means AC-037 did NOT run, which must fail the
+  # gate rather than pass vacuously.
+  security:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      # 0.8.9 Slice 1: fetch-depth 0 so AC-050c removal-detect can resolve its
+      # v0.6.1 base tag (see the verify job above for the same rationale).
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - name: Configure per-session TMPDIR
+        shell: bash
+        run: |
+          TMPDIR="$RUNNER_TEMP/fathomdb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$TMPDIR"
+          echo "TMPDIR=$TMPDIR" >> "$GITHUB_ENV"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Bootstrap dev tooling (installs strace for AC-036/AC-037)
+        run: bash scripts/bootstrap.sh
+      - name: agent-security (AC-036/037/038/050a/050c)
+        run: STRICT=1 bash scripts/agent-security.sh
+
+  # EU-5c — pre-warm the BGE-small embedder weight cache (~133 MB from HF)
+  # via actions/cache, then run the network-hitting EU-5b tests against the
+  # warm cache. If the warm step fails (e.g. HF unreachable), the env-gate
+  # `FATHOMDB_SKIP_NETWORK_TESTS=1` is exported and the gated tests skip
+  # cleanly with a log line instead of failing the job. On the happy path
+  # the env var stays unset and the tests run normally — fast on warm cache.
+  default-embedder-tests:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Configure per-session TMPDIR
+        shell: bash
+        run: |
+          TMPDIR="$RUNNER_TEMP/fathomdb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$TMPDIR"
+          echo "TMPDIR=$TMPDIR" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      # H-5: pin third-party actions to commit SHAs. Cache key is
+      # runner.os + model identity + HF revision (see
+      # fathomdb-embedder/src/loader.rs::HF_REVISION). Bumping the
+      # revision invalidates the cache cleanly.
+      - name: Restore BGE embedder weight cache
+        id: bge-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/fathomdb/embedders
+          key: ${{ runner.os }}-fathomdb-embedder-bge-small-en-v1.5-5c38ec7c405ec4b44b94cc5a9bb96e735b38267a
+          # Future revision bumps should still benefit from partial
+          # restoration (the loader will sha-verify each file and refetch
+          # only mismatched ones). Without this, a SHA bump = 100% cold
+          # miss (~133 MB redownload from HF).
+          restore-keys: |
+            ${{ runner.os }}-fathomdb-embedder-bge-small-en-v1.5-
+            ${{ runner.os }}-fathomdb-embedder-
+      - name: Warm BGE embedder cache (no-op on cache hit)
+        id: warm
+        shell: bash
+        run: |
+          set +e
+          # Surface cache-hit outcome as a GitHub Actions notice so it
+          # shows up in the run summary without log-diving. A regression
+          # that breaks the cache key (silently forcing cold downloads
+          # on every run) becomes visible at a glance here.
+          echo "::notice title=BGE cache::hit=${{ steps.bge-cache.outputs.cache-hit }}"
+          cargo run --quiet -p fathomdb-cli --features default-embedder \
+            --bin fathomdb -- doctor warm-cache --json
+          rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "warm-cache failed (rc=$rc); will skip network-hitting tests"
+            echo "FATHOMDB_SKIP_NETWORK_TESTS=1" >> "$GITHUB_ENV"
+          fi
+          # Never fail the job on warm-cache failure — the env gate covers it.
+          exit 0
+      - name: Network-hitting EU-5b tests (engine)
+        run: |
+          cargo test -p fathomdb-engine --features default-embedder \
+            --test eu5b_lockflip
+      - name: Network-hitting EU-5b tests (cli warm-cache)
+        run: |
+          cargo test -p fathomdb-cli --features default-embedder \
+            --test cli_warm_cache
+
+  # Platform-sensitive engine code regresses on Windows/macOS often enough
+  # that pre-0.6.0 carried these matrix legs. Keep them.
+  rust-windows:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Configure per-session TMPDIR
+        shell: bash
+        run: |
+          # Windows resolves temp dir via TMP/TEMP, not TMPDIR.
+          TMP="$RUNNER_TEMP/fathomdb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$TMP"
+          echo "TMP=$TMP" >> "$GITHUB_ENV"
+          echo "TEMP=$TMP" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      # 0.8.9 Slice 20 (F-9): --no-fail-fast surfaces the FULL set of Windows test
+      # failures in one run rather than stopping at the first. The pyo3 link gate had
+      # masked Windows test execution entirely; once it lifted, failures appear one per
+      # run with a default (fail-fast) invocation. Enumerate them all so the
+      # cross-platform remediation scope is known, not discovered whack-a-mole. (Aligned
+      # with 0.8.9's anti-masking mandate — a first failure must not hide the rest.)
+      - run: cargo test --workspace --no-fail-fast
+
+  rust-macos:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Configure per-session TMPDIR
+        shell: bash
+        run: |
+          TMPDIR="$RUNNER_TEMP/fathomdb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$TMPDIR"
+          echo "TMPDIR=$TMPDIR" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - run: cargo test --workspace
+
+  # EU-6 FIX-1 / ADR-0.6.0-default-embedder.md EMB-3 — wheel-size gate.
+  #
+  # Per `dev/design/0.7.1-EU-6-FIX-1-design.md` D2:
+  #   * The SHIPPED wheel (with `default-embedder` feature ON, the
+  #     surface a `pip install fathomdb` user actually consumes) is the
+  #     GATED artifact. Each platform has its own `baseline_bytes`;
+  #     regression > 20 MB blocks. This is the canary that matters.
+  #   * The NO-FEATURE wheel is built informationally per matrix entry
+  #     and recorded in the job summary so accidental dependency creep
+  #     on the minimal-deps build path is still visible — but not gated.
+  #
+  # Matrix covers all 5 release-target platforms emitted by
+  # `release.yml`'s build-python job: Linux x86_64, Linux aarch64,
+  # macOS x86_64, macOS arm64, Windows x86_64. AC-FIX1-5.
+  #
+  # Baselines: Linux x86_64 measured on the FIX-1 GREEN commit
+  # (with-feature wheel ≈ 6.16 MB; ~20% padding → 7.4 MB). Non-Linux
+  # baselines are seeded at conservative numbers derived from the
+  # Linux measurement; the first CI run will surface the real per-
+  # platform numbers and any baseline that's too low can be bumped
+  # within EMB-3's 20 MB regression budget. BASELINES TO RE-CALIBRATE
+  # IN FIRST CI RUN — bump in a follow-up commit once the first run
+  # emits real `::notice title=wheel-size::` values.
+  wheel-size-gate:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            label: linux-x64
+            manylinux: "2_28"
+            # Measured on FIX-1 GREEN commit (Linux x86_64, abi3 cp310):
+            # no-feature ≈ 3.06 MB, with-feature ≈ 6.16 MB. Baseline
+            # = with-feature + ~20% headroom so Cargo.lock churn does
+            # not whip the gate; the 20 MB regression budget on top of
+            # this absorbs intentional dependency bumps.
+            baseline_bytes: 7400000
+          - runner: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            label: linux-aarch64
+            manylinux: "2_28"
+            # Seeded from Linux x86_64 with ~5% padding (aarch64 wheels
+            # are typically near-parity, occasionally a hair larger).
+            # TO RECALIBRATE.
+            baseline_bytes: 7700000
+          - runner: macos-latest
+            target: x86_64-apple-darwin
+            label: darwin-x64
+            # Seeded from Linux x86_64 with ~5% padding (Mach-O vs ELF
+            # overhead is small at this scale). TO RECALIBRATE.
+            baseline_bytes: 7700000
+          - runner: macos-latest
+            target: aarch64-apple-darwin
+            label: darwin-arm64
+            # Seeded from Linux x86_64 with ~5% padding. TO RECALIBRATE.
+            baseline_bytes: 7700000
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            label: win32-x64
+            # Seeded from Linux x86_64 with ~10% padding (PE/COFF
+            # sections + MSVC runtime imports add a small overhead vs
+            # ELF). TO RECALIBRATE.
+            baseline_bytes: 8000000
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      # Use PyO3/maturin-action (same SHA as release.yml's build-python)
+      # so the linux-aarch64 leg gets a working cross-toolchain via the
+      # action's container. A bare `maturin build --target
+      # aarch64-unknown-linux-gnu` on ubuntu-latest has no aarch64
+      # sysroot/linker; the action handles that. This also harmonizes
+      # the build path with release.yml.
+      #
+      # Build the with-feature wheel first — this is the shipped
+      # artifact and the GATED build. `--features` REPLACES the
+      # pyproject list, so the explicit list here is what gets built
+      # regardless of what pyproject.toml carries.
+      - name: Build wheel (with default-embedder feature; shipped artifact)
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        with:
+          target: ${{ matrix.target }}
+          args: --release --out dist-feature -i python3.11 --features pyo3/extension-module,default-embedder
+          manylinux: ${{ matrix.manylinux || 'auto' }}
+          working-directory: src/python
+      # No-feature wheel: informational only. Recorded to detect
+      # accidental dependency creep on the minimal-deps tree.
+      - name: Build wheel (no default-embedder feature; informational)
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        with:
+          target: ${{ matrix.target }}
+          args: --release --out dist-nofeature -i python3.11 --features pyo3/extension-module
+          manylinux: ${{ matrix.manylinux || 'auto' }}
+          working-directory: src/python
+      - name: Assert wheel-size gate
+        shell: bash
+        working-directory: src/python
+        run: |
+          set -euo pipefail
+          BASELINE=${{ matrix.baseline_bytes }}
+          BUDGET=$((20 * 1024 * 1024)) # 20 MB, per EMB-3
+          FEAT=$(stat -c%s dist-feature/*.whl 2>/dev/null || stat -f%z dist-feature/*.whl)
+          NOFEAT=$(stat -c%s dist-nofeature/*.whl 2>/dev/null || stat -f%z dist-nofeature/*.whl)
+          DELTA=$(( FEAT - BASELINE ))
+          FEATDELTA=$(( FEAT - NOFEAT ))
+          echo "::notice title=wheel-size (${{ matrix.label }})::with-feature=${FEAT}B baseline=${BASELINE}B delta=${DELTA}B; no-feature=${NOFEAT}B (informational)"
+          {
+            echo "## Wheel-size gate (${{ matrix.label }})"
+            echo ""
+            echo "| metric | value |"
+            echo "| --- | --- |"
+            echo "| with-feature wheel (shipped, GATED) | ${FEAT} B |"
+            echo "| baseline | ${BASELINE} B |"
+            echo "| delta vs baseline | ${DELTA} B |"
+            echo "| budget (blocking) | ${BUDGET} B |"
+            echo "| no-feature wheel | ${NOFEAT} B (informational only) |"
+            echo "| with-feature delta vs no-feature | ${FEATDELTA} B (informational only) |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$DELTA" -gt "$BUDGET" ]; then
+            echo "::error title=wheel-size regression::with-feature wheel grew ${DELTA} B vs baseline ${BASELINE} B (budget ${BUDGET} B)"
+            exit 1
+          fi
+
+  # Docs-only fast-path md gate. Runs ONLY when the diff is markdown-only (the
+  # heavy `verify` job — which runs scripts/agent-verify.sh -> agent-lint-md.sh —
+  # is the md gate on every non-docs diff, so this avoids double-linting). Uses
+  # the SAME .markdownlint-cli2.jsonc config as local + CI, so the real markdown
+  # gate is preserved on the fast path (this is NOT a silent `paths-ignore` drop).
+  markdownlint:
+    needs: changes
+    if: needs.changes.outputs.docs_only == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+      - name: Install markdown tooling (markdownlint-cli2)
+        run: npm ci
+      - name: markdownlint-cli2 (repo markdown; same config as local + verify)
+        run: ./node_modules/.bin/markdownlint-cli2
+      - name: markdownlint docs/** (mirrors agent-lint-md.sh docs leg)
+        run: bash scripts/agent-lint-docs.sh
+      - name: dev/plans/*.md status frontmatter (T3/8+9, mirrors agent-lint-md.sh leg)
+        run: bash scripts/lint-plans-status.sh
+      - name: master §6 findings register — duplicate-id gate (T1c, mirrors agent-lint-md.sh leg)
+        run: bash scripts/lint-findings.sh
+
+  # status-board-currency-enforcement item 3 — the non-bypassable CI backstop.
+  # `preflight.sh --landing` (item 2) is the PREVENT gate at land time, but it is
+  # a local, invocable check; this job is the DETECT gate that catches anything
+  # that slipped preflight or predates it (the exact 4-day drift the incident
+  # exhibited: a board that kept saying "not landed" after the merge commit was
+  # already on origin/main). Reuses scripts/check-board-currency.sh — the SAME
+  # script preflight.sh calls — so the two homes cannot diverge (see that
+  # script's header for the full predicate). Intentionally NOT gated on
+  # docs_only: a board can drift behind a non-docs-only push just as easily.
+  # fetch-depth 0 is required: the predicate walks full reachable git history
+  # for `merge(0.8.z): Slice N` commits, which a shallow (depth-1) checkout
+  # would hide entirely.
+  board-currency:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - name: Board/git-ancestry drift check (status-board-currency-enforcement item 3)
+        run: bash scripts/check-board-currency.sh --tip HEAD
+
+  # DOC-HYGIENE-2 T1b — the always-on ledger-integrity backstop.
+  # `preflight.sh --landing` is the PREVENT gate at land time; this job is the
+  # DETECT gate for whatever slips it. Reuses scripts/check-ledgers.sh — the
+  # SAME script preflight calls — so the two homes cannot diverge (see that
+  # script's header for the predicate: sidecar == max(seq), and seq contiguous).
+  #
+  # Deliberately carries NO `if:` condition. A docs_only-gated job never fires on
+  # a code push, and the measured incident (steward-ledger.jsonl.seq frozen at 80
+  # against max(seq) 98 for 19 commits / four days) spanned both docs and code
+  # pushes; the sidecar is tracked, so any clone taken in that window would have
+  # minted colliding seq numbers. Default (depth-1) checkout is sufficient: the
+  # predicate reads working-tree files only and walks no history.
+  ledger-integrity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Ledger sidecar/seq integrity (DOC-HYGIENE-2 T1b)
+        run: bash scripts/check-ledgers.sh
+
+  # DOC-HYGIENE-2 T1e — the always-on governed-surface pin backstop.
+  # `preflight.sh --landing` is the PREVENT gate at land time; this job is the
+  # DETECT gate for whatever slips it. Reuses scripts/check-governed-surface-pin.sh
+  # — the SAME script preflight calls — so the two homes cannot diverge (see that
+  # script's header for the predicate: content hash + member lists + counts +
+  # REQ-054, against scripts/governed-surface-pin.json).
+  #
+  # Deliberately carries NO `if:` condition and is NOT on the docs_only fast path:
+  # a governed-surface change is BY DEFINITION a code change, so a docs_only gate
+  # would make this job silently absent on exactly the pushes it exists to catch.
+  # Default (depth-1) checkout is sufficient: the predicate reads working-tree
+  # files only and walks no history.
+  governed-surface-pin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Governed-surface pin vs the AC-079 pre-sign (DOC-HYGIENE-2 T1e)
+        run: bash scripts/check-governed-surface-pin.sh
+
+  # mkdocs --strict is the broader CI gate beyond agent-verify (per AGENTS.md §3).
+  # Intentionally NOT gated on docs_only: it must run for docs/** changes (the
+  # fast path) AND alongside code changes, exactly as before.
+  docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - run: python3 -m pip install --upgrade pip mkdocs
+      - run: mkdocs build --strict
+#!/usr/bin/env bash
+# preflight.sh — orchestrator-side gate, run BEFORE spawning an implementer.
+#
+# Codifies the checks whose absence has cost real slices:
+#   * agent-worktree-stale-base-trap — a worktree cut from a stale base (main had
+#     advanced ~206 commits) silently lost two slices. The --worktree check below
+#     fails loudly when a worktree's HEAD is neither current main nor a descendant
+#     of it.
+#   * dependency-not-actually-CLOSED — spawning a slice whose declared dependency
+#     never closed. The --expect-closed check greps the plan for the CLOSED block.
+#   * landing-in-the-primary-checkout — TC-RUBRIC-5 requires release orchestration
+#     and all landing git-writes to run in a dedicated linked worktree. --landing
+#     HARD-fails when invoked from the primary checkout.
+#
+# Witness-first (orchestration.md §1.5): every check derives from the repo on disk,
+# never from belief. Emits a one-line JSON summary; exits non-zero on any HARD fail.
+#
+# Usage:
+#   scripts/preflight.sh                              # general repo health (run anytime)
+#   scripts/preflight.sh --worktree /tmp/fdb-slice-5-... # + stale-base guard on a freshly cut WT
+#   scripts/preflight.sh --expect-closed 5 --plan dev/plans/plan-0.8.6.md
+#   scripts/preflight.sh --landing                    # TC-RUBRIC-5: refuse to land in the primary checkout
+#   scripts/preflight.sh --worktree <wt> --expect-closed 5 --plan <plan> --min-disk-gb 15
+#
+# --landing composes with every other flag and is inert unless passed: without it
+# the script behaves exactly as it did before the flag existed.
+#
+# Exit codes: 0 = all HARD checks pass (WARN/INFO may print); 1 = a HARD check failed.
+
+set -euo pipefail
+
+# Resolve this script's own directory BEFORE the toplevel cd below, so the
+# board-currency check (§7) can find its sibling script regardless of which
+# repo/worktree `cd` below lands us in (BASH_SOURCE is a file path, not
+# affected by cwd, but resolving it AFTER a cd elsewhere would be needless
+# fragility for no benefit).
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+cd "$(git rev-parse --show-toplevel)"
+CANON="$(pwd)"
+
+WT=""
+EXPECT_CLOSED=""
+PLAN=""
+MIN_DISK_GB=10
+LANDING=0
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --landing)       LANDING=1; shift ;;
+    --worktree)      WT="${2:?--worktree needs a path}"; shift 2 ;;
+    --expect-closed) EXPECT_CLOSED="${2:?--expect-closed needs a slice id}"; shift 2 ;;
+    --plan)          PLAN="${2:?--plan needs a file}"; shift 2 ;;
+    --min-disk-gb)   MIN_DISK_GB="${2:?--min-disk-gb needs a number}"; shift 2 ;;
+    *) printf 'preflight: unknown arg %q\n' "$1" >&2; exit 2 ;;
+  esac
+done
+
+HARD_FAILS=()
+WARNS=()
+
+hard() { HARD_FAILS+=("$1"); printf 'HARD  %s\n' "$1" >&2; }
+warn() { WARNS+=("$1");      printf 'WARN  %s\n' "$1" >&2; }
+info() { printf 'INFO  %s\n' "$1" >&2; }
+ok()   { printf 'ok    %s\n' "$1" >&2; }
+
+# Resolve an existing directory to its absolute, symlink-resolved path. Uses
+# cd+pwd -P rather than `readlink -f` so this works on macOS too. Prints nothing
+# (and returns non-zero) if the path is not a reachable directory.
+abs_dir() { ( cd "$1" 2>/dev/null && pwd -P ); }
+
+MAIN_SHA="$(git rev-parse main)"
+
+# --- 1. Canonical repo is not mid-operation -------------------------------------
+GITDIR="$(git rev-parse --git-dir)"
+if [ -d "$GITDIR/rebase-merge" ] || [ -d "$GITDIR/rebase-apply" ]; then
+  hard "canonical repo is mid-rebase — finish or abort before spawning"
+elif [ -f "$GITDIR/MERGE_HEAD" ]; then
+  hard "canonical repo is mid-merge — finish or abort before spawning"
+elif [ -f "$GITDIR/CHERRY_PICK_HEAD" ]; then
+  hard "canonical repo is mid-cherry-pick — finish or abort before spawning"
+else
+  ok "canonical repo is not mid-merge/rebase/cherry-pick"
+fi
+
+# --- 2. Tracked source is clean (dev/ docs churn is expected, so only gate src/) -
+DIRTY_SRC="$(git status --porcelain -- src/ scripts/ mkdocs.yml 2>/dev/null || true)"
+if [ -n "$DIRTY_SRC" ]; then
+  warn "tracked source dirty on canonical main (commit/stash before a worktree inherits a stale base):"
+  printf '%s\n' "$DIRTY_SRC" | sed 's/^/        /' >&2
+else
+  ok "tracked source (src/ scripts/ mkdocs.yml) is clean"
+fi
+
+# --- 3. Disk headroom (worktrees + per-worktree target/ are not free) ------------
+WT_PARENT="${WT:+$(dirname "$WT")}"; WT_PARENT="${WT_PARENT:-/tmp}"
+FREE_GB="$(df -BG --output=avail "$WT_PARENT" 2>/dev/null | tail -1 | tr -dc '0-9')"
+if [ -n "$FREE_GB" ] && [ "$FREE_GB" -lt "$MIN_DISK_GB" ]; then
+  hard "only ${FREE_GB}G free on $WT_PARENT (need >= ${MIN_DISK_GB}G; prune stale worktrees)"
+else
+  ok "disk headroom on $WT_PARENT: ${FREE_GB:-?}G free (>= ${MIN_DISK_GB}G)"
+fi
+
+# --- 4. Worktree stale-base guard (the load-bearing check) -----------------------
+if [ -n "$WT" ]; then
+  if [ ! -d "$WT" ]; then
+    hard "worktree path does not exist: $WT"
+  elif [ "$(git -C "$WT" rev-parse --show-toplevel 2>/dev/null || echo MISSING)" != "$WT" ]; then
+    hard "not a git worktree rooted at: $WT"
+  else
+    WT_HEAD="$(git -C "$WT" rev-parse HEAD)"
+    if [ "$WT_HEAD" = "$MAIN_SHA" ]; then
+      ok "worktree HEAD == current main ($MAIN_SHA) — freshly cut, no stale base"
+    elif [ "$(git merge-base "$MAIN_SHA" "$WT_HEAD")" = "$MAIN_SHA" ]; then
+      warn "worktree has advanced past main (main is an ancestor) — OK if it carries this slice's commits"
+    else
+      hard "STALE BASE: worktree HEAD ($WT_HEAD) is not current main and main is not its ancestor."
+      hard "  -> re-create the worktree off \$(git rev-parse main). See agent-worktree-stale-base-trap."
+    fi
+    # maturin/pip -e from a worktree rebinds the shared .venv to the worktree tree.
+    info "reminder: do NOT 'maturin develop' / 'pip install -e' from a worktree — build on the MAIN tree only."
+  fi
+fi
+
+# --- 5. Dependency-CLOSED gate ---------------------------------------------------
+if [ -n "$EXPECT_CLOSED" ]; then
+  if [ -z "$PLAN" ]; then
+    hard "--expect-closed $EXPECT_CLOSED given without --plan <file>"
+  elif [ ! -f "$PLAN" ]; then
+    hard "plan file not found: $PLAN"
+  elif grep -qiE "(Slice|Phase)[^A-Za-z0-9]*${EXPECT_CLOSED}[^0-9].*CLOSED|CLOSED.*(Slice|Phase)[^A-Za-z0-9]*${EXPECT_CLOSED}([^0-9]|$)" "$PLAN"; then
+    ok "dependency Slice/Phase $EXPECT_CLOSED has a CLOSED witness in $PLAN"
+  else
+    hard "dependency Slice/Phase $EXPECT_CLOSED has NO 'CLOSED' block in $PLAN — do not spawn dependents"
+  fi
+fi
+
+# --- 6. Landing-mode guard (TC-RUBRIC-5) -----------------------------------------
+# TC-RUBRIC-5 (HITL-ADOPTED 2026-07-11): release orchestration and ALL landing
+# git-writes run in a dedicated linked worktree, never in the primary checkout.
+#
+# primary checkout <=> --git-dir and --git-common-dir name the SAME directory
+# (a linked worktree's git-dir is <common>/worktrees/<name>).
+#
+# Both paths are canonicalized before comparing. git returns these relative or
+# absolute depending on cwd and version: from a subdirectory, git 2.43 returns an
+# ABSOLUTE --git-dir but a RELATIVE '../.git' --git-common-dir. Today the `cd` to
+# the toplevel above normalizes that away (both read '.git' there), so a raw
+# string compare would happen to work — but only by accident of that cd. Measured:
+# with the toplevel cd removed, a raw compare run from a subdirectory of the
+# primary checkout FAILS OPEN (exit 0, "cleared for landing"), while the
+# canonicalized compare below still correctly HARD-fails. Canonicalizing makes
+# this check self-sufficient rather than dependent on cwd, git version, and the
+# ordering of an unrelated line.
+if [ "$LANDING" -eq 1 ]; then
+  GITDIR_ABS="$(abs_dir "$(git rev-parse --git-dir)" || true)"
+  COMMONDIR_ABS="$(abs_dir "$(git rev-parse --git-common-dir)" || true)"
+  if [ -z "$GITDIR_ABS" ] || [ -z "$COMMONDIR_ABS" ]; then
+    hard "--landing: cannot resolve git-dir/git-common-dir — refusing to certify this tree for landing"
+  elif [ "$GITDIR_ABS" = "$COMMONDIR_ABS" ]; then
+    hard "TC-RUBRIC-5: --landing invoked in the PRIMARY checkout ($CANON) — landing git-writes are forbidden here."
+    hard "  -> re-run from a dedicated linked worktree: git worktree add <path> <branch>, then run this from <path>."
+  else
+    ok "TC-RUBRIC-5: running in a linked worktree ($CANON) — cleared for landing git-writes"
+  fi
+fi
+
+# --- 7. Board-currency gate (status-board-currency-enforcement design, item 2) --
+# Refuse a land that would leave dev/plans/runs/STATUS-0.8.z.md stale. The
+# incident: a slice's merge commit reached origin/main and the board kept saying
+# "not landed" for four days — nobody's explicit job to update it at land time
+# (an ownership seam between the orchestrator, who owns in-flight rows, and the
+# Steward, who lands). See dev/design/status-board-currency-enforcement.md and
+# orchestration.md §12.5 for the seam-ownership contract this gate enforces
+# mechanically.
+#
+# The predicate lives in scripts/check-board-currency.sh (see that file's header
+# for the full statement) so preflight and the CI drift job (item 3) share ONE
+# implementation and cannot diverge. --landing-only: mid-build the board
+# legitimately reads "in flight", so this must never run outside a land (that is
+# precommit's false-positive trap the design doc rejects).
+if [ "$LANDING" -eq 1 ]; then
+  BOARD_CHECK_OUT="$(bash "$SELF_DIR/check-board-currency.sh" --tip HEAD 2>&1)" || BOARD_CHECK_RC=$?
+  BOARD_CHECK_RC="${BOARD_CHECK_RC:-0}"
+  if [ "$BOARD_CHECK_RC" -ne 0 ]; then
+    while IFS= read -r line; do
+      case "$line" in
+        STALE*) hard "board-currency: $line" ;;
+        *)      info "board-currency: $line" ;;
+      esac
+    done <<<"$BOARD_CHECK_OUT"
+  else
+    ok "board-currency: live STATUS-0.8.z.md board(s) match git ancestry for this tip"
+  fi
+fi
+
+# --- 8. Ledger-integrity gate (DOC-HYGIENE-2 T1b) --------------------------------
+# Refuse a land that would ship a `*.jsonl.seq` sidecar disagreeing with its
+# ledger. The incident: 19 consecutive commits (f22e4947 -> 3264114a, four days)
+# shipped dev/steward/steward-ledger.jsonl.seq frozen at 80 while max(seq) in
+# the ledger had reached 98. The sidecar is TRACKED and is the only thing an
+# appender reads to pick the next seq, so every clone taken in that window would
+# have minted colliding seq numbers.
+#
+# The predicate lives in scripts/check-ledgers.sh (see that file's header for
+# the full statement — exactly two checks: sidecar == max(seq), and seq
+# contiguous) so preflight and the always-on CI job share ONE implementation and
+# cannot diverge, exactly as §7 does for board-currency.
+#
+# --landing-only, mirroring §7's structure. The ledger invariant is in fact true
+# at all times (unlike a board, which legitimately reads "in flight" mid-build),
+# so an unconditional run would also be sound; it is kept behind --landing so
+# preflight's non-landing path stays exactly as lean as it was, and the CI job —
+# which is deliberately NOT docs_only-gated — is what covers every non-landing
+# push.
+if [ "$LANDING" -eq 1 ]; then
+  LEDGER_CHECK_OUT="$(bash "$SELF_DIR/check-ledgers.sh" 2>&1)" || LEDGER_CHECK_RC=$?
+  LEDGER_CHECK_RC="${LEDGER_CHECK_RC:-0}"
+  if [ "$LEDGER_CHECK_RC" -ne 0 ]; then
+    LEDGER_SAW_BROKEN=0
+    while IFS= read -r line; do
+      case "$line" in
+        BROKEN*) hard "ledger-integrity: $line"; LEDGER_SAW_BROKEN=1 ;;
+        *)       info "ledger-integrity: $line" ;;
+      esac
+    done <<<"$LEDGER_CHECK_OUT"
+    # Anti-fail-open: a non-zero rc with no BROKEN line means the checker itself
+    # could not run (exit 2 = usage/env, e.g. python3 absent) — that must still
+    # block the land, never degrade into INFO lines and a green summary.
+    if [ "$LEDGER_SAW_BROKEN" -eq 0 ]; then
+      hard "ledger-integrity: check-ledgers.sh exited $LEDGER_CHECK_RC without reporting a specific defect — refusing to certify this tree for landing"
+    fi
+  else
+    ok "ledger-integrity: every *.jsonl.seq sidecar agrees with its ledger and every seq run is contiguous"
+  fi
+fi
+
+# --- 9. Governed-surface pin gate (DOC-HYGIENE-2 T1e) ----------------------------
+# Refuse a land that would ship a governed surface the HITL has not signed. The
+# HITL PRE-SIGNED the accumulated delta of 0.8.20 Slices 5d+10b+15b+15d (AC-079)
+# pinned to the exact content of src/conformance/governed-surface-allowlist.json
+# as of 427d2712 — 30 allowlist members, recovery_denylist unchanged at the five
+# REQ-054 names. This gate makes that pin mechanical.
+#
+# The predicate lives in scripts/check-governed-surface-pin.sh (see that file's
+# header) so preflight and the always-on CI job share ONE implementation and
+# cannot diverge, exactly as §7 and §8 do. --landing-only, mirroring their
+# structure: the CI job — deliberately NOT docs_only-gated — covers every
+# non-landing push.
+#
+# Tripping this is CORRECT BEHAVIOUR, not a bug: Slices 20/25/30 are expected to
+# trip it, and that is exactly what routes a changed surface back to the HITL
+# instead of letting it land under a pre-sign that never covered it.
+if [ "$LANDING" -eq 1 ]; then
+  SURFACE_CHECK_OUT="$(bash "$SELF_DIR/check-governed-surface-pin.sh" 2>&1)" || SURFACE_CHECK_RC=$?
+  SURFACE_CHECK_RC="${SURFACE_CHECK_RC:-0}"
+  if [ "$SURFACE_CHECK_RC" -ne 0 ]; then
+    SURFACE_SAW_FAIL=0
+    while IFS= read -r line; do
+      case "$line" in
+        FAIL*) hard "governed-surface-pin: $line"; SURFACE_SAW_FAIL=1 ;;
+        *)     info "governed-surface-pin: $line" ;;
+      esac
+    done <<<"$SURFACE_CHECK_OUT"
+    # Anti-fail-open, as in §8: a non-zero rc with no FAIL line means the checker
+    # itself could not run (exit 2 = usage/env, e.g. python3 absent or an
+    # unreadable pin) — that must still block the land.
+    if [ "$SURFACE_SAW_FAIL" -eq 0 ]; then
+      hard "governed-surface-pin: check-governed-surface-pin.sh exited $SURFACE_CHECK_RC without reporting a specific defect — refusing to certify this tree for landing"
+    fi
+  else
+    ok "governed-surface-pin: the governed surface matches the AC-079 pre-signed pin"
+  fi
+fi
+
+# --- Summary (JSON, last line) ---------------------------------------------------
+json_arr() { local out="" x; for x in "$@"; do out="${out:+$out,}\"$(printf '%s' "$x" | sed 's/\\/\\\\/g; s/"/\\"/g')\""; done; printf '[%s]' "$out"; }
+
+STATUS=$([ ${#HARD_FAILS[@]} -eq 0 ] && echo pass || echo fail)
+printf '{"preflight":"%s","main_sha":"%s","worktree":"%s","hard_fails":%s,"warnings":%s}\n' \
+  "$STATUS" "$MAIN_SHA" "${WT:-}" "$(json_arr "${HARD_FAILS[@]+"${HARD_FAILS[@]}"}")" "$(json_arr "${WARNS[@]+"${WARNS[@]}"}")"
+
+[ "$STATUS" = pass ]
+
+exec
+/bin/bash -lc "nl -ba scripts/check-governed-surface-pin.sh | sed -n '135,170p'" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 0ms:
+   135	
+   136	# REQ-054 / AC-041: the recovery denylist is FIVE names. Hardcoded here on
+   137	# purpose — checked against both the file and the pin, so a re-pin cannot widen
+   138	# it. See the "recovery denylist is five names" rule.
+   139	REQ_054 = ["recover", "restore", "repair", "fix", "rebuild"]
+   140	
+   141	LIST_KEYS = ["allowlist", "core", "recovery_denylist"]
+   142	CAP = 8  # cap on enumerated member names per difference line
+   143	
+   144	failures = []
+   145	
+   146	
+   147	def fail(msg):
+   148	    failures.append(msg)
+   149	    print("FAIL  governed-surface-pin: " + msg)
+   150	
+   151	
+   152	def die_env(msg):
+   153	    print("check-governed-surface-pin: " + msg)
+   154	    sys.exit(2)
+   155	
+   156	
+   157	def show(names):
+   158	    shown = ", ".join(sorted(names)[:CAP])
+   159	    if len(names) > CAP:
+   160	        shown += f" ...and {len(names) - CAP} more"
+   161	    return shown
+   162	
+   163	
+   164	# ---------------------------------------------------------------- the pin ----
+   165	# An unusable pin is a broken GATE (exit 2), not a governed-surface divergence.
+   166	try:
+   167	    with open(PIN, "rb") as fh:
+   168	        pin = json.loads(fh.read().decode("utf-8"))
+   169	except OSError as exc:
+   170	    die_env(f"cannot read the pin {PIN}: {exc} — the gate cannot run, so it refuses to pass")
+
+exec
+/bin/bash -lc "nl -ba scripts/check-governed-surface-pin.sh | sed -n '171,215p'" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 0ms:
+   171	except Exception as exc:
+   172	    die_env(f"the pin {PIN} is not valid JSON: {exc} — the gate cannot run, so it refuses to pass")
+   173	
+   174	if not isinstance(pin, dict):
+   175	    die_env(f"the pin {PIN} is not a JSON object")
+   176	for key in ["sha256", "git_blob_sha1", "counts"] + LIST_KEYS:
+   177	    if key not in pin:
+   178	        die_env(f"the pin {PIN} has no {key!r} field — it cannot vouch for anything")
+   179	for key in LIST_KEYS:
+   180	    if not isinstance(pin[key], list) or not all(isinstance(v, str) for v in pin[key]):
+   181	        die_env(f"the pin {PIN}: {key!r} is not a list of strings")
+   182	if not isinstance(pin["counts"], dict):
+   183	    die_env(f"the pin {PIN}: 'counts' is not an object")
+   184	
+   185	WHERE = f"pinned at {pin.get('pinned_at_commit_short', '?')} under {pin.get('ac', 'the pre-sign')}"
+   186	
+   187	# (d) on the PIN: a re-pin may not widen or rename the recovery denylist.
+   188	if pin["recovery_denylist"] != REQ_054:
+   189	    fail(
+   190	        f"{PIN} itself declares recovery_denylist {pin['recovery_denylist']!r}, which is not the "
+   191	        f"five REQ-054 names {REQ_054!r}. That rule (AC-041) is independently load-bearing and is "
+   192	        "not something a re-pin can change: the recovery denylist is five names."
+   193	    )
+   194	
+   195	# (c) on the PIN: internally inconsistent pin (lists vs its own counts).
+   196	for key in LIST_KEYS:
+   197	    declared = pin["counts"].get(key)
+   198	    if declared is not None and declared != len(pin[key]):
+   199	        fail(
+   200	            f"{PIN} is internally inconsistent: counts.{key} says {declared} but its {key!r} list "
+   201	            f"holds {len(pin[key])} member(s) — a botched re-pin, not a usable signature record."
+   202	        )
+   203	
+   204	# --------------------------------------------------------- the pinned file ----
+   205	# TC-37 vacuous-pass guard: missing / unreadable is a HARD failure, never a pass.
+   206	try:
+   207	    with open(FILE, "rb") as fh:
+   208	        raw = fh.read()
+   209	except OSError as exc:
+   210	    fail(
+   211	        f"cannot read {FILE}: {exc}. The gate cannot see the surface it vouches for, so it fails "
+   212	        "loudly instead of reporting a vacuous ok (TC-37) — and a governed-surface allowlist that "
+   213	        "has moved or vanished is itself the largest possible change to the governed surface."
+   214	    )
+   215	    raw = None
+
+codex
+The new gate works for the current pin but can pass a malformed pin that omits count entries, which undercuts one of the stated enforcement predicates.
+
+Review comment:
+
+- [P2] Require every pinned count entry — /home/coreyt/projects/fathomdb-worktrees/dh2-t1c/scripts/check-governed-surface-pin.sh:197-198
+  When a pin omits `counts.allowlist`, `counts.core`, or `counts.recovery_denylist`, `.get()` returns `None` and both this internal-consistency check and the later file-count check silently skip that list. A malformed re-pin can therefore delete a count entry, update the hashes/member list, and still exit 0, defeating the separate count backstop this gate is supposed to enforce.
+The new gate works for the current pin but can pass a malformed pin that omits count entries, which undercuts one of the stated enforcement predicates.
+
+Review comment:
+
+- [P2] Require every pinned count entry — /home/coreyt/projects/fathomdb-worktrees/dh2-t1c/scripts/check-governed-surface-pin.sh:197-198
+  When a pin omits `counts.allowlist`, `counts.core`, or `counts.recovery_denylist`, `.get()` returns `None` and both this internal-consistency check and the later file-count check silently skip that list. A malformed re-pin can therefore delete a count entry, update the hashes/member list, and still exit 0, defeating the separate count backstop this gate is supposed to enforce.

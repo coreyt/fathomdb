@@ -1,0 +1,1607 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f9ae6-c849-7ed2-ae47-72a804121125
+--------
+user
+changes against '3ca4a92cda2b0bd67c7cab4d0999073d01e1cd84'
+exec
+/bin/bash -lc 'cat MEMORY.md 2>/dev/null || true && ls feedback_*.md 2>/dev/null' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ exited 2 in 0ms:
+exec
+/bin/bash -lc 'git diff --stat 3ca4a92cda2b0bd67c7cab4d0999073d01e1cd84 && git diff --name-only 3ca4a92cda2b0bd67c7cab4d0999073d01e1cd84' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 0ms:
+ scripts/check-governed-surface-pin.sh            |  73 ++++++++++--
+ scripts/tests/test_check_governed_surface_pin.sh | 141 +++++++++++++++++++++++
+ 2 files changed, 205 insertions(+), 9 deletions(-)
+scripts/check-governed-surface-pin.sh
+scripts/tests/test_check_governed_surface_pin.sh
+
+exec
+/bin/bash -lc "pwd; ls -la; if [ -f MEMORY.md ]; then cat MEMORY.md; fi; find . -maxdepth 1 -name 'feedback_*.md' -print -exec cat {} \\;" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 0ms:
+/home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+total 340
+drwxrwxr-x 12 coreyt coreyt   4096 Jul 25 14:55 .
+drwxrwxr-x  8 coreyt coreyt   4096 Jul 25 14:16 ..
+drwxrwxr-x  4 coreyt coreyt   4096 Jul 25 14:16 .claude
+-rw-rw-r--  1 coreyt coreyt     62 Jul 25 14:16 .git
+drwxrwxr-x  3 coreyt coreyt   4096 Jul 25 14:16 .github
+-rw-rw-r--  1 coreyt coreyt   4679 Jul 25 14:16 .gitignore
+-rw-rw-r--  1 coreyt coreyt   2154 Jul 25 14:16 .markdownlint-cli2.jsonc
+-rw-rw-r--  1 coreyt coreyt   2105 Jul 25 14:16 .markdownlint.jsonc
+-rw-rw-r--  1 coreyt coreyt    657 Jul 25 14:16 .prettierignore
+-rw-rw-r--  1 coreyt coreyt    296 Jul 25 14:16 .prettierrc.json
+-rw-rw-r--  1 coreyt coreyt  13373 Jul 25 14:16 AGENTS.md
+-rw-rw-r--  1 coreyt coreyt  45281 Jul 25 14:16 CHANGELOG.md
+-rw-rw-r--  1 coreyt coreyt 115578 Jul 25 14:16 Cargo.lock
+-rw-rw-r--  1 coreyt coreyt   2434 Jul 25 14:16 Cargo.toml
+-rw-rw-r--  1 coreyt coreyt   1078 Jul 25 14:16 LICENSE
+-rw-rw-r--  1 coreyt coreyt    939 Jul 25 14:16 README.md
+-rw-rw-r--  1 coreyt coreyt    120 Jul 25 14:16 deny.toml
+drwxrwxr-x 30 coreyt coreyt   4096 Jul 25 14:43 dev
+drwxrwxr-x 11 coreyt coreyt   4096 Jul 25 14:16 docs
+drwxrwxr-x  2 coreyt coreyt   4096 Jul 25 14:16 experiments
+-rw-rw-r--  1 coreyt coreyt   1783 Jul 25 14:16 lychee.toml
+-rw-rw-r--  1 coreyt coreyt   1502 Jul 25 14:16 mkdocs.yml
+-rw-rw-r--  1 coreyt coreyt  48768 Jul 25 14:16 package-lock.json
+-rw-rw-r--  1 coreyt coreyt   1249 Jul 25 14:16 package.json
+-rw-rw-r--  1 coreyt coreyt     66 Jul 25 14:16 rust-toolchain.toml
+-rw-rw-r--  1 coreyt coreyt     45 Jul 25 14:16 rustfmt.toml
+drwxrwxr-x  9 coreyt coreyt   4096 Jul 25 15:06 scripts
+drwxrwxr-x  6 coreyt coreyt   4096 Jul 25 14:16 src
+drwxrwxr-x  6 coreyt coreyt   4096 Jul 25 14:16 test
+drwxrwxr-x  4 coreyt coreyt   4096 Jul 25 14:16 tests
+drwxrwxr-x  3 coreyt coreyt   4096 Jul 25 14:16 tools
+
+exec
+/bin/bash -lc 'git diff --find-renames 3ca4a92cda2b0bd67c7cab4d0999073d01e1cd84 -- scripts/check-governed-surface-pin.sh scripts/tests/test_check_governed_surface_pin.sh' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 0ms:
+diff --git a/scripts/check-governed-surface-pin.sh b/scripts/check-governed-surface-pin.sh
+index 7a2bb44f..56df95ff 100755
+--- a/scripts/check-governed-surface-pin.sh
++++ b/scripts/check-governed-surface-pin.sh
+@@ -38,6 +38,12 @@
+ #   (c) COUNTS: 30 / 5 / 5, asserted separately from (b) against the pin's own
+ #       `counts` block, so a pin whose lists and counts disagree is caught as an
+ #       internally inconsistent (botched) re-pin rather than being trusted.
++#       EVERY one of the three counts must be PRESENT and an integer: a count the
++#       gate cannot read is a MALFORMED PIN (exit 2), never a skipped check. An
++#       absent count used to read back as None and silently disable both halves
++#       of (c) for that list, so a re-pin that DELETED a count, added a member
++#       and recomputed the hashes exited 0 — disarming the very backstop that
++#       makes a lazy re-pin (b) impossible to hide.
+ #   (d) REQ-054: `recovery_denylist` is EXACTLY {recover, restore, repair, fix,
+ #       rebuild}, checked against a constant HARDCODED BELOW — in the FILE and in
+ #       the PIN. This rule (AC-041) is independently load-bearing: the recovery
+@@ -76,8 +82,13 @@
+ #             1 = divergence from the pin, OR the pinned file is missing /
+ #                 unreadable / unparseable (vacuous-pass guard), OR the pin
+ #                 itself breaches REQ-054 or is internally inconsistent;
+-#             2 = usage error, unreadable/unparseable pin file, or python3 absent
+-#                 (the gate could not run — never reported as a pass).
++#             2 = usage error, unreadable/unparseable/MALFORMED pin file, or
++#                 python3 absent (the gate could not run — never reported as a
++#                 pass). "Malformed" is structural: a missing/mistyped field the
++#                 predicate reads. That is deliberately NOT exit 1: exit 1 says
++#                 "the surface diverged, take it back to the HITL", whereas a
++#                 malformed pin means the gate has no trustworthy statement of
++#                 what was signed at all.
+ set -euo pipefail
+ 
+ SELF="$(basename "${BASH_SOURCE[0]}")"
+@@ -179,9 +190,49 @@ for key in ["sha256", "git_blob_sha1", "counts"] + LIST_KEYS:
+ for key in LIST_KEYS:
+     if not isinstance(pin[key], list) or not all(isinstance(v, str) for v in pin[key]):
+         die_env(f"the pin {PIN}: {key!r} is not a list of strings")
++for key in ["sha256", "git_blob_sha1"]:
++    if not isinstance(pin[key], str) or not pin[key]:
++        die_env(
++            f"the pin {PIN}: {key!r} is {pin[key]!r}, not a non-empty string — the pin is MALFORMED "
++            "and cannot vouch for any content. Reported as a broken gate (exit 2), not as a surface "
++            "divergence (exit 1): a hash that is not a hash never equals the file's, so exit 1 would "
++            "send the reader to the HITL to re-sign a surface that may not have moved at all."
++        )
+ if not isinstance(pin["counts"], dict):
+     die_env(f"the pin {PIN}: 'counts' is not an object")
+ 
++# EVERY pinned count must be PRESENT and an integer — a missing one is a hard
++# failure, never an implicit skip. Read permissively (dict.get) an absent entry
++# came back as None and BOTH count checks below skipped that list, so a re-pin
++# could delete a count, add a member to the surface, update the signed member
++# list and hashes to match, and still exit 0 — the count backstop that catches a
++# lazy re-pin, deleted. bool is excluded explicitly because isinstance(True, int)
++# is True in Python and `True == 1` would let a count of `true` masquerade as 1.
++for key in LIST_KEYS:
++    if key not in pin["counts"]:
++        die_env(
++            f"the pin {PIN}: 'counts' has no {key!r} entry — the pin is MALFORMED and cannot be "
++            f"trusted. counts.{key} is the backstop that catches a re-pin which updates the hashes "
++            "and the signed member list but not the counts; if it is absent the gate would silently "
++            "stop checking the size of that list altogether, which is how a pass gets bought rather "
++            "than earned. DO NOT 'fix' this by regenerating the pin: a pin is only regenerated from "
++            "a governed surface the HITL has SIGNED. Restore the pin from git instead."
++        )
++    declared = pin["counts"][key]
++    if isinstance(declared, bool) or not isinstance(declared, int):
++        die_env(
++            f"the pin {PIN}: counts.{key} is {declared!r}, which is not an integer — the pin is "
++            "MALFORMED and cannot be trusted. A non-integer count can be compared neither against "
++            "the pinned member list nor against the file, so it would silently weaken this gate to "
++            "the same degree as deleting it. DO NOT 'fix' this by regenerating the pin unless the "
++            "HITL has signed the surface the new pin would record; restore it from git instead."
++        )
++
++# Deliberately permissive, and the ONLY permissive reads left in this file:
++# 'pinned_at_commit_short' and 'ac' are prose for the failure message and are not
++# part of the predicate, so a pin missing them still gates correctly (it just
++# says "pinned at ?"). Every field the predicate actually READS is validated
++# above and then indexed strictly, so no check can be skipped by omission.
+ WHERE = f"pinned at {pin.get('pinned_at_commit_short', '?')} under {pin.get('ac', 'the pre-sign')}"
+ 
+ # (d) on the PIN: a re-pin may not widen or rename the recovery denylist.
+@@ -192,10 +243,11 @@ if pin["recovery_denylist"] != REQ_054:
+         "not something a re-pin can change: the recovery denylist is five names."
+     )
+ 
+-# (c) on the PIN: internally inconsistent pin (lists vs its own counts).
++# (c) on the PIN: internally inconsistent pin (lists vs its own counts). Every
++# count is present and an int by the validation above, so this never skips.
+ for key in LIST_KEYS:
+-    declared = pin["counts"].get(key)
+-    if declared is not None and declared != len(pin[key]):
++    declared = pin["counts"][key]
++    if declared != len(pin[key]):
+         fail(
+             f"{PIN} is internally inconsistent: counts.{key} says {declared} but its {key!r} list "
+             f"holds {len(pin[key])} member(s) — a botched re-pin, not a usable signature record."
+@@ -271,9 +323,12 @@ if data is not None:
+     # (c) counts, asserted against the pin's own counts block as well as (b), so
+     # a same-hash-different-meaning or partially-updated pin is still caught.
+     for key in LIST_KEYS:
+-        declared = pin["counts"].get(key)
++        declared = pin["counts"][key]
+         got = data.get(key)
+-        if declared is None or not isinstance(got, list):
++        if not isinstance(got, list):
++            # (b) above has ALREADY failed this key by name; counting a non-list
++            # would add nothing. This is the one remaining `continue`, and it
++            # cannot hide anything: it is unreachable without a recorded failure.
+             continue
+         if len(got) != declared:
+             members_identical = False
+@@ -332,8 +387,8 @@ if failures:
+ 
+ print(
+     f"ok    governed-surface-pin: {FILE} matches the {pin.get('ac', 'pre-signed')} pin "
+-    f"({pin['counts'].get('allowlist')} allowlist / {pin['counts'].get('core')} core / "
+-    f"{pin['counts'].get('recovery_denylist')} recovery_denylist, {WHERE})"
++    f"({pin['counts']['allowlist']} allowlist / {pin['counts']['core']} core / "
++    f"{pin['counts']['recovery_denylist']} recovery_denylist, {WHERE})"
+ )
+ PY
+ RC=$?
+diff --git a/scripts/tests/test_check_governed_surface_pin.sh b/scripts/tests/test_check_governed_surface_pin.sh
+index 93c691c0..98ef07dd 100644
+--- a/scripts/tests/test_check_governed_surface_pin.sh
++++ b/scripts/tests/test_check_governed_surface_pin.sh
+@@ -24,6 +24,13 @@
+ # NOTE ON ARM 5 (whitespace-only): failing on a formatting-only change is a
+ # DELIBERATE, DOCUMENTED property of a content-hash pin, not an accident — see
+ # the gate's header. It is asserted here so the behaviour is a contract.
++#
++# NOTE ON ARMS 8b-8f (the pin's own well-formedness): Arm 8 proves the counts
++# block is what catches a lazy re-pin, which makes the counts block itself a
++# target. These arms attack it: a pin that DELETES, nulls or mistypes one of its
++# three counts must fail as a MALFORMED PIN (exit 2 — the gate could not run),
++# never skip that list and never be reported as a surface divergence (exit 1 —
++# "go get it signed"). Each was captured exiting 0 on the pre-fix gate.
+ set -euo pipefail
+ 
+ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+@@ -274,6 +281,140 @@ else
+ fi
+ expect_routes_to_hitl "lazy-repin"
+ 
++# ========= Arm 8b (RED): a pin that DELETES one of its own counts ============
++# Arm 8 proved the counts block is what catches a lazy re-pin. So the counts
++# block is itself worth attacking: reading counts.<list> permissively meant an
++# ABSENT entry came back as None and BOTH the internal-consistency check and the
++# file-count check silently skipped that list. Deleting a count therefore
++# disarmed the backstop — the gate would have kept reporting "ok" while checking
++# strictly less than it claimed. Captured on the pre-fix script, all three of
++# these exited 0. A count the gate cannot read is a MALFORMED PIN (exit 2, "the
++# gate could not run"), never a divergence (exit 1, "go get the surface signed").
++#
++# omit_count_pin <key> -> prints the path of a pin with counts.<key> deleted
++omit_count_pin() {
++  local key="$1" out="$TMPROOT/pin-omit-$1.json"
++  python3 - "$REAL_PIN" "$out" "$key" <<'PY'
++import json, sys
++pin = json.load(open(sys.argv[1]))
++del pin["counts"][sys.argv[3]]
++json.dump(pin, open(sys.argv[2], "w"), indent=2)
++PY
++  printf '%s' "$out"
++}
++
++for KEY in allowlist core recovery_denylist; do
++  check_fixture "$REAL_FILE" "$(omit_count_pin "$KEY")"
++  expect_rc 2 "a pin that OMITS counts.$KEY HARD-fails as malformed (was a silent exit 0)"
++  expect_out "'counts' has no '$KEY' entry" "omit-counts.$KEY names the missing count entry"
++  expect_out 'MALFORMED' "omit-counts.$KEY says the pin is malformed"
++  expect_out "DO NOT 'fix' this by regenerating the pin" \
++    "omit-counts.$KEY forbids regenerating the pin to clear it"
++  if printf '%s' "$OUT" | grep -q 'ok +governed-surface-pin'; then
++    fail "omit-counts.$KEY must never print an ok line; got: $OUT"
++  else
++    pass "omit-counts.$KEY prints no ok line (no vacuous pass)"
++  fi
++done
++
++# ===== Arm 8c (RED): counts entry present but not an integer =================
++# Same hole through a different door: null skipped the check exactly like an
++# absent key (pre-fix exit 0), a float 30.0 compared EQUAL to 30 and also passed
++# (pre-fix exit 0), and a string "30" tripped the consistency check with a
++# nonsense message ("counts.allowlist says 30 but its list holds 30"). All three
++# are a malformed pin, and all three must now say so.
++type_count_pin() {
++  local label="$1" literal="$2" out="$TMPROOT/pin-type-$1.json"
++  python3 - "$REAL_PIN" "$out" "$literal" <<'PY'
++import json, sys
++pin = json.load(open(sys.argv[1]))
++pin["counts"]["allowlist"] = json.loads(sys.argv[3])
++json.dump(pin, open(sys.argv[2], "w"), indent=2)
++PY
++  printf '%s' "$out"
++}
++
++check_fixture "$REAL_FILE" "$(type_count_pin null 'null')"
++expect_rc 2 "a NULL counts.allowlist HARD-fails as malformed (was a silent exit 0)"
++expect_out 'not an integer' "null-count says the count is not an integer"
++
++check_fixture "$REAL_FILE" "$(type_count_pin string '"30"')"
++expect_rc 2 "a STRING counts.allowlist HARD-fails as malformed (was a confusing exit 1)"
++expect_out 'not an integer' "string-count says the count is not an integer"
++
++check_fixture "$REAL_FILE" "$(type_count_pin float '30.0')"
++expect_rc 2 "a FLOAT counts.allowlist HARD-fails as malformed (30.0 == 30 used to pass)"
++expect_out 'not an integer' "float-count says the count is not an integer"
++
++check_fixture "$REAL_FILE" "$(type_count_pin bool 'true')"
++expect_rc 2 "a BOOLEAN counts.allowlist HARD-fails (isinstance(True, int) is True in Python)"
++expect_out 'not an integer' "bool-count says the count is not an integer"
++
++# ==== Arm 8d (RED): THE KILLER — drop the count, add a member, rehash ========
++# The full defeat of the backstop, and the reason 8b is P2 and not cosmetic: a
++# re-pin that adds a member to the surface, updates the signed member list AND
++# the hashes to match, and DELETES counts.allowlist. Every surviving check then
++# agreed with the pin, and the one check that still knew the signed size was 30
++# had been quietly switched off. Pre-fix this exited 0 and printed
++#   "ok ... (None allowlist / 5 core / 5 recovery_denylist)"
++# for a 31-member surface carrying smuggled.verb.
++F="$(copy_file killer-drop-count)"
++mutate "$F" 'd["allowlist"].append("smuggled.verb")'
++KILLER_PIN="$TMPROOT/killer-drop-count/pin.json"
++python3 - "$REAL_PIN" "$F" "$KILLER_PIN" <<'PY'
++import hashlib, json, sys
++pin = json.load(open(sys.argv[1]))
++raw = open(sys.argv[2], "rb").read()
++pin["allowlist"] = json.loads(raw.decode("utf-8"))["allowlist"]  # signed list updated
++pin["sha256"] = hashlib.sha256(raw).hexdigest()                  # hashes recomputed
++pin["git_blob_sha1"] = hashlib.sha1(b"blob %d\0" % len(raw) + raw).hexdigest()
++del pin["counts"]["allowlist"]                                   # backstop DELETED
++json.dump(pin, open(sys.argv[3], "w"), indent=2)
++PY
++check_fixture "$F" "$KILLER_PIN"
++expect_rc 2 "a re-pin that DROPS counts.allowlist, adds a member and rehashes HARD-fails (was exit 0)"
++expect_out 'MALFORMED' "killer-drop-count reports a malformed pin"
++if printf '%s' "$OUT" | grep -qE 'ok +governed-surface-pin|None allowlist'; then
++  fail "killer-drop-count must never report ok / a None count; got: $OUT"
++else
++  pass "killer-drop-count prints no ok line and no None count"
++fi
++# Guard that this arm keeps testing what it claims: the hashes and the member
++# list DO agree by construction, so only the missing-count rule can carry it.
++if printf '%s' "$OUT" | grep -qE 'content differs from the pin|ADDED smuggled.verb'; then
++  fail "killer-drop-count's hashes and member list match by construction; a hash/member complaint means the arm is not testing the count rule: $OUT"
++else
++  pass "killer-drop-count's hash and member checks genuinely pass — only the missing-count rule carries it"
++fi
++
++# ==== Arm 8e: a malformed pin is a BROKEN GATE (2), not a divergence (1) =====
++# The distinction is load-bearing for the reader: exit 1 says "the surface moved,
++# take it to the HITL", and printing that for a pin the gate cannot parse would
++# invite exactly the re-pin this gate exists to prevent. It also matches what the
++# gate already does for a missing pin (Arm 10).
++check_fixture "$REAL_FILE" "$(omit_count_pin allowlist)"
++if printf '%s' "$OUT" | grep -q 'DO NOT update the pin to make this pass'; then
++  fail "a malformed pin must NOT print the surface-divergence HITL-routing block; got: $OUT"
++else
++  pass "a malformed pin does not print the surface-divergence routing block (it is a broken gate, not a changed surface)"
++fi
++
++# ==== Arm 8f: a non-string hash field in the pin is malformed too ============
++# Same class as 8b, found by auditing the rest of the pin-parsing path: the
++# predicate READS sha256/git_blob_sha1, so a mistyped one is a broken gate. It
++# used to be reported as a content divergence (exit 1), sending the reader to the
++# HITL to re-sign a surface that never moved.
++BAD_HASH_PIN="$TMPROOT/pin-bad-hash.json"
++python3 - "$REAL_PIN" "$BAD_HASH_PIN" <<'PY'
++import json, sys
++pin = json.load(open(sys.argv[1]))
++pin["sha256"] = None
++json.dump(pin, open(sys.argv[2], "w"), indent=2)
++PY
++check_fixture "$REAL_FILE" "$BAD_HASH_PIN"
++expect_rc 2 "a NULL sha256 in the pin HARD-fails as malformed, not as a divergence"
++expect_out 'not a non-empty string' "bad-hash pin says the hash field is not a string"
++
+ # ============ Arm 9 (RED): a re-pin that widens the denylist in the PIN =======
+ # REQ-054 is checked against a constant hardcoded in the gate, in the PIN as well
+ # as in the file, so this is the one rule a re-pin cannot buy its way past.
+
+exec
+/bin/bash -lc "sed -n '1,430p' scripts/check-governed-surface-pin.sh && sed -n '1,460p' scripts/tests/test_check_governed_surface_pin.sh" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 0ms:
+#!/usr/bin/env bash
+# check-governed-surface-pin.sh — governed-surface pin gate (DOC-HYGIENE-2 T1e).
+#
+# Shared by two callers, exactly like its siblings scripts/check-ledgers.sh and
+# scripts/check-board-currency.sh:
+#   * scripts/preflight.sh --landing                 (PREVENT, land-time gate)
+#   * .github/workflows/ci.yml governed-surface-pin job
+#                                                    (DETECT, always-on backstop)
+# Reuse, not reimplementation: both callers invoke THIS script so the predicate
+# cannot diverge between the two homes.
+#
+# WHAT THIS ENFORCES
+#   The HITL PRE-SIGNED the accumulated governed-surface delta of 0.8.20 Slices
+#   5d + 10b + 15b + 15d (AC-079) — but pinned to the EXACT CONTENT of
+#   src/conformance/governed-surface-allowlist.json as of commit 427d2712:
+#   30 allowlist members, 5 core, and recovery_denylist unchanged at the five
+#   REQ-054 names. A pre-sign keyed to specific content is worth exactly as much
+#   as the mechanism that notices when that content moves. This is that
+#   mechanism: the signed content is recorded in scripts/governed-surface-pin.json
+#   and this gate HARD-fails the moment the file diverges from it, routing the
+#   reader back to the HITL for a fresh sign-off.
+#
+# TRIPPING THIS GATE IS CORRECT BEHAVIOUR, NOT A BUG. It is precisely what lets
+# 0.8.20 Slices 20 / 25 / 30 proceed WITHOUT stopping for a per-slice sign-off:
+# the pre-sign covers the pinned content, and anything else re-opens it. Slice 20
+# is EXPECTED to trip this. Re-pinning to make the gate green without a fresh
+# HITL sign-off is the failure mode the gate exists to prevent.
+#
+# PREDICATE — the pinned file must match the pin on ALL of:
+#   (a) CONTENT HASH: sha256 and git blob sha1 of the file's raw bytes equal the
+#       values recorded in the pin. Both are recorded so a reviewer can
+#       reproduce the pin either way (`git rev-parse 427d2712:<file>` gives the
+#       blob sha1 directly).
+#   (b) MEMBER LISTS: `allowlist`, `core` and `recovery_denylist` are compared
+#       element-by-element against the copies stored in the pin, so the failure
+#       can name WHICH member appeared or vanished — and so that updating only
+#       the hash in the pin (a lazy re-pin, to silence the gate) still fails.
+#   (c) COUNTS: 30 / 5 / 5, asserted separately from (b) against the pin's own
+#       `counts` block, so a pin whose lists and counts disagree is caught as an
+#       internally inconsistent (botched) re-pin rather than being trusted.
+#       EVERY one of the three counts must be PRESENT and an integer: a count the
+#       gate cannot read is a MALFORMED PIN (exit 2), never a skipped check. An
+#       absent count used to read back as None and silently disable both halves
+#       of (c) for that list, so a re-pin that DELETED a count, added a member
+#       and recomputed the hashes exited 0 — disarming the very backstop that
+#       makes a lazy re-pin (b) impossible to hide.
+#   (d) REQ-054: `recovery_denylist` is EXACTLY {recover, restore, repair, fix,
+#       rebuild}, checked against a constant HARDCODED BELOW — in the FILE and in
+#       the PIN. This rule (AC-041) is independently load-bearing: the recovery
+#       denylist is five names, and it must not silently widen even by way of an
+#       otherwise well-formed re-pin. This is the one check a re-pin cannot buy
+#       its way past.
+#
+# WHITESPACE / FORMATTING-ONLY CHANGES FAIL. DELIBERATE, DOCUMENTED CHOICE:
+#   (a) is a CONTENT hash over raw bytes, so re-indenting the file, reordering
+#   keys, or adding a trailing newline HARD-fails even though the parsed members
+#   are unchanged. The pin is a statement about a file's content at a commit, not
+#   about its abstract meaning — and a "harmless reformat" is the ideal cover for
+#   a member slipped in on an adjacent line. When only formatting moved, the
+#   failure says so explicitly (the parsed members are reported as identical), so
+#   the reader is never left guessing whether the surface actually changed.
+#
+# VACUOUS-PASS GUARD (TC-37, this repo's named failure class): if the pinned file
+# is MISSING or UNREADABLE, this gate HARD-fails — it never exits 0. A gate that
+# cannot see its subject and reports green is worse than no gate: it is an active
+# false assurance. A vanished governed-surface allowlist is also, on its face, the
+# largest possible change to the governed surface.
+#
+# Usage:
+#   scripts/check-governed-surface-pin.sh [--file <path>] [--pin <path>] [--help]
+#
+# --file/--pin exist so the test fixtures can point at COPIES under mktemp -d; the
+# real src/conformance/governed-surface-allowlist.json is never written by the
+# tests (mutating it is the exact thing this gate exists to catch). Both callers
+# invoke the script with no arguments. (--help mirrors scripts/set-version.sh, the
+# one sibling that offers it.)
+#
+# Requires python3 for JSON parsing and hashing. If it is absent this script exits
+# 2 (env error) LOUDLY rather than skipping — a skip here would be the TC-37 hole.
+#
+# Exit codes: 0 = the pinned file matches the pin on (a)-(d);
+#             1 = divergence from the pin, OR the pinned file is missing /
+#                 unreadable / unparseable (vacuous-pass guard), OR the pin
+#                 itself breaches REQ-054 or is internally inconsistent;
+#             2 = usage error, unreadable/unparseable/MALFORMED pin file, or
+#                 python3 absent (the gate could not run — never reported as a
+#                 pass). "Malformed" is structural: a missing/mistyped field the
+#                 predicate reads. That is deliberately NOT exit 1: exit 1 says
+#                 "the surface diverged, take it back to the HITL", whereas a
+#                 malformed pin means the gate has no trustworthy statement of
+#                 what was signed at all.
+set -euo pipefail
+
+SELF="$(basename "${BASH_SOURCE[0]}")"
+
+usage() {
+  cat <<EOF
+Usage: scripts/$SELF [--file <path>] [--pin <path>]
+
+Fails when src/conformance/governed-surface-allowlist.json diverges from the
+AC-079 pre-signed pin recorded in scripts/governed-surface-pin.json (pinned to
+the file's content as of commit 427d2712). See the header of this script for the
+full predicate and for why re-pinning without a fresh HITL sign-off is forbidden.
+
+  --file <path>  the governed-surface allowlist to check
+                 (default: src/conformance/governed-surface-allowlist.json)
+  --pin <path>   the pin record to check it against
+                 (default: scripts/governed-surface-pin.json)
+  --help         show this text
+
+Exit codes: 0 = matches the pin; 1 = divergence (or missing/unreadable file);
+            2 = usage/environment error.
+EOF
+}
+
+FILE="src/conformance/governed-surface-allowlist.json"
+PIN="scripts/governed-surface-pin.json"
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --file)    FILE="${2:?--file needs a path}"; shift 2 ;;
+    --pin)     PIN="${2:?--pin needs a path}"; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) printf '%s: unknown arg %q\n' "${SELF%.sh}" "$1" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
+# Both callers run from anywhere in the repo; defaults are repo-relative. An
+# absolute --file/--pin (what the fixtures pass) is unaffected by the cd.
+if TOPLEVEL="$(git rev-parse --show-toplevel 2>/dev/null)"; then
+  cd "$TOPLEVEL"
+fi
+
+if ! command -v python3 >/dev/null 2>&1; then
+  printf 'check-governed-surface-pin: python3 is required to parse and hash the governed surface and is not on PATH — refusing to report a pass it did not verify\n' >&2
+  exit 2
+fi
+
+set +e
+python3 - "$FILE" "$PIN" >&2 <<'PY'
+import hashlib
+import json
+import sys
+
+FILE, PIN = sys.argv[1], sys.argv[2]
+
+# REQ-054 / AC-041: the recovery denylist is FIVE names. Hardcoded here on
+# purpose — checked against both the file and the pin, so a re-pin cannot widen
+# it. See the "recovery denylist is five names" rule.
+REQ_054 = ["recover", "restore", "repair", "fix", "rebuild"]
+
+LIST_KEYS = ["allowlist", "core", "recovery_denylist"]
+CAP = 8  # cap on enumerated member names per difference line
+
+failures = []
+
+
+def fail(msg):
+    failures.append(msg)
+    print("FAIL  governed-surface-pin: " + msg)
+
+
+def die_env(msg):
+    print("check-governed-surface-pin: " + msg)
+    sys.exit(2)
+
+
+def show(names):
+    shown = ", ".join(sorted(names)[:CAP])
+    if len(names) > CAP:
+        shown += f" ...and {len(names) - CAP} more"
+    return shown
+
+
+# ---------------------------------------------------------------- the pin ----
+# An unusable pin is a broken GATE (exit 2), not a governed-surface divergence.
+try:
+    with open(PIN, "rb") as fh:
+        pin = json.loads(fh.read().decode("utf-8"))
+except OSError as exc:
+    die_env(f"cannot read the pin {PIN}: {exc} — the gate cannot run, so it refuses to pass")
+except Exception as exc:
+    die_env(f"the pin {PIN} is not valid JSON: {exc} — the gate cannot run, so it refuses to pass")
+
+if not isinstance(pin, dict):
+    die_env(f"the pin {PIN} is not a JSON object")
+for key in ["sha256", "git_blob_sha1", "counts"] + LIST_KEYS:
+    if key not in pin:
+        die_env(f"the pin {PIN} has no {key!r} field — it cannot vouch for anything")
+for key in LIST_KEYS:
+    if not isinstance(pin[key], list) or not all(isinstance(v, str) for v in pin[key]):
+        die_env(f"the pin {PIN}: {key!r} is not a list of strings")
+for key in ["sha256", "git_blob_sha1"]:
+    if not isinstance(pin[key], str) or not pin[key]:
+        die_env(
+            f"the pin {PIN}: {key!r} is {pin[key]!r}, not a non-empty string — the pin is MALFORMED "
+            "and cannot vouch for any content. Reported as a broken gate (exit 2), not as a surface "
+            "divergence (exit 1): a hash that is not a hash never equals the file's, so exit 1 would "
+            "send the reader to the HITL to re-sign a surface that may not have moved at all."
+        )
+if not isinstance(pin["counts"], dict):
+    die_env(f"the pin {PIN}: 'counts' is not an object")
+
+# EVERY pinned count must be PRESENT and an integer — a missing one is a hard
+# failure, never an implicit skip. Read permissively (dict.get) an absent entry
+# came back as None and BOTH count checks below skipped that list, so a re-pin
+# could delete a count, add a member to the surface, update the signed member
+# list and hashes to match, and still exit 0 — the count backstop that catches a
+# lazy re-pin, deleted. bool is excluded explicitly because isinstance(True, int)
+# is True in Python and `True == 1` would let a count of `true` masquerade as 1.
+for key in LIST_KEYS:
+    if key not in pin["counts"]:
+        die_env(
+            f"the pin {PIN}: 'counts' has no {key!r} entry — the pin is MALFORMED and cannot be "
+            f"trusted. counts.{key} is the backstop that catches a re-pin which updates the hashes "
+            "and the signed member list but not the counts; if it is absent the gate would silently "
+            "stop checking the size of that list altogether, which is how a pass gets bought rather "
+            "than earned. DO NOT 'fix' this by regenerating the pin: a pin is only regenerated from "
+            "a governed surface the HITL has SIGNED. Restore the pin from git instead."
+        )
+    declared = pin["counts"][key]
+    if isinstance(declared, bool) or not isinstance(declared, int):
+        die_env(
+            f"the pin {PIN}: counts.{key} is {declared!r}, which is not an integer — the pin is "
+            "MALFORMED and cannot be trusted. A non-integer count can be compared neither against "
+            "the pinned member list nor against the file, so it would silently weaken this gate to "
+            "the same degree as deleting it. DO NOT 'fix' this by regenerating the pin unless the "
+            "HITL has signed the surface the new pin would record; restore it from git instead."
+        )
+
+# Deliberately permissive, and the ONLY permissive reads left in this file:
+# 'pinned_at_commit_short' and 'ac' are prose for the failure message and are not
+# part of the predicate, so a pin missing them still gates correctly (it just
+# says "pinned at ?"). Every field the predicate actually READS is validated
+# above and then indexed strictly, so no check can be skipped by omission.
+WHERE = f"pinned at {pin.get('pinned_at_commit_short', '?')} under {pin.get('ac', 'the pre-sign')}"
+
+# (d) on the PIN: a re-pin may not widen or rename the recovery denylist.
+if pin["recovery_denylist"] != REQ_054:
+    fail(
+        f"{PIN} itself declares recovery_denylist {pin['recovery_denylist']!r}, which is not the "
+        f"five REQ-054 names {REQ_054!r}. That rule (AC-041) is independently load-bearing and is "
+        "not something a re-pin can change: the recovery denylist is five names."
+    )
+
+# (c) on the PIN: internally inconsistent pin (lists vs its own counts). Every
+# count is present and an int by the validation above, so this never skips.
+for key in LIST_KEYS:
+    declared = pin["counts"][key]
+    if declared != len(pin[key]):
+        fail(
+            f"{PIN} is internally inconsistent: counts.{key} says {declared} but its {key!r} list "
+            f"holds {len(pin[key])} member(s) — a botched re-pin, not a usable signature record."
+        )
+
+# --------------------------------------------------------- the pinned file ----
+# TC-37 vacuous-pass guard: missing / unreadable is a HARD failure, never a pass.
+try:
+    with open(FILE, "rb") as fh:
+        raw = fh.read()
+except OSError as exc:
+    fail(
+        f"cannot read {FILE}: {exc}. The gate cannot see the surface it vouches for, so it fails "
+        "loudly instead of reporting a vacuous ok (TC-37) — and a governed-surface allowlist that "
+        "has moved or vanished is itself the largest possible change to the governed surface."
+    )
+    raw = None
+
+data = None
+if raw is not None:
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except Exception as exc:
+        fail(f"{FILE} is not valid UTF-8 JSON: {exc} — it cannot be compared against the pin.")
+    else:
+        if not isinstance(data, dict):
+            fail(f"{FILE} is not a JSON object.")
+            data = None
+
+hash_ok = False
+if raw is not None:
+    # (a) content hash. Both forms: sha256 over the raw bytes, and git's blob
+    # sha1 so `git rev-parse <commit>:<path>` reproduces the pin directly.
+    got_sha256 = hashlib.sha256(raw).hexdigest()
+    got_blob = hashlib.sha1(b"blob %d\0" % len(raw) + raw).hexdigest()
+    hash_ok = got_sha256 == pin["sha256"] and got_blob == pin["git_blob_sha1"]
+    if not hash_ok:
+        fail(
+            f"{FILE} content differs from the pin ({WHERE}).\n"
+            f"        pinned   sha256 {pin['sha256']}  git-blob {pin['git_blob_sha1']}\n"
+            f"        on disk  sha256 {got_sha256}  git-blob {got_blob}"
+        )
+
+members_identical = None
+if data is not None:
+    members_identical = True
+    # (b) member lists, element-by-element, so the failure can NAME the change.
+    for key in LIST_KEYS:
+        got = data.get(key)
+        if not isinstance(got, list) or not all(isinstance(v, str) for v in got):
+            members_identical = False
+            fail(f"{FILE}: {key!r} is missing or is not a list of strings.")
+            continue
+        want = pin[key]
+        if got == want:
+            continue
+        members_identical = False
+        added = [v for v in got if v not in want]
+        removed = [v for v in want if v not in got]
+        detail = []
+        if added:
+            detail.append(f"ADDED {show(added)}")
+        if removed:
+            detail.append(f"REMOVED {show(removed)}")
+        if not added and not removed:
+            detail.append("REORDERED (same members, different order)")
+        fail(
+            f"{FILE}: {key!r} diverges from the pin ({WHERE}): "
+            + "; ".join(detail)
+            + f". Pinned {len(want)} member(s), on disk {len(got)}."
+        )
+
+    # (c) counts, asserted against the pin's own counts block as well as (b), so
+    # a same-hash-different-meaning or partially-updated pin is still caught.
+    for key in LIST_KEYS:
+        declared = pin["counts"][key]
+        got = data.get(key)
+        if not isinstance(got, list):
+            # (b) above has ALREADY failed this key by name; counting a non-list
+            # would add nothing. This is the one remaining `continue`, and it
+            # cannot hide anything: it is unreachable without a recorded failure.
+            continue
+        if len(got) != declared:
+            members_identical = False
+            fail(
+                f"{FILE}: {key!r} holds {len(got)} member(s) but the pin's counts block says "
+                f"{declared} ({WHERE})."
+            )
+
+    # (d) on the FILE: REQ-054, independent of what the pin happens to say.
+    got_deny = data.get("recovery_denylist")
+    if isinstance(got_deny, list) and got_deny != REQ_054:
+        members_identical = False
+        extra = [v for v in got_deny if v not in REQ_054]
+        gone = [v for v in REQ_054 if v not in got_deny]
+        what = []
+        if extra:
+            what.append(f"WIDENED by {show(extra)}")
+        if gone:
+            what.append(f"DROPPED {show(gone)}")
+        if not extra and not gone:
+            what.append("REORDERED")
+        fail(
+            "recovery_denylist is no longer exactly the five REQ-054 names "
+            f"{REQ_054!r}: " + "; ".join(what) + ". This rule (AC-041) is independently "
+            "load-bearing — the recovery denylist is five names and must not silently widen."
+        )
+
+if failures and not hash_ok and members_identical is True:
+    print(
+        "NOTE  governed-surface-pin: the PARSED members are identical to the pin — this is a "
+        "formatting/whitespace-only change. It still fails, deliberately: the pin is a CONTENT "
+        "hash over the file's bytes (see this gate's header), because a 'harmless reformat' is "
+        "the ideal cover for a member slipped in on an adjacent line."
+    )
+
+if failures:
+    print(
+        "\n"
+        "  The governed surface has changed relative to the AC-079 pre-signed pin; this re-opens\n"
+        "  the HITL sign-off. The pre-sign covers exactly the pinned content and nothing else, so\n"
+        "  a changed surface is by definition unsigned.\n"
+        "\n"
+        "  DO NOT update the pin to make this pass unless the HITL has signed the new surface.\n"
+        f"  Once it is signed — and only then — update {PIN} in the SAME change that carries the\n"
+        "  new surface, so the signed member list and the shipped member list land together and a\n"
+        "  reviewer can diff them.\n"
+        "\n"
+        "  Silently re-pinning to make this gate green is the failure mode this gate exists to\n"
+        "  prevent.\n"
+        "\n"
+        "  (0.8.20 Slices 20/25/30 are EXPECTED to trip this. Tripping is CORRECT BEHAVIOUR, not a\n"
+        "  bug: this gate is what lets them proceed without a per-slice sign-off, by guaranteeing\n"
+        "  that any surface change routes back to the HITL.)"
+    )
+    sys.exit(1)
+
+print(
+    f"ok    governed-surface-pin: {FILE} matches the {pin.get('ac', 'pre-signed')} pin "
+    f"({pin['counts']['allowlist']} allowlist / {pin['counts']['core']} core / "
+    f"{pin['counts']['recovery_denylist']} recovery_denylist, {WHERE})"
+)
+PY
+RC=$?
+set -e
+
+exit "$RC"
+#!/usr/bin/env bash
+# scripts/tests/test_check_governed_surface_pin.sh — coverage for the governed-
+# surface pin gate (scripts/check-governed-surface-pin.sh) AND for its two
+# wirings: `preflight.sh --landing` (PREVENT) and the always-on CI job (DETECT).
+#
+# WHAT IS BEING PROTECTED: the HITL PRE-SIGNED the accumulated governed-surface
+# delta of 0.8.20 Slices 5d+10b+15b+15d (AC-079) — pinned to the exact content of
+# src/conformance/governed-surface-allowlist.json as of commit 427d2712 (30
+# allowlist members, 5 core, recovery_denylist unchanged at the five REQ-054
+# names). A pre-sign keyed to specific content is worth exactly as much as the
+# mechanism that notices when that content moves.
+#
+# RED-first: the file MATCHES the pin today, so asserting only against the real
+# repo would prove nothing — a `true` script would pass it. Every failure arm
+# below therefore runs against a purpose-built DIVERGENT FIXTURE, so each arm can
+# only go green because the predicate actually fires. The real-repo arm is the
+# regression half of the same pair.
+#
+# THE FIXTURES ARE COPIES. src/conformance/governed-surface-allowlist.json is
+# NEVER written by this suite — mutating it is the exact thing the gate exists to
+# catch. Copies live under mktemp -d (the checker takes --file/--pin for exactly
+# this reason); the preflight arms build throwaway git repos + linked worktrees.
+#
+# NOTE ON ARM 5 (whitespace-only): failing on a formatting-only change is a
+# DELIBERATE, DOCUMENTED property of a content-hash pin, not an accident — see
+# the gate's header. It is asserted here so the behaviour is a contract.
+#
+# NOTE ON ARMS 8b-8f (the pin's own well-formedness): Arm 8 proves the counts
+# block is what catches a lazy re-pin, which makes the counts block itself a
+# target. These arms attack it: a pin that DELETES, nulls or mistypes one of its
+# three counts must fail as a MALFORMED PIN (exit 2 — the gate could not run),
+# never skip that list and never be reported as a surface divergence (exit 1 —
+# "go get it signed"). Each was captured exiting 0 on the pre-fix gate.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+CHECKER="$REPO_ROOT/scripts/check-governed-surface-pin.sh"
+PREFLIGHT="$REPO_ROOT/scripts/preflight.sh"
+CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
+REAL_FILE="$REPO_ROOT/src/conformance/governed-surface-allowlist.json"
+REAL_PIN="$REPO_ROOT/scripts/governed-surface-pin.json"
+
+# The no-argument arm exercises the checker's REPO-RELATIVE defaults, which it
+# resolves from `git rev-parse --show-toplevel` — i.e. from the cwd. Pin the cwd
+# to this checkout so that arm tests THIS tree no matter where the suite is
+# invoked from (agent-test.sh cd_repo_root's first; a bare `bash scripts/tests/...`
+# from a sibling checkout would otherwise silently check the wrong repo).
+cd "$REPO_ROOT"
+
+FAILED=0
+pass() { printf 'PASS  %s\n' "$1"; }
+fail() { printf 'FAIL  %s\n' "$1" >&2; FAILED=$((FAILED + 1)); }
+
+TMPROOT="$(mktemp -d)"
+cleanup() {
+  case "$TMPROOT" in
+    "${TMPDIR:-/tmp}"/*|/tmp/*) rm -rf "$TMPROOT" ;;
+    *) printf 'refusing to remove unexpected temp path: %s\n' "$TMPROOT" >&2 ;;
+  esac
+}
+trap cleanup EXIT
+
+# copy_file <name> -> prints the path of a fresh COPY of the real allowlist
+copy_file() {
+  local d="$TMPROOT/$1"
+  mkdir -p "$d"
+  cp "$REAL_FILE" "$d/governed-surface-allowlist.json"
+  printf '%s' "$d/governed-surface-allowlist.json"
+}
+
+# mutate <path> <python-body>  — edits the COPY in place. `d` is the parsed dict.
+mutate() {
+  local path="$1" body="$2"
+  python3 - "$path" <<PY
+import json, sys
+p = sys.argv[1]
+with open(p) as fh:
+    d = json.load(fh)
+$body
+with open(p, "w") as fh:
+    json.dump(d, fh, indent=2)
+    fh.write("\n")
+PY
+}
+
+run_checker() {
+  set +e
+  OUT="$(bash "$CHECKER" "$@" 2>&1)"
+  RC=$?
+  set -e
+}
+
+# check_fixture <file> [pin]  — always pins explicitly so the arm is independent
+# of the cwd the suite happens to run from.
+check_fixture() {
+  run_checker --file "$1" --pin "${2:-$REAL_PIN}"
+}
+
+expect_rc() {
+  local want="$1" desc="$2"
+  if [ "$RC" -eq "$want" ]; then
+    pass "$desc"
+  else
+    fail "$desc — expected rc=$want, got rc=$RC; out: $OUT"
+  fi
+}
+
+# expect_out <regex> <desc>
+expect_out() {
+  if printf '%s' "$OUT" | grep -qE "$1"; then
+    pass "$2"
+  else
+    fail "$2 — expected output matching /$1/; got: $OUT"
+  fi
+}
+
+# The HITL-routing block must appear on EVERY divergence, not just some of them:
+# a failure the reader cannot act on is how a gate gets silently re-pinned.
+expect_routes_to_hitl() {
+  local desc="$1"
+  local ok=1
+  printf '%s' "$OUT" | grep -q 'this re-opens' || ok=0
+  printf '%s' "$OUT" | grep -q 'HITL sign-off' || ok=0
+  printf '%s' "$OUT" | grep -q 'DO NOT update the pin to make this pass' || ok=0
+  printf '%s' "$OUT" | grep -q 'failure mode this gate exists to' || ok=0
+  if [ "$ok" -eq 1 ]; then
+    pass "$desc routes the reader to the HITL for a fresh sign-off"
+  else
+    fail "$desc did not print the full HITL-routing block; got: $OUT"
+  fi
+}
+
+# ======================= Arm 0: the real, unmodified tree =====================
+# Regression half. Also a standing assertion that the pinned artifact itself is
+# byte-unmodified — if this suite ever "fixes" a red arm by editing the real
+# allowlist, this arm goes red.
+run_checker
+expect_rc 0 "the real repo's governed surface matches the pin (default args)"
+expect_out 'ok +governed-surface-pin' "the passing run says ok"
+expect_out '30 allowlist / 5 core / 5 recovery_denylist' \
+  "the passing run states the pinned counts it verified"
+
+PIN_SHA="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["sha256"])' "$REAL_PIN")"
+REAL_SHA="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$REAL_FILE")"
+if [ "$PIN_SHA" = "$REAL_SHA" ]; then
+  pass "src/conformance/governed-surface-allowlist.json is byte-identical to the pin"
+else
+  fail "the real allowlist json no longer matches the pin's sha256 ($REAL_SHA vs $PIN_SHA)"
+fi
+
+# The pin must really be 427d2712's content, which is the whole provenance claim.
+# Skipped (loudly) on a shallow checkout where that commit is unreachable — the
+# hash arms above still carry the assertion, so this is not a vacuous pass.
+PIN_BLOB="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["git_blob_sha1"])' "$REAL_PIN")"
+if git -C "$REPO_ROOT" cat-file -e '427d2712^{commit}' 2>/dev/null; then
+  AT_PIN="$(git -C "$REPO_ROOT" rev-parse '427d2712:src/conformance/governed-surface-allowlist.json')"
+  if [ "$AT_PIN" = "$PIN_BLOB" ]; then
+    pass "the pin's git_blob_sha1 is exactly 427d2712's blob for the allowlist"
+  else
+    fail "pin git_blob_sha1 $PIN_BLOB != 427d2712's blob $AT_PIN — the provenance claim is false"
+  fi
+else
+  printf 'SKIP  427d2712 unreachable (shallow checkout) — provenance arm not run\n'
+fi
+
+# =================== Arm 7 (ordered early): unmodified COPY ===================
+# A byte-identical copy at a different path must pass, proving the gate compares
+# CONTENT and is not keyed to the path or to any repo state.
+F="$(copy_file unmodified)"
+check_fixture "$F"
+expect_rc 0 "an unmodified COPY of the allowlist passes"
+
+# ======================= Arm 1 (RED): added member (31) =======================
+F="$(copy_file added-member)"
+mutate "$F" 'd["allowlist"].append("shiny.new_verb")'
+check_fixture "$F"
+expect_rc 1 "an ADDED allowlist member (31) HARD-fails"
+expect_out "'allowlist' diverges from the pin" "added-member names the diverging key"
+expect_out 'ADDED shiny.new_verb' "added-member NAMES the member that appeared"
+expect_out 'Pinned 30 member\(s\), on disk 31' "added-member states pinned-vs-on-disk counts"
+expect_out 'content differs from the pin' "added-member reports the content-hash divergence too"
+expect_routes_to_hitl "added-member"
+
+# ====================== Arm 2 (RED): removed member (29) ======================
+F="$(copy_file removed-member)"
+mutate "$F" 'd["allowlist"].remove("purge")'
+check_fixture "$F"
+expect_rc 1 "a REMOVED allowlist member (29) HARD-fails"
+expect_out 'REMOVED purge' "removed-member NAMES the member that vanished"
+expect_out 'Pinned 30 member\(s\), on disk 29' "removed-member states pinned-vs-on-disk counts"
+expect_routes_to_hitl "removed-member"
+
+# =================== Arm 3 (RED): recovery_denylist widened ===================
+# AC-041 / REQ-054: the recovery denylist is five names. Widening it to six must
+# fail on the DENYLIST rule by name, not merely as "some list changed".
+F="$(copy_file denylist-widened)"
+mutate "$F" 'd["recovery_denylist"].append("reset")'
+check_fixture "$F"
+expect_rc 1 "a recovery_denylist widened to SIX HARD-fails"
+expect_out 'REQ-054' "denylist-widened cites the REQ-054 rule by name"
+expect_out 'recovery denylist is five names' "denylist-widened states the five-names rule"
+expect_out 'WIDENED by reset' "denylist-widened NAMES the added denylist entry"
+expect_routes_to_hitl "denylist-widened"
+
+# ================= Arm 4 (RED): recovery_denylist name changed ================
+# Still FIVE names, so every count assertion passes — only an exact-membership
+# check can catch this. That is precisely why counts are secondary, not the test.
+F="$(copy_file denylist-renamed)"
+mutate "$F" 'd["recovery_denylist"] = ["recover", "restore", "repair", "mend", "rebuild"]'
+check_fixture "$F"
+expect_rc 1 "a RENAMED recovery_denylist entry (still five) HARD-fails"
+expect_out 'REQ-054' "denylist-renamed cites the REQ-054 rule by name"
+expect_out 'WIDENED by mend' "denylist-renamed names the substituted entry"
+expect_out 'DROPPED fix' "denylist-renamed names the REQ-054 entry that went missing"
+expect_routes_to_hitl "denylist-renamed"
+
+# =================== Arm 5 (RED): whitespace / formatting only ================
+# Documented behaviour of a CONTENT-hash pin. The failure must ALSO say that the
+# parsed members are identical, so the reader is not left guessing.
+F="$(copy_file whitespace-only)"
+printf '\n' >>"$F"
+check_fixture "$F"
+expect_rc 1 "a whitespace/formatting-only change HARD-fails (content-hash pin, by design)"
+expect_out 'content differs from the pin' "whitespace-only reports a content-hash divergence"
+expect_out 'formatting/whitespace-only change' "whitespace-only says the change is formatting-only"
+expect_out 'CONTENT hash' "whitespace-only explains that the pin is a content hash (deliberate)"
+if printf '%s' "$OUT" | grep -qE 'ADDED|REMOVED|diverges from the pin'; then
+  fail "whitespace-only must NOT report a member divergence; got: $OUT"
+else
+  pass "whitespace-only reports no member divergence (members are genuinely unchanged)"
+fi
+expect_routes_to_hitl "whitespace-only"
+
+# ============= Arm 6 (RED): file missing — TC-37 vacuous-pass guard ===========
+# A gate that cannot see its subject and reports green is an active false
+# assurance. Missing/unreadable must be LOUD and must never exit 0.
+check_fixture "$TMPROOT/does-not-exist/governed-surface-allowlist.json"
+expect_rc 1 "a MISSING allowlist file HARD-fails (TC-37 vacuous-pass guard)"
+expect_out 'cannot read' "file-missing says it could not read the file"
+expect_out 'TC-37' "file-missing cites the vacuous-pass failure class"
+expect_out 'largest possible change to the governed surface' \
+  "file-missing explains why a vanished allowlist is itself a surface change"
+
+D="$TMPROOT/unreadable"
+mkdir -p "$D"
+cp "$REAL_FILE" "$D/governed-surface-allowlist.json"
+chmod 000 "$D/governed-surface-allowlist.json"
+if [ -r "$D/governed-surface-allowlist.json" ]; then
+  # root ignores the mode bits; the missing-file arm above already carries TC-37.
+  printf 'SKIP  running as root — chmod 000 is not enforced, unreadable arm not run\n'
+else
+  check_fixture "$D/governed-surface-allowlist.json"
+  expect_rc 1 "an UNREADABLE allowlist file HARD-fails (TC-37 vacuous-pass guard)"
+fi
+chmod 644 "$D/governed-surface-allowlist.json"
+
+# ================= Arm 8 (RED): the LAZY RE-PIN — hash-only update ============
+# The failure mode with teeth: a member is added to the surface and the pin's
+# hashes are updated to match, but the signed member lists/counts are left alone.
+# The gate must still fail, because the member lists are compared independently.
+F="$(copy_file lazy-repin)"
+mutate "$F" 'd["allowlist"].append("smuggled.verb")'
+LAZY_PIN="$TMPROOT/lazy-repin/pin.json"
+python3 - "$REAL_PIN" "$F" "$LAZY_PIN" <<'PY'
+import hashlib, json, sys
+pin = json.load(open(sys.argv[1]))
+raw = open(sys.argv[2], "rb").read()
+pin["sha256"] = hashlib.sha256(raw).hexdigest()
+pin["git_blob_sha1"] = hashlib.sha1(b"blob %d\0" % len(raw) + raw).hexdigest()
+json.dump(pin, open(sys.argv[3], "w"), indent=2)
+PY
+check_fixture "$F" "$LAZY_PIN"
+expect_rc 1 "a LAZY RE-PIN (hashes updated, signed member list untouched) still HARD-fails"
+expect_out 'ADDED smuggled.verb' "lazy-repin names the smuggled member"
+expect_out 'counts block says 30' "lazy-repin is also caught by the counts assertion"
+if printf '%s' "$OUT" | grep -q 'content differs from the pin'; then
+  fail "lazy-repin's hashes DO match by construction; a hash complaint means the arm is not testing what it claims: $OUT"
+else
+  pass "lazy-repin's hash check genuinely passes — only the member/count checks carry this arm"
+fi
+expect_routes_to_hitl "lazy-repin"
+
+# ========= Arm 8b (RED): a pin that DELETES one of its own counts ============
+# Arm 8 proved the counts block is what catches a lazy re-pin. So the counts
+# block is itself worth attacking: reading counts.<list> permissively meant an
+# ABSENT entry came back as None and BOTH the internal-consistency check and the
+# file-count check silently skipped that list. Deleting a count therefore
+# disarmed the backstop — the gate would have kept reporting "ok" while checking
+# strictly less than it claimed. Captured on the pre-fix script, all three of
+# these exited 0. A count the gate cannot read is a MALFORMED PIN (exit 2, "the
+# gate could not run"), never a divergence (exit 1, "go get the surface signed").
+#
+# omit_count_pin <key> -> prints the path of a pin with counts.<key> deleted
+omit_count_pin() {
+  local key="$1" out="$TMPROOT/pin-omit-$1.json"
+  python3 - "$REAL_PIN" "$out" "$key" <<'PY'
+import json, sys
+pin = json.load(open(sys.argv[1]))
+del pin["counts"][sys.argv[3]]
+json.dump(pin, open(sys.argv[2], "w"), indent=2)
+PY
+  printf '%s' "$out"
+}
+
+for KEY in allowlist core recovery_denylist; do
+  check_fixture "$REAL_FILE" "$(omit_count_pin "$KEY")"
+  expect_rc 2 "a pin that OMITS counts.$KEY HARD-fails as malformed (was a silent exit 0)"
+  expect_out "'counts' has no '$KEY' entry" "omit-counts.$KEY names the missing count entry"
+  expect_out 'MALFORMED' "omit-counts.$KEY says the pin is malformed"
+  expect_out "DO NOT 'fix' this by regenerating the pin" \
+    "omit-counts.$KEY forbids regenerating the pin to clear it"
+  if printf '%s' "$OUT" | grep -q 'ok +governed-surface-pin'; then
+    fail "omit-counts.$KEY must never print an ok line; got: $OUT"
+  else
+    pass "omit-counts.$KEY prints no ok line (no vacuous pass)"
+  fi
+done
+
+# ===== Arm 8c (RED): counts entry present but not an integer =================
+# Same hole through a different door: null skipped the check exactly like an
+# absent key (pre-fix exit 0), a float 30.0 compared EQUAL to 30 and also passed
+# (pre-fix exit 0), and a string "30" tripped the consistency check with a
+# nonsense message ("counts.allowlist says 30 but its list holds 30"). All three
+# are a malformed pin, and all three must now say so.
+type_count_pin() {
+  local label="$1" literal="$2" out="$TMPROOT/pin-type-$1.json"
+  python3 - "$REAL_PIN" "$out" "$literal" <<'PY'
+import json, sys
+pin = json.load(open(sys.argv[1]))
+pin["counts"]["allowlist"] = json.loads(sys.argv[3])
+json.dump(pin, open(sys.argv[2], "w"), indent=2)
+PY
+  printf '%s' "$out"
+}
+
+check_fixture "$REAL_FILE" "$(type_count_pin null 'null')"
+expect_rc 2 "a NULL counts.allowlist HARD-fails as malformed (was a silent exit 0)"
+expect_out 'not an integer' "null-count says the count is not an integer"
+
+check_fixture "$REAL_FILE" "$(type_count_pin string '"30"')"
+expect_rc 2 "a STRING counts.allowlist HARD-fails as malformed (was a confusing exit 1)"
+expect_out 'not an integer' "string-count says the count is not an integer"
+
+check_fixture "$REAL_FILE" "$(type_count_pin float '30.0')"
+expect_rc 2 "a FLOAT counts.allowlist HARD-fails as malformed (30.0 == 30 used to pass)"
+expect_out 'not an integer' "float-count says the count is not an integer"
+
+check_fixture "$REAL_FILE" "$(type_count_pin bool 'true')"
+expect_rc 2 "a BOOLEAN counts.allowlist HARD-fails (isinstance(True, int) is True in Python)"
+expect_out 'not an integer' "bool-count says the count is not an integer"
+
+# ==== Arm 8d (RED): THE KILLER — drop the count, add a member, rehash ========
+# The full defeat of the backstop, and the reason 8b is P2 and not cosmetic: a
+# re-pin that adds a member to the surface, updates the signed member list AND
+# the hashes to match, and DELETES counts.allowlist. Every surviving check then
+# agreed with the pin, and the one check that still knew the signed size was 30
+# had been quietly switched off. Pre-fix this exited 0 and printed
+#   "ok ... (None allowlist / 5 core / 5 recovery_denylist)"
+# for a 31-member surface carrying smuggled.verb.
+F="$(copy_file killer-drop-count)"
+mutate "$F" 'd["allowlist"].append("smuggled.verb")'
+KILLER_PIN="$TMPROOT/killer-drop-count/pin.json"
+python3 - "$REAL_PIN" "$F" "$KILLER_PIN" <<'PY'
+import hashlib, json, sys
+pin = json.load(open(sys.argv[1]))
+raw = open(sys.argv[2], "rb").read()
+pin["allowlist"] = json.loads(raw.decode("utf-8"))["allowlist"]  # signed list updated
+pin["sha256"] = hashlib.sha256(raw).hexdigest()                  # hashes recomputed
+pin["git_blob_sha1"] = hashlib.sha1(b"blob %d\0" % len(raw) + raw).hexdigest()
+del pin["counts"]["allowlist"]                                   # backstop DELETED
+json.dump(pin, open(sys.argv[3], "w"), indent=2)
+PY
+check_fixture "$F" "$KILLER_PIN"
+expect_rc 2 "a re-pin that DROPS counts.allowlist, adds a member and rehashes HARD-fails (was exit 0)"
+expect_out 'MALFORMED' "killer-drop-count reports a malformed pin"
+if printf '%s' "$OUT" | grep -qE 'ok +governed-surface-pin|None allowlist'; then
+  fail "killer-drop-count must never report ok / a None count; got: $OUT"
+else
+  pass "killer-drop-count prints no ok line and no None count"
+fi
+# Guard that this arm keeps testing what it claims: the hashes and the member
+# list DO agree by construction, so only the missing-count rule can carry it.
+if printf '%s' "$OUT" | grep -qE 'content differs from the pin|ADDED smuggled.verb'; then
+  fail "killer-drop-count's hashes and member list match by construction; a hash/member complaint means the arm is not testing the count rule: $OUT"
+else
+  pass "killer-drop-count's hash and member checks genuinely pass — only the missing-count rule carries it"
+fi
+
+# ==== Arm 8e: a malformed pin is a BROKEN GATE (2), not a divergence (1) =====
+# The distinction is load-bearing for the reader: exit 1 says "the surface moved,
+# take it to the HITL", and printing that for a pin the gate cannot parse would
+# invite exactly the re-pin this gate exists to prevent. It also matches what the
+# gate already does for a missing pin (Arm 10).
+check_fixture "$REAL_FILE" "$(omit_count_pin allowlist)"
+if printf '%s' "$OUT" | grep -q 'DO NOT update the pin to make this pass'; then
+  fail "a malformed pin must NOT print the surface-divergence HITL-routing block; got: $OUT"
+else
+  pass "a malformed pin does not print the surface-divergence routing block (it is a broken gate, not a changed surface)"
+fi
+
+# ==== Arm 8f: a non-string hash field in the pin is malformed too ============
+# Same class as 8b, found by auditing the rest of the pin-parsing path: the
+# predicate READS sha256/git_blob_sha1, so a mistyped one is a broken gate. It
+# used to be reported as a content divergence (exit 1), sending the reader to the
+# HITL to re-sign a surface that never moved.
+BAD_HASH_PIN="$TMPROOT/pin-bad-hash.json"
+python3 - "$REAL_PIN" "$BAD_HASH_PIN" <<'PY'
+import json, sys
+pin = json.load(open(sys.argv[1]))
+pin["sha256"] = None
+json.dump(pin, open(sys.argv[2], "w"), indent=2)
+PY
+check_fixture "$REAL_FILE" "$BAD_HASH_PIN"
+expect_rc 2 "a NULL sha256 in the pin HARD-fails as malformed, not as a divergence"
+expect_out 'not a non-empty string' "bad-hash pin says the hash field is not a string"
+
+# ============ Arm 9 (RED): a re-pin that widens the denylist in the PIN =======
+# REQ-054 is checked against a constant hardcoded in the gate, in the PIN as well
+# as in the file, so this is the one rule a re-pin cannot buy its way past.
+WIDE_PIN="$TMPROOT/wide-pin.json"
+python3 - "$REAL_PIN" "$WIDE_PIN" <<'PY'
+import json, sys
+pin = json.load(open(sys.argv[1]))
+pin["recovery_denylist"].append("reset")
+pin["counts"]["recovery_denylist"] = 6
+json.dump(pin, open(sys.argv[2], "w"), indent=2)
+PY
+check_fixture "$REAL_FILE" "$WIDE_PIN"
+expect_rc 1 "a PIN that itself widens recovery_denylist HARD-fails (REQ-054 is not re-pinnable)"
+expect_out 'itself declares recovery_denylist' "wide-pin failure points at the pin, not the file"
+expect_out 'not something a re-pin can change' "wide-pin says REQ-054 cannot be re-pinned"
+
+# ==================== Arm 10: usage / environment errors = 2 ==================
+run_checker --not-a-flag
+expect_rc 2 "an unknown flag exits 2 (usage), distinct from a divergence"
+
+check_fixture "$REAL_FILE" "$TMPROOT/no-such-pin.json"
+expect_rc 2 "a missing PIN exits 2 (the gate could not run) and never 0"
+expect_out 'the gate cannot run' "missing-pin says the gate could not run"
+
+run_checker --help
+expect_rc 0 "--help exits 0"
+expect_out 'Usage: scripts/check-governed-surface-pin.sh' "--help prints usage"
+
+# ======================== preflight.sh --landing wiring =======================
+# These arms prove the PREVENT wiring. Pre-wiring they are the RED witness for
+# the gap: a tree carrying an unsigned governed surface cleared --landing with 0.
+
+NO_HOOKS="$TMPROOT/no-hooks"
+mkdir -p "$NO_HOOKS"
+
+# make_repo <primary> <linked> — a throwaway repo carrying COPIES of the two
+# governed-surface files plus a consistent ledger (so preflight's §8 passes and
+# only §9 is under test), plus a linked worktree (TC-RUBRIC-5 forbids --landing
+# in a primary checkout).
+make_repo() {
+  local primary="$1" linked="$2"
+  mkdir -p "$primary/src/conformance" "$primary/scripts" "$primary/dev/steward"
+  git init -q -b main "$primary"
+
+exec
+/bin/bash -lc 'bash scripts/tests/test_check_governed_surface_pin.sh' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 1235ms:
+PASS  added-member names the diverging key
+PASS  added-member NAMES the member that appeared
+PASS  added-member states pinned-vs-on-disk counts
+PASS  added-member reports the content-hash divergence too
+PASS  added-member routes the reader to the HITL for a fresh sign-off
+PASS  a REMOVED allowlist member (29) HARD-fails
+PASS  removed-member NAMES the member that vanished
+PASS  removed-member states pinned-vs-on-disk counts
+PASS  removed-member routes the reader to the HITL for a fresh sign-off
+PASS  a recovery_denylist widened to SIX HARD-fails
+PASS  denylist-widened cites the REQ-054 rule by name
+PASS  denylist-widened states the five-names rule
+PASS  denylist-widened NAMES the added denylist entry
+PASS  denylist-widened routes the reader to the HITL for a fresh sign-off
+PASS  a RENAMED recovery_denylist entry (still five) HARD-fails
+PASS  denylist-renamed cites the REQ-054 rule by name
+PASS  denylist-renamed names the substituted entry
+PASS  denylist-renamed names the REQ-054 entry that went missing
+PASS  denylist-renamed routes the reader to the HITL for a fresh sign-off
+PASS  a whitespace/formatting-only change HARD-fails (content-hash pin, by design)
+PASS  whitespace-only reports a content-hash divergence
+PASS  whitespace-only says the change is formatting-only
+PASS  whitespace-only explains that the pin is a content hash (deliberate)
+PASS  whitespace-only reports no member divergence (members are genuinely unchanged)
+PASS  whitespace-only routes the reader to the HITL for a fresh sign-off
+PASS  a MISSING allowlist file HARD-fails (TC-37 vacuous-pass guard)
+PASS  file-missing says it could not read the file
+PASS  file-missing cites the vacuous-pass failure class
+PASS  file-missing explains why a vanished allowlist is itself a surface change
+PASS  an UNREADABLE allowlist file HARD-fails (TC-37 vacuous-pass guard)
+PASS  a LAZY RE-PIN (hashes updated, signed member list untouched) still HARD-fails
+PASS  lazy-repin names the smuggled member
+PASS  lazy-repin is also caught by the counts assertion
+PASS  lazy-repin's hash check genuinely passes — only the member/count checks carry this arm
+PASS  lazy-repin routes the reader to the HITL for a fresh sign-off
+PASS  a pin that OMITS counts.allowlist HARD-fails as malformed (was a silent exit 0)
+PASS  omit-counts.allowlist names the missing count entry
+PASS  omit-counts.allowlist says the pin is malformed
+PASS  omit-counts.allowlist forbids regenerating the pin to clear it
+PASS  omit-counts.allowlist prints no ok line (no vacuous pass)
+PASS  a pin that OMITS counts.core HARD-fails as malformed (was a silent exit 0)
+PASS  omit-counts.core names the missing count entry
+PASS  omit-counts.core says the pin is malformed
+PASS  omit-counts.core forbids regenerating the pin to clear it
+PASS  omit-counts.core prints no ok line (no vacuous pass)
+PASS  a pin that OMITS counts.recovery_denylist HARD-fails as malformed (was a silent exit 0)
+PASS  omit-counts.recovery_denylist names the missing count entry
+PASS  omit-counts.recovery_denylist says the pin is malformed
+PASS  omit-counts.recovery_denylist forbids regenerating the pin to clear it
+PASS  omit-counts.recovery_denylist prints no ok line (no vacuous pass)
+PASS  a NULL counts.allowlist HARD-fails as malformed (was a silent exit 0)
+PASS  null-count says the count is not an integer
+PASS  a STRING counts.allowlist HARD-fails as malformed (was a confusing exit 1)
+PASS  string-count says the count is not an integer
+PASS  a FLOAT counts.allowlist HARD-fails as malformed (30.0 == 30 used to pass)
+PASS  float-count says the count is not an integer
+PASS  a BOOLEAN counts.allowlist HARD-fails (isinstance(True, int) is True in Python)
+PASS  bool-count says the count is not an integer
+PASS  a re-pin that DROPS counts.allowlist, adds a member and rehashes HARD-fails (was exit 0)
+PASS  killer-drop-count reports a malformed pin
+PASS  killer-drop-count prints no ok line and no None count
+PASS  killer-drop-count's hash and member checks genuinely pass — only the missing-count rule carries it
+PASS  a malformed pin does not print the surface-divergence routing block (it is a broken gate, not a changed surface)
+PASS  a NULL sha256 in the pin HARD-fails as malformed, not as a divergence
+PASS  bad-hash pin says the hash field is not a string
+PASS  a PIN that itself widens recovery_denylist HARD-fails (REQ-054 is not re-pinnable)
+PASS  wide-pin failure points at the pin, not the file
+PASS  wide-pin says REQ-054 cannot be re-pinned
+PASS  an unknown flag exits 2 (usage), distinct from a divergence
+PASS  a missing PIN exits 2 (the gate could not run) and never 0
+PASS  missing-pin says the gate could not run
+PASS  --help exits 0
+PASS  --help prints usage
+PASS  --landing HARD-fails in a worktree whose governed surface diverges from the pin
+PASS  --landing failure output names the governed-surface-pin check
+PASS  --landing failure carries the specific member through to the operator
+PASS  --landing still exits 0 in a worktree whose governed surface matches the pin
+PASS  regression guard: governed-surface-pin is inert without --landing
+PASS  ci.yml defines a governed-surface-pin job
+PASS  the CI job runs the SHARED scripts/check-governed-surface-pin.sh (one predicate, two callers)
+PASS  the governed-surface-pin job is always-on (no if: condition, not docs_only-gated)
+PASS  the governed-surface-pin job has no needs: (does not ride the changes/docs_only fast path)
+
+All check-governed-surface-pin tests passed
+
+exec
+/bin/bash -lc "nl -ba scripts/check-governed-surface-pin.sh | sed -n '185,335p'; nl -ba scripts/tests/test_check_governed_surface_pin.sh | sed -n '280,420p'" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1c
+ succeeded in 0ms:
+   185	if not isinstance(pin, dict):
+   186	    die_env(f"the pin {PIN} is not a JSON object")
+   187	for key in ["sha256", "git_blob_sha1", "counts"] + LIST_KEYS:
+   188	    if key not in pin:
+   189	        die_env(f"the pin {PIN} has no {key!r} field — it cannot vouch for anything")
+   190	for key in LIST_KEYS:
+   191	    if not isinstance(pin[key], list) or not all(isinstance(v, str) for v in pin[key]):
+   192	        die_env(f"the pin {PIN}: {key!r} is not a list of strings")
+   193	for key in ["sha256", "git_blob_sha1"]:
+   194	    if not isinstance(pin[key], str) or not pin[key]:
+   195	        die_env(
+   196	            f"the pin {PIN}: {key!r} is {pin[key]!r}, not a non-empty string — the pin is MALFORMED "
+   197	            "and cannot vouch for any content. Reported as a broken gate (exit 2), not as a surface "
+   198	            "divergence (exit 1): a hash that is not a hash never equals the file's, so exit 1 would "
+   199	            "send the reader to the HITL to re-sign a surface that may not have moved at all."
+   200	        )
+   201	if not isinstance(pin["counts"], dict):
+   202	    die_env(f"the pin {PIN}: 'counts' is not an object")
+   203	
+   204	# EVERY pinned count must be PRESENT and an integer — a missing one is a hard
+   205	# failure, never an implicit skip. Read permissively (dict.get) an absent entry
+   206	# came back as None and BOTH count checks below skipped that list, so a re-pin
+   207	# could delete a count, add a member to the surface, update the signed member
+   208	# list and hashes to match, and still exit 0 — the count backstop that catches a
+   209	# lazy re-pin, deleted. bool is excluded explicitly because isinstance(True, int)
+   210	# is True in Python and `True == 1` would let a count of `true` masquerade as 1.
+   211	for key in LIST_KEYS:
+   212	    if key not in pin["counts"]:
+   213	        die_env(
+   214	            f"the pin {PIN}: 'counts' has no {key!r} entry — the pin is MALFORMED and cannot be "
+   215	            f"trusted. counts.{key} is the backstop that catches a re-pin which updates the hashes "
+   216	            "and the signed member list but not the counts; if it is absent the gate would silently "
+   217	            "stop checking the size of that list altogether, which is how a pass gets bought rather "
+   218	            "than earned. DO NOT 'fix' this by regenerating the pin: a pin is only regenerated from "
+   219	            "a governed surface the HITL has SIGNED. Restore the pin from git instead."
+   220	        )
+   221	    declared = pin["counts"][key]
+   222	    if isinstance(declared, bool) or not isinstance(declared, int):
+   223	        die_env(
+   224	            f"the pin {PIN}: counts.{key} is {declared!r}, which is not an integer — the pin is "
+   225	            "MALFORMED and cannot be trusted. A non-integer count can be compared neither against "
+   226	            "the pinned member list nor against the file, so it would silently weaken this gate to "
+   227	            "the same degree as deleting it. DO NOT 'fix' this by regenerating the pin unless the "
+   228	            "HITL has signed the surface the new pin would record; restore it from git instead."
+   229	        )
+   230	
+   231	# Deliberately permissive, and the ONLY permissive reads left in this file:
+   232	# 'pinned_at_commit_short' and 'ac' are prose for the failure message and are not
+   233	# part of the predicate, so a pin missing them still gates correctly (it just
+   234	# says "pinned at ?"). Every field the predicate actually READS is validated
+   235	# above and then indexed strictly, so no check can be skipped by omission.
+   236	WHERE = f"pinned at {pin.get('pinned_at_commit_short', '?')} under {pin.get('ac', 'the pre-sign')}"
+   237	
+   238	# (d) on the PIN: a re-pin may not widen or rename the recovery denylist.
+   239	if pin["recovery_denylist"] != REQ_054:
+   240	    fail(
+   241	        f"{PIN} itself declares recovery_denylist {pin['recovery_denylist']!r}, which is not the "
+   242	        f"five REQ-054 names {REQ_054!r}. That rule (AC-041) is independently load-bearing and is "
+   243	        "not something a re-pin can change: the recovery denylist is five names."
+   244	    )
+   245	
+   246	# (c) on the PIN: internally inconsistent pin (lists vs its own counts). Every
+   247	# count is present and an int by the validation above, so this never skips.
+   248	for key in LIST_KEYS:
+   249	    declared = pin["counts"][key]
+   250	    if declared != len(pin[key]):
+   251	        fail(
+   252	            f"{PIN} is internally inconsistent: counts.{key} says {declared} but its {key!r} list "
+   253	            f"holds {len(pin[key])} member(s) — a botched re-pin, not a usable signature record."
+   254	        )
+   255	
+   256	# --------------------------------------------------------- the pinned file ----
+   257	# TC-37 vacuous-pass guard: missing / unreadable is a HARD failure, never a pass.
+   258	try:
+   259	    with open(FILE, "rb") as fh:
+   260	        raw = fh.read()
+   261	except OSError as exc:
+   262	    fail(
+   263	        f"cannot read {FILE}: {exc}. The gate cannot see the surface it vouches for, so it fails "
+   264	        "loudly instead of reporting a vacuous ok (TC-37) — and a governed-surface allowlist that "
+   265	        "has moved or vanished is itself the largest possible change to the governed surface."
+   266	    )
+   267	    raw = None
+   268	
+   269	data = None
+   270	if raw is not None:
+   271	    try:
+   272	        data = json.loads(raw.decode("utf-8"))
+   273	    except Exception as exc:
+   274	        fail(f"{FILE} is not valid UTF-8 JSON: {exc} — it cannot be compared against the pin.")
+   275	    else:
+   276	        if not isinstance(data, dict):
+   277	            fail(f"{FILE} is not a JSON object.")
+   278	            data = None
+   279	
+   280	hash_ok = False
+   281	if raw is not None:
+   282	    # (a) content hash. Both forms: sha256 over the raw bytes, and git's blob
+   283	    # sha1 so `git rev-parse <commit>:<path>` reproduces the pin directly.
+   284	    got_sha256 = hashlib.sha256(raw).hexdigest()
+   285	    got_blob = hashlib.sha1(b"blob %d\0" % len(raw) + raw).hexdigest()
+   286	    hash_ok = got_sha256 == pin["sha256"] and got_blob == pin["git_blob_sha1"]
+   287	    if not hash_ok:
+   288	        fail(
+   289	            f"{FILE} content differs from the pin ({WHERE}).\n"
+   290	            f"        pinned   sha256 {pin['sha256']}  git-blob {pin['git_blob_sha1']}\n"
+   291	            f"        on disk  sha256 {got_sha256}  git-blob {got_blob}"
+   292	        )
+   293	
+   294	members_identical = None
+   295	if data is not None:
+   296	    members_identical = True
+   297	    # (b) member lists, element-by-element, so the failure can NAME the change.
+   298	    for key in LIST_KEYS:
+   299	        got = data.get(key)
+   300	        if not isinstance(got, list) or not all(isinstance(v, str) for v in got):
+   301	            members_identical = False
+   302	            fail(f"{FILE}: {key!r} is missing or is not a list of strings.")
+   303	            continue
+   304	        want = pin[key]
+   305	        if got == want:
+   306	            continue
+   307	        members_identical = False
+   308	        added = [v for v in got if v not in want]
+   309	        removed = [v for v in want if v not in got]
+   310	        detail = []
+   311	        if added:
+   312	            detail.append(f"ADDED {show(added)}")
+   313	        if removed:
+   314	            detail.append(f"REMOVED {show(removed)}")
+   315	        if not added and not removed:
+   316	            detail.append("REORDERED (same members, different order)")
+   317	        fail(
+   318	            f"{FILE}: {key!r} diverges from the pin ({WHERE}): "
+   319	            + "; ".join(detail)
+   320	            + f". Pinned {len(want)} member(s), on disk {len(got)}."
+   321	        )
+   322	
+   323	    # (c) counts, asserted against the pin's own counts block as well as (b), so
+   324	    # a same-hash-different-meaning or partially-updated pin is still caught.
+   325	    for key in LIST_KEYS:
+   326	        declared = pin["counts"][key]
+   327	        got = data.get(key)
+   328	        if not isinstance(got, list):
+   329	            # (b) above has ALREADY failed this key by name; counting a non-list
+   330	            # would add nothing. This is the one remaining `continue`, and it
+   331	            # cannot hide anything: it is unreachable without a recorded failure.
+   332	            continue
+   333	        if len(got) != declared:
+   334	            members_identical = False
+   335	            fail(
+   280	  pass "lazy-repin's hash check genuinely passes — only the member/count checks carry this arm"
+   281	fi
+   282	expect_routes_to_hitl "lazy-repin"
+   283	
+   284	# ========= Arm 8b (RED): a pin that DELETES one of its own counts ============
+   285	# Arm 8 proved the counts block is what catches a lazy re-pin. So the counts
+   286	# block is itself worth attacking: reading counts.<list> permissively meant an
+   287	# ABSENT entry came back as None and BOTH the internal-consistency check and the
+   288	# file-count check silently skipped that list. Deleting a count therefore
+   289	# disarmed the backstop — the gate would have kept reporting "ok" while checking
+   290	# strictly less than it claimed. Captured on the pre-fix script, all three of
+   291	# these exited 0. A count the gate cannot read is a MALFORMED PIN (exit 2, "the
+   292	# gate could not run"), never a divergence (exit 1, "go get the surface signed").
+   293	#
+   294	# omit_count_pin <key> -> prints the path of a pin with counts.<key> deleted
+   295	omit_count_pin() {
+   296	  local key="$1" out="$TMPROOT/pin-omit-$1.json"
+   297	  python3 - "$REAL_PIN" "$out" "$key" <<'PY'
+   298	import json, sys
+   299	pin = json.load(open(sys.argv[1]))
+   300	del pin["counts"][sys.argv[3]]
+   301	json.dump(pin, open(sys.argv[2], "w"), indent=2)
+   302	PY
+   303	  printf '%s' "$out"
+   304	}
+   305	
+   306	for KEY in allowlist core recovery_denylist; do
+   307	  check_fixture "$REAL_FILE" "$(omit_count_pin "$KEY")"
+   308	  expect_rc 2 "a pin that OMITS counts.$KEY HARD-fails as malformed (was a silent exit 0)"
+   309	  expect_out "'counts' has no '$KEY' entry" "omit-counts.$KEY names the missing count entry"
+   310	  expect_out 'MALFORMED' "omit-counts.$KEY says the pin is malformed"
+   311	  expect_out "DO NOT 'fix' this by regenerating the pin" \
+   312	    "omit-counts.$KEY forbids regenerating the pin to clear it"
+   313	  if printf '%s' "$OUT" | grep -q 'ok +governed-surface-pin'; then
+   314	    fail "omit-counts.$KEY must never print an ok line; got: $OUT"
+   315	  else
+   316	    pass "omit-counts.$KEY prints no ok line (no vacuous pass)"
+   317	  fi
+   318	done
+   319	
+   320	# ===== Arm 8c (RED): counts entry present but not an integer =================
+   321	# Same hole through a different door: null skipped the check exactly like an
+   322	# absent key (pre-fix exit 0), a float 30.0 compared EQUAL to 30 and also passed
+   323	# (pre-fix exit 0), and a string "30" tripped the consistency check with a
+   324	# nonsense message ("counts.allowlist says 30 but its list holds 30"). All three
+   325	# are a malformed pin, and all three must now say so.
+   326	type_count_pin() {
+   327	  local label="$1" literal="$2" out="$TMPROOT/pin-type-$1.json"
+   328	  python3 - "$REAL_PIN" "$out" "$literal" <<'PY'
+   329	import json, sys
+   330	pin = json.load(open(sys.argv[1]))
+   331	pin["counts"]["allowlist"] = json.loads(sys.argv[3])
+   332	json.dump(pin, open(sys.argv[2], "w"), indent=2)
+   333	PY
+   334	  printf '%s' "$out"
+   335	}
+   336	
+   337	check_fixture "$REAL_FILE" "$(type_count_pin null 'null')"
+   338	expect_rc 2 "a NULL counts.allowlist HARD-fails as malformed (was a silent exit 0)"
+   339	expect_out 'not an integer' "null-count says the count is not an integer"
+   340	
+   341	check_fixture "$REAL_FILE" "$(type_count_pin string '"30"')"
+   342	expect_rc 2 "a STRING counts.allowlist HARD-fails as malformed (was a confusing exit 1)"
+   343	expect_out 'not an integer' "string-count says the count is not an integer"
+   344	
+   345	check_fixture "$REAL_FILE" "$(type_count_pin float '30.0')"
+   346	expect_rc 2 "a FLOAT counts.allowlist HARD-fails as malformed (30.0 == 30 used to pass)"
+   347	expect_out 'not an integer' "float-count says the count is not an integer"
+   348	
+   349	check_fixture "$REAL_FILE" "$(type_count_pin bool 'true')"
+   350	expect_rc 2 "a BOOLEAN counts.allowlist HARD-fails (isinstance(True, int) is True in Python)"
+   351	expect_out 'not an integer' "bool-count says the count is not an integer"
+   352	
+   353	# ==== Arm 8d (RED): THE KILLER — drop the count, add a member, rehash ========
+   354	# The full defeat of the backstop, and the reason 8b is P2 and not cosmetic: a
+   355	# re-pin that adds a member to the surface, updates the signed member list AND
+   356	# the hashes to match, and DELETES counts.allowlist. Every surviving check then
+   357	# agreed with the pin, and the one check that still knew the signed size was 30
+   358	# had been quietly switched off. Pre-fix this exited 0 and printed
+   359	#   "ok ... (None allowlist / 5 core / 5 recovery_denylist)"
+   360	# for a 31-member surface carrying smuggled.verb.
+   361	F="$(copy_file killer-drop-count)"
+   362	mutate "$F" 'd["allowlist"].append("smuggled.verb")'
+   363	KILLER_PIN="$TMPROOT/killer-drop-count/pin.json"
+   364	python3 - "$REAL_PIN" "$F" "$KILLER_PIN" <<'PY'
+   365	import hashlib, json, sys
+   366	pin = json.load(open(sys.argv[1]))
+   367	raw = open(sys.argv[2], "rb").read()
+   368	pin["allowlist"] = json.loads(raw.decode("utf-8"))["allowlist"]  # signed list updated
+   369	pin["sha256"] = hashlib.sha256(raw).hexdigest()                  # hashes recomputed
+   370	pin["git_blob_sha1"] = hashlib.sha1(b"blob %d\0" % len(raw) + raw).hexdigest()
+   371	del pin["counts"]["allowlist"]                                   # backstop DELETED
+   372	json.dump(pin, open(sys.argv[3], "w"), indent=2)
+   373	PY
+   374	check_fixture "$F" "$KILLER_PIN"
+   375	expect_rc 2 "a re-pin that DROPS counts.allowlist, adds a member and rehashes HARD-fails (was exit 0)"
+   376	expect_out 'MALFORMED' "killer-drop-count reports a malformed pin"
+   377	if printf '%s' "$OUT" | grep -qE 'ok +governed-surface-pin|None allowlist'; then
+   378	  fail "killer-drop-count must never report ok / a None count; got: $OUT"
+   379	else
+   380	  pass "killer-drop-count prints no ok line and no None count"
+   381	fi
+   382	# Guard that this arm keeps testing what it claims: the hashes and the member
+   383	# list DO agree by construction, so only the missing-count rule can carry it.
+   384	if printf '%s' "$OUT" | grep -qE 'content differs from the pin|ADDED smuggled.verb'; then
+   385	  fail "killer-drop-count's hashes and member list match by construction; a hash/member complaint means the arm is not testing the count rule: $OUT"
+   386	else
+   387	  pass "killer-drop-count's hash and member checks genuinely pass — only the missing-count rule carries it"
+   388	fi
+   389	
+   390	# ==== Arm 8e: a malformed pin is a BROKEN GATE (2), not a divergence (1) =====
+   391	# The distinction is load-bearing for the reader: exit 1 says "the surface moved,
+   392	# take it to the HITL", and printing that for a pin the gate cannot parse would
+   393	# invite exactly the re-pin this gate exists to prevent. It also matches what the
+   394	# gate already does for a missing pin (Arm 10).
+   395	check_fixture "$REAL_FILE" "$(omit_count_pin allowlist)"
+   396	if printf '%s' "$OUT" | grep -q 'DO NOT update the pin to make this pass'; then
+   397	  fail "a malformed pin must NOT print the surface-divergence HITL-routing block; got: $OUT"
+   398	else
+   399	  pass "a malformed pin does not print the surface-divergence routing block (it is a broken gate, not a changed surface)"
+   400	fi
+   401	
+   402	# ==== Arm 8f: a non-string hash field in the pin is malformed too ============
+   403	# Same class as 8b, found by auditing the rest of the pin-parsing path: the
+   404	# predicate READS sha256/git_blob_sha1, so a mistyped one is a broken gate. It
+   405	# used to be reported as a content divergence (exit 1), sending the reader to the
+   406	# HITL to re-sign a surface that never moved.
+   407	BAD_HASH_PIN="$TMPROOT/pin-bad-hash.json"
+   408	python3 - "$REAL_PIN" "$BAD_HASH_PIN" <<'PY'
+   409	import json, sys
+   410	pin = json.load(open(sys.argv[1]))
+   411	pin["sha256"] = None
+   412	json.dump(pin, open(sys.argv[2], "w"), indent=2)
+   413	PY
+   414	check_fixture "$REAL_FILE" "$BAD_HASH_PIN"
+   415	expect_rc 2 "a NULL sha256 in the pin HARD-fails as malformed, not as a divergence"
+   416	expect_out 'not a non-empty string' "bad-hash pin says the hash field is not a string"
+   417	
+   418	# ============ Arm 9 (RED): a re-pin that widens the denylist in the PIN =======
+   419	# REQ-054 is checked against a constant hardcoded in the gate, in the PIN as well
+   420	# as in the file, so this is the one rule a re-pin cannot buy its way past.
+
+codex
+The production gate change correctly hard-fails malformed count/hash fields and the added tests pass. The only finding is a low-severity weakness in one regression assertion.
+
+Review comment:
+
+- [P3] Match the ok line with an extended regex — /home/coreyt/projects/fathomdb-worktrees/dh2-t1c/scripts/tests/test_check_governed_surface_pin.sh:313-313
+  When this guard is supposed to reject any accidental `ok    governed-surface-pin` line, the plain `grep` treats `+` literally, so the pattern only matches `ok +governed-surface-pin` and would miss the actual ok output with spaces. Use `grep -E` here, or a basic-regex-compatible space match, so this regression check exercises the intended no-ok-line contract.
+The production gate change correctly hard-fails malformed count/hash fields and the added tests pass. The only finding is a low-severity weakness in one regression assertion.
+
+Review comment:
+
+- [P3] Match the ok line with an extended regex — /home/coreyt/projects/fathomdb-worktrees/dh2-t1c/scripts/tests/test_check_governed_surface_pin.sh:313-313
+  When this guard is supposed to reject any accidental `ok    governed-surface-pin` line, the plain `grep` treats `+` literally, so the pattern only matches `ok +governed-surface-pin` and would miss the actual ok output with spaces. Use `grep -E` here, or a basic-regex-compatible space match, so this regression check exercises the intended no-ok-line contract.
