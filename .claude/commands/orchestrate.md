@@ -26,8 +26,11 @@ derive slice state from git witnesses (`output.json` + head advanced), not
 narration; escalate on any permission denial. Do not proceed until I acknowledge
 your confirmation.
 
-(This ORCHESTRATOR kickoff drives one release's slice ladder. FathomDB also
-invokes the same per-release orchestrator contract via the built-in
-`/goal complete 0.8.z` — use whichever entry point you prefer; both point at
-`0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md`. The program-scope role is `/steward`,
-which COMMISSIONS this session and verifies it from git.)
+(This ORCHESTRATOR kickoff drives one release's slice ladder, and is the
+**PREFERRED** entry point (standing HITL ruling, 2026-07-25). The built-in
+`/goal complete 0.8.z` reaches the same per-release contract, but is used **only
+on an explicit HITL instruction for that run** — a ladder is gated, not
+autonomous, and this kickoff is what carries the repo's own guardrails. Both
+point at `0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md`; the rationale is in the steward
+hand-off §9. The program-scope role is `/steward`, which COMMISSIONS this session
+and verifies it from git.)

@@ -48,8 +48,24 @@ literally; this file is the durable role contract that hand-off assumes.
   `wake guard-check` PreToolUse hook checks recorded constraints, not a blanket
   source block).
 - **You do NOT hand-drive a release ladder.** Execution is commissioned as a
-  separate `/goal complete 0.8.z` release-orchestrator session and verified from
-  git (steward hand-off §9). You commission and verify; you do not perform.
+  separate **release-orchestrator** session and verified from git (steward
+  hand-off §9). You commission and verify; you do not perform.
+- **The ORCHESTRATOR is the PREFERRED commissioning mechanism — `/goal` is NOT
+  (standing HITL ruling, 2026-07-25).** In order: **(1) `/orchestrate <plan>`**
+  (alias `/orch`) — an HITL-opened orchestrator session, the default; **(2) a
+  Steward-spawned background orchestrator** (`Agent`, `subagent_type:
+  orchestrator`) when the HITL wants you to hold the loop — it returns once and
+  **does NOT notify on stall**, so give it an anti-stall directive and poll git
+  yourself; **(3) `/goal complete 0.8.z` — only on an explicit HITL instruction
+  for that run, never your own choice.** Why: `/orchestrate` carries the repo's
+  own guardrails (§0 preflight, worktree rules, codex §9 gate, canary-then-max-3),
+  versioned and reviewable, whereas `/goal` runs to a *prose* condition judged
+  from the transcript — and a 0.8.x ladder is **gated, not autonomous** (X0/AC
+  sign-off, publish, any landing outside a standing mandate must STOP the loop).
+  `/goal` is a real Claude Code built-in and **will not appear in
+  `.claude/commands/`, `~/.claude/commands/`, or the skills listing** — absence
+  there is not evidence it is missing (a Steward got this wrong on 2026-07-25).
+  Full rationale + precedent: steward hand-off §9.
 - **Trust git, not narration.** Verify every "closed / landed / merged / green"
   claim against the diff and real exit codes (`PIPESTATUS`/`$?`, not a trailing
   `echo`) before recording or acting on it. The witness on disk wins over any
@@ -102,8 +118,8 @@ Per HITL directive or monitoring pass: **orient** (cold-start read order §3) �
 **establish ground truth** (reconcile narration against git) → **intake &
 classify** (direction → HITL, execution → autonomous-under-mandate, per the §5
 decision-rights table) → **decide in-thread** (triage, placement, sequencing
-impact, diff-ready proposals) → **commission & verify** (a `/goal complete 0.8.z`
-release orchestrator for execution; verify from git) → **reconcile, record,
+impact, diff-ready proposals) → **commission & verify** (an **orchestrator** for
+execution — `/orchestrate`, preferred over `/goal`; verify from git) → **reconcile, record,
 report** (apply only under mandate; `ledgerwrite` the decision; keep the master
 and boards true; emit the §10 report) → **context hygiene** (persist to disk, not
 chat).
