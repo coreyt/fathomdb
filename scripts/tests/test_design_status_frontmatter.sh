@@ -17,6 +17,15 @@
 #      dev/notes/, docs/ or the repo root must not fail this gate.
 #   8. Grandfathers the frozen pre-gate legacy vocabulary (e.g. `locked`) but
 #      only up to the ceiling, and carries NO filename-based exception.
+#   9. FAILS an UNTERMINATED frontmatter block (opens with `---`, never closes)
+#      — otherwise awk reads the whole document as the block and any `status:`
+#      line in the BODY satisfies a doc with no valid frontmatter at all.
+#      A properly-closed block followed by a later `---` horizontal rule must
+#      still pass (fix-1, codex §9 [P2]).
+#  10. Enforces the legacy ratchet in BOTH directions: over the ceiling fails
+#      (a new legacy doc), and UNDER the ceiling also fails, naming the value to
+#      ratchet to. A ceiling that never falls is just a constant, and would let
+#      a later change re-add legacy statuses for free (fix-1, codex §9 [P2]).
 #
 # Builds a throwaway fixture repo under mktemp -d; never touches this
 # checkout's real dev/design/.
@@ -39,6 +48,17 @@ setup_fixture() {
   cp "$REPO_ROOT/scripts/lint-design-status.sh" "$FIX/repo/scripts/lint-design-status.sh"
   chmod +x "$FIX/repo/scripts/lint-design-status.sh"
   (cd "$FIX/repo" && git init -q && git config user.email t@example.com && git config user.name t)
+  # A fixture repo has none of the 46 grandfathered docs, and the ratchet now
+  # fails BELOW the ceiling as well as above it, so every arm must declare the
+  # ceiling it means to test against. Default 0 = "this arm is not about legacy".
+  set_budget 0
+}
+
+# The ceiling is a hard-coded constant on purpose — an env-var seam would be a
+# way to raise it silently, which is the thing the ratchet exists to prevent.
+# Fixtures therefore rewrite the constant in their own throwaway COPY.
+set_budget() {
+  sed -i -E "s/^LEGACY_BUDGET=.*/LEGACY_BUDGET=$1/" "$FIX/repo/scripts/lint-design-status.sh"
 }
 
 run_lint() {
@@ -234,6 +254,7 @@ fi
 
 # --- Arm 8: frozen legacy vocabulary is grandfathered -> PASS ------------
 setup_fixture
+set_budget 2   # exactly the two legacy docs planted below
 plant_good
 cat >"$FIX/repo/dev/design/legacy.md" <<'EOF'
 ---
@@ -272,10 +293,152 @@ else
   fail "a filename exception exists for engine.md: rc=$RC out=$OUT"
 fi
 
+# --- Arm 9: UNTERMINATED frontmatter block -> FAIL (fix-1, codex §9 [P2]) -
+# The bypass: with no closing `---`, awk's "print until the next `---`" reads
+# the ENTIRE document as the frontmatter block, so a `status:` line buried in
+# the prose satisfies a doc that has no valid frontmatter at all. This arm is
+# the RED witness — against the pre-fix script it exits 0.
+setup_fixture
+plant_good
+cat >"$FIX/repo/dev/design/unterminated.md" <<'EOF'
+---
+title: A design doc whose frontmatter block is never closed
+
+# Body starts here, still inside the "block" as far as awk is concerned
+
+Prose that happens to mention a key later on:
+
+status: ACTIVE
+
+More prose.
+EOF
+run_lint
+if [ "$RC" -ne 0 ] && grep -q "unterminated.md" <<<"$OUT" \
+  && grep -qi "unterminated" <<<"$OUT" && ! grep -qi "missing a .status" <<<"$OUT"; then
+  pass "unterminated frontmatter -> non-zero exit (a body status: is not frontmatter)"
+else
+  fail "unterminated frontmatter bypass: rc=$RC out=$OUT"
+fi
+
+# --- Arm 9b: closed block, then a later `---` horizontal rule -> PASS -----
+# No-regression fence for arm 9: `---` is also valid Markdown for a thematic
+# break, and one appearing AFTER a properly-closed block must not be read as a
+# second/unbalanced delimiter.
+setup_fixture
+plant_good
+cat >"$FIX/repo/dev/design/closed-then-hr.md" <<'EOF'
+---
+status: ACTIVE
+---
+
+# A normal doc
+
+Some prose.
+
+---
+
+## A section after a horizontal rule
+
+More prose.
+
+---
+EOF
+run_lint
+if [ "$RC" -eq 0 ]; then
+  pass 'closed block + later `---` horizontal rules -> exit 0 (no false positive)'
+else
+  fail "horizontal rule after a closed block was misread: rc=$RC out=$OUT"
+fi
+
+# --- Arm 9c: `---` on line 1 and nothing else -> FAIL ---------------------
+setup_fixture
+plant_good
+printf -- '---\n' >"$FIX/repo/dev/design/only-opener.md"
+run_lint
+if [ "$RC" -ne 0 ] && grep -q "only-opener.md" <<<"$OUT"; then
+  pass 'a lone opening `---` with no block and no closer -> non-zero exit'
+else
+  fail "lone-opener case: rc=$RC out=$OUT"
+fi
+
+# --- Arm 10: legacy count BELOW the ceiling -> FAIL (fix-1, codex §9 [P2]) -
+# The ratchet is meant to be one-way. Pre-fix this only printed a NOTICE and
+# exited 0, so the stale ceiling survived and a later PR could re-add legacy
+# statuses back up to it for free. This arm is the second RED witness.
+setup_fixture
+set_budget 5
+plant_good
+cat >"$FIX/repo/dev/design/legacy-one.md" <<'EOF'
+---
+status: locked
+---
+
+# One legacy doc, against a ceiling of five
+EOF
+run_lint
+if [ "$RC" -ne 0 ] && grep -qi "LEGACY_BUDGET" <<<"$OUT" && grep -q " 1" <<<"$OUT"; then
+  pass "legacy count below the ceiling -> non-zero exit, names the value to ratchet to"
+else
+  fail "below-budget ratchet did not block: rc=$RC out=$OUT"
+fi
+
+# --- Arm 10b: legacy count ABOVE the ceiling -> FAIL (no regression) ------
+setup_fixture
+set_budget 1
+plant_good
+cat >"$FIX/repo/dev/design/legacy-a.md" <<'EOF'
+---
+status: locked
+---
+
+# legacy a
+EOF
+cat >"$FIX/repo/dev/design/legacy-b.md" <<'EOF'
+---
+status: accepted
+---
+
+# legacy b
+EOF
+run_lint
+if [ "$RC" -ne 0 ] && grep -qi "ceiling" <<<"$OUT"; then
+  pass "legacy count over the ceiling -> non-zero exit (grandfathering is closed)"
+else
+  fail "over-budget ratchet did not fail: rc=$RC out=$OUT"
+fi
+
+# --- Arm 10c: legacy count EXACTLY at the ceiling -> PASS (no regression) -
+# The real tree's steady state: 46 legacy docs against a budget of 46.
+setup_fixture
+set_budget 2
+plant_good
+cat >"$FIX/repo/dev/design/legacy-a.md" <<'EOF'
+---
+status: locked
+---
+
+# legacy a
+EOF
+cat >"$FIX/repo/dev/design/legacy-b.md" <<'EOF'
+---
+status: accepted
+---
+
+# legacy b
+EOF
+run_lint
+if [ "$RC" -eq 0 ]; then
+  pass "legacy count exactly at the ceiling -> exit 0 (the steady state stays green)"
+else
+  fail "at-budget case is not green: rc=$RC out=$OUT"
+fi
+
 if [ "$FAILED" -ne 0 ]; then
   printf '%d arm(s) failed\n' "$FAILED" >&2
   exit 1
 fi
 printf 'PASS  all arms — scripts/lint-design-status.sh catches missing/empty/invalid status and\n'
 printf 'PASS  targetless SUPERSEDED, hard-fails on zero discovered files, scans dev/design/** recursively,\n'
-printf 'PASS  stays scoped to it, and grandfathers legacy values by value rather than by filename\n'
+printf 'PASS  stays scoped to it, and grandfathers legacy values by value rather than by filename;\n'
+printf 'PASS  rejects an unterminated frontmatter block (no body-status bypass) while tolerating a\n'
+printf 'PASS  later `---` horizontal rule, and enforces the legacy ratchet both over AND under the ceiling\n'

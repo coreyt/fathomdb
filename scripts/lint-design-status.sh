@@ -44,8 +44,10 @@
 # below is total and name-blind.
 # The grandfathering is bounded by a ratchet: LEGACY_BUDGET is a CEILING that
 # must never rise. A new doc using a legacy value pushes the count over the
-# ceiling and fails. As TC-50 retires legacy values the count drops and the gate
-# says so, so the number can only be revised downward.
+# ceiling and fails. As TC-50 retires legacy values the count drops BELOW the
+# ceiling — and that fails too, naming the new number, so the budget must be
+# lowered in the same change that lowered the count. The count and the ceiling
+# are therefore always equal, and both can only ever fall.
 #
 # Zero-discovery hard fail (TC-37, this repo's named vacuous-pass class): if the
 # scan finds NO files it fails loudly rather than exiting 0. A gate that silently
@@ -82,6 +84,21 @@ while IFS= read -r -d '' f; do
     printf 'FAIL %s: no YAML frontmatter (must open with a `---` block and carry\n' "$f" >&2
     printf '  status: ACTIVE|COMPLETE|PROPOSED|SUPERSEDED|UNKNOWN|UNREVIEWED — use UNREVIEWED\n' >&2
     printf '  if you are not certain; a wrong ACTIVE is worse than an honest UNREVIEWED)\n' >&2
+    FAIL=1
+    continue
+  fi
+
+  # The opening `---` must actually be CLOSED. Without this check the awk
+  # below (which prints "until the next `---`, or EOF") reads the WHOLE
+  # document as the frontmatter block, so a `status:` line sitting in the prose
+  # satisfies a file that has no valid frontmatter at all — the gate is
+  # bypassable exactly for the malformed docs it exists to catch.
+  # First `---` at NR>1 wins, so a later horizontal rule in the body is
+  # irrelevant: it can only ever appear after the real closing delimiter.
+  if [ -z "$(awk 'NR>1 && /^---$/{print "closed"; exit}' "$f")" ]; then
+    printf 'FAIL %s: unterminated YAML frontmatter — the block opens with `---` but is\n' "$f" >&2
+    printf '  never closed. Add the closing `---`; until then a `status:` line in the body\n' >&2
+    printf '  does NOT count as frontmatter.\n' >&2
     FAIL=1
     continue
   fi
@@ -144,8 +161,15 @@ if [ "$LEGACY_SEEN" -gt "$LEGACY_BUDGET" ]; then
   printf '  doc must use ACTIVE|COMPLETE|PROPOSED|SUPERSEDED|UNKNOWN|UNREVIEWED.\n' >&2
   FAIL=1
 elif [ "$LEGACY_SEEN" -lt "$LEGACY_BUDGET" ]; then
-  printf 'NOTICE lint-design-status: legacy status count is now %d (ceiling %d).\n' "$LEGACY_SEEN" "$LEGACY_BUDGET" >&2
-  printf '  Ratchet LEGACY_BUDGET down to %d in this script — the ceiling must only fall.\n' "$LEGACY_SEEN" >&2
+  # Below-budget FAILS rather than merely advising. An advisory left the stale
+  # ceiling in place, so a later change could re-add legacy statuses back up to
+  # the old number for free — a ceiling that never falls is just a constant,
+  # not a ratchet. Failing here forces the budget down in the SAME change that
+  # retires the docs, which is what makes the mechanism one-way.
+  printf 'FAIL lint-design-status: legacy count is now %d, ceiling is %d — lower `LEGACY_BUDGET`\n' "$LEGACY_SEEN" "$LEGACY_BUDGET" >&2
+  printf '  to %d in scripts/lint-design-status.sh in this same change. The ratchet is one-way:\n' "$LEGACY_SEEN" >&2
+  printf '  leaving the ceiling high would let a later change re-add legacy statuses for free.\n' >&2
+  FAIL=1
 fi
 
 exit "$FAIL"
