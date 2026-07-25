@@ -504,6 +504,151 @@ fn a_failed_embed_is_not_a_torn_write_and_the_detector_is_not_vacuous() {
 }
 
 // ===========================================================================
+// fix-1 (codex §9 [P2]) — the probe's EDGE arm must mirror the SCHEDULER
+// ===========================================================================
+
+/// Raw: is `kind` registered as a vector kind? The fixture below depends on
+/// `edge_fact` being ABSENT, so the precondition is asserted, not assumed.
+fn vector_kind_registered(conn: &rusqlite::Connection, kind: &str) -> bool {
+    conn.query_row("SELECT COUNT(*) FROM _fathomdb_vector_kinds WHERE kind = ?1", [kind], |r| {
+        r.get::<_, i64>(0)
+    })
+    .expect("vector kind probe")
+        > 0
+}
+
+/// **The stuck-`embedding`-forever defect.** `next_pending_projection_jobs` —
+/// the SCHEDULER, and therefore the authority on what will actually be embedded
+/// — joins `_fathomdb_vector_kinds` on `'edge_fact'` in its edge arm. So a live
+/// edge body whose `edge_fact` kind is unregistered is NEVER scheduled, never
+/// embedded, and never gains a `_fathomdb_projection_terminal` row.
+///
+/// If the pending-work probe's edge arm omits that same join it counts such a
+/// row as outstanding FOREVER, so `dense_readiness` reports `embedding` for a
+/// corpus in which nothing will ever happen — the exact mirror image of
+/// R-20-DR's property, and a false report on brand-new governed metadata.
+///
+/// The same predicate backs `wait_for_idle`, hence the shipped public
+/// `Engine::drain`, so the drain half is asserted here too: idle must be
+/// reported rather than timing out into [`EngineError::Scheduler`].
+///
+/// **Fixture reachability.** The state is a live edge with a body written while
+/// `edge_fact` was not a vector kind — e.g. a database whose edges predate the
+/// G11 edge-vector pipeline (which is what auto-registers `edge_fact`), carried
+/// forward by migration. `_fathomdb_vector_kinds` has no delete path, so the
+/// fixture is built the way the sibling TC-33 edge tests build theirs: a second
+/// connection to the live file inserts the canonical row directly.
+#[test]
+fn readiness_is_ready_when_a_live_edge_body_can_never_be_scheduled() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "readiness_unschedulable_edge");
+    let opened =
+        Engine::open_with_embedder_for_test(&path, Arc::new(DelayEmbedder::new(Duration::ZERO)))
+            .expect("open");
+    let engine = &opened.engine;
+    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+    engine.configure_projections(&[vector_spec("summary")], &[]).expect("configure");
+
+    assert_eq!(
+        readiness(engine, "summary"),
+        Some(DenseReadiness::Ready),
+        "precondition: an empty corpus has no outstanding embeds"
+    );
+
+    // A LIVE canonical edge WITH a body, under a kind the vector pipeline does
+    // not serve. Not superseded, still valid (`t_invalid` NULL), no terminal.
+    let raw = rusqlite::Connection::open(&path).expect("raw writer");
+    raw.execute(
+        "INSERT INTO canonical_edges(write_cursor, kind, from_id, to_id, body)
+         VALUES(9000001, 'mentions', 'a', 'b', 'an edge body nothing will embed')",
+        [],
+    )
+    .expect("insert a live edge body");
+
+    // Fixture preconditions — asserted, so the test cannot pass by building the
+    // wrong database.
+    let conn = ro(&path);
+    assert!(
+        !vector_kind_registered(&conn, "edge_fact"),
+        "fixture: `edge_fact` must NOT be a registered vector kind"
+    );
+    assert_eq!(
+        conn.query_row(
+            "SELECT COUNT(*) FROM canonical_edges ce
+             LEFT JOIN _fathomdb_projection_terminal pt ON pt.write_cursor = ce.write_cursor
+             WHERE ce.body IS NOT NULL
+               AND ce.superseded_at IS NULL
+               AND ce.t_invalid IS NULL
+               AND pt.write_cursor IS NULL",
+            [],
+            |r| r.get::<_, i64>(0)
+        )
+        .expect("fixture probe"),
+        1,
+        "fixture: exactly one live, un-terminated edge body must exist"
+    );
+
+    // The scheduler's edge arm JOINs `_fathomdb_vector_kinds` on 'edge_fact',
+    // so this row is not, and can never become, outstanding work.
+    assert_eq!(
+        readiness(engine, "summary"),
+        Some(DenseReadiness::Ready),
+        "readiness must NOT report `embedding` for an edge body the scheduler will never \
+         schedule — that is a permanent false `embedding`"
+    );
+
+    // Same predicate, shipped surface: `drain` must report idle, not time out.
+    engine.drain(5_000).expect("drain must report idle when no schedulable embed is outstanding");
+
+    opened.engine.close().unwrap();
+}
+
+/// **Precision guard on the fix above** — do not overcorrect into reporting
+/// `ready` while a genuinely schedulable edge embed is outstanding. Same fixture
+/// shape, one difference: `edge_fact` IS registered, so the scheduler WILL pick
+/// the row up. Readiness must read `embedding` until it lands.
+#[test]
+fn readiness_still_reports_embedding_for_a_schedulable_edge_body() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "readiness_schedulable_edge");
+    let opened =
+        Engine::open_with_embedder_for_test(&path, Arc::new(DelayEmbedder::new(Duration::ZERO)))
+            .expect("open");
+    let engine = &opened.engine;
+    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+    engine.configure_projections(&[vector_spec("summary")], &[]).expect("configure");
+    // Register `edge_fact` exactly as the G11 edge write path does.
+    engine.configure_vector_kind_for_test("edge_fact").expect("edge vector kind");
+
+    engine.set_projection_scheduler_frozen_for_test(true);
+    let raw = rusqlite::Connection::open(&path).expect("raw writer");
+    raw.execute(
+        "INSERT INTO canonical_edges(write_cursor, kind, from_id, to_id, body)
+         VALUES(9000001, 'mentions', 'a', 'b', 'an edge body that WILL embed')",
+        [],
+    )
+    .expect("insert a live edge body");
+
+    let conn = ro(&path);
+    assert!(
+        vector_kind_registered(&conn, "edge_fact"),
+        "fixture: `edge_fact` must be a registered vector kind here"
+    );
+    assert!(
+        !vector_row_exists(&conn, 9_000_001),
+        "precondition: the edge vector must be absent while the scheduler is frozen"
+    );
+
+    assert_eq!(
+        readiness(engine, "summary"),
+        Some(DenseReadiness::Embedding),
+        "readiness must still report `embedding` while a SCHEDULABLE edge embed is outstanding"
+    );
+
+    opened.engine.close().unwrap();
+}
+
+// ===========================================================================
 // `dense_readiness` is ENGINE-SET read metadata, not caller config
 // ===========================================================================
 
