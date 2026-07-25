@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # Slice 5 Design Memo — R0: Candidate-Recall CDF + Rerank Cost Model
 
 **Status:** implementation memo  

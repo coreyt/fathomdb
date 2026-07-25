@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # Multi-field + recursive-payload FTS — design-on-spec (0.8.11.2)
 
 > **DESIGN-ON-SPEC — NOT APPROVED. HITL is still deciding whether to build this.

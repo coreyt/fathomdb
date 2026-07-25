@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # Free-threaded Python (PEP 703) for FathomDB — value, lift, and experiment plan
 
 > **Status:** analysis / experiment proposal (pre-decision). Owner: TBD. Raised out of the 0.8.8

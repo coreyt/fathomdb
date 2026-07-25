@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # Slice 31 — G0 identity re-scope: active-uniqueness = `logical_id` ALONE (both tables)
 
 > **Status:** design memo for the Slice 31 implementation. The decision it

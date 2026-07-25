@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # Slice 15 — G0 Canonical Identity Substrate (design memo)
 
 > KEYSTONE. Schema `step_id 12` / `SCHEMA_VERSION 11→12`. Consumes

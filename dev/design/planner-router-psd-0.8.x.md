@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # FathomDB — Preliminary Solution Design: the query-planner/router surface (DRAFT)
 
 **Component:** FathomDB's **candidate in-library query-planner / router** — a transparent, hintable, overridable *default* route over a portfolio of coexisting retrieval mechanisms, plus the observability surface that makes it inspectable and the agent-feedback loop that makes it improvable. It is **not** an authority in front of FathomDB; it is the planner FathomDB runs *by default* and the agent can always inspect, hint, or override. *(Locus — agent-side / in-library / both-layered — is **gated by `EXP-Fr-acc` + `EXP-S`**, not assumed; "in-library" is the recommended target, not a settled decision. See §II.E, §VI.E, and `initial-arch` §2/§9.2.)*

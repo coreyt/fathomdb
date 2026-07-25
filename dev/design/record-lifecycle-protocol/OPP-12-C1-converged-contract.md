@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # OPP-12 C-1 — converged co-design contract (EntityTypeSpec → ProjectionSpec)
 
 > **Status: RATIFIED — BOTH SIDES (HITL coreyt + MEMEX, 2026-07-07; sub-ledger seq 6/7/8).** Converged 2-shot loop, HITL- and Memex-ratified — C-1 is a **closed,

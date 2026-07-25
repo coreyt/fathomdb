@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # Structural lifecycle contract (FathomDB-owned mechanism)
 
 > Part of the [record lifecycle & projection protocol](README.md). **Status: PROPOSED.** Defines the

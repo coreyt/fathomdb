@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # Slice 35 design memo — G4 filter grammar (`read.list` + `Predicate`)
 
 **Status:** authoritative (written first, before any code). Slice 35 of 0.8.1.

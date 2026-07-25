@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # FathomDB-side design — what 0.8.x owes the 0.5.1 refit & the 0.8.11.2 experiments (#1.7)
 
 > **Per-repo design (#1.7, FathomDB side).** Derives from the integrated design

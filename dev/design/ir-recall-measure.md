@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # IR / agentic evidence-recall MEASURE (definition + methodology) · `[design / consensus]`
 
 > **Status:** Phase-1 DEFINITION, Claude↔codex consensus-signed (see § Consensus).

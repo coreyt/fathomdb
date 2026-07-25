@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # Consolidated API surface (record-lifecycle protocol)
 
 > Part of the [record lifecycle & projection protocol](README.md). **Status: PROPOSED.** The net verb +

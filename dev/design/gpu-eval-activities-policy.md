@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # Policy — the repo MUST use the 3090 GPUs for eval/embed activities when there is room
 
 > **Standing HITL mandate (2026-07-05). This is a repo MUST, not a suggestion.**

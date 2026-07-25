@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # OPP-12 — proposed leverage-ledger update (FathomDB → Memex)
 
 > **What this is.** Proposed replacement text for the **OPP-12** section of Memex's

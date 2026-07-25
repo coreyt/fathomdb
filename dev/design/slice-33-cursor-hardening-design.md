@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # Slice 33 — `read.collection` / `read.mutations` cursor + limit hardening design memo
 
 > Status: design-first memo for the Slice 33 implementation (op-store paginated

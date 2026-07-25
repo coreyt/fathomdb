@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # Slice 20 — Design Memo: G5/G6 Graph Traversal
 
 **Baseline SHA:** e94fc1af6263f5a97cd7a097daf0b866bd84cf81

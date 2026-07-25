@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # Integrated design — Memex 0.5.1 × FathomDB 0.8.x storage-API refit (Option B)
 
 > **High-level cross-repo design (#1.5).** How Memex 0.5.1 comes onto FathomDB's 0.8.x governed

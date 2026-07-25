@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # Per-kind precision tokenizer FTS — design-on-spec (~0.8.15)
 
 > **DESIGN-ON-SPEC — targeted at fathomdb ~0.8.15, NOT 0.8.11.x. Paired with Memex 0.5.3.

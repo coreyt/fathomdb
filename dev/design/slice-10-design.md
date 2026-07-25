@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # Slice 10 design memo — G9 RRF fusion + rerank seam, G10 filtered KNN, G12-recency
 
 Status: design-first for `dev/plans/prompts/0.8.0-slice-10.md`. Authoritative

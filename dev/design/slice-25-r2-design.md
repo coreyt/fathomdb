@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # Slice 25 — R2 end-to-end parity eval: harness design memo
 
 > Authored before any source, per the slice-25 prompt §3.0. Binding spec:

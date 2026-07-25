@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # Slice 0 — ADR Plan Design Memo
 
 > **Status:** Slice 0 design artifact (`[design-adr]`).

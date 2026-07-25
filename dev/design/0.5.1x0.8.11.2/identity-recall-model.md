@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # Identity & recall model — Memex 0.5.1 × FathomDB 0.8.x (building block for the integrated design)
 
 > **HITL concern (2026-06-30):** "did the API surface lose Memex's ability to simply recall a

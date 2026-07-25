@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # FathomDB C-1 co-design — SHOT 1 (FATHOM opens)
 
 > **Status: DRAFT, FATHOM-voice, HITL-review-pending before Memex routing.** Full text of the SHOT-1 entry in

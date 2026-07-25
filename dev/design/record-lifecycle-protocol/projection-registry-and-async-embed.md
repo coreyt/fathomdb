@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # Projection registry & the async-embed execution model
 
 > Part of the [record lifecycle & projection protocol](README.md). **Status: PROPOSED.** This is the seam

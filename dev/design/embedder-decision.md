@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # Default embedder — decision register
 
 **Purpose.** Single-page index of every parameter decision behind the

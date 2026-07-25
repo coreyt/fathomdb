@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # FathomDB 0.8.x Agent-Memory Implementation Strategy (head-of-main 0.7.2)
 
 > How to implement the G0–G12 agent-memory gaps by leveraging FathomDB's existing

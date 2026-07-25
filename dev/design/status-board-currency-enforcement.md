@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # Status-board currency enforcement — keep project artifacts true to git at land-time
 
 > **Status:** PROPOSAL (steward-authored 2026-07-24, HITL-directed). Rulings on items 1–3 = **do it**;

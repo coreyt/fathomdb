@@ -505,6 +505,25 @@ jobs:
       - name: Recurrence guard for the gate itself (fixture arms)
         run: bash scripts/tests/test_check_release_state_views.sh
 
+  # DOC-HYGIENE-2 T2c — dev/design/**/*.md must carry a `status:` frontmatter key
+  # (and `superseded_by:` when SUPERSEDED). Deliberately its OWN always-on job and
+  # NOT a step in the `markdownlint` job above: that job is
+  # `if: needs.changes.outputs.docs_only == 'true'`, so it never fires on a code
+  # push — a design doc landing alongside code would slip the gate entirely. Same
+  # reasoning as `board-currency` above (a doc tier can drift behind a non-docs-only
+  # push just as easily). `verify` also runs it via agent-lint-md.sh; this job is
+  # the backstop that does not depend on the verify matrix. No fetch-depth needed:
+  # the check reads the working tree only.
+  design-status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: dev/design/**/*.md status frontmatter (T2c)
+        run: bash scripts/lint-design-status.sh
+      - name: Recurrence guard for the gate itself
+        run: bash scripts/tests/test_design_status_frontmatter.sh
+
   # mkdocs --strict is the broader CI gate beyond agent-verify (per AGENTS.md §3).
   # Intentionally NOT gated on docs_only: it must run for docs/** changes (the
   # fast path) AND alongside code changes, exactly as before.

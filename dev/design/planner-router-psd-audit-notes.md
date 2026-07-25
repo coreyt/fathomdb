@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # Audit Notes — Planner/Router PSD
 
 **Audited:** the colleague's "planning/composition shim" PSD draft — now archived at `dev/archive/psd/planner-router-psd-draft.md` (was `dev/design/planner-router-psd.md`); superseded by `dev/design/planner-router-psd-0.8.x.md`

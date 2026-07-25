@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # Slice 15 Design Memo — G11 edge enrichment + BYO-LLM ingest + edge projectability
 
 > Status: IMPLEMENTATION DESIGN — informs the Slice 15 keystone implementation.

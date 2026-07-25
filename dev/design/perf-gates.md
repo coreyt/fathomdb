@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # Perf gates — the two-tier model
 
 FathomDB has **two** perf-gate tiers that exercise the *same* production read

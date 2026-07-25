@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # GPU device-allocation policy — design-on-spec (embedder + CE reranker)
 
 > **DESIGN-ON-SPEC — NOT APPROVED. NO engine code changes.**

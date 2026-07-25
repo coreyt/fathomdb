@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # Code Markers — Evaluation & Lifecycle (2026-07-09)
 
 **Status:** experiment report (out-of-band). **Ships nothing.** Determines, with

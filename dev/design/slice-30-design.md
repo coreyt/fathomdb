@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # Slice 30 (0.8.1) — R3 Graph-Retrieval Arm Design Memo
 
 > NOTE: The previous `slice-30-design.md` covered the 0.8.0 Slice 30 (G2/G3 read.get/read.collection).

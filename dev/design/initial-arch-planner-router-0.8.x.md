@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # Initial architecture — the planner/router surface, observability, and who owns routing
 
 **Status:** initial recommendation (steward sign-off pending) · **Date:** 2026-06-26 · **Owner:** program steward

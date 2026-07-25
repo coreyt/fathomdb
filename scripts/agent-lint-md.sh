@@ -34,6 +34,11 @@ fi
 # Pure bash/grep; no external binary, so this leg has no absent-tool skip path.
 run_capped lint-plans-status "$SCRIPT_DIR/lint-plans-status.sh"
 
+# T2c (DOC-HYGIENE-2): the same rule for the OTHER governed doc tier —
+# dev/design/**/*.md (recursive). Same pure-bash/grep property, so likewise no
+# absent-tool skip path. Hard-fails on zero discovered files (TC-37).
+run_capped lint-design-status "$SCRIPT_DIR/lint-design-status.sh"
+
 # T1c (DOC-HYGIENE-2): the master's §6 findings register must not mint two
 # entries under one `F-n` id — an ambiguous id silently breaks every citation of
 # it (a duplicate F-11 did exactly that for four weeks). Same class of guard as

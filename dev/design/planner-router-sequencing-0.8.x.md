@@ -1,3 +1,8 @@
+---
+status: SUPERSEDED
+superseded_by: dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md
+---
+
 # Planner-router — release sequencing, dependencies, and the by-when
 
 > ⚠ SUPERSEDED on all release-number scheduling by `0.8.6-0.8.16-PROGRAM-SEQUENCING.md` (master) + `dev/plans/runs/0.8.x-renumber-reconciliation.md`. Dispatcher = 0.8.15, EXP-S = 0.8.14. Numbers retained below for design rationale.

@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # Slice G0 — instrument hardening: Phase-1 design memo
 
 > **Status:** Phase-1 design (tracer green; implementation gated on design review +

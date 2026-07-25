@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # Slice 40 / GA-2 — gate restructure (AC-075/076) + GA verification design memo
 
 **Type:** `[design]` · **Slice:** 40 / GA-2 (0.8.0 GA terminus) · **Baseline:** local `main` @ `7316746`

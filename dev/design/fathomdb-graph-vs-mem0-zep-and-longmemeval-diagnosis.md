@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # FathomDB's graph implementation vs Mem0 / Zep, and the LongMemEval underperformance diagnosis
 
 > **Purpose.** Answer four questions for the 0.8.1 graph track: (1) what *is*

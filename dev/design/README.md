@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # Design Docs
 
 > **Current vs historical (2026-06-26 ledger-prune).** The **live** design surface is the

@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # Record lifecycle & projection protocol — FathomDB ⇄ Memex
 
 > **Status: RATIFIED (both sides, 2026-07-03).** The record-liveness/lifecycle contract (leverage-ledger

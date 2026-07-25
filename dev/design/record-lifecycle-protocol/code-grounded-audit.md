@@ -1,3 +1,7 @@
+---
+status: UNREVIEWED
+---
+
 # Record-lifecycle-protocol — code-grounded audit
 
 > Verifies the PROPOSED record-lifecycle contract (`README.md`,
