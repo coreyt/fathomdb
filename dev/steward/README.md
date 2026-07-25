@@ -34,11 +34,32 @@ cursor. State lives on disk (`orchestration.md` §12.1 — "if it must survive a
   entries appended since your saved cursor, then advances the cursor. This is the
   read you do at the top of a session — not a whole-file re-read.
 
+  **Always pass an explicit `--state-dir`, and run from the repo root.** The
+  default is *cwd-relative* (`$LEDGERWATCH_STATE`, else `./.ledgerwatch`), so a
+  run from a worktree — or from any directory but the root — silently picks up a
+  *different*, empty cursor, and the "delta" degrades into a whole-file re-read.
+  A fixed repo-relative state dir makes it the same cursor every session.
+
   ```bash
-  python3 dev/agent-tools/ledgerwatch/ledgerwatch.py dev/steward/steward-ledger.jsonl
-  # --dry-run to peek without advancing; --reset to re-read from the top;
-  # --validate for a whole-file JSONL integrity scan.
+  # From the repo root. This run ADVANCES the cursor.
+  python3 dev/agent-tools/ledgerwatch/ledgerwatch.py \
+    dev/steward/steward-ledger.jsonl --state-dir dev/steward/.ledgerwatch
+  # --reset to re-read from the top; --validate for a whole-file JSONL
+  # integrity scan.
   ```
+
+  **`--dry-run` is the peek mode only: it does *not* advance the cursor** (the
+  tool skips its state save entirely under that flag). It is never the normal
+  read — a session that only ever peeks re-reads the whole ledger every time.
+
+  This repo has **three** ledgers. Same form for each; give each its own fixed
+  state dir (all three paths below are already git-ignored):
+
+  | ledger                                                         | `--state-dir`                    |
+  |----------------------------------------------------------------|----------------------------------|
+  | `dev/steward/steward-ledger.jsonl`                             | `dev/steward/.ledgerwatch`       |
+  | `dev/todos-and-considerations-ledger.jsonl`                    | `dev/.ledgerwatch-todos`         |
+  | `dev/design/record-lifecycle-protocol/OPP-12-sub-ledger.jsonl` | `dev/steward/.ledgerwatch-opp12` |
 
 Each tool has a full `README.md` next to it in `dev/agent-tools/`.
 
