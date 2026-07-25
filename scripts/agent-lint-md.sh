@@ -40,6 +40,17 @@ run_capped lint-plans-status "$SCRIPT_DIR/lint-plans-status.sh"
 # the leg above: pure bash/awk, no external binary, so no absent-tool skip path.
 run_capped lint-findings "$SCRIPT_DIR/lint-findings.sh"
 
+# T1d (DOC-HYGIENE-2): ACTIVE plans may not cite code by `<name>:<line>` — a
+# line number rots on the next commit, silently (plan-0.8.20.md's TC-45 pair was
+# ~2,100 lines off and git shows it was never correct) — and every symbol an
+# ACTIVE plan DOES cite must actually occur in the file it names. That second
+# half is the load-bearing one: swapping an unverified number for an unverified
+# symbol would launder the same bad pointer. Pure bash/perl, no external binary,
+# so no absent-tool skip path. Also runs always-on in CI (the `plan-anchors`
+# job) — the push that renames a symbol is a CODE push, which the docs_only
+# markdownlint job never sees.
+run_capped lint-plan-anchors "$SCRIPT_DIR/lint-plan-anchors.sh" --quiet
+
 # docs/** structural lint. The repo .markdownlint-cli2.jsonc IGNORES docs/** (it is
 # otherwise gated only by `mkdocs build --strict`, which does NOT enforce markdownlint
 # style). agent-lint-docs.sh lints docs/** with the same .markdownlint.jsonc rules via

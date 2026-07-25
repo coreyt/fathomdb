@@ -84,6 +84,12 @@ run_capped test-lint-md-hard-fail-on-missing-linter bash scripts/tests/test_lint
 # guard for archival banners drifting silently). RED-fixture proven inline.
 run_capped test-plans-status-frontmatter bash scripts/tests/test_plans_status_frontmatter.sh
 
+# T1d: recurrence guard for the ACTIVE-plan line-anchor ban AND — the arm that
+# carries the weight — for the mandatory symbol-existence check. Mutation-proven:
+# stubbing the existence check to always succeed turns this suite red, so a green
+# here is not vacuous. RED fixtures built inline under mktemp -d.
+run_capped test-lint-plan-anchors bash scripts/tests/test_lint_plan_anchors.sh
+
 # Markdown generators (shell): context-clarity.sh / memory-clarity.sh emit
 # gate-compliant markdown. Their output trees (and the dev/plans/runs/** reports
 # from the Python generators) are markdownlint-ignored, so the normal md gate never

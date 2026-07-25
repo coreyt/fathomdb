@@ -394,6 +394,10 @@ jobs:
         run: bash scripts/lint-plans-status.sh
       - name: master §6 findings register — duplicate-id gate (T1c, mirrors agent-lint-md.sh leg)
         run: bash scripts/lint-findings.sh
+      # NOTE: agent-lint-md.sh's `lint-plan-anchors` leg is deliberately NOT
+      # mirrored here. This job is `if: docs_only == 'true'`, and the event that
+      # breaks a symbol citation is a CODE push (a rename), which this job never
+      # sees. It has its own always-on `plan-anchors` job below instead.
 
   # status-board-currency-enforcement item 3 — the non-bypassable CI backstop.
   # `preflight.sh --landing` (item 2) is the PREVENT gate at land time, but it is
@@ -436,6 +440,29 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Ledger sidecar/seq integrity (DOC-HYGIENE-2 T1b)
         run: bash scripts/check-ledgers.sh
+
+  # DOC-HYGIENE-2 T1d — the always-on line-anchor / citation-integrity backstop.
+  #
+  # Deliberately carries NO `if:` and NO `needs:`. This is the whole point of the
+  # job, not boilerplate. The `markdownlint` job above is gated on
+  # `needs.changes.outputs.docs_only == 'true'`, so it fires only when a push
+  # touches docs and nothing else — but the event that BREAKS a symbol citation
+  # in an ACTIVE plan is a rename in `src/`, i.e. a code push, which docs_only
+  # excludes by construction. A citation gate that cannot run on the push that
+  # invalidates the citation is decorative. Same reasoning that put
+  # `board-currency` and `ledger-integrity` outside the docs_only fast path.
+  #
+  # Default (depth-1) checkout is sufficient: the predicate reads working-tree
+  # files only and walks no history.
+  plan-anchors:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: ACTIVE-plan line-anchor ban + symbol-existence check (DOC-HYGIENE-2 T1d)
+        run: bash scripts/lint-plan-anchors.sh
+      - name: Recurrence guard for the gate itself (fixture arms)
+        run: bash scripts/tests/test_lint_plan_anchors.sh
 
   # mkdocs --strict is the broader CI gate beyond agent-verify (per AGENTS.md §3).
   # Intentionally NOT gated on docs_only: it must run for docs/** changes (the
