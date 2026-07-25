@@ -151,8 +151,8 @@ class ProjectionSpec:
     ``roles`` carries SET semantics (dedup + membership; an attribute can be
     filterable AND searchable). ``fts`` selects the ``searchable→FTS`` sub-target
     (with an optional custom tokenizer); ``vector`` selects ``searchable→vector``
-    (with an optional embedder). The ``vector`` sub-object is STORED by Slice 15d
-    but built by Slice 20 (``dense_readiness`` attaches to it there).
+    (with an optional embedder). The ``vector`` sub-object is STORED by Slice 15d;
+    Slice 20 (R-20-DR) hangs the engine-set ``vector_dense_readiness`` off it.
     """
 
     name: str
@@ -165,6 +165,26 @@ class ProjectionSpec:
     vector: bool = False
     #: Optional embedder override; ``None`` = engine default (only with ``vector``).
     vector_embedder: str | None = None
+    #: 0.8.20 Slice 20 (R-20-DR) — **READ METADATA, engine-set.** ``"ready"`` or
+    #: ``"embedding"`` when returned by :func:`fathomdb.read.projections` for a
+    #: spec with ``vector=True``; ``None`` on every caller-authored spec.
+    #:
+    #: ``filterable`` / ``searchable→FTS`` are same-transaction (non-stale on
+    #: commit) so they carry no readiness; ``searchable→vector`` is async and
+    #: rebuild-durable, so it does. The value is DERIVED from outstanding
+    #: projection work, never stored — which is what makes
+    #: ``{vector-insert ∧ readiness := ready}`` atomic by construction: a
+    #: ``"ready"`` reading can never be observed with the vector row absent.
+    #:
+    #: ``"pending"`` is NOT a value here: that token is reserved for the
+    #: orthogonal ADMISSION axis (quarantine/trust, an app judgment).
+    #:
+    #: Supplying it to ``Engine.configure_projections`` is INERT — it is not part
+    #: of the declaration and the engine always reports the derived truth — so
+    #: ``read.projections`` output still re-applies as a no-op. Supplying it with
+    #: ``vector=False``, or any spelling outside ``{"ready", "embedding"}``, is a
+    #: hard ``ValueError`` (it could not round-trip).
+    vector_dense_readiness: str | None = None
 
 
 @dataclass(frozen=True)

@@ -47,7 +47,9 @@ fn spec(name: &str, rs: &[ProjectionRole], fts: bool, vector: bool) -> Projectio
         name: name.to_string(),
         roles: roles(rs),
         fts: fts.then_some(ProjectionFts { tokenizer: None }),
-        vector: vector.then_some(ProjectionVector { embedder: None }),
+        // 0.8.20 Slice 20 (R-20-DR) — `dense_readiness` is engine-set READ
+        // METADATA, so a caller-authored spec always carries `None` here.
+        vector: vector.then_some(ProjectionVector { embedder: None, dense_readiness: None }),
     }
 }
 

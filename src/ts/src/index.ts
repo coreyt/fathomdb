@@ -106,9 +106,9 @@ export type ProjectionRole = "filterable" | "rankable" | "searchable";
  * HITL-ratified shape `{ name, roles, fts?, vector? }`; `roles` carries SET
  * semantics. `fts` selects the `searchable→FTS` sub-target (optional custom
  * `ftsTokenizer`); `vector` selects `searchable→vector` (optional
- * `vectorEmbedder`). The `vector` sub-object is stored by Slice 15d and built
- * by Slice 20 (`denseReadiness` attaches to it). Mirrors the Python
- * `ProjectionSpec` (cross-binding parity).
+ * `vectorEmbedder`). The `vector` sub-object is stored by Slice 15d; Slice 20
+ * (R-20-DR) hangs the engine-set `vectorDenseReadiness` off it. Mirrors the
+ * Python `ProjectionSpec` (cross-binding parity).
  */
 export interface ProjectionSpec {
   name: string;
@@ -121,7 +121,37 @@ export interface ProjectionSpec {
   vector: boolean;
   /** Optional embedder override; omitted = engine default (only with `vector`). */
   vectorEmbedder?: string | null;
+  /**
+   * 0.8.20 Slice 20 (R-20-DR) — **READ METADATA, engine-set.** `"ready"` or
+   * `"embedding"` when returned by `read.projections` for a spec with
+   * `vector: true`; `null` on every caller-authored spec.
+   *
+   * `filterable` / `searchable→FTS` are same-transaction (non-stale on commit)
+   * so they carry no readiness; `searchable→vector` is async and
+   * rebuild-durable, so it does. The value is DERIVED from outstanding
+   * projection work, never stored — which is what makes
+   * `{vector-insert ∧ readiness := ready}` atomic by construction: a `"ready"`
+   * reading can never be observed with the vector row absent.
+   *
+   * `"pending"` is NOT a value here: that token is reserved for the orthogonal
+   * ADMISSION axis (quarantine/trust, an app judgment).
+   *
+   * Supplying it to `configureProjections` is INERT — it is not part of the
+   * declaration and the engine always reports the derived truth — so
+   * `read.projections` output still re-applies as a no-op. Supplying it with
+   * `vector: false`, or any spelling outside `{"ready", "embedding"}`, throws a
+   * typed `FDB_INVALID_ARGUMENT` (it could not round-trip).
+   */
+  vectorDenseReadiness?: DenseReadiness | null;
 }
+
+/**
+ * 0.8.20 Slice 20 (R-20-DR) — the two engine-set readiness values of the
+ * `searchable→vector` projection. Mirrors the Rust `DenseReadiness` and the
+ * Python string literals. `"pending"` is deliberately absent — that token is
+ * reserved for the orthogonal admission axis.
+ */
+export type DenseReadiness = "ready" | "embedding";
 
 /**
  * 0.8.20 Slice 15d (R-20-PR) — the diff `configureProjections` applied.
@@ -807,10 +837,16 @@ export class Engine {
     // and breaking the read→configure round-trip. Mapping `null → undefined`
     // here makes the two bindings behave identically and keeps the caller's
     // objects untouched (a shallow copy per spec).
+    // 0.8.20 Slice 20 (R-20-DR) — `vectorDenseReadiness` gets the SAME
+    // null→undefined normalization: `read.projections` emits an explicit `null`
+    // for a spec with no vector sub-object, and napi-rs would reject that for an
+    // `Option<String>` field. Its non-null value is carried through unchanged
+    // (it is inert engine-side, so the read→configure round-trip stays a no-op).
     const nativeSpecs = specs.map((s) => ({
       ...s,
       ftsTokenizer: s.ftsTokenizer ?? undefined,
       vectorEmbedder: s.vectorEmbedder ?? undefined,
+      vectorDenseReadiness: s.vectorDenseReadiness ?? undefined,
     }));
     return intercept(() =>
       this.#native.configureProjections(nativeSpecs, drop ?? null),

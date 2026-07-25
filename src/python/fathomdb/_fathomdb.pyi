@@ -308,6 +308,8 @@ class ProjectionSpec:
     fts_tokenizer: str | None
     vector: bool
     vector_embedder: str | None
+    # 0.8.20 Slice 20 (R-20-DR) — engine-set READ METADATA ("ready"/"embedding").
+    vector_dense_readiness: str | None
     def __init__(
         self,
         name: str,
@@ -316,6 +318,7 @@ class ProjectionSpec:
         fts_tokenizer: str | None = ...,
         vector: bool = ...,
         vector_embedder: str | None = ...,
+        vector_dense_readiness: str | None = ...,
     ) -> None: ...
 
 class ProjectionDelta:

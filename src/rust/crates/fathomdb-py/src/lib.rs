@@ -37,12 +37,13 @@ use fathomdb_embedder_api::EmbedderIdentity as RustEmbedderIdentity;
 use fathomdb_engine::{
     rerank_passages as rust_rerank_passages, BoundaryCrossing as RustBoundaryCrossing,
     ComparisonOp as RustComparisonOp, ConsolidateAxis as RustConsolidateAxis,
-    ConsolidateReceipt as RustConsolidateReceipt, CorruptionDetail, CorruptionKind, EmbedderChoice,
-    Engine as RustEngine, EngineError as RustEngineError, EngineOpenError,
-    ExciseReport as RustExciseReport, Explanation as RustExplanation,
-    ExtractDocument as RustExtractDocument, Filter as RustFilter, FilterTerm as RustFilterTerm,
-    IdSpace as RustIdSpace, IngestWithExtractorReceipt as RustIngestWithExtractorReceipt,
-    InitialState, LifecycleState as RustLifecycleState, NodeRecord as RustNodeRecord,
+    ConsolidateReceipt as RustConsolidateReceipt, CorruptionDetail, CorruptionKind,
+    DenseReadiness as RustDenseReadiness, EmbedderChoice, Engine as RustEngine,
+    EngineError as RustEngineError, EngineOpenError, ExciseReport as RustExciseReport,
+    Explanation as RustExplanation, ExtractDocument as RustExtractDocument, Filter as RustFilter,
+    FilterTerm as RustFilterTerm, IdSpace as RustIdSpace,
+    IngestWithExtractorReceipt as RustIngestWithExtractorReceipt, InitialState,
+    LifecycleState as RustLifecycleState, NodeRecord as RustNodeRecord,
     OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage,
     PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
     ProjectionDelta as RustProjectionDelta, ProjectionFts as RustProjectionFts,
@@ -846,12 +847,17 @@ struct PyProjectionSpec {
     fts_tokenizer: Option<String>,
     vector: bool,
     vector_embedder: Option<String>,
+    /// 0.8.20 Slice 20 (R-20-DR) — READ METADATA, engine-set: `"ready"` /
+    /// `"embedding"` on the way OUT of `read.projections`, `None` on every
+    /// caller-authored spec. Inert on the way IN (the engine reports the derived
+    /// truth), so `read.projections` output still re-applies as a no-op.
+    vector_dense_readiness: Option<String>,
 }
 
 #[pymethods]
 impl PyProjectionSpec {
     #[new]
-    #[pyo3(signature = (name, roles, fts = false, fts_tokenizer = None, vector = false, vector_embedder = None))]
+    #[pyo3(signature = (name, roles, fts = false, fts_tokenizer = None, vector = false, vector_embedder = None, vector_dense_readiness = None))]
     fn new(
         name: String,
         roles: Vec<String>,
@@ -859,8 +865,9 @@ impl PyProjectionSpec {
         fts_tokenizer: Option<String>,
         vector: bool,
         vector_embedder: Option<String>,
+        vector_dense_readiness: Option<String>,
     ) -> Self {
-        Self { name, roles, fts, fts_tokenizer, vector, vector_embedder }
+        Self { name, roles, fts, fts_tokenizer, vector, vector_embedder, vector_dense_readiness }
     }
 }
 
@@ -873,6 +880,11 @@ impl PyProjectionSpec {
             fts_tokenizer: s.fts.as_ref().and_then(|f| f.tokenizer.clone()),
             vector: s.vector.is_some(),
             vector_embedder: s.vector.as_ref().and_then(|v| v.embedder.clone()),
+            vector_dense_readiness: s
+                .vector
+                .as_ref()
+                .and_then(|v| v.dense_readiness)
+                .map(|r| r.as_str().to_string()),
         }
     }
 
@@ -948,9 +960,16 @@ impl PyProjectionSpec {
             name: self.name.clone(),
             roles,
             fts: self.fts.then(|| RustProjectionFts { tokenizer: self.fts_tokenizer.clone() }),
-            vector: self
-                .vector
-                .then(|| RustProjectionVector { embedder: self.vector_embedder.clone() }),
+            vector: self.vector.then(|| RustProjectionVector {
+                embedder: self.vector_embedder.clone(),
+                // 0.8.20 Slice 20 (R-20-DR) — readiness is engine-set READ
+                // METADATA. Carried across so the engine can see what the caller
+                // sent, but the registry never stores it and never honours it.
+                dense_readiness: self
+                    .vector_dense_readiness
+                    .as_deref()
+                    .and_then(RustDenseReadiness::from_str_opt),
+            }),
         })
     }
 }

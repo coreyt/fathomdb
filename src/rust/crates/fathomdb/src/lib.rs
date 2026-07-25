@@ -39,14 +39,19 @@
 //   Threading `ReadView` as a parameter (rather than shipping five `*_with_view`
 //   sibling verbs) is what keeps this delta at TWO TYPES and ZERO new verbs.
 //   PROPOSED / NOT SIGNED — see `src/conformance/governed-surface-allowlist.json`.
+// + 1 new type from 0.8.20 Slice 20 (R-20-DR): `DenseReadiness` — the two-member
+//   `{ready, embedding}` READ-METADATA flag the engine hangs off
+//   `ProjectionSpec.vector` (`read.projections` populates it; it is never a
+//   caller declaration). ZERO net-new commands in this slice.
+//   PROPOSED / NOT SIGNED — see `src/conformance/governed-surface-allowlist.json`.
 pub use fathomdb_engine::{
     BoundaryCrossing, ComparisonOp, CorruptionDetail, CorruptionKind, CorruptionLocator,
-    CounterSnapshot, Engine, EngineError, EngineOpenError, ExciseReport, Explanation,
-    ExtractDocument, IngestWithExtractorReceipt, InitialState, LifecycleState, NodeRecord,
-    OpenReport, OpenStage, OpenedEngine, PerHitExplain, Predicate, PreparedWrite, ProjectionDelta,
-    ProjectionFts, ProjectionRole, ProjectionSpec, ProjectionVector, QueryTrace, ReadView,
-    RecoveryHint, ScalarValue, SearchExpandResult, SearchFilter, SearchResult, SoftFallback,
-    SoftFallbackBranch, SourceId, Subscription, TraversalDirection, WriteReceipt,
+    CounterSnapshot, DenseReadiness, Engine, EngineError, EngineOpenError, ExciseReport,
+    Explanation, ExtractDocument, IngestWithExtractorReceipt, InitialState, LifecycleState,
+    NodeRecord, OpenReport, OpenStage, OpenedEngine, PerHitExplain, Predicate, PreparedWrite,
+    ProjectionDelta, ProjectionFts, ProjectionRole, ProjectionSpec, ProjectionVector, QueryTrace,
+    ReadView, RecoveryHint, ScalarValue, SearchExpandResult, SearchFilter, SearchResult,
+    SoftFallback, SoftFallbackBranch, SourceId, Subscription, TraversalDirection, WriteReceipt,
 };
 
 // The operator-seam report types (`dev/interfaces/rust.md` § 2b) — CLI-only,

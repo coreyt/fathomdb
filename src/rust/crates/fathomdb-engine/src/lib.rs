@@ -3884,18 +3884,85 @@ pub struct ProjectionFts {
     pub tokenizer: Option<String>,
 }
 
+/// 0.8.20 Slice 20 (R-20-DR) — the ENGINE-SET readiness of the
+/// `searchable→vector` projection, per
+/// `dev/design/record-lifecycle-protocol/projection-registry-and-async-embed.md`
+/// §3.
+///
+/// **Exactly two members.** `filterable` and `searchable→FTS` are
+/// same-transaction (non-stale on commit) so they need no readiness axis at all;
+/// `searchable→vector` is **async, rebuild-durable**, so it carries one.
+///
+/// **Naming discipline (load-bearing).** The token **`pending` is RESERVED for
+/// the admission axis** (quarantine/trust — an app judgment). Index-readiness is
+/// a DIFFERENT, orthogonal dimension (a record can be
+/// `active ∧ is_latest ∧ admissible` yet `dense_readiness = embedding`), so this
+/// enum deliberately does **not** reuse that word: the non-ready member is
+/// `Embedding`, never `Pending`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum DenseReadiness {
+    /// Every row in the vector projection's row set has reached a projection
+    /// terminal — the dense arm is caught up. Because the vector INSERT and the
+    /// terminal record are written in ONE transaction
+    /// ([`commit_projection_outcomes`]), `Ready` can never be observed with the
+    /// vector row absent (design §4.1 invariant 1).
+    Ready,
+    /// At least one row in the projection's row set has not yet reached a
+    /// projection terminal — embedding is outstanding. This is the ONLY
+    /// tolerable torn state: readiness `embedding` with the vector absent (the
+    /// dense arm reads as partial and RRF under-ranks; it does not hide).
+    Embedding,
+}
+
+impl DenseReadiness {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DenseReadiness::Ready => "ready",
+            DenseReadiness::Embedding => "embedding",
+        }
+    }
+
+    /// The two accepted spellings. `"pending"` is DELIBERATELY not one of them
+    /// (reserved for the admission axis) and so parses to `None`.
+    #[must_use]
+    pub fn from_str_opt(value: &str) -> Option<Self> {
+        match value {
+            "ready" => Some(DenseReadiness::Ready),
+            "embedding" => Some(DenseReadiness::Embedding),
+            _ => None,
+        }
+    }
+}
+
 /// 0.8.20 Slice 15d (R-20-PR) — the `searchable→vector` sub-target selector.
 ///
-/// **Slice 20 (R-20-DR) attaches `dense_readiness` HERE, additively:** this
+/// **Slice 20 (R-20-DR) attached `dense_readiness` HERE, additively:** this
 /// sub-object is STORED by 15d (so the shape exists and a caller can declare a
-/// vector projection) but 15d builds NO embedding / readiness machinery. Slice
-/// 20 adds a `dense_readiness` field to this struct and the async flip logic;
-/// nothing in 15d's persisted shape has to change for that (the registry column
-/// `vector_embedder` + `vector_declared` already round-trip the sub-object).
+/// vector projection); Slice 20 hangs the READ-METADATA readiness flag off it.
+/// Nothing in 15d's persisted shape changed (the registry columns
+/// `vector_embedder` + `vector_declared` still round-trip the declaration) —
+/// **readiness is DERIVED, never stored**, so there is no schema step and no
+/// separate flag that could tear.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ProjectionVector {
     /// Optional embedder override; `None` ⇒ the engine's shipped default.
     pub embedder: Option<String>,
+    /// 0.8.20 Slice 20 (R-20-DR) — **READ METADATA, engine-set.** Populated by
+    /// [`Engine::read_projections`]; `None` on every caller-authored spec.
+    ///
+    /// It is **not part of the declaration**: `configure_projections` neither
+    /// stores nor honours it (see [`StoredProjection::from_spec`], which reads
+    /// only `embedder`), so a value supplied here is INERT — the engine always
+    /// reports the derived truth. This is deliberately accept-inert rather than
+    /// hard-reject so `read.projections` output stays feedable straight back
+    /// into `configure_projections` (the fix-4 read→configure round-trip, which
+    /// both bindings pin with a test); it mirrors the already-audited
+    /// accept-inert ruling on an `fts`/`vector` sub-object declared without the
+    /// `searchable` role. The bindings still HARD-REJECT the shapes that could
+    /// not round-trip: a readiness supplied with `vector = false`, and any
+    /// spelling outside `{ready, embedding}`.
+    pub dense_readiness: Option<DenseReadiness>,
 }
 
 /// 0.8.20 Slice 15d (R-20-PR / C-1) — a single declarative projection
@@ -7953,6 +8020,13 @@ impl Engine {
     /// [`ProjectionSpec`] sorted by name, so a caller can inspect current state
     /// (and the destructive delta a change would cause) BEFORE applying. Pure
     /// read; never mutates.
+    ///
+    /// 0.8.20 Slice 20 (R-20-DR) — this is ALSO the surface that populates the
+    /// engine-set [`ProjectionVector::dense_readiness`] READ METADATA. It is
+    /// derived here, on the way out; the durable
+    /// registry stores no readiness. Only a spec that declares the
+    /// `searchable→vector` sub-object carries one — `filterable` and
+    /// `searchable→FTS` are same-transaction and have no readiness axis.
     pub fn read_projections(&self) -> Result<Vec<ProjectionSpec>, EngineError> {
         self.ensure_open()?;
         let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
@@ -15804,6 +15878,13 @@ impl StoredProjection {
     }
 
     /// Build from the public [`ProjectionSpec`].
+    ///
+    /// 0.8.20 Slice 20 (R-20-DR) — note what is DELIBERATELY not read here:
+    /// `spec.vector.dense_readiness`. Readiness is engine-set READ METADATA, not
+    /// part of the declaration, so it never reaches the durable registry. That
+    /// is what makes a caller-supplied value INERT (the engine always reports the
+    /// derived truth) and what keeps it out of the destructive-change diff — a
+    /// readiness difference can never look like a projection change.
     fn from_spec(spec: &ProjectionSpec) -> Self {
         StoredProjection {
             roles: spec.roles.clone(),
@@ -15833,7 +15914,15 @@ impl StoredProjection {
                 None
             },
             vector: if self.vector_declared {
-                Some(ProjectionVector { embedder: self.vector_embedder.clone() })
+                // 0.8.20 Slice 20 (R-20-DR) — the registry knows nothing about
+                // readiness (it is DERIVED, never stored), so the durable shape
+                // reconstructs with `dense_readiness: None`.
+                // [`Engine::read_projections`] fills it from
+                // the readiness derivation on the way out.
+                Some(ProjectionVector {
+                    embedder: self.vector_embedder.clone(),
+                    dense_readiness: None,
+                })
             } else {
                 None
             },
