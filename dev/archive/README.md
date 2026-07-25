@@ -40,3 +40,15 @@ at/below this pass's commit; the exact 23-file list is enumerated in
 `dev/plans/runs/doc-hygiene-1-T3-output.json` (`files_deleted`). Results of record for the
 pruned releases already live in `dev/experiments-ledger.md` / the release boards, unaffected
 by this prune.
+
+**Correction — T3/10 fix-1 (2026-07-25, codex §9 [P2]):** the "transient" predicate was
+wrong for **two** of the 23: `dev/plans/runs/expb-joint-tune-output.json` and
+`dev/plans/runs/gate2-oracle-output.json` are **read-inputs** (`.read_text()`, not output
+declarations) to the checked-in generator `dev/prototypes/l2-router/build_registry.py`, which
+regenerates the committed `dev/prototypes/l2-router/registry.json`; deleting them broke that
+workflow with `FileNotFoundError`. **Both files RESTORED** (regeneration re-verified: exit 0,
+`registry.json` byte-unchanged). The other 21 stay pruned — the 8 with tracked-code references
+are output *declarations* (the eval scripts under `src/python/eval/` **write** them and they
+regenerate on next run), the rest are unreferenced. **Predicate rule going forward: never
+prune a `runs/*` artifact that tracked non-doc code READS** (`git grep -F <basename> -- '*.py'
+'*.sh' '*.rs' 'dev/prototypes/**/*.json'`, then confirm each hit is a read, not a write-path).
