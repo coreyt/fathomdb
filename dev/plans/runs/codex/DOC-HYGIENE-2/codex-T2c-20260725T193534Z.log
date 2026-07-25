@@ -1,0 +1,1663 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/doc-hygiene-2
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f9ac6-9853-7931-a576-aaf7f1e7081d
+--------
+user
+changes against '5be3fc24ccab7bce7689e0f18df37e874b5bf35f'
+exec
+/bin/bash -lc "cat MEMORY.md 2>/dev/null || true && printf '\\n--- feedback files ---\\n' && ls feedback_*.md 2>/dev/null || true" in /home/coreyt/projects/fathomdb-worktrees/doc-hygiene-2
+ succeeded in 0ms:
+
+--- feedback files ---
+
+exec
+/bin/bash -lc 'git diff --stat 5be3fc24ccab7bce7689e0f18df37e874b5bf35f && git diff --name-only 5be3fc24ccab7bce7689e0f18df37e874b5bf35f' in /home/coreyt/projects/fathomdb-worktrees/doc-hygiene-2
+ succeeded in 0ms:
+ .github/workflows/ci.yml                           |  19 ++
+ dev/design/0.5.1x0.8.11.2/00-integrated-design.md  |   4 +
+ .../0.5.1x0.8.11.2/10-fathomdb-side-design.md      |   4 +
+ .../0.5.1x0.8.11.2/20-multifield-fts-design.md     |   4 +
+ .../30-perkind-tokenizer-fts-design.md             |   4 +
+ dev/design/0.5.1x0.8.11.2/identity-recall-model.md |   4 +
+ dev/design/0.8.0-agent-memory-fit.md               |   4 +
+ dev/design/0.8.0-slice-5-G1-design.md              |   4 +
+ dev/design/0.8.0-v05-feature-triage.md             |   4 +
+ dev/design/0.8.1-embedder-gpu-and-portability.md   |   4 +
+ dev/design/0.8.1-graph-experiment-plan.md          |   4 +
+ dev/design/0.8.1-slice-10-reranker-design.md       |   4 +
+ dev/design/0.8.11-analysis-G10-G4-searchfilt.md    |   4 +
+ ...1-slice40-f8b-record-feedback-execution-note.md |   4 +
+ dev/design/0.8.12-coverage-probe-and-value-test.md |   4 +
+ dev/design/0.8.16-slice-0-f9-onnx-design.md        |   4 +
+ ...18-slice-0-vector-equivalence-publish-design.md |   4 +
+ dev/design/0.8.18-slice-20-publish-pipeline.md     |   4 +
+ .../0.8.18-slice-5-vector-equivalence-probe.md     |   4 +
+ dev/design/0.8.19-slice-0-opp12-phase1-design.md   |   4 +
+ dev/design/0.8.20-erasure-and-h-end-state-v4.md    |   4 +
+ dev/design/0.8.20-slice0-erasure-design.md         |   4 +
+ dev/design/0.8.3-openai-batch-completion-howto.md  |   4 +
+ dev/design/0.8.4-closing-graphrag-gap.md           |   4 +
+ dev/design/0.8.5-ce-rerank-slice-design.md         |   4 +
+ dev/design/0.8.x-parity-portfolio-strategy.md      |   4 +
+ dev/design/README.md                               |   4 +
+ dev/design/agent-memory-impl-strategy.md           |   4 +
+ dev/design/code-markers-evaluation-2026-07-09.md   |   4 +
+ dev/design/embedder-decision.md                    |   4 +
+ ...-graph-vs-mem0-zep-and-longmemeval-diagnosis.md |   4 +
+ ...e-threaded-python-value-lift-and-experiments.md |   4 +
+ dev/design/gpu-device-allocation-policy.md         |   4 +
+ dev/design/gpu-eval-activities-policy.md           |   4 +
+ dev/design/initial-arch-planner-router-0.8.x.md    |   4 +
+ dev/design/ir-recall-measure.md                    |   4 +
+ dev/design/perf-gates.md                           |   4 +
+ dev/design/perf-regression-detection.md            |   4 +
+ dev/design/planner-router-psd-0.8.x.md             |   4 +
+ dev/design/planner-router-psd-audit-notes.md       |   4 +
+ dev/design/planner-router-sequencing-0.8.x.md      |   5 +
+ .../OPP-12-C1-converged-contract.md                |   4 +
+ .../record-lifecycle-protocol/OPP-12-C1-shot1.md   |   4 +
+ .../OPP-12-leverage-ledger-update.md               |   4 +
+ dev/design/record-lifecycle-protocol/README.md     |   4 +
+ .../record-lifecycle-protocol/api-surface.md       |   4 +
+ .../code-grounded-audit.md                         |   4 +
+ .../projection-registry-and-async-embed.md         |   4 +
+ .../structural-lifecycle-contract.md               |   4 +
+ dev/design/slice-0-adr-plan.md                     |   4 +
+ dev/design/slice-10-design.md                      |   4 +
+ dev/design/slice-15-design.md                      |   4 +
+ dev/design/slice-15-g0-design.md                   |   4 +
+ dev/design/slice-20-design.md                      |   4 +
+ dev/design/slice-25-r2-design.md                   |   4 +
+ dev/design/slice-30-design.md                      |   4 +
+ dev/design/slice-31-identity-rescope-design.md     |   4 +
+ dev/design/slice-33-cursor-hardening-design.md     |   4 +
+ dev/design/slice-35-design.md                      |   4 +
+ dev/design/slice-40-gate-restructure-and-ga.md     |   4 +
+ dev/design/slice-5-design.md                       |   4 +
+ dev/design/slice-G0-design.md                      |   4 +
+ dev/design/status-board-currency-enforcement.md    |   4 +
+ scripts/agent-lint-md.sh                           |   5 +
+ scripts/lint-design-status.sh                      | 151 +++++++++++
+ scripts/tests/test_design_status_frontmatter.sh    | 281 +++++++++++++++++++++
+ 66 files changed, 705 insertions(+)
+.github/workflows/ci.yml
+dev/design/0.5.1x0.8.11.2/00-integrated-design.md
+dev/design/0.5.1x0.8.11.2/10-fathomdb-side-design.md
+dev/design/0.5.1x0.8.11.2/20-multifield-fts-design.md
+dev/design/0.5.1x0.8.11.2/30-perkind-tokenizer-fts-design.md
+dev/design/0.5.1x0.8.11.2/identity-recall-model.md
+dev/design/0.8.0-agent-memory-fit.md
+dev/design/0.8.0-slice-5-G1-design.md
+dev/design/0.8.0-v05-feature-triage.md
+dev/design/0.8.1-embedder-gpu-and-portability.md
+dev/design/0.8.1-graph-experiment-plan.md
+dev/design/0.8.1-slice-10-reranker-design.md
+dev/design/0.8.11-analysis-G10-G4-searchfilt.md
+dev/design/0.8.11-slice40-f8b-record-feedback-execution-note.md
+dev/design/0.8.12-coverage-probe-and-value-test.md
+dev/design/0.8.16-slice-0-f9-onnx-design.md
+dev/design/0.8.18-slice-0-vector-equivalence-publish-design.md
+dev/design/0.8.18-slice-20-publish-pipeline.md
+dev/design/0.8.18-slice-5-vector-equivalence-probe.md
+dev/design/0.8.19-slice-0-opp12-phase1-design.md
+dev/design/0.8.20-erasure-and-h-end-state-v4.md
+dev/design/0.8.20-slice0-erasure-design.md
+dev/design/0.8.3-openai-batch-completion-howto.md
+dev/design/0.8.4-closing-graphrag-gap.md
+dev/design/0.8.5-ce-rerank-slice-design.md
+dev/design/0.8.x-parity-portfolio-strategy.md
+dev/design/README.md
+dev/design/agent-memory-impl-strategy.md
+dev/design/code-markers-evaluation-2026-07-09.md
+dev/design/embedder-decision.md
+dev/design/fathomdb-graph-vs-mem0-zep-and-longmemeval-diagnosis.md
+dev/design/free-threaded-python-value-lift-and-experiments.md
+dev/design/gpu-device-allocation-policy.md
+dev/design/gpu-eval-activities-policy.md
+dev/design/initial-arch-planner-router-0.8.x.md
+dev/design/ir-recall-measure.md
+dev/design/perf-gates.md
+dev/design/perf-regression-detection.md
+dev/design/planner-router-psd-0.8.x.md
+dev/design/planner-router-psd-audit-notes.md
+dev/design/planner-router-sequencing-0.8.x.md
+dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md
+dev/design/record-lifecycle-protocol/OPP-12-C1-shot1.md
+dev/design/record-lifecycle-protocol/OPP-12-leverage-ledger-update.md
+dev/design/record-lifecycle-protocol/README.md
+dev/design/record-lifecycle-protocol/api-surface.md
+dev/design/record-lifecycle-protocol/code-grounded-audit.md
+dev/design/record-lifecycle-protocol/projection-registry-and-async-embed.md
+dev/design/record-lifecycle-protocol/structural-lifecycle-contract.md
+dev/design/slice-0-adr-plan.md
+dev/design/slice-10-design.md
+dev/design/slice-15-design.md
+dev/design/slice-15-g0-design.md
+dev/design/slice-20-design.md
+dev/design/slice-25-r2-design.md
+dev/design/slice-30-design.md
+dev/design/slice-31-identity-rescope-design.md
+dev/design/slice-33-cursor-hardening-design.md
+dev/design/slice-35-design.md
+dev/design/slice-40-gate-restructure-and-ga.md
+dev/design/slice-5-design.md
+dev/design/slice-G0-design.md
+dev/design/status-board-currency-enforcement.md
+scripts/agent-lint-md.sh
+scripts/lint-design-status.sh
+scripts/tests/test_design_status_frontmatter.sh
+
+exec
+/bin/bash -lc 'git diff --find-renames 5be3fc24ccab7bce7689e0f18df37e874b5bf35f -- .github/workflows/ci.yml scripts/agent-lint-md.sh scripts/lint-design-status.sh scripts/tests/test_design_status_frontmatter.sh' in /home/coreyt/projects/fathomdb-worktrees/doc-hygiene-2
+ succeeded in 0ms:
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 94b60fb1..6b778bb5 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -415,6 +415,25 @@ jobs:
+       - name: Board/git-ancestry drift check (status-board-currency-enforcement item 3)
+         run: bash scripts/check-board-currency.sh --tip HEAD
+ 
++  # DOC-HYGIENE-2 T2c — dev/design/**/*.md must carry a `status:` frontmatter key
++  # (and `superseded_by:` when SUPERSEDED). Deliberately its OWN always-on job and
++  # NOT a step in the `markdownlint` job above: that job is
++  # `if: needs.changes.outputs.docs_only == 'true'`, so it never fires on a code
++  # push — a design doc landing alongside code would slip the gate entirely. Same
++  # reasoning as `board-currency` above (a doc tier can drift behind a non-docs-only
++  # push just as easily). `verify` also runs it via agent-lint-md.sh; this job is
++  # the backstop that does not depend on the verify matrix. No fetch-depth needed:
++  # the check reads the working tree only.
++  design-status:
++    runs-on: ubuntu-latest
++    timeout-minutes: 5
++    steps:
++      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
++      - name: dev/design/**/*.md status frontmatter (T2c)
++        run: bash scripts/lint-design-status.sh
++      - name: Recurrence guard for the gate itself
++        run: bash scripts/tests/test_design_status_frontmatter.sh
++
+   # mkdocs --strict is the broader CI gate beyond agent-verify (per AGENTS.md §3).
+   # Intentionally NOT gated on docs_only: it must run for docs/** changes (the
+   # fast path) AND alongside code changes, exactly as before.
+diff --git a/scripts/agent-lint-md.sh b/scripts/agent-lint-md.sh
+index eff29918..65637e1d 100755
+--- a/scripts/agent-lint-md.sh
++++ b/scripts/agent-lint-md.sh
+@@ -34,6 +34,11 @@ fi
+ # Pure bash/grep; no external binary, so this leg has no absent-tool skip path.
+ run_capped lint-plans-status "$SCRIPT_DIR/lint-plans-status.sh"
+ 
++# T2c (DOC-HYGIENE-2): the same rule for the OTHER governed doc tier —
++# dev/design/**/*.md (recursive). Same pure-bash/grep property, so likewise no
++# absent-tool skip path. Hard-fails on zero discovered files (TC-37).
++run_capped lint-design-status "$SCRIPT_DIR/lint-design-status.sh"
++
+ # docs/** structural lint. The repo .markdownlint-cli2.jsonc IGNORES docs/** (it is
+ # otherwise gated only by `mkdocs build --strict`, which does NOT enforce markdownlint
+ # style). agent-lint-docs.sh lints docs/** with the same .markdownlint.jsonc rules via
+diff --git a/scripts/lint-design-status.sh b/scripts/lint-design-status.sh
+new file mode 100755
+index 00000000..0a8a0e29
+--- /dev/null
++++ b/scripts/lint-design-status.sh
+@@ -0,0 +1,151 @@
++#!/usr/bin/env bash
++# scripts/lint-design-status.sh — T2c enforcement (DOC-HYGIENE-2).
++#
++# Sibling of scripts/lint-plans-status.sh, for the OTHER governed doc tier.
++# `dev/design/**` is the largest doc surface in the repo (~108 .md / ~1.9 MB at
++# the time this landed) and it is the tier a Steward must cite to an
++# orchestrator — yet nothing linted it: lint-plans-status.sh is scoped to
++# `dev/plans/*.md` TOP-LEVEL ONLY (see its § "Scope") and never reached here.
++# 62 of those 108 docs carried no `status:` at all, so "which design docs are
++# still current?" could only be answered by reading all of them.
++#
++# The rule: every `dev/design/**/*.md` (RECURSIVE — subdirectories such as
++# record-lifecycle-protocol/ and fathomdb-memex-overall-roadmap/ are in scope)
++# must carry YAML frontmatter with a `status:` key. A doc whose status is
++# SUPERSEDED must additionally carry a `superseded_by:` pointing somewhere — a
++# supersession that names no successor is a dead end for the next reader.
++#
++# WHAT THIS GATE DOES AND DOES NOT PROVE (HITL 2026-07-25, todos TC-50):
++# it proves the PRESENCE of a status field, never its TRUTH. The backfill that
++# accompanied it deliberately defaulted to UNREVIEWED, because a doc wrongly
++# marked ACTIVE is worse than one with no marker. The real classification is a
++# separate owed slice (TC-50). Do not read a green run here as "the statuses
++# are correct".
++#
++# UNREVIEWED vs UNKNOWN — near-synonyms, kept distinct on purpose:
++#   UNKNOWN    (inherited from lint-plans-status.sh) = someone LOOKED and the
++#              true status genuinely could not be sourced from the master's §4
++#              allocation table or the doc's own banners. An honest dead end.
++#   UNREVIEWED (added here) = nobody has classified this doc yet. The TC-50
++#              backfill default. It is a queue marker, not a verdict.
++# A doc moving UNREVIEWED -> UNKNOWN is progress (it was examined); the reverse
++# is not. Flagged to the Steward as a candidate for consolidation once TC-50
++# has drained the UNREVIEWED backlog.
++#
++# LEGACY STATUS VALUES (frozen inventory, monotone ratchet):
++# 46 design docs predate this gate with free-form values — `locked` (the 0.8.0
++# architecture specs), `accepted`, `decision-ready`, `SIGNED (...)`, `PROPOSAL —
++# awaiting HITL review (...)` and so on. None of them fit the governed
++# vocabulary. Rewriting them here would BE the TC-50 classification this tranche
++# is explicitly forbidden to attempt, and would destroy real signal, so they are
++# grandfathered by VALUE (leading token, case-insensitive), not by filename:
++# lint-plans-status.sh's own header records why a filename carve-out is "exactly
++# the shape of gate that rots", and that reasoning applies here too — the rule
++# below is total and name-blind.
++# The grandfathering is bounded by a ratchet: LEGACY_BUDGET is a CEILING that
++# must never rise. A new doc using a legacy value pushes the count over the
++# ceiling and fails. As TC-50 retires legacy values the count drops and the gate
++# says so, so the number can only be revised downward.
++#
++# Zero-discovery hard fail (TC-37, this repo's named vacuous-pass class): if the
++# scan finds NO files it fails loudly rather than exiting 0. A gate that silently
++# passes because its scope evaporated (a moved directory, a broken glob) is the
++# exact failure mode TC-37 is named for.
++#
++# Scope: dev/design/**/*.md ONLY. Nothing outside dev/design/ is read.
++#
++# Pass: silent, exit 0. Fail: one line per offending file + nonzero exit.
++set -euo pipefail
++cd "$(git rev-parse --show-toplevel)"
++
++# The governed vocabulary for dev/design/**. Deliberately its OWN constant:
++# lint-plans-status.sh's ALLOWED_RE stays byte-identical (it does NOT admit
++# UNREVIEWED — dev/plans has no unclassified backlog and must not grow one).
++ALLOWED_RE='^(ACTIVE|COMPLETE|PROPOSED|SUPERSEDED|UNKNOWN|UNREVIEWED)$'
++
++# Frozen at DOC-HYGIENE-2 T2c (2026-07-25). Leading token, case-insensitive.
++# DO NOT EXTEND — see the LEGACY block in the header. TC-50 retires these.
++LEGACY_RE='^(accepted|adopted|analysis|decision-ready|design-note|draft|implementation|implementation-notes|locked|open|proposal|proposed|ratified|signed|tracked)$'
++LEGACY_BUDGET=46
++
++FAIL=0
++SCANNED=0
++LEGACY_SEEN=0
++
++# find (not a glob): the scan must be RECURSIVE, unlike the top-level-only
++# dev/plans scope. -print0 so a path with whitespace cannot split.
++while IFS= read -r -d '' f; do
++  SCANNED=$((SCANNED + 1))
++
++  first_line="$(head -n1 "$f")"
++  if [ "$first_line" != "---" ]; then
++    printf 'FAIL %s: no YAML frontmatter (must open with a `---` block and carry\n' "$f" >&2
++    printf '  status: ACTIVE|COMPLETE|PROPOSED|SUPERSEDED|UNKNOWN|UNREVIEWED — use UNREVIEWED\n' >&2
++    printf '  if you are not certain; a wrong ACTIVE is worse than an honest UNREVIEWED)\n' >&2
++    FAIL=1
++    continue
++  fi
++
++  # Frontmatter block = the lines strictly between the first `---` and the
++  # next line that is exactly `---`.
++  block="$(awk 'NR==1{next} /^---$/{exit} {print}' "$f")"
++  status_line="$(printf '%s\n' "$block" | grep -E '^status:[[:space:]]*' | head -n1 || true)"
++
++  if [ -z "$status_line" ]; then
++    printf 'FAIL %s: frontmatter present but missing a `status:` key\n' "$f" >&2
++    FAIL=1
++    continue
++  fi
++
++  value="$(printf '%s\n' "$status_line" | sed -E 's/^status:[[:space:]]*//; s/[[:space:]]+$//')"
++  if [ -z "$value" ]; then
++    printf 'FAIL %s: `status:` key is present but empty\n' "$f" >&2
++    FAIL=1
++    continue
++  fi
++
++  if grep -qE "$ALLOWED_RE" <<<"$value"; then
++    # Governed value. SUPERSEDED must name a successor.
++    if [ "$value" = "SUPERSEDED" ]; then
++      superseded_by="$(printf '%s\n' "$block" | grep -E '^superseded_by:[[:space:]]*' | head -n1 || true)"
++      target="$(printf '%s\n' "$superseded_by" | sed -E 's/^superseded_by:[[:space:]]*//; s/[[:space:]]+$//')"
++      if [ -z "$target" ]; then
++        printf 'FAIL %s: status SUPERSEDED requires a non-empty `superseded_by:` key\n' "$f" >&2
++        printf '  (a supersession that names no successor is a dead end for the next reader)\n' >&2
++        FAIL=1
++      fi
++    fi
++    continue
++  fi
++
++  # Not governed — is it one of the frozen legacy values?
++  leading="$(printf '%s\n' "$value" | awk '{print $1}')"
++  if grep -qiE "$LEGACY_RE" <<<"$leading"; then
++    LEGACY_SEEN=$((LEGACY_SEEN + 1))
++    continue
++  fi
++
++  printf 'FAIL %s: status %s is not one of ACTIVE|COMPLETE|PROPOSED|SUPERSEDED|UNKNOWN|UNREVIEWED\n' "$f" "$value" >&2
++  FAIL=1
++done < <(find dev/design -type f -name '*.md' -print0 | sort -z)
++
++# TC-37 vacuous-pass guard.
++if [ "$SCANNED" -eq 0 ]; then
++  printf 'FAIL lint-design-status: scanned 0 files under dev/design/**/*.md.\n' >&2
++  printf '  A gate that finds nothing must never report a pass (TC-37). Either the\n' >&2
++  printf '  directory moved, or this script is being run outside the repo it lints.\n' >&2
++  exit 1
++fi
++
++# Monotone legacy ratchet. Ceiling only: it may fall, never rise.
++if [ "$LEGACY_SEEN" -gt "$LEGACY_BUDGET" ]; then
++  printf 'FAIL lint-design-status: %d docs carry a pre-gate legacy status value, over the\n' "$LEGACY_SEEN" >&2
++  printf '  frozen ceiling of %d. The legacy vocabulary is grandfathered, NOT open: a new\n' "$LEGACY_BUDGET" >&2
++  printf '  doc must use ACTIVE|COMPLETE|PROPOSED|SUPERSEDED|UNKNOWN|UNREVIEWED.\n' >&2
++  FAIL=1
++elif [ "$LEGACY_SEEN" -lt "$LEGACY_BUDGET" ]; then
++  printf 'NOTICE lint-design-status: legacy status count is now %d (ceiling %d).\n' "$LEGACY_SEEN" "$LEGACY_BUDGET" >&2
++  printf '  Ratchet LEGACY_BUDGET down to %d in this script — the ceiling must only fall.\n' "$LEGACY_SEEN" >&2
++fi
++
++exit "$FAIL"
+diff --git a/scripts/tests/test_design_status_frontmatter.sh b/scripts/tests/test_design_status_frontmatter.sh
+new file mode 100644
+index 00000000..6238c926
+--- /dev/null
++++ b/scripts/tests/test_design_status_frontmatter.sh
+@@ -0,0 +1,281 @@
++#!/usr/bin/env bash
++# scripts/tests/test_design_status_frontmatter.sh — T2c recurrence guard
++# (DOC-HYGIENE-2). Mirrors scripts/tests/test_plans_status_frontmatter.sh.
++#
++# Proves scripts/lint-design-status.sh:
++#   1. FAILS a dev/design/**.md file with no YAML frontmatter at all.
++#   2. FAILS a dev/design/**.md file with frontmatter but no `status:` key.
++#   3. FAILS a dev/design/**.md file whose `status:` value is outside the
++#      allowed set and outside the frozen legacy set.
++#   4. FAILS `status: SUPERSEDED` with no `superseded_by:` (and with an empty
++#      one) — a supersession must name a successor.
++#   5. FAILS when it discovers ZERO files (TC-37 vacuous-pass guard) — both
++#      when dev/design/ is empty and when it does not exist at all.
++#   6. PASSES valid UNREVIEWED / ACTIVE / SUPERSEDED+superseded_by, including
++#      in a SUBDIRECTORY (the scan is recursive, unlike the dev/plans one).
++#   7. Stays SCOPED to dev/design/** — a bare .md planted in dev/plans/,
++#      dev/notes/, docs/ or the repo root must not fail this gate.
++#   8. Grandfathers the frozen pre-gate legacy vocabulary (e.g. `locked`) but
++#      only up to the ceiling, and carries NO filename-based exception.
++#
++# Builds a throwaway fixture repo under mktemp -d; never touches this
++# checkout's real dev/design/.
++set -euo pipefail
++
++SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
++
++FIX="$(mktemp -d)"
++trap 'rm -rf "$FIX"' EXIT
++
++FAILED=0
++pass() { printf 'PASS  %s\n' "$1"; }
++fail() { printf 'FAIL  %s\n' "$1" >&2; FAILED=$((FAILED + 1)); }
++
++setup_fixture() {
++  rm -rf "$FIX/repo"
++  mkdir -p "$FIX/repo/scripts" "$FIX/repo/dev/design/subdir" \
++    "$FIX/repo/dev/plans" "$FIX/repo/dev/notes" "$FIX/repo/docs"
++  cp "$REPO_ROOT/scripts/lint-design-status.sh" "$FIX/repo/scripts/lint-design-status.sh"
++  chmod +x "$FIX/repo/scripts/lint-design-status.sh"
++  (cd "$FIX/repo" && git init -q && git config user.email t@example.com && git config user.name t)
++}
++
++run_lint() {
++  set +e
++  OUT="$(cd "$FIX/repo" && bash scripts/lint-design-status.sh 2>&1)"
++  RC=$?
++  set -e
++}
++
++# A known-good doc, so a fixture that is otherwise empty still discovers files
++# (keeps every arm testing the intended failure, not the zero-file guard).
++plant_good() {
++  cat >"$FIX/repo/dev/design/good.md" <<'EOF'
++---
++status: UNREVIEWED
++---
++
++# A doc nobody has classified yet
++EOF
++}
++
++# --- Arm 1: no frontmatter at all -> FAIL -------------------------------
++setup_fixture
++plant_good
++cat >"$FIX/repo/dev/design/no-frontmatter.md" <<'EOF'
++# A design doc with no frontmatter
++
++Body text.
++EOF
++run_lint
++if [ "$RC" -ne 0 ] && grep -q "no-frontmatter.md" <<<"$OUT" && grep -qi "frontmatter" <<<"$OUT"; then
++  pass "missing frontmatter -> non-zero exit + names the offending file"
++else
++  fail "missing frontmatter case: rc=$RC out=$OUT"
++fi
++
++# --- Arm 2: frontmatter present, no status: key -> FAIL -----------------
++setup_fixture
++plant_good
++cat >"$FIX/repo/dev/design/no-status-key.md" <<'EOF'
++---
++title: Some design doc
++date: 2026-07-01
++---
++
++# Some design doc
++EOF
++run_lint
++if [ "$RC" -ne 0 ] && grep -q "no-status-key.md" <<<"$OUT" && grep -qi "status" <<<"$OUT"; then
++  pass "frontmatter without status: key -> non-zero exit"
++else
++  fail "missing status key case: rc=$RC out=$OUT"
++fi
++
++# --- Arm 2b: status: key present but empty -> FAIL ----------------------
++setup_fixture
++plant_good
++printf -- '---\nstatus:\n---\n\n# empty status\n' >"$FIX/repo/dev/design/empty-status.md"
++run_lint
++if [ "$RC" -ne 0 ] && grep -q "empty-status.md" <<<"$OUT"; then
++  pass "empty status: value -> non-zero exit (presence must mean a real value)"
++else
++  fail "empty status value case: rc=$RC out=$OUT"
++fi
++
++# --- Arm 3: invalid status value -> FAIL ---------------------------------
++setup_fixture
++plant_good
++cat >"$FIX/repo/dev/design/bad-status.md" <<'EOF'
++---
++title: Some design doc
++status: DONE
++---
++
++# Some design doc
++EOF
++run_lint
++if [ "$RC" -ne 0 ] && grep -q "bad-status.md" <<<"$OUT" && grep -qi "DONE" <<<"$OUT"; then
++  pass "invalid status value (DONE) -> non-zero exit, names the bad value"
++else
++  fail "invalid status value case: rc=$RC out=$OUT"
++fi
++
++# --- Arm 4: SUPERSEDED with no superseded_by: -> FAIL --------------------
++setup_fixture
++plant_good
++cat >"$FIX/repo/dev/design/superseded-no-target.md" <<'EOF'
++---
++status: SUPERSEDED
++---
++
++# Superseded, but by what?
++EOF
++run_lint
++if [ "$RC" -ne 0 ] && grep -q "superseded-no-target.md" <<<"$OUT" && grep -qi "superseded_by" <<<"$OUT"; then
++  pass "SUPERSEDED without superseded_by: -> non-zero exit"
++else
++  fail "superseded-no-target case: rc=$RC out=$OUT"
++fi
++
++# --- Arm 4b: SUPERSEDED with an EMPTY superseded_by: -> FAIL -------------
++setup_fixture
++plant_good
++printf -- '---\nstatus: SUPERSEDED\nsuperseded_by:\n---\n\n# empty target\n' \
++  >"$FIX/repo/dev/design/superseded-empty-target.md"
++run_lint
++if [ "$RC" -ne 0 ] && grep -q "superseded-empty-target.md" <<<"$OUT"; then
++  pass "SUPERSEDED with an empty superseded_by: -> non-zero exit (not a loophole)"
++else
++  fail "superseded-empty-target case: rc=$RC out=$OUT"
++fi
++
++# --- Arm 5: ZERO files discovered -> FAIL (TC-37 vacuous-pass guard) -----
++setup_fixture
++# dev/design/ and dev/design/subdir/ exist but contain no .md at all.
++run_lint
++if [ "$RC" -ne 0 ] && grep -qi "0 files" <<<"$OUT"; then
++  pass "zero .md discovered -> hard fail, not a silent pass (TC-37)"
++else
++  fail "zero-files guard (empty dir): rc=$RC out=$OUT"
++fi
++
++# --- Arm 5b: dev/design/ absent entirely -> FAIL -------------------------
++setup_fixture
++rm -rf "$FIX/repo/dev/design"
++run_lint
++if [ "$RC" -ne 0 ]; then
++  pass "dev/design/ missing entirely -> hard fail (scope evaporation is not a pass)"
++else
++  fail "zero-files guard (missing dir) reported a pass: rc=$RC out=$OUT"
++fi
++
++# --- Arm 6: valid governed values, incl. a subdirectory -> PASS ----------
++setup_fixture
++plant_good
++cat >"$FIX/repo/dev/design/active.md" <<'EOF'
++---
++title: Live design
++status: ACTIVE
++---
++
++# Live design
++EOF
++cat >"$FIX/repo/dev/design/subdir/superseded-ok.md" <<'EOF'
++---
++status: SUPERSEDED
++superseded_by: dev/design/active.md
++---
++
++# Superseded, and it says by what
++EOF
++run_lint
++if [ "$RC" -eq 0 ]; then
++  pass "UNREVIEWED + ACTIVE + SUPERSEDED-with-target (incl. subdir) -> exit 0"
++else
++  fail "valid values case unexpectedly failed: rc=$RC out=$OUT"
++fi
++
++# --- Arm 6b: the scan is RECURSIVE — a bad doc in a subdir still fails ---
++setup_fixture
++plant_good
++cat >"$FIX/repo/dev/design/subdir/nested-bad.md" <<'EOF'
++# nested, no frontmatter — subdirectories are IN scope here
++EOF
++run_lint
++if [ "$RC" -ne 0 ] && grep -q "nested-bad.md" <<<"$OUT"; then
++  pass "recursive scan — dev/design/subdir/ is in scope (unlike the dev/plans gate)"
++else
++  fail "recursion broken: a bad nested doc did not fail (rc=$RC out=$OUT)"
++fi
++
++# --- Arm 7: scope fence — nothing outside dev/design/** is read ----------
++setup_fixture
++plant_good
++cat >"$FIX/repo/dev/plans/bare-plan.md" <<'EOF'
++# no frontmatter, but this is dev/plans — lint-plans-status.sh's job, not ours
++EOF
++cat >"$FIX/repo/dev/notes/bare-note.md" <<'EOF'
++# no frontmatter, dev/notes is not a governed status tier
++EOF
++cat >"$FIX/repo/docs/bare-doc.md" <<'EOF'
++# no frontmatter, docs/ is gated by mkdocs --strict
++EOF
++cat >"$FIX/repo/README.md" <<'EOF'
++# no frontmatter, repo root
++EOF
++run_lint
++if [ "$RC" -eq 0 ]; then
++  pass "scope fence — dev/plans, dev/notes, docs/ and the repo root are untouched"
++else
++  fail "scope fence broken: something outside dev/design/** leaked in (rc=$RC out=$OUT)"
++fi
++
++# --- Arm 8: frozen legacy vocabulary is grandfathered -> PASS ------------
++setup_fixture
++plant_good
++cat >"$FIX/repo/dev/design/legacy.md" <<'EOF'
++---
++status: locked
++---
++
++# A pre-gate architecture spec, grandfathered by value (TC-50 retires this)
++EOF
++cat >"$FIX/repo/dev/design/legacy-trailing.md" <<'EOF'
++---
++status: SIGNED (HITL 2026-06-21 — trailing prose after the leading token)
++---
++
++# Legacy value with trailing prose
++EOF
++run_lint
++if [ "$RC" -eq 0 ]; then
++  pass "frozen legacy values (locked, SIGNED …) are grandfathered -> exit 0"
++else
++  fail "legacy grandfathering broken: rc=$RC out=$OUT"
++fi
++
++# --- Arm 8b: legacy grandfathering is VALUE-keyed, not FILENAME-keyed ----
++# lint-plans-status.sh's header records why a filename carve-out is "exactly the
++# shape of gate that rots" (T3 fix-1 removed one). Prove none crept in here: a
++# fixture file named after a real grandfathered doc, with NO status, still fails.
++setup_fixture
++plant_good
++cat >"$FIX/repo/dev/design/engine.md" <<'EOF'
++# no frontmatter — there is no filename exception for the locked arch specs
++EOF
++run_lint
++if [ "$RC" -ne 0 ] && grep -q "engine.md" <<<"$OUT"; then
++  pass "no filename-based exception — engine.md is scanned like any other design doc"
++else
++  fail "a filename exception exists for engine.md: rc=$RC out=$OUT"
++fi
++
++if [ "$FAILED" -ne 0 ]; then
++  printf '%d arm(s) failed\n' "$FAILED" >&2
++  exit 1
++fi
++printf 'PASS  all arms — scripts/lint-design-status.sh catches missing/empty/invalid status and\n'
++printf 'PASS  targetless SUPERSEDED, hard-fails on zero discovered files, scans dev/design/** recursively,\n'
++printf 'PASS  stays scoped to it, and grandfathers legacy values by value rather than by filename\n'
+
+exec
+/bin/bash -lc "sed -n '1,220p' scripts/lint-plans-status.sh && printf '\\n--- design diff sample ---\\n' && git diff 5be3fc24ccab7bce7689e0f18df37e874b5bf35f -- dev/design/README.md dev/design/planner-router-sequencing-0.8.x.md" in /home/coreyt/projects/fathomdb-worktrees/doc-hygiene-2
+ succeeded in 0ms:
+#!/usr/bin/env bash
+# scripts/lint-plans-status.sh — T3/8 enforcement (DOC-HYGIENE-1).
+#
+# Every top-level `dev/plans/*.md` file must carry YAML frontmatter with a
+# `status:` key whose value is one of ACTIVE | COMPLETE | PROPOSED | SUPERSEDED
+# | UNKNOWN — machine-readable so an agent can filter release plans without
+# reading each one. This is the recurrence guard for that convention (T3/9): a
+# plan that lands without a status, or with a value outside the allowed set,
+# fails here instead of silently drifting (the same "fix the tooling, not the
+# people" reasoning as TC-37).
+#
+# UNKNOWN (T3 fix-1, HITL 2026-07-24): reserved for a doc whose true status
+# genuinely cannot be sourced from the master's §4 allocation table or its own
+# banners — an honest "we don't know" beats guessing. Every UNKNOWN carries a
+# matching `found_not_fixed` entry in whichever closure JSON introduced it.
+#
+# Scope: dev/plans/*.md ONLY (top-level).
+#   - NOT dev/plans/runs/**   — slice logs / status boards / run artifacts, not plans.
+#   - NOT dev/plans/prompts/** — one-shot execution prompts, not plans.
+# See dev/plans/README.md for the directory-split rationale.
+#
+# Pass: silent, exit 0. Fail: one line per offending file + nonzero exit.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+ALLOWED_RE='^(ACTIVE|COMPLETE|PROPOSED|SUPERSEDED|UNKNOWN)$'
+FAIL=0
+
+# No exceptions: the rule is total over dev/plans/*.md (top-level). An earlier
+# revision carved out dev/plans/plan-0.8.20.md while it was under a "do not
+# touch" hard constraint from the commissioning brief; that constraint was
+# lifted (DOC-HYGIENE-1 T3 fix-1) once plan-0.8.20.md got its frontmatter
+# (status: ACTIVE), and the carve-out was removed with it — a lint with a
+# hardcoded exception for one live plan is exactly the shape of gate that rots.
+
+shopt -s nullglob
+for f in dev/plans/*.md; do
+  first_line="$(head -n1 "$f")"
+  if [ "$first_line" != "---" ]; then
+    printf 'FAIL %s: no YAML frontmatter (must open with a `---` block and carry\n' "$f" >&2
+    printf '  status: ACTIVE|COMPLETE|PROPOSED|SUPERSEDED|UNKNOWN)\n' >&2
+    FAIL=1
+    continue
+  fi
+
+  # Frontmatter block = the lines strictly between the first `---` and the
+  # next line that is exactly `---`.
+  block="$(awk 'NR==1{next} /^---$/{exit} {print}' "$f")"
+  status_line="$(printf '%s\n' "$block" | grep -E '^status:[[:space:]]*' | head -n1 || true)"
+
+  if [ -z "$status_line" ]; then
+    printf 'FAIL %s: frontmatter present but missing a `status:` key\n' "$f" >&2
+    FAIL=1
+    continue
+  fi
+
+  value="$(printf '%s\n' "$status_line" | sed -E 's/^status:[[:space:]]*//; s/[[:space:]]+$//')"
+  if ! grep -qE "$ALLOWED_RE" <<<"$value"; then
+    printf 'FAIL %s: status %s is not one of ACTIVE|COMPLETE|PROPOSED|SUPERSEDED|UNKNOWN\n' "$f" "$value" >&2
+    FAIL=1
+  fi
+done
+shopt -u nullglob
+
+exit "$FAIL"
+
+--- design diff sample ---
+diff --git a/dev/design/README.md b/dev/design/README.md
+index ade789f9..a16281ef 100644
+--- a/dev/design/README.md
++++ b/dev/design/README.md
+@@ -1,3 +1,7 @@
++---
++status: UNREVIEWED
++---
++
+ # Design Docs
+ 
+ > **Current vs historical (2026-06-26 ledger-prune).** The **live** design surface is the
+diff --git a/dev/design/planner-router-sequencing-0.8.x.md b/dev/design/planner-router-sequencing-0.8.x.md
+index e5320928..bff19729 100644
+--- a/dev/design/planner-router-sequencing-0.8.x.md
++++ b/dev/design/planner-router-sequencing-0.8.x.md
+@@ -1,3 +1,8 @@
++---
++status: SUPERSEDED
++superseded_by: dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md
++---
++
+ # Planner-router — release sequencing, dependencies, and the by-when
+ 
+ > ⚠ SUPERSEDED on all release-number scheduling by `0.8.6-0.8.16-PROGRAM-SEQUENCING.md` (master) + `dev/plans/runs/0.8.x-renumber-reconciliation.md`. Dispatcher = 0.8.15, EXP-S = 0.8.14. Numbers retained below for design rationale.
+
+exec
+/bin/bash -lc 'bash scripts/tests/test_design_status_frontmatter.sh; echo TEST_RC:$?; bash scripts/lint-design-status.sh; echo LINT_RC:$?' in /home/coreyt/projects/fathomdb-worktrees/doc-hygiene-2
+ succeeded in 1357ms:
+PASS  SUPERSEDED without superseded_by: -> non-zero exit
+PASS  SUPERSEDED with an empty superseded_by: -> non-zero exit (not a loophole)
+PASS  zero .md discovered -> hard fail, not a silent pass (TC-37)
+PASS  dev/design/ missing entirely -> hard fail (scope evaporation is not a pass)
+PASS  UNREVIEWED + ACTIVE + SUPERSEDED-with-target (incl. subdir) -> exit 0
+PASS  recursive scan — dev/design/subdir/ is in scope (unlike the dev/plans gate)
+PASS  scope fence — dev/plans, dev/notes, docs/ and the repo root are untouched
+PASS  frozen legacy values (locked, SIGNED …) are grandfathered -> exit 0
+PASS  no filename-based exception — engine.md is scanned like any other design doc
+PASS  all arms — scripts/lint-design-status.sh catches missing/empty/invalid status and
+PASS  targetless SUPERSEDED, hard-fails on zero discovered files, scans dev/design/** recursively,
+PASS  stays scoped to it, and grandfathers legacy values by value rather than by filename
+TEST_RC:0
+LINT_RC:0
+
+exec
+/bin/bash -lc "sed -n '1,520p' .github/workflows/ci.yml" in /home/coreyt/projects/fathomdb-worktrees/doc-hygiene-2
+ succeeded in 0ms:
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+# H-4 (pre-0.6.0 security fix): scope workflow permissions to least privilege.
+# Default GITHUB_TOKEN has broader access that a compromised third-party action
+# could exploit.
+permissions:
+  contents: read
+
+jobs:
+  # Docs-only fast-path detector. Computes whether the diff touches ANY
+  # non-markdown file. A markdown/docs-only change then runs ONLY the lightweight
+  # `markdownlint` job (plus the always-on `docs` mkdocs gate) and skips the heavy
+  # verify / security / embedder / cross-OS / wheel jobs — so a trivial docs edit
+  # no longer burns the full matrix (and a single md finding no longer reds main
+  # via the heavy gate). The md gate itself is PRESERVED on the fast path; this is
+  # not a `paths-ignore` drop. paths-filter handles base-ref resolution for both
+  # push (before SHA) and pull_request (base branch).
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      # docs_only = true when NO changed file is outside markdown (i.e. every
+      # changed path is *.md). `nonmd` is true when at least one non-md file
+      # changed; docs_only is its negation. The bias is safe: a misread can only
+      # make heavy jobs RUN on a docs change (slower), never SKIP on a code change.
+      docs_only: ${{ steps.filter.outputs.nonmd == 'false' }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        id: filter
+        with:
+          filters: |
+            nonmd:
+              - '!**/*.md'
+
+  # Single agent-loop gate. Mirrors what scripts/agent-verify.sh does locally,
+  # so a green CI run = `verify` is green on the same toolchain set.
+  verify:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # H-5 (pre-0.6.0 security fix): pin third-party actions to commit SHAs.
+      # 0.8.9 Slice 1: fetch-depth 0 so the AC-050c removal-detect gate can
+      # resolve its base ref (v0.6.1 tag); the default shallow checkout has no
+      # tags, which made `git diff v0.6.1..HEAD` fail (`bad revision`) once the
+      # bootstrap un-mask let agent-security.sh actually reach AC-050c.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - name: Configure per-session TMPDIR
+        shell: bash
+        run: |
+          # Per-session TMPDIR root so cleanup is one rm -rf at job end (GH #40).
+          # Set via $GITHUB_ENV — runner.* context isn't available at job-env level.
+          TMPDIR="$RUNNER_TEMP/fathomdb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$TMPDIR"
+          echo "TMPDIR=$TMPDIR" >> "$GITHUB_ENV"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Bootstrap dev tooling
+        run: bash scripts/bootstrap.sh
+      - name: agent-verify (lint -> typecheck -> test)
+        run: bash scripts/agent-verify.sh
+
+  # Gate (n) — agent-security battery (AC-036/037/038/050a/050c).
+  #
+  # 0.8.0 Slice 40 (Q3/META): the agent-verify job above already runs
+  # STRICT=1 agent-security.sh, but on ubuntu-latest (24.04) AppArmor
+  # restricts unprivileged user namespaces, so the AC-037 netns-deny-egress
+  # fixture cannot actually create its userns there. This dedicated job pins
+  # the security battery to ubuntu-22.04, which permits unprivileged userns
+  # by default, so AC-037 genuinely exercises (the home of AC-037 per
+  # acceptance.md). STRICT=1 promotes any toolchain blocker to a hard
+  # failure — a blocker here means AC-037 did NOT run, which must fail the
+  # gate rather than pass vacuously.
+  security:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      # 0.8.9 Slice 1: fetch-depth 0 so AC-050c removal-detect can resolve its
+      # v0.6.1 base tag (see the verify job above for the same rationale).
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - name: Configure per-session TMPDIR
+        shell: bash
+        run: |
+          TMPDIR="$RUNNER_TEMP/fathomdb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$TMPDIR"
+          echo "TMPDIR=$TMPDIR" >> "$GITHUB_ENV"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Bootstrap dev tooling (installs strace for AC-036/AC-037)
+        run: bash scripts/bootstrap.sh
+      - name: agent-security (AC-036/037/038/050a/050c)
+        run: STRICT=1 bash scripts/agent-security.sh
+
+  # EU-5c — pre-warm the BGE-small embedder weight cache (~133 MB from HF)
+  # via actions/cache, then run the network-hitting EU-5b tests against the
+  # warm cache. If the warm step fails (e.g. HF unreachable), the env-gate
+  # `FATHOMDB_SKIP_NETWORK_TESTS=1` is exported and the gated tests skip
+  # cleanly with a log line instead of failing the job. On the happy path
+  # the env var stays unset and the tests run normally — fast on warm cache.
+  default-embedder-tests:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Configure per-session TMPDIR
+        shell: bash
+        run: |
+          TMPDIR="$RUNNER_TEMP/fathomdb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$TMPDIR"
+          echo "TMPDIR=$TMPDIR" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      # H-5: pin third-party actions to commit SHAs. Cache key is
+      # runner.os + model identity + HF revision (see
+      # fathomdb-embedder/src/loader.rs::HF_REVISION). Bumping the
+      # revision invalidates the cache cleanly.
+      - name: Restore BGE embedder weight cache
+        id: bge-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/fathomdb/embedders
+          key: ${{ runner.os }}-fathomdb-embedder-bge-small-en-v1.5-5c38ec7c405ec4b44b94cc5a9bb96e735b38267a
+          # Future revision bumps should still benefit from partial
+          # restoration (the loader will sha-verify each file and refetch
+          # only mismatched ones). Without this, a SHA bump = 100% cold
+          # miss (~133 MB redownload from HF).
+          restore-keys: |
+            ${{ runner.os }}-fathomdb-embedder-bge-small-en-v1.5-
+            ${{ runner.os }}-fathomdb-embedder-
+      - name: Warm BGE embedder cache (no-op on cache hit)
+        id: warm
+        shell: bash
+        run: |
+          set +e
+          # Surface cache-hit outcome as a GitHub Actions notice so it
+          # shows up in the run summary without log-diving. A regression
+          # that breaks the cache key (silently forcing cold downloads
+          # on every run) becomes visible at a glance here.
+          echo "::notice title=BGE cache::hit=${{ steps.bge-cache.outputs.cache-hit }}"
+          cargo run --quiet -p fathomdb-cli --features default-embedder \
+            --bin fathomdb -- doctor warm-cache --json
+          rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "warm-cache failed (rc=$rc); will skip network-hitting tests"
+            echo "FATHOMDB_SKIP_NETWORK_TESTS=1" >> "$GITHUB_ENV"
+          fi
+          # Never fail the job on warm-cache failure — the env gate covers it.
+          exit 0
+      - name: Network-hitting EU-5b tests (engine)
+        run: |
+          cargo test -p fathomdb-engine --features default-embedder \
+            --test eu5b_lockflip
+      - name: Network-hitting EU-5b tests (cli warm-cache)
+        run: |
+          cargo test -p fathomdb-cli --features default-embedder \
+            --test cli_warm_cache
+
+  # Platform-sensitive engine code regresses on Windows/macOS often enough
+  # that pre-0.6.0 carried these matrix legs. Keep them.
+  rust-windows:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Configure per-session TMPDIR
+        shell: bash
+        run: |
+          # Windows resolves temp dir via TMP/TEMP, not TMPDIR.
+          TMP="$RUNNER_TEMP/fathomdb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$TMP"
+          echo "TMP=$TMP" >> "$GITHUB_ENV"
+          echo "TEMP=$TMP" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      # 0.8.9 Slice 20 (F-9): --no-fail-fast surfaces the FULL set of Windows test
+      # failures in one run rather than stopping at the first. The pyo3 link gate had
+      # masked Windows test execution entirely; once it lifted, failures appear one per
+      # run with a default (fail-fast) invocation. Enumerate them all so the
+      # cross-platform remediation scope is known, not discovered whack-a-mole. (Aligned
+      # with 0.8.9's anti-masking mandate — a first failure must not hide the rest.)
+      - run: cargo test --workspace --no-fail-fast
+
+  rust-macos:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Configure per-session TMPDIR
+        shell: bash
+        run: |
+          TMPDIR="$RUNNER_TEMP/fathomdb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$TMPDIR"
+          echo "TMPDIR=$TMPDIR" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - run: cargo test --workspace
+
+  # EU-6 FIX-1 / ADR-0.6.0-default-embedder.md EMB-3 — wheel-size gate.
+  #
+  # Per `dev/design/0.7.1-EU-6-FIX-1-design.md` D2:
+  #   * The SHIPPED wheel (with `default-embedder` feature ON, the
+  #     surface a `pip install fathomdb` user actually consumes) is the
+  #     GATED artifact. Each platform has its own `baseline_bytes`;
+  #     regression > 20 MB blocks. This is the canary that matters.
+  #   * The NO-FEATURE wheel is built informationally per matrix entry
+  #     and recorded in the job summary so accidental dependency creep
+  #     on the minimal-deps build path is still visible — but not gated.
+  #
+  # Matrix covers all 5 release-target platforms emitted by
+  # `release.yml`'s build-python job: Linux x86_64, Linux aarch64,
+  # macOS x86_64, macOS arm64, Windows x86_64. AC-FIX1-5.
+  #
+  # Baselines: Linux x86_64 measured on the FIX-1 GREEN commit
+  # (with-feature wheel ≈ 6.16 MB; ~20% padding → 7.4 MB). Non-Linux
+  # baselines are seeded at conservative numbers derived from the
+  # Linux measurement; the first CI run will surface the real per-
+  # platform numbers and any baseline that's too low can be bumped
+  # within EMB-3's 20 MB regression budget. BASELINES TO RE-CALIBRATE
+  # IN FIRST CI RUN — bump in a follow-up commit once the first run
+  # emits real `::notice title=wheel-size::` values.
+  wheel-size-gate:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            label: linux-x64
+            manylinux: "2_28"
+            # Measured on FIX-1 GREEN commit (Linux x86_64, abi3 cp310):
+            # no-feature ≈ 3.06 MB, with-feature ≈ 6.16 MB. Baseline
+            # = with-feature + ~20% headroom so Cargo.lock churn does
+            # not whip the gate; the 20 MB regression budget on top of
+            # this absorbs intentional dependency bumps.
+            baseline_bytes: 7400000
+          - runner: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            label: linux-aarch64
+            manylinux: "2_28"
+            # Seeded from Linux x86_64 with ~5% padding (aarch64 wheels
+            # are typically near-parity, occasionally a hair larger).
+            # TO RECALIBRATE.
+            baseline_bytes: 7700000
+          - runner: macos-latest
+            target: x86_64-apple-darwin
+            label: darwin-x64
+            # Seeded from Linux x86_64 with ~5% padding (Mach-O vs ELF
+            # overhead is small at this scale). TO RECALIBRATE.
+            baseline_bytes: 7700000
+          - runner: macos-latest
+            target: aarch64-apple-darwin
+            label: darwin-arm64
+            # Seeded from Linux x86_64 with ~5% padding. TO RECALIBRATE.
+            baseline_bytes: 7700000
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            label: win32-x64
+            # Seeded from Linux x86_64 with ~10% padding (PE/COFF
+            # sections + MSVC runtime imports add a small overhead vs
+            # ELF). TO RECALIBRATE.
+            baseline_bytes: 8000000
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      # Use PyO3/maturin-action (same SHA as release.yml's build-python)
+      # so the linux-aarch64 leg gets a working cross-toolchain via the
+      # action's container. A bare `maturin build --target
+      # aarch64-unknown-linux-gnu` on ubuntu-latest has no aarch64
+      # sysroot/linker; the action handles that. This also harmonizes
+      # the build path with release.yml.
+      #
+      # Build the with-feature wheel first — this is the shipped
+      # artifact and the GATED build. `--features` REPLACES the
+      # pyproject list, so the explicit list here is what gets built
+      # regardless of what pyproject.toml carries.
+      - name: Build wheel (with default-embedder feature; shipped artifact)
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        with:
+          target: ${{ matrix.target }}
+          args: --release --out dist-feature -i python3.11 --features pyo3/extension-module,default-embedder
+          manylinux: ${{ matrix.manylinux || 'auto' }}
+          working-directory: src/python
+      # No-feature wheel: informational only. Recorded to detect
+      # accidental dependency creep on the minimal-deps tree.
+      - name: Build wheel (no default-embedder feature; informational)
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        with:
+          target: ${{ matrix.target }}
+          args: --release --out dist-nofeature -i python3.11 --features pyo3/extension-module
+          manylinux: ${{ matrix.manylinux || 'auto' }}
+          working-directory: src/python
+      - name: Assert wheel-size gate
+        shell: bash
+        working-directory: src/python
+        run: |
+          set -euo pipefail
+          BASELINE=${{ matrix.baseline_bytes }}
+          BUDGET=$((20 * 1024 * 1024)) # 20 MB, per EMB-3
+          FEAT=$(stat -c%s dist-feature/*.whl 2>/dev/null || stat -f%z dist-feature/*.whl)
+          NOFEAT=$(stat -c%s dist-nofeature/*.whl 2>/dev/null || stat -f%z dist-nofeature/*.whl)
+          DELTA=$(( FEAT - BASELINE ))
+          FEATDELTA=$(( FEAT - NOFEAT ))
+          echo "::notice title=wheel-size (${{ matrix.label }})::with-feature=${FEAT}B baseline=${BASELINE}B delta=${DELTA}B; no-feature=${NOFEAT}B (informational)"
+          {
+            echo "## Wheel-size gate (${{ matrix.label }})"
+            echo ""
+            echo "| metric | value |"
+            echo "| --- | --- |"
+            echo "| with-feature wheel (shipped, GATED) | ${FEAT} B |"
+            echo "| baseline | ${BASELINE} B |"
+            echo "| delta vs baseline | ${DELTA} B |"
+            echo "| budget (blocking) | ${BUDGET} B |"
+            echo "| no-feature wheel | ${NOFEAT} B (informational only) |"
+            echo "| with-feature delta vs no-feature | ${FEATDELTA} B (informational only) |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$DELTA" -gt "$BUDGET" ]; then
+            echo "::error title=wheel-size regression::with-feature wheel grew ${DELTA} B vs baseline ${BASELINE} B (budget ${BUDGET} B)"
+            exit 1
+          fi
+
+  # Docs-only fast-path md gate. Runs ONLY when the diff is markdown-only (the
+  # heavy `verify` job — which runs scripts/agent-verify.sh -> agent-lint-md.sh —
+  # is the md gate on every non-docs diff, so this avoids double-linting). Uses
+  # the SAME .markdownlint-cli2.jsonc config as local + CI, so the real markdown
+  # gate is preserved on the fast path (this is NOT a silent `paths-ignore` drop).
+  markdownlint:
+    needs: changes
+    if: needs.changes.outputs.docs_only == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+      - name: Install markdown tooling (markdownlint-cli2)
+        run: npm ci
+      - name: markdownlint-cli2 (repo markdown; same config as local + verify)
+        run: ./node_modules/.bin/markdownlint-cli2
+      - name: markdownlint docs/** (mirrors agent-lint-md.sh docs leg)
+        run: bash scripts/agent-lint-docs.sh
+      - name: dev/plans/*.md status frontmatter (T3/8+9, mirrors agent-lint-md.sh leg)
+        run: bash scripts/lint-plans-status.sh
+
+  # status-board-currency-enforcement item 3 — the non-bypassable CI backstop.
+  # `preflight.sh --landing` (item 2) is the PREVENT gate at land time, but it is
+  # a local, invocable check; this job is the DETECT gate that catches anything
+  # that slipped preflight or predates it (the exact 4-day drift the incident
+  # exhibited: a board that kept saying "not landed" after the merge commit was
+  # already on origin/main). Reuses scripts/check-board-currency.sh — the SAME
+  # script preflight.sh calls — so the two homes cannot diverge (see that
+  # script's header for the full predicate). Intentionally NOT gated on
+  # docs_only: a board can drift behind a non-docs-only push just as easily.
+  # fetch-depth 0 is required: the predicate walks full reachable git history
+  # for `merge(0.8.z): Slice N` commits, which a shallow (depth-1) checkout
+  # would hide entirely.
+  board-currency:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - name: Board/git-ancestry drift check (status-board-currency-enforcement item 3)
+        run: bash scripts/check-board-currency.sh --tip HEAD
+
+  # DOC-HYGIENE-2 T2c — dev/design/**/*.md must carry a `status:` frontmatter key
+  # (and `superseded_by:` when SUPERSEDED). Deliberately its OWN always-on job and
+  # NOT a step in the `markdownlint` job above: that job is
+  # `if: needs.changes.outputs.docs_only == 'true'`, so it never fires on a code
+  # push — a design doc landing alongside code would slip the gate entirely. Same
+  # reasoning as `board-currency` above (a doc tier can drift behind a non-docs-only
+  # push just as easily). `verify` also runs it via agent-lint-md.sh; this job is
+  # the backstop that does not depend on the verify matrix. No fetch-depth needed:
+  # the check reads the working tree only.
+  design-status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: dev/design/**/*.md status frontmatter (T2c)
+        run: bash scripts/lint-design-status.sh
+      - name: Recurrence guard for the gate itself
+        run: bash scripts/tests/test_design_status_frontmatter.sh
+
+  # mkdocs --strict is the broader CI gate beyond agent-verify (per AGENTS.md §3).
+  # Intentionally NOT gated on docs_only: it must run for docs/** changes (the
+  # fast path) AND alongside code changes, exactly as before.
+  docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - run: python3 -m pip install --upgrade pip mkdocs
+      - run: mkdocs build --strict
+
+exec
+/bin/bash -lc "git diff 5be3fc24ccab7bce7689e0f18df37e874b5bf35f -- dev/design | sed -n '1,220p'" in /home/coreyt/projects/fathomdb-worktrees/doc-hygiene-2
+ succeeded in 0ms:
+diff --git a/dev/design/0.5.1x0.8.11.2/00-integrated-design.md b/dev/design/0.5.1x0.8.11.2/00-integrated-design.md
+index e94e2cbb..c3c0a5c4 100644
+--- a/dev/design/0.5.1x0.8.11.2/00-integrated-design.md
++++ b/dev/design/0.5.1x0.8.11.2/00-integrated-design.md
+@@ -1,3 +1,7 @@
++---
++status: UNREVIEWED
++---
++
+ # Integrated design — Memex 0.5.1 × FathomDB 0.8.x storage-API refit (Option B)
+ 
+ > **High-level cross-repo design (#1.5).** How Memex 0.5.1 comes onto FathomDB's 0.8.x governed
+diff --git a/dev/design/0.5.1x0.8.11.2/10-fathomdb-side-design.md b/dev/design/0.5.1x0.8.11.2/10-fathomdb-side-design.md
+index 6c07c31d..fa6618e8 100644
+--- a/dev/design/0.5.1x0.8.11.2/10-fathomdb-side-design.md
++++ b/dev/design/0.5.1x0.8.11.2/10-fathomdb-side-design.md
+@@ -1,3 +1,7 @@
++---
++status: UNREVIEWED
++---
++
+ # FathomDB-side design — what 0.8.x owes the 0.5.1 refit & the 0.8.11.2 experiments (#1.7)
+ 
+ > **Per-repo design (#1.7, FathomDB side).** Derives from the integrated design
+diff --git a/dev/design/0.5.1x0.8.11.2/20-multifield-fts-design.md b/dev/design/0.5.1x0.8.11.2/20-multifield-fts-design.md
+index 1ce22a83..d1fbd9ea 100644
+--- a/dev/design/0.5.1x0.8.11.2/20-multifield-fts-design.md
++++ b/dev/design/0.5.1x0.8.11.2/20-multifield-fts-design.md
+@@ -1,3 +1,7 @@
++---
++status: UNREVIEWED
++---
++
+ # Multi-field + recursive-payload FTS — design-on-spec (0.8.11.2)
+ 
+ > **DESIGN-ON-SPEC — NOT APPROVED. HITL is still deciding whether to build this.
+diff --git a/dev/design/0.5.1x0.8.11.2/30-perkind-tokenizer-fts-design.md b/dev/design/0.5.1x0.8.11.2/30-perkind-tokenizer-fts-design.md
+index 04dd4822..e0d1e425 100644
+--- a/dev/design/0.5.1x0.8.11.2/30-perkind-tokenizer-fts-design.md
++++ b/dev/design/0.5.1x0.8.11.2/30-perkind-tokenizer-fts-design.md
+@@ -1,3 +1,7 @@
++---
++status: UNREVIEWED
++---
++
+ # Per-kind precision tokenizer FTS — design-on-spec (~0.8.15)
+ 
+ > **DESIGN-ON-SPEC — targeted at fathomdb ~0.8.15, NOT 0.8.11.x. Paired with Memex 0.5.3.
+diff --git a/dev/design/0.5.1x0.8.11.2/identity-recall-model.md b/dev/design/0.5.1x0.8.11.2/identity-recall-model.md
+index b4d7b4fb..5bcc320e 100644
+--- a/dev/design/0.5.1x0.8.11.2/identity-recall-model.md
++++ b/dev/design/0.5.1x0.8.11.2/identity-recall-model.md
+@@ -1,3 +1,7 @@
++---
++status: UNREVIEWED
++---
++
+ # Identity & recall model — Memex 0.5.1 × FathomDB 0.8.x (building block for the integrated design)
+ 
+ > **HITL concern (2026-06-30):** "did the API surface lose Memex's ability to simply recall a
+diff --git a/dev/design/0.8.0-agent-memory-fit.md b/dev/design/0.8.0-agent-memory-fit.md
+index 1f23dc7c..9dea9fed 100644
+--- a/dev/design/0.8.0-agent-memory-fit.md
++++ b/dev/design/0.8.0-agent-memory-fit.md
+@@ -1,3 +1,7 @@
++---
++status: UNREVIEWED
++---
++
+ # Research note: enabling FathomDB for agent-memory applications
+ 
+ > Scope: how to evolve FathomDB so applications like **Memex**, **Hermes Agent**,
+diff --git a/dev/design/0.8.0-slice-5-G1-design.md b/dev/design/0.8.0-slice-5-G1-design.md
+index 23635e26..62a54d4f 100644
+--- a/dev/design/0.8.0-slice-5-G1-design.md
++++ b/dev/design/0.8.0-slice-5-G1-design.md
+@@ -1,3 +1,7 @@
++---
++status: UNREVIEWED
++---
++
+ # 0.8.0 Slice 5 — G1 Structured Search Hits + Global FTS5 Tokenizer Upgrade (design memo)
+ 
+ **Status:** design-first (pre-RED). Authoritative contract:
+diff --git a/dev/design/0.8.0-v05-feature-triage.md b/dev/design/0.8.0-v05-feature-triage.md
+index 62496cca..bad409ce 100644
+--- a/dev/design/0.8.0-v05-feature-triage.md
++++ b/dev/design/0.8.0-v05-feature-triage.md
+@@ -1,3 +1,7 @@
++---
++status: UNREVIEWED
++---
++
+ # FathomDB 0.8.0 — v0.5.x Feature Triage (Consolidated)
+ 
+ > Status: synthesis for HITL review. Decides which v0.5.0 features enter 0.8.0
+diff --git a/dev/design/0.8.1-embedder-gpu-and-portability.md b/dev/design/0.8.1-embedder-gpu-and-portability.md
+index d3d06dc5..cead664b 100644
+--- a/dev/design/0.8.1-embedder-gpu-and-portability.md
++++ b/dev/design/0.8.1-embedder-gpu-and-portability.md
+@@ -1,3 +1,7 @@
++---
++status: UNREVIEWED
++---
++
+ # Embedder GPU acceleration + cross-vendor portability + vector equivalence
+ 
+ > Decision record, 2026-06-15 (HITL-approved). Covers: (1) GPU-now via a device
+diff --git a/dev/design/0.8.1-graph-experiment-plan.md b/dev/design/0.8.1-graph-experiment-plan.md
+index 6148ed9c..4d74244b 100644
+--- a/dev/design/0.8.1-graph-experiment-plan.md
++++ b/dev/design/0.8.1-graph-experiment-plan.md
+@@ -1,3 +1,7 @@
++---
++status: UNREVIEWED
++---
++
+ # 0.8.1 graph/IR experiment plan — finding the most valuable design choices (LME)
+ 
+ > **Purpose.** A prioritized, gated experiment program to identify the **most
+diff --git a/dev/design/0.8.1-slice-10-reranker-design.md b/dev/design/0.8.1-slice-10-reranker-design.md
+index d2767765..f50b58e3 100644
+--- a/dev/design/0.8.1-slice-10-reranker-design.md
++++ b/dev/design/0.8.1-slice-10-reranker-design.md
+@@ -1,3 +1,7 @@
++---
++status: UNREVIEWED
++---
++
+ # 0.8.1 Slice 10 Design Memo — R1 CPU Cross-Encoder Reranker in `rerank_fused`
+ 
+ Status: **IMPLEMENTED** (0.8.2 Slice E1). The CE seam is no longer a stub —
+diff --git a/dev/design/0.8.11-analysis-G10-G4-searchfilt.md b/dev/design/0.8.11-analysis-G10-G4-searchfilt.md
+index 3813337f..47398dcc 100644
+--- a/dev/design/0.8.11-analysis-G10-G4-searchfilt.md
++++ b/dev/design/0.8.11-analysis-G10-G4-searchfilt.md
+@@ -1,3 +1,7 @@
++---
++status: UNREVIEWED
++---
++
+ # 0.8.11 — Analysis: G10 `search_filtered` vs G4 `read.list` — requirements & User-Needs trace-up
+ 
+ > **Purpose.** Slice-0 analysis feeding the #17 filter-grammar unification (Track G, Slice 40) and
+diff --git a/dev/design/0.8.11-slice40-f8b-record-feedback-execution-note.md b/dev/design/0.8.11-slice40-f8b-record-feedback-execution-note.md
+index e831fbad..7a84a724 100644
+--- a/dev/design/0.8.11-slice40-f8b-record-feedback-execution-note.md
++++ b/dev/design/0.8.11-slice40-f8b-record-feedback-execution-note.md
+@@ -1,3 +1,7 @@
++---
++status: UNREVIEWED
++---
++
+ # 0.8.11 Slice 40 — F-8b execution note (`record_feedback` governance)
+ 
+ Status: EXECUTED at Slice 40 — decision = **KEEP instrumentation** (no promotion).
+diff --git a/dev/design/0.8.12-coverage-probe-and-value-test.md b/dev/design/0.8.12-coverage-probe-and-value-test.md
+index 12ef5776..1b34eaaf 100644
+--- a/dev/design/0.8.12-coverage-probe-and-value-test.md
++++ b/dev/design/0.8.12-coverage-probe-and-value-test.md
+@@ -1,3 +1,7 @@
++---
++status: UNREVIEWED
++---
++
+ # 0.8.12 — Coverage-probe pre-registration + Consolidation value-test design
+ 
+ > **Status:** PRE-REGISTERED at Slice 0 (before any measurement), 2026-07-01. Two designs in one doc:
+diff --git a/dev/design/0.8.16-slice-0-f9-onnx-design.md b/dev/design/0.8.16-slice-0-f9-onnx-design.md
+index 3b5a56fc..69b377a2 100644
+--- a/dev/design/0.8.16-slice-0-f9-onnx-design.md
++++ b/dev/design/0.8.16-slice-0-f9-onnx-design.md
+@@ -1,3 +1,7 @@
++---
++status: UNREVIEWED
++---
++
+ # 0.8.16 Slice-0 design package — F9 importance/confidence ranking + cross-vendor ONNX embedder
+ 
+ > **Status: SIGNED — HITL coreyt ratified all 5 Slice-0 decisions 2026-07-08 (via the Program Steward).**
+diff --git a/dev/design/0.8.18-slice-0-vector-equivalence-publish-design.md b/dev/design/0.8.18-slice-0-vector-equivalence-publish-design.md
+index 85af4461..9a43e85b 100644
+--- a/dev/design/0.8.18-slice-0-vector-equivalence-publish-design.md
++++ b/dev/design/0.8.18-slice-0-vector-equivalence-publish-design.md
+@@ -1,3 +1,7 @@
++---
++status: UNREVIEWED
++---
++
+ # 0.8.18 Slice 0 — ELEVATED design package (requirements + ACs + design) for the design-review gate
+ 
+ > **Status: SIGNED (HITL 2026-07-09).** Independent design review CLEAN after **4 codex rounds** (BLOCKs
+diff --git a/dev/design/0.8.18-slice-20-publish-pipeline.md b/dev/design/0.8.18-slice-20-publish-pipeline.md
+index 720d472a..ec8b39bc 100644
+--- a/dev/design/0.8.18-slice-20-publish-pipeline.md
++++ b/dev/design/0.8.18-slice-20-publish-pipeline.md
+@@ -1,3 +1,7 @@
++---
++status: UNREVIEWED
++---
++
+ # 0.8.18 Slice 20 — #11-full full publish pipeline (implementation design)
+ 
+ - **Status: IMPLEMENTED (Slice 20).** Reconcile + gap-fill + harden the existing
+diff --git a/dev/design/0.8.18-slice-5-vector-equivalence-probe.md b/dev/design/0.8.18-slice-5-vector-equivalence-probe.md
+index 363be636..a127705c 100644
+--- a/dev/design/0.8.18-slice-5-vector-equivalence-probe.md
++++ b/dev/design/0.8.18-slice-5-vector-equivalence-probe.md
+@@ -1,3 +1,7 @@
++---
++status: UNREVIEWED
++---
++
+ # 0.8.18 Slice 5 — #5 vector-equivalence probe (shipped surface)
+ 
+ > **Status: IMPLEMENTED (RED/GREEN TDD).** Schema-migration slice (18→19) →
+diff --git a/dev/design/0.8.19-slice-0-opp12-phase1-design.md b/dev/design/0.8.19-slice-0-opp12-phase1-design.md
+index 7a113170..81701c44 100644
+--- a/dev/design/0.8.19-slice-0-opp12-phase1-design.md
++++ b/dev/design/0.8.19-slice-0-opp12-phase1-design.md
+
+exec
+/bin/bash -lc "find dev/design -type f -name '*.md' | wc -l; python3 - <<'PY'
+import os,re,subprocess
+bad=[];legacy=[];governed=[]
+for root,_,files in os.walk('dev/design'):
+ for fn in files:
+  if not fn.endswith('.md'): continue
+  p=os.path.join(root,fn)
+  with open(p) as f: lines=f.read().splitlines()
+  val=None
+  if lines and lines[0]=='---':
+   for line in lines[1:]:
+    if line=='---': break
+    if line.startswith('status:'):
+     val=line.split(':',1)[1].strip(); break
+  print(p, val)
+PY" in /home/coreyt/projects/fathomdb-worktrees/doc-hygiene-2
+ succeeded in 0ms:
+108
+dev/design/code-markers-evaluation-2026-07-09.md UNREVIEWED
+dev/design/slice-27-fix1-operator-gate-design.md accepted
+dev/design/vector.md locked
+dev/design/1-2M-chunk-scaling-roadmap-divergence.md analysis (companion to 1-2M-chunk-scaling-vector-latency-roadmap.md)
+dev/design/0.8.0-slice-5-G1-design.md UNREVIEWED
+dev/design/0.8.x-parity-portfolio-strategy.md UNREVIEWED
+dev/design/0.8.0-v05-feature-triage.md UNREVIEWED
+dev/design/slice-31-identity-rescope-design.md UNREVIEWED
+dev/design/0.8.20-erasure-and-h-end-state-v4.md UNREVIEWED
+dev/design/slice-25-r2-design.md UNREVIEWED
+dev/design/ann-index-vec0.md tracked / not started
+dev/design/slice-40-gate-restructure-and-ga.md UNREVIEWED
+dev/design/initial-arch-planner-router-0.8.x.md UNREVIEWED
+dev/design/errors.md locked
+dev/design/release.md locked
+dev/design/0.8.3-gap-decomposition-probe.md decision-ready
+dev/design/0.8.12-coverage-probe-and-value-test.md UNREVIEWED
+dev/design/slice-5-design.md UNREVIEWED
+dev/design/agent-memory-impl-strategy.md UNREVIEWED
+dev/design/bindings.md locked
+dev/design/slice-10-design.md UNREVIEWED
+dev/design/0.8.5-ce-rerank-slice-design.md UNREVIEWED
+dev/design/planner-router-psd-audit-notes.md UNREVIEWED
+dev/design/fathomdb-graph-vs-mem0-zep-and-longmemeval-diagnosis.md UNREVIEWED
+dev/design/0.8.16-slice-0-f9-onnx-design.md UNREVIEWED
+dev/design/0.7.1-EU-6-FIX-1-design.md proposed (→ ready when this doc lands; → accepted when GREEN merges)
+dev/design/embedder-decision.md UNREVIEWED
+dev/design/0.8.19-slice-0-opp12-phase1-design.md UNREVIEWED
+dev/design/0.8.18-slice-0-vector-equivalence-publish-design.md UNREVIEWED
+dev/design/slice-30-design.md UNREVIEWED
+dev/design/0.8.1-graph-experiment-plan.md UNREVIEWED
+dev/design/0.8.11-analysis-G10-G4-searchfilt.md UNREVIEWED
+dev/design/slice-0-adr-plan.md UNREVIEWED
+dev/design/status-board-currency-enforcement.md UNREVIEWED
+dev/design/1-2M-chunk-scaling-DECISION-BRIEF.md OPEN — awaiting HITL decision (session "fathom-plan-refactor-path-0.8.x")
+dev/design/0.7.1-EU-6-FIX-2-design.md proposed (→ ready when this doc lands; → accepted when GREEN merges)
+dev/design/slice-20-g8-design.md implementation
+dev/design/ir-recall-measure.md UNREVIEWED
+dev/design/slice-27-rust-allowlist-design.md accepted
+dev/design/0.8.11-slice40-f8b-record-feedback-execution-note.md UNREVIEWED
+dev/design/slice-35-design.md UNREVIEWED
+dev/design/gpu-eval-activities-policy.md UNREVIEWED
+dev/design/migrations.md locked
+dev/design/gpu-device-allocation-policy.md UNREVIEWED
+dev/design/engine.md locked
+dev/design/recovery.md locked
+dev/design/0.8.0-agent-memory-fit.md UNREVIEWED
+dev/design/0.8.3-slice-15a-embedder-probe.md decision-ready
+dev/design/0.8.18-slice-5-vector-equivalence-probe.md UNREVIEWED
+dev/design/slice-G0-design.md UNREVIEWED
+dev/design/0.8.3-mem0-parity.md SIGNED (HITL Slice-0 gate signed 2026-06-21 — pre-registration frozen in eval/decision_rule_083.py; ADJ-2 F5 promotion RATIFIED; surpass-option protocol RATIFIED. Engine commitment (20/25) + priced runs (10/20/25/30) are now unblocked subject to their per-slice cheap-validate/HITL spend checks.)
+dev/design/README.md UNREVIEWED
+dev/design/0.8.8-telemetry-design.md PROPOSED — implementing against this under the standing `complete 0.8.8` goal; HITL-amendable (additive)
+dev/design/slice-15-design.md UNREVIEWED
+dev/design/embedder.md locked
+dev/design/slice-33-cursor-hardening-design.md UNREVIEWED
+dev/design/0.8.4-closing-graphrag-gap.md UNREVIEWED
+dev/design/1-2M-chunk-scaling-vector-latency-roadmap.md proposal / decision-support (pending HITL scheduling sign-off)
+dev/design/0.8.18-slice-20-publish-pipeline.md UNREVIEWED
+dev/design/planner-router-psd-0.8.x.md UNREVIEWED
+dev/design/0.8.3-slice-10-design.md implementation-notes
+dev/design/0.8.3-ce-rerank-batch-release.md decision-ready
+dev/design/planner-router-sequencing-0.8.x.md SUPERSEDED
+dev/design/slice-25-conformance-design.md design-note
+dev/design/0.8.2-m1-multihop-harness.md decision-ready (SIGNED 2026-06-16; AMENDED 2026-06-19)
+dev/design/0.8.3-openai-batch-completion-howto.md UNREVIEWED
+dev/design/0.8.1-slice-10-reranker-design.md UNREVIEWED
+dev/design/0.8.8-explain-and-telemetry-adr.md RATIFIED 2026-06-27 — Part A `Explanation` field set ratified via 6-owner negotiation (`dev/plans/runs/0.8.8-explanation-fieldset-ratification.md`); landed in Slice 5 (engine keystone) + `#[non_exhaustive]`. Part B (telemetry/gold) carried into Slice 15/20 with the §B amendments folded in.
+dev/design/0.8.1-embedder-gpu-and-portability.md UNREVIEWED
+dev/design/scheduler.md locked
+dev/design/lifecycle.md locked
+dev/design/slice-20-design.md UNREVIEWED
+dev/design/0.8.3-slice-5-design.md implementation-notes
+dev/design/slice-34-cli-op-store-readback-design.md accepted
+dev/design/op-store.md locked
+dev/design/0.8.20-slice0-erasure-design.md PROPOSED
+dev/design/orchestration.md locked
+dev/design/0.8.3-slice-15b-d2-proxy.md decision-ready
+dev/design/dedicated-checkout-per-orchestration-guard-proposal.md ADOPTED (HITL 2026-07-11) — TC-RUBRIC-5 authorized; wiring folds into the 0.8.20 X0. Proposed by Steward 2026-07-10.
+dev/design/slice-15-g0-design.md UNREVIEWED
+dev/design/0.8.4-graphrag-sensemaking.md decision-ready (SIGNED — HITL Slice-0 gate 2026-06-23: honest-prior CLEARED with PILOT-FIRST discipline; budget top-up to a powered run APPROVED, exact $ set after the Slice-5 pilot measures per-call cost. The pre-registration in eval/decision_rule_084.py is frozen; Slice 5 is unblocked.)
+dev/design/free-threaded-python-value-lift-and-experiments.md UNREVIEWED
+dev/design/projections.md locked
+dev/design/0.7.0-vector-quant-pack1.md draft fix-3 (consumed by Pack 1 implementation)
+dev/design/perf-regression-detection.md UNREVIEWED
+dev/design/0.8.3-ce-rerank-precision-probe.md decision-ready
+dev/design/perf-gates.md UNREVIEWED
+dev/design/slice-27-fix2-engine-test-gate-design.md accepted
+dev/design/0.8.3-rerank-accuracy-arm.md decision-ready
+dev/design/retrieval.md locked
+dev/design/0.5.1x0.8.11.2/30-perkind-tokenizer-fts-design.md UNREVIEWED
+dev/design/0.5.1x0.8.11.2/10-fathomdb-side-design.md UNREVIEWED
+dev/design/0.5.1x0.8.11.2/20-multifield-fts-design.md UNREVIEWED
+dev/design/0.5.1x0.8.11.2/00-integrated-design.md UNREVIEWED
+dev/design/0.5.1x0.8.11.2/identity-recall-model.md UNREVIEWED
+dev/design/record-lifecycle-protocol/api-surface.md UNREVIEWED
+dev/design/record-lifecycle-protocol/OPP-12-C1-shot1.md UNREVIEWED
+dev/design/record-lifecycle-protocol/projection-registry-and-async-embed.md UNREVIEWED
+dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md UNREVIEWED
+dev/design/record-lifecycle-protocol/README.md UNREVIEWED
+dev/design/record-lifecycle-protocol/code-grounded-audit.md UNREVIEWED
+dev/design/record-lifecycle-protocol/structural-lifecycle-contract.md UNREVIEWED
+dev/design/record-lifecycle-protocol/OPP-12-leverage-ledger-update.md UNREVIEWED
+dev/design/fathomdb-memex-overall-roadmap/02-fathomdb-roadmap-adjustments.md PROPOSAL — awaiting HITL review (session "fathom-2MM-plan-refactor-0.8.x")
+dev/design/fathomdb-memex-overall-roadmap/04-phase0-liaison-proposal-to-memex.md DRAFT for HITL relay — NOT sent, NOT pushed, NOT appended to any Memex ledger
+dev/design/fathomdb-memex-overall-roadmap/01-overall-roadmap.md PROPOSAL — awaiting HITL review (session "fathom-2MM-plan-refactor-0.8.x")
+dev/design/fathomdb-memex-overall-roadmap/00-priorities-and-misalignments.md PROPOSAL — awaiting HITL review (session "fathom-2MM-plan-refactor-0.8.x")
+dev/design/fathomdb-memex-overall-roadmap/03-memex-roadmap-adjustments.md PROPOSAL — awaiting HITL review (session "fathom-2MM-plan-refactor-0.8.x")
+
+exec
+/bin/bash -lc "nl -ba scripts/lint-design-status.sh | sed -n '80,150p'" in /home/coreyt/projects/fathomdb-worktrees/doc-hygiene-2
+ succeeded in 0ms:
+    80	  first_line="$(head -n1 "$f")"
+    81	  if [ "$first_line" != "---" ]; then
+    82	    printf 'FAIL %s: no YAML frontmatter (must open with a `---` block and carry\n' "$f" >&2
+    83	    printf '  status: ACTIVE|COMPLETE|PROPOSED|SUPERSEDED|UNKNOWN|UNREVIEWED — use UNREVIEWED\n' >&2
+    84	    printf '  if you are not certain; a wrong ACTIVE is worse than an honest UNREVIEWED)\n' >&2
+    85	    FAIL=1
+    86	    continue
+    87	  fi
+    88	
+    89	  # Frontmatter block = the lines strictly between the first `---` and the
+    90	  # next line that is exactly `---`.
+    91	  block="$(awk 'NR==1{next} /^---$/{exit} {print}' "$f")"
+    92	  status_line="$(printf '%s\n' "$block" | grep -E '^status:[[:space:]]*' | head -n1 || true)"
+    93	
+    94	  if [ -z "$status_line" ]; then
+    95	    printf 'FAIL %s: frontmatter present but missing a `status:` key\n' "$f" >&2
+    96	    FAIL=1
+    97	    continue
+    98	  fi
+    99	
+   100	  value="$(printf '%s\n' "$status_line" | sed -E 's/^status:[[:space:]]*//; s/[[:space:]]+$//')"
+   101	  if [ -z "$value" ]; then
+   102	    printf 'FAIL %s: `status:` key is present but empty\n' "$f" >&2
+   103	    FAIL=1
+   104	    continue
+   105	  fi
+   106	
+   107	  if grep -qE "$ALLOWED_RE" <<<"$value"; then
+   108	    # Governed value. SUPERSEDED must name a successor.
+   109	    if [ "$value" = "SUPERSEDED" ]; then
+   110	      superseded_by="$(printf '%s\n' "$block" | grep -E '^superseded_by:[[:space:]]*' | head -n1 || true)"
+   111	      target="$(printf '%s\n' "$superseded_by" | sed -E 's/^superseded_by:[[:space:]]*//; s/[[:space:]]+$//')"
+   112	      if [ -z "$target" ]; then
+   113	        printf 'FAIL %s: status SUPERSEDED requires a non-empty `superseded_by:` key\n' "$f" >&2
+   114	        printf '  (a supersession that names no successor is a dead end for the next reader)\n' >&2
+   115	        FAIL=1
+   116	      fi
+   117	    fi
+   118	    continue
+   119	  fi
+   120	
+   121	  # Not governed — is it one of the frozen legacy values?
+   122	  leading="$(printf '%s\n' "$value" | awk '{print $1}')"
+   123	  if grep -qiE "$LEGACY_RE" <<<"$leading"; then
+   124	    LEGACY_SEEN=$((LEGACY_SEEN + 1))
+   125	    continue
+   126	  fi
+   127	
+   128	  printf 'FAIL %s: status %s is not one of ACTIVE|COMPLETE|PROPOSED|SUPERSEDED|UNKNOWN|UNREVIEWED\n' "$f" "$value" >&2
+   129	  FAIL=1
+   130	done < <(find dev/design -type f -name '*.md' -print0 | sort -z)
+   131	
+   132	# TC-37 vacuous-pass guard.
+   133	if [ "$SCANNED" -eq 0 ]; then
+   134	  printf 'FAIL lint-design-status: scanned 0 files under dev/design/**/*.md.\n' >&2
+   135	  printf '  A gate that finds nothing must never report a pass (TC-37). Either the\n' >&2
+   136	  printf '  directory moved, or this script is being run outside the repo it lints.\n' >&2
+   137	  exit 1
+   138	fi
+   139	
+   140	# Monotone legacy ratchet. Ceiling only: it may fall, never rise.
+   141	if [ "$LEGACY_SEEN" -gt "$LEGACY_BUDGET" ]; then
+   142	  printf 'FAIL lint-design-status: %d docs carry a pre-gate legacy status value, over the\n' "$LEGACY_SEEN" >&2
+   143	  printf '  frozen ceiling of %d. The legacy vocabulary is grandfathered, NOT open: a new\n' "$LEGACY_BUDGET" >&2
+   144	  printf '  doc must use ACTIVE|COMPLETE|PROPOSED|SUPERSEDED|UNKNOWN|UNREVIEWED.\n' >&2
+   145	  FAIL=1
+   146	elif [ "$LEGACY_SEEN" -lt "$LEGACY_BUDGET" ]; then
+   147	  printf 'NOTICE lint-design-status: legacy status count is now %d (ceiling %d).\n' "$LEGACY_SEEN" "$LEGACY_BUDGET" >&2
+   148	  printf '  Ratchet LEGACY_BUDGET down to %d in this script — the ceiling must only fall.\n' "$LEGACY_SEEN" >&2
+   149	fi
+   150	
+
+codex
+The new design-status gate has bypass/enforcement gaps: malformed frontmatter can pass, and the legacy-value ratchet is only advisory when it should prevent regressions. These issues undermine the patch's stated CI guard behavior.
+
+Full review comments:
+
+- [P2] Reject unterminated frontmatter blocks — /home/coreyt/projects/fathomdb-worktrees/doc-hygiene-2/scripts/lint-design-status.sh:91-92
+  When a `dev/design` file starts with `---` but never closes the YAML block, this `awk` reads the rest of the document as `block`, so any later `status:` line in the body makes the file pass even though it has no valid YAML frontmatter. This leaves the new gate bypassable for malformed docs; track whether the closing `---` was actually found and fail otherwise.
+
+- [P2] Enforce the legacy ratchet when the count drops — /home/coreyt/projects/fathomdb-worktrees/doc-hygiene-2/scripts/lint-design-status.sh:146-148
+  If a cleanup reduces `LEGACY_SEEN` below `LEGACY_BUDGET`, this only emits a notice and still exits successfully, so the stale ceiling can remain and a later PR can add legacy statuses back up to that old budget without failing. Since this is intended to be a monotone ratchet, the below-budget case needs to fail (or otherwise block) until the budget is lowered in the same change.
+The new design-status gate has bypass/enforcement gaps: malformed frontmatter can pass, and the legacy-value ratchet is only advisory when it should prevent regressions. These issues undermine the patch's stated CI guard behavior.
+
+Full review comments:
+
+- [P2] Reject unterminated frontmatter blocks — /home/coreyt/projects/fathomdb-worktrees/doc-hygiene-2/scripts/lint-design-status.sh:91-92
+  When a `dev/design` file starts with `---` but never closes the YAML block, this `awk` reads the rest of the document as `block`, so any later `status:` line in the body makes the file pass even though it has no valid YAML frontmatter. This leaves the new gate bypassable for malformed docs; track whether the closing `---` was actually found and fail otherwise.
+
+- [P2] Enforce the legacy ratchet when the count drops — /home/coreyt/projects/fathomdb-worktrees/doc-hygiene-2/scripts/lint-design-status.sh:146-148
+  If a cleanup reduces `LEGACY_SEEN` below `LEGACY_BUDGET`, this only emits a notice and still exits successfully, so the stale ceiling can remain and a later PR can add legacy statuses back up to that old budget without failing. Since this is intended to be a monotone ratchet, the below-budget case needs to fail (or otherwise block) until the budget is lowered in the same change.
