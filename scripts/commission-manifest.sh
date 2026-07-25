@@ -343,6 +343,97 @@ def scan_design(tokens, release, slice_no):
     return hits
 
 
+PRE_SIGN_STATES = ("PRE_SIGNED", "NOT_PRE_SIGNED")
+
+
+def emit_publish_gate(m, gate, state_path):
+    """Brief the publish gate as THREE DISTINCT FACTS, never one status word.
+
+    WHAT WENT WRONG HERE. This line used to print `gate["state_word"]`, a single
+    word the state file derived from `signed: false`. It rendered "AC-079 —
+    unsigned, minted=False" INTO A SLICE-20 COMMISSION MANIFEST, after the HITL
+    had PRE-SIGNED that governed-surface delta (2026-07-25, master F-34), pinned
+    to the exact content of the allowlist. Briefing the next orchestrator that a
+    settled sign-off is still outstanding is how a settled call gets re-decided —
+    the failure this whole manifest exists to prevent (see §8: "Ruled decisions
+    are CITED, never re-decided or restated").
+
+    The three facts, kept apart on purpose:
+      1. `pre_sign_state` — has the HITL signed off on the CONTENT of the delta?
+      2. `minted` / `sign_off_slice` — has the AC been minted and recorded SIGNED?
+         PRE-SIGN IS NOT MINTING; the AC does not exist in the register yet.
+      3. `publish_gated_by` — what actually holds publish. Not an unsigned AC.
+
+    Every required field is read with `[...]`, not `.get(...)`. Under the
+    predecessor model a `.get("state_word")` against a state file that no longer
+    carried the key printed the literal text `AC-999 — None` and every gate still
+    passed: a stale reference rendering a blank is the same defect wearing a
+    different hat, so a missing fact dies here instead."""
+    try:
+        for retired in ("state_word", "signed"):
+            if retired in gate:
+                raise ValueError(
+                    "`acceptance.publish_gate` carries the RETIRED field `%s`. That single "
+                    "collapsed word is what made a Slice-20 manifest brief an already-given "
+                    "HITL pre-sign as an outstanding one. Model the facts separately: "
+                    "pre_sign_state + pre_sign, minted + minted_as + sign_off_slice, "
+                    "publish_gated_by." % retired)
+
+        state_word = gate["pre_sign_state"]
+        if state_word not in PRE_SIGN_STATES:
+            raise ValueError(
+                "`acceptance.publish_gate.pre_sign_state` is %r; it must be one of %s. An "
+                "unrecognised value must fail loudly rather than brief a guessed claim about "
+                "whether the HITL has signed." % (state_word, " or ".join(PRE_SIGN_STATES)))
+
+        ac       = gate["ac"]
+        covers   = gate["covers"]
+        minted   = gate["minted"]
+        mint_slice = gate["sign_off_slice"]
+        as_word  = gate["minted_as"]
+        board_rf = gate["board_ref"]
+        gated_by = gate["publish_gated_by"]
+        pre      = gate["pre_sign"] if state_word == "PRE_SIGNED" else None
+        if state_word == "PRE_SIGNED" and not isinstance(pre, dict):
+            raise ValueError(
+                "`acceptance.publish_gate.pre_sign_state` is PRE_SIGNED but there is no "
+                "`pre_sign` object recording WHO signed, WHEN, on what authority and what "
+                "the pre-sign is PINNED to. A pre-sign with no provenance is not citable.")
+    except (KeyError, ValueError, TypeError) as exc:
+        detail = exc.args[0] if exc.args else exc
+        die(["FAIL commission-manifest: the publish gate in `%s` cannot be briefed —"
+             % state_path,
+             "  %s" % detail,
+             "  A manifest that printed a blank or guessed sign-off status would brief the",
+             "  next orchestrator with a claim nobody made (TC-37: a gate that cannot run",
+             "  must not report a pass)."])
+
+    if minted:
+        head = "%s — MINTED and recorded as %s at Slice %s (board %s)" % (
+            ac, as_word, mint_slice, board_rf)
+    elif state_word == "PRE_SIGNED":
+        head = "%s — PRE-SIGNED by %s on %s (%s); NOT YET MINTED" % (
+            ac, pre["by"], pre["on"], pre["source"])
+    else:
+        head = "%s — NOT PRE-SIGNED, awaiting HITL sign-off; NOT YET MINTED" % ac
+
+    m.out("  publish gate                      %s" % head)
+    m.out("      covers                        %s" % covers)
+    if pre:
+        m.out("      pinned to                     %s" % pre["pinned_to"])
+        m.out("      re-opens if                   %s" % pre["reopens_if"])
+    if not minted:
+        m.out("      mints at                      Slice %s, recorded as %s (board %s)"
+              % (mint_slice, as_word, board_rf))
+    if state_word == "PRE_SIGNED":
+        m.out("      publish is gated by           %s — NOT by this AC." % gated_by)
+        m.out("      The pre-sign is a RULED decision: cite it, never re-decide it. Do not")
+        m.out("      brief it as outstanding and do not seek it again.")
+    else:
+        m.out("      publish is gated by           that sign-off AND %s." % gated_by)
+        m.out("      Escalate for the sign-off; never re-decide it yourself.")
+
+
 def build(release, state_path, state, slice_no, entry):
     m = Manifest()
     ladder = {e.get("slice"): e for e in state.get("ladder") or []}
@@ -547,9 +638,7 @@ def build(release, state_path, state, slice_no, entry):
         m.out("  reserved                          %s [%s] %s"
               % (res.get("ac"), res.get("state"), res.get("initiative") or ""))
     if gate:
-        m.out("  publish gate                      %s — %s, minted=%s, signed at Slice %s (board %s)"
-              % (gate.get("ac"), gate.get("state_word"), gate.get("minted"),
-                 gate.get("sign_off_slice"), gate.get("board_ref")))
+        emit_publish_gate(m, gate, state_path)
     if acc.get("re_verified_green"):
         m.out("  re-verified green                 %s" % ", ".join(acc["re_verified_green"]))
     m.out("  Mint no AC and change no AC here: %s is the register and the plan's" % m.cite(ACCEPTANCE))

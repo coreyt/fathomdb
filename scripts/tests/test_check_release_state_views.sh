@@ -60,18 +60,88 @@ E_HANDOFF='<!-- END GENERATED release-state:9.9.9:handoff-next-step -->'
 # T2b: the live-open-set COUNT in the board's §4 banner.
 B_OPEN='<!-- BEGIN GENERATED release-state:9.9.9:status-live-open-count -->'
 E_OPEN='<!-- END GENERATED release-state:9.9.9:status-live-open-count -->'
+# The board's §1 `**Unblocks**` cell — the publish-gate sentence.
+B_UNBLOCKS='<!-- BEGIN GENERATED release-state:9.9.9:status-unblocks -->'
+E_UNBLOCKS='<!-- END GENERATED release-state:9.9.9:status-unblocks -->'
 
-# A minimal but REAL fixture: one state file, two fenced views in two documents,
-# each region byte-identical to what the renderers emit. Every arm mutates one
-# thing from this baseline, so a red arm isolates exactly one fault.
+# The publish-gate fact set, in each of the three states the model must keep
+# DISTINCT. This is the defect that made these arms necessary: the predecessor
+# model carried ONE `state_word: "unsigned"`, and `status-unblocks` rendered from
+# it — so the board told readers publish was blocked awaiting an AC-079 signature
+# the HITL had ALREADY GIVEN (pre-signed 2026-07-25, master F-34). "Pre-signed
+# but not yet minted" and "not signed at all" are different facts and the fixture
+# proves the renderer branches on them rather than on one collapsed word.
+#
+# GATE_SENTENCE is written out LONGHAND here, deliberately: it is an INDEPENDENT
+# restatement of what the renderer must emit, so a renderer change that alters
+# the claim cannot also silently alter the expectation.
+gate_facts() {
+  case "${1:-presigned}" in
+    presigned)
+      GATE_JSON='"ac": "AC-999",
+      "covers": "the accumulated governed-surface delta",
+      "pre_sign_state": "PRE_SIGNED",
+      "pre_sign": {"on": "2026-01-02", "by": "HITL", "source": "master F-99",
+                   "pinned_to": "src/conformance/governed-surface-allowlist.json",
+                   "reopens_if": "any diff to that file re-opens it (the pin)"},
+      "minted": false, "minted_as": "SIGNED", "sign_off_slice": 40,
+      "publish_gated_by": "the separate HITL publish gate",
+      "board_ref": "§4 #1"'
+      GATE_SENTENCE='**AC-999 is PRE-SIGNED** — the HITL signed off on the accumulated governed-surface delta on 2026-01-02 (master F-99), pinned to the content of `src/conformance/governed-surface-allowlist.json`; any diff to that file re-opens it (the pin). Pre-signing is NOT minting: AC-999 is minted and recorded as SIGNED at Slice 40 (§4 #1). **Publish is gated by the separate HITL publish gate, not by this AC.**'
+      ;;
+    notpresigned)
+      GATE_JSON='"ac": "AC-999",
+      "covers": "the accumulated governed-surface delta",
+      "pre_sign_state": "NOT_PRE_SIGNED",
+      "minted": false, "minted_as": "SIGNED", "sign_off_slice": 40,
+      "publish_gated_by": "the separate HITL publish gate",
+      "board_ref": "§4 #1"'
+      GATE_SENTENCE='**Publish remains blocked on AC-999**, which is **NOT pre-signed** — the accumulated governed-surface delta still awaits HITL sign-off, and AC-999 is minted and recorded as SIGNED at Slice 40 (§4 #1). Publish is additionally gated by the separate HITL publish gate.'
+      ;;
+    minted)
+      GATE_JSON='"ac": "AC-999",
+      "covers": "the accumulated governed-surface delta",
+      "pre_sign_state": "PRE_SIGNED",
+      "pre_sign": {"on": "2026-01-02", "by": "HITL", "source": "master F-99",
+                   "pinned_to": "src/conformance/governed-surface-allowlist.json",
+                   "reopens_if": "any diff to that file re-opens it (the pin)"},
+      "minted": true, "minted_as": "SIGNED", "sign_off_slice": 40,
+      "publish_gated_by": "the separate HITL publish gate",
+      "board_ref": "§4 #1"'
+      GATE_SENTENCE='**AC-999 is MINTED and recorded as SIGNED** at Slice 40 (§4 #1), covering the accumulated governed-surface delta. **Publish is gated by the separate HITL publish gate, not by this AC.**'
+      ;;
+    retired-state-word)
+      # The RETIRED field, deliberately reintroduced. A renderer must never be
+      # able to read it again, and a state file carrying it must go red rather
+      # than have a consumer quietly fall back to it.
+      GATE_JSON='"ac": "AC-999",
+      "covers": "the accumulated governed-surface delta",
+      "state_word": "unsigned",
+      "pre_sign_state": "PRE_SIGNED",
+      "pre_sign": {"on": "2026-01-02", "by": "HITL", "source": "master F-99",
+                   "pinned_to": "src/conformance/governed-surface-allowlist.json",
+                   "reopens_if": "any diff to that file re-opens it (the pin)"},
+      "minted": false, "minted_as": "SIGNED", "sign_off_slice": 40,
+      "publish_gated_by": "the separate HITL publish gate",
+      "board_ref": "§4 #1"'
+      GATE_SENTENCE='(unrenderable)'
+      ;;
+    *) printf 'gate_facts: unknown mode %q\n' "$1" >&2; exit 2 ;;
+  esac
+}
+
+# A minimal but REAL fixture: one state file, three fenced views in three
+# documents, each region byte-identical to what the renderers emit. Every arm
+# mutates one thing from this baseline, so a red arm isolates exactly one fault.
 setup_fixture() {
+  gate_facts "${1:-presigned}"
   rm -rf "$FIX"
   mkdir -p "$FIX/dev/plans/runs" "$FIX/scripts"
   cp "$GATE" "$FIX/scripts/check-release-state-views.sh"
   chmod +x "$FIX/scripts/check-release-state-views.sh"
   (cd "$FIX" && git init -q && git config user.email t@example.com && git config user.name t)
 
-  cat >"$FIX/dev/plans/release-state-9.9.9.json" <<'EOF'
+  cat >"$FIX/dev/plans/release-state-9.9.9.json" <<EOF
 {
   "release": "9.9.9",
   "schema_version": 42,
@@ -91,8 +161,7 @@ setup_fixture() {
   "publish_precondition_slice": 30,
   "acceptance": {
     "publish_gate": {
-      "ac": "AC-999", "minted": false, "signed": false, "state_word": "unsigned",
-      "sign_off_slice": 40, "board_ref": "§4 #1"
+      ${GATE_JSON}
     }
   },
   "decisions": {
@@ -106,6 +175,7 @@ setup_fixture() {
   },
   "generated_views": [
     {"id": "master-ladder-progress",  "file": "dev/plans/master.md"},
+    {"id": "status-unblocks",         "file": "dev/plans/runs/board.md"},
     {"id": "status-live-open-count",  "file": "dev/plans/runs/board.md"},
     {"id": "handoff-next-step",       "file": "dev/plans/runs/handoff.md"}
   ]
@@ -119,6 +189,12 @@ EOF
   # (CommonMark), and the surrounding sentence is not renderable from facts.
   cat >"$FIX/dev/plans/runs/board.md" <<EOF
 # Board
+
+## 1. Current state
+
+| | |
+|---|---|
+| **Unblocks** | ${B_UNBLOCKS}**Slices 10 and 20 are NOW UNBLOCKED** — R-A (the thing) now exists. Slice 30 (H7) depends on 5/10/20. ${GATE_SENTENCE}${E_UNBLOCKS} |
 
 ## 4. Open HITL decisions
 
@@ -301,6 +377,121 @@ else
   fail "arm 2h (marker placement): a BEGIN marker heads a blockquote line"
 fi
 
+# ===========================================================================
+# THE PUBLISH-GATE MODEL (arms 2i-2n). The incident: `status-unblocks` rendered
+# "**Publish remains blocked on AC-079**, which is **still unsigned**" from a
+# single `state_word`, while the state file's own `pre_signed` field recorded
+# that the HITL had PRE-SIGNED that delta on 2026-07-25 (master F-34). The
+# sentence told every reader a settled call was still open, which is how a
+# settled call gets re-decided. These arms pin that the renderer branches on
+# DISTINCT facts — pre-sign, minting, and who actually gates publish — in BOTH
+# directions, so the fix cannot be "hardcode the pre-signed wording".
+# ===========================================================================
+
+# --- Arm 2i: PRE-SIGNED renders the pre-sign, and NOT a stale "unsigned" ---
+setup_fixture presigned
+run_gate
+CELL="$(perl -0777 -ne 'print $1 if /\Q'"$B_UNBLOCKS"'\E(.*?)\Q'"$E_UNBLOCKS"'\E/s' \
+  "$FIX/dev/plans/runs/board.md")"
+if [ "$RC" -eq 0 ] \
+   && grep -q 'is PRE-SIGNED' <<<"$CELL" \
+   && grep -q 'Pre-signing is NOT minting' <<<"$CELL" \
+   && grep -q 'minted and recorded as SIGNED at Slice 40' <<<"$CELL" \
+   && grep -q 'Publish is gated by the separate HITL publish gate' <<<"$CELL" \
+   && ! grep -q 'still unsigned' <<<"$CELL" \
+   && ! grep -q 'Publish remains blocked on AC-999' <<<"$CELL"; then
+  pass "pre-signed gate — renders pre-sign + mints-at-40 + the SEPARATE publish gate"
+else
+  fail "arm 2i (pre-signed render): rc=$RC cell=$CELL"
+fi
+
+# --- Arm 2j: the NOT-pre-signed direction still says BLOCKED ---------------
+# Without this arm the fix would be indistinguishable from hardcoding the happy
+# path: a gate that is genuinely awaiting sign-off must still read as blocked.
+setup_fixture notpresigned
+run_gate
+CELL="$(perl -0777 -ne 'print $1 if /\Q'"$B_UNBLOCKS"'\E(.*?)\Q'"$E_UNBLOCKS"'\E/s' \
+  "$FIX/dev/plans/runs/board.md")"
+if [ "$RC" -eq 0 ] \
+   && grep -q 'Publish remains blocked on AC-999' <<<"$CELL" \
+   && grep -q 'NOT pre-signed' <<<"$CELL" \
+   && grep -q 'still awaits HITL sign-off' <<<"$CELL" \
+   && ! grep -q 'is PRE-SIGNED' <<<"$CELL"; then
+  pass "NOT-pre-signed gate — still renders a blocked / awaiting-sign-off sentence"
+else
+  fail "arm 2j (not-pre-signed render): rc=$RC cell=$CELL"
+fi
+
+# --- Arm 2k: the MINTED direction -----------------------------------------
+setup_fixture minted
+run_gate
+CELL="$(perl -0777 -ne 'print $1 if /\Q'"$B_UNBLOCKS"'\E(.*?)\Q'"$E_UNBLOCKS"'\E/s' \
+  "$FIX/dev/plans/runs/board.md")"
+if [ "$RC" -eq 0 ] \
+   && grep -q 'is MINTED and recorded as SIGNED' <<<"$CELL" \
+   && ! grep -q 'Publish remains blocked on AC-999' <<<"$CELL"; then
+  pass "minted gate — renders the completed sign-off, not a pending one"
+else
+  fail "arm 2k (minted render): rc=$RC cell=$CELL"
+fi
+
+# --- Arm 2l: the renderer BRANCHES — flipping the fact turns the doc red ---
+# The sharpest form of the question "did you fix the model or the wording?": the
+# document keeps the pre-signed sentence, the state file flips to NOT pre-signed,
+# and the gate must go STALE with the blocked wording on the rendered side.
+setup_fixture presigned
+python3 - "$FIX/dev/plans/release-state-9.9.9.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+st = json.load(open(p, encoding="utf-8"))
+g = st["acceptance"]["publish_gate"]
+g["pre_sign_state"] = "NOT_PRE_SIGNED"
+g.pop("pre_sign", None)
+json.dump(st, open(p, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+PY
+run_gate
+if [ "$RC" -ne 0 ] && grep -q 'is STALE' <<<"$OUT" && grep -q 'status-unblocks' <<<"$OUT" \
+   && grep -q 'NOT pre-signed' <<<"$OUT"; then
+  pass "pre-sign is a FACT the renderer reads — flipping it turns the stale board RED"
+else
+  fail "arm 2l (renderer branches on pre_sign_state): rc=$RC out=$OUT"
+fi
+
+# --- Arm 2m: the RETIRED `state_word` cannot come back silently ------------
+# `state_word` is what collapsed the three facts into one. A state file that
+# still carries it must HARD-fail: a consumer quietly reading it again, or a
+# stale reference rendering an empty string, is the recurrence.
+setup_fixture retired-state-word
+run_gate
+if [ "$RC" -ne 0 ] && grep -qi 'state_word' <<<"$OUT"; then
+  pass "the retired \`state_word\` field HARD-fails — it cannot be reintroduced"
+else
+  fail "arm 2m (retired state_word): rc=$RC out=$OUT"
+fi
+
+# --- Arm 2n: an unknown pre_sign_state fails loudly, never renders blank ---
+setup_fixture presigned
+perl -0777 -pi -e 's/"PRE_SIGNED"/"MAYBE"/' "$FIX/dev/plans/release-state-9.9.9.json"
+run_gate
+if [ "$RC" -ne 0 ] && grep -q 'pre_sign_state' <<<"$OUT"; then
+  pass "an unrecognised pre_sign_state HARD-fails rather than rendering an empty claim"
+else
+  fail "arm 2n (unknown pre_sign_state): rc=$RC out=$OUT"
+fi
+
+# --- Arm 2o: a hand-edit INSIDE the status-unblocks markers ---------------
+# The staleness half, on this specific region: somebody "just corrects" the
+# publish-gate sentence in the board instead of editing the single writer.
+setup_fixture presigned
+perl -0777 -pi -e 's/\Q'"$B_UNBLOCKS"'\E/'"$B_UNBLOCKS"'HAND-EDITED /' \
+  "$FIX/dev/plans/runs/board.md"
+run_gate
+if [ "$RC" -ne 0 ] && grep -q 'is STALE' <<<"$OUT" && grep -q 'status-unblocks' <<<"$OUT"; then
+  pass "hand-editing inside the status-unblocks markers HARD-fails"
+else
+  fail "arm 2o (hand-edited unblocks cell): rc=$RC out=$OUT"
+fi
+
 # --- Arm 3: MISSING MARKER — a declared view that is not fenced ------------
 # A view that silently stops being checked is worse than no view at all.
 setup_fixture
@@ -451,6 +642,45 @@ if [ "$REAL_RC" -eq 0 ]; then
 else
   fail "arm 8 (real repo green): rc=$REAL_RC out=$REAL_OUT"
 fi
+
+# --- Arm 8b: the REAL board must not claim a signature already given -------
+# The concrete defect, asserted against the shipped document rather than a
+# fixture: 0.8.20's `status-unblocks` cell said publish was blocked on AC-079
+# "which is still unsigned" AFTER the HITL pre-signed that delta (2026-07-25,
+# master F-34). Restating a settled call as open is how it gets re-decided.
+REAL_STATE="$REPO_ROOT/dev/plans/release-state-0.8.20.json"
+REAL_BOARD="$REPO_ROOT/dev/plans/runs/STATUS-0.8.20.md"
+RB='<!-- BEGIN GENERATED release-state:0.8.20:status-unblocks -->'
+RE_='<!-- END GENERATED release-state:0.8.20:status-unblocks -->'
+REAL_CELL="$(perl -0777 -ne 'print $1 if /\Q'"$RB"'\E(.*?)\Q'"$RE_"'\E/s' "$REAL_BOARD")"
+REAL_PRESIGN="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["acceptance"]["publish_gate"].get("pre_sign_state",""))' "$REAL_STATE")"
+
+if [ -n "$REAL_CELL" ]; then
+  pass "the real board carries a status-unblocks region to assert against"
+else
+  fail "arm 8b: no status-unblocks region found in $REAL_BOARD"
+fi
+
+if [ "$REAL_PRESIGN" = "PRE_SIGNED" ]; then
+  pass "the real state file records the publish gate as PRE_SIGNED (master F-34)"
+  if ! grep -q 'still unsigned' <<<"$REAL_CELL" \
+     && ! grep -qE 'Publish remains blocked on AC-[0-9]+' <<<"$REAL_CELL"; then
+    pass "the real board does NOT claim publish awaits an already-given AC signature"
+  else
+    fail "arm 8b: the board restates a PRE-SIGNED gate as unsigned/blocking: $REAL_CELL"
+  fi
+  if grep -q 'is PRE-SIGNED' <<<"$REAL_CELL" \
+     && grep -q 'Pre-signing is NOT minting' <<<"$REAL_CELL" \
+     && grep -qE 'minted and recorded as [A-Z]+ at Slice [0-9]+' <<<"$REAL_CELL" \
+     && grep -q 'Publish is gated by the separate HITL publish gate' <<<"$REAL_CELL"; then
+    pass "the real board conveys pre-signed + mints-at-sign-off-slice + the separate gate"
+  else
+    fail "arm 8b: the board omits one of pre-sign / minting / the separate gate: $REAL_CELL"
+  fi
+else
+  fail "arm 8b: the real state file's pre_sign_state is '$REAL_PRESIGN', not PRE_SIGNED"
+fi
+
 
 # --- Arm 9: the CI job is ALWAYS-ON, and reuses the shared script ----------
 # Same reasoning as board-currency / ledger-integrity / plan-anchors: the push

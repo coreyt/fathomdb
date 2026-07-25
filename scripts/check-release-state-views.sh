@@ -152,21 +152,102 @@ def render_master_ladder_progress(st):
     return ("Slices %s are all LANDED on `origin/main`; SCHEMA is %d; "
             "remaining ladder = %s." % (landed, st["schema_version"], ladder))
 
+
+PRE_SIGN_STATES = ("PRE_SIGNED", "NOT_PRE_SIGNED")
+
+
+def publish_gate_facts(st):
+    """Read `acceptance.publish_gate` STRICTLY, as THREE distinct facts.
+
+    WHY THIS IS STRICT AND NOT A `.get()` PILE. The predecessor model carried a
+    single `state_word`, and this file's `render_status_unblocks` rendered its
+    whole publish sentence from it — so the board said "**Publish remains blocked
+    on AC-079**, which is **still unsigned**" AFTER the HITL had PRE-SIGNED that
+    delta (2026-07-25, master F-34). The state file already knew better: it
+    carried a `pre_signed` provenance string the renderer never read. Collapsing
+    "pre-signed but not yet minted" into "unsigned" told every reader a settled
+    call was still open, which is how a settled call gets re-decided.
+
+    The three facts, which a consumer must never re-collapse:
+      1. `pre_sign_state` — has the HITL signed off on the CONTENT of the delta?
+      2. `minted` / `sign_off_slice` — has the AC been minted and recorded SIGNED?
+         PRE-SIGN IS NOT MINTING.
+      3. `publish_gated_by` — what actually holds publish.
+
+    Every lookup below is `[...]`, never `.get(...)`: a missing field must raise
+    and fail the gate, because a renderer that quietly emits an empty string in
+    place of a fact is the same failure in a new costume. The retired
+    `state_word` is rejected outright so it cannot be reintroduced and silently
+    re-read."""
+    gate = st["acceptance"]["publish_gate"]
+    for retired in ("state_word", "signed"):
+        if retired in gate:
+            raise ValueError(
+                "acceptance.publish_gate carries the RETIRED field `%s`. It collapsed "
+                "pre-sign, minting and the publish gate into one word and is what made "
+                "the board claim an already-given signature was still outstanding. Model "
+                "the facts separately: pre_sign_state + pre_sign, minted + minted_as + "
+                "sign_off_slice, publish_gated_by." % retired)
+
+    state = gate["pre_sign_state"]
+    if state not in PRE_SIGN_STATES:
+        raise ValueError(
+            "acceptance.publish_gate.pre_sign_state is %r; it must be one of %s. An "
+            "unrecognised value must fail loudly rather than render a blank or guessed "
+            "claim about whether the HITL has signed." % (state, " or ".join(PRE_SIGN_STATES)))
+    if state == "PRE_SIGNED" and not isinstance(gate.get("pre_sign"), dict):
+        raise ValueError(
+            "acceptance.publish_gate.pre_sign_state is PRE_SIGNED but there is no "
+            "`pre_sign` object recording WHO signed, WHEN, on what authority, and what "
+            "the pre-sign is PINNED to. A pre-sign with no provenance is not citable.")
+    return gate
+
+
+def render_publish_gate_sentence(gate):
+    """The publish-gate sentence, branched on the FACTS — never one status word.
+
+    Three branches because there are three genuinely different states, and the
+    not-pre-signed branch is load-bearing: without it this would be a hardcoded
+    happy path rather than a model, and a gate that really is awaiting sign-off
+    would read as settled."""
+    ac = gate["ac"]
+
+    if gate["minted"]:
+        return ("**%s is MINTED and recorded as %s** at Slice %d (%s), covering %s. "
+                "**Publish is gated by %s, not by this AC.**"
+                % (ac, gate["minted_as"], int(gate["sign_off_slice"]), gate["board_ref"],
+                   gate["covers"], gate["publish_gated_by"]))
+
+    if gate["pre_sign_state"] == "PRE_SIGNED":
+        ps = gate["pre_sign"]
+        return ("**%s is PRE-SIGNED** — the %s signed off on %s on %s (%s), pinned to the "
+                "content of `%s`; %s. Pre-signing is NOT minting: %s is minted and recorded "
+                "as %s at Slice %d (%s). **Publish is gated by %s, not by this AC.**"
+                % (ac, ps["by"], gate["covers"], ps["on"], ps["source"], ps["pinned_to"],
+                   ps["reopens_if"], ac, gate["minted_as"], int(gate["sign_off_slice"]),
+                   gate["board_ref"], gate["publish_gated_by"]))
+
+    return ("**Publish remains blocked on %s**, which is **NOT pre-signed** — %s still "
+            "awaits HITL sign-off, and %s is minted and recorded as %s at Slice %d (%s). "
+            "Publish is additionally gated by %s."
+            % (ac, gate["covers"], ac, gate["minted_as"], int(gate["sign_off_slice"]),
+               gate["board_ref"], gate["publish_gated_by"]))
+
+
 def render_status_unblocks(st):
-    """STATUS §1 `**Unblocks**` row: what is unblocked, by what, and the
-    publish-precondition + AC sign-off status."""
+    """STATUS §1 `**Unblocks**` row: what is unblocked, by what, the
+    publish-precondition slice, and the publish gate as three distinct facts."""
     by   = _by_slice(st)
     ub   = st["unblocked"]
     src  = st["unblocked_by"]
     pre  = by[int(st["publish_precondition_slice"])]
-    gate = st["acceptance"]["publish_gate"]
+    gate = publish_gate_facts(st)
     return ("**Slices %s are NOW UNBLOCKED** — %s (%s) now exists. "
-            "Slice %d (%s) depends on %s. "
-            "**Publish remains blocked on %s**, which is **still %s** — "
-            "sign-off is gated to Slice %d (%s)."
+            "Slice %d (%s) depends on %s. %s"
             % (_and_join(ub), src["requirement"], src["gloss"],
                pre["slice"], pre["short"], "/".join(str(d) for d in pre["depends_on"]),
-               gate["ac"], gate["state_word"], gate["sign_off_slice"], gate["board_ref"]))
+               render_publish_gate_sentence(gate)))
+
 
 def render_handoff_next_step(st):
     """Steward hand-off ★ IMMEDIATE NEXT STEP: landed chain + next slice.
@@ -284,7 +365,25 @@ for sp in state_paths:
             continue
 
         have = doc[i:j]
-        want = RENDERERS[vid](st)
+        # A renderer that cannot produce its bytes must fail with the REASON, not
+        # a traceback and not a blank region: the fact model refusing to render is
+        # a real finding about the state file (a retired field reintroduced, an
+        # unrecognised enum value, a missing fact) and the operator has to be told
+        # which one. Rendering "" and diffing it would delete the claim instead.
+        try:
+            want = RENDERERS[vid](st)
+        except KeyError as exc:                               # noqa: PERF203
+            bad("FAIL %s: view `%s` could NOT be rendered from %s — the state file is\n"
+                "  MISSING the required fact %s. A renderer must never substitute an empty\n"
+                "  string for a fact it cannot find; that is how a claim silently changes."
+                % (path, vid, sp, exc))
+            continue
+        except (ValueError, TypeError) as exc:                # noqa: BLE001
+            detail = exc.args[0] if exc.args else exc
+            bad("FAIL %s: view `%s` could NOT be rendered from %s —\n    %s\n"
+                "  A view that cannot be rendered is a hard failure, never an empty region."
+                % (path, vid, sp, detail))
+            continue
         blocks_checked += 1
 
         if have == want:

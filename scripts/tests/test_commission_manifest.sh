@@ -80,7 +80,36 @@ setup_fixture() {
   chmod +x "$FIX/scripts/commission-manifest.sh"
   (cd "$FIX" && git init -q && git config user.email t@example.com && git config user.name t)
 
-  cat >"$FIX/dev/plans/release-state-9.9.9.json" <<'EOF'
+  # The publish-gate fact set. THREE DISTINCT FACTS — pre-sign, minting, and who
+  # actually gates publish — never one collapsed word. The predecessor model
+  # carried `state_word: "unsigned"` and this manifest printed it, so a Slice-20
+  # brief told the next orchestrator that publish awaited an AC-079 signature the
+  # HITL had ALREADY GIVEN (pre-signed 2026-07-25, master F-34). Briefing an
+  # orchestrator with a settled call restated as open is how it gets re-decided.
+  case "${1:-presigned}" in
+    presigned)
+      GATE_JSON='"ac": "AC-999",
+      "covers": "the accumulated governed-surface delta",
+      "pre_sign_state": "PRE_SIGNED",
+      "pre_sign": {"on": "2026-01-02", "by": "HITL", "source": "master F-99",
+                   "pinned_to": "src/conformance/governed-surface-allowlist.json",
+                   "reopens_if": "any diff to that file re-opens it (the pin)"},
+      "minted": false, "minted_as": "SIGNED", "sign_off_slice": 30,
+      "publish_gated_by": "the separate HITL publish gate",
+      "board_ref": "§4 #1"'
+      ;;
+    notpresigned)
+      GATE_JSON='"ac": "AC-999",
+      "covers": "the accumulated governed-surface delta",
+      "pre_sign_state": "NOT_PRE_SIGNED",
+      "minted": false, "minted_as": "SIGNED", "sign_off_slice": 30,
+      "publish_gated_by": "the separate HITL publish gate",
+      "board_ref": "§4 #1"'
+      ;;
+    *) printf 'setup_fixture: unknown gate mode %q\n' "$1" >&2; exit 2 ;;
+  esac
+
+  cat >"$FIX/dev/plans/release-state-9.9.9.json" <<EOF
 {
   "release": "9.9.9",
   "release_kind": "even, publish",
@@ -103,8 +132,7 @@ setup_fixture() {
   "acceptance": {
     "highest_defined_non_reserved": "AC-900",
     "publish_gate": {
-      "ac": "AC-999", "minted": false, "signed": false, "state_word": "unsigned",
-      "sign_off_slice": 30, "board_ref": "§4 #1"
+      ${GATE_JSON}
     }
   },
   "decisions": {
@@ -445,6 +473,61 @@ if [ "$RC" -eq 0 ] && [ -z "$MISSING" ]; then
 else
   fail "arm 5 (known slice content): rc=$RC missing:$MISSING"
 fi
+
+# --- Arm 5e: the PUBLISH-GATE line must not brief a stale claim ------------
+# The measured defect: this line printed a single `state_word` ("unsigned"), so a
+# Slice-20 manifest told the next orchestrator that publish awaited an AC-079
+# signature the HITL had ALREADY GIVEN (pre-signed 2026-07-25, master F-34). A
+# brief that restates a settled call as open invites re-deciding it.
+setup_fixture presigned
+run_gen 9.9.9 10
+GATELINES="$(sed -n '/^  publish gate/,/^  re-verified green\|^  Mint no AC/p' <<<"$OUT")"
+MISSING=""
+grep -q 'PRE-SIGNED'                            <<<"$GATELINES" || MISSING="$MISSING pre-signed"
+grep -q 'NOT YET MINTED'                        <<<"$GATELINES" || MISSING="$MISSING not-minted"
+grep -q 'mints at'                              <<<"$GATELINES" || MISSING="$MISSING mints-at"
+grep -q 'Slice 30'                              <<<"$GATELINES" || MISSING="$MISSING sign-off-slice"
+grep -q 'governed-surface-allowlist.json'       <<<"$GATELINES" || MISSING="$MISSING pin"
+grep -q 'separate HITL publish gate'            <<<"$GATELINES" || MISSING="$MISSING separate-gate"
+grep -q 'never re-decide'                       <<<"$GATELINES" || MISSING="$MISSING do-not-re-decide"
+grep -q 'None'                                  <<<"$GATELINES" && MISSING="$MISSING rendered-None"
+grep -qi 'unsigned'                             <<<"$GATELINES" && MISSING="$MISSING claims-unsigned"
+if [ "$RC" -eq 0 ] && [ -z "$MISSING" ]; then
+  pass "publish gate — a PRE-SIGNED gate briefs pre-sign + pin + minting + the separate gate"
+else
+  fail "arm 5e (pre-signed publish-gate line): rc=$RC missing:$MISSING lines:$GATELINES"
+fi
+
+# --- Arm 5f: the NOT-pre-signed direction still briefs it as BLOCKING ------
+# Without this the fix would be indistinguishable from hardcoding the happy path.
+setup_fixture notpresigned
+run_gen 9.9.9 10
+GATELINES="$(sed -n '/^  publish gate/,/^  re-verified green\|^  Mint no AC/p' <<<"$OUT")"
+if [ "$RC" -eq 0 ] \
+   && grep -q 'NOT PRE-SIGNED' <<<"$GATELINES" \
+   && grep -q 'awaiting HITL sign-off' <<<"$GATELINES" \
+   && ! grep -q 'None' <<<"$GATELINES"; then
+  pass "publish gate — a gate that is genuinely NOT pre-signed briefs as awaiting sign-off"
+else
+  fail "arm 5f (not-pre-signed publish-gate line): rc=$RC lines:$GATELINES"
+fi
+
+# --- Arm 5g: the RETIRED `state_word` cannot be read again ----------------
+# A consumer falling back to the collapsed word — or `.get()` rendering `None`
+# from a field that no longer exists — is exactly the recurrence.
+setup_fixture presigned
+perl -0777 -pi -e 's/"pre_sign_state": "PRE_SIGNED",/"state_word": "unsigned",/' \
+  "$FIX/dev/plans/release-state-9.9.9.json"
+run_gen 9.9.9 10
+if [ "$RC" -ne 0 ] && grep -q 'state_word' <<<"$OUT"; then
+  pass "a state file still carrying the retired \`state_word\` HARD-fails the manifest"
+else
+  fail "arm 5g (retired state_word): rc=$RC out=$OUT"
+fi
+
+# Restore the default fixture for the arms that follow.
+setup_fixture
+run_gen 9.9.9 10
 
 # --- Arm 5b: a doc carrying NO slice token is NOT cited --------------------
 # Otherwise "design of record" degenerates into "every design doc in the repo".

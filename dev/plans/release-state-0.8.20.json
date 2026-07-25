@@ -110,13 +110,29 @@
       }
     ],
     "publish_gate": {
+      "_model": "THREE DISTINCT FACTS, deliberately NOT collapsed into one word. The predecessor model carried `minted`/`signed` plus a single `state_word: \"unsigned\"`, and the STATUS §1 `Unblocks` view rendered its sentence off that one word — so the board told every reader `**Publish remains blocked on AC-079**, which is **still unsigned**` AFTER the HITL had PRE-SIGNED that delta on 2026-07-25 (master F-34). Restating a settled call as still open is precisely how a settled call gets re-decided. The three facts a consumer MUST read separately: (1) `pre_sign_state` - has the HITL signed off on the CONTENT of the delta yet? (2) `minted` + `sign_off_slice` - has the AC been minted into dev/acceptance.md and recorded there as SIGNED yet? PRE-SIGN IS NOT MINTING. (3) `publish_gated_by` - what actually holds publish, which is the separate HITL publish gate (`decisions.unruled` id `publish`), NOT an unsigned AC. No consumer may derive a single status word from `minted`/`signed` alone; both renderers (scripts/check-release-state-views.sh render_status_unblocks, scripts/commission-manifest.sh publish-gate line) branch on `pre_sign_state` and hard-fail on an unrecognised value or a reintroduced `state_word`.",
+
       "ac": "AC-079",
-      "minted": false,
-      "signed": false,
-      "state_word": "unsigned",
       "covers": "the accumulated governed-surface delta (Slices 5d + 10b + 15b + 15d)",
-      "pre_signed": "HITL 2026-07-25 — PRE-SIGNED and pinned to the content of src/conformance/governed-surface-allowlist.json; any diff to that file re-opens the gate (T1e pin). PRE-SIGN IS NOT MINTING: AC-079 is still minted and recorded as SIGNED at Slice 40.",
+
+      "pre_sign_state": "PRE_SIGNED",
+      "pre_sign": {
+        "on": "2026-07-25",
+        "by": "HITL",
+        "source": "master F-34",
+        "pinned_to": "src/conformance/governed-surface-allowlist.json",
+        "reopens_if": "any diff to that file re-opens it (the T1e pin)",
+        "provenance": "HITL 2026-07-25 — PRE-SIGNED and pinned to the content of src/conformance/governed-surface-allowlist.json; any diff to that file re-opens the gate (T1e pin). PRE-SIGN IS NOT MINTING: AC-079 is still minted and recorded as SIGNED at Slice 40.",
+        "enforced_by": "scripts/check-governed-surface-pin.sh (the pin), run from scripts/preflight.sh"
+      },
+
+      "minted": false,
+      "minted_as": "SIGNED",
       "sign_off_slice": 40,
+
+      "publish_gated_by": "the separate HITL publish gate",
+      "publish_gate_decision_id": "publish",
+
       "board_ref": "§4 #1"
     },
     "re_verified_green": ["AC-041", "AC-080"]
@@ -215,7 +231,7 @@
       "id": "status-unblocks",
       "file": "dev/plans/runs/STATUS-0.8.20.md",
       "location": "§1 Current state — the `**Unblocks**` table row's cell body",
-      "renders": "unblocked slices, what unblocked them, the publish-precondition slice + its dependencies, AC-079 sign-off status"
+      "renders": "unblocked slices, what unblocked them, the publish-precondition slice + its dependencies, and the publish gate as THREE distinct facts (pre-sign state + its pin, minting at the sign-off slice, and what actually gates publish) - never one collapsed status word"
     },
     {
       "id": "status-live-open-count",
