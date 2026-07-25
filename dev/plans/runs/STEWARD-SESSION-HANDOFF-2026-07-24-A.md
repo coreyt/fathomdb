@@ -12,7 +12,9 @@
 ## ★ IMMEDIATE NEXT STEP — commission the 0.8.20 Slice-20 orchestrator
 
 **The 0.8.20 ladder is between slices: 0 → 5 → 10 → 15 are all LANDED; 20 is next.** The next action is to
-**commission a `/goal complete 0.8.20` orchestrator** against `0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md` +
+**commission a `/orchestrate dev/plans/plan-0.8.20.md` orchestrator** (alias `/orch`; the preferred entry point
+per the standing HITL ruling of 2026-07-25 — `/goal complete 0.8.20` only on an explicit HITL instruction for
+that run) against `0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md` +
 `dev/plans/plan-0.8.20.md`, whose first job is **Slice 20 — `dense_readiness` + `flush_embeddings()` (R-20-DR)**.
 You commission and verify it; you do not run it.
 

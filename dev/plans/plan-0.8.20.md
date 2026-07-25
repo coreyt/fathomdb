@@ -24,12 +24,12 @@ target_release: 0.8.20
 |---|---|---|
 | ~~`SCHEMA_VERSION = 20`~~ → **`SCHEMA_VERSION = 22`** | **CORRECTED 2026-07-20 (Slice 15b).** The `20` row was **stale**: it recorded the 0.8.19 19→20 existence migration, but 0.8.20 has since added **step 21** (legacy provenance backfill, Slice 5c) and **step 22** (`canonical_nodes` validity window, Slice 10) | ✓ **`fathomdb-schema/src/lib.rs:6` reads `pub const SCHEMA_VERSION: u32 = 22;`**, pinned by `s22_is_head_and_schema_version_is_22` (`fathomdb-schema/tests/step22_migration.rs:285`) |
 | manifests = **`0.8.9`** | every release since 0.8.9 was label-only ⇒ **0.8.20 is the first manifest bump `0.8.9 → 0.8.20`** | ✓ `src/python/pyproject.toml:7`, `src/ts/package.json:3` |
-| `transition` / `purge` **shipped in both SDKs** | 0.8.19 Phase-1 surface is live | ✓ `fathomdb-py:1274,1297`; `fathomdb-napi:1070,1102` |
+| `transition` / `purge` **shipped in both SDKs** | 0.8.19 Phase-1 surface is live | ✓ `fn transition` / `fn purge` in `fathomdb-py/src/lib.rs`; `pub async fn transition` / `pub async fn purge` in `fathomdb-napi/src/lib.rs` |
 | **Phase-2 surface = 100 % NET-NEW** | `ReadView`, `valid_from`, `valid_until`, `dense_readiness`, `configure_projections`, `ProjectionSpec`, `EntityTypeSpec`, `id_prefix` | ✓ **ZERO hits** across all crates |
-| `derive_logical_id` = `SHA256("{kind}:{name}")` | natural-key derivation, **not** an opaque surrogate | ✓ `engine lib.rs:11152` |
+| `derive_logical_id` = `SHA256("{kind}:{name}")` | natural-key derivation, **not** an opaque surrogate | ✓ `fn derive_logical_id` in `fathomdb-engine/src/lib.rs` |
 | `search_index_v2` = **content-storing** FTS5 | holds the **body verbatim** (no `content=''`) | ✓ `fathomdb-schema/src/lib.rs:427` |
-| `truncate_wal()` **already exists** | `PRAGMA wal_checkpoint(TRUNCATE)`, returns typed `TruncateWalStatus::{Done,Busy}` | ✓ `engine:6379`; **CLI-only** (`fathomdb-cli:389`); **NOT called by `purge`/`excise`** |
-| op-store record erasure | **does not exist** — only a cap-based retention sweep | ✓ `engine:10083` (`enforce_provenance_retention`) |
+| `truncate_wal()` **already exists** | `PRAGMA wal_checkpoint(TRUNCATE)`, returns typed `TruncateWalStatus::{Done,Busy}` | ✓ `pub fn truncate_wal` / `fn wal_checkpoint_truncate_once` in `fathomdb-engine/src/lib.rs`; **CLI-only** (the `args.truncate_wal` → `wire_recover(…, "truncate-wal", …)` arm in `fathomdb-cli/src/lib.rs`); **NOT called by `purge`/`excise`** |
+| op-store record erasure | **does not exist** — only a cap-based retention sweep | ✓ `fn enforce_provenance_retention` in `fathomdb-engine/src/lib.rs` |
 | REQ-037 → AC-041 | recovery surface CLI-only; AC-041 tests the **REQ-054 five-name denylist** only | ✓ `dev/requirements.md:332`; `dev/acceptance.md:688` |
 | AC minting floor | ~~highest existing AC = AC-077~~ **CORRECTED (TC-14):** highest **defined, non-reserved** AC = **AC-076**; AC-077/078 are **live IR-1/IR-2 reservations** ⇒ **0.8.20 mints from AC-079**. Never mint by "max AC id + 1" — see the warning in §3. | ✓ `dev/acceptance.md:1147` (AC-076), `:1286`/`:1297` (reservations) |
 
@@ -119,7 +119,7 @@ carried it as "deferred from Phase-1"; it is now **cancelled** for doc-chunks. G
   re-ingest-stable content-addressed identity `h:` provides (`same bytes ⇒ same handle` — the basis of
   cross-session gold keying, telemetry `result_stable_ids`, and explain-correlation).
 - `derive_logical_id` is **not** the surrogate mechanism — `:54` requires "never content-derived/**hashed**", and
-  it *is* hashed (`engine:11152`); §2:98 names it a **separate** mechanism.
+  it *is* hashed (`fn derive_logical_id` in `fathomdb-engine/src/lib.rs`); §2:98 names it a **separate** mechanism.
 - §2(ii) has **no consumer** — the contract itself states Memex's lifecycle problem is closed by **(i) alone**.
 - Its stated goal is **already met** — the shipped C-2 `IdSpace` is **total** (`l:`/`h:`/`p:`, non-null) ⇒
   **`h:` IS an address**.
@@ -134,7 +134,8 @@ The engine does not dedupe them. Supplying a `logical_id` **at write time** is w
 Remove the anonymous row by excising its source.
 
 **Applied to the authority surfaces:** `structural-lifecycle-contract.md` §2(ii) (**OVERRULED**) ·
-`README.md:108` (struck) · `api-surface.md:64` (surrogate leg **CANCELLED, not deferred**).
+the struck `opaque surrogate` bullet in `dev/design/record-lifecycle-protocol/README.md` ·
+`api-surface.md:64` (surrogate leg **CANCELLED, not deferred**).
 Design of record: `dev/design/0.8.20-erasure-and-h-end-state-v4.md`.
 
 ### 2.2 The erasure axis is **PROVENANCE**, not the `l:`/`h:` id-space
@@ -146,7 +147,8 @@ is incoherent). Anonymous content — **the dominant corpus class** — is erase
 ### 2.3 REQ-037 lawful-erasure carve-out · ✅ **HITL-APPROVED 2026-07-12**
 
 The project's real policy is **"RECOVERY-*NAMED* verbs are CLI-only"** — **not** "destructive ⇒ CLI-only".
-Proof: **`purge(logical_id)` is already an SDK verb** (`py:1297`, `napi:1102`, 0.8.19) *despite being named in
+Proof: **`purge(logical_id)` is already an SDK verb** (`fn purge` in `fathomdb-py/src/lib.rs`, `pub async fn purge`
+in `fathomdb-napi/src/lib.rs`, 0.8.19) *despite being named in
 REQ-037's forbidden list*, because **AC-041 tests only the REQ-054 five-name denylist**
 {`recover`,`restore`,`repair`,`fix`,`rebuild`} — and `purge` is not one of them.
 
@@ -396,14 +398,16 @@ framing; 15 is landed and 20/25 are unblocked.)*
 >
 > **P3 hard-reject requirement (HITL Note 1) — "reduce failure mode":** the fail-open path is the
 > defect. An unparseable timestamp must **never** coerce to SQL `NULL`, because a NULL `t_invalid`
-> reads as **"still valid"** (`fathomdb-schema/src/lib.rs:339`; relied on at `engine:9910`, `:10059`,
-> `:10455`) — i.e. junk silently **resurrects an invalidated edge**. Required, defence in depth:
+> reads as **"still valid"** (`fathomdb-schema/src/lib.rs:339`; the predicate is generated by the ONE
+> `fn edge_validity_sql` in `fathomdb-engine/src/lib.rs` and relied on at each of its call sites — grep
+> `edge_validity_sql`) — i.e. junk silently **resurrects an invalidated edge**. Required, defence in depth:
 > **enforce `strftime('%s', <user value>)` and reject a NULL result with a typed error at the write
 > boundary**, plus schema-level `NOT NULL`/`CHECK` constraints so the invariant is structural rather
 > than upheld by call sites, plus a RED test proving malformed input **fails loudly**. Note
 > `temporal_fallback` is matched by **string equality** against `substituted_t_valid`
-> (`engine:4253`, `:4434`) — a representation change silently stops flagging fallback edges, so that
-> comparison must be re-grounded, not left to drift.
+> (the `is_temporal_fallback` / `fallback_epochs` comparison in `fathomdb-engine/src/lib.rs`) — a
+> representation change silently stops flagging fallback edges, so that comparison must be re-grounded,
+> not left to drift.
 >
 > **TC-47 (steward-ruled 2026-07-22, within the Note-1 hard-reject mandate; HITL-veto-available):**
 > `strftime('%s', …)` is a **leaky** ISO validator — it has now silently mis-stored input twice: Julian-day
@@ -426,21 +430,26 @@ framing; 15 is landed and 20/25 are unblocked.)*
 > it does **not** reach a runtime reconfiguration of a live DB.) `filterable` **already works** via the
 > Slice-15d row-owned EAV table (`canonical_attributes`); 15e adds the **pre-KNN vector-path** routing
 > only (ADR-0.8.11 D3). The tree already ships this exact operation as
-> `migrate_vector_partition_pack1_to_pack2` (`engine:13492-13529`) — **follow that precedent.**
+> `fn migrate_vector_partition_pack1_to_pack2` (in `fathomdb-engine/src/lib.rs`) — **follow that precedent.**
 >
 > **The four load-bearing conditions (steward-investigated against code; all MUST hold or query results
 > go silently wrong):**
 >
 > 1. **List `rowid` explicitly** in the re-insert — a vec0 row maps to its node by `rowid == write_cursor`
->    (`engine:7086`, `:10005`); letting vec0 auto-assign rowids silently decouples every embedding.
+>    (the identity documented on `write_canonical_row_with_kind_for_test` and relied on by
+>    `fn text_hit_passes_filter` / `fn edge_fts_hit_passes_filter` in `fathomdb-engine/src/lib.rs`); letting
+>    vec0 auto-assign rowids silently decouples every embedding.
 > 2. **New attribute column is plain metadata OR a partition key — NEVER a vec0 `aux`/`+` column.** An aux
->    column hard-**errors** every filtered KNN query (`engine:13460-13464`).
-> 3. **Back-fill old rows with the `''` sentinel** (vec0 TEXT metadata is NOT-NULL-able, `engine:7091`) so
->    they cleanly fail-to-match a filter rather than erroring.
+>    column hard-**errors** every filtered KNN query (see the `aux` note on `fn vector_partition_create_sql`
+>    in `fathomdb-engine/src/lib.rs`).
+> 3. **Back-fill old rows with the `''` sentinel** (vec0 TEXT metadata is NOT-NULL-able — the `''` back-fill
+>    in `fn vector_partition_create_sql`'s callers, e.g. the `status` sentinel in
+>    `fn migrate_vector_partition_pack1_to_pack2`) so they cleanly fail-to-match a filter rather than erroring.
 > 4. **Copy `embedding_bin` verbatim via `vec_bit(...)` — do NOT re-quantize.** Re-deriving bits from the
 >    raw `embedding` leaves old rows quantized **un-centered** while new rows stay mean-centered ⇒
->    incomparable Hamming distances, silent recall corruption, no error (`engine:13514-13527`, and the
->    anti-pattern to avoid at `:13584-13599`).
+>    incomparable Hamming distances, silent recall corruption, no error (the `vec_bit(embedding_bin)`
+>    re-insert inside `fn migrate_vector_partition_pack1_to_pack2`, and the anti-pattern to avoid — the
+>    DELETE+INSERT re-quantize in `fn run_pin_and_requantize_pass` — both in `fathomdb-engine/src/lib.rs`).
 >
 > Idempotent re-registration still diffs to a **no-op**; a shape-changing reshape is an **explicit**
 > drop (`api-surface.md:26-30`), never a silent boot-time wipe. `run_pin_and_requantize_pass` is a
@@ -454,8 +463,9 @@ framing; 15 is landed and 20/25 are unblocked.)*
 >
 > - **Not consumer-reachable in 0.8.20 (verified):** `attributes` is **not** on the Py/TS `search` wire
 >   (`fathomdb-napi SearchFilterInput`, `fathomdb-py search` carry only `source_type/kind/created_after/
->   status`); attribute-filtering is **engine-internal only** (comment `engine:5561` — "a later slice adds
->   that surface"). So the edge-semantics choice governs a feature no consumer can call this release; (A)
+>   status`); attribute-filtering is **engine-internal only** (the comment inside `pub fn search_filtered` in
+>   `fathomdb-engine/src/lib.rs` — "a later slice adds that surface"). So the edge-semantics choice governs a
+>   feature no consumer can call this release; (A)
 >   forecloses nothing and is a pure query-time behavior with **zero stored-data and zero wire commitment**.
 > - **(B) raw pass-through — DECLINED.** Predicate-honest failure (Memex): returning rows never evaluated
 >   against the filter is a bug-factory for agent-memory consumers feeding results to an LLM as vetted
@@ -691,7 +701,11 @@ broken code (§0.1). **Mint ACs from AC-079** (§3). **Run NO eu7 — R-20-EU7 i
    registry**, so deferring turns an internal defect into a published silent cursor-stall; the twin of this class
    (TC-33 fix-4) was already fixed in-release; and "carried unfixed across releases" is the F-30 trap. **Fix
    shape (implementer + codex micro-call):** prefer `'up_to_date'` at both `record_projection_terminal` call
-   sites (`engine:14867`/`:14890`) — **no migration** — over widening the terminal CHECK to admit `'superseded'`
+   sites that pass `"superseded"` — the two prune loops inside `fn commit_batch` in
+   `fathomdb-engine/src/lib.rs`, one after `prior_edge_cursors_by_logical_id` (G0) and one after
+   `prior_edge_cursors_by_triple` (G11); grep
+   `record_projection_terminal(&tx, *sc as u64, "superseded")` for exactly those two —
+   **no migration** — over widening the terminal CHECK to admit `'superseded'`
    (**a schema step + migration test**); escalate only if the terminal's semantics demand the distinct token.
    RED-first, per the standing TDD rule. Ledger: todos seq 65. **Gated:** Slice 20.
 8. ~~**PENDING INPUT (not a decision) — Hermes consult**~~ **✅ CLOSED 2026-07-25 (HITL): no input received
