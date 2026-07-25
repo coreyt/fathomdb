@@ -668,7 +668,8 @@ broken code (§0.1). **Mint ACs from AC-079** (§3). **Run NO eu7 — R-20-EU7 i
 
 1. **AC-079 governed-surface sign-off** — the Phase-2 + erasure API delta (`erase_source`/`SourceId`/
    `EraseReport`/`ExciseReport`, `configure_projections`/`ProjectionSpec`/`ProjectionRole`, `read.projections`,
-   `SearchFilter.attributes` + `#[non_exhaustive]`) is **PROPOSED / NOT SIGNED**; signing mints AC-079 and permits
+   `SearchFilter.attributes` + `#[non_exhaustive]`) ~~is **PROPOSED / NOT SIGNED**~~ **← SUPERSEDED 2026-07-25;
+   see the ruling at the foot of this item**; signing mints AC-079 and permits
    publish. **Options:** (a) sign once at Slice 40 after the full surface + H7 are green; (b) sign per-slice now.
    **Rec:** (a). **Why:** the surface still grows (20 adds `dense_readiness`, 25 adds surrogate); 0.8.19 signed at
    its Slice-40 close. **Gated:** Slice 40 (publish precondition).
