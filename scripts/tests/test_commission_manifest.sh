@@ -38,6 +38,15 @@
 # because every landing SHA also appears in the `landed so far` roll-up and a
 # whole-output grep therefore cannot distinguish a right base from a wrong one.
 #
+# THIRD PREDICATE (codex §9 [P2], arms 5h/5i/9e): the publish gate's
+# `pre_sign.pinned_to` is a REGISTERED CITATION, not printed text. It names the
+# file whose content the HITL pre-sign is bound to, and it was emitted raw — so
+# a mistyped or renamed pin path was still printed while `--verify` reported 0
+# dead citations and CI stayed green. That is CHECK 1's guarantee not holding
+# over the one path it matters most for. Arm 5h asserts the failure direction, 5i
+# asserts the verified-path COUNT moves (a bolted-on existence check beside the
+# citation list would satisfy 5h alone), and 9e asserts it on the live state file.
+#
 # Isolation: fixtures are throwaway git repos under mktemp -d (the generator
 # does `cd "$(git rev-parse --show-toplevel)"`, so each fixture must BE a repo).
 # Nothing here writes into the real checkout — arm 9 asserts that mechanically.
@@ -525,6 +534,53 @@ else
   fail "arm 5g (retired state_word): rc=$RC out=$OUT"
 fi
 
+# --- Arm 5h: THE PIN PATH IS A VERIFIED CITATION, not raw text -------------
+# codex §9 [P2]. `pre_sign.pinned_to` names the file whose CONTENT the HITL
+# pre-sign is bound to — the most load-bearing path in the whole manifest, since
+# the pin is what makes the pre-sign citable rather than a bare assertion. It was
+# emitted with `m.out(... % pre["pinned_to"])`, i.e. as RAW TEXT, so CHECK 1
+# never saw it. MEASURED RED against the pre-fix generator (GATE_UNDER_TEST):
+# with `pinned_to` pointing at src/conformance/DOES-NOT-EXIST.json the manifest
+# was still EMITTED, still exited 0, and still printed
+#   `PATH VERIFICATION: 24 distinct path(s) exist, 24 anchor(s) verified, 0 dead.`
+# — a dead pin path briefing an orchestrator while CI stayed green, which is
+# exactly the "a gate that appears to cover a citation but does not" class.
+setup_fixture presigned
+mutate_state "s['acceptance']['publish_gate']['pre_sign']['pinned_to'] = 'src/conformance/DOES-NOT-EXIST.json'"
+run_gen 9.9.9 10
+if [ "$RC" -ne 0 ] && grep -q 'DOES-NOT-EXIST.json' <<<"$OUT" \
+   && grep -qi 'does NOT exist' <<<"$OUT" \
+   && ! grep -q 'COMMISSION MANIFEST' <<<"$OUT"; then
+  pass "pre-sign pin — a \`pinned_to\` that does not resolve HARD-fails and names the dead path"
+else
+  fail "arm 5h (dead pin path): rc=$RC out=$OUT"
+fi
+
+# --- Arm 5i: ...and the pin is COUNTED, so the registration is proven -------
+# Asserting only the failure direction would be satisfied by a special-case
+# `os.path.exists` check bolted on beside the citation list. This asserts the
+# VERIFIED-PATH COUNT moves: pointing `pinned_to` at an existing path that
+# nothing else cites raises the count by exactly one, which can only happen if
+# the pin went through the same citation machinery as every other path.
+# The default fixture pins to src/conformance/governed-surface-allowlist.json,
+# which §4 ALREADY cites, so its count is deliberately unchanged (paths are
+# counted distinct) — that is why this arm re-pins to a fresh file.
+# Pre-fix the count does NOT move: measured RED.
+setup_fixture presigned
+run_gen 9.9.9 10 --verify
+PIN_BASE_N="$(grep -oE '[0-9]+ path\(s\)' <<<"$OUT" | head -1 | grep -oE '[0-9]+' || true)"
+setup_fixture presigned
+printf '{"delta": []}\n' >"$FIX/src/conformance/pinned-delta.json"
+mutate_state "s['acceptance']['publish_gate']['pre_sign']['pinned_to'] = 'src/conformance/pinned-delta.json'"
+run_gen 9.9.9 10 --verify
+PIN_NEW_N="$(grep -oE '[0-9]+ path\(s\)' <<<"$OUT" | head -1 | grep -oE '[0-9]+' || true)"
+if [ "$RC" -eq 0 ] && [ -n "$PIN_BASE_N" ] && [ -n "$PIN_NEW_N" ] \
+   && [ "$PIN_NEW_N" -eq "$((PIN_BASE_N + 1))" ]; then
+  pass "pre-sign pin — a distinct \`pinned_to\` raises the verified-path count by exactly 1"
+else
+  fail "arm 5i (pin counted): rc=$RC base=$PIN_BASE_N new=$PIN_NEW_N (expected $((PIN_BASE_N + 1)))"
+fi
+
 # Restore the default fixture for the arms that follow.
 setup_fixture
 run_gen 9.9.9 10
@@ -763,6 +819,21 @@ if grep -q 'a2022957' <<<"$REAL_BASE_LINE" && grep -q 'Slice 15' <<<"$REAL_BASE_
   pass "real repo — Slice 20's base is Slice 15's landing merge (a2022957), on the base line"
 else
   fail "arm 9d (real base line): base=[$REAL_BASE_LINE]"
+fi
+
+# --- Arm 9e: the REAL manifest's pin path is emitted as a CITATION ----------
+# The live half of arms 5h/5i. The pin line must render the path the way every
+# other cited path renders (through `m.cite`, i.e. backticked and therefore
+# existence-checked), and the path it names must resolve in this checkout. The
+# assertion is value-agnostic — it reads whatever the state file pins to — so it
+# keeps holding when the pin moves. Pre-fix the line was raw text: measured RED.
+REAL_PIN_LINE="$(grep -m1 '^      pinned to' <<<"$REAL_OUT" || true)"
+REAL_PIN="$(sed 's/^ *pinned to *//; s/`//g' <<<"$REAL_PIN_LINE")"
+if grep -qE '^ +pinned to +`[^`]+`$' <<<"$REAL_PIN_LINE" \
+   && [ -n "$REAL_PIN" ] && [ -e "$REPO_ROOT/$REAL_PIN" ]; then
+  pass "real repo — the publish-gate pin is emitted as a citation and resolves ($REAL_PIN)"
+else
+  fail "arm 9e (real pin citation): line=[$REAL_PIN_LINE] pin=[$REAL_PIN]"
 fi
 
 # --- Arm 9c: the real repo's every-release sweep is green ------------------

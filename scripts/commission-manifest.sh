@@ -420,7 +420,16 @@ def emit_publish_gate(m, gate, state_path):
     m.out("  publish gate                      %s" % head)
     m.out("      covers                        %s" % covers)
     if pre:
-        m.out("      pinned to                     %s" % pre["pinned_to"])
+        # REGISTERED, not printed. `pinned_to` names the file whose CONTENT the
+        # HITL pre-sign is bound to — the single most load-bearing path in the
+        # manifest, since the pin is what makes the pre-sign citable at all. It
+        # used to be emitted as raw text, so CHECK 1 never saw it: a mistyped or
+        # renamed pin path still printed, `--verify` still reported 0 dead
+        # citations, and CI stayed green while the brief pointed an orchestrator
+        # at a file that does not exist. Going through `m.cite` is what makes the
+        # path existence-checked like every other cited path.
+        m.out("      pinned to                     %s"
+              % m.cite(pre["pinned_to"], label="publish-gate pre-sign pin"))
         m.out("      re-opens if                   %s" % pre["reopens_if"])
     if not minted:
         m.out("      mints at                      Slice %s, recorded as %s (board %s)"
