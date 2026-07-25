@@ -17,6 +17,20 @@
 #    an ephemeral ledgerwatch --state-dir so the Steward's REAL cursor is never
 #    read or advanced. Verified mechanically by scripts/tests/test_steward_orient.sh
 #    (fixture tree byte-identical before/after; the run's whole TMPDIR empty after).
+#    ".git/index" IS A FILE THIS SCRIPT WRITES TOO, and it is the one the working
+#    tree's own contract lives in. `git status` REFRESHES a stale stat cache and
+#    then rewrites the index under .git/index.lock — measured on git 2.43:
+#    touching tracked files and running `git status --porcelain` changes the
+#    index's bytes. That is a repo-metadata write in a script whose whole promise
+#    is that it makes none, it can race a concurrent git command for the index
+#    lock, and it would fail in a read-only checkout. So EVERY git probe here runs
+#    with git's OPTIONAL locks disabled (GIT_OPTIONAL_LOCKS=0 plus an explicit
+#    --no-optional-locks at each call site): git then does all the same reads and
+#    simply declines to persist the refreshed cache. The env var covers git run by
+#    CHILD processes (gh, python3); the per-call flag keeps the intent legible and
+#    survives someone unsetting the environment. Asserted by the suite's
+#    ".git/index is byte-unchanged across a run with a deliberately staled stat
+#    cache" arm, plus a structural arm that no bare `git` call creeps back in.
 #
 # ========================== WHERE THE FACTS COME FROM ========================
 # LIVE repo facts are read live (branch, HEAD, dirty count, worktrees, orphan
@@ -82,13 +96,20 @@
 # Usage: scripts/steward-orient.sh
 set -euo pipefail
 
+# Hard limit 2, mechanically. Belongs BEFORE the first git call: with optional
+# locks disabled git never takes .git/index.lock, so a stale stat cache is
+# refreshed in memory and never written back, and a lock held by a concurrent
+# git command (or a read-only .git) cannot perturb this run. Exported so git
+# invoked by CHILD processes (gh, python3, ledgerwatch) inherits it.
+export GIT_OPTIONAL_LOCKS=0
+
 BUDGET_BYTES="${STEWARD_ORIENT_BUDGET:-4096}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/board-closed.sh
 . "$SCRIPT_DIR/lib/board-closed.sh"
 
-if ! REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"; then
+if ! REPO_ROOT="$(git --no-optional-locks rev-parse --show-toplevel 2>/dev/null)"; then
   printf 'steward-orient: not inside a git worktree\n' >&2
   exit 2
 fi
@@ -128,16 +149,16 @@ emit() {
 tilde() { printf '%s' "${1/#$HOME/\~}"; }
 
 # ------------------------------------------------------------------- REPO ---
-BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || printf '?')"
-HEAD_SHA="$(git rev-parse --short=8 HEAD 2>/dev/null || printf '?')"
-HEAD_SUBJ="$(git log -1 --format=%s 2>/dev/null | cut -c1-58 || printf '?')"
-DIRTY="$(git status --porcelain --untracked-files=all | wc -l | tr -d ' ')"
+BRANCH="$(git --no-optional-locks rev-parse --abbrev-ref HEAD 2>/dev/null || printf '?')"
+HEAD_SHA="$(git --no-optional-locks rev-parse --short=8 HEAD 2>/dev/null || printf '?')"
+HEAD_SUBJ="$(git --no-optional-locks log -1 --format=%s 2>/dev/null | cut -c1-58 || printf '?')"
+DIRTY="$(git --no-optional-locks status --porcelain --untracked-files=all | wc -l | tr -d ' ')"
 
 add "STEWARD ORIENT $(date -u +%Y-%m-%dT%H:%MZ) · stateless · reads only · writes nothing"
 add "REPO   branch=$BRANCH head=$HEAD_SHA dirty=$DIRTY  \"$HEAD_SUBJ\""
 
 # -------------------------------------------------------------- WORKTREES ---
-mapfile -t WT_LINES < <(git worktree list 2>/dev/null || true)
+mapfile -t WT_LINES < <(git --no-optional-locks worktree list 2>/dev/null || true)
 if [ "${#WT_LINES[@]}" -eq 0 ]; then
   note_empty "worktrees (git worktree list returned nothing)"
 fi
@@ -147,10 +168,10 @@ for w in "${WT_LINES[@]}"; do add "  $(tilde "$w")"; done
 # Correction 2: the checkout pool is a SIBLING of the MAIN worktree root.
 # --git-common-dir points at the main .git even from inside a linked worktree,
 # so this resolves the same pool no matter where the briefing is run from.
-GIT_COMMON="$(cd "$(git rev-parse --git-common-dir)" && pwd)"
+GIT_COMMON="$(cd "$(git --no-optional-locks rev-parse --git-common-dir)" && pwd)"
 MAIN_ROOT="$(dirname "$GIT_COMMON")"
 WT_DIR="${MAIN_ROOT}-worktrees"
-REGISTERED="$(git worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' || true)"
+REGISTERED="$(git --no-optional-locks worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' || true)"
 ORPHANS=""
 if [ -d "$WT_DIR" ]; then
   for d in "$WT_DIR"/*/; do

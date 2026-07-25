@@ -10,7 +10,9 @@
 #
 # Predicate under test (see scripts/steward-orient.sh's header for the full
 # statement):
-#   * output is <= 4096 bytes and NO file is written anywhere;
+#   * output is <= 4096 bytes and NO file is written anywhere — INCLUDING
+#     `.git/index`, which `git status` rewrites when it refreshes a stale stat
+#     cache (arms 2b-2d);
 #   * every load-bearing section is non-empty, or the run HARD-fails naming the
 #     section (the documented exemptions are the sections that have a legitimate
 #     empty state: open-PR count, orphan checkout dirs, dirty-file count);
@@ -445,6 +447,124 @@ if [ ! -d "$FIX/.ledgerwatch" ]; then
   pass "writes no file — no default .ledgerwatch cursor dir is created in the repo"
 else
   fail "arm 2: the briefing created $FIX/.ledgerwatch (a real cursor would be disturbed)"
+fi
+
+# --- Arm 2b: .git/index IS BYTE-UNCHANGED, EVEN WITH A STALE STAT CACHE ------
+# Arm 2's tree_snapshot PRUNES */.git, so it could never see this: `git status`
+# refreshes a stale stat cache and REWRITES .git/index under .git/index.lock.
+# That is a repo-metadata write by a script whose stated contract is that it
+# writes nothing at all, and it can race a concurrent git command for the lock.
+#
+# Staling technique: rewrite every tracked file's mtime to a FIXED PAST instant.
+# A fixed timestamp (rather than `touch` + sleep) puts the mtime well outside
+# git's racily-clean one-second window with no wall-clock cost, so every cache
+# entry is unambiguously stat-dirty.
+#
+# NON-VACUITY, and the RED witness carried inside the suite: a fixture where git
+# had nothing to refresh would green this arm no matter what the briefing does.
+# So the same staled fixture is COPIED (cp -a preserves the mtimes, so the copy
+# is staled identically) and probed with a PLAIN, lock-taking `git status` — the
+# exact call the briefing used to make. That copy's index MUST change. Only then
+# does "the briefing left the index alone" mean anything.
+setup_fixture
+find "$FIX" -path '*/.git' -prune -o -type f -print0 \
+  | xargs -0 touch -d '2026-01-01 00:00:00'
+
+WITNESS="$TMPROOT/parent/witness"
+cp -a "$FIX" "$WITNESS"
+WITNESS_BEFORE="$(sha256sum "$WITNESS/.git/index" | cut -d' ' -f1)"
+git -C "$WITNESS" status --porcelain --untracked-files=all >/dev/null 2>&1 || true
+WITNESS_AFTER="$(sha256sum "$WITNESS/.git/index" | cut -d' ' -f1)"
+if [ "$WITNESS_BEFORE" != "$WITNESS_AFTER" ]; then
+  pass "arm 2b witness: the stat cache really is stale — a plain \`git status\` rewrites .git/index"
+else
+  fail "arm 2b fixture invalid: a plain lock-taking \`git status\` did NOT rewrite .git/index, so this arm proves nothing"
+fi
+rm -rf "$WITNESS"
+
+INDEX_BEFORE="$(sha256sum "$FIX/.git/index" | cut -d' ' -f1)"
+INDEX_META_BEFORE="$(stat -c '%s %.9Y' "$FIX/.git/index")"
+run_orient "$FIX"
+INDEX_AFTER="$(sha256sum "$FIX/.git/index" | cut -d' ' -f1)"
+INDEX_META_AFTER="$(stat -c '%s %.9Y' "$FIX/.git/index")"
+# Guarded on the run having HAPPENED: a briefing that cannot start also writes
+# no index, and must not be able to green this.
+if [ "$RC" -eq 0 ] && [ -n "$OUT" ]; then
+  pass "arm 2b precondition: the briefing still completes on a stat-stale checkout (rc=0)"
+else
+  fail "arm 2b precondition: the briefing did not run (rc=$RC, $BYTES bytes) — the index assertion would be vacuous; err=$ERR"
+fi
+if [ "$INDEX_BEFORE" = "$INDEX_AFTER" ]; then
+  pass "writes no file — .git/index is BYTE-IDENTICAL across a run with a deliberately staled stat cache"
+else
+  fail "arm 2b: the briefing REWROTE .git/index ($INDEX_BEFORE -> $INDEX_AFTER) — it must run git with optional locks disabled"
+fi
+if [ "$INDEX_META_BEFORE" = "$INDEX_META_AFTER" ]; then
+  pass "writes no file — .git/index size+mtime are unchanged too (NANOSECOND mtime: it was not even reopened)"
+else
+  fail "arm 2b: .git/index metadata moved ($INDEX_META_BEFORE -> $INDEX_META_AFTER)"
+fi
+if [ ! -e "$FIX/.git/index.lock" ]; then
+  pass "writes no file — no .git/index.lock is left behind"
+else
+  fail "arm 2b: the briefing left a .git/index.lock behind"
+fi
+
+# --- Arm 2c: a HELD index lock does not perturb the briefing ----------------
+# HONEST SCOPE: measured on git 2.43, a plain `git status` tolerates a held
+# optional lock (it declines to write and still exits 0), so this arm is NOT a
+# RED witness for the fix — it is a forward guard. It is worth its cost because
+# the briefing runs under `set -euo pipefail`, where any future git probe that
+# DOES insist on the lock (or a git version that starts erroring) would abort the
+# whole cold-start briefing rather than degrade. With optional locks disabled the
+# lock is never contended for at all.
+setup_fixture
+find "$FIX" -path '*/.git' -prune -o -type f -print0 \
+  | xargs -0 touch -d '2026-01-01 00:00:00'
+: >"$FIX/.git/index.lock"
+LOCKED_INDEX_BEFORE="$(sha256sum "$FIX/.git/index" | cut -d' ' -f1)"
+run_orient "$FIX"
+LOCKED_INDEX_AFTER="$(sha256sum "$FIX/.git/index" | cut -d' ' -f1)"
+if [ "$RC" -eq 0 ] && [ -n "$OUT" ]; then
+  pass "a concurrently HELD .git/index.lock does not abort the briefing (rc=0)"
+else
+  fail "arm 2c: a held index lock broke the briefing (rc=$RC); err=$ERR"
+fi
+if [ "$LOCKED_INDEX_BEFORE" = "$LOCKED_INDEX_AFTER" ]; then
+  pass "a held index lock run still leaves .git/index byte-identical"
+else
+  fail "arm 2c: .git/index changed while its lock was held by another process"
+fi
+if [ -e "$FIX/.git/index.lock" ]; then
+  pass "the other process's .git/index.lock is still there — the briefing never touched it"
+else
+  fail "arm 2c: the briefing REMOVED another process's .git/index.lock"
+fi
+rm -f "$FIX/.git/index.lock"
+
+# --- Arm 2d: structural — EVERY git probe disables optional locks -----------
+# Behavioural arm 2b only covers the git calls on the paths it exercises. This
+# arm is the drift guard: a new `$(git ...)` added later without the flag would
+# silently reintroduce the index write. Counts every command substitution /
+# process substitution that starts a git command and requires all of them to
+# carry --no-optional-locks, plus the exported env var that covers git run by
+# CHILD processes (gh, python3).
+GIT_CALLS_ALL="$(grep -coE '(\$\(|<\()git ' "$GATE" || true)"
+GIT_CALLS_SAFE="$(grep -coE '(\$\(|<\()git --no-optional-locks ' "$GATE" || true)"
+if [ "$GIT_CALLS_ALL" -ge 8 ]; then
+  pass "arm 2d precondition: the briefing really does shell out to git ($GIT_CALLS_ALL call sites)"
+else
+  fail "arm 2d precondition: found only $GIT_CALLS_ALL git call sites — the count regex has drifted, so this arm proves nothing"
+fi
+if [ "$GIT_CALLS_ALL" -eq "$GIT_CALLS_SAFE" ]; then
+  pass "every git call site ($GIT_CALLS_SAFE/$GIT_CALLS_ALL) passes --no-optional-locks"
+else
+  fail "arm 2d: $((GIT_CALLS_ALL - GIT_CALLS_SAFE)) git call site(s) can still take .git/index.lock: $(grep -nE '(\$\(|<\()git ' "$GATE" | grep -v -- '--no-optional-locks')"
+fi
+if grep -qE '^export GIT_OPTIONAL_LOCKS=0$' "$GATE"; then
+  pass "GIT_OPTIONAL_LOCKS=0 is exported, so git in CHILD processes (gh, python3) cannot lock either"
+else
+  fail "arm 2d: the briefing must export GIT_OPTIONAL_LOCKS=0"
 fi
 
 # --- Arm 10: the REAL repo is green (the regression half) ----------------
