@@ -51,6 +51,15 @@ run_capped lint-findings "$SCRIPT_DIR/lint-findings.sh"
 # markdownlint job never sees.
 run_capped lint-plan-anchors "$SCRIPT_DIR/lint-plan-anchors.sh" --quiet
 
+# T2a (DOC-HYGIENE-2): release state has ONE writer — dev/plans/release-state-*.json
+# — and the prose restatements of it are marker-delimited GENERATED regions. This
+# leg regenerates every region and diffs it against the document, so a hand-edit
+# inside the markers, or a fact changed in the state file without a regenerate,
+# both go red. (Release state used to be narrated across a 5-12 file fan-out with
+# nothing checking the copies agreed; one reconciliation commit touched 7 files.)
+# Pure bash + python3, and python3 absent is a hard failure, not a skip (TC-37).
+run_capped check-release-state-views "$SCRIPT_DIR/check-release-state-views.sh" --quiet
+
 # docs/** structural lint. The repo .markdownlint-cli2.jsonc IGNORES docs/** (it is
 # otherwise gated only by `mkdocs build --strict`, which does NOT enforce markdownlint
 # style). agent-lint-docs.sh lints docs/** with the same .markdownlint.jsonc rules via

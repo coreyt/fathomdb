@@ -1,0 +1,227 @@
+{
+  "_comment": "SINGLE WRITER for 0.8.20 release state (DOC-HYGIENE-2 T2a). THIS FILE IS THE ONLY PLACE THESE FACTS ARE AUTHORED: landed slices + their landing SHAs, the SCHEMA version, the next slice, the remaining ladder, AC status, and the ruled/unruled decision set. WHY: before this file, that state was narrated across a 5-12 file write-side fan-out (the master release plan, the STATUS board, the plan, the Steward hand-off, the ledgers) with NOTHING checking that the copies agreed - one reconciliation commit (b70629e5) had to touch 7 files, and the live board is ~79 KB, too large to read whole. HOW IT IS ENFORCED: `generated_views` below names the marker-delimited regions that are RENDERED from this file by scripts/check-release-state-views.sh. That script regenerates each region into a temp buffer and diffs it against what is in the document; any difference is a HARD failure, so a hand-edit of a view, or a change here without a regenerate, both go red. Regenerate with `scripts/check-release-state-views.sh --write`. TO CHANGE A FACT: edit it HERE, then run --write, then commit both. Do NOT hand-edit inside the markers. SCOPE: this file records state, it does not decide anything - it changes no release slot, no scope, no requirement and no AC. Every fact below was re-verified from git (merge-commit ancestry on origin/main; `pub const SCHEMA_VERSION` in src/rust/crates/fathomdb-schema/src/lib.rs) rather than copied from narration.",
+
+  "release": "0.8.20",
+  "release_kind": "even, publish",
+  "board": "dev/plans/runs/STATUS-0.8.20.md",
+  "plan": "dev/plans/plan-0.8.20.md",
+  "master": "dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md",
+
+  "schema_version": 24,
+  "schema_version_source": "pub const SCHEMA_VERSION in src/rust/crates/fathomdb-schema/src/lib.rs",
+
+  "landed_verified_at": "fae276b9",
+  "landed_verified_how": "each SHA below is the landing merge commit for its slice AND is an ancestor of origin/main (git merge-base --is-ancestor), with the merge subject matching this repo's `merge(0.8.20): Slice[- ]N` landing convention",
+
+  "ladder": [
+    {
+      "slice": 0,
+      "short": "X0",
+      "title": "X0 design gate",
+      "depends_on": [],
+      "status": "LANDED",
+      "sha": "403eb254",
+      "merge_subject": "merge(0.8.20): Slice-0 X0 design gate — HITL-SIGNED 2026-07-19"
+    },
+    {
+      "slice": 5,
+      "short": "R-20-E1..E8",
+      "title": "erasure completeness",
+      "depends_on": [0],
+      "status": "LANDED",
+      "sha": "1f8ed8bf",
+      "merge_subject": "merge(0.8.20): Slice 5 — erasure completeness (R-20-E1..E8)"
+    },
+    {
+      "slice": 10,
+      "short": "R-20-RV, R-20-NV",
+      "title": "ReadView / read-modes + node-validity",
+      "depends_on": [0],
+      "status": "LANDED",
+      "sha": "3cfb3cda",
+      "merge_subject": "merge(0.8.20): Slice 10 — ReadView/read-modes + node-validity + TC-31"
+    },
+    {
+      "slice": 15,
+      "short": "R-20-PR, R-20-EAV",
+      "title": "projection registry (C-1) + EAV/property-FTS + TC-33 + TC-34",
+      "depends_on": [0, 10],
+      "status": "LANDED",
+      "sha": "a2022957",
+      "merge_subject": "merge(0.8.20): Slice 15 keystone COMPLETE — registry + EAV + filterable pre-KNN + TC-33"
+    },
+    {
+      "slice": 20,
+      "short": "R-20-DR",
+      "title": "dense_readiness + flush_embeddings() + the TC-45 supersession-terminal fix",
+      "depends_on": [15],
+      "status": "UNBLOCKED",
+      "sha": null
+    },
+    {
+      "slice": 25,
+      "short": "R-20-SUR",
+      "title": "surrogate minting — governed entities ONLY",
+      "depends_on": [15],
+      "status": "UNBLOCKED",
+      "sha": null
+    },
+    {
+      "slice": 30,
+      "short": "H7",
+      "title": "RUBRIC-H7 can-i-deploy contract gate (R-20-H7)",
+      "depends_on": [10, 15, 20, 25],
+      "status": "NOT_STARTED",
+      "sha": null,
+      "publish_precondition": true
+    },
+    {
+      "slice": 40,
+      "short": "R-20-PUB",
+      "title": "verification + release readiness (publish-or-hold)",
+      "depends_on": [5, 30],
+      "status": "NOT_STARTED",
+      "sha": null
+    }
+  ],
+
+  "landed": [0, 5, 10, 15],
+  "next_slice": 20,
+  "remaining_ladder": [20, 25, 30, 40],
+  "ladder_order": "SEQUENTIAL — parallel 20 || 25 was declined (master F-34)",
+  "unblocked": [20, 25],
+  "unblocked_by": { "requirement": "R-20-PR", "gloss": "the projection registry" },
+  "publish_precondition_slice": 30,
+
+  "acceptance": {
+    "highest_defined_non_reserved": "AC-076",
+    "reservations": [
+      {
+        "ac": "AC-077",
+        "state": "RESERVED",
+        "initiative": "IR-eval IR-1/IR-2",
+        "note": "reserved placeholder in dev/acceptance.md; thresholds TBD"
+      },
+      {
+        "ac": "AC-078",
+        "state": "CONDITIONALLY RESERVED",
+        "initiative": "IR-eval IR-1/IR-2",
+        "note": "minted only if the consensus splits the measure"
+      }
+    ],
+    "publish_gate": {
+      "ac": "AC-079",
+      "minted": false,
+      "signed": false,
+      "state_word": "unsigned",
+      "covers": "the accumulated governed-surface delta (Slices 5d + 10b + 15b + 15d)",
+      "pre_signed": "HITL 2026-07-25 — PRE-SIGNED and pinned to the content of src/conformance/governed-surface-allowlist.json; any diff to that file re-opens the gate (T1e pin). PRE-SIGN IS NOT MINTING: AC-079 is still minted and recorded as SIGNED at Slice 40.",
+      "sign_off_slice": 40,
+      "board_ref": "§4 #1"
+    },
+    "re_verified_green": ["AC-041", "AC-080"]
+  },
+
+  "decisions": {
+    "_comment": "Ruled vs unruled, as of 2026-07-25. Sources of record: dev/plans/runs/STATUS-0.8.20.md §4 (the historical queue banner) and dev/plans/plan-0.8.20.md §11 (the live queue + the 2026-07-24 and 2026-07-25 ruling blocks). Recorded here so the ruled/unruled split has ONE writer; the two prose sections stay exactly as they are.",
+    "unruled": [
+      {
+        "id": "batched-governed-surface",
+        "title": "the batched governed-surface decision — the accumulated Slice 20/25/30 allowlist delta",
+        "gated_at": "the Slice 30 -> Slice 40 boundary",
+        "halts_run": false,
+        "source": "plan-0.8.20.md §11 (2026-07-25 rulings, item 2)"
+      },
+      {
+        "id": "publish",
+        "title": "PUBLISH the 0.8.20 breaking pair (manifests 0.8.9 -> 0.8.20)",
+        "gated_at": "Slice 40",
+        "halts_run": true,
+        "source": "plan-0.8.20.md §11 item 3"
+      }
+    ],
+    "ruled": [
+      {
+        "id": "ac-079-sign-off",
+        "ruling": "PRE-SIGNED; minted at Slice 40",
+        "ruled_on": "2026-07-25",
+        "source": "plan-0.8.20.md §11 item 1 + the 2026-07-25 rulings block"
+      },
+      {
+        "id": "adoption-arms",
+        "ruling": "(a) — Phase-2 surface opt-in, erasure fixes ON",
+        "ruled_on": "2026-07-24",
+        "source": "plan-0.8.20.md §11 item 2"
+      },
+      {
+        "id": "fts-vector-without-searchable",
+        "ruling": "(b) REJECT as an invalid spec; implement at the next configure_projections slice",
+        "ruled_on": "2026-07-24",
+        "source": "plan-0.8.20.md §11 item 4"
+      },
+      {
+        "id": "embed-batch-cls-ts-parity",
+        "ruling": "(a) — add the TS binding (X1 / Slice 40)",
+        "ruled_on": "2026-07-24",
+        "source": "plan-0.8.20.md §11 item 5"
+      },
+      {
+        "id": "tc-16-placement",
+        "ruling": "fold into Slice 40 with the #11-full rehearsal",
+        "ruled_on": "2026-07-24",
+        "source": "plan-0.8.20.md §11 item 6"
+      },
+      {
+        "id": "tc-45-placement",
+        "ruling": "FIX IN 0.8.20 — folded into Slice 20",
+        "ruled_on": "2026-07-24",
+        "source": "plan-0.8.20.md §11 item 7"
+      },
+      {
+        "id": "hermes-consult",
+        "ruling": "CLOSED — no input received; it gated nothing in 0.8.20",
+        "ruled_on": "2026-07-25",
+        "source": "plan-0.8.20.md §11 item 8"
+      },
+      {
+        "id": "memex-co-land-readiness",
+        "ruling": "CLOSED BY DECISION — Memex adapts to 0.8.20's surface; no confirmation is to be sought",
+        "ruled_on": "2026-07-25",
+        "source": "master F-34 · plan-0.8.20.md §7 prereq 5"
+      },
+      {
+        "id": "eu7-basis",
+        "ruling": "CLOSED BY DECISION — ZERO eu7 runs on any backend at any N; Slice 40 executes no eu7 gate",
+        "ruled_on": "2026-07-19",
+        "source": "master F-28 · STATUS §6"
+      },
+      {
+        "id": "run-authorization",
+        "ruling": "standing Steward mandate for DOC-HYGIENE-2 -> 20 -> 25 (sequential) -> 30 -> batched surface decision -> DOC-HYGIENE-3 -> 40",
+        "ruled_on": "2026-07-25",
+        "source": "master F-34"
+      }
+    ]
+  },
+
+  "generated_views": [
+    {
+      "id": "master-ladder-progress",
+      "file": "dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md",
+      "location": "§4 Release allocation — the `| **0.8.20 (even, publish)** |` row, inside the LADDER PROGRESS sentence",
+      "renders": "landed slices + their SHAs, SCHEMA version, remaining ladder"
+    },
+    {
+      "id": "status-unblocks",
+      "file": "dev/plans/runs/STATUS-0.8.20.md",
+      "location": "§1 Current state — the `**Unblocks**` table row's cell body",
+      "renders": "unblocked slices, what unblocked them, the publish-precondition slice + its dependencies, AC-079 sign-off status"
+    },
+    {
+      "id": "handoff-next-step",
+      "file": "dev/plans/runs/STEWARD-SESSION-HANDOFF-2026-07-24-A.md",
+      "location": "★ IMMEDIATE NEXT STEP — the opening next-step sentence",
+      "renders": "landed slices + the next slice"
+    }
+  ]
+}

@@ -484,6 +484,27 @@ jobs:
       - name: Governed-surface pin vs the AC-079 pre-sign (DOC-HYGIENE-2 T1e)
         run: bash scripts/check-governed-surface-pin.sh
 
+  # DOC-HYGIENE-2 T2a — the always-on single-writer release-state backstop.
+  #
+  # Deliberately carries NO `if:` and NO `needs:`, for the same reason as
+  # board-currency / ledger-integrity / plan-anchors above. The push that
+  # invalidates a generated release-state view is a LANDING push (a slice merges,
+  # SCHEMA moves, the next slice changes) — i.e. a code push, which the
+  # `markdownlint` job's `docs_only` gate excludes by construction. A currency
+  # gate that cannot run on the push that makes the fact wrong is decorative.
+  #
+  # Default (depth-1) checkout is sufficient: the predicate reads working-tree
+  # files only and walks no history.
+  release-state-views:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Release-state generated views are current (DOC-HYGIENE-2 T2a)
+        run: bash scripts/check-release-state-views.sh
+      - name: Recurrence guard for the gate itself (fixture arms)
+        run: bash scripts/tests/test_check_release_state_views.sh
+
   # mkdocs --strict is the broader CI gate beyond agent-verify (per AGENTS.md §3).
   # Intentionally NOT gated on docs_only: it must run for docs/** changes (the
   # fast path) AND alongside code changes, exactly as before.

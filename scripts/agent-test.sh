@@ -98,6 +98,12 @@ run_capped test-plans-status-frontmatter bash scripts/tests/test_plans_status_fr
 # here is not vacuous. RED fixtures built inline under mktemp -d.
 run_capped test-lint-plan-anchors bash scripts/tests/test_lint_plan_anchors.sh
 
+# T2a: recurrence guard for the single-writer release-state file and its
+# marker-delimited generated views — regenerate-and-diff, marker well-formedness,
+# the orphan-marker confinement rule, and the TC-37 zero-blocks hard fail. RED
+# fixtures built inline under mktemp -d; also asserts the CI job is always-on.
+run_capped test-check-release-state-views bash scripts/tests/test_check_release_state_views.sh
+
 # Markdown generators (shell): context-clarity.sh / memory-clarity.sh emit
 # gate-compliant markdown. Their output trees (and the dev/plans/runs/** reports
 # from the Python generators) are markdownlint-ignored, so the normal md gate never
