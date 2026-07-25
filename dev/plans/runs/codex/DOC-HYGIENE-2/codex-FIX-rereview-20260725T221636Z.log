@@ -1,0 +1,1599 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/dh2-fix
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f9b5a-07a9-77d0-b06c-5af51d053ed1
+--------
+user
+changes against '7b6a67ba9b658fa9ed0fc0fd65f558679d52dbe5'
+exec
+/bin/bash -lc "cat MEMORY.md && for f in feedback_*.md; do echo '---' "'$f; cat "$f"; done' in /home/coreyt/projects/fathomdb-worktrees/dh2-fix
+ exited 1 in 0ms:
+cat: MEMORY.md: No such file or directory
+
+exec
+/bin/bash -lc "pwd; ls -la; find .. -maxdepth 2 -name MEMORY.md -o -name 'feedback_*.md'" in /home/coreyt/projects/fathomdb-worktrees/dh2-fix
+ succeeded in 0ms:
+/home/coreyt/projects/fathomdb-worktrees/dh2-fix
+total 340
+drwxrwxr-x 12 coreyt coreyt   4096 Jul 25 17:15 .
+drwxrwxr-x  4 coreyt coreyt   4096 Jul 25 16:49 ..
+drwxrwxr-x  4 coreyt coreyt   4096 Jul 25 16:49 .claude
+-rw-rw-r--  1 coreyt coreyt     62 Jul 25 16:49 .git
+drwxrwxr-x  3 coreyt coreyt   4096 Jul 25 16:49 .github
+-rw-rw-r--  1 coreyt coreyt   4679 Jul 25 16:49 .gitignore
+-rw-rw-r--  1 coreyt coreyt   2154 Jul 25 16:49 .markdownlint-cli2.jsonc
+-rw-rw-r--  1 coreyt coreyt   2105 Jul 25 16:49 .markdownlint.jsonc
+-rw-rw-r--  1 coreyt coreyt    657 Jul 25 16:49 .prettierignore
+-rw-rw-r--  1 coreyt coreyt    296 Jul 25 16:49 .prettierrc.json
+-rw-rw-r--  1 coreyt coreyt  13373 Jul 25 16:49 AGENTS.md
+-rw-rw-r--  1 coreyt coreyt  45281 Jul 25 16:49 CHANGELOG.md
+-rw-rw-r--  1 coreyt coreyt 115578 Jul 25 16:49 Cargo.lock
+-rw-------  1 coreyt coreyt   2434 Jul 25 17:15 Cargo.toml
+-rw-rw-r--  1 coreyt coreyt   1078 Jul 25 16:49 LICENSE
+-rw-rw-r--  1 coreyt coreyt    939 Jul 25 16:49 README.md
+-rw-rw-r--  1 coreyt coreyt    120 Jul 25 16:49 deny.toml
+drwxrwxr-x 30 coreyt coreyt   4096 Jul 25 16:49 dev
+drwxrwxr-x 11 coreyt coreyt   4096 Jul 25 16:49 docs
+drwxrwxr-x  2 coreyt coreyt   4096 Jul 25 16:49 experiments
+-rw-rw-r--  1 coreyt coreyt   1783 Jul 25 16:49 lychee.toml
+-rw-rw-r--  1 coreyt coreyt   1502 Jul 25 16:49 mkdocs.yml
+-rw-rw-r--  1 coreyt coreyt  48768 Jul 25 16:49 package-lock.json
+-rw-rw-r--  1 coreyt coreyt   1249 Jul 25 16:49 package.json
+-rw-rw-r--  1 coreyt coreyt     66 Jul 25 16:49 rust-toolchain.toml
+-rw-rw-r--  1 coreyt coreyt     45 Jul 25 16:49 rustfmt.toml
+drwxrwxr-x  9 coreyt coreyt   4096 Jul 25 17:11 scripts
+drwxrwxr-x  6 coreyt coreyt   4096 Jul 25 16:49 src
+drwxrwxr-x  6 coreyt coreyt   4096 Jul 25 16:49 test
+drwxrwxr-x  4 coreyt coreyt   4096 Jul 25 16:49 tests
+drwxrwxr-x  3 coreyt coreyt   4096 Jul 25 16:49 tools
+
+exec
+/bin/bash -lc 'git status --short && git diff --stat 7b6a67ba9b658fa9ed0fc0fd65f558679d52dbe5 && git diff --name-only 7b6a67ba9b658fa9ed0fc0fd65f558679d52dbe5' in /home/coreyt/projects/fathomdb-worktrees/dh2-fix
+ succeeded in 0ms:
+ scripts/commission-manifest.sh            | 11 ++++-
+ scripts/tests/test_commission_manifest.sh | 71 +++++++++++++++++++++++++++++++
+ 2 files changed, 81 insertions(+), 1 deletion(-)
+scripts/commission-manifest.sh
+scripts/tests/test_commission_manifest.sh
+
+exec
+/bin/bash -lc 'git diff 7b6a67ba9b658fa9ed0fc0fd65f558679d52dbe5 -- scripts/commission-manifest.sh scripts/tests/test_commission_manifest.sh' in /home/coreyt/projects/fathomdb-worktrees/dh2-fix
+ succeeded in 0ms:
+diff --git a/scripts/commission-manifest.sh b/scripts/commission-manifest.sh
+index 6c41807e..e438c87c 100755
+--- a/scripts/commission-manifest.sh
++++ b/scripts/commission-manifest.sh
+@@ -420,7 +420,16 @@ def emit_publish_gate(m, gate, state_path):
+     m.out("  publish gate                      %s" % head)
+     m.out("      covers                        %s" % covers)
+     if pre:
+-        m.out("      pinned to                     %s" % pre["pinned_to"])
++        # REGISTERED, not printed. `pinned_to` names the file whose CONTENT the
++        # HITL pre-sign is bound to — the single most load-bearing path in the
++        # manifest, since the pin is what makes the pre-sign citable at all. It
++        # used to be emitted as raw text, so CHECK 1 never saw it: a mistyped or
++        # renamed pin path still printed, `--verify` still reported 0 dead
++        # citations, and CI stayed green while the brief pointed an orchestrator
++        # at a file that does not exist. Going through `m.cite` is what makes the
++        # path existence-checked like every other cited path.
++        m.out("      pinned to                     %s"
++              % m.cite(pre["pinned_to"], label="publish-gate pre-sign pin"))
+         m.out("      re-opens if                   %s" % pre["reopens_if"])
+     if not minted:
+         m.out("      mints at                      Slice %s, recorded as %s (board %s)"
+diff --git a/scripts/tests/test_commission_manifest.sh b/scripts/tests/test_commission_manifest.sh
+index d0e82bcf..7931262a 100644
+--- a/scripts/tests/test_commission_manifest.sh
++++ b/scripts/tests/test_commission_manifest.sh
+@@ -38,6 +38,15 @@
+ # because every landing SHA also appears in the `landed so far` roll-up and a
+ # whole-output grep therefore cannot distinguish a right base from a wrong one.
+ #
++# THIRD PREDICATE (codex §9 [P2], arms 5h/5i/9e): the publish gate's
++# `pre_sign.pinned_to` is a REGISTERED CITATION, not printed text. It names the
++# file whose content the HITL pre-sign is bound to, and it was emitted raw — so
++# a mistyped or renamed pin path was still printed while `--verify` reported 0
++# dead citations and CI stayed green. That is CHECK 1's guarantee not holding
++# over the one path it matters most for. Arm 5h asserts the failure direction, 5i
++# asserts the verified-path COUNT moves (a bolted-on existence check beside the
++# citation list would satisfy 5h alone), and 9e asserts it on the live state file.
++#
+ # Isolation: fixtures are throwaway git repos under mktemp -d (the generator
+ # does `cd "$(git rev-parse --show-toplevel)"`, so each fixture must BE a repo).
+ # Nothing here writes into the real checkout — arm 9 asserts that mechanically.
+@@ -525,6 +534,53 @@ else
+   fail "arm 5g (retired state_word): rc=$RC out=$OUT"
+ fi
+ 
++# --- Arm 5h: THE PIN PATH IS A VERIFIED CITATION, not raw text -------------
++# codex §9 [P2]. `pre_sign.pinned_to` names the file whose CONTENT the HITL
++# pre-sign is bound to — the most load-bearing path in the whole manifest, since
++# the pin is what makes the pre-sign citable rather than a bare assertion. It was
++# emitted with `m.out(... % pre["pinned_to"])`, i.e. as RAW TEXT, so CHECK 1
++# never saw it. MEASURED RED against the pre-fix generator (GATE_UNDER_TEST):
++# with `pinned_to` pointing at src/conformance/DOES-NOT-EXIST.json the manifest
++# was still EMITTED, still exited 0, and still printed
++#   `PATH VERIFICATION: 24 distinct path(s) exist, 24 anchor(s) verified, 0 dead.`
++# — a dead pin path briefing an orchestrator while CI stayed green, which is
++# exactly the "a gate that appears to cover a citation but does not" class.
++setup_fixture presigned
++mutate_state "s['acceptance']['publish_gate']['pre_sign']['pinned_to'] = 'src/conformance/DOES-NOT-EXIST.json'"
++run_gen 9.9.9 10
++if [ "$RC" -ne 0 ] && grep -q 'DOES-NOT-EXIST.json' <<<"$OUT" \
++   && grep -qi 'does NOT exist' <<<"$OUT" \
++   && ! grep -q 'COMMISSION MANIFEST' <<<"$OUT"; then
++  pass "pre-sign pin — a \`pinned_to\` that does not resolve HARD-fails and names the dead path"
++else
++  fail "arm 5h (dead pin path): rc=$RC out=$OUT"
++fi
++
++# --- Arm 5i: ...and the pin is COUNTED, so the registration is proven -------
++# Asserting only the failure direction would be satisfied by a special-case
++# `os.path.exists` check bolted on beside the citation list. This asserts the
++# VERIFIED-PATH COUNT moves: pointing `pinned_to` at an existing path that
++# nothing else cites raises the count by exactly one, which can only happen if
++# the pin went through the same citation machinery as every other path.
++# The default fixture pins to src/conformance/governed-surface-allowlist.json,
++# which §4 ALREADY cites, so its count is deliberately unchanged (paths are
++# counted distinct) — that is why this arm re-pins to a fresh file.
++# Pre-fix the count does NOT move: measured RED.
++setup_fixture presigned
++run_gen 9.9.9 10 --verify
++PIN_BASE_N="$(grep -oE '[0-9]+ path\(s\)' <<<"$OUT" | head -1 | grep -oE '[0-9]+' || true)"
++setup_fixture presigned
++printf '{"delta": []}\n' >"$FIX/src/conformance/pinned-delta.json"
++mutate_state "s['acceptance']['publish_gate']['pre_sign']['pinned_to'] = 'src/conformance/pinned-delta.json'"
++run_gen 9.9.9 10 --verify
++PIN_NEW_N="$(grep -oE '[0-9]+ path\(s\)' <<<"$OUT" | head -1 | grep -oE '[0-9]+' || true)"
++if [ "$RC" -eq 0 ] && [ -n "$PIN_BASE_N" ] && [ -n "$PIN_NEW_N" ] \
++   && [ "$PIN_NEW_N" -eq "$((PIN_BASE_N + 1))" ]; then
++  pass "pre-sign pin — a distinct \`pinned_to\` raises the verified-path count by exactly 1"
++else
++  fail "arm 5i (pin counted): rc=$RC base=$PIN_BASE_N new=$PIN_NEW_N (expected $((PIN_BASE_N + 1)))"
++fi
++
+ # Restore the default fixture for the arms that follow.
+ setup_fixture
+ run_gen 9.9.9 10
+@@ -765,6 +821,21 @@ else
+   fail "arm 9d (real base line): base=[$REAL_BASE_LINE]"
+ fi
+ 
++# --- Arm 9e: the REAL manifest's pin path is emitted as a CITATION ----------
++# The live half of arms 5h/5i. The pin line must render the path the way every
++# other cited path renders (through `m.cite`, i.e. backticked and therefore
++# existence-checked), and the path it names must resolve in this checkout. The
++# assertion is value-agnostic — it reads whatever the state file pins to — so it
++# keeps holding when the pin moves. Pre-fix the line was raw text: measured RED.
++REAL_PIN_LINE="$(grep -m1 '^      pinned to' <<<"$REAL_OUT" || true)"
++REAL_PIN="$(sed 's/^ *pinned to *//; s/`//g' <<<"$REAL_PIN_LINE")"
++if grep -qE '^ +pinned to +`[^`]+`$' <<<"$REAL_PIN_LINE" \
++   && [ -n "$REAL_PIN" ] && [ -e "$REPO_ROOT/$REAL_PIN" ]; then
++  pass "real repo — the publish-gate pin is emitted as a citation and resolves ($REAL_PIN)"
++else
++  fail "arm 9e (real pin citation): line=[$REAL_PIN_LINE] pin=[$REAL_PIN]"
++fi
++
+ # --- Arm 9c: the real repo's every-release sweep is green ------------------
+ set +e
+ SWEEP_OUT="$("$REPO_ROOT/scripts/commission-manifest.sh" --verify-all 2>&1)"
+
+exec
+/bin/bash -lc "sed -n '1,520p' scripts/commission-manifest.sh && sed -n '1,220p' scripts/tests/test_commission_manifest.sh" in /home/coreyt/projects/fathomdb-worktrees/dh2-fix
+ succeeded in 0ms:
+#!/usr/bin/env bash
+# scripts/commission-manifest.sh — T3b (DOC-HYGIENE-2): the GENERATED COMMISSION
+# MANIFEST. Given a release and a slice, emit the citation list an orchestrator
+# brief needs — design-of-record paths, contract paths, plan section anchors, the
+# base SHA, the worktree rules and the stop conditions — and HARD-FAIL if any of
+# it has rotted.
+#
+# ---------------------------------------------------------------------------
+# WHY (measured, not hypothetical)
+# ---------------------------------------------------------------------------
+# Commissioning a slice meant hand-assembling the same list every time out of a
+# 5-12 file fan-out (the master, the plan, the STATUS board, the hand-off, the
+# ledgers, the design tier), and NOTHING checked that the paths it cited still
+# resolved. T1d measured what that costs on the anchor axis: the TC-45 pointers
+# in `dev/plans/plan-0.8.20.md` were ~2,100 lines off and, per `git log`, had
+# never been correct. A citation nobody checks rots silently.
+#
+# THIS REPLACES A HAND-MAINTAINED BRIEF TEMPLATE; it does not add one. That shape
+# already exists twice in-repo, and the section set emitted below is DERIVED from
+# what those two documents actually contain, so the generated manifest is a real
+# substitute rather than a parallel invention:
+#   * dev/plans/prompts/LIBRARY-BUMP-ORCHESTRATOR-TEMPLATE.md — Assignment
+#     (branch-from tip, worktree path, coupling), STEP 0 Isolate, Escalate-to-LBS,
+#     Closure output.
+#   * dev/plans/prompts/0.8.0-SLICE-TEMPLATE.md — {{CONTRACT_REF}}, {{READING}},
+#     {{MANDATE}}, {{DEFERRED}}, {{AC_IDS}}, {{GUARDRAILS}}, {{DOD}}, §6 scope
+#     discipline, §7 recovery, §9 closure schema.
+#
+# ---------------------------------------------------------------------------
+# WHERE THE FACTS COME FROM (it re-scrapes nothing that already has an owner)
+# ---------------------------------------------------------------------------
+#   * dev/plans/release-state-<release>.json (T2a) is the SINGLE WRITER for the
+#     ladder, the landed slices + their landing SHAs, the SCHEMA version, the
+#     next slice, the AC state and the ruled/unruled decision set. Every one of
+#     those facts below is read from it — never re-derived from prose. Change a
+#     fact THERE and the manifest follows.
+#   * `status:` frontmatter on dev/design/**/*.md (T2c) selects the design tier,
+#     so the design-of-record list is derived, not a hardcoded list.
+#   * The plan's own `##` headings supply the section anchors, looked up by ROLE
+#     keyword rather than by line number (T1d's ban) or by a frozen title string.
+#
+# ---------------------------------------------------------------------------
+# HOW UNREVIEWED IS HANDLED (deliberate, and the honest part)
+# ---------------------------------------------------------------------------
+# T2c's backfill was conservative on purpose: most design docs are UNREVIEWED,
+# which means "nobody has classified this yet" — NOT "this is current" — and
+# scripts/lint-design-status.sh proves the PRESENCE of a status field, never its
+# TRUTH (the classification is a separate owed slice, TC-50). So this manifest
+# NEVER presents an UNREVIEWED doc as authoritative: each cited doc carries its
+# recorded status inline, UNREVIEWED/UNKNOWN rows are explicitly marked
+# unclassified with the TC-50 pointer, and the section header says the status is
+# recorded rather than verified. The reader judges; the generator does not
+# launder.
+#
+# ---------------------------------------------------------------------------
+# WHAT IT ENFORCES (two hard checks + one guard)
+# ---------------------------------------------------------------------------
+# CHECK 1 — EVERY CITED PATH MUST EXIST. Always on, not a `--verify` extra. A
+#   path that does not resolve is a HARD failure and the manifest is NOT emitted:
+#   printing a brief with one dead citation in it is the artifact this replaces.
+# CHECK 2 — EVERY CITED ANCHOR MUST OCCUR. Anchors are greppable section
+#   headings/symbols, never `file:line` (T1d RULE 1), and each is verified by
+#   literal match inside the file it names (T1d RULE 2). Swapping an unverified
+#   NUMBER for an unverified SYMBOL would just launder a bad pointer.
+# CHECK 3 — THE BASE SHA IS THE TARGET SLICE'S PREDECESSOR, never `max(landed)`.
+#   For any slice that is not the next one, the newest landed slice can BE the
+#   target (or later), and a manifest that says "branch from here" while naming
+#   the target's own merge is the agent-worktree-stale-base trap in printed
+#   form. §2 takes the greatest landed slice STRICTLY BELOW the target, marks a
+#   regeneration of an already-landed slice as HISTORICAL, and says plainly
+#   when no predecessor exists rather than emitting a blank or a wrong SHA.
+# GUARD — TC-37 VACUOUS PASS (this repo's named failure class). Zero design
+#   citations for the slice, zero citations overall, zero paths verified, or a
+#   sweep that discovers zero state files: all HARD failures. A manifest that is
+#   empty has briefed nobody while looking green.
+#
+# READ-ONLY: emits to stdout, writes no file into the repo. It records state and
+# cites decisions; it changes no slot, scope, requirement, AC or ruling.
+#
+# Usage:
+#   scripts/commission-manifest.sh <release> <slice|next> [--verify]
+#   scripts/commission-manifest.sh --verify-all
+# Exit: 0 = manifest emitted (or verified) with every path and anchor resolving;
+#       1 = a dead citation, an unknown release/slice, or a vacuous manifest.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+usage() {
+  cat <<'USAGE'
+usage:
+  scripts/commission-manifest.sh <release> <slice|next> [--verify]
+  scripts/commission-manifest.sh --verify-all
+
+  <release>   a release with a dev/plans/release-state-<release>.json (e.g. 0.8.20)
+  <slice>     a slice number in that file's ladder, or the word `next`
+  --verify    run the path/anchor existence checks and print only the counts
+  --verify-all  verify the NEXT slice of every release-state file (CI shape)
+USAGE
+}
+
+MODE="emit"
+RELEASE=""
+SLICE=""
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help) usage; exit 0 ;;
+    --verify) MODE="verify" ;;
+    --verify-all) MODE="verify-all" ;;
+    -*) echo "FAIL commission-manifest: unknown option $arg" >&2; usage >&2; exit 1 ;;
+    *)
+      if [ -z "$RELEASE" ]; then RELEASE="$arg"
+      elif [ -z "$SLICE" ]; then SLICE="$arg"
+      else echo "FAIL commission-manifest: unexpected argument $arg" >&2; usage >&2; exit 1; fi ;;
+  esac
+done
+
+if [ "$MODE" != "verify-all" ] && { [ -z "$RELEASE" ] || [ -z "$SLICE" ]; }; then
+  echo "FAIL commission-manifest: a release AND a slice are required." >&2
+  usage >&2
+  exit 1
+fi
+
+# python3 carries the JSON parse, the design-tier scan and the citation checks.
+# A gate that cannot run must fail loudly, never skip (TC-37).
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "FAIL commission-manifest: python3 not found; the state-file parser and the" >&2
+  echo "  citation existence checks cannot run. A tool that cannot check its own" >&2
+  echo "  citations must not emit them (TC-37)." >&2
+  exit 1
+fi
+
+MODE="$MODE" RELEASE="$RELEASE" SLICE="$SLICE" python3 - <<'PY'
+import glob
+import json
+import os
+import re
+import sys
+
+MODE = os.environ["MODE"]
+RELEASE = os.environ["RELEASE"]
+SLICE_SEL = os.environ["SLICE"]
+
+STATE_GLOB = "dev/plans/release-state-*.json"
+
+# Fixed infrastructure the manifest cites. These are SOURCES OF RECORD, not
+# restatements: the manifest points at them and stops. Every one is existence-
+# checked, so a rename fails here rather than being handed to an agent.
+ORCH = "dev/design/orchestration.md"
+HANDOFF = "dev/plans/prompts/0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md"
+LBO_TEMPLATE = "dev/plans/prompts/LIBRARY-BUMP-ORCHESTRATOR-TEMPLATE.md"
+SLICE_TEMPLATE = "dev/plans/prompts/0.8.0-SLICE-TEMPLATE.md"
+PREFLIGHT = "scripts/preflight.sh"
+ACCEPTANCE = "dev/acceptance.md"
+AGENTS = "AGENTS.md"
+SURFACE_ALLOWLIST = "src/conformance/governed-surface-allowlist.json"
+SURFACE_PIN = "scripts/governed-surface-pin.json"
+CODEX_DIR = "dev/plans/runs/codex"
+DESIGN_ROOT = "dev/design"
+
+# T1d RULE 1's shape, applied to this tool's OWN output: a manifest that emitted
+# a `name:123` pointer would reintroduce the class T1d closed.
+LINE_ANCHOR_RE = re.compile(r"`[A-Za-z_][A-Za-z0-9_.+-]*:[0-9]{3,}(-[0-9]+)?\+?`")
+
+# Status ordering for the design tier. Lower sorts first. UNREVIEWED/UNKNOWN sit
+# BELOW every classified value on purpose — they are queue markers, not verdicts.
+STATUS_RANK = {
+    "ACTIVE": 0, "locked": 1, "accepted": 1, "adopted": 1, "ratified": 1,
+    "signed": 1, "proposal": 3, "proposed": 3, "COMPLETE": 2, "PROPOSED": 3,
+    "UNKNOWN": 8, "UNREVIEWED": 9, "SUPERSEDED": 10,
+}
+UNCLASSIFIED = ("UNREVIEWED", "UNKNOWN")
+
+
+def die(lines):
+    for ln in lines:
+        print(ln, file=sys.stderr)
+    sys.exit(1)
+
+
+def read(path):
+    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+        return fh.read()
+
+
+def frontmatter_status(path):
+    """Parse `status:` exactly as scripts/lint-design-status.sh does."""
+    try:
+        text = read(path)
+    except OSError:
+        return None
+    lines = text.split("\n")
+    if not lines or lines[0].strip() != "---":
+        return None
+    block = []
+    for ln in lines[1:]:
+        if ln.rstrip() == "---":
+            break
+        block.append(ln)
+    else:
+        return None
+    for ln in block:
+        m = re.match(r"^status:\s*(.*?)\s*$", ln)
+        if m and m.group(1):
+            return m.group(1)
+    return None
+
+
+class Manifest:
+    """Accumulates the emitted lines AND the citations they make, so the
+    existence checks run over exactly what the brief says — not a parallel list
+    that could drift from it."""
+
+    def __init__(self):
+        self.lines = []
+        self.cites = []      # (path, needle|None, label)
+        self.problems = []
+
+    def out(self, text=""):
+        self.lines.append(text)
+
+    def cite(self, path, needle=None, label=""):
+        self.cites.append((path, needle, label))
+        if needle is not None:
+            return "`%s` in `%s`" % (needle, path)
+        return "`%s`" % path
+
+    def anchor(self, path, keywords, role, required=True):
+        """Resolve a section anchor by ROLE keyword against the file's own
+        headings. Never a line number (T1d RULE 1); always verified (RULE 2)."""
+        try:
+            text = read(path)
+        except OSError:
+            self.problems.append(
+                "FAIL commission-manifest: cannot read `%s` while resolving the %s anchor."
+                % (path, role))
+            self.cites.append((path, None, role))
+            return None
+        for ln in text.split("\n"):
+            if not ln.startswith("#"):
+                continue
+            low = ln.lower()
+            if all(k in low for k in keywords):
+                return self.cite(path, ln.strip(), role)
+        if required:
+            self.problems.append(
+                "FAIL commission-manifest: `%s` has no heading matching %s (role %s).\n"
+                "  The section was renamed or removed, so the brief would cite a heading\n"
+                "  that no longer exists. Re-point the role or restore the heading."
+                % (path, " + ".join("'%s'" % k for k in keywords), role))
+        return None
+
+
+def load_state(release):
+    path = "dev/plans/release-state-%s.json" % release
+    known = sorted(
+        re.sub(r"^dev/plans/release-state-(.*)\.json$", r"\1", p)
+        for p in glob.glob(STATE_GLOB))
+    if not known:
+        die(["FAIL commission-manifest: ZERO release-state files under %s." % STATE_GLOB,
+             "  There is nothing to generate a manifest FROM, so exiting 0 would vouch",
+             "  for nothing (TC-37). Either the state files moved or this is not the repo."])
+    if not os.path.isfile(path):
+        die(["FAIL commission-manifest: unknown release '%s' — no release-state file at" % release,
+             "  `%s`. Releases that DO have one: %s." % (path, ", ".join(known)),
+             "  The state file is the single writer (T2a); a manifest is not generated",
+             "  from prose."])
+    try:
+        return path, json.loads(read(path))
+    except (OSError, ValueError) as exc:
+        die(["FAIL commission-manifest: `%s` is not parseable as JSON: %s" % (path, exc)])
+
+
+def pick_slice(state, state_path, sel):
+    ladder = state.get("ladder") or []
+    known = [e.get("slice") for e in ladder]
+    if not ladder:
+        die(["FAIL commission-manifest: `%s` declares an EMPTY ladder." % state_path,
+             "  A manifest cannot be generated for a release with no slices (TC-37)."])
+    if str(sel).lower() == "next":
+        sel = state.get("next_slice")
+        if sel is None:
+            die(["FAIL commission-manifest: `%s` names no `next_slice`." % state_path])
+    try:
+        want = int(sel)
+    except (TypeError, ValueError):
+        die(["FAIL commission-manifest: slice '%s' is not a number (or the word `next`)." % sel])
+    for entry in ladder:
+        if entry.get("slice") == want:
+            return want, entry
+    die(["FAIL commission-manifest: slice %s is not in the %s ladder declared by `%s`."
+         % (want, state.get("release", "?"), state_path),
+         "  Known slices: %s." % ", ".join(str(s) for s in known)])
+
+
+def slice_tokens(entry):
+    """Derive the search tokens for the design tier from T2a's OWN fields, so the
+    required-reading list follows the state file rather than a hardcoded map.
+    Shapes only — snake_case identifiers and the repo's structured ids."""
+    blob = "%s %s" % (entry.get("short") or "", entry.get("title") or "")
+    pats = [
+        r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b",   # dense_readiness, flush_embeddings
+        r"\bTC-[0-9]+\b",                        # carry/todo ids
+        r"\bR-[0-9]+-[A-Za-z0-9]+\b",            # requirement ids: R-20-DR
+        r"\bC-[0-9]+\b",                         # contract ids
+        r"\bAC-[0-9]+\b",
+        r"\bRUBRIC-[A-Za-z0-9]+\b",
+        r"\b[A-Z]{2,}-[0-9]+\b",                 # OPP-12, EXP-…
+    ]
+    tokens = []
+    for pat in pats:
+        for tok in re.findall(pat, blob):
+            if tok not in tokens:
+                tokens.append(tok)
+    return tokens
+
+
+def scan_design(tokens, release, slice_no):
+    # Second selector, alongside the token scan: a doc whose FILENAME names this
+    # release AND this slice is that slice's own design memo (SLICE-TEMPLATE §3.0
+    # writes one per slice). The release is required in the name precisely
+    # because `dev/design/slice-30-design.md` is 0.8.0's — pulling it into a
+    # 0.8.20 Slice-30 brief would be a wrong citation that still resolves.
+    name_re = re.compile(r"slice[-_ ]?0*%d(?![0-9])" % slice_no, re.I)
+    hits = []
+    for root, dirs, files in os.walk(DESIGN_ROOT):
+        dirs.sort()
+        for name in sorted(files):
+            if not name.endswith(".md"):
+                continue
+            path = os.path.join(root, name)
+            try:
+                text = read(path)
+            except OSError:
+                continue
+            matched = [t for t in tokens if t in text]
+            if release in name and name_re.search(name):
+                matched.append("filename: %s slice %s" % (release, slice_no))
+            if not matched:
+                continue
+            status = frontmatter_status(path) or "(no status:)"
+            hits.append((STATUS_RANK.get(status.split()[0], 7), path, status, matched))
+    hits.sort(key=lambda h: (h[0], h[1]))
+    return hits
+
+
+PRE_SIGN_STATES = ("PRE_SIGNED", "NOT_PRE_SIGNED")
+
+
+def emit_publish_gate(m, gate, state_path):
+    """Brief the publish gate as THREE DISTINCT FACTS, never one status word.
+
+    WHAT WENT WRONG HERE. This line used to print `gate["state_word"]`, a single
+    word the state file derived from `signed: false`. It rendered "AC-079 —
+    unsigned, minted=False" INTO A SLICE-20 COMMISSION MANIFEST, after the HITL
+    had PRE-SIGNED that governed-surface delta (2026-07-25, master F-34), pinned
+    to the exact content of the allowlist. Briefing the next orchestrator that a
+    settled sign-off is still outstanding is how a settled call gets re-decided —
+    the failure this whole manifest exists to prevent (see §8: "Ruled decisions
+    are CITED, never re-decided or restated").
+
+    The three facts, kept apart on purpose:
+      1. `pre_sign_state` — has the HITL signed off on the CONTENT of the delta?
+      2. `minted` / `sign_off_slice` — has the AC been minted and recorded SIGNED?
+         PRE-SIGN IS NOT MINTING; the AC does not exist in the register yet.
+      3. `publish_gated_by` — what actually holds publish. Not an unsigned AC.
+
+    Every required field is read with `[...]`, not `.get(...)`. Under the
+    predecessor model a `.get("state_word")` against a state file that no longer
+    carried the key printed the literal text `AC-999 — None` and every gate still
+    passed: a stale reference rendering a blank is the same defect wearing a
+    different hat, so a missing fact dies here instead."""
+    try:
+        for retired in ("state_word", "signed"):
+            if retired in gate:
+                raise ValueError(
+                    "`acceptance.publish_gate` carries the RETIRED field `%s`. That single "
+                    "collapsed word is what made a Slice-20 manifest brief an already-given "
+                    "HITL pre-sign as an outstanding one. Model the facts separately: "
+                    "pre_sign_state + pre_sign, minted + minted_as + sign_off_slice, "
+                    "publish_gated_by." % retired)
+
+        state_word = gate["pre_sign_state"]
+        if state_word not in PRE_SIGN_STATES:
+            raise ValueError(
+                "`acceptance.publish_gate.pre_sign_state` is %r; it must be one of %s. An "
+                "unrecognised value must fail loudly rather than brief a guessed claim about "
+                "whether the HITL has signed." % (state_word, " or ".join(PRE_SIGN_STATES)))
+
+        ac       = gate["ac"]
+        covers   = gate["covers"]
+        minted   = gate["minted"]
+        mint_slice = gate["sign_off_slice"]
+        as_word  = gate["minted_as"]
+        board_rf = gate["board_ref"]
+        gated_by = gate["publish_gated_by"]
+        pre      = gate["pre_sign"] if state_word == "PRE_SIGNED" else None
+        if state_word == "PRE_SIGNED" and not isinstance(pre, dict):
+            raise ValueError(
+                "`acceptance.publish_gate.pre_sign_state` is PRE_SIGNED but there is no "
+                "`pre_sign` object recording WHO signed, WHEN, on what authority and what "
+                "the pre-sign is PINNED to. A pre-sign with no provenance is not citable.")
+    except (KeyError, ValueError, TypeError) as exc:
+        detail = exc.args[0] if exc.args else exc
+        die(["FAIL commission-manifest: the publish gate in `%s` cannot be briefed —"
+             % state_path,
+             "  %s" % detail,
+             "  A manifest that printed a blank or guessed sign-off status would brief the",
+             "  next orchestrator with a claim nobody made (TC-37: a gate that cannot run",
+             "  must not report a pass)."])
+
+    if minted:
+        head = "%s — MINTED and recorded as %s at Slice %s (board %s)" % (
+            ac, as_word, mint_slice, board_rf)
+    elif state_word == "PRE_SIGNED":
+        head = "%s — PRE-SIGNED by %s on %s (%s); NOT YET MINTED" % (
+            ac, pre["by"], pre["on"], pre["source"])
+    else:
+        head = "%s — NOT PRE-SIGNED, awaiting HITL sign-off; NOT YET MINTED" % ac
+
+    m.out("  publish gate                      %s" % head)
+    m.out("      covers                        %s" % covers)
+    if pre:
+        # REGISTERED, not printed. `pinned_to` names the file whose CONTENT the
+        # HITL pre-sign is bound to — the single most load-bearing path in the
+        # manifest, since the pin is what makes the pre-sign citable at all. It
+        # used to be emitted as raw text, so CHECK 1 never saw it: a mistyped or
+        # renamed pin path still printed, `--verify` still reported 0 dead
+        # citations, and CI stayed green while the brief pointed an orchestrator
+        # at a file that does not exist. Going through `m.cite` is what makes the
+        # path existence-checked like every other cited path.
+        m.out("      pinned to                     %s"
+              % m.cite(pre["pinned_to"], label="publish-gate pre-sign pin"))
+        m.out("      re-opens if                   %s" % pre["reopens_if"])
+    if not minted:
+        m.out("      mints at                      Slice %s, recorded as %s (board %s)"
+              % (mint_slice, as_word, board_rf))
+    if state_word == "PRE_SIGNED":
+        m.out("      publish is gated by           %s — NOT by this AC." % gated_by)
+        m.out("      The pre-sign is a RULED decision: cite it, never re-decide it. Do not")
+        m.out("      brief it as outstanding and do not seek it again.")
+    else:
+        m.out("      publish is gated by           that sign-off AND %s." % gated_by)
+        m.out("      Escalate for the sign-off; never re-decide it yourself.")
+
+
+def build(release, state_path, state, slice_no, entry):
+    m = Manifest()
+    ladder = {e.get("slice"): e for e in state.get("ladder") or []}
+    landed = state.get("landed") or []
+    next_slice = state.get("next_slice")
+    plan = state.get("plan") or ""
+    board = state.get("board") or ""
+    master = state.get("master") or ""
+
+    tokens = slice_tokens(entry)
+    design = scan_design(tokens, release, slice_no)
+
+    # ---- 1. ASSIGNMENT (LBO "Assignment"; SLICE-TEMPLATE heading + §2) -----
+    m.out("=" * 100)
+    m.out("COMMISSION MANIFEST — %s Slice %s (%s)" % (release, slice_no, entry.get("short") or "?"))
+    m.out("=" * 100)
+    m.out("GENERATED, READ-ONLY. It CITES sources of record; it restates no ruling and decides")
+    m.out("nothing. Facts come from the single-writer state file %s" % m.cite(state_path))
+    m.out("(T2a) and from `status:` frontmatter under `%s/` (T2c). Section set derived from" % DESIGN_ROOT)
+    m.out("%s" % m.cite(LBO_TEMPLATE))
+    m.out("and %s — this REPLACES those as the brief" % m.cite(SLICE_TEMPLATE))
+    m.out("assembly step; it does not add a third template to maintain.")
+    m.out()
+    m.out("## 1. ASSIGNMENT   [LBO 'Assignment (filled by LBS)'; SLICE-TEMPLATE title line + §2]")
+    m.out("  release          %s (%s)" % (release, state.get("release_kind") or "kind not stated"))
+    m.out("  slice            %s — %s" % (slice_no, entry.get("title") or "(no title)"))
+    m.out("  requirement id   %s" % (entry.get("short") or "(none)"))
+    m.out("  ladder status    %s" % (entry.get("status") or "?"))
+    m.out("  depends on       %s" % (", ".join(
+        "Slice %s [%s%s]" % (d, (ladder.get(d) or {}).get("status", "UNKNOWN"),
+                             ", %s" % (ladder.get(d) or {}).get("sha")
+                             if (ladder.get(d) or {}).get("sha") else "")
+        for d in (entry.get("depends_on") or [])) or "— (none)"))
+    if next_slice == slice_no:
+        m.out("  sequencing       ✅ this IS the next slice per the state file")
+    else:
+        m.out("  sequencing       ⚠ this is NOT the next slice — the state file says next = %s"
+              % next_slice)
+    m.out("  plan             %s" % m.cite(plan))
+    m.out("  board of record  %s" % m.cite(board))
+    m.out("  master           %s" % m.cite(master))
+    m.out("  codex §9         transcripts go under %s, release-namespaced (TC-RUBRIC-7)"
+          % m.cite(CODEX_DIR))
+    m.out()
+
+    # ---- 2. BASE SHA (LBO "Branch from tip"; SLICE-TEMPLATE §0) ------------
+    # The base is the TARGET SLICE'S PREDECESSOR: the greatest LANDED slice
+    # STRICTLY BELOW slice_no. It is NOT max(landed). For any slice that is not
+    # the next one — a historical regeneration, an out-of-order brief — max()
+    # can select the target's OWN landing merge or a later one, i.e. tell an
+    # operator to branch from the very work they are being commissioned to do.
+    # A wrong branch point is this repo's named agent-worktree-stale-base trap
+    # (it has already cost two slices), and a confidently printed wrong SHA is
+    # exactly what defeats the human sanity check, so this is computed
+    # relative to the target and never to the tip of `landed`.
+    #
+    # `depends_on` is deliberately NOT the base. Dependencies state the MINIMUM
+    # ancestry a slice needs; branching from that minimum would silently drop
+    # every slice landed since — the same stale-base trap from the other side.
+    # The predecessor is the ancestry-maximal choice that still excludes the
+    # target itself, so dependencies are CROSS-CHECKED against it instead.
+    m.out("## 2. BASE SHA + BRANCH POINT   [LBO 'Branch from tip'; SLICE-TEMPLATE §0]")
+    landed_nums = sorted({s for s in landed if isinstance(s, int)})
+    prior_landed = [s for s in landed_nums if s < slice_no]
+    later_landed = [s for s in landed_nums if s > slice_no]
+    base_slice = max(prior_landed) if prior_landed else None
+    base_sha = (ladder.get(base_slice) or {}).get("sha") if base_slice is not None else None
+    if slice_no in landed_nums:
+        m.out("  ⚠ HISTORICAL     Slice %s is ITSELF LANDED (%s), so this is a regeneration:"
+              % (slice_no, (ladder.get(slice_no) or {}).get("sha") or "no sha recorded"))
+        m.out("                   the base below is that slice's PREDECESSOR, never its own merge.")
+    if base_sha:
+        m.out("  base sha         %s  (Slice %s — the newest LANDED slice STRICTLY BEFORE Slice %s)"
+              % (base_sha, base_slice, slice_no))
+    elif base_slice is not None:
+#!/usr/bin/env bash
+# scripts/tests/test_commission_manifest.sh — T3b recurrence guard
+# (DOC-HYGIENE-2): the GENERATED COMMISSION MANIFEST.
+#
+# The incident this closes: briefing an orchestrator for a slice meant
+# hand-assembling the same citation list every time — design-of-record paths,
+# contract paths, plan section anchors, the base SHA, the worktree rules, the
+# stop conditions — out of a 5-12 file fan-out, with NOTHING checking that the
+# cited paths still resolved. T1d already measured what that costs: the TC-45
+# line anchors in plan-0.8.20.md were ~2,100 lines off and had never been
+# correct. A citation nobody checks is a citation that rots silently.
+#
+# Predicate under test (see scripts/commission-manifest.sh for the statement):
+# for a given release + slice, the emitted manifest cites only paths that EXIST
+# and only anchors that actually OCCUR in the file they name — and it hard-fails
+# rather than emitting anything if either is false, or if it would emit nothing.
+#
+# RED-first: the predicate passes on the real repo today (arm 8), so asserting
+# against the real checkout alone would prove nothing — a `true` script would
+# pass it. Every failure arm below runs against a purpose-built fixture repo in
+# which exactly one fault is planted, so an arm can only go green because the
+# generator's own check fired.
+#
+# NON-VACUITY: the suite honours $GATE_UNDER_TEST, so a MUTANT generator — one
+# whose path-existence test always answers "exists" — can be pointed at it. That
+# mutant turns arms 1/1b RED, which is the evidence that a green here is
+# load-bearing rather than a script that merely exits 0.
+#
+# SECOND PREDICATE (codex §9 [P2], arms 8e-8j): the emitted base SHA is the
+# TARGET SLICE'S PREDECESSOR — the greatest LANDED slice strictly below it —
+# never max(landed). Measured RED against the pre-fix generator: with Slice 10
+# in `landed`, the manifest for Slice 10 printed
+#   `base sha  dddd5555  (Slice 10, the newest LANDED slice's landing merge)`
+# i.e. branch from the very work you are being commissioned to do; and with a
+# later slice landed it printed Slice 30's merge as the base for Slice 10. That
+# is the agent-worktree-stale-base trap in printed form, and it becomes live the
+# moment 0.8.20 Slice 20 lands. These arms assert the base LINE specifically,
+# because every landing SHA also appears in the `landed so far` roll-up and a
+# whole-output grep therefore cannot distinguish a right base from a wrong one.
+#
+# THIRD PREDICATE (codex §9 [P2], arms 5h/5i/9e): the publish gate's
+# `pre_sign.pinned_to` is a REGISTERED CITATION, not printed text. It names the
+# file whose content the HITL pre-sign is bound to, and it was emitted raw — so
+# a mistyped or renamed pin path was still printed while `--verify` reported 0
+# dead citations and CI stayed green. That is CHECK 1's guarantee not holding
+# over the one path it matters most for. Arm 5h asserts the failure direction, 5i
+# asserts the verified-path COUNT moves (a bolted-on existence check beside the
+# citation list would satisfy 5h alone), and 9e asserts it on the live state file.
+#
+# Isolation: fixtures are throwaway git repos under mktemp -d (the generator
+# does `cd "$(git rev-parse --show-toplevel)"`, so each fixture must BE a repo).
+# Nothing here writes into the real checkout — arm 9 asserts that mechanically.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+GEN="${GATE_UNDER_TEST:-$REPO_ROOT/scripts/commission-manifest.sh}"
+CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
+AGENT_TEST="$REPO_ROOT/scripts/agent-test.sh"
+
+FAILED=0
+pass() { printf 'PASS  %s\n' "$1"; }
+fail() { printf 'FAIL  %s\n' "$1" >&2; FAILED=$((FAILED + 1)); }
+
+TMPROOT="$(mktemp -d)"
+cleanup() {
+  case "$TMPROOT" in
+    "${TMPDIR:-/tmp}"/*|/tmp/*) rm -rf "$TMPROOT" ;;
+    *) printf 'refusing to remove unexpected temp path: %s\n' "$TMPROOT" >&2 ;;
+  esac
+}
+trap cleanup EXIT
+
+FIX="$TMPROOT/repo"
+OUT=""
+RC=0
+
+# A minimal but REAL fixture release: a state file with a landed prefix and one
+# UNBLOCKED slice whose short/title carry the tokens the design scan keys on, a
+# plan carrying every required role heading, and the fixed infrastructure the
+# manifest cites (orchestration doc, release hand-off, preflight, AC register,
+# governed-surface pin, schema source). Every arm mutates ONE thing from this
+# baseline, so a red arm isolates exactly one fault.
+setup_fixture() {
+  rm -rf "$FIX"
+  mkdir -p "$FIX/dev/plans/runs/codex" "$FIX/dev/plans/prompts" "$FIX/dev/design/sub" \
+           "$FIX/scripts" "$FIX/src/conformance" "$FIX/src/rust/crates/fathomdb-schema/src"
+  cp "$GEN" "$FIX/scripts/commission-manifest.sh"
+  chmod +x "$FIX/scripts/commission-manifest.sh"
+  (cd "$FIX" && git init -q && git config user.email t@example.com && git config user.name t)
+
+  # The publish-gate fact set. THREE DISTINCT FACTS — pre-sign, minting, and who
+  # actually gates publish — never one collapsed word. The predecessor model
+  # carried `state_word: "unsigned"` and this manifest printed it, so a Slice-20
+  # brief told the next orchestrator that publish awaited an AC-079 signature the
+  # HITL had ALREADY GIVEN (pre-signed 2026-07-25, master F-34). Briefing an
+  # orchestrator with a settled call restated as open is how it gets re-decided.
+  case "${1:-presigned}" in
+    presigned)
+      GATE_JSON='"ac": "AC-999",
+      "covers": "the accumulated governed-surface delta",
+      "pre_sign_state": "PRE_SIGNED",
+      "pre_sign": {"on": "2026-01-02", "by": "HITL", "source": "master F-99",
+                   "pinned_to": "src/conformance/governed-surface-allowlist.json",
+                   "reopens_if": "any diff to that file re-opens it (the pin)"},
+      "minted": false, "minted_as": "SIGNED", "sign_off_slice": 30,
+      "publish_gated_by": "the separate HITL publish gate",
+      "board_ref": "§4 #1"'
+      ;;
+    notpresigned)
+      GATE_JSON='"ac": "AC-999",
+      "covers": "the accumulated governed-surface delta",
+      "pre_sign_state": "NOT_PRE_SIGNED",
+      "minted": false, "minted_as": "SIGNED", "sign_off_slice": 30,
+      "publish_gated_by": "the separate HITL publish gate",
+      "board_ref": "§4 #1"'
+      ;;
+    *) printf 'setup_fixture: unknown gate mode %q\n' "$1" >&2; exit 2 ;;
+  esac
+
+  cat >"$FIX/dev/plans/release-state-9.9.9.json" <<EOF
+{
+  "release": "9.9.9",
+  "release_kind": "even, publish",
+  "board": "dev/plans/runs/board.md",
+  "plan": "dev/plans/plan-9.9.9.md",
+  "master": "dev/plans/master.md",
+  "schema_version": 42,
+  "schema_version_source": "pub const SCHEMA_VERSION in src/rust/crates/fathomdb-schema/src/lib.rs",
+  "ladder": [
+    {"slice": 0,  "short": "X0",    "title": "X0 design gate",                        "depends_on": [],      "status": "LANDED",      "sha": "aaaa1111"},
+    {"slice": 5,  "short": "R-9-A", "title": "the keystone",                          "depends_on": [0],     "status": "LANDED",      "sha": "bbbb2222"},
+    {"slice": 10, "short": "R-9-B", "title": "widget_readiness + the TC-99 terminal fix", "depends_on": [5], "status": "UNBLOCKED",   "sha": null},
+    {"slice": 30, "short": "H7",    "title": "can-i-deploy contract gate",            "depends_on": [10],    "status": "NOT_STARTED", "sha": null, "publish_precondition": true}
+  ],
+  "landed": [0, 5],
+  "next_slice": 10,
+  "remaining_ladder": [10, 30],
+  "unblocked": [10],
+  "publish_precondition_slice": 30,
+  "acceptance": {
+    "highest_defined_non_reserved": "AC-900",
+    "publish_gate": {
+      ${GATE_JSON}
+    }
+  },
+  "decisions": {
+    "unruled": [
+      {"id": "publish", "title": "PUBLISH the pair", "gated_at": "Slice 30", "halts_run": true,
+       "source": "plan-9.9.9.md §11 item 3"},
+      {"id": "batched-surface", "title": "the batched governed-surface delta", "gated_at": "the 30 boundary",
+       "halts_run": false, "source": "plan-9.9.9.md §11 item 2"}
+    ],
+    "ruled": [
+      {"id": "already-settled", "ruling": "CLOSED BY DECISION", "ruled_on": "2026-01-01",
+       "source": "plan-9.9.9.md §10"}
+    ]
+  },
+  "generated_views": []
+}
+EOF
+
+  cat >"$FIX/dev/plans/plan-9.9.9.md" <<'EOF'
+---
+status: ACTIVE
+---
+
+# 9.9.9 — Plan
+
+## 1. Goal & scope
+
+## 2. Decisions already taken (do NOT re-litigate)
+
+## 3. Requirements + acceptance criteria (release DoD — frozen at Slice 0)
+
+## 4. Slice ladder (mod-5)
+
+## 5. Reserved-gap policy
+
+## 6. Cross-cutting DoD (X0/X1/X2/X3 — bind EVERY slice)
+
+## 7. Prerequisites
+
+## 9. Immediate next slice
+
+## 10. Decisions taken (recorded)
+
+## 11. Open HITL decision queue
+EOF
+
+  printf '# Board\n' >"$FIX/dev/plans/runs/board.md"
+  printf '# Master\n' >"$FIX/dev/plans/master.md"
+  printf 'transcripts land here\n' >"$FIX/dev/plans/runs/codex/README.md"
+
+  cat >"$FIX/dev/design/orchestration.md" <<'EOF'
+---
+status: locked
+---
+
+# Orchestration
+
+## 1.6 Preflight gate (run before every worktree spawn)
+
+## 10. Hard rules summary
+
+## 11. Worktree cleanup (after phase family closes)
+
+## 8. Closure output.json schema (per slice)
+EOF
+
+  cat >"$FIX/dev/plans/prompts/0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md" <<'EOF'
+# Release Orchestrator hand-off
+
+## 0. Hard preflight checks (CURRENT — apply every session)
+
+## 6. Orchestration mechanics
+EOF
+
+  # The two templates the emitted section set is DERIVED from. The stand-ins
+  # carry exactly the headings the manifest cites, so a rename of any of them in
+
+exec
+/bin/bash -lc "grep -n \"def verify\\|PATH VERIFICATION\\|cites\\|problems\\|LINE_ANCHOR\" -n scripts/commission-manifest.sh && sed -n '520,920p' scripts/commission-manifest.sh" in /home/coreyt/projects/fathomdb-worktrees/dh2-fix
+ succeeded in 0ms:
+78:# cites decisions; it changes no slot, scope, requirement, AC or ruling.
+145:# Fixed infrastructure the manifest cites. These are SOURCES OF RECORD, not
+162:LINE_ANCHOR_RE = re.compile(r"`[A-Za-z_][A-Za-z0-9_.+-]*:[0-9]{3,}(-[0-9]+)?\+?`")
+215:        self.cites = []      # (path, needle|None, label)
+216:        self.problems = []
+222:        self.cites.append((path, needle, label))
+233:            self.problems.append(
+236:            self.cites.append((path, None, role))
+245:            self.problems.append(
+708:def verify(m, release, slice_no):
+710:    problems = list(m.problems)
+714:    for path, needle, label in m.cites:
+717:            problems.append(
+727:                problems.append(
+732:                problems.append(
+741:    hit = LINE_ANCHOR_RE.search(body)
+743:        problems.append(
+748:    if not m.cites:
+749:        problems.append(
+753:    if paths_ok == 0 and not problems:
+754:        problems.append(
+757:    return paths_ok, anchors_ok, problems
+774:    paths_ok, anchors_ok, problems = verify(m, release, slice_no)
+775:    if problems:
+776:        problems.append(
+778:            % (len(problems), release, slice_no))
+779:        die(problems)
+803:print("PATH VERIFICATION: %d distinct path(s) exist, %d anchor(s) verified to occur, 0 dead."
+    elif base_slice is not None:
+        m.out("  base sha         (Slice %s is the predecessor but records NO landing sha)"
+              % base_slice)
+        m.out("                   The state file is incomplete: take the branch point from")
+        m.out("                   `git log` for that landing and record it in output.json. Do NOT guess.")
+    else:
+        m.out("  base sha         (none — NO landed slice precedes Slice %s)" % slice_no)
+        # These two cases are MUTUALLY EXCLUSIVE. "No predecessor" means branch
+        # from the tip ONLY while the tip is still where this slice was cut. Once
+        # later slices have landed, origin/main carries their merges, so printing
+        # the branch-from-tip instruction beside the TIP IS AHEAD warning emits
+        # precisely the stale-base instruction this section exists to prevent —
+        # and an operator follows the instruction, not the caveat next to it.
+        if later_landed:
+            m.out("  ⚠ TIP IS AHEAD   Slice(s) %s landed AFTER this one, so origin/main already"
+                  % ", ".join(str(s) for s in later_landed))
+            m.out("                   carries work Slice %s never had. There is NO correct automatic"
+                  % slice_no)
+            m.out("                   base for this regeneration: do NOT branch from the tip. Recover")
+            m.out("                   the point of cut from `git log` and record it in output.json.")
+        else:
+            m.out("                   This is the first slice of the release to be cut, so there is no")
+            m.out("                   predecessor merge: branch from `git rev-parse origin/main` at STEP 0.")
+    dep_gap = [d for d in (entry.get("depends_on") or [])
+               if (ladder.get(d) or {}).get("status") == "LANDED"
+               and (base_slice is None or d > base_slice)]
+    if dep_gap:
+        m.out("  ⚠ DEP NOT IN BASE dependency Slice(s) %s are LANDED but do NOT sit at or below the"
+              % ", ".join(str(d) for d in dep_gap))
+        m.out("                   base slice, so the base merge does not contain them. Re-derive the")
+        m.out("                   branch point from `git log` before cutting the worktree.")
+    m.out("  re-verify        `git rev-parse origin/main` at STEP 0 — a later landing may have")
+    m.out("                   advanced the tip since the state file was written.")
+    m.out("  landed so far    %s" % (", ".join(
+        "%s (%s)%s" % (s, (ladder.get(s) or {}).get("sha") or "no sha",
+                       " ⚠ at/after Slice %s" % slice_no if isinstance(s, int) and s >= slice_no else "")
+        for s in landed) or "none"))
+    m.out("  SCHEMA           %s — %s"
+          % (state.get("schema_version"),
+             m.cite(schema_src_path(state), "pub const SCHEMA_VERSION", "schema source")))
+    m.out()
+
+    # ---- 3. WORKTREE RULES (LBO STEP 0; SLICE-TEMPLATE §0) ----------------
+    m.out("## 3. WORKTREE RULES   [LBO 'STEP 0 — Isolate'; SLICE-TEMPLATE §0] — cite, do not restate")
+    for label, kw in (("preflight gate ", ["preflight gate"]),
+                      ("hard rules     ", ["hard rules"]),
+                      ("worktree cleanup", ["worktree cleanup"])):
+        a = m.anchor(ORCH, kw, label.strip())
+        if a:
+            m.out("  %s %s" % (label, a))
+    for label, kw in (("session preflight", ["hard preflight checks"]),
+                      ("mechanics       ", ["orchestration mechanics"])):
+        a = m.anchor(HANDOFF, kw, label.strip())
+        if a:
+            m.out("  %s %s" % (label, a))
+    m.out("  TC-RUBRIC-5      all landing git-writes run in a dedicated linked worktree;")
+    m.out("                   %s hard-fails on the primary checkout"
+          % m.cite(PREFLIGHT, "--landing", "TC-RUBRIC-5"))
+    a = m.anchor(LBO_TEMPLATE, ["step 0"], "LBO isolate step")
+    if a:
+        m.out("  isolate step     %s" % a)
+    m.out()
+
+    # ---- 4. CONTRACT PATHS (SLICE-TEMPLATE §1 {{CONTRACT_REF}}) -----------
+    m.out("## 4. CONTRACT PATHS   [SLICE-TEMPLATE §1.2 {{CONTRACT_REF}} — on any conflict with a")
+    m.out("   brief, the CONTRACT wins and the conflict is flagged in output.json]")
+    a = m.anchor(plan, ["requirements"], "requirements + ACs")
+    if a:
+        m.out("  requirements/ACs %s" % a)
+    m.out("  AC register      %s" % m.cite(ACCEPTANCE))
+    m.out("  invariants       %s (TDD mandatory; no DB mocking; never --no-verify)" % m.cite(AGENTS))
+    m.out("  governed surface %s" % m.cite(SURFACE_ALLOWLIST))
+    m.out("                   pinned by %s" % m.cite(SURFACE_PIN))
+    for _rank, path, status, _matched in design:
+        if "contract" in os.path.basename(path).lower():
+            m.out("  design contract  [%s] %s" % (status, m.cite(path)))
+    m.out()
+
+    # ---- 5. PLAN SECTION ANCHORS (no line numbers — T1d) ------------------
+    m.out("## 5. PLAN SECTION ANCHORS   [{{MANDATE}}/{{DEFERRED}}/{{DOD}}/{{GUARDRAILS}}] — greppable")
+    m.out("   headings, never `file:line` (T1d ban); each is verified to occur in the file it names.")
+    roles = [
+        ("mandate    ", ["immediate next slice"], True),
+        ("ladder     ", ["slice ladder"], True),
+        ("scope      ", ["goal", "scope"], True),
+        ("deferred   ", ["reserved-gap"], True),
+        ("cross-cut DoD", ["cross-cutting dod"], True),
+        ("do-not-relitigate", ["decisions already taken"], False),
+        ("prerequisites", ["prerequisites"], False),
+        ("rulings    ", ["decisions taken"], False),
+        ("open queue ", ["open hitl"], False),
+    ]
+    for label, kw, required in roles:
+        a = m.anchor(plan, kw, label.strip(), required=required)
+        if a:
+            m.out("  %-18s %s" % (label.strip(), a))
+    m.out()
+
+    # ---- 6. DESIGN DOCS ({{READING}}) -------------------------------------
+    m.out("## 6. DESIGN DOCS FOR THIS SLICE   [SLICE-TEMPLATE §1.4 {{READING}}]")
+    m.out("   Selected by the slice's OWN tokens from the state file: %s" % ", ".join(tokens))
+    m.out("   Status is AS RECORDED in `status:` frontmatter (T2c) — it is NOT a currency claim.")
+    m.out("   scripts/lint-design-status.sh proves the PRESENCE of a status, never its TRUTH;")
+    m.out("   UNREVIEWED means 'nobody has classified this yet' and the classification is owed")
+    m.out("   at TC-50. Rows marked ⚠ unclassified are candidates, NOT design of record.")
+    for _rank, path, status, matched in design:
+        flag = " ⚠ unclassified (TC-50)" if status.split()[0] in UNCLASSIFIED else ""
+        m.out("  [%s]%s %s" % (status, flag, m.cite(path)))
+        m.out("        matched: %s" % ", ".join(matched))
+    classified = [h for h in design if h[2].split()[0] not in UNCLASSIFIED]
+    m.out("  -> %d doc(s) matched: %d classified, %d unclassified."
+          % (len(design), len(classified), len(design) - len(classified)))
+    matched_tokens = {t for _r, _p, _s, ms in design for t in ms}
+    unmatched = [t for t in tokens if t not in matched_tokens]
+    if unmatched:
+        m.out("  -> NO design doc mentions: %s. That part of the slice has no design of record;"
+              % ", ".join(unmatched))
+        m.out("     its authority is whatever the plan's rulings/requirements sections say — read")
+        m.out("     them there, and do not infer a design that does not exist.")
+    m.out()
+
+    # ---- 7. ACCEPTANCE ({{AC_IDS}}) ---------------------------------------
+    acc = state.get("acceptance") or {}
+    gate = acc.get("publish_gate") or {}
+    m.out("## 7. ACCEPTANCE STATE   [SLICE-TEMPLATE §3.1 {{AC_IDS}}] — from the state file, verbatim")
+    m.out("  highest defined non-reserved AC   %s" % acc.get("highest_defined_non_reserved", "—"))
+    for res in acc.get("reservations") or []:
+        m.out("  reserved                          %s [%s] %s"
+              % (res.get("ac"), res.get("state"), res.get("initiative") or ""))
+    if gate:
+        emit_publish_gate(m, gate, state_path)
+    if acc.get("re_verified_green"):
+        m.out("  re-verified green                 %s" % ", ".join(acc["re_verified_green"]))
+    m.out("  Mint no AC and change no AC here: %s is the register and the plan's" % m.cite(ACCEPTANCE))
+    m.out("  requirements section is the contract.")
+    m.out()
+
+    # ---- 8. STOP CONDITIONS -----------------------------------------------
+    m.out("## 8. STOP CONDITIONS   [LBO 'Escalate to LBS'; SLICE-TEMPLATE §6/§7; orchestration §10]")
+    dec = state.get("decisions") or {}
+    for d in dec.get("unruled") or []:
+        verb = "⛔ HALT TO HITL" if d.get("halts_run") else "⚠ GATED (does not halt this run)"
+        m.out("  %s — %s" % (verb, d.get("title") or d.get("id")))
+        m.out("      gated at %s · source: %s" % (d.get("gated_at") or "?", d.get("source") or "?"))
+    pubslice = state.get("publish_precondition_slice")
+    if pubslice is not None:
+        m.out("  ⛔ Slice %s is a PUBLISH PRECONDITION — absent-or-failing holds the release."
+              % pubslice)
+    for d in entry.get("depends_on") or []:
+        dep = ladder.get(d) or {}
+        if dep.get("status") != "LANDED":
+            m.out("  ⛔ NOT COMMISSIONABLE YET — dependency Slice %s is %s, not LANDED."
+                  % (d, dep.get("status")))
+    m.out("  Ruled decisions are CITED, never re-decided or restated: %d ruling(s) recorded in the"
+          % len(dec.get("ruled") or []))
+    m.out("  state file's `decisions.ruled` with their sources; read them there.")
+    for label, path, kw in (("hard rules", ORCH, ["hard rules"]),
+                            ("scope discipline", SLICE_TEMPLATE, ["scope discipline"]),
+                            ("recovery", SLICE_TEMPLATE, ["when something goes wrong"]),
+                            ("escalate", LBO_TEMPLATE, ["escalate to lbs"])):
+        a = m.anchor(path, kw, label)
+        if a:
+            m.out("  %-17s %s" % (label, a))
+    m.out()
+
+    # ---- 9. CLOSURE (orchestration §8; LBO 'Closure output') --------------
+    m.out("## 9. CLOSURE   [orchestration §8 schema; LBO 'Closure output'; SLICE-TEMPLATE §9]")
+    a = m.anchor(ORCH, ["closure output"], "closure schema")
+    if a:
+        m.out("  output.json      %s" % a)
+    a = m.anchor(SLICE_TEMPLATE, ["closure"], "slice closure", required=False)
+    if a:
+        m.out("  slice closure    %s" % a)
+    m.out("  write it LAST, after every commit, and report the head SHA to the orchestrator.")
+    m.out()
+    return m
+
+
+def schema_src_path(state):
+    """The state file states the SCHEMA source as prose ('pub const X in <path>');
+    take the path out of it rather than hardcoding a second copy."""
+    src = state.get("schema_version_source") or ""
+    for tok in src.split():
+        if "/" in tok:
+            return tok
+    return "src/rust/crates/fathomdb-schema/src/lib.rs"
+
+
+def verify(m, release, slice_no):
+    """CHECK 1 + CHECK 2 + the TC-37 guard. Returns (paths, anchors) verified."""
+    problems = list(m.problems)
+    paths_ok = 0
+    anchors_ok = 0
+    seen = set()
+    for path, needle, label in m.cites:
+        exists = os.path.exists(path)   # MUTATION POINT (see the test suite)
+        if not exists:
+            problems.append(
+                "FAIL commission-manifest: cited path `%s` does NOT exist in the worktree\n"
+                "  (citation role: %s). The file was renamed, moved or deleted; a brief built\n"
+                "  on it would send an agent to a dead path." % (path, label or "unlabelled"))
+            continue
+        if path not in seen:
+            seen.add(path)
+            paths_ok += 1
+        if needle is not None:
+            if os.path.isdir(path):
+                problems.append(
+                    "FAIL commission-manifest: `%s` is a directory but the citation names the\n"
+                    "  symbol `%s` (role: %s)." % (path, needle, label))
+                continue
+            if needle not in read(path):
+                problems.append(
+                    "FAIL commission-manifest: cited symbol `%s`\n"
+                    "  does NOT occur in `%s` (role: %s). The heading or symbol was renamed —\n"
+                    "  an unverified pointer must never be laundered as a verified one."
+                    % (needle, path, label))
+                continue
+            anchors_ok += 1
+
+    body = "\n".join(m.lines)
+    hit = LINE_ANCHOR_RE.search(body)
+    if hit:
+        problems.append(
+            "FAIL commission-manifest: the manifest emitted a bare line anchor %s.\n"
+            "  `<name>:<line>` pointers are banned (T1d): emit a greppable section anchor."
+            % hit.group(0))
+
+    if not m.cites:
+        problems.append(
+            "FAIL commission-manifest: ZERO citations emitted for %s Slice %s.\n"
+            "  An empty manifest briefs nobody while looking green — the TC-37 vacuous-pass\n"
+            "  class. This is a hard failure, never an exit 0." % (release, slice_no))
+    if paths_ok == 0 and not problems:
+        problems.append(
+            "FAIL commission-manifest: ZERO paths verified for %s Slice %s (TC-37)."
+            % (release, slice_no))
+    return paths_ok, anchors_ok, problems
+
+
+def generate(release, slice_sel):
+    state_path, state = load_state(release)
+    slice_no, entry = pick_slice(state, state_path, slice_sel)
+
+    tokens = slice_tokens(entry)
+    if not scan_design(tokens, release, slice_no):
+        die(["FAIL commission-manifest: ZERO design docs matched %s Slice %s (tokens: %s)."
+             % (release, slice_no, ", ".join(tokens) or "none derived"),
+             "  The required-reading list would be EMPTY, so the manifest would brief nobody",
+             "  while exiting 0 — this repo's named TC-37 vacuous-pass class. Fix it by",
+             "  authoring/citing the design of record for this slice, or by naming the slice's",
+             "  requirement id in the state file's `short`/`title` so the scan can find it."])
+
+    m = build(release, state_path, state, slice_no, entry)
+    paths_ok, anchors_ok, problems = verify(m, release, slice_no)
+    if problems:
+        problems.append(
+            "\ncommission-manifest: %d dead citation(s) for %s Slice %s — manifest NOT emitted."
+            % (len(problems), release, slice_no))
+        die(problems)
+    return slice_no, entry, m, paths_ok, anchors_ok
+
+
+if MODE == "verify-all":
+    states = sorted(glob.glob(STATE_GLOB))
+    if not states:
+        die(["FAIL commission-manifest: ZERO release-state files under %s." % STATE_GLOB,
+             "  The sweep loop never ran, so exiting 0 would vouch for nothing (TC-37)."])
+    for sp in states:
+        rel = re.sub(r"^dev/plans/release-state-(.*)\.json$", r"\1", sp)
+        sl, entry, m, paths_ok, anchors_ok = generate(rel, "next")
+        print("commission-manifest: %s next slice %s (%s) — %d path(s) and %d anchor(s) verified."
+              % (rel, sl, entry.get("short") or "?", paths_ok, anchors_ok))
+    sys.exit(0)
+
+slice_no, entry, m, paths_ok, anchors_ok = generate(RELEASE, SLICE_SEL)
+if MODE == "verify":
+    print("commission-manifest: %s Slice %s (%s) — %d path(s) and %d anchor(s) verified, 0 dead."
+          % (RELEASE, slice_no, entry.get("short") or "?", paths_ok, anchors_ok))
+    sys.exit(0)
+
+print("\n".join(m.lines))
+print("-" * 100)
+print("PATH VERIFICATION: %d distinct path(s) exist, %d anchor(s) verified to occur, 0 dead."
+      % (paths_ok, anchors_ok))
+print("Every citation above was checked at generation time. Re-run before reusing this brief.")
+PY
+
+exec
+/bin/bash -lc "grep -R '\"pinned_to\"' -n dev/plans/release-state-*.json scripts/tests/test_commission_manifest.sh" in /home/coreyt/projects/fathomdb-worktrees/dh2-fix
+ succeeded in 0ms:
+dev/plans/release-state-0.8.20.json:123:        "pinned_to": "src/conformance/governed-surface-allowlist.json",
+scripts/tests/test_commission_manifest.sh:104:                   "pinned_to": "src/conformance/governed-surface-allowlist.json",
+scripts/tests/test_commission_manifest.sh:541:# emitted with `m.out(... % pre["pinned_to"])`, i.e. as RAW TEXT, so CHECK 1
+
+exec
+/bin/bash -lc 'bash scripts/tests/test_commission_manifest.sh' in /home/coreyt/projects/fathomdb-worktrees/dh2-fix
+ succeeded in 1743ms:
+PASS  rotted plan anchor — a role heading that no longer exists HARD-fails
+PASS  rotted orchestration anchor — the worktree-rules citation HARD-fails
+PASS  rotted symbol — the TC-RUBRIC-5 `--landing` citation HARD-fails when it stops occurring
+PASS  rotted symbol — the state file's SCHEMA source citation HARD-fails
+PASS  zero design citations — an empty manifest HARD-fails (TC-37), never exit 0
+PASS  unknown release — HARD fails and names the releases that DO have a state file
+PASS  unknown slice — HARD fails and names the ladder it is not in
+PASS  known slice — base SHA, contract, design, worktree rules and stop conditions all present
+PASS  publish gate — a PRE-SIGNED gate briefs pre-sign + pin + minting + the separate gate
+PASS  publish gate — a gate that is genuinely NOT pre-signed briefs as awaiting sign-off
+PASS  a state file still carrying the retired `state_word` HARD-fails the manifest
+PASS  pre-sign pin — a `pinned_to` that does not resolve HARD-fails and names the dead path
+PASS  pre-sign pin — a distinct `pinned_to` raises the verified-path count by exactly 1
+PASS  an unrelated design doc is not cited (the scan is token-driven, not a dump)
+PASS  filename selector — this release's slice memo is cited, another release's is not
+PASS  UNREVIEWED docs are surfaced with their status + the TC-50 caveat
+PASS  state-file-driven — a changed base SHA and next slice both move the manifest
+PASS  no bare `name:line` anchors in the emitted manifest (T1d shape)
+PASS  read-only — a generate leaves the worktree byte-clean
+PASS  --verify checks the citations without emitting the brief
+PASS  --verify-all verifies the next slice of every release-state file
+PASS  vacuity guard — a sweep that discovers zero state files HARD-fails
+PASS  target slice already landed — the base is its PREDECESSOR, never its own landing merge
+PASS  an already-landed target is marked HISTORICAL rather than briefed as if pending
+PASS  later slices landed — the base stays the target's immediate predecessor
+PASS  first slice — no predecessor is stated in words + branch-from-tip, not left blank
+PASS  no predecessor but later landings exist — the manifest warns the tip is AHEAD
+PASS  a historical first-slice brief is never ALSO told to branch from the tip
+PASS  gaps in `landed` — the base is the greatest landed slice strictly below the target
+PASS  real repo — the 0.8.20 Slice 20 manifest generates with every path resolving
+PASS  the real manifest emits section anchors only — no `name:line` pointers
+PASS  real repo — Slice 20's base is Slice 15's landing merge (a2022957), on the base line
+PASS  real repo — the publish-gate pin is emitted as a citation and resolves (src/conformance/governed-surface-allowlist.json)
+PASS  real repo — --verify-all is green across every live release-state file
+PASS  agent-test.sh runs this fixture suite
+PASS  ci.yml defines a commission-manifest job
+PASS  the CI job runs the SHARED scripts/commission-manifest.sh
+PASS  the commission-manifest job is always-on (no if:, no needs:, not docs_only-gated)
+
+All commission-manifest tests passed
+
+exec
+/bin/bash -lc "grep -n \"run_gen\\|REAL_OUT\\|setup_fixture\" scripts/tests/test_commission_manifest.sh | head -80 && sed -n '220,360p' scripts/tests/test_commission_manifest.sh" in /home/coreyt/projects/fathomdb-worktrees/dh2-fix
+ succeeded in 0ms:
+84:setup_fixture() {
+118:    *) printf 'setup_fixture: unknown gate mode %q\n' "$1" >&2; exit 2 ;;
+312:run_gen() {
+342:setup_fixture
+343:run_gen 9.9.9 10
+366:setup_fixture
+368:run_gen 9.9.9 10
+387:setup_fixture
+389:run_gen 9.9.9 10
+397:setup_fixture
+399:run_gen 9.9.9 10
+412:setup_fixture
+414:run_gen 9.9.9 10
+422:setup_fixture
+425:run_gen 9.9.9 10
+435:setup_fixture
+440:run_gen 9.9.9 10
+448:setup_fixture
+449:run_gen 1.2.3 10
+458:setup_fixture
+459:run_gen 9.9.9 99
+469:setup_fixture
+470:run_gen 9.9.9 10
+491:setup_fixture presigned
+492:run_gen 9.9.9 10
+512:setup_fixture notpresigned
+513:run_gen 9.9.9 10
+527:setup_fixture presigned
+530:run_gen 9.9.9 10
+548:setup_fixture presigned
+550:run_gen 9.9.9 10
+569:setup_fixture presigned
+570:run_gen 9.9.9 10 --verify
+572:setup_fixture presigned
+575:run_gen 9.9.9 10 --verify
+585:setup_fixture
+586:run_gen 9.9.9 10
+619:setup_fixture
+622:run_gen 9.9.9 10
+631:setup_fixture
+632:run_gen 9.9.9 10
+641:setup_fixture
+643:run_gen 9.9.9 10
+652:run_gen 9.9.9 10 --verify
+660:run_gen --verify-all
+668:setup_fixture
+670:run_gen --verify-all
+684:setup_fixture
+686:run_gen 9.9.9 10
+706:setup_fixture
+710:run_gen 9.9.9 10
+723:setup_fixture
+728:run_gen 9.9.9 0
+744:setup_fixture
+748:run_gen 9.9.9 0
+777:setup_fixture
+782:run_gen 9.9.9 30
+795:REAL_OUT="$("$REPO_ROOT/scripts/commission-manifest.sh" 0.8.20 20 2>&1)"
+798:if [ "$REAL_RC" -eq 0 ] && grep -q 'R-20-DR' <<<"$REAL_OUT" && grep -q 'a2022957' <<<"$REAL_OUT"; then
+801:  fail "arm 9 (real Slice 20): rc=$REAL_RC out=$REAL_OUT"
+805:if ! grep -qE '`[A-Za-z_][A-Za-z0-9_.+-]*:[0-9]{3,}(-[0-9]+)?\+?`' <<<"$REAL_OUT"; then
+816:REAL_BASE_LINE="$(grep -m1 '^  base sha' <<<"$REAL_OUT" || true)"
+818:   && ! grep -qi 'HISTORICAL' <<<"$REAL_OUT"; then
+830:REAL_PIN_LINE="$(grep -m1 '^      pinned to' <<<"$REAL_OUT" || true)"
+  # carry exactly the headings the manifest cites, so a rename of any of them in
+  # the real repo is caught by arm 9 rather than by an agent following a dead
+  # pointer.
+  cat >"$FIX/dev/plans/prompts/LIBRARY-BUMP-ORCHESTRATOR-TEMPLATE.md" <<'EOF'
+# LBO template
+
+## STEP 0 — Isolate (fail-fast)
+
+## Escalate to LBS (`SendMessage`) when
+
+## Closure output
+EOF
+
+  cat >"$FIX/dev/plans/prompts/0.8.0-SLICE-TEMPLATE.md" <<'EOF'
+# Slice template
+
+## 6. Scope discipline — stay in-slice
+
+## 7. When something goes wrong — detect, log, recover (do not hide)
+
+## 9. Closure — write `output.json` LAST (orchestration §8 schema)
+EOF
+
+  cat >"$FIX/scripts/preflight.sh" <<'EOF'
+#!/usr/bin/env bash
+# --landing hard-fails on the primary checkout
+EOF
+  chmod +x "$FIX/scripts/preflight.sh"
+
+  printf '# Acceptance\n\nAC-900\n' >"$FIX/dev/acceptance.md"
+  printf '# AGENTS\n\nTDD is mandatory.\n' >"$FIX/AGENTS.md"
+  printf '{"allow": []}\n' >"$FIX/src/conformance/governed-surface-allowlist.json"
+  printf '{"pin": "x"}\n' >"$FIX/scripts/governed-surface-pin.json"
+  printf 'pub const SCHEMA_VERSION: i64 = 42;\n' \
+    >"$FIX/src/rust/crates/fathomdb-schema/src/lib.rs"
+
+  # Design tier: one ACTIVE doc and one UNREVIEWED doc, both carrying the slice
+  # tokens, plus a doc that carries NO token (it must NOT be cited).
+  cat >"$FIX/dev/design/widget-design.md" <<'EOF'
+---
+status: ACTIVE
+---
+
+# Widget design
+
+widget_readiness is defined here, and R-9-B is its requirement id.
+EOF
+
+  cat >"$FIX/dev/design/sub/widget-contract.md" <<'EOF'
+---
+status: UNREVIEWED
+---
+
+# Widget contract
+
+The TC-99 terminal fix attaches to widget_readiness.
+EOF
+
+  # The slice's OWN design memo, found by filename (release + slice), carrying
+  # none of the tokens — and its 0.8.0-era namesake, which must NOT be pulled in
+  # just because the slice numbers collide.
+  cat >"$FIX/dev/design/9.9.9-slice-10-design.md" <<'EOF'
+---
+status: ACTIVE
+---
+
+# The slice memo
+
+No token here at all.
+EOF
+
+  cat >"$FIX/dev/design/slice-10-design.md" <<'EOF'
+---
+status: UNREVIEWED
+---
+
+# An OLD release's slice 10
+
+Also no token, and a different release.
+EOF
+
+  cat >"$FIX/dev/design/unrelated.md" <<'EOF'
+---
+status: UNREVIEWED
+---
+
+# Unrelated
+
+Nothing to do with this slice.
+EOF
+}
+
+run_gen() {
+  set +e
+  OUT="$(cd "$FIX" && ./scripts/commission-manifest.sh "$@" 2>&1)"
+  RC=$?
+  set -e
+}
+
+# Structural edits to the fixture's state file (landed set, ladder statuses,
+# landing SHAs) for the base-SHA arms. python3 is already a hard precondition of
+# the generator, so using it here adds no dependency; hand-rolled perl over JSON
+# would be the fragile choice. `s` is the parsed state, `L` maps slice -> entry.
+mutate_state() {
+  python3 -c "
+import json
+p = '$FIX/dev/plans/release-state-9.9.9.json'
+s = json.load(open(p))
+L = {e['slice']: e for e in s['ladder']}
+$1
+json.dump(s, open(p, 'w'), indent=2)
+"
+}
+
+# The `base sha` line as the operator reads it. Asserting on THIS line, not on
+# the whole manifest, is the point: every landing SHA also appears in the
+# `landed so far` roll-up, so a whole-output grep cannot tell a correct base
+# from a wrong one.
+base_line() { grep -m1 '^  base sha' <<<"$OUT" || true; }
+
+# --- Arm 0: the BASELINE fixture is GREEN and NON-EMPTY --------------------
+# Without this, every RED arm below could be passing for an unrelated reason.
+setup_fixture
+run_gen 9.9.9 10
+if [ "$RC" -eq 0 ] && [ "$(printf '%s\n' "$OUT" | grep -c .)" -gt 20 ]; then
+  pass "baseline fixture — a known slice emits a non-empty manifest (exit 0)"
+else
+  fail "arm 0 (baseline green): rc=$RC out=$OUT"
+fi
+
+# --- Arm 0b: every SECTION the two templates require is present ------------
+# The manifest REPLACES a hand-maintained brief template, so it has to carry the
+# section set those templates actually contain — not a parallel invention.
+MISSING=""
+for section in "ASSIGNMENT" "BASE SHA" "WORKTREE RULES" "CONTRACT PATHS" \
+               "PLAN SECTION ANCHORS" "DESIGN DOCS" "ACCEPTANCE" "STOP CONDITIONS" "CLOSURE"; do
+  grep -q "$section" <<<"$OUT" || MISSING="$MISSING $section"
+done
+if [ -z "$MISSING" ]; then
+  pass "the manifest carries every template-derived section"
+else
+
+exec
+/bin/bash -lc "nl -ba scripts/commission-manifest.sh | sed -n '420,438p'; nl -ba scripts/tests/test_commission_manifest.sh | sed -n '540,585p;820,837p'" in /home/coreyt/projects/fathomdb-worktrees/dh2-fix
+ succeeded in 0ms:
+   420	    m.out("  publish gate                      %s" % head)
+   421	    m.out("      covers                        %s" % covers)
+   422	    if pre:
+   423	        # REGISTERED, not printed. `pinned_to` names the file whose CONTENT the
+   424	        # HITL pre-sign is bound to — the single most load-bearing path in the
+   425	        # manifest, since the pin is what makes the pre-sign citable at all. It
+   426	        # used to be emitted as raw text, so CHECK 1 never saw it: a mistyped or
+   427	        # renamed pin path still printed, `--verify` still reported 0 dead
+   428	        # citations, and CI stayed green while the brief pointed an orchestrator
+   429	        # at a file that does not exist. Going through `m.cite` is what makes the
+   430	        # path existence-checked like every other cited path.
+   431	        m.out("      pinned to                     %s"
+   432	              % m.cite(pre["pinned_to"], label="publish-gate pre-sign pin"))
+   433	        m.out("      re-opens if                   %s" % pre["reopens_if"])
+   434	    if not minted:
+   435	        m.out("      mints at                      Slice %s, recorded as %s (board %s)"
+   436	              % (mint_slice, as_word, board_rf))
+   437	    if state_word == "PRE_SIGNED":
+   438	        m.out("      publish is gated by           %s — NOT by this AC." % gated_by)
+   540	# the pin is what makes the pre-sign citable rather than a bare assertion. It was
+   541	# emitted with `m.out(... % pre["pinned_to"])`, i.e. as RAW TEXT, so CHECK 1
+   542	# never saw it. MEASURED RED against the pre-fix generator (GATE_UNDER_TEST):
+   543	# with `pinned_to` pointing at src/conformance/DOES-NOT-EXIST.json the manifest
+   544	# was still EMITTED, still exited 0, and still printed
+   545	#   `PATH VERIFICATION: 24 distinct path(s) exist, 24 anchor(s) verified, 0 dead.`
+   546	# — a dead pin path briefing an orchestrator while CI stayed green, which is
+   547	# exactly the "a gate that appears to cover a citation but does not" class.
+   548	setup_fixture presigned
+   549	mutate_state "s['acceptance']['publish_gate']['pre_sign']['pinned_to'] = 'src/conformance/DOES-NOT-EXIST.json'"
+   550	run_gen 9.9.9 10
+   551	if [ "$RC" -ne 0 ] && grep -q 'DOES-NOT-EXIST.json' <<<"$OUT" \
+   552	   && grep -qi 'does NOT exist' <<<"$OUT" \
+   553	   && ! grep -q 'COMMISSION MANIFEST' <<<"$OUT"; then
+   554	  pass "pre-sign pin — a \`pinned_to\` that does not resolve HARD-fails and names the dead path"
+   555	else
+   556	  fail "arm 5h (dead pin path): rc=$RC out=$OUT"
+   557	fi
+   558	
+   559	# --- Arm 5i: ...and the pin is COUNTED, so the registration is proven -------
+   560	# Asserting only the failure direction would be satisfied by a special-case
+   561	# `os.path.exists` check bolted on beside the citation list. This asserts the
+   562	# VERIFIED-PATH COUNT moves: pointing `pinned_to` at an existing path that
+   563	# nothing else cites raises the count by exactly one, which can only happen if
+   564	# the pin went through the same citation machinery as every other path.
+   565	# The default fixture pins to src/conformance/governed-surface-allowlist.json,
+   566	# which §4 ALREADY cites, so its count is deliberately unchanged (paths are
+   567	# counted distinct) — that is why this arm re-pins to a fresh file.
+   568	# Pre-fix the count does NOT move: measured RED.
+   569	setup_fixture presigned
+   570	run_gen 9.9.9 10 --verify
+   571	PIN_BASE_N="$(grep -oE '[0-9]+ path\(s\)' <<<"$OUT" | head -1 | grep -oE '[0-9]+' || true)"
+   572	setup_fixture presigned
+   573	printf '{"delta": []}\n' >"$FIX/src/conformance/pinned-delta.json"
+   574	mutate_state "s['acceptance']['publish_gate']['pre_sign']['pinned_to'] = 'src/conformance/pinned-delta.json'"
+   575	run_gen 9.9.9 10 --verify
+   576	PIN_NEW_N="$(grep -oE '[0-9]+ path\(s\)' <<<"$OUT" | head -1 | grep -oE '[0-9]+' || true)"
+   577	if [ "$RC" -eq 0 ] && [ -n "$PIN_BASE_N" ] && [ -n "$PIN_NEW_N" ] \
+   578	   && [ "$PIN_NEW_N" -eq "$((PIN_BASE_N + 1))" ]; then
+   579	  pass "pre-sign pin — a distinct \`pinned_to\` raises the verified-path count by exactly 1"
+   580	else
+   581	  fail "arm 5i (pin counted): rc=$RC base=$PIN_BASE_N new=$PIN_NEW_N (expected $((PIN_BASE_N + 1)))"
+   582	fi
+   583	
+   584	# Restore the default fixture for the arms that follow.
+   585	setup_fixture
+   820	else
+   821	  fail "arm 9d (real base line): base=[$REAL_BASE_LINE]"
+   822	fi
+   823	
+   824	# --- Arm 9e: the REAL manifest's pin path is emitted as a CITATION ----------
+   825	# The live half of arms 5h/5i. The pin line must render the path the way every
+   826	# other cited path renders (through `m.cite`, i.e. backticked and therefore
+   827	# existence-checked), and the path it names must resolve in this checkout. The
+   828	# assertion is value-agnostic — it reads whatever the state file pins to — so it
+   829	# keeps holding when the pin moves. Pre-fix the line was raw text: measured RED.
+   830	REAL_PIN_LINE="$(grep -m1 '^      pinned to' <<<"$REAL_OUT" || true)"
+   831	REAL_PIN="$(sed 's/^ *pinned to *//; s/`//g' <<<"$REAL_PIN_LINE")"
+   832	if grep -qE '^ +pinned to +`[^`]+`$' <<<"$REAL_PIN_LINE" \
+   833	   && [ -n "$REAL_PIN" ] && [ -e "$REPO_ROOT/$REAL_PIN" ]; then
+   834	  pass "real repo — the publish-gate pin is emitted as a citation and resolves ($REAL_PIN)"
+   835	else
+   836	  fail "arm 9e (real pin citation): line=[$REAL_PIN_LINE] pin=[$REAL_PIN]"
+   837	fi
+
+codex
+The change registers the publish gate pre-sign pin through the existing citation machinery and adds targeted regression coverage for failure, count movement, and the live state. I did not identify any introduced correctness issues.
+The change registers the publish gate pre-sign pin through the existing citation machinery and adds targeted regression coverage for failure, count movement, and the live state. I did not identify any introduced correctness issues.
