@@ -1,0 +1,2496 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f9b0a-fa49-74d2-b9ae-2fb56e4feb19
+--------
+user
+changes against 'd56572e6b4527d0e3f89833ab98fce336735eae0'
+exec
+/bin/bash -lc 'cat MEMORY.md 2>/dev/null || true && ls feedback_*.md 2>/dev/null' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ exited 2 in 0ms:
+exec
+/bin/bash -lc 'git diff --stat d56572e6b4527d0e3f89833ab98fce336735eae0 && git diff --name-only d56572e6b4527d0e3f89833ab98fce336735eae0' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+ dev/agent-tools/ledgerwatch/ledgerwatch.py      | 258 ++++++++++++++++++++++--
+ dev/agent-tools/ledgerwatch/test_ledgerwatch.py | 232 +++++++++++++++++++++
+ dev/plans/release-state-0.8.20.json             |   7 +
+ dev/plans/runs/STATUS-0.8.20.md                 |  17 +-
+ dev/todos-and-considerations-ledger-readme.md   |  35 ++++
+ scripts/check-release-state-views.sh            |  33 ++-
+ scripts/tests/test_check_release_state_views.sh | 125 +++++++++++-
+ 7 files changed, 669 insertions(+), 38 deletions(-)
+dev/agent-tools/ledgerwatch/ledgerwatch.py
+dev/agent-tools/ledgerwatch/test_ledgerwatch.py
+dev/plans/release-state-0.8.20.json
+dev/plans/runs/STATUS-0.8.20.md
+dev/todos-and-considerations-ledger-readme.md
+scripts/check-release-state-views.sh
+scripts/tests/test_check_release_state_views.sh
+
+exec
+/bin/bash -lc "pwd; ls -la | head; cat MEMORY.md; for f in feedback_*.md; do echo '---' "'$f; cat "$f"; done' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ exited 1 in 0ms:
+/home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+total 348
+drwxrwxr-x 14 coreyt coreyt   4096 Jul 25 15:47 .
+drwxrwxr-x  8 coreyt coreyt   4096 Jul 25 14:16 ..
+drwxrwxr-x  4 coreyt coreyt   4096 Jul 25 14:13 .claude
+-rw-rw-r--  1 coreyt coreyt     62 Jul 25 14:13 .git
+drwxrwxr-x  3 coreyt coreyt   4096 Jul 25 14:13 .github
+-rw-rw-r--  1 coreyt coreyt   4679 Jul 25 14:13 .gitignore
+-rw-rw-r--  1 coreyt coreyt   2154 Jul 25 14:13 .markdownlint-cli2.jsonc
+-rw-rw-r--  1 coreyt coreyt   2105 Jul 25 14:13 .markdownlint.jsonc
+-rw-rw-r--  1 coreyt coreyt    657 Jul 25 14:13 .prettierignore
+cat: MEMORY.md: No such file or directory
+--- feedback_*.md
+cat: 'feedback_*.md': No such file or directory
+
+exec
+/bin/bash -lc 'git diff --find-renames --find-copies d56572e6b4527d0e3f89833ab98fce336735eae0 -- dev/agent-tools/ledgerwatch/ledgerwatch.py scripts/check-release-state-views.sh' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+diff --git a/dev/agent-tools/ledgerwatch/ledgerwatch.py b/dev/agent-tools/ledgerwatch/ledgerwatch.py
+index 2ba8473a..b3884ce7 100755
+--- a/dev/agent-tools/ledgerwatch/ledgerwatch.py
++++ b/dev/agent-tools/ledgerwatch/ledgerwatch.py
+@@ -30,21 +30,28 @@ even when --select would otherwise silently drop it). --validate runs a full-fil
+ JSONL integrity scan instead (0 clean / 3 corrupt / 2 error; no delta, no cursor
+ advance).
+ 
+---project folds an event-sourced ledger to its LATEST entry per `id` (the file
+-is the event log; the fold is the state). Entries with no `id` are NOT an error
+-— they are counted into an explicit, always-printed `unfoldable (no id): N`
+-bucket. That bucket is the whole point: the recipe this mode replaces did
+-`latest[r["id"]] = r` and died with KeyError on the first id-less entry, which
+-is every entry of dev/steward/steward-ledger.jsonl. Like --prune and --validate
+-it is a standalone READ/REPORT mode: it never writes the ledger and never reads
+-or advances the cursor, so running a projection cannot silently consume the
+-delta a later watch run is waiting for.
++--project selects a PROJECTION over an event-sourced ledger. Two are defined:
++
++  latest   (the default; `--project` with no value) folds the ledger to its
++           LATEST entry per `id` — the file is the event log, the fold is the
++           state. Entries with no `id` are NOT an error: they are counted into
++           an explicit, always-printed `unfoldable (no id): N` bucket. That
++           bucket is the whole point: the recipe this mode replaces did
++           `latest[r["id"]] = r` and died with KeyError on the first id-less
++           entry, which is every entry of dev/steward/steward-ledger.jsonl.
++  rulings  the RULING REGISTRY: which items have been ruled on, which are still
++           open, and which the ledger does not say. See do_project_rulings for
++           the projection key, the classifier, and their limits.
++
++Like --prune and --validate, --project is a standalone READ/REPORT mode: it
++never writes the ledger and never reads or advances the cursor, so running a
++projection cannot silently consume the delta a later watch run is waiting for.
+ 
+ Flags: --json (structured envelope), --dry-run (compute delta without advancing
+ the cursor), --reset (discard cursor first), --select (tail field filter),
+ --strategy (override), --no-status (see below), --prune (drop cursors whose
+ source file is gone; takes no file argument), --validate (full-file JSONL scan),
+---project (fold-to-latest-per-id projection).
++--project [latest|rulings] (projection; bare = latest).
+ 
+ Exit status is grep-style by default, so a poller can branch on it without
+ capturing stdout:
+@@ -495,6 +502,194 @@ def do_project(path: str, as_json: bool, out, err) -> int:
+     return 0
+ 
+ 
++# --- rulings projection (the ruling registry) --------------------------------
++
++# The ONE literal status this tool reads. It is not a vocabulary this tool
++# invents: `open` is declared in dev/todos-and-considerations-ledger-readme.md
++# §2.1 as the ledger's own non-terminal status, and it is the dominant literal
++# value in the data (46 `open` + 9 `OPEN` of 76 entries). Everything else —
++# `watching`, `in_progress`, `converged-pending-hitl`, `build-authorized`,
++# `placed`, `resolved`, `closed`, `ratified-both-sides`, … — is echoed VERBATIM
++# and never interpreted. Inventing a status vocabulary is a refused move in this
++# effort, and the README's own TERMINAL vocabulary (`done`/`wont-do`/
++# `superseded`) matches ZERO entries in any of the three real ledgers, so there
++# is no declared terminal set to read either.
++OPEN_STATUS = "open"
++
++# Emission order. Deterministic and stable: bucket first, then key.
++VERDICT_ORDER = {"ruled": 0, "unruled": 1, "unclassified": 2}
++
++
++def ruling_key(obj: dict, lineno: int):
++    """Address an entry. Returns (key, from_id).
++
++    `id` when the entry carries one — that is the join key the todos ledger
++    declares, and it is what makes the fold-to-latest reuse work. Otherwise
++    `seq-N`: dev/steward/steward-ledger.jsonl holds most of this repo's rulings
++    and 107/107 of its entries have NO `id`, and ADDING one is banned (that file
++    is a decision trail, not an item register). `seq` is stamped by ledgerwrite
++    on every entry of all three ledgers and check-ledgers.sh gates that it is
++    contiguous, so `seq-N` is a real, stable address — it is simply scoped to
++    ONE file, which is why this mode takes one ledger at a time. A `seq`-less
++    entry falls back to `line-N` so that no entry is ever dropped for want of a
++    key (the KeyError class T1b closed).
++    """
++    ident = obj.get("id")
++    if ident is not None and str(ident) != "":
++        return str(ident), True
++    seq = obj.get("seq")
++    if seq is not None and str(seq) != "":
++        return "seq-%s" % seq, False
++    return "line-%d" % lineno, False
++
++
++def do_project_rulings(path: str, as_json: bool, out, err) -> int:
++    """Project a ledger to its RULING REGISTRY: ruled / unruled / unclassified.
++
++    WHY THIS EXISTS: rulings live in >=4 homes with no index, and the 0.8.20
++    board listed >=4 already-ruled items as still open — which is the direct
++    generator of re-deciding settled calls, the most expensive failure this
++    program has. A registry has to be derived from the ledger, not narrated
++    beside it.
++
++    THE PROJECTION KEY is `id` when present, else `seq-N` (see ruling_key).
++    Items are folded to their LATEST entry per key — the same fold `--project
++    latest` performs, for the same reason: the file is an event log, so the
++    item's current fields are its last entry's.
++
++    THE CLASSIFIER, and its limits, stated honestly:
++
++      ruled         ANY entry under this key has `kind == "decision"`.
++                    `kind` is the only field present on 193/193 entries of all
++                    three ledgers, and `decision` is its actual cross-ledger
++                    value for "this entry records a ruling" (68 steward + 6
++                    todos + 5 OPP-12). ANY entry, not just the latest: a ruling
++                    once recorded is not un-recorded by a later observation.
++                    `ruling_seqs` names exactly which entries carry it.
++      unruled       no ruling entry, and the folded entry's `status` is `open`
++                    (case-insensitively — the todos ledger contains both `open`
++                    and `OPEN`). See OPEN_STATUS for why that one literal.
++      unclassified  everything else. This bucket is LARGE and that is the point:
++                    it is where the ledgers genuinely do not say. Real instance:
++                    TC-7 walked open -> in_progress -> converged-pending-hitl ->
++                    resolved with NO `kind: decision` entry anywhere, so a
++                    registry cannot see that it was ruled. Guessing from
++                    `resolved` would be inventing the vocabulary this effort
++                    already refused. Every unclassified row is still EMITTED,
++                    with its literal `kind`/`status`, so it is visible and
++                    countable — never silently dropped.
++
++    LIMITS a caller must know: (1) `seq` is unique per FILE, so this mode reports
++    one ledger at a time and its keys must not be merged across files without a
++    file qualifier; (2) it classifies ENTRIES, not the truth of a ruling — it can
++    say "the ledger records a decision here", never "this decision is correct";
++    (3) an item ruled in prose but never entered as `kind: decision` reads as
++    unruled or unclassified, which is a finding about the LEDGER, not a defect
++    here.
++
++    Read/report only: never writes the ledger, never touches the cursor state
++    directory. Exit 0 = registry emitted (even if empty), 2 = read error.
++    """
++    try:
++        data = read_bytes(path)
++    except OSError as exc:
++        print(f"ledgerwatch: cannot read {path}: {exc}", file=err)
++        return 2
++
++    text = data.decode("utf-8", errors="replace")
++    order: list[str] = []
++    latest: dict[str, dict] = {}
++    ruling_seqs: dict[str, list] = {}
++    from_id: dict[str, bool] = {}
++    entries = 0
++    malformed = 0
++
++    for lineno, raw in enumerate(text.split("\n"), start=1):
++        if raw.strip() == "":
++            continue  # blank lines are not entries
++        entries += 1
++        try:
++            obj = json.loads(raw)
++        except Exception:
++            malformed += 1
++            continue
++        if not isinstance(obj, dict):
++            malformed += 1
++            continue
++        key, keyed_by_id = ruling_key(obj, lineno)
++        if key not in latest:
++            order.append(key)
++            ruling_seqs[key] = []
++            from_id[key] = keyed_by_id
++        latest[key] = obj  # last write wins (file order == append order)
++        if obj.get("kind") == "decision":
++            ruling_seqs[key].append(obj.get("seq", lineno))
++
++    rows = []
++    counts = {"ruled": 0, "unruled": 0, "unclassified": 0}
++    for key in order:
++        obj = latest[key]
++        status = obj.get("status")
++        if ruling_seqs[key]:
++            verdict = "ruled"
++        elif status is not None and str(status).casefold() == OPEN_STATUS:
++            verdict = "unruled"
++        else:
++            verdict = "unclassified"
++        counts[verdict] += 1
++        rows.append(
++            {
++                "key": key,
++                "verdict": verdict,
++                "seq": obj.get("seq"),
++                "kind": obj.get("kind"),
++                "status": status,
++                "decider": obj.get("decider"),
++                "ruling_seqs": ruling_seqs[key],
++                "summary": obj.get("summary"),
++            }
++        )
++
++    rows.sort(key=lambda r: (VERDICT_ORDER[r["verdict"]], r["key"]))
++    keyed_by_seq = sum(1 for key in order if not from_id[key])
++
++    if as_json:
++        envelope = {
++            "file": path,
++            "mode": "project",
++            "projection": "rulings",
++            "entries": entries,
++            "items": len(rows),
++            "ruled": counts["ruled"],
++            "unruled": counts["unruled"],
++            "unclassified": counts["unclassified"],
++            "malformed": malformed,
++            "keyed_by_seq": keyed_by_seq,
++            "rows": rows,
++        }
++        out.write(json.dumps(envelope) + "\n")
++    else:
++        for row in rows:
++            out.write(json.dumps(row, sort_keys=True) + "\n")
++
++    # EVERY bucket on EVERY run, including the zeros. Same discipline as
++    # `unfoldable (no id): N`: a bucket that only appears when non-empty lets
++    # "nothing to classify" read as "everything classified".
++    print(
++        f"ledgerwatch: --project rulings {path}: {len(rows)} item(s) "
++        f"from {entries} entries; ruled: {counts['ruled']}; "
++        f"unruled: {counts['unruled']}; "
++        f"unclassified: {counts['unclassified']}; "
++        f"malformed: {malformed}; "
++        f"keyed by seq (no id): {keyed_by_seq}",
++        file=err,
++    )
++    return 0
++
++
++PROJECTIONS = {"latest": do_project, "rulings": do_project_rulings}
++
++
+ # --- driver -----------------------------------------------------------------
+ 
+ 
+@@ -538,14 +733,39 @@ def run(argv, out=sys.stdout, err=sys.stderr) -> int:
+     )
+     parser.add_argument(
+         "--project",
+-        action="store_true",
+-        help="fold the ledger to its latest entry per id; entries with no id are "
+-        "reported in an 'unfoldable (no id): N' bucket, never fatal. Read-only: "
+-        "does NOT write the ledger and does NOT advance the cursor "
++        nargs="?",
++        const="latest",
++        default=None,
++        metavar="PROJECTION",
++        help="project the ledger: `latest` (the default, and what a bare "
++        "--project means) folds to the latest entry per id, reporting id-less "
++        "entries in an 'unfoldable (no id): N' bucket; `rulings` emits the "
++        "ruled/unruled registry, keyed by id or else `seq-N` (the steward "
++        "ledger carries NO ids and must not be made to), classified by "
++        "`kind == \"decision\"` plus the single literal status `open`, with "
++        "everything the ledger does not say landing in a printed "
++        "`unclassified` bucket rather than being guessed at or dropped. "
++        "Read-only: does NOT write the ledger and does NOT advance the cursor "
+         "(0 = projection emitted / 2 = read error)",
+     )
+     args = parser.parse_args(argv)
+ 
++    # `--project` takes an OPTIONAL value, so `--project dev/x.jsonl` (the form
++    # the ledger READMEs document) would otherwise have the PATH swallowed as
++    # the projection name. Re-read it as the file when it is not a projection
++    # name. A path that collides with a reserved name (`latest`/`rulings`) must
++    # be given positionally.
++    if args.project is not None and args.project not in PROJECTIONS:
++        if args.file is None:
++            args.file, args.project = args.project, "latest"
++        else:
++            print(
++                "ledgerwatch: unknown projection %r (choose from %s)"
++                % (args.project, ", ".join(sorted(PROJECTIONS))),
++                file=err,
++            )
++            return 2
++
+     if args.prune:
+         return do_prune(args.state_dir, out, err)
+ 
+@@ -563,11 +783,11 @@ def run(argv, out=sys.stdout, err=sys.stderr) -> int:
+         # does not compute a delta or advance the cursor.
+         return do_validate(abspath, args.json, out, err)
+ 
+-    # Fold-to-latest-per-id projection. Dispatched HERE, before the state dir is
+-    # created below, so --project provably cannot create, read or advance a
+-    # cursor (see do_project's docstring for why that is the safe choice).
+-    if args.project:
+-        return do_project(abspath, args.json, out, err)
++    # Projections. Dispatched HERE, before the state dir is created below, so
++    # --project provably cannot create, read or advance a cursor (see
++    # do_project's docstring for why that is the safe choice).
++    if args.project is not None:
++        return PROJECTIONS[args.project](abspath, args.json, out, err)
+ 
+     try:
+         select = parse_select(args.select)
+diff --git a/scripts/check-release-state-views.sh b/scripts/check-release-state-views.sh
+index f7373a3b..d3585316 100755
+--- a/scripts/check-release-state-views.sh
++++ b/scripts/check-release-state-views.sh
+@@ -181,10 +181,37 @@ def render_handoff_next_step(st):
+     return ("\n**The %s ladder is between slices: %s are all LANDED; %d is next.**"
+             % (st["release"], chain, st["next_slice"]))
+ 
++# Spelled-out counts, because the sentence this renders into is prose. Beyond
++# the table the numeral is used verbatim rather than inventing a spelling: an
++# open set that large is a different problem than a wording one.
++NUMBER_WORDS = {0: "ZERO", 1: "ONE", 2: "TWO", 3: "THREE", 4: "FOUR", 5: "FIVE",
++                6: "SIX", 7: "SEVEN", 8: "EIGHT", 9: "NINE", 10: "TEN"}
++
++def render_status_live_open_count(st):
++    """STATUS §4, the banner: how many decisions are live-OPEN, spelled out.
++
++    T2b (DOC-HYGIENE-2). The measured failure this pins: §4 listed >=4
++    ALREADY-RULED items as still open, and §4 says so about itself in the file
++    ("a hand-maintained duplicate of state that lives in three other files").
++    The count of the live open set is the one fact in that banner that is
++    mechanically derivable from `decisions.unruled`, so the count is what the
++    fence owns — a third unruled item appearing in the state file now turns this
++    gate RED until the banner is regenerated.
++
++    Deliberately NARROW; see `why_only_the_count` on this view in the state file
++    for the full statement. In short: the surrounding sentence cannot be
++    rendered from facts (its two items have different prose shapes and it closes
++    on an F-n citation), and reproducing it would mean pasting the sentence into
++    the JSON — the move this script refuses above. The historical rows 1-22 of
++    §4 are the retained decision record and are NOT under generation at all."""
++    return NUMBER_WORDS.get(len(st["decisions"]["unruled"]),
++                            str(len(st["decisions"]["unruled"])))
++
+ RENDERERS = {
+-    "master-ladder-progress": render_master_ladder_progress,
+-    "status-unblocks":        render_status_unblocks,
+-    "handoff-next-step":      render_handoff_next_step,
++    "master-ladder-progress":  render_master_ladder_progress,
++    "status-unblocks":         render_status_unblocks,
++    "status-live-open-count":  render_status_live_open_count,
++    "handoff-next-step":       render_handoff_next_step,
+ }
+ 
+ # ---------------------------------------------------------------------------
+
+exec
+/bin/bash -lc 'git diff d56572e6b4527d0e3f89833ab98fce336735eae0 -- dev/agent-tools/ledgerwatch/test_ledgerwatch.py scripts/tests/test_check_release_state_views.sh dev/plans/release-state-0.8.20.json dev/plans/runs/STATUS-0.8.20.md' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+diff --git a/dev/agent-tools/ledgerwatch/test_ledgerwatch.py b/dev/agent-tools/ledgerwatch/test_ledgerwatch.py
+index 706307db..7bd82925 100644
+--- a/dev/agent-tools/ledgerwatch/test_ledgerwatch.py
++++ b/dev/agent-tools/ledgerwatch/test_ledgerwatch.py
+@@ -827,3 +827,235 @@ def test_project_non_string_and_empty_ids(tmp_path):
+     _, out, err = lw(tmp_path, str(f), "--project")
+     assert len(out.splitlines()) == 1  # id 7 folds under the key "7"
+     assert "unfoldable (no id): 2" in err  # "" and null are not usable ids
++
++
++# --------------------------------------------------------------------------
++# --project rulings (the ruling registry)
++#
++# RED-first. The projection key here CANNOT be `id`: dev/steward/steward-
++# ledger.jsonl is the ledger that holds most of this repo's rulings and 107/107
++# of its entries have NO `id` — and adding one was explicitly forbidden (T1b).
++# So the address is `id` when present, else `seq-N`, and the RULING SIGNAL is
++# `kind == "decision"`, the only classifier present on 193/193 entries across
++# all three ledgers. `status` is read for exactly ONE literal value, `open`,
++# which the todos-ledger README declares itself; every other status is REPORTED
++# VERBATIM and never interpreted, because inventing a status vocabulary is a
++# refused move in this effort (T1b) and the README's own terminal vocabulary
++# (`done`/`wont-do`/`superseded`) matches ZERO real entries.
++# --------------------------------------------------------------------------
++
++
++def test_rulings_a_decision_entry_is_ruled(tmp_path):
++    f = tmp_path / "l.jsonl"
++    f.write_text('{"seq":1,"kind":"decision","summary":"ruled it"}\n')
++    rc, out, err = lw(tmp_path, str(f), "--project", "rulings")
++    rows = [json.loads(line) for line in out.splitlines()]
++    assert rc == PROJECT_OK
++    assert rows[0]["verdict"] == "ruled" and rows[0]["key"] == "seq-1"
++    assert "ruled: 1" in err
++
++
++def test_rulings_an_open_entry_is_unruled(tmp_path):
++    f = tmp_path / "l.jsonl"
++    f.write_text('{"seq":1,"id":"TC-3","kind":"consideration","status":"open"}\n')
++    rc, out, err = lw(tmp_path, str(f), "--project", "rulings")
++    rows = [json.loads(line) for line in out.splitlines()]
++    assert rc == PROJECT_OK
++    assert rows[0]["verdict"] == "unruled" and rows[0]["key"] == "TC-3"
++    assert "unruled: 1" in err
++
++
++def test_rulings_unclassifiable_entry_is_bucketed_not_dropped(tmp_path):
++    """`resolved` is NOT read as a ruling: it is not in any declared vocabulary.
++
++    Real instance: TC-7 walked open -> in_progress -> converged-pending-hitl ->
++    resolved without a single `kind: decision` entry. The registry must SAY it
++    cannot classify that, not guess.
++    """
++    f = tmp_path / "l.jsonl"
++    f.write_text('{"seq":1,"id":"TC-7","kind":"reconcile","status":"resolved"}\n')
++    rc, out, err = lw(tmp_path, str(f), "--project", "rulings")
++    rows = [json.loads(line) for line in out.splitlines()]
++    assert rc == PROJECT_OK
++    assert rows[0]["verdict"] == "unclassified"  # emitted, never dropped
++    assert rows[0]["status"] == "resolved"       # echoed verbatim, uninterpreted
++    assert "unclassified: 1" in err
++
++
++def test_rulings_every_bucket_is_printed_even_when_zero(tmp_path):
++    """An empty ledger must still name all four buckets, or "nothing to
++    classify" reads as "everything classified" (the T1b bucket lesson)."""
++    f = tmp_path / "l.jsonl"
++    f.write_text("")
++    rc, out, err = lw(tmp_path, str(f), "--project", "rulings")
++    assert rc == PROJECT_OK and out == ""
++    for bucket in ("ruled: 0", "unruled: 0", "unclassified: 0", "malformed: 0"):
++        assert bucket in err
++
++
++def test_rulings_malformed_line_is_bucketed_separately(tmp_path):
++    f = tmp_path / "l.jsonl"
++    f.write_text('{"seq":1,"kind":"decision"}\nnot json at all\n[1,2,3]\n')
++    rc, out, err = lw(tmp_path, str(f), "--project", "rulings")
++    assert rc == PROJECT_OK
++    assert "malformed: 2" in err  # torn line + a non-object JSON value
++    assert len(out.splitlines()) == 1
++
++
++def test_rulings_id_less_entries_are_keyed_by_seq(tmp_path):
++    """The steward ledger's real shape: no entry has an `id`, and adding one is
++    banned. Every entry must still be addressable — by `seq-N`."""
++    f = tmp_path / "steward.jsonl"
++    f.write_text(
++        '{"seq":1,"kind":"decision","summary":"a"}\n'
++        '{"seq":2,"kind":"decision","summary":"b"}\n'
++    )
++    rc, out, err = lw(tmp_path, str(f), "--project", "rulings")
++    rows = [json.loads(line) for line in out.splitlines()]
++    assert rc == PROJECT_OK
++    assert [r["key"] for r in rows] == ["seq-1", "seq-2"]
++    assert all(r["verdict"] == "ruled" for r in rows)
++    assert "keyed by seq (no id): 2" in err
++
++
++def test_rulings_folds_to_latest_per_id(tmp_path):
++    """Reuses T1b's fold: the item's current state is its LAST entry."""
++    f = tmp_path / "l.jsonl"
++    f.write_text(
++        '{"seq":1,"id":"TC-1","kind":"consideration","status":"open"}\n'
++        '{"seq":2,"id":"TC-1","kind":"decision","status":"closed"}\n'
++    )
++    _, out, err = lw(tmp_path, str(f), "--project", "rulings")
++    rows = [json.loads(line) for line in out.splitlines()]
++    assert len(rows) == 1 and rows[0]["seq"] == 2
++    assert rows[0]["verdict"] == "ruled" and rows[0]["status"] == "closed"
++    assert "1 item(s) from 2 entries" in err
++
++
++def test_rulings_a_ruling_is_not_undone_by_a_later_observation(tmp_path):
++    """A ruling, once recorded, stays recorded — this is the whole point. The
++    fold decides the item's CURRENT fields; it does not un-rule the item."""
++    f = tmp_path / "l.jsonl"
++    f.write_text(
++        '{"seq":1,"id":"TC-1","kind":"decision","summary":"ruled"}\n'
++        '{"seq":2,"id":"TC-1","kind":"observation","status":"open"}\n'
++    )
++    _, out, _ = lw(tmp_path, str(f), "--project", "rulings")
++    rows = [json.loads(line) for line in out.splitlines()]
++    assert rows[0]["verdict"] == "ruled"      # NOT flipped back to unruled
++    assert rows[0]["ruling_seqs"] == [1]      # and it says exactly where
++
++
++def test_rulings_status_case_variants_both_read_as_open(tmp_path):
++    """The real todos ledger carries BOTH `open` (46) and `OPEN` (9)."""
++    f = tmp_path / "l.jsonl"
++    f.write_text(
++        '{"seq":1,"id":"TC-1","kind":"question","status":"open"}\n'
++        '{"seq":2,"id":"TC-2","kind":"question","status":"OPEN"}\n'
++    )
++    _, _, err = lw(tmp_path, str(f), "--project", "rulings")
++    assert "unruled: 2" in err
++
++
++def test_rulings_ordering_is_deterministic(tmp_path):
++    """Sorted by (ruled, unruled, unclassified) then key — same bytes every run."""
++    f = tmp_path / "l.jsonl"
++    f.write_text(
++        '{"seq":1,"id":"TC-9","kind":"observation","status":"watching"}\n'
++        '{"seq":2,"id":"TC-2","kind":"question","status":"open"}\n'
++        '{"seq":3,"id":"TC-1","kind":"decision"}\n'
++        '{"seq":4,"id":"TC-0","kind":"question","status":"open"}\n'
++    )
++    _, out_a, _ = lw(tmp_path, str(f), "--project", "rulings")
++    _, out_b, _ = lw(tmp_path, str(f), "--project", "rulings")
++    keys = [json.loads(line)["key"] for line in out_a.splitlines()]
++    assert out_a == out_b
++    assert keys == ["TC-1", "TC-0", "TC-2", "TC-9"]
++
++
++def test_rulings_entry_with_neither_id_nor_seq_still_gets_a_key(tmp_path):
++    f = tmp_path / "l.jsonl"
++    f.write_text('{"kind":"decision","summary":"no id, no seq"}\n')
++    _, out, err = lw(tmp_path, str(f), "--project", "rulings")
++    rows = [json.loads(line) for line in out.splitlines()]
++    assert rows[0]["key"] == "line-1"  # addressable by file position, not dropped
++    assert "keyed by seq (no id): 1" in err
++
++
++def test_rulings_does_not_mutate_the_ledger_or_the_cursor(tmp_path):
++    f = tmp_path / "l.jsonl"
++    original = '{"seq":1,"kind":"decision"}\n{"seq":2,"kind":"observation"}\n'
++    f.write_text(original)
++    lw(tmp_path, str(f), "--project", "rulings")
++    assert f.read_text() == original
++    assert not (tmp_path / "state").exists()  # read/report only
++
++
++def test_rulings_json_envelope(tmp_path):
++    f = tmp_path / "l.jsonl"
++    f.write_text(
++        '{"seq":1,"id":"TC-1","kind":"decision","status":"closed"}\n'
++        '{"seq":2,"kind":"observation"}\n'
++        '{"seq":3,"id":"TC-2","kind":"question","status":"open"}\n'
++        "junk\n"
++    )
++    rc, out, err = lw(tmp_path, str(f), "--project", "rulings", "--json")
++    env = json.loads(out)
++    assert rc == PROJECT_OK
++    assert env["mode"] == "project" and env["projection"] == "rulings"
++    assert env["entries"] == 4 and env["items"] == 3
++    assert env["ruled"] == 1 and env["unruled"] == 1 and env["unclassified"] == 1
++    assert env["malformed"] == 1 and env["keyed_by_seq"] == 1
++    assert [r["key"] for r in env["rows"]] == ["TC-1", "TC-2", "seq-2"]
++    assert "unclassified: 1" in err  # buckets printed in --json mode too
++
++
++def test_rulings_missing_file_exits_2(tmp_path):
++    rc, _, err = lw(tmp_path, str(tmp_path / "nope.jsonl"), "--project", "rulings")
++    assert rc == ERROR and "no such file" in err
++
++
++def test_rulings_summary_is_not_capped(tmp_path):
++    """T1b refused a --summary length cap; a registry row must not silently
++    truncate the one line a reader uses to recognise the ruling."""
++    long = "x" * 400
++    f = tmp_path / "l.jsonl"
++    f.write_text(json.dumps({"seq": 1, "kind": "decision", "summary": long}) + "\n")
++    _, out, _ = lw(tmp_path, str(f), "--project", "rulings")
++    assert json.loads(out.splitlines()[0])["summary"] == long
++
++
++# --- --project argument back-compatibility (T1b's bare form must survive) ---
++
++
++def test_project_bare_flag_still_means_fold_to_latest(tmp_path):
++    f = tmp_path / "l.jsonl"
++    f.write_text('{"seq":1,"id":"TC-1","status":"open"}\n')
++    rc, out, err = lw(tmp_path, str(f), "--project")
++    assert rc == PROJECT_OK and "unfoldable (no id): 0" in err
++    assert json.loads(out.splitlines()[0])["id"] == "TC-1"
++
++
++def test_project_named_latest_is_the_same_as_the_bare_flag(tmp_path):
++    f = tmp_path / "l.jsonl"
++    f.write_text('{"seq":1,"id":"TC-1","status":"open"}\n')
++    _, bare, _ = lw(tmp_path, str(f), "--project")
++    _, named, _ = lw(tmp_path, str(f), "--project", "latest")
++    assert bare == named
++
++
++def test_project_file_first_argument_form_still_works(tmp_path):
++    """`ledgerwatch --project FILE` — the form documented in the ledger README.
++    argparse would otherwise eat the path as the projection NAME."""
++    f = tmp_path / "l.jsonl"
++    f.write_text('{"seq":1,"id":"TC-1","status":"open"}\n')
++    rc, out, err = lw(tmp_path, "--project", str(f))
++    assert rc == PROJECT_OK and "unfoldable (no id): 0" in err
++    assert json.loads(out.splitlines()[0])["id"] == "TC-1"
++
++
++def test_project_unknown_projection_name_exits_2(tmp_path):
++    f = tmp_path / "l.jsonl"
++    f.write_text('{"seq":1,"id":"TC-1"}\n')
++    rc, _, err = lw(tmp_path, str(f), "--project", "nonsense")
++    assert rc == ERROR and "unknown projection" in err
+diff --git a/dev/plans/release-state-0.8.20.json b/dev/plans/release-state-0.8.20.json
+index a330dd90..6a7d1766 100644
+--- a/dev/plans/release-state-0.8.20.json
++++ b/dev/plans/release-state-0.8.20.json
+@@ -217,6 +217,13 @@
+       "location": "§1 Current state — the `**Unblocks**` table row's cell body",
+       "renders": "unblocked slices, what unblocked them, the publish-precondition slice + its dependencies, AC-079 sign-off status"
+     },
++    {
++      "id": "status-live-open-count",
++      "file": "dev/plans/runs/STATUS-0.8.20.md",
++      "location": "§4 Open HITL decisions — the banner's `THE LIVE OPEN SET IS EXACTLY <N>:` count word",
++      "renders": "the number of entries in `decisions.unruled`, spelled out",
++      "why_only_the_count": "T2b (DOC-HYGIENE-2). The measured failure was §4 listing >=4 ALREADY-RULED items as still open, i.e. the COUNT of the live open set drifting from the single writer - which is exactly what this region pins. The surrounding sentence is NOT generated, for two reasons, both binding. (1) Its two items are worded in different shapes ('the <label> - <detail>, taken to the HITL **once**, at <gate>' vs '**<label>** (<gate>, hard gate)') and it closes on a findings citation (master F-34), so no template over the fact model reproduces it; only pasting the sentence into this JSON would, and that is the move check-release-state-views.sh explicitly refuses ('widen the fact model or NARROW THE REGION - never paste the prose into the JSON'). (2) CommonMark: a blockquote line whose content BEGINS with `<!--` is an HTML block that swallows the whole line, so a BEGIN marker cannot be placed at the head of this line without changing how it renders. Narrowing keeps the fence in place, byte-exact, and fully reversible. The full ruled/unruled table is emitted by `ledgerwatch <ledger> --project rulings`, and the ruled/unruled FACTS live in `decisions` above; §4's items 1-22 are the historical decision record and are deliberately NOT under generation."
++    },
+     {
+       "id": "handoff-next-step",
+       "file": "dev/plans/runs/STEWARD-SESSION-HANDOFF-2026-07-24-A.md",
+diff --git a/dev/plans/runs/STATUS-0.8.20.md b/dev/plans/runs/STATUS-0.8.20.md
+index c73a67a0..4c9475db 100644
+--- a/dev/plans/runs/STATUS-0.8.20.md
++++ b/dev/plans/runs/STATUS-0.8.20.md
+@@ -42,12 +42,12 @@ step 24). Ledger tip **`3264114a`** (steward seq-98).
+ | **Slice in flight** | **NONE — Slice 15 keystone just LANDED (`a2022957`).** The ladder is between slices, awaiting the next commission. |
+ | **Status** | **Slices 0, 5, 10, 15 all COMPLETE and LANDED on `origin/main`** (header table). The keystone landed **R-20-PR + R-20-EAV + `filterable` pre-KNN + TC-33 + TC-34 + Finding-1 (A) + `#[non_exhaustive] SearchFilter`**; codex §9 **terminal-clean**; gates re-verified by the Steward (clippy 0, check 0, (A) pin 1/1, AC-041 3/3). **SCHEMA 24.** |
+ | **Unblocks** | <!-- BEGIN GENERATED release-state:0.8.20:status-unblocks -->**Slices 20 and 25 are NOW UNBLOCKED** — R-20-PR (the projection registry) now exists. Slice 30 (H7) depends on 10/15/20/25. **Publish remains blocked on AC-079**, which is **still unsigned** — sign-off is gated to Slice 40 (§4 #1).<!-- END GENERATED release-state:0.8.20:status-unblocks --> |
+-| **Immediate next action** | **Commission the `DOC-HYGIENE-2` orchestrator FIRST — Slice 20 does not open until it lands** (**F-34**, HITL 2026-07-25). A wide docs diff must not run while a slice orchestrator is live (**F-7** collision rule), and DOC-HYGIENE-2 corrects **18 line-anchors in `plan-0.8.20.md` that misdirect the Slice-20 implementer** (`engine:14867`/`:14890` for TC-45 → the real call sites are `lib.rs:16963`/`:16986`). **Then** Slice 20 — `dense_readiness` + `flush_embeddings()` (**R-20-DR**) **+ the TC-45 supersession-terminal fix** (HITL 2026-07-24) — commissioned as an **orchestrator** (`/orchestrate`, or a Steward-spawned background orchestrator; **NOT `/goal`** — standing ruling `927ffb35`). Then **25 → 30 → 40, sequentially** (parallel 20∥25 was declined, F-34). **✅ The sequencing prerequisite is DISCHARGED:** the cross-cutting docs/tooling hygiene effort (DOC-HYGIENE-1, TC-48) that had to land FIRST — a wide docs diff that must not run while an orchestrator is live (F-7 collision rule) — **LANDED on `origin/main` 2026-07-25 (`f53b8c64..597738d9`, no pico label)**. Nothing now blocks the Slice-20 commission. Rulings for the eight-item queue are recorded in `plan-0.8.20.md` §11; master reconciliation = **F-32**, DOC-HYGIENE-1 = **F-33**. |
++| **Immediate next action** | **Commission the `DOC-HYGIENE-2` orchestrator FIRST — Slice 20 does not open until it lands** (**F-34**, HITL 2026-07-25). A wide docs diff must not run while a slice orchestrator is live (**F-7** collision rule), and DOC-HYGIENE-2 corrects **18 line-anchors in `plan-0.8.20.md` that misdirect the Slice-20 implementer** (`engine:14867`/`:14890` for TC-45 → the real call sites are `lib.rs:16963`/`:16986`). **Then** Slice 20 — `dense_readiness` + `flush_embeddings()` (**R-20-DR**) **+ the TC-45 supersession-terminal fix** (HITL 2026-07-24) — commissioned as an **orchestrator** (`/orchestrate`, or a Steward-spawned background orchestrator; **NOT `/goal`** — standing ruling **steward `seq-104`** (`927ffb35`)). Then **25 → 30 → 40, sequentially** (parallel 20∥25 was declined, F-34). **✅ The sequencing prerequisite is DISCHARGED:** the cross-cutting docs/tooling hygiene effort (DOC-HYGIENE-1, TC-48) that had to land FIRST — a wide docs diff that must not run while an orchestrator is live (F-7 collision rule) — **LANDED on `origin/main` 2026-07-25 (`f53b8c64..597738d9`, no pico label)** (steward `seq-101`). Nothing now blocks the Slice-20 commission. Rulings for the eight-item queue are recorded in `plan-0.8.20.md` §11; master reconciliation = **F-32**, DOC-HYGIENE-1 = **F-33**. |
+ 
+ **Slices 0, 5, 10, 15 close records** are §11 (Slice 5), §12 (Slice 10), §13 (Slice 15b — TC-34 only; the
+ registry/EAV/TC-33 remainder that also landed in the keystone `a2022957` is summarised in §8 and in
+ `plan-0.8.20.md` §9). Slice 0 was HITL-SIGNED (`403eb254`, 2026-07-19). **eu7 is CLOSED BY DECISION — ZERO runs,
+-any backend, any N** (§6 / plan §10 F-28); the earlier "baseline capture BLOCKED" framing in §6.3 is superseded
++any backend, any N** (§6 / plan §10 F-28 · steward `seq-84`); the earlier "baseline capture BLOCKED" framing in §6.3 is superseded
+ by that ruling.
+ 
+ ---
+@@ -123,15 +123,16 @@ Everything else is tracked by **requirement id + TDD test name** per the locked-
+ > **⚠ THIS SECTION IS A HISTORICAL QUEUE, NOT THE LIVE OPEN SET (Steward, 2026-07-25).** Items 1–6 below were
+ > **resolved at the 2026-07-19 Slice-0 X0 sign-off**; item 7 (**AC-079**) was **PRE-SIGNED by the HITL on
+ > 2026-07-25**. Item 1 (**eu7 basis**) is doubly settled — eu7 is **CLOSED BY DECISION, zero runs on any
+-> backend at any N** (§6 / master F-28), so its "conditional on Slice-40 proof" wording is dead. Item 6's
+-> "confirm Memex co-land readiness" is **CLOSED BY DECISION** (master F-34): Memex adapts to 0.8.20's surface
+-> and **no confirmation is to be sought**. The rows are retained as the decision record; **do not act on them
+-> as open**.
++> backend at any N** (§6 / master F-28 · steward `seq-84`), so its "conditional on Slice-40 proof" wording is
++> dead. Item 6's "confirm Memex co-land readiness" is **CLOSED BY DECISION** (master F-34 · steward
++> `seq-106` ruling 5): Memex adapts to 0.8.20's surface and **no confirmation is to be sought**. The rows are
++> retained as the decision record; **do not act on them as open**.
+ >
+-> **THE LIVE OPEN SET IS EXACTLY TWO:** (1) the **batched governed-surface decision** — the accumulated
++> **THE LIVE OPEN SET IS EXACTLY <!-- BEGIN GENERATED release-state:0.8.20:status-live-open-count -->TWO<!-- END GENERATED release-state:0.8.20:status-live-open-count -->:** (1) the **batched governed-surface decision** — the accumulated
+ > Slice 20/25/30 allowlist delta, taken to the HITL **once**, at the Slice 30 → Slice 40 boundary; and
+ > (2) **PUBLISH** (Slice 40, hard gate). Reserved-gap band overflow (`plan-0.8.20.md` §5) still halts.
+-> Full authorization: master **F-34** · plan §11's 2026-07-25 rulings block.
++> Full authorization: master **F-34** · steward `seq-106` (*"Two stops remain"* — the ruling of record for
++> this count) · plan §11's 2026-07-25 rulings block.
+ >
+ > *This section is a hand-maintained duplicate of state that lives in three other files — exactly the
+ > fan-out DOC-HYGIENE-2's **N2** replaces with a generated ruled/unruled table.*
+diff --git a/scripts/tests/test_check_release_state_views.sh b/scripts/tests/test_check_release_state_views.sh
+index 5ca31280..12685fdf 100755
+--- a/scripts/tests/test_check_release_state_views.sh
++++ b/scripts/tests/test_check_release_state_views.sh
+@@ -57,6 +57,9 @@ B_MASTER='<!-- BEGIN GENERATED release-state:9.9.9:master-ladder-progress -->'
+ E_MASTER='<!-- END GENERATED release-state:9.9.9:master-ladder-progress -->'
+ B_HANDOFF='<!-- BEGIN GENERATED release-state:9.9.9:handoff-next-step -->'
+ E_HANDOFF='<!-- END GENERATED release-state:9.9.9:handoff-next-step -->'
++# T2b: the live-open-set COUNT in the board's §4 banner.
++B_OPEN='<!-- BEGIN GENERATED release-state:9.9.9:status-live-open-count -->'
++E_OPEN='<!-- END GENERATED release-state:9.9.9:status-live-open-count -->'
+ 
+ # A minimal but REAL fixture: one state file, two fenced views in two documents,
+ # each region byte-identical to what the renderers emit. Every arm mutates one
+@@ -92,11 +95,42 @@ setup_fixture() {
+       "sign_off_slice": 40, "board_ref": "§4 #1"
+     }
+   },
++  "decisions": {
++    "unruled": [
++      {"id": "batched-surface", "title": "the batched surface decision"},
++      {"id": "publish",         "title": "PUBLISH"}
++    ],
++    "ruled": [
++      {"id": "already-settled", "ruling": "CLOSED BY DECISION", "ruled_on": "2026-01-01"}
++    ]
++  },
+   "generated_views": [
+-    {"id": "master-ladder-progress", "file": "dev/plans/master.md"},
+-    {"id": "handoff-next-step",      "file": "dev/plans/runs/handoff.md"}
++    {"id": "master-ladder-progress",  "file": "dev/plans/master.md"},
++    {"id": "status-live-open-count",  "file": "dev/plans/runs/board.md"},
++    {"id": "handoff-next-step",       "file": "dev/plans/runs/handoff.md"}
+   ]
+ }
++EOF
++
++  # T2b: the board's §4 banner. The fence is deliberately NARROW — the count
++  # word only — and it sits INSIDE a blockquote, mid-line. Both properties are
++  # load-bearing and are asserted below: a BEGIN marker at the head of a
++  # blockquote line would be an HTML block that swallows the whole line
++  # (CommonMark), and the surrounding sentence is not renderable from facts.
++  cat >"$FIX/dev/plans/runs/board.md" <<EOF
++# Board
++
++## 4. Open HITL decisions
++
++> **⚠ HISTORICAL QUEUE, NOT THE LIVE OPEN SET.** Rows 1-3 are retained as the
++> decision record; do not act on them as open.
++>
++> **THE LIVE OPEN SET IS EXACTLY ${B_OPEN}TWO${E_OPEN}:** (1) the batched
++> surface decision; and (2) PUBLISH (hard gate).
++
++| # | Decision | Recommendation |
++|---|---|---|
++| 1 | A settled thing | retained as the decision record |
+ EOF
+ 
+   cat >"$FIX/dev/plans/master.md" <<EOF
+@@ -186,15 +220,87 @@ fi
+ # Reproduction proof in miniature: if regenerating a current document changed
+ # it, the renderer would not be reproducing what it claims to own.
+ setup_fixture
+-BEFORE="$(cat "$FIX/dev/plans/master.md" "$FIX/dev/plans/runs/handoff.md")"
++BEFORE="$(cat "$FIX/dev/plans/master.md" "$FIX/dev/plans/runs/handoff.md" "$FIX/dev/plans/runs/board.md")"
+ run_gate --write
+-AFTER="$(cat "$FIX/dev/plans/master.md" "$FIX/dev/plans/runs/handoff.md")"
++AFTER="$(cat "$FIX/dev/plans/master.md" "$FIX/dev/plans/runs/handoff.md" "$FIX/dev/plans/runs/board.md")"
+ if [ "$RC" -eq 0 ] && [ "$BEFORE" = "$AFTER" ]; then
+   pass "--write on a current tree is byte-for-byte a no-op (the renderer reproduces)"
+ else
+   fail "arm 2c (write is a no-op): rc=$RC"
+ fi
+ 
++# --- Arm 2d (T2b): the LIVE-OPEN-SET COUNT drifts from the single writer ---
++# THE measured failure this tranche exists for: the board's §4 listed >=4
++# ALREADY-RULED items as still open. The count of the live open set is the one
++# fact in that banner a renderer can derive, so a third unruled item appearing
++# in the state file must turn the board RED until it is regenerated.
++setup_fixture
++perl -0777 -pi -e 's/\{"id": "publish",         "title": "PUBLISH"\}/{"id": "publish", "title": "PUBLISH"},\n      {"id": "third-thing", "title": "a newly-opened call"}/' \
++  "$FIX/dev/plans/release-state-9.9.9.json"
++run_gate
++if [ "$RC" -ne 0 ] && grep -q 'is STALE' <<<"$OUT" \
++   && grep -q 'status-live-open-count' <<<"$OUT" && grep -q "'THREE'" <<<"$OUT"; then
++  pass "live-open-set drift — a THIRD unruled decision HARD-fails the board's count"
++else
++  fail "arm 2d (live-open-set drift): rc=$RC out=$OUT"
++fi
++
++# --- Arm 2e (T2b): the opposite direction — an item gets RULED -------------
++# The exact shape of the incident: a decision is settled, the state file records
++# it, and the board still says "EXACTLY TWO". That must be red, not silent.
++setup_fixture
++perl -0777 -pi -e 's/\{"id": "batched-surface", "title": "the batched surface decision"\},\n\s*//' \
++  "$FIX/dev/plans/release-state-9.9.9.json"
++run_gate
++if [ "$RC" -ne 0 ] && grep -q 'status-live-open-count' <<<"$OUT" && grep -q "'ONE'" <<<"$OUT"; then
++  pass "a decision becoming RULED shrinks the count and HARD-fails a stale board"
++else
++  fail "arm 2e (ruled item shrinks the count): rc=$RC out=$OUT"
++fi
++
++# --- Arm 2f (T2b): a hand-edit of the count word inside the markers --------
++setup_fixture
++perl -0777 -pi -e 's/\Q'"$B_OPEN"'\ETWO/'"$B_OPEN"'FOUR/' "$FIX/dev/plans/runs/board.md"
++run_gate
++if [ "$RC" -ne 0 ] && grep -q 'is STALE' <<<"$OUT" && grep -q 'status-live-open-count' <<<"$OUT"; then
++  pass "hand-editing the count inside the markers HARD-fails"
++else
++  fail "arm 2f (hand-edited count): rc=$RC out=$OUT"
++fi
++
++# --- Arm 2g (T2b): --write repairs the count and DELETES NOTHING -----------
++# Bounding condition 3 of the HITL pre-sign, on the section that carries the
++# historical decision record: regenerating must touch the count word and
++# nothing else — the retained rows and the banner prose stay byte-identical.
++setup_fixture
++perl -0777 -pi -e 's/\{"id": "publish",         "title": "PUBLISH"\}/{"id": "publish", "title": "PUBLISH"},\n      {"id": "third-thing", "title": "a newly-opened call"}/' \
++  "$FIX/dev/plans/release-state-9.9.9.json"
++run_gate --write
++if [ "$RC" -eq 0 ] \
++   && grep -q "${B_OPEN}THREE${E_OPEN}" "$FIX/dev/plans/runs/board.md" \
++   && grep -q 'HISTORICAL QUEUE, NOT THE LIVE OPEN SET' "$FIX/dev/plans/runs/board.md" \
++   && grep -q 'retained as the decision record' "$FIX/dev/plans/runs/board.md" \
++   && grep -q '(1) the batched' "$FIX/dev/plans/runs/board.md" \
++   && grep -q '(2) PUBLISH (hard gate)' "$FIX/dev/plans/runs/board.md"; then
++  pass "--write updates ONLY the count; the retained rows and banner prose survive"
++else
++  fail "arm 2g (write deletes nothing): rc=$RC"
++fi
++
++# --- Arm 2h (T2b): the fence does not start a blockquote line --------------
++# CommonMark: a blockquote line whose content BEGINS with `<!--` is an HTML
++# block that swallows the REST OF THE LINE, so a BEGIN marker placed at the head
++# of the banner line would stop the sentence rendering as markdown. This is the
++# same hazard render_handoff_next_step documents; assert the placement rather
++# than trusting it to stay right.
++setup_fixture
++if ! grep -qE '^>[[:space:]]*<!-- BEGIN GENERATED' "$FIX/dev/plans/runs/board.md" \
++   && grep -qE '^> \*\*THE LIVE OPEN SET' "$FIX/dev/plans/runs/board.md"; then
++  pass "the blockquote fence is mid-line — no marker heads a quoted line (CommonMark)"
++else
++  fail "arm 2h (marker placement): a BEGIN marker heads a blockquote line"
++fi
++
+ # --- Arm 3: MISSING MARKER — a declared view that is not fenced ------------
+ # A view that silently stops being checked is worse than no view at all.
+ setup_fixture
+@@ -287,7 +393,7 @@ fi
+ # --- Arm 6: TC-37 vacuous-pass guard — ZERO state files -------------------
+ setup_fixture
+ rm -f "$FIX/dev/plans/release-state-9.9.9.json"
+-rm -f "$FIX/dev/plans/master.md" "$FIX/dev/plans/runs/handoff.md"
++rm -f "$FIX/dev/plans/master.md" "$FIX/dev/plans/runs/handoff.md" "$FIX/dev/plans/runs/board.md"
+ run_gate
+ if [ "$RC" -ne 0 ] && grep -q 'ZERO release-state files' <<<"$OUT"; then
+   pass "vacuity guard — zero state files discovered -> hard FAIL, not a silent exit 0"
+@@ -300,7 +406,7 @@ fi
+ # empty `generated_views` the regenerate-and-diff loop never runs at all, so an
+ # exit 0 would be a gate vouching for nothing.
+ setup_fixture
+-rm -f "$FIX/dev/plans/master.md" "$FIX/dev/plans/runs/handoff.md"
++rm -f "$FIX/dev/plans/master.md" "$FIX/dev/plans/runs/handoff.md" "$FIX/dev/plans/runs/board.md"
+ perl -0777 -pi -e 's/"generated_views": \[.*\]/"generated_views": []/s' \
+   "$FIX/dev/plans/release-state-9.9.9.json"
+ run_gate
+@@ -316,7 +422,7 @@ fi
+ # byte-identical to their unfenced originals.
+ setup_fixture
+ mkdir -p "$TMPROOT/unfenced"
+-for f in dev/plans/master.md dev/plans/runs/handoff.md; do
++for f in dev/plans/master.md dev/plans/runs/handoff.md dev/plans/runs/board.md; do
+   mkdir -p "$TMPROOT/unfenced/$(dirname "$f")"
+   perl -0777 -pe 's/<!-- (?:BEGIN|END) GENERATED release-state:[^>]*-->\n?//g' \
+     "$FIX/$f" >"$TMPROOT/unfenced/$f"
+@@ -326,7 +432,10 @@ if grep -q 'Lead-in prose' "$TMPROOT/unfenced/dev/plans/master.md" \
+    && grep -q 'must never be touched' "$TMPROOT/unfenced/dev/plans/master.md" \
+    && ! grep -q 'GENERATED release-state' "$TMPROOT/unfenced/dev/plans/master.md" \
+    && grep -q 'Slices 0 (`aaaa1111`)' "$TMPROOT/unfenced/dev/plans/master.md" \
+-   && grep -q 'More prose' "$TMPROOT/unfenced/dev/plans/runs/handoff.md"; then
++   && grep -q 'More prose' "$TMPROOT/unfenced/dev/plans/runs/handoff.md" \
++   && grep -q 'IS EXACTLY TWO:' "$TMPROOT/unfenced/dev/plans/runs/board.md" \
++   && grep -q 'retained as the decision record' "$TMPROOT/unfenced/dev/plans/runs/board.md" \
++   && ! grep -q 'GENERATED release-state' "$TMPROOT/unfenced/dev/plans/runs/board.md"; then
+   pass "reversibility — stripping the markers leaves the prose AND the fenced content intact"
+ else
+   fail "arm 7 (reversibility): stripped documents lost content"
+
+exec
+/bin/bash -lc "sed -n '1,260p' scripts/check-release-state-views.sh && sed -n '260,520p' scripts/check-release-state-views.sh && sed -n '1,220p' dev/agent-tools/ledgerwatch/ledgerwatch.py && sed -n '220,860p' dev/agent-tools/ledgerwatch/ledgerwatch.py" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+#!/usr/bin/env bash
+# scripts/check-release-state-views.sh — T2a enforcement (DOC-HYGIENE-2):
+# SINGLE-WRITER RELEASE STATE + GENERATED VIEWS.
+#
+# ---------------------------------------------------------------------------
+# WHY (measured, not hypothetical)
+# ---------------------------------------------------------------------------
+# 0.8.20's release state — which slices have landed and at which SHAs, the
+# SCHEMA version, which slice is next, the AC status, which decisions are ruled
+# — was narrated across a 5-12 file write-side fan-out, and NOTHING checked that
+# the copies agreed. One reconciliation commit (b70629e5) had to touch SEVEN
+# files to bring them back into line, and the live board is ~79 KB: nobody reads
+# it whole, so a copy can sit wrong for weeks without anyone noticing.
+#
+# The remedy is the standing rule's remedy — fix the tooling so it cannot recur
+# for anyone, rather than writing a "remember to update all seven" note:
+#
+#   * ONE machine-readable state file per live release owns the facts:
+#     dev/plans/release-state-<version>.json.
+#   * Restatements of those facts in prose become MARKER-DELIMITED GENERATED
+#     REGIONS, rendered from that file.
+#   * This gate regenerates every region into a temp buffer and DIFFS it against
+#     what is actually in the document. Any difference is a hard failure — so a
+#     hand-edit of a view goes red, and a fact changed in the state file without
+#     a regenerate goes red too.
+#
+# ---------------------------------------------------------------------------
+# WHAT IT ENFORCES (four rules + one guard)
+# ---------------------------------------------------------------------------
+# RULE 1 — REGENERATE-AND-DIFF. For every view a state file declares, the bytes
+#   between its BEGIN and END markers must equal the bytes the renderer produces
+#   from that state file. Not a heuristic, not a wording check: byte equality.
+#
+# RULE 2 — MARKERS MUST BE WELL-FORMED AND PRESENT. A declared view whose BEGIN
+#   or END marker is missing, duplicated, or out of order is a FAILURE, never a
+#   skip. A view that silently stops being checked is worse than no view.
+#
+# RULE 3 — NO ORPHAN MARKERS (the confinement rule). Every
+#   `BEGIN GENERATED release-state:` marker anywhere in the worktree's markdown
+#   must belong to a view some state file declares. This is what mechanically
+#   holds the HITL pre-sign's "generated regions are confined to exactly the
+#   named locations, nothing else": a marker added anywhere else fails.
+#
+# RULE 4 — EVERY DECLARED VIEW MUST HAVE A RENDERER. A view id this script does
+#   not know how to render cannot be checked, so it is a failure rather than a
+#   silently-unchecked region.
+#
+# VACUOUS-PASS GUARD (TC-37 — this repo's named failure class: a gate that
+#   reports green without having run). If ZERO state files are discovered, or
+#   ZERO generated blocks are checked, the checking loop never executes and this
+#   script would exit 0 having vouched for nothing. Both are HARD failures.
+#   This is the same hole that let a genuinely-red `main` read green for three
+#   weeks when markdownlint-cli2 was absent.
+#
+# ---------------------------------------------------------------------------
+# WHAT IS *NOT* GENERATED (deliberate, and load-bearing)
+# ---------------------------------------------------------------------------
+# The three fenced regions are SUB-REGIONS of their locations, not whole
+# sections. The surrounding prose — narrative, rationale, cross-references,
+# history — stays hand-written and OUTSIDE the markers, untouched. A renderer
+# cannot plausibly re-derive judgement prose, and pretending otherwise would
+# mean laundering that prose through a JSON string, which buys nothing. Only
+# mechanically-derivable fact restatements are fenced. Removing the marker
+# comments restores the documents exactly, byte for byte: the fencing is fully
+# reversible and deletes nothing.
+#
+# ---------------------------------------------------------------------------
+# USAGE
+# ---------------------------------------------------------------------------
+#   scripts/check-release-state-views.sh            # check (default); exit 1 on drift
+#   scripts/check-release-state-views.sh --write    # regenerate the regions in place
+#   scripts/check-release-state-views.sh --quiet    # check, suppress the ok line
+#
+# Exit: 0 = every generated region matches its render (and >=1 state file and
+#           >=1 block were seen);
+#       1 = drift, a malformed/missing/orphan marker, an unknown view id, or a
+#           vacuous scan;
+#       2 = usage error / the gate could not run.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+MODE="check"
+QUIET=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --write) MODE="write"; shift ;;
+    --check) MODE="check"; shift ;;
+    --quiet) QUIET=1; shift ;;
+    *) printf 'check-release-state-views: unknown arg %q\n' "$1" >&2; exit 2 ;;
+  esac
+done
+
+# `python3` carries the JSON parse + the byte-exact region diff. If it is absent
+# the gate cannot run — and a gate that cannot run must fail loudly, never skip
+# (TC-37). Same posture as lint-plan-anchors.sh's perl dependency.
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "FAIL check-release-state-views: python3 not found; the state-file parser and" >&2
+  echo "  the byte-exact region diff cannot run. A gate that cannot run must not" >&2
+  echo "  report a pass (TC-37)." >&2
+  exit 2
+fi
+
+MODE="$MODE" QUIET="$QUIET" python3 - <<'PY'
+import glob, json, os, sys
+
+MODE  = os.environ["MODE"]
+QUIET = os.environ["QUIET"] == "1"
+
+BEGIN = "<!-- BEGIN GENERATED release-state:{release}:{vid} -->"
+END   = "<!-- END GENERATED release-state:{release}:{vid} -->"
+
+# Bare BEGIN-marker prefix, used by the RULE-3 orphan scan. The scan reads only
+# `*.md`, so this script's own source (a `.sh`) is never a false positive.
+MARKER_PREFIX = "<!-- BEGIN GENERATED release-state:"
+
+fail = 0
+def bad(msg):
+    global fail
+    fail = 1
+    sys.stderr.write(msg.rstrip("\n") + "\n")
+
+# ---------------------------------------------------------------------------
+# Renderers. One per view id. Each takes the parsed state dict and returns the
+# EXACT bytes that must sit between that view's markers.
+#
+# These are templates over FACTS, which is the whole point: the connective text
+# is literal, every varying part comes from the state file. If a template can no
+# longer reproduce the document, the honest move is to widen the fact model or
+# narrow the region — never to paste the prose into the JSON.
+# ---------------------------------------------------------------------------
+
+def _by_slice(st):
+    return {int(e["slice"]): e for e in st["ladder"]}
+
+def _and_join(items):
+    """`[20]` -> "20"; `[20, 25]` -> "20 and 25"; `[20, 25, 30]` -> "20, 25 and 30"."""
+    items = [str(i) for i in items]
+    if len(items) <= 1:
+        return "".join(items)
+    return ", ".join(items[:-1]) + " and " + items[-1]
+
+def render_master_ladder_progress(st):
+    """master §4, the 0.8.20 row: landed slices + SHAs, SCHEMA, remaining ladder.
+
+    Fenced sub-region only. The `**✅ LADDER PROGRESS (F-32, verified from git @
+    ...):` lead-in and the closing `**` stay OUTSIDE the markers: the F-n
+    reference is a findings-register citation and is deliberately not placed
+    under generation."""
+    by = _by_slice(st)
+    landed = " · ".join("%d (`%s`)" % (n, by[n]["sha"]) for n in st["landed"])
+    ladder = " → ".join(str(n) for n in st["remaining_ladder"])
+    return ("Slices %s are all LANDED on `origin/main`; SCHEMA is %d; "
+            "remaining ladder = %s." % (landed, st["schema_version"], ladder))
+
+def render_status_unblocks(st):
+    """STATUS §1 `**Unblocks**` row: what is unblocked, by what, and the
+    publish-precondition + AC sign-off status."""
+    by   = _by_slice(st)
+    ub   = st["unblocked"]
+    src  = st["unblocked_by"]
+    pre  = by[int(st["publish_precondition_slice"])]
+    gate = st["acceptance"]["publish_gate"]
+    return ("**Slices %s are NOW UNBLOCKED** — %s (%s) now exists. "
+            "Slice %d (%s) depends on %s. "
+            "**Publish remains blocked on %s**, which is **still %s** — "
+            "sign-off is gated to Slice %d (%s)."
+            % (_and_join(ub), src["requirement"], src["gloss"],
+               pre["slice"], pre["short"], "/".join(str(d) for d in pre["depends_on"]),
+               gate["ac"], gate["state_word"], gate["sign_off_slice"], gate["board_ref"]))
+
+def render_handoff_next_step(st):
+    """Steward hand-off ★ IMMEDIATE NEXT STEP: landed chain + next slice.
+
+    The leading newline is NOT cosmetic. This region starts a markdown
+    PARAGRAPH, and CommonMark treats a line that BEGINS with `<!--` as an HTML
+    block that swallows the whole line — so an inline BEGIN marker in front of
+    the sentence would stop the sentence rendering as markdown. The marker
+    therefore sits on its own line and the region content starts with the
+    newline that follows it."""
+    chain = " → ".join(str(n) for n in st["landed"])
+    return ("\n**The %s ladder is between slices: %s are all LANDED; %d is next.**"
+            % (st["release"], chain, st["next_slice"]))
+
+# Spelled-out counts, because the sentence this renders into is prose. Beyond
+# the table the numeral is used verbatim rather than inventing a spelling: an
+# open set that large is a different problem than a wording one.
+NUMBER_WORDS = {0: "ZERO", 1: "ONE", 2: "TWO", 3: "THREE", 4: "FOUR", 5: "FIVE",
+                6: "SIX", 7: "SEVEN", 8: "EIGHT", 9: "NINE", 10: "TEN"}
+
+def render_status_live_open_count(st):
+    """STATUS §4, the banner: how many decisions are live-OPEN, spelled out.
+
+    T2b (DOC-HYGIENE-2). The measured failure this pins: §4 listed >=4
+    ALREADY-RULED items as still open, and §4 says so about itself in the file
+    ("a hand-maintained duplicate of state that lives in three other files").
+    The count of the live open set is the one fact in that banner that is
+    mechanically derivable from `decisions.unruled`, so the count is what the
+    fence owns — a third unruled item appearing in the state file now turns this
+    gate RED until the banner is regenerated.
+
+    Deliberately NARROW; see `why_only_the_count` on this view in the state file
+    for the full statement. In short: the surrounding sentence cannot be
+    rendered from facts (its two items have different prose shapes and it closes
+    on an F-n citation), and reproducing it would mean pasting the sentence into
+    the JSON — the move this script refuses above. The historical rows 1-22 of
+    §4 are the retained decision record and are NOT under generation at all."""
+    return NUMBER_WORDS.get(len(st["decisions"]["unruled"]),
+                            str(len(st["decisions"]["unruled"])))
+
+RENDERERS = {
+    "master-ladder-progress":  render_master_ladder_progress,
+    "status-unblocks":         render_status_unblocks,
+    "status-live-open-count":  render_status_live_open_count,
+    "handoff-next-step":       render_handoff_next_step,
+}
+
+# ---------------------------------------------------------------------------
+# Discover state files.
+# ---------------------------------------------------------------------------
+state_paths = sorted(glob.glob("dev/plans/release-state-*.json"))
+if not state_paths:
+    bad("FAIL check-release-state-views: ZERO release-state files discovered under\n"
+        "  dev/plans/release-state-*.json. The check loop never ran, so a pass here\n"
+        "  would vouch for nothing (TC-37 vacuous-pass guard).")
+    sys.exit(1)
+
+blocks_checked = 0
+rewritten      = []
+declared       = set()   # (path, release, view-id) actually declared somewhere
+
+for sp in state_paths:
+    try:
+        with open(sp, encoding="utf-8") as fh:
+            st = json.load(fh)
+    except Exception as exc:                                  # noqa: BLE001
+        bad("FAIL %s: not parseable as JSON — %s" % (sp, exc))
+        continue
+
+    release = st.get("release")
+    views   = st.get("generated_views")
+    if not release or not isinstance(views, list):
+        bad("FAIL %s: a release-state file must carry a `release` string and a\n"
+            "  `generated_views` list naming the regions rendered from it." % sp)
+        continue
+    if not views:
+        bad("FAIL %s: `generated_views` is EMPTY, so this state file owns no region\n"
+            "  and nothing about it is checkable. A state file that gates nothing is a\n"
+            "  vacuous pass, not a pass (TC-37)." % sp)
+        continue
+
+    for view in views:
+        vid  = view.get("id")
+        path = view.get("file")
+        if not vid or not path:
+            bad("FAIL %s: a `generated_views` entry needs both `id` and `file`." % sp)
+            continue
+        if vid not in RENDERERS:
+            bad("FAIL %s: view `%s` has no renderer in check-release-state-views.sh, so\n"
+                "  its region cannot be checked. An unrenderable view is a failure, not\n"
+                "  an unchecked region." % (sp, vid))
+                "  an unchecked region." % (sp, vid))
+            continue
+        if not os.path.isfile(path):
+            bad("FAIL %s: view `%s` names `%s`, which is not a file in the worktree."
+                % (sp, vid, path))
+            continue
+
+        b = BEGIN.format(release=release, vid=vid)
+        e = END.format(release=release, vid=vid)
+        declared.add((path, b))
+
+        with open(path, encoding="utf-8") as fh:
+            doc = fh.read()
+
+        if doc.count(b) != 1 or doc.count(e) != 1:
+            bad("FAIL %s: view `%s` expects EXACTLY ONE BEGIN and ONE END marker; found\n"
+                "  %d BEGIN and %d END. Markers:\n    %s\n    %s"
+                % (path, vid, doc.count(b), doc.count(e), b, e))
+            continue
+        i = doc.index(b) + len(b)
+        j = doc.index(e)
+        if j < i:
+            bad("FAIL %s: view `%s` has its END marker BEFORE its BEGIN marker."
+                % (path, vid))
+            continue
+
+        have = doc[i:j]
+        want = RENDERERS[vid](st)
+        blocks_checked += 1
+
+        if have == want:
+            continue
+
+        if MODE == "write":
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(doc[:i] + want + doc[j:])
+            rewritten.append("%s :: %s" % (path, vid))
+            continue
+
+        bad("FAIL %s: generated region `%s` is STALE — it does not match what\n"
+            "  %s renders. Either the document was hand-edited inside the markers, or a\n"
+            "  fact changed in the state file and the region was never regenerated.\n"
+            "  IN THE DOCUMENT:\n    %r\n"
+            "  RENDERED FROM THE STATE FILE:\n    %r\n"
+            "  Fix: edit the FACT in %s, then run\n"
+            "    scripts/check-release-state-views.sh --write\n"
+            % (path, vid, sp, have, want, sp))
+
+# ---------------------------------------------------------------------------
+# RULE 3 — orphan-marker scan (the confinement rule).
+# ---------------------------------------------------------------------------
+PRUNE = {".git", "node_modules", "target", ".venv", "site", "dist", ".cache", ".wake"}
+for root, dirs, files in os.walk("."):
+    dirs[:] = [d for d in dirs if d not in PRUNE]
+    for name in files:
+        if not name.endswith(".md"):
+            continue
+        p = os.path.relpath(os.path.join(root, name), ".")
+        try:
+            with open(p, encoding="utf-8", errors="replace") as fh:
+                text = fh.read()
+        except OSError:
+            continue
+        if MARKER_PREFIX not in text:
+            continue
+        for line in text.split("\n"):
+            k = line.find(MARKER_PREFIX)
+            while k != -1:
+                end = line.find("-->", k)
+                if end == -1:
+                    bad("FAIL %s: unterminated generated-region BEGIN marker." % p)
+                    break
+                marker = line[k:end + 3]
+                if (p, marker) not in declared:
+                    bad("FAIL %s: ORPHAN generated-region marker\n    %s\n"
+                        "  No release-state file declares this view for this file. Generated\n"
+                        "  regions are confined to the locations a state file names; a marker\n"
+                        "  anywhere else is unowned and unchecked." % (p, marker))
+                k = line.find(MARKER_PREFIX, end + 3)
+
+# ---------------------------------------------------------------------------
+# Vacuity guard + report.
+# ---------------------------------------------------------------------------
+if blocks_checked == 0:
+    bad("FAIL check-release-state-views: ZERO generated blocks were checked across %d\n"
+        "  release-state file(s). The regenerate-and-diff loop never executed, so a pass\n"
+        "  here would vouch for nothing (TC-37 vacuous-pass guard)." % len(state_paths))
+
+if fail:
+    sys.exit(1)
+
+if MODE == "write":
+    if rewritten:
+        for r in rewritten:
+            print("wrote %s" % r)
+    else:
+        print("ok    check-release-state-views: %d generated block(s) already current"
+              % blocks_checked)
+    sys.exit(0)
+
+if not QUIET:
+    sys.stderr.write("ok    check-release-state-views: %d generated block(s) across %d "
+                     "release-state file(s) match their render\n"
+                     % (blocks_checked, len(state_paths)))
+sys.exit(0)
+PY
+#!/usr/bin/env python3
+"""ledgerwatch — emit only what changed in a monitored file since the last check.
+
+The point of this tool is to keep *context* small while watching files that grow
+without bound. It runs at the shell; only its (delta) stdout enters an agent's
+context. It persists a per-file cursor in a state directory so each run prints
+just what is new/changed and nothing else.
+
+Strategy is chosen by file extension (override with --strategy):
+
+  .jsonl/.ndjson/.log  -> tail    append-only positional cursor (byte offset),
+                                   made rotation/truncation-safe by a first-line
+                                   signature. Optional --select field filtering.
+  .md/.markdown        -> section content-hash per heading. Detects edits made
+                                   ANYWHERE in the document (intra-document), which
+                                   a positional cursor would miss.
+  everything else      -> diff    unified diff against a shadow copy.
+
+Each run reports a MODE so the consumer knows how much to trust the delta:
+  incremental  exact new/changed items since a valid cursor.
+  cold         first run (or unreadable state): output is a baseline, not events.
+  resync       cursor was invalidated (rotation/truncation/rewrite): output is a
+               re-read baseline, NOT a list of N new events. (tail only)
+In text mode the mode is announced on stderr only when it is not incremental; in
+--json mode it is always the "mode" field of the envelope.
+
+For the tail strategy, delta-validate is ON by default: any non-blank delta line
+that is not valid JSON is flagged on stderr (so a torn/corrupt line is surfaced
+even when --select would otherwise silently drop it). --validate runs a full-file
+JSONL integrity scan instead (0 clean / 3 corrupt / 2 error; no delta, no cursor
+advance).
+
+--project selects a PROJECTION over an event-sourced ledger. Two are defined:
+
+  latest   (the default; `--project` with no value) folds the ledger to its
+           LATEST entry per `id` — the file is the event log, the fold is the
+           state. Entries with no `id` are NOT an error: they are counted into
+           an explicit, always-printed `unfoldable (no id): N` bucket. That
+           bucket is the whole point: the recipe this mode replaces did
+           `latest[r["id"]] = r` and died with KeyError on the first id-less
+           entry, which is every entry of dev/steward/steward-ledger.jsonl.
+  rulings  the RULING REGISTRY: which items have been ruled on, which are still
+           open, and which the ledger does not say. See do_project_rulings for
+           the projection key, the classifier, and their limits.
+
+Like --prune and --validate, --project is a standalone READ/REPORT mode: it
+never writes the ledger and never reads or advances the cursor, so running a
+projection cannot silently consume the delta a later watch run is waiting for.
+
+Flags: --json (structured envelope), --dry-run (compute delta without advancing
+the cursor), --reset (discard cursor first), --select (tail field filter),
+--strategy (override), --no-status (see below), --prune (drop cursors whose
+source file is gone; takes no file argument), --validate (full-file JSONL scan),
+--project [latest|rulings] (projection; bare = latest).
+
+Exit status is grep-style by default, so a poller can branch on it without
+capturing stdout:
+  0  changed   — a delta was emitted on stdout
+  1  no change — nothing new (a normal idle tick, NOT a failure)
+  2  error     — missing file/argument, bad --select
+A no-change run is silent on stdout in both text and --json mode; the status is
+on the exit code. Pass --no-status to collapse 0/1 into 0 (success), reserving
+nonzero for real errors (2) — for callers whose harness treats any nonzero as a
+failure.
+"""
+
+import argparse
+import difflib
+import hashlib
+import json
+import os
+import re
+import sys
+
+HEADING_RE = re.compile(r"^#{1,6}\s")
+
+TAIL_EXTS = {".jsonl", ".ndjson", ".log"}
+SECTION_EXTS = {".md", ".markdown"}
+
+
+def sha1(data: bytes) -> str:
+    return hashlib.sha1(data).hexdigest()
+
+
+def read_bytes(path: str) -> bytes:
+    with open(path, "rb") as fh:
+        return fh.read()
+
+
+def read_text(path: str) -> str:
+    return read_bytes(path).decode("utf-8", errors="replace")
+
+
+def write_text(path: str, text: str) -> None:
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(text)
+
+
+# --- strategy selection -----------------------------------------------------
+
+
+def choose_strategy(path: str, override: str | None) -> str:
+    if override:
+        return override
+    ext = os.path.splitext(path)[1].lower()
+    if ext in TAIL_EXTS:
+        return "tail"
+    if ext in SECTION_EXTS:
+        return "section"
+    return "diff"
+
+
+# Each strategy is pure: it computes a structured payload + the next state and
+# never writes. The driver renders the payload (text or json) and commits state
+# (unless --dry-run). This split is what makes --json and --dry-run fall out for
+# free. Strategies return: (payload, new_state, changed, mode, shadow_content).
+
+
+# --- tail (append-only, rotation-safe) --------------------------------------
+
+
+def first_line_sig(data: bytes) -> str:
+    nl = data.find(b"\n")
+    seg = data if nl < 0 else data[:nl]
+    return sha1(seg)
+
+
+def is_json(line: str) -> bool:
+    """True if the line parses as JSON (used by delta-validate and --validate)."""
+    try:
+        json.loads(line)
+        return True
+    except Exception:
+        return False
+
+
+def match_select(line: str, select: dict) -> bool:
+    try:
+        obj = json.loads(line)
+    except Exception:
+        return False
+    for field, values in select.items():
+        if str(obj.get(field)) not in values:
+            return False
+    return True
+
+
+def strat_tail(path: str, state: dict, select: dict):
+    data = read_bytes(path)
+    size = len(data)
+    head_sig = first_line_sig(data)
+    prev_off = state.get("offset", 0)
+    prev_head = state.get("head_sig")
+
+    if prev_head is None:
+        mode = "cold"  # no usable prior cursor (first run / corrupt / reset)
+    elif prev_head != head_sig or prev_off > size:
+        # Rotation / truncation / in-place rewrite: the bytes we already
+        # committed are no longer a stable prefix. Re-read from the start so we
+        # never silently skip the replacement content.
+        mode = "resync"
+    else:
+        mode = "incremental"
+    start = 0 if mode != "incremental" else prev_off
+
+    # Only commit up to the last complete line; a partial trailing line (writer
+    # mid-append) is left for the next run so it is emitted exactly once.
+    last_nl = data.rfind(b"\n")
+    commit = last_nl + 1 if last_nl >= 0 else 0
+    if commit < start:
+        commit = start
+
+    chunk = data[start:commit]
+    raw_lines = chunk.decode("utf-8", errors="replace").splitlines()
+
+    # Delta-validate (default, tail only): flag any non-empty delta line that is
+    # not valid JSON, so a torn/corrupt line is surfaced even when --select would
+    # otherwise silently drop it. Scoped to the delta, so it never re-spams old
+    # corruption (which lies before the cursor).
+    lines_before = data[:start].count(b"\n")
+    invalid = [
+        {"line": lines_before + idx + 1, "text": ln[:120]}
+        for idx, ln in enumerate(raw_lines)
+        if ln.strip() and not is_json(ln)
+    ]
+
+    lines = raw_lines
+    if select:
+        lines = [ln for ln in raw_lines if match_select(ln, select)]
+
+    payload = {"lines": lines}
+    if invalid:
+        payload["invalid"] = invalid
+    new_state = {
+        "strategy": "tail",
+        "offset": commit,
+        "head_sig": head_sig,
+        "size": size,
+        "path": path,
+    }
+    return payload, new_state, bool(lines), mode, None
+
+
+# --- section (content-hash per heading, intra-document safe) -----------------
+
+
+def parse_sections(text: str):
+    blocks = []
+    cur_key = "(preamble)"
+    cur = []
+    for ln in text.splitlines(keepends=True):
+        if HEADING_RE.match(ln):
+            blocks.append((cur_key, "".join(cur)))
+            cur_key = ln.strip()
+            cur = [ln]
+        else:
+            cur.append(ln)
+    blocks.append((cur_key, "".join(cur)))
+
+    result = []
+    result = []
+    seen = {}
+    for key, body in blocks:
+        if key == "(preamble)" and not body.strip():
+            continue
+        seen[key] = seen.get(key, 0) + 1
+        disambiguated = key if seen[key] == 1 else f"{key} #{seen[key]}"
+        result.append((disambiguated, body))
+    return result
+
+
+def strat_section(path: str, state: dict):
+    text = read_text(path)
+    current = parse_sections(text)
+    has_prev = "sections" in state
+    prev = state.get("sections", {})
+    mode = "incremental" if has_prev else "cold"  # content-addressed: never resyncs
+
+    cur_map = {}
+    sections = []
+    for key, body in current:
+        # Hash on stripped content so the blank line that separates sections
+        # (which re-attaches to a different section when sections are reordered)
+        # does not register as a spurious change.
+        digest = sha1(body.strip().encode("utf-8"))
+        cur_map[key] = digest
+        if key not in prev:
+            sections.append({"key": key, "kind": "new", "body": body.rstrip("\n")})
+        elif prev[key] != digest:
+            sections.append({"key": key, "kind": "changed", "body": body.rstrip("\n")})
+    for key in prev:
+        if key not in cur_map:
+            sections.append({"key": key, "kind": "removed", "body": ""})
+
+    payload = {"sections": sections}
+    new_state = {"strategy": "section", "sections": cur_map, "path": path}
+    return payload, new_state, bool(sections), mode, None
+
+
+# --- diff (shadow copy, works for any text file) ----------------------------
+
+
+def strat_diff(path: str, state: dict, shadow_path: str):
+    new = read_text(path)
+    has_shadow = os.path.exists(shadow_path)
+    old = read_text(shadow_path) if has_shadow else ""
+    mode = "incremental" if has_shadow else "cold"
+
+    diff = list(
+        difflib.unified_diff(
+            old.splitlines(keepends=True),
+            new.splitlines(keepends=True),
+            fromfile="prev",
+            tofile="cur",
+        )
+    )
+    payload = {"diff": "".join(diff)}
+    new_state = {
+        "strategy": "diff",
+        "shadow": os.path.basename(shadow_path),
+        "path": path,
+    }
+    # shadow_content is committed by the driver (skipped on --dry-run).
+    return payload, new_state, bool(diff), mode, new
+
+
+# --- rendering --------------------------------------------------------------
+
+
+def render_text(strategy: str, payload: dict) -> str:
+    if strategy == "tail":
+        lines = payload["lines"]
+        return ("\n".join(lines) + "\n") if lines else ""
+    if strategy == "section":
+        parts = []
+        for s in payload["sections"]:
+            if s["kind"] == "removed":
+                parts.append(f"===== {s['key']} [removed] =====\n")
+            else:
+                parts.append(f"===== {s['key']} [{s['kind']}] =====\n{s['body']}\n")
+        return "\n".join(parts)
+    return payload["diff"]
+
+
+# --- state I/O --------------------------------------------------------------
+
+
+def load_state(state_path: str) -> dict:
+    try:
+        with open(state_path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:
+        # Missing or corrupt state -> cold start. Never crash the monitor.
+        return {}
+
+
+def save_state(state_path: str, state: dict) -> None:
+    tmp = state_path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(state, fh)
+    os.replace(tmp, state_path)
+
+
+def parse_select(items):
+    select = {}
+    for item in items or []:
+        if "=" not in item:
+            raise ValueError(f"--select must be field=value[,value]: {item!r}")
+        field, values = item.split("=", 1)
+        select.setdefault(field, set()).update(v for v in values.split(",") if v)
+    return select
+
+
+def do_prune(state_dir: str, out, err) -> int:
+    """Drop cursor (+shadow) files whose recorded source path no longer exists.
+
+    Unparseable state files, and ones with no recorded path, are left untouched
+    (we cannot prove what they track). Safe to run anytime; `rm -rf` on the
+    state dir is an equally valid full reset.
+    """
+    if not os.path.isdir(state_dir):
+        print("ledgerwatch: pruned 0 stale cursor(s)", file=err)
+        return 0
+    pruned = []
+    for name in sorted(os.listdir(state_dir)):
+        if not name.endswith(".json"):
+            continue
+        st = load_state(os.path.join(state_dir, name))
+        path = st.get("path")
+        if not path or os.path.exists(path):
+            continue
+        os.remove(os.path.join(state_dir, name))
+        try:
+            os.remove(os.path.join(state_dir, name[:-5] + ".shadow"))
+        except FileNotFoundError:
+            pass
+        pruned.append(path)
+    for p in pruned:
+        print(f"ledgerwatch: pruned {p}", file=err)
+    print(f"ledgerwatch: pruned {len(pruned)} stale cursor(s)", file=err)
+    return 0
+
+
+def do_validate(path: str, as_json: bool, out, err) -> int:
+    """Full-file JSONL integrity scan (opt-in `--validate`).
+
+    Reports every non-blank line that is not valid JSON, plus an unterminated
+    final line, as a bounded summary. It reads the whole file (O(file) disk) but
+    caps its output so context stays O(problems), not O(file). Distinct exit code
+    so it never muddies the delta status: 0 = clean, 3 = corruption found,
+    2 = read error. Blank/whitespace-only lines are ignored (never written by a
+    well-behaved appender, harmless if present).
+    """
+    try:
+        data = read_bytes(path)
+    except OSError as exc:
+        print(f"ledgerwatch: cannot read {path}: {exc}", file=err)
+        return 2
+    text = data.decode("utf-8", errors="replace")
+    unterminated = bool(data) and not data.endswith(b"\n")
+    rows = text.split("\n")
+    invalid = []
+    last = len(rows) - 1
+    for i, ln in enumerate(rows):
+        if i == last and ln == "":
+            continue  # the empty tail produced by a final newline is not a line
+        if ln.strip() == "":
+            continue  # ignore blank lines
+        if not is_json(ln):
+            invalid.append((i + 1, ln[:120]))
+    clean = not invalid and not unterminated
+    cap = 20
+    shown = invalid[:cap]
+
+    if as_json:
+        envelope = {
+            "file": path,
+            "mode": "validate",
+            "valid": clean,
+            "invalid_count": len(invalid),
+            "invalid_lines": [{"line": n, "text": t} for n, t in shown],
+            "truncated": len(invalid) > cap,
+            "unterminated_final_line": unterminated,
+        }
+        out.write(json.dumps(envelope) + "\n")
+    elif clean:
+        print(f"ledgerwatch: {path}: valid (no invalid lines)", file=err)
+    else:
+        for n, t in shown:
+            print(f"ledgerwatch: {path}:{n} invalid JSON: {t}", file=err)
+        if len(invalid) > cap:
+            print(
+                f"ledgerwatch: ...and {len(invalid) - cap} more invalid line(s)",
+                file=err,
+            )
+        if unterminated:
+            print(
+                f"ledgerwatch: {path}: unterminated final line (no trailing newline)",
+                file=err,
+            )
+    return 0 if clean else 3
+
+
+def do_project(path: str, as_json: bool, out, err) -> int:
+    """Fold an event-sourced JSONL ledger to its latest entry per `id`.
+
+    These ledgers are event logs: an item's current state is the LAST entry
+    carrying its `id`, and every earlier entry for that id is history. This mode
+    computes that fold. Last occurrence in FILE order wins — the files are
+    append-ordered (and `check-ledgers.sh` gates that their seq runs are
+    contiguous), so file order is append order.
+
+    Entries with no usable `id` are a first-class, expected case, not an error:
+    dev/steward/steward-ledger.jsonl is a decision trail whose 107/107 entries
+    carry no `id` at all. They are counted into the `unfoldable (no id): N`
+    bucket, which is printed on EVERY run (including when it is 0) so a caller
+    can never mistake "nothing to fold" for "everything folded". A line that is
+    not valid JSON, or is valid JSON but not an object, goes to a separate
+    `malformed` bucket (use --validate for the line-by-line integrity report).
+
+    Read/report only: never writes the ledger, and — like --prune/--validate —
+    never touches the cursor state directory, so a projection cannot surprise a
+    caller by consuming the delta their next watch run is waiting for.
+
+    Text mode prints one compact JSON object per folded id on stdout, sorted
+    lexicographically by id; --json prints a single envelope. Exit codes are NOT
+    grep-style here (there is no "no change" notion for a projection):
+    0 = projection emitted (even if it is empty), 2 = read error.
+    """
+    try:
+        data = read_bytes(path)
+    except OSError as exc:
+        print(f"ledgerwatch: cannot read {path}: {exc}", file=err)
+        return 2
+
+    text = data.decode("utf-8", errors="replace")
+    latest: dict[str, dict] = {}
+    entries = 0
+    no_id = 0
+    malformed = 0
+
+    for raw in text.split("\n"):
+        if raw.strip() == "":
+            continue  # blank lines are not entries
+        entries += 1
+        try:
+            obj = json.loads(raw)
+        except Exception:
+            malformed += 1
+            continue
+        if not isinstance(obj, dict):
+            malformed += 1
+            continue
+        ident = obj.get("id")
+        if ident is None or str(ident) == "":
+            no_id += 1
+            continue
+        latest[str(ident)] = obj  # last write wins (file order == append order)
+
+    rows = [latest[key] for key in sorted(latest)]
+
+    if as_json:
+        envelope = {
+            "file": path,
+            "mode": "project",
+            "entries": entries,
+            "folded_ids": len(rows),
+            "unfoldable_no_id": no_id,
+            "malformed": malformed,
+            "latest": rows,
+        }
+        out.write(json.dumps(envelope) + "\n")
+    else:
+        for row in rows:
+            out.write(json.dumps(row, sort_keys=True) + "\n")
+
+    print(
+        f"ledgerwatch: --project {path}: {len(rows)} id(s) folded "
+        f"from {entries} entries; unfoldable (no id): {no_id}; "
+        f"malformed: {malformed}",
+        file=err,
+    )
+    return 0
+
+
+# --- rulings projection (the ruling registry) --------------------------------
+
+# The ONE literal status this tool reads. It is not a vocabulary this tool
+# invents: `open` is declared in dev/todos-and-considerations-ledger-readme.md
+# §2.1 as the ledger's own non-terminal status, and it is the dominant literal
+# value in the data (46 `open` + 9 `OPEN` of 76 entries). Everything else —
+# `watching`, `in_progress`, `converged-pending-hitl`, `build-authorized`,
+# `placed`, `resolved`, `closed`, `ratified-both-sides`, … — is echoed VERBATIM
+# and never interpreted. Inventing a status vocabulary is a refused move in this
+# effort, and the README's own TERMINAL vocabulary (`done`/`wont-do`/
+# `superseded`) matches ZERO entries in any of the three real ledgers, so there
+# is no declared terminal set to read either.
+OPEN_STATUS = "open"
+
+# Emission order. Deterministic and stable: bucket first, then key.
+VERDICT_ORDER = {"ruled": 0, "unruled": 1, "unclassified": 2}
+
+
+def ruling_key(obj: dict, lineno: int):
+    """Address an entry. Returns (key, from_id).
+
+    `id` when the entry carries one — that is the join key the todos ledger
+    declares, and it is what makes the fold-to-latest reuse work. Otherwise
+    `seq-N`: dev/steward/steward-ledger.jsonl holds most of this repo's rulings
+    and 107/107 of its entries have NO `id`, and ADDING one is banned (that file
+    is a decision trail, not an item register). `seq` is stamped by ledgerwrite
+    on every entry of all three ledgers and check-ledgers.sh gates that it is
+    contiguous, so `seq-N` is a real, stable address — it is simply scoped to
+    ONE file, which is why this mode takes one ledger at a time. A `seq`-less
+    entry falls back to `line-N` so that no entry is ever dropped for want of a
+    key (the KeyError class T1b closed).
+    """
+    ident = obj.get("id")
+    if ident is not None and str(ident) != "":
+        return str(ident), True
+    seq = obj.get("seq")
+    if seq is not None and str(seq) != "":
+        return "seq-%s" % seq, False
+    return "line-%d" % lineno, False
+
+
+def do_project_rulings(path: str, as_json: bool, out, err) -> int:
+    """Project a ledger to its RULING REGISTRY: ruled / unruled / unclassified.
+
+    WHY THIS EXISTS: rulings live in >=4 homes with no index, and the 0.8.20
+    board listed >=4 already-ruled items as still open — which is the direct
+    generator of re-deciding settled calls, the most expensive failure this
+    program has. A registry has to be derived from the ledger, not narrated
+    beside it.
+
+    THE PROJECTION KEY is `id` when present, else `seq-N` (see ruling_key).
+    Items are folded to their LATEST entry per key — the same fold `--project
+    latest` performs, for the same reason: the file is an event log, so the
+    item's current fields are its last entry's.
+
+    THE CLASSIFIER, and its limits, stated honestly:
+
+      ruled         ANY entry under this key has `kind == "decision"`.
+                    `kind` is the only field present on 193/193 entries of all
+                    three ledgers, and `decision` is its actual cross-ledger
+                    value for "this entry records a ruling" (68 steward + 6
+                    todos + 5 OPP-12). ANY entry, not just the latest: a ruling
+                    once recorded is not un-recorded by a later observation.
+                    `ruling_seqs` names exactly which entries carry it.
+      unruled       no ruling entry, and the folded entry's `status` is `open`
+                    (case-insensitively — the todos ledger contains both `open`
+                    and `OPEN`). See OPEN_STATUS for why that one literal.
+      unclassified  everything else. This bucket is LARGE and that is the point:
+                    it is where the ledgers genuinely do not say. Real instance:
+                    TC-7 walked open -> in_progress -> converged-pending-hitl ->
+                    resolved with NO `kind: decision` entry anywhere, so a
+                    registry cannot see that it was ruled. Guessing from
+                    `resolved` would be inventing the vocabulary this effort
+                    already refused. Every unclassified row is still EMITTED,
+                    with its literal `kind`/`status`, so it is visible and
+                    countable — never silently dropped.
+
+    LIMITS a caller must know: (1) `seq` is unique per FILE, so this mode reports
+    one ledger at a time and its keys must not be merged across files without a
+    file qualifier; (2) it classifies ENTRIES, not the truth of a ruling — it can
+    say "the ledger records a decision here", never "this decision is correct";
+    (3) an item ruled in prose but never entered as `kind: decision` reads as
+    unruled or unclassified, which is a finding about the LEDGER, not a defect
+    here.
+
+    Read/report only: never writes the ledger, never touches the cursor state
+    directory. Exit 0 = registry emitted (even if empty), 2 = read error.
+    """
+    try:
+        data = read_bytes(path)
+    except OSError as exc:
+        print(f"ledgerwatch: cannot read {path}: {exc}", file=err)
+        return 2
+
+    text = data.decode("utf-8", errors="replace")
+    order: list[str] = []
+    latest: dict[str, dict] = {}
+    ruling_seqs: dict[str, list] = {}
+    from_id: dict[str, bool] = {}
+    entries = 0
+    malformed = 0
+
+    for lineno, raw in enumerate(text.split("\n"), start=1):
+        if raw.strip() == "":
+            continue  # blank lines are not entries
+        entries += 1
+        try:
+            obj = json.loads(raw)
+        except Exception:
+            malformed += 1
+            continue
+        if not isinstance(obj, dict):
+            malformed += 1
+            continue
+        key, keyed_by_id = ruling_key(obj, lineno)
+        if key not in latest:
+            order.append(key)
+            ruling_seqs[key] = []
+            from_id[key] = keyed_by_id
+        latest[key] = obj  # last write wins (file order == append order)
+        if obj.get("kind") == "decision":
+            ruling_seqs[key].append(obj.get("seq", lineno))
+
+    rows = []
+    counts = {"ruled": 0, "unruled": 0, "unclassified": 0}
+    for key in order:
+        obj = latest[key]
+        status = obj.get("status")
+        if ruling_seqs[key]:
+            verdict = "ruled"
+        elif status is not None and str(status).casefold() == OPEN_STATUS:
+            verdict = "unruled"
+        else:
+            verdict = "unclassified"
+        counts[verdict] += 1
+        rows.append(
+            {
+                "key": key,
+                "verdict": verdict,
+                "seq": obj.get("seq"),
+                "kind": obj.get("kind"),
+                "status": status,
+                "decider": obj.get("decider"),
+                "ruling_seqs": ruling_seqs[key],
+                "summary": obj.get("summary"),
+            }
+        )
+
+    rows.sort(key=lambda r: (VERDICT_ORDER[r["verdict"]], r["key"]))
+    keyed_by_seq = sum(1 for key in order if not from_id[key])
+
+    if as_json:
+        envelope = {
+            "file": path,
+            "mode": "project",
+            "projection": "rulings",
+            "entries": entries,
+            "items": len(rows),
+            "ruled": counts["ruled"],
+            "unruled": counts["unruled"],
+            "unclassified": counts["unclassified"],
+            "malformed": malformed,
+            "keyed_by_seq": keyed_by_seq,
+            "rows": rows,
+        }
+        out.write(json.dumps(envelope) + "\n")
+    else:
+        for row in rows:
+            out.write(json.dumps(row, sort_keys=True) + "\n")
+
+    # EVERY bucket on EVERY run, including the zeros. Same discipline as
+    # `unfoldable (no id): N`: a bucket that only appears when non-empty lets
+    # "nothing to classify" read as "everything classified".
+    print(
+        f"ledgerwatch: --project rulings {path}: {len(rows)} item(s) "
+        f"from {entries} entries; ruled: {counts['ruled']}; "
+        f"unruled: {counts['unruled']}; "
+        f"unclassified: {counts['unclassified']}; "
+        f"malformed: {malformed}; "
+        f"keyed by seq (no id): {keyed_by_seq}",
+        file=err,
+    )
+    return 0
+
+
+PROJECTIONS = {"latest": do_project, "rulings": do_project_rulings}
+
+
+# --- driver -----------------------------------------------------------------
+
+
+def run(argv, out=sys.stdout, err=sys.stderr) -> int:
+    parser = argparse.ArgumentParser(prog="ledgerwatch", add_help=True)
+    parser.add_argument("file", nargs="?")
+    parser.add_argument(
+        "--state-dir", default=os.environ.get("LEDGERWATCH_STATE", ".ledgerwatch")
+    )
+    parser.add_argument("--strategy", choices=["tail", "section", "diff"], default=None)
+    parser.add_argument(
+        "--select",
+        action="append",
+        default=[],
+        help="tail only: field=value[,value]; repeatable (AND across fields)",
+    )
+    parser.add_argument(
+        "--json", action="store_true", help="emit a structured envelope"
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="show the delta without advancing the cursor",
+    )
+    parser.add_argument(
+        "--reset", action="store_true", help="discard saved cursor first"
+    )
+    parser.add_argument(
+        "--no-status",
+        action="store_true",
+        help="opt out of grep-style codes: exit 0 on success (changed or not), 2 on error",
+    )
+    parser.add_argument(
+        "--prune", action="store_true", help="drop cursors whose source file is gone"
+    )
+    parser.add_argument(
+        "--validate",
+        action="store_true",
+        help="JSONL integrity scan of the whole file (0 clean / 3 corrupt / 2 error); "
+        "no delta, no cursor advance",
+    )
+    parser.add_argument(
+        "--project",
+        nargs="?",
+        const="latest",
+        default=None,
+        metavar="PROJECTION",
+        help="project the ledger: `latest` (the default, and what a bare "
+        "--project means) folds to the latest entry per id, reporting id-less "
+        "entries in an 'unfoldable (no id): N' bucket; `rulings` emits the "
+        "ruled/unruled registry, keyed by id or else `seq-N` (the steward "
+        "ledger carries NO ids and must not be made to), classified by "
+        "`kind == \"decision\"` plus the single literal status `open`, with "
+        "everything the ledger does not say landing in a printed "
+        "`unclassified` bucket rather than being guessed at or dropped. "
+        "Read-only: does NOT write the ledger and does NOT advance the cursor "
+        "(0 = projection emitted / 2 = read error)",
+    )
+    args = parser.parse_args(argv)
+
+    # `--project` takes an OPTIONAL value, so `--project dev/x.jsonl` (the form
+    # the ledger READMEs document) would otherwise have the PATH swallowed as
+    # the projection name. Re-read it as the file when it is not a projection
+    # name. A path that collides with a reserved name (`latest`/`rulings`) must
+    # be given positionally.
+    if args.project is not None and args.project not in PROJECTIONS:
+        if args.file is None:
+            args.file, args.project = args.project, "latest"
+        else:
+            print(
+                "ledgerwatch: unknown projection %r (choose from %s)"
+                % (args.project, ", ".join(sorted(PROJECTIONS))),
+                file=err,
+            )
+            return 2
+
+    if args.prune:
+        return do_prune(args.state_dir, out, err)
+
+    if not args.file:
+        print("ledgerwatch: file argument required (or use --prune)", file=err)
+        return 2
+
+    abspath = os.path.abspath(args.file)
+    if not os.path.isfile(abspath):
+        print(f"ledgerwatch: no such file: {args.file}", file=err)
+        return 2
+
+    if args.validate:
+        # Opt-in full-file integrity scan; a standalone mode (like --prune) that
+        # does not compute a delta or advance the cursor.
+        return do_validate(abspath, args.json, out, err)
+
+    # Projections. Dispatched HERE, before the state dir is created below, so
+    # --project provably cannot create, read or advance a cursor (see
+    # do_project's docstring for why that is the safe choice).
+    if args.project is not None:
+        return PROJECTIONS[args.project](abspath, args.json, out, err)
+
+    try:
+        select = parse_select(args.select)
+    except ValueError as exc:
+        print(f"ledgerwatch: {exc}", file=err)
+        return 2
+
+    os.makedirs(args.state_dir, exist_ok=True)
+    key = sha1(abspath.encode("utf-8"))
+    state_path = os.path.join(args.state_dir, key + ".json")
+    shadow_path = os.path.join(args.state_dir, key + ".shadow")
+
+    if args.reset:
+        for p in (state_path, shadow_path):
+            try:
+                os.remove(p)
+            except FileNotFoundError:
+                pass
+
+    strategy = choose_strategy(abspath, args.strategy)
+    if select and strategy != "tail":
+        print("ledgerwatch: --select ignored for non-tail strategy", file=err)
+
+    state = load_state(state_path)
+    if state.get("strategy") != strategy:
+        state = {}  # strategy changed since last run -> cold start
+
+    if strategy == "tail":
+        payload, new_state, changed, mode, shadow_content = strat_tail(
+            abspath, state, select
+        )
+    elif strategy == "section":
+        payload, new_state, changed, mode, shadow_content = strat_section(
+            abspath, state
+        )
+    else:
+        payload, new_state, changed, mode, shadow_content = strat_diff(
+            abspath, state, shadow_path
+        )
+
+    # Delta-validate (tail, on by default): warn on stderr about any invalid-JSON
+    # line in this delta, independent of `changed` — so a corrupt line that
+    # --select silently drops (lines empty → changed False) is still surfaced.
+    for item in payload.get("invalid", []):
+        print(
+            f"ledgerwatch: {abspath}:{item['line']} invalid JSON in delta: {item['text']}",
+            file=err,
+        )
+
+    # stdout carries the payload only, and only when there is one. A no-change
+    # run is silent on stdout in BOTH modes; the exit code reports the status, so
+    # an idle tick stays free and "empty stdout" is never ambiguous (errors exit
+    # 2, so empty + success-code can only mean no change).
+    if changed:
+        if args.json:
+            envelope = {
+                "file": abspath,
+                "strategy": strategy,
+                "mode": mode,
+                "changed": True,
+            }
+            envelope.update(payload)
+            out.write(json.dumps(envelope) + "\n")
+        else:
+            out.write(render_text(strategy, payload))
+            if mode != "incremental":
+                note = (
+                    "baseline, first run"
+                    if mode == "cold"
+                    else "re-synced after rotation/truncation; treat as baseline, not new events"
+
+exec
+/bin/bash -lc "nl -ba scripts/check-release-state-views.sh | sed -n '220,250p'; python3 -m py_compile dev/agent-tools/ledgerwatch/ledgerwatch.py; bash -n scripts/check-release-state-views.sh; python3 - <<'PY'
+import ast
+# extract python heredoc? skip
+PY" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+   220	state_paths = sorted(glob.glob("dev/plans/release-state-*.json"))
+   221	if not state_paths:
+   222	    bad("FAIL check-release-state-views: ZERO release-state files discovered under\n"
+   223	        "  dev/plans/release-state-*.json. The check loop never ran, so a pass here\n"
+   224	        "  would vouch for nothing (TC-37 vacuous-pass guard).")
+   225	    sys.exit(1)
+   226	
+   227	blocks_checked = 0
+   228	rewritten      = []
+   229	declared       = set()   # (path, release, view-id) actually declared somewhere
+   230	
+   231	for sp in state_paths:
+   232	    try:
+   233	        with open(sp, encoding="utf-8") as fh:
+   234	            st = json.load(fh)
+   235	    except Exception as exc:                                  # noqa: BLE001
+   236	        bad("FAIL %s: not parseable as JSON — %s" % (sp, exc))
+   237	        continue
+   238	
+   239	    release = st.get("release")
+   240	    views   = st.get("generated_views")
+   241	    if not release or not isinstance(views, list):
+   242	        bad("FAIL %s: a release-state file must carry a `release` string and a\n"
+   243	            "  `generated_views` list naming the regions rendered from it." % sp)
+   244	        continue
+   245	    if not views:
+   246	        bad("FAIL %s: `generated_views` is EMPTY, so this state file owns no region\n"
+   247	            "  and nothing about it is checkable. A state file that gates nothing is a\n"
+   248	            "  vacuous pass, not a pass (TC-37)." % sp)
+   249	        continue
+   250	
+
+exec
+/bin/bash -lc "nl -ba scripts/check-release-state-views.sh | sed -n '250,310p'; ./scripts/check-release-state-views.sh --quiet" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+   250	
+   251	    for view in views:
+   252	        vid  = view.get("id")
+   253	        path = view.get("file")
+   254	        if not vid or not path:
+   255	            bad("FAIL %s: a `generated_views` entry needs both `id` and `file`." % sp)
+   256	            continue
+   257	        if vid not in RENDERERS:
+   258	            bad("FAIL %s: view `%s` has no renderer in check-release-state-views.sh, so\n"
+   259	                "  its region cannot be checked. An unrenderable view is a failure, not\n"
+   260	                "  an unchecked region." % (sp, vid))
+   261	            continue
+   262	        if not os.path.isfile(path):
+   263	            bad("FAIL %s: view `%s` names `%s`, which is not a file in the worktree."
+   264	                % (sp, vid, path))
+   265	            continue
+   266	
+   267	        b = BEGIN.format(release=release, vid=vid)
+   268	        e = END.format(release=release, vid=vid)
+   269	        declared.add((path, b))
+   270	
+   271	        with open(path, encoding="utf-8") as fh:
+   272	            doc = fh.read()
+   273	
+   274	        if doc.count(b) != 1 or doc.count(e) != 1:
+   275	            bad("FAIL %s: view `%s` expects EXACTLY ONE BEGIN and ONE END marker; found\n"
+   276	                "  %d BEGIN and %d END. Markers:\n    %s\n    %s"
+   277	                % (path, vid, doc.count(b), doc.count(e), b, e))
+   278	            continue
+   279	        i = doc.index(b) + len(b)
+   280	        j = doc.index(e)
+   281	        if j < i:
+   282	            bad("FAIL %s: view `%s` has its END marker BEFORE its BEGIN marker."
+   283	                % (path, vid))
+   284	            continue
+   285	
+   286	        have = doc[i:j]
+   287	        want = RENDERERS[vid](st)
+   288	        blocks_checked += 1
+   289	
+   290	        if have == want:
+   291	            continue
+   292	
+   293	        if MODE == "write":
+   294	            with open(path, "w", encoding="utf-8") as fh:
+   295	                fh.write(doc[:i] + want + doc[j:])
+   296	            rewritten.append("%s :: %s" % (path, vid))
+   297	            continue
+   298	
+   299	        bad("FAIL %s: generated region `%s` is STALE — it does not match what\n"
+   300	            "  %s renders. Either the document was hand-edited inside the markers, or a\n"
+   301	            "  fact changed in the state file and the region was never regenerated.\n"
+   302	            "  IN THE DOCUMENT:\n    %r\n"
+   303	            "  RENDERED FROM THE STATE FILE:\n    %r\n"
+   304	            "  Fix: edit the FACT in %s, then run\n"
+   305	            "    scripts/check-release-state-views.sh --write\n"
+   306	            % (path, vid, sp, have, want, sp))
+   307	
+   308	# ---------------------------------------------------------------------------
+   309	# RULE 3 — orphan-marker scan (the confinement rule).
+   310	# ---------------------------------------------------------------------------
+
+exec
+/bin/bash -lc "jq '.decisions | keys, .unruled | length' dev/plans/release-state-0.8.20.json && grep -R \"status-live-open-count\" -n ." in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+3
+2
+./dev/plans/runs/STATUS-0.8.20.md:131:> **THE LIVE OPEN SET IS EXACTLY <!-- BEGIN GENERATED release-state:0.8.20:status-live-open-count -->TWO<!-- END GENERATED release-state:0.8.20:status-live-open-count -->:** (1) the **batched governed-surface decision** — the accumulated
+./dev/plans/release-state-0.8.20.json:221:      "id": "status-live-open-count",
+./scripts/tests/test_check_release_state_views.sh:61:B_OPEN='<!-- BEGIN GENERATED release-state:9.9.9:status-live-open-count -->'
+./scripts/tests/test_check_release_state_views.sh:62:E_OPEN='<!-- END GENERATED release-state:9.9.9:status-live-open-count -->'
+./scripts/tests/test_check_release_state_views.sh:109:    {"id": "status-live-open-count",  "file": "dev/plans/runs/board.md"},
+./scripts/tests/test_check_release_state_views.sh:242:   && grep -q 'status-live-open-count' <<<"$OUT" && grep -q "'THREE'" <<<"$OUT"; then
+./scripts/tests/test_check_release_state_views.sh:255:if [ "$RC" -ne 0 ] && grep -q 'status-live-open-count' <<<"$OUT" && grep -q "'ONE'" <<<"$OUT"; then
+./scripts/tests/test_check_release_state_views.sh:265:if [ "$RC" -ne 0 ] && grep -q 'is STALE' <<<"$OUT" && grep -q 'status-live-open-count' <<<"$OUT"; then
+./scripts/check-release-state-views.sh:213:    "status-live-open-count":  render_status_live_open_count,
+
+exec
+/bin/bash -lc 'pytest -q dev/agent-tools/ledgerwatch/test_ledgerwatch.py && bash scripts/tests/test_check_release_state_views.sh' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 1276ms:
+........................................................................ [ 75%]
+........................                                                 [100%]
+96 passed in 0.27s
+PASS  baseline fixture — every fenced region matches its render (exit 0)
+PASS  stale block — a hand-edit inside the markers HARD-fails and names the block
+PASS  the stale message prints the document bytes AND the rendered bytes
+PASS  state drift — a fact changed without a regenerate HARD-fails
+PASS  --write regenerates in place; --check is green immediately after
+PASS  --write on a current tree is byte-for-byte a no-op (the renderer reproduces)
+PASS  live-open-set drift — a THIRD unruled decision HARD-fails the board's count
+PASS  a decision becoming RULED shrinks the count and HARD-fails a stale board
+PASS  hand-editing the count inside the markers HARD-fails
+PASS  --write updates ONLY the count; the retained rows and banner prose survive
+PASS  the blockquote fence is mid-line — no marker heads a quoted line (CommonMark)
+PASS  missing BEGIN marker — a declared-but-unfenced view HARD-fails, never skips
+PASS  duplicated markers — an ambiguous region HARD-fails
+PASS  inverted markers — END before BEGIN HARD-fails
+PASS  orphan marker — a generated region outside every declared location HARD-fails
+PASS  unknown view id — an unrenderable view HARD-fails, not an unchecked region
+PASS  a view naming a nonexistent file HARD-fails
+PASS  a corrupt state file HARD-fails (it cannot silently stop owning its views)
+PASS  vacuity guard — zero state files discovered -> hard FAIL, not a silent exit 0
+PASS  vacuity guard — zero generated blocks checked -> hard FAIL (TC-37)
+PASS  reversibility — stripping the markers leaves the prose AND the fenced content intact
+PASS  the real checkout's generated regions all reproduce from their state file
+PASS  ci.yml defines a release-state-views job
+PASS  the CI job runs the SHARED scripts/check-release-state-views.sh
+PASS  the release-state-views job is always-on (no if:, no needs:, not docs_only-gated)
+
+All check-release-state-views tests passed
+
+exec
+/bin/bash -lc 'git diff d56572e6b4527d0e3f89833ab98fce336735eae0 -- dev/todos-and-considerations-ledger-readme.md' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+diff --git a/dev/todos-and-considerations-ledger-readme.md b/dev/todos-and-considerations-ledger-readme.md
+index 591fd0e7..4237437d 100644
+--- a/dev/todos-and-considerations-ledger-readme.md
++++ b/dev/todos-and-considerations-ledger-readme.md
+@@ -236,6 +236,41 @@ has one (107/107), and 16 of this ledger's 76 entries have none either. A previo
+ here folded with `latest[r["id"]] = r` and died with `KeyError: 'id'` on the first such
+ entry; the bucket is what replaces that failure with a number you can see.
+ 
++**Asking "was this ruled on?"** — `--project rulings` (T2b) projects any of the three ledgers
++to a **ruling registry**: which items carry a recorded ruling, which are still open, and which
++the ledger does not say.
++
++```bash
++# The ruled/unruled registry for this ledger:
++$LW $LEDGER --project rulings
++
++# Works on the steward ledger and the OPP-12 sub-ledger too:
++$LW dev/steward/steward-ledger.jsonl --project rulings
++```
++
++Read it knowing exactly what it can and cannot see:
++
++| bucket | predicate | note |
++|---|---|---|
++| `ruled` | **any** entry under the key has `kind: decision` | a ruling stays recorded; a later `observation` does not un-rule it. `ruling_seqs` names the entries |
++| `unruled` | no ruling entry **and** the folded entry's `status` is `open` | `open` is this README's own non-terminal status (§2.1), read case-insensitively because the file holds both `open` and `OPEN` |
++| `unclassified` | everything else | **not a defect — the ledger genuinely does not say.** Emitted in full with its literal `kind`/`status`, never dropped |
++
++The key is `id` when the entry has one, otherwise **`seq-N`**. That is deliberate: the steward
++ledger holds most of this repo's rulings and *none* of its entries carry an `id`, and adding
++one is out of scope for a decision trail. Because `seq` is unique **per file**, this mode reads
++one ledger at a time — do not merge its keys across files without a file qualifier.
++
++No other status is interpreted. `resolved`, `converged-pending-hitl`, `build-authorized`,
++`placed`, `ratified-both-sides`… are echoed verbatim and land in `unclassified`, because
++inventing a status vocabulary is a refused move here — and note that the **terminal** vocabulary
++this README declares in §2.1 (`done` / `wont-do` / `superseded`) currently matches **zero**
++entries in any of the three ledgers. Two consequences worth knowing before you trust a count:
++an item ruled in prose but never entered as `kind: decision` reads as unruled or unclassified
++(**TC-7** is the live example — it walked `open → in_progress → converged-pending-hitl →
++resolved` without one), and the registry reports what the ledger *records*, never whether a
++ruling is *right*.
++
+ Filter the projection with whatever you like (`jq 'select(.status=="open")'`) — the tool
+ deliberately imposes no status vocabulary, because the statuses actually in use here are
+ open-ended (`open`, `OPEN`, `resolved`, `closed`, `watching`, `RATIFIED`, `accepted`,
+
+exec
+/bin/bash -lc 'ls dev/plans/release-state-*.json' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+dev/plans/release-state-0.8.20.json
+
+exec
+/bin/bash -lc "find dev -path '*ledger*.jsonl' -maxdepth 5 -type f -print; python3 dev/agent-tools/ledgerwatch/ledgerwatch.py dev/steward/steward-ledger.jsonl --project rulings --json | jq '{items,ruled,unruled,unclassified,keyed_by_seq,first:(.rows[:5])}'" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+dev/design/record-lifecycle-protocol/OPP-12-sub-ledger.jsonl
+dev/todos-and-considerations-ledger.jsonl
+dev/steward/steward-ledger.jsonl
+ledgerwatch: --project rulings /home/coreyt/projects/fathomdb-worktrees/dh2-t1b/dev/steward/steward-ledger.jsonl: 107 item(s) from 107 entries; ruled: 68; unruled: 0; unclassified: 39; malformed: 0; keyed by seq (no id): 107
+{
+  "items": 107,
+  "ruled": 68,
+  "unruled": 0,
+  "unclassified": 39,
+  "keyed_by_seq": 107,
+  "first": [
+    {
+      "key": "seq-10",
+      "verdict": "ruled",
+      "seq": 10,
+      "kind": "decision",
+      "status": null,
+      "decider": null,
+      "ruling_seqs": [
+        10
+      ],
+      "summary": "0.8.12 truly CLOSED + main GREEN + PUSHED. Post-merge masked-gate (fathomdb-cli non-exhaustive EngineError::Consolidator + vec! clippy) fixed 3817997f, codex §9 PASS; Steward re-ran full workspace clippy+check (both exit 0) before FF+push. DoD amended: full pre-push/CI workspace gate required before any green claim. Label-only, manifests 0.8.9."
+    },
+    {
+      "key": "seq-100",
+      "verdict": "ruled",
+      "seq": 100,
+      "kind": "decision",
+      "status": null,
+      "decider": "hitl",
+      "ruling_seqs": [
+        100
+      ],
+      "summary": "F-32 reconciled into master: 0.8.20 Slices 5/10/15 LANDED (SCHEMA 24), eight-item HITL queue ruled 2026-07-24, TC-16 placed at Slice 40 (F-30 ownership gap CLOSED), TC-45 placed IN 0.8.20 Slice 20 (overrides Steward 0.8.21 rec). Master/plan/board now agree."
+    },
+    {
+      "key": "seq-101",
+      "verdict": "ruled",
+      "seq": 101,
+      "kind": "decision",
+      "status": null,
+      "decider": "hitl",
+      "ruling_seqs": [
+        101
+      ],
+      "summary": "DOC-HYGIENE-1 LANDED on origin/main (f53b8c64..597738d9, ff). Cross-cutting docs/tooling hygiene, NO pico label (HITL 2026-07-25). 4 tranches: T1 md-gate RED->GREEN + master retitled 0.8.6->0.8.24 in place; T2 DOC-INDEX 83.6->33KB (199 paths preserved) + closed-line banners + prompts/README; T3 TC-37 hard-fail + status: frontmatter+lint + prune (2 read-input artifacts wrongly deleted, RESTORED per codex P2); T4 status-board-currency items 1-3 (seam contract + preflight land-gate + CI drift detector + vacuous-pass guard). codex §9 terminal: 1 P2 fixed, no P1. Orchestrated by the Steward (HITL-directed role change)."
+    },
+    {
+      "key": "seq-104",
+      "verdict": "ruled",
+      "seq": 104,
+      "kind": "decision",
+      "status": null,
+      "decider": "hitl",
+      "ruling_seqs": [
+        104
+      ],
+      "summary": "STANDING RULING (HITL 2026-07-25): the ORCHESTRATOR is the PREFERRED commissioning mechanism; /goal is NOT. Order: (1) /orchestrate (alias /orch) HITL-opened session = default; (2) Steward-spawned background orchestrator Agent (subagent_type=orchestrator) when the Steward holds the loop — returns once, does NOT notify on stall, needs an anti-stall directive + git polling; (3) /goal complete 0.8.z ONLY on explicit HITL instruction for that run, never the Steward's own choice. Rationale: /orchestrate carries the repo's versioned guardrails (§0 preflight, worktree rules, codex §9, canary-then-max-3); /goal runs to a PROSE condition judged from the transcript, but a 0.8.x ladder is GATED not autonomous (X0/AC sign-off, publish, landings outside a mandate must STOP the loop) — precedent seq-81 had to scope /goal to 'Slice 0 X0 ONLY (hard stop after)', fighting the command's nature. Landed in 4 docs so every future steward AND orchestrator sees it: STEWARD-HANDOFF §9 (full rationale) + §1/§2/§8 call-sites, .claude/agents/steward.md (durable role contract, hard rule + loop line), .claude/commands/orchestrate.md, .claude/agents/orchestrator.md. NOT a deprecation of /goal — it remains a real built-in and the ~6 doc references to it are not wrong."
+    },
+    {
+      "key": "seq-106",
+      "verdict": "ruled",
+      "seq": 106,
+      "kind": "decision",
+      "status": null,
+      "decider": "hitl",
+      "ruling_seqs": [
+        106
+      ],
+      "summary": "RUN AUTHORIZATION (HITL 2026-07-25): 0.8.20 tail runs to completion under a STANDING STEWARD MANDATE. Sequence: DOC-HYGIENE-2 -> Slice 20 -> 25 (SEQUENTIAL; parallel declined) -> 30 -> batched governed-surface decision -> DOC-HYGIENE-3 -> Slice 40 (publish gate) -> N6. Both hygiene efforts carry NO pico label (cross-cutting, not release increments; DOC-HYGIENE-1 precedent F-33). Rulings folded in: (1) per-slice X0 HITL sign-off NOT required - codex/fix-N resolves, escalate only if unresolvable; (2) fix-N circuit-breaker QUANTIFIED as a standing rule (3 rounds same finding / 6 per slice) escalating to STEWARD first; (3) reviewer substitution to local /code-review when codex unavailable, NEVER ultra-level, TC-RUBRIC-7 persistence binds either way; (4) AC-079 PRE-SIGNED pinned to allowlist content, any diff re-opens (T1e gate), minting still at Slice 40; (5) plan s7 prereq-5 Memex co-land readiness CLOSED BY DECISION - Memex adapts, no confirmation to be sought, push scope stays fathomdb-only. Two stops remain: batched governed-surface decision (Slice 30->40) and PUBLISH (Slice 40, hard). Hermes consult item 8 CLOSED, no input. Basis: multi-agent cold-start retrospective measuring 7-file reconcile fan-out, master at 129631 B / 2.3x read cap / 60.6 pct findings log, dev/design 108 docs with only 23 carrying status:."
+    }
+  ]
+}
+
+exec
+/bin/bash -lc "jq '.decisions' dev/plans/release-state-0.8.20.json" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+{
+  "_comment": "Ruled vs unruled, as of 2026-07-25. Sources of record: dev/plans/runs/STATUS-0.8.20.md §4 (the historical queue banner) and dev/plans/plan-0.8.20.md §11 (the live queue + the 2026-07-24 and 2026-07-25 ruling blocks). Recorded here so the ruled/unruled split has ONE writer; the two prose sections stay exactly as they are.",
+  "unruled": [
+    {
+      "id": "batched-governed-surface",
+      "title": "the batched governed-surface decision — the accumulated Slice 20/25/30 allowlist delta",
+      "gated_at": "the Slice 30 -> Slice 40 boundary",
+      "halts_run": false,
+      "source": "plan-0.8.20.md §11 (2026-07-25 rulings, item 2)"
+    },
+    {
+      "id": "publish",
+      "title": "PUBLISH the 0.8.20 breaking pair (manifests 0.8.9 -> 0.8.20)",
+      "gated_at": "Slice 40",
+      "halts_run": true,
+      "source": "plan-0.8.20.md §11 item 3"
+    }
+  ],
+  "ruled": [
+    {
+      "id": "ac-079-sign-off",
+      "ruling": "PRE-SIGNED; minted at Slice 40",
+      "ruled_on": "2026-07-25",
+      "source": "plan-0.8.20.md §11 item 1 + the 2026-07-25 rulings block"
+    },
+    {
+      "id": "adoption-arms",
+      "ruling": "(a) — Phase-2 surface opt-in, erasure fixes ON",
+      "ruled_on": "2026-07-24",
+      "source": "plan-0.8.20.md §11 item 2"
+    },
+    {
+      "id": "fts-vector-without-searchable",
+      "ruling": "(b) REJECT as an invalid spec; implement at the next configure_projections slice",
+      "ruled_on": "2026-07-24",
+      "source": "plan-0.8.20.md §11 item 4"
+    },
+    {
+      "id": "embed-batch-cls-ts-parity",
+      "ruling": "(a) — add the TS binding (X1 / Slice 40)",
+      "ruled_on": "2026-07-24",
+      "source": "plan-0.8.20.md §11 item 5"
+    },
+    {
+      "id": "tc-16-placement",
+      "ruling": "fold into Slice 40 with the #11-full rehearsal",
+      "ruled_on": "2026-07-24",
+      "source": "plan-0.8.20.md §11 item 6"
+    },
+    {
+      "id": "tc-45-placement",
+      "ruling": "FIX IN 0.8.20 — folded into Slice 20",
+      "ruled_on": "2026-07-24",
+      "source": "plan-0.8.20.md §11 item 7"
+    },
+    {
+      "id": "hermes-consult",
+      "ruling": "CLOSED — no input received; it gated nothing in 0.8.20",
+      "ruled_on": "2026-07-25",
+      "source": "plan-0.8.20.md §11 item 8"
+    },
+    {
+      "id": "memex-co-land-readiness",
+      "ruling": "CLOSED BY DECISION — Memex adapts to 0.8.20's surface; no confirmation is to be sought",
+      "ruled_on": "2026-07-25",
+      "source": "master F-34 · plan-0.8.20.md §7 prereq 5"
+    },
+    {
+      "id": "eu7-basis",
+      "ruling": "CLOSED BY DECISION — ZERO eu7 runs on any backend at any N; Slice 40 executes no eu7 gate",
+      "ruled_on": "2026-07-19",
+      "source": "master F-28 · STATUS §6"
+    },
+    {
+      "id": "run-authorization",
+      "ruling": "standing Steward mandate for DOC-HYGIENE-2 -> 20 -> 25 (sequential) -> 30 -> batched surface decision -> DOC-HYGIENE-3 -> 40",
+      "ruled_on": "2026-07-25",
+      "source": "master F-34"
+    }
+  ]
+}
+
+codex
+I did not identify any discrete correctness issues introduced by this diff. The new projection and generated-view changes are covered by targeted tests and the relevant local test suites pass.
+I did not identify any discrete correctness issues introduced by this diff. The new projection and generated-view changes are covered by targeted tests and the relevant local test suites pass.
