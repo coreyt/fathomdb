@@ -310,7 +310,7 @@ for KEY in allowlist core recovery_denylist; do
   expect_out 'MALFORMED' "omit-counts.$KEY says the pin is malformed"
   expect_out "DO NOT 'fix' this by regenerating the pin" \
     "omit-counts.$KEY forbids regenerating the pin to clear it"
-  if printf '%s' "$OUT" | grep -q 'ok +governed-surface-pin'; then
+  if printf '%s' "$OUT" | grep -qE 'ok[[:space:]]+governed-surface-pin'; then
     fail "omit-counts.$KEY must never print an ok line; got: $OUT"
   else
     pass "omit-counts.$KEY prints no ok line (no vacuous pass)"
