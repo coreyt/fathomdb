@@ -57,6 +57,9 @@ B_MASTER='<!-- BEGIN GENERATED release-state:9.9.9:master-ladder-progress -->'
 E_MASTER='<!-- END GENERATED release-state:9.9.9:master-ladder-progress -->'
 B_HANDOFF='<!-- BEGIN GENERATED release-state:9.9.9:handoff-next-step -->'
 E_HANDOFF='<!-- END GENERATED release-state:9.9.9:handoff-next-step -->'
+# T2b: the live-open-set COUNT in the board's §4 banner.
+B_OPEN='<!-- BEGIN GENERATED release-state:9.9.9:status-live-open-count -->'
+E_OPEN='<!-- END GENERATED release-state:9.9.9:status-live-open-count -->'
 
 # A minimal but REAL fixture: one state file, two fenced views in two documents,
 # each region byte-identical to what the renderers emit. Every arm mutates one
@@ -92,11 +95,42 @@ setup_fixture() {
       "sign_off_slice": 40, "board_ref": "§4 #1"
     }
   },
+  "decisions": {
+    "unruled": [
+      {"id": "batched-surface", "title": "the batched surface decision"},
+      {"id": "publish",         "title": "PUBLISH"}
+    ],
+    "ruled": [
+      {"id": "already-settled", "ruling": "CLOSED BY DECISION", "ruled_on": "2026-01-01"}
+    ]
+  },
   "generated_views": [
-    {"id": "master-ladder-progress", "file": "dev/plans/master.md"},
-    {"id": "handoff-next-step",      "file": "dev/plans/runs/handoff.md"}
+    {"id": "master-ladder-progress",  "file": "dev/plans/master.md"},
+    {"id": "status-live-open-count",  "file": "dev/plans/runs/board.md"},
+    {"id": "handoff-next-step",       "file": "dev/plans/runs/handoff.md"}
   ]
 }
+EOF
+
+  # T2b: the board's §4 banner. The fence is deliberately NARROW — the count
+  # word only — and it sits INSIDE a blockquote, mid-line. Both properties are
+  # load-bearing and are asserted below: a BEGIN marker at the head of a
+  # blockquote line would be an HTML block that swallows the whole line
+  # (CommonMark), and the surrounding sentence is not renderable from facts.
+  cat >"$FIX/dev/plans/runs/board.md" <<EOF
+# Board
+
+## 4. Open HITL decisions
+
+> **⚠ HISTORICAL QUEUE, NOT THE LIVE OPEN SET.** Rows 1-3 are retained as the
+> decision record; do not act on them as open.
+>
+> **THE LIVE OPEN SET IS EXACTLY ${B_OPEN}TWO${E_OPEN}:** (1) the batched
+> surface decision; and (2) PUBLISH (hard gate).
+
+| # | Decision | Recommendation |
+|---|---|---|
+| 1 | A settled thing | retained as the decision record |
 EOF
 
   cat >"$FIX/dev/plans/master.md" <<EOF
@@ -186,13 +220,85 @@ fi
 # Reproduction proof in miniature: if regenerating a current document changed
 # it, the renderer would not be reproducing what it claims to own.
 setup_fixture
-BEFORE="$(cat "$FIX/dev/plans/master.md" "$FIX/dev/plans/runs/handoff.md")"
+BEFORE="$(cat "$FIX/dev/plans/master.md" "$FIX/dev/plans/runs/handoff.md" "$FIX/dev/plans/runs/board.md")"
 run_gate --write
-AFTER="$(cat "$FIX/dev/plans/master.md" "$FIX/dev/plans/runs/handoff.md")"
+AFTER="$(cat "$FIX/dev/plans/master.md" "$FIX/dev/plans/runs/handoff.md" "$FIX/dev/plans/runs/board.md")"
 if [ "$RC" -eq 0 ] && [ "$BEFORE" = "$AFTER" ]; then
   pass "--write on a current tree is byte-for-byte a no-op (the renderer reproduces)"
 else
   fail "arm 2c (write is a no-op): rc=$RC"
+fi
+
+# --- Arm 2d (T2b): the LIVE-OPEN-SET COUNT drifts from the single writer ---
+# THE measured failure this tranche exists for: the board's §4 listed >=4
+# ALREADY-RULED items as still open. The count of the live open set is the one
+# fact in that banner a renderer can derive, so a third unruled item appearing
+# in the state file must turn the board RED until it is regenerated.
+setup_fixture
+perl -0777 -pi -e 's/\{"id": "publish",         "title": "PUBLISH"\}/{"id": "publish", "title": "PUBLISH"},\n      {"id": "third-thing", "title": "a newly-opened call"}/' \
+  "$FIX/dev/plans/release-state-9.9.9.json"
+run_gate
+if [ "$RC" -ne 0 ] && grep -q 'is STALE' <<<"$OUT" \
+   && grep -q 'status-live-open-count' <<<"$OUT" && grep -q "'THREE'" <<<"$OUT"; then
+  pass "live-open-set drift — a THIRD unruled decision HARD-fails the board's count"
+else
+  fail "arm 2d (live-open-set drift): rc=$RC out=$OUT"
+fi
+
+# --- Arm 2e (T2b): the opposite direction — an item gets RULED -------------
+# The exact shape of the incident: a decision is settled, the state file records
+# it, and the board still says "EXACTLY TWO". That must be red, not silent.
+setup_fixture
+perl -0777 -pi -e 's/\{"id": "batched-surface", "title": "the batched surface decision"\},\n\s*//' \
+  "$FIX/dev/plans/release-state-9.9.9.json"
+run_gate
+if [ "$RC" -ne 0 ] && grep -q 'status-live-open-count' <<<"$OUT" && grep -q "'ONE'" <<<"$OUT"; then
+  pass "a decision becoming RULED shrinks the count and HARD-fails a stale board"
+else
+  fail "arm 2e (ruled item shrinks the count): rc=$RC out=$OUT"
+fi
+
+# --- Arm 2f (T2b): a hand-edit of the count word inside the markers --------
+setup_fixture
+perl -0777 -pi -e 's/\Q'"$B_OPEN"'\ETWO/'"$B_OPEN"'FOUR/' "$FIX/dev/plans/runs/board.md"
+run_gate
+if [ "$RC" -ne 0 ] && grep -q 'is STALE' <<<"$OUT" && grep -q 'status-live-open-count' <<<"$OUT"; then
+  pass "hand-editing the count inside the markers HARD-fails"
+else
+  fail "arm 2f (hand-edited count): rc=$RC out=$OUT"
+fi
+
+# --- Arm 2g (T2b): --write repairs the count and DELETES NOTHING -----------
+# Bounding condition 3 of the HITL pre-sign, on the section that carries the
+# historical decision record: regenerating must touch the count word and
+# nothing else — the retained rows and the banner prose stay byte-identical.
+setup_fixture
+perl -0777 -pi -e 's/\{"id": "publish",         "title": "PUBLISH"\}/{"id": "publish", "title": "PUBLISH"},\n      {"id": "third-thing", "title": "a newly-opened call"}/' \
+  "$FIX/dev/plans/release-state-9.9.9.json"
+run_gate --write
+if [ "$RC" -eq 0 ] \
+   && grep -q "${B_OPEN}THREE${E_OPEN}" "$FIX/dev/plans/runs/board.md" \
+   && grep -q 'HISTORICAL QUEUE, NOT THE LIVE OPEN SET' "$FIX/dev/plans/runs/board.md" \
+   && grep -q 'retained as the decision record' "$FIX/dev/plans/runs/board.md" \
+   && grep -q '(1) the batched' "$FIX/dev/plans/runs/board.md" \
+   && grep -q '(2) PUBLISH (hard gate)' "$FIX/dev/plans/runs/board.md"; then
+  pass "--write updates ONLY the count; the retained rows and banner prose survive"
+else
+  fail "arm 2g (write deletes nothing): rc=$RC"
+fi
+
+# --- Arm 2h (T2b): the fence does not start a blockquote line --------------
+# CommonMark: a blockquote line whose content BEGINS with `<!--` is an HTML
+# block that swallows the REST OF THE LINE, so a BEGIN marker placed at the head
+# of the banner line would stop the sentence rendering as markdown. This is the
+# same hazard render_handoff_next_step documents; assert the placement rather
+# than trusting it to stay right.
+setup_fixture
+if ! grep -qE '^>[[:space:]]*<!-- BEGIN GENERATED' "$FIX/dev/plans/runs/board.md" \
+   && grep -qE '^> \*\*THE LIVE OPEN SET' "$FIX/dev/plans/runs/board.md"; then
+  pass "the blockquote fence is mid-line — no marker heads a quoted line (CommonMark)"
+else
+  fail "arm 2h (marker placement): a BEGIN marker heads a blockquote line"
 fi
 
 # --- Arm 3: MISSING MARKER — a declared view that is not fenced ------------
@@ -287,7 +393,7 @@ fi
 # --- Arm 6: TC-37 vacuous-pass guard — ZERO state files -------------------
 setup_fixture
 rm -f "$FIX/dev/plans/release-state-9.9.9.json"
-rm -f "$FIX/dev/plans/master.md" "$FIX/dev/plans/runs/handoff.md"
+rm -f "$FIX/dev/plans/master.md" "$FIX/dev/plans/runs/handoff.md" "$FIX/dev/plans/runs/board.md"
 run_gate
 if [ "$RC" -ne 0 ] && grep -q 'ZERO release-state files' <<<"$OUT"; then
   pass "vacuity guard — zero state files discovered -> hard FAIL, not a silent exit 0"
@@ -300,7 +406,7 @@ fi
 # empty `generated_views` the regenerate-and-diff loop never runs at all, so an
 # exit 0 would be a gate vouching for nothing.
 setup_fixture
-rm -f "$FIX/dev/plans/master.md" "$FIX/dev/plans/runs/handoff.md"
+rm -f "$FIX/dev/plans/master.md" "$FIX/dev/plans/runs/handoff.md" "$FIX/dev/plans/runs/board.md"
 perl -0777 -pi -e 's/"generated_views": \[.*\]/"generated_views": []/s' \
   "$FIX/dev/plans/release-state-9.9.9.json"
 run_gate
@@ -316,7 +422,7 @@ fi
 # byte-identical to their unfenced originals.
 setup_fixture
 mkdir -p "$TMPROOT/unfenced"
-for f in dev/plans/master.md dev/plans/runs/handoff.md; do
+for f in dev/plans/master.md dev/plans/runs/handoff.md dev/plans/runs/board.md; do
   mkdir -p "$TMPROOT/unfenced/$(dirname "$f")"
   perl -0777 -pe 's/<!-- (?:BEGIN|END) GENERATED release-state:[^>]*-->\n?//g' \
     "$FIX/$f" >"$TMPROOT/unfenced/$f"
@@ -326,7 +432,10 @@ if grep -q 'Lead-in prose' "$TMPROOT/unfenced/dev/plans/master.md" \
    && grep -q 'must never be touched' "$TMPROOT/unfenced/dev/plans/master.md" \
    && ! grep -q 'GENERATED release-state' "$TMPROOT/unfenced/dev/plans/master.md" \
    && grep -q 'Slices 0 (`aaaa1111`)' "$TMPROOT/unfenced/dev/plans/master.md" \
-   && grep -q 'More prose' "$TMPROOT/unfenced/dev/plans/runs/handoff.md"; then
+   && grep -q 'More prose' "$TMPROOT/unfenced/dev/plans/runs/handoff.md" \
+   && grep -q 'IS EXACTLY TWO:' "$TMPROOT/unfenced/dev/plans/runs/board.md" \
+   && grep -q 'retained as the decision record' "$TMPROOT/unfenced/dev/plans/runs/board.md" \
+   && ! grep -q 'GENERATED release-state' "$TMPROOT/unfenced/dev/plans/runs/board.md"; then
   pass "reversibility — stripping the markers leaves the prose AND the fenced content intact"
 else
   fail "arm 7 (reversibility): stripped documents lost content"

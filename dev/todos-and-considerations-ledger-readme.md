@@ -236,6 +236,41 @@ has one (107/107), and 16 of this ledger's 76 entries have none either. A previo
 here folded with `latest[r["id"]] = r` and died with `KeyError: 'id'` on the first such
 entry; the bucket is what replaces that failure with a number you can see.
 
+**Asking "was this ruled on?"** — `--project rulings` (T2b) projects any of the three ledgers
+to a **ruling registry**: which items carry a recorded ruling, which are still open, and which
+the ledger does not say.
+
+```bash
+# The ruled/unruled registry for this ledger:
+$LW $LEDGER --project rulings
+
+# Works on the steward ledger and the OPP-12 sub-ledger too:
+$LW dev/steward/steward-ledger.jsonl --project rulings
+```
+
+Read it knowing exactly what it can and cannot see:
+
+| bucket | predicate | note |
+|---|---|---|
+| `ruled` | **any** entry under the key has `kind: decision` | a ruling stays recorded; a later `observation` does not un-rule it. `ruling_seqs` names the entries |
+| `unruled` | no ruling entry **and** the folded entry's `status` is `open` | `open` is this README's own non-terminal status (§2.1), read case-insensitively because the file holds both `open` and `OPEN` |
+| `unclassified` | everything else | **not a defect — the ledger genuinely does not say.** Emitted in full with its literal `kind`/`status`, never dropped |
+
+The key is `id` when the entry has one, otherwise **`seq-N`**. That is deliberate: the steward
+ledger holds most of this repo's rulings and *none* of its entries carry an `id`, and adding
+one is out of scope for a decision trail. Because `seq` is unique **per file**, this mode reads
+one ledger at a time — do not merge its keys across files without a file qualifier.
+
+No other status is interpreted. `resolved`, `converged-pending-hitl`, `build-authorized`,
+`placed`, `ratified-both-sides`… are echoed verbatim and land in `unclassified`, because
+inventing a status vocabulary is a refused move here — and note that the **terminal** vocabulary
+this README declares in §2.1 (`done` / `wont-do` / `superseded`) currently matches **zero**
+entries in any of the three ledgers. Two consequences worth knowing before you trust a count:
+an item ruled in prose but never entered as `kind: decision` reads as unruled or unclassified
+(**TC-7** is the live example — it walked `open → in_progress → converged-pending-hitl →
+resolved` without one), and the registry reports what the ledger *records*, never whether a
+ruling is *right*.
+
 Filter the projection with whatever you like (`jq 'select(.status=="open")'`) — the tool
 deliberately imposes no status vocabulary, because the statuses actually in use here are
 open-ended (`open`, `OPEN`, `resolved`, `closed`, `watching`, `RATIFIED`, `accepted`,

@@ -30,21 +30,28 @@ even when --select would otherwise silently drop it). --validate runs a full-fil
 JSONL integrity scan instead (0 clean / 3 corrupt / 2 error; no delta, no cursor
 advance).
 
---project folds an event-sourced ledger to its LATEST entry per `id` (the file
-is the event log; the fold is the state). Entries with no `id` are NOT an error
-— they are counted into an explicit, always-printed `unfoldable (no id): N`
-bucket. That bucket is the whole point: the recipe this mode replaces did
-`latest[r["id"]] = r` and died with KeyError on the first id-less entry, which
-is every entry of dev/steward/steward-ledger.jsonl. Like --prune and --validate
-it is a standalone READ/REPORT mode: it never writes the ledger and never reads
-or advances the cursor, so running a projection cannot silently consume the
-delta a later watch run is waiting for.
+--project selects a PROJECTION over an event-sourced ledger. Two are defined:
+
+  latest   (the default; `--project` with no value) folds the ledger to its
+           LATEST entry per `id` — the file is the event log, the fold is the
+           state. Entries with no `id` are NOT an error: they are counted into
+           an explicit, always-printed `unfoldable (no id): N` bucket. That
+           bucket is the whole point: the recipe this mode replaces did
+           `latest[r["id"]] = r` and died with KeyError on the first id-less
+           entry, which is every entry of dev/steward/steward-ledger.jsonl.
+  rulings  the RULING REGISTRY: which items have been ruled on, which are still
+           open, and which the ledger does not say. See do_project_rulings for
+           the projection key, the classifier, and their limits.
+
+Like --prune and --validate, --project is a standalone READ/REPORT mode: it
+never writes the ledger and never reads or advances the cursor, so running a
+projection cannot silently consume the delta a later watch run is waiting for.
 
 Flags: --json (structured envelope), --dry-run (compute delta without advancing
 the cursor), --reset (discard cursor first), --select (tail field filter),
 --strategy (override), --no-status (see below), --prune (drop cursors whose
 source file is gone; takes no file argument), --validate (full-file JSONL scan),
---project (fold-to-latest-per-id projection).
+--project [latest|rulings] (projection; bare = latest).
 
 Exit status is grep-style by default, so a poller can branch on it without
 capturing stdout:
@@ -495,6 +502,194 @@ def do_project(path: str, as_json: bool, out, err) -> int:
     return 0
 
 
+# --- rulings projection (the ruling registry) --------------------------------
+
+# The ONE literal status this tool reads. It is not a vocabulary this tool
+# invents: `open` is declared in dev/todos-and-considerations-ledger-readme.md
+# §2.1 as the ledger's own non-terminal status, and it is the dominant literal
+# value in the data (46 `open` + 9 `OPEN` of 76 entries). Everything else —
+# `watching`, `in_progress`, `converged-pending-hitl`, `build-authorized`,
+# `placed`, `resolved`, `closed`, `ratified-both-sides`, … — is echoed VERBATIM
+# and never interpreted. Inventing a status vocabulary is a refused move in this
+# effort, and the README's own TERMINAL vocabulary (`done`/`wont-do`/
+# `superseded`) matches ZERO entries in any of the three real ledgers, so there
+# is no declared terminal set to read either.
+OPEN_STATUS = "open"
+
+# Emission order. Deterministic and stable: bucket first, then key.
+VERDICT_ORDER = {"ruled": 0, "unruled": 1, "unclassified": 2}
+
+
+def ruling_key(obj: dict, lineno: int):
+    """Address an entry. Returns (key, from_id).
+
+    `id` when the entry carries one — that is the join key the todos ledger
+    declares, and it is what makes the fold-to-latest reuse work. Otherwise
+    `seq-N`: dev/steward/steward-ledger.jsonl holds most of this repo's rulings
+    and 107/107 of its entries have NO `id`, and ADDING one is banned (that file
+    is a decision trail, not an item register). `seq` is stamped by ledgerwrite
+    on every entry of all three ledgers and check-ledgers.sh gates that it is
+    contiguous, so `seq-N` is a real, stable address — it is simply scoped to
+    ONE file, which is why this mode takes one ledger at a time. A `seq`-less
+    entry falls back to `line-N` so that no entry is ever dropped for want of a
+    key (the KeyError class T1b closed).
+    """
+    ident = obj.get("id")
+    if ident is not None and str(ident) != "":
+        return str(ident), True
+    seq = obj.get("seq")
+    if seq is not None and str(seq) != "":
+        return "seq-%s" % seq, False
+    return "line-%d" % lineno, False
+
+
+def do_project_rulings(path: str, as_json: bool, out, err) -> int:
+    """Project a ledger to its RULING REGISTRY: ruled / unruled / unclassified.
+
+    WHY THIS EXISTS: rulings live in >=4 homes with no index, and the 0.8.20
+    board listed >=4 already-ruled items as still open — which is the direct
+    generator of re-deciding settled calls, the most expensive failure this
+    program has. A registry has to be derived from the ledger, not narrated
+    beside it.
+
+    THE PROJECTION KEY is `id` when present, else `seq-N` (see ruling_key).
+    Items are folded to their LATEST entry per key — the same fold `--project
+    latest` performs, for the same reason: the file is an event log, so the
+    item's current fields are its last entry's.
+
+    THE CLASSIFIER, and its limits, stated honestly:
+
+      ruled         ANY entry under this key has `kind == "decision"`.
+                    `kind` is the only field present on 193/193 entries of all
+                    three ledgers, and `decision` is its actual cross-ledger
+                    value for "this entry records a ruling" (68 steward + 6
+                    todos + 5 OPP-12). ANY entry, not just the latest: a ruling
+                    once recorded is not un-recorded by a later observation.
+                    `ruling_seqs` names exactly which entries carry it.
+      unruled       no ruling entry, and the folded entry's `status` is `open`
+                    (case-insensitively — the todos ledger contains both `open`
+                    and `OPEN`). See OPEN_STATUS for why that one literal.
+      unclassified  everything else. This bucket is LARGE and that is the point:
+                    it is where the ledgers genuinely do not say. Real instance:
+                    TC-7 walked open -> in_progress -> converged-pending-hitl ->
+                    resolved with NO `kind: decision` entry anywhere, so a
+                    registry cannot see that it was ruled. Guessing from
+                    `resolved` would be inventing the vocabulary this effort
+                    already refused. Every unclassified row is still EMITTED,
+                    with its literal `kind`/`status`, so it is visible and
+                    countable — never silently dropped.
+
+    LIMITS a caller must know: (1) `seq` is unique per FILE, so this mode reports
+    one ledger at a time and its keys must not be merged across files without a
+    file qualifier; (2) it classifies ENTRIES, not the truth of a ruling — it can
+    say "the ledger records a decision here", never "this decision is correct";
+    (3) an item ruled in prose but never entered as `kind: decision` reads as
+    unruled or unclassified, which is a finding about the LEDGER, not a defect
+    here.
+
+    Read/report only: never writes the ledger, never touches the cursor state
+    directory. Exit 0 = registry emitted (even if empty), 2 = read error.
+    """
+    try:
+        data = read_bytes(path)
+    except OSError as exc:
+        print(f"ledgerwatch: cannot read {path}: {exc}", file=err)
+        return 2
+
+    text = data.decode("utf-8", errors="replace")
+    order: list[str] = []
+    latest: dict[str, dict] = {}
+    ruling_seqs: dict[str, list] = {}
+    from_id: dict[str, bool] = {}
+    entries = 0
+    malformed = 0
+
+    for lineno, raw in enumerate(text.split("\n"), start=1):
+        if raw.strip() == "":
+            continue  # blank lines are not entries
+        entries += 1
+        try:
+            obj = json.loads(raw)
+        except Exception:
+            malformed += 1
+            continue
+        if not isinstance(obj, dict):
+            malformed += 1
+            continue
+        key, keyed_by_id = ruling_key(obj, lineno)
+        if key not in latest:
+            order.append(key)
+            ruling_seqs[key] = []
+            from_id[key] = keyed_by_id
+        latest[key] = obj  # last write wins (file order == append order)
+        if obj.get("kind") == "decision":
+            ruling_seqs[key].append(obj.get("seq", lineno))
+
+    rows = []
+    counts = {"ruled": 0, "unruled": 0, "unclassified": 0}
+    for key in order:
+        obj = latest[key]
+        status = obj.get("status")
+        if ruling_seqs[key]:
+            verdict = "ruled"
+        elif status is not None and str(status).casefold() == OPEN_STATUS:
+            verdict = "unruled"
+        else:
+            verdict = "unclassified"
+        counts[verdict] += 1
+        rows.append(
+            {
+                "key": key,
+                "verdict": verdict,
+                "seq": obj.get("seq"),
+                "kind": obj.get("kind"),
+                "status": status,
+                "decider": obj.get("decider"),
+                "ruling_seqs": ruling_seqs[key],
+                "summary": obj.get("summary"),
+            }
+        )
+
+    rows.sort(key=lambda r: (VERDICT_ORDER[r["verdict"]], r["key"]))
+    keyed_by_seq = sum(1 for key in order if not from_id[key])
+
+    if as_json:
+        envelope = {
+            "file": path,
+            "mode": "project",
+            "projection": "rulings",
+            "entries": entries,
+            "items": len(rows),
+            "ruled": counts["ruled"],
+            "unruled": counts["unruled"],
+            "unclassified": counts["unclassified"],
+            "malformed": malformed,
+            "keyed_by_seq": keyed_by_seq,
+            "rows": rows,
+        }
+        out.write(json.dumps(envelope) + "\n")
+    else:
+        for row in rows:
+            out.write(json.dumps(row, sort_keys=True) + "\n")
+
+    # EVERY bucket on EVERY run, including the zeros. Same discipline as
+    # `unfoldable (no id): N`: a bucket that only appears when non-empty lets
+    # "nothing to classify" read as "everything classified".
+    print(
+        f"ledgerwatch: --project rulings {path}: {len(rows)} item(s) "
+        f"from {entries} entries; ruled: {counts['ruled']}; "
+        f"unruled: {counts['unruled']}; "
+        f"unclassified: {counts['unclassified']}; "
+        f"malformed: {malformed}; "
+        f"keyed by seq (no id): {keyed_by_seq}",
+        file=err,
+    )
+    return 0
+
+
+PROJECTIONS = {"latest": do_project, "rulings": do_project_rulings}
+
+
 # --- driver -----------------------------------------------------------------
 
 
@@ -538,13 +733,38 @@ def run(argv, out=sys.stdout, err=sys.stderr) -> int:
     )
     parser.add_argument(
         "--project",
-        action="store_true",
-        help="fold the ledger to its latest entry per id; entries with no id are "
-        "reported in an 'unfoldable (no id): N' bucket, never fatal. Read-only: "
-        "does NOT write the ledger and does NOT advance the cursor "
+        nargs="?",
+        const="latest",
+        default=None,
+        metavar="PROJECTION",
+        help="project the ledger: `latest` (the default, and what a bare "
+        "--project means) folds to the latest entry per id, reporting id-less "
+        "entries in an 'unfoldable (no id): N' bucket; `rulings` emits the "
+        "ruled/unruled registry, keyed by id or else `seq-N` (the steward "
+        "ledger carries NO ids and must not be made to), classified by "
+        "`kind == \"decision\"` plus the single literal status `open`, with "
+        "everything the ledger does not say landing in a printed "
+        "`unclassified` bucket rather than being guessed at or dropped. "
+        "Read-only: does NOT write the ledger and does NOT advance the cursor "
         "(0 = projection emitted / 2 = read error)",
     )
     args = parser.parse_args(argv)
+
+    # `--project` takes an OPTIONAL value, so `--project dev/x.jsonl` (the form
+    # the ledger READMEs document) would otherwise have the PATH swallowed as
+    # the projection name. Re-read it as the file when it is not a projection
+    # name. A path that collides with a reserved name (`latest`/`rulings`) must
+    # be given positionally.
+    if args.project is not None and args.project not in PROJECTIONS:
+        if args.file is None:
+            args.file, args.project = args.project, "latest"
+        else:
+            print(
+                "ledgerwatch: unknown projection %r (choose from %s)"
+                % (args.project, ", ".join(sorted(PROJECTIONS))),
+                file=err,
+            )
+            return 2
 
     if args.prune:
         return do_prune(args.state_dir, out, err)
@@ -563,11 +783,11 @@ def run(argv, out=sys.stdout, err=sys.stderr) -> int:
         # does not compute a delta or advance the cursor.
         return do_validate(abspath, args.json, out, err)
 
-    # Fold-to-latest-per-id projection. Dispatched HERE, before the state dir is
-    # created below, so --project provably cannot create, read or advance a
-    # cursor (see do_project's docstring for why that is the safe choice).
-    if args.project:
-        return do_project(abspath, args.json, out, err)
+    # Projections. Dispatched HERE, before the state dir is created below, so
+    # --project provably cannot create, read or advance a cursor (see
+    # do_project's docstring for why that is the safe choice).
+    if args.project is not None:
+        return PROJECTIONS[args.project](abspath, args.json, out, err)
 
     try:
         select = parse_select(args.select)

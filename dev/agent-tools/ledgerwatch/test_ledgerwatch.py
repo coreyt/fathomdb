@@ -827,3 +827,235 @@ def test_project_non_string_and_empty_ids(tmp_path):
     _, out, err = lw(tmp_path, str(f), "--project")
     assert len(out.splitlines()) == 1  # id 7 folds under the key "7"
     assert "unfoldable (no id): 2" in err  # "" and null are not usable ids
+
+
+# --------------------------------------------------------------------------
+# --project rulings (the ruling registry)
+#
+# RED-first. The projection key here CANNOT be `id`: dev/steward/steward-
+# ledger.jsonl is the ledger that holds most of this repo's rulings and 107/107
+# of its entries have NO `id` — and adding one was explicitly forbidden (T1b).
+# So the address is `id` when present, else `seq-N`, and the RULING SIGNAL is
+# `kind == "decision"`, the only classifier present on 193/193 entries across
+# all three ledgers. `status` is read for exactly ONE literal value, `open`,
+# which the todos-ledger README declares itself; every other status is REPORTED
+# VERBATIM and never interpreted, because inventing a status vocabulary is a
+# refused move in this effort (T1b) and the README's own terminal vocabulary
+# (`done`/`wont-do`/`superseded`) matches ZERO real entries.
+# --------------------------------------------------------------------------
+
+
+def test_rulings_a_decision_entry_is_ruled(tmp_path):
+    f = tmp_path / "l.jsonl"
+    f.write_text('{"seq":1,"kind":"decision","summary":"ruled it"}\n')
+    rc, out, err = lw(tmp_path, str(f), "--project", "rulings")
+    rows = [json.loads(line) for line in out.splitlines()]
+    assert rc == PROJECT_OK
+    assert rows[0]["verdict"] == "ruled" and rows[0]["key"] == "seq-1"
+    assert "ruled: 1" in err
+
+
+def test_rulings_an_open_entry_is_unruled(tmp_path):
+    f = tmp_path / "l.jsonl"
+    f.write_text('{"seq":1,"id":"TC-3","kind":"consideration","status":"open"}\n')
+    rc, out, err = lw(tmp_path, str(f), "--project", "rulings")
+    rows = [json.loads(line) for line in out.splitlines()]
+    assert rc == PROJECT_OK
+    assert rows[0]["verdict"] == "unruled" and rows[0]["key"] == "TC-3"
+    assert "unruled: 1" in err
+
+
+def test_rulings_unclassifiable_entry_is_bucketed_not_dropped(tmp_path):
+    """`resolved` is NOT read as a ruling: it is not in any declared vocabulary.
+
+    Real instance: TC-7 walked open -> in_progress -> converged-pending-hitl ->
+    resolved without a single `kind: decision` entry. The registry must SAY it
+    cannot classify that, not guess.
+    """
+    f = tmp_path / "l.jsonl"
+    f.write_text('{"seq":1,"id":"TC-7","kind":"reconcile","status":"resolved"}\n')
+    rc, out, err = lw(tmp_path, str(f), "--project", "rulings")
+    rows = [json.loads(line) for line in out.splitlines()]
+    assert rc == PROJECT_OK
+    assert rows[0]["verdict"] == "unclassified"  # emitted, never dropped
+    assert rows[0]["status"] == "resolved"       # echoed verbatim, uninterpreted
+    assert "unclassified: 1" in err
+
+
+def test_rulings_every_bucket_is_printed_even_when_zero(tmp_path):
+    """An empty ledger must still name all four buckets, or "nothing to
+    classify" reads as "everything classified" (the T1b bucket lesson)."""
+    f = tmp_path / "l.jsonl"
+    f.write_text("")
+    rc, out, err = lw(tmp_path, str(f), "--project", "rulings")
+    assert rc == PROJECT_OK and out == ""
+    for bucket in ("ruled: 0", "unruled: 0", "unclassified: 0", "malformed: 0"):
+        assert bucket in err
+
+
+def test_rulings_malformed_line_is_bucketed_separately(tmp_path):
+    f = tmp_path / "l.jsonl"
+    f.write_text('{"seq":1,"kind":"decision"}\nnot json at all\n[1,2,3]\n')
+    rc, out, err = lw(tmp_path, str(f), "--project", "rulings")
+    assert rc == PROJECT_OK
+    assert "malformed: 2" in err  # torn line + a non-object JSON value
+    assert len(out.splitlines()) == 1
+
+
+def test_rulings_id_less_entries_are_keyed_by_seq(tmp_path):
+    """The steward ledger's real shape: no entry has an `id`, and adding one is
+    banned. Every entry must still be addressable — by `seq-N`."""
+    f = tmp_path / "steward.jsonl"
+    f.write_text(
+        '{"seq":1,"kind":"decision","summary":"a"}\n'
+        '{"seq":2,"kind":"decision","summary":"b"}\n'
+    )
+    rc, out, err = lw(tmp_path, str(f), "--project", "rulings")
+    rows = [json.loads(line) for line in out.splitlines()]
+    assert rc == PROJECT_OK
+    assert [r["key"] for r in rows] == ["seq-1", "seq-2"]
+    assert all(r["verdict"] == "ruled" for r in rows)
+    assert "keyed by seq (no id): 2" in err
+
+
+def test_rulings_folds_to_latest_per_id(tmp_path):
+    """Reuses T1b's fold: the item's current state is its LAST entry."""
+    f = tmp_path / "l.jsonl"
+    f.write_text(
+        '{"seq":1,"id":"TC-1","kind":"consideration","status":"open"}\n'
+        '{"seq":2,"id":"TC-1","kind":"decision","status":"closed"}\n'
+    )
+    _, out, err = lw(tmp_path, str(f), "--project", "rulings")
+    rows = [json.loads(line) for line in out.splitlines()]
+    assert len(rows) == 1 and rows[0]["seq"] == 2
+    assert rows[0]["verdict"] == "ruled" and rows[0]["status"] == "closed"
+    assert "1 item(s) from 2 entries" in err
+
+
+def test_rulings_a_ruling_is_not_undone_by_a_later_observation(tmp_path):
+    """A ruling, once recorded, stays recorded — this is the whole point. The
+    fold decides the item's CURRENT fields; it does not un-rule the item."""
+    f = tmp_path / "l.jsonl"
+    f.write_text(
+        '{"seq":1,"id":"TC-1","kind":"decision","summary":"ruled"}\n'
+        '{"seq":2,"id":"TC-1","kind":"observation","status":"open"}\n'
+    )
+    _, out, _ = lw(tmp_path, str(f), "--project", "rulings")
+    rows = [json.loads(line) for line in out.splitlines()]
+    assert rows[0]["verdict"] == "ruled"      # NOT flipped back to unruled
+    assert rows[0]["ruling_seqs"] == [1]      # and it says exactly where
+
+
+def test_rulings_status_case_variants_both_read_as_open(tmp_path):
+    """The real todos ledger carries BOTH `open` (46) and `OPEN` (9)."""
+    f = tmp_path / "l.jsonl"
+    f.write_text(
+        '{"seq":1,"id":"TC-1","kind":"question","status":"open"}\n'
+        '{"seq":2,"id":"TC-2","kind":"question","status":"OPEN"}\n'
+    )
+    _, _, err = lw(tmp_path, str(f), "--project", "rulings")
+    assert "unruled: 2" in err
+
+
+def test_rulings_ordering_is_deterministic(tmp_path):
+    """Sorted by (ruled, unruled, unclassified) then key — same bytes every run."""
+    f = tmp_path / "l.jsonl"
+    f.write_text(
+        '{"seq":1,"id":"TC-9","kind":"observation","status":"watching"}\n'
+        '{"seq":2,"id":"TC-2","kind":"question","status":"open"}\n'
+        '{"seq":3,"id":"TC-1","kind":"decision"}\n'
+        '{"seq":4,"id":"TC-0","kind":"question","status":"open"}\n'
+    )
+    _, out_a, _ = lw(tmp_path, str(f), "--project", "rulings")
+    _, out_b, _ = lw(tmp_path, str(f), "--project", "rulings")
+    keys = [json.loads(line)["key"] for line in out_a.splitlines()]
+    assert out_a == out_b
+    assert keys == ["TC-1", "TC-0", "TC-2", "TC-9"]
+
+
+def test_rulings_entry_with_neither_id_nor_seq_still_gets_a_key(tmp_path):
+    f = tmp_path / "l.jsonl"
+    f.write_text('{"kind":"decision","summary":"no id, no seq"}\n')
+    _, out, err = lw(tmp_path, str(f), "--project", "rulings")
+    rows = [json.loads(line) for line in out.splitlines()]
+    assert rows[0]["key"] == "line-1"  # addressable by file position, not dropped
+    assert "keyed by seq (no id): 1" in err
+
+
+def test_rulings_does_not_mutate_the_ledger_or_the_cursor(tmp_path):
+    f = tmp_path / "l.jsonl"
+    original = '{"seq":1,"kind":"decision"}\n{"seq":2,"kind":"observation"}\n'
+    f.write_text(original)
+    lw(tmp_path, str(f), "--project", "rulings")
+    assert f.read_text() == original
+    assert not (tmp_path / "state").exists()  # read/report only
+
+
+def test_rulings_json_envelope(tmp_path):
+    f = tmp_path / "l.jsonl"
+    f.write_text(
+        '{"seq":1,"id":"TC-1","kind":"decision","status":"closed"}\n'
+        '{"seq":2,"kind":"observation"}\n'
+        '{"seq":3,"id":"TC-2","kind":"question","status":"open"}\n'
+        "junk\n"
+    )
+    rc, out, err = lw(tmp_path, str(f), "--project", "rulings", "--json")
+    env = json.loads(out)
+    assert rc == PROJECT_OK
+    assert env["mode"] == "project" and env["projection"] == "rulings"
+    assert env["entries"] == 4 and env["items"] == 3
+    assert env["ruled"] == 1 and env["unruled"] == 1 and env["unclassified"] == 1
+    assert env["malformed"] == 1 and env["keyed_by_seq"] == 1
+    assert [r["key"] for r in env["rows"]] == ["TC-1", "TC-2", "seq-2"]
+    assert "unclassified: 1" in err  # buckets printed in --json mode too
+
+
+def test_rulings_missing_file_exits_2(tmp_path):
+    rc, _, err = lw(tmp_path, str(tmp_path / "nope.jsonl"), "--project", "rulings")
+    assert rc == ERROR and "no such file" in err
+
+
+def test_rulings_summary_is_not_capped(tmp_path):
+    """T1b refused a --summary length cap; a registry row must not silently
+    truncate the one line a reader uses to recognise the ruling."""
+    long = "x" * 400
+    f = tmp_path / "l.jsonl"
+    f.write_text(json.dumps({"seq": 1, "kind": "decision", "summary": long}) + "\n")
+    _, out, _ = lw(tmp_path, str(f), "--project", "rulings")
+    assert json.loads(out.splitlines()[0])["summary"] == long
+
+
+# --- --project argument back-compatibility (T1b's bare form must survive) ---
+
+
+def test_project_bare_flag_still_means_fold_to_latest(tmp_path):
+    f = tmp_path / "l.jsonl"
+    f.write_text('{"seq":1,"id":"TC-1","status":"open"}\n')
+    rc, out, err = lw(tmp_path, str(f), "--project")
+    assert rc == PROJECT_OK and "unfoldable (no id): 0" in err
+    assert json.loads(out.splitlines()[0])["id"] == "TC-1"
+
+
+def test_project_named_latest_is_the_same_as_the_bare_flag(tmp_path):
+    f = tmp_path / "l.jsonl"
+    f.write_text('{"seq":1,"id":"TC-1","status":"open"}\n')
+    _, bare, _ = lw(tmp_path, str(f), "--project")
+    _, named, _ = lw(tmp_path, str(f), "--project", "latest")
+    assert bare == named
+
+
+def test_project_file_first_argument_form_still_works(tmp_path):
+    """`ledgerwatch --project FILE` — the form documented in the ledger README.
+    argparse would otherwise eat the path as the projection NAME."""
+    f = tmp_path / "l.jsonl"
+    f.write_text('{"seq":1,"id":"TC-1","status":"open"}\n')
+    rc, out, err = lw(tmp_path, "--project", str(f))
+    assert rc == PROJECT_OK and "unfoldable (no id): 0" in err
+    assert json.loads(out.splitlines()[0])["id"] == "TC-1"
+
+
+def test_project_unknown_projection_name_exits_2(tmp_path):
+    f = tmp_path / "l.jsonl"
+    f.write_text('{"seq":1,"id":"TC-1"}\n')
+    rc, _, err = lw(tmp_path, str(f), "--project", "nonsense")
+    assert rc == ERROR and "unknown projection" in err

@@ -181,10 +181,37 @@ def render_handoff_next_step(st):
     return ("\n**The %s ladder is between slices: %s are all LANDED; %d is next.**"
             % (st["release"], chain, st["next_slice"]))
 
+# Spelled-out counts, because the sentence this renders into is prose. Beyond
+# the table the numeral is used verbatim rather than inventing a spelling: an
+# open set that large is a different problem than a wording one.
+NUMBER_WORDS = {0: "ZERO", 1: "ONE", 2: "TWO", 3: "THREE", 4: "FOUR", 5: "FIVE",
+                6: "SIX", 7: "SEVEN", 8: "EIGHT", 9: "NINE", 10: "TEN"}
+
+def render_status_live_open_count(st):
+    """STATUS §4, the banner: how many decisions are live-OPEN, spelled out.
+
+    T2b (DOC-HYGIENE-2). The measured failure this pins: §4 listed >=4
+    ALREADY-RULED items as still open, and §4 says so about itself in the file
+    ("a hand-maintained duplicate of state that lives in three other files").
+    The count of the live open set is the one fact in that banner that is
+    mechanically derivable from `decisions.unruled`, so the count is what the
+    fence owns — a third unruled item appearing in the state file now turns this
+    gate RED until the banner is regenerated.
+
+    Deliberately NARROW; see `why_only_the_count` on this view in the state file
+    for the full statement. In short: the surrounding sentence cannot be
+    rendered from facts (its two items have different prose shapes and it closes
+    on an F-n citation), and reproducing it would mean pasting the sentence into
+    the JSON — the move this script refuses above. The historical rows 1-22 of
+    §4 are the retained decision record and are NOT under generation at all."""
+    return NUMBER_WORDS.get(len(st["decisions"]["unruled"]),
+                            str(len(st["decisions"]["unruled"])))
+
 RENDERERS = {
-    "master-ladder-progress": render_master_ladder_progress,
-    "status-unblocks":        render_status_unblocks,
-    "handoff-next-step":      render_handoff_next_step,
+    "master-ladder-progress":  render_master_ladder_progress,
+    "status-unblocks":         render_status_unblocks,
+    "status-live-open-count":  render_status_live_open_count,
+    "handoff-next-step":       render_handoff_next_step,
 }
 
 # ---------------------------------------------------------------------------

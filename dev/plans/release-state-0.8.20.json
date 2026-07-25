@@ -218,6 +218,13 @@
       "renders": "unblocked slices, what unblocked them, the publish-precondition slice + its dependencies, AC-079 sign-off status"
     },
     {
+      "id": "status-live-open-count",
+      "file": "dev/plans/runs/STATUS-0.8.20.md",
+      "location": "§4 Open HITL decisions — the banner's `THE LIVE OPEN SET IS EXACTLY <N>:` count word",
+      "renders": "the number of entries in `decisions.unruled`, spelled out",
+      "why_only_the_count": "T2b (DOC-HYGIENE-2). The measured failure was §4 listing >=4 ALREADY-RULED items as still open, i.e. the COUNT of the live open set drifting from the single writer - which is exactly what this region pins. The surrounding sentence is NOT generated, for two reasons, both binding. (1) Its two items are worded in different shapes ('the <label> - <detail>, taken to the HITL **once**, at <gate>' vs '**<label>** (<gate>, hard gate)') and it closes on a findings citation (master F-34), so no template over the fact model reproduces it; only pasting the sentence into this JSON would, and that is the move check-release-state-views.sh explicitly refuses ('widen the fact model or NARROW THE REGION - never paste the prose into the JSON'). (2) CommonMark: a blockquote line whose content BEGINS with `<!--` is an HTML block that swallows the whole line, so a BEGIN marker cannot be placed at the head of this line without changing how it renders. Narrowing keeps the fence in place, byte-exact, and fully reversible. The full ruled/unruled table is emitted by `ledgerwatch <ledger> --project rulings`, and the ruled/unruled FACTS live in `decisions` above; §4's items 1-22 are the historical decision record and are deliberately NOT under generation."
+    },
+    {
       "id": "handoff-next-step",
       "file": "dev/plans/runs/STEWARD-SESSION-HANDOFF-2026-07-24-A.md",
       "location": "★ IMMEDIATE NEXT STEP — the opening next-step sentence",
