@@ -12647,6 +12647,53 @@ fn run_projection_job(shared: &ProjectionRuntimeShared, job: &ProjectionJob) -> 
     ProjectionOutcome::Failure { cursor: job.cursor, failure_code: last_code }
 }
 
+/// 0.8.20 Slice 20 fix-1 (codex §9 [P2]) — the ONE definition of "a canonical
+/// EDGE row the vector pipeline still owes an embed for".
+///
+/// Two call sites must agree on this predicate and had drifted:
+///
+/// - [`next_pending_projection_jobs`] — the SCHEDULER, and therefore the
+///   authority on what will actually be embedded. It joins
+///   `_fathomdb_vector_kinds` on `'edge_fact'`, so an edge body is only ever
+///   scheduled when that kind is registered.
+/// - [`connection_has_pending_projection_work`] — the PROBE behind
+///   `drain`/`wait_for_idle` and, since this slice, `dense_readiness`. It
+///   omitted that join.
+///
+/// The consequence of the drift: a live edge body written while `edge_fact` was
+/// not a registered vector kind (e.g. edges carried forward from before the G11
+/// edge-vector pipeline, which is what auto-registers the kind) counted as
+/// outstanding work the scheduler would NEVER take. `dense_readiness` reported
+/// `embedding` forever and `drain` could never report idle — both the mirror
+/// image of R-20-DR's property. Building both edge arms from this one fragment
+/// makes a repeat drift unrepresentable.
+///
+/// Emits the `FROM`/`JOIN` clauses plus the shared `WHERE` predicates, with the
+/// edge table aliased `ce` and the projection terminal aliased `pt`; `now_idx`
+/// is the 1-based bind index of the `:now` seam that [`edge_validity_sql`]
+/// consumes. Callers may append further `AND` predicates.
+///
+/// **The one predicate deliberately NOT shared** is the scheduler's
+/// `write_cursor > :cursor` watermark filter, which the scheduler appends and
+/// the probe must not: per the G11 (Slice 15) fix-1 note on the probe, the
+/// probe has to see edge bodies left un-projected BELOW the watermark when the
+/// engine closed mid-flight, or `drain` would report idle with edge vectors
+/// still missing on reopen. That asymmetry is intentional and load-bearing; the
+/// row-eligibility predicates above are not, and are shared.
+fn pending_edge_projection_from_where(now_idx: usize) -> String {
+    format!(
+        "FROM canonical_edges ce
+         JOIN _fathomdb_vector_kinds
+           ON _fathomdb_vector_kinds.kind = 'edge_fact'
+         LEFT JOIN _fathomdb_projection_terminal pt
+           ON pt.write_cursor = ce.write_cursor
+         WHERE ce.body IS NOT NULL
+           AND ce.superseded_at IS NULL{}
+           AND pt.write_cursor IS NULL",
+        edge_validity_sql("ce", now_idx)
+    )
+}
+
 fn next_pending_projection_jobs(
     connection: &Connection,
     in_flight: &BTreeSet<u64>,
@@ -12677,20 +12724,17 @@ fn next_pending_projection_jobs(
 
              UNION ALL
 
-             SELECT canonical_edges.write_cursor, 'edge_fact', canonical_edges.body
-             FROM canonical_edges
-             JOIN _fathomdb_vector_kinds
-               ON _fathomdb_vector_kinds.kind = 'edge_fact'
-             LEFT JOIN _fathomdb_projection_terminal
-               ON _fathomdb_projection_terminal.write_cursor = canonical_edges.write_cursor
-             WHERE canonical_edges.write_cursor > ?1
-               AND canonical_edges.body IS NOT NULL
-               AND canonical_edges.superseded_at IS NULL{edge_valid}
-               AND _fathomdb_projection_terminal.write_cursor IS NULL
+             SELECT ce.write_cursor, 'edge_fact', ce.body
+             {edge_arm}
+               AND ce.write_cursor > ?1
          ) ORDER BY write_cursor
          LIMIT {sql_limit}",
+        // fix-1 [P2]: the edge arm's row-eligibility predicates come from the
+        // shared fragment so this and `connection_has_pending_projection_work`
+        // cannot disagree about what is outstanding. The `write_cursor > ?1`
+        // watermark is appended here and ONLY here — see the fragment's doc.
         // TC-33: `?1` is the projection cursor ⇒ the edge `:now` binds at `?2`.
-        edge_valid = edge_validity_sql("canonical_edges", 2)
+        edge_arm = pending_edge_projection_from_where(2)
     );
     let mut statement = connection.prepare_cached(&sql)?;
     let rows = statement.query_map(params![cursor, current_epoch_seconds()], |row| {
@@ -12719,10 +12763,17 @@ fn database_has_pending_projection_work(path: &Path) -> rusqlite::Result<bool> {
 /// [`database_has_pending_projection_work`], lifted so it can also run on a
 /// connection the caller ALREADY holds (the engine's own connection, inside
 /// [`Engine::read_projections`]) instead of opening a runtime connection from a
-/// path. Behaviour is byte-identical: the same two arms, the same predicates —
-/// which is the point. Readiness and `drain`/`wait_for_idle` must key off ONE
-/// definition of "outstanding embed", or readiness could report `ready` for work
-/// `drain` still waits on.
+/// path. Both callers run the same two arms and the same predicates — which is
+/// the point. Readiness and `drain`/`wait_for_idle` must key off ONE definition
+/// of "outstanding embed", or readiness could report `ready` for work `drain`
+/// still waits on.
+///
+/// fix-1 (codex §9 [P2]) — the edge arm is no longer a hand-copied mirror of
+/// the scheduler's: both are built from
+/// [`pending_edge_projection_from_where`]. The copy had lost the
+/// `_fathomdb_vector_kinds` join, so this probe reported permanent pending work
+/// for edge bodies the scheduler would never schedule. That was PRE-EXISTING —
+/// it reached `Engine::drain` through `wait_for_idle` before readiness existed.
 fn connection_has_pending_projection_work(connection: &Connection) -> rusqlite::Result<bool> {
     let cursor = load_projection_cursor(connection)?;
     // Check canonical_nodes for un-projected work.
@@ -12758,20 +12809,17 @@ fn connection_has_pending_projection_work(connection: &Connection) -> rusqlite::
     // `next_pending_projection_jobs` now correctly skips would never gain a
     // `_fathomdb_projection_terminal` row, so this probe would flag it as
     // phantom-pending forever and `drain()`/`wait_for_idle` would hang.
+    // Slice-20 fix-1 [P2]: the mirror is now STRUCTURAL — the arm is built from
+    // `pending_edge_projection_from_where`, the same fragment the scheduler
+    // uses — because the hand-copied mirror had already lost the
+    // `_fathomdb_vector_kinds` join and produced exactly the phantom-pending
+    // hang described above for edge bodies under an unregistered `edge_fact`.
     connection
         .query_row(
             // TC-33: no other parameter here ⇒ the edge `:now` binds at `?1`.
-            &format!(
-                "SELECT 1
-             FROM canonical_edges ce
-             LEFT JOIN _fathomdb_projection_terminal pt
-               ON pt.write_cursor = ce.write_cursor
-             WHERE ce.body IS NOT NULL
-               AND ce.superseded_at IS NULL{}
-               AND pt.write_cursor IS NULL
-             LIMIT 1",
-                edge_validity_sql("ce", 1)
-            ),
+            // No `write_cursor > cursor` filter — see the fragment's doc for
+            // why the probe deliberately looks BELOW the watermark too.
+            &format!("SELECT 1 {} LIMIT 1", pending_edge_projection_from_where(1)),
             params![current_epoch_seconds()],
             |_row| Ok(true),
         )
