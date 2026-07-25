@@ -24,6 +24,13 @@
 # NOTE ON ARM 5 (whitespace-only): failing on a formatting-only change is a
 # DELIBERATE, DOCUMENTED property of a content-hash pin, not an accident — see
 # the gate's header. It is asserted here so the behaviour is a contract.
+#
+# NOTE ON ARMS 8b-8f (the pin's own well-formedness): Arm 8 proves the counts
+# block is what catches a lazy re-pin, which makes the counts block itself a
+# target. These arms attack it: a pin that DELETES, nulls or mistypes one of its
+# three counts must fail as a MALFORMED PIN (exit 2 — the gate could not run),
+# never skip that list and never be reported as a surface divergence (exit 1 —
+# "go get it signed"). Each was captured exiting 0 on the pre-fix gate.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -273,6 +280,140 @@ else
   pass "lazy-repin's hash check genuinely passes — only the member/count checks carry this arm"
 fi
 expect_routes_to_hitl "lazy-repin"
+
+# ========= Arm 8b (RED): a pin that DELETES one of its own counts ============
+# Arm 8 proved the counts block is what catches a lazy re-pin. So the counts
+# block is itself worth attacking: reading counts.<list> permissively meant an
+# ABSENT entry came back as None and BOTH the internal-consistency check and the
+# file-count check silently skipped that list. Deleting a count therefore
+# disarmed the backstop — the gate would have kept reporting "ok" while checking
+# strictly less than it claimed. Captured on the pre-fix script, all three of
+# these exited 0. A count the gate cannot read is a MALFORMED PIN (exit 2, "the
+# gate could not run"), never a divergence (exit 1, "go get the surface signed").
+#
+# omit_count_pin <key> -> prints the path of a pin with counts.<key> deleted
+omit_count_pin() {
+  local key="$1" out="$TMPROOT/pin-omit-$1.json"
+  python3 - "$REAL_PIN" "$out" "$key" <<'PY'
+import json, sys
+pin = json.load(open(sys.argv[1]))
+del pin["counts"][sys.argv[3]]
+json.dump(pin, open(sys.argv[2], "w"), indent=2)
+PY
+  printf '%s' "$out"
+}
+
+for KEY in allowlist core recovery_denylist; do
+  check_fixture "$REAL_FILE" "$(omit_count_pin "$KEY")"
+  expect_rc 2 "a pin that OMITS counts.$KEY HARD-fails as malformed (was a silent exit 0)"
+  expect_out "'counts' has no '$KEY' entry" "omit-counts.$KEY names the missing count entry"
+  expect_out 'MALFORMED' "omit-counts.$KEY says the pin is malformed"
+  expect_out "DO NOT 'fix' this by regenerating the pin" \
+    "omit-counts.$KEY forbids regenerating the pin to clear it"
+  if printf '%s' "$OUT" | grep -q 'ok +governed-surface-pin'; then
+    fail "omit-counts.$KEY must never print an ok line; got: $OUT"
+  else
+    pass "omit-counts.$KEY prints no ok line (no vacuous pass)"
+  fi
+done
+
+# ===== Arm 8c (RED): counts entry present but not an integer =================
+# Same hole through a different door: null skipped the check exactly like an
+# absent key (pre-fix exit 0), a float 30.0 compared EQUAL to 30 and also passed
+# (pre-fix exit 0), and a string "30" tripped the consistency check with a
+# nonsense message ("counts.allowlist says 30 but its list holds 30"). All three
+# are a malformed pin, and all three must now say so.
+type_count_pin() {
+  local label="$1" literal="$2" out="$TMPROOT/pin-type-$1.json"
+  python3 - "$REAL_PIN" "$out" "$literal" <<'PY'
+import json, sys
+pin = json.load(open(sys.argv[1]))
+pin["counts"]["allowlist"] = json.loads(sys.argv[3])
+json.dump(pin, open(sys.argv[2], "w"), indent=2)
+PY
+  printf '%s' "$out"
+}
+
+check_fixture "$REAL_FILE" "$(type_count_pin null 'null')"
+expect_rc 2 "a NULL counts.allowlist HARD-fails as malformed (was a silent exit 0)"
+expect_out 'not an integer' "null-count says the count is not an integer"
+
+check_fixture "$REAL_FILE" "$(type_count_pin string '"30"')"
+expect_rc 2 "a STRING counts.allowlist HARD-fails as malformed (was a confusing exit 1)"
+expect_out 'not an integer' "string-count says the count is not an integer"
+
+check_fixture "$REAL_FILE" "$(type_count_pin float '30.0')"
+expect_rc 2 "a FLOAT counts.allowlist HARD-fails as malformed (30.0 == 30 used to pass)"
+expect_out 'not an integer' "float-count says the count is not an integer"
+
+check_fixture "$REAL_FILE" "$(type_count_pin bool 'true')"
+expect_rc 2 "a BOOLEAN counts.allowlist HARD-fails (isinstance(True, int) is True in Python)"
+expect_out 'not an integer' "bool-count says the count is not an integer"
+
+# ==== Arm 8d (RED): THE KILLER — drop the count, add a member, rehash ========
+# The full defeat of the backstop, and the reason 8b is P2 and not cosmetic: a
+# re-pin that adds a member to the surface, updates the signed member list AND
+# the hashes to match, and DELETES counts.allowlist. Every surviving check then
+# agreed with the pin, and the one check that still knew the signed size was 30
+# had been quietly switched off. Pre-fix this exited 0 and printed
+#   "ok ... (None allowlist / 5 core / 5 recovery_denylist)"
+# for a 31-member surface carrying smuggled.verb.
+F="$(copy_file killer-drop-count)"
+mutate "$F" 'd["allowlist"].append("smuggled.verb")'
+KILLER_PIN="$TMPROOT/killer-drop-count/pin.json"
+python3 - "$REAL_PIN" "$F" "$KILLER_PIN" <<'PY'
+import hashlib, json, sys
+pin = json.load(open(sys.argv[1]))
+raw = open(sys.argv[2], "rb").read()
+pin["allowlist"] = json.loads(raw.decode("utf-8"))["allowlist"]  # signed list updated
+pin["sha256"] = hashlib.sha256(raw).hexdigest()                  # hashes recomputed
+pin["git_blob_sha1"] = hashlib.sha1(b"blob %d\0" % len(raw) + raw).hexdigest()
+del pin["counts"]["allowlist"]                                   # backstop DELETED
+json.dump(pin, open(sys.argv[3], "w"), indent=2)
+PY
+check_fixture "$F" "$KILLER_PIN"
+expect_rc 2 "a re-pin that DROPS counts.allowlist, adds a member and rehashes HARD-fails (was exit 0)"
+expect_out 'MALFORMED' "killer-drop-count reports a malformed pin"
+if printf '%s' "$OUT" | grep -qE 'ok +governed-surface-pin|None allowlist'; then
+  fail "killer-drop-count must never report ok / a None count; got: $OUT"
+else
+  pass "killer-drop-count prints no ok line and no None count"
+fi
+# Guard that this arm keeps testing what it claims: the hashes and the member
+# list DO agree by construction, so only the missing-count rule can carry it.
+if printf '%s' "$OUT" | grep -qE 'content differs from the pin|ADDED smuggled.verb'; then
+  fail "killer-drop-count's hashes and member list match by construction; a hash/member complaint means the arm is not testing the count rule: $OUT"
+else
+  pass "killer-drop-count's hash and member checks genuinely pass — only the missing-count rule carries it"
+fi
+
+# ==== Arm 8e: a malformed pin is a BROKEN GATE (2), not a divergence (1) =====
+# The distinction is load-bearing for the reader: exit 1 says "the surface moved,
+# take it to the HITL", and printing that for a pin the gate cannot parse would
+# invite exactly the re-pin this gate exists to prevent. It also matches what the
+# gate already does for a missing pin (Arm 10).
+check_fixture "$REAL_FILE" "$(omit_count_pin allowlist)"
+if printf '%s' "$OUT" | grep -q 'DO NOT update the pin to make this pass'; then
+  fail "a malformed pin must NOT print the surface-divergence HITL-routing block; got: $OUT"
+else
+  pass "a malformed pin does not print the surface-divergence routing block (it is a broken gate, not a changed surface)"
+fi
+
+# ==== Arm 8f: a non-string hash field in the pin is malformed too ============
+# Same class as 8b, found by auditing the rest of the pin-parsing path: the
+# predicate READS sha256/git_blob_sha1, so a mistyped one is a broken gate. It
+# used to be reported as a content divergence (exit 1), sending the reader to the
+# HITL to re-sign a surface that never moved.
+BAD_HASH_PIN="$TMPROOT/pin-bad-hash.json"
+python3 - "$REAL_PIN" "$BAD_HASH_PIN" <<'PY'
+import json, sys
+pin = json.load(open(sys.argv[1]))
+pin["sha256"] = None
+json.dump(pin, open(sys.argv[2], "w"), indent=2)
+PY
+check_fixture "$REAL_FILE" "$BAD_HASH_PIN"
+expect_rc 2 "a NULL sha256 in the pin HARD-fails as malformed, not as a divergence"
+expect_out 'not a non-empty string' "bad-hash pin says the hash field is not a string"
 
 # ============ Arm 9 (RED): a re-pin that widens the denylist in the PIN =======
 # REQ-054 is checked against a constant hardcoded in the gate, in the PIN as well

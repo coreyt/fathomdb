@@ -38,6 +38,12 @@
 #   (c) COUNTS: 30 / 5 / 5, asserted separately from (b) against the pin's own
 #       `counts` block, so a pin whose lists and counts disagree is caught as an
 #       internally inconsistent (botched) re-pin rather than being trusted.
+#       EVERY one of the three counts must be PRESENT and an integer: a count the
+#       gate cannot read is a MALFORMED PIN (exit 2), never a skipped check. An
+#       absent count used to read back as None and silently disable both halves
+#       of (c) for that list, so a re-pin that DELETED a count, added a member
+#       and recomputed the hashes exited 0 — disarming the very backstop that
+#       makes a lazy re-pin (b) impossible to hide.
 #   (d) REQ-054: `recovery_denylist` is EXACTLY {recover, restore, repair, fix,
 #       rebuild}, checked against a constant HARDCODED BELOW — in the FILE and in
 #       the PIN. This rule (AC-041) is independently load-bearing: the recovery
@@ -76,8 +82,13 @@
 #             1 = divergence from the pin, OR the pinned file is missing /
 #                 unreadable / unparseable (vacuous-pass guard), OR the pin
 #                 itself breaches REQ-054 or is internally inconsistent;
-#             2 = usage error, unreadable/unparseable pin file, or python3 absent
-#                 (the gate could not run — never reported as a pass).
+#             2 = usage error, unreadable/unparseable/MALFORMED pin file, or
+#                 python3 absent (the gate could not run — never reported as a
+#                 pass). "Malformed" is structural: a missing/mistyped field the
+#                 predicate reads. That is deliberately NOT exit 1: exit 1 says
+#                 "the surface diverged, take it back to the HITL", whereas a
+#                 malformed pin means the gate has no trustworthy statement of
+#                 what was signed at all.
 set -euo pipefail
 
 SELF="$(basename "${BASH_SOURCE[0]}")"
@@ -179,9 +190,49 @@ for key in ["sha256", "git_blob_sha1", "counts"] + LIST_KEYS:
 for key in LIST_KEYS:
     if not isinstance(pin[key], list) or not all(isinstance(v, str) for v in pin[key]):
         die_env(f"the pin {PIN}: {key!r} is not a list of strings")
+for key in ["sha256", "git_blob_sha1"]:
+    if not isinstance(pin[key], str) or not pin[key]:
+        die_env(
+            f"the pin {PIN}: {key!r} is {pin[key]!r}, not a non-empty string — the pin is MALFORMED "
+            "and cannot vouch for any content. Reported as a broken gate (exit 2), not as a surface "
+            "divergence (exit 1): a hash that is not a hash never equals the file's, so exit 1 would "
+            "send the reader to the HITL to re-sign a surface that may not have moved at all."
+        )
 if not isinstance(pin["counts"], dict):
     die_env(f"the pin {PIN}: 'counts' is not an object")
 
+# EVERY pinned count must be PRESENT and an integer — a missing one is a hard
+# failure, never an implicit skip. Read permissively (dict.get) an absent entry
+# came back as None and BOTH count checks below skipped that list, so a re-pin
+# could delete a count, add a member to the surface, update the signed member
+# list and hashes to match, and still exit 0 — the count backstop that catches a
+# lazy re-pin, deleted. bool is excluded explicitly because isinstance(True, int)
+# is True in Python and `True == 1` would let a count of `true` masquerade as 1.
+for key in LIST_KEYS:
+    if key not in pin["counts"]:
+        die_env(
+            f"the pin {PIN}: 'counts' has no {key!r} entry — the pin is MALFORMED and cannot be "
+            f"trusted. counts.{key} is the backstop that catches a re-pin which updates the hashes "
+            "and the signed member list but not the counts; if it is absent the gate would silently "
+            "stop checking the size of that list altogether, which is how a pass gets bought rather "
+            "than earned. DO NOT 'fix' this by regenerating the pin: a pin is only regenerated from "
+            "a governed surface the HITL has SIGNED. Restore the pin from git instead."
+        )
+    declared = pin["counts"][key]
+    if isinstance(declared, bool) or not isinstance(declared, int):
+        die_env(
+            f"the pin {PIN}: counts.{key} is {declared!r}, which is not an integer — the pin is "
+            "MALFORMED and cannot be trusted. A non-integer count can be compared neither against "
+            "the pinned member list nor against the file, so it would silently weaken this gate to "
+            "the same degree as deleting it. DO NOT 'fix' this by regenerating the pin unless the "
+            "HITL has signed the surface the new pin would record; restore it from git instead."
+        )
+
+# Deliberately permissive, and the ONLY permissive reads left in this file:
+# 'pinned_at_commit_short' and 'ac' are prose for the failure message and are not
+# part of the predicate, so a pin missing them still gates correctly (it just
+# says "pinned at ?"). Every field the predicate actually READS is validated
+# above and then indexed strictly, so no check can be skipped by omission.
 WHERE = f"pinned at {pin.get('pinned_at_commit_short', '?')} under {pin.get('ac', 'the pre-sign')}"
 
 # (d) on the PIN: a re-pin may not widen or rename the recovery denylist.
@@ -192,10 +243,11 @@ if pin["recovery_denylist"] != REQ_054:
         "not something a re-pin can change: the recovery denylist is five names."
     )
 
-# (c) on the PIN: internally inconsistent pin (lists vs its own counts).
+# (c) on the PIN: internally inconsistent pin (lists vs its own counts). Every
+# count is present and an int by the validation above, so this never skips.
 for key in LIST_KEYS:
-    declared = pin["counts"].get(key)
-    if declared is not None and declared != len(pin[key]):
+    declared = pin["counts"][key]
+    if declared != len(pin[key]):
         fail(
             f"{PIN} is internally inconsistent: counts.{key} says {declared} but its {key!r} list "
             f"holds {len(pin[key])} member(s) — a botched re-pin, not a usable signature record."
@@ -271,9 +323,12 @@ if data is not None:
     # (c) counts, asserted against the pin's own counts block as well as (b), so
     # a same-hash-different-meaning or partially-updated pin is still caught.
     for key in LIST_KEYS:
-        declared = pin["counts"].get(key)
+        declared = pin["counts"][key]
         got = data.get(key)
-        if declared is None or not isinstance(got, list):
+        if not isinstance(got, list):
+            # (b) above has ALREADY failed this key by name; counting a non-list
+            # would add nothing. This is the one remaining `continue`, and it
+            # cannot hide anything: it is unreachable without a recorded failure.
             continue
         if len(got) != declared:
             members_identical = False
@@ -332,8 +387,8 @@ if failures:
 
 print(
     f"ok    governed-surface-pin: {FILE} matches the {pin.get('ac', 'pre-signed')} pin "
-    f"({pin['counts'].get('allowlist')} allowlist / {pin['counts'].get('core')} core / "
-    f"{pin['counts'].get('recovery_denylist')} recovery_denylist, {WHERE})"
+    f"({pin['counts']['allowlist']} allowlist / {pin['counts']['core']} core / "
+    f"{pin['counts']['recovery_denylist']} recovery_denylist, {WHERE})"
 )
 PY
 RC=$?
