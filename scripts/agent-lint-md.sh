@@ -34,6 +34,12 @@ fi
 # Pure bash/grep; no external binary, so this leg has no absent-tool skip path.
 run_capped lint-plans-status "$SCRIPT_DIR/lint-plans-status.sh"
 
+# T1c (DOC-HYGIENE-2): the master's §6 findings register must not mint two
+# entries under one `F-n` id — an ambiguous id silently breaks every citation of
+# it (a duplicate F-11 did exactly that for four weeks). Same class of guard as
+# the leg above: pure bash/awk, no external binary, so no absent-tool skip path.
+run_capped lint-findings "$SCRIPT_DIR/lint-findings.sh"
+
 # docs/** structural lint. The repo .markdownlint-cli2.jsonc IGNORES docs/** (it is
 # otherwise gated only by `mkdocs build --strict`, which does NOT enforce markdownlint
 # style). agent-lint-docs.sh lints docs/** with the same .markdownlint.jsonc rules via
