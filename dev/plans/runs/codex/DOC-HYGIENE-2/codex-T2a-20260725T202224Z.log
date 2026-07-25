@@ -1,0 +1,1527 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f9af1-7ad4-7c81-8d57-5426c377d8ac
+--------
+user
+changes against '4884366621a2ff3fcefdd166707077d0b94dcba8'
+exec
+/bin/bash -lc "cat MEMORY.md 2>/dev/null || true && find . -maxdepth 1 -name 'feedback_*.md' -print -exec cat {} \\;" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+exec
+/bin/bash -lc 'git diff --stat 4884366621a2ff3fcefdd166707077d0b94dcba8 && git diff --name-only 4884366621a2ff3fcefdd166707077d0b94dcba8' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+ .github/workflows/ci.yml                           |  21 ++
+ dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md       |   2 +-
+ dev/plans/release-state-0.8.20.json                | 227 +++++++++++++
+ dev/plans/runs/STATUS-0.8.20.md                    |   2 +-
+ .../runs/STEWARD-SESSION-HANDOFF-2026-07-24-A.md   |   3 +-
+ scripts/agent-lint-md.sh                           |   9 +
+ scripts/agent-test.sh                              |   6 +
+ scripts/check-release-state-views.sh               | 338 ++++++++++++++++++
+ scripts/tests/test_check_release_state_views.sh    | 377 +++++++++++++++++++++
+ 9 files changed, 982 insertions(+), 3 deletions(-)
+.github/workflows/ci.yml
+dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md
+dev/plans/release-state-0.8.20.json
+dev/plans/runs/STATUS-0.8.20.md
+dev/plans/runs/STEWARD-SESSION-HANDOFF-2026-07-24-A.md
+scripts/agent-lint-md.sh
+scripts/agent-test.sh
+scripts/check-release-state-views.sh
+scripts/tests/test_check_release_state_views.sh
+
+exec
+/bin/bash -lc 'git diff --find-renames --find-copies 4884366621a2ff3fcefdd166707077d0b94dcba8 -- .github/workflows/ci.yml scripts/agent-lint-md.sh scripts/agent-test.sh scripts/check-release-state-views.sh scripts/tests/test_check_release_state_views.sh' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 684d6c80..c1083f69 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -464,6 +464,27 @@ jobs:
+       - name: Recurrence guard for the gate itself (fixture arms)
+         run: bash scripts/tests/test_lint_plan_anchors.sh
+ 
++  # DOC-HYGIENE-2 T2a — the always-on single-writer release-state backstop.
++  #
++  # Deliberately carries NO `if:` and NO `needs:`, for the same reason as
++  # board-currency / ledger-integrity / plan-anchors above. The push that
++  # invalidates a generated release-state view is a LANDING push (a slice merges,
++  # SCHEMA moves, the next slice changes) — i.e. a code push, which the
++  # `markdownlint` job's `docs_only` gate excludes by construction. A currency
++  # gate that cannot run on the push that makes the fact wrong is decorative.
++  #
++  # Default (depth-1) checkout is sufficient: the predicate reads working-tree
++  # files only and walks no history.
++  release-state-views:
++    runs-on: ubuntu-latest
++    timeout-minutes: 5
++    steps:
++      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
++      - name: Release-state generated views are current (DOC-HYGIENE-2 T2a)
++        run: bash scripts/check-release-state-views.sh
++      - name: Recurrence guard for the gate itself (fixture arms)
++        run: bash scripts/tests/test_check_release_state_views.sh
++
+   # mkdocs --strict is the broader CI gate beyond agent-verify (per AGENTS.md §3).
+   # Intentionally NOT gated on docs_only: it must run for docs/** changes (the
+   # fast path) AND alongside code changes, exactly as before.
+diff --git a/scripts/agent-lint-md.sh b/scripts/agent-lint-md.sh
+index 4a9a9e87..e851cf81 100755
+--- a/scripts/agent-lint-md.sh
++++ b/scripts/agent-lint-md.sh
+@@ -51,6 +51,15 @@ run_capped lint-findings "$SCRIPT_DIR/lint-findings.sh"
+ # markdownlint job never sees.
+ run_capped lint-plan-anchors "$SCRIPT_DIR/lint-plan-anchors.sh" --quiet
+ 
++# T2a (DOC-HYGIENE-2): release state has ONE writer — dev/plans/release-state-*.json
++# — and the prose restatements of it are marker-delimited GENERATED regions. This
++# leg regenerates every region and diffs it against the document, so a hand-edit
++# inside the markers, or a fact changed in the state file without a regenerate,
++# both go red. (Release state used to be narrated across a 5-12 file fan-out with
++# nothing checking the copies agreed; one reconciliation commit touched 7 files.)
++# Pure bash + python3, and python3 absent is a hard failure, not a skip (TC-37).
++run_capped check-release-state-views "$SCRIPT_DIR/check-release-state-views.sh" --quiet
++
+ # docs/** structural lint. The repo .markdownlint-cli2.jsonc IGNORES docs/** (it is
+ # otherwise gated only by `mkdocs build --strict`, which does NOT enforce markdownlint
+ # style). agent-lint-docs.sh lints docs/** with the same .markdownlint.jsonc rules via
+diff --git a/scripts/agent-test.sh b/scripts/agent-test.sh
+index 3f652182..e1f97e09 100755
+--- a/scripts/agent-test.sh
++++ b/scripts/agent-test.sh
+@@ -90,6 +90,12 @@ run_capped test-plans-status-frontmatter bash scripts/tests/test_plans_status_fr
+ # here is not vacuous. RED fixtures built inline under mktemp -d.
+ run_capped test-lint-plan-anchors bash scripts/tests/test_lint_plan_anchors.sh
+ 
++# T2a: recurrence guard for the single-writer release-state file and its
++# marker-delimited generated views — regenerate-and-diff, marker well-formedness,
++# the orphan-marker confinement rule, and the TC-37 zero-blocks hard fail. RED
++# fixtures built inline under mktemp -d; also asserts the CI job is always-on.
++run_capped test-check-release-state-views bash scripts/tests/test_check_release_state_views.sh
++
+ # Markdown generators (shell): context-clarity.sh / memory-clarity.sh emit
+ # gate-compliant markdown. Their output trees (and the dev/plans/runs/** reports
+ # from the Python generators) are markdownlint-ignored, so the normal md gate never
+diff --git a/scripts/check-release-state-views.sh b/scripts/check-release-state-views.sh
+new file mode 100755
+index 00000000..f7373a3b
+--- /dev/null
++++ b/scripts/check-release-state-views.sh
+@@ -0,0 +1,338 @@
++#!/usr/bin/env bash
++# scripts/check-release-state-views.sh — T2a enforcement (DOC-HYGIENE-2):
++# SINGLE-WRITER RELEASE STATE + GENERATED VIEWS.
++#
++# ---------------------------------------------------------------------------
++# WHY (measured, not hypothetical)
++# ---------------------------------------------------------------------------
++# 0.8.20's release state — which slices have landed and at which SHAs, the
++# SCHEMA version, which slice is next, the AC status, which decisions are ruled
++# — was narrated across a 5-12 file write-side fan-out, and NOTHING checked that
++# the copies agreed. One reconciliation commit (b70629e5) had to touch SEVEN
++# files to bring them back into line, and the live board is ~79 KB: nobody reads
++# it whole, so a copy can sit wrong for weeks without anyone noticing.
++#
++# The remedy is the standing rule's remedy — fix the tooling so it cannot recur
++# for anyone, rather than writing a "remember to update all seven" note:
++#
++#   * ONE machine-readable state file per live release owns the facts:
++#     dev/plans/release-state-<version>.json.
++#   * Restatements of those facts in prose become MARKER-DELIMITED GENERATED
++#     REGIONS, rendered from that file.
++#   * This gate regenerates every region into a temp buffer and DIFFS it against
++#     what is actually in the document. Any difference is a hard failure — so a
++#     hand-edit of a view goes red, and a fact changed in the state file without
++#     a regenerate goes red too.
++#
++# ---------------------------------------------------------------------------
++# WHAT IT ENFORCES (four rules + one guard)
++# ---------------------------------------------------------------------------
++# RULE 1 — REGENERATE-AND-DIFF. For every view a state file declares, the bytes
++#   between its BEGIN and END markers must equal the bytes the renderer produces
++#   from that state file. Not a heuristic, not a wording check: byte equality.
++#
++# RULE 2 — MARKERS MUST BE WELL-FORMED AND PRESENT. A declared view whose BEGIN
++#   or END marker is missing, duplicated, or out of order is a FAILURE, never a
++#   skip. A view that silently stops being checked is worse than no view.
++#
++# RULE 3 — NO ORPHAN MARKERS (the confinement rule). Every
++#   `BEGIN GENERATED release-state:` marker anywhere in the worktree's markdown
++#   must belong to a view some state file declares. This is what mechanically
++#   holds the HITL pre-sign's "generated regions are confined to exactly the
++#   named locations, nothing else": a marker added anywhere else fails.
++#
++# RULE 4 — EVERY DECLARED VIEW MUST HAVE A RENDERER. A view id this script does
++#   not know how to render cannot be checked, so it is a failure rather than a
++#   silently-unchecked region.
++#
++# VACUOUS-PASS GUARD (TC-37 — this repo's named failure class: a gate that
++#   reports green without having run). If ZERO state files are discovered, or
++#   ZERO generated blocks are checked, the checking loop never executes and this
++#   script would exit 0 having vouched for nothing. Both are HARD failures.
++#   This is the same hole that let a genuinely-red `main` read green for three
++#   weeks when markdownlint-cli2 was absent.
++#
++# ---------------------------------------------------------------------------
++# WHAT IS *NOT* GENERATED (deliberate, and load-bearing)
++# ---------------------------------------------------------------------------
++# The three fenced regions are SUB-REGIONS of their locations, not whole
++# sections. The surrounding prose — narrative, rationale, cross-references,
++# history — stays hand-written and OUTSIDE the markers, untouched. A renderer
++# cannot plausibly re-derive judgement prose, and pretending otherwise would
++# mean laundering that prose through a JSON string, which buys nothing. Only
++# mechanically-derivable fact restatements are fenced. Removing the marker
++# comments restores the documents exactly, byte for byte: the fencing is fully
++# reversible and deletes nothing.
++#
++# ---------------------------------------------------------------------------
++# USAGE
++# ---------------------------------------------------------------------------
++#   scripts/check-release-state-views.sh            # check (default); exit 1 on drift
++#   scripts/check-release-state-views.sh --write    # regenerate the regions in place
++#   scripts/check-release-state-views.sh --quiet    # check, suppress the ok line
++#
++# Exit: 0 = every generated region matches its render (and >=1 state file and
++#           >=1 block were seen);
++#       1 = drift, a malformed/missing/orphan marker, an unknown view id, or a
++#           vacuous scan;
++#       2 = usage error / the gate could not run.
++set -euo pipefail
++cd "$(git rev-parse --show-toplevel)"
++
++MODE="check"
++QUIET=0
++while [ $# -gt 0 ]; do
++  case "$1" in
++    --write) MODE="write"; shift ;;
++    --check) MODE="check"; shift ;;
++    --quiet) QUIET=1; shift ;;
++    *) printf 'check-release-state-views: unknown arg %q\n' "$1" >&2; exit 2 ;;
++  esac
++done
++
++# `python3` carries the JSON parse + the byte-exact region diff. If it is absent
++# the gate cannot run — and a gate that cannot run must fail loudly, never skip
++# (TC-37). Same posture as lint-plan-anchors.sh's perl dependency.
++if ! command -v python3 >/dev/null 2>&1; then
++  echo "FAIL check-release-state-views: python3 not found; the state-file parser and" >&2
++  echo "  the byte-exact region diff cannot run. A gate that cannot run must not" >&2
++  echo "  report a pass (TC-37)." >&2
++  exit 2
++fi
++
++MODE="$MODE" QUIET="$QUIET" python3 - <<'PY'
++import glob, json, os, sys
++
++MODE  = os.environ["MODE"]
++QUIET = os.environ["QUIET"] == "1"
++
++BEGIN = "<!-- BEGIN GENERATED release-state:{release}:{vid} -->"
++END   = "<!-- END GENERATED release-state:{release}:{vid} -->"
++
++# Bare BEGIN-marker prefix, used by the RULE-3 orphan scan. The scan reads only
++# `*.md`, so this script's own source (a `.sh`) is never a false positive.
++MARKER_PREFIX = "<!-- BEGIN GENERATED release-state:"
++
++fail = 0
++def bad(msg):
++    global fail
++    fail = 1
++    sys.stderr.write(msg.rstrip("\n") + "\n")
++
++# ---------------------------------------------------------------------------
++# Renderers. One per view id. Each takes the parsed state dict and returns the
++# EXACT bytes that must sit between that view's markers.
++#
++# These are templates over FACTS, which is the whole point: the connective text
++# is literal, every varying part comes from the state file. If a template can no
++# longer reproduce the document, the honest move is to widen the fact model or
++# narrow the region — never to paste the prose into the JSON.
++# ---------------------------------------------------------------------------
++
++def _by_slice(st):
++    return {int(e["slice"]): e for e in st["ladder"]}
++
++def _and_join(items):
++    """`[20]` -> "20"; `[20, 25]` -> "20 and 25"; `[20, 25, 30]` -> "20, 25 and 30"."""
++    items = [str(i) for i in items]
++    if len(items) <= 1:
++        return "".join(items)
++    return ", ".join(items[:-1]) + " and " + items[-1]
++
++def render_master_ladder_progress(st):
++    """master §4, the 0.8.20 row: landed slices + SHAs, SCHEMA, remaining ladder.
++
++    Fenced sub-region only. The `**✅ LADDER PROGRESS (F-32, verified from git @
++    ...):` lead-in and the closing `**` stay OUTSIDE the markers: the F-n
++    reference is a findings-register citation and is deliberately not placed
++    under generation."""
++    by = _by_slice(st)
++    landed = " · ".join("%d (`%s`)" % (n, by[n]["sha"]) for n in st["landed"])
++    ladder = " → ".join(str(n) for n in st["remaining_ladder"])
++    return ("Slices %s are all LANDED on `origin/main`; SCHEMA is %d; "
++            "remaining ladder = %s." % (landed, st["schema_version"], ladder))
++
++def render_status_unblocks(st):
++    """STATUS §1 `**Unblocks**` row: what is unblocked, by what, and the
++    publish-precondition + AC sign-off status."""
++    by   = _by_slice(st)
++    ub   = st["unblocked"]
++    src  = st["unblocked_by"]
++    pre  = by[int(st["publish_precondition_slice"])]
++    gate = st["acceptance"]["publish_gate"]
++    return ("**Slices %s are NOW UNBLOCKED** — %s (%s) now exists. "
++            "Slice %d (%s) depends on %s. "
++            "**Publish remains blocked on %s**, which is **still %s** — "
++            "sign-off is gated to Slice %d (%s)."
++            % (_and_join(ub), src["requirement"], src["gloss"],
++               pre["slice"], pre["short"], "/".join(str(d) for d in pre["depends_on"]),
++               gate["ac"], gate["state_word"], gate["sign_off_slice"], gate["board_ref"]))
++
++def render_handoff_next_step(st):
++    """Steward hand-off ★ IMMEDIATE NEXT STEP: landed chain + next slice.
++
++    The leading newline is NOT cosmetic. This region starts a markdown
++    PARAGRAPH, and CommonMark treats a line that BEGINS with `<!--` as an HTML
++    block that swallows the whole line — so an inline BEGIN marker in front of
++    the sentence would stop the sentence rendering as markdown. The marker
++    therefore sits on its own line and the region content starts with the
++    newline that follows it."""
++    chain = " → ".join(str(n) for n in st["landed"])
++    return ("\n**The %s ladder is between slices: %s are all LANDED; %d is next.**"
++            % (st["release"], chain, st["next_slice"]))
++
++RENDERERS = {
++    "master-ladder-progress": render_master_ladder_progress,
++    "status-unblocks":        render_status_unblocks,
++    "handoff-next-step":      render_handoff_next_step,
++}
++
++# ---------------------------------------------------------------------------
++# Discover state files.
++# ---------------------------------------------------------------------------
++state_paths = sorted(glob.glob("dev/plans/release-state-*.json"))
++if not state_paths:
++    bad("FAIL check-release-state-views: ZERO release-state files discovered under\n"
++        "  dev/plans/release-state-*.json. The check loop never ran, so a pass here\n"
++        "  would vouch for nothing (TC-37 vacuous-pass guard).")
++    sys.exit(1)
++
++blocks_checked = 0
++rewritten      = []
++declared       = set()   # (path, release, view-id) actually declared somewhere
++
++for sp in state_paths:
++    try:
++        with open(sp, encoding="utf-8") as fh:
++            st = json.load(fh)
++    except Exception as exc:                                  # noqa: BLE001
++        bad("FAIL %s: not parseable as JSON — %s" % (sp, exc))
++        continue
++
++    release = st.get("release")
++    views   = st.get("generated_views")
++    if not release or not isinstance(views, list):
++        bad("FAIL %s: a release-state file must carry a `release` string and a\n"
++            "  `generated_views` list naming the regions rendered from it." % sp)
++        continue
++    if not views:
++        bad("FAIL %s: `generated_views` is EMPTY, so this state file owns no region\n"
++            "  and nothing about it is checkable. A state file that gates nothing is a\n"
++            "  vacuous pass, not a pass (TC-37)." % sp)
++        continue
++
++    for view in views:
++        vid  = view.get("id")
++        path = view.get("file")
++        if not vid or not path:
++            bad("FAIL %s: a `generated_views` entry needs both `id` and `file`." % sp)
++            continue
++        if vid not in RENDERERS:
++            bad("FAIL %s: view `%s` has no renderer in check-release-state-views.sh, so\n"
++                "  its region cannot be checked. An unrenderable view is a failure, not\n"
++                "  an unchecked region." % (sp, vid))
++            continue
++        if not os.path.isfile(path):
++            bad("FAIL %s: view `%s` names `%s`, which is not a file in the worktree."
++                % (sp, vid, path))
++            continue
++
++        b = BEGIN.format(release=release, vid=vid)
++        e = END.format(release=release, vid=vid)
++        declared.add((path, b))
++
++        with open(path, encoding="utf-8") as fh:
++            doc = fh.read()
++
++        if doc.count(b) != 1 or doc.count(e) != 1:
++            bad("FAIL %s: view `%s` expects EXACTLY ONE BEGIN and ONE END marker; found\n"
++                "  %d BEGIN and %d END. Markers:\n    %s\n    %s"
++                % (path, vid, doc.count(b), doc.count(e), b, e))
++            continue
++        i = doc.index(b) + len(b)
++        j = doc.index(e)
++        if j < i:
++            bad("FAIL %s: view `%s` has its END marker BEFORE its BEGIN marker."
++                % (path, vid))
++            continue
++
++        have = doc[i:j]
++        want = RENDERERS[vid](st)
++        blocks_checked += 1
++
++        if have == want:
++            continue
++
++        if MODE == "write":
++            with open(path, "w", encoding="utf-8") as fh:
++                fh.write(doc[:i] + want + doc[j:])
++            rewritten.append("%s :: %s" % (path, vid))
++            continue
++
++        bad("FAIL %s: generated region `%s` is STALE — it does not match what\n"
++            "  %s renders. Either the document was hand-edited inside the markers, or a\n"
++            "  fact changed in the state file and the region was never regenerated.\n"
++            "  IN THE DOCUMENT:\n    %r\n"
++            "  RENDERED FROM THE STATE FILE:\n    %r\n"
++            "  Fix: edit the FACT in %s, then run\n"
++            "    scripts/check-release-state-views.sh --write\n"
++            % (path, vid, sp, have, want, sp))
++
++# ---------------------------------------------------------------------------
++# RULE 3 — orphan-marker scan (the confinement rule).
++# ---------------------------------------------------------------------------
++PRUNE = {".git", "node_modules", "target", ".venv", "site", "dist", ".cache", ".wake"}
++for root, dirs, files in os.walk("."):
++    dirs[:] = [d for d in dirs if d not in PRUNE]
++    for name in files:
++        if not name.endswith(".md"):
++            continue
++        p = os.path.relpath(os.path.join(root, name), ".")
++        try:
++            with open(p, encoding="utf-8", errors="replace") as fh:
++                text = fh.read()
++        except OSError:
++            continue
++        if MARKER_PREFIX not in text:
++            continue
++        for line in text.split("\n"):
++            k = line.find(MARKER_PREFIX)
++            while k != -1:
++                end = line.find("-->", k)
++                if end == -1:
++                    bad("FAIL %s: unterminated generated-region BEGIN marker." % p)
++                    break
++                marker = line[k:end + 3]
++                if (p, marker) not in declared:
++                    bad("FAIL %s: ORPHAN generated-region marker\n    %s\n"
++                        "  No release-state file declares this view for this file. Generated\n"
++                        "  regions are confined to the locations a state file names; a marker\n"
++                        "  anywhere else is unowned and unchecked." % (p, marker))
++                k = line.find(MARKER_PREFIX, end + 3)
++
++# ---------------------------------------------------------------------------
++# Vacuity guard + report.
++# ---------------------------------------------------------------------------
++if blocks_checked == 0:
++    bad("FAIL check-release-state-views: ZERO generated blocks were checked across %d\n"
++        "  release-state file(s). The regenerate-and-diff loop never executed, so a pass\n"
++        "  here would vouch for nothing (TC-37 vacuous-pass guard)." % len(state_paths))
++
++if fail:
++    sys.exit(1)
++
++if MODE == "write":
++    if rewritten:
++        for r in rewritten:
++            print("wrote %s" % r)
++    else:
++        print("ok    check-release-state-views: %d generated block(s) already current"
++              % blocks_checked)
++    sys.exit(0)
++
++if not QUIET:
++    sys.stderr.write("ok    check-release-state-views: %d generated block(s) across %d "
++                     "release-state file(s) match their render\n"
++                     % (blocks_checked, len(state_paths)))
++sys.exit(0)
++PY
+diff --git a/scripts/tests/test_check_release_state_views.sh b/scripts/tests/test_check_release_state_views.sh
+new file mode 100755
+index 00000000..5ca31280
+--- /dev/null
++++ b/scripts/tests/test_check_release_state_views.sh
+@@ -0,0 +1,377 @@
++#!/usr/bin/env bash
++# scripts/tests/test_check_release_state_views.sh — T2a recurrence guard
++# (DOC-HYGIENE-2): the single-writer release-state file + its generated views.
++#
++# The incident this closes: 0.8.20's release state — landed slices + SHAs, the
++# SCHEMA version, the next slice, AC status, ruled/unruled decisions — was
++# narrated across a 5-12 file write-side fan-out with NOTHING checking that the
++# copies agreed. One reconciliation commit (b70629e5) had to touch SEVEN files,
++# and the live board is ~79 KB, so nobody reads it whole and a wrong copy can
++# sit unnoticed for weeks.
++#
++# Predicate under test (see scripts/check-release-state-views.sh for the full
++# statement): for every view a `dev/plans/release-state-*.json` file declares,
++# the bytes between its BEGIN/END markers must EQUAL the bytes the renderer
++# produces from that state file — plus marker well-formedness, the orphan-marker
++# confinement rule, an unknown-view-id failure, and the TC-37 vacuous-pass guard.
++#
++# RED-first: the predicate passes on the real repo today, so asserting against
++# the real checkout alone would prove nothing (a `true` script would pass it).
++# Every failure arm below runs against a purpose-built fixture repo in which the
++# fault is deliberately planted, so an arm can only go green because the
++# predicate actually fired. The real-repo arm is the regression half of the pair.
++#
++# NON-VACUITY: the suite honours $GATE_UNDER_TEST, so a MUTANT gate (one whose
++# region diff always compares equal) can be pointed at it. That mutant turns
++# this suite RED — which is the evidence that a green here is load-bearing
++# rather than a script that merely exits 0.
++#
++# Isolation: fixtures are throwaway git repos under mktemp -d (the gate does
++# `cd "$(git rev-parse --show-toplevel)"`, so each fixture needs to BE a repo).
++# Nothing here writes into the real checkout.
++set -euo pipefail
++
++SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
++GATE="${GATE_UNDER_TEST:-$REPO_ROOT/scripts/check-release-state-views.sh}"
++CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
++
++FAILED=0
++pass() { printf 'PASS  %s\n' "$1"; }
++fail() { printf 'FAIL  %s\n' "$1" >&2; FAILED=$((FAILED + 1)); }
++
++TMPROOT="$(mktemp -d)"
++cleanup() {
++  case "$TMPROOT" in
++    "${TMPDIR:-/tmp}"/*|/tmp/*) rm -rf "$TMPROOT" ;;
++    *) printf 'refusing to remove unexpected temp path: %s\n' "$TMPROOT" >&2 ;;
++  esac
++}
++trap cleanup EXIT
++
++FIX="$TMPROOT/repo"
++OUT=""
++RC=0
++
++B_MASTER='<!-- BEGIN GENERATED release-state:9.9.9:master-ladder-progress -->'
++E_MASTER='<!-- END GENERATED release-state:9.9.9:master-ladder-progress -->'
++B_HANDOFF='<!-- BEGIN GENERATED release-state:9.9.9:handoff-next-step -->'
++E_HANDOFF='<!-- END GENERATED release-state:9.9.9:handoff-next-step -->'
++
++# A minimal but REAL fixture: one state file, two fenced views in two documents,
++# each region byte-identical to what the renderers emit. Every arm mutates one
++# thing from this baseline, so a red arm isolates exactly one fault.
++setup_fixture() {
++  rm -rf "$FIX"
++  mkdir -p "$FIX/dev/plans/runs" "$FIX/scripts"
++  cp "$GATE" "$FIX/scripts/check-release-state-views.sh"
++  chmod +x "$FIX/scripts/check-release-state-views.sh"
++  (cd "$FIX" && git init -q && git config user.email t@example.com && git config user.name t)
++
++  cat >"$FIX/dev/plans/release-state-9.9.9.json" <<'EOF'
++{
++  "release": "9.9.9",
++  "schema_version": 42,
++  "ladder": [
++    {"slice": 0,  "short": "X0",   "depends_on": [],          "status": "LANDED",      "sha": "aaaa1111"},
++    {"slice": 5,  "short": "R-A",  "depends_on": [0],         "status": "LANDED",      "sha": "bbbb2222"},
++    {"slice": 10, "short": "R-B",  "depends_on": [5],         "status": "UNBLOCKED",   "sha": null},
++    {"slice": 20, "short": "R-C",  "depends_on": [5],         "status": "UNBLOCKED",   "sha": null},
++    {"slice": 30, "short": "H7",   "depends_on": [5, 10, 20], "status": "NOT_STARTED", "sha": null},
++    {"slice": 40, "short": "PUB",  "depends_on": [30],        "status": "NOT_STARTED", "sha": null}
++  ],
++  "landed": [0, 5],
++  "next_slice": 10,
++  "remaining_ladder": [10, 20, 30, 40],
++  "unblocked": [10, 20],
++  "unblocked_by": {"requirement": "R-A", "gloss": "the thing"},
++  "publish_precondition_slice": 30,
++  "acceptance": {
++    "publish_gate": {
++      "ac": "AC-999", "minted": false, "signed": false, "state_word": "unsigned",
++      "sign_off_slice": 40, "board_ref": "§4 #1"
++    }
++  },
++  "generated_views": [
++    {"id": "master-ladder-progress", "file": "dev/plans/master.md"},
++    {"id": "handoff-next-step",      "file": "dev/plans/runs/handoff.md"}
++  ]
++}
++EOF
++
++  cat >"$FIX/dev/plans/master.md" <<EOF
++# Master
++
++Prose that is NOT generated and must never be touched.
++
++| Release | Notes |
++|---|---|
++| **9.9.9** | Lead-in prose. **✅ LADDER PROGRESS: ${B_MASTER}Slices 0 (\`aaaa1111\`) · 5 (\`bbbb2222\`) are all LANDED on \`origin/main\`; SCHEMA is 42; remaining ladder = 10 → 20 → 30 → 40.${E_MASTER}** Trailing prose. |
++EOF
++
++  cat >"$FIX/dev/plans/runs/handoff.md" <<EOF
++# Hand-off
++
++## Next step
++
++${B_HANDOFF}
++**The 9.9.9 ladder is between slices: 0 → 5 are all LANDED; 10 is next.**${E_HANDOFF} More prose.
++EOF
++}
++
++run_gate() {
++  set +e
++  OUT="$(cd "$FIX" && ./scripts/check-release-state-views.sh "$@" 2>&1)"
++  RC=$?
++  set -e
++}
++
++# --- Arm 0: the BASELINE fixture is GREEN ----------------------------------
++# Without this, every RED arm below could be passing for an unrelated reason.
++setup_fixture
++run_gate
++if [ "$RC" -eq 0 ]; then
++  pass "baseline fixture — every fenced region matches its render (exit 0)"
++else
++  fail "arm 0 (baseline green): rc=$RC out=$OUT"
++fi
++
++# --- Arm 1: STALE BLOCK — a hand-edit INSIDE the markers -------------------
++# The primary failure this gate exists to catch: somebody "just fixes" a SHA in
++# the prose and the state file no longer agrees.
++setup_fixture
++perl -0777 -pi -e 's/bbbb2222/deadbeef/' "$FIX/dev/plans/master.md"
++run_gate
++if [ "$RC" -ne 0 ] && grep -q 'is STALE' <<<"$OUT" && grep -q 'master-ladder-progress' <<<"$OUT"; then
++  pass "stale block — a hand-edit inside the markers HARD-fails and names the block"
++else
++  fail "arm 1 (stale block): rc=$RC out=$OUT"
++fi
++
++# --- Arm 1b: the failure message shows BOTH sides of the diff --------------
++# A gate that says "stale" without showing what differs makes the fix a guess.
++if grep -q 'IN THE DOCUMENT' <<<"$OUT" && grep -q 'RENDERED FROM THE STATE FILE' <<<"$OUT"; then
++  pass "the stale message prints the document bytes AND the rendered bytes"
++else
++  fail "arm 1b (diagnostic shows both sides): out=$OUT"
++fi
++
++# --- Arm 2: STATE DRIFT — a fact changes and nothing is regenerated --------
++# The other direction of the same seam, and the one the fan-out actually
++# produced: the single writer is updated, the restatements are not.
++setup_fixture
++perl -0777 -pi -e 's/"schema_version": 42/"schema_version": 43/' \
++  "$FIX/dev/plans/release-state-9.9.9.json"
++run_gate
++if [ "$RC" -ne 0 ] && grep -q 'is STALE' <<<"$OUT" && grep -q 'SCHEMA is 43' <<<"$OUT"; then
++  pass "state drift — a fact changed without a regenerate HARD-fails"
++else
++  fail "arm 2 (state drift): rc=$RC out=$OUT"
++fi
++
++# --- Arm 2b: --write repairs the drift, and --check is then green ----------
++run_gate --write
++if [ "$RC" -eq 0 ] && grep -q 'SCHEMA is 43' "$FIX/dev/plans/master.md"; then
++  run_gate
++  if [ "$RC" -eq 0 ]; then
++    pass "--write regenerates in place; --check is green immediately after"
++  else
++    fail "arm 2b (check after write): rc=$RC out=$OUT"
++  fi
++else
++  fail "arm 2b (--write): rc=$RC out=$OUT"
++fi
++
++# --- Arm 2c: --write is a NO-OP on an already-current tree -----------------
++# Reproduction proof in miniature: if regenerating a current document changed
++# it, the renderer would not be reproducing what it claims to own.
++setup_fixture
++BEFORE="$(cat "$FIX/dev/plans/master.md" "$FIX/dev/plans/runs/handoff.md")"
++run_gate --write
++AFTER="$(cat "$FIX/dev/plans/master.md" "$FIX/dev/plans/runs/handoff.md")"
++if [ "$RC" -eq 0 ] && [ "$BEFORE" = "$AFTER" ]; then
++  pass "--write on a current tree is byte-for-byte a no-op (the renderer reproduces)"
++else
++  fail "arm 2c (write is a no-op): rc=$RC"
++fi
++
++# --- Arm 3: MISSING MARKER — a declared view that is not fenced ------------
++# A view that silently stops being checked is worse than no view at all.
++setup_fixture
++perl -0777 -pi -e 's/\Q'"$B_HANDOFF"'\E\n//' "$FIX/dev/plans/runs/handoff.md"
++run_gate
++if [ "$RC" -ne 0 ] && grep -q 'EXACTLY ONE BEGIN and ONE END' <<<"$OUT"; then
++  pass "missing BEGIN marker — a declared-but-unfenced view HARD-fails, never skips"
++else
++  fail "arm 3 (missing marker): rc=$RC out=$OUT"
++fi
++
++# --- Arm 3b: DUPLICATED marker pair ---------------------------------------
++setup_fixture
++{
++  printf '\n%s\n' "$B_HANDOFF"
++  printf 'a second, ambiguous copy%s\n' "$E_HANDOFF"
++} >>"$FIX/dev/plans/runs/handoff.md"
++run_gate
++if [ "$RC" -ne 0 ] && grep -q 'EXACTLY ONE BEGIN and ONE END' <<<"$OUT"; then
++  pass "duplicated markers — an ambiguous region HARD-fails"
++else
++  fail "arm 3b (duplicate markers): rc=$RC out=$OUT"
++fi
++
++# --- Arm 3c: markers in the WRONG ORDER (END before BEGIN) ----------------
++setup_fixture
++cat >"$FIX/dev/plans/runs/handoff.md" <<EOF
++# Hand-off
++
++${E_HANDOFF}
++**The 9.9.9 ladder is between slices: 0 → 5 are all LANDED; 10 is next.**${B_HANDOFF}
++EOF
++run_gate
++if [ "$RC" -ne 0 ] && grep -q 'END marker BEFORE its BEGIN marker' <<<"$OUT"; then
++  pass "inverted markers — END before BEGIN HARD-fails"
++else
++  fail "arm 3c (inverted markers): rc=$RC out=$OUT"
++fi
++
++# --- Arm 4: ORPHAN MARKER — the confinement rule --------------------------
++# This is what mechanically holds "generated regions are confined to the named
++# locations, nothing else". A marker anywhere a state file has not declared is
++# unowned and therefore unchecked, so it must fail.
++setup_fixture
++cat >"$FIX/dev/plans/stray.md" <<EOF
++# Stray
++
++${B_HANDOFF}
++whatever${E_HANDOFF}
++EOF
++run_gate
++if [ "$RC" -ne 0 ] && grep -q 'ORPHAN generated-region marker' <<<"$OUT"; then
++  pass "orphan marker — a generated region outside every declared location HARD-fails"
++else
++  fail "arm 4 (orphan marker): rc=$RC out=$OUT"
++fi
++
++# --- Arm 5: UNKNOWN VIEW ID — declared but unrenderable -------------------
++setup_fixture
++perl -0777 -pi -e 's/"id": "handoff-next-step"/"id": "no-such-renderer"/' \
++  "$FIX/dev/plans/release-state-9.9.9.json"
++run_gate
++if [ "$RC" -ne 0 ] && grep -q 'has no renderer' <<<"$OUT"; then
++  pass "unknown view id — an unrenderable view HARD-fails, not an unchecked region"
++else
++  fail "arm 5 (unknown view id): rc=$RC out=$OUT"
++fi
++
++# --- Arm 5b: a view naming a file that does not exist ---------------------
++setup_fixture
++perl -0777 -pi -e 's{dev/plans/runs/handoff\.md}{dev/plans/runs/gone.md}' \
++  "$FIX/dev/plans/release-state-9.9.9.json"
++run_gate
++if [ "$RC" -ne 0 ] && grep -q 'not a file in the worktree' <<<"$OUT"; then
++  pass "a view naming a nonexistent file HARD-fails"
++else
++  fail "arm 5b (missing target file): rc=$RC out=$OUT"
++fi
++
++# --- Arm 5c: an unparseable state file ------------------------------------
++setup_fixture
++printf 'this is not json\n' >"$FIX/dev/plans/release-state-9.9.9.json"
++run_gate
++if [ "$RC" -ne 0 ] && grep -q 'not parseable as JSON' <<<"$OUT"; then
++  pass "a corrupt state file HARD-fails (it cannot silently stop owning its views)"
++else
++  fail "arm 5c (corrupt state file): rc=$RC out=$OUT"
++fi
++
++# --- Arm 6: TC-37 vacuous-pass guard — ZERO state files -------------------
++setup_fixture
++rm -f "$FIX/dev/plans/release-state-9.9.9.json"
++rm -f "$FIX/dev/plans/master.md" "$FIX/dev/plans/runs/handoff.md"
++run_gate
++if [ "$RC" -ne 0 ] && grep -q 'ZERO release-state files' <<<"$OUT"; then
++  pass "vacuity guard — zero state files discovered -> hard FAIL, not a silent exit 0"
++else
++  fail "arm 6 (zero state files): rc=$RC out=$OUT"
++fi
++
++# --- Arm 6b: TC-37 vacuous-pass guard — ZERO generated blocks -------------
++# The named stop condition: a gate that finds no blocks must hard-fail. With an
++# empty `generated_views` the regenerate-and-diff loop never runs at all, so an
++# exit 0 would be a gate vouching for nothing.
++setup_fixture
++rm -f "$FIX/dev/plans/master.md" "$FIX/dev/plans/runs/handoff.md"
++perl -0777 -pi -e 's/"generated_views": \[.*\]/"generated_views": []/s' \
++  "$FIX/dev/plans/release-state-9.9.9.json"
++run_gate
++if [ "$RC" -ne 0 ] && grep -qE 'ZERO generated blocks|`generated_views` is EMPTY' <<<"$OUT"; then
++  pass "vacuity guard — zero generated blocks checked -> hard FAIL (TC-37)"
++else
++  fail "arm 6b (zero blocks): rc=$RC out=$OUT"
++fi
++
++# --- Arm 7: REVERSIBILITY — removing the markers restores the documents ----
++# Bounding condition 4 of the HITL pre-sign, asserted mechanically rather than
++# by inspection: strip every marker comment and the fixture documents are
++# byte-identical to their unfenced originals.
++setup_fixture
++mkdir -p "$TMPROOT/unfenced"
++for f in dev/plans/master.md dev/plans/runs/handoff.md; do
++  mkdir -p "$TMPROOT/unfenced/$(dirname "$f")"
++  perl -0777 -pe 's/<!-- (?:BEGIN|END) GENERATED release-state:[^>]*-->\n?//g' \
++    "$FIX/$f" >"$TMPROOT/unfenced/$f"
++done
++if grep -q 'Lead-in prose' "$TMPROOT/unfenced/dev/plans/master.md" \
++   && grep -q 'Trailing prose' "$TMPROOT/unfenced/dev/plans/master.md" \
++   && grep -q 'must never be touched' "$TMPROOT/unfenced/dev/plans/master.md" \
++   && ! grep -q 'GENERATED release-state' "$TMPROOT/unfenced/dev/plans/master.md" \
++   && grep -q 'Slices 0 (`aaaa1111`)' "$TMPROOT/unfenced/dev/plans/master.md" \
++   && grep -q 'More prose' "$TMPROOT/unfenced/dev/plans/runs/handoff.md"; then
++  pass "reversibility — stripping the markers leaves the prose AND the fenced content intact"
++else
++  fail "arm 7 (reversibility): stripped documents lost content"
++fi
++
++# --- Arm 8: the REAL repo is green (the regression half) ------------------
++set +e
++REAL_OUT="$("$REPO_ROOT/scripts/check-release-state-views.sh" 2>&1)"
++REAL_RC=$?
++set -e
++if [ "$REAL_RC" -eq 0 ]; then
++  pass "the real checkout's generated regions all reproduce from their state file"
++else
++  fail "arm 8 (real repo green): rc=$REAL_RC out=$REAL_OUT"
++fi
++
++# --- Arm 9: the CI job is ALWAYS-ON, and reuses the shared script ----------
++# Same reasoning as board-currency / ledger-integrity / plan-anchors: the push
++# that breaks a generated view is a LANDING push, which the docs_only fast path
++# excludes by construction. A currency gate that cannot run on the push that
++# invalidates the fact is decorative.
++CI_JOB_BLOCK="$(awk '
++  /^  release-state-views:/ { inblock = 1; print; next }
++  inblock && /^  [A-Za-z0-9_-]+:/ { inblock = 0 }
++  inblock { print }
++' "$CI_YML")"
++
++if [ -n "$CI_JOB_BLOCK" ]; then
++  pass "ci.yml defines a release-state-views job"
++else
++  fail "ci.yml has no release-state-views job"
++fi
++if printf '%s' "$CI_JOB_BLOCK" | grep -q 'scripts/check-release-state-views.sh'; then
++  pass "the CI job runs the SHARED scripts/check-release-state-views.sh"
++else
++  fail "the CI job must invoke scripts/check-release-state-views.sh, not a reimplementation"
++fi
++if printf '%s' "$CI_JOB_BLOCK" | grep -qE '^\s*(if|needs):'; then
++  fail "the release-state-views job must be ALWAYS-ON (no if:/needs: gate); block: $CI_JOB_BLOCK"
++else
++  pass "the release-state-views job is always-on (no if:, no needs:, not docs_only-gated)"
++fi
++
++if [ "$FAILED" -gt 0 ]; then
++  printf '\n%d test(s) failed\n' "$FAILED" >&2
++  exit 1
++fi
++printf '\nAll check-release-state-views tests passed\n'
+
+exec
+/bin/bash -lc 'git diff 4884366621a2ff3fcefdd166707077d0b94dcba8 -- dev/plans/release-state-0.8.20.json dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md dev/plans/runs/STATUS-0.8.20.md dev/plans/runs/STEWARD-SESSION-HANDOFF-2026-07-24-A.md' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+diff --git a/dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md b/dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md
+index c3e69952..3ff0b8cf 100644
+--- a/dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md
++++ b/dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md
+@@ -214,7 +214,7 @@ parallel but pinned to the even line at I-1/I-2 and pins back at I-3 — see §2
+ | **0.8.17 (odd) ⏸ PARKED** | Router hardening / forks *(parked)* | per-feature config wiring · EXP-AF productization · EXP-C/D/E forks | **⏸ PARKED (F-19)** — builds on the ⏸ PARKED 0.8.15 dispatcher; re-open together with 0.8.15 |
+ | **0.8.18 ✅ COMPLETE** (2026-07-09, label-only `bce032a0`) | Production-safety & CI capstone | #5 vector-equivalence self-check (two-stage P1 mean-centered flip=0 / P2 un-centered L2 ε=1e-5; degraded-open `dense_disabled` + query-time typed `VectorEquivalenceMismatch`; **SCHEMA 18→19**) · #11-full publish machinery (x86_64-linux critical path; matrix-tag-gate; resilience-not-atomicity; npm split-topology; **exercised via staging**) | **consumes I-4.** Design review CLEAN (4 codex rounds); D4 floor from the U3 canary (all same-identity legs 0/17280). **DEFECT #4 open-path baseline HITL-approved** (async write invariant). eu7 **no-op basis** (default vector path byte-unchanged; #5 is an additive open-time check). **#11-full is the publish PREREQUISITE for 0.8.20's OPP-12 breaking-pair publish (proven+exercised, not yet fired).** Cross-platform matrix + OOB D3 ONNX-GPU-EP Δ (2/17280, distinct `-onnx` identity) deferred-to-follow-on. **Label-only close (HITL): manifests stay 0.8.9; publish deferred to 0.8.20.** Carry: TC-10 (#5 open-latency), TC-9 (`ort::init` GPU-EP), cross-platform follow-on orchestrator |
+ | **0.8.19 ✅ COMPLETE** (2026-07-10, label-only) | **OPP-12 Phase-1 — lifecycle + id** | existence axis (`pending/active/deleted/purged`; SCHEMA **19→20** existence columns ONLY) · `transition`/`purge` verbs (codex §9 caught a real GDPR-erasure leak → `secure_delete`=ON every open) · **C-2 typed `SearchHit.id` swap** (`u64→IdSpace`; `write_cursor`+`stable_id` subsumed; `to_prefixed()` == prior `stable_id` byte-for-byte ⇒ **no gold-remap**; TC-8) · **X1 py/ts parity GREEN (26/26)** · **AC-074 governed-surface delta HITL-SIGNED** (recovery_denylist unchanged) | **F-19/F-24: OPP-12 Phase-1 DONE; ladder `plan-0.8.19.md` (F-23).** Breaking surface built **label-only** (odd). **Anonymous-node surrogate `logical_id` minting DEFERRED to 0.8.20 (F-23 ruling 1a):** doc-seeded/anonymous hits stay `h:`; C-2 swap total via `l:`/`h:`/`p:` without it → `SearchHit.id` values byte-unchanged. Prereqs met: EXP-S/Cause-A landed, C-1 RATIFIED. Slice-0 X0 design-review + adversarial audit terminal. **Label-only close (HITL Option-A): manifests stay `0.8.9`; publish deferred to 0.8.20 breaking-pair.** Carry: TC-11 (0.8.20 `h:` end-state pin). See **F-24** |
+-| **0.8.20 (even, publish)** | **OPP-12 Phase-2 + erasure completeness + breaking-pair publish** | `ReadView`/read-modes · node-validity (`valid_from`/`valid_until`) · **projection registry (C-1 co-land)** + EAV/property-FTS · `dense_readiness` · surrogate `logical_id` minting **for registry-admitted GOVERNED entities only (F-25)** · **erasure completeness (F-25: shared row-owned projection registry + total projector; `erase_source()` SDK verb; mandatory provenance; WAL/telemetry/op-store)** · X1 parity · **coordinated breaking-pair publish** (manifests **`0.8.9 → 0.8.20`** — first real bump in the line) | **F-19: OPP-12 DONE here** (Memex `0.5.x-successor` pairs). Needs 0.8.18 #11-full matrix ✓; F9 (0.8.16) for `rankable` ✓. Contract: `OPP-12-C1-converged-contract.md`. **✅ F-23 GUARDRAIL / TC-11 DISCHARGED (HITL 2026-07-12, F-25): `h:` end-state = pin A, TERMINAL-FOREVER.** Anonymous/doc-seeded nodes stay `h:<content-hash>` **permanently**; `structural-lifecycle-contract.md §2(ii)` is **OVERRULED**; the anonymous-surrogate leg is **CANCELLED, not deferred** — a surrogate serves ONLY registry-admitted governed entities. **`plan-0.8.20.md` DE-STALED + authored 2026-07-12** (dep-migration content removed → 0.8.22). **RUBRIC-H7 GATE (TC-RUBRIC-2, folded HITL 2026-07-10): the OPP-12 co-land carries a mechanical contract-conformance check — a Pact-style `can-i-deploy` gate verifying as-built code still satisfies the ratified `OPP-12-C1-converged-contract.md` at the co-land, not humans re-reading prose — as a precondition of the breaking-pair publish; an absent-or-failing gate HOLDS the pair. Tracked `dev/steward/agent-rubric-ledger.jsonl` TC-RUBRIC-2; incorporated as plan §3 R-20-H7 / Slice 30.** **BUILD-AUTHORIZED (F-21)**; publish = separate per-`x.y.z` HITL gate. **✅ SLICE-0 X0 SIGNED + LANDED 2026-07-19 (`403eb254`, F-26) — slices 5+ unblocked**; TC-RUBRIC-5 now ENFORCED by `scripts/preflight.sh --landing`, TC-RUBRIC-7 transcripts pinned at `dev/plans/runs/codex/0.8.20/`. **Scope deltas from Slice-0 (no slot/dependency change):** (a) F-27 — the erasure audit trail MUST be DURABLE (HITL: "there must be an auditable record of deletion event"); Slice 5 additionally exempts the erasure-audit collection from `enforce_provenance_retention` (the v4 §3.6 "retained permanently" claim was VERIFIED FALSE); (b) F-28 — R-20-EU7 is CLOSED BY DECISION, not by measurement: ZERO eu7 runs authorized on any backend at any N, so Slice 40 executes NO eu7 gate; (c) F-29 — new ACs mint from AC-079 (AC-077/078 are live IR-1/IR-2 reservations), so the governed-surface delta is AC-079, not "AC-078+"; (d) F-31 — Slice 5's `SourceId` newtype must sweep `PreparedWrite` constructions in `tests/` too. **F-30 (dead publish dry-run guard, red since 0.8.14) is PLACED at Slice 40 (HITL 2026-07-24, F-32).** **✅ LADDER PROGRESS (F-32, verified from git @ `fae276b9`): Slices 0 (`403eb254`) · 5 (`1f8ed8bf`) · 10 (`3cfb3cda`) · 15 (`a2022957`) are all LANDED on `origin/main`; SCHEMA is 24; remaining ladder = 20 → 25 → 30 → 40.** **✅ RUN AUTHORIZED (F-34, HITL 2026-07-25):** the tail runs under a standing Steward mandate — `DOC-HYGIENE-2` → 20 → 25 (**sequential**) → 30 → *(batched surface decision)* → `DOC-HYGIENE-3` → 40. **AC-079 PRE-SIGNED** (pinned to the allowlist content; any diff re-opens it — T1e gate); **§7 prereq-5 Memex co-land readiness CLOSED BY DECISION** — Memex adapts to 0.8.20's surface, **no confirmation is to be sought**, push scope stays fathomdb-only, and the "one side alone is not a release" framing no longer gates the cut. **PUBLISH remains the hard HITL gate.** |
++| **0.8.20 (even, publish)** | **OPP-12 Phase-2 + erasure completeness + breaking-pair publish** | `ReadView`/read-modes · node-validity (`valid_from`/`valid_until`) · **projection registry (C-1 co-land)** + EAV/property-FTS · `dense_readiness` · surrogate `logical_id` minting **for registry-admitted GOVERNED entities only (F-25)** · **erasure completeness (F-25: shared row-owned projection registry + total projector; `erase_source()` SDK verb; mandatory provenance; WAL/telemetry/op-store)** · X1 parity · **coordinated breaking-pair publish** (manifests **`0.8.9 → 0.8.20`** — first real bump in the line) | **F-19: OPP-12 DONE here** (Memex `0.5.x-successor` pairs). Needs 0.8.18 #11-full matrix ✓; F9 (0.8.16) for `rankable` ✓. Contract: `OPP-12-C1-converged-contract.md`. **✅ F-23 GUARDRAIL / TC-11 DISCHARGED (HITL 2026-07-12, F-25): `h:` end-state = pin A, TERMINAL-FOREVER.** Anonymous/doc-seeded nodes stay `h:<content-hash>` **permanently**; `structural-lifecycle-contract.md §2(ii)` is **OVERRULED**; the anonymous-surrogate leg is **CANCELLED, not deferred** — a surrogate serves ONLY registry-admitted governed entities. **`plan-0.8.20.md` DE-STALED + authored 2026-07-12** (dep-migration content removed → 0.8.22). **RUBRIC-H7 GATE (TC-RUBRIC-2, folded HITL 2026-07-10): the OPP-12 co-land carries a mechanical contract-conformance check — a Pact-style `can-i-deploy` gate verifying as-built code still satisfies the ratified `OPP-12-C1-converged-contract.md` at the co-land, not humans re-reading prose — as a precondition of the breaking-pair publish; an absent-or-failing gate HOLDS the pair. Tracked `dev/steward/agent-rubric-ledger.jsonl` TC-RUBRIC-2; incorporated as plan §3 R-20-H7 / Slice 30.** **BUILD-AUTHORIZED (F-21)**; publish = separate per-`x.y.z` HITL gate. **✅ SLICE-0 X0 SIGNED + LANDED 2026-07-19 (`403eb254`, F-26) — slices 5+ unblocked**; TC-RUBRIC-5 now ENFORCED by `scripts/preflight.sh --landing`, TC-RUBRIC-7 transcripts pinned at `dev/plans/runs/codex/0.8.20/`. **Scope deltas from Slice-0 (no slot/dependency change):** (a) F-27 — the erasure audit trail MUST be DURABLE (HITL: "there must be an auditable record of deletion event"); Slice 5 additionally exempts the erasure-audit collection from `enforce_provenance_retention` (the v4 §3.6 "retained permanently" claim was VERIFIED FALSE); (b) F-28 — R-20-EU7 is CLOSED BY DECISION, not by measurement: ZERO eu7 runs authorized on any backend at any N, so Slice 40 executes NO eu7 gate; (c) F-29 — new ACs mint from AC-079 (AC-077/078 are live IR-1/IR-2 reservations), so the governed-surface delta is AC-079, not "AC-078+"; (d) F-31 — Slice 5's `SourceId` newtype must sweep `PreparedWrite` constructions in `tests/` too. **F-30 (dead publish dry-run guard, red since 0.8.14) is PLACED at Slice 40 (HITL 2026-07-24, F-32).** **✅ LADDER PROGRESS (F-32, verified from git @ `fae276b9`): <!-- BEGIN GENERATED release-state:0.8.20:master-ladder-progress -->Slices 0 (`403eb254`) · 5 (`1f8ed8bf`) · 10 (`3cfb3cda`) · 15 (`a2022957`) are all LANDED on `origin/main`; SCHEMA is 24; remaining ladder = 20 → 25 → 30 → 40.<!-- END GENERATED release-state:0.8.20:master-ladder-progress -->** **✅ RUN AUTHORIZED (F-34, HITL 2026-07-25):** the tail runs under a standing Steward mandate — `DOC-HYGIENE-2` → 20 → 25 (**sequential**) → 30 → *(batched surface decision)* → `DOC-HYGIENE-3` → 40. **AC-079 PRE-SIGNED** (pinned to the allowlist content; any diff re-opens it — T1e gate); **§7 prereq-5 Memex co-land readiness CLOSED BY DECISION** — Memex adapts to 0.8.20's surface, **no confirmation is to be sought**, push scope stays fathomdb-only, and the "one side alone is not a release" framing no longer gates the cut. **PUBLISH remains the hard HITL gate.** |
+ | **0.8.21 (odd, OOB)** *(was 0.8.19)* | Free-threading + benchmark harness | **EXP-FT free-threaded-Python ladder (FT-1…5)** · **#13 benchmark-and-robustness harness** | bumped after OPP-12 (F-19); EXP-FT needs pyo3 0.29 (@0.8.8); #13 needs perf/bench substrate |
+ | **0.8.22 (even) — deferred major-dependency migrations** *(was 0.8.20)* | Library Sweep — owned engine slices | **napi 2→3** · **rusqlite 0.31→0.40 + sqlite-vec (coupled)** | bumped after OPP-12 (F-19); deferred-with-trigger, LBO-executed (F-12). rusqlite/sqlite-vec affects the vector path → **precede the scale-bound (0.8.23/24)** |
+ | **0.8.23 (odd)** | **F-17 scale-bound — *soft* (advisory)** | characterize + document the supported-scale envelope of the exact-search local-first stack (frozen eu7 fidelity + latency gates; ~<50k-row operating point) on the **complete 0.8.x surface** | **F-20: F-17 scale-bound pulled into 0.8.x** so the line is cohesive before 0.9.0 (**revises F-17's 0.9.x placement**). Advisory guidance |
+diff --git a/dev/plans/release-state-0.8.20.json b/dev/plans/release-state-0.8.20.json
+new file mode 100644
+index 00000000..a330dd90
+--- /dev/null
++++ b/dev/plans/release-state-0.8.20.json
+@@ -0,0 +1,227 @@
++{
++  "_comment": "SINGLE WRITER for 0.8.20 release state (DOC-HYGIENE-2 T2a). THIS FILE IS THE ONLY PLACE THESE FACTS ARE AUTHORED: landed slices + their landing SHAs, the SCHEMA version, the next slice, the remaining ladder, AC status, and the ruled/unruled decision set. WHY: before this file, that state was narrated across a 5-12 file write-side fan-out (the master release plan, the STATUS board, the plan, the Steward hand-off, the ledgers) with NOTHING checking that the copies agreed - one reconciliation commit (b70629e5) had to touch 7 files, and the live board is ~79 KB, too large to read whole. HOW IT IS ENFORCED: `generated_views` below names the marker-delimited regions that are RENDERED from this file by scripts/check-release-state-views.sh. That script regenerates each region into a temp buffer and diffs it against what is in the document; any difference is a HARD failure, so a hand-edit of a view, or a change here without a regenerate, both go red. Regenerate with `scripts/check-release-state-views.sh --write`. TO CHANGE A FACT: edit it HERE, then run --write, then commit both. Do NOT hand-edit inside the markers. SCOPE: this file records state, it does not decide anything - it changes no release slot, no scope, no requirement and no AC. Every fact below was re-verified from git (merge-commit ancestry on origin/main; `pub const SCHEMA_VERSION` in src/rust/crates/fathomdb-schema/src/lib.rs) rather than copied from narration.",
++
++  "release": "0.8.20",
++  "release_kind": "even, publish",
++  "board": "dev/plans/runs/STATUS-0.8.20.md",
++  "plan": "dev/plans/plan-0.8.20.md",
++  "master": "dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md",
++
++  "schema_version": 24,
++  "schema_version_source": "pub const SCHEMA_VERSION in src/rust/crates/fathomdb-schema/src/lib.rs",
++
++  "landed_verified_at": "fae276b9",
++  "landed_verified_how": "each SHA below is the landing merge commit for its slice AND is an ancestor of origin/main (git merge-base --is-ancestor), with the merge subject matching this repo's `merge(0.8.20): Slice[- ]N` landing convention",
++
++  "ladder": [
++    {
++      "slice": 0,
++      "short": "X0",
++      "title": "X0 design gate",
++      "depends_on": [],
++      "status": "LANDED",
++      "sha": "403eb254",
++      "merge_subject": "merge(0.8.20): Slice-0 X0 design gate — HITL-SIGNED 2026-07-19"
++    },
++    {
++      "slice": 5,
++      "short": "R-20-E1..E8",
++      "title": "erasure completeness",
++      "depends_on": [0],
++      "status": "LANDED",
++      "sha": "1f8ed8bf",
++      "merge_subject": "merge(0.8.20): Slice 5 — erasure completeness (R-20-E1..E8)"
++    },
++    {
++      "slice": 10,
++      "short": "R-20-RV, R-20-NV",
++      "title": "ReadView / read-modes + node-validity",
++      "depends_on": [0],
++      "status": "LANDED",
++      "sha": "3cfb3cda",
++      "merge_subject": "merge(0.8.20): Slice 10 — ReadView/read-modes + node-validity + TC-31"
++    },
++    {
++      "slice": 15,
++      "short": "R-20-PR, R-20-EAV",
++      "title": "projection registry (C-1) + EAV/property-FTS + TC-33 + TC-34",
++      "depends_on": [0, 10],
++      "status": "LANDED",
++      "sha": "a2022957",
++      "merge_subject": "merge(0.8.20): Slice 15 keystone COMPLETE — registry + EAV + filterable pre-KNN + TC-33"
++    },
++    {
++      "slice": 20,
++      "short": "R-20-DR",
++      "title": "dense_readiness + flush_embeddings() + the TC-45 supersession-terminal fix",
++      "depends_on": [15],
++      "status": "UNBLOCKED",
++      "sha": null
++    },
++    {
++      "slice": 25,
++      "short": "R-20-SUR",
++      "title": "surrogate minting — governed entities ONLY",
++      "depends_on": [15],
++      "status": "UNBLOCKED",
++      "sha": null
++    },
++    {
++      "slice": 30,
++      "short": "H7",
++      "title": "RUBRIC-H7 can-i-deploy contract gate (R-20-H7)",
++      "depends_on": [10, 15, 20, 25],
++      "status": "NOT_STARTED",
++      "sha": null,
++      "publish_precondition": true
++    },
++    {
++      "slice": 40,
++      "short": "R-20-PUB",
++      "title": "verification + release readiness (publish-or-hold)",
++      "depends_on": [5, 30],
++      "status": "NOT_STARTED",
++      "sha": null
++    }
++  ],
++
++  "landed": [0, 5, 10, 15],
++  "next_slice": 20,
++  "remaining_ladder": [20, 25, 30, 40],
++  "ladder_order": "SEQUENTIAL — parallel 20 || 25 was declined (master F-34)",
++  "unblocked": [20, 25],
++  "unblocked_by": { "requirement": "R-20-PR", "gloss": "the projection registry" },
++  "publish_precondition_slice": 30,
++
++  "acceptance": {
++    "highest_defined_non_reserved": "AC-076",
++    "reservations": [
++      {
++        "ac": "AC-077",
++        "state": "RESERVED",
++        "initiative": "IR-eval IR-1/IR-2",
++        "note": "reserved placeholder in dev/acceptance.md; thresholds TBD"
++      },
++      {
++        "ac": "AC-078",
++        "state": "CONDITIONALLY RESERVED",
++        "initiative": "IR-eval IR-1/IR-2",
++        "note": "minted only if the consensus splits the measure"
++      }
++    ],
++    "publish_gate": {
++      "ac": "AC-079",
++      "minted": false,
++      "signed": false,
++      "state_word": "unsigned",
++      "covers": "the accumulated governed-surface delta (Slices 5d + 10b + 15b + 15d)",
++      "pre_signed": "HITL 2026-07-25 — PRE-SIGNED and pinned to the content of src/conformance/governed-surface-allowlist.json; any diff to that file re-opens the gate (T1e pin). PRE-SIGN IS NOT MINTING: AC-079 is still minted and recorded as SIGNED at Slice 40.",
++      "sign_off_slice": 40,
++      "board_ref": "§4 #1"
++    },
++    "re_verified_green": ["AC-041", "AC-080"]
++  },
++
++  "decisions": {
++    "_comment": "Ruled vs unruled, as of 2026-07-25. Sources of record: dev/plans/runs/STATUS-0.8.20.md §4 (the historical queue banner) and dev/plans/plan-0.8.20.md §11 (the live queue + the 2026-07-24 and 2026-07-25 ruling blocks). Recorded here so the ruled/unruled split has ONE writer; the two prose sections stay exactly as they are.",
++    "unruled": [
++      {
++        "id": "batched-governed-surface",
++        "title": "the batched governed-surface decision — the accumulated Slice 20/25/30 allowlist delta",
++        "gated_at": "the Slice 30 -> Slice 40 boundary",
++        "halts_run": false,
++        "source": "plan-0.8.20.md §11 (2026-07-25 rulings, item 2)"
++      },
++      {
++        "id": "publish",
++        "title": "PUBLISH the 0.8.20 breaking pair (manifests 0.8.9 -> 0.8.20)",
++        "gated_at": "Slice 40",
++        "halts_run": true,
++        "source": "plan-0.8.20.md §11 item 3"
++      }
++    ],
++    "ruled": [
++      {
++        "id": "ac-079-sign-off",
++        "ruling": "PRE-SIGNED; minted at Slice 40",
++        "ruled_on": "2026-07-25",
++        "source": "plan-0.8.20.md §11 item 1 + the 2026-07-25 rulings block"
++      },
++      {
++        "id": "adoption-arms",
++        "ruling": "(a) — Phase-2 surface opt-in, erasure fixes ON",
++        "ruled_on": "2026-07-24",
++        "source": "plan-0.8.20.md §11 item 2"
++      },
++      {
++        "id": "fts-vector-without-searchable",
++        "ruling": "(b) REJECT as an invalid spec; implement at the next configure_projections slice",
++        "ruled_on": "2026-07-24",
++        "source": "plan-0.8.20.md §11 item 4"
++      },
++      {
++        "id": "embed-batch-cls-ts-parity",
++        "ruling": "(a) — add the TS binding (X1 / Slice 40)",
++        "ruled_on": "2026-07-24",
++        "source": "plan-0.8.20.md §11 item 5"
++      },
++      {
++        "id": "tc-16-placement",
++        "ruling": "fold into Slice 40 with the #11-full rehearsal",
++        "ruled_on": "2026-07-24",
++        "source": "plan-0.8.20.md §11 item 6"
++      },
++      {
++        "id": "tc-45-placement",
++        "ruling": "FIX IN 0.8.20 — folded into Slice 20",
++        "ruled_on": "2026-07-24",
++        "source": "plan-0.8.20.md §11 item 7"
++      },
++      {
++        "id": "hermes-consult",
++        "ruling": "CLOSED — no input received; it gated nothing in 0.8.20",
++        "ruled_on": "2026-07-25",
++        "source": "plan-0.8.20.md §11 item 8"
++      },
++      {
++        "id": "memex-co-land-readiness",
++        "ruling": "CLOSED BY DECISION — Memex adapts to 0.8.20's surface; no confirmation is to be sought",
++        "ruled_on": "2026-07-25",
++        "source": "master F-34 · plan-0.8.20.md §7 prereq 5"
++      },
++      {
++        "id": "eu7-basis",
++        "ruling": "CLOSED BY DECISION — ZERO eu7 runs on any backend at any N; Slice 40 executes no eu7 gate",
++        "ruled_on": "2026-07-19",
++        "source": "master F-28 · STATUS §6"
++      },
++      {
++        "id": "run-authorization",
++        "ruling": "standing Steward mandate for DOC-HYGIENE-2 -> 20 -> 25 (sequential) -> 30 -> batched surface decision -> DOC-HYGIENE-3 -> 40",
++        "ruled_on": "2026-07-25",
++        "source": "master F-34"
++      }
++    ]
++  },
++
++  "generated_views": [
++    {
++      "id": "master-ladder-progress",
++      "file": "dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md",
++      "location": "§4 Release allocation — the `| **0.8.20 (even, publish)** |` row, inside the LADDER PROGRESS sentence",
++      "renders": "landed slices + their SHAs, SCHEMA version, remaining ladder"
++    },
++    {
++      "id": "status-unblocks",
++      "file": "dev/plans/runs/STATUS-0.8.20.md",
++      "location": "§1 Current state — the `**Unblocks**` table row's cell body",
++      "renders": "unblocked slices, what unblocked them, the publish-precondition slice + its dependencies, AC-079 sign-off status"
++    },
++    {
++      "id": "handoff-next-step",
++      "file": "dev/plans/runs/STEWARD-SESSION-HANDOFF-2026-07-24-A.md",
++      "location": "★ IMMEDIATE NEXT STEP — the opening next-step sentence",
++      "renders": "landed slices + the next slice"
++    }
++  ]
++}
+diff --git a/dev/plans/runs/STATUS-0.8.20.md b/dev/plans/runs/STATUS-0.8.20.md
+index 8eb12f66..c73a67a0 100644
+--- a/dev/plans/runs/STATUS-0.8.20.md
++++ b/dev/plans/runs/STATUS-0.8.20.md
+@@ -41,7 +41,7 @@ step 24). Ledger tip **`3264114a`** (steward seq-98).
+ |---|---|
+ | **Slice in flight** | **NONE — Slice 15 keystone just LANDED (`a2022957`).** The ladder is between slices, awaiting the next commission. |
+ | **Status** | **Slices 0, 5, 10, 15 all COMPLETE and LANDED on `origin/main`** (header table). The keystone landed **R-20-PR + R-20-EAV + `filterable` pre-KNN + TC-33 + TC-34 + Finding-1 (A) + `#[non_exhaustive] SearchFilter`**; codex §9 **terminal-clean**; gates re-verified by the Steward (clippy 0, check 0, (A) pin 1/1, AC-041 3/3). **SCHEMA 24.** |
+-| **Unblocks** | **Slices 20 and 25 are NOW UNBLOCKED** — R-20-PR (the projection registry) now exists. Slice 30 (H7) depends on 10/15/20/25. **Publish remains blocked on AC-079**, which is **still unsigned** — sign-off is gated to Slice 40 (§4 #1). |
++| **Unblocks** | <!-- BEGIN GENERATED release-state:0.8.20:status-unblocks -->**Slices 20 and 25 are NOW UNBLOCKED** — R-20-PR (the projection registry) now exists. Slice 30 (H7) depends on 10/15/20/25. **Publish remains blocked on AC-079**, which is **still unsigned** — sign-off is gated to Slice 40 (§4 #1).<!-- END GENERATED release-state:0.8.20:status-unblocks --> |
+ | **Immediate next action** | **Commission the `DOC-HYGIENE-2` orchestrator FIRST — Slice 20 does not open until it lands** (**F-34**, HITL 2026-07-25). A wide docs diff must not run while a slice orchestrator is live (**F-7** collision rule), and DOC-HYGIENE-2 corrects **18 line-anchors in `plan-0.8.20.md` that misdirect the Slice-20 implementer** (`engine:14867`/`:14890` for TC-45 → the real call sites are `lib.rs:16963`/`:16986`). **Then** Slice 20 — `dense_readiness` + `flush_embeddings()` (**R-20-DR**) **+ the TC-45 supersession-terminal fix** (HITL 2026-07-24) — commissioned as an **orchestrator** (`/orchestrate`, or a Steward-spawned background orchestrator; **NOT `/goal`** — standing ruling `927ffb35`). Then **25 → 30 → 40, sequentially** (parallel 20∥25 was declined, F-34). **✅ The sequencing prerequisite is DISCHARGED:** the cross-cutting docs/tooling hygiene effort (DOC-HYGIENE-1, TC-48) that had to land FIRST — a wide docs diff that must not run while an orchestrator is live (F-7 collision rule) — **LANDED on `origin/main` 2026-07-25 (`f53b8c64..597738d9`, no pico label)**. Nothing now blocks the Slice-20 commission. Rulings for the eight-item queue are recorded in `plan-0.8.20.md` §11; master reconciliation = **F-32**, DOC-HYGIENE-1 = **F-33**. |
+ 
+ **Slices 0, 5, 10, 15 close records** are §11 (Slice 5), §12 (Slice 10), §13 (Slice 15b — TC-34 only; the
+diff --git a/dev/plans/runs/STEWARD-SESSION-HANDOFF-2026-07-24-A.md b/dev/plans/runs/STEWARD-SESSION-HANDOFF-2026-07-24-A.md
+index 96269938..b1a9666c 100644
+--- a/dev/plans/runs/STEWARD-SESSION-HANDOFF-2026-07-24-A.md
++++ b/dev/plans/runs/STEWARD-SESSION-HANDOFF-2026-07-24-A.md
+@@ -11,7 +11,8 @@
+ 
+ ## ★ IMMEDIATE NEXT STEP — commission the 0.8.20 Slice-20 orchestrator
+ 
+-**The 0.8.20 ladder is between slices: 0 → 5 → 10 → 15 are all LANDED; 20 is next.** The next action is to
++<!-- BEGIN GENERATED release-state:0.8.20:handoff-next-step -->
++**The 0.8.20 ladder is between slices: 0 → 5 → 10 → 15 are all LANDED; 20 is next.**<!-- END GENERATED release-state:0.8.20:handoff-next-step --> The next action is to
+ **commission a `/orchestrate dev/plans/plan-0.8.20.md` orchestrator** (alias `/orch`; the preferred entry point
+ per the standing HITL ruling of 2026-07-25 — `/goal complete 0.8.20` only on an explicit HITL instruction for
+ that run) against `0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md` +
+
+exec
+/bin/bash -lc 'bash scripts/check-release-state-views.sh' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+ok    check-release-state-views: 3 generated block(s) across 1 release-state file(s) match their render
+
+exec
+/bin/bash -lc 'bash scripts/tests/test_check_release_state_views.sh' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 598ms:
+PASS  --write regenerates in place; --check is green immediately after
+PASS  --write on a current tree is byte-for-byte a no-op (the renderer reproduces)
+PASS  missing BEGIN marker — a declared-but-unfenced view HARD-fails, never skips
+PASS  duplicated markers — an ambiguous region HARD-fails
+PASS  inverted markers — END before BEGIN HARD-fails
+PASS  orphan marker — a generated region outside every declared location HARD-fails
+PASS  unknown view id — an unrenderable view HARD-fails, not an unchecked region
+PASS  a view naming a nonexistent file HARD-fails
+PASS  a corrupt state file HARD-fails (it cannot silently stop owning its views)
+PASS  vacuity guard — zero state files discovered -> hard FAIL, not a silent exit 0
+PASS  vacuity guard — zero generated blocks checked -> hard FAIL (TC-37)
+PASS  reversibility — stripping the markers leaves the prose AND the fenced content intact
+PASS  the real checkout's generated regions all reproduce from their state file
+PASS  ci.yml defines a release-state-views job
+PASS  the CI job runs the SHARED scripts/check-release-state-views.sh
+PASS  the release-state-views job is always-on (no if:, no needs:, not docs_only-gated)
+
+All check-release-state-views tests passed
+
+exec
+/bin/bash -lc 'grep -n "actions/checkout" -n .github/workflows/ci.yml | head -20 && git show 4884366621a2ff3fcefdd166707077d0b94dcba8:.github/workflows/ci.yml | grep -n "actions/checkout" | head -20' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+34:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+55:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+101:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+134:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+198:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+225:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+307:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+383:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+418:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+440:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+461:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+482:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+495:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+34:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+55:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+101:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+134:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+198:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+225:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+307:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+383:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+418:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+440:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+461:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+474:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+exec
+/bin/bash -lc "sed -n '1,120p' scripts/agent-lint-md.sh && sed -n '1,130p' scripts/agent-test.sh" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+#!/usr/bin/env bash
+# Markdown lint + format check + link integrity.
+# Pass: silent. Fail: structured diagnostic + spill path.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/agent-output.sh
+. "$SCRIPT_DIR/lib/agent-output.sh"
+cd_repo_root
+
+# markdownlint-cli2 — structural lint.
+#
+# TC-37 (fixed here): this used to skip_notice (exit 0) when the binary was absent —
+# the NORMAL state inside an orchestration worktree — which hid a genuinely red `main`
+# (9 markdown errors, 2026-07-02 -> 2026-07-24) for three weeks: every orchestrator ran
+# this gate, saw green, and never knew it hadn't actually run. A gate that cannot run
+# must say so loudly and fail, never report a silent pass. See scripts/tests/
+# test_lint_md_hard_fail_on_missing_linter.sh for the recurrence-guard test.
+if [ -d node_modules/.bin ] && [ -x node_modules/.bin/markdownlint-cli2 ]; then
+  run_capped lint-md-structure ./node_modules/.bin/markdownlint-cli2
+else
+  {
+    echo "FAIL lint-md-structure: markdownlint-cli2 not found at node_modules/.bin/markdownlint-cli2."
+    echo "  A missing structural markdown linter must never report a silent pass (TC-37)."
+    echo "  Fix: run scripts/bootstrap.sh to install it, OR (inside a linked worktree)"
+    echo "  symlink the primary checkout's node_modules:"
+    echo "    ln -s /home/coreyt/projects/fathomdb/node_modules node_modules"
+  } >&2
+  exit 1
+fi
+
+# T3/8+9 (DOC-HYGIENE-1): every top-level dev/plans/*.md must carry a valid
+# `status:` frontmatter value — the recurrence guard for that convention.
+# Pure bash/grep; no external binary, so this leg has no absent-tool skip path.
+run_capped lint-plans-status "$SCRIPT_DIR/lint-plans-status.sh"
+
+# T1c (DOC-HYGIENE-2): the master's §6 findings register must not mint two
+# entries under one `F-n` id — an ambiguous id silently breaks every citation of
+# it (a duplicate F-11 did exactly that for four weeks). Same class of guard as
+# the leg above: pure bash/awk, no external binary, so no absent-tool skip path.
+run_capped lint-findings "$SCRIPT_DIR/lint-findings.sh"
+
+# T1d (DOC-HYGIENE-2): ACTIVE plans may not cite code by `<name>:<line>` — a
+# line number rots on the next commit, silently (plan-0.8.20.md's TC-45 pair was
+# ~2,100 lines off and git shows it was never correct) — and every symbol an
+# ACTIVE plan DOES cite must actually occur in the file it names. That second
+# half is the load-bearing one: swapping an unverified number for an unverified
+# symbol would launder the same bad pointer. Pure bash/perl, no external binary,
+# so no absent-tool skip path. Also runs always-on in CI (the `plan-anchors`
+# job) — the push that renames a symbol is a CODE push, which the docs_only
+# markdownlint job never sees.
+run_capped lint-plan-anchors "$SCRIPT_DIR/lint-plan-anchors.sh" --quiet
+
+# T2a (DOC-HYGIENE-2): release state has ONE writer — dev/plans/release-state-*.json
+# — and the prose restatements of it are marker-delimited GENERATED regions. This
+# leg regenerates every region and diffs it against the document, so a hand-edit
+# inside the markers, or a fact changed in the state file without a regenerate,
+# both go red. (Release state used to be narrated across a 5-12 file fan-out with
+# nothing checking the copies agreed; one reconciliation commit touched 7 files.)
+# Pure bash + python3, and python3 absent is a hard failure, not a skip (TC-37).
+run_capped check-release-state-views "$SCRIPT_DIR/check-release-state-views.sh" --quiet
+
+# docs/** structural lint. The repo .markdownlint-cli2.jsonc IGNORES docs/** (it is
+# otherwise gated only by `mkdocs build --strict`, which does NOT enforce markdownlint
+# style). agent-lint-docs.sh lints docs/** with the same .markdownlint.jsonc rules via
+# an out-of-tree copy (so the ignore does not apply). It self-skips if the binary is
+# absent, so run it unconditionally.
+run_capped lint-md-docs "$SCRIPT_DIR/agent-lint-docs.sh"
+
+# NOTE: prettier --check was REMOVED from the markdown gate (0.8.9.1, HITL 2026-06-28).
+# prettier's markdown formatter is non-configurable for emphasis style and its *->_ reflow
+# CORRUPTS multi-line / nested / adjacent-to-`code` emphasis spans (broken spans, snake_case
+# `_` loss, word-joins that change tokenization). markdownlint-cli2 (AST/token-aware) above is
+# the sole structural formatter; it does not have this failure mode. Neutrality of any future
+# bulk markdown reformat is verified out-of-band by dev/tools/md-neutrality-guard (markdown-it-py
+# AST visible-text diff), not by re-introducing prettier.
+
+# lychee — link integrity. Offline by default; pass AGENT_LINK_CHECK=online to hit the network.
+#
+# TC-37 follow-up (deliberately left as skip-on-absent, unlike lint-md-structure above):
+# lychee is a separate Rust binary (cargo install), not part of the node_modules symlink
+# convention that makes markdownlint-cli2 trivially available in a worktree, and it is not
+# the tool implicated in the TC-37 incident (that was markdownlint-cli2 missing 9 real
+# structural errors). Hard-failing here would break every worktree that has not run the
+# full `scripts/bootstrap.sh` (which `cargo install`s lychee) for a check whose own online/
+# offline modality already signals partial, best-effort coverage. Revisit if a lychee-only
+# vacuous-green incident is ever observed.
+if command -v lychee >/dev/null 2>&1; then
+  if [ "${AGENT_LINK_CHECK:-offline}" = "online" ]; then
+    run_capped lint-md-links lychee --offline=false --no-progress '**/*.md'
+  else
+    run_capped lint-md-links lychee --offline --no-progress '**/*.md'
+  fi
+else
+  skip_notice lint-md-links "lychee not installed (run scripts/bootstrap.sh)"
+fi
+#!/usr/bin/env bash
+# Run unit tests across language surfaces.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/agent-output.sh
+. "$SCRIPT_DIR/lib/agent-output.sh"
+cd_repo_root
+
+# Scripts (bash): set-version.sh two-axis enforcement.
+run_capped test-set-version bash scripts/tests/test_set_version.sh
+
+# Scripts (bash): release-time preflight (tag/--check-files/CHANGELOG/metadata).
+run_capped test-verify-release-gates bash scripts/tests/test_verify_release_gates.sh
+
+# Scripts (bash): TC-RUBRIC-5 landing guard — preflight.sh --landing must HARD-fail
+# in the primary checkout and pass in a linked worktree. Builds its own throwaway
+# repo + worktree under mktemp -d; never git-writes into this checkout.
+run_capped test-preflight-landing bash scripts/tests/test_preflight_landing.sh
+
+# Scripts (bash): status-board-currency-enforcement items 2+3 — the shared
+# scripts/check-board-currency.sh predicate plus its --landing wiring in
+# preflight.sh. Builds its own throwaway repos + worktrees under mktemp -d;
+# never git-writes into this checkout.
+run_capped test-check-board-currency bash scripts/tests/test_check_board_currency.sh
+
+# Scripts (bash): DOC-HYGIENE-2 T1b — the shared scripts/check-ledgers.sh
+# predicate (sidecar == max(seq); seq contiguous), its --landing wiring in
+# preflight.sh, and a static assertion that its CI job is always-on. Fixture
+# roots are plain dirs under mktemp -d (plus throwaway git repos for the
+# preflight arms); no real .jsonl / .jsonl.seq is ever touched.
+run_capped test-check-ledgers bash scripts/tests/test_check_ledgers.sh
+
+# Scripts (bash): sibling-package co-tagging assert (AC-052). Offline via
+# python3 -m http.server fixture; never hits crates.io.
+run_capped test-assert-co-tagging bash scripts/tests/test_assert_co_tagging.sh
+
+# Scripts (bash): Axis-E published-API drift guard (prevents the v0.8.9
+# partial-publish — embedder-api surface moved without an Axis-E bump).
+# Offline via a fixture http router; never hits crates.io.
+run_capped test-embedder-api-no-drift bash scripts/tests/test_verify_embedder_api_no_drift.sh
+
+# Scripts (bash): structural shape of the post-publish smoke scripts.
+# NOT integration — see test header for why behavior is exercised at tag
+# time by the release workflow, not here.
+run_capped test-smoke-scripts bash scripts/tests/test_smoke_scripts.sh
+
+# Scripts (bash): 0.8.18 Slice 20 (#11-full publish) — static release.yml scope
+# assertions (matrix gated to x86_64-linux, tiered ordering, non-latest npm
+# dist-tag). Pure python3+PyYAML parse; never runs the workflow.
+run_capped test-release-workflow-scope bash scripts/tests/test_release_workflow_scope.sh
+
+# Scripts (bash): coordinated-publish resilience (R-REL-4b/4c) — REAL npm
+# local-registry round-trip (publish -> query-no-op -> install -> loader) +
+# crates.io SIMULATED (real crates registry infeasible in-harness). node-only.
+run_capped test-idempotent-republish bash scripts/tests/test_idempotent_republish.sh
+
+# Scripts (bash): REAL PyPI round-trip (R-REL-4b) — genuine twine upload to a
+# minimal local index -> query-sees-it -> re-run no-op. Self-provisions twine<6
+# (twine 6 blocks --skip-existing on non-prod repos); SKIPS loudly if it cannot.
+run_capped test-pypi-publish-roundtrip bash scripts/tests/test_pypi_publish_roundtrip.sh
+
+# Scripts (bash): Fix-1 publish-registry SAFETY — a staging/test run can never
+# publish to prod (npm publish --registry $BASE; twine upload --repository-url).
+run_capped test-publish-registry-safety bash scripts/tests/test_publish_registry_safety.sh
+
+# Scripts (bash): poll-for-resolvability guard that replaced the fixed 60s
+# index-propagation sleep (R-REL-4c). Offline fixture http server.
+run_capped test-wait-for-crate-version bash scripts/tests/test_wait_for_crate_version.sh
+
+# Scripts (bash): publish-time npm optionalDependencies injection (R-REL-4f) —
+# napi per-platform split. Pure filesystem fixture; no registry.
+run_capped test-npm-inject-optional-deps bash scripts/tests/test_npm_inject_optional_deps.sh
+
+# actionlint binary present + rejects deliberately-broken fixture.
+run_capped test-actionlint-fixture bash scripts/tests/test_actionlint_fixture.sh
+
+# TC-37 recurrence guard: agent-lint-md.sh must HARD-fail (not skip_notice/exit 0)
+# when markdownlint-cli2 is genuinely unresolvable. Builds its own throwaway
+# fixture repo under mktemp -d; never touches this checkout's node_modules.
+run_capped test-lint-md-hard-fail-on-missing-linter bash scripts/tests/test_lint_md_hard_fail_on_missing_linter.sh
+
+# T3/9: dev/plans/*.md must carry a valid `status:` frontmatter value (recurrence
+# guard for archival banners drifting silently). RED-fixture proven inline.
+run_capped test-plans-status-frontmatter bash scripts/tests/test_plans_status_frontmatter.sh
+
+# T1d: recurrence guard for the ACTIVE-plan line-anchor ban AND — the arm that
+# carries the weight — for the mandatory symbol-existence check. Mutation-proven:
+# stubbing the existence check to always succeed turns this suite red, so a green
+# here is not vacuous. RED fixtures built inline under mktemp -d.
+run_capped test-lint-plan-anchors bash scripts/tests/test_lint_plan_anchors.sh
+
+# T2a: recurrence guard for the single-writer release-state file and its
+# marker-delimited generated views — regenerate-and-diff, marker well-formedness,
+# the orphan-marker confinement rule, and the TC-37 zero-blocks hard fail. RED
+# fixtures built inline under mktemp -d; also asserts the CI job is always-on.
+run_capped test-check-release-state-views bash scripts/tests/test_check_release_state_views.sh
+
+# Markdown generators (shell): context-clarity.sh / memory-clarity.sh emit
+# gate-compliant markdown. Their output trees (and the dev/plans/runs/** reports
+# from the Python generators) are markdownlint-ignored, so the normal md gate never
+# sees a regenerated report. The Python generators (aggregate / m1_verdict_run /
+# s15a_embedder_probe) are guarded by src/python/tests/test_md_generator_hygiene.py
+# in the pytest step below.
+run_capped test-md-generators bash scripts/tests/test_md_generators.sh
+
+# AC-051a / AC-051b: cross-ecosystem version-skew resolver fixtures.
+run_capped test-cargo-skew bash dev/release/tests/cargo_skew.sh
+run_capped test-pip-skew bash dev/release/tests/pip_skew.sh
+
+# Rust
+#
+# TC-20 invariant: this line must NEVER reach `eu7_real_corpus_ac_validation`,
+# a ~1.5h real-corpus embed measurement. Do NOT add `--all-features` here.
+# Three gates keep it out, in order of what a change is most likely to break:
+#   1. `required-features = ["operator"]` on the test target — not built at all
+#      under the workspace default feature set (`default = []`);
+#   2. file-level `#![cfg(feature = "default-embedder")]` — compiles to zero
+#      tests even when `operator` IS on (e.g. the engine's operator suite);
+#   3. `#[ignore]` on the test itself — holds no matter which features are
+#      selected, so `--all-features` still would not run the body.
+# Verify by inspection only (`-- --list --ignored`), never by running it.
+run_capped test-rust cargo test --workspace --quiet --no-fail-fast
+
+# Python
+python_bin=""
+if [ -x .venv/bin/python ]; then
+  python_bin=".venv/bin/python"
+elif command -v python3 >/dev/null 2>&1; then
+  python_bin="$(command -v python3)"
+
+exec
+/bin/bash -lc 'bash scripts/agent-lint-md.sh' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ exited 1 in 0ms:
+FAIL lint-md-structure: markdownlint-cli2 not found at node_modules/.bin/markdownlint-cli2.
+  A missing structural markdown linter must never report a silent pass (TC-37).
+  Fix: run scripts/bootstrap.sh to install it, OR (inside a linked worktree)
+  symlink the primary checkout's node_modules:
+    ln -s /home/coreyt/projects/fathomdb/node_modules node_modules
+
+exec
+/bin/bash -lc "sed -n '430,500p' .github/workflows/ci.yml" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+  # Deliberately carries NO `if:` condition. A docs_only-gated job never fires on
+  # a code push, and the measured incident (steward-ledger.jsonl.seq frozen at 80
+  # against max(seq) 98 for 19 commits / four days) spanned both docs and code
+  # pushes; the sidecar is tracked, so any clone taken in that window would have
+  # minted colliding seq numbers. Default (depth-1) checkout is sufficient: the
+  # predicate reads working-tree files only and walks no history.
+  ledger-integrity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Ledger sidecar/seq integrity (DOC-HYGIENE-2 T1b)
+        run: bash scripts/check-ledgers.sh
+
+  # DOC-HYGIENE-2 T1d — the always-on line-anchor / citation-integrity backstop.
+  #
+  # Deliberately carries NO `if:` and NO `needs:`. This is the whole point of the
+  # job, not boilerplate. The `markdownlint` job above is gated on
+  # `needs.changes.outputs.docs_only == 'true'`, so it fires only when a push
+  # touches docs and nothing else — but the event that BREAKS a symbol citation
+  # in an ACTIVE plan is a rename in `src/`, i.e. a code push, which docs_only
+  # excludes by construction. A citation gate that cannot run on the push that
+  # invalidates the citation is decorative. Same reasoning that put
+  # `board-currency` and `ledger-integrity` outside the docs_only fast path.
+  #
+  # Default (depth-1) checkout is sufficient: the predicate reads working-tree
+  # files only and walks no history.
+  plan-anchors:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: ACTIVE-plan line-anchor ban + symbol-existence check (DOC-HYGIENE-2 T1d)
+        run: bash scripts/lint-plan-anchors.sh
+      - name: Recurrence guard for the gate itself (fixture arms)
+        run: bash scripts/tests/test_lint_plan_anchors.sh
+
+  # DOC-HYGIENE-2 T2a — the always-on single-writer release-state backstop.
+  #
+  # Deliberately carries NO `if:` and NO `needs:`, for the same reason as
+  # board-currency / ledger-integrity / plan-anchors above. The push that
+  # invalidates a generated release-state view is a LANDING push (a slice merges,
+  # SCHEMA moves, the next slice changes) — i.e. a code push, which the
+  # `markdownlint` job's `docs_only` gate excludes by construction. A currency
+  # gate that cannot run on the push that makes the fact wrong is decorative.
+  #
+  # Default (depth-1) checkout is sufficient: the predicate reads working-tree
+  # files only and walks no history.
+  release-state-views:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Release-state generated views are current (DOC-HYGIENE-2 T2a)
+        run: bash scripts/check-release-state-views.sh
+      - name: Recurrence guard for the gate itself (fixture arms)
+        run: bash scripts/tests/test_check_release_state_views.sh
+
+  # mkdocs --strict is the broader CI gate beyond agent-verify (per AGENTS.md §3).
+  # Intentionally NOT gated on docs_only: it must run for docs/** changes (the
+  # fast path) AND alongside code changes, exactly as before.
+  docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - run: python3 -m pip install --upgrade pip mkdocs
+      - run: mkdocs build --strict
+
+exec
+/bin/bash -lc "python3 - <<'PY'
+try:
+ import markdown
+ print(markdown.markdown('| A | B |\\n|---|---|\\n| x | <"'!-- BEGIN GENERATED release-state:0.8.20:status-unblocks -->**Slices 20 and 25 are NOW UNBLOCKED** — R-20-PR (the projection registry) now exists. Slice 30 (H7) depends on 10/15/20/25. **Publish remains blocked on AC-079**, which is **still unsigned** — sign-off is gated to Slice 40 (§4 #1).<!-- END GENERATED release-state:0.8.20:status-unblocks --> |'"', extensions=['tables']))
+except Exception as e:
+ print('err',e)
+PY" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+<table>
+<thead>
+<tr>
+<th>A</th>
+<th>B</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>x</td>
+<td><!-- BEGIN GENERATED release-state:0.8.20:status-unblocks --><strong>Slices 20 and 25 are NOW UNBLOCKED</strong> — R-20-PR (the projection registry) now exists. Slice 30 (H7) depends on 10/15/20/25. <strong>Publish remains blocked on AC-079</strong>, which is <strong>still unsigned</strong> — sign-off is gated to Slice 40 (§4 #1).<!-- END GENERATED release-state:0.8.20:status-unblocks --></td>
+</tr>
+</tbody>
+</table>
+
+exec
+/bin/bash -lc 'grep -R "pub const SCHEMA_VERSION" -n src/rust/crates/fathomdb-schema/src/lib.rs || true' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+6:pub const SCHEMA_VERSION: u32 = 24;
+
+exec
+/bin/bash -lc "git log --oneline --grep='merge(0.8.20): Slice' --all -20" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+a2022957 merge(0.8.20): Slice 15 keystone COMPLETE — registry + EAV + filterable pre-KNN + TC-33
+e32497a2 merge(0.8.20): Slice 15 PARTIAL — TC-34 authoring + search-validity coherence
+3cfb3cda merge(0.8.20): Slice 10 — ReadView/read-modes + node-validity + TC-31
+1f8ed8bf merge(0.8.20): Slice 5 — erasure completeness (R-20-E1..E8)
+403eb254 merge(0.8.20): Slice-0 X0 design gate — HITL-SIGNED 2026-07-19
+
+codex
+The new release-state generated-view gate, CI wiring, and fixture coverage appear consistent with the documented intent. The gate passes on the current checkout and the recurrence tests exercise the key failure modes without revealing a correctness issue.
+The new release-state generated-view gate, CI wiring, and fixture coverage appear consistent with the documented intent. The gate passes on the current checkout and the recurrence tests exercise the key failure modes without revealing a correctness issue.
