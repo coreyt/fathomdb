@@ -54,6 +54,16 @@ init_repo() {
   git -C "$dir" config user.name 'Board Currency Test'
   git -C "$dir" config commit.gpgsign false
   git -C "$dir" config core.hooksPath "$NO_HOOKS"
+  # A minimal, CONSISTENT ledger + sidecar (committed by the first commit_all,
+  # which runs `git add -A`). The preflight arms below invoke `--landing`, which
+  # now also runs the ledger-integrity gate (DOC-HYGIENE-2 T1b); its TC-37
+  # vacuous-pass guard HARD-fails a tree in which it discovers zero ledgers, so
+  # these fixtures must model a real checkout and carry one. Nothing here is
+  # ledger-specific beyond its presence — the ledger arms live in
+  # scripts/tests/test_check_ledgers.sh.
+  mkdir -p "$dir/dev/steward"
+  printf '{"seq":1,"note":"fixture"}\n' >"$dir/dev/steward/steward-ledger.jsonl"
+  printf '%s' 1 >"$dir/dev/steward/steward-ledger.jsonl.seq"
 }
 
 # commit_all <dir> <message>

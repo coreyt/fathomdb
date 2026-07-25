@@ -30,10 +30,21 @@ even when --select would otherwise silently drop it). --validate runs a full-fil
 JSONL integrity scan instead (0 clean / 3 corrupt / 2 error; no delta, no cursor
 advance).
 
+--project folds an event-sourced ledger to its LATEST entry per `id` (the file
+is the event log; the fold is the state). Entries with no `id` are NOT an error
+— they are counted into an explicit, always-printed `unfoldable (no id): N`
+bucket. That bucket is the whole point: the recipe this mode replaces did
+`latest[r["id"]] = r` and died with KeyError on the first id-less entry, which
+is every entry of dev/steward/steward-ledger.jsonl. Like --prune and --validate
+it is a standalone READ/REPORT mode: it never writes the ledger and never reads
+or advances the cursor, so running a projection cannot silently consume the
+delta a later watch run is waiting for.
+
 Flags: --json (structured envelope), --dry-run (compute delta without advancing
 the cursor), --reset (discard cursor first), --select (tail field filter),
 --strategy (override), --no-status (see below), --prune (drop cursors whose
-source file is gone; takes no file argument), --validate (full-file JSONL scan).
+source file is gone; takes no file argument), --validate (full-file JSONL scan),
+--project (fold-to-latest-per-id projection).
 
 Exit status is grep-style by default, so a poller can branch on it without
 capturing stdout:
@@ -402,6 +413,88 @@ def do_validate(path: str, as_json: bool, out, err) -> int:
     return 0 if clean else 3
 
 
+def do_project(path: str, as_json: bool, out, err) -> int:
+    """Fold an event-sourced JSONL ledger to its latest entry per `id`.
+
+    These ledgers are event logs: an item's current state is the LAST entry
+    carrying its `id`, and every earlier entry for that id is history. This mode
+    computes that fold. Last occurrence in FILE order wins — the files are
+    append-ordered (and `check-ledgers.sh` gates that their seq runs are
+    contiguous), so file order is append order.
+
+    Entries with no usable `id` are a first-class, expected case, not an error:
+    dev/steward/steward-ledger.jsonl is a decision trail whose 107/107 entries
+    carry no `id` at all. They are counted into the `unfoldable (no id): N`
+    bucket, which is printed on EVERY run (including when it is 0) so a caller
+    can never mistake "nothing to fold" for "everything folded". A line that is
+    not valid JSON, or is valid JSON but not an object, goes to a separate
+    `malformed` bucket (use --validate for the line-by-line integrity report).
+
+    Read/report only: never writes the ledger, and — like --prune/--validate —
+    never touches the cursor state directory, so a projection cannot surprise a
+    caller by consuming the delta their next watch run is waiting for.
+
+    Text mode prints one compact JSON object per folded id on stdout, sorted
+    lexicographically by id; --json prints a single envelope. Exit codes are NOT
+    grep-style here (there is no "no change" notion for a projection):
+    0 = projection emitted (even if it is empty), 2 = read error.
+    """
+    try:
+        data = read_bytes(path)
+    except OSError as exc:
+        print(f"ledgerwatch: cannot read {path}: {exc}", file=err)
+        return 2
+
+    text = data.decode("utf-8", errors="replace")
+    latest: dict[str, dict] = {}
+    entries = 0
+    no_id = 0
+    malformed = 0
+
+    for raw in text.split("\n"):
+        if raw.strip() == "":
+            continue  # blank lines are not entries
+        entries += 1
+        try:
+            obj = json.loads(raw)
+        except Exception:
+            malformed += 1
+            continue
+        if not isinstance(obj, dict):
+            malformed += 1
+            continue
+        ident = obj.get("id")
+        if ident is None or str(ident) == "":
+            no_id += 1
+            continue
+        latest[str(ident)] = obj  # last write wins (file order == append order)
+
+    rows = [latest[key] for key in sorted(latest)]
+
+    if as_json:
+        envelope = {
+            "file": path,
+            "mode": "project",
+            "entries": entries,
+            "folded_ids": len(rows),
+            "unfoldable_no_id": no_id,
+            "malformed": malformed,
+            "latest": rows,
+        }
+        out.write(json.dumps(envelope) + "\n")
+    else:
+        for row in rows:
+            out.write(json.dumps(row, sort_keys=True) + "\n")
+
+    print(
+        f"ledgerwatch: --project {path}: {len(rows)} id(s) folded "
+        f"from {entries} entries; unfoldable (no id): {no_id}; "
+        f"malformed: {malformed}",
+        file=err,
+    )
+    return 0
+
+
 # --- driver -----------------------------------------------------------------
 
 
@@ -443,6 +536,14 @@ def run(argv, out=sys.stdout, err=sys.stderr) -> int:
         help="JSONL integrity scan of the whole file (0 clean / 3 corrupt / 2 error); "
         "no delta, no cursor advance",
     )
+    parser.add_argument(
+        "--project",
+        action="store_true",
+        help="fold the ledger to its latest entry per id; entries with no id are "
+        "reported in an 'unfoldable (no id): N' bucket, never fatal. Read-only: "
+        "does NOT write the ledger and does NOT advance the cursor "
+        "(0 = projection emitted / 2 = read error)",
+    )
     args = parser.parse_args(argv)
 
     if args.prune:
@@ -461,6 +562,12 @@ def run(argv, out=sys.stdout, err=sys.stderr) -> int:
         # Opt-in full-file integrity scan; a standalone mode (like --prune) that
         # does not compute a delta or advance the cursor.
         return do_validate(abspath, args.json, out, err)
+
+    # Fold-to-latest-per-id projection. Dispatched HERE, before the state dir is
+    # created below, so --project provably cannot create, read or advance a
+    # cursor (see do_project's docstring for why that is the safe choice).
+    if args.project:
+        return do_project(abspath, args.json, out, err)
 
     try:
         select = parse_select(args.select)

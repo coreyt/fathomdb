@@ -70,8 +70,15 @@ make_fixture() {
   git -C "$primary" config user.name 'Preflight Test'
   git -C "$primary" config commit.gpgsign false
   git -C "$primary" config core.hooksPath "$NO_HOOKS"
-  mkdir -p "$primary/src" "$primary/scripts"
+  mkdir -p "$primary/src" "$primary/scripts" "$primary/dev/steward"
   printf 'fixture\n' >"$primary/src/keep.txt"
+  # A minimal, CONSISTENT ledger + sidecar. preflight.sh --landing now also runs
+  # the ledger-integrity gate (DOC-HYGIENE-2 T1b), whose TC-37 vacuous-pass
+  # guard HARD-fails a tree in which it discovers zero ledgers — a repo with no
+  # ledger at all cannot be vouched for. This fixture models a real checkout, so
+  # it carries one; its own corruption arms live in test_check_ledgers.sh.
+  printf '{"seq":1,"note":"fixture"}\n' >"$primary/dev/steward/steward-ledger.jsonl"
+  printf '%s' 1 >"$primary/dev/steward/steward-ledger.jsonl.seq"
   git -C "$primary" add -A
   git -C "$primary" commit -q -m 'fixture: initial commit'
   git -C "$primary" worktree add -q -b landing-fixture "$linked" >/dev/null 2>&1

@@ -24,6 +24,13 @@ run_capped test-preflight-landing bash scripts/tests/test_preflight_landing.sh
 # never git-writes into this checkout.
 run_capped test-check-board-currency bash scripts/tests/test_check_board_currency.sh
 
+# Scripts (bash): DOC-HYGIENE-2 T1b — the shared scripts/check-ledgers.sh
+# predicate (sidecar == max(seq); seq contiguous), its --landing wiring in
+# preflight.sh, and a static assertion that its CI job is always-on. Fixture
+# roots are plain dirs under mktemp -d (plus throwaway git repos for the
+# preflight arms); no real .jsonl / .jsonl.seq is ever touched.
+run_capped test-check-ledgers bash scripts/tests/test_check_ledgers.sh
+
 # Scripts (bash): sibling-package co-tagging assert (AC-052). Offline via
 # python3 -m http.server fixture; never hits crates.io.
 run_capped test-assert-co-tagging bash scripts/tests/test_assert_co_tagging.sh
@@ -131,6 +138,18 @@ if [ -n "$python_bin" ] && "$python_bin" -c 'import pytest' >/dev/null 2>&1 && [
   fi
 else
   skip_notice test-python "pytest not installed or no tests dir"
+fi
+
+# ledgerwatch (dev/agent-tools): pure-stdlib pytest suite, no fathomdb binding
+# needed, so it runs under whichever interpreter was resolved above without the
+# maturin-rebuild dance. Wired in by DOC-HYGIENE-2 T1b — the suite existed but
+# no harness ran it, so its --project arms (fold-to-latest-per-id, and the
+# "unfoldable (no id)" bucket that the deleted readme recipe crashed on) would
+# otherwise never have been exercised in CI.
+if [ -n "$python_bin" ] && "$python_bin" -c 'import pytest' >/dev/null 2>&1; then
+  run_capped test-ledgerwatch "$python_bin" -m pytest -q dev/agent-tools/ledgerwatch
+else
+  skip_notice test-ledgerwatch "pytest not installed"
 fi
 
 # TypeScript

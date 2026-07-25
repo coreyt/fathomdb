@@ -216,25 +216,31 @@ $LW $LEDGER --state-dir dev/.ledgerwatch-todos
 $LW $LEDGER --validate
 ```
 
-**Deriving the live board (all open items):** fold to the latest entry per `id`, then drop
-terminal statuses. A quick, dependency-free projection:
+**Deriving the current state:** fold the ledger to its latest entry per `id` with
+`--project`. The file is an event log; the fold is the state.
 
 ```bash
-python3 - <<'PY'
-import json, collections
-latest = {}
-for line in open("dev/todos-and-considerations-ledger.jsonl"):
-    line = line.strip()
-    if not line: continue
-    r = json.loads(line)
-    latest[r["id"]] = r            # last write wins (file is in append/seq order)
-TERMINAL = {"done", "wont-do", "superseded"}
-live = [r for r in latest.values() if r.get("status") not in TERMINAL]
-live.sort(key=lambda r: (r.get("priority","p9"), r["id"]))
-for r in live:
-    print(f'{r["id"]:7} [{r["kind"]:13}] {r.get("status",""):11} {r["summary"]}')
-PY
+# Latest entry per id, one compact JSON object per line, sorted by id:
+$LW $LEDGER --project
+
+# Same, as a single envelope (adds the entries / folded_ids / unfoldable_no_id counts):
+$LW $LEDGER --project --json
 ```
+
+`--project` is read-only: it never writes the ledger and never advances the watch cursor,
+so a projection cannot swallow the delta your next `$LW $LEDGER` run is waiting for.
+
+Every run prints an `unfoldable (no id): N` bucket. Entries with no `id` are **normal**,
+not an error — `dev/steward/steward-ledger.jsonl` is a decision trail in which *no* entry
+has one (107/107), and 16 of this ledger's 76 entries have none either. A previous recipe
+here folded with `latest[r["id"]] = r` and died with `KeyError: 'id'` on the first such
+entry; the bucket is what replaces that failure with a number you can see.
+
+Filter the projection with whatever you like (`jq 'select(.status=="open")'`) — the tool
+deliberately imposes no status vocabulary, because the statuses actually in use here are
+open-ended (`open`, `OPEN`, `resolved`, `closed`, `watching`, `RATIFIED`, `accepted`,
+`placed`, `in_progress`, `build-authorized`, `converged-pending-hitl`, and entries with
+no status at all).
 
 > The `.ledgerwatch*` cursor dirs are **gitignored** (watcher state). Commit only the
 > `.jsonl` and its `.seq` sidecar.

@@ -693,3 +693,137 @@ def test_validate_json_envelope(tmp_path):
 def test_validate_missing_file_exits_2(tmp_path):
     rc, _, err = lw(tmp_path, str(tmp_path / "nope.jsonl"), "--validate")
     assert rc == 2 and "no such file" in err
+
+
+# --------------------------------------------------------------------------
+# --project (fold-to-latest-per-id)
+#
+# RED-first: the recipe this mode replaces (dev/todos-and-considerations-ledger-
+# readme.md lines 222-237, deleted in the same commit) did
+# `latest[r["id"]] = r` and died with `KeyError: 'id'` on the first id-less
+# entry — reproduced against the real ledger before this mode existed. Every
+# arm below is therefore built around id-less entries being ROUTINE, not fatal.
+# --------------------------------------------------------------------------
+
+PROJECT_OK = 0
+
+
+def test_project_folds_to_latest_per_id(tmp_path):
+    f = tmp_path / "l.jsonl"
+    f.write_text(
+        '{"seq":1,"id":"TC-1","status":"open"}\n'
+        '{"seq":2,"id":"TC-2","status":"open"}\n'
+        '{"seq":3,"id":"TC-1","status":"resolved"}\n'
+    )
+    rc, out, _ = lw(tmp_path, str(f), "--project")
+    rows = [json.loads(line) for line in out.splitlines()]
+    assert rc == PROJECT_OK
+    assert [r["id"] for r in rows] == ["TC-1", "TC-2"]  # sorted by id
+    # TC-1's LATEST entry wins; its earlier "open" state is history.
+    assert rows[0]["status"] == "resolved" and rows[0]["seq"] == 3
+
+
+def test_project_entry_without_id_is_bucketed_not_fatal(tmp_path):
+    """The exact input that killed the old recipe with KeyError: 'id'."""
+    f = tmp_path / "l.jsonl"
+    f.write_text(
+        '{"seq":1,"id":"TC-1","status":"open"}\n'
+        '{"seq":2,"note":"a decision-trail entry with no id"}\n'
+        '{"seq":3,"id":"TC-1","status":"resolved"}\n'
+    )
+    rc, out, err = lw(tmp_path, str(f), "--project")
+    assert rc == PROJECT_OK  # not an error, and not a traceback
+    assert "unfoldable (no id): 1" in err
+    assert len(out.splitlines()) == 1
+
+
+def test_project_all_entries_id_less_is_not_an_error(tmp_path):
+    """dev/steward/steward-ledger.jsonl's real shape: no entry has an `id`."""
+    f = tmp_path / "steward.jsonl"
+    f.write_text('{"seq":1,"decision":"a"}\n{"seq":2,"decision":"b"}\n')
+    rc, out, err = lw(tmp_path, str(f), "--project")
+    assert rc == PROJECT_OK
+    assert out == ""  # nothing foldable
+    assert "0 id(s) folded" in err and "unfoldable (no id): 2" in err
+
+
+def test_project_bucket_is_printed_even_when_zero(tmp_path):
+    """Always printed, so 'nothing to fold' can never look like 'all folded'."""
+    f = tmp_path / "l.jsonl"
+    f.write_text('{"seq":1,"id":"TC-1"}\n')
+    _, _, err = lw(tmp_path, str(f), "--project")
+    assert "unfoldable (no id): 0" in err
+
+
+def test_project_does_not_advance_or_create_the_cursor(tmp_path):
+    f = tmp_path / "l.jsonl"
+    f.write_text('{"seq":1,"id":"TC-1"}\n')
+    lw(tmp_path, str(f), "--project")
+    state_dir = tmp_path / "state"
+    assert not state_dir.exists()  # no cursor created at all
+    # A subsequent watch run therefore still sees the whole file as new.
+    rc, out, _ = lw(tmp_path, str(f))
+    assert rc == CHANGED and '"id":"TC-1"' in out.replace(" ", "")
+
+
+def test_project_does_not_mutate_the_ledger(tmp_path):
+    f = tmp_path / "l.jsonl"
+    original = '{"seq":1,"id":"TC-1"}\n{"seq":2}\n'
+    f.write_text(original)
+    lw(tmp_path, str(f), "--project")
+    assert f.read_text() == original
+
+
+def test_project_malformed_line_is_bucketed_separately(tmp_path):
+    f = tmp_path / "l.jsonl"
+    f.write_text('{"seq":1,"id":"TC-1"}\nnot json at all\n[1,2,3]\n')
+    rc, out, err = lw(tmp_path, str(f), "--project")
+    assert rc == PROJECT_OK
+    assert "malformed: 2" in err  # torn line + a non-object JSON value
+    assert len(out.splitlines()) == 1
+
+
+def test_project_blank_lines_are_not_entries(tmp_path):
+    f = tmp_path / "l.jsonl"
+    f.write_text('{"seq":1,"id":"TC-1"}\n\n   \n{"seq":2,"id":"TC-2"}\n')
+    _, out, err = lw(tmp_path, str(f), "--project")
+    assert len(out.splitlines()) == 2
+    assert "from 2 entries" in err and "malformed: 0" in err
+
+
+def test_project_empty_file_is_an_empty_projection(tmp_path):
+    f = tmp_path / "l.jsonl"
+    f.write_text("")
+    rc, out, err = lw(tmp_path, str(f), "--project")
+    assert rc == PROJECT_OK and out == ""
+    assert "0 id(s) folded" in err and "unfoldable (no id): 0" in err
+
+
+def test_project_json_envelope(tmp_path):
+    f = tmp_path / "l.jsonl"
+    f.write_text(
+        '{"seq":1,"id":"TC-1","status":"open"}\n'
+        '{"seq":2,"note":"no id"}\n'
+        '{"seq":3,"id":"TC-1","status":"resolved"}\n'
+    )
+    rc, out, err = lw(tmp_path, str(f), "--project", "--json")
+    env = json.loads(out)
+    assert rc == PROJECT_OK
+    assert env["mode"] == "project"
+    assert env["entries"] == 3 and env["folded_ids"] == 1
+    assert env["unfoldable_no_id"] == 1 and env["malformed"] == 0
+    assert env["latest"][0]["status"] == "resolved"
+    assert "unfoldable (no id): 1" in err  # bucket printed in --json mode too
+
+
+def test_project_missing_file_exits_2(tmp_path):
+    rc, _, err = lw(tmp_path, str(tmp_path / "nope.jsonl"), "--project")
+    assert rc == ERROR and "no such file" in err
+
+
+def test_project_non_string_and_empty_ids(tmp_path):
+    f = tmp_path / "l.jsonl"
+    f.write_text('{"seq":1,"id":7}\n{"seq":2,"id":""}\n{"seq":3,"id":null}\n')
+    _, out, err = lw(tmp_path, str(f), "--project")
+    assert len(out.splitlines()) == 1  # id 7 folds under the key "7"
+    assert "unfoldable (no id): 2" in err  # "" and null are not usable ids

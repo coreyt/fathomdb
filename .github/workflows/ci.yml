@@ -415,6 +415,26 @@ jobs:
       - name: Board/git-ancestry drift check (status-board-currency-enforcement item 3)
         run: bash scripts/check-board-currency.sh --tip HEAD
 
+  # DOC-HYGIENE-2 T1b — the always-on ledger-integrity backstop.
+  # `preflight.sh --landing` is the PREVENT gate at land time; this job is the
+  # DETECT gate for whatever slips it. Reuses scripts/check-ledgers.sh — the
+  # SAME script preflight calls — so the two homes cannot diverge (see that
+  # script's header for the predicate: sidecar == max(seq), and seq contiguous).
+  #
+  # Deliberately carries NO `if:` condition. A docs_only-gated job never fires on
+  # a code push, and the measured incident (steward-ledger.jsonl.seq frozen at 80
+  # against max(seq) 98 for 19 commits / four days) spanned both docs and code
+  # pushes; the sidecar is tracked, so any clone taken in that window would have
+  # minted colliding seq numbers. Default (depth-1) checkout is sufficient: the
+  # predicate reads working-tree files only and walks no history.
+  ledger-integrity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Ledger sidecar/seq integrity (DOC-HYGIENE-2 T1b)
+        run: bash scripts/check-ledgers.sh
+
   # mkdocs --strict is the broader CI gate beyond agent-verify (per AGENTS.md §3).
   # Intentionally NOT gated on docs_only: it must run for docs/** changes (the
   # fast path) AND alongside code changes, exactly as before.

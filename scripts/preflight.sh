@@ -194,6 +194,47 @@ if [ "$LANDING" -eq 1 ]; then
   fi
 fi
 
+# --- 8. Ledger-integrity gate (DOC-HYGIENE-2 T1b) --------------------------------
+# Refuse a land that would ship a `*.jsonl.seq` sidecar disagreeing with its
+# ledger. The incident: 19 consecutive commits (f22e4947 -> 3264114a, four days)
+# shipped dev/steward/steward-ledger.jsonl.seq frozen at 80 while max(seq) in
+# the ledger had reached 98. The sidecar is TRACKED and is the only thing an
+# appender reads to pick the next seq, so every clone taken in that window would
+# have minted colliding seq numbers.
+#
+# The predicate lives in scripts/check-ledgers.sh (see that file's header for
+# the full statement — exactly two checks: sidecar == max(seq), and seq
+# contiguous) so preflight and the always-on CI job share ONE implementation and
+# cannot diverge, exactly as §7 does for board-currency.
+#
+# --landing-only, mirroring §7's structure. The ledger invariant is in fact true
+# at all times (unlike a board, which legitimately reads "in flight" mid-build),
+# so an unconditional run would also be sound; it is kept behind --landing so
+# preflight's non-landing path stays exactly as lean as it was, and the CI job —
+# which is deliberately NOT docs_only-gated — is what covers every non-landing
+# push.
+if [ "$LANDING" -eq 1 ]; then
+  LEDGER_CHECK_OUT="$(bash "$SELF_DIR/check-ledgers.sh" 2>&1)" || LEDGER_CHECK_RC=$?
+  LEDGER_CHECK_RC="${LEDGER_CHECK_RC:-0}"
+  if [ "$LEDGER_CHECK_RC" -ne 0 ]; then
+    LEDGER_SAW_BROKEN=0
+    while IFS= read -r line; do
+      case "$line" in
+        BROKEN*) hard "ledger-integrity: $line"; LEDGER_SAW_BROKEN=1 ;;
+        *)       info "ledger-integrity: $line" ;;
+      esac
+    done <<<"$LEDGER_CHECK_OUT"
+    # Anti-fail-open: a non-zero rc with no BROKEN line means the checker itself
+    # could not run (exit 2 = usage/env, e.g. python3 absent) — that must still
+    # block the land, never degrade into INFO lines and a green summary.
+    if [ "$LEDGER_SAW_BROKEN" -eq 0 ]; then
+      hard "ledger-integrity: check-ledgers.sh exited $LEDGER_CHECK_RC without reporting a specific defect — refusing to certify this tree for landing"
+    fi
+  else
+    ok "ledger-integrity: every *.jsonl.seq sidecar agrees with its ledger and every seq run is contiguous"
+  fi
+fi
+
 # --- Summary (JSON, last line) ---------------------------------------------------
 json_arr() { local out="" x; for x in "$@"; do out="${out:+$out,}\"$(printf '%s' "$x" | sed 's/\\/\\\\/g; s/"/\\"/g')\""; done; printf '[%s]' "$out"; }
 
