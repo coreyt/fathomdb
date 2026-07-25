@@ -1,0 +1,360 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f9b33-c7b0-7e51-a8ba-fcf454bae14e
+--------
+user
+changes against 'c4adb5326572963877ad69104a8fa600d71e4ced'
+exec
+/bin/bash -lc "cat MEMORY.md 2>/dev/null || true && ls feedback_*.md 2>/dev/null | xargs -r -n1 sh -c 'echo --- "'$0; cat "$0"'"'" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+exec
+/bin/bash -lc 'git diff --stat c4adb5326572963877ad69104a8fa600d71e4ced && git diff --name-only c4adb5326572963877ad69104a8fa600d71e4ced' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+ scripts/commission-manifest.sh            | 16 ++++++++++++----
+ scripts/tests/test_commission_manifest.sh | 20 +++++++++++++++++++-
+ 2 files changed, 31 insertions(+), 5 deletions(-)
+scripts/commission-manifest.sh
+scripts/tests/test_commission_manifest.sh
+
+exec
+/bin/bash -lc 'git diff --find-renames --find-copies c4adb5326572963877ad69104a8fa600d71e4ced -- scripts/commission-manifest.sh scripts/tests/test_commission_manifest.sh' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+diff --git a/scripts/commission-manifest.sh b/scripts/commission-manifest.sh
+index 9e59841e..4703bbf6 100755
+--- a/scripts/commission-manifest.sh
++++ b/scripts/commission-manifest.sh
+@@ -424,14 +424,22 @@ def build(release, state_path, state, slice_no, entry):
+         m.out("                   `git log` for that landing and record it in output.json. Do NOT guess.")
+     else:
+         m.out("  base sha         (none — NO landed slice precedes Slice %s)" % slice_no)
+-        m.out("                   This is the first slice of the release to be cut, so there is no")
+-        m.out("                   predecessor merge: branch from `git rev-parse origin/main` at STEP 0.")
++        # These two cases are MUTUALLY EXCLUSIVE. "No predecessor" means branch
++        # from the tip ONLY while the tip is still where this slice was cut. Once
++        # later slices have landed, origin/main carries their merges, so printing
++        # the branch-from-tip instruction beside the TIP IS AHEAD warning emits
++        # precisely the stale-base instruction this section exists to prevent —
++        # and an operator follows the instruction, not the caveat next to it.
+         if later_landed:
+             m.out("  ⚠ TIP IS AHEAD   Slice(s) %s landed AFTER this one, so origin/main already"
+                   % ", ".join(str(s) for s in later_landed))
+-            m.out("                   carries work Slice %s never had. Branch from the tip only if that"
++            m.out("                   carries work Slice %s never had. There is NO correct automatic"
+                   % slice_no)
+-            m.out("                   is intended; otherwise recover the point of cut from `git log`.")
++            m.out("                   base for this regeneration: do NOT branch from the tip. Recover")
++            m.out("                   the point of cut from `git log` and record it in output.json.")
++        else:
++            m.out("                   This is the first slice of the release to be cut, so there is no")
++            m.out("                   predecessor merge: branch from `git rev-parse origin/main` at STEP 0.")
+     dep_gap = [d for d in (entry.get("depends_on") or [])
+                if (ladder.get(d) or {}).get("status") == "LANDED"
+                and (base_slice is None or d > base_slice)]
+diff --git a/scripts/tests/test_commission_manifest.sh b/scripts/tests/test_commission_manifest.sh
+index 01ca6090..3a1b4fdf 100644
+--- a/scripts/tests/test_commission_manifest.sh
++++ b/scripts/tests/test_commission_manifest.sh
+@@ -591,7 +591,8 @@ BASE_LINE="$(base_line)"
+ BASE_BLOCK="$(grep -m1 -A3 '^  base sha' <<<"$OUT" || true)"
+ if [ "$RC" -eq 0 ] && grep -qi 'no landed slice precedes' <<<"$BASE_LINE" \
+    && ! grep -qE '[0-9a-f]{8}' <<<"$BASE_LINE" \
+-   && grep -qi 'first slice' <<<"$BASE_BLOCK" && grep -q 'origin/main' <<<"$BASE_BLOCK"; then
++   && grep -qi 'first slice' <<<"$BASE_BLOCK" \
++   && grep -q 'branch from `git rev-parse origin/main`' <<<"$BASE_BLOCK"; then
+   pass "first slice — no predecessor is stated in words + branch-from-tip, not left blank"
+ else
+   fail "arm 8h (first slice): rc=$RC base=[$BASE_LINE] block=[$BASE_BLOCK]"
+@@ -614,6 +615,23 @@ else
+   fail "arm 8i (tip ahead): rc=$RC base=[$BASE_LINE] out=$OUT"
+ fi
+ 
++# --- Arm 8i2: ...and the warning is not contradicted by an instruction ------
++# codex §9 [P2]. The warning alone was not enough: the no-predecessor branch ALSO
++# printed "branch from \`git rev-parse origin/main\`", so the same brief warned the
++# tip was ahead and then told the operator to branch from it anyway. An operator
++# follows the instruction, not the caveat beside it, so the two cases must be
++# mutually exclusive. Reuses arm 8i's run (same fixture, same $OUT).
++# NOTE: the generic "re-verify \`git rev-parse origin/main\`" line is a different
++# statement and stays; the assertion targets the BRANCH instruction only.
++if ! grep -q 'branch from `git rev-parse origin/main`' <<<"$OUT" \
++   && grep -q 'do NOT branch from the tip' <<<"$OUT" \
++   && grep -q 'NO correct automatic' <<<"$OUT" \
++   && grep -q 'git log' <<<"$OUT"; then
++  pass "a historical first-slice brief is never ALSO told to branch from the tip"
++else
++  fail "arm 8i2 (contradictory branch-from-tip instruction): rc=$RC out=$OUT"
++fi
++
+ # --- Arm 8j: GAPS in `landed` -> the greatest landed slice BELOW the target --
+ # Slice 5 never landed; the predecessor is Slice 10, not "the target minus one"
+ # and not the oldest landing.
+
+exec
+/bin/bash -lc "sed -n '360,470p' scripts/commission-manifest.sh && sed -n '540,640p' scripts/tests/test_commission_manifest.sh" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+    m.out("COMMISSION MANIFEST — %s Slice %s (%s)" % (release, slice_no, entry.get("short") or "?"))
+    m.out("=" * 100)
+    m.out("GENERATED, READ-ONLY. It CITES sources of record; it restates no ruling and decides")
+    m.out("nothing. Facts come from the single-writer state file %s" % m.cite(state_path))
+    m.out("(T2a) and from `status:` frontmatter under `%s/` (T2c). Section set derived from" % DESIGN_ROOT)
+    m.out("%s" % m.cite(LBO_TEMPLATE))
+    m.out("and %s — this REPLACES those as the brief" % m.cite(SLICE_TEMPLATE))
+    m.out("assembly step; it does not add a third template to maintain.")
+    m.out()
+    m.out("## 1. ASSIGNMENT   [LBO 'Assignment (filled by LBS)'; SLICE-TEMPLATE title line + §2]")
+    m.out("  release          %s (%s)" % (release, state.get("release_kind") or "kind not stated"))
+    m.out("  slice            %s — %s" % (slice_no, entry.get("title") or "(no title)"))
+    m.out("  requirement id   %s" % (entry.get("short") or "(none)"))
+    m.out("  ladder status    %s" % (entry.get("status") or "?"))
+    m.out("  depends on       %s" % (", ".join(
+        "Slice %s [%s%s]" % (d, (ladder.get(d) or {}).get("status", "UNKNOWN"),
+                             ", %s" % (ladder.get(d) or {}).get("sha")
+                             if (ladder.get(d) or {}).get("sha") else "")
+        for d in (entry.get("depends_on") or [])) or "— (none)"))
+    if next_slice == slice_no:
+        m.out("  sequencing       ✅ this IS the next slice per the state file")
+    else:
+        m.out("  sequencing       ⚠ this is NOT the next slice — the state file says next = %s"
+              % next_slice)
+    m.out("  plan             %s" % m.cite(plan))
+    m.out("  board of record  %s" % m.cite(board))
+    m.out("  master           %s" % m.cite(master))
+    m.out("  codex §9         transcripts go under %s, release-namespaced (TC-RUBRIC-7)"
+          % m.cite(CODEX_DIR))
+    m.out()
+
+    # ---- 2. BASE SHA (LBO "Branch from tip"; SLICE-TEMPLATE §0) ------------
+    # The base is the TARGET SLICE'S PREDECESSOR: the greatest LANDED slice
+    # STRICTLY BELOW slice_no. It is NOT max(landed). For any slice that is not
+    # the next one — a historical regeneration, an out-of-order brief — max()
+    # can select the target's OWN landing merge or a later one, i.e. tell an
+    # operator to branch from the very work they are being commissioned to do.
+    # A wrong branch point is this repo's named agent-worktree-stale-base trap
+    # (it has already cost two slices), and a confidently printed wrong SHA is
+    # exactly what defeats the human sanity check, so this is computed
+    # relative to the target and never to the tip of `landed`.
+    #
+    # `depends_on` is deliberately NOT the base. Dependencies state the MINIMUM
+    # ancestry a slice needs; branching from that minimum would silently drop
+    # every slice landed since — the same stale-base trap from the other side.
+    # The predecessor is the ancestry-maximal choice that still excludes the
+    # target itself, so dependencies are CROSS-CHECKED against it instead.
+    m.out("## 2. BASE SHA + BRANCH POINT   [LBO 'Branch from tip'; SLICE-TEMPLATE §0]")
+    landed_nums = sorted({s for s in landed if isinstance(s, int)})
+    prior_landed = [s for s in landed_nums if s < slice_no]
+    later_landed = [s for s in landed_nums if s > slice_no]
+    base_slice = max(prior_landed) if prior_landed else None
+    base_sha = (ladder.get(base_slice) or {}).get("sha") if base_slice is not None else None
+    if slice_no in landed_nums:
+        m.out("  ⚠ HISTORICAL     Slice %s is ITSELF LANDED (%s), so this is a regeneration:"
+              % (slice_no, (ladder.get(slice_no) or {}).get("sha") or "no sha recorded"))
+        m.out("                   the base below is that slice's PREDECESSOR, never its own merge.")
+    if base_sha:
+        m.out("  base sha         %s  (Slice %s — the newest LANDED slice STRICTLY BEFORE Slice %s)"
+              % (base_sha, base_slice, slice_no))
+    elif base_slice is not None:
+        m.out("  base sha         (Slice %s is the predecessor but records NO landing sha)"
+              % base_slice)
+        m.out("                   The state file is incomplete: take the branch point from")
+        m.out("                   `git log` for that landing and record it in output.json. Do NOT guess.")
+    else:
+        m.out("  base sha         (none — NO landed slice precedes Slice %s)" % slice_no)
+        # These two cases are MUTUALLY EXCLUSIVE. "No predecessor" means branch
+        # from the tip ONLY while the tip is still where this slice was cut. Once
+        # later slices have landed, origin/main carries their merges, so printing
+        # the branch-from-tip instruction beside the TIP IS AHEAD warning emits
+        # precisely the stale-base instruction this section exists to prevent —
+        # and an operator follows the instruction, not the caveat next to it.
+        if later_landed:
+            m.out("  ⚠ TIP IS AHEAD   Slice(s) %s landed AFTER this one, so origin/main already"
+                  % ", ".join(str(s) for s in later_landed))
+            m.out("                   carries work Slice %s never had. There is NO correct automatic"
+                  % slice_no)
+            m.out("                   base for this regeneration: do NOT branch from the tip. Recover")
+            m.out("                   the point of cut from `git log` and record it in output.json.")
+        else:
+            m.out("                   This is the first slice of the release to be cut, so there is no")
+            m.out("                   predecessor merge: branch from `git rev-parse origin/main` at STEP 0.")
+    dep_gap = [d for d in (entry.get("depends_on") or [])
+               if (ladder.get(d) or {}).get("status") == "LANDED"
+               and (base_slice is None or d > base_slice)]
+    if dep_gap:
+        m.out("  ⚠ DEP NOT IN BASE dependency Slice(s) %s are LANDED but do NOT sit at or below the"
+              % ", ".join(str(d) for d in dep_gap))
+        m.out("                   base slice, so the base merge does not contain them. Re-derive the")
+        m.out("                   branch point from `git log` before cutting the worktree.")
+    m.out("  re-verify        `git rev-parse origin/main` at STEP 0 — a later landing may have")
+    m.out("                   advanced the tip since the state file was written.")
+    m.out("  landed so far    %s" % (", ".join(
+        "%s (%s)%s" % (s, (ladder.get(s) or {}).get("sha") or "no sha",
+                       " ⚠ at/after Slice %s" % slice_no if isinstance(s, int) and s >= slice_no else "")
+        for s in landed) or "none"))
+    m.out("  SCHEMA           %s — %s"
+          % (state.get("schema_version"),
+             m.cite(schema_src_path(state), "pub const SCHEMA_VERSION", "schema source")))
+    m.out()
+
+    # ---- 3. WORKTREE RULES (LBO STEP 0; SLICE-TEMPLATE §0) ----------------
+    m.out("## 3. WORKTREE RULES   [LBO 'STEP 0 — Isolate'; SLICE-TEMPLATE §0] — cite, do not restate")
+    for label, kw in (("preflight gate ", ["preflight gate"]),
+                      ("hard rules     ", ["hard rules"]),
+                      ("worktree cleanup", ["worktree cleanup"])):
+        a = m.anchor(ORCH, kw, label.strip())
+        if a:
+            m.out("  %s %s" % (label, a))
+    for label, kw in (("session preflight", ["hard preflight checks"]),
+# the next one selects the target's OWN landing merge (or a later one) — a brief
+# telling an operator to branch from the very work being commissioned. This is
+# the fixture form of the live case: it arrives the moment 0.8.20 Slice 20 lands
+# and someone regenerates its manifest. Slice 10 is landed here; the base MUST
+# be Slice 5's merge (bbbb2222) and MUST NOT be Slice 10's own (dddd5555).
+setup_fixture
+mutate_state "L[10]['status'] = 'LANDED'; L[10]['sha'] = 'dddd5555'; s['landed'] = [0, 5, 10]; s['next_slice'] = 30"
+run_gen 9.9.9 10
+BASE_LINE="$(base_line)"
+if [ "$RC" -eq 0 ] && grep -q 'bbbb2222' <<<"$BASE_LINE" && ! grep -q 'dddd5555' <<<"$BASE_LINE"; then
+  pass "target slice already landed — the base is its PREDECESSOR, never its own landing merge"
+else
+  fail "arm 8e (predecessor base): rc=$RC base=[$BASE_LINE]"
+fi
+
+# --- Arm 8f: and the regeneration is LABELLED, not silently reinterpreted ----
+# The reader has to know they asked for a slice that is already in the past;
+# a correct base printed without that context still misleads.
+if grep -qi 'HISTORICAL' <<<"$OUT"; then
+  pass "an already-landed target is marked HISTORICAL rather than briefed as if pending"
+else
+  fail "arm 8f (historical marker): out=$OUT"
+fi
+
+# --- Arm 8g: LATER slices landed too -> still the IMMEDIATE predecessor ------
+# max(landed) here is Slice 30, two slices past the target. The base must not
+# drift forward just because the release moved on.
+setup_fixture
+mutate_state "L[10]['status'] = 'LANDED'; L[10]['sha'] = 'dddd5555'
+L[30]['status'] = 'LANDED'; L[30]['sha'] = 'eeee6666'
+s['landed'] = [0, 5, 10, 30]; s['next_slice'] = None"
+run_gen 9.9.9 10
+BASE_LINE="$(base_line)"
+if [ "$RC" -eq 0 ] && grep -q 'bbbb2222' <<<"$BASE_LINE" \
+   && ! grep -q 'dddd5555' <<<"$BASE_LINE" && ! grep -q 'eeee6666' <<<"$BASE_LINE"; then
+  pass "later slices landed — the base stays the target's immediate predecessor"
+else
+  fail "arm 8g (no forward drift): rc=$RC base=[$BASE_LINE]"
+fi
+
+# --- Arm 8h: THE FIRST SLICE — nothing precedes it --------------------------
+# Documented behaviour: there is no predecessor merge, so the manifest says so
+# in words and sends the operator to `git rev-parse origin/main`. It must never
+# print an empty base, and it must never borrow a later slice's SHA.
+setup_fixture
+printf -- '---\nstatus: ACTIVE\n---\n\n# Slice 0 memo\n' >"$FIX/dev/design/9.9.9-slice-0-design.md"
+mutate_state "L[0]['status'] = 'UNBLOCKED'; L[0]['sha'] = None
+L[5]['status'] = 'NOT_STARTED'; L[5]['sha'] = None
+s['landed'] = []; s['next_slice'] = 0"
+run_gen 9.9.9 0
+BASE_LINE="$(base_line)"
+BASE_BLOCK="$(grep -m1 -A3 '^  base sha' <<<"$OUT" || true)"
+if [ "$RC" -eq 0 ] && grep -qi 'no landed slice precedes' <<<"$BASE_LINE" \
+   && ! grep -qE '[0-9a-f]{8}' <<<"$BASE_LINE" \
+   && grep -qi 'first slice' <<<"$BASE_BLOCK" \
+   && grep -q 'branch from `git rev-parse origin/main`' <<<"$BASE_BLOCK"; then
+  pass "first slice — no predecessor is stated in words + branch-from-tip, not left blank"
+else
+  fail "arm 8h (first slice): rc=$RC base=[$BASE_LINE] block=[$BASE_BLOCK]"
+fi
+
+# --- Arm 8i: first slice, but LATER slices have landed -> the tip is AHEAD ---
+# Regenerating a historical first-slice brief: branching from the tip would pick
+# up work that slice never had, so the manifest has to say the tip has moved on
+# instead of implying the tip IS the point of cut.
+setup_fixture
+printf -- '---\nstatus: ACTIVE\n---\n\n# Slice 0 memo\n' >"$FIX/dev/design/9.9.9-slice-0-design.md"
+mutate_state "L[0]['status'] = 'UNBLOCKED'; L[0]['sha'] = None
+s['landed'] = [5]; s['next_slice'] = 0"
+run_gen 9.9.9 0
+BASE_LINE="$(base_line)"
+if [ "$RC" -eq 0 ] && ! grep -qE '[0-9a-f]{8}' <<<"$BASE_LINE" \
+   && grep -q 'TIP IS AHEAD' <<<"$OUT" && grep -q 'bbbb2222' <<<"$OUT"; then
+  pass "no predecessor but later landings exist — the manifest warns the tip is AHEAD"
+else
+  fail "arm 8i (tip ahead): rc=$RC base=[$BASE_LINE] out=$OUT"
+fi
+
+# --- Arm 8i2: ...and the warning is not contradicted by an instruction ------
+# codex §9 [P2]. The warning alone was not enough: the no-predecessor branch ALSO
+# printed "branch from \`git rev-parse origin/main\`", so the same brief warned the
+# tip was ahead and then told the operator to branch from it anyway. An operator
+# follows the instruction, not the caveat beside it, so the two cases must be
+# mutually exclusive. Reuses arm 8i's run (same fixture, same $OUT).
+# NOTE: the generic "re-verify \`git rev-parse origin/main\`" line is a different
+# statement and stays; the assertion targets the BRANCH instruction only.
+if ! grep -q 'branch from `git rev-parse origin/main`' <<<"$OUT" \
+   && grep -q 'do NOT branch from the tip' <<<"$OUT" \
+   && grep -q 'NO correct automatic' <<<"$OUT" \
+   && grep -q 'git log' <<<"$OUT"; then
+  pass "a historical first-slice brief is never ALSO told to branch from the tip"
+else
+  fail "arm 8i2 (contradictory branch-from-tip instruction): rc=$RC out=$OUT"
+fi
+
+# --- Arm 8j: GAPS in `landed` -> the greatest landed slice BELOW the target --
+# Slice 5 never landed; the predecessor is Slice 10, not "the target minus one"
+# and not the oldest landing.
+setup_fixture
+printf -- '---\nstatus: ACTIVE\n---\n\n# Slice 30 memo\n' >"$FIX/dev/design/9.9.9-slice-30-design.md"
+mutate_state "L[5]['status'] = 'NOT_STARTED'; L[5]['sha'] = None
+
+exec
+/bin/bash -lc scripts/tests/test_commission_manifest.sh in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ exited 126 in 0ms:
+/bin/bash: line 1: scripts/tests/test_commission_manifest.sh: Permission denied
+
+exec
+/bin/bash -lc 'bash scripts/tests/test_commission_manifest.sh' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 1301ms:
+PASS  rotted plan anchor — a role heading that no longer exists HARD-fails
+PASS  rotted orchestration anchor — the worktree-rules citation HARD-fails
+PASS  rotted symbol — the TC-RUBRIC-5 `--landing` citation HARD-fails when it stops occurring
+PASS  rotted symbol — the state file's SCHEMA source citation HARD-fails
+PASS  zero design citations — an empty manifest HARD-fails (TC-37), never exit 0
+PASS  unknown release — HARD fails and names the releases that DO have a state file
+PASS  unknown slice — HARD fails and names the ladder it is not in
+PASS  known slice — base SHA, contract, design, worktree rules and stop conditions all present
+PASS  an unrelated design doc is not cited (the scan is token-driven, not a dump)
+PASS  filename selector — this release's slice memo is cited, another release's is not
+PASS  UNREVIEWED docs are surfaced with their status + the TC-50 caveat
+PASS  state-file-driven — a changed base SHA and next slice both move the manifest
+PASS  no bare `name:line` anchors in the emitted manifest (T1d shape)
+PASS  read-only — a generate leaves the worktree byte-clean
+PASS  --verify checks the citations without emitting the brief
+PASS  --verify-all verifies the next slice of every release-state file
+PASS  vacuity guard — a sweep that discovers zero state files HARD-fails
+PASS  target slice already landed — the base is its PREDECESSOR, never its own landing merge
+PASS  an already-landed target is marked HISTORICAL rather than briefed as if pending
+PASS  later slices landed — the base stays the target's immediate predecessor
+PASS  first slice — no predecessor is stated in words + branch-from-tip, not left blank
+PASS  no predecessor but later landings exist — the manifest warns the tip is AHEAD
+PASS  a historical first-slice brief is never ALSO told to branch from the tip
+PASS  gaps in `landed` — the base is the greatest landed slice strictly below the target
+PASS  real repo — the 0.8.20 Slice 20 manifest generates with every path resolving
+PASS  the real manifest emits section anchors only — no `name:line` pointers
+PASS  real repo — Slice 20's base is Slice 15's landing merge (a2022957), on the base line
+PASS  real repo — --verify-all is green across every live release-state file
+PASS  agent-test.sh runs this fixture suite
+PASS  ci.yml defines a commission-manifest job
+PASS  the CI job runs the SHARED scripts/commission-manifest.sh
+PASS  the commission-manifest job is always-on (no if:, no needs:, not docs_only-gated)
+
+All commission-manifest tests passed
+
+codex
+The change removes the contradictory branch-from-tip instruction when later slices have landed and adds coverage for that scenario. The updated commission-manifest test suite passes.
+The change removes the contradictory branch-from-tip instruction when later slices have landed and adds coverage for that scenario. The updated commission-manifest test suite passes.

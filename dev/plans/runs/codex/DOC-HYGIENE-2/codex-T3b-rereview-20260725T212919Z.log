@@ -1,0 +1,1733 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f9b2e-bf5f-7911-9749-fb20964e09ae
+--------
+user
+changes against 'ab88bab3a71dbf55a9b54c689c0ed537e9416180'
+exec
+/bin/bash -lc "cat MEMORY.md && printf '\\n---diff---\\n' && git diff ab88bab3a71dbf55a9b54c689c0ed537e9416180" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ exited 1 in 0ms:
+cat: MEMORY.md: No such file or directory
+
+exec
+/bin/bash -lc "ls feedback_*.md 2>/dev/null | xargs -r -n1 sh -c 'echo ---"'$0---; cat "$0"'"'" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+exec
+/bin/bash -lc "pwd; ls -la; find .. -maxdepth 2 -name MEMORY.md -o -name 'feedback_*.md'" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+/home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+total 348
+drwxrwxr-x 14 coreyt coreyt   4096 Jul 25 16:14 .
+drwxrwxr-x  8 coreyt coreyt   4096 Jul 25 14:16 ..
+drwxrwxr-x  4 coreyt coreyt   4096 Jul 25 14:13 .claude
+-rw-rw-r--  1 coreyt coreyt     62 Jul 25 14:13 .git
+drwxrwxr-x  3 coreyt coreyt   4096 Jul 25 14:13 .github
+-rw-rw-r--  1 coreyt coreyt   4679 Jul 25 14:13 .gitignore
+-rw-rw-r--  1 coreyt coreyt   2154 Jul 25 14:13 .markdownlint-cli2.jsonc
+-rw-rw-r--  1 coreyt coreyt   2105 Jul 25 14:13 .markdownlint.jsonc
+-rw-rw-r--  1 coreyt coreyt    657 Jul 25 14:13 .prettierignore
+-rw-rw-r--  1 coreyt coreyt    296 Jul 25 14:13 .prettierrc.json
+drwxrwxr-x  3 coreyt coreyt   4096 Jul 25 14:25 .pytest_cache
+drwxrwxr-x  3 coreyt coreyt   4096 Jul 25 14:30 .ruff_cache
+-rw-rw-r--  1 coreyt coreyt  13373 Jul 25 14:13 AGENTS.md
+-rw-rw-r--  1 coreyt coreyt  45281 Jul 25 14:13 CHANGELOG.md
+-rw-rw-r--  1 coreyt coreyt 115578 Jul 25 14:13 Cargo.lock
+-rw-rw-r--  1 coreyt coreyt   2434 Jul 25 14:13 Cargo.toml
+-rw-rw-r--  1 coreyt coreyt   1078 Jul 25 14:13 LICENSE
+-rw-rw-r--  1 coreyt coreyt    939 Jul 25 14:13 README.md
+-rw-rw-r--  1 coreyt coreyt    120 Jul 25 14:13 deny.toml
+drwxrwxr-x 30 coreyt coreyt   4096 Jul 25 15:45 dev
+drwxrwxr-x 11 coreyt coreyt   4096 Jul 25 14:13 docs
+drwxrwxr-x  2 coreyt coreyt   4096 Jul 25 14:13 experiments
+-rw-rw-r--  1 coreyt coreyt   1783 Jul 25 14:13 lychee.toml
+-rw-rw-r--  1 coreyt coreyt   1502 Jul 25 14:13 mkdocs.yml
+-rw-rw-r--  1 coreyt coreyt  48768 Jul 25 14:13 package-lock.json
+-rw-rw-r--  1 coreyt coreyt   1249 Jul 25 14:13 package.json
+-rw-rw-r--  1 coreyt coreyt     66 Jul 25 14:13 rust-toolchain.toml
+-rw-rw-r--  1 coreyt coreyt     45 Jul 25 14:13 rustfmt.toml
+drwxrwxr-x  9 coreyt coreyt   4096 Jul 25 16:25 scripts
+drwxrwxr-x  6 coreyt coreyt   4096 Jul 25 14:13 src
+drwxrwxr-x  6 coreyt coreyt   4096 Jul 25 14:13 test
+drwxrwxr-x  4 coreyt coreyt   4096 Jul 25 14:13 tests
+drwxrwxr-x  3 coreyt coreyt   4096 Jul 25 14:13 tools
+
+exec
+/bin/bash -lc 'git diff --stat ab88bab3a71dbf55a9b54c689c0ed537e9416180 && git diff --name-status ab88bab3a71dbf55a9b54c689c0ed537e9416180' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+ scripts/commission-manifest.sh            |  62 +++++++++++--
+ scripts/tests/test_commission_manifest.sh | 142 ++++++++++++++++++++++++++++++
+ 2 files changed, 199 insertions(+), 5 deletions(-)
+M	scripts/commission-manifest.sh
+M	scripts/tests/test_commission_manifest.sh
+
+exec
+/bin/bash -lc 'git diff ab88bab3a71dbf55a9b54c689c0ed537e9416180 -- scripts/commission-manifest.sh scripts/tests/test_commission_manifest.sh' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+diff --git a/scripts/commission-manifest.sh b/scripts/commission-manifest.sh
+index d2b35353..9e59841e 100755
+--- a/scripts/commission-manifest.sh
++++ b/scripts/commission-manifest.sh
+@@ -62,6 +62,13 @@
+ #   headings/symbols, never `file:line` (T1d RULE 1), and each is verified by
+ #   literal match inside the file it names (T1d RULE 2). Swapping an unverified
+ #   NUMBER for an unverified SYMBOL would just launder a bad pointer.
++# CHECK 3 — THE BASE SHA IS THE TARGET SLICE'S PREDECESSOR, never `max(landed)`.
++#   For any slice that is not the next one, the newest landed slice can BE the
++#   target (or later), and a manifest that says "branch from here" while naming
++#   the target's own merge is the agent-worktree-stale-base trap in printed
++#   form. §2 takes the greatest landed slice STRICTLY BELOW the target, marks a
++#   regeneration of an already-landed slice as HISTORICAL, and says plainly
++#   when no predecessor exists rather than emitting a blank or a wrong SHA.
+ # GUARD — TC-37 VACUOUS PASS (this repo's named failure class). Zero design
+ #   citations for the slice, zero citations overall, zero paths verified, or a
+ #   sweep that discovers zero state files: all HARD failures. A manifest that is
+@@ -382,18 +389,63 @@ def build(release, state_path, state, slice_no, entry):
+     m.out()
+ 
+     # ---- 2. BASE SHA (LBO "Branch from tip"; SLICE-TEMPLATE §0) ------------
++    # The base is the TARGET SLICE'S PREDECESSOR: the greatest LANDED slice
++    # STRICTLY BELOW slice_no. It is NOT max(landed). For any slice that is not
++    # the next one — a historical regeneration, an out-of-order brief — max()
++    # can select the target's OWN landing merge or a later one, i.e. tell an
++    # operator to branch from the very work they are being commissioned to do.
++    # A wrong branch point is this repo's named agent-worktree-stale-base trap
++    # (it has already cost two slices), and a confidently printed wrong SHA is
++    # exactly what defeats the human sanity check, so this is computed
++    # relative to the target and never to the tip of `landed`.
++    #
++    # `depends_on` is deliberately NOT the base. Dependencies state the MINIMUM
++    # ancestry a slice needs; branching from that minimum would silently drop
++    # every slice landed since — the same stale-base trap from the other side.
++    # The predecessor is the ancestry-maximal choice that still excludes the
++    # target itself, so dependencies are CROSS-CHECKED against it instead.
+     m.out("## 2. BASE SHA + BRANCH POINT   [LBO 'Branch from tip'; SLICE-TEMPLATE §0]")
+-    base_slice = max(landed) if landed else None
++    landed_nums = sorted({s for s in landed if isinstance(s, int)})
++    prior_landed = [s for s in landed_nums if s < slice_no]
++    later_landed = [s for s in landed_nums if s > slice_no]
++    base_slice = max(prior_landed) if prior_landed else None
+     base_sha = (ladder.get(base_slice) or {}).get("sha") if base_slice is not None else None
++    if slice_no in landed_nums:
++        m.out("  ⚠ HISTORICAL     Slice %s is ITSELF LANDED (%s), so this is a regeneration:"
++              % (slice_no, (ladder.get(slice_no) or {}).get("sha") or "no sha recorded"))
++        m.out("                   the base below is that slice's PREDECESSOR, never its own merge.")
+     if base_sha:
+-        m.out("  base sha         %s  (Slice %s, the newest LANDED slice's landing merge)"
+-              % (base_sha, base_slice))
++        m.out("  base sha         %s  (Slice %s — the newest LANDED slice STRICTLY BEFORE Slice %s)"
++              % (base_sha, base_slice, slice_no))
++    elif base_slice is not None:
++        m.out("  base sha         (Slice %s is the predecessor but records NO landing sha)"
++              % base_slice)
++        m.out("                   The state file is incomplete: take the branch point from")
++        m.out("                   `git log` for that landing and record it in output.json. Do NOT guess.")
+     else:
+-        m.out("  base sha         (none recorded — no slice has landed yet)")
++        m.out("  base sha         (none — NO landed slice precedes Slice %s)" % slice_no)
++        m.out("                   This is the first slice of the release to be cut, so there is no")
++        m.out("                   predecessor merge: branch from `git rev-parse origin/main` at STEP 0.")
++        if later_landed:
++            m.out("  ⚠ TIP IS AHEAD   Slice(s) %s landed AFTER this one, so origin/main already"
++                  % ", ".join(str(s) for s in later_landed))
++            m.out("                   carries work Slice %s never had. Branch from the tip only if that"
++                  % slice_no)
++            m.out("                   is intended; otherwise recover the point of cut from `git log`.")
++    dep_gap = [d for d in (entry.get("depends_on") or [])
++               if (ladder.get(d) or {}).get("status") == "LANDED"
++               and (base_slice is None or d > base_slice)]
++    if dep_gap:
++        m.out("  ⚠ DEP NOT IN BASE dependency Slice(s) %s are LANDED but do NOT sit at or below the"
++              % ", ".join(str(d) for d in dep_gap))
++        m.out("                   base slice, so the base merge does not contain them. Re-derive the")
++        m.out("                   branch point from `git log` before cutting the worktree.")
+     m.out("  re-verify        `git rev-parse origin/main` at STEP 0 — a later landing may have")
+     m.out("                   advanced the tip since the state file was written.")
+     m.out("  landed so far    %s" % (", ".join(
+-        "%s (%s)" % (s, (ladder.get(s) or {}).get("sha") or "no sha") for s in landed) or "none"))
++        "%s (%s)%s" % (s, (ladder.get(s) or {}).get("sha") or "no sha",
++                       " ⚠ at/after Slice %s" % slice_no if isinstance(s, int) and s >= slice_no else "")
++        for s in landed) or "none"))
+     m.out("  SCHEMA           %s — %s"
+           % (state.get("schema_version"),
+              m.cite(schema_src_path(state), "pub const SCHEMA_VERSION", "schema source")))
+diff --git a/scripts/tests/test_commission_manifest.sh b/scripts/tests/test_commission_manifest.sh
+index 60cba0ad..01ca6090 100644
+--- a/scripts/tests/test_commission_manifest.sh
++++ b/scripts/tests/test_commission_manifest.sh
+@@ -26,6 +26,18 @@
+ # mutant turns arms 1/1b RED, which is the evidence that a green here is
+ # load-bearing rather than a script that merely exits 0.
+ #
++# SECOND PREDICATE (codex §9 [P2], arms 8e-8j): the emitted base SHA is the
++# TARGET SLICE'S PREDECESSOR — the greatest LANDED slice strictly below it —
++# never max(landed). Measured RED against the pre-fix generator: with Slice 10
++# in `landed`, the manifest for Slice 10 printed
++#   `base sha  dddd5555  (Slice 10, the newest LANDED slice's landing merge)`
++# i.e. branch from the very work you are being commissioned to do; and with a
++# later slice landed it printed Slice 30's merge as the base for Slice 10. That
++# is the agent-worktree-stale-base trap in printed form, and it becomes live the
++# moment 0.8.20 Slice 20 lands. These arms assert the base LINE specifically,
++# because every landing SHA also appears in the `landed so far` roll-up and a
++# whole-output grep therefore cannot distinguish a right base from a wrong one.
++#
+ # Isolation: fixtures are throwaway git repos under mktemp -d (the generator
+ # does `cd "$(git rev-parse --show-toplevel)"`, so each fixture must BE a repo).
+ # Nothing here writes into the real checkout — arm 9 asserts that mechanically.
+@@ -267,6 +279,27 @@ run_gen() {
+   set -e
+ }
+ 
++# Structural edits to the fixture's state file (landed set, ladder statuses,
++# landing SHAs) for the base-SHA arms. python3 is already a hard precondition of
++# the generator, so using it here adds no dependency; hand-rolled perl over JSON
++# would be the fragile choice. `s` is the parsed state, `L` maps slice -> entry.
++mutate_state() {
++  python3 -c "
++import json
++p = '$FIX/dev/plans/release-state-9.9.9.json'
++s = json.load(open(p))
++L = {e['slice']: e for e in s['ladder']}
++$1
++json.dump(s, open(p, 'w'), indent=2)
++"
++}
++
++# The `base sha` line as the operator reads it. Asserting on THIS line, not on
++# the whole manifest, is the point: every landing SHA also appears in the
++# `landed so far` roll-up, so a whole-output grep cannot tell a correct base
++# from a wrong one.
++base_line() { grep -m1 '^  base sha' <<<"$OUT" || true; }
++
+ # --- Arm 0: the BASELINE fixture is GREEN and NON-EMPTY --------------------
+ # Without this, every RED arm below could be passing for an unrelated reason.
+ setup_fixture
+@@ -502,6 +535,102 @@ else
+   fail "arm 8e (zero state files): rc=$RC out=$OUT"
+ fi
+ 
++# --- Arm 8e: THE TARGET SLICE IS ITSELF LANDED -> base is its PREDECESSOR ---
++# codex §9 [P2]. The base used to be max(landed), which for a slice that is not
++# the next one selects the target's OWN landing merge (or a later one) — a brief
++# telling an operator to branch from the very work being commissioned. This is
++# the fixture form of the live case: it arrives the moment 0.8.20 Slice 20 lands
++# and someone regenerates its manifest. Slice 10 is landed here; the base MUST
++# be Slice 5's merge (bbbb2222) and MUST NOT be Slice 10's own (dddd5555).
++setup_fixture
++mutate_state "L[10]['status'] = 'LANDED'; L[10]['sha'] = 'dddd5555'; s['landed'] = [0, 5, 10]; s['next_slice'] = 30"
++run_gen 9.9.9 10
++BASE_LINE="$(base_line)"
++if [ "$RC" -eq 0 ] && grep -q 'bbbb2222' <<<"$BASE_LINE" && ! grep -q 'dddd5555' <<<"$BASE_LINE"; then
++  pass "target slice already landed — the base is its PREDECESSOR, never its own landing merge"
++else
++  fail "arm 8e (predecessor base): rc=$RC base=[$BASE_LINE]"
++fi
++
++# --- Arm 8f: and the regeneration is LABELLED, not silently reinterpreted ----
++# The reader has to know they asked for a slice that is already in the past;
++# a correct base printed without that context still misleads.
++if grep -qi 'HISTORICAL' <<<"$OUT"; then
++  pass "an already-landed target is marked HISTORICAL rather than briefed as if pending"
++else
++  fail "arm 8f (historical marker): out=$OUT"
++fi
++
++# --- Arm 8g: LATER slices landed too -> still the IMMEDIATE predecessor ------
++# max(landed) here is Slice 30, two slices past the target. The base must not
++# drift forward just because the release moved on.
++setup_fixture
++mutate_state "L[10]['status'] = 'LANDED'; L[10]['sha'] = 'dddd5555'
++L[30]['status'] = 'LANDED'; L[30]['sha'] = 'eeee6666'
++s['landed'] = [0, 5, 10, 30]; s['next_slice'] = None"
++run_gen 9.9.9 10
++BASE_LINE="$(base_line)"
++if [ "$RC" -eq 0 ] && grep -q 'bbbb2222' <<<"$BASE_LINE" \
++   && ! grep -q 'dddd5555' <<<"$BASE_LINE" && ! grep -q 'eeee6666' <<<"$BASE_LINE"; then
++  pass "later slices landed — the base stays the target's immediate predecessor"
++else
++  fail "arm 8g (no forward drift): rc=$RC base=[$BASE_LINE]"
++fi
++
++# --- Arm 8h: THE FIRST SLICE — nothing precedes it --------------------------
++# Documented behaviour: there is no predecessor merge, so the manifest says so
++# in words and sends the operator to `git rev-parse origin/main`. It must never
++# print an empty base, and it must never borrow a later slice's SHA.
++setup_fixture
++printf -- '---\nstatus: ACTIVE\n---\n\n# Slice 0 memo\n' >"$FIX/dev/design/9.9.9-slice-0-design.md"
++mutate_state "L[0]['status'] = 'UNBLOCKED'; L[0]['sha'] = None
++L[5]['status'] = 'NOT_STARTED'; L[5]['sha'] = None
++s['landed'] = []; s['next_slice'] = 0"
++run_gen 9.9.9 0
++BASE_LINE="$(base_line)"
++BASE_BLOCK="$(grep -m1 -A3 '^  base sha' <<<"$OUT" || true)"
++if [ "$RC" -eq 0 ] && grep -qi 'no landed slice precedes' <<<"$BASE_LINE" \
++   && ! grep -qE '[0-9a-f]{8}' <<<"$BASE_LINE" \
++   && grep -qi 'first slice' <<<"$BASE_BLOCK" && grep -q 'origin/main' <<<"$BASE_BLOCK"; then
++  pass "first slice — no predecessor is stated in words + branch-from-tip, not left blank"
++else
++  fail "arm 8h (first slice): rc=$RC base=[$BASE_LINE] block=[$BASE_BLOCK]"
++fi
++
++# --- Arm 8i: first slice, but LATER slices have landed -> the tip is AHEAD ---
++# Regenerating a historical first-slice brief: branching from the tip would pick
++# up work that slice never had, so the manifest has to say the tip has moved on
++# instead of implying the tip IS the point of cut.
++setup_fixture
++printf -- '---\nstatus: ACTIVE\n---\n\n# Slice 0 memo\n' >"$FIX/dev/design/9.9.9-slice-0-design.md"
++mutate_state "L[0]['status'] = 'UNBLOCKED'; L[0]['sha'] = None
++s['landed'] = [5]; s['next_slice'] = 0"
++run_gen 9.9.9 0
++BASE_LINE="$(base_line)"
++if [ "$RC" -eq 0 ] && ! grep -qE '[0-9a-f]{8}' <<<"$BASE_LINE" \
++   && grep -q 'TIP IS AHEAD' <<<"$OUT" && grep -q 'bbbb2222' <<<"$OUT"; then
++  pass "no predecessor but later landings exist — the manifest warns the tip is AHEAD"
++else
++  fail "arm 8i (tip ahead): rc=$RC base=[$BASE_LINE] out=$OUT"
++fi
++
++# --- Arm 8j: GAPS in `landed` -> the greatest landed slice BELOW the target --
++# Slice 5 never landed; the predecessor is Slice 10, not "the target minus one"
++# and not the oldest landing.
++setup_fixture
++printf -- '---\nstatus: ACTIVE\n---\n\n# Slice 30 memo\n' >"$FIX/dev/design/9.9.9-slice-30-design.md"
++mutate_state "L[5]['status'] = 'NOT_STARTED'; L[5]['sha'] = None
++L[10]['status'] = 'LANDED'; L[10]['sha'] = 'dddd5555'
++s['landed'] = [0, 10]; s['next_slice'] = 30"
++run_gen 9.9.9 30
++BASE_LINE="$(base_line)"
++if [ "$RC" -eq 0 ] && grep -q 'dddd5555' <<<"$BASE_LINE" \
++   && ! grep -q 'aaaa1111' <<<"$BASE_LINE" && ! grep -q 'bbbb2222' <<<"$BASE_LINE"; then
++  pass "gaps in \`landed\` — the base is the greatest landed slice strictly below the target"
++else
++  fail "arm 8j (gapped landed): rc=$RC base=[$BASE_LINE]"
++fi
++
+ # --- Arm 9: the REAL repo — Slice 20 of 0.8.20 (the acceptance criterion) --
+ # Every emitted path must resolve. This is the regression half of the pair and
+ # the tranche's stated bar.
+@@ -522,6 +651,19 @@ else
+   fail "arm 9b (real line-anchor ban): the manifest emitted a bare line anchor"
+ fi
+ 
++# --- Arm 9d: the real repo's base SHA is Slice 15's merge, on the LINE ------
++# The live regression half of the predecessor fix. Slice 20 is not yet landed,
++# so predecessor and max(landed) agree TODAY — asserting the base LINE (not the
++# whole manifest, where every landing SHA appears in the roll-up) is what keeps
++# this honest the day Slice 20 lands.
++REAL_BASE_LINE="$(grep -m1 '^  base sha' <<<"$REAL_OUT" || true)"
++if grep -q 'a2022957' <<<"$REAL_BASE_LINE" && grep -q 'Slice 15' <<<"$REAL_BASE_LINE" \
++   && ! grep -qi 'HISTORICAL' <<<"$REAL_OUT"; then
++  pass "real repo — Slice 20's base is Slice 15's landing merge (a2022957), on the base line"
++else
++  fail "arm 9d (real base line): base=[$REAL_BASE_LINE]"
++fi
++
+ # --- Arm 9c: the real repo's every-release sweep is green ------------------
+ set +e
+ SWEEP_OUT="$("$REPO_ROOT/scripts/commission-manifest.sh" --verify-all 2>&1)"
+
+exec
+/bin/bash -lc "sed -n '330,470p' scripts/commission-manifest.sh && sed -n '1,180p' scripts/commission-manifest.sh && sed -n '230,340p' scripts/tests/test_commission_manifest.sh" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+            path = os.path.join(root, name)
+            try:
+                text = read(path)
+            except OSError:
+                continue
+            matched = [t for t in tokens if t in text]
+            if release in name and name_re.search(name):
+                matched.append("filename: %s slice %s" % (release, slice_no))
+            if not matched:
+                continue
+            status = frontmatter_status(path) or "(no status:)"
+            hits.append((STATUS_RANK.get(status.split()[0], 7), path, status, matched))
+    hits.sort(key=lambda h: (h[0], h[1]))
+    return hits
+
+
+def build(release, state_path, state, slice_no, entry):
+    m = Manifest()
+    ladder = {e.get("slice"): e for e in state.get("ladder") or []}
+    landed = state.get("landed") or []
+    next_slice = state.get("next_slice")
+    plan = state.get("plan") or ""
+    board = state.get("board") or ""
+    master = state.get("master") or ""
+
+    tokens = slice_tokens(entry)
+    design = scan_design(tokens, release, slice_no)
+
+    # ---- 1. ASSIGNMENT (LBO "Assignment"; SLICE-TEMPLATE heading + §2) -----
+    m.out("=" * 100)
+    m.out("COMMISSION MANIFEST — %s Slice %s (%s)" % (release, slice_no, entry.get("short") or "?"))
+    m.out("=" * 100)
+    m.out("GENERATED, READ-ONLY. It CITES sources of record; it restates no ruling and decides")
+    m.out("nothing. Facts come from the single-writer state file %s" % m.cite(state_path))
+    m.out("(T2a) and from `status:` frontmatter under `%s/` (T2c). Section set derived from" % DESIGN_ROOT)
+    m.out("%s" % m.cite(LBO_TEMPLATE))
+    m.out("and %s — this REPLACES those as the brief" % m.cite(SLICE_TEMPLATE))
+    m.out("assembly step; it does not add a third template to maintain.")
+    m.out()
+    m.out("## 1. ASSIGNMENT   [LBO 'Assignment (filled by LBS)'; SLICE-TEMPLATE title line + §2]")
+    m.out("  release          %s (%s)" % (release, state.get("release_kind") or "kind not stated"))
+    m.out("  slice            %s — %s" % (slice_no, entry.get("title") or "(no title)"))
+    m.out("  requirement id   %s" % (entry.get("short") or "(none)"))
+    m.out("  ladder status    %s" % (entry.get("status") or "?"))
+    m.out("  depends on       %s" % (", ".join(
+        "Slice %s [%s%s]" % (d, (ladder.get(d) or {}).get("status", "UNKNOWN"),
+                             ", %s" % (ladder.get(d) or {}).get("sha")
+                             if (ladder.get(d) or {}).get("sha") else "")
+        for d in (entry.get("depends_on") or [])) or "— (none)"))
+    if next_slice == slice_no:
+        m.out("  sequencing       ✅ this IS the next slice per the state file")
+    else:
+        m.out("  sequencing       ⚠ this is NOT the next slice — the state file says next = %s"
+              % next_slice)
+    m.out("  plan             %s" % m.cite(plan))
+    m.out("  board of record  %s" % m.cite(board))
+    m.out("  master           %s" % m.cite(master))
+    m.out("  codex §9         transcripts go under %s, release-namespaced (TC-RUBRIC-7)"
+          % m.cite(CODEX_DIR))
+    m.out()
+
+    # ---- 2. BASE SHA (LBO "Branch from tip"; SLICE-TEMPLATE §0) ------------
+    # The base is the TARGET SLICE'S PREDECESSOR: the greatest LANDED slice
+    # STRICTLY BELOW slice_no. It is NOT max(landed). For any slice that is not
+    # the next one — a historical regeneration, an out-of-order brief — max()
+    # can select the target's OWN landing merge or a later one, i.e. tell an
+    # operator to branch from the very work they are being commissioned to do.
+    # A wrong branch point is this repo's named agent-worktree-stale-base trap
+    # (it has already cost two slices), and a confidently printed wrong SHA is
+    # exactly what defeats the human sanity check, so this is computed
+    # relative to the target and never to the tip of `landed`.
+    #
+    # `depends_on` is deliberately NOT the base. Dependencies state the MINIMUM
+    # ancestry a slice needs; branching from that minimum would silently drop
+    # every slice landed since — the same stale-base trap from the other side.
+    # The predecessor is the ancestry-maximal choice that still excludes the
+    # target itself, so dependencies are CROSS-CHECKED against it instead.
+    m.out("## 2. BASE SHA + BRANCH POINT   [LBO 'Branch from tip'; SLICE-TEMPLATE §0]")
+    landed_nums = sorted({s for s in landed if isinstance(s, int)})
+    prior_landed = [s for s in landed_nums if s < slice_no]
+    later_landed = [s for s in landed_nums if s > slice_no]
+    base_slice = max(prior_landed) if prior_landed else None
+    base_sha = (ladder.get(base_slice) or {}).get("sha") if base_slice is not None else None
+    if slice_no in landed_nums:
+        m.out("  ⚠ HISTORICAL     Slice %s is ITSELF LANDED (%s), so this is a regeneration:"
+              % (slice_no, (ladder.get(slice_no) or {}).get("sha") or "no sha recorded"))
+        m.out("                   the base below is that slice's PREDECESSOR, never its own merge.")
+    if base_sha:
+        m.out("  base sha         %s  (Slice %s — the newest LANDED slice STRICTLY BEFORE Slice %s)"
+              % (base_sha, base_slice, slice_no))
+    elif base_slice is not None:
+        m.out("  base sha         (Slice %s is the predecessor but records NO landing sha)"
+              % base_slice)
+        m.out("                   The state file is incomplete: take the branch point from")
+        m.out("                   `git log` for that landing and record it in output.json. Do NOT guess.")
+    else:
+        m.out("  base sha         (none — NO landed slice precedes Slice %s)" % slice_no)
+        m.out("                   This is the first slice of the release to be cut, so there is no")
+        m.out("                   predecessor merge: branch from `git rev-parse origin/main` at STEP 0.")
+        if later_landed:
+            m.out("  ⚠ TIP IS AHEAD   Slice(s) %s landed AFTER this one, so origin/main already"
+                  % ", ".join(str(s) for s in later_landed))
+            m.out("                   carries work Slice %s never had. Branch from the tip only if that"
+                  % slice_no)
+            m.out("                   is intended; otherwise recover the point of cut from `git log`.")
+    dep_gap = [d for d in (entry.get("depends_on") or [])
+               if (ladder.get(d) or {}).get("status") == "LANDED"
+               and (base_slice is None or d > base_slice)]
+    if dep_gap:
+        m.out("  ⚠ DEP NOT IN BASE dependency Slice(s) %s are LANDED but do NOT sit at or below the"
+              % ", ".join(str(d) for d in dep_gap))
+        m.out("                   base slice, so the base merge does not contain them. Re-derive the")
+        m.out("                   branch point from `git log` before cutting the worktree.")
+    m.out("  re-verify        `git rev-parse origin/main` at STEP 0 — a later landing may have")
+    m.out("                   advanced the tip since the state file was written.")
+    m.out("  landed so far    %s" % (", ".join(
+        "%s (%s)%s" % (s, (ladder.get(s) or {}).get("sha") or "no sha",
+                       " ⚠ at/after Slice %s" % slice_no if isinstance(s, int) and s >= slice_no else "")
+        for s in landed) or "none"))
+    m.out("  SCHEMA           %s — %s"
+          % (state.get("schema_version"),
+             m.cite(schema_src_path(state), "pub const SCHEMA_VERSION", "schema source")))
+    m.out()
+
+    # ---- 3. WORKTREE RULES (LBO STEP 0; SLICE-TEMPLATE §0) ----------------
+    m.out("## 3. WORKTREE RULES   [LBO 'STEP 0 — Isolate'; SLICE-TEMPLATE §0] — cite, do not restate")
+    for label, kw in (("preflight gate ", ["preflight gate"]),
+                      ("hard rules     ", ["hard rules"]),
+                      ("worktree cleanup", ["worktree cleanup"])):
+        a = m.anchor(ORCH, kw, label.strip())
+        if a:
+            m.out("  %s %s" % (label, a))
+    for label, kw in (("session preflight", ["hard preflight checks"]),
+                      ("mechanics       ", ["orchestration mechanics"])):
+        a = m.anchor(HANDOFF, kw, label.strip())
+        if a:
+            m.out("  %s %s" % (label, a))
+    m.out("  TC-RUBRIC-5      all landing git-writes run in a dedicated linked worktree;")
+    m.out("                   %s hard-fails on the primary checkout"
+          % m.cite(PREFLIGHT, "--landing", "TC-RUBRIC-5"))
+    a = m.anchor(LBO_TEMPLATE, ["step 0"], "LBO isolate step")
+#!/usr/bin/env bash
+# scripts/commission-manifest.sh — T3b (DOC-HYGIENE-2): the GENERATED COMMISSION
+# MANIFEST. Given a release and a slice, emit the citation list an orchestrator
+# brief needs — design-of-record paths, contract paths, plan section anchors, the
+# base SHA, the worktree rules and the stop conditions — and HARD-FAIL if any of
+# it has rotted.
+#
+# ---------------------------------------------------------------------------
+# WHY (measured, not hypothetical)
+# ---------------------------------------------------------------------------
+# Commissioning a slice meant hand-assembling the same list every time out of a
+# 5-12 file fan-out (the master, the plan, the STATUS board, the hand-off, the
+# ledgers, the design tier), and NOTHING checked that the paths it cited still
+# resolved. T1d measured what that costs on the anchor axis: the TC-45 pointers
+# in `dev/plans/plan-0.8.20.md` were ~2,100 lines off and, per `git log`, had
+# never been correct. A citation nobody checks rots silently.
+#
+# THIS REPLACES A HAND-MAINTAINED BRIEF TEMPLATE; it does not add one. That shape
+# already exists twice in-repo, and the section set emitted below is DERIVED from
+# what those two documents actually contain, so the generated manifest is a real
+# substitute rather than a parallel invention:
+#   * dev/plans/prompts/LIBRARY-BUMP-ORCHESTRATOR-TEMPLATE.md — Assignment
+#     (branch-from tip, worktree path, coupling), STEP 0 Isolate, Escalate-to-LBS,
+#     Closure output.
+#   * dev/plans/prompts/0.8.0-SLICE-TEMPLATE.md — {{CONTRACT_REF}}, {{READING}},
+#     {{MANDATE}}, {{DEFERRED}}, {{AC_IDS}}, {{GUARDRAILS}}, {{DOD}}, §6 scope
+#     discipline, §7 recovery, §9 closure schema.
+#
+# ---------------------------------------------------------------------------
+# WHERE THE FACTS COME FROM (it re-scrapes nothing that already has an owner)
+# ---------------------------------------------------------------------------
+#   * dev/plans/release-state-<release>.json (T2a) is the SINGLE WRITER for the
+#     ladder, the landed slices + their landing SHAs, the SCHEMA version, the
+#     next slice, the AC state and the ruled/unruled decision set. Every one of
+#     those facts below is read from it — never re-derived from prose. Change a
+#     fact THERE and the manifest follows.
+#   * `status:` frontmatter on dev/design/**/*.md (T2c) selects the design tier,
+#     so the design-of-record list is derived, not a hardcoded list.
+#   * The plan's own `##` headings supply the section anchors, looked up by ROLE
+#     keyword rather than by line number (T1d's ban) or by a frozen title string.
+#
+# ---------------------------------------------------------------------------
+# HOW UNREVIEWED IS HANDLED (deliberate, and the honest part)
+# ---------------------------------------------------------------------------
+# T2c's backfill was conservative on purpose: most design docs are UNREVIEWED,
+# which means "nobody has classified this yet" — NOT "this is current" — and
+# scripts/lint-design-status.sh proves the PRESENCE of a status field, never its
+# TRUTH (the classification is a separate owed slice, TC-50). So this manifest
+# NEVER presents an UNREVIEWED doc as authoritative: each cited doc carries its
+# recorded status inline, UNREVIEWED/UNKNOWN rows are explicitly marked
+# unclassified with the TC-50 pointer, and the section header says the status is
+# recorded rather than verified. The reader judges; the generator does not
+# launder.
+#
+# ---------------------------------------------------------------------------
+# WHAT IT ENFORCES (two hard checks + one guard)
+# ---------------------------------------------------------------------------
+# CHECK 1 — EVERY CITED PATH MUST EXIST. Always on, not a `--verify` extra. A
+#   path that does not resolve is a HARD failure and the manifest is NOT emitted:
+#   printing a brief with one dead citation in it is the artifact this replaces.
+# CHECK 2 — EVERY CITED ANCHOR MUST OCCUR. Anchors are greppable section
+#   headings/symbols, never `file:line` (T1d RULE 1), and each is verified by
+#   literal match inside the file it names (T1d RULE 2). Swapping an unverified
+#   NUMBER for an unverified SYMBOL would just launder a bad pointer.
+# CHECK 3 — THE BASE SHA IS THE TARGET SLICE'S PREDECESSOR, never `max(landed)`.
+#   For any slice that is not the next one, the newest landed slice can BE the
+#   target (or later), and a manifest that says "branch from here" while naming
+#   the target's own merge is the agent-worktree-stale-base trap in printed
+#   form. §2 takes the greatest landed slice STRICTLY BELOW the target, marks a
+#   regeneration of an already-landed slice as HISTORICAL, and says plainly
+#   when no predecessor exists rather than emitting a blank or a wrong SHA.
+# GUARD — TC-37 VACUOUS PASS (this repo's named failure class). Zero design
+#   citations for the slice, zero citations overall, zero paths verified, or a
+#   sweep that discovers zero state files: all HARD failures. A manifest that is
+#   empty has briefed nobody while looking green.
+#
+# READ-ONLY: emits to stdout, writes no file into the repo. It records state and
+# cites decisions; it changes no slot, scope, requirement, AC or ruling.
+#
+# Usage:
+#   scripts/commission-manifest.sh <release> <slice|next> [--verify]
+#   scripts/commission-manifest.sh --verify-all
+# Exit: 0 = manifest emitted (or verified) with every path and anchor resolving;
+#       1 = a dead citation, an unknown release/slice, or a vacuous manifest.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+usage() {
+  cat <<'USAGE'
+usage:
+  scripts/commission-manifest.sh <release> <slice|next> [--verify]
+  scripts/commission-manifest.sh --verify-all
+
+  <release>   a release with a dev/plans/release-state-<release>.json (e.g. 0.8.20)
+  <slice>     a slice number in that file's ladder, or the word `next`
+  --verify    run the path/anchor existence checks and print only the counts
+  --verify-all  verify the NEXT slice of every release-state file (CI shape)
+USAGE
+}
+
+MODE="emit"
+RELEASE=""
+SLICE=""
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help) usage; exit 0 ;;
+    --verify) MODE="verify" ;;
+    --verify-all) MODE="verify-all" ;;
+    -*) echo "FAIL commission-manifest: unknown option $arg" >&2; usage >&2; exit 1 ;;
+    *)
+      if [ -z "$RELEASE" ]; then RELEASE="$arg"
+      elif [ -z "$SLICE" ]; then SLICE="$arg"
+      else echo "FAIL commission-manifest: unexpected argument $arg" >&2; usage >&2; exit 1; fi ;;
+  esac
+done
+
+if [ "$MODE" != "verify-all" ] && { [ -z "$RELEASE" ] || [ -z "$SLICE" ]; }; then
+  echo "FAIL commission-manifest: a release AND a slice are required." >&2
+  usage >&2
+  exit 1
+fi
+
+# python3 carries the JSON parse, the design-tier scan and the citation checks.
+# A gate that cannot run must fail loudly, never skip (TC-37).
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "FAIL commission-manifest: python3 not found; the state-file parser and the" >&2
+  echo "  citation existence checks cannot run. A tool that cannot check its own" >&2
+  echo "  citations must not emit them (TC-37)." >&2
+  exit 1
+fi
+
+MODE="$MODE" RELEASE="$RELEASE" SLICE="$SLICE" python3 - <<'PY'
+import glob
+import json
+import os
+import re
+import sys
+
+MODE = os.environ["MODE"]
+RELEASE = os.environ["RELEASE"]
+SLICE_SEL = os.environ["SLICE"]
+
+STATE_GLOB = "dev/plans/release-state-*.json"
+
+# Fixed infrastructure the manifest cites. These are SOURCES OF RECORD, not
+# restatements: the manifest points at them and stops. Every one is existence-
+# checked, so a rename fails here rather than being handed to an agent.
+ORCH = "dev/design/orchestration.md"
+HANDOFF = "dev/plans/prompts/0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md"
+LBO_TEMPLATE = "dev/plans/prompts/LIBRARY-BUMP-ORCHESTRATOR-TEMPLATE.md"
+SLICE_TEMPLATE = "dev/plans/prompts/0.8.0-SLICE-TEMPLATE.md"
+PREFLIGHT = "scripts/preflight.sh"
+ACCEPTANCE = "dev/acceptance.md"
+AGENTS = "AGENTS.md"
+SURFACE_ALLOWLIST = "src/conformance/governed-surface-allowlist.json"
+SURFACE_PIN = "scripts/governed-surface-pin.json"
+CODEX_DIR = "dev/plans/runs/codex"
+DESIGN_ROOT = "dev/design"
+
+# T1d RULE 1's shape, applied to this tool's OWN output: a manifest that emitted
+# a `name:123` pointer would reintroduce the class T1d closed.
+LINE_ANCHOR_RE = re.compile(r"`[A-Za-z_][A-Za-z0-9_.+-]*:[0-9]{3,}(-[0-9]+)?\+?`")
+
+# Status ordering for the design tier. Lower sorts first. UNREVIEWED/UNKNOWN sit
+# BELOW every classified value on purpose — they are queue markers, not verdicts.
+STATUS_RANK = {
+    "ACTIVE": 0, "locked": 1, "accepted": 1, "adopted": 1, "ratified": 1,
+    "signed": 1, "proposal": 3, "proposed": 3, "COMPLETE": 2, "PROPOSED": 3,
+    "UNKNOWN": 8, "UNREVIEWED": 9, "SUPERSEDED": 10,
+}
+UNCLASSIFIED = ("UNREVIEWED", "UNKNOWN")
+
+
+def die(lines):
+    for ln in lines:
+        print(ln, file=sys.stderr)
+    sys.exit(1)
+
+
+def read(path):
+
+  cat >"$FIX/dev/design/sub/widget-contract.md" <<'EOF'
+---
+status: UNREVIEWED
+---
+
+# Widget contract
+
+The TC-99 terminal fix attaches to widget_readiness.
+EOF
+
+  # The slice's OWN design memo, found by filename (release + slice), carrying
+  # none of the tokens — and its 0.8.0-era namesake, which must NOT be pulled in
+  # just because the slice numbers collide.
+  cat >"$FIX/dev/design/9.9.9-slice-10-design.md" <<'EOF'
+---
+status: ACTIVE
+---
+
+# The slice memo
+
+No token here at all.
+EOF
+
+  cat >"$FIX/dev/design/slice-10-design.md" <<'EOF'
+---
+status: UNREVIEWED
+---
+
+# An OLD release's slice 10
+
+Also no token, and a different release.
+EOF
+
+  cat >"$FIX/dev/design/unrelated.md" <<'EOF'
+---
+status: UNREVIEWED
+---
+
+# Unrelated
+
+Nothing to do with this slice.
+EOF
+}
+
+run_gen() {
+  set +e
+  OUT="$(cd "$FIX" && ./scripts/commission-manifest.sh "$@" 2>&1)"
+  RC=$?
+  set -e
+}
+
+# Structural edits to the fixture's state file (landed set, ladder statuses,
+# landing SHAs) for the base-SHA arms. python3 is already a hard precondition of
+# the generator, so using it here adds no dependency; hand-rolled perl over JSON
+# would be the fragile choice. `s` is the parsed state, `L` maps slice -> entry.
+mutate_state() {
+  python3 -c "
+import json
+p = '$FIX/dev/plans/release-state-9.9.9.json'
+s = json.load(open(p))
+L = {e['slice']: e for e in s['ladder']}
+$1
+json.dump(s, open(p, 'w'), indent=2)
+"
+}
+
+# The `base sha` line as the operator reads it. Asserting on THIS line, not on
+# the whole manifest, is the point: every landing SHA also appears in the
+# `landed so far` roll-up, so a whole-output grep cannot tell a correct base
+# from a wrong one.
+base_line() { grep -m1 '^  base sha' <<<"$OUT" || true; }
+
+# --- Arm 0: the BASELINE fixture is GREEN and NON-EMPTY --------------------
+# Without this, every RED arm below could be passing for an unrelated reason.
+setup_fixture
+run_gen 9.9.9 10
+if [ "$RC" -eq 0 ] && [ "$(printf '%s\n' "$OUT" | grep -c .)" -gt 20 ]; then
+  pass "baseline fixture — a known slice emits a non-empty manifest (exit 0)"
+else
+  fail "arm 0 (baseline green): rc=$RC out=$OUT"
+fi
+
+# --- Arm 0b: every SECTION the two templates require is present ------------
+# The manifest REPLACES a hand-maintained brief template, so it has to carry the
+# section set those templates actually contain — not a parallel invention.
+MISSING=""
+for section in "ASSIGNMENT" "BASE SHA" "WORKTREE RULES" "CONTRACT PATHS" \
+               "PLAN SECTION ANCHORS" "DESIGN DOCS" "ACCEPTANCE" "STOP CONDITIONS" "CLOSURE"; do
+  grep -q "$section" <<<"$OUT" || MISSING="$MISSING $section"
+done
+if [ -z "$MISSING" ]; then
+  pass "the manifest carries every template-derived section"
+else
+  fail "arm 0b (section set): missing:$MISSING"
+fi
+
+# --- Arm 1: A CITED PATH DOES NOT EXIST -> hard FAIL, naming it ------------
+# THE core guard. A rotted citation must fail loudly instead of being emitted.
+setup_fixture
+rm -f "$FIX/dev/acceptance.md"
+run_gen 9.9.9 10
+if [ "$RC" -ne 0 ] && grep -q 'dev/acceptance.md' <<<"$OUT"; then
+  pass "missing cited path — HARD fails and NAMES the path"
+else
+  fail "arm 1 (missing path): rc=$RC out=$OUT"
+fi
+
+# --- Arm 1a: the failing run emits NO manifest ------------------------------
+# "Fails loudly rather than being emitted": a manifest that is printed anyway,
+# with one dead citation in it, is exactly the artifact this tranche removes.
+
+exec
+/bin/bash -lc 'grep -n "release-state" -A80 -B10 scripts/tests/test_commission_manifest.sh' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+73-# governed-surface pin, schema source). Every arm mutates ONE thing from this
+74-# baseline, so a red arm isolates exactly one fault.
+75-setup_fixture() {
+76-  rm -rf "$FIX"
+77-  mkdir -p "$FIX/dev/plans/runs/codex" "$FIX/dev/plans/prompts" "$FIX/dev/design/sub" \
+78-           "$FIX/scripts" "$FIX/src/conformance" "$FIX/src/rust/crates/fathomdb-schema/src"
+79-  cp "$GEN" "$FIX/scripts/commission-manifest.sh"
+80-  chmod +x "$FIX/scripts/commission-manifest.sh"
+81-  (cd "$FIX" && git init -q && git config user.email t@example.com && git config user.name t)
+82-
+83:  cat >"$FIX/dev/plans/release-state-9.9.9.json" <<'EOF'
+84-{
+85-  "release": "9.9.9",
+86-  "release_kind": "even, publish",
+87-  "board": "dev/plans/runs/board.md",
+88-  "plan": "dev/plans/plan-9.9.9.md",
+89-  "master": "dev/plans/master.md",
+90-  "schema_version": 42,
+91-  "schema_version_source": "pub const SCHEMA_VERSION in src/rust/crates/fathomdb-schema/src/lib.rs",
+92-  "ladder": [
+93-    {"slice": 0,  "short": "X0",    "title": "X0 design gate",                        "depends_on": [],      "status": "LANDED",      "sha": "aaaa1111"},
+94-    {"slice": 5,  "short": "R-9-A", "title": "the keystone",                          "depends_on": [0],     "status": "LANDED",      "sha": "bbbb2222"},
+95-    {"slice": 10, "short": "R-9-B", "title": "widget_readiness + the TC-99 terminal fix", "depends_on": [5], "status": "UNBLOCKED",   "sha": null},
+96-    {"slice": 30, "short": "H7",    "title": "can-i-deploy contract gate",            "depends_on": [10],    "status": "NOT_STARTED", "sha": null, "publish_precondition": true}
+97-  ],
+98-  "landed": [0, 5],
+99-  "next_slice": 10,
+100-  "remaining_ladder": [10, 30],
+101-  "unblocked": [10],
+102-  "publish_precondition_slice": 30,
+103-  "acceptance": {
+104-    "highest_defined_non_reserved": "AC-900",
+105-    "publish_gate": {
+106-      "ac": "AC-999", "minted": false, "signed": false, "state_word": "unsigned",
+107-      "sign_off_slice": 30, "board_ref": "§4 #1"
+108-    }
+109-  },
+110-  "decisions": {
+111-    "unruled": [
+112-      {"id": "publish", "title": "PUBLISH the pair", "gated_at": "Slice 30", "halts_run": true,
+113-       "source": "plan-9.9.9.md §11 item 3"},
+114-      {"id": "batched-surface", "title": "the batched governed-surface delta", "gated_at": "the 30 boundary",
+115-       "halts_run": false, "source": "plan-9.9.9.md §11 item 2"}
+116-    ],
+117-    "ruled": [
+118-      {"id": "already-settled", "ruling": "CLOSED BY DECISION", "ruled_on": "2026-01-01",
+119-       "source": "plan-9.9.9.md §10"}
+120-    ]
+121-  },
+122-  "generated_views": []
+123-}
+124-EOF
+125-
+126-  cat >"$FIX/dev/plans/plan-9.9.9.md" <<'EOF'
+127----
+128-status: ACTIVE
+129----
+130-
+131-# 9.9.9 — Plan
+132-
+133-## 1. Goal & scope
+134-
+135-## 2. Decisions already taken (do NOT re-litigate)
+136-
+137-## 3. Requirements + acceptance criteria (release DoD — frozen at Slice 0)
+138-
+139-## 4. Slice ladder (mod-5)
+140-
+141-## 5. Reserved-gap policy
+142-
+143-## 6. Cross-cutting DoD (X0/X1/X2/X3 — bind EVERY slice)
+144-
+145-## 7. Prerequisites
+146-
+147-## 9. Immediate next slice
+148-
+149-## 10. Decisions taken (recorded)
+150-
+151-## 11. Open HITL decision queue
+152-EOF
+153-
+154-  printf '# Board\n' >"$FIX/dev/plans/runs/board.md"
+155-  printf '# Master\n' >"$FIX/dev/plans/master.md"
+156-  printf 'transcripts land here\n' >"$FIX/dev/plans/runs/codex/README.md"
+157-
+158-  cat >"$FIX/dev/design/orchestration.md" <<'EOF'
+159----
+160-status: locked
+161----
+162-
+163-# Orchestration
+--
+279-  set -e
+280-}
+281-
+282-# Structural edits to the fixture's state file (landed set, ladder statuses,
+283-# landing SHAs) for the base-SHA arms. python3 is already a hard precondition of
+284-# the generator, so using it here adds no dependency; hand-rolled perl over JSON
+285-# would be the fragile choice. `s` is the parsed state, `L` maps slice -> entry.
+286-mutate_state() {
+287-  python3 -c "
+288-import json
+289:p = '$FIX/dev/plans/release-state-9.9.9.json'
+290-s = json.load(open(p))
+291-L = {e['slice']: e for e in s['ladder']}
+292-$1
+293-json.dump(s, open(p, 'w'), indent=2)
+294-"
+295-}
+296-
+297-# The `base sha` line as the operator reads it. Asserting on THIS line, not on
+298-# the whole manifest, is the point: every landing SHA also appears in the
+299-# `landed so far` roll-up, so a whole-output grep cannot tell a correct base
+300-# from a wrong one.
+301-base_line() { grep -m1 '^  base sha' <<<"$OUT" || true; }
+302-
+303-# --- Arm 0: the BASELINE fixture is GREEN and NON-EMPTY --------------------
+304-# Without this, every RED arm below could be passing for an unrelated reason.
+305-setup_fixture
+306-run_gen 9.9.9 10
+307-if [ "$RC" -eq 0 ] && [ "$(printf '%s\n' "$OUT" | grep -c .)" -gt 20 ]; then
+308-  pass "baseline fixture — a known slice emits a non-empty manifest (exit 0)"
+309-else
+310-  fail "arm 0 (baseline green): rc=$RC out=$OUT"
+311-fi
+312-
+313-# --- Arm 0b: every SECTION the two templates require is present ------------
+314-# The manifest REPLACES a hand-maintained brief template, so it has to carry the
+315-# section set those templates actually contain — not a parallel invention.
+316-MISSING=""
+317-for section in "ASSIGNMENT" "BASE SHA" "WORKTREE RULES" "CONTRACT PATHS" \
+318-               "PLAN SECTION ANCHORS" "DESIGN DOCS" "ACCEPTANCE" "STOP CONDITIONS" "CLOSURE"; do
+319-  grep -q "$section" <<<"$OUT" || MISSING="$MISSING $section"
+320-done
+321-if [ -z "$MISSING" ]; then
+322-  pass "the manifest carries every template-derived section"
+323-else
+324-  fail "arm 0b (section set): missing:$MISSING"
+325-fi
+326-
+327-# --- Arm 1: A CITED PATH DOES NOT EXIST -> hard FAIL, naming it ------------
+328-# THE core guard. A rotted citation must fail loudly instead of being emitted.
+329-setup_fixture
+330-rm -f "$FIX/dev/acceptance.md"
+331-run_gen 9.9.9 10
+332-if [ "$RC" -ne 0 ] && grep -q 'dev/acceptance.md' <<<"$OUT"; then
+333-  pass "missing cited path — HARD fails and NAMES the path"
+334-else
+335-  fail "arm 1 (missing path): rc=$RC out=$OUT"
+336-fi
+337-
+338-# --- Arm 1a: the failing run emits NO manifest ------------------------------
+339-# "Fails loudly rather than being emitted": a manifest that is printed anyway,
+340-# with one dead citation in it, is exactly the artifact this tranche removes.
+341-if ! grep -q 'COMMISSION MANIFEST' <<<"$OUT"; then
+342-  pass "a failing verification suppresses the manifest entirely"
+343-else
+344-  fail "arm 1a (no partial emit): the manifest was printed despite a dead citation"
+345-fi
+346-
+347-# --- Arm 1b: a cited ANCHOR that no longer occurs -> hard FAIL --------------
+348-# Swapping an unverified line number for an unverified SYMBOL would launder a bad
+349-# pointer as a good one (T1d's crux). Anchors are existence-checked too.
+350-setup_fixture
+351-perl -0777 -pi -e 's/## 9\. Immediate next slice/## 9. Next up/' "$FIX/dev/plans/plan-9.9.9.md"
+352-run_gen 9.9.9 10
+353-if [ "$RC" -ne 0 ] && grep -qi 'immediate next slice\|no heading' <<<"$OUT"; then
+354-  pass "rotted plan anchor — a role heading that no longer exists HARD-fails"
+355-else
+356-  fail "arm 1b (rotted anchor): rc=$RC out=$OUT"
+357-fi
+358-
+359-# --- Arm 1c: an infrastructure anchor that rots ----------------------------
+360-setup_fixture
+361-perl -0777 -pi -e 's/## 10\. Hard rules summary/## 10. Rules/' "$FIX/dev/design/orchestration.md"
+362-run_gen 9.9.9 10
+363-if [ "$RC" -ne 0 ] && grep -qi 'hard rules' <<<"$OUT"; then
+364-  pass "rotted orchestration anchor — the worktree-rules citation HARD-fails"
+365-else
+366-  fail "arm 1c (rotted infra anchor): rc=$RC out=$OUT"
+367-fi
+368-
+369-# --- Arm 1d: a cited SYMBOL that no longer occurs -> hard FAIL -------------
+--
+390-  pass "rotted symbol — the state file's SCHEMA source citation HARD-fails"
+391-else
+392-  fail "arm 1e (schema symbol): rc=$RC out=$OUT"
+393-fi
+394-
+395-# --- Arm 2: ZERO citations for the slice -> hard FAIL (TC-37) --------------
+396-# The vacuous-pass class this repo is named for: a generator that exits 0 with
+397-# an empty required-reading list has briefed nobody while looking green.
+398-setup_fixture
+399-perl -0777 -pi -e 's/"short": "R-9-B", "title": "widget_readiness \+ the TC-99 terminal fix"/"short": "R-0-ZZ", "title": "nothing matches this"/' \
+400:  "$FIX/dev/plans/release-state-9.9.9.json"
+401-# ...and no slice memo for it either, so BOTH selectors come up empty.
+402-rm -f "$FIX/dev/design/9.9.9-slice-10-design.md"
+403-run_gen 9.9.9 10
+404-if [ "$RC" -ne 0 ] && grep -q 'TC-37' <<<"$OUT" && grep -qi 'zero\|no design' <<<"$OUT"; then
+405-  pass "zero design citations — an empty manifest HARD-fails (TC-37), never exit 0"
+406-else
+407-  fail "arm 2 (zero citations): rc=$RC out=$OUT"
+408-fi
+409-
+410-# --- Arm 3: UNKNOWN RELEASE -> hard FAIL, listing what exists --------------
+411-setup_fixture
+412-run_gen 1.2.3 10
+413:if [ "$RC" -ne 0 ] && grep -qi 'no release-state file\|unknown release' <<<"$OUT" \
+414-   && grep -q '9.9.9' <<<"$OUT"; then
+415-  pass "unknown release — HARD fails and names the releases that DO have a state file"
+416-else
+417-  fail "arm 3 (unknown release): rc=$RC out=$OUT"
+418-fi
+419-
+420-# --- Arm 4: UNKNOWN SLICE -> hard FAIL, listing the ladder -----------------
+421-setup_fixture
+422-run_gen 9.9.9 99
+423-if [ "$RC" -ne 0 ] && grep -qi 'not in the .*ladder\|unknown slice' <<<"$OUT" \
+424-   && grep -q '30' <<<"$OUT"; then
+425-  pass "unknown slice — HARD fails and names the ladder it is not in"
+426-else
+427-  fail "arm 4 (unknown slice): rc=$RC out=$OUT"
+428-fi
+429-
+430-# --- Arm 5: a KNOWN slice emits the load-bearing facts ---------------------
+431-# Non-emptiness is not the bar: the manifest has to be usable to brief a slice.
+432-setup_fixture
+433-run_gen 9.9.9 10
+434-MISSING=""
+435-grep -q 'bbbb2222'                              <<<"$OUT" || MISSING="$MISSING base-sha"
+436-grep -q 'dev/plans/plan-9.9.9.md'               <<<"$OUT" || MISSING="$MISSING plan"
+437-grep -q 'dev/design/widget-design.md'           <<<"$OUT" || MISSING="$MISSING design-of-record"
+438-grep -q 'dev/design/sub/widget-contract.md'     <<<"$OUT" || MISSING="$MISSING nested-design"
+439-grep -q 'preflight.sh'                          <<<"$OUT" || MISSING="$MISSING preflight"
+440-grep -q 'PUBLISH the pair'                      <<<"$OUT" || MISSING="$MISSING halting-decision"
+441-grep -q 'AC-999'                                <<<"$OUT" || MISSING="$MISSING publish-gate-ac"
+442-grep -q 'UNREVIEWED'                            <<<"$OUT" || MISSING="$MISSING unreviewed-surfaced"
+443-if [ "$RC" -eq 0 ] && [ -z "$MISSING" ]; then
+444-  pass "known slice — base SHA, contract, design, worktree rules and stop conditions all present"
+445-else
+446-  fail "arm 5 (known slice content): rc=$RC missing:$MISSING"
+447-fi
+448-
+449-# --- Arm 5b: a doc carrying NO slice token is NOT cited --------------------
+450-# Otherwise "design of record" degenerates into "every design doc in the repo".
+451-if ! grep -q 'dev/design/unrelated.md' <<<"$OUT"; then
+452-  pass "an unrelated design doc is not cited (the scan is token-driven, not a dump)"
+453-else
+454-  fail "arm 5b (token selectivity): unrelated.md was cited"
+455-fi
+456-
+457-# --- Arm 5d: the slice's OWN memo is found by filename, and only ITS ---------
+458-# A design doc named for this release AND this slice is that slice's memo even
+459-# when it carries no token. Its same-numbered namesake from ANOTHER release must
+460-# not be cited: a wrong citation that still resolves is the worst kind.
+461-if grep -q 'dev/design/9.9.9-slice-10-design.md' <<<"$OUT" \
+462-   && ! grep -q 'dev/design/slice-10-design.md' <<<"$OUT"; then
+463-  pass "filename selector — this release's slice memo is cited, another release's is not"
+464-else
+465-  fail "arm 5d (filename selector): out=$OUT"
+466-fi
+467-
+468-# --- Arm 5c: UNREVIEWED is surfaced as unclassified, not laundered ---------
+469-# T2c's backfill defaulted to UNREVIEWED = "nobody has classified this yet". A
+470-# manifest that presents those as authoritative would launder the gate's silence.
+471-if grep -q 'TC-50' <<<"$OUT" && grep -qi 'not verified\|unclassified\|not a currency claim' <<<"$OUT"; then
+472-  pass "UNREVIEWED docs are surfaced with their status + the TC-50 caveat"
+473-else
+474-  fail "arm 5c (unreviewed honesty): out=$OUT"
+475-fi
+476-
+477-# --- Arm 6: STATE-FILE-DRIVEN — the manifest follows T2a's file ------------
+478-# Proves the generator READS the single-writer state file rather than
+479-# re-scraping the prose (which is the whole point of T2a owning these facts).
+480-setup_fixture
+481-perl -0777 -pi -e 's/bbbb2222/cafe4444/; s/"next_slice": 10/"next_slice": 30/' \
+482:  "$FIX/dev/plans/release-state-9.9.9.json"
+483-run_gen 9.9.9 10
+484-if [ "$RC" -eq 0 ] && grep -q 'cafe4444' <<<"$OUT" && ! grep -q 'bbbb2222' <<<"$OUT" \
+485-   && grep -qi 'not the next slice' <<<"$OUT"; then
+486-  pass "state-file-driven — a changed base SHA and next slice both move the manifest"
+487-else
+488-  fail "arm 6 (state-file-driven): rc=$RC out=$OUT"
+489-fi
+490-
+491-# --- Arm 7: NO BARE LINE ANCHORS are ever emitted (T1d's ban) --------------
+492-setup_fixture
+493-run_gen 9.9.9 10
+494-if [ "$RC" -eq 0 ] \
+495-   && ! grep -qE '`[A-Za-z_][A-Za-z0-9_.+-]*:[0-9]{3,}(-[0-9]+)?\+?`' <<<"$OUT"; then
+496-  pass "no bare \`name:line\` anchors in the emitted manifest (T1d shape)"
+497-else
+498-  fail "arm 7 (line-anchor ban): rc=$RC"
+499-fi
+500-
+501-# --- Arm 8: READ-ONLY — generating writes nothing into the repo ------------
+502-setup_fixture
+503-(cd "$FIX" && git add -A && git commit -qm base)
+504-run_gen 9.9.9 10
+505-DIRT="$(cd "$FIX" && git status --porcelain --untracked-files=all)"
+506-if [ "$RC" -eq 0 ] && [ -z "$DIRT" ]; then
+507-  pass "read-only — a generate leaves the worktree byte-clean"
+508-else
+509-  fail "arm 8 (read-only): rc=$RC dirt=$DIRT"
+510-fi
+511-
+512-# --- Arm 8b: --verify prints the counts and no manifest --------------------
+513-run_gen 9.9.9 10 --verify
+514-if [ "$RC" -eq 0 ] && grep -qi 'verified' <<<"$OUT" && ! grep -q 'STOP CONDITIONS' <<<"$OUT"; then
+515-  pass "--verify checks the citations without emitting the brief"
+516-else
+517-  fail "arm 8c (--verify): rc=$RC out=$OUT"
+518-fi
+519-
+520-# --- Arm 8c: --verify-all sweeps every state file's NEXT slice -------------
+521-run_gen --verify-all
+522-if [ "$RC" -eq 0 ] && grep -q '9.9.9' <<<"$OUT"; then
+523:  pass "--verify-all verifies the next slice of every release-state file"
+524-else
+525-  fail "arm 8d (--verify-all): rc=$RC out=$OUT"
+526-fi
+527-
+528-# --- Arm 8d: --verify-all with ZERO state files -> hard FAIL (TC-37) -------
+529-setup_fixture
+530:rm -f "$FIX/dev/plans/release-state-9.9.9.json"
+531-run_gen --verify-all
+532-if [ "$RC" -ne 0 ] && grep -q 'TC-37' <<<"$OUT"; then
+533-  pass "vacuity guard — a sweep that discovers zero state files HARD-fails"
+534-else
+535-  fail "arm 8e (zero state files): rc=$RC out=$OUT"
+536-fi
+537-
+538-# --- Arm 8e: THE TARGET SLICE IS ITSELF LANDED -> base is its PREDECESSOR ---
+539-# codex §9 [P2]. The base used to be max(landed), which for a slice that is not
+540-# the next one selects the target's OWN landing merge (or a later one) — a brief
+541-# telling an operator to branch from the very work being commissioned. This is
+542-# the fixture form of the live case: it arrives the moment 0.8.20 Slice 20 lands
+543-# and someone regenerates its manifest. Slice 10 is landed here; the base MUST
+544-# be Slice 5's merge (bbbb2222) and MUST NOT be Slice 10's own (dddd5555).
+545-setup_fixture
+546-mutate_state "L[10]['status'] = 'LANDED'; L[10]['sha'] = 'dddd5555'; s['landed'] = [0, 5, 10]; s['next_slice'] = 30"
+547-run_gen 9.9.9 10
+548-BASE_LINE="$(base_line)"
+549-if [ "$RC" -eq 0 ] && grep -q 'bbbb2222' <<<"$BASE_LINE" && ! grep -q 'dddd5555' <<<"$BASE_LINE"; then
+550-  pass "target slice already landed — the base is its PREDECESSOR, never its own landing merge"
+551-else
+552-  fail "arm 8e (predecessor base): rc=$RC base=[$BASE_LINE]"
+553-fi
+554-
+555-# --- Arm 8f: and the regeneration is LABELLED, not silently reinterpreted ----
+556-# The reader has to know they asked for a slice that is already in the past;
+557-# a correct base printed without that context still misleads.
+558-if grep -qi 'HISTORICAL' <<<"$OUT"; then
+559-  pass "an already-landed target is marked HISTORICAL rather than briefed as if pending"
+560-else
+561-  fail "arm 8f (historical marker): out=$OUT"
+562-fi
+563-
+564-# --- Arm 8g: LATER slices landed too -> still the IMMEDIATE predecessor ------
+565-# max(landed) here is Slice 30, two slices past the target. The base must not
+566-# drift forward just because the release moved on.
+567-setup_fixture
+568-mutate_state "L[10]['status'] = 'LANDED'; L[10]['sha'] = 'dddd5555'
+569-L[30]['status'] = 'LANDED'; L[30]['sha'] = 'eeee6666'
+570-s['landed'] = [0, 5, 10, 30]; s['next_slice'] = None"
+571-run_gen 9.9.9 10
+572-BASE_LINE="$(base_line)"
+573-if [ "$RC" -eq 0 ] && grep -q 'bbbb2222' <<<"$BASE_LINE" \
+574-   && ! grep -q 'dddd5555' <<<"$BASE_LINE" && ! grep -q 'eeee6666' <<<"$BASE_LINE"; then
+575-  pass "later slices landed — the base stays the target's immediate predecessor"
+576-else
+577-  fail "arm 8g (no forward drift): rc=$RC base=[$BASE_LINE]"
+578-fi
+579-
+580-# --- Arm 8h: THE FIRST SLICE — nothing precedes it --------------------------
+581-# Documented behaviour: there is no predecessor merge, so the manifest says so
+582-# in words and sends the operator to `git rev-parse origin/main`. It must never
+583-# print an empty base, and it must never borrow a later slice's SHA.
+584-setup_fixture
+585-printf -- '---\nstatus: ACTIVE\n---\n\n# Slice 0 memo\n' >"$FIX/dev/design/9.9.9-slice-0-design.md"
+586-mutate_state "L[0]['status'] = 'UNBLOCKED'; L[0]['sha'] = None
+587-L[5]['status'] = 'NOT_STARTED'; L[5]['sha'] = None
+588-s['landed'] = []; s['next_slice'] = 0"
+589-run_gen 9.9.9 0
+590-BASE_LINE="$(base_line)"
+591-BASE_BLOCK="$(grep -m1 -A3 '^  base sha' <<<"$OUT" || true)"
+592-if [ "$RC" -eq 0 ] && grep -qi 'no landed slice precedes' <<<"$BASE_LINE" \
+593-   && ! grep -qE '[0-9a-f]{8}' <<<"$BASE_LINE" \
+594-   && grep -qi 'first slice' <<<"$BASE_BLOCK" && grep -q 'origin/main' <<<"$BASE_BLOCK"; then
+595-  pass "first slice — no predecessor is stated in words + branch-from-tip, not left blank"
+596-else
+597-  fail "arm 8h (first slice): rc=$RC base=[$BASE_LINE] block=[$BASE_BLOCK]"
+598-fi
+599-
+600-# --- Arm 8i: first slice, but LATER slices have landed -> the tip is AHEAD ---
+601-# Regenerating a historical first-slice brief: branching from the tip would pick
+602-# up work that slice never had, so the manifest has to say the tip has moved on
+603-# instead of implying the tip IS the point of cut.
+604-setup_fixture
+605-printf -- '---\nstatus: ACTIVE\n---\n\n# Slice 0 memo\n' >"$FIX/dev/design/9.9.9-slice-0-design.md"
+606-mutate_state "L[0]['status'] = 'UNBLOCKED'; L[0]['sha'] = None
+607-s['landed'] = [5]; s['next_slice'] = 0"
+608-run_gen 9.9.9 0
+609-BASE_LINE="$(base_line)"
+610-if [ "$RC" -eq 0 ] && ! grep -qE '[0-9a-f]{8}' <<<"$BASE_LINE" \
+--
+663-else
+664-  fail "arm 9d (real base line): base=[$REAL_BASE_LINE]"
+665-fi
+666-
+667-# --- Arm 9c: the real repo's every-release sweep is green ------------------
+668-set +e
+669-SWEEP_OUT="$("$REPO_ROOT/scripts/commission-manifest.sh" --verify-all 2>&1)"
+670-SWEEP_RC=$?
+671-set -e
+672-if [ "$SWEEP_RC" -eq 0 ]; then
+673:  pass "real repo — --verify-all is green across every live release-state file"
+674-else
+675-  fail "arm 9c (real sweep): rc=$SWEEP_RC out=$SWEEP_OUT"
+676-fi
+677-
+678-# --- Arm 10: wired into agent-test.sh and into an ALWAYS-ON CI job ---------
+679-if grep -q 'scripts/tests/test_commission_manifest.sh' "$AGENT_TEST"; then
+680-  pass "agent-test.sh runs this fixture suite"
+681-else
+682-  fail "agent-test.sh does not run scripts/tests/test_commission_manifest.sh"
+683-fi
+684-
+685-CI_JOB_BLOCK="$(awk '
+686-  /^  commission-manifest:/ { inblock = 1; print; next }
+687-  inblock && /^  [A-Za-z0-9_-]+:/ { inblock = 0 }
+688-  inblock { print }
+689-' "$CI_YML")"
+690-if [ -n "$CI_JOB_BLOCK" ]; then
+691-  pass "ci.yml defines a commission-manifest job"
+692-else
+693-  fail "ci.yml has no commission-manifest job"
+694-fi
+695-if printf '%s' "$CI_JOB_BLOCK" | grep -q 'scripts/commission-manifest.sh'; then
+696-  pass "the CI job runs the SHARED scripts/commission-manifest.sh"
+697-else
+698-  fail "the CI job must invoke scripts/commission-manifest.sh, not a reimplementation"
+699-fi
+700-if printf '%s' "$CI_JOB_BLOCK" | grep -qE '^\s*(if|needs):'; then
+701-  fail "the commission-manifest job must be ALWAYS-ON (no if:/needs:); block: $CI_JOB_BLOCK"
+702-else
+703-  pass "the commission-manifest job is always-on (no if:, no needs:, not docs_only-gated)"
+704-fi
+705-
+706-if [ "$FAILED" -gt 0 ]; then
+707-  printf '\n%d test(s) failed\n' "$FAILED" >&2
+708-  exit 1
+709-fi
+710-printf '\nAll commission-manifest tests passed\n'
+
+exec
+/bin/bash -lc "sed -n '180,330p' scripts/commission-manifest.sh; sed -n '470,780p' scripts/commission-manifest.sh" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+def read(path):
+    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+        return fh.read()
+
+
+def frontmatter_status(path):
+    """Parse `status:` exactly as scripts/lint-design-status.sh does."""
+    try:
+        text = read(path)
+    except OSError:
+        return None
+    lines = text.split("\n")
+    if not lines or lines[0].strip() != "---":
+        return None
+    block = []
+    for ln in lines[1:]:
+        if ln.rstrip() == "---":
+            break
+        block.append(ln)
+    else:
+        return None
+    for ln in block:
+        m = re.match(r"^status:\s*(.*?)\s*$", ln)
+        if m and m.group(1):
+            return m.group(1)
+    return None
+
+
+class Manifest:
+    """Accumulates the emitted lines AND the citations they make, so the
+    existence checks run over exactly what the brief says — not a parallel list
+    that could drift from it."""
+
+    def __init__(self):
+        self.lines = []
+        self.cites = []      # (path, needle|None, label)
+        self.problems = []
+
+    def out(self, text=""):
+        self.lines.append(text)
+
+    def cite(self, path, needle=None, label=""):
+        self.cites.append((path, needle, label))
+        if needle is not None:
+            return "`%s` in `%s`" % (needle, path)
+        return "`%s`" % path
+
+    def anchor(self, path, keywords, role, required=True):
+        """Resolve a section anchor by ROLE keyword against the file's own
+        headings. Never a line number (T1d RULE 1); always verified (RULE 2)."""
+        try:
+            text = read(path)
+        except OSError:
+            self.problems.append(
+                "FAIL commission-manifest: cannot read `%s` while resolving the %s anchor."
+                % (path, role))
+            self.cites.append((path, None, role))
+            return None
+        for ln in text.split("\n"):
+            if not ln.startswith("#"):
+                continue
+            low = ln.lower()
+            if all(k in low for k in keywords):
+                return self.cite(path, ln.strip(), role)
+        if required:
+            self.problems.append(
+                "FAIL commission-manifest: `%s` has no heading matching %s (role %s).\n"
+                "  The section was renamed or removed, so the brief would cite a heading\n"
+                "  that no longer exists. Re-point the role or restore the heading."
+                % (path, " + ".join("'%s'" % k for k in keywords), role))
+        return None
+
+
+def load_state(release):
+    path = "dev/plans/release-state-%s.json" % release
+    known = sorted(
+        re.sub(r"^dev/plans/release-state-(.*)\.json$", r"\1", p)
+        for p in glob.glob(STATE_GLOB))
+    if not known:
+        die(["FAIL commission-manifest: ZERO release-state files under %s." % STATE_GLOB,
+             "  There is nothing to generate a manifest FROM, so exiting 0 would vouch",
+             "  for nothing (TC-37). Either the state files moved or this is not the repo."])
+    if not os.path.isfile(path):
+        die(["FAIL commission-manifest: unknown release '%s' — no release-state file at" % release,
+             "  `%s`. Releases that DO have one: %s." % (path, ", ".join(known)),
+             "  The state file is the single writer (T2a); a manifest is not generated",
+             "  from prose."])
+    try:
+        return path, json.loads(read(path))
+    except (OSError, ValueError) as exc:
+        die(["FAIL commission-manifest: `%s` is not parseable as JSON: %s" % (path, exc)])
+
+
+def pick_slice(state, state_path, sel):
+    ladder = state.get("ladder") or []
+    known = [e.get("slice") for e in ladder]
+    if not ladder:
+        die(["FAIL commission-manifest: `%s` declares an EMPTY ladder." % state_path,
+             "  A manifest cannot be generated for a release with no slices (TC-37)."])
+    if str(sel).lower() == "next":
+        sel = state.get("next_slice")
+        if sel is None:
+            die(["FAIL commission-manifest: `%s` names no `next_slice`." % state_path])
+    try:
+        want = int(sel)
+    except (TypeError, ValueError):
+        die(["FAIL commission-manifest: slice '%s' is not a number (or the word `next`)." % sel])
+    for entry in ladder:
+        if entry.get("slice") == want:
+            return want, entry
+    die(["FAIL commission-manifest: slice %s is not in the %s ladder declared by `%s`."
+         % (want, state.get("release", "?"), state_path),
+         "  Known slices: %s." % ", ".join(str(s) for s in known)])
+
+
+def slice_tokens(entry):
+    """Derive the search tokens for the design tier from T2a's OWN fields, so the
+    required-reading list follows the state file rather than a hardcoded map.
+    Shapes only — snake_case identifiers and the repo's structured ids."""
+    blob = "%s %s" % (entry.get("short") or "", entry.get("title") or "")
+    pats = [
+        r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b",   # dense_readiness, flush_embeddings
+        r"\bTC-[0-9]+\b",                        # carry/todo ids
+        r"\bR-[0-9]+-[A-Za-z0-9]+\b",            # requirement ids: R-20-DR
+        r"\bC-[0-9]+\b",                         # contract ids
+        r"\bAC-[0-9]+\b",
+        r"\bRUBRIC-[A-Za-z0-9]+\b",
+        r"\b[A-Z]{2,}-[0-9]+\b",                 # OPP-12, EXP-…
+    ]
+    tokens = []
+    for pat in pats:
+        for tok in re.findall(pat, blob):
+            if tok not in tokens:
+                tokens.append(tok)
+    return tokens
+
+
+def scan_design(tokens, release, slice_no):
+    # Second selector, alongside the token scan: a doc whose FILENAME names this
+    # release AND this slice is that slice's own design memo (SLICE-TEMPLATE §3.0
+    # writes one per slice). The release is required in the name precisely
+    # because `dev/design/slice-30-design.md` is 0.8.0's — pulling it into a
+    # 0.8.20 Slice-30 brief would be a wrong citation that still resolves.
+    name_re = re.compile(r"slice[-_ ]?0*%d(?![0-9])" % slice_no, re.I)
+    hits = []
+    for root, dirs, files in os.walk(DESIGN_ROOT):
+        dirs.sort()
+        for name in sorted(files):
+            if not name.endswith(".md"):
+                continue
+            path = os.path.join(root, name)
+    a = m.anchor(LBO_TEMPLATE, ["step 0"], "LBO isolate step")
+    if a:
+        m.out("  isolate step     %s" % a)
+    m.out()
+
+    # ---- 4. CONTRACT PATHS (SLICE-TEMPLATE §1 {{CONTRACT_REF}}) -----------
+    m.out("## 4. CONTRACT PATHS   [SLICE-TEMPLATE §1.2 {{CONTRACT_REF}} — on any conflict with a")
+    m.out("   brief, the CONTRACT wins and the conflict is flagged in output.json]")
+    a = m.anchor(plan, ["requirements"], "requirements + ACs")
+    if a:
+        m.out("  requirements/ACs %s" % a)
+    m.out("  AC register      %s" % m.cite(ACCEPTANCE))
+    m.out("  invariants       %s (TDD mandatory; no DB mocking; never --no-verify)" % m.cite(AGENTS))
+    m.out("  governed surface %s" % m.cite(SURFACE_ALLOWLIST))
+    m.out("                   pinned by %s" % m.cite(SURFACE_PIN))
+    for _rank, path, status, _matched in design:
+        if "contract" in os.path.basename(path).lower():
+            m.out("  design contract  [%s] %s" % (status, m.cite(path)))
+    m.out()
+
+    # ---- 5. PLAN SECTION ANCHORS (no line numbers — T1d) ------------------
+    m.out("## 5. PLAN SECTION ANCHORS   [{{MANDATE}}/{{DEFERRED}}/{{DOD}}/{{GUARDRAILS}}] — greppable")
+    m.out("   headings, never `file:line` (T1d ban); each is verified to occur in the file it names.")
+    roles = [
+        ("mandate    ", ["immediate next slice"], True),
+        ("ladder     ", ["slice ladder"], True),
+        ("scope      ", ["goal", "scope"], True),
+        ("deferred   ", ["reserved-gap"], True),
+        ("cross-cut DoD", ["cross-cutting dod"], True),
+        ("do-not-relitigate", ["decisions already taken"], False),
+        ("prerequisites", ["prerequisites"], False),
+        ("rulings    ", ["decisions taken"], False),
+        ("open queue ", ["open hitl"], False),
+    ]
+    for label, kw, required in roles:
+        a = m.anchor(plan, kw, label.strip(), required=required)
+        if a:
+            m.out("  %-18s %s" % (label.strip(), a))
+    m.out()
+
+    # ---- 6. DESIGN DOCS ({{READING}}) -------------------------------------
+    m.out("## 6. DESIGN DOCS FOR THIS SLICE   [SLICE-TEMPLATE §1.4 {{READING}}]")
+    m.out("   Selected by the slice's OWN tokens from the state file: %s" % ", ".join(tokens))
+    m.out("   Status is AS RECORDED in `status:` frontmatter (T2c) — it is NOT a currency claim.")
+    m.out("   scripts/lint-design-status.sh proves the PRESENCE of a status, never its TRUTH;")
+    m.out("   UNREVIEWED means 'nobody has classified this yet' and the classification is owed")
+    m.out("   at TC-50. Rows marked ⚠ unclassified are candidates, NOT design of record.")
+    for _rank, path, status, matched in design:
+        flag = " ⚠ unclassified (TC-50)" if status.split()[0] in UNCLASSIFIED else ""
+        m.out("  [%s]%s %s" % (status, flag, m.cite(path)))
+        m.out("        matched: %s" % ", ".join(matched))
+    classified = [h for h in design if h[2].split()[0] not in UNCLASSIFIED]
+    m.out("  -> %d doc(s) matched: %d classified, %d unclassified."
+          % (len(design), len(classified), len(design) - len(classified)))
+    matched_tokens = {t for _r, _p, _s, ms in design for t in ms}
+    unmatched = [t for t in tokens if t not in matched_tokens]
+    if unmatched:
+        m.out("  -> NO design doc mentions: %s. That part of the slice has no design of record;"
+              % ", ".join(unmatched))
+        m.out("     its authority is whatever the plan's rulings/requirements sections say — read")
+        m.out("     them there, and do not infer a design that does not exist.")
+    m.out()
+
+    # ---- 7. ACCEPTANCE ({{AC_IDS}}) ---------------------------------------
+    acc = state.get("acceptance") or {}
+    gate = acc.get("publish_gate") or {}
+    m.out("## 7. ACCEPTANCE STATE   [SLICE-TEMPLATE §3.1 {{AC_IDS}}] — from the state file, verbatim")
+    m.out("  highest defined non-reserved AC   %s" % acc.get("highest_defined_non_reserved", "—"))
+    for res in acc.get("reservations") or []:
+        m.out("  reserved                          %s [%s] %s"
+              % (res.get("ac"), res.get("state"), res.get("initiative") or ""))
+    if gate:
+        m.out("  publish gate                      %s — %s, minted=%s, signed at Slice %s (board %s)"
+              % (gate.get("ac"), gate.get("state_word"), gate.get("minted"),
+                 gate.get("sign_off_slice"), gate.get("board_ref")))
+    if acc.get("re_verified_green"):
+        m.out("  re-verified green                 %s" % ", ".join(acc["re_verified_green"]))
+    m.out("  Mint no AC and change no AC here: %s is the register and the plan's" % m.cite(ACCEPTANCE))
+    m.out("  requirements section is the contract.")
+    m.out()
+
+    # ---- 8. STOP CONDITIONS -----------------------------------------------
+    m.out("## 8. STOP CONDITIONS   [LBO 'Escalate to LBS'; SLICE-TEMPLATE §6/§7; orchestration §10]")
+    dec = state.get("decisions") or {}
+    for d in dec.get("unruled") or []:
+        verb = "⛔ HALT TO HITL" if d.get("halts_run") else "⚠ GATED (does not halt this run)"
+        m.out("  %s — %s" % (verb, d.get("title") or d.get("id")))
+        m.out("      gated at %s · source: %s" % (d.get("gated_at") or "?", d.get("source") or "?"))
+    pubslice = state.get("publish_precondition_slice")
+    if pubslice is not None:
+        m.out("  ⛔ Slice %s is a PUBLISH PRECONDITION — absent-or-failing holds the release."
+              % pubslice)
+    for d in entry.get("depends_on") or []:
+        dep = ladder.get(d) or {}
+        if dep.get("status") != "LANDED":
+            m.out("  ⛔ NOT COMMISSIONABLE YET — dependency Slice %s is %s, not LANDED."
+                  % (d, dep.get("status")))
+    m.out("  Ruled decisions are CITED, never re-decided or restated: %d ruling(s) recorded in the"
+          % len(dec.get("ruled") or []))
+    m.out("  state file's `decisions.ruled` with their sources; read them there.")
+    for label, path, kw in (("hard rules", ORCH, ["hard rules"]),
+                            ("scope discipline", SLICE_TEMPLATE, ["scope discipline"]),
+                            ("recovery", SLICE_TEMPLATE, ["when something goes wrong"]),
+                            ("escalate", LBO_TEMPLATE, ["escalate to lbs"])):
+        a = m.anchor(path, kw, label)
+        if a:
+            m.out("  %-17s %s" % (label, a))
+    m.out()
+
+    # ---- 9. CLOSURE (orchestration §8; LBO 'Closure output') --------------
+    m.out("## 9. CLOSURE   [orchestration §8 schema; LBO 'Closure output'; SLICE-TEMPLATE §9]")
+    a = m.anchor(ORCH, ["closure output"], "closure schema")
+    if a:
+        m.out("  output.json      %s" % a)
+    a = m.anchor(SLICE_TEMPLATE, ["closure"], "slice closure", required=False)
+    if a:
+        m.out("  slice closure    %s" % a)
+    m.out("  write it LAST, after every commit, and report the head SHA to the orchestrator.")
+    m.out()
+    return m
+
+
+def schema_src_path(state):
+    """The state file states the SCHEMA source as prose ('pub const X in <path>');
+    take the path out of it rather than hardcoding a second copy."""
+    src = state.get("schema_version_source") or ""
+    for tok in src.split():
+        if "/" in tok:
+            return tok
+    return "src/rust/crates/fathomdb-schema/src/lib.rs"
+
+
+def verify(m, release, slice_no):
+    """CHECK 1 + CHECK 2 + the TC-37 guard. Returns (paths, anchors) verified."""
+    problems = list(m.problems)
+    paths_ok = 0
+    anchors_ok = 0
+    seen = set()
+    for path, needle, label in m.cites:
+        exists = os.path.exists(path)   # MUTATION POINT (see the test suite)
+        if not exists:
+            problems.append(
+                "FAIL commission-manifest: cited path `%s` does NOT exist in the worktree\n"
+                "  (citation role: %s). The file was renamed, moved or deleted; a brief built\n"
+                "  on it would send an agent to a dead path." % (path, label or "unlabelled"))
+            continue
+        if path not in seen:
+            seen.add(path)
+            paths_ok += 1
+        if needle is not None:
+            if os.path.isdir(path):
+                problems.append(
+                    "FAIL commission-manifest: `%s` is a directory but the citation names the\n"
+                    "  symbol `%s` (role: %s)." % (path, needle, label))
+                continue
+            if needle not in read(path):
+                problems.append(
+                    "FAIL commission-manifest: cited symbol `%s`\n"
+                    "  does NOT occur in `%s` (role: %s). The heading or symbol was renamed —\n"
+                    "  an unverified pointer must never be laundered as a verified one."
+                    % (needle, path, label))
+                continue
+            anchors_ok += 1
+
+    body = "\n".join(m.lines)
+    hit = LINE_ANCHOR_RE.search(body)
+    if hit:
+        problems.append(
+            "FAIL commission-manifest: the manifest emitted a bare line anchor %s.\n"
+            "  `<name>:<line>` pointers are banned (T1d): emit a greppable section anchor."
+            % hit.group(0))
+
+    if not m.cites:
+        problems.append(
+            "FAIL commission-manifest: ZERO citations emitted for %s Slice %s.\n"
+            "  An empty manifest briefs nobody while looking green — the TC-37 vacuous-pass\n"
+            "  class. This is a hard failure, never an exit 0." % (release, slice_no))
+    if paths_ok == 0 and not problems:
+        problems.append(
+            "FAIL commission-manifest: ZERO paths verified for %s Slice %s (TC-37)."
+            % (release, slice_no))
+    return paths_ok, anchors_ok, problems
+
+
+def generate(release, slice_sel):
+    state_path, state = load_state(release)
+    slice_no, entry = pick_slice(state, state_path, slice_sel)
+
+    tokens = slice_tokens(entry)
+    if not scan_design(tokens, release, slice_no):
+        die(["FAIL commission-manifest: ZERO design docs matched %s Slice %s (tokens: %s)."
+             % (release, slice_no, ", ".join(tokens) or "none derived"),
+             "  The required-reading list would be EMPTY, so the manifest would brief nobody",
+             "  while exiting 0 — this repo's named TC-37 vacuous-pass class. Fix it by",
+             "  authoring/citing the design of record for this slice, or by naming the slice's",
+             "  requirement id in the state file's `short`/`title` so the scan can find it."])
+
+    m = build(release, state_path, state, slice_no, entry)
+    paths_ok, anchors_ok, problems = verify(m, release, slice_no)
+    if problems:
+        problems.append(
+            "\ncommission-manifest: %d dead citation(s) for %s Slice %s — manifest NOT emitted."
+            % (len(problems), release, slice_no))
+        die(problems)
+    return slice_no, entry, m, paths_ok, anchors_ok
+
+
+if MODE == "verify-all":
+    states = sorted(glob.glob(STATE_GLOB))
+    if not states:
+        die(["FAIL commission-manifest: ZERO release-state files under %s." % STATE_GLOB,
+             "  The sweep loop never ran, so exiting 0 would vouch for nothing (TC-37)."])
+    for sp in states:
+        rel = re.sub(r"^dev/plans/release-state-(.*)\.json$", r"\1", sp)
+        sl, entry, m, paths_ok, anchors_ok = generate(rel, "next")
+        print("commission-manifest: %s next slice %s (%s) — %d path(s) and %d anchor(s) verified."
+              % (rel, sl, entry.get("short") or "?", paths_ok, anchors_ok))
+    sys.exit(0)
+
+slice_no, entry, m, paths_ok, anchors_ok = generate(RELEASE, SLICE_SEL)
+if MODE == "verify":
+    print("commission-manifest: %s Slice %s (%s) — %d path(s) and %d anchor(s) verified, 0 dead."
+          % (RELEASE, slice_no, entry.get("short") or "?", paths_ok, anchors_ok))
+    sys.exit(0)
+
+print("\n".join(m.lines))
+print("-" * 100)
+print("PATH VERIFICATION: %d distinct path(s) exist, %d anchor(s) verified to occur, 0 dead."
+      % (paths_ok, anchors_ok))
+print("Every citation above was checked at generation time. Re-run before reusing this brief.")
+PY
+
+exec
+/bin/bash -lc "python3 - <<'PY'
+import glob,json
+for p in glob.glob('dev/plans/release-state-*.json'):
+ s=json.load(open(p)); print(p, s.get('landed')[:5] if s.get('landed') else [], [(type(x).__name__,x) for x in (s.get('landed') or [])[:5]], 'next', s.get('next_slice'))
+PY" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+dev/plans/release-state-0.8.20.json [0, 5, 10, 15] [('int', 0), ('int', 5), ('int', 10), ('int', 15)] next 20
+
+exec
+/bin/bash -lc 'bash scripts/tests/test_commission_manifest.sh' in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 1284ms:
+PASS  rotted plan anchor — a role heading that no longer exists HARD-fails
+PASS  rotted orchestration anchor — the worktree-rules citation HARD-fails
+PASS  rotted symbol — the TC-RUBRIC-5 `--landing` citation HARD-fails when it stops occurring
+PASS  rotted symbol — the state file's SCHEMA source citation HARD-fails
+PASS  zero design citations — an empty manifest HARD-fails (TC-37), never exit 0
+PASS  unknown release — HARD fails and names the releases that DO have a state file
+PASS  unknown slice — HARD fails and names the ladder it is not in
+PASS  known slice — base SHA, contract, design, worktree rules and stop conditions all present
+PASS  an unrelated design doc is not cited (the scan is token-driven, not a dump)
+PASS  filename selector — this release's slice memo is cited, another release's is not
+PASS  UNREVIEWED docs are surfaced with their status + the TC-50 caveat
+PASS  state-file-driven — a changed base SHA and next slice both move the manifest
+PASS  no bare `name:line` anchors in the emitted manifest (T1d shape)
+PASS  read-only — a generate leaves the worktree byte-clean
+PASS  --verify checks the citations without emitting the brief
+PASS  --verify-all verifies the next slice of every release-state file
+PASS  vacuity guard — a sweep that discovers zero state files HARD-fails
+PASS  target slice already landed — the base is its PREDECESSOR, never its own landing merge
+PASS  an already-landed target is marked HISTORICAL rather than briefed as if pending
+PASS  later slices landed — the base stays the target's immediate predecessor
+PASS  first slice — no predecessor is stated in words + branch-from-tip, not left blank
+PASS  no predecessor but later landings exist — the manifest warns the tip is AHEAD
+PASS  gaps in `landed` — the base is the greatest landed slice strictly below the target
+PASS  real repo — the 0.8.20 Slice 20 manifest generates with every path resolving
+PASS  the real manifest emits section anchors only — no `name:line` pointers
+PASS  real repo — Slice 20's base is Slice 15's landing merge (a2022957), on the base line
+PASS  real repo — --verify-all is green across every live release-state file
+PASS  agent-test.sh runs this fixture suite
+PASS  ci.yml defines a commission-manifest job
+PASS  the CI job runs the SHARED scripts/commission-manifest.sh
+PASS  the commission-manifest job is always-on (no if:, no needs:, not docs_only-gated)
+
+All commission-manifest tests passed
+
+exec
+/bin/bash -lc "nl -ba scripts/commission-manifest.sh | sed -n '410,435p'" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+   410	    later_landed = [s for s in landed_nums if s > slice_no]
+   411	    base_slice = max(prior_landed) if prior_landed else None
+   412	    base_sha = (ladder.get(base_slice) or {}).get("sha") if base_slice is not None else None
+   413	    if slice_no in landed_nums:
+   414	        m.out("  ⚠ HISTORICAL     Slice %s is ITSELF LANDED (%s), so this is a regeneration:"
+   415	              % (slice_no, (ladder.get(slice_no) or {}).get("sha") or "no sha recorded"))
+   416	        m.out("                   the base below is that slice's PREDECESSOR, never its own merge.")
+   417	    if base_sha:
+   418	        m.out("  base sha         %s  (Slice %s — the newest LANDED slice STRICTLY BEFORE Slice %s)"
+   419	              % (base_sha, base_slice, slice_no))
+   420	    elif base_slice is not None:
+   421	        m.out("  base sha         (Slice %s is the predecessor but records NO landing sha)"
+   422	              % base_slice)
+   423	        m.out("                   The state file is incomplete: take the branch point from")
+   424	        m.out("                   `git log` for that landing and record it in output.json. Do NOT guess.")
+   425	    else:
+   426	        m.out("  base sha         (none — NO landed slice precedes Slice %s)" % slice_no)
+   427	        m.out("                   This is the first slice of the release to be cut, so there is no")
+   428	        m.out("                   predecessor merge: branch from `git rev-parse origin/main` at STEP 0.")
+   429	        if later_landed:
+   430	            m.out("  ⚠ TIP IS AHEAD   Slice(s) %s landed AFTER this one, so origin/main already"
+   431	                  % ", ".join(str(s) for s in later_landed))
+   432	            m.out("                   carries work Slice %s never had. Branch from the tip only if that"
+   433	                  % slice_no)
+   434	            m.out("                   is intended; otherwise recover the point of cut from `git log`.")
+   435	    dep_gap = [d for d in (entry.get("depends_on") or [])
+
+exec
+/bin/bash -lc "./scripts/commission-manifest.sh 0.8.20 20 | sed -n '20,45p'" in /home/coreyt/projects/fathomdb-worktrees/dh2-t1b
+ succeeded in 0ms:
+  master           `dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md`
+  codex §9         transcripts go under `dev/plans/runs/codex`, release-namespaced (TC-RUBRIC-7)
+
+## 2. BASE SHA + BRANCH POINT   [LBO 'Branch from tip'; SLICE-TEMPLATE §0]
+  base sha         a2022957  (Slice 15 — the newest LANDED slice STRICTLY BEFORE Slice 20)
+  re-verify        `git rev-parse origin/main` at STEP 0 — a later landing may have
+                   advanced the tip since the state file was written.
+  landed so far    0 (403eb254), 5 (1f8ed8bf), 10 (3cfb3cda), 15 (a2022957)
+  SCHEMA           24 — `pub const SCHEMA_VERSION` in `src/rust/crates/fathomdb-schema/src/lib.rs`
+
+## 3. WORKTREE RULES   [LBO 'STEP 0 — Isolate'; SLICE-TEMPLATE §0] — cite, do not restate
+  preflight gate  `## 1.6 Preflight gate (run before every worktree spawn)` in `dev/design/orchestration.md`
+  hard rules      `## 10. Hard rules summary` in `dev/design/orchestration.md`
+  worktree cleanup `## 11. Worktree cleanup (after phase family closes)` in `dev/design/orchestration.md`
+  session preflight `## 0. Hard preflight checks (CURRENT — apply every session, regardless of the 0.8.3/0.8.4 body below)` in `dev/plans/prompts/0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md`
+  mechanics        `## 6. Orchestration mechanics` in `dev/plans/prompts/0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md`
+  TC-RUBRIC-5      all landing git-writes run in a dedicated linked worktree;
+                   `--landing` in `scripts/preflight.sh` hard-fails on the primary checkout
+  isolate step     `## STEP 0 — Isolate (fail-fast)` in `dev/plans/prompts/LIBRARY-BUMP-ORCHESTRATOR-TEMPLATE.md`
+
+## 4. CONTRACT PATHS   [SLICE-TEMPLATE §1.2 {{CONTRACT_REF}} — on any conflict with a
+   brief, the CONTRACT wins and the conflict is flagged in output.json]
+  requirements/ACs `## 3. Requirements + acceptance criteria (release DoD — frozen at Slice 0)` in `dev/plans/plan-0.8.20.md`
+  AC register      `dev/acceptance.md`
+  invariants       `AGENTS.md` (TDD mandatory; no DB mocking; never --no-verify)
+  governed surface `src/conformance/governed-surface-allowlist.json`
+
+codex
+The predecessor selection is improved for most slices, but historical first-slice regeneration still emits an incorrect branch-from-tip instruction when later slices have already landed.
+
+Review comment:
+
+- [P2] Don't branch historical first-slice briefs from tip — /home/coreyt/projects/fathomdb-worktrees/dh2-t1b/scripts/commission-manifest.sh:427-428
+  When regenerating Slice 0 after later slices have landed (`base_slice is None` and `later_landed` is non-empty), this still tells the operator this is the first slice to be cut and to branch from current `origin/main`. In that scenario `origin/main` already contains later slice merges, so the manifest includes the stale-base instruction it is trying to prevent; the origin/main instruction should only be emitted when there are no later landings, otherwise only the recovery guidance should be shown.
+The predecessor selection is improved for most slices, but historical first-slice regeneration still emits an incorrect branch-from-tip instruction when later slices have already landed.
+
+Review comment:
+
+- [P2] Don't branch historical first-slice briefs from tip — /home/coreyt/projects/fathomdb-worktrees/dh2-t1b/scripts/commission-manifest.sh:427-428
+  When regenerating Slice 0 after later slices have landed (`base_slice is None` and `later_landed` is non-empty), this still tells the operator this is the first slice to be cut and to branch from current `origin/main`. In that scenario `origin/main` already contains later slice merges, so the manifest includes the stale-base instruction it is trying to prevent; the origin/main instruction should only be emitted when there are no later landings, otherwise only the recovery guidance should be shown.
