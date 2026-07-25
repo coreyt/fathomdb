@@ -312,7 +312,15 @@ Gaps `1–4, 6–9, 11–14, 16–19, 21–24, 26–29, 31–39` absorb unplanne
 4. **Baseline captured** — FTS/vector numbers + X1. **~~eu7 recall~~ — STRUCK (HITL 2026-07-19):** R-20-EU7 is
    **closed by decision**, so **no eu7 baseline is required and no eu7 run is authorized** (§3). This prereq was
    listed as *assumed* and was never actually met — Slice-0 found no baseline existed (**TC-19**); it is now moot.
-5. **Memex `0.5.x-successor` co-land readiness** confirmed (breaking **pair** — one side alone is not a release).
+5. ~~**Memex `0.5.x-successor` co-land readiness** confirmed (breaking **pair** — one side alone is not a
+   release).~~ **✅ CLOSED BY DECISION (HITL 2026-07-25) — no Memex confirmation is required and none is to be
+   sought.** Ruling: *Memex readiness completes after Slice 30, does not need review from Memex, and Memex will
+   adjust to the surface of 0.8.20.* The publish therefore no longer waits on a cross-repo confirmation the
+   FathomDB side cannot perform. **Do not re-introduce a "verify with Memex" step** — closing a decision and
+   then scheduling a confirming check is the failure this repo has already ruled against. **Push scope is
+   unchanged and absolute: fathomdb-only.** Signalling this ruling to Memex would require a separate, explicit
+   per-push HITL directive and is NOT authorized by this closure. **Publish itself remains a hard HITL gate**
+   (§ 11 item 3) — this closure removes a prerequisite, not the gate.
 
 ---
 
@@ -623,6 +631,30 @@ broken code (§0.1). **Mint ACs from AC-079** (§3). **Run NO eu7 — R-20-EU7 i
 >
 > Effect lands at **Slice 40** for 1/2/3/5/6; at **Slice 20** for 7; at the **next `configure_projections` slice**
 > for 4; item 8 is a future-slice input.
+>
+> ### ✅ HITL RULINGS 2026-07-25 — the run authorization (see master **F-34**)
+>
+> The remaining ladder (20 → 25 → 30 → 40) runs under a **standing Steward mandate**, preceded by the
+> cross-cutting **DOC-HYGIENE-2** effort. Four rulings amend this queue:
+>
+> 1. **AC-079 is PRE-SIGNED** — item 1 below is **DECIDED, not open**. The HITL signed the *accumulated*
+>    governed-surface delta as it stands today (Slices 5d + 10b + 15b + 15d). **The delta is pinned to the
+>    content of `src/conformance/governed-surface-allowlist.json` as of this commit** — 30 `allowlist`
+>    members, `recovery_denylist` unchanged at the five REQ-054 names. **Any diff to that file re-opens the
+>    gate**, enforced mechanically by the DOC-HYGIENE-2 **T1e allowlist-pin gate**, not by anyone remembering.
+>    **Pre-sign ≠ AC minted:** AC-079 is still *minted and recorded as SIGNED at Slice 40*, covering the
+>    pre-signed set plus whatever the batched decision below adds.
+> 2. **New governed surface at 20/25/30 — CONVERTED, not pre-signed.** Each pin trip is recorded as a
+>    proposal (branch stays green, existing practice) and the **accumulated 20/25/30 delta goes to the HITL
+>    ONCE, at the Slice 30 → Slice 40 boundary**. Slice 20 is expected to trip it (`flush_embeddings()` reads
+>    as a net-new command; `dense_readiness` attaches additively to `ProjectionSpec.vector`).
+> 3. **§ 7 prerequisite 5 (Memex co-land readiness) is CLOSED BY DECISION** — see § 7. Item 3 below
+>    (publish) is **unchanged and still HITL-pending**: it is the one hard stop in the run.
+> 4. **Item 8 (Hermes consult) is CLOSED — no input received.** It gated nothing in 0.8.20.
+>
+> **Remaining stops in the run:** the batched governed-surface decision (scheduled, C4 → C6) and **publish**
+> (Slice 40, hard). Reserved-gap band overflow (§ 5) still halts. The fix-N circuit-breaker
+> (`orchestration.md` § 6) escalates to the **Steward** first, reaching the HITL only on the Steward's call.
 
 1. **AC-079 governed-surface sign-off** — the Phase-2 + erasure API delta (`erase_source`/`SourceId`/
    `EraseReport`/`ExciseReport`, `configure_projections`/`ProjectionSpec`/`ProjectionRole`, `read.projections`,
@@ -630,6 +662,10 @@ broken code (§0.1). **Mint ACs from AC-079** (§3). **Run NO eu7 — R-20-EU7 i
    publish. **Options:** (a) sign once at Slice 40 after the full surface + H7 are green; (b) sign per-slice now.
    **Rec:** (a). **Why:** the surface still grows (20 adds `dense_readiness`, 25 adds surrogate); 0.8.19 signed at
    its Slice-40 close. **Gated:** Slice 40 (publish precondition).
+   **✅ RULED 2026-07-25 — PRE-SIGNED, this item is CLOSED.** The accumulated delta (5d + 10b + 15b + 15d) is
+   signed as of this commit and pinned to the allowlist file's content; any diff re-opens it (T1e gate). The
+   *minting* of AC-079 still happens at Slice 40. Growth from Slices 20/25/30 is handled by the **batched**
+   decision at the Slice 30 → Slice 40 boundary, not by re-opening this item. See the 2026-07-25 rulings block.
 2. **Adoption arms (build ≠ adopt, F-21)** — which Phase-2 features change shipped DEFAULT behavior vs opt-in.
    **Options:** (a) registry / read-modes / `dense_readiness` / `filterable` OPT-IN, erasure fixes ON; (b) some
    other subset ON. **Rec:** (a). **Why:** the erasure fixes correct shipped defects; the Phase-2 surface is
@@ -658,6 +694,8 @@ broken code (§0.1). **Mint ACs from AC-079** (§3). **Run NO eu7 — R-20-EU7 i
    sites (`engine:14867`/`:14890`) — **no migration** — over widening the terminal CHECK to admit `'superseded'`
    (**a schema step + migration test**); escalate only if the terminal's semantics demand the distinct token.
    RED-first, per the standing TDD rule. Ledger: todos seq 65. **Gated:** Slice 20.
-8. **PENDING INPUT (not a decision) — Hermes consult** on the eventual **(D)** endpoint-node attribute-filter
-   widening. Memex already replied: **(A) now, (D) reserved**. **Why here:** it refines a future call and blocks
-   nothing. **Gated:** the future SDK-surface slice that widens (D), not 0.8.20.
+8. ~~**PENDING INPUT (not a decision) — Hermes consult**~~ **✅ CLOSED 2026-07-25 (HITL): no input received
+   from Hermes; the item is closed rather than carried.** It concerned the eventual **(D)** endpoint-node
+   attribute-filter widening. Memex already replied: **(A) now, (D) reserved** — that reply stands and is
+   unaffected. It gated nothing in 0.8.20; a future SDK-surface slice that widens (D) may re-open the consult
+   on its own terms.

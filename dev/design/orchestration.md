@@ -91,8 +91,11 @@ Four invariants (the entire added formality):
    completion event **and** its commits exist.
 3. **No undefined transition.** Any state with no satisfiable next
    step — expected witness missing (failed implementer), a BLOCK
-   fix-N can't clear, fix-N past a small bound — **halts to HITL**
-   rather than improvising.
+   fix-N can't clear, fix-N past the § 6 round cap — **halts and
+   escalates** rather than improvising. Under a Steward-held loop the
+   halt goes to the **Steward**, who decides re-commission / re-scope /
+   escalate to HITL; with no Steward in the loop it goes straight to
+   the HITL.
 4. **Idempotent re-entry.** On resume, re-derive from witnesses and
    continue at the first incomplete transition; a transition whose
    witness already exists is a verified no-op.
@@ -365,9 +368,26 @@ reading the verdict has everything it needs. Do not wait on / reach
 for SendMessage.
 
 After fix-N: cherry-pick the new commit(s), re-spawn the reviewer for
-re-verdict. Iterate until PASS or orchestrator override. A BLOCK that
-fix-N cannot clear, or fix-N past a small bound, halts to HITL
-(§ 1.5 invariant 3) rather than looping indefinitely.
+re-verdict. Iterate until PASS or orchestrator override.
+
+**Round cap — the circuit-breaker (STANDING RULE, HITL 2026-07-25).**
+The fix-N loop is bounded. An orchestrator **escalates after 3 fix-N
+rounds on the SAME finding, or 6 rounds total on a slice** — whichever
+comes first — rather than iterating indefinitely. This replaces the
+former unquantified "small bound" (§ 1.5 invariant 3), which left the
+bound to the orchestrator's judgement and therefore did not bind.
+
+The escalation target is the **Steward**, not the HITL, whenever a
+Steward holds the loop: the Steward then decides **re-commission /
+re-scope / escalate to HITL**. Only the Steward may carry it further
+up — an orchestrator never escalates straight past the Steward, and a
+HITL gate never travels down to the orchestrator. With no Steward in
+the loop the halt goes to the HITL directly.
+
+Precedent: a sixth-round circuit-breaker fired and worked on 0.8.20's
+TC-47 (steward ledger seq-97); the cap makes that ad-hoc judgement a
+rule. A BLOCK that fix-N cannot clear halts the same way regardless of
+round count.
 
 Numbering convention: `<id>-fix-1.md`, `<id>-fix-2.md`, etc. Past
 practice: ~1 fix-N pass per BLOCK; CONCERN often accepted via

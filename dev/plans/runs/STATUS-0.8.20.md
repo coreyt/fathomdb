@@ -42,7 +42,7 @@ step 24). Ledger tip **`3264114a`** (steward seq-98).
 | **Slice in flight** | **NONE — Slice 15 keystone just LANDED (`a2022957`).** The ladder is between slices, awaiting the next commission. |
 | **Status** | **Slices 0, 5, 10, 15 all COMPLETE and LANDED on `origin/main`** (header table). The keystone landed **R-20-PR + R-20-EAV + `filterable` pre-KNN + TC-33 + TC-34 + Finding-1 (A) + `#[non_exhaustive] SearchFilter`**; codex §9 **terminal-clean**; gates re-verified by the Steward (clippy 0, check 0, (A) pin 1/1, AC-041 3/3). **SCHEMA 24.** |
 | **Unblocks** | **Slices 20 and 25 are NOW UNBLOCKED** — R-20-PR (the projection registry) now exists. Slice 30 (H7) depends on 10/15/20/25. **Publish remains blocked on AC-079**, which is **still unsigned** — sign-off is gated to Slice 40 (§4 #1). |
-| **Immediate next action** | **Commission a `/goal complete 0.8.20` orchestrator for Slice 20** — `dense_readiness` + `flush_embeddings()` (**R-20-DR**) **+ the TC-45 supersession-terminal fix** (HITL 2026-07-24). Then the remaining ladder **20 → 25 → 30 → 40**. **✅ The sequencing prerequisite is DISCHARGED:** the cross-cutting docs/tooling hygiene effort (DOC-HYGIENE-1, TC-48) that had to land FIRST — a wide docs diff that must not run while an orchestrator is live (F-7 collision rule) — **LANDED on `origin/main` 2026-07-25 (`f53b8c64..597738d9`, no pico label)**. Nothing now blocks the Slice-20 commission. Rulings for the eight-item queue are recorded in `plan-0.8.20.md` §11; master reconciliation = **F-32**, DOC-HYGIENE-1 = **F-33**. |
+| **Immediate next action** | **Commission the `DOC-HYGIENE-2` orchestrator FIRST — Slice 20 does not open until it lands** (**F-34**, HITL 2026-07-25). A wide docs diff must not run while a slice orchestrator is live (**F-7** collision rule), and DOC-HYGIENE-2 corrects **18 line-anchors in `plan-0.8.20.md` that misdirect the Slice-20 implementer** (`engine:14867`/`:14890` for TC-45 → the real call sites are `lib.rs:16963`/`:16986`). **Then** Slice 20 — `dense_readiness` + `flush_embeddings()` (**R-20-DR**) **+ the TC-45 supersession-terminal fix** (HITL 2026-07-24) — commissioned as an **orchestrator** (`/orchestrate`, or a Steward-spawned background orchestrator; **NOT `/goal`** — standing ruling `927ffb35`). Then **25 → 30 → 40, sequentially** (parallel 20∥25 was declined, F-34). **✅ The sequencing prerequisite is DISCHARGED:** the cross-cutting docs/tooling hygiene effort (DOC-HYGIENE-1, TC-48) that had to land FIRST — a wide docs diff that must not run while an orchestrator is live (F-7 collision rule) — **LANDED on `origin/main` 2026-07-25 (`f53b8c64..597738d9`, no pico label)**. Nothing now blocks the Slice-20 commission. Rulings for the eight-item queue are recorded in `plan-0.8.20.md` §11; master reconciliation = **F-32**, DOC-HYGIENE-1 = **F-33**. |
 
 **Slices 0, 5, 10, 15 close records** are §11 (Slice 5), §12 (Slice 10), §13 (Slice 15b — TC-34 only; the
 registry/EAV/TC-33 remainder that also landed in the keystone `a2022957` is summarised in §8 and in
@@ -65,8 +65,9 @@ by that ruling.
 | 30 | RUBRIC-H7 `can-i-deploy` contract gate (R-20-H7) | 10,15,20,25 | not started — publish precondition |
 | 40 | Verification + release readiness (publish-or-hold) | 5,30 | not started |
 
-**Ladder remaining: 20 → 25 → 30 → 40.** Slices 0/5/10/15 are landed. **Immediate next: commission a
-`/goal complete 0.8.20` orchestrator for Slice 20 (R-20-DR).**
+**Ladder remaining: 20 → 25 → 30 → 40, run SEQUENTIALLY** (F-34 — parallel 20∥25 was declined). Slices
+0/5/10/15 are landed. **Immediate next: `DOC-HYGIENE-2`, then Slice 20 (R-20-DR) — commissioned as an
+orchestrator, NOT via `/goal`** (standing ruling `927ffb35`). See §1.
 
 **Merge discipline (still binding for 20/25).** Slices touching `engine/src/lib.rs` **serialize the merges**
 (rebase-then-merge one at a time). **One `maturin develop` at a time** (shared `.venv` mutex) — and **never from
@@ -118,6 +119,22 @@ Everything else is tracked by **requirement id + TDD test name** per the locked-
 ---
 
 ## 4. Open HITL decisions (options + recommendation)
+
+> **⚠ THIS SECTION IS A HISTORICAL QUEUE, NOT THE LIVE OPEN SET (Steward, 2026-07-25).** Items 1–6 below were
+> **resolved at the 2026-07-19 Slice-0 X0 sign-off**; item 7 (**AC-079**) was **PRE-SIGNED by the HITL on
+> 2026-07-25**. Item 1 (**eu7 basis**) is doubly settled — eu7 is **CLOSED BY DECISION, zero runs on any
+> backend at any N** (§6 / master F-28), so its "conditional on Slice-40 proof" wording is dead. Item 6's
+> "confirm Memex co-land readiness" is **CLOSED BY DECISION** (master F-34): Memex adapts to 0.8.20's surface
+> and **no confirmation is to be sought**. The rows are retained as the decision record; **do not act on them
+> as open**.
+>
+> **THE LIVE OPEN SET IS EXACTLY TWO:** (1) the **batched governed-surface decision** — the accumulated
+> Slice 20/25/30 allowlist delta, taken to the HITL **once**, at the Slice 30 → Slice 40 boundary; and
+> (2) **PUBLISH** (Slice 40, hard gate). Reserved-gap band overflow (`plan-0.8.20.md` §5) still halts.
+> Full authorization: master **F-34** · plan §11's 2026-07-25 rulings block.
+>
+> *This section is a hand-maintained duplicate of state that lives in three other files — exactly the
+> fan-out DOC-HYGIENE-2's **N2** replaces with a generated ruled/unruled table.*
 
 | # | Decision | Recommendation |
 |---|---|---|
