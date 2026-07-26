@@ -4804,25 +4804,66 @@ impl Engine {
     /// a workspace with a live dense arm pays nothing; a workspace that never
     /// declared a vector projection pays two `prepare_cached` `EXISTS` probes per
     /// batch-row of an unenrolled kind.
+    ///
+    /// fix-2 (codex §9 [P2]) — a late enrolment now runs the SAME stranded-row
+    /// treatment the declare-time door runs ([`reenqueue_stranded_vector_rows`]),
+    /// and returns `true` iff that re-enqueued anything. Enrolling a kind while
+    /// enqueueing ONLY the batch's own row left every earlier row of that kind
+    /// holding its permanent `'up_to_date'` terminal with no vector, so once the
+    /// new row drained readiness reported `ready` with pre-existing vector-eligible
+    /// rows unembedded — a FALSE READY. Reached, for instance, by a database that
+    /// persisted the declaration while opened WITHOUT an embedder and then reopened
+    /// WITH one and wrote before re-applying the projection.
+    ///
+    /// Both statements run in ONE transaction so the enrolment and the un-stranding
+    /// cannot be torn apart by a crash (the same `BEGIN IMMEDIATE` shape
+    /// [`rederive_projections_on_boot`] uses). That transaction is opened on the
+    /// writer connection just OUTSIDE the batch transaction: if the batch then
+    /// fails, the workspace is left having enrolled a kind whose rows are correctly
+    /// queued for the dense arm the registry does declare — inert, and self-healing
+    /// on the next write or apply.
     fn enrol_batch_vector_kinds(
         &self,
         connection: &Connection,
         batch: &[PreparedWrite],
-    ) -> Result<(), EngineError> {
+    ) -> Result<bool, EngineError> {
         if self.runtime_embedder.is_none() {
-            return Ok(());
+            return Ok(false);
         }
+        let mut enrolled_any = false;
         for write in batch {
             // Only `Node` writes: edge bodies enrol `'edge_fact'` themselves in
             // `project_canonical_edge_row` (G11), unconditionally and already.
             let PreparedWrite::Node { kind, .. } = write else { continue };
-            self.enrol_vector_kind_if_declared(connection, kind, RowKind::Leaf)?;
+            enrolled_any |= self.enrol_vector_kind_if_declared(connection, kind, RowKind::Leaf)?;
         }
-        Ok(())
+        if !enrolled_any {
+            return Ok(false);
+        }
+        self.unstrand_after_late_enrolment(connection)
+    }
+
+    /// 0.8.20 Slice 20c fix-2 — the un-stranding half of a LATE enrolment, on its
+    /// own `BEGIN IMMEDIATE` transaction. Split out so both write-path callers
+    /// ([`Engine::enrol_batch_vector_kinds`] and the `#[doc(hidden)]`
+    /// `write_canonical_row_with_kind_for_test`) share it verbatim.
+    fn unstrand_after_late_enrolment(&self, connection: &Connection) -> Result<bool, EngineError> {
+        connection.execute_batch("BEGIN IMMEDIATE").map_err(|_| EngineError::Storage)?;
+        match reenqueue_stranded_vector_rows(connection) {
+            Ok(enqueued) => {
+                connection.execute_batch("COMMIT").map_err(|_| EngineError::Storage)?;
+                Ok(enqueued)
+            }
+            Err(_) => {
+                let _ = connection.execute_batch("ROLLBACK");
+                Err(EngineError::Storage)
+            }
+        }
     }
 
     /// 0.8.20 Slice 20c — enrol ONE kind if the workspace declares a
-    /// `searchable→vector` projection and the row kind is vector-eligible. See
+    /// `searchable→vector` projection and the row kind is vector-eligible. Returns
+    /// `true` iff this call NEWLY enrolled the kind. See
     /// [`Engine::enrol_batch_vector_kinds`] for the rationale and the
     /// live-embedder precondition (which that caller has already checked).
     fn enrol_vector_kind_if_declared(
@@ -4830,21 +4871,29 @@ impl Engine {
         connection: &Connection,
         kind: &str,
         row_kind: RowKind,
-    ) -> Result<(), EngineError> {
+    ) -> Result<bool, EngineError> {
         // `graph` rows are lexically searchable but NEVER embedded
         // (`index_targets_for_row_kind`), so they must not drag their kind into
         // the vector registry — that would start embedding every other row of
         // that kind.
         if !index_targets_for_row_kind(row_kind).vector {
-            return Ok(());
+            return Ok(false);
+        }
+        // fix-2 (codex §9 [P1]) — the SAME restriction the declare-time door
+        // applies, from the SAME predicate, so the two cannot drift: a kind the
+        // vector writer cannot commit must never be enrolled, or the projection
+        // worker wedges on it forever. See [`kind_is_vector_committable`].
+        if !kind_is_vector_committable(kind) {
+            return Ok(false);
         }
         if kind_is_vector_indexed(connection, kind)? {
-            return Ok(());
+            return Ok(false);
         }
         if !vector_projection_declared(connection).map_err(|_| EngineError::Storage)? {
-            return Ok(());
+            return Ok(false);
         }
-        register_vector_kind(connection, kind).map_err(|_| EngineError::Storage)
+        register_vector_kind(connection, kind).map_err(|_| EngineError::Storage)?;
+        Ok(true)
     }
 
     fn write_inner(&self, batch: &[PreparedWrite]) -> Result<WriteReceipt, EngineError> {
@@ -4861,7 +4910,13 @@ impl Engine {
         // `collect_projection_jobs` reads the vector-kind registry to decide
         // whether the dispatcher needs waking. See
         // `Engine::enrol_batch_vector_kinds`.
-        self.enrol_batch_vector_kinds(connection, batch)?;
+        //
+        // fix-2 (codex §9 [P2]) — the flag says the enrolment ALSO un-stranded
+        // rows outside this batch. Those rows are not in `projection_jobs` (that
+        // only walks the batch), so it is OR-ed into `pending_projection` below:
+        // `drain` is a passive barrier and never a trigger (C4 rider), so work
+        // enqueued without a wake would sit until the next unrelated write.
+        let unstranded = self.enrol_batch_vector_kinds(connection, batch)?;
         let projection_jobs = collect_projection_jobs(connection, batch)?;
         #[cfg(debug_assertions)]
         if self.force_next_commit_failure.swap(false, Ordering::SeqCst) {
@@ -4883,7 +4938,7 @@ impl Engine {
         // `commit_batch` but need the scanner to wake up via `notify_new_work`.
         let has_edge_body_work =
             batch.iter().any(|w| matches!(w, PreparedWrite::Edge { body: Some(_), .. }));
-        let pending_projection = !projection_jobs.is_empty() || has_edge_body_work;
+        let pending_projection = !projection_jobs.is_empty() || has_edge_body_work || unstranded;
 
         let dangling_edge_endpoints = match commit_batch(
             connection,
@@ -7273,9 +7328,16 @@ impl Engine {
         // silently diverge into the false-ready barrier for `coverage` rows. The
         // live-embedder precondition is checked here, as that caller does; the
         // `row_kind` gate keeps `graph` rows out of the vector registry.
-        if self.runtime_embedder.is_some() {
-            self.enrol_vector_kind_if_declared(connection, kind, row_kind)?;
-        }
+        //
+        // fix-2 (codex §9 [P2]) — including the un-stranding half, so this door
+        // cannot diverge from the other one either.
+        let unstranded = if self.runtime_embedder.is_some()
+            && self.enrol_vector_kind_if_declared(connection, kind, row_kind)?
+        {
+            self.unstrand_after_late_enrolment(connection)?
+        } else {
+            false
+        };
 
         let cursor = self.next_cursor.load(Ordering::SeqCst).saturating_add(1);
         let enqueued = {
@@ -7313,7 +7375,7 @@ impl Engine {
             enqueued
         };
         self.next_cursor.store(cursor, Ordering::SeqCst);
-        if enqueued {
+        if enqueued || unstranded {
             self.projection_runtime.notify_new_work();
         }
         Ok(WriteReceipt { cursor, row_cursors: vec![cursor], dangling_edge_endpoints: 0 })
@@ -15193,6 +15255,39 @@ fn resolve_source_type(kind: &str) -> Result<&'static str, EngineError> {
     })
 }
 
+/// 0.8.20 Slice 20c fix-2 (codex §9 [P1]) — **can the vector writer COMMIT a row
+/// of this kind?** The ONE definition of the vector pipeline's kind domain, shared
+/// by every enrolment path.
+///
+/// [`commit_projection_outcomes`] resolves `kind -> source_type` through
+/// [`resolve_source_type`] and returns `Err` for anything outside its locked
+/// vocabulary — *before* it records the row's terminal. `PreparedWrite::Node`, by
+/// contrast, accepts ANY non-empty `kind` (`validate_write` constrains the body,
+/// the identity and the validity window, never the kind against that vocabulary),
+/// so a corpus can legitimately hold e.g. an `"invoice"` node.
+///
+/// Enrolling such a kind is therefore a permanent LIVENESS WEDGE for the whole
+/// workspace: the scheduler picks the row up, the commit fails, no terminal is
+/// ever written, the scanner re-enqueues it forever, `drain` burns its entire
+/// timeout into [`EngineError::Scheduler`] and `dense_readiness` sticks on
+/// `embedding` — starving the rows whose kinds ARE commit-able along with it.
+///
+/// So enrolment is RESTRICTED to this predicate rather than the vector writer
+/// being taught arbitrary kinds (which would reach into `resolve_source_type`'s
+/// locked Pack-1 partition-key semantics — `dev/design/0.7.0-vector-quant-pack1.md`
+/// D3, a HITL lock). A non-commit-able kind simply gets NO dense arm, which is
+/// precisely its pre-slice status quo; it is deliberately **not** a new typed
+/// error and adds no governed surface.
+///
+/// It DELEGATES to `resolve_source_type` instead of restating the list. A
+/// hand-copied second vocabulary is the TC-56 defect shape (a mirror that silently
+/// drifts from its original), and here the drift would be silent in the worst
+/// direction: a kind added to `resolve_source_type` but missing from a copied
+/// filter would just never be embedded.
+fn kind_is_vector_committable(kind: &str) -> bool {
+    resolve_source_type(kind).is_ok()
+}
+
 /// G11 (Slice 15) — derive a stable hex-encoded sha256 logical_id from a
 /// `(kind, name)` pair. Both inputs are lowercased before hashing so that
 /// entity identity is case-insensitive (`"Alice"` == `"alice"`). The
@@ -16906,13 +17001,11 @@ fn register_vector_kind(tx: &Connection, kind: &str) -> rusqlite::Result<()> {
 ///    (`row_kind IN ('leaf','coverage')` — the `index_targets_for_row_kind`
 ///    vector-eligibility predicate; `graph` rows are lexically searchable but
 ///    never embedded, so enrolling on them would silently start embedding
-///    structural rows);
-/// 2. find the STRANDED rows — vector-eligible, now vector-kind-registered,
-///    carrying an `'up_to_date'` terminal, and carrying NO `_fathomdb_vector_rows`
-///    row — and delete their terminals so the scheduler's `terminal IS NULL`
-///    predicate sees them again;
-/// 3. rewind the readiness watermark to just below the lowest stranded cursor, so
-///    the scheduler's `write_cursor > cursor` filter reaches them.
+///    structural rows) **that the vector writer can commit**
+///    ([`kind_is_vector_committable`], fix-2 / codex §9 [P1]);
+/// 2. (and 3.) un-strand the rows that enrolment now covers, via
+///    [`reenqueue_stranded_vector_rows`] — shared verbatim with the write path's
+///    late enrolment.
 ///
 /// # Why it is IDEMPOTENT (R-20-PR: "re-registration is a no-op")
 ///
@@ -16922,11 +17015,6 @@ fn register_vector_kind(tx: &Connection, kind: &str) -> rusqlite::Result<()> {
 /// finds an empty stranded set, returns `false`, and touches neither the
 /// terminals nor the cursor. No rewind, no re-embed, no spurious `embedding`
 /// window.
-///
-/// A `'failed'` terminal is deliberately NOT re-enqueued (step 2 filters on
-/// `'up_to_date'`): re-enqueueing it would loop a permanently-failing row
-/// forever, and the documented failure boundary is that a terminally-failed embed
-/// stops being outstanding work (see [`derive_dense_readiness`]).
 ///
 /// # Not a data migration
 ///
@@ -16938,7 +17026,11 @@ fn enqueue_declared_vector_backfill(tx: &Connection) -> rusqlite::Result<bool> {
         return Ok(false);
     }
 
-    // (1) Enrol the vector-eligible kinds the live corpus actually contains.
+    // (1) Enrol the vector-eligible kinds the live corpus actually contains —
+    // RESTRICTED to the ones the vector writer can actually commit
+    // ([`kind_is_vector_committable`], fix-2 / codex §9 [P1]). Enrolling a kind
+    // outside `resolve_source_type`'s locked vocabulary wedges the projection
+    // worker forever and starves every other kind with it.
     let kinds: Vec<String> = {
         let mut stmt = tx.prepare(
             "SELECT DISTINCT kind FROM canonical_nodes
@@ -16947,10 +17039,50 @@ fn enqueue_declared_vector_backfill(tx: &Connection) -> rusqlite::Result<bool> {
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
         rows.collect::<rusqlite::Result<Vec<String>>>()?
     };
-    for kind in &kinds {
+    for kind in kinds.iter().filter(|kind| kind_is_vector_committable(kind)) {
         register_vector_kind(tx, kind)?;
     }
 
+    // (2)+(3) Un-strand the rows the new enrolment now covers.
+    reenqueue_stranded_vector_rows(tx)
+}
+
+/// 0.8.20 Slice 20c — steps (2) and (3) of the declared-backfill above, as their
+/// own function because **both** enrolment doors owe this treatment.
+///
+/// fix-2 (codex §9 [P2]): [`enqueue_declared_vector_backfill`] is the DECLARE-time
+/// door; [`Engine::enrol_batch_vector_kinds`] is the WRITE-time one, and it used to
+/// enrol a kind while enqueueing only the row in its own batch. A database that
+/// persisted a `searchable→vector` declaration while opened WITHOUT an embedder
+/// (Q6a graceful-absent: it defers, enrolling nothing), then reopened WITH one and
+/// wrote the same kind BEFORE re-applying the projection, therefore drained the new
+/// row and reported `ready` while every row from the no-embedder session kept its
+/// permanent `'up_to_date'` terminal and no vector. That is a FALSE READY — the
+/// exact defect class R-20-DR exists to eliminate — so the two doors share ONE
+/// implementation rather than one of them carrying a partial copy.
+///
+/// Returns `true` iff work was re-enqueued; the caller must then `notify_new_work()`
+/// (after its commit — the dispatcher opens its own connection).
+///
+///   2. find the STRANDED rows — vector-eligible, now vector-kind-registered,
+///      carrying an `'up_to_date'` terminal, and carrying NO `_fathomdb_vector_rows`
+///      row — and delete their terminals so the scheduler's `terminal IS NULL`
+///      predicate sees them again;
+///   3. rewind the readiness watermark to just below the lowest stranded cursor, so
+///      the scheduler's `write_cursor > cursor` filter reaches them.
+///
+/// The `_fathomdb_vector_kinds` join is what scopes this to the dense arm: a kind
+/// that is not enrolled (including one that is not commit-able, per
+/// [`kind_is_vector_committable`]) is not stranded — it has no dense arm to be
+/// behind on.
+///
+/// Idempotent by construction: it acts only on rows that are stranded RIGHT NOW, so
+/// once drained the set is empty, it returns `false`, and neither the terminals nor
+/// the cursor are touched. A `'failed'` terminal is deliberately NOT re-enqueued
+/// (the filter is `'up_to_date'`): re-enqueueing it would loop a permanently-failing
+/// row forever, and the documented failure boundary is that a terminally-failed
+/// embed stops being outstanding work (see [`derive_dense_readiness`]).
+fn reenqueue_stranded_vector_rows(tx: &Connection) -> rusqlite::Result<bool> {
     // (2) The stranded set: covered by the dense arm, terminally marked done, no
     // vector. `MIN` first so a no-op apply costs one indexed probe and stops.
     let lowest_stranded: Option<u64> = tx.query_row(
