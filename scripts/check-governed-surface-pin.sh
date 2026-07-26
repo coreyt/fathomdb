@@ -20,11 +20,31 @@
 #   and this gate HARD-fails the moment the file diverges from it, routing the
 #   reader back to the HITL for a fresh sign-off.
 #
-# TRIPPING THIS GATE IS CORRECT BEHAVIOUR, NOT A BUG. It is precisely what lets
-# 0.8.20 Slices 20 / 25 / 30 proceed WITHOUT stopping for a per-slice sign-off:
-# the pre-sign covers the pinned content, and anything else re-opens it. Slice 20
-# is EXPECTED to trip this. Re-pinning to make the gate green without a fresh
-# HITL sign-off is the failure mode the gate exists to prevent.
+# TRIPPING THIS GATE IS CORRECT BEHAVIOUR, NOT A BUG: the pre-sign covers the
+# pinned content, and anything else re-opens it. Re-pinning to make the gate
+# green without a fresh HITL sign-off is the failure mode the gate exists to
+# prevent.
+#
+# ⚠ CORRECTED 2026-07-26 (HITL, steward ledger seq-113). An earlier revision of
+# this header claimed tripping the gate "is precisely what lets Slices 20/25/30
+# proceed WITHOUT stopping for a per-slice sign-off". THAT CLAIM WAS FALSE, and
+# the mechanism it described does not exist. This gate hashes the file's RAW
+# BYTES (predicate (a) below) and `scripts/preflight.sh` treats a FAIL as `hard`,
+# refusing to certify the tree for landing. So the procedure that claim implied —
+# record the delta as a `_comment` proposal and land — is NOT executable: the
+# `_comment` edit IS a byte diff, so writing the proposal blocks the very land it
+# was meant to permit. A trip is a genuine HALT, not a soft signal.
+#
+# THE RULED STRATEGY IS ONE RE-PIN AT THE BATCHED DECISION (TC-59, option (b)):
+# the `_comment` prose correction (TC-52) and the signing of any accumulated
+# delta happen together as a SINGLE ceremony at the Slice 30 -> Slice 40
+# boundary, where AC-079 mints anyway. No `pending_delta` mechanism is built —
+# with TC-55 ruled as instrumentation, Slice 20c adds zero governed commands,
+# R-20-SUR is a write-time minting rule with no new verb, and R-20-H7 is a gate
+# rather than SDK surface, so the pin is NOT expected to trip again in 0.8.20.
+#
+# IF IT DOES TRIP: HALT and escalate to the Steward. Do not work around it, do
+# not re-pin, do not edit the pinned file to make it pass.
 #
 # PREDICATE — the pinned file must match the pin on ALL of:
 #   (a) CONTENT HASH: sha256 and git blob sha1 of the file's raw bytes equal the

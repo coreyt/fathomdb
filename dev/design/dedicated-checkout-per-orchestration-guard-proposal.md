@@ -29,6 +29,25 @@ invariant ("branch verified before every commit/push") was **violated in the mom
 The rubric-eval v3 pilot independently flagged this as **A6** (high) and tracks the durable fix as
 **TC-RUBRIC-5**.
 
+## 1a. SCOPE — TC-RUBRIC-5 covers AUTHORING only (HITL 2026-07-26, steward ledger seq-112)
+
+**The rule binds where release work is *authored*, not where the merge ref-move happens.** Authoring —
+every code, test and docs commit of a slice — runs in a dedicated linked worktree, and
+`scripts/preflight.sh --landing` hard-fails on the primary checkout. **Making the merge commit and the
+closing docs commits in the primary checkout is COMPLIANT.**
+
+Why this is an exemption and not a loophole: `main` is checked out in the primary tree, so **no ref-move can
+advance it from anywhere else** — as written without this clause the rule had **no executable path** for the
+merge itself, and an orchestrator following it literally could never land. Requiring a bare-repo or detached
+landing path would be real tooling work for **no added safety**: the rule's purpose is that release work is
+not authored in the shared checkout, and that is already met when authoring happens in the worktree and
+`--landing` passes from there.
+
+**This is written down deliberately.** It was raised by the 0.8.20 Slice-20 orchestrator, which flagged the
+ambiguity rather than assuming it away — the correct behaviour. Leaving the exemption as unwritten practice
+is exactly how **TC-37**-class vacuous compliance takes root: a rule everyone quietly works around stops
+meaning anything, and the next agent cannot tell an exemption from a violation.
+
 ## 2. Why discipline alone is insufficient
 
 The orchestrator handoff §0 already mandates `git rev-parse --abbrev-ref HEAD` **before every commit**. That

@@ -1,18 +1,14 @@
 {
   "_comment": "SINGLE WRITER for 0.8.20 release state (DOC-HYGIENE-2 T2a). THIS FILE IS THE ONLY PLACE THESE FACTS ARE AUTHORED: landed slices + their landing SHAs, the SCHEMA version, the next slice, the remaining ladder, AC status, and the ruled/unruled decision set. WHY: before this file, that state was narrated across a 5-12 file write-side fan-out (the master release plan, the STATUS board, the plan, the Steward hand-off, the ledgers) with NOTHING checking that the copies agreed - one reconciliation commit (b70629e5) had to touch 7 files, and the live board is ~79 KB, too large to read whole. HOW IT IS ENFORCED: `generated_views` below names the marker-delimited regions that are RENDERED from this file by scripts/check-release-state-views.sh. That script regenerates each region into a temp buffer and diffs it against what is in the document; any difference is a HARD failure, so a hand-edit of a view, or a change here without a regenerate, both go red. Regenerate with `scripts/check-release-state-views.sh --write`. TO CHANGE A FACT: edit it HERE, then run --write, then commit both. Do NOT hand-edit inside the markers. SCOPE: this file records state, it does not decide anything - it changes no release slot, no scope, no requirement and no AC. Every fact below was re-verified from git (merge-commit ancestry on origin/main; `pub const SCHEMA_VERSION` in src/rust/crates/fathomdb-schema/src/lib.rs) rather than copied from narration.",
-
   "release": "0.8.20",
   "release_kind": "even, publish",
   "board": "dev/plans/runs/STATUS-0.8.20.md",
   "plan": "dev/plans/plan-0.8.20.md",
   "master": "dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md",
-
   "schema_version": 24,
   "schema_version_source": "pub const SCHEMA_VERSION in src/rust/crates/fathomdb-schema/src/lib.rs",
-
   "landed_verified_at": "fae276b9",
   "landed_verified_how": "each SHA below is the landing merge commit for its slice AND is an ancestor of origin/main (git merge-base --is-ancestor), with the merge subject matching this repo's `merge(0.8.20): Slice[- ]N` landing convention",
-
   "ladder": [
     {
       "slice": 0,
@@ -27,7 +23,9 @@
       "slice": 5,
       "short": "R-20-E1..E8",
       "title": "erasure completeness",
-      "depends_on": [0],
+      "depends_on": [
+        0
+      ],
       "status": "LANDED",
       "sha": "1f8ed8bf",
       "merge_subject": "merge(0.8.20): Slice 5 — erasure completeness (R-20-E1..E8)"
@@ -36,7 +34,9 @@
       "slice": 10,
       "short": "R-20-RV, R-20-NV",
       "title": "ReadView / read-modes + node-validity",
-      "depends_on": [0],
+      "depends_on": [
+        0
+      ],
       "status": "LANDED",
       "sha": "3cfb3cda",
       "merge_subject": "merge(0.8.20): Slice 10 — ReadView/read-modes + node-validity + TC-31"
@@ -45,7 +45,10 @@
       "slice": 15,
       "short": "R-20-PR, R-20-EAV",
       "title": "projection registry (C-1) + EAV/property-FTS + TC-33 + TC-34",
-      "depends_on": [0, 10],
+      "depends_on": [
+        0,
+        10
+      ],
       "status": "LANDED",
       "sha": "a2022957",
       "merge_subject": "merge(0.8.20): Slice 15 keystone COMPLETE — registry + EAV + filterable pre-KNN + TC-33"
@@ -54,7 +57,9 @@
       "slice": 20,
       "short": "R-20-DR",
       "title": "dense_readiness + flush_embeddings() + the TC-45 supersession-terminal fix",
-      "depends_on": [15],
+      "depends_on": [
+        15
+      ],
       "status": "UNBLOCKED",
       "sha": null
     },
@@ -62,7 +67,9 @@
       "slice": 25,
       "short": "R-20-SUR",
       "title": "surrogate minting — governed entities ONLY",
-      "depends_on": [15],
+      "depends_on": [
+        15
+      ],
       "status": "UNBLOCKED",
       "sha": null
     },
@@ -70,7 +77,12 @@
       "slice": 30,
       "short": "H7",
       "title": "RUBRIC-H7 can-i-deploy contract gate (R-20-H7)",
-      "depends_on": [10, 15, 20, 25],
+      "depends_on": [
+        10,
+        15,
+        20,
+        25
+      ],
       "status": "NOT_STARTED",
       "sha": null,
       "publish_precondition": true
@@ -79,20 +91,37 @@
       "slice": 40,
       "short": "R-20-PUB",
       "title": "verification + release readiness (publish-or-hold)",
-      "depends_on": [5, 30],
+      "depends_on": [
+        5,
+        30
+      ],
       "status": "NOT_STARTED",
       "sha": null
     }
   ],
-
-  "landed": [0, 5, 10, 15],
+  "landed": [
+    0,
+    5,
+    10,
+    15
+  ],
   "next_slice": 20,
-  "remaining_ladder": [20, 25, 30, 40],
+  "remaining_ladder": [
+    20,
+    25,
+    30,
+    40
+  ],
   "ladder_order": "SEQUENTIAL — parallel 20 || 25 was declined (master F-34)",
-  "unblocked": [20, 25],
-  "unblocked_by": { "requirement": "R-20-PR", "gloss": "the projection registry" },
+  "unblocked": [
+    20,
+    25
+  ],
+  "unblocked_by": {
+    "requirement": "R-20-PR",
+    "gloss": "the projection registry"
+  },
   "publish_precondition_slice": 30,
-
   "acceptance": {
     "highest_defined_non_reserved": "AC-076",
     "reservations": [
@@ -111,10 +140,8 @@
     ],
     "publish_gate": {
       "_model": "THREE DISTINCT FACTS, deliberately NOT collapsed into one word. The predecessor model carried `minted`/`signed` plus a single `state_word: \"unsigned\"`, and the STATUS §1 `Unblocks` view rendered its sentence off that one word — so the board told every reader `**Publish remains blocked on AC-079**, which is **still unsigned**` AFTER the HITL had PRE-SIGNED that delta on 2026-07-25 (master F-34). Restating a settled call as still open is precisely how a settled call gets re-decided. The three facts a consumer MUST read separately: (1) `pre_sign_state` - has the HITL signed off on the CONTENT of the delta yet? (2) `minted` + `sign_off_slice` - has the AC been minted into dev/acceptance.md and recorded there as SIGNED yet? PRE-SIGN IS NOT MINTING. (3) `publish_gated_by` - what actually holds publish, which is the separate HITL publish gate (`decisions.unruled` id `publish`), NOT an unsigned AC. No consumer may derive a single status word from `minted`/`signed` alone; both renderers (scripts/check-release-state-views.sh render_status_unblocks, scripts/commission-manifest.sh publish-gate line) branch on `pre_sign_state` and hard-fail on an unrecognised value or a reintroduced `state_word`.",
-
       "ac": "AC-079",
       "covers": "the accumulated governed-surface delta (Slices 5d + 10b + 15b + 15d)",
-
       "pre_sign_state": "PRE_SIGNED",
       "pre_sign": {
         "on": "2026-07-25",
@@ -125,19 +152,18 @@
         "provenance": "HITL 2026-07-25 — PRE-SIGNED and pinned to the content of src/conformance/governed-surface-allowlist.json; any diff to that file re-opens the gate (T1e pin). PRE-SIGN IS NOT MINTING: AC-079 is still minted and recorded as SIGNED at Slice 40.",
         "enforced_by": "scripts/check-governed-surface-pin.sh (the pin), run from scripts/preflight.sh"
       },
-
       "minted": false,
       "minted_as": "SIGNED",
       "sign_off_slice": 40,
-
       "publish_gated_by": "the separate HITL publish gate",
       "publish_gate_decision_id": "publish",
-
       "board_ref": "§4 #1"
     },
-    "re_verified_green": ["AC-041", "AC-080"]
+    "re_verified_green": [
+      "AC-041",
+      "AC-080"
+    ]
   },
-
   "decisions": {
     "_comment": "Ruled vs unruled, as of 2026-07-25. Sources of record: dev/plans/runs/STATUS-0.8.20.md §4 (the historical queue banner) and dev/plans/plan-0.8.20.md §11 (the live queue + the 2026-07-24 and 2026-07-25 ruling blocks). Recorded here so the ruled/unruled split has ONE writer; the two prose sections stay exactly as they are.",
     "unruled": [
@@ -216,10 +242,29 @@
         "ruling": "standing Steward mandate for DOC-HYGIENE-2 -> 20 -> 25 (sequential) -> 30 -> batched surface decision -> DOC-HYGIENE-3 -> 40",
         "ruled_on": "2026-07-25",
         "source": "master F-34"
+      },
+      {
+        "id": "tc-55-flush-classification",
+        "title": "flush-to-readiness is INSTRUMENTATION (reuse `drain`), not a governed command",
+        "source": "steward-ledger seq-110 (HITL 2026-07-26)"
+      },
+      {
+        "id": "tc-57-projection-race",
+        "title": "governed-write vs projection-worker race: characterize first, then fix IN-release",
+        "source": "steward-ledger seq-111 (HITL 2026-07-26)"
+      },
+      {
+        "id": "tc-rubric-5-scope",
+        "title": "TC-RUBRIC-5 covers AUTHORING only; merging in the primary checkout is compliant",
+        "source": "steward-ledger seq-112 (HITL 2026-07-26)"
+      },
+      {
+        "id": "tc-59-pin-repin-strategy",
+        "title": "one re-pin at the batched decision; no pending_delta tooling",
+        "source": "steward-ledger seq-113 (HITL 2026-07-26)"
       }
     ]
   },
-
   "generated_views": [
     {
       "id": "master-ladder-progress",
