@@ -18,7 +18,15 @@
 //!   surface in search. The partial-unique index is
 //!   `ON canonical_nodes(logical_id) WHERE superseded_at IS NULL`, and SQLite
 //!   treats every NULL as distinct, so a NULL `logical_id` never collides.
-//!   `anonymous_and_governed_twins_both_stay_active` pins that corollary.
+//!   `anonymous_and_governed_twins_both_stay_active_and_both_surface` pins that
+//!   corollary, and
+//!   `identical_body_twins_collapse_under_fusion_body_dedup_but_both_persist`
+//!   records its one wrinkle.
+//!
+//! It also carries **D4**: the write-time admission audit found NO gap, and the
+//! two paths that audit turns on — the internal structural-row writer (the only
+//! writer that bypasses `PreparedWrite`) and an anonymous `PreparedWrite` going
+//! through `commit_batch` — are pinned to mint nothing.
 //!
 //! **"Registration"** is the projection registry (Slice 15d, R-20-PR):
 //! `configure_projections` (add / re-register / drop) plus the boot re-derive
@@ -34,7 +42,7 @@
 
 use fathomdb_engine::{
     Engine, ExtractDocument, IdSpace, IdSpaceKind, InitialState, PreparedWrite, ProjectionFts,
-    ProjectionRole, ProjectionSpec, SourceId,
+    ProjectionRole, ProjectionSpec, RowKind, SourceId,
 };
 use fathomdb_schema::SQLITE_SUFFIX;
 use sha2::{Digest, Sha256};
@@ -468,4 +476,71 @@ fn supersession_reuses_the_write_time_logical_id_rather_than_re_deriving_one() {
             .all(|(_, lid, _, id)| lid.as_deref() == Some("ent-zephyr") && id == "l:ent-zephyr"),
         "every version carries the SAME write-time logical_id — nothing is re-derived"
     );
+}
+
+// ===========================================================================
+// D4 — the write-time admission audit, pinned where it is reachable in a test
+// ===========================================================================
+
+/// **D4 audit conclusion, made falsifiable.** The audit of every path that can
+/// set `PreparedWrite::Node.logical_id` / `Edge.logical_id` found NO gap: only
+/// the two governed arms of `Engine::ingest_with_extractor` mint in-engine, a
+/// caller-supplied `logical_id` IS the definition of admission, and no engine
+/// SQL anywhere assigns `logical_id` (no `UPDATE … SET logical_id`, no
+/// `INSERT … logical_id` other than the pass-through of a caller value).
+///
+/// The one writer that reaches `canonical_nodes` while BYPASSING
+/// `PreparedWrite` entirely is the internal structural-row writer
+/// (`write_canonical_row_with_kind_for_test`, the `coverage`/`graph` `RowKind`s
+/// from EXP-S — rows with NO public SDK surface at all). It binds a literal
+/// `NULL` `logical_id`. That is the un-admitted, non-governed write path, and
+/// this test pins that it mints nothing: a structural row stays in the `h:`
+/// content space forever, exactly like a doc-seeded one.
+#[test]
+fn the_internal_structural_row_writer_mints_no_logical_id() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "structural_rows");
+    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
+    let engine = &opened.engine;
+
+    engine
+        .write_canonical_row_with_kind_for_test("coverage", "a coverage row", RowKind::Coverage)
+        .expect("coverage row write");
+    engine
+        .write_canonical_row_with_kind_for_test("graph", "a graph row", RowKind::Graph)
+        .expect("graph row write");
+
+    let snap = snapshot(&path);
+    assert_eq!(snap.len(), 2, "both structural rows landed");
+    assert_eq!(
+        spaces(&snap),
+        (2, 0),
+        "an un-admitted, non-governed write path mints NOTHING — the rows stay `h:`"
+    );
+    assert!(
+        snap.iter().all(|(_, lid, _, _)| lid.is_none()),
+        "the structural writer binds a literal NULL logical_id"
+    );
+}
+
+/// The mirror of the audit's other half: an ANONYMOUS `PreparedWrite::Node`
+/// (`logical_id: None`) survives the full durable write path — validation,
+/// `commit_batch`, projection — still NULL. `commit_batch` is a pure
+/// pass-through of the caller's `logical_id`; it decides nothing, and
+/// `validate_write` rejects a malformed `logical_id` but never assigns one.
+#[test]
+fn an_anonymous_write_stays_anonymous_through_the_whole_durable_path() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "anonymous_stays");
+    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
+    let engine = &opened.engine;
+
+    engine.write(&[anonymous("src:doc-a", r#"{"status":"open","title":"a doc chunk"}"#)]).unwrap();
+    engine
+        .configure_projections(&[spec("status", &[ProjectionRole::Filterable], false)], &[])
+        .expect("register a projection over it");
+
+    let snap = snapshot(&path);
+    assert_eq!(spaces(&snap), (1, 0), "still `h:` after write + projection");
+    assert_eq!(snap[0].1, None, "commit_batch passes `logical_id: None` through untouched");
 }
