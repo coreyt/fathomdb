@@ -44,8 +44,9 @@ use fathomdb_engine::{
 use fathomdb_schema::SQLITE_SUFFIX;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 use tempfile::TempDir;
 
 // ---------------------------------------------------------------------------
@@ -58,6 +59,12 @@ use tempfile::TempDir;
 struct CountingEmbedder {
     identity: EmbedderIdentity,
     calls: Arc<AtomicUsize>,
+    /// fix-1 — a settable per-call delay. Default `0`, so every pre-existing
+    /// test is unaffected. Leg C raises it AFTER its fixture has settled, which
+    /// is what makes "`drain` does not wait on a dropped projection's work"
+    /// falsifiable in BOTH directions: with work enqueued the drain must burn
+    /// its (short) timeout, with none it returns on the first poll.
+    delay_ms: Arc<AtomicU64>,
 }
 
 impl CountingEmbedder {
@@ -66,7 +73,11 @@ impl CountingEmbedder {
     }
 
     fn with_identity(identity: EmbedderIdentity) -> Self {
-        Self { identity, calls: Arc::new(AtomicUsize::new(0)) }
+        Self {
+            identity,
+            calls: Arc::new(AtomicUsize::new(0)),
+            delay_ms: Arc::new(AtomicU64::new(0)),
+        }
     }
 }
 
@@ -77,6 +88,10 @@ impl Embedder for CountingEmbedder {
 
     fn embed(&self, _text: &str) -> Result<Vector, EmbedderError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
+        let delay = self.delay_ms.load(Ordering::SeqCst);
+        if delay > 0 {
+            std::thread::sleep(Duration::from_millis(delay));
+        }
         let mut v = vec![0.0_f32; self.identity.dimension as usize];
         v[0] = 1.0;
         Ok(v)
@@ -99,6 +114,24 @@ fn vector_spec(name: &str) -> ProjectionSpec {
         roles: roles(&[ProjectionRole::Searchable]),
         fts: None,
         vector: Some(ProjectionVector { embedder: None, dense_readiness: None }),
+    }
+}
+
+/// An edge carrying a BODY — the only edge shape that enrols `'edge_fact'` in
+/// `_fathomdb_vector_kinds` (`project_canonical_edge_row`, G11).
+fn edge(logical_id: &str, from: &str, to: &str, body: &str) -> PreparedWrite {
+    PreparedWrite::Edge {
+        kind: "link".to_string(),
+        from: from.to_string(),
+        to: to.to_string(),
+        source_id: SourceId::new("test:fixture").expect("source id"),
+        logical_id: Some(logical_id.to_string()),
+        body: Some(body.to_string()),
+        t_valid: None,
+        t_invalid: None,
+        confidence: None,
+        extractor_model_id: None,
+        temporal_fallback: None,
     }
 }
 
@@ -530,4 +563,209 @@ fn drain_ok_implies_dense_readiness_ready_across_mutation_shapes() {
     );
 
     opened2.engine.close().unwrap();
+}
+
+// ===========================================================================
+// Leg C (fix-1, codex §9 [P2] "Stop embedding after vector projection drops")
+//         — the SYMMETRIC INVERSE of Leg A's enrolment
+// ===========================================================================
+//
+// Leg A gave `_fathomdb_vector_kinds` its first governed-call-reachable
+// enrolment path (before this slice the only writer for a NODE kind was the
+// `#[doc(hidden)]` `configure_vector_kind_for_test` hook). Enrolment with no
+// inverse is the defect: `drop`ping the last `searchable→vector` projection
+// leaves the kind enrolled, so `project_canonical_node_row`'s
+// `kind_is_vector_indexed` gate keeps enqueueing embeds and
+// `connection_has_pending_projection_work` keeps making `drain` wait — for a
+// projection the registry no longer declares.
+//
+// The inverse is deliberately NON-DESTRUCTIVE. The shipped `drop` arm
+// (`clear_attribute_projection` + `remove_projection_row`) has NEVER touched
+// vec0, `_fathomdb_vector_rows` or `_fathomdb_vector_kinds`, so "existing
+// vectors survive a drop" is already the shipped contract. Un-enrolment removes
+// ONE registry row and deletes no embedding, which PRESERVES that contract —
+// asserted below rather than assumed.
+
+/// How many `_fathomdb_vector_kinds` rows exist, total. Used to prove the
+/// un-enrolment is scoped (it must not empty the table when `'edge_fact'` is in
+/// it) without joining anything.
+fn vector_kind_count(conn: &rusqlite::Connection) -> i64 {
+    conn.query_row("SELECT COUNT(*) FROM _fathomdb_vector_kinds", [], |r| r.get::<_, i64>(0))
+        .expect("vector kind count")
+}
+
+/// **Dropping the last `searchable→vector` projection stops the embedding.**
+///
+/// Post-conditions (each one fails at fix-1 baseline):
+///   1. after the `drop` the kind is no longer enrolled in
+///      `_fathomdb_vector_kinds`;
+///   2. the vectors already at rest are UNTOUCHED (the non-destructive half —
+///      this must keep passing, it is the shipped drop contract);
+///   3. a subsequent write of the SAME kind enqueues NO embed: the embedder is
+///      never called again and the row has no vector at rest;
+///   4. `drain` does not wait on it — with the embedder slowed to 8s a 2s drain
+///      still returns `Ok` promptly, because there is nothing outstanding;
+///   5. a write of a BRAND-NEW kind after the drop does not re-enrol via the
+///      late-enrolment path (`Engine::enrol_batch_vector_kinds`);
+///   6. re-applying the same drop is an idempotent no-op;
+///   7. RE-declaring re-enrols and backfills, so un-enrolment is reversible and
+///      strands nothing.
+#[test]
+fn dropping_the_last_vector_projection_un_enrols_the_kind_and_stops_embedding() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "flush_barrier_drop_inverse");
+    let embedder = CountingEmbedder::new();
+    let calls = Arc::clone(&embedder.calls);
+    let delay_ms = Arc::clone(&embedder.delay_ms);
+    let opened = Engine::open_with_embedder_for_test(&path, Arc::new(embedder)).expect("open");
+    let engine = &opened.engine;
+
+    // ---- fixture: the dense arm is live and caught up ----
+    engine.write(&[node("doc", "N1", r#"{"summary":"a dense meaning"}"#)]).expect("write N1");
+    engine.configure_projections(&[vector_spec("summary")], &[]).expect("configure");
+    engine.drain(30_000).expect("drain");
+    assert_eq!(readiness(engine, "summary"), Some(DenseReadiness::Ready));
+
+    let conn = ro(&path);
+    let c1 = active_cursor(&conn, "N1");
+    assert!(vector_kind_registered(&conn, "doc"), "fixture: the declaration enrolled `doc`");
+    assert!(vector_row_exists(&conn, c1), "fixture: N1 is embedded");
+    assert!(vec0_row_exists(&conn, c1), "fixture: N1's vec0 row exists");
+    assert_eq!(calls.load(Ordering::SeqCst), 1, "fixture: exactly one embed so far");
+
+    // ---- the drop: remove the LAST `searchable→vector` declaration ----
+    let delta = engine
+        .configure_projections(&[], &["summary".to_string()])
+        .expect("drop the vector projection");
+    assert!(delta.dropped.contains(&"summary".to_string()), "the drop is reported");
+    assert!(
+        engine.read_projections().expect("read_projections").is_empty(),
+        "the registry no longer declares any projection"
+    );
+
+    let conn = ro(&path);
+    // (1) the inverse actually ran.
+    assert!(
+        !vector_kind_registered(&conn, "doc"),
+        "ONE-WAY ENROLMENT: dropping the last `searchable→vector` declaration must un-enrol the \
+         node kind it enrolled, or the write path keeps embedding for a projection the registry \
+         no longer declares"
+    );
+    // (2) …and deleted NOTHING. This is the shipped drop contract.
+    assert!(
+        vector_row_exists(&conn, c1),
+        "un-enrolment must NOT delete embeddings — the shipped `drop` arm leaves vectors at rest"
+    );
+    assert!(vec0_row_exists(&conn, c1), "…including the vec0 row");
+
+    // ---- slow the embedder down so post-4 is falsifiable in both directions ----
+    delay_ms.store(8_000, Ordering::SeqCst);
+
+    // (3)+(4) a subsequent write of the SAME kind must enqueue nothing.
+    engine.write(&[node("doc", "N2", r#"{"summary":"written after the drop"}"#)]).expect("N2");
+    engine.drain(2_000).expect(
+        "drain must not wait on work for a DROPPED projection — with the embedder at 8s a 2s \
+         barrier can only return Ok if nothing was enqueued",
+    );
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        1,
+        "a write after the drop must not be embedded — the dense arm is no longer declared"
+    );
+
+    // (5) the late-enrolment path must not re-enrol a brand-new kind either.
+    //
+    // The kind is `note` rather than an arbitrary string because
+    // `resolve_source_type` accepts only a LOCKED set
+    // (email/article/paper/meeting/note/todo/doc + edge_fact) and errors on
+    // anything else. An unmappable kind wedges the projection worker — a
+    // PRE-EXISTING landed-20c defect on both enrolment paths, reproduced against
+    // this file's parent commit and reported out-of-scope; it is not what this
+    // test is pinning, so it is deliberately not stepped on here.
+    engine.write(&[node("note", "M1", r#"{"summary":"a new kind after the drop"}"#)]).expect("M1");
+    engine.drain(2_000).expect("drain: still nothing enqueued");
+    let conn = ro(&path);
+    assert!(
+        !vector_kind_registered(&conn, "note"),
+        "late enrolment must be gated on an ACTIVE declaration, not merely on 'kind unseen'"
+    );
+    assert!(!vector_kind_registered(&conn, "doc"), "…and must not re-enrol `doc` either");
+    let c2 = active_cursor(&conn, "N2");
+    assert!(!vector_row_exists(&conn, c2), "N2 has no vector: nothing was ever enqueued for it");
+    assert!(!vec0_row_exists(&conn, c2), "…and no vec0 row");
+    assert!(vector_row_exists(&conn, c1), "N1's pre-drop vector is still at rest");
+    assert_eq!(calls.load(Ordering::SeqCst), 1, "still exactly the one pre-drop embed");
+
+    // (6) re-applying the same drop is an idempotent no-op.
+    let again = engine.configure_projections(&[], &["summary".to_string()]).expect("re-drop");
+    assert!(again.dropped.is_empty(), "dropping an absent projection is a no-op, not an error");
+    let conn = ro(&path);
+    assert!(!vector_kind_registered(&conn, "doc"), "re-drop keeps the kind un-enrolled");
+    assert!(vector_row_exists(&conn, c1), "re-drop still deletes no embedding");
+    assert_eq!(calls.load(Ordering::SeqCst), 1, "re-drop embeds nothing");
+
+    // (7) RE-declaring re-enrols and backfills — un-enrolment is reversible, and
+    // the rows written while the arm was off are picked up, not stranded.
+    delay_ms.store(0, Ordering::SeqCst);
+    engine.configure_projections(&[vector_spec("summary")], &[]).expect("re-declare");
+    engine.drain(30_000).expect("drain the re-declared backfill");
+    assert_eq!(readiness(engine, "summary"), Some(DenseReadiness::Ready));
+    let conn = ro(&path);
+    assert!(vector_kind_registered(&conn, "doc"), "re-declaring re-enrols the kind");
+    assert!(vector_row_exists(&conn, c2), "the row written while the arm was off is backfilled");
+    assert_eq!(
+        leaf_rows_without_vectors(&conn),
+        0,
+        "after the re-declared backfill drains, no vector-eligible row lacks its vector"
+    );
+
+    opened.engine.close().unwrap();
+}
+
+/// **`'edge_fact'` is NOT the registry's to un-enrol.**
+///
+/// `project_canonical_edge_row` (G11) auto-registers `'edge_fact'` off the
+/// presence of an edge BODY, unconditionally and independently of the projection
+/// registry — that lifecycle predates this slice and is not keyed to any
+/// `searchable→vector` declaration. So the inverse must be scoped to the NODE
+/// kinds the registry mechanism enrols and must leave `'edge_fact'` alone;
+/// otherwise a `drop` would silently kill the edge-fact dense arm as a side
+/// effect.
+#[test]
+fn dropping_a_vector_projection_leaves_edge_fact_enrolled() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "flush_barrier_drop_edge_fact");
+    let embedder = CountingEmbedder::new();
+    let opened = Engine::open_with_embedder_for_test(&path, Arc::new(embedder)).expect("open");
+    let engine = &opened.engine;
+
+    engine.write(&[node("doc", "N1", r#"{"summary":"a dense meaning"}"#)]).expect("write N1");
+    engine.write(&[node("doc", "N2", r#"{"summary":"another meaning"}"#)]).expect("write N2");
+    engine.write(&[edge("E1", "N1", "N2", "N1 elaborates N2")]).expect("write E1");
+    engine.configure_projections(&[vector_spec("summary")], &[]).expect("configure");
+    engine.drain(30_000).expect("drain");
+
+    let conn = ro(&path);
+    assert!(vector_kind_registered(&conn, "doc"), "fixture: `doc` enrolled by the declaration");
+    assert!(vector_kind_registered(&conn, "edge_fact"), "fixture: `edge_fact` enrolled by G11");
+    assert_eq!(vector_kind_count(&conn), 2, "fixture: exactly `doc` + `edge_fact`");
+
+    engine.configure_projections(&[], &["summary".to_string()]).expect("drop");
+
+    let conn = ro(&path);
+    assert!(!vector_kind_registered(&conn, "doc"), "the node kind is un-enrolled");
+    assert!(
+        vector_kind_registered(&conn, "edge_fact"),
+        "`edge_fact` is auto-registered off edge BODIES by `project_canonical_edge_row`, not off \
+         the projection registry — dropping a node projection must not end its lifecycle"
+    );
+    assert_eq!(vector_kind_count(&conn), 1, "exactly the node kind was removed");
+
+    // The edge arm still works: a new edge body is still embedded after the drop.
+    engine.write(&[edge("E2", "N2", "N1", "N2 is elaborated by N1")]).expect("write E2");
+    engine.drain(30_000).expect("drain the edge body");
+    let conn = ro(&path);
+    assert!(vector_kind_registered(&conn, "edge_fact"), "the edge dense arm survived the drop");
+
+    opened.engine.close().unwrap();
 }
