@@ -4822,13 +4822,23 @@ impl Engine {
     /// persisted the declaration while opened WITHOUT an embedder and then reopened
     /// WITH one and wrote before re-applying the projection.
     ///
-    /// Both statements run in ONE transaction so the enrolment and the un-stranding
-    /// cannot be torn apart by a crash (the same `BEGIN IMMEDIATE` shape
-    /// [`rederive_projections_on_boot`] uses). That transaction is opened on the
-    /// writer connection just OUTSIDE the batch transaction: if the batch then
-    /// fails, the workspace is left having enrolled a kind whose rows are correctly
-    /// queued for the dense arm the registry does declare — inert, and self-healing
-    /// on the next write or apply.
+    /// fix-5 (codex §9 round 4 [P2]) — the registry INSERT and the un-stranding
+    /// commit as ONE `BEGIN IMMEDIATE`…`COMMIT` (the shape
+    /// [`rederive_projections_on_boot`] and
+    /// [`reproject_search_index_after_tokenizer_upgrade`] already use). fix-2 ran
+    /// them as two, and that window is not benign: a crash or a failed repair in
+    /// between leaves the kind REGISTERED with the older rows still holding their
+    /// `'up_to_date'` terminals and no vectors — and that state is SELF-SEALING,
+    /// because `kind_is_vector_indexed` is then true, so every later write skips
+    /// this path and therefore skips the repair, while readiness reads `ready` for
+    /// rows nothing will ever embed. Only a manual re-apply of the projection
+    /// recovers it. No marker table and no new recovery path: the two statements
+    /// simply share a transaction.
+    ///
+    /// That transaction is opened on the writer connection just OUTSIDE the batch
+    /// transaction: if the batch then fails, the workspace is left having enrolled
+    /// a kind whose rows are correctly queued for the dense arm the registry does
+    /// declare — inert, and self-healing on the next write or apply.
     fn enrol_batch_vector_kinds(
         &self,
         connection: &Connection,
@@ -4837,43 +4847,33 @@ impl Engine {
         if self.runtime_embedder.is_none() {
             return Ok(false);
         }
-        let mut enrolled_any = false;
+        // READ-ONLY pre-pass. Nothing is written here, so the overwhelmingly
+        // common case — every kind in the batch already enrolled, or no vector
+        // projection declared at all — still pays only the probes it paid before
+        // and never takes a write lock.
+        let mut to_enrol: Vec<&str> = Vec::new();
         for write in batch {
             // Only `Node` writes: edge bodies enrol `'edge_fact'` themselves in
             // `project_canonical_edge_row` (G11), unconditionally and already.
             let PreparedWrite::Node { kind, .. } = write else { continue };
-            enrolled_any |= self.enrol_vector_kind_if_declared(connection, kind, RowKind::Leaf)?;
+            if to_enrol.contains(&kind.as_str()) {
+                continue;
+            }
+            if self.vector_kind_needs_enrolment(connection, kind, RowKind::Leaf)? {
+                to_enrol.push(kind);
+            }
         }
-        if !enrolled_any {
+        if to_enrol.is_empty() {
             return Ok(false);
         }
-        self.unstrand_after_late_enrolment(connection)
+        self.enrol_and_unstrand(connection, &to_enrol)
     }
 
-    /// 0.8.20 Slice 20c fix-2 — the un-stranding half of a LATE enrolment, on its
-    /// own `BEGIN IMMEDIATE` transaction. Split out so both write-path callers
-    /// ([`Engine::enrol_batch_vector_kinds`] and the `#[doc(hidden)]`
-    /// `write_canonical_row_with_kind_for_test`) share it verbatim.
-    fn unstrand_after_late_enrolment(&self, connection: &Connection) -> Result<bool, EngineError> {
-        connection.execute_batch("BEGIN IMMEDIATE").map_err(|_| EngineError::Storage)?;
-        match reenqueue_stranded_vector_rows(connection) {
-            Ok(enqueued) => {
-                connection.execute_batch("COMMIT").map_err(|_| EngineError::Storage)?;
-                Ok(enqueued)
-            }
-            Err(_) => {
-                let _ = connection.execute_batch("ROLLBACK");
-                Err(EngineError::Storage)
-            }
-        }
-    }
-
-    /// 0.8.20 Slice 20c — enrol ONE kind if the workspace declares a
-    /// `searchable→vector` projection and the row kind is vector-eligible. Returns
-    /// `true` iff this call NEWLY enrolled the kind. See
-    /// [`Engine::enrol_batch_vector_kinds`] for the rationale and the
-    /// live-embedder precondition (which that caller has already checked).
-    fn enrol_vector_kind_if_declared(
+    /// 0.8.20 Slice 20c — would enrolling `kind` be correct here? The READ-ONLY
+    /// half of a late enrolment; [`Engine::enrol_and_unstrand`] is the write half.
+    /// The live-embedder precondition is the CALLER's (see
+    /// [`Engine::enrol_batch_vector_kinds`]).
+    fn vector_kind_needs_enrolment(
         &self,
         connection: &Connection,
         kind: &str,
@@ -4899,8 +4899,44 @@ impl Engine {
         if !vector_projection_declared(connection).map_err(|_| EngineError::Storage)? {
             return Ok(false);
         }
-        register_vector_kind(connection, kind).map_err(|_| EngineError::Storage)?;
         Ok(true)
+    }
+
+    /// 0.8.20 Slice 20c fix-5 (codex §9 round 4 [P2]) — the WRITE half of a LATE
+    /// enrolment: register the kinds AND repair the rows they strand, in ONE
+    /// transaction. Returns `true` iff the repair re-enqueued anything (the caller
+    /// must then `notify_new_work()`, since those rows are outside its batch).
+    ///
+    /// Split out so both write-path doors ([`Engine::enrol_batch_vector_kinds`]
+    /// and the `#[doc(hidden)]` `write_canonical_row_with_kind_for_test`) share it
+    /// verbatim, and so neither can register a kind without owing the repair.
+    ///
+    /// `register_vector_kind` is `INSERT OR IGNORE` and
+    /// [`reenqueue_stranded_vector_rows`] is idempotent, so the read-only pre-pass
+    /// that chose `kinds` does not need re-validating under the write lock: the
+    /// worst a stale decision costs is one no-op `MIN` probe.
+    fn enrol_and_unstrand(
+        &self,
+        connection: &Connection,
+        kinds: &[&str],
+    ) -> Result<bool, EngineError> {
+        connection.execute_batch("BEGIN IMMEDIATE").map_err(|_| EngineError::Storage)?;
+        let result = (|| -> rusqlite::Result<bool> {
+            for kind in kinds {
+                register_vector_kind(connection, kind)?;
+            }
+            reenqueue_stranded_vector_rows(connection)
+        })();
+        match result {
+            Ok(enqueued) => {
+                connection.execute_batch("COMMIT").map_err(|_| EngineError::Storage)?;
+                Ok(enqueued)
+            }
+            Err(_) => {
+                let _ = connection.execute_batch("ROLLBACK");
+                Err(EngineError::Storage)
+            }
+        }
     }
 
     fn write_inner(&self, batch: &[PreparedWrite]) -> Result<WriteReceipt, EngineError> {
@@ -7337,11 +7373,13 @@ impl Engine {
         // `row_kind` gate keeps `graph` rows out of the vector registry.
         //
         // fix-2 (codex §9 [P2]) — including the un-stranding half, so this door
-        // cannot diverge from the other one either.
+        // cannot diverge from the other one either. fix-5 (codex §9 round 4 [P2])
+        // — and both halves commit as ONE transaction, via the same shared
+        // `enrol_and_unstrand`.
         let unstranded = if self.runtime_embedder.is_some()
-            && self.enrol_vector_kind_if_declared(connection, kind, row_kind)?
+            && self.vector_kind_needs_enrolment(connection, kind, row_kind)?
         {
-            self.unstrand_after_late_enrolment(connection)?
+            self.enrol_and_unstrand(connection, &[kind])?
         } else {
             false
         };
@@ -12388,30 +12426,24 @@ fn projection_dispatcher_loop(shared: Arc<ProjectionRuntimeShared>) {
             PROJECTION_INFLIGHT_LIMIT.saturating_sub(state.active_jobs + state.queued_jobs)
         };
         let fetch_cap = budget.clamp(1, PROJECTION_SCAN_FETCH);
+        // 0.8.20 Slice 20c fix-4 (codex §9 round 3 [P1]) — with no live embedder a
+        // NODE job can only come back DEFERRED (`ProjectionOutcome::Deferred`),
+        // which by design records no terminal, so dispatching one would re-fetch
+        // the SAME cursor forever. fix-5 (codex §9 round 4 [P1]) moved that
+        // exclusion INSIDE the scan, so the `LIMIT` applies to the already-filtered
+        // set and a pending EDGE body behind a full window of node rows is still
+        // reachable. See `next_pending_projection_jobs`.
         let fetched =
-            next_pending_projection_jobs(&connection, &in_flight, fetch_cap).map(|jobs| {
-                // 0.8.20 Slice 20c fix-4 (codex §9 round 3 [P1]) — with no live
-                // embedder a NODE job can only come back DEFERRED
-                // (`ProjectionOutcome::Deferred`), which by design records no
-                // terminal. The row is therefore still pending when the worker sets
-                // `pending_scan` again, so dispatching it would re-fetch the SAME
-                // cursor immediately: a hot loop for the whole life of the session.
-                // MEASURED on the Leg F fixture (ONE pending row, a 3 s `drain`)
-                // before this filter: 6.47 s user CPU at 222 %; after: 0.15 s at 5 %.
-                //
-                // Edge jobs are NOT filtered. `'edge_fact'` is auto-registered by the
-                // edge write itself, un-gated on the embedder (see
-                // `project_canonical_edge_row`, G11, and the note in
-                // `enrol_batch_vector_kinds`), so an edge body still TERMINATES on the
-                // absent embedder exactly as it has shipped since G11 — the deferral
-                // is scoped to codex's finding, which is the node path. Making edges
-                // recoverable too needs that enrolment gated first (OOS-13).
-                if dense_arm_live {
-                    jobs
-                } else {
-                    jobs.into_iter().filter(|job| job.kind == EDGE_FACT_KIND).collect()
-                }
-            });
+            next_pending_projection_jobs(&connection, &in_flight, fetch_cap, dense_arm_live);
+        // Cheap assertion only — it can never DROP a job, which is precisely what
+        // the fix-4 shape did.
+        debug_assert!(
+            fetched
+                .as_ref()
+                .map(|jobs| dense_arm_live || jobs.iter().all(|job| job.kind == EDGE_FACT_KIND))
+                .unwrap_or(true),
+            "no-embedder scan returned a NODE job: the exclusion must be in the scan's SQL"
+        );
         match fetched {
             Ok(jobs) if !jobs.is_empty() => {
                 if let Ok(mut state) = shared.state.lock() {
@@ -12963,10 +12995,37 @@ fn pending_edge_projection_from_where(now_idx: usize) -> String {
     )
 }
 
+/// The SCHEDULER's scan: the next `max_jobs` pending projection jobs in
+/// `write_cursor` order.
+///
+/// `dense_arm_live` is `ProjectionRuntimeShared::embedder.is_some()`, read once
+/// per dispatcher because it is fixed for the session's lifetime.
+///
+/// # fix-5 (codex §9 round 4 [P1]) — why the node exclusion is IN the SQL
+///
+/// With no live embedder a NODE job can only come back
+/// [`ProjectionOutcome::Deferred`], which by design records no terminal (fix-4),
+/// so dispatching one would re-fetch the SAME cursor forever: a hot loop for the
+/// whole life of the session. fix-4 suppressed that by filtering the vector this
+/// function RETURNS — i.e. after the `ORDER BY … LIMIT`, so the `LIMIT` still
+/// applied to the UNFILTERED set. More than `PROJECTION_SCAN_FETCH` pending node
+/// rows ordered before a pending EDGE body therefore filled the entire window
+/// with jobs that were then all dropped, the dispatcher went back to sleep with
+/// `pending_scan` already consumed, and the edge body was never scheduled at all
+/// — permanently, since those node rows stay pending for the session's life. The
+/// exclusion belongs here, where the `LIMIT` applies to the ALREADY-FILTERED set
+/// and a later edge job is always reachable.
+///
+/// Edges are NOT excluded: `'edge_fact'` is auto-registered by the edge write
+/// itself, un-gated on the embedder (`project_canonical_edge_row`, G11, and the
+/// note in [`Engine::enrol_batch_vector_kinds`]), so an edge body still
+/// TERMINATES on an absent embedder exactly as it has shipped since G11. Making
+/// edges recoverable too needs that enrolment gated first (OOS-13).
 fn next_pending_projection_jobs(
     connection: &Connection,
     in_flight: &BTreeSet<u64>,
     max_jobs: usize,
+    dense_arm_live: bool,
 ) -> rusqlite::Result<Vec<ProjectionJob>> {
     if max_jobs == 0 {
         return Ok(Vec::new());
@@ -12980,9 +13039,15 @@ fn next_pending_projection_jobs(
     // `source_type = 'edge_fact'` in `vector_default` (partition correctness).
     // The UNION is ordered by write_cursor so projection proceeds in
     // insertion order across nodes and edges.
-    let sql = format!(
-        "SELECT write_cursor, kind, body FROM (
-             SELECT canonical_nodes.write_cursor, canonical_nodes.kind, canonical_nodes.body
+    //
+    // fix-5 [P1]: with no dense arm the NODE arm is omitted outright rather than
+    // predicated false, so the planner never walks it. The edge arm keeps both
+    // binds (`?1` the cursor, `?2` the `:now` seam), so the bound parameter set
+    // is identical either way.
+    let node_arm = if dense_arm_live {
+        "SELECT canonical_nodes.write_cursor AS write_cursor,
+                    canonical_nodes.kind AS kind,
+                    canonical_nodes.body AS body
              FROM canonical_nodes
              JOIN _fathomdb_vector_kinds
                ON _fathomdb_vector_kinds.kind = canonical_nodes.kind
@@ -12993,7 +13058,15 @@ fn next_pending_projection_jobs(
 
              UNION ALL
 
-             SELECT ce.write_cursor, 'edge_fact', ce.body
+             "
+    } else {
+        ""
+    };
+    let sql = format!(
+        "SELECT write_cursor, kind, body FROM (
+             {node_arm}SELECT ce.write_cursor AS write_cursor,
+                    'edge_fact' AS kind,
+                    ce.body AS body
              {edge_arm}
                AND ce.write_cursor > ?1
          ) ORDER BY write_cursor
