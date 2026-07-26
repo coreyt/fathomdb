@@ -1,0 +1,789 @@
+{
+  "engine": {
+    "synthesis": "# One Module Tree for `fathomdb-engine/src/lib.rs` (17,910 LOC \u2192 ~20 files, largest ~1,100)\n\n## 0. The enabling fact this whole plan rests on\n\nRust lets inherent `impl` blocks for a type live in **any module of the defining crate**, and private fields are visible in the defining module **and all its descendants**. So if `struct Engine` stays at the crate root (`lib.rs`), every child module can write `impl Engine { \u2026 }` and touch `self.connection`, `self.reader_pool`, `self.dense_disabled` etc. with **zero visibility churn, zero facade, zero API change** \u2014 `Engine::search()` remains `Engine::search()` for every consumer.\n\nThat is why the answer is \"one `Engine` type, ~16 `impl Engine` blocks in ~16 capability modules\", not \"split `Engine` into 16 types\". Nobody should attempt the latter.\n\n**Hard constraint that follows:** `struct Engine` must stay in `lib.rs`. If someone \"tidies\" it into `engine/mod.rs` and makes the capability modules siblings, private-field access breaks everywhere and the plan collapses into a `pub(crate)`-field rewrite. Write this down in the first commit.\n\n---\n\n## 1. Findings that are NOT \"split the file\" (do these regardless)\n\nPer doctrine #3, these are worth more than the split and are independent of it:\n\n| Finding | Location | Action |\n|---|---|---|\n| `sqlite_extended_code_name` / `sqlite_extended_code_name_from_int` are near-verbatim duplicate ~20-arm matches | L17195\u201317250 | Real duplication defect. Make the `&rusqlite::Error` form delegate to the `i32` form. ~20 lines deleted. Do this today, independent of everything below. |\n| `read_search_in_tx` \u2014 748 lines, 6 comment-delimited phases, 16 params | L10377\u201311124 | The only function in the file that clears the \"over 200 lines with real internal seams\" bar. But see \u00a77 \u2014 the phases share one `Transaction` and one `FrozenView`; only split into **private helpers in the same file**, never across modules, and only if each phase can take `(&FrozenView, &Transaction) -> Vec<SearchHit>` without a 16-field context struct. |\n| `Engine` is the privileged owner of every subsystem's test seam | ~46 `*_for_test` methods, L6766\u20137647 | This is the actual \"one type carries 140 responsibilities\" defect, and it is the cheapest to fix. It is step 1 below. |\n| Four unrelated things are all called \"projection\"; two unrelated things are both called \"lifecycle\" | see \u00a73 | Naming, not size. Resolved by the tree below. |\n| `bfs_graph_arm_candidates` (338 lines) | L11125\u201311462 | **LEAVE.** One coherent algorithm (seed phase + traversal phase), not several concerns bolted together. Region 4 got this right. |\n\n---\n\n## 2. The module tree\n\nAll paths relative to `src/rust/crates/fathomdb-engine/src/`. \"impl-Engine LOC\" is the part of the 5008-line block that moves.\n\n| Module | Owns | Line ranges moved | \u2248LOC | impl-Engine LOC / methods |\n|---|---|---|---|---|\n| `lib.rs` (root) | `struct Engine`, `Debug`/`Drop`, imports, crate-wide consts, engine controls (`close`/`drain`/`counters`/`subscribe`/`set_profiling`/`set_slow_threshold_ms`/`path`/`ensure_open`), `emit_event`/`detect_slow`/`emit_sqlite_internal_error`, and **all `pub use` re-exports** | L3\u2013223, 274\u2013346, 525\u2013543, 4104\u20134109, 4663\u20134666, 6096\u20136142, 6686\u20136765, 9109\u20139117 | **~600** | ~140 / 11 |\n| `error.rs` | `EngineError` + `Display` + `stable_code()` + `Error` | L3529\u20133736 | 208 | \u2014 |\n| `id.rs` | `IdSpaceKind`/`IdSpace`, `SourceId` (whole, incl. its trait tail), `resolve_source_type`, `derive_logical_id`, `derive_stable_id` | L1458\u20131558, 2924\u20133010, 14867\u201314955 | 277 | \u2014 |\n| `temporal.rs` | `ReadView`/`FrozenView`/`BoundaryCrossing`, `CLOCK_READS`, `current_epoch_seconds`, `edge_validity_sql`, the whole ISO-8601\u21c4epoch boundary (`is_iso8601_shape`, `normalize_extractor_timestamp`, \u2026) | L1659\u20132253 | 595 | \u2014 |\n| `existence.rs` | `LifecycleState`, `InitialState`, `is_legal_transition_move`, `resolve_lifecycle_target`, `transition`, `purge`, `purge_inner` | L3169\u20133305, 7783\u20137930, 7986\u20138153 | 455 | 316 / 4 |\n| `filter.rs` | `ScalarValue`/`ComparisonOp`/`Predicate`, `SearchFilter`, `Filter`/`FilterTerm` + lowering, **and** all three arms' compilation/enforcement (`vector_filter_clause`, `build_vector_phase1_sql`, `text_hit_passes_filter`, `edge_fts_hit_passes_filter`) | L2381\u20132547, 2594\u20132803, 10022\u201310376 | 732 | \u2014 |\n| `reader_pool.rs` | `ReaderWorkerPool`, `ReaderRequest`, `SearchReaderError`, `CacheStatusReply`, `reader_worker_loop`, `reader_search_hook` | L558\u20131144 | 590 | \u2014 |\n| `search/mod.rs` | `SearchHit`, `SoftFallback(Branch)`, `GraphFrontierStats`, `SearchResult`/`Explanation`/`QueryTrace`/`PerHitExplain`, `branch_str`, the 13 public `search*` methods, `search_inner(_with_stats)` | L1386\u20131457, 1559\u20131629, 2272\u20132380, 5615\u20135961, 6143\u20136344, 9401\u20139411 | 810 | 549 / 16 |\n| `search/exec.rs` | `read_search_in_tx` + retrieval tuning consts | L9130\u20139143, 10377\u201311124 | 770 | \u2014 |\n| `search/ranking.rs` | RRF consts, `fuse_rrf`/`fuse_three_arms`, recency/importance reweight, `rerank_fused`/`rerank_passages`/`ce_rerank`/`CandleCrossEncoder` | L9357\u20139397, 9531\u201310021 | 535 | \u2014 |\n| `search/graph_arm.rs` | `bfs_graph_arm_candidates` | L11125\u201311462 | 340 | \u2014 |\n| `read/mod.rs` | `NodeRecord`, `OpStoreRow`, the 10 `read_*`/`graph_neighbors`/`search_expand`/`crossed_boundary_since` verbs, `read_get_by_id_in_tx`, `read_collection_in_tx`, `read_list_in_tx` | L1630\u20131658, 2254\u20132271, 6345\u20136685, 11463\u201311696 | 670 | 341 / 10 |\n| `read/graph.rs` | `TraversalDirection`, `SearchExpandResult`, `build_bfs_sql`, `build_bfs_with_depth_sql`, `graph_neighbors_in_tx`, `crossed_boundary_since_in_tx`, `search_expand_in_tx`, `explain_graph_neighbors_in_tx` | L2548\u20132593, 11697\u201312070 | 420 | \u2014 |\n| `write/mod.rs` | `PreparedWrite`, `RowKind`, `WriteReceipt`, `Engine::write`/`write_inner`, `write_node_importance`/`node_importance`, `batch_is_admin`, `WritePlan` + all validation | L1362\u20131385, 3011\u20133168, 4667\u20134779, 7507\u20137553, 9118\u20139149, 15300\u201315480 | 620 | 160 / 4 |\n| `write/commit.rs` | `prior_*_cursors_by_*`, `commit_batch`, `load_next_cursor`/`reserved_write_cursor`/`max_cursor` | L15481\u201315530, 16817\u201317194 | 430 | \u2014 |\n| `projection/runtime.rs` | `ProjectionJob`/`ProjectionRuntimeState`/`ProjectionRuntimeShared`/`ProjectionRuntime` + `impl`, dispatcher/worker loops, watchdog, circuit breaker, `run_projection_job` | L228\u2013252, 356\u2013524, 1145\u20131292, 12071\u201312618 | 890 | \u2014 |\n| `projection/commit.rs` | `open_runtime_connection`, cursor load/store, `record_projection_terminal`, `commit_projection_outcomes` | L13044\u201313336 | 293 | \u2014 |\n| `projection/registry.rs` | `ProjectionRole`/`Fts`/`Vector`/`Spec`/`Delta`, `ROW_OWNED_PROJECTIONS`, `erase_row_projections` family, `StoredProjection`, EAV attribute projection, `apply_projection_config`, per-`row_kind` projector dispatch, `Engine::configure_projections`/`read_projections` | L3843\u20133946, 7931\u20137985, 15531\u201316625 | 1,110 | 55 / 2 |\n| `projection/maintenance.rs` | Boot repair (tokenizer reproject, orphan edge-vector prune, `rederive_projections_on_boot`) + `RebuildKind`/`RebuildReport`, `rebuild_projections`/`rebuild_vec0`/`run_rebuild`/`rebuild_shadow_state` | L3807\u20133829, 7707\u20137725, 8998\u20139108, 12619\u201312907, 16397\u201316434 | 490 | 130 / 4 |\n| `vector/mod.rs` | blob encode/decode, `subtract_mean`, `read_pinned_mean_vec`, `identity_requires_mean_centering`, `embed_text`, `drain_embedder_events` | L7226\u20137233, 7399\u20137423, 14392\u201314451 | 130 | 33 / 2 |\n| `vector/partition.rs` | Everything about `vector_default`'s vec0 *shape*: create, Pack1\u2194Pack2 migration, `attr_<hex>` column reconcile/reshape | L13921\u201314391 | 471 | \u2014 |\n| `vector/mean.rs` | `MeanAccumulator`, `cosine_similarity`, pin-and-requantize, `recover_mean_vec_pin`, `recompute_mean_in_tx*`, `Engine::recompute_mean`, `MeanRecomputeReport` | L4075\u20134087, 7424\u20137472, 9150\u20139400, 13337\u201313454 | 435 | 49 / 1 |\n| `vector/equivalence.rs` | The whole 0.8.18 vector-equivalence self-check (`run_vector_equivalence_probe` and friends, `l2_distance`, `hamming_bytes`) | L14452\u201314866 | 415 | \u2014 |\n| `extract/session.rs` | `ProviderTask`, `ProviderSession` (NDJSON-over-stdio subprocess transport), `extractor_io_timeout`, `recv_extractor_line`, `map_runtime_embedder_error`, `Engine::provider_session`, `dedup_prepared_by_logical_id` | L4803\u20134881, 14956\u201315150 | 260 | 79 / 1 |\n| `extract/ingest.rs` | `ExtractDocument`, `IngestWithExtractorReceipt`, `ingest_with_extractor`, `run_extract_session` | L2804\u20132830, 4780\u20134802, 4882\u20135261 | 430 | 403 / 2 |\n| `extract/consolidate.rs` | `ConsolidateAxis`/`CandidateEdge`/`Receipt`, `consolidate_with_provider`, `run_consolidate_session`, `assemble_consolidate_cluster`, `apply_consolidate_verdicts`, `active_edge_write_cursor`, `prune_edge_projection_shadows` | L2831\u20132923, 5262\u20135614 | 450 | 353 / 6 |\n| `erasure/mod.rs` | `is_erasure_bookkeeping_collection` + erasure consts, `ExciseReport`/`ExciseRecordReport`/`OrphanProvenance*`, the 13-method GDPR verb family, `wal_checkpoint_truncate_once`, `enforce_provenance_retention`, `collect_erased_stable_ids`, `digest_record_identity` | L144\u2013273, 3830\u20133842, 3947\u20133957, 4014\u20134060, 8154\u20138225, 8308\u20138393, 8444\u20138997, 13455\u201313579 | 930 | 712 / 13 |\n| `erasure/redaction.rs` | `append_jsonl`, `redact_jsonl_*`, pending-redaction enqueue/load/clear | L9412\u20139530, 13543\u201313571 | 250 | \u2014 |\n| `open/mod.rs` | `OpenReport`/`OpenedEngine`/`LoaderInfo`, all 12 `open*` methods incl. `open_locked` | L1293\u20131361, 4111\u20134662 | 630 | 556 / 12 |\n| `open/errors.rs` | `CorruptionDetail`/`Kind`/`Locator`, `OpenStage`, `RecoveryHint`, `EngineOpenError` + `Display`, `EmbedderChoice`, `sqlite_extended_code_name*`, `map_open_sqlite_error`, `emit_open_error_event` | L3369\u20133528, 17195\u201317320 | 290 | \u2014 |\n| `open/probe.rs` | Lock acquisition, header/WAL probes, legacy-shape rejection, `map_migration_error`, perf-experiment/extension init, `check_embedder_profile` | L13580\u201313920, 15151\u201315299 | 460 | \u2014 |\n| `admin.rs` (`feature = \"operator\"`) | The ~14 one-verb-one-DTO doctor report types **as one flat catalog**, `check_integrity`/`safe_export`/`trace_source_ref`/`verify_embedder`/`dump_*`/`truncate_wal`, the `*_section` helpers, `hex_encode` | L3737\u20133806, 3958\u20134013, 4061\u20134103, 7648\u20137706, 7726\u20137782, 8226\u20138307, 8394\u20138443, 12908\u201313043, 13886\u201313920 | 590 | 248 / 8 |\n| `bm25f.rs` | `Bm25fFieldWeights`/`Bm25fQueryPlan`, `fts5_tokenize`, `bm25f_score_doc`, `bm25f_search_inner`, `Engine::bm25f_search` | L3306\u20133351, 7201\u20137225, 16626\u201316816 | 262 | 25 / 1 |\n| `telemetry.rs` | `TelemetrySink`, `CounterSnapshot`, `enable_telemetry`, `capture_telemetry`, `record_feedback`, `last_telemetry_query_id` | L347\u2013355, 3352\u20133368, 5962\u20136095 | 165 | 134 / 4 |\n| `sqlite_ffi.rs` | `ProfileContext`, `install`/`uninstall_profile_callback`, the FFI trampoline, perf pragmas, lookaside/cache-status `unsafe` | L544\u2013557, 17321\u201317620 | 315 | \u2014 |\n| `test_hooks.rs` | One `#[cfg(\u2026)] impl Engine` holding the ~46 `*_for_test` seams | L6766\u20137200, 7234\u20137398, 7473\u20137506, 7554\u20137647 | 730 | 730 / 46 |\n| (existing) `lifecycle.rs`, `pcache2.rs` | unchanged | \u2014 | \u2014 | \u2014 |\n\n**Totals:** ~17,800 accounted for. Largest new file ~1,110 (`projection/registry.rs`). No file under 130. Root `lib.rs` ends at ~600 lines. Largest single `impl Engine` block ends at ~730 (`test_hooks`), then extract-ingest+consolidate ~780 across two files, `open` 556, `search` 549.\n\n`telemetry.rs` (165) and `vector/mod.rs` (130) are below the Hatton floor. That's deliberate and defensible: `vector/mod.rs` is a `mod.rs` of shared primitives, and `telemetry.rs` is a privacy-scoped surface whose whole value is being auditable in isolation. If you disagree, fold `telemetry.rs` into the root \u2014 do **not** fold it into `erasure/redaction.rs` (they are the writer and the eraser of the same file and must be reviewable separately).\n\n---\n\n## 3. Conflicts between regions, resolved\n\n1. **Filter grammar (R1 c16/18-19 vs R4 c7).** R1 claimed the types (L2381\u20132803), R4 claimed the SQL builders and the three per-arm enforcement functions (L10022\u201310376). One capability \u2014 \"what can be filtered, and how each arm compiles and enforces it\". \u2192 single `filter.rs` (732). Separating them would break the documented D3/D4 lowering contract.\n\n2. **Four things named \"projection\"** (R1 c3 runtime state; R2 c9 declarative config types; R5 c2/c5 loops+commit; R6 c6/c7 registry+per-row projector; R3 c13 the `Engine` config verbs). \u2192 one `projection/` directory with four files whose names say which is which: `runtime.rs` (scheduler/threads), `commit.rs` (durable write of outcomes), `registry.rs` (declarative config + EAV + row projector), `maintenance.rs` (boot repair + rebuild). This naming fix is a real deliverable, not incidental.\n\n3. **Two things named \"lifecycle\"** (`pub mod lifecycle` = subscribers/events, already a published module path; vs `LifecycleState` = the OPP-12 existence axis). \u2192 keep `lifecycle.rs` untouched (public API), name the new one **`existence.rs`**. Never `lifecycle_state.rs` \u2014 too close.\n\n4. **Erasure claimed four ways** (R3 c14 impl methods; R4 c4 JSONL redaction; R5 c7 provenance retention; R6 c6 the registry-driven `erase_row_projections`). \u2192 `erasure/` takes the first three. `erase_row_projections` / `purge_row_projections_for_cursor_in` / `truncate_*_row_projections` **stay in `projection/registry.rs`**, because they are registry-walk primitives whose correctness is guaranteed by the `guard_row_owned_registry` test that also lives there. `erasure`, `existence::purge_inner`, and `projection::maintenance` all call into them. This is the one deliberate cross-module edge in the plan; document it at the top of `erasure/mod.rs`.\n\n5. **`SourceId` split across the R1/R2 seam** (L2924\u20133010) \u2014 one type, \u2192 `id.rs` whole.\n\n6. **`derive_logical_id` / `derive_stable_id` split across the R5/R6 seam** (L14898\u201314955) \u2014 one cluster, \u2192 `id.rs`.\n\n7. **`search_expand_in_tx` split across the R4/R5 seam** (L11904\u201312040) \u2014 continues the BFS-CTE theme, \u2192 `read/graph.rs` with `build_bfs_with_depth_sql`, which it reuses.\n\n8. **`check_embedder_profile`** (R6 c3 argued it belongs with the vector/open integrity cluster, not where it sits) \u2014 agreed \u2192 `open/probe.rs`, **not** `vector/`. It produces `EngineOpenError`, only `open_locked` calls it.\n\n9. **Mean-centering split** (R4 c3 accumulator/requantize; R5 c6 recompute/recover) \u2192 `vector/mean.rs`, both halves.\n\n10. **Rebuild** (R3 c15 grouped it with erasure/lifecycle on the shared drain-freeze-mutate pattern) \u2192 I overrule that: the shared *pattern* is not a shared *capability*. Rebuild regenerates derived projection state \u2192 `projection/maintenance.rs`. Extract the drain-then-freeze sequence as one `pub(crate) fn` in the root if the three call sites drift.\n\n---\n\n## 4. How `impl Engine` decomposes \u2014 the core of the answer\n\n**Basis for clustering (in priority order):**\n1. **Which subsystem's state the method mutates** (reader pool / projection runtime / vec0 partition / provenance / subprocess) \u2014 not what it returns.\n2. **Which free functions it calls.** Every one of the 140 methods is a thin funnel into free functions that currently sit 3,000\u201312,000 lines away *in the same file*. The dominant finding across all six regions is identical: **the `impl Engine` / free-function boundary is not capability-aligned.** Almost every capability has a \"public API\" half in the impl block and an \"engine room\" half in the free-function tail. The decomposition is: **co-locate each capability's two halves; the impl-block boundary is an artifact of file convention and carries no information.**\n3. Cargo feature / `cfg` gate, as a tiebreaker (`operator` \u2192 `admin.rs`; `default-reranker` \u2192 `search/ranking.rs`; `_for_test` \u2192 `test_hooks.rs`).\n\n**Resulting 16 `impl Engine` blocks:**\n\n| Block | Methods | LOC | Why these cluster |\n|---|---|---|---|\n| `test_hooks.rs` | ~46 | 730 | All `*_for_test`. The one real cohesion defect: these let `Engine` reach into reader-pool, projection-runtime, mean-centering, and provenance-retention private state directly, diluting every production cluster they sit between. |\n| `extract/` (3 files) | 9 | 835 | Extract and consolidate are **siblings over one shared subprocess transport** (`ProviderSession`), not independent \u2014 hence one directory, transport in its own file. |\n| `open/mod.rs` | 12 | 556 | Eleven thin funnels into `open_locked` (237 lines), which wires every other subsystem's boot hook. The most cross-cutting block in the file, and the reason it goes late in the sequence. |\n| `search/mod.rs` | 16 | 549 | Public search surface + query-vector prep + `dense_disabled` latch. Dispatches through `ReaderRequest::Search`; the SQL is `search/exec.rs`. |\n| `read/mod.rs` | 10 | 341 | Uniform shape: build a `ReaderRequest` variant, dispatch, unwrap. Pure API surface over `*_in_tx`. |\n| `existence.rs` | 4 | 316 | The governed pending/active/deleted/purged state machine; only these can produce `Deleted`/`Purged`. |\n| `erasure/mod.rs` | 13 | 712 | Region 3's assessment holds: \"almost no coupling into the other clusters beyond `drain`/`ensure_open`/`connection`\". The cleanest large extraction in the impl block. |\n| `admin.rs` | 8 | 248 | All `feature = \"operator\"`, all read-mostly report generators. |\n| `write/mod.rs` | 4 | 160 | `write`/`write_inner` + the two importance accessors that write `canonical_nodes.importance`. |\n| `projection/maintenance.rs` | 4 | 130 | Rebuild wrappers + the two rebuild workers. |\n| `projection/registry.rs` | 2 | 55 | `configure_projections`/`read_projections` \u2014 thin wrappers, put them next to what they wrap. |\n| `lib.rs` (root) | 11 | 140 | Engine-wide operational controls + the shared event-emission primitives used by every other block. Correctly small; do not split further. |\n| `telemetry.rs` | 4 | 134 | Privacy-scoped by design (never captures query text or `source_id`) \u2014 worth being separately auditable. |\n| `vector/mean.rs` | 1 | 49 | `recompute_mean` next to the accumulator it drives. |\n| `vector/mod.rs` | 2 | 33 | `embed_text`, `drain_embedder_events`. |\n| `bm25f.rs` | 1 | 25 | `bm25f_search` next to `bm25f_search_inner`. |\n\nNote the last five: five one-to-four-method `impl Engine` blocks. That is fine and is the point \u2014 a method goes where the thing it delegates to lives, even when that's a block of one.\n\n---\n\n## 5. Sequencing \u2014 this matters more than the end state\n\nDo **not** attempt this as one change. Each step below is one PR, compiles green, changes no public path, and is independently abandonable.\n\n**Step 0 (today, unrelated to the split):** collapse the duplicated `sqlite_extended_code_name*` match. ~20 lines. Proves the review produced something usable before any restructuring lands.\n\n**Step 1 \u2014 `test_hooks.rs` (\u2212730, impl block 5008\u2192~4,280). Do this first.**\nWhy this one:\n- **Zero production risk.** Every method moved is `*_for_test`/`#[doc(hidden)]`/`cfg(debug_assertions)`. If it compiles, it is correct.\n- **It is the one named defect** in the impl block, not just an attention signal.\n- **It proves the mechanism** under the crate's real constraints \u2014 split `impl Engine` across files, private field access from a child module, `cfg`/feature gates surviving the move, and the pyo3/napi/integration-test consumers unchanged. Everything after depends on that proof.\n- Biggest single cut of the impl block available at zero risk (15%).\n- Guardrail it earns: once these 46 methods are in one place, add a lint/test that no new `*_for_test` method may be added to any other `impl Engine` block.\n\n**Step 2 \u2014 `erasure/` (\u22121,176; impl \u2192 ~3,570).**\nSecond because it's the largest genuinely self-contained *production* capability, all six regions independently identified it as such, and it is the area under the most active HITL/GDPR scrutiny \u2014 the capability that most benefits from being one reviewable module. Also forces the `erase_row_projections` cross-edge decision (conflict 4) early, while it's cheap to revisit.\n\n**Step 3 \u2014 `extract/` (\u22121,150; impl \u2192 ~2,735).**\nA whole subprocess protocol with a single entry point. After this, the impl block is under 3,000 and the \"one type, 140 responsibilities\" finding is already half-discharged. **This is a legitimate stopping point** \u2014 see \u00a78.\n\n**Step 4 \u2014 `open/` (\u22121,366; impl \u2192 ~2,180).**\nDeliberately *not* earlier despite being large. `open_locked` calls into a dozen subsystems; if you extract it first, its call sites become a wall of `crate::\u2026` paths to code that hasn't moved yet, and you'll want to redo them. After steps 5\u20136 those calls read `vector::partition::ensure_vector_partition(\u2026)`, `projection::maintenance::rederive_on_boot(\u2026)` \u2014 which is the actual discoverability win. If you'd rather not reorder, do step 4 *last* instead of fourth.\n\n**Step 5 \u2014 `projection/` + `vector/` (\u22124,120).** The largest block of work, and the one that needs the most care because `commit_projection_outcomes` and `commit_batch` share transaction ordering. Split into two PRs (`vector/` first \u2014 `equivalence.rs` and `partition.rs` are near-zero-coupling warmups).\n\n**Step 6 \u2014 the retrieval spine: `search/` + `filter.rs` + `read/` + `reader_pool.rs` (\u22124,819).** Last of the majors, because it's the most interconnected and the most performance-sensitive. Do `filter.rs` first (it's a leaf both `search/exec.rs` and `read/mod.rs` depend on).\n\n**Step 7 \u2014 leaves, any order, opportunistically:** `id.rs`, `temporal.rs`, `error.rs`, `existence.rs`, `bm25f.rs`, `sqlite_ffi.rs`, `admin.rs`, `telemetry.rs`, `write/`. Each is small, self-contained, and can ride along with whatever slice touches it.\n\n**Mechanical rules for every step:**\n- Move code **verbatim**. No renames, no signature changes, no \"while I'm here\" cleanups. One PR = one `git mv`-shaped diff. Reviewability of the diff is the entire point.\n- Move each item's tests out of `mod tests` (L17621\u201317910) **with** the item, in the same PR. `guard_row_owned_registry` moves with `projection/registry.rs`.\n- Every PR ends with a public-symbol diff (rustdoc JSON or `cargo public-api`) proving the exported surface is byte-identical.\n- Full-workspace `cargo clippy --workspace --all-targets` + `cargo check --workspace --all-targets`, both exit 0 \u2014 per the release-DoD memory note, per-crate verify masks cross-crate breaks, and this refactor is exactly the shape that produces them.\n\n---\n\n## 6. What genuinely should stay together\n\nBeing honest about the parts where LEAVE is the right verdict:\n\n- **`read_search_in_tx` (748 lines).** Its six phases share one `Transaction`, one `FrozenView` (the type-level guarantee that `:now` resolves exactly once), and ~16 locals. It stays in `search/exec.rs` as one function unless someone demonstrates the phases decompose to `(&FrozenView, &Transaction) -> Vec<SearchHit>` without threading a 16-field context struct. A context struct would be strictly worse than the current shape.\n- **`bfs_graph_arm_candidates` (338).** One algorithm. LEAVE.\n- **`commit_batch` (321).** It is the connective tissue for validation, prior-cursor lookup, the row projector, and the G8 dangling-edge pass \u2014 all inside one transaction. It is long *because* it is one transaction. LEAVE as one function; it moves to `write/commit.rs` intact.\n- **The doctor report DTO catalog** (~14 one-verb-one-DTO pairs, L3737\u20134103). Zero coupling between them; the flatness is appropriate, not a defect. Move as **one unit** into `admin.rs`; never decompose further. Splitting these into 14 files is the textbook doctrine-#2 violation.\n- **`EngineError` (208 lines) and `PreparedWrite` (125).** Cross-cutting by definition \u2014 `EngineError` is returned by essentially all 140 methods. `error.rs` is a leaf every module imports; that's correct, not a smell. Do not try to distribute the variants.\n- **`sqlite_ffi.rs` unsafe blocks** stay adjacent to the trampoline they configure; their `// SAFETY:` comments reference each other's pointer lifetimes.\n- **`mod tests` (290 lines).** Per the test doctrine, nothing to flag \u2014 no per-test-length or duplicated-fixture problem. It dissolves only as a side effect of steps 1\u20137.\n\n---\n\n## 7. What would make this plan wrong\n\n1. **`struct Engine` moves out of the crate root.** Then private fields stop being visible to the capability modules and the whole plan degenerates into a `pub(crate)`-field rewrite with a much larger blast radius. This is the single load-bearing assumption.\n2. **A consumer imports an internal path.** If `fathomdb-py`, `fathomdb-node`, `fathomdb-cli`, or any integration test does `use fathomdb_engine::some_free_function`, moving it breaks them. The plan assumes `pub use` re-exports from `lib.rs` cover 100% of the current exported surface. **Verify this with a symbol diff before step 1, not after step 6.** If the surface turns out to be wide and undocumented, the cost of every step roughly doubles.\n3. **0.8.20 is in flight.** A 17,910-line reshuffle conflicts with every concurrent slice touching this file. If slices are landing weekly against `lib.rs`, this must be sequenced *between* releases, and steps 5\u20136 in particular need a quiet window. Doing this concurrently converts a mechanical refactor into a merge-conflict tax on everyone else.\n4. **The review model depends on reading the ordering invariants together.** `commit_batch`, `commit_projection_outcomes`, `purge_inner`, and `excise_source_inner` all encode a drain\u2192freeze\u2192mutate ordering that is currently reviewable by scrolling one file. If the codex \u00a79 gate or HITL sign-off depends on that co-location, steps 2 and 5 make review *harder*, not easier. Mitigation: extract the shared sequence into one named `pub(crate)` helper at the root so the ordering has a single definition instead of four. If that mitigation isn't taken, downgrade steps 2 and 5.\n5. **There is no defect-risk justification here and the plan should never claim one.** El Emam found no threshold effect of class size; Yamashita found larger files have *lower* defect density. Splitting this file has **no predicted defect benefit**. The entire justification is navigability and ownership \u2014 being able to say \"erasure lives here\" and \"the vec0 partition shape lives here\". If the team does not currently feel that pain, **LEAVE the file alone** and take only \u00a71 (the duplicate match arms) and step 1 (`test_hooks.rs`, which is a cohesion defect independent of file size). That is a complete and defensible outcome.\n\n---\n\n## 8. Legitimate stopping points\n\n- **After step 1:** the one real cohesion defect is fixed. Cost: one small PR. If you do nothing else, do this.\n- **After step 3:** `lib.rs` is ~14,850 and `impl Engine` is ~2,735. The \"one type carries 140 responsibilities\" finding is materially discharged; the three most self-contained capabilities own their own files. This is where the marginal value per unit of risk drops sharply.\n- **After step 7:** ~20 files, largest ~1,110, root ~600. Nice, but the delta from step 3 to step 7 is navigability only, bought with the most interconnected and performance-sensitive code in the crate.",
+    "regions": 6
+  },
+  "hard": [
+    {
+      "path": "scripts/commission-manifest.sh",
+      "why_big": "Embeds a 674-line Python program as a shell heredoc (lines 132\u2013806), defeating IDE tooling support and preventing independent testing or reuse of the Python logic.",
+      "verdict": "RESTRUCTURE-IN-PLACE",
+      "proposal": [
+        {
+          "name": "Extract Python logic to independent module",
+          "line_ranges": "132\u2013806",
+          "what": "Move the Python code block (currently a heredoc at lines 132\u2013806) into a new file `scripts/commission-manifest.py`. This enables IDE syntax highlighting, linting, independent unit testing, and potential reuse by other Python code in the repo.",
+          "approx_loc": 674
+        },
+        {
+          "name": "Replace heredoc with thin wrapper call",
+          "line_ranges": "132\u2013806",
+          "what": "Replace the entire Python heredoc with a single call: `MODE=\"$MODE\" RELEASE=\"$RELEASE\" SLICE=\"$SLICE\" exec python3 \"$(dirname \"$0\")/commission-manifest.py\"`. The shell wrapper (lines 100\u2013131) retains responsibility for argument parsing and the python3 availability check; the extracted module handles all logic.",
+          "approx_loc": 3
+        }
+      ],
+      "blast_radius": "Low. Public API unchanged (callers invoke `scripts/commission-manifest.sh` with same arguments). Internal refactor only. Existing test suite (`scripts/tests/test_commission_manifest.sh`) exercises the script end-to-end and will verify correctness. No cross-language mirror or re-export risk.",
+      "confidence": "high"
+    },
+    {
+      "path": "dev/notes/performance-whitepaper-notes.md",
+      "why_big": "Performance investigation whitepaper spanning 6+ experimental phases (Pack 4-6.G) with chronological evidence narrative that builds from research summary \u2192 hypothesis falsification \u2192 final synthesis.",
+      "verdict": "LEAVE",
+      "proposal": [],
+      "blast_radius": "none \u2014 internal design doc, no API surface, no code paths",
+      "confidence": "high"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-py/src/lib.rs",
+      "why_big": "One PyO3 binding crate accreted eight distinct concerns (exception taxonomy + FFI validation, ~30 thin Py wrapper structs/getters, the PyEngine method surface, standalone lifecycle/read verbs, dict/batch write-translation, graph traversal + rerank, an embedder singleton, and module registration + tests) into a single file because #[pymodule] registration and #[pymethods] impls all had to live somewhere and nobody split them out as the surface grew feature-by-feature across 0.6.0-0.8.20.",
+      "verdict": "SPLIT",
+      "proposal": [
+        {
+          "name": "errors.rs",
+          "line_ranges": "64-395",
+          "approx_loc": 330,
+          "what": "The create_exception! taxonomy (root EngineError + ~20 concrete leaves), FFI string validation (validate_ffi_string, validate_ffi_string_py, extract_validated_str, extract_opt_validated_str), and Rust-error-to-PyErr conversion (engine_error_to_py, corruption_kind_str, open_stage_str, engine_open_error_to_py, corruption_to_py, call_engine)."
+        },
+        {
+          "name": "types.rs",
+          "line_ranges": "396-1176",
+          "approx_loc": 780,
+          "what": "All the small Py* data-wrapper structs and their #[pymethods]/getter impls: PyWriteReceipt, PyEraseReport, PyIngestWithExtractorReceipt, PyConsolidateReceipt, PySoftFallback, PyIdSpace, PySearchHit, PySearchResult, PyQueryTrace, PyPerHitExplain, PyExplanation, PyNodeRecord, PyReadView (+read_view_or_default), PyBoundaryCrossing, PyProjectionSpec, PyProjectionDelta, PyOpStoreRow, PyCounterSnapshot, PyMigrationStepReport, PyEmbedderIdentity, PyOpenReport, and embedder_event_to_py."
+        },
+        {
+          "name": "engine.rs",
+          "line_ranges": "1177-1568",
+          "approx_loc": 392,
+          "what": "The PyEngine struct and its single #[pymethods] impl block (open/write/search/etc.) - the core engine method surface, already the single largest cohesive unit in the file."
+        },
+        {
+          "name": "verbs.rs",
+          "line_ranges": "1565-1895",
+          "approx_loc": 330,
+          "what": "Standalone #[pyfunction]s hung off PyEngine: admin_configure, transition, purge, erase_source, configure_projections, read_projections, read_get, read_get_many, read_collection, read_mutations, read_collection_impl (+py_predicate_to_rust), read_list, read_list_filter (+py_filter_term_to_rust)."
+        },
+        {
+          "name": "translate.rs",
+          "line_ranges": "1896-2096",
+          "approx_loc": 200,
+          "what": "Write-batch translation from Python dicts to PreparedWrite: translate_batch, the dict_get/dict_str/dict_str_required/dict_source_id_required/dict_epoch_seconds helpers, translate_write_item, translate_node, translate_edge, translate_op_store, translate_admin_schema."
+        },
+        {
+          "name": "graph.rs",
+          "line_ranges": "2097-2361",
+          "approx_loc": 265,
+          "what": "Graph-traversal and rerank surface: PyExpandedNode, PySearchExpandResult, parse_direction, graph_neighbors, crossed_boundary_since, search_expand (+dict_u64_required/dict_f64_required), rerank."
+        },
+        {
+          "name": "embed.rs",
+          "line_ranges": "2362-2459",
+          "approx_loc": 98,
+          "what": "The CLS embedder singleton and its Python entry points: get_or_try_init, cls_embedder_singleton, embed_batch_cls, the two cfg-gated embed_batch_cls_impl variants, and force_panic_for_test."
+        }
+      ],
+      "blast_radius": "Internal crate-private reorg only, no Python-facing API/ABI change: all types stay registered on the same _fathomdb pymodule, same class names. The _fathomdb pymodule-init fn (L2460-2548, stays in lib.rs) needs `use` imports across the new modules; the `mod tests` block (L2549-2678, stays in lib.rs) currently uses items in scope and needs qualified/re-exported paths after the split. The napi-rs mirror crate (src/rust/crates/fathomdb-napi/src/lib.rs, 2561 LOC) is a separate single-file crate the header comment says is kept in parity for FFI *semantics* (GIL-release, panic translation, string validation), not file layout, so this split does not need a matching napi-side split and does not desync anything documented.",
+      "confidence": "high"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-engine/tests/perf_gates.rs",
+      "why_big": "The file organizes 15 semantically related performance gates (AC-012, AC-013, AC-013b, AC-017\u2013AC-020, G.3.5, A.3.x) that share deterministic synthetic data generation, embedders, measurement utilities, and documented context across perf-gate evolution (0.6.0\u20130.8.0). Size is inherent to the scope, not a defect.",
+      "verdict": "LEAVE",
+      "proposal": [],
+      "blast_radius": "Test-only; no public API, SDK exposure, or cross-language mirrors. Changes to this file do not affect shipped binaries.",
+      "confidence": "high"
+    },
+    {
+      "path": "src/python/eval/s15a_embedder_probe.py",
+      "why_big": "File implements a complete frozen measurement pipeline (15a embedder-ceiling probe); size inherent to the job, not bloat",
+      "verdict": "LEAVE",
+      "proposal": [],
+      "blast_radius": "none",
+      "confidence": "high"
+    },
+    {
+      "path": "src/ts/src/index.ts",
+      "why_big": "The file is the TypeScript SDK public surface, necessarily exporting ~300 LOC of type contracts + the monolithic Engine class facade (26 methods) + admin/graph verbs, with no internal fragmentation.",
+      "verdict": "LEAVE",
+      "proposal": [],
+      "blast_radius": "Public API. This is the primary import surface for the TS SDK. Any split would require coordinated import changes across callers (cross-language parity risk with Python SDK).",
+      "confidence": "high"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-napi/src/lib.rs",
+      "why_big": "Sole source file of the fathomdb-napi crate accreted five structurally distinct FFI responsibilities \u2014 error-code translation, ~20 #[napi] DTO struct/impl conversions, the core Engine binding methods, the read/query surface, and JSON write-translation helpers \u2014 each independently understandable but bundled by history rather than by design.",
+      "verdict": "SPLIT",
+      "proposal": [
+        {
+          "name": "errors.rs",
+          "line_ranges": "58-103 (error-code consts) + 112-416 (TypedEnvelope/typed_error through call_engine_sync)",
+          "approx_loc": 360,
+          "what": "Error-code constants, TypedEnvelope/typed_error, validate_ffi_string(_napi), checked_ids_napi, engine_error_to_napi, corruption_kind_str/open_stage_str/corruption_to_napi, engine_open_error_to_napi, panic_error, call_engine/call_engine_sync \u2014 the FFI error-translation layer, self-contained and independently testable against the TS leaf-class table (AC-060a)."
+        },
+        {
+          "name": "types.rs",
+          "line_ranges": "417-1207",
+          "approx_loc": 790,
+          "what": "The repeated-pattern block of plain #[napi] DTO structs + impls converting Rust engine types to JS-visible shapes: WriteReceipt, EraseReport, ProjectionSpec/ProjectionDelta, IngestWithExtractorReceipt, ConsolidateReceipt, SoftFallback, IdSpace, SearchHit, NodeRecord, OpStoreRow, SearchFilterInput, SearchResult, QueryTrace, PerHitExplain (+ inline test mod 903-988), Explanation, MigrationStepReport, EmbedderIdentity, EmbedderEvent, OpenReport, CounterSnapshot, AttachSubscriberOptions, EngineConfig, EngineOpenOptions, AdminConfigureOptions. Homogeneous DTO-conversion responsibility, no engine-call logic."
+        },
+        {
+          "name": "engine.rs",
+          "line_ranges": "1208-1781 + 2477-2532 (test-support impl Engine) + 2533-2561 (mod tests)",
+          "approx_loc": 650,
+          "what": "struct Engine + the large impl Engine (519 lines, L1214-1732) holding the primary bound methods and admin_configure, plus force_panic_for_test / call_panicking_engine_for_test test-support additions and the crate's own unit test module \u2014 the actual engine-lifecycle binding surface."
+        },
+        {
+          "name": "read.rs",
+          "line_ranges": "1782-2176",
+          "approx_loc": 395,
+          "what": "The read/query surface: ReadViewInput, BoundaryCrossing, ReadCollectionOptions, read_get/read_get_many/read_collection/read_mutations/read_collection_impl, PredicateInput + napi_predicate_to_rust, read_list, FilterTermInput + napi_filter_term_to_rust, read_list_filter, ExpandedNode, SearchExpandResult, parse_direction_napi, graph_neighbors, crossed_boundary_since, search_expand."
+        },
+        {
+          "name": "translate.rs",
+          "line_ranges": "2177-2476",
+          "approx_loc": 300,
+          "what": "Pure JSON\u2192PreparedWrite translation helpers: translate_batch, json_get/json_str(_required)/json_serialised(_required) and their _alt variants, json_source_id_required, translate_write_item, translate_node, json_i64(_alt), translate_edge, translate_op_store, translate_admin_schema. No napi-macro surface \u2014 ordinary Rust functions, easy to unit-test in isolation."
+        }
+      ],
+      "blast_radius": "None on the public API: napi-rs codegen (build.rs) scans every module in the crate regardless of file layout, so the generated index.d.ts / TS leaf-class surface (src/ts/src/binding.ts, index.ts, read.ts, release-surface.test.ts) is unaffected by an internal `mod` split as long as items stay pub(crate)/pub and are wired via `mod` declarations in lib.rs. No cross-language mirror (fathomdb-py, pyi) lives in this crate to keep in sync. Pure internal reorganization of a single-file crate; each target module is 300-790 lines, comfortably above the ~150-line floor, and each maps to one real responsibility (errors / DTOs / engine methods / read surface / write translation) \u2014 not over-splitting.",
+      "confidence": "high"
+    },
+    {
+      "path": "src/python/eval/r2_parity_eval.py",
+      "why_big": "This is a complete py-eval pipeline (1494 LOC) integrating data models, answerer protocol, four retrieval adapters, scoring logic, and two CLI entry points into a single reproducible R2 parity evaluation run, with well-marked section boundaries but cohesive control flow.",
+      "verdict": "LEAVE",
+      "proposal": [],
+      "blast_radius": "High: 20+ evaluation scripts import from r2_parity_eval (Hit, GoldQuery, BaseAnswerer, adapters, load_repin_gold, _build_fathomdb, normalize_answer, session_id_of, etc.). Any split would require updating imports across the entire eval suite.",
+      "confidence": "high"
+    },
+    {
+      "path": "dev/plans/runs/STATUS-0.8.0.md",
+      "why_big": "Complete historical decision ledger (73 dated entries, 1593 LOC) for a ~8-day 0.8.0 release phase; size is inherent to the file's purpose as an append-only historical record.",
+      "verdict": "LEAVE",
+      "proposal": [],
+      "blast_radius": "none",
+      "confidence": "high"
+    },
+    {
+      "path": "scripts/tests/test_commission_manifest.sh",
+      "why_big": "Exhaustive fixture-based regression suite for commission-manifest.sh generator: 40+ test arms (each 8\u201329 lines) testing distinct failure modes, with a necessarily monolithic 228-line fixture setup that builds a complete fake repo.",
+      "verdict": "LEAVE",
+      "proposal": [],
+      "blast_radius": "None \u2014 test-only file, no public API or cross-language mirrors.",
+      "confidence": "high"
+    },
+    {
+      "path": "dev/agent-tools/ledgerwatch/ledgerwatch.py",
+      "why_big": "The file is a complete CLI tool that implements three interchangeable file-watching strategies and four command modes (validate, project, prune) sharing a unified state model and rendering layer; the longest functions (183-line CLI driver and 150-line ledger-fold algorithm) are inherently sequential and cannot be split mid-algorithm without fragmenting the state threading.",
+      "verdict": "LEAVE",
+      "proposal": [],
+      "blast_radius": "None\u2014this is a standalone CLI tool with no public API or re-exports; callers invoke it as a subprocess (ledgerwrite, tests, scripts).",
+      "confidence": "high"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs",
+      "why_big": "Comprehensive correctness test suite for projection registry (24 tests \u00d7 3 feature areas: registry semantics, EAV/property-FTS, lifecycle gates) with shared fixture library; per-test methods all \u226491 LOC, well within measured cognitive bounds.",
+      "verdict": "LEAVE",
+      "proposal": [],
+      "blast_radius": "Test suite only; no public API or cross-language mirrors affected.",
+      "confidence": "high"
+    },
+    {
+      "path": "dev/agent-tools/ledgerwatch/test_ledgerwatch.py",
+      "why_big": "Single tool's cohesive test suite organized by operational feature (100 tests across JSONL/Markdown/diff strategies, state handling, modes, validation, and project/fold modes); per-test length all healthy (5\u201324 LOC, median 10 LOC).",
+      "verdict": "LEAVE",
+      "proposal": [],
+      "blast_radius": "none \u2014 test-only file, no public API exports, no cross-language mirrors",
+      "confidence": "high"
+    },
+    {
+      "path": "src/ts/tests/slice10-read-view.test.ts",
+      "why_big": "Cross-binding parity test harness for R-20-RV/RV surface spanning 5 read verbs \u00d7 4 view permutations \u00d7 2 validity-window axes, with shared oracle helpers. Per-test length (20\u2013106 LOC) is reasonable; longest test justified by native/public layer shape verification.",
+      "verdict": "LEAVE",
+      "proposal": [],
+      "blast_radius": "Test file only; no public API or cross-language mirror impact from refactoring.",
+      "confidence": "high"
+    },
+    {
+      "path": ".github/workflows/release.yml",
+      "why_big": "This is a monolithic release pipeline (verify \u2192 build \u2192 publish-tiers \u2192 post-publish) where each job has a specific role in a sequential dependency chain; splitting fragments the narrative and doesn't reduce the inherent repetition in GitHub Actions' job-definition syntax.",
+      "verdict": "LEAVE",
+      "proposal": [],
+      "blast_radius": "none",
+      "confidence": "high"
+    }
+  ],
+  "soft": [
+    {
+      "findings": [
+        {
+          "path": "src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs",
+          "why_big": "Single monolithic benchmark/measurement harness (307 LOC) that runs correlated phases sequentially; splitting breaks test coherence and measurement validity.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "none",
+          "confidence": "high"
+        },
+        {
+          "path": "src/rust/crates/fathomdb-engine/tests/ir_c_gold_diagnostics.rs",
+          "why_big": "Main test (173 LOC) plus nested module with 8 focused unit tests; structure is clean; no per-test threshold violation.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "none",
+          "confidence": "high"
+        },
+        {
+          "path": "src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs",
+          "why_big": "23 independent conformance tests covering 8 acceptance criteria; all per-test lengths <87 LOC; file size reflects appropriate test count, not per-test bloat.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "none",
+          "confidence": "high"
+        },
+        {
+          "path": "src/rust/crates/fathomdb-engine/tests/slice15e_prekn_filterable.rs",
+          "why_big": "11 tests, one at 131 LOC documents four load-bearing reshape invariants; splitting would fragment a cohesive contract verifying byte-safe re-insertion.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "none",
+          "confidence": "high"
+        },
+        {
+          "path": "src/rust/crates/fathomdb-engine/tests/vector_equivalence_probe.rs",
+          "why_big": "21 tests probing embedder identity + mean-centering paths; longest is 78 LOC; per-test granularity is sound.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "none",
+          "confidence": "high"
+        },
+        {
+          "path": "src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs",
+          "why_big": "Single reusable CorpusFixture type with cohesive impl (327 LOC); this is a library fixture, not a test file; impl methods are related behaviors of one logical entity.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "none",
+          "confidence": "high"
+        },
+        {
+          "path": "src/rust/crates/fathomdb-engine/tests/support/ir_eval.rs",
+          "why_big": "Public IR evaluation library (not test file); type defs + parsing + evaluation logic; no function exceeds ~80 LOC; appropriate scope for reference documentation + API.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "none",
+          "confidence": "high"
+        }
+      ],
+      "shared_observation": "eu7_real_corpus_ac.rs and corpus_harness.rs duplicate 76 LOC across four utility functions: SplitMix64 struct+impl (identical), synth_query() (identical), lead_sentence() (identical), and LEAD_MAX_CHARS constant. These should be extracted to a shared support module (e.g., support/query_synthesis.rs) and imported by both files. This is a single high-confidence cross-cutting extraction that reduces duplication without touching per-test granularity."
+    },
+    {
+      "findings": [
+        {
+          "path": "src/rust/crates/fathomdb-embedder/tests/cross_backend_calibration.rs",
+          "why_big": "File is 824 LOC (24 above soft threshold), but this is a cohesive measurement instrument with properly-factored helpers and no duplicated setup; per-test methods (50\u201385 LOC) are individually short.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "Test-only; no public API or cross-language mirror.",
+          "confidence": "high"
+        }
+      ],
+      "shared_observation": "nothing"
+    },
+    {
+      "findings": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "why_big": "Manifests 17 independent parallel CI gates (filter, verify, security, tests, matrices, metadata jobs); the length reflects job count and variety, not any single over-long function.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "none",
+          "confidence": "high"
+        },
+        {
+          "path": ".github/workflows/perf-canonical.yml",
+          "why_big": "Two substantial workflow_dispatch jobs with complex setup; ac012-canonical-measure and perf-experiment are self-contained and serve distinct measurement roles.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "none",
+          "confidence": "high"
+        }
+      ],
+      "shared_observation": "Both workflows duplicate identical TMPDIR configuration (4-line bash block), checkout action SHA, Rust toolchain setup, and rust-cache config. This boilerplate appears 7 times total across ci.yml (5 jobs) and perf-canonical.yml (2 jobs). Extracting into a reusable composite action `.github/actions/setup-fathomdb-env/action.yml` would reduce duplicated setup by ~50\u201360 LOC, establish a single source of truth for toolchain pinning, and improve maintenance. This cross-cutting extraction is worth more than any per-file split, since each file's length is inherent to its job (ci.yml = manifest of parallel gates; perf-canonical.yml = two substantial measurement workflows)."
+    },
+    {
+      "findings": [
+        {
+          "path": "src/python/tests/test_s15a_embedder_probe.py",
+          "why_big": "Tests a complex multi-scenario embedder probe wiring across model selection, determinism, cache behavior, and integration markers.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "none",
+          "confidence": "high"
+        },
+        {
+          "path": "src/python/tests/test_gap_decomposition_run.py",
+          "why_big": "Tests gap-decomposition budget safety, distiller constraints, oracle completeness, checkpointing, and resumption across multiple modes.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "none",
+          "confidence": "high"
+        },
+        {
+          "path": "src/python/tests/test_m1_verdict.py",
+          "why_big": "Tests M1 verdict harness across 5-arm pipelines, endpoint computation, decision rules, stage-1/2 gates, and multi-run resume semantics.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "none",
+          "confidence": "high"
+        },
+        {
+          "path": "src/python/tests/test_slice10_read_view.py",
+          "why_big": "Tests R-20-RV read view across all 5 verbs and multiple orthogonal flags (include_superseded, include_inactive, valid_as_of) forming complex assertion matrices.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "none",
+          "confidence": "high"
+        },
+        {
+          "path": "src/python/tests/test_r2_harness.py",
+          "why_big": "Tests R2 parity evaluation harness contract and corpus validity across multiple adapter integration paths; marginally over soft threshold.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "none",
+          "confidence": "high"
+        }
+      ],
+      "shared_observation": "These five test files target different systems (embedder probe, gap decomposition, M1 verdict, read view SDK, R2 harness) with zero cross-file setup duplication. Each file's length is inherent to its system's multi-scenario or cross-product test matrices. Per-test methods are measured-reasonable (max 69 LOC), and helper fixtures are system-specific (FakeEncoder, _RecClient, etc.) with no reuse across files. The high LEAVE rate is expected for soft-threshold advisory hits."
+    },
+    {
+      "findings": [
+        {
+          "path": "scripts/check-release-state-views.sh",
+          "why_big": "Embeds complete Python state-file renderer + validator in here-doc with 4 renderers and orphan-marker scanning loop.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "Invoked by preflight.sh --landing and CI backstop. No public API; invocation is stable.",
+          "confidence": "high"
+        },
+        {
+          "path": "scripts/set-version.sh",
+          "why_big": "check_files() at 167 LOC is unified version-consistency check across workspace, Python, npm, platform packages as single semantic operation.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "Public entry point (--check-files mode); also sourced. Splitting fragments a single operation requiring sequential flow.",
+          "confidence": "high"
+        },
+        {
+          "path": "scripts/steward-orient.sh",
+          "why_big": "Stateless briefing aggregating 6+ sources (release, worktrees, ledgers, todos) into unified output under 4 KB budget + strict no-write contract.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "Output consumed by orchestrator agents and human operators. Extracting sources would fragment briefing logic.",
+          "confidence": "high"
+        },
+        {
+          "path": "scripts/check-governed-surface-pin.sh",
+          "why_big": "Embeds Python validator checking pinned file against pre-signed spec on 4 axes: hash, member lists, counts, REQ-054 denylist.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "Shared by preflight.sh --landing and CI; predicate must not diverge per DOC-HYGIENE-2 design.",
+          "confidence": "high"
+        },
+        {
+          "path": "scripts/preflight.sh",
+          "why_big": "Orchestrator gate running 9 independent health checks (mid-merge, stale-base, disk, landing-mode, board-currency, ledger, surface, etc.)",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "Critical orchestration gate; unified JSON summary depends on all checks running together. Extraction requires parallel invocation or rebinding.",
+          "confidence": "high"
+        },
+        {
+          "path": "scripts/lint-plan-anchors.sh",
+          "why_big": "Enforces line-anchor ban via RULE 1 (shape scan) + RULE 2 (symbol existence) plus wrap-aware citation extraction via embedded Perl.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "Public gate on ACTIVE plans; citation form is a contract. Extraction fragments two-rule validation.",
+          "confidence": "high"
+        },
+        {
+          "path": "scripts/check-ledgers.sh",
+          "why_big": "Embeds Python gate validating ledger integrity (sidecar-agreement + seq contiguity) for all discovered *.jsonl.seq sidecars.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "Shared by preflight.sh --landing and CI; predicate must not diverge. Discovery is dynamic (all sidecars).",
+          "confidence": "high"
+        }
+      ],
+      "shared_observation": "These 7 files are DOC-HYGIENE-2 gates (T1b-T1e, T2a, T3a) created to mechanically prevent recurring failures by encoding measured remedies into tooling. They share patterns (cd to toplevel, tool-presence checks, structured error reporting, exit-code semantics) but NOT code. Each is independently deployable and deliberately self-contained: check-release-state-views, check-governed-surface-pin, and check-ledgers embed Python; lint-plan-anchors embeds Perl; preflight and steward-orient orchestrate multiple checks; set-version manages version axes. No shared harness, no copy-pasted logic, no duplication. The standing rule (\"fix tooling so it cannot recur\") applies: each script is a specialized gate that precisely documents its own failure mode and remedy, making it independently understandable and auditable. Extracting a common bash library would save 5-10 lines per script at the cost of added complexity and indirection with minimal gain."
+    },
+    {
+      "findings": [
+        {
+          "path": "scripts/release/cargo-publish-if-new.sh",
+          "why_big": "Substance-driven growth: workspace/crate version resolution, registry idempotency check with split-brain guard, dry-run conditional for dependent crates, each load-bearing to the script's mission.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "Idempotency guard called by release.yml T1..T7 tiers; controls whether real `cargo publish` executes; registry-routing logic is a security boundary.",
+          "confidence": "high"
+        },
+        {
+          "path": "scripts/release/verify-embedder-api-no-drift.sh",
+          "why_big": "Only 7 LOC over threshold; normalize_src (17 LOC) is domain-specific source normalization for diff, appropriate length and necessary.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "Release preflight (runs before tag push); detects published-API drift; failures block tag and mandate `set-version.sh` invocation.",
+          "confidence": "high"
+        }
+      ],
+      "shared_observation": "Both scripts redefine `read_crate_version()` (~12 LOC each) and `registry_has_version()` (~20\u201342 LOC each) with nearly identical curl+jq patterns and AWK parsing. This suggests a future extraction target: a shared `scripts/release/_common.sh` library. However, neither script is large enough to mandate it yet. The duplication is modest in absolute terms, and extracting introduces a cross-script dependency. This is an *architectural improvement* deferred, not a structural defect of either file."
+    },
+    {
+      "findings": [
+        {
+          "path": "dev/plans/0.8.0-implementation.md",
+          "why_big": "Contains detailed contracts for 9 slices (0, 5, 10, 15, 20, 25, 30, 35, 40) with per-slice specifications (~140\u2013170 LOC each) PLUS universal orchestration rules (\u00a71\u2013\u00a712) that must be co-located for reference completeness.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "Highest scope in release corpus \u2014 cited by orchestrator agents during 0.8.0 execution, embedded in codex reviews, referenced in slice prompts; splitting fragments the orchestration contract that binds every slice.",
+          "confidence": "high"
+        },
+        {
+          "path": "dev/plans/runs/STATUS-0.8.1.md",
+          "why_big": "Live status board (now archived) whose \u00a77 'Recent decisions' ledger (lines 413\u20131162) is append-only, capturing the chronological spine of HITL decisions and experiment outcomes; earlier sections reference into this ledger.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "Orchestration tool; read by agents during 0.8.1 continuation; splitting the ledger severs the decision sequence that makes it a historical record.",
+          "confidence": "high"
+        },
+        {
+          "path": "dev/plans/0.6.0-implementation.md",
+          "why_big": "Implementation plan for older release organized by phases (5\u201312) as logical units, with per-phase execution posture and a detailed slice-sequence table; phases are structural, not arbitrary.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "Historical reference for 0.6.0 release; only marginally over soft (20 LOC); splitting phases would fragment the execution guidance and phase-to-slice mapping table.",
+          "confidence": "high"
+        }
+      ],
+      "shared_observation": "All three are historical release-planning documents already correctly implementing archive-and-link: each is marked CLOSED at the header, explicitly points to a newer current version (STATUS-0.8.20.md + 0.8.6-0.8.16-PROGRAM-SEQUENCING.md as master schedule-of-record), and serves as an authoritative reference contract for a closed release cycle. No shared duplication, copy-pasted harness, or cross-cutting extraction opportunity exists \u2014 they are distinct releases. The pattern is correct; these files need no restructuring."
+    },
+    {
+      "findings": [
+        {
+          "path": "src/python/eval/gap_decomposition_run.py",
+          "why_big": "run_gap_decomposition (243 LOC) is a single coherent orchestration loop iterating over queries with integrated oracle context retrieval, new-arm answering, delta computation, and checkpoint persistence \u2014 not multiple extractable sub-functions.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "none",
+          "confidence": "high"
+        },
+        {
+          "path": "src/python/eval/m1_baseline.py",
+          "why_big": "BGEEncoder (94 LOC) and FusedPoolReranker (69 LOC) are essential classes required by the justified-deviation architectural decision: dense retrieval must be in-harness because the engine does not expose vector-kind registration, forcing reimplementation in the same model space.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "none",
+          "confidence": "high"
+        },
+        {
+          "path": "src/python/eval/fracc_voi_run.py",
+          "why_big": "main() (142 LOC) orchestrates five named deliverables (ce_guard, stage_a, margins, vos, grid, asym) where each represents one experimental phase with distinct outputs. Phases are sequential but interdependent; extracting them would fragment the run record.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "none",
+          "confidence": "high"
+        },
+        {
+          "path": "src/python/eval/p0a_base_retrieval.py",
+          "why_big": "Comprises pure scorer functions (hit_at_k, reciprocal_rank, ndcg_at_k, aggregate) deliberately co-located with orchestration loops. Module docstring emphasizes these scorers are TDD'd separately in tests/test_p0a_scorer.py; co-location supports that testing relationship.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "none",
+          "confidence": "high"
+        },
+        {
+          "path": "src/python/eval/autoe_pilot_run.py",
+          "why_big": "run_pilot (259 LOC) is the largest function: it orchestrates sampling, building answers, resilient judging, cost projection, and win-rate aggregation as a single pass. The phases are logically distinct but all feed one output report; extracting sub-orchestrations would fragment the run record without measurement benefit.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "none",
+          "confidence": "high"
+        }
+      ],
+      "shared_observation": "All 5 files successfully reuse BudgetLedger and pricing infrastructure from gap_decomposition_run (working shared pattern). Three files (gap_decomposition, fracc_voi, autoe_pilot) implement similar checkpoint/resume patterns for resilience, but their checkpoint schemas are domain-specific: gap_decomposition tracks reader + mode, fracc_voi tracks cost dict separately, autoe_pilot persists judgment keys. Extracting a generic checkpoint framework would require config abstraction over these schemas, adding complexity for modest LOC savings (~30 per file). Per the py-eval doctrine, these are run-once experiment pipelines whose value is reproducibility of the specific execution; the checkpoint-pattern repetition is acceptable because: (1) each schema is slightly different, (2) total duplication is only ~30 LOC per file, (3) framework overhead would increase cognitive load when reading the run record. Recommendation: accept the duplication; the shared BudgetLedger infrastructure is the right level of extraction."
+    },
+    {
+      "findings": [
+        {
+          "path": "scripts/tests/test_check_release_state_views.sh",
+          "why_big": "Comprehensive RED-first specification suite with 25+ test arms (5\u201325 lines each) covering every error path of the release-state-views gate, not a single oversized component.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "none",
+          "confidence": "high"
+        },
+        {
+          "path": "scripts/tests/test_steward_orient.sh",
+          "why_big": "Unified proof of the steward-orient briefing contract: ~150 lines of fixture infrastructure plus 12 test arms (5\u201330 lines each), with longer arms deliberately exercising .git/index locking and stale-stat-cache behavior.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "none",
+          "confidence": "high"
+        },
+        {
+          "path": "scripts/tests/test_check_governed_surface_pin.sh",
+          "why_big": "Only 8% over soft threshold (558 vs 500 LOC); length justified by comprehensive edge-case coverage including three distinct pin-validation backstop attacks (omitted count, mistyped count, killer-drop-count combo).",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "none",
+          "confidence": "high"
+        }
+      ],
+      "shared_observation": "All three files duplicate lightweight test infrastructure (~40 lines per file): identical pass()/fail()/FAILED counter, cleanup() trap pattern, output-capture wrappers, and assertion helpers. Extraction to a shared lib would save ~90 lines but introduce an import dependency and cannot standardize custom assertions (expect_routes_to_hitl). Duplication is real but lightweight, stable, and unlikely to diverge \u2014 not a blocking issue. However, this pattern should be codified for future test suites to avoid recurring duplication."
+    },
+    {
+      "findings": [
+        {
+          "path": "src/python/fathomdb/engine.py",
+          "why_big": "The Engine class wraps the public five-verb API surface defined by dev/interfaces/python.md; all verbs (write, transition, purge, erase_source, configure_projections) plus read utilities must co-locate in one public-facing wrapper.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "Public SDK API; cross-language mirrors in TypeScript (fathomdb-js); named in interface spec.",
+          "confidence": "high"
+        },
+        {
+          "path": "tests/corpus/scripts/generate_chain_corpus.py",
+          "why_big": "Six chain builders (chain_email_note_todo through chain_paper_note_todo) repeat nearly identical templates: pick anchor \u2192 build synthetic docs \u2192 create queries \u2192 return dict, spanning ~350 LOC of systematic copy-paste.",
+          "verdict": "RESTRUCTURE-IN-PLACE",
+          "proposal": [
+            {
+              "name": "Extract chain-builder factory",
+              "line_ranges": "L205-600 (the 6 chain_* functions)",
+              "approx_loc": 150,
+              "what": "Replace the 6 chain builders with a parameterized factory function that takes anchor spec, document sequence, and relation templates, then synthesizes docs and queries. Consolidate synth_doc call patterns and query-building logic into one place. This eliminates ~150 LOC of duplication while preserving the CHAIN_BUILDERS list."
+            }
+          ],
+          "blast_radius": "Internal script; no external API. Tests depend on chain shapes (CHAIN_BUILDERS list), but shapes themselves are stable.",
+          "confidence": "high"
+        },
+        {
+          "path": "dev/plans/runs/0.8.4-gating-rerun.py",
+          "why_big": "Run-once experiment orchestration script with tightly coupled concerns (spending metering, answer generation, judging, result serialization); functions maintain shared state (CFG, _spent dicts) and are called sequentially.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "Dev/experiment script; not in SDK or public interface.",
+          "confidence": "high"
+        },
+        {
+          "path": "src/python/fathomdb/types.py",
+          "why_big": "Public API type catalog (~30 frozen dataclasses, TypedDicts, functions) defined in dev/interfaces/python.md; each type is short (10\u201345 LOC); cohesion is by role (all are public API types), not length.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "Public SDK API; TypeScript mirrors exist; tests and integrations import from this module.",
+          "confidence": "high"
+        },
+        {
+          "path": "experiments/_lib.py",
+          "why_big": "Utility library for experiment tracking (mirrored from memex); three concerns (config schemas, record I/O, index management) all belong together; write_record (117 LOC) is a single end-to-end pipeline that cannot split without threading state through fragments.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "Internal experiment harness; imported by experiment scripts.",
+          "confidence": "high"
+        }
+      ],
+      "shared_observation": "These files do not share duplication across them. They occupy different directories and serve distinct purposes (SDK wrapper, type catalog, corpus generation, experiment orchestration, experiment utilities). The only significant duplication is internal to generate_chain_corpus.py, where 6 chain builders repeat nearly identical templates. The other files' sizes are inherent to their responsibilities; splitting would harm discoverability (types.py), reproducibility (gating-rerun.py), or cohesion (engine.py, _lib.py)."
+    },
+    {
+      "findings": [
+        {
+          "path": "src/ts/tests/slice15d-projection-registry.test.ts",
+          "why_big": "23 test methods (100% of tests) repeat an identical 4\u20135 line engine-lifecycle boilerplate pattern (freshDbPath, Engine.open, try/finally close), accounting for ~16% of file bulk.",
+          "verdict": "RESTRUCTURE-IN-PLACE",
+          "proposal": [
+            {
+              "name": "Extract withEngine() fixture helper",
+              "line_ranges": "Add new helper after imports (ca. L24), before test suite begins",
+              "approx_loc": 8,
+              "what": "Lift the repeated try/finally engine-open/close sequence into a parameterized helper that accepts a test body function. Rewrite all 23 tests to call withEngine(async (engine, path) => { ... }). Reduces file size to ~430\u2013450 LOC while maintaining test clarity and method lengths in the 10\u201325 LOC range."
+            }
+          ],
+          "blast_radius": "None \u2014 internal test fixture, no public API or cross-file impact.",
+          "confidence": "high"
+        }
+      ],
+      "shared_observation": "nothing"
+    },
+    {
+      "findings": [
+        {
+          "path": "dev/design/embedder.md",
+          "why_big": "Comprehensive reference on embedder subsystem design covering ten distinct concerns (mean-centering, loader, HTTP, auth, cache, atomicity, verification, timing, endianness, failures, concurrency).",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "none",
+          "confidence": "high"
+        },
+        {
+          "path": "dev/design/0.7.0-vector-quant-pack1.md",
+          "why_big": "Design-decision memo for binary quantization Pack 1, structured as eight interrelated decisions; largest section documents complex SQL migration with atomicity and recovery.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "none",
+          "confidence": "high"
+        },
+        {
+          "path": "dev/design/orchestration.md",
+          "why_big": "Canonical release-independent orchestration runbook; sections are tightly interdependent (roles require state spine, state spine requires decision loop).",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "none",
+          "confidence": "high"
+        },
+        {
+          "path": "dev/design/0.8.1-graph-experiment-plan.md",
+          "why_big": "Experiment plan with methodology, program structure, statistical math, cost forecasting, and live state; math sections intertwined with design decisions.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "none",
+          "confidence": "high"
+        },
+        {
+          "path": "dev/design/gpu-device-allocation-policy.md",
+          "why_big": "Design-on-spec proposal following standard design-evaluation pattern; research sections grounded in prior-art and genuine unknowns.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "none",
+          "confidence": "high"
+        }
+      ],
+      "shared_observation": "nothing"
+    },
+    {
+      "findings": [
+        {
+          "path": "dev/corpus-creation/architecture.md",
+          "why_big": "File documents 12 distinct data sources with individual pinning, license, and acquisition logic, plus 4 validation packs and sequencing rules \u2014 inherent complexity for a canonical operational reference.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "none",
+          "confidence": "high"
+        }
+      ],
+      "shared_observation": "Single file reviewed. No cross-file duplication or common harness detected."
+    },
+    {
+      "findings": [
+        {
+          "path": "src/python/fathomdb/_fathomdb.pyi",
+          "why_big": ".pyi stub files are inherently verbose because they faithfully mirror the Rust binding's entire public surface (27 exception types + 20+ Engine methods + 10+ data classes), and splitting would fragment the logical unit that type checkers expect to co-locate.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "Type-checking boundary (mypy/pyright resolve `from fathomdb._fathomdb import *`). Splitting would require re-exporting from __init__ or confusing type-checker import paths.",
+          "confidence": "high"
+        }
+      ],
+      "shared_observation": "Single file only; no cross-file pattern to observe."
+    },
+    {
+      "findings": [
+        {
+          "path": "src/rust/crates/fathomdb-cli/src/lib.rs",
+          "why_big": "Three genuinely distinct concerns are concatenated in one file: clap arg/subcommand struct definitions (~L26-395), verb dispatch + engine-error-to-exit-code mapping (~L396-830), and a long flat sequence of ~20 near-identical `*_report_json(report) -> Value` serializer functions (~L831-1025) that convert each typed engine report into its CLI JSON body.",
+          "verdict": "RESTRUCTURE-IN-PLACE",
+          "proposal": [
+            {
+              "name": "report_json.rs (new sibling module, `mod report_json;`)",
+              "line_ranges": "817-1025",
+              "approx_loc": 210,
+              "what": "Move the block of `*_report_json`/`section_json`/`finding_json`/`locator_json` functions (the report-to-JSON serialization layer) into their own module. Each function is small and self-contained with no interaction with the clap/dispatch code above it, so this is a clean topic boundary, not an arbitrary line cut. Leaves lib.rs at ~840 LOC (arg structs + dispatch + tests), comfortably under the soft threshold, and gives report-JSON shape changes an isolated, easy-to-diff home."
+            }
+          ],
+          "blast_radius": "none - internal move within the same crate; functions are private (fn, not pub fn) and only called from run_doctor/run_recover in the same crate, so a `mod report_json; use report_json::*;` keeps the public CLI surface identical.",
+          "confidence": "medium"
+        }
+      ],
+      "shared_observation": "Only one file was in scope this round, so no cross-file duplication could be directly observed. But the extracted concern (typed-engine-report -> serde_json::Value mapping, one function per report type, each emitting a \"verb\": \"<name>\" discriminator) is exactly the kind of mechanical, repeated shape that tends to recur wherever the CLI or an adjacent HTTP/RPC-facing crate re-serializes the same fathomdb engine report types (IntegrityReport, RebuildReport, ExciseReport, etc.) for a different transport. Worth a repo-wide grep for other *_report_json / report -> Value mappers before deciding whether report_json.rs should become a small shared crate rather than a cli-local module."
+    },
+    {
+      "findings": [
+        {
+          "path": "src/ts/src/binding.ts",
+          "why_big": "File bundles runtime binding resolution (9-11 LOC functions) with 39 FFI interface definitions (462 LOC) that document what the native napi-rs binding exports.",
+          "verdict": "LEAVE",
+          "proposal": [],
+          "blast_radius": "none",
+          "confidence": "high"
+        }
+      ],
+      "shared_observation": "nothing"
+    }
+  ],
+  "shared_observations": [
+    {
+      "batch": "rust-test",
+      "observation": "eu7_real_corpus_ac.rs and corpus_harness.rs duplicate 76 LOC across four utility functions: SplitMix64 struct+impl (identical), synth_query() (identical), lead_sentence() (identical), and LEAD_MAX_CHARS constant. These should be extracted to a shared support module (e.g., support/query_synthesis.rs) and imported by both files. This is a single high-confidence cross-cutting extraction that reduces duplication without touching per-test granularity."
+    },
+    {
+      "batch": "rust-test",
+      "observation": "nothing"
+    },
+    {
+      "batch": "ci-workflow",
+      "observation": "Both workflows duplicate identical TMPDIR configuration (4-line bash block), checkout action SHA, Rust toolchain setup, and rust-cache config. This boilerplate appears 7 times total across ci.yml (5 jobs) and perf-canonical.yml (2 jobs). Extracting into a reusable composite action `.github/actions/setup-fathomdb-env/action.yml` would reduce duplicated setup by ~50\u201360 LOC, establish a single source of truth for toolchain pinning, and improve maintenance. This cross-cutting extraction is worth more than any per-file split, since each file's length is inherent to its job (ci.yml = manifest of parallel gates; perf-canonical.yml = two substantial measurement workflows)."
+    },
+    {
+      "batch": "py-test",
+      "observation": "These five test files target different systems (embedder probe, gap decomposition, M1 verdict, read view SDK, R2 harness) with zero cross-file setup duplication. Each file's length is inherent to its system's multi-scenario or cross-product test matrices. Per-test methods are measured-reasonable (max 69 LOC), and helper fixtures are system-specific (FakeEncoder, _RecClient, etc.) with no reuse across files. The high LEAVE rate is expected for soft-threshold advisory hits."
+    },
+    {
+      "batch": "shell",
+      "observation": "These 7 files are DOC-HYGIENE-2 gates (T1b-T1e, T2a, T3a) created to mechanically prevent recurring failures by encoding measured remedies into tooling. They share patterns (cd to toplevel, tool-presence checks, structured error reporting, exit-code semantics) but NOT code. Each is independently deployable and deliberately self-contained: check-release-state-views, check-governed-surface-pin, and check-ledgers embed Python; lint-plan-anchors embeds Perl; preflight and steward-orient orchestrate multiple checks; set-version manages version axes. No shared harness, no copy-pasted logic, no duplication. The standing rule (\"fix tooling so it cannot recur\") applies: each script is a specialized gate that precisely documents its own failure mode and remedy, making it independently understandable and auditable. Extracting a common bash library would save 5-10 lines per script at the cost of added complexity and indirection with minimal gain."
+    },
+    {
+      "batch": "shell",
+      "observation": "Both scripts redefine `read_crate_version()` (~12 LOC each) and `registry_has_version()` (~20\u201342 LOC each) with nearly identical curl+jq patterns and AWK parsing. This suggests a future extraction target: a shared `scripts/release/_common.sh` library. However, neither script is large enough to mandate it yet. The duplication is modest in absolute terms, and extracting introduces a cross-script dependency. This is an *architectural improvement* deferred, not a structural defect of either file."
+    },
+    {
+      "batch": "plan-status-doc",
+      "observation": "All three are historical release-planning documents already correctly implementing archive-and-link: each is marked CLOSED at the header, explicitly points to a newer current version (STATUS-0.8.20.md + 0.8.6-0.8.16-PROGRAM-SEQUENCING.md as master schedule-of-record), and serves as an authoritative reference contract for a closed release cycle. No shared duplication, copy-pasted harness, or cross-cutting extraction opportunity exists \u2014 they are distinct releases. The pattern is correct; these files need no restructuring."
+    },
+    {
+      "batch": "py-eval",
+      "observation": "All 5 files successfully reuse BudgetLedger and pricing infrastructure from gap_decomposition_run (working shared pattern). Three files (gap_decomposition, fracc_voi, autoe_pilot) implement similar checkpoint/resume patterns for resilience, but their checkpoint schemas are domain-specific: gap_decomposition tracks reader + mode, fracc_voi tracks cost dict separately, autoe_pilot persists judgment keys. Extracting a generic checkpoint framework would require config abstraction over these schemas, adding complexity for modest LOC savings (~30 per file). Per the py-eval doctrine, these are run-once experiment pipelines whose value is reproducibility of the specific execution; the checkpoint-pattern repetition is acceptable because: (1) each schema is slightly different, (2) total duplication is only ~30 LOC per file, (3) framework overhead would increase cognitive load when reading the run record. Recommendation: accept the duplication; the shared BudgetLedger infrastructure is the right level of extraction."
+    },
+    {
+      "batch": "shell-test",
+      "observation": "All three files duplicate lightweight test infrastructure (~40 lines per file): identical pass()/fail()/FAILED counter, cleanup() trap pattern, output-capture wrappers, and assertion helpers. Extraction to a shared lib would save ~90 lines but introduce an import dependency and cannot standardize custom assertions (expect_routes_to_hitl). Duplication is real but lightweight, stable, and unlikely to diverge \u2014 not a blocking issue. However, this pattern should be codified for future test suites to avoid recurring duplication."
+    },
+    {
+      "batch": "py-src",
+      "observation": "These files do not share duplication across them. They occupy different directories and serve distinct purposes (SDK wrapper, type catalog, corpus generation, experiment orchestration, experiment utilities). The only significant duplication is internal to generate_chain_corpus.py, where 6 chain builders repeat nearly identical templates. The other files' sizes are inherent to their responsibilities; splitting would harm discoverability (types.py), reproducibility (gating-rerun.py), or cohesion (engine.py, _lib.py)."
+    },
+    {
+      "batch": "ts-test",
+      "observation": "nothing"
+    },
+    {
+      "batch": "design-doc",
+      "observation": "nothing"
+    },
+    {
+      "batch": "doc-other",
+      "observation": "Single file reviewed. No cross-file duplication or common harness detected."
+    },
+    {
+      "batch": "py-stub",
+      "observation": "Single file only; no cross-file pattern to observe."
+    },
+    {
+      "batch": "rust-src",
+      "observation": "Only one file was in scope this round, so no cross-file duplication could be directly observed. But the extracted concern (typed-engine-report -> serde_json::Value mapping, one function per report type, each emitting a \"verb\": \"<name>\" discriminator) is exactly the kind of mechanical, repeated shape that tends to recur wherever the CLI or an adjacent HTTP/RPC-facing crate re-serializes the same fathomdb engine report types (IntegrityReport, RebuildReport, ExciseReport, etc.) for a different transport. Worth a repo-wide grep for other *_report_json / report -> Value mappers before deciding whether report_json.rs should become a small shared crate rather than a cli-local module."
+    },
+    {
+      "batch": "ts-src",
+      "observation": "nothing"
+    }
+  ],
+  "tally": {
+    "RESTRUCTURE-IN-PLACE": 4,
+    "LEAVE": 59,
+    "SPLIT": 2
+  }
+}
