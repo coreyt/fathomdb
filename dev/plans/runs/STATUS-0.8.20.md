@@ -39,10 +39,10 @@ step 24). Ledger tip **`3264114a`** (steward seq-98).
 
 | | |
 |---|---|
-| **Slice in flight** | **NONE — Slice 20 just landed PARTIAL (`26b237c0`).** The ladder is between slices; **Slice 20 is not finished** — `flush_embeddings()` is HELD on TC-54/TC-55 (§14). |
+| **Slice in flight** | **NONE — Slice 20 just landed PARTIAL (`26b237c0`).** The ladder is between slices; **Slice 20 is not finished** — `flush_embeddings()` is HELD on TC-59/TC-55 (§14). |
 | **Status** | **Slices 0, 5, 10, 15 all COMPLETE and LANDED on `origin/main`** (header table). The keystone landed **R-20-PR + R-20-EAV + `filterable` pre-KNN + TC-33 + TC-34 + Finding-1 (A) + `#[non_exhaustive] SearchFilter`**; codex §9 **terminal-clean**; gates re-verified by the Steward (clippy 0, check 0, (A) pin 1/1, AC-041 3/3). **SCHEMA 24.** |
 | **Unblocks** | <!-- BEGIN GENERATED release-state:0.8.20:status-unblocks -->**Slices 20 and 25 are NOW UNBLOCKED** — R-20-PR (the projection registry) now exists. Slice 30 (H7) depends on 10/15/20/25. **AC-079 is PRE-SIGNED** — the HITL signed off on the accumulated governed-surface delta (Slices 5d + 10b + 15b + 15d) on 2026-07-25 (master F-34), pinned to the content of `src/conformance/governed-surface-allowlist.json`; any diff to that file re-opens it (the T1e pin). Pre-signing is NOT minting: AC-079 is minted and recorded as SIGNED at Slice 40 (§4 #1). **Publish is gated by the separate HITL publish gate, not by this AC.**<!-- END GENERATED release-state:0.8.20:status-unblocks --> |
-| **Immediate next action** | **Resolve `TC-54` + `TC-55`, then finish Slice 20 as `20c` (`flush_embeddings()`).** Slice 20 landed **PARTIAL** at **`26b237c0`** — TC-45 and `dense_readiness` are CLOSED; **`flush_embeddings()` is HELD** (close record §14). Two ledger items block 20c (`dev/todos-and-considerations-ledger.jsonl`, seq 81–85): **TC-54** — `scripts/check-governed-surface-pin.sh` hashes the **raw bytes** of `src/conformance/governed-surface-allowlist.json` and `scripts/preflight.sh --landing` treats it as a **HARD** fail, so plan §11 ruling 2's *"record the delta as a proposal, branch stays green, batch to the HITL at 30→40"* is **mechanically impossible** — any allowlist diff blocks the land; recommended fix is a `pending_delta` block in the pin (fix the tooling, not the actor). **TC-55** — is `flush_embeddings()` a governed **command** (plan §11 ruling 2) or **instrumentation** (design C4: reuse the shipped `drain` barrier)? That answer decides whether 20c trips the pin at all, so it must be settled **on the design**, not by whichever answer lands easier. **Then 25 → 30 → 40, sequentially** (parallel 20∥25 was declined, F-34), each commissioned as an **orchestrator** (`/orchestrate`, or a Steward-spawned background orchestrator; **NOT `/goal`** — standing ruling **steward `seq-104`** (`927ffb35`)). **✅ Both docs-hygiene prerequisites are DISCHARGED:** DOC-HYGIENE-1 landed 2026-07-25 (`f53b8c64..597738d9`, steward `seq-101`) and **DOC-HYGIENE-2 is verified complete** (`ff4f07a0`). Rulings for the eight-item queue are recorded in `plan-0.8.20.md` §11; master reconciliation = **F-32**, DOC-HYGIENE-1 = **F-33**. |
+| **Immediate next action** | **Resolve `TC-59` + `TC-55`, then finish Slice 20 as `20c` (`flush_embeddings()`).** Slice 20 landed **PARTIAL** at **`26b237c0`** — TC-45 and `dense_readiness` are CLOSED; **`flush_embeddings()` is HELD** (close record §14). Two ledger items block 20c (`dev/todos-and-considerations-ledger.jsonl`, seq 82–86): **TC-59** — `scripts/check-governed-surface-pin.sh` hashes the **raw bytes** of `src/conformance/governed-surface-allowlist.json` and `scripts/preflight.sh --landing` treats it as a **HARD** fail, so plan §11 ruling 2's *"record the delta as a proposal, branch stays green, batch to the HITL at 30→40"* is **mechanically impossible** — any allowlist diff blocks the land; recommended fix is a `pending_delta` block in the pin (fix the tooling, not the actor). **TC-55** — is `flush_embeddings()` a governed **command** (plan §11 ruling 2) or **instrumentation** (design C4: reuse the shipped `drain` barrier)? That answer decides whether 20c trips the pin at all, so it must be settled **on the design**, not by whichever answer lands easier. **Then 25 → 30 → 40, sequentially** (parallel 20∥25 was declined, F-34), each commissioned as an **orchestrator** (`/orchestrate`, or a Steward-spawned background orchestrator; **NOT `/goal`** — standing ruling **steward `seq-104`** (`927ffb35`)). **✅ Both docs-hygiene prerequisites are DISCHARGED:** DOC-HYGIENE-1 landed 2026-07-25 (`f53b8c64..597738d9`, steward `seq-101`) and **DOC-HYGIENE-2 is verified complete** (`ff4f07a0`). Rulings for the eight-item queue are recorded in `plan-0.8.20.md` §11; master reconciliation = **F-32**, DOC-HYGIENE-1 = **F-33**. |
 
 **Slices 0, 5, 10, 15 close records** are §11 (Slice 5), §12 (Slice 10), §13 (Slice 15b — TC-34 only; the
 registry/EAV/TC-33 remainder that also landed in the keystone `a2022957` is summarised in §8 and in
@@ -60,13 +60,13 @@ by that ruling.
 | **5** | **Erasure completeness (R-20-E1…E8, +E9a)** | 0 | **COMPLETE — LANDED `1f8ed8bf`** (in `origin/main`). Close record §11 |
 | **10** | **`ReadView` / read-modes + node-validity (R-20-RV, R-20-NV)** | 0 | **COMPLETE — LANDED `3cfb3cda`** (merge) — SCHEMA 21→22. Close record §12 |
 | **15** | **Projection registry (C-1) + EAV/property-FTS (R-20-PR, R-20-EAV) + TC-34 + TC-33 + Finding-1 (A) + `#[non_exhaustive] SearchFilter`** | 0, 10 | **COMPLETE — LANDED `a2022957`** (merge, Phase-2 keystone) — SCHEMA →24; codex §9 terminal-clean; Steward-verified gates. §13 = the TC-34 sub-part only; registry/EAV/TC-33 remainder summarised in §8 |
-| **20** | `dense_readiness` + `flush_embeddings()` (R-20-DR) **+ TC-45 supersession-terminal fix** | 15 | **PARTIAL — LANDED `26b237c0`** (merge). **CLOSED:** (a) **TC-45** — both `commit_batch` call sites now record `'up_to_date'`; **no migration, SCHEMA stays 24**, terminal CHECK **not** widened, exactly as the ruling preferred. (b) **R-20-DR part 1 of 2** — `DenseReadiness {Ready, Embedding}` **derived** onto the `ProjectionSpec.vector` sub-object as engine-set read metadata (no stored column, no schema step), plus the **atomic readiness-flip**, which holds **by construction**. Surfaces as `vector_dense_readiness` (Py) / `vectorDenseReadiness` (TS). **ZERO net-new governed commands.** **⛔ HELD: `flush_embeddings()`** — blocked on **TC-54** (pin gate) + **TC-55** (command-vs-instrumentation). Close record **§14** |
+| **20** | `dense_readiness` + `flush_embeddings()` (R-20-DR) **+ TC-45 supersession-terminal fix** | 15 | **PARTIAL — LANDED `26b237c0`** (merge). **CLOSED:** (a) **TC-45** — both `commit_batch` call sites now record `'up_to_date'`; **no migration, SCHEMA stays 24**, terminal CHECK **not** widened, exactly as the ruling preferred. (b) **R-20-DR part 1 of 2** — `DenseReadiness {Ready, Embedding}` **derived** onto the `ProjectionSpec.vector` sub-object as engine-set read metadata (no stored column, no schema step), plus the **atomic readiness-flip**, which holds **by construction**. Surfaces as `vector_dense_readiness` (Py) / `vectorDenseReadiness` (TS). **ZERO net-new governed commands.** **⛔ HELD: `flush_embeddings()`** — blocked on **TC-59** (pin gate) + **TC-55** (command-vs-instrumentation). Close record **§14** |
 | **25** | Surrogate minting — governed entities ONLY (R-20-SUR) | 15 | **UNBLOCKED** (R-20-PR exists) — not started |
 | 30 | RUBRIC-H7 `can-i-deploy` contract gate (R-20-H7) | 10,15,20,25 | not started — publish precondition |
 | 40 | Verification + release readiness (publish-or-hold) | 5,30 | not started |
 
 **Ladder remaining: 20c → 25 → 30 → 40, run SEQUENTIALLY** (F-34 — parallel 20∥25 was declined). Slices
-0/5/10/15 are landed and **20 is PARTIAL**. **Immediate next: resolve TC-54 + TC-55, then Slice 20c
+0/5/10/15 are landed and **20 is PARTIAL**. **Immediate next: resolve TC-59 + TC-55, then Slice 20c
 (`flush_embeddings()`) — commissioned as an orchestrator, NOT via `/goal`** (standing ruling `927ffb35`).
 See §1.
 
@@ -950,7 +950,7 @@ transcripts in §13.5. Ledger entries **TC-38…TC-42**. Committed with this clo
 dense_readiness/atomic-flip"*. Branch `orch-0.8.20-s20`, cut from **`ff4f07a0`**, terminal HEAD **`15c75c57`**.
 
 > **⚠ SLICE 20 IS NOT COMPLETE.** Two of the three scoped items closed. **`flush_embeddings()` did NOT land**
-> and must not be described anywhere as shipped. It is HELD on **TC-54** and **TC-55** (§14.5). The remainder
+> and must not be described anywhere as shipped. It is HELD on **TC-59** and **TC-55** (§14.5). The remainder
 > is tracked as **Slice 20c**.
 
 ### 14.1 What shipped
@@ -1039,7 +1039,7 @@ boundary.
 
 ### 14.5 What is HELD, and why — `flush_embeddings()`
 
-**TC-54 — the pin gate makes "propose AND land" mechanically impossible (p1, blocks 20c / 25 / 30).**
+**TC-59 — the pin gate makes "propose AND land" mechanically impossible (p1, blocks 20c / 25 / 30).**
 Plan §11 ruling 2 (HITL 2026-07-25) says new governed surface at 20/25/30 is **recorded as a proposal**, the
 branch **stays green**, and the accumulated delta goes to the HITL **once** at the 30 → 40 boundary. But
 `check-governed-surface-pin.sh` compares a sha256 **and** a git-blob-sha1 over the **raw bytes** of the allowlist,
@@ -1057,7 +1057,7 @@ the opposite — **reuse the shipped `drain(timeout_ms)` barrier instead**. Both
 otherwise keep misleading readers. **Mechanically load-bearing:** the shipped `drain` is **not** in the JSON
 allowlist — it sits in the `_INSTRUMENTATION` exclusion set hardcoded in **both** `src/python/tests/test_surface.py`
 and `src/ts/tests/surface.test.ts`. So *instrumentation* leaves the pinned JSON untouched and 20c lands clean,
-while *command* forces an allowlist edit and hits TC-54. **That must not be settled by whichever answer is easier
+while *command* forces an allowlist edit and hits TC-59. **That must not be settled by whichever answer is easier
 to land.** Design rider either way: `drain` is a **barrier** (wait-for-idle); `flush` must also be a **trigger**,
 so deferred/backfill rows have to be enqueued on the same runtime `drain` waits on.
 
@@ -1079,15 +1079,28 @@ Transcripts under `dev/plans/runs/codex/0.8.20/` (**TC-RUBRIC-7** path), committ
 
 ### 14.7 Closure artifacts
 
-The **four §9 transcripts** in §14.6, and ledger entries **TC-54…TC-58** in
-`dev/todos-and-considerations-ledger.jsonl` (**seq 81–85**) — TC-54 (pin-gate blocker), TC-55
-(`flush_embeddings` classification), TC-56 (the shipped `drain` defect), TC-57 (pre-existing governed-write ×
-projection-worker `EngineError::Storage` race, 7/8 at baseline), TC-58 (`ac_002` scans `$HOME` and
-false-positives on sibling repos). Committed with this close per **TC-23**.
+The **four §9 transcripts** in §14.6, the **closure witness** at `dev/plans/runs/0.8.20-slice-20-output.json`,
+and the Slice-20 ledger entries in `dev/todos-and-considerations-ledger.jsonl` — **TC-55, TC-56, TC-57, TC-58
+and TC-59**, at **seq 82–86**, plus the **seq 87** entry that restores **TC-54**. *(This is deliberately not
+stated as a contiguous `TC-54…TC-58` range: `TC-54` is **not** a Slice-20 item — it is the
+`.markdownlint-cli2.jsonc` observation, and the Slice-20 pin-gate blocker mis-filed under that id at seq 81 was
+reissued as **TC-59** at seq 86. Grepping `TC-54` in the ledger must not send a reader to the pin gate.)* By id:
+TC-59 (pin-gate blocker), TC-55 (`flush_embeddings` classification), TC-56 (the shipped `drain` defect), TC-57
+(pre-existing governed-write × projection-worker `EngineError::Storage` race, 7/8 at baseline), TC-58 (`ac_002`
+scans `$HOME` and false-positives on sibling repos). Committed with this close per **TC-23**.
 
 > **⚠ Two record defects found while writing this close, both corrected here — do not re-introduce them.**
-> (1) The TC-54…TC-58 ledger entries were **written but never committed** — they sat as an uncommitted diff in
-> the slice worktree and were minted at **seq 80–84**, which **collides** with the `seq 80` already on `main`
-> (the `.markdownlint-cli2.jsonc` observation). They are ported here **renumbered to seq 81–85**; every citation
-> of them uses the new numbers. (2) **No `0.8.20-slice-20*-output.json` closure witness was persisted** for any
-> sub-slice, unlike every prior 0.8.20 slice — a **TC-23 gap**, recorded rather than papered over.
+> (1) The five new Slice-20 ledger entries were **written but never committed** — they sat as an uncommitted
+> diff in the slice worktree and were minted at **seq 80–84**, which **collides** with the `seq 80` already on
+> `main` (the `.markdownlint-cli2.jsonc` observation). They are ported here **renumbered to seq 81–85**; every
+> citation of them uses the new numbers. **The same read-then-write race also produced a second, worse defect:
+> the entries were minted starting at the already-taken *id* `TC-54`, so the fold-to-latest silently overwrote
+> the markdownlint item — repaired **append-only** at **seq 86** (the pin-gate blocker reissued as **TC-59**)
+> and **seq 87** (`TC-54` restored to the markdownlint observation, `closed`), with every citation in this
+> document and in `plan-0.8.20.md` retargeted to `TC-59`; root cause is that `ledgerwrite` mints no id and
+> cannot detect that a caller-supplied id already exists, so concurrent agents reuse ids silently — tooling
+> work captured in the `TC-54` restoration entry, adjacent to `TC-53`.** (2) **No `0.8.20-slice-20*-output.json`
+> closure witness was persisted per-slice** in the usual location while the slice was in flight, unlike every
+> prior 0.8.20 slice — a **TC-23 gap**, recorded rather than papered over. The witness has since been recovered
+> from the (now prunable) slice worktree and committed **verbatim** as
+> `dev/plans/runs/0.8.20-slice-20-output.json`; producing it per-slice, at close, remains the process gap.

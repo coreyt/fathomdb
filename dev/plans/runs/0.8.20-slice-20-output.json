@@ -1,0 +1,51 @@
+{
+  "phase": "0.8.20-slice-20b-fix-2",
+  "baseline_sha": "9db3276588f38ced08d77f44e05830b726a81343",
+  "branch": "orch-0.8.20-s20",
+  "head_sha": "15c75c5789bf85083925e282c230e4794e4c82e8",
+  "commits": [
+    "a6e1bf21b8cdea118687164d02b9d59ca39c5f93: test(0.8.20-s20b): R-20-DR RED — dense_readiness is never populated",
+    "3ae399fdbf685cc9d5e2f51ca703a8a77b33cba2: feat(0.8.20-s20b): R-20-DR GREEN — derive dense_readiness; the flip is atomic by construction",
+    "d1a1cd20: test(0.8.20-s20b-fix-1): RED — the pending-work probe reports `embedding` forever",
+    "2b1f62d0d0ed59e2fdc4664f11e45b86a0e28ef7: fix(0.8.20-s20b-fix-1): GREEN — probe and scheduler share ONE edge-arm predicate",
+    "15c75c5789bf85083925e282c230e4794e4c82e8: docs(0.8.20-s20b-fix-2): codex §9 [P2] — interface docs carry the dense-readiness surface"
+  ],
+  "fix1_commits": [
+    "d1a1cd20 (RED)",
+    "2b1f62d0 (GREEN)"
+  ],
+  "fix2_commits": [
+    "15c75c57 (docs-only, single commit)"
+  ],
+  "findings_addressed": [
+    "codex §9 [P2] — interface docs stale for the dense_readiness surface"
+  ],
+  "fix2_scope": "DOCS ONLY. Files changed by 2b1f62d0..15c75c57: CHANGELOG.md, dev/DOC-INDEX.md, dev/doc-index/dev.md, dev/interfaces/python.md, dev/interfaces/rust.md, dev/interfaces/typescript.md, src/python/fathomdb/types.py (a `#:` DOCSTRING comment only — zero code lines). No Rust/TS source, no test logic, no SCHEMA_VERSION/MIGRATIONS (still 24), no flush_embeddings (part c, NOT implemented and deliberately NOT documented as shipped), no dev/acceptance.md, no dev/plans/plan-0.8.20.md, no dev/plans/runs/STATUS-0.8.20.md, no dev/plans/release-state-0.8.20.json.",
+  "fix2_what_was_documented": "The three interface files gained the readiness member on ProjectionSpec and lost the now-false 'the vector sub-object is stored here for Slice 20 to attach dense_readiness to' future-attachment wording (all three occurrences removed). Each states, verified against the code first: Rust `enum DenseReadiness { Ready, Embedding }` facade-re-exported + `ProjectionVector::dense_readiness`; wire spellings `ready`/`embedding` ONLY with `pending` RESERVED for the orthogonal ADMISSION axis (quarantine/trust) and never an index-readiness value; Py `vector_dense_readiness`, TS `vectorDenseReadiness` plus the net-new exported TS `DenseReadiness` string union; ENGINE-SET READ METADATA surfaced by read.projections; DERIVED never stored (no schema step, SCHEMA_VERSION stays 24); ACCEPT-INERT on configure_projections so read.projections output re-applies as a no-op, while the BINDINGS hard-reject readiness-with-vector=false and any spelling outside {ready, embedding} (notably `pending` and `\"\"`) through the EXISTING InvalidArgument / InvalidArgumentError / FDB_INVALID_ARGUMENT — no new error type minted; additive with zero net-new governed commands.",
+  "fix2_changelog": "CHANGELOG.md [Unreleased] `### Added`: one new entry 'Dense-index readiness on `ProjectionSpec.vector` (0.8.20, R-20-DR)' in the established bold-lead + sub-bullet shape used by the other 0.8.20 entries, plus `DenseReadiness` appended to the existing 'New public types' bullet. No new section invented; no `### Removed` entry needed (nothing removed).",
+  "fix2_code_vs_doc_discrepancies_found": [
+    "dev/interfaces/rust.md P1 claimed `GOVERNED_SURFACE_ALLOWLIST` holds 29 types AND that 0.8.20 Slice 15d 'adds the five projection-registry types' to it. Both false against src/rust/crates/fathomdb/tests/governed_surface.rs: the const holds 33 (asserted by name in t_074_rust_governed_surface_resolves) and lists NEITHER the five Projection* types NOR DenseReadiness — they are facade `pub use`s that sit OUTSIDE the pinned const. It also omitted the Slice 5c/5d group (SourceId, ExciseReport) that IS in the const. Corrected in this commit: 29 -> 33, 5c/5d named, and the projection types + DenseReadiness described accurately as re-exported-but-not-const-members (PROPOSED/NOT SIGNED). CODE WAS NOT CHANGED — this is a doc correction; whether DenseReadiness and the Projection* types SHOULD join the const is an orchestrator/HITL call tied to the AC-079 sign-off.",
+    "src/python/fathomdb/types.py said a bad readiness 'is a hard ``ValueError``'. The pyo3 binding raises InvalidArgumentError, created by `create_exception!(_fathomdb, InvalidArgumentError, EngineError)` where `EngineError` derives from PyException — NOT from ValueError. src/python/tests/test_slice20_dense_readiness.py asserts `pytest.raises(InvalidArgumentError, ...)`. The docstring comment was corrected; no code touched.",
+    "OUT-OF-SCOPE, NOT TOUCHED (flagged for the orchestrator): src/conformance/governed-surface-allowlist.json's `_comment` still carries the same future-tense phrasing — 'the `ProjectionSpec.vector` sub-object is where Slice 20's `dense_readiness` attaches additively'. The task pinned that file byte-identical, so it was left alone; it will need the same past-tense correction whenever the Slice-20 delta is added to that JSON for the AC-079 re-sign.",
+    "OUT-OF-SCOPE, NOT TOUCHED: CHANGELOG.md's existing R-20-E entry says 'Schema version 20 -> 21 (0.8.20)' while SCHEMA_VERSION is now 24 (later 0.8.20 slices added steps 22-24 without a changelog line). Pre-existing debt from earlier slices, outside this fix's mandate."
+  ],
+  "allowlist_byte_identical": "CONFIRMED — `git diff 2b1f62d0..HEAD -- src/conformance/governed-surface-allowlist.json scripts/governed-surface-pin.json` is EMPTY (0 files), and so is the same diff against the pre-slice baseline ff4f07a0. scripts/check-governed-surface-pin.sh rc=0.",
+  "fix2_gates": {
+    "scripts/check-ledgers.sh": 0,
+    "scripts/lint-findings.sh": 0,
+    "scripts/lint-plan-anchors.sh": 0,
+    "scripts/lint-design-status.sh": 0,
+    "scripts/check-governed-surface-pin.sh": 0,
+    "scripts/check-release-state-views.sh": 0,
+    "scripts/agent-lint-md.sh": 0,
+    "cargo check --workspace --all-targets": 0,
+    "scripts/agent-typecheck.sh": "1 — EXACTLY 7 pyright errors, the unchanged red baseline",
+    "typescript suite": "NOT RUN — no src/ts/src/*.ts file was touched (the index.ts doc comment already described the readiness field in accurate present tense, so no correction was needed there)",
+    "scripts/agent-test.sh": "DELIBERATELY NOT RUN (vacuous aggregate signal, TC-16/F-30)"
+  },
+  "fix2_tooling_note": "scripts/agent-lint-md.sh hard-fails (TC-37) when node_modules/.bin/markdownlint-cli2 is absent, which is the normal state in a fresh worktree. Per the script's own instruction a symlink `node_modules -> /home/coreyt/projects/fathomdb/node_modules` was created for the run and REMOVED afterwards so the tree is clean; recreate it to re-run that gate. The first lint run caught two real defects introduced by this commit (a raw `|` inside a markdown TABLE cell in dev/doc-index/dev.md broke the column count, MD056 + 3x MD038); both were fixed and the re-run is rc=0. prettier was NOT used on markdown.",
+  "blockers_encountered": [
+    "NONE. No spec ambiguity and no impossible assertion."
+  ],
+  "next_step_for_orchestrator": "1) Run codex §9 over 2b1f62d0..15c75c57 (fix-2 only) or 9db32765..15c75c57 (whole slice). 2) Cherry-pick 15c75c57 on top of the already-planned a6e1bf21 + 3ae399fd + d1a1cd20 + 2b1f62d0. 3) DECIDE the rust.md P1 correction: this commit now states as FACT that DenseReadiness and the five Slice 15d Projection* types are facade re-exports OUTSIDE GOVERNED_SURFACE_ALLOWLIST (const = 33). If the intent was for them to be const members, that is a CODE change in src/rust/crates/fathomdb/tests/governed_surface.rs and belongs to a later slice / the AC-079 sign-off, not here. 4) The allowlist JSON `_comment` still calls dense_readiness a future attachment — fix it when the Slice-20 delta is written into that file for the re-sign. 5) Still open from fix-1 and UNCHANGED: the accept-inert-vs-hard-reject deviation ruling, and the report-upward that fix-1 also closed a pre-existing defect in the shipped public Engine::drain (may warrant its own CHANGELOG line — NOT written by fix-2, since it is your call)."
+}

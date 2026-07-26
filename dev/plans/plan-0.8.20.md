@@ -368,11 +368,11 @@ metadata (**no stored column, no schema step**), plus the **atomic readiness-fli
 construction**. **ZERO net-new governed commands.**
 
 **⛔ THE REMAINDER — `flush_embeddings()` — DID NOT LAND, and must not be described as shipped.** It is tracked
-as **Slice 20c** and is blocked on two ledger items: **TC-54** (the governed-surface **pin gate** hashes the raw
+as **Slice 20c** and is blocked on two ledger items: **TC-59** (the governed-surface **pin gate** hashes the raw
 bytes of the allowlist and `preflight.sh --landing` treats it as a HARD fail, so §11 ruling 2's *"record a
 proposal and land"* is mechanically impossible) and **TC-55** (is `flush_embeddings()` a governed **command**, per
 §11 ruling 2, or **instrumentation**, per `api-surface.md` C4's "reuse `drain`"? — the answer decides whether 20c
-trips the pin at all). **➡ IMMEDIATE NEXT: resolve TC-54 + TC-55, then Slice 20c.** Commission it as an
+trips the pin at all). **➡ IMMEDIATE NEXT: resolve TC-59 + TC-55, then Slice 20c.** Commission it as an
 **orchestrator** — **NOT** `/goal` (standing ruling `927ffb35`). Remaining ladder: **20c → 25 → 30 → 40**,
 sequentially. Full close record: `runs/STATUS-0.8.20.md` **§14**. Board of record: `runs/STATUS-0.8.20.md`; open
 HITL decisions: §11.
@@ -668,7 +668,7 @@ broken code (§0.1). **Mint ACs from AC-079** (§3). **Run NO eu7 — R-20-EU7 i
 >    proposal (branch stays green, existing practice) and the **accumulated 20/25/30 delta goes to the HITL
 >    ONCE, at the Slice 30 → Slice 40 boundary**. Slice 20 is expected to trip it (`flush_embeddings()` reads
 >    as a net-new command; `dense_readiness` attaches additively to `ProjectionSpec.vector`).
->    **⚠ 2026-07-26 — this ruling is NOT MECHANICALLY EXECUTABLE as the gate is wired (TC-54, p1).**
+>    **⚠ 2026-07-26 — this ruling is NOT MECHANICALLY EXECUTABLE as the gate is wired (TC-59, p1).**
 >    `check-governed-surface-pin.sh` hashes the **raw bytes** of the allowlist and `preflight.sh --landing`
 >    treats it as a **HARD** fail, so recording a proposal *and landing* is impossible — **any** allowlist diff
 >    blocks the land. Slice 20 was split around it (part b adds zero commands and landed at `26b237c0`; part c
