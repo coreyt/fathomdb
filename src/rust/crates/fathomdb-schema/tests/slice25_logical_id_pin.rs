@@ -322,6 +322,124 @@ fn pin_still_ignores_qualified_non_canonical_tables() {
     }
 }
 
+/// **SQLite's `UPDATE OR <conflict-action>` prefix is not an escape.** All five
+/// actions (`ROLLBACK`, `ABORT`, `FAIL`, `IGNORE`, `REPLACE`) sit BETWEEN the
+/// `UPDATE` keyword and the table name, so a naive "first token after `UPDATE`"
+/// extractor reads the table as `OR` and lets the backfill through. Verified
+/// against real SQLite 3.45.1 before this assertion was written: every spelling
+/// below parses and targets `canonical_nodes` / `canonical_edges`.
+///
+/// (Reviewer finding, codex §9 [P2] on Slice 25 fix-1.)
+#[test]
+fn pin_rejects_update_with_an_or_conflict_clause() {
+    for action in ["ROLLBACK", "ABORT", "FAIL", "IGNORE", "REPLACE"] {
+        for offender in [
+            format!("UPDATE OR {action} canonical_nodes SET logical_id = 'minted' WHERE 1;"),
+            format!("UPDATE OR {action} canonical_edges SET logical_id = 'minted' WHERE 1;"),
+            // …and composed with the fix-1 schema qualifier, in every spelling.
+            format!("UPDATE OR {action} main.canonical_nodes SET logical_id = 'minted';"),
+            format!("UPDATE OR {action} temp . canonical_edges SET logical_id = 'minted';"),
+            format!(r#"UPDATE OR {action} "main"."canonical_nodes" SET logical_id = 'x';"#),
+        ] {
+            check_migration_logical_id_pin("099_or_conflict.sql", &offender).unwrap_err_or_panic(
+                "an UPDATE OR <conflict-action> backfill must still be rejected",
+                &offender,
+            );
+        }
+    }
+    // Lowercase is the same statement to SQLite, so it is to the guard.
+    let lowered = "update or replace main.canonical_nodes set logical_id = 'x';";
+    check_migration_logical_id_pin("099_or_lower.sql", lowered)
+        .unwrap_err_or_panic("case is not an escape", lowered);
+}
+
+/// The analogous `INSERT OR <conflict-action> INTO …` shape — the same finding
+/// family. The insert arm anchors on ` INTO `, which the conflict clause
+/// precedes, so this is a REGRESSION pin rather than a hole: it must stay
+/// rejected whatever the extractor does next.
+#[test]
+fn pin_rejects_insert_with_an_or_conflict_clause() {
+    for action in ["ROLLBACK", "ABORT", "FAIL", "IGNORE", "REPLACE"] {
+        for offender in [
+            format!(
+                "INSERT OR {action} INTO canonical_nodes(write_cursor, logical_id) VALUES(1,'x');"
+            ),
+            format!("INSERT OR {action} INTO main.canonical_edges(logical_id) VALUES('x');"),
+            // No column list: writes every column, identity included.
+            format!("INSERT OR {action} INTO canonical_nodes SELECT * FROM canonical_nodes_old;"),
+        ] {
+            check_migration_logical_id_pin("099_insert_or.sql", &offender).unwrap_err_or_panic(
+                "an INSERT OR <conflict-action> backfill must still be rejected",
+                &offender,
+            );
+        }
+    }
+}
+
+/// **Control — the conflict-clause skip must not widen into a substring match.**
+/// A lookalike table is none of the pin's business, conflict clause or not.
+#[test]
+fn pin_still_ignores_or_conflict_updates_on_unrelated_tables() {
+    for accepted in [
+        "UPDATE OR REPLACE canonical_nodes_backup SET logical_id = 'x' WHERE 1;",
+        "UPDATE OR IGNORE main.canonical_edges_old SET logical_id = 'x';",
+        // `or_ledger` is a table whose name merely STARTS with the OR keyword's
+        // letters; skipping the clause must be token-exact.
+        "UPDATE or_ledger SET logical_id = 'x';",
+    ] {
+        check_migration_logical_id_pin("098_unrelated_or.sql", accepted).unwrap_or_else(|err| {
+            panic!("an unrelated table is none of the pin's business: {accepted} → {err}")
+        });
+    }
+}
+
+/// **The trigger arm must identify its target by TOKEN, not by substring.**
+/// `canonical_nodes_backup` is a different table; a trigger that stamps
+/// `logical_id` on the BACKUP is legitimate recreate/backup scaffolding and the
+/// pin has no business rejecting it. (Reviewer finding, codex §9 [P3] on Slice 25
+/// fix-1: `statement.contains(table)` conscripted every lookalike name.)
+#[test]
+fn pin_accepts_a_trigger_on_a_lookalike_table() {
+    for accepted in [
+        "CREATE TRIGGER backup_stamp AFTER INSERT ON canonical_nodes_backup BEGIN \
+             UPDATE canonical_nodes_backup SET logical_id = NEW.logical_id \
+             WHERE write_cursor = NEW.write_cursor; END;",
+        "CREATE TRIGGER edge_backup_stamp AFTER INSERT ON main.canonical_edges_old BEGIN \
+             UPDATE canonical_edges_old SET logical_id = 'x' WHERE 1; END;",
+    ] {
+        check_migration_logical_id_pin("098_backup_trigger.sql", accepted).unwrap_or_else(|err| {
+            panic!("a trigger on a NON-canonical lookalike table must be accepted: {err}")
+        });
+    }
+}
+
+/// **Control — precision on the trigger TARGET must not cost the trigger BODY.**
+/// A trigger declared on a lookalike table whose body writes `logical_id` on a
+/// REAL canonical table is the same deferred backfill and must stay rejected,
+/// whether the offending statement is the first in the body (glued to the
+/// `CREATE TRIGGER` head by the `;` split) or a later one (its own fragment).
+#[test]
+fn pin_rejects_a_lookalike_trigger_whose_body_writes_a_canonical_logical_id() {
+    for offender in [
+        // First body statement — same fragment as the head.
+        "CREATE TRIGGER sneaky AFTER INSERT ON canonical_nodes_backup BEGIN \
+             UPDATE canonical_nodes SET logical_id = 'minted' \
+             WHERE write_cursor = NEW.write_cursor; END;",
+        // Later body statement — its own fragment.
+        "CREATE TRIGGER sneakier AFTER INSERT ON canonical_nodes_backup BEGIN \
+             INSERT INTO audit_log(note) VALUES('backup'); \
+             UPDATE canonical_nodes SET logical_id = 'minted'; END;",
+        // …and through the fix-1 qualifier.
+        "CREATE TRIGGER sneakiest AFTER INSERT ON canonical_nodes_backup BEGIN \
+             UPDATE main.canonical_edges SET logical_id = 'minted'; END;",
+    ] {
+        check_migration_logical_id_pin("099_sneaky_trigger.sql", offender).unwrap_err_or_panic(
+            "a trigger BODY that writes a canonical logical_id must still be rejected",
+            offender,
+        );
+    }
+}
+
 /// A trigger is a deferred `UPDATE`. One that writes `logical_id` on a canonical
 /// table is the same offence, executed later.
 #[test]
