@@ -249,7 +249,18 @@ Rust, Python and TypeScript:
   ```
 
 - **Ordering does not matter.** Write-then-declare and declare-then-write behave
-  identically.
+  identically. The write path performs the **same** backfill the declaration
+  does, so rows of that kind written by an earlier session — for instance one
+  opened with `useDefaultEmbedder: false`, where the declaration persisted but
+  deferred — are picked up too, rather than being left behind a `"ready"` that is
+  not true of them.
+- **The dense arm covers only the engine's locked `kind` vocabulary.** A
+  `searchable→vector` declaration turns the dense arm on for node kinds in
+  `{email, article, paper, meeting, note, todo, doc}`. Rows of ANY other `kind`
+  are accepted and stay lexically searchable, but get **no vector** and are not
+  counted as outstanding work, so readiness still reaches `"ready"`. This is
+  **not** an error condition: `engine.write` does not reject them, nothing
+  rejects, and there is no verb to ask about it.
 - **Idempotent.** Re-applying an already-satisfied declaration re-embeds nothing
   and resolves `{ unchanged: true }`.
 - **Dropping the last `searchable→vector` declaration turns the dense arm back

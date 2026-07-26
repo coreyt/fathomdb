@@ -181,7 +181,17 @@ AC-050c) gates merges against this invariant.
     its vector at rest, asserted in Rust, Python and TypeScript.
   - **Ordering-independent.** Write-then-declare and declare-then-write reach
     the same state; a kind first written after the declaration is enrolled on
-    the write path.
+    the write path, and that write-path enrolment runs the **same** backfill the
+    declaration does — so rows of that kind written by an earlier session (for
+    instance one opened without an embedder, where the declaration persisted but
+    deferred) are picked up rather than left behind a `"ready"` that is not true
+    of them.
+  - **Scoped to the engine's locked `kind` vocabulary.** The dense arm turns on
+    for node kinds in `{email, article, paper, meeting, note, todo, doc}` (plus
+    the internal `edge_fact` for edge bodies). Rows of any other `kind` are
+    accepted and stay lexically searchable but get no vector, and are not counted
+    as outstanding work, so readiness still reaches `"ready"`. This is not an
+    error condition: nothing rejects the write and no new surface reports it.
   - **Idempotent.** Re-applying a satisfied declaration rewinds nothing and
     re-embeds nothing.
   - **Reversible.** `drop`ping the last `searchable→vector` declaration turns

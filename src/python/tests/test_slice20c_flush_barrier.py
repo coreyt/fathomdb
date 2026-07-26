@@ -38,6 +38,10 @@ from fathomdb import Engine, ProjectionRole, ProjectionSpec, read
 
 _SOURCE_ID = "py-test:slice20c"
 _DRAIN_TIMEOUT_S = 120.0
+# fix-2: the arms whose FAILURE MODE is a wedged projection worker use a shorter
+# barrier — an assertion that "`drain` did not hang" should not cost two minutes
+# per arm when it is red.
+_WEDGE_TIMEOUT_S = 30.0
 
 
 def _skip_if_no_network() -> None:
@@ -46,7 +50,11 @@ def _skip_if_no_network() -> None:
 
 
 def _node(logical_id: str, body_json: str) -> dict:
-    return {"kind": "doc", "body": body_json, "logical_id": logical_id, "source_id": _SOURCE_ID}
+    return _node_of_kind("doc", logical_id, body_json)
+
+
+def _node_of_kind(kind: str, logical_id: str, body_json: str) -> dict:
+    return {"kind": kind, "body": body_json, "logical_id": logical_id, "source_id": _SOURCE_ID}
 
 
 def _vector_spec(name: str = "summary") -> ProjectionSpec:
@@ -98,6 +106,28 @@ def _leaf_rows_without_vectors(path: str) -> int:
         " LEFT JOIN _fathomdb_vector_rows v ON v.write_cursor = n.write_cursor"
         " WHERE n.row_kind IN ('leaf', 'coverage') AND v.write_cursor IS NULL",
     )
+
+
+def _leaf_rows_of_kind_without_vectors(path: str, kind: str) -> int:
+    """The same un-joined at-rest probe, narrowed to one ``canonical_nodes.kind``.
+
+    fix-2 needs the narrowed form because its fixture deliberately holds a kind
+    that gets NO dense arm, so the corpus-wide count is legitimately non-zero. It
+    still does not join ``_fathomdb_vector_kinds``.
+    """
+
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM canonical_nodes n"
+            " LEFT JOIN _fathomdb_vector_rows v ON v.write_cursor = n.write_cursor"
+            " WHERE n.row_kind IN ('leaf', 'coverage') AND n.kind = ?"
+            " AND v.write_cursor IS NULL",
+            (kind,),
+        ).fetchone()
+        return int(row[0])
+    finally:
+        conn.close()
 
 
 def _vector_kind_registered(path: str, kind: str = "doc") -> bool:
@@ -282,3 +312,115 @@ def test_dropping_the_last_vector_projection_stops_embedding(tmp_path) -> None:
         assert _leaf_rows_without_vectors(path) == 0
     finally:
         engine.close()
+
+
+def test_a_kind_the_vector_writer_cannot_commit_gets_no_dense_arm(tmp_path) -> None:
+    """fix-2 (codex §9 [P1]) — enrolment is restricted to COMMIT-ABLE kinds.
+
+    The engine maps a node ``kind`` onto a locked ``source_type`` partition-key
+    vocabulary before it can commit a vector, and ``write`` accepts any non-empty
+    ``kind``. Enrolling a kind outside that vocabulary made the scheduler pick the
+    row up while the commit could never record a terminal: the row stayed pending
+    forever, ``drain`` burned its whole timeout, and ``vector_dense_readiness``
+    stuck on ``"embedding"`` — starving the rows whose kinds ARE commit-able.
+
+    Both enrolment doors are exercised: ``invoice`` present in the corpus at
+    DECLARATION time, and a second ``invoice`` written AFTER the declaration
+    (the write-path late-enrolment door).
+
+    The un-enrolled kind is not an error: nothing rejects it, no exception is
+    raised, and there is no verb to ask about it. It just gets no vector.
+    """
+
+    _skip_if_no_network()
+    path = str(tmp_path / "flush_uncommittable.sqlite")
+    engine = Engine.open(path, use_default_embedder=True)
+    try:
+        engine.write(
+            [
+                _node("N1", '{"summary":"a dense meaning"}'),
+                _node_of_kind("invoice", "I1", '{"summary":"payable in 30 days"}'),
+            ]
+        )
+        engine.drain(timeout_s=_WEDGE_TIMEOUT_S)
+
+        # ---- declare-time enrolment ----
+        engine.configure_projections([_vector_spec()])
+        engine.drain(timeout_s=_WEDGE_TIMEOUT_S)  # WEDGES at fix-2 baseline
+        assert _readiness(engine) == "ready", (
+            "a kind the engine cannot commit a vector for must not hold the whole corpus in "
+            '"embedding" forever'
+        )
+
+        # ---- late (write-path) enrolment ----
+        engine.write([_node_of_kind("invoice", "I2", '{"summary":"also payable"}')])
+        engine.drain(timeout_s=_WEDGE_TIMEOUT_S)  # WEDGES at fix-2 baseline
+        assert _readiness(engine) == "ready"
+    finally:
+        engine.close()
+
+    assert _vector_kind_registered(path, "doc"), "the commit-able kind still gets its dense arm"
+    assert _leaf_rows_of_kind_without_vectors(path, "doc") == 0, "…and its row is embedded"
+    assert not _vector_kind_registered(path, "invoice"), (
+        "ENROLMENT MUST BE RESTRICTED TO COMMIT-ABLE KINDS"
+    )
+    assert _vector_rows(path) == 1, "exactly the one commit-able row was embedded"
+    assert _leaf_rows_of_kind_without_vectors(path, "invoice") == 2, "no dense arm for that kind"
+    assert (
+        _query(
+            path,
+            "SELECT COUNT(*) FROM operational_mutations"
+            " WHERE collection_name = 'projection_failures'",
+        )
+        == 0
+    ), "a kind with no dense arm is not a FAILURE — it must not pollute the failure audit"
+
+
+def test_late_enrolment_backfills_rows_a_no_embedder_session_stranded(tmp_path) -> None:
+    """fix-2 (codex §9 [P2]) — a LATE enrolment owes the same backfill.
+
+    A database persists a ``searchable→vector`` declaration while opened WITHOUT
+    an embedder (it defers, enrolling nothing), then reopens WITH one and writes
+    the same kind BEFORE re-applying the projection. The write enrols the kind —
+    and used to enqueue only its OWN row, leaving every row from the no-embedder
+    session holding a permanent terminal with no vector. After the flush,
+    readiness reported ``"ready"`` with pre-existing vector-eligible rows
+    unembedded: a FALSE READY, the exact defect class R-20-DR exists to
+    eliminate.
+    """
+
+    _skip_if_no_network()
+    path = str(tmp_path / "flush_late_enrol_backfill.sqlite")
+
+    # ---- session 1: no embedder. The declaration persists and DEFERS. ----
+    engine = Engine.open(path, use_default_embedder=False)
+    try:
+        engine.configure_projections([_vector_spec()])
+        engine.write(
+            [
+                _node("N1", '{"summary":"stranded one"}'),
+                _node("N2", '{"summary":"stranded two"}'),
+            ]
+        )
+        engine.drain(timeout_s=5.0)
+        assert not _vector_kind_registered(path), "fixture: a dead dense arm enrols nothing"
+        assert _leaf_rows_without_vectors(path) == 2, "fixture: two rows are stranded"
+    finally:
+        engine.close()
+
+    # ---- session 2: SAME database, now WITH an embedder. The projection is NOT
+    # re-applied — the WRITE is what turns the dense arm on. ----
+    engine = Engine.open(path, use_default_embedder=True)
+    try:
+        engine.write([_node("N3", '{"summary":"written before re-applying"}')])
+        assert _vector_kind_registered(path), "the write LATE-ENROLLED the kind"
+        engine.drain(timeout_s=_DRAIN_TIMEOUT_S)
+        assert _readiness(engine) == "ready"
+    finally:
+        engine.close()
+
+    assert _leaf_rows_without_vectors(path) == 0, (
+        'FALSE-READY: `drain()` returned and readiness reads "ready", but rows written in the '
+        "no-embedder session still have no vector at rest"
+    )
+    assert _vector_rows(path) == 3, "all three rows were embedded"

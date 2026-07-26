@@ -23,7 +23,8 @@
 // These tests need a LIVE embedder (`useDefaultEmbedder: true`) because the
 // dense arm is what is being flushed; they honour the standing
 // `FATHOMDB_SKIP_NETWORK_TESTS` guard, exactly as `embedder-event-narrowing`
-// does. The final test needs no embedder and therefore always runs.
+// does. The "declaration without a live embedder" test needs no embedder and
+// therefore always runs.
 //
 // ZERO net-new governed commands: this rides the already-governed
 // `configureProjections` / `read.projections` verbs plus the shipped
@@ -39,9 +40,17 @@ import { freshDbPath } from "./helpers.js";
 
 const SOURCE = "ts-test:slice20c";
 const DRAIN_TIMEOUT_MS = 120_000;
+// fix-2: the arms whose FAILURE MODE is a wedged projection worker use a shorter
+// barrier — an assertion that "`drain` did not hang" should not cost two minutes
+// per arm when it is red.
+const WEDGE_TIMEOUT_MS = 30_000;
 
 function node(logicalId: string, bodyJson: string): object {
-  return { kind: "doc", body: bodyJson, logicalId, sourceId: SOURCE };
+  return nodeOfKind("doc", logicalId, bodyJson);
+}
+
+function nodeOfKind(kind: string, logicalId: string, bodyJson: string): object {
+  return { kind, body: bodyJson, logicalId, sourceId: SOURCE };
 }
 
 function vectorSpec(name = "summary"): ProjectionSpec {
@@ -101,6 +110,22 @@ function leafRowsWithoutVectors(path: string): number {
     "SELECT COUNT(*) AS c FROM canonical_nodes n" +
       " LEFT JOIN _fathomdb_vector_rows v ON v.write_cursor = n.write_cursor" +
       " WHERE n.row_kind IN ('leaf', 'coverage') AND v.write_cursor IS NULL",
+  );
+}
+
+/**
+ * The same un-joined at-rest probe, narrowed to one `canonical_nodes.kind`.
+ * fix-2 needs the narrowed form because its fixture deliberately holds a kind
+ * that gets NO dense arm, so the corpus-wide count is legitimately non-zero. It
+ * still does not join `_fathomdb_vector_kinds`.
+ */
+function leafRowsOfKindWithoutVectors(path: string, kind: string): number {
+  return count(
+    path,
+    "SELECT COUNT(*) AS c FROM canonical_nodes n" +
+      " LEFT JOIN _fathomdb_vector_rows v ON v.write_cursor = n.write_cursor" +
+      " WHERE n.row_kind IN ('leaf', 'coverage')" +
+      ` AND n.kind = '${kind}' AND v.write_cursor IS NULL`,
   );
 }
 
@@ -288,4 +313,116 @@ test("dropping the last vector projection un-enrols the kind and stops embedding
   } finally {
     await engine.close();
   }
+});
+
+test("a kind the vector writer cannot commit gets no dense arm", async () => {
+  // fix-2 (codex §9 [P1]) — enrolment is restricted to COMMIT-ABLE kinds.
+  //
+  // The engine maps a node `kind` onto a locked `source_type` partition-key
+  // vocabulary before it can commit a vector, and `write` accepts any non-empty
+  // `kind`. Enrolling a kind outside that vocabulary made the scheduler pick the
+  // row up while the commit could never record a terminal: the row stayed pending
+  // forever, `drain` burned its whole timeout, and `vectorDenseReadiness` stuck on
+  // `"embedding"` — starving the rows whose kinds ARE commit-able.
+  //
+  // Both enrolment doors are exercised: `invoice` present in the corpus at
+  // DECLARATION time, and a second `invoice` written AFTER the declaration (the
+  // write-path late-enrolment door).
+  //
+  // The un-enrolled kind is not an error: nothing rejects it, nothing throws, and
+  // there is no verb to ask about it. It just gets no vector.
+  if (skipNetwork()) return;
+  const path = freshDbPath();
+  const engine = await Engine.open(path, { useDefaultEmbedder: true });
+  try {
+    await engine.write([
+      node("N1", '{"summary":"a dense meaning"}'),
+      nodeOfKind("invoice", "I1", '{"summary":"payable in 30 days"}'),
+    ]);
+    await engine.drain(WEDGE_TIMEOUT_MS);
+
+    // ---- declare-time enrolment ----
+    await engine.configureProjections([vectorSpec()]);
+    await engine.drain(WEDGE_TIMEOUT_MS); // WEDGES at fix-2 baseline
+    assert.equal(
+      await readiness(engine),
+      "ready",
+      'a kind the engine cannot commit a vector for must not hold the whole corpus in "embedding"',
+    );
+
+    // ---- late (write-path) enrolment ----
+    await engine.write([nodeOfKind("invoice", "I2", '{"summary":"also payable"}')]);
+    await engine.drain(WEDGE_TIMEOUT_MS); // WEDGES at fix-2 baseline
+    assert.equal(await readiness(engine), "ready");
+  } finally {
+    await engine.close();
+  }
+
+  assert.equal(vectorKindRegistered(path, "doc"), true, "the commit-able kind keeps its dense arm");
+  assert.equal(leafRowsOfKindWithoutVectors(path, "doc"), 0, "…and its row is embedded");
+  assert.equal(
+    vectorKindRegistered(path, "invoice"),
+    false,
+    "ENROLMENT MUST BE RESTRICTED TO COMMIT-ABLE KINDS",
+  );
+  assert.equal(vectorRows(path), 1, "exactly the one commit-able row was embedded");
+  assert.equal(leafRowsOfKindWithoutVectors(path, "invoice"), 2, "no dense arm for that kind");
+  assert.equal(
+    count(
+      path,
+      "SELECT COUNT(*) AS c FROM operational_mutations" +
+        " WHERE collection_name = 'projection_failures'",
+    ),
+    0,
+    "a kind with no dense arm is not a FAILURE — it must not pollute the failure audit",
+  );
+});
+
+test("late enrolment backfills the rows a no-embedder session stranded", async () => {
+  // fix-2 (codex §9 [P2]) — a LATE enrolment owes the same backfill.
+  //
+  // A database persists a `searchable→vector` declaration while opened WITHOUT an
+  // embedder (it defers, enrolling nothing), then reopens WITH one and writes the
+  // same kind BEFORE re-applying the projection. The write enrols the kind — and
+  // used to enqueue only its OWN row, leaving every row from the no-embedder
+  // session holding a permanent terminal with no vector. After the flush,
+  // readiness reported `"ready"` with pre-existing vector-eligible rows
+  // unembedded: a FALSE READY, the exact defect class R-20-DR exists to eliminate.
+  if (skipNetwork()) return;
+  const path = freshDbPath();
+
+  // ---- session 1: no embedder. The declaration persists and DEFERS. ----
+  const cold = await Engine.open(path, { useDefaultEmbedder: false });
+  try {
+    await cold.configureProjections([vectorSpec()]);
+    await cold.write([
+      node("N1", '{"summary":"stranded one"}'),
+      node("N2", '{"summary":"stranded two"}'),
+    ]);
+    await cold.drain(5_000);
+    assert.equal(vectorKindRegistered(path), false, "fixture: a dead dense arm enrols nothing");
+    assert.equal(leafRowsWithoutVectors(path), 2, "fixture: two rows are stranded");
+  } finally {
+    await cold.close();
+  }
+
+  // ---- session 2: SAME database, now WITH an embedder. The projection is NOT
+  // re-applied — the WRITE is what turns the dense arm on. ----
+  const warm = await Engine.open(path, { useDefaultEmbedder: true });
+  try {
+    await warm.write([node("N3", '{"summary":"written before re-applying"}')]);
+    assert.equal(vectorKindRegistered(path), true, "the write LATE-ENROLLED the kind");
+    await warm.drain(DRAIN_TIMEOUT_MS);
+    assert.equal(await readiness(warm), "ready");
+  } finally {
+    await warm.close();
+  }
+
+  assert.equal(
+    leafRowsWithoutVectors(path),
+    0,
+    'FALSE-READY: `drain` resolved and readiness reads "ready", but rows written in the ' +
+      "no-embedder session still have no vector at rest",
+  );
+  assert.equal(vectorRows(path), 3, "all three rows were embedded");
 });

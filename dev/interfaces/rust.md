@@ -376,7 +376,19 @@ in Rust, Python and TypeScript:
   reported `Ready` with no vectors and nothing that would ever create them.
 - **Ordering does not matter.** Write-then-declare and declare-then-write behave
   identically: a kind first written after the declaration is enrolled on the write
-  path, before the decision to wake the dispatcher is taken.
+  path, before the decision to wake the dispatcher is taken. That write-path
+  enrolment performs the **same** backfill the declaration does (fix-2), so rows
+  of that kind written by an earlier session — for instance one opened without an
+  embedder, where the declaration persisted but deferred — are picked up too,
+  rather than being left behind a `Ready` that is not true of them.
+- **The dense arm covers only the engine's locked `kind` vocabulary** (fix-2).
+  A `searchable→vector` declaration turns the dense arm on for node kinds in
+  `{email, article, paper, meeting, note, todo, doc}` (plus the engine-internal
+  `edge_fact` for edge bodies). Rows of ANY other `kind` are accepted and stay
+  lexically searchable, but get **no vector** and are not counted as outstanding
+  work, so readiness still reaches `Ready`. This is **not** an error condition:
+  the write is not rejected, no typed error is raised, and there is no verb to
+  ask about it — it is the same treatment those kinds had before Slice 20c.
 - **Idempotent.** Re-applying an already-satisfied declaration re-opens nothing,
   rewinds no watermark, and re-embeds nothing (`ProjectionDelta::unchanged`).
 - **Dropping the last `searchable→vector` declaration turns the dense arm back
