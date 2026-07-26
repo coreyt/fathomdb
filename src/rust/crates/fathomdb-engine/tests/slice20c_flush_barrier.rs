@@ -62,10 +62,11 @@ struct CountingEmbedder {
 
 impl CountingEmbedder {
     fn new() -> Self {
-        Self {
-            identity: EmbedderIdentity::new("deterministic", "rev-a", 384),
-            calls: Arc::new(AtomicUsize::new(0)),
-        }
+        Self::with_identity(EmbedderIdentity::new("deterministic", "rev-a", 384))
+    }
+
+    fn with_identity(identity: EmbedderIdentity) -> Self {
+        Self { identity, calls: Arc::new(AtomicUsize::new(0)) }
     }
 }
 
@@ -352,6 +353,108 @@ fn reapplying_a_satisfied_vector_declaration_does_not_rewind_or_re_embed() {
         calls_before,
         "an idempotent re-apply must NOT re-embed an already-embedded row"
     );
+
+    opened.engine.close().unwrap();
+}
+
+/// Raw: how many `projection_failures` audit rows exist? The no-embedder path
+/// must generate NONE — a declaration that queued doomed embeds would show up
+/// here.
+fn projection_failure_rows(conn: &rusqlite::Connection) -> i64 {
+    conn.query_row(
+        "SELECT COUNT(*) FROM operational_mutations
+         WHERE collection_name = 'projection_failures'",
+        [],
+        |r| r.get::<_, i64>(0),
+    )
+    .unwrap_or(0)
+}
+
+/// **The live-embedder gate, and the graceful-GRAFT that pays for it.**
+///
+/// With `EmbedderChoice::None` there is no dense arm at all, so declaring
+/// `searchable→vector` must PERSIST and DEFER (Q6a graceful-absent, exactly like
+/// `rankable`) rather than enqueue embeds that could only retry to a `failed`
+/// terminal and pollute `projection_failures`. That deferral is only honest if
+/// the work actually grafts on later — so the second half of this test reopens
+/// the SAME database WITH an embedder, re-applies the SAME spec, and requires the
+/// backfill to run and the vectors to land at rest.
+#[test]
+fn a_declaration_without_a_live_embedder_defers_then_grafts_on_reapply() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "flush_barrier_no_embedder");
+
+    // ---- session 1: no embedder ----
+    {
+        let opened = Engine::open(path.clone()).expect("open without embedder");
+        let engine = &opened.engine;
+        engine.write(&[node("doc", "N1", r#"{"summary":"a dense meaning"}"#)]).expect("write");
+        engine.configure_projections(&[vector_spec("summary")], &[]).expect("configure");
+
+        assert_eq!(
+            readiness(engine, "summary"),
+            Some(DenseReadiness::Ready),
+            "with no live embedder there is no dense arm, so nothing is outstanding"
+        );
+        engine.drain(5_000).expect("drain must not burn its timeout on a dead dense arm");
+
+        let conn = ro(&path);
+        assert!(
+            !vector_kind_registered(&conn, "doc"),
+            "a declaration with no live embedder must NOT enrol the kind"
+        );
+        assert_eq!(
+            projection_failure_rows(&conn),
+            0,
+            "no doomed embeds may be queued, so no projection_failures audit rows"
+        );
+        opened.engine.close().unwrap();
+    }
+
+    // ---- session 2: SAME database, now WITH an embedder ----
+    //
+    // The embedder must carry the identity session 1 pinned into
+    // `_fathomdb_embedder_profiles`, or the reopen fails closed on
+    // `EmbedderIdentityMismatch` (ADR-0.6.0-vector-identity-embedder-owned).
+    // Read it back from the file rather than hard-coding the pinned revision, so
+    // this fixture cannot rot against a default-identity change.
+    let stored_identity = {
+        let conn = ro(&path);
+        conn.query_row(
+            "SELECT name, revision, dimension FROM _fathomdb_embedder_profiles
+             WHERE profile = 'default'",
+            [],
+            |r| {
+                Ok(EmbedderIdentity::new(
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, u32>(2)?,
+                ))
+            },
+        )
+        .expect("stored default embedder identity")
+    };
+    let embedder = CountingEmbedder::with_identity(stored_identity);
+    let calls = Arc::clone(&embedder.calls);
+    let opened = Engine::open_with_embedder_for_test(&path, Arc::new(embedder)).expect("reopen");
+    let engine = &opened.engine;
+
+    // The identical spec — the shipped graceful-graft contract: re-applying an
+    // already-persisted declaration grafts the deferred build on.
+    engine.configure_projections(&[vector_spec("summary")], &[]).expect("re-apply");
+    assert_eq!(
+        readiness(engine, "summary"),
+        Some(DenseReadiness::Embedding),
+        "the deferred backfill grafts on in a session that HAS an embedder"
+    );
+
+    engine.drain(30_000).expect("drain flushes the grafted backfill");
+    assert_eq!(readiness(engine, "summary"), Some(DenseReadiness::Ready));
+    let conn = ro(&path);
+    let cursor = active_cursor(&conn, "N1");
+    assert!(vector_row_exists(&conn, cursor), "the grafted backfill landed at rest");
+    assert!(vec0_row_exists(&conn, cursor), "…including the vec0 row");
+    assert_eq!(calls.load(Ordering::SeqCst), 1, "exactly the one deferred row was embedded");
 
     opened.engine.close().unwrap();
 }
