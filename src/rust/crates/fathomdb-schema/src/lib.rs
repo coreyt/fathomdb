@@ -1082,6 +1082,22 @@ const PINNED_IDENTITY_COLUMN: &str = "LOGICAL_ID";
 /// escape. `main.canonical_nodes_old` is NOT the pinned table — the qualifier is
 /// stripped, never widened into a substring match.
 ///
+/// SQLite's `UPDATE OR <conflict-action> …` prefix is not an escape either. All
+/// five actions (`ROLLBACK` / `ABORT` / `FAIL` / `IGNORE` / `REPLACE`, verified
+/// against SQLite 3.45.1) sit BETWEEN the keyword and the table name, so the
+/// clause is skipped — token-exactly, so a table genuinely named `or_ledger`
+/// still reads as the table — before the comparison. The `INSERT`/`REPLACE` arm
+/// anchors on ` INTO `, which the conflict clause precedes, so it never had the
+/// hole.
+///
+/// The reverse error — over-rejection — is a real cost too, so table names are
+/// matched by TOKEN, never by substring, on EVERY arm including the trigger one.
+/// A `CREATE TRIGGER … ON canonical_nodes_backup` targets a different table and
+/// is accepted; a trigger whose BODY writes `logical_id` on a real canonical
+/// table is still rejected, because the trigger arm scans the whole fragment
+/// (which, by the `;` split, carries the head AND the first body statement) for
+/// a pinned table token, and later body statements are their own fragments.
+///
 /// # No exemption escape hatch — deliberately
 ///
 /// [`check_migration_accretion`] honours a `-- MIGRATION-ACCRETION-EXEMPTION: `
@@ -1096,11 +1112,13 @@ const PINNED_IDENTITY_COLUMN: &str = "LOGICAL_ID";
 /// string literals, unwraps `"…"` / `[…]` / `` `…` `` quoted identifiers, and
 /// tightens whitespace around `.` so a schema qualifier is one token (SQLite
 /// accepts `main . canonical_nodes`; verified against SQLite 3.45) — then it
-/// splits on `;`. A `CREATE TRIGGER` body therefore splits into fragments — which
-/// is harmless here, because both the `CREATE TRIGGER …` head and any
-/// `UPDATE canonical_… SET logical_id` fragment inside it are independently
-/// rejected. It cannot see through dynamically-built SQL, which migrations do not
-/// use (`MIGRATIONS` holds `&'static str` literals).
+/// splits on `;`. A `CREATE TRIGGER` body therefore splits into fragments: the
+/// FIRST body statement stays glued to the `CREATE TRIGGER …` head (the split
+/// point is the `;` that ends it) and is judged with the head by the trigger
+/// arm's whole-fragment token scan; every LATER body statement is its own
+/// fragment and is judged independently by the `UPDATE` / `INSERT` arms. It
+/// cannot see through dynamically-built SQL, which migrations do not use
+/// (`MIGRATIONS` holds `&'static str` literals).
 pub fn check_migration_logical_id_pin(
     name: &str,
     sql: &str,
@@ -1219,14 +1237,16 @@ fn statement_violates_logical_id_pin(statement: &str) -> bool {
     let names_column = statement.contains(PINNED_IDENTITY_COLUMN);
 
     // A trigger is a deferred write; one that so much as mentions the identity
-    // column on a canonical table is refused whole (the body may also split into
-    // fragments that the UPDATE arm below catches independently).
+    // column AND names a canonical table — as its ON-target, or anywhere in the
+    // first body statement, which the `;` split glues onto the head — is refused
+    // whole. Later body statements split into their own fragments, which the
+    // UPDATE / INSERT arms below catch independently.
     if statement.starts_with("CREATE") && statement.contains(" TRIGGER ") && names_column {
-        return targets_pinned_table(statement);
+        return mentions_pinned_table(statement);
     }
 
     if statement.starts_with("UPDATE") {
-        let Some(table) = token_after(statement, "UPDATE ") else { return false };
+        let Some(table) = update_target_table(statement) else { return false };
         if !is_pinned_table(&table) {
             return false;
         }
@@ -1280,13 +1300,57 @@ fn is_pinned_table(token: &str) -> bool {
     PINNED_IDENTITY_TABLES.contains(&bare_table_name(token))
 }
 
-fn targets_pinned_table(statement: &str) -> bool {
-    PINNED_IDENTITY_TABLES.iter().any(|table| statement.contains(table))
+/// Does any IDENTIFIER TOKEN of `statement` name a pinned canonical table?
+///
+/// Token-based, never a substring: `canonical_nodes_backup` is a DIFFERENT
+/// table, and a `contains` test would conscript every lookalike name into the
+/// pin — rejecting legitimate backup/recreate scaffolding. The statement is cut
+/// on every character that cannot appear in an identifier, keeping `.` so a
+/// schema qualifier stays one token for [`is_pinned_table`] to strip.
+///
+/// Used by the trigger arm, whose target table can sit anywhere in the head
+/// (`… ON <table> …`), and which — because the `;` split glues the FIRST body
+/// statement onto the head — must also see a table named inside that body.
+fn mentions_pinned_table(statement: &str) -> bool {
+    statement
+        .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '.'))
+        .any(is_pinned_table)
+}
+
+/// SQLite's five `UPDATE OR <conflict-action>` / `INSERT OR <conflict-action>`
+/// spellings (verified against SQLite 3.45.1).
+const SQLITE_CONFLICT_ACTIONS: [&str; 5] = ["ROLLBACK", "ABORT", "FAIL", "IGNORE", "REPLACE"];
+
+/// The target table of an `UPDATE`, skipping SQLite's optional conflict clause.
+///
+/// `UPDATE OR REPLACE canonical_nodes SET logical_id = …` is a valid, running
+/// backfill; the conflict action sits BETWEEN the keyword and the table name, so
+/// taking the first token after `UPDATE ` yields `OR` and the pin is bypassed.
+/// The skip is token-EXACT (the action must be a whole token followed by a
+/// space), so a table actually named `or_ledger` is still read as the table.
+///
+/// The `INSERT`/`REPLACE` arm needs no equivalent: it anchors on ` INTO `, which
+/// the conflict clause precedes (`INSERT OR IGNORE INTO canonical_nodes …`).
+fn update_target_table(statement: &str) -> Option<String> {
+    let mut rest = statement.strip_prefix("UPDATE ")?;
+    if let Some(after_or) = rest.strip_prefix("OR ") {
+        if let Some(after_action) = SQLITE_CONFLICT_ACTIONS
+            .iter()
+            .find_map(|action| after_or.strip_prefix(*action)?.strip_prefix(' '))
+        {
+            rest = after_action;
+        }
+    }
+    first_token(rest)
 }
 
 /// The first identifier token after `marker`, cut at whitespace or `(`.
 fn token_after(statement: &str, marker: &str) -> Option<String> {
-    let rest = statement.split_once(marker)?.1;
+    first_token(statement.split_once(marker)?.1)
+}
+
+/// The leading identifier token of `rest`, cut at whitespace, `(` or `,`.
+fn first_token(rest: &str) -> Option<String> {
     let token: String =
         rest.chars().take_while(|c| !c.is_whitespace() && *c != '(' && *c != ',').collect();
     (!token.is_empty()).then_some(token)
