@@ -985,6 +985,498 @@ impl Display for MigrationAccretionError {
 
 impl std::error::Error for MigrationAccretionError {}
 
+/// 0.8.20 Slice 25 (R-20-SUR) — rejection from the TC-11 `logical_id` pin.
+///
+/// Carries the offending migration's `name` (as `MigrationAccretionError` does)
+/// PLUS the normalised offending `statement`, because a migration step is a
+/// batch: naming the file alone would leave an author hunting for which of a
+/// dozen statements tripped the guard.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MigrationLogicalIdPinError {
+    /// The migration step / file name handed to the guard.
+    pub offender: String,
+    /// The single offending statement, comment-stripped, string-literal-elided,
+    /// uppercased and whitespace-collapsed (the guard's normalised view).
+    pub statement: String,
+}
+
+impl Display for MigrationLogicalIdPinError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "TC-11 logical_id pin rejected {}: a migration may never populate `logical_id` on an \
+             existing canonical row — offending statement: {}",
+            self.offender, self.statement
+        )
+    }
+}
+
+impl std::error::Error for MigrationLogicalIdPinError {}
+
+/// The two canonical tables that carry the identity column the pin protects.
+/// Uppercase because the guard compares against a normalised (uppercased) view.
+const PINNED_IDENTITY_TABLES: [&str; 2] = ["CANONICAL_NODES", "CANONICAL_EDGES"];
+
+/// The protected column, uppercased for the same reason.
+const PINNED_IDENTITY_COLUMN: &str = "LOGICAL_ID";
+
+/// 0.8.20 Slice 25 (R-20-SUR) — the **TC-11 pin's static migration guard**, and
+/// the sibling of [`check_migration_accretion`].
+///
+/// # What it enforces
+///
+/// TC-11 pin A (HITL-ratified 2026-07-12; `dev/plans/plan-0.8.20.md` §2.1) rules
+/// that anonymous / doc-seeded nodes stay `h:<content-hash>` **permanently** —
+/// the anonymous-surrogate leg is CANCELLED, not deferred — and that enforcement
+/// is "**no new column**": the record IS `canonical_nodes.logical_id`'s
+/// null-ness. The invariant is therefore a PROHIBITION:
+///
+/// > No migration, backfill, or verb shall ever populate `logical_id` on an
+/// > existing canonical row, and a stored row's id-space is NEVER re-derived.
+///
+/// This function is the migration half of that prohibition, checked STATICALLY —
+/// before the SQL can ever run. Supplying a `logical_id` at WRITE time is what
+/// makes a record governed; a migration is not a write time.
+///
+/// # Rejected shapes
+///
+/// On `canonical_nodes` / `canonical_edges` only:
+///
+/// - `UPDATE … SET … logical_id …` — the direct forward-mint;
+/// - `INSERT`/`REPLACE … INTO …` that names `logical_id`, i.e. a recreate-and-copy
+///   backfill (`SELECT COALESCE(logical_id, mint(…))`);
+/// - `INSERT`/`REPLACE … INTO …` with NO explicit column list — it writes every
+///   column, `logical_id` among them, without naming it;
+/// - `ALTER TABLE … ADD COLUMN logical_id … DEFAULT …` — a default populates
+///   every EXISTING row in one statement;
+/// - `ALTER TABLE … RENAME … logical_id` — a rename turns an already-populated
+///   column INTO the identity column with no write at all;
+/// - `CREATE TRIGGER … logical_id …` — a deferred `UPDATE`;
+/// - `CREATE TABLE …(… logical_id … DEFAULT …)` — same reasoning as `ADD COLUMN`;
+/// - ANY of the write shapes above behind a leading `WITH … AS (…)` /
+///   `WITH RECURSIVE …` CTE clause, which SQLite allows in FRONT of `UPDATE`,
+///   `INSERT` and `DELETE` — see the keyword-independent catch-all below.
+///
+/// # Accepted shapes (the ladder already ships all four)
+///
+/// - DECLARING the column (`ALTER TABLE canonical_nodes ADD COLUMN logical_id
+///   TEXT`, step 12) — declaration is not population;
+/// - INDEXING it (`CREATE UNIQUE INDEX … ON canonical_nodes(logical_id) WHERE
+///   superseded_at IS NULL`, steps 12/23);
+/// - READING it as a PREDICATE (`WHERE source_id IS NULL AND logical_id IS
+///   NULL`, step 21 — which writes only `source_id`);
+/// - RE-DECLARING it in a `CREATE TABLE` recreate (step 23's TC-33 edge
+///   recreate, which deliberately copies no rows).
+///
+/// # Deliberately conservative
+///
+/// The guard refuses any statement that WRITES INTO `logical_id` on a canonical
+/// table, including a copy that would merely PRESERVE the value through a
+/// table-recreate. Distinguishing "preserving copy" from "minting copy" needs
+/// positional matching of an insert column list against a `SELECT` expression
+/// list — fragile, and trivially gamed by the exact class of change the pin
+/// exists to stop. A future recreate must follow step 23's shipped precedent
+/// (declare the column; do not copy rows through it), or come back through the
+/// HITL to change the pin itself.
+///
+/// Conservatism also decides the SCHEMA-QUALIFIED case: `main.canonical_nodes`,
+/// `temp.canonical_nodes` and every quoted spelling of either half normalise to
+/// the bare table name before the comparison, so qualifying the table is not an
+/// escape. `main.canonical_nodes_old` is NOT the pinned table — the qualifier is
+/// stripped, never widened into a substring match.
+///
+/// SQLite's `UPDATE OR <conflict-action> …` prefix is not an escape either. All
+/// five actions (`ROLLBACK` / `ABORT` / `FAIL` / `IGNORE` / `REPLACE`, verified
+/// against SQLite 3.45.1) sit BETWEEN the keyword and the table name, so the
+/// clause is skipped — token-exactly, so a table genuinely named `or_ledger`
+/// still reads as the table — before the comparison. The `INSERT`/`REPLACE` arm
+/// anchors on ` INTO `, which the conflict clause precedes, so it never had the
+/// hole.
+///
+/// The reverse error — over-rejection — is a real cost too, so table names are
+/// matched by TOKEN, never by substring, on EVERY arm including the trigger one.
+/// A `CREATE TRIGGER … ON canonical_nodes_backup` targets a different table and
+/// is accepted; a trigger whose BODY writes `logical_id` on a real canonical
+/// table is still rejected, because the trigger arm scans the whole fragment
+/// (which, by the `;` split, carries the head AND the first body statement) for
+/// a pinned table token, and later body statements are their own fragments.
+///
+/// Conservatism is also why the arms above are not the whole guard. Each of them
+/// anchors on the statement's LEADING keyword, and SQLite's grammar puts an
+/// optional `WITH …` CTE clause in front of `UPDATE` / `INSERT` / `DELETE`, so
+/// `WITH x AS (SELECT 1) UPDATE canonical_nodes SET logical_id = …` (valid, and
+/// verified running against SQLite 3.45.1) would match no arm at all. Rather
+/// than teach the guard to skip balanced parentheses — a SQL parser by another
+/// name — a keyword-INDEPENDENT catch-all runs FIRST and refuses any statement
+/// that writes `logical_id` in an ASSIGNMENT position on a pinned table:
+/// a ` SET ` clause naming the column while some token names a canonical table,
+/// or an ` INTO ` target that IS a canonical table (naming the column, or
+/// omitting the column list). Read positions — a `WHERE` predicate, an index
+/// column list, a column declaration — are untouched, which is precisely what
+/// keeps the four shipped accepts green. See
+/// [`writes_pinned_identity_anywhere`], whose assignment half deliberately
+/// over-rejects: after an arbitrary prefix the update TARGET cannot be located
+/// without parsing, so merely MENTIONING a canonical table anywhere in a
+/// statement that assigns `logical_id` is refused.
+///
+/// # No exemption escape hatch — deliberately
+///
+/// [`check_migration_accretion`] honours a `-- MIGRATION-ACCRETION-EXEMPTION: `
+/// marker because accretion is a BUDGET an author may knowingly spend. The TC-11
+/// pin is not a budget; it is TERMINAL-FOREVER. An escape hatch would defeat it,
+/// so there is none: a marked offender is rejected identically to an unmarked
+/// one. Changing the pin is an HITL decision, not a comment.
+///
+/// # Known limits (stated, not hidden)
+///
+/// This is a lexical guard, not a SQL parser. It normalises away comments and
+/// string literals, unwraps `"…"` / `[…]` / `` `…` `` quoted identifiers, and
+/// tightens whitespace around `.` so a schema qualifier is one token (SQLite
+/// accepts `main . canonical_nodes`; verified against SQLite 3.45) — then it
+/// splits on `;`. A `CREATE TRIGGER` body therefore splits into fragments: the
+/// FIRST body statement stays glued to the `CREATE TRIGGER …` head (the split
+/// point is the `;` that ends it) and is judged with the head by the trigger
+/// arm's whole-fragment token scan; every LATER body statement is its own
+/// fragment and is judged independently by the `UPDATE` / `INSERT` arms. It
+/// cannot see through dynamically-built SQL, which migrations do not use
+/// (`MIGRATIONS` holds `&'static str` literals).
+///
+/// A leading `WITH …` CTE is NOT among the limits — the keyword-independent
+/// catch-all above closes that family. What remains open, stated plainly rather
+/// than papered over, is **cross-statement table identity**: the guard judges
+/// each `;`-separated statement ALONE and holds no model of which name refers to
+/// which table over the course of a step. A migration that renames the pinned
+/// table out of the way, writes `logical_id` under the new name, and renames it
+/// back —
+///
+/// ```sql
+/// ALTER TABLE canonical_nodes RENAME TO tmp_x;
+/// UPDATE tmp_x SET logical_id = 'minted' WHERE logical_id IS NULL;
+/// ALTER TABLE tmp_x RENAME TO canonical_nodes;
+/// ```
+///
+/// — is therefore ACCEPTED, as is its sibling (`CREATE TABLE … AS SELECT …
+/// 'minted' AS logical_id FROM canonical_nodes`, `DROP`, `RENAME TO
+/// canonical_nodes`). Closing it means tracking table identity across
+/// statements, which is a different guard, not a wider arm; it is recorded here
+/// (and in the slice's reviewer record) as a KNOWN residual rather than silently
+/// implied to be covered. Note that the second half of the TC-11 prohibition —
+/// the runtime write path — is enforced elsewhere, so this guard being lexical
+/// is not the pin's only defence.
+pub fn check_migration_logical_id_pin(
+    name: &str,
+    sql: &str,
+) -> Result<(), MigrationLogicalIdPinError> {
+    for statement in normalized_statements(sql) {
+        if statement_violates_logical_id_pin(&statement) {
+            return Err(MigrationLogicalIdPinError { offender: name.to_string(), statement });
+        }
+    }
+    Ok(())
+}
+
+/// Split `sql` into per-statement NORMALISED views: comments removed, string
+/// literals elided to `''`, quoted identifiers unwrapped to bare ones,
+/// uppercased, whitespace collapsed to single spaces.
+///
+/// Scanning is strictly left-to-right so precedence is correct: a `--` inside a
+/// string literal is data, and a `'` inside a comment is prose.
+fn normalized_statements(sql: &str) -> Vec<String> {
+    let mut statements = Vec::new();
+    let mut current = String::new();
+    let chars: Vec<char> = sql.chars().collect();
+    let mut i = 0;
+
+    while i < chars.len() {
+        let c = chars[i];
+        match c {
+            // Line comment: drop to end of line (the newline becomes whitespace).
+            '-' if chars.get(i + 1) == Some(&'-') => {
+                while i < chars.len() && chars[i] != '\n' {
+                    i += 1;
+                }
+            }
+            // Block comment: drop to the closing delimiter.
+            '/' if chars.get(i + 1) == Some(&'*') => {
+                i += 2;
+                while i < chars.len() && !(chars[i] == '*' && chars.get(i + 1) == Some(&'/')) {
+                    i += 1;
+                }
+                i = (i + 2).min(chars.len());
+                current.push(' ');
+            }
+            // String literal: elide the contents (they can never be an
+            // identifier). `''` inside a literal is an escaped quote.
+            '\'' => {
+                i += 1;
+                while i < chars.len() {
+                    if chars[i] == '\'' {
+                        if chars.get(i + 1) == Some(&'\'') {
+                            i += 2;
+                            continue;
+                        }
+                        i += 1;
+                        break;
+                    }
+                    i += 1;
+                }
+                current.push_str("''");
+            }
+            // Quoted identifiers: UNWRAP them, so `"logical_id"` / `[logical_id]`
+            // / `` `logical_id` `` are the same identifier to the guard that they
+            // are to SQLite.
+            '"' | '`' | '[' => {
+                let close = if c == '[' { ']' } else { c };
+                i += 1;
+                while i < chars.len() && chars[i] != close {
+                    current.push(chars[i].to_ascii_uppercase());
+                    i += 1;
+                }
+                i += 1;
+            }
+            ';' => {
+                statements.push(normalize_statement(&current));
+                current.clear();
+                i += 1;
+            }
+            _ => {
+                current.push(c.to_ascii_uppercase());
+                i += 1;
+            }
+        }
+    }
+    statements.push(normalize_statement(&current));
+    statements.retain(|s| !s.is_empty());
+    statements
+}
+
+/// The per-statement tail of the normalisation: collapse whitespace, then
+/// tighten qualified names so a schema qualifier is ONE token.
+fn normalize_statement(raw: &str) -> String {
+    tighten_qualified_names(&collapse_whitespace(raw))
+}
+
+fn collapse_whitespace(raw: &str) -> String {
+    raw.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Remove whitespace around `.` so `main . canonical_nodes` normalises to
+/// `MAIN.CANONICAL_NODES`.
+///
+/// SQLite's tokenizer accepts whitespace around the qualifier dot (verified
+/// against SQLite 3.45: `UPDATE main . t SET …` parses and targets `main.t`),
+/// while the token extractors below cut at whitespace — so without this the
+/// spaced spelling would extract the bare token `MAIN` and slip the pin.
+/// Comments are already stripped and string literals already elided to `''` by
+/// this point, so no `.` that survives here is data.
+fn tighten_qualified_names(statement: &str) -> String {
+    if !statement.contains('.') {
+        return statement.to_string();
+    }
+    statement.split('.').map(str::trim).collect::<Vec<_>>().join(".")
+}
+
+/// Does one NORMALISED statement write into `logical_id` on a canonical table?
+fn statement_violates_logical_id_pin(statement: &str) -> bool {
+    let names_column = statement.contains(PINNED_IDENTITY_COLUMN);
+
+    // FIRST, and independent of the leading keyword: the keyword-anchored arms
+    // below all begin `statement.starts_with(…)`, and SQLite's grammar allows a
+    // `WITH …` CTE clause in FRONT of UPDATE / INSERT / DELETE — so
+    // `WITH x AS (SELECT 1) UPDATE canonical_nodes SET logical_id = …` runs the
+    // forbidden backfill while starting with none of them. This catch-all closes
+    // that whole family without a paren-matching CTE parser, and runs BEFORE the
+    // arms because several of them `return false` early (a non-pinned UPDATE
+    // target, say), which would otherwise shadow it.
+    if writes_pinned_identity_anywhere(statement, names_column) {
+        return true;
+    }
+
+    // A trigger is a deferred write; one that so much as mentions the identity
+    // column AND names a canonical table — as its ON-target, or anywhere in the
+    // first body statement, which the `;` split glues onto the head — is refused
+    // whole. Later body statements split into their own fragments, which the
+    // UPDATE / INSERT arms below catch independently.
+    if statement.starts_with("CREATE") && statement.contains(" TRIGGER ") && names_column {
+        return mentions_pinned_table(statement);
+    }
+
+    if statement.starts_with("UPDATE") {
+        let Some(table) = update_target_table(statement) else { return false };
+        if !is_pinned_table(&table) {
+            return false;
+        }
+        // Only the SET clause assigns. Reading `logical_id` in a WHERE predicate
+        // (step 21) is explicitly legitimate.
+        return set_clause(statement).is_some_and(|clause| clause.contains(PINNED_IDENTITY_COLUMN));
+    }
+
+    if statement.starts_with("INSERT") || statement.starts_with("REPLACE") {
+        let Some((table, rest)) = table_after_into(statement) else { return false };
+        if !is_pinned_table(&table) {
+            return false;
+        }
+        // Naming the column anywhere in an insert into a canonical table is a
+        // backfill; a MISSING column list writes every column, identity included.
+        return names_column || !rest.trim_start().starts_with('(');
+    }
+
+    if statement.starts_with("ALTER") {
+        let Some(table) = token_after(statement, "ALTER TABLE ") else { return false };
+        if !is_pinned_table(&table) || !names_column {
+            return false;
+        }
+        // Declaring the column bare is how step 12 shipped it. A DEFAULT
+        // populates every existing row; a RENAME conscripts a populated one.
+        return statement.contains("DEFAULT") || statement.contains("RENAME");
+    }
+
+    if statement.starts_with("CREATE") && statement.contains(" TABLE ") {
+        let Some(table) = token_after(statement, " TABLE ") else { return false };
+        // A recreate may DECLARE the column (step 23 does); it may not default it.
+        return is_pinned_table(&table) && names_column && statement.contains("DEFAULT");
+    }
+
+    false
+}
+
+/// The keyword-INDEPENDENT catch-all: does `statement` write `logical_id` on a
+/// pinned table ANYWHERE, whatever it starts with?
+///
+/// Every other arm anchors on the leading keyword, so any prefix that displaces
+/// it — SQLite's optional `WITH …` / `WITH RECURSIVE …` CTE clause is the one
+/// that actually exists, and it is legal in front of `UPDATE`, `INSERT` and
+/// `DELETE` — slips them all. Parsing CTE parentheses to find the real head
+/// keyword would be a SQL parser; the pin is TERMINAL-FOREVER and its stated
+/// stance is that over-rejection is a cost worth paying and under-rejection is
+/// not, so this fires on WRITE POSITION instead of on statement shape:
+///
+/// - an assignment: the ` SET ` clause (up to `WHERE` / `FROM` / `RETURNING`)
+///   names `logical_id`, and SOME token of the statement is a pinned table;
+/// - an insert target: the table after ` INTO ` is pinned, and the statement
+///   either names `logical_id` or omits the column list (which writes every
+///   column, identity included) — the same rule the `INSERT` arm applies.
+///
+/// READ positions are deliberately untouched, which is exactly what keeps the
+/// four shipped accepts green: a `WHERE … logical_id IS NULL` predicate (step
+/// 21, which writes only `source_id`), an index column list (steps 12/23), a
+/// bare `ADD COLUMN logical_id TEXT` declaration (step 12) and a `CREATE TABLE`
+/// re-declaration (step 23) all name the column without assigning to it. The
+/// insert half checks the TARGET table, not mere mention, so step 23's
+/// `INSERT … INTO _fathomdb_open_state … SELECT … FROM canonical_edges` — which
+/// reads a pinned table — stays accepted.
+///
+/// The assignment half is deliberately coarser than the `UPDATE` arm: it asks
+/// only whether a pinned table is MENTIONED, because after an arbitrary prefix
+/// the update target cannot be located token-wise without parsing. So
+/// `WITH x AS (SELECT 1 FROM canonical_nodes) UPDATE other SET logical_id = …`
+/// is refused too. That is over-rejection by design, and cheap to work around
+/// honestly (don't name a canonical table in the CTE); the reverse mistake is
+/// not recoverable.
+fn writes_pinned_identity_anywhere(statement: &str, names_column: bool) -> bool {
+    if names_column
+        && mentions_pinned_table(statement)
+        && set_clause(statement).is_some_and(|clause| clause.contains(PINNED_IDENTITY_COLUMN))
+    {
+        return true;
+    }
+    table_after_into(statement).is_some_and(|(table, rest)| {
+        is_pinned_table(&table) && (names_column || !rest.trim_start().starts_with('('))
+    })
+}
+
+/// The bare table name from a possibly schema-qualified token.
+///
+/// SQLite resolves `main.canonical_nodes` (or `temp.canonical_nodes`, or any
+/// quoted spelling of either half — the normaliser has already unwrapped those)
+/// to the SAME pinned table as the bare name, so the qualifier is stripped
+/// before the comparison. SQLite permits at most ONE qualifier, so the part
+/// after the dot is the table name. This is a STRIP, not a widening to a
+/// substring match: `main.canonical_nodes_old` is still a different table.
+fn bare_table_name(token: &str) -> &str {
+    token.rsplit_once('.').map_or(token, |(_, table)| table)
+}
+
+fn is_pinned_table(token: &str) -> bool {
+    PINNED_IDENTITY_TABLES.contains(&bare_table_name(token))
+}
+
+/// Does any IDENTIFIER TOKEN of `statement` name a pinned canonical table?
+///
+/// Token-based, never a substring: `canonical_nodes_backup` is a DIFFERENT
+/// table, and a `contains` test would conscript every lookalike name into the
+/// pin — rejecting legitimate backup/recreate scaffolding. The statement is cut
+/// on every character that cannot appear in an identifier, keeping `.` so a
+/// schema qualifier stays one token for [`is_pinned_table`] to strip.
+///
+/// Used by the trigger arm, whose target table can sit anywhere in the head
+/// (`… ON <table> …`), and which — because the `;` split glues the FIRST body
+/// statement onto the head — must also see a table named inside that body.
+fn mentions_pinned_table(statement: &str) -> bool {
+    statement
+        .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '.'))
+        .any(is_pinned_table)
+}
+
+/// SQLite's five `UPDATE OR <conflict-action>` / `INSERT OR <conflict-action>`
+/// spellings (verified against SQLite 3.45.1).
+const SQLITE_CONFLICT_ACTIONS: [&str; 5] = ["ROLLBACK", "ABORT", "FAIL", "IGNORE", "REPLACE"];
+
+/// The target table of an `UPDATE`, skipping SQLite's optional conflict clause.
+///
+/// `UPDATE OR REPLACE canonical_nodes SET logical_id = …` is a valid, running
+/// backfill; the conflict action sits BETWEEN the keyword and the table name, so
+/// taking the first token after `UPDATE ` yields `OR` and the pin is bypassed.
+/// The skip is token-EXACT (the action must be a whole token followed by a
+/// space), so a table actually named `or_ledger` is still read as the table.
+///
+/// The `INSERT`/`REPLACE` arm needs no equivalent: it anchors on ` INTO `, which
+/// the conflict clause precedes (`INSERT OR IGNORE INTO canonical_nodes …`).
+fn update_target_table(statement: &str) -> Option<String> {
+    let mut rest = statement.strip_prefix("UPDATE ")?;
+    if let Some(after_or) = rest.strip_prefix("OR ") {
+        if let Some(after_action) = SQLITE_CONFLICT_ACTIONS
+            .iter()
+            .find_map(|action| after_or.strip_prefix(*action)?.strip_prefix(' '))
+        {
+            rest = after_action;
+        }
+    }
+    first_token(rest)
+}
+
+/// The first identifier token after `marker`, cut at whitespace or `(`.
+fn token_after(statement: &str, marker: &str) -> Option<String> {
+    first_token(statement.split_once(marker)?.1)
+}
+
+/// The leading identifier token of `rest`, cut at whitespace, `(` or `,`.
+fn first_token(rest: &str) -> Option<String> {
+    let token: String =
+        rest.chars().take_while(|c| !c.is_whitespace() && *c != '(' && *c != ',').collect();
+    (!token.is_empty()).then_some(token)
+}
+
+/// `(table, remainder-after-the-table-name)` for an `INSERT`/`REPLACE … INTO …`.
+fn table_after_into(statement: &str) -> Option<(String, String)> {
+    let rest = statement.split_once(" INTO ")?.1;
+    let table: String =
+        rest.chars().take_while(|c| !c.is_whitespace() && *c != '(' && *c != ',').collect();
+    (!table.is_empty()).then(|| (table.clone(), rest[table.len()..].to_string()))
+}
+
+/// The assignment half of an `UPDATE`: everything between ` SET ` and the first
+/// clause keyword that ends it.
+fn set_clause(statement: &str) -> Option<&str> {
+    let after_set = statement.split_once(" SET ")?.1;
+    let end = [" WHERE ", " FROM ", " RETURNING "]
+        .iter()
+        .filter_map(|kw| after_set.find(kw))
+        .min()
+        .unwrap_or(after_set.len());
+    Some(&after_set[..end])
+}
+
 pub fn check_migration_accretion(name: &str, sql: &str) -> Result<(), MigrationAccretionError> {
     let upper = sql.to_ascii_uppercase();
     let adds_schema = upper.contains("CREATE TABLE") || upper.contains("ADD COLUMN");

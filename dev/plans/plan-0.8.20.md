@@ -192,7 +192,7 @@ Tracked by **requirement id + TDD test name** (per the locked-`acceptance.md` po
 | R-20-PR | Projection registry (C-1): `configure_projections(spec, drop?)` idempotent diff + backfill; engine is **sole** authority; incompatible change ⇒ destructive delta requiring explicit `drop` | re-registration is a no-op; role add/remove builds/drops exactly; boot re-derive is crash-safe + idempotent |
 | R-20-EAV | EAV / property-FTS — the store the registry projects from | property-level filter/search green; body-FTS behavior unchanged |
 | R-20-DR | `dense_readiness` + `flush_embeddings()` + atomic readiness-flip | readiness never reports ready with pending embeds; flip is atomic under concurrent write |
-| R-20-SUR | Surrogate minting serves **ONLY** registry-admitted governed entities; decided **at write time** | **migration-guard: rows transitioning `logical_id NULL → NOT NULL` == 0** (the pin's invariant); registering a kind does **not** alter any pre-existing row's `IdSpace` |
+| R-20-SUR | Surrogate minting serves **ONLY** registry-admitted governed entities; decided **at write time** | **migration-guard: rows transitioning `logical_id NULL → NOT NULL` == 0** (the pin's invariant); registering a kind does **not** alter any pre-existing row's `IdSpace` · **CLOSED at Slice 25** (`83b1c818`) — enforcement + proof, not a new mechanism: the governed write-time path already existed and no anonymous surrogate is minted anywhere (pin A) |
 
 ### Erasure completeness (B)
 
@@ -260,7 +260,7 @@ Tracked by **requirement id + TDD test name** (per the locked-`acceptance.md` po
 | **10** | **`ReadView` / read-modes** + **node-validity** (R-20-RV, R-20-NV) — ✅ **COMPLETE on-branch @ `93a57b10`** (SCHEMA 21→22) | implementation | 0 |
 | **15** | **Projection registry (C-1 co-land) + EAV/property-FTS** (R-20-PR, R-20-EAV) **+ TC-34 node-validity write-side authoring verb + TC-33 temporal-representation harmonisation** *(both folded in by HITL 2026-07-20)* | implementation | 0, 10 |
 | **20** | **`dense_readiness` + `flush_embeddings()`** (R-20-DR) | implementation | 15 |
-| **25** | **Surrogate minting — registry-admitted governed entities ONLY** (R-20-SUR) | implementation | 15 |
+| **25** | **Surrogate minting — registry-admitted governed entities ONLY** (R-20-SUR) — ✅ **LANDED `83b1c818`** | implementation | 15 |
 | **30** | **RUBRIC-H7 `can-i-deploy` contract-conformance gate** (R-20-H7) | implementation | 10,15,20,25 |
 | **40** | **Verification + release readiness** — full DoD, X1, **AC-079 sign-off** (R-20-EU7 is **CLOSED — run NO eu7**, see §3), **publish-or-hold per the HITL gate** | verification | 5,30 |
 

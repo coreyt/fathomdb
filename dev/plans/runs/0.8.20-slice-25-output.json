@@ -1,0 +1,544 @@
+{
+  "phase": "0.8.20-slice-25-R-20-SUR",
+  "baseline_sha": "2afd168c",
+  "branch": "orch-0.8.20-s25",
+  "head_sha": "90695a3e95ae8a8dc4af27ee62c9e459254dfe31",
+  "head_sha_at_slice_close": "86f803750bf83ac3c1bbc1744c6b72910fcb5c7e",
+  "commits": [
+    "f66d74d9: test(0.8.20-s25): R-20-SUR RED — the TC-11 logical_id pin has no static guard",
+    "bbc95a9b: feat(0.8.20-s25): R-20-SUR GREEN — static TC-11 logical_id pin guard",
+    "86f80375: test(0.8.20-s25): R-20-SUR D4 — pin the write-time admission audit's conclusion",
+    "48a872b7: test(0.8.20-s25-fix-1): RED — schema-qualified names slip the TC-11 pin",
+    "d4a9781f: fix(0.8.20-s25-fix-1): GREEN — normalise schema-qualified canonical table names",
+    "ee94cdf6: test(0.8.20-s25-fix-2): RED — UPDATE OR <conflict-action> slips the pin; trigger arm over-rejects lookalikes",
+    "ec2335a7: fix(0.8.20-s25-fix-2): GREEN — skip the UPDATE conflict clause; match trigger targets by token"
+  ],
+  "requirement_closed": {
+    "id": "R-20-SUR",
+    "statement": "Surrogate minting serves ONLY registry-admitted governed entities; decided at write time.",
+    "acceptance_signal_1": "migration-guard: rows transitioning logical_id NULL -> NOT NULL == 0 — PROVEN both statically (check_migration_logical_id_pin over MIGRATIONS 1..=24 and over migrations/*.sql) and dynamically (real SQLite, step 12 -> head and step 23 -> head, mixed anonymous/governed corpus).",
+    "acceptance_signal_2": "registering a kind does not alter any pre-existing row's IdSpace — PROVEN at engine level across configure_projections add / idempotent re-register / explicit drop / boot re-derive, on raw at-rest state AND on live SearchHit::id.",
+    "slice_shape": "ENFORCEMENT + PROOF, not new feature. The governed minting path (derive_logical_id in the entity/edge arms of Engine::ingest_with_extractor) already existed and was NOT rebuilt. NO anonymous surrogate was minted anywhere (TC-11 pin A: the anonymous-surrogate leg is CANCELLED, not deferred)."
+  },
+  "deliverables": {
+    "D1_static_migration_guard": {
+      "status": "DONE",
+      "artifact": "src/rust/crates/fathomdb-schema/src/lib.rs — pub fn check_migration_logical_id_pin(name, sql) -> Result<(), MigrationLogicalIdPinError>",
+      "rejects": [
+        "UPDATE canonical_nodes|canonical_edges ... SET ... logical_id ...",
+        "INSERT/REPLACE ... INTO canonical_nodes|canonical_edges naming logical_id (recreate-and-copy backfill)",
+        "INSERT/REPLACE ... INTO canonical_* with NO explicit column list (writes every column implicitly)",
+        "ALTER TABLE canonical_* ADD COLUMN logical_id ... DEFAULT ... (populates every existing row)",
+        "ALTER TABLE canonical_* RENAME ... logical_id (conscripts an already-populated column)",
+        "CREATE TRIGGER ... logical_id ... on a canonical table (a deferred UPDATE)",
+        "CREATE TABLE canonical_*( ... logical_id ... DEFAULT ... )",
+        "quoted-identifier evasion: \"logical_id\", [logical_id], `logical_id` are unwrapped before matching"
+      ],
+      "accepts": [
+        "step 12 — ALTER TABLE canonical_nodes ADD COLUMN logical_id TEXT (declaration is not population)",
+        "steps 12/23 — CREATE UNIQUE INDEX ... ON canonical_*(logical_id) WHERE superseded_at IS NULL",
+        "step 21 — UPDATE canonical_nodes SET source_id=... WHERE source_id IS NULL AND logical_id IS NULL (predicate READ only)",
+        "step 23 — CREATE TABLE canonical_edges(... logical_id TEXT ...) re-declaration in the TC-33 recreate",
+        "a MENTION inside an SQL comment (comments are stripped before matching; they execute nothing)"
+      ],
+      "exemption_escape_hatch": "DELIBERATELY ABSENT. check_migration_accretion honours '-- MIGRATION-ACCRETION-EXEMPTION: ' because accretion is a BUDGET an author may knowingly spend. The TC-11 pin is TERMINAL-FOREVER, not a budget; a hatch would defeat it. Test `pin_has_no_exemption_escape_hatch` asserts a MARKED offender is rejected identically to an unmarked one. Changing the pin is an HITL decision, not a comment.",
+      "conservatism_recorded": "The guard refuses ANY write into logical_id on a canonical table, including a copy that would merely PRESERVE the value through a table-recreate. Distinguishing 'preserving copy' from 'minting copy' requires positional matching of an INSERT column list against a SELECT expression list — fragile, and trivially gamed by exactly the change class the pin exists to stop. A future canonical-table recreate follows step 23's SHIPPED precedent (declare the column; do not copy rows through it) or returns to the HITL. Documented in the fn doc comment under '# Deliberately conservative'.",
+      "known_limits_recorded": "Lexical guard, not a SQL parser. Normalises comments away, elides string literals, unwraps quoted identifiers, splits on ';'. A CREATE TRIGGER body therefore splits into fragments — harmless, because both the CREATE TRIGGER head and any UPDATE ... SET logical_id fragment inside it are independently rejected. Cannot see through dynamically-built SQL, which migrations never use (MIGRATIONS holds &'static str literals)."
+    },
+    "D1_wiring": {
+      "surface_1": "pin_accepts_every_shipped_migration_step — walks MIGRATIONS WHOLE (asserts MIGRATIONS.len() == SCHEMA_VERSION, then checks every step). MIGRATIONS is the ONLY functional migration surface, so a FUTURE violating step cannot land without tripping this test.",
+      "surface_2": "pin_accepts_every_on_disk_migration_sql_file — runs the SAME Rust guard over src/rust/crates/fathomdb-schema/migrations/*.sql, the surface scripts/agent-lint-migrations.py lints (wired into scripts/agent-lint.sh).",
+      "why_not_mirrored_into_python": "Deliberate. Duplicating the guard's ~150-line lexical scanner into agent-lint-migrations.py would create a SECOND source of truth that can drift from the Rust one; a shared guard cannot. Covering the .sql surface with the same Rust function gives identical coverage with zero drift. Also note: those .sql files are documentation duplicates — they are NOT include_str!'d anywhere, so a violating .sql alone could not execute. scripts/agent-lint-migrations.sh still exits 0 (unchanged).",
+      "why_not_wired_into_migrate_at_runtime": "Considered and rejected as out of scope + behaviour-changing. migrate_with_steps accepts caller-supplied Migration arrays (tests pass poison/partial ladders, e.g. ac_046c), so a runtime guard would change error taxonomy on those paths. The requirement names a *migration-guard*, i.e. a static authoring gate; that is what was built."
+    },
+    "D2_dynamic_migration_guard": {
+      "status": "DONE",
+      "artifact": "src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs",
+      "no_db_mocking": "Real SQLite (rusqlite + sqlite-vec auto-extension), per AGENTS.md.",
+      "nodes": "migrating_to_head_never_populates_logical_id_on_an_existing_node — builds a DB at step 12 (the exact moment logical_id first exists), inserts 3 anonymous (logical_id IS NULL, incl. an empty body) + 2 governed rows, migrates the WHOLE remaining ladder to head (24), then asserts: NULL->NOT NULL transitions == 0; NOT NULL->NULL transitions == 0; the full (write_cursor, logical_id, body) snapshot is byte-identical; and every row's derived IdSpace::to_prefixed() is byte-identical (3 stay h:, 2 stay l:).",
+      "edges": "migrating_to_head_never_populates_logical_id_on_an_existing_edge — starts at step 23 (AFTER the TC-33 edge recreate, which by HITL 2026-07-21 does NO data migration) with a mixed anonymous/governed edge population, migrates to head, asserts the same three properties. step_23_edge_recreate_drops_rows_rather_than_minting_ids separately proves the recreate DROPS pre-23 edges (surviving count 0, minted count 0) rather than copying them through a surrogate-computing SELECT — so 'no surviving edge transitioned' is not a vacuous reading.",
+      "anti_vacuity": "the_transition_detector_catches_a_rogue_backfill runs the forbidden UPDATE directly against the DB and asserts the counter reports 1, the snapshot comparison FAILS, and the derived id moves h: -> l:. the_degovern_detector_catches_a_rogue_clear does the mirror. Without these, 'transitions == 0' would prove nothing about the assertion itself."
+    },
+    "D3_registration_inert": {
+      "status": "DONE",
+      "artifact": "src/rust/crates/fathomdb-engine/tests/slice25_registration_identity_inert.rs",
+      "corpus": "3 anonymous doc-seeded nodes (logical_id: None) + 2 caller-governed nodes + 2 entity nodes MINTED through the real extractor arm (ingest_with_extractor against tests/fixtures/slice15_byo_llm/stub_harness.py, doc-simple -> Alice/person + Project X/project).",
+      "registration_shapes_exercised": "configure_projections add (2 specs, filterable + searchable->FTS) -> identical re-registration (asserted delta.unchanged) -> explicit drop of one -> boot re-derive (engine dropped, DB re-opened, which re-drives the cached ProjectionSpecs from the durable registry). read_projections() after re-open confirms the registration really survived, so the inertness is not vacuous.",
+      "assertions": "Every pre-existing row's (write_cursor, logical_id, body, IdSpace::to_prefixed()) is byte-identical at every step; the 3 anonymous rows stay h:, the 2+2 governed rows stay l:.",
+      "note_on_rebuild_projections": "The prompt suggested rebuild_projections() as an alternative cycle; it is gated behind the `operator` Cargo feature, so calling it would force the whole test target under required-features and off the default build. Boot re-derive (close + re-open) exercises the same rederive_projections_on_boot path and stays default-runnable. Deliberate substitution, recorded here.",
+      "anti_vacuity": "a_real_backfill_does_move_the_id_space_which_is_why_it_is_banned runs the forbidden UPDATE through the engine's own writer connection and asserts the snapshot changes and the space flips (1,0) -> (0,1). The keystone test additionally mutates its own baseline (forcing one anonymous row to Some(\"minted-surrogate\")) and asserts the comparator FAILS.",
+      "corollary_pinned": "anonymous_and_governed_twins_both_stay_active_and_both_surface — the TC-11 accepted corollary (document it, do NOT fix it): the partial-unique index is ON canonical_nodes(logical_id) WHERE superseded_at IS NULL and SQLite treats every NULL as distinct, so both twins stay ACTIVE (count 2) and both surface with distinct id-spaces. supersession_reuses_the_write_time_logical_id_rather_than_re_deriving_one pins that even supersession re-uses the write-time id rather than deriving one."
+    },
+    "D4_write_time_admission_audit": {
+      "status": "NO GAP FOUND — no engine change made, per the prompt's 'prefer proving the invariant over adding machinery'.",
+      "engine_src_diff_vs_baseline": "EMPTY — `git diff --stat 2afd168c -- src/rust/crates/fathomdb-engine/src/` produces zero bytes. Deliberate, given the concurrent Slice 20c also touches fathomdb-engine/src/lib.rs.",
+      "enumerated_call_sites": {
+        "mint_sites_in_engine": [
+          "src/rust/crates/fathomdb-engine/src/lib.rs:5057-5062 — entity arm of Engine::ingest_with_extractor: derive_logical_id(kind, name) -> PreparedWrite::Node { logical_id: Some(..) }. GOVERNED by construction (a registry-admitted extracted entity).",
+          "src/rust/crates/fathomdb-engine/src/lib.rs:5264-5279 — edge arm of the same verb: derive_logical_id x3 (from_lid, to_lid, edge_lid) -> PreparedWrite::Edge { logical_id: Some(edge_lid) }. GOVERNED by construction."
+        ],
+        "derive_logical_id_call_sites_total": "3 (all in fathomdb-engine/src/lib.rs, lines 5057, 5264-5265, 5267) — grep across src/rust/ finds no other caller in any crate.",
+        "caller_supplied_path": [
+          "src/rust/crates/fathomdb-engine/src/lib.rs:3026 (Node) and :3074 (Edge) — `pub logical_id: Option<String>`. A caller SUPPLYING a logical_id at write time IS the definition of admission under the pin, so this is not a gap.",
+          "src/rust/crates/fathomdb-napi/src/lib.rs:2386 / :2464 — json_str_alt(item, \"logicalId\", \"logical_id\") passed straight through; fathomdb-py translate_batch does the same. Bindings never synthesise a value."
+        ],
+        "explicit_null_non_governed_writers": [
+          "src/rust/crates/fathomdb-engine/src/lib.rs:6918 and :6943 — run_one_thread_poison_for_test seeds: logical_id: None.",
+          "src/rust/crates/fathomdb-engine/src/lib.rs:7200-7202 — write_canonical_row_with_kind_for_test (EXP-S coverage/graph structural rows; the ONLY writer that bypasses PreparedWrite and reaches canonical_nodes directly) binds a LITERAL NULL: `INSERT INTO canonical_nodes(write_cursor, kind, body, source_id, logical_id, row_kind) VALUES(?1,?2,?3,?4,NULL,?5)`. Pinned by `the_internal_structural_row_writer_mints_no_logical_id`."
+        ],
+        "pure_pass_through": [
+          "src/rust/crates/fathomdb-engine/src/lib.rs:17046/:17113 (Node) and :17140/:17223 (Edge) — commit_batch destructures and binds the caller's logical_id verbatim. It decides nothing.",
+          "src/rust/crates/fathomdb-engine/src/lib.rs:15529+ — validate_write rejects an empty logical_id and one containing \\x1e, and never assigns one."
+        ],
+        "zero_assignment_sites": "grep for `UPDATE canonical_nodes` / `UPDATE canonical_edges` across the engine returns lines 5545 (SET t_invalid), 5589/17165/17201 (SET superseded_at), 7587 (SET importance), 7944 (SET state, reason), 17075 (SET superseded_at). NOT ONE assigns logical_id. The only INSERTs naming logical_id are the two commit_batch pass-throughs and the literal-NULL structural writer above."
+      },
+      "conclusion": "No non-governed (doc / chunk / passage / anonymous) write path can mint. D1-D3 carry the slice; the audit's two load-bearing paths are additionally pinned by `the_internal_structural_row_writer_mints_no_logical_id` and `an_anonymous_write_stays_anonymous_through_the_whole_durable_path`."
+    }
+  },
+  "red_witness": {
+    "commit": "f66d74d9",
+    "how_red_was_forced": "The tests landed alongside a DELIBERATELY PERMISSIVE `check_migration_logical_id_pin` stub returning Ok(()) unconditionally, so the RED is a set of assertion failures rather than a compile error.",
+    "command": "cargo test -p fathomdb-schema --test slice25_logical_id_pin",
+    "result": "test result: FAILED. 6 passed; 11 failed; 0 ignored (exit 101)",
+    "failing_tests": [
+      "pin_rejects_update_that_mints_logical_id_on_anonymous_nodes — 'a migration that populates logical_id must be rejected: ()'",
+      "pin_rejects_update_that_mints_logical_id_on_edges",
+      "pin_rejects_insert_select_backfill_that_writes_logical_id",
+      "pin_rejects_insert_into_canonical_table_without_a_column_list",
+      "pin_rejects_quoted_identifier_evasion — 'quoted-identifier evasion must still be rejected: UPDATE canonical_nodes SET \"logical_id\" = 'x' WHERE 1;'",
+      "pin_rejects_a_trigger_that_writes_logical_id",
+      "pin_rejects_add_column_logical_id_with_a_default",
+      "pin_rejects_renaming_a_populated_column_to_logical_id",
+      "pin_has_no_exemption_escape_hatch",
+      "pin_and_accretion_guard_are_independent",
+      "the_transition_detector_catches_a_rogue_backfill — 'the static guard must refuse this statement: ()'"
+    ],
+    "why_6_passed_at_red": "The D2 dynamic migration tests and the legitimate-use accepts passed at RED because the invariant ALREADY HOLDS at rest — nothing in the shipped ladder mints. What was missing was the guard that keeps it holding. This is expected for an ENFORCEMENT+PROOF slice and is why every 'nothing changed' assertion is paired with a negative control.",
+    "green_after": "cargo test -p fathomdb-schema --test slice25_logical_id_pin -> test result: ok. 18 passed; 0 failed (18 after the on-disk-.sql wiring test was added in bbc95a9b).",
+    "d3_red_discipline": "D3 (engine) was green at baseline for the same reason. Its falsifiability is carried by executed negative controls, not by a stub: a_real_backfill_does_move_the_id_space_which_is_why_it_is_banned RUNS the forbidden UPDATE and asserts both the at-rest snapshot and the derived IdSpace flip; the keystone test mutates its own baseline and asserts the comparator fails."
+  },
+  "gates": {
+    "cargo clippy --workspace --all-targets": 0,
+    "cargo clippy --workspace --all-targets -- -D warnings": 0,
+    "cargo check --workspace --all-targets": 0,
+    "cargo fmt --all --check": 0,
+    "cargo test -p fathomdb-schema": 0,
+    "cargo test -p fathomdb-engine --no-fail-fast": 0,
+    "bash scripts/check-governed-surface-pin.sh": 0,
+    "bash scripts/agent-lint-migrations.sh": 0,
+    "bash scripts/check-ledgers.sh": 0,
+    "bash scripts/lint-findings.sh": 0,
+    "bash scripts/lint-plan-anchors.sh": 0,
+    "bash scripts/lint-design-status.sh": 0,
+    "bash scripts/check-release-state-views.sh": 0,
+    "bash scripts/check-board-currency.sh": 0
+  },
+  "gate_detail": {
+    "schema_suite": "18 test targets, all 'test result: ok', 0 FAILED. New target slice25_logical_id_pin.rs: 18 passed.",
+    "engine_suite": "103 test targets, all 'test result: ok', 0 FAILED. New target slice25_registration_identity_inert.rs: 8 passed.",
+    "engine_suite_flake_observed_and_dismissed": "On the FIRST full-suite run, tests/lifecycle_observability.rs reported 'FAILED. 20 passed; 1 failed'. Re-run standalone 3x: 21/21 green every time; re-run of the FULL suite: 0 FAILED. It is a load-sensitive slow-statement-threshold timing test (ac_007a/ac_007b class) that flakes when cargo runs many test binaries in parallel. NOT attributable to this slice: `git diff 2afd168c -- src/rust/crates/fathomdb-engine/src/` is EMPTY, i.e. the engine source is byte-unchanged. Flagged for the orchestrator, not fixed (out of slice).",
+    "governed_surface_pin_output": "ok governed-surface-pin: src/conformance/governed-surface-allowlist.json matches the AC-079 pin (30 allowlist / 5 core / 5 recovery_denylist, pinned at 427d2712 under AC-079)",
+    "allowlist_diff": "`git diff --stat 2afd168c -- src/conformance/governed-surface-allowlist.json` produces ZERO BYTES — the allowlist is byte-identical to base. `scripts/governed-surface-pin.json` likewise zero-byte diff. Neither was edited.",
+    "known_red_not_touched": "scripts/agent-test.sh (vacuous aggregate exit / TC-16), test_actionlint_fixture.sh, scripts/agent-typecheck.sh (7 pre-existing pyright errors) were NOT run and NOT fixed, per the prompt."
+  },
+  "x1_sdk_parity": {
+    "claim_evidenced": "R-20-SUR adds NO SDK verb, so the parity claim is (a) the Python and TypeScript SDK surfaces are UNCHANGED, and (b) both still behave identically w.r.t. IdSpace (l:/h:) on hits, including across a registration.",
+    "build_isolation": "NEITHER `maturin develop` NOR `pip install -e` was run. Python: `maturin build -i python3 --features pyo3/extension-module --out <scratchpad>/wheelhouse` from the WORKTREE's src/python, producing fathomdb-0.8.9-cp310-abi3-manylinux_2_39_x86_64.whl, installed into a THROWAWAY venv at <scratchpad>/x1venv (outside the repo, so the TC-27 venv_belongs_to_source_tree gate is False and conftest could not rebuild anything). VERIFIED AFTER: /home/coreyt/projects/fathomdb/.venv/.../fathomdb.pth still reads '/home/coreyt/projects/fathomdb/src/python' — the shared venv was NOT rebound. TypeScript: node_modules was COPIED from the primary checkout into the worktree (the sanctioned gitignored-input pattern; the primary tree was not mutated) and the native addon built with `napi build --platform --cargo-cwd ../rust/crates/fathomdb-napi --features test-hooks --js false` into the worktree only.",
+    "python_live_results": {
+      "existing_x1_suite": "src/python/tests/test_idspace_parity.py — 3 passed (governed hit -> logical space l:gov-py-1; doc-seeded hit -> content space h:<sha256(body)>; ids non-null and space-total).",
+      "surface_conformance": "test_surface.py + test_no_recovery_surface.py + test_idspace_parity.py -> 24 passed. test_surface.py checks the LIVE dir()-introspected binding against src/conformance/governed-surface-allowlist.json, so this is direct evidence the Python governed surface is unchanged.",
+      "slice_specific_harness": "<scratchpad>/x1py/x1_r20sur_live.py (live: open real DB, write anonymous doc + governed node, search, then configureProjections add + idempotent re-register + explicit drop, then re-search + re-read canonical_nodes read-only). exit 0. Output: anonymous h:6d7f8dc26ec21af97cf127c490488d83ac173923138682939595fb8ca180fb80 and governed l:x1-gov-1 BOTH BEFORE and AFTER registration, byte-identical; at-rest (write_cursor, logical_id, body) rows unchanged; anonymous row still logical_id NULL."
+    },
+    "typescript_live_results": {
+      "existing_x1_suite": "src/ts/tests/idspace-parity.test.ts -> 3 pass / 0 fail.",
+      "surface_conformance": "release-surface.test.ts + no-recovery-surface.test.ts + consumer-boundary.test.ts -> 9 pass / 0 fail (2 release-surface cases self-skip without RELEASE_SURFACE_TESTS=1, unchanged from base behaviour).",
+      "slice_specific_harness": "A temporary mirror of the Python harness (src/ts/tests/zz-x1-r20sur-live.test.ts) was compiled with `tsc -p tsconfig.json` (exit 0) and run with `node --test` -> 1 pass / 0 fail. It was DELETED before the closing state (it is X1 evidence, not a slice deliverable; the slice ships no new SDK test). `git status --short` is clean and the worktree contains no trace of it."
+    },
+    "cross_sdk_byte_identity": "The Python and TypeScript harnesses printed BYTE-IDENTICAL ids for the same corpus: anonymous 'h:6d7f8dc26ec21af97cf127c490488d83ac173923138682939595fb8ca180fb80', governed 'l:x1-gov-1', unchanged across registration in both. This is live functional parity, not symbol presence.",
+    "gaps": "None. Both SDKs were built and exercised live from this branch."
+  },
+  "hard_boundaries_honoured": {
+    "zero_net_new_governed_sdk_surface": "check-governed-surface-pin.sh exit 0 at every commit; live Python test_surface.py conformance 24/24 against the unmodified allowlist.",
+    "allowlist_untouched": "src/conformance/governed-surface-allowlist.json byte-identical to 2afd168c (zero-byte diff). scripts/governed-surface-pin.json untouched.",
+    "no_new_sdk_verb_or_binding_method": "No change under src/python, src/ts, fathomdb-py, fathomdb-napi. The one new pub fn (check_migration_logical_id_pin) is internal to fathomdb-schema and is not SDK surface — verified by the pin script, not by reasoning.",
+    "schema_version_not_bumped": "SCHEMA_VERSION stays 24; MIGRATIONS gains no step. Slice 25 needs no schema change — the pin's enforcement is explicitly 'no new column'.",
+    "no_new_column": "None added anywhere. The record remains canonical_nodes.logical_id's null-ness.",
+    "no_db_mocking": "All migration tests use real SQLite; all engine tests use real on-disk temp DBs.",
+    "no_no_verify": "Every commit went through the pre-commit hook (cargo fmt --check).",
+    "no_subagents_spawned": true,
+    "engine_diff_minimal": "ZERO engine source lines changed — the smallest possible diff given the concurrent Slice 20c also edits fathomdb-engine/src/lib.rs. Only a NEW engine TEST file was added (no merge surface with 20c).",
+    "slice_20c_untouched": "flush_embeddings / drain work not touched.",
+    "primary_checkout_untouched": "git -C /home/coreyt/projects/fathomdb status --short is clean, still on main.",
+    "not_pushed_not_merged": "Branch orch-0.8.20-s25 only; no push, no merge, main untouched.",
+    "plan_status_release_state_untouched": "dev/plans/plan-0.8.20.md, dev/plans/runs/STATUS-0.8.20.md and dev/plans/release-state-0.8.20.json were NOT edited — the orchestrator writes the closing docs commit.",
+    "no_ledger_entry_written": true
+  },
+  "findings_addressed": [
+    "TC-11 pin A enforcement gap: the ruling existed (plan §2.1, step-21 comments, s21_backfill_populates_no_logical_id) but nothing made a FUTURE migration incapable of breaking it. check_migration_logical_id_pin + the two whole-corpus wiring tests close that."
+  ],
+  "blockers_encountered": [],
+  "additional_changes_made_in_scope": [
+    "sha2 added to fathomdb-schema [dev-dependencies] (already in the graph via fathomdb-engine; no new crate enters the dependency tree, Cargo.lock +1 line) so the D2 test can assert the derived h:<sha256(body)> id is byte-identical across a migration rather than arguing it.",
+    "Recorded (NOT fixed) a wrinkle in the pin's accepted corollary: identical-body anonymous/governed twins collapse to ONE search hit under fusion's documented dedup-on-body ordering (first-wins keeps the anonymous row). Both rows stay ACTIVE at rest and neither id-space moves — the collapse is retrieval presentation, not re-derivation. Pinned by identical_body_twins_collapse_under_fusion_body_dedup_but_both_persist so the corollary is not misread as a promise that identical-body twins each get a hit."
+  ],
+  "observations_for_orchestrator": [
+    "tests/lifecycle_observability.rs is load-sensitive: it failed 1/21 on one full-suite run and was green on every isolated re-run and on the repeat full-suite run. Pre-existing (engine source byte-unchanged on this branch). Worth a separate note if it recurs; NOT fixed here.",
+    "TC-57 (governed-write vs projection-worker race) was NOT tripped and NOT touched.",
+    "The D1 guard is deliberately strict enough that a future canonical-table recreate which COPIES logical_id through will be refused. That is the intended reading of a TERMINAL-FOREVER pin, and step 23 already set the drop-not-copy precedent — but it is the one decision in this slice a reviewer should weigh explicitly."
+  ],
+  "agent_verify_result": "pass — clippy 0 (also with -D warnings), check 0, fmt 0, fathomdb-schema 0 (18 targets), fathomdb-engine 0 (103 targets, --no-fail-fast), governed-surface-pin 0, agent-lint-migrations 0, and all six repo linters 0. X1: Python 24 live tests + a live registration-inertness harness, TypeScript 12 live tests + the mirrored harness, byte-identical ids across both SDKs.",
+  "fix_1": {
+    "id": "0.8.20-s25-fix-1",
+    "scope": "ONE codex §9 [P2] finding. Nothing broadened.",
+    "commits": [
+      "48a872b7: test(0.8.20-s25-fix-1): RED — schema-qualified names slip the TC-11 pin",
+      "d4a9781f: fix(0.8.20-s25-fix-1): GREEN — normalise schema-qualified canonical table names"
+    ],
+    "head_sha": "d4a9781fa8dcde0649a099562fed8422691e1c8b",
+    "finding": {
+      "verdict": "CONCERN",
+      "severity": "P2",
+      "title": "Handle schema-qualified canonical table names",
+      "location_at_review": "src/rust/crates/fathomdb-schema/src/lib.rs:1237-1238 (fn is_pinned_table)",
+      "statement": "When a migration schema-qualifies the table (e.g. `UPDATE main.canonical_nodes SET logical_id = ...` or `INSERT INTO main.canonical_nodes(logical_id) ...`), SQLite targets the same pinned table, but the guard compared the extracted token LITERALLY against CANONICAL_NODES / CANONICAL_EDGES. The token became MAIN.CANONICAL_NODES, so the pin SILENTLY ACCEPTED the exact backfill shape it is meant to reject.",
+      "assessment": "Genuine evasion hole in a TERMINAL-FOREVER pin. Reproduced at RED before fixing. A SECOND, related hole was found while writing the tests and closed in the same fix: SQLite's tokenizer also accepts whitespace around the qualifier dot (`UPDATE main . canonical_nodes SET ...`), and the guard's token extractors cut at whitespace, so that spelling extracted the bare token MAIN and slipped the pin too."
+    },
+    "sqlite_behaviour_verified_before_asserting": {
+      "why": "The prompt required verifying the whitespace-around-the-dot spelling against real SQLite before asserting on it.",
+      "engine": "SQLite 3.45.1 (python3 sqlite3 module, live statements against a real in-memory DB)",
+      "results": [
+        "`INSERT INTO main . t(a) VALUES(1)` — ACCEPTED, targets main.t",
+        "`UPDATE main . t SET a=2` — ACCEPTED",
+        "`UPDATE temp . t SET a=7` — ACCEPTED",
+        "`INSERT INTO \"main\".t(a) VALUES(4)` / `INSERT INTO [main].[t](a) VALUES(5)` / ``INSERT INTO `temp`.t(a) VALUES(8)`` — ACCEPTED",
+        "`UPDATE main.temp.t SET a=1` — SYNTAX ERROR ('near \".\"'). SQLite permits AT MOST ONE qualifier, which is why `bare_table_name` takes the part after the (single) dot."
+      ],
+      "consequence": "The whitespace spelling IS asserted on (it parses). No spelling SQLite rejects is asserted on."
+    },
+    "red_witness": {
+      "commit": "48a872b7",
+      "command": "cargo test -p fathomdb-schema --test slice25_logical_id_pin",
+      "result_line": "test result: FAILED. 19 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+      "exit_code": 101,
+      "failing_tests": [
+        "pin_rejects_schema_qualified_backfills — panicked: 'a schema-qualified backfill must still be rejected: UPDATE main.canonical_nodes SET logical_id = ''minted'' WHERE logical_id IS NULL;'",
+        "pin_rejects_quoted_and_temp_schema_qualified_evasion — panicked: 'a quoted / temp-qualified backfill must still be rejected: UPDATE \"main\".canonical_nodes SET logical_id = ''x'' WHERE 1;'",
+        "pin_rejects_whitespace_around_the_qualifier_dot — panicked: 'whitespace around the qualifier dot must not defeat the pin: UPDATE main . canonical_nodes SET logical_id = ''x'' WHERE 1;'",
+        "pin_rejects_schema_qualified_ddl — panicked: 'a schema-qualified DDL offender must still be rejected: ALTER TABLE main.canonical_nodes ADD COLUMN logical_id TEXT NOT NULL DEFAULT ''minted'';'"
+      ],
+      "control_green_at_red": "pin_still_ignores_qualified_non_canonical_tables PASSED at RED and still passes at GREEN. It asserts main.canonical_nodes_old / main.node_projections / temp.canonical_nodes_backup stay ACCEPTED, i.e. the fix had to be a qualifier STRIP and not a widening to a substring match.",
+      "coverage_asserted": "UPDATE and INSERT…SELECT and column-list-less INSERT, on BOTH canonical_nodes and canonical_edges; `main.` and `temp.`; either half quoted with \"…\" / […] / `…`; whitespace on either or both sides of the dot; and the ALTER TABLE / CREATE TABLE arms, which take the table name through the same extractor."
+    },
+    "green": {
+      "commit": "d4a9781f",
+      "result_line": "test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+      "change_1_qualifier_strip": "New `fn bare_table_name(token) -> &str` = `token.rsplit_once('.').map_or(token, |(_, table)| table)`, called from `is_pinned_table`. SQLite permits at most one qualifier (verified above), so the part after the dot IS the table name. Quoted spellings needed no extra work: the normaliser ALREADY unwraps \"…\" / […] / `…` in place, so \"main\".\"canonical_nodes\" and [main].[canonical_nodes] arrive as MAIN.CANONICAL_NODES — the qualified-name handling is thereby consistent with the existing quoted-identifier unwrapping, as the prompt required.",
+      "change_2_whitespace_tightening": "New `fn tighten_qualified_names(statement) -> String` removes whitespace around `.`, applied via a new `fn normalize_statement(raw)` = tighten(collapse_whitespace(raw)) at the TWO statement-push sites in `normalized_statements`. Safe by construction: comments are already stripped and string literals already elided to '' at that point, so no surviving `.` is data.",
+      "minimality": "Both changes sit in the token-normalisation path. `statement_violates_logical_id_pin` and every arm of it are UNCHANGED; the guard was not restructured. Net src/lib.rs delta vs the slice head: +46/-4 lines including doc comment.",
+      "existing_accepts_reconfirmed_green": [
+        "pin_accepts_every_shipped_migration_step — ok",
+        "pin_accepts_every_on_disk_migration_sql_file — ok",
+        "pin_accepts_declaration_index_and_predicate_uses — ok",
+        "pin_and_accretion_guard_are_independent — ok"
+      ],
+      "no_rejection_loosened": "All 10 pre-existing rejection tests still pass (update/nodes, update/edges, insert-select, no-column-list, quoted-identifier, trigger, add-column-default, rename, no-exemption-hatch, rogue-backfill static refusal). The whole slice25_logical_id_pin target went 18 -> 23 tests, all green; the schema crate suite is 0 FAILED overall.",
+      "doc_comment_updated": "Two places, as required. (a) '# Deliberately conservative' now records that main./temp./quoted qualified names normalise to the bare table so qualifying is not an escape, AND that main.canonical_nodes_old is NOT the pinned table (strip, never a substring match). (b) '# Known limits' now records the whitespace tightening around `.` alongside the quoted-identifier unwrapping, citing the SQLite 3.45 verification."
+    },
+    "gates": {
+      "cargo clippy --workspace --all-targets": 0,
+      "cargo check --workspace --all-targets": 0,
+      "cargo fmt --all --check": 0,
+      "cargo test -p fathomdb-schema": 0,
+      "bash scripts/check-governed-surface-pin.sh": 0,
+      "bash scripts/agent-lint-migrations.sh": 0
+    },
+    "gate_capture_method": "Each exit code read with `rc=$?` on the line immediately following the command, before any command substitution.",
+    "boundary_diffs_vs_2afd168c": {
+      "src/conformance/governed-surface-allowlist.json": "EMPTY — `git diff --stat 2afd168c -- src/conformance/governed-surface-allowlist.json` produced ZERO BYTES. Never opened, never edited.",
+      "src/rust/crates/fathomdb-engine/src/": "EMPTY — `git diff --stat 2afd168c -- src/rust/crates/fathomdb-engine/src/` produced ZERO BYTES. Slice 20c's file is untouched.",
+      "full_diff_stat_vs_baseline": "Cargo.lock +1 | fathomdb-engine/tests/slice25_registration_identity_inert.rs +546 | fathomdb-schema/Cargo.toml +6 | fathomdb-schema/src/lib.rs +327 | fathomdb-schema/tests/slice25_logical_id_pin.rs +714 — 5 files, 1594 insertions, 0 deletions."
+    },
+    "hard_boundaries_honoured": {
+      "schema_version_not_bumped": "SCHEMA_VERSION is still 24 (grep-verified) and the fix adds ZERO `Migration {` entries (diff of lib.rs vs baseline contains no added Migration literal).",
+      "zero_engine_source_changes": true,
+      "allowlist_byte_identical": true,
+      "no_new_sdk_verb_or_binding_method": "No change under src/python, src/ts, fathomdb-py, fathomdb-napi. `bare_table_name`, `tighten_qualified_names` and `normalize_statement` are all PRIVATE fns in fathomdb-schema; the only pub item is the pre-existing check_migration_logical_id_pin, whose signature is unchanged.",
+      "no_new_column": true,
+      "no_db_mocking": "Real SQLite was used to VERIFY the tokenizer behaviour before asserting on it; the guard tests are pure-function tests over SQL strings and mock nothing.",
+      "no_no_verify": "Both commits went through the pre-commit hook (cargo fmt --check).",
+      "no_subagents_spawned": true,
+      "no_maturin_develop_or_pip_install_e": true,
+      "commits_on_slice_branch_only": "`git rev-parse --abbrev-ref HEAD` = orch-0.8.20-s25 verified before each commit. Not pushed, not merged, main untouched.",
+      "primary_checkout_untouched": true,
+      "plan_status_release_state_untouched": "dev/plans/plan-0.8.20.md, dev/plans/runs/STATUS-0.8.20.md, dev/plans/release-state-0.8.20.json NOT edited. No ledger entry written."
+    },
+    "gates_deliberately_not_rerun": {
+      "cargo test -p fathomdb-engine": "NOT re-run, per the prompt: the orchestrator already verified it clean (exit 0, 103/103) and this fix changes ZERO engine source (diff empty) and zero engine tests.",
+      "X1_sdk_parity": "NOT redone, and it does not need to be: this fix touches only a private normalisation path inside a fathomdb-schema authoring guard. There is NO SDK surface change (no new verb, no binding method, allowlist byte-identical, check-governed-surface-pin.sh exit 0), and no runtime code path is affected — check_migration_logical_id_pin is not called by migrate_with_steps or by any SDK entry point. Stating this explicitly rather than re-running X1.",
+      "known_red_not_touched": "scripts/agent-test.sh (vacuous aggregate exit), test_actionlint_fixture.sh, scripts/agent-typecheck.sh (7 pre-existing pyright errors), and the load-sensitive flakes ac_002_no_log_files_without_subscriber / ac_029_canonical_writes_complete_under_projection_stall / tests/lifecycle_observability.rs were NOT run and NOT 'fixed'."
+    },
+    "residual_risk_for_the_reviewer": "The guard remains LEXICAL by design. `tighten_qualified_names` joins around every unquoted `.` in a normalised statement; in migration SQL the only such dots are qualified names (string literals are elided to '' and comments removed beforehand), and all 24 shipped steps plus the whole on-disk migrations/*.sql corpus still pass. A pathological future statement with a spaced decimal literal (`1 . 5`) would normalise to `1.5` — same value, no behavioural consequence for the pin.",
+    "blockers_encountered": []
+  },
+  "next_step_for_orchestrator": "Cherry-pick f66d74d9, bbc95a9b, 86f80375, 48a872b7, d4a9781f (in order) onto mainline, then run the codex §9 review against branch orch-0.8.20-s25 HEAD d4a9781fa8dcde0649a099562fed8422691e1c8b (baseline 2afd168c). Point the reviewer at: (1) whether check_migration_logical_id_pin's deliberate conservatism (refusing even a PRESERVING recreate-copy) and its deliberate absence of an exemption escape hatch are the right reading of TC-11 pin A; (2) whether the two whole-corpus wiring tests are sufficient to make a future violating migration unlandable; (3) whether the D4 no-gap conclusion holds against the enumerated call sites. Then write the closing docs commit (plan §3 R-20-SUR row, STATUS-0.8.20.md, release-state-0.8.20.json) and the ledger entry — this implementer touched none of them.",
+  "fix_2": {
+    "id": "0.8.20-s25-fix-2",
+    "scope": "TWO codex §9 findings on check_migration_logical_id_pin (one [P2] bypass, one [P3] over-rejection), both in the same table-token extraction path. Nothing broadened.",
+    "branch": "orch-0.8.20-s25",
+    "baseline_sha": "2afd168c",
+    "parent_sha": "d4a9781fa8dcde0649a099562fed8422691e1c8b",
+    "head_sha": "ec2335a7531a89a917d2eefabcd068706dd1e671",
+    "commits": [
+      "ee94cdf6: test(0.8.20-s25-fix-2): RED — UPDATE OR <conflict-action> slips the pin; trigger arm over-rejects lookalikes",
+      "ec2335a7: fix(0.8.20-s25-fix-2): GREEN — skip the UPDATE conflict clause; match trigger targets by token"
+    ],
+    "findings": [
+      {
+        "severity": "P2",
+        "title": "Handle SQLite UPDATE conflict clauses",
+        "location_at_review": "src/rust/crates/fathomdb-schema/src/lib.rs:1228-1230 (UPDATE arm of statement_violates_logical_id_pin)",
+        "statement": "For `UPDATE OR <conflict-action> canonical_nodes SET logical_id = ...`, the guard extracted `OR` as the table name and returned false, so a forbidden logical_id backfill bypassed the TERMINAL-FOREVER TC-11 pin.",
+        "assessment": "GENUINE BYPASS. Reproduced at RED before fixing.",
+        "fix": "New private fn `update_target_table(statement)` replaces `token_after(statement, \"UPDATE \")`. It strips the `UPDATE ` prefix, then skips an optional `OR <action> ` where <action> is one of the five SQLite conflict actions, matched TOKEN-EXACTLY (whole token followed by a single space), then takes the first identifier token. `token_after` and the new `update_target_table` share the extracted helper `first_token`.",
+        "insert_arm_checked": "The analogous `INSERT OR <action> INTO ...` shape was checked and does NOT have the hole: the INSERT/REPLACE arm anchors on ` INTO `, which the conflict clause precedes, so `table_after_into` already read the real table. Confirmed at RED — pin_rejects_insert_with_an_or_conflict_clause PASSED before the GREEN change — and pinned as a regression test anyway (15 offender shapes: 5 actions x {column list, qualified, no column list}).",
+        "status": "CLOSED"
+      },
+      {
+        "severity": "P3",
+        "title": "Avoid substring matching trigger targets",
+        "location_at_review": "src/rust/crates/fathomdb-schema/src/lib.rs:1283-1285 (fn targets_pinned_table)",
+        "statement": "`statement.contains(table)` rejected any trigger whose statement merely CONTAINED a pinned table name as a substring, e.g. `CREATE TRIGGER ... ON canonical_nodes_backup`, which targets neither pinned table. Legitimate recreate/backup trigger scaffolding failed the pin.",
+        "assessment": "GENUINE OVER-rejection. Reproduced at RED before fixing.",
+        "fix": "`targets_pinned_table` becomes `mentions_pinned_table`: it splits the statement on every character that cannot appear in an identifier (keeping `.` so a schema qualifier stays one token for `is_pinned_table` to strip) and compares TOKENS, the same way every other arm does. Same call site, same arm, no restructuring.",
+        "anti_loosening_guarantee": "Precision on the trigger TARGET did NOT cost the trigger BODY. Verified how the `;` split actually behaves rather than assuming: the FIRST body statement is NOT its own fragment — it stays glued to the `CREATE TRIGGER ...` head (the split point is the `;` that TERMINATES it), so the arm's whole-fragment token scan still sees `UPDATE canonical_nodes SET logical_id ...` there. Every LATER body statement IS its own fragment, judged independently by the UPDATE / INSERT arms. Both cases are pinned by pin_rejects_a_lookalike_trigger_whose_body_writes_a_canonical_logical_id (first-statement, later-statement, and schema-qualified variants).",
+        "doc_correction": "The doc comment's Known-limits paragraph previously claimed the trigger head and the body UPDATE are 'independently rejected' fragments. That was wrong for the FIRST body statement; the text now states the glue precisely.",
+        "status": "CLOSED"
+      }
+    ],
+    "sqlite_behaviour_verified_before_asserting": {
+      "why": "The prompt required verifying the accepted conflict-action spellings against real SQLite before asserting on them (as was done for the qualifier dot in fix-1).",
+      "engine": "SQLite 3.45.1 (python3 sqlite3 module, live statements against a real in-memory DB with real canonical_nodes / canonical_nodes_backup tables)",
+      "results": [
+        "All five actions PARSE for UPDATE: `UPDATE OR ROLLBACK|ABORT|FAIL|IGNORE|REPLACE canonical_nodes SET logical_id = ...` — accepted and targets the table.",
+        "All five actions PARSE for INSERT: `INSERT OR <action> INTO canonical_nodes(...) VALUES(...)` — accepted (ABORT/FAIL returned a runtime UNIQUE-constraint failure, i.e. they parsed and executed).",
+        "Composes with the qualifier: `UPDATE OR <action> main.canonical_nodes SET ...` and `UPDATE OR <action> main . canonical_nodes SET ...` both parse.",
+        "`UPDATE OR BOGUS canonical_nodes SET ...` — SYNTAX ERROR (near \"BOGUS\"), so the five-action list is exhaustive for this shape.",
+        "Lowercase `update or replace canonical_nodes set logical_id=...` parses (the normaliser upper-cases, so the guard sees the same statement).",
+        "Trigger fixtures verified real: `CREATE TRIGGER ... ON canonical_nodes_backup BEGIN UPDATE canonical_nodes_backup SET logical_id = NEW.logical_id ...; END;`, the sneaky body variant, and the two-statement body variant ALL execute against real SQLite."
+      ],
+      "consequence": "Every asserted spelling is one real SQLite accepts. No spelling SQLite rejects is asserted on."
+    },
+    "red_witness": {
+      "commit": "ee94cdf6",
+      "command": "cargo test -p fathomdb-schema --test slice25_logical_id_pin",
+      "result_line": "test result: FAILED. 26 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+      "exit_code": 101,
+      "failing_tests": [
+        "pin_rejects_update_with_an_or_conflict_clause — panicked: 'an UPDATE OR <conflict-action> backfill must still be rejected: UPDATE OR ROLLBACK canonical_nodes SET logical_id = ''minted'' WHERE 1;'",
+        "pin_accepts_a_trigger_on_a_lookalike_table — panicked: 'a trigger on a NON-canonical lookalike table must be accepted: TC-11 logical_id pin rejected 098_backup_trigger.sql: ... offending statement: CREATE TRIGGER BACKUP_STAMP AFTER INSERT ON CANONICAL_NODES_BACKUP BEGIN UPDATE CANONICAL_NODES_BACKUP SET LOGICAL_ID = NEW.LOGICAL_ID WHERE WRITE_CURSOR = NEW.WRITE_CURSOR'"
+      ],
+      "passing_at_red_by_design": [
+        "pin_rejects_insert_with_an_or_conflict_clause — the INSERT arm never had the hole (regression pin).",
+        "pin_rejects_a_lookalike_trigger_whose_body_writes_a_canonical_logical_id — anti-loosening control; green at RED and MUST stay green through the [P3] fix.",
+        "pin_still_ignores_or_conflict_updates_on_unrelated_tables — anti-over-rejection control for the [P2] fix."
+      ]
+    },
+    "green_result": {
+      "commit": "ec2335a7",
+      "command": "cargo test -p fathomdb-schema --test slice25_logical_id_pin",
+      "result_line": "test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+      "exit_code": 0,
+      "tests_added": [
+        "pin_rejects_update_with_an_or_conflict_clause (RED->GREEN; 5 actions x 5 shapes + a lowercase spelling)",
+        "pin_rejects_insert_with_an_or_conflict_clause (regression pin; 5 actions x 3 shapes)",
+        "pin_still_ignores_or_conflict_updates_on_unrelated_tables (anti-over-rejection control, incl. a table named or_ledger)",
+        "pin_accepts_a_trigger_on_a_lookalike_table (RED->GREEN)",
+        "pin_rejects_a_lookalike_trigger_whose_body_writes_a_canonical_logical_id (anti-loosening control)"
+      ],
+      "previously_green_tests_still_green": "All 23 pre-fix-2 tests in the file, including pin_accepts_every_shipped_migration_step, pin_accepts_every_on_disk_migration_sql_file, pin_accepts_declaration_index_and_predicate_uses, pin_and_accretion_guard_are_independent, pin_has_no_exemption_escape_hatch, pin_still_ignores_qualified_non_canonical_tables, and every pin_rejects_* test. No existing rejection loosened; no existing accept broken."
+    },
+    "gates": {
+      "cargo clippy --workspace --all-targets": 0,
+      "cargo check --workspace --all-targets": 0,
+      "cargo fmt --all --check": 0,
+      "cargo test -p fathomdb-schema": 0,
+      "bash scripts/check-governed-surface-pin.sh": 0,
+      "bash scripts/agent-lint-migrations.sh": 0
+    },
+    "gate_detail": {
+      "cargo_test_p_fathomdb_schema": "ALL suites green, incl. slice25_logical_id_pin 28/28, migrations 12/12, step14..step24, tc33_fix4 3/3, tc33_fix6 2/2, wire_constants 2/2. Exit 0.",
+      "engine_suite_not_rerun": "Deliberate: ZERO engine source change (diff vs 2afd168c empty), and the orchestrator already verified fathomdb-engine clean at 103/103."
+    },
+    "hard_boundaries_honoured": {
+      "allowlist_diff_vs_2afd168c": "EMPTY — `git diff 2afd168c -- src/conformance/governed-surface-allowlist.json` produced no output; check-governed-surface-pin.sh exit 0.",
+      "engine_src_diff_vs_2afd168c": "EMPTY — `git diff 2afd168c -- src/rust/crates/fathomdb-engine/src/` produced no output (Slice 20c owns that tree).",
+      "schema_version": "UNCHANGED at 24; no Migration step appended (MIGRATIONS registry untouched).",
+      "sdk_surface": "No new SDK verb, binding method, column, or public API. `mentions_pinned_table`, `update_target_table` and `first_token` are PRIVATE fns in fathomdb-schema.",
+      "files_touched_by_fix_2": [
+        "src/rust/crates/fathomdb-schema/src/lib.rs",
+        "src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs"
+      ],
+      "no_db_mocking": "True — SQLite behaviour verified against a real in-memory SQLite 3.45.1 DB.",
+      "no_no_verify": "True — both commits went through the pre-commit hook (cargo fmt --check).",
+      "no_subagents_spawned": true,
+      "no_maturin_or_pip_e_from_worktree": true,
+      "plan_status_ledger_untouched": "True — dev/plans/plan-0.8.20.md, dev/plans/runs/STATUS-0.8.20.md, dev/plans/release-state-0.8.20.json and the ledger were not touched.",
+      "no_push_no_merge_main_untouched": true
+    },
+    "x1_sdk_parity": "UNAFFECTED — not re-run, deliberately. fix-2 changes only PRIVATE functions inside a fathomdb-schema authoring-time guard (check_migration_logical_id_pin) and its test file. No SDK surface, no verb, no wire format, no schema change, and no engine source change.",
+    "observations_for_orchestrator": [
+      "CANDIDATE FOR A LATER FIX (found while working, NOT closed — deliberately out of this fix's mandate, no code touched): the arms of statement_violates_logical_id_pin anchor on `statement.starts_with(\"UPDATE\"/\"INSERT\"/\"REPLACE\"/\"ALTER\"/\"CREATE\")`, so a statement that leads with a CTE — `WITH x AS (SELECT 1) UPDATE canonical_nodes SET logical_id = ...;` — matches NO arm and is accepted. SQLite supports WITH before UPDATE/INSERT/DELETE. This is the same family as the two findings just closed (leading-keyword-anchored extraction) but closing it needs paren-aware CTE skipping, i.e. more than a local extraction fix, so per the circuit-breaker instruction it was left alone and reported instead. It is NOT introduced by fix-2 — it is present at 2afd168c and at fix-1 head.",
+      "The five-action conflict list is now a named const SQLITE_CONFLICT_ACTIONS in fathomdb-schema/src/lib.rs, so a future reviewer can see the closed set in one place."
+    ],
+    "next_step_for_orchestrator": "Re-run codex §9 on ec2335a7 (or cherry-pick ee94cdf6 + ec2335a7 onto the integration branch). Nothing else is pending on this slice from the implementer side."
+  },
+  "fix_3": {
+    "id": "0.8.20-s25-fix-3",
+    "scope": "ONE self-reported bypass in check_migration_logical_id_pin: a leading WITH … CTE slips every keyword-anchored arm. Plus a POST-REBASE re-run of the full gate set. Nothing broadened, nothing restructured.",
+    "branch": "orch-0.8.20-s25",
+    "baseline_sha": "efa8d584",
+    "baseline_note": "The branch was REBASED by the orchestrator onto the new main tip efa8d584 (a concurrent slice landed). Every diff/verification below is against efa8d584, NOT the original 2afd168c. Rebased parent for fix-3 = 8d81a0a5 (the rebased fix-2 GREEN).",
+    "parent_sha": "8d81a0a558dc90538b91ba343ae33ef1cc24d128",
+    "head_sha": "90695a3e95ae8a8dc4af27ee62c9e459254dfe31",
+    "commits": [
+      "6763f2ad: test(0.8.20-s25-fix-3): RED — a leading WITH … CTE slips every arm of the pin",
+      "90695a3e: fix(0.8.20-s25-fix-3): GREEN — keyword-independent catch-all closes the CTE bypass"
+    ],
+    "finding": {
+      "severity": "P2-equivalent (self-reported by fix-2, not a codex round)",
+      "title": "A leading CTE clause bypasses the TC-11 logical_id pin",
+      "location_at_review": "src/rust/crates/fathomdb-schema/src/lib.rs — every arm of statement_violates_logical_id_pin (each begins statement.starts_with(...))",
+      "statement": "SQLite's grammar allows an optional with-clause in FRONT of UPDATE / INSERT / DELETE, so `WITH x AS (SELECT 1) UPDATE canonical_nodes SET logical_id = 'y';` is a running forward-mint backfill whose normalised statement starts with WITH. It matched NO arm and was ACCEPTED by a TERMINAL-FOREVER pin.",
+      "provenance": "PRE-EXISTING: present at 2afd168c (the slice's first GREEN) and at every fix head; NOT introduced by fix-1 or fix-2. Same finding family as the two closed codex §9 [P2]s (leading-keyword-anchored extraction).",
+      "assessment": "GENUINE BYPASS. Reproduced at RED before fixing.",
+      "fix": "One new PRIVATE helper, writes_pinned_identity_anywhere(statement, names_column), called FIRST inside statement_violates_logical_id_pin and independent of the leading keyword. It refuses any statement that writes logical_id in an ASSIGNMENT position on a pinned table: (a) the ` SET ` clause (up to WHERE / FROM / RETURNING, via the existing set_clause helper) names logical_id AND some token of the statement is a pinned table (mentions_pinned_table, which already carries the fix-1 qualifier strip); or (b) the table after ` INTO ` IS pinned and the statement either names logical_id or omits the column list — the same rule the INSERT arm applies. NO CTE/paren parser was built.",
+      "why_it_runs_first": "Several keyword arms `return false` EARLY (e.g. an UPDATE whose target is not pinned), which would shadow a fallback placed at the end of the function. Running the catch-all first makes it a true catch-all; as a boolean OR the ordering is otherwise semantics-free.",
+      "why_write_position_not_statement_shape": "It closes the whole 'something displaces the leading keyword' family at once rather than only the WITH spelling, and it is the line the four shipped accepts already draw: they NAME logical_id in READ positions (predicate, index column list, column declaration) and never assign to it.",
+      "status": "CLOSED"
+    },
+    "accepts_preserved_by_construction": {
+      "step_21_predicate": "UPDATE canonical_nodes SET source_id = '…' WHERE source_id IS NULL AND logical_id IS NULL — set_clause() yields only `SOURCE_ID = ''`, which does not name logical_id ⇒ ACCEPTED.",
+      "steps_12_23_index": "CREATE UNIQUE INDEX … ON canonical_*(logical_id) WHERE superseded_at IS NULL — no ` SET `, no ` INTO ` ⇒ ACCEPTED.",
+      "step_12_declaration": "ALTER TABLE canonical_nodes ADD COLUMN logical_id TEXT (no DEFAULT) — no ` SET `, no ` INTO ` ⇒ ACCEPTED.",
+      "step_23_recreate": "CREATE TABLE canonical_edges(… logical_id TEXT …) ⇒ ACCEPTED. And step 23's `INSERT OR REPLACE INTO _fathomdb_open_state … SELECT … FROM canonical_edges` / `INSERT OR IGNORE INTO _fathomdb_projection_terminal … FROM canonical_edges` stay accepted because the insert half tests the INTO TARGET table, not mere mention of a pinned table."
+    },
+    "sqlite_behaviour_verified_before_asserting": {
+      "why": "The prompt required (as fix-1/fix-2 did) that every asserted shape be one real SQLite accepts.",
+      "engine": "SQLite 3.45.1 (python3 sqlite3 module, live executescript against a real in-memory DB with real canonical_nodes / canonical_edges / canonical_nodes_old / canonical_nodes_backup / other_t tables)",
+      "results": [
+        "VALID: WITH x AS (SELECT 1) UPDATE canonical_nodes SET logical_id = 'y';",
+        "VALID: the same on canonical_edges.",
+        "VALID: WITH x AS (SELECT 1) UPDATE main.canonical_nodes SET logical_id = 'y'; (fix-1 qualifier composes)",
+        "VALID: WITH x AS (SELECT 1) UPDATE temp . canonical_edges SET logical_id = 'y'; — re-run against a real TEMP table (the first run reported only 'no such table', i.e. resolution, not a parse error), then VALID.",
+        "VALID: WITH x AS (SELECT 1) UPDATE OR REPLACE|IGNORE|ABORT [main.|temp.]canonical_* SET logical_id = 'y'; (fix-2 conflict clause composes)",
+        "VALID: WITH RECURSIVE x(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM x WHERE n<3) UPDATE canonical_nodes SET logical_id = 'y' WHERE write_cursor IN (SELECT n FROM x);",
+        "VALID: WITH src AS (SELECT write_cursor, body FROM canonical_nodes_old) INSERT INTO canonical_nodes(write_cursor, kind, body, logical_id) SELECT … FROM src;",
+        "VALID: WITH src AS (SELECT * FROM canonical_nodes_old) INSERT INTO canonical_nodes SELECT * FROM src; (column-list-less)",
+        "VALID: WITH x AS (SELECT 1) INSERT INTO main.canonical_edges(…, logical_id) VALUES(…);",
+        "VALID: leading newline/indent spelling, and the all-lowercase spelling.",
+        "VALID (controls, must stay ACCEPTED): WITH x AS (SELECT 1) UPDATE canonical_nodes_backup SET logical_id = 'y'; and WITH x AS (SELECT logical_id FROM canonical_nodes) UPDATE other_t SET note = 'n';"
+      ],
+      "consequence": "Every asserted spelling is one real SQLite parses and runs. No spelling SQLite rejects is asserted on."
+    },
+    "red_witness": {
+      "commit": "6763f2ad",
+      "command": "cargo test -p fathomdb-schema --test slice25_logical_id_pin",
+      "result_line": "test result: FAILED. 29 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+      "failing_tests": [
+        "pin_rejects_a_cte_prefixed_backfill — panicked at tests/slice25_logical_id_pin.rs:893:9: 'a CTE-prefixed backfill must be rejected: WITH x AS (SELECT 1) UPDATE canonical_nodes SET logical_id = ''y'';'"
+      ],
+      "passing_at_red_by_design": [
+        "pin_still_accepts_cte_statements_that_write_no_canonical_identity — the anti-over-rejection control for this fix; GREEN at RED and MUST stay green through the GREEN change (it does)."
+      ]
+    },
+    "green_result": {
+      "commit": "90695a3e",
+      "command": "cargo test -p fathomdb-schema --test slice25_logical_id_pin",
+      "result_line": "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+      "exit_code": 0,
+      "tests_added": [
+        "pin_rejects_a_cte_prefixed_backfill (RED→GREEN; 14 offender shapes: both canonical tables, main./temp./quoted/spaced-dot qualifiers, UPDATE OR REPLACE|IGNORE|ABORT, WITH RECURSIVE, INSERT…SELECT with and without a column list, INSERT…VALUES, leading-newline and all-lowercase spellings)",
+        "pin_still_accepts_cte_statements_that_write_no_canonical_identity (anti-over-rejection control: a CTE onto a lookalike table, and a CTE that READS logical_id off canonical_nodes while writing another table)"
+      ],
+      "previously_green_tests_still_green": "All 28 pre-fix-3 tests, including the two load-bearing regression proofs pin_accepts_every_shipped_migration_step and pin_accepts_every_on_disk_migration_sql_file, plus pin_accepts_declaration_index_and_predicate_uses, pin_accepts_a_trigger_on_a_lookalike_table, pin_still_ignores_qualified_non_canonical_tables, pin_still_ignores_or_conflict_updates_on_unrelated_tables, pin_has_no_exemption_escape_hatch and every D2 dynamic-migration test. No existing rejection loosened; no existing accept weakened.",
+      "doc_comment_updated": "Rejected-shapes list gains the CTE-prefixed shape; a new paragraph in '# Deliberately conservative' explains the keyword-independent catch-all and names its deliberate over-rejection; '# Known limits' now states that a leading CTE is NOT a limit any more and records the cross-statement-table-identity residual instead (see residual_evasion_shapes_still_open)."
+    },
+    "residual_evasion_shapes_still_open": {
+      "honesty_note": "The guard is NOT airtight and this fix does not make it so. The shapes below were probed EMPIRICALLY against the post-fix guard (a scratch test binary in the worktree, run then deleted — it is not part of any commit), not assumed.",
+      "open": [
+        {
+          "family": "cross-statement table identity (rename round-trip)",
+          "shape": "ALTER TABLE canonical_nodes RENAME TO tmp_x;  UPDATE tmp_x SET logical_id = 'minted' WHERE logical_id IS NULL;  ALTER TABLE tmp_x RENAME TO canonical_nodes;",
+          "status": "ACCEPTED by the guard (verified). The guard judges each ';'-separated statement ALONE and holds no model of which name refers to which table across a step; the first ALTER does not name logical_id, the UPDATE does not name a pinned table.",
+          "why_not_closed_here": "Closing it needs table-identity tracking ACROSS statements — a different guard, not a wider arm — and the fix-3 mandate is a local fallback with a circuit-breaker. Recorded in the doc comment's Known-limits section rather than silently implied to be covered."
+        },
+        {
+          "family": "cross-statement table identity (create-as-select + swap)",
+          "shape": "CREATE TABLE cn_new AS SELECT write_cursor, kind, body, 'minted' AS logical_id FROM canonical_nodes;  DROP TABLE canonical_nodes;  ALTER TABLE cn_new RENAME TO canonical_nodes;",
+          "status": "ACCEPTED (verified). Same root cause as the rename round-trip: the write happens under a name that is not pinned at the moment it is written.",
+          "why_not_closed_here": "Same as above."
+        },
+        {
+          "family": "dynamically-built SQL",
+          "shape": "any SQL assembled at runtime rather than written as a literal",
+          "status": "Out of reach for a lexical guard, and NOT reachable in practice: MIGRATIONS holds &'static str literals. Stated in the doc comment since the slice's first GREEN.",
+          "why_not_closed_here": "Not a real exposure on this surface."
+        }
+      ],
+      "probed_and_CONFIRMED_CLOSED_by_this_fix": [
+        "WITH / WITH RECURSIVE CTE in front of UPDATE and INSERT (the reported bypass), including qualified, spaced-dot, quoted, UPDATE OR <action>, lowercase and leading-newline spellings.",
+        "A CTE-prefixed UPDATE appearing as a LATER statement inside a CREATE TRIGGER body (its own fragment) — rejected.",
+        "UPSERT: INSERT INTO canonical_nodes(…) VALUES(…) ON CONFLICT(…) DO UPDATE SET logical_id = … — rejected.",
+        "ATTACHed-database qualifier: UPDATE aux.canonical_nodes SET logical_id = … — rejected (the qualifier is stripped).",
+        "UPDATE canonical_nodes AS c SET …, UPDATE canonical_nodes INDEXED BY i SET …, SET (logical_id, kind) = (…), INSERT INTO canonical_nodes DEFAULT VALUES, RETURNING logical_id — all rejected."
+      ],
+      "deliberate_over_rejections_introduced": [
+        "A statement that assigns logical_id on a NON-pinned table while merely MENTIONING a pinned table anywhere (e.g. `WITH x AS (SELECT 1 FROM canonical_nodes) UPDATE other SET logical_id = …`, or `INSERT INTO other … FROM canonical_nodes ON CONFLICT DO UPDATE SET logical_id = …`) is now REFUSED. After an arbitrary prefix the update TARGET cannot be located token-wise without parsing. This is over-rejection by design (the pin's stated stance), it breaks nothing shipped, and it is cheap to work around honestly. The two paired controls bound it: a lookalike target and a canonical-table READ inside a CTE both stay ACCEPTED."
+      ],
+      "not_this_guard": "The migration guard is only the MIGRATION half of the TC-11 prohibition; the runtime write path is enforced separately (D2/D3 and the engine-side admission audit recorded earlier in this file)."
+    },
+    "gates_post_rebase": {
+      "note": "FULL set re-run on the rebased branch at head 90695a3e; every exit code captured with `rc=$?` on the line immediately following the command, before any command substitution.",
+      "cargo clippy --workspace --all-targets": 0,
+      "cargo check --workspace --all-targets": 0,
+      "cargo fmt --all --check": 0,
+      "cargo test -p fathomdb-schema": 0,
+      "cargo test -p fathomdb-engine --no-fail-fast": 0,
+      "bash scripts/check-governed-surface-pin.sh": 0,
+      "bash scripts/agent-lint-migrations.sh": 0,
+      "bash scripts/check-ledgers.sh": 1,
+      "bash scripts/lint-findings.sh": 0,
+      "bash scripts/lint-plan-anchors.sh": 0,
+      "bash scripts/lint-design-status.sh": 0,
+      "bash scripts/check-release-state-views.sh": 0,
+      "bash scripts/check-board-currency.sh": 0
+    },
+    "gate_detail_post_rebase": {
+      "cargo_test_p_fathomdb_schema": "Exit 0. 17 suites green incl. slice25_logical_id_pin 30/30, migrations 12/12, the step14..step24 suites, tc33_fix4 3/3, tc33_fix6 2/2, wire_constants 2/2, and 0 doc-tests.",
+      "cargo_test_p_fathomdb_engine": "Exit 0, RUN THIS ROUND as instructed (new base). 103 suites reported `test result: ok`; ZERO `test result: FAILED` and zero `failures:` blocks in the log. Run with nothing else competing for CPU. None of the load-sensitive flakes (ac_002_no_log_files_without_subscriber, ac_029_canonical_writes_complete_under_projection_stall, tests/lifecycle_observability.rs) fired, so no isolation re-run was needed.",
+      "check_ledgers_rc_1_IS_PRE_EXISTING_AT_THE_NEW_BASE": "FAILS AT efa8d584 ITSELF, not from this slice. Output: 'BROKEN dev/todos-and-considerations-ledger.jsonl.seq: sidecar says 87 but max(seq) is 91 in dev/todos-and-considerations-ledger.jsonl (91 entries)'. Proof it is not mine: `git diff --stat efa8d584 -- dev/todos-and-considerations-ledger.jsonl dev/todos-and-considerations-ledger.jsonl.seq` is EMPTY, `git diff --name-only efa8d584..HEAD` touches no dev/ file at all, and at efa8d584 the tracked sidecar already reads 87 while max(seq) in the tracked ledger is already 91. The stale sidecar arrived with the concurrent slice that moved main. NOT FIXED HERE (the prompt forbids ledger writes on this branch); the other two ledgers are reported `ok` and contiguous. Orchestrator action: repair the sidecar on main, outside this slice.",
+      "x1": "UNAFFECTED and NOT re-run, deliberately. fix-3 changes ONE private fn inside a fathomdb-schema authoring-time guard plus its doc comment and test file. No SDK surface, no verb, no binding method, no wire format, no schema change, no engine source change."
+    },
+    "hard_boundaries_honoured": {
+      "allowlist_diff_vs_efa8d584": "EMPTY — `git diff --stat efa8d584 -- src/conformance/governed-surface-allowlist.json` produced no output; scripts/check-governed-surface-pin.sh exit 0.",
+      "engine_src_diff_vs_efa8d584": "EMPTY — `git diff --stat efa8d584 -- src/rust/crates/fathomdb-engine/src/` produced no output.",
+      "schema_version": "UNCHANGED at 24; MIGRATIONS registry untouched; no Migration step appended.",
+      "sdk_surface": "No new SDK verb, binding method, public fn, or column. writes_pinned_identity_anywhere is PRIVATE to fathomdb-schema.",
+      "files_touched_by_fix_3": [
+        "src/rust/crates/fathomdb-schema/src/lib.rs",
+        "src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs"
+      ],
+      "no_db_mocking": "True — SQLite behaviour verified against a real in-memory SQLite 3.45.1 DB.",
+      "no_no_verify": "True — both commits went through the pre-commit hook (cargo fmt --check).",
+      "no_subagents_spawned": true,
+      "no_maturin_or_pip_e_from_worktree": true,
+      "plan_status_ledger_untouched": "True — dev/plans/plan-0.8.20.md, dev/plans/runs/STATUS-0.8.20.md, dev/plans/release-state-0.8.20.json and every ledger were NOT touched (confirmed by `git diff --name-only efa8d584..HEAD`).",
+      "no_push_no_merge_main_untouched": true,
+      "no_worktree_created_moved_or_removed": true,
+      "scratch_probe_not_committed": "The residual-shape probe was written to src/rust/crates/fathomdb-schema/tests/zz_scratch_residual_probe.rs, run, and DELETED before the GREEN commit; `git status --porcelain` is clean apart from this untracked output.json."
+    },
+    "circuit_breaker": "RESPECTED. The mandate's condition ('if closing this needs more than a local fallback arm, STOP and report') did not trigger: the fix is one 8-line private helper plus one call site. The newly-found rename/swap residual was NOT chased — it is reported instead, per the prompt's instruction that the orchestrator records residuals.",
+    "next_step_for_orchestrator": "Run codex §9 on 90695a3e (or cherry-pick 6763f2ad + 90695a3e onto the integration branch). Two items for the RECORD, not for this slice: (1) the cross-statement rename/swap residual in the TC-11 lexical guard, already documented in the guard's own Known-limits doc comment; (2) dev/todos-and-considerations-ledger.jsonl.seq is STALE ON MAIN AT efa8d584 (sidecar 87 vs max(seq) 91) — check-ledgers.sh exits 1 at the base commit and needs a repair on main, outside this branch.",
+    "note_on_top_level_head_sha": "The top-level head_sha was advanced from ec2335a7531a89a917d2eefabcd068706dd1e671 (the pre-rebase fix-2 head) to 90695a3e95ae8a8dc4af27ee62c9e459254dfe31 (fix-3 GREEN, post-rebase). Everything before the fix_1/fix_2/fix_3 sections describes the original slice work at baseline 2afd168c and is unchanged."
+  }
+}

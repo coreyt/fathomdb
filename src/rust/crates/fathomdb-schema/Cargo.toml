@@ -15,6 +15,12 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 
 [dev-dependencies]
 proptest = "1"
+# 0.8.20 Slice 25 (R-20-SUR): the TC-11-pin migration test restates the engine's
+# `derive_stable_id` id-space rule (`h:<sha256(body)>`) so it can assert the
+# derived `IdSpace` is byte-identical across a migration. The schema crate is a
+# LEAF (engine → schema), so the rule cannot be imported — only mirrored. Pin
+# matches fathomdb-engine; no new crate enters the dependency graph.
+sha2 = "0.11"
 # Pack 1 migration step 9 creates a vec0 virtual table; the schema
 # crate's migration tests need the extension loaded to exercise it.
 # Pin matches fathomdb-engine.
