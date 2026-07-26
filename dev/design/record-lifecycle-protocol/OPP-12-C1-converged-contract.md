@@ -74,10 +74,26 @@ nothing more. Policy stays 100% Memex-side; the engine stays mechanical.
   F9 exists. (Same mechanism as the Q4 refinement.)
 - **(b) `id_prefix` = space, engine mints the value.** `EntityTypeSpec.id_prefix` names the `IdSpace`/namespace
   (Memex vocab; uniform `WM_ENTITY` today, per-type is intended-future); the engine mints the opaque surrogate
-  `logical_id` **value** within it for anonymous entities. The **typed carrier** (`l:`/`h:`/`p:` → `IdSpace`
+  `logical_id` **value** within it ~~for anonymous entities~~ **for registry-admitted GOVERNED entities only**.
+  The **typed carrier** (`l:`/`h:`/`p:` → `IdSpace`
   newtype) is **OPP-12 C-2 / TC-8** (lands-together with the Cause-A `SearchHit.id: write_cursor → logical_id`
   swap, ≥0.9.x; additive `stable_id` base landed, typed swap not started). **C-1 needs only the space/value
   split, not the typed carrier.**
+  > **⛔ The surrogate leg is CANCELLED for the anonymous class — not deferred.
+  > HITL-RATIFIED 2026-07-12 (TC-11 pin A), amended into this contract 2026-07-26 (steward `seq-114`).**
+  > Anonymous and doc-seeded nodes stay `h:<content-hash>` **permanently**: `h:` is a **first-class terminal
+  > `IdSpace` variant**, so every hit is `l:`/`h:`/`p:`, non-null — **no anonymous node is left
+  > unaddressed-by-`id`** (only unaddressed-by-*lifecycle-verb*, which is by design). A surrogate serves
+  > **only** registry-admitted governed entities (0.8.20 `R-20-SUR`). The C-2 swap **shipped ALONE** in 0.8.19
+  > and is **total without a surrogate**.
+  >
+  > **Why this amendment exists.** As written, clause (b) mandated behaviour the ratified pin forbids ever
+  > implementing — and as-built agrees with the pin, not with this clause (no `EntityTypeSpec` or `id_prefix`
+  > exists anywhere under `src/`). The **`R-20-H7` `can-i-deploy` gate verifies as-built code against THIS
+  > document**, so the un-amended clause would have made that gate **permanently red and held the breaking-pair
+  > publish forever.** The cancellation was applied to `api-surface.md` (§ "F-8a co-requisite") on 2026-07-12
+  > and never propagated here. See `structural-lifecycle-contract.md` §2(ii) — **OVERRULED** by the same pin —
+  > and `dev/design/0.8.20-erasure-and-h-end-state-v4.md` §5.
 
 ## Resolved now (contract-level) — previously flagged for P2·S0
 
