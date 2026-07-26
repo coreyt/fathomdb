@@ -164,6 +164,33 @@ AC-050c) gates merges against this invariant.
   - **Additive.** Callers who never read the field see identical behaviour, and
     the change adds no governed commands.
 
+- **`drain` is now the flush-to-readiness barrier (0.8.20, R-20-DR).**
+  Declaring a `searchable→vector` projection over a corpus that already holds
+  rows now actually **backfills** it: `configure_projections` /
+  `configureProjections` enrols the vector kinds and enqueues the deferred embed
+  work, and the existing `drain(timeout)` flushes it. There is **no new verb** —
+  `drain` carries the `flush_embeddings()` semantics, so this adds **zero**
+  governed commands.
+
+  - **Bug fixed:** previously the declaration acknowledged the work
+    (`ProjectionDelta.deferred`) and then dropped it — the kind was never
+    registered, so `drain` returned immediately and readiness reported
+    `"ready"` while **no vector rows existed and nothing would ever create
+    them**. Only an operator `rebuild` recovered. The pinned invariant is now
+    `drain() ⟹ dense_readiness == "ready"` **and** every vector-eligible row has
+    its vector at rest, asserted in Rust, Python and TypeScript.
+  - **Ordering-independent.** Write-then-declare and declare-then-write reach
+    the same state; a kind first written after the declaration is enrolled on
+    the write path.
+  - **Idempotent.** Re-applying a satisfied declaration rewinds nothing and
+    re-embeds nothing.
+  - **Graceful-absent without a live embedder.** With no embedder there is no
+    dense arm, so the declaration persists and defers rather than queueing
+    embeds that could only fail; it grafts on when re-applied in a session that
+    has one — the same contract as `rankable`.
+  - **Additive**, no schema step (`SCHEMA_VERSION` unchanged), and no data
+    migration: this re-enqueues work inside one live database.
+
 - **New public types.** Rust: `SourceId`, `OrphanProvenanceReport`,
   `OrphanProvenanceSource`; `ExciseReport` is no longer behind the `operator`
   feature (it is `erase_source`'s return type). Python: `EraseReport`.
