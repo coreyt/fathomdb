@@ -251,6 +251,13 @@ const PROJECTION_INFLIGHT_LIMIT: usize = PROJECTION_WORKERS * PROJECTION_COMMIT_
 const PROJECTION_SCAN_FETCH: usize = PROJECTION_INFLIGHT_LIMIT;
 const DEFAULT_PROJECTION_RETRY_DELAYS_MS: [u64; 3] = [1_000, 4_000, 16_000];
 
+/// G11 — the fixed projection kind every EDGE body is scheduled under
+/// (`resolve_source_type` maps it to `source_type = 'edge_fact'` in
+/// `vector_default`). Named so the fix-4 deferral can say WHICH rows it
+/// deliberately leaves on the shipped terminal path (see
+/// `projection_dispatcher_loop`).
+const EDGE_FACT_KIND: &str = "edge_fact";
+
 /// Reader pool size. Per `dev/design/engine.md` § Writer / reader split,
 /// reader connections are pooled and never serialize behind one
 /// connection. AC-021 exercises 8 concurrent readers.
@@ -12342,6 +12349,9 @@ fn projection_dispatcher_loop(shared: Arc<ProjectionRuntimeShared>) {
         Ok(connection) => connection,
         Err(_) => return,
     };
+    // 0.8.20 Slice 20c fix-4 (codex §9 round 3 [P1]) — read ONCE:
+    // `ProjectionRuntimeShared::embedder` is fixed for the session's lifetime.
+    let dense_arm_live = shared.embedder.is_some();
     loop {
         let in_flight = {
             let mut state = match shared.state.lock() {
@@ -12378,7 +12388,31 @@ fn projection_dispatcher_loop(shared: Arc<ProjectionRuntimeShared>) {
             PROJECTION_INFLIGHT_LIMIT.saturating_sub(state.active_jobs + state.queued_jobs)
         };
         let fetch_cap = budget.clamp(1, PROJECTION_SCAN_FETCH);
-        match next_pending_projection_jobs(&connection, &in_flight, fetch_cap) {
+        let fetched =
+            next_pending_projection_jobs(&connection, &in_flight, fetch_cap).map(|jobs| {
+                // 0.8.20 Slice 20c fix-4 (codex §9 round 3 [P1]) — with no live
+                // embedder a NODE job can only come back DEFERRED
+                // (`ProjectionOutcome::Deferred`), which by design records no
+                // terminal. The row is therefore still pending when the worker sets
+                // `pending_scan` again, so dispatching it would re-fetch the SAME
+                // cursor immediately: a hot loop for the whole life of the session.
+                // MEASURED on the Leg F fixture (ONE pending row, a 3 s `drain`)
+                // before this filter: 6.47 s user CPU at 222 %; after: 0.15 s at 5 %.
+                //
+                // Edge jobs are NOT filtered. `'edge_fact'` is auto-registered by the
+                // edge write itself, un-gated on the embedder (see
+                // `project_canonical_edge_row`, G11, and the note in
+                // `enrol_batch_vector_kinds`), so an edge body still TERMINATES on the
+                // absent embedder exactly as it has shipped since G11 — the deferral
+                // is scoped to codex's finding, which is the node path. Making edges
+                // recoverable too needs that enrolment gated first (OOS-13).
+                if dense_arm_live {
+                    jobs
+                } else {
+                    jobs.into_iter().filter(|job| job.kind == EDGE_FACT_KIND).collect()
+                }
+            });
+        match fetched {
             Ok(jobs) if !jobs.is_empty() => {
                 if let Ok(mut state) = shared.state.lock() {
                     state.queued_jobs = state.queued_jobs.saturating_add(jobs.len());
@@ -12490,6 +12524,23 @@ enum ProjectionOutcome {
         cursor: u64,
         failure_code: &'static str,
     },
+    /// 0.8.20 Slice 20c fix-4 (codex §9 round 3 [P1]) — the ENVIRONMENT could
+    /// not serve this row, as distinct from the embed FAILING. Records nothing
+    /// at all: no `projection_failures` audit row and, decisively, **no
+    /// terminal**. The row stays `terminal IS NULL`, i.e. PENDING, so the next
+    /// session that DOES have an embedder picks it up through the ordinary
+    /// scheduler — no graft path and no recovery machinery.
+    ///
+    /// The only producer is the absent-embedder check at the top of
+    /// [`run_projection_job`]. That condition cannot change within a session, so
+    /// this can never become a retry loop for a genuinely-failing row.
+    ///
+    /// It carries NO cursor, deliberately: the other two variants carry one
+    /// because they identify the row they are about to WRITE, and this variant
+    /// writes nothing at all. A row's deferral is represented on disk by the
+    /// continued ABSENCE of its `_fathomdb_projection_terminal` row, which is
+    /// exactly the state it was already in.
+    Deferred,
 }
 
 fn run_projection_jobs(
@@ -12708,6 +12759,49 @@ fn embed_batch_with_watchdog(
 }
 
 fn run_projection_job(shared: &ProjectionRuntimeShared, job: &ProjectionJob) -> ProjectionOutcome {
+    // 0.8.20 Slice 20c fix-4 (codex §9 round 3 [P1]) — an ABSENT embedder is an
+    // ENVIRONMENT fact, not an embed failure, and it CANNOT appear mid-job:
+    // `ProjectionRuntimeShared::embedder` is fixed for the whole session. So for a
+    // NODE row the whole retry ladder (0 + 1 + 4 + 16 s) can only reach a
+    // conclusion that was already knowable at entry — answer it NOW, with the
+    // NON-TERMINAL `Deferred`: no audit row, no terminal, and therefore a write
+    // the next live-embedder session can still recover.
+    //
+    // That is codex's finding. With the kind already ENROLLED, the shipped
+    // `'failed'` terminal was PERMANENT (nothing reopens one, and nothing should:
+    // re-enqueueing one would loop a genuinely-failing row forever), so the write
+    // was lost while `dense_readiness` read `ready`.
+    //
+    // `projection_dispatcher_loop` already declines to dispatch node jobs in a
+    // no-embedder session — it must, or the still-pending row would be re-scanned
+    // in a hot loop. This check is the LOCAL backstop for the same invariant:
+    // whatever reaches a worker with no embedder must not be TERMINATED. Keeping
+    // the invariant beside the code that would otherwise write the terminal is
+    // what makes it hold if that dispatcher-side filter is ever loosened.
+    //
+    // EDGE rows deliberately fall THROUGH to the shipped path, ladder and all.
+    // `'edge_fact'` is auto-registered by the edge write itself, UN-gated on the
+    // embedder (`project_canonical_edge_row`, G11 — see the note in
+    // `enrol_batch_vector_kinds`), so an edge body written with no embedder is
+    // outstanding the moment it lands. Deferring it would leave `drain` and
+    // `excise_source` returning `EngineError::Scheduler` on paths with nothing to
+    // do with the dense arm (MEASURED: 4 shipped tests across
+    // `tc31_source_id_on_every_hit`, `provenance_mandatory` and
+    // `multidoc_extractor_provenance`). Making edges recoverable needs their
+    // enrolment gated the way fix-2 gated node kinds — reported as OOS-13, and
+    // outside codex's finding, which is the node path.
+    //
+    // Their LADDER is left alone for a second, separately MEASURED reason:
+    // shortening it makes the worker's terminal-commit land while a caller's own
+    // write is still open, which trips the PRE-EXISTING `SQLITE_BUSY_SNAPSHOT`
+    // write-race already documented in `slice20_dense_readiness.rs` (governed
+    // supersession reads before it writes, so `busy_timeout` cannot retry it).
+    // Measured on `consolidate_provider` under 6-way concurrency: 0/48 failures
+    // with the ladder, 8/48 without. Left byte-for-byte as shipped; the race is
+    // reported as OOS-17 rather than newly exposed by a fix round.
+    if shared.embedder.is_none() && job.kind != EDGE_FACT_KIND {
+        return ProjectionOutcome::Deferred;
+    }
     // PR-9 — embed circuit breaker (see `embed_circuit_open`). Once abandoned
     // (timed-out) embed threads have piled up to the threshold the embedder is
     // treated as broken; fail subsequent jobs fast WITHOUT attempting an embed,
@@ -13679,6 +13773,31 @@ fn commit_projection_outcomes(
                 }
                 record_projection_terminal(&tx, *cursor, "failed")?;
             }
+            // 0.8.20 Slice 20c fix-4 (codex §9 round 3 [P1]) — record NOTHING.
+            //
+            // No `projection_failures` audit row (an ABSENT embedder is an
+            // environment fact, not an embed failure) and, decisively, no
+            // terminal: the row keeps `terminal IS NULL`, so
+            // `advance_projection_cursor` below cannot step over it, the shared
+            // `connection_has_pending_projection_work` predicate still reports it
+            // outstanding, and `derive_dense_readiness` therefore reads
+            // `embedding`. That is the ONLY torn state
+            // `dev/design/record-lifecycle-protocol/projection-registry-and-async-embed.md`
+            // §4.1 invariant 1 tolerates; the alternative — the enqueue-side gate
+            // — puts an `'up_to_date'` terminal on an ENROLLED row with no
+            // vector, which is the torn `ready` that invariant calls FORBIDDEN.
+            //
+            // Q6a graceful-absent governs ROLE DECLARATION ("you declared a
+            // projection I cannot build yet" -> defer + graft), i.e. the
+            // NOT-yet-enrolled case fix-1/fix-2 handle. Once a kind IS enrolled,
+            // §4.1 invariant 1 governs. (HITL ruling, 0.8.20 Slice 20c fix-4.)
+            //
+            // Consumer-visible consequence, accepted deliberately and pinned by
+            // `slice20c_flush_barrier`: for the REST of that no-embedder session
+            // `dense_readiness` stays `embedding` and `drain` burns its timeout
+            // into `EngineError::Scheduler`. Loud and recoverable, rather than
+            // silent and lost.
+            ProjectionOutcome::Deferred => {}
         }
     }
     // 0.7.2 PR-2bc S2 — the AUTOMATIC in-ingest drift detector (EWMA recent
