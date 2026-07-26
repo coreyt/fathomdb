@@ -1076,6 +1076,12 @@ const PINNED_IDENTITY_COLUMN: &str = "LOGICAL_ID";
 /// (declare the column; do not copy rows through it), or come back through the
 /// HITL to change the pin itself.
 ///
+/// Conservatism also decides the SCHEMA-QUALIFIED case: `main.canonical_nodes`,
+/// `temp.canonical_nodes` and every quoted spelling of either half normalise to
+/// the bare table name before the comparison, so qualifying the table is not an
+/// escape. `main.canonical_nodes_old` is NOT the pinned table — the qualifier is
+/// stripped, never widened into a substring match.
+///
 /// # No exemption escape hatch — deliberately
 ///
 /// [`check_migration_accretion`] honours a `-- MIGRATION-ACCRETION-EXEMPTION: `
@@ -1087,7 +1093,9 @@ const PINNED_IDENTITY_COLUMN: &str = "LOGICAL_ID";
 /// # Known limits (stated, not hidden)
 ///
 /// This is a lexical guard, not a SQL parser. It normalises away comments and
-/// string literals and unwraps `"…"` / `[…]` / `` `…` `` quoted identifiers, then
+/// string literals, unwraps `"…"` / `[…]` / `` `…` `` quoted identifiers, and
+/// tightens whitespace around `.` so a schema qualifier is one token (SQLite
+/// accepts `main . canonical_nodes`; verified against SQLite 3.45) — then it
 /// splits on `;`. A `CREATE TRIGGER` body therefore splits into fragments — which
 /// is harmless here, because both the `CREATE TRIGGER …` head and any
 /// `UPDATE canonical_… SET logical_id` fragment inside it are independently
@@ -1165,7 +1173,7 @@ fn normalized_statements(sql: &str) -> Vec<String> {
                 i += 1;
             }
             ';' => {
-                statements.push(collapse_whitespace(&current));
+                statements.push(normalize_statement(&current));
                 current.clear();
                 i += 1;
             }
@@ -1175,13 +1183,35 @@ fn normalized_statements(sql: &str) -> Vec<String> {
             }
         }
     }
-    statements.push(collapse_whitespace(&current));
+    statements.push(normalize_statement(&current));
     statements.retain(|s| !s.is_empty());
     statements
 }
 
+/// The per-statement tail of the normalisation: collapse whitespace, then
+/// tighten qualified names so a schema qualifier is ONE token.
+fn normalize_statement(raw: &str) -> String {
+    tighten_qualified_names(&collapse_whitespace(raw))
+}
+
 fn collapse_whitespace(raw: &str) -> String {
     raw.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Remove whitespace around `.` so `main . canonical_nodes` normalises to
+/// `MAIN.CANONICAL_NODES`.
+///
+/// SQLite's tokenizer accepts whitespace around the qualifier dot (verified
+/// against SQLite 3.45: `UPDATE main . t SET …` parses and targets `main.t`),
+/// while the token extractors below cut at whitespace — so without this the
+/// spaced spelling would extract the bare token `MAIN` and slip the pin.
+/// Comments are already stripped and string literals already elided to `''` by
+/// this point, so no `.` that survives here is data.
+fn tighten_qualified_names(statement: &str) -> String {
+    if !statement.contains('.') {
+        return statement.to_string();
+    }
+    statement.split('.').map(str::trim).collect::<Vec<_>>().join(".")
 }
 
 /// Does one NORMALISED statement write into `logical_id` on a canonical table?
@@ -1234,8 +1264,20 @@ fn statement_violates_logical_id_pin(statement: &str) -> bool {
     false
 }
 
+/// The bare table name from a possibly schema-qualified token.
+///
+/// SQLite resolves `main.canonical_nodes` (or `temp.canonical_nodes`, or any
+/// quoted spelling of either half — the normaliser has already unwrapped those)
+/// to the SAME pinned table as the bare name, so the qualifier is stripped
+/// before the comparison. SQLite permits at most ONE qualifier, so the part
+/// after the dot is the table name. This is a STRIP, not a widening to a
+/// substring match: `main.canonical_nodes_old` is still a different table.
+fn bare_table_name(token: &str) -> &str {
+    token.rsplit_once('.').map_or(token, |(_, table)| table)
+}
+
 fn is_pinned_table(token: &str) -> bool {
-    PINNED_IDENTITY_TABLES.contains(&token)
+    PINNED_IDENTITY_TABLES.contains(&bare_table_name(token))
 }
 
 fn targets_pinned_table(statement: &str) -> bool {
