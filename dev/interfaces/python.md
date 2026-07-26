@@ -229,6 +229,13 @@ commands. The pinned invariant, tested in Rust, Python and TypeScript:
   identically.
 - **Idempotent.** Re-applying an already-satisfied declaration re-embeds nothing
   and returns `ProjectionDelta(unchanged=True)`.
+- **Dropping the last `searchable→vector` declaration turns the dense arm back
+  off.** `engine.configure_projections([], drop=["summary"])` un-enrols the node
+  kinds that declaration enrolled, so later writes enqueue no embed and `drain()`
+  no longer waits on them. It **deletes no embedding** — vectors already at rest
+  survive the drop, exactly as they always have. Re-declaring re-enrols and
+  backfills, so a row written while the arm was off is picked up, not stranded.
+  Edge-body vectors are unaffected.
 - **Graceful-absent without a live embedder:** the declaration persists and
   defers, then grafts on when re-applied in a session that has one.
 - **`drain` stays bounded** and raises the existing timeout error rather than

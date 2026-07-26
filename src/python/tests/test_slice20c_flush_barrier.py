@@ -226,3 +226,59 @@ def test_declaration_without_a_live_embedder_defers_and_does_not_enrol(tmp_path)
         )
         == 0
     ), "no doomed embeds may be queued, so no projection_failures audit rows"
+
+
+def test_dropping_the_last_vector_projection_stops_embedding(tmp_path) -> None:
+    """fix-1 (codex §9 [P2]) — the SYMMETRIC INVERSE, through the binding.
+
+    Slice 20c gave ``_fathomdb_vector_kinds`` its first governed-call-reachable
+    enrolment path for a node kind. Without an inverse, ``drop``ping the last
+    ``searchable→vector`` declaration leaves the kind enrolled, so subsequent
+    writes keep embedding for a projection ``read.projections`` no longer
+    reports.
+
+    The un-enrolment is NON-DESTRUCTIVE and this test pins both halves: the
+    kind stops being enrolled, and the vectors already at rest are untouched
+    (the shipped ``drop`` arm has never deleted an embedding). Re-declaring
+    re-enrols and backfills, so nothing is stranded.
+    """
+
+    _skip_if_no_network()
+    path = str(tmp_path / "flush_drop_inverse.sqlite")
+    engine = Engine.open(path, use_default_embedder=True)
+    try:
+        engine.write([_node("N1", '{"summary":"a dense meaning"}')])
+        engine.configure_projections([_vector_spec()])
+        engine.drain(timeout_s=_DRAIN_TIMEOUT_S)
+        assert _readiness(engine) == "ready"
+        assert _vector_kind_registered(path), "fixture: the declaration enrolled `doc`"
+        assert _vector_rows(path) == 1, "fixture: N1 is embedded"
+
+        # ---- drop the LAST `searchable→vector` declaration ----
+        delta = engine.configure_projections([], drop=["summary"])
+        assert "summary" in delta.dropped, "the drop is reported"
+        assert _readiness(engine) is None, "the projection is gone from the registry"
+
+        assert not _vector_kind_registered(path), (
+            "ONE-WAY ENROLMENT: dropping the last `searchable→vector` declaration must un-enrol "
+            "the node kind it enrolled"
+        )
+        assert _vector_rows(path) == 1, (
+            "un-enrolment must NOT delete embeddings — the shipped `drop` arm leaves vectors at rest"
+        )
+
+        # ---- a write of the SAME kind after the drop embeds nothing ----
+        engine.write([_node("N2", '{"summary":"written after the drop"}')])
+        engine.drain(timeout_s=_DRAIN_TIMEOUT_S)
+        assert _vector_rows(path) == 1, "a write after the drop must not be embedded"
+        assert _leaf_rows_without_vectors(path) == 1, "N2 is the one un-embedded row"
+
+        # ---- re-declaring re-enrols and backfills: the inverse is reversible ----
+        engine.configure_projections([_vector_spec()])
+        engine.drain(timeout_s=_DRAIN_TIMEOUT_S)
+        assert _readiness(engine) == "ready"
+        assert _vector_kind_registered(path), "re-declaring re-enrols the kind"
+        assert _vector_rows(path) == 2, "the row written while the arm was off is backfilled"
+        assert _leaf_rows_without_vectors(path) == 0
+    finally:
+        engine.close()

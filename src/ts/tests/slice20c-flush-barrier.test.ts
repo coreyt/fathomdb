@@ -231,3 +231,61 @@ test("a declaration without a live embedder defers and does not enrol the kind",
     "no doomed embeds may be queued, so no projection_failures audit rows",
   );
 });
+
+test("dropping the last vector projection un-enrols the kind and stops embedding", async () => {
+  // fix-1 (codex §9 [P2]) — the SYMMETRIC INVERSE, through the binding.
+  //
+  // Slice 20c gave `_fathomdb_vector_kinds` its first governed-call-reachable
+  // enrolment path for a node kind. Without an inverse, dropping the last
+  // `searchable→vector` declaration leaves the kind enrolled, so subsequent
+  // writes keep embedding for a projection `read.projections` no longer reports.
+  //
+  // The un-enrolment is NON-DESTRUCTIVE and both halves are pinned here: the
+  // kind stops being enrolled, and the vectors already at rest are untouched
+  // (the shipped `drop` arm has never deleted an embedding). Re-declaring
+  // re-enrols and backfills, so nothing is stranded.
+  if (skipNetwork()) return;
+  const path = freshDbPath();
+  const engine = await Engine.open(path, { useDefaultEmbedder: true });
+  try {
+    await engine.write([node("N1", '{"summary":"a dense meaning"}')]);
+    await engine.configureProjections([vectorSpec()]);
+    await engine.drain(DRAIN_TIMEOUT_MS);
+    assert.equal(await readiness(engine), "ready");
+    assert.equal(vectorKindRegistered(path), true, "fixture: the declaration enrolled `doc`");
+    assert.equal(vectorRows(path), 1, "fixture: N1 is embedded");
+
+    // ---- drop the LAST `searchable→vector` declaration ----
+    const delta = await engine.configureProjections([], ["summary"]);
+    assert.ok(delta.dropped.includes("summary"), "the drop is reported");
+    assert.equal(await readiness(engine), null, "the projection is gone from the registry");
+
+    assert.equal(
+      vectorKindRegistered(path),
+      false,
+      "ONE-WAY ENROLMENT: dropping the last `searchable→vector` declaration must un-enrol the " +
+        "node kind it enrolled",
+    );
+    assert.equal(
+      vectorRows(path),
+      1,
+      "un-enrolment must NOT delete embeddings — the shipped `drop` arm leaves vectors at rest",
+    );
+
+    // ---- a write of the SAME kind after the drop embeds nothing ----
+    await engine.write([node("N2", '{"summary":"written after the drop"}')]);
+    await engine.drain(DRAIN_TIMEOUT_MS);
+    assert.equal(vectorRows(path), 1, "a write after the drop must not be embedded");
+    assert.equal(leafRowsWithoutVectors(path), 1, "N2 is the one un-embedded row");
+
+    // ---- re-declaring re-enrols and backfills: the inverse is reversible ----
+    await engine.configureProjections([vectorSpec()]);
+    await engine.drain(DRAIN_TIMEOUT_MS);
+    assert.equal(await readiness(engine), "ready");
+    assert.equal(vectorKindRegistered(path), true, "re-declaring re-enrols the kind");
+    assert.equal(vectorRows(path), 2, "the row written while the arm was off is backfilled");
+    assert.equal(leafRowsWithoutVectors(path), 0);
+  } finally {
+    await engine.close();
+  }
+});

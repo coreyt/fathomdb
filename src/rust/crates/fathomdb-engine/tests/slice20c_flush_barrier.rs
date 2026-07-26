@@ -35,6 +35,22 @@
 //! **No schema step.** `SCHEMA_VERSION` stays 24 (asserted below). Re-enqueueing
 //! embed work inside ONE live database is runtime reconfiguration, not a
 //! cross-version data migration (HITL 2026-07-21, cf. TC-46).
+//!
+//! ## Known: this suite sometimes reports ~30 s wall time (not a flake)
+//!
+//! Every assertion still passes; ONE `drain(30_000)` occasionally returns `Ok`
+//! only at its deadline. The cause is a PRE-EXISTING missed wakeup in
+//! `ProjectionRuntime::wait_for_idle`: it releases the state lock to run
+//! `database_has_pending_projection_work` (which opens a fresh connection), and a
+//! worker that finishes the LAST job inside that window does its
+//! `state_cvar.notify_all()` before the waiter re-acquires. With no further
+//! notification the waiter sleeps the whole remaining timeout, then re-probes at
+//! the loop top, sees idle, and returns `Ok`. Adding Leg C widened the exposure
+//! (two more concurrent engines) but did not create it — `wait_for_idle` is
+//! untouched by this slice. Measured: capping the cvar wait at 25 ms removes the
+//! stall in 6/6 runs versus ~40 % stalls without. Left unfixed on purpose (fix-1
+//! scope is the drop inverse); reported for triage, where the same window is also
+//! a SPURIOUS-TIMEOUT risk for callers who pass a short timeout.
 
 use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
 use fathomdb_engine::{

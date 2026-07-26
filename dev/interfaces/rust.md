@@ -379,6 +379,14 @@ in Rust, Python and TypeScript:
   path, before the decision to wake the dispatcher is taken.
 - **Idempotent.** Re-applying an already-satisfied declaration re-opens nothing,
   rewinds no watermark, and re-embeds nothing (`ProjectionDelta::unchanged`).
+- **Dropping the last `searchable→vector` declaration turns the dense arm back
+  off** (fix-1). The `drop` un-enrols the node kinds the declaration enrolled, so
+  subsequent writes of those kinds enqueue no embed and `drain` no longer waits on
+  them. It **deletes no embedding**: vectors already at rest survive, exactly as
+  they always have across a `drop`. Re-declaring re-enrols and backfills, so a
+  row written while the arm was off is picked up, not stranded. Edge-body vectors
+  are unaffected — the `edge_fact` kind is registered off the presence of an edge
+  body, not off the projection registry.
 - **Graceful-absent without a live embedder.** Opened with `EmbedderChoice::None`
   there is no dense arm, so the declaration persists and DEFERS rather than
   queueing embeds that could only fail; it **grafts on** when the same spec is

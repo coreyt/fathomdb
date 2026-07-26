@@ -184,6 +184,14 @@ AC-050c) gates merges against this invariant.
     the write path.
   - **Idempotent.** Re-applying a satisfied declaration rewinds nothing and
     re-embeds nothing.
+  - **Reversible.** `drop`ping the last `searchable→vector` declaration turns
+    the dense arm back off: the node kinds that declaration enrolled are
+    un-enrolled, so later writes enqueue no embed and `drain` no longer waits on
+    them. It **deletes no embedding** — vectors already at rest survive a `drop`,
+    exactly as they always have — and re-declaring re-enrols and backfills, so a
+    row written while the arm was off is picked up rather than stranded.
+    Edge-body vectors are unaffected (`edge_fact` is registered off the presence
+    of an edge body, not off the projection registry).
   - **Graceful-absent without a live embedder.** With no embedder there is no
     dense arm, so the declaration persists and defers rather than queueing
     embeds that could only fail; it grafts on when re-applied in a session that
