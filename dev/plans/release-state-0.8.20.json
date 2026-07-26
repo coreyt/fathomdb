@@ -70,8 +70,9 @@
       "depends_on": [
         15
       ],
-      "status": "UNBLOCKED",
-      "sha": null
+      "status": "LANDED",
+      "sha": "83b1c818",
+      "merge_subject": "merge(0.8.20): Slice 25 COMPLETE — R-20-SUR surrogate minting, governed entities ONLY"
     },
     {
       "slice": 30,
@@ -103,19 +104,18 @@
     0,
     5,
     10,
-    15
+    15,
+    25
   ],
   "next_slice": 20,
   "remaining_ladder": [
     20,
-    25,
     30,
     40
   ],
   "ladder_order": "SEQUENTIAL — parallel 20 || 25 was declined (master F-34)",
   "unblocked": [
-    20,
-    25
+    20
   ],
   "unblocked_by": {
     "requirement": "R-20-PR",

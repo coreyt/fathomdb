@@ -1,0 +1,2175 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s25
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f9f5a-44aa-7902-9869-24f7bf310e29
+--------
+user
+changes against '2afd168c337a5d0fea75aaec1953792f46026086'
+exec
+/bin/bash -lc "cat MEMORY.md 2>/dev/null || true && ls feedback_*.md 2>/dev/null | xargs -r -n1 sh -c 'echo --- "'$0; cat $0'"'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s25
+ succeeded in 0ms:
+exec
+/bin/bash -lc 'git diff --stat 2afd168c337a5d0fea75aaec1953792f46026086 && git diff --name-only 2afd168c337a5d0fea75aaec1953792f46026086' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s25
+ succeeded in 0ms:
+ Cargo.lock                                         |   1 +
+ .../tests/slice25_registration_identity_inert.rs   | 546 ++++++++++++++++
+ src/rust/crates/fathomdb-schema/Cargo.toml         |   6 +
+ src/rust/crates/fathomdb-schema/src/lib.rs         | 327 ++++++++++
+ .../tests/slice25_logical_id_pin.rs                | 714 +++++++++++++++++++++
+ 5 files changed, 1594 insertions(+)
+Cargo.lock
+src/rust/crates/fathomdb-engine/tests/slice25_registration_identity_inert.rs
+src/rust/crates/fathomdb-schema/Cargo.toml
+src/rust/crates/fathomdb-schema/src/lib.rs
+src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs
+
+exec
+/bin/bash -lc 'git diff 2afd168c337a5d0fea75aaec1953792f46026086 -- src/rust/crates/fathomdb-schema/src/lib.rs src/rust/crates/fathomdb-schema/Cargo.toml' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s25
+ succeeded in 0ms:
+diff --git a/src/rust/crates/fathomdb-schema/Cargo.toml b/src/rust/crates/fathomdb-schema/Cargo.toml
+index 4b878d6c..171a86f3 100644
+--- a/src/rust/crates/fathomdb-schema/Cargo.toml
++++ b/src/rust/crates/fathomdb-schema/Cargo.toml
+@@ -15,6 +15,12 @@ rusqlite = { version = "0.31", features = ["bundled"] }
+ 
+ [dev-dependencies]
+ proptest = "1"
++# 0.8.20 Slice 25 (R-20-SUR): the TC-11-pin migration test restates the engine's
++# `derive_stable_id` id-space rule (`h:<sha256(body)>`) so it can assert the
++# derived `IdSpace` is byte-identical across a migration. The schema crate is a
++# LEAF (engine → schema), so the rule cannot be imported — only mirrored. Pin
++# matches fathomdb-engine; no new crate enters the dependency graph.
++sha2 = "0.11"
+ # Pack 1 migration step 9 creates a vec0 virtual table; the schema
+ # crate's migration tests need the extension loaded to exercise it.
+ # Pin matches fathomdb-engine.
+diff --git a/src/rust/crates/fathomdb-schema/src/lib.rs b/src/rust/crates/fathomdb-schema/src/lib.rs
+index 125d6fa8..896ad983 100644
+--- a/src/rust/crates/fathomdb-schema/src/lib.rs
++++ b/src/rust/crates/fathomdb-schema/src/lib.rs
+@@ -985,6 +985,333 @@ impl Display for MigrationAccretionError {
+ 
+ impl std::error::Error for MigrationAccretionError {}
+ 
++/// 0.8.20 Slice 25 (R-20-SUR) — rejection from the TC-11 `logical_id` pin.
++///
++/// Carries the offending migration's `name` (as `MigrationAccretionError` does)
++/// PLUS the normalised offending `statement`, because a migration step is a
++/// batch: naming the file alone would leave an author hunting for which of a
++/// dozen statements tripped the guard.
++#[derive(Clone, Debug, Eq, PartialEq)]
++pub struct MigrationLogicalIdPinError {
++    /// The migration step / file name handed to the guard.
++    pub offender: String,
++    /// The single offending statement, comment-stripped, string-literal-elided,
++    /// uppercased and whitespace-collapsed (the guard's normalised view).
++    pub statement: String,
++}
++
++impl Display for MigrationLogicalIdPinError {
++    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
++        write!(
++            f,
++            "TC-11 logical_id pin rejected {}: a migration may never populate `logical_id` on an \
++             existing canonical row — offending statement: {}",
++            self.offender, self.statement
++        )
++    }
++}
++
++impl std::error::Error for MigrationLogicalIdPinError {}
++
++/// The two canonical tables that carry the identity column the pin protects.
++/// Uppercase because the guard compares against a normalised (uppercased) view.
++const PINNED_IDENTITY_TABLES: [&str; 2] = ["CANONICAL_NODES", "CANONICAL_EDGES"];
++
++/// The protected column, uppercased for the same reason.
++const PINNED_IDENTITY_COLUMN: &str = "LOGICAL_ID";
++
++/// 0.8.20 Slice 25 (R-20-SUR) — the **TC-11 pin's static migration guard**, and
++/// the sibling of [`check_migration_accretion`].
++///
++/// # What it enforces
++///
++/// TC-11 pin A (HITL-ratified 2026-07-12; `dev/plans/plan-0.8.20.md` §2.1) rules
++/// that anonymous / doc-seeded nodes stay `h:<content-hash>` **permanently** —
++/// the anonymous-surrogate leg is CANCELLED, not deferred — and that enforcement
++/// is "**no new column**": the record IS `canonical_nodes.logical_id`'s
++/// null-ness. The invariant is therefore a PROHIBITION:
++///
++/// > No migration, backfill, or verb shall ever populate `logical_id` on an
++/// > existing canonical row, and a stored row's id-space is NEVER re-derived.
++///
++/// This function is the migration half of that prohibition, checked STATICALLY —
++/// before the SQL can ever run. Supplying a `logical_id` at WRITE time is what
++/// makes a record governed; a migration is not a write time.
++///
++/// # Rejected shapes
++///
++/// On `canonical_nodes` / `canonical_edges` only:
++///
++/// - `UPDATE … SET … logical_id …` — the direct forward-mint;
++/// - `INSERT`/`REPLACE … INTO …` that names `logical_id`, i.e. a recreate-and-copy
++///   backfill (`SELECT COALESCE(logical_id, mint(…))`);
++/// - `INSERT`/`REPLACE … INTO …` with NO explicit column list — it writes every
++///   column, `logical_id` among them, without naming it;
++/// - `ALTER TABLE … ADD COLUMN logical_id … DEFAULT …` — a default populates
++///   every EXISTING row in one statement;
++/// - `ALTER TABLE … RENAME … logical_id` — a rename turns an already-populated
++///   column INTO the identity column with no write at all;
++/// - `CREATE TRIGGER … logical_id …` — a deferred `UPDATE`;
++/// - `CREATE TABLE …(… logical_id … DEFAULT …)` — same reasoning as `ADD COLUMN`.
++///
++/// # Accepted shapes (the ladder already ships all four)
++///
++/// - DECLARING the column (`ALTER TABLE canonical_nodes ADD COLUMN logical_id
++///   TEXT`, step 12) — declaration is not population;
++/// - INDEXING it (`CREATE UNIQUE INDEX … ON canonical_nodes(logical_id) WHERE
++///   superseded_at IS NULL`, steps 12/23);
++/// - READING it as a PREDICATE (`WHERE source_id IS NULL AND logical_id IS
++///   NULL`, step 21 — which writes only `source_id`);
++/// - RE-DECLARING it in a `CREATE TABLE` recreate (step 23's TC-33 edge
++///   recreate, which deliberately copies no rows).
++///
++/// # Deliberately conservative
++///
++/// The guard refuses any statement that WRITES INTO `logical_id` on a canonical
++/// table, including a copy that would merely PRESERVE the value through a
++/// table-recreate. Distinguishing "preserving copy" from "minting copy" needs
++/// positional matching of an insert column list against a `SELECT` expression
++/// list — fragile, and trivially gamed by the exact class of change the pin
++/// exists to stop. A future recreate must follow step 23's shipped precedent
++/// (declare the column; do not copy rows through it), or come back through the
++/// HITL to change the pin itself.
++///
++/// Conservatism also decides the SCHEMA-QUALIFIED case: `main.canonical_nodes`,
++/// `temp.canonical_nodes` and every quoted spelling of either half normalise to
++/// the bare table name before the comparison, so qualifying the table is not an
++/// escape. `main.canonical_nodes_old` is NOT the pinned table — the qualifier is
++/// stripped, never widened into a substring match.
++///
++/// # No exemption escape hatch — deliberately
++///
++/// [`check_migration_accretion`] honours a `-- MIGRATION-ACCRETION-EXEMPTION: `
++/// marker because accretion is a BUDGET an author may knowingly spend. The TC-11
++/// pin is not a budget; it is TERMINAL-FOREVER. An escape hatch would defeat it,
++/// so there is none: a marked offender is rejected identically to an unmarked
++/// one. Changing the pin is an HITL decision, not a comment.
++///
++/// # Known limits (stated, not hidden)
++///
++/// This is a lexical guard, not a SQL parser. It normalises away comments and
++/// string literals, unwraps `"…"` / `[…]` / `` `…` `` quoted identifiers, and
++/// tightens whitespace around `.` so a schema qualifier is one token (SQLite
++/// accepts `main . canonical_nodes`; verified against SQLite 3.45) — then it
++/// splits on `;`. A `CREATE TRIGGER` body therefore splits into fragments — which
++/// is harmless here, because both the `CREATE TRIGGER …` head and any
++/// `UPDATE canonical_… SET logical_id` fragment inside it are independently
++/// rejected. It cannot see through dynamically-built SQL, which migrations do not
++/// use (`MIGRATIONS` holds `&'static str` literals).
++pub fn check_migration_logical_id_pin(
++    name: &str,
++    sql: &str,
++) -> Result<(), MigrationLogicalIdPinError> {
++    for statement in normalized_statements(sql) {
++        if statement_violates_logical_id_pin(&statement) {
++            return Err(MigrationLogicalIdPinError { offender: name.to_string(), statement });
++        }
++    }
++    Ok(())
++}
++
++/// Split `sql` into per-statement NORMALISED views: comments removed, string
++/// literals elided to `''`, quoted identifiers unwrapped to bare ones,
++/// uppercased, whitespace collapsed to single spaces.
++///
++/// Scanning is strictly left-to-right so precedence is correct: a `--` inside a
++/// string literal is data, and a `'` inside a comment is prose.
++fn normalized_statements(sql: &str) -> Vec<String> {
++    let mut statements = Vec::new();
++    let mut current = String::new();
++    let chars: Vec<char> = sql.chars().collect();
++    let mut i = 0;
++
++    while i < chars.len() {
++        let c = chars[i];
++        match c {
++            // Line comment: drop to end of line (the newline becomes whitespace).
++            '-' if chars.get(i + 1) == Some(&'-') => {
++                while i < chars.len() && chars[i] != '\n' {
++                    i += 1;
++                }
++            }
++            // Block comment: drop to the closing delimiter.
++            '/' if chars.get(i + 1) == Some(&'*') => {
++                i += 2;
++                while i < chars.len() && !(chars[i] == '*' && chars.get(i + 1) == Some(&'/')) {
++                    i += 1;
++                }
++                i = (i + 2).min(chars.len());
++                current.push(' ');
++            }
++            // String literal: elide the contents (they can never be an
++            // identifier). `''` inside a literal is an escaped quote.
++            '\'' => {
++                i += 1;
++                while i < chars.len() {
++                    if chars[i] == '\'' {
++                        if chars.get(i + 1) == Some(&'\'') {
++                            i += 2;
++                            continue;
++                        }
++                        i += 1;
++                        break;
++                    }
++                    i += 1;
++                }
++                current.push_str("''");
++            }
++            // Quoted identifiers: UNWRAP them, so `"logical_id"` / `[logical_id]`
++            // / `` `logical_id` `` are the same identifier to the guard that they
++            // are to SQLite.
++            '"' | '`' | '[' => {
++                let close = if c == '[' { ']' } else { c };
++                i += 1;
++                while i < chars.len() && chars[i] != close {
++                    current.push(chars[i].to_ascii_uppercase());
++                    i += 1;
++                }
++                i += 1;
++            }
++            ';' => {
++                statements.push(normalize_statement(&current));
++                current.clear();
++                i += 1;
++            }
++            _ => {
++                current.push(c.to_ascii_uppercase());
++                i += 1;
++            }
++        }
++    }
++    statements.push(normalize_statement(&current));
++    statements.retain(|s| !s.is_empty());
++    statements
++}
++
++/// The per-statement tail of the normalisation: collapse whitespace, then
++/// tighten qualified names so a schema qualifier is ONE token.
++fn normalize_statement(raw: &str) -> String {
++    tighten_qualified_names(&collapse_whitespace(raw))
++}
++
++fn collapse_whitespace(raw: &str) -> String {
++    raw.split_whitespace().collect::<Vec<_>>().join(" ")
++}
++
++/// Remove whitespace around `.` so `main . canonical_nodes` normalises to
++/// `MAIN.CANONICAL_NODES`.
++///
++/// SQLite's tokenizer accepts whitespace around the qualifier dot (verified
++/// against SQLite 3.45: `UPDATE main . t SET …` parses and targets `main.t`),
++/// while the token extractors below cut at whitespace — so without this the
++/// spaced spelling would extract the bare token `MAIN` and slip the pin.
++/// Comments are already stripped and string literals already elided to `''` by
++/// this point, so no `.` that survives here is data.
++fn tighten_qualified_names(statement: &str) -> String {
++    if !statement.contains('.') {
++        return statement.to_string();
++    }
++    statement.split('.').map(str::trim).collect::<Vec<_>>().join(".")
++}
++
++/// Does one NORMALISED statement write into `logical_id` on a canonical table?
++fn statement_violates_logical_id_pin(statement: &str) -> bool {
++    let names_column = statement.contains(PINNED_IDENTITY_COLUMN);
++
++    // A trigger is a deferred write; one that so much as mentions the identity
++    // column on a canonical table is refused whole (the body may also split into
++    // fragments that the UPDATE arm below catches independently).
++    if statement.starts_with("CREATE") && statement.contains(" TRIGGER ") && names_column {
++        return targets_pinned_table(statement);
++    }
++
++    if statement.starts_with("UPDATE") {
++        let Some(table) = token_after(statement, "UPDATE ") else { return false };
++        if !is_pinned_table(&table) {
++            return false;
++        }
++        // Only the SET clause assigns. Reading `logical_id` in a WHERE predicate
++        // (step 21) is explicitly legitimate.
++        return set_clause(statement).is_some_and(|clause| clause.contains(PINNED_IDENTITY_COLUMN));
++    }
++
++    if statement.starts_with("INSERT") || statement.starts_with("REPLACE") {
++        let Some((table, rest)) = table_after_into(statement) else { return false };
++        if !is_pinned_table(&table) {
++            return false;
++        }
++        // Naming the column anywhere in an insert into a canonical table is a
++        // backfill; a MISSING column list writes every column, identity included.
++        return names_column || !rest.trim_start().starts_with('(');
++    }
++
++    if statement.starts_with("ALTER") {
++        let Some(table) = token_after(statement, "ALTER TABLE ") else { return false };
++        if !is_pinned_table(&table) || !names_column {
++            return false;
++        }
++        // Declaring the column bare is how step 12 shipped it. A DEFAULT
++        // populates every existing row; a RENAME conscripts a populated one.
++        return statement.contains("DEFAULT") || statement.contains("RENAME");
++    }
++
++    if statement.starts_with("CREATE") && statement.contains(" TABLE ") {
++        let Some(table) = token_after(statement, " TABLE ") else { return false };
++        // A recreate may DECLARE the column (step 23 does); it may not default it.
++        return is_pinned_table(&table) && names_column && statement.contains("DEFAULT");
++    }
++
++    false
++}
++
++/// The bare table name from a possibly schema-qualified token.
++///
++/// SQLite resolves `main.canonical_nodes` (or `temp.canonical_nodes`, or any
++/// quoted spelling of either half — the normaliser has already unwrapped those)
++/// to the SAME pinned table as the bare name, so the qualifier is stripped
++/// before the comparison. SQLite permits at most ONE qualifier, so the part
++/// after the dot is the table name. This is a STRIP, not a widening to a
++/// substring match: `main.canonical_nodes_old` is still a different table.
++fn bare_table_name(token: &str) -> &str {
++    token.rsplit_once('.').map_or(token, |(_, table)| table)
++}
++
++fn is_pinned_table(token: &str) -> bool {
++    PINNED_IDENTITY_TABLES.contains(&bare_table_name(token))
++}
++
++fn targets_pinned_table(statement: &str) -> bool {
++    PINNED_IDENTITY_TABLES.iter().any(|table| statement.contains(table))
++}
++
++/// The first identifier token after `marker`, cut at whitespace or `(`.
++fn token_after(statement: &str, marker: &str) -> Option<String> {
++    let rest = statement.split_once(marker)?.1;
++    let token: String =
++        rest.chars().take_while(|c| !c.is_whitespace() && *c != '(' && *c != ',').collect();
++    (!token.is_empty()).then_some(token)
++}
++
++/// `(table, remainder-after-the-table-name)` for an `INSERT`/`REPLACE … INTO …`.
++fn table_after_into(statement: &str) -> Option<(String, String)> {
++    let rest = statement.split_once(" INTO ")?.1;
++    let table: String =
++        rest.chars().take_while(|c| !c.is_whitespace() && *c != '(' && *c != ',').collect();
++    (!table.is_empty()).then(|| (table.clone(), rest[table.len()..].to_string()))
++}
++
++/// The assignment half of an `UPDATE`: everything between ` SET ` and the first
++/// clause keyword that ends it.
++fn set_clause(statement: &str) -> Option<&str> {
++    let after_set = statement.split_once(" SET ")?.1;
++    let end = [" WHERE ", " FROM ", " RETURNING "]
++        .iter()
++        .filter_map(|kw| after_set.find(kw))
++        .min()
++        .unwrap_or(after_set.len());
++    Some(&after_set[..end])
++}
++
+ pub fn check_migration_accretion(name: &str, sql: &str) -> Result<(), MigrationAccretionError> {
+     let upper = sql.to_ascii_uppercase();
+     let adds_schema = upper.contains("CREATE TABLE") || upper.contains("ADD COLUMN");
+
+exec
+/bin/bash -lc "grep -R \"check_migration_logical_id_pin\\|logical_id_pin\" -n src/rust/crates | head -50 && git diff 2afd168c337a5d0fea75aaec1953792f46026086 -- src/rust/crates/fathomdb-engine/tests/slice25_registration_identity_inert.rs | sed -n '1,220p'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s25
+ succeeded in 0ms:
+src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs:23://! - **D1 — static migration guard.** [`check_migration_logical_id_pin`] is the
+src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs:43:    check_migration_accretion, check_migration_logical_id_pin, migrate_with_steps,
+src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs:166:    let err = check_migration_logical_id_pin("099_surrogate_backfill.sql", offender)
+src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs:182:    check_migration_logical_id_pin("099_edge_backfill.sql", offender)
+src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs:196:    check_migration_logical_id_pin("099_recreate_copy.sql", offender)
+src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs:206:    check_migration_logical_id_pin("099_blind_copy.sql", offender)
+src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs:220:        check_migration_logical_id_pin("099_quoted.sql", offender)
+src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs:245:        check_migration_logical_id_pin("099_qualified.sql", offender)
+src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs:265:        check_migration_logical_id_pin("099_qualified_quoted.sql", offender).unwrap_err_or_panic(
+src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs:284:        check_migration_logical_id_pin("099_spaced_dot.sql", offender).unwrap_err_or_panic(
+src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs:301:        check_migration_logical_id_pin("099_qualified_ddl.sql", offender).unwrap_err_or_panic(
+src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs:319:        check_migration_logical_id_pin("098_unrelated.sql", accepted).unwrap_or_else(|err| {
+src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs:332:    check_migration_logical_id_pin("099_trigger.sql", offender)
+src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs:342:    check_migration_logical_id_pin("099_defaulted.sql", offender)
+src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs:351:    check_migration_logical_id_pin("099_rename.sql", offender)
+src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs:364:    check_migration_logical_id_pin("099_marked_offender.sql", marked)
+src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs:371:    check_migration_logical_id_pin("099_only_a_comment.sql", commented)
+src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs:388:        check_migration_logical_id_pin(&format!("step-{}", step.step_id), step.sql).unwrap_or_else(
+src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs:419:        check_migration_logical_id_pin(&name, &sql)
+src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs:442:    check_migration_logical_id_pin("012_g0_substrate.sql", s12.sql)
+src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs:449:    check_migration_logical_id_pin("021_legacy_provenance_backfill.sql", s21.sql)
+src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs:455:    check_migration_logical_id_pin("023_tc33_edge_recreate.sql", s23.sql)
+src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs:469:    check_migration_logical_id_pin("099.sql", mints).expect_err("…but not the TC-11 pin");
+src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs:475:    check_migration_logical_id_pin("098.sql", accretes)
+src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs:566:/// rogue `UPDATE` (the very statement `check_migration_logical_id_pin` refuses
+src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs:595:    check_migration_logical_id_pin("rogue", rogue)
+src/rust/crates/fathomdb-schema/src/lib.rs:1104:pub fn check_migration_logical_id_pin(
+src/rust/crates/fathomdb-schema/src/lib.rs:1109:        if statement_violates_logical_id_pin(&statement) {
+src/rust/crates/fathomdb-schema/src/lib.rs:1218:fn statement_violates_logical_id_pin(statement: &str) -> bool {
+src/rust/crates/fathomdb-engine/tests/slice25_registration_identity_inert.rs:6://! in `fathomdb-schema/tests/slice25_logical_id_pin.rs`.
+diff --git a/src/rust/crates/fathomdb-engine/tests/slice25_registration_identity_inert.rs b/src/rust/crates/fathomdb-engine/tests/slice25_registration_identity_inert.rs
+new file mode 100644
+index 00000000..00ff866f
+--- /dev/null
++++ b/src/rust/crates/fathomdb-engine/tests/slice25_registration_identity_inert.rs
+@@ -0,0 +1,546 @@
++//! 0.8.20 Slice 25 (R-20-SUR) — D3: **registering a kind does not alter any
++//! pre-existing row's `IdSpace`**.
++//!
++//! The second half of R-20-SUR's acceptance signal. The first half (the
++//! migration guard: rows transitioning `logical_id` NULL → NOT NULL == 0) lives
++//! in `fathomdb-schema/tests/slice25_logical_id_pin.rs`.
++//!
++//! **The ruling being enforced** (TC-11 pin A, HITL-ratified 2026-07-12; plan
++//! `dev/plans/plan-0.8.20.md` §2.1) — do not re-open:
++//!
++//! - A stored row's id-space is **NEVER re-derived**. Supplying a `logical_id`
++//!   at WRITE time is what makes a record governed; nothing after the write can
++//!   change that, in either direction.
++//! - Anonymous / doc-seeded nodes stay `h:<content-hash>` PERMANENTLY. The
++//!   anonymous-surrogate leg is CANCELLED, not deferred.
++//! - Accepted corollary, documented rather than "fixed": an anonymous row and a
++//!   later governed row for the same real-world thing BOTH stay active and BOTH
++//!   surface in search. The partial-unique index is
++//!   `ON canonical_nodes(logical_id) WHERE superseded_at IS NULL`, and SQLite
++//!   treats every NULL as distinct, so a NULL `logical_id` never collides.
++//!   `anonymous_and_governed_twins_both_stay_active_and_both_surface` pins that
++//!   corollary, and
++//!   `identical_body_twins_collapse_under_fusion_body_dedup_but_both_persist`
++//!   records its one wrinkle.
++//!
++//! It also carries **D4**: the write-time admission audit found NO gap, and the
++//! two paths that audit turns on — the internal structural-row writer (the only
++//! writer that bypasses `PreparedWrite`) and an anonymous `PreparedWrite` going
++//! through `commit_batch` — are pinned to mint nothing.
++//!
++//! **"Registration"** is the projection registry (Slice 15d, R-20-PR):
++//! `configure_projections` (add / re-register / drop) plus the boot re-derive
++//! that re-drives the engine's cached `ProjectionSpec`s from the durable
++//! registry. The registry is keyed on ATTRIBUTE NAME, never on entity kind, and
++//! it must be provably INERT with respect to identity: it may build and drop
++//! projections all it likes, but no canonical row's `logical_id` — and therefore
++//! no row's [`IdSpace`] — may move.
++//!
++//! Anti-vacuity: every "nothing changed" assertion in this file is paired with a
++//! negative control that makes the SAME comparator fire on a real mutation. A
++//! green here is only worth something if red is reachable.
++
++use fathomdb_engine::{
++    Engine, ExtractDocument, IdSpace, IdSpaceKind, InitialState, PreparedWrite, ProjectionFts,
++    ProjectionRole, ProjectionSpec, RowKind, SourceId,
++};
++use fathomdb_schema::SQLITE_SUFFIX;
++use sha2::{Digest, Sha256};
++use std::collections::{BTreeSet, HashSet};
++use std::path::{Path, PathBuf};
++use tempfile::TempDir;
++
++// ---------------------------------------------------------------------------
++// Fixtures
++// ---------------------------------------------------------------------------
++
++fn db_path(dir: &TempDir, name: &str) -> PathBuf {
++    dir.path().join(format!("{name}{SQLITE_SUFFIX}"))
++}
++
++fn stub_harness_cmd() -> Vec<String> {
++    let script = Path::new(env!("CARGO_MANIFEST_DIR"))
++        .join("tests/fixtures/slice15_byo_llm/stub_harness.py");
++    assert!(script.exists(), "stub harness must exist at {}", script.display());
++    vec!["python3".to_string(), script.to_string_lossy().to_string()]
++}
++
++/// An ANONYMOUS / doc-seeded node: `logical_id: None`. Permanently `h:`.
++fn anonymous(source: &str, body_json: &str) -> PreparedWrite {
++    PreparedWrite::Node {
++        kind: "doc".to_string(),
++        body: body_json.to_string(),
++        source_id: SourceId::new(source).expect("source id"),
++        logical_id: None,
++        state: InitialState::Active,
++        reason: None,
++        valid_from: None,
++        valid_until: None,
++    }
++}
++
++/// A GOVERNED node: the caller supplied a `logical_id` at WRITE time, which is
++/// exactly what admission means under the pin. Permanently `l:`.
++fn governed(logical_id: &str, source: &str, body_json: &str) -> PreparedWrite {
++    PreparedWrite::Node {
++        kind: "doc".to_string(),
++        body: body_json.to_string(),
++        source_id: SourceId::new(source).expect("source id"),
++        logical_id: Some(logical_id.to_string()),
++        state: InitialState::Active,
++        reason: None,
++        valid_from: None,
++        valid_until: None,
++    }
++}
++
++fn spec(name: &str, roles: &[ProjectionRole], fts: bool) -> ProjectionSpec {
++    ProjectionSpec {
++        name: name.to_string(),
++        roles: roles.iter().copied().collect::<BTreeSet<_>>(),
++        fts: fts.then_some(ProjectionFts { tokenizer: None }),
++        vector: None,
++    }
++}
++
++fn ro(path: &Path) -> rusqlite::Connection {
++    rusqlite::Connection::open_with_flags(
++        path,
++        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
++    )
++    .expect("open read-only")
++}
++
++/// The engine's `derive_stable_id` rule, restated against the REAL public
++/// [`IdSpace`] type: `Some(non-empty)` → `IdSpace::logical`, otherwise
++/// `IdSpace::content(sha256(body))`. `derive_stable_id` itself is private, so
++/// the test reproduces the documented contract and cross-checks it against live
++/// `SearchHit::id` values in `live_search_hit_id_spaces_survive_registration`.
++fn id_space_of(logical_id: Option<&str>, body: &str) -> IdSpace {
++    match logical_id {
++        Some(lid) if !lid.is_empty() => IdSpace::logical(lid),
++        _ => {
++            let mut hasher = Sha256::new();
++            hasher.update(body.as_bytes());
++            IdSpace::content(
++                hasher.finalize().iter().map(|b| format!("{b:02x}")).collect::<String>(),
++            )
++        }
++    }
++}
++
++/// Every canonical node row's identity state, at rest, plus its DERIVED
++/// prefixed id: `(write_cursor, logical_id, body, IdSpace::to_prefixed())`.
++/// Ordered by `write_cursor` so the vec compares positionally.
++type IdentitySnapshot = Vec<(i64, Option<String>, String, String)>;
++
++fn snapshot(path: &Path) -> IdentitySnapshot {
++    let conn = ro(path);
++    let mut stmt = conn
++        .prepare("SELECT write_cursor, logical_id, body FROM canonical_nodes ORDER BY write_cursor")
++        .unwrap();
++    let rows: Vec<(i64, Option<String>, String)> = stmt
++        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
++        .unwrap()
++        .map(Result::unwrap)
++        .collect();
++    rows.into_iter()
++        .map(|(cursor, lid, body)| {
++            let prefixed = id_space_of(lid.as_deref(), &body).to_prefixed();
++            (cursor, lid, body, prefixed)
++        })
++        .collect()
++}
++
++fn spaces(snap: &IdentitySnapshot) -> (usize, usize) {
++    let content = snap.iter().filter(|(_, _, _, id)| id.starts_with("h:")).count();
++    let logical = snap.iter().filter(|(_, _, _, id)| id.starts_with("l:")).count();
++    (content, logical)
++}
++
++/// Seed the mixed corpus every test in this file shares: three ANONYMOUS
++/// doc-seeded nodes (JSON bodies, so the attribute projections have something
++/// to derive from), two caller-GOVERNED nodes, and two entity nodes MINTED by
++/// the extractor arm of `ingest_with_extractor` (the only in-engine minting
++/// site). Returns the post-seed snapshot.
++fn seed_mixed_corpus(engine: &Engine) -> usize {
++    engine
++        .write(&[
++            anonymous("src:doc-a", r#"{"status":"open","title":"the quick brown fox"}"#),
++            anonymous("src:doc-b", r#"{"status":"closed","title":"a doc-seeded chunk"}"#),
++            anonymous("src:doc-c", r#"{"status":"open","title":"lorem ipsum dolor"}"#),
++            governed("ent-zephyr", "src:doc-d", r#"{"status":"open","title":"zephyr"}"#),
++            governed("ent-boreas", "src:doc-e", r#"{"status":"closed","title":"boreas"}"#),
++        ])
++        .expect("mixed corpus write");
++
++    let cmd_strings = stub_harness_cmd();
++    let cmd_refs: Vec<&str> = cmd_strings.iter().map(String::as_str).collect();
++    let docs = vec![ExtractDocument {
++        source_doc_id: "doc-simple".to_string(),
++        body: "Alice owns the project".to_string(),
++    }];
++    let receipt = engine.ingest_with_extractor(&cmd_refs, &docs).expect("extractor ingest");
++    assert!(
++        receipt.nodes_written >= 2,
++        "the extractor arm must MINT governed entity nodes (the governed minting path already \
++         exists — Slice 25 proves it is restricted, it does not build a new one)"
++    );
++    receipt.nodes_written as usize
++}
++
++// ===========================================================================
++// D3 — registration is inert with respect to identity
++// ===========================================================================
++
++/// **The acceptance signal.** Write a mixed corpus (anonymous `logical_id =
++/// NULL` + caller-governed + extractor-minted), snapshot every node's
++/// `logical_id` and derived `IdSpace::to_prefixed()`, then REGISTER: a fresh
++/// projection add, an identical re-registration (the idempotent no-op), an
++/// explicit drop, and a boot re-derive (close + re-open, which re-drives the
++/// cached specs from the durable registry). Every pre-existing row's
++/// `logical_id` and `to_prefixed()` must be BYTE-IDENTICAL throughout, the
++/// anonymous rows still `h:` and the governed rows still `l:`.
++#[test]
++fn registering_projections_never_alters_a_pre_existing_row_id_space() {
++    let dir = TempDir::new().unwrap();
++    let path = db_path(&dir, "registration_inert");
++
++    let baseline = {
++        let opened = Engine::open_without_embedder_for_test(&path).expect("open");
++        let minted = seed_mixed_corpus(&opened.engine);
++
++        let baseline = snapshot(&path);
++        assert_eq!(baseline.len(), 5 + minted, "corpus is 5 hand-written rows + minted entities");
+
+exec
+/bin/bash -lc "git diff 2afd168c337a5d0fea75aaec1953792f46026086 -- src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs | sed -n '1,760p'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s25
+ succeeded in 0ms:
+diff --git a/src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs b/src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs
+new file mode 100644
+index 00000000..105170d5
+--- /dev/null
++++ b/src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs
+@@ -0,0 +1,714 @@
++//! 0.8.20 Slice 25 (R-20-SUR) — the TC-11 pin's ENFORCING invariant, in both
++//! its static and dynamic form.
++//!
++//! **The requirement.** Surrogate minting serves ONLY registry-admitted governed
++//! entities, and admission is decided at WRITE TIME. Its acceptance signal is a
++//! migration-guard: rows transitioning `logical_id` NULL → NOT NULL must be
++//! **exactly 0**.
++//!
++//! **The ruling being enforced** (TC-11 pin A, HITL-ratified 2026-07-12; plan
++//! `dev/plans/plan-0.8.20.md` §2.1) — do not re-open:
++//!
++//! - Anonymous / doc-seeded nodes stay `h:<content-hash>` PERMANENTLY. No
++//!   backfill, no forward-mint, no split. The anonymous-surrogate leg is
++//!   CANCELLED, not deferred.
++//! - Enforcement is "**no new column**". The record IS `canonical_nodes.logical_id`'s
++//!   null-ness, so the invariant is a PROHIBITION: *no migration, backfill, or
++//!   verb shall ever populate `logical_id` on an existing canonical row.*
++//! - A stored row's id-space is NEVER re-derived. Supplying a `logical_id` at
++//!   write time is what makes a record governed.
++//!
++//! This file carries two of the slice's three deliverables:
++//!
++//! - **D1 — static migration guard.** [`check_migration_logical_id_pin`] is the
++//!   sibling of [`check_migration_accretion`]: it statically rejects any
++//!   migration step whose SQL could populate `logical_id` on an existing
++//!   canonical row. The synthetic-offender tests are the RED witness; the
++//!   loop over every shipped step (1..=`SCHEMA_VERSION`) is both the regression
++//!   proof that the shipped ladder is clean AND the wiring that makes a FUTURE
++//!   violating migration impossible to land (a new step must enter `MIGRATIONS`
++//!   to have any effect, and this test walks `MIGRATIONS` whole).
++//! - **D2 — dynamic migration guard.** Real SQLite, no mocking (`AGENTS.md`):
++//!   build a DB at a pre-head schema holding BOTH anonymous (`logical_id IS
++//!   NULL`) and governed (`logical_id NOT NULL`) canonical rows, migrate to
++//!   head, and assert 0 NULL → NOT NULL transitions, 0 NOT NULL → NULL
++//!   transitions, no value change at all, and byte-identical derived
++//!   `IdSpace::to_prefixed()` for every pre-existing row.
++//!
++//! D3 ("registering a kind does not alter any pre-existing row's `IdSpace`")
++//! is engine-level and lives in
++//! `fathomdb-engine/tests/slice25_registration_identity_inert.rs`.
++
++use fathomdb_schema::{
++    check_migration_accretion, check_migration_logical_id_pin, migrate_with_steps,
++    MigrationLogicalIdPinError, MIGRATIONS, SCHEMA_VERSION,
++};
++use rusqlite::Connection;
++use sha2::{Digest, Sha256};
++use std::sync::Once;
++
++// ---------------------------------------------------------------------------
++// Fixtures
++// ---------------------------------------------------------------------------
++
++/// Step 9 creates a vec0 virtual table; register sqlite-vec once per binary.
++fn register_sqlite_vec_once() {
++    static REGISTER: Once = Once::new();
++    REGISTER.call_once(|| unsafe {
++        let entrypoint: unsafe extern "C" fn(
++            *mut rusqlite::ffi::sqlite3,
++            *mut *const std::os::raw::c_char,
++            *const rusqlite::ffi::sqlite3_api_routines,
++        ) -> std::os::raw::c_int = std::mem::transmute(sqlite_vec::sqlite3_vec_init as *const ());
++        rusqlite::ffi::sqlite3_auto_extension(Some(entrypoint));
++    });
++}
++
++fn user_version(conn: &Connection) -> u32 {
++    conn.query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0)).unwrap()
++}
++
++fn set_user_version(conn: &Connection, version: u32) {
++    conn.pragma_update(None, "user_version", version).unwrap();
++}
++
++fn steps_through(limit: u32) -> Vec<fathomdb_schema::Migration> {
++    MIGRATIONS.iter().filter(|m| m.step_id <= limit).cloned().collect()
++}
++
++/// One canonical row's identity-relevant state, as it is at rest.
++///
++/// `(write_cursor, logical_id, body)` is the COMPLETE input to the id-space
++/// split: `derive_stable_id` reads `logical_id` (null-ness + value) and falls
++/// back to `sha256(body)`. Snapshotting the triple therefore pins both the
++/// pin's invariant and the derived hit id.
++type IdentityRow = (i64, Option<String>, String);
++
++/// The engine's `derive_stable_id` / `IdSpace::to_prefixed()` rule, restated
++/// here because `IdSpace` lives in `fathomdb-engine` and the schema crate is a
++/// LEAF (engine → schema; the reverse would be a cycle). Kept byte-identical to
++/// `fathomdb-engine::derive_stable_id`: `Some(non-empty)` → `l:<logical_id>`,
++/// otherwise → `h:<sha256(body)>`. The engine-side D3 test asserts the same
++/// property against the real `IdSpace` type, so the two are cross-checked.
++fn prefixed_id(logical_id: Option<&str>, body: &str) -> String {
++    match logical_id {
++        Some(lid) if !lid.is_empty() => format!("l:{lid}"),
++        _ => {
++            let mut hasher = Sha256::new();
++            hasher.update(body.as_bytes());
++            let hex: String = hasher.finalize().iter().map(|b| format!("{b:02x}")).collect();
++            format!("h:{hex}")
++        }
++    }
++}
++
++fn snapshot_nodes(conn: &Connection) -> Vec<IdentityRow> {
++    conn.prepare("SELECT write_cursor, logical_id, body FROM canonical_nodes ORDER BY write_cursor")
++        .unwrap()
++        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
++        .unwrap()
++        .map(Result::unwrap)
++        .collect()
++}
++
++fn snapshot_edges(conn: &Connection) -> Vec<IdentityRow> {
++    conn.prepare(
++        "SELECT write_cursor, logical_id, COALESCE(body, '') FROM canonical_edges \
++         ORDER BY write_cursor",
++    )
++    .unwrap()
++    .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
++    .unwrap()
++    .map(Result::unwrap)
++    .collect()
++}
++
++/// The acceptance signal itself, as a function: how many rows present in BOTH
++/// snapshots went `logical_id` NULL → NOT NULL. Keyed on `write_cursor`, which
++/// migrations never rewrite.
++fn null_to_not_null(before: &[IdentityRow], after: &[IdentityRow]) -> usize {
++    before
++        .iter()
++        .filter(|(cursor, lid, _)| {
++            lid.is_none()
++                && after
++                    .iter()
++                    .any(|(c, l, _)| c == cursor && l.as_ref().is_some_and(|v| !v.is_empty()))
++        })
++        .count()
++}
++
++/// The mirror direction — a governed row silently DE-governed is just as much a
++/// re-derivation of a stored row's id-space.
++fn not_null_to_null(before: &[IdentityRow], after: &[IdentityRow]) -> usize {
++    before
++        .iter()
++        .filter(|(cursor, lid, _)| {
++            lid.is_some() && after.iter().any(|(c, l, _)| c == cursor && l.is_none())
++        })
++        .count()
++}
++
++// ===========================================================================
++// D1 — static migration guard
++// ===========================================================================
++
++/// **RED witness (synthetic offender, `UPDATE … SET logical_id`).** The
++/// canonical shape of a forward-mint backfill: a migration that stamps a
++/// surrogate onto every anonymous row. This is exactly what the TC-11 pin
++/// forbids, and the guard must reject it statically — before it can ever run.
++#[test]
++fn pin_rejects_update_that_mints_logical_id_on_anonymous_nodes() {
++    let offender = "UPDATE canonical_nodes \
++                       SET logical_id = 'l:' || lower(hex(randomblob(16))) \
++                     WHERE logical_id IS NULL;";
++
++    let err = check_migration_logical_id_pin("099_surrogate_backfill.sql", offender)
++        .expect_err("a migration that populates logical_id must be rejected");
++    assert_eq!(err.offender, "099_surrogate_backfill.sql");
++    assert!(
++        err.statement.contains("LOGICAL_ID"),
++        "the rejection must name the offending statement, got {:?}",
++        err.statement
++    );
++}
++
++/// The same offence on the edge table. Edges carry `logical_id` too (a
++/// supersession identity), and the pin covers BOTH canonical tables.
++#[test]
++fn pin_rejects_update_that_mints_logical_id_on_edges() {
++    let offender = "UPDATE canonical_edges SET logical_id = from_id || ':' || to_id \
++                    WHERE logical_id IS NULL;";
++    check_migration_logical_id_pin("099_edge_backfill.sql", offender)
++        .expect_err("a migration that populates canonical_edges.logical_id must be rejected");
++}
++
++/// **RED witness (synthetic offender, `INSERT … SELECT` backfill).** The other
++/// route to the same outcome: recreate-and-copy, computing a surrogate on the
++/// way through. Naming `logical_id` in the insert column list of a canonical
++/// table is refused outright.
++#[test]
++fn pin_rejects_insert_select_backfill_that_writes_logical_id() {
++    let offender = "INSERT INTO canonical_nodes(write_cursor, kind, body, logical_id) \
++                        SELECT write_cursor, kind, body, \
++                               COALESCE(logical_id, 'minted:' || write_cursor) \
++                          FROM canonical_nodes_old;";
++    check_migration_logical_id_pin("099_recreate_copy.sql", offender)
++        .expect_err("an INSERT…SELECT backfill that writes logical_id must be rejected");
++}
++
++/// A column-list-less `INSERT INTO canonical_nodes SELECT …` writes EVERY
++/// column, `logical_id` among them, without ever naming it. The guard refuses
++/// the shape rather than trying to count columns.
++#[test]
++fn pin_rejects_insert_into_canonical_table_without_a_column_list() {
++    let offender = "INSERT INTO canonical_nodes SELECT * FROM canonical_nodes_old;";
++    check_migration_logical_id_pin("099_blind_copy.sql", offender)
++        .expect_err("an INSERT with no column list writes logical_id implicitly");
++}
++
++/// Quoting is not an escape. `"logical_id"` / `[logical_id]` / `` `logical_id` ``
++/// are the same identifier to SQLite, so they are the same identifier to the
++/// guard.
++#[test]
++fn pin_rejects_quoted_identifier_evasion() {
++    for offender in [
++        r#"UPDATE canonical_nodes SET "logical_id" = 'x' WHERE 1;"#,
++        "UPDATE canonical_nodes SET [logical_id] = 'x' WHERE 1;",
++        "UPDATE canonical_nodes SET `logical_id` = 'x' WHERE 1;",
++    ] {
++        check_migration_logical_id_pin("099_quoted.sql", offender)
++            .unwrap_err_or_panic("quoted-identifier evasion must still be rejected", offender);
++    }
++}
++
++/// **Schema-qualifying the table is not an escape either.** SQLite resolves
++/// `main.canonical_nodes` to the SAME pinned table as the bare name, so an
++/// author who writes the qualified spelling has performed the exact backfill the
++/// pin exists to reject. Both canonical tables, both write shapes.
++///
++/// (Reviewer finding, codex §9 [P2] on Slice 25: the guard compared the extracted
++/// token LITERALLY against `CANONICAL_NODES` / `CANONICAL_EDGES`, so the token
++/// `MAIN.CANONICAL_NODES` silently ACCEPTED the forbidden shape.)
++#[test]
++fn pin_rejects_schema_qualified_backfills() {
++    for offender in [
++        "UPDATE main.canonical_nodes SET logical_id = 'minted' WHERE logical_id IS NULL;",
++        "UPDATE main.canonical_edges SET logical_id = from_id || ':' || to_id WHERE 1;",
++        "INSERT INTO main.canonical_nodes(write_cursor, logical_id) \
++             SELECT write_cursor, COALESCE(logical_id, 'minted') FROM canonical_nodes_old;",
++        "INSERT INTO main.canonical_edges(write_cursor, logical_id) \
++             SELECT write_cursor, 'minted' FROM canonical_edges_old;",
++        // No column list: writes every column, identity included.
++        "INSERT INTO main.canonical_nodes SELECT * FROM canonical_nodes_old;",
++    ] {
++        check_migration_logical_id_pin("099_qualified.sql", offender)
++            .unwrap_err_or_panic("a schema-qualified backfill must still be rejected", offender);
++    }
++}
++
++/// The qualifier is normalised the same way the TABLE name already is: EITHER
++/// half may be quoted (`"main".canonical_nodes`, `[main].[canonical_nodes]`,
++/// `` `main`.`canonical_nodes` ``), and `temp.` qualifies just as `main.` does.
++/// SQLite treats all of these as the one pinned table; so must the guard.
++#[test]
++fn pin_rejects_quoted_and_temp_schema_qualified_evasion() {
++    for offender in [
++        r#"UPDATE "main".canonical_nodes SET logical_id = 'x' WHERE 1;"#,
++        r#"UPDATE main."canonical_nodes" SET logical_id = 'x' WHERE 1;"#,
++        r#"UPDATE "main"."canonical_nodes" SET logical_id = 'x' WHERE 1;"#,
++        "UPDATE [main].[canonical_nodes] SET logical_id = 'x' WHERE 1;",
++        "UPDATE `main`.`canonical_nodes` SET logical_id = 'x' WHERE 1;",
++        "UPDATE temp.canonical_nodes SET logical_id = 'x' WHERE 1;",
++        "INSERT INTO [temp].[canonical_edges](write_cursor, logical_id) VALUES(1, 'x');",
++    ] {
++        check_migration_logical_id_pin("099_qualified_quoted.sql", offender).unwrap_err_or_panic(
++            "a quoted / temp-qualified backfill must still be rejected",
++            offender,
++        );
++    }
++}
++
++/// SQLite's tokenizer accepts whitespace around the qualifier dot —
++/// `UPDATE main . canonical_nodes SET …` parses and targets the same table
++/// (verified against real SQLite 3.45 before this assertion was written). The
++/// guard's token extractors cut at whitespace, so the spaced spelling must be
++/// tightened during normalisation or it slips the pin as the bare token `MAIN`.
++#[test]
++fn pin_rejects_whitespace_around_the_qualifier_dot() {
++    for offender in [
++        "UPDATE main . canonical_nodes SET logical_id = 'x' WHERE 1;",
++        "UPDATE main. canonical_edges SET logical_id = 'x' WHERE 1;",
++        "INSERT INTO main .canonical_nodes(write_cursor, logical_id) VALUES(1, 'x');",
++    ] {
++        check_migration_logical_id_pin("099_spaced_dot.sql", offender).unwrap_err_or_panic(
++            "whitespace around the qualifier dot must not defeat the pin",
++            offender,
++        );
++    }
++}
++
++/// The DDL arms take the table name through the same extractor, so they carry
++/// the same hole: a qualified `ALTER TABLE` / `CREATE TABLE` must be judged on
++/// the table it actually targets.
++#[test]
++fn pin_rejects_schema_qualified_ddl() {
++    for offender in [
++        "ALTER TABLE main.canonical_nodes ADD COLUMN logical_id TEXT NOT NULL DEFAULT 'minted';",
++        "ALTER TABLE main.canonical_nodes RENAME COLUMN kind TO logical_id;",
++        "CREATE TABLE main.canonical_edges(write_cursor INTEGER, logical_id TEXT DEFAULT 'x');",
++    ] {
++        check_migration_logical_id_pin("099_qualified_ddl.sql", offender).unwrap_err_or_panic(
++            "a schema-qualified DDL offender must still be rejected",
++            offender,
++        );
++    }
++}
++
++/// **Control — stripping the qualifier must not degrade into a substring match.**
++/// `main.canonical_nodes_old` is a DIFFERENT table and is none of the pin's
++/// business; if the fix widened the comparison to "contains", these would start
++/// failing and the guard would reject legitimate recreate scaffolding.
++#[test]
++fn pin_still_ignores_qualified_non_canonical_tables() {
++    for accepted in [
++        "UPDATE main.canonical_nodes_old SET logical_id = 'x' WHERE 1;",
++        "UPDATE main.node_projections SET logical_id = 'x' WHERE 1;",
++        "INSERT INTO temp.canonical_nodes_backup(write_cursor, logical_id) VALUES(1, 'x');",
++    ] {
++        check_migration_logical_id_pin("098_unrelated.sql", accepted).unwrap_or_else(|err| {
++            panic!("an unrelated table is none of the pin's business: {err}")
++        });
++    }
++}
++
++/// A trigger is a deferred `UPDATE`. One that writes `logical_id` on a canonical
++/// table is the same offence, executed later.
++#[test]
++fn pin_rejects_a_trigger_that_writes_logical_id() {
++    let offender = "CREATE TRIGGER mint_ids AFTER INSERT ON canonical_nodes BEGIN \
++                        UPDATE canonical_nodes SET logical_id = 'minted' \
++                        WHERE write_cursor = NEW.write_cursor; END;";
++    check_migration_logical_id_pin("099_trigger.sql", offender)
++        .expect_err("a trigger that writes logical_id must be rejected");
++}
++
++/// `ADD COLUMN … DEFAULT` populates every EXISTING row in one statement — the
++/// quietest possible forward-mint.
++#[test]
++fn pin_rejects_add_column_logical_id_with_a_default() {
++    let offender =
++        "ALTER TABLE canonical_nodes ADD COLUMN logical_id TEXT NOT NULL DEFAULT 'minted';";
++    check_migration_logical_id_pin("099_defaulted.sql", offender)
++        .expect_err("a defaulted logical_id column populates every existing row");
++}
++
++/// A RENAME can turn an already-populated column INTO `logical_id` without a
++/// single write.
++#[test]
++fn pin_rejects_renaming_a_populated_column_to_logical_id() {
++    let offender = "ALTER TABLE canonical_nodes RENAME COLUMN kind TO logical_id;";
++    check_migration_logical_id_pin("099_rename.sql", offender)
++        .expect_err("renaming a populated column to logical_id is a backfill in disguise");
++}
++
++/// **The pin is TERMINAL-FOREVER, so it has NO exemption escape hatch.**
++/// `check_migration_accretion` takes a `-- MIGRATION-ACCRETION-EXEMPTION: `
++/// marker because accretion is a budget an author may deliberately spend. The
++/// TC-11 pin is not a budget: an escape hatch would defeat it, so a marked
++/// offender is rejected identically to an unmarked one.
++#[test]
++fn pin_has_no_exemption_escape_hatch() {
++    let marked = "-- MIGRATION-ACCRETION-EXEMPTION: totally legitimate, honest\n\
++                  UPDATE canonical_nodes SET logical_id = 'minted' WHERE logical_id IS NULL;";
++    check_migration_logical_id_pin("099_marked_offender.sql", marked)
++        .expect_err("no marker may exempt a migration from the TC-11 pin");
++
++    // …and the accretion guard's own marker text is not special-cased anywhere
++    // in the pin: a comment can never make an offending statement legal.
++    let commented = "-- we promise this UPDATE canonical_nodes SET logical_id is fine\n\
++                     SELECT 1;";
++    check_migration_logical_id_pin("099_only_a_comment.sql", commented)
++        .expect("a mention inside a COMMENT executes nothing and must be accepted");
++}
++
++/// **Regression proof + the wiring.** Every shipped step 1..=`SCHEMA_VERSION`
++/// passes the pin. This is the future-migration blocker: `MIGRATIONS` is the
++/// only functional migration surface (the `migrations/*.sql` files are
++/// documentation duplicates and are not `include_str!`'d), so a new step MUST
++/// appear here to have any effect — and this test walks the registry whole.
++#[test]
++fn pin_accepts_every_shipped_migration_step() {
++    assert_eq!(
++        MIGRATIONS.len(),
++        SCHEMA_VERSION as usize,
++        "the registry must cover every step up to head"
++    );
++    for step in MIGRATIONS {
++        check_migration_logical_id_pin(&format!("step-{}", step.step_id), step.sql).unwrap_or_else(
++            |err| panic!("shipped migration step {} violates the TC-11 pin: {err}", step.step_id),
++        );
++    }
++}
++
++/// **The second enforcement surface.** `check_migration_accretion` is enforced
++/// in TWO places: these Rust tests, and `scripts/agent-lint-migrations.py`
++/// (wired into `scripts/agent-lint.sh`) over the `migrations/*.sql` authoring
++/// copies. The pin covers both surfaces WITHOUT a second implementation: this
++/// test runs the SAME Rust guard over the on-disk `.sql` files. Mirroring the
++/// guard's ~150-line lexical scanner into Python would create a second source of
++/// truth that can drift; a shared guard cannot.
++///
++/// (Those `.sql` files are documentation duplicates — they are NOT `include_str!`'d,
++/// so `MIGRATIONS` above is the only surface that can actually run. They are
++/// checked anyway so an author who edits the copy first still meets the pin.)
++#[test]
++fn pin_accepts_every_on_disk_migration_sql_file() {
++    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
++    let mut checked = 0usize;
++    let mut entries: Vec<_> = std::fs::read_dir(&dir)
++        .unwrap_or_else(|e| panic!("migrations dir must be readable at {}: {e}", dir.display()))
++        .filter_map(Result::ok)
++        .map(|e| e.path())
++        .filter(|p| p.extension().is_some_and(|ext| ext == "sql"))
++        .collect();
++    entries.sort();
++    for path in entries {
++        let sql = std::fs::read_to_string(&path).unwrap();
++        let name = path.file_name().unwrap().to_string_lossy().to_string();
++        check_migration_logical_id_pin(&name, &sql)
++            .unwrap_or_else(|err| panic!("{name} violates the TC-11 pin: {err}"));
++        checked += 1;
++    }
++    assert!(checked > 0, "the on-disk migration corpus must not be silently empty");
++}
++
++/// The three LEGITIMATE `logical_id` uses that already ship, pinned one by one
++/// so a future tightening of the guard cannot break the ladder silently:
++///
++/// - step 12 DECLARES the column (`ADD COLUMN logical_id TEXT`, no default);
++/// - step 12/23 INDEX it (`… ON canonical_nodes(logical_id) WHERE …`);
++/// - step 21 READS it as a PREDICATE (`WHERE … AND logical_id IS NULL`) while
++///   writing only `source_id`;
++/// - step 23 re-DECLARES it in a `CREATE TABLE` recreate (declaration ≠
++///   population — the recreate deliberately copies no rows).
++#[test]
++fn pin_accepts_declaration_index_and_predicate_uses() {
++    let step = |id: u32| MIGRATIONS.iter().find(|m| m.step_id == id).expect("step must exist");
++
++    // Declaration + index (step 12, the G0 identity substrate).
++    let s12 = step(12);
++    assert!(s12.sql.contains("ADD COLUMN logical_id TEXT"), "step 12 declares the column");
++    check_migration_logical_id_pin("012_g0_substrate.sql", s12.sql)
++        .expect("declaring + indexing logical_id is not populating it");
++
++    // Predicate-only read (step 21, the legacy-provenance backfill).
++    let s21 = step(21);
++    assert!(s21.sql.contains("logical_id IS NULL"), "step 21 reads logical_id as a predicate");
++    assert!(s21.sql.contains("SET source_id"), "step 21 writes only source_id");
++    check_migration_logical_id_pin("021_legacy_provenance_backfill.sql", s21.sql)
++        .expect("reading logical_id in a WHERE clause is not populating it");
++
++    // CREATE TABLE re-declaration (step 23, the TC-33 edge recreate).
++    let s23 = step(23);
++    assert!(s23.sql.contains("CREATE TABLE canonical_edges"), "step 23 recreates the edge table");
++    check_migration_logical_id_pin("023_tc33_edge_recreate.sql", s23.sql)
++        .expect("re-declaring the column in a recreate is not populating it");
++}
++
++/// The two guards are INDEPENDENT and compose: a step can pass one and fail the
++/// other. Pinned so a future refactor cannot quietly fold the pin into the
++/// accretion budget (which has an exemption marker — see
++/// `pin_has_no_exemption_escape_hatch`).
++#[test]
++fn pin_and_accretion_guard_are_independent() {
++    // Passes accretion (pure data statement, no CREATE TABLE / ADD COLUMN),
++    // fails the pin.
++    let mints = "UPDATE canonical_nodes SET logical_id = 'x' WHERE logical_id IS NULL;";
++    check_migration_accretion("099.sql", mints).expect("a pure UPDATE passes the accretion guard");
++    check_migration_logical_id_pin("099.sql", mints).expect_err("…but not the TC-11 pin");
++
++    // Fails accretion (additive, unmarked), passes the pin (touches no
++    // canonical identity column).
++    let accretes = "ALTER TABLE canonical_nodes ADD COLUMN nickname TEXT;";
++    check_migration_accretion("098.sql", accretes).expect_err("unmarked accretion is rejected");
++    check_migration_logical_id_pin("098.sql", accretes)
++        .expect("an unrelated column is none of the pin's business");
++}
++
++// ===========================================================================
++// D2 — dynamic migration guard (real SQLite, no mocking)
++// ===========================================================================
++
++/// **The acceptance signal, end to end.** Build a DB at step 12 — the exact
++/// moment `logical_id` first exists — holding BOTH anonymous (`logical_id IS
++/// NULL`, the doc-seeded class) and governed (`logical_id NOT NULL`) node rows.
++/// Migrate the whole remaining ladder to head. Assert:
++///
++/// 1. rows transitioning `logical_id` NULL → NOT NULL == **0** (the pin);
++/// 2. rows transitioning NOT NULL → NULL == 0 (the mirror);
++/// 3. no `logical_id` changed AT ALL, and no `body` changed;
++/// 4. every pre-existing row's derived `IdSpace::to_prefixed()` is
++///    BYTE-IDENTICAL before and after — the anonymous rows are still `h:`, the
++///    governed rows still `l:`.
++#[test]
++fn migrating_to_head_never_populates_logical_id_on_an_existing_node() {
++    register_sqlite_vec_once();
++    let conn = Connection::open_in_memory().unwrap();
++    set_user_version(&conn, 1);
++    migrate_with_steps(&conn, &steps_through(12)).expect("migrate to step 12");
++    assert_eq!(user_version(&conn), 12);
++
++    // Anonymous / doc-seeded rows: logical_id IS NULL, permanently `h:`.
++    for (cursor, body) in [(1i64, "the quick brown fox"), (2, "a doc-seeded chunk"), (3, "")] {
++        conn.execute(
++            "INSERT INTO canonical_nodes(write_cursor, kind, body, logical_id) \
++             VALUES(?1, 'doc', ?2, NULL)",
++            rusqlite::params![cursor, body],
++        )
++        .unwrap();
++    }
++    // Governed rows: a caller supplied a logical_id at WRITE time, permanently `l:`.
++    for (cursor, lid, body) in [(4i64, "ent-alice", "Alice"), (5, "ent-bob", "Bob")] {
++        conn.execute(
++            "INSERT INTO canonical_nodes(write_cursor, kind, body, logical_id) \
++             VALUES(?1, 'person', ?3, ?2)",
++            rusqlite::params![cursor, lid, body],
++        )
++        .unwrap();
++    }
++
++    let before = snapshot_nodes(&conn);
++    assert_eq!(before.len(), 5);
++    let ids_before: Vec<String> =
++        before.iter().map(|(_, lid, body)| prefixed_id(lid.as_deref(), body)).collect();
++    assert_eq!(
++        ids_before.iter().filter(|id| id.starts_with("h:")).count(),
++        3,
++        "three anonymous rows start in the content id-space"
++    );
++    assert_eq!(
++        ids_before.iter().filter(|id| id.starts_with("l:")).count(),
++        2,
++        "two governed rows start in the logical id-space"
++    );
++
++    migrate_with_steps(&conn, MIGRATIONS).expect("migrate from 12 to head");
++    assert_eq!(user_version(&conn), SCHEMA_VERSION);
++
++    let after = snapshot_nodes(&conn);
++    assert_eq!(after.len(), before.len(), "no canonical node row may be added or dropped");
++
++    // (1) THE acceptance signal.
++    assert_eq!(
++        null_to_not_null(&before, &after),
++        0,
++        "TC-11 pin: rows transitioning logical_id NULL → NOT NULL must be exactly 0"
++    );
++    // (2) the mirror.
++    assert_eq!(
++        not_null_to_null(&before, &after),
++        0,
++        "TC-11 pin: a governed row may not be silently de-governed either"
++    );
++    // (3) nothing moved at all.
++    assert_eq!(
++        before, after,
++        "no migration may populate, clear or re-derive logical_id on an existing canonical row"
++    );
++    // (4) the derived id-space is byte-identical.
++    let ids_after: Vec<String> =
++        after.iter().map(|(_, lid, body)| prefixed_id(lid.as_deref(), body)).collect();
++    assert_eq!(ids_before, ids_after, "every pre-existing row's IdSpace must be byte-identical");
++}
++
++/// **Negative control — the detector is not vacuous.** Same fixture, but a
++/// rogue `UPDATE` (the very statement `check_migration_logical_id_pin` refuses
++/// to let into the ladder) is applied by hand. Both the transition counter and
++/// the byte-identity comparison MUST fire. Without this, an assertion of "0
++/// transitions" proves nothing about the assertion itself.
++#[test]
++fn the_transition_detector_catches_a_rogue_backfill() {
++    register_sqlite_vec_once();
++    let conn = Connection::open_in_memory().unwrap();
++    set_user_version(&conn, 1);
++    migrate_with_steps(&conn, &steps_through(12)).expect("migrate to step 12");
++
++    conn.execute(
++        "INSERT INTO canonical_nodes(write_cursor, kind, body, logical_id) \
++         VALUES(1, 'doc', 'anonymous body', NULL)",
++        [],
++    )
++    .unwrap();
++    conn.execute(
++        "INSERT INTO canonical_nodes(write_cursor, kind, body, logical_id) \
++         VALUES(2, 'person', 'Alice', 'ent-alice')",
++        [],
++    )
++    .unwrap();
++
++    let before = snapshot_nodes(&conn);
++
++    // The forbidden statement, run directly against the DB.
++    let rogue = "UPDATE canonical_nodes SET logical_id = 'minted-' || write_cursor \
++                 WHERE logical_id IS NULL";
++    check_migration_logical_id_pin("rogue", rogue)
++        .expect_err("the static guard must refuse this statement");
++    conn.execute(rogue, []).unwrap();
++
++    let after = snapshot_nodes(&conn);
++    assert_eq!(
++        null_to_not_null(&before, &after),
++        1,
++        "the detector must COUNT a real NULL → NOT NULL transition (else the 0 above is vacuous)"
++    );
++    assert_ne!(before, after, "the byte-identity comparison must FAIL on a real mutation");
++    let id_before = prefixed_id(before[0].1.as_deref(), &before[0].2);
++    let id_after = prefixed_id(after[0].1.as_deref(), &after[0].2);
++    assert!(id_before.starts_with("h:") && id_after.starts_with("l:"));
++    assert_ne!(id_before, id_after, "a backfill DOES move the id-space — that is why it is banned");
++}
++
++/// The mirror control: the NOT NULL → NULL detector is not vacuous either.
++#[test]
++fn the_degovern_detector_catches_a_rogue_clear() {
++    register_sqlite_vec_once();
++    let conn = Connection::open_in_memory().unwrap();
++    set_user_version(&conn, 1);
++    migrate_with_steps(&conn, &steps_through(12)).expect("migrate to step 12");
++    conn.execute(
++        "INSERT INTO canonical_nodes(write_cursor, kind, body, logical_id) \
++         VALUES(1, 'person', 'Alice', 'ent-alice')",
++        [],
++    )
++    .unwrap();
++
++    let before = snapshot_nodes(&conn);
++    conn.execute("UPDATE canonical_nodes SET logical_id = NULL", []).unwrap();
++    let after = snapshot_nodes(&conn);
++
++    assert_eq!(not_null_to_null(&before, &after), 1, "the de-govern detector must count it");
++    assert_eq!(null_to_not_null(&before, &after), 0, "…and must not confuse the two directions");
++}
++
++/// Edges carry `logical_id` too. Step 23 (TC-33) RECREATES `canonical_edges`
++/// with NO data migration (HITL 2026-07-21) — pre-23 edge rows do not survive
++/// at all — so the honest edge fixture starts AFTER that recreate. From step 23
++/// to head, a mixed anonymous/governed edge population must survive with its
++/// `logical_id` untouched.
++#[test]
++fn migrating_to_head_never_populates_logical_id_on_an_existing_edge() {
++    register_sqlite_vec_once();
++    let conn = Connection::open_in_memory().unwrap();
++    set_user_version(&conn, 1);
++    migrate_with_steps(&conn, &steps_through(23)).expect("migrate to step 23");
++    assert_eq!(user_version(&conn), 23);
++
++    conn.execute(
++        "INSERT INTO canonical_edges(write_cursor, kind, from_id, to_id, logical_id, body) \
++         VALUES(1, 'mentions', 'a', 'b', NULL, 'anonymous edge')",
++        [],
++    )
++    .unwrap();
++    conn.execute(
++        "INSERT INTO canonical_edges(write_cursor, kind, from_id, to_id, logical_id, body) \
++         VALUES(2, 'owns', 'a', 'c', 'edge-ac', 'governed edge')",
++        [],
++    )
++    .unwrap();
++
++    let before = snapshot_edges(&conn);
++    assert_eq!(before.len(), 2);
++
++    migrate_with_steps(&conn, MIGRATIONS).expect("migrate from 23 to head");
++    assert_eq!(user_version(&conn), SCHEMA_VERSION);
++
++    let after = snapshot_edges(&conn);
++    assert_eq!(null_to_not_null(&before, &after), 0, "no edge may gain a logical_id");
++    assert_eq!(not_null_to_null(&before, &after), 0, "no edge may lose one");
++    assert_eq!(before, after, "edge identity state must be byte-identical across the migration");
++}
++
++/// Step 23's edge recreate is a DROP, not a mint: pre-23 edge rows disappear
++/// entirely rather than being copied through a surrogate-computing `SELECT`.
++/// Pinned because "no surviving row transitioned" would otherwise be a vacuous
++/// reading of the acceptance signal for edges.
++#[test]
++fn step_23_edge_recreate_drops_rows_rather_than_minting_ids() {
++    register_sqlite_vec_once();
++    let conn = Connection::open_in_memory().unwrap();
++    set_user_version(&conn, 1);
++    migrate_with_steps(&conn, &steps_through(22)).expect("migrate to step 22");
++    conn.execute(
++        "INSERT INTO canonical_edges(write_cursor, kind, from_id, to_id, logical_id) \
++         VALUES(1, 'mentions', 'a', 'b', NULL)",
++        [],
++    )
++    .unwrap();
++
++    migrate_with_steps(&conn, MIGRATIONS).expect("migrate from 22 to head");
++
++    let surviving: i64 =
++        conn.query_row("SELECT COUNT(*) FROM canonical_edges", [], |r| r.get(0)).unwrap();
++    assert_eq!(surviving, 0, "step 23 drops pre-TC-33 edge rows (HITL: no data migration)");
++    let minted: i64 = conn
++        .query_row("SELECT COUNT(*) FROM canonical_edges WHERE logical_id IS NOT NULL", [], |r| {
++            r.get(0)
++        })
++        .unwrap();
++    assert_eq!(minted, 0, "and mints nothing on the way through");
++}
++
++// ---------------------------------------------------------------------------
++// Small assertion helper
++// ---------------------------------------------------------------------------
++
++trait UnwrapErrOrPanic {
++    fn unwrap_err_or_panic(self, message: &str, context: &str);
++}
++
++impl UnwrapErrOrPanic for Result<(), MigrationLogicalIdPinError> {
++    fn unwrap_err_or_panic(self, message: &str, context: &str) {
++        assert!(self.is_err(), "{message}: {context}");
++    }
++}
+
+exec
+/bin/bash -lc "grep -R \"check_migration_accretion\\|migrate_with_steps\\|MIGRATIONS\" -n src/rust/crates/fathomdb-schema/src scripts | head -80" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s25
+ succeeded in 0ms:
+src/rust/crates/fathomdb-schema/src/lib.rs:102:pub const MIGRATIONS: &[Migration] = &[
+src/rust/crates/fathomdb-schema/src/lib.rs:747:    // whole. `check_migration_accretion` does not fire (the SQL names both
+src/rust/crates/fathomdb-schema/src/lib.rs:884:    migrate_with_steps(conn, MIGRATIONS)
+src/rust/crates/fathomdb-schema/src/lib.rs:887:pub fn migrate_with_steps(
+src/rust/crates/fathomdb-schema/src/lib.rs:1024:/// the sibling of [`check_migration_accretion`].
+src/rust/crates/fathomdb-schema/src/lib.rs:1087:/// [`check_migration_accretion`] honours a `-- MIGRATION-ACCRETION-EXEMPTION: `
+src/rust/crates/fathomdb-schema/src/lib.rs:1103:/// use (`MIGRATIONS` holds `&'static str` literals).
+src/rust/crates/fathomdb-schema/src/lib.rs:1315:pub fn check_migration_accretion(name: &str, sql: &str) -> Result<(), MigrationAccretionError> {
+
+exec
+/bin/bash -lc "sed -n '850,930p' src/rust/crates/fathomdb-schema/src/lib.rs && grep -R \"agent-lint-migrations\" -n scripts && sed -n '1,220p' scripts/agent-lint-migrations.py 2>/dev/null" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s25
+ succeeded in 0ms:
+                  roles TEXT NOT NULL,
+                  fts_tokenizer TEXT,
+                  vector_embedder TEXT,
+                  vector_declared INTEGER NOT NULL DEFAULT 0
+              );
+              CREATE TABLE canonical_attributes(
+                  write_cursor INTEGER NOT NULL,
+                  attr_name TEXT NOT NULL,
+                  attr_value TEXT
+              );
+              CREATE INDEX canonical_attributes_name_value_idx
+                  ON canonical_attributes(attr_name, attr_value);
+              CREATE INDEX canonical_attributes_cursor_idx
+                  ON canonical_attributes(write_cursor);
+              CREATE VIRTUAL TABLE property_search_index USING fts5(
+                  attr_value,
+                  attr_name UNINDEXED,
+                  write_cursor UNINDEXED,
+                  tokenize = 'porter unicode61 remove_diacritics 2'
+              );",
+    },
+];
+
+/// `_fathomdb_open_state` key under which step 23 reserved the pre-TC-33
+/// `canonical_edges` write-cursor high-water mark.
+///
+/// Step 23 recreates `canonical_edges` (no data migration), which can LOWER the
+/// `MAX(write_cursor)` the engine's cursor allocator derives from the canonical
+/// tables. Reusing a cursor would collide with stale projection shadow rows that
+/// still key on it, silently marking a new row as already-projected. The engine
+/// folds this reserved value into its allocation so cursors stay monotonic.
+pub const RESERVED_WRITE_CURSOR_KEY: &str = "tc33_reserved_write_cursor";
+
+pub fn migrate(conn: &Connection) -> Result<MigrationReport, MigrationError> {
+    migrate_with_steps(conn, MIGRATIONS)
+}
+
+pub fn migrate_with_steps(
+    conn: &Connection,
+    migrations: &[Migration],
+) -> Result<MigrationReport, MigrationError> {
+    migrate_with_event_sink(conn, migrations, |_| {})
+}
+
+pub fn migrate_with_event_sink(
+    conn: &Connection,
+    migrations: &[Migration],
+    mut emit: impl FnMut(&MigrationStepReport),
+) -> Result<MigrationReport, MigrationError> {
+    let before = user_version(conn)?;
+    if before > SCHEMA_VERSION {
+        return Err(MigrationError::IncompatibleSchemaVersion {
+            seen: before,
+            supported: SCHEMA_VERSION,
+        });
+    }
+
+    let mut current = before;
+    let mut reports = Vec::new();
+
+    for migration in migrations.iter().filter(|migration| migration.step_id > before) {
+        if migration.step_id != current.saturating_add(1) {
+            return Err(MigrationError::Storage {
+                message: "migration registry is not contiguous",
+            });
+        }
+
+        let started = Instant::now();
+        if let Err(_err) = apply_one(conn, migration) {
+            reports.push(MigrationStepReport {
+                step_id: migration.step_id,
+                duration_ms: Some(duration_ms(started)),
+                failed: true,
+            });
+            emit(reports.last().expect("failed step report was just pushed"));
+            let schema_version_current = user_version(conn).unwrap_or(current);
+            return Err(MigrationError::MigrationError(MigrationFailureReport {
+                schema_version_before: before,
+                schema_version_current,
+                migration_steps: reports,
+            }));
+scripts/agent-lint.sh:17:run_capped lint-migrations "$SCRIPT_DIR/agent-lint-migrations.sh"
+scripts/agent-lint-migrations.sh:6:python3 "$SCRIPT_DIR/agent-lint-migrations.py" "$@"
+#!/usr/bin/env python3
+"""Lint FathomDB migration files for schema accretion."""
+
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+
+REPO = Path(__file__).resolve().parents[1]
+DEFAULT_TARGET = REPO / "src/rust/crates/fathomdb-schema/migrations"
+EXEMPTION = "-- MIGRATION-ACCRETION-EXEMPTION: "
+
+
+def migration_files(paths: list[str]) -> list[Path]:
+    if not paths:
+        paths = [str(DEFAULT_TARGET)]
+    files: list[Path] = []
+    for raw in paths:
+        path = Path(raw)
+        if path.is_dir():
+            files.extend(sorted(path.glob("*.sql")))
+        else:
+            files.append(path)
+    return files
+
+
+def is_post_v1(path: Path) -> bool:
+    match = re.match(r"^(\d+)", path.name)
+    return match is None or int(match.group(1)) > 1
+
+
+def violates(path: Path) -> bool:
+    if not is_post_v1(path):
+        return False
+    sql = path.read_text(encoding="utf-8")
+    upper = sql.upper()
+    adds_schema = "CREATE TABLE" in upper or "ADD COLUMN" in upper
+    names_removal = "DROP TABLE" in upper or "DROP COLUMN" in upper
+    has_exemption = EXEMPTION in sql
+    return adds_schema and not names_removal and not has_exemption
+
+
+def main() -> int:
+    offenders = [path for path in migration_files(sys.argv[1:]) if violates(path)]
+    for offender in offenders:
+        print(f"migration accretion violation: {offender}", file=sys.stderr)
+    return 1 if offenders else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+exec
+/bin/bash -lc "sed -n '930,990p' src/rust/crates/fathomdb-schema/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s25
+ succeeded in 0ms:
+            }));
+        }
+
+        current = migration.step_id;
+        reports.push(MigrationStepReport {
+            step_id: migration.step_id,
+            duration_ms: Some(duration_ms(started)),
+            failed: false,
+        });
+        emit(reports.last().expect("successful step report was just pushed"));
+    }
+
+    Ok(MigrationReport {
+        schema_version_before: before,
+        schema_version_after: user_version(conn)?,
+        migration_steps: reports,
+    })
+}
+
+fn apply_one(conn: &Connection, migration: &Migration) -> rusqlite::Result<()> {
+    conn.execute_batch("BEGIN IMMEDIATE")?;
+    let result = (|| {
+        conn.execute_batch(migration.sql)?;
+        conn.pragma_update(None, PRAGMA_USER_VERSION, migration.step_id)?;
+        Ok(())
+    })();
+
+    match result {
+        Ok(()) => conn.execute_batch("COMMIT"),
+        Err(err) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            Err(err)
+        }
+    }
+}
+
+fn user_version(conn: &Connection) -> Result<u32, MigrationError> {
+    conn.query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))
+        .map_err(|_| MigrationError::Storage { message: "could not read schema version" })
+}
+
+fn duration_ms(started: Instant) -> u64 {
+    u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MigrationAccretionError {
+    pub offender: String,
+}
+
+impl Display for MigrationAccretionError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "migration accretion guard rejected {}", self.offender)
+    }
+}
+
+impl std::error::Error for MigrationAccretionError {}
+
+/// 0.8.20 Slice 25 (R-20-SUR) — rejection from the TC-11 `logical_id` pin.
+///
+/// Carries the offending migration's `name` (as `MigrationAccretionError` does)
+
+exec
+/bin/bash -lc 'cargo test -p fathomdb-schema slice25_logical_id_pin --tests' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s25
+ succeeded in 0ms:
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running unittests src/lib.rs (target/debug/deps/fathomdb_schema-9b186684921422c3)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/migrations.rs (target/debug/deps/migrations-c887c39b8a8a4d53)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s
+
+     Running tests/property_template.rs (target/debug/deps/property_template-adeb6e11833ac3f7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/slice25_logical_id_pin.rs (target/debug/deps/slice25_logical_id_pin-040aaed3ba157904)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 23 filtered out; finished in 0.00s
+
+     Running tests/step14_migration.rs (target/debug/deps/step14_migration-70819e6cad332aa3)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+     Running tests/step15_to_17_migration.rs (target/debug/deps/step15_to_17_migration-77e3c894b23c6747)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/step16_migration.rs (target/debug/deps/step16_migration-81fa1b737a6d586a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/step17_migration.rs (target/debug/deps/step17_migration-7e88d83f1d66828e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/step18_migration.rs (target/debug/deps/step18_migration-e5698ceff5c18f01)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/step19_migration.rs (target/debug/deps/step19_migration-71cf7df8efa6527a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/step20_migration.rs (target/debug/deps/step20_migration-8408fdedbabc96b1)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/step21_migration.rs (target/debug/deps/step21_migration-037eda29aae9f5ad)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running tests/step22_migration.rs (target/debug/deps/step22_migration-50de4f1b6bd0d949)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s
+
+     Running tests/step24_migration.rs (target/debug/deps/step24_migration-e9dd6e4594ae46b0)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+     Running tests/tc33_fix4_projection_cursor_stall.rs (target/debug/deps/tc33_fix4_projection_cursor_stall-fcccc1ef2fccc3a3)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/tc33_fix6_edge_vector_sidecar.rs (target/debug/deps/tc33_fix6_edge_vector_sidecar-7bb43eb6a003ea27)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/wire_constants.rs (target/debug/deps/wire_constants-e44f81989aae9232)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+
+exec
+/bin/bash -lc "git diff 2afd168c337a5d0fea75aaec1953792f46026086 -- src/rust/crates/fathomdb-engine/tests/slice25_registration_identity_inert.rs | sed -n '220,620p'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s25
+ succeeded in 0ms:
++        assert_eq!(baseline.len(), 5 + minted, "corpus is 5 hand-written rows + minted entities");
++        let (content, logical) = spaces(&baseline);
++        assert_eq!(content, 3, "the three anonymous doc-seeded rows are in the `h:` space");
++        assert_eq!(
++            logical,
++            2 + minted,
++            "the two caller-governed rows plus every minted entity are in the `l:` space"
++        );
++
++        // --- REGISTRATION, every shape of it ---------------------------------
++        let status =
++            spec("status", &[ProjectionRole::Filterable, ProjectionRole::Searchable], true);
++        let title = spec("title", &[ProjectionRole::Searchable], true);
++
++        let first = opened
++            .engine
++            .configure_projections(&[status.clone(), title.clone()], &[])
++            .expect("register two projections");
++        assert!(!first.unchanged, "the first apply must do REAL work (else this test is vacuous)");
++        assert_eq!(snapshot(&path), baseline, "a projection add must not move any row's IdSpace");
++
++        // Re-registration: the idempotent no-op.
++        let again = opened
++            .engine
++            .configure_projections(&[status.clone(), title.clone()], &[])
++            .expect("re-register");
++        assert!(again.unchanged, "identical re-registration diffs to a no-op");
++        assert_eq!(snapshot(&path), baseline, "re-registration must not move any row's IdSpace");
++
++        // Explicit drop.
++        let dropped = opened
++            .engine
++            .configure_projections(&[], &["title".to_string()])
++            .expect("drop one projection");
++        assert_eq!(
++            dropped.dropped,
++            vec!["title".to_string()],
++            "the drop must drop exactly `title`"
++        );
++        assert_eq!(snapshot(&path), baseline, "a projection drop must not move any row's IdSpace");
++
++        baseline
++    };
++
++    // --- BOOT RE-DERIVE: close, re-open, re-drive from the durable registry ---
++    let reopened = Engine::open_without_embedder_for_test(&path).expect("re-open");
++    let after_boot = snapshot(&path);
++    assert_eq!(
++        after_boot, baseline,
++        "boot re-derive of the projection registry must not move any row's IdSpace"
++    );
++    assert_eq!(
++        reopened.engine.read_projections().unwrap().len(),
++        1,
++        "the registration really did survive the boot (so the inertness above is not vacuous)"
++    );
++
++    // --- Anti-vacuity: the comparator IS sensitive to the transition we ban ---
++    let mut mutated = baseline.clone();
++    let anonymous_row = mutated
++        .iter_mut()
++        .find(|(_, lid, _, _)| lid.is_none())
++        .expect("an anonymous row must exist");
++    anonymous_row.1 = Some("minted-surrogate".to_string());
++    anonymous_row.3 = IdSpace::logical("minted-surrogate").to_prefixed();
++    assert_ne!(
++        mutated, baseline,
++        "the snapshot comparator must FAIL when a row's id-space moves h: → l: — otherwise every \
++         `assert_eq!(snapshot, baseline)` above proves nothing"
++    );
++}
++
++/// **Negative control, executed for real.** The same comparator, the same
++/// engine, but the forbidden `UPDATE … SET logical_id` is run directly against
++/// the writer connection. Both the at-rest snapshot AND the derived id-space
++/// must flip. This is what makes the green above falsifiable rather than
++/// decorative.
++#[test]
++fn a_real_backfill_does_move_the_id_space_which_is_why_it_is_banned() {
++    let dir = TempDir::new().unwrap();
++    let path = db_path(&dir, "negative_control");
++    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
++    opened
++        .engine
++        .write(&[anonymous("src:doc-a", r#"{"status":"open","title":"anonymous body"}"#)])
++        .unwrap();
++
++    let before = snapshot(&path);
++    assert_eq!(spaces(&before), (1, 0), "one anonymous row, `h:` space");
++
++    opened
++        .engine
++        .execute_for_test(
++            "UPDATE canonical_nodes SET logical_id = 'minted-' || write_cursor \
++             WHERE logical_id IS NULL",
++        )
++        .expect("the rogue backfill runs (nothing in SQLite stops it — the guard is the point)");
++
++    let after = snapshot(&path);
++    assert_ne!(before, after, "a backfill DOES change the snapshot");
++    assert_eq!(spaces(&after), (0, 1), "…by moving the row out of the `h:` space into `l:`");
++    assert_ne!(before[0].3, after[0].3, "…and the derived prefixed id is no longer byte-identical");
++}
++
++/// The live-functional half: the id-space is observable on `SearchHit::id`, not
++/// just in the raw table, and registration does not perturb it. An anonymous
++/// doc-seeded hit comes back [`IdSpaceKind::Content`] (`h:`); a governed hit
++/// comes back [`IdSpaceKind::Logical`] (`l:`) — before AND after
++/// `configure_projections`, with byte-identical `to_prefixed()`.
++#[test]
++fn live_search_hit_id_spaces_survive_registration() {
++    let dir = TempDir::new().unwrap();
++    let path = db_path(&dir, "live_hits");
++    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
++    let engine = &opened.engine;
++
++    engine
++        .write(&[
++            anonymous("src:doc-a", r#"{"status":"open","title":"peculiar wombat telemetry"}"#),
++            governed("ent-zephyr", "src:doc-d", r#"{"status":"open","title":"zephyr aurora"}"#),
++        ])
++        .unwrap();
++
++    // `id_of` is the LIVE oracle: the engine's own derived hit id.
++    let id_of = |query: &str| -> IdSpace {
++        let result = engine.search(query).expect("search");
++        result.results.first().expect("a hit for the seeded body").id.clone()
++    };
++
++    let anon_before = id_of("wombat");
++    let gov_before = id_of("aurora");
++    assert_eq!(anon_before.space, IdSpaceKind::Content, "a doc-seeded hit is `h:`");
++    assert_eq!(gov_before.space, IdSpaceKind::Logical, "a governed hit is `l:`");
++    assert_eq!(gov_before.value, "ent-zephyr", "the `l:` value IS the write-time logical_id");
++
++    // Cross-check the test's local `id_space_of` against the engine's own
++    // derivation, so the at-rest snapshots in this file are anchored to the
++    // real rule rather than to a restatement that could drift.
++    let snap = snapshot(&path);
++    let derived: Vec<&String> = snap.iter().map(|(_, _, _, id)| id).collect();
++    assert!(
++        derived.contains(&&anon_before.to_prefixed())
++            && derived.contains(&&gov_before.to_prefixed()),
++        "the local id-space rule must agree with the engine's live SearchHit::id"
++    );
++
++    let delta = engine
++        .configure_projections(
++            &[
++                spec("status", &[ProjectionRole::Filterable, ProjectionRole::Searchable], true),
++                spec("title", &[ProjectionRole::Searchable], true),
++            ],
++            &[],
++        )
++        .expect("register");
++    assert!(!delta.unchanged, "registration must do real work");
++
++    assert_eq!(id_of("wombat"), anon_before, "the anonymous hit id is byte-identical after");
++    assert_eq!(id_of("aurora"), gov_before, "the governed hit id is byte-identical after");
++}
++
++/// **The accepted corollary, pinned as documentation-in-code** (TC-11 pin:
++/// document it, do NOT "fix" it). An anonymous row and a later governed row for
++/// the same real-world thing BOTH stay active and BOTH surface — the
++/// partial-unique index is `ON canonical_nodes(logical_id) WHERE superseded_at
++/// IS NULL`, and SQLite treats every NULL as distinct, so the anonymous row is
++/// never superseded by the governed one. Writing the governed twin does NOT
++/// retro-mint an id onto the anonymous one: minting is decided at WRITE time,
++/// per row, and never re-derived.
++#[test]
++fn anonymous_and_governed_twins_both_stay_active_and_both_surface() {
++    let dir = TempDir::new().unwrap();
++    let path = db_path(&dir, "twins");
++    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
++    let engine = &opened.engine;
++
++    engine
++        .write(&[anonymous("src:doc-a", r#"{"title":"a memo about the peculiar wombat"}"#)])
++        .unwrap();
++    let anonymous_only = snapshot(&path);
++    assert_eq!(spaces(&anonymous_only), (1, 0));
++
++    // Later, the SAME real-world thing arrives governed.
++    engine.write(&[governed("ent-wombat", "src:doc-b", r#"{"title":"wombat"}"#)]).unwrap();
++
++    let both = snapshot(&path);
++    assert_eq!(both.len(), 2, "both rows exist");
++    assert_eq!(spaces(&both), (1, 1), "one stays `h:`, the new one is `l:` — no split, no merge");
++    assert_eq!(
++        both[0], anonymous_only[0],
++        "writing the governed twin must not retro-mint an id onto the anonymous row"
++    );
++
++    let active: i64 = ro(&path)
++        .query_row("SELECT COUNT(*) FROM canonical_nodes WHERE superseded_at IS NULL", [], |r| {
++            r.get(0)
++        })
++        .unwrap();
++    assert_eq!(active, 2, "NULL never collides on the partial-unique index — both stay ACTIVE");
++
++    // …and both surface in search. This is the accepted duplicate.
++    let spaces_seen: HashSet<IdSpaceKind> =
++        engine.search("wombat").expect("search").results.iter().map(|h| h.id.space).collect();
++    assert!(
++        spaces_seen.contains(&IdSpaceKind::Content) && spaces_seen.contains(&IdSpaceKind::Logical),
++        "the accepted corollary: BOTH the anonymous and the governed twin surface, got \
++         {spaces_seen:?}"
++    );
++}
++
++/// The one wrinkle in the corollary, recorded rather than "fixed": when the twins
++/// have BYTE-IDENTICAL bodies, fusion's documented **dedup-on-body** ordering
++/// (see `SearchResult`) collapses them to a single hit and the first-wins rule
++/// keeps the ANONYMOUS one (lower `write_cursor`). Both rows are still ACTIVE at
++/// rest and neither id-space moved — the collapse is a retrieval-presentation
++/// property of body-dedup, NOT a re-derivation. Pinned here so the corollary
++/// above is not read as a promise that identical-body twins each get a hit.
++#[test]
++fn identical_body_twins_collapse_under_fusion_body_dedup_but_both_persist() {
++    let dir = TempDir::new().unwrap();
++    let path = db_path(&dir, "identical_twins");
++    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
++    let engine = &opened.engine;
++
++    let body = r#"{"title":"peculiar wombat telemetry"}"#;
++    engine.write(&[anonymous("src:doc-a", body)]).unwrap();
++    engine.write(&[governed("ent-wombat", "src:doc-b", body)]).unwrap();
++
++    let at_rest = snapshot(&path);
++    assert_eq!(spaces(&at_rest), (1, 1), "at rest, both twins exist in their own id-spaces");
++
++    let hits = engine.search("wombat").expect("search").results;
++    let bodies: HashSet<&str> = hits.iter().map(|h| h.body.as_str()).collect();
++    assert_eq!(bodies.len(), hits.len(), "fusion dedups on body — one hit per distinct body");
++    assert_eq!(
++        hits.first().map(|h| h.id.space),
++        Some(IdSpaceKind::Content),
++        "first-wins keeps the earlier (anonymous) row; its id-space is unchanged"
++    );
++}
++
++/// Supersession is the one legitimate way a governed row's ACTIVE version
++/// changes — and even it never re-derives an id-space: the superseded row keeps
++/// its `logical_id`, and the new active row carries the SAME one. Pinned so a
++/// future supersession change cannot quietly become a re-minting path.
++#[test]
++fn supersession_reuses_the_write_time_logical_id_rather_than_re_deriving_one() {
++    let dir = TempDir::new().unwrap();
++    let path = db_path(&dir, "supersede");
++    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
++    let engine = &opened.engine;
++
++    engine.write(&[governed("ent-zephyr", "src:1", r#"{"status":"open"}"#)]).unwrap();
++    let first = snapshot(&path);
++    engine.write(&[governed("ent-zephyr", "src:2", r#"{"status":"closed"}"#)]).unwrap();
++    let second = snapshot(&path);
++
++    assert_eq!(second.len(), 2, "tombstone-then-insert leaves both versions on disk");
++    assert_eq!(first[0], second[0], "the superseded row is untouched, id-space included");
++    assert!(
++        second
++            .iter()
++            .all(|(_, lid, _, id)| lid.as_deref() == Some("ent-zephyr") && id == "l:ent-zephyr"),
++        "every version carries the SAME write-time logical_id — nothing is re-derived"
++    );
++}
++
++// ===========================================================================
++// D4 — the write-time admission audit, pinned where it is reachable in a test
++// ===========================================================================
++
++/// **D4 audit conclusion, made falsifiable.** The audit of every path that can
++/// set `PreparedWrite::Node.logical_id` / `Edge.logical_id` found NO gap: only
++/// the two governed arms of `Engine::ingest_with_extractor` mint in-engine, a
++/// caller-supplied `logical_id` IS the definition of admission, and no engine
++/// SQL anywhere assigns `logical_id` (no `UPDATE … SET logical_id`, no
++/// `INSERT … logical_id` other than the pass-through of a caller value).
++///
++/// The one writer that reaches `canonical_nodes` while BYPASSING
++/// `PreparedWrite` entirely is the internal structural-row writer
++/// (`write_canonical_row_with_kind_for_test`, the `coverage`/`graph` `RowKind`s
++/// from EXP-S — rows with NO public SDK surface at all). It binds a literal
++/// `NULL` `logical_id`. That is the un-admitted, non-governed write path, and
++/// this test pins that it mints nothing: a structural row stays in the `h:`
++/// content space forever, exactly like a doc-seeded one.
++#[test]
++fn the_internal_structural_row_writer_mints_no_logical_id() {
++    let dir = TempDir::new().unwrap();
++    let path = db_path(&dir, "structural_rows");
++    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
++    let engine = &opened.engine;
++
++    engine
++        .write_canonical_row_with_kind_for_test("coverage", "a coverage row", RowKind::Coverage)
++        .expect("coverage row write");
++    engine
++        .write_canonical_row_with_kind_for_test("graph", "a graph row", RowKind::Graph)
++        .expect("graph row write");
++
++    let snap = snapshot(&path);
++    assert_eq!(snap.len(), 2, "both structural rows landed");
++    assert_eq!(
++        spaces(&snap),
++        (2, 0),
++        "an un-admitted, non-governed write path mints NOTHING — the rows stay `h:`"
++    );
++    assert!(
++        snap.iter().all(|(_, lid, _, _)| lid.is_none()),
++        "the structural writer binds a literal NULL logical_id"
++    );
++}
++
++/// The mirror of the audit's other half: an ANONYMOUS `PreparedWrite::Node`
++/// (`logical_id: None`) survives the full durable write path — validation,
++/// `commit_batch`, projection — still NULL. `commit_batch` is a pure
++/// pass-through of the caller's `logical_id`; it decides nothing, and
++/// `validate_write` rejects a malformed `logical_id` but never assigns one.
++#[test]
++fn an_anonymous_write_stays_anonymous_through_the_whole_durable_path() {
++    let dir = TempDir::new().unwrap();
++    let path = db_path(&dir, "anonymous_stays");
++    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
++    let engine = &opened.engine;
++
++    engine.write(&[anonymous("src:doc-a", r#"{"status":"open","title":"a doc chunk"}"#)]).unwrap();
++    engine
++        .configure_projections(&[spec("status", &[ProjectionRole::Filterable], false)], &[])
++        .expect("register a projection over it");
++
++    let snap = snapshot(&path);
++    assert_eq!(spaces(&snap), (1, 0), "still `h:` after write + projection");
++    assert_eq!(snap[0].1, None, "commit_batch passes `logical_id: None` through untouched");
++}
+
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-schema/src/lib.rs | sed -n '1214,1268p'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s25
+ succeeded in 0ms:
+  1214	    statement.split('.').map(str::trim).collect::<Vec<_>>().join(".")
+  1215	}
+  1216	
+  1217	/// Does one NORMALISED statement write into `logical_id` on a canonical table?
+  1218	fn statement_violates_logical_id_pin(statement: &str) -> bool {
+  1219	    let names_column = statement.contains(PINNED_IDENTITY_COLUMN);
+  1220	
+  1221	    // A trigger is a deferred write; one that so much as mentions the identity
+  1222	    // column on a canonical table is refused whole (the body may also split into
+  1223	    // fragments that the UPDATE arm below catches independently).
+  1224	    if statement.starts_with("CREATE") && statement.contains(" TRIGGER ") && names_column {
+  1225	        return targets_pinned_table(statement);
+  1226	    }
+  1227	
+  1228	    if statement.starts_with("UPDATE") {
+  1229	        let Some(table) = token_after(statement, "UPDATE ") else { return false };
+  1230	        if !is_pinned_table(&table) {
+  1231	            return false;
+  1232	        }
+  1233	        // Only the SET clause assigns. Reading `logical_id` in a WHERE predicate
+  1234	        // (step 21) is explicitly legitimate.
+  1235	        return set_clause(statement).is_some_and(|clause| clause.contains(PINNED_IDENTITY_COLUMN));
+  1236	    }
+  1237	
+  1238	    if statement.starts_with("INSERT") || statement.starts_with("REPLACE") {
+  1239	        let Some((table, rest)) = table_after_into(statement) else { return false };
+  1240	        if !is_pinned_table(&table) {
+  1241	            return false;
+  1242	        }
+  1243	        // Naming the column anywhere in an insert into a canonical table is a
+  1244	        // backfill; a MISSING column list writes every column, identity included.
+  1245	        return names_column || !rest.trim_start().starts_with('(');
+  1246	    }
+  1247	
+  1248	    if statement.starts_with("ALTER") {
+  1249	        let Some(table) = token_after(statement, "ALTER TABLE ") else { return false };
+  1250	        if !is_pinned_table(&table) || !names_column {
+  1251	            return false;
+  1252	        }
+  1253	        // Declaring the column bare is how step 12 shipped it. A DEFAULT
+  1254	        // populates every existing row; a RENAME conscripts a populated one.
+  1255	        return statement.contains("DEFAULT") || statement.contains("RENAME");
+  1256	    }
+  1257	
+  1258	    if statement.starts_with("CREATE") && statement.contains(" TABLE ") {
+  1259	        let Some(table) = token_after(statement, " TABLE ") else { return false };
+  1260	        // A recreate may DECLARE the column (step 23 does); it may not default it.
+  1261	        return is_pinned_table(&table) && names_column && statement.contains("DEFAULT");
+  1262	    }
+  1263	
+  1264	    false
+  1265	}
+  1266	
+  1267	/// The bare table name from a possibly schema-qualified token.
+  1268	///
+
+exec
+/bin/bash -lc "git diff 2afd168c337a5d0fea75aaec1953792f46026086 -- Cargo.lock | cat && grep -n \"name = \\\"sha2\\\"\" -A8 Cargo.lock" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s25
+ succeeded in 0ms:
+diff --git a/Cargo.lock b/Cargo.lock
+index 78e3c320..ead655b6 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -1239,6 +1239,7 @@ version = "0.8.9"
+ dependencies = [
+  "proptest",
+  "rusqlite",
++ "sha2 0.11.0",
+  "sqlite-vec",
+ ]
+ 
+3383:name = "sha2"
+3384-version = "0.10.9"
+3385-source = "registry+https://github.com/rust-lang/crates.io-index"
+3386-checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
+3387-dependencies = [
+3388- "cfg-if",
+3389- "cpufeatures 0.2.17",
+3390- "digest 0.10.7",
+3391-]
+--
+3394:name = "sha2"
+3395-version = "0.11.0"
+3396-source = "registry+https://github.com/rust-lang/crates.io-index"
+3397-checksum = "446ba717509524cb3f22f17ecc096f10f4822d76ab5c0b9822c5f9c284e825f4"
+3398-dependencies = [
+3399- "cfg-if",
+3400- "cpufeatures 0.3.0",
+3401- "digest 0.11.3",
+3402-]
+
+exec
+/bin/bash -lc 'grep -R "sha2" -n Cargo.toml src/rust/crates/*/Cargo.toml | cat' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s25
+ succeeded in 0ms:
+src/rust/crates/fathomdb-embedder/Cargo.toml:17:sha2 = { version = "0.11", optional = true }
+src/rust/crates/fathomdb-embedder/Cargo.toml:56:    "dep:sha2",
+src/rust/crates/fathomdb-embedder/Cargo.toml:72:    "dep:sha2",
+src/rust/crates/fathomdb-embedder/Cargo.toml:105:# `sha2` derives the self-describing identity revision from a content digest of
+src/rust/crates/fathomdb-embedder/Cargo.toml:108:# mixing; the same asset → a stable identity. `sha2` is ALREADY in the tree
+src/rust/crates/fathomdb-embedder/Cargo.toml:111:# the thin `default = []` build is unchanged (no `sha2` in the default tree).
+src/rust/crates/fathomdb-embedder/Cargo.toml:115:    "dep:sha2",
+src/rust/crates/fathomdb-embedder/Cargo.toml:127:sha2 = "0.11"
+src/rust/crates/fathomdb-engine/Cargo.toml:18:sha2 = "0.11"
+src/rust/crates/fathomdb-engine/Cargo.toml:158:sha2 = "0.11"
+src/rust/crates/fathomdb-schema/Cargo.toml:19:# `derive_stable_id` id-space rule (`h:<sha256(body)>`) so it can assert the
+src/rust/crates/fathomdb-schema/Cargo.toml:23:sha2 = "0.11"
+
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-schema/src/lib.rs | sed -n '1278,1290p'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s25
+ succeeded in 0ms:
+  1278	
+  1279	fn is_pinned_table(token: &str) -> bool {
+  1280	    PINNED_IDENTITY_TABLES.contains(&bare_table_name(token))
+  1281	}
+  1282	
+  1283	fn targets_pinned_table(statement: &str) -> bool {
+  1284	    PINNED_IDENTITY_TABLES.iter().any(|table| statement.contains(table))
+  1285	}
+  1286	
+  1287	/// The first identifier token after `marker`, cut at whitespace or `(`.
+  1288	fn token_after(statement: &str, marker: &str) -> Option<String> {
+  1289	    let rest = statement.split_once(marker)?.1;
+  1290	    let token: String =
+
+codex
+The new static migration guard has a bypass for valid SQLite UPDATE syntax, so it does not fully enforce the invariant it introduces. It also over-rejects trigger SQL on similarly named non-canonical tables.
+
+Full review comments:
+
+- [P2] Handle SQLite UPDATE conflict clauses — /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s25/src/rust/crates/fathomdb-schema/src/lib.rs:1228-1230
+  For migrations that use SQLite's valid `UPDATE OR <conflict-action>` syntax, e.g. `UPDATE OR REPLACE canonical_nodes SET logical_id = ...`, the guard extracts `OR` as the table name and returns `false`, so a forbidden `logical_id` backfill can bypass the TC-11 pin. The table extractor needs to skip the optional conflict clause before comparing against the pinned canonical tables.
+
+- [P3] Avoid substring matching trigger targets — /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s25/src/rust/crates/fathomdb-schema/src/lib.rs:1283-1285
+  For triggers on non-canonical tables whose names contain a pinned table name, such as `canonical_nodes_backup`, this substring check rejects the migration even though it does not target `canonical_nodes` or `canonical_edges`. That makes legitimate recreate/backup trigger scaffolding fail the pin; the trigger path should identify table tokens the same way the other arms do rather than using `contains`.
+The new static migration guard has a bypass for valid SQLite UPDATE syntax, so it does not fully enforce the invariant it introduces. It also over-rejects trigger SQL on similarly named non-canonical tables.
+
+Full review comments:
+
+- [P2] Handle SQLite UPDATE conflict clauses — /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s25/src/rust/crates/fathomdb-schema/src/lib.rs:1228-1230
+  For migrations that use SQLite's valid `UPDATE OR <conflict-action>` syntax, e.g. `UPDATE OR REPLACE canonical_nodes SET logical_id = ...`, the guard extracts `OR` as the table name and returns `false`, so a forbidden `logical_id` backfill can bypass the TC-11 pin. The table extractor needs to skip the optional conflict clause before comparing against the pinned canonical tables.
+
+- [P3] Avoid substring matching trigger targets — /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s25/src/rust/crates/fathomdb-schema/src/lib.rs:1283-1285
+  For triggers on non-canonical tables whose names contain a pinned table name, such as `canonical_nodes_backup`, this substring check rejects the migration even though it does not target `canonical_nodes` or `canonical_edges`. That makes legitimate recreate/backup trigger scaffolding fail the pin; the trigger path should identify table tokens the same way the other arms do rather than using `contains`.

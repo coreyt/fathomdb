@@ -12,7 +12,7 @@
 ## ★ IMMEDIATE NEXT STEP — commission the 0.8.20 Slice-20 orchestrator
 
 <!-- BEGIN GENERATED release-state:0.8.20:handoff-next-step -->
-**The 0.8.20 ladder is between slices: 0 → 5 → 10 → 15 are all LANDED; 20 is next.**<!-- END GENERATED release-state:0.8.20:handoff-next-step --> The next action is to
+**The 0.8.20 ladder is between slices: 0 → 5 → 10 → 15 → 25 are all LANDED; 20 is next.**<!-- END GENERATED release-state:0.8.20:handoff-next-step --> The next action is to
 **commission a `/orchestrate dev/plans/plan-0.8.20.md` orchestrator** (alias `/orch`; the preferred entry point
 per the standing HITL ruling of 2026-07-25 — `/goal complete 0.8.20` only on an explicit HITL instruction for
 that run) against `0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md` +

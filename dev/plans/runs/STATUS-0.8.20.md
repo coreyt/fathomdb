@@ -41,7 +41,7 @@ step 24). Ledger tip **`3264114a`** (steward seq-98).
 |---|---|
 | **Slice in flight** | **NONE — Slice 20 just landed PARTIAL (`26b237c0`).** The ladder is between slices; **Slice 20 is not finished** — `flush_embeddings()` is HELD on TC-59/TC-55 (§14). |
 | **Status** | **Slices 0, 5, 10, 15 all COMPLETE and LANDED on `origin/main`** (header table). The keystone landed **R-20-PR + R-20-EAV + `filterable` pre-KNN + TC-33 + TC-34 + Finding-1 (A) + `#[non_exhaustive] SearchFilter`**; codex §9 **terminal-clean**; gates re-verified by the Steward (clippy 0, check 0, (A) pin 1/1, AC-041 3/3). **SCHEMA 24.** |
-| **Unblocks** | <!-- BEGIN GENERATED release-state:0.8.20:status-unblocks -->**Slices 20 and 25 are NOW UNBLOCKED** — R-20-PR (the projection registry) now exists. Slice 30 (H7) depends on 10/15/20/25. **AC-079 is PRE-SIGNED** — the HITL signed off on the accumulated governed-surface delta (Slices 5d + 10b + 15b + 15d) on 2026-07-25 (master F-34), pinned to the content of `src/conformance/governed-surface-allowlist.json`; any diff to that file re-opens it (the T1e pin). Pre-signing is NOT minting: AC-079 is minted and recorded as SIGNED at Slice 40 (§4 #1). **Publish is gated by the separate HITL publish gate, not by this AC.**<!-- END GENERATED release-state:0.8.20:status-unblocks --> |
+| **Unblocks** | <!-- BEGIN GENERATED release-state:0.8.20:status-unblocks -->**Slices 20 are NOW UNBLOCKED** — R-20-PR (the projection registry) now exists. Slice 30 (H7) depends on 10/15/20/25. **AC-079 is PRE-SIGNED** — the HITL signed off on the accumulated governed-surface delta (Slices 5d + 10b + 15b + 15d) on 2026-07-25 (master F-34), pinned to the content of `src/conformance/governed-surface-allowlist.json`; any diff to that file re-opens it (the T1e pin). Pre-signing is NOT minting: AC-079 is minted and recorded as SIGNED at Slice 40 (§4 #1). **Publish is gated by the separate HITL publish gate, not by this AC.**<!-- END GENERATED release-state:0.8.20:status-unblocks --> |
 | **Immediate next action** | **Commission Slice 20c — `flush_embeddings()`. BOTH BLOCKERS ARE RULED (HITL 2026-07-26); 20c is UNBLOCKED.** Slice 20 landed **PARTIAL** at **`26b237c0`** — TC-45 and `dense_readiness` are CLOSED; `flush_embeddings()` was HELD (close record §14). **TC-55 RULED = instrumentation** (steward `seq-110`): 20c **reuses/extends the shipped `drain`** rather than minting a governed `flush_embeddings` — `drain` is absent from the allowlist and present in `_INSTRUMENTATION` (`src/python/tests/test_surface.py:63`), so a second governed verb is surface duplication. **⇒ 20c adds ZERO net-new governed commands and does NOT trip the pin.** **TC-59 RULED = one re-pin at the batched decision** (steward `seq-113`): **no `pending_delta` tooling is built**; the allowlist `_comment` correction (TC-52) and the signing of any accumulated delta happen as a SINGLE ceremony at the Slice 30 → Slice 40 boundary, where AC-079 mints anyway. The pin is **not expected to trip again in 0.8.20** — `R-20-SUR` is a write-time minting rule with no new verb and `R-20-H7` is a gate, not SDK surface. **If it DOES trip: HALT and escalate to the Steward — never work around it, never re-pin.** `check-governed-surface-pin.sh`'s header carried a **false capability claim** and was corrected at `66d30bb2`. **Then 25 → 30 → 40, sequentially** (parallel 20∥25 was declined, F-34), each commissioned as an **orchestrator** (`/orchestrate`, or a Steward-spawned background orchestrator; **NOT `/goal`** — standing ruling **steward `seq-104`** (`927ffb35`)). **✅ Both docs-hygiene prerequisites are DISCHARGED:** DOC-HYGIENE-1 landed 2026-07-25 (`f53b8c64..597738d9`, steward `seq-101`) and **DOC-HYGIENE-2 is verified complete** (`ff4f07a0`). Rulings for the eight-item queue are recorded in `plan-0.8.20.md` §11; master reconciliation = **F-32**, DOC-HYGIENE-1 = **F-33**. |
 
 **Slices 0, 5, 10, 15 close records** are §11 (Slice 5), §12 (Slice 10), §13 (Slice 15b — TC-34 only; the
@@ -61,7 +61,7 @@ by that ruling.
 | **10** | **`ReadView` / read-modes + node-validity (R-20-RV, R-20-NV)** | 0 | **COMPLETE — LANDED `3cfb3cda`** (merge) — SCHEMA 21→22. Close record §12 |
 | **15** | **Projection registry (C-1) + EAV/property-FTS (R-20-PR, R-20-EAV) + TC-34 + TC-33 + Finding-1 (A) + `#[non_exhaustive] SearchFilter`** | 0, 10 | **COMPLETE — LANDED `a2022957`** (merge, Phase-2 keystone) — SCHEMA →24; codex §9 terminal-clean; Steward-verified gates. §13 = the TC-34 sub-part only; registry/EAV/TC-33 remainder summarised in §8 |
 | **20** | `dense_readiness` + `flush_embeddings()` (R-20-DR) **+ TC-45 supersession-terminal fix** | 15 | **PARTIAL — LANDED `26b237c0`** (merge). **CLOSED:** (a) **TC-45** — both `commit_batch` call sites now record `'up_to_date'`; **no migration, SCHEMA stays 24**, terminal CHECK **not** widened, exactly as the ruling preferred. (b) **R-20-DR part 1 of 2** — `DenseReadiness {Ready, Embedding}` **derived** onto the `ProjectionSpec.vector` sub-object as engine-set read metadata (no stored column, no schema step), plus the **atomic readiness-flip**, which holds **by construction**. Surfaces as `vector_dense_readiness` (Py) / `vectorDenseReadiness` (TS). **ZERO net-new governed commands.** **⛔ HELD: `flush_embeddings()`** — blocked on **TC-59** (pin gate) + **TC-55** (command-vs-instrumentation). Close record **§14** |
-| **25** | Surrogate minting — governed entities ONLY (R-20-SUR) | 15 | **UNBLOCKED** (R-20-PR exists) — not started |
+| **25** | Surrogate minting — governed entities ONLY (R-20-SUR) | 15 | ✅ **LANDED `83b1c818`** — D1 static migration guard + D2 dynamic whole-ladder proof (`NULL → NOT NULL == 0`) + D3 registration-inertness; zero engine source change, SCHEMA stays 24, allowlist byte-identical, pin exit 0. codex §9: 3 fix rounds, halted at the circuit-breaker on a 4th same-family [P2]; residual ACCEPTED by Steward ruling (D2 is row-based ⇒ shape-independent). Residual recorded as **TC-66**. |
 | 30 | RUBRIC-H7 `can-i-deploy` contract gate (R-20-H7) | 10,15,20,25 | not started — publish precondition |
 | 40 | Verification + release readiness (publish-or-hold) | 5,30 | not started |
 
@@ -1102,3 +1102,84 @@ scans `$HOME` and false-positives on sibling repos). Committed with this close p
 > prior 0.8.20 slice — a **TC-23 gap**, recorded rather than papered over. The witness has since been recovered
 > from the (now prunable) slice worktree and committed **verbatim** as
 > `dev/plans/runs/0.8.20-slice-20-output.json`; producing it per-slice, at close, remains the process gap.
+
+---
+
+## 15. Slice 25 close — surrogate minting, registry-admitted governed entities ONLY (R-20-SUR)
+
+**Landed `83b1c818`** (merge, `--no-ff`), branch `orch-0.8.20-s25`, cut from a verified `origin/main` tip and
+**rebased twice** onto live `main` (`efa8d584`, then `3a9e04e4`) as Slice 20c landed alongside it — the full
+gate set was re-run after the final rebase, not carried over.
+
+### What this slice actually was
+
+**Enforcement + proof, NOT a new mechanism.** The governed write-time minting path already existed
+(`derive_logical_id` in the entity/edge arms of `Engine::ingest_with_extractor`) and was **not rebuilt**. Per
+**TC-11 pin A** the anonymous-surrogate leg is **CANCELLED, not deferred**, so no surrogate is minted for
+anonymous or doc-seeded content anywhere in this slice. `structural-lifecycle-contract.md` §2(ii) stays
+**OVERRULED**.
+
+| Deliverable | What landed |
+|---|---|
+| **D1** static migration guard | `check_migration_logical_id_pin` in `fathomdb-schema` — rejects any migration step that would populate `logical_id` on an existing canonical row. **No exemption escape hatch**: the pin is a prohibition, not a budget (unlike `check_migration_accretion`). Wired over `MIGRATIONS` *whole* and over `migrations/*.sql`. |
+| **D2** dynamic migration guard | Real-SQLite whole-ladder migration of a mixed anonymous/governed corpus (step 12 → head, step 23 → head) asserting `logical_id` NULL → NOT NULL == 0, NOT NULL → NULL == 0, byte-identical snapshot, and byte-identical `IdSpace::to_prefixed()`. **This is the load-bearing proof.** |
+| **D3** registration inertness | `configure_projections` add / idempotent re-register / explicit drop / boot re-derive leave every pre-existing row's `logical_id` and `IdSpace` byte-identical — asserted on raw at-rest state **and** on live `SearchHit::id`. |
+| **D4** write-time admission audit | **No gap.** Every `PreparedWrite` node/edge call site enumerated; no unadmitted path mints. No machinery manufactured to fill an absent gap. |
+
+### Boundaries held
+
+`SCHEMA_VERSION` unchanged (**24**), no migration step appended, **no new column**, **no new SDK verb or
+binding method**. `src/conformance/governed-surface-allowlist.json` **byte-identical** to base;
+`check-governed-surface-pin.sh` **exit 0** throughout — the pin never tripped, was never re-pinned.
+**Zero engine source lines changed** (only a new engine *test* file), which is why the concurrent Slice 20c
+work on `fathomdb-engine/src/lib.rs` rebased without a single conflict.
+
+### codex §9 — CONCERN, 3 fix rounds, halted at the circuit-breaker
+
+| Round | Verdict | Transcript |
+|---|---|---|
+| initial | CONCERN [P2] — schema-qualified names bypass the guard | `dev/plans/runs/codex/0.8.20/slice-25-r20sur-20260726T162955Z.log` |
+| fix-1 | CONCERN [P2] `UPDATE OR <conflict-action>` bypass · [P3] trigger-target over-rejection | `.../slice-25-fix-1-rereview-20260726T165520Z.log` |
+| fix-3 | CONCERN [P2] — subquery in an earlier `SET` truncates the clause | `.../slice-25-fix-3-rereview-20260726T172916Z.log` |
+
+Each round produced a **new lexical shape** rather than a defect in the requirement: a lexical scanner cannot
+be complete against SQL grammar. The run **halted at the orchestration circuit-breaker** (3 fix rounds on one
+finding family) rather than dispatching a 4th round that would buy a 5th `[P2]`.
+
+**Steward ruling: ACCEPT the residual and land as-is** — verified, not taken on assertion: D2 snapshots
+identity **rows** before/after and asserts `null_to_not_null == 0`, i.e. it compares **rows, not SQL text**, so
+it is shape-independent and catches every evasion the lexical guard misses. **D1 is defence-in-depth; D2 is the
+proof.** The known-open shapes (subquery-in-`SET`, rename round-trip, `CREATE TABLE AS SELECT` swap) are stated
+openly in the guard's `# Known limits` doc comment, which is what makes accepting the residual honest rather
+than a shrug. Recorded durably as **`TC-66`** (seq 94), including the caveat that a future slice must **not**
+read a green static guard as evidence the pin holds, nor weaken the D2 whole-ladder tests.
+
+### Verify — real exit codes, re-run after the final rebase
+
+`cargo fmt --all --check` **0** · `cargo clippy --workspace --all-targets` **0** ·
+`cargo check --workspace --all-targets` **0** · `cargo test -p fathomdb-schema` **0** ·
+`cargo test -p fathomdb-engine --no-fail-fast` **0** (103/103 binaries) ·
+`cargo test -p fathomdb-embedder-api` **0** · `check-governed-surface-pin` **0** ·
+`agent-lint-migrations` **0** · `lint-findings` / `lint-plan-anchors` / `lint-design-status` /
+`check-release-state-views` / `check-board-currency` **0**.
+
+**X1 SDK parity — live, not symbol presence.** A wheel was built into a **throwaway venv** outside the repo
+(never `maturin develop`; the shared `.venv` binding was verified un-rebound afterwards) and the TS addon built
+worktree-local. Python 24 live tests + TS 12 live tests, plus a live registration-inertness harness on both:
+anonymous `h:6d7f8dc2…` and governed `l:x1-gov-1`, **byte-identical across both SDKs** and unchanged across a
+`configure_projections` cycle.
+
+### Carried out of this slice
+
+- **`ac_002_no_log_files_without_subscriber`, `ac_029_canonical_writes_complete_under_projection_stall` and
+  `tests/lifecycle_observability.rs` are LOAD-SENSITIVE flakes** — they fail under heavy concurrent CPU load
+  and pass in isolation and on an unloaded full run. Engine source was byte-unchanged on this branch, so they
+  are pre-existing. Recorded, not "fixed".
+- **A red gate was inherited from `main` and closed here:**
+  `dev/todos-and-considerations-ledger.jsonl.seq` was committed at **87** while the committed ledger's
+  `max(seq)` was **93**, so `check-ledgers.sh` was **RED on any clean checkout of `main`** — it only looked
+  green in a working tree carrying an uncommitted sidecar fix. Repaired as part of this close (sidecar now
+  **94**, verified exit 0 from a clean tree). The lesson is the vacuous-green trap in miniature: a gate
+  verified against a dirty tree is not verified.
+- **TC-57** (governed-write vs projection-worker race) was **not tripped and not touched** — it is placed
+  elsewhere.
