@@ -44,5 +44,5 @@ default-embedder = ["fathomdb-embedder/default-embedder"]
 # shapes the erasure verbs cannot reach (NULL `source_id`), which no supported
 # write path can produce. Raw SQL is the only way to build that fixture, and
 # design §3 Rule 1 requires erasure witnesses to assert on RAW table contents.
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 tempfile = "3"
