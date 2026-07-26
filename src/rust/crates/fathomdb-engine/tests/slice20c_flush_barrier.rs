@@ -62,7 +62,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
 // ---------------------------------------------------------------------------
@@ -1311,6 +1311,316 @@ fn a_no_embedder_session_leaves_an_enrolled_kinds_write_recoverable() {
         0,
         "the recovery leaves no failure audit behind either"
     );
+
+    opened.engine.close().unwrap();
+}
+
+// ===========================================================================
+// Leg G (fix-5, codex §9 round 4 [P1]) — the no-embedder NODE exclusion must
+//         happen INSIDE the scheduler's scan, NOT after its `LIMIT`
+// ===========================================================================
+
+/// `PROJECTION_SCAN_FETCH`, restated here because it is private to the engine:
+/// `PROJECTION_WORKERS (2) * PROJECTION_COMMIT_BATCH (16)`. It is the `LIMIT` the
+/// dispatcher's one scan carries, and therefore the width of the window a
+/// post-fetch filter can starve. The fixture asserts it is genuinely exceeded
+/// rather than trusting this constant, so a change to it makes the test weaker
+/// only by making the fixture assertion fail.
+const PROJECTION_SCAN_FETCH: usize = 32;
+
+/// The `write_cursor` of the live edge body carrying `logical_id`. The edge
+/// half of [`active_cursor`]; edges live in their own table and carry their own
+/// cursors from the SAME monotonic sequence, which is what lets the scheduler
+/// `ORDER BY write_cursor` across the node/edge `UNION`.
+fn active_edge_cursor(conn: &rusqlite::Connection, logical_id: &str) -> i64 {
+    conn.query_row(
+        "SELECT write_cursor FROM canonical_edges
+         WHERE logical_id = ?1 AND superseded_at IS NULL",
+        [logical_id],
+        |r| r.get::<_, i64>(0),
+    )
+    .expect("active edge cursor")
+}
+
+/// How many vector-eligible NODE rows are pending (no terminal) below `cursor`.
+/// The fixture precondition for Leg G: the scan window must be genuinely
+/// over-subscribed by node rows before the edge body.
+fn pending_node_rows_below(conn: &rusqlite::Connection, cursor: i64) -> i64 {
+    conn.query_row(
+        "SELECT COUNT(*)
+         FROM canonical_nodes n
+         JOIN _fathomdb_vector_kinds k ON k.kind = n.kind
+         LEFT JOIN _fathomdb_projection_terminal t ON t.write_cursor = n.write_cursor
+         WHERE n.row_kind IN ('leaf', 'coverage')
+           AND n.superseded_at IS NULL
+           AND t.write_cursor IS NULL
+           AND n.write_cursor < ?1",
+        [cursor],
+        |r| r.get::<_, i64>(0),
+    )
+    .expect("pending node rows below cursor")
+}
+
+/// Poll `probe` until it reports true or `timeout` elapses. Returns whether it
+/// ever did. Used instead of `drain` because Leg G's session deliberately holds
+/// permanently-pending node rows (fix-4), so `drain` can only ever time out
+/// there — the question is whether the EDGE was scheduled, not whether the
+/// session reached idle.
+fn poll_until(timeout: Duration, mut probe: impl FnMut() -> bool) -> bool {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if probe() {
+            return true;
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+}
+
+/// **A pending EDGE body must stay reachable behind a full scan window of
+/// no-embedder NODE rows.**
+///
+/// fix-4 excluded node jobs in a no-embedder session by filtering the vector
+/// [`next_pending_projection_jobs`] returned — i.e. AFTER its `ORDER BY
+/// write_cursor LIMIT PROJECTION_SCAN_FETCH`. The `LIMIT` therefore applied to
+/// the UNFILTERED set: with more than `PROJECTION_SCAN_FETCH` pending node rows
+/// ordered before a pending edge body, the one scan comes back entirely full of
+/// node jobs, the filter drops all of them, the dispatcher sees an empty batch
+/// and goes back to sleep with `pending_scan` already consumed — and the edge
+/// body is never scheduled at all. Nothing later re-widens the window, because
+/// the node rows are pending FOREVER in that session (that is fix-4's whole
+/// point), so the starvation is permanent, not a delay.
+///
+/// Edges keep their SHIPPED no-embedder behaviour (`'edge_fact'` is
+/// auto-registered by the edge write itself, un-gated on the embedder — G11,
+/// OOS-13), so "scheduled" is observable as the edge body reaching a TERMINAL.
+/// This test does NOT assert edges become recoverable; it asserts only that the
+/// scheduler still REACHES them.
+#[test]
+fn a_pending_edge_body_survives_a_full_scan_window_of_no_embedder_node_rows() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "flush_barrier_scan_window_starvation");
+
+    // ---- session 0: create with NO embedder so the `default` profile pins
+    // `default_embedder_identity()` and the reopens cannot fail closed on
+    // `EmbedderIdentityMismatch`.
+    Engine::open(path.clone()).expect("create").engine.close().unwrap();
+    let identity = stored_default_identity(&path);
+
+    // ---- session 1: WITH an embedder — this is what durably ENROLS `doc`.
+    {
+        let embedder = CountingEmbedder::with_identity(identity);
+        let opened = Engine::open_with_embedder_for_test(&path, Arc::new(embedder)).expect("open");
+        let engine = &opened.engine;
+        engine.configure_projections(&[vector_spec("summary")], &[]).expect("configure");
+        engine.write(&[node("doc", "SEED", r#"{"summary":"enrols the kind"}"#)]).expect("seed");
+        engine.drain(30_000).expect("session 1 drain");
+        assert!(vector_kind_registered(&ro(&path), "doc"), "fixture: session 1 enrolled `doc`");
+        opened.engine.close().unwrap();
+    }
+
+    // ---- session 2: the SAME database with NO embedder. Every `doc` row it
+    // writes is pending forever (fix-4); the edge body written AFTER them is the
+    // row under test.
+    let opened = Engine::open(path.clone()).expect("reopen without embedder");
+    let engine = &opened.engine;
+    // Collapse the retry ladder: an edge body with no embedder takes the SHIPPED
+    // path (0 + 1 + 4 + 16 s, then a `'failed'` terminal). Without this the
+    // "was it scheduled?" probe would have to outwait 21 s.
+    engine.set_projection_retry_delays_for_test(&[]);
+
+    // MORE than one scan window of node rows, all ordered BEFORE the edge.
+    let node_rows = PROJECTION_SCAN_FETCH + 8;
+    let batch: Vec<PreparedWrite> = (0..node_rows)
+        .map(|i| node("doc", &format!("N{i}"), &format!(r#"{{"summary":"row {i}"}}"#)))
+        .collect();
+    engine.write(&batch).expect("write the node rows");
+    engine
+        .write(&[edge("E1", "N0", "N1", "the edge body that must not be starved")])
+        .expect("edge");
+
+    let conn = ro(&path);
+    let edge_cursor = active_edge_cursor(&conn, "E1");
+    assert!(
+        vector_kind_registered(&conn, "edge_fact"),
+        "fixture: an edge body auto-registers `'edge_fact'` (G11), so it IS schedulable work"
+    );
+    let pending_before = pending_node_rows_below(&conn, edge_cursor);
+    assert!(
+        pending_before > PROJECTION_SCAN_FETCH as i64,
+        "fixture: the scan window must be over-subscribed by node rows ordered BEFORE the edge \
+         body — that is the whole scenario. Pending node rows below the edge: {pending_before}, \
+         scan window: {PROJECTION_SCAN_FETCH}"
+    );
+
+    // THE FINDING. The scheduler must still reach the edge body.
+    let scheduled =
+        poll_until(Duration::from_secs(20), || terminal_state(&ro(&path), edge_cursor).is_some());
+    assert!(
+        scheduled,
+        "SCAN-WINDOW STARVATION: with more than PROJECTION_SCAN_FETCH ({PROJECTION_SCAN_FETCH}) \
+         pending node rows ordered before it, the pending edge body at cursor {edge_cursor} was \
+         NEVER scheduled. The no-embedder node exclusion must happen INSIDE \
+         `next_pending_projection_jobs`' SQL so the `LIMIT` applies to the ALREADY-FILTERED set; \
+         filtering after the fetch lets one full window of node rows hide every later job, and \
+         `drain` then times out on that edge workload indefinitely"
+    );
+
+    // …and it reached it on the SHIPPED edge path, unchanged by this slice.
+    assert_eq!(
+        terminal_state(&ro(&path), edge_cursor),
+        Some("failed".to_string()),
+        "edges keep their shipped no-embedder behaviour (OOS-13): the retry ladder exhausts into \
+         a `'failed'` terminal. fix-5 changes WHICH rows the scan returns, not what happens to \
+         an edge once it is dispatched"
+    );
+
+    // fix-4 is intact: the NODE rows are still pending, not terminated.
+    let conn = ro(&path);
+    assert_eq!(
+        pending_node_rows_below(&conn, edge_cursor),
+        pending_before,
+        "fix-4 stands: an absent embedder records NO terminal for a NODE row, so every one of \
+         them is still pending and still recoverable by the next live-embedder session"
+    );
+
+    opened.engine.close().unwrap();
+}
+
+// ===========================================================================
+// Leg H (fix-5, codex §9 round 4 [P2]) — a LATE enrolment and the un-stranding
+//         it owes must commit as ONE transaction
+// ===========================================================================
+
+/// A raw READ-WRITE connection to the live file, used to install the fault
+/// injection below. Same basis as [`ro`]: the engine's exclusive hold is a lock
+/// FILE, not a SQLite lock. Only ever used while NO engine is open on `path`.
+fn rw(path: &Path) -> rusqlite::Connection {
+    let conn = rusqlite::Connection::open(path).expect("open read-write");
+    conn.busy_timeout(Duration::from_secs(10)).expect("busy_timeout");
+    conn
+}
+
+/// **The crash window between the registry INSERT and the un-stranding.**
+///
+/// A late enrolment does two things: it registers the kind in
+/// `_fathomdb_vector_kinds`, and it repairs the rows that kind stranded
+/// (`reenqueue_stranded_vector_rows` — delete their `'up_to_date'` terminals and
+/// rewind the watermark). While the INSERT autocommits ahead of the repair's own
+/// `BEGIN IMMEDIATE`, a failure in between leaves the kind REGISTERED with older
+/// rows still holding `'up_to_date'` terminals and no vectors. That state is
+/// self-sealing: on the next open `kind_is_vector_indexed` is already true, so
+/// every future write skips the enrolment path — and therefore skips the
+/// un-stranding — while `dense_readiness` reads `ready` for rows that will never
+/// be embedded. Only a manual re-apply of the projection recovers it.
+///
+/// **How the window is pinned.** The failure is injected as a real SQLite
+/// `BEFORE DELETE` trigger on `_fathomdb_projection_terminal` that `RAISE(ABORT)`s
+/// — i.e. the repair genuinely fails, against a real engine and a real database,
+/// at exactly the point a crash would truncate it. No process is killed and
+/// nothing is mocked; what is reproduced is the resulting STATE, and then its
+/// durable consequence (the second half of the test), which is what the finding
+/// is actually about.
+#[test]
+fn a_late_enrolment_whose_repair_fails_registers_nothing() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "flush_barrier_enrolment_atomicity");
+
+    // ---- session A: NO embedder. The declaration persists and DEFERS (fix-2:
+    // a kind is only enrolled by a session that has a live embedder), so these
+    // rows take permanent `'up_to_date'` terminals with no vector: the stranded
+    // set a later late enrolment owes a repair to.
+    {
+        let opened = Engine::open(path.clone()).expect("create without embedder");
+        let engine = &opened.engine;
+        engine.configure_projections(&[vector_spec("summary")], &[]).expect("configure");
+        engine.write(&[node("doc", "N1", r#"{"summary":"stranded one"}"#)]).expect("N1");
+        engine.write(&[node("doc", "N2", r#"{"summary":"stranded two"}"#)]).expect("N2");
+        engine.drain(5_000).expect("no dense arm ⇒ nothing outstanding");
+        opened.engine.close().unwrap();
+    }
+    let identity = stored_default_identity(&path);
+    {
+        let conn = ro(&path);
+        assert!(
+            !vector_kind_registered(&conn, "doc"),
+            "fixture: a no-embedder session enrols nothing"
+        );
+        for id in ["N1", "N2"] {
+            let cursor = active_cursor(&conn, id);
+            assert_eq!(
+                terminal_state(&conn, cursor),
+                Some("up_to_date".to_string()),
+                "fixture: {id} holds the permanent terminal that makes it STRANDABLE"
+            );
+            assert!(!vector_row_exists(&conn, cursor), "fixture: {id} has no vector");
+        }
+    }
+
+    // ---- the fault injection, installed while no engine holds the database.
+    rw(&path)
+        .execute_batch(
+            "CREATE TRIGGER fix5_repair_fails
+             BEFORE DELETE ON _fathomdb_projection_terminal
+             BEGIN SELECT RAISE(ABORT, 'fix-5: the un-stranding repair failed'); END",
+        )
+        .expect("install the repair-failure injection");
+
+    // ---- session B: WITH an embedder. This write triggers the LATE enrolment:
+    // register `doc`, then repair N1/N2. The repair now fails.
+    {
+        let embedder = CountingEmbedder::with_identity(identity.clone());
+        let opened = Engine::open_with_embedder_for_test(&path, Arc::new(embedder)).expect("open");
+        let engine = &opened.engine;
+
+        let wrote = engine.write(&[node("doc", "N3", r#"{"summary":"the late write"}"#)]);
+        assert!(
+            matches!(wrote, Err(fathomdb_engine::EngineError::Storage)),
+            "fixture: the repair failed, so the write must surface Storage. Got: {wrote:?}"
+        );
+
+        // THE FINDING.
+        assert!(
+            !vector_kind_registered(&ro(&path), "doc"),
+            "TORN LATE ENROLMENT: the registry INSERT committed while the un-stranding it owes \
+             did not. `_fathomdb_vector_kinds` now holds `doc` with N1/N2 still carrying \
+             `'up_to_date'` terminals and no vectors — and because `kind_is_vector_indexed` is \
+             now true, every future write SKIPS the enrolment path and therefore skips the \
+             repair. The registry insert and the terminal/cursor repair must commit as ONE \
+             transaction"
+        );
+        opened.engine.close().unwrap();
+    }
+
+    // ---- remove the injection and let the engine heal itself.
+    rw(&path).execute_batch("DROP TRIGGER fix5_repair_fails").expect("remove the injection");
+
+    // ---- session C: the SAME database, WITH an embedder, no re-apply of the
+    // projection and no operator `rebuild` — one ordinary write must now enrol
+    // AND un-strand, because nothing was left half-done behind it.
+    let embedder = CountingEmbedder::with_identity(identity);
+    let opened = Engine::open_with_embedder_for_test(&path, Arc::new(embedder)).expect("reopen");
+    let engine = &opened.engine;
+    engine.write(&[node("doc", "N4", r#"{"summary":"the healing write"}"#)]).expect("N4");
+    engine.drain(30_000).expect("drain flushes the late-enrolled backfill");
+
+    assert_eq!(readiness(engine, "summary"), Some(DenseReadiness::Ready));
+    let conn = ro(&path);
+    assert_eq!(
+        leaf_rows_without_vectors(&conn),
+        0,
+        "SELF-SEALED FALSE READY: `drain()` returned Ok and readiness reads `ready`, but the rows \
+         the torn enrolment stranded still have no vector at rest. The torn state is invisible to \
+         every later write precisely BECAUSE the kind is already registered — which is why the \
+         two statements have to be atomic"
+    );
+    for id in ["N1", "N2", "N4"] {
+        let cursor = active_cursor(&conn, id);
+        assert!(vector_row_exists(&conn, cursor), "{id}'s vector must exist at rest");
+        assert!(vec0_row_exists(&conn, cursor), "{id}'s vec0 row must exist at rest");
+    }
 
     opened.engine.close().unwrap();
 }
