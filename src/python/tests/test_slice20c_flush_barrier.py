@@ -31,10 +31,12 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import time
 
 import pytest
 
 from fathomdb import Engine, ProjectionRole, ProjectionSpec, read
+from fathomdb.errors import SchedulerError
 
 _SOURCE_ID = "py-test:slice20c"
 _DRAIN_TIMEOUT_S = 120.0
@@ -42,6 +44,10 @@ _DRAIN_TIMEOUT_S = 120.0
 # barrier — an assertion that "`drain` did not hang" should not cost two minutes
 # per arm when it is red.
 _WEDGE_TIMEOUT_S = 30.0
+# fix-4: the engine's projection retry ladder is 0 + 1 + 4 + 16 s. The
+# no-embedder arm waits it out so its terminal/audit probes are FALSIFYING at
+# baseline rather than merely early.
+_LADDER_SETTLE_S = 24.0
 
 
 def _skip_if_no_network() -> None:
@@ -139,6 +145,59 @@ def _vector_kind_registered(path: str, kind: str = "doc") -> bool:
         return row[0] > 0
     finally:
         conn.close()
+
+
+def _active_cursor(path: str, logical_id: str) -> int:
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        row = conn.execute(
+            "SELECT write_cursor FROM canonical_nodes"
+            " WHERE logical_id = ? AND superseded_at IS NULL",
+            (logical_id,),
+        ).fetchone()
+        assert row is not None, f"no active row for {logical_id}"
+        return int(row[0])
+    finally:
+        conn.close()
+
+
+def _terminal_state(path: str, cursor: int) -> str | None:
+    """The raw ``_fathomdb_projection_terminal`` state for one cursor.
+
+    ``None`` is PENDING, and that is the fix-4 property: an ABSENT embedder is an
+    ENVIRONMENT fact, not an embed failure, so it must record NO terminal. A
+    ``"failed"`` terminal is permanent by design (nothing reopens one, and
+    nothing should — that would loop a genuinely-failing row forever), so
+    recording one here LOSES the write.
+    """
+
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        row = conn.execute(
+            "SELECT state FROM _fathomdb_projection_terminal WHERE write_cursor = ?",
+            (cursor,),
+        ).fetchone()
+        return None if row is None else str(row[0])
+    finally:
+        conn.close()
+
+
+def _fts_row_exists(path: str, cursor: int) -> bool:
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM search_index WHERE write_cursor = ?", (cursor,)
+        ).fetchone()
+        return int(row[0]) > 0
+    finally:
+        conn.close()
+
+
+def _projection_failure_rows(path: str) -> int:
+    return _query(
+        path,
+        "SELECT COUNT(*) FROM operational_mutations WHERE collection_name = 'projection_failures'",
+    )
 
 
 def test_declaring_a_vector_projection_backfills_and_drain_flushes_to_ready(tmp_path) -> None:
@@ -241,7 +300,9 @@ def test_declaration_without_a_live_embedder_defers_and_does_not_enrol(tmp_path)
     try:
         engine.write([_node("N1", '{"summary":"a dense meaning"}')])
         engine.configure_projections([_vector_spec()])
-        assert _readiness(engine) == "ready", "no live embedder ⇒ no dense arm ⇒ nothing outstanding"
+        assert _readiness(engine) == "ready", (
+            "no live embedder ⇒ no dense arm ⇒ nothing outstanding"
+        )
         engine.drain(timeout_s=5.0)
         assert _readiness(engine) == "ready"
     finally:
@@ -424,3 +485,104 @@ def test_late_enrolment_backfills_rows_a_no_embedder_session_stranded(tmp_path) 
         "no-embedder session still have no vector at rest"
     )
     assert _vector_rows(path) == 3, "all three rows were embedded"
+
+
+def test_a_no_embedder_session_leaves_an_enrolled_kinds_write_recoverable(tmp_path) -> None:
+    """fix-4 (codex §9 round 3 [P1]) — a write made with NO live embedder, over an
+    ALREADY-ENROLLED kind, must stay RECOVERABLE.
+
+    fix-2 gated ENROLMENT on a live embedder, but ``_fathomdb_vector_kinds`` is
+    durable: once an embedder-backed session has enrolled ``doc``, every later
+    session sees the enrolment. Reopening with no embedder and writing that kind
+    therefore still enqueues. At baseline the worker exhausted its retry ladder
+    against the absent embedder and recorded an ``EmbedderNotConfiguredError``
+    ``'failed'`` terminal plus a ``projection_failures`` audit row — and since no
+    path reopens a ``'failed'`` terminal, reopening WITH an embedder left that
+    write PERMANENTLY unembedded while readiness reported ``"ready"``.
+
+    Three sessions, no re-apply and no second write: the ORDINARY scheduler is
+    the whole recovery path.
+
+    The CONSUMER-VISIBLE consequence is asserted here on purpose, so it cannot
+    change back silently: while the row is outstanding and this session cannot
+    satisfy it, readiness reads ``"embedding"`` and ``drain`` raises
+    ``SchedulerError``. That is what design-of-record §4.1 invariant 1 demands
+    (the ONLY tolerable torn state is ``embedding`` with the vector absent) and
+    it is LOUD rather than silent.
+    """
+
+    _skip_if_no_network()
+    path = str(tmp_path / "flush_no_embedder_recoverable.sqlite")
+
+    # ---- session 1: WITH an embedder. This durably ENROLS `doc`. ----
+    engine = Engine.open(path, use_default_embedder=True)
+    try:
+        engine.configure_projections([_vector_spec()])
+        engine.write([_node("N1", '{"summary":"embedded in session one"}')])
+        engine.drain(timeout_s=_DRAIN_TIMEOUT_S)
+        assert _vector_kind_registered(path), "fixture: session 1 enrolled `doc`"
+        assert _leaf_rows_without_vectors(path) == 0, "fixture: session 1's row is embedded"
+    finally:
+        engine.close()
+
+    c1 = _active_cursor(path, "N1")
+
+    # ---- session 2: the SAME database, reopened with NO embedder. ----
+    engine = Engine.open(path, use_default_embedder=False)
+    try:
+        # Fixture precondition, asserted rather than assumed: the enrolment
+        # PERSISTED, so this session's write reaches the vector pipeline.
+        assert _vector_kind_registered(path), (
+            "fixture: the kind stays enrolled across the reopen — that is the whole finding"
+        )
+        engine.write([_node("N2", '{"summary":"written with no dense arm"}')])
+
+        # THE CONSUMER-VISIBLE CONSEQUENCE. An enrolled row with no vector is
+        # outstanding and this session cannot satisfy it, so the barrier must NOT
+        # clear. At baseline it cleared by recording a `'failed'` terminal —
+        # which is exactly how the write got lost.
+        with pytest.raises(SchedulerError):
+            engine.drain(timeout_s=3.0)
+
+        # Give the BASELINE its full retry ladder (0 + 1 + 4 + 16 s) before the
+        # probes below. Without this wait they all read a merely-unterminated row
+        # and pass VACUOUSLY on the broken code — the SDKs expose no equivalent
+        # of the Rust suite's `set_projection_retry_delays_for_test` seam, so
+        # waiting is the only way to make them falsifying. Under the fix the row
+        # is never dispatched, so this is dead time and nothing changes across it.
+        time.sleep(_LADDER_SETTLE_S)
+
+        assert _readiness(engine) == "embedding", (
+            "§4.1 invariant 1: readiness must never read `ready` for an ENROLLED row that has "
+            "no vector"
+        )
+
+        c2 = _active_cursor(path, "N2")
+        assert _fts_row_exists(path, c2), "the write is accepted and still lexically searchable"
+        assert _projection_failure_rows(path) == 0, (
+            "an ABSENT embedder is an ENVIRONMENT fact, not an embed failure — it must not "
+            "pollute the `projection_failures` audit"
+        )
+        assert _terminal_state(path, c2) is None, (
+            "PERMANENTLY LOST WRITE: an absent embedder must record NO terminal. Leaving the row "
+            "PENDING is what lets the next live-embedder session's ORDINARY scheduler pick it up"
+        )
+        assert _terminal_state(path, c1) == "up_to_date", "session 1's row is untouched"
+        assert _vector_rows(path) == 1, "fixture: no dense arm ⇒ no new vector yet"
+    finally:
+        engine.close()
+
+    # ---- session 3: WITH an embedder again. NO re-apply, NO further write. ----
+    engine = Engine.open(path, use_default_embedder=True)
+    try:
+        engine.drain(timeout_s=_DRAIN_TIMEOUT_S)
+        assert _readiness(engine) == "ready"
+    finally:
+        engine.close()
+
+    assert _leaf_rows_without_vectors(path) == 0, (
+        'PERMANENTLY LOST WRITE: `drain()` returned and readiness reads "ready", but the row '
+        "written in the no-embedder session still has no vector at rest"
+    )
+    assert _vector_rows(path) == 2, "the recovered row was embedded, and only it"
+    assert _projection_failure_rows(path) == 0, "the recovery leaves no failure audit behind"

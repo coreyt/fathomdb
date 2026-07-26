@@ -206,6 +206,15 @@ AC-050c) gates merges against this invariant.
     dense arm, so the declaration persists and defers rather than queueing
     embeds that could only fail; it grafts on when re-applied in a session that
     has one — the same contract as `rankable`.
+  - **Graceful-absent stops at the enrolment boundary.** Once a kind IS enrolled
+    — some earlier session DID have an embedder — writing that kind without one
+    leaves real dense work outstanding. The write is **accepted** and stays
+    lexically searchable, but readiness reads `"embedding"` and `drain` reports
+    its timeout for the rest of that session, however long you wait. The write is
+    **not lost**: no failure is recorded and no terminal is written, so the next
+    session opened with an embedder embeds it through the ordinary scheduler — no
+    re-apply and no operator `rebuild`. Reporting `"ready"` there would be a torn
+    `ready`-without-vector, i.e. the silent miss this work exists to eliminate.
   - **Additive**, no schema step (`SCHEMA_VERSION` unchanged), and no data
     migration: this re-enqueues work inside one live database.
 

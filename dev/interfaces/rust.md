@@ -404,6 +404,19 @@ in Rust, Python and TypeScript:
   queueing embeds that could only fail; it **grafts on** when the same spec is
   re-applied in a session that has an embedder — the same Q6a contract as
   `rankable`.
+- **…but graceful-absent stops at the enrolment boundary** (fix-4). Once a kind
+  IS enrolled — i.e. some earlier session DID have an embedder — a write of that
+  kind is dense work the workspace has committed to, and a session with no
+  embedder cannot make it go away. Such a write is **accepted** and stays
+  lexically searchable, but it stays **outstanding**: `dense_readiness` reads
+  `Embedding` and `drain` returns `EngineError::Scheduler` for the rest of that
+  session, however long you wait. It is **not** lost — no failure is recorded and
+  no terminal is written, so the next session opened WITH an embedder embeds it
+  through the ordinary scheduler, with no re-apply and no operator `rebuild`.
+  Callers who write to an enrolled corpus without an embedder should therefore
+  expect `drain` to time out and should not treat that as data loss. (Reporting
+  `Ready` there instead would be a torn `ready`-without-vector — the silent miss
+  this slice exists to eliminate.)
 - **`drain` remains bounded**, returning the typed timeout error rather than
   blocking; a caller sizes `timeout_ms` for the backfill it just asked for.
 

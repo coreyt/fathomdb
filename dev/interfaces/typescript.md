@@ -272,6 +272,16 @@ Rust, Python and TypeScript:
   Edge-body vectors are unaffected.
 - **Graceful-absent without a live embedder:** the declaration persists and
   defers, then grafts on when re-applied in a session that has one.
+- **…but graceful-absent stops at the enrolment boundary** (fix-4). Once a kind
+  IS enrolled — i.e. some earlier session DID have an embedder — writing that
+  kind from a session opened with `useDefaultEmbedder: false` leaves real dense
+  work outstanding, and this session cannot satisfy it. The write is **accepted**
+  and stays lexically searchable, but `vectorDenseReadiness` reads `"embedding"`
+  and `drain` rejects with `SchedulerError` for the rest of that session, however
+  long you wait. It is **not** lost: no failure is recorded and no terminal is
+  written, so the next session opened WITH an embedder embeds it through the
+  ordinary scheduler — no re-apply, no operator `rebuild`. Expect the timeout
+  there and do not read it as data loss.
 - **`drain` stays bounded** and rejects with the existing timeout error rather
   than hanging; size `timeoutMs` for the backfill you just asked for.
 

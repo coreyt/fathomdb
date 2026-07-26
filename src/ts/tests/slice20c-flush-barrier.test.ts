@@ -35,6 +35,7 @@ import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 
 import { Engine, read } from "../src/index.js";
+import { SchedulerError } from "../src/errors.js";
 import type { ProjectionSpec } from "../src/index.js";
 import { freshDbPath } from "./helpers.js";
 
@@ -44,6 +45,10 @@ const DRAIN_TIMEOUT_MS = 120_000;
 // barrier — an assertion that "`drain` did not hang" should not cost two minutes
 // per arm when it is red.
 const WEDGE_TIMEOUT_MS = 30_000;
+// fix-4: the engine's projection retry ladder is 0 + 1 + 4 + 16 s. The
+// no-embedder arm waits it out so its terminal/audit probes are FALSIFYING at
+// baseline rather than merely early.
+const LADDER_SETTLE_MS = 24_000;
 
 function node(logicalId: string, bodyJson: string): object {
   return nodeOfKind("doc", logicalId, bodyJson);
@@ -135,6 +140,47 @@ function vectorKindRegistered(path: string, kind = "doc"): boolean {
       path,
       `SELECT COUNT(*) AS c FROM _fathomdb_vector_kinds WHERE kind = '${kind}'`,
     ) > 0
+  );
+}
+
+function activeCursor(path: string, logicalId: string): number {
+  return count(
+    path,
+    "SELECT write_cursor AS c FROM canonical_nodes" +
+      ` WHERE logical_id = '${logicalId}' AND superseded_at IS NULL`,
+  );
+}
+
+/**
+ * The raw `_fathomdb_projection_terminal` state for one cursor.
+ *
+ * `null` is PENDING, and that is the fix-4 property: an ABSENT embedder is an
+ * ENVIRONMENT fact, not an embed failure, so it must record NO terminal. A
+ * `'failed'` terminal is permanent by design (nothing reopens one, and nothing
+ * should — that would loop a genuinely-failing row forever), so recording one
+ * here LOSES the write.
+ */
+function terminalState(path: string, cursor: number): string | null {
+  const db = new DatabaseSync(path, { readOnly: true });
+  try {
+    const row = db
+      .prepare("SELECT state AS s FROM _fathomdb_projection_terminal WHERE write_cursor = ?")
+      .get(cursor) as { s: string } | undefined;
+    return row ? String(row.s) : null;
+  } finally {
+    db.close();
+  }
+}
+
+function ftsRowExists(path: string, cursor: number): boolean {
+  return count(path, `SELECT COUNT(*) AS c FROM search_index WHERE write_cursor = ${cursor}`) > 0;
+}
+
+function projectionFailureRows(path: string): number {
+  return count(
+    path,
+    "SELECT COUNT(*) AS c FROM operational_mutations" +
+      " WHERE collection_name = 'projection_failures'",
   );
 }
 
@@ -425,4 +471,114 @@ test("late enrolment backfills the rows a no-embedder session stranded", async (
       "no-embedder session still have no vector at rest",
   );
   assert.equal(vectorRows(path), 3, "all three rows were embedded");
+});
+
+test("a no-embedder session leaves an enrolled kind's write recoverable", async () => {
+  // fix-4 (codex §9 round 3 [P1]) — a write made with NO live embedder, over an
+  // ALREADY-ENROLLED kind, must stay RECOVERABLE.
+  //
+  // fix-2 gated ENROLMENT on a live embedder, but `_fathomdb_vector_kinds` is
+  // durable: once an embedder-backed session has enrolled `doc`, every later
+  // session sees the enrolment. Reopening with no embedder and writing that kind
+  // therefore still enqueues. At baseline the worker exhausted its retry ladder
+  // against the absent embedder and recorded an `EmbedderNotConfiguredError`
+  // `'failed'` terminal plus a `projection_failures` audit row — and since no
+  // path reopens a `'failed'` terminal, reopening WITH an embedder left that
+  // write PERMANENTLY unembedded while readiness reported `"ready"`.
+  //
+  // Three sessions, no re-apply and no second write: the ORDINARY scheduler is
+  // the whole recovery path.
+  //
+  // The CONSUMER-VISIBLE consequence is asserted on purpose, so it cannot change
+  // back silently: while the row is outstanding and this session cannot satisfy
+  // it, readiness reads `"embedding"` and `drain` rejects with `SchedulerError`.
+  // That is what design-of-record §4.1 invariant 1 demands (the ONLY tolerable
+  // torn state is `embedding` with the vector absent) and it is LOUD rather than
+  // silent.
+  if (skipNetwork()) return;
+  const path = freshDbPath();
+
+  // ---- session 1: WITH an embedder. This durably ENROLS `doc`. ----
+  const first = await Engine.open(path, { useDefaultEmbedder: true });
+  try {
+    await first.configureProjections([vectorSpec()]);
+    await first.write([node("N1", '{"summary":"embedded in session one"}')]);
+    await first.drain(DRAIN_TIMEOUT_MS);
+    assert.equal(vectorKindRegistered(path), true, "fixture: session 1 enrolled `doc`");
+    assert.equal(leafRowsWithoutVectors(path), 0, "fixture: session 1's row is embedded");
+  } finally {
+    await first.close();
+  }
+
+  const c1 = activeCursor(path, "N1");
+
+  // ---- session 2: the SAME database, reopened with NO embedder. ----
+  const cold = await Engine.open(path, { useDefaultEmbedder: false });
+  try {
+    // Fixture precondition, asserted rather than assumed: the enrolment
+    // PERSISTED, so this session's write reaches the vector pipeline.
+    assert.equal(
+      vectorKindRegistered(path),
+      true,
+      "fixture: the kind stays enrolled across the reopen — that is the whole finding",
+    );
+    await cold.write([node("N2", '{"summary":"written with no dense arm"}')]);
+
+    // THE CONSUMER-VISIBLE CONSEQUENCE. An enrolled row with no vector is
+    // outstanding and this session cannot satisfy it, so the barrier must NOT
+    // clear. At baseline it cleared by recording a `'failed'` terminal — which
+    // is exactly how the write got lost.
+    await assert.rejects(() => cold.drain(3_000), SchedulerError);
+
+    // Give the BASELINE its full retry ladder (0 + 1 + 4 + 16 s) before the
+    // probes below. Without this wait they all read a merely-unterminated row
+    // and pass VACUOUSLY on the broken code — the SDKs expose no equivalent of
+    // the Rust suite's `set_projection_retry_delays_for_test` seam, so waiting
+    // is the only way to make them falsifying. Under the fix the row is never
+    // dispatched, so this is dead time and nothing changes across it.
+    await new Promise((resolve) => setTimeout(resolve, LADDER_SETTLE_MS));
+
+    assert.equal(
+      await readiness(cold),
+      "embedding",
+      "§4.1 invariant 1: readiness must never read `ready` for an ENROLLED row with no vector",
+    );
+
+    const c2 = activeCursor(path, "N2");
+    assert.equal(ftsRowExists(path, c2), true, "the write is accepted and lexically searchable");
+    assert.equal(
+      projectionFailureRows(path),
+      0,
+      "an ABSENT embedder is an ENVIRONMENT fact, not an embed failure — it must not pollute " +
+        "the `projection_failures` audit",
+    );
+    assert.equal(
+      terminalState(path, c2),
+      null,
+      "PERMANENTLY LOST WRITE: an absent embedder must record NO terminal. Leaving the row " +
+        "PENDING is what lets the next live-embedder session's ORDINARY scheduler pick it up",
+    );
+    assert.equal(terminalState(path, c1), "up_to_date", "session 1's row is untouched");
+    assert.equal(vectorRows(path), 1, "fixture: no dense arm ⇒ no new vector yet");
+  } finally {
+    await cold.close();
+  }
+
+  // ---- session 3: WITH an embedder again. NO re-apply, NO further write. ----
+  const warm = await Engine.open(path, { useDefaultEmbedder: true });
+  try {
+    await warm.drain(DRAIN_TIMEOUT_MS);
+    assert.equal(await readiness(warm), "ready");
+  } finally {
+    await warm.close();
+  }
+
+  assert.equal(
+    leafRowsWithoutVectors(path),
+    0,
+    'PERMANENTLY LOST WRITE: `drain` resolved and readiness reads "ready", but the row written ' +
+      "in the no-embedder session still has no vector at rest",
+  );
+  assert.equal(vectorRows(path), 2, "the recovered row was embedded, and only it");
+  assert.equal(projectionFailureRows(path), 0, "the recovery leaves no failure audit behind");
 });
