@@ -258,6 +258,27 @@ fn leaf_rows_without_vectors(conn: &rusqlite::Connection) -> i64 {
     .expect("unembedded probe")
 }
 
+/// The same un-joined at-rest probe as [`leaf_rows_without_vectors`], narrowed to
+/// ONE `canonical_nodes.kind`.
+///
+/// fix-2 needs the narrowed form because its fixtures deliberately hold a kind
+/// that gets NO dense arm at all (a kind outside `resolve_source_type`'s locked
+/// set), so the corpus-wide count is legitimately non-zero there. It still does
+/// **not** join `_fathomdb_vector_kinds` — the registry is the thing under test.
+fn leaf_rows_of_kind_without_vectors(conn: &rusqlite::Connection, kind: &str) -> i64 {
+    conn.query_row(
+        "SELECT COUNT(*)
+         FROM canonical_nodes n
+         LEFT JOIN _fathomdb_vector_rows v ON v.write_cursor = n.write_cursor
+         WHERE n.row_kind IN ('leaf', 'coverage')
+           AND n.kind = ?1
+           AND v.write_cursor IS NULL",
+        [kind],
+        |r| r.get::<_, i64>(0),
+    )
+    .expect("per-kind unembedded probe")
+}
+
 // ===========================================================================
 // Leg A — the C4 rider: declaring a vector projection ENQUEUES the deferred
 //         work onto the runtime `drain` waits on
@@ -782,6 +803,304 @@ fn dropping_a_vector_projection_leaves_edge_fact_enrolled() {
     engine.drain(30_000).expect("drain the edge body");
     let conn = ro(&path);
     assert!(vector_kind_registered(&conn, "edge_fact"), "the edge dense arm survived the drop");
+
+    opened.engine.close().unwrap();
+}
+
+// ===========================================================================
+// Leg D (fix-2, codex §9 [P1] "Don't enrol kinds the vector writer can't
+//         commit") — enrolment must be RESTRICTED to commit-able node kinds
+// ===========================================================================
+//
+// `commit_projection_outcomes` maps `kind -> source_type` through
+// `resolve_source_type`, which accepts only a LOCKED vocabulary
+// (email/article/paper/meeting/note/todo + the `doc` fixture coercion, plus
+// `edge_fact` for edge bodies) and returns `EngineError::Storage` for anything
+// else. `PreparedWrite::Node`, by contrast, accepts ANY non-empty `kind` — so a
+// corpus can perfectly legitimately hold a `"invoice"` node.
+//
+// Both of Slice 20c's enrolment paths enrol off the kind actually present in
+// `canonical_nodes`. Enrolling an unmappable kind makes the scheduler pick the
+// row up, and the commit then FAILS before recording a terminal: the row stays
+// pending forever, the scanner re-enqueues it forever, `drain` burns its whole
+// timeout into `EngineError::Scheduler`, and readiness is stuck on `embedding`.
+// That is a permanent LIVENESS wedge for the whole workspace — including the
+// rows whose kinds ARE commit-able.
+//
+// The fix is the first of codex's two options: restrict ENROLMENT. A
+// non-commit-able kind simply gets no dense arm, which is exactly its pre-slice
+// status quo. It is deliberately NOT a new typed error and adds no governed
+// surface.
+
+/// **Declare-time enrolment must skip a kind the vector writer cannot commit.**
+///
+/// Post-conditions (1, 2 and 4 fail at fix-2 baseline):
+///   1. `drain` returns `Ok` — the declaration did not wedge the runtime;
+///   2. readiness reaches `ready`;
+///   3. the commit-able kind still gets its dense arm (so the filter is not
+///      "enrol nothing");
+///   4. the non-commit-able kind is NOT enrolled and has no vector — no dense
+///      arm, and no `projection_failures` audit noise either.
+#[test]
+fn a_kind_the_vector_writer_cannot_commit_is_not_enrolled_at_declaration_time() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "flush_barrier_uncommittable_declare");
+    let embedder = CountingEmbedder::new();
+    let calls = Arc::clone(&embedder.calls);
+    let opened = Engine::open_with_embedder_for_test(&path, Arc::new(embedder)).expect("open");
+    let engine = &opened.engine;
+
+    // A corpus holding BOTH a commit-able kind and one outside the locked set.
+    // `PreparedWrite::Node` accepts it: nothing in `validate_write` constrains
+    // `kind` to `resolve_source_type`'s vocabulary.
+    engine.write(&[node("doc", "N1", r#"{"summary":"a dense meaning"}"#)]).expect("write N1");
+    engine
+        .write(&[node("invoice", "I1", r#"{"summary":"payable in 30 days"}"#)])
+        .expect("write I1");
+    engine.drain(30_000).expect("baseline drain");
+
+    let conn = ro(&path);
+    let c_doc = active_cursor(&conn, "N1");
+    let c_invoice = active_cursor(&conn, "I1");
+    assert!(!vector_kind_registered(&conn, "doc"), "fixture: nothing enrolled yet");
+    assert!(!vector_kind_registered(&conn, "invoice"), "fixture: nothing enrolled yet");
+
+    // ---- the declaration ----
+    engine.configure_projections(&[vector_spec("summary")], &[]).expect("configure");
+
+    // (1) The wedge. At baseline `invoice` is enrolled, the scheduler picks the
+    // row up, `commit_projection_outcomes` fails on `resolve_source_type`, no
+    // terminal is ever written, and the scanner re-enqueues it forever.
+    engine.drain(30_000).expect(
+        "WEDGED: enrolling a node kind the vector writer cannot commit leaves the row pending \
+         forever — no terminal is ever recorded, so `drain` burns its whole timeout",
+    );
+
+    // (2) …and the whole workspace's readiness is stuck with it.
+    assert_eq!(
+        readiness(engine, "summary"),
+        Some(DenseReadiness::Ready),
+        "a kind the vector writer cannot commit must not hold the corpus in `embedding` forever"
+    );
+
+    let conn = ro(&path);
+    // (3) The commit-able kind is unaffected — the filter is not "enrol nothing".
+    assert!(vector_kind_registered(&conn, "doc"), "the commit-able kind still gets its dense arm");
+    assert!(vector_row_exists(&conn, c_doc), "…and its vector is at rest");
+    assert!(vec0_row_exists(&conn, c_doc), "…including the vec0 row");
+    assert_eq!(
+        leaf_rows_of_kind_without_vectors(&conn, "doc"),
+        0,
+        "every `doc` row is embedded once readiness reads ready"
+    );
+
+    // (4) The non-commit-able kind gets NO dense arm. That is its pre-slice
+    // status quo, reported through no new surface: no typed error, no new verb.
+    assert!(
+        !vector_kind_registered(&conn, "invoice"),
+        "ENROLMENT MUST BE RESTRICTED TO COMMIT-ABLE KINDS: `resolve_source_type(\"invoice\")` is \
+         `Err`, so an enrolled `invoice` row can never record a terminal"
+    );
+    assert!(!vector_row_exists(&conn, c_invoice), "the un-enrolled kind has no vector");
+    assert_eq!(calls.load(Ordering::SeqCst), 1, "exactly the one commit-able row was embedded");
+    assert_eq!(
+        projection_failure_rows(&conn),
+        0,
+        "a kind with no dense arm is not a FAILURE — it must not pollute the failure audit"
+    );
+
+    opened.engine.close().unwrap();
+}
+
+/// **Late enrolment must apply the SAME restriction.** Same defect, reached by
+/// writing second instead of declaring second: `Engine::enrol_batch_vector_kinds`
+/// enrols off the batch's kinds, so a post-declaration write of an unmappable
+/// kind wedges the runtime just as thoroughly.
+#[test]
+fn a_kind_the_vector_writer_cannot_commit_is_not_late_enrolled_on_write() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "flush_barrier_uncommittable_late");
+    let embedder = CountingEmbedder::new();
+    let calls = Arc::clone(&embedder.calls);
+    let opened = Engine::open_with_embedder_for_test(&path, Arc::new(embedder)).expect("open");
+    let engine = &opened.engine;
+
+    // Declare over an EMPTY corpus, so the declare-time path enrols nothing and
+    // the write path is the only enrolment reachable below.
+    engine.configure_projections(&[vector_spec("summary")], &[]).expect("configure");
+    engine.drain(30_000).expect("declare-on-empty drain");
+
+    engine
+        .write(&[node("invoice", "I1", r#"{"summary":"payable in 30 days"}"#)])
+        .expect("write I1");
+    engine.drain(30_000).expect(
+        "WEDGED: late-enrolling a node kind the vector writer cannot commit leaves the row pending \
+         forever",
+    );
+    assert_eq!(
+        readiness(engine, "summary"),
+        Some(DenseReadiness::Ready),
+        "a post-declaration write of an unmappable kind must not hold readiness in `embedding`"
+    );
+
+    let conn = ro(&path);
+    let c_invoice = active_cursor(&conn, "I1");
+    assert!(
+        !vector_kind_registered(&conn, "invoice"),
+        "LATE ENROLMENT MUST BE RESTRICTED TOO: the write path enrols off the batch's kinds, so it \
+         needs the same commit-ability filter as the declare-time backfill"
+    );
+    assert!(!vector_row_exists(&conn, c_invoice), "the un-enrolled kind has no vector");
+    assert_eq!(calls.load(Ordering::SeqCst), 0, "nothing was embedded");
+
+    // …and a commit-able kind written afterwards still late-enrols normally.
+    engine.write(&[node("doc", "N1", r#"{"summary":"a dense meaning"}"#)]).expect("write N1");
+    engine.drain(30_000).expect("drain the commit-able write");
+    assert_eq!(readiness(engine, "summary"), Some(DenseReadiness::Ready));
+    let conn = ro(&path);
+    let c_doc = active_cursor(&conn, "N1");
+    assert!(vector_kind_registered(&conn, "doc"), "the commit-able kind still late-enrols");
+    assert!(vector_row_exists(&conn, c_doc), "…and its vector is at rest");
+    assert_eq!(calls.load(Ordering::SeqCst), 1, "exactly the one commit-able row was embedded");
+
+    opened.engine.close().unwrap();
+}
+
+// ===========================================================================
+// Leg E (fix-2, codex §9 [P2] "Backfill stranded rows when late-enrolling a
+//         kind") — the write path's enrolment owes the same stranded-row
+//         treatment the declare-time path performs
+// ===========================================================================
+
+/// Read back the `default` embedder identity a previous session pinned, so a
+/// reopen cannot fail closed on `EmbedderIdentityMismatch`
+/// (ADR-0.6.0-vector-identity-embedder-owned) and the fixture cannot rot against
+/// a default-identity change.
+fn stored_default_identity(path: &Path) -> EmbedderIdentity {
+    let conn = ro(path);
+    conn.query_row(
+        "SELECT name, revision, dimension FROM _fathomdb_embedder_profiles
+         WHERE profile = 'default'",
+        [],
+        |r| {
+            Ok(EmbedderIdentity::new(
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, u32>(2)?,
+            ))
+        },
+    )
+    .expect("stored default embedder identity")
+}
+
+/// **A LATE enrolment must un-strand the rows an earlier session left behind.**
+///
+/// The declare-time path (`enqueue_declared_vector_backfill`) already deletes the
+/// permanent `'up_to_date'` terminals of rows that carry no vector and rewinds the
+/// readiness watermark to reach them. The write path enrols the same kind through
+/// a different door and, at fix-2 baseline, enqueues ONLY the row in its own
+/// batch.
+///
+/// The shape is exactly codex's: a database persists a `searchable→vector`
+/// declaration while opened WITHOUT an embedder (Q6a graceful-absent — it defers,
+/// enrolling nothing), then reopens WITH one and writes the same kind BEFORE
+/// re-applying the projection. At baseline the new row drains, readiness reports
+/// `ready`, and the rows from the no-embedder session keep their terminals with no
+/// vector — a FALSE READY, the exact defect class R-20-DR exists to eliminate.
+///
+/// The at-rest oracle is `leaf_rows_without_vectors`, keyed off
+/// `canonical_nodes.row_kind` with **no** join to `_fathomdb_vector_kinds`: a
+/// kind-registry join returns a hollow zero precisely when enrolment is the thing
+/// at issue.
+#[test]
+fn late_enrolment_backfills_the_rows_an_earlier_session_stranded() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "flush_barrier_late_enrol_backfill");
+
+    // ---- session 1: NO embedder. The declaration persists and DEFERS; every row
+    // written under it takes a permanent `'up_to_date'` terminal with no vector.
+    {
+        let opened = Engine::open(path.clone()).expect("open without embedder");
+        let engine = &opened.engine;
+        engine.configure_projections(&[vector_spec("summary")], &[]).expect("configure");
+        engine.write(&[node("doc", "N1", r#"{"summary":"stranded one"}"#)]).expect("write N1");
+        engine.write(&[node("doc", "N2", r#"{"summary":"stranded two"}"#)]).expect("write N2");
+        engine.drain(5_000).expect("drain must not burn its timeout on a dead dense arm");
+
+        let conn = ro(&path);
+        assert!(
+            !vector_kind_registered(&conn, "doc"),
+            "fixture: no live embedder ⇒ no dense arm ⇒ nothing enrolled"
+        );
+        assert_eq!(leaf_rows_without_vectors(&conn), 2, "fixture: two rows are stranded");
+        opened.engine.close().unwrap();
+    }
+
+    let conn = ro(&path);
+    let c1 = active_cursor(&conn, "N1");
+    let c2 = active_cursor(&conn, "N2");
+    let watermark_before = projection_cursor(&conn);
+    assert!(
+        watermark_before >= c2,
+        "fixture: session 1's terminals carried the readiness watermark past both rows"
+    );
+
+    // ---- session 2: SAME database, now WITH an embedder. The projection is NOT
+    // re-applied; the WRITE is what turns the dense arm on (late enrolment).
+    let embedder = CountingEmbedder::with_identity(stored_default_identity(&path));
+    let calls = Arc::clone(&embedder.calls);
+    let delay_ms = Arc::clone(&embedder.delay_ms);
+    // Slow the embedder so the post-write probes below are read BEFORE the worker
+    // can advance the watermark again — otherwise "was it rewound?" is a race.
+    delay_ms.store(1_500, Ordering::SeqCst);
+    let opened = Engine::open_with_embedder_for_test(&path, Arc::new(embedder)).expect("reopen");
+    let engine = &opened.engine;
+
+    engine.write(&[node("doc", "N3", r#"{"summary":"written before re-applying"}"#)]).expect("N3");
+
+    let conn = ro(&path);
+    assert!(vector_kind_registered(&conn, "doc"), "the write LATE-ENROLLED the kind");
+    assert!(
+        projection_cursor(&conn) < c1,
+        "LATE ENROLMENT STRANDS ROWS: turning the dense arm on from the write path must run the \
+         SAME stranded-row treatment the declare-time backfill does — delete the `'up_to_date'` \
+         terminals of rows with no vector and REWIND the readiness watermark to reach them"
+    );
+    assert_eq!(
+        readiness(engine, "summary"),
+        Some(DenseReadiness::Embedding),
+        "readiness must not read `ready` while pre-existing rows still lack their vectors"
+    );
+
+    delay_ms.store(0, Ordering::SeqCst);
+    engine.drain(30_000).expect("drain flushes the late-enrolled backfill");
+
+    assert_eq!(readiness(engine, "summary"), Some(DenseReadiness::Ready));
+    let conn = ro(&path);
+    assert_eq!(
+        leaf_rows_without_vectors(&conn),
+        0,
+        "FALSE-READY: `drain()` returned Ok and readiness reads `ready`, but rows written in the \
+         no-embedder session still have no vector at rest"
+    );
+    for (label, cursor) in [("N1", c1), ("N2", c2), ("N3", active_cursor(&conn, "N3"))] {
+        assert!(vector_row_exists(&conn, cursor), "{label}'s vector must exist at rest");
+        assert!(vec0_row_exists(&conn, cursor), "{label}'s vec0 row must exist at rest");
+    }
+    assert_eq!(calls.load(Ordering::SeqCst), 3, "all three rows were embedded, exactly once each");
+
+    // Idempotence: a further write of the SAME kind finds nothing stranded, so it
+    // must not rewind the watermark or re-embed.
+    let watermark_after = projection_cursor(&conn);
+    engine.write(&[node("doc", "N4", r#"{"summary":"nothing left to un-strand"}"#)]).expect("N4");
+    engine.drain(30_000).expect("drain");
+    let conn = ro(&path);
+    assert!(
+        projection_cursor(&conn) >= watermark_after,
+        "a write with nothing stranded must not rewind the readiness watermark"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 4, "only the new row was embedded");
+    assert_eq!(leaf_rows_without_vectors(&conn), 0);
 
     opened.engine.close().unwrap();
 }
