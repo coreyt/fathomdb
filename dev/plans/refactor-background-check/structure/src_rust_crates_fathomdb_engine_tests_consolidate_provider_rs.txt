@@ -1,0 +1,35 @@
+# src/rust/crates/fathomdb-engine/tests/consolidate_provider.rs  (758 LOC, class=rust-test, soft=600, hard=1200)
+
+L    24-29     (    6) | fn fixture_dir() -> std::path::PathBuf {
+L    30-37     (    8) | fn consolidate_harness_cmd() -> Vec<String> {
+L    38-44     (    7) | fn extract_only_harness_cmd() -> Vec<String> {
+L    45-51     (    7) | fn db_path(dir: &TempDir, name: &str) -> std::path::PathBuf {
+L    52-80     (   29) | fn fact_edge(
+L    81-104    (   24) | fn seed_competing_edges(engine: &Engine) {
+L   105-116    (   12) | fn edge_fts_count(conn: &Connection, term: &str) -> u64 {
+L   117-125    (    9) | fn now_epoch() -> i64 {
+L   126-142    (   17) | fn edge_row(conn: &Connection, logical_id: &str) -> (Option<String>, Option<i64>
+L   143-143    (    1) | #[test]
+L   144-230    (   87) | fn recency_consolidation_invalidates_older_edge() {
+L   231-231    (    1) | #[test]
+L   232-303    (   72) | fn invalidate_retains_projection_terminal_while_pruning_fts() {
+L   304-304    (    1) | #[test]
+L   305-379    (   75) | fn supersede_verdict_marks_superseded_row_survives() {
+L   380-380    (    1) | #[test]
+L   381-402    (   22) | fn consolidate_refused_by_extract_only_harness() {
+L   403-403    (    1) | #[test]
+L   404-442    (   39) | fn consolidate_refused_when_task_not_advertised() {
+L   443-443    (    1) | #[test]
+L   444-497    (   54) | fn consolidate_rejects_out_of_cluster_verdict() {
+L   498-498    (    1) | #[test]
+L   499-526    (   28) | fn footprint_no_network_egress() {
+L   527-527    (    1) | #[test]
+L   528-555    (   28) | fn empty_cluster_is_skipped() {
+L   556-556    (    1) | #[test]
+L   557-600    (   44) | fn invalidate_hides_stale_edge_from_edge_fts() {
+L   601-601    (    1) | #[test]
+L   602-664    (   63) | fn supersede_hides_loser_from_edge_fts() {
+L   665-665    (    1) | #[test]
+L   666-713    (   48) | fn consolidate_rejects_missing_verdict() {
+L   714-714    (    1) | #[test]
+L   715-758    (   44) | fn consolidate_rejects_duplicate_verdict() {

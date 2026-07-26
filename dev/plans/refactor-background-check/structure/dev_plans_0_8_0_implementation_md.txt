@@ -1,0 +1,27 @@
+# dev/plans/0.8.0-implementation.md  (1650 LOC, class=plan-status-doc, soft=1100, hard=1800)
+
+L     5-24     (   20) | # FathomDB 0.8.0 — Implementation Plan
+L    25-26     (    2) | ## How to read this plan
+L    27-42     (   16) | ### Numbering — N-mod-5 with reserved gaps (HITL directive)
+L    43-50     (    8) | ### Slice-orchestrator model (HITL directive)
+L    51-59     (    9) | ### Slices are not all implementation
+L    60-110    (   51) | ### Cross-cutting requirements (HITL directive 2026-06-02 — bind EVERY slice)
+L   111-126    (   16) | ## Slice sequence at a glance
+L   127-128    (    2) | ## Critical path, parallelization, and HITL session boundaries
+L   129-147    (   19) | ### Keystone-gated critical path
+L   148-160    (   13) | ### Parallelization plan (also recorded verbatim in the STATUS board §12.5 secti
+L   161-174    (   14) | ### HITL gate boundaries = natural §12.7 session boundaries
+L   175-176    (    2) | ## Per-slice detail
+L   177-316    (  140) | ### Slice 0 — Setup + ADR Kickoff  · `[design-adr]` · depends-on: — · gaps: 1–4
+L   317-486    (  170) | ### Slice 5 — G1 Structured Search Hits + Global FTS5 Tokenizer Upgrade  · `[imp
+L   487-652    (  166) | ### Slice 10 — G9 RRF Fusion + Rerank Seam (+ G10 metadata-filtered KNN, + G12 r
+L   653-801    (  149) | ### Slice 15 — G0 Canonical Identity Substrate (KEYSTONE — schema 11→12)  · `[im
+L   802-932    (  131) | ### Slice 20 — G8 Dangling-Edge Flag-and-Count  · `[implementation]` · depends-o
+L   933-1102   (  170) | ### Slice 25 — ADR-Supersede Sign-off + Conformance-Test Rewrite  · `[conformanc
+L  1103-1237   (  135) | ### Slice 30 — G2 read.get/get_many + G3 read.collection/mutations (read.*)  · `
+L  1238-1381   (  144) | ### Slice 35 — Deferred-Feature Design-ADRs (graph-scope, G4 grammar, F9, F5)  ·
+L  1382-1537   (  156) | ### Slice 40 — Verification + Release Readiness  · `[verification]` · depends-on
+L  1538-1572   (   35) | ## Orchestration rules this plan binds to
+L  1573-1608   (   36) | ### Per-slice execution discipline (the universal loop EVERY slice runs)
+L  1609-1639   (   31) | ## Open items / discrepancies
+L  1640-1650   (   11) | ## Deferred to 0.8.x / dropped (cross-ref `dev/design/0.8.0-v05-feature-triage.m

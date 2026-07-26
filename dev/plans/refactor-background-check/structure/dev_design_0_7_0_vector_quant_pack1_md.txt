@@ -1,0 +1,16 @@
+# dev/design/0.7.0-vector-quant-pack1.md  (760 LOC, class=design-doc, soft=700, hard=1100)
+
+L    15-27     (   13) | # 0.7.0 Vector binary-quant — Pack 1 design
+L    28-65     (   38) | ## D1 — Sibling column vs. sibling table
+L    66-104    (   39) | ## D2 — Metadata column inventory (vec0 16-col cap)
+L   105-194    (   90) | ## D3 — `kind` -> `source_type` mapping
+L   195-425    (  231) | ## D4 — NOT NULL + migration strategy
+L   426-455    (   30) | ### Rejected alternative — repopulate via `Engine::rebuild_vec0` / `RebuildKind:
+L   456-496    (   41) | ## D5 — Writer transaction shape
+L   497-555    (   59) | ## D6 — `vec_quantize_binary()` contract validation plan
+L   556-590    (   35) | ## D7 — Second writer site (test-only)
+L   591-640    (   50) | ## D8 — Reader-path NO-OP guarantee
+L   641-647    (    7) | ## Open escalations
+L   648-674    (   27) | ## Fix-1 changelog
+L   675-713    (   39) | ## Fix-2 changelog
+L   714-760    (   47) | ## Fix-3 changelog

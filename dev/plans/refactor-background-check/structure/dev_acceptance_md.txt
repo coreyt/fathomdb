@@ -1,0 +1,138 @@
+# dev/acceptance.md  (1305 LOC, class=doc-other, soft=700, hard=1100)
+
+L    10-14     (    5) | # Acceptance Criteria
+L    15-43     (   29) | ## AC-NNN: <short title>
+L    44-87     (   44) | ## Parameter table
+L    88-122    (   35) | ## Traceability matrix
+L   123-124    (    2) | ## Observability
+L   125-132    (    8) | ## AC-001: Lifecycle phase tag is a typed enum
+L   133-140    (    8) | ## AC-002: No log files written without subscriber
+L   141-148    (    8) | ## AC-003a: Writer events flow to host subscriber
+L   149-156    (    8) | ## AC-003b: Search events flow to host subscriber
+L   157-164    (    8) | ## AC-003c: Admin events flow to host subscriber
+L   165-172    (    8) | ## AC-003d: Error events flow to host subscriber
+L   173-180    (    8) | ## AC-004a: Counter snapshot exposes documented key set
+L   181-188    (    8) | ## AC-004b: Counter delta exact for write/query keys
+L   189-196    (    8) | ## AC-004c: Counter snapshot read does not perturb counters
+L   197-204    (    8) | ## AC-005a: Per-statement profiling toggleable at runtime
+L   205-212    (    8) | ## AC-005b: Profile record schema
+L   213-220    (    8) | ## AC-006: SQLite-internal events surfaced with typed source tag
+L   221-228    (    8) | ## AC-007a: Slow-statement event at default threshold
+L   229-236    (    8) | ## AC-007b: Slow threshold reconfigurable at runtime
+L   237-244    (    8) | ## AC-008: Slow signal participates in lifecycle attribution
+L   245-252    (    8) | ## AC-009: Stress-failure event field schema
+L   253-260    (    8) | ## AC-010: Projection-status enum coverage
+L   261-269    (    9) | ## Performance
+L   270-277    (    8) | ## AC-011a: Write throughput @ 1 KB ≥ 1,000 commits/sec
+L   278-285    (    8) | ## AC-011b: Write throughput @ 100 KB ≥ 100 commits/sec
+L   286-295    (   10) | ## AC-012: Text query latency on FTS5 path
+L   296-304    (    9) | ## AC-013: Vector retrieval latency
+L   305-312    (    8) | ## AC-014: `doctor safe-export` ≤ 500 ms on seeded dataset
+L   313-320    (    8) | ## AC-015: Canonical-read freshness within write tx
+L   321-328    (    8) | ## AC-016: FTS-search freshness within write tx
+L   329-336    (    8) | ## AC-017: Vector-projection freshness p99 ≤ 5 s
+L   337-344    (    8) | ## AC-018: Drain of 100 vectors ≤ 2 s
+L   345-353    (    9) | ## AC-019: Mixed-retrieval stress workload tail
+L   354-361    (    8) | ## AC-020: Reads do not serialize on a single reader connection
+L   362-363    (    2) | ## Reliability
+L   364-371    (    8) | ## AC-021: Zero `SQLITE_SCHEMA` warnings under concurrent reads + admin DDL
+L   372-379    (    8) | ## AC-022a: Engine close releases lock
+L   380-387    (    8) | ## AC-022b: Engine close does not leak FDs
+L   388-395    (    8) | ## AC-022c: Host process exits ≤ 5 s of close
+L   396-403    (    8) | ## AC-023a: Bounded process exit ≤ 5 s on main-return without explicit close
+L   404-411    (    8) | ## AC-023b: Bounded process exit ≤ 5 s on main-return with engine in module-leve
+L   412-419    (    8) | ## AC-024a: `DatabaseLocked` rejection on second open
+L   420-427    (    8) | ## AC-024b: Rejected second open never modifies file
+L   428-435    (    8) | ## AC-025: No hang on engine drop with pending vector work
+L   436-443    (    8) | ## AC-026: `doctor safe-export` covers WAL-only commits
+L   444-451    (    8) | ## AC-027a: Recovery preserves canonical rows
+L   452-459    (    8) | ## AC-027b: Recovery restores FTS query result equality
+L   460-467    (    8) | ## AC-027c: Recovery preserves vector profile metadata bit-equal
+L   468-475    (    8) | ## AC-027d: Recovery preserves vector top-k rank-correlation
+L   476-483    (    8) | ## AC-028a: `excise_source` writes audit row
+L   484-491    (    8) | ## AC-028b: `excise_source` removes residue from projections
+L   492-499    (    8) | ## AC-028c: `excise_source` does not perturb non-excised projections
+L   500-507    (    8) | ## AC-029: Canonical writes complete under projection stall
+L   508-515    (    8) | ## AC-030a: Misconfig — no embedder wired
+L   516-523    (    8) | ## AC-030b: Misconfig — kind not vector-indexed
+L   524-531    (    8) | ## AC-030c: Misconfig — embedder dimension mismatch at call boundary
+L   532-539    (    8) | ## AC-031: Hybrid retrieval surfaces soft-fallback signal
+L   540-547    (    8) | ## AC-032a: Bounded background-work — completes within timeout
+L   548-555    (    8) | ## AC-032b: Bounded background-work — typed timeout error
+L   556-563    (    8) | ## AC-033: Bounded provenance growth (compressed runtime)
+L   564-571    (    8) | ## AC-034a: Zero corruption on power-cut
+L   572-579    (    8) | ## AC-034b: Power-cut final-commit-loss bound
+L   580-587    (    8) | ## AC-034c: Zero commit loss on OS-crash
+L   588-595    (    8) | ## AC-035: Recovery time ≤ 2 s for 1 GB DB (worst-of-10)
+L   596-603    (    8) | ## AC-035a: Engine.open refuses on detected corruption
+L   604-611    (    8) | ## AC-035b: CorruptionDetail shape
+L   612-619    (    8) | ## AC-035c: Lock released + no SQLite connection retained on Corruption error
+L   620-627    (    8) | ## AC-035d: Recovery reachable only via CLI
+L   628-629    (    2) | ## Security
+L   630-637    (    8) | ## AC-036: No listening sockets opened
+L   638-645    (    8) | ## AC-037: No outbound network requests on open with embedder configured
+L   646-653    (    8) | ## AC-038: FTS5-injection-safe text query
+L   654-661    (    8) | ## AC-039a: `doctor safe-export` artifact ships SHA-256 manifest matching conten
+L   662-669    (    8) | ## AC-039b: Tampered artifact detected by verifier
+L   670-671    (    2) | ## Operability
+L   672-679    (    8) | ## AC-040a: Every `fathomdb doctor` verb invocable
+L   680-687    (    8) | ## AC-040b: Every `fathomdb doctor` verb has usage section in help
+L   688-695    (    8) | ## AC-041: Recovery tooling unreachable from runtime SDK
+L   696-703    (    8) | ## AC-042: Source-ref blast-radius enumeration exact
+L   704-711    (    8) | ## AC-043a: `check-integrity` produces structured report with three sections
+L   712-719    (    8) | ## AC-043b: `check-integrity` populates each section
+L   720-727    (    8) | ## AC-043c: `check-integrity --full` findings carry stable report fields
+L   728-735    (    8) | ## AC-044: Physical recovery rebuilds projections from canonical state
+L   736-743    (    8) | ## AC-045: Single-file deploy
+L   744-745    (    2) | ## Upgrade / compatibility
+L   746-753    (    8) | ## AC-046a: Auto schema migration applied at open
+L   754-761    (    8) | ## AC-046b: Migration emits per-step duration event on success
+L   762-769    (    8) | ## AC-046c: Migration emits per-step duration event on failure
+L   770-777    (    8) | ## AC-047: Hard-error on 0.5.x-shaped DB
+L   778-785    (    8) | ## AC-048: Hard-error on embedder mismatch at re-open (identity)
+L   786-793    (    8) | ## AC-048b: Hard-error on embedder mismatch at re-open (dimension)
+L   794-801    (    8) | ## AC-049: Schema-migration accretion guard
+L   802-809    (    8) | ## AC-050a: No 0.5.x → 0.6.0 deprecation shims (AST-scoped)
+L   810-817    (    8) | ## AC-050b: Within-0.6.x changelog discipline
+L   818-825    (    8) | ## AC-050c: Within-0.6.x removal scenario end-to-end
+L   826-827    (    2) | ## Supply chain
+L   828-835    (    8) | ## AC-051a: Cargo version-skew detected at resolve time
+L   836-843    (    8) | ## AC-051b: Pip version-skew detected at resolve time
+L   844-851    (    8) | ## AC-052: Co-tagged sibling releases
+L   852-859    (    8) | ## AC-053: Single source of truth for version
+L   860-867    (    8) | ## AC-054: Atomic multi-registry publish
+L   868-875    (    8) | ## AC-055: `sqlite-vec` validated at open with vector rows present
+L   876-883    (    8) | ## AC-056: Registry-installed wheel is the release gate
+L   884-885    (    2) | ## Public surface
+L   886-896    (   11) | ## AC-057a: Five-verb application runtime SDK surface
+L   897-913    (   17) | ## AC-074: Governed SDK surface — allowlist + parity + recovery-denylist + typed
+L   914-921    (    8) | ## AC-058: Recovery verbs CLI-reachable
+L   922-929    (    8) | ## AC-059a: `projection_cursor` exposed on read tx; monotonic non-decreasing
+L   930-937    (    8) | ## AC-059b: Write commit returns write cursor satisfiable by `projection_cursor`
+L   938-945    (    8) | ## AC-060a: Engine errors as typed language-idiomatic exceptions
+L   946-953    (    8) | ## AC-060b: JSON-Schema validation fires save-time, pre-commit; no open-time re-
+L   954-961    (    8) | ## AC-061a: `append_only_log` writes preserve authoritative history
+L   962-969    (    8) | ## AC-061b: `latest_state` stores one authoritative current row per key
+L   970-977    (    8) | ## AC-061c: No derived `operational_current` table exists
+L   978-985    (    8) | ## AC-062: Collection registry schema exposes the accepted narrow lifecycle
+L   986-993    (    8) | ## AC-063a: Exhausted projection failure is recorded durably
+L   994-1001   (    8) | ## AC-063b: Restart does not silently clear terminal projection failures
+L  1002-1011   (   10) | ## AC-063c: `recover --rebuild-projections` performs the explicit regenerate wor
+L  1012-1016   (    5) | ## Security hardening (AC-064..AC-070)
+L  1017-1026   (   10) | ## AC-064: Op-store payload validation rejects ReDoS regex in bounded time
+L  1027-1036   (   10) | ## AC-065: Op-store schema registration rejects external `$ref`
+L  1037-1046   (   10) | ## AC-066: Wrong-dimension embedder return rolls back without vec0 write
+L  1047-1056   (   10) | ## AC-067: Rust panic in binding entry point surfaces as language-native excepti
+L  1057-1066   (   10) | ## AC-068a: FFI rejects embedded NUL in string arguments
+L  1067-1076   (   10) | ## AC-068b: FFI rejects unpaired surrogates in string arguments
+L  1077-1086   (   10) | ## AC-068c: Python `engine.open_report()` surfaces structured open report
+L  1087-1096   (   10) | ## AC-068d: TypeScript `engine.openReport()` surfaces structured open report
+L  1097-1106   (   10) | ## AC-069: Error `Display` omits raw SQL, absolute paths, and parser byte offset
+L  1107-1114   (    8) | ## AC-070: Failed migration preserves prior `user_version`
+L  1115-1126   (   12) | ## AC-072: Vector retrieval latency (revised, tiered) — supersedes the AC-013 bu
+L  1127-1135   (    9) | ## AC-073: Mixed-retrieval stress tail (revised, tiered) — supersedes the AC-019
+L  1136-1146   (   11) | ## AC-075: Recall@10 verdict (real-embedder, ANN+ vector stage) — supersedes the
+L  1147-1160   (   14) | ## AC-076: Text-query latency (revised, tiered) — supersedes the AC-012 uncondit
+L  1161-1246   (   86) | ## Coverage trace
+L  1247-1285   (   39) | ## Lock-blocking dependencies
+L  1286-1305   (   20) | ## AC-077 (RESERVED) — Agentic IR / evidence-recall (defined by the IR-eval IR-1

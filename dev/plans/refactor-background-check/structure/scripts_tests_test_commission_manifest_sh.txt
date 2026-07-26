@@ -1,0 +1,9 @@
+# scripts/tests/test_commission_manifest.sh  (882 LOC, class=shell-test, soft=500, hard=800)
+
+L    62-62     (    1) | pass() { printf 'PASS  %s\n' "$1"; }
+L    63-65     (    3) | fail() { printf 'FAIL  %s\n' "$1" >&2; FAILED=$((FAILED + 1)); }
+L    66-83     (   18) | cleanup() {
+L    84-311    (  228) | setup_fixture() {
+L   312-322    (   11) | run_gen() {
+L   323-337    (   15) | mutate_state() {
+L   338-882    (  545) | base_line() { grep -m1 '^  base sha' <<<"$OUT" || true; }

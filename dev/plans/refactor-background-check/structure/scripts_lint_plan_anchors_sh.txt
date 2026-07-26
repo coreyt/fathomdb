@@ -1,0 +1,5 @@
+# scripts/lint-plan-anchors.sh  (278 LOC, class=shell, soft=200, hard=500)
+
+L   139-157    (   19) | extract_citations() {
+L   158-177    (   20) | note() { [ "$QUIET" -eq 1 ] || printf '%s\n' "$*"; }
+L   178-278    (  101) | resolve_path() {

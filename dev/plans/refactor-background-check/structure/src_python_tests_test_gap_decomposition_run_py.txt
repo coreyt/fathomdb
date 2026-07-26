@@ -1,0 +1,51 @@
+# src/python/tests/test_gap_decomposition_run.py  (834 LOC, class=py-test, soft=600, hard=1000)
+
+L    42-54     (   13) | class _RecClient:
+L    55-69     (   15) | class _SpyAnswerer(BaseAnswerer):
+L    70-83     (   14) | class _EchoAnswerer(BaseAnswerer):
+L    84-96     (   13) | class _FakeAdapter:
+L    97-107    (   11) | def test_distill_cache_defaults_to_output_derived_path(tmp_path: Path) -> None:
+L   108-113    (    6) | def test_distill_cache_explicit_flag_is_respected() -> None:
+L   114-119    (    6) | def test_price_for_pins_cheap_validate_model() -> None:
+L   120-130    (   11) | def test_gpt5_nano_distiller_is_pinned_and_allowed() -> None:
+L   131-136    (    6) | def test_price_for_fail_closed_on_unpinned_model() -> None:
+L   137-143    (    7) | def test_budget_guard_halts_before_exceeding_cap() -> None:
+L   144-152    (    9) | def test_budget_guard_passes_within_cap_and_records() -> None:
+L   153-160    (    8) | def test_answer_with_budget_does_not_call_when_guard_trips() -> None:
+L   161-169    (    9) | def test_unpinned_reader_fails_closed_in_guard() -> None:
+L   170-182    (   13) | def test_default_distiller_is_cheap_not_the_priced_reader() -> None:
+L   183-193    (   11) | def test_distiller_cannot_be_the_priced_reader() -> None:
+L   194-200    (    7) | def test_distiller_is_structurally_query_and_answer_blind() -> None:
+L   201-212    (   12) | def test_distiller_prompt_contains_only_the_body() -> None:
+L   213-231    (   19) | def test_distill_corpus_caches_per_doc_and_is_blind(tmp_path: Path) -> None:
+L   232-247    (   16) | def test_distill_corpus_is_budget_capped(tmp_path: Path) -> None:
+L   248-253    (    6) | def test_oracle_context_builds_gold_docs_and_fit_flag() -> None:
+L   254-260    (    7) | def test_oracle_fit_incomplete_under_truncation() -> None:
+L   261-266    (    6) | def test_oracle_incomplete_on_missing_gold_doc() -> None:
+L   267-273    (    7) | def test_oracle_empty_gold_is_incomplete() -> None:
+L   274-285    (   12) | def test_load_d0b_cells_hard_stops_without_records(tmp_path: Path) -> None:
+L   286-306    (   21) | def test_load_d0b_cells_returns_per_question_cells(tmp_path: Path) -> None:
+L   307-320    (   14) | def test_component_deltas_exclude_unfit_oracle_questions() -> None:
+L   321-325    (    5) | def _gold(qid: str, cls: str, gold_ids: tuple[str, ...], answer: str) -> GoldQue
+L   326-365    (   40) | def test_run_gap_decomposition_end_to_end_with_fakes(tmp_path: Path) -> None:
+L   366-381    (   16) | def test_per_component_table_and_decide_all_classes_shape() -> None:
+L   382-395    (   14) | def test_answer_retention_separates_lossy_distill() -> None:
+L   396-413    (   18) | def test_cheap_mode_defaults_to_cheap_reader() -> None:
+L   414-429    (   16) | class _FakeCtx:
+L   430-440    (   11) | class _CapturingOpen:
+L   441-471    (   31) | def test_distiller_uses_raw_completion_not_qa_template() -> None:
+L   472-490    (   19) | def _decomp_fixtures(
+L   491-508    (   18) | def test_checkpoint_persists_ledger_spend(tmp_path: Path) -> None:
+L   509-538    (   30) | def test_resume_restores_ledger_spend_and_trips_cap(tmp_path: Path) -> None:
+L   539-552    (   14) | def test_budget_ledger_restore_spent_sets_running_total() -> None:
+L   553-573    (   21) | def test_strong_distiller_rejected_in_all_modes() -> None:
+L   574-594    (   21) | class _CountingEchoAnswerer(BaseAnswerer):
+L   595-623    (   29) | def test_capped_run_is_non_citable_never_dominant(tmp_path: Path) -> None:
+L   624-654    (   31) | def test_incomplete_run_below_floor_is_non_citable(tmp_path: Path) -> None:
+L   655-682    (   28) | def test_complete_run_is_citable_and_may_publish_verdict(tmp_path: Path) -> None
+L   683-711    (   29) | def test_distill_corpus_resume_restores_prior_spend_and_trips_cap(tmp_path: Path
+L   712-741    (   30) | def test_distill_corpus_persists_and_restores_cumulative_spend(tmp_path: Path) -
+L   742-757    (   16) | class _DistilledFailAnswerer(BaseAnswerer):
+L   758-788    (   31) | def test_answerer_failure_is_missing_cell_not_crash(tmp_path: Path) -> None:
+L   789-809    (   21) | def test_no_adapter_skips_fathomdb_distilled_cleanly(tmp_path: Path) -> None:
+L   810-834    (   25) | def test_with_adapter_exports_fathomdb_distilled_crosscheck(tmp_path: Path) -> N

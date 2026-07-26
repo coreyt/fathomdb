@@ -84,6 +84,17 @@ EXCLUSIONS: list[tuple[str, str]] = [
     (r"^.*\.seq$", "counter sidecar"),
     (r"^.*\.stderr$", "captured output artifact"),
     (r"^.*\.txt$", "plain data/output, not authored source or prose"),
+    # --- exemptions carried from the Phase-1 research, by citation not judgment ---
+    (r"^dev/archive/.*$",
+     "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark "
+     "them, not edit them"),
+    (r"^dev/acceptance\.md$",
+     "governance-locked specification: recorded as locked with no per-feature ACs. A "
+     "file that cannot be edited by policy cannot be a length violation; splitting it "
+     "is a governance decision, not a hygiene finding"),
+    (r"^(.*/)?CHANGELOG\.md$",
+     "Keep a Changelog 2.0.0 states a single long file is fine and old entries must "
+     "not be deleted"),
 ]
 
 # --------------------------------------------------------------------------
@@ -217,7 +228,21 @@ def main() -> int:
     for rel in tracked_files(repo_root):
         reason = first_match(rel, EXCLUSIONS)
         if reason:
-            excluded.append({"path": rel, "reason": reason})
+            # Record size anyway: an excluded file that WOULD have been a violator is
+            # reported in its own section rather than vanishing. Silent exclusion reads
+            # as "we checked and it was fine", which is not what happened.
+            ex: dict[str, str] = {"path": rel, "reason": reason}
+            ex_class = first_match(rel, CLASS_RULES)
+            ex_limits = thresholds.get(ex_class) if ex_class else None
+            if ex_limits:
+                ex_loc = count_lines(repo_root / rel)
+                if ex_loc >= int(ex_limits["soft_loc"]):
+                    ex["loc"] = str(ex_loc)
+                    ex["file_class"] = ex_class or ""
+                    ex["would_have_been"] = (
+                        "hard" if ex_loc >= int(ex_limits["hard_loc"]) else "soft"
+                    )
+            excluded.append(ex)
             continue
         file_class = first_match(rel, CLASS_RULES)
         if file_class is None:
@@ -284,6 +309,19 @@ def main() -> int:
         for r in rows:
             md.append(f"| {r.loc} | {r.severity:.2f} | {r.band} | `{r.path}` |")
         md.append("")
+    suppressed = [e for e in excluded if "would_have_been" in e]
+    if suppressed:
+        md.append("## Over threshold but EXCLUDED by rule")
+        md.append("")
+        md.append("These exceed their class threshold and are deliberately not violators. "
+                  "Listed so the exemption is visible rather than silent.")
+        md.append("")
+        md.append("| LOC | would have been | file | why exempt |")
+        md.append("|---:|:--|:--|:--|")
+        for e in sorted(suppressed, key=lambda x: -int(x["loc"])):
+            md.append(f"| {e['loc']} | {e['would_have_been']} | `{e['path']}` | {e['reason']} |")
+        md.append("")
+
     if unclassified:
         md.append("## Unclassified (no rule matched — review the ruleset)")
         md.append("")

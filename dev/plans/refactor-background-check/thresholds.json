@@ -1,63 +1,66 @@
 {
-  "_provisional": "PLACEHOLDER for smoke-testing scan_file_sizes.py. Phase 1 research overwrites this file with sourced thresholds. Do not cite these numbers.",
+  "_source": "Phase 1 research synthesis, adversarially verified (71 claims survived, 14 killed). See heuristics.md for rationale and citations per class.",
   "rust-src": {
-    "soft_loc": 500,
-    "hard_loc": 1000
+    "soft_loc": 1000,
+    "hard_loc": 2000
   },
   "rust-test": {
-    "soft_loc": 600,
+    "soft_loc": 800,
     "hard_loc": 1200
   },
   "py-src": {
-    "soft_loc": 400,
+    "soft_loc": 500,
     "hard_loc": 800
   },
   "py-eval": {
-    "soft_loc": 500,
-    "hard_loc": 1000
+    "soft_loc": 800,
+    "hard_loc": 1200
   },
   "py-test": {
     "soft_loc": 600,
-    "hard_loc": 1200
+    "hard_loc": 1000
   },
   "ts-src": {
-    "soft_loc": 400,
-    "hard_loc": 800
+    "soft_loc": 500,
+    "hard_loc": 1000
   },
   "ts-test": {
     "soft_loc": 500,
-    "hard_loc": 1000
+    "hard_loc": 750
   },
   "shell": {
-    "soft_loc": 300,
-    "hard_loc": 600
+    "soft_loc": 200,
+    "hard_loc": 500
   },
   "shell-test": {
     "soft_loc": 500,
-    "hard_loc": 1000
+    "hard_loc": 800
   },
   "design-doc": {
-    "soft_loc": 500,
-    "hard_loc": 1000
+    "soft_loc": 700,
+    "hard_loc": 1100
   },
   "plan-status-doc": {
-    "soft_loc": 800,
-    "hard_loc": 1600
-  },
-  "doc-other": {
-    "soft_loc": 500,
-    "hard_loc": 1000
+    "soft_loc": 1100,
+    "hard_loc": 1800
   },
   "agent-file": {
     "soft_loc": 200,
-    "hard_loc": 400
+    "hard_loc": 350
+  },
+  "doc-other": {
+    "soft_loc": 700,
+    "hard_loc": 1100,
+    "_repo_calibration": "analogy to design-doc; no literature backing"
   },
   "py-stub": {
-    "soft_loc": 400,
-    "hard_loc": 800
+    "soft_loc": 500,
+    "hard_loc": 800,
+    "_repo_calibration": "analogy to py-src; no literature backing. Size is not the real concern for this class - it is a hand-maintained mirror of fathomdb-py/src/lib.rs, so it matters as a coupled surface."
   },
   "ci-workflow": {
     "soft_loc": 300,
-    "hard_loc": 600
+    "hard_loc": 600,
+    "_repo_calibration": "no literature backing whatsoever. Google's 100-line shell trigger does not transfer to declarative CI YAML. Chosen to flag the three workflows that stand apart from the rest."
   }
 }

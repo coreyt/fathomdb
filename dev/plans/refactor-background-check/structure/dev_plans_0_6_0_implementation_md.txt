@@ -1,0 +1,40 @@
+# dev/plans/0.6.0-implementation.md  (1120 LOC, class=plan-status-doc, soft=1100, hard=1800)
+
+L    10-32     (   23) | # 0.6.0 Implementation Plan
+L    33-41     (    9) | ## Contract Inputs
+L    42-102    (   61) | ## Phase 5 — Interface Stubs
+L   103-137    (   35) | ## Phase 6 — Schema, Errors, and Open Path Foundation
+L   138-165    (   28) | ## Phase 7 — Writer, Typed Writes, and Op-Store
+L   166-189    (   24) | ## Phase 8 — Lifecycle Observability and Reader Pool
+L   190-221    (   32) | ## Phase 9 — Retrieval, Vector, Projections, and Scheduler
+L   222-255    (   34) | ### Pack ledger
+L   256-273    (   18) | ### Pack 7 un-defer trigger
+L   274-291    (   18) | ## Phase 10 — CLI Recovery and Operator Tooling
+L   292-306    (   15) | ### Wiring decision (2026-05-11)
+L   307-318    (   12) | ### Test fixture strategy
+L   319-379    (   61) | ### Phase 10a — Facade re-exports + six landed seams
+L   380-430    (   51) | ### Phase 10b — Build remaining engine seams + complete CLI coverage
+L   431-469    (   39) | ## Phase 11 — Bindings Parity and Packaging
+L   470-501    (   32) | ## Phase 12 — Durability, Performance, Security, and Release Gates
+L   502-512    (   11) | ## Current Execution Posture
+L   513-543    (   31) | ### Phase 10
+L   544-561    (   18) | ### Phase 11
+L   562-592    (   31) | ### Phase 12
+L   593-602    (   10) | ### Parallel-work constraints
+L   603-615    (   13) | ## Cross-Phase Rules
+L   616-800    (  185) | ## Immediate Next Slice
+L   801-806    (    6) | ## Phase 12 pre-RC1 checkpoint (2026-05-17)
+L   807-824    (   18) | ### Phase 12 scoreboard
+L   825-867    (   43) | ### ⚠️ 12-RC1 is the inflection point
+L   868-878    (   11) | ## Path to Client-Ready (0.6.0 GA)
+L   879-896    (   18) | ### Status at start of path (2026-05-17, tip `085727e`+)
+L   897-911    (   15) | ### Slice sequence
+L   912-936    (   25) | ### Slice ordering rationale
+L   937-950    (   14) | ### Parallelization opportunities
+L   951-977    (   27) | ### Performance ACs deferral analysis (input to 12-P HITL decision)
+L   978-1010   (   33) | ### Deferred verbs enumeration (input to 12-V-VERBS HITL decision)
+L  1011-1039   (   29) | ### TypeScript SDK Python-parity (12-TX)
+L  1040-1065   (   26) | ### Deferred items disclosure (must appear in 12-GA release notes)
+L  1066-1095   (   30) | ### Compatibility-shim enforcement (no-0.5.x rule)
+L  1096-1111   (   16) | ### Merge-to-main strategy
+L  1112-1120   (    9) | ### Exit gate (matches Phase 12 § "Exit gate")

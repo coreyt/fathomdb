@@ -1,0 +1,23 @@
+# dev/design/1-2M-chunk-scaling-vector-latency-roadmap.md  (546 LOC, class=design-doc, soft=500, hard=1000)
+
+L    16-37     (   22) | # Scaling vector retrieval to 1–2M chunks — latency roadmap & decision record
+L    38-60     (   23) | ## 1. The problem
+L    61-71     (   11) | ## 2. Decision
+L    72-92     (   21) | ### Why A over C at *this* scale
+L    93-102    (   10) | ### Why the "already-tried the cheap move" story is nuanced
+L   103-133    (   31) | ## 3. What already exists (code-verified, v0.8.9 / schema v15)
+L   134-135    (    2) | ## 4. The three paths (ranked)
+L   136-154    (   19) | ### Path A — Drive p50 down on the exact architecture — **RANK 1 for 1–2M**
+L   155-181    (   27) | ### Path B — Relax the 300 ms p99 budget — **RANK 3 standalone; escape hatch onl
+L   182-204    (   23) | ### Path C — Adopt ANN (IVF-via-partition-key) — **RANK 2, the durability track*
+L   205-222    (   18) | ## 5. Roadmap scaffold & sequence
+L   223-244    (   22) | ### Proposed version mapping (requires HITL scheduling sign-off)
+L   245-303    (   59) | ## 6. Experiments & decision rules
+L   304-321    (   18) | ## 7. Trade-offs (3-way)
+L   322-343    (   22) | ## 8. Open items / what this doc does not settle
+L   344-353    (   10) | ## Appendices
+L   354-384    (   31) | ## Appendix A — Original write-up (source material)
+L   385-435    (   51) | ## Appendix B — Clean-room evaluation of the write-up
+L   436-463    (   28) | ## Appendix C — Decision arc (how the numbers moved the answer)
+L   464-520    (   57) | ## Appendix D — Code-verified featureset inventory (v0.8.9 / schema v15)
+L   521-546    (   26) | ## Appendix E — Supporting perf data & crossover analysis

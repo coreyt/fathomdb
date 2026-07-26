@@ -1,0 +1,12 @@
+# src/python/eval/p0a_batch_e2e.py  (521 LOC, class=py-eval, soft=500, hard=1000)
+
+L    55-100    (   46) | def build_batch_jsonl(
+L   101-128    (   28) | def parse_batch_output(text: str) -> tuple[dict[str, Optional[str]], int]:
+L   129-176    (   48) | def score_e2e(
+L   177-212    (   36) | def build_judge_jsonl(
+L   213-236    (   24) | def _extract_verdict(content: Optional[str]) -> Optional[bool]:
+L   237-270    (   34) | def parse_judge_output(text: str) -> tuple[dict[str, bool], int]:
+L   271-277    (    7) | class BatchClient(Protocol):
+L   278-357    (   80) | class AirlockBatchClient:
+L   358-394    (   37) | def run_batch(
+L   395-521    (  127) | def main(argv: Optional[list[str]] = None) -> int:

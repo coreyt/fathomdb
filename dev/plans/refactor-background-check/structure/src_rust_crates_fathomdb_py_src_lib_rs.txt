@@ -1,0 +1,103 @@
+# src/rust/crates/fathomdb-py/src/lib.rs  (2678 LOC, class=rust-src, soft=1000, hard=2000)
+
+L   123-135    (   13) | pub fn validate_ffi_string(value: &str) -> Result<(), String> {
+L   136-144    (    9) | fn validate_ffi_string_py(value: &str) -> PyResult<()> {
+L   145-160    (   16) | fn extract_validated_str(value: &Bound<'_, PyAny>) -> PyResult<String> {
+L   161-173    (   13) | fn extract_opt_validated_str(value: Option<&Bound<'_, PyAny>>) -> PyResult<Optio
+L   174-272    (   99) | fn engine_error_to_py(err: RustEngineError) -> PyErr {
+L   273-281    (    9) | fn corruption_kind_str(kind: CorruptionKind) -> &'static str {
+L   282-290    (    9) | fn open_stage_str(stage: OpenStage) -> &'static str {
+L   291-347    (   57) | fn engine_open_error_to_py(err: EngineOpenError) -> PyErr {
+L   348-372    (   25) | fn corruption_to_py(detail: CorruptionDetail) -> PyErr {
+L   373-395    (   23) | fn call_engine<R: Send>(
+L   396-404    (    9) | struct PyWriteReceipt {
+L   405-426    (   22) | impl PyWriteReceipt {
+L   427-433    (    7) | struct PyEraseReport {
+L   434-453    (   20) | impl PyEraseReport {
+L   454-459    (    6) | struct PyIngestWithExtractorReceipt {
+L   460-478    (   19) | impl PyIngestWithExtractorReceipt {
+L   479-486    (    8) | struct PyConsolidateReceipt {
+L   487-506    (   20) | impl PyConsolidateReceipt {
+L   507-510    (    4) | struct PySoftFallback {
+L   511-531    (   21) | impl PySoftFallback {
+L   532-536    (    5) | struct PyIdSpace {
+L   537-544    (    8) | impl PyIdSpace {
+L   545-569    (   25) | struct PySearchHit {
+L   570-596    (   27) | impl PySearchHit {
+L   597-606    (   10) | struct PySearchResult {
+L   607-622    (   16) | impl PySearchResult {
+L   623-637    (   15) | struct PyQueryTrace {
+L   638-670    (   33) | impl PyQueryTrace {
+L   671-687    (   17) | struct PyPerHitExplain {
+L   688-720    (   33) | impl PyPerHitExplain {
+L   721-725    (    5) | struct PyExplanation {
+L   726-736    (   11) | impl PyExplanation {
+L   737-743    (    7) | struct PyNodeRecord {
+L   744-763    (   20) | impl PyNodeRecord {
+L   764-775    (   12) | struct PyReadView {
+L   776-793    (   18) | impl PyReadView {
+L   794-805    (   12) | impl PyReadView {
+L   806-818    (   13) | fn read_view_or_default(view: Option<&PyReadView>) -> RustReadView {
+L   819-824    (    6) | struct PyBoundaryCrossing {
+L   825-841    (   17) | impl PyBoundaryCrossing {
+L   842-851    (   10) | struct PyProjectionSpec {
+L   852-866    (   15) | impl PyProjectionSpec {
+L   867-966    (  100) | impl PyProjectionSpec {
+L   967-973    (    7) | struct PyProjectionDelta {
+L   974-986    (   13) | impl PyProjectionDelta {
+L   987-996    (   10) | struct PyOpStoreRow {
+L   997-1018   (   22) | impl PyOpStoreRow {
+L  1019-1035   (   17) | struct PyCounterSnapshot {
+L  1036-1041   (    6) | struct PyMigrationStepReport {
+L  1042-1055   (   14) | impl PyMigrationStepReport {
+L  1056-1061   (    6) | struct PyEmbedderIdentity {
+L  1062-1068   (    7) | impl PyEmbedderIdentity {
+L  1069-1102   (   34) | struct PyOpenReport {
+L  1103-1133   (   31) | impl PyOpenReport {
+L  1134-1176   (   43) | fn embedder_event_to_py(py: Python<'_>, ev: &RustEmbedderEvent) -> Py<PyAny> {
+L  1177-1182   (    6) | struct PyEngine {
+L  1183-1568   (  386) | impl PyEngine {
+L  1569-1613   (   45) | fn admin_configure(
+L  1614-1636   (   23) | fn transition(
+L  1637-1660   (   24) | fn purge(py: Python<'_>, engine: &PyEngine, logical_id: &Bound<'_, PyAny>) -> Py
+L  1661-1678   (   18) | fn erase_source(
+L  1679-1701   (   23) | fn configure_projections(
+L  1702-1709   (    8) | fn read_projections(py: Python<'_>, engine: &PyEngine) -> PyResult<Vec<PyProject
+L  1710-1724   (   15) | fn read_get(
+L  1725-1742   (   18) | fn read_get_many(
+L  1743-1754   (   12) | fn read_collection(
+L  1755-1764   (   10) | fn read_mutations(
+L  1765-1786   (   22) | fn read_collection_impl(
+L  1787-1822   (   36) | fn py_predicate_to_rust(pred: &Bound<'_, PyAny>) -> PyResult<RustPredicate> {
+L  1823-1849   (   27) | fn read_list(
+L  1850-1870   (   21) | fn py_filter_term_to_rust(term: &Bound<'_, PyAny>) -> PyResult<RustFilterTerm> {
+L  1871-1895   (   25) | fn read_list_filter(
+L  1896-1903   (    8) | fn translate_batch(batch: &Bound<'_, PyList>) -> PyResult<Vec<PreparedWrite>> {
+L  1904-1907   (    4) | fn dict_get<'py>(d: &Bound<'py, PyDict>, key: &str) -> PyResult<Option<Bound<'py
+L  1908-1914   (    7) | fn dict_str(d: &Bound<'_, PyDict>, key: &str) -> PyResult<Option<String>> {
+L  1915-1928   (   14) | fn dict_str_required(d: &Bound<'_, PyDict>, key: &str) -> PyResult<String> {
+L  1929-1943   (   15) | fn dict_source_id_required(d: &Bound<'_, PyDict>, kind: &str) -> PyResult<Source
+L  1944-1966   (   23) | fn translate_write_item(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
+L  1967-2013   (   47) | fn translate_node(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
+L  2014-2029   (   16) | fn dict_epoch_seconds(d: &Bound<'_, PyDict>, key: &str) -> PyResult<Option<i64>>
+L  2030-2069   (   40) | fn translate_edge(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
+L  2070-2080   (   11) | fn translate_op_store(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
+L  2081-2096   (   16) | fn translate_admin_schema(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
+L  2097-2109   (   13) | struct PyExpandedNode {
+L  2110-2118   (    9) | struct PySearchExpandResult {
+L  2119-2138   (   20) | impl PySearchExpandResult {
+L  2139-2157   (   19) | fn parse_direction(s: &str) -> PyResult<RustTraversalDirection> {
+L  2158-2177   (   20) | fn graph_neighbors(
+L  2178-2199   (   22) | fn crossed_boundary_since(
+L  2200-2250   (   51) | fn search_expand(
+L  2251-2262   (   12) | fn dict_u64_required(d: &Bound<'_, PyDict>, key: &str) -> PyResult<u64> {
+L  2263-2273   (   11) | fn dict_f64_required(d: &Bound<'_, PyDict>, key: &str) -> PyResult<f64> {
+L  2274-2361   (   88) | fn rerank(
+L  2362-2380   (   19) | fn get_or_try_init<T, E>(
+L  2381-2399   (   19) | fn cls_embedder_singleton() -> Result<
+L  2400-2407   (    8) | fn embed_batch_cls(py: Python<'_>, texts: Vec<String>) -> PyResult<Vec<Vec<f32>>
+L  2408-2433   (   26) | fn embed_batch_cls_impl(py: Python<'_>, texts: Vec<String>) -> PyResult<Vec<Vec<
+L  2434-2447   (   14) | fn embed_batch_cls_impl(_py: Python<'_>, _texts: Vec<String>) -> PyResult<Vec<Ve
+L  2448-2459   (   12) | fn force_panic_for_test() -> PyResult<()> {
+L  2460-2548   (   89) | fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
+L  2549-2678   (  130) | mod tests {

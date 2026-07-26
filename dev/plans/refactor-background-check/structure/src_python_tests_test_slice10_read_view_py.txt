@@ -1,0 +1,23 @@
+# src/python/tests/test_slice10_read_view.py  (675 LOC, class=py-test, soft=600, hard=1000)
+
+L    54-57     (    4) | def _node(logical_id: str, body: str, kind: str = "doc") -> dict:
+L    58-69     (   12) | def _edge(from_id: str, to_id: str, logical_id: str) -> dict:
+L    70-73     (    4) | def _open(path: str) -> Engine:
+L    74-77     (    4) | def _ids(rows: Sequence[NodeRecord]) -> list[str]:
+L    78-81     (    4) | def _bodies(rows: Sequence[NodeRecord]) -> list[str]:
+L    82-103    (   22) | def _set_window(
+L   104-117    (   14) | def _raw_window(path: str, logical_id: str) -> tuple[int | None, int | None]:
+L   118-134    (   17) | def _raw_current_active_bodies(path: str) -> list[str]:
+L   135-147    (   13) | def _raw_node_count(path: str) -> int:
+L   148-214    (   67) | def test_default_view_is_unchanged_on_all_five_verbs(db_path: str) -> None:
+L   215-235    (   21) | def test_include_superseded_returns_history(db_path: str) -> None:
+L   236-263    (   28) | def test_point_lookup_under_include_superseded_is_deterministic(db_path: str) ->
+L   264-290    (   27) | def test_include_inactive_returns_non_active_states(db_path: str) -> None:
+L   291-356    (   66) | def test_existence_flags_compose_independently(db_path: str) -> None:
+L   357-383    (   27) | def test_read_list_filter_form_inherits_the_view(db_path: str) -> None:
+L   384-428    (   45) | def test_graph_neighbors_honours_the_view_in_every_direction(db_path: str) -> No
+L   429-469    (   41) | def test_graph_neighbors_view_reaches_the_recursive_join(db_path: str) -> None:
+L   470-532    (   63) | def test_valid_as_of_window_visibility_on_every_read_verb(db_path: str) -> None:
+L   533-580    (   48) | def test_validity_and_existence_flags_compose(db_path: str) -> None:
+L   581-642    (   62) | def test_crossed_boundary_since_reports_both_boundaries(db_path: str) -> None:
+L   643-675    (   33) | def test_crossed_boundary_since_honours_existence_flags(db_path: str) -> None:

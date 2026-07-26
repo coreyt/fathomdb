@@ -1,0 +1,48 @@
+# dev/plans/runs/STATUS-0.8.20.md  (942 LOC, class=plan-status-doc, soft=800, hard=1600)
+
+L     1-37     (   37) | # STATUS — FathomDB 0.8.20 · OPP-12 Phase-2 + erasure completeness + the breakin
+L    38-54     (   17) | ## 1. Current state
+L    55-77     (   23) | ## 2. Slice ladder
+L    78-120    (   43) | ## 3. AC scoreboard
+L   121-191    (   71) | ## 4. Open HITL decisions (options + recommendation)
+L   192-193    (    2) | ## 5. Process pins (bind every later slice)
+L   194-208    (   15) | ### 5.1 TC-RUBRIC-7 — codex §9 transcript path (**PINNED**)
+L   209-214    (    6) | ### 5.2 TC-RUBRIC-5 — dedicated checkout
+L   215-222    (    8) | ### 5.3 Release DoD (every slice)
+L   223-224    (    2) | ## 6. R-20-EU7 baseline
+L   225-235    (   11) | ### 6.1 Backend constraint — **eu7 is a CPU same-backend gate**
+L   236-246    (   11) | ### 6.2 Two vacuous-green hazards found in the harness (Slice 40 must guard both
+L   247-283    (   37) | ### 6.3 Captured numbers — **CAPTURE BLOCKED (root-caused)**
+L   284-301    (   18) | ## 7. Outstanding worktrees
+L   302-366    (   65) | ## 8. Recent decisions (newest first)
+L   367-377    (   11) | ## 9. Compaction-resume checklist
+L   378-399    (   22) | ## 10. Slice-0 findings the Steward must reconcile into the master
+L   400-418    (   19) | ## 11. Slice 5 close — erasure completeness (R-20-E1…E8)
+L   419-438    (   20) | ### 11.1 What shipped
+L   439-456    (   18) | ### 11.2 codex §9 — four rounds on the branch, then two delta rounds, terminal P
+L   457-490    (   34) | ### 11.3 Gates — re-verified on the terminal HEAD (real exit codes)
+L   491-514    (   24) | ### 11.4 What Slice 5 proved WRONG
+L   515-530    (   16) | ### 11.5 Owed to the HITL / Steward
+L   531-537    (    7) | ### 11.6 Closure artifacts
+L   538-573    (   36) | ### 11.7 fix-4 — the REGRESSION found AFTER the first closure
+L   574-626    (   53) | ### 11.8 Python verification — the honest number
+L   627-650    (   24) | ### 11.9 fix-6 — codex found a P2 in our OWN TC-27 guard
+L   651-686    (   36) | ### 11.10 fix-7 — the probe was narrower than the surface it gated
+L   687-697    (   11) | ## 12. Slice 10 close — `ReadView` / read-modes + node-validity (R-20-RV, R-20-N
+L   698-727    (   30) | ### 12.1 What shipped
+L   728-736    (    9) | ### 12.2 Schema — 21 → 22
+L   737-756    (   20) | ### 12.3 Gates — ONE fresh clone at exactly `93a57b10`, everything SERIAL
+L   757-766    (   10) | ### 12.4 Python — the honest comparison
+L   767-778    (   12) | ### 12.5 Governed-surface delta — **PROPOSED / NOT SIGNED**
+L   779-788    (   10) | ### 12.6 codex §9 — two terminal PASSes
+L   789-800    (   12) | ### 12.7 Owed to the HITL
+L   801-809    (    9) | ### 12.8 Closure artifacts
+L   810-826    (   17) | ## 13. Slice 15b close — TC-34 node-validity authoring + search-validity coheren
+L   827-852    (   26) | ### 13.1 What shipped
+L   853-879    (   27) | ### 13.2 The defect codex found — and why it was in scope
+L   880-894    (   15) | ### 13.3 Gates — real exit codes, terminal HEAD `a8087dfb`
+L   895-903    (    9) | ### 13.4 Governed-surface delta — **PROPOSED / NOT SIGNED**
+L   904-916    (   13) | ### 13.5 codex §9 — four rounds, terminal PASS
+L   917-934    (   18) | ### 13.6 What Slice 15b proved WRONG
+L   935-938    (    4) | ### 13.7 Owed to the HITL
+L   939-942    (    4) | ### 13.8 Closure artifacts

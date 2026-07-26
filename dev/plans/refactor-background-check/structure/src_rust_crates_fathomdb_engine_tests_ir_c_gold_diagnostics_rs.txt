@@ -1,0 +1,24 @@
+# src/rust/crates/fathomdb-engine/tests/ir_c_gold_diagnostics.rs  (901 LOC, class=rust-test, soft=800, hard=1200)
+
+L    27-28     (    2) | mod corpus_subset;
+L    29-30     (    2) | mod ir_eval;
+L    31-48     (   18) | mod ir_retrieval;
+L    49-56     (    8) | fn env_usize(key: &str, default: usize) -> usize {
+L    57-61     (    5) | fn bm25_gold_rank(ranked: &[String], gold: &BTreeSet<String>) -> Option<usize> {
+L    62-69     (    8) | fn idf(df: usize, n_docs: usize) -> f64 {
+L    70-88     (   19) | fn idf_overlap(
+L    89-106    (   18) | fn check_corpus_hash(gold_hash: &str, snapshot_hash: &str) -> Result<String, Str
+L   107-116    (   10) | struct LexRecord {
+L   117-126    (   10) | fn median(mut v: Vec<usize>) -> Option<f64> {
+L   127-143    (   17) | fn summarize(recs: &[&LexRecord]) -> Value {
+L   144-200    (   57) | fn build_lexical_sidecar(
+L   201-212    (   12) | fn bucket(bm25_rank: Option<usize>, dense_rank: Option<usize>, cap: usize) -> &'
+L   213-227    (   15) | fn span_iou(a: (usize, usize), b: (usize, usize)) -> f64 {
+L   228-252    (   25) | fn maxpool_ranking(
+L   253-264    (   12) | fn dense_gold_rank_and_span(
+L   265-272    (    8) | struct DenseRecord {
+L   273-323    (   51) | fn build_dense_section(
+L   324-491    (  168) | fn compute_dense_section(
+L   492-492    (    1) | #[test]
+L   493-665    (  173) | fn ir_c_gold_diagnostics() {
+L   666-901    (  236) | mod tests {

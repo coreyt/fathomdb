@@ -1,0 +1,24 @@
+# src/ts/tests/slice10-read-view.test.ts  (755 LOC, class=ts-test, soft=500, hard=750)
+
+L    47-52     (    6) | const SOURCE_ID = "ts-test:slice10-read-view";
+L    53-56     (    4) | function nodeItem(logicalId: string, body: string, kind = "doc"): object {
+L    57-60     (    4) | function edgeItem(from: string, to: string, logicalId: string): object {
+L    61-64     (    4) | async function openEngine(path: string): Promise<Engine> {
+L    65-68     (    4) | function ids(rows: NodeRecord[]): string[] {
+L    69-79     (   11) | function bodies(rows: NodeRecord[]): string[] {
+L    80-97     (   18) | function setWindow(
+L    98-117    (   20) | function rawWindow(path: string, logicalId: string): [number | null, number | nu
+L   118-131    (   14) | function rawCurrentActiveBodies(path: string): string[] {
+L   132-145    (   14) | function rawNodeCount(path: string): number {
+L   146-222    (   77) | test("R-20-RV: the default view is unchanged on all five read verbs", async () =
+L   223-248    (   26) | test("R-20-RV: includeSuperseded returns history", async () => {
+L   249-276    (   28) | test("R-20-RV: the point lookup under includeSuperseded is deterministic", async
+L   277-307    (   31) | test("R-20-RV: includeInactive returns non-active states", async () => {
+L   308-365    (   58) | test("R-20-RV: the existence flags compose independently (read-mode matrix)", as
+L   366-390    (   25) | test("R-20-RV: the read.list filter-form inherits the view", async () => {
+L   391-432    (   42) | test("R-20-RV: graph.neighbors honours the view in every direction", async () =>
+L   433-469    (   37) | test("R-20-RV: the graph.neighbors view reaches the BFS recursive join", async (
+L   470-563    (   94) | test("R-20-NV: validAsOf window visibility on every read verb", async () => {
+L   564-610    (   47) | test("R-20-NV: the validity flag composes with the existence flag", async () => 
+L   611-717    (  107) | test("R-20-NV: crossedBoundarySince reports both boundaries", async () => {
+L   718-755    (   38) | test("R-20-NV: crossedBoundarySince honours the view's existence flags", async (

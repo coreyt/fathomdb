@@ -1,0 +1,15 @@
+# src/python/eval/d0b_parity_run.py  (688 LOC, class=py-eval, soft=500, hard=1000)
+
+L    86-111    (   26) | def paired_metric_deltas(
+L   112-141    (   30) | def class_delta(deltas: Sequence[float], *, n_boot: int = DEFAULT_N_BOOT, seed: 
+L   142-163    (   22) | def per_class_delta_table(
+L   164-197    (   34) | def external_per_class_for_decide(
+L   198-234    (   37) | def project_full_cost(
+L   235-258    (   24) | def answer_completeness(
+L   259-279    (   21) | def resume_map(prior: Mapping[str, Any]) -> dict[tuple[str, str], Optional[str]]
+L   280-288    (    9) | def _select_subset(queries: Sequence[GoldQuery], *, per_class: int, classes: Seq
+L   289-316    (   28) | def fit_context(bodies: Sequence[str], budget_chars: Optional[int]) -> list[str]
+L   317-503    (  187) | def run_d0b(
+L   504-528    (   25) | def build_documents_from_lme(
+L   529-602    (   74) | def build_live_adapters(
+L   603-688    (   86) | def main(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - CLI

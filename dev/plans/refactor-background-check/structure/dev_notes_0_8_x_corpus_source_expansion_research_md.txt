@@ -1,0 +1,26 @@
+# dev/notes/0.8.x-corpus-source-expansion-research.md  (548 LOC, class=design-doc, soft=500, hard=1000)
+
+L    23-24     (    2) | # 0.8.x Corpus Source Expansion Research
+L    25-72     (   48) | ## Executive Recommendation
+L    73-110    (   38) | ## Current Corpus Review
+L   111-131    (   21) | ## Candidate Matrix
+L   132-160    (   29) | ### 1. QAConv
+L   161-185    (   25) | ### 2. Existing EnronQA QA export
+L   186-212    (   27) | ### 3. QASPER
+L   213-238    (   26) | ### 4. LongMemEval-S
+L   239-264    (   26) | ### 5. PMC OA Commercial-Use Subset
+L   265-290    (   26) | ### 6. MeetingBank
+L   291-311    (   21) | ### 7. LongMemEval-V2
+L   312-335    (   24) | ### 8. PubMedQA
+L   336-359    (   24) | ### 9. S2ORC
+L   360-384    (   25) | ### 10. Asta Interaction Dataset
+L   385-438    (   54) | ## QA / Accuracy-Test Plan
+L   439-440    (    2) | ## Implementation Slices
+L   441-448    (    8) | ### Slice 1: Low-risk corpus + QA additions
+L   449-455    (    7) | ### Slice 2: Existing QA export
+L   456-464    (    9) | ### Slice 3: Paper source and chain expansion
+L   465-471    (    7) | ### Slice 4: PMC OA commercial-use
+L   472-479    (    8) | ### Slice 5: Optional meeting expansion
+L   480-496    (   17) | ## Reject / Defer List
+L   497-530    (   34) | ## Sources Checked
+L   531-548    (   18) | ## Implementation Status

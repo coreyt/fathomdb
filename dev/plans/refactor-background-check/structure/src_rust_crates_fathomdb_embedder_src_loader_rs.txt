@@ -1,0 +1,26 @@
+# src/rust/crates/fathomdb-embedder/src/loader.rs  (876 LOC, class=rust-src, soft=500, hard=1000)
+
+L   107-126    (   20) | fn parse_secs_env_or_default(var: &str, default: Duration) -> Duration {
+L   127-146    (   20) | fn model_sha_prefix() -> &'static str {
+L   147-165    (   19) | pub struct LoadedWeights {
+L   166-229    (   64) | pub enum EmbedderLoadError {
+L   230-250    (   21) | enum DownloadAttemptError {
+L   251-265    (   15) | fn retry_decision_ureq(err: &ureq::Error) -> RetryDecision {
+L   266-284    (   19) | enum RetryDecision {
+L   285-304    (   20) | pub struct LoaderConfig {
+L   305-450    (  146) | impl LoaderConfig {
+L   451-459    (    9) | pub fn load_pinned_default_embedder() -> Result<LoadedWeights, EmbedderLoadError
+L   460-463    (    4) | pub fn load_with_config(cfg: LoaderConfig) -> Result<LoadedWeights, EmbedderLoad
+L   464-530    (   67) | fn load_with_config_internal(cfg: LoaderConfig) -> Result<LoadedWeights, Embedde
+L   531-535    (    5) | enum FetchOutcome {
+L   536-617    (   82) | fn fetch_under_lock(
+L   618-635    (   18) | fn fsync_parent_dir(path: &Path) -> Result<(), EmbedderLoadError> {
+L   636-653    (   18) | fn hf_hub_candidate_path(cfg: &LoaderConfig, file_name: &str) -> Option<PathBuf>
+L   654-668    (   15) | fn materialize_from_hf_hub(src: &Path, dst: &Path) -> Result<(), EmbedderLoadErr
+L   669-699    (   31) | fn acquire_exclusive_with_timeout(
+L   700-700    (    1) | struct LockGuard<'a>(&'a File);
+L   701-706    (    6) | impl Drop for LockGuard<'_> {
+L   707-759    (   53) | fn download_with_retries(
+L   760-853    (   94) | fn download_once(
+L   854-862    (    9) | fn file_matches_sha(path: &Path, expected: &str) -> Result<bool, EmbedderLoadErr
+L   863-876    (   14) | fn sha256_file(path: &Path) -> std::io::Result<String> {

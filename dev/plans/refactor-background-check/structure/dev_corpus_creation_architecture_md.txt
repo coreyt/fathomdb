@@ -1,0 +1,37 @@
+# dev/corpus-creation/architecture.md  (758 LOC, class=doc-other, soft=700, hard=1100)
+
+L     1-2      (    2) | # Corpus creation — architecture
+L     3-37     (   35) | ## 1. Why a real-data composite corpus exists
+L    38-92     (   55) | ## 2. Source selection (how the catalogue was chosen)
+L    93-113    (   21) | ## 3. Source vocabulary (locked)
+L   114-162    (   49) | ## 4. Document schema (canonical JSONL)
+L   163-186    (   24) | ## 5. Per-source acquisition
+L   187-201    (   15) | ### 5.1 CNN/DailyMail (`acquire_cnn_dailymail.py`)
+L   202-236    (   35) | ### 5.2 Enron (`acquire_enron.py`)
+L   237-253    (   17) | ### 5.3 EnronQA (`acquire_enronqa.py`)
+L   254-280    (   27) | ### 5.4 QMSum (`acquire_qmsum.py`)
+L   281-298    (   18) | ### 5.5 Landes/Di Eugenio to-dos (`acquire_landes_todos.py`)
+L   299-317    (   19) | ### 5.6 bahmutov daily-logs (`acquire_bahmutov_dailylogs.py`)
+L   318-335    (   18) | ### 5.7 Synthetic notes (`generate_synthetic_notes.py`)
+L   336-345    (   10) | ### 5.8 Chain connectives (`generate_chain_corpus.py`)
+L   346-358    (   13) | ### 5.9 QAConv (`acquire_qaconv.py`)
+L   359-374    (   16) | ### 5.10 QASPER (`acquire_qasper.py`)
+L   375-384    (   10) | ### 5.11 Existing-source QA exports
+L   385-391    (    7) | ### 5.12 PMC OA reconsideration
+L   392-424    (   33) | ## 6. License posture and distribution
+L   425-441    (   17) | ## 7. Chain generator (Pack 2)
+L   442-465    (   24) | ### 7.1 Chain shapes shipped in v1
+L   466-479    (   14) | ### 7.2 Determinism
+L   480-493    (   14) | ### 7.3 Volume cap (handoff guard)
+L   494-520    (   27) | ### 7.4 Output
+L   521-558    (   38) | ## 8. Ingest harness (Pack 3)
+L   559-585    (   27) | ### Known issue with batched ingest
+L   586-594    (    9) | ## 9. Validation gates (Pack 4)
+L   595-605    (   11) | ### 9.1 `corpus_fts.rs` — FTS gate
+L   606-631    (   26) | ### 9.2 `corpus_vector.rs` — vector wiring gate
+L   632-644    (   13) | ### 9.3 `corpus_graph.rs` — graph gate
+L   645-651    (    7) | ### 9.4 Timing
+L   652-688    (   37) | ## 10. Layout summary
+L   689-716    (   28) | ## 11. Build sequencing
+L   717-745    (   29) | ## 12. Known issues and deferred work
+L   746-758    (   13) | ## 13. Versioning policy for this doc

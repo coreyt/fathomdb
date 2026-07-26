@@ -1,0 +1,24 @@
+# dev/plans/prompts/0.7.2-RELEASE-HARDENING-HANDOFF.md  (846 LOC, class=plan-status-doc, soft=800, hard=1600)
+
+L     1-51     (   51) | # 0.7.2 — Recall investigation + release closure + testing/perf hardening: orche
+L    52-92     (   41) | ## Continuity preamble (read first)
+L    93-116    (   24) | ## Hard constraints carried forward (do not weaken)
+L   117-160    (   44) | ## Pre-flight (PR-0) — Reconcile inherited state
+L   161-162    (    2) | ## Phase A — Release closure
+L   163-219    (   57) | ### PR-1 — Architecture-doc drift sweep
+L   220-263    (   44) | ### PR-2a — Mean-centering recall investigation (experiment) [GATES PR-2]
+L   264-292    (   29) | ### PR-2b — Production mean recompute (engine; design + implement + test) [GATES
+L   293-321    (   29) | ### PR-2c — Representative initial mean pin (engine; RED→GREEN) [GATES PR-2]
+L   322-396    (   75) | ### PR-2 — AC-013b recall floor re-derivation against real embeddings
+L   397-467    (   71) | ### PR-3 — Real-corpus canonical-CI dispatch
+L   468-534    (   67) | ### PR-4 — Release notes + push v0.7.0 + v0.7.1
+L   535-541    (    7) | ## Phase B — Testing/perf hardening
+L   542-598    (   57) | ### PR-5 — Corpus-driven test harness
+L   599-643    (   45) | ### PR-6 — Dev-loop perf gates
+L   644-681    (   38) | ### PR-7 — Perf regression detection
+L   682-713    (   32) | ### PR-9 — Embedder robustness (concurrent-embed safety + embed watchdog)
+L   714-732    (   19) | ### PR-8 — Campaign closure
+L   733-753    (   21) | ## HITL gates summary
+L   754-765    (   12) | ## Branch / worktree strategy
+L   766-822    (   57) | ## Definition of done — entire campaign
+L   823-846    (   24) | ## Citations

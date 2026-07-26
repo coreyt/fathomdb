@@ -1,0 +1,39 @@
+# dev/design/orchestration.md  (746 LOC, class=design-doc, soft=700, hard=1100)
+
+L    16-36     (   21) | # Multi-Agent Orchestration Pattern
+L    37-59     (   23) | ## 1. Three-role separation
+L    60-102    (   43) | ## 1.5 State spine
+L   103-112    (   10) | ## 1.6 Preflight gate (run before every worktree spawn)
+L   113-114    (    2) | # After: git worktree add "$WT" -b "slice-<N>-<ts>" "$(git rev-parse main)"
+L   115-149    (   35) | # exit 0 = spawn; exit 1 = STOP, read the HARD lines, fix, re-run.
+L   150-169    (   20) | ## 2. Implementer (Claude writes code)
+L   170-219    (   50) | # Gate the spawn (§ 1.6) — STOP on exit 1, never spawn around a HARD fail:
+L   220-281    (   62) | ## 3. Reviewer (Codex reads diff, returns verdict)
+L   282-292    (   11) | ## 4. Verdict promotion (codex sandbox cannot write)
+L   293-304    (   12) | # Phase <id> Review — codex gpt-5.4 verdict
+L   305-306    (    2) | ## Verdict: PASS|CONCERN|BLOCK
+L   307-310    (    4) | ### 1. [severity] short title
+L   311-313    (    3) | ## Addressed
+L   314-316    (    3) | ## What passed on inspection
+L   317-319    (    3) | ## Reviewer process notes
+L   320-323    (    4) | ## Orchestrator triage
+L   324-330    (    7) | ## 5. Cherry-pick to mainline
+L   331-344    (   14) | # In main repo, on the release branch (e.g. 0.6.0-rewrite):
+L   345-395    (   51) | ## 6. Fix-1 remediation pass (on BLOCK / CONCERN)
+L   396-411    (   16) | ## 7. Orchestrator override (CONCERN accept)
+L   412-436    (   25) | ## 8. Closure output.json schema (per slice)
+L   437-461    (   25) | ## 9. Decision loop (per slice) — the transition function
+L   462-486    (   25) | ## 10. Hard rules summary
+L   487-517    (   31) | ## 11. Worktree cleanup (after phase family closes)
+L   518-524    (    7) | ## 12. Context management
+L   525-535    (   11) | ### 12.1 Three context tiers
+L   536-557    (   22) | ### 12.2 Cold-start resume protocol
+L   558-575    (   18) | ### 12.3 Per-slice context discipline
+L   576-590    (   15) | ### 12.4 Plan doc as canonical state machine
+L   591-633    (   43) | ### 12.5 Phase STATUS board
+L   634-650    (   17) | ### 12.6 Compaction discipline
+L   651-658    (    8) | ### 12.7 HITL gates as natural conversation boundaries
+L   659-684    (   26) | ### 12.8 Perf-experiment work (Pack 7+ shape)
+L   685-709    (   25) | ## 13. Failure & recovery catalog
+L   710-732    (   23) | ## 14. Reviewer topology & empirical resolution
+L   733-746    (   14) | ## 15. References

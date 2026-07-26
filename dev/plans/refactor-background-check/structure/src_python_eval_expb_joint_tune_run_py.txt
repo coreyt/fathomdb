@@ -1,0 +1,17 @@
+# src/python/eval/expb_joint_tune_run.py  (703 LOC, class=py-eval, soft=500, hard=1000)
+
+L   116-137    (   22) | def bootstrap_mean_ci(
+L   138-145    (    8) | def _intent_of(record: dict[str, Any]) -> Optional[str]:
+L   146-151    (    6) | def recall_at_k_deep_for_pool(pool: Sequence[dict[str, Any]], gold: Sequence[str
+L   152-182    (   31) | def per_query_rerank_metrics(
+L   183-200    (   18) | def recall_envelope_by_intent(
+L   201-250    (   50) | def joint_sweep(
+L   251-264    (   14) | def best_config(grid: list[dict[str, Any]]) -> dict[str, Any]:
+L   265-294    (   30) | def crux_check(grid: list[dict[str, Any]], *, candidate_k: int = 200, alpha: flo
+L   295-336    (   42) | def make_tuple(intent: str, *, measured: dict[str, Any] | None) -> dict[str, Any
+L   337-346    (   10) | def eval_config_on_intent(grid: list[dict[str, Any]], cfg: dict[str, Any]) -> Op
+L   347-410    (   64) | def forbidden_composition_matrix(
+L   411-439    (   29) | def run_lme_recall_pool(*, per_class: Optional[int], max_pool: int, db_path: str
+L   440-449    (   10) | def ce_norm_is_active(records: Sequence[dict[str, Any]]) -> bool:
+L   450-619    (  170) | def main(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - CLI
+L   620-703    (   84) | def write_md(out: dict[str, Any], path: Path) -> None:

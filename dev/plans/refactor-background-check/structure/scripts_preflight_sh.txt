@@ -1,0 +1,8 @@
+# scripts/preflight.sh  (283 LOC, class=shell, soft=200, hard=500)
+
+L    62-62     (    1) | hard() { HARD_FAILS+=("$1"); printf 'HARD  %s\n' "$1" >&2; }
+L    63-63     (    1) | warn() { WARNS+=("$1");      printf 'WARN  %s\n' "$1" >&2; }
+L    64-64     (    1) | info() { printf 'INFO  %s\n' "$1" >&2; }
+L    65-69     (    5) | ok()   { printf 'ok    %s\n' "$1" >&2; }
+L    70-276    (  207) | abs_dir() { ( cd "$1" 2>/dev/null && pwd -P ); }
+L   277-283    (    7) | json_arr() { local out="" x; for x in "$@"; do out="${out:+$out,}\"$(printf '%s'

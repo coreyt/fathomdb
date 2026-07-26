@@ -1,0 +1,19 @@
+# src/python/eval/s15b_d2_proxy.py  (606 LOC, class=py-eval, soft=500, hard=1000)
+
+L    99-114    (   16) | def paired_deltas(
+L   115-118    (    4) | def _mean(values: Sequence[float]) -> float:
+L   119-126    (    8) | def _popvar(values: Sequence[float]) -> float:
+L   127-138    (   12) | def _quantile(sorted_xs: Sequence[float], q: float) -> float:
+L   139-165    (   27) | def paired_bootstrap_ci(
+L   166-182    (   17) | def paired_mde(deltas: Sequence[float]) -> float:
+L   183-206    (   24) | def neutralization_classify(
+L   207-226    (   20) | def removes_length_norm_status(
+L   227-265    (   39) | def classify_verdict(
+L   266-278    (   13) | def _key_tokens(graph: Mapping[str, Any]) -> list[str]:
+L   279-305    (   27) | def build_enriched_placebo(
+L   306-331    (   26) | def per_query_recall(
+L   332-427    (   96) | def compute_proxy(
+L   428-468    (   41) | def _smoke_corpus() -> tuple[SmokeSet, dict[str, dict[str, Any]]]:
+L   469-522    (   54) | def _build_arms_and_run(
+L   523-532    (   10) | def _corpus_hash(documents: Mapping[str, str]) -> str:
+L   533-606    (   74) | def main(argv: Optional[list[str]] = None) -> int:

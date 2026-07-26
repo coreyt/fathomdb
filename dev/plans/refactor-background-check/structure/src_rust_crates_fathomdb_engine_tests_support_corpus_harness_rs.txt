@@ -1,0 +1,25 @@
+# src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs  (861 LOC, class=rust-test, soft=800, hard=1200)
+
+L    41-81     (   41) | mod corpus_subset;
+L    82-108    (   27) | pub struct IngestReport {
+L   109-120    (   12) | pub struct HeldOutQuery {
+L   121-128    (    8) | enum EmbedderKind {
+L   129-141    (   13) | pub struct CorpusFixture {
+L   142-468    (  327) | impl CorpusFixture {
+L   469-477    (    9) | fn build_real_embedder() -> Arc<dyn Embedder> {
+L   478-488    (   11) | fn build_real_embedder() -> Arc<dyn Embedder> {
+L   489-508    (   20) | struct CachingEmbedder {
+L   509-618    (  110) | impl CachingEmbedder {
+L   619-637    (   19) | impl Embedder for CachingEmbedder {
+L   638-645    (    8) | fn text_sha256(text: &str) -> [u8; 32] {
+L   646-660    (   15) | fn doc_manifest_sha(docs: &[Doc]) -> String {
+L   661-674    (   14) | fn cache_key(identity: &EmbedderIdentity, label: &str, doc_manifest_sha: &str) -
+L   675-688    (   14) | fn hex(bytes: &[u8]) -> String {
+L   689-732    (   44) | fn read_cache(
+L   733-770    (   38) | fn parse_blob(blob: &[u8], expected_dim: u32) -> Result<VecCache, String> {
+L   771-781    (   11) | fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
+L   782-794    (   13) | fn open_readonly(path: &Path) -> Connection {
+L   795-798    (    4) | struct SplitMix64 {
+L   799-822    (   24) | impl SplitMix64 {
+L   823-842    (   20) | fn synth_query(doc: &Doc) -> Option<String> {
+L   843-861    (   19) | fn lead_sentence(body: &str, max_chars: usize) -> String {

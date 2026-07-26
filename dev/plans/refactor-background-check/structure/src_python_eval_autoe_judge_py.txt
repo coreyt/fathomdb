@@ -1,0 +1,21 @@
+# src/python/eval/autoe_judge.py  (642 LOC, class=py-eval, soft=500, hard=1000)
+
+L   131-145    (   15) | class Judge(Protocol):
+L   146-168    (   23) | class JudgmentKey:
+L   169-197    (   29) | class Judgment:
+L   198-219    (   22) | def build_pairwise_prompt(
+L   220-233    (   14) | def _coerce_one(value: object) -> Verdict:
+L   234-262    (   29) | def parse_verdict(completion: Optional[str], metrics: tuple[str, ...]) -> dict[s
+L   263-271    (    9) | def _is_fully_absent(judgment: Judgment, metrics: tuple[str, ...]) -> bool:
+L   272-312    (   41) | def run_autoe(
+L   313-327    (   15) | def _treatment_score(raw: str, order: str) -> Optional[float]:
+L   328-339    (   12) | def _percentile(sorted_xs: list[float], pct: float) -> float:
+L   340-383    (   44) | def _metric_winrate(
+L   384-405    (   22) | def compute_winrates(
+L   406-426    (   21) | def assemble_bias_controls(
+L   427-448    (   22) | def length_contradicts(
+L   449-489    (   41) | def assemble_length_corroboration(
+L   490-513    (   24) | def build_arm_answers(
+L   514-572    (   59) | def build_autoe_batch_jsonl(
+L   573-607    (   35) | def parse_autoe_batch_output(
+L   608-642    (   35) | def project_autoe_cost(

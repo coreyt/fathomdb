@@ -1,0 +1,38 @@
+# dev/design/gpu-device-allocation-policy.md  (712 LOC, class=design-doc, soft=700, hard=1100)
+
+L     5-38     (   34) | # GPU device-allocation policy — design-on-spec (embedder + CE reranker)
+L    39-64     (   26) | ## 0. The problem (from HITL)
+L    65-69     (    5) | ## 0.5. Scope — TWO TIERS (HITL directive, v2)
+L    70-94     (   25) | ### TIER 1 — MVP now (this machine + the V-3/V-7 experiment work)
+L    95-112    (   18) | ### TIER 2 — Full release work (the published GPU-capable package)
+L   113-117    (    5) | ## 1. Current-state survey — what FathomDB does today
+L   118-133    (   16) | ### 1.1 The shared parser (`device.rs`)
+L   134-148    (   15) | ### 1.2 Request → device mapping (`resolve_device`, per backend)
+L   149-167    (   19) | ### 1.3 candle backend constraints
+L   168-205    (   38) | ### 1.4 Gaps vs the problem
+L   206-210    (    5) | ## 2. Web research — how other systems manage GPU selection / limits / fallback
+L   211-224    (   14) | ### 2.1 PyTorch
+L   225-239    (   15) | ### 2.2 vLLM
+L   240-256    (   17) | ### 2.3 Ollama (and llama.cpp under it)
+L   257-275    (   19) | ### 2.4 ONNX Runtime (CUDA EP) — directly relevant to the 0.8.16 path
+L   276-287    (   12) | ### 2.5 HuggingFace Accelerate
+L   288-305    (   18) | ### 2.6 NVML / nvidia-smi — the probing substrate
+L   306-321    (   16) | ### 2.7 The patterns (what to steal)
+L   322-326    (    5) | ### 2.8 v2 research — the three genuinely-open questions
+L   327-349    (   23) | #### (a) Can candle enforce a GPU memory budget? — NO hard cap; advisory free-VR
+L   350-378    (   29) | #### (b) Per-call vs per-engine device validation overhead — per-engine; per-cal
+L   379-406    (   28) | #### (c) The vendor-abstraction boundary (#0) — two independent seams
+L   407-411    (    5) | ## 3. The mechanism matrix (HITL's options)
+L   412-429    (   18) | ### 3.1 Static config / user pre-identification
+L   430-447    (   18) | ### 3.2 Dynamic allocation
+L   448-466    (   19) | ### 3.3 CPU fallback — three flavors
+L   467-508    (   42) | ### 3.5 Vendor abstraction — the `DeviceProbe` / `GpuBackend` boundary (#0, v2)
+L   509-514    (    6) | ## 4. Recommendation
+L   515-541    (   27) | ### 4.1 Default policy (unchanged spirit, safer floor)
+L   542-560    (   19) | ### 4.2 Config surface (proposed concrete names)
+L   561-600    (   40) | ### 4.3 Probing / eligibility algorithm (Tier 2 — `auto` and refusing a bad pin)
+L   601-616    (   16) | ### 4.4 Tier-1 MVP — exact scope (folds into 0.8.14)
+L   617-625    (    9) | ### 4.5 Explicitly out of scope (not now, maybe never)
+L   626-654    (   29) | ## 5. Cross-cutting fit + roadmap slot
+L   655-691    (   37) | ## 6. Sources
+L   692-712    (   21) | ## 7. Open questions for HITL — status after v2

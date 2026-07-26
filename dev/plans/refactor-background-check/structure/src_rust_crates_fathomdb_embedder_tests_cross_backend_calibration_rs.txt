@@ -1,0 +1,28 @@
+# src/rust/crates/fathomdb-embedder/tests/cross_backend_calibration.rs  (824 LOC, class=rust-test, soft=800, hard=1200)
+
+L    63-73     (   11) | fn probes() -> Vec<String> {
+L    74-83     (   10) | fn pinned_mean() -> Vec<f32> {
+L    84-93     (   10) | fn onnx_env() -> Option<(String, String)> {
+L    94-109    (   16) | struct LegResult {
+L   110-120    (   11) | fn backend_of(label: &str) -> &str {
+L   121-131    (   11) | fn ran_on_requested(requested: &str, effective: &str) -> bool {
+L   132-132    (    1) | #[test]
+L   133-201    (   69) | fn calibration_leg_worker() {
+L   202-216    (   15) | struct LegOut<'a> {
+L   217-224    (    8) | fn fallback_note(vendor: &str, requested: &str, effective: &str) -> String {
+L   225-274    (   50) | impl<'a> LegOut<'a> {
+L   275-316    (   42) | fn write_leg(path: &str, leg: &LegOut<'_>) {
+L   317-338    (   22) | fn run_leg(vendor: &str, device: &str) -> LegResult {
+L   339-366    (   28) | fn parse_leg(raw: &str) -> LegResult {
+L   367-383    (   17) | struct PairMetrics {
+L   384-442    (   59) | fn compare_pair(a: &[Vec<f32>], b: &[Vec<f32>], mean: &[f32]) -> PairMetrics {
+L   443-449    (    7) | struct GpuPairs {
+L   450-467    (   18) | fn measured_row(label: &str, m: &PairMetrics) -> String {
+L   468-468    (    1) | #[test]
+L   469-518    (   50) | fn cpu_legs_reproduce_0816_baseline() {
+L   519-519    (    1) | #[test]
+L   520-600    (   81) | fn harness_skips_unavailable_backends_cleanly() {
+L   601-604    (    4) | fn repo_root() -> PathBuf {
+L   605-605    (    1) | #[test]
+L   606-690    (   85) | fn calibration_reports_p1_flips_and_p2_l2() {
+L   691-824    (  134) | fn write_durable_doc(

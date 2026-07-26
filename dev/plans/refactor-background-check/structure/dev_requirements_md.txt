@@ -1,0 +1,14 @@
+# dev/requirements.md  (642 LOC, class=doc-other, soft=500, hard=1000)
+
+L    10-29     (   20) | # Requirements
+L    30-83     (   54) | ## Observability (REQ-001..REQ-008)
+L    84-145    (   62) | ## Performance (REQ-009..REQ-018)
+L   146-261    (  116) | ## Reliability (REQ-019..REQ-031)
+L   262-303    (   42) | ## Security (REQ-032..REQ-035)
+L   304-387    (   84) | ## Operability (REQ-036..REQ-041)
+L   388-422    (   35) | ## Upgrade / compatibility (REQ-042..REQ-046)
+L   423-463    (   41) | ## Supply chain (REQ-047..REQ-052)
+L   464-537    (   74) | ## Public surface (REQ-053..REQ-059)
+L   538-624    (   87) | ## Security hardening (REQ-060..REQ-066)
+L   625-635    (   11) | ## Non-goals
+L   636-642    (    7) | ## Source-trace summary

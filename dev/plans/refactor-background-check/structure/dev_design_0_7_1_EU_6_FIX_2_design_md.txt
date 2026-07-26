@@ -1,0 +1,27 @@
+# dev/design/0.7.1-EU-6-FIX-2-design.md  (601 LOC, class=design-doc, soft=500, hard=1000)
+
+L    14-50     (   37) | ## 1. Context
+L    51-61     (   11) | ## 2. Decisions register
+L    62-75     (   14) | ### 2.1 Variant inventory (verified against Rust)
+L    76-109    (   34) | ## 3. Acceptance criteria (restated verbatim from master plan)
+L   110-132    (   23) | ### 3.1 AC concerns
+L   133-171    (   39) | ## 4. Files expected to change (per master plan, restated for B3)
+L   172-173    (    2) | ## 5. Test architecture
+L   174-188    (   15) | ### 5.1 Pyright narrowing test (AC-FIX2-3)
+L   189-229    (   41) | # _pyright_narrowing_fixture.py — fed to pyright; not executed at test time.
+L   230-277    (   48) | ### 5.2 TS compile-time narrowing test (AC-FIX2-5)
+L   278-295    (   18) | ### 5.3 TS mapper unit test (D4)
+L   296-318    (   23) | ### 5.4 Runtime shape consistency test (AC-FIX2-6)
+L   319-320    (    2) | ## 6. Mechanism details
+L   321-357    (   37) | ### 6.1 Python `_fathomdb.pyi` structure
+L   358-370    (   13) | ### 6.2 Python `fathomdb/types.py` structure
+L   371-466    (   96) | ### 6.3 TS `index.ts` structure
+L   467-493    (   27) | ### 6.4 Documentation update
+L   494-495    (    2) | ## 7. Risks & rollback
+L   496-504    (    9) | ### 7.1 Pyright invocation latency
+L   505-510    (    6) | ### 7.2 TS mapper per-open overhead
+L   511-521    (   11) | ### 7.3 Non-null assertions in the mapper
+L   522-531    (   10) | ### 7.4 Rollback
+L   532-540    (    9) | ### 7.5 `typing_extensions` dependency drift (Python 3.10)
+L   541-572    (   32) | ## 8. Alternatives considered
+L   573-601    (   29) | ## 9. Exit criteria (mapped 1:1 to ACs)

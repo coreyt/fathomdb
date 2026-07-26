@@ -1,0 +1,15 @@
+# src/python/eval/expaf_value_run.py  (757 LOC, class=py-eval, soft=500, hard=1000)
+
+L   102-134    (   33) | def load_pool_records() -> list[dict[str, Any]]:
+L   135-139    (    5) | def _all_in(order: Sequence[str], gold: Sequence[str], n: int) -> bool:
+L   140-171    (   32) | def headroom(records: list[dict[str, Any]]) -> dict[str, Any]:
+L   172-192    (   21) | def _rerank_prompt(question: str, passages: list[str], offset: int = 0) -> str:
+L   193-217    (   25) | def _parse_relevance(raw: str, valid: set[int]) -> tuple[list[int], bool, bool]:
+L   218-229    (   12) | def _rerank_order(ce_order: list[str], shown_n: int, relevant_1based: list[int])
+L   230-315    (   86) | def run_agent_arm(
+L   316-335    (   20) | def _net_grid(lift_ci: dict[str, Any], depth_calls: float) -> dict[str, Any]:
+L   336-441    (  106) | def analyse(records: dict[str, dict[str, Any]], sample: list[dict[str, Any]],
+L   442-465    (   24) | def select_breakeven(records: list[dict[str, Any]], *, threshold: float,
+L   466-579    (  114) | def main(argv: Optional[list[str]] = None) -> int:
+L   580-645    (   66) | def build_verdict(agent: dict[str, Any], be_head: dict[str, Any]) -> dict[str, A
+L   646-757    (  112) | def write_md(out: dict[str, Any], path: Path) -> None:

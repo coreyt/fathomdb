@@ -1,0 +1,11 @@
+# dev/adr/ADR-0.7.0-vector-binary-quant.md  (544 LOC, class=design-doc, soft=500, hard=1000)
+
+L    10-31     (   22) | # ADR-0.7.0 — Vector binary quantization (Pack 1 + Pack 2)
+L    32-81     (   50) | ## 1. Problem
+L    82-264    (  183) | ## 2. Decision
+L   265-319    (   55) | ## 3. Alternatives considered (and rejected)
+L   320-386    (   67) | ## 4. Consequences
+L   387-420    (   34) | ## 5. Architectural-lever accounting
+L   421-475    (   55) | ## 6. Open questions / HITL gates
+L   476-496    (   21) | ## 7. Status / next actions
+L   497-544    (   48) | ## Citations

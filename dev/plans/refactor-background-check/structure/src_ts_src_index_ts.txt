@@ -1,0 +1,54 @@
+# src/ts/src/index.ts  (1300 LOC, class=ts-src, soft=500, hard=1000)
+
+L    38-39     (    2) | export type LifecycleState = "pending" | "active" | "deleted" | "purged";
+L    40-47     (    8) | export interface EngineConfig {
+L    48-61     (   14) | export interface EngineOpenOptions {
+L    62-82     (   21) | export interface WriteReceipt {
+L    83-101    (   19) | export interface EraseReport {
+L   102-112    (   11) | export type ProjectionRole = "filterable" | "rankable" | "searchable";
+L   113-130    (   18) | export interface ProjectionSpec {
+L   131-138    (    8) | export interface ProjectionDelta {
+L   139-148    (   10) | export interface IngestWithExtractorReceipt {
+L   149-156    (    8) | export interface ExtractDocument {
+L   157-170    (   14) | export interface ConsolidateReceipt {
+L   171-177    (    7) | export interface ConsolidateAxis {
+L   178-179    (    2) | export type SoftFallbackBranch = "vector" | "text" | "text_edge" | "graph_arm";
+L   180-192    (   13) | export interface SoftFallback {
+L   193-197    (    5) | export interface IdSpace {
+L   198-245    (   48) | export interface SearchHit {
+L   246-260    (   15) | export interface SearchFilter {
+L   261-275    (   15) | export type FilterTerm =
+L   276-279    (    4) | export interface Filter {
+L   280-284    (    5) | const VEC0_JSON_REJECT =
+L   285-293    (    9) | function isUnifiedFilter(f: SearchFilter | Filter | undefined): f is Filter {
+L   294-317    (   24) | export function filterToSearchFilter(filter: Filter): SearchFilter {
+L   318-333    (   16) | export function searchFilterToFilter(sf: SearchFilter): Filter {
+L   334-359    (   26) | export interface QueryTrace {
+L   360-381    (   22) | export interface PerHitExplain {
+L   382-406    (   25) | export function mapPerHitExplain(p: NativePerHitExplain): PerHitExplain {
+L   407-411    (    5) | export interface Explanation {
+L   412-422    (   11) | export interface SearchResult {
+L   423-428    (    6) | export interface MigrationStepReport {
+L   429-442    (   14) | export interface EmbedderIdentity {
+L   443-452    (   10) | export interface DefaultEmbedderDownloadEvent {
+L   453-459    (    7) | export interface DefaultEmbedderCacheHitEvent {
+L   460-476    (   17) | export interface MeanVecPinnedEvent {
+L   477-481    (    5) | export interface UnknownEmbedderEvent {
+L   482-504    (   23) | export type EmbedderEvent =
+L   505-527    (   23) | export function isKnownEmbedderEvent(
+L   528-568    (   41) | export function mapEmbedderEvent(n: NativeEmbedderEvent): EmbedderEvent {
+L   569-597    (   29) | export interface OpenReport {
+L   598-606    (    9) | export interface CounterSnapshot {
+L   607-610    (    4) | export interface SubscriberEvent {
+L   611-612    (    2) | export type SubscriberCallback = (event: SubscriberEvent) => void;
+L   613-616    (    4) | export interface AttachSubscriberOptions {
+L   617-621    (    5) | export interface AdminConfigureOptions {
+L   622-629    (    8) | async function intercept<T>(fn: () => Promise<T>): Promise<T> {
+L   630-642    (   13) | function interceptSync<T>(fn: () => T): T {
+L   643-660    (   18) | function validateIdArray(name: string, value: number[]): void {
+L   661-1178   (  518) | export class Engine {
+L  1179-1195   (   17) | export const admin = {
+L  1196-1208   (   13) | export interface ExpandedNode {
+L  1209-1215   (    7) | export interface SearchExpandResult {
+L  1216-1217   (    2) | export type TraversalDirection = "outgoing" | "incoming" | "both";
+L  1218-1300   (   83) | export const graph = {

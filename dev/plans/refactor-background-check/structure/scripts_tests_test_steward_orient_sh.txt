@@ -1,0 +1,8 @@
+# scripts/tests/test_steward_orient.sh  (645 LOC, class=shell-test, soft=500, hard=800)
+
+L    49-49     (    1) | pass() { printf 'PASS  %s\n' "$1"; }
+L    50-52     (    3) | fail() { printf 'FAIL  %s\n' "$1" >&2; FAILED=$((FAILED + 1)); }
+L    53-73     (   21) | cleanup() {
+L    74-174    (  101) | setup_fixture() {
+L   175-190    (   16) | run_orient() {
+L   191-645    (  455) | tree_snapshot() { find "$1" -path '*/.git' -prune -o -printf '%p %s\n' | sort; }

@@ -1,0 +1,22 @@
+# dev/design/embedder.md  (854 LOC, class=design-doc, soft=700, hard=1100)
+
+L    12-30     (   19) | # Embedder Design
+L    31-41     (   11) | ## `embedder_pool_size` rationale
+L    42-43     (    2) | ## §0 — Mean-centering sub-design
+L    44-58     (   15) | ### §0.1 Why it exists
+L    59-84     (   26) | ### §0.2 Schema
+L    85-203    (  119) | ### §0.3 Lifecycle
+L   204-239    (   36) | ### §0.4 Apply rule
+L   240-315    (   76) | ### §0.5 Pin-commit re-quantize pass (no asymmetry)
+L   316-371    (   56) | ### §0.6 Visibility
+L   372-385    (   14) | ### §0.7 Invariant summary
+L   386-454    (   69) | ## §1 — Loader scope
+L   455-505    (   51) | ## §2 — HTTP transport
+L   506-534    (   29) | ## §3 — Auth tokens
+L   535-585    (   51) | ## §4 — Cache layout
+L   586-621    (   36) | ## §5 — Atomic write
+L   622-646    (   25) | ## §6 — Verification
+L   647-709    (   63) | ## §7 — Cold-load timing
+L   710-735    (   26) | ## §8 — Endianness
+L   736-807    (   72) | ## §9 — Failure taxonomy
+L   808-854    (   47) | ## §10 — Concurrency

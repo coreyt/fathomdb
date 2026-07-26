@@ -1,0 +1,41 @@
+# src/rust/crates/fathomdb-engine/tests/support/ir_eval.rs  (826 LOC, class=rust-test, soft=800, hard=1200)
+
+L    57-61     (    5) | pub enum Necessity {
+L    62-74     (   13) | impl Necessity {
+L    75-83     (    9) | pub enum QueryClass {
+L    84-114    (   31) | impl QueryClass {
+L   115-120    (    6) | pub enum QueryOrigin {
+L   121-143    (   23) | impl QueryOrigin {
+L   144-153    (   10) | pub struct Span {
+L   154-164    (   11) | pub struct Locator {
+L   165-177    (   13) | pub struct EvidenceUnit {
+L   178-208    (   31) | pub struct GoldQuery {
+L   209-223    (   15) | pub struct GoldSet {
+L   224-231    (    8) | pub fn load_gold_set(path: &Path) -> Result<GoldSet, String> {
+L   232-248    (   17) | pub fn parse_gold_set(text: &str) -> Result<GoldSet, String> {
+L   249-300    (   52) | fn parse_query(q: &Value) -> Result<GoldQuery, String> {
+L   301-314    (   14) | fn parse_evidence(u: &Value) -> Result<EvidenceUnit, String> {
+L   315-324    (   10) | fn parse_locator(v: &Value) -> Option<Locator> {
+L   325-341    (   17) | fn parse_span(v: &Value) -> Option<Span> {
+L   342-354    (   13) | pub fn required_doc_ids(q: &GoldQuery) -> BTreeSet<String> {
+L   355-365    (   11) | pub fn supporting_doc_ids(q: &GoldQuery) -> BTreeSet<String> {
+L   366-384    (   19) | pub struct PerQueryRecall {
+L   385-408    (   24) | pub fn evidence_recall_at_k(
+L   409-415    (    7) | pub fn negative_abstained(retrieved_doc_ids: &[String], k: usize) -> bool {
+L   416-422    (    7) | pub struct ClassAgg {
+L   423-453    (   31) | impl ClassAgg {
+L   454-458    (    5) | pub struct NegativeAgg {
+L   459-472    (   14) | impl NegativeAgg {
+L   473-479    (    7) | pub struct KResult {
+L   480-500    (   21) | impl KResult {
+L   501-538    (   38) | pub fn evaluate_gold_set<F>(
+L   539-615    (   77) | pub fn validate_gold_set(gold: &GoldSet) -> Vec<String> {
+L   616-631    (   16) | pub enum RetrievalMode {
+L   632-663    (   32) | impl RetrievalMode {
+L   664-691    (   28) | pub fn run_mode_bodies(
+L   692-704    (   13) | fn search_bodies(engine: &Engine, query: &str) -> Result<Vec<String>, String> {
+L   705-726    (   22) | pub struct ExperimentResult {
+L   727-755    (   29) | pub fn run_experiment(
+L   756-759    (    4) | pub fn map_bodies_to_doc_ids(bodies: &[String], map: &HashMap<String, String>) -
+L   760-765    (    6) | fn round4(x: f64) -> f64 {
+L   766-826    (   61) | pub fn experiment_to_json(gold: &GoldSet, result: &ExperimentResult) -> Value {
