@@ -61,7 +61,7 @@ use fathomdb_schema::SQLITE_SUFFIX;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tempfile::TempDir;
 
@@ -81,6 +81,15 @@ struct CountingEmbedder {
     /// falsifiable in BOTH directions: with work enqueued the drain must burn
     /// its (short) timeout, with none it returns on the first poll.
     delay_ms: Arc<AtomicU64>,
+    /// fix-3 — restrict `delay_ms` to texts CONTAINING this marker. Default `""`,
+    /// which every text contains, so every pre-existing test is unaffected.
+    ///
+    /// Leg F needs it because it reopens a database whose `_fathomdb_vector_kinds`
+    /// is already non-empty, which engages the 0.8.18 vector-equivalence probe:
+    /// that probe embeds its reference set AT OPEN (measured here: 90 calls), so
+    /// an unrestricted 1.5 s delay would put ~135 s inside `Engine::open` and
+    /// drown the ONE projection embed the test is counting.
+    delay_marker: Arc<Mutex<String>>,
 }
 
 impl CountingEmbedder {
@@ -93,7 +102,13 @@ impl CountingEmbedder {
             identity,
             calls: Arc::new(AtomicUsize::new(0)),
             delay_ms: Arc::new(AtomicU64::new(0)),
+            delay_marker: Arc::new(Mutex::new(String::new())),
         }
+    }
+
+    /// fix-3 — apply `delay_ms` only to texts containing `marker`.
+    fn delay_only_for(&self, marker: &str) {
+        *self.delay_marker.lock().unwrap_or_else(|p| p.into_inner()) = marker.to_string();
     }
 }
 
@@ -102,9 +117,10 @@ impl Embedder for CountingEmbedder {
         self.identity.clone()
     }
 
-    fn embed(&self, _text: &str) -> Result<Vector, EmbedderError> {
+    fn embed(&self, text: &str) -> Result<Vector, EmbedderError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        let delay = self.delay_ms.load(Ordering::SeqCst);
+        let marker = self.delay_marker.lock().unwrap_or_else(|p| p.into_inner()).clone();
+        let delay = if text.contains(&marker) { self.delay_ms.load(Ordering::SeqCst) } else { 0 };
         if delay > 0 {
             std::thread::sleep(Duration::from_millis(delay));
         }
@@ -1101,6 +1117,211 @@ fn late_enrolment_backfills_the_rows_an_earlier_session_stranded() {
     );
     assert_eq!(calls.load(Ordering::SeqCst), 4, "only the new row was embedded");
     assert_eq!(leaf_rows_without_vectors(&conn), 0);
+
+    opened.engine.close().unwrap();
+}
+
+// ===========================================================================
+// Leg F (fix-3, codex §9 round 3 [P1] "Do not enqueue vector work in
+//         no-embedder sessions") — the live-embedder gate must reach the
+//         ENQUEUE decision, not only enrolment / backfill
+// ===========================================================================
+
+/// The raw `_fathomdb_projection_terminal` state for one cursor.
+///
+/// The two tokens are the whole finding: `'failed'` is what retry-exhaustion
+/// against an ABSENT embedder records (`EmbedderNotConfiguredError`), and NO
+/// graft path reopens a `'failed'` terminal — deliberately, since re-enqueueing
+/// one would loop a genuinely-failing row forever. `'up_to_date'` is what the
+/// not-enqueued branch records, and that IS the stranded shape
+/// `reenqueue_stranded_vector_rows` reopens.
+fn terminal_state(conn: &rusqlite::Connection, cursor: i64) -> Option<String> {
+    conn.query_row(
+        "SELECT state FROM _fathomdb_projection_terminal WHERE write_cursor = ?1",
+        [cursor],
+        |r| r.get::<_, String>(0),
+    )
+    .ok()
+}
+
+/// The node-FTS shadow row for one cursor — the "the write is still lexically
+/// searchable" half of the graceful-absent contract, read AT REST so it does not
+/// depend on FTS query semantics.
+fn fts_row_exists(conn: &rusqlite::Connection, cursor: i64) -> bool {
+    conn.query_row("SELECT COUNT(*) FROM search_index WHERE write_cursor = ?1", [cursor], |r| {
+        r.get::<_, i64>(0)
+    })
+    .expect("fts row probe")
+        > 0
+}
+
+/// **A no-embedder session must not enqueue vector work for an ALREADY-ENROLLED
+/// kind.**
+///
+/// fix-2 gated ENROLMENT on a live embedder. It did not gate the ENQUEUE, and
+/// `_fathomdb_vector_kinds` is durable: once an embedder-backed session has
+/// enrolled `doc`, every later session sees `kind_is_vector_indexed == true`.
+/// Reopening that database with `EmbedderChoice::None` and writing the same kind
+/// therefore still enqueued the row. The worker exhausted its retry ladder
+/// against `shared.embedder == None`, recorded an `EmbedderNotConfiguredError`
+/// `'failed'` terminal plus a `projection_failures` audit row — and because the
+/// graft path only reopens `'up_to_date'` terminals, reopening WITH an embedder
+/// left that write permanently unembedded while readiness reported `ready`.
+/// A FALSE READY: the exact defect class R-20-DR exists to eliminate.
+///
+/// The fix is codex's: the live-embedder gate reaches the enqueue decision, so a
+/// no-embedder session takes the else-branch and records the `'up_to_date'`
+/// terminal — i.e. it produces a STRANDED row, which the machinery fix-2 already
+/// built (`reenqueue_stranded_vector_rows`) reopens on the next live-embedder
+/// session. No new recovery path, and no retry loop for genuinely-failing rows.
+///
+/// This test pins the whole graceful-absent sentence end to end: a no-embedder
+/// session **accepts** the write, keeps it **lexically searchable**, does **not**
+/// count it as outstanding work for `drain`, and **does** let a later
+/// live-embedder session **graft** it.
+///
+/// The at-rest oracles key off `canonical_nodes.row_kind` with **no** join to
+/// `_fathomdb_vector_kinds` (the registry is precisely what is non-empty here, so
+/// a joined probe would return a hollow zero).
+#[test]
+fn a_no_embedder_session_does_not_enqueue_for_an_already_enrolled_kind() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "flush_barrier_no_embedder_enqueue");
+
+    // ---- session 0: create the database with NO embedder, so the `default`
+    // profile pins `default_embedder_identity()`. Every later session then uses
+    // that same identity and the reopens cannot fail closed on
+    // `EmbedderIdentityMismatch` (ADR-0.6.0-vector-identity-embedder-owned).
+    Engine::open(path.clone()).expect("create").engine.close().unwrap();
+    let identity = stored_default_identity(&path);
+
+    // ---- session 1: WITH an embedder. This is what durably ENROLS `doc` into
+    // `_fathomdb_vector_kinds`; from here on every session sees an enrolled kind.
+    {
+        let embedder = CountingEmbedder::with_identity(identity.clone());
+        let opened = Engine::open_with_embedder_for_test(&path, Arc::new(embedder)).expect("open");
+        let engine = &opened.engine;
+        engine.configure_projections(&[vector_spec("summary")], &[]).expect("configure");
+        engine
+            .write(&[node("doc", "N1", r#"{"summary":"embedded in session one"}"#)])
+            .expect("write N1");
+        engine.drain(30_000).expect("session 1 drain");
+
+        let conn = ro(&path);
+        assert!(vector_kind_registered(&conn, "doc"), "fixture: session 1 enrolled `doc`");
+        assert_eq!(leaf_rows_without_vectors(&conn), 0, "fixture: session 1's row is embedded");
+        opened.engine.close().unwrap();
+    }
+    let c1 = active_cursor(&ro(&path), "N1");
+
+    // ---- session 2: the SAME database, reopened with `EmbedderChoice::None`.
+    let c2 = {
+        let opened = Engine::open(path.clone()).expect("reopen without embedder");
+        let engine = &opened.engine;
+
+        // Fixture precondition, asserted rather than assumed: the enrolment
+        // PERSISTED, so this session's write reaches `kind_is_vector_indexed`.
+        assert!(
+            vector_kind_registered(&ro(&path), "doc"),
+            "fixture: the kind stays enrolled across the reopen — that is the whole finding"
+        );
+
+        engine
+            .write(&[node("doc", "N2", r#"{"summary":"written with no dense arm"}"#)])
+            .expect("write N2");
+
+        // (b) not outstanding work. The timeout is generous ON PURPOSE: at
+        // baseline the barrier only clears once the worker has burned the whole
+        // retry ladder (0 + 1 s + 4 s + 16 s) into its `'failed'` terminal, and a
+        // short timeout would abort this test BEFORE that terminal lands — which
+        // would leave session 3 grafting a merely-unterminated row and make the
+        // whole test vacuously green on the broken code. No wall-clock assertion
+        // is made here: `wait_for_idle` has a pre-existing missed-wakeup window
+        // (OOS-11) that can add ~30 s of its own.
+        engine.drain(60_000).expect("drain must not burn its timeout on a dead dense arm");
+        assert_eq!(
+            readiness(engine, "summary"),
+            Some(DenseReadiness::Ready),
+            "with no live embedder there is no dense arm, so nothing is outstanding"
+        );
+
+        let conn = ro(&path);
+        let c2 = active_cursor(&conn, "N2");
+
+        // (a) the write is ACCEPTED and stays lexically searchable.
+        assert!(fts_row_exists(&conn, c2), "the write is accepted and still lexically searchable");
+
+        // THE FINDING. Both of these are `'failed'`-side at baseline.
+        assert_eq!(
+            projection_failure_rows(&conn),
+            0,
+            "NO-EMBEDDER ENQUEUE: a session with no dense arm must not enqueue vector work — the \
+             worker can only exhaust its retries into an `EmbedderNotConfiguredError` `'failed'` \
+             terminal, and an ABSENT embedder is an environment fact, not an embed failure"
+        );
+        assert_eq!(
+            terminal_state(&conn, c2).as_deref(),
+            Some("up_to_date"),
+            "NO-EMBEDDER ENQUEUE: the row must take the NOT-ENQUEUED branch's `'up_to_date'` \
+             terminal — that is what makes it a STRANDED row, and stranded rows are the ONLY \
+             shape `reenqueue_stranded_vector_rows` reopens. A `'failed'` terminal is permanent \
+             by design, so enqueueing here loses the write forever"
+        );
+        assert!(!vector_row_exists(&conn, c2), "fixture: no dense arm ⇒ no vector yet");
+        assert!(vector_row_exists(&conn, c1), "session 1's vector is untouched");
+
+        opened.engine.close().unwrap();
+        c2
+    };
+
+    // ---- session 3: the SAME database, WITH an embedder again. No re-apply and
+    // no further write — reopening is the graft point.
+    let embedder = CountingEmbedder::with_identity(identity);
+    let calls = Arc::clone(&embedder.calls);
+    let delay_ms = Arc::clone(&embedder.delay_ms);
+    // Slow the embedder so the readiness probe below is read BEFORE the worker
+    // can finish — otherwise "did readiness ever say `embedding`?" is a race.
+    //
+    // Scoped to the NODE BODIES. `_fathomdb_vector_kinds` is non-empty on this
+    // database, so `Engine::open` engages the 0.8.18 vector-equivalence probe,
+    // which embeds its reference set at open (measured: 90 calls). An
+    // unrestricted delay would put ~135 s inside `Engine::open` itself, before
+    // the graft even runs.
+    embedder.delay_only_for("\"summary\"");
+    delay_ms.store(1_500, Ordering::SeqCst);
+    let opened = Engine::open_with_embedder_for_test(&path, Arc::new(embedder)).expect("reopen");
+    let engine = &opened.engine;
+    // Those probe embeds are NOT projection work, so the count below is a DELTA
+    // from this baseline. Read after `open` has returned, i.e. after the probe.
+    let calls_at_open = calls.load(Ordering::SeqCst);
+
+    assert_eq!(
+        readiness(engine, "summary"),
+        Some(DenseReadiness::Embedding),
+        "the row the no-embedder session stranded is outstanding again, so readiness must NOT \
+         report `ready` while it has no vector"
+    );
+
+    delay_ms.store(0, Ordering::SeqCst);
+    engine.drain(30_000).expect("drain flushes the grafted row");
+    assert_eq!(readiness(engine, "summary"), Some(DenseReadiness::Ready));
+
+    let conn = ro(&path);
+    assert_eq!(
+        leaf_rows_without_vectors(&conn),
+        0,
+        "FALSE-READY: `drain()` returned Ok and readiness reads `ready`, but the row written in \
+         the no-embedder session still has no vector at rest"
+    );
+    assert!(vector_row_exists(&conn, c2), "the stranded row's vector landed at rest");
+    assert!(vec0_row_exists(&conn, c2), "…including the vec0 row");
+    assert!(vector_row_exists(&conn, c1), "session 1's vector is still there");
+    assert_eq!(
+        calls.load(Ordering::SeqCst) - calls_at_open,
+        1,
+        "ONLY the stranded row was embedded — session 1's row must not be re-embedded"
+    );
+    assert_eq!(projection_failure_rows(&conn), 0, "the graft produced no failures either");
 
     opened.engine.close().unwrap();
 }
