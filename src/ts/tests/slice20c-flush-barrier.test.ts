@@ -426,3 +426,133 @@ test("late enrolment backfills the rows a no-embedder session stranded", async (
   );
   assert.equal(vectorRows(path), 3, "all three rows were embedded");
 });
+
+/**
+ * The raw `_fathomdb_projection_terminal` state for one node's cursor.
+ *
+ * The two tokens are the whole fix-3 finding: `'failed'` is what retry-exhaustion
+ * against an ABSENT embedder records, and no graft path reopens a `'failed'`
+ * terminal (deliberately — re-enqueueing one would loop a genuinely-failing row
+ * forever). `'up_to_date'` is what the not-enqueued branch records, and that IS
+ * the stranded shape a later live-embedder session reopens.
+ */
+function terminalState(path: string, logicalId: string): string | null {
+  const db = new DatabaseSync(path, { readOnly: true });
+  try {
+    const row = db
+      .prepare(
+        "SELECT t.state AS s FROM canonical_nodes n" +
+          " JOIN _fathomdb_projection_terminal t ON t.write_cursor = n.write_cursor" +
+          ` WHERE n.logical_id = '${logicalId}' AND n.superseded_at IS NULL`,
+      )
+      .get() as { s: string } | undefined;
+    return row ? String(row.s) : null;
+  } finally {
+    db.close();
+  }
+}
+
+function projectionFailures(path: string): number {
+  return count(
+    path,
+    "SELECT COUNT(*) AS c FROM operational_mutations" +
+      " WHERE collection_name = 'projection_failures'",
+  );
+}
+
+test("a no-embedder session does not enqueue for an already-enrolled kind", async () => {
+  // fix-3 (codex §9 round 3 [P1]) — the live-embedder gate reaches the ENQUEUE.
+  //
+  // `_fathomdb_vector_kinds` is DURABLE. Once an embedder-backed session has
+  // enrolled a kind, reopening the same database with `useDefaultEmbedder: false`
+  // and writing that kind still reached the enqueue and handed the row to a worker
+  // with no embedder: retry exhaustion recorded an `EmbedderNotConfiguredError`
+  // `'failed'` terminal plus a `projection_failures` audit row, and because the
+  // graft path only reopens `'up_to_date'` terminals, reopening WITH an embedder
+  // left that write permanently unembedded while readiness reported `"ready"`.
+  // A FALSE READY.
+  //
+  // Pins the whole graceful-absent sentence: the no-embedder session ACCEPTS the
+  // write, keeps it LEXICALLY SEARCHABLE, does NOT count it as outstanding work
+  // for `drain`, and DOES let a later live-embedder session GRAFT it — with no
+  // re-apply and no further write, because reopening is itself the graft point.
+  //
+  // NOT mirrored from the Rust suite: the "readiness never read `ready` while the
+  // row lacked its vector" probe, which needs a deliberately-slowed embedder to be
+  // race-free. The bindings cannot install one.
+  if (skipNetwork()) return;
+  const path = freshDbPath();
+
+  // ---- session 1: WITH an embedder. This is what durably ENROLS `doc`. ----
+  const first = await Engine.open(path, { useDefaultEmbedder: true });
+  try {
+    await first.configureProjections([vectorSpec()]);
+    await first.write([node("N1", '{"summary":"embedded in session one"}')]);
+    await first.drain(DRAIN_TIMEOUT_MS);
+    assert.equal(vectorKindRegistered(path), true, "fixture: session 1 enrolled `doc`");
+    assert.equal(leafRowsWithoutVectors(path), 0, "fixture: session 1's row is embedded");
+  } finally {
+    await first.close();
+  }
+
+  // ---- session 2: the SAME database, reopened with NO embedder. ----
+  const cold = await Engine.open(path, { useDefaultEmbedder: false });
+  try {
+    assert.equal(
+      vectorKindRegistered(path),
+      true,
+      "fixture: the enrolment persists across the reopen — that is the whole finding",
+    );
+    await cold.write([node("N2", '{"summary":"written with no dense arm"}')]);
+    // Generous on purpose: at baseline the barrier only clears once the worker has
+    // burned its whole retry ladder into the `'failed'` terminal, and a short
+    // timeout would abort before that terminal lands — which would make session 3
+    // graft a merely-unterminated row and the test vacuously green.
+    await cold.drain(DRAIN_TIMEOUT_MS);
+    assert.equal(await readiness(cold), "ready", "no live embedder ⇒ nothing is outstanding");
+  } finally {
+    await cold.close();
+  }
+
+  assert.equal(
+    count(
+      path,
+      "SELECT COUNT(*) AS c FROM search_index s JOIN canonical_nodes n" +
+        " ON n.write_cursor = s.write_cursor WHERE n.logical_id = 'N2'",
+    ),
+    1,
+    "the write is ACCEPTED and stays lexically searchable",
+  );
+  assert.equal(
+    projectionFailures(path),
+    0,
+    "NO-EMBEDDER ENQUEUE: a session with no dense arm must not enqueue vector work — an ABSENT " +
+      "embedder is an environment fact, not an embed failure",
+  );
+  assert.equal(
+    terminalState(path, "N2"),
+    "up_to_date",
+    "NO-EMBEDDER ENQUEUE: the row must take the NOT-ENQUEUED branch's `'up_to_date'` terminal — " +
+      "a `'failed'` terminal is permanent by design, so enqueueing here loses the write forever",
+  );
+  assert.equal(vectorRows(path), 1, "no dense arm ⇒ no vector for N2 yet");
+  assert.equal(leafRowsWithoutVectors(path), 1);
+
+  // ---- session 3: WITH an embedder again. No re-apply and no further write. ----
+  const warm = await Engine.open(path, { useDefaultEmbedder: true });
+  try {
+    await warm.drain(DRAIN_TIMEOUT_MS);
+    assert.equal(await readiness(warm), "ready");
+  } finally {
+    await warm.close();
+  }
+
+  assert.equal(
+    leafRowsWithoutVectors(path),
+    0,
+    'FALSE-READY: `drain` resolved and readiness reads "ready", but the row written in the ' +
+      "no-embedder session still has no vector at rest",
+  );
+  assert.equal(vectorRows(path), 2, "the stranded row was grafted, and only it");
+  assert.equal(projectionFailures(path), 0, "the graft produced no failures either");
+});
