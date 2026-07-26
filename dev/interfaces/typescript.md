@@ -223,6 +223,40 @@ and rebuild-durable, so it carries one.
   the slice adds ZERO net-new governed commands; `DenseReadiness` is the only
   net-new export.
 
+### `engine.drain()` is the flush-to-readiness barrier (0.8.20 Slice 20c, R-20-DR)
+
+There is **no `flushEmbeddings()` verb**. The shipped `engine.drain(timeoutMs)` —
+note **MILLISECONDS** here, seconds in Python — carries those semantics, so the
+surface gains ZERO net-new governed commands. The pinned invariant, tested in
+Rust, Python and TypeScript:
+
+> `await engine.drain(timeoutMs)` resolving ⟹ `vectorDenseReadiness === "ready"`,
+> **and every vector-eligible row has its vector row at rest.**
+
+- **`drain` is a BARRIER, not a trigger.** It waits for the engine's projection
+  runtime to go quiescent; it never schedules or wakes anything.
+  Deferred/backfill work is enqueued on the **enqueue side** instead:
+  `configureProjections` enrols the vector kinds and re-opens the stranded rows
+  before it resolves, so the very next `drain` flushes them. Turning the dense arm
+  on over an existing corpus is therefore just:
+
+  ```ts
+  await configureProjections(engine, [
+    { name: "summary", roles: ["searchable"], vector: true },
+  ]);
+  await engine.drain(60_000); // flush the backfill
+  // (await readProjections(engine))[0].vectorDenseReadiness === "ready"
+  ```
+
+- **Ordering does not matter.** Write-then-declare and declare-then-write behave
+  identically.
+- **Idempotent.** Re-applying an already-satisfied declaration re-embeds nothing
+  and resolves `{ unchanged: true }`.
+- **Graceful-absent without a live embedder:** the declaration persists and
+  defers, then grafts on when re-applied in a session that has one.
+- **`drain` stays bounded** and rejects with the existing timeout error rather
+  than hanging; size `timeoutMs` for the backfill you just asked for.
+
 ## Errors
 
 TypeScript exposes one concrete leaf class per canonical row in

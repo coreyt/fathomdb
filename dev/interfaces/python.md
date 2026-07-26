@@ -200,6 +200,40 @@ same-transaction (non-stale on commit) so they have no readiness axis at all;
 - **Additive.** A caller who never reads the field sees identical behaviour, and
   the slice adds ZERO net-new governed commands.
 
+### `engine.drain()` is the flush-to-readiness barrier (0.8.20 Slice 20c, R-20-DR)
+
+There is **no `flush_embeddings()` verb**. The shipped
+`engine.drain(timeout_s=...)` — note **SECONDS** here, milliseconds in
+TypeScript — carries those semantics, so the surface gains ZERO net-new governed
+commands. The pinned invariant, tested in Rust, Python and TypeScript:
+
+> `drain()` returning normally ⟹ `vector_dense_readiness == "ready"`, **and every
+> vector-eligible row has its vector row at rest.**
+
+- **`drain` is a BARRIER, not a trigger.** It waits for the engine's projection
+  runtime to go quiescent; it never schedules or wakes anything. Deferred/backfill
+  work is enqueued on the **enqueue side** instead: `engine.configure_projections`
+  enrols the vector kinds and re-opens the stranded rows before returning, so the
+  very next `drain()` flushes them. Turning the dense arm on over an existing
+  corpus is therefore just:
+
+  ```python
+  configure_projections(engine, [ProjectionSpec(name="summary",
+                                               roles=["searchable"],
+                                               vector=True)])
+  engine.drain(timeout_s=60)          # flush the backfill
+  assert read_projections(engine)[0].vector_dense_readiness == "ready"
+  ```
+
+- **Ordering does not matter.** Write-then-declare and declare-then-write behave
+  identically.
+- **Idempotent.** Re-applying an already-satisfied declaration re-embeds nothing
+  and returns `ProjectionDelta(unchanged=True)`.
+- **Graceful-absent without a live embedder:** the declaration persists and
+  defers, then grafts on when re-applied in a session that has one.
+- **`drain` stays bounded** and raises the existing timeout error rather than
+  blocking; size `timeout_s` for the backfill you just asked for.
+
 ## Errors
 
 Python exposes one catch-all base class plus one concrete subclass per canonical
