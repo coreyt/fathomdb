@@ -223,6 +223,68 @@ and rebuild-durable, so it carries one.
   the slice adds ZERO net-new governed commands; `DenseReadiness` is the only
   net-new export.
 
+### `engine.drain()` is the flush-to-readiness barrier (0.8.20 Slice 20c, R-20-DR)
+
+There is **no `flushEmbeddings()` verb**. The shipped `engine.drain(timeoutMs)` —
+note **MILLISECONDS** here, seconds in Python — carries those semantics, so the
+surface gains ZERO net-new governed commands. The pinned invariant, tested in
+Rust, Python and TypeScript:
+
+> `await engine.drain(timeoutMs)` resolving ⟹ `vectorDenseReadiness === "ready"`,
+> **and every vector-eligible row has its vector row at rest.**
+
+- **`drain` is a BARRIER, not a trigger.** It waits for the engine's projection
+  runtime to go quiescent; it never schedules or wakes anything.
+  Deferred/backfill work is enqueued on the **enqueue side** instead:
+  `configureProjections` enrols the vector kinds and re-opens the stranded rows
+  before it resolves, so the very next `drain` flushes them. Turning the dense arm
+  on over an existing corpus is therefore just:
+
+  ```ts
+  await configureProjections(engine, [
+    { name: "summary", roles: ["searchable"], vector: true },
+  ]);
+  await engine.drain(60_000); // flush the backfill
+  // (await readProjections(engine))[0].vectorDenseReadiness === "ready"
+  ```
+
+- **Ordering does not matter.** Write-then-declare and declare-then-write behave
+  identically. The write path performs the **same** backfill the declaration
+  does, so rows of that kind written by an earlier session — for instance one
+  opened with `useDefaultEmbedder: false`, where the declaration persisted but
+  deferred — are picked up too, rather than being left behind a `"ready"` that is
+  not true of them.
+- **The dense arm covers only the engine's locked `kind` vocabulary.** A
+  `searchable→vector` declaration turns the dense arm on for node kinds in
+  `{email, article, paper, meeting, note, todo, doc}`. Rows of ANY other `kind`
+  are accepted and stay lexically searchable, but get **no vector** and are not
+  counted as outstanding work, so readiness still reaches `"ready"`. This is
+  **not** an error condition: `engine.write` does not reject them, nothing
+  rejects, and there is no verb to ask about it.
+- **Idempotent.** Re-applying an already-satisfied declaration re-embeds nothing
+  and resolves `{ unchanged: true }`.
+- **Dropping the last `searchable→vector` declaration turns the dense arm back
+  off.** `engine.configureProjections([], ["summary"])` un-enrols the node kinds
+  that declaration enrolled, so later writes enqueue no embed and `drain` no
+  longer waits on them. It **deletes no embedding** — vectors already at rest
+  survive the drop, exactly as they always have. Re-declaring re-enrols and
+  backfills, so a row written while the arm was off is picked up, not stranded.
+  Edge-body vectors are unaffected.
+- **Graceful-absent without a live embedder:** the declaration persists and
+  defers, then grafts on when re-applied in a session that has one.
+- **…but graceful-absent stops at the enrolment boundary** (fix-4). Once a kind
+  IS enrolled — i.e. some earlier session DID have an embedder — writing that
+  kind from a session opened with `useDefaultEmbedder: false` leaves real dense
+  work outstanding, and this session cannot satisfy it. The write is **accepted**
+  and stays lexically searchable, but `vectorDenseReadiness` reads `"embedding"`
+  and `drain` rejects with `SchedulerError` for the rest of that session, however
+  long you wait. It is **not** lost: no failure is recorded and no terminal is
+  written, so the next session opened WITH an embedder embeds it through the
+  ordinary scheduler — no re-apply, no operator `rebuild`. Expect the timeout
+  there and do not read it as data loss.
+- **`drain` stays bounded** and rejects with the existing timeout error rather
+  than hanging; size `timeoutMs` for the backfill you just asked for.
+
 ## Errors
 
 TypeScript exposes one concrete leaf class per canonical row in

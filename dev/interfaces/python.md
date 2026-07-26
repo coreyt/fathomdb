@@ -200,6 +200,68 @@ same-transaction (non-stale on commit) so they have no readiness axis at all;
 - **Additive.** A caller who never reads the field sees identical behaviour, and
   the slice adds ZERO net-new governed commands.
 
+### `engine.drain()` is the flush-to-readiness barrier (0.8.20 Slice 20c, R-20-DR)
+
+There is **no `flush_embeddings()` verb**. The shipped
+`engine.drain(timeout_s=...)` — note **SECONDS** here, milliseconds in
+TypeScript — carries those semantics, so the surface gains ZERO net-new governed
+commands. The pinned invariant, tested in Rust, Python and TypeScript:
+
+> `drain()` returning normally ⟹ `vector_dense_readiness == "ready"`, **and every
+> vector-eligible row has its vector row at rest.**
+
+- **`drain` is a BARRIER, not a trigger.** It waits for the engine's projection
+  runtime to go quiescent; it never schedules or wakes anything. Deferred/backfill
+  work is enqueued on the **enqueue side** instead: `engine.configure_projections`
+  enrols the vector kinds and re-opens the stranded rows before returning, so the
+  very next `drain()` flushes them. Turning the dense arm on over an existing
+  corpus is therefore just:
+
+  ```python
+  configure_projections(engine, [ProjectionSpec(name="summary",
+                                               roles=["searchable"],
+                                               vector=True)])
+  engine.drain(timeout_s=60)          # flush the backfill
+  assert read_projections(engine)[0].vector_dense_readiness == "ready"
+  ```
+
+- **Ordering does not matter.** Write-then-declare and declare-then-write behave
+  identically. The write path performs the **same** backfill the declaration
+  does, so rows of that kind written by an earlier session — for instance one
+  opened with `use_default_embedder=False`, where the declaration persisted but
+  deferred — are picked up too, rather than being left behind a `"ready"` that is
+  not true of them.
+- **The dense arm covers only the engine's locked `kind` vocabulary.** A
+  `searchable→vector` declaration turns the dense arm on for node kinds in
+  `{email, article, paper, meeting, note, todo, doc}`. Rows of ANY other `kind`
+  are accepted and stay lexically searchable, but get **no vector** and are not
+  counted as outstanding work, so readiness still reaches `"ready"`. This is
+  **not** an error condition: `engine.write` does not reject them, no exception is
+  raised, and there is no verb to ask about it.
+- **Idempotent.** Re-applying an already-satisfied declaration re-embeds nothing
+  and returns `ProjectionDelta(unchanged=True)`.
+- **Dropping the last `searchable→vector` declaration turns the dense arm back
+  off.** `engine.configure_projections([], drop=["summary"])` un-enrols the node
+  kinds that declaration enrolled, so later writes enqueue no embed and `drain()`
+  no longer waits on them. It **deletes no embedding** — vectors already at rest
+  survive the drop, exactly as they always have. Re-declaring re-enrols and
+  backfills, so a row written while the arm was off is picked up, not stranded.
+  Edge-body vectors are unaffected.
+- **Graceful-absent without a live embedder:** the declaration persists and
+  defers, then grafts on when re-applied in a session that has one.
+- **…but graceful-absent stops at the enrolment boundary** (fix-4). Once a kind
+  IS enrolled — i.e. some earlier session DID have an embedder — writing that
+  kind from a session opened with `use_default_embedder=False` leaves real dense
+  work outstanding, and this session cannot satisfy it. The write is **accepted**
+  and stays lexically searchable, but `vector_dense_readiness` reads
+  `"embedding"` and `drain` raises `SchedulerError` for the rest of that session,
+  however long you wait. It is **not** lost: no failure is recorded and no
+  terminal is written, so the next session opened WITH an embedder embeds it
+  through the ordinary scheduler — no re-apply, no operator `rebuild`. Expect the
+  timeout there and do not read it as data loss.
+- **`drain` stays bounded** and raises the existing timeout error rather than
+  blocking; size `timeout_s` for the backfill you just asked for.
+
 ## Errors
 
 Python exposes one catch-all base class plus one concrete subclass per canonical

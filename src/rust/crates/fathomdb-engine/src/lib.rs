@@ -251,6 +251,13 @@ const PROJECTION_INFLIGHT_LIMIT: usize = PROJECTION_WORKERS * PROJECTION_COMMIT_
 const PROJECTION_SCAN_FETCH: usize = PROJECTION_INFLIGHT_LIMIT;
 const DEFAULT_PROJECTION_RETRY_DELAYS_MS: [u64; 3] = [1_000, 4_000, 16_000];
 
+/// G11 — the fixed projection kind every EDGE body is scheduled under
+/// (`resolve_source_type` maps it to `source_type = 'edge_fact'` in
+/// `vector_default`). Named so the fix-4 deferral can say WHICH rows it
+/// deliberately leaves on the shipped terminal path (see
+/// `projection_dispatcher_loop`).
+const EDGE_FACT_KIND: &str = "edge_fact";
+
 /// Reader pool size. Per `dev/design/engine.md` § Writer / reader split,
 /// reader connections are pooled and never serialize behind one
 /// connection. AC-021 exercises 8 concurrent readers.
@@ -4768,6 +4775,170 @@ impl Engine {
         }
     }
 
+    /// 0.8.20 Slice 20c (R-20-DR remainder) — **late enrolment**, the write-path
+    /// half of the C4 rider.
+    ///
+    /// [`enqueue_declared_vector_backfill`] enrols the kinds the corpus held AT
+    /// DECLARATION TIME. A kind first written AFTERWARDS would otherwise fall
+    /// through [`project_canonical_node_row`]'s `kind_is_vector_indexed` gate
+    /// straight onto a permanent `'up_to_date'` terminal and be silently,
+    /// irrecoverably un-embedded — the identical false-ready barrier, reached by
+    /// writing second instead of declaring second.
+    ///
+    /// **Gated on a LIVE embedder** (`runtime_embedder`), which is exactly why
+    /// this lives on `Engine` and not inside the projector: with
+    /// `EmbedderChoice::None` there is no dense arm at all, so enrolling a kind
+    /// would only queue embeds that retry to a `failed` terminal and pollute
+    /// `projection_failures`. The declaration still PERSISTS without an embedder
+    /// — it simply defers, and grafts on the next idempotent apply in a session
+    /// that has one (the shipped Q6a graceful-absent/graceful-graft contract,
+    /// same as `rankable`). It mirrors the `run_vector_equivalence_probe` gate:
+    /// "no live embedder ⇒ no dense arm to guard".
+    ///
+    /// Enrolment is an idempotent `INSERT OR IGNORE`, so running it on the writer
+    /// connection just OUTSIDE the batch transaction is safe: if the batch then
+    /// fails, the workspace is left having enrolled a kind for which no row
+    /// exists — inert.
+    ///
+    /// fix-1 (codex §9 [P2]) — the `vector_projection_declared` probe below is
+    /// what stops this path re-enrolling immediately after
+    /// [`unenrol_registry_vector_node_kinds`] has run: the inverse removes the
+    /// registry row, and with no active declaration this returns without
+    /// re-adding it. (The kind registry DOES now have a delete path; it is that
+    /// one, reachable only from `configure_projections`.)
+    ///
+    /// Cost: the registry probe is skipped entirely once the kind is enrolled, so
+    /// a workspace with a live dense arm pays nothing; a workspace that never
+    /// declared a vector projection pays two `prepare_cached` `EXISTS` probes per
+    /// batch-row of an unenrolled kind.
+    ///
+    /// fix-2 (codex §9 [P2]) — a late enrolment now runs the SAME stranded-row
+    /// treatment the declare-time door runs ([`reenqueue_stranded_vector_rows`]),
+    /// and returns `true` iff that re-enqueued anything. Enrolling a kind while
+    /// enqueueing ONLY the batch's own row left every earlier row of that kind
+    /// holding its permanent `'up_to_date'` terminal with no vector, so once the
+    /// new row drained readiness reported `ready` with pre-existing vector-eligible
+    /// rows unembedded — a FALSE READY. Reached, for instance, by a database that
+    /// persisted the declaration while opened WITHOUT an embedder and then reopened
+    /// WITH one and wrote before re-applying the projection.
+    ///
+    /// fix-5 (codex §9 round 4 [P2]) — the registry INSERT and the un-stranding
+    /// commit as ONE `BEGIN IMMEDIATE`…`COMMIT` (the shape
+    /// [`rederive_projections_on_boot`] and
+    /// [`reproject_search_index_after_tokenizer_upgrade`] already use). fix-2 ran
+    /// them as two, and that window is not benign: a crash or a failed repair in
+    /// between leaves the kind REGISTERED with the older rows still holding their
+    /// `'up_to_date'` terminals and no vectors — and that state is SELF-SEALING,
+    /// because `kind_is_vector_indexed` is then true, so every later write skips
+    /// this path and therefore skips the repair, while readiness reads `ready` for
+    /// rows nothing will ever embed. Only a manual re-apply of the projection
+    /// recovers it. No marker table and no new recovery path: the two statements
+    /// simply share a transaction.
+    ///
+    /// That transaction is opened on the writer connection just OUTSIDE the batch
+    /// transaction: if the batch then fails, the workspace is left having enrolled
+    /// a kind whose rows are correctly queued for the dense arm the registry does
+    /// declare — inert, and self-healing on the next write or apply.
+    fn enrol_batch_vector_kinds(
+        &self,
+        connection: &Connection,
+        batch: &[PreparedWrite],
+    ) -> Result<bool, EngineError> {
+        if self.runtime_embedder.is_none() {
+            return Ok(false);
+        }
+        // READ-ONLY pre-pass. Nothing is written here, so the overwhelmingly
+        // common case — every kind in the batch already enrolled, or no vector
+        // projection declared at all — still pays only the probes it paid before
+        // and never takes a write lock.
+        let mut to_enrol: Vec<&str> = Vec::new();
+        for write in batch {
+            // Only `Node` writes: edge bodies enrol `'edge_fact'` themselves in
+            // `project_canonical_edge_row` (G11), unconditionally and already.
+            let PreparedWrite::Node { kind, .. } = write else { continue };
+            if to_enrol.contains(&kind.as_str()) {
+                continue;
+            }
+            if self.vector_kind_needs_enrolment(connection, kind, RowKind::Leaf)? {
+                to_enrol.push(kind);
+            }
+        }
+        if to_enrol.is_empty() {
+            return Ok(false);
+        }
+        self.enrol_and_unstrand(connection, &to_enrol)
+    }
+
+    /// 0.8.20 Slice 20c — would enrolling `kind` be correct here? The READ-ONLY
+    /// half of a late enrolment; [`Engine::enrol_and_unstrand`] is the write half.
+    /// The live-embedder precondition is the CALLER's (see
+    /// [`Engine::enrol_batch_vector_kinds`]).
+    fn vector_kind_needs_enrolment(
+        &self,
+        connection: &Connection,
+        kind: &str,
+        row_kind: RowKind,
+    ) -> Result<bool, EngineError> {
+        // `graph` rows are lexically searchable but NEVER embedded
+        // (`index_targets_for_row_kind`), so they must not drag their kind into
+        // the vector registry — that would start embedding every other row of
+        // that kind.
+        if !index_targets_for_row_kind(row_kind).vector {
+            return Ok(false);
+        }
+        // fix-2 (codex §9 [P1]) — the SAME restriction the declare-time door
+        // applies, from the SAME predicate, so the two cannot drift: a kind the
+        // vector writer cannot commit must never be enrolled, or the projection
+        // worker wedges on it forever. See [`kind_is_vector_committable`].
+        if !kind_is_vector_committable(kind) {
+            return Ok(false);
+        }
+        if kind_is_vector_indexed(connection, kind)? {
+            return Ok(false);
+        }
+        if !vector_projection_declared(connection).map_err(|_| EngineError::Storage)? {
+            return Ok(false);
+        }
+        Ok(true)
+    }
+
+    /// 0.8.20 Slice 20c fix-5 (codex §9 round 4 [P2]) — the WRITE half of a LATE
+    /// enrolment: register the kinds AND repair the rows they strand, in ONE
+    /// transaction. Returns `true` iff the repair re-enqueued anything (the caller
+    /// must then `notify_new_work()`, since those rows are outside its batch).
+    ///
+    /// Split out so both write-path doors ([`Engine::enrol_batch_vector_kinds`]
+    /// and the `#[doc(hidden)]` `write_canonical_row_with_kind_for_test`) share it
+    /// verbatim, and so neither can register a kind without owing the repair.
+    ///
+    /// `register_vector_kind` is `INSERT OR IGNORE` and
+    /// [`reenqueue_stranded_vector_rows`] is idempotent, so the read-only pre-pass
+    /// that chose `kinds` does not need re-validating under the write lock: the
+    /// worst a stale decision costs is one no-op `MIN` probe.
+    fn enrol_and_unstrand(
+        &self,
+        connection: &Connection,
+        kinds: &[&str],
+    ) -> Result<bool, EngineError> {
+        connection.execute_batch("BEGIN IMMEDIATE").map_err(|_| EngineError::Storage)?;
+        let result = (|| -> rusqlite::Result<bool> {
+            for kind in kinds {
+                register_vector_kind(connection, kind)?;
+            }
+            reenqueue_stranded_vector_rows(connection)
+        })();
+        match result {
+            Ok(enqueued) => {
+                connection.execute_batch("COMMIT").map_err(|_| EngineError::Storage)?;
+                Ok(enqueued)
+            }
+            Err(_) => {
+                let _ = connection.execute_batch("ROLLBACK");
+                Err(EngineError::Storage)
+            }
+        }
+    }
+
     fn write_inner(&self, batch: &[PreparedWrite]) -> Result<WriteReceipt, EngineError> {
         self.ensure_open()?;
 
@@ -4778,6 +4949,17 @@ impl Engine {
         let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
         let connection = connection.as_mut().ok_or(EngineError::Closing)?;
         let plans = validate_batch(connection, batch)?;
+        // 0.8.20 Slice 20c (R-20-DR remainder) — LATE ENROLMENT, before
+        // `collect_projection_jobs` reads the vector-kind registry to decide
+        // whether the dispatcher needs waking. See
+        // `Engine::enrol_batch_vector_kinds`.
+        //
+        // fix-2 (codex §9 [P2]) — the flag says the enrolment ALSO un-stranded
+        // rows outside this batch. Those rows are not in `projection_jobs` (that
+        // only walks the batch), so it is OR-ed into `pending_projection` below:
+        // `drain` is a passive barrier and never a trigger (C4 rider), so work
+        // enqueued without a wake would sit until the next unrelated write.
+        let unstranded = self.enrol_batch_vector_kinds(connection, batch)?;
         let projection_jobs = collect_projection_jobs(connection, batch)?;
         #[cfg(debug_assertions)]
         if self.force_next_commit_failure.swap(false, Ordering::SeqCst) {
@@ -4799,7 +4981,7 @@ impl Engine {
         // `commit_batch` but need the scanner to wake up via `notify_new_work`.
         let has_edge_body_work =
             batch.iter().any(|w| matches!(w, PreparedWrite::Edge { body: Some(_), .. }));
-        let pending_projection = !projection_jobs.is_empty() || has_edge_body_work;
+        let pending_projection = !projection_jobs.is_empty() || has_edge_body_work || unstranded;
 
         let dangling_edge_endpoints = match commit_batch(
             connection,
@@ -7184,6 +7366,24 @@ impl Engine {
         // them, so they are both erasable and distinguishable from caller data.
         let engine_provenance = SourceId::engine_derived(row_kind.as_str());
 
+        // 0.8.20 Slice 20c — same late enrolment the governed write path takes
+        // (`Engine::enrol_batch_vector_kinds`), so this internal writer does not
+        // silently diverge into the false-ready barrier for `coverage` rows. The
+        // live-embedder precondition is checked here, as that caller does; the
+        // `row_kind` gate keeps `graph` rows out of the vector registry.
+        //
+        // fix-2 (codex §9 [P2]) — including the un-stranding half, so this door
+        // cannot diverge from the other one either. fix-5 (codex §9 round 4 [P2])
+        // — and both halves commit as ONE transaction, via the same shared
+        // `enrol_and_unstrand`.
+        let unstranded = if self.runtime_embedder.is_some()
+            && self.vector_kind_needs_enrolment(connection, kind, row_kind)?
+        {
+            self.enrol_and_unstrand(connection, &[kind])?
+        } else {
+            false
+        };
+
         let cursor = self.next_cursor.load(Ordering::SeqCst).saturating_add(1);
         let enqueued = {
             let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
@@ -7220,7 +7420,7 @@ impl Engine {
             enqueued
         };
         self.next_cursor.store(cursor, Ordering::SeqCst);
-        if enqueued {
+        if enqueued || unstranded {
             self.projection_runtime.notify_new_work();
         }
         Ok(WriteReceipt { cursor, row_cursors: vec![cursor], dangling_edge_endpoints: 0 })
@@ -8006,11 +8206,31 @@ impl Engine {
         // backfill issued while it holds the write lock would SQLITE_BUSY.
         self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS)?;
 
-        let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
-        let connection = connection.as_mut().ok_or(EngineError::Closing)?;
-        let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
-        let delta = apply_projection_config(&tx, specs, drop)?;
-        tx.commit().map_err(|_| EngineError::Storage)?;
+        // 0.8.20 Slice 20c (R-20-DR remainder) — the backfill is gated on a LIVE
+        // embedder. With `EmbedderChoice::None` there is no dense arm, so the
+        // declaration persists and DEFERS (Q6a graceful-absent, exactly like
+        // `rankable`) rather than queueing embeds that could only retry to a
+        // `failed` terminal. Re-applying the same spec in a session that HAS an
+        // embedder grafts the backfill on — the shipped graceful-graft contract.
+        let dense_arm_live = self.runtime_embedder.is_some();
+        let (delta, enqueued_backfill) = {
+            let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+            let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+            let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
+            let applied = apply_projection_config(&tx, specs, drop, dense_arm_live)?;
+            tx.commit().map_err(|_| EngineError::Storage)?;
+            applied
+        };
+        // 0.8.20 Slice 20c (R-20-DR remainder) — the C4 rider's second half. The
+        // enrolment + terminal-clear committed above; now WAKE the dispatcher, or
+        // it sleeps on `pending_scan == false` and the very next `drain` burns its
+        // whole timeout waiting for work nobody scheduled. `drain` itself stays
+        // PASSIVE (a barrier, never a trigger) — the notify belongs here, on the
+        // enqueue side. Deliberately after the connection guard is dropped: the
+        // dispatcher immediately opens its own connection to scan.
+        if enqueued_backfill {
+            self.projection_runtime.notify_new_work();
+        }
         self.counters.record_admin();
         Ok(delta)
     }
@@ -12167,6 +12387,9 @@ fn projection_dispatcher_loop(shared: Arc<ProjectionRuntimeShared>) {
         Ok(connection) => connection,
         Err(_) => return,
     };
+    // 0.8.20 Slice 20c fix-4 (codex §9 round 3 [P1]) — read ONCE:
+    // `ProjectionRuntimeShared::embedder` is fixed for the session's lifetime.
+    let dense_arm_live = shared.embedder.is_some();
     loop {
         let in_flight = {
             let mut state = match shared.state.lock() {
@@ -12203,7 +12426,25 @@ fn projection_dispatcher_loop(shared: Arc<ProjectionRuntimeShared>) {
             PROJECTION_INFLIGHT_LIMIT.saturating_sub(state.active_jobs + state.queued_jobs)
         };
         let fetch_cap = budget.clamp(1, PROJECTION_SCAN_FETCH);
-        match next_pending_projection_jobs(&connection, &in_flight, fetch_cap) {
+        // 0.8.20 Slice 20c fix-4 (codex §9 round 3 [P1]) — with no live embedder a
+        // NODE job can only come back DEFERRED (`ProjectionOutcome::Deferred`),
+        // which by design records no terminal, so dispatching one would re-fetch
+        // the SAME cursor forever. fix-5 (codex §9 round 4 [P1]) moved that
+        // exclusion INSIDE the scan, so the `LIMIT` applies to the already-filtered
+        // set and a pending EDGE body behind a full window of node rows is still
+        // reachable. See `next_pending_projection_jobs`.
+        let fetched =
+            next_pending_projection_jobs(&connection, &in_flight, fetch_cap, dense_arm_live);
+        // Cheap assertion only — it can never DROP a job, which is precisely what
+        // the fix-4 shape did.
+        debug_assert!(
+            fetched
+                .as_ref()
+                .map(|jobs| dense_arm_live || jobs.iter().all(|job| job.kind == EDGE_FACT_KIND))
+                .unwrap_or(true),
+            "no-embedder scan returned a NODE job: the exclusion must be in the scan's SQL"
+        );
+        match fetched {
             Ok(jobs) if !jobs.is_empty() => {
                 if let Ok(mut state) = shared.state.lock() {
                     state.queued_jobs = state.queued_jobs.saturating_add(jobs.len());
@@ -12315,6 +12556,23 @@ enum ProjectionOutcome {
         cursor: u64,
         failure_code: &'static str,
     },
+    /// 0.8.20 Slice 20c fix-4 (codex §9 round 3 [P1]) — the ENVIRONMENT could
+    /// not serve this row, as distinct from the embed FAILING. Records nothing
+    /// at all: no `projection_failures` audit row and, decisively, **no
+    /// terminal**. The row stays `terminal IS NULL`, i.e. PENDING, so the next
+    /// session that DOES have an embedder picks it up through the ordinary
+    /// scheduler — no graft path and no recovery machinery.
+    ///
+    /// The only producer is the absent-embedder check at the top of
+    /// [`run_projection_job`]. That condition cannot change within a session, so
+    /// this can never become a retry loop for a genuinely-failing row.
+    ///
+    /// It carries NO cursor, deliberately: the other two variants carry one
+    /// because they identify the row they are about to WRITE, and this variant
+    /// writes nothing at all. A row's deferral is represented on disk by the
+    /// continued ABSENCE of its `_fathomdb_projection_terminal` row, which is
+    /// exactly the state it was already in.
+    Deferred,
 }
 
 fn run_projection_jobs(
@@ -12533,6 +12791,49 @@ fn embed_batch_with_watchdog(
 }
 
 fn run_projection_job(shared: &ProjectionRuntimeShared, job: &ProjectionJob) -> ProjectionOutcome {
+    // 0.8.20 Slice 20c fix-4 (codex §9 round 3 [P1]) — an ABSENT embedder is an
+    // ENVIRONMENT fact, not an embed failure, and it CANNOT appear mid-job:
+    // `ProjectionRuntimeShared::embedder` is fixed for the whole session. So for a
+    // NODE row the whole retry ladder (0 + 1 + 4 + 16 s) can only reach a
+    // conclusion that was already knowable at entry — answer it NOW, with the
+    // NON-TERMINAL `Deferred`: no audit row, no terminal, and therefore a write
+    // the next live-embedder session can still recover.
+    //
+    // That is codex's finding. With the kind already ENROLLED, the shipped
+    // `'failed'` terminal was PERMANENT (nothing reopens one, and nothing should:
+    // re-enqueueing one would loop a genuinely-failing row forever), so the write
+    // was lost while `dense_readiness` read `ready`.
+    //
+    // `projection_dispatcher_loop` already declines to dispatch node jobs in a
+    // no-embedder session — it must, or the still-pending row would be re-scanned
+    // in a hot loop. This check is the LOCAL backstop for the same invariant:
+    // whatever reaches a worker with no embedder must not be TERMINATED. Keeping
+    // the invariant beside the code that would otherwise write the terminal is
+    // what makes it hold if that dispatcher-side filter is ever loosened.
+    //
+    // EDGE rows deliberately fall THROUGH to the shipped path, ladder and all.
+    // `'edge_fact'` is auto-registered by the edge write itself, UN-gated on the
+    // embedder (`project_canonical_edge_row`, G11 — see the note in
+    // `enrol_batch_vector_kinds`), so an edge body written with no embedder is
+    // outstanding the moment it lands. Deferring it would leave `drain` and
+    // `excise_source` returning `EngineError::Scheduler` on paths with nothing to
+    // do with the dense arm (MEASURED: 4 shipped tests across
+    // `tc31_source_id_on_every_hit`, `provenance_mandatory` and
+    // `multidoc_extractor_provenance`). Making edges recoverable needs their
+    // enrolment gated the way fix-2 gated node kinds — reported as OOS-13, and
+    // outside codex's finding, which is the node path.
+    //
+    // Their LADDER is left alone for a second, separately MEASURED reason:
+    // shortening it makes the worker's terminal-commit land while a caller's own
+    // write is still open, which trips the PRE-EXISTING `SQLITE_BUSY_SNAPSHOT`
+    // write-race already documented in `slice20_dense_readiness.rs` (governed
+    // supersession reads before it writes, so `busy_timeout` cannot retry it).
+    // Measured on `consolidate_provider` under 6-way concurrency: 0/48 failures
+    // with the ladder, 8/48 without. Left byte-for-byte as shipped; the race is
+    // reported as OOS-17 rather than newly exposed by a fix round.
+    if shared.embedder.is_none() && job.kind != EDGE_FACT_KIND {
+        return ProjectionOutcome::Deferred;
+    }
     // PR-9 — embed circuit breaker (see `embed_circuit_open`). Once abandoned
     // (timed-out) embed threads have piled up to the threshold the embedder is
     // treated as broken; fail subsequent jobs fast WITHOUT attempting an embed,
@@ -12694,10 +12995,37 @@ fn pending_edge_projection_from_where(now_idx: usize) -> String {
     )
 }
 
+/// The SCHEDULER's scan: the next `max_jobs` pending projection jobs in
+/// `write_cursor` order.
+///
+/// `dense_arm_live` is `ProjectionRuntimeShared::embedder.is_some()`, read once
+/// per dispatcher because it is fixed for the session's lifetime.
+///
+/// # fix-5 (codex §9 round 4 [P1]) — why the node exclusion is IN the SQL
+///
+/// With no live embedder a NODE job can only come back
+/// [`ProjectionOutcome::Deferred`], which by design records no terminal (fix-4),
+/// so dispatching one would re-fetch the SAME cursor forever: a hot loop for the
+/// whole life of the session. fix-4 suppressed that by filtering the vector this
+/// function RETURNS — i.e. after the `ORDER BY … LIMIT`, so the `LIMIT` still
+/// applied to the UNFILTERED set. More than `PROJECTION_SCAN_FETCH` pending node
+/// rows ordered before a pending EDGE body therefore filled the entire window
+/// with jobs that were then all dropped, the dispatcher went back to sleep with
+/// `pending_scan` already consumed, and the edge body was never scheduled at all
+/// — permanently, since those node rows stay pending for the session's life. The
+/// exclusion belongs here, where the `LIMIT` applies to the ALREADY-FILTERED set
+/// and a later edge job is always reachable.
+///
+/// Edges are NOT excluded: `'edge_fact'` is auto-registered by the edge write
+/// itself, un-gated on the embedder (`project_canonical_edge_row`, G11, and the
+/// note in [`Engine::enrol_batch_vector_kinds`]), so an edge body still
+/// TERMINATES on an absent embedder exactly as it has shipped since G11. Making
+/// edges recoverable too needs that enrolment gated first (OOS-13).
 fn next_pending_projection_jobs(
     connection: &Connection,
     in_flight: &BTreeSet<u64>,
     max_jobs: usize,
+    dense_arm_live: bool,
 ) -> rusqlite::Result<Vec<ProjectionJob>> {
     if max_jobs == 0 {
         return Ok(Vec::new());
@@ -12711,9 +13039,15 @@ fn next_pending_projection_jobs(
     // `source_type = 'edge_fact'` in `vector_default` (partition correctness).
     // The UNION is ordered by write_cursor so projection proceeds in
     // insertion order across nodes and edges.
-    let sql = format!(
-        "SELECT write_cursor, kind, body FROM (
-             SELECT canonical_nodes.write_cursor, canonical_nodes.kind, canonical_nodes.body
+    //
+    // fix-5 [P1]: with no dense arm the NODE arm is omitted outright rather than
+    // predicated false, so the planner never walks it. The edge arm keeps both
+    // binds (`?1` the cursor, `?2` the `:now` seam), so the bound parameter set
+    // is identical either way.
+    let node_arm = if dense_arm_live {
+        "SELECT canonical_nodes.write_cursor AS write_cursor,
+                    canonical_nodes.kind AS kind,
+                    canonical_nodes.body AS body
              FROM canonical_nodes
              JOIN _fathomdb_vector_kinds
                ON _fathomdb_vector_kinds.kind = canonical_nodes.kind
@@ -12724,7 +13058,15 @@ fn next_pending_projection_jobs(
 
              UNION ALL
 
-             SELECT ce.write_cursor, 'edge_fact', ce.body
+             "
+    } else {
+        ""
+    };
+    let sql = format!(
+        "SELECT write_cursor, kind, body FROM (
+             {node_arm}SELECT ce.write_cursor AS write_cursor,
+                    'edge_fact' AS kind,
+                    ce.body AS body
              {edge_arm}
                AND ce.write_cursor > ?1
          ) ORDER BY write_cursor
@@ -13504,6 +13846,31 @@ fn commit_projection_outcomes(
                 }
                 record_projection_terminal(&tx, *cursor, "failed")?;
             }
+            // 0.8.20 Slice 20c fix-4 (codex §9 round 3 [P1]) — record NOTHING.
+            //
+            // No `projection_failures` audit row (an ABSENT embedder is an
+            // environment fact, not an embed failure) and, decisively, no
+            // terminal: the row keeps `terminal IS NULL`, so
+            // `advance_projection_cursor` below cannot step over it, the shared
+            // `connection_has_pending_projection_work` predicate still reports it
+            // outstanding, and `derive_dense_readiness` therefore reads
+            // `embedding`. That is the ONLY torn state
+            // `dev/design/record-lifecycle-protocol/projection-registry-and-async-embed.md`
+            // §4.1 invariant 1 tolerates; the alternative — the enqueue-side gate
+            // — puts an `'up_to_date'` terminal on an ENROLLED row with no
+            // vector, which is the torn `ready` that invariant calls FORBIDDEN.
+            //
+            // Q6a graceful-absent governs ROLE DECLARATION ("you declared a
+            // projection I cannot build yet" -> defer + graft), i.e. the
+            // NOT-yet-enrolled case fix-1/fix-2 handle. Once a kind IS enrolled,
+            // §4.1 invariant 1 governs. (HITL ruling, 0.8.20 Slice 20c fix-4.)
+            //
+            // Consumer-visible consequence, accepted deliberately and pinned by
+            // `slice20c_flush_barrier`: for the REST of that no-embedder session
+            // `dense_readiness` stays `embedding` and `drain` burns its timeout
+            // into `EngineError::Scheduler`. Loud and recoverable, rather than
+            // silent and lost.
+            ProjectionOutcome::Deferred => {}
         }
     }
     // 0.7.2 PR-2bc S2 — the AUTOMATIC in-ingest drift detector (EWMA recent
@@ -15080,6 +15447,39 @@ fn resolve_source_type(kind: &str) -> Result<&'static str, EngineError> {
     })
 }
 
+/// 0.8.20 Slice 20c fix-2 (codex §9 [P1]) — **can the vector writer COMMIT a row
+/// of this kind?** The ONE definition of the vector pipeline's kind domain, shared
+/// by every enrolment path.
+///
+/// [`commit_projection_outcomes`] resolves `kind -> source_type` through
+/// [`resolve_source_type`] and returns `Err` for anything outside its locked
+/// vocabulary — *before* it records the row's terminal. `PreparedWrite::Node`, by
+/// contrast, accepts ANY non-empty `kind` (`validate_write` constrains the body,
+/// the identity and the validity window, never the kind against that vocabulary),
+/// so a corpus can legitimately hold e.g. an `"invoice"` node.
+///
+/// Enrolling such a kind is therefore a permanent LIVENESS WEDGE for the whole
+/// workspace: the scheduler picks the row up, the commit fails, no terminal is
+/// ever written, the scanner re-enqueues it forever, `drain` burns its entire
+/// timeout into [`EngineError::Scheduler`] and `dense_readiness` sticks on
+/// `embedding` — starving the rows whose kinds ARE commit-able along with it.
+///
+/// So enrolment is RESTRICTED to this predicate rather than the vector writer
+/// being taught arbitrary kinds (which would reach into `resolve_source_type`'s
+/// locked Pack-1 partition-key semantics — `dev/design/0.7.0-vector-quant-pack1.md`
+/// D3, a HITL lock). A non-commit-able kind simply gets NO dense arm, which is
+/// precisely its pre-slice status quo; it is deliberately **not** a new typed
+/// error and adds no governed surface.
+///
+/// It DELEGATES to `resolve_source_type` instead of restating the list. A
+/// hand-copied second vocabulary is the TC-56 defect shape (a mirror that silently
+/// drifts from its original), and here the drift would be silent in the worst
+/// direction: a kind added to `resolve_source_type` but missing from a copied
+/// filter would just never be embedded.
+fn kind_is_vector_committable(kind: &str) -> bool {
+    resolve_source_type(kind).is_ok()
+}
+
 /// G11 (Slice 15) — derive a stable hex-encoded sha256 logical_id from a
 /// `(kind, name)` pair. Both inputs are lowercased before hashing so that
 /// entity identity is case-insensitive (`"Alice"` == `"alice"`). The
@@ -15518,6 +15918,13 @@ fn collect_projection_jobs(
     let mut jobs = Vec::new();
     for write in batch {
         if let PreparedWrite::Node { kind, body, .. } = write {
+            // 0.8.20 Slice 20c — this probe decides whether `notify_new_work` is
+            // called, so `Engine::enrol_batch_vector_kinds` MUST already have run
+            // on this batch: a kind enrolled after this point would be enqueued in
+            // the database with the dispatcher left asleep on
+            // `pending_scan == false`, and because `drain` is a passive barrier
+            // (C4 rider: never a trigger) the next `drain` would burn its ENTIRE
+            // timeout and return `EngineError::Scheduler` on work ready to run.
             if kind_is_vector_indexed(connection, kind)? {
                 jobs.push(ProjectionJob { cursor: 0, kind: kind.clone(), body: body.clone() });
             }
@@ -16462,11 +16869,24 @@ fn describe_projection_delta(existing: &StoredProjection, desired: &StoredProjec
 /// call rebuilds fresh), then diff each spec. Idempotent re-registration diffs to
 /// an empty delta (`unchanged`). A destructive change without an explicit drop is
 /// refused with [`EngineError::ProjectionDestructive`].
+///
+/// 0.8.20 Slice 20c (R-20-DR remainder) — returns `(delta, enqueued_backfill)`.
+/// The second member is `true` iff [`enqueue_declared_vector_backfill`] put
+/// deferred embed work on the queue, in which case the CALLER must
+/// `notify_new_work()` after committing (the flag cannot ride on
+/// [`ProjectionDelta`]: that is the caller-facing diff, and this is a runtime
+/// signal, not part of the declaration's result).
+///
+/// 0.8.20 Slice 20c fix-1 (codex §9 [P2]) — and the symmetric inverse: a call
+/// that removes the LAST `searchable→vector` declaration un-enrols the node kinds
+/// the forward path enrolled ([`unenrol_registry_vector_node_kinds`]), on this
+/// same transaction. It deletes no embedding.
 fn apply_projection_config(
     tx: &Connection,
     specs: &[ProjectionSpec],
     drop: &[String],
-) -> Result<ProjectionDelta, EngineError> {
+    dense_arm_live: bool,
+) -> Result<(ProjectionDelta, bool), EngineError> {
     // Validate up-front so a bad name aborts before any write.
     //
     // fix-6 finding [P2] — REJECT a duplicate projection `name` within `specs`
@@ -16517,6 +16937,15 @@ fn apply_projection_config(
     }
 
     let mut delta = ProjectionDelta::default();
+
+    // 0.8.20 Slice 20c fix-1 (codex §9 [P2]) — snapshot "is the dense arm
+    // declared?" BEFORE any registry mutation. Together with the same read taken
+    // after them it identifies the ONE transition that owns the inverse of this
+    // slice's enrolment: declared -> not-declared. See
+    // [`unenrol_registry_vector_node_kinds`] for why the inverse is keyed to that
+    // TRANSITION rather than to the bare post-state.
+    let vector_declared_before =
+        vector_projection_declared(tx).map_err(|_| EngineError::Storage)?;
 
     // (1) Explicit drops. Omission never drops (C3); only this list does.
     let before_drop = load_projection_registry(tx).map_err(|_| EngineError::Storage)?;
@@ -16597,7 +17026,298 @@ fn apply_projection_config(
 
     delta.unchanged =
         delta.built.is_empty() && delta.dropped.is_empty() && delta.deferred.is_empty();
-    Ok(delta)
+
+    // 0.8.20 Slice 20c (R-20-DR remainder) — THE C4 RIDER. Everything above has
+    // only *persisted* the `searchable→vector` declaration and pushed its name
+    // onto `delta.deferred`. Acknowledging deferred work and then dropping it on
+    // the floor is what made `drain` a FALSE-READY barrier; this call is where the
+    // deferred work is actually enqueued onto the runtime `drain` waits on.
+    //
+    // fix-1 (codex §9 [P2]) — and its SYMMETRIC INVERSE, on the same
+    // transaction. If this call removed the last `searchable→vector` declaration,
+    // un-enrol the node kinds the forward path enrols; otherwise enrolment is a
+    // one-way door and the write path keeps embedding for a projection the
+    // registry no longer declares.
+    let vector_declared_after = vector_projection_declared(tx).map_err(|_| EngineError::Storage)?;
+    let enqueued = if vector_declared_after {
+        if dense_arm_live {
+            enqueue_declared_vector_backfill(tx).map_err(|_| EngineError::Storage)?
+        } else {
+            false
+        }
+    } else {
+        if vector_declared_before {
+            unenrol_registry_vector_node_kinds(tx).map_err(|_| EngineError::Storage)?;
+        }
+        false
+    };
+    Ok((delta, enqueued))
+}
+
+/// 0.8.20 Slice 20c fix-1 (codex §9 [P2] "Stop embedding after vector projection
+/// drops") — **the inverse of [`enqueue_declared_vector_backfill`]'s enrolment.**
+///
+/// Slice 20c gave `_fathomdb_vector_kinds` its first governed-call-reachable
+/// writer for a NODE kind (before it, the only one was the `#[doc(hidden)]`
+/// `configure_vector_kind_for_test` hook). Forward without reverse is the defect:
+/// after `drop`ping the last `searchable→vector` declaration,
+/// [`project_canonical_node_row`]'s `kind_is_vector_indexed` gate and
+/// [`connection_has_pending_projection_work`] both still see the enrolment, so
+/// subsequent writes keep enqueueing embeds and `drain` keeps waiting on work for
+/// a projection [`Engine::read_projections`] no longer reports.
+///
+/// # It DELETES NO EMBEDDING — that is the point
+///
+/// The shipped drop arm ([`clear_attribute_projection`] +
+/// [`remove_projection_row`]) has never touched vec0, `_fathomdb_vector_rows` or
+/// `_fathomdb_vector_kinds`, so "vectors already at rest survive a drop" is
+/// ALREADY the shipped contract. Removing one registry row PRESERVES it; deleting
+/// embeddings would be the destructive delta, and is not done here.
+///
+/// # Why keyed to the TRANSITION, not to the bare post-state
+///
+/// The rule is "this call removed the last vector declaration"
+/// (`declared_before && !declared_after`), not "no vector declaration exists
+/// now". A workspace can hold enrolments this registry never made — the test hook
+/// does exactly that, and several shipped suites enrol a kind through it and then
+/// declare an unrelated `filterable`-only projection (e.g.
+/// `slice15e_prekn_filterable`). Firing on the bare post-state would un-enrol
+/// those and silently kill a dense arm the registry never owned. In production
+/// the two readings coincide: before this slice
+/// `production_vector_kind_surface=[]`, so a node kind can only be enrolled
+/// because a `searchable→vector` declaration existed.
+///
+/// It is still STATE-keyed, not delta-keyed: both members are reads of the
+/// registry, never "was this spec new". Re-applying the same drop finds
+/// `declared_before == false` and is a total no-op, and nothing re-enrols it
+/// ([`Engine::enrol_vector_kind_if_declared`] is gated on
+/// [`vector_projection_declared`]).
+///
+/// # `'edge_fact'` is excluded, deliberately
+///
+/// [`project_canonical_edge_row`] (G11) auto-registers `'edge_fact'` off the
+/// presence of an edge BODY, unconditionally and independently of the projection
+/// registry. That lifecycle predates this slice and is not the registry's to end,
+/// so a node-projection drop must not take the edge dense arm down with it.
+///
+/// # What it deliberately does NOT do
+///
+/// It touches no `_fathomdb_projection_terminal` row and no readiness watermark.
+/// A row enqueued-but-not-yet-embedded when the drop lands keeps its absent
+/// terminal, which pins the watermark below it — harmless, because both the
+/// scheduler and the pending-work probe join `_fathomdb_vector_kinds` and so no
+/// longer see it, and it is precisely what lets a later RE-declaration pick the
+/// row up again instead of stranding it.
+fn unenrol_registry_vector_node_kinds(tx: &Connection) -> rusqlite::Result<()> {
+    tx.execute("DELETE FROM _fathomdb_vector_kinds WHERE kind <> 'edge_fact'", [])?;
+    Ok(())
+}
+
+/// 0.8.20 Slice 20c (R-20-DR remainder) — is ANY `searchable→vector` projection
+/// declared in the durable registry?
+///
+/// This is the corpus-wide "the dense arm is live" predicate. It is corpus-wide
+/// rather than per-attribute for the same reason [`derive_dense_readiness`] is:
+/// Slice 15d persists the `searchable→vector` sub-object but defers building any
+/// per-attribute embedding, so every declared vector projection is served by the
+/// ONE engine vector pipeline. When per-attribute embedding lands, this is where
+/// the scoping goes — the same seam as readiness.
+///
+/// Safe on a pre-step-24 schema (the registry table is created by step 24): an
+/// absent table means nothing is declared, not an error. Mirrors the guard in
+/// [`load_projection_registry`], and uses `prepare_cached` because the write path
+/// calls this once per un-registered-kind row.
+fn vector_projection_declared(conn: &Connection) -> rusqlite::Result<bool> {
+    let table_exists: bool = conn
+        .prepare_cached(
+            "SELECT EXISTS(
+                 SELECT 1 FROM sqlite_master
+                 WHERE type = 'table' AND name = '_fathomdb_projection_registry'
+             )",
+        )?
+        .query_row([], |row| row.get(0))?;
+    if !table_exists {
+        return Ok(false);
+    }
+    conn.prepare_cached(
+        "SELECT EXISTS(SELECT 1 FROM _fathomdb_projection_registry WHERE vector_declared = 1)",
+    )?
+    .query_row([], |row| row.get(0))
+}
+
+/// 0.8.20 Slice 20c (R-20-DR remainder) — enrol `kind` in the vector pipeline.
+///
+/// `INSERT OR IGNORE`, so it is idempotent and never disturbs an existing
+/// registration's `profile`/`created_at`. Same statement shape the G11 edge path
+/// uses for `'edge_fact'` ([`project_canonical_edge_row`]).
+fn register_vector_kind(tx: &Connection, kind: &str) -> rusqlite::Result<()> {
+    tx.execute(
+        "INSERT OR IGNORE INTO _fathomdb_vector_kinds(kind, profile, created_at)
+         VALUES(?1, ?2, 0)",
+        params![kind, DEFAULT_VECTOR_PROFILE],
+    )?;
+    Ok(())
+}
+
+/// 0.8.20 Slice 20c (R-20-DR remainder) — **the flush barrier's enqueue half**
+/// (`api-surface.md` **C4** rider: `drain` is a barrier, not a trigger, so
+/// deferred/backfill rows must be enqueued on the same projection runtime `drain`
+/// waits on).
+///
+/// Runs on the caller's `configure_projections` write transaction, AFTER the
+/// registry mutations, so the enrolment + re-enqueue commit atomically with the
+/// declaration that caused them. Returns `true` iff work was enqueued — the
+/// caller must then `notify_new_work()` (after the commit; the dispatcher opens
+/// its own connection).
+///
+/// # The defect this closes
+///
+/// `project_canonical_node_row` writes a PERMANENT `'up_to_date'` terminal for
+/// any row whose kind was not vector-registered *at write time*, and before this
+/// slice NOTHING but the `#[doc(hidden)]` test hook ever registered a node kind
+/// (`slice-G0-design.md`: `production_vector_kind_surface=[]`). So the ordinary
+/// "turn the dense arm on over an existing corpus" flow — write rows, then
+/// declare `searchable→vector` — left every row terminally marked done with no
+/// vector and no way to get one short of an operator `rebuild`. Both
+/// `drain`/`wait_for_idle` and `derive_dense_readiness` read that terminal
+/// through [`connection_has_pending_projection_work`], so the corpus reported
+/// `ready` while nothing would ever embed it.
+///
+/// # Shape (deliberately the `run_rebuild` shape, scoped)
+///
+/// `run_rebuild` truncates the readiness terminals and rewinds the projection
+/// cursor so the scheduler re-walks the corpus. This does the same, but scoped to
+/// the rows the declaration newly covers, and it does NOT truncate anything else:
+///
+/// 1. enrol every vector-eligible node kind present in `canonical_nodes`
+///    (`row_kind IN ('leaf','coverage')` — the `index_targets_for_row_kind`
+///    vector-eligibility predicate; `graph` rows are lexically searchable but
+///    never embedded, so enrolling on them would silently start embedding
+///    structural rows) **that the vector writer can commit**
+///    ([`kind_is_vector_committable`], fix-2 / codex §9 [P1]);
+/// 2. (and 3.) un-strand the rows that enrolment now covers, via
+///    [`reenqueue_stranded_vector_rows`] — shared verbatim with the write path's
+///    late enrolment.
+///
+/// # Why it is IDEMPOTENT (R-20-PR: "re-registration is a no-op")
+///
+/// Every step keys off *state*, not off "was this declaration new": step 1 is
+/// `INSERT OR IGNORE`; steps 2-3 act only on rows that are stranded RIGHT NOW.
+/// Once the backfill has been drained those rows carry vectors, so a re-apply
+/// finds an empty stranded set, returns `false`, and touches neither the
+/// terminals nor the cursor. No rewind, no re-embed, no spurious `embedding`
+/// window.
+///
+/// # Not a data migration
+///
+/// This re-enqueues embed work inside ONE live database at the caller's request.
+/// It converts no rows across a version step, and `SCHEMA_VERSION` stays 24
+/// (HITL 2026-07-21; cf. TC-46's in-place vec0 reshape).
+fn enqueue_declared_vector_backfill(tx: &Connection) -> rusqlite::Result<bool> {
+    if !vector_projection_declared(tx)? {
+        return Ok(false);
+    }
+
+    // (1) Enrol the vector-eligible kinds the live corpus actually contains —
+    // RESTRICTED to the ones the vector writer can actually commit
+    // ([`kind_is_vector_committable`], fix-2 / codex §9 [P1]). Enrolling a kind
+    // outside `resolve_source_type`'s locked vocabulary wedges the projection
+    // worker forever and starves every other kind with it.
+    let kinds: Vec<String> = {
+        let mut stmt = tx.prepare(
+            "SELECT DISTINCT kind FROM canonical_nodes
+             WHERE row_kind IN ('leaf', 'coverage')",
+        )?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        rows.collect::<rusqlite::Result<Vec<String>>>()?
+    };
+    for kind in kinds.iter().filter(|kind| kind_is_vector_committable(kind)) {
+        register_vector_kind(tx, kind)?;
+    }
+
+    // (2)+(3) Un-strand the rows the new enrolment now covers.
+    reenqueue_stranded_vector_rows(tx)
+}
+
+/// 0.8.20 Slice 20c — steps (2) and (3) of the declared-backfill above, as their
+/// own function because **both** enrolment doors owe this treatment.
+///
+/// fix-2 (codex §9 [P2]): [`enqueue_declared_vector_backfill`] is the DECLARE-time
+/// door; [`Engine::enrol_batch_vector_kinds`] is the WRITE-time one, and it used to
+/// enrol a kind while enqueueing only the row in its own batch. A database that
+/// persisted a `searchable→vector` declaration while opened WITHOUT an embedder
+/// (Q6a graceful-absent: it defers, enrolling nothing), then reopened WITH one and
+/// wrote the same kind BEFORE re-applying the projection, therefore drained the new
+/// row and reported `ready` while every row from the no-embedder session kept its
+/// permanent `'up_to_date'` terminal and no vector. That is a FALSE READY — the
+/// exact defect class R-20-DR exists to eliminate — so the two doors share ONE
+/// implementation rather than one of them carrying a partial copy.
+///
+/// Returns `true` iff work was re-enqueued; the caller must then `notify_new_work()`
+/// (after its commit — the dispatcher opens its own connection).
+///
+///   2. find the STRANDED rows — vector-eligible, now vector-kind-registered,
+///      carrying an `'up_to_date'` terminal, and carrying NO `_fathomdb_vector_rows`
+///      row — and delete their terminals so the scheduler's `terminal IS NULL`
+///      predicate sees them again;
+///   3. rewind the readiness watermark to just below the lowest stranded cursor, so
+///      the scheduler's `write_cursor > cursor` filter reaches them.
+///
+/// The `_fathomdb_vector_kinds` join is what scopes this to the dense arm: a kind
+/// that is not enrolled (including one that is not commit-able, per
+/// [`kind_is_vector_committable`]) is not stranded — it has no dense arm to be
+/// behind on.
+///
+/// Idempotent by construction: it acts only on rows that are stranded RIGHT NOW, so
+/// once drained the set is empty, it returns `false`, and neither the terminals nor
+/// the cursor are touched. A `'failed'` terminal is deliberately NOT re-enqueued
+/// (the filter is `'up_to_date'`): re-enqueueing it would loop a permanently-failing
+/// row forever, and the documented failure boundary is that a terminally-failed
+/// embed stops being outstanding work (see [`derive_dense_readiness`]).
+fn reenqueue_stranded_vector_rows(tx: &Connection) -> rusqlite::Result<bool> {
+    // (2) The stranded set: covered by the dense arm, terminally marked done, no
+    // vector. `MIN` first so a no-op apply costs one indexed probe and stops.
+    let lowest_stranded: Option<u64> = tx.query_row(
+        "SELECT MIN(n.write_cursor)
+         FROM canonical_nodes n
+         JOIN _fathomdb_vector_kinds k ON k.kind = n.kind
+         JOIN _fathomdb_projection_terminal t ON t.write_cursor = n.write_cursor
+         LEFT JOIN _fathomdb_vector_rows v ON v.write_cursor = n.write_cursor
+         WHERE n.row_kind IN ('leaf', 'coverage')
+           AND t.state = 'up_to_date'
+           AND v.write_cursor IS NULL",
+        [],
+        |row| row.get::<_, Option<u64>>(0),
+    )?;
+    let Some(lowest_stranded) = lowest_stranded else {
+        return Ok(false);
+    };
+
+    tx.execute(
+        "DELETE FROM _fathomdb_projection_terminal
+         WHERE write_cursor IN (
+             SELECT n.write_cursor
+             FROM canonical_nodes n
+             JOIN _fathomdb_vector_kinds k ON k.kind = n.kind
+             JOIN _fathomdb_projection_terminal t ON t.write_cursor = n.write_cursor
+             LEFT JOIN _fathomdb_vector_rows v ON v.write_cursor = n.write_cursor
+             WHERE n.row_kind IN ('leaf', 'coverage')
+               AND t.state = 'up_to_date'
+               AND v.write_cursor IS NULL
+         )",
+        [],
+    )?;
+
+    // (3) Rewind the readiness watermark just below the lowest stranded row so the
+    // scheduler's `write_cursor > cursor` filter reaches it. Never move it
+    // FORWARD: rows above the watermark that still hold their terminals are
+    // skipped by the scheduler's `terminal IS NULL` predicate, and
+    // `advance_projection_cursor` walks the watermark back up over them.
+    let rewind_to = lowest_stranded.saturating_sub(1);
+    if load_projection_cursor(tx)? > rewind_to {
+        store_projection_cursor(tx, rewind_to)?;
+    }
+    Ok(true)
 }
 
 /// 0.8.20 Slice 15d (R-20-PR, Q5) — BOOT re-derive: the engine `ProjectionSpec`
@@ -16733,6 +17453,12 @@ fn project_canonical_node_row(
     if pass.writes_attributes() && node_active {
         project_node_attributes(tx, cursor as i64, body)?;
     }
+    // 0.8.20 Slice 20c (R-20-DR remainder) — UNCHANGED, deliberately. Late
+    // enrolment of a kind first written AFTER a `searchable→vector` declaration
+    // happens in [`Engine::enrol_vector_kind_if_declared`], upstream of this
+    // transaction, NOT here: the decision needs the engine's LIVE embedder, which
+    // a free function holding only a `Connection` cannot see. Enrolling without
+    // one would queue embeds that can only retry-then-fail.
     let enqueue_vector = targets.vector && kind_is_vector_indexed(tx, kind).unwrap_or(false);
     if pass.writes_vector_state() {
         if enqueue_vector {

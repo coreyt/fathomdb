@@ -358,6 +358,68 @@ axis. It is `None` on every caller-authored spec.
 - **Additive.** Callers who never look at readiness see identical behaviour.
   **PROPOSED, NOT SIGNED.**
 
+**`drain` is the flush-to-readiness barrier (0.8.20 Slice 20c, R-20-DR /
+`api-surface.md` C4).** There is **no `flush_embeddings()` verb** — the shipped
+`Engine::drain(timeout_ms)` carries those semantics, so the surface gains ZERO
+net-new governed commands (TC-55 = INSTRUMENTATION). The pinned invariant, tested
+in Rust, Python and TypeScript:
+
+> `drain(timeout)` returning `Ok(())` ⟹ `dense_readiness == Ready`,
+> **and every vector-eligible row has its vector row at rest.**
+
+- **`drain` is a BARRIER, not a trigger.** It waits for the projection runtime to
+  go quiescent; it never schedules or wakes anything. Deferred/backfill work is
+  therefore enqueued on the **enqueue side**, on the same runtime `drain` waits
+  on: `Engine::configure_projections` enrols the vector kinds, re-opens the
+  stranded rows' readiness terminals and calls the runtime notify **after its
+  commit**. Without that, declaring `searchable→vector` over an existing corpus
+  reported `Ready` with no vectors and nothing that would ever create them.
+- **Ordering does not matter.** Write-then-declare and declare-then-write behave
+  identically: a kind first written after the declaration is enrolled on the write
+  path, before the decision to wake the dispatcher is taken. That write-path
+  enrolment performs the **same** backfill the declaration does (fix-2), so rows
+  of that kind written by an earlier session — for instance one opened without an
+  embedder, where the declaration persisted but deferred — are picked up too,
+  rather than being left behind a `Ready` that is not true of them.
+- **The dense arm covers only the engine's locked `kind` vocabulary** (fix-2).
+  A `searchable→vector` declaration turns the dense arm on for node kinds in
+  `{email, article, paper, meeting, note, todo, doc}` (plus the engine-internal
+  `edge_fact` for edge bodies). Rows of ANY other `kind` are accepted and stay
+  lexically searchable, but get **no vector** and are not counted as outstanding
+  work, so readiness still reaches `Ready`. This is **not** an error condition:
+  the write is not rejected, no typed error is raised, and there is no verb to
+  ask about it — it is the same treatment those kinds had before Slice 20c.
+- **Idempotent.** Re-applying an already-satisfied declaration re-opens nothing,
+  rewinds no watermark, and re-embeds nothing (`ProjectionDelta::unchanged`).
+- **Dropping the last `searchable→vector` declaration turns the dense arm back
+  off** (fix-1). The `drop` un-enrols the node kinds the declaration enrolled, so
+  subsequent writes of those kinds enqueue no embed and `drain` no longer waits on
+  them. It **deletes no embedding**: vectors already at rest survive, exactly as
+  they always have across a `drop`. Re-declaring re-enrols and backfills, so a
+  row written while the arm was off is picked up, not stranded. Edge-body vectors
+  are unaffected — the `edge_fact` kind is registered off the presence of an edge
+  body, not off the projection registry.
+- **Graceful-absent without a live embedder.** Opened with `EmbedderChoice::None`
+  there is no dense arm, so the declaration persists and DEFERS rather than
+  queueing embeds that could only fail; it **grafts on** when the same spec is
+  re-applied in a session that has an embedder — the same Q6a contract as
+  `rankable`.
+- **…but graceful-absent stops at the enrolment boundary** (fix-4). Once a kind
+  IS enrolled — i.e. some earlier session DID have an embedder — a write of that
+  kind is dense work the workspace has committed to, and a session with no
+  embedder cannot make it go away. Such a write is **accepted** and stays
+  lexically searchable, but it stays **outstanding**: `dense_readiness` reads
+  `Embedding` and `drain` returns `EngineError::Scheduler` for the rest of that
+  session, however long you wait. It is **not** lost — no failure is recorded and
+  no terminal is written, so the next session opened WITH an embedder embeds it
+  through the ordinary scheduler, with no re-apply and no operator `rebuild`.
+  Callers who write to an enrolled corpus without an embedder should therefore
+  expect `drain` to time out and should not treat that as data loss. (Reporting
+  `Ready` there instead would be a torn `ready`-without-vector — the silent miss
+  this slice exists to eliminate.)
+- **`drain` remains bounded**, returning the typed timeout error rather than
+  blocking; a caller sizes `timeout_ms` for the backfill it just asked for.
+
 **Attribute filters on `SearchFilter` (0.8.20 Slice 15e, R-20-PR / ADR-0.8.11 D3).**
 `SearchFilter` gains a public field `attributes: Vec<(String, String)>` — each
 `(attribute_name, value)` is an equality predicate over a declared-`filterable`

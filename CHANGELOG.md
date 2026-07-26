@@ -164,6 +164,60 @@ AC-050c) gates merges against this invariant.
   - **Additive.** Callers who never read the field see identical behaviour, and
     the change adds no governed commands.
 
+- **`drain` is now the flush-to-readiness barrier (0.8.20, R-20-DR).**
+  Declaring a `searchable→vector` projection over a corpus that already holds
+  rows now actually **backfills** it: `configure_projections` /
+  `configureProjections` enrols the vector kinds and enqueues the deferred embed
+  work, and the existing `drain(timeout)` flushes it. There is **no new verb** —
+  `drain` carries the `flush_embeddings()` semantics, so this adds **zero**
+  governed commands.
+
+  - **Bug fixed:** previously the declaration acknowledged the work
+    (`ProjectionDelta.deferred`) and then dropped it — the kind was never
+    registered, so `drain` returned immediately and readiness reported
+    `"ready"` while **no vector rows existed and nothing would ever create
+    them**. Only an operator `rebuild` recovered. The pinned invariant is now
+    `drain() ⟹ dense_readiness == "ready"` **and** every vector-eligible row has
+    its vector at rest, asserted in Rust, Python and TypeScript.
+  - **Ordering-independent.** Write-then-declare and declare-then-write reach
+    the same state; a kind first written after the declaration is enrolled on
+    the write path, and that write-path enrolment runs the **same** backfill the
+    declaration does — so rows of that kind written by an earlier session (for
+    instance one opened without an embedder, where the declaration persisted but
+    deferred) are picked up rather than left behind a `"ready"` that is not true
+    of them.
+  - **Scoped to the engine's locked `kind` vocabulary.** The dense arm turns on
+    for node kinds in `{email, article, paper, meeting, note, todo, doc}` (plus
+    the internal `edge_fact` for edge bodies). Rows of any other `kind` are
+    accepted and stay lexically searchable but get no vector, and are not counted
+    as outstanding work, so readiness still reaches `"ready"`. This is not an
+    error condition: nothing rejects the write and no new surface reports it.
+  - **Idempotent.** Re-applying a satisfied declaration rewinds nothing and
+    re-embeds nothing.
+  - **Reversible.** `drop`ping the last `searchable→vector` declaration turns
+    the dense arm back off: the node kinds that declaration enrolled are
+    un-enrolled, so later writes enqueue no embed and `drain` no longer waits on
+    them. It **deletes no embedding** — vectors already at rest survive a `drop`,
+    exactly as they always have — and re-declaring re-enrols and backfills, so a
+    row written while the arm was off is picked up rather than stranded.
+    Edge-body vectors are unaffected (`edge_fact` is registered off the presence
+    of an edge body, not off the projection registry).
+  - **Graceful-absent without a live embedder.** With no embedder there is no
+    dense arm, so the declaration persists and defers rather than queueing
+    embeds that could only fail; it grafts on when re-applied in a session that
+    has one — the same contract as `rankable`.
+  - **Graceful-absent stops at the enrolment boundary.** Once a kind IS enrolled
+    — some earlier session DID have an embedder — writing that kind without one
+    leaves real dense work outstanding. The write is **accepted** and stays
+    lexically searchable, but readiness reads `"embedding"` and `drain` reports
+    its timeout for the rest of that session, however long you wait. The write is
+    **not lost**: no failure is recorded and no terminal is written, so the next
+    session opened with an embedder embeds it through the ordinary scheduler — no
+    re-apply and no operator `rebuild`. Reporting `"ready"` there would be a torn
+    `ready`-without-vector, i.e. the silent miss this work exists to eliminate.
+  - **Additive**, no schema step (`SCHEMA_VERSION` unchanged), and no data
+    migration: this re-enqueues work inside one live database.
+
 - **New public types.** Rust: `SourceId`, `OrphanProvenanceReport`,
   `OrphanProvenanceSource`; `ExciseReport` is no longer behind the `operator`
   feature (it is `erase_source`'s return type). Python: `EraseReport`.
