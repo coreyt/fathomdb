@@ -368,11 +368,24 @@ metadata (**no stored column, no schema step**), plus the **atomic readiness-fli
 construction**. **ZERO net-new governed commands.**
 
 **⛔ THE REMAINDER — `flush_embeddings()` — DID NOT LAND, and must not be described as shipped.** It is tracked
-as **Slice 20c** and is blocked on two ledger items: **TC-59** (the governed-surface **pin gate** hashes the raw
-bytes of the allowlist and `preflight.sh --landing` treats it as a HARD fail, so §11 ruling 2's *"record a
-proposal and land"* is mechanically impossible) and **TC-55** (is `flush_embeddings()` a governed **command**, per
-§11 ruling 2, or **instrumentation**, per `api-surface.md` C4's "reuse `drain`"? — the answer decides whether 20c
-trips the pin at all). **➡ IMMEDIATE NEXT: resolve TC-59 + TC-55, then Slice 20c.** Commission it as an
+as **Slice 20c**. It *was* blocked on TC-59 + TC-55; **both are now RULED (HITL 2026-07-26) and 20c is
+UNBLOCKED.**
+
+- **TC-55 = INSTRUMENTATION** (steward `seq-110`). 20c **reuses/extends the shipped `drain`** rather than
+  minting a governed `flush_embeddings`: `drain` is absent from the allowlist and present in
+  `_INSTRUMENTATION` (`src/python/tests/test_surface.py:63`), so a second governed verb doing the same thing
+  is surface duplication. **⇒ 20c adds ZERO net-new governed commands and does not trip the pin.**
+- **TC-59 = ONE re-pin at the batched decision** (steward `seq-113`). **No `pending_delta` tooling is built.**
+  The allowlist `_comment` correction (TC-52) and the signing of any accumulated delta happen as a **single
+  ceremony at the Slice 30 → Slice 40 boundary**, where AC-079 mints anyway. The pin is **not expected to trip
+  again in 0.8.20** — `R-20-SUR` is a write-time minting rule with no new verb, `R-20-H7` is a gate rather than
+  SDK surface. **If it does trip: HALT and escalate to the Steward** — never work around it, never re-pin.
+  §11 ruling 2's *"record a proposal and land"* was **mechanically impossible** (the gate hashes raw bytes and
+  `preflight.sh --landing` treats a FAIL as `hard`); the gate's own false capability claim was corrected at
+  `66d30bb2`.
+
+**➡ IMMEDIATE NEXT: Slice 20c.** Then **Slice 21** — TC-57 characterize→fix, a reserved gap in the 20 band
+(plan §5 pre-authorizes the gaps; only overflow halts). Commission it as an
 **orchestrator** — **NOT** `/goal` (standing ruling `927ffb35`). Remaining ladder: **20c → 25 → 30 → 40**,
 sequentially. Full close record: `runs/STATUS-0.8.20.md` **§14**. Board of record: `runs/STATUS-0.8.20.md`; open
 HITL decisions: §11.
