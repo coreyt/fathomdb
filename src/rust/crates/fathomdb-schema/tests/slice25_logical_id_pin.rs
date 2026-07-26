@@ -393,6 +393,69 @@ fn pin_still_ignores_or_conflict_updates_on_unrelated_tables() {
     }
 }
 
+/// **A leading `WITH …` CTE is not an escape.** SQLite's grammar puts an
+/// optional `with-clause` in FRONT of `UPDATE`, `INSERT` and `DELETE`, so
+/// `WITH x AS (SELECT 1) UPDATE canonical_nodes SET logical_id = 'y'` is a
+/// running backfill whose statement does not START with `UPDATE` — and every
+/// arm of the guard anchored on the leading keyword. Verified against real
+/// SQLite 3.45.1 before these assertions were written: every shape below parses
+/// AND executes against the canonical tables.
+///
+/// (Self-reported by Slice 25 fix-2; same finding family as the two codex §9
+/// [P2]s it follows.)
+#[test]
+fn pin_rejects_a_cte_prefixed_backfill() {
+    for offender in [
+        // The reported shape, both canonical tables.
+        "WITH x AS (SELECT 1) UPDATE canonical_nodes SET logical_id = 'y';",
+        "WITH x AS (SELECT 1) UPDATE canonical_edges SET logical_id = 'y';",
+        // …composed with the fix-1 schema qualifier, spaced dot included.
+        "WITH x AS (SELECT 1) UPDATE main.canonical_nodes SET logical_id = 'y';",
+        "WITH x AS (SELECT 1) UPDATE temp . canonical_edges SET logical_id = 'y';",
+        r#"WITH x AS (SELECT 1) UPDATE "main"."canonical_nodes" SET [logical_id] = 'y';"#,
+        // …and with the fix-2 conflict clause, so all three fixes compose.
+        "WITH x AS (SELECT 1) UPDATE OR REPLACE canonical_nodes SET logical_id = 'y';",
+        "WITH x AS (SELECT 1) UPDATE OR IGNORE main.canonical_edges SET logical_id = 'y';",
+        "WITH x AS (SELECT 1) UPDATE OR ABORT temp.canonical_edges SET logical_id = 'y';",
+        // A recursive CTE is the same clause with one more keyword.
+        "WITH RECURSIVE x(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM x WHERE n < 3) \
+             UPDATE canonical_nodes SET logical_id = 'y' \
+             WHERE write_cursor IN (SELECT n FROM x);",
+        // The INSERT … SELECT backfill route, CTE-prefixed.
+        "WITH src AS (SELECT write_cursor, body FROM canonical_nodes_old) \
+             INSERT INTO canonical_nodes(write_cursor, kind, body, logical_id) \
+             SELECT write_cursor, 'doc', body, 'minted' FROM src;",
+        // …and the column-list-less form, which writes identity implicitly.
+        "WITH src AS (SELECT * FROM canonical_nodes_old) \
+             INSERT INTO canonical_nodes SELECT * FROM src;",
+        "WITH x AS (SELECT 1) INSERT INTO main.canonical_edges\
+             (write_cursor, kind, from_id, to_id, logical_id) VALUES(9,'k','a','b','y');",
+        // Leading whitespace / newlines are not an escape…
+        "\n   WITH x AS (SELECT 1)\n   UPDATE canonical_nodes SET logical_id = 'y';",
+        // …nor is case.
+        "with x as (select 1) update canonical_nodes set logical_id = 'y';",
+    ] {
+        check_migration_logical_id_pin("099_cte_backfill.sql", offender)
+            .unwrap_err_or_panic("a CTE-prefixed backfill must be rejected", offender);
+    }
+}
+
+/// **Control — the CTE catch-all must not conscript unrelated statements.**
+/// A lookalike target table is still none of the pin's business, and READING
+/// `logical_id` off a canonical table inside a CTE while writing something else
+/// entirely is not a backfill. Both shapes verified valid against SQLite 3.45.1.
+#[test]
+fn pin_still_accepts_cte_statements_that_write_no_canonical_identity() {
+    for accepted in [
+        "WITH x AS (SELECT 1) UPDATE canonical_nodes_backup SET logical_id = 'y';",
+        "WITH x AS (SELECT logical_id FROM canonical_nodes) UPDATE other_t SET note = 'n';",
+    ] {
+        check_migration_logical_id_pin("098_cte_unrelated.sql", accepted).unwrap_or_else(|err| {
+            panic!("a CTE that writes no canonical logical_id must be accepted: {accepted} → {err}")
+        });
+    }
+}
+
 /// **The trigger arm must identify its target by TOKEN, not by substring.**
 /// `canonical_nodes_backup` is a different table; a trigger that stamps
 /// `logical_id` on the BACKUP is legitimate recreate/backup scaffolding and the
