@@ -985,29 +985,289 @@ impl Display for MigrationAccretionError {
 
 impl std::error::Error for MigrationAccretionError {}
 
-/// RED STUB (0.8.20 Slice 25, R-20-SUR) — deliberately permissive. Replaced by
-/// the real guard in the GREEN commit; exists only so the RED witness is a set
-/// of assertion failures rather than a compile error.
+/// 0.8.20 Slice 25 (R-20-SUR) — rejection from the TC-11 `logical_id` pin.
+///
+/// Carries the offending migration's `name` (as `MigrationAccretionError` does)
+/// PLUS the normalised offending `statement`, because a migration step is a
+/// batch: naming the file alone would leave an author hunting for which of a
+/// dozen statements tripped the guard.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MigrationLogicalIdPinError {
+    /// The migration step / file name handed to the guard.
     pub offender: String,
+    /// The single offending statement, comment-stripped, string-literal-elided,
+    /// uppercased and whitespace-collapsed (the guard's normalised view).
     pub statement: String,
 }
 
 impl Display for MigrationLogicalIdPinError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "TC-11 logical_id pin rejected {}: {}", self.offender, self.statement)
+        write!(
+            f,
+            "TC-11 logical_id pin rejected {}: a migration may never populate `logical_id` on an \
+             existing canonical row — offending statement: {}",
+            self.offender, self.statement
+        )
     }
 }
 
 impl std::error::Error for MigrationLogicalIdPinError {}
 
-/// RED STUB — always accepts. See above.
+/// The two canonical tables that carry the identity column the pin protects.
+/// Uppercase because the guard compares against a normalised (uppercased) view.
+const PINNED_IDENTITY_TABLES: [&str; 2] = ["CANONICAL_NODES", "CANONICAL_EDGES"];
+
+/// The protected column, uppercased for the same reason.
+const PINNED_IDENTITY_COLUMN: &str = "LOGICAL_ID";
+
+/// 0.8.20 Slice 25 (R-20-SUR) — the **TC-11 pin's static migration guard**, and
+/// the sibling of [`check_migration_accretion`].
+///
+/// # What it enforces
+///
+/// TC-11 pin A (HITL-ratified 2026-07-12; `dev/plans/plan-0.8.20.md` §2.1) rules
+/// that anonymous / doc-seeded nodes stay `h:<content-hash>` **permanently** —
+/// the anonymous-surrogate leg is CANCELLED, not deferred — and that enforcement
+/// is "**no new column**": the record IS `canonical_nodes.logical_id`'s
+/// null-ness. The invariant is therefore a PROHIBITION:
+///
+/// > No migration, backfill, or verb shall ever populate `logical_id` on an
+/// > existing canonical row, and a stored row's id-space is NEVER re-derived.
+///
+/// This function is the migration half of that prohibition, checked STATICALLY —
+/// before the SQL can ever run. Supplying a `logical_id` at WRITE time is what
+/// makes a record governed; a migration is not a write time.
+///
+/// # Rejected shapes
+///
+/// On `canonical_nodes` / `canonical_edges` only:
+///
+/// - `UPDATE … SET … logical_id …` — the direct forward-mint;
+/// - `INSERT`/`REPLACE … INTO …` that names `logical_id`, i.e. a recreate-and-copy
+///   backfill (`SELECT COALESCE(logical_id, mint(…))`);
+/// - `INSERT`/`REPLACE … INTO …` with NO explicit column list — it writes every
+///   column, `logical_id` among them, without naming it;
+/// - `ALTER TABLE … ADD COLUMN logical_id … DEFAULT …` — a default populates
+///   every EXISTING row in one statement;
+/// - `ALTER TABLE … RENAME … logical_id` — a rename turns an already-populated
+///   column INTO the identity column with no write at all;
+/// - `CREATE TRIGGER … logical_id …` — a deferred `UPDATE`;
+/// - `CREATE TABLE …(… logical_id … DEFAULT …)` — same reasoning as `ADD COLUMN`.
+///
+/// # Accepted shapes (the ladder already ships all four)
+///
+/// - DECLARING the column (`ALTER TABLE canonical_nodes ADD COLUMN logical_id
+///   TEXT`, step 12) — declaration is not population;
+/// - INDEXING it (`CREATE UNIQUE INDEX … ON canonical_nodes(logical_id) WHERE
+///   superseded_at IS NULL`, steps 12/23);
+/// - READING it as a PREDICATE (`WHERE source_id IS NULL AND logical_id IS
+///   NULL`, step 21 — which writes only `source_id`);
+/// - RE-DECLARING it in a `CREATE TABLE` recreate (step 23's TC-33 edge
+///   recreate, which deliberately copies no rows).
+///
+/// # Deliberately conservative
+///
+/// The guard refuses any statement that WRITES INTO `logical_id` on a canonical
+/// table, including a copy that would merely PRESERVE the value through a
+/// table-recreate. Distinguishing "preserving copy" from "minting copy" needs
+/// positional matching of an insert column list against a `SELECT` expression
+/// list — fragile, and trivially gamed by the exact class of change the pin
+/// exists to stop. A future recreate must follow step 23's shipped precedent
+/// (declare the column; do not copy rows through it), or come back through the
+/// HITL to change the pin itself.
+///
+/// # No exemption escape hatch — deliberately
+///
+/// [`check_migration_accretion`] honours a `-- MIGRATION-ACCRETION-EXEMPTION: `
+/// marker because accretion is a BUDGET an author may knowingly spend. The TC-11
+/// pin is not a budget; it is TERMINAL-FOREVER. An escape hatch would defeat it,
+/// so there is none: a marked offender is rejected identically to an unmarked
+/// one. Changing the pin is an HITL decision, not a comment.
+///
+/// # Known limits (stated, not hidden)
+///
+/// This is a lexical guard, not a SQL parser. It normalises away comments and
+/// string literals and unwraps `"…"` / `[…]` / `` `…` `` quoted identifiers, then
+/// splits on `;`. A `CREATE TRIGGER` body therefore splits into fragments — which
+/// is harmless here, because both the `CREATE TRIGGER …` head and any
+/// `UPDATE canonical_… SET logical_id` fragment inside it are independently
+/// rejected. It cannot see through dynamically-built SQL, which migrations do not
+/// use (`MIGRATIONS` holds `&'static str` literals).
 pub fn check_migration_logical_id_pin(
-    _name: &str,
-    _sql: &str,
+    name: &str,
+    sql: &str,
 ) -> Result<(), MigrationLogicalIdPinError> {
+    for statement in normalized_statements(sql) {
+        if statement_violates_logical_id_pin(&statement) {
+            return Err(MigrationLogicalIdPinError { offender: name.to_string(), statement });
+        }
+    }
     Ok(())
+}
+
+/// Split `sql` into per-statement NORMALISED views: comments removed, string
+/// literals elided to `''`, quoted identifiers unwrapped to bare ones,
+/// uppercased, whitespace collapsed to single spaces.
+///
+/// Scanning is strictly left-to-right so precedence is correct: a `--` inside a
+/// string literal is data, and a `'` inside a comment is prose.
+fn normalized_statements(sql: &str) -> Vec<String> {
+    let mut statements = Vec::new();
+    let mut current = String::new();
+    let chars: Vec<char> = sql.chars().collect();
+    let mut i = 0;
+
+    while i < chars.len() {
+        let c = chars[i];
+        match c {
+            // Line comment: drop to end of line (the newline becomes whitespace).
+            '-' if chars.get(i + 1) == Some(&'-') => {
+                while i < chars.len() && chars[i] != '\n' {
+                    i += 1;
+                }
+            }
+            // Block comment: drop to the closing delimiter.
+            '/' if chars.get(i + 1) == Some(&'*') => {
+                i += 2;
+                while i < chars.len() && !(chars[i] == '*' && chars.get(i + 1) == Some(&'/')) {
+                    i += 1;
+                }
+                i = (i + 2).min(chars.len());
+                current.push(' ');
+            }
+            // String literal: elide the contents (they can never be an
+            // identifier). `''` inside a literal is an escaped quote.
+            '\'' => {
+                i += 1;
+                while i < chars.len() {
+                    if chars[i] == '\'' {
+                        if chars.get(i + 1) == Some(&'\'') {
+                            i += 2;
+                            continue;
+                        }
+                        i += 1;
+                        break;
+                    }
+                    i += 1;
+                }
+                current.push_str("''");
+            }
+            // Quoted identifiers: UNWRAP them, so `"logical_id"` / `[logical_id]`
+            // / `` `logical_id` `` are the same identifier to the guard that they
+            // are to SQLite.
+            '"' | '`' | '[' => {
+                let close = if c == '[' { ']' } else { c };
+                i += 1;
+                while i < chars.len() && chars[i] != close {
+                    current.push(chars[i].to_ascii_uppercase());
+                    i += 1;
+                }
+                i += 1;
+            }
+            ';' => {
+                statements.push(collapse_whitespace(&current));
+                current.clear();
+                i += 1;
+            }
+            _ => {
+                current.push(c.to_ascii_uppercase());
+                i += 1;
+            }
+        }
+    }
+    statements.push(collapse_whitespace(&current));
+    statements.retain(|s| !s.is_empty());
+    statements
+}
+
+fn collapse_whitespace(raw: &str) -> String {
+    raw.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Does one NORMALISED statement write into `logical_id` on a canonical table?
+fn statement_violates_logical_id_pin(statement: &str) -> bool {
+    let names_column = statement.contains(PINNED_IDENTITY_COLUMN);
+
+    // A trigger is a deferred write; one that so much as mentions the identity
+    // column on a canonical table is refused whole (the body may also split into
+    // fragments that the UPDATE arm below catches independently).
+    if statement.starts_with("CREATE") && statement.contains(" TRIGGER ") && names_column {
+        return targets_pinned_table(statement);
+    }
+
+    if statement.starts_with("UPDATE") {
+        let Some(table) = token_after(statement, "UPDATE ") else { return false };
+        if !is_pinned_table(&table) {
+            return false;
+        }
+        // Only the SET clause assigns. Reading `logical_id` in a WHERE predicate
+        // (step 21) is explicitly legitimate.
+        return set_clause(statement).is_some_and(|clause| clause.contains(PINNED_IDENTITY_COLUMN));
+    }
+
+    if statement.starts_with("INSERT") || statement.starts_with("REPLACE") {
+        let Some((table, rest)) = table_after_into(statement) else { return false };
+        if !is_pinned_table(&table) {
+            return false;
+        }
+        // Naming the column anywhere in an insert into a canonical table is a
+        // backfill; a MISSING column list writes every column, identity included.
+        return names_column || !rest.trim_start().starts_with('(');
+    }
+
+    if statement.starts_with("ALTER") {
+        let Some(table) = token_after(statement, "ALTER TABLE ") else { return false };
+        if !is_pinned_table(&table) || !names_column {
+            return false;
+        }
+        // Declaring the column bare is how step 12 shipped it. A DEFAULT
+        // populates every existing row; a RENAME conscripts a populated one.
+        return statement.contains("DEFAULT") || statement.contains("RENAME");
+    }
+
+    if statement.starts_with("CREATE") && statement.contains(" TABLE ") {
+        let Some(table) = token_after(statement, " TABLE ") else { return false };
+        // A recreate may DECLARE the column (step 23 does); it may not default it.
+        return is_pinned_table(&table) && names_column && statement.contains("DEFAULT");
+    }
+
+    false
+}
+
+fn is_pinned_table(token: &str) -> bool {
+    PINNED_IDENTITY_TABLES.contains(&token)
+}
+
+fn targets_pinned_table(statement: &str) -> bool {
+    PINNED_IDENTITY_TABLES.iter().any(|table| statement.contains(table))
+}
+
+/// The first identifier token after `marker`, cut at whitespace or `(`.
+fn token_after(statement: &str, marker: &str) -> Option<String> {
+    let rest = statement.split_once(marker)?.1;
+    let token: String =
+        rest.chars().take_while(|c| !c.is_whitespace() && *c != '(' && *c != ',').collect();
+    (!token.is_empty()).then_some(token)
+}
+
+/// `(table, remainder-after-the-table-name)` for an `INSERT`/`REPLACE … INTO …`.
+fn table_after_into(statement: &str) -> Option<(String, String)> {
+    let rest = statement.split_once(" INTO ")?.1;
+    let table: String =
+        rest.chars().take_while(|c| !c.is_whitespace() && *c != '(' && *c != ',').collect();
+    (!table.is_empty()).then(|| (table.clone(), rest[table.len()..].to_string()))
+}
+
+/// The assignment half of an `UPDATE`: everything between ` SET ` and the first
+/// clause keyword that ends it.
+fn set_clause(statement: &str) -> Option<&str> {
+    let after_set = statement.split_once(" SET ")?.1;
+    let end = [" WHERE ", " FROM ", " RETURNING "]
+        .iter()
+        .filter_map(|kw| after_set.find(kw))
+        .min()
+        .unwrap_or(after_set.len());
+    Some(&after_set[..end])
 }
 
 pub fn check_migration_accretion(name: &str, sql: &str) -> Result<(), MigrationAccretionError> {

@@ -291,6 +291,38 @@ fn pin_accepts_every_shipped_migration_step() {
     }
 }
 
+/// **The second enforcement surface.** `check_migration_accretion` is enforced
+/// in TWO places: these Rust tests, and `scripts/agent-lint-migrations.py`
+/// (wired into `scripts/agent-lint.sh`) over the `migrations/*.sql` authoring
+/// copies. The pin covers both surfaces WITHOUT a second implementation: this
+/// test runs the SAME Rust guard over the on-disk `.sql` files. Mirroring the
+/// guard's ~150-line lexical scanner into Python would create a second source of
+/// truth that can drift; a shared guard cannot.
+///
+/// (Those `.sql` files are documentation duplicates — they are NOT `include_str!`'d,
+/// so `MIGRATIONS` above is the only surface that can actually run. They are
+/// checked anyway so an author who edits the copy first still meets the pin.)
+#[test]
+fn pin_accepts_every_on_disk_migration_sql_file() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+    let mut checked = 0usize;
+    let mut entries: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("migrations dir must be readable at {}: {e}", dir.display()))
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|ext| ext == "sql"))
+        .collect();
+    entries.sort();
+    for path in entries {
+        let sql = std::fs::read_to_string(&path).unwrap();
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        check_migration_logical_id_pin(&name, &sql)
+            .unwrap_or_else(|err| panic!("{name} violates the TC-11 pin: {err}"));
+        checked += 1;
+    }
+    assert!(checked > 0, "the on-disk migration corpus must not be silently empty");
+}
+
 /// The three LEGITIMATE `logical_id` uses that already ship, pinned one by one
 /// so a future tightening of the guard cannot break the ladder silently:
 ///
