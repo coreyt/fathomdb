@@ -1052,7 +1052,10 @@ const PINNED_IDENTITY_COLUMN: &str = "LOGICAL_ID";
 /// - `ALTER TABLE … RENAME … logical_id` — a rename turns an already-populated
 ///   column INTO the identity column with no write at all;
 /// - `CREATE TRIGGER … logical_id …` — a deferred `UPDATE`;
-/// - `CREATE TABLE …(… logical_id … DEFAULT …)` — same reasoning as `ADD COLUMN`.
+/// - `CREATE TABLE …(… logical_id … DEFAULT …)` — same reasoning as `ADD COLUMN`;
+/// - ANY of the write shapes above behind a leading `WITH … AS (…)` /
+///   `WITH RECURSIVE …` CTE clause, which SQLite allows in FRONT of `UPDATE`,
+///   `INSERT` and `DELETE` — see the keyword-independent catch-all below.
 ///
 /// # Accepted shapes (the ladder already ships all four)
 ///
@@ -1098,6 +1101,24 @@ const PINNED_IDENTITY_COLUMN: &str = "LOGICAL_ID";
 /// (which, by the `;` split, carries the head AND the first body statement) for
 /// a pinned table token, and later body statements are their own fragments.
 ///
+/// Conservatism is also why the arms above are not the whole guard. Each of them
+/// anchors on the statement's LEADING keyword, and SQLite's grammar puts an
+/// optional `WITH …` CTE clause in front of `UPDATE` / `INSERT` / `DELETE`, so
+/// `WITH x AS (SELECT 1) UPDATE canonical_nodes SET logical_id = …` (valid, and
+/// verified running against SQLite 3.45.1) would match no arm at all. Rather
+/// than teach the guard to skip balanced parentheses — a SQL parser by another
+/// name — a keyword-INDEPENDENT catch-all runs FIRST and refuses any statement
+/// that writes `logical_id` in an ASSIGNMENT position on a pinned table:
+/// a ` SET ` clause naming the column while some token names a canonical table,
+/// or an ` INTO ` target that IS a canonical table (naming the column, or
+/// omitting the column list). Read positions — a `WHERE` predicate, an index
+/// column list, a column declaration — are untouched, which is precisely what
+/// keeps the four shipped accepts green. See
+/// [`writes_pinned_identity_anywhere`], whose assignment half deliberately
+/// over-rejects: after an arbitrary prefix the update TARGET cannot be located
+/// without parsing, so merely MENTIONING a canonical table anywhere in a
+/// statement that assigns `logical_id` is refused.
+///
 /// # No exemption escape hatch — deliberately
 ///
 /// [`check_migration_accretion`] honours a `-- MIGRATION-ACCRETION-EXEMPTION: `
@@ -1119,6 +1140,29 @@ const PINNED_IDENTITY_COLUMN: &str = "LOGICAL_ID";
 /// fragment and is judged independently by the `UPDATE` / `INSERT` arms. It
 /// cannot see through dynamically-built SQL, which migrations do not use
 /// (`MIGRATIONS` holds `&'static str` literals).
+///
+/// A leading `WITH …` CTE is NOT among the limits — the keyword-independent
+/// catch-all above closes that family. What remains open, stated plainly rather
+/// than papered over, is **cross-statement table identity**: the guard judges
+/// each `;`-separated statement ALONE and holds no model of which name refers to
+/// which table over the course of a step. A migration that renames the pinned
+/// table out of the way, writes `logical_id` under the new name, and renames it
+/// back —
+///
+/// ```sql
+/// ALTER TABLE canonical_nodes RENAME TO tmp_x;
+/// UPDATE tmp_x SET logical_id = 'minted' WHERE logical_id IS NULL;
+/// ALTER TABLE tmp_x RENAME TO canonical_nodes;
+/// ```
+///
+/// — is therefore ACCEPTED, as is its sibling (`CREATE TABLE … AS SELECT …
+/// 'minted' AS logical_id FROM canonical_nodes`, `DROP`, `RENAME TO
+/// canonical_nodes`). Closing it means tracking table identity across
+/// statements, which is a different guard, not a wider arm; it is recorded here
+/// (and in the slice's reviewer record) as a KNOWN residual rather than silently
+/// implied to be covered. Note that the second half of the TC-11 prohibition —
+/// the runtime write path — is enforced elsewhere, so this guard being lexical
+/// is not the pin's only defence.
 pub fn check_migration_logical_id_pin(
     name: &str,
     sql: &str,
@@ -1236,6 +1280,18 @@ fn tighten_qualified_names(statement: &str) -> String {
 fn statement_violates_logical_id_pin(statement: &str) -> bool {
     let names_column = statement.contains(PINNED_IDENTITY_COLUMN);
 
+    // FIRST, and independent of the leading keyword: the keyword-anchored arms
+    // below all begin `statement.starts_with(…)`, and SQLite's grammar allows a
+    // `WITH …` CTE clause in FRONT of UPDATE / INSERT / DELETE — so
+    // `WITH x AS (SELECT 1) UPDATE canonical_nodes SET logical_id = …` runs the
+    // forbidden backfill while starting with none of them. This catch-all closes
+    // that whole family without a paren-matching CTE parser, and runs BEFORE the
+    // arms because several of them `return false` early (a non-pinned UPDATE
+    // target, say), which would otherwise shadow it.
+    if writes_pinned_identity_anywhere(statement, names_column) {
+        return true;
+    }
+
     // A trigger is a deferred write; one that so much as mentions the identity
     // column AND names a canonical table — as its ON-target, or anywhere in the
     // first body statement, which the `;` split glues onto the head — is refused
@@ -1282,6 +1338,51 @@ fn statement_violates_logical_id_pin(statement: &str) -> bool {
     }
 
     false
+}
+
+/// The keyword-INDEPENDENT catch-all: does `statement` write `logical_id` on a
+/// pinned table ANYWHERE, whatever it starts with?
+///
+/// Every other arm anchors on the leading keyword, so any prefix that displaces
+/// it — SQLite's optional `WITH …` / `WITH RECURSIVE …` CTE clause is the one
+/// that actually exists, and it is legal in front of `UPDATE`, `INSERT` and
+/// `DELETE` — slips them all. Parsing CTE parentheses to find the real head
+/// keyword would be a SQL parser; the pin is TERMINAL-FOREVER and its stated
+/// stance is that over-rejection is a cost worth paying and under-rejection is
+/// not, so this fires on WRITE POSITION instead of on statement shape:
+///
+/// - an assignment: the ` SET ` clause (up to `WHERE` / `FROM` / `RETURNING`)
+///   names `logical_id`, and SOME token of the statement is a pinned table;
+/// - an insert target: the table after ` INTO ` is pinned, and the statement
+///   either names `logical_id` or omits the column list (which writes every
+///   column, identity included) — the same rule the `INSERT` arm applies.
+///
+/// READ positions are deliberately untouched, which is exactly what keeps the
+/// four shipped accepts green: a `WHERE … logical_id IS NULL` predicate (step
+/// 21, which writes only `source_id`), an index column list (steps 12/23), a
+/// bare `ADD COLUMN logical_id TEXT` declaration (step 12) and a `CREATE TABLE`
+/// re-declaration (step 23) all name the column without assigning to it. The
+/// insert half checks the TARGET table, not mere mention, so step 23's
+/// `INSERT … INTO _fathomdb_open_state … SELECT … FROM canonical_edges` — which
+/// reads a pinned table — stays accepted.
+///
+/// The assignment half is deliberately coarser than the `UPDATE` arm: it asks
+/// only whether a pinned table is MENTIONED, because after an arbitrary prefix
+/// the update target cannot be located token-wise without parsing. So
+/// `WITH x AS (SELECT 1 FROM canonical_nodes) UPDATE other SET logical_id = …`
+/// is refused too. That is over-rejection by design, and cheap to work around
+/// honestly (don't name a canonical table in the CTE); the reverse mistake is
+/// not recoverable.
+fn writes_pinned_identity_anywhere(statement: &str, names_column: bool) -> bool {
+    if names_column
+        && mentions_pinned_table(statement)
+        && set_clause(statement).is_some_and(|clause| clause.contains(PINNED_IDENTITY_COLUMN))
+    {
+        return true;
+    }
+    table_after_into(statement).is_some_and(|(table, rest)| {
+        is_pinned_table(&table) && (names_column || !rest.trim_start().starts_with('('))
+    })
 }
 
 /// The bare table name from a possibly schema-qualified token.
