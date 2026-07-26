@@ -32,6 +32,11 @@ __pycache__/
 _site/
 site/
 node_modules/
+# A trailing slash matches DIRECTORIES only, so a `node_modules` SYMLINK (the
+# usual agent-worktree shape: a link to the primary checkout's install, needed
+# by `scripts/agent-lint.sh`) slips past the line above and `git add -A` commits
+# an absolute-path symlink into the repo root. The slash-less form closes it.
+node_modules
 typescript/node_modules/
 typescript/packages/*/dist/
 typescript/apps/*/dist/
