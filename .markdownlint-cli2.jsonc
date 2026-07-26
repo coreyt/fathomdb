@@ -54,7 +54,14 @@
     // not maintained prose. The authored design docs under dev/design/ stay linted.
     "dev/experiments/**",
 
-    // Local-only agent config (gitignored, not part of repo).
+    // Agent config + slash-command definitions. INTENTIONALLY IGNORED — keep it
+    // that way (HITL 2026-07-25). NB the previous rationale here ("gitignored,
+    // not part of repo") was FACTUALLY WRONG: `.claude/commands/*.md` IS tracked
+    // and committed. The real reason is that these files are prompt text read by
+    // an agent, not published prose — markdownlint's structural rules (heading
+    // increments, fence languages, list indentation) police a shape that carries
+    // no meaning here, and a lint failure would block a command edit for style.
+    // Corrected so nobody "fixes" the ignore on the strength of a false premise.
     ".claude/**",
 
     // Public docs are gated by `mkdocs build --strict` already.

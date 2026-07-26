@@ -40,6 +40,25 @@ Then read, in this order, for the framing behind each item:
   banner points at the generated live count instead. Never lift a row out of §4
   and present it as an open decision.
 
+## Then harvest the SESSION — the repo does not know about these
+
+The sources above only know what has been written down. **A question raised in
+this session and never recorded is invisible to every one of them**, and it is
+usually the one actually blocking me. Sweep the conversation for:
+
+- anything an orchestrator or subagent **escalated** and you triaged but did not
+  yet place (these arrive as "for you / your call, not mine" in a hand-back);
+- anything you deferred with "I'll flag this" or "worth your attention" and no
+  durable id was minted;
+- assumptions you stated and acted on that I never actually confirmed — say so
+  plainly, and give me the chance to overturn them while it is still cheap;
+- work you scoped or re-sequenced yourself that arguably crossed into the §5
+  **always-HITL** row.
+
+Mark each one **`[session]`** so I can see at a glance which items have no repo
+home yet. If I close a `[session]` item, it gets a durable id at close time (see
+the closing section) — that is the moment it stops being transcript-only.
+
 ## What qualifies
 
 The authority is `dev/plans/prompts/0.8.x-STEWARD-HANDOFF.md` **§5** — the
@@ -139,10 +158,77 @@ them. Run the suites individually and quote each one's own exit code.
   irreversible waits behind the gate. Say plainly whether the item **halts the
   run** (`halts_run` in the state file) or is merely scheduled at a boundary.
 
-## Then stop
+## Then stop — enumeration ends here
 
 Do not begin work on any of it — not the analysis it implies, not the "quick
 check" that would settle it. If some decisions are independent and others depend
 on an earlier answer, say which, so I can answer out of order.
+
+---
+
+## Closing a decision — the second half of this command
+
+When I answer, **record it.** A decision answered only in chat does not exist:
+the transcript is not a durable home, and losing it is how the same call gets
+re-litigated a week later. Closing is three writes, in this order.
+
+**1. The ledger — the append-only trail, and the authority.**
+
+```bash
+python3 dev/agent-tools/ledgerwrite/ledgerwrite.py dev/steward/steward-ledger.jsonl \
+  --kind decision --field decider=hitl \
+  --summary '<the ruling, in MY words, and what it forecloses>' \
+  --ref plan:dev/plans/plan-0.8.20.md
+```
+
+**Single-quote the summary.** Shell substitution has silently corrupted this
+ledger **twice** — seq-95/96 and seq-108/109 (`TC-53`). A mangled entry is
+indistinguishable from an intended one, and the ledger is append-only, so it can
+only ever be corrected by a follow-up entry, never repaired.
+
+**2. The state file — the single writer.** Move the entry from
+`decisions.unruled` to `decisions.ruled` in `dev/plans/release-state-0.8.20.json`,
+with `source` set to the new `seq-N`.
+
+**3. Regenerate and verify.** `scripts/check-release-state-views.sh` must exit 0.
+The board's §1 cell, its §4 live-open **count**, and the master's 0.8.20 row all
+render from the state file — **never hand-edit inside a `GENERATED` marker.**
+This is the whole point of the single writer: closing one decision updates every
+view, so no two documents can disagree about what is open.
+
+**For a session question with no repo home yet** — something raised in
+conversation that was never written down — mint a durable id *first*, then close
+it the same way:
+
+```bash
+python3 dev/agent-tools/ledgerwrite/ledgerwrite.py dev/todos-and-considerations-ledger.jsonl \
+  --kind todo --field decider=hitl --field id=TC-<n> --field status=open --summary '<...>'
+```
+
+Check the id is unused before minting it — `max(TC-n) + 1` is not safe on its own
+(AC ids already collided once this way, master **F-29**).
+
+### What closing must never do
+
+- **Never close a decision by making it yourself.** `decider=hitl` means the
+  human answered. If I did not answer it, it stays open — an agent-supplied
+  answer recorded as mine is the worst possible outcome of this command.
+- **Record my answer, not your reading of it.** If I pick the option you did not
+  recommend, record that plainly, with no editorial and no re-argument.
+- **Cite, never restate.** Prose homes reference `seq-N`; they do not paraphrase
+  the ruling. Restating is precisely what put one fact in four documents and let
+  them drift apart.
+- **Never schedule a confirming check** for something just closed. Closing a
+  decision and then pricing a run to confirm it is a failure mode this program
+  has already ruled against.
+- A close that changes program direction or the record is the §5 **always-HITL**
+  row. That is satisfied *only* because I am the one answering — so attribute
+  honestly, every time.
+
+### Report back after closing
+
+One line per decision: what was decided, the `seq-N` it landed at, and what is
+now unblocked. Then re-run the enumeration if anything remains, so the open set
+is current before you resume work.
 
 $ARGUMENTS
