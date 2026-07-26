@@ -81,6 +81,8 @@ export interface NativeProjectionSpec {
   ftsTokenizer?: string | null;
   vector: boolean;
   vectorEmbedder?: string | null;
+  /** 0.8.20 Slice 20 (R-20-DR) — engine-set readiness ("ready"/"embedding"). */
+  vectorDenseReadiness?: string | null;
 }
 
 /** 0.8.20 Slice 15d (R-20-PR) — native configure_projections diff. */

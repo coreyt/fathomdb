@@ -240,6 +240,9 @@ def projections(engine: "Engine") -> builtins.list[ProjectionSpec]:
             fts_tokenizer=s.fts_tokenizer,
             vector=s.vector,
             vector_embedder=s.vector_embedder,
+            # 0.8.20 Slice 20 (R-20-DR) — engine-set readiness read metadata
+            # (`"ready"` / `"embedding"`; `None` when no vector sub-object).
+            vector_dense_readiness=s.vector_dense_readiness,
         )
         for s in _native_read_projections(engine._native)
     ]

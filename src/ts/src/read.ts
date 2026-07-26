@@ -27,6 +27,7 @@ import {
 import { InvalidArgumentError, rethrowTyped } from "./errors.js";
 import { validateFfiString } from "./validation.js";
 import type {
+  DenseReadiness,
   Engine,
   Filter,
   FilterTerm,
@@ -360,6 +361,9 @@ export const read = {
       ftsTokenizer: s.ftsTokenizer ?? null,
       vector: s.vector,
       vectorEmbedder: s.vectorEmbedder ?? null,
+      // 0.8.20 Slice 20 (R-20-DR) — engine-set readiness read metadata
+      // ("ready"/"embedding"; null when there is no vector sub-object).
+      vectorDenseReadiness: (s.vectorDenseReadiness ?? null) as DenseReadiness | null,
     }));
   },
 };

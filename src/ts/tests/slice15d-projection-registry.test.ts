@@ -553,8 +553,16 @@ test("fix-4 CONTROL — a consistent spec round-trips verbatim via read.projecti
     assert.equal(delta.unchanged, false);
     const back = await read.projections(engine);
     assert.equal(back.length, 1);
-    // The full round-trip invariant: read-back equals what was sent.
-    assert.deepEqual(back[0], sent);
+    // The full round-trip invariant: read-back equals what was sent, PLUS the
+    // one engine-set READ-METADATA field 0.8.20 Slice 20 (R-20-DR) attached to
+    // the vector sub-object. `vectorDenseReadiness` is not a declaration, so it
+    // is expected to differ from the sent spec (which never authors it); every
+    // DECLARED field must still match byte-for-byte.
+    assert.equal(back[0].vectorDenseReadiness, "ready");
+    assert.deepEqual({ ...back[0], vectorDenseReadiness: undefined }, {
+      ...sent,
+      vectorDenseReadiness: undefined,
+    });
   } finally {
     await engine.close();
   }

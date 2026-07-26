@@ -12,6 +12,7 @@ rest" assertion for the EAV store / property-FTS.
 
 from __future__ import annotations
 
+import dataclasses
 import sqlite3
 
 import pytest
@@ -401,8 +402,13 @@ def test_consistent_fts_spec_round_trips(tmp_path) -> None:
         back = read.projections(engine)
         assert len(back) == 1
         got = back[0]
-        # The full round-trip invariant: read-back equals what was sent.
-        assert got == sent
+        # The full round-trip invariant: read-back equals what was sent, PLUS the
+        # one engine-set READ-METADATA field 0.8.20 Slice 20 (R-20-DR) attached
+        # to the vector sub-object. `vector_dense_readiness` is not a
+        # declaration, so it is expected to differ from the sent spec (which
+        # never authors it); every DECLARED field must still match exactly.
+        assert got.vector_dense_readiness == "ready"
+        assert dataclasses.replace(got, vector_dense_readiness=None) == sent
         assert got.fts is True and got.fts_tokenizer == "unicode61"
         assert got.vector is True and got.vector_embedder == "bge-small"
     finally:
@@ -426,7 +432,11 @@ def test_fts_without_searchable_role_round_trips(tmp_path) -> None:
         )
         engine.configure_projections([sent])
         got = next(s for s in read.projections(engine) if s.name == "status")
-        assert got == sent, "fts/vector-without-searchable must round-trip faithfully"
+        # 0.8.20 Slice 20 (R-20-DR) — modulo the engine-set readiness read
+        # metadata, which is not a declaration and is never authored by a caller.
+        assert (
+            dataclasses.replace(got, vector_dense_readiness=None) == sent
+        ), "fts/vector-without-searchable must round-trip faithfully"
         assert got.fts is True and got.vector is True
         assert got.roles == frozenset({"filterable"})
     finally:

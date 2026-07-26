@@ -33,12 +33,12 @@ use fathomdb_embedder_api::EmbedderIdentity as RustEmbedderIdentity;
 use fathomdb_engine::{
     BoundaryCrossing as RustBoundaryCrossing, ComparisonOp as RustComparisonOp,
     ConsolidateAxis as RustConsolidateAxis, ConsolidateReceipt as RustConsolidateReceipt,
-    CorruptionDetail, CorruptionKind, EmbedderChoice, Engine as RustEngine,
-    EngineError as RustEngineError, EngineOpenError, ExciseReport as RustExciseReport,
-    Explanation as RustExplanation, ExtractDocument as RustExtractDocument, Filter as RustFilter,
-    FilterTerm as RustFilterTerm, IdSpace as RustIdSpace,
-    IngestWithExtractorReceipt as RustIngestWithExtractorReceipt, InitialState,
-    LifecycleState as RustLifecycleState, NodeRecord as RustNodeRecord,
+    CorruptionDetail, CorruptionKind, DenseReadiness as RustDenseReadiness, EmbedderChoice,
+    Engine as RustEngine, EngineError as RustEngineError, EngineOpenError,
+    ExciseReport as RustExciseReport, Explanation as RustExplanation,
+    ExtractDocument as RustExtractDocument, Filter as RustFilter, FilterTerm as RustFilterTerm,
+    IdSpace as RustIdSpace, IngestWithExtractorReceipt as RustIngestWithExtractorReceipt,
+    InitialState, LifecycleState as RustLifecycleState, NodeRecord as RustNodeRecord,
     OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage,
     PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
     ProjectionDelta as RustProjectionDelta, ProjectionFts as RustProjectionFts,
@@ -473,6 +473,12 @@ pub struct ProjectionSpec {
     pub fts_tokenizer: Option<String>,
     pub vector: bool,
     pub vector_embedder: Option<String>,
+    /// 0.8.20 Slice 20 (R-20-DR) — READ METADATA, engine-set (`vectorDenseReadiness`
+    /// in JS): `"ready"` / `"embedding"` on the way OUT of `read.projections`,
+    /// omitted on every caller-authored spec. Inert on the way IN (the engine
+    /// reports the derived truth), so `read.projections` output still re-applies
+    /// as a no-op.
+    pub vector_dense_readiness: Option<String>,
 }
 
 impl ProjectionSpec {
@@ -484,6 +490,11 @@ impl ProjectionSpec {
             fts_tokenizer: s.fts.as_ref().and_then(|f| f.tokenizer.clone()),
             vector: s.vector.is_some(),
             vector_embedder: s.vector.as_ref().and_then(|v| v.embedder.clone()),
+            vector_dense_readiness: s
+                .vector
+                .as_ref()
+                .and_then(|v| v.dense_readiness)
+                .map(|r| r.as_str().to_string()),
         }
     }
 
@@ -553,6 +564,37 @@ impl ProjectionSpec {
             }
             _ => {}
         }
+        // 0.8.20 Slice 20 (R-20-DR) — the SAME round-trip gate applied to the
+        // engine-set readiness field. It is READ METADATA, so its VALUE is inert
+        // on the way in (the engine always reports the derived truth, which is
+        // what keeps `read.projections` output re-appliable as a no-op — the
+        // fix-4 read→configure round-trip, pinned by a test in both bindings).
+        // But the two shapes that could NEVER round-trip are refused, exactly as
+        // for `vectorEmbedder`. Kept byte-for-byte in step with the pyo3 binding
+        // (Py ≡ TS): the two must refuse the same shapes the same way.
+        if let Some(readiness) = self.vector_dense_readiness.as_deref() {
+            validate_ffi_string_napi(readiness)?;
+            if !self.vector {
+                return Err(typed_error(
+                    CODE_INVALID_ARGUMENT,
+                    format!(
+                        "projection {:?}: vectorDenseReadiness is set but vector is false — readiness belongs to the vector sub-object and cannot round-trip without it; set vector=true or omit vectorDenseReadiness",
+                        self.name
+                    ),
+                    JsonValue::Null,
+                ));
+            }
+            if RustDenseReadiness::from_str_opt(readiness).is_none() {
+                return Err(typed_error(
+                    CODE_INVALID_ARGUMENT,
+                    format!(
+                        "projection {:?}: unknown vectorDenseReadiness {readiness:?}: expected \"ready\" or \"embedding\" (\"pending\" is reserved for the admission axis and is never a readiness value). It is engine-set read metadata; omit it",
+                        self.name
+                    ),
+                    JsonValue::Null,
+                ));
+            }
+        }
         let mut roles = std::collections::BTreeSet::new();
         for r in &self.roles {
             validate_ffi_string_napi(r)?;
@@ -583,9 +625,16 @@ impl ProjectionSpec {
             name: self.name.clone(),
             roles,
             fts: self.fts.then(|| RustProjectionFts { tokenizer: self.fts_tokenizer.clone() }),
-            vector: self
-                .vector
-                .then(|| RustProjectionVector { embedder: self.vector_embedder.clone() }),
+            vector: self.vector.then(|| RustProjectionVector {
+                embedder: self.vector_embedder.clone(),
+                // 0.8.20 Slice 20 (R-20-DR) — readiness is engine-set READ
+                // METADATA. Carried across so the engine can see what the caller
+                // sent, but the registry never stores it and never honours it.
+                dense_readiness: self
+                    .vector_dense_readiness
+                    .as_deref()
+                    .and_then(RustDenseReadiness::from_str_opt),
+            }),
         })
     }
 }

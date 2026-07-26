@@ -288,6 +288,13 @@ class Engine:
                 s.fts_tokenizer,
                 s.vector,
                 s.vector_embedder,
+                # 0.8.20 Slice 20 (R-20-DR) — the engine-set readiness field is
+                # carried ACROSS rather than dropped here, so the binding's
+                # round-trip gate sees what the caller actually sent (a readiness
+                # with ``vector=False``, or an unknown spelling, is refused).
+                # Its VALUE is inert engine-side, which is what keeps
+                # ``read.projections`` output re-appliable as a no-op.
+                s.vector_dense_readiness,
             )
             for s in specs
         ]

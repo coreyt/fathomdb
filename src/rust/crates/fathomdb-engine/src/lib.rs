@@ -3884,18 +3884,85 @@ pub struct ProjectionFts {
     pub tokenizer: Option<String>,
 }
 
+/// 0.8.20 Slice 20 (R-20-DR) — the ENGINE-SET readiness of the
+/// `searchable→vector` projection, per
+/// `dev/design/record-lifecycle-protocol/projection-registry-and-async-embed.md`
+/// §3.
+///
+/// **Exactly two members.** `filterable` and `searchable→FTS` are
+/// same-transaction (non-stale on commit) so they need no readiness axis at all;
+/// `searchable→vector` is **async, rebuild-durable**, so it carries one.
+///
+/// **Naming discipline (load-bearing).** The token **`pending` is RESERVED for
+/// the admission axis** (quarantine/trust — an app judgment). Index-readiness is
+/// a DIFFERENT, orthogonal dimension (a record can be
+/// `active ∧ is_latest ∧ admissible` yet `dense_readiness = embedding`), so this
+/// enum deliberately does **not** reuse that word: the non-ready member is
+/// `Embedding`, never `Pending`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum DenseReadiness {
+    /// Every row in the vector projection's row set has reached a projection
+    /// terminal — the dense arm is caught up. Because the vector INSERT and the
+    /// terminal record are written in ONE transaction
+    /// ([`commit_projection_outcomes`]), `Ready` can never be observed with the
+    /// vector row absent (design §4.1 invariant 1).
+    Ready,
+    /// At least one row in the projection's row set has not yet reached a
+    /// projection terminal — embedding is outstanding. This is the ONLY
+    /// tolerable torn state: readiness `embedding` with the vector absent (the
+    /// dense arm reads as partial and RRF under-ranks; it does not hide).
+    Embedding,
+}
+
+impl DenseReadiness {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DenseReadiness::Ready => "ready",
+            DenseReadiness::Embedding => "embedding",
+        }
+    }
+
+    /// The two accepted spellings. `"pending"` is DELIBERATELY not one of them
+    /// (reserved for the admission axis) and so parses to `None`.
+    #[must_use]
+    pub fn from_str_opt(value: &str) -> Option<Self> {
+        match value {
+            "ready" => Some(DenseReadiness::Ready),
+            "embedding" => Some(DenseReadiness::Embedding),
+            _ => None,
+        }
+    }
+}
+
 /// 0.8.20 Slice 15d (R-20-PR) — the `searchable→vector` sub-target selector.
 ///
-/// **Slice 20 (R-20-DR) attaches `dense_readiness` HERE, additively:** this
+/// **Slice 20 (R-20-DR) attached `dense_readiness` HERE, additively:** this
 /// sub-object is STORED by 15d (so the shape exists and a caller can declare a
-/// vector projection) but 15d builds NO embedding / readiness machinery. Slice
-/// 20 adds a `dense_readiness` field to this struct and the async flip logic;
-/// nothing in 15d's persisted shape has to change for that (the registry column
-/// `vector_embedder` + `vector_declared` already round-trip the sub-object).
+/// vector projection); Slice 20 hangs the READ-METADATA readiness flag off it.
+/// Nothing in 15d's persisted shape changed (the registry columns
+/// `vector_embedder` + `vector_declared` still round-trip the declaration) —
+/// **readiness is DERIVED, never stored**, so there is no schema step and no
+/// separate flag that could tear (see [`derive_dense_readiness`]).
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ProjectionVector {
     /// Optional embedder override; `None` ⇒ the engine's shipped default.
     pub embedder: Option<String>,
+    /// 0.8.20 Slice 20 (R-20-DR) — **READ METADATA, engine-set.** Populated by
+    /// [`Engine::read_projections`]; `None` on every caller-authored spec.
+    ///
+    /// It is **not part of the declaration**: `configure_projections` neither
+    /// stores nor honours it (see [`StoredProjection::from_spec`], which reads
+    /// only `embedder`), so a value supplied here is INERT — the engine always
+    /// reports the derived truth. This is deliberately accept-inert rather than
+    /// hard-reject so `read.projections` output stays feedable straight back
+    /// into `configure_projections` (the fix-4 read→configure round-trip, which
+    /// both bindings pin with a test); it mirrors the already-audited
+    /// accept-inert ruling on an `fts`/`vector` sub-object declared without the
+    /// `searchable` role. The bindings still HARD-REJECT the shapes that could
+    /// not round-trip: a readiness supplied with `vector = false`, and any
+    /// spelling outside `{ready, embedding}`.
+    pub dense_readiness: Option<DenseReadiness>,
 }
 
 /// 0.8.20 Slice 15d (R-20-PR / C-1) — a single declarative projection
@@ -7953,12 +8020,39 @@ impl Engine {
     /// [`ProjectionSpec`] sorted by name, so a caller can inspect current state
     /// (and the destructive delta a change would cause) BEFORE applying. Pure
     /// read; never mutates.
+    ///
+    /// 0.8.20 Slice 20 (R-20-DR) — this is ALSO the surface that populates the
+    /// engine-set [`ProjectionVector::dense_readiness`] READ METADATA. It is
+    /// derived here, on the way out (see [`derive_dense_readiness`]); the durable
+    /// registry stores no readiness. Only a spec that declares the
+    /// `searchable→vector` sub-object carries one — `filterable` and
+    /// `searchable→FTS` are same-transaction and have no readiness axis.
     pub fn read_projections(&self) -> Result<Vec<ProjectionSpec>, EngineError> {
         self.ensure_open()?;
         let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
         let connection = connection.as_ref().ok_or(EngineError::Closing)?;
         let registry = load_projection_registry(connection).map_err(|_| EngineError::Storage)?;
-        Ok(registry.iter().map(|(name, stored)| stored.to_spec(name)).collect())
+        // Derived ONCE per call, so every vector projection in one read reports a
+        // consistent readiness (they are all served by the one vector pipeline).
+        // Skipped entirely when no vector projection is declared, keeping the
+        // no-vector default path free of the extra probe.
+        let mut readiness: Option<DenseReadiness> = None;
+        let mut specs: Vec<ProjectionSpec> =
+            registry.iter().map(|(name, stored)| stored.to_spec(name)).collect();
+        for spec in &mut specs {
+            if let Some(vector) = spec.vector.as_mut() {
+                let value = match readiness {
+                    Some(value) => value,
+                    None => {
+                        let value = derive_dense_readiness(connection)?;
+                        readiness = Some(value);
+                        value
+                    }
+                };
+                vector.dense_readiness = Some(value);
+            }
+        }
+        Ok(specs)
     }
 
     /// OPP-12 Phase-1 (0.8.19 Slice 10, R-PG-1/2) — irreversibly hard-erase a
@@ -12553,6 +12647,53 @@ fn run_projection_job(shared: &ProjectionRuntimeShared, job: &ProjectionJob) -> 
     ProjectionOutcome::Failure { cursor: job.cursor, failure_code: last_code }
 }
 
+/// 0.8.20 Slice 20 fix-1 (codex §9 [P2]) — the ONE definition of "a canonical
+/// EDGE row the vector pipeline still owes an embed for".
+///
+/// Two call sites must agree on this predicate and had drifted:
+///
+/// - [`next_pending_projection_jobs`] — the SCHEDULER, and therefore the
+///   authority on what will actually be embedded. It joins
+///   `_fathomdb_vector_kinds` on `'edge_fact'`, so an edge body is only ever
+///   scheduled when that kind is registered.
+/// - [`connection_has_pending_projection_work`] — the PROBE behind
+///   `drain`/`wait_for_idle` and, since this slice, `dense_readiness`. It
+///   omitted that join.
+///
+/// The consequence of the drift: a live edge body written while `edge_fact` was
+/// not a registered vector kind (e.g. edges carried forward from before the G11
+/// edge-vector pipeline, which is what auto-registers the kind) counted as
+/// outstanding work the scheduler would NEVER take. `dense_readiness` reported
+/// `embedding` forever and `drain` could never report idle — both the mirror
+/// image of R-20-DR's property. Building both edge arms from this one fragment
+/// makes a repeat drift unrepresentable.
+///
+/// Emits the `FROM`/`JOIN` clauses plus the shared `WHERE` predicates, with the
+/// edge table aliased `ce` and the projection terminal aliased `pt`; `now_idx`
+/// is the 1-based bind index of the `:now` seam that [`edge_validity_sql`]
+/// consumes. Callers may append further `AND` predicates.
+///
+/// **The one predicate deliberately NOT shared** is the scheduler's
+/// `write_cursor > :cursor` watermark filter, which the scheduler appends and
+/// the probe must not: per the G11 (Slice 15) fix-1 note on the probe, the
+/// probe has to see edge bodies left un-projected BELOW the watermark when the
+/// engine closed mid-flight, or `drain` would report idle with edge vectors
+/// still missing on reopen. That asymmetry is intentional and load-bearing; the
+/// row-eligibility predicates above are not, and are shared.
+fn pending_edge_projection_from_where(now_idx: usize) -> String {
+    format!(
+        "FROM canonical_edges ce
+         JOIN _fathomdb_vector_kinds
+           ON _fathomdb_vector_kinds.kind = 'edge_fact'
+         LEFT JOIN _fathomdb_projection_terminal pt
+           ON pt.write_cursor = ce.write_cursor
+         WHERE ce.body IS NOT NULL
+           AND ce.superseded_at IS NULL{}
+           AND pt.write_cursor IS NULL",
+        edge_validity_sql("ce", now_idx)
+    )
+}
+
 fn next_pending_projection_jobs(
     connection: &Connection,
     in_flight: &BTreeSet<u64>,
@@ -12583,20 +12724,17 @@ fn next_pending_projection_jobs(
 
              UNION ALL
 
-             SELECT canonical_edges.write_cursor, 'edge_fact', canonical_edges.body
-             FROM canonical_edges
-             JOIN _fathomdb_vector_kinds
-               ON _fathomdb_vector_kinds.kind = 'edge_fact'
-             LEFT JOIN _fathomdb_projection_terminal
-               ON _fathomdb_projection_terminal.write_cursor = canonical_edges.write_cursor
-             WHERE canonical_edges.write_cursor > ?1
-               AND canonical_edges.body IS NOT NULL
-               AND canonical_edges.superseded_at IS NULL{edge_valid}
-               AND _fathomdb_projection_terminal.write_cursor IS NULL
+             SELECT ce.write_cursor, 'edge_fact', ce.body
+             {edge_arm}
+               AND ce.write_cursor > ?1
          ) ORDER BY write_cursor
          LIMIT {sql_limit}",
+        // fix-1 [P2]: the edge arm's row-eligibility predicates come from the
+        // shared fragment so this and `connection_has_pending_projection_work`
+        // cannot disagree about what is outstanding. The `write_cursor > ?1`
+        // watermark is appended here and ONLY here — see the fragment's doc.
         // TC-33: `?1` is the projection cursor ⇒ the edge `:now` binds at `?2`.
-        edge_valid = edge_validity_sql("canonical_edges", 2)
+        edge_arm = pending_edge_projection_from_where(2)
     );
     let mut statement = connection.prepare_cached(&sql)?;
     let rows = statement.query_map(params![cursor, current_epoch_seconds()], |row| {
@@ -12618,7 +12756,26 @@ fn next_pending_projection_jobs(
 
 fn database_has_pending_projection_work(path: &Path) -> rusqlite::Result<bool> {
     let connection = open_runtime_connection(path)?;
-    let cursor = load_projection_cursor(&connection)?;
+    connection_has_pending_projection_work(&connection)
+}
+
+/// 0.8.20 Slice 20 (R-20-DR) — the body of
+/// [`database_has_pending_projection_work`], lifted so it can also run on a
+/// connection the caller ALREADY holds (the engine's own connection, inside
+/// [`Engine::read_projections`]) instead of opening a runtime connection from a
+/// path. Both callers run the same two arms and the same predicates — which is
+/// the point. Readiness and `drain`/`wait_for_idle` must key off ONE definition
+/// of "outstanding embed", or readiness could report `ready` for work `drain`
+/// still waits on.
+///
+/// fix-1 (codex §9 [P2]) — the edge arm is no longer a hand-copied mirror of
+/// the scheduler's: both are built from
+/// [`pending_edge_projection_from_where`]. The copy had lost the
+/// `_fathomdb_vector_kinds` join, so this probe reported permanent pending work
+/// for edge bodies the scheduler would never schedule. That was PRE-EXISTING —
+/// it reached `Engine::drain` through `wait_for_idle` before readiness existed.
+fn connection_has_pending_projection_work(connection: &Connection) -> rusqlite::Result<bool> {
+    let cursor = load_projection_cursor(connection)?;
     // Check canonical_nodes for un-projected work.
     let has_node_work: bool = connection
         .query_row(
@@ -12652,20 +12809,17 @@ fn database_has_pending_projection_work(path: &Path) -> rusqlite::Result<bool> {
     // `next_pending_projection_jobs` now correctly skips would never gain a
     // `_fathomdb_projection_terminal` row, so this probe would flag it as
     // phantom-pending forever and `drain()`/`wait_for_idle` would hang.
+    // Slice-20 fix-1 [P2]: the mirror is now STRUCTURAL — the arm is built from
+    // `pending_edge_projection_from_where`, the same fragment the scheduler
+    // uses — because the hand-copied mirror had already lost the
+    // `_fathomdb_vector_kinds` join and produced exactly the phantom-pending
+    // hang described above for edge bodies under an unregistered `edge_fact`.
     connection
         .query_row(
             // TC-33: no other parameter here ⇒ the edge `:now` binds at `?1`.
-            &format!(
-                "SELECT 1
-             FROM canonical_edges ce
-             LEFT JOIN _fathomdb_projection_terminal pt
-               ON pt.write_cursor = ce.write_cursor
-             WHERE ce.body IS NOT NULL
-               AND ce.superseded_at IS NULL{}
-               AND pt.write_cursor IS NULL
-             LIMIT 1",
-                edge_validity_sql("ce", 1)
-            ),
+            // No `write_cursor > cursor` filter — see the fragment's doc for
+            // why the probe deliberately looks BELOW the watermark too.
+            &format!("SELECT 1 {} LIMIT 1", pending_edge_projection_from_where(1)),
             params![current_epoch_seconds()],
             |_row| Ok(true),
         )
@@ -12673,6 +12827,51 @@ fn database_has_pending_projection_work(path: &Path) -> rusqlite::Result<bool> {
             rusqlite::Error::QueryReturnedNoRows => Ok(false),
             _ => Err(err),
         })
+}
+
+/// 0.8.20 Slice 20 (R-20-DR) — the `dense_readiness` of the `searchable→vector`
+/// projection, DERIVED. There is no stored flag, no schema step
+/// (`SCHEMA_VERSION` stays 24) and no `MIGRATIONS` change.
+///
+/// **Why derived is the design, not a shortcut.** §4.1 invariant 1 requires
+/// `{ vector-insert ∧ dense_readiness := ready }` to be ONE transaction, with a
+/// torn `ready`-without-vector FORBIDDEN. A stored flag is precisely the thing
+/// that can tear. Deriving it makes the invariant true **by construction**:
+/// readiness is a pure function of state that
+/// [`commit_projection_outcomes`] already writes inside a single transaction —
+/// the `vector_default` / `_fathomdb_vector_rows` INSERTs, the
+/// `_fathomdb_projection_terminal` row ([`record_projection_terminal`]) and the
+/// readiness watermark ([`advance_projection_cursor`], which only ever steps
+/// over cursors that ALREADY hold a terminal) all commit together or not at all.
+/// So `ready` cannot be observed before the vector is durable, and the only
+/// reachable torn state is the tolerated one (`embedding` with the vector
+/// absent — the dense arm simply reads as partial).
+///
+/// It reuses the EXACT predicate `drain`/`wait_for_idle` use
+/// ([`connection_has_pending_projection_work`]), so "readiness is `ready`" and
+/// "`drain` reports idle" cannot disagree.
+///
+/// **Scope note (honest boundary).** The predicate is corpus-wide, not
+/// per-attribute, because Slice 15d persists the `searchable→vector` sub-object
+/// but DEFERS building any per-attribute embedding (`ProjectionDelta::deferred`)
+/// — every declared vector projection is served by the one engine vector
+/// pipeline, so per-projection scoping has no distinct meaning yet. A stored
+/// column would not have been more specific; it would only have been tearable.
+/// When per-attribute embedding lands, this function is where the scoping goes.
+///
+/// **Failure boundary.** A row whose embed FAILED terminally records a `failed`
+/// terminal (no vector row), so it stops being outstanding and readiness returns
+/// to `ready`. That is the correct reading of a two-member vocabulary — the row
+/// will never embed, so reporting `embedding` forever would be a lie — and
+/// failures stay separately observable through the `projection_failures`
+/// collection. It is the one case where a `ready` corpus can lack a vector row,
+/// and it is NOT a torn write: no `up_to_date` terminal exists for it.
+fn derive_dense_readiness(connection: &Connection) -> Result<DenseReadiness, EngineError> {
+    if connection_has_pending_projection_work(connection).map_err(|_| EngineError::Storage)? {
+        Ok(DenseReadiness::Embedding)
+    } else {
+        Ok(DenseReadiness::Ready)
+    }
 }
 
 struct CanonicalNodeRow {
@@ -15804,6 +16003,13 @@ impl StoredProjection {
     }
 
     /// Build from the public [`ProjectionSpec`].
+    ///
+    /// 0.8.20 Slice 20 (R-20-DR) — note what is DELIBERATELY not read here:
+    /// `spec.vector.dense_readiness`. Readiness is engine-set READ METADATA, not
+    /// part of the declaration, so it never reaches the durable registry. That
+    /// is what makes a caller-supplied value INERT (the engine always reports the
+    /// derived truth) and what keeps it out of the destructive-change diff — a
+    /// readiness difference can never look like a projection change.
     fn from_spec(spec: &ProjectionSpec) -> Self {
         StoredProjection {
             roles: spec.roles.clone(),
@@ -15833,7 +16039,15 @@ impl StoredProjection {
                 None
             },
             vector: if self.vector_declared {
-                Some(ProjectionVector { embedder: self.vector_embedder.clone() })
+                // 0.8.20 Slice 20 (R-20-DR) — the registry knows nothing about
+                // readiness (it is DERIVED, never stored), so the durable shape
+                // reconstructs with `dense_readiness: None`.
+                // [`Engine::read_projections`] fills it from
+                // [`derive_dense_readiness`] on the way out.
+                Some(ProjectionVector {
+                    embedder: self.vector_embedder.clone(),
+                    dense_readiness: None,
+                })
             } else {
                 None
             },
@@ -16960,7 +17174,19 @@ fn commit_batch(
                         )?;
                         // fix-32 [P2]: record terminal so advance_projection_cursor
                         // can walk past this now-superseded cursor.
-                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+                        // TC-45: the token MUST be 'up_to_date', NOT 'superseded'.
+                        // The terminal table (schema step 7) carries
+                        // CHECK(state IN ('failed','up_to_date')) and the writer is
+                        // INSERT OR IGNORE, which SILENTLY SKIPS a CHECK-violating
+                        // row — so 'superseded' was dropped without error and this
+                        // cursor stalled forever (nothing backfills it: the job
+                        // query and the pending-work probe both exclude superseded
+                        // edges). 'up_to_date' is the CHECK-valid, non-'failed'
+                        // terminal and is semantically exact here: the row is
+                        // tombstoned and its vector shadow just deleted, so there is
+                        // no further projection work for this cursor. Same reasoning
+                        // and same token as the step-23 backfill (fix-4, TC-33).
+                        record_projection_terminal(&tx, *sc as u64, "up_to_date")?;
                     }
                 }
                 // G11 — invalidate-not-accumulate: for fact-edges (body IS NOT NULL),
@@ -16983,7 +17209,12 @@ fn commit_batch(
                             [sc],
                         )?;
                         // fix-32 [P2]: mark terminal so projection cursor can advance.
-                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+                        // TC-45: 'up_to_date', NOT 'superseded' — see the identical
+                        // note on the G0 prune loop above. The step-7 CHECK admits
+                        // only ('failed','up_to_date') and INSERT OR IGNORE swallows
+                        // a violating row, so 'superseded' never landed and wedged
+                        // the shared readiness watermark.
+                        record_projection_terminal(&tx, *sc as u64, "up_to_date")?;
                     }
                 }
                 let temporal_fallback_i: Option<i64> =
