@@ -140,10 +140,36 @@ AC-050c) gates merges against this invariant.
   queue), which would otherwise let an operator destroy the proof of an
   erasure, or an undischarged obligation, through a normal-looking call.
 
+- **Dense-index readiness on `ProjectionSpec.vector` (0.8.20, R-20-DR).**
+  `read.projections` / `read_projections` now reports whether the async
+  `searchable→vector` projection has caught up, as engine-set READ METADATA:
+  `vector_dense_readiness` (Python), `vectorDenseReadiness` (TypeScript),
+  `ProjectionVector::dense_readiness` (Rust). `filterable` and `searchable→FTS`
+  are same-transaction and carry no readiness at all.
+
+  - **Exactly two values, `"ready"` and `"embedding"`.** `"pending"` is NOT one
+    of them: that token is RESERVED for the orthogonal **admission** axis
+    (quarantine/trust, an app judgment), and index-readiness is a different
+    dimension — a record can be admissible and still read `"embedding"`.
+  - **Derived, never stored.** No schema step; `SCHEMA_VERSION` is unchanged.
+    Deriving it from the same outstanding-work predicate `drain` uses is what
+    makes `{vector-insert ∧ readiness := ready}` atomic by construction —
+    `"ready"` can never be observed with the vector row absent.
+  - **Round-trip.** The value is INERT on the way in to
+    `configure_projections` / `configureProjections`, so `read.projections`
+    output still re-applies as a no-op. The two shapes that could never
+    round-trip are refused with the EXISTING `InvalidArgumentError` /
+    `FDB_INVALID_ARGUMENT` (no new error type): a readiness supplied with
+    `vector=false`, and any spelling outside `{"ready", "embedding"}`.
+  - **Additive.** Callers who never read the field see identical behaviour, and
+    the change adds no governed commands.
+
 - **New public types.** Rust: `SourceId`, `OrphanProvenanceReport`,
   `OrphanProvenanceSource`; `ExciseReport` is no longer behind the `operator`
   feature (it is `erase_source`'s return type). Python: `EraseReport`.
-  TypeScript: `EraseReport`.
+  TypeScript: `EraseReport`. Rust `DenseReadiness` and the TypeScript
+  `DenseReadiness` string union (`"ready" | "embedding"`) are the only net-new
+  types from R-20-DR; Python surfaces the value as a plain `str | None` field.
 
 ### Documentation
 

@@ -183,7 +183,8 @@ class ProjectionSpec:
     #: of the declaration and the engine always reports the derived truth — so
     #: ``read.projections`` output still re-applies as a no-op. Supplying it with
     #: ``vector=False``, or any spelling outside ``{"ready", "embedding"}``, is a
-    #: hard ``ValueError`` (it could not round-trip).
+    #: hard :class:`fathomdb.errors.InvalidArgumentError` (it could not
+    #: round-trip) — the EXISTING typed error, no new class minted.
     vector_dense_readiness: str | None = None
 
 

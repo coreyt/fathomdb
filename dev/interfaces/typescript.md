@@ -172,15 +172,56 @@ attributes. **PROPOSED, NOT SIGNED.**
   registry introspection (folded into `read.*`).
 
 `ProjectionSpec` is
-`{ name, roles: ProjectionRole[], fts, ftsTokenizer?, vector, vectorEmbedder? }`.
+`{ name, roles: ProjectionRole[], fts, ftsTokenizer?, vector, vectorEmbedder?,
+vectorDenseReadiness? }`.
 `ProjectionRole` is the string union `"filterable" | "rankable" | "searchable"`;
 `searchable→FTS` and `searchable→vector` are tier labels carried by the
 `fts`/`vector` sub-object flags, not roles. Cheap roles (`filterable`,
 `searchable→FTS`) build same-transaction; `rankable` and the `searchable→vector`
 sub-target are persisted-but-deferred (reported in `ProjectionDelta.deferred`).
-The `vector` sub-object is stored here for Slice 20 to attach `denseReadiness`
-to. `ProjectionDelta` is `{ built, dropped, deferred, unchanged }`. Field names
+`ProjectionDelta` is `{ built, dropped, deferred, unchanged }`. Field names
 are camelCase per this file's casing rule.
+
+### `vectorDenseReadiness` (0.8.20 Slice 20, R-20-DR)
+
+`ProjectionSpec.vectorDenseReadiness` is **engine-set READ METADATA**, hung off
+the `vector` sub-object, typed by the net-new exported string union
+
+```ts
+export type DenseReadiness = "ready" | "embedding";
+```
+
+It is `null`/omitted on every caller-authored spec and is populated only on the
+way OUT of `read.projections(engine)` — and only for a spec that declares
+`vector: true`. `filterable` and `searchable→FTS` are same-transaction (non-stale
+on commit) so they have no readiness axis at all; `searchable→vector` is async
+and rebuild-durable, so it carries one.
+
+- **Exactly two spellings: `"ready"` and `"embedding"`.** `"pending"` is
+  DELIBERATELY not one of them — that token is RESERVED for the orthogonal
+  **admission** axis (quarantine/trust, an app judgment). Index-readiness and
+  admission are different dimensions: a record can be admissible and still read
+  `"embedding"`. Do not reuse the word.
+- **Derived, never stored.** There is no schema step and no `SCHEMA_VERSION`
+  bump; the value is computed per `read.projections` call from outstanding
+  projection work (the same predicate `drain` uses), which is what makes
+  `{vector-insert ∧ readiness := ready}` atomic by construction — `"ready"` can
+  never be observed with the vector row absent.
+- **Accept-inert on the way in.** Passing `vectorDenseReadiness` to
+  `engine.configureProjections` neither stores nor changes anything: it is not
+  part of the declaration and the engine always reports the derived truth. That
+  is deliberate, so `read.projections` output stays feedable straight back into
+  `configureProjections` as a no-op (`{ unchanged: true }`); an explicit `null`
+  is normalized to `undefined` on the way in, exactly as for `ftsTokenizer` /
+  `vectorEmbedder`.
+- **Two shapes are still hard-rejected**, because they could never round-trip: a
+  readiness supplied with `vector: false`, and any spelling outside
+  `{"ready", "embedding"}` (including `"pending"`, `""`, and `"Ready"`). Both
+  throw the EXISTING `InvalidArgumentError`, mapped from the `FDB_INVALID_ARGUMENT`
+  envelope — **no new error type is minted**. `null`/omitted is always accepted.
+- **Additive.** A caller who never reads the field sees identical behaviour, and
+  the slice adds ZERO net-new governed commands; `DenseReadiness` is the only
+  net-new export.
 
 ## Errors
 

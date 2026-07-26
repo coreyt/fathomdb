@@ -34,7 +34,7 @@ is the **typed governed application surface** this file owns. Three load-bearing
 properties hold (asserted by `src/rust/crates/fathomdb/tests/governed_surface.rs`,
 which binds AC-074 — not a new AC id):
 
-- **P1 — positive allowlist (`GOVERNED_SURFACE_ALLOWLIST`, 29 types):** the
+- **P1 — positive allowlist (`GOVERNED_SURFACE_ALLOWLIST`, 33 types):** the
   facade re-exports exactly the curated governed application surface — the
   original 17: `Engine`, `OpenedEngine`, `OpenReport`, `WriteReceipt`,
   `SearchResult`, `PreparedWrite`, `EngineError`, `EngineOpenError`, the open-path
@@ -54,12 +54,17 @@ which binds AC-074 — not a new AC id):
   `read_list`, `read_list_filter`, `graph_neighbors`) rather than shipped as five
   `*_with_view` sibling verbs, which is what keeps the delta at two TYPES and zero
   new verb names; `ReadView::default()` is the strict view and reproduces the
-  pre-slice read semantics exactly. 0.8.20 Slice 15d (R-20-PR) adds the five
+  pre-slice read semantics exactly. 0.8.20 Slices 5c/5d (R-20-E3 / R-20-E4) add
+  the erasure types `SourceId` and `ExciseReport` (the latter moved out of the
+  operator-gated block — it is `erase_source`'s return type) — **PROPOSED, NOT
+  SIGNED**. Each of those 33 resolves through the facade at compile time
+  (`type_name::<…>()`). The facade ALSO `pub use`s two further additive groups
+  that are **not yet members of the const**: the five Slice 15d (R-20-PR)
   projection-registry types (`ProjectionSpec`, `ProjectionRole`, `ProjectionFts`,
-  `ProjectionVector`, `ProjectionDelta`) — **PROPOSED, NOT SIGNED** (see
+  `ProjectionVector`, `ProjectionDelta`) and, from 0.8.20 Slice 20 (R-20-DR), the
+  single readiness enum `DenseReadiness` — both **PROPOSED, NOT SIGNED** (see
   § "Projection registry" below and
-  `src/conformance/governed-surface-allowlist.json`). Each resolves through the
-  facade at compile time (`type_name::<…>()`). The recovery /
+  `src/conformance/governed-surface-allowlist.json`). The recovery /
   integrity / dump operator-seam report types in § "Recovery / operator seam
   re-exports" are deliberately **excluded** from this allowlist — they are
   CLI-only ergonomic symbols (the Rust analogue of "recovery is CLI-only, not an
@@ -266,7 +271,8 @@ the read verbs, so search validity is deterministically testable.
 
 Two net-new governed methods on `Engine` declare and inspect projections over
 interpretive attributes. The facade re-exports the five supporting
-`Projection*` types (all part of the public Rust surface):
+`Projection*` types — plus `DenseReadiness` since 0.8.20 Slice 20 (R-20-DR) —
+all part of the public Rust surface:
 
 - `Engine::configure_projections(specs: &[ProjectionSpec], drop: &[String]) ->
   Result<ProjectionDelta, EngineError>` — declarative, idempotent apply: the
@@ -280,7 +286,9 @@ interpretive attributes. The facade re-exports the five supporting
   `ProjectionDelta { unchanged: true, .. }` with the vecs empty.
 - `Engine::read_projections() -> Result<Vec<ProjectionSpec>, EngineError>` — the
   registry introspection (the Rust analogue of `read.projections`), sorted by
-  name. Pure read; never mutates.
+  name. Pure read; never mutates. Since 0.8.20 Slice 20 (R-20-DR) it is also the
+  surface that populates the engine-set `ProjectionVector::dense_readiness`
+  READ METADATA (derived on the way out; see below).
 
 Types:
 
@@ -292,9 +300,14 @@ Types:
   by the `fts`/`vector` sub-objects, not roles). `as_str` / `from_str_opt` give
   the `"filterable" | "rankable" | "searchable"` wire spellings.
 - `ProjectionFts { tokenizer: Option<String> }` and `ProjectionVector { embedder:
-  Option<String> }` — the `searchable→FTS` / `searchable→vector` sub-target
-  selectors (`None` ⇒ engine default). Slice 20 attaches `dense_readiness` to
-  `ProjectionVector` additively.
+  Option<String>, dense_readiness: Option<DenseReadiness> }` — the
+  `searchable→FTS` / `searchable→vector` sub-target selectors (`None` embedder ⇒
+  engine default). `dense_readiness` was added additively by 0.8.20 Slice 20
+  (R-20-DR); see below.
+- `DenseReadiness` — a two-variant enum, `Ready` and `Embedding`, with
+  `as_str` / `from_str_opt` giving the `"ready" | "embedding"` wire spellings.
+  0.8.20 Slice 20 (R-20-DR), **PROPOSED, NOT SIGNED**; the only net-new type in
+  that slice, which adds ZERO net-new governed commands.
 - `ProjectionDelta { built, dropped, deferred, unchanged }`. Cheap roles
   (`filterable`, `searchable→FTS`) build same-transaction; `rankable` and the
   `searchable→vector` sub-target are persisted-but-deferred (reported in
@@ -309,6 +322,41 @@ containing a double-quote `"`, a name containing a BACKSLASH `\`, or a name
 containing any ASCII control char. This upholds the invariant "a name the engine
 ACCEPTS is populatable" (accept ⟹ works); previously a backslash name was
 accepted yet silently never populated `canonical_attributes`.
+
+**Dense readiness on `ProjectionVector` (0.8.20 Slice 20, R-20-DR).**
+`ProjectionVector::dense_readiness: Option<DenseReadiness>` is **engine-set READ
+METADATA**, not a declaration. `Engine::read_projections` populates it — and only
+for a spec that declares the `searchable→vector` sub-object; `filterable` and
+`searchable→FTS` are same-transaction (non-stale on commit) and have no readiness
+axis. It is `None` on every caller-authored spec.
+
+- **`DenseReadiness` has exactly two variants**, `Ready` and `Embedding`, wire
+  spellings `"ready"` / `"embedding"`. **`pending` is RESERVED for the orthogonal
+  ADMISSION axis** (quarantine/trust — an app judgment) and is deliberately never
+  an index-readiness value: a record can be `active ∧ is_latest ∧ admissible` and
+  still read `Embedding`. `from_str_opt("pending")` is `None`.
+- **DERIVED, never stored.** No schema step, no `MIGRATIONS` change,
+  `SCHEMA_VERSION` stays 24. The value is computed on the way out of
+  `read_projections` from the same outstanding-work predicate `drain` /
+  `wait_for_idle` use, so "readiness is `Ready`" and "`drain` reports idle" cannot
+  disagree. That is what makes `{ vector-insert ∧ readiness := ready }` atomic BY
+  CONSTRUCTION: `Ready` can never be observed with the vector row absent (only the
+  tolerated torn state — `Embedding` with the vector absent — is reachable). The
+  predicate is corpus-wide rather than per-attribute while Slice 15d still defers
+  per-attribute embedding.
+- **ACCEPT-INERT on the way in.** `Engine::configure_projections` neither stores
+  nor honours a caller-supplied `dense_readiness` (`StoredProjection::from_spec`
+  reads only `embedder`), so `read_projections` output re-applies as a no-op —
+  the shipped read→configure round-trip. Mirrors the accept-inert ruling on an
+  `fts`/`vector` sub-object declared without the `searchable` role.
+- **The BINDINGS hard-reject** the two shapes that could never round-trip: a
+  readiness supplied with `vector = false`, and any spelling outside
+  `{ready, embedding}` (notably `pending`, and the empty string). Both reuse the
+  EXISTING `EngineError::InvalidArgument` / `InvalidArgumentError` /
+  `FDB_INVALID_ARGUMENT` — **no new error type is minted.** A declared readiness
+  never changes what the engine reports.
+- **Additive.** Callers who never look at readiness see identical behaviour.
+  **PROPOSED, NOT SIGNED.**
 
 **Attribute filters on `SearchFilter` (0.8.20 Slice 15e, R-20-PR / ADR-0.8.11 D3).**
 `SearchFilter` gains a public field `attributes: Vec<(String, String)>` — each

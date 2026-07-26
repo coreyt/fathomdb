@@ -158,15 +158,47 @@ attributes. **PROPOSED, NOT SIGNED.**
   registry introspection (folded into `read.*`).
 
 `ProjectionSpec` (`fathomdb.types.ProjectionSpec`) is
-`{ name, roles: frozenset[str], fts, fts_tokenizer, vector, vector_embedder }`.
+`{ name, roles: frozenset[str], fts, fts_tokenizer, vector, vector_embedder,
+vector_dense_readiness }`.
 `ProjectionRole` (`fathomdb.types.ProjectionRole`) has exactly three members —
 `FILTERABLE`, `RANKABLE`, `SEARCHABLE`; `searchable→FTS` and `searchable→vector`
 are tier labels carried by the `fts`/`vector` sub-object flags, not roles. Cheap
 roles (`filterable`, `searchable→FTS`) build same-transaction; `rankable` and the
 `searchable→vector` sub-target are persisted-but-deferred (reported in
-`ProjectionDelta.deferred`). The `vector` sub-object is stored here for Slice 20
-to attach `dense_readiness` to. `ProjectionDelta` is
+`ProjectionDelta.deferred`). `ProjectionDelta` is
 `{ built, dropped, deferred, unchanged }`.
+
+### `vector_dense_readiness` (0.8.20 Slice 20, R-20-DR)
+
+`ProjectionSpec.vector_dense_readiness` is **engine-set READ METADATA**, hung off
+the `vector` sub-object. It is `None` on every caller-authored spec and is
+populated only on the way OUT of `read.projections(engine)` — and only for a spec
+that declares `vector=True`. `filterable` and `searchable→FTS` are
+same-transaction (non-stale on commit) so they have no readiness axis at all;
+`searchable→vector` is async and rebuild-durable, so it carries one.
+
+- **Exactly two spellings: `"ready"` and `"embedding"`.** `"pending"` is
+  DELIBERATELY not one of them — that token is RESERVED for the orthogonal
+  **admission** axis (quarantine/trust, an app judgment). Index-readiness and
+  admission are different dimensions: a record can be admissible and still read
+  `"embedding"`. Do not reuse the word.
+- **Derived, never stored.** There is no schema step and no `SCHEMA_VERSION`
+  bump; the value is computed per `read.projections` call from outstanding
+  projection work (the same predicate `drain` uses), which is what makes
+  `{vector-insert ∧ readiness := ready}` atomic by construction — `"ready"` can
+  never be observed with the vector row absent.
+- **Accept-inert on the way in.** Passing `vector_dense_readiness` to
+  `engine.configure_projections` neither stores nor changes anything: it is not
+  part of the declaration and the engine always reports the derived truth. That
+  is deliberate, so `read.projections` output stays feedable straight back into
+  `configure_projections` as a no-op (`ProjectionDelta(unchanged=True)`).
+- **Two shapes are still hard-rejected**, because they could never round-trip:
+  a readiness supplied with `vector=False`, and any spelling outside
+  `{"ready", "embedding"}` (including `"pending"`, `""`, and `"Ready"`). Both
+  raise the EXISTING `InvalidArgumentError` — **no new error type is minted**.
+  `None` is always accepted.
+- **Additive.** A caller who never reads the field sees identical behaviour, and
+  the slice adds ZERO net-new governed commands.
 
 ## Errors
 
