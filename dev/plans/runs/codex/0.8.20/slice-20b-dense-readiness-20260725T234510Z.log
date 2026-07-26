@@ -1,0 +1,3349 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f9bab-1f4c-7f82-bed9-f521ed142592
+--------
+user
+changes against '9db3276588f38ced08d77f44e05830b726a81343'
+exec
+/bin/bash -lc 'cat MEMORY.md && for f in feedback_*.md; do [ -f "$f" ] && echo "--- $f" && cat "$f"; done' in /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20
+ exited 1 in 0ms:
+cat: MEMORY.md: No such file or directory
+
+exec
+/bin/bash -lc 'git diff --stat 9db3276588f38ced08d77f44e05830b726a81343 && git diff --name-only 9db3276588f38ced08d77f44e05830b726a81343' in /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20
+ succeeded in 0ms:
+ src/python/fathomdb/_fathomdb.pyi                  |   3 +
+ src/python/fathomdb/engine.py                      |   7 +
+ src/python/fathomdb/read.py                        |   3 +
+ src/python/fathomdb/types.py                       |  24 +-
+ .../tests/test_slice15d_projection_registry.py     |  16 +-
+ src/python/tests/test_slice20_dense_readiness.py   | 229 ++++++++
+ src/rust/crates/fathomdb-engine/src/lib.rs         | 182 +++++-
+ .../tests/slice15d_projection_registry.rs          |  34 +-
+ .../tests/slice20_dense_readiness.rs               | 641 +++++++++++++++++++++
+ src/rust/crates/fathomdb-napi/src/lib.rs           |  67 ++-
+ src/rust/crates/fathomdb-py/src/lib.rs             |  69 ++-
+ src/rust/crates/fathomdb/src/lib.rs                |  17 +-
+ src/ts/src/binding.ts                              |   2 +
+ src/ts/src/index.ts                                |  42 +-
+ src/ts/src/read.ts                                 |   4 +
+ src/ts/tests/slice15d-projection-registry.test.ts  |  12 +-
+ src/ts/tests/slice20-dense-readiness.test.ts       | 247 ++++++++
+ 17 files changed, 1549 insertions(+), 50 deletions(-)
+src/python/fathomdb/_fathomdb.pyi
+src/python/fathomdb/engine.py
+src/python/fathomdb/read.py
+src/python/fathomdb/types.py
+src/python/tests/test_slice15d_projection_registry.py
+src/python/tests/test_slice20_dense_readiness.py
+src/rust/crates/fathomdb-engine/src/lib.rs
+src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs
+src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs
+src/rust/crates/fathomdb-napi/src/lib.rs
+src/rust/crates/fathomdb-py/src/lib.rs
+src/rust/crates/fathomdb/src/lib.rs
+src/ts/src/binding.ts
+src/ts/src/index.ts
+src/ts/src/read.ts
+src/ts/tests/slice15d-projection-registry.test.ts
+src/ts/tests/slice20-dense-readiness.test.ts
+
+exec
+/bin/bash -lc 'find .. -name MEMORY.md -maxdepth 3 -print; git diff 9db3276588f38ced08d77f44e05830b726a81343 -- src/rust/crates/fathomdb-engine/src/lib.rs src/rust/crates/fathomdb/src/lib.rs src/rust/crates/fathomdb-py/src/lib.rs src/rust/crates/fathomdb-napi/src/lib.rs' in /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20
+ succeeded in 0ms:
+diff --git a/src/rust/crates/fathomdb-engine/src/lib.rs b/src/rust/crates/fathomdb-engine/src/lib.rs
+index 2d53ef1d..cc1b6687 100644
+--- a/src/rust/crates/fathomdb-engine/src/lib.rs
++++ b/src/rust/crates/fathomdb-engine/src/lib.rs
+@@ -3884,18 +3884,85 @@ pub struct ProjectionFts {
+     pub tokenizer: Option<String>,
+ }
+ 
++/// 0.8.20 Slice 20 (R-20-DR) — the ENGINE-SET readiness of the
++/// `searchable→vector` projection, per
++/// `dev/design/record-lifecycle-protocol/projection-registry-and-async-embed.md`
++/// §3.
++///
++/// **Exactly two members.** `filterable` and `searchable→FTS` are
++/// same-transaction (non-stale on commit) so they need no readiness axis at all;
++/// `searchable→vector` is **async, rebuild-durable**, so it carries one.
++///
++/// **Naming discipline (load-bearing).** The token **`pending` is RESERVED for
++/// the admission axis** (quarantine/trust — an app judgment). Index-readiness is
++/// a DIFFERENT, orthogonal dimension (a record can be
++/// `active ∧ is_latest ∧ admissible` yet `dense_readiness = embedding`), so this
++/// enum deliberately does **not** reuse that word: the non-ready member is
++/// `Embedding`, never `Pending`.
++#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
++pub enum DenseReadiness {
++    /// Every row in the vector projection's row set has reached a projection
++    /// terminal — the dense arm is caught up. Because the vector INSERT and the
++    /// terminal record are written in ONE transaction
++    /// ([`commit_projection_outcomes`]), `Ready` can never be observed with the
++    /// vector row absent (design §4.1 invariant 1).
++    Ready,
++    /// At least one row in the projection's row set has not yet reached a
++    /// projection terminal — embedding is outstanding. This is the ONLY
++    /// tolerable torn state: readiness `embedding` with the vector absent (the
++    /// dense arm reads as partial and RRF under-ranks; it does not hide).
++    Embedding,
++}
++
++impl DenseReadiness {
++    #[must_use]
++    pub fn as_str(self) -> &'static str {
++        match self {
++            DenseReadiness::Ready => "ready",
++            DenseReadiness::Embedding => "embedding",
++        }
++    }
++
++    /// The two accepted spellings. `"pending"` is DELIBERATELY not one of them
++    /// (reserved for the admission axis) and so parses to `None`.
++    #[must_use]
++    pub fn from_str_opt(value: &str) -> Option<Self> {
++        match value {
++            "ready" => Some(DenseReadiness::Ready),
++            "embedding" => Some(DenseReadiness::Embedding),
++            _ => None,
++        }
++    }
++}
++
+ /// 0.8.20 Slice 15d (R-20-PR) — the `searchable→vector` sub-target selector.
+ ///
+-/// **Slice 20 (R-20-DR) attaches `dense_readiness` HERE, additively:** this
++/// **Slice 20 (R-20-DR) attached `dense_readiness` HERE, additively:** this
+ /// sub-object is STORED by 15d (so the shape exists and a caller can declare a
+-/// vector projection) but 15d builds NO embedding / readiness machinery. Slice
+-/// 20 adds a `dense_readiness` field to this struct and the async flip logic;
+-/// nothing in 15d's persisted shape has to change for that (the registry column
+-/// `vector_embedder` + `vector_declared` already round-trip the sub-object).
++/// vector projection); Slice 20 hangs the READ-METADATA readiness flag off it.
++/// Nothing in 15d's persisted shape changed (the registry columns
++/// `vector_embedder` + `vector_declared` still round-trip the declaration) —
++/// **readiness is DERIVED, never stored**, so there is no schema step and no
++/// separate flag that could tear (see [`derive_dense_readiness`]).
+ #[derive(Clone, Debug, Default, Eq, PartialEq)]
+ pub struct ProjectionVector {
+     /// Optional embedder override; `None` ⇒ the engine's shipped default.
+     pub embedder: Option<String>,
++    /// 0.8.20 Slice 20 (R-20-DR) — **READ METADATA, engine-set.** Populated by
++    /// [`Engine::read_projections`]; `None` on every caller-authored spec.
++    ///
++    /// It is **not part of the declaration**: `configure_projections` neither
++    /// stores nor honours it (see [`StoredProjection::from_spec`], which reads
++    /// only `embedder`), so a value supplied here is INERT — the engine always
++    /// reports the derived truth. This is deliberately accept-inert rather than
++    /// hard-reject so `read.projections` output stays feedable straight back
++    /// into `configure_projections` (the fix-4 read→configure round-trip, which
++    /// both bindings pin with a test); it mirrors the already-audited
++    /// accept-inert ruling on an `fts`/`vector` sub-object declared without the
++    /// `searchable` role. The bindings still HARD-REJECT the shapes that could
++    /// not round-trip: a readiness supplied with `vector = false`, and any
++    /// spelling outside `{ready, embedding}`.
++    pub dense_readiness: Option<DenseReadiness>,
+ }
+ 
+ /// 0.8.20 Slice 15d (R-20-PR / C-1) — a single declarative projection
+@@ -7953,12 +8020,39 @@ impl Engine {
+     /// [`ProjectionSpec`] sorted by name, so a caller can inspect current state
+     /// (and the destructive delta a change would cause) BEFORE applying. Pure
+     /// read; never mutates.
++    ///
++    /// 0.8.20 Slice 20 (R-20-DR) — this is ALSO the surface that populates the
++    /// engine-set [`ProjectionVector::dense_readiness`] READ METADATA. It is
++    /// derived here, on the way out (see [`derive_dense_readiness`]); the durable
++    /// registry stores no readiness. Only a spec that declares the
++    /// `searchable→vector` sub-object carries one — `filterable` and
++    /// `searchable→FTS` are same-transaction and have no readiness axis.
+     pub fn read_projections(&self) -> Result<Vec<ProjectionSpec>, EngineError> {
+         self.ensure_open()?;
+         let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+         let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+         let registry = load_projection_registry(connection).map_err(|_| EngineError::Storage)?;
+-        Ok(registry.iter().map(|(name, stored)| stored.to_spec(name)).collect())
++        // Derived ONCE per call, so every vector projection in one read reports a
++        // consistent readiness (they are all served by the one vector pipeline).
++        // Skipped entirely when no vector projection is declared, keeping the
++        // no-vector default path free of the extra probe.
++        let mut readiness: Option<DenseReadiness> = None;
++        let mut specs: Vec<ProjectionSpec> =
++            registry.iter().map(|(name, stored)| stored.to_spec(name)).collect();
++        for spec in &mut specs {
++            if let Some(vector) = spec.vector.as_mut() {
++                let value = match readiness {
++                    Some(value) => value,
++                    None => {
++                        let value = derive_dense_readiness(connection)?;
++                        readiness = Some(value);
++                        value
++                    }
++                };
++                vector.dense_readiness = Some(value);
++            }
++        }
++        Ok(specs)
+     }
+ 
+     /// OPP-12 Phase-1 (0.8.19 Slice 10, R-PG-1/2) — irreversibly hard-erase a
+@@ -12618,7 +12712,19 @@ fn next_pending_projection_jobs(
+ 
+ fn database_has_pending_projection_work(path: &Path) -> rusqlite::Result<bool> {
+     let connection = open_runtime_connection(path)?;
+-    let cursor = load_projection_cursor(&connection)?;
++    connection_has_pending_projection_work(&connection)
++}
++
++/// 0.8.20 Slice 20 (R-20-DR) — the body of
++/// [`database_has_pending_projection_work`], lifted so it can also run on a
++/// connection the caller ALREADY holds (the engine's own connection, inside
++/// [`Engine::read_projections`]) instead of opening a runtime connection from a
++/// path. Behaviour is byte-identical: the same two arms, the same predicates —
++/// which is the point. Readiness and `drain`/`wait_for_idle` must key off ONE
++/// definition of "outstanding embed", or readiness could report `ready` for work
++/// `drain` still waits on.
++fn connection_has_pending_projection_work(connection: &Connection) -> rusqlite::Result<bool> {
++    let cursor = load_projection_cursor(connection)?;
+     // Check canonical_nodes for un-projected work.
+     let has_node_work: bool = connection
+         .query_row(
+@@ -12675,6 +12781,51 @@ fn database_has_pending_projection_work(path: &Path) -> rusqlite::Result<bool> {
+         })
+ }
+ 
++/// 0.8.20 Slice 20 (R-20-DR) — the `dense_readiness` of the `searchable→vector`
++/// projection, DERIVED. There is no stored flag, no schema step
++/// (`SCHEMA_VERSION` stays 24) and no `MIGRATIONS` change.
++///
++/// **Why derived is the design, not a shortcut.** §4.1 invariant 1 requires
++/// `{ vector-insert ∧ dense_readiness := ready }` to be ONE transaction, with a
++/// torn `ready`-without-vector FORBIDDEN. A stored flag is precisely the thing
++/// that can tear. Deriving it makes the invariant true **by construction**:
++/// readiness is a pure function of state that
++/// [`commit_projection_outcomes`] already writes inside a single transaction —
++/// the `vector_default` / `_fathomdb_vector_rows` INSERTs, the
++/// `_fathomdb_projection_terminal` row ([`record_projection_terminal`]) and the
++/// readiness watermark ([`advance_projection_cursor`], which only ever steps
++/// over cursors that ALREADY hold a terminal) all commit together or not at all.
++/// So `ready` cannot be observed before the vector is durable, and the only
++/// reachable torn state is the tolerated one (`embedding` with the vector
++/// absent — the dense arm simply reads as partial).
++///
++/// It reuses the EXACT predicate `drain`/`wait_for_idle` use
++/// ([`connection_has_pending_projection_work`]), so "readiness is `ready`" and
++/// "`drain` reports idle" cannot disagree.
++///
++/// **Scope note (honest boundary).** The predicate is corpus-wide, not
++/// per-attribute, because Slice 15d persists the `searchable→vector` sub-object
++/// but DEFERS building any per-attribute embedding (`ProjectionDelta::deferred`)
++/// — every declared vector projection is served by the one engine vector
++/// pipeline, so per-projection scoping has no distinct meaning yet. A stored
++/// column would not have been more specific; it would only have been tearable.
++/// When per-attribute embedding lands, this function is where the scoping goes.
++///
++/// **Failure boundary.** A row whose embed FAILED terminally records a `failed`
++/// terminal (no vector row), so it stops being outstanding and readiness returns
++/// to `ready`. That is the correct reading of a two-member vocabulary — the row
++/// will never embed, so reporting `embedding` forever would be a lie — and
++/// failures stay separately observable through the `projection_failures`
++/// collection. It is the one case where a `ready` corpus can lack a vector row,
++/// and it is NOT a torn write: no `up_to_date` terminal exists for it.
++fn derive_dense_readiness(connection: &Connection) -> Result<DenseReadiness, EngineError> {
++    if connection_has_pending_projection_work(connection).map_err(|_| EngineError::Storage)? {
++        Ok(DenseReadiness::Embedding)
++    } else {
++        Ok(DenseReadiness::Ready)
++    }
++}
++
+ struct CanonicalNodeRow {
+     cursor: u64,
+     kind: String,
+@@ -15804,6 +15955,13 @@ impl StoredProjection {
+     }
+ 
+     /// Build from the public [`ProjectionSpec`].
++    ///
++    /// 0.8.20 Slice 20 (R-20-DR) — note what is DELIBERATELY not read here:
++    /// `spec.vector.dense_readiness`. Readiness is engine-set READ METADATA, not
++    /// part of the declaration, so it never reaches the durable registry. That
++    /// is what makes a caller-supplied value INERT (the engine always reports the
++    /// derived truth) and what keeps it out of the destructive-change diff — a
++    /// readiness difference can never look like a projection change.
+     fn from_spec(spec: &ProjectionSpec) -> Self {
+         StoredProjection {
+             roles: spec.roles.clone(),
+@@ -15833,7 +15991,15 @@ impl StoredProjection {
+                 None
+             },
+             vector: if self.vector_declared {
+-                Some(ProjectionVector { embedder: self.vector_embedder.clone() })
++                // 0.8.20 Slice 20 (R-20-DR) — the registry knows nothing about
++                // readiness (it is DERIVED, never stored), so the durable shape
++                // reconstructs with `dense_readiness: None`.
++                // [`Engine::read_projections`] fills it from
++                // [`derive_dense_readiness`] on the way out.
++                Some(ProjectionVector {
++                    embedder: self.vector_embedder.clone(),
++                    dense_readiness: None,
++                })
+             } else {
+                 None
+             },
+diff --git a/src/rust/crates/fathomdb-napi/src/lib.rs b/src/rust/crates/fathomdb-napi/src/lib.rs
+index 62541fba..77310b1f 100644
+--- a/src/rust/crates/fathomdb-napi/src/lib.rs
++++ b/src/rust/crates/fathomdb-napi/src/lib.rs
+@@ -33,12 +33,12 @@ use fathomdb_embedder_api::EmbedderIdentity as RustEmbedderIdentity;
+ use fathomdb_engine::{
+     BoundaryCrossing as RustBoundaryCrossing, ComparisonOp as RustComparisonOp,
+     ConsolidateAxis as RustConsolidateAxis, ConsolidateReceipt as RustConsolidateReceipt,
+-    CorruptionDetail, CorruptionKind, EmbedderChoice, Engine as RustEngine,
+-    EngineError as RustEngineError, EngineOpenError, ExciseReport as RustExciseReport,
+-    Explanation as RustExplanation, ExtractDocument as RustExtractDocument, Filter as RustFilter,
+-    FilterTerm as RustFilterTerm, IdSpace as RustIdSpace,
+-    IngestWithExtractorReceipt as RustIngestWithExtractorReceipt, InitialState,
+-    LifecycleState as RustLifecycleState, NodeRecord as RustNodeRecord,
++    CorruptionDetail, CorruptionKind, DenseReadiness as RustDenseReadiness, EmbedderChoice,
++    Engine as RustEngine, EngineError as RustEngineError, EngineOpenError,
++    ExciseReport as RustExciseReport, Explanation as RustExplanation,
++    ExtractDocument as RustExtractDocument, Filter as RustFilter, FilterTerm as RustFilterTerm,
++    IdSpace as RustIdSpace, IngestWithExtractorReceipt as RustIngestWithExtractorReceipt,
++    InitialState, LifecycleState as RustLifecycleState, NodeRecord as RustNodeRecord,
+     OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage,
+     PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
+     ProjectionDelta as RustProjectionDelta, ProjectionFts as RustProjectionFts,
+@@ -473,6 +473,12 @@ pub struct ProjectionSpec {
+     pub fts_tokenizer: Option<String>,
+     pub vector: bool,
+     pub vector_embedder: Option<String>,
++    /// 0.8.20 Slice 20 (R-20-DR) — READ METADATA, engine-set (`vectorDenseReadiness`
++    /// in JS): `"ready"` / `"embedding"` on the way OUT of `read.projections`,
++    /// omitted on every caller-authored spec. Inert on the way IN (the engine
++    /// reports the derived truth), so `read.projections` output still re-applies
++    /// as a no-op.
++    pub vector_dense_readiness: Option<String>,
+ }
+ 
+ impl ProjectionSpec {
+@@ -484,6 +490,11 @@ impl ProjectionSpec {
+             fts_tokenizer: s.fts.as_ref().and_then(|f| f.tokenizer.clone()),
+             vector: s.vector.is_some(),
+             vector_embedder: s.vector.as_ref().and_then(|v| v.embedder.clone()),
++            vector_dense_readiness: s
++                .vector
++                .as_ref()
++                .and_then(|v| v.dense_readiness)
++                .map(|r| r.as_str().to_string()),
+         }
+     }
+ 
+@@ -553,6 +564,37 @@ impl ProjectionSpec {
+             }
+             _ => {}
+         }
++        // 0.8.20 Slice 20 (R-20-DR) — the SAME round-trip gate applied to the
++        // engine-set readiness field. It is READ METADATA, so its VALUE is inert
++        // on the way in (the engine always reports the derived truth, which is
++        // what keeps `read.projections` output re-appliable as a no-op — the
++        // fix-4 read→configure round-trip, pinned by a test in both bindings).
++        // But the two shapes that could NEVER round-trip are refused, exactly as
++        // for `vectorEmbedder`. Kept byte-for-byte in step with the pyo3 binding
++        // (Py ≡ TS): the two must refuse the same shapes the same way.
++        if let Some(readiness) = self.vector_dense_readiness.as_deref() {
++            validate_ffi_string_napi(readiness)?;
++            if !self.vector {
++                return Err(typed_error(
++                    CODE_INVALID_ARGUMENT,
++                    format!(
++                        "projection {:?}: vectorDenseReadiness is set but vector is false — readiness belongs to the vector sub-object and cannot round-trip without it; set vector=true or omit vectorDenseReadiness",
++                        self.name
++                    ),
++                    JsonValue::Null,
++                ));
++            }
++            if RustDenseReadiness::from_str_opt(readiness).is_none() {
++                return Err(typed_error(
++                    CODE_INVALID_ARGUMENT,
++                    format!(
++                        "projection {:?}: unknown vectorDenseReadiness {readiness:?}: expected \"ready\" or \"embedding\" (\"pending\" is reserved for the admission axis and is never a readiness value). It is engine-set read metadata; omit it",
++                        self.name
++                    ),
++                    JsonValue::Null,
++                ));
++            }
++        }
+         let mut roles = std::collections::BTreeSet::new();
+         for r in &self.roles {
+             validate_ffi_string_napi(r)?;
+@@ -583,9 +625,16 @@ impl ProjectionSpec {
+             name: self.name.clone(),
+             roles,
+             fts: self.fts.then(|| RustProjectionFts { tokenizer: self.fts_tokenizer.clone() }),
+-            vector: self
+-                .vector
+-                .then(|| RustProjectionVector { embedder: self.vector_embedder.clone() }),
++            vector: self.vector.then(|| RustProjectionVector {
++                embedder: self.vector_embedder.clone(),
++                // 0.8.20 Slice 20 (R-20-DR) — readiness is engine-set READ
++                // METADATA. Carried across so the engine can see what the caller
++                // sent, but the registry never stores it and never honours it.
++                dense_readiness: self
++                    .vector_dense_readiness
++                    .as_deref()
++                    .and_then(RustDenseReadiness::from_str_opt),
++            }),
+         })
+     }
+ }
+diff --git a/src/rust/crates/fathomdb-py/src/lib.rs b/src/rust/crates/fathomdb-py/src/lib.rs
+index ba876b95..f1f97ea3 100644
+--- a/src/rust/crates/fathomdb-py/src/lib.rs
++++ b/src/rust/crates/fathomdb-py/src/lib.rs
+@@ -37,12 +37,13 @@ use fathomdb_embedder_api::EmbedderIdentity as RustEmbedderIdentity;
+ use fathomdb_engine::{
+     rerank_passages as rust_rerank_passages, BoundaryCrossing as RustBoundaryCrossing,
+     ComparisonOp as RustComparisonOp, ConsolidateAxis as RustConsolidateAxis,
+-    ConsolidateReceipt as RustConsolidateReceipt, CorruptionDetail, CorruptionKind, EmbedderChoice,
+-    Engine as RustEngine, EngineError as RustEngineError, EngineOpenError,
+-    ExciseReport as RustExciseReport, Explanation as RustExplanation,
+-    ExtractDocument as RustExtractDocument, Filter as RustFilter, FilterTerm as RustFilterTerm,
+-    IdSpace as RustIdSpace, IngestWithExtractorReceipt as RustIngestWithExtractorReceipt,
+-    InitialState, LifecycleState as RustLifecycleState, NodeRecord as RustNodeRecord,
++    ConsolidateReceipt as RustConsolidateReceipt, CorruptionDetail, CorruptionKind,
++    DenseReadiness as RustDenseReadiness, EmbedderChoice, Engine as RustEngine,
++    EngineError as RustEngineError, EngineOpenError, ExciseReport as RustExciseReport,
++    Explanation as RustExplanation, ExtractDocument as RustExtractDocument, Filter as RustFilter,
++    FilterTerm as RustFilterTerm, IdSpace as RustIdSpace,
++    IngestWithExtractorReceipt as RustIngestWithExtractorReceipt, InitialState,
++    LifecycleState as RustLifecycleState, NodeRecord as RustNodeRecord,
+     OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage,
+     PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
+     ProjectionDelta as RustProjectionDelta, ProjectionFts as RustProjectionFts,
+@@ -846,12 +847,17 @@ struct PyProjectionSpec {
+     fts_tokenizer: Option<String>,
+     vector: bool,
+     vector_embedder: Option<String>,
++    /// 0.8.20 Slice 20 (R-20-DR) — READ METADATA, engine-set: `"ready"` /
++    /// `"embedding"` on the way OUT of `read.projections`, `None` on every
++    /// caller-authored spec. Inert on the way IN (the engine reports the derived
++    /// truth), so `read.projections` output still re-applies as a no-op.
++    vector_dense_readiness: Option<String>,
+ }
+ 
+ #[pymethods]
+ impl PyProjectionSpec {
+     #[new]
+-    #[pyo3(signature = (name, roles, fts = false, fts_tokenizer = None, vector = false, vector_embedder = None))]
++    #[pyo3(signature = (name, roles, fts = false, fts_tokenizer = None, vector = false, vector_embedder = None, vector_dense_readiness = None))]
+     fn new(
+         name: String,
+         roles: Vec<String>,
+@@ -859,8 +865,9 @@ impl PyProjectionSpec {
+         fts_tokenizer: Option<String>,
+         vector: bool,
+         vector_embedder: Option<String>,
++        vector_dense_readiness: Option<String>,
+     ) -> Self {
+-        Self { name, roles, fts, fts_tokenizer, vector, vector_embedder }
++        Self { name, roles, fts, fts_tokenizer, vector, vector_embedder, vector_dense_readiness }
+     }
+ }
+ 
+@@ -873,6 +880,11 @@ impl PyProjectionSpec {
+             fts_tokenizer: s.fts.as_ref().and_then(|f| f.tokenizer.clone()),
+             vector: s.vector.is_some(),
+             vector_embedder: s.vector.as_ref().and_then(|v| v.embedder.clone()),
++            vector_dense_readiness: s
++                .vector
++                .as_ref()
++                .and_then(|v| v.dense_readiness)
++                .map(|r| r.as_str().to_string()),
+         }
+     }
+ 
+@@ -926,6 +938,34 @@ impl PyProjectionSpec {
+             }
+             _ => {}
+         }
++        // 0.8.20 Slice 20 (R-20-DR) — the SAME round-trip gate applied to the
++        // engine-set readiness field. It is READ METADATA, so its VALUE is inert
++        // on the way in (the engine always reports the derived truth, which is
++        // what keeps `read.projections` output re-appliable as a no-op — the
++        // fix-4 read→configure round-trip, pinned by a test in both bindings).
++        // But the two shapes that could NEVER round-trip are refused, exactly as
++        // for `vector_embedder`:
++        //   * supplied while `vector` is false — there is no vector sub-object
++        //     to carry it, so `read.projections` could not echo it back;
++        //   * an unrecognised spelling — `read.projections` only ever emits
++        //     `"ready"` / `"embedding"`, so anything else (notably `"pending"`,
++        //     which is RESERVED for the orthogonal admission axis, and `""`)
++        //     could not round-trip and is a caller mistake worth naming.
++        if let Some(readiness) = self.vector_dense_readiness.as_deref() {
++            validate_ffi_string_py(readiness)?;
++            if !self.vector {
++                return Err(InvalidArgumentError::new_err(format!(
++                    "projection {:?}: vector_dense_readiness is set but vector is false — readiness belongs to the vector sub-object and cannot round-trip without it; set vector=true or omit vector_dense_readiness",
++                    self.name
++                )));
++            }
++            if RustDenseReadiness::from_str_opt(readiness).is_none() {
++                return Err(InvalidArgumentError::new_err(format!(
++                    "projection {:?}: unknown vector_dense_readiness {readiness:?}: expected \"ready\" or \"embedding\" (\"pending\" is reserved for the admission axis and is never a readiness value). It is engine-set read metadata; omit it",
++                    self.name
++                )));
++            }
++        }
+         let mut roles = std::collections::BTreeSet::new();
+         for r in &self.roles {
+             validate_ffi_string_py(r)?;
+@@ -948,9 +988,16 @@ impl PyProjectionSpec {
+             name: self.name.clone(),
+             roles,
+             fts: self.fts.then(|| RustProjectionFts { tokenizer: self.fts_tokenizer.clone() }),
+-            vector: self
+-                .vector
+-                .then(|| RustProjectionVector { embedder: self.vector_embedder.clone() }),
++            vector: self.vector.then(|| RustProjectionVector {
++                embedder: self.vector_embedder.clone(),
++                // 0.8.20 Slice 20 (R-20-DR) — readiness is engine-set READ
++                // METADATA. Carried across so the engine can see what the caller
++                // sent, but the registry never stores it and never honours it.
++                dense_readiness: self
++                    .vector_dense_readiness
++                    .as_deref()
++                    .and_then(RustDenseReadiness::from_str_opt),
++            }),
+         })
+     }
+ }
+diff --git a/src/rust/crates/fathomdb/src/lib.rs b/src/rust/crates/fathomdb/src/lib.rs
+index 3e48330f..3a70706d 100644
+--- a/src/rust/crates/fathomdb/src/lib.rs
++++ b/src/rust/crates/fathomdb/src/lib.rs
+@@ -39,14 +39,19 @@
+ //   Threading `ReadView` as a parameter (rather than shipping five `*_with_view`
+ //   sibling verbs) is what keeps this delta at TWO TYPES and ZERO new verbs.
+ //   PROPOSED / NOT SIGNED — see `src/conformance/governed-surface-allowlist.json`.
++// + 1 new type from 0.8.20 Slice 20 (R-20-DR): `DenseReadiness` — the two-member
++//   `{ready, embedding}` READ-METADATA flag the engine hangs off
++//   `ProjectionSpec.vector` (`read.projections` populates it; it is never a
++//   caller declaration). ZERO net-new commands in this slice.
++//   PROPOSED / NOT SIGNED — see `src/conformance/governed-surface-allowlist.json`.
+ pub use fathomdb_engine::{
+     BoundaryCrossing, ComparisonOp, CorruptionDetail, CorruptionKind, CorruptionLocator,
+-    CounterSnapshot, Engine, EngineError, EngineOpenError, ExciseReport, Explanation,
+-    ExtractDocument, IngestWithExtractorReceipt, InitialState, LifecycleState, NodeRecord,
+-    OpenReport, OpenStage, OpenedEngine, PerHitExplain, Predicate, PreparedWrite, ProjectionDelta,
+-    ProjectionFts, ProjectionRole, ProjectionSpec, ProjectionVector, QueryTrace, ReadView,
+-    RecoveryHint, ScalarValue, SearchExpandResult, SearchFilter, SearchResult, SoftFallback,
+-    SoftFallbackBranch, SourceId, Subscription, TraversalDirection, WriteReceipt,
++    CounterSnapshot, DenseReadiness, Engine, EngineError, EngineOpenError, ExciseReport,
++    Explanation, ExtractDocument, IngestWithExtractorReceipt, InitialState, LifecycleState,
++    NodeRecord, OpenReport, OpenStage, OpenedEngine, PerHitExplain, Predicate, PreparedWrite,
++    ProjectionDelta, ProjectionFts, ProjectionRole, ProjectionSpec, ProjectionVector, QueryTrace,
++    ReadView, RecoveryHint, ScalarValue, SearchExpandResult, SearchFilter, SearchResult,
++    SoftFallback, SoftFallbackBranch, SourceId, Subscription, TraversalDirection, WriteReceipt,
+ };
+ 
+ // The operator-seam report types (`dev/interfaces/rust.md` § 2b) — CLI-only,
+
+exec
+/bin/bash -lc 'git diff 9db3276588f38ced08d77f44e05830b726a81343 -- src/python/fathomdb src/python/tests src/ts/src src/ts/tests' in /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20
+ succeeded in 0ms:
+diff --git a/src/python/fathomdb/_fathomdb.pyi b/src/python/fathomdb/_fathomdb.pyi
+index 48b54bf4..3560b72d 100644
+--- a/src/python/fathomdb/_fathomdb.pyi
++++ b/src/python/fathomdb/_fathomdb.pyi
+@@ -308,6 +308,8 @@ class ProjectionSpec:
+     fts_tokenizer: str | None
+     vector: bool
+     vector_embedder: str | None
++    # 0.8.20 Slice 20 (R-20-DR) — engine-set READ METADATA ("ready"/"embedding").
++    vector_dense_readiness: str | None
+     def __init__(
+         self,
+         name: str,
+@@ -316,6 +318,7 @@ class ProjectionSpec:
+         fts_tokenizer: str | None = ...,
+         vector: bool = ...,
+         vector_embedder: str | None = ...,
++        vector_dense_readiness: str | None = ...,
+     ) -> None: ...
+ 
+ class ProjectionDelta:
+diff --git a/src/python/fathomdb/engine.py b/src/python/fathomdb/engine.py
+index da6f676e..53e170c0 100644
+--- a/src/python/fathomdb/engine.py
++++ b/src/python/fathomdb/engine.py
+@@ -288,6 +288,13 @@ class Engine:
+                 s.fts_tokenizer,
+                 s.vector,
+                 s.vector_embedder,
++                # 0.8.20 Slice 20 (R-20-DR) — the engine-set readiness field is
++                # carried ACROSS rather than dropped here, so the binding's
++                # round-trip gate sees what the caller actually sent (a readiness
++                # with ``vector=False``, or an unknown spelling, is refused).
++                # Its VALUE is inert engine-side, which is what keeps
++                # ``read.projections`` output re-appliable as a no-op.
++                s.vector_dense_readiness,
+             )
+             for s in specs
+         ]
+diff --git a/src/python/fathomdb/read.py b/src/python/fathomdb/read.py
+index a0e1e47b..dc677fcf 100644
+--- a/src/python/fathomdb/read.py
++++ b/src/python/fathomdb/read.py
+@@ -240,6 +240,9 @@ def projections(engine: "Engine") -> builtins.list[ProjectionSpec]:
+             fts_tokenizer=s.fts_tokenizer,
+             vector=s.vector,
+             vector_embedder=s.vector_embedder,
++            # 0.8.20 Slice 20 (R-20-DR) — engine-set readiness read metadata
++            # (`"ready"` / `"embedding"`; `None` when no vector sub-object).
++            vector_dense_readiness=s.vector_dense_readiness,
+         )
+         for s in _native_read_projections(engine._native)
+     ]
+diff --git a/src/python/fathomdb/types.py b/src/python/fathomdb/types.py
+index 21d764ed..52a7e9cf 100644
+--- a/src/python/fathomdb/types.py
++++ b/src/python/fathomdb/types.py
+@@ -151,8 +151,8 @@ class ProjectionSpec:
+     ``roles`` carries SET semantics (dedup + membership; an attribute can be
+     filterable AND searchable). ``fts`` selects the ``searchable→FTS`` sub-target
+     (with an optional custom tokenizer); ``vector`` selects ``searchable→vector``
+-    (with an optional embedder). The ``vector`` sub-object is STORED by Slice 15d
+-    but built by Slice 20 (``dense_readiness`` attaches to it there).
++    (with an optional embedder). The ``vector`` sub-object is STORED by Slice 15d;
++    Slice 20 (R-20-DR) hangs the engine-set ``vector_dense_readiness`` off it.
+     """
+ 
+     name: str
+@@ -165,6 +165,26 @@ class ProjectionSpec:
+     vector: bool = False
+     #: Optional embedder override; ``None`` = engine default (only with ``vector``).
+     vector_embedder: str | None = None
++    #: 0.8.20 Slice 20 (R-20-DR) — **READ METADATA, engine-set.** ``"ready"`` or
++    #: ``"embedding"`` when returned by :func:`fathomdb.read.projections` for a
++    #: spec with ``vector=True``; ``None`` on every caller-authored spec.
++    #:
++    #: ``filterable`` / ``searchable→FTS`` are same-transaction (non-stale on
++    #: commit) so they carry no readiness; ``searchable→vector`` is async and
++    #: rebuild-durable, so it does. The value is DERIVED from outstanding
++    #: projection work, never stored — which is what makes
++    #: ``{vector-insert ∧ readiness := ready}`` atomic by construction: a
++    #: ``"ready"`` reading can never be observed with the vector row absent.
++    #:
++    #: ``"pending"`` is NOT a value here: that token is reserved for the
++    #: orthogonal ADMISSION axis (quarantine/trust, an app judgment).
++    #:
++    #: Supplying it to ``Engine.configure_projections`` is INERT — it is not part
++    #: of the declaration and the engine always reports the derived truth — so
++    #: ``read.projections`` output still re-applies as a no-op. Supplying it with
++    #: ``vector=False``, or any spelling outside ``{"ready", "embedding"}``, is a
++    #: hard ``ValueError`` (it could not round-trip).
++    vector_dense_readiness: str | None = None
+ 
+ 
+ @dataclass(frozen=True)
+diff --git a/src/python/tests/test_slice15d_projection_registry.py b/src/python/tests/test_slice15d_projection_registry.py
+index 15f14770..db73f3d5 100644
+--- a/src/python/tests/test_slice15d_projection_registry.py
++++ b/src/python/tests/test_slice15d_projection_registry.py
+@@ -12,6 +12,7 @@ rest" assertion for the EAV store / property-FTS.
+ 
+ from __future__ import annotations
+ 
++import dataclasses
+ import sqlite3
+ 
+ import pytest
+@@ -401,8 +402,13 @@ def test_consistent_fts_spec_round_trips(tmp_path) -> None:
+         back = read.projections(engine)
+         assert len(back) == 1
+         got = back[0]
+-        # The full round-trip invariant: read-back equals what was sent.
+-        assert got == sent
++        # The full round-trip invariant: read-back equals what was sent, PLUS the
++        # one engine-set READ-METADATA field 0.8.20 Slice 20 (R-20-DR) attached
++        # to the vector sub-object. `vector_dense_readiness` is not a
++        # declaration, so it is expected to differ from the sent spec (which
++        # never authors it); every DECLARED field must still match exactly.
++        assert got.vector_dense_readiness == "ready"
++        assert dataclasses.replace(got, vector_dense_readiness=None) == sent
+         assert got.fts is True and got.fts_tokenizer == "unicode61"
+         assert got.vector is True and got.vector_embedder == "bge-small"
+     finally:
+@@ -426,7 +432,11 @@ def test_fts_without_searchable_role_round_trips(tmp_path) -> None:
+         )
+         engine.configure_projections([sent])
+         got = next(s for s in read.projections(engine) if s.name == "status")
+-        assert got == sent, "fts/vector-without-searchable must round-trip faithfully"
++        # 0.8.20 Slice 20 (R-20-DR) — modulo the engine-set readiness read
++        # metadata, which is not a declaration and is never authored by a caller.
++        assert (
++            dataclasses.replace(got, vector_dense_readiness=None) == sent
++        ), "fts/vector-without-searchable must round-trip faithfully"
+         assert got.fts is True and got.vector is True
+         assert got.roles == frozenset({"filterable"})
+     finally:
+diff --git a/src/python/tests/test_slice20_dense_readiness.py b/src/python/tests/test_slice20_dense_readiness.py
+new file mode 100644
+index 00000000..0b9e506e
+--- /dev/null
++++ b/src/python/tests/test_slice20_dense_readiness.py
+@@ -0,0 +1,229 @@
++"""X1 SDK parity — 0.8.20 Slice 20 (R-20-DR ``dense_readiness``).
++
++Drives the engine-set readiness field through the PyO3 binding by EXECUTION
++(not symbol presence): ``read.projections`` must surface
++``vector_dense_readiness`` on a ``searchable→vector`` projection, it must never
++read ``"ready"`` while an embed is outstanding, and it must be inert on the way
++back in. Mirrors the Rust suite
++``src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs`` and the TS
++suite ``src/ts/tests/slice20-dense-readiness.test.ts`` (Py ≡ TS, R-X-1).
++
++``sqlite3`` is used only as a READ oracle on a CLOSED database — the "vector at
++rest" assertion behind the readiness flip.
++
++ZERO net-new governed commands: this rides the already-governed
++``Engine.configure_projections`` / ``read.projections`` verbs.
++"""
++
++from __future__ import annotations
++
++import sqlite3
++
++import pytest
++
++from fathomdb import Engine, ProjectionRole, ProjectionSpec, read
++from fathomdb.errors import InvalidArgumentError
++
++_SOURCE_ID = "py-test:slice20"
++
++
++def _open(path: str) -> Engine:
++    return Engine.open(path, use_default_embedder=False)
++
++
++def _node(logical_id: str, body_json: str) -> dict:
++    return {"kind": "doc", "body": body_json, "logical_id": logical_id, "source_id": _SOURCE_ID}
++
++
++def _vector_spec(name: str) -> ProjectionSpec:
++    return ProjectionSpec(name=name, roles=frozenset({ProjectionRole.SEARCHABLE}), vector=True)
++
++
++def _readiness(engine: Engine, name: str) -> str | None:
++    for spec in read.projections(engine):
++        if spec.name == name:
++            return spec.vector_dense_readiness
++    return None
++
++
++def _vector_row_count(path: str) -> int:
++    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
++    try:
++        return conn.execute("SELECT COUNT(*) FROM _fathomdb_vector_rows").fetchone()[0]
++    finally:
++        conn.close()
++
++
++def _torn_terminals(path: str) -> int:
++    """§4.1 invariant 1 as SQL: rows at the ``up_to_date`` projection terminal
++    that carry NO vector row. Must always be zero — the vector INSERT and the
++    terminal are one transaction, so a torn ``ready``-without-vector is
++    unreachable."""
++
++    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
++    try:
++        return conn.execute(
++            "SELECT COUNT(*) FROM _fathomdb_projection_terminal t"
++            " JOIN canonical_nodes n ON n.write_cursor = t.write_cursor"
++            " JOIN _fathomdb_vector_kinds k ON k.kind = n.kind"
++            " LEFT JOIN _fathomdb_vector_rows v ON v.write_cursor = t.write_cursor"
++            " WHERE t.state = 'up_to_date' AND v.write_cursor IS NULL"
++        ).fetchone()[0]
++    finally:
++        conn.close()
++
++
++def test_read_projections_surfaces_vector_dense_readiness(tmp_path) -> None:
++    engine = _open(str(tmp_path / "surface.sqlite"))
++    try:
++        engine.configure_projections([_vector_spec("summary")])
++        # No embedder is configured, so nothing is outstanding: ready.
++        assert _readiness(engine, "summary") == "ready"
++    finally:
++        engine.close()
++
++
++def test_readiness_is_scoped_to_the_vector_sub_object(tmp_path) -> None:
++    """``filterable`` / ``searchable→FTS`` are same-transaction (non-stale on
++    commit), so they carry NO readiness axis at all."""
++
++    engine = _open(str(tmp_path / "scoped.sqlite"))
++    try:
++        engine.configure_projections(
++            [ProjectionSpec(name="status", roles=frozenset({ProjectionRole.FILTERABLE}))]
++        )
++        got = next(s for s in read.projections(engine) if s.name == "status")
++        assert got.vector is False
++        assert got.vector_dense_readiness is None
++    finally:
++        engine.close()
++
++
++def test_readiness_never_reports_ready_with_pending_embeds(tmp_path) -> None:
++    """The R-20-DR acceptance signal, driven through the binding with NO network
++    and NO embedder download.
++
++    How it is made deterministic: register ``doc`` as a vector kind through the
++    ``test-hooks``-gated native seam, then write a ``doc`` row on an engine
++    opened WITHOUT an embedder. The row enqueues vector work that cannot
++    complete, and the shipped retry ladder is 1s/4s/16s, so there is a
++    ~21-second window in which the embed is genuinely outstanding. Readiness must
++    read ``embedding`` throughout it — never ``ready``.
++    """
++
++    path = str(tmp_path / "pending.sqlite")
++    engine = _open(path)
++    try:
++        # `getattr`, not attribute access: the seam is `test-hooks`-gated, so it
++        # is absent from the type stub (and from release wheels).
++        configure_vector_kind = getattr(engine._native, "_configure_vector_kind_for_test", None)
++        if configure_vector_kind is None:
++            pytest.skip("binding built without the `test-hooks` vector-kind seam")
++        # Declare the projection FIRST: `configure_projections` drains, and
++        # draining with work outstanding would (correctly) time out.
++        engine.configure_projections([_vector_spec("summary")])
++        assert _readiness(engine, "summary") == "ready", "an empty corpus is ready"
++
++        configure_vector_kind("doc")
++        engine.write([_node("N1", '{"summary":"a dense meaning"}')])
++
++        assert (
++            _readiness(engine, "summary") == "embedding"
++        ), "readiness must NOT report ready while an embed is outstanding"
++    finally:
++        engine.close()
++
++    # At rest: the tolerated torn state (`embedding` with the vector absent) —
++    # and NOT the forbidden one.
++    assert _vector_row_count(path) == 0, "no vector landed — the embed never ran"
++    assert _torn_terminals(path) == 0, "§4.1: no up_to_date terminal without its vector"
++
++
++def test_caller_supplied_dense_readiness_is_inert(tmp_path) -> None:
++    """It is engine-set READ METADATA: accepted (it is not part of the
++    declaration) but never stored and never honoured, so the engine always
++    reports the derived truth — and it can never masquerade as a change."""
++
++    engine = _open(str(tmp_path / "inert.sqlite"))
++    try:
++        lying = ProjectionSpec(
++            name="summary",
++            roles=frozenset({ProjectionRole.SEARCHABLE}),
++            vector=True,
++            vector_dense_readiness="embedding",
++        )
++        engine.configure_projections([lying])
++        assert (
++            _readiness(engine, "summary") == "ready"
++        ), "the caller's `embedding` must NOT be honoured"
++        again = engine.configure_projections([_vector_spec("summary")])
++        assert again.unchanged is True, "readiness is not part of the declaration"
++    finally:
++        engine.close()
++
++
++def test_read_projections_output_round_trips_back_into_configure_with_readiness(tmp_path) -> None:
++    """The fix-4 read→configure round-trip, extended: ``read.projections`` now
++    emits ``vector_dense_readiness`` for a vector projection, and feeding that
++    output straight back MUST still re-apply as an idempotent no-op. Otherwise
++    ``read.projections`` would produce a value its own ``configure_projections``
++    cannot consume — the exact defect fix-4 closed."""
++
++    engine = _open(str(tmp_path / "round_trip.sqlite"))
++    try:
++        engine.configure_projections(
++            [
++                ProjectionSpec(
++                    name="status",
++                    roles=frozenset({ProjectionRole.FILTERABLE, ProjectionRole.SEARCHABLE}),
++                    fts=True,
++                    vector=True,
++                )
++            ]
++        )
++        read_back = read.projections(engine)
++        assert len(read_back) == 1
++        assert read_back[0].vector_dense_readiness == "ready", "read output carries readiness"
++        again = engine.configure_projections(list(read_back))
++        assert again.unchanged is True, "read.projections output must re-apply as a no-op"
++    finally:
++        engine.close()
++
++
++def test_readiness_with_vector_false_is_refused(tmp_path) -> None:
++    """Mirrors the shipped ``vector_embedder``-without-``vector`` gate: a shape
++    ``read.projections`` could never echo back is refused at the binding."""
++
++    engine = _open(str(tmp_path / "refuse_shape.sqlite"))
++    try:
++        spec = ProjectionSpec(
++            name="status",
++            roles=frozenset({ProjectionRole.FILTERABLE}),
++            vector=False,
++            vector_dense_readiness="ready",
++        )
++        with pytest.raises(InvalidArgumentError, match="vector_dense_readiness"):
++            engine.configure_projections([spec])
++    finally:
++        engine.close()
++
++
++@pytest.mark.parametrize("bad", ["pending", "", "Ready", "embedded"])
++def test_unknown_readiness_spelling_is_refused(tmp_path, bad: str) -> None:
++    """``read.projections`` only ever emits ``"ready"`` / ``"embedding"``, so any
++    other spelling could not round-trip. ``"pending"`` in particular is RESERVED
++    for the orthogonal admission axis (quarantine/trust, an app judgment) and is
++    never a readiness value."""
++
++    engine = _open(str(tmp_path / f"refuse_{bad or 'empty'}.sqlite"))
++    try:
++        spec = ProjectionSpec(
++            name="summary",
++            roles=frozenset({ProjectionRole.SEARCHABLE}),
++            vector=True,
++            vector_dense_readiness=bad,
++        )
++        with pytest.raises(InvalidArgumentError):
++            engine.configure_projections([spec])
++    finally:
++        engine.close()
+diff --git a/src/ts/src/binding.ts b/src/ts/src/binding.ts
+index 07dbc7c5..c87a8917 100644
+--- a/src/ts/src/binding.ts
++++ b/src/ts/src/binding.ts
+@@ -81,6 +81,8 @@ export interface NativeProjectionSpec {
+   ftsTokenizer?: string | null;
+   vector: boolean;
+   vectorEmbedder?: string | null;
++  /** 0.8.20 Slice 20 (R-20-DR) — engine-set readiness ("ready"/"embedding"). */
++  vectorDenseReadiness?: string | null;
+ }
+ 
+ /** 0.8.20 Slice 15d (R-20-PR) — native configure_projections diff. */
+diff --git a/src/ts/src/index.ts b/src/ts/src/index.ts
+index d8d0640a..d78581bd 100644
+--- a/src/ts/src/index.ts
++++ b/src/ts/src/index.ts
+@@ -106,9 +106,9 @@ export type ProjectionRole = "filterable" | "rankable" | "searchable";
+  * HITL-ratified shape `{ name, roles, fts?, vector? }`; `roles` carries SET
+  * semantics. `fts` selects the `searchable→FTS` sub-target (optional custom
+  * `ftsTokenizer`); `vector` selects `searchable→vector` (optional
+- * `vectorEmbedder`). The `vector` sub-object is stored by Slice 15d and built
+- * by Slice 20 (`denseReadiness` attaches to it). Mirrors the Python
+- * `ProjectionSpec` (cross-binding parity).
++ * `vectorEmbedder`). The `vector` sub-object is stored by Slice 15d; Slice 20
++ * (R-20-DR) hangs the engine-set `vectorDenseReadiness` off it. Mirrors the
++ * Python `ProjectionSpec` (cross-binding parity).
+  */
+ export interface ProjectionSpec {
+   name: string;
+@@ -121,8 +121,38 @@ export interface ProjectionSpec {
+   vector: boolean;
+   /** Optional embedder override; omitted = engine default (only with `vector`). */
+   vectorEmbedder?: string | null;
++  /**
++   * 0.8.20 Slice 20 (R-20-DR) — **READ METADATA, engine-set.** `"ready"` or
++   * `"embedding"` when returned by `read.projections` for a spec with
++   * `vector: true`; `null` on every caller-authored spec.
++   *
++   * `filterable` / `searchable→FTS` are same-transaction (non-stale on commit)
++   * so they carry no readiness; `searchable→vector` is async and
++   * rebuild-durable, so it does. The value is DERIVED from outstanding
++   * projection work, never stored — which is what makes
++   * `{vector-insert ∧ readiness := ready}` atomic by construction: a `"ready"`
++   * reading can never be observed with the vector row absent.
++   *
++   * `"pending"` is NOT a value here: that token is reserved for the orthogonal
++   * ADMISSION axis (quarantine/trust, an app judgment).
++   *
++   * Supplying it to `configureProjections` is INERT — it is not part of the
++   * declaration and the engine always reports the derived truth — so
++   * `read.projections` output still re-applies as a no-op. Supplying it with
++   * `vector: false`, or any spelling outside `{"ready", "embedding"}`, throws a
++   * typed `FDB_INVALID_ARGUMENT` (it could not round-trip).
++   */
++  vectorDenseReadiness?: DenseReadiness | null;
+ }
+ 
++/**
++ * 0.8.20 Slice 20 (R-20-DR) — the two engine-set readiness values of the
++ * `searchable→vector` projection. Mirrors the Rust `DenseReadiness` and the
++ * Python string literals. `"pending"` is deliberately absent — that token is
++ * reserved for the orthogonal admission axis.
++ */
++export type DenseReadiness = "ready" | "embedding";
++
+ /**
+  * 0.8.20 Slice 15d (R-20-PR) — the diff `configureProjections` applied.
+  * Idempotent re-registration yields `unchanged: true` with all arrays empty; a
+@@ -807,10 +837,16 @@ export class Engine {
+     // and breaking the read→configure round-trip. Mapping `null → undefined`
+     // here makes the two bindings behave identically and keeps the caller's
+     // objects untouched (a shallow copy per spec).
++    // 0.8.20 Slice 20 (R-20-DR) — `vectorDenseReadiness` gets the SAME
++    // null→undefined normalization: `read.projections` emits an explicit `null`
++    // for a spec with no vector sub-object, and napi-rs would reject that for an
++    // `Option<String>` field. Its non-null value is carried through unchanged
++    // (it is inert engine-side, so the read→configure round-trip stays a no-op).
+     const nativeSpecs = specs.map((s) => ({
+       ...s,
+       ftsTokenizer: s.ftsTokenizer ?? undefined,
+       vectorEmbedder: s.vectorEmbedder ?? undefined,
++      vectorDenseReadiness: s.vectorDenseReadiness ?? undefined,
+     }));
+     return intercept(() =>
+       this.#native.configureProjections(nativeSpecs, drop ?? null),
+diff --git a/src/ts/src/read.ts b/src/ts/src/read.ts
+index fd105ef4..6e4a3ee6 100644
+--- a/src/ts/src/read.ts
++++ b/src/ts/src/read.ts
+@@ -27,6 +27,7 @@ import {
+ import { InvalidArgumentError, rethrowTyped } from "./errors.js";
+ import { validateFfiString } from "./validation.js";
+ import type {
++  DenseReadiness,
+   Engine,
+   Filter,
+   FilterTerm,
+@@ -360,6 +361,9 @@ export const read = {
+       ftsTokenizer: s.ftsTokenizer ?? null,
+       vector: s.vector,
+       vectorEmbedder: s.vectorEmbedder ?? null,
++      // 0.8.20 Slice 20 (R-20-DR) — engine-set readiness read metadata
++      // ("ready"/"embedding"; null when there is no vector sub-object).
++      vectorDenseReadiness: (s.vectorDenseReadiness ?? null) as DenseReadiness | null,
+     }));
+   },
+ };
+diff --git a/src/ts/tests/slice15d-projection-registry.test.ts b/src/ts/tests/slice15d-projection-registry.test.ts
+index 2a9ed848..1f30cacd 100644
+--- a/src/ts/tests/slice15d-projection-registry.test.ts
++++ b/src/ts/tests/slice15d-projection-registry.test.ts
+@@ -553,8 +553,16 @@ test("fix-4 CONTROL — a consistent spec round-trips verbatim via read.projecti
+     assert.equal(delta.unchanged, false);
+     const back = await read.projections(engine);
+     assert.equal(back.length, 1);
+-    // The full round-trip invariant: read-back equals what was sent.
+-    assert.deepEqual(back[0], sent);
++    // The full round-trip invariant: read-back equals what was sent, PLUS the
++    // one engine-set READ-METADATA field 0.8.20 Slice 20 (R-20-DR) attached to
++    // the vector sub-object. `vectorDenseReadiness` is not a declaration, so it
++    // is expected to differ from the sent spec (which never authors it); every
++    // DECLARED field must still match byte-for-byte.
++    assert.equal(back[0].vectorDenseReadiness, "ready");
++    assert.deepEqual({ ...back[0], vectorDenseReadiness: undefined }, {
++      ...sent,
++      vectorDenseReadiness: undefined,
++    });
+   } finally {
+     await engine.close();
+   }
+diff --git a/src/ts/tests/slice20-dense-readiness.test.ts b/src/ts/tests/slice20-dense-readiness.test.ts
+new file mode 100644
+index 00000000..d20b6341
+--- /dev/null
++++ b/src/ts/tests/slice20-dense-readiness.test.ts
+@@ -0,0 +1,247 @@
++// X1 SDK parity — 0.8.20 Slice 20 (R-20-DR `dense_readiness`).
++//
++// Drives the engine-set readiness field through the napi-rs binding by
++// EXECUTION (not symbol presence): `read.projections` must surface
++// `vectorDenseReadiness` on a `searchable→vector` projection, it must never read
++// `"ready"` while an embed is outstanding, and it must be inert on the way back
++// in. Mirrors the Rust suite
++// `src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs` and the
++// Python suite `src/python/tests/test_slice20_dense_readiness.py` (Py ≡ TS,
++// R-X-1).
++//
++// `node:sqlite` is used only as a READ oracle on a CLOSED database — the
++// "vector at rest" assertion behind the readiness flip.
++//
++// ZERO net-new governed commands: this rides the already-governed
++// `configureProjections` / `read.projections` verbs.
++
++import test from "node:test";
++import assert from "node:assert/strict";
++import { DatabaseSync } from "node:sqlite";
++
++import { Engine, read } from "../src/index.js";
++import type { ProjectionSpec } from "../src/index.js";
++import { InvalidArgumentError } from "../src/errors.js";
++import { freshDbPath } from "./helpers.js";
++
++const SOURCE = "ts-test:slice20";
++
++function node(logicalId: string, bodyJson: string): object {
++  return { kind: "doc", body: bodyJson, logicalId, sourceId: SOURCE };
++}
++
++function vectorSpec(name: string): ProjectionSpec {
++  return { name, roles: ["searchable"], fts: false, vector: true };
++}
++
++async function readiness(engine: Engine, name: string): Promise<string | null> {
++  const specs = await read.projections(engine);
++  const found = specs.find((s) => s.name === name);
++  return found ? (found.vectorDenseReadiness ?? null) : null;
++}
++
++/** Raw at-rest oracle on a CLOSED database: vector rows per write cursor. */
++function vectorRowCount(path: string): number {
++  const db = new DatabaseSync(path);
++  try {
++    return Number(
++      (db.prepare("SELECT COUNT(*) AS c FROM _fathomdb_vector_rows").get() as { c: number }).c,
++    );
++  } finally {
++    db.close();
++  }
++}
++
++/**
++ * §4.1 invariant 1 as SQL: rows that reached the `up_to_date` projection
++ * terminal but carry NO vector row. Must always be zero — the vector INSERT and
++ * the terminal are one transaction, so a torn `ready`-without-vector is
++ * unreachable.
++ */
++function tornTerminals(path: string): number {
++  const db = new DatabaseSync(path);
++  try {
++    return Number(
++      (
++        db
++          .prepare(
++            "SELECT COUNT(*) AS c FROM _fathomdb_projection_terminal t" +
++              " JOIN canonical_nodes n ON n.write_cursor = t.write_cursor" +
++              " JOIN _fathomdb_vector_kinds k ON k.kind = n.kind" +
++              " LEFT JOIN _fathomdb_vector_rows v ON v.write_cursor = t.write_cursor" +
++              " WHERE t.state = 'up_to_date' AND v.write_cursor IS NULL",
++          )
++          .get() as { c: number }
++      ).c,
++    );
++  } finally {
++    db.close();
++  }
++}
++
++test("read.projections surfaces vectorDenseReadiness on a searchable→vector projection", async () => {
++  const path = freshDbPath();
++  const engine = await Engine.open(path);
++  try {
++    await engine.configureProjections([vectorSpec("summary")]);
++    // No embedder is configured, so nothing is outstanding: `ready`.
++    assert.equal(await readiness(engine, "summary"), "ready");
++  } finally {
++    await engine.close();
++  }
++});
++
++test("readiness is scoped to the vector sub-object — a non-vector projection carries none", async () => {
++  const path = freshDbPath();
++  const engine = await Engine.open(path);
++  try {
++    await engine.configureProjections([
++      { name: "status", roles: ["filterable"], fts: false, vector: false },
++    ]);
++    const got = (await read.projections(engine)).find((s) => s.name === "status");
++    assert.ok(got);
++    assert.equal(got.vector, false);
++    assert.equal(
++      got.vectorDenseReadiness,
++      null,
++      "filterable / searchable→FTS are same-transaction and have NO readiness axis",
++    );
++  } finally {
++    await engine.close();
++  }
++});
++
++test("readiness never reports ready with pending embeds (offline, deterministic)", async () => {
++  // The R-20-DR acceptance signal, driven through the binding with NO network
++  // and NO embedder download.
++  //
++  // How it is made deterministic: register `doc` as a vector kind via the
++  // `test-hooks`-gated native seam (the same one `use-default-embedder.test.ts`
++  // uses — the public TS surface has no typed vector-write verb), then write a
++  // `doc` row on an engine opened WITHOUT an embedder. The row enqueues vector
++  // work that cannot complete, and the shipped retry ladder is 1s/4s/16s, so
++  // there is a ~21-second window in which the embed is genuinely outstanding.
++  // Readiness must read `embedding` throughout it — never `ready`.
++  const path = freshDbPath();
++  const engine = await Engine.open(path);
++  try {
++    // Declare the projection FIRST: `configureProjections` drains, and draining
++    // with work outstanding would (correctly) time out.
++    await engine.configureProjections([vectorSpec("summary")]);
++    assert.equal(await readiness(engine, "summary"), "ready", "an empty corpus is ready");
++
++    const inner = (engine as unknown as { _native: unknown })._native as {
++      configureVectorKindForTest: (kind: string) => Promise<void>;
++    };
++    await inner.configureVectorKindForTest("doc");
++    await engine.write([node("N1", JSON.stringify({ summary: "a dense meaning" }))]);
++
++    assert.equal(
++      await readiness(engine, "summary"),
++      "embedding",
++      "readiness must NOT report ready while an embed is outstanding",
++    );
++  } finally {
++    await engine.close();
++  }
++  // At rest: the tolerated torn state (`embedding` with the vector absent) —
++  // and NOT the forbidden one. No `up_to_date` terminal exists without its
++  // vector row, which is §4.1 invariant 1.
++  assert.equal(vectorRowCount(path), 0, "no vector landed — the embed never ran");
++  assert.equal(tornTerminals(path), 0, "§4.1: no up_to_date terminal without its vector");
++});
++
++test("a caller-supplied vectorDenseReadiness is INERT — the engine reports the derived truth", async () => {
++  const path = freshDbPath();
++  const engine = await Engine.open(path);
++  try {
++    // Declare a LIE. It is accepted (it is not part of the declaration) but the
++    // registry never stores it, so the engine still reports what it derives.
++    await engine.configureProjections([
++      { ...vectorSpec("summary"), vectorDenseReadiness: "embedding" },
++    ]);
++    assert.equal(
++      await readiness(engine, "summary"),
++      "ready",
++      "the caller's `embedding` must NOT be honoured",
++    );
++    // And it cannot masquerade as a projection change: re-applying diffs to a
++    // no-op even though the readiness field differs from what was first sent.
++    const again = await engine.configureProjections([vectorSpec("summary")]);
++    assert.equal(again.unchanged, true, "readiness is not part of the declaration");
++  } finally {
++    await engine.close();
++  }
++});
++
++test("read.projections output round-trips BACK into configureProjections with readiness attached", async () => {
++  // The fix-4 read→configure round-trip, extended: `read.projections` now emits
++  // `vectorDenseReadiness` for a vector projection, and feeding that output
++  // straight back MUST still re-apply as an idempotent no-op. Otherwise
++  // `read.projections` would produce a value its own `configureProjections`
++  // cannot consume — the exact defect fix-4 closed.
++  const path = freshDbPath();
++  const engine = await Engine.open(path);
++  try {
++    await engine.configureProjections([
++      { name: "status", roles: ["filterable", "searchable"], fts: true, vector: true },
++    ]);
++    const readBack = await read.projections(engine);
++    assert.equal(readBack.length, 1);
++    assert.equal(readBack[0].vectorDenseReadiness, "ready", "read output carries readiness");
++    const again = await engine.configureProjections(readBack);
++    assert.equal(again.unchanged, true, "read.projections output must re-apply as a no-op");
++  } finally {
++    await engine.close();
++  }
++});
++
++test("vectorDenseReadiness with vector:false is REFUSED (cannot round-trip)", async () => {
++  const path = freshDbPath();
++  const engine = await Engine.open(path);
++  try {
++    await assert.rejects(
++      engine.configureProjections([
++        {
++          name: "status",
++          roles: ["filterable"],
++          fts: false,
++          vector: false,
++          vectorDenseReadiness: "ready",
++        },
++      ]),
++      (err: unknown) => {
++        assert.ok(err instanceof InvalidArgumentError);
++        assert.match(String((err as Error).message), /vectorDenseReadiness/);
++        return true;
++      },
++    );
++  } finally {
++    await engine.close();
++  }
++});
++
++test('an unknown readiness spelling is REFUSED — "pending" is reserved for the admission axis', async () => {
++  const path = freshDbPath();
++  const engine = await Engine.open(path);
++  try {
++    for (const bad of ["pending", "", "Ready", "embedded"]) {
++      await assert.rejects(
++        engine.configureProjections([
++          // The cast is deliberate: the TS type already forbids these, so the
++          // test is proving the RUNTIME gate, not the compile-time one.
++          { ...vectorSpec("summary"), vectorDenseReadiness: bad } as ProjectionSpec,
++        ]),
++        (err: unknown) => {
++          assert.ok(
++            err instanceof InvalidArgumentError,
++            `expected an InvalidArgumentError refusal for readiness spelling ${JSON.stringify(bad)}`,
++          );
++          return true;
++        },
++      );
++    }
++  } finally {
++    await engine.close();
++  }
++});
+
+exec
+/bin/bash -lc "grep -R \"fn load_projection_cursor\\|advance_projection_cursor\\|_fathomdb_projection_terminal\\|projection.*failed\\|projection_failures\\|next_pending_projection_jobs\" -n src/rust/crates/fathomdb-engine/src/lib.rs | head -80" in /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20
+ succeeded in 0ms:
+4546:        // off `_fathomdb_projection_terminal`, which the migration does not
+5570:                            // terminal as pending; since `next_pending_projection_jobs`
+5623:    /// `_fathomdb_projection_terminal`).
+5644:    /// `keep_terminal` retains the `_fathomdb_projection_terminal` marker — set it
+5655:    /// (`next_pending_projection_jobs`), and the pending-work probe
+5674:                "DELETE FROM _fathomdb_projection_terminal WHERE write_cursor = ?1",
+7051:                 WHERE collection_name = 'projection_failures'
+7218:            advance_projection_cursor(&tx).map_err(|_| EngineError::Storage)?;
+7771:    /// `projection_failures` audit rows are preserved per design. AC-044
+8069:    /// (vec0) + `_fathomdb_vector_rows` vectors; its `_fathomdb_projection_terminal`
+9166:        // this slice) never restored, stalling `advance_projection_cursor`.
+10731:             LEFT JOIN _fathomdb_projection_terminal
+10732:               ON _fathomdb_projection_terminal.write_cursor = search_index.write_cursor
+10734:              AND _fathomdb_projection_terminal.write_cursor IS NULL
+12206:        match next_pending_projection_jobs(&connection, &in_flight, fetch_cap) {
+12650:fn next_pending_projection_jobs(
+12673:             LEFT JOIN _fathomdb_projection_terminal
+12674:               ON _fathomdb_projection_terminal.write_cursor = canonical_nodes.write_cursor
+12676:               AND _fathomdb_projection_terminal.write_cursor IS NULL
+12684:             LEFT JOIN _fathomdb_projection_terminal
+12685:               ON _fathomdb_projection_terminal.write_cursor = canonical_edges.write_cursor
+12689:               AND _fathomdb_projection_terminal.write_cursor IS NULL
+12734:             LEFT JOIN _fathomdb_projection_terminal
+12735:               ON _fathomdb_projection_terminal.write_cursor = canonical_nodes.write_cursor
+12737:               AND _fathomdb_projection_terminal.write_cursor IS NULL
+12756:    // mirroring `next_pending_projection_jobs`'s edge arm. Required: without
+12758:    // `next_pending_projection_jobs` now correctly skips would never gain a
+12759:    // `_fathomdb_projection_terminal` row, so this probe would flag it as
+12767:             LEFT JOIN _fathomdb_projection_terminal pt
+12795:/// `_fathomdb_projection_terminal` row ([`record_projection_terminal`]) and the
+12796:/// readiness watermark ([`advance_projection_cursor`], which only ever steps
+12818:/// failures stay separately observable through the `projection_failures`
+13206:fn load_projection_cursor(connection: &Connection) -> rusqlite::Result<u64> {
+13235:        "INSERT OR IGNORE INTO _fathomdb_projection_terminal(write_cursor, state) VALUES(?1, ?2)",
+13247:            "SELECT state FROM _fathomdb_projection_terminal WHERE write_cursor = ?1",
+13258:fn advance_projection_cursor(connection: &Connection) -> rusqlite::Result<u64> {
+13441:                     WHERE collection_name = 'projection_failures'
+13453:                         ) VALUES('projection_failures', ?1, 'append', ?2, NULL, ?3)",
+13457:                record_projection_terminal(&tx, *cursor, "failed")?;
+13470:    advance_projection_cursor(&tx)?;
+13749:             LEFT JOIN _fathomdb_projection_terminal
+13750:               ON _fathomdb_projection_terminal.write_cursor = canonical_nodes.write_cursor
+13752:               AND _fathomdb_projection_terminal.write_cursor IS NULL",
+15696:///   `advance_projection_cursor` walk past a row.
+15768:        table: "_fathomdb_projection_terminal",
+16620:/// per-kind-extensible) so `advance_projection_cursor` can walk past it.
+16699:            // `advance_projection_cursor` can advance the readiness watermark.
+17127:                        // fix-32 [P2]: record terminal so advance_projection_cursor
+17315:    advance_projection_cursor(&tx)?;
+17329:    // and stale `_fathomdb_projection_terminal` / `_fathomdb_vector_rows` / vec0
+
+exec
+/bin/bash -lc "sed -n '12620,12790p' src/rust/crates/fathomdb-engine/src/lib.rs; sed -n '13200,13290p' src/rust/crates/fathomdb-engine/src/lib.rs; sed -n '13420,13480p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20
+ succeeded in 0ms:
+                continue;
+            }
+        };
+
+        if u32::try_from(vector.len()).unwrap_or(u32::MAX) != shared.embedder_identity.dimension {
+            last_code = "EmbedderDimensionMismatchError";
+            continue;
+        }
+
+        let blob = encode_vector_blob(&vector);
+        // EU-5a2 mean-centering apply path (projection write side). The
+        // f32 BLOB persisted is ALWAYS un-centered; `bin_blob` carries
+        // the (possibly centered) f32 fed to `vec_quantize_binary`. The
+        // centering decision is finalized in `commit_projection_outcomes`
+        // where the writer connection is in-hand and the read of
+        // `_fathomdb_embedder_profiles.mean_vec` is in the same tx as
+        // the INSERT. NoopEmbedder (EU-5a2's only live identity) is not
+        // MC-required, so `bin_blob == blob` throughout EU-5a2.
+        let bin_blob = blob.clone();
+        return ProjectionOutcome::Success {
+            cursor: job.cursor,
+            kind: job.kind.clone(),
+            blob,
+            bin_blob,
+        };
+    }
+
+    ProjectionOutcome::Failure { cursor: job.cursor, failure_code: last_code }
+}
+
+fn next_pending_projection_jobs(
+    connection: &Connection,
+    in_flight: &BTreeSet<u64>,
+    max_jobs: usize,
+) -> rusqlite::Result<Vec<ProjectionJob>> {
+    if max_jobs == 0 {
+        return Ok(Vec::new());
+    }
+    let cursor = load_projection_cursor(connection)?;
+    // Over-fetch by `in_flight.len()` so the post-filter still returns
+    // up to `max_jobs` after skipping cursors already in-flight.
+    let sql_limit = max_jobs.saturating_add(in_flight.len()).min(256);
+    // G11 (Slice 15) — UNION extends the projection queue to include edge bodies.
+    // Edge bodies use kind `'edge_fact'` so `resolve_source_type` maps them to
+    // `source_type = 'edge_fact'` in `vector_default` (partition correctness).
+    // The UNION is ordered by write_cursor so projection proceeds in
+    // insertion order across nodes and edges.
+    let sql = format!(
+        "SELECT write_cursor, kind, body FROM (
+             SELECT canonical_nodes.write_cursor, canonical_nodes.kind, canonical_nodes.body
+             FROM canonical_nodes
+             JOIN _fathomdb_vector_kinds
+               ON _fathomdb_vector_kinds.kind = canonical_nodes.kind
+             LEFT JOIN _fathomdb_projection_terminal
+               ON _fathomdb_projection_terminal.write_cursor = canonical_nodes.write_cursor
+             WHERE canonical_nodes.write_cursor > ?1
+               AND _fathomdb_projection_terminal.write_cursor IS NULL
+
+             UNION ALL
+
+             SELECT canonical_edges.write_cursor, 'edge_fact', canonical_edges.body
+             FROM canonical_edges
+             JOIN _fathomdb_vector_kinds
+               ON _fathomdb_vector_kinds.kind = 'edge_fact'
+             LEFT JOIN _fathomdb_projection_terminal
+               ON _fathomdb_projection_terminal.write_cursor = canonical_edges.write_cursor
+             WHERE canonical_edges.write_cursor > ?1
+               AND canonical_edges.body IS NOT NULL
+               AND canonical_edges.superseded_at IS NULL{edge_valid}
+               AND _fathomdb_projection_terminal.write_cursor IS NULL
+         ) ORDER BY write_cursor
+         LIMIT {sql_limit}",
+        // TC-33: `?1` is the projection cursor ⇒ the edge `:now` binds at `?2`.
+        edge_valid = edge_validity_sql("canonical_edges", 2)
+    );
+    let mut statement = connection.prepare_cached(&sql)?;
+    let rows = statement.query_map(params![cursor, current_epoch_seconds()], |row| {
+        Ok(ProjectionJob { cursor: row.get(0)?, kind: row.get(1)?, body: row.get(2)? })
+    })?;
+    let mut jobs = Vec::with_capacity(max_jobs);
+    for row in rows {
+        let job = row?;
+        if in_flight.contains(&job.cursor) {
+            continue;
+        }
+        jobs.push(job);
+        if jobs.len() >= max_jobs {
+            break;
+        }
+    }
+    Ok(jobs)
+}
+
+fn database_has_pending_projection_work(path: &Path) -> rusqlite::Result<bool> {
+    let connection = open_runtime_connection(path)?;
+    connection_has_pending_projection_work(&connection)
+}
+
+/// 0.8.20 Slice 20 (R-20-DR) — the body of
+/// [`database_has_pending_projection_work`], lifted so it can also run on a
+/// connection the caller ALREADY holds (the engine's own connection, inside
+/// [`Engine::read_projections`]) instead of opening a runtime connection from a
+/// path. Behaviour is byte-identical: the same two arms, the same predicates —
+/// which is the point. Readiness and `drain`/`wait_for_idle` must key off ONE
+/// definition of "outstanding embed", or readiness could report `ready` for work
+/// `drain` still waits on.
+fn connection_has_pending_projection_work(connection: &Connection) -> rusqlite::Result<bool> {
+    let cursor = load_projection_cursor(connection)?;
+    // Check canonical_nodes for un-projected work.
+    let has_node_work: bool = connection
+        .query_row(
+            "SELECT 1
+             FROM canonical_nodes
+             JOIN _fathomdb_vector_kinds ON _fathomdb_vector_kinds.kind = canonical_nodes.kind
+             LEFT JOIN _fathomdb_projection_terminal
+               ON _fathomdb_projection_terminal.write_cursor = canonical_nodes.write_cursor
+             WHERE canonical_nodes.write_cursor > ?1
+               AND _fathomdb_projection_terminal.write_cursor IS NULL
+             LIMIT 1",
+            [cursor],
+            |_row| Ok(true),
+        )
+        .or_else(|err| match err {
+            rusqlite::Error::QueryReturnedNoRows => Ok(false),
+            _ => Err(err),
+        })?;
+    if has_node_work {
+        return Ok(true);
+    }
+    // G11 (Slice 15) fix-1 [P2] — also check canonical_edges for edge bodies
+    // that were not projected before the engine closed. Without this check,
+    // drain() returns idle while edge vectors remain unembedded on reopen.
+    // fix-31 [P2]: exclude superseded edges from the pending check so the
+    // scheduler does not pick up stale tombstoned rows as projection work.
+    // 0.8.12 Slice A (R-CON-2 named default-ON blocker; Slice-20 codex §9
+    // [P2]) — also exclude t_invalid-excluded (recency-consolidated) edges,
+    // mirroring `next_pending_projection_jobs`'s edge arm. Required: without
+    // this mirror, a rebuild-truncated t_invalid edge that
+    // `next_pending_projection_jobs` now correctly skips would never gain a
+    // `_fathomdb_projection_terminal` row, so this probe would flag it as
+    // phantom-pending forever and `drain()`/`wait_for_idle` would hang.
+    connection
+        .query_row(
+            // TC-33: no other parameter here ⇒ the edge `:now` binds at `?1`.
+            &format!(
+                "SELECT 1
+             FROM canonical_edges ce
+             LEFT JOIN _fathomdb_projection_terminal pt
+               ON pt.write_cursor = ce.write_cursor
+             WHERE ce.body IS NOT NULL
+               AND ce.superseded_at IS NULL{}
+               AND pt.write_cursor IS NULL
+             LIMIT 1",
+                edge_validity_sql("ce", 1)
+            ),
+            params![current_epoch_seconds()],
+            |_row| Ok(true),
+        )
+        .or_else(|err| match err {
+            rusqlite::Error::QueryReturnedNoRows => Ok(false),
+            _ => Err(err),
+        })
+}
+
+/// 0.8.20 Slice 20 (R-20-DR) — the `dense_readiness` of the `searchable→vector`
+/// projection, DERIVED. There is no stored flag, no schema step
+/// (`SCHEMA_VERSION` stays 24) and no `MIGRATIONS` change.
+///
+/// **Why derived is the design, not a shortcut.** §4.1 invariant 1 requires
+/// `{ vector-insert ∧ dense_readiness := ready }` to be ONE transaction, with a
+/// torn `ready`-without-vector FORBIDDEN. A stored flag is precisely the thing
+    // DELETEs (shadow-table rewrites), so its freed pages must be scrubbed too;
+    // setting the pragma only on the writer left a GDPR-erasure leak here.
+    connection.pragma_update(None, "secure_delete", "ON")?;
+    Ok(connection)
+}
+
+fn load_projection_cursor(connection: &Connection) -> rusqlite::Result<u64> {
+    connection
+        .query_row(
+            "SELECT value FROM _fathomdb_open_state WHERE key = ?1",
+            [PROJECTION_CURSOR_KEY],
+            |row| row.get::<_, String>(0),
+        )
+        .map(|value| value.parse::<u64>().unwrap_or(0))
+        .or_else(|err| match err {
+            rusqlite::Error::QueryReturnedNoRows => Ok(0),
+            _ => Err(err),
+        })
+}
+
+fn store_projection_cursor(connection: &Connection, cursor: u64) -> rusqlite::Result<()> {
+    connection.execute(
+        "INSERT INTO _fathomdb_open_state(key, value) VALUES(?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![PROJECTION_CURSOR_KEY, cursor.to_string()],
+    )?;
+    Ok(())
+}
+
+fn record_projection_terminal(
+    connection: &Connection,
+    cursor: u64,
+    state: &str,
+) -> rusqlite::Result<()> {
+    connection.execute(
+        "INSERT OR IGNORE INTO _fathomdb_projection_terminal(write_cursor, state) VALUES(?1, ?2)",
+        params![cursor, state],
+    )?;
+    Ok(())
+}
+
+fn terminal_state_for_cursor(
+    connection: &Connection,
+    cursor: u64,
+) -> rusqlite::Result<Option<String>> {
+    connection
+        .query_row(
+            "SELECT state FROM _fathomdb_projection_terminal WHERE write_cursor = ?1",
+            [cursor],
+            |row| row.get::<_, String>(0),
+        )
+        .map(Some)
+        .or_else(|err| match err {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            _ => Err(err),
+        })
+}
+
+fn advance_projection_cursor(connection: &Connection) -> rusqlite::Result<u64> {
+    let mut cursor = load_projection_cursor(connection)?;
+    loop {
+        let next = cursor.saturating_add(1);
+        if terminal_state_for_cursor(connection, next)?.is_some() {
+            cursor = next;
+        } else {
+            break;
+        }
+    }
+    store_projection_cursor(connection, cursor)?;
+    Ok(cursor)
+}
+
+fn commit_projection_outcomes(
+    connection: &mut Connection,
+    outcomes: &[ProjectionOutcome],
+    shared: &ProjectionRuntimeShared,
+) -> rusqlite::Result<()> {
+    let embedder_identity = &shared.embedder_identity;
+    let mc = identity_requires_mean_centering(embedder_identity);
+    // EU-5f — serialize the whole commit across workers so the at-pin
+    // re-quantize sees a totally-ordered history (see `commit_gate`).
+    let _gate = shared.commit_gate.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let tx = connection.transaction()?;
+    // EU-5a2/EU-5f — the live pinned mean. Read once at the top; may pin
+    // mid-batch (set to `Some` after a threshold-crossing row below).
+    let mut current_mean: Option<Vec<f32>> = if mc {
+        tx.query_row(
+            "SELECT mean_vec FROM _fathomdb_embedder_profiles WHERE profile = 'default'",
+            [],
+            |row| row.get::<_, Option<Vec<u8>>>(0),
+        )
+                    };
+                    let (doc_count, _) =
+                        run_pin_and_requantize_pass(&tx, &rows, &mean).map_err(|_| {
+                            rusqlite::Error::SqliteFailure(
+                                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
+                                Some("mean-centering re-quantize pass failed".to_string()),
+                            )
+                        })?;
+                    staged_events.push(EmbedderEvent::MeanVecPinned {
+                        dim: u32::try_from(mean.len()).unwrap_or(u32::MAX),
+                        doc_count,
+                    });
+                    current_mean = Some(mean);
+                }
+            }
+            ProjectionOutcome::Failure { cursor, failure_code } => {
+                if terminal_state_for_cursor(&tx, *cursor)?.is_some() {
+                    continue;
+                }
+                let existing: u64 = tx.query_row(
+                    "SELECT COUNT(*) FROM operational_mutations
+                     WHERE collection_name = 'projection_failures'
+                       AND json_extract(payload_json, '$.write_cursor') = ?1",
+                    [cursor],
+                    |row| row.get(0),
+                )?;
+                if existing == 0 {
+                    let payload = format!(
+                        r#"{{"write_cursor":{cursor},"failure_code":"{failure_code}","recorded_at":0}}"#
+                    );
+                    tx.execute(
+                        "INSERT INTO operational_mutations(
+                            collection_name, record_key, op_kind, payload_json, schema_id, write_cursor
+                         ) VALUES('projection_failures', ?1, 'append', ?2, NULL, ?3)",
+                        params![cursor.to_string(), payload, cursor],
+                    )?;
+                }
+                record_projection_terminal(&tx, *cursor, "failed")?;
+            }
+        }
+    }
+    // 0.7.2 PR-2bc S2 — the AUTOMATIC in-ingest drift detector (EWMA recent
+    // mean + cos-threshold + debounce + 200k cap + `MeanRecomputeDeferred`)
+    // was CARVED OUT and DEFERRED to 0.8.x; its recall premise was refuted
+    // (the mean is a non-lever) and the benefit is unmeasured. The mean is
+    // refreshed only on demand via `Engine::recompute_mean` (the
+    // `doctor recompute-mean` verb). See `dev/design/embedder.md` §0.3 and
+    // `dev/plans/prompts/0.8.x-auto-mean-drift-DEFERRED.md`. Nothing here
+    // mutates `mean_vec` after the initial pin.
+
+    advance_projection_cursor(&tx)?;
+    tx.commit()?;
+    // EU-5f — publish MeanVecPinned only after the pin tx is durable, so a
+    // rolled-back pin never emits a spurious event.
+    if !staged_events.is_empty() {
+        if let Ok(mut events) = shared.pending_events.lock() {
+            events.extend(staged_events);
+        }
+    }
+    Ok(())
+}
+
+exec
+/bin/bash -lc "git show 9db3276588f38ced08d77f44e05830b726a81343:src/rust/crates/fathomdb-engine/src/lib.rs | sed -n '12620,12740p'" in /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20
+ succeeded in 0ms:
+    let connection = open_runtime_connection(path)?;
+    let cursor = load_projection_cursor(&connection)?;
+    // Check canonical_nodes for un-projected work.
+    let has_node_work: bool = connection
+        .query_row(
+            "SELECT 1
+             FROM canonical_nodes
+             JOIN _fathomdb_vector_kinds ON _fathomdb_vector_kinds.kind = canonical_nodes.kind
+             LEFT JOIN _fathomdb_projection_terminal
+               ON _fathomdb_projection_terminal.write_cursor = canonical_nodes.write_cursor
+             WHERE canonical_nodes.write_cursor > ?1
+               AND _fathomdb_projection_terminal.write_cursor IS NULL
+             LIMIT 1",
+            [cursor],
+            |_row| Ok(true),
+        )
+        .or_else(|err| match err {
+            rusqlite::Error::QueryReturnedNoRows => Ok(false),
+            _ => Err(err),
+        })?;
+    if has_node_work {
+        return Ok(true);
+    }
+    // G11 (Slice 15) fix-1 [P2] — also check canonical_edges for edge bodies
+    // that were not projected before the engine closed. Without this check,
+    // drain() returns idle while edge vectors remain unembedded on reopen.
+    // fix-31 [P2]: exclude superseded edges from the pending check so the
+    // scheduler does not pick up stale tombstoned rows as projection work.
+    // 0.8.12 Slice A (R-CON-2 named default-ON blocker; Slice-20 codex §9
+    // [P2]) — also exclude t_invalid-excluded (recency-consolidated) edges,
+    // mirroring `next_pending_projection_jobs`'s edge arm. Required: without
+    // this mirror, a rebuild-truncated t_invalid edge that
+    // `next_pending_projection_jobs` now correctly skips would never gain a
+    // `_fathomdb_projection_terminal` row, so this probe would flag it as
+    // phantom-pending forever and `drain()`/`wait_for_idle` would hang.
+    connection
+        .query_row(
+            // TC-33: no other parameter here ⇒ the edge `:now` binds at `?1`.
+            &format!(
+                "SELECT 1
+             FROM canonical_edges ce
+             LEFT JOIN _fathomdb_projection_terminal pt
+               ON pt.write_cursor = ce.write_cursor
+             WHERE ce.body IS NOT NULL
+               AND ce.superseded_at IS NULL{}
+               AND pt.write_cursor IS NULL
+             LIMIT 1",
+                edge_validity_sql("ce", 1)
+            ),
+            params![current_epoch_seconds()],
+            |_row| Ok(true),
+        )
+        .or_else(|err| match err {
+            rusqlite::Error::QueryReturnedNoRows => Ok(false),
+            _ => Err(err),
+        })
+}
+
+struct CanonicalNodeRow {
+    cursor: u64,
+    kind: String,
+    body: String,
+    row_kind: RowKind,
+    /// fix-2 [P2] — whether this row is in the attribute projection's row set
+    /// (`state = 'active' AND superseded_at IS NULL`, the exact `backfill_attribute`
+    /// predicate). A projector-replay rebuild uses this to gate the attribute
+    /// projection so it does not re-surface a pending / superseded node's values.
+    /// Node-FTS / vector shadows are rebuilt for every row (their stale versions
+    /// are excluded by the read-side lifecycle join, unchanged from before).
+    attr_projected: bool,
+}
+
+/// 0.8.0 Slice 5 (G1) — re-tokenize `search_index` from the canonical source
+/// rows after the step-11 tokenizer-default upgrade drops + recreates the FTS5
+/// virtual table. Projection-only: it reads `canonical_nodes` (the source of
+/// truth, untouched) and rewrites the FTS shadow; it performs **no**
+/// source-record migration. Every canonical node already carries an FTS row at
+/// write time (the projection-time INSERT is unconditional), so reinserting
+/// every node exactly reproduces the prior index content under the new
+/// tokenizer. Runs in a single transaction on the writer connection before
+/// readers spawn.
+///
+/// Crash-retryable (fix-1): the reindex and its durable completion marker
+/// (`SEARCH_INDEX_TOKENIZER_REPROJECT_MARKER_KEY` in `_fathomdb_open_state`)
+/// commit together in ONE `BEGIN IMMEDIATE…COMMIT`. A crash before the commit
+/// rolls both back, leaving no marker; the next open re-runs. A crash after
+/// the commit finds the marker present and skips. Idempotent.
+fn reproject_search_index_after_tokenizer_upgrade(connection: &Connection) -> rusqlite::Result<()> {
+    let rows = canonical_node_rows(connection)?;
+    connection.execute_batch("BEGIN IMMEDIATE")?;
+    let result = (|| {
+        // 0.8.20 Slice 5a (R-20-E1) — registry-driven: re-tokenize EVERY
+        // node-FTS projection, not just `search_index`. `search_index_v2` uses
+        // the SAME tokenizer (`porter unicode61 remove_diacritics 2`), so it is
+        // equally invalidated by a tokenizer-default upgrade; before this slice
+        // it was neither cleared nor re-tokenized here. Edge FTS is out of scope
+        // for this open-path repair (it postdates the step-11 upgrade and is
+        // rebuilt by `rebuild_projections`).
+        truncate_row_projections_in(connection, &[ProjectionClass::NodeFts])?;
+        for row in &rows {
+            project_canonical_node_row(
+                connection,
+                row.cursor,
+                &row.kind,
+                &row.body,
+                row.row_kind,
+                ProjectionPass::FtsOnly,
+                // FtsOnly never touches the attribute store (predates step 24), so
+                // `node_active` is inert here; forward the row's flag anyway (it is
+                // the backfill's active-and-non-superseded predicate) so the field
+                // has a reader in every build configuration.
+                row.attr_projected,
+            )?;
+        }
+        connection.execute(
+            "INSERT INTO _fathomdb_open_state(key, value) VALUES(?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![SEARCH_INDEX_TOKENIZER_REPROJECT_MARKER_KEY, "1"],
+        )?;
+        Ok(())
+    })();
+
+exec
+/bin/bash -lc "grep -R \"configure_vector_kind\\|_fathomdb_vector_kinds\\|vector_kind\" -n src/rust/crates/fathomdb-engine/src/lib.rs src/rust/crates/fathomdb-* tests 2>/dev/null | head -120" in /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20
+ succeeded in 0ms:
+src/rust/crates/fathomdb-engine/src/lib.rs:4126:/// `_fathomdb_vector_kinds`.
+src/rust/crates/fathomdb-engine/src/lib.rs:6395:    /// sanctioned `set_vector_stage_only_for_test` / `_configure_vector_kind_for_test`
+src/rust/crates/fathomdb-engine/src/lib.rs:7099:    pub fn configure_vector_kind_for_test(&self, kind: &str) -> Result<(), EngineError> {
+src/rust/crates/fathomdb-engine/src/lib.rs:7105:                "INSERT OR REPLACE INTO _fathomdb_vector_kinds(kind, profile, created_at)
+src/rust/crates/fathomdb-engine/src/lib.rs:8073:    /// `_fathomdb_projection_state` and `_fathomdb_vector_kinds` are NOT keyed to
+src/rust/crates/fathomdb-engine/src/lib.rs:8486:    /// kinds from `_fathomdb_vector_kinds`.
+src/rust/crates/fathomdb-engine/src/lib.rs:8494:            .prepare("SELECT kind FROM _fathomdb_vector_kinds ORDER BY kind")
+src/rust/crates/fathomdb-engine/src/lib.rs:10730:             JOIN _fathomdb_vector_kinds ON _fathomdb_vector_kinds.kind = search_index.kind
+src/rust/crates/fathomdb-engine/src/lib.rs:12671:             JOIN _fathomdb_vector_kinds
+src/rust/crates/fathomdb-engine/src/lib.rs:12672:               ON _fathomdb_vector_kinds.kind = canonical_nodes.kind
+src/rust/crates/fathomdb-engine/src/lib.rs:12682:             JOIN _fathomdb_vector_kinds
+src/rust/crates/fathomdb-engine/src/lib.rs:12683:               ON _fathomdb_vector_kinds.kind = 'edge_fact'
+src/rust/crates/fathomdb-engine/src/lib.rs:12733:             JOIN _fathomdb_vector_kinds ON _fathomdb_vector_kinds.kind = canonical_nodes.kind
+src/rust/crates/fathomdb-engine/src/lib.rs:14094:        .query_row("SELECT 1 FROM _fathomdb_vector_kinds WHERE kind = ?1", [kind], |_row| Ok(()))
+src/rust/crates/fathomdb-engine/src/lib.rs:14683:    // kind (`_fathomdb_vector_kinds` non-empty). A fresh workspace that has never
+src/rust/crates/fathomdb-engine/src/lib.rs:14709:    let vector_kind_registered: bool = connection
+src/rust/crates/fathomdb-engine/src/lib.rs:14710:        .query_row("SELECT EXISTS(SELECT 1 FROM _fathomdb_vector_kinds)", [], |r| r.get(0))
+src/rust/crates/fathomdb-engine/src/lib.rs:14712:    if !vector_kind_registered {
+src/rust/crates/fathomdb-engine/src/lib.rs:16723:/// `_fathomdb_vector_kinds` (idempotent).
+src/rust/crates/fathomdb-engine/src/lib.rs:16751:                "INSERT OR IGNORE INTO _fathomdb_vector_kinds(kind, profile, created_at)
+src/rust/crates/fathomdb-engine/tests/pr_g12_recency.rs:99:    opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/eu5a2_machinery.rs:143:    opened.engine.configure_vector_kind_for_test("doc").expect("configure kind");
+src/rust/crates/fathomdb-engine/tests/vector_quant_pack1.rs:59:    opened.engine.configure_vector_kind_for_test("doc").expect("configure kind");
+src/rust/crates/fathomdb-engine/tests/vector_quant_pack1.rs:116:    opened.engine.configure_vector_kind_for_test("doc").expect("configure kind");
+src/rust/crates/fathomdb-engine/tests/vector_quant_pack1.rs:142:    opened.engine.configure_vector_kind_for_test("doc").expect("configure kind");
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:103:    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:440:    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:843:    opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:917:    opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:965:    opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:1467:             JOIN _fathomdb_vector_kinds ON _fathomdb_vector_kinds.kind = search_index.kind
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:1475:             JOIN _fathomdb_vector_kinds ON _fathomdb_vector_kinds.kind = search_index.kind
+src/rust/crates/fathomdb-engine/tests/opp12_lifecycle_verbs.rs:15://!     registries (`_fathomdb_projection_state`, `_fathomdb_vector_kinds`) are
+src/rust/crates/fathomdb-engine/tests/opp12_lifecycle_verbs.rs:61:    opened.engine.configure_vector_kind_for_test("doc").expect("configure vector kind");
+src/rust/crates/fathomdb-engine/tests/opp12_lifecycle_verbs.rs:381:    let vector_kinds_before = count(&conn, "SELECT COUNT(*) FROM _fathomdb_vector_kinds");
+src/rust/crates/fathomdb-engine/tests/opp12_lifecycle_verbs.rs:446:        count(&conn, "SELECT COUNT(*) FROM _fathomdb_vector_kinds"),
+src/rust/crates/fathomdb-engine/tests/opp12_lifecycle_verbs.rs:447:        vector_kinds_before,
+src/rust/crates/fathomdb-engine/tests/opp12_lifecycle_verbs.rs:448:        "_fathomdb_vector_kinds is a kind registry, not a purge target"
+src/rust/crates/fathomdb-engine/tests/gen_cross_backend_mean_fixture.rs:135:    engine.configure_vector_kind_for_test("doc").expect("register vector kind");
+src/rust/crates/fathomdb-engine/tests/excise_source.rs:253:    opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/telemetry_capture.rs:46:    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs:108:        opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs:146:        opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs:182:        opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs:214:    opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs:248:        opened.engine.configure_vector_kind_for_test("edge_fact").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/pr9_embed_serialization.rs:94:    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/exp_s_substrate.rs:69:    opened.engine.configure_vector_kind_for_test("doc").expect("configure vector kind");
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs:127:    opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs:179:    opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs:208:    opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs:280:    opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs:312:    opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs:340:    opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs:368:    opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs:403:    opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs:484:    opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs:517:    opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs:554:    opened.engine.configure_vector_kind_for_test("doc").expect("doc vector kind");
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs:555:    opened.engine.configure_vector_kind_for_test("note").expect("note vector kind");
+src/rust/crates/fathomdb-engine/tests/tc33_fix6_edge_vector_prune.rs:122:        opened.engine.configure_vector_kind_for_test("doc").expect("vector kind doc");
+src/rust/crates/fathomdb-engine/tests/tc33_fix6_edge_vector_prune.rs:123:        opened.engine.configure_vector_kind_for_test("edge_fact").expect("vector kind edge_fact");
+src/rust/crates/fathomdb-engine/tests/tc33_fix6_edge_vector_prune.rs:211:        opened.engine.configure_vector_kind_for_test("doc").expect("vector kind doc");
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs:398:        .configure_vector_kind_for_test("edge_fact")
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs:859:/// This test uses a FixedEmbedder + `configure_vector_kind_for_test` + `drain` so
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs:879:        .configure_vector_kind_for_test("edge_fact")
+src/rust/crates/fathomdb-engine/tests/vector_equivalence_probe.rs:222:    opened.engine.configure_vector_kind_for_test("note").expect("register vector kind");
+src/rust/crates/fathomdb-engine/tests/vector_equivalence_probe.rs:244:    opened.engine.configure_vector_kind_for_test("note").expect("register vector kind");
+src/rust/crates/fathomdb-engine/tests/vector_equivalence_probe.rs:258:fn probe_set_persisted_at_first_vector_kind_registration() {
+src/rust/crates/fathomdb-engine/tests/vector_equivalence_probe.rs:263:    opened.engine.configure_vector_kind_for_test("note").expect("register vector kind");
+src/rust/crates/fathomdb-engine/tests/vector_equivalence_probe.rs:581:    opened.engine.configure_vector_kind_for_test("note").expect("register vector kind");
+src/rust/crates/fathomdb-engine/tests/vector_equivalence_probe.rs:628:    engine.configure_vector_kind_for_test("note").expect("register vector kind post-open");
+src/rust/crates/fathomdb-engine/tests/vector_equivalence_probe.rs:770:        // `_fathomdb_embedder_profiles`; the mean_vec column + `_fathomdb_vector_kinds`
+src/rust/crates/fathomdb-engine/tests/vector_equivalence_probe.rs:784:            "INSERT INTO _fathomdb_vector_kinds(kind, profile, created_at) VALUES('note','default',0)",
+src/rust/crates/fathomdb-engine/tests/erasure_projection_registry.rs:163:        opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/erasure_projection_registry.rs:189:        opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/erasure_projection_registry.rs:299:    opened.engine.configure_vector_kind_for_test("edge_fact").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs:211:         JOIN _fathomdb_vector_kinds k ON k.kind = n.kind
+src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs:231:         JOIN _fathomdb_vector_kinds k ON k.kind = n.kind
+src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs:246:         JOIN _fathomdb_vector_kinds k ON k.kind = n.kind
+src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs:277:    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs:361:    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs:480:    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs:522:    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs:566:    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs:606:    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/eu5a1_plumbing.rs:52:    opened.engine.configure_vector_kind_for_test("doc").expect("configure vector kind");
+src/rust/crates/fathomdb-engine/tests/pr9_embed_watchdog.rs:196:    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/pr9_embed_watchdog.rs:246:    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/pr9_embed_watchdog.rs:283:    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/pr9_embed_watchdog.rs:322:    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/pr9_embed_watchdog.rs:352:    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/batch_write_per_row_cursor.rs:64:    opened.engine.configure_vector_kind_for_test("doc").expect("configure vector kind");
+src/rust/crates/fathomdb-engine/tests/vector_contracts.rs:40:    opened.engine.configure_vector_kind_for_test("doc").expect("configure vector kind");
+src/rust/crates/fathomdb-engine/tests/vector_contracts.rs:49:fn ac_030b_vector_write_for_non_vector_kind_is_rejected_at_call_boundary() {
+src/rust/crates/fathomdb-engine/tests/vector_contracts.rs:50:    let (_dir, path) = fixture_path("non_vector_kind");
+src/rust/crates/fathomdb-engine/tests/vector_contracts.rs:66:    opened.engine.configure_vector_kind_for_test("doc").expect("configure vector kind");
+src/rust/crates/fathomdb-engine/tests/vector_contracts.rs:79:    opened.engine.configure_vector_kind_for_test("doc").expect("configure vector kind");
+src/rust/crates/fathomdb-engine/tests/vector_contracts.rs:132:        opened.engine.configure_vector_kind_for_test("doc").unwrap();
+src/rust/crates/fathomdb-engine/tests/erasure_drain_ordering.rs:133:    opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/erasure_drain_ordering.rs:189:    opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/slice15b_search_validity_recall.rs:201:        opened.engine.configure_vector_kind_for_test("doc").expect("vector kind doc");
+src/rust/crates/fathomdb-engine/tests/slice15b_search_validity_recall.rs:251:        opened.engine.configure_vector_kind_for_test("doc").expect("vector kind doc");
+src/rust/crates/fathomdb-engine/tests/slice15b_search_validity_recall.rs:297:        opened.engine.configure_vector_kind_for_test("doc").expect("vector kind doc");
+src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs:830:    engine.configure_vector_kind_for_test("doc").expect("configure vector kind");
+src/rust/crates/fathomdb-engine/tests/ir_c_fusion_experiment.rs:258:    engine.configure_vector_kind_for_test(VECTOR_KIND).expect("configure vector kind");
+src/rust/crates/fathomdb-engine/tests/ir_c_recall_run.rs:232:    engine.configure_vector_kind_for_test(VECTOR_KIND).expect("configure vector kind");
+src/rust/crates/fathomdb-engine/tests/pr_g1_search_hits.rs:105:    opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/pr_g1_search_hits.rs:140:    opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/pr_g10_filtered_knn.rs:99:    opened.engine.configure_vector_kind_for_test("doc").expect("vector kind doc");
+src/rust/crates/fathomdb-engine/tests/pr_g10_filtered_knn.rs:100:    opened.engine.configure_vector_kind_for_test("note").expect("vector kind note");
+src/rust/crates/fathomdb-engine/tests/pr_g10_filtered_knn.rs:156:    opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/corpus_vector.rs:110:        .query_row("SELECT count(*) FROM _fathomdb_vector_kinds WHERE kind = 'doc'", [], |row| {
+src/rust/crates/fathomdb-engine/tests/corpus_vector.rs:114:    assert_eq!(kinds_count, 1, "configure_vector_kind_for_test('doc') did not register the kind",);
+src/rust/crates/fathomdb-engine/tests/ir_c_cdf_run.rs:361:        engine.configure_vector_kind_for_test(VECTOR_KIND).expect("configure vector kind");
+src/rust/crates/fathomdb-engine/tests/pr_g9_rrf_fusion.rs:160:    opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/pr_g9_rrf_fusion.rs:199:    opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/exp_obs_explain.rs:49:    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:130:    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:168:    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+
+exec
+/bin/bash -lc "rg \"ProjectionVector \\{\" src/rust -n" in /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20
+ succeeded in 0ms:
+src/rust/crates/fathomdb-napi/src/lib.rs:628:            vector: self.vector.then(|| RustProjectionVector {
+src/rust/crates/fathomdb-py/src/lib.rs:991:            vector: self.vector.then(|| RustProjectionVector {
+src/rust/crates/fathomdb-engine/src/lib.rs:3948:pub struct ProjectionVector {
+src/rust/crates/fathomdb-engine/src/lib.rs:15999:                Some(ProjectionVector {
+src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs:52:        vector: vector.then_some(ProjectionVector { embedder: None, dense_readiness: None }),
+src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs:380:            vector: Some(ProjectionVector {
+src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs:103:        vector: Some(ProjectionVector { embedder: None, dense_readiness: None }),
+src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs:527:        Some(ProjectionVector { embedder: None, dense_readiness: Some(DenseReadiness::Ready) });
+src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs:544:        Some(ProjectionVector { embedder: None, dense_readiness: Some(DenseReadiness::Embedding) });
+
+exec
+/bin/bash -lc "sed -n '120,180p' src/python/fathomdb/types.py; sed -n '780,860p' src/ts/src/index.ts" in /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20
+ succeeded in 0ms:
+
+    #: Relax ``superseded_at IS NULL`` — include historical versions.
+    include_superseded: bool = False
+    #: Relax ``state = 'active'`` — include non-active lifecycle states.
+    include_inactive: bool = False
+    #: Relax the validity window entirely (ignores ``valid_as_of``).
+    include_out_of_window: bool = False
+    #: Validity instant, INTEGER epoch SECONDS. ``None`` means now.
+    valid_as_of: int | None = None
+
+
+class ProjectionRole:
+    """0.8.20 Slice 15d (R-20-PR) — the three projection roles (set members).
+
+    ``searchable→FTS`` and ``searchable→vector`` are NOT roles: they are tier
+    labels carried by the ``fts`` / ``vector`` sub-objects of a
+    :class:`ProjectionSpec`. Named ``roles``, not ``kind`` (``kind`` is the
+    node/edge type discriminator). Mirrors the Rust ``ProjectionRole`` and the
+    TypeScript ``ProjectionRole``.
+    """
+
+    FILTERABLE = "filterable"
+    RANKABLE = "rankable"
+    SEARCHABLE = "searchable"
+
+
+@dataclass(frozen=True)
+class ProjectionSpec:
+    """0.8.20 Slice 15d (R-20-PR / C-1) — a declarative projection declaration.
+
+    HITL-ratified shape ``{ name, roles: Set<ProjectionRole>, fts?, vector? }``.
+    ``roles`` carries SET semantics (dedup + membership; an attribute can be
+    filterable AND searchable). ``fts`` selects the ``searchable→FTS`` sub-target
+    (with an optional custom tokenizer); ``vector`` selects ``searchable→vector``
+    (with an optional embedder). The ``vector`` sub-object is STORED by Slice 15d;
+    Slice 20 (R-20-DR) hangs the engine-set ``vector_dense_readiness`` off it.
+    """
+
+    name: str
+    roles: frozenset[str]
+    #: ``True`` when the ``searchable→FTS`` sub-target is declared.
+    fts: bool = False
+    #: Optional custom tokenizer; ``None`` = engine default (only with ``fts``).
+    fts_tokenizer: str | None = None
+    #: ``True`` when the ``searchable→vector`` sub-target is declared.
+    vector: bool = False
+    #: Optional embedder override; ``None`` = engine default (only with ``vector``).
+    vector_embedder: str | None = None
+    #: 0.8.20 Slice 20 (R-20-DR) — **READ METADATA, engine-set.** ``"ready"`` or
+    #: ``"embedding"`` when returned by :func:`fathomdb.read.projections` for a
+    #: spec with ``vector=True``; ``None`` on every caller-authored spec.
+    #:
+    #: ``filterable`` / ``searchable→FTS`` are same-transaction (non-stale on
+    #: commit) so they carry no readiness; ``searchable→vector`` is async and
+    #: rebuild-durable, so it does. The value is DERIVED from outstanding
+    #: projection work, never stored — which is what makes
+    #: ``{vector-insert ∧ readiness := ready}`` atomic by construction: a
+    #: ``"ready"`` reading can never be observed with the vector row absent.
+    #:
+    #: ``"pending"`` is NOT a value here: that token is reserved for the
+    #: orthogonal ADMISSION axis (quarantine/trust, an app judgment).
+   * cannot reach at all. Together they make every canonical row erasable from
+   * the SDK alone, with no CLI on `PATH`.
+   *
+   * Idempotent: erasing an absent or already-erased source is a zero-count
+   * success, so an interrupted erasure obligation can be retried without a
+   * pre-check.
+   *
+   * Throws `WriteValidationError` for an empty, whitespace-only or reserved
+   * (`_`-prefixed) `sourceId`. The engine's reserved namespace (`_engine:*`
+   * substrate and the `_legacy:pre-0.8.20` migration cohort) is reachable ONLY
+   * through the CLI recovery seam `fathomdb recover --excise-source`; a single
+   * governed call against it would erase every pre-0.8.20 anonymous row.
+   *
+   * NOT a recovery-denylist name (`recover`/`restore`/`repair`/`fix`/`rebuild`),
+   * so AC-041 is unaffected.
+   */
+  async eraseSource(sourceId: string): Promise<EraseReport> {
+    validateFfiString(sourceId);
+    return intercept(() => this.#native.eraseSource(sourceId));
+  }
+
+  /**
+   * 0.8.20 Slice 15d (R-20-PR / C-1) — the `configureProjections` governed verb.
+   * Declaratively apply projection declarations: the engine is the SOLE
+   * projection authority and diffs `specs` against the durable registry,
+   * backfilling the difference in one transaction. Cheap projections
+   * (`filterable`, `searchable→FTS`) build same-transaction; `rankable` and the
+   * `searchable→vector` sub-target are persisted-but-deferred (F9 / Slice 20).
+   *
+   * `drop` is EXPLICIT: omitting a live projection from `specs` does NOT drop
+   * it; removal requires naming it in `drop`. A destructive change to a live
+   * projection (a role removal or a tokenizer/embedder change) that is NOT in
+   * `drop` throws a typed `FDB_PROJECTION_DESTRUCTIVE` error carrying
+   * `{ name, delta }` — never silent data loss. Re-applying an unchanged spec
+   * returns `{ unchanged: true }`.
+   *
+   * Pair with `read.projections` to inspect current state first.
+   */
+  async configureProjections(
+    specs: ProjectionSpec[],
+    drop?: string[],
+  ): Promise<ProjectionDelta> {
+    // TC-47 (keystone terminal codex P2) — every string in the spec/drop tree
+    // (projection name, each role, ftsTokenizer, vectorEmbedder, each drop entry)
+    // crosses to native. napi-rs silently replaces a lone UTF-16 surrogate with
+    // U+FFFD BEFORE the Rust-side guard runs, so — exactly like `write` — the
+    // surrogate check must happen JS-side or the mangled U+FFFD is persisted
+    // instead of raising WriteValidationError. (A NUL survives the napi UTF-8
+    // path as a real byte and is already caught Rust-side; the surrogate is not.)
+    validateFfiTree(specs);
+    if (drop !== undefined) validateFfiTree(drop);
+    // 0.8.20 keystone closeout fix-4 — normalize an explicit `null` sub-field to
+    // `undefined` (⇒ napi `None`). `read.projections` EMITS `ftsTokenizer: null`
+    // / `vectorEmbedder: null` for a spec with no custom sub-field, but napi-rs
+    // rejects an explicit `null` for an `Option<String>` field with an opaque
+    // `StringExpected` — so feeding read output straight back into
+    // `configureProjections` threw, diverging from pyo3 (which accepts `None`)
+    // and breaking the read→configure round-trip. Mapping `null → undefined`
+    // here makes the two bindings behave identically and keeps the caller's
+    // objects untouched (a shallow copy per spec).
+    // 0.8.20 Slice 20 (R-20-DR) — `vectorDenseReadiness` gets the SAME
+    // null→undefined normalization: `read.projections` emits an explicit `null`
+    // for a spec with no vector sub-object, and napi-rs would reject that for an
+    // `Option<String>` field. Its non-null value is carried through unchanged
+    // (it is inert engine-side, so the read→configure round-trip stays a no-op).
+    const nativeSpecs = specs.map((s) => ({
+      ...s,
+      ftsTokenizer: s.ftsTokenizer ?? undefined,
+      vectorEmbedder: s.vectorEmbedder ?? undefined,
+      vectorDenseReadiness: s.vectorDenseReadiness ?? undefined,
+    }));
+    return intercept(() =>
+      this.#native.configureProjections(nativeSpecs, drop ?? null),
+    );
+  }
+
+  async search(
+    query: string,
+    filter?: SearchFilter | Filter,
+    rerankDepth?: number,
+    useGraphArm?: boolean,
+
+exec
+/bin/bash -lc 'cargo check -q -p fathomdb-engine -p fathomdb-py -p fathomdb-napi' in /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20/src/rust
+ succeeded in 2134ms:
+exec
+/bin/bash -lc "git diff 9db3276588f38ced08d77f44e05830b726a81343 -- src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs | sed -n '1,260p'" in /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20
+ succeeded in 0ms:
+diff --git a/src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs b/src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs
+new file mode 100644
+index 00000000..a98449a4
+--- /dev/null
++++ b/src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs
+@@ -0,0 +1,641 @@
++//! 0.8.20 Slice 20 (R-20-DR) — `dense_readiness` + the ATOMIC READINESS FLIP.
++//!
++//! Acceptance signal (plan §3, verbatim): *"readiness never reports ready with
++//! pending embeds; flip is atomic under concurrent write."* Design of record:
++//! `dev/design/record-lifecycle-protocol/projection-registry-and-async-embed.md`
++//! §3 (the split staleness contract) and §4.1 invariant 1 (the flip).
++//!
++//! Two falsifiable properties, both asserted on RAW TABLES rather than on a
++//! derived status:
++//!
++//! - **P1** — with the projection scheduler frozen and a vector-kind row
++//!   written, `read.projections` reports `dense_readiness = embedding` AND the
++//!   raw `_fathomdb_vector_rows` / `vector_default` rows are absent. Unfreeze,
++//!   drain, and it flips to `ready` WITH the raw vector row present.
++//! - **P2** — under a CONCURRENT writer there is no interleaving in which
++//!   readiness reads `ready` while a vector row is absent. The forbidden torn
++//!   state (`ready` without the vector) is unobservable; the only torn state
++//!   seen is the tolerated one (`embedding` without the vector).
++//!
++//! Why the raw tables and not a status verb: `projection_status` maps
++//! `_ => UpToDate`, so a MISSING terminal row and a healthy one are
++//! indistinguishable there — a status-level assertion would have passed against
++//! the TC-45 bug part (a) of this slice fixed. Every assertion below reads
++//! `_fathomdb_projection_terminal` / `_fathomdb_vector_rows` / `canonical_nodes`
++//! directly.
++//!
++//! **No schema step.** Readiness is DERIVED from the existing pending-projection
++//! -work predicate (the same one `drain`/`wait_for_idle` use), so `SCHEMA_VERSION`
++//! is unchanged at 24 — asserted below. A stored flag is exactly what could tear.
++
++use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
++use fathomdb_engine::{
++    DenseReadiness, Engine, InitialState, PreparedWrite, ProjectionRole, ProjectionSpec,
++    ProjectionVector, SourceId,
++};
++use fathomdb_schema::SQLITE_SUFFIX;
++use std::collections::BTreeSet;
++use std::path::{Path, PathBuf};
++use std::sync::atomic::{AtomicBool, Ordering};
++use std::sync::Arc;
++use std::thread;
++use std::time::{Duration, Instant};
++use tempfile::TempDir;
++
++// ---------------------------------------------------------------------------
++// Helpers
++// ---------------------------------------------------------------------------
++
++/// A deterministic in-process embedder with a tunable per-call delay, so the
++/// window between "row written" and "vector committed" is real and observable.
++#[derive(Clone, Debug)]
++struct DelayEmbedder {
++    identity: EmbedderIdentity,
++    delay: Duration,
++    fail: bool,
++}
++
++impl DelayEmbedder {
++    fn new(delay: Duration) -> Self {
++        Self { identity: EmbedderIdentity::new("deterministic", "rev-a", 384), delay, fail: false }
++    }
++
++    /// Always errors — drives rows to the `failed` projection terminal, which
++    /// records NO vector row. Used by the non-vacuity guard below.
++    fn failing() -> Self {
++        Self { fail: true, ..Self::new(Duration::ZERO) }
++    }
++}
++
++impl Embedder for DelayEmbedder {
++    fn identity(&self) -> EmbedderIdentity {
++        self.identity.clone()
++    }
++
++    fn embed(&self, _text: &str) -> Result<Vector, EmbedderError> {
++        if !self.delay.is_zero() {
++            thread::sleep(self.delay);
++        }
++        if self.fail {
++            return Err(EmbedderError::Failed { message: "deterministic failure".to_string() });
++        }
++        let mut v = vec![0.0_f32; self.identity.dimension as usize];
++        v[0] = 1.0;
++        Ok(v)
++    }
++}
++
++fn db_path(dir: &TempDir, name: &str) -> PathBuf {
++    dir.path().join(format!("{name}{SQLITE_SUFFIX}"))
++}
++
++fn roles(rs: &[ProjectionRole]) -> BTreeSet<ProjectionRole> {
++    rs.iter().copied().collect()
++}
++
++/// A caller-authored `searchable→vector` spec. `dense_readiness` is `None` —
++/// a caller never authors it (it is engine-set read metadata).
++fn vector_spec(name: &str) -> ProjectionSpec {
++    ProjectionSpec {
++        name: name.to_string(),
++        roles: roles(&[ProjectionRole::Searchable]),
++        fts: None,
++        vector: Some(ProjectionVector { embedder: None, dense_readiness: None }),
++    }
++}
++
++fn node(logical_id: &str, body_json: &str) -> PreparedWrite {
++    PreparedWrite::Node {
++        kind: "doc".to_string(),
++        body: body_json.to_string(),
++        source_id: SourceId::new("test:fixture").expect("source id"),
++        logical_id: Some(logical_id.to_string()),
++        state: InitialState::Active,
++        reason: None,
++        valid_from: None,
++        valid_until: None,
++    }
++}
++
++/// An ANONYMOUS (no `logical_id`) vector-kind write.
++///
++/// Why the P2 stream uses this rather than the governed `node` helper: a tight
++/// loop of GOVERNED writes racing the async projection worker intermittently
++/// fails with `EngineError::Storage` — reproduced at the Slice-20 BASELINE
++/// (`9db32765`) in 7 of 8 runs with no Slice-20 code in the build, and never
++/// reproducible with anonymous writes. That is a PRE-EXISTING write-path defect
++/// (the governed supersession path reads before it writes, so its deferred
++/// transaction must upgrade to a writer and takes `SQLITE_BUSY_SNAPSHOT`, which
++/// `busy_timeout` cannot retry); it is recorded for triage and is NOT in
++/// R-20-DR's scope. Readiness is indifferent to `logical_id` — the vector
++/// projection consumes the same rows either way — so the atomicity property is
++/// exercised exactly as well without dragging in an unrelated red.
++fn anon_node(body_json: &str) -> PreparedWrite {
++    PreparedWrite::Node {
++        kind: "doc".to_string(),
++        body: body_json.to_string(),
++        source_id: SourceId::new("test:fixture").expect("source id"),
++        logical_id: None,
++        state: InitialState::Active,
++        reason: None,
++        valid_from: None,
++        valid_until: None,
++    }
++}
++
++/// The readiness the engine reports for projection `name`, via the governed
++/// `read.projections` path.
++fn readiness(engine: &Engine, name: &str) -> Option<DenseReadiness> {
++    engine
++        .read_projections()
++        .expect("read_projections")
++        .into_iter()
++        .find(|s| s.name == name)
++        .and_then(|s| s.vector)
++        .and_then(|v| v.dense_readiness)
++}
++
++/// A raw READ-ONLY connection to the live database file. The engine's exclusive
++/// hold is a lock FILE, not a SQLite lock, so this observes committed WAL state
++/// while the engine is open. `mode=ro` (never `immutable=1`) so WAL frames are
++/// visible.
++fn ro(path: &Path) -> rusqlite::Connection {
++    rusqlite::Connection::open_with_flags(
++        path,
++        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
++    )
++    .expect("open read-only")
++}
++
++/// Raw: does `_fathomdb_vector_rows` carry a row for this write cursor? This is
++/// the vector-at-rest oracle for the flip.
++fn vector_row_exists(conn: &rusqlite::Connection, cursor: i64) -> bool {
++    conn.query_row(
++        "SELECT COUNT(*) FROM _fathomdb_vector_rows WHERE write_cursor = ?1",
++        [cursor],
++        |r| r.get::<_, i64>(0),
++    )
++    .expect("vector row probe")
++        > 0
++}
++
++/// Raw: the `vector_default` (vec0) rowid count for this cursor — the SECOND
++/// at-rest oracle, so the assertion cannot pass off the bookkeeping table alone.
++fn vec0_row_exists(conn: &rusqlite::Connection, cursor: i64) -> bool {
++    conn.query_row("SELECT COUNT(*) FROM vector_default WHERE rowid = ?1", [cursor], |r| {
++        r.get::<_, i64>(0)
++    })
++    .unwrap_or(0)
++        > 0
++}
++
++fn active_cursor(conn: &rusqlite::Connection, logical_id: &str) -> i64 {
++    conn.query_row(
++        "SELECT write_cursor FROM canonical_nodes
++         WHERE logical_id = ?1 AND superseded_at IS NULL",
++        [logical_id],
++        |r| r.get::<_, i64>(0),
++    )
++    .expect("active cursor")
++}
++
++/// §4.1 invariant 1, stated as SQL: the number of vector-kind rows that reached
++/// the `up_to_date` projection terminal but carry NO vector row. Must ALWAYS be
++/// zero — the terminal and the vector INSERT are written in one transaction, so
++/// a non-zero count is a torn `ready`-without-vector.
++fn terminals_missing_vectors(conn: &rusqlite::Connection) -> i64 {
++    conn.query_row(
++        "SELECT COUNT(*)
++         FROM _fathomdb_projection_terminal t
++         JOIN canonical_nodes n ON n.write_cursor = t.write_cursor
++         JOIN _fathomdb_vector_kinds k ON k.kind = n.kind
++         LEFT JOIN _fathomdb_vector_rows v ON v.write_cursor = t.write_cursor
++         WHERE t.state = 'up_to_date' AND v.write_cursor IS NULL",
++        [],
++        |r| r.get::<_, i64>(0),
++    )
++    .expect("torn-terminal probe")
++}
++
++/// The same LEFT JOIN as [`terminals_missing_vectors`] with the
++/// `state = 'up_to_date'` filter DROPPED — i.e. rows at ANY projection terminal
++/// that carry no vector. The non-vacuity control: it must be able to return a
++/// non-zero count (the `failed` terminals do exactly that), proving the join
++/// shape genuinely finds terminal-without-vector rows and that the zero the
++/// atomicity assertion sees is a real zero, not a query that can never match.
++fn any_terminal_missing_vectors(conn: &rusqlite::Connection) -> i64 {
++    conn.query_row(
++        "SELECT COUNT(*)
++         FROM _fathomdb_projection_terminal t
++         JOIN canonical_nodes n ON n.write_cursor = t.write_cursor
++         JOIN _fathomdb_vector_kinds k ON k.kind = n.kind
++         LEFT JOIN _fathomdb_vector_rows v ON v.write_cursor = t.write_cursor
++         WHERE v.write_cursor IS NULL",
++        [],
++        |r| r.get::<_, i64>(0),
++    )
++    .expect("any-terminal probe")
++}
++
++/// The number of vector-kind rows at or below `max_cursor` with NO vector row.
++/// Must be zero whenever readiness reads `ready`.
++fn unembedded_at_or_below(conn: &rusqlite::Connection, max_cursor: i64) -> i64 {
++    conn.query_row(
++        "SELECT COUNT(*)
++         FROM canonical_nodes n
++         JOIN _fathomdb_vector_kinds k ON k.kind = n.kind
++         LEFT JOIN _fathomdb_vector_rows v ON v.write_cursor = n.write_cursor
++         WHERE n.write_cursor <= ?1 AND v.write_cursor IS NULL",
++        [max_cursor],
++        |r| r.get::<_, i64>(0),
++    )
++    .expect("unembedded probe")
++}
++
+
+exec
+/bin/bash -lc "git diff 9db3276588f38ced08d77f44e05830b726a81343 -- src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs | sed -n '260,700p'" in /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20
+ succeeded in 0ms:
++
++fn max_node_cursor(conn: &rusqlite::Connection) -> i64 {
++    conn.query_row("SELECT COALESCE(MAX(write_cursor), 0) FROM canonical_nodes", [], |r| {
++        r.get::<_, i64>(0)
++    })
++    .expect("max cursor")
++}
++
++// ===========================================================================
++// P1 — "readiness never reports ready with pending embeds"
++// ===========================================================================
++
++/// Freeze the scheduler, write a vector-kind row, and readiness must read
++/// `embedding` WHILE the raw vector tables are empty for that cursor. Unfreeze
++/// + drain and it flips to `ready` WITH both raw vector rows present.
++#[test]
++fn readiness_reads_embedding_while_embeds_are_outstanding_then_flips_to_ready() {
++    let dir = TempDir::new().unwrap();
++    let path = db_path(&dir, "readiness_p1");
++    let opened =
++        Engine::open_with_embedder_for_test(&path, Arc::new(DelayEmbedder::new(Duration::ZERO)))
++            .expect("open");
++    let engine = &opened.engine;
++    engine.configure_vector_kind_for_test("doc").expect("vector kind");
++
++    // Declare the projection BEFORE any pending work exists: `configure_projections`
++    // drains first, so declaring it under a frozen scheduler with outstanding
++    // work would (correctly) time out.
++    engine.configure_projections(&[vector_spec("summary")], &[]).expect("configure");
++
++    // Baseline: an empty corpus has nothing outstanding, so it is READY.
++    assert_eq!(
++        readiness(engine, "summary"),
++        Some(DenseReadiness::Ready),
++        "an empty corpus has no outstanding embeds"
++    );
++
++    // Freeze the async projection scheduler, then write a vector-kind row. The
++    // row is committed and FTS-retrievable; its embedding is outstanding.
++    engine.set_projection_scheduler_frozen_for_test(true);
++    engine.write(&[node("N1", r#"{"summary":"a dense meaning"}"#)]).expect("write");
++
++    let conn = ro(&path);
++    let cursor = active_cursor(&conn, "N1");
++
++    // RAW oracle first — the vector genuinely is not there yet.
++    assert!(
++        !vector_row_exists(&conn, cursor),
++        "precondition: the vector row must be absent while the scheduler is frozen"
++    );
++    assert!(!vec0_row_exists(&conn, cursor), "precondition: the vec0 row must be absent too");
++
++    // The acceptance signal: readiness must NOT say ready.
++    assert_eq!(
++        readiness(engine, "summary"),
++        Some(DenseReadiness::Embedding),
++        "readiness must report `embedding` while an embed is outstanding, never `ready`"
++    );
++
++    // Let the worker finish, then the flip.
++    engine.set_projection_scheduler_frozen_for_test(false);
++    engine.drain(30_000).expect("drain");
++
++    assert_eq!(
++        readiness(engine, "summary"),
++        Some(DenseReadiness::Ready),
++        "readiness must flip to `ready` once the embed lands"
++    );
++    let conn = ro(&path);
++    assert!(vector_row_exists(&conn, cursor), "the vector row is at rest once readiness is ready");
++    assert!(vec0_row_exists(&conn, cursor), "the vec0 row is at rest once readiness is ready");
++    assert_eq!(terminals_missing_vectors(&conn), 0, "§4.1: no terminal without its vector");
++
++    opened.engine.close().unwrap();
++}
++
++// ===========================================================================
++// P2 — "flip is atomic under concurrent write"
++// ===========================================================================
++
++/// The forbidden torn state is UNOBSERVABLE. A background writer streams
++/// vector-kind rows while the observer repeatedly samples (a) the raw
++/// high-water cursor, (b) readiness, and (c) the raw vector tables. Two
++/// invariants are checked on every sample:
++///
++///   1. `ready` ⟹ every vector-kind row at or below the cursor sampled BEFORE
++///      the readiness read has its vector row. (Sampling the cursor first is
++///      what makes this sound under concurrency: rows can only be ADDED after
++///      the sample, and vector rows are never removed, so a later re-read can
++///      only be more complete.)
++///   2. Unconditionally: no row carries an `up_to_date` projection terminal
++///      without its vector row — the direct §4.1 invariant-1 statement, valid at
++///      every instant regardless of interleaving.
++///
++/// It also asserts the TOLERATED torn state is genuinely reachable (`embedding`
++/// with vectors outstanding was observed at least once), so a run in which the
++/// worker always won the race cannot pass vacuously.
++#[test]
++fn atomic_flip_never_exposes_ready_without_the_vector_under_concurrent_write() {
++    let dir = TempDir::new().unwrap();
++    let path = db_path(&dir, "readiness_p2");
++    let opened = Engine::open_with_embedder_for_test(
++        &path,
++        Arc::new(DelayEmbedder::new(Duration::from_millis(1))),
++    )
++    .expect("open");
++    let engine = &opened.engine;
++    engine.configure_vector_kind_for_test("doc").expect("vector kind");
++    engine.configure_projections(&[vector_spec("summary")], &[]).expect("configure");
++
++    const WRITES: usize = 300;
++    let writer_done = AtomicBool::new(false);
++    let saw_embedding = AtomicBool::new(false);
++    let saw_ready = AtomicBool::new(false);
++
++    thread::scope(|scope| {
++        scope.spawn(|| {
++            for i in 0..WRITES {
++                engine
++                    .write(&[anon_node(&format!(r#"{{"summary":"meaning {i}"}}"#))])
++                    .expect("concurrent write");
++                // Yield so the projection worker actually interleaves: without
++                // this the writer monopolises the writer lock and the observer
++                // mostly samples a settled corpus, weakening the race.
++                thread::sleep(Duration::from_millis(1));
++            }
++            writer_done.store(true, Ordering::SeqCst);
++        });
++
++        let conn = ro(&path);
++        let deadline = Instant::now() + Duration::from_secs(60);
++        let mut samples = 0_u32;
++        loop {
++            // (a) high-water cursor FIRST, (b) readiness SECOND — see the doc
++            // comment: this ordering is what makes invariant 1 sound.
++            let max_cursor = max_node_cursor(&conn);
++            let observed = readiness(engine, "summary");
++
++            match observed {
++                Some(DenseReadiness::Ready) => {
++                    saw_ready.store(true, Ordering::SeqCst);
++                    assert_eq!(
++                        unembedded_at_or_below(&conn, max_cursor),
++                        0,
++                        "FORBIDDEN TORN STATE: readiness read `ready` while a vector row \
++                         at or below cursor {max_cursor} was absent"
++                    );
++                }
++                Some(DenseReadiness::Embedding) => {
++                    saw_embedding.store(true, Ordering::SeqCst);
++                }
++                None => panic!("a declared vector projection must always carry a readiness"),
++            }
++
++            // Holds at EVERY instant, in either readiness state.
++            assert_eq!(
++                terminals_missing_vectors(&conn),
++                0,
++                "FORBIDDEN TORN STATE: an `up_to_date` terminal exists without its vector row"
++            );
++
++            samples += 1;
++            // Keep sampling until the writer has finished, a healthy number of
++            // samples is in, AND the corpus has settled to `ready` at least once
++            // — otherwise the branch that carries the forbidden-torn-state
++            // assertion could never execute and the test would be vacuous.
++            if writer_done.load(Ordering::SeqCst)
++                && samples > 200
++                && saw_ready.load(Ordering::SeqCst)
++            {
++                break;
++            }
++            assert!(Instant::now() < deadline, "observer timed out");
++            thread::sleep(Duration::from_millis(1));
++        }
++    });
++
++    assert!(
++        saw_embedding.load(Ordering::SeqCst),
++        "non-vacuity: the tolerated torn state (`embedding`) must have been observed at least \
++         once, else the race window never opened"
++    );
++    assert!(
++        saw_ready.load(Ordering::SeqCst),
++        "non-vacuity: `ready` must have been observed at least once, else the branch carrying \
++         the forbidden-torn-state assertion never executed"
++    );
++
++    engine.drain(60_000).expect("drain");
++    assert_eq!(
++        readiness(engine, "summary"),
++        Some(DenseReadiness::Ready),
++        "the corpus settles to ready once every embed lands"
++    );
++    let conn = ro(&path);
++    assert_eq!(unembedded_at_or_below(&conn, max_node_cursor(&conn)), 0);
++    assert_eq!(terminals_missing_vectors(&conn), 0);
++
++    opened.engine.close().unwrap();
++}
++
++/// **Non-vacuity guard for P2's torn-state detector, and the documented failure
++/// boundary.** A terminally-FAILED embed records a `failed` projection terminal
++/// with NO vector row. That gives a real terminal-without-vector row, so:
++///
++///   1. the un-filtered join ([`any_terminal_missing_vectors`]) returns > 0 —
++///      proving the LEFT JOIN shape P2 relies on genuinely FINDS such rows, and
++///      that P2's zeroes are real zeroes rather than a query that can never
++///      match (the Slice-25 vacuous-green lesson);
++///   2. the `state = 'up_to_date'` filtered form still returns 0 — a failed row
++///      is NOT a torn write. §4.1 forbids a torn `ready`-WITHOUT-vector, i.e. an
++///      `up_to_date` terminal with no vector; a `failed` terminal is a terminal
++///      decision that there will never be a vector.
++///
++/// It also pins the documented boundary of the two-member vocabulary: once the
++/// failure is terminal, nothing is outstanding, so readiness returns to `ready`
++/// even though that row has no vector. Reporting `embedding` forever would be a
++/// lie (the row will never embed); the failure stays observable through the
++/// `projection_failures` collection.
++#[test]
++fn a_failed_embed_is_not_a_torn_write_and_the_detector_is_not_vacuous() {
++    let dir = TempDir::new().unwrap();
++    let path = db_path(&dir, "readiness_failed");
++    let opened = Engine::open_with_embedder_for_test(&path, Arc::new(DelayEmbedder::failing()))
++        .expect("open");
++    let engine = &opened.engine;
++    engine.configure_vector_kind_for_test("doc").expect("vector kind");
++    engine.set_projection_retry_delays_for_test(&[0, 0, 0]);
++    engine.configure_projections(&[vector_spec("summary")], &[]).expect("configure");
++
++    engine.write(&[anon_node(r#"{"summary":"will fail projection"}"#)]).expect("write");
++    engine.drain(30_000).expect("drain");
++
++    let conn = ro(&path);
++    assert!(
++        any_terminal_missing_vectors(&conn) > 0,
++        "non-vacuity: the terminal-without-vector detector MUST be able to fire"
++    );
++    assert_eq!(
++        terminals_missing_vectors(&conn),
++        0,
++        "a `failed` terminal is not a torn write — no `up_to_date` terminal lacks its vector"
++    );
++    assert_eq!(
++        readiness(engine, "summary"),
++        Some(DenseReadiness::Ready),
++        "a TERMINALLY-failed embed is not outstanding work; readiness returns to `ready`"
++    );
++
++    opened.engine.close().unwrap();
++}
++
++// ===========================================================================
++// `dense_readiness` is ENGINE-SET read metadata, not caller config
++// ===========================================================================
++
++/// A caller-supplied `dense_readiness` is INERT: the engine stores nothing and
++/// honours nothing, and always reports the DERIVED truth. Asserted the
++/// falsifiable way round — declare `Ready` while an embed is genuinely
++/// outstanding and the engine must still say `Embedding`.
++#[test]
++fn caller_supplied_dense_readiness_is_inert_engine_reports_derived_truth() {
++    let dir = TempDir::new().unwrap();
++    let path = db_path(&dir, "readiness_inert");
++    let opened =
++        Engine::open_with_embedder_for_test(&path, Arc::new(DelayEmbedder::new(Duration::ZERO)))
++            .expect("open");
++    let engine = &opened.engine;
++    engine.configure_vector_kind_for_test("doc").expect("vector kind");
++
++    // Declare with a LIE: `ready` while nothing is embedded yet.
++    let mut lying = vector_spec("summary");
++    lying.vector =
++        Some(ProjectionVector { embedder: None, dense_readiness: Some(DenseReadiness::Ready) });
++    engine.configure_projections(&[lying.clone()], &[]).expect("configure accepts it inertly");
++
++    engine.set_projection_scheduler_frozen_for_test(true);
++    engine.write(&[node("N1", r#"{"summary":"a dense meaning"}"#)]).expect("write");
++
++    assert_eq!(
++        readiness(engine, "summary"),
++        Some(DenseReadiness::Embedding),
++        "the caller's `ready` must NOT be honoured — the engine reports the derived truth"
++    );
++
++    // And the inverse lie is equally inert.
++    engine.set_projection_scheduler_frozen_for_test(false);
++    engine.drain(30_000).expect("drain");
++    let mut lying_other_way = vector_spec("summary");
++    lying_other_way.vector =
++        Some(ProjectionVector { embedder: None, dense_readiness: Some(DenseReadiness::Embedding) });
++    engine.configure_projections(&[lying_other_way], &[]).expect("configure");
++    assert_eq!(
++        readiness(engine, "summary"),
++        Some(DenseReadiness::Ready),
++        "the caller's `embedding` must NOT be honoured either"
++    );
++
++    opened.engine.close().unwrap();
++}
++
++/// Readiness is NOT part of the declaration, so supplying it cannot make an
++/// otherwise-identical re-apply look like a change (it must still diff to a
++/// no-op) and cannot be mistaken for a destructive delta.
++#[test]
++fn readiness_is_not_part_of_the_declaration_reapply_is_a_no_op() {
++    let dir = TempDir::new().unwrap();
++    let path = db_path(&dir, "readiness_noop");
++    let opened =
++        Engine::open_with_embedder_for_test(&path, Arc::new(DelayEmbedder::new(Duration::ZERO)))
++            .expect("open");
++    let engine = &opened.engine;
++    engine.configure_vector_kind_for_test("doc").expect("vector kind");
++    engine.configure_projections(&[vector_spec("summary")], &[]).expect("configure");
++
++    // Feed `read.projections` output STRAIGHT back in — the fix-4 read→configure
++    // round-trip, which now carries the engine-set readiness field.
++    let read_back = engine.read_projections().expect("read_projections");
++    assert_eq!(read_back.len(), 1);
++    assert_eq!(
++        read_back[0].vector.as_ref().and_then(|v| v.dense_readiness),
++        Some(DenseReadiness::Ready),
++        "read output carries the engine-set readiness"
++    );
++    let again = engine.configure_projections(&read_back, &[]).expect("re-apply read output");
++    assert!(again.unchanged, "read.projections output must re-apply as an idempotent no-op");
++
++    opened.engine.close().unwrap();
++}
++
++// ===========================================================================
++// No default-behaviour drift (plan §11 item 2 — `dense_readiness` is OPT-IN)
++// ===========================================================================
++
++/// A caller who never declares a vector projection sees IDENTICAL behaviour:
++/// no readiness field is produced anywhere, the same rows are embedded, and no
++/// schema step was taken (readiness is derived, so `SCHEMA_VERSION` is
++/// unchanged at 24).
++#[test]
++fn default_path_is_unchanged_when_no_vector_projection_is_declared() {
++    assert_eq!(
++        fathomdb_schema::SCHEMA_VERSION,
++        24,
++        "R-20-DR derives readiness and MUST NOT add a schema step"
++    );
++
++    let dir = TempDir::new().unwrap();
++    let path = db_path(&dir, "readiness_default");
++    let opened =
++        Engine::open_with_embedder_for_test(&path, Arc::new(DelayEmbedder::new(Duration::ZERO)))
++            .expect("open");
++    let engine = &opened.engine;
++    engine.configure_vector_kind_for_test("doc").expect("vector kind");
++
++    // No `configure_projections` at all — the pre-slice default path.
++    engine.write(&[node("N1", r#"{"summary":"a dense meaning"}"#)]).expect("write");
++    engine.drain(30_000).expect("drain");
++
++    assert!(engine.read_projections().expect("read_projections").is_empty());
++
++    let conn = ro(&path);
++    let cursor = active_cursor(&conn, "N1");
++    assert!(vector_row_exists(&conn, cursor), "the default embed path still embeds");
++    assert_eq!(terminals_missing_vectors(&conn), 0);
++
++    // A projection declared WITHOUT the vector sub-object carries no readiness
++    // at all — the field is scoped to `searchable→vector` and nothing else.
++    engine
++        .configure_projections(
++            &[ProjectionSpec {
++                name: "status".to_string(),
++                roles: roles(&[ProjectionRole::Filterable]),
++                fts: None,
++                vector: None,
++            }],
++            &[],
++        )
++        .expect("configure filterable");
++    let status = engine
++        .read_projections()
++        .expect("read_projections")
++        .into_iter()
++        .find(|s| s.name == "status")
++        .expect("status projection");
++    assert!(status.vector.is_none(), "a non-vector projection carries no readiness");
++
++    opened.engine.close().unwrap();
++}
+
+exec
+/bin/bash -lc "git diff 9db3276588f38ced08d77f44e05830b726a81343 -- src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs | sed -n '700,980p'" in /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20
+ succeeded in 0ms:
+exec
+/bin/bash -lc "rg \"configure_projections\" -n src/rust/crates/fathomdb-engine/src/lib.rs | head -20; sed -n '8300,8580p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20
+ succeeded in 0ms:
+771:/// `configure_projections` DROP landing in that window let the vec0 `attr_<hex>`
+1089:/// `configure_projections` DROP of a `filterable` attribute on the writer
+3628:    /// 0.8.20 Slice 15d (R-20-PR) — `configure_projections` refused an
+3690:                "configure_projections refused a destructive change to projection '{name}' \
+3849:    /// exists and grafts it on the next idempotent `configure_projections`.
+3954:    /// It is **not part of the declaration**: `configure_projections` neither
+3959:    /// into `configure_projections` (the fix-4 read→configure round-trip, which
+3982:/// 0.8.20 Slice 15d (R-20-PR) — the diff [`Engine::configure_projections`]
+6280:        // vec0 query on a DIFFERENT connection/snapshot — a `configure_projections`
+7998:    pub fn configure_projections(
+10105:/// the SAME WAL snapshot. A concurrent `configure_projections` DROP either commits
+10132:                 declare it via configure_projections before filtering on it"
+10505:    // `configure_projections` DROP in the exact race window. Disarmed (no-op) in
+10514:    // `validate_filter_attributes_on_snapshot`), so a `configure_projections` DROP
+14282:/// write transaction (`configure_projections`) gets the reshape atomically with
+14381:            // (fix-1 finding 2 [P2]). `configure_projections` runs `backfill_attribute`
+16019:/// Establishes the invariant "a name that `configure_projections` ACCEPTS must be
+16038:/// `configure_projections` time (spec names AND the `drop` list).
+16057:/// `configure_projections` diff read.
+16320:/// on commit. A no-op when the registry is empty (the pre-`configure_projections`
+        // (codex §9 [P2]; `erase_source_drains_before_freezing`.)
+        self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS)?;
+        self.projection_runtime.set_frozen(true);
+        let drain_result = self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS);
+        let outcome = drain_result.and_then(|()| self.excise_source_inner(verb, source_id));
+        self.projection_runtime.set_frozen(false);
+        // 0.8.20 Slice 5b (R-20-E5/E6) — finish the erasure AT REST before
+        // reporting success: redact the erased stable ids out of the telemetry
+        // sink, then truncate the `-wal` so the erased bytes are not still
+        // readable on disk. On persistent checkpoint BUSY this returns
+        // `ErasureIncomplete` rather than an `ExciseReport`.
+        let report = outcome?;
+        self.complete_erasure_at_rest(verb)?;
+        Ok(report)
+    }
+
+    /// Doctor `verify-embedder` seam (AC-040a). Compares the
+    /// `_fathomdb_embedder_profiles` row to the operator-supplied
+    /// `name:revision` identity + dimension; never raises on mismatch.
+    #[cfg(feature = "operator")]
+    pub fn verify_embedder(
+        &self,
+        supplied_identity: &str,
+        supplied_dimension: u32,
+    ) -> Result<VerifyEmbedderReport, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        let stored = load_default_profile(connection).map_err(|_| EngineError::Storage)?;
+        let stored_identity = format!("{}:{}", stored.name, stored.revision);
+        let identity_match = stored_identity == supplied_identity;
+        let dimension_match = stored.dimension == supplied_dimension;
+        let status = match (identity_match, dimension_match) {
+            (true, true) => VerifyEmbedderStatus::Match,
+            (false, true) => VerifyEmbedderStatus::IdentityMismatch,
+            (true, false) => VerifyEmbedderStatus::DimensionMismatch,
+            (false, false) => VerifyEmbedderStatus::BothMismatch,
+        };
+        Ok(VerifyEmbedderReport {
+            stored_identity,
+            stored_dimension: stored.dimension,
+            supplied_identity: supplied_identity.to_string(),
+            supplied_dimension,
+            status,
+        })
+    }
+
+    /// Doctor `dump-schema` seam (AC-040a). Returns the
+    /// `PRAGMA user_version` sentinel plus the table + index inventory
+    /// from `sqlite_schema`, excluding `sqlite_*` internal rows.
+    /// Canonical tables appear first per [`CANONICAL_TABLES`].
+    #[cfg(feature = "operator")]
+    pub fn dump_schema(&self) -> Result<DumpSchemaReport, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        let user_version: u32 = connection
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .map_err(|_| EngineError::Storage)?;
+        let tables = read_schema_objects(connection, "table")?;
+        let indexes = read_schema_objects(connection, "index")?;
+        Ok(DumpSchemaReport { user_version, tables: order_canonical_first(tables), indexes })
+    }
+
+    /// Doctor `dump-row-counts` seam (AC-040a). Emits canonical-table
+    /// counts only; projection / FTS / vec0 shadow tables are excluded.
+    #[cfg(feature = "operator")]
+    pub fn dump_row_counts(&self) -> Result<DumpRowCountsReport, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        let mut counts = Vec::with_capacity(CANONICAL_TABLES.len());
+        for name in CANONICAL_TABLES {
+            let rows: u64 = connection
+                .query_row(&format!("SELECT COUNT(*) FROM {name}"), [], |row| row.get(0))
+                .map_err(|_| EngineError::Storage)?;
+            counts.push(TableRowCount { name: (*name).to_string(), rows });
+        }
+        Ok(DumpRowCountsReport { counts })
+    }
+
+    /// 0.8.20 Slice 5d (R-20-E8, design §4 item 11) — doctor
+    /// `orphan-provenance` seam: a **read-only** per-`source_id` census over
+    /// `canonical_nodes` + `canonical_edges`.
+    ///
+    /// Answers the operator question the erasure work made askable: *"for this
+    /// database, is every row actually reachable by some erasure verb?"* A row
+    /// is reachable by `erase_source` / `excise_source` via `source_id`, or —
+    /// **if it is a NODE** — by `purge` via `logical_id`. A row with neither is
+    /// un-erasable, and is counted into
+    /// [`OrphanProvenanceReport::unerasable_rows`].
+    ///
+    /// The node/edge asymmetry is load-bearing and mirrors migration step 21:
+    /// an EDGE's `logical_id` is a supersession identity only and confers no
+    /// purge-addressability, so a NULL-`source_id` edge is un-erasable however
+    /// governed it looks. See the query comment below.
+    ///
+    /// CLI-only (no SDK parity), matching the `dump-*` diagnostic family.
+    ///
+    /// Read-only by construction: this method issues SELECTs exclusively and
+    /// opens no transaction.
+    #[cfg(feature = "operator")]
+    pub fn orphan_provenance(&self) -> Result<OrphanProvenanceReport, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+
+        // One UNION ALL over both canonical tables so a source that spans nodes
+        // AND edges reports as a single bucket.
+        //
+        // TWO DIFFERENT SUMS, and the difference is the whole point:
+        //
+        // * `governed` counts `logical_id` carriers — a reporting figure;
+        // * `purge_addressable` counts rows that `purge` can actually reach,
+        //   and it is NODE-ONLY (the edge arm contributes a literal 0).
+        //
+        // This is the same node/edge asymmetry migration step 21 carries, for
+        // the same reason, and the two must stay in step: `purge_inner`
+        // resolves its target exclusively through `canonical_nodes` (`SELECT
+        // state FROM canonical_nodes WHERE logical_id = ?1`) and then erases
+        // edges by ENDPOINT (`from_id`/`to_id`). It NEVER resolves an edge by
+        // edge `logical_id` — an edge `logical_id` is only a SUPERSESSION
+        // identity and confers no purge-addressability whatsoever.
+        //
+        // Crediting an edge's `logical_id` here made the diagnostic subtract
+        // exactly the rows it exists to find: a NULL-`source_id` edge is
+        // reachable by no erasure verb at all, yet `orphan-provenance` would
+        // exit CLEAN on precisely the legacy/corrupt shape step 21 closes.
+        // False assurance from a governance verb is worse than no verb.
+        // (codex §9 [P2]; `null_source_governed_edge_counts_as_unerasable`.)
+        let mut stmt = connection
+            .prepare(
+                "SELECT source_id,
+                        COUNT(*) AS rows_total,
+                        SUM(CASE WHEN logical_id IS NOT NULL THEN 1 ELSE 0 END) AS governed,
+                        SUM(purge_addressable) AS purge_addressable
+                   FROM (SELECT source_id,
+                                logical_id,
+                                CASE WHEN logical_id IS NOT NULL THEN 1 ELSE 0 END
+                                    AS purge_addressable
+                           FROM canonical_nodes
+                         UNION ALL
+                         SELECT source_id, logical_id, 0 AS purge_addressable
+                           FROM canonical_edges)
+                  GROUP BY source_id
+                  ORDER BY rows_total DESC, source_id",
+            )
+            .map_err(|_| EngineError::Storage)?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                let source_id: Option<String> = row.get(0)?;
+                let rows: i64 = row.get(1)?;
+                let governed: i64 = row.get(2)?;
+                let purge_addressable: i64 = row.get(3)?;
+                Ok((source_id, rows, governed, purge_addressable))
+            })
+            .map_err(|_| EngineError::Storage)?;
+
+        let mut sources = Vec::new();
+        let mut total_rows: u64 = 0;
+        let mut unerasable_rows: u64 = 0;
+        for row in rows {
+            let (source_id, rows, governed, purge_addressable) =
+                row.map_err(|_| EngineError::Storage)?;
+            let rows = u64::try_from(rows).unwrap_or(0);
+            let governed_rows = u64::try_from(governed).unwrap_or(0);
+            let purge_addressable = u64::try_from(purge_addressable).unwrap_or(0);
+            total_rows = total_rows.saturating_add(rows);
+            if source_id.is_none() {
+                // No provenance: only the PURGE-ADDRESSABLE subset (governed
+                // NODES) is reachable. The remainder — including every governed
+                // EDGE, whose `logical_id` reaches nothing — is reachable by no
+                // erasure verb at all.
+                unerasable_rows =
+                    unerasable_rows.saturating_add(rows - purge_addressable.min(rows));
+            }
+            let reserved = source_id.as_deref().is_some_and(|s| s.starts_with('_'));
+            sources.push(OrphanProvenanceSource { source_id, rows, governed_rows, reserved });
+        }
+
+        Ok(OrphanProvenanceReport { sources, total_rows, unerasable_rows })
+    }
+
+    /// Doctor `dump-profile` seam (AC-040a). Returns the stored
+    /// embedder identity + dimension plus the registered vectorized
+    /// kinds from `_fathomdb_vector_kinds`.
+    #[cfg(feature = "operator")]
+    pub fn dump_profile(&self) -> Result<DumpProfileReport, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        let stored = load_default_profile(connection).map_err(|_| EngineError::Storage)?;
+        let mut stmt = connection
+            .prepare("SELECT kind FROM _fathomdb_vector_kinds ORDER BY kind")
+            .map_err(|_| EngineError::Storage)?;
+        let rows =
+            stmt.query_map([], |row| row.get::<_, String>(0)).map_err(|_| EngineError::Storage)?;
+        let mut vectorized_kinds = Vec::new();
+        for row in rows {
+            vectorized_kinds.push(row.map_err(|_| EngineError::Storage)?);
+        }
+        Ok(DumpProfileReport {
+            embedder_identity: format!("{}:{}", stored.name, stored.revision),
+            embedder_dimension: stored.dimension,
+            vectorized_kinds,
+        })
+    }
+
+    /// Recover `--truncate-wal` seam. Runs
+    /// `PRAGMA wal_checkpoint(TRUNCATE)` and returns the three counters
+    /// SQLite reports. `status = Busy` when SQLite signalled a blocked
+    /// checkpoint (`busy != 0`); the WAL may still be partially
+    /// checkpointed in that case.
+    #[cfg(feature = "operator")]
+    pub fn truncate_wal(&self) -> Result<TruncateWalReport, EngineError> {
+        self.ensure_open()?;
+        // The operator verb keeps SQLite's own busy handler: `recover
+        // --truncate-wal` is an explicit, foreground operator act, so waiting out
+        // a transient reader is the helpful behaviour.
+        self.wal_checkpoint_truncate_once(true)
+    }
+
+    /// One `PRAGMA wal_checkpoint(TRUNCATE)` on the writer connection.
+    ///
+    /// NOT operator-gated: the erasure verbs (`purge` is a default-feature verb)
+    /// need it too, and a `#[cfg(feature = "operator")]` helper would break the
+    /// default build. Acquires the connection mutex, so callers must NOT already
+    /// hold it — every erasure verb calls this AFTER its transaction has
+    /// committed and the guard has been dropped.
+    ///
+    /// `honor_busy_timeout = false` suppresses SQLite's busy handler for the
+    /// duration of the checkpoint. rusqlite installs a **5 s** default
+    /// `busy_timeout`, so a blocked checkpoint sits for 5 s before reporting
+    /// `busy` — under the erasure verbs' bounded retry that compounds to a ~25 s
+    /// stall on a verb that is supposed to fail fast. The erasure path therefore
+    /// takes the immediate `busy` answer and runs its OWN short backoff; the
+    /// prior value is restored before returning, on every path.
+    fn wal_checkpoint_truncate_once(
+        &self,
+        honor_busy_timeout: bool,
+    ) -> Result<TruncateWalReport, EngineError> {
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+
+        let restore_timeout_ms: Option<i64> = if honor_busy_timeout {
+            None
+        } else {
+            let previous: i64 = connection
+                .query_row("PRAGMA busy_timeout", [], |row| row.get(0))
+                .map_err(|_| EngineError::Storage)?;
+            connection.busy_timeout(Duration::ZERO).map_err(|_| EngineError::Storage)?;
+            Some(previous)
+        };
+
+        let checkpoint: rusqlite::Result<(i64, i64, i64)> =
+            connection.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            });
+
+        if let Some(previous) = restore_timeout_ms {
+            let previous = u64::try_from(previous.max(0)).unwrap_or(0);
+            connection
+                .busy_timeout(Duration::from_millis(previous))
+                .map_err(|_| EngineError::Storage)?;
+        }
+
+        let (busy, log_frames, checkpointed_frames) =
+            checkpoint.map_err(|_| EngineError::Storage)?;
+        let status = if busy == 0 { TruncateWalStatus::Done } else { TruncateWalStatus::Busy };
+        Ok(TruncateWalReport {
+            status,
+            busy: busy.max(0) as u32,
+            log_frames: log_frames.max(0) as u32,
+            checkpointed_frames: checkpointed_frames.max(0) as u32,
+        })
+    }
+
+    /// 0.8.20 Slice 5b (R-20-E5) — complete an erasure **at rest** after the
+    /// erasing transaction has committed. Two obligations, in order:
+    ///
+
+exec
+/bin/bash -lc "sed -n '7980,8060p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20
+ succeeded in 0ms:
+
+    /// 0.8.20 Slice 15d (R-20-PR / C-1) — the projection registry as a
+    /// DECLARATIVE, IDEMPOTENT apply. The engine is the SOLE projection authority
+    /// (Q3): it diffs the supplied `specs` against the durable registry and
+    /// backfills the difference in ONE transaction. Cheap projections
+    /// (`filterable`, `searchable→FTS`) are built same-transaction; `rankable`
+    /// and the `searchable→vector` sub-target are PERSISTED but deferred (F9 /
+    /// Slice 20) — declaring them never errors (graceful-absent, Q6a).
+    ///
+    /// `drop` is EXPLICIT (C3, `api-surface.md:27`): omission of a live
+    /// projection from `specs` does NOT drop it; removal requires naming it in
+    /// `drop`. An incompatible/destructive change to a live projection that is
+    /// NOT in `drop` is refused with [`EngineError::ProjectionDestructive`], the
+    /// destructive delta surfaced — never silent data loss. Re-applying an
+    /// unchanged spec diffs to a no-op ([`ProjectionDelta::unchanged`]).
+    ///
+    /// Pair with [`Engine::read_projections`] to see current state before
+    /// applying.
+    pub fn configure_projections(
+        &self,
+        specs: &[ProjectionSpec],
+        drop: &[String],
+    ) -> Result<ProjectionDelta, EngineError> {
+        self.ensure_open()?;
+        // Settle in-flight async projection work first (same rationale as
+        // `transition`): the async worker commits on its own connection, so a
+        // backfill issued while it holds the write lock would SQLITE_BUSY.
+        self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS)?;
+
+        let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+        let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
+        let delta = apply_projection_config(&tx, specs, drop)?;
+        tx.commit().map_err(|_| EngineError::Storage)?;
+        self.counters.record_admin();
+        Ok(delta)
+    }
+
+    /// 0.8.20 Slice 15d (R-20-PR) — read the current projection registry (C5
+    /// introspection: `read.projections`). Returns every declared
+    /// [`ProjectionSpec`] sorted by name, so a caller can inspect current state
+    /// (and the destructive delta a change would cause) BEFORE applying. Pure
+    /// read; never mutates.
+    ///
+    /// 0.8.20 Slice 20 (R-20-DR) — this is ALSO the surface that populates the
+    /// engine-set [`ProjectionVector::dense_readiness`] READ METADATA. It is
+    /// derived here, on the way out (see [`derive_dense_readiness`]); the durable
+    /// registry stores no readiness. Only a spec that declares the
+    /// `searchable→vector` sub-object carries one — `filterable` and
+    /// `searchable→FTS` are same-transaction and have no readiness axis.
+    pub fn read_projections(&self) -> Result<Vec<ProjectionSpec>, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        let registry = load_projection_registry(connection).map_err(|_| EngineError::Storage)?;
+        // Derived ONCE per call, so every vector projection in one read reports a
+        // consistent readiness (they are all served by the one vector pipeline).
+        // Skipped entirely when no vector projection is declared, keeping the
+        // no-vector default path free of the extra probe.
+        let mut readiness: Option<DenseReadiness> = None;
+        let mut specs: Vec<ProjectionSpec> =
+            registry.iter().map(|(name, stored)| stored.to_spec(name)).collect();
+        for spec in &mut specs {
+            if let Some(vector) = spec.vector.as_mut() {
+                let value = match readiness {
+                    Some(value) => value,
+                    None => {
+                        let value = derive_dense_readiness(connection)?;
+                        readiness = Some(value);
+                        value
+                    }
+                };
+                vector.dense_readiness = Some(value);
+            }
+        }
+        Ok(specs)
+    }
+
+    /// OPP-12 Phase-1 (0.8.19 Slice 10, R-PG-1/2) — irreversibly hard-erase a
+    /// governed node. A SEPARATE verb from [`Engine::transition`] (NOT on the
+    /// `recovery_denylist`). Precondition: DELETED-FIRST — legal only from
+
+exec
+/bin/bash -lc "sed -n '1,180p' src/ts/src/validation.ts" in /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20
+ succeeded in 0ms:
+// TS-side FFI string guard (AC-068a / AC-068b).
+//
+// napi-rs converts JS strings to Rust `String` via NAPI's UTF-8 path,
+// which silently replaces lone UTF-16 surrogates with U+FFFD; the
+// Rust-side guard never sees them. We catch them in TS BEFORE the
+// native call so the no-row-written invariant holds end-to-end.
+
+import { WriteValidationError } from "./errors.js";
+
+export function validateFfiString(value: string): void {
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code === 0) {
+      throw new WriteValidationError("embedded NUL byte in FFI string");
+    }
+    if (code >= 0xd800 && code <= 0xdbff) {
+      if (i + 1 >= value.length) {
+        throw new WriteValidationError("unpaired UTF-16 high surrogate in FFI string");
+      }
+      const next = value.charCodeAt(i + 1);
+      if (next < 0xdc00 || next > 0xdfff) {
+        throw new WriteValidationError("unpaired UTF-16 high surrogate in FFI string");
+      }
+      i++;
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      throw new WriteValidationError("unpaired UTF-16 low surrogate in FFI string");
+    }
+  }
+}
+
+export function validateFfiTree(value: unknown): void {
+  if (typeof value === "string") {
+    validateFfiString(value);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      validateFfiTree(item);
+    }
+    return;
+  }
+  if (value !== null && typeof value === "object") {
+    for (const v of Object.values(value as Record<string, unknown>)) {
+      validateFfiTree(v);
+    }
+  }
+}
+
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-engine/src/lib.rs | sed -n '12754,12776p'" in /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20
+ succeeded in 0ms:
+ 12754	    // 0.8.12 Slice A (R-CON-2 named default-ON blocker; Slice-20 codex §9
+ 12755	    // [P2]) — also exclude t_invalid-excluded (recency-consolidated) edges,
+ 12756	    // mirroring `next_pending_projection_jobs`'s edge arm. Required: without
+ 12757	    // this mirror, a rebuild-truncated t_invalid edge that
+ 12758	    // `next_pending_projection_jobs` now correctly skips would never gain a
+ 12759	    // `_fathomdb_projection_terminal` row, so this probe would flag it as
+ 12760	    // phantom-pending forever and `drain()`/`wait_for_idle` would hang.
+ 12761	    connection
+ 12762	        .query_row(
+ 12763	            // TC-33: no other parameter here ⇒ the edge `:now` binds at `?1`.
+ 12764	            &format!(
+ 12765	                "SELECT 1
+ 12766	             FROM canonical_edges ce
+ 12767	             LEFT JOIN _fathomdb_projection_terminal pt
+ 12768	               ON pt.write_cursor = ce.write_cursor
+ 12769	             WHERE ce.body IS NOT NULL
+ 12770	               AND ce.superseded_at IS NULL{}
+ 12771	               AND pt.write_cursor IS NULL
+ 12772	             LIMIT 1",
+ 12773	                edge_validity_sql("ce", 1)
+ 12774	            ),
+ 12775	            params![current_epoch_seconds()],
+ 12776	            |_row| Ok(true),
+
+exec
+/bin/bash -lc "sed -n '820,850p' src/rust/crates/fathomdb-py/src/lib.rs; sed -n '450,480p' src/rust/crates/fathomdb-napi/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20
+ succeeded in 0ms:
+struct PyBoundaryCrossing {
+    node: PyNodeRecord,
+    became_valid_at: Option<i64>,
+    became_invalid_at: Option<i64>,
+}
+
+impl PyBoundaryCrossing {
+    fn from_rust(c: &RustBoundaryCrossing) -> Self {
+        Self {
+            node: PyNodeRecord::from_rust(&c.node),
+            became_valid_at: c.became_valid_at,
+            became_invalid_at: c.became_invalid_at,
+        }
+    }
+}
+
+// 0.8.20 Slice 15d (R-20-PR) — the Python face of a `ProjectionSpec`. Flat at
+// the native boundary (the Python `fathomdb.types.ProjectionSpec` dataclass
+// translates the nested `fts?`/`vector?` shape to/from these fields). `fts` /
+// `vector` booleans carry the SUB-OBJECT PRESENCE; the optional tokenizer /
+// embedder carry the value (None = engine default).
+#[pyclass(module = "fathomdb._fathomdb", name = "ProjectionSpec", get_all, from_py_object)]
+#[derive(Clone)]
+struct PyProjectionSpec {
+    name: String,
+    roles: Vec<String>,
+    fts: bool,
+    fts_tokenizer: Option<String>,
+    vector: bool,
+    vector_embedder: Option<String>,
+    /// 0.8.20 Slice 20 (R-20-DR) — READ METADATA, engine-set: `"ready"` /
+    pub projections_invalidated: i64,
+}
+
+impl EraseReport {
+    fn from_rust(r: RustExciseReport) -> Self {
+        Self {
+            source_ref: r.source_ref,
+            nodes_excised: r.nodes_excised as i64,
+            edges_excised: r.edges_excised as i64,
+            projections_invalidated: r.projections_invalidated as i64,
+        }
+    }
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — a declarative projection declaration. Flat at
+/// the FFI boundary; `fts`/`vector` booleans carry the sub-object PRESENCE and
+/// the optional tokenizer/embedder carry the value. JS field names are
+/// camelCase (`ftsTokenizer` / `vectorEmbedder`).
+#[napi(object)]
+pub struct ProjectionSpec {
+    pub name: String,
+    pub roles: Vec<String>,
+    pub fts: bool,
+    pub fts_tokenizer: Option<String>,
+    pub vector: bool,
+    pub vector_embedder: Option<String>,
+    /// 0.8.20 Slice 20 (R-20-DR) — READ METADATA, engine-set (`vectorDenseReadiness`
+    /// in JS): `"ready"` / `"embedding"` on the way OUT of `read.projections`,
+    /// omitted on every caller-authored spec. Inert on the way IN (the engine
+    /// reports the derived truth), so `read.projections` output still re-applies
+    /// as a no-op.
+
+exec
+/bin/bash -lc 'rg "node:sqlite|DatabaseSync" src/ts/tests -n' in /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20
+ succeeded in 0ms:
+src/ts/tests/slice10-read-view.test.ts:30:// direct SQL (`node:sqlite`) on the CLOSED database — exactly as the engine
+src/ts/tests/slice10-read-view.test.ts:39:import { DatabaseSync } from "node:sqlite";
+src/ts/tests/slice10-read-view.test.ts:86:  const db = new DatabaseSync(path);
+src/ts/tests/slice10-read-view.test.ts:99:  const db = new DatabaseSync(path);
+src/ts/tests/slice10-read-view.test.ts:119:  const db = new DatabaseSync(path);
+src/ts/tests/slice10-read-view.test.ts:133:  const db = new DatabaseSync(path);
+src/ts/tests/slice15d-projection-registry.test.ts:9:// `node:sqlite` is used only as a READ oracle on a CLOSED database — the "value
+src/ts/tests/slice15d-projection-registry.test.ts:14:import { DatabaseSync } from "node:sqlite";
+src/ts/tests/slice15d-projection-registry.test.ts:57:  const db = new DatabaseSync(path);
+src/ts/tests/slice15d-projection-registry.test.ts:73:  const db = new DatabaseSync(path);
+src/ts/tests/slice15d-projection-registry.test.ts:86:  const db = new DatabaseSync(path);
+src/ts/tests/slice15b-search-validity.test.ts:15:// `node:sqlite` is used ONLY as a data-at-rest oracle on a CLOSED database: a
+src/ts/tests/slice15b-search-validity.test.ts:34:import { DatabaseSync } from "node:sqlite";
+src/ts/tests/slice15b-search-validity.test.ts:77:  const db = new DatabaseSync(path);
+src/ts/tests/slice15b-search-validity.test.ts:97:  const db = new DatabaseSync(path);
+src/ts/tests/slice20-dense-readiness.test.ts:12:// `node:sqlite` is used only as a READ oracle on a CLOSED database — the
+src/ts/tests/slice20-dense-readiness.test.ts:20:import { DatabaseSync } from "node:sqlite";
+src/ts/tests/slice20-dense-readiness.test.ts:45:  const db = new DatabaseSync(path);
+src/ts/tests/slice20-dense-readiness.test.ts:62:  const db = new DatabaseSync(path);
+src/ts/tests/slice15b-node-validity-write.test.ts:10:// `node:sqlite` IS used, but only as a READ oracle on a CLOSED database: the
+src/ts/tests/slice15b-node-validity-write.test.ts:37:import { DatabaseSync } from "node:sqlite";
+src/ts/tests/slice15b-node-validity-write.test.ts:94:  const db = new DatabaseSync(path);
+src/ts/tests/slice15b-node-validity-write.test.ts:110:  const db = new DatabaseSync(path);
+
+exec
+/bin/bash -lc 'cargo test -q -p fathomdb-engine --test slice20_dense_readiness' in /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20/src/rust
+ succeeded in 1354ms:
+......
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.27s
+
+
+codex
+The new readiness surface can be driven by rows that the projection worker will not process, causing false `embedding` reports in reachable databases. This is a correctness issue in the newly exposed metadata.
+
+Review comment:
+
+- [P2] Mirror the edge scheduler before reporting embedding — /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20/src/rust/crates/fathomdb-engine/src/lib.rs:12765-12771
+  When a database contains any live canonical edge with a body but `edge_fact` is not registered in `_fathomdb_vector_kinds`, this probe returns true even though `next_pending_projection_jobs` will never schedule that edge. Because `read_projections` now uses this predicate for `dense_readiness`, any declared vector projection can report `embedding` forever for non-vectorized edge rows; mirror the scheduler's edge arm here, including the vector-kind predicate.
+The new readiness surface can be driven by rows that the projection worker will not process, causing false `embedding` reports in reachable databases. This is a correctness issue in the newly exposed metadata.
+
+Review comment:
+
+- [P2] Mirror the edge scheduler before reporting embedding — /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20/src/rust/crates/fathomdb-engine/src/lib.rs:12765-12771
+  When a database contains any live canonical edge with a body but `edge_fact` is not registered in `_fathomdb_vector_kinds`, this probe returns true even though `next_pending_projection_jobs` will never schedule that edge. Because `read_projections` now uses this predicate for `dense_readiness`, any declared vector projection can report `embedding` forever for non-vectorized edge rows; mirror the scheduler's edge arm here, including the vector-kind predicate.

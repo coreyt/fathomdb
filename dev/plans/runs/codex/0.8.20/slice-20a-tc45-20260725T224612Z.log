@@ -1,0 +1,1831 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f9b75-23a6-78f2-bf25-099bdca69116
+--------
+user
+changes against 'ff4f07a0d73f7c6f2bdf930149d6564e1e1b2596'
+exec
+/bin/bash -lc "cat MEMORY.md 2>/dev/null; printf '\\n--- feedback files ---\\n'; for f in feedback_*.md; do [ -e \""'$f" ] && echo "### $f" && cat "$f"; done' in /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20
+ exited 1 in 0ms:
+
+--- feedback files ---
+
+exec
+/bin/bash -lc 'git diff --stat ff4f07a0d73f7c6f2bdf930149d6564e1e1b2596 && git diff --name-only ff4f07a0d73f7c6f2bdf930149d6564e1e1b2596' in /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20
+ succeeded in 0ms:
+ src/rust/crates/fathomdb-engine/src/lib.rs         |  21 +-
+ .../tests/tc45_supersession_terminal.rs            | 283 +++++++++++++++++++++
+ 2 files changed, 302 insertions(+), 2 deletions(-)
+src/rust/crates/fathomdb-engine/src/lib.rs
+src/rust/crates/fathomdb-engine/tests/tc45_supersession_terminal.rs
+
+exec
+/bin/bash -lc 'git diff --find-renames --find-copies --unified=80 ff4f07a0d73f7c6f2bdf930149d6564e1e1b2596 -- src/rust/crates/fathomdb-engine/src/lib.rs src/rust/crates/fathomdb-engine/tests/tc45_supersession_terminal.rs' in /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20
+ succeeded in 0ms:
+diff --git a/src/rust/crates/fathomdb-engine/src/lib.rs b/src/rust/crates/fathomdb-engine/src/lib.rs
+index 6e2961d9..2d53ef1d 100644
+--- a/src/rust/crates/fathomdb-engine/src/lib.rs
++++ b/src/rust/crates/fathomdb-engine/src/lib.rs
+@@ -16883,184 +16883,201 @@ fn commit_batch(
+                 // rows are written via internal paths (row_kind is a SEPARATE
+                 // axis from the doc-type `kind`, and there is no public SDK
+                 // surface for it this release). Writing `leaf` explicitly is
+                 // value-identical to the column DEFAULT.
+                 // OPP-12 Phase-1 (0.8.19 Slice 5) — persist the create-time
+                 // existence state + advisory reason. `InitialState::Active`
+                 // (the default) writes `state = 'active'`, value-identical to the
+                 // migration step-20 column DEFAULT; `Pending` quarantines the node
+                 // out of default retrieval (the `state = 'active'` read exclusion).
+                 // 0.8.20 Slice 15b (TC-34) — persist the world-time validity
+                 // window. A `None` binds SQL NULL, which is what the migration
+                 // step-22 columns already hold for every pre-existing row and what
+                 // `ReadView::validity_sql` reads as UNBOUNDED on that side. So a
+                 // write that omits the window is byte-identical on disk to a
+                 // pre-slice write, and default-view visibility cannot drift.
+                 tx.execute(
+                     "INSERT INTO canonical_nodes(write_cursor, kind, body, source_id, logical_id, row_kind, state, reason, valid_from, valid_until)
+                      VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                     params![cursor, kind, body, source_id.as_str(), logical_id, RowKind::Leaf.as_str(), state.as_str(), reason, valid_from, valid_until],
+                 )?;
+                 // EXP-S (D2/D5) — per-row_kind index-target dispatch. For `leaf`
+                 // this is behavior-identical to the pre-EXP-S inline path: FTS
+                 // (sync, in-tx) + vector (async, gated by kind_is_vector_indexed);
+                 // else the cursor is terminated up-front.
+                 // fix-2 [P2]: gate the attribute projection on the create-time
+                 // state. A fresh insert is always non-superseded, so the backfill
+                 // predicate (`state = 'active' AND superseded_at IS NULL`) reduces
+                 // to `state == Active` here. A `Pending` node is quarantined out of
+                 // the canonical read model — its declared attributes must NOT reach
+                 // the property store until a `transition(pending → active)` promotes
+                 // it (which projects them then). Node-FTS / vector shadows are left
+                 // to their read-side lifecycle filter, exactly as for supersession.
+                 project_canonical_node_row(
+                     &tx,
+                     cursor,
+                     kind,
+                     body,
+                     RowKind::Leaf,
+                     ProjectionPass::Write,
+                     matches!(state, InitialState::Active),
+                 )?;
+             }
+             (
+                 PreparedWrite::Edge {
+                     kind,
+                     from,
+                     to,
+                     source_id,
+                     logical_id,
+                     body,
+                     t_valid,
+                     t_invalid,
+                     confidence,
+                     extractor_model_id,
+                     temporal_fallback,
+                 },
+                 WritePlan::Edge,
+             ) => {
+                 // G0 — identical tombstone-then-insert supersession on edges,
+                 // keyed by logical_id ALONE (Decision 5, HITL-SIGNED 2026-06-05;
+                 // edge `kind` is relationship-type, not identity — a kind-change
+                 // re-ingest of the same edge logical_id SUPERSEDES, never forks).
+                 // No-op when logical_id is None.
+                 if let Some(logical_id) = logical_id {
+                     // fix-30 [P2]: collect prior active cursors BEFORE tombstoning
+                     // so stale vector_default rows can be pruned.
+                     let prior_g0 = prior_edge_cursors_by_logical_id(&tx, logical_id)?;
+                     tx.execute(
+                         "UPDATE canonical_edges SET superseded_at = ?1
+                          WHERE logical_id = ?2 AND superseded_at IS NULL",
+                         params![cursor, logical_id],
+                     )?;
+                     for sc in &prior_g0 {
+                         tx.execute("DELETE FROM vector_default WHERE rowid = ?1", [sc])?;
+                         tx.execute(
+                             "DELETE FROM _fathomdb_vector_rows WHERE write_cursor = ?1",
+                             [sc],
+                         )?;
+                         // fix-32 [P2]: record terminal so advance_projection_cursor
+                         // can walk past this now-superseded cursor.
+-                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
++                        // TC-45: the token MUST be 'up_to_date', NOT 'superseded'.
++                        // The terminal table (schema step 7) carries
++                        // CHECK(state IN ('failed','up_to_date')) and the writer is
++                        // INSERT OR IGNORE, which SILENTLY SKIPS a CHECK-violating
++                        // row — so 'superseded' was dropped without error and this
++                        // cursor stalled forever (nothing backfills it: the job
++                        // query and the pending-work probe both exclude superseded
++                        // edges). 'up_to_date' is the CHECK-valid, non-'failed'
++                        // terminal and is semantically exact here: the row is
++                        // tombstoned and its vector shadow just deleted, so there is
++                        // no further projection work for this cursor. Same reasoning
++                        // and same token as the step-23 backfill (fix-4, TC-33).
++                        record_projection_terminal(&tx, *sc as u64, "up_to_date")?;
+                     }
+                 }
+                 // G11 — invalidate-not-accumulate: for fact-edges (body IS NOT NULL),
+                 // tombstone any prior active edge on the same (from_id, to_id, kind)
+                 // BEFORE inserting the new row. This is DIFFERENT from the G0
+                 // logical_id tombstone: it is keyed on the triple, not the identity.
+                 // Regular edges (body=None) skip this path — they retain G0 semantics.
+                 if body.is_some() {
+                     // fix-30 [P2]: collect and prune vector shadow for the superseded edge.
+                     let prior_g11 = prior_edge_cursors_by_triple(&tx, from, to, kind)?;
+                     tx.execute(
+                         "UPDATE canonical_edges SET superseded_at = ?1
+                          WHERE from_id = ?2 AND to_id = ?3 AND kind = ?4 AND superseded_at IS NULL",
+                         params![cursor, from, to, kind],
+                     )?;
+                     for sc in &prior_g11 {
+                         tx.execute("DELETE FROM vector_default WHERE rowid = ?1", [sc])?;
+                         tx.execute(
+                             "DELETE FROM _fathomdb_vector_rows WHERE write_cursor = ?1",
+                             [sc],
+                         )?;
+                         // fix-32 [P2]: mark terminal so projection cursor can advance.
+-                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
++                        // TC-45: 'up_to_date', NOT 'superseded' — see the identical
++                        // note on the G0 prune loop above. The step-7 CHECK admits
++                        // only ('failed','up_to_date') and INSERT OR IGNORE swallows
++                        // a violating row, so 'superseded' never landed and wedged
++                        // the shared readiness watermark.
++                        record_projection_terminal(&tx, *sc as u64, "up_to_date")?;
+                     }
+                 }
+                 let temporal_fallback_i: Option<i64> =
+                     temporal_fallback.and_then(|f| if f { Some(1) } else { None });
+                 tx.execute(
+                     "INSERT INTO canonical_edges(
+                          write_cursor, kind, from_id, to_id, source_id, logical_id,
+                          body, t_valid, t_invalid, confidence, extractor_model_id,
+                          temporal_fallback
+                      ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                     params![
+                         cursor,
+                         kind,
+                         from,
+                         to,
+                         source_id.as_str(),
+                         logical_id,
+                         body,
+                         t_valid,
+                         t_invalid,
+                         confidence,
+                         extractor_model_id,
+                         temporal_fallback_i
+                     ],
+                 )?;
+                 // 0.8.20 Slice 5a (R-20-E1, work item 1) — edge projection is no
+                 // longer inlined here: the write path and the rebuild replay
+                 // share ONE projector, so they cannot drift.
+                 project_canonical_edge_row(
+                     &tx,
+                     cursor,
+                     kind,
+                     body.as_deref(),
+                     ProjectionPass::Write,
+                 )?;
+             }
+             (
+                 PreparedWrite::AdminSchema { name, kind, schema_json, retention_json },
+                 WritePlan::AdminSchema,
+             ) => {
+                 tx.execute(
+                     "INSERT INTO operational_collections(
+                         name, kind, schema_json, retention_json, format_version, created_at
+                      ) VALUES(?1, ?2, ?3, ?4, 1, 0)
+                      ON CONFLICT(name) DO UPDATE SET
+                         schema_json = excluded.schema_json,
+                         retention_json = excluded.retention_json",
+                     params![name, kind, schema_json, retention_json],
+                 )?;
+                 record_projection_terminal(&tx, cursor, "up_to_date")?;
+             }
+             (
+                 PreparedWrite::OpStore { collection, record_key, schema_id, body },
+                 WritePlan::AppendOnlyLog,
+             ) => {
+                 tx.execute(
+                     "INSERT INTO operational_mutations(
+                         collection_name, record_key, op_kind, payload_json, schema_id, write_cursor
+                      ) VALUES(?1, ?2, 'append', ?3, ?4, ?5)",
+                     params![collection, record_key, body, schema_id, cursor],
+                 )?;
+                 record_projection_terminal(&tx, cursor, "up_to_date")?;
+             }
+             (
+                 PreparedWrite::OpStore { collection, record_key, schema_id, body },
+                 WritePlan::LatestState,
+             ) => {
+                 tx.execute(
+                     "INSERT INTO operational_state(
+                         collection_name, record_key, payload_json, schema_id, write_cursor
+                      ) VALUES(?1, ?2, ?3, ?4, ?5)
+                      ON CONFLICT(collection_name, record_key) DO UPDATE SET
+                         payload_json = excluded.payload_json,
+                         schema_id = excluded.schema_id,
+                         write_cursor = excluded.write_cursor",
+                     params![collection, record_key, body, schema_id, cursor],
+                 )?;
+                 record_projection_terminal(&tx, cursor, "up_to_date")?;
+             }
+             _ => return Err(rusqlite::Error::InvalidQuery),
+diff --git a/src/rust/crates/fathomdb-engine/tests/tc45_supersession_terminal.rs b/src/rust/crates/fathomdb-engine/tests/tc45_supersession_terminal.rs
+new file mode 100644
+index 00000000..9acb45ce
+--- /dev/null
++++ b/src/rust/crates/fathomdb-engine/tests/tc45_supersession_terminal.rs
+@@ -0,0 +1,283 @@
++//! TC-45 (plan-0.8.20 §11 item 7, HITL-RULED 2026-07-24) — a superseded edge
++//! cursor MUST receive a `_fathomdb_projection_terminal` row so the shared
++//! projection cursor can walk past it.
++//!
++//! **The defect.** `commit_batch`'s two supersession prune loops (the G0
++//! `logical_id` path and the G11 `(from, to, kind)` triple path) called
++//! `record_projection_terminal(.., "superseded")`. The terminal table's CHECK
++//! (schema step 7) is `CHECK(state IN ('failed', 'up_to_date'))` and the writer
++//! is `INSERT OR IGNORE`; under SQLite `OR IGNORE` SKIPS a CHECK-violating row
++//! and returns NO error, so the terminal was SILENTLY DROPPED.
++//!
++//! **Why that is a permanent stall, not a transient gap.** Nothing else will
++//! ever record that terminal:
++//!
++//! - `next_pending_projection_jobs`'s edge arm carries `AND
++//!   canonical_edges.superseded_at IS NULL` (fix-31), so the embed scheduler
++//!   never picks the superseded cursor up as work; and
++//! - `database_has_pending_projection_work` carries the same exclusion, so
++//!   `drain()` reports IDLE while the hole is still open.
++//!
++//! `advance_projection_cursor` walks `cursor + 1` forward ONLY while
++//! `terminal_state_for_cursor(next)` is `Some(..)`, so it wedges at the hole
++//! forever. `write_cursor` is a SINGLE global sequence shared by nodes AND
++//! edges, so one superseded edge freezes the readiness watermark for every
++//! LATER write too.
++//!
++//! **Test-design contract.** Both witnesses assert on RAW TABLE CONTENTS
++//! (`SELECT ... FROM _fathomdb_projection_terminal WHERE write_cursor = ?`),
++//! never on a derived status. `projection_status` maps every non-`'failed'`
++//! terminal — and a MISSING terminal — through to `UpToDate`, so a
++//! status-level assertion passes on the BROKEN code (vacuous green).
++//!
++//! **Fixture shape (load-bearing).** Both edges of a pair are written in ONE
++//! batch. For edges `project_canonical_edge_row` sets `enqueue_vector =
++//! body.is_some()`, so a BODY-BEARING edge gets NO write-time terminal — the
++//! embed worker is supposed to record it after projection. Writing the pair in
++//! one batch supersedes the first edge inside the same transaction, before any
++//! worker can embed it, which is exactly the window the defect lives in. The
++//! surviving edge is then embedded by `drain()` and DOES gain its terminal, so
++//! the cursor-advance assertion isolates the hole at the superseded cursor.
++//!
++//! The sibling schema-side test
++//! `fathomdb-schema/tests/tc33_fix4_projection_cursor_stall.rs` asserts the
++//! CHECK's own behaviour (that `'superseded'` is rejected and `OR IGNORE`
++//! swallows it). That remains true and is the direct evidence for this defect;
++//! the fix here is code-side (pass the CHECK-valid token), with NO migration
++//! and NO `SCHEMA_VERSION` bump.
++
++use std::sync::Arc;
++
++use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
++use fathomdb_engine::{Engine, PreparedWrite};
++use fathomdb_schema::SQLITE_SUFFIX;
++use rusqlite::Connection;
++use tempfile::TempDir;
++
++// ---------------------------------------------------------------------------
++// Helpers
++// ---------------------------------------------------------------------------
++
++#[derive(Clone, Debug)]
++struct DeterministicEmbedder {
++    identity: EmbedderIdentity,
++    vector: Vector,
++}
++
++impl DeterministicEmbedder {
++    fn new(dim: u32) -> Self {
++        let mut vector = vec![0.0_f32; dim as usize];
++        vector[0] = 1.0;
++        Self { identity: EmbedderIdentity::new("tc45-test", "rev-a", dim), vector }
++    }
++}
++
++impl Embedder for DeterministicEmbedder {
++    fn identity(&self) -> EmbedderIdentity {
++        self.identity.clone()
++    }
++
++    fn embed(&self, _text: &str) -> Result<Vector, EmbedderError> {
++        Ok(self.vector.clone())
++    }
++}
++
++fn db_path(dir: &TempDir, name: &str) -> std::path::PathBuf {
++    dir.path().join(format!("{name}{SQLITE_SUFFIX}"))
++}
++
++/// A body-bearing ("fact") edge. `body: Some(..)` is load-bearing: it is what
++/// defers the readiness terminal to the async embed worker, which is the window
++/// the supersession prune must close itself.
++fn fact_edge(
++    kind: &str,
++    from: &str,
++    to: &str,
++    logical_id: Option<&str>,
++    body: &str,
++) -> PreparedWrite {
++    PreparedWrite::Edge {
++        kind: kind.to_string(),
++        from: from.to_string(),
++        to: to.to_string(),
++        source_id: fathomdb_engine::SourceId::new("tc45:fixture").expect("source id"),
++        logical_id: logical_id.map(str::to_string),
++        body: Some(body.to_string()),
++        t_valid: None,
++        t_invalid: None,
++        confidence: None,
++        extractor_model_id: None,
++        temporal_fallback: None,
++    }
++}
++
++/// Raw terminal rows for one cursor: the `state` token at rest, if any.
++fn terminal_state(conn: &Connection, cursor: u64) -> Option<String> {
++    conn.query_row(
++        "SELECT state FROM _fathomdb_projection_terminal WHERE write_cursor = ?1",
++        [cursor],
++        |r| r.get::<_, String>(0),
++    )
++    .ok()
++}
++
++fn terminal_count(conn: &Connection, cursor: u64) -> u64 {
++    conn.query_row(
++        "SELECT COUNT(*) FROM _fathomdb_projection_terminal WHERE write_cursor = ?1",
++        [cursor],
++        |r| r.get(0),
++    )
++    .expect("count terminal rows")
++}
++
++/// The durable projection cursor (`_fathomdb_open_state.projection_cursor`),
++/// i.e. the readiness watermark `advance_projection_cursor` maintains. Absent
++/// key means 0, matching `load_projection_cursor`.
++fn projection_cursor(conn: &Connection) -> u64 {
++    conn.query_row(
++        "SELECT value FROM _fathomdb_open_state WHERE key = 'projection_cursor'",
++        [],
++        |r| r.get::<_, String>(0),
++    )
++    .map(|v| v.parse::<u64>().unwrap_or(0))
++    .unwrap_or(0)
++}
++
++/// Drive one supersession pair through the engine and hand back
++/// `(superseded_cursor, survivor_cursor, path_to_db)`.
++fn run_pair(
++    dir: &TempDir,
++    name: &str,
++    first: PreparedWrite,
++    second: PreparedWrite,
++) -> (u64, u64, std::path::PathBuf) {
++    let path = db_path(dir, name);
++    let embedder = Arc::new(DeterministicEmbedder::new(8));
++    let opened = Engine::open_with_embedder_for_test(&path, embedder).expect("open");
++
++    // ONE batch: the second write supersedes the first INSIDE the same
++    // transaction, before the embed worker can terminal the first cursor.
++    let receipt = opened.engine.write(&[first, second]).expect("write supersession pair");
++    assert_eq!(receipt.row_cursors.len(), 2, "expected one cursor per edge");
++    let superseded = receipt.row_cursors[0];
++    let survivor = receipt.row_cursors[1];
++
++    opened.engine.drain(10_000).expect("drain embed work");
++    opened.engine.close().expect("close");
++
++    (superseded, survivor, path)
++}
++
++/// Shared assertions for both supersession paths.
++fn assert_terminal_and_advance(
++    path: &std::path::Path,
++    superseded: u64,
++    survivor: u64,
++    label: &str,
++) {
++    let conn = Connection::open(path).expect("open sqlite");
++
++    // Guard against a vacuous fixture: the first edge must really have been
++    // superseded, and the survivor must really still be active.
++    let superseded_at: Option<i64> = conn
++        .query_row(
++            "SELECT superseded_at FROM canonical_edges WHERE write_cursor = ?1",
++            [superseded],
++            |r| r.get(0),
++        )
++        .expect("read superseded edge");
++    assert!(
++        superseded_at.is_some(),
++        "{label}: fixture is vacuous — cursor {superseded} was never superseded"
++    );
++    let survivor_active: Option<i64> = conn
++        .query_row(
++            "SELECT superseded_at FROM canonical_edges WHERE write_cursor = ?1",
++            [survivor],
++            |r| r.get(0),
++        )
++        .expect("read survivor edge");
++    assert!(
++        survivor_active.is_none(),
++        "{label}: fixture is vacuous — survivor cursor {survivor} is itself superseded"
++    );
++    // The survivor's terminal proves the embed worker ran, so a missing
++    // terminal on `superseded` is the supersession hole and not a dead worker.
++    assert_eq!(
++        terminal_count(&conn, survivor),
++        1,
++        "{label}: fixture is vacuous — the surviving edge never gained a terminal, \
++         so the embed worker did not run"
++    );
++
++    // (i) RAW-TABLE witness: the superseded cursor has a terminal row at rest.
++    assert_eq!(
++        terminal_count(&conn, superseded),
++        1,
++        "{label}: TC-45 — no _fathomdb_projection_terminal row for superseded cursor \
++         {superseded}; the CHECK-violating 'superseded' token was swallowed by \
++         INSERT OR IGNORE, and no scheduler will ever backfill it (the job query \
++         excludes superseded edges)"
++    );
++    assert_eq!(
++        terminal_state(&conn, superseded).as_deref(),
++        Some("up_to_date"),
++        "{label}: TC-45 — the recorded token must be the CHECK-valid 'up_to_date' \
++         (schema step 7 allows only 'failed' / 'up_to_date'); a superseded cursor \
++         needs no further projection work, which is what 'up_to_date' means"
++    );
++
++    // (ii) The readiness watermark walked PAST the superseded cursor instead of
++    // wedging on it.
++    let cursor = projection_cursor(&conn);
++    assert!(
++        cursor >= survivor,
++        "{label}: TC-45 — projection cursor STALLED at {cursor}; it must advance to \
++         at least {survivor} (past superseded cursor {superseded}). \
++         advance_projection_cursor walks cursor+1 only while a terminal exists, so \
++         the missing terminal wedges the shared node+edge readiness watermark forever"
++    );
++}
++
++// ---------------------------------------------------------------------------
++// G0 path — supersession keyed by `logical_id` alone
++// (`prior_edge_cursors_by_logical_id`).
++// ---------------------------------------------------------------------------
++
++/// Two body-bearing edges sharing a `logical_id` but with DIFFERENT
++/// `(from, to, kind)` triples, so ONLY the G0 prune loop fires and this witness
++/// isolates that call site.
++#[test]
++fn tc45_g0_superseded_edge_cursor_gets_terminal_and_cursor_advances() {
++    let dir = TempDir::new().unwrap();
++    let (superseded, survivor, path) = run_pair(
++        &dir,
++        "tc45_g0",
++        fact_edge("rel", "a", "b", Some("E1"), "Alice knows Bob"),
++        // Same logical_id, different `to` ⇒ the triple differs ⇒ G11 finds
++        // nothing and G0 alone supersedes the first cursor.
++        fact_edge("rel", "a", "c", Some("E1"), "Alice knows Carol"),
++    );
++    assert_terminal_and_advance(&path, superseded, survivor, "G0/logical_id");
++}
++
++// ---------------------------------------------------------------------------
++// G11 path — invalidate-not-accumulate keyed by the `(from, to, kind)` triple
++// (`prior_edge_cursors_by_triple`).
++// ---------------------------------------------------------------------------
++
++/// Two body-bearing edges sharing `(from, to, kind)` and carrying NO
++/// `logical_id`, so the G0 prune loop is skipped entirely (`if let Some(..)`)
++/// and ONLY the G11 call site can record the terminal.
++#[test]
++fn tc45_g11_superseded_edge_cursor_gets_terminal_and_cursor_advances() {
++    let dir = TempDir::new().unwrap();
++    let (superseded, survivor, path) = run_pair(
++        &dir,
++        "tc45_g11",
++        fact_edge("rel", "a", "b", None, "Alice knows Bob"),
++        // Identical triple, no logical_id ⇒ G0 skipped, G11 supersedes.
++        fact_edge("rel", "a", "b", None, "Alice no longer knows Bob"),
++    );
++    assert_terminal_and_advance(&path, superseded, survivor, "G11/triple");
++}
+
+exec
+/bin/bash -lc "grep -R \"fn record_projection_terminal\\|CREATE TABLE _fathomdb_projection_terminal\\|projection_terminal\" -n src/rust/crates/fathomdb-* | head -80 && grep -R \"record_projection_terminal(&tx, .*superseded\" -n ." in /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20
+exec
+/bin/bash -lc "sed -n '13060,13125p' src/rust/crates/fathomdb-engine/src/lib.rs; sed -n '12540,12680p' src/rust/crates/fathomdb-engine/src/lib.rs; sed -n '16480,16620p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20
+ succeeded in 0ms:
+            |row| row.get::<_, String>(0),
+        )
+        .map(|value| value.parse::<u64>().unwrap_or(0))
+        .or_else(|err| match err {
+            rusqlite::Error::QueryReturnedNoRows => Ok(0),
+            _ => Err(err),
+        })
+}
+
+fn store_projection_cursor(connection: &Connection, cursor: u64) -> rusqlite::Result<()> {
+    connection.execute(
+        "INSERT INTO _fathomdb_open_state(key, value) VALUES(?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![PROJECTION_CURSOR_KEY, cursor.to_string()],
+    )?;
+    Ok(())
+}
+
+fn record_projection_terminal(
+    connection: &Connection,
+    cursor: u64,
+    state: &str,
+) -> rusqlite::Result<()> {
+    connection.execute(
+        "INSERT OR IGNORE INTO _fathomdb_projection_terminal(write_cursor, state) VALUES(?1, ?2)",
+        params![cursor, state],
+    )?;
+    Ok(())
+}
+
+fn terminal_state_for_cursor(
+    connection: &Connection,
+    cursor: u64,
+) -> rusqlite::Result<Option<String>> {
+    connection
+        .query_row(
+            "SELECT state FROM _fathomdb_projection_terminal WHERE write_cursor = ?1",
+            [cursor],
+            |row| row.get::<_, String>(0),
+        )
+        .map(Some)
+        .or_else(|err| match err {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            _ => Err(err),
+        })
+}
+
+fn advance_projection_cursor(connection: &Connection) -> rusqlite::Result<u64> {
+    let mut cursor = load_projection_cursor(connection)?;
+    loop {
+        let next = cursor.saturating_add(1);
+        if terminal_state_for_cursor(connection, next)?.is_some() {
+            cursor = next;
+        } else {
+            break;
+        }
+    }
+    store_projection_cursor(connection, cursor)?;
+    Ok(cursor)
+}
+
+fn commit_projection_outcomes(
+    connection: &mut Connection,
+    outcomes: &[ProjectionOutcome],
+    shared: &ProjectionRuntimeShared,
+) -> rusqlite::Result<()> {
+        // where the writer connection is in-hand and the read of
+        // `_fathomdb_embedder_profiles.mean_vec` is in the same tx as
+        // the INSERT. NoopEmbedder (EU-5a2's only live identity) is not
+        // MC-required, so `bin_blob == blob` throughout EU-5a2.
+        let bin_blob = blob.clone();
+        return ProjectionOutcome::Success {
+            cursor: job.cursor,
+            kind: job.kind.clone(),
+            blob,
+            bin_blob,
+        };
+    }
+
+    ProjectionOutcome::Failure { cursor: job.cursor, failure_code: last_code }
+}
+
+fn next_pending_projection_jobs(
+    connection: &Connection,
+    in_flight: &BTreeSet<u64>,
+    max_jobs: usize,
+) -> rusqlite::Result<Vec<ProjectionJob>> {
+    if max_jobs == 0 {
+        return Ok(Vec::new());
+    }
+    let cursor = load_projection_cursor(connection)?;
+    // Over-fetch by `in_flight.len()` so the post-filter still returns
+    // up to `max_jobs` after skipping cursors already in-flight.
+    let sql_limit = max_jobs.saturating_add(in_flight.len()).min(256);
+    // G11 (Slice 15) — UNION extends the projection queue to include edge bodies.
+    // Edge bodies use kind `'edge_fact'` so `resolve_source_type` maps them to
+    // `source_type = 'edge_fact'` in `vector_default` (partition correctness).
+    // The UNION is ordered by write_cursor so projection proceeds in
+    // insertion order across nodes and edges.
+    let sql = format!(
+        "SELECT write_cursor, kind, body FROM (
+             SELECT canonical_nodes.write_cursor, canonical_nodes.kind, canonical_nodes.body
+             FROM canonical_nodes
+             JOIN _fathomdb_vector_kinds
+               ON _fathomdb_vector_kinds.kind = canonical_nodes.kind
+             LEFT JOIN _fathomdb_projection_terminal
+               ON _fathomdb_projection_terminal.write_cursor = canonical_nodes.write_cursor
+             WHERE canonical_nodes.write_cursor > ?1
+               AND _fathomdb_projection_terminal.write_cursor IS NULL
+
+             UNION ALL
+
+             SELECT canonical_edges.write_cursor, 'edge_fact', canonical_edges.body
+             FROM canonical_edges
+             JOIN _fathomdb_vector_kinds
+               ON _fathomdb_vector_kinds.kind = 'edge_fact'
+             LEFT JOIN _fathomdb_projection_terminal
+               ON _fathomdb_projection_terminal.write_cursor = canonical_edges.write_cursor
+             WHERE canonical_edges.write_cursor > ?1
+               AND canonical_edges.body IS NOT NULL
+               AND canonical_edges.superseded_at IS NULL{edge_valid}
+               AND _fathomdb_projection_terminal.write_cursor IS NULL
+         ) ORDER BY write_cursor
+         LIMIT {sql_limit}",
+        // TC-33: `?1` is the projection cursor ⇒ the edge `:now` binds at `?2`.
+        edge_valid = edge_validity_sql("canonical_edges", 2)
+    );
+    let mut statement = connection.prepare_cached(&sql)?;
+    let rows = statement.query_map(params![cursor, current_epoch_seconds()], |row| {
+        Ok(ProjectionJob { cursor: row.get(0)?, kind: row.get(1)?, body: row.get(2)? })
+    })?;
+    let mut jobs = Vec::with_capacity(max_jobs);
+    for row in rows {
+        let job = row?;
+        if in_flight.contains(&job.cursor) {
+            continue;
+        }
+        jobs.push(job);
+        if jobs.len() >= max_jobs {
+            break;
+        }
+    }
+    Ok(jobs)
+}
+
+fn database_has_pending_projection_work(path: &Path) -> rusqlite::Result<bool> {
+    let connection = open_runtime_connection(path)?;
+    let cursor = load_projection_cursor(&connection)?;
+    // Check canonical_nodes for un-projected work.
+    let has_node_work: bool = connection
+        .query_row(
+            "SELECT 1
+             FROM canonical_nodes
+             JOIN _fathomdb_vector_kinds ON _fathomdb_vector_kinds.kind = canonical_nodes.kind
+             LEFT JOIN _fathomdb_projection_terminal
+               ON _fathomdb_projection_terminal.write_cursor = canonical_nodes.write_cursor
+             WHERE canonical_nodes.write_cursor > ?1
+               AND _fathomdb_projection_terminal.write_cursor IS NULL
+             LIMIT 1",
+            [cursor],
+            |_row| Ok(true),
+        )
+        .or_else(|err| match err {
+            rusqlite::Error::QueryReturnedNoRows => Ok(false),
+            _ => Err(err),
+        })?;
+    if has_node_work {
+        return Ok(true);
+    }
+    // G11 (Slice 15) fix-1 [P2] — also check canonical_edges for edge bodies
+    // that were not projected before the engine closed. Without this check,
+    // drain() returns idle while edge vectors remain unembedded on reopen.
+    // fix-31 [P2]: exclude superseded edges from the pending check so the
+    // scheduler does not pick up stale tombstoned rows as projection work.
+    // 0.8.12 Slice A (R-CON-2 named default-ON blocker; Slice-20 codex §9
+    // [P2]) — also exclude t_invalid-excluded (recency-consolidated) edges,
+    // mirroring `next_pending_projection_jobs`'s edge arm. Required: without
+    // this mirror, a rebuild-truncated t_invalid edge that
+    // `next_pending_projection_jobs` now correctly skips would never gain a
+    // `_fathomdb_projection_terminal` row, so this probe would flag it as
+    // phantom-pending forever and `drain()`/`wait_for_idle` would hang.
+    connection
+        .query_row(
+            // TC-33: no other parameter here ⇒ the edge `:now` binds at `?1`.
+            &format!(
+                "SELECT 1
+             FROM canonical_edges ce
+             LEFT JOIN _fathomdb_projection_terminal pt
+               ON pt.write_cursor = ce.write_cursor
+             WHERE ce.body IS NOT NULL
+               AND ce.superseded_at IS NULL{}
+               AND pt.write_cursor IS NULL
+             LIMIT 1",
+                edge_validity_sql("ce", 1)
+            ),
+            params![current_epoch_seconds()],
+            |_row| Ok(true),
+        )
+        .or_else(|err| match err {
+            rusqlite::Error::QueryReturnedNoRows => Ok(false),
+            _ => Err(err),
+        })
+}
+
+struct CanonicalNodeRow {
+    cursor: u64,
+    kind: String,
+        // non-JSON bodies index an empty status. NOTE (codex fix-1 finding 2):
+        // this is F5's OWN `$.status`-derived field for the BM25F `status`
+        // column — it is NOT (yet) the value the shipped G10 SearchFilter reads.
+        // G10 filtering reads the vec0 `status` column, which is still hardwired
+        // to the empty-string sentinel; wiring G10 onto this field is out of
+        // scope for F5. Determinism (R-SUB-2) is preserved: the derivation is
+        // a pure function of `body`, evaluated in-SQL identically on every run.
+        tx.execute(
+            "INSERT INTO search_index_v2(kind, body, status, write_cursor)
+             VALUES(
+                 ?1,
+                 ?2,
+                 CASE WHEN json_valid(?2)
+                      THEN COALESCE(json_extract(?2, '$.status'), '')
+                      ELSE '' END,
+                 ?3
+             )",
+            params![kind, body, cursor],
+        )?;
+    }
+    // 0.8.20 Slice 15d (R-20-EAV) — same-transaction attribute projection. Only
+    // the full `Write` pass re-derives attributes (see `writes_attributes`): the
+    // FtsOnly tokenizer reproject predates step 24 and must not touch the
+    // registry/attribute tables; VectorOnly rebuilds only vector shadows. A full
+    // operator FTS rebuild uses `Write`, so it re-derives attributes after the
+    // truncate.
+    //
+    // fix-2 [P2]: gated on `node_active`. The at-rest attribute projection tracks
+    // EXACTLY the backfill's row set — `state = 'active' AND superseded_at IS NULL`
+    // (see `backfill_attribute`). Unlike node-FTS / vector shadows (whose stale
+    // versions are excluded by the canonical read path's `superseded_at IS NULL`
+    // / `state = 'active'` join), the property tables carry NO read-side lifecycle
+    // filter (`property_search_index` is an FTS5 table that cannot), so a pending
+    // or superseded node's attribute values would otherwise LEAK into a
+    // same-session property filter / property-FTS. The write path passes
+    // `state == Active`; a projector-replay rebuild passes `active ∧ non-superseded`
+    // per row. Lifecycle transitions maintain the store directly (see
+    // `Engine::transition`). Passes where `writes_attributes()` is false ignore the
+    // flag entirely.
+    if pass.writes_attributes() && node_active {
+        project_node_attributes(tx, cursor as i64, body)?;
+    }
+    let enqueue_vector = targets.vector && kind_is_vector_indexed(tx, kind).unwrap_or(false);
+    if pass.writes_vector_state() {
+        if enqueue_vector {
+            tx.execute(
+                "INSERT INTO _fathomdb_projection_state(kind, last_enqueued_cursor, updated_at)
+                 VALUES(?1, ?2, 0)
+                 ON CONFLICT(kind) DO UPDATE SET last_enqueued_cursor = excluded.last_enqueued_cursor",
+                params![kind, cursor],
+            )?;
+        } else {
+            // Never-vector-projected rows terminate the cursor up-front so
+            // `advance_projection_cursor` can advance the readiness watermark.
+            record_projection_terminal(tx, cursor, "up_to_date")?;
+        }
+    }
+    Ok(enqueue_vector)
+}
+
+/// 0.8.20 Slice 5a (R-20-E1, work item 1) — the EDGE half of the total
+/// projector, extracted verbatim from the inlined `commit_batch` edge arm.
+///
+/// Before this extraction there was NO edge projector function: `commit_batch`
+/// inlined the edge FTS insert + the edge vector enqueue, and
+/// `rebuild_shadow_state` re-implemented a SUBSET of it (edge FTS only, and only
+/// for body-carrying edges), so a projector-replay rebuild silently dropped the
+/// rest — notably the `up_to_date` readiness terminal that the write path
+/// records for a body-less structural edge. With both sites now calling this one
+/// function, the write path and the rebuild path produce identical edge
+/// projections by construction.
+///
+/// Mirrors [`project_canonical_node_row`]'s split (ADR-0.8.14 §D5(b)): FTS in
+/// THIS transaction; vector work only ENQUEUED, embedded later by the worker
+/// pool. Edge bodies enqueue under the fixed kind `"edge_fact"` so
+/// `resolve_source_type` maps them to `source_type = "edge_fact"` in
+/// `vector_default` (partition correctness); that kind is auto-registered in
+/// `_fathomdb_vector_kinds` (idempotent).
+///
+/// Returns `true` iff async vector work was enqueued.
+fn project_canonical_edge_row(
+    tx: &Connection,
+    cursor: u64,
+    kind: &str,
+    body: Option<&str>,
+    pass: ProjectionPass,
+) -> rusqlite::Result<bool> {
+    // G11 — edge FTS projection into `search_index_edges` (separate table from
+    // node-body `search_index` — Option B partition). Body-less structural
+    // edges carry no lexical content and project no FTS row.
+    if pass.writes_fts() {
+        if let Some(edge_body) = body {
+            tx.execute(
+                "INSERT INTO search_index_edges(body, kind, write_cursor)
+                 VALUES(?1, ?2, ?3)",
+                params![edge_body, kind, cursor],
+            )?;
+        }
+    }
+    let enqueue_vector = body.is_some();
+    if pass.writes_vector_state() {
+        if enqueue_vector {
+            let now_unix =
+                SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
+            tx.execute(
+                "INSERT OR IGNORE INTO _fathomdb_vector_kinds(kind, profile, created_at)
+                 VALUES('edge_fact', 'default', ?1)",
+                params![now_unix],
+            )?;
+            tx.execute(
+                "INSERT INTO _fathomdb_projection_state(
+                     kind, last_enqueued_cursor, updated_at
+                 ) VALUES('edge_fact', ?1, 0)
+                 ON CONFLICT(kind) DO UPDATE
+                     SET last_enqueued_cursor = excluded.last_enqueued_cursor",
+                params![cursor],
+            )?;
+            // Do NOT call record_projection_terminal — let the scheduler embed
+            // the body and mark it terminal after projection.
+        } else {
+            record_projection_terminal(tx, cursor, "up_to_date")?;
+        }
+    }
+    Ok(enqueue_vector)
+}
+
+/// F5 (0.8.14 Slice 10, fix-1) — tokenizer for the in-engine BM25F scorer.
+///
+/// Tokenizes `text` through the SAME FTS5 tokenizer that `search_index_v2` uses
+/// for candidate recall (`porter unicode61 remove_diacritics 2`), so the scorer
+/// measures term-frequency, document-frequency, field length, and average field
+/// length under the index's own tokenization — porter stemming + unicode61
+/// case-fold + diacritic folding. The previous implementation hand-rolled a
+/// second lowercase-alnum splitter; a stemmed/diacritic variant recalled by
+/// `MATCH` (e.g. query `run` vs indexed `running`, or `cafe` vs `café`) was then
+/// scored as if the term were absent, so ranking was wrong for exactly those
+/// variants (codex §9 fix-1 finding 1). Reusing FTS5 itself makes scoring
+/// tokenization-faithful without re-implementing porter/unicode61 in Rust.
+///
+/// Mechanism: round-trip `text` through a temp single-column FTS5 table with the
+/// identical tokenizer, then read the emitted token instances back via the
+
+ succeeded in 16144ms:
+./dev/plans/plan-0.8.20.md:708:   `record_projection_terminal(&tx, *sc as u64, "superseded")` for exactly those two —
+./dev/plans/runs/codex/0.8.20/keystone-terminal6-20260723T013559Z.log:6482:16986-                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/keystone-terminal3-20260722T233037Z.log:7534:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/keystone-terminal3-20260722T233037Z.log:7557:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/keystone-terminal3-20260722T233037Z.log:7835:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/keystone-terminal3-20260722T233037Z.log:8446:14437:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/keystone-terminal3-20260722T233037Z.log:8452:14460:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-15b-fix-3-rereview-20260720T213603Z.log:4680:                         record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-15b-fix-3-rereview-20260720T213603Z.log:4703:                         record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal3-20260721T075024Z.log:4055:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal3-20260721T075024Z.log:4078:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal3-20260721T075024Z.log:4139:14867:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal3-20260721T075024Z.log:4140:14890:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal3-20260721T075024Z.log:4157:14867:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal3-20260721T075024Z.log:4161:14890:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal5-20260721T090057Z.log:5971:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal5-20260721T090057Z.log:5994:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal5-20260721T090057Z.log:6044:src/rust/crates/fathomdb-engine/src/lib.rs:15128:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal5-20260721T090057Z.log:6045:src/rust/crates/fathomdb-engine/src/lib.rs:15151:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal5-20260721T090057Z.log:6242:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal5-20260721T090057Z.log:6265:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal5-20260721T090057Z.log:6266:14437:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal5-20260721T090057Z.log:6267:14460:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/keystone-terminal4-20260723T000440Z.log:4816:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/keystone-terminal4-20260723T000440Z.log:4839:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/keystone-terminal4-20260723T000440Z.log:4995:src/rust/crates/fathomdb-engine/src/lib.rs:16831:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/keystone-terminal4-20260723T000440Z.log:4996:src/rust/crates/fathomdb-engine/src/lib.rs:16854:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/keystone-terminal4-20260723T000440Z.log:5070:14437:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/keystone-terminal4-20260723T000440Z.log:5078:14460:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal2-20260721T071720Z.log:2450:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal2-20260721T071720Z.log:2473:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal2-20260721T071720Z.log:6209:14867-                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal2-20260721T071720Z.log:6232:14890-                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal2-20260721T071720Z.log:7181:src/rust/crates/fathomdb-engine/src/lib.rs:14867:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal2-20260721T071720Z.log:7182:src/rust/crates/fathomdb-engine/src/lib.rs:14890:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal2-20260721T071720Z.log:7190:14437:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal2-20260721T071720Z.log:7196:14460:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/keystone-terminal-20260722T221247Z.log:7063:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/keystone-terminal-20260722T221247Z.log:7192:6a82c16e2 (Corey Thompson 2026-06-13 09:34:58 -0500 16659)                         record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-15d-20260721T091324Z.log:3505:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-15d-20260721T091324Z.log:3528:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-15c-20260721T061113Z.log:8338:14758-                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/keystone-terminal2-20260722T224346Z.log:7779:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/keystone-terminal2-20260722T224346Z.log:7802:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal4-20260721T082814Z.log:6635:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal4-20260721T082814Z.log:6658:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal4-20260721T082814Z.log:7298:14437:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal4-20260721T082814Z.log:7299:14460:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:7952: 13542	                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:7975: 13565	                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-15e-rereview-20260722T003359Z.log:5120:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:3828:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:3851:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-15c-tc33-rereview-20260721T061439Z.log:2150:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/codex/0.8.20/slice-15c-tc33-rereview-20260721T061439Z.log:2173:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/0.8.14-slice-10-fix1-review-20260704T011100Z.log:3370:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/0.8.14-slice-10-fix1-review-20260704T011100Z.log:3393:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/0.8.14-slice-5-review-20260704T001710Z.log:1884:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/0.8.14-slice-5-review-20260704T001710Z.log:1907:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/0.8.14-slice-5-review-20260704T001710Z.log:2380:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/0.8.14-slice-5-review-20260704T001710Z.log:2403:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/0.8.14-slice-10-review-20260704T005156Z.log:3672:                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/0.8.16-slice-5-codex-review-rerun2-20260708T130139Z.log:3564:10829-                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+./dev/plans/runs/0.8.16-slice-5-codex-review-rerun2-20260708T130139Z.log:3587:10852-                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+
+exec
+/bin/bash -lc 'grep -n "fn prior_edge_cursors" -A80 src/rust/crates/fathomdb-engine/src/lib.rs; git diff ff4f07a0d73f7c6f2bdf930149d6564e1e1b2596 -- src/rust/crates/fathomdb-engine/Cargo.toml src/rust/crates/fathomdb-engine/tests | cat' in /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20
+ succeeded in 0ms:
+15481:fn prior_edge_cursors_by_logical_id(
+15482-    tx: &rusqlite::Transaction<'_>,
+15483-    logical_id: &str,
+15484-) -> rusqlite::Result<Vec<i64>> {
+15485-    let mut s = tx.prepare_cached(
+15486-        "SELECT write_cursor FROM canonical_edges \
+15487-         WHERE logical_id = ?1 AND superseded_at IS NULL",
+15488-    )?;
+15489-    let rows = s.query_map(params![logical_id], |r| r.get(0))?;
+15490-    rows.collect()
+15491-}
+15492-
+15493-/// 0.8.20 Slice 15d fix-1 finding 2 [P2] — the active (non-superseded) NODE
+15494-/// cursors for a `logical_id`, collected BEFORE the tombstone-then-insert
+15495-/// supersession UPDATE so the caller can purge the about-to-be-superseded row's
+15496-/// row-owned attribute projections. Mirrors [`prior_edge_cursors_by_logical_id`].
+15497-/// The partial-unique-active index means this is at most one cursor; a `Vec`
+15498-/// keeps it robust and symmetric with the edge path.
+15499-fn prior_node_cursors_by_logical_id(
+15500-    tx: &rusqlite::Transaction<'_>,
+15501-    logical_id: &str,
+15502-) -> rusqlite::Result<Vec<i64>> {
+15503-    let mut s = tx.prepare_cached(
+15504-        "SELECT write_cursor FROM canonical_nodes \
+15505-         WHERE logical_id = ?1 AND superseded_at IS NULL",
+15506-    )?;
+15507-    let rows = s.query_map(params![logical_id], |r| r.get(0))?;
+15508-    rows.collect()
+15509-}
+15510-
+15511:fn prior_edge_cursors_by_triple(
+15512-    tx: &rusqlite::Transaction<'_>,
+15513-    from: &str,
+15514-    to: &str,
+15515-    kind: &str,
+15516-) -> rusqlite::Result<Vec<i64>> {
+15517-    let mut s = tx.prepare_cached(
+15518-        "SELECT write_cursor FROM canonical_edges \
+15519-         WHERE from_id = ?1 AND to_id = ?2 AND kind = ?3 AND superseded_at IS NULL",
+15520-    )?;
+15521-    let rows = s.query_map(params![from, to, kind], |r| r.get(0))?;
+15522-    rows.collect()
+15523-}
+15524-
+15525-/// EXP-S (0.8.14 Slice 5, D2) — the set of coexisting indexes a `row_kind`
+15526-/// projects into. `fts` = the FTS index (`search_index`), written SYNCHRONOUSLY
+15527-/// in the write transaction; `vector` = the vec0 vector index, written
+15528-/// ASYNCHRONOUSLY by the projection worker pool (and additionally gated per
+15529-/// doc-type `kind` by [`kind_is_vector_indexed`]).
+15530-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+15531-struct IndexTargetSet {
+15532-    fts: bool,
+15533-    vector: bool,
+15534-}
+15535-
+15536-/// 0.8.20 Slice 5a (R-20-E1) — the class a row-owned projection table belongs
+15537-/// to, so the four maintenance sites can each truncate exactly the subset they
+15538-/// own without re-deriving a hand-rolled table list.
+15539-///
+15540-/// - `NodeFts` — same-txn lexical projection of a canonical NODE body.
+15541-/// - `EdgeFts` — same-txn lexical projection of a canonical EDGE body.
+15542-/// - `Vector` — the async vec0 materialization (written by the embed worker,
+15543-///   not by the write path — see [`project_canonical_node_row`]).
+15544-/// - `Readiness` — the terminal-cursor bookkeeping that lets
+15545-///   `advance_projection_cursor` walk past a row.
+15546-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+15547-enum ProjectionClass {
+15548-    NodeFts,
+15549-    EdgeFts,
+15550-    Vector,
+15551-    Readiness,
+15552-    /// 0.8.20 Slice 15d (R-20-EAV) — the EAV attribute store (`filterable` +
+15553-    /// the value-at-rest for `searchable`). Same-transaction, row-owned.
+15554-    Attribute,
+15555-    /// 0.8.20 Slice 15d (R-20-EAV) — the property-FTS5 shadow of attribute
+15556-    /// values (`searchable→FTS`). Same-transaction, row-owned.
+15557-    PropertyFts,
+15558-}
+15559-
+15560-/// 0.8.20 Slice 5a (R-20-E1) — one ROW-OWNED projection table: a shadow whose
+15561-/// rows are 1:1 with a canonical row's `write_cursor` and therefore MUST die
+15562-/// with that row.
+15563-#[derive(Clone, Copy, Debug)]
+15564-struct RowOwnedProjection {
+15565-    /// Table name. `'static` and never caller-derived: safe to interpolate.
+15566-    table: &'static str,
+15567-    /// The column carrying the owning canonical row's `write_cursor`. For the
+15568-    /// vec0 table this is `rowid` — vec0 rowid IS the write_cursor (see the
+15569-    /// `_fathomdb_vector_rows.write_cursor UNIQUE` identity).
+15570-    cursor_column: &'static str,
+15571-    class: ProjectionClass,
+15572-}
+15573-
+15574-/// 0.8.20 Slice 5a (R-20-E1) — **the** registry of row-owned projections.
+15575-///
+15576-/// Every table here is 1:1 with a canonical `write_cursor` and is erased by
+15577-/// [`erase_row_projections`] whenever that canonical row is erased. Adding a
+15578-/// projection table WITHOUT registering it here re-opens the defect this slice
+15579-/// closes (`search_index_v2` was written by one site and deleted by one site,
+15580-/// out of five that maintain projections — so `excise_source` left the erased
+15581-/// body on disk in a content-storing FTS5 table). The `guard_row_owned_registry`
+15582-/// unit test introspects `sqlite_master` and fails if a `write_cursor`-keyed
+15583-/// table is missing from this list.
+15584-///
+15585-/// **NOT here, deliberately (design v5 §1.1): `_fathomdb_projection_state`.**
+15586-/// That table is KIND-owned — keyed by `kind`, holding a per-kind enqueue
+15587-/// watermark. Erasing one row must NOT rewind a whole kind's watermark, so it
+15588-/// must never be deleted per-cursor. A rebuild resets it deliberately; erasure
+15589-/// leaves it alone.
+15590-const ROW_OWNED_PROJECTIONS: &[RowOwnedProjection] = &[
+15591-    RowOwnedProjection {
+diff --git a/src/rust/crates/fathomdb-engine/tests/tc45_supersession_terminal.rs b/src/rust/crates/fathomdb-engine/tests/tc45_supersession_terminal.rs
+new file mode 100644
+index 00000000..9acb45ce
+--- /dev/null
++++ b/src/rust/crates/fathomdb-engine/tests/tc45_supersession_terminal.rs
+@@ -0,0 +1,283 @@
++//! TC-45 (plan-0.8.20 §11 item 7, HITL-RULED 2026-07-24) — a superseded edge
++//! cursor MUST receive a `_fathomdb_projection_terminal` row so the shared
++//! projection cursor can walk past it.
++//!
++//! **The defect.** `commit_batch`'s two supersession prune loops (the G0
++//! `logical_id` path and the G11 `(from, to, kind)` triple path) called
++//! `record_projection_terminal(.., "superseded")`. The terminal table's CHECK
++//! (schema step 7) is `CHECK(state IN ('failed', 'up_to_date'))` and the writer
++//! is `INSERT OR IGNORE`; under SQLite `OR IGNORE` SKIPS a CHECK-violating row
++//! and returns NO error, so the terminal was SILENTLY DROPPED.
++//!
++//! **Why that is a permanent stall, not a transient gap.** Nothing else will
++//! ever record that terminal:
++//!
++//! - `next_pending_projection_jobs`'s edge arm carries `AND
++//!   canonical_edges.superseded_at IS NULL` (fix-31), so the embed scheduler
++//!   never picks the superseded cursor up as work; and
++//! - `database_has_pending_projection_work` carries the same exclusion, so
++//!   `drain()` reports IDLE while the hole is still open.
++//!
++//! `advance_projection_cursor` walks `cursor + 1` forward ONLY while
++//! `terminal_state_for_cursor(next)` is `Some(..)`, so it wedges at the hole
++//! forever. `write_cursor` is a SINGLE global sequence shared by nodes AND
++//! edges, so one superseded edge freezes the readiness watermark for every
++//! LATER write too.
++//!
++//! **Test-design contract.** Both witnesses assert on RAW TABLE CONTENTS
++//! (`SELECT ... FROM _fathomdb_projection_terminal WHERE write_cursor = ?`),
++//! never on a derived status. `projection_status` maps every non-`'failed'`
++//! terminal — and a MISSING terminal — through to `UpToDate`, so a
++//! status-level assertion passes on the BROKEN code (vacuous green).
++//!
++//! **Fixture shape (load-bearing).** Both edges of a pair are written in ONE
++//! batch. For edges `project_canonical_edge_row` sets `enqueue_vector =
++//! body.is_some()`, so a BODY-BEARING edge gets NO write-time terminal — the
++//! embed worker is supposed to record it after projection. Writing the pair in
++//! one batch supersedes the first edge inside the same transaction, before any
++//! worker can embed it, which is exactly the window the defect lives in. The
++//! surviving edge is then embedded by `drain()` and DOES gain its terminal, so
++//! the cursor-advance assertion isolates the hole at the superseded cursor.
++//!
++//! The sibling schema-side test
++//! `fathomdb-schema/tests/tc33_fix4_projection_cursor_stall.rs` asserts the
++//! CHECK's own behaviour (that `'superseded'` is rejected and `OR IGNORE`
++//! swallows it). That remains true and is the direct evidence for this defect;
++//! the fix here is code-side (pass the CHECK-valid token), with NO migration
++//! and NO `SCHEMA_VERSION` bump.
++
++use std::sync::Arc;
++
++use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
++use fathomdb_engine::{Engine, PreparedWrite};
++use fathomdb_schema::SQLITE_SUFFIX;
++use rusqlite::Connection;
++use tempfile::TempDir;
++
++// ---------------------------------------------------------------------------
++// Helpers
++// ---------------------------------------------------------------------------
++
++#[derive(Clone, Debug)]
++struct DeterministicEmbedder {
++    identity: EmbedderIdentity,
++    vector: Vector,
++}
++
++impl DeterministicEmbedder {
++    fn new(dim: u32) -> Self {
++        let mut vector = vec![0.0_f32; dim as usize];
++        vector[0] = 1.0;
++        Self { identity: EmbedderIdentity::new("tc45-test", "rev-a", dim), vector }
++    }
++}
++
++impl Embedder for DeterministicEmbedder {
++    fn identity(&self) -> EmbedderIdentity {
++        self.identity.clone()
++    }
++
++    fn embed(&self, _text: &str) -> Result<Vector, EmbedderError> {
++        Ok(self.vector.clone())
++    }
++}
++
++fn db_path(dir: &TempDir, name: &str) -> std::path::PathBuf {
++    dir.path().join(format!("{name}{SQLITE_SUFFIX}"))
++}
++
++/// A body-bearing ("fact") edge. `body: Some(..)` is load-bearing: it is what
++/// defers the readiness terminal to the async embed worker, which is the window
++/// the supersession prune must close itself.
++fn fact_edge(
++    kind: &str,
++    from: &str,
++    to: &str,
++    logical_id: Option<&str>,
++    body: &str,
++) -> PreparedWrite {
++    PreparedWrite::Edge {
++        kind: kind.to_string(),
++        from: from.to_string(),
++        to: to.to_string(),
++        source_id: fathomdb_engine::SourceId::new("tc45:fixture").expect("source id"),
++        logical_id: logical_id.map(str::to_string),
++        body: Some(body.to_string()),
++        t_valid: None,
++        t_invalid: None,
++        confidence: None,
++        extractor_model_id: None,
++        temporal_fallback: None,
++    }
++}
++
++/// Raw terminal rows for one cursor: the `state` token at rest, if any.
++fn terminal_state(conn: &Connection, cursor: u64) -> Option<String> {
++    conn.query_row(
++        "SELECT state FROM _fathomdb_projection_terminal WHERE write_cursor = ?1",
++        [cursor],
++        |r| r.get::<_, String>(0),
++    )
++    .ok()
++}
++
++fn terminal_count(conn: &Connection, cursor: u64) -> u64 {
++    conn.query_row(
++        "SELECT COUNT(*) FROM _fathomdb_projection_terminal WHERE write_cursor = ?1",
++        [cursor],
++        |r| r.get(0),
++    )
++    .expect("count terminal rows")
++}
++
++/// The durable projection cursor (`_fathomdb_open_state.projection_cursor`),
++/// i.e. the readiness watermark `advance_projection_cursor` maintains. Absent
++/// key means 0, matching `load_projection_cursor`.
++fn projection_cursor(conn: &Connection) -> u64 {
++    conn.query_row(
++        "SELECT value FROM _fathomdb_open_state WHERE key = 'projection_cursor'",
++        [],
++        |r| r.get::<_, String>(0),
++    )
++    .map(|v| v.parse::<u64>().unwrap_or(0))
++    .unwrap_or(0)
++}
++
++/// Drive one supersession pair through the engine and hand back
++/// `(superseded_cursor, survivor_cursor, path_to_db)`.
++fn run_pair(
++    dir: &TempDir,
++    name: &str,
++    first: PreparedWrite,
++    second: PreparedWrite,
++) -> (u64, u64, std::path::PathBuf) {
++    let path = db_path(dir, name);
++    let embedder = Arc::new(DeterministicEmbedder::new(8));
++    let opened = Engine::open_with_embedder_for_test(&path, embedder).expect("open");
++
++    // ONE batch: the second write supersedes the first INSIDE the same
++    // transaction, before the embed worker can terminal the first cursor.
++    let receipt = opened.engine.write(&[first, second]).expect("write supersession pair");
++    assert_eq!(receipt.row_cursors.len(), 2, "expected one cursor per edge");
++    let superseded = receipt.row_cursors[0];
++    let survivor = receipt.row_cursors[1];
++
++    opened.engine.drain(10_000).expect("drain embed work");
++    opened.engine.close().expect("close");
++
++    (superseded, survivor, path)
++}
++
++/// Shared assertions for both supersession paths.
++fn assert_terminal_and_advance(
++    path: &std::path::Path,
++    superseded: u64,
++    survivor: u64,
++    label: &str,
++) {
++    let conn = Connection::open(path).expect("open sqlite");
++
++    // Guard against a vacuous fixture: the first edge must really have been
++    // superseded, and the survivor must really still be active.
++    let superseded_at: Option<i64> = conn
++        .query_row(
++            "SELECT superseded_at FROM canonical_edges WHERE write_cursor = ?1",
++            [superseded],
++            |r| r.get(0),
++        )
++        .expect("read superseded edge");
++    assert!(
++        superseded_at.is_some(),
++        "{label}: fixture is vacuous — cursor {superseded} was never superseded"
++    );
++    let survivor_active: Option<i64> = conn
++        .query_row(
++            "SELECT superseded_at FROM canonical_edges WHERE write_cursor = ?1",
++            [survivor],
++            |r| r.get(0),
++        )
++        .expect("read survivor edge");
++    assert!(
++        survivor_active.is_none(),
++        "{label}: fixture is vacuous — survivor cursor {survivor} is itself superseded"
++    );
++    // The survivor's terminal proves the embed worker ran, so a missing
++    // terminal on `superseded` is the supersession hole and not a dead worker.
++    assert_eq!(
++        terminal_count(&conn, survivor),
++        1,
++        "{label}: fixture is vacuous — the surviving edge never gained a terminal, \
++         so the embed worker did not run"
++    );
++
++    // (i) RAW-TABLE witness: the superseded cursor has a terminal row at rest.
++    assert_eq!(
++        terminal_count(&conn, superseded),
++        1,
++        "{label}: TC-45 — no _fathomdb_projection_terminal row for superseded cursor \
++         {superseded}; the CHECK-violating 'superseded' token was swallowed by \
++         INSERT OR IGNORE, and no scheduler will ever backfill it (the job query \
++         excludes superseded edges)"
++    );
++    assert_eq!(
++        terminal_state(&conn, superseded).as_deref(),
++        Some("up_to_date"),
++        "{label}: TC-45 — the recorded token must be the CHECK-valid 'up_to_date' \
++         (schema step 7 allows only 'failed' / 'up_to_date'); a superseded cursor \
++         needs no further projection work, which is what 'up_to_date' means"
++    );
++
++    // (ii) The readiness watermark walked PAST the superseded cursor instead of
++    // wedging on it.
++    let cursor = projection_cursor(&conn);
++    assert!(
++        cursor >= survivor,
++        "{label}: TC-45 — projection cursor STALLED at {cursor}; it must advance to \
++         at least {survivor} (past superseded cursor {superseded}). \
++         advance_projection_cursor walks cursor+1 only while a terminal exists, so \
++         the missing terminal wedges the shared node+edge readiness watermark forever"
++    );
++}
++
++// ---------------------------------------------------------------------------
++// G0 path — supersession keyed by `logical_id` alone
++// (`prior_edge_cursors_by_logical_id`).
++// ---------------------------------------------------------------------------
++
++/// Two body-bearing edges sharing a `logical_id` but with DIFFERENT
++/// `(from, to, kind)` triples, so ONLY the G0 prune loop fires and this witness
++/// isolates that call site.
++#[test]
++fn tc45_g0_superseded_edge_cursor_gets_terminal_and_cursor_advances() {
++    let dir = TempDir::new().unwrap();
++    let (superseded, survivor, path) = run_pair(
++        &dir,
++        "tc45_g0",
++        fact_edge("rel", "a", "b", Some("E1"), "Alice knows Bob"),
++        // Same logical_id, different `to` ⇒ the triple differs ⇒ G11 finds
++        // nothing and G0 alone supersedes the first cursor.
++        fact_edge("rel", "a", "c", Some("E1"), "Alice knows Carol"),
++    );
++    assert_terminal_and_advance(&path, superseded, survivor, "G0/logical_id");
++}
++
++// ---------------------------------------------------------------------------
++// G11 path — invalidate-not-accumulate keyed by the `(from, to, kind)` triple
++// (`prior_edge_cursors_by_triple`).
++// ---------------------------------------------------------------------------
++
++/// Two body-bearing edges sharing `(from, to, kind)` and carrying NO
++/// `logical_id`, so the G0 prune loop is skipped entirely (`if let Some(..)`)
++/// and ONLY the G11 call site can record the terminal.
++#[test]
++fn tc45_g11_superseded_edge_cursor_gets_terminal_and_cursor_advances() {
++    let dir = TempDir::new().unwrap();
++    let (superseded, survivor, path) = run_pair(
++        &dir,
++        "tc45_g11",
++        fact_edge("rel", "a", "b", None, "Alice knows Bob"),
++        // Identical triple, no logical_id ⇒ G0 skipped, G11 supersedes.
++        fact_edge("rel", "a", "b", None, "Alice no longer knows Bob"),
++    );
++    assert_terminal_and_advance(&path, superseded, survivor, "G11/triple");
++}
+
+exec
+/bin/bash -lc 'cargo test -p fathomdb-engine --test tc45_supersession_terminal -- --nocapture' in /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20
+ succeeded in 147ms:
+test tc45_g11_superseded_edge_cursor_gets_terminal_and_cursor_advances ... ok
+test tc45_g0_superseded_edge_cursor_gets_terminal_and_cursor_advances ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+
+exec
+/bin/bash -lc "sed -n '13120,13330p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20
+ succeeded in 0ms:
+
+fn commit_projection_outcomes(
+    connection: &mut Connection,
+    outcomes: &[ProjectionOutcome],
+    shared: &ProjectionRuntimeShared,
+) -> rusqlite::Result<()> {
+    let embedder_identity = &shared.embedder_identity;
+    let mc = identity_requires_mean_centering(embedder_identity);
+    // EU-5f — serialize the whole commit across workers so the at-pin
+    // re-quantize sees a totally-ordered history (see `commit_gate`).
+    let _gate = shared.commit_gate.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let tx = connection.transaction()?;
+    // EU-5a2/EU-5f — the live pinned mean. Read once at the top; may pin
+    // mid-batch (set to `Some` after a threshold-crossing row below).
+    let mut current_mean: Option<Vec<f32>> = if mc {
+        tx.query_row(
+            "SELECT mean_vec FROM _fathomdb_embedder_profiles WHERE profile = 'default'",
+            [],
+            |row| row.get::<_, Option<Vec<u8>>>(0),
+        )
+        .ok()
+        .flatten()
+        .map(|bytes| decode_vector_blob(&bytes))
+    } else {
+        None
+    };
+    let mut staged_events: Vec<EmbedderEvent> = Vec::new();
+    for outcome in outcomes {
+        match outcome {
+            ProjectionOutcome::Success { cursor, kind, blob, bin_blob } => {
+                if terminal_state_for_cursor(&tx, *cursor)?.is_some() {
+                    continue;
+                }
+                // EU-5f — feed the streaming accumulator and decide the pin
+                // atomically under the accumulator lock (add -> count ->
+                // take), so exactly one row/worker can cross the threshold.
+                // Only while MC-required and not yet pinned.
+                let pin_mean: Option<Vec<f32>> = if mc && current_mean.is_none() {
+                    let mut acc = shared.mean_accumulator.lock().unwrap_or_else(|p| p.into_inner());
+                    match acc.as_mut() {
+                        Some(a) => {
+                            a.add(&decode_vector_blob(bin_blob));
+                            if a.count() >= MEAN_VEC_PIN_THRESHOLD {
+                                let mean = a.materialize();
+                                *acc = None;
+                                Some(mean)
+                            } else {
+                                None
+                            }
+                        }
+                        None => None,
+                    }
+                } else {
+                    None
+                };
+
+                let source_type = resolve_source_type(kind).map_err(|_| {
+                    rusqlite::Error::SqliteFailure(
+                        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT),
+                        Some(format!("unknown kind for source_type mapping: {kind}")),
+                    )
+                })?;
+                let now_unix =
+                    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
+                        as i64;
+                tx.execute(
+                    "INSERT OR IGNORE INTO _fathomdb_vector_rows(rowid, kind, write_cursor) VALUES(?1, ?2, ?3)",
+                    params![cursor, kind, cursor],
+                )?;
+                // EU-5a2/EU-5f — sign-quant input is the mean-subtracted
+                // vector iff a mean is live (`current_mean`); otherwise the
+                // un-centered `bin_blob`. A row inserted just before the
+                // crossing is centered retroactively by the re-quantize
+                // pass below.
+                let centered_blob: Vec<u8> = match &current_mean {
+                    Some(mean) if mean.len() * 4 == bin_blob.len() => {
+                        encode_vector_blob(&subtract_mean(&decode_vector_blob(bin_blob), mean))
+                    }
+                    _ => bin_blob.clone(),
+                };
+                // Slice 10 / G10 — `status` ships the empty-string sentinel (vec0
+                // TEXT metadata is NOT NULL-able); no real population source yet
+                // (reserved-gap candidate 13).
+                //
+                // 0.8.20 Slice 15e — when the live `vector_default` carries
+                // `filterable` `attr_<hex>` columns, EVERY column must be bound
+                // (vec0 rejects a partial-column INSERT). Bind each from the node
+                // body's scalar extraction (or the `''` sentinel). The body is not
+                // carried on the embed job, so it is read from `canonical_nodes` by
+                // `write_cursor` (== rowid) — but ONLY when attr columns exist, so
+                // the common no-filterable hot path stays byte-identical and does
+                // NO extra lookup.
+                if actual_vector_attr_columns(&tx)?.is_empty() {
+                    tx.execute(
+                        "INSERT OR IGNORE INTO vector_default(
+                            rowid, embedding, embedding_bin, source_type, kind, created_at, status
+                         ) VALUES(?1, ?2, vec_quantize_binary(?3), ?4, ?5, ?6, '')",
+                        params![cursor, blob, centered_blob, source_type, kind, now_unix],
+                    )?;
+                } else {
+                    let body: String = tx
+                        .query_row(
+                            "SELECT body FROM canonical_nodes WHERE write_cursor = ?1 LIMIT 1",
+                            [*cursor as i64],
+                            |row| row.get(0),
+                        )
+                        .optional()?
+                        .unwrap_or_default();
+                    let (cols_sql, ph_sql, attr_vals) =
+                        vector_attr_insert_fragments(&tx, &body, 7)?;
+                    let sql = format!(
+                        "INSERT OR IGNORE INTO vector_default(
+                            rowid, embedding, embedding_bin, source_type, kind, created_at, status{cols_sql}
+                         ) VALUES(?1, ?2, vec_quantize_binary(?3), ?4, ?5, ?6, ''{ph_sql})"
+                    );
+                    let mut pv: Vec<rusqlite::types::Value> = vec![
+                        rusqlite::types::Value::Integer(*cursor as i64),
+                        rusqlite::types::Value::Blob(blob.clone()),
+                        rusqlite::types::Value::Blob(centered_blob.clone()),
+                        rusqlite::types::Value::Text(source_type.to_string()),
+                        rusqlite::types::Value::Text(kind.to_string()),
+                        rusqlite::types::Value::Integer(now_unix),
+                    ];
+                    pv.extend(attr_vals);
+                    tx.execute(&sql, rusqlite::params_from_iter(pv.iter()))?;
+                }
+                record_projection_terminal(&tx, *cursor, "up_to_date")?;
+
+                // EU-5f — this row crossed the threshold: pin the mean and
+                // re-quantize every row written so far (incl. earlier rows
+                // in this same tx, which are visible to the SELECT) within
+                // the same transaction so the pin is atomic.
+                if let Some(mean) = pin_mean {
+                    tx.execute(
+                        "UPDATE _fathomdb_embedder_profiles SET mean_vec = ?1 WHERE profile = 'default'",
+                        params![encode_vector_blob(&mean)],
+                    )?;
+                    let rows: Vec<(i64, Vec<u8>)> = {
+                        let mut statement = tx.prepare(
+                            "SELECT rowid, embedding FROM vector_default ORDER BY rowid",
+                        )?;
+                        let mapped = statement.query_map([], |row| {
+                            Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?))
+                        })?;
+                        let mut out = Vec::new();
+                        for r in mapped {
+                            out.push(r?);
+                        }
+                        out
+                    };
+                    let (doc_count, _) =
+                        run_pin_and_requantize_pass(&tx, &rows, &mean).map_err(|_| {
+                            rusqlite::Error::SqliteFailure(
+                                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
+                                Some("mean-centering re-quantize pass failed".to_string()),
+                            )
+                        })?;
+                    staged_events.push(EmbedderEvent::MeanVecPinned {
+                        dim: u32::try_from(mean.len()).unwrap_or(u32::MAX),
+                        doc_count,
+                    });
+                    current_mean = Some(mean);
+                }
+            }
+            ProjectionOutcome::Failure { cursor, failure_code } => {
+                if terminal_state_for_cursor(&tx, *cursor)?.is_some() {
+                    continue;
+                }
+                let existing: u64 = tx.query_row(
+                    "SELECT COUNT(*) FROM operational_mutations
+                     WHERE collection_name = 'projection_failures'
+                       AND json_extract(payload_json, '$.write_cursor') = ?1",
+                    [cursor],
+                    |row| row.get(0),
+                )?;
+                if existing == 0 {
+                    let payload = format!(
+                        r#"{{"write_cursor":{cursor},"failure_code":"{failure_code}","recorded_at":0}}"#
+                    );
+                    tx.execute(
+                        "INSERT INTO operational_mutations(
+                            collection_name, record_key, op_kind, payload_json, schema_id, write_cursor
+                         ) VALUES('projection_failures', ?1, 'append', ?2, NULL, ?3)",
+                        params![cursor.to_string(), payload, cursor],
+                    )?;
+                }
+                record_projection_terminal(&tx, *cursor, "failed")?;
+            }
+        }
+    }
+    // 0.7.2 PR-2bc S2 — the AUTOMATIC in-ingest drift detector (EWMA recent
+    // mean + cos-threshold + debounce + 200k cap + `MeanRecomputeDeferred`)
+    // was CARVED OUT and DEFERRED to 0.8.x; its recall premise was refuted
+    // (the mean is a non-lever) and the benefit is unmeasured. The mean is
+    // refreshed only on demand via `Engine::recompute_mean` (the
+    // `doctor recompute-mean` verb). See `dev/design/embedder.md` §0.3 and
+    // `dev/plans/prompts/0.8.x-auto-mean-drift-DEFERRED.md`. Nothing here
+    // mutates `mean_vec` after the initial pin.
+
+    advance_projection_cursor(&tx)?;
+    tx.commit()?;
+    // EU-5f — publish MeanVecPinned only after the pin tx is durable, so a
+    // rolled-back pin never emits a spurious event.
+    if !staged_events.is_empty() {
+        if let Ok(mut events) = shared.pending_events.lock() {
+            events.extend(staged_events);
+        }
+    }
+    Ok(())
+}
+
+
+exec
+/bin/bash -lc "sed -n '17080,17135p' src/rust/crates/fathomdb-engine/src/lib.rs; sed -n '16820,16920p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20
+ succeeded in 0ms:
+                )?;
+                record_projection_terminal(&tx, cursor, "up_to_date")?;
+            }
+            _ => return Err(rusqlite::Error::InvalidQuery),
+        }
+    }
+
+    // G8 (Slice 20 / F10) — cross-row dangling-edge flag-and-count. This runs
+    // AFTER the batch loop (so every same-batch node is already on disk in `tx`
+    // and a same-batch later-inserted endpoint is visible) and BEFORE retention /
+    // projection-cursor / commit. It is the cross-row reason this lives here and
+    // not in single-row pre-insert `validate_write`. Default is FLAG-AND-COUNT:
+    // we only COUNT, never roll back (strict-mode rollback is deferred to
+    // reserved-gap band 22 — adding a write-options surface is out of scope).
+    //
+    // Probe is `logical_id`-alone against the step-12 partial index
+    // `canonical_nodes_logical_active_idx ON canonical_nodes(logical_id)
+    // WHERE superseded_at IS NULL` (its leading column + partial predicate), so
+    // it SEARCHes the index with no SCAN (see `tests/pr_g8_dangling_edges.rs`
+    // case (f)). There is no node-kind to match: `canonical_edges` stores only
+    // the edge's own kind, not the endpoint node's kind.
+    let dangling_edge_endpoints = {
+        // O(N) pre-pass: record, per `logical_id`, the LAST (highest) index at
+        // which an `Edge { logical_id: Some(_), .. }` with that id appears. Keyed
+        // by `logical_id` ALONE (Decision 5, HITL-SIGNED 2026-06-05) to match the
+        // supersession UPDATE, which keys by logical_id alone: a kind-change
+        // re-ingest of the same edge logical_id SUPERSEDES the earlier one.
+        // Iterating front-to-back and overwriting means the stored value ends up
+        // as the final index for each id. An edge at index `i` with that id is
+        // then in-batch-superseded iff `last_index[lid] > i`. This is
+        // behavior-identical to the prior per-edge `batch[i+1..]` `.any(..)` scan
+        // (which was O(N²) under the single-writer txn) — same skip-set, same count.
+        let mut last_index: HashMap<&str, usize> = HashMap::new();
+        for (i, write) in batch.iter().enumerate() {
+            if let PreparedWrite::Edge { logical_id: Some(lid), .. } = write {
+                last_index.insert(lid.as_str(), i);
+            }
+        }
+
+        let mut probe = tx.prepare(
+            "SELECT 1 FROM canonical_nodes WHERE logical_id = ?1 AND superseded_at IS NULL LIMIT 1",
+        )?;
+        let mut count: u64 = 0;
+        for (i, write) in batch.iter().enumerate() {
+            if let PreparedWrite::Edge { from, to, logical_id, .. } = write {
+                // Honor `edge.superseded_at IS NULL`: an edge inserted in this
+                // batch is active unless a LATER same-batch edge with the same
+                // `Some(logical_id)` tombstoned it (the loop's supersession
+                // UPDATE). Skip such an in-batch-superseded edge. Edges with
+                // `logical_id: None` are never superseded-in-batch.
+                if let Some(lid) = logical_id {
+                    let superseded_in_batch =
+                        last_index.get(lid.as_str()).is_some_and(|&last| last > i);
+                    if superseded_in_batch {
+                        continue;
+                    }
+    plans: &[WritePlan],
+    base_cursor: u64,
+    provenance_row_cap: u64,
+) -> rusqlite::Result<u64> {
+    let tx = connection.transaction()?;
+
+    for (i, (write, plan)) in batch.iter().zip(plans).enumerate() {
+        // Per-row cursor: row i gets `base_cursor + i + 1`. See the
+        // comment in `Engine::write_inner`.
+        let cursor = base_cursor.saturating_add((i as u64).saturating_add(1));
+        match (write, plan) {
+            (
+                PreparedWrite::Node {
+                    kind,
+                    body,
+                    source_id,
+                    logical_id,
+                    state,
+                    reason,
+                    valid_from,
+                    valid_until,
+                },
+                WritePlan::Node,
+            ) => {
+                // G0 — supersession is tombstone-then-insert in this same txn:
+                // mark the prior active version superseded BEFORE inserting the
+                // new active row, so the partial-unique-active index never sees
+                // two active rows for one logical_id. Scoped to logical_id ALONE
+                // (Decision 5, HITL-SIGNED 2026-06-05): a kind-change re-ingest of
+                // the same logical_id SUPERSEDES, never forks. No-op when logical_id
+                // is None (legacy/own-identity insert, behavior-identical to 0.7.x).
+                if let Some(logical_id) = logical_id {
+                    // fix-1 finding 2 [P2]: collect the prior active cursor(s)
+                    // BEFORE tombstoning so we can purge the superseded row's
+                    // row-owned attribute projections and keep the at-rest EAV /
+                    // property-FTS store ACTIVE-ONLY. Without this, a same-session
+                    // property filter / property-FTS saw BOTH the stale and the
+                    // current value until a boot re-derive/reconfigure cleared the
+                    // table — a stale read that violates the active-only invariant.
+                    let prior_g0 = prior_node_cursors_by_logical_id(&tx, logical_id)?;
+                    tx.execute(
+                        "UPDATE canonical_nodes SET superseded_at = ?1
+                         WHERE logical_id = ?2 AND superseded_at IS NULL",
+                        params![cursor, logical_id],
+                    )?;
+                    // Purge only the Attribute + PropertyFts classes: those tables
+                    // have NO `superseded_at IS NULL` read-side filter (the FTS5
+                    // `property_search_index` cannot carry one), so their stale rows
+                    // MUST be deleted at rest. The NodeFts (`search_index` /
+                    // `search_index_v2`) + Vector shadows are left intact — the node
+                    // read path already excludes their superseded rows via the
+                    // `canonical_nodes WHERE superseded_at IS NULL` join, so purging
+                    // them here would be a behaviour change outside this fix's scope.
+                    for sc in &prior_g0 {
+                        purge_row_projections_for_cursor_in(
+                            &tx,
+                            *sc,
+                            &[ProjectionClass::Attribute, ProjectionClass::PropertyFts],
+                        )?;
+                    }
+                }
+                // EXP-S (0.8.14 Slice 5, D1) — a `PreparedWrite::Node` is the
+                // `leaf` structural row_kind (a normal record). coverage/graph
+                // rows are written via internal paths (row_kind is a SEPARATE
+                // axis from the doc-type `kind`, and there is no public SDK
+                // surface for it this release). Writing `leaf` explicitly is
+                // value-identical to the column DEFAULT.
+                // OPP-12 Phase-1 (0.8.19 Slice 5) — persist the create-time
+                // existence state + advisory reason. `InitialState::Active`
+                // (the default) writes `state = 'active'`, value-identical to the
+                // migration step-20 column DEFAULT; `Pending` quarantines the node
+                // out of default retrieval (the `state = 'active'` read exclusion).
+                // 0.8.20 Slice 15b (TC-34) — persist the world-time validity
+                // window. A `None` binds SQL NULL, which is what the migration
+                // step-22 columns already hold for every pre-existing row and what
+                // `ReadView::validity_sql` reads as UNBOUNDED on that side. So a
+                // write that omits the window is byte-identical on disk to a
+                // pre-slice write, and default-view visibility cannot drift.
+                tx.execute(
+                    "INSERT INTO canonical_nodes(write_cursor, kind, body, source_id, logical_id, row_kind, state, reason, valid_from, valid_until)
+                     VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                    params![cursor, kind, body, source_id.as_str(), logical_id, RowKind::Leaf.as_str(), state.as_str(), reason, valid_from, valid_until],
+                )?;
+                // EXP-S (D2/D5) — per-row_kind index-target dispatch. For `leaf`
+                // this is behavior-identical to the pre-EXP-S inline path: FTS
+                // (sync, in-tx) + vector (async, gated by kind_is_vector_indexed);
+                // else the cursor is terminated up-front.
+                // fix-2 [P2]: gate the attribute projection on the create-time
+                // state. A fresh insert is always non-superseded, so the backfill
+                // predicate (`state = 'active' AND superseded_at IS NULL`) reduces
+                // to `state == Active` here. A `Pending` node is quarantined out of
+                // the canonical read model — its declared attributes must NOT reach
+                // the property store until a `transition(pending → active)` promotes
+                // it (which projects them then). Node-FTS / vector shadows are left
+                // to their read-side lifecycle filter, exactly as for supersession.
+                project_canonical_node_row(
+                    &tx,
+                    cursor,
+                    kind,
+                    body,
+                    RowKind::Leaf,
+
+exec
+/bin/bash -lc "sed -n '17135,17220p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.20-s20
+ succeeded in 0ms:
+                    }
+                }
+                // Probe `from_id` and `to_id` independently (0, 1, or 2 per edge).
+                for endpoint in [from, to] {
+                    if !probe.exists(params![endpoint])? {
+                        count = count.saturating_add(1);
+                    }
+                }
+            }
+        }
+        count
+    };
+
+    enforce_provenance_retention(&tx, provenance_row_cap)?;
+    advance_projection_cursor(&tx)?;
+
+    tx.commit()?;
+    Ok(dangling_edge_endpoints)
+}
+
+fn load_next_cursor(connection: &Connection) -> u64 {
+    let nodes = max_cursor(connection, "canonical_nodes").unwrap_or(0);
+    let edges = max_cursor(connection, "canonical_edges").unwrap_or(0);
+    let mutations = max_cursor(connection, "operational_mutations").unwrap_or(0);
+    let state = max_cursor(connection, "operational_state").unwrap_or(0);
+    // TC-33: schema step 23 RECREATES `canonical_edges` (no data migration), so
+    // the edge rows that used to hold the high-water mark are gone. Without this
+    // term the allocator can hand out a cursor a PREVIOUS edge already used —
+    // and stale `_fathomdb_projection_terminal` / `_fathomdb_vector_rows` / vec0
+    // rows still key on it, so a brand-new row would be treated as
+    // already-projected and never get indexed. Step 23 stashes the pre-drop
+    // maximum here; folding it in keeps cursors monotonic across the migration.
+    let reserved = reserved_write_cursor(connection);
+    nodes.max(edges).max(mutations).max(state).max(reserved)
+}
+
+/// The write-cursor high-water mark reserved by schema step 23, or 0 when the
+/// key is absent (fresh DB, or a DB that never had edges). Never fails the
+/// caller: a missing/unparseable value degrades to 0, which is the pre-TC-33
+/// behaviour.
+fn reserved_write_cursor(connection: &Connection) -> u64 {
+    connection
+        .query_row(
+            "SELECT value FROM _fathomdb_open_state WHERE key = ?1",
+            params![fathomdb_schema::RESERVED_WRITE_CURSOR_KEY],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+        .and_then(|raw| raw.parse::<u64>().ok())
+        .unwrap_or(0)
+}
+
+fn max_cursor(connection: &Connection, table: &str) -> rusqlite::Result<u64> {
+    let sql = format!("SELECT COALESCE(MAX(write_cursor), 0) FROM {table}");
+    connection.query_row(&sql, [], |row| row.get::<_, u64>(0))
+}
+
+/// Map a rusqlite error to its stable SQLite extended-code name.
+///
+/// Returns `None` for non-`SqliteFailure` variants (e.g. JSON conversion
+/// failures, type mismatches at the rusqlite layer) — those are not
+/// SQLite-internal events and should not be surfaced under
+/// `EventSource::SqliteInternal`. The names returned here are the
+/// canonical `SQLITE_*` symbol names from `sqlite3.h` and are stable
+/// dispatch keys for AC-021 / AC-006 binding adapters.
+///
+/// Only the subset of codes the engine can reach in 0.6.0 is enumerated
+/// — bare-extended-code matching covers the rest with a stable
+/// `"SQLITE_UNKNOWN"` fallback so subscribers always see a typed code.
+///
+/// Diagnostic completeness for unmapped codes: when this helper returns
+/// `"SQLITE_UNKNOWN"`, the numeric extended code is not lost — it
+/// remains on the underlying `rusqlite::Error::SqliteFailure` carried
+/// in the engine error chain that subscribers can inspect via
+/// `EngineError`'s `source()`. Expanding the enumerated subset (or
+/// surfacing the numeric code as a typed payload field) is a 0.7+
+/// improvement.
+fn sqlite_extended_code_name(err: &rusqlite::Error) -> Option<&'static str> {
+    let sqlite_error = err.sqlite_error()?;
+    let extended = sqlite_error.extended_code;
+    Some(match extended {
+        rusqlite::ffi::SQLITE_SCHEMA => "SQLITE_SCHEMA",
+        rusqlite::ffi::SQLITE_BUSY => "SQLITE_BUSY",
+        rusqlite::ffi::SQLITE_LOCKED => "SQLITE_LOCKED",
+        rusqlite::ffi::SQLITE_CORRUPT => "SQLITE_CORRUPT",
+        rusqlite::ffi::SQLITE_NOTADB => "SQLITE_NOTADB",
+
+codex
+The change replaces an invalid terminal-state token with the schema-valid `up_to_date` token at both superseded-edge terminal recording sites, and the new tests cover the two supersession paths. I did not find any regression or blocking issue in the diff.
+The change replaces an invalid terminal-state token with the schema-valid `up_to_date` token at both superseded-edge terminal recording sites, and the new tests cover the two supersession paths. I did not find any regression or blocking issue in the diff.

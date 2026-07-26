@@ -31,7 +31,7 @@ step 24). Ledger tip **`3264114a`** (steward seq-98).
 > close records (§11 Slice 5, §12 Slice 10, §13 Slice 15b) are retained **as history**; their "not landed" /
 > "Slice 15 OPEN" banners describe the on-branch state at the time they were written, **not** current truth.
 
-**Last updated:** 2026-07-24 (Slice 15 keystone landed).
+**Last updated:** 2026-07-26 (Slice 20 landed PARTIAL — `26b237c0`; close record §14).
 
 ---
 
@@ -39,10 +39,10 @@ step 24). Ledger tip **`3264114a`** (steward seq-98).
 
 | | |
 |---|---|
-| **Slice in flight** | **NONE — Slice 15 keystone just LANDED (`a2022957`).** The ladder is between slices, awaiting the next commission. |
+| **Slice in flight** | **NONE — Slice 20 just landed PARTIAL (`26b237c0`).** The ladder is between slices; **Slice 20 is not finished** — `flush_embeddings()` is HELD on TC-54/TC-55 (§14). |
 | **Status** | **Slices 0, 5, 10, 15 all COMPLETE and LANDED on `origin/main`** (header table). The keystone landed **R-20-PR + R-20-EAV + `filterable` pre-KNN + TC-33 + TC-34 + Finding-1 (A) + `#[non_exhaustive] SearchFilter`**; codex §9 **terminal-clean**; gates re-verified by the Steward (clippy 0, check 0, (A) pin 1/1, AC-041 3/3). **SCHEMA 24.** |
 | **Unblocks** | <!-- BEGIN GENERATED release-state:0.8.20:status-unblocks -->**Slices 20 and 25 are NOW UNBLOCKED** — R-20-PR (the projection registry) now exists. Slice 30 (H7) depends on 10/15/20/25. **AC-079 is PRE-SIGNED** — the HITL signed off on the accumulated governed-surface delta (Slices 5d + 10b + 15b + 15d) on 2026-07-25 (master F-34), pinned to the content of `src/conformance/governed-surface-allowlist.json`; any diff to that file re-opens it (the T1e pin). Pre-signing is NOT minting: AC-079 is minted and recorded as SIGNED at Slice 40 (§4 #1). **Publish is gated by the separate HITL publish gate, not by this AC.**<!-- END GENERATED release-state:0.8.20:status-unblocks --> |
-| **Immediate next action** | **Commission the `DOC-HYGIENE-2` orchestrator FIRST — Slice 20 does not open until it lands** (**F-34**, HITL 2026-07-25). A wide docs diff must not run while a slice orchestrator is live (**F-7** collision rule), and DOC-HYGIENE-2 corrects **18 line-anchors in `plan-0.8.20.md` that misdirect the Slice-20 implementer** (`engine:14867`/`:14890` for TC-45 → the real call sites are `lib.rs:16963`/`:16986`). **Then** Slice 20 — `dense_readiness` + `flush_embeddings()` (**R-20-DR**) **+ the TC-45 supersession-terminal fix** (HITL 2026-07-24) — commissioned as an **orchestrator** (`/orchestrate`, or a Steward-spawned background orchestrator; **NOT `/goal`** — standing ruling **steward `seq-104`** (`927ffb35`)). Then **25 → 30 → 40, sequentially** (parallel 20∥25 was declined, F-34). **✅ The sequencing prerequisite is DISCHARGED:** the cross-cutting docs/tooling hygiene effort (DOC-HYGIENE-1, TC-48) that had to land FIRST — a wide docs diff that must not run while an orchestrator is live (F-7 collision rule) — **LANDED on `origin/main` 2026-07-25 (`f53b8c64..597738d9`, no pico label)** (steward `seq-101`). Nothing now blocks the Slice-20 commission. Rulings for the eight-item queue are recorded in `plan-0.8.20.md` §11; master reconciliation = **F-32**, DOC-HYGIENE-1 = **F-33**. |
+| **Immediate next action** | **Resolve `TC-54` + `TC-55`, then finish Slice 20 as `20c` (`flush_embeddings()`).** Slice 20 landed **PARTIAL** at **`26b237c0`** — TC-45 and `dense_readiness` are CLOSED; **`flush_embeddings()` is HELD** (close record §14). Two ledger items block 20c (`dev/todos-and-considerations-ledger.jsonl`, seq 81–85): **TC-54** — `scripts/check-governed-surface-pin.sh` hashes the **raw bytes** of `src/conformance/governed-surface-allowlist.json` and `scripts/preflight.sh --landing` treats it as a **HARD** fail, so plan §11 ruling 2's *"record the delta as a proposal, branch stays green, batch to the HITL at 30→40"* is **mechanically impossible** — any allowlist diff blocks the land; recommended fix is a `pending_delta` block in the pin (fix the tooling, not the actor). **TC-55** — is `flush_embeddings()` a governed **command** (plan §11 ruling 2) or **instrumentation** (design C4: reuse the shipped `drain` barrier)? That answer decides whether 20c trips the pin at all, so it must be settled **on the design**, not by whichever answer lands easier. **Then 25 → 30 → 40, sequentially** (parallel 20∥25 was declined, F-34), each commissioned as an **orchestrator** (`/orchestrate`, or a Steward-spawned background orchestrator; **NOT `/goal`** — standing ruling **steward `seq-104`** (`927ffb35`)). **✅ Both docs-hygiene prerequisites are DISCHARGED:** DOC-HYGIENE-1 landed 2026-07-25 (`f53b8c64..597738d9`, steward `seq-101`) and **DOC-HYGIENE-2 is verified complete** (`ff4f07a0`). Rulings for the eight-item queue are recorded in `plan-0.8.20.md` §11; master reconciliation = **F-32**, DOC-HYGIENE-1 = **F-33**. |
 
 **Slices 0, 5, 10, 15 close records** are §11 (Slice 5), §12 (Slice 10), §13 (Slice 15b — TC-34 only; the
 registry/EAV/TC-33 remainder that also landed in the keystone `a2022957` is summarised in §8 and in
@@ -60,14 +60,15 @@ by that ruling.
 | **5** | **Erasure completeness (R-20-E1…E8, +E9a)** | 0 | **COMPLETE — LANDED `1f8ed8bf`** (in `origin/main`). Close record §11 |
 | **10** | **`ReadView` / read-modes + node-validity (R-20-RV, R-20-NV)** | 0 | **COMPLETE — LANDED `3cfb3cda`** (merge) — SCHEMA 21→22. Close record §12 |
 | **15** | **Projection registry (C-1) + EAV/property-FTS (R-20-PR, R-20-EAV) + TC-34 + TC-33 + Finding-1 (A) + `#[non_exhaustive] SearchFilter`** | 0, 10 | **COMPLETE — LANDED `a2022957`** (merge, Phase-2 keystone) — SCHEMA →24; codex §9 terminal-clean; Steward-verified gates. §13 = the TC-34 sub-part only; registry/EAV/TC-33 remainder summarised in §8 |
-| **20** | `dense_readiness` + `flush_embeddings()` (R-20-DR) **+ TC-45 supersession-terminal fix** | 15 | **UNBLOCKED — NEXT SLICE.** Attaches `dense_readiness` to the `ProjectionSpec.vector` sub-object (built in 15d) — not started. **TC-45 folded in by HITL 2026-07-24** (plan §11 #7): `record_projection_terminal` writes `state='superseded'` under `INSERT OR IGNORE` against a CHECK of `('failed','up_to_date')` ⇒ terminal silently dropped, cursor can stall. Prefer `'up_to_date'` at both call sites (no migration) over widening the CHECK (schema step); RED-first |
+| **20** | `dense_readiness` + `flush_embeddings()` (R-20-DR) **+ TC-45 supersession-terminal fix** | 15 | **PARTIAL — LANDED `26b237c0`** (merge). **CLOSED:** (a) **TC-45** — both `commit_batch` call sites now record `'up_to_date'`; **no migration, SCHEMA stays 24**, terminal CHECK **not** widened, exactly as the ruling preferred. (b) **R-20-DR part 1 of 2** — `DenseReadiness {Ready, Embedding}` **derived** onto the `ProjectionSpec.vector` sub-object as engine-set read metadata (no stored column, no schema step), plus the **atomic readiness-flip**, which holds **by construction**. Surfaces as `vector_dense_readiness` (Py) / `vectorDenseReadiness` (TS). **ZERO net-new governed commands.** **⛔ HELD: `flush_embeddings()`** — blocked on **TC-54** (pin gate) + **TC-55** (command-vs-instrumentation). Close record **§14** |
 | **25** | Surrogate minting — governed entities ONLY (R-20-SUR) | 15 | **UNBLOCKED** (R-20-PR exists) — not started |
 | 30 | RUBRIC-H7 `can-i-deploy` contract gate (R-20-H7) | 10,15,20,25 | not started — publish precondition |
 | 40 | Verification + release readiness (publish-or-hold) | 5,30 | not started |
 
-**Ladder remaining: 20 → 25 → 30 → 40, run SEQUENTIALLY** (F-34 — parallel 20∥25 was declined). Slices
-0/5/10/15 are landed. **Immediate next: `DOC-HYGIENE-2`, then Slice 20 (R-20-DR) — commissioned as an
-orchestrator, NOT via `/goal`** (standing ruling `927ffb35`). See §1.
+**Ladder remaining: 20c → 25 → 30 → 40, run SEQUENTIALLY** (F-34 — parallel 20∥25 was declined). Slices
+0/5/10/15 are landed and **20 is PARTIAL**. **Immediate next: resolve TC-54 + TC-55, then Slice 20c
+(`flush_embeddings()`) — commissioned as an orchestrator, NOT via `/goal`** (standing ruling `927ffb35`).
+See §1.
 
 **Merge discipline (still binding for 20/25).** Slices touching `engine/src/lib.rs` **serialize the merges**
 (rebase-then-merge one at a time). **One `maturin develop` at a time** (shared `.venv` mutex) — and **never from
@@ -940,3 +941,153 @@ Recorded as **§4 #18–#22**.
 
 `dev/plans/runs/0.8.20-slice-15b-output.json` and `0.8.20-slice-15b-fix-{1,2,3}-output.json`, plus the four §9
 transcripts in §13.5. Ledger entries **TC-38…TC-42**. Committed with this close per **TC-23**.
+
+---
+
+## 14. Slice 20 close — **PARTIAL** (TC-45 + `dense_readiness` landed; `flush_embeddings()` HELD)
+
+**Merge `26b237c0`** — *"merge(0.8.20): Slice 20 PARTIAL — TC-45 supersession terminal + R-20-DR
+dense_readiness/atomic-flip"*. Branch `orch-0.8.20-s20`, cut from **`ff4f07a0`**, terminal HEAD **`15c75c57`**.
+
+> **⚠ SLICE 20 IS NOT COMPLETE.** Two of the three scoped items closed. **`flush_embeddings()` did NOT land**
+> and must not be described anywhere as shipped. It is HELD on **TC-54** and **TC-55** (§14.5). The remainder
+> is tracked as **Slice 20c**.
+
+### 14.1 What shipped
+
+| Commit | Content |
+|---|---|
+| `ca32ec81` | **RED** — TC-45: superseded edge cursors never gain a projection terminal |
+| `9db32765` | **GREEN** — TC-45: record superseded edge cursors as `'up_to_date'` |
+| `a6e1bf21` | **RED** — R-20-DR: `dense_readiness` is never populated |
+| `3ae399fd` | **GREEN** — R-20-DR: derive `dense_readiness`; the flip is atomic by construction |
+| `d1a1cd20` | **RED** — fix-1: the pending-work probe reports `embedding` forever |
+| `2b1f62d0` | **GREEN** — fix-1: probe and scheduler share ONE edge-arm predicate |
+| `15c75c57` | **fix-2** — interface docs carry the dense-readiness surface (codex **[P2]**) |
+
+**✅ TC-45 CLOSED** (HITL-ruled 2026-07-24, plan §11 item 7). `record_projection_terminal` wrote
+`state='superseded'` under `INSERT OR IGNORE` against `CHECK(state IN ('failed','up_to_date'))`, so the terminal
+was **silently dropped** and `advance_projection_cursor` could stall. Both call sites in `commit_batch` — the
+**G0** path after `prior_edge_cursors_by_logical_id` and the **G11** path after `prior_edge_cursors_by_triple` —
+now record `'up_to_date'`. **No migration; `SCHEMA_VERSION` stays 24**; the terminal CHECK was **not** widened —
+exactly the shape the ruling preferred. The semantic question the ruling reserved ("escalate only if the
+terminal's semantics demand the distinct token") was **checked, not assumed**: **no consumer discriminates the
+token** — `advance_projection_cursor` and `commit_projection_outcomes` test only `.is_some()`, and
+`projection_status` maps `_ => UpToDate`.
+
+**✅ R-20-DR part 1 of 2 — `dense_readiness` + the atomic readiness-flip.** `DenseReadiness { Ready, Embedding }`
+attaches **additively** to the `ProjectionSpec.vector` sub-object built in 15d, as **engine-set read metadata**.
+It is **derived**, not stored — **no column, no schema step**. Surfaces as `vector_dense_readiness` (Python) /
+`vectorDenseReadiness` (TypeScript). The reserved token **`pending` is never emitted and never accepted**.
+
+The **atomic readiness-flip** (design §4.1 invariant 1) holds **by construction**, and this was **verified rather
+than added**: `commit_projection_outcomes` already performs the vector insert, the terminal record and
+`advance_projection_cursor` **inside ONE transaction**. The flip test is therefore a **proof test, not a
+regression test** — an honest label, recorded here so a later reader does not mistake it for a fix.
+
+**Deviation accepted by the orchestrator.** A caller-supplied `dense_readiness` on `configure_projections` is
+**accept-inert at the engine**, plus a **narrowed hard-reject at the bindings** — readiness with `vector=false`,
+or any spelling outside `{ready, embedding}` — reusing the existing `InvalidArgument` / `FDB_INVALID_ARGUMENT`
+(**no new error type**). A *full* hard-reject was **rejected**: it would break the shipped, twice-tested invariant
+that `read.projections` output must feed back into `configure_projections`. This does **not** pre-empt plan §11
+item 4 (the still-open accept-vs-reject question for a sub-object without the `searchable` role).
+
+### 14.2 Side effect — fix-1 closed a **shipped** `Engine::drain` defect
+
+Deriving `dense_readiness` from the pending-work predicate surfaced a **pre-existing, already-published** defect:
+the probe omitted the scheduler's `_fathomdb_vector_kinds` join on the **edge** arm, so a live edge body under an
+**unregistered `edge_fact` kind** was **phantom-pending forever** — `drain` burned its whole timeout and returned
+`Err(Scheduler)`. Confirmed pre-existing **empirically, not by inspection**: reproduced at baseline **`9db32765`**
+with **zero Slice-20 code in the build**. The fix gives probe and scheduler **one shared predicate** so they
+cannot drift again. This is a **behaviour change on a published surface** and the CHANGELOG / Slice-40 publish
+narrative must reflect it. Ledger **TC-56**.
+
+### 14.3 Gates — real exit codes, captured at the slice head
+
+| Gate | Result |
+|---|---|
+| `cargo clippy --workspace --all-targets` | **exit 0** |
+| `cargo check --workspace --all-targets` | **exit 0** |
+| `cargo test -p fathomdb-engine` | **exit 0** |
+| `cargo test -p fathomdb-schema` | **exit 0** |
+| **Python** | **exit 0 — 842 passed / 7 skipped** |
+| **TypeScript** | **exit 0 — 231 / 231** |
+| `check-ledgers.sh` · `lint-findings.sh` · `lint-plan-anchors.sh` · `lint-design-status.sh` | **exit 0** (each) |
+| `check-governed-surface-pin.sh` · `check-release-state-views.sh` | **exit 0** (each) |
+| `agent-lint.sh` · `agent-lint-md.sh` | **exit 0** (each) |
+| `scripts/agent-typecheck.sh` | **exit 1 — PRE-EXISTING**, exactly **7** pyright errors; identical count verified at baseline **by stashing** |
+| `scripts/agent-test.sh` | **DELIBERATELY NOT RUN** — a vacuous aggregate that aborts early on the known-red **TC-16 / F-30** fixture |
+
+**X1 SDK parity ran BEFORE the land**, via **live functional harnesses**, not symbol presence:
+`src/python/tests/test_slice20_dense_readiness.py` ↔ `src/ts/tests/slice20-dense-readiness.test.ts`. Python ran
+against a **wheel installed into a throwaway venv** — the shared `.venv` was **never touched** and
+`maturin develop` / `pip install -e` were **never run** (the standing worktree rule). **The harness earned its
+keep:** it caught `src/python/fathomdb/engine.py` silently dropping `vector_dense_readiness` before the native
+boundary.
+
+### 14.4 Governed-surface delta — **ZERO net-new governed commands**
+
+- `src/conformance/governed-surface-allowlist.json` and `scripts/governed-surface-pin.json` are
+  **byte-identical to the pre-slice baseline**; `scripts/check-governed-surface-pin.sh` exits **0**.
+- The one net-new **exported Rust type** is **`DenseReadiness`**. It sits **outside** the 33-entry
+  `GOVERNED_SURFACE_ALLOWLIST` const in `src/rust/crates/fathomdb/tests/governed_surface.rs` — **the same place
+  the five Slice-15d `Projection*` types sit**. This follows **existing precedent**; it does **not** set new
+  policy.
+- **Flagged as OWED at the AC-079 sign-off.** It is **not** signed and **not** a decision taken. **AC-079 remains
+  unminted** — minting is at Slice 40.
+- **AC-041 untouched:** the recovery denylist is unchanged at exactly five.
+
+### 14.5 What is HELD, and why — `flush_embeddings()`
+
+**TC-54 — the pin gate makes "propose AND land" mechanically impossible (p1, blocks 20c / 25 / 30).**
+Plan §11 ruling 2 (HITL 2026-07-25) says new governed surface at 20/25/30 is **recorded as a proposal**, the
+branch **stays green**, and the accumulated delta goes to the HITL **once** at the 30 → 40 boundary. But
+`check-governed-surface-pin.sh` compares a sha256 **and** a git-blob-sha1 over the **raw bytes** of the allowlist,
+and `preflight.sh --landing` treats it as a **HARD** fail — so **any** allowlist diff, *including the `_comment`
+prose edit that IS the proposal convention used by 5d/10b/15b/15d*, **blocks the land**. The gate's own header
+asserts that tripping it is "precisely what lets Slices 20/25/30 proceed without stopping for a per-slice
+sign-off"; **as wired, that claim is false.** Recommended fix is **(a) fix the tooling** — give the pin a
+`pending_delta` block so the gate passes iff `allowlist == pinned ∪ pending_delta`, reporting the unsigned set
+loudly and preserving every guarantee including the locked `recovery_denylist`.
+
+**TC-55 — is `flush_embeddings()` a governed COMMAND or INSTRUMENTATION? (p1, unresolved).**
+Plan §11 ruling 2 says it "reads as a net-new command" and expects the pin to trip. `api-surface.md` **C4** says
+the opposite — **reuse the shipped `drain(timeout_ms)` barrier instead**. Both design docs are status
+**UNREVIEWED**, so the plan is the contract and the plan wins; the conflict is recorded because the docs will
+otherwise keep misleading readers. **Mechanically load-bearing:** the shipped `drain` is **not** in the JSON
+allowlist — it sits in the `_INSTRUMENTATION` exclusion set hardcoded in **both** `src/python/tests/test_surface.py`
+and `src/ts/tests/surface.test.ts`. So *instrumentation* leaves the pinned JSON untouched and 20c lands clean,
+while *command* forces an allowlist edit and hits TC-54. **That must not be settled by whichever answer is easier
+to land.** Design rider either way: `drain` is a **barrier** (wait-for-idle); `flush` must also be a **trigger**,
+so deferred/backfill rows have to be enqueued on the same runtime `drain` waits on.
+
+**Slice 20 was split accordingly:** part **b** (`dense_readiness`) adds **zero** governed commands and landed
+clean; part **c** (`flush_embeddings()`) is held pending those two answers.
+
+### 14.6 codex §9 — three rounds, terminal PASS
+
+Transcripts under `dev/plans/runs/codex/0.8.20/` (**TC-RUBRIC-7** path), committed with this close.
+
+| Round | Transcript | Verdict |
+|---|---|---|
+| 20a (TC-45) | `slice-20a-tc45-20260725T224612Z.log` | **PASS** — no findings |
+| 20b (dense readiness) | `slice-20b-dense-readiness-20260725T234510Z.log` | **CONCERN** — **1×[P2]** probe/scheduler edge-arm divergence |
+| 20b fix-1 re-review | `slice-20b-fix-1-rereview-20260726T001244Z.log` | **CONCERN** — **1×[P2]** interface docs stale |
+| 20b fix-2 re-review | `slice-20b-fix-2-rereview-20260726T002647Z.log` | **TERMINAL PASS** |
+
+**No verdict was overridden. Every [P2] was fixed.**
+
+### 14.7 Closure artifacts
+
+The **four §9 transcripts** in §14.6, and ledger entries **TC-54…TC-58** in
+`dev/todos-and-considerations-ledger.jsonl` (**seq 81–85**) — TC-54 (pin-gate blocker), TC-55
+(`flush_embeddings` classification), TC-56 (the shipped `drain` defect), TC-57 (pre-existing governed-write ×
+projection-worker `EngineError::Storage` race, 7/8 at baseline), TC-58 (`ac_002` scans `$HOME` and
+false-positives on sibling repos). Committed with this close per **TC-23**.
+
+> **⚠ Two record defects found while writing this close, both corrected here — do not re-introduce them.**
+> (1) The TC-54…TC-58 ledger entries were **written but never committed** — they sat as an uncommitted diff in
+> the slice worktree and were minted at **seq 80–84**, which **collides** with the `seq 80` already on `main`
+> (the `.markdownlint-cli2.jsonc` observation). They are ported here **renumbered to seq 81–85**; every citation
+> of them uses the new numbers. (2) **No `0.8.20-slice-20*-output.json` closure witness was persisted** for any
+> sub-slice, unlike every prior 0.8.20 slice — a **TC-23 gap**, recorded rather than papered over.
