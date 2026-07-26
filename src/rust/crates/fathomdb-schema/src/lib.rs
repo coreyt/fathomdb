@@ -985,6 +985,31 @@ impl Display for MigrationAccretionError {
 
 impl std::error::Error for MigrationAccretionError {}
 
+/// RED STUB (0.8.20 Slice 25, R-20-SUR) — deliberately permissive. Replaced by
+/// the real guard in the GREEN commit; exists only so the RED witness is a set
+/// of assertion failures rather than a compile error.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MigrationLogicalIdPinError {
+    pub offender: String,
+    pub statement: String,
+}
+
+impl Display for MigrationLogicalIdPinError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "TC-11 logical_id pin rejected {}: {}", self.offender, self.statement)
+    }
+}
+
+impl std::error::Error for MigrationLogicalIdPinError {}
+
+/// RED STUB — always accepts. See above.
+pub fn check_migration_logical_id_pin(
+    _name: &str,
+    _sql: &str,
+) -> Result<(), MigrationLogicalIdPinError> {
+    Ok(())
+}
+
 pub fn check_migration_accretion(name: &str, sql: &str) -> Result<(), MigrationAccretionError> {
     let upper = sql.to_ascii_uppercase();
     let adds_schema = upper.contains("CREATE TABLE") || upper.contains("ADD COLUMN");

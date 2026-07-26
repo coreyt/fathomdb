@@ -1239,6 +1239,7 @@ version = "0.8.9"
 dependencies = [
  "proptest",
  "rusqlite",
+ "sha2 0.11.0",
  "sqlite-vec",
 ]
 
