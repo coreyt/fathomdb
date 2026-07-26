@@ -586,3 +586,235 @@ def test_a_no_embedder_session_leaves_an_enrolled_kinds_write_recoverable(tmp_pa
     )
     assert _vector_rows(path) == 2, "the recovered row was embedded, and only it"
     assert _projection_failure_rows(path) == 0, "the recovery leaves no failure audit behind"
+
+
+# ---------------------------------------------------------------------------
+# fix-5 (codex §9 round 4) — the scheduler's SCAN WINDOW, and the ATOMICITY of a
+# late enrolment
+# ---------------------------------------------------------------------------
+
+# `PROJECTION_SCAN_FETCH`, restated: the engine's dispatcher fetches at most
+# `PROJECTION_WORKERS (2) * PROJECTION_COMMIT_BATCH (16)` jobs per scan, ordered
+# by `write_cursor`. It is the width of the window a post-fetch filter can
+# starve. The fixture asserts the window is genuinely exceeded rather than
+# trusting this number.
+_PROJECTION_SCAN_FETCH = 32
+
+
+def _edge(logical_id: str, from_id: str, to_id: str, body: str) -> dict:
+    """An edge carrying a BODY — the only edge shape that enrols ``'edge_fact'``
+    in ``_fathomdb_vector_kinds`` (engine ``project_canonical_edge_row``, G11)
+    and therefore the only one that is schedulable projection work."""
+
+    return {
+        "edge": {
+            "kind": "link",
+            "from": from_id,
+            "to": to_id,
+            "source_id": _SOURCE_ID,
+            "logical_id": logical_id,
+            "body": body,
+        }
+    }
+
+
+def _active_edge_cursor(path: str, logical_id: str) -> int:
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        row = conn.execute(
+            "SELECT write_cursor FROM canonical_edges"
+            " WHERE logical_id = ? AND superseded_at IS NULL",
+            (logical_id,),
+        ).fetchone()
+        assert row is not None, f"no active edge for {logical_id}"
+        return int(row[0])
+    finally:
+        conn.close()
+
+
+def _pending_node_rows_below(path: str, cursor: int) -> int:
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM canonical_nodes n"
+            " JOIN _fathomdb_vector_kinds k ON k.kind = n.kind"
+            " LEFT JOIN _fathomdb_projection_terminal t"
+            "   ON t.write_cursor = n.write_cursor"
+            " WHERE n.row_kind IN ('leaf', 'coverage')"
+            "   AND n.superseded_at IS NULL"
+            "   AND t.write_cursor IS NULL"
+            "   AND n.write_cursor < ?",
+            (cursor,),
+        ).fetchone()
+        return int(row[0])
+    finally:
+        conn.close()
+
+
+def _poll_until(timeout_s: float, probe) -> bool:
+    deadline = time.monotonic() + timeout_s
+    while True:
+        if probe():
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.05)
+
+
+def test_a_pending_edge_body_survives_a_full_scan_window_of_node_rows(tmp_path) -> None:
+    """fix-5 (codex §9 round 4 [P1]) — a pending EDGE body must stay reachable
+    behind a full scan window of no-embedder NODE rows.
+
+    fix-4 excluded no-embedder node jobs by filtering what the scheduler's scan
+    RETURNED — i.e. after its ``ORDER BY write_cursor LIMIT
+    PROJECTION_SCAN_FETCH``. The ``LIMIT`` therefore applied to the UNFILTERED
+    set: with more than one window of pending node rows ordered before a pending
+    edge body, the scan came back entirely full of node jobs, the filter dropped
+    all of them, the dispatcher went back to sleep with its wake already
+    consumed — and the edge body was NEVER scheduled. Permanently, because those
+    node rows stay pending for the life of a no-embedder session, so ``drain``
+    could time out indefinitely on that edge workload.
+
+    Fully OFFLINE and network-free: the kind is enrolled through the
+    ``test-hooks``-gated ``_configure_vector_kind_for_test`` seam (the same one
+    the shipped ``test_slice20_dense_readiness.py`` fixture uses), so no embedder
+    is ever downloaded. Edges keep their SHIPPED no-embedder behaviour, so
+    "scheduled" is observable as the edge body reaching a TERMINAL; this test
+    asserts only that the scheduler REACHES it.
+    """
+
+    path = str(tmp_path / "flush_scan_window_starvation.sqlite")
+    engine = Engine.open(path, use_default_embedder=False)
+    try:
+        engine.configure_projections([_vector_spec()])
+        configure_vector_kind = getattr(engine._native, "_configure_vector_kind_for_test", None)
+        assert configure_vector_kind is not None, "test-hooks seam required for the offline fixture"
+        configure_vector_kind("doc")
+
+        # MORE than one scan window of node rows, all ordered BEFORE the edge.
+        node_rows = _PROJECTION_SCAN_FETCH + 8
+        engine.write([_node(f"N{i}", '{"summary":"row %d"}' % i) for i in range(node_rows)])
+        engine.write([_edge("E1", "N0", "N1", "the edge body that must not be starved")])
+
+        edge_cursor = _active_edge_cursor(path, "E1")
+        assert _vector_kind_registered(path, "edge_fact"), (
+            "fixture: an edge body auto-registers `edge_fact` (G11), so it IS schedulable work"
+        )
+        pending_before = _pending_node_rows_below(path, edge_cursor)
+        assert pending_before > _PROJECTION_SCAN_FETCH, (
+            "fixture: the scan window must be over-subscribed by node rows ordered BEFORE the "
+            f"edge body. Pending: {pending_before}, window: {_PROJECTION_SCAN_FETCH}"
+        )
+
+        # The shipped edge path with no embedder is the 0 + 1 + 4 + 16 s retry
+        # ladder into a `'failed'` terminal; the SDKs expose no equivalent of the
+        # Rust `set_projection_retry_delays_for_test` seam, so this waits it out.
+        scheduled = _poll_until(
+            _LADDER_SETTLE_S + 16.0, lambda: _terminal_state(path, edge_cursor) is not None
+        )
+        assert scheduled, (
+            "SCAN-WINDOW STARVATION: with more than PROJECTION_SCAN_FETCH "
+            f"({_PROJECTION_SCAN_FETCH}) pending node rows ordered before it, the pending edge "
+            f"body at cursor {edge_cursor} was NEVER scheduled. The no-embedder node exclusion "
+            "must happen INSIDE the scheduler's SQL so the LIMIT applies to the ALREADY-FILTERED "
+            "set; filtering after the fetch lets one full window of node rows hide every later "
+            "job, and `drain` then times out on that edge workload indefinitely"
+        )
+        assert _terminal_state(path, edge_cursor) == "failed", (
+            "edges keep their shipped no-embedder behaviour: the retry ladder exhausts into a "
+            "`'failed'` terminal. fix-5 changes WHICH rows the scan returns, not what happens to "
+            "an edge once it is dispatched"
+        )
+        assert _pending_node_rows_below(path, edge_cursor) == pending_before, (
+            "fix-4 stands: an absent embedder records NO terminal for a NODE row, so every one "
+            "of them is still pending and still recoverable by the next live-embedder session"
+        )
+    finally:
+        engine.close()
+
+
+def test_a_late_enrolment_whose_repair_fails_registers_nothing(tmp_path) -> None:
+    """fix-5 (codex §9 round 4 [P2]) — the late-enrolment registry INSERT and the
+    un-stranding it owes must commit as ONE transaction.
+
+    A late enrolment registers the kind in ``_fathomdb_vector_kinds`` AND repairs
+    the rows that kind stranded (delete their ``'up_to_date'`` terminals, rewind
+    the watermark). While the INSERT autocommitted ahead of the repair's own
+    transaction, a failure in between left the kind REGISTERED with older rows
+    still holding their terminals and no vectors. That state is SELF-SEALING: the
+    kind is now registered, so every later write skips the enrolment path and
+    therefore skips the repair, while readiness reads ``"ready"`` for rows nothing
+    will ever embed.
+
+    The failure is injected as a real SQLite ``BEFORE DELETE`` trigger on
+    ``_fathomdb_projection_terminal`` — the repair genuinely fails, against a real
+    engine and a real database, at exactly the point a crash would truncate it.
+    The trigger is installed and dropped while NO engine holds the file. Nothing
+    is mocked.
+    """
+
+    _skip_if_no_network()
+    path = str(tmp_path / "flush_enrolment_atomicity.sqlite")
+
+    # ---- session A: NO embedder. The declaration persists and DEFERS, so these
+    # rows take permanent terminals with no vector: the stranded set. ----
+    engine = Engine.open(path, use_default_embedder=False)
+    try:
+        engine.configure_projections([_vector_spec()])
+        engine.write([_node("N1", '{"summary":"stranded one"}')])
+        engine.write([_node("N2", '{"summary":"stranded two"}')])
+        engine.drain(timeout_s=5.0)
+        assert not _vector_kind_registered(path), "fixture: a dead dense arm enrols nothing"
+        assert _leaf_rows_without_vectors(path) == 2, "fixture: two rows are stranded"
+    finally:
+        engine.close()
+
+    conn = sqlite3.connect(path)
+    try:
+        conn.executescript(
+            "CREATE TRIGGER fix5_repair_fails"
+            " BEFORE DELETE ON _fathomdb_projection_terminal"
+            " BEGIN SELECT RAISE(ABORT, 'fix-5: the un-stranding repair failed'); END"
+        )
+    finally:
+        conn.close()
+
+    # ---- session B: WITH an embedder. The write triggers the LATE enrolment,
+    # whose repair now fails. ----
+    engine = Engine.open(path, use_default_embedder=True)
+    try:
+        with pytest.raises(Exception):
+            engine.write([_node("N3", '{"summary":"the late write"}')])
+        assert not _vector_kind_registered(path), (
+            "TORN LATE ENROLMENT: the registry INSERT committed while the un-stranding it owes "
+            "did not. `_fathomdb_vector_kinds` now holds `doc` with N1/N2 still carrying "
+            "`'up_to_date'` terminals and no vectors — and because the kind is now registered, "
+            "every future write SKIPS the enrolment path and therefore skips the repair. The "
+            "registry insert and the terminal/cursor repair must commit as ONE transaction"
+        )
+    finally:
+        engine.close()
+
+    conn = sqlite3.connect(path)
+    try:
+        conn.executescript("DROP TRIGGER fix5_repair_fails")
+    finally:
+        conn.close()
+
+    # ---- session C: one ordinary write must now enrol AND un-strand, because
+    # nothing was left half-done behind it. No re-apply, no operator rebuild. ----
+    engine = Engine.open(path, use_default_embedder=True)
+    try:
+        engine.write([_node("N4", '{"summary":"the healing write"}')])
+        engine.drain(timeout_s=_DRAIN_TIMEOUT_S)
+        assert _readiness(engine) == "ready"
+    finally:
+        engine.close()
+
+    assert _leaf_rows_without_vectors(path) == 0, (
+        "SELF-SEALED FALSE READY: `drain()` returned and readiness reads \"ready\", but the rows "
+        "the torn enrolment stranded still have no vector at rest. The torn state is invisible "
+        "to every later write precisely BECAUSE the kind is already registered — which is why "
+        "the two statements have to be atomic"
+    )
+    assert _vector_rows(path) == 3, "N1, N2 and N4 were all embedded"

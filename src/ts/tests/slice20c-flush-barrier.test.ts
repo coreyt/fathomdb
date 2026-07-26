@@ -582,3 +582,240 @@ test("a no-embedder session leaves an enrolled kind's write recoverable", async 
   assert.equal(vectorRows(path), 2, "the recovered row was embedded, and only it");
   assert.equal(projectionFailureRows(path), 0, "the recovery leaves no failure audit behind");
 });
+
+// ---------------------------------------------------------------------------
+// fix-5 (codex §9 round 4) — the scheduler's SCAN WINDOW, and the ATOMICITY of a
+// late enrolment
+// ---------------------------------------------------------------------------
+
+// `PROJECTION_SCAN_FETCH`, restated: the engine's dispatcher fetches at most
+// `PROJECTION_WORKERS (2) * PROJECTION_COMMIT_BATCH (16)` jobs per scan, ordered
+// by `write_cursor`. It is the width of the window a post-fetch filter can
+// starve. The fixture asserts the window is genuinely exceeded rather than
+// trusting this number.
+const PROJECTION_SCAN_FETCH = 32;
+
+/**
+ * An edge carrying a BODY — the only edge shape that enrols `'edge_fact'` in
+ * `_fathomdb_vector_kinds` (engine `project_canonical_edge_row`, G11) and
+ * therefore the only one that is schedulable projection work.
+ */
+function edge(logicalId: string, from: string, to: string, body: string): object {
+  return { edge: { kind: "link", from, to, logicalId, sourceId: SOURCE, body } };
+}
+
+function activeEdgeCursor(path: string, logicalId: string): number {
+  return count(
+    path,
+    "SELECT write_cursor AS c FROM canonical_edges" +
+      ` WHERE logical_id = '${logicalId}' AND superseded_at IS NULL`,
+  );
+}
+
+function pendingNodeRowsBelow(path: string, cursor: number): number {
+  return count(
+    path,
+    "SELECT COUNT(*) AS c FROM canonical_nodes n" +
+      " JOIN _fathomdb_vector_kinds k ON k.kind = n.kind" +
+      " LEFT JOIN _fathomdb_projection_terminal t ON t.write_cursor = n.write_cursor" +
+      " WHERE n.row_kind IN ('leaf', 'coverage')" +
+      "   AND n.superseded_at IS NULL" +
+      "   AND t.write_cursor IS NULL" +
+      `   AND n.write_cursor < ${cursor}`,
+  );
+}
+
+async function pollUntil(timeoutMs: number, probe: () => boolean): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (probe()) return true;
+    if (Date.now() >= deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
+// fix-5 [P1] — a pending EDGE body must stay reachable behind a full scan window
+// of no-embedder NODE rows.
+//
+// fix-4 excluded no-embedder node jobs by filtering what the scheduler's scan
+// RETURNED — i.e. after its `ORDER BY write_cursor LIMIT PROJECTION_SCAN_FETCH`.
+// The `LIMIT` therefore applied to the UNFILTERED set: with more than one window
+// of pending node rows ordered before a pending edge body, the scan came back
+// entirely full of node jobs, the filter dropped all of them, the dispatcher
+// went back to sleep with its wake already consumed — and the edge body was
+// NEVER scheduled. Permanently, because those node rows stay pending for the
+// life of a no-embedder session, so `drain` could time out indefinitely on that
+// edge workload.
+//
+// Fully OFFLINE: the kind is enrolled through the `test-hooks`-gated
+// `configureVectorKindForTest` seam (the same one the shipped
+// `slice20-dense-readiness.test.ts` fixture uses), so no embedder is ever
+// downloaded. Edges keep their SHIPPED no-embedder behaviour, so "scheduled" is
+// observable as the edge body reaching a TERMINAL; this test asserts only that
+// the scheduler REACHES it.
+test("a pending edge body survives a full scan window of node rows (offline)", async () => {
+  const path = freshDbPath();
+  const engine = await Engine.open(path);
+  try {
+    await engine.configureProjections([vectorSpec()]);
+    const inner = (engine as unknown as { _native: unknown })._native as {
+      configureVectorKindForTest: (kind: string) => Promise<void>;
+    };
+    await inner.configureVectorKindForTest("doc");
+
+    // MORE than one scan window of node rows, all ordered BEFORE the edge.
+    const nodeRows = PROJECTION_SCAN_FETCH + 8;
+    await engine.write(
+      Array.from({ length: nodeRows }, (_, i) => node(`N${i}`, `{"summary":"row ${i}"}`)),
+    );
+    await engine.write([edge("E1", "N0", "N1", "the edge body that must not be starved")]);
+
+    const edgeCursor = activeEdgeCursor(path, "E1");
+    assert.equal(
+      vectorKindRegistered(path, "edge_fact"),
+      true,
+      "fixture: an edge body auto-registers `edge_fact` (G11), so it IS schedulable work",
+    );
+    const pendingBefore = pendingNodeRowsBelow(path, edgeCursor);
+    assert.ok(
+      pendingBefore > PROJECTION_SCAN_FETCH,
+      "fixture: the scan window must be over-subscribed by node rows ordered BEFORE the edge " +
+        `body. Pending: ${pendingBefore}, window: ${PROJECTION_SCAN_FETCH}`,
+    );
+
+    // The shipped edge path with no embedder is the 0 + 1 + 4 + 16 s retry ladder
+    // into a `'failed'` terminal; the SDKs expose no equivalent of the Rust
+    // `set_projection_retry_delays_for_test` seam, so this waits it out.
+    const scheduled = await pollUntil(
+      LADDER_SETTLE_MS + 16_000,
+      () => terminalState(path, edgeCursor) !== null,
+    );
+    assert.ok(
+      scheduled,
+      `SCAN-WINDOW STARVATION: with more than PROJECTION_SCAN_FETCH (${PROJECTION_SCAN_FETCH}) ` +
+        `pending node rows ordered before it, the pending edge body at cursor ${edgeCursor} was ` +
+        "NEVER scheduled. The no-embedder node exclusion must happen INSIDE the scheduler's SQL " +
+        "so the LIMIT applies to the ALREADY-FILTERED set; filtering after the fetch lets one " +
+        "full window of node rows hide every later job, and `drain` then times out on that edge " +
+        "workload indefinitely",
+    );
+    assert.equal(
+      terminalState(path, edgeCursor),
+      "failed",
+      "edges keep their shipped no-embedder behaviour: the retry ladder exhausts into a " +
+        "`'failed'` terminal. fix-5 changes WHICH rows the scan returns, not what happens to an " +
+        "edge once it is dispatched",
+    );
+    assert.equal(
+      pendingNodeRowsBelow(path, edgeCursor),
+      pendingBefore,
+      "fix-4 stands: an absent embedder records NO terminal for a NODE row, so every one of " +
+        "them is still pending and still recoverable by the next live-embedder session",
+    );
+  } finally {
+    await engine.close();
+  }
+});
+
+// fix-5 [P2] — the late-enrolment registry INSERT and the un-stranding it owes
+// must commit as ONE transaction.
+//
+// A late enrolment registers the kind in `_fathomdb_vector_kinds` AND repairs the
+// rows that kind stranded (delete their `'up_to_date'` terminals, rewind the
+// watermark). While the INSERT autocommitted ahead of the repair's own
+// transaction, a failure in between left the kind REGISTERED with older rows
+// still holding their terminals and no vectors. That state is SELF-SEALING: the
+// kind is now registered, so every later write skips the enrolment path and
+// therefore skips the repair, while readiness reads `"ready"` for rows nothing
+// will ever embed.
+//
+// The failure is injected as a real SQLite `BEFORE DELETE` trigger on
+// `_fathomdb_projection_terminal` — the repair genuinely fails, against a real
+// engine and a real database, at exactly the point a crash would truncate it.
+// The READ-WRITE `DatabaseSync` is opened ONLY while no engine holds the file,
+// so the live-WAL hazard documented on `count()` above is not in play. Nothing
+// is mocked.
+test("a late enrolment whose repair fails registers nothing", async () => {
+  if (skipNetwork()) return;
+  const path = freshDbPath();
+
+  // ---- session A: NO embedder. The declaration persists and DEFERS, so these
+  // rows take permanent terminals with no vector: the stranded set.
+  {
+    const engine = await Engine.open(path);
+    try {
+      await engine.configureProjections([vectorSpec()]);
+      await engine.write([node("N1", '{"summary":"stranded one"}')]);
+      await engine.write([node("N2", '{"summary":"stranded two"}')]);
+      await engine.drain(5_000);
+      assert.equal(vectorKindRegistered(path), false, "fixture: a dead dense arm enrols nothing");
+      assert.equal(leafRowsWithoutVectors(path), 2, "fixture: two rows are stranded");
+    } finally {
+      await engine.close();
+    }
+  }
+
+  const injector = new DatabaseSync(path);
+  try {
+    injector.exec(
+      "CREATE TRIGGER fix5_repair_fails" +
+        " BEFORE DELETE ON _fathomdb_projection_terminal" +
+        " BEGIN SELECT RAISE(ABORT, 'fix-5: the un-stranding repair failed'); END",
+    );
+  } finally {
+    injector.close();
+  }
+
+  // ---- session B: WITH an embedder. The write triggers the LATE enrolment,
+  // whose repair now fails.
+  {
+    const engine = await Engine.open(path, { useDefaultEmbedder: true });
+    try {
+      await assert.rejects(
+        engine.write([node("N3", '{"summary":"the late write"}')]),
+        "fixture: the repair failed, so the write must surface an error",
+      );
+      assert.equal(
+        vectorKindRegistered(path),
+        false,
+        "TORN LATE ENROLMENT: the registry INSERT committed while the un-stranding it owes did " +
+          "not. `_fathomdb_vector_kinds` now holds `doc` with N1/N2 still carrying " +
+          "`'up_to_date'` terminals and no vectors — and because the kind is now registered, " +
+          "every future write SKIPS the enrolment path and therefore skips the repair. The " +
+          "registry insert and the terminal/cursor repair must commit as ONE transaction",
+      );
+    } finally {
+      await engine.close();
+    }
+  }
+
+  const remover = new DatabaseSync(path);
+  try {
+    remover.exec("DROP TRIGGER fix5_repair_fails");
+  } finally {
+    remover.close();
+  }
+
+  // ---- session C: one ordinary write must now enrol AND un-strand, because
+  // nothing was left half-done behind it. No re-apply, no operator rebuild.
+  {
+    const engine = await Engine.open(path, { useDefaultEmbedder: true });
+    try {
+      await engine.write([node("N4", '{"summary":"the healing write"}')]);
+      await engine.drain(DRAIN_TIMEOUT_MS);
+      assert.equal(await readiness(engine), "ready");
+    } finally {
+      await engine.close();
+    }
+  }
+
+  assert.equal(
+    leafRowsWithoutVectors(path),
+    0,
+    'SELF-SEALED FALSE READY: `drain()` returned and readiness reads "ready", but the rows the ' +
+      "torn enrolment stranded still have no vector at rest. The torn state is invisible to " +
+      "every later write precisely BECAUSE the kind is already registered — which is why the " +
+      "two statements have to be atomic",
+  );
+  assert.equal(vectorRows(path), 3, "N1, N2 and N4 were all embedded");
+});
