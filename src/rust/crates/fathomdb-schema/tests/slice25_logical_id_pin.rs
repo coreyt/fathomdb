@@ -222,6 +222,106 @@ fn pin_rejects_quoted_identifier_evasion() {
     }
 }
 
+/// **Schema-qualifying the table is not an escape either.** SQLite resolves
+/// `main.canonical_nodes` to the SAME pinned table as the bare name, so an
+/// author who writes the qualified spelling has performed the exact backfill the
+/// pin exists to reject. Both canonical tables, both write shapes.
+///
+/// (Reviewer finding, codex §9 [P2] on Slice 25: the guard compared the extracted
+/// token LITERALLY against `CANONICAL_NODES` / `CANONICAL_EDGES`, so the token
+/// `MAIN.CANONICAL_NODES` silently ACCEPTED the forbidden shape.)
+#[test]
+fn pin_rejects_schema_qualified_backfills() {
+    for offender in [
+        "UPDATE main.canonical_nodes SET logical_id = 'minted' WHERE logical_id IS NULL;",
+        "UPDATE main.canonical_edges SET logical_id = from_id || ':' || to_id WHERE 1;",
+        "INSERT INTO main.canonical_nodes(write_cursor, logical_id) \
+             SELECT write_cursor, COALESCE(logical_id, 'minted') FROM canonical_nodes_old;",
+        "INSERT INTO main.canonical_edges(write_cursor, logical_id) \
+             SELECT write_cursor, 'minted' FROM canonical_edges_old;",
+        // No column list: writes every column, identity included.
+        "INSERT INTO main.canonical_nodes SELECT * FROM canonical_nodes_old;",
+    ] {
+        check_migration_logical_id_pin("099_qualified.sql", offender)
+            .unwrap_err_or_panic("a schema-qualified backfill must still be rejected", offender);
+    }
+}
+
+/// The qualifier is normalised the same way the TABLE name already is: EITHER
+/// half may be quoted (`"main".canonical_nodes`, `[main].[canonical_nodes]`,
+/// `` `main`.`canonical_nodes` ``), and `temp.` qualifies just as `main.` does.
+/// SQLite treats all of these as the one pinned table; so must the guard.
+#[test]
+fn pin_rejects_quoted_and_temp_schema_qualified_evasion() {
+    for offender in [
+        r#"UPDATE "main".canonical_nodes SET logical_id = 'x' WHERE 1;"#,
+        r#"UPDATE main."canonical_nodes" SET logical_id = 'x' WHERE 1;"#,
+        r#"UPDATE "main"."canonical_nodes" SET logical_id = 'x' WHERE 1;"#,
+        "UPDATE [main].[canonical_nodes] SET logical_id = 'x' WHERE 1;",
+        "UPDATE `main`.`canonical_nodes` SET logical_id = 'x' WHERE 1;",
+        "UPDATE temp.canonical_nodes SET logical_id = 'x' WHERE 1;",
+        "INSERT INTO [temp].[canonical_edges](write_cursor, logical_id) VALUES(1, 'x');",
+    ] {
+        check_migration_logical_id_pin("099_qualified_quoted.sql", offender).unwrap_err_or_panic(
+            "a quoted / temp-qualified backfill must still be rejected",
+            offender,
+        );
+    }
+}
+
+/// SQLite's tokenizer accepts whitespace around the qualifier dot —
+/// `UPDATE main . canonical_nodes SET …` parses and targets the same table
+/// (verified against real SQLite 3.45 before this assertion was written). The
+/// guard's token extractors cut at whitespace, so the spaced spelling must be
+/// tightened during normalisation or it slips the pin as the bare token `MAIN`.
+#[test]
+fn pin_rejects_whitespace_around_the_qualifier_dot() {
+    for offender in [
+        "UPDATE main . canonical_nodes SET logical_id = 'x' WHERE 1;",
+        "UPDATE main. canonical_edges SET logical_id = 'x' WHERE 1;",
+        "INSERT INTO main .canonical_nodes(write_cursor, logical_id) VALUES(1, 'x');",
+    ] {
+        check_migration_logical_id_pin("099_spaced_dot.sql", offender).unwrap_err_or_panic(
+            "whitespace around the qualifier dot must not defeat the pin",
+            offender,
+        );
+    }
+}
+
+/// The DDL arms take the table name through the same extractor, so they carry
+/// the same hole: a qualified `ALTER TABLE` / `CREATE TABLE` must be judged on
+/// the table it actually targets.
+#[test]
+fn pin_rejects_schema_qualified_ddl() {
+    for offender in [
+        "ALTER TABLE main.canonical_nodes ADD COLUMN logical_id TEXT NOT NULL DEFAULT 'minted';",
+        "ALTER TABLE main.canonical_nodes RENAME COLUMN kind TO logical_id;",
+        "CREATE TABLE main.canonical_edges(write_cursor INTEGER, logical_id TEXT DEFAULT 'x');",
+    ] {
+        check_migration_logical_id_pin("099_qualified_ddl.sql", offender).unwrap_err_or_panic(
+            "a schema-qualified DDL offender must still be rejected",
+            offender,
+        );
+    }
+}
+
+/// **Control — stripping the qualifier must not degrade into a substring match.**
+/// `main.canonical_nodes_old` is a DIFFERENT table and is none of the pin's
+/// business; if the fix widened the comparison to "contains", these would start
+/// failing and the guard would reject legitimate recreate scaffolding.
+#[test]
+fn pin_still_ignores_qualified_non_canonical_tables() {
+    for accepted in [
+        "UPDATE main.canonical_nodes_old SET logical_id = 'x' WHERE 1;",
+        "UPDATE main.node_projections SET logical_id = 'x' WHERE 1;",
+        "INSERT INTO temp.canonical_nodes_backup(write_cursor, logical_id) VALUES(1, 'x');",
+    ] {
+        check_migration_logical_id_pin("098_unrelated.sql", accepted).unwrap_or_else(|err| {
+            panic!("an unrelated table is none of the pin's business: {err}")
+        });
+    }
+}
+
 /// A trigger is a deferred `UPDATE`. One that writes `logical_id` on a canonical
 /// table is the same offence, executed later.
 #[test]
