@@ -4788,10 +4788,17 @@ impl Engine {
     /// same as `rankable`). It mirrors the `run_vector_equivalence_probe` gate:
     /// "no live embedder ⇒ no dense arm to guard".
     ///
-    /// Enrolment is an idempotent `INSERT OR IGNORE` into a KIND registry that
-    /// has no delete path, so running it on the writer connection just OUTSIDE
-    /// the batch transaction is safe: if the batch then fails, the workspace is
-    /// left having enrolled a kind for which no row exists — inert.
+    /// Enrolment is an idempotent `INSERT OR IGNORE`, so running it on the writer
+    /// connection just OUTSIDE the batch transaction is safe: if the batch then
+    /// fails, the workspace is left having enrolled a kind for which no row
+    /// exists — inert.
+    ///
+    /// fix-1 (codex §9 [P2]) — the `vector_projection_declared` probe below is
+    /// what stops this path re-enrolling immediately after
+    /// [`unenrol_registry_vector_node_kinds`] has run: the inverse removes the
+    /// registry row, and with no active declaration this returns without
+    /// re-adding it. (The kind registry DOES now have a delete path; it is that
+    /// one, reachable only from `configure_projections`.)
     ///
     /// Cost: the registry probe is skipped entirely once the kind is enrolled, so
     /// a workspace with a live dense arm pays nothing; a workspace that never
@@ -16582,6 +16589,11 @@ fn describe_projection_delta(existing: &StoredProjection, desired: &StoredProjec
 /// `notify_new_work()` after committing (the flag cannot ride on
 /// [`ProjectionDelta`]: that is the caller-facing diff, and this is a runtime
 /// signal, not part of the declaration's result).
+///
+/// 0.8.20 Slice 20c fix-1 (codex §9 [P2]) — and the symmetric inverse: a call
+/// that removes the LAST `searchable→vector` declaration un-enrols the node kinds
+/// the forward path enrolled ([`unenrol_registry_vector_node_kinds`]), on this
+/// same transaction. It deletes no embedding.
 fn apply_projection_config(
     tx: &Connection,
     specs: &[ProjectionSpec],
@@ -16638,6 +16650,15 @@ fn apply_projection_config(
     }
 
     let mut delta = ProjectionDelta::default();
+
+    // 0.8.20 Slice 20c fix-1 (codex §9 [P2]) — snapshot "is the dense arm
+    // declared?" BEFORE any registry mutation. Together with the same read taken
+    // after them it identifies the ONE transition that owns the inverse of this
+    // slice's enrolment: declared -> not-declared. See
+    // [`unenrol_registry_vector_node_kinds`] for why the inverse is keyed to that
+    // TRANSITION rather than to the bare post-state.
+    let vector_declared_before =
+        vector_projection_declared(tx).map_err(|_| EngineError::Storage)?;
 
     // (1) Explicit drops. Omission never drops (C3); only this list does.
     let before_drop = load_projection_registry(tx).map_err(|_| EngineError::Storage)?;
@@ -16724,12 +16745,85 @@ fn apply_projection_config(
     // onto `delta.deferred`. Acknowledging deferred work and then dropping it on
     // the floor is what made `drain` a FALSE-READY barrier; this call is where the
     // deferred work is actually enqueued onto the runtime `drain` waits on.
-    let enqueued = if dense_arm_live {
-        enqueue_declared_vector_backfill(tx).map_err(|_| EngineError::Storage)?
+    //
+    // fix-1 (codex §9 [P2]) — and its SYMMETRIC INVERSE, on the same
+    // transaction. If this call removed the last `searchable→vector` declaration,
+    // un-enrol the node kinds the forward path enrols; otherwise enrolment is a
+    // one-way door and the write path keeps embedding for a projection the
+    // registry no longer declares.
+    let vector_declared_after = vector_projection_declared(tx).map_err(|_| EngineError::Storage)?;
+    let enqueued = if vector_declared_after {
+        if dense_arm_live {
+            enqueue_declared_vector_backfill(tx).map_err(|_| EngineError::Storage)?
+        } else {
+            false
+        }
     } else {
+        if vector_declared_before {
+            unenrol_registry_vector_node_kinds(tx).map_err(|_| EngineError::Storage)?;
+        }
         false
     };
     Ok((delta, enqueued))
+}
+
+/// 0.8.20 Slice 20c fix-1 (codex §9 [P2] "Stop embedding after vector projection
+/// drops") — **the inverse of [`enqueue_declared_vector_backfill`]'s enrolment.**
+///
+/// Slice 20c gave `_fathomdb_vector_kinds` its first governed-call-reachable
+/// writer for a NODE kind (before it, the only one was the `#[doc(hidden)]`
+/// `configure_vector_kind_for_test` hook). Forward without reverse is the defect:
+/// after `drop`ping the last `searchable→vector` declaration,
+/// [`project_canonical_node_row`]'s `kind_is_vector_indexed` gate and
+/// [`connection_has_pending_projection_work`] both still see the enrolment, so
+/// subsequent writes keep enqueueing embeds and `drain` keeps waiting on work for
+/// a projection [`Engine::read_projections`] no longer reports.
+///
+/// # It DELETES NO EMBEDDING — that is the point
+///
+/// The shipped drop arm ([`clear_attribute_projection`] +
+/// [`remove_projection_row`]) has never touched vec0, `_fathomdb_vector_rows` or
+/// `_fathomdb_vector_kinds`, so "vectors already at rest survive a drop" is
+/// ALREADY the shipped contract. Removing one registry row PRESERVES it; deleting
+/// embeddings would be the destructive delta, and is not done here.
+///
+/// # Why keyed to the TRANSITION, not to the bare post-state
+///
+/// The rule is "this call removed the last vector declaration"
+/// (`declared_before && !declared_after`), not "no vector declaration exists
+/// now". A workspace can hold enrolments this registry never made — the test hook
+/// does exactly that, and several shipped suites enrol a kind through it and then
+/// declare an unrelated `filterable`-only projection (e.g.
+/// `slice15e_prekn_filterable`). Firing on the bare post-state would un-enrol
+/// those and silently kill a dense arm the registry never owned. In production
+/// the two readings coincide: before this slice
+/// `production_vector_kind_surface=[]`, so a node kind can only be enrolled
+/// because a `searchable→vector` declaration existed.
+///
+/// It is still STATE-keyed, not delta-keyed: both members are reads of the
+/// registry, never "was this spec new". Re-applying the same drop finds
+/// `declared_before == false` and is a total no-op, and nothing re-enrols it
+/// ([`Engine::enrol_vector_kind_if_declared`] is gated on
+/// [`vector_projection_declared`]).
+///
+/// # `'edge_fact'` is excluded, deliberately
+///
+/// [`project_canonical_edge_row`] (G11) auto-registers `'edge_fact'` off the
+/// presence of an edge BODY, unconditionally and independently of the projection
+/// registry. That lifecycle predates this slice and is not the registry's to end,
+/// so a node-projection drop must not take the edge dense arm down with it.
+///
+/// # What it deliberately does NOT do
+///
+/// It touches no `_fathomdb_projection_terminal` row and no readiness watermark.
+/// A row enqueued-but-not-yet-embedded when the drop lands keeps its absent
+/// terminal, which pins the watermark below it — harmless, because both the
+/// scheduler and the pending-work probe join `_fathomdb_vector_kinds` and so no
+/// longer see it, and it is precisely what lets a later RE-declaration pick the
+/// row up again instead of stranding it.
+fn unenrol_registry_vector_node_kinds(tx: &Connection) -> rusqlite::Result<()> {
+    tx.execute("DELETE FROM _fathomdb_vector_kinds WHERE kind <> 'edge_fact'", [])?;
+    Ok(())
 }
 
 /// 0.8.20 Slice 20c (R-20-DR remainder) — is ANY `searchable→vector` projection
