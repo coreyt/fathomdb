@@ -4475,6 +4475,32 @@ impl Engine {
                 if let Some(subscriber) = initial_subscriber {
                     opened.engine.subscribers.attach_persistent(subscriber);
                 }
+                // 0.8.20 Slice 20c fix-3 (codex §9 round 3 [P1]) — the OPEN-time
+                // half of the graceful-graft contract. A session with no live
+                // embedder now records an `'up_to_date'` terminal instead of
+                // enqueueing (see `project_canonical_node_row`), which leaves
+                // STRANDED rows. Before this, the only doors that un-stranded
+                // were a NEW enrolment (write path) and a re-applied declaration
+                // (`enqueue_declared_vector_backfill`) — and neither fires when
+                // the kind is ALREADY enrolled, which is exactly the state a
+                // no-embedder session leaves behind. Reopening WITH an embedder
+                // would then never graft the deferred work, so "it defers" would
+                // be a lie.
+                //
+                // Gated on the LIVE embedder for the same reason as every other
+                // door: with none there is no dense arm to re-enqueue onto.
+                // Idempotent and effectively free — `reenqueue_stranded_vector_rows`
+                // opens with a single indexed `MIN` over the `_fathomdb_vector_kinds`
+                // join and returns immediately when nothing is stranded, which is
+                // every healthy corpus and every DB that never declared a vector
+                // projection. It runs BEFORE the pending-work probe below, so the
+                // rows it un-strands are what that probe wakes the dispatcher for
+                // — `drain` stays a passive barrier and is never a trigger (C4).
+                opened.engine.graft_stranded_vector_rows_on_open().map_err(|_| {
+                    EngineOpenError::Io {
+                        message: "could not re-enqueue stranded vector rows on boot".to_string(),
+                    }
+                })?;
                 if database_has_pending_projection_work(&canonical_path).unwrap_or(false) {
                     opened.engine.projection_runtime.notify_new_work();
                 }
@@ -4843,10 +4869,39 @@ impl Engine {
         self.unstrand_after_late_enrolment(connection)
     }
 
+    /// 0.8.20 Slice 20c fix-3 (codex §9 round 3 [P1]) — the OPEN-time graft.
+    ///
+    /// A no-embedder session accepts a write of an already-enrolled kind, keeps it
+    /// lexically searchable, and does NOT enqueue vector work for it; the row
+    /// takes the `'up_to_date'` terminal, i.e. it is STRANDED. Reopening WITH an
+    /// embedder is the moment that deferral has to be honoured, and neither of the
+    /// other two doors fires there: the write-path door needs a NEW enrolment
+    /// (the kind is already enrolled) and the declare-time door needs a re-applied
+    /// `configure_projections` call the caller has no reason to make.
+    ///
+    /// So this runs on every open that HAS a live embedder. It is the identical
+    /// [`reenqueue_stranded_vector_rows`] the other two doors call — one
+    /// implementation, three doors — wrapped in the same `BEGIN IMMEDIATE`
+    /// transaction. Returns `true` iff work was re-enqueued; the caller's existing
+    /// `database_has_pending_projection_work` probe then wakes the dispatcher.
+    ///
+    /// A no-op on every corpus with nothing stranded (one indexed `MIN` over the
+    /// `_fathomdb_vector_kinds` join), which includes every database that never
+    /// declared a `searchable→vector` projection.
+    fn graft_stranded_vector_rows_on_open(&self) -> Result<bool, EngineError> {
+        if self.runtime_embedder.is_none() {
+            return Ok(false);
+        }
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        self.unstrand_after_late_enrolment(connection)
+    }
+
     /// 0.8.20 Slice 20c fix-2 — the un-stranding half of a LATE enrolment, on its
-    /// own `BEGIN IMMEDIATE` transaction. Split out so both write-path callers
-    /// ([`Engine::enrol_batch_vector_kinds`] and the `#[doc(hidden)]`
-    /// `write_canonical_row_with_kind_for_test`) share it verbatim.
+    /// own `BEGIN IMMEDIATE` transaction. Split out so its callers
+    /// ([`Engine::enrol_batch_vector_kinds`], the `#[doc(hidden)]`
+    /// `write_canonical_row_with_kind_for_test`, and — fix-3 —
+    /// [`Engine::graft_stranded_vector_rows_on_open`]) share it verbatim.
     fn unstrand_after_late_enrolment(&self, connection: &Connection) -> Result<bool, EngineError> {
         connection.execute_batch("BEGIN IMMEDIATE").map_err(|_| EngineError::Storage)?;
         match reenqueue_stranded_vector_rows(connection) {
@@ -4917,7 +4972,11 @@ impl Engine {
         // `drain` is a passive barrier and never a trigger (C4 rider), so work
         // enqueued without a wake would sit until the next unrelated write.
         let unstranded = self.enrol_batch_vector_kinds(connection, batch)?;
-        let projection_jobs = collect_projection_jobs(connection, batch)?;
+        // fix-3 (codex §9 round 3 [P1]) — ONE live-embedder fact, read once and
+        // carried to every decision this write makes about the dense arm: the
+        // wake below, and `project_canonical_node_row`'s enqueue.
+        let dense_arm_live = self.runtime_embedder.is_some();
+        let projection_jobs = collect_projection_jobs(connection, batch, dense_arm_live)?;
         #[cfg(debug_assertions)]
         if self.force_next_commit_failure.swap(false, Ordering::SeqCst) {
             return Err(EngineError::Storage);
@@ -4946,6 +5005,7 @@ impl Engine {
             &plans,
             base_cursor,
             self.provenance_row_cap.load(Ordering::Relaxed),
+            dense_arm_live,
         ) {
             Ok(count) => count,
             Err(err) => {
@@ -7368,6 +7428,10 @@ impl Engine {
                 // `state = 'active'` (no state column in its INSERT), so the row
                 // is always active and its attributes project.
                 true,
+                // fix-3 (codex §9 round 3 [P1]) — the SAME live-embedder fact
+                // this writer already checks for enrolment, now also carried to
+                // the enqueue decision. Identical to the governed write path.
+                self.runtime_embedder.is_some(),
             )
             .map_err(|_| EngineError::Storage)?;
             advance_projection_cursor(&tx).map_err(|_| EngineError::Storage)?;
@@ -9323,6 +9387,12 @@ impl Engine {
                 // active-and-non-superseded row set; FTS / vector shadows still
                 // rebuild for every row (read-side lifecycle filter, unchanged).
                 row.attr_projected,
+                // fix-3 (codex §9 round 3 [P1]) — a rebuild in a session with no
+                // embedder must not re-enqueue what it just truncated: the worker
+                // could only fail it into a permanent `'failed'` terminal. It
+                // records the `'up_to_date'` terminal instead, leaving STRANDED
+                // rows that the next live-embedder open grafts.
+                self.runtime_embedder.is_some(),
             )
             .map_err(|_| EngineError::Storage)?;
             if include_fts {
@@ -13103,6 +13173,12 @@ fn reproject_search_index_after_tokenizer_upgrade(connection: &Connection) -> ru
                 // the backfill's active-and-non-superseded predicate) so the field
                 // has a reader in every build configuration.
                 row.attr_projected,
+                // fix-3: INERT on this pass. `FtsOnly.writes_vector_state()` is
+                // false, so the enqueue/terminal branch is not reached at all and
+                // this flag cannot perturb readiness. `false` is the honest value:
+                // this runs inside `open_locked`, which holds the embedder
+                // IDENTITY but not the live embedder itself.
+                false,
             )?;
         }
         connection.execute(
@@ -15722,8 +15798,16 @@ fn validate_batch(
 fn collect_projection_jobs(
     connection: &Connection,
     batch: &[PreparedWrite],
+    dense_arm_live: bool,
 ) -> Result<Vec<ProjectionJob>, EngineError> {
     let mut jobs = Vec::new();
+    // fix-3 (codex §9 round 3 [P1]) — the same gate `project_canonical_node_row`
+    // now applies to the ENQUEUE, applied here to the WAKE, so the two cannot
+    // disagree: with no live embedder this write enqueues no vector work, so the
+    // dispatcher has nothing to be woken for.
+    if !dense_arm_live {
+        return Ok(jobs);
+    }
     for write in batch {
         if let PreparedWrite::Node { kind, body, .. } = write {
             // 0.8.20 Slice 20c — this probe decides whether `notify_new_work` is
@@ -17198,6 +17282,16 @@ fn index_targets_for_row_kind(row_kind: RowKind) -> IndexTargetSet {
 /// Returns `true` iff async vector work was enqueued (the caller must then
 /// `notify_new_work`). For `RowKind::Leaf` this is behavior-identical to the
 /// pre-EXP-S inline node path.
+///
+/// `dense_arm_live` is the engine's LIVE-embedder fact, threaded down explicitly
+/// (fix-3, codex §9 round 3 [P1]) — see the gate at the enqueue decision below.
+/// It is spelled the same way as [`apply_projection_config`]'s parameter of the
+/// same name, which is the seam that already carries this fact into the
+/// declare-time door.
+// The projector takes one argument per axis it dispatches on; grouping them into
+// a struct would only rename the same eight facts. Every call site labels the two
+// trailing flags inline so a transposition is visible in review.
+#[allow(clippy::too_many_arguments)]
 fn project_canonical_node_row(
     tx: &Connection,
     cursor: u64,
@@ -17206,6 +17300,7 @@ fn project_canonical_node_row(
     row_kind: RowKind,
     pass: ProjectionPass,
     node_active: bool,
+    dense_arm_live: bool,
 ) -> rusqlite::Result<bool> {
     let targets = index_targets_for_row_kind(row_kind);
     if targets.fts && pass.writes_fts() {
@@ -17261,13 +17356,34 @@ fn project_canonical_node_row(
     if pass.writes_attributes() && node_active {
         project_node_attributes(tx, cursor as i64, body)?;
     }
-    // 0.8.20 Slice 20c (R-20-DR remainder) — UNCHANGED, deliberately. Late
-    // enrolment of a kind first written AFTER a `searchable→vector` declaration
-    // happens in [`Engine::enrol_vector_kind_if_declared`], upstream of this
-    // transaction, NOT here: the decision needs the engine's LIVE embedder, which
-    // a free function holding only a `Connection` cannot see. Enrolling without
-    // one would queue embeds that can only retry-then-fail.
-    let enqueue_vector = targets.vector && kind_is_vector_indexed(tx, kind).unwrap_or(false);
+    // 0.8.20 Slice 20c (R-20-DR remainder) — late ENROLMENT of a kind first
+    // written AFTER a `searchable→vector` declaration happens in
+    // [`Engine::enrol_vector_kind_if_declared`], upstream of this transaction,
+    // NOT here: it needs the engine's LIVE embedder, which a free function
+    // holding only a `Connection` cannot see.
+    //
+    // fix-3 (codex §9 round 3 [P1]) — that same live-embedder fact must reach
+    // the ENQUEUE decision too, so it is threaded down as `dense_arm_live`
+    // rather than re-derived from global state. Gating only enrolment was not
+    // enough: `_fathomdb_vector_kinds` is DURABLE, so once an embedder-backed
+    // session enrolled the kind, reopening the database with
+    // `EmbedderChoice::None` and writing that kind still passed
+    // `kind_is_vector_indexed` and enqueued. The worker then burned its retry
+    // ladder against `shared.embedder == None`, recorded an
+    // `EmbedderNotConfiguredError` `'failed'` terminal, and — because
+    // [`reenqueue_stranded_vector_rows`] reopens `'up_to_date'` terminals ONLY
+    // (re-enqueueing a `'failed'` one would loop a genuinely-failing row
+    // forever) — reopening WITH an embedder left that write permanently
+    // unembedded while readiness reported `ready`. A FALSE READY.
+    //
+    // With the gate, a no-embedder session takes the ELSE branch below and
+    // records the `'up_to_date'` terminal, i.e. it produces exactly the STRANDED
+    // shape the machinery fix-2 already built reopens on the next live-embedder
+    // enrolment, declaration, or open. No new recovery path, and no retry loop
+    // for genuinely-failing rows. An ABSENT embedder is an environment fact, not
+    // an embed failure, so it must not reach `projection_failures` either.
+    let enqueue_vector =
+        targets.vector && dense_arm_live && kind_is_vector_indexed(tx, kind).unwrap_or(false);
     if pass.writes_vector_state() {
         if enqueue_vector {
             tx.execute(
@@ -17568,6 +17684,13 @@ fn commit_batch(
     plans: &[WritePlan],
     base_cursor: u64,
     provenance_row_cap: u64,
+    // fix-3 (codex §9 round 3 [P1]) — the engine's LIVE-embedder fact, threaded
+    // down to `project_canonical_node_row`'s enqueue decision. It is passed
+    // explicitly rather than re-derived here: `commit_batch` is a free function
+    // holding only a `Connection`, and the durable `_fathomdb_vector_kinds`
+    // registry it can read says nothing about whether THIS session has an
+    // embedder to serve it.
+    dense_arm_live: bool,
 ) -> rusqlite::Result<u64> {
     let tx = connection.transaction()?;
 
@@ -17668,6 +17791,7 @@ fn commit_batch(
                     RowKind::Leaf,
                     ProjectionPass::Write,
                     matches!(state, InitialState::Active),
+                    dense_arm_live,
                 )?;
             }
             (
