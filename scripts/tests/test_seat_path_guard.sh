@@ -666,6 +666,161 @@ expect_deny "arm 56e: '&>' glued is DENIED"
 run_hook "$(payload Bash '' 'printf x &> src/rust/lib.rs' orchestrator)"
 expect_deny "arm 56f: '&>' spaced is DENIED"
 
+# ############################################################################
+# # ARMS 57-64 — ASH-B fix-2, the two codex § 9 ROUND-2 findings.            #
+# # Round-2 finding 1 was a FALSE NEGATIVE that fix-1 itself introduced:     #
+# # a guard that silently lets a src/** write through has failed at its one  #
+# # job, where a false positive is merely annoying. Arms 57* are that class  #
+# # and every one of them was OBSERVED RED against the fix-1 hook (06b7418f) #
+# # before the fix. Arms 62-64 are the SAME assumption found in sibling      #
+# # branches by the audit round 2 ordered; they were red too.                #
+# # Where an arm was already green when written it says so, and it is kept   #
+# # as the regression pin for the paired true/false positive.                #
+# ############################################################################
+
+# ====== ARMS 57-60 — in-place editors: `-` is an OPERAND, `--` ends options ==
+# codex round-2 finding 1. fix-1's rule "a token starting with `-` is a flag,
+# never a target" is wrong for the two POSIX operand spellings:
+#   `-`   means "read the script from stdin" (after -f/--file) or "stdin" as a
+#         file. It is an OPERAND. Skipping it as a flag left the program slot
+#         unfilled, so rule 4 ("the first bare operand IS the program") then ate
+#         the real src/** FILE as if it were the sed script — and no operand was
+#         ever considered. Measured on the fix-1 hook, seat=orchestrator:
+#           sed -i -f - src/rust/lib.rs      -> no decision  (want deny)  RED
+#           sed -i --file - src/rust/lib.rs  -> no decision  (want deny)  RED
+#           perl -i -pe - src/rust/lib.rs    -> no decision  (want deny)  RED
+#           sed -i - src/rust/lib.rs         -> no decision  (want deny)  RED
+#   `--`  ends the options; everything after it is an operand, never a flag.
+
+# arm 57 — the reviewer's literal witness. OBSERVED RED (allowed a src/** write).
+run_hook "$(payload Bash '' 'sed -i -f - src/rust/lib.rs' orchestrator)"
+expect_deny "arm 57: 'sed -i -f - src/**' is DENIED ('-' is the stdin PROGRAM, so the file is still an operand) (RED before fix-2)"
+
+# arm 57b — the long-option spelling of the same thing. OBSERVED RED.
+run_hook "$(payload Bash '' 'sed -i --file - src/rust/lib.rs' orchestrator)"
+expect_deny "arm 57b: 'sed -i --file - src/**' is DENIED (RED before fix-2)"
+
+# arm 57c — the same bug in the sibling verb. OBSERVED RED.
+run_hook "$(payload Bash '' 'perl -i -pe - src/rust/lib.rs' steward)"
+expect_deny "arm 57c: 'perl -i -pe - src/**' is DENIED (RED before fix-2)"
+
+# arm 57d — turned up by the audit: a bare `-` with NO preceding -e/-f. It is
+# the first OPERAND, so it takes the program slot and the real file behind it is
+# a file. Skipping it as a flag made src/** the program. OBSERVED RED.
+run_hook "$(payload Bash '' 'sed -i - src/rust/lib.rs' orchestrator)"
+expect_deny "arm 57d: 'sed -i - src/**' is DENIED (a leading bare '-' must not push the file into the program slot) (RED before fix-2)"
+
+# arm 58 — the ordinary `-f script` form must still catch the file. Status when
+# written: ALREADY GREEN (arm 51d pins the same rule with a pathful script).
+run_hook "$(payload Bash '' 'sed -i -f script.sed src/rust/lib.rs' orchestrator)"
+expect_deny "arm 58: 'sed -i -f script.sed src/**' still DENIES (already green; the false-negative fix must not be a false-negative trade)"
+
+# arm 58b — and must not over-block the allowed target. ALREADY GREEN.
+run_hook "$(payload Bash '' 'sed -i -f script.sed dev/plans/note.md' orchestrator)"
+expect_allow "arm 58b: 'sed -i -f script.sed dev/plans/note.md' is ALLOWED (already green)"
+
+# arm 59 — `--` end-of-options terminator. ALREADY GREEN; pinned because fix-2
+# rewrites the flag/operand decision that decides it.
+run_hook "$(payload Bash '' "sed -i -- 's/a/b/' src/rust/lib.rs" orchestrator)"
+expect_deny "arm 59: 'sed -i -- EXPR src/**' is DENIED ('--' ends the options) (already green)"
+
+run_hook "$(payload Bash '' "sed -i -- 's/src/lib/' dev/plans/note.md" orchestrator)"
+expect_allow "arm 59b: 'sed -i -- EXPR dev/plans/note.md' is ALLOWED (already green; the allow half of arm 59)"
+
+run_hook "$(payload Bash '' "sed -i -e 's/a/b/' -- src/rust/lib.rs" orchestrator)"
+expect_deny "arm 59c: a file operand AFTER '--' is still DENIED (already green)"
+
+# arm 60 — the glued long-option forms: the program came from the OPTION, so
+# every remaining bare operand is a file. ALREADY GREEN, pinned for the same
+# reason as arm 59.
+run_hook "$(payload Bash '' "sed -i --expression='s/a/b/' src/rust/lib.rs" orchestrator)"
+expect_deny "arm 60: 'sed -i --expression=EXPR src/**' is DENIED (already green)"
+
+run_hook "$(payload Bash '' "sed -i --expression='s/a/b/' dev/plans/note.md" orchestrator)"
+expect_allow "arm 60b: 'sed -i --expression=EXPR dev/plans/note.md' is ALLOWED (already green)"
+
+run_hook "$(payload Bash '' 'sed -i --file=fix.sed src/rust/lib.rs' orchestrator)"
+expect_deny "arm 60c: 'sed -i --file=script src/**' is DENIED (already green)"
+
+# ========== ARM 61 — the redirection header's claims, made exhaustive ========
+# codex round-2 finding 2: the header listed `&>>` among the forms "each
+# verified by an arm", and no `&>>` arm existed. `&>>` IS matched at runtime
+# (measured, not assumed), so the fix is the missing arms rather than a softer
+# claim. Swept for the whole list at the same time: plain glued `>` and `>>`
+# were claimed and unasserted too. Each form in the header now names its arm.
+run_hook "$(payload Bash '' 'printf x >src/rust/lib.rs' orchestrator)"
+expect_deny "arm 61a: plain '>' GLUED is DENIED (claimed by the header, previously unasserted)"
+run_hook "$(payload Bash '' 'printf x >>src/rust/lib.rs' orchestrator)"
+expect_deny "arm 61b: plain '>>' GLUED is DENIED (claimed by the header, previously unasserted)"
+run_hook "$(payload Bash '' 'printf x &>>src/rust/lib.rs' orchestrator)"
+expect_deny "arm 61c: '&>>' GLUED is DENIED (the exact claim codex round-2 found unasserted)"
+run_hook "$(payload Bash '' 'printf x &>> src/rust/lib.rs' orchestrator)"
+expect_deny "arm 61d: '&>>' SPACED is DENIED (the exact claim codex round-2 found unasserted)"
+run_hook "$(payload Bash '' 'printf x &>> dev/plans/note.md' orchestrator)"
+expect_allow "arm 61d2: '&>>' into dev/plans/** is ALLOWED (the allow half, so 61c/61d cannot pass by over-blocking)"
+
+# `>>|` and `&>|` are bash SYNTAX ERRORS — re-measured with `bash -n` for fix-2,
+# both fail to parse — so no write can happen through either. The `>|`->`>` fold
+# denies them anyway; that over-block on an unrunnable command is harmless, and
+# these two arms exist only so the header's claim about it is asserted, not
+# believed.
+run_hook "$(payload Bash '' 'printf x >>|src/rust/lib.rs' orchestrator)"
+expect_deny "arm 61e: '>>|' (a bash syntax error) is harmlessly DENIED — asserts the header's over-block note"
+run_hook "$(payload Bash '' 'printf x &>|src/rust/lib.rs' orchestrator)"
+expect_deny "arm 61f: '&>|' (a bash syntax error) is harmlessly DENIED — asserts the header's over-block note"
+
+# The header also claims `>&2` cannot reach the scanner as a target. Asserted.
+run_hook "$(payload Bash '' 'echo hi >&2' orchestrator)"
+expect_allow "arm 61g: 'echo hi >&2' is ALLOWED (an fd dup is not a file target) — asserts the header's '>&2' note"
+
+# ===== ARMS 62-64 — the SAME "-* means flag" assumption in sibling branches ==
+# Round-2 ordered an audit of every other place the assumption appears. It
+# appears in three, and all three were false negatives, not false positives.
+
+# arm 62 — consider() itself refused any target starting with `-`, so a path
+# below a directory literally named `-` was never even normalized. OBSERVED RED:
+#   printf x > -/src/lib.rs  -> no decision  (want deny)
+run_hook "$(payload Bash '' 'printf x > -/src/lib.rs' orchestrator)"
+expect_deny "arm 62: a redirect target under a '-' directory is DENIED (a leading '-' does not make a path a flag) (RED before fix-2)"
+
+# arm 63 — THE WORST ONE, and the one the seats would actually hit: git's global
+# options take a VALUE IN THE NEXT TOKEN. The old subcommand scan skipped `-C`
+# and then read the WORKTREE PATH as the subcommand, matched none of the write
+# verbs, and allowed the rewrite. `git -C "$WT" checkout -- <path>` is the
+# orchestrator's own idiom. OBSERVED RED (all three):
+#   git -C /home/x/wt checkout -- src/rust/lib.rs -> no decision (want deny)
+#   git -C /home/x/wt restore src/rust/lib.rs     -> no decision (want deny)
+#   git -c core.x=1 checkout -- src/rust/lib.rs   -> no decision (want deny)
+run_hook "$(payload Bash '' 'git -C /home/x/wt checkout -- src/rust/lib.rs' orchestrator)"
+expect_deny "arm 63: 'git -C <dir> checkout -- src/**' is DENIED (the -C VALUE is not the subcommand) (RED before fix-2)"
+run_hook "$(payload Bash '' 'git -C /home/x/wt restore src/rust/lib.rs' steward)"
+expect_deny "arm 63b: 'git -C <dir> restore src/**' is DENIED (RED before fix-2)"
+run_hook "$(payload Bash '' 'git -c core.editor=true checkout -- src/rust/lib.rs' orchestrator)"
+expect_deny "arm 63c: 'git -c <cfg> checkout -- src/**' is DENIED (RED before fix-2)"
+# ...without over-blocking the read/commit subcommands that dominate a seat's
+# actual git usage. These were green and must stay green.
+run_hook "$(payload Bash '' 'git -C /home/x/wt status --porcelain' orchestrator)"
+expect_allow "arm 63d: 'git -C <dir> status' is ALLOWED (already green; -C must not turn a read into a write)"
+run_hook "$(payload Bash '' 'git -C /home/x/wt commit -m msg' orchestrator)"
+expect_allow "arm 63e: 'git -C <dir> commit' is ALLOWED (already green)"
+run_hook "$(payload Bash '' 'git -C /home/x/wt log --oneline -5 src/' orchestrator)"
+expect_allow "arm 63f: 'git -C <dir> log src/' is ALLOWED (already green)"
+
+# arm 64 — cp/mv/install/ln can take the DESTINATION from an option instead of
+# the last operand, and the last-operand rule never looked there. OBSERVED RED:
+#   cp -t src/rust dev/plans/x.md                  -> no decision (want deny)
+#   cp --target-directory=src/rust dev/plans/x.md  -> no decision (want deny)
+run_hook "$(payload Bash '' 'cp -t src/rust dev/plans/x.md' orchestrator)"
+expect_deny "arm 64: 'cp -t src/rust <file>' is DENIED (the destination came from the option) (RED before fix-2)"
+run_hook "$(payload Bash '' 'cp --target-directory=src/rust dev/plans/x.md' orchestrator)"
+expect_deny "arm 64b: 'cp --target-directory=src/rust <file>' is DENIED (RED before fix-2)"
+run_hook "$(payload Bash '' 'install -m 644 -t engine/native dev/plans/x.md' steward)"
+expect_deny "arm 64c: 'install -t engine/native <file>' is DENIED (RED before fix-2)"
+run_hook "$(payload Bash '' 'cp -t dev/plans/runs dev/plans/x.md' orchestrator)"
+expect_allow "arm 64d: 'cp -t dev/plans/runs <file>' is ALLOWED (the allow half; -t handling must not over-block)"
+run_hook "$(payload Bash '' 'cp -p dev/plans/a.md dev/plans/b.md' orchestrator)"
+expect_allow "arm 64e: an ordinary 'cp' between allowed paths is ALLOWED (already green)"
+
 if [ "$FAILED" -gt 0 ]; then
   printf '\n%d test(s) failed\n' "$FAILED" >&2
   exit 1
