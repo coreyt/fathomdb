@@ -41,8 +41,10 @@ PREFLIGHT="$REPO_ROOT/scripts/preflight.sh"
 CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
 REAL_CONTRACT="$REPO_ROOT/dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md"
 REAL_PIN="$REPO_ROOT/scripts/c1-conformance-pin.json"
-REAL_SURFACE="$REPO_ROOT/src/conformance/governed-surface-allowlist.json"
-REAL_SURFACE_PIN="$REPO_ROOT/scripts/governed-surface-pin.json"
+# shellcheck source=lib/governed-surface-fixture.sh
+. "$SCRIPT_DIR/lib/governed-surface-fixture.sh"
+# shellcheck source=lib/c1-conformance-fixture.sh
+. "$SCRIPT_DIR/lib/c1-conformance-fixture.sh"
 
 # The no-argument arm exercises the checker's REPO-RELATIVE defaults, which it
 # resolves from `git rev-parse --show-toplevel` — i.e. from the cwd. Pin the cwd
@@ -452,30 +454,25 @@ NO_HOOKS="$TMPROOT/no-hooks"
 mkdir -p "$NO_HOOKS"
 
 # make_repo <primary> <linked> — a throwaway repo carrying COPIES of everything
-# preflight's landing gates read (§8 ledger, §9 governed surface) PLUS the C-1
-# contract, its pin and the source files the clause assertions need, so only the
-# new §10 is under test. A linked worktree is required: TC-RUBRIC-5 forbids
-# --landing in a primary checkout.
+# preflight's landing gates read, so only the new §10 is under test. A linked
+# worktree is required: TC-RUBRIC-5 forbids --landing in a primary checkout.
+#
+# §9's governed surface is seeded SYNTHETICALLY (lib/governed-surface-fixture.sh)
+# rather than copied: it is incidental to this suite, and that pin is EXPECTED to
+# trip during 0.8.20, so copying the real pair would couple this suite to an
+# unrelated signing state. §10's subject is seeded by lib/c1-conformance-fixture.sh
+# — the same helper the sibling suites use, so the seeder itself gets exercised
+# here too.
 make_repo() {
-  local primary="$1" linked="$2" kind path
-  mkdir -p "$primary/src/conformance" "$primary/scripts" "$primary/dev/steward" \
-    "$primary/dev/design/record-lifecycle-protocol"
+  local primary="$1" linked="$2"
+  mkdir -p "$primary/scripts" "$primary/dev/steward"
   git init -q -b main "$primary"
   git -C "$primary" config user.email c1-test@example.invalid
   git -C "$primary" config user.name 'C1 Test'
   git -C "$primary" config commit.gpgsign false
   git -C "$primary" config core.hooksPath "$NO_HOOKS"
-  cp "$REAL_SURFACE" "$primary/src/conformance/governed-surface-allowlist.json"
-  cp "$REAL_SURFACE_PIN" "$primary/scripts/governed-surface-pin.json"
-  cp "$REAL_CONTRACT" "$primary/dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md"
-  cp "$REAL_PIN" "$primary/scripts/c1-conformance-pin.json"
-  while IFS=$'\t' read -r kind path; do
-    [ -n "${kind:-}" ] || continue
-    case "$kind" in
-      file) mkdir -p "$primary/$(dirname "$path")"; cp "$REPO_ROOT/$path" "$primary/$path" ;;
-      tree) mkdir -p "$primary/$path" ;;
-    esac
-  done <<<"$SOURCE_MANIFEST"
+  seed_governed_surface_fixture "$primary"
+  seed_c1_conformance_fixture "$primary"
   printf '{"seq":1,"note":"fixture"}\n' >"$primary/dev/steward/steward-ledger.jsonl"
   printf '%s' 1 >"$primary/dev/steward/steward-ledger.jsonl.seq"
   git -C "$primary" add -A

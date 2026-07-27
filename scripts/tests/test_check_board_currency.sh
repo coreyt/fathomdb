@@ -30,6 +30,8 @@ PREFLIGHT="$REPO_ROOT/scripts/preflight.sh"
 CHECKER="$REPO_ROOT/scripts/check-board-currency.sh"
 # shellcheck source=lib/governed-surface-fixture.sh
 . "$SCRIPT_DIR/lib/governed-surface-fixture.sh"
+# shellcheck source=lib/c1-conformance-fixture.sh
+. "$SCRIPT_DIR/lib/c1-conformance-fixture.sh"
 
 FAILED=0
 pass() { printf 'PASS  %s\n' "$1"; }
@@ -74,6 +76,7 @@ init_repo() {
   # beyond its presence, and the gate's own arms live in
   # scripts/tests/test_check_governed_surface_pin.sh.
   seed_governed_surface_fixture "$dir"
+  seed_c1_conformance_fixture "$dir"
 }
 
 # commit_all <dir> <message>
