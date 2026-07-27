@@ -185,8 +185,11 @@
 #        ITS POSITION   it sits at the TOP LEVEL of the integration-test file, so
 #                       no enclosing (possibly `#[cfg]`-gated) item can silence it
 #                       out of this reader's view.
-#        THE FILE       the file carries no `#![cfg(..)]` inner attribute, which
-#                       would switch every proof in it off at once.
+#        THE FILE       the file's own LEADING HEADER carries no `#![cfg(..)]`
+#                       inner attribute, which would switch every proof in it off
+#                       at once. Read at the header and nowhere else (fix-6): an
+#                       inner attribute inside a nested `mod` belongs to THAT
+#                       module, and reading it as the file's was a false RED.
 #        THE TARGET     the owning crate's Cargo.toml neither sets
 #                       `autotests = false` nor declares a `[[test]]` block for
 #                       that file with `required-features` / `test = false`.
@@ -452,7 +455,9 @@ def crate_manifest_for(test_path):
 #                                      all four levels it could be switched off
 #                                      at: a `#[test]`-family attribute with no
 #                                      `#[ignore]`/`#[cfg]`; at the file's top
-#                                      level; in a file with no `#![cfg(..)]`;
+#                                      level; in a file whose own LEADING HEADER
+#                                      carries no `#![cfg(..)]` (a nested module's
+#                                      inner attribute is that module's, fix-6);
 #                                      in a crate whose Cargo.toml does not gate
 #                                      that `[[test]]` target. "The proof still
 #                                      exists" is worth nothing if the proof no
@@ -713,8 +718,26 @@ ASSERTIONS = {
     # carrying `drop: &[String],` and the delta return type satisfied them while
     # `configure_projections` took no drop list at all. They are now read out of
     # THAT FUNCTION'S SIGNATURE.
+    #
+    # fix-6 (codex §9 round 6 finding #1): reading them out of the signature is
+    # still not enough, because a signature is not a method. Turn
+    # `configure_projections` into a free or associated function — delete the
+    # `&self,` line, nothing else — and all three fragments are still there
+    # character for character while `engine.configure_projections(..)`, the
+    # instance verb the pin's evidence records and every call site in this repo
+    # uses, stops compiling. So the RECEIVER is probed too.
     "C1-SEAM-ENGINE-BUILD-DROP": [
         ("present", ENG, r"pub fn configure_projections\("),
+        # A `self` receiver is legal ONLY inside an `impl`/trait block, so
+        # requiring one excludes both shapes the finding names (a free function
+        # and a receiver-less associated function) without this gate having to
+        # decide which `impl` it landed in. Every legal receiver spelling is
+        # admitted — `&self`, `& self`, `&mut self`, `&'a self`, `self`,
+        # `mut self` — because a formatting-only edit must not manufacture a
+        # false RED (`self` may only ever be the FIRST parameter, so the open
+        # paren this anchors on can only be the parameter list's).
+        ("fn_sig", ENG, "configure_projections",
+         r"\(\s*(?:&\s*(?:'[A-Za-z_]\w*\s+)?)?(?:mut\s+)?self\b"),
         ("fn_sig", ENG, "configure_projections", r"specs:\s*&\[ProjectionSpec\]"),
         ("fn_sig", ENG, "configure_projections", r"drop:\s*&\[String\]"),
         ("fn_sig", ENG, "configure_projections",
@@ -1812,26 +1835,50 @@ def attr_path(attr):
 
 
 def file_inner_attrs(rel):
-    """The `#![..]` INNER attribute paths at the head of a Rust source file.
+    """The `#![..]` INNER attribute paths in a Rust file's OWN LEADING HEADER.
 
     A `#![cfg(..)]` there switches the WHOLE FILE off, which for an integration
     test means every proof in it stops running while each one still reads as a
     perfectly ordinary `#[test]`.
+
+    "IN THE HEADER" IS LOAD-BEARING (fix-6, codex §9 round 6 finding #2). This
+    used to scan the whole file for `#![`, but Rust permits an inner attribute at
+    the head of ANY braced item, and `mod helpers { #![cfg(feature = "x")] .. }`
+    is ordinary, legal, and switches off THAT MODULE alone. Reading one of those
+    as "the whole test file is conditionally compiled" turns this gate RED and
+    blocks CI and `preflight.sh --landing` while every top-level pinned proof
+    still builds and runs — a FALSE RED, which on a publish precondition is its
+    own failure mode, not the safe side.
+
+    So the walk starts at byte 0 and stops at the first thing that is neither
+    whitespace nor an inner attribute — i.e. at the first item. That leading run
+    IS the file header, and it is the only place a FILE-level inner attribute may
+    legally appear, so narrowing to it gives up nothing: a genuine
+    `#![cfg(..)]` is still found when it sits alone at the head, after other
+    leading inner attributes, or after a `//!` doc header (comments, `//!`
+    included, are already blanked to spaces by `rust_view`, so a doc header does
+    not end the run).
     """
     code = rust_code(rel)
-    found = []
-    for match in re.finditer(r"#!\[", code):
-        depth, i = 0, match.end() - 1
-        while i < len(code):
-            if code[i] == "[":
+    found, i, n = [], 0, len(code)
+    while True:
+        while i < n and code[i].isspace():
+            i += 1
+        if code[i:i + 3] != "#![":
+            break
+        depth, j = 0, i + 2
+        while j < n:
+            if code[j] == "[":
                 depth += 1
-            elif code[i] == "]":
+            elif code[j] == "]":
                 depth -= 1
                 if depth == 0:
                     break
-            i += 1
-        if i < len(code):
-            found.append(attr_path("#[" + code[match.end():i] + "]"))
+            j += 1
+        if j >= n:                       # unbalanced: unreadable, so the run ends
+            break
+        found.append(attr_path("#[" + code[i + 3:j] + "]"))
+        i = j + 1
     return found
 
 
