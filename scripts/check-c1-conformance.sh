@@ -54,6 +54,85 @@
 # otherwise would be a false assurance — which is the TC-37 failure class in a
 # different costume.
 #
+# ==================== RESIDUAL SCOPE — READ BEFORE ROUND 3 ===================
+# This gate is a STATIC, LEXICAL check over Rust and SQL SOURCE TEXT. That
+# approach has a boundary, and two review rounds have now been spent tightening
+# regexes against it (fix-1: SQL case/whitespace, and blacklist ⇒ closed
+# vocabulary; fix-2: schema-qualified table names, and spellings admitted
+# outside a simple match arm). Rather than rediscover the boundary a third time,
+# it is written down here.
+#
+# WHAT THIS GATE IS. A TRIPWIRE AGAINST DRIFT. Its threat model is a FUTURE
+# CONTRIBUTOR who changes as-built code without noticing that a ratified
+# cross-repo contract said otherwise — the ordinary way a `can-i-deploy`
+# precondition rots. It is NOT a proof of conformance and NOT an adversarial
+# control: it cannot stop someone deliberately smuggling a backfill past CI, and
+# nothing assembled out of regexes over source text could.
+#
+# THE CLASSES IT DOES NOT AND CANNOT CATCH, concretely:
+#
+#   1. DYNAMICALLY COMPOSED SQL. The probes read literal source text. A
+#      `format!("INSERT INTO {} SELECT ...", TABLE)`, a `push_str` built from
+#      fragments, or a table name held in a `const`/`static` all reach the
+#      forbidden table while the text this gate reads contains only `{}`.
+#
+#   2. ANOTHER ROUTE TO THE SAME TABLE. `qualified()` closes the SPELLINGS of
+#      the PINNED NAME (`main.canonical_attributes`, `` `main` . x ``, `[main].x`,
+#      any case, any whitespace). It does not close every ROUTE: an ATTACHed
+#      database whose alias is chosen at runtime, a VIEW or an `INSTEAD OF`
+#      TRIGGER that writes the table under a different name, or an
+#      `ALTER TABLE ... RENAME` are all invisible to it.
+#
+#   3. IDENTIFIER INDIRECTION IN RUST. `const PENDING: &str = "pending";` used
+#      in place of a literal defeats the string-literal vocabulary check;
+#      `macro_rules!` / `paste!`-generated enum bodies and impl blocks are never
+#      expanded; `concat_idents!`-style construction defeats the `EntityTypeSpec`
+#      / `id_prefix` negative-space probes; a type alias or a re-export under
+#      another name defeats the identifier probes.
+#
+#   4. CONVERSION SURFACES OUTSIDE THE NAMED FUNCTION. `arms_exact` reads exactly
+#      `impl <Ty> { fn <fn> }`. An `impl FromStr for <Ty>`, a `From<&str>`, or a
+#      free `fn parse_readiness(&str) -> Option<DenseReadiness>` can admit an
+#      extra spelling without touching the block this gate reads. This is the
+#      clearest proof the approach cannot be COMPLETED by widening: a free
+#      function is ordinary Rust, and no impl-scoped check can reach it.
+#
+#   5. NORMALISING COMPARISONS. `value.to_lowercase()`, `.trim()`,
+#      `eq_ignore_ascii_case` widen the accepted vocabulary WITHOUT introducing a
+#      new string literal, so the vocabulary check has nothing to see.
+#
+#   6. CONDITIONAL COMPILATION. Nothing here models `#[cfg(...)]`: text under a
+#      disabled feature reads exactly like shipped code, and a violation
+#      introduced only behind a feature flag reads exactly like one that is
+#      always on. (This class errs RED, not green.)
+#
+#   7. BEHAVIOUR, and THE MEMEX REPO. Stated above: the behavioural clauses
+#      assert only that the NAMED TEST still exists, and 12 contract clauses are
+#      CROSS-REPO by classification and unverifiable from this repo at all.
+#
+# WHICH WAY THE ERRORS FALL. Every ambiguity is resolved toward RED: an
+# unparseable enum body, an impl block the reader cannot find, an unreadable file
+# and a missing tree are all failures (exit 1 / exit 2), never skips; and the
+# text-scoped probes WILL trip on a doc comment or an error message that happens
+# to spell the forbidden thing. Noisy false positives, and false negatives
+# confined to the list above, is the correct bias for a gate that HOLDS A
+# PUBLISH.
+#
+# WHY THIS IS THE RIGHT STOPPING POINT. A stronger mechanism exists and is
+# deliberately NOT built here: asserting the shipped schema against
+# `sqlite_master` at runtime (which sees the table however the SQL was spelled or
+# composed), and/or parsing Rust with `syn` (which sees every conversion surface,
+# macro-expanded). Both are real work with their own maintenance surface, both
+# belong to a slice of their own, and neither is warranted by the threat model
+# above. Recorded as a RECOMMENDATION in
+# dev/plans/runs/0.8.20-slice-30-output.json, not as a defect being deferred.
+#
+# CONSEQUENCE FOR REVIEWERS. A finding that this gate misses something ON THE
+# LIST ABOVE is TRUE and is NOT a defect in the patch — it is the documented
+# scope, and the answer to it is a different mechanism, not another regex. A
+# finding that it misses a spelling of a PINNED NAME in LITERAL source text is a
+# real defect: fix it, and if the fix is another regex, add its class here.
+#
 # ============================ THE AMENDMENT TRAP =============================
 # The contract was AMENDED at efa8d584 ("amend C-1 contract Q6(b) with the TC-11
 # cancellation — unblocks the H7 gate"). Before that amendment, clause Q6(b)
@@ -259,21 +338,53 @@ SKIP_DIRS = {
 # Rust IDENTIFIER probes (`ProjectionRole::Vector`, `EntityTypeSpec`,
 # `id_prefix`) are deliberately left case-SENSITIVE: case is significant in Rust,
 # so folding case there would create false positives, not close a hole.
+#
+# ----------------- A SQL TABLE NAME IS `[<schema>.]<table>` ------------------
+# fix-2, codex §9 round 2 findings #1 and #2 [P2]. fix-1 widened these probes for
+# CASE and WHITESPACE but still required the pinned table name IMMEDIATELY after
+# `INTO` / `TABLE`. That is not how SQLite names a table: every table reference
+# may carry a schema qualifier, and `main.` is ALWAYS valid for the main
+# database. `INSERT INTO main.canonical_attributes ...` therefore writes exactly
+# the forbidden table and cleared the gate with 0; so did `CREATE VIRTUAL TABLE
+# main.property_search_index ...`. `qualified()` below tolerates one optional
+# schema identifier — quoted, bracketed or bare, with whitespace around the dot,
+# which SQLite also accepts.
+#
+# NOTE WHAT THIS DOES **NOT** REACH: an ATTACHed alias whose NAME is chosen at
+# runtime, or a table reached through a view/trigger under a different name, is
+# still invisible here — see RESIDUAL SCOPE in this file's header. `qualified()`
+# closes the spellings of the PINNED name, not every route to the pinned table.
 # ---------------------------------------------------------------------------
+
+# One SQL identifier, optionally quoted `"x"` / 'x' / `x` / [x].
+_SQL_IDENT_OPEN = r"[\"'`\[]?"
+_SQL_IDENT_CLOSE = r"[\"'`\]]?"
+
+
+def qualified(table):
+    """`[<schema> . ]<table>` — an optional schema qualifier before the pinned
+    table name, each part optionally quoted/bracketed, whitespace tolerated
+    around the dot (all of which SQLite accepts)."""
+    schema = (
+        r"(?:" + _SQL_IDENT_OPEN + r"[A-Za-z_][A-Za-z0-9_]*" + _SQL_IDENT_CLOSE
+        + r"\s*\.\s*)?"
+    )
+    return schema + _SQL_IDENT_OPEN + table + r"\b"
 
 
 def insert_into(table):
-    """A case-insensitive `INSERT [OR <conflict>] INTO <table>` / `REPLACE INTO
-    <table>` pattern.
+    """A case-insensitive `INSERT [OR <conflict>] INTO [<schema>.]<table>` /
+    `REPLACE INTO [<schema>.]<table>` pattern.
 
     Tolerates all five SQLite conflict clauses (the same five the schema crate's
     own accretion guard enumerates), arbitrary whitespace including newlines
-    between every token, and an optionally quoted/bracketed table name.
+    between every token, an optional schema qualifier, and an optionally
+    quoted/bracketed table name.
     """
     return (
         r"(?i)\b(?:INSERT|REPLACE)\b"
         r"(?:\s+OR\s+(?:ABORT|FAIL|IGNORE|REPLACE|ROLLBACK))?"
-        r"\s+INTO\s+[\"'`\[]?" + table + r"\b"
+        r"\s+INTO\s+" + qualified(table)
     )
 
 ASSERTIONS = {
@@ -410,9 +521,17 @@ ASSERTIONS = {
         ("arms_exact", ENG, "IdSpaceKind", "as_str",
          (("Logical", "logical"), ("Content", "content"), ("Passage", "passage"))),
     ],
+    # fix-2 SWEEP (not a codex finding): the same NARROW-REGEX class as findings
+    # #1/#2, found by sweeping every remaining negative probe. The `absent` probe
+    # was the literal string `pub id: Option<IdSpace>`, so any legal Rust
+    # respacing (`pub id : Option < IdSpace >`) evaded it. The clause is not
+    # trivially exploitable — the paired `present` probe fails on the same edit —
+    # but a decoy struct carrying `pub id: IdSpace,` satisfies that probe and
+    # leaves the narrow `absent` probe as the only thing standing (fixture 12p,
+    # which exited 0 before this round). Whitespace-tolerant now.
     "C1-Q6B-ID-NON-NULL": [
         ("present", ENG, r"pub id: IdSpace,"),
-        ("absent", ENG, r"pub id: Option<IdSpace>"),
+        ("absent", ENG, r"pub\s+id\s*:\s*Option\s*<\s*IdSpace"),
     ],
     "C1-Q6B-H-TERMINAL-NOT-LIFECYCLE-ADDRESSABLE": [
         ("present", ENG, r"NotLifecycleAddressable \{"),
@@ -459,7 +578,7 @@ ASSERTIONS = {
         ("present", SCH, r"recorded in the registry but not honoured here"),
         ("absent", ENG,
          r"(?i)CREATE\s+VIRTUAL\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?"
-         r"[\"'`\[]?property_search_index\b"),
+         + qualified("property_search_index")),
     ],
     # ---- Landing ---------------------------------------------------------
     "C1-LAND-0820-SLOT": [
@@ -840,20 +959,62 @@ def fn_body(view, ty, fn):
     return None
 
 
+_STRING_LIT = r'"(?:[^"\\]|\\.)*"'
+_STRING_CAP = r'"((?:[^"\\]|\\.)*)"'
+
+
 def arm_pairs(body, ty):
     """Every (variant, string) match arm in `body`, both directions, sorted.
 
     A LIST, not a dict: two arms mapping the same variant to two different
     spellings is itself a vocabulary that is not closed, and collapsing them
     into a dict would hide exactly that.
+
+    OR-PATTERNS are expanded (fix-2, codex §9 round 2 finding #3): in
+    `"vector" | "searchable" => Some(Ty::Searchable)` only the LAST alternative
+    sits immediately before the `=>`, so a single-literal pattern harvested the
+    pinned pair and reported the vocabulary as exact while the arm accepted a
+    second token. Each alternative now yields its own pair, in BOTH directions.
     """
     who = r"(?:Self|" + re.escape(ty) + r")"
-    string = r'"((?:[^"\\]|\\.)*)"'
-    pairs = [(m.group(1), m.group(2))
-             for m in re.finditer(who + r"::([A-Za-z_]\w*)\s*=>\s*" + string, body)]
-    pairs += [(m.group(2), m.group(1))
-              for m in re.finditer(string + r"\s*=>\s*Some\(" + who + r"::([A-Za-z_]\w*)\)", body)]
+    variant = who + r"::[A-Za-z_]\w*"
+    pairs = []
+    # [Ty::A |] Ty::B => "s"
+    for match in re.finditer(
+        r"((?:" + variant + r"\s*\|\s*)*" + variant + r")\s*=>\s*" + _STRING_CAP, body
+    ):
+        for name in re.findall(who + r"::([A-Za-z_]\w*)", match.group(1)):
+            pairs.append((name, match.group(2)))
+    # ["a" |] "b" => Some(Ty::A)
+    for match in re.finditer(
+        r"((?:" + _STRING_LIT + r"\s*\|\s*)*" + _STRING_LIT + r")\s*=>\s*Some\("
+        + who + r"::([A-Za-z_]\w*)\)",
+        body,
+    ):
+        for spelling in re.findall(_STRING_CAP, match.group(1)):
+            pairs.append((match.group(2), spelling))
     return sorted(pairs)
+
+
+def body_strings(body):
+    """Every string literal appearing anywhere in `body`.
+
+    The NEGATIVE half of the closed-vocabulary check (fix-2, codex §9 round 2
+    finding #3). Expanding or-patterns closes ONE extra syntax; it does not close
+    the general case, because a token can be admitted by syntax that never forms
+    a match arm at all — an `if value == "pending" { return Some(..) }` guard
+    before the match, a `matches!`, a `starts_with`. Rather than enumerate those
+    forms (an open set — the same asymptote this gate has now been asked to chase
+    twice), the check is inverted: inside a function whose whole job is to map a
+    CLOSED vocabulary, EVERY string literal must be one of the pinned spellings.
+
+    Consequence, stated plainly: a legitimate non-vocabulary literal added to one
+    of these three tiny functions (an error message, say) turns the gate RED. It
+    is a false RED — the safe side of a publish-precondition gate, and the same
+    trade already documented for the SQL text probes. What it is NOT is the
+    silent green it replaces.
+    """
+    return [m.group(1) for m in re.finditer(_STRING_CAP, body)]
 
 
 def run_probe(probe):
@@ -924,16 +1085,35 @@ def run_probe(probe):
                 f"vocabulary {want} cannot be checked, so this reads as a clause failure rather "
                 "than a skipped probe"
             )
+        defects = []
         got = arm_pairs(body, ty)
         if got != want:
             extra = [p for p in got if p not in want]
             missing = [p for p in want if p not in got]
-            return (
+            defects.append(
                 f"{ty}::{fn} in {path} must map EXACTLY {len(want)} (variant, string) pair(s) "
                 f"{want}, found {len(got)} {got}"
                 + (f"; UNPINNED pair(s) {extra}" if extra else "")
                 + (f"; MISSING pair(s) {missing}" if missing else "")
             )
+        # The NEGATIVE half (fix-2): a token can be admitted by syntax that never
+        # forms a match arm, so the arm harvest alone can report a vocabulary as
+        # exact while the function accepts more. Every string literal in the body
+        # must be a pinned spelling.
+        pinned_spellings = {pair[1] for pair in want}
+        unpinned = sorted({s for s in body_strings(body) if s not in pinned_spellings})
+        if unpinned:
+            defects.append(
+                f"{ty}::{fn} in {path} contains string literal(s) {unpinned} that are NOT in the "
+                f"pinned vocabulary {sorted(pinned_spellings)}. This vocabulary is CLOSED by the "
+                "contract, and a token can be ADMITTED without ever forming a `\"s\" => Some(..)` "
+                "arm — an `if value == \"...\"` guard before the match, an or-pattern, a "
+                "`matches!`. Every literal inside this function is therefore treated as part of "
+                "the vocabulary: if the extra literal is genuinely not a spelling (an error "
+                "message, say), move it out of this function rather than widening this check."
+            )
+        if defects:
+            return "\n        - ".join(defects)
         return None
     die_env(f"internal error: unknown probe kind {kind!r}")
 
