@@ -79,17 +79,37 @@
 #     the proof, nothing went red. That is the TC-37 evaporation shape this gate
 #     exists to close, and it is a ONE-TOKEN edit that reads as tidy-up.
 #
-# READ THE GATE'S "RESIDUAL SCOPE" HEADER SECTION BEFORE ADDING A ROUND 6, AND
+# FIX-6 ARMS (arms 12ai–12aj) are the recurrence guard for codex §9 round 6 — two
+# bounded holes, and for the first time in this file they point in OPPOSITE
+# directions:
+#   * 12ai, A FALSE GREEN — THE RECEIVER. The cohesion-seam clause reads the apply
+#     verb's parameter and return TEXT out of its own signature (fix-4), but
+#     nothing bound it to the `&self` RECEIVER. A free or associated
+#     `fn configure_projections(specs.., drop..) -> Result<ProjectionDelta,
+#     EngineError>` carries every probed fragment verbatim while
+#     `engine.configure_projections(..)` — the instance verb the pin's evidence
+#     records — stops existing, and the gate stayed green.
+#   * 12aj, A FALSE RED, and the first one this suite has had to guard. The
+#     file-level `#![cfg(..)]` check (fix-5 SWEEP) scanned the WHOLE file for
+#     inner attributes, so a pinned test file that later grows a perfectly legal
+#     `mod helpers { #![cfg(feature = "x")] .. }` was reported as wholly
+#     conditionally compiled — turning the gate RED and blocking CI and
+#     `preflight.sh --landing` — while every top-level pinned test still built and
+#     ran. Note the INVERTED expectation on that arm (rc=0), and the mirror arms
+#     that keep a GENUINE file-level `#![cfg(..)]` red.
+#
+# READ THE GATE'S "RESIDUAL SCOPE" HEADER SECTION BEFORE ADDING A ROUND 7, AND
 # CLASSIFY THE FINDING FIRST. The header states, in writing, the evasion classes a
 # static/lexical check CANNOT close (dynamically composed SQL, const/macro-
 # indirected identifiers, ATTACH aliases, normalising comparisons, and what a
 # still-active test's BODY actually asserts); arms for those belong to a DIFFERENT
 # mechanism — a runtime `sqlite_master` assertion, a real parse, or asking the
 # toolchain which tests the built binary contains — not to another regex here. But
-# rounds 3, 4 and 5 were NOT one of those: a LITERAL spelling of a PINNED name in
+# rounds 3 through 6 were NOT one of those: a LITERAL spelling of a PINNED name in
 # ordinary source text that this gate does not see, a probe satisfied by something
-# other than its subject, and a proof that no longer runs are real defects with
-# definite fixes, and they get fixed.
+# other than its subject, a proof that no longer runs, a verb that lost its
+# receiver, and a legal nested module misread as a switched-off file are real
+# defects with definite fixes, and they get fixed.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -1620,6 +1640,124 @@ run_checker --list-sources
 expect_rc 0 "--list-sources still exits 0 with the crate manifest in the set"
 expect_out 'file\s+src/rust/crates/fathomdb-engine/Cargo\.toml' \
   "--list-sources names the crate manifest the test-target check reads"
+
+# === Arm 12ai (RED, fix-6): THE VERB THAT LOST ITS RECEIVER ==================
+# codex §9 round 6 finding #1, a FALSE GREEN. `C1-SEAM-ENGINE-BUILD-DROP` reads
+# the specs parameter, the drop parameter and the return type out of
+# `configure_projections`'s OWN signature (that was fix-4's arm 12y). What no
+# probe said is that it is still an INSTANCE METHOD. Delete only the `&self,`
+# line and every one of those three fragments is still there, character for
+# character — while `engine.configure_projections(..)`, the call shape the pin's
+# evidence records and every call site in this repo uses, stops compiling. A
+# `self` receiver is legal ONLY inside an `impl`/trait block, so requiring one
+# excludes both a free function and a receiver-less associated function.
+RECEIVERLESS_ROOT="$(make_root apply-verb-receiver-deleted)"
+python3 - "$RECEIVERLESS_ROOT/src/rust/crates/fathomdb-engine/src/lib.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+old = """    pub fn configure_projections(
+        &self,
+        specs: &[ProjectionSpec],
+        drop: &[String],
+    ) -> Result<ProjectionDelta, EngineError> {"""
+# ONLY the receiver goes. Parameters, return type and name are untouched, which
+# is the whole point: every fix-4 probe still matches.
+new = """    pub fn configure_projections(
+        specs: &[ProjectionSpec],
+        drop: &[String],
+    ) -> Result<ProjectionDelta, EngineError> {"""
+assert text.count(old) == 1
+open(p, "w", encoding="utf-8").write(text.replace(old, new, 1))
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$RECEIVERLESS_ROOT"
+expect_rc 1 "an apply verb that LOST ITS \`&self\` RECEIVER HARD-fails the seam clause"
+expect_out 'C1-SEAM-ENGINE-BUILD-DROP' "the receiver-less failure NAMES the seam clause id"
+expect_out 'configure_projections' "the receiver-less failure NAMES the subject function"
+expect_routes_to_steward "the receiver-less seam failure"
+
+# THE MIRROR ARMS. A receiver obligation that a formatting-only or a
+# by-the-book-legal respelling can trip is a false RED, and a false RED on a
+# publish gate is its own failure mode (this round is fixing one — see 12aj). So
+# every legal receiver spelling must stay GREEN.
+SPELLING_IDX=0
+for SPELLING in '& self,' '&mut self,' "&'life self," 'mut self,' 'self,'; do
+  SPELLING_IDX=$((SPELLING_IDX + 1))
+  MIRROR_ROOT="$(make_root "apply-verb-receiver-$SPELLING_IDX")"
+  python3 - "$MIRROR_ROOT/src/rust/crates/fathomdb-engine/src/lib.rs" "$SPELLING" <<'PY'
+import sys
+p, spelling = sys.argv[1], sys.argv[2]
+text = open(p, encoding="utf-8").read()
+old = """    pub fn configure_projections(
+        &self,
+        specs: &[ProjectionSpec],"""
+new = """    pub fn configure_projections(
+        %s
+        specs: &[ProjectionSpec],""" % spelling
+assert text.count(old) == 1
+open(p, "w", encoding="utf-8").write(text.replace(old, new, 1))
+PY
+  run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$MIRROR_ROOT"
+  expect_rc 0 "the receiver spelled \`$SPELLING\` is still a receiver (no false RED)"
+done
+
+# === Arm 12aj (fix-6): A NESTED MODULE'S INNER ATTRIBUTE IS NOT THE FILE'S ====
+# codex §9 round 6 finding #2, and THE DIRECTION IS INVERTED versus every other
+# arm above: this fixture must exit 0. It is a FALSE RED that this arm guards.
+#
+# The fix-5 SWEEP taught `test_defined` that a file-level `#![cfg(..)]` switches
+# every proof in a file off (arm 12ah-2). The reader it used scanned the WHOLE
+# file for `#![`, and Rust permits an inner attribute at the head of ANY braced
+# item — `mod helpers { #![cfg(feature = "x")] .. }` is ordinary, legal, and
+# switches off THAT MODULE alone. One of those in a pinned test file made the
+# gate report the whole integration test as conditionally compiled: exit 1, CI
+# and `preflight.sh --landing` blocked, with every top-level pinned proof still
+# building and running. No such module exists in the tree today; this arm is here
+# so the first one to arrive does not stop the release.
+NESTED_INNER_ATTR_ROOT="$(make_root nested-module-inner-attr)"
+cat >>"$NESTED_INNER_ATTR_ROOT/src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs" <<'RS'
+
+// Fixture only (fix-6). A perfectly legal nested module carrying its OWN inner
+// attribute. Every pinned top-level test above is untouched and still runs.
+mod helpers {
+    #![cfg(feature = "never-enabled")]
+    pub fn h() {}
+}
+RS
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$NESTED_INNER_ATTR_ROOT"
+expect_rc 0 "a NESTED module's own inner \`#![cfg(..)]\` does NOT gate the pinned test file"
+expect_out 'ok +c1-contract-conformance' "the nested-inner-attribute root still reports ok"
+expect_no_out 'CONDITIONALLY COMPILED as a whole' \
+  "the nested-inner-attribute root is not reported as a wholly cfg-gated file"
+
+# THE MIRROR ARMS, so narrowing the scan cannot overshoot into a false GREEN. A
+# GENUINE file-level `#![cfg(..)]` must still be RED — including one that is not
+# the FIRST thing in the header. Rust allows a run of inner attributes at the top
+# of a file, and a `//!` doc header above them; both are still file level.
+#   (a) alone, at the very head of the same pinned file;
+#   (b) after another leading inner attribute;
+#   (c) after a leading `//!` doc comment.
+IDX=0
+for HEAD in \
+  '#![cfg(feature = "never-enabled")]' \
+  '#![allow(dead_code)]
+#![cfg(feature = "never-enabled")]' \
+  '//! Fixture only (fix-6): a doc header does not stop the next attribute being
+//! a FILE-level one.
+#![cfg(feature = "never-enabled")]'; do
+  IDX=$((IDX + 1))
+  HEAD_ROOT="$(make_root "file-cfg-in-header-$IDX")"
+  python3 - "$HEAD_ROOT/src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs" "$HEAD" <<'PY'
+import sys
+p, head = sys.argv[1], sys.argv[2]
+text = open(p, encoding="utf-8").read()
+open(p, "w", encoding="utf-8").write(head + "\n" + text)
+PY
+  run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$HEAD_ROOT"
+  expect_rc 1 "a FILE-level #![cfg(..)] in the header (form $IDX) still HARD-fails the file's clauses"
+  expect_out 'C1-Q3-DESTRUCTIVE-DELTA' "header-cfg form $IDX NAMES a clause proved in that file"
+  expect_out 'CONDITIONALLY COMPILED as a whole' "header-cfg form $IDX says the whole file is gated"
+done
 
 # === Arm 13 (RED): a source file an assertion reads is MISSING ===============
 # TC-37 evaporation path #4: the assertion could not be EVALUATED. That is
