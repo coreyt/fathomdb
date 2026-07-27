@@ -32,6 +32,12 @@
 # NOTE ON THE WHITESPACE ARM: failing on a formatting-only change is a
 # DELIBERATE, DOCUMENTED property of a content-hash pin, not an accident — see
 # the gate's header. It is asserted here so the behaviour is a contract.
+#
+# FIX-1 ARMS (arms 12d–12j) are the recurrence guard for codex §9 round 1: two
+# [P2] FALSE NEGATIVES in which the gate exited 0 on a tree that violates the
+# pinned contract — an open readiness vocabulary guarded only by a blacklist of
+# one name, and case-sensitive `absent` regexes over SQL. Both classes were
+# swept for and are fixed across every clause that carried them.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -415,6 +421,151 @@ PY
 run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$BAD_ROOT3"
 expect_rc 1 "deleting the named crash-heal test HARD-fails the gate"
 expect_out 'C1-AA-CRASH-HEAL-BOOT-REDERIVE' "the deleted-test failure NAMES the clause id"
+
+# === Arm 12d–12g (RED, fix-1): CLOSED VOCABULARY, not a blacklist ===========
+# codex §9 round 1, finding #1 [P2]. Three contract clauses say a vocabulary is
+# EXACTLY some set ("EXACTLY {ready, embedding}", "exactly {filterable,
+# rankable, searchable}", "total over exactly those three"). The gate used to
+# assert "the members I want are PRESENT" plus, in one case, "one specific bad
+# name is ABSENT" — which is a BLACKLIST OF ONE, not a closed vocabulary. Any
+# member added under a name nobody had thought to forbid walked straight
+# through, and the gate reported 0 on a tree that violates the pinned contract:
+# a false assurance in a PUBLISH-PRECONDITION gate, the TC-37 class in costume.
+#
+# Each arm below adds a member whose NAME the old blacklist could not have
+# known. Every one of them exited 0 before this round.
+
+# 12d — codex's own demonstration: a THIRD DenseReadiness variant.
+VOCAB_ROOT="$(make_root readiness-third-variant)"
+python3 - "$VOCAB_ROOT/src/rust/crates/fathomdb-engine/src/lib.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+i = text.index("pub enum DenseReadiness {")
+j = text.index("\n}", i)
+text = text[:j] + "\n    Failed," + text[j:]
+open(p, "w", encoding="utf-8").write(text)
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$VOCAB_ROOT"
+expect_rc 1 "a THIRD DenseReadiness variant HARD-fails (the readiness vocabulary is CLOSED)"
+expect_out 'C1-Q4-DENSE-READINESS-TWO-MEMBERS' "the third-variant failure NAMES the clause id"
+expect_out 'Failed' "the third-variant failure NAMES the unpinned variant it found"
+expect_routes_to_steward "the readiness-vocabulary failure"
+
+# 12e — the same hole through the STRING vocabulary: the enum keeps exactly two
+# variants, but a third accepted SPELLING is admitted. The clause reserves
+# `pending` for the orthogonal admission axis, and the old probes could not see
+# this at all (they matched `DenseReadiness::Pending`, which never appears).
+SPELL_ROOT="$(make_root readiness-third-spelling)"
+python3 - "$SPELL_ROOT/src/rust/crates/fathomdb-engine/src/lib.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+old = '            "ready" => Some(DenseReadiness::Ready),'
+assert old in text
+text = text.replace(old, old + '\n            "pending" => Some(DenseReadiness::Ready),', 1)
+open(p, "w", encoding="utf-8").write(text)
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$SPELL_ROOT"
+expect_rc 1 "a THIRD accepted readiness SPELLING HARD-fails even with the enum unchanged"
+expect_out 'C1-Q4-DENSE-READINESS-TWO-MEMBERS' "the third-spelling failure NAMES the clause id"
+expect_out 'pending' "the third-spelling failure NAMES the reserved token it found"
+
+# 12f — the SAME DEFECT CLASS in a sibling clause: a FOURTH ProjectionRole. The
+# old probes blacklisted exactly two names (Vector, Fts), so any other name
+# passed.
+ROLE_ROOT="$(make_root fourth-projection-role)"
+python3 - "$ROLE_ROOT/src/rust/crates/fathomdb-engine/src/lib.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+i = text.index("pub enum ProjectionRole {")
+j = text.index("\n}", i)
+text = text[:j] + "\n    Embeddable," + text[j:]
+text = text.replace('            ProjectionRole::Searchable => "searchable",',
+                    '            ProjectionRole::Searchable => "searchable",\n'
+                    '            ProjectionRole::Embeddable => "embeddable",', 1)
+text = text.replace('            "searchable" => Some(ProjectionRole::Searchable),',
+                    '            "searchable" => Some(ProjectionRole::Searchable),\n'
+                    '            "embeddable" => Some(ProjectionRole::Embeddable),', 1)
+open(p, "w", encoding="utf-8").write(text)
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$ROLE_ROOT"
+expect_rc 1 "a FOURTH ProjectionRole HARD-fails (the role vocabulary is exactly three)"
+expect_out 'C1-Q6A-THREE-ROLES' "the fourth-role failure NAMES the clause id"
+expect_out 'Embeddable' "the fourth-role failure NAMES the unpinned role it found"
+
+# 12g — same class again, and this one had NO blacklist at all: a FOURTH
+# IdSpaceKind. The clause says the typed id space is TOTAL over exactly three,
+# so a fourth variant is precisely the violation, and four `present` probes
+# could never see it.
+IDSPACE_ROOT="$(make_root fourth-id-space)"
+python3 - "$IDSPACE_ROOT/src/rust/crates/fathomdb-engine/src/lib.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+i = text.index("pub enum IdSpaceKind {")
+j = text.index("\n}", i)
+text = text[:j] + "\n    Chunk," + text[j:]
+text = text.replace('            Self::Passage => "p:",',
+                    '            Self::Passage => "p:",\n            Self::Chunk => "c:",', 1)
+text = text.replace('            Self::Passage => "passage",',
+                    '            Self::Passage => "passage",\n'
+                    '            Self::Chunk => "chunk",', 1)
+open(p, "w", encoding="utf-8").write(text)
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$IDSPACE_ROOT"
+expect_rc 1 "a FOURTH IdSpaceKind HARD-fails (the typed id space is total over exactly three)"
+expect_out 'C1-Q6B-IDSPACE-TOTAL-THREE' "the fourth-id-space failure NAMES the clause id"
+expect_out 'Chunk' "the fourth-id-space failure NAMES the unpinned variant it found"
+
+# === Arm 12h–12j (RED, fix-1): SQL is CASE-INSENSITIVE ======================
+# codex §9 round 1, finding #2 [P2]. The negative-space probes over SQL were
+# anchored to ONE uppercase spelling with single spaces. SQL is case-insensitive
+# and admits `INSERT OR REPLACE INTO` / `INSERT OR IGNORE INTO` with an
+# intervening conflict clause and arbitrary whitespace (newlines included), so
+# a lowercase or modifier-carrying backfill cleared the gate with 0.
+
+# 12h — codex's own demonstration: a lowercase migration-time backfill.
+BACKFILL_ROOT="$(make_root lowercase-backfill)"
+cat >>"$BACKFILL_ROOT/src/rust/crates/fathomdb-schema/src/lib.rs" <<'RS'
+
+// Fixture only. A LOWERCASE migration-time backfill of pre-existing rows —
+// exactly what the Q2 NO-DATA-MIGRATION clause forbids, and exactly what an
+// uppercase-anchored `absent` regex walked straight past.
+const FIXTURE_BACKFILL_SQL: &str = "insert into canonical_attributes select * from old_attrs;";
+RS
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$BACKFILL_ROOT"
+expect_rc 1 "a LOWERCASE backfill into the EAV store HARD-fails the NO-DATA-MIGRATION clause"
+expect_out 'C1-Q2-NO-DATA-MIGRATION' "the lowercase-backfill failure NAMES the clause id"
+expect_routes_to_steward "the lowercase-backfill clause failure"
+
+# 12i — the modifier + whitespace form, on the property-FTS half of the clause.
+MODIFIER_ROOT="$(make_root insert-or-replace-backfill)"
+cat >>"$MODIFIER_ROOT/src/rust/crates/fathomdb-schema/src/lib.rs" <<'RS'
+
+// Fixture only. `INSERT OR REPLACE INTO` — a valid SQLite backfill form with an
+// intervening conflict clause and a NEWLINE before the table name.
+const FIXTURE_BACKFILL_SQL: &str = "INSERT OR REPLACE INTO
+    property_search_index(attr_value, attr_name, write_cursor)
+    SELECT value, name, cursor FROM legacy_props;";
+RS
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$MODIFIER_ROOT"
+expect_rc 1 "an INSERT OR REPLACE INTO backfill (newline before the table) HARD-fails"
+expect_out 'C1-Q2-NO-DATA-MIGRATION' "the modifier-backfill failure NAMES the clause id"
+
+# 12j — the SAME DEFECT CLASS in a sibling clause: the deferred-custom-tokenizer
+# clause forbids the ENGINE from creating the property-FTS table itself, and its
+# `absent` probe was uppercase-anchored too.
+LOWER_DDL_ROOT="$(make_root lowercase-fts-ddl)"
+cat >>"$LOWER_DDL_ROOT/src/rust/crates/fathomdb-engine/src/lib.rs" <<'RS'
+
+// Fixture only. The ENGINE creating the property-FTS table, in lowercase.
+const FIXTURE_DDL: &str = "create virtual table property_search_index using fts5(attr_value)";
+RS
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$LOWER_DDL_ROOT"
+expect_rc 1 "a LOWERCASE engine-side property-FTS DDL HARD-fails the deferred-tokenizer clause"
+expect_out 'C1-TE-CUSTOM-TOKENIZER-DEFERRED' "the lowercase-DDL failure NAMES the clause id"
 
 # === Arm 13 (RED): a source file an assertion reads is MISSING ===============
 # TC-37 evaporation path #4: the assertion could not be EVALUATED. That is
