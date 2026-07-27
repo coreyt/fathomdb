@@ -111,6 +111,35 @@ are live from this session and are **not yet in that file**.
 | 4 | **TC-82 — should the cap key on ROUND PRODUCTIVITY rather than which directory a slice touches?** Slice 30 consumed six rounds, then a bounded seventh, then a micro-fix — **every round found something real, and the same-finding bound never fired once**, on a slice with **zero engine source**. That is the TC-75 argument outside TC-75's scope. | Rule change |
 | 5 | **TC-79 — `commission-manifest` is RED on `main` TODAY** (`test_commission_manifest.sh` exit 1, arm 9d; reproduced independently). It is an **always-on CI job**. Pre-existing, not Slice 30's doing. Natural slot: Slice 40 beside TC-16. | CI red now |
 
+### ⚠ READ THIS BEFORE YOU RUN `/decisions` — the open set is under-reported
+
+**`/decisions` will tell you there are TWO open decisions. There are FIVE.** Items **1** and **2** above are
+in `dev/plans/release-state-0.8.20.json` `decisions.unruled`; items **3**, **4** and **5** — step 7, `TC-82`
+and `TC-79` — were ruled *open* during the 2026-07-27 session and **were never written into that file.** They
+exist only in the steward ledger (`seq-119`, `seq-124`), the todos ledger (`TC-82`, `TC-79`, `TC-83`), and
+this hand-off.
+
+This is exactly the failure mode `/decisions` is built to prevent, pointed the other way: instead of a stale
+document over-reporting a settled call, the single writer is **under-reporting live ones**. Do not take
+`decisions.unruled` as complete until you have reconciled it against §4 here.
+
+**The fix is small and it is yours to make.** Add the three entries to `decisions.unruled` with `source` set
+to their ledger `seq-N` / `TC-n`, then regenerate — **never hand-edit inside a `GENERATED` marker**:
+
+```bash
+bash scripts/check-release-state-views.sh --write   # then verify: exit 0
+```
+
+**Know the mechanical consequence before you do it.** `render_status_live_open_count` renders from
+`len(decisions.unruled)`, so `STATUS-0.8.20.md` §4's banner will flip from **`TWO`** to **`FIVE`**. That is
+correct and intended — but the *surrounding sentence* in that banner is hand-written, not generated, and it
+currently enumerates only the two. Update that prose in the same commit or the board will name two items
+while its own generated count says five.
+
+The prior Steward left this undone deliberately rather than widen scope past the hand-off that was asked for.
+It is not blocked on anything and does not need an HITL ruling — it is bookkeeping that makes the single
+writer true again.
+
 ---
 
 ## 5. Ruled this session — cite, do not re-open
