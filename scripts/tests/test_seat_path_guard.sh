@@ -590,6 +590,16 @@ expect_allow "arm 49: 'perl -i -pe s/engine/motor/ dev/plans/note.md' is ALLOWED
 run_hook "$(payload Bash '' "sed -i 's,^,# see src/rust/lib.rs,' dev/plans/note.md" orchestrator)"
 expect_allow "arm 50: a multi-word sed EXPR quoting src/** does not deny (RED before fix-1)"
 
+# Arm 50 forced the fix to walk past the WHOLE quoted program word, not just its
+# first token. That absorption must not over-swallow, or the real operand behind
+# an apostrophe-bearing expression goes unguarded. Both idioms below balance
+# their quotes and must still reach the src/** operand.
+run_hook "$(payload Bash '' "sed -i 's/it'\\''s/x/' src/rust/lib.rs" orchestrator)"
+expect_deny "arm 50b: the '\\'' quote-escape idiom still DENIES its src/** operand (absorption does not over-swallow)"
+
+run_hook "$(payload Bash '' "sed -i \"s/don't/do not/\" src/rust/lib.rs" orchestrator)"
+expect_deny "arm 50c: an apostrophe inside a double-quoted EXPR still DENIES its src/** operand"
+
 # --- the true positives the fix must NOT trade away. All were green pre-fix and
 # must stay green: a false-positive fix that opens a false negative is not a fix.
 run_hook "$(payload Bash '' "sed -i -e 's/a/b/' src/rust/lib.rs" orchestrator)"

@@ -241,6 +241,48 @@ strip_heredocs() {
 }
 
 # --------------------------------------------------------------------------
+# absorb_quoted_word — advance past the REST of a quoted shell word.
+# `read -ra` splits on whitespace with no idea about quoting, so a single word
+# like  's,^,# see src/rust/lib.rs,'  arrives as three tokens. When the token at
+# index $k opens a quote it does not close, this walks $k forward to the token
+# that closes it, so the shards of one word are never read as separate file
+# operands. Backslash escapes are honoured outside single quotes, which is what
+# makes the `'a'\''b'` idiom balance correctly.
+#
+# Relies on bash's DYNAMIC scoping: k, toks and count are scan_simple_command's
+# locals and this is only ever called from there. Bounded by $count, so it
+# cannot loop. Worst case it over-absorbs and the guard says nothing — the
+# fail-open direction, consistent with the rest of the hook.
+# --------------------------------------------------------------------------
+absorb_quoted_word() {
+  local q="" c word len idx
+  while :; do
+    word="${toks[k]}"
+    len="${#word}"
+    idx=0
+    while [ "$idx" -lt "$len" ]; do
+      c="${word:idx:1}"
+      if [ -n "$q" ]; then
+        if [ "$q" = '"' ] && [ "$c" = '\' ]; then
+          idx=$((idx + 1))
+        elif [ "$c" = "$q" ]; then
+          q=""
+        fi
+      else
+        case "$c" in
+          '\')     idx=$((idx + 1)) ;;
+          "'"|'"') q="$c" ;;
+        esac
+      fi
+      idx=$((idx + 1))
+    done
+    [ -n "$q" ] || return 0
+    [ $((k + 1)) -lt "$count" ] || return 0
+    k=$((k + 1))
+  done
+}
+
+# --------------------------------------------------------------------------
 # scan_simple_command <one simple command> — the per-command target extractor.
 # --------------------------------------------------------------------------
 scan_simple_command() {
@@ -251,12 +293,23 @@ scan_simple_command() {
   [ "$count" -gt 0 ] || return 0
 
   local i tok next
-  # --- output redirections: >  >>  >|  1>  2>>  (and the `>FILE` glued form).
+  # --- output redirections. Covered, each verified by an arm in
+  # scripts/tests/test_seat_path_guard.sh (arms 6, 10, 53-56):
+  #     >  >>  1>  2>>  &>  &>>       spaced   (`> FILE`)
+  #     >  >>  1>  2>>  &>  &>>       glued    (`>FILE`)
+  #     >|  2>|                       both, via the `>|`->`>` rewrite that
+  #                                   scan_bash_command applies BEFORE it splits
+  #                                   on `|` (see the note there).
+  # `>>|` and `&>|` are bash SYNTAX ERRORS — measured, not assumed — so no write
+  # can happen through them and nothing needs guarding. The `>|`->`>` fold does
+  # incidentally make them deny; that is a harmless over-block on a command that
+  # could never run, recorded here so the code and this comment stay in step.
   # `>&2` cannot reach here as a target: the `&` split below has already put the
-  # fd on its own line, leaving a bare `>` with no following token.
+  # fd on its own line, leaving a bare `>` with no following token. `&>FILE`
+  # survives that split as `>FILE`, which the glued branch catches.
   for ((i = 0; i < count; i++)); do
     tok="${toks[i]}"
-    if [[ "$tok" =~ ^[0-9]*(\>\>?|\>\|)$ ]]; then
+    if [[ "$tok" =~ ^[0-9]*\>\>?$ ]]; then
       next="${toks[i + 1]-}"
       consider "$next"
     elif [[ "$tok" =~ ^[0-9]*\>\>?(.+)$ ]]; then
@@ -282,13 +335,80 @@ scan_simple_command() {
       done
       ;;
     sed|gsed|perl|ruby)
+      # THE EDIT PROGRAM IS NOT A FILE. These four take a script/expression
+      # argument that is prose, not a path, and pushing it through consider()
+      # denies allowed writes whose only sin is mentioning src/ in a
+      # substitution (`sed -i 's/src/lib/' dev/plans/note.md`). Over-blocking is
+      # how a guard gets switched off, so the operand rule is explicit:
+      #
+      #   1. A token starting with `-` is a flag, never a target.
+      #   2. A short cluster containing `e`, `E` or `f` supplies the program:
+      #      GLUED if characters follow that letter (`-e's/a/b/'`, `-pe'EXPR'`),
+      #      otherwise the NEXT non-flag token is the program (`-e EXPR`,
+      #      `-pe EXPR`, `-f script.sed`). Either way the program is consumed
+      #      and never considered.
+      #   3. `--expression`/`--file`, with or without `=`, do the same.
+      #   4. If no flag supplied a program, the FIRST bare operand IS the
+      #      program (`sed -i 's/a/b/' FILE...`) and is skipped.
+      #   5. EVERY remaining bare operand is a file and IS considered.
+      #
+      # Whenever a token is identified as the program, absorb_quoted_word walks
+      # past the rest of that shell word — `read -ra` split on whitespace, so a
+      # program like `'s,^,# see src/rust/lib.rs,'` arrived as three tokens and
+      # its middle shards would otherwise read as file operands.
+      #
+      # Only reached when an in-place flag is present; without one these
+      # commands write nothing and the hook stays silent. In-place detection
+      # runs over FLAG tokens only, so a program argument can never be mistaken
+      # for `-i`.
+      # Known imperfection, stated rather than hidden: BSD's `sed -i '' EXPR
+      # FILE` passes the backup suffix as a SEPARATE argument, so rule 4 eats
+      # the empty suffix and rule 5 then treats EXPR as a file. Harmless here
+      # (an EXPR rarely normalizes onto a protected segment, and this repo's
+      # hosts are GNU), but it is a real edge, not a covered one.
+      local -a operands=()
+      local arg flagbody before after want_prog=0 prog_seen=0
       for ((k = j + 1; k < count; k++)); do
-        case "${toks[k]}" in -*i*) has_inplace=1 ;; esac
+        arg="${toks[k]}"
+        if [ "$want_prog" -eq 1 ]; then
+          case "$arg" in
+            -*) want_prog=0 ;;   # a flag, not the program: fall through below
+            *)  want_prog=0; prog_seen=1; absorb_quoted_word; continue ;;
+          esac
+        fi
+        case "$arg" in
+          --expression=*|--file=*) prog_seen=1; absorb_quoted_word; continue ;;
+          --expression|--file)     want_prog=1; continue ;;
+          --in-place*)             has_inplace=1; continue ;;
+          --*)                     continue ;;
+          -*)
+            case "$arg" in *i*) has_inplace=1 ;; esac
+            flagbody="${arg#-}"
+            before="${flagbody%%[eEf]*}"
+            if [ "$before" != "$flagbody" ]; then
+              after="${flagbody#"$before"?}"
+              if [ -n "$after" ]; then
+                prog_seen=1
+                absorb_quoted_word
+              else
+                want_prog=1
+              fi
+            fi
+            continue
+            ;;
+          *)
+            if [ "$prog_seen" -eq 0 ]; then
+              prog_seen=1
+              absorb_quoted_word
+              continue
+            fi
+            operands+=("$arg")
+            ;;
+        esac
       done
       [ "$has_inplace" -eq 1 ] || return 0
-      for ((k = j + 1; k < count; k++)); do
-        case "${toks[k]}" in -*) continue ;; esac
-        consider "${toks[k]}"
+      for arg in "${operands[@]}"; do
+        consider "$arg"
       done
       ;;
     cp|mv|install|rsync|ln)
@@ -375,6 +495,14 @@ scan_bash_command() {
   scan_inline_interpreter "$cmd"
 
   stripped="$(printf '%s\n' "$cmd" | strip_heredocs)"
+  # `>|` (clobber-override redirect) MUST be folded to `>` before the `|` split
+  # below, or the split tears the operator in half and drops the target on a
+  # line of its own where it is just a bare word — which is how both
+  # `printf x >|src/lib.rs` and `printf x >| src/lib.rs` escaped the scanner
+  # entirely. `>|` is a single unambiguous bash operator, and `>` is the same
+  # redirection for scanning purposes, so the fold is lossless here. It runs
+  # before the `||` fold too: in valid shell a `>|` can never be half of a `||`.
+  stripped="${stripped//>|/>}"
   stripped="${stripped//&&/$'\n'}"
   stripped="${stripped//||/$'\n'}"
   stripped="${stripped//;/$'\n'}"
