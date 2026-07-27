@@ -1,0 +1,190 @@
+{
+  "phase": "0.8.20 Slice 30 — R-20-H7 RUBRIC-H7 `can-i-deploy` contract-conformance gate",
+  "baseline_sha": "23a436dcc7321eab86c622c8b403682caf2dfe2c",
+  "branch": "orch-0.8.20-s30",
+  "head_sha": "5add8a20bb4d421166ad0dc92346137d14972842",
+  "commits": [
+    {
+      "sha": "10f018dd",
+      "subject": "test(0.8.20-s30): RED — fixture suite for the R-20-H7 can-i-deploy gate",
+      "note": "RED-first. Ran at this commit with REAL exit code 1 (the gate did not exist: rc=127 from every checker invocation)."
+    },
+    {
+      "sha": "e48d5796",
+      "subject": "feat(0.8.20-s30): the R-20-H7 can-i-deploy gate + its reviewable clause pin",
+      "note": "scripts/check-c1-conformance.sh + scripts/c1-conformance-pin.json. Also corrected two expectations in the RED suite: the clause tally (12 cross-repo / 45 total, not 11 / 44) and a case-sensitive regex. The tally error was caught by the pin's OWN counts backstop — the gate refused its own first pin as internally inconsistent (exit 2), which is the backstop working as designed."
+    },
+    {
+      "sha": "43faa5f3",
+      "subject": "feat(0.8.20-s30): dual-home the R-20-H7 gate — preflight --landing + always-on CI",
+      "note": "preflight.sh §10 (PREVENT, with the anti-fail-open clause) + ci.yml c1-contract-conformance (DETECT, no if:, no needs:) + agent-test.sh registration."
+    },
+    {
+      "sha": "cd6a2e19",
+      "subject": "fix(0.8.20-s30): seed the C-1 subject into every --landing fixture repo",
+      "note": "Repairs a regression this slice introduced in four sibling suites. See blockers_encountered."
+    },
+    {
+      "sha": "5add8a20",
+      "subject": "docs(0.8.20-s30): DOC-INDEX row for the R-20-H7 gate + its clause pin",
+      "note": "X3."
+    },
+    {
+      "sha": "(this commit — self-referential, not knowable before it exists)",
+      "subject": "docs(0.8.20-s30): slice closure output.json",
+      "note": "This file."
+    }
+  ],
+  "findings_addressed": [
+    "R-20-H7 — the gate EXISTS and is GREEN. scripts/check-c1-conformance.sh exits 0 on the tree at head; all 26 CHECKABLE clauses of the ratified OPP-12 C-1 converged contract hold against as-built code.",
+    "The gate is pinned to the AMENDED contract (efa8d584). The un-amended Q6(b) mandated an anonymous surrogate that the ratified TC-11 pin A forbids ever implementing; a registry derived from that text would have been permanently red and would have held the breaking-pair publish forever. Both the gate header and the pin's _comment record this as the reason the contract's bytes are pinned at all.",
+    "Dual-homed per the settled design: preflight.sh --landing §10 (PREVENT) and an always-on ci.yml job (DETECT), both invoking THE SAME script so the predicate cannot diverge.",
+    "Recurrence guard: scripts/tests/test_check_c1_conformance.sh, 106 assertions across 17 arms, every failure arm driven by a purpose-built divergent fixture."
+  ],
+  "blockers_encountered": [
+    {
+      "id": "S30-B1",
+      "status": "RESOLVED IN SLICE",
+      "what": "Wiring the gate into preflight §10 turned FOUR sibling suites red (test_preflight_landing, test_check_ledgers, test_check_board_currency, test_check_governed_surface_pin). Their throwaway fixture repos carry no C-1 contract, no pin and no sources, so the gate exited 2 and the anti-fail-open clause correctly refused to certify the tree.",
+      "how": "The gate was NOT weakened. Followed the established repair (T1b for ledger-integrity, T1e for the governed-surface pin): a new seeder helper scripts/tests/lib/c1-conformance-fixture.sh, called from each fixture builder. No bypass, no env escape hatch, no --skip, no conditional that makes the gate inert.",
+      "deviation_recorded": "The seeder COPIES the real artifacts, a deliberate departure from its synthetic sibling lib/governed-surface-fixture.sh. A synthetic C-1 pair is IMPOSSIBLE, not merely undesirable: the gate's implemented-assertion set is a constant inside the script and the registry bijection is rigid in both directions, so any pin not registering exactly the 26 CHECKABLE ids reports MALFORMED — the very failure the seeder exists to remove. The header states this and why the resulting coupling is acceptable (the C-1 pin, unlike the governed-surface pin, is not expected to trip during 0.8.20)."
+    },
+    {
+      "id": "S30-B2",
+      "status": "PRE-EXISTING, NOT THIS SLICE — for the orchestrator",
+      "what": "scripts/tests/test_commission_manifest.sh is RED, arm 9d: `FAIL arm 9d (real base line): base=[  base sha         a2022957  (Slice 15 — the newest LANDED slice STRICTLY BEFORE Slice 20)]`.",
+      "evidence": "Reproduced at the BASELINE 23a436dc in a throwaway local clone (not a worktree) with the identical failure line. REAL exit code 1 at baseline and at head. Nothing in Slice 30 touches commission-manifest.",
+      "recommendation": "Worth a TC. It is a live always-on CI job (commission-manifest), so this is presumably red in CI on main today."
+    },
+    {
+      "id": "S30-B3",
+      "status": "OBSERVATION, NOT A GATE FAILURE — for the Steward",
+      "what": "The contract contains an internal inconsistency inside clause Q6(b). The parenthetical says the C-2 typed carrier's `typed swap [is] not started`, while the amendment banner four lines below says `The C-2 swap shipped ALONE in 0.8.19` — and as-built agrees with the banner (SearchHit.id is a non-Option IdSpace, engine lib.rs:1575).",
+      "classification": "Registered as C1-Q6B-C2-CARRIER-STATUS, category PROSE, with the reason written into the pin: it is a point-in-time status note about a sibling workstream, superseded WITHIN THE SAME CLAUSE by the banner, not an obligation on as-built code. Pinning it CHECKABLE would hold the publish on an already-superseded parenthetical — the exact hazard the efa8d584 amendment was made to remove.",
+      "recommendation": "Fix the stale parenthetical at the NEXT contract amendment. Not worth an amendment of its own, and NOT a blocker: doing it now would move the contract's bytes and force a re-derivation of the whole registry."
+    }
+  ],
+  "additional_changes_made_in_scope": [
+    "scripts/tests/lib/c1-conformance-fixture.sh — new seeder (see S30-B1).",
+    "scripts/tests/test_check_governed_surface_pin.sh, test_check_ledgers.sh, test_check_board_currency.sh, test_preflight_landing.sh — each now seeds preflight's §10 subject. Two added lines apiece plus a comment; no assertion of any suite was changed.",
+    "scripts/tests/test_check_c1_conformance.sh now seeds §9's governed surface SYNTHETICALLY via the sibling helper instead of copying the real pair — that pin is expected to trip during 0.8.20 and this suite has no business being coupled to its signing state.",
+    "The gate carries a --list-sources flag (not in the brief). It prints every path the assertions read, and both the fixture roots and the seeder are built from it, so a clause added later cannot leave them silently stale. A stale fixture root would turn every source arm into a TC-37 path-#4 evaporation and stop testing what it claims.",
+    "The pin carries sha256_whitespace_normalized in addition to sha256 + git_blob_sha1. It is used ONLY to tell the reader whether a divergence was formatting-only (the brief requires that message); it is never a substitute for the content hash."
+  ],
+  "changelog_decision": {
+    "decision": "NO CHANGELOG ENTRY",
+    "reason": "This slice adds no consumer-visible behaviour and no SDK surface. It is a repo gate, its pin, its fixtures and two CI/preflight wirings — nothing a consumer of the Python, TypeScript, Rust or CLI surface can observe. The governed-surface pin holding byte-identical is the mechanical corroboration of that claim.",
+    "recorded_in": "the docs commit message and here"
+  },
+  "clause_registry": {
+    "subject": "dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md",
+    "pinned_at_commit": "23a436dcc7321eab86c622c8b403682caf2dfe2c",
+    "amended_at_commit": "efa8d584",
+    "sha256": "8740f0873344088130970360134e4766d1d091645662842e82d711e584ae50bb",
+    "git_blob_sha1": "93694a5602ae205de05a801f256676b921dc39cc",
+    "totals": {
+      "checkable": 26,
+      "cross_repo": 12,
+      "prose": 7,
+      "total": 45
+    },
+    "failing_clauses": [],
+    "prior_pass_reconciliation": {
+      "prior_report": "17 checkable / 16 passing / 7 cross-repo / 6 prose",
+      "this_pass": "26 checkable / 26 passing / 12 cross-repo / 7 prose (45 total)",
+      "why_they_differ": "This registry is FINER-GRAINED, derived clause-by-clause from the document rather than inherited. Q3 alone yields three distinct obligations the prior tally appears to have merged (sole authority; the destructive delta; the explicit `omission != drop` parenthetical). Q6(b) as amended yields five (the negative-space assertion; id-space totality; non-null id; h: terminal + lifecycle-addressability; surrogate-governed-only). The two cross-repo entries about the Commission C `index` carrier are two distinct sentences in two distinct sections (Q1 and Landing) and are registered separately. Critically, the prior report's '16 of 17 passing' is NOT reproduced: on this pass EVERY clause classified CHECKABLE passes. No clause was demoted to make that true — the full registry with per-clause reasons is in scripts/c1-conformance-pin.json.",
+      "governing": "this pass"
+    },
+    "checkable": [
+      "C1-SEAM-ENGINE-BUILD-DROP — engine owns projection build/drop: configure_projections(specs, drop) -> ProjectionDelta. engine lib.rs:8198",
+      "C1-Q1-ROLE-SET — roles are a Set[ProjectionRole]. engine lib.rs:3850, :3984",
+      "C1-Q3-SOLE-AUTHORITY — one durable registry, engine diffs + backfills. schema lib.rs:848; engine lib.rs:16884, :3993",
+      "C1-Q3-DESTRUCTIVE-DELTA — incompatible change surfaces a destructive delta. engine lib.rs:3642; slice15d:283",
+      "C1-Q3-OMISSION-NOT-DROP — omission != drop. slice15d:223, :1191",
+      "C1-Q5-DERIVED-CACHE-IDEMPOTENT — re-apply diffs to a no-op. engine lib.rs:4007; slice15d:204",
+      "C1-Q2-ENGINE-EAV-PROPERTY-FTS — one engine-owned EAV + property-FTS + composite index. schema lib.rs:855, :860, :864",
+      "C1-Q2-ENGINE-PROJECTS-VIA-CONFIGURE — property filter + property FTS live. slice15d:413, :447",
+      "C1-Q2-NO-DATA-MIGRATION — the EAV migration is shape-only, no backfill. schema lib.rs:847 (step 24, CREATE-only SQL)",
+      "C1-Q4-CHEAP-SAME-TRANSACTION — filterable + searchable->FTS build in the apply transaction. engine lib.rs:8221, :3997",
+      "C1-Q4-DENSE-READINESS-TWO-MEMBERS — exactly {ready, embedding}; `pending` reserved for the admission axis. engine lib.rs:3910",
+      "C1-Q4-NO-PROVISIONAL-CONCEPT — NEGATIVE: zero `provisional` occurrences in any .rs under src/",
+      "C1-Q6A-THREE-ROLES — exactly {filterable, rankable, searchable}; the FTS/vector tiers are sub-object labels, not roles. engine lib.rs:3874-3880",
+      "C1-Q6A-RANKABLE-GRACEFUL-DEFER — declared, deferred, never errors, grafts later. engine lib.rs:4004; slice15d:334, :1209",
+      "C1-Q6B-NO-ENTITYTYPESPEC-NO-IDPREFIX — NEGATIVE: zero EntityTypeSpec / id_prefix / idPrefix anywhere under src/. This is the amendment's own factual assertion, checked as one.",
+      "C1-Q6B-IDSPACE-TOTAL-THREE — every hit is l:/h:/p:. engine lib.rs:1465, :1478-1484",
+      "C1-Q6B-ID-NON-NULL — SearchHit.id is IdSpace, not Option<IdSpace>. engine lib.rs:1575",
+      "C1-Q6B-H-TERMINAL-NOT-LIFECYCLE-ADDRESSABLE — typed refusal, no fabricated surrogate. engine lib.rs:3608; slice25:532",
+      "C1-Q6B-SURROGATE-GOVERNED-ONLY — registration never mints an id for a pre-existing anonymous row. slice25:205, :500",
+      "C1-AA-ATOMIC-FLIP — vector row + terminal in ONE transaction; torn ready-without-vector forbidden. engine lib.rs:13662; slice20:352",
+      "C1-AA-NO-BLOCK-ON-EMBEDDING — apply enqueues and returns; readiness reads `embedding`. engine lib.rs:1208; slice20:270",
+      "C1-AA-CRASH-HEAL-BOOT-REDERIVE — boot re-derive converges after a simulated crash. engine lib.rs:16513; slice15d:740",
+      "C1-TE-DEFAULT-EMBEDDER — Option override, None => the engine's shipped default. engine lib.rs:3957; candle_bge.rs:44",
+      "C1-TE-DEFAULT-TOKENIZER — Option override, None => the SAME tokenizer body-FTS uses. engine lib.rs:3891; schema lib.rs:436 and :867",
+      "C1-TE-CUSTOM-TOKENIZER-DEFERRED — recorded in the registry, not honoured; no per-declaration FTS table. schema lib.rs:851, :836",
+      "C1-LAND-0820-SLOT — the 0.8.20 plan actually carries the C-1 co-land requirements. plan-0.8.20.md:192-195"
+    ],
+    "cross_repo": [
+      "C1-SEAM-MEMEX-SEMANTICS — Memex owns which attributes exist, what they mean, their roles, the promotion gate; the LLM stays Memex-side.",
+      "C1-Q1-INDEX-CARRIER — the optional AttributeSpec.index carrier landed inert in Commission C (memex 95ed450).",
+      "C1-Q3-MEMEX-PURE-DERIVE — Memex runs only the pure derive and holds no projection state.",
+      "C1-Q5-MEMEX-PERSISTS-SPEC — Memex persists the spec; drift resolves to it; no two-registry sync.",
+      "C1-Q2-FORBIDDEN-OVERBUILD — no persisted standalone attribute node/table Memex-side.",
+      "C1-Q2-MEMEX-REPOINTS-WRITE-PATH — Memex repoints set_entity_attribute and retires the interim at the co-land.",
+      "C1-Q4-PROMOTE-DEFERS-VECTOR — the vector tier defers to promote(); timing policy is Memex-owned.",
+      "C1-Q4-REJECT-DROPS-CHEAP-ONLY — a rejected provisional drops only the cheap projections.",
+      "C1-AA-PERSIST-FIRST — register() durably writes the Memex spec before any projection work.",
+      "C1-AA-DERIVE-THEN-CONFIGURE — the derive step is the Memex-side pure function.",
+      "C1-LAND-INDEX-CARRIER-MOVED — 'the only piece that had to move now, and it has' (memex 95ed450).",
+      "C1-LAND-MEMEX-ISOLATION — P2·S-F is isolated from Memex's current work; engine wiring deferred Memex-side."
+    ],
+    "prose": [
+      "C1-STATUS-BANNER",
+      "C1-Q2-SCOPE-LINE-UNTIL-COLAND",
+      "C1-Q6B-C2-CARRIER-STATUS  (see blocker S30-B3 — stale parenthetical, flagged for the next amendment)",
+      "C1-Q6B-AMENDMENT-RATIONALE",
+      "C1-AA-P2S0-INTERNAL-DETAIL",
+      "C1-NET-NOTHING-OPEN",
+      "C1-LAND-PUBLISH-IS-SEPARATE-GATE"
+    ]
+  },
+  "tc71_assessment": {
+    "question": "Does TC-71 (vector_projection_declared keys off the stored `vector` sub-object alone and ignores the `searchable` role) contradict any C-1 clause?",
+    "verdict": "NO — but the tension is real and is recorded here rather than papered over.",
+    "reasoning": "C-1 never states the negative-space rule TC-71 violates. It names a TIER, `searchable->vector`, and assigns it a cost policy (defers to promote()); it nowhere says 'an attribute without the searchable role must not receive a vector projection'. The engine does persist and honour the vector sub-object a caller explicitly declared, so no clause of this document is falsified. The rule TC-71 is measured against is the ENGINE'S OWN doc-comment (lib.rs:3843-3848: the sub-objects select the sub-target of a Searchable attribute) plus the accept-inert ruling — a FathomDB-internal API-shape defect, not a cross-repo contract breach.",
+    "consequence": "No clause was weakened, reclassified or skipped on TC-71's account, and Slice 30 does not touch it. It stays scoped to Slice 21 (R-20-CR).",
+    "caveat_for_the_steward": "If Slice 21 fixes TC-71 by requiring the `searchable` role, that is a behavioural change with NO C-1 clause on either side of it — this gate will neither notice nor object. That is correct (the contract is silent), and it is exactly the kind of thing the gate's header warns it does not cover."
+  },
+  "gates": [
+    { "gate": "scripts/check-c1-conformance.sh (the new gate, real tree)", "exit": 0, "note": "26/26 CHECKABLE clauses hold; contract byte-identical to the pin." },
+    { "gate": "scripts/tests/test_check_c1_conformance.sh (recurrence guard)", "exit": 0, "note": "106 assertions, 17 arms, 0 failures. Was exit 1 at 10f018dd (RED-first)." },
+    { "gate": "scripts/check-governed-surface-pin.sh", "exit": 0, "note": "HELD. src/conformance/governed-surface-allowlist.json byte-identical to baseline 23a436dc (git diff --stat empty). Not expected to trip for a gate-only slice, and it did not." },
+    { "gate": "scripts/preflight.sh --landing (from the worktree)", "exit": 0, "note": "all ten sections ok, hard_fails []." },
+    { "gate": "cargo clippy --workspace --all-targets", "exit": 0, "note": "no Rust changed in this slice; run anyway per release DoD." },
+    { "gate": "cargo check --workspace --all-targets", "exit": 0, "note": "as above." },
+    { "gate": "cargo test --workspace --quiet --no-fail-fast", "exit": 0, "note": "ONE green run. Per TC-72 a single green is not proof of stability on this machine, but no Rust changed in this slice." },
+    { "gate": "scripts/agent-lint.sh", "exit": 0, "note": "required a node_modules symlink to the primary checkout first (the linter itself printed that instruction and HARD-failed rather than skipping — TC-37 behaving correctly)." },
+    { "gate": "actionlint .github/workflows/ci.yml", "exit": 0 },
+    { "gate": "bash -n on every new/modified shell file", "exit": 0, "note": "shellcheck is NOT installed on this machine, so no shellcheck run is claimed." },
+    { "gate": "scripts/tests/test_check_governed_surface_pin.sh", "exit": 0, "note": "was red mid-slice (S30-B1), green after the seeder repair." },
+    { "gate": "scripts/tests/test_preflight_landing.sh", "exit": 0, "note": "as above." },
+    { "gate": "scripts/tests/test_check_ledgers.sh", "exit": 0, "note": "as above." },
+    { "gate": "scripts/tests/test_check_board_currency.sh", "exit": 0, "note": "as above." },
+    { "gate": "scripts/tests/test_commission_manifest.sh", "exit": 1, "note": "PRE-EXISTING RED — reproduced identically at baseline 23a436dc in a throwaway clone. See blocker S30-B2. NOT caused by this slice." },
+    { "gate": "scripts/tests/test_smoke_scripts.sh", "exit": 0 },
+    { "gate": "scripts/tests/test_lint_plan_anchors.sh", "exit": 0 },
+    { "gate": "scripts/tests/test_check_release_state_views.sh", "exit": 0 },
+    { "gate": "scripts/tests/test_plans_status_frontmatter.sh", "exit": 0 },
+    { "gate": "scripts/tests/test_design_status_frontmatter.sh", "exit": 0 },
+    { "gate": "scripts/agent-test.sh (aggregate)", "exit": null, "note": "DELIBERATELY NOT RUN AS AN AGGREGATE. Under set -euo pipefail it aborts at the known-red test_actionlint_fixture.sh (TC-16, placed at Slice 40) and never reaches the later steps, so its exit code is vacuous. Every suite above was run individually and its own real exit code quoted." },
+    { "gate": "scripts/agent-lint-md.sh (worktree)", "exit": null, "note": "NOT CLAIMED. Per TC-37 this script takes its skip branches in a linked worktree and exits 0 having linted nothing; a worktree exit 0 is not a green and is not reported as one." }
+  ],
+  "agent_verify_result": "GREEN for the slice's own scope. The R-20-H7 gate exists, is dual-homed, and is GREEN: 26/26 CHECKABLE clauses of the ratified C-1 contract hold against as-built code, and the contract is byte-identical to its pin. The recurrence guard is 106 assertions strong and every failure arm is fixture-driven. The governed-surface pin HELD byte-identical. Full-workspace clippy and check both exit 0. One pre-existing unrelated red is recorded (S30-B2, test_commission_manifest arm 9d, reproduced at baseline).",
+  "next_step_for_orchestrator": [
+    "Run codex §9 against this branch. Point it in particular at: (i) the clause registry in scripts/c1-conformance-pin.json — the classification is the slice's real deliverable and the place a reviewer should push hardest, especially C1-Q6B-C2-CARRIER-STATUS (PROSE, blocker S30-B3) and C1-Q2-NO-DATA-MIGRATION; (ii) the honesty paragraph in the gate header, which is a claim about what the gate does NOT prove; (iii) the seeder's documented departure from its synthetic sibling (S30-B1).",
+    "Cherry-pick onto main. Nothing under src/ was touched; SCHEMA is unmoved; no SDK surface changed; no CHANGELOG entry (decision + reason recorded above).",
+    "Close R-20-H7 on the board: 'Gate exists and is GREEN' is satisfied. R-20-H7 is a PUBLISH PRECONDITION — an absent-or-failing gate holds the breaking pair — so the publish precondition is now met and the CI job will keep it honest on every push.",
+    "OPEN A TC for S30-B2 (test_commission_manifest arm 9d is red on main today, and commission-manifest is an always-on CI job).",
+    "Note for the Steward, S30-B3: the contract's Q6(b) carries a stale parenthetical ('typed swap not started') contradicted by its own amendment banner four lines below. Fix it at the NEXT amendment, not now — any edit moves the contract's bytes and forces a full re-derivation of the clause registry.",
+    "Ladder: Slice 30 was the publish precondition and ran first of the remainder. Next per plan-0.8.20.md §4 is Slice 21 (R-20-CR: TC-57 characterize-then-fix, ac_002 sandbox, TC-71)."
+  ]
+}
