@@ -261,6 +261,36 @@
         "id": "tc-59-pin-repin-strategy",
         "title": "one re-pin at the batched decision; no pending_delta tooling",
         "source": "steward-ledger seq-113 (HITL 2026-07-26)"
+      },
+      {
+        "id": "tc-74-workspace-gate-evidence-rule",
+        "ruling": "(a) serialize the Slice-40 workspace gate + keep a NON-BLOCKING parallel reporting run; race-hunting to 0.8.21",
+        "ruled_on": "2026-07-27",
+        "source": "seq-119 · todos TC-74"
+      },
+      {
+        "id": "tc-75-engine-fix-round-cap",
+        "ruling": "(a) same-finding stays 3; per-slice total 6->10 for fathomdb-engine/src slices; mandatory Steward check-in at 6. NOT YET IN FORCE - durable rule homes still read 3/6",
+        "ruled_on": "2026-07-27",
+        "source": "seq-119 · todos TC-75"
+      },
+      {
+        "id": "tc-76-library-slice-requirement-id",
+        "ruling": "(a) Slice 31 carries NO R-20-xx id; annotated as a deliberate departure from the F-12 pico precedent",
+        "ruled_on": "2026-07-27",
+        "source": "seq-119 · todos TC-76"
+      },
+      {
+        "id": "tc-77-overflow-tripwire",
+        "ruling": "(a) FOR NOW - keep plan §5 band-overflow default; CONDITIONAL, re-opens if Slice 21 or 22 spawns two or more further slices",
+        "ruled_on": "2026-07-27",
+        "source": "seq-119 · todos TC-77"
+      },
+      {
+        "id": "tc-78-dependabot-153-setup-node",
+        "ruling": "(a) FOR NOW - terminal hold until after publish; MONITOR for (c) if the Slice-40 rehearsal fails on npm auth",
+        "ruled_on": "2026-07-27",
+        "source": "seq-119 · todos TC-78"
       }
     ]
   },
