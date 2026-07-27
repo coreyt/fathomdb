@@ -33,7 +33,11 @@
 #   * the ABSENCE of the negative space the contract names (its Q6(b) amendment
 #     asserts, as a matter of fact, that no `EntityTypeSpec` and no `id_prefix`
 #     exists anywhere under src/ — that is a perfect falsifiable assertion and
-#     it is checked as one); and
+#     it is checked as one);
+#   * for CLOSED VOCABULARIES ("EXACTLY {ready, embedding}", "exactly three
+#     roles", "total over exactly those three"), that the enum's variant SET and
+#     COUNT and its string mappings are exactly the pinned ones — a structural
+#     comparison, NOT a blacklist of the names somebody happened to fear; and
 #   * for BEHAVIOURAL obligations, that THE NAMED TEST WHICH PROVES THAT
 #     BEHAVIOUR STILL EXISTS IN THE TREE.
 #
@@ -221,7 +225,57 @@ SKIP_DIRS = {
 #   ("min",     path, regex, n)       regex must match at least n times in path
 #   ("absent_tree", tree, regex, exts) regex must not match in any text file
 #                                      under tree (exts=None ⇒ every text file)
+#   ("enum_exact", path, ty, members) the Rust `enum ty` in path has EXACTLY
+#                                      these variants — set AND count
+#   ("arms_exact", path, ty, fn, pairs) the match arms inside `impl ty { fn fn }`
+#                                      map EXACTLY these (variant, string) pairs
+#
+# ------------ CLOSED VOCABULARIES ARE STRUCTURAL, NOT BLACKLISTED ------------
+# fix-1, codex §9 round 1 finding #1 [P2]. Three clauses below assert that a
+# vocabulary is EXACTLY some set: readiness is "EXACTLY {ready, embedding}",
+# roles are "exactly {filterable, rankable, searchable}", the typed id space is
+# "total over exactly those three". Those obligations were originally probed as
+# "the members I want are PRESENT" plus, in one case, "one specific bad name is
+# ABSENT" — a BLACKLIST OF ONE. A blacklist is not a closed vocabulary: any
+# member added under a name nobody thought to forbid walks straight through, and
+# the gate reports 0 on a tree that violates the contract. codex demonstrated it
+# with `pub enum DenseReadiness { Ready, Embedding, Failed }`.
+#
+# `enum_exact` / `arms_exact` close that by CONSTRUCTION: they parse the enum
+# body and the match arms, count the members, and compare the member SET against
+# the pinned one. A third variant fails whatever it is called; a third accepted
+# string spelling fails even when the enum is untouched. That is the difference
+# between "the names I feared are absent" and "the vocabulary is closed".
+#
+# ------------------ SQL IS CASE-INSENSITIVE (AND WHITESPACE) -----------------
+# fix-1, codex §9 round 1 finding #2 [P2]. An `absent` probe over SQL that
+# anchors on ONE uppercase spelling with single spaces is a false negative:
+# SQLite accepts `insert into t`, `INSERT OR REPLACE INTO t`, `INSERT OR IGNORE
+# INTO   t` and a newline anywhere whitespace is legal. codex cleared the gate
+# with a single lowercase line. Every negative-space probe whose subject is SQL
+# now goes through `insert_into()` / an explicit `(?i)` pattern that tolerates
+# the five SQLite conflict clauses and arbitrary whitespace.
+#
+# Rust IDENTIFIER probes (`ProjectionRole::Vector`, `EntityTypeSpec`,
+# `id_prefix`) are deliberately left case-SENSITIVE: case is significant in Rust,
+# so folding case there would create false positives, not close a hole.
 # ---------------------------------------------------------------------------
+
+
+def insert_into(table):
+    """A case-insensitive `INSERT [OR <conflict>] INTO <table>` / `REPLACE INTO
+    <table>` pattern.
+
+    Tolerates all five SQLite conflict clauses (the same five the schema crate's
+    own accretion guard enumerates), arbitrary whitespace including newlines
+    between every token, and an optionally quoted/bracketed table name.
+    """
+    return (
+        r"(?i)\b(?:INSERT|REPLACE)\b"
+        r"(?:\s+OR\s+(?:ABORT|FAIL|IGNORE|REPLACE|ROLLBACK))?"
+        r"\s+INTO\s+[\"'`\[]?" + table + r"\b"
+    )
+
 ASSERTIONS = {
     # ---- Cohesion seam --------------------------------------------------
     "C1-SEAM-ENGINE-BUILD-DROP": [
@@ -263,32 +317,71 @@ ASSERTIONS = {
         ("present", T15, r"fn property_filter_returns_correct_rows\(\)"),
         ("present", T15, r"fn property_fts_search_returns_correct_rows\(\)"),
     ],
+    # SCOPE (load-bearing, fix-1). The clause forbids a MIGRATION/BACKFILL of
+    # PRE-EXISTING rows — not projection writes as such. The two `absent` probes
+    # are therefore scoped to SCH, the schema crate, which IS the migration
+    # ladder: any `INSERT ... INTO canonical_attributes` there runs at migrate
+    # time over rows that already existed, which is exactly the forbidden thing.
+    # The LEGITIMATE writes — the per-declaration, same-transaction projection
+    # INSERTs — live in the ENGINE (`configure_projections`, ENG ~16663/16669)
+    # and are deliberately out of this probe's scope, so widening the pattern to
+    # be case-insensitive cannot produce a false positive on them.
+    #
+    # Residual, stated honestly: the probe reads the schema crate as TEXT, so a
+    # doc comment that literally spells `insert into canonical_attributes` would
+    # trip it. That is a false RED (reword the comment), which is the safe side
+    # of this gate — unlike the false GREEN it replaces.
     "C1-Q2-NO-DATA-MIGRATION": [
         ("present", SCH, r"NO DATA MIGRATION \(HITL 2026-07-21\): shape only, no backfill\."),
-        ("absent", SCH, r"INSERT INTO canonical_attributes"),
-        ("absent", SCH, r"INSERT INTO property_search_index"),
+        ("absent", SCH, insert_into("canonical_attributes")),
+        ("absent", SCH, insert_into("property_search_index")),
     ],
     # ---- Q4 --------------------------------------------------------------
     "C1-Q4-CHEAP-SAME-TRANSACTION": [
         ("present", ENG, r"apply_projection_config\(&tx,"),
         ("present", ENG, r"pub built: Vec<String>,"),
     ],
+    # "EXACTLY {ready, embedding}" is a CLOSED vocabulary, so it is asserted
+    # structurally (fix-1, codex finding #1): the enum has exactly two variants,
+    # and each conversion fn maps exactly two (variant, string) pairs. The
+    # `present` probes are kept as a spelling regression guard, and the `absent`
+    # `::Pending` probe is kept because the clause names that token
+    # specifically ("reserved for the orthogonal admission axis") — but neither
+    # is what closes the vocabulary any more.
     "C1-Q4-DENSE-READINESS-TWO-MEMBERS": [
         ("present", ENG, r"pub enum DenseReadiness \{"),
         ("present", ENG, r'DenseReadiness::Ready => "ready",'),
         ("present", ENG, r'DenseReadiness::Embedding => "embedding",'),
         ("absent", ENG, r"DenseReadiness::Pending"),
+        ("enum_exact", ENG, "DenseReadiness", ("Ready", "Embedding")),
+        ("arms_exact", ENG, "DenseReadiness", "as_str",
+         (("Ready", "ready"), ("Embedding", "embedding"))),
+        ("arms_exact", ENG, "DenseReadiness", "from_str_opt",
+         (("Ready", "ready"), ("Embedding", "embedding"))),
     ],
     "C1-Q4-NO-PROVISIONAL-CONCEPT": [
         ("absent_tree", SRC_TREE, r"(?i)provisional", (".rs",)),
     ],
     # ---- Q6(a) -----------------------------------------------------------
+    # Same CLASS as the readiness clause (fix-1 sweep): "exactly {filterable,
+    # rankable, searchable}" was probed as three presents plus a blacklist of
+    # two names, so a FOURTH role under any other name passed. Closed
+    # structurally now; the two `absent` probes are kept because Vector/Fts are
+    # the specific confusion the clause calls out (they are TIER LABELS on the
+    # sub-objects, not roles).
     "C1-Q6A-THREE-ROLES": [
         ("present", ENG, r'"filterable" => Some\(ProjectionRole::Filterable\),'),
         ("present", ENG, r'"rankable" => Some\(ProjectionRole::Rankable\),'),
         ("present", ENG, r'"searchable" => Some\(ProjectionRole::Searchable\),'),
         ("absent", ENG, r"ProjectionRole::Vector\b"),
         ("absent", ENG, r"ProjectionRole::Fts\b"),
+        ("enum_exact", ENG, "ProjectionRole", ("Filterable", "Rankable", "Searchable")),
+        ("arms_exact", ENG, "ProjectionRole", "as_str",
+         (("Filterable", "filterable"), ("Rankable", "rankable"),
+          ("Searchable", "searchable"))),
+        ("arms_exact", ENG, "ProjectionRole", "from_str_opt",
+         (("Filterable", "filterable"), ("Rankable", "rankable"),
+          ("Searchable", "searchable"))),
     ],
     "C1-Q6A-RANKABLE-GRACEFUL-DEFER": [
         ("present", ENG, r"pub deferred: Vec<String>,"),
@@ -301,11 +394,21 @@ ASSERTIONS = {
         ("absent_tree", SRC_TREE, r"\bid_prefix\b", None),
         ("absent_tree", SRC_TREE, r"\bidPrefix\b", None),
     ],
+    # Same CLASS again, and the worst instance (fix-1 sweep): "TOTAL over exactly
+    # those three" was probed with FOUR `present` probes and NO negative at all,
+    # so a fourth variant — the precise violation of totality-over-three — could
+    # not be seen even in principle. Closed structurally over BOTH conversion
+    # fns, so a fourth prefix or a fourth discriminant spelling fails too.
     "C1-Q6B-IDSPACE-TOTAL-THREE": [
         ("present", ENG, r"pub enum IdSpaceKind \{"),
         ("present", ENG, r'Self::Logical => "l:",'),
         ("present", ENG, r'Self::Content => "h:",'),
         ("present", ENG, r'Self::Passage => "p:",'),
+        ("enum_exact", ENG, "IdSpaceKind", ("Logical", "Content", "Passage")),
+        ("arms_exact", ENG, "IdSpaceKind", "prefix",
+         (("Logical", "l:"), ("Content", "h:"), ("Passage", "p:"))),
+        ("arms_exact", ENG, "IdSpaceKind", "as_str",
+         (("Logical", "logical"), ("Content", "content"), ("Passage", "passage"))),
     ],
     "C1-Q6B-ID-NON-NULL": [
         ("present", ENG, r"pub id: IdSpace,"),
@@ -344,10 +447,19 @@ ASSERTIONS = {
         ("present", ENG, r"pub tokenizer: Option<String>,"),
         ("min", SCH, r"tokenize = 'porter unicode61 remove_diacritics 2'", 2),
     ],
+    # The third `absent` probe is SQL, so it carries the SAME defect class as
+    # C1-Q2-NO-DATA-MIGRATION and was fixed in the same sweep (fix-1): a
+    # lowercase `create virtual table property_search_index using fts5(...)` in
+    # the engine cleared the uppercase-anchored original. The obligation is that
+    # the ENGINE does not create the property-FTS table itself (the schema
+    # migration owns it, with the default tokenizer; a declared override is
+    # recorded and not honoured), so the probe is scoped to ENG.
     "C1-TE-CUSTOM-TOKENIZER-DEFERRED": [
         ("present", SCH, r"fts_tokenizer TEXT,"),
         ("present", SCH, r"recorded in the registry but not honoured here"),
-        ("absent", ENG, r"CREATE VIRTUAL TABLE property_search_index"),
+        ("absent", ENG,
+         r"(?i)CREATE\s+VIRTUAL\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?"
+         r"[\"'`\[]?property_search_index\b"),
     ],
     # ---- Landing ---------------------------------------------------------
     "C1-LAND-0820-SLOT": [
@@ -637,6 +749,113 @@ def line_of(text, match):
     return text.count("\n", 0, match.start()) + 1
 
 
+# ---------------------------------------------------------------------------
+# STRUCTURAL RUST READING for the CLOSED-VOCABULARY probes (fix-1).
+#
+# Deliberately a small, dumb reader, not a Rust parser: it strips comments,
+# brace-matches ONE named block, and reads what is inside. Everything it can
+# fail to find is reported as a CLAUSE DEFECT (exit 1) rather than being
+# skipped, so a rename or a refactor that puts the enum somewhere this reader
+# cannot see it goes RED and gets looked at — it never quietly stops checking.
+#
+# Known limits, stated rather than papered over: comment-stripping is textual,
+# so a `//` inside a string literal truncates that line, and brace-matching does
+# not skip braces inside strings. Neither can reach the three blocks read here
+# (their bodies hold only bare identifiers and short string literals), and both
+# would surface as a clause FAILURE, never as a silent pass.
+# ---------------------------------------------------------------------------
+_view_cache = {}
+
+
+def rust_view(rel):
+    """A comment-stripped view of a Rust source file (cached)."""
+    if rel not in _view_cache:
+        text = read_source(rel)
+        text = re.sub(r"/\*.*?\*/", " ", text, flags=re.S)
+        text = re.sub(r"//[^\n]*", "", text)
+        _view_cache[rel] = text
+    return _view_cache[rel]
+
+
+def brace_body(text, open_index):
+    """Body of the brace block whose '{' sits at open_index; None if unbalanced."""
+    depth = 0
+    for i in range(open_index, len(text)):
+        char = text[i]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[open_index + 1:i]
+    return None
+
+
+def enum_variants(view, ty):
+    """Every variant identifier of `enum ty`, in declaration order; None if the
+    declaration is absent or unparseable."""
+    match = re.search(r"\benum\s+" + re.escape(ty) + r"\b[^{;]*\{", view)
+    if match is None:
+        return None
+    body = brace_body(view, match.end() - 1)
+    if body is None:
+        return None
+    body = re.sub(r"#\[[^\]]*\]", " ", body)
+    chunks, depth, current = [], 0, ""
+    for char in body:
+        if char in "({[":
+            depth += 1
+        elif char in ")}]":
+            depth -= 1
+        if char == "," and depth == 0:
+            chunks.append(current)
+            current = ""
+        else:
+            current += char
+    chunks.append(current)
+    variants = []
+    for chunk in chunks:
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        name = re.match(r"([A-Za-z_][A-Za-z0-9_]*)", chunk)
+        if name is None:
+            return None
+        variants.append(name.group(1))
+    return variants
+
+
+def fn_body(view, ty, fn):
+    """Body of `fn` inside `impl ty { ... }`; None if either is absent."""
+    for match in re.finditer(r"\bimpl\s+" + re.escape(ty) + r"\s*\{", view):
+        block = brace_body(view, match.end() - 1)
+        if block is None:
+            continue
+        inner = re.search(r"\bfn\s+" + re.escape(fn) + r"\b[^{;]*\{", block)
+        if inner is None:
+            continue
+        body = brace_body(block, inner.end() - 1)
+        if body is not None:
+            return body
+    return None
+
+
+def arm_pairs(body, ty):
+    """Every (variant, string) match arm in `body`, both directions, sorted.
+
+    A LIST, not a dict: two arms mapping the same variant to two different
+    spellings is itself a vocabulary that is not closed, and collapsing them
+    into a dict would hide exactly that.
+    """
+    who = r"(?:Self|" + re.escape(ty) + r")"
+    string = r'"((?:[^"\\]|\\.)*)"'
+    pairs = [(m.group(1), m.group(2))
+             for m in re.finditer(who + r"::([A-Za-z_]\w*)\s*=>\s*" + string, body)]
+    pairs += [(m.group(2), m.group(1))
+              for m in re.finditer(string + r"\s*=>\s*Some\(" + who + r"::([A-Za-z_]\w*)\)", body)]
+    return sorted(pairs)
+
+
 def run_probe(probe):
     """Return a human-readable defect string, or None when the probe holds."""
     kind = probe[0]
@@ -673,6 +892,48 @@ def run_probe(probe):
                     f"expected NO match for /{pattern}/ in {scope} under {tree}/, but found it at "
                     f"{path}:{line_of(text, match)}"
                 )
+        return None
+    if kind == "enum_exact":
+        _, path, ty, expected = probe
+        want = list(expected)
+        got = enum_variants(rust_view(path), ty)
+        if got is None:
+            return (
+                f"could not locate a parseable `enum {ty}` declaration in {path} — the pinned "
+                f"vocabulary {want} cannot be checked, so this reads as a clause failure rather "
+                "than a skipped probe"
+            )
+        if sorted(got) != sorted(want):
+            extra = [v for v in got if v not in want]
+            missing = [v for v in want if v not in got]
+            return (
+                f"enum {ty} in {path} must carry EXACTLY {len(want)} variant(s) {want}, found "
+                f"{len(got)} {got}"
+                + (f"; UNPINNED variant(s) {extra}" if extra else "")
+                + (f"; MISSING variant(s) {missing}" if missing else "")
+                + " — this vocabulary is CLOSED by the contract, not merely non-empty"
+            )
+        return None
+    if kind == "arms_exact":
+        _, path, ty, fn, expected = probe
+        want = sorted(tuple(pair) for pair in expected)
+        body = fn_body(rust_view(path), ty, fn)
+        if body is None:
+            return (
+                f"could not locate `impl {ty} {{ fn {fn}(..) }}` in {path} — the pinned string "
+                f"vocabulary {want} cannot be checked, so this reads as a clause failure rather "
+                "than a skipped probe"
+            )
+        got = arm_pairs(body, ty)
+        if got != want:
+            extra = [p for p in got if p not in want]
+            missing = [p for p in want if p not in got]
+            return (
+                f"{ty}::{fn} in {path} must map EXACTLY {len(want)} (variant, string) pair(s) "
+                f"{want}, found {len(got)} {got}"
+                + (f"; UNPINNED pair(s) {extra}" if extra else "")
+                + (f"; MISSING pair(s) {missing}" if missing else "")
+            )
         return None
     die_env(f"internal error: unknown probe kind {kind!r}")
 
