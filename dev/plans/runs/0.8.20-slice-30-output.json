@@ -2,7 +2,7 @@
   "phase": "0.8.20 Slice 30 — R-20-H7 RUBRIC-H7 `can-i-deploy` contract-conformance gate",
   "baseline_sha": "23a436dcc7321eab86c622c8b403682caf2dfe2c",
   "branch": "orch-0.8.20-s30",
-  "head_sha": "(fix-3 round: the docs commit that carries this file — see commits[]; the GREEN half is cc31fef1)",
+  "head_sha": "(fix-4 round: the docs commit that carries this file — see commits[]; the last GREEN code half is 33792f3b)",
   "head_sha_before_fix_1": "3475d55e",
   "commits": [
     {
@@ -84,6 +84,36 @@
       "sha": "cc31fef1",
       "subject": "fix(0.8.20-s30): GREEN fix-3 — every NEGATIVE probe is crate-TREE-scoped, and the file-scoped kind is gone",
       "note": "FIX-3 ROUND, GREEN half. All seven file-scoped negative probes converted to absent_tree over the owning crate's SOURCE TREE; the ('absent', <file>, regex) probe kind DELETED from the script; walk_tree returns a cached LIST and exits 2 on a candidate-less tree. Suite rc=0 at this commit: 172 PASS, 0 failures. Gate rc=0 on the real tree. scripts/c1-conformance-pin.json `_comment` prose only."
+    },
+    {
+      "sha": "cf240a23",
+      "subject": "test(0.8.20-s30): RED fix-4 — ten fixtures the R-20-H7 gate reports GREEN while the named subject is broken",
+      "note": "FIX-4 ROUND, RED half. Ten new fixture roots (arms 12v-12ac) + the `min`-probe-kind structural guards. Ran at this commit with REAL exit code 1: 172 PASS / 35 FAIL, every new fixture root reporting 'expected rc=1, got rc=0'."
+    },
+    {
+      "sha": "36f528f1",
+      "subject": "fix(0.8.20-s30): GREEN fix-4 — every probe is bound to the SUBJECT its clause names, and the count kind is gone",
+      "note": "The gate only. 55 `present` probes became 10 `present` + 2 `doc_text` + 48 structural probes across six new kinds; the `min` kind was DELETED. Gate rc=0, suite rc=0 (207 PASS / 0 FAIL)."
+    },
+    {
+      "sha": "7b37186c",
+      "subject": "test(0.8.20-s30): RED fix-4b — a string literal read as code (the fix-4 class, found in the fix-4 patch)",
+      "note": "Self-adversarial: the fix-4 readers (and enum_exact/arms_exact since fix-1) read string literals as code. Ran at 36f528f1 with REAL exit code 1, 'expected rc=1, got rc=0'."
+    },
+    {
+      "sha": "5253934d",
+      "subject": "fix(0.8.20-s30): GREEN fix-4b — the structural readers no longer read string literals as code",
+      "note": "Length- and line-preserving literal blanking; bodies still sliced from the literal-bearing view so arms_exact keeps its subject. Gate rc=0, suite rc=0 (212 PASS / 0 FAIL)."
+    },
+    {
+      "sha": "aed79cac",
+      "subject": "test(0.8.20-s30): RED fix-4c — a COMMENTED-OUT declaration still satisfies the probe that names it",
+      "note": "The last reachable false green of the sweep. Ran at 5253934d with REAL exit code 1, 'expected rc=1, got rc=0'. Includes the MIRROR arm so the fix cannot overshoot doc_text."
+    },
+    {
+      "sha": "33792f3b",
+      "subject": "fix(0.8.20-s30): GREEN fix-4c — a commented-out declaration is not a declaration",
+      "note": "`present` reads the comment-stripped view for .rs; `doc_text` still reads raw. Gate rc=0, suite rc=0 (219 PASS / 0 FAIL)."
     }
   ],
   "findings_addressed": [
@@ -329,6 +359,56 @@
       "gate": "timing: 5x `bash scripts/check-c1-conformance.sh` on the real tree",
       "exit": 0,
       "note": "0.28 / 0.27 / 0.28 / 0.28 / 0.28 s at cc31fef1 vs 0.29 / 0.29 / 0.29 / 0.30 / 0.29 s at b0de847b. Tree-scoping two extra crate trees did NOT slow the gate: both are subsets of src/, and the new per-(tree,exts) walk cache collapses C1-Q6B-NO-ENTITYTYPESPEC's three identical full walks of src/ into one. Relevant because the gate runs in an always-on CI job and in preflight --landing."
+    },
+    {
+      "gate": "scripts/check-c1-conformance.sh (the gate, real tree)",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-4 HEAD (33792f3b). exit 0 in 0.50s wall. 26/26 CHECKABLE clauses hold; contract byte-identical to the pin. The green is EARNED, not an artefact of looking in the wrong place: every one of the 18 demonstrated false greens this round is now a RED arm in the recurrence suite."
+    },
+    {
+      "gate": "scripts/tests/test_check_c1_conformance.sh (recurrence guard)",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-4 HEAD (33792f3b). exit 0, 219 assertions (was 172), 0 failures, 20.6s. Arm 12 now carries 26 divergent-fixture sub-arms 12a-12ae. RED-first evidence: exit 1 at cf240a23 (172 PASS / 35 FAIL), at 7b37186c and at aed79cac."
+    },
+    {
+      "gate": "scripts/check-governed-surface-pin.sh",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-4 HEAD (33792f3b). exit 0 — 30 allowlist / 5 core / 5 recovery_denylist, AC-079 pin. src/conformance/governed-surface-allowlist.json is byte-identical to the baseline 23a436dc (git diff empty)."
+    },
+    {
+      "gate": "scripts/preflight.sh --landing (from the worktree)",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-4 HEAD (33792f3b). exit 0 in 0.89s. §10 reports ok c1-contract-conformance."
+    },
+    {
+      "gate": "scripts/tests/test_check_ledgers.sh",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-4 HEAD (33792f3b). exit 0."
+    },
+    {
+      "gate": "scripts/tests/test_check_board_currency.sh",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-4 HEAD (33792f3b). exit 0."
+    },
+    {
+      "gate": "scripts/tests/test_check_governed_surface_pin.sh",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-4 HEAD (33792f3b). exit 0."
+    },
+    {
+      "gate": "scripts/tests/test_preflight_landing.sh",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-4 HEAD (33792f3b). exit 0."
+    },
+    {
+      "gate": "scripts/agent-lint.sh",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-4 HEAD (33792f3b). exit 0."
+    },
+    {
+      "gate": "bash -n scripts/check-c1-conformance.sh + scripts/tests/test_check_c1_conformance.sh",
+      "exit": 0,
+      "note": "exit 0 each."
     }
   ],
   "fix_rounds": [
@@ -751,20 +831,336 @@
         "scripts/c1-conformance-pin.json's hashes, clause ids, categories and counts — only 7 lines of `_comment` prose were added.",
         ".github/workflows/ci.yml and scripts/preflight.sh — the two wirings are unchanged; both still invoke the SAME script."
       ]
+    },
+    {
+      "round": 4,
+      "reviewer": "codex §9, round 4 (fix-3 re-review) — one [P2] finding",
+      "transcript": "dev/plans/runs/codex/0.8.20/slice-30-fix-3-rereview-20260727T165252Z.log",
+      "budget": "Round 4 of a maximum 6. The 3-same-finding bound has still not fired, and the four classes are genuinely distinct: rounds 1-2 = REGEX SHAPE over an open vocabulary (SQL case/whitespace, schema qualifiers, spellings outside a match arm); round 3 = SCOPE (one file vs the crate source tree); round 4 = SUBJECT BINDING (a file vs the named table / struct / enum / function / index / test the clause is actually about). Each was a bounded defect with a definite, complete fix, and each was CLOSED rather than retired into RESIDUAL SCOPE.",
+      "why_this_was_not_residual": "The gate's residual covers INDIRECTION and NON-LITERAL routes. codex's fixture is neither: it edits ONE literal `tokenize = '...'` clause in ordinary source text, in the exact table the clause names. The probe simply was not looking at that table — it was COUNTING file-wide matches, and other FTS tables in the same file kept the count satisfied. A definite defect with a definite fix.",
+      "clause_registry_change": "NONE. Same 26 CHECKABLE ids, same categories, same pinned counts (26 checkable / 12 cross-repo / 7 prose, 45 total). The contract's bytes are untouched, so no re-derivation was triggered. scripts/c1-conformance-pin.json was NOT edited this round at all.",
+      "findings": [
+        {
+          "id": "round4-#1 [P2] the default-tokenizer probe is not bound to its subject",
+          "site": "scripts/check-c1-conformance.sh:651-654 (C1-TE-DEFAULT-TOKENIZER)",
+          "claim_verified": true,
+          "how": "Reproduced verbatim as fixture 12v: change ONLY property_search_index's `tokenize = 'porter unicode61 remove_diacritics 2'` to `'unicode61'`. Pre-fix gate rc=0 — the `min` probe (n=2) stayed satisfied by search_index, search_index_v2 and search_index_edges, none of which the clause is about.",
+          "fix": "New `fts_tokenizer_shared` probe. It extracts the `tokenize=` clause from property_search_index's OWN `CREATE VIRTUAL TABLE ... USING fts5( ... )` body and from the body-FTS tables' bodies, requires them EQUAL (the clause is relational: 'the ENGINE'S DEFAULT FTS5 TOKENIZER — THE ONE body-FTS USES'), and requires the shared value to equal the pinned default. Comparison is on the whitespace-collapsed, lowercased value, because SQLite matches fts5 tokenizer names that way; a `tokenize=` value may be quoted with ' \" ` or [ ].",
+          "reference_set_choice": "search_index_v2 (the fielded body-FTS the pin's own evidence cites as body-FTS at schema lib.rs:436) plus search_index (the retained legacy body index, whose effective tokenizer comes from the step-11 drop+recreate). search_index_edges is deliberately EXCLUDED: the edge index is a different subject, and its equal tokenizer was part of the coincidence that kept the old count green.",
+          "second_arm": "A second fixture DELETES property_search_index's tokenize clause outright. That is also a violation — fts5 then silently uses its own unicode61 default, which is not the engine default the clause names — and it also exited 0 before this round."
+        }
+      ],
+      "sweep": {
+        "method": "For EVERY probe: is this assertion bound to the contract's actual subject, or merely to a file that happens to contain something matching? Where the answer was 'a file', a fixture was built that leaves a DECOY satisfying the old probe while the named subject is broken, and the pre-fix rc was recorded.",
+        "instances_found_beyond_the_reviewer_finding": 15,
+        "extra_self_adversarial_rounds": "Two more, both found by turning the same question on the fix-4 patch itself (fix-4b, fix-4c). Both were REACHABLE false greens, both were closed with their own RED-first arms.",
+        "instances": [
+          {
+            "clauses": [
+              "C1-Q1-ROLE-SET",
+              "C1-Q5-DERIVED-CACHE-IDEMPOTENT",
+              "C1-Q4-CHEAP-SAME-TRANSACTION",
+              "C1-Q6A-RANKABLE-GRACEFUL-DEFER",
+              "C1-Q6B-ID-NON-NULL",
+              "C1-TE-DEFAULT-EMBEDDER",
+              "C1-TE-DEFAULT-TOKENIZER"
+            ],
+            "shape": "A field of a NAMED STRUCT probed as a bare `pub <field>: <ty>,` anywhere in engine lib.rs.",
+            "fixture": "12w — each of the seven fields renamed IN ITS OWN struct, one decoy struct carrying the seven original lines. Pre-fix rc=0.",
+            "fix": "in_item(struct <the struct the contract names>, <field regex>)."
+          },
+          {
+            "clauses": [
+              "C1-Q3-DESTRUCTIVE-DELTA",
+              "C1-Q6B-H-TERMINAL-NOT-LIFECYCLE-ADDRESSABLE"
+            ],
+            "shape": "An EngineError VARIANT probed as `<Variant> {` anywhere — which the Display impl and every construction site also spell.",
+            "fixture": "12x — both variants deleted from `enum EngineError`, uses left in place. Pre-fix rc=0.",
+            "fix": "in_item(enum EngineError, <variant regex>)."
+          },
+          {
+            "clauses": [
+              "C1-SEAM-ENGINE-BUILD-DROP"
+            ],
+            "shape": "Three INDEPENDENT file-wide probes for the apply verb's specs param, drop param and return type — nothing tied them to one another or to configure_projections.",
+            "fixture": "12y — the real signature rewritten (no drop list, error type changed) + a decoy verb carrying all three fragments. Pre-fix rc=0.",
+            "fix": "fn_sig(configure_projections, ...) x3, read out of THAT function's signature."
+          },
+          {
+            "clauses": [
+              "C1-Q4-CHEAP-SAME-TRANSACTION",
+              "C1-AA-NO-BLOCK-ON-EMBEDDING"
+            ],
+            "shape": "Statements about what happens INSIDE the apply verb, probed file-wide.",
+            "fixture": "12z — the `&tx` apply moved out of the transaction and the dispatcher wake removed, with a decoy call and the engine's three unrelated notify_new_work() sites keeping both probes satisfied. Pre-fix rc=0.",
+            "fix": "in_item(fn configure_projections, ...)."
+          },
+          {
+            "clauses": [
+              "C1-AA-ATOMIC-FLIP",
+              "C1-AA-CRASH-HEAL-BOOT-REDERIVE",
+              "and every other behavioural clause (18 probes in total)"
+            ],
+            "shape": "`fn <name>(` cannot tell a DEFINITION from a COMMENT mentioning the name.",
+            "fixture": "12aa — one engine fn and one named test deleted, each name left in a comment. Pre-fix rc=0.",
+            "fix": "fn_defined, which requires a parseable body in the comment-stripped source."
+          },
+          {
+            "clauses": [
+              "C1-Q2-ENGINE-EAV-PROPERTY-FTS",
+              "C1-TE-CUSTOM-TOKENIZER-DEFERRED"
+            ],
+            "shape": "The composite index probed by NAME while the clause is about its COLUMNS; the registry's fts_tokenizer column probed file-wide.",
+            "fixture": "12ab — the index re-created on ONE column (exactly what the cheap filterable tier cannot use) and the column moved to a decoy table. Pre-fix rc=0.",
+            "fix": "the index regex now names its columns; the column is read via sql_ddl inside _fathomdb_projection_registry's own CREATE TABLE body."
+          },
+          {
+            "clauses": [
+              "C1-LAND-0820-SLOT"
+            ],
+            "shape": "A requirement ROW probed as a bare `| id |` mention, which running prose can carry.",
+            "fixture": "12ac — the row demoted to a sentence. Pre-fix rc=0.",
+            "fix": "a whole three-cell table row anchored at line start."
+          },
+          {
+            "clauses": [
+              "C1-AA-CRASH-HEAL-BOOT-REDERIVE",
+              "C1-Q4-DENSE-READINESS-TWO-MEMBERS"
+            ],
+            "shape": "fix-4b, SELF-ADVERSARIAL. The structural readers read a comment-stripped view that still contained STRING LITERALS, so `fn foo() { }` inside a &str read like a definition and `enum DenseReadiness { Ready, Embedding }` inside one read like a declaration. NOT confined to the new readers: enum_exact/arms_exact have brace-matched over string literals since fix-1.",
+            "fixture": "12ad — the crash-heal proof deleted with its name surviving only in a string constant, AND a THIRD `Failed` variant added to the real enum with a decoy string ahead of it. Pre-fix rc=0 (at 36f528f1).",
+            "fix": "blank_literals(): a LINE- and LENGTH-preserving code view in which literal CONTENTS are blanked. Readers LOCATE in that view and SLICE bodies from the literal-bearing view, so arms_exact keeps its subject. Handles raw/byte/char literals and leaves lifetimes alone."
+          },
+          {
+            "clauses": [
+              "C1-TE-DEFAULT-EMBEDDER",
+              "C1-Q2-ENGINE-EAV-PROPERTY-FTS"
+            ],
+            "shape": "fix-4c, SELF-ADVERSARIAL. The remaining `present` probes read RAW text, so COMMENTING OUT a declaration and putting a replacement beside it left them satisfied. Reachable because for these two obligations that probe is the only one carrying it.",
+            "fixture": "12ae — DEFAULT_EMBEDDER_NAME renamed to `some-other-model` with the pinned line left in a comment, and the composite index not created at all with its DDL left in a one-line comment. Pre-fix rc=0 (at 5253934d).",
+            "fix": "`present` reads the comment-stripped view for .rs subjects; `doc_text` still reads raw, and the suite asserts BOTH directions so the fix cannot overshoot."
+          }
+        ]
+      },
+      "probe_kind_deleted": {
+        "kind": "min — (\"min\", path, regex, n), a count of file-wide matches",
+        "uses_before": 1,
+        "legitimate_remaining_use": "NONE. Every clause in this registry is about a named subject, so the honest probe is a structural extraction bound to that subject, or failing that a regex tight enough to name it uniquely. A count relates a probe to a FILE, which is precisely the defect this round found.",
+        "deleted_not_left_unused": "The kind is gone from the gate entirely — the same move fix-3 made for the file-scoped `absent` kind — so writing a count again is a deliberate, reviewed act. scripts/tests/test_check_c1_conformance.sh asserts both the absence of any (\"min\", ...) declaration and the absence of the `kind == \"min\"` implementation."
+      },
+      "probe_audit": {
+        "as_of": "33792f3b",
+        "totals_before": {
+          "present": 55,
+          "min": 1,
+          "absent_tree": 11,
+          "enum_exact": 3,
+          "arms_exact": 6,
+          "total": 76
+        },
+        "totals_after": {
+          "in_item": 20,
+          "fn_defined": 18,
+          "absent_tree": 11,
+          "present": 10,
+          "sql_ddl": 6,
+          "arms_exact": 6,
+          "fn_sig": 3,
+          "enum_exact": 3,
+          "doc_text": 2,
+          "fts_tokenizer_shared": 1,
+          "total": 80
+        },
+        "reading": "48 of the 55 file-scoped `present` probes became structural probes bound to a named subject; 2 became `doc_text` (declared as documentary); 10 remain `present`. The clause count, the ids and the pinned counts are unchanged.",
+        "every_remaining_present_probe_and_why_it_is_subject_bound": [
+          {
+            "clause": "C1-SEAM-ENGINE-BUILD-DROP",
+            "probe": "pub fn configure_projections\\(",
+            "subject": "the uniquely-named public engine verb",
+            "bound": true,
+            "why": "The identifier IS the subject; comments are stripped (fix-4c). Also strictly dominated by the three fn_sig probes on the same clause, which fail if the function is absent."
+          },
+          {
+            "clause": "C1-Q1-ROLE-SET",
+            "probe": "pub enum ProjectionRole \\{",
+            "subject": "the uniquely-named enum",
+            "bound": true,
+            "why": "Identifier = subject; dominated by enum_exact on C1-Q6A-THREE-ROLES."
+          },
+          {
+            "clause": "C1-Q4-DENSE-READINESS-TWO-MEMBERS",
+            "probe": "pub enum DenseReadiness \\{",
+            "subject": "the uniquely-named enum",
+            "bound": true,
+            "why": "Identifier = subject; dominated by enum_exact on the same clause."
+          },
+          {
+            "clause": "C1-Q6B-IDSPACE-TOTAL-THREE",
+            "probe": "pub enum IdSpaceKind \\{",
+            "subject": "the uniquely-named enum",
+            "bound": true,
+            "why": "Identifier = subject; dominated by enum_exact on the same clause."
+          },
+          {
+            "clause": "C1-Q2-ENGINE-EAV-PROPERTY-FTS",
+            "probe": "CREATE INDEX canonical_attributes_name_value_idx ON canonical_attributes(attr_name, attr_value)",
+            "subject": "that index AND its columns",
+            "bound": true,
+            "why": "fix-4: the regex now carries the whole obligation (name + table + both columns, case- and whitespace-tolerant), so it cannot be satisfied by a differently-shaped index. Comments stripped (fix-4c)."
+          },
+          {
+            "clause": "C1-TE-DEFAULT-EMBEDDER",
+            "probe": "pub const DEFAULT_EMBEDDER_NAME: &str = \"fathomdb-bge-small-en-v1.5\";",
+            "subject": "that const AND its value",
+            "bound": true,
+            "why": "Names the const and pins its exact value; nothing else in the file can satisfy it. Comments stripped (fix-4c) — this was the fix-4c finding."
+          },
+          {
+            "clause": "C1-LAND-0820-SLOT",
+            "probe": "^| R-20-PR | .+ | .+ |$ (and R-20-EAV / R-20-DR / R-20-SUR)",
+            "subject": "a whole requirement ROW of the 0.8.20 plan's table",
+            "bound": true,
+            "why": "fix-4: anchored at line start and requiring three cells, so a mention inside running prose no longer satisfies it. Raw text deliberately (markdown, not Rust)."
+          }
+        ],
+        "doc_text_probes_and_why_they_are_not_load_bearing": [
+          {
+            "clause": "C1-Q2-NO-DATA-MIGRATION",
+            "probe": "the step-24 'NO DATA MIGRATION (HITL 2026-07-21): shape only, no backfill.' marker",
+            "why_not_bound_structurally": "Its subject IS a written statement. Demoting it to a comment elsewhere would not violate the obligation (no backfill would thereby appear), which is the test for whether a text probe is load-bearing.",
+            "what_actually_carries_the_clause": "two TREE-scoped `absent_tree` negatives over the whole schema crate (any INSERT/REPLACE INTO canonical_attributes or property_search_index, in any spelling SQLite accepts)."
+          },
+          {
+            "clause": "C1-TE-CUSTOM-TOKENIZER-DEFERRED",
+            "probe": "'recorded in the registry but not honoured here'",
+            "why_not_bound_structurally": "Same: it is a documented statement in an ordinary // comment.",
+            "what_actually_carries_the_clause": "sql_ddl (the registry DECLARES an fts_tokenizer column, read inside that table's own DDL) + absent_tree over the engine crate tree (the engine builds no property-FTS table of its own) + the sibling clause C1-TE-DEFAULT-TOKENIZER, which is now a real tokenizer comparison."
+          }
+        ],
+        "structural_probes": "20 in_item (7 struct fields, 2 enum variants, 8 impl-scoped spellings, 2 statements inside configure_projections' body, 1 ProjectionDelta.dropped), 18 fn_defined, 6 sql_ddl, 3 fn_sig, 3 enum_exact, 6 arms_exact, 1 fts_tokenizer_shared. Every one names its subject.",
+        "negative_probes": "11 absent_tree, unchanged from fix-3 and all TREE-scoped.",
+        "multiplicity_semantics": "A subject name that denotes several items is resolved on the STRICT side: every struct/enum/fn body of that name must satisfy the probe. `impl` is the documented exception — a type's inherent impl may legitimately be split across blocks, and ANY block suffices because every one of them is still `impl <the named type>`, so the subject binding holds either way."
+      },
+      "not_lexically_bindable": {
+        "verdict": "NONE of the 26 clauses was found unbindable this round. Every probe now names its subject, and the two that cannot (by nature) are DECLARED as `doc_text` and are not the load-bearing half of their clause.",
+        "the_honest_boundary_worth_the_Steward_knowing": {
+          "what": "A named test proves EXISTENCE, never that its body still asserts anything. `fn atomic_flip_never_exposes_ready_without_the_vector_under_concurrent_write() {}` — an empty body — satisfies fn_defined, and so does one whose assertions were commented out. This is now residual class #8 in the gate header.",
+          "affected": "all 12 behavioural clauses (the ones whose evidence is a named test).",
+          "why_it_is_not_a_defect_in_this_gate": "The gate's own header has said since the first commit that it does NOT re-execute behavioural suites and proves only that the proof has not been deleted or renamed away. `cargo test --workspace` is the mechanism that executes those bodies, it is a required gate, and an emptied test body is visible in review as a code diff.",
+          "recommended_mechanism_if_it_is_ever_wanted": "Not another regex. Either (a) assert the shipped schema against `sqlite_master` at runtime and the behavioural obligations against a real engine instance — a functional conformance suite, which is a slice of its own; or (b) parse Rust with `syn` and assert that each named test's body contains at least one assertion macro. (b) is cheap but shallow (it cannot tell a real assertion from `assert!(true)`); (a) is the real answer and is the same recommendation this slice already recorded for dynamically-composed SQL. NEITHER IS BUILT HERE."
+        }
+      },
+      "red_to_green_per_arm": [
+        {
+          "arm": "12v property-FTS tokenizer diverged (codex's own fixture, verbatim)",
+          "red_rc": 0,
+          "green_rc": 1,
+          "red_at": "cf240a23",
+          "green_at": "36f528f1"
+        },
+        {
+          "arm": "12v-b property-FTS tokenize clause DELETED",
+          "red_rc": 0,
+          "green_rc": 1,
+          "red_at": "cf240a23",
+          "green_at": "36f528f1"
+        },
+        {
+          "arm": "12w seven struct fields moved out of their named structs (decoy struct)",
+          "red_rc": 0,
+          "green_rc": 1,
+          "red_at": "cf240a23",
+          "green_at": "36f528f1"
+        },
+        {
+          "arm": "12x two EngineError variants deleted, uses kept",
+          "red_rc": 0,
+          "green_rc": 1,
+          "red_at": "cf240a23",
+          "green_at": "36f528f1"
+        },
+        {
+          "arm": "12y configure_projections' signature rewritten (decoy verb)",
+          "red_rc": 0,
+          "green_rc": 1,
+          "red_at": "cf240a23",
+          "green_at": "36f528f1"
+        },
+        {
+          "arm": "12z the apply verb's body gutted (decoy call + unrelated wake sites)",
+          "red_rc": 0,
+          "green_rc": 1,
+          "red_at": "cf240a23",
+          "green_at": "36f528f1"
+        },
+        {
+          "arm": "12aa definitions deleted, names left in comments",
+          "red_rc": 0,
+          "green_rc": 1,
+          "red_at": "cf240a23",
+          "green_at": "36f528f1"
+        },
+        {
+          "arm": "12ab index rebuilt on one column + registry column moved to a decoy table",
+          "red_rc": 0,
+          "green_rc": 1,
+          "red_at": "cf240a23",
+          "green_at": "36f528f1"
+        },
+        {
+          "arm": "12ac requirement row demoted to a prose mention",
+          "red_rc": 0,
+          "green_rc": 1,
+          "red_at": "cf240a23",
+          "green_at": "36f528f1"
+        },
+        {
+          "arm": "min probe-kind structural guards (declaration + implementation)",
+          "red_rc": "FAIL",
+          "green_rc": "PASS",
+          "red_at": "cf240a23",
+          "green_at": "36f528f1"
+        },
+        {
+          "arm": "12ad definition/declaration planted inside a STRING LITERAL",
+          "red_rc": 0,
+          "green_rc": 1,
+          "red_at": "7b37186c",
+          "green_at": "5253934d"
+        },
+        {
+          "arm": "12ae declaration COMMENTED OUT (embedder const + composite index)",
+          "red_rc": 0,
+          "green_rc": 1,
+          "red_at": "aed79cac",
+          "green_at": "33792f3b"
+        },
+        {
+          "arm": "12ae-mirror doc_text must STILL read // comments (regression half)",
+          "red_rc": "PASS",
+          "green_rc": "PASS",
+          "red_at": "aed79cac",
+          "green_at": "33792f3b"
+        }
+      ],
+      "suite_totals": {
+        "before_fix_4": "172 assertions",
+        "after_fix_4": "219 assertions, 0 failures",
+        "arms": "1-17, with arm 12 expanded to 26 divergent-fixture sub-arms 12a-12ae"
+      },
+      "residual_scope_amended": "One class ADDED (#8: what a named test actually asserts). The existing seven are unchanged. fix-4 itself is explicitly NOT on the list, for the same reason fix-3 was not: it was a bounded defect with a definite, complete fix, and the RESIDUAL SCOPE section is not a place to retire findings to.",
+      "performance": "The gate runs in 0.50s wall on the real tree (was ~0.35s): the structural readers add one literal-blanking pass per Rust source read, cached per file. The recurrence suite runs in 20.6s (was ~16s) for 219 assertions across 26 divergent-fixture roots.",
+      "not_changed": "src/ (no Rust changed — clippy/check carried), the C-1 contract's bytes, scripts/c1-conformance-pin.json (not touched at all this round), src/conformance/governed-surface-allowlist.json (byte-identical, verified against the baseline), ci.yml, preflight.sh, agent-test.sh."
     }
   ],
-  "agent_verify_result": "GREEN for the slice's own scope, fix-3 round applied. The R-20-H7 gate exists, is dual-homed (preflight --landing + an always-on CI job running the SAME script), and is GREEN: 26/26 CHECKABLE clauses of the ratified C-1 contract hold against as-built code, and the contract is byte-identical to its pin. The recurrence guard is now 172 assertions across arms 1-17 with 21 fixture sub-arms 12a-12u, every failure arm fixture-driven.\n\nBOTH codex §9 round-3 [P2] findings are closed RED-first, and they were a DIFFERENT class from rounds 1-2: not a regex shape but a SCOPE bug — every negative probe read ONE FILE, so a literal, correctly-spelled, fully schema-qualified violation placed in a SIBLING MODULE of the same crate exited 0. That was a false claim in the gate's own header, not a residual limitation, so it was CLOSED rather than documented. The sweep enumerated all 76 probes by scope and polarity, found 4 more file-scoped negatives than codex named, and fixed all 7.\n\nTHE STRUCTURAL PART IS THE DURABLE PART: the file-scoped negative probe KIND was deleted from the script, so a negative probe can now only be written tree-scoped, and the suite asserts the kind's absence. The positive/negative asymmetry is stated rather than implicit (a too-narrow POSITIVE fails RED by construction and is therefore safe to leave file-scoped). TC-37 path #4 gained a definition for a tree subject: absent directory AND candidate-less directory both exit 2, with the coverage limit of the latter stated honestly rather than papered over.\n\nNothing under src/ was touched in any of the three fix rounds; SCHEMA is unmoved; the governed-surface allowlist is byte-identical to baseline; the contract's bytes and the clause registry are unchanged.",
+  "agent_verify_result": "GREEN for the slice's own scope, fix-4 round applied. The R-20-H7 gate exists, is dual-homed (preflight --landing + an always-on CI job running the SAME script), and is GREEN: 26/26 CHECKABLE clauses of the ratified C-1 contract hold against as-built code, and the contract is byte-identical to its pin. This round replaced 48 of the 55 file-scoped `present` probes with structural probes bound to the subject their clause names, DELETED the `min` count kind, and closed 18 demonstrated false greens across 18 of the 26 clauses (16 from the sweep of codex's finding, 2 more found by turning the same question on the fix-4 patch itself). The recurrence guard is 219 assertions across arms 1-17 with 26 divergent-fixture sub-arms 12a-12ae, every one of them RED-first with the pre-fix rc recorded. No Rust changed, so the workspace clippy/check evidence is carried.",
   "next_step_for_orchestrator": [
-    "Run codex §9 round 4 against this branch if the budget allows — this is round 3 of a maximum 6, NOT round 3 of 3, because the orchestrator ruled the round-3 findings a NEW, DISTINCT class (bounded scope bug) rather than a fourth variant of the rounds-1-2 classes (regex shape over an open vocabulary). Preserve that distinction when adjudicating round 4: a finding on the RESIDUAL SCOPE list is documented scope and is not a defect; a finding that a LITERAL spelling of a pinned name is missed, or that a probe is pointed at the wrong SUBJECT, is a real defect and gets fixed.",
-    "Point round 4 at the fix-3 delta: (i) the PROBE SCOPE header section — the rule, the positive/negative asymmetry and the full 76-probe inventory, all of which are claims a reviewer should try to falsify; (ii) the DELETION of the file-scoped negative probe kind, which is the anti-recurrence mechanism; (iii) the exts choices (None for the SQL negatives so an include_str!-ed .sql is in scope; *.rs for the Rust identifier negatives to avoid pure false REDs); (iv) the TC-37 tree semantics and the STATED limit of their coverage; (v) the five new fixture arms 12q-12u, each of which exited 0 pre-fix.",
-    "Still worth pushing on from rounds 1-3: (i) the clause registry in scripts/c1-conformance-pin.json — the classification is the slice's real deliverable, especially C1-Q6B-C2-CARRIER-STATUS (PROSE, blocker S30-B3); (ii) the seeder's documented departure from its synthetic sibling (S30-B1).",
-    "Cherry-pick onto main. Nothing under src/ was touched; SCHEMA is unmoved; no SDK surface changed; the governed-surface allowlist is byte-identical to baseline; no CHANGELOG entry (decision + reason recorded above).",
-    "Close R-20-H7 on the board: 'Gate exists and is GREEN' is satisfied. R-20-H7 is a PUBLISH PRECONDITION — an absent-or-failing gate holds the breaking pair — so the publish precondition is now met and the CI job will keep it honest on every push.",
-    "Put fix_rounds[1].recommendation_made_not_built in front of the Steward as a SEPARATE decision: a runtime sqlite_master assertion and/or a syn-based parse would make R-20-H7 a soundness argument instead of a drift tripwire. It is not a blocker on R-20-H7 as ratified and was deliberately not built in any fix round. Note that fix-3 STRENGTHENS the case for leaving it as a tripwire: the scope bug was fixable inside the lexical mechanism, so the mechanism was not the thing at fault.",
-    "OPEN A TC for S30-B2 (test_commission_manifest arm 9d is red on main today, and commission-manifest is an always-on CI job).",
-    "Note for the Steward, S30-B3: the contract's Q6(b) carries a stale parenthetical ('typed swap not started') contradicted by its own amendment banner four lines below. Fix it at the NEXT amendment, not now — any edit moves the contract's bytes and forces a full re-derivation of the clause registry.",
-    "Ladder: Slice 30 was the publish precondition and ran first of the remainder. Next per plan-0.8.20.md §4 is Slice 21 (R-20-CR: TC-57 characterize-then-fix, ac_002 sandbox, TC-71)."
+    "Run codex §9 round 5 against this branch if the budget allows — this is round 4 of a maximum 6. The three-same-finding bound has NOT fired: rounds 1-2 were REGEX SHAPE, round 3 was SCOPE, round 4 was SUBJECT BINDING. Preserve that distinction when adjudicating round 5.",
+    "For round 5, the two things worth knowing before adjudicating: (a) there are now NO file-scoped negative probes and NO count probes, and the gate's test suite asserts both kinds are absent from the source entirely; (b) the eight residual classes in the gate header are the documented boundary of a lexical check, and #8 (a named test proves existence, not that its body still asserts anything) is the one a reviewer is most likely to find next. The answer to a residual-class finding is a different MECHANISM — a runtime sqlite_master + functional conformance suite — not another regex, and that mechanism is a slice of its own.",
+    "No Rust changed in this round; clippy/check --workspace evidence is carried from the fix-1 round.",
+    "Cherry-pick order onto the landing branch: cf240a23, 36f528f1, 7b37186c, 5253934d, aed79cac, 33792f3b, then the docs commit carrying this file."
   ],
   "head_sha_before_fix_2": "52c2bde9",
-  "head_sha_before_fix_3": "b0de847b"
+  "head_sha_before_fix_3": "b0de847b",
+  "head_sha_before_fix_4": "0ddb4be7"
 }
