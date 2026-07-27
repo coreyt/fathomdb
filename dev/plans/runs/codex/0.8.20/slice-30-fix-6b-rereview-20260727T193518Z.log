@@ -1,0 +1,1928 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019fa513-136f-76e3-a395-77952e854a06
+--------
+user
+changes against 'e8e35260ace933af73c49e0879929438a4f99df0'
+exec
+/bin/bash -lc "cat MEMORY.md 2>/dev/null || true; ls feedback_*.md 2>/dev/null | xargs -r -n1 sh -c 'echo --- "'$0; cat $0'"'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+exec
+/bin/bash -lc 'git diff --stat e8e35260ace933af73c49e0879929438a4f99df0 && git diff --name-only e8e35260ace933af73c49e0879929438a4f99df0' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+ dev/plans/runs/0.8.20-slice-30-output.json | 320 ++++++++++++++++++++++++++++-
+ scripts/check-c1-conformance.sh            |  89 ++++++--
+ scripts/tests/test_check_c1_conformance.sh | 228 +++++++++++++++++++-
+ 3 files changed, 612 insertions(+), 25 deletions(-)
+dev/plans/runs/0.8.20-slice-30-output.json
+scripts/check-c1-conformance.sh
+scripts/tests/test_check_c1_conformance.sh
+
+exec
+/bin/bash -lc 'git diff --unified=80 e8e35260ace933af73c49e0879929438a4f99df0 -- scripts/check-c1-conformance.sh scripts/tests/test_check_c1_conformance.sh' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+diff --git a/scripts/check-c1-conformance.sh b/scripts/check-c1-conformance.sh
+index 3de5231e..50d96bc5 100755
+--- a/scripts/check-c1-conformance.sh
++++ b/scripts/check-c1-conformance.sh
+@@ -108,162 +108,165 @@
+ #
+ # ==================== RESIDUAL SCOPE — READ BEFORE ROUND 6 ===================
+ # This gate is a STATIC, LEXICAL check over Rust and SQL SOURCE TEXT. That
+ # approach has a boundary, and two review rounds were spent tightening regexes
+ # against it (fix-1: SQL case/whitespace, and blacklist ⇒ closed vocabulary;
+ # fix-2: schema-qualified table names, and spellings admitted outside a simple
+ # match arm). Rather than rediscover the boundary again, it is written down here.
+ #
+ # NOTE THAT FIX-3, FIX-4 AND FIX-5 ARE NOT ON THIS LIST AND DID NOT BELONG ON IT.
+ # Round 3 was a bounded SCOPE bug (one file vs the crate tree), round 4 a bounded
+ # SUBJECT-BINDING bug (a file vs the named table/struct/enum/function the clause
+ # is about), and round 5 two more bounded ones — the WRONG CRATE'S same-named
+ # symbol, and a test function that is no longer a test. All three had definite,
+ # complete fixes and all three were CLOSED, not documented away. The list below
+ # is the set of things a different MECHANISM would be needed for; it is not a
+ # place to retire findings to.
+ #
+ # WHAT THIS GATE IS. A TRIPWIRE AGAINST DRIFT. Its threat model is a FUTURE
+ # CONTRIBUTOR who changes as-built code without noticing that a ratified
+ # cross-repo contract said otherwise — the ordinary way a `can-i-deploy`
+ # precondition rots. It is NOT a proof of conformance and NOT an adversarial
+ # control: it cannot stop someone deliberately smuggling a backfill past CI, and
+ # nothing assembled out of regexes over source text could.
+ #
+ # THE CLASSES IT DOES NOT AND CANNOT CATCH, concretely:
+ #
+ #   1. DYNAMICALLY COMPOSED SQL. The probes read literal source text. A
+ #      `format!("INSERT INTO {} SELECT ...", TABLE)`, a `push_str` built from
+ #      fragments, or a table name held in a `const`/`static` all reach the
+ #      forbidden table while the text this gate reads contains only `{}`.
+ #
+ #   2. ANOTHER ROUTE TO THE SAME TABLE. `qualified()` closes the SPELLINGS of
+ #      the PINNED NAME (`main.canonical_attributes`, `` `main` . x ``, `[main].x`,
+ #      any case, any whitespace). It does not close every ROUTE: an ATTACHed
+ #      database whose alias is chosen at runtime, a VIEW or an `INSTEAD OF`
+ #      TRIGGER that writes the table under a different name, or an
+ #      `ALTER TABLE ... RENAME` are all invisible to it.
+ #
+ #   3. IDENTIFIER INDIRECTION IN RUST. `const PENDING: &str = "pending";` used
+ #      in place of a literal defeats the string-literal vocabulary check;
+ #      `macro_rules!` / `paste!`-generated enum bodies and impl blocks are never
+ #      expanded; `concat_idents!`-style construction defeats the `EntityTypeSpec`
+ #      / `id_prefix` negative-space probes; a type alias or a re-export under
+ #      another name defeats the identifier probes.
+ #
+ #   4. CONVERSION SURFACES OUTSIDE THE NAMED FUNCTION. `arms_exact` reads exactly
+ #      `impl <Ty> { fn <fn> }`. An `impl FromStr for <Ty>`, a `From<&str>`, or a
+ #      free `fn parse_readiness(&str) -> Option<DenseReadiness>` can admit an
+ #      extra spelling without touching the block this gate reads. This is the
+ #      clearest proof the approach cannot be COMPLETED by widening: a free
+ #      function is ordinary Rust, and no impl-scoped check can reach it.
+ #
+ #   5. NORMALISING COMPARISONS. `value.to_lowercase()`, `.trim()`,
+ #      `eq_ignore_ascii_case` widen the accepted vocabulary WITHOUT introducing a
+ #      new string literal, so the vocabulary check has nothing to see.
+ #
+ #   6. CONDITIONAL COMPILATION. Nothing here models `#[cfg(...)]`: text under a
+ #      disabled feature reads exactly like shipped code, and a violation
+ #      introduced only behind a feature flag reads exactly like one that is
+ #      always on. (This class errs RED, not green.)
+ #
+ #   7. BEHAVIOUR, and THE MEMEX REPO. Stated above: the behavioural clauses
+ #      assert only that the NAMED TEST still exists and is still ENABLED, not
+ #      that it still proves anything, and 12 contract clauses are CROSS-REPO by
+ #      classification and unverifiable from this repo at all.
+ #
+ #   8. WHAT A NAMED TEST'S BODY ACTUALLY ASSERTS. The strongest form of #7, and
+ #      REWRITTEN AT FIX-5 because the version written at fix-4 claimed more
+ #      residual than is now true. An over-broad residual is its own dishonesty:
+ #      it retires a defect that the gate does in fact catch.
+ #
+ #      WHAT IS NOW ENFORCED, by `test_defined`, at all four levels a proof can be
+ #      switched off at:
+ #        THE FUNCTION   it EXISTS as a definition with a parseable body (not a
+ #                       comment, not a string literal, not a call); it CARRIES a
+ #                       `#[test]`-family attribute; it is NOT disabled by
+ #                       `#[ignore]` / `#[cfg(..)]` / `#[cfg_attr(..)]`.
+ #        ITS POSITION   it sits at the TOP LEVEL of the integration-test file, so
+ #                       no enclosing (possibly `#[cfg]`-gated) item can silence it
+ #                       out of this reader's view.
+-#        THE FILE       the file carries no `#![cfg(..)]` inner attribute, which
+-#                       would switch every proof in it off at once.
++#        THE FILE       the file's own LEADING HEADER carries no `#![cfg(..)]`
++#                       inner attribute, which would switch every proof in it off
++#                       at once. Read at the header and nowhere else (fix-6): an
++#                       inner attribute inside a nested `mod` belongs to THAT
++#                       module, and reading it as the file's was a false RED.
+ #        THE TARGET     the owning crate's Cargo.toml neither sets
+ #                       `autotests = false` nor declares a `[[test]]` block for
+ #                       that file with `required-features` / `test = false`.
+ #
+ #      So "delete the proof", "rename it away", "leave only a comment mentioning
+ #      it", "drop the `#[test]`", "add an `#[ignore]`", "gate the fn", "gate the
+ #      module", "gate the file" and "gate the target" are ALL closed. The middle
+ #      two were codex §9 round 5 finding #2; the last four came out of turning
+ #      that same question on this patch. The TARGET one is not hypothetical:
+ #      fathomdb-engine/Cargo.toml already carries nineteen `[[test]]` blocks with
+ #      `required-features`, so it is an established pattern in the very file a
+ #      contributor would edit.
+ #
+ #      WHAT REMAINS, precisely, is three things and no more:
+ #        (a) THE BODY'S ASSERTIONS. `fn atomic_flip_never_exposes_ready_without
+ #            _the_vector_under_concurrent_write() { assert!(true); }` satisfies
+ #            every check above, and so does one whose assertions were commented
+ #            out. No lexical check can decide whether a body proves the obligation
+ #            its name claims — `cargo test --workspace` EXECUTING it is what does,
+ #            it is a required gate, and an emptied body is a visible code diff.
+ #        (b) THE CRATE, AND THE INVOCATION. This gate reads source and manifest
+ #            TEXT. It does not know whether the crate is still a workspace member,
+ #            nor how CI actually invokes cargo (a `--exclude`, a filter argument,
+ #            a job that stops running).
+ #        (c) `#[cfg]` INSIDE the body — an assertion compiled out while the test
+ #            still runs and passes vacuously. This is class #6 again.
+ #      ALL THREE need the same different mechanism, and it is one mechanism: ask
+ #      the TOOLCHAIN what the built test binaries actually contain and what they
+ #      did (`cargo test -- --list`, or `--no-run --message-format=json`), instead
+ #      of reading text. See the RECOMMENDATION in the closure JSON.
+ #
+ # WHICH WAY THE ERRORS FALL. Every ambiguity is resolved toward RED: an
+ # unparseable enum body, an impl block the reader cannot find, an unreadable file
+ # and a missing tree are all failures (exit 1 / exit 2), never skips; and the
+ # text-scoped probes WILL trip on a doc comment or an error message that happens
+ # to spell the forbidden thing. Noisy false positives, and false negatives
+ # confined to the list above, is the correct bias for a gate that HOLDS A
+ # PUBLISH.
+ #
+ # WHY THIS IS THE RIGHT STOPPING POINT. A stronger mechanism exists and is
+ # deliberately NOT built here: asserting the shipped schema against
+ # `sqlite_master` at runtime (which sees the table however the SQL was spelled or
+ # composed), and/or parsing Rust with `syn` (which sees every conversion surface,
+ # macro-expanded). Both are real work with their own maintenance surface, both
+ # belong to a slice of their own, and neither is warranted by the threat model
+ # above. Recorded as a RECOMMENDATION in
+ # dev/plans/runs/0.8.20-slice-30-output.json, not as a defect being deferred.
+ #
+ # CONSEQUENCE FOR REVIEWERS. A finding that this gate misses something ON THE
+ # LIST ABOVE is TRUE and is NOT a defect in the patch — it is the documented
+ # scope, and the answer to it is a different mechanism, not another regex. A
+ # finding that it misses a spelling of a PINNED NAME in LITERAL source text, that
+ # it misses it because the probe was pointed at the wrong SCOPE, that a probe is
+ # satisfied by something OTHER THAN THE SUBJECT ITS CLAUSE NAMES, that it is
+ # pointed at a DIFFERENT CRATE'S same-named symbol, or that a "proof still
+ # exists" probe is satisfied by a proof that no longer RUNS, is a real defect:
+ # fix it, and if the fix is another regex, add its class here. Round 3 was the
+ # second kind (see PROBE SCOPE above), round 4 the third and round 5 the fourth
+ # and fifth (see A PROBE IS BOUND TO ITS SUBJECT and THE SUBJECT IS A CRATE, NOT
+ # A SYMBOL NAME, beside the assertion table); all were fixed.
+ #
+ # ============================ THE AMENDMENT TRAP =============================
+ # The contract was AMENDED at efa8d584 ("amend C-1 contract Q6(b) with the TC-11
+ # cancellation — unblocks the H7 gate"). Before that amendment, clause Q6(b)
+ # mandated minting an anonymous surrogate `logical_id` — behaviour the ratified
+ # TC-11 pin A FORBIDS ever implementing, and which as-built code does not
+ # implement. A gate authored from the un-amended text would have been
+ # PERMANENTLY RED and would have held the breaking-pair publish forever.
+ #
+ # That is precisely why this gate pins the contract's BYTES. The registry below
+ # describes ONE exact revision of the document. If the document moves, the
+ # honest answer is not "recompute the hash" — it is RE-DERIVE the clause
+ # registry from the new text, re-classify every clause, and re-pin under review.
+ #
+ # PREDICATE — all four must hold:
+ #   (a) CONTRACT PIN. sha256 AND git blob sha1 of the contract file's raw bytes
+ #       equal the pin. Both forms are recorded so a reviewer can reproduce the
+ #       pin either way (`git rev-parse <commit>:<path>` gives the blob sha1
+ #       directly). Divergence ⇒ exit 1.
+ #   (b) CLAUSE-REGISTRY INTEGRITY. The pin records every clause id with its
+@@ -375,161 +378,163 @@ fi
+ ROOT="${ROOT:-${TOPLEVEL:-.}}"
+ 
+ if ! command -v python3 >/dev/null 2>&1; then
+   printf 'check-c1-conformance: python3 is required to parse the pin, hash the contract and evaluate the clause assertions, and is not on PATH — refusing to report a pass it did not verify (TC-37 evaporation path #1)\n' >&2
+   exit 2
+ fi
+ 
+ set +e
+ python3 - "$CONTRACT" "$PIN" "$ROOT" "$LIST_SOURCES" >&2 <<'PY'
+ import hashlib
+ import json
+ import os
+ import re
+ import sys
+ 
+ CONTRACT, PIN, ROOT, LIST_SOURCES = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4] == "1"
+ 
+ # ---------------------------------------------------------------------------
+ # Root-relative paths the assertions read. Everything the gate opens is named
+ # here, and --list-sources prints exactly this, so a fixture root can be built
+ # from the gate's own manifest rather than from a hand-maintained copy that
+ # silently rots (a stale fixture root would turn every source arm into a TC-37
+ # path-#4 evaporation and stop testing what it claims).
+ # ---------------------------------------------------------------------------
+ ENG = "src/rust/crates/fathomdb-engine/src/lib.rs"
+ SCH = "src/rust/crates/fathomdb-schema/src/lib.rs"
+ EMB = "src/rust/crates/fathomdb-embedder/src/candle_bge.rs"
+ T15 = "src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs"
+ T20 = "src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs"
+ T25 = "src/rust/crates/fathomdb-engine/tests/slice25_registration_identity_inert.rs"
+ PLAN = "dev/plans/plan-0.8.20.md"
+ SRC_TREE = "src"
+ # The CRATE SOURCE TREES the negative probes scan (fix-3). ENG and SCH above name
+ # the crates' lib.rs; these name the whole module tree each lib.rs is the root of,
+ # because that — not one file — is the scope in which a crate's obligations hold.
+ ENG_TREE = "src/rust/crates/fathomdb-engine/src"
+ SCH_TREE = "src/rust/crates/fathomdb-schema/src"
+ 
+ # Directories never worth walking (and, for node_modules/target, never OURS).
+ SKIP_DIRS = {
+     ".git", "node_modules", "target", "__pycache__", ".venv", "venv",
+     "dist", "build", ".pytest_cache", ".mypy_cache", ".ruff_cache",
+ }
+ 
+ 
+ def crate_manifest_for(test_path):
+     """The `Cargo.toml` of the crate owning a `<crate>/tests/<file>.rs` path.
+ 
+     Defined here rather than beside its reader because `--list-sources` needs it:
+     a `test_defined` probe reads that manifest too, and a path missing from the
+     manifest is a fixture root missing a file, i.e. a silent TC-37 #4.
+     """
+     marker = "/tests/"
+     index = test_path.find(marker)
+     if index < 0:
+         return None
+     return test_path[:index] + "/Cargo.toml"
+ 
+ # ---------------------------------------------------------------------------
+ # THE IMPLEMENTED ASSERTIONS. One entry per CHECKABLE clause id in the pin; the
+ # bijection between this dict's keys and the pin's CHECKABLE ids is predicate
+ # (b) and is enforced in BOTH directions below.
+ #
+ # Probe kinds. STRUCTURAL kinds extract THE NAMED SUBJECT and assert inside it;
+ # the two text kinds are for subjects whose name IS the text.
+ #   ("in_item", path, kw, name, regex) regex must match inside the brace body of
+ #                                      the Rust item `<kw> <name>` (kw ∈ struct /
+ #                                      enum / impl / fn) — the field, variant,
+ #                                      arm or statement is asserted OF THAT ITEM
+ #   ("fn_sig", path, fn, regex)        regex must match inside the SIGNATURE of
+ #                                      `fn fn` (params + return type)
+ #   ("fn_defined", path, fn)           `fn fn` exists as a DEFINITION with a
+ #                                      parseable body (not a comment, not a call).
+ #                                      PRODUCTION code only — the gate REFUSES to
+ #                                      run this kind against a `tests/` path
+ #                                      (fix-5); use `test_defined` there
+ #   ("test_defined", path, fn)         the same, PLUS `fn` is an ACTIVE TEST at
+ #                                      all four levels it could be switched off
+ #                                      at: a `#[test]`-family attribute with no
+ #                                      `#[ignore]`/`#[cfg]`; at the file's top
+-#                                      level; in a file with no `#![cfg(..)]`;
++#                                      level; in a file whose own LEADING HEADER
++#                                      carries no `#![cfg(..)]` (a nested module's
++#                                      inner attribute is that module's, fix-6);
+ #                                      in a crate whose Cargo.toml does not gate
+ #                                      that `[[test]]` target. "The proof still
+ #                                      exists" is worth nothing if the proof no
+ #                                      longer RUNS (fix-5)
+ #   ("const_str_agree", ((path, const), ..), pinned)
+ #                                      every named `const/static <const>: &str`
+ #                                      is DECLARED in its own file, all of them
+ #                                      carry the SAME string literal, and that
+ #                                      value equals `pinned`. For an obligation
+ #                                      whose subject is a value TWO CRATES must
+ #                                      agree on (fix-5)
+ #   ("sql_ddl", path, table, regex)    regex must match inside the parenthesised
+ #                                      body of every `CREATE [VIRTUAL] TABLE
+ #                                      [<schema>.]<table> ( ... )` in path, and
+ #                                      there must be at least one
+ #   ("fts_tokenizer_shared", path, subject, refs, pinned)
+ #                                      the `tokenize=` clause of fts5 table
+ #                                      `subject` equals that of every table in
+ #                                      `refs`, and equals the pinned default
+ #   ("enum_exact", path, ty, members)  the Rust `enum ty` in path has EXACTLY
+ #                                      these variants — set AND count
+ #   ("arms_exact", path, ty, fn, pairs) the match arms inside `impl ty { fn fn }`
+ #                                      map EXACTLY these (variant, string) pairs
+ #   ("absent_tree", tree, regex, exts) regex must not match in any text file
+ #                                      under tree (exts=None ⇒ every text file)
+ #   ("present", path, regex)           regex must match at least once in path —
+ #                                      ONLY where the regex names its subject
+ #                                      uniquely (a declaration by name, a const
+ #                                      and its value, a whole table row). In a
+ #                                      `.rs` file it reads the COMMENT-STRIPPED
+ #                                      text: a commented-out declaration is not a
+ #                                      declaration (fix-4c)
+ #   ("doc_text", path, regex)          the same predicate over RAW text, and
+ #                                      declaring what it is: a DOCUMENTED
+ #                                      STATEMENT is still in the file — its
+ #                                      subject IS a comment. Never the
+ #                                      load-bearing half of a clause; see the
+ #                                      fix-4 note below.
+ #
+ # THERE IS NO FILE-SCOPED NEGATIVE PROBE KIND, DELIBERATELY (fix-3). See "PROBE
+ # SCOPE" in this file's header: every NEGATIVE assertion is `absent_tree`, and
+ # `("absent", <file>, regex)` was DELETED rather than merely left unused, so
+ # re-introducing a single-file negative is a deliberate, reviewed act.
+ #
+ # AND THERE IS NO COUNT PROBE KIND, DELIBERATELY (fix-4). `("min", path, regex,
+ # n)` was DELETED for the same reason: a count of file-wide matches is the
+ # weakest possible relationship between a probe and its subject. See "SUBJECT
+ # BINDING" in this file's header. scripts/tests/test_check_c1_conformance.sh
+ # asserts the absence of both kinds.
+ #
+ # ------------ CLOSED VOCABULARIES ARE STRUCTURAL, NOT BLACKLISTED ------------
+ # fix-1, codex §9 round 1 finding #1 [P2]. Three clauses below assert that a
+ # vocabulary is EXACTLY some set: readiness is "EXACTLY {ready, embedding}",
+ # roles are "exactly {filterable, rankable, searchable}", the typed id space is
+ # "total over exactly those three". Those obligations were originally probed as
+ # "the members I want are PRESENT" plus, in one case, "one specific bad name is
+ # ABSENT" — a BLACKLIST OF ONE. A blacklist is not a closed vocabulary: any
+ # member added under a name nobody thought to forbid walks straight through, and
+ # the gate reports 0 on a tree that violates the contract. codex demonstrated it
+ # with `pub enum DenseReadiness { Ready, Embedding, Failed }`.
+ #
+ # `enum_exact` / `arms_exact` close that by CONSTRUCTION: they parse the enum
+ # body and the match arms, count the members, and compare the member SET against
+ # the pinned one. A third variant fails whatever it is called; a third accepted
+ # string spelling fails even when the enum is untouched. That is the difference
+ # between "the names I feared are absent" and "the vocabulary is closed".
+ #
+ # ------------------ SQL IS CASE-INSENSITIVE (AND WHITESPACE) -----------------
+ # fix-1, codex §9 round 1 finding #2 [P2]. An `absent` probe over SQL that
+ # anchors on ONE uppercase spelling with single spaces is a false negative:
+ # SQLite accepts `insert into t`, `INSERT OR REPLACE INTO t`, `INSERT OR IGNORE
+ # INTO   t` and a newline anywhere whitespace is legal. codex cleared the gate
+ # with a single lowercase line. Every negative-space probe whose subject is SQL
+ # now goes through `insert_into()` / an explicit `(?i)` pattern that tolerates
+ # the five SQLite conflict clauses and arbitrary whitespace.
+ #
+ # Rust IDENTIFIER probes (`ProjectionRole::Vector`, `EntityTypeSpec`,
+ # `id_prefix`) are deliberately left case-SENSITIVE: case is significant in Rust,
+ # so folding case there would create false positives, not close a hole.
+ #
+@@ -636,162 +641,180 @@ def crate_manifest_for(test_path):
+ #
+ # That is strictly worse than residual class #8 as fix-4 stated it. #8's claim
+ # was "an emptied body is review-visible" — true, and an emptied body genuinely
+ # is a diff a human reads. But a deleted attribute is a ONE-TOKEN edit that looks
+ # like tidy-up, and unlike an emptied body it IS closeable lexically. So it was
+ # closed, for ALL FOURTEEN test probes across the ten behavioural clauses.
+ # `fn_defined` survives ONLY for the four PRODUCTION functions, and the gate now
+ # REFUSES (exit 2, internal error) to evaluate `fn_defined` against a path under
+ # `tests/` so the weaker kind cannot drift back onto a proof.
+ #
+ # AND THEN THE SAME QUESTION, TURNED ON THIS PATCH: `test_defined` reads the
+ # attributes ON THE FUNCTION, so a proof can carry a pristine `#[test]` and still
+ # never run because something ABOVE it was switched off. Three more routes, all
+ # lexical, all of which exited 0 against the first cut of this fix:
+ #   * the proof NESTED inside a `#[cfg]`-gated `mod` (attributes on the module,
+ #     not on the fn);
+ #   * a `#![cfg(..)]` INNER attribute switching the whole FILE off;
+ #   * a `[[test]]` block in the crate's Cargo.toml carrying `required-features`
+ #     (or `test = false`, or `autotests = false`), which gates the whole TARGET.
+ # The last is the important one, and it is NOT hypothetical: fathomdb-engine's
+ # Cargo.toml ALREADY declares nineteen such blocks, because that is how the crate
+ # legitimately keeps operator-only and reranker-only suites out of the default
+ # build. "Somebody adds a required-features to a test target" is an established
+ # pattern in the exact file a contributor would edit — the fix-3 sibling-module
+ # argument, one level up. All four levels are checked now.
+ #
+ # `#[cfg(..)]` is rejected on a proof, on its module and on its file
+ # deliberately, and it is the judgement call here: a legitimately feature-gated
+ # proof goes RED. That is the safe side (a false RED a human resolves), and it
+ # matches the bias stated under WHICH WAY THE ERRORS FALL. What it must NOT be
+ # mistaken for is completeness — see residual class #8 for exactly the three
+ # things that remain.
+ #
+ # NO PYTHON OR TYPESCRIPT TEST IS CITED BY ANY CLAUSE. `--list-sources` is the
+ # authority: the gate reads seven files (four Rust, one markdown plan, and the
+ # two crate lib.rs) and three trees, and not one `.py` or `.ts` among them. The
+ # same evaporation exists in those languages (`@pytest.mark.skip`, `xfail`,
+ # `describe.skip` / `it.skip` / `.only`, a renamed-away `test_` prefix), so if a
+ # future clause ever cites one, it needs its own `test_defined` equivalent — not
+ # a `present` probe on a function name.
+ # ---------------------------------------------------------------------------
+ 
+ # One SQL identifier, optionally quoted `"x"` / 'x' / `x` / [x].
+ _SQL_IDENT_OPEN = r"[\"'`\[]?"
+ _SQL_IDENT_CLOSE = r"[\"'`\]]?"
+ 
+ 
+ def qualified(table):
+     """`[<schema> . ]<table>` — an optional schema qualifier before the pinned
+     table name, each part optionally quoted/bracketed, whitespace tolerated
+     around the dot (all of which SQLite accepts)."""
+     schema = (
+         r"(?:" + _SQL_IDENT_OPEN + r"[A-Za-z_][A-Za-z0-9_]*" + _SQL_IDENT_CLOSE
+         + r"\s*\.\s*)?"
+     )
+     return schema + _SQL_IDENT_OPEN + table + r"\b"
+ 
+ 
+ def insert_into(table):
+     """A case-insensitive `INSERT [OR <conflict>] INTO [<schema>.]<table>` /
+     `REPLACE INTO [<schema>.]<table>` pattern.
+ 
+     Tolerates all five SQLite conflict clauses (the same five the schema crate's
+     own accretion guard enumerates), arbitrary whitespace including newlines
+     between every token, an optional schema qualifier, and an optionally
+     quoted/bracketed table name.
+     """
+     return (
+         r"(?i)\b(?:INSERT|REPLACE)\b"
+         r"(?:\s+OR\s+(?:ABORT|FAIL|IGNORE|REPLACE|ROLLBACK))?"
+         r"\s+INTO\s+" + qualified(table)
+     )
+ 
+ ASSERTIONS = {
+     # ---- Cohesion seam --------------------------------------------------
+     # fix-4: the three fragments used to be three INDEPENDENT file-wide probes,
+     # so nothing tied them to one another OR to the apply verb — a decoy function
+     # carrying `drop: &[String],` and the delta return type satisfied them while
+     # `configure_projections` took no drop list at all. They are now read out of
+     # THAT FUNCTION'S SIGNATURE.
++    #
++    # fix-6 (codex §9 round 6 finding #1): reading them out of the signature is
++    # still not enough, because a signature is not a method. Turn
++    # `configure_projections` into a free or associated function — delete the
++    # `&self,` line, nothing else — and all three fragments are still there
++    # character for character while `engine.configure_projections(..)`, the
++    # instance verb the pin's evidence records and every call site in this repo
++    # uses, stops compiling. So the RECEIVER is probed too.
+     "C1-SEAM-ENGINE-BUILD-DROP": [
+         ("present", ENG, r"pub fn configure_projections\("),
++        # A `self` receiver is legal ONLY inside an `impl`/trait block, so
++        # requiring one excludes both shapes the finding names (a free function
++        # and a receiver-less associated function) without this gate having to
++        # decide which `impl` it landed in. Every legal receiver spelling is
++        # admitted — `&self`, `& self`, `&mut self`, `&'a self`, `self`,
++        # `mut self` — because a formatting-only edit must not manufacture a
++        # false RED (`self` may only ever be the FIRST parameter, so the open
++        # paren this anchors on can only be the parameter list's).
++        ("fn_sig", ENG, "configure_projections",
++         r"\(\s*(?:&\s*(?:'[A-Za-z_]\w*\s+)?)?(?:mut\s+)?self\b"),
+         ("fn_sig", ENG, "configure_projections", r"specs:\s*&\[ProjectionSpec\]"),
+         ("fn_sig", ENG, "configure_projections", r"drop:\s*&\[String\]"),
+         ("fn_sig", ENG, "configure_projections",
+          r"->\s*Result<\s*ProjectionDelta\s*,\s*EngineError\s*>"),
+     ],
+     # ---- Q1 --------------------------------------------------------------
+     "C1-Q1-ROLE-SET": [
+         ("present", ENG, r"pub enum ProjectionRole \{"),
+         ("in_item", ENG, "struct", "ProjectionSpec",
+          r"pub\s+roles\s*:\s*BTreeSet\s*<\s*ProjectionRole\s*>"),
+     ],
+     # ---- Q3 --------------------------------------------------------------
+     # fix-4 SWEEP: "reporting the applied delta" is read as a FIELD of
+     # ProjectionDelta (`dropped` — the half of the delta no other clause
+     # asserts), not as a bare `pub struct ProjectionDelta {` line that a decoy or
+     # a comment could carry.
+     "C1-Q3-SOLE-AUTHORITY": [
+         ("sql_ddl", SCH, "_fathomdb_projection_registry",
+          r"(?i)\bname\s+TEXT\s+PRIMARY\s+KEY\b"),
+         ("fn_defined", ENG, "apply_projection_config"),
+         ("in_item", ENG, "struct", "ProjectionDelta",
+          r"pub\s+dropped\s*:\s*Vec\s*<\s*String\s*>"),
+     ],
+     "C1-Q3-DESTRUCTIVE-DELTA": [
+         ("in_item", ENG, "enum", "EngineError", r"\bProjectionDestructive\s*\{"),
+         ("test_defined", T15, "destructive_change_requires_explicit_drop"),
+     ],
+     "C1-Q3-OMISSION-NOT-DROP": [
+         ("test_defined", T15, "role_add_builds_and_explicit_drop_drops_exactly_one"),
+         ("test_defined", T15, "dropping_an_absent_name_is_a_clean_noop"),
+     ],
+     # ---- Q5 --------------------------------------------------------------
+     "C1-Q5-DERIVED-CACHE-IDEMPOTENT": [
+         ("in_item", ENG, "struct", "ProjectionDelta", r"pub\s+unchanged\s*:\s*bool"),
+         ("test_defined", T15, "idempotent_reregistration_is_a_noop"),
+     ],
+     # ---- Q2 --------------------------------------------------------------
+     # fix-4: the EAV store and the property-FTS were probed by TABLE NAME only,
+     # and the composite index by INDEX NAME only — but the clause is about the
+     # SHAPE: an attribute store keyed by (name, value) and the index the cheap
+     # filterable tier reads. Re-creating that index on ONE column passed. The
+     # table probes are structural now (a `CREATE TABLE` whose body must carry the
+     # columns), and the index probe names its COLUMNS.
+     "C1-Q2-ENGINE-EAV-PROPERTY-FTS": [
+         ("sql_ddl", SCH, "canonical_attributes", r"(?i)\bwrite_cursor\s+INTEGER\b"),
+         ("sql_ddl", SCH, "canonical_attributes", r"(?i)\battr_name\s+TEXT\b"),
+         ("sql_ddl", SCH, "canonical_attributes", r"(?i)\battr_value\s+TEXT\b"),
+         ("sql_ddl", SCH, "property_search_index", r"(?i)\battr_value\b"),
+         ("present", SCH,
+          r"(?i)CREATE\s+INDEX\s+canonical_attributes_name_value_idx\s+ON\s+"
+          r"canonical_attributes\s*\(\s*attr_name\s*,\s*attr_value\s*\)"),
+     ],
+     "C1-Q2-ENGINE-PROJECTS-VIA-CONFIGURE": [
+         ("test_defined", T15, "property_filter_returns_correct_rows"),
+         ("test_defined", T15, "property_fts_search_returns_correct_rows"),
+     ],
+     # SCOPE (load-bearing, fix-1 then fix-3). The clause forbids a
+     # MIGRATION/BACKFILL of PRE-EXISTING rows — not projection writes as such.
+     # The two negative probes are therefore scoped to THE SCHEMA CRATE, which IS
+     # the migration ladder: any `INSERT ... INTO canonical_attributes` there runs
+     # at migrate time over rows that already existed, which is exactly the
+     # forbidden thing. The LEGITIMATE writes — the per-declaration,
+     # same-transaction projection INSERTs — live in the ENGINE
+     # (`configure_projections`) and are deliberately out of scope, so widening
+     # these patterns cannot produce a false positive on them.
+     #
+     # fix-3, codex §9 round 3 finding #1 [P2]: the scope is the crate's SOURCE
+     # TREE (SCH_TREE), not its lib.rs. A backfill added in ANY module of the
+     # schema crate runs at migrate time exactly as one in lib.rs does; scoping
+     # the check to one file only ever asserted "nobody added a module".
+     # exts=None (every text file) rather than *.rs, so a migration carried in a
+     # `.sql` file and pulled in with `include_str!` is in scope too.
+     #
+     # Residual, stated honestly: the probe reads the schema crate as TEXT, so a
+     # doc comment that literally spells `insert into canonical_attributes` would
+     # trip it. That is a false RED (reword the comment), which is the safe side
+     # of this gate — unlike the false GREEN it replaces.
+     #
+     # fix-4 AUDIT: the marker probe is a `doc_text` probe and is DECLARED as one.
+     # Its subject IS a documented statement, so there is nothing structural to
+@@ -1735,180 +1758,220 @@ def _attrs_before(code, index):
+     """Every `#[..]` attribute attached to the item whose keyword sits at `index`.
+ 
+     Walks BACKWARDS over the item's modifiers (`pub`, `pub(crate)`, `async`,
+     `unsafe`, `const`, `extern`) and then over any run of outer attributes.
+     Returns them OUTERMOST-LAST; order does not matter to the caller. `#![..]`
+     (an INNER attribute) terminates the walk: it belongs to the enclosing module,
+     not to this item.
+ 
+     Erring: anything this cannot parse simply ends the walk, which yields FEWER
+     attributes and therefore a RED verdict — the safe side.
+     """
+     i = index
+     # 1. back up over the fn's modifiers.
+     while True:
+         j = i
+         while j > 0 and code[j - 1].isspace():
+             j -= 1
+         if j == 0:
+             i = j
+             break
+         if code[j - 1] == ")":                      # pub(crate) / pub(in ..)
+             depth, k = 0, j - 1
+             while k >= 0:
+                 if code[k] == ")":
+                     depth += 1
+                 elif code[k] == "(":
+                     depth -= 1
+                     if depth == 0:
+                         break
+                 k -= 1
+             word = re.search(r"([A-Za-z_]\w*)\s*$", code[:k]) if k >= 0 else None
+             if word is not None and word.group(1) == "pub":
+                 i = word.start(1)
+                 continue
+             i = j
+             break
+         word = re.search(r"([A-Za-z_]\w*)\s*$", code[:j])
+         if word is not None and word.group(1) in _FN_MODIFIERS:
+             i = word.start(1)
+             continue
+         i = j
+         break
+     # 2. consume the run of outer attributes above it.
+     attrs = []
+     while True:
+         j = i
+         while j > 0 and code[j - 1].isspace():
+             j -= 1
+         if j == 0 or code[j - 1] != "]":
+             break
+         depth, k = 0, j - 1
+         while k >= 0:
+             if code[k] == "]":
+                 depth += 1
+             elif code[k] == "[":
+                 depth -= 1
+                 if depth == 0:
+                     break
+             k -= 1
+         if k < 1 or code[k - 1] != "#":
+             break
+         if code[k + 1:k + 2] == "!":                # inner attribute: not ours
+             break
+         attrs.append(code[k - 1:j])
+         i = k - 1
+     return attrs
+ 
+ 
+ def attr_path(attr):
+     """The dotted path an attribute names: `#[tokio::test]` -> 'tokio::test',
+     `#[ignore = "why"]` -> 'ignore', `#[cfg(feature = "x")]` -> 'cfg'. None when
+     the attribute is not a simple path (a bare literal, say)."""
+     inner = attr[2:-1].strip()
+     match = re.match(r"([A-Za-z_]\w*(?:\s*::\s*[A-Za-z_]\w*)*)", inner)
+     if match is None:
+         return None
+     return "::".join(part.strip() for part in match.group(1).split("::"))
+ 
+ 
+ def file_inner_attrs(rel):
+-    """The `#![..]` INNER attribute paths at the head of a Rust source file.
++    """The `#![..]` INNER attribute paths in a Rust file's OWN LEADING HEADER.
+ 
+     A `#![cfg(..)]` there switches the WHOLE FILE off, which for an integration
+     test means every proof in it stops running while each one still reads as a
+     perfectly ordinary `#[test]`.
++
++    "IN THE HEADER" IS LOAD-BEARING (fix-6, codex §9 round 6 finding #2). This
++    used to scan the whole file for `#![`, but Rust permits an inner attribute at
++    the head of ANY braced item, and `mod helpers { #![cfg(feature = "x")] .. }`
++    is ordinary, legal, and switches off THAT MODULE alone. Reading one of those
++    as "the whole test file is conditionally compiled" turns this gate RED and
++    blocks CI and `preflight.sh --landing` while every top-level pinned proof
++    still builds and runs — a FALSE RED, which on a publish precondition is its
++    own failure mode, not the safe side.
++
++    So the walk starts at the top of the file and stops at the first thing that
++    is neither whitespace nor an inner attribute — i.e. at the first item. That
++    leading run IS the file header, and it is the only place a FILE-level inner
++    attribute may legally appear, so narrowing to it gives up nothing: a genuine
++    `#![cfg(..)]` is still found when it sits alone at the head, after other
++    leading inner attributes, or after a `//!` doc header (comments, `//!`
++    included, are already blanked to spaces by `rust_view`, so a doc header does
++    not end the run).
++
++    A LEADING SHEBANG IS PART OF THAT HEADER AND IS SKIPPED FIRST (fix-6b, codex
++    §9 round 6 RE-REVIEW of the fix-6 patch — a regression the narrowing itself
++    opened). A Rust source file may legally begin with `#!/usr/bin/env ..`, which
++    is not `#![`, so the walk ended at byte 0 and never saw a file-level
++    `#![cfg(..)]` on the NEXT line: the whole test file compiled out, gate green.
++    `rustc --test` on shebang + `#![cfg(feature = "nope")]` + `#[test] fn t() {}`
++    builds and `--list` reports `0 tests`. rustc's own rule is followed exactly:
++    ONLY the very first line can be a shebang, and it is one only when the file
++    starts with `#!` whose next character is NOT `[` — `#![..]` at byte 0 is an
++    inner attribute, not a shebang. The rest of that first line is skipped and
++    the leading-attribute walk resumes, so an attribute run after a shebang is
++    still read (and the nested-module false RED above stays closed).
+     """
+     code = rust_code(rel)
+-    found = []
+-    for match in re.finditer(r"#!\[", code):
+-        depth, i = 0, match.end() - 1
+-        while i < len(code):
+-            if code[i] == "[":
++    found, i, n = [], 0, len(code)
++    if code[:2] == "#!" and code[2:3] != "[":       # a shebang line, not an attr
++        end = code.find("\n")
++        i = n if end == -1 else end + 1
++    while True:
++        while i < n and code[i].isspace():
++            i += 1
++        if code[i:i + 3] != "#![":
++            break
++        depth, j = 0, i + 2
++        while j < n:
++            if code[j] == "[":
+                 depth += 1
+-            elif code[i] == "]":
++            elif code[j] == "]":
+                 depth -= 1
+                 if depth == 0:
+                     break
+-            i += 1
+-        if i < len(code):
+-            found.append(attr_path("#[" + code[match.end():i] + "]"))
++            j += 1
++        if j >= n:                       # unbalanced: unreadable, so the run ends
++            break
++        found.append(attr_path("#[" + code[i + 3:j] + "]"))
++        i = j + 1
+     return found
+ 
+ 
+ def fn_definitions(rel, name):
+     """One entry per DEFINITION of `fn <name>`: (attribute paths, brace depth).
+ 
+     A definition is a `fn <name> ... { .. }` with a brace-matchable body, located
+     in the blanked CODE view. Same subject-binding rule as `rust_items`, but it
+     keeps the ATTRIBUTES rather than the body, and the DEPTH of the enclosing
+     braces — an integration test nested inside anything is not a top-level test
+     target, and whatever encloses it may carry its own `#[cfg]` that this reader
+     would never look at (fix-5 SWEEP).
+     """
+     code, raw = rust_code(rel), rust_view(rel)
+     found = []
+     for match in re.finditer(r"\bfn\s+" + re.escape(name) + r"\b[^{;]*\{", code):
+         if brace_body(code, match.end() - 1, source=raw) is None:
+             continue
+         before = code[:match.start()]
+         depth = before.count("{") - before.count("}")
+         found.append(([attr_path(a) for a in _attrs_before(code, match.start())], depth))
+     return found
+ 
+ 
+ # Minimal, deliberately dumb TOML block reader — the same stance as the Rust
+ # readers above, and for the same reason: hand-rolling it keeps this gate's
+ # environment contract at "requires python3", where `tomllib` would quietly
+ # require 3.11+ and turn an older runner into an exit-2 that nobody predicted.
+ # It reads ONE shape (`[[test]]` tables and their scalar keys) and treats
+ # anything it cannot read as a clause failure.
+ _TOML_TABLE = re.compile(r"(?m)^\s*(\[\[?[^\]]+\]\]?)\s*$")
+ 
+ 
+ def cargo_test_target_defect(manifest_rel, stem):
+     """None, or why the test target `stem` does not run on a default `cargo test`.
+ 
+     fix-5 SWEEP, and NOT a hypothetical: `fathomdb-engine/Cargo.toml` ALREADY
+     carries nineteen `[[test]]` blocks with `required-features`, because that is
+     how this crate legitimately keeps operator-only and reranker-only suites out
+     of the default build. So "somebody adds a `required-features` to a test
+     target" is an established pattern here, exactly as "somebody adds a module"
+     was in fix-3 — and adding one for slice15d/slice20/slice25 would stop the
+     pinned proofs running under `cargo test -p fathomdb-engine` while every
+     attribute this gate reads stayed exactly as it is.
+ 
+     That is codex §9 round 5 finding #2 one level up: the proof is still a
+     `#[test]`, still un-`#[ignore]`d, and still never executed.
+     """
+     text = read_source(manifest_rel)
+     stripped = re.sub(r"(?m)#.*$", "", text)
+     if re.search(r"(?m)^\s*autotests\s*=\s*false", stripped):
+         return (
+             f"{manifest_rel} sets `autotests = false`, so integration-test files are no longer "
+             "auto-discovered and only explicitly declared `[[test]]` targets are built. This "
+             "gate cannot tell from source text whether the pinned proofs are still among them"
+         )
+     blocks, current, header = [], [], None
+     for line in stripped.splitlines():
+         match = _TOML_TABLE.match(line)
+         if match:
+             blocks.append((header, current))
+             header, current = match.group(1).strip(), []
+         else:
+             current.append(line)
+     blocks.append((header, current))
+     for head, body in blocks:
+         if head != "[[test]]":
+             continue
+         joined = "\n".join(body)
+         name = re.search(r'(?m)^\s*name\s*=\s*"([^"]*)"', joined)
+         if name is None:
+             return (
+                 f"{manifest_rel} declares a `[[test]]` target with no readable `name = \"..\"`, so "
+                 "this gate cannot tell which test file it configures — and a target block is "
+                 "exactly where a pinned proof gets quietly gated out of the default build. "
+                 "Reported RED rather than guessed at"
+             )
+         if name.group(1) != stem:
+             continue
+         gate = re.search(r"(?m)^\s*required-features\s*=", joined)
+diff --git a/scripts/tests/test_check_c1_conformance.sh b/scripts/tests/test_check_c1_conformance.sh
+index e0372e35..7b57936a 100755
+--- a/scripts/tests/test_check_c1_conformance.sh
++++ b/scripts/tests/test_check_c1_conformance.sh
+@@ -2,171 +2,201 @@
+ # scripts/tests/test_check_c1_conformance.sh — coverage for the RUBRIC-H7
+ # `can-i-deploy` contract-conformance gate (scripts/check-c1-conformance.sh) AND
+ # for its two wirings: `preflight.sh --landing` (PREVENT) and the always-on CI
+ # job (DETECT).
+ #
+ # WHAT IS BEING PROTECTED: R-20-H7 — as-built FathomDB code still satisfies the
+ # ratified cross-repo design contract
+ # dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md at the
+ # 0.8.20 co-land. The gate is mechanical on purpose ("not humans re-reading
+ # prose", plan-0.8.20.md §3), and an absent-or-failing gate HOLDS the breaking
+ # pair. So the gate itself needs a recurrence guard: these arms.
+ #
+ # RED-first: the real tree PASSES today, so asserting only against the real repo
+ # would prove nothing — a `true` script would pass it. Every failure arm below
+ # therefore runs against a purpose-built DIVERGENT FIXTURE (a mutated COPY of
+ # the contract, of the pin, or of the source root), so each arm can only go green
+ # because the predicate actually fired. The real-repo arm is the regression half
+ # of the same pair.
+ #
+ # THE FIXTURES ARE COPIES. Neither the real contract nor the real src/ tree is
+ # ever written by this suite — mutating them is the exact thing the gate exists
+ # to catch. Copies live under mktemp -d (the checker takes --contract/--pin/--root
+ # for exactly this reason); the preflight arms build throwaway git repos + linked
+ # worktrees.
+ #
+ # THE FIXTURE ROOTS ARE BUILT FROM `--list-sources`, not from a hand-maintained
+ # path list. If a future clause reads a new file, the fixture roots pick it up
+ # automatically and cannot silently go stale (a stale fixture root would turn
+ # every source arm into a TC-37 #4 evaporation and stop testing what it claims).
+ #
+ # NOTE ON THE WHITESPACE ARM: failing on a formatting-only change is a
+ # DELIBERATE, DOCUMENTED property of a content-hash pin, not an accident — see
+ # the gate's header. It is asserted here so the behaviour is a contract.
+ #
+ # FIX-1 ARMS (arms 12d–12j) are the recurrence guard for codex §9 round 1: two
+ # [P2] FALSE NEGATIVES in which the gate exited 0 on a tree that violates the
+ # pinned contract — an open readiness vocabulary guarded only by a blacklist of
+ # one name, and case-sensitive `absent` regexes over SQL. Both classes were
+ # swept for and are fixed across every clause that carried them.
+ #
+ # FIX-2 ARMS (arms 12k–12p) are the recurrence guard for codex §9 round 2, which
+ # found three REFINEMENTS of those same two classes: a SQL table name may be
+ # SCHEMA-QUALIFIED (`main.canonical_attributes`), and an accepted string may be
+ # admitted OUTSIDE a simple match arm (an `if` guard, an or-pattern). 12p is the
+ # sweep's own product, in the same narrow-regex class.
+ #
+ # FIX-3 ARMS (arms 12q–12u, plus the tree-evaporation and probe-kind arms) are
+ # the recurrence guard for codex §9 round 3 — a DIFFERENT defect class from
+ # rounds 1–2. Not a regex shape: a SCOPE bug. Every negative (`absent`) probe read
+ # ONE FILE (a crate's lib.rs), so a literal, correctly-spelled, fully-qualified
+ # violation placed in a SIBLING MODULE of the same crate exited 0. Fixed by
+ # scoping every negative probe to the crate SOURCE TREE and by DELETING the
+ # file-scoped negative probe kind outright.
+ #
+ # FIX-4 ARMS (arms 12v–12ac, plus the `min`-probe-kind arms) are the recurrence
+ # guard for codex §9 round 4 — a FOURTH distinct class again. Not a regex shape
+ # (rounds 1–2) and not a file-vs-tree scope bug (round 3): SUBJECT BINDING. Every
+ # probe below asserted that some text existed SOMEWHERE IN A FILE, while the
+ # clause it implements is about a NAMED SUBJECT inside that file — a particular
+ # table's tokenizer, a particular struct's field, a particular enum's variant, a
+ # particular function's signature or body, a particular index's COLUMNS, a
+ # particular test's DEFINITION (as opposed to a comment mentioning it). Each
+ # fixture leaves a DECOY that satisfies the old probe, so each exited 0 while the
+ # obligation was violated. Fixed by extracting the named subject structurally and
+ # asserting inside it, and by DELETING the `min` count-probe kind outright.
+ #
+ # FIX-5 ARMS (arms 12af–12ag, plus the `fn_defined`-on-a-test guards) are the
+ # recurrence guard for codex §9 round 5 — two more bounded classes, both of them
+ # false GREENS on ordinary source text:
+ #   * THE WRONG CRATE'S SAME-NAMED SYMBOL. A refinement of fix-4. fix-4 asked "is
+ #     this probe bound to a subject at all?"; round 5 asks "is it bound to the
+ #     subject THE CLAUSE NAMES?". `C1-TE-DEFAULT-EMBEDDER` is about the ENGINE's
+ #     shipped default and was probed against the EMBEDDER crate's identically
+ #     named constant, so flipping the engine's exited 0.
+ #   * A DISABLED TEST IS NOT A PROOF. Ten clauses are carried by "the named test
+ #     still exists". Deleting `#[test]` or adding `#[ignore]` leaves a plain
+ #     function of the same name — the probe passed, `cargo test` stopped running
+ #     the proof, nothing went red. That is the TC-37 evaporation shape this gate
+ #     exists to close, and it is a ONE-TOKEN edit that reads as tidy-up.
+ #
+-# READ THE GATE'S "RESIDUAL SCOPE" HEADER SECTION BEFORE ADDING A ROUND 6, AND
++# FIX-6 ARMS (arms 12ai–12aj) are the recurrence guard for codex §9 round 6 — two
++# bounded holes, and for the first time in this file they point in OPPOSITE
++# directions:
++#   * 12ai, A FALSE GREEN — THE RECEIVER. The cohesion-seam clause reads the apply
++#     verb's parameter and return TEXT out of its own signature (fix-4), but
++#     nothing bound it to the `&self` RECEIVER. A free or associated
++#     `fn configure_projections(specs.., drop..) -> Result<ProjectionDelta,
++#     EngineError>` carries every probed fragment verbatim while
++#     `engine.configure_projections(..)` — the instance verb the pin's evidence
++#     records — stops existing, and the gate stayed green.
++#   * 12aj, A FALSE RED, and the first one this suite has had to guard. The
++#     file-level `#![cfg(..)]` check (fix-5 SWEEP) scanned the WHOLE file for
++#     inner attributes, so a pinned test file that later grows a perfectly legal
++#     `mod helpers { #![cfg(feature = "x")] .. }` was reported as wholly
++#     conditionally compiled — turning the gate RED and blocking CI and
++#     `preflight.sh --landing` — while every top-level pinned test still built and
++#     ran. Note the INVERTED expectation on that arm (rc=0), and the mirror arms
++#     that keep a GENUINE file-level `#![cfg(..)]` red.
++#
++# FIX-6b ARMS (arm 12ak) are the recurrence guard for a regression THE FIX-6
++# PATCH ITSELF OPENED, found by codex re-reviewing that patch: narrowing the
++# inner-attribute scan to the file's LEADING HEADER made the walk stop at the
++# first byte that is neither whitespace nor `#![`, and a Rust file may legally
++# begin with a SHEBANG. `#!/usr/bin/env rust-script` followed by
++# `#![cfg(feature = "..")]` therefore compiled every proof in a pinned test file
++# out while the gate exited 0 — the same false GREEN the whole-file scan had
++# caught. A leading shebang is now part of the header and is skipped, and 12ak
++# holds BOTH directions: shebang + `#![cfg(..)]` is red, a shebang alone is not.
++#
++# READ THE GATE'S "RESIDUAL SCOPE" HEADER SECTION BEFORE ADDING A ROUND 7, AND
+ # CLASSIFY THE FINDING FIRST. The header states, in writing, the evasion classes a
+ # static/lexical check CANNOT close (dynamically composed SQL, const/macro-
+ # indirected identifiers, ATTACH aliases, normalising comparisons, and what a
+ # still-active test's BODY actually asserts); arms for those belong to a DIFFERENT
+ # mechanism — a runtime `sqlite_master` assertion, a real parse, or asking the
+ # toolchain which tests the built binary contains — not to another regex here. But
+-# rounds 3, 4 and 5 were NOT one of those: a LITERAL spelling of a PINNED name in
++# rounds 3 through 6 were NOT one of those: a LITERAL spelling of a PINNED name in
+ # ordinary source text that this gate does not see, a probe satisfied by something
+-# other than its subject, and a proof that no longer runs are real defects with
+-# definite fixes, and they get fixed.
++# other than its subject, a proof that no longer runs, a verb that lost its
++# receiver, and a legal nested module misread as a switched-off file are real
++# defects with definite fixes, and they get fixed.
+ set -euo pipefail
+ 
+ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+ CHECKER="$REPO_ROOT/scripts/check-c1-conformance.sh"
+ PREFLIGHT="$REPO_ROOT/scripts/preflight.sh"
+ CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
+ REAL_CONTRACT="$REPO_ROOT/dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md"
+ REAL_PIN="$REPO_ROOT/scripts/c1-conformance-pin.json"
+ # shellcheck source=lib/governed-surface-fixture.sh
+ . "$SCRIPT_DIR/lib/governed-surface-fixture.sh"
+ # shellcheck source=lib/c1-conformance-fixture.sh
+ . "$SCRIPT_DIR/lib/c1-conformance-fixture.sh"
+ 
+ # The no-argument arm exercises the checker's REPO-RELATIVE defaults, which it
+ # resolves from `git rev-parse --show-toplevel` — i.e. from the cwd. Pin the cwd
+ # to this checkout so that arm tests THIS tree no matter where the suite is
+ # invoked from (mirrors the governed-surface-pin suite).
+ cd "$REPO_ROOT"
+ 
+ FAILED=0
+ pass() { printf 'PASS  %s\n' "$1"; }
+ fail() { printf 'FAIL  %s\n' "$1" >&2; FAILED=$((FAILED + 1)); }
+ 
+ TMPROOT="$(mktemp -d)"
+ cleanup() {
+   case "$TMPROOT" in
+     "${TMPDIR:-/tmp}"/*|/tmp/*) rm -rf "$TMPROOT" ;;
+     *) printf 'refusing to remove unexpected temp path: %s\n' "$TMPROOT" >&2 ;;
+   esac
+ }
+ trap cleanup EXIT
+ 
+ run_checker() {
+   set +e
+   OUT="$(bash "$CHECKER" "$@" 2>&1)"
+   RC=$?
+   set -e
+ }
+ 
+ expect_rc() {
+   local want="$1" desc="$2"
+   if [ "$RC" -eq "$want" ]; then
+     pass "$desc"
+   else
+     fail "$desc — expected rc=$want, got rc=$RC; out: $OUT"
+   fi
+ }
+ 
+ # expect_out <regex> <desc>
+ expect_out() {
+   if printf '%s' "$OUT" | grep -qE "$1"; then
+     pass "$2"
+   else
+     fail "$2 — expected output matching /$1/; got: $OUT"
+   fi
+ }
+ 
+ # expect_no_out <regex> <desc>
+ expect_no_out() {
+   if printf '%s' "$OUT" | grep -qE "$1"; then
+     fail "$2 — output must NOT match /$1/; got: $OUT"
+   else
+     pass "$2"
+   fi
+ }
+ 
+ # Every real DIVERGENCE (exit 1) must route the reader to the Steward/HITL and
+ # must forbid a silent re-pin: a failure the reader cannot act on is how a
+ # conformance gate gets quietly neutered.
+ expect_routes_to_steward() {
+   local desc="$1" ok=1
+   printf '%s' "$OUT" | grep -q 'DO NOT re-pin' || ok=0
+   printf '%s' "$OUT" | grep -q 'Steward' || ok=0
+   if [ "$ok" -eq 1 ]; then
+     pass "$desc routes the reader to the Steward and forbids a silent re-pin"
+   else
+     fail "$desc did not print the full Steward-routing block; got: $OUT"
+   fi
+ }
+@@ -1544,160 +1574,350 @@ TARGET_GATED_ROOT="$(make_root proof-target-required-features)"
+ cat >>"$TARGET_GATED_ROOT/src/rust/crates/fathomdb-engine/Cargo.toml" <<'TOML'
+ 
+ # Fixture only (fix-5 SWEEP). The whole target is now skipped on a default
+ # `cargo test`, so every pinned proof inside it stops running — with no edit to
+ # any `#[test]` attribute anywhere.
+ [[test]]
+ name = "slice20_dense_readiness"
+ required-features = ["operator"]
+ TOML
+ run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$TARGET_GATED_ROOT"
+ expect_rc 1 "gating a proof's whole [[test]] TARGET behind required-features HARD-fails its clauses"
+ expect_out 'C1-AA-ATOMIC-FLIP' "the gated-target failure NAMES the atomic-flip clause"
+ expect_out 'C1-AA-NO-BLOCK-ON-EMBEDDING' "the gated-target failure NAMES the other clause in that file"
+ expect_out 'required-features' "the gated-target failure says what gated the target"
+ expect_routes_to_steward "the gated-target clause failures"
+ 
+ # The sibling switch: `autotests = false` stops the files being discovered at all.
+ NO_AUTOTESTS_ROOT="$(make_root proof-autotests-disabled)"
+ python3 - "$NO_AUTOTESTS_ROOT/src/rust/crates/fathomdb-engine/Cargo.toml" <<'PY'
+ import sys
+ p = sys.argv[1]
+ text = open(p, encoding="utf-8").read()
+ old = 'name = "fathomdb-engine"'
+ assert text.count(old) == 1
+ open(p, "w", encoding="utf-8").write(text.replace(old, old + "\nautotests = false", 1))
+ PY
+ run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$NO_AUTOTESTS_ROOT"
+ expect_rc 1 "\`autotests = false\` HARD-fails every clause whose proof lives in an auto-discovered test file"
+ expect_out 'autotests = false' "the autotests failure says what it found"
+ 
+ # 12ah-2 — A FILE-LEVEL `#![cfg(..)]`. Every proof in the file stops being built
+ # while each one still reads as an ordinary `#[test]`.
+ FILE_CFG_ROOT="$(make_root proof-file-cfg-gated)"
+ python3 - "$FILE_CFG_ROOT/src/rust/crates/fathomdb-engine/tests/slice25_registration_identity_inert.rs" <<'PY'
+ import sys
+ p = sys.argv[1]
+ text = open(p, encoding="utf-8").read()
+ open(p, "w", encoding="utf-8").write(
+     '#![cfg(feature = "never-enabled")]\n'
+     "// Fixture only (fix-5 SWEEP). The whole file is switched off; every `#[test]`\n"
+     "// below is untouched and none of them run.\n" + text
+ )
+ PY
+ run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$FILE_CFG_ROOT"
+ expect_rc 1 "a file-level #![cfg(..)] HARD-fails every clause whose proof lives in that file"
+ expect_out 'C1-Q6B-H-TERMINAL-NOT-LIFECYCLE-ADDRESSABLE' "the file-cfg failure NAMES a clause from that file"
+ expect_out 'C1-Q6B-SURROGATE-GOVERNED-ONLY' "the file-cfg failure NAMES the other clause from that file"
+ expect_out 'CONDITIONALLY COMPILED as a whole' "the file-cfg failure says the whole file is gated"
+ 
+ # 12ah-3 — THE PROOF NESTED inside a module. Its own attributes say nothing about
+ # whether the module it now lives in is compiled, so the gate refuses to call it
+ # a live proof. Deliberately the RED side of a judgement call, like 12ag-3.
+ NESTED_PROOF_ROOT="$(make_root proof-nested-in-a-module)"
+ python3 - "$NESTED_PROOF_ROOT/src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs" <<'PY'
+ import sys
+ p = sys.argv[1]
+ text = open(p, encoding="utf-8").read()
+ old = "#[test]\nfn atomic_flip_never_exposes_ready_without_the_vector_under_concurrent_write("
+ assert text.count(old) == 1
+ # Wrap the proof (and everything after it) in a cfg-gated module. The proof's own
+ # `#[test]` is copied through untouched — the point of the fixture.
+ open(p, "w", encoding="utf-8").write(text.replace(
+     old,
+     '#[cfg(feature = "never-enabled")]\nmod fixture_gated {\nuse super::*;\n' + old,
+     1,
+ ) + "\n}\n")
+ PY
+ run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$NESTED_PROOF_ROOT"
+ expect_rc 1 "a proof NESTED inside a (cfg-gated) module HARD-fails the clause it carries"
+ expect_out 'C1-AA-ATOMIC-FLIP' "the nested-proof failure NAMES the clause id"
+ expect_out 'NESTED' "the nested-proof failure says the proof is not at the top level"
+ 
+ # The manifest arm for the same class: the crate Cargo.toml is now a source the
+ # assertions READ, so it must appear in --list-sources or every fixture root
+ # above would lack it and the whole target check would evaporate (TC-37 #4).
+ run_checker --list-sources
+ expect_rc 0 "--list-sources still exits 0 with the crate manifest in the set"
+ expect_out 'file\s+src/rust/crates/fathomdb-engine/Cargo\.toml' \
+   "--list-sources names the crate manifest the test-target check reads"
+ 
++# === Arm 12ai (RED, fix-6): THE VERB THAT LOST ITS RECEIVER ==================
++# codex §9 round 6 finding #1, a FALSE GREEN. `C1-SEAM-ENGINE-BUILD-DROP` reads
++# the specs parameter, the drop parameter and the return type out of
++# `configure_projections`'s OWN signature (that was fix-4's arm 12y). What no
++# probe said is that it is still an INSTANCE METHOD. Delete only the `&self,`
++# line and every one of those three fragments is still there, character for
++# character — while `engine.configure_projections(..)`, the call shape the pin's
++# evidence records and every call site in this repo uses, stops compiling. A
++# `self` receiver is legal ONLY inside an `impl`/trait block, so requiring one
++# excludes both a free function and a receiver-less associated function.
++RECEIVERLESS_ROOT="$(make_root apply-verb-receiver-deleted)"
++python3 - "$RECEIVERLESS_ROOT/src/rust/crates/fathomdb-engine/src/lib.rs" <<'PY'
++import sys
++p = sys.argv[1]
++text = open(p, encoding="utf-8").read()
++old = """    pub fn configure_projections(
++        &self,
++        specs: &[ProjectionSpec],
++        drop: &[String],
++    ) -> Result<ProjectionDelta, EngineError> {"""
++# ONLY the receiver goes. Parameters, return type and name are untouched, which
++# is the whole point: every fix-4 probe still matches.
++new = """    pub fn configure_projections(
++        specs: &[ProjectionSpec],
++        drop: &[String],
++    ) -> Result<ProjectionDelta, EngineError> {"""
++assert text.count(old) == 1
++open(p, "w", encoding="utf-8").write(text.replace(old, new, 1))
++PY
++run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$RECEIVERLESS_ROOT"
++expect_rc 1 "an apply verb that LOST ITS \`&self\` RECEIVER HARD-fails the seam clause"
++expect_out 'C1-SEAM-ENGINE-BUILD-DROP' "the receiver-less failure NAMES the seam clause id"
++expect_out 'configure_projections' "the receiver-less failure NAMES the subject function"
++expect_routes_to_steward "the receiver-less seam failure"
++
++# THE MIRROR ARMS. A receiver obligation that a formatting-only or a
++# by-the-book-legal respelling can trip is a false RED, and a false RED on a
++# publish gate is its own failure mode (this round is fixing one — see 12aj). So
++# every legal receiver spelling must stay GREEN.
++SPELLING_IDX=0
++for SPELLING in '& self,' '&mut self,' "&'life self," 'mut self,' 'self,'; do
++  SPELLING_IDX=$((SPELLING_IDX + 1))
++  MIRROR_ROOT="$(make_root "apply-verb-receiver-$SPELLING_IDX")"
++  python3 - "$MIRROR_ROOT/src/rust/crates/fathomdb-engine/src/lib.rs" "$SPELLING" <<'PY'
++import sys
++p, spelling = sys.argv[1], sys.argv[2]
++text = open(p, encoding="utf-8").read()
++old = """    pub fn configure_projections(
++        &self,
++        specs: &[ProjectionSpec],"""
++new = """    pub fn configure_projections(
++        %s
++        specs: &[ProjectionSpec],""" % spelling
++assert text.count(old) == 1
++open(p, "w", encoding="utf-8").write(text.replace(old, new, 1))
++PY
++  run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$MIRROR_ROOT"
++  expect_rc 0 "the receiver spelled \`$SPELLING\` is still a receiver (no false RED)"
++done
++
++# === Arm 12aj (fix-6): A NESTED MODULE'S INNER ATTRIBUTE IS NOT THE FILE'S ====
++# codex §9 round 6 finding #2, and THE DIRECTION IS INVERTED versus every other
++# arm above: this fixture must exit 0. It is a FALSE RED that this arm guards.
++#
++# The fix-5 SWEEP taught `test_defined` that a file-level `#![cfg(..)]` switches
++# every proof in a file off (arm 12ah-2). The reader it used scanned the WHOLE
++# file for `#![`, and Rust permits an inner attribute at the head of ANY braced
++# item — `mod helpers { #![cfg(feature = "x")] .. }` is ordinary, legal, and
++# switches off THAT MODULE alone. One of those in a pinned test file made the
++# gate report the whole integration test as conditionally compiled: exit 1, CI
++# and `preflight.sh --landing` blocked, with every top-level pinned proof still
++# building and running. No such module exists in the tree today; this arm is here
++# so the first one to arrive does not stop the release.
++NESTED_INNER_ATTR_ROOT="$(make_root nested-module-inner-attr)"
++cat >>"$NESTED_INNER_ATTR_ROOT/src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs" <<'RS'
++
++// Fixture only (fix-6). A perfectly legal nested module carrying its OWN inner
++// attribute. Every pinned top-level test above is untouched and still runs.
++mod helpers {
++    #![cfg(feature = "never-enabled")]
++    pub fn h() {}
++}
++RS
++run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$NESTED_INNER_ATTR_ROOT"
++expect_rc 0 "a NESTED module's own inner \`#![cfg(..)]\` does NOT gate the pinned test file"
++expect_out 'ok +c1-contract-conformance' "the nested-inner-attribute root still reports ok"
++expect_no_out 'CONDITIONALLY COMPILED as a whole' \
++  "the nested-inner-attribute root is not reported as a wholly cfg-gated file"
++
++# THE MIRROR ARMS, so narrowing the scan cannot overshoot into a false GREEN. A
++# GENUINE file-level `#![cfg(..)]` must still be RED — including one that is not
++# the FIRST thing in the header. Rust allows a run of inner attributes at the top
++# of a file, and a `//!` doc header above them; both are still file level.
++#   (a) alone, at the very head of the same pinned file;
++#   (b) after another leading inner attribute;
++#   (c) after a leading `//!` doc comment.
++IDX=0
++for HEAD in \
++  '#![cfg(feature = "never-enabled")]' \
++  '#![allow(dead_code)]
++#![cfg(feature = "never-enabled")]' \
++  '//! Fixture only (fix-6): a doc header does not stop the next attribute being
++//! a FILE-level one.
++#![cfg(feature = "never-enabled")]'; do
++  IDX=$((IDX + 1))
++  HEAD_ROOT="$(make_root "file-cfg-in-header-$IDX")"
++  python3 - "$HEAD_ROOT/src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs" "$HEAD" <<'PY'
++import sys
++p, head = sys.argv[1], sys.argv[2]
++text = open(p, encoding="utf-8").read()
++open(p, "w", encoding="utf-8").write(head + "\n" + text)
++PY
++  run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$HEAD_ROOT"
++  expect_rc 1 "a FILE-level #![cfg(..)] in the header (form $IDX) still HARD-fails the file's clauses"
++  expect_out 'C1-Q3-DESTRUCTIVE-DELTA' "header-cfg form $IDX NAMES a clause proved in that file"
++  expect_out 'CONDITIONALLY COMPILED as a whole' "header-cfg form $IDX says the whole file is gated"
++done
++
++# === Arm 12ak (RED, fix-6b): A LEADING SHEBANG IS PART OF THE HEADER =========
++# codex §9 round 6 RE-REVIEW, and this one is a regression THE FIX-6 PATCH ABOVE
++# OPENED. Narrowing the file-level `#![..]` scan to the file's LEADING HEADER
++# (arm 12aj) closed the nested-module false RED, but the new walk stops at the
++# first byte that is neither whitespace nor `#![` — and a Rust source file may
++# legally BEGIN WITH A SHEBANG. `#!/usr/bin/env rust-script` is not `#![`, so the
++# walk ended at byte 0 and a file-level `#![cfg(..)]` on the NEXT line was never
++# seen: exit 0 on a pinned test file whose every proof is compiled out. codex
++# proved it with the toolchain, not by reading — `rustc --test` on
++# shebang + `#![cfg(feature = "nope")]` + `#[test] fn t() {}` builds, and
++# `--list` reports `0 tests`.
++#
++# The pre-fix-6 whole-file scan caught this. These arms keep BOTH directions
++# closed at once: the shebang must not hide a file-level `#![cfg(..)]` (12ak-1,
++# 12ak-3, rc=1) and must not by itself gate anything (12ak-2, rc=0). The nested
++# module mirror — the false RED fix-6 closed — is arm 12aj above and is NOT
++# duplicated here; it must stay rc=0 for this repair to be in scope.
++#
++# 12ak-1 — codex's own demonstration: a shebang line, then a genuine file-level
++# `#![cfg(..)]`. Same subject file as the 12aj mirror arms, so the only variable
++# against them is the shebang.
++SHEBANG_CFG_ROOT="$(make_root shebang-hides-file-cfg)"
++python3 - "$SHEBANG_CFG_ROOT/src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs" <<'PY'
++import sys
++p = sys.argv[1]
++text = open(p, encoding="utf-8").read()
++open(p, "w", encoding="utf-8").write(
++    "#!/usr/bin/env rust-script\n"
++    '#![cfg(feature = "never-enabled")]\n' + text
++)
++PY
++run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$SHEBANG_CFG_ROOT"
++expect_rc 1 "a file-level #![cfg(..)] hidden behind a leading SHEBANG still HARD-fails the file's clauses"
++expect_out 'C1-Q3-DESTRUCTIVE-DELTA' "the shebang-hidden file-cfg failure NAMES a clause proved in that file"
++expect_out 'CONDITIONALLY COMPILED as a whole' \
++  "the shebang-hidden file-cfg failure says the whole file is gated"
++expect_routes_to_steward "the shebang-hidden file-cfg failure"
++
++# 12ak-2 — THE MIRROR, so skipping the shebang cannot overshoot: a shebang ALONE
++# gates nothing, and a file that grows one must not turn the gate RED.
++SHEBANG_ONLY_ROOT="$(make_root shebang-only)"
++python3 - "$SHEBANG_ONLY_ROOT/src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs" <<'PY'
++import sys
++p = sys.argv[1]
++text = open(p, encoding="utf-8").read()
++open(p, "w", encoding="utf-8").write("#!/usr/bin/env rust-script\n" + text)
++PY
++run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$SHEBANG_ONLY_ROOT"
++expect_rc 0 "a leading SHEBANG on its own does NOT gate the pinned test file"
++expect_out 'ok +c1-contract-conformance' "the shebang-only root still reports ok"
++expect_no_out 'CONDITIONALLY COMPILED as a whole' \
++  "the shebang-only root is not reported as a wholly cfg-gated file"
++
++# 12ak-3 — the walk must RESUME after the shebang, not merely skip one line: a
++# shebang, then an unrelated inner attribute, then the `#![cfg(..)]`.
++SHEBANG_RUN_ROOT="$(make_root shebang-then-attr-run)"
++python3 - "$SHEBANG_RUN_ROOT/src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs" <<'PY'
++import sys
++p = sys.argv[1]
++text = open(p, encoding="utf-8").read()
++open(p, "w", encoding="utf-8").write(
++    "#!/usr/bin/env rust-script\n"
++    "#![allow(dead_code)]\n"
++    '#![cfg(feature = "never-enabled")]\n' + text
++)
++PY
++run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$SHEBANG_RUN_ROOT"
++expect_rc 1 "a #![cfg(..)] after a shebang AND another inner attribute still HARD-fails"
++expect_out 'C1-Q3-DESTRUCTIVE-DELTA' "the shebang+attr-run failure NAMES a clause proved in that file"
++expect_out 'CONDITIONALLY COMPILED as a whole' \
++  "the shebang+attr-run failure says the whole file is gated"
++
+ # === Arm 13 (RED): a source file an assertion reads is MISSING ===============
+ # TC-37 evaporation path #4: the assertion could not be EVALUATED. That is
+ # neither a pass (0) nor a clause failure (1) — the gate computed no verdict.
+ GONE_ROOT="$(make_root file-missing)"
+ rm -f "$GONE_ROOT/src/rust/crates/fathomdb-schema/src/lib.rs"
+ run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$GONE_ROOT"
+ expect_rc 2 "a MISSING source file exits 2 (TC-37 #4) — not 0 and not 1"
+ expect_out 'could not be EVALUATED' "file-missing says the assertion could not be evaluated"
+ expect_out 'TC-37' "file-missing cites the evaporation failure class"
+ expect_no_out 'ok +c1-contract-conformance' "file-missing prints no ok line"
+ 
+ # An entirely empty root is the same class, not a vacuous pass.
+ mkdir -p "$TMPROOT/root-empty"
+ run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$TMPROOT/root-empty"
+ expect_rc 2 "an EMPTY source root exits 2 (every assertion evaporates), never 0"
+ 
+ # TC-37 #4 FOR A TREE-SCOPED PROBE (fix-3). Once a probe's subject is a TREE
+ # rather than a file, "missing" needs a definition. The gate's answer, stated in
+ # its header: an ABSENT directory is exit 2, and so is a directory that yields
+ # ZERO candidate files — a negative assertion that examined nothing has not been
+ # evaluated, and reporting it as satisfied is the TC-37 vacuous pass in its
+ # purest form.
+ #
+ # HONEST LIMIT OF THIS ARM: every crate tree the gate scans also holds that
+ # crate's lib.rs, which the same clause's file-scoped `present` probes read. So
+ # emptying the tree trips BOTH rules and the CLI cannot say which fired first.
+ # What the arm asserts is the property that matters — NO GREEN IS REACHABLE, and
+ # the verdict is "gate could not run" (2), never "clause failed" (1).
+ for TREE in fathomdb-engine fathomdb-schema; do
+   EMPTY_TREE_ROOT="$(make_root "empty-tree-$TREE")"
+   rm -rf "${EMPTY_TREE_ROOT:?}/src/rust/crates/$TREE/src"
+   mkdir -p "$EMPTY_TREE_ROOT/src/rust/crates/$TREE/src"
+   run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$EMPTY_TREE_ROOT"
+   expect_rc 2 "an EMPTIED $TREE source tree exits 2 (TC-37 #4), never 0 and never 1"
+   expect_out 'TC-37' "empty-tree-$TREE cites the evaporation failure class"
+   expect_no_out 'ok +c1-contract-conformance' "empty-tree-$TREE prints no ok line"
+ 
+   GONE_TREE_ROOT="$(make_root "gone-tree-$TREE")"
+   rm -rf "${GONE_TREE_ROOT:?}/src/rust/crates/$TREE/src"
+   run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$GONE_TREE_ROOT"
+   expect_rc 2 "an ABSENT $TREE source tree exits 2 (TC-37 #4), never 0 and never 1"
+   expect_no_out 'ok +c1-contract-conformance' "gone-tree-$TREE prints no ok line"
+ done
+ 
+ # ==================== Arm 14: usage / environment errors ====================
+ run_checker --not-a-flag
+ expect_rc 2 "an unknown flag exits 2 (usage), distinct from a divergence"
+ 
+ run_checker --help
+ expect_rc 0 "--help exits 0"
+ expect_out 'Usage: scripts/check-c1-conformance.sh' "--help prints usage"
+ 
+ run_checker --list-sources
+ expect_rc 0 "--list-sources exits 0"
+ expect_out 'file\s+src/rust/crates/fathomdb-engine/src/lib.rs' \
+   "--list-sources names the engine source the assertions read"
+ expect_out 'tree\s+src' "--list-sources names the tree the negative-space clause scans"
+ # fix-3: the crate SOURCE TREES are now first-class subjects, so they must appear
+ # in the manifest — that manifest is what builds every fixture root here AND the
+ # preflight seeder in lib/c1-conformance-fixture.sh. A tree-scoped probe whose
+ # tree is not listed would leave those roots without it and silently evaporate.
+ expect_out 'tree\s+src/rust/crates/fathomdb-engine/src' \
+   "--list-sources names the ENGINE crate source tree the negative probes scan"
+ expect_out 'tree\s+src/rust/crates/fathomdb-schema/src' \
+   "--list-sources names the SCHEMA crate source tree the negative probes scan"
+ 
+ # THE STRUCTURAL GUARD FOR THIS WHOLE CLASS (fix-3). Widening seven probes fixes
+ # today's holes; deleting the file-scoped negative probe KIND is what stops the
+ # class recurring. `absent` (single file) no longer exists — a negative probe can
+ # only be written as `absent_tree`. Assert that, so re-introducing a file-scoped
+ # negative is a deliberate, reviewed act rather than the path of least effort.
+ if grep -nE '^\s*\("absent",' "$REPO_ROOT/scripts/check-c1-conformance.sh" >/dev/null; then
+   fail "the gate still declares file-scoped (\"absent\", <file>, ...) probes; every negative probe must be tree-scoped (fix-3)"
+ else
+   pass "no file-scoped \`absent\` probe remains: every negative assertion is tree-scoped"
+ fi
+ if grep -nE 'kind == "absent"' "$REPO_ROOT/scripts/check-c1-conformance.sh" >/dev/null; then
+   fail "the gate still IMPLEMENTS the file-scoped \`absent\` probe kind — removing the kind is what prevents the fix-3 class from recurring"
+ else
+   pass "the file-scoped \`absent\` probe kind is gone from the gate entirely"
+
+exec
+/bin/bash -lc 'git diff e8e35260ace933af73c49e0879929438a4f99df0 -- scripts/check-c1-conformance.sh' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+diff --git a/scripts/check-c1-conformance.sh b/scripts/check-c1-conformance.sh
+index 3de5231e..50d96bc5 100755
+--- a/scripts/check-c1-conformance.sh
++++ b/scripts/check-c1-conformance.sh
+@@ -185,8 +185,11 @@
+ #        ITS POSITION   it sits at the TOP LEVEL of the integration-test file, so
+ #                       no enclosing (possibly `#[cfg]`-gated) item can silence it
+ #                       out of this reader's view.
+-#        THE FILE       the file carries no `#![cfg(..)]` inner attribute, which
+-#                       would switch every proof in it off at once.
++#        THE FILE       the file's own LEADING HEADER carries no `#![cfg(..)]`
++#                       inner attribute, which would switch every proof in it off
++#                       at once. Read at the header and nowhere else (fix-6): an
++#                       inner attribute inside a nested `mod` belongs to THAT
++#                       module, and reading it as the file's was a false RED.
+ #        THE TARGET     the owning crate's Cargo.toml neither sets
+ #                       `autotests = false` nor declares a `[[test]]` block for
+ #                       that file with `required-features` / `test = false`.
+@@ -452,7 +455,9 @@ def crate_manifest_for(test_path):
+ #                                      all four levels it could be switched off
+ #                                      at: a `#[test]`-family attribute with no
+ #                                      `#[ignore]`/`#[cfg]`; at the file's top
+-#                                      level; in a file with no `#![cfg(..)]`;
++#                                      level; in a file whose own LEADING HEADER
++#                                      carries no `#![cfg(..)]` (a nested module's
++#                                      inner attribute is that module's, fix-6);
+ #                                      in a crate whose Cargo.toml does not gate
+ #                                      that `[[test]]` target. "The proof still
+ #                                      exists" is worth nothing if the proof no
+@@ -713,8 +718,26 @@ ASSERTIONS = {
+     # carrying `drop: &[String],` and the delta return type satisfied them while
+     # `configure_projections` took no drop list at all. They are now read out of
+     # THAT FUNCTION'S SIGNATURE.
++    #
++    # fix-6 (codex §9 round 6 finding #1): reading them out of the signature is
++    # still not enough, because a signature is not a method. Turn
++    # `configure_projections` into a free or associated function — delete the
++    # `&self,` line, nothing else — and all three fragments are still there
++    # character for character while `engine.configure_projections(..)`, the
++    # instance verb the pin's evidence records and every call site in this repo
++    # uses, stops compiling. So the RECEIVER is probed too.
+     "C1-SEAM-ENGINE-BUILD-DROP": [
+         ("present", ENG, r"pub fn configure_projections\("),
++        # A `self` receiver is legal ONLY inside an `impl`/trait block, so
++        # requiring one excludes both shapes the finding names (a free function
++        # and a receiver-less associated function) without this gate having to
++        # decide which `impl` it landed in. Every legal receiver spelling is
++        # admitted — `&self`, `& self`, `&mut self`, `&'a self`, `self`,
++        # `mut self` — because a formatting-only edit must not manufacture a
++        # false RED (`self` may only ever be the FIRST parameter, so the open
++        # paren this anchors on can only be the parameter list's).
++        ("fn_sig", ENG, "configure_projections",
++         r"\(\s*(?:&\s*(?:'[A-Za-z_]\w*\s+)?)?(?:mut\s+)?self\b"),
+         ("fn_sig", ENG, "configure_projections", r"specs:\s*&\[ProjectionSpec\]"),
+         ("fn_sig", ENG, "configure_projections", r"drop:\s*&\[String\]"),
+         ("fn_sig", ENG, "configure_projections",
+@@ -1812,26 +1835,66 @@ def attr_path(attr):
+ 
+ 
+ def file_inner_attrs(rel):
+-    """The `#![..]` INNER attribute paths at the head of a Rust source file.
++    """The `#![..]` INNER attribute paths in a Rust file's OWN LEADING HEADER.
+ 
+     A `#![cfg(..)]` there switches the WHOLE FILE off, which for an integration
+     test means every proof in it stops running while each one still reads as a
+     perfectly ordinary `#[test]`.
++
++    "IN THE HEADER" IS LOAD-BEARING (fix-6, codex §9 round 6 finding #2). This
++    used to scan the whole file for `#![`, but Rust permits an inner attribute at
++    the head of ANY braced item, and `mod helpers { #![cfg(feature = "x")] .. }`
++    is ordinary, legal, and switches off THAT MODULE alone. Reading one of those
++    as "the whole test file is conditionally compiled" turns this gate RED and
++    blocks CI and `preflight.sh --landing` while every top-level pinned proof
++    still builds and runs — a FALSE RED, which on a publish precondition is its
++    own failure mode, not the safe side.
++
++    So the walk starts at the top of the file and stops at the first thing that
++    is neither whitespace nor an inner attribute — i.e. at the first item. That
++    leading run IS the file header, and it is the only place a FILE-level inner
++    attribute may legally appear, so narrowing to it gives up nothing: a genuine
++    `#![cfg(..)]` is still found when it sits alone at the head, after other
++    leading inner attributes, or after a `//!` doc header (comments, `//!`
++    included, are already blanked to spaces by `rust_view`, so a doc header does
++    not end the run).
++
++    A LEADING SHEBANG IS PART OF THAT HEADER AND IS SKIPPED FIRST (fix-6b, codex
++    §9 round 6 RE-REVIEW of the fix-6 patch — a regression the narrowing itself
++    opened). A Rust source file may legally begin with `#!/usr/bin/env ..`, which
++    is not `#![`, so the walk ended at byte 0 and never saw a file-level
++    `#![cfg(..)]` on the NEXT line: the whole test file compiled out, gate green.
++    `rustc --test` on shebang + `#![cfg(feature = "nope")]` + `#[test] fn t() {}`
++    builds and `--list` reports `0 tests`. rustc's own rule is followed exactly:
++    ONLY the very first line can be a shebang, and it is one only when the file
++    starts with `#!` whose next character is NOT `[` — `#![..]` at byte 0 is an
++    inner attribute, not a shebang. The rest of that first line is skipped and
++    the leading-attribute walk resumes, so an attribute run after a shebang is
++    still read (and the nested-module false RED above stays closed).
+     """
+     code = rust_code(rel)
+-    found = []
+-    for match in re.finditer(r"#!\[", code):
+-        depth, i = 0, match.end() - 1
+-        while i < len(code):
+-            if code[i] == "[":
++    found, i, n = [], 0, len(code)
++    if code[:2] == "#!" and code[2:3] != "[":       # a shebang line, not an attr
++        end = code.find("\n")
++        i = n if end == -1 else end + 1
++    while True:
++        while i < n and code[i].isspace():
++            i += 1
++        if code[i:i + 3] != "#![":
++            break
++        depth, j = 0, i + 2
++        while j < n:
++            if code[j] == "[":
+                 depth += 1
+-            elif code[i] == "]":
++            elif code[j] == "]":
+                 depth -= 1
+                 if depth == 0:
+                     break
+-            i += 1
+-        if i < len(code):
+-            found.append(attr_path("#[" + code[match.end():i] + "]"))
++            j += 1
++        if j >= n:                       # unbalanced: unreadable, so the run ends
++            break
++        found.append(attr_path("#[" + code[i + 3:j] + "]"))
++        i = j + 1
+     return found
+ 
+ 
+
+exec
+/bin/bash -lc "nl -ba scripts/check-c1-conformance.sh | sed -n '700,735p;1825,1885p'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+   700	    """A case-insensitive `INSERT [OR <conflict>] INTO [<schema>.]<table>` /
+   701	    `REPLACE INTO [<schema>.]<table>` pattern.
+   702	
+   703	    Tolerates all five SQLite conflict clauses (the same five the schema crate's
+   704	    own accretion guard enumerates), arbitrary whitespace including newlines
+   705	    between every token, an optional schema qualifier, and an optionally
+   706	    quoted/bracketed table name.
+   707	    """
+   708	    return (
+   709	        r"(?i)\b(?:INSERT|REPLACE)\b"
+   710	        r"(?:\s+OR\s+(?:ABORT|FAIL|IGNORE|REPLACE|ROLLBACK))?"
+   711	        r"\s+INTO\s+" + qualified(table)
+   712	    )
+   713	
+   714	ASSERTIONS = {
+   715	    # ---- Cohesion seam --------------------------------------------------
+   716	    # fix-4: the three fragments used to be three INDEPENDENT file-wide probes,
+   717	    # so nothing tied them to one another OR to the apply verb — a decoy function
+   718	    # carrying `drop: &[String],` and the delta return type satisfied them while
+   719	    # `configure_projections` took no drop list at all. They are now read out of
+   720	    # THAT FUNCTION'S SIGNATURE.
+   721	    #
+   722	    # fix-6 (codex §9 round 6 finding #1): reading them out of the signature is
+   723	    # still not enough, because a signature is not a method. Turn
+   724	    # `configure_projections` into a free or associated function — delete the
+   725	    # `&self,` line, nothing else — and all three fragments are still there
+   726	    # character for character while `engine.configure_projections(..)`, the
+   727	    # instance verb the pin's evidence records and every call site in this repo
+   728	    # uses, stops compiling. So the RECEIVER is probed too.
+   729	    "C1-SEAM-ENGINE-BUILD-DROP": [
+   730	        ("present", ENG, r"pub fn configure_projections\("),
+   731	        # A `self` receiver is legal ONLY inside an `impl`/trait block, so
+   732	        # requiring one excludes both shapes the finding names (a free function
+   733	        # and a receiver-less associated function) without this gate having to
+   734	        # decide which `impl` it landed in. Every legal receiver spelling is
+   735	        # admitted — `&self`, `& self`, `&mut self`, `&'a self`, `self`,
+  1825	
+  1826	def attr_path(attr):
+  1827	    """The dotted path an attribute names: `#[tokio::test]` -> 'tokio::test',
+  1828	    `#[ignore = "why"]` -> 'ignore', `#[cfg(feature = "x")]` -> 'cfg'. None when
+  1829	    the attribute is not a simple path (a bare literal, say)."""
+  1830	    inner = attr[2:-1].strip()
+  1831	    match = re.match(r"([A-Za-z_]\w*(?:\s*::\s*[A-Za-z_]\w*)*)", inner)
+  1832	    if match is None:
+  1833	        return None
+  1834	    return "::".join(part.strip() for part in match.group(1).split("::"))
+  1835	
+  1836	
+  1837	def file_inner_attrs(rel):
+  1838	    """The `#![..]` INNER attribute paths in a Rust file's OWN LEADING HEADER.
+  1839	
+  1840	    A `#![cfg(..)]` there switches the WHOLE FILE off, which for an integration
+  1841	    test means every proof in it stops running while each one still reads as a
+  1842	    perfectly ordinary `#[test]`.
+  1843	
+  1844	    "IN THE HEADER" IS LOAD-BEARING (fix-6, codex §9 round 6 finding #2). This
+  1845	    used to scan the whole file for `#![`, but Rust permits an inner attribute at
+  1846	    the head of ANY braced item, and `mod helpers { #![cfg(feature = "x")] .. }`
+  1847	    is ordinary, legal, and switches off THAT MODULE alone. Reading one of those
+  1848	    as "the whole test file is conditionally compiled" turns this gate RED and
+  1849	    blocks CI and `preflight.sh --landing` while every top-level pinned proof
+  1850	    still builds and runs — a FALSE RED, which on a publish precondition is its
+  1851	    own failure mode, not the safe side.
+  1852	
+  1853	    So the walk starts at the top of the file and stops at the first thing that
+  1854	    is neither whitespace nor an inner attribute — i.e. at the first item. That
+  1855	    leading run IS the file header, and it is the only place a FILE-level inner
+  1856	    attribute may legally appear, so narrowing to it gives up nothing: a genuine
+  1857	    `#![cfg(..)]` is still found when it sits alone at the head, after other
+  1858	    leading inner attributes, or after a `//!` doc header (comments, `//!`
+  1859	    included, are already blanked to spaces by `rust_view`, so a doc header does
+  1860	    not end the run).
+  1861	
+  1862	    A LEADING SHEBANG IS PART OF THAT HEADER AND IS SKIPPED FIRST (fix-6b, codex
+  1863	    §9 round 6 RE-REVIEW of the fix-6 patch — a regression the narrowing itself
+  1864	    opened). A Rust source file may legally begin with `#!/usr/bin/env ..`, which
+  1865	    is not `#![`, so the walk ended at byte 0 and never saw a file-level
+  1866	    `#![cfg(..)]` on the NEXT line: the whole test file compiled out, gate green.
+  1867	    `rustc --test` on shebang + `#![cfg(feature = "nope")]` + `#[test] fn t() {}`
+  1868	    builds and `--list` reports `0 tests`. rustc's own rule is followed exactly:
+  1869	    ONLY the very first line can be a shebang, and it is one only when the file
+  1870	    starts with `#!` whose next character is NOT `[` — `#![..]` at byte 0 is an
+  1871	    inner attribute, not a shebang. The rest of that first line is skipped and
+  1872	    the leading-attribute walk resumes, so an attribute run after a shebang is
+  1873	    still read (and the nested-module false RED above stays closed).
+  1874	    """
+  1875	    code = rust_code(rel)
+  1876	    found, i, n = [], 0, len(code)
+  1877	    if code[:2] == "#!" and code[2:3] != "[":       # a shebang line, not an attr
+  1878	        end = code.find("\n")
+  1879	        i = n if end == -1 else end + 1
+  1880	    while True:
+  1881	        while i < n and code[i].isspace():
+  1882	            i += 1
+  1883	        if code[i:i + 3] != "#![":
+  1884	            break
+  1885	        depth, j = 0, i + 2
+
+exec
+/bin/bash -lc "nl -ba scripts/check-c1-conformance.sh | sed -n '735,750p;1885,1905p'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+   735	        # admitted — `&self`, `& self`, `&mut self`, `&'a self`, `self`,
+   736	        # `mut self` — because a formatting-only edit must not manufacture a
+   737	        # false RED (`self` may only ever be the FIRST parameter, so the open
+   738	        # paren this anchors on can only be the parameter list's).
+   739	        ("fn_sig", ENG, "configure_projections",
+   740	         r"\(\s*(?:&\s*(?:'[A-Za-z_]\w*\s+)?)?(?:mut\s+)?self\b"),
+   741	        ("fn_sig", ENG, "configure_projections", r"specs:\s*&\[ProjectionSpec\]"),
+   742	        ("fn_sig", ENG, "configure_projections", r"drop:\s*&\[String\]"),
+   743	        ("fn_sig", ENG, "configure_projections",
+   744	         r"->\s*Result<\s*ProjectionDelta\s*,\s*EngineError\s*>"),
+   745	    ],
+   746	    # ---- Q1 --------------------------------------------------------------
+   747	    "C1-Q1-ROLE-SET": [
+   748	        ("present", ENG, r"pub enum ProjectionRole \{"),
+   749	        ("in_item", ENG, "struct", "ProjectionSpec",
+   750	         r"pub\s+roles\s*:\s*BTreeSet\s*<\s*ProjectionRole\s*>"),
+  1885	        depth, j = 0, i + 2
+  1886	        while j < n:
+  1887	            if code[j] == "[":
+  1888	                depth += 1
+  1889	            elif code[j] == "]":
+  1890	                depth -= 1
+  1891	                if depth == 0:
+  1892	                    break
+  1893	            j += 1
+  1894	        if j >= n:                       # unbalanced: unreadable, so the run ends
+  1895	            break
+  1896	        found.append(attr_path("#[" + code[i + 3:j] + "]"))
+  1897	        i = j + 1
+  1898	    return found
+  1899	
+  1900	
+  1901	def fn_definitions(rel, name):
+  1902	    """One entry per DEFINITION of `fn <name>`: (attribute paths, brace depth).
+  1903	
+  1904	    A definition is a `fn <name> ... { .. }` with a brace-matchable body, located
+  1905	    in the blanked CODE view. Same subject-binding rule as `rust_items`, but it
+
+exec
+/bin/bash -lc "grep -n \"def .*fn_sig\\|kind == \\\"fn_sig\\\"\\|def rust_code\\|def rust_view\" -n scripts/check-c1-conformance.sh | head -50 && nl -ba scripts/check-c1-conformance.sh | sed -n '1540,1655p;2190,2245p'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+1543:def rust_view(rel):
+1567:def rust_code(rel):
+1736:def fn_signatures(rel, name):
+2140:    if kind == "fn_sig":
+  1540	    return "".join(out)
+  1541	
+  1542	
+  1543	def rust_view(rel):
+  1544	    """A comment-stripped view of a Rust source file (cached).
+  1545	
+  1546	    STRING LITERALS ARE PRESENT here — `arms_exact` and `body_strings` read them
+  1547	    as their subject. Use `rust_code(rel)` to LOCATE anything.
+  1548	
+  1549	    LENGTH- AND LINE-PRESERVING (fix-5c, found by turning the round-5 question on
+  1550	    this patch). Comments are BLANKED, not deleted: the old version collapsed a
+  1551	    multi-line `/* .. */` to a single space, so every offset and every LINE NUMBER
+  1552	    downstream of one drifted. Nothing depended on that until fix-5 added a reader
+  1553	    that CITES A LINE (`const_str_values`), and a failure message that names the
+  1554	    wrong line in a gate whose whole value is actionable failures is a small lie.
+  1555	    Blanking also means one index now means the same thing in the raw file, in
+  1556	    this view and in `rust_code`.
+  1557	    """
+  1558	    if rel not in _view_cache:
+  1559	        text = read_source(rel)
+  1560	        text = re.sub(r"/\*.*?\*/",
+  1561	                      lambda m: re.sub(r"[^\n]", " ", m.group(0)), text, flags=re.S)
+  1562	        text = re.sub(r"//[^\n]*", lambda m: " " * len(m.group(0)), text)
+  1563	        _view_cache[rel] = text
+  1564	    return _view_cache[rel]
+  1565	
+  1566	
+  1567	def rust_code(rel):
+  1568	    """`rust_view(rel)` with literal CONTENTS blanked — same length, same offsets."""
+  1569	    if rel not in _code_cache:
+  1570	        _code_cache[rel] = blank_literals(rust_view(rel))
+  1571	    return _code_cache[rel]
+  1572	
+  1573	
+  1574	def brace_body(text, open_index, source=None):
+  1575	    """Body of the brace block whose '{' sits at open_index; None if unbalanced.
+  1576	
+  1577	    Braces are counted in `text` (always the blanked CODE view) and the body is
+  1578	    sliced out of `source` (the view that still has the literals), which is sound
+  1579	    because blanking preserves length.
+  1580	    """
+  1581	    src = text if source is None else source
+  1582	    depth = 0
+  1583	    for i in range(open_index, len(text)):
+  1584	        char = text[i]
+  1585	        if char == "{":
+  1586	            depth += 1
+  1587	        elif char == "}":
+  1588	            depth -= 1
+  1589	            if depth == 0:
+  1590	                return src[open_index + 1:i]
+  1591	    return None
+  1592	
+  1593	
+  1594	def enum_variants(rel, ty):
+  1595	    """Every variant identifier of `enum ty`, in declaration order; None if the
+  1596	    declaration is absent or unparseable."""
+  1597	    code = rust_code(rel)
+  1598	    match = re.search(r"\benum\s+" + re.escape(ty) + r"\b[^{;]*\{", code)
+  1599	    if match is None:
+  1600	        return None
+  1601	    body = brace_body(code, match.end() - 1)
+  1602	    if body is None:
+  1603	        return None
+  1604	    body = re.sub(r"#\[[^\]]*\]", " ", body)
+  1605	    chunks, depth, current = [], 0, ""
+  1606	    for char in body:
+  1607	        if char in "({[":
+  1608	            depth += 1
+  1609	        elif char in ")}]":
+  1610	            depth -= 1
+  1611	        if char == "," and depth == 0:
+  1612	            chunks.append(current)
+  1613	            current = ""
+  1614	        else:
+  1615	            current += char
+  1616	    chunks.append(current)
+  1617	    variants = []
+  1618	    for chunk in chunks:
+  1619	        chunk = chunk.strip()
+  1620	        if not chunk:
+  1621	            continue
+  1622	        name = re.match(r"([A-Za-z_][A-Za-z0-9_]*)", chunk)
+  1623	        if name is None:
+  1624	            return None
+  1625	        variants.append(name.group(1))
+  1626	    return variants
+  1627	
+  1628	
+  1629	def fn_body(rel, ty, fn):
+  1630	    """Body of `fn` inside `impl ty { ... }`; None if either is absent.
+  1631	
+  1632	    Located in the blanked CODE view, returned FROM the view that still carries
+  1633	    the string literals — `arms_exact`'s whole subject is those literals, and a
+  1634	    blanked body would report every vocabulary as empty (a false green of the
+  1635	    worst kind). The two views have identical offsets by construction.
+  1636	    """
+  1637	    code, raw = rust_code(rel), rust_view(rel)
+  1638	    for match in re.finditer(r"\bimpl\s+" + re.escape(ty) + r"\s*\{", code):
+  1639	        code_block = brace_body(code, match.end() - 1)
+  1640	        raw_block = brace_body(code, match.end() - 1, source=raw)
+  1641	        if code_block is None or raw_block is None:
+  1642	            continue
+  1643	        inner = re.search(r"\bfn\s+" + re.escape(fn) + r"\b[^{;]*\{", code_block)
+  1644	        if inner is None:
+  1645	            continue
+  1646	        body = brace_body(code_block, inner.end() - 1, source=raw_block)
+  1647	        if body is not None:
+  1648	            return body
+  1649	    return None
+  1650	
+  1651	
+  1652	_STRING_LIT = r'"(?:[^"\\]|\\.)*"'
+  1653	_STRING_CAP = r'"((?:[^"\\]|\\.)*)"'
+  1654	
+  1655	
+  2190	        # off one or two levels up is switched off just the same, and neither is
+  2191	        # visible in the function's own attributes (fix-5 SWEEP).
+  2192	        gated_file = [a for a in file_inner_attrs(path)
+  2193	                      if a and a.split("::")[-1] in ("cfg", "cfg_attr")]
+  2194	        if gated_file:
+  2195	            return (
+  2196	                f"the test file {path} is CONDITIONALLY COMPILED as a whole "
+  2197	                f"(inner attribute(s) {gated_file}), so `fn {name}` may never be built at all. "
+  2198	                "A file-level `#![cfg(..)]` switches every proof in the file off while each one "
+  2199	                "still reads as an ordinary `#[test]`"
+  2200	            )
+  2201	        manifest = crate_manifest_for(path)
+  2202	        if manifest is not None:
+  2203	            stem = os.path.basename(path)[:-3] if path.endswith(".rs") else os.path.basename(path)
+  2204	            defect = cargo_test_target_defect(manifest, stem)
+  2205	            if defect is not None:
+  2206	                return defect
+  2207	        # EVERY definition of that name must be an active test — a name denoting
+  2208	        # several functions is ambiguous, and the strict side is the safe one.
+  2209	        for attrs, depth in definitions:
+  2210	            if depth != 0:
+  2211	                return (
+  2212	                    f"`fn {name}` in {path} is NESTED {depth} brace level(s) deep rather than at "
+  2213	                    "the top level of the integration-test file. Whatever encloses it may carry a "
+  2214	                    "`#[cfg(..)]` this reader never looks at, so its attributes alone no longer "
+  2215	                    "establish that the proof runs. Reported RED rather than assumed"
+  2216	                )
+  2217	            present = [a for a in attrs if a]
+  2218	            tail = [a.split("::")[-1] for a in present]
+  2219	            if "test" not in tail:
+  2220	                return (
+  2221	                    f"`fn {name}` in {path} exists but carries NO `#[test]`-family attribute "
+  2222	                    f"(it carries {present or 'no attributes at all'}). The clause's proof is a "
+  2223	                    "TEST; a function that `cargo test` no longer runs proves nothing, and "
+  2224	                    "deleting the attribute is a one-token edit that leaves the definition — and "
+  2225	                    "every 'the proof still exists' check — looking untouched (TC-37 evaporation)"
+  2226	                )
+  2227	            if "ignore" in tail:
+  2228	                return (
+  2229	                    f"`fn {name}` in {path} is a test but is DISABLED by `#[ignore]`. `cargo "
+  2230	                    "test` skips it, so the behavioural obligation this clause pins has no "
+  2231	                    "running proof. Re-enable the test, or take the clause back through the "
+  2232	                    "contract — do not leave a pinned proof switched off"
+  2233	                )
+  2234	            gated = [a for a in present if a.split("::")[-1] in ("cfg", "cfg_attr")]
+  2235	            if gated:
+  2236	                return (
+  2237	                    f"`fn {name}` in {path} is a test but is CONDITIONALLY COMPILED "
+  2238	                    f"({gated}). Whether it runs then depends on the feature set, and this gate "
+  2239	                    "cannot know that from source text, so it refuses to call it a live proof. "
+  2240	                    "This is deliberately the RED side: a pinned proof must run unconditionally"
+  2241	                )
+  2242	        return None
+  2243	    if kind == "const_str_agree":
+  2244	        _, subjects, pinned = probe
+  2245	        seen = {}
+
+exec
+/bin/bash -lc "nl -ba scripts/check-c1-conformance.sh | sed -n '1720,1765p;2125,2150p'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+  1720	    `kw` is one of struct / enum / impl / fn. LOCATED in the blanked CODE view
+  1721	    (fix-4b — a `{ }` inside a string literal is not a declaration) and RETURNED
+  1722	    from the view that still carries the literals, because some probes are about
+  1723	    a literal inside the item (`DenseReadiness::Ready => "ready",`). A body that
+  1724	    cannot be brace-matched is dropped, which surfaces as "could not locate" at
+  1725	    the call site — i.e. RED, not a silent pass.
+  1726	    """
+  1727	    code, raw = rust_code(rel), rust_view(rel)
+  1728	    bodies = []
+  1729	    for match in re.finditer(r"\b" + kw + r"\s+" + re.escape(name) + r"\b[^{;]*\{", code):
+  1730	        body = brace_body(code, match.end() - 1, source=raw)
+  1731	        if body is not None:
+  1732	            bodies.append(body)
+  1733	    return bodies
+  1734	
+  1735	
+  1736	def fn_signatures(rel, name):
+  1737	    """The signature text (params + return type) of every `fn <name>`."""
+  1738	    code = rust_code(rel)
+  1739	    return [m.group(1) for m in
+  1740	            re.finditer(r"\bfn\s+" + re.escape(name) + r"\b([^{;]*)\{", code)]
+  1741	
+  1742	
+  1743	# ---------------------------------------------------------------------------
+  1744	# ATTRIBUTE READING (fix-5). "The named proof still exists" is worth nothing if
+  1745	# the proof no longer RUNS: deleting `#[test]` or adding `#[ignore]` leaves a
+  1746	# plain function of the same name, which every `fn <name>` reader accepts while
+  1747	# `cargo test` quietly stops executing it. That is the TC-37 evaporation shape
+  1748	# this gate exists to close, so the ATTRIBUTES are read too.
+  1749	#
+  1750	# Everything below reads the blanked CODE view, so an attribute spelled inside a
+  1751	# string literal or a comment is not an attribute — the same rule as every other
+  1752	# reader here.
+  1753	# ---------------------------------------------------------------------------
+  1754	_FN_MODIFIERS = {"pub", "async", "unsafe", "const", "extern", "default"}
+  1755	
+  1756	
+  1757	def _attrs_before(code, index):
+  1758	    """Every `#[..]` attribute attached to the item whose keyword sits at `index`.
+  1759	
+  1760	    Walks BACKWARDS over the item's modifiers (`pub`, `pub(crate)`, `async`,
+  1761	    `unsafe`, `const`, `extern`) and then over any run of outer attributes.
+  1762	    Returns them OUTERMOST-LAST; order does not matter to the caller. `#![..]`
+  1763	    (an INNER attribute) terminates the walk: it belongs to the enclosing module,
+  1764	    not to this item.
+  1765	
+  2125	                "reads as a clause failure rather than a skipped probe"
+  2126	            )
+  2127	        # An inherent `impl` may legitimately be split across blocks, so ANY block
+  2128	        # satisfies it — every one of them is still `impl <the named type>`. A
+  2129	        # struct/enum/fn name denoting several items is ambiguous, so EVERY body
+  2130	        # must satisfy the probe (the strict side).
+  2131	        hits = [b for b in bodies if re.search(pattern, b) is not None]
+  2132	        ok = bool(hits) if kw == "impl" else len(hits) == len(bodies)
+  2133	        if not ok:
+  2134	            return (
+  2135	                f"expected /{pattern}/ INSIDE `{kw} {name}` in {path}; matched {len(hits)} of "
+  2136	                f"{len(bodies)} such item(s). The contract makes this statement ABOUT "
+  2137	                f"`{name}` — a match elsewhere in the file is a different subject"
+  2138	            )
+  2139	        return None
+  2140	    if kind == "fn_sig":
+  2141	        _, path, name, pattern = probe
+  2142	        sigs = fn_signatures(path, name)
+  2143	        if not sigs:
+  2144	            return (
+  2145	                f"could not locate `fn {name}(..)` in {path} — the pinned signature obligation "
+  2146	                f"/{pattern}/ cannot be checked, so this reads as a clause failure rather than a "
+  2147	                "skipped probe"
+  2148	            )
+  2149	        missing = [s for s in sigs if re.search(pattern, s) is None]
+  2150	        if missing:
+
+exec
+/bin/bash -lc "nl -ba scripts/check-c1-conformance.sh | sed -n '2150,2162p'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+  2150	        if missing:
+  2151	            return (
+  2152	                f"expected /{pattern}/ in the SIGNATURE of `fn {name}` in {path}; "
+  2153	                f"{len(missing)} of {len(sigs)} definition(s) do not carry it. The contract "
+  2154	                "describes THIS verb's parameters and return type — the same text on another "
+  2155	                "function is a different subject"
+  2156	            )
+  2157	        return None
+  2158	    if kind == "fn_defined":
+  2159	        _, path, name = probe
+  2160	        # fix-5. `fn_defined` is for PRODUCTION functions only. Pointing it at a
+  2161	        # test is the round-5 #2 defect by construction — it accepts a function
+  2162	        # whose `#[test]` was deleted — so the weaker kind is refused outright
+
+exec
+/bin/bash -lc "cat > /tmp/receiver.rs <<'RS'
+struct A;
+impl A { fn f(self: &Self) {} }
+fn main(){ let a=A; a.f(); }
+RS
+rustc /tmp/receiver.rs -o /tmp/receiver && echo ok || true" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+ok
+
+exec
+/bin/bash -lc "printf '\\xEF\\xBB\\xBF#"'![cfg(feature="nope")]'"\\n#[test]\\nfn t(){}\\n' > /tmp/bom_test.rs; rustc --test /tmp/bom_test.rs --list || true" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+error: Unrecognized option: 'list'
+
+
+exec
+/bin/bash -lc 'rustc --test /tmp/bom_test.rs -o /tmp/bom_test && /tmp/bom_test --list; echo rc=$?' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+0 tests, 0 benchmarks
+rc=0
+
+codex
+The new receiver check can produce a false RED for valid Rust method receiver syntax, which undermines the conformance gate's stated goal of accepting legal receiver spellings while blocking receiver-less functions.
+
+Review comment:
+
+- [P2] Allow explicit `self:` receivers — /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30/scripts/check-c1-conformance.sh:740-740
+  If `configure_projections` is rewritten with Rust's explicit receiver syntax, e.g. `self: &Self`, it remains an instance method and existing `engine.configure_projections(..)` call sites still compile, but this regex only accepts shorthand forms like `&self`/`mut self`. That would make the conformance gate fail on a valid method shape despite the seam contract still being preserved.
+The new receiver check can produce a false RED for valid Rust method receiver syntax, which undermines the conformance gate's stated goal of accepting legal receiver spellings while blocking receiver-less functions.
+
+Review comment:
+
+- [P2] Allow explicit `self:` receivers — /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30/scripts/check-c1-conformance.sh:740-740
+  If `configure_projections` is rewritten with Rust's explicit receiver syntax, e.g. `self: &Self`, it remains an instance method and existing `engine.configure_projections(..)` call sites still compile, but this regex only accepts shorthand forms like `&self`/`mut self`. That would make the conformance gate fail on a valid method shape despite the seam contract still being preserved.
