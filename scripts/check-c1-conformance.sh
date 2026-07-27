@@ -1850,17 +1850,33 @@ def file_inner_attrs(rel):
     still builds and runs — a FALSE RED, which on a publish precondition is its
     own failure mode, not the safe side.
 
-    So the walk starts at byte 0 and stops at the first thing that is neither
-    whitespace nor an inner attribute — i.e. at the first item. That leading run
-    IS the file header, and it is the only place a FILE-level inner attribute may
-    legally appear, so narrowing to it gives up nothing: a genuine
+    So the walk starts at the top of the file and stops at the first thing that
+    is neither whitespace nor an inner attribute — i.e. at the first item. That
+    leading run IS the file header, and it is the only place a FILE-level inner
+    attribute may legally appear, so narrowing to it gives up nothing: a genuine
     `#![cfg(..)]` is still found when it sits alone at the head, after other
     leading inner attributes, or after a `//!` doc header (comments, `//!`
     included, are already blanked to spaces by `rust_view`, so a doc header does
     not end the run).
+
+    A LEADING SHEBANG IS PART OF THAT HEADER AND IS SKIPPED FIRST (fix-6b, codex
+    §9 round 6 RE-REVIEW of the fix-6 patch — a regression the narrowing itself
+    opened). A Rust source file may legally begin with `#!/usr/bin/env ..`, which
+    is not `#![`, so the walk ended at byte 0 and never saw a file-level
+    `#![cfg(..)]` on the NEXT line: the whole test file compiled out, gate green.
+    `rustc --test` on shebang + `#![cfg(feature = "nope")]` + `#[test] fn t() {}`
+    builds and `--list` reports `0 tests`. rustc's own rule is followed exactly:
+    ONLY the very first line can be a shebang, and it is one only when the file
+    starts with `#!` whose next character is NOT `[` — `#![..]` at byte 0 is an
+    inner attribute, not a shebang. The rest of that first line is skipped and
+    the leading-attribute walk resumes, so an attribute run after a shebang is
+    still read (and the nested-module false RED above stays closed).
     """
     code = rust_code(rel)
     found, i, n = [], 0, len(code)
+    if code[:2] == "#!" and code[2:3] != "[":       # a shebang line, not an attr
+        end = code.find("\n")
+        i = n if end == -1 else end + 1
     while True:
         while i < n and code[i].isspace():
             i += 1
