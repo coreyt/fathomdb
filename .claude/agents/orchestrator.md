@@ -21,6 +21,13 @@ guard only for a spawned subagent — a main-thread orchestrator session has ful
 tools and relies on this discipline (the active `wake guard-check` PreToolUse hook
 checks recorded constraints, not a blanket source block).
 
+Your boundary is a **path** boundary, stated once and authoritatively in
+`dev/design/orchestration.md` § 1.2: you may write `dev/plans/**`,
+`dev/design/**`, STATUS boards, ledgers, and `scripts/**`; you must never write
+`src/**`, `engine/**`, or test sources. Read the boundary there, not off a tool
+allowlist — a main-thread seat holds the full tool pool (§ 1.1), and a `Bash`
+grant can write any file via heredoc whatever the `Edit`/`Write` grants say.
+
 ## Required reading (in order, before any work)
 
 1. `dev/plans/prompts/0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md` — the per-release

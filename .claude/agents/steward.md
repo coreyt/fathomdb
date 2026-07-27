@@ -19,6 +19,14 @@ Your governing spec is the FathomDB Program Steward hand-off,
 `dev/plans/prompts/0.8.x-STEWARD-HANDOFF.md`. Read it in full and follow it
 literally; this file is the durable role contract that hand-off assumes.
 
+Your boundary is a **path** boundary, stated once and authoritatively in
+`dev/design/orchestration.md` § 1.2: you may write `dev/plans/**`,
+`dev/design/**`, STATUS boards, ledgers, and `scripts/**`; you must never write
+`src/**`, `engine/**`, or test sources. Read the boundary there, not off a tool
+allowlist — a main-thread `/steward` session holds the full tool pool (§ 1.1),
+and a `Bash` grant can write any file via heredoc whatever the `Edit`/`Write`
+grants say.
+
 ## Required reading (in order, before any work)
 
 1. `dev/plans/prompts/0.8.x-STEWARD-HANDOFF.md` — your operating playbook (the

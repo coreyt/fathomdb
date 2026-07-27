@@ -44,8 +44,15 @@ principles; this file owns the mechanics.
 
 Anti-patterns (do not violate):
 
-- **Do not spawn an "orchestrator" subagent.** The main thread IS
-  the orchestrator. (`feedback_orchestrator_thread.md`)
+- **Do not spawn an "orchestrator" subagent from inside an orchestrator
+  or an implementer** — no *nesting*. The main thread of a session IS
+  that session's orchestrator. (`feedback_orchestrator_thread.md`)
+  **Scope (chronology).** This bullet and § 10 rule 1 both date to
+  `72af7045` (2026-05-17); the `orchestrator` / `steward` agent *types*
+  did not exist until `31a73401` (2026-07-02), **46 days later**. Both
+  lines are therefore **silent on a Steward-commissioned orchestrator,
+  not prohibitive** — they remain correct about nesting. Full argument:
+  § 1.1.
 - **Do not chain subagents to each other.** The implementer never
   spawns another agent — the `implementer` agent type omits Agent/Task
   (the physical guard; replaces the old `--disallowedTools Task Agent`).
@@ -56,6 +63,53 @@ Anti-patterns (do not violate):
   Agent-native isolation — it forfeits baseline control and § 11 cleanup.
 - **Do not edit in a subagent's worktree from the main thread.**
   Worktree is the unit of isolation.
+
+## 1.1 What "main thread" means
+
+**"Main thread" is ROLE-INDEXED, not globally unique.** It means *the
+top-level thread of whatever session is seated in that role*: a
+`/orchestrate` session's top-level thread is the **orchestrator's** main
+thread; a `/steward` session's top-level thread is the **Steward's** main
+thread. Both seat files already use this parallel phrasing —
+`.claude/agents/orchestrator.md` ("The main thread plays this role") and
+`.claude/agents/steward.md` ("The main thread of a /steward session plays
+this role") — which would be self-contradictory if the term named one
+globally unique thread.
+
+**A seat file's `tools:` frontmatter binds ONLY the spawned-subagent
+case.** A main-thread session holds the full tool pool; the frontmatter
+allowlist is inert for it. Consequence: a constraint that is *physically*
+enforced for a spawned seat (the implementer's omitted Agent/Task) is a
+**discipline**, not a guard, for the same seat run on a main thread.
+
+**Count the orchestrators** to settle the substance. A `/orchestrate`
+session is orchestrator → implementer: **one** orchestrator. A
+`/steward` session is steward → orchestrator → implementer: also
+**one**, because the Steward is explicitly **not** an orchestrator
+(`.claude/agents/steward.md` — it commissions and verifies the execution
+it does not perform, and never hand-drives a ladder). What the § 1
+anti-pattern and § 10 rule 1 guard is **nesting**: an orchestrator or
+implementer spawning a second orchestrator. That is the B.1 incident
+(2026-05-03), where a wrapper agent misread "spawn from main thread" as
+instruction to spawn-again; the adopted guard was removing Agent/Task
+from the **implementer** seat.
+
+## 1.2 Write-path boundary by role
+
+The real boundary between the coordinating seats and the implementing
+seat is about **paths**, not tools. This is the authoritative statement;
+the seat files cite it rather than restate it.
+
+| Seat                       | MAY write                                                              | MUST NEVER write                                |
+| -------------------------- | ---------------------------------------------------------------------- | ----------------------------------------------- |
+| **Orchestrator / Steward** | `dev/plans/**`, `dev/design/**`, STATUS boards, ledgers, `scripts/**`  | `src/**`, `engine/**`, test sources             |
+| **Implementer**            | source + tests **inside its own worktree**                             | release plans, STATUS boards                    |
+
+Why paths and not tools: the tool-omission framing is not a guard for a
+main-thread seat at all (§ 1.1), and even for a spawned seat a `Bash`
+grant can write any file via `cat >` / heredoc regardless of `Edit` /
+`Write` grants. Tool lists shape convenience; the path boundary is the
+rule.
 
 ## 1.5 State spine
 
@@ -364,8 +418,23 @@ Commits are additive; never rewrite landed commits.
 Fresh-spawn is the intended mechanism, **not** a fallback for missing
 conversational continuity: per § 12.1 the implementer's state lives on
 disk (worktree diff + output.json + verdict.md), so a fresh subagent
-reading the verdict has everything it needs. Do not wait on / reach
-for SendMessage.
+reading the verdict has everything it needs. That holds for fix-N and
+for **every hand-off across a subagent boundary that has already
+closed** — on-disk state is the contract, and a warm resident is never a
+*substitute* for the artifact.
+
+`SendMessage` is only for the one case on-disk state cannot serve:
+**correcting or halting a subagent that is still running.** A mid-flight
+steer never replaces the brief, the `output.json`, or the codex § 9
+gate.
+
+**Caveat — OPEN, UNRULED (HITL).** Whether a mid-flight steer counts
+against the round cap below is *not ruled*. The breaker counts
+**rounds** (a round = a discrete briefed spawn), and a steer is not a
+round — so drip-fed corrections inside a single round would never trip
+the cap. Until that is ruled, the seats are **not** granted
+`SendMessage`: this paragraph states intent, not a currently-available
+capability.
 
 After fix-N: cherry-pick the new commit(s), re-spawn the reviewer for
 re-verdict. Iterate until PASS or orchestrator override.
@@ -505,7 +574,12 @@ advance to <next>`.
 
 ## 10. Hard rules summary
 
-1. Main thread orchestrates. No orchestrator subagent.
+1. Main thread orchestrates. **No NESTED orchestrator** — an
+   orchestrator or an implementer never spawns another orchestrator.
+   Scope: this rule and the § 1 anti-pattern date to `72af7045`
+   (2026-05-17), **46 days** before the `orchestrator` / `steward` agent
+   types existed (`31a73401`, 2026-07-02); both are **silent on a
+   Steward-commissioned orchestrator, not prohibitive** (§ 1.1).
 2. Main thread spawns implementers via the Agent tool,
    `subagent_type: implementer`. Worktree is main-thread-owned
    (`git worktree add`); never use Agent isolation. (The `claude -p`
