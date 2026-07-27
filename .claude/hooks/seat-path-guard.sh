@@ -113,6 +113,16 @@
 #     touches src/** passes unless a protected path appears in the argv
 #   * quoted paths containing spaces are tokenized naively
 #   * `;`/`|`/`&&` inside a quoted string split the command incorrectly
+#   * an option that carries a PATH AS ITS VALUE is parsed only where it was
+#     measured to matter: sed/perl `-e -f --expression --file`, cp/mv/install/ln
+#     `-t --target-directory`, and git's value-taking globals (`-C`, `-c`,
+#     `--git-dir`, `--work-tree`, `--namespace`, `--exec-path`, `--super-prefix`,
+#     `--config-env`). Any OTHER option-carried path is invisible — e.g.
+#     `rsync --files-from=…`, or a `-t` on rsync itself, which is deliberately
+#     NOT read as a target because there it means "preserve times" and treating
+#     its neighbour as a destination would be a false positive.
+#   * git's value-taking global list is enumerated, so a global added by a
+#     future git release would again be mistaken for the subcommand
 #   * MultiEdit and NotebookEdit are NOT covered (only Edit, Write, Bash).
 #     A named Phase-2 gap, not an oversight.
 # Accepted over-block: a path whose ancestor directory is literally named src/
@@ -202,13 +212,52 @@ protected_reason() {
 }
 
 # --------------------------------------------------------------------------
+# skip_as_flag <token> — the ONE place the question "is this token an OPTION
+# rather than an operand?" is answered. Returns 0 = skip it, it is an option;
+# returns 1 = it is an operand, deal with it. Every verb branch below routes
+# through this, so the same mistake cannot survive in a sibling branch.
+#
+# The naive rule "it starts with `-` so it is a flag" is WRONG twice, and both
+# errors point the dangerous way — they hide a target rather than invent one:
+#   `-`   is NOT an option. It is the operand meaning stdin/stdout. Skipping it
+#         is precisely how `sed -i -f - src/rust/lib.rs` got through: the `-`
+#         (the script, read from stdin) was dropped, the program slot stayed
+#         empty, and the real src/** FILE was then eaten as "the first bare
+#         operand IS the program". No operand was ever considered.
+#   `--`  ends the options. Every token after it is an operand however many
+#         dashes it starts with.
+#
+# Relies on bash DYNAMIC scoping for ENDOPTS, which scan_simple_command owns and
+# each verb branch resets — the same convention absorb_quoted_word uses for k.
+# --------------------------------------------------------------------------
+skip_as_flag() {
+  [ "${ENDOPTS:-0}" -eq 0 ] || return 1
+  case "$1" in
+    --)  ENDOPTS=1; return 0 ;;
+    -)   return 1 ;;
+    -?*) return 0 ;;
+  esac
+  return 1
+}
+
+# --------------------------------------------------------------------------
 # consider <raw-target> — normalize, test, and deny on the first protected hit.
+#
+# A leading `-` alone does NOT disqualify a token here either: `-/src/lib.rs` is
+# a writable path under a directory named `-`, and refusing to normalize it was
+# the same false negative one level down. A dash-leading token is dismissed only
+# when it carries no `/` at all, which is the shape of a real option and cannot
+# be the shape of a protected path (every protected path is either multi-segment
+# or a bare test-source basename, and a basename does not start with `-`).
+# Callers already strip their own options via skip_as_flag, so this is a second
+# line of defence, deliberately biased toward considering.
 # --------------------------------------------------------------------------
 consider() {
   local raw="$1" norm why
   [ -n "$raw" ] || return 0
   case "$raw" in
-    -*|'&'*|'|'*) return 0 ;;
+    '&'*|'|'*) return 0 ;;
+    -*) case "$raw" in */*) ;; *) return 0 ;; esac ;;
   esac
   norm="$(normalize_path "$raw")"
   [ -n "$norm" ] || return 0
@@ -293,20 +342,31 @@ scan_simple_command() {
   [ "$count" -gt 0 ] || return 0
 
   local i tok next
-  # --- output redirections. Covered, each verified by an arm in
-  # scripts/tests/test_seat_path_guard.sh (arms 6, 10, 53-56):
-  #     >  >>  1>  2>>  &>  &>>       spaced   (`> FILE`)
-  #     >  >>  1>  2>>  &>  &>>       glued    (`>FILE`)
-  #     >|  2>|                       both, via the `>|`->`>` rewrite that
-  #                                   scan_bash_command applies BEFORE it splits
-  #                                   on `|` (see the note there).
-  # `>>|` and `&>|` are bash SYNTAX ERRORS — measured, not assumed — so no write
-  # can happen through them and nothing needs guarding. The `>|`->`>` fold does
-  # incidentally make them deny; that is a harmless over-block on a command that
-  # could never run, recorded here so the code and this comment stay in step.
+  # --- output redirections. Every form listed here names the arm in
+  # scripts/tests/test_seat_path_guard.sh that asserts it, because "verified by
+  # an arm" WAS the drift codex round 2 caught: the list claimed `&>>` and no
+  # `&>>` arm existed. A claim without an arm number is not made.
+  #
+  #                  SPACED (`> FILE`)        GLUED (`>FILE`)
+  #     >            arm 3 deny / arm 6 allow arm 61a
+  #     >>           arm 10                   arm 61b
+  #     1>           arm 56b                  arm 56a
+  #     2>>          arm 56d                  arm 56c
+  #     &>           arm 56f                  arm 56e
+  #     &>>          arm 61d                  arm 61c   (+ allow half: arm 61d2)
+  #     >|           arm 54                   arm 53
+  #     2>|                                   arm 54b   (+ allow half: arm 55)
+  #
+  # The `>|` pair works via the `>|`->`>` rewrite that scan_bash_command applies
+  # BEFORE it splits on `|` (see the note there).
+  # `>>|` and `&>|` are bash SYNTAX ERRORS — re-measured with `bash -n` for
+  # fix-2, both fail to parse — so no write can happen through them and nothing
+  # needs guarding. The `>|`->`>` fold does incidentally make them deny; that is
+  # a harmless over-block on a command that could never run, and arms 61e/61f
+  # assert it so the code and this comment stay in step.
   # `>&2` cannot reach here as a target: the `&` split below has already put the
-  # fd on its own line, leaving a bare `>` with no following token. `&>FILE`
-  # survives that split as `>FILE`, which the glued branch catches.
+  # fd on its own line, leaving a bare `>` with no following token (arm 61g).
+  # `&>FILE` survives that split as `>FILE`, which the glued branch catches.
   for ((i = 0; i < count; i++)); do
     tok="${toks[i]}"
     if [[ "$tok" =~ ^[0-9]*\>\>?$ ]]; then
@@ -326,11 +386,15 @@ scan_simple_command() {
   verb="${toks[j]}"
   verb="${verb##*/}"
 
-  local k last="" has_inplace=0 sub
+  # ENDOPTS is the `--` end-of-options latch that skip_as_flag sets and reads by
+  # dynamic scope. Every verb branch resets it, because it is per-command state.
+  local k last="" has_inplace=0 sub ENDOPTS=0
+  local arg flagbody before after
   case "$verb" in
     tee)
+      ENDOPTS=0
       for ((k = j + 1; k < count; k++)); do
-        case "${toks[k]}" in -*) continue ;; esac
+        skip_as_flag "${toks[k]}" && continue
         consider "${toks[k]}"
       done
       ;;
@@ -341,16 +405,26 @@ scan_simple_command() {
       # substitution (`sed -i 's/src/lib/' dev/plans/note.md`). Over-blocking is
       # how a guard gets switched off, so the operand rule is explicit:
       #
-      #   1. A token starting with `-` is a flag, never a target.
+      #   1. skip_as_flag decides what is an option. NOT "it starts with `-`":
+      #      a bare `-` is an OPERAND (stdin) and `--` ends the options. See
+      #      that function for why the naive rule was a false negative here.
       #   2. A short cluster containing `e`, `E` or `f` supplies the program:
       #      GLUED if characters follow that letter (`-e's/a/b/'`, `-pe'EXPR'`),
-      #      otherwise the NEXT non-flag token is the program (`-e EXPR`,
-      #      `-pe EXPR`, `-f script.sed`). Either way the program is consumed
-      #      and never considered.
+      #      otherwise the NEXT TOKEN is the program (`-e EXPR`, `-pe EXPR`,
+      #      `-f script.sed`, and `-f -` = read the script from stdin). Either
+      #      way the program is consumed and never considered.
       #   3. `--expression`/`--file`, with or without `=`, do the same.
       #   4. If no flag supplied a program, the FIRST bare operand IS the
       #      program (`sed -i 's/a/b/' FILE...`) and is skipped.
       #   5. EVERY remaining bare operand is a file and IS considered.
+      #
+      # Rule 2 makes the pending program slot swallow the next token WHATEVER it
+      # looks like, including a dash-leading one. That is the deny-biased
+      # reading: filling the slot early means later tokens are FILES and get
+      # considered, where leaving it open means the next real path is mistaken
+      # for the program and nothing is ever checked. Over-blocking a seat's
+      # `sed` is a visible annoyance; under-blocking is a silent § 1.2 breach,
+      # so every ambiguous case in this branch resolves toward DENY.
       #
       # Whenever a token is identified as the program, absorb_quoted_word walks
       # past the rest of that shell word — `read -ra` split on whitespace, so a
@@ -367,44 +441,51 @@ scan_simple_command() {
       # (an EXPR rarely normalizes onto a protected segment, and this repo's
       # hosts are GNU), but it is a real edge, not a covered one.
       local -a operands=()
-      local arg flagbody before after want_prog=0 prog_seen=0
+      local want_prog=0 prog_seen=0
+      ENDOPTS=0
       for ((k = j + 1; k < count; k++)); do
         arg="${toks[k]}"
+        # (a) a pending -e/-f/--expression/--file operand. THE NEXT TOKEN IS THE
+        #     PROGRAM, whatever it looks like — `-f -` reads the script from
+        #     stdin, and `-` is an operand, not a flag (rule 2).
         if [ "$want_prog" -eq 1 ]; then
-          case "$arg" in
-            -*) want_prog=0 ;;   # a flag, not the program: fall through below
-            *)  want_prog=0; prog_seen=1; absorb_quoted_word; continue ;;
-          esac
+          want_prog=0
+          prog_seen=1
+          absorb_quoted_word
+          continue
         fi
-        case "$arg" in
-          --expression=*|--file=*) prog_seen=1; absorb_quoted_word; continue ;;
-          --expression|--file)     want_prog=1; continue ;;
-          --in-place*)             has_inplace=1; continue ;;
-          --*)                     continue ;;
-          -*)
-            case "$arg" in *i*) has_inplace=1 ;; esac
-            flagbody="${arg#-}"
-            before="${flagbody%%[eEf]*}"
-            if [ "$before" != "$flagbody" ]; then
-              after="${flagbody#"$before"?}"
-              if [ -n "$after" ]; then
-                prog_seen=1
-                absorb_quoted_word
-              else
-                want_prog=1
+        # (b) options, via the one shared decision (rules 1-3).
+        if skip_as_flag "$arg"; then
+          case "$arg" in
+            --expression=*|--file=*) prog_seen=1; absorb_quoted_word ;;
+            --expression|--file)     want_prog=1 ;;
+            --in-place*)             has_inplace=1 ;;
+            --*)                     : ;;
+            *)
+              case "$arg" in *i*) has_inplace=1 ;; esac
+              flagbody="${arg#-}"
+              before="${flagbody%%[eEf]*}"
+              if [ "$before" != "$flagbody" ]; then
+                after="${flagbody#"$before"?}"
+                if [ -n "$after" ]; then
+                  prog_seen=1
+                  absorb_quoted_word
+                else
+                  want_prog=1
+                fi
               fi
-            fi
-            continue
-            ;;
-          *)
-            if [ "$prog_seen" -eq 0 ]; then
-              prog_seen=1
-              absorb_quoted_word
-              continue
-            fi
-            operands+=("$arg")
-            ;;
-        esac
+              ;;
+          esac
+          continue
+        fi
+        # (c) an operand: the first one is the program if no flag supplied one
+        #     (rule 4), every later one is a file (rule 5).
+        if [ "$prog_seen" -eq 0 ]; then
+          prog_seen=1
+          absorb_quoted_word
+          continue
+        fi
+        operands+=("$arg")
       done
       [ "$has_inplace" -eq 1 ] || return 0
       for arg in "${operands[@]}"; do
@@ -412,10 +493,41 @@ scan_simple_command() {
       done
       ;;
     cp|mv|install|rsync|ln)
-      # Destination is the last non-flag operand.
+      # Destination is the last non-flag operand — UNLESS an option supplied it.
+      # `cp -t DIR file`, `install -m 644 -t DIR file` and the glued/long forms
+      # put the destination IN THE OPTION, where a last-operand rule never looks:
+      # measured, `cp -t src/rust dev/plans/x.md` was allowed (arm 64). Handled
+      # for cp/mv/install/ln only: rsync's `-t` means "preserve times" and has no
+      # operand, so reading its neighbour as a target would be a false positive.
+      local want_target=0 has_t=0
+      case "$verb" in cp|mv|install|ln) has_t=1 ;; esac
+      ENDOPTS=0
       for ((k = j + 1; k < count; k++)); do
-        case "${toks[k]}" in -*) continue ;; esac
-        last="${toks[k]}"
+        tok="${toks[k]}"
+        if [ "$want_target" -eq 1 ]; then
+          want_target=0
+          consider "$tok"
+          continue
+        fi
+        if skip_as_flag "$tok"; then
+          [ "$has_t" -eq 1 ] || continue
+          case "$tok" in
+            --target-directory=*) consider "${tok#--target-directory=}"; continue ;;
+            --target-directory)   want_target=1; continue ;;
+            --*)                  continue ;;
+            *)
+              # short cluster: `-t DIR` (t last) or `-tDIR` / `-vtDIR` (glued).
+              flagbody="${tok#-}"
+              before="${flagbody%%t*}"
+              if [ "$before" != "$flagbody" ]; then
+                after="${flagbody#"$before"?}"
+                if [ -n "$after" ]; then consider "$after"; else want_target=1; fi
+              fi
+              continue
+              ;;
+          esac
+        fi
+        last="$tok"
       done
       consider "$last"
       ;;
@@ -425,30 +537,44 @@ scan_simple_command() {
       done
       ;;
     rm|shred|unlink|touch|truncate|mkfifo)
+      ENDOPTS=0
       for ((k = j + 1; k < count; k++)); do
-        case "${toks[k]}" in
-          -*) continue ;;
-          [0-9]*) continue ;;
-        esac
+        skip_as_flag "${toks[k]}" && continue
+        case "${toks[k]}" in [0-9]*) continue ;; esac
         consider "${toks[k]}"
       done
       ;;
     git)
+      # git's GLOBAL options take their value in the NEXT TOKEN, and the old
+      # "skip anything starting with -, the next bare word is the subcommand"
+      # scan therefore read `-C`'s VALUE as the subcommand: `git -C "$WT"
+      # checkout -- src/rust/lib.rs` resolved sub="$WT", matched none of the
+      # write verbs, and allowed the rewrite. That is the coordinating seats'
+      # own idiom, so it was the most reachable false negative in the file
+      # (arm 63). The value-taking globals are enumerated; the `--opt=value`
+      # spellings need no entry because the value travels inside the token.
       sub=""
+      local -a gitargs=()
+      local skipnext=0
+      ENDOPTS=0
       for ((k = j + 1; k < count; k++)); do
-        case "${toks[k]}" in -*) continue ;; esac
-        sub="${toks[k]}"
-        break
+        if [ "$skipnext" -eq 1 ]; then skipnext=0; continue; fi
+        if [ "$ENDOPTS" -eq 0 ]; then
+          case "${toks[k]}" in
+            -C|-c|--git-dir|--work-tree|--namespace|--exec-path|--super-prefix|--config-env)
+              skipnext=1; continue ;;
+          esac
+        fi
+        skip_as_flag "${toks[k]}" && continue
+        if [ -z "$sub" ]; then sub="${toks[k]}"; continue; fi
+        gitargs+=("${toks[k]}")
       done
       case "$sub" in
         checkout|restore|apply|mv|rm|stash|clean) ;;
         *) return 0 ;;
       esac
-      for ((k = j + 1; k < count; k++)); do
-        case "${toks[k]}" in
-          -*|"$sub") continue ;;
-        esac
-        consider "${toks[k]}"
+      for arg in ${gitargs[@]+"${gitargs[@]}"}; do
+        consider "$arg"
       done
       ;;
   esac
