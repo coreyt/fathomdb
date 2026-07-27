@@ -484,6 +484,37 @@ jobs:
       - name: Governed-surface pin vs the AC-079 pre-sign (DOC-HYGIENE-2 T1e)
         run: bash scripts/check-governed-surface-pin.sh
 
+  # R-20-H7 — the always-on RUBRIC-H7 `can-i-deploy` contract-conformance
+  # backstop. `preflight.sh --landing` is the PREVENT gate at land time; this job
+  # is the DETECT gate for whatever slips it. Reuses
+  # scripts/check-c1-conformance.sh — the SAME script preflight calls — so the
+  # two homes cannot diverge (see that script's header for the predicate, for the
+  # five TC-37 evaporation paths, and for the explicit statement of what this
+  # STATIC STRUCTURAL check does NOT prove).
+  #
+  # Deliberately carries NO `if:` condition and NO `needs:`, and is NOT on the
+  # docs_only fast path. That combination is the whole point of the job. The
+  # subject here straddles both fast paths: the ratified C-1 contract is a DESIGN
+  # DOC (so a code-only push would skip a docs_only-gated job) while the code it
+  # governs is SOURCE (so a docs-only push takes the fast path that skips the
+  # heavy verify job). Either gate would make this job absent on exactly the
+  # pushes that matter — a rename in src/ that breaks a contract obligation, or
+  # an edit to the contract that moves it out from under its clause registry.
+  #
+  # An absent-or-failing gate HOLDS the 0.8.20 ↔ Memex breaking pair
+  # (plan-0.8.20.md §3), so this job is a publish precondition, not decoration.
+  # Default (depth-1) checkout is sufficient: the predicate reads working-tree
+  # files only and walks no history.
+  c1-contract-conformance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: As-built code still satisfies the ratified OPP-12 C-1 contract (R-20-H7)
+        run: bash scripts/check-c1-conformance.sh
+      - name: Recurrence guard for the gate itself (fixture arms)
+        run: bash scripts/tests/test_check_c1_conformance.sh
+
   # DOC-HYGIENE-2 T2a — the always-on single-writer release-state backstop.
   #
   # Deliberately carries NO `if:` and NO `needs:`, for the same reason as
