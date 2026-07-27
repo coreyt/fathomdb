@@ -65,6 +65,29 @@
       "merge_subject": "merge(0.8.20): Slice 20c — R-20-DR flush-to-readiness barrier via the shipped `drain` (C4)"
     },
     {
+      "slice": 21,
+      "short": "R-20-CR",
+      "title": "concurrency + test-oracle repair — TC-57 characterize-then-fix, ac_002 oracle replacement, TC-71 vector-predicate fix",
+      "depends_on": [
+        20
+      ],
+      "status": "NOT_STARTED",
+      "sha": null,
+      "reserved_gap": true
+    },
+    {
+      "slice": 22,
+      "short": "R-20-VC",
+      "title": "vector-arm consumer contract — TC-67 (c) typed report, TC-68 fingerprint-cache, Slice-15b decision #18 error-variant, sqlite-vec #99 vec0 DELETE probe",
+      "depends_on": [
+        15,
+        20
+      ],
+      "status": "NOT_STARTED",
+      "sha": null,
+      "reserved_gap": true
+    },
+    {
       "slice": 25,
       "short": "R-20-SUR",
       "title": "surrogate minting — governed entities ONLY",
@@ -90,6 +113,18 @@
       "publish_precondition": true
     },
     {
+      "slice": 31,
+      "short": "LIB",
+      "title": "Library Sweep #3 — dependency hygiene; carries NO R-20-xx requirement id (TC-76), a deliberate departure from the F-12 pico precedent",
+      "depends_on": [],
+      "status": "NOT_STARTED",
+      "sha": null,
+      "reserved_gap": true,
+      "no_requirement_id": true,
+      "sequenced_after": 30,
+      "sequencing_note": "no technical dependency on 30; placed after it by HITL ruling 2026-07-27 so the publish precondition stays first on the critical path"
+    },
+    {
       "slice": 40,
       "short": "R-20-PUB",
       "title": "verification + release readiness (publish-or-hold)",
@@ -112,13 +147,20 @@
   "next_slice": 30,
   "remaining_ladder": [
     30,
+    21,
+    22,
+    31,
     40
   ],
-  "ladder_order": "SEQUENTIAL — parallel 20 || 25 was declined (master F-34)",
-  "unblocked": [],
+  "ladder_order": "SEQUENTIAL — HITL-approved 2026-07-27 (steward seq-119). Execution order: 30 (publish precondition, first on the critical path) → 21 → 22 → 31 (Library Sweep #3) → DOC-HYGIENE-3 (cross-cutting, NOT a ladder slice and carries no pico label, per seq-106) → the batched governed-surface decision (HITL) → 40. Parallel 20 || 25 was declined earlier (master F-34).",
+  "unblocked": [
+    21,
+    22,
+    30
+  ],
   "unblocked_by": {
-    "requirement": "R-20-PR",
-    "gloss": "the projection registry"
+    "requirement": "the Slice 20 + Slice 25 landing pair",
+    "gloss": "R-20-DR and R-20-SUR, the last dependency any of the three was waiting on"
   },
   "publish_precondition_slice": 30,
   "acceptance": {

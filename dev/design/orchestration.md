@@ -370,12 +370,31 @@ for SendMessage.
 After fix-N: cherry-pick the new commit(s), re-spawn the reviewer for
 re-verdict. Iterate until PASS or orchestrator override.
 
-**Round cap — the circuit-breaker (STANDING RULE, HITL 2026-07-25).**
+**Round cap — the circuit-breaker (STANDING RULE, HITL 2026-07-25;
+engine amendment HITL 2026-07-27).**
 The fix-N loop is bounded. An orchestrator **escalates after 3 fix-N
 rounds on the SAME finding, or 6 rounds total on a slice** — whichever
 comes first — rather than iterating indefinitely. This replaces the
 former unquantified "small bound" (§ 1.5 invariant 3), which left the
 bound to the orchestrator's judgement and therefore did not bind.
+
+**Engine amendment (HITL 2026-07-27, steward ledger seq-119 · todos
+TC-75).** For a slice touching `src/rust/crates/fathomdb-engine/src`,
+the **same-finding bound stays at 3** and the **per-slice total is 10**,
+with a **MANDATORY Steward check-in at 6**: the orchestrator reports
+what each round found, and the Steward rules continue / re-scope /
+escalate. The check-in is not optional and not a notification — rounds
+7-10 require it to have happened.
+
+Why the two bounds move independently: they guard different failures.
+The same-finding bound is the **anti-thrash** rule — three attempts at
+one defect means the *design* is wrong, not the patch — and it still
+stops the loop hard. The total is a **cost** bound. On 0.8.20 Slice 20c
+the same-finding rule never fired: every round found a **new, distinct**
+defect, each RED-first, so the binding constraint was the total and the
+breaker fired on a *productive* loop, leaving TC-71 open. An unbounded
+total was declined — it would remove the runaway backstop that caught
+TC-47 — and the check-in supplies the judgement that option was after.
 
 The escalation target is the **Steward**, not the HITL, whenever a
 Steward holds the loop: the Steward then decides **re-commission /

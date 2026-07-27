@@ -245,13 +245,38 @@ Tracked by **requirement id + TDD test name** (per the locked-`acceptance.md` po
 | R-20-PUB | Coordinated breaking-pair publish; manifests **`0.8.9 → 0.8.20`** | Publish executed exactly per the **separate HITL gate** (F-21). Uses 0.8.18 #11-full machinery (proven, never fired). Pairs with Memex `0.5.x-successor` |
 | R-20-AC | Governed-surface delta signed | **new AC (`AC-079`+ — see the minting-floor warning in §3; NOT AC-077/078, which are reserved)** mirroring AC-074: the Phase-2 + erasure API delta vs the conformance allowlist, **HITL-SIGNED**. `recovery_denylist` **unchanged (stays five)** |
 
+### Reserved-gap requirements (D) — minted 2026-07-27
+
+Added by the HITL scope rulings of 2026-07-27 (steward `seq-117`/`seq-119`). Both ride **reserved gaps in
+the 20 band**, which §5 pre-authorizes; neither changes the mod-5 spine, the release theme, or any I-edge.
+
+| ID | Requirement | Acceptance signal |
+|----|-------------|-------------------|
+| R-20-CR | **Concurrency + test-oracle repair** (Slice 21). Three legs: **TC-57** — the governed-write vs projection-worker race (`EngineError::Storage`, 7 of 8 baseline runs with `logical_id Some`, never with `None`, suspected `SQLITE_BUSY_SNAPSHOT`) is **characterized FIRST, then fixed in-release** (`seq-111`); **ac_002** — replace the PWD/HOME/XDG/TMPDIR substring scan with a **per-test sandbox**, fixing by isolation rather than detection (Part 1, the allowlist inside the DB parent, is hermetic and is KEPT); **TC-71** — `vector_projection_declared` must require the `searchable` role, not `vector_declared` alone. | TC-57 reproduced under a written characterization before any fix is scoped, then GREEN. ac_002 asserts against the sandbox, not the substring. TC-71: a RED test that runs **with a live embedder** (the shipped inertness test passes vacuously without one), re-verified across **all three** paths the predicate gates — forward backfill, drop inverse, late enrolment. |
+| R-20-VC | **Vector-arm consumer contract** (Slice 22). Four legs: **TC-67** — declaring a `searchable→vector` projection over a kind the vector writer cannot commit must **REPORT**, per HITL option (c); the `resolve_source_type` vocabulary is **NOT grown** and the Pack-1 D3 partition-key lock is **not touched**; **TC-68** — cache the 0.8.18 equivalence probe against an **embedder-identity fingerprint** so `Engine::open` cost is constant again, preserving the guarantee rather than weakening it; **decision #18** — settle the `InvalidArgument` vs `WriteValidation` family inconsistency before the surface is signed; **sqlite-vec #99 probe** — exercise `excise_source`/`purge` against a `vec0` row whose `kind` or `attr_*` value exceeds 12 chars and record whether 0.1.7 reports a spurious `DELETE` error. | TC-67: a typed report, not silence; readiness semantics unchanged. TC-68: open cost independent of enrolled-kind count, with the probe still running on an identity change. #18: one family, tests updated. #99: a written finding either way — it informs whether `sqlite-vec` should move out of the 0.8.22 placement (**TC-76** re-open trigger). |
+
+> **Slice 31 (Library Sweep #3) deliberately carries NO requirement id** — **TC-76**, HITL-ruled
+> 2026-07-27. It is **dependency hygiene, not a release requirement**, and master **F-12** treats a Library
+> Sweep as a **pico** (label-only, never published). Placing this one **in-ladder before publish** is a
+> **deliberate departure** from that precedent, recorded here so a later Steward does not silently
+> overwrite F-12 by following this instance. Minting `R-20-LIB` was declined: it would convert a recurring
+> hygiene programme into a one-off requirement of 0.8.20, the category error F-12 exists to fix.
+
 ---
 
 ## 4. Slice ladder (mod-5)
 
 ```text
-0 → 5 → 10 → 15 → 20 → 25 → 30 → 40
+0 → 5 → 10 → 15 → 20 → 25 → [30] → 21 → 22 → 31 → DOC-HYGIENE-3 → ⟨batched surface decision⟩ → 40
+                              ↑ publish precondition, first on the critical path
 ```
+
+**Execution order ≠ numeric order, and that is deliberate** (HITL-approved 2026-07-27, steward `seq-119`).
+**Slice 30 runs FIRST** of the remainder: it is the publish precondition, it is fully specified, and it is
+the slice most likely to surface a contract-conformance failure that would reshape everything downstream —
+so it is worth discovering before three slices of hygiene, not after. 21 and 22 are **reserved-gap** slices
+in the 20 band (§5) and gate nothing. **DOC-HYGIENE-3 is not a ladder slice** — it is cross-cutting and
+carries **no pico label** (`seq-106`; DOC-HYGIENE-1 precedent, F-33). Execution is **SEQUENTIAL**.
 
 | Slice | Title | Work-type | Depends-on |
 |------:|-------|-----------|-----------|
@@ -261,8 +286,11 @@ Tracked by **requirement id + TDD test name** (per the locked-`acceptance.md` po
 | **15** | **Projection registry (C-1 co-land) + EAV/property-FTS** (R-20-PR, R-20-EAV) **+ TC-34 node-validity write-side authoring verb + TC-33 temporal-representation harmonisation** *(both folded in by HITL 2026-07-20)* | implementation | 0, 10 |
 | **20** | **`dense_readiness` + `flush_embeddings()`** (R-20-DR) | implementation | 15 |
 | **25** | **Surrogate minting — registry-admitted governed entities ONLY** (R-20-SUR) — ✅ **LANDED `83b1c818`** | implementation | 15 |
-| **30** | **RUBRIC-H7 `can-i-deploy` contract-conformance gate** (R-20-H7) | implementation | 10,15,20,25 |
-| **40** | **Verification + release readiness** — full DoD, X1, **AC-079 sign-off** (R-20-EU7 is **CLOSED — run NO eu7**, see §3), **publish-or-hold per the HITL gate** | verification | 5,30 |
+| **30** | **RUBRIC-H7 `can-i-deploy` contract-conformance gate** (R-20-H7) — ⚑ **RUNS FIRST of the remainder** | implementation | 10,15,20,25 |
+| **21** | **Concurrency + test-oracle repair** (R-20-CR) — TC-57 characterize→fix · ac_002 oracle replacement · TC-71 | implementation | 20 |
+| **22** | **Vector-arm consumer contract** (R-20-VC) — TC-67 (c) · TC-68 fingerprint-cache · decision #18 · sqlite-vec #99 probe | implementation | 15, 20 |
+| **31** | **Library Sweep #3** — dependency hygiene; **NO requirement id** (TC-76), a deliberate F-12 departure | dependency hygiene | — (sequenced after 30 by ruling, no technical dep) |
+| **40** | **Verification + release readiness** — full DoD, X1, **AC-079 sign-off** (R-20-EU7 is **CLOSED — run NO eu7**, see §3), **TC-16 determination FIRST** (`seq-118`), **publish-or-hold per the HITL gate** | verification | 5,30 |
 
 **Keystones / hard gates.**
 
@@ -286,6 +314,16 @@ time). **One `maturin develop` at a time** (shared `.venv` mutex).
 
 Gaps `1–4, 6–9, 11–14, 16–19, 21–24, 26–29, 31–39` absorb unplanned follow-on. Fully orchestrated, not ad-hoc.
 **HALT to HITL on band overflow** — never spill into the next mod-5.
+
+**Band occupancy (2026-07-27).** The **20 band** now holds **21** (R-20-CR) and **22** (R-20-VC) — **two of
+four slots used, two remaining**. The **30 band** holds **31** (Library Sweep #3).
+
+**The tripwire stays at band overflow — TC-77, HITL-ruled 2026-07-27, and it is CONDITIONAL.** Tightening
+it to halt on the *next* new slice was declined: the band was sized as slack deliberately, and halting
+earlier spends HITL attention on exactly what this section exists to handle without them. The growth so far
+came from HITL rulings, not from drift. **RE-OPEN TRIGGER — the Steward raises this unprompted:** if Slice
+21 or Slice 22 spawns **two or more further slices**, the tighter tripwire becomes correct and this returns
+to the HITL.
 
 ---
 
@@ -394,10 +432,22 @@ loss** — the write is accepted, stays lexically searchable, and is embedded on
 Documented in `dev/interfaces/{rust,python,typescript}.md` + `CHANGELOG.md`.
 
 **➡ IMMEDIATE NEXT: Slice 30** (R-20-H7 `can-i-deploy` contract-conformance gate — a **publish precondition**).
-**Slice 21** (TC-57 characterize→fix) remains available as a reserved gap in the 20 band (plan §5
-pre-authorizes the gaps; only overflow halts). Commission either as an **orchestrator** — **NOT** `/goal`
-(standing ruling `927ffb35`). Remaining ladder: **30 → 40**, sequentially. Board of record:
-`runs/STATUS-0.8.20.md`; open HITL decisions: §11.
+
+**Remaining ladder, HITL-approved 2026-07-27 (steward `seq-119`), SEQUENTIAL:**
+**30 → 21 → 22 → 31 → DOC-HYGIENE-3 → ⟨batched governed-surface decision⟩ → 40.**
+Slice 30 runs first of the remainder by ruling — see §4. **21** (R-20-CR) and **22** (R-20-VC) are
+reserved-gap slices in the 20 band; **31** is Library Sweep #3 and carries no requirement id (TC-76);
+**DOC-HYGIENE-3** is cross-cutting and is not a ladder slice. Commission each as an **orchestrator** —
+**NOT** `/goal` (standing ruling `927ffb35` · steward `seq-104`). Board of record:
+`runs/STATUS-0.8.20.md`; open HITL decisions: §11 — the **live** open set is **two**
+(batched governed-surface decision, publish), per `release-state-0.8.20.json` `decisions.unruled`.
+
+> **Fix-round cap for these slices (TC-75, HITL-ruled 2026-07-27 — `seq-119`).** 21 and 22 both touch
+> `fathomdb-engine/src`, so the **engine** bound applies: **3 rounds on the same finding** (unchanged — the
+> anti-thrash rule), **10 rounds total** (was 6), with a **mandatory Steward check-in at 6** where the
+> orchestrator reports what each round found and the Steward rules continue / re-scope / escalate. Basis:
+> in Slice 20c the same-finding rule never fired — every round found a **new, distinct** defect — so the
+> binding constraint was the total, and the breaker fired on a *productive* loop.
 
 *(Everything below in §9 is retained as landed history — the Slice-15 ratified decisions and the pre-keystone
 "Slice 15 is OPEN" close notes describe the state before the keystone merged. Do not act on the "OPEN / BLOCKED"
