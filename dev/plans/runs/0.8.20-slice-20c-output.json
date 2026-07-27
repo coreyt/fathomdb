@@ -1,0 +1,1843 @@
+{
+  "phase": "0.8.20-s20c",
+  "baseline_sha": "2afd168c",
+  "branch": "orch-0.8.20-s20c",
+  "head_sha": "30ab62df (my last commit). The BRANCH has since advanced past me — see `branch_state_at_closure`.",
+  "round": "fix-5 (codex §9 round 4, [P1] + [P2]) — COMPLETE and GREEN. Round 5 of a hard maximum of 6, and the LAST round the mandate authorises. See `fix_5`.",
+  "commits": [
+    "ddaf732066fdc9404e64b0e246debae8f8168156: test(0.8.20-s20c): RED — the false-ready flush barrier (R-20-DR remainder, C4)",
+    "da7c5b76e6a5ca452c00d4ac3bf1c2f212880b7a: fix(0.8.20-s20c): GREEN — enqueue the deferred embed work on the runtime drain waits on (C4 rider)",
+    "e7a4676a93af40a0772559890be3768c6384de91: docs+test(0.8.20-s20c): Leg B — pin `drain()` Ok ⇒ readiness ready in Py + TS, and document the C4 barrier",
+    "7de05aae81311a6f5ab1f44127e753c552479740: docs(0.8.20-s20c): CHANGELOG — `drain` is the flush-to-readiness barrier",
+    "77bca9d4e64f7163ea0bb98622ba758a9a5fc95a: [fix-1] test(0.8.20-s20c): RED fix-1 — enrolment has no inverse; a dropped vector projection keeps embedding",
+    "c7c0f5279f9ffdf162f2cffe4d7cfdab3b0110c1: [fix-1] fix(0.8.20-s20c): GREEN fix-1 — the symmetric inverse; a dropped vector projection un-enrols its node kinds",
+    "0759715aef182fcb117a03d09c3239fc3d639007: [fix-1] docs+test(0.8.20-s20c): fix-1 X1 parity — pin the drop inverse in Py + TS, and document it",
+    "63554cee690f44462257eed60dfc168fb301918d: [fix-2] test(0.8.20-s20c): RED fix-2 — enrolment covers kinds the vector writer cannot commit, and late enrolment strands rows",
+    "0efcf9cdb508ba8c3bae4ae2ccc0d35d6b2ecdc7: [fix-2] fix(0.8.20-s20c): GREEN fix-2 — enrol only commit-able kinds, and un-strand on late enrolment too",
+    "1b0cf514c933762ac04bba5dfba4469c24613614: [fix-2] docs+test(0.8.20-s20c): fix-2 X1 parity — pin both fix-2 behaviours in Py + TS, and document the kind limitation",
+    "7dabc7cf86447fbde3a705015cdd92e4b32d41f5: [fix-3] test(0.8.20-s20c): RED fix-3 — a no-embedder session still enqueues vector work for an already-enrolled kind",
+    "1f7b2937e9b5015dbd98154d575a8f844333aaad: [fix-3] fix(0.8.20-s20c): GREEN fix-3 — gate the ENQUEUE on a live embedder, and graft the stranded rows at open",
+    "2b16228758442d5243c10b49116729e32aba76a2: [fix-3] test(0.8.20-s20c): fix-3 X1 parity — mirror the no-embedder enqueue gate in Py + TS (BLOCKED: see below)",
+    "87ac6491: [fix-4] revert(0.8.20-s20c): back out fix-3 entirely — R1 REJECTED, R2 is the ruling",
+    "3ebfb373: [fix-4] test(0.8.20-s20c): RED fix-4 — a no-embedder session PERMANENTLY loses a write over an already-enrolled kind",
+    "35de816c: [fix-4] fix(0.8.20-s20c): GREEN fix-4 (R2) — an absent embedder records NO terminal, so the write stays recoverable",
+    "1f46438b: [fix-4] docs+test(0.8.20-s20c): fix-4 X1 parity — pin the recoverability property in Py + TS, and document the enrolment boundary",
+    "d5cc51e0: [fix-5] test(0.8.20-s20c): RED fix-5 — the scan window starves a pending edge, and a late enrolment tears",
+    "e2df8646: [fix-5] fix(0.8.20-s20c): GREEN fix-5 — filter inside the scan, and enrol atomically",
+    "30ab62df: [fix-5] test(0.8.20-s20c): fix-5 X1 parity — mirror both findings in Py + TS"
+  ],
+  "fix_5": {
+    "status": "COMPLETE and GREEN. Both codex §9 round 4 findings are CLOSED, by the approach the mandate specified, with no new mechanism invented. Every gate is at its real exit code below; the only non-zero is the pre-existing 7-error pyright baseline. NO new defect was found in this subsystem. READY FOR RE-REVIEW and cherry-pick.",
+    "round": "fix-5 (codex §9 round 4) — round 5 of a hard maximum of 6, and the LAST round the mandate authorises",
+    "findings_addressed": "codex §9 round 4 [P1] 'Don't filter no-embedder jobs after the limited scan' (src/rust/crates/fathomdb-engine/src/lib.rs:12412 at the fix-4 tree) and [P2] 'Make late enrolment atomic with un-stranding' (:4902). Transcript: /home/coreyt/projects/fathomdb/dev/plans/runs/codex/0.8.20/slice-20c-fix-4-rereview-20260726T214229Z.log",
+    "commits": [
+      "d5cc51e0: test(0.8.20-s20c): RED fix-5 — the scan window starves a pending edge, and a late enrolment tears",
+      "e2df8646: fix(0.8.20-s20c): GREEN fix-5 — filter inside the scan, and enrol atomically",
+      "30ab62df: test(0.8.20-s20c): fix-5 X1 parity — mirror both findings in Py + TS"
+    ],
+    "p1_what_changed": {
+      "one_line": "`next_pending_projection_jobs` takes `dense_arm_live` and OMITS the node arm of its UNION when there is no live embedder, so the `ORDER BY write_cursor LIMIT` applies to the ALREADY-FILTERED set.",
+      "detail": "The node arm is omitted OUTRIGHT (an empty SQL fragment) rather than predicated false, so the planner never walks it. The edge arm keeps both binds — `?1` the projection cursor, `?2` the `:now` seam `edge_validity_sql` consumes — so the bound parameter set is identical either way, and `prepare_cached` simply caches two statement texts instead of one. The three UNION columns are explicitly aliased (`write_cursor`, `kind`, `body`) so the outer `SELECT` resolves in the edge-only shape too.",
+      "post_fetch_filter_removed": "YES. fix-4's `.map(|jobs| … filter …)` in `projection_dispatcher_loop` is GONE. What replaces it is a `debug_assert!` that can only OBSERVE — `dense_arm_live || jobs.iter().all(|job| job.kind == EDGE_FACT_KIND)` — i.e. exactly the mandate's 'cheap assertion that can never drop a job'.",
+      "edges_untouched": "No deferral was added for edges. `'edge_fact'` is auto-registered by the edge write itself, un-gated on the embedder (`project_canonical_edge_row`, G11 — OOS-13), and fix-4 measured that deferring edges turns four unrelated shipped suites red. The edge arm of the scan is byte-for-byte as shipped and an edge body still exhausts the retry ladder into a `'failed'` terminal on an absent embedder.",
+      "not_touched": "`drain` is untouched (C4 passivity intact) and `connection_has_pending_projection_work` is NOT restructured (TC-56 blast radius stays closed). `pending_edge_projection_from_where` — the fragment both share — is unchanged, so the scheduler and the probe still cannot drift."
+    },
+    "p1_cpu_re_measured": {
+      "how": "`cargo test --no-run`, then `/usr/bin/time -v <binary> --exact a_no_embedder_session_leaves_an_enrolled_kinds_write_recoverable` — the SAME Leg F fixture fix-4 measured (one pending row, a 3 s `drain`), same assertions, all three arms passing. Same machine, same session.",
+      "no_filter_at_all": "6.37 s user CPU at 231 % of one core (fix-4 recorded 6.47 s at 222 % — reproduced). Measured by temporarily passing `dense_arm_live = true` into the scan, i.e. the pre-fix-4 behaviour, then reverting.",
+      "fix_4_post_fetch_filter": "0.08 s user CPU at 4 % (fix-4 recorded 0.15 s at 5 %). Measured by `git stash`ing the fix-5 lib.rs so the tree held the RED commit's fix-4 engine, then restoring.",
+      "fix_5_in_scan_sql": "0.10 s user CPU at 4 %.",
+      "verdict": "fix-4's CPU win is PRESERVED — 0.10 s vs 0.08 s is noise against the 6.37 s spin. SQL-side filtering alone is sufficient and NO additional guard is needed: with the node arm absent from the scan, a node job is never dispatched, so no worker completion ever re-arms `pending_scan`, so the dispatcher blocks on its cvar instead of re-fetching. The spin is unreachable by construction rather than suppressed after the fact."
+    },
+    "p2_what_changed": {
+      "one_line": "The late-enrolment registry INSERT(s) and `reenqueue_stranded_vector_rows` now commit inside ONE `BEGIN IMMEDIATE`…`COMMIT`.",
+      "shape_followed": "The precedent already in the tree, as the mandate directed: `rederive_projections_on_boot` (and `reproject_search_index_after_tokenizer_upgrade`) run their work and their marker in one `BEGIN IMMEDIATE` with a ROLLBACK arm. No new marker table, no new recovery path, no new open-time door.",
+      "structure": "`enrol_batch_vector_kinds` splits into a READ-ONLY pre-pass and a WRITE half. `vector_kind_needs_enrolment` is the old `enrol_vector_kind_if_declared` minus its INSERT — the identical four predicates (`index_targets_for_row_kind`, `kind_is_vector_committable`, `kind_is_vector_indexed`, `vector_projection_declared`), so fix-1's and fix-2's guarantees are preserved verbatim. `enrol_and_unstrand` is the write half and is the ONLY place `register_vector_kind` is now called from the write path, so a kind can no longer be registered by a caller that does not also owe the repair.",
+      "no_new_write_lock_in_the_common_case": "The pre-pass writes nothing and returns early when it finds nothing to enrol, which is every batch over an already-enrolled kind and every batch in a workspace with no vector declaration. Those pay exactly the probes they paid before and take no `BEGIN IMMEDIATE`.",
+      "stale_pre_pass_is_safe": "`register_vector_kind` is `INSERT OR IGNORE` and `reenqueue_stranded_vector_rows` is idempotent (it `MIN`-probes first and returns `false` when nothing is stranded), so the read-only decision is not re-validated under the write lock; the worst a stale decision costs is one no-op indexed probe. Stated in the doc comment.",
+      "second_door_shares_it": "`write_canonical_row_with_kind_for_test` (the `#[doc(hidden)]` coverage/graph writer) calls the SAME two halves, so the two write-path doors still cannot diverge — that was fix-2's property and it is kept.",
+      "doc_comment_corrected": "fix-2's doc comment already CLAIMED 'Both statements run in ONE transaction'. It was wrong about the code it sat on. It now describes what the code does, plus why the window is not benign."
+    },
+    "p2_how_the_crash_window_was_pinned": {
+      "verdict": "EXECUTED, not argued structurally.",
+      "method": "The repair is made to genuinely FAIL, at exactly the point a crash would truncate it, by a real SQLite `BEFORE DELETE` trigger on `_fathomdb_projection_terminal` that `RAISE(ABORT)`s. The trigger is installed and dropped from a raw READ-WRITE connection while NO engine holds the file. A real engine, a real database on disk, real SQL — nothing is mocked and no new crash-injection machinery was added to the engine.",
+      "what_is_and_is_not_reproduced": "What is reproduced is the resulting STATE (registry committed, repair not applied) and then its DURABLE CONSEQUENCE. What is NOT reproduced is a literal process kill: no signal is sent and no power-loss is simulated. The mandate allowed a structural argument if pinning it needed new machinery; it did not, so the stronger form was used. Called out here so a reviewer is not misled into thinking a process was killed.",
+      "why_the_second_half_is_the_real_pin": "The registry-row assertion alone would only show the two statements are atomic. The test then DROPS the trigger and makes ONE ordinary healing write with no re-apply and no operator `rebuild`, and requires the stranded rows to be embedded. At the pre-fix engine that write is a no-op for the repair — the kind is already registered, so `kind_is_vector_indexed` short-circuits the enrolment path — which is precisely codex's 'readiness can report ready for those stranded rows until the user manually re-applies the projection'. MEASURED at the pre-fix engine: readiness `ready`, `leaf_rows_without_vectors` = 2.",
+      "why_a_TRIGGER_is_not_DB_mocking": "It is storage-level FAULT INJECTION on the real database, in the same family as the tree's existing `force_next_commit_failure` seam. Every read and write in the test still goes through the real engine against a real SQLite file."
+    },
+    "red_first_evidence": {
+      "red_commit": "d5cc51e0",
+      "green_commit": "e2df8646",
+      "test_text_identical_between_red_and_green": true,
+      "command": "cargo test -p fathomdb-engine --test slice20c_flush_barrier",
+      "baseline_exit_code": 101,
+      "baseline_result": "10 passed; 2 failed",
+      "post_fix_exit_code": 0,
+      "post_fix_result": "12 passed; 0 failed (was 10)",
+      "p1": {
+        "test": "a_pending_edge_body_survives_a_full_scan_window_of_no_embedder_node_rows (Leg G)",
+        "fixture": "session 0 creates the DB with no embedder (pinning `default_embedder_identity()` so the reopens cannot fail closed on `EmbedderIdentityMismatch`); session 1 WITH an embedder durably enrols `doc`; session 2 reopens with NO embedder and writes PROJECTION_SCAN_FETCH + 8 = 40 `doc` rows in one batch, then one body-carrying edge in a second batch, so the edge's `write_cursor` is strictly above all 40.",
+        "fixture_preconditions_asserted_not_assumed": [
+          "`edge_fact` IS registered in `_fathomdb_vector_kinds` (the edge write auto-registers it, G11), so the edge genuinely IS schedulable work",
+          "pending node rows below the edge cursor = 40 > PROJECTION_SCAN_FETCH (32) — the scan window is genuinely over-subscribed"
+        ],
+        "oracle": "`drain` cannot be the oracle here: the 40 node rows are pending FOREVER in a no-embedder session (that is fix-4), so `drain` can only ever time out. The oracle is therefore the edge body reaching a TERMINAL at all, polled for 20 s with the retry ladder collapsed via `set_projection_retry_delays_for_test(&[])`.",
+        "captured_failure": "SCAN-WINDOW STARVATION: with more than PROJECTION_SCAN_FETCH (32) pending node rows ordered before it, the pending edge body at cursor 42 was NEVER scheduled.",
+        "downstream_non_vacuity": {
+          "why": "The test fails on the `scheduled` assertion, so the two later oracles had to be proven falsifying too. They were temporarily softened to `eprintln!` and the test re-run at the RED commit; probes then reverted (0 occurrences of TEMP-PROBE in the committed file) and RED re-confirmed at 10 passed / 2 failed, exit 101.",
+          "measured": [
+            "TEMP-PROBE legG scheduled                = false",
+            "TEMP-PROBE legG edge terminal_state      = None      — the edge NEVER reached the worker",
+            "TEMP-PROBE legG projection_failure_rows  = 0         — nothing was even attempted",
+            "TEMP-PROBE legG pending_before           = 40",
+            "TEMP-PROBE legG pending_now              = 40        — the window never widens; the starvation is PERMANENT, not a delay"
+          ],
+          "temp_probes_reverted": true
+        }
+      },
+      "p2": {
+        "test": "a_late_enrolment_whose_repair_fails_registers_nothing (Leg H)",
+        "fixture": "session A (no embedder) declares `searchable→vector` and writes N1/N2, which take permanent `'up_to_date'` terminals with no vector (fix-2: a no-embedder session enrols nothing) — the strandable set. A `BEFORE DELETE` trigger is then installed while no engine holds the file. Session B (WITH an embedder) writes N3, which triggers the late enrolment; the repair aborts and the write surfaces `Storage`. The trigger is dropped, and session C makes ONE ordinary write.",
+        "captured_failure": "TORN LATE ENROLMENT: the registry INSERT committed while the un-stranding it owes did not … the registry insert and the terminal/cursor repair must commit as ONE transaction",
+        "downstream_non_vacuity": {
+          "why": "Same treatment: the first assertion was softened and the test re-run at the RED commit to prove the SECOND half — the durable, self-sealing consequence — also falsifies. Probes reverted; RED re-confirmed.",
+          "measured": [
+            "TEMP-PROBE legH doc registered after torn enrolment = true   — the TORN state itself",
+            "TEMP-PROBE legH session C readiness                 = Some(Ready)   — the FALSE READY, reached after an ordinary healing write",
+            "TEMP-PROBE legH doc registered in C                 = true",
+            "and the deep at-rest oracle then fails: `leaf_rows_without_vectors` left: 2, right: 0  ← THE [P2]"
+          ],
+          "temp_probes_reverted": true
+        }
+      }
+    },
+    "gates_re_run": [
+      {
+        "gate": "cargo clippy --workspace --all-targets",
+        "exit_code": 0,
+        "detail": "ZERO warnings and ZERO errors, on a FORCED rebuild (`touch lib.rs`) at HEAD so it is not a cached pass"
+      },
+      {
+        "gate": "cargo check --workspace --all-targets",
+        "exit_code": 0,
+        "detail": "also on the forced rebuild at HEAD"
+      },
+      {
+        "gate": "cargo test --workspace --no-fail-fast",
+        "exit_code": 0,
+        "detail": "170 suites, every one `test result: ok`, 0 FAILED — same suite count as fix-4"
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test slice20c_flush_barrier",
+        "exit_code": 0,
+        "detail": "12 passed (4 -> 6 -> 9 -> 10 -> 12)"
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test slice20_dense_readiness",
+        "exit_code": 0,
+        "detail": "8 passed"
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test slice15d_projection_registry",
+        "exit_code": 0,
+        "detail": "24 passed"
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test slice15e_prekn_filterable",
+        "exit_code": 0,
+        "detail": "11 passed (OOS-12 did not flake this round)"
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test projection_runtime",
+        "exit_code": 0,
+        "detail": "12 passed, 1 ignored"
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --features operator --test rebuild_projections",
+        "exit_code": 0,
+        "detail": "4 passed"
+      },
+      {
+        "gate": "Python (wheel in throwaway venv) — slice20c suite",
+        "exit_code": 0,
+        "detail": "10 passed (4 -> 5 -> 7 -> 8 -> 10)"
+      },
+      {
+        "gate": "Python (wheel in throwaway venv) — full tests/ tree",
+        "exit_code": 0,
+        "detail": "859 collected = fix-4's 857 + the 2 new fix-5 tests; 850 passed, 9 skipped, 0 failed"
+      },
+      {
+        "gate": "Python (wheel in throwaway venv) — test_slice20_dense_readiness.py",
+        "exit_code": 0,
+        "detail": "10 passed — the shipped Slice-20 pin, UNMODIFIED"
+      },
+      {
+        "gate": "TypeScript — npm test (full tree)",
+        "exit_code": 0,
+        "detail": "241 tests, 241 pass, 0 fail (fix-4's 239 + the 2 new)"
+      },
+      {
+        "gate": "TypeScript — slice20c-flush-barrier.test.ts alone",
+        "exit_code": 0,
+        "detail": "10 pass; run 7 separate times at HEAD, all 10/10 exit 0 (one earlier run on this build died mid-file — see OOS-19, which reproduces at the PRE-fix-5 engine too)"
+      },
+      {
+        "gate": "TypeScript — slice20-dense-readiness.test.ts alone",
+        "exit_code": 0,
+        "detail": "7 pass — the shipped Slice-20 pin, UNMODIFIED"
+      },
+      {
+        "gate": "scripts/check-governed-surface-pin.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/agent-lint.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/agent-lint-md.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/check-ledgers.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/lint-findings.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/lint-plan-anchors.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/lint-design-status.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/check-release-state-views.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/check-board-currency.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/security/check-removal-changelog.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/agent-typecheck.sh",
+        "exit_code": 1,
+        "detail": "PRE-EXISTING — EXACTLY the 7 baseline pyright errors, enumerated and none in a fix-5 file: engine.py:538/542/546/659/660, graph.py:153, test_vector_equivalence_probe.py:32. fix-5 adds none."
+      },
+      {
+        "gate": "scripts/agent-test.sh",
+        "exit_code": null,
+        "detail": "DELIBERATELY NOT RUN — vacuous aggregate that aborts on the known-red TC-16 actionlint fixture. Suites run individually, per the mandate."
+      }
+    ],
+    "x1_re_run": {
+      "status": "DONE in both bindings, for BOTH findings, WITH non-vacuity measured against the pre-fix-5 engine in each. 1 new test per finding per binding (Python 8 -> 10, TypeScript 8 -> 10).",
+      "sdk_observability": "Both findings are SDK-observable. [P1] needs only a body-carrying edge (`{'edge': {…, 'body': …}}` / `{ edge: { …, body } }`, already a governed write shape) plus the `test-hooks`-gated vector-kind seam, so the whole arm is OFFLINE and network-free. [P2] needs a raw READ-WRITE connection to install the fault injection, which both harnesses can open.",
+      "p1_mirror": "`test_a_pending_edge_body_survives_a_full_scan_window_of_node_rows` / 'a pending edge body survives a full scan window of node rows (offline)'. Enrols `doc` via `_configure_vector_kind_for_test` / `configureVectorKindForTest` (the SAME seam the shipped `test_slice20_dense_readiness` fixtures use), writes 40 `doc` rows then one body-carrying edge with NO embedder, and polls the raw `_fathomdb_projection_terminal` for the edge's cursor. The SDKs expose no equivalent of the Rust `set_projection_retry_delays_for_test`, so it WAITS OUT the shipped 0+1+4+16 s edge ladder (poll budget 40 s). Cost ~21 s per binding under the fix; ~40 s when red.",
+      "p2_mirror": "`test_a_late_enrolment_whose_repair_fails_registers_nothing` / 'a late enrolment whose repair fails registers nothing'. Same `BEFORE DELETE` trigger injection as the Rust arm, installed and dropped from a raw read-write connection while NO engine holds the file — so the live-WAL hazard the TS `count()` helper documents (a third-party read-write `DatabaseSync` against a live WAL DB wedges the projection pipeline) is not in play. The TS read oracles keep `{ readOnly: true }` (OOS-1) unchanged; only the two injection connections are read-write.",
+      "python": {
+        "how": "Wheel built from `src/python` with `maturin build --release --out <SCRATCH>/wheel --features pyo3/extension-module,test-hooks,default-embedder,default-reranker`, then `pip install`ed into a THROWAWAY `python3 -m venv` under the scratch dir (plus the `[test]` extras numpy/scipy/networkx/pyyaml/hypothesis, without which 16 eval-harness modules fail COLLECTION and the tree exits 2 — worth knowing for the next round).",
+        "shared_venv_untouched": true,
+        "maturin_develop_or_pip_install_e_used": false,
+        "pytest_invocation_note": "`src/python/pyproject.toml` sets `pythonpath = ['.']`, which puts the SOURCE `fathomdb/` package ahead of the installed wheel. Run as `python -m pytest -o 'pythonpath=<venv-site-packages> .' …` so the WHEEL's native module wins while `import eval.*` still resolves. No `.so` was copied into the source tree.",
+        "new_suite_result": "10 passed, exit 0",
+        "full_suite_result": "850 passed, 9 skipped, exit 0",
+        "shipped_slice20_suite": "test_slice20_dense_readiness.py — 10 passed, exit 0, file UNMODIFIED",
+        "non_vacuity": "Wheel rebuilt against commit d5cc51e0's `lib.rs` (the RED / fix-4 engine) into a SECOND throwaway venv and re-run: 2 failed / 8 passed, exit 1 — one failure per finding, each on its own primary assertion. Downstream oracles then proven falsifying with TEMP-PROBEs at that same build (see `downstream_non_vacuity_bindings`). `lib.rs` was restored with `git checkout e2df8646 --` and verified byte-identical to a scratch copy afterwards; `git status` clean."
+      },
+      "typescript": {
+        "how": "`npm test` in src/ts (runs `napi build --features test-hooks,default-embedder`, `tsc`, `node --test`).",
+        "full_suite_result": "241 tests, 241 pass, 0 fail, exit 0",
+        "new_suite_alone": "10 pass, 0 fail, exit 0 — re-run 3 times at HEAD",
+        "shipped_slice20_suite": "slice20-dense-readiness.test.ts — 7 pass, exit 0, file UNMODIFIED",
+        "non_vacuity": "napi binding rebuilt against commit d5cc51e0's `lib.rs` and the slice20c file re-run: 10 tests, 8 pass, 2 FAIL, exit 1 — `SCAN-WINDOW STARVATION … edge body at cursor 41 was NEVER scheduled` and `TORN LATE ENROLMENT …`. HEAD restored and rebuilt; 10/10 exit 0."
+      },
+      "downstream_non_vacuity_bindings": {
+        "method": "The assertions AFTER each test's primary one were temporarily softened to `print` and the two tests re-run against the PRE-FIX-5 Python wheel; probes then reverted (0 occurrences of TEMP-PROBE in the committed file) and the pre-fix RED re-confirmed.",
+        "measured": [
+          "TEMP-PROBE legG scheduled                 = False",
+          "TEMP-PROBE legG edge terminal_state       = None",
+          "TEMP-PROBE legG projection_failure_rows   = 0",
+          "TEMP-PROBE legG pending_before / pending_now = 40 / 40",
+          "TEMP-PROBE legH doc registered after torn enrolment = True   — the TORN state",
+          "TEMP-PROBE legH doc registered in C       = True",
+          "TEMP-PROBE legH readiness in C            = ready   — the FALSE READY",
+          "and the deep at-rest oracle then fails: leaf_rows_without_vectors 2 != 0  ← THE [P2]"
+        ],
+        "temp_probes_reverted": true
+      },
+      "harness_boundary_unchanged": "`vector_default` is a vec0 VIRTUAL table; neither stdlib `sqlite3` nor `node:sqlite` can read it. Both bindings assert on `_fathomdb_vector_rows`, `_fathomdb_projection_terminal`, `_fathomdb_vector_kinds`, `canonical_nodes` and `canonical_edges` — all ordinary tables. The at-rest probes still do NOT join `_fathomdb_vector_kinds`."
+    },
+    "governed_surface_re_verified": {
+      "allowlist_byte_identical": true,
+      "allowlist_sha256": "555e6ae7f7d13e537170dbd63eed4a0433a82a0f7bdc03781ec4e0ef7692c02b",
+      "allowlist_sha256_matches_mandate_baseline": true,
+      "allowlist_edited": false,
+      "re_pinned": false,
+      "check_governed_surface_pin_exit": 0,
+      "net_new_governed_commands": 0,
+      "new_sdk_verbs": 0,
+      "new_exported_types": 0,
+      "note": "`next_pending_projection_jobs`, `projection_dispatcher_loop`, `Engine::enrol_batch_vector_kinds`, `Engine::vector_kind_needs_enrolment` and `Engine::enrol_and_unstrand` are ALL private. `vector_kind_needs_enrolment` / `enrol_and_unstrand` are a rename+split of the private `enrol_vector_kind_if_declared` / `unstrand_after_late_enrolment`; nothing crossed the crate boundary either way. `git diff 2afd168c -- src/conformance/governed-surface-allowlist.json` is EMPTY."
+    },
+    "constraints_honoured": {
+      "schema_version": "24 — unchanged (`fathomdb-schema/src/lib.rs:6`); still asserted inside the Rust suite",
+      "migrations_changed": false,
+      "drain_touched": false,
+      "connection_has_pending_projection_work_touched": false,
+      "shipped_slice20_binding_tests_verbatim": "`git diff 2afd168c -- src/python/tests/test_slice20_dense_readiness.py src/ts/tests/slice20-dense-readiness.test.ts` is EMPTY (0 lines), and both pass at HEAD (10 and 7).",
+      "fix_1_fix_2_fix_4_intact": "All 10 pre-existing slice20c Rust tests and all 8 pre-existing tests in each binding suite are GREEN and UNMODIFIED. fix-4's specific property is re-asserted INSIDE the new Leg G (`pending_node_rows_below` is unchanged after the edge is scheduled — an absent embedder still records no NODE terminal).",
+      "oos_11_cvar_cap": "STILL REVERTED, as directed. `wait_for_idle` untouched.",
+      "maturin_develop_or_pip_install_e": "never run; /home/coreyt/projects/fathomdb/.venv was used ONLY as the `maturin` binary source, never as an install target",
+      "no_verify_used": false,
+      "db_mocking": "none — every test drives a real engine against a real SQLite file. The [P2] trigger is storage-level FAULT INJECTION on that real file, not a mock.",
+      "worktree_discipline": "all work inside /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s20c; the primary checkout was never modified; no worktree created/moved/removed",
+      "ledgerwrite_run": false,
+      "status_doc_edited": false,
+      "node_modules_committed": "NO — `git status --porcelain` was checked before every commit and `git show --stat` on all three commits touches only the three intended files (OOS-16's `.gitignore` fix from fix-4 is holding)."
+    },
+    "docs_and_changelog": {
+      "changed": false,
+      "why": "DELIBERATE. Neither finding changes a consumer-visible contract. [P1] is a defect fix-4 introduced WITHIN this unreleased slice — the CHANGELOG bullet fix-4 wrote already states the intended behaviour ('readiness reads `embedding` and `drain` reports its timeout for the rest of that session'); [P1] was that contract failing to hold for an edge workload, and it now holds. [P2] is a crash-window in an internal transaction boundary with no surface at all. Adding prose for either would document machinery, not contract, and the mandate's scope discipline argues against the churn. `dev/interfaces/{rust,python,typescript}.md` and `CHANGELOG.md` are byte-unchanged by fix-5."
+    },
+    "found_out_of_scope": [
+      {
+        "id": "OOS-19",
+        "severity": "low",
+        "title": "PRE-EXISTING: the TypeScript binding harness can hard-crash the node process on the fix-2 late-enrolment arm (the TS twin of OOS-18)",
+        "refs": "src/ts/tests/slice20c-flush-barrier.test.ts 'late enrolment backfills the rows a no-embedder session stranded' (a fix-2 test, untouched by fix-5)",
+        "detail": "Twice this round `node --test dist/tests/slice20c-flush-barrier.test.js` died mid-file: 7 tests reported, 6 pass, 1 file-level 'test failed', exit 1, with the process gone during the SEVENTH test. MEASURED ON BOTH ENGINES — once on the fix-5 build and once on the PRE-fix-5 (d5cc51e0) build, in both cases on the first run after a `napi build`. Rate at HEAD: 1 crash in 8 file-level runs (7 subsequent runs 10/10 exit 0), plus two full `npm test` runs at 241/241 exit 0; at the pre-fix-5 build, 1 crash in 2 runs. The failing test is the SAME fixture OOS-18 names in Python (a third-party connection probing a database the engine is actively writing), so this is very likely the same live-WAL harness hazard in the other binding rather than a new class.",
+        "action": "reported, not fixed — it is a HARNESS hazard, it reproduces at the pre-fix engine, and the durable fix (probe only closed databases) would cost the mid-session oracles the whole suite is built on"
+      }
+    ],
+    "still_out_of_scope_after_fix_5": [
+      "OOS-1, OOS-2 (TC-57 @ Slice 21), OOS-3, OOS-4, OOS-5, OOS-6, OOS-7, OOS-9 — unchanged, still reported-not-fixed.",
+      "OOS-11 — UNCHANGED and deliberately NOT fixed; the cvar-wait cap stays reverted and `wait_for_idle` is untouched.",
+      "OOS-12 (slice15e race flake) — unchanged; 11/11 green in every run this round.",
+      "OOS-13 (body-carrying EDGES have the same no-embedder shape) — STILL OPEN and still load-bearing: it is why fix-5 leaves the edge arm of the scan alone. Leg G's `terminal_state == 'failed'` assertion PINS that shipped edge behaviour so closing OOS-13 later will have to say so.",
+      "OOS-14 — unchanged (node half closed by fix-4, edge half open).",
+      "OOS-15 (90 synchronous embeds inside `Engine::open` on any workspace with an enrolled vector kind) — unchanged; still the dominant cost of the fix-4 TS arm (~102 s).",
+      "OOS-16 (worktree `node_modules` symlink) — FIXED in fix-4; the `.gitignore` guard held all round.",
+      "OOS-17 (projection worker can SQLITE_BUSY_SNAPSHOT a caller's governed write) — unchanged, reported-not-fixed. fix-5 does not shorten any retry ladder, so it is not made reachable.",
+      "OOS-18 — unchanged; OOS-19 is its TypeScript twin, new this round.",
+      "decision D1 (corpus-wide vector-kind enrolment) unchanged.",
+      "eu7: ZERO runs, any backend, any N."
+    ],
+    "new_defects_found_in_this_subsystem": "NONE. The mandate required a STOP-and-hand-back if a new defect surfaced; none did. OOS-19 is a TEST-HARNESS hazard that reproduces at the pre-fix engine, not an engine defect, and it is the twin of an already-reported one.",
+    "agent_verify_result": "pass. Every gate at its real exit code in `fix_5.gates_re_run`. The ONLY non-zero is `agent-typecheck.sh` at exit 1 with EXACTLY the 7 pre-existing pyright errors (enumerated; none in a fix-5 file), plus `agent-test.sh`, deliberately not run per the mandate. `cargo clippy` and `cargo check` --workspace --all-targets both exit 0 on a forced rebuild with ZERO warnings; `cargo test --workspace --no-fail-fast` exits 0 across 170 suites; the FULL Python tree exits 0 (850 passed / 9 skipped) and `npm test` exits 0 (241/241). Both shipped Slice-20 binding tests are byte-unchanged from origin/main and pass VERBATIM. The governed-surface allowlist is BYTE-IDENTICAL at sha256 555e6ae7…2c02b and `check-governed-surface-pin.sh` exits 0. `SCHEMA_VERSION` is 24."
+  },
+  "fix_4": {
+    "status": "COMPLETE and GREEN. codex §9 round 3 [P1] is CLOSED, by the R2 mechanism rather than codex's prescription. Every gate is at its real exit code below; the only non-zero is the pre-existing 7-error pyright baseline. READY FOR RE-REVIEW and cherry-pick.",
+    "round": "fix-4 (codex §9 round 3, second attempt) — round 4 of a hard maximum of 6",
+    "finding_addressed": "codex §9 round 3 [P1] 'Do not enqueue vector work in no-embedder sessions' (src/rust/crates/fathomdb-engine/src/lib.rs:17264-17270 at the fix-2 tree). Transcript: /home/coreyt/projects/fathomdb/dev/plans/runs/codex/0.8.20/slice-20c-fix-2-rereview-20260726T183101Z.log. The FINDING closed is 'a write made in a no-embedder session over an already-enrolled kind is PERMANENTLY lost while readiness reports ready'. codex's particular prescription (gate the ENQUEUE) was NOT adopted — the HITL ruled it produces the state design-of-record §4.1 invariant 1 calls FORBIDDEN.",
+    "commits": [
+      "87ac6491: revert(0.8.20-s20c): back out fix-3 entirely — R1 REJECTED, R2 is the ruling",
+      "3ebfb373: test(0.8.20-s20c): RED fix-4 — a no-embedder session PERMANENTLY loses a write over an already-enrolled kind",
+      "35de816c: fix(0.8.20-s20c): GREEN fix-4 (R2) — an absent embedder records NO terminal, so the write stays recoverable",
+      "1f46438b: docs+test(0.8.20-s20c): fix-4 X1 parity — pin the recoverability property in Py + TS, and document the enrolment boundary"
+    ],
+    "the_ruling_applied": {
+      "r1_rejected": "fix-3's enqueue-side gate + open-time graft is FULLY REVERTED by 87ac6491 — all three fix-3 commits (7dabc7cf, 1f7b2937, 2b162287), restoring lib.rs, the Rust suite and both binding suites byte-for-byte to 1b0cf514 (fix-2).",
+      "boundary_now_explicit": "Q6a graceful-absent (OPP-12 sub-ledger seq 3/4) governs ROLE DECLARATION — 'you declared a projection I cannot build yet' -> defer + graft — i.e. the NOT-yet-enrolled case fix-1/fix-2 stand on. §4.1 invariant 1 governs the ENROLLED case. The two never collided; fix-3 crossed the line.",
+      "mandate_sentence_withdrawn": "'a no-embedder session ... does NOT count it as outstanding work for `drain`' was withdrawn by its author as an over-extension of graceful-absent. fix-4 implements the opposite: over an ENROLLED kind it IS outstanding work.",
+      "fix_1_and_fix_2_intact": "Verified from git: `git diff 1b0cf514 87ac6491` over lib.rs and all three suites is empty apart from the .gitignore/node_modules hygiene fix. All 9 pre-existing slice20c tests green at the revert commit (exit 0) and at HEAD."
+    },
+    "what_changed": [
+      "NEW `ProjectionOutcome::Deferred` — a THIRD outcome beside Success/Failure, meaning 'the ENVIRONMENT could not serve this row', as distinct from 'the embed FAILED'. `commit_projection_outcomes` records NOTHING for it: no `projection_failures` audit row and, decisively, NO terminal. The row keeps `terminal IS NULL`, so `advance_projection_cursor` cannot step over it, the shared `connection_has_pending_projection_work` predicate still reports it outstanding, and `derive_dense_readiness` reads `embedding`. It carries no cursor, deliberately — it writes nothing, and a row's deferral is represented on disk by the continued ABSENCE of its terminal row.",
+      "`run_projection_job` returns `Deferred` immediately when `shared.embedder.is_none()` AND the job is not an edge. This is the mandate's 'skip the retry ladder' (0+1+4+16 s could only re-derive a fact known at entry) plus the non-terminal decision. The carve-out is keyed on the ENVIRONMENTAL condition, which is FIXED for the session's lifetime, so it can never become a retry loop: `EmbedderError`, `EmbedderDimensionMismatchError` and `ProjectionPanic` all still terminate exactly as before.",
+      "`projection_dispatcher_loop` does not dispatch NODE jobs when `shared.embedder.is_none()`. REQUIRED, not cosmetic — see `fix_4.why_the_dispatcher_filter_is_load_bearing`. Edge jobs are NOT filtered.",
+      "NEW private const `EDGE_FACT_KIND` so the two edge carve-outs name the same string rather than repeating a literal.",
+      "Rust suite: Leg F, ONE new test (10 total) + two new probe helpers (`terminal_state`, `fts_row_exists`). NO new embedder machinery was needed (fix-3's `delay_only_for` is gone with the revert).",
+      "X1 parity: 1 new test each in `src/python/tests/test_slice20c_flush_barrier.py` (8 total) and `src/ts/tests/slice20c-flush-barrier.test.ts` (8 total).",
+      "Docs: `dev/interfaces/{rust,python,typescript}.md` + `CHANGELOG.md` — extended the EXISTING graceful-absent bullets (no new section, no new file) to state the enrolment boundary and the consumer-visible timeout.",
+      "HYGIENE (not part of the fix): 7dabc7cf had accidentally COMMITTED the worktree's `node_modules` symlink — an absolute path into the primary checkout — into the repo ROOT. fix-3's closure JSON asserted it was 'in no commit', which was WRONG. The revert drops it, and `.gitignore` gains the slash-less `node_modules` form beside `node_modules/` (a trailing slash matches DIRECTORIES only, so a symlink slipped past it) so it cannot recur for anyone."
+    ],
+    "the_measured_behaviour_change": {
+      "one_line": "A no-embedder session over an ALREADY-ENROLLED corpus now leaves `dense_readiness` at `embedding`, and `drain` burns its whole timeout into `EngineError::Scheduler` — for that session, permanently.",
+      "measured_how": "Directly asserted in all three arms (Rust Leg F, Python, TypeScript): after a write of an enrolled kind with no embedder, `drain(3 s)` returns `Err(EngineError::Scheduler)` / raises `SchedulerError` / rejects with `SchedulerError`, and readiness reads `embedding`. At the pre-fix engine the SAME probe measured `drain = Ok(())` and `readiness = ready`.",
+      "why_it_is_correct": "The row IS outstanding: the kind is enrolled, the vector is absent, and this session cannot produce it. §4.1 invariant 1 says the ONLY tolerable torn state is `embedding` with the vector absent. Reporting `ready` there is the torn `ready`-without-vector the invariant forbids and the silent miss R-20-DR exists to eliminate.",
+      "what_it_is_NOT": "It is NOT data loss. No `projection_failures` row and no terminal are written, the write is accepted and stays lexically searchable, and the next session opened WITH an embedder embeds it through the ORDINARY scheduler — no re-apply, no graft path, no operator `rebuild`. Pinned end-to-end in Rust and in BOTH bindings.",
+      "scope_of_the_change": "ONLY when the kind is already enrolled, i.e. only in workspaces where some earlier session DID have an embedder. A workspace that has never had a live embedder enrols nothing (fix-2) and is completely unaffected: declaration still defers and grafts, `drain` still returns promptly.",
+      "documented_for_consumers": "Yes — `dev/interfaces/{rust,python,typescript}.md` and `CHANGELOG.md` now tell callers to EXPECT the timeout on that path and explicitly NOT to read it as data loss.",
+      "hitl_note": "This is the consumer-visible consequence the mandate asked to be measured and reported explicitly. It is loud rather than silent, by design."
+    },
+    "why_the_dispatcher_filter_is_load_bearing": {
+      "problem": "A `Deferred` row records no terminal, so it is STILL pending when the worker sets `state.pending_scan = true` on completion. The dispatcher then re-fetches the SAME cursor immediately, the worker defers it again, and so on — a hot loop for the whole life of the session.",
+      "measured": "On the Leg F fixture (ONE pending row, a 3 s `drain`), with `/usr/bin/time -v`: WITHOUT the filter 6.47 s user CPU at 222 % of one core; WITH the filter 0.15 s at 5 %. Same test, same assertions, both passing.",
+      "why_it_is_safe": "`ProjectionRuntimeShared::embedder` is fixed for the session's lifetime, so the condition cannot change under the filter. Nothing is lost: the rows stay PENDING (readiness `embedding`, `drain` timing out) and the next live-embedder session's ordinary scheduler takes them.",
+      "relationship_to_the_worker_check": "The `run_projection_job` check is kept as a LOCAL backstop even though the dispatcher filter makes it unreachable in practice. Keeping 'whatever reaches a worker with no embedder must not be TERMINATED' beside the code that would otherwise write the terminal is what makes the invariant hold if the dispatcher-side filter is ever loosened. Called out here because a reviewer will notice the redundancy."
+    },
+    "why_edges_are_excluded": {
+      "summary": "fix-4 changes the NODE path only. The EDGE path (`kind == 'edge_fact'`) is byte-for-byte as shipped: full retry ladder, `'failed'` terminal on an absent embedder. TWO independent MEASURED reasons, plus one scope reason.",
+      "scope_reason": "codex's [P1] cites `project_canonical_node_row`'s enqueue. Edges are OOS-13, which fix-3 filed and deliberately left.",
+      "measured_reason_1_deferring_edges": "`'edge_fact'` is auto-registered by the edge write itself, UN-gated on the embedder (`project_canonical_edge_row`, G11 — the asymmetry the doc comment in `enrol_batch_vector_kinds` already records). So a body-carrying edge written with no embedder is outstanding the MOMENT it lands. An earlier fix-4 draft deferred edges too and turned FOUR shipped tests red with `EngineError::Scheduler` on paths that have nothing to do with the dense arm: `tc31_source_id_on_every_hit::{tc31_graph_arm_hit_carries_source_id_and_erases, tc31_edge_fts_hit_carries_source_id_and_erases}` ('erase_source with the hit's own source_id: Scheduler'), `provenance_mandatory::extractor_omitting_source_doc_id_still_excisable` ('excise: Scheduler') and `multidoc_extractor_provenance::multidoc_batch_with_valid_echo_stores_caller_copy` ('drain: Scheduler'). Making edges recoverable needs their ENROLMENT gated the way fix-2 gated node kinds — a separate piece of work (OOS-13).",
+      "measured_reason_2_the_edge_retry_ladder": "Even shortening ONLY the edge retry ladder (keeping the `'failed'` terminal) regressed CI. The worker's terminal-commit then lands while a caller's own write transaction is still open, tripping the PRE-EXISTING SQLITE_BUSY_SNAPSHOT write-race already documented in `slice20_dense_readiness.rs` (governed supersession reads before it writes, so `busy_timeout` cannot retry it). MEASURED on `consolidate_provider` under 6 concurrent test processes: 8/48 failures ('consolidate must succeed: Storage') with the ladder shortened, 0/48 with the ladder intact, and 0/48 at origin/main. The ladder therefore stays. Re-hiding a real defect would be wrong, but newly EXPOSING one is not a fix round's job either — reported as OOS-17.",
+      "consequence_left_standing": "A body-carrying edge written with no embedder still takes a permanent `'failed'` terminal, i.e. it still has the [P1] defect shape. That is OOS-13 + OOS-14, unchanged and reported, NOT closed."
+    },
+    "red_first_evidence": {
+      "red_commit": "3ebfb373",
+      "green_commit": "35de816c",
+      "test_text_identical_between_red_and_green": true,
+      "command": "cargo test -p fathomdb-engine --test slice20c_flush_barrier",
+      "baseline_exit_code": 101,
+      "baseline_result": "9 passed; 1 failed",
+      "red_test_added": "a_no_embedder_session_leaves_an_enrolled_kinds_write_recoverable",
+      "captured_failure": "NO-EMBEDDER SESSION: an enrolled row with no vector is outstanding and this session cannot satisfy it, so `drain` must burn its timeout into `Scheduler` rather than clear the barrier by terminating the row. Got: Ok(())",
+      "vacuity_trap_designed_around": "The test calls `set_projection_retry_delays_for_test(&[])` for the BASELINE's benefit, not the fix's: at baseline the `'failed'` terminal only lands after 0+1+4+16 s, so every probe would otherwise read a merely-unterminated row and pass VACUOUSLY on the broken code. Under the fix the seam is inert — the node job is never dispatched.",
+      "downstream_non_vacuity": {
+        "why": "The test fails on an EARLY assertion, so the deeper oracles had to be proven falsifying too. The four earlier assertions were temporarily softened to `eprintln!` and the test re-run at the RED commit; the probes were then reverted (0 occurrences of TEMP-PROBE in the committed file) and RED re-confirmed at 9 passed / 1 failed, exit 101.",
+        "measured": [
+          "TEMP-PROBE session2 drain                   = Ok(())",
+          "TEMP-PROBE session2 readiness               = Some(Ready)   — the FALSE READY itself, over an ENROLLED kind with no vector: the torn `ready` §4.1 invariant 1 calls FORBIDDEN, reached at BASELINE",
+          "TEMP-PROBE session2 projection_failure_rows = 1",
+          "TEMP-PROBE session2 terminal_state(c2)      = Some(\"failed\")",
+          "TEMP-PROBE session3 drain                   = Ok(())",
+          "TEMP-PROBE session3 readiness               = Some(Ready)",
+          "and the deep at-rest oracle then fails: `leaf_rows_without_vectors` left: 1, right: 0 — 'drain() returned Ok and readiness reads ready, but the row written in the no-embedder session still has no vector at rest'  ← THE [P1]"
+        ],
+        "temp_probes_reverted": true
+      },
+      "post_fix_exit_code": 0,
+      "post_fix_result": "10 passed; 0 failed (was 9)",
+      "harness_note": "Session 3's embed count is a DELTA read after `Engine::open` returns: `_fathomdb_vector_kinds` is non-empty on that database, so the 0.8.18 vector-equivalence probe embeds its reference set at open (measured 90 calls — OOS-15)."
+    },
+    "gates_re_run": [
+      {
+        "gate": "cargo clippy --workspace --all-targets",
+        "exit_code": 0,
+        "detail": "ZERO warnings, verified on a FORCED rebuild (`touch lib.rs`) at HEAD so it is not a cached pass"
+      },
+      {
+        "gate": "cargo check --workspace --all-targets",
+        "exit_code": 0
+      },
+      {
+        "gate": "cargo test --workspace --no-fail-fast",
+        "exit_code": 0,
+        "detail": "170 suites ok, 0 FAILED — re-run at HEAD after a forced rebuild. Three consecutive clean full-workspace runs at this lib.rs."
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test slice20c_flush_barrier",
+        "exit_code": 0,
+        "detail": "10 passed (4 -> 6 -> 9 -> 10)"
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test slice20_dense_readiness",
+        "exit_code": 0,
+        "detail": "8 passed"
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test slice15d_projection_registry",
+        "exit_code": 0,
+        "detail": "24 passed"
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test slice15e_prekn_filterable",
+        "exit_code": 0,
+        "detail": "11 passed"
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test projection_runtime",
+        "exit_code": 0,
+        "detail": "12 passed, 1 ignored"
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --features operator --test rebuild_projections",
+        "exit_code": 0,
+        "detail": "4 passed"
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test tc31_source_id_on_every_hit",
+        "exit_code": 0,
+        "detail": "6 passed — one of the 4 suites an earlier fix-4 draft turned red; re-verified explicitly"
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --features operator --test provenance_mandatory",
+        "exit_code": 0,
+        "detail": "3 passed — likewise"
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test multidoc_extractor_provenance",
+        "exit_code": 0,
+        "detail": "5 passed — likewise"
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test consolidate_provider",
+        "exit_code": 0,
+        "detail": "12 passed; 0/48 failures under 6-way concurrency, matching origin/main (OOS-17)"
+      },
+      {
+        "gate": "Python (wheel in throwaway venv) — slice20c suite",
+        "exit_code": 0,
+        "detail": "8 passed (4 -> 5 -> 7 -> 8)"
+      },
+      {
+        "gate": "Python (wheel in throwaway venv) — full tests/ tree",
+        "exit_code": 0,
+        "detail": "857 collected = fix-2's 856 + the 1 new fix-4 test; 847 passed, 10 skipped, 0 failed. The Slice-20 test fix-3 turned red is GREEN and unmodified."
+      },
+      {
+        "gate": "Python (wheel in throwaway venv) — test_slice20_dense_readiness.py",
+        "exit_code": 0,
+        "detail": "10 passed, including `test_readiness_never_reports_ready_with_pending_embeds` — the shipped test fix-3 turned red, UNMODIFIED"
+      },
+      {
+        "gate": "TypeScript — npm test",
+        "exit_code": 0,
+        "detail": "239 tests, 239 pass, 0 fail"
+      },
+      {
+        "gate": "TypeScript — slice20-dense-readiness.test.ts alone",
+        "exit_code": 0,
+        "detail": "7 pass, including 'readiness never reports ready with pending embeds (offline, deterministic)' — UNMODIFIED"
+      },
+      {
+        "gate": "TypeScript — slice20c-flush-barrier.test.ts alone",
+        "exit_code": 0,
+        "detail": "8 pass"
+      },
+      {
+        "gate": "scripts/check-governed-surface-pin.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/agent-lint.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/agent-lint-md.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/check-ledgers.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/lint-findings.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/lint-plan-anchors.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/lint-design-status.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/check-release-state-views.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/check-board-currency.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/security/check-removal-changelog.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/agent-typecheck.sh",
+        "exit_code": 1,
+        "detail": "PRE-EXISTING — exactly 7 pyright errors, the unchanged baseline (last is test_vector_equivalence_probe.py:32 'No parameter named \"reason\"'). fix-4 adds none."
+      },
+      {
+        "gate": "scripts/agent-test.sh",
+        "exit_code": null,
+        "detail": "DELIBERATELY NOT RUN — vacuous aggregate that aborts on the known-red TC-16 actionlint fixture. Suites run individually, per the mandate."
+      }
+    ],
+    "x1_re_run": {
+      "status": "DONE in both bindings, WITH non-vacuity measured against the pre-fix-4 engine in each.",
+      "sdk_observability": "The finding is SDK-observable in both: `EmbedderChoice::None` pins `default_embedder_identity()`, the SAME identity `use_default_embedder=True` / `useDefaultEmbedder: true` carries, so the three-session reopen does not fail closed on `EmbedderIdentityMismatch`.",
+      "shape_pinned": "session 1 WITH an embedder enrols the kind and embeds N1; session 2 with NO embedder writes N2 over that enrolled kind; session 3 reopens WITH an embedder and drains — no re-apply, no further write. Both bindings assert on RAW TABLES: the `search_index` row, `projection_failures == 0`, `terminal IS NULL` for N2 (the MECHANISM, not only the end state), `terminal == 'up_to_date'` for N1, and `leaf_rows_without_vectors == 0` after the recovery. Both also pin the consumer-visible `SchedulerError` + `embedding` readiness.",
+      "harness_limitation_and_how_it_was_handled": "The SDKs expose no equivalent of the Rust `set_projection_retry_delays_for_test` seam, so the session-2 probes would have read a merely-unterminated row and passed VACUOUSLY on the broken code — measured directly: the first draft of the binding tests failed at baseline ONLY on the deep at-rest oracle. Each binding test therefore WAITS OUT the engine's 0+1+4+16 s ladder (`_LADDER_SETTLE_S` / `LADDER_SETTLE_MS` = 24 s) before probing. Under the fix that wait is dead time. Cost: ~25 s per binding suite; the fix-4 arm is ~33 s in Python and ~102 s in TS (the TS figure also carries the OOS-15 open-time probe on a real CPU embedder).",
+      "python": {
+        "how": "Wheel built from `src/python` with `maturin build --release --out <SCRATCH>/wheel --features pyo3/extension-module,test-hooks,default-embedder,default-reranker`, then `pip install`ed into a THROWAWAY `python3 -m venv` under the scratch dir.",
+        "shared_venv_untouched": true,
+        "maturin_develop_or_pip_install_e_used": false,
+        "pytest_invocation_note": "`src/python/pyproject.toml` sets `pythonpath = [\".\"]`, which puts the SOURCE `fathomdb/` package (no compiled `_fathomdb`) ahead of the installed wheel. Run as `python -m pytest -o \"pythonpath=<venv-site-packages> .\" ...` so the WHEEL's native module wins while `import eval.*` still resolves for the eval-harness tests. No `.so` was copied into the source tree and `maturin develop` was never run.",
+        "new_suite_result": "8 passed, exit 0",
+        "full_suite_result": "847 passed, 10 skipped, exit 0 (857 collected = fix-2's 856 + the 1 new test)",
+        "shipped_slice20_suite": "test_slice20_dense_readiness.py — 10 passed, exit 0, file UNMODIFIED",
+        "non_vacuity": "Wheel rebuilt against commit 3ebfb373's `lib.rs` (the RED/fix-2 engine) into a SECOND throwaway venv and re-run: 1 failed / 7 passed, exit 1, on `assert 'ready' == 'embedding'`. Downstream oracles then proven falsifying with TEMP-PROBEs at that same build (see `downstream_non_vacuity_bindings`). The fix-4 lib.rs was restored from a scratch copy and `git diff` verified EMPTY afterwards."
+      },
+      "typescript": {
+        "how": "`npm test` in src/ts (runs `napi build --features test-hooks,default-embedder`, `tsc`, `node --test`).",
+        "full_suite_result": "239 tests, 239 pass, 0 fail, exit 0",
+        "new_suite_alone": "8 pass, 0 fail, exit 0",
+        "shipped_slice20_suite": "slice20-dense-readiness.test.ts — 7 pass, exit 0, file UNMODIFIED",
+        "non_vacuity": "napi binding rebuilt against commit 3ebfb373's `lib.rs` and the slice20c file re-run: 8 tests, 7 pass, 1 fail, exit 1, on `actual 'ready' / expected 'embedding'`. Downstream oracles then proven falsifying with TEMP-PROBEs at that same build. HEAD restored and rebuilt; 8/8 exit 0."
+      },
+      "downstream_non_vacuity_bindings": {
+        "method": "The four earlier assertions in each binding test were temporarily softened to `console.log` / `print` and the test re-run at the PRE-FIX build; probes then reverted (0 occurrences of TEMP-PROBE in either committed file) and the pre-fix RED re-confirmed.",
+        "measured_identically_in_both": [
+          "TEMP-PROBE session2 readiness               = ready   — the FALSE READY",
+          "TEMP-PROBE session2 projection_failure_rows = 1",
+          "TEMP-PROBE session2 terminal_state(c2)      = failed",
+          "TEMP-PROBE session2 vector_rows             = 1",
+          "TEMP-PROBE session3 readiness               = ready",
+          "and the deep at-rest oracle then fails: leaf_rows_without_vectors 1 != 0  ← THE [P1]"
+        ],
+        "temp_probes_reverted": true
+      },
+      "not_mirrored_from_rust": "The 'readiness never read `ready` while the row lacked its vector' race probe. It needs a deliberately-slowed embedder to be race-free; the bindings cannot install one. Stated in both binding files rather than faked.",
+      "harness_boundary_unchanged": "`vector_default` is a vec0 VIRTUAL table; neither stdlib `sqlite3` nor `node:sqlite` can read it. Both bindings assert on `_fathomdb_vector_rows` plus the un-joined leaf probes. The TS oracle keeps `{ readOnly: true }` (OOS-1)."
+    },
+    "governed_surface_re_verified": {
+      "allowlist_byte_identical": true,
+      "allowlist_sha256": "555e6ae7f7d13e537170dbd63eed4a0433a82a0f7bdc03781ec4e0ef7692c02b",
+      "allowlist_sha256_matches_mandate_baseline": true,
+      "allowlist_edited": false,
+      "re_pinned": false,
+      "check_governed_surface_pin_exit": 0,
+      "net_new_governed_commands": 0,
+      "new_sdk_verbs": 0,
+      "new_exported_types": 0,
+      "note": "`ProjectionOutcome` is a PRIVATE enum and `EDGE_FACT_KIND` a private const; `run_projection_job`, `commit_projection_outcomes` and `projection_dispatcher_loop` are private free functions. No signature on any public item changed. `git diff 2afd168c -- src/conformance/governed-surface-allowlist.json` is EMPTY."
+    },
+    "constraints_honoured": {
+      "schema_version": "24 — unchanged; still asserted inside the Rust suite",
+      "migrations_changed": false,
+      "drain_touched": false,
+      "connection_has_pending_projection_work_touched": false,
+      "oos_11_cvar_cap": "STILL REVERTED, as directed. `wait_for_idle` untouched; the module-doc note explaining the ~30 s runs is intact.",
+      "maturin_develop_or_pip_install_e": "never run; /home/coreyt/projects/fathomdb/.venv was used ONLY as the `maturin` binary source, never as an install target",
+      "no_verify_used": false,
+      "db_mocking": "none — every test drives a real engine against a real SQLite file",
+      "worktree_discipline": "all work inside /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s20c; the primary checkout was never modified; no worktree created/moved/removed",
+      "ledgerwrite_run": false,
+      "status_doc_edited": false,
+      "shipped_tests_edited": "NONE of the two Slice-20 binding tests, and none of the 4 unrelated suites an earlier fix-4 draft turned red. `src/python/tests/test_slice20_dense_readiness.py` and `src/ts/tests/slice20-dense-readiness.test.ts` are byte-unchanged from origin/main and pass VERBATIM.",
+      "at_rest_oracles": "keyed off `canonical_nodes.row_kind IN ('leaf','coverage')` with NO join to `_fathomdb_vector_kinds`, in all three arms"
+    },
+    "found_out_of_scope": [
+      {
+        "id": "OOS-16",
+        "severity": "medium",
+        "title": "GUARDRAIL FAILURE (fixed here): a worktree `node_modules` symlink was committed into the repo root",
+        "refs": "commit 7dabc7cf; .gitignore:34",
+        "detail": "`scripts/agent-lint.sh` requires a `node_modules` in the worktree root, and the usual remedy is a symlink to the primary checkout's install. `.gitignore` carried only `node_modules/`, and a TRAILING SLASH matches DIRECTORIES only — a symlink is not a directory for gitignore purposes — so `git add -A` committed an ABSOLUTE-PATH symlink into the repo root. fix-3's closure JSON stated it was 'in no commit', which was wrong.",
+        "action": "FIXED, not just reported: the revert commit 87ac6491 drops the symlink from the index and adds the slash-less `node_modules` line to `.gitignore`, so it cannot recur for anyone. Verified with `git check-ignore -v node_modules`."
+      },
+      {
+        "id": "OOS-17",
+        "severity": "medium",
+        "title": "PRE-EXISTING: the projection worker's commit can SQLITE_BUSY_SNAPSHOT a caller's own governed write",
+        "refs": "src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs:120-131 (the `anon_node` doc comment already characterises it); `open_runtime_connection` sets no `busy_timeout`",
+        "detail": "The governed supersession path READS before it writes, so its deferred transaction must upgrade to a writer and takes SQLITE_BUSY_SNAPSHOT, which `busy_timeout` cannot retry. The shipped note records 7-of-8 reproduction at the Slice-20 BASELINE with no Slice-20 code in the build. fix-4 did not create it, but an intermediate draft that shortened the EDGE retry ladder made it reachable in the no-embedder case: MEASURED on `consolidate_provider` under 6 concurrent test processes — 8/48 failures ('consolidate must succeed: Storage') with the ladder shortened, 0/48 with it intact, 0/48 at origin/main. The edge ladder was therefore left byte-for-byte as shipped.",
+        "action": "reported, not fixed — the shipped 21 s ladder currently hides it on the no-embedder edge path, and fixing it properly means changing connection/transaction discipline, which is well outside a fix round"
+      },
+      {
+        "id": "OOS-18",
+        "severity": "low",
+        "title": "PRE-EXISTING: the Python binding test harness can SIGBUS reading a LIVE WAL database",
+        "refs": "src/python/tests/test_slice20c_flush_barrier.py `_vector_kind_registered` (a stdlib `sqlite3` mode=ro probe), reached from `test_late_enrolment_backfills_rows_a_no_embedder_session_stranded` (a fix-2 test)",
+        "detail": "'Fatal Python error: Bus error', exit 135, while a read-only stdlib `sqlite3` connection probes a database the engine is actively writing. MEASURED both ways: fix-4 wheel 5/30 runs, pre-fix-4 wheel 3/30 runs — statistically indistinguishable, and the test involved is unchanged by fix-4. The full Python tree passed cleanly (847 passed, exit 0). Note fix-2's closure recorded a related exit-135 anomaly.",
+        "action": "reported, not fixed — a HARNESS hazard (third-party reader vs live WAL), not an engine defect; the durable fix is to probe only closed databases, which would cost the mid-session oracles"
+      }
+    ],
+    "still_out_of_scope_after_fix_4": [
+      "OOS-1, OOS-2 (TC-57 @ Slice 21), OOS-3, OOS-4, OOS-5, OOS-6, OOS-7, OOS-9 — unchanged, still reported-not-fixed.",
+      "OOS-11 — UNCHANGED and deliberately NOT fixed. The one-line cvar-wait cap stays reverted and `wait_for_idle` is untouched.",
+      "OOS-12 (slice15e race flake) — unchanged; 11/11 green in every run this round.",
+      "OOS-13 (body-carrying EDGES have the same no-embedder shape) — STILL OPEN, and now load-bearing: it is the reason fix-4 stops at the node path. Closing it needs `'edge_fact'` enrolment gated on a live embedder the way fix-2 gated node kinds. See `fix_4.why_edges_are_excluded`.",
+      "OOS-14 (a row enqueued by a live-embedder session and reopened WITHOUT one) — PARTIALLY closed as a side effect: a NODE row in that shape now comes back `Deferred` and is no longer failed permanently. The EDGE half is unchanged and still open.",
+      "OOS-15 (90 synchronous embeds inside `Engine::open` on any workspace with an enrolled vector kind) — unchanged; it is the dominant cost of the new TS binding test (~102 s).",
+      "OOS-16, OOS-17, OOS-18 — new this round. OOS-16 is FIXED; the other two are reported-not-fixed.",
+      "decision D1 (corpus-wide vector-kind enrolment) unchanged.",
+      "eu7: ZERO runs, any backend, any N."
+    ],
+    "agent_verify_result": "pass. Every gate at its real exit code in `fix_4.gates_re_run`. The ONLY non-zero is `agent-typecheck.sh` at exit 1 with EXACTLY the 7 pre-existing pyright errors (fix-4 adds none), plus `agent-test.sh`, deliberately not run per the mandate. `cargo clippy` and `cargo check` --workspace --all-targets both exit 0 on a forced rebuild; `cargo test --workspace --no-fail-fast` exits 0 across 170 suites; the FULL Python tree exits 0 (847 passed / 10 skipped) and `npm test` exits 0 (239/239). The two shipped Slice-20 binding tests fix-3 turned red are GREEN and UNMODIFIED. The governed-surface allowlist is BYTE-IDENTICAL at sha256 555e6ae7…2c02b and `check-governed-surface-pin.sh` exits 0."
+  },
+  "fix_3": {
+    "status": "BLOCKED — HANDING BACK FOR A DESIGN CALL. The fix codex prescribed is implemented, Rust-green and X1-mirrored, but it breaches design-of-record §4.1 invariant 1 and turns ONE SHIPPED Slice-20 test red in each binding. DO NOT CHERRY-PICK until the call is made.",
+    "round": "fix-3 (codex §9 round 3) — round 3 of a hard maximum of 6",
+    "finding_addressed": "codex §9 round 3 [P1] 'Do not enqueue vector work in no-embedder sessions' (src/rust/crates/fathomdb-engine/src/lib.rs:17264-17270). Transcript: /home/coreyt/projects/fathomdb/dev/plans/runs/codex/0.8.20/slice-20c-fix-2-rereview-20260726T183101Z.log",
+    "commits": [
+      "7dabc7cf86447fbde3a705015cdd92e4b32d41f5: test(0.8.20-s20c): RED fix-3 — a no-embedder session still enqueues vector work for an already-enrolled kind",
+      "1f7b2937e9b5015dbd98154d575a8f844333aaad: fix(0.8.20-s20c): GREEN fix-3 — gate the ENQUEUE on a live embedder, and graft the stranded rows at open",
+      "2b16228758442d5243c10b49116729e32aba76a2: test(0.8.20-s20c): fix-3 X1 parity — mirror the no-embedder enqueue gate in Py + TS (BLOCKED: see below)"
+    ],
+    "the_blocker": {
+      "id": "BLK-1",
+      "severity": "blocking",
+      "title": "The prescribed fix produces the state design-of-record §4.1 invariant 1 calls FORBIDDEN",
+      "what_the_fix_does": "Per codex and per the mandate, a no-embedder session no longer enqueues vector work; the row takes the else-branch and records an `'up_to_date'` terminal, i.e. it becomes a STRANDED row that `reenqueue_stranded_vector_rows` reopens later.",
+      "why_that_is_a_problem": "When the kind is ALREADY ENROLLED (exactly codex's scenario), that terminal is written while `_fathomdb_vector_kinds` holds the kind. `derive_dense_readiness` then reads `ready` for a corpus whose enrolled-kind row has no vector at rest. `dev/design/record-lifecycle-protocol/projection-registry-and-async-embed.md` §4.1 invariant 1 states: 'The ONLY tolerable torn state is `dense_readiness = embedding` with the vector absent. A torn `ready`-without-vector is FORBIDDEN — it would reintroduce the silent miss as a torn write that rebuild-durability papers over.'",
+      "measured_directly": {
+        "how": "A throwaway Python probe against the fix-3 wheel, reproducing the shipped Slice-20 offline fixture: `Engine.open(use_default_embedder=False)` + `configure_projections([vector spec])` + `_configure_vector_kind_for_test('doc')` + one `doc` write.",
+        "result": [
+          "readiness       = ready",
+          "torn terminals  = 1   (state='up_to_date', kind ENROLLED, no `_fathomdb_vector_rows` row)",
+          "vector rows     = 0",
+          "terminal states = [('up_to_date', 1)]"
+        ],
+        "torn_terminal_sql": "SELECT COUNT(*) FROM _fathomdb_projection_terminal t JOIN canonical_nodes n ON n.write_cursor=t.write_cursor JOIN _fathomdb_vector_kinds k ON k.kind=n.kind LEFT JOIN _fathomdb_vector_rows v ON v.write_cursor=t.write_cursor WHERE t.state='up_to_date' AND v.write_cursor IS NULL"
+      },
+      "shipped_tests_it_turns_red": [
+        "src/python/tests/test_slice20_dense_readiness.py::test_readiness_never_reports_ready_with_pending_embeds — `assert 'ready' == 'embedding'` at :130",
+        "src/ts/tests/slice20-dense-readiness.test.ts 'readiness never reports ready with pending embeds (offline, deterministic)' — `actual 'ready' / expected 'embedding'` at :115"
+      ],
+      "how_those_tests_are_built": "Both are OFFLINE fixtures that manufacture a pending embed by enrolling `doc` through the `test-hooks`-gated `_configure_vector_kind_for_test` seam and then writing on an engine opened with NO embedder — i.e. they construct their fixture out of exactly the behaviour codex asked to remove. Their trailing assertion is the §4.1 one (`torn terminals == 0`), which the probe above shows becomes 1.",
+      "why_fix_2_did_not_trip_it": "fix-2's stranded rows are stranded because the kind was NOT enrolled at write time, and every torn-terminal probe JOINS `_fathomdb_vector_kinds`. fix-3 is the first change that reaches the state with the kind enrolled.",
+      "rust_suite_unaffected": "`slice20_dense_readiness.rs` is 8/8 green: its fixtures all hold a LIVE (slow or failing) embedder, so they never enter the no-embedder-with-enrolled-kind state. Only the bindings, which cannot install a custom embedder, use the no-embedder contrivance."
+    },
+    "the_question_for_the_hitl": {
+      "one_line": "In a session with NO live embedder, over a corpus whose kind is ALREADY enrolled, what does `dense_readiness` mean?",
+      "reading_a_shipped_slice_20": "'Every enrolled row has its vector.' ⇒ readiness must read `embedding`, `drain` must NOT return Ok, and an `'up_to_date'` terminal without a vector is forbidden (§4.1 invariant 1). This is what the two shipped binding tests pin.",
+      "reading_b_slice_20c_graceful_absent": "'This session has nothing outstanding.' ⇒ readiness reads `ready`, `drain` returns promptly, and the vector-less rows are a deferred/STRANDED state a later live-embedder session grafts. This is what Q6a graceful-absent and this mandate direct ('does NOT count it as outstanding work for `drain`').",
+      "note": "Both readings are shipped and tested. They cannot both hold for the enrolled-kind case. Slice 20c has been extending reading (b); codex's [P1] and this mandate push it into the region reading (a) owns."
+    },
+    "options": [
+      {
+        "id": "R1",
+        "label": "KEEP the implemented fix (what is on the branch now)",
+        "what_it_needs": "Amend §4.1 invariant 1 to scope it to rows written by a session with a LIVE dense arm, and REWRITE the two shipped binding tests (their MECHANISM, not their intent, is what fix-3 removes).",
+        "cost": "A design-of-record amendment plus the loss of the only OFFLINE binding-level pin of the R-20-DR acceptance signal ('readiness never reports ready with pending embeds'). That signal stays pinned in Rust (slow embedder, `readiness_reads_embedding_while_embeds_are_outstanding_then_flips_to_ready`) and in the network arms of the binding slice20c suites, but there is no offline binding substitute unless a test-hook embedder is exposed to Py/TS.",
+        "state": "IMPLEMENTED and measured. Rust workspace fully green (170 suites, exit 0); the two binding suites are 1-red each, exactly as above."
+      },
+      {
+        "id": "R2",
+        "label": "NARROWER alternative — make the environmental `EmbedderNotConfigured` NON-TERMINAL instead of gating the enqueue",
+        "sketch": "In `commit_projection_outcomes`' `ProjectionOutcome::Failure` arm (src/rust/crates/fathomdb-engine/src/lib.rs ~:13735-13757), when `failure_code == \"EmbedderNotConfiguredError\"` record NEITHER the `projection_failures` audit row NOR the `'failed'` terminal — leave the row PENDING. Plus: in `run_projection_job` (~:12710) skip the retry ladder when `shared.embedder.is_none()`, since an absent embedder cannot appear mid-job (today it burns 0+1+4+16 s per row).",
+        "what_it_buys": [
+          "Closes codex's [P1]: the write is no longer lost. The row keeps `terminal IS NULL`, so the NEXT live-embedder session's ordinary scheduler picks it up — no graft path, no new recovery machinery at all.",
+          "PRESERVES §4.1 invariant 1 (no `'up_to_date'` terminal without a vector; no `'failed'` terminal either).",
+          "PRESERVES both shipped binding tests VERBATIM (readiness stays `embedding` for the whole window, and now permanently rather than for ~21 s).",
+          "Honours the mandate's 'an environmental EmbedderNotConfigured must not be conflated with a real embed failure', and creates NO retry loop for genuinely-failing rows (the carve-out is keyed on `shared.embedder.is_none()`, which cannot change within a session).",
+          "Removes one route into OOS-6 (`'failed'` ⇒ readiness `ready` with the vector missing).",
+          "Much smaller diff: no `dense_arm_live` threading, no open-time graft, `drain` and `connection_has_pending_projection_work` still untouched."
+        ],
+        "what_it_costs": [
+          "CONTRADICTS this mandate's explicit sentence 'a no-embedder session … does NOT count it as outstanding work for `drain`' and codex's explicit prescription 'the live-embedder gate needs to apply to enqueueing'.",
+          "A no-embedder session over an ALREADY-ENROLLED corpus then has readiness stuck at `embedding` and `drain` burning its full timeout into `EngineError::Scheduler` — permanently, for that session. That is the honest answer under reading (a), and it is loud rather than silent, but it IS a behaviour change consumers would feel and may itself need sign-off.",
+          "NOT implemented. Feasibility verified by reading the two call sites; not built, not measured."
+        ]
+      },
+      {
+        "id": "R3",
+        "label": "Do nothing this round; take the whole question to the HITL with codex's finding attached",
+        "note": "Defensible: codex's [P1] is real and unfixed either way, but the branch currently holds a fix that cannot land. R3 means reverting 1f7b2937 + 2b162287 and shipping Slice 20c with the finding OPEN and documented."
+      }
+    ],
+    "what_was_implemented_for_r1": [
+      "`project_canonical_node_row` takes `dense_arm_live: bool` — threaded down EXPLICITLY, not re-derived from global state, because that free function holds only a `Connection` and the durable `_fathomdb_vector_kinds` registry it CAN read says nothing about whether THIS session has an embedder. The enqueue decision becomes `targets.vector && dense_arm_live && kind_is_vector_indexed(..)`. The enrolment decision was NOT moved into the projector.",
+      "Threaded through `commit_batch` (governed writes) from `Engine::write_inner`, and applied at the other three call sites: `write_canonical_row_with_kind_for_test` (same `runtime_embedder.is_some()` it already checks for enrolment), `rebuild_shadow_state` (a rebuild with no embedder must not re-enqueue what it just truncated), and `reproject_search_index_after_tokenizer_upgrade` (INERT — `FtsOnly` does not write vector state; `false` is the honest value because `open_locked` holds the embedder IDENTITY, not the embedder).",
+      "`collect_projection_jobs` takes the same flag so the WAKE and the ENQUEUE cannot disagree.",
+      "NEW `Engine::graft_stranded_vector_rows_on_open` — VERIFIED, not assumed: `reenqueue_stranded_vector_rows` reopens `'up_to_date'` terminals ONLY, and neither existing door reaches the state a no-embedder session leaves behind (the write-path door needs a NEW enrolment, but the kind is already enrolled; the declare-time door needs a re-applied `configure_projections` the caller has no reason to make). Without it the deferral would never be honoured. It calls the IDENTICAL `unstrand_after_late_enrolment` the other two doors call — one implementation, three doors — is gated on the live embedder, and runs BEFORE the existing `database_has_pending_projection_work` probe so that probe is what wakes the dispatcher. `drain` NOT touched, still a passive barrier (C4 rider).",
+      "`#[allow(clippy::too_many_arguments)]` on `project_canonical_node_row` (8 args; clippy's threshold is 7), matching the existing in-file convention at lib.rs:5919 / :6167. Every call site labels the two trailing flags inline.",
+      "Rust suite: Leg F, ONE new test (10 total) + two new probes (`terminal_state`, `fts_row_exists`) + `CountingEmbedder::delay_only_for`.",
+      "X1 parity: 1 new test each in `src/python/tests/test_slice20c_flush_barrier.py` (8 total) and `src/ts/tests/slice20c-flush-barrier.test.ts` (8 total).",
+      "NO docs / CHANGELOG written — deliberately. Documenting a contract that is pending a design call would be worse than leaving it."
+    ],
+    "red_first_evidence": {
+      "red_commit": "7dabc7cf86447fbde3a705015cdd92e4b32d41f5",
+      "green_commit": "1f7b2937e9b5015dbd98154d575a8f844333aaad",
+      "note_on_amend": "The RED commit was amended once, BEFORE the GREEN commit existed, so RED and GREEN pin byte-identical test text. RED was then re-run at the amended commit and re-confirmed (9 passed / 1 failed, exit 101).",
+      "command": "cargo test -p fathomdb-engine --test slice20c_flush_barrier",
+      "baseline_exit_code": 101,
+      "baseline_result": "9 passed; 1 failed",
+      "red_test_added": "a_no_embedder_session_does_not_enqueue_for_an_already_enrolled_kind",
+      "captured_failure": "assertion `left == right` failed: 'NO-EMBEDDER ENQUEUE: a session with no dense arm must not enqueue vector work — the worker can only exhaust its retries into an `EmbedderNotConfiguredError` `failed` terminal, and an ABSENT embedder is an environment fact, not an embed failure' — left: 1, right: 0. The single `drain` took 21.1 s, i.e. the full 0+1+4+16 s retry ladder.",
+      "downstream_non_vacuity": {
+        "why": "The test fails on an EARLY assertion, so the deeper oracles had to be proven falsifying too. The first two failing assertions were temporarily softened to `eprintln!` and the test re-run at baseline; the probes were then reverted (0 occurrences of TEMP-PROBE in the committed file) and RED re-confirmed.",
+        "measured": [
+          "TEMP-PROBE session2 projection_failure_rows = 1",
+          "TEMP-PROBE session2 terminal_state(c2)      = Some(\"failed\")",
+          "TEMP-PROBE session3 readiness at open       = Some(Ready)   — the FALSE READY itself",
+          "and the deep at-rest oracle then fails: `leaf_rows_without_vectors` left: 1, right: 0 — 'drain() returned Ok and readiness reads ready, but the row written in the no-embedder session still has no vector at rest'"
+        ],
+        "temp_probes_reverted": true
+      },
+      "two_harness_traps_designed_around": [
+        "The session-2 `drain` timeout is deliberately GENEROUS (60 s). A short timeout aborts BEFORE the `'failed'` terminal lands, which would leave session 3 grafting a merely-unterminated row and make the whole test VACUOUSLY GREEN on the broken code.",
+        "`CountingEmbedder` gains `delay_marker` (default `\"\"` ⇒ every pre-existing test unaffected). This suite's other reopen fixtures start from a NO-embedder session, so `_fathomdb_vector_kinds` is empty and the 0.8.18 vector-equivalence probe stays inert. Leg F's session 1 HAS an embedder, so the reopen ENGAGES that probe: MEASURED 90 embed calls inside `Engine::open`. An unrestricted 1.5 s delay therefore put ~135 s into `open` and made the embed count 91 instead of 1. The delay is now scoped to the node bodies and the projection count is a DELTA read after `open` returns."
+      ],
+      "post_fix_exit_code": 0,
+      "post_fix_result": "10 passed; 0 failed (was 9)"
+    },
+    "gates_re_run": [
+      {
+        "gate": "cargo clippy --workspace --all-targets",
+        "exit_code": 0,
+        "detail": "ZERO warnings, verified on a FORCED rebuild (`touch lib.rs`) so it is not a cached pass. One `too_many_arguments` warning introduced by the first draft was closed with an `#[allow]` + justification before the GREEN commit."
+      },
+      {
+        "gate": "cargo check --workspace --all-targets",
+        "exit_code": 0
+      },
+      {
+        "gate": "cargo test --workspace --no-fail-fast",
+        "exit_code": 0,
+        "detail": "170 suites ok, 0 FAILED. An earlier run of the same command hit the pre-existing OOS-9 CLI flake twice (see OOS-9 below); the clean run is the one recorded."
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test slice20c_flush_barrier",
+        "exit_code": 0,
+        "detail": "10 passed (4 -> 6 -> 9 -> 10)"
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test slice20_dense_readiness",
+        "exit_code": 0,
+        "detail": "8 passed — the RUST arm is unaffected; only the BINDING arms of this pin collide (see BLK-1)"
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test slice15d_projection_registry",
+        "exit_code": 0,
+        "detail": "24 passed"
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test slice15e_prekn_filterable",
+        "exit_code": 0,
+        "detail": "11 passed. Flaked once during this round; measured PRE-EXISTING — see OOS-12."
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test projection_runtime",
+        "exit_code": 0,
+        "detail": "12 passed, 1 ignored"
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --features operator --test rebuild_projections",
+        "exit_code": 0,
+        "detail": "4 passed"
+      },
+      {
+        "gate": "Python (wheel in throwaway venv) — slice20c suite",
+        "exit_code": 0,
+        "detail": "8 passed (4 -> 5 -> 7 -> 8)"
+      },
+      {
+        "gate": "Python (wheel in throwaway venv) — full tests/ tree",
+        "exit_code": 1,
+        "detail": "846 passed, 1 FAILED, 10 skipped. The ONE failure is BLK-1: test_slice20_dense_readiness.py::test_readiness_never_reports_ready_with_pending_embeds. 857 collected = fix-2's 856 + the 1 new test."
+      },
+      {
+        "gate": "TypeScript — npm test",
+        "exit_code": 1,
+        "detail": "239 tests, 238 pass, 1 FAIL. The ONE failure is BLK-1: 'readiness never reports ready with pending embeds (offline, deterministic)'. The slice20c file alone is 8/8, exit 0."
+      },
+      {
+        "gate": "scripts/check-governed-surface-pin.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/agent-lint.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/agent-lint-md.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/check-ledgers.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/lint-findings.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/lint-plan-anchors.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/lint-design-status.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/check-release-state-views.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/check-board-currency.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/security/check-removal-changelog.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/agent-typecheck.sh",
+        "exit_code": 1,
+        "detail": "PRE-EXISTING — exactly 7 pyright errors, the unchanged baseline (last is test_vector_equivalence_probe.py:32 'No parameter named \"reason\"'). fix-3 adds none."
+      },
+      {
+        "gate": "scripts/agent-test.sh",
+        "exit_code": null,
+        "detail": "DELIBERATELY NOT RUN — vacuous aggregate that aborts on the known-red TC-16 actionlint fixture. Suites run individually, per the mandate."
+      }
+    ],
+    "x1_re_run": {
+      "status": "DONE in both bindings. The finding IS SDK-observable in both: `EmbedderChoice::None` pins `default_embedder_identity()`, the SAME identity `use_default_embedder=True` / `useDefaultEmbedder: true` carries, so the reopens do not fail closed on `EmbedderIdentityMismatch`.",
+      "python": {
+        "how": "Wheel built from `src/python` with `maturin build --release --out <SCRATCH>/wheel --features pyo3/extension-module,test-hooks,default-embedder,default-reranker`, then `pip install`ed into a THROWAWAY `python3 -m venv` under the scratch dir.",
+        "shared_venv_untouched": true,
+        "maturin_develop_or_pip_install_e_used": false,
+        "new_suite_result": "8 passed, exit 0",
+        "full_suite_result": "846 passed, 1 FAILED, 10 skipped, exit 1 — the one failure is BLK-1",
+        "build_warnings": "2, both PRE-EXISTING dead-code warnings under this feature set (`ReaderWorkerPool::worker_count`/`live_count`, `SubscriberRegistry::dispatch_stress_failure`). fix-3 adds none."
+      },
+      "typescript": {
+        "how": "`npm test` in src/ts (runs `napi build --features test-hooks,default-embedder`, `tsc`, `node --test`).",
+        "full_suite_result": "239 tests, 238 pass, 1 fail, exit 1 — the one failure is BLK-1",
+        "new_suite_alone": "8 pass, 0 fail, exit 0"
+      },
+      "non_vacuity_note": "NOT re-measured by rebuilding each binding against the pre-fix-3 engine, as fix-1/fix-2 did. The reason is stronger evidence in hand, not a shortcut: the pre-fix-3 behaviour of this exact shape is DIRECTLY measured in both bindings by the two SHIPPED tests BLK-1 turns red, which assert `readiness == 'embedding'` on the pre-fix engine and now read `ready`. If the design call lands on R1, the conventional pre-fix rebuild should still be run for the record.",
+      "not_mirrored_from_rust": "The 'readiness never read `ready` while the row lacked its vector' probe. It needs a deliberately-slowed embedder to be race-free; the bindings cannot install one. Stated in both binding files rather than faked.",
+      "harness_boundary_unchanged": "`vector_default` is a vec0 VIRTUAL table; neither stdlib `sqlite3` nor `node:sqlite` can read it. Both bindings assert on `_fathomdb_vector_rows` plus the un-joined leaf probes. The TS oracle keeps `{ readOnly: true }` (OOS-1)."
+    },
+    "governed_surface_re_verified": {
+      "allowlist_byte_identical": true,
+      "allowlist_sha256": "555e6ae7f7d13e537170dbd63eed4a0433a82a0f7bdc03781ec4e0ef7692c02b",
+      "allowlist_sha256_matches_mandate_baseline": true,
+      "allowlist_edited": false,
+      "re_pinned": false,
+      "check_governed_surface_pin_exit": 0,
+      "net_new_governed_commands": 0,
+      "new_sdk_verbs": 0,
+      "new_exported_types": 0,
+      "note": "`Engine::graft_stranded_vector_rows_on_open` is a PRIVATE method. The signature changes (`project_canonical_node_row`, `commit_batch`, `collect_projection_jobs`) are all on private free functions. No public type or verb changed shape."
+    },
+    "constraints_honoured": {
+      "schema_version": "24 — unchanged; still asserted inside the Rust suite",
+      "migrations_changed": false,
+      "drain_touched": false,
+      "connection_has_pending_projection_work_touched": false,
+      "oos_11_cvar_cap": "STILL REVERTED, as directed. `wait_for_idle` untouched; the module-doc note explaining the ~30 s runs is intact.",
+      "maturin_develop_or_pip_install_e": "never run; /home/coreyt/projects/fathomdb/.venv was used ONLY as the `maturin` binary source, never as an install target",
+      "no_verify_used": false,
+      "db_mocking": "none — every test drives a real engine against a real SQLite file",
+      "worktree_discipline": "all work inside /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s20c; the primary checkout was never modified; no worktree created/moved/removed",
+      "ledgerwrite_run": false,
+      "status_doc_edited": false,
+      "shipped_tests_edited": "NONE. The two Slice-20 binding tests BLK-1 turns red were left EXACTLY as shipped — amending them is the design call, not a fix round's to take."
+    },
+    "found_out_of_scope": [
+      {
+        "id": "OOS-12",
+        "severity": "low",
+        "title": "PRE-EXISTING: `slice15e_prekn_filterable::undeclared_after_concurrent_drop_is_typed_invalidfilter_not_storage_race` is flaky",
+        "refs": "src/rust/crates/fathomdb-engine/tests/slice15e_prekn_filterable.rs:1045",
+        "detail": "`expected a typed InvalidFilter after the concurrent drop (never a raw error / silent Ok), got Ok(SearchResult { … })`. It is a deliberate race test.",
+        "measured": "2/30 failures with lib.rs at ORIGIN/MAIN 2afd168c, and 3/30 with fix-3 applied — the SAME rate, the same test. Not introduced by this slice. The test file itself is byte-unchanged by 20c (empty `git diff 2afd168c..HEAD` for it).",
+        "action": "reported, not fixed"
+      },
+      {
+        "id": "OOS-13",
+        "severity": "medium",
+        "title": "The EDGE path has the SAME no-embedder shape, and un-stranding does not cover edges",
+        "refs": "src/rust/crates/fathomdb-engine/src/lib.rs `project_canonical_edge_row` (`let enqueue_vector = body.is_some();`) vs `reenqueue_stranded_vector_rows` (joins `canonical_nodes` ONLY)",
+        "detail": "A body-carrying edge written in a no-embedder session is enqueued UNCONDITIONALLY (edges auto-register `'edge_fact'` off the presence of a body, G11), so it takes the same `EmbedderNotConfigured` → `'failed'` terminal path. PRE-EXISTING since G11, NOT introduced by 20c: unlike node kinds, `'edge_fact'` was always auto-registered. DELIBERATELY NOT FIXED — gating the edge enqueue alone would only trade a `'failed'` terminal for an `'up_to_date'` one that nothing reopens, since the stranded query joins `canonical_nodes` and never sees `canonical_edges`. Making edges graftable is a separate piece of work.",
+        "action": "reported, not fixed"
+      },
+      {
+        "id": "OOS-14",
+        "severity": "medium",
+        "title": "A row enqueued by a live-embedder session and reopened WITHOUT one is failed permanently",
+        "refs": "src/rust/crates/fathomdb-engine/src/lib.rs :4478 (the open-time `notify_new_work`) and the worker's `None` arm at ~:12793",
+        "detail": "Close (or crash) with vector work enqueued and undrained, then reopen with `EmbedderChoice::None`: the open-time pending-work probe wakes the dispatcher, the worker finds `shared.embedder == None`, and the row terminates `'failed'`. Not reachable through the ENQUEUE gate (nothing new is enqueued) — it is the WORKER side, which fix-3 deliberately does not touch. Option R2 above would close this one too, as a side effect.",
+        "action": "reported, not fixed — this is the 'pre-existing `failed` terminals' question the mandate asked me to decide deliberately and leave"
+      },
+      {
+        "id": "OOS-15",
+        "severity": "low",
+        "title": "Reopening a database with any enrolled vector kind costs 90 synchronous embeds inside `Engine::open`",
+        "refs": "src/rust/crates/fathomdb-engine/src/lib.rs `run_vector_equivalence_probe` (:14969) — gated on `_fathomdb_vector_kinds` being non-empty",
+        "detail": "MEASURED, not inferred: 90 `Embedder::embed` calls during `Engine::open` on a database with one enrolled kind and one row. Documented 0.8.18 behaviour (the 45-reference P1/P2 self-check), inert on a workspace that never enrolled a vector kind — which was every workspace before Slice 20c gave `_fathomdb_vector_kinds` its first production enrolment path. So 20c makes a previously-unreachable open-time cost reachable for ordinary consumers, on a real CPU embedder rather than a 0-cost test double. Worth a latency look; not a correctness issue.",
+        "action": "reported, not fixed"
+      },
+      {
+        "id": "OOS-9",
+        "severity": "low",
+        "title": "`t_s34_dump_mutations_lock_held_exits_71` is flaky under `cargo test --workspace` (carried from fix-1)",
+        "refs": "src/rust/crates/fathomdb-cli/tests/operator_cli.rs:719",
+        "detail": "Reproduced twice consecutively in full-workspace runs this round with `DatabaseLocked { holder_pid: <another process> }`, then passed on the next full-workspace run and 25/25 in isolation, and 0/10 in isolation under 8-way CPU load with AND without fix-3. It cannot be caused by fix-3: that DB is opened with `Engine::open` (no embedder), so `graft_stranded_vector_rows_on_open` early-returns before touching the connection, `collect_projection_jobs` early-returns, and the writes are `AdminSchema`/`OpStore` — `project_canonical_node_row` is never called.",
+        "action": "reported, not fixed"
+      }
+    ],
+    "still_out_of_scope_after_fix_3": [
+      "OOS-1, OOS-2 (TC-57 @ Slice 21), OOS-3, OOS-4, OOS-5, OOS-6, OOS-7, OOS-9 — unchanged, still reported-not-fixed.",
+      "OOS-11 — UNCHANGED and deliberately NOT fixed. The one-line cvar-wait cap stays reverted and `wait_for_idle` is untouched.",
+      "OOS-12, OOS-13, OOS-14, OOS-15 — NEW this round, all reported-not-fixed. OOS-13 and OOS-14 are the same graceful-absent/embedder-gating family as this finding; per the mandate they were characterised and left rather than folded in.",
+      "decision D1 (corpus-wide vector-kind enrolment) unchanged.",
+      "eu7: ZERO runs, any backend, any N."
+    ],
+    "next_step_for_orchestrator": "STOP before cherry-picking. HEAD is 2b16228758442d5243c10b49116729e32aba76a2. The R1 fix is complete, Rust-green (170 workspace suites, exit 0) and X1-mirrored, but it puts the engine into the state design-of-record §4.1 invariant 1 forbids and turns ONE shipped Slice-20 test red in EACH binding (measured: `torn terminals = 1`, `readiness = ready`, `vector rows = 0`). Take `the_question_for_the_hitl` above to the HITL with options R1/R2/R3. If R1 wins: amend §4.1 invariant 1, rewrite the two shipped binding tests, add the interface-doc + CHANGELOG text this round deliberately did NOT write, and run the conventional pre-fix binding rebuild for the non-vacuity record. If R2 wins: revert 1f7b2937 and 2b162287, and re-issue fix-4 against `commit_projection_outcomes`' Failure arm (~lib.rs:13735-13757) plus `run_projection_job`'s retry ladder (~:12710) — a much smaller change. Either way, codex should re-review from 1b0cf514. Note `node_modules` in the worktree root is an untracked symlink to the primary checkout's node_modules (needed by agent-lint); it is in no commit."
+  },
+  "fix_2": {
+    "findings_closed": [
+      "codex §9 round 2 [P1] 'Don't enrol kinds the vector writer can't commit' (src/rust/crates/fathomdb-engine/src/lib.rs:16950-16951)",
+      "codex §9 round 2 [P2] 'Backfill stranded rows when late-enrolling a kind' (src/rust/crates/fathomdb-engine/src/lib.rs:4847)"
+    ],
+    "transcript": "/home/coreyt/projects/fathomdb/dev/plans/runs/codex/0.8.20/slice-20c-fix-1-rereview-20260726T173103Z.log",
+    "note_on_p1": "This is the SAME defect the implementer independently filed as OOS-10 after fix-1. Two independent reviewers converging is why it moved from reported-out-of-scope into scope. Closed with codex's FIRST option (restrict enrolment); the vector writer was NOT taught arbitrary kinds — that would reach into `resolve_source_type`'s locked Pack-1 partition-key semantics (dev/design/0.7.0-vector-quant-pack1.md D3, a HITL lock).",
+    "red_first_evidence": {
+      "red_commit": "63554cee690f44462257eed60dfc168fb301918d",
+      "green_commit": "0efcf9cdb508ba8c3bae4ae2ccc0d35d6b2ecdc7",
+      "command": "cargo test -p fathomdb-engine --test slice20c_flush_barrier",
+      "baseline_exit_code": 101,
+      "baseline_result": "6 passed; 3 failed — re-run AT the RED commit (post `cargo fmt`), so this is the committed test text",
+      "red_tests_added": [
+        "a_kind_the_vector_writer_cannot_commit_is_not_enrolled_at_declaration_time  [P1, declare-time door]",
+        "a_kind_the_vector_writer_cannot_commit_is_not_late_enrolled_on_write        [P1, write-path door]",
+        "late_enrolment_backfills_the_rows_an_earlier_session_stranded               [P2]"
+      ],
+      "captured_failures": [
+        "a_kind_the_vector_writer_cannot_commit_is_not_enrolled_at_declaration_time — 'WEDGED: enrolling a node kind the vector writer cannot commit leaves the row pending forever — no terminal is ever recorded, so `drain` burns its whole timeout: Scheduler'",
+        "a_kind_the_vector_writer_cannot_commit_is_not_late_enrolled_on_write — 'WEDGED: late-enrolling a node kind the vector writer cannot commit leaves the row pending forever: Scheduler'",
+        "late_enrolment_backfills_the_rows_an_earlier_session_stranded — 'LATE ENROLMENT STRANDS ROWS: … delete the `up_to_date` terminals of rows with no vector and REWIND the readiness watermark to reach them'"
+      ],
+      "downstream_non_vacuity": {
+        "why": "Each test fails on an EARLY assertion, so the deeper oracles had to be proven falsifying too. The first failing assertion of each was temporarily softened to an `eprintln!` and the three tests re-run at baseline with `--nocapture --test-threads=1`. The probes were then reverted (0 occurrences of TEMP-PROBE in the committed file) and the RED re-confirmed.",
+        "measured": [
+          "TEMP-PROBE declare-time drain(30s) = Err(Scheduler)",
+          "TEMP-PROBE declare-time readiness = Some(Embedding)",
+          "TEMP-PROBE doc enrolled = true   /  doc vector at rest = FALSE  /  doc leaf rows without vectors = 1  — the wedge STARVES the commit-able kind too, which is why the severity is workspace-wide and not per-kind",
+          "TEMP-PROBE late drain(30s) = Err(Scheduler)  /  late readiness = Some(Embedding)",
+          "TEMP-PROBE watermark after late enrolment = 2 (c1 = 1) — never rewound",
+          "TEMP-PROBE readiness while stranded = Some(Embedding)  — passes at baseline too (the NEW row is genuinely outstanding); recorded so the reviewer knows which assertion is the falsifying one",
+          "post-drain `assertion left == right` failed: 'FALSE-READY: `drain()` returned Ok and readiness reads `ready`, but rows written in the no-embedder session still have no vector at rest' — left: 2, right: 0"
+        ],
+        "temp_probes_reverted": true
+      },
+      "post_fix_exit_code": 0,
+      "post_fix_result": "9 passed; 0 failed (was 6)"
+    },
+    "what_changed": [
+      "[P1] NEW `kind_is_vector_committable(kind) -> bool`, placed immediately after `resolve_source_type`. It is `resolve_source_type(kind).is_ok()` — it DELEGATES rather than restating the vocabulary, so the enrolment filter and the writer that must commit the row cannot drift. A hand-copied second list is the TC-56 defect shape, and here the drift would be silent in the worst direction (a kind added to `resolve_source_type` but missed by a copied filter would simply never embed).",
+      "[P1] Applied at BOTH doors from that one predicate: `enqueue_declared_vector_backfill` step (1) now filters the `SELECT DISTINCT kind` result, and `Engine::enrol_vector_kind_if_declared` returns early. The second covers `enrol_batch_vector_kinds` (governed writes) AND `write_canonical_row_with_kind_for_test`.",
+      "[P2] `enqueue_declared_vector_backfill`'s steps (2)+(3) extracted VERBATIM into `reenqueue_stranded_vector_rows(tx) -> rusqlite::Result<bool>`; the declare-time path now calls it as its tail. NO second copy of the logic exists.",
+      "[P2] `Engine::enrol_batch_vector_kinds` calls it too, via the new `Engine::unstrand_after_late_enrolment`, which wraps it in `BEGIN IMMEDIATE`/`COMMIT`/`ROLLBACK` (the `rederive_projections_on_boot` shape) so the enrolment and the un-stranding cannot be torn apart by a crash.",
+      "[P2] `enrol_vector_kind_if_declared` now returns `bool` (newly enrolled) and `enrol_batch_vector_kinds` returns `bool` (stranded work re-enqueued). The stranded probe therefore runs ONLY on a transition — a workspace whose kinds are already enrolled pays nothing per write.",
+      "[P2] `write_inner` ORs that flag into `pending_projection`, so `notify_new_work` fires for rows OUTSIDE the batch. `collect_projection_jobs` only walks the batch, and `drain` is a passive barrier that never triggers (C4 rider), so enqueued-without-a-wake work would sit until the next unrelated write. `write_canonical_row_with_kind_for_test` gets the same `enqueued || unstranded` treatment.",
+      "`drain` NOT touched — still a passive barrier (C4 rider).",
+      "`connection_has_pending_projection_work` NOT restructured (TC-56 blast radius stays closed).",
+      "Rust suite: Legs D + E, 3 new tests (9 total) + one new probe helper `leaf_rows_of_kind_without_vectors` + `stored_default_identity`.",
+      "X1 parity: 2 new tests each in `src/python/tests/test_slice20c_flush_barrier.py` (7 total) and `src/ts/tests/slice20c-flush-barrier.test.ts` (7 total).",
+      "Docs: `dev/interfaces/{rust,python,typescript}.md` + `CHANGELOG.md` — extended the EXISTING `drain`-barrier / R-20-DR blocks (no new section, no new file)."
+    ],
+    "design_decisions_the_reviewer_should_scrutinise": [
+      {
+        "id": "G1",
+        "title": "The commit-ability predicate DELEGATES; it does not mirror",
+        "detail": "`kind_is_vector_committable` is one line: `resolve_source_type(kind).is_ok()`. The mandate required one shared definition; delegation is the strongest form of that — there is literally no second vocabulary to drift. Cost is one `match` over ≤8 string literals per unenrolled batch-row, which is strictly cheaper than the `EXISTS` probes that already guard the same path."
+      },
+      {
+        "id": "G2",
+        "title": "A non-commit-able kind gets NO new surface — deliberately silent",
+        "detail": "No typed error, no new verb, no `ProjectionDelta` field, no log-only failure row. The write is accepted, the row stays lexically searchable (FTS), it is not counted as outstanding work, and readiness still reaches `ready`. Asserted positively: `projection_failure_rows == 0` in Rust and Python (a kind with no dense arm is not a FAILURE, so it must not pollute the failure audit). This is exactly that kind's PRE-SLICE status quo — before Slice 20c nothing enrolled a node kind at all — so it is a restoration, not a new limitation. The limitation is documented in all three interface docs and the CHANGELOG."
+      },
+      {
+        "id": "G3",
+        "title": "The stranded set is corpus-wide, not scoped to the newly-enrolled kind",
+        "detail": "`reenqueue_stranded_vector_rows` joins `_fathomdb_vector_kinds` and therefore covers EVERY enrolled kind, not just the one that triggered it. That is deliberate and matches D1 (the engine has ONE vector pipeline and `derive_dense_readiness` is corpus-wide): if two kinds were stranded and a write of one of them turns the arm on, leaving the other stranded would just re-create the false-ready in a narrower shape. The `_fathomdb_vector_kinds` join is also what keeps a non-commit-able kind out — it is not enrolled, so it is not 'behind', so it is not stranded."
+      },
+      {
+        "id": "G4",
+        "title": "The un-stranding runs on its own transaction, OUTSIDE the batch transaction",
+        "detail": "`enrol_batch_vector_kinds` runs on the writer connection before `commit_batch` opens its own transaction, so a nested transaction is not possible. The enrolment + un-stranding pair is made atomic with `BEGIN IMMEDIATE` (previously the enrolment was a bare autocommit `INSERT OR IGNORE`; adding a terminal DELETE + a cursor rewind made the un-atomic pair a real, if small, hazard). If the BATCH then fails, the workspace is left having enrolled a kind whose rows are correctly queued for the dense arm the registry does declare — inert and self-healing, the same reasoning the pre-existing doc comment already carried for enrolment alone."
+      },
+      {
+        "id": "G5",
+        "title": "Gated on a NEW enrolment, so the cost is a transition cost",
+        "detail": "`unstrand_after_late_enrolment` is reached only when `enrol_vector_kind_if_declared` actually inserted a registry row. A steady-state write of an already-enrolled kind runs ONE `EXISTS` probe and stops, exactly as before fix-2 — no `BEGIN IMMEDIATE`, no MIN-over-join. Pinned by the tail of the Leg E test: a further write with nothing stranded must not rewind the watermark and must not re-embed."
+      },
+      {
+        "id": "G6",
+        "title": "Watermark rewind is asserted directly, not inferred — and the race was designed out",
+        "detail": "Reading `projection_cursor` right after the session-2 write is racy (the worker advances it again as it drains). Leg E therefore raises `CountingEmbedder::delay_ms` to 1500 ms BEFORE that write and drops it back to 0 before the drain, so the post-write probe is deterministic. The rewind assertion (`projection_cursor < c1`) is the falsifying one at baseline (measured: watermark 2, c1 1); the readiness=`Embedding` assertion beside it passes at baseline too and is the invariant statement, not the oracle."
+      },
+      {
+        "id": "G7",
+        "title": "The P1 at-rest oracle is narrowed on `canonical_nodes.kind`, never on the registry",
+        "detail": "`leaf_rows_without_vectors` (corpus-wide) is legitimately non-zero in the P1 fixture — the `invoice` rows correctly have no vector — so a per-kind form was needed. It narrows on `canonical_nodes.kind`, still with NO join to `_fathomdb_vector_kinds`. Joining the kind registry is the vacuous-green trap that has already bitten this slice twice; the P1 fixture asserts `leaf_rows_of_kind_without_vectors('doc') == 0` (the arm works) AND `== 2` for `invoice` (the arm is deliberately absent), so the probe is falsifiable in both directions."
+      }
+    ],
+    "x1_re_run": {
+      "status": "DONE, with non-vacuity measured in BOTH bindings against the pre-fix-2 engine. BOTH findings are SDK-observable; nothing was engine-internal-only.",
+      "sdk_observability": "P1 is a single-session shape in both bindings. P2 needs the no-embedder → embedder reopen, which is reachable because `EmbedderChoice::None` pins `default_embedder_identity()` — the SAME identity `use_default_embedder=True` / `useDefaultEmbedder: true` carries — so the reopen does not fail closed on `EmbedderIdentityMismatch`.",
+      "python": {
+        "how": "Wheel built from `src/python` with `maturin build --release --out <SCRATCH>/wheel --features pyo3/extension-module,test-hooks,default-embedder,default-reranker`, then `pip install`ed into a THROWAWAY `python3 -m venv` under the scratch dir.",
+        "shared_venv_untouched": true,
+        "maturin_develop_or_pip_install_e_used": false,
+        "new_suite_result": "7 passed, exit 0 (was 5; +2 are the fix-2 tests)",
+        "full_suite_result": "846 passed, 10 skipped, exit 0",
+        "full_suite_note": "Total collected is 856 = fix-1's 854 + the 2 new tests. The passed/skipped split differs from fix-1's record (845/9) by one test that skips in this venv; the venv needed `numpy`, `pyyaml`, `networkx` and `scipy` installed for the eval-harness modules to collect, and one arm skips on an env condition. Zero failures.",
+        "non_vacuity": "Rebuilt the wheel against `git checkout 63554cee -- .../lib.rs` and re-ran: 2 failed / 5 passed, exit 1 — P1 raised `_fathomdb.SchedulerError: scheduler error` at the post-declaration `drain`; P2 failed `assert 2 == 0` with 'FALSE-READY: `drain()` returned and readiness reads \"ready\", but rows written in the no-embedder session still have no vector at rest'. HEAD wheel reinstalled afterwards and re-verified 7 passed / exit 0; the engine source was restored with `git checkout HEAD -- …` and `git status` is clean.",
+        "baseline_run_anomaly": "The FIRST baseline (pre-fix) run of the new suite exited 135 (a hard abort at interpreter teardown) after the wedged engine; the immediate re-run produced the clean 2-failed/5-passed above. That is broken-engine behaviour, on a build that is not being shipped. Two consecutive HEAD full-suite runs both exited 0."
+      },
+      "typescript": {
+        "how": "`npm test` in src/ts (runs `napi build --features test-hooks,default-embedder`, `tsc`, `node --test`).",
+        "full_suite_result": "238 tests, 238 pass, 0 fail, exit 0 (was 236; +2 are the fix-2 tests)",
+        "non_vacuity": "Rebuilt the napi binding against `git checkout 63554cee -- .../lib.rs` and ran the slice20c suite alone: 7 tests, 5 pass, 2 fail, exit 1 — P1 `Error [SchedulerError]: scheduler error` from `Engine.drain`; P2 `AssertionError … 2 !== 0` on the FALSE-READY probe. HEAD restored and rebuilt: 7 tests, 7 pass, exit 0."
+      },
+      "harness_boundary_unchanged": "`vector_default` is a vec0 VIRTUAL table; neither stdlib `sqlite3` nor `node:sqlite` can read it. Both bindings assert on `_fathomdb_vector_rows` (written in the SAME transaction as the vec0 INSERT) plus the un-joined leaf probes. The TS oracle keeps `{ readOnly: true }` (see OOS-1)."
+    },
+    "gates_re_run": [
+      {
+        "gate": "cargo clippy --workspace --all-targets",
+        "exit_code": 0,
+        "detail": "ZERO warnings. Two `doc_lazy_continuation` warnings introduced by the first draft of the new doc comment were fixed before the GREEN commit; verified by forcing a rebuild (`touch lib.rs`) so the result is not a cached pass."
+      },
+      {
+        "gate": "cargo check --workspace --all-targets",
+        "exit_code": 0
+      },
+      {
+        "gate": "cargo test --workspace",
+        "exit_code": 0,
+        "detail": "every `test result` line reports `ok`; zero failures anywhere, including the CLI suite that flaked once during fix-1 (OOS-9)"
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test slice20c_flush_barrier",
+        "exit_code": 0,
+        "detail": "9 passed (was 6)"
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test slice20_dense_readiness",
+        "exit_code": 0,
+        "detail": "8 passed"
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test slice15d_projection_registry",
+        "exit_code": 0,
+        "detail": "24 passed"
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test slice15e_prekn_filterable",
+        "exit_code": 0,
+        "detail": "11 passed"
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test projection_runtime",
+        "exit_code": 0,
+        "detail": "12 passed, 1 ignored"
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --features operator --test rebuild_projections",
+        "exit_code": 0,
+        "detail": "4 passed"
+      },
+      {
+        "gate": "Python (wheel in throwaway venv) — new suite",
+        "exit_code": 0,
+        "detail": "7 passed"
+      },
+      {
+        "gate": "Python (wheel in throwaway venv) — full tests/ tree",
+        "exit_code": 0,
+        "detail": "846 passed, 10 skipped (run twice, exit 0 both times)"
+      },
+      {
+        "gate": "TypeScript — npm test",
+        "exit_code": 0,
+        "detail": "238 / 238"
+      },
+      {
+        "gate": "scripts/check-governed-surface-pin.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/agent-lint.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/agent-lint-md.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/check-ledgers.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/lint-findings.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/lint-plan-anchors.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/lint-design-status.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/check-release-state-views.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/check-board-currency.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/security/check-removal-changelog.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/agent-typecheck.sh",
+        "exit_code": 1,
+        "detail": "PRE-EXISTING — exactly 7 pyright errors, the unchanged baseline (the last is `test_vector_equivalence_probe.py:32 - error: No parameter named \"reason\"`). fix-2 adds none."
+      },
+      {
+        "gate": "scripts/agent-test.sh",
+        "exit_code": null,
+        "detail": "DELIBERATELY NOT RUN — vacuous aggregate that aborts on the known-red TC-16 actionlint fixture. Suites run individually, per the mandate."
+      }
+    ],
+    "governed_surface_re_verified": {
+      "allowlist_byte_identical": true,
+      "allowlist_sha256": "555e6ae7f7d13e537170dbd63eed4a0433a82a0f7bdc03781ec4e0ef7692c02b",
+      "allowlist_sha256_matches_mandate_baseline": true,
+      "allowlist_edited": false,
+      "re_pinned": false,
+      "check_governed_surface_pin_exit": 0,
+      "net_new_governed_commands": 0,
+      "new_sdk_verbs": 0,
+      "new_exported_types": 0,
+      "note": "`kind_is_vector_committable` and `reenqueue_stranded_vector_rows` are private free functions; `Engine::unstrand_after_late_enrolment` is a private method. The only signature changes are on private methods (`enrol_batch_vector_kinds` / `enrol_vector_kind_if_declared` now return `bool`). No public type or verb changed shape."
+    },
+    "constraints_honoured": {
+      "schema_version": "24 — unchanged; still asserted inside the Rust suite",
+      "migrations_changed": false,
+      "drain_touched": false,
+      "connection_has_pending_projection_work_touched": false,
+      "oos_11_cvar_cap": "STILL REVERTED, as directed. `wait_for_idle` is untouched and the module-doc note explaining the ~30 s runs is intact.",
+      "maturin_develop_or_pip_install_e": "never run; /home/coreyt/projects/fathomdb/.venv was used ONLY as the `maturin` binary source, never as an install target",
+      "no_verify_used": false,
+      "db_mocking": "none — every test drives a real engine against a real SQLite file",
+      "worktree_discipline": "all work inside /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s20c; the primary checkout was never modified; no worktree created/moved/removed",
+      "ledgerwrite_run": false,
+      "status_doc_edited": false
+    }
+  },
+  "fix_1": {
+    "finding_closed": "codex §9 round 1, the ONE finding: [P2] CONCERN 'Stop embedding after vector projection drops' (src/rust/crates/fathomdb-engine/src/lib.rs:16772-16777). Transcript: /home/coreyt/projects/fathomdb/dev/plans/runs/codex/0.8.20/slice-20c-review-20260726T164236Z.log",
+    "oos_8_resolution": "CLOSED as a code fix, not a direction call. The orchestrator's reading was verified in the tree: the drop arm (`apply_projection_config` step (1) — `clear_attribute_projection` + `remove_projection_row`) touches no vec0 table, no `_fathomdb_vector_rows`, no `_fathomdb_vector_kinds`, so 'a drop leaves existing vectors at rest' is ALREADY the shipped contract. Un-enrolment removes ONE registry row and deletes zero embeddings, so it PRESERVES that contract — no destructive delta, no direction question.",
+    "red_first_evidence": {
+      "red_commit": "77bca9d4e64f7163ea0bb98622ba758a9a5fc95a",
+      "green_commit": "c7c0f5279f9ffdf162f2cffe4d7cfdab3b0110c1",
+      "note_on_amend": "The RED commit was amended once, BEFORE the GREEN commit existed, so that RED and GREEN pin byte-identical test text (the post-drop new-kind arm moved from an arbitrary kind to `note` — see OOS-10). RED was then re-run at the amended commit and re-confirmed.",
+      "command": "cargo test -p fathomdb-engine --test slice20c_flush_barrier",
+      "baseline_exit_code": 101,
+      "baseline_result": "4 passed; 2 failed",
+      "captured_failures": [
+        "dropping_the_last_vector_projection_un_enrols_the_kind_and_stops_embedding — 'ONE-WAY ENROLMENT: dropping the last `searchable→vector` declaration must un-enrol the node kind it enrolled, or the write path keeps embedding for a projection the registry no longer declares'",
+        "dropping_a_vector_projection_leaves_edge_fact_enrolled — 'the node kind is un-enrolled'"
+      ],
+      "downstream_non_vacuity": {
+        "why": "Both tests fail on their FIRST assertion, so the deeper oracles had to be proven falsifying too — otherwise the pin would be a single-assertion tautology. Assertion (1) was temporarily softened to a print and the suite re-run at baseline.",
+        "measured": [
+          "TEMP-PROBE doc enrolled after drop = true",
+          "TEMP-PROBE drain(2000) after drop = Err(Scheduler)  — this IS codex's stated symptom: `drain` waits on work for a dropped projection. Falsifiable in both directions because the embedder is slowed to 8s at that point, so a 2s barrier can only return Ok if nothing was enqueued.",
+          "assertion `left == right` failed: 'a write after the drop must not be embedded' — left: 2, right: 1  (the post-drop write WAS embedded)"
+        ],
+        "temp_probes_reverted": true
+      },
+      "post_fix_exit_code": 0,
+      "post_fix_result": "6 passed; 0 failed"
+    },
+    "what_changed": [
+      "`apply_projection_config` now reads `vector_projection_declared(tx)` BEFORE the drop arm and AGAIN after all registry mutations. On the declared -> not-declared TRANSITION it calls the new `unenrol_registry_vector_node_kinds(tx)`, on the SAME write transaction as the registry mutation. The forward `enqueue_declared_vector_backfill` call is now the other arm of the same `if`.",
+      "NEW `unenrol_registry_vector_node_kinds(tx)` — `DELETE FROM _fathomdb_vector_kinds WHERE kind <> 'edge_fact'`. One statement. It deletes NO embedding: no vec0 delete, no `_fathomdb_vector_rows` delete.",
+      "`Engine::enrol_batch_vector_kinds`'s doc comment corrected — it claimed the kind registry 'has no delete path', which is no longer true. No code change was needed on that path: `enrol_vector_kind_if_declared` was ALREADY gated on `vector_projection_declared`, so it does not immediately re-enrol after a drop. That gate is now pinned by post-condition (5) of the RED test.",
+      "`connection_has_pending_projection_work` NOT restructured (TC-56 blast radius kept closed) — it already joins `_fathomdb_vector_kinds`, so removing the enrolment is sufficient for `drain` to stop waiting and for `dense_readiness` to stop counting the rows.",
+      "`drain` NOT touched — it stays a passive barrier (C4 rider).",
+      "Rust suite: Leg C, 2 new tests (6 total). `CountingEmbedder` gains a settable `delay_ms` (default 0 ⇒ every pre-existing test unaffected).",
+      "X1 parity: 1 new test each in `src/python/tests/test_slice20c_flush_barrier.py` and `src/ts/tests/slice20c-flush-barrier.test.ts`.",
+      "Docs: `dev/interfaces/{rust,python,typescript}.md` + `CHANGELOG.md` — a reversibility bullet inside the EXISTING `drain`-barrier / R-20-DR blocks (no new section, no new file)."
+    ],
+    "design_decisions_the_reviewer_should_scrutinise": [
+      {
+        "id": "F1",
+        "title": "Keyed to the declared -> not-declared TRANSITION, not to the bare post-state",
+        "detail": "The mandate said 'when a call leaves no active searchable→vector declaration'. Taken as a bare post-state that is WRONG and was measured to be wrong: a workspace can hold enrolments this registry never made. `configure_vector_kind_for_test` is such a writer, and `slice15e_prekn_filterable.rs` opens EVERY fixture with `configure_vector_kind_for_test(\"doc\")` and then calls `configure_projections(&[filterable_spec(\"priority\")], &[])` — a spec with `vector: None`. Firing on the bare post-state would un-enrol `doc` there and kill a dense arm the projection registry never owned. `slice20_dense_readiness.rs:767` has the same shape. So the rule is `declared_before && !declared_after`. It is still STATE-keyed and not delta-keyed — both members are registry reads, never 'was this spec new' — so a re-applied drop finds `declared_before == false` and is a total no-op (pinned by post-condition (6)). In PRODUCTION the two readings coincide: before this slice `production_vector_kind_surface=[]`, so a node kind can only be enrolled because a declaration existed."
+      },
+      {
+        "id": "F2",
+        "title": "Scope of the delete: `kind <> 'edge_fact'`, not 'kinds currently present in canonical_nodes'",
+        "detail": "The tighter predicate (mirror the forward path's `SELECT DISTINCT kind FROM canonical_nodes WHERE row_kind IN ('leaf','coverage')`) would MISS a kind that was enrolled and whose rows were later purged/superseded away — leaving a live enrolment that a future write of that kind would silently re-activate, i.e. exactly the defect codex reported, just rarer. `kind <> 'edge_fact'` is the superset that closes it. `'edge_fact'` is the ONE kind whose lifecycle is not the registry's: `project_canonical_edge_row` (G11) auto-registers it off the presence of an edge BODY, unconditionally. Pinned by `dropping_a_vector_projection_leaves_edge_fact_enrolled`, which also writes a NEW edge after the drop and drains it to prove the edge dense arm still works."
+      },
+      {
+        "id": "F3",
+        "title": "NOT gated on a live embedder (unlike the forward path)",
+        "detail": "`enqueue_declared_vector_backfill` is gated on `dense_arm_live`; the inverse deliberately is not. A prior session WITH an embedder may have enrolled; a later session WITHOUT one must still be able to drop. Un-enrolling with no embedder is inert and non-destructive either way."
+      },
+      {
+        "id": "F4",
+        "title": "Terminals and the readiness watermark are deliberately untouched",
+        "detail": "A row enqueued-but-not-yet-embedded when the drop lands keeps its ABSENT `_fathomdb_projection_terminal` row, which pins `advance_projection_cursor` below it (that function stops at the first cursor with no terminal). Harmless — both the scheduler and the pending-work probe join `_fathomdb_vector_kinds`, so neither sees the row — and it is precisely what lets a later RE-declaration reach it. Post-condition (7) pins that end-to-end: after re-declaring, the row written while the arm was off IS backfilled and `leaf_rows_without_vectors == 0`."
+      },
+      {
+        "id": "F5",
+        "title": "Vacuous-green trap avoided, as instructed",
+        "detail": "Every at-rest probe keys off `canonical_nodes.row_kind IN ('leaf','coverage')` or off `_fathomdb_vector_rows` directly, with NO join to `_fathomdb_vector_kinds` (`leaf_rows_without_vectors` in all three languages). The only probes that DO read `_fathomdb_vector_kinds` are the ones whose subject IS the enrolment, where its emptiness is the assertion rather than a hollow zero."
+      }
+    ],
+    "x1_re_run": {
+      "status": "DONE, with non-vacuity measured in BOTH bindings against the pre-fix-1 engine",
+      "python": {
+        "how": "Wheel built from `src/python` (so the `[tool.maturin]` module-name `fathomdb._fathomdb` applies — building from the crate dir instead yields a `fathomdb_py` wheel with no importable init symbol) with `maturin build --release --out <SCRATCH>/wheel --features pyo3/extension-module,test-hooks,default-embedder,default-reranker`, then `pip install`ed into a THROWAWAY `python3 -m venv` under the scratch dir.",
+        "shared_venv_untouched": true,
+        "maturin_develop_or_pip_install_e_used": false,
+        "new_suite_result": "5 passed, exit 0",
+        "full_suite_result": "845 passed, 9 skipped, exit 0 (was 844 + 9; +1 is the new drop-inverse test)",
+        "non_vacuity": "Rebuilt the wheel against `git checkout 7de05aae -- .../lib.rs` and re-ran the suite: 1 failed / 4 passed, exit 1, failing on `assert not _vector_kind_registered(path)` — 'ONE-WAY ENROLMENT…', `assert not True`. HEAD wheel reinstalled afterwards and re-verified 5 passed / exit 0; the engine source was restored with `git checkout HEAD -- …` and `git status` is clean.",
+        "note": "Run from a neutral cwd with `-o pythonpath=<shadow-dir>` because `src/python/pyproject.toml` sets `pythonpath=['.']`, which shadows the installed wheel with the `.so`-less source package. The shadow dir symlinks only `eval/` + `_typecheck_fixtures/`."
+      },
+      "typescript": {
+        "how": "`npm test` in src/ts (runs `napi build --features test-hooks,default-embedder`, `tsc`, `node --test`).",
+        "full_suite_result": "236 tests, 236 pass, 0 fail, exit 0 (was 235; +1 is the new drop-inverse test)",
+        "non_vacuity": "Rebuilt the napi binding against `git checkout 7de05aae -- .../lib.rs` and ran the slice20c suite alone: exit 1, `✖ dropping the last vector projection un-enrols the kind and stops embedding` with `AssertionError … true !== false`. HEAD restored and rebuilt: 5 tests, 5 pass, exit 0."
+      },
+      "harness_boundary_unchanged": "`vector_default` is a vec0 VIRTUAL table; neither stdlib `sqlite3` nor `node:sqlite` can read it. Both bindings assert on `_fathomdb_vector_rows` (written in the SAME transaction as the vec0 INSERT) plus the un-joined leaf probe. The TS oracle keeps `{ readOnly: true }` (see OOS-1)."
+    },
+    "gates_re_run": [
+      {
+        "gate": "cargo clippy --workspace --all-targets",
+        "exit_code": 0
+      },
+      {
+        "gate": "cargo check --workspace --all-targets",
+        "exit_code": 0
+      },
+      {
+        "gate": "cargo test --workspace",
+        "exit_code": 0
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test slice20c_flush_barrier",
+        "exit_code": 0,
+        "detail": "6 passed (was 4)"
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test slice15d_projection_registry",
+        "exit_code": 0,
+        "detail": "24 passed"
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test slice20_dense_readiness",
+        "exit_code": 0,
+        "detail": "8 passed"
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test projection_runtime",
+        "exit_code": 0,
+        "detail": "12 passed, 1 ignored"
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --test slice15e_prekn_filterable",
+        "exit_code": 0,
+        "detail": "11 passed — run explicitly because it is the suite decision F1 protects"
+      },
+      {
+        "gate": "cargo test -p fathomdb-engine --features operator --test rebuild_projections",
+        "exit_code": 0,
+        "detail": "4 passed — needs `--features operator`; without it cargo exits 101 with 'requires the features: operator', which is a cargo argument error, NOT a test failure"
+      },
+      {
+        "gate": "Python (wheel in throwaway venv) — new suite",
+        "exit_code": 0,
+        "detail": "5 passed"
+      },
+      {
+        "gate": "Python (wheel in throwaway venv) — full tests/ tree",
+        "exit_code": 0,
+        "detail": "845 passed, 9 skipped"
+      },
+      {
+        "gate": "TypeScript — npm test",
+        "exit_code": 0,
+        "detail": "236 / 236"
+      },
+      {
+        "gate": "scripts/check-governed-surface-pin.sh",
+        "exit_code": 0,
+        "detail": "'matches the AC-079 pin (30 allowlist / 5 core / 5 recovery_denylist)'"
+      },
+      {
+        "gate": "scripts/agent-lint.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/agent-lint-md.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/check-ledgers.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/lint-findings.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/lint-plan-anchors.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/lint-design-status.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/check-release-state-views.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/check-board-currency.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/security/check-removal-changelog.sh",
+        "exit_code": 0
+      },
+      {
+        "gate": "scripts/agent-typecheck.sh",
+        "exit_code": 1,
+        "detail": "PRE-EXISTING — exactly 7 pyright errors, the unchanged baseline. fix-1 adds none."
+      },
+      {
+        "gate": "scripts/agent-test.sh",
+        "exit_code": null,
+        "detail": "DELIBERATELY NOT RUN — vacuous aggregate that aborts on the known-red TC-16 actionlint fixture. Suites run individually, per the mandate."
+      }
+    ],
+    "governed_surface_re_verified": {
+      "allowlist_byte_identical": true,
+      "allowlist_sha256": "555e6ae7f7d13e537170dbd63eed4a0433a82a0f7bdc03781ec4e0ef7692c02b",
+      "allowlist_sha256_matches_mandate_baseline": true,
+      "allowlist_edited": false,
+      "re_pinned": false,
+      "check_governed_surface_pin_exit": 0,
+      "net_new_governed_commands": 0,
+      "new_sdk_verbs": 0,
+      "new_exported_types": 0,
+      "note": "`unenrol_registry_vector_node_kinds` is a private free function; `configure_projections`' signature and `ProjectionDelta`'s shape are unchanged."
+    },
+    "constraints_honoured": {
+      "schema_version": "24 — unchanged; still asserted inside the Rust suite",
+      "migrations_changed": false,
+      "embeddings_deleted": "NONE — no vec0 delete, no `_fathomdb_vector_rows` delete. Asserted positively in all three languages after the drop and again after the idempotent re-drop.",
+      "drain_touched": false,
+      "connection_has_pending_projection_work_touched": false,
+      "maturin_develop_or_pip_install_e": "never run; /home/coreyt/projects/fathomdb/.venv untouched",
+      "no_verify_used": false,
+      "db_mocking": "none",
+      "worktree_discipline": "all work inside /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s20c; primary checkout never modified; no worktree created/moved/removed",
+      "ledgerwrite_run": false,
+      "status_doc_edited": false
+    }
+  },
+  "red_first_evidence": {
+    "red_commit": "ddaf732066fdc9404e64b0e246debae8f8168156",
+    "green_commit": "da7c5b76e6a5ca452c00d4ac3bf1c2f212880b7a",
+    "command": "cargo test -p fathomdb-engine --test slice20c_flush_barrier",
+    "baseline_exit_code": 101,
+    "baseline_result": "0 passed; 3 failed",
+    "captured_failures": [
+      "declaring_a_vector_projection_backfills_pre_existing_rows_and_drain_flushes_to_ready — assertion `left == right` failed: FALSE-READY BARRIER … left: Some(Ready)  right: Some(Embedding)",
+      "drain_ok_implies_dense_readiness_ready_across_mutation_shapes — write-after-declare: `drain()` returned Ok and readiness is `ready`, so no vector-eligible row may lack its vector at rest. left: 1  right: 0",
+      "reapplying_a_satisfied_vector_declaration_does_not_rewind_or_re_embed — assertion `left == right` failed: exactly one backfill embed happened. left: 0  right: 1"
+    ],
+    "vacuity_correction": "An earlier draft of test 3 PASSED at baseline because its at-rest probe joined `_fathomdb_vector_kinds` — the very table the defect leaves empty — so it returned a hollow zero. The probe was rewritten to key off `canonical_nodes.row_kind IN ('leaf','coverage')` with no join to the vector-kind registry, at which point it went red. This is recorded because it is exactly the Slice-25 vacuous-green failure mode the mandate names.",
+    "post_fix_exit_code": 0,
+    "post_fix_result": "4 passed; 0 failed (a 4th test — the no-embedder graceful-absent/graceful-graft arm — was added with the fix, since the live-embedder gate was a semantic decision that needed pinning)"
+  },
+  "what_changed": {
+    "leg_a_enqueue_side": [
+      "NEW `enqueue_declared_vector_backfill(tx)` — called from `apply_projection_config` AFTER the registry mutations, on the caller's `configure_projections` write transaction, so enrolment + re-enqueue commit atomically with the declaration. (1) enrols every vector-eligible node kind present in `canonical_nodes` (`row_kind IN ('leaf','coverage')`, the `index_targets_for_row_kind` predicate — `graph` rows are lexically searchable but never embedded); (2) deletes the PERMANENT `'up_to_date'` terminals of now-covered rows carrying no `_fathomdb_vector_rows` row; (3) rewinds the readiness watermark to just below the lowest stranded cursor. Same truncate+rewind shape as `run_rebuild`, scoped to the stranded set.",
+      "IDEMPOTENCE by construction: every step keys off CURRENT state, never off 'was this declaration new'. Once drained, the stranded set is empty ⇒ returns false ⇒ no terminal touched, no cursor rewound, no re-embed. A `'failed'` terminal is deliberately never re-enqueued (would loop a permanently-failing row forever, and contradicts the documented failure boundary).",
+      "NEW `Engine::enrol_batch_vector_kinds` / `enrol_vector_kind_if_declared` — LATE ENROLMENT for a kind first written AFTER the declaration, which would otherwise hit the same permanent-terminal trap. Runs in `write_inner` BEFORE `collect_projection_jobs`.",
+      "`configure_projections` calls `notify_new_work()` AFTER its commit when work was enqueued. `drain` itself was NOT touched — it stays a passive barrier, per the C4 rider.",
+      "`apply_projection_config` now returns `(ProjectionDelta, bool)`. The flag is a runtime signal, deliberately NOT a new `ProjectionDelta` field: `ProjectionDelta`'s public shape is unchanged."
+    ],
+    "leg_b_pin_and_docs": [
+      "Rust `src/rust/crates/fathomdb-engine/tests/slice20c_flush_barrier.rs` (4 tests).",
+      "Python `src/python/tests/test_slice20c_flush_barrier.py` (4 tests).",
+      "TypeScript `src/ts/tests/slice20c-flush-barrier.test.ts` (4 tests).",
+      "`dev/interfaces/{rust,python,typescript}.md` — extended the `dense_readiness` section added by Slice 20 fix-2 at 15c75c57 (did NOT start a new doc). Documents: no `flush_embeddings()` verb; `drain() Ok ⇒ dense_readiness == ready` AND vectors at rest; barrier-not-trigger; ordering-independence; idempotence; graceful-absent. The Python-SECONDS vs TS-MILLISECONDS asymmetry is called out in both binding files.",
+      "`CHANGELOG.md` — extended the existing R-20-DR block in [Unreleased]."
+    ]
+  },
+  "decisions_taken_that_the_reviewer_should_scrutinise": [
+    {
+      "id": "D1",
+      "title": "Vector-kind scoping: `ProjectionSpec` carries NO kind axis",
+      "detail": "The mandate says 'scoped to the newly-declared kind', but `ProjectionSpec` is `{name, roles, fts?, vector?}` — per-ATTRIBUTE, with no kind. `derive_dense_readiness`'s own doc states the readiness predicate is CORPUS-WIDE because 15d defers per-attribute embedding, so every declared vector projection is served by the one engine vector pipeline. I therefore read 'declare searchable→vector' as 'the corpus's dense arm is live' and enrol every vector-eligible node kind. This is a judgment call made explicit rather than silently; when per-attribute embedding lands, the scoping goes in the same seam as readiness."
+    },
+    {
+      "id": "D2",
+      "title": "Live-embedder gate + late enrolment placed on `Engine`, not in the projector",
+      "detail": "Both enrolment paths require `self.runtime_embedder.is_some()`. With `EmbedderChoice::None` there is no dense arm, so enrolling would queue embeds that can only retry to a `'failed'` terminal and pollute `projection_failures`. This was NOT theoretical: the first cut of the fix (enrolment inside `project_canonical_node_row`) turned `slice15d_projection_registry::vector_subobject_is_stored_not_built` RED — it opens with `Engine::open` (no embedder) and documents 'no engine is embedding here … readiness derives to Ready'. The gate needs the live embedder, which a free function holding only a `Connection` cannot see, so enrolment moved up to `Engine`. The declaration still PERSISTS without an embedder and GRAFTS on re-apply in a session that has one — the shipped Q6a contract, pinned by `a_declaration_without_a_live_embedder_defers_then_grafts_on_reapply` (which also asserts zero `projection_failures` rows)."
+    },
+    {
+      "id": "D3",
+      "title": "Late enrolment must run BEFORE `collect_projection_jobs`",
+      "detail": "`collect_projection_jobs` runs pre-transaction and decides whether `notify_new_work` fires. Enrolling after it left the row correctly enqueued in the DB with the dispatcher asleep on `pending_scan == false`; because `drain` is a passive barrier the next `drain` burned its ENTIRE timeout into `EngineError::Scheduler`. Caught by the RED 'write-after-declare' shape, and the reason `collect_projection_jobs` now carries an explicit ordering comment."
+    }
+  ],
+  "x1_sdk_parity": {
+    "status": "DONE, before land, as ONE unit — live functional harnesses, not symbol presence",
+    "python": {
+      "how": "Wheel built with `maturin build --out <SCRATCH>/wheel --features pyo3/extension-module,test-hooks,default-embedder,default-reranker` and `pip install`ed into a THROWAWAY `python3 -m venv` under the scratch dir.",
+      "shared_venv_untouched": true,
+      "maturin_develop_or_pip_install_e_used": false,
+      "new_suite_result": "4 passed, exit 0",
+      "full_suite_result": "844 passed, 9 skipped, exit 0",
+      "note": "Run from a neutral cwd with `-o pythonpath=<shadow-dir>` because `src/python/pyproject.toml` sets `pythonpath=['.']`, which shadows the installed wheel with the `.so`-less source package. The shadow dir symlinks only `eval/` + `_typecheck_fixtures/` so the eval-harness tests still collect."
+    },
+    "typescript": {
+      "how": "`npm ci` then `npm test` in src/ts (which runs `napi build --features test-hooks,default-embedder`, `tsc`, `node --test`).",
+      "new_suite_result": "4 pass, 0 fail, exit 0",
+      "full_suite_result": "235 tests, 235 pass, 0 fail, exit 0"
+    },
+    "non_vacuity_measured_in_both_bindings": {
+      "method": "Rebuilt each binding against the BASELINE engine (`git checkout 2afd168c -- src/rust/crates/fathomdb-engine/src/lib.rs`), re-ran, then restored HEAD and rebuilt.",
+      "python_baseline": "3 failed / 1 passed (fixture assertions up to `_vector_rows == 4` all reached; failures were `the declaration enrolled the vector kind` (False), `the post-declaration write embedded` (0 == 1), `before == 1` (0 == 1))",
+      "typescript_baseline": "3 failed / 1 passed",
+      "the_one_test_that_passes_on_both": "the no-embedder graceful-absent arm — correct on both codebases by construction, and the arm that runs with no network"
+    },
+    "harness_boundary_recorded": "`vector_default` is a vec0 VIRTUAL table from the engine-linked extension; neither stdlib `sqlite3` nor `node:sqlite` can read it (`no such module: vec0`). The second at-rest oracle therefore lives in the Rust suite only. Both bindings assert on `_fathomdb_vector_rows` (written in the SAME transaction as the vec0 INSERT) plus a probe deliberately NOT joined to `_fathomdb_vector_kinds`."
+  },
+  "gates_note": "CORRECTED at fix-4. This array is the SLICE-FINAL measured state at HEAD 1f46438b29d282758bcca2d3006504d88537476c, and is IDENTICAL to `fix_4.gates_re_run`. Every gate is green at its real exit code. The two non-zero entries fix-3 recorded (the Python and TypeScript full suites, each failing the one shipped Slice-20 test) are GONE: fix-3 is fully reverted and fix-4 preserves both tests verbatim. The only remaining non-zero is `agent-typecheck.sh` (exit 1, exactly the 7 PRE-EXISTING pyright errors) and `agent-test.sh`, deliberately not run.",
+  "gates": [
+    {
+      "gate": "cargo clippy --workspace --all-targets",
+      "exit_code": 0,
+      "detail": "ZERO warnings, verified on a FORCED rebuild (`touch lib.rs`) at HEAD so it is not a cached pass"
+    },
+    {
+      "gate": "cargo check --workspace --all-targets",
+      "exit_code": 0
+    },
+    {
+      "gate": "cargo test --workspace --no-fail-fast",
+      "exit_code": 0,
+      "detail": "170 suites ok, 0 FAILED — re-run at HEAD after a forced rebuild. Three consecutive clean full-workspace runs at this lib.rs."
+    },
+    {
+      "gate": "cargo test -p fathomdb-engine --test slice20c_flush_barrier",
+      "exit_code": 0,
+      "detail": "10 passed (4 -> 6 -> 9 -> 10)"
+    },
+    {
+      "gate": "cargo test -p fathomdb-engine --test slice20_dense_readiness",
+      "exit_code": 0,
+      "detail": "8 passed"
+    },
+    {
+      "gate": "cargo test -p fathomdb-engine --test slice15d_projection_registry",
+      "exit_code": 0,
+      "detail": "24 passed"
+    },
+    {
+      "gate": "cargo test -p fathomdb-engine --test slice15e_prekn_filterable",
+      "exit_code": 0,
+      "detail": "11 passed"
+    },
+    {
+      "gate": "cargo test -p fathomdb-engine --test projection_runtime",
+      "exit_code": 0,
+      "detail": "12 passed, 1 ignored"
+    },
+    {
+      "gate": "cargo test -p fathomdb-engine --features operator --test rebuild_projections",
+      "exit_code": 0,
+      "detail": "4 passed"
+    },
+    {
+      "gate": "cargo test -p fathomdb-engine --test tc31_source_id_on_every_hit",
+      "exit_code": 0,
+      "detail": "6 passed — one of the 4 suites an earlier fix-4 draft turned red; re-verified explicitly"
+    },
+    {
+      "gate": "cargo test -p fathomdb-engine --features operator --test provenance_mandatory",
+      "exit_code": 0,
+      "detail": "3 passed — likewise"
+    },
+    {
+      "gate": "cargo test -p fathomdb-engine --test multidoc_extractor_provenance",
+      "exit_code": 0,
+      "detail": "5 passed — likewise"
+    },
+    {
+      "gate": "cargo test -p fathomdb-engine --test consolidate_provider",
+      "exit_code": 0,
+      "detail": "12 passed; 0/48 failures under 6-way concurrency, matching origin/main (OOS-17)"
+    },
+    {
+      "gate": "Python (wheel in throwaway venv) — slice20c suite",
+      "exit_code": 0,
+      "detail": "8 passed (4 -> 5 -> 7 -> 8)"
+    },
+    {
+      "gate": "Python (wheel in throwaway venv) — full tests/ tree",
+      "exit_code": 0,
+      "detail": "857 collected = fix-2's 856 + the 1 new fix-4 test; 847 passed, 10 skipped, 0 failed. The Slice-20 test fix-3 turned red is GREEN and unmodified."
+    },
+    {
+      "gate": "Python (wheel in throwaway venv) — test_slice20_dense_readiness.py",
+      "exit_code": 0,
+      "detail": "10 passed, including `test_readiness_never_reports_ready_with_pending_embeds` — the shipped test fix-3 turned red, UNMODIFIED"
+    },
+    {
+      "gate": "TypeScript — npm test",
+      "exit_code": 0,
+      "detail": "239 tests, 239 pass, 0 fail"
+    },
+    {
+      "gate": "TypeScript — slice20-dense-readiness.test.ts alone",
+      "exit_code": 0,
+      "detail": "7 pass, including 'readiness never reports ready with pending embeds (offline, deterministic)' — UNMODIFIED"
+    },
+    {
+      "gate": "TypeScript — slice20c-flush-barrier.test.ts alone",
+      "exit_code": 0,
+      "detail": "8 pass"
+    },
+    {
+      "gate": "scripts/check-governed-surface-pin.sh",
+      "exit_code": 0
+    },
+    {
+      "gate": "scripts/agent-lint.sh",
+      "exit_code": 0
+    },
+    {
+      "gate": "scripts/agent-lint-md.sh",
+      "exit_code": 0
+    },
+    {
+      "gate": "scripts/check-ledgers.sh",
+      "exit_code": 0
+    },
+    {
+      "gate": "scripts/lint-findings.sh",
+      "exit_code": 0
+    },
+    {
+      "gate": "scripts/lint-plan-anchors.sh",
+      "exit_code": 0
+    },
+    {
+      "gate": "scripts/lint-design-status.sh",
+      "exit_code": 0
+    },
+    {
+      "gate": "scripts/check-release-state-views.sh",
+      "exit_code": 0
+    },
+    {
+      "gate": "scripts/check-board-currency.sh",
+      "exit_code": 0
+    },
+    {
+      "gate": "scripts/security/check-removal-changelog.sh",
+      "exit_code": 0
+    },
+    {
+      "gate": "scripts/agent-typecheck.sh",
+      "exit_code": 1,
+      "detail": "PRE-EXISTING — exactly 7 pyright errors, the unchanged baseline (last is test_vector_equivalence_probe.py:32 'No parameter named \"reason\"'). fix-4 adds none."
+    },
+    {
+      "gate": "scripts/agent-test.sh",
+      "exit_code": null,
+      "detail": "DELIBERATELY NOT RUN — vacuous aggregate that aborts on the known-red TC-16 actionlint fixture. Suites run individually, per the mandate."
+    }
+  ],
+  "governed_surface": {
+    "net_new_governed_commands": 0,
+    "allowlist_byte_identical": true,
+    "allowlist_sha256": "555e6ae7f7d13e537170dbd63eed4a0433a82a0f7bdc03781ec4e0ef7692c02b",
+    "allowlist_sha256_matches_mandate_baseline": true,
+    "governed_surface_pin_json_sha256": "d14f2f5c5ca1e3f092050ff58ed3134d42c1636f69bdb17ab6a7a0864a58511e",
+    "check_governed_surface_pin_exit": 0,
+    "new_sdk_verbs": 0,
+    "new_exported_types": 0,
+    "note": "TC-55 = INSTRUMENTATION (steward seq-110) honoured exactly: the barrier ships on the shipped `drain`, which is absent from the allowlist and present in `_INSTRUMENTATION` (src/python/tests/test_surface.py:63). TC-59 was never touched — no `pending_delta` tooling, no re-pin, no allowlist edit."
+  },
+  "constraints_honoured": {
+    "schema_version": "24 — unchanged; asserted inside the new Rust suite",
+    "migrations_changed": false,
+    "data_migration": "none — re-enqueueing embed work inside ONE live database is runtime reconfiguration, not a cross-version conversion (HITL 2026-07-21, cf. TC-46)",
+    "maturin_develop_or_pip_install_e": "never run; the shared /home/coreyt/projects/fathomdb/.venv was never touched",
+    "no_verify_used": false,
+    "db_mocking": "none — every test drives a real engine against a real SQLite file",
+    "worktree_discipline": "all work inside /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s20c; the primary checkout was never modified; no worktree created/moved/removed",
+    "ledgerwrite_run": false
+  },
+  "findings_addressed": [
+    "R-20-DR acceptance signal 'readiness never reports ready with pending embeds' — the remaining false-ready path (declare a vector projection over an existing corpus) is closed and pinned in three languages.",
+    "api-surface.md C4 rider — deferred/backfill rows are now enqueued on the same projection runtime `drain` waits on; `drain` stays passive."
+  ],
+  "blockers_encountered": [
+    {
+      "id": "B1",
+      "description": "First cut of the fix put late enrolment inside `project_canonical_node_row`, which regressed `slice15d_projection_registry::vector_subobject_is_stored_not_built` (no-embedder engine started queueing doomed embeds; readiness read `Embedding` where the shipped contract says `Ready`).",
+      "resolution": "RESOLVED — enrolment moved up to `Engine` and gated on `runtime_embedder.is_some()`; the deferred declaration now grafts on re-apply in an embedder-backed session, pinned by a new test. See decision D2."
+    },
+    {
+      "id": "B2",
+      "description": "The RED 'write-after-declare' shape went from a wrong answer to a 120s `EngineError::Scheduler` timeout: `collect_projection_jobs` decided whether to wake the dispatcher using pre-enrolment state, so the row was enqueued in the DB with the dispatcher asleep.",
+      "resolution": "RESOLVED — enrolment runs before `collect_projection_jobs`; both sites carry cross-referencing comments. See decision D3."
+    },
+    {
+      "id": "B3",
+      "description": "TS harness: the post-declaration `drain` burned its full 120s timeout into SchedulerError. NOT an engine defect — the harness oracle opened the LIVE database with a READ-WRITE `node:sqlite` `DatabaseSync`.",
+      "resolution": "RESOLVED for the harness by `{ readOnly: true }` (4/4 green, 3.7s). The underlying engine behaviour is recorded as OUT-OF-SCOPE finding OOS-1 below — it is a real robustness question, not something this slice folds in."
+    },
+    {
+      "id": "B4",
+      "description": "`scripts/agent-lint.sh` / `agent-lint-md.sh` failed closed with 'markdownlint-cli2 not found' because a fresh worktree has no node_modules.",
+      "resolution": "RESOLVED using the gate's own documented remediation: symlinked the primary checkout's node_modules into the worktree root. It is gitignored and untracked. The orchestrator may delete it with the worktree."
+    },
+    {
+      "id": "B5",
+      "description": "fix-3 (option R1) BLOCKER BLK-1 — the enqueue-side gate codex prescribed put an `'up_to_date'` terminal on an ENROLLED row with no vector, i.e. the torn `ready`-without-vector design-of-record §4.1 invariant 1 calls FORBIDDEN, and turned ONE shipped Slice-20 test red in EACH binding. Handed back for a design call.",
+      "resolution": "RESOLVED by HITL ruling at fix-4: R1 REJECTED, R2 adopted. Q6a graceful-absent governs ROLE DECLARATION (the not-yet-enrolled case); once a kind IS enrolled, §4.1 invariant 1 governs. All three fix-3 commits reverted (87ac6491); the finding closed by a different mechanism (35de816c). Both shipped tests pass VERBATIM."
+    },
+    {
+      "id": "B6",
+      "description": "fix-4 first draft applied the non-terminal deferral to EDGE rows too. Because `'edge_fact'` is auto-registered by the edge write itself, un-gated on the embedder (G11), that left every body-carrying edge written without an embedder outstanding forever and turned FOUR unrelated shipped tests red with `EngineError::Scheduler` (`tc31_source_id_on_every_hit` x2, `provenance_mandatory`, `multidoc_extractor_provenance`).",
+      "resolution": "RESOLVED by narrowing fix-4 to the NODE path, which is also the exact scope of codex's finding. Edges keep the shipped `'failed'` terminal. All four suites re-verified green individually and in the full workspace run."
+    },
+    {
+      "id": "B7",
+      "description": "fix-4 second draft kept edges terminal but shortened their retry ladder (the mandate's 'skip the retry ladder' clause). That made the worker's terminal-commit land while a caller's own write transaction was still open and tripped the PRE-EXISTING SQLITE_BUSY_SNAPSHOT write-race: `consolidate_provider` went from 0/48 to 8/48 failures under 6-way concurrency.",
+      "resolution": "RESOLVED by leaving the EDGE ladder byte-for-byte as shipped; the ladder-skip applies only to node rows, where it is in any case moot because the dispatcher never dispatches them. Re-measured 0/48, matching origin/main. The underlying race is filed as OOS-17. This is a deliberate, measured deviation from one clause of the mandate — flagged here for the reviewer."
+    }
+  ],
+  "found_out_of_scope": [
+    {
+      "id": "OOS-1",
+      "severity": "medium",
+      "title": "A third-party READ-WRITE SQLite connection to a live engine DB wedges the projection pipeline",
+      "refs": "measured via node:sqlite `DatabaseSync(path)` (RW, default) against a live engine; contrast `DatabaseSync(path, { readOnly: true })`",
+      "detail": "With a RW observer opened+closed between `write` and `configure_projections`, the declaration's enrolment/backfill never became visible or effective and the subsequent `drain` timed out into SchedulerError with `_fathomdb_vector_kinds` still empty; read-only observation reproduces none of it. IMPORTANT: the barrier itself HELD — `drain` returned an ERROR, never a false Ok — so the R-20-DR invariant was not violated. NEW this slice only in the sense that the harness surfaced it; nothing in the fix causes it.",
+      "action": "reported, not fixed"
+    },
+    {
+      "id": "OOS-2",
+      "severity": "n/a (explicitly deferred by the mandate)",
+      "title": "TC-57 — governed-write vs projection-worker race",
+      "refs": "placed at Slice 21 by the mandate",
+      "action": "not investigated"
+    },
+    {
+      "id": "OOS-3",
+      "severity": "medium",
+      "title": "`drain` never calls `notify_new_work`; a sleeping dispatcher burns the whole timeout",
+      "refs": "src/rust/crates/fathomdb-engine/src/lib.rs — `ProjectionRuntime::wait_for_idle` (:1218) vs `notify_new_work` (:1201)",
+      "detail": "Confirmed live during this slice (blocker B2). The C4 rider forbids making `drain` a trigger, so the fix belongs on the enqueue side — which is what this slice did for the paths it owns. Any OTHER path that enqueues without notifying retains the defect.",
+      "action": "reported, `drain`'s passivity deliberately untouched"
+    },
+    {
+      "id": "OOS-4",
+      "severity": "medium",
+      "title": "`drain` spins to timeout while `state.frozen` is true",
+      "refs": "src/rust/crates/fathomdb-engine/src/lib.rs:8097 (purge), :8302, :9097 (run_rebuild)",
+      "action": "reported, not fixed"
+    },
+    {
+      "id": "OOS-5",
+      "severity": "medium",
+      "title": "`run_rebuild` can return with re-enqueued work still outstanding",
+      "refs": "src/rust/crates/fathomdb-engine/src/lib.rs:9092 (`run_rebuild`) — it drains BEFORE `rebuild_shadow_state` rewinds the cursor, never after",
+      "action": "reported, not fixed"
+    },
+    {
+      "id": "OOS-6",
+      "severity": "low",
+      "title": "A terminally-`'failed'` embed makes readiness `ready` with the vector missing",
+      "refs": "src/rust/crates/fathomdb-engine/src/lib.rs:13505 area; documented boundary in `derive_dense_readiness`",
+      "detail": "Documented + tested as intended behaviour by Slice 20 (`a_failed_embed_is_not_a_torn_write_and_the_detector_is_not_vacuous`). Restated here only because it is the one reachable `ready`-without-vector state.",
+      "action": "reported, not fixed"
+    },
+    {
+      "id": "OOS-7",
+      "severity": "low",
+      "title": "Python-SECONDS vs TS-MILLISECONDS unit asymmetry on `drain`",
+      "refs": "src/python/fathomdb/engine.py:594 (`timeout_s`) vs src/ts/src/index.ts:1050 (`timeoutMs`)",
+      "detail": "Not changed (it would be a breaking SDK change). It IS now called out explicitly in both interface docs so a consumer cannot be surprised.",
+      "action": "reported + documented, not fixed"
+    },
+    {
+      "id": "OOS-8",
+      "severity": "medium",
+      "title": "RESIDUAL of this slice: `_fathomdb_vector_kinds` still has no delete path, so enrolment is one-way",
+      "refs": "src/rust/crates/fathomdb-schema/src/lib.rs:171; `apply_projection_config` drop arm",
+      "detail": "DROPPING the last `searchable→vector` projection does NOT un-enrol the kinds this slice enrolled, so subsequent writes keep embedding. That matches the pre-existing registry semantics (no delete path anywhere, and `purge` deliberately leaves it untouched), and un-enrolling would be a destructive-delta decision, not an implementation detail.",
+      "action": "CLOSED in fix-1 (commits 77bca9d4 / c7c0f527 / 0759715a). The 'destructive-delta' framing was wrong: the drop arm never touched vec0 / `_fathomdb_vector_rows` / `_fathomdb_vector_kinds`, so un-enrolment (which deletes one registry row and zero embeddings) is the NON-destructive choice and preserves the shipped contract. See `fix_1` above."
+    },
+    {
+      "id": "OOS-10",
+      "severity": "high",
+      "title": "PRE-EXISTING (landed 20c): a node kind outside `resolve_source_type`'s locked set wedges the projection worker forever",
+      "refs": "src/rust/crates/fathomdb-engine/src/lib.rs:15179 (`resolve_source_type`) vs `enqueue_declared_vector_backfill` step (1) and `Engine::enrol_batch_vector_kinds`",
+      "detail": "`resolve_source_type` accepts ONLY {email, article, paper, meeting, note, todo, doc, edge_fact} (the '6-value HITL lock' plus the `doc` fixture coercion) and returns `EngineError::Storage` for anything else. BOTH of Slice 20c's enrolment paths enrol on the kind actually present in `canonical_nodes` with no such filter (decision D1 enrols every vector-eligible kind in the corpus; late enrolment enrols any newly-written kind). So a workspace holding a node of, say, kind `memo` that declares `searchable→vector` enqueues a job that can never commit: NO `_fathomdb_projection_terminal` row is ever written, `drain` returns `Err(Scheduler)` forever, and `dense_readiness` stays `embedding` forever.",
+      "measured": "Two throwaway probes on BOTH enrolment paths (declare-then-write, and write-then-declare) with `PROBE drain(10s) = Err(Scheduler)` / `PROBE2 drain(10s) = Err(Scheduler)`, no terminal recorded. Reproduced with the fix-1 engine AND with `git stash`ed lib.rs (i.e. exactly 7de05aae), so it is landed-20c behaviour, NOT introduced by fix-1. The probe file was deleted; nothing was committed.",
+      "why_it_survived_the_workspace_gate": "No existing test declares a `searchable→vector` projection over a kind outside the locked set — every fixture uses `doc`.",
+      "impact": "The barrier still HOLDS (an Err, never a false Ok), so R-20-DR's correctness invariant is not violated. But it is a permanent liveness wedge for any consumer whose entity kinds are not in the locked list — which is most of them (Memex's kinds, for instance). Likely fixes: filter enrolment on `resolve_source_type(kind).is_ok()`, or make the unmappable kind a recorded `failed` terminal instead of an un-committable job.",
+      "action": "CLOSED in fix-2 (commits 63554cee / 0efcf9cd / 1b0cf514). codex §9 round 2 raised the SAME defect independently as its [P1], which is why it moved into scope. Closed by RESTRICTING enrolment through the shared `kind_is_vector_committable` predicate at both doors — codex's first option; the vector writer was NOT taught arbitrary kinds. See `fix_2` above. NOTE: the impact estimate above stands and should reach the HITL — a consumer whose entity kinds are outside {email, article, paper, meeting, note, todo, doc} now gets NO dense arm for them (silently, by design, documented). Whether the locked `source_type` vocabulary should GROW is a separate, live product question that fix-2 deliberately does not answer."
+    },
+    {
+      "id": "OOS-11",
+      "severity": "medium",
+      "title": "PRE-EXISTING: missed wakeup in `ProjectionRuntime::wait_for_idle` makes `drain` burn its whole timeout after the work is already done",
+      "refs": "src/rust/crates/fathomdb-engine/src/lib.rs:1218 (`wait_for_idle`) — the `drop(state)` / `database_has_pending_projection_work` / re-lock window; the worker's `state_cvar.notify_all()` at the end of `projection_worker_loop`",
+      "detail": "`wait_for_idle` releases the state lock to run `database_has_pending_projection_work`, which opens a FRESH SQLite connection (milliseconds). A worker that finishes the LAST job inside that window does its `notify_all()` before the waiter re-acquires the lock. With no further notification the waiter then sleeps the ENTIRE remaining timeout, re-probes at the loop top, sees idle, and returns `Ok`.",
+      "measured": "Adding Leg C's two engines widened the exposure: the slice20c suite reports ~30 s wall time (all assertions passing) in roughly 40% of parallel runs — 30.19 / 0.25 / 0.26 / 30.15 across four runs — versus 0.18 s consistently for the 4-test baseline suite. Capping the cvar wait at 25 ms (`.min(Duration::from_millis(25))`, one line) removed it in 6/6 runs. That one-line probe was REVERTED; it is not in any commit.",
+      "impact": "Worse than slow: with a SHORT timeout the same window makes `drain` return a SPURIOUS `EngineError::Scheduler` for work that has already completed. Sibling of OOS-3 (which is about the dispatcher never being woken; this one is about the waiter missing the wake).",
+      "action": "reported, NOT fixed — the mandate scoped fix-1 to the drop inverse and forbade touching `drain`. Recorded in the Rust suite's module doc so the ~30 s runs are not mistaken for a flake introduced here."
+    },
+    {
+      "id": "OOS-9",
+      "severity": "low",
+      "title": "`t_s34_dump_mutations_lock_held_exits_71` is flaky under `cargo test --workspace`",
+      "refs": "src/rust/crates/fathomdb-cli/tests/operator_cli.rs:719",
+      "detail": "Failed once under full-workspace parallelism with `DatabaseLocked { holder_pid: <other pid> }`; passes in isolation and passed on the final full-workspace run. Unrelated to this slice (no CLI/lock code touched).",
+      "action": "reported, not fixed"
+    }
+  ],
+  "additional_changes_made_in_scope": [
+    "Added a 4th Rust test (`a_declaration_without_a_live_embedder_defers_then_grafts_on_reapply`) beyond the mandate's two legs, because the live-embedder gate (decision D2) is a semantic choice that must not ship unpinned.",
+    "CHANGELOG.md entry — extending the existing R-20-DR block, per the shipped convention that Slice 20 fix-2 (15c75c57) used."
+  ],
+  "not_done": [
+    "dev/plans/runs/STATUS-0.8.20.md was NOT edited (marker-delimited GENERATED regions; the orchestrator owns closure docs).",
+    "No ledger entry was written (`ledgerwrite` not run) — ledger-worthy material is in this file: TC-55 discharged as INSTRUMENTATION with zero allowlist delta; TC-59 untouched; OOS-1/3/4/5/8 offered for triage.",
+    "eu7: ZERO runs, any backend, any N."
+  ],
+  "agent_verify_result": "pass — every gate above at its real exit code; the only non-zero is `agent-typecheck.sh` at exit 1 with EXACTLY the 7 pre-existing pyright errors, and `agent-test.sh` which was deliberately not run as a vacuous aggregate.",
+  "agent_verify_result_fix_1": "pass — see `fix_1.gates_re_run`. Everything green at its real exit code; the only non-zero remains `agent-typecheck.sh` (7 pre-existing pyright errors, unchanged) and the deliberately-unrun `agent-test.sh`.",
+  "agent_verify_result_fix_2": "pass — see `fix_2.gates_re_run`. Everything green at its real exit code; the only non-zero remains `agent-typecheck.sh` (exit 1, exactly the 7 pre-existing pyright errors) and the deliberately-unrun `agent-test.sh`. The governed-surface allowlist is BYTE-IDENTICAL at sha256 555e6ae7f7d13e537170dbd63eed4a0433a82a0f7bdc03781ec4e0ef7692c02b and `scripts/check-governed-surface-pin.sh` exits 0; it was never edited and never re-pinned.",
+  "still_out_of_scope_after_fix_1": [
+    "OOS-1, OOS-2 (TC-57 @ Slice 21), OOS-3, OOS-4, OOS-5, OOS-6, OOS-7, OOS-9 — all unchanged, still reported-not-fixed.",
+    "OOS-10 (NEW, severity high) — the unmappable-kind projection wedge. Landed-20c defect, verified against 7de05aae, not introduced by fix-1. This is the one I would put in front of the HITL first.",
+    "OOS-11 (NEW, severity medium) — the `wait_for_idle` missed wakeup / spurious-timeout window. Pre-existing; fix-1's tests widened its exposure, so it is documented in the suite's module doc.",
+    "decision D1 (corpus-wide vector-kind enrolment) is UNCHANGED by fix-1 and remains the reading of a spec that has no kind axis — codex did not object to it, but OOS-10 is a direct consequence of it and may cause the HITL to revisit it.",
+    "eu7: ZERO runs, any backend, any N."
+  ],
+  "still_out_of_scope_after_fix_2": [
+    "OOS-1, OOS-2 (TC-57 @ Slice 21), OOS-3, OOS-4, OOS-5, OOS-6, OOS-7, OOS-9 — all unchanged, still reported-not-fixed.",
+    "OOS-10 — CLOSED as a code defect by fix-2 [P1]. What REMAINS for the HITL is the product question it exposes, not a bug: the dense arm is now explicitly scoped to `resolve_source_type`'s locked vocabulary, so a consumer using other entity kinds (Memex's, for instance) gets FTS but no vectors for them, silently and by design. Growing that vocabulary is a Pack-1 partition-key decision (0.7.0-vector-quant-pack1.md D3, a HITL lock) and is not something a fix round may take.",
+    "OOS-11 — UNCHANGED and deliberately NOT fixed, per the mandate. The one-line cvar-wait cap stays reverted, `wait_for_idle` is untouched, and the module-doc note explaining the ~30 s suite runs is intact. The slice20c suite still reports ~30 s wall time with all 9 assertions passing.",
+    "decision D1 (corpus-wide vector-kind enrolment) is NARROWED but not reversed by fix-2: still every vector-eligible kind in the corpus, now intersected with commit-ability. `ProjectionSpec` still carries no kind axis.",
+    "NO new out-of-scope findings were discovered during fix-2.",
+    "eu7: ZERO runs, any backend, any N."
+  ],
+  "next_step_for_orchestrator": "PROCEED. HEAD is 30ab62df on branch orch-0.8.20-s20c. codex §9 round 4 [P1] and [P2] are BOTH CLOSED across three commits (d5cc51e0 RED / e2df8646 GREEN / 30ab62df X1). Nothing is blocked and NO new defect was found in this subsystem, so no sixth round is requested. codex should re-review 1f46438b..30ab62df (the fix-4 head to now); the whole-slice range is still 2afd168c..30ab62df. Four things worth putting in front of the reviewer/HITL: (1) [P1] was fixed by the mandate's prescribed approach — the no-embedder node exclusion moved INTO `next_pending_projection_jobs`' SQL so the LIMIT applies to the already-filtered set — and fix-4's CPU win is PRESERVED, re-measured on the same fixture and machine: no filter 6.37 s @231%, fix-4 post-fetch 0.08 s @4%, fix-5 in-scan 0.10 s @4%. No additional guard was needed; the spin is now unreachable by construction. See `fix_5.p1_cpu_re_measured`. (2) [P2]'s crash window was pinned by EXECUTION, not by a structural argument: the un-stranding repair is made to genuinely fail by a real SQLite BEFORE DELETE trigger on `_fathomdb_projection_terminal`, installed while no engine holds the file. No process is killed and nothing is mocked; what is reproduced is the resulting STATE and then its durable, self-sealing consequence (readiness `ready` with leaf_rows_without_vectors = 2 after an ordinary healing write, measured at the pre-fix engine). See `fix_5.p2_how_the_crash_window_was_pinned`. (3) NO docs/CHANGELOG change, deliberately — neither finding moves a consumer-visible contract; [P1] was fix-4's own regression against the contract fix-4 already documented, and [P2] has no surface. Reasoning in `fix_5.docs_and_changelog`. (4) NEW: OOS-19, the TypeScript twin of OOS-18 — the node process hard-crashed mid-file twice this round on the PRE-EXISTING fix-2 late-enrolment arm, once on the fix-5 build and once on the pre-fix-5 build, i.e. it is not fix-5's and it is a harness hazard, not an engine defect. Five clean 10/10 runs and two clean 241/241 `npm test` runs at HEAD. Everything fix-4 flagged still stands unchanged: the consumer-visible no-embedder/enrolled-kind timeout is documented, and OOS-13/OOS-14/OOS-17 are still open. Leg G's `terminal_state == 'failed'` assertion now PINS the shipped edge behaviour, so whoever closes OOS-13 will have to change that assertion deliberately.",
+  "agent_verify_result_fix_3": "BLOCKED, not pass. Every Rust and script gate is green at its real exit code (cargo test --workspace --no-fail-fast exits 0 across 170 suites), and the governed-surface allowlist is BYTE-IDENTICAL at sha256 555e6ae7f7d13e537170dbd63eed4a0433a82a0f7bdc03781ec4e0ef7692c02b with check-governed-surface-pin.sh at exit 0. But the Python and TypeScript full suites each fail EXACTLY ONE SHIPPED Slice-20 test — the same test, the same assertion — because the fix codex prescribed produces the state design-of-record §4.1 invariant 1 forbids. That is a design call, so the round is handed back rather than forced. See `fix_3.the_blocker` and `fix_3.the_question_for_the_hitl`. `agent-typecheck.sh` remains at exit 1 with exactly the 7 pre-existing pyright errors; `agent-test.sh` was deliberately not run.",
+  "agent_verify_result_fix_4": "pass. Every gate at its real exit code in `fix_4.gates_re_run`. The ONLY non-zero is `agent-typecheck.sh` at exit 1 with EXACTLY the 7 pre-existing pyright errors (fix-4 adds none), plus `agent-test.sh`, deliberately not run per the mandate. `cargo clippy` and `cargo check` --workspace --all-targets both exit 0 on a forced rebuild; `cargo test --workspace --no-fail-fast` exits 0 across 170 suites; the FULL Python tree exits 0 (847 passed / 10 skipped) and `npm test` exits 0 (239/239). The two shipped Slice-20 binding tests fix-3 turned red are GREEN and UNMODIFIED. The governed-surface allowlist is BYTE-IDENTICAL at sha256 555e6ae7…2c02b and `check-governed-surface-pin.sh` exits 0.",
+  "agent_verify_result_fix_5": "pass. Every gate at its real exit code in `fix_5.gates_re_run`. The ONLY non-zero is `agent-typecheck.sh` at exit 1 with EXACTLY the 7 pre-existing pyright errors (enumerated; none in a fix-5 file), plus `agent-test.sh`, deliberately not run per the mandate. `cargo clippy` and `cargo check` --workspace --all-targets both exit 0 on a forced rebuild with ZERO warnings; `cargo test --workspace --no-fail-fast` exits 0 across 170 suites; the FULL Python tree exits 0 (850 passed / 9 skipped) and `npm test` exits 0 (241/241). Both shipped Slice-20 binding tests are byte-unchanged from origin/main and pass VERBATIM. The governed-surface allowlist is BYTE-IDENTICAL at sha256 555e6ae7…2c02b and `check-governed-surface-pin.sh` exits 0. `SCHEMA_VERSION` is 24.",
+  "branch_state_at_closure": "While this closure was being written the ORCHESTRATOR advanced `orch-0.8.20-s20c` past my last commit, in parallel with me and not by me: 07e525d4 'docs(0.8.20-s20c): codex §9 round 5 transcript + TC-71' and the merge commit cfc68280 'Merge branch main into orch-0.8.20-s20c'. Branch HEAD at the moment I exit is cfc6828003d9310e8b00e6257ea11b8c78995665. MY WORK IS INTACT ACROSS BOTH: `git diff 30ab62df..cfc68280 -- src/` touches only `fathomdb-schema` (Cargo.toml + lib.rs) and two Slice-25 test files that came in from main; NOTHING under `fathomdb-engine/src`, `fathomdb-engine/tests`, `src/python/tests` or `src/ts/tests` changed, so every gate result recorded in `fix_5.gates_re_run` still describes the code that is on the branch. NOTE that those gates were measured at 30ab62df and have NOT been re-run against the merged-in Slice-25 schema work — if the orchestrator wants a post-merge green claim, `cargo test --workspace` should be re-run at cfc68280. The orchestrator has ALREADY run codex §9 round 5 against my three commits (dev/plans/runs/codex/0.8.20/slice-20c-fix-5-rereview-20260726T224040Z.log) and filed TC-71 (p2, open, DELIBERATELY NOT FIXED — the orchestration circuit-breaker was reached at 5 fix rounds): `vector_projection_declared` keys off the stored vector sub-object alone rather than also requiring the `searchable` role, so `{roles: [filterable], vector: true}` in a session WITH a live embedder enrols kinds and backfills even though that combination is documented as inert-but-round-trippable. I did NOT touch that predicate this round — it is pre-existing (it reaches fix-1's drop inverse, fix-2's late enrolment and the declare-time backfill alike), it is not a false-ready and not data loss, and it is outside my mandate's two findings. No action was taken on it here."
+}
