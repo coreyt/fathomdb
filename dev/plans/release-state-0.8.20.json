@@ -60,8 +60,9 @@
       "depends_on": [
         15
       ],
-      "status": "UNBLOCKED",
-      "sha": null
+      "status": "LANDED",
+      "sha": "841c307b",
+      "merge_subject": "merge(0.8.20): Slice 20c — R-20-DR flush-to-readiness barrier via the shipped `drain` (C4)"
     },
     {
       "slice": 25,
@@ -105,18 +106,16 @@
     5,
     10,
     15,
+    20,
     25
   ],
-  "next_slice": 20,
+  "next_slice": 30,
   "remaining_ladder": [
-    20,
     30,
     40
   ],
   "ladder_order": "SEQUENTIAL — parallel 20 || 25 was declined (master F-34)",
-  "unblocked": [
-    20
-  ],
+  "unblocked": [],
   "unblocked_by": {
     "requirement": "R-20-PR",
     "gloss": "the projection registry"

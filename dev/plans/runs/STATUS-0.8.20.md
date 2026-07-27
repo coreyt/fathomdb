@@ -31,7 +31,7 @@ step 24). Ledger tip **`3264114a`** (steward seq-98).
 > close records (§11 Slice 5, §12 Slice 10, §13 Slice 15b) are retained **as history**; their "not landed" /
 > "Slice 15 OPEN" banners describe the on-branch state at the time they were written, **not** current truth.
 
-**Last updated:** 2026-07-26 (Slice 20 landed PARTIAL — `26b237c0`; close record §14).
+**Last updated:** 2026-07-26 (**Slice 20c LANDED — `841c307b`; R-20-DR CLOSED**; close record §16. Slice 25 landed `83b1c818`, close record §15).
 
 ---
 
@@ -39,10 +39,10 @@ step 24). Ledger tip **`3264114a`** (steward seq-98).
 
 | | |
 |---|---|
-| **Slice in flight** | **NONE — Slice 20 just landed PARTIAL (`26b237c0`).** The ladder is between slices; **Slice 20 is not finished** — `flush_embeddings()` is HELD on TC-59/TC-55 (§14). |
+| **Slice in flight** | **NONE — Slice 20c landed (`841c307b`) and Slice 25 landed (`83b1c818`).** The ladder is between slices; **Slice 20 is now COMPLETE** — R-20-DR is closed and the flush barrier shipped on the existing `drain` (§16). |
 | **Status** | **Slices 0, 5, 10, 15 all COMPLETE and LANDED on `origin/main`** (header table). The keystone landed **R-20-PR + R-20-EAV + `filterable` pre-KNN + TC-33 + TC-34 + Finding-1 (A) + `#[non_exhaustive] SearchFilter`**; codex §9 **terminal-clean**; gates re-verified by the Steward (clippy 0, check 0, (A) pin 1/1, AC-041 3/3). **SCHEMA 24.** |
-| **Unblocks** | <!-- BEGIN GENERATED release-state:0.8.20:status-unblocks -->**Slices 20 are NOW UNBLOCKED** — R-20-PR (the projection registry) now exists. Slice 30 (H7) depends on 10/15/20/25. **AC-079 is PRE-SIGNED** — the HITL signed off on the accumulated governed-surface delta (Slices 5d + 10b + 15b + 15d) on 2026-07-25 (master F-34), pinned to the content of `src/conformance/governed-surface-allowlist.json`; any diff to that file re-opens it (the T1e pin). Pre-signing is NOT minting: AC-079 is minted and recorded as SIGNED at Slice 40 (§4 #1). **Publish is gated by the separate HITL publish gate, not by this AC.**<!-- END GENERATED release-state:0.8.20:status-unblocks --> |
-| **Immediate next action** | **Commission Slice 20c — `flush_embeddings()`. BOTH BLOCKERS ARE RULED (HITL 2026-07-26); 20c is UNBLOCKED.** Slice 20 landed **PARTIAL** at **`26b237c0`** — TC-45 and `dense_readiness` are CLOSED; `flush_embeddings()` was HELD (close record §14). **TC-55 RULED = instrumentation** (steward `seq-110`): 20c **reuses/extends the shipped `drain`** rather than minting a governed `flush_embeddings` — `drain` is absent from the allowlist and present in `_INSTRUMENTATION` (`src/python/tests/test_surface.py:63`), so a second governed verb is surface duplication. **⇒ 20c adds ZERO net-new governed commands and does NOT trip the pin.** **TC-59 RULED = one re-pin at the batched decision** (steward `seq-113`): **no `pending_delta` tooling is built**; the allowlist `_comment` correction (TC-52) and the signing of any accumulated delta happen as a SINGLE ceremony at the Slice 30 → Slice 40 boundary, where AC-079 mints anyway. The pin is **not expected to trip again in 0.8.20** — `R-20-SUR` is a write-time minting rule with no new verb and `R-20-H7` is a gate, not SDK surface. **If it DOES trip: HALT and escalate to the Steward — never work around it, never re-pin.** `check-governed-surface-pin.sh`'s header carried a **false capability claim** and was corrected at `66d30bb2`. **Then 25 → 30 → 40, sequentially** (parallel 20∥25 was declined, F-34), each commissioned as an **orchestrator** (`/orchestrate`, or a Steward-spawned background orchestrator; **NOT `/goal`** — standing ruling **steward `seq-104`** (`927ffb35`)). **✅ Both docs-hygiene prerequisites are DISCHARGED:** DOC-HYGIENE-1 landed 2026-07-25 (`f53b8c64..597738d9`, steward `seq-101`) and **DOC-HYGIENE-2 is verified complete** (`ff4f07a0`). Rulings for the eight-item queue are recorded in `plan-0.8.20.md` §11; master reconciliation = **F-32**, DOC-HYGIENE-1 = **F-33**. |
+| **Unblocks** | <!-- BEGIN GENERATED release-state:0.8.20:status-unblocks -->**Slices  are NOW UNBLOCKED** — R-20-PR (the projection registry) now exists. Slice 30 (H7) depends on 10/15/20/25. **AC-079 is PRE-SIGNED** — the HITL signed off on the accumulated governed-surface delta (Slices 5d + 10b + 15b + 15d) on 2026-07-25 (master F-34), pinned to the content of `src/conformance/governed-surface-allowlist.json`; any diff to that file re-opens it (the T1e pin). Pre-signing is NOT minting: AC-079 is minted and recorded as SIGNED at Slice 40 (§4 #1). **Publish is gated by the separate HITL publish gate, not by this AC.**<!-- END GENERATED release-state:0.8.20:status-unblocks --> |
+| **Immediate next action** | **Commission Slice 30 — R-20-H7 `can-i-deploy` contract-conformance gate. It is a PUBLISH PRECONDITION: absent-or-failing HOLDS the breaking pair.** It depends on 10/15/20/25, **all of which are now LANDED**. Then **40** (full DoD, X1, AC-079 minted+signed, publish-or-hold per the HITL gate). **Slice 21** (TC-57 characterize→fix) remains available as a reserved gap in the 20 band (plan §5 pre-authorizes the gaps; only overflow halts). **Carry into 30/40:** **TC-71** — the one codex §9 finding Slice 20c left OPEN at the 5-round circuit breaker (`vector_projection_declared` ignores the `searchable` role, so `{roles:[filterable], vector:true}` activates the dense arm instead of staying inert; wasted embed work, **not** a false-ready, **not** data loss). **The governed-surface pin never tripped in 20c** — the allowlist is byte-identical and AC-079's pre-sign (F-34) is intact; the batched ceremony still happens ONCE at the 30 → 40 boundary. Commission as an **orchestrator** (`/orchestrate`); **NOT `/goal`** — standing ruling **steward `seq-104`** (`927ffb35`). |
 
 **Slices 0, 5, 10, 15 close records** are §11 (Slice 5), §12 (Slice 10), §13 (Slice 15b — TC-34 only; the
 registry/EAV/TC-33 remainder that also landed in the keystone `a2022957` is summarised in §8 and in
@@ -60,7 +60,7 @@ by that ruling.
 | **5** | **Erasure completeness (R-20-E1…E8, +E9a)** | 0 | **COMPLETE — LANDED `1f8ed8bf`** (in `origin/main`). Close record §11 |
 | **10** | **`ReadView` / read-modes + node-validity (R-20-RV, R-20-NV)** | 0 | **COMPLETE — LANDED `3cfb3cda`** (merge) — SCHEMA 21→22. Close record §12 |
 | **15** | **Projection registry (C-1) + EAV/property-FTS (R-20-PR, R-20-EAV) + TC-34 + TC-33 + Finding-1 (A) + `#[non_exhaustive] SearchFilter`** | 0, 10 | **COMPLETE — LANDED `a2022957`** (merge, Phase-2 keystone) — SCHEMA →24; codex §9 terminal-clean; Steward-verified gates. §13 = the TC-34 sub-part only; registry/EAV/TC-33 remainder summarised in §8 |
-| **20** | `dense_readiness` + `flush_embeddings()` (R-20-DR) **+ TC-45 supersession-terminal fix** | 15 | **PARTIAL — LANDED `26b237c0`** (merge). **CLOSED:** (a) **TC-45** — both `commit_batch` call sites now record `'up_to_date'`; **no migration, SCHEMA stays 24**, terminal CHECK **not** widened, exactly as the ruling preferred. (b) **R-20-DR part 1 of 2** — `DenseReadiness {Ready, Embedding}` **derived** onto the `ProjectionSpec.vector` sub-object as engine-set read metadata (no stored column, no schema step), plus the **atomic readiness-flip**, which holds **by construction**. Surfaces as `vector_dense_readiness` (Py) / `vectorDenseReadiness` (TS). **ZERO net-new governed commands.** **⛔ HELD: `flush_embeddings()`** — blocked on **TC-59** (pin gate) + **TC-55** (command-vs-instrumentation). Close record **§14** |
+| **20** | `dense_readiness` + flush-to-readiness barrier (R-20-DR) **+ TC-45 supersession-terminal fix** | 15 | **✅ COMPLETE — 20b `26b237c0` + 20c `841c307b`** (merges). **TC-45** closed (both `commit_batch` sites record `'up_to_date'`; SCHEMA stays 24). **R-20-DR closed:** part 1 = `DenseReadiness {Ready, Embedding}` derived onto `ProjectionSpec.vector` + the atomic flip; part 2 = the **flush-to-readiness barrier, shipped by REUSING `drain`** per `api-surface.md` **C4** — **there is NO `flush_embeddings()` verb** (TC-55 = INSTRUMENTATION). Fixed entirely on the **enqueue** side; `drain` stays passive and `connection_has_pending_projection_work` was not restructured (TC-56). **ZERO net-new governed commands; allowlist byte-identical; pin exit 0; SCHEMA 24.** Five codex §9 rounds, all RED-first; **one finding left OPEN at the circuit breaker = TC-71**. Close record **§16** |
 | **25** | Surrogate minting — governed entities ONLY (R-20-SUR) | 15 | ✅ **LANDED `83b1c818`** — D1 static migration guard + D2 dynamic whole-ladder proof (`NULL → NOT NULL == 0`) + D3 registration-inertness; zero engine source change, SCHEMA stays 24, allowlist byte-identical, pin exit 0. codex §9: 3 fix rounds, halted at the circuit-breaker on a 4th same-family [P2]; residual ACCEPTED by Steward ruling (D2 is row-based ⇒ shape-independent). Residual recorded as **TC-66**. |
 | 30 | RUBRIC-H7 `can-i-deploy` contract gate (R-20-H7) | 10,15,20,25 | not started — publish precondition |
 | 40 | Verification + release readiness (publish-or-hold) | 5,30 | not started |
@@ -1183,3 +1183,96 @@ anonymous `h:6d7f8dc2…` and governed `l:x1-gov-1`, **byte-identical across bot
   verified against a dirty tree is not verified.
 - **TC-57** (governed-write vs projection-worker race) was **not tripped and not touched** — it is placed
   elsewhere.
+
+---
+
+## 16. Slice 20c close — **R-20-DR COMPLETE**; the flush barrier shipped on the existing `drain`
+
+**LANDED at `841c307b`** (merge). Branch `orch-0.8.20-s20c`, cut from `2afd168c`. **SCHEMA stays 24**, no
+migration, **zero net-new governed commands**.
+
+### 16.1 What shipped
+
+The **flush-to-readiness barrier**, implemented by **REUSING the shipped `drain`** per
+`dev/design/record-lifecycle-protocol/api-surface.md` **C4**. **There is NO `flush_embeddings()` verb** —
+**TC-55 = INSTRUMENTATION** (steward `seq-110`): `drain` is absent from the allowlist and present in
+`_INSTRUMENTATION` (`src/python/tests/test_surface.py:63`), so a second governed verb would be surface
+duplication. **TC-59** (one re-pin at the batched decision, `seq-113`) was honoured — **no `pending_delta`
+tooling was built, the allowlist was never edited, and the pin never tripped.**
+
+**The defect closed.** C4's rider — *"deferred/backfill rows must be enqueued on the same projection runtime
+`drain` waits on"* — **was not true of the code**. `configure_projections` recorded vector work as `deferred`
+and then dropped it, so `drain()` returned `Ok(())` and `dense_readiness` read `ready` **while no vectors
+existed and nothing would ever create them**. That is precisely the false-ready R-20-DR exists to eliminate.
+
+The fix is **entirely on the enqueue side**. `drain` remains a **passive barrier** (the C4 rider forbids making
+it a trigger) and the shared `connection_has_pending_projection_work` predicate was **never restructured**, so
+the **TC-56** blast radius stayed closed.
+
+### 16.2 codex §9 — five rounds, every one RED-first
+
+| Round | Finding | Resolution |
+|------:|---------|-----------|
+| 1 | **[P2]** enrolment was one-way; dropping the last vector projection kept embedding | The symmetric inverse. `edge_fact` preserved; **no embeddings deleted** (a drop already left vectors at rest, so un-enrolment is the NON-destructive choice — no design call) |
+| 2 | **[P1]** enrolling kinds `resolve_source_type` cannot commit wedged `drain` **forever**; **[P2]** late enrolment stranded rows (**FALSE-READY**) | `kind_is_vector_committable` **DELEGATES** to `resolve_source_type` (no second vocabulary can drift — the TC-56 shape); stranded-row repair extracted and shared by both doors |
+| 3 | **[P1]** no-embedder sessions lost writes permanently (**FALSE-READY**) | **Option R2**, not codex's prescription. `ProjectionOutcome::Deferred` records **no terminal**, so the row stays pending and the next live-embedder session embeds it through the **ordinary scheduler**. **R1 was REJECTED** — it would have amended design §4.1 invariant 1 (*"a torn `ready`-without-vector is FORBIDDEN"*) and rewritten two shipped tests |
+| 4 | **[P1]** the no-embedder dispatcher filter ran **after** the limited scan and starved edge jobs; **[P2]** late enrolment was not crash-atomic | Filter moved **inside** the scan SQL (CPU win preserved: **0.10 s vs 6.37 s** unfiltered); enrolment + repair in one `BEGIN IMMEDIATE`, pinned by **real SQLite fault injection** |
+| 5 | **[P2]** `vector_projection_declared` ignores the `searchable` role | **LEFT OPEN — `TC-71`**, at the **5-round circuit breaker** (see §16.5) |
+
+**Transcripts (TC-RUBRIC-7):** `dev/plans/runs/codex/0.8.20/slice-20c-review-20260726T164236Z.log`,
+`…-fix-1-rereview-20260726T173103Z.log`, `…-fix-2-rereview-20260726T183101Z.log`,
+`…-fix-4-rereview-20260726T214229Z.log`, `…-fix-5-rereview-20260726T224040Z.log`.
+
+### 16.3 Gates — real exit codes
+
+| Gate | Result |
+|---|---|
+| `cargo clippy --workspace --all-targets` | **0** (forced rebuild, zero warnings) |
+| `cargo check --workspace --all-targets` | **0** |
+| `cargo test --workspace --no-fail-fast` | **0** (170 suites) |
+| `slice20c_flush_barrier` · `slice20_dense_readiness` · `slice15d` · `slice15e` · `projection_runtime` · `rebuild_projections` | **0** (12 · 8 · 24 · 11 · 12+1 · 4) |
+| **Python** (wheel → **throwaway venv**; shared `.venv` never touched) | **0** — 850 passed / 9 skipped |
+| **TypeScript** `npm test` | **0** — 241 / 241 |
+| `check-governed-surface-pin.sh` | **0** — allowlist **byte-identical** at `555e6ae7…92c02b` |
+| `check-ledgers` · `lint-findings` · `lint-plan-anchors` · `lint-design-status` · `check-release-state-views` · `check-board-currency` | **0** each |
+| `agent-typecheck.sh` | **1 — PRE-EXISTING**, exactly the 7 baseline pyright errors; this slice adds none |
+| `agent-test.sh` | **DELIBERATELY NOT RUN** — vacuous aggregate (aborts on the known-red TC-16 fixture) |
+
+**Post-merge re-verification against a `main` control:** the merged tree failed **1 of 3** full-workspace runs
+and `main` failed **1 of 3**, each time a *different* concurrency test that passes reliably in isolation
+(slice15e 6/6, lifecycle_observability 3/3). **No regression** — the full-workspace parallel run is flaky on
+both sides (**TC-72**).
+
+### 16.4 X1 SDK parity — ran BEFORE the land, as one unit
+
+Live functional harnesses, **not symbol presence**: `src/python/tests/test_slice20c_flush_barrier.py` ↔
+`src/ts/tests/slice20c-flush-barrier.test.ts`. **Non-vacuity was measured in BOTH bindings** by rebuilding each
+against the pre-fix engine and re-running. Python ran against a **wheel installed into a throwaway venv** —
+`maturin develop` / `pip install -e` were **never** run and the shared `.venv` was **never** touched.
+**Both shipped Slice-20 binding tests pass BYTE-UNCHANGED** (`git diff 2afd168c` over those two files is empty).
+
+### 16.5 Carried out of this slice
+
+- **`TC-71` (OPEN, p2)** — the one codex finding left unfixed, at the circuit breaker. `vector_projection_declared`
+  keys off the stored `vector` sub-object alone, so `{roles:[filterable], vector:true}` activates the dense arm
+  instead of staying **inert**. **Wasted embed work; NOT a false-ready, NOT data loss.** The predicate gates the
+  forward backfill, the drop inverse **and** late enrolment — a fix must re-verify all three together.
+- **⚠ CONSUMER-VISIBLE behaviour change.** A no-embedder session over an **already-enrolled** corpus now leaves
+  readiness at `embedding` and `drain` times out into `SchedulerError` **for that session**. This is **loud
+  rather than silent** and is **not data loss** — the write is accepted, stays lexically searchable, and is
+  embedded on the next embedder-backed open. Documented in `dev/interfaces/{rust,python,typescript}.md` +
+  `CHANGELOG.md`. Workspaces that have never had a live embedder are unaffected.
+- **Ledger:** `TC-60` (third-party RW SQLite connection wedges the pipeline) · `TC-61` (enqueue and notify are
+  one operation) · `TC-62` (`drain` spins while frozen) · `TC-63` (`run_rebuild` returns with work outstanding) ·
+  `TC-64` (`wait_for_idle` lost wakeup) · `TC-65` (`ProjectionSpec` has no kind axis — the enrolment-scope seam) ·
+  `TC-67` (the locked source-type vocabulary vs consumer kinds — **open question for the HITL**) · `TC-68`
+  (90 synchronous embeds inside `Engine::open`) · `TC-69` (the edge-path residual) · `TC-70` (the retry ladder
+  masks a `SQLITE_BUSY_SNAPSHOT` race) · `TC-72` (full-workspace flake).
+- **`TC-57`** (governed-write vs projection-worker race) remains placed at **Slice 21**, untouched.
+
+### 16.6 Closure artifacts
+
+Commits: `ddaf7320` (RED) · `da7c5b76` (GREEN) · `e7a4676a` (Leg B + docs) · `7de05aae` (CHANGELOG) ·
+`77bca9d4`/`c7c0f527`/`0759715a` (fix-1) · `63554cee`/`0efcf9cd`/`1b0cf514` (fix-2) ·
+`87ac6491` (revert of fix-3) · `3ebfb373`/`35de816c`/`1f46438b` (fix-4 = R2) ·
+`d5cc51e0`/`e2df8646`/`30ab62df` (fix-5) · merge **`841c307b`**.

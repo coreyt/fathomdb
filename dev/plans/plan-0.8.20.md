@@ -360,35 +360,44 @@ Gaps `1–4, 6–9, 11–14, 16–19, 21–24, 26–29, 31–39` absorb unplanne
 
 ## 9. Immediate next slice
 
-**➡ SLICE 20 IS PARTIAL — LANDED at `26b237c0`.** Two of its three scoped items are **CLOSED**: **TC-45**
-(supersession terminal — `'up_to_date'` at both `commit_batch` call sites; **no migration, SCHEMA stays 24**,
-CHECK not widened) and **R-20-DR part 1 of 2** — `DenseReadiness {Ready, Embedding}` **derived** onto the
-`ProjectionSpec.vector` sub-object built in Slice 15d (see ratified-decision #1 below) as engine-set read
-metadata (**no stored column, no schema step**), plus the **atomic readiness-flip**, which holds **by
-construction**. **ZERO net-new governed commands.**
+**✅ SLICE 20 IS COMPLETE — Slice 20c LANDED at `841c307b`; R-20-DR is CLOSED.** Slice 20b had landed
+**TC-45** (supersession terminal) and **R-20-DR part 1** (`DenseReadiness {Ready, Embedding}` derived onto the
+`ProjectionSpec.vector` sub-object + the atomic flip) at `26b237c0`. **Slice 20c landed the remaining leg —
+the flush-to-readiness barrier.**
 
-**⛔ THE REMAINDER — `flush_embeddings()` — DID NOT LAND, and must not be described as shipped.** It is tracked
-as **Slice 20c**. It *was* blocked on TC-59 + TC-55; **both are now RULED (HITL 2026-07-26) and 20c is
-UNBLOCKED.**
+**It shipped by REUSING the shipped `drain`, per `api-surface.md` C4 — there is NO `flush_embeddings()` verb.**
+**ZERO net-new governed commands**; the allowlist is **byte-identical**, `check-governed-surface-pin.sh` exits
+**0**, and **SCHEMA stays 24**. TC-55 (= INSTRUMENTATION, steward `seq-110`) and TC-59 (one re-pin at the
+batched decision, `seq-113`) were the rulings that unblocked it; **the pin never tripped.**
 
-- **TC-55 = INSTRUMENTATION** (steward `seq-110`). 20c **reuses/extends the shipped `drain`** rather than
-  minting a governed `flush_embeddings`: `drain` is absent from the allowlist and present in
-  `_INSTRUMENTATION` (`src/python/tests/test_surface.py:63`), so a second governed verb doing the same thing
-  is surface duplication. **⇒ 20c adds ZERO net-new governed commands and does not trip the pin.**
-- **TC-59 = ONE re-pin at the batched decision** (steward `seq-113`). **No `pending_delta` tooling is built.**
-  The allowlist `_comment` correction (TC-52) and the signing of any accumulated delta happen as a **single
-  ceremony at the Slice 30 → Slice 40 boundary**, where AC-079 mints anyway. The pin is **not expected to trip
-  again in 0.8.20** — `R-20-SUR` is a write-time minting rule with no new verb, `R-20-H7` is a gate rather than
-  SDK surface. **If it does trip: HALT and escalate to the Steward** — never work around it, never re-pin.
-  §11 ruling 2's *"record a proposal and land"* was **mechanically impossible** (the gate hashes raw bytes and
-  `preflight.sh --landing` treats a FAIL as `hard`); the gate's own false capability claim was corrected at
-  `66d30bb2`.
+The defect closed: C4's rider — *"deferred/backfill rows must be enqueued on the same projection runtime
+`drain` waits on"* — **was not true of the code**. `configure_projections` recorded vector work as `deferred`
+and dropped it, so `drain()` returned `Ok` and readiness read `ready` **with no vectors**. The fix is entirely
+on the **enqueue** side: `drain` remains a passive barrier (C4) and the shared
+`connection_has_pending_projection_work` predicate was never restructured (TC-56 blast radius kept closed).
 
-**➡ IMMEDIATE NEXT: Slice 20c.** Then **Slice 21** — TC-57 characterize→fix, a reserved gap in the 20 band
-(plan §5 pre-authorizes the gaps; only overflow halts). Commission it as an
-**orchestrator** — **NOT** `/goal` (standing ruling `927ffb35`). Remaining ladder: **20c → 25 → 30 → 40**,
-sequentially. Full close record: `runs/STATUS-0.8.20.md` **§14**. Board of record: `runs/STATUS-0.8.20.md`; open
-HITL decisions: §11.
+**Five codex §9 rounds, every one RED-first** (transcripts under `dev/plans/runs/codex/0.8.20/`): the drop
+inverse; enrolment restricted to commit-able kinds (`kind_is_vector_committable` **delegates** to
+`resolve_source_type` so the two cannot drift) + shared un-stranding; the no-embedder write made recoverable
+via `ProjectionOutcome::Deferred` (**option R2** — R1 was **rejected** because it would have amended design
+§4.1 invariant 1, *"a torn `ready`-without-vector is FORBIDDEN"*, and rewritten two shipped tests); the
+dispatcher filter moved **inside** the scan SQL + late enrolment made crash-atomic.
+
+⚠ **ONE codex finding was left OPEN at the 5-round circuit breaker — `TC-71`:** `vector_projection_declared`
+keys off the stored `vector` sub-object alone, so `{roles:[filterable], vector:true}` activates the dense arm
+instead of staying inert. **Wasted embed work; NOT a false-ready and NOT data loss.** The predicate gates the
+forward backfill, the drop inverse **and** late enrolment, so a fix must re-verify all three together.
+
+⚠ **CONSUMER-VISIBLE:** a no-embedder session over an **already-enrolled** corpus now leaves readiness at
+`embedding` and `drain` times out into `SchedulerError` **for that session**. Loud, not silent, and **not data
+loss** — the write is accepted, stays lexically searchable, and is embedded on the next embedder-backed open.
+Documented in `dev/interfaces/{rust,python,typescript}.md` + `CHANGELOG.md`.
+
+**➡ IMMEDIATE NEXT: Slice 30** (R-20-H7 `can-i-deploy` contract-conformance gate — a **publish precondition**).
+**Slice 21** (TC-57 characterize→fix) remains available as a reserved gap in the 20 band (plan §5
+pre-authorizes the gaps; only overflow halts). Commission either as an **orchestrator** — **NOT** `/goal`
+(standing ruling `927ffb35`). Remaining ladder: **30 → 40**, sequentially. Board of record:
+`runs/STATUS-0.8.20.md`; open HITL decisions: §11.
 
 *(Everything below in §9 is retained as landed history — the Slice-15 ratified decisions and the pre-keystone
 "Slice 15 is OPEN" close notes describe the state before the keystone merged. Do not act on the "OPEN / BLOCKED"
