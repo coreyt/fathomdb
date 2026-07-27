@@ -2,7 +2,7 @@
   "phase": "0.8.20 Slice 30 — R-20-H7 RUBRIC-H7 `can-i-deploy` contract-conformance gate",
   "baseline_sha": "23a436dcc7321eab86c622c8b403682caf2dfe2c",
   "branch": "orch-0.8.20-s30",
-  "head_sha": "(fix-2 round: the docs commit that carries this file — see commits[]; the GREEN half is 1fdbca4f)",
+  "head_sha": "(fix-3 round: the docs commit that carries this file — see commits[]; the GREEN half is cc31fef1)",
   "head_sha_before_fix_1": "3475d55e",
   "commits": [
     {
@@ -69,6 +69,21 @@
       "sha": "1fdbca4f",
       "subject": "fix(0.8.20-s30): GREEN fix-2 — schema-qualified SQL, spellings outside a match arm, and a STATED residual scope",
       "note": "FIX-2 ROUND, GREEN half. qualified() (a SQL table reference is [<schema>.]<table>); arm_pairs() expands or-patterns; a new INVERTED check — every string literal inside a closed-vocabulary fn must be a pinned spelling; one sweep fix (C1-Q6B-ID-NON-NULL whitespace). PLUS the RESIDUAL SCOPE section in the gate header and its one-paragraph mirror in the pin's _comment. Suite rc=0: 142 PASS, 0 failures. Gate rc=0 on the real tree."
+    },
+    {
+      "sha": "b0de847b",
+      "subject": "docs(0.8.20-s30): codex §9 round 3 (fix-2 re-review) transcript (TC-RUBRIC-7)",
+      "note": "Review artefact, no code. Verdict CONCERN, two [P2] findings — NOT refinements of the rounds 1-2 classes. See fix_rounds[2].budget: the orchestrator ruled this a NEW, DISTINCT defect class, so the 3-same-finding bound did not fire."
+    },
+    {
+      "sha": "2b0d76c8",
+      "subject": "test(0.8.20-s30): RED fix-3 — five literal violations in SIBLING MODULES the gate walks past",
+      "note": "FIX-3 ROUND, RED half. Five new divergent-fixture arms (12q-12u), each a NEW FILE beside the crate's lib.rs with lib.rs UNTOUCHED, ALL FIVE exiting 0 against the pre-fix gate when they must exit 1. Plus --list-sources tree assertions, TC-37 tree-evaporation arms, and the structural probe-kind guard. Suite rc=1 at this commit: 152 PASS, 20 assertion failures. Every pre-existing arm stayed green, so this is a pure addition that weakens nothing."
+    },
+    {
+      "sha": "cc31fef1",
+      "subject": "fix(0.8.20-s30): GREEN fix-3 — every NEGATIVE probe is crate-TREE-scoped, and the file-scoped kind is gone",
+      "note": "FIX-3 ROUND, GREEN half. All seven file-scoped negative probes converted to absent_tree over the owning crate's SOURCE TREE; the ('absent', <file>, regex) probe kind DELETED from the script; walk_tree returns a cached LIST and exits 2 on a candidate-less tree. Suite rc=0 at this commit: 172 PASS, 0 failures. Gate rc=0 on the real tree. scripts/c1-conformance-pin.json `_comment` prose only."
     }
   ],
   "findings_addressed": [
@@ -198,47 +213,47 @@
     {
       "gate": "scripts/check-c1-conformance.sh (the gate, real tree)",
       "exit": 0,
-      "note": "RE-RUN AT THE FIX-2 HEAD (1fdbca4f). 26/26 CHECKABLE clauses hold; contract byte-identical to the pin. The three fix-2-strengthened clauses pass on the real tree, which also proves the new probes are non-vacuous (the string-literal check would report UNPINNED literals if it were reading the wrong block, and arms_exact would report MISSING pair(s) if it found nothing)."
+      "note": "RE-RUN AT THE FIX-3 HEAD (cc31fef1). 26/26 CHECKABLE clauses hold; contract byte-identical to the pin. The seven newly TREE-scoped negative probes pass on the real tree, and they are non-vacuous: a grep for each pattern over both crate trees before the change returned zero matches, so the green is earned rather than an artefact of scanning the wrong place."
     },
     {
       "gate": "scripts/tests/test_check_c1_conformance.sh (recurrence guard)",
       "exit": 0,
-      "note": "RE-RUN AT THE FIX-2 HEAD (1fdbca4f). 142 assertions (was 126), 23 arms including the six new fix-2 sub-arms 12k-12p, 0 failures. Was exit 1 at the RED commit 041e729e (126 PASS / 16 FAIL) — the RED-first evidence that all six fixtures cleared the pre-fix gate with 0."
+      "note": "RE-RUN AT THE FIX-3 HEAD (cc31fef1). 172 assertions (was 142), 0 failures. Arms 1-17, with arm 12 expanded into 21 divergent-fixture sub-arms 12a-12u — five of them new this round (12q-12u). Also new: four TC-37 tree-evaporation arms (EMPTIED and ABSENT, for each of the two crate trees), two --list-sources tree assertions, and two structural probe-kind guards. Was exit 1 at the RED commit 2b0d76c8 (152 PASS / 20 FAIL) — the RED-first evidence that all five sibling-module fixtures cleared the pre-fix gate with 0."
     },
     {
       "gate": "scripts/check-governed-surface-pin.sh",
       "exit": 0,
-      "note": "RE-RUN AT THE FIX-2 HEAD (1fdbca4f). HELD. src/conformance/governed-surface-allowlist.json is still byte-identical to baseline 23a436dc — it does not appear in `git diff --name-only 23a436dc` at all."
+      "note": "RE-RUN AT THE FIX-3 HEAD (cc31fef1). HELD. src/conformance/governed-surface-allowlist.json is still byte-identical to baseline 23a436dc — it does not appear in `git diff --name-only 23a436dc` at all."
     },
     {
       "gate": "scripts/preflight.sh --landing (from the worktree)",
       "exit": 0,
-      "note": "RE-RUN AT THE FIX-2 HEAD (1fdbca4f). All sections ok, hard_fails []. The c1-contract-conformance section reports ok."
+      "note": "RE-RUN AT THE FIX-3 HEAD (cc31fef1). All sections ok, hard_fails [], warnings []. The c1-contract-conformance section reports ok."
     },
     {
       "gate": "cargo clippy --workspace --all-targets",
       "exit": 0,
-      "note": "CARRIED from the pre-fix round (run at 3475d55e). NOT re-run in fix-1 or fix-2: no Rust changed — both rounds touched only scripts/check-c1-conformance.sh, scripts/tests/test_check_c1_conformance.sh, scripts/c1-conformance-pin.json (prose only) and this file."
+      "note": "CARRIED from the pre-fix round (run at 3475d55e). NOT re-run in fix-1, fix-2 or fix-3: no Rust changed in any of them — the three fix rounds touched only scripts/check-c1-conformance.sh, scripts/tests/test_check_c1_conformance.sh, scripts/c1-conformance-pin.json (prose only) and this file."
     },
     {
       "gate": "cargo check --workspace --all-targets",
       "exit": 0,
-      "note": "CARRIED from the pre-fix round (run at 3475d55e). NOT re-run in fix-1 or fix-2: no Rust changed — both rounds touched only scripts/check-c1-conformance.sh, scripts/tests/test_check_c1_conformance.sh, scripts/c1-conformance-pin.json (prose only) and this file."
+      "note": "CARRIED from the pre-fix round (run at 3475d55e). NOT re-run in fix-1, fix-2 or fix-3: no Rust changed in any of them — the three fix rounds touched only scripts/check-c1-conformance.sh, scripts/tests/test_check_c1_conformance.sh, scripts/c1-conformance-pin.json (prose only) and this file."
     },
     {
       "gate": "cargo test --workspace --quiet --no-fail-fast",
       "exit": 0,
-      "note": "CARRIED from the pre-fix round (run at 3475d55e). NOT re-run in fix-1 or fix-2: no Rust changed — both rounds touched only scripts/check-c1-conformance.sh, scripts/tests/test_check_c1_conformance.sh, scripts/c1-conformance-pin.json (prose only) and this file."
+      "note": "CARRIED from the pre-fix round (run at 3475d55e). NOT re-run in fix-1, fix-2 or fix-3: no Rust changed in any of them — the three fix rounds touched only scripts/check-c1-conformance.sh, scripts/tests/test_check_c1_conformance.sh, scripts/c1-conformance-pin.json (prose only) and this file."
     },
     {
       "gate": "scripts/agent-lint.sh",
       "exit": 0,
-      "note": "RE-RUN AT THE FIX-2 HEAD (1fdbca4f)."
+      "note": "RE-RUN AT THE FIX-3 HEAD (cc31fef1). Exit 0."
     },
     {
       "gate": "actionlint .github/workflows/ci.yml",
       "exit": 0,
-      "note": "CARRIED; ci.yml unchanged in the fix-1 round."
+      "note": "CARRIED. .github/workflows/ci.yml is unchanged in fix-1, fix-2 and fix-3 — the CI wiring invokes the same shared script and did not need to move."
     },
     {
       "gate": "bash -n on every new/modified shell file",
@@ -248,22 +263,22 @@
     {
       "gate": "scripts/tests/test_check_governed_surface_pin.sh",
       "exit": 0,
-      "note": "RE-RUN AT THE FIX-2 HEAD (1fdbca4f). Sibling suite, re-run individually (never as the agent-test.sh aggregate, which is vacuous under TC-16)."
+      "note": "RE-RUN AT THE FIX-3 HEAD (cc31fef1). Exit 0. Sibling suite 1 of 4 — it consumes lib/c1-conformance-fixture.sh, which builds its fixture root from the gate's --list-sources manifest, so the two new tree entries had to flow through correctly for this to stay green."
     },
     {
       "gate": "scripts/tests/test_preflight_landing.sh",
       "exit": 0,
-      "note": "RE-RUN AT THE FIX-2 HEAD (1fdbca4f). Sibling suite, re-run individually (never as the agent-test.sh aggregate, which is vacuous under TC-16)."
+      "note": "RE-RUN AT THE FIX-3 HEAD (cc31fef1). Exit 0. Sibling suite 2 of 4."
     },
     {
       "gate": "scripts/tests/test_check_ledgers.sh",
       "exit": 0,
-      "note": "RE-RUN AT THE FIX-2 HEAD (1fdbca4f). Sibling suite, re-run individually (never as the agent-test.sh aggregate, which is vacuous under TC-16)."
+      "note": "RE-RUN AT THE FIX-3 HEAD (cc31fef1). Exit 0. Sibling suite 3 of 4."
     },
     {
       "gate": "scripts/tests/test_check_board_currency.sh",
       "exit": 0,
-      "note": "RE-RUN AT THE FIX-2 HEAD (1fdbca4f). Sibling suite, re-run individually (never as the agent-test.sh aggregate, which is vacuous under TC-16)."
+      "note": "RE-RUN AT THE FIX-3 HEAD (cc31fef1). Exit 0. Sibling suite 4 of 4."
     },
     {
       "gate": "scripts/tests/test_commission_manifest.sh",
@@ -293,7 +308,7 @@
     {
       "gate": "scripts/agent-test.sh (aggregate)",
       "exit": null,
-      "note": "DELIBERATELY NOT RUN AS AN AGGREGATE. Under set -euo pipefail it aborts at the known-red test_actionlint_fixture.sh (TC-16, placed at Slice 40) and never reaches the later steps, so its exit code is vacuous. Every suite above was run individually and its own real exit code quoted."
+      "note": "NOT RUN, TC-16. The aggregate is vacuous as a slice gate; the individual suites above are what carry the signal. Unchanged in fix-3."
     },
     {
       "gate": "scripts/agent-lint-md.sh (worktree)",
@@ -303,12 +318,17 @@
     {
       "gate": "bash -n scripts/check-c1-conformance.sh",
       "exit": 0,
-      "note": "fix-2 round: syntax check on the changed shell."
+      "note": "RE-RUN AT THE FIX-3 HEAD (cc31fef1). Exit 0."
     },
     {
       "gate": "bash -n scripts/tests/test_check_c1_conformance.sh",
       "exit": 0,
-      "note": "fix-2 round: syntax check on the changed shell."
+      "note": "RE-RUN AT THE FIX-3 HEAD (cc31fef1). Exit 0."
+    },
+    {
+      "gate": "timing: 5x `bash scripts/check-c1-conformance.sh` on the real tree",
+      "exit": 0,
+      "note": "0.28 / 0.27 / 0.28 / 0.28 / 0.28 s at cc31fef1 vs 0.29 / 0.29 / 0.29 / 0.30 / 0.29 s at b0de847b. Tree-scoping two extra crate trees did NOT slow the gate: both are subsets of src/, and the new per-(tree,exts) walk cache collapses C1-Q6B-NO-ENTITYTYPESPEC's three identical full walks of src/ into one. Relevant because the gate runs in an always-on CI job and in preflight --landing."
     }
   ],
   "fix_rounds": [
@@ -494,19 +514,257 @@
         "why_not_built_here": "Both are real work with their own maintenance surface and belong to a slice of their own; neither is warranted by the stated threat model; and silently building one inside a §9 fix round would be scope creep in the exact costume OOB forbids. Raised as a recommendation, per the fix-round brief, rather than implemented.",
         "who_decides": "Steward / HITL. It is NOT a blocker on R-20-H7 as ratified: the acceptance is 'Gate exists and is GREEN', which is satisfied."
       }
+    },
+    {
+      "round": 3,
+      "reviewer": "codex §9, round 3 (fix-2 re-review) — verdict CONCERN, two [P2] findings",
+      "transcript": "dev/plans/runs/codex/0.8.20/slice-30-fix-2-rereview-20260727T162303Z.log",
+      "budget": "THE 3-SAME-FINDING BOUND DID NOT FIRE, and the distinction is load-bearing. orchestration.md §6 bounds a REPEATED finding class at 3. Rounds 1-2 were an ASYMPTOTE: regex shape over an open vocabulary of spellings, unwinnable by widening, correctly closed first by INVERTING the check and then by STATING the residual. Round 3 is a different animal — a BOUNDED SCOPE BUG with a definite, complete fix: the probes were pointed at ONE FILE instead of the crate's SOURCE TREE. The orchestrator ruled it a NEW, DISTINCT class; this is therefore round 3 of a maximum 6 total, not round 3 of 3 on the rounds-1-2 classes. It was CLOSED, not documented away, and the RESIDUAL SCOPE section was deliberately NOT extended to absorb it.",
+      "why_this_was_not_residual": "The gate's stated residual covers INDIRECTION and NON-LITERAL routes (format!-composed SQL, const/macro-indirected identifiers, ATTACH aliases, conversion surfaces outside the named impl, normalising comparisons). codex's fixture is none of those: it is a LITERAL, correctly-spelled, fully schema-qualified `CREATE VIRTUAL TABLE main.property_search_index USING fts5(...)` — exactly what the gate claims to catch — sitting in a sibling file. The header's claim was therefore FALSE AS WRITTEN, which is the real severity here, and the honest repair is to make the claim true rather than to narrow the claim.",
+      "clause_registry_change": "NONE. Same 26 CHECKABLE ids, same categories, same pinned counts (26 checkable / 12 cross-repo / 7 prose, 45 total). The contract's bytes are untouched, so no re-derivation was triggered. scripts/c1-conformance-pin.json WAS edited this round, but only its `_comment` prose (7 added lines stating that SCOPE is not a residual class) — no id, category, count or hash moved.",
+      "findings": [
+        {
+          "id": "round3-#1 [P2] schema-crate module scope",
+          "site": "scripts/check-c1-conformance.sh:447-448 (C1-Q2-NO-DATA-MIGRATION absent probes)",
+          "claim_verified": true,
+          "how": "Reproduced as fixture 12q: a NEW module src/rust/crates/fathomdb-schema/src/migrations_extra.rs carrying `INSERT INTO main.canonical_attributes SELECT * FROM old_attrs;` and `INSERT INTO property_search_index(attr_value) SELECT value FROM legacy_props;`, with lib.rs untouched. Pre-fix gate rc=0.",
+          "fix": "Both probes become ('absent_tree', SCH_TREE, insert_into(<table>), None) over src/rust/crates/fathomdb-schema/src. exts=None (every text file) rather than *.rs, so a migration carried in a .sql file and pulled in with include_str! is in scope.",
+          "scope_note": "The scope is still THE SCHEMA CRATE and not all of src/: the clause forbids a backfill of PRE-EXISTING rows, and the LEGITIMATE per-declaration, same-transaction projection INSERTs live in the ENGINE. Widening to the crate tree cannot false-positive on them. Verified by grep over the real tree before the change: zero matches in either crate tree."
+        },
+        {
+          "id": "round3-#2 [P2] engine-crate module scope",
+          "site": "scripts/check-c1-conformance.sh:579-581 (C1-TE-CUSTOM-TOKENIZER-DEFERRED)",
+          "claim_verified": true,
+          "how": "Reproduced as fixture 12r, using codex's own file name: a NEW module src/rust/crates/fathomdb-engine/src/extra_fts.rs carrying `CREATE VIRTUAL TABLE main.property_search_index USING fts5(attr_value)`, with lib.rs untouched. Pre-fix gate rc=0.",
+          "fix": "('absent_tree', ENG_TREE, <the fix-1/fix-2 case-insensitive, schema-qualified CREATE VIRTUAL TABLE pattern>, None) over src/rust/crates/fathomdb-engine/src.",
+          "scope_note": "The engine crate ALREADY carries sibling modules on main (lifecycle.rs, pcache2.rs) plus a non-.rs text file (vector_equivalence_probes.txt), so 'somebody adds a module' is not a hypothetical shape — it is how this crate already looks."
+        }
+      ],
+      "sweep": {
+        "method": "Enumerated EVERY probe of all 26 CHECKABLE clauses and classified each by SCOPE (single file vs tree) and by POLARITY (positive vs negative). codex named 3 of the 7 file-scoped negative probes; the sweep found the other 4 and closed them in the same commit. This is the third consecutive sweep to find instances the reviewer had not named (fix-1 found 3, fix-2 found 1, fix-3 found 4).",
+        "extra_instances_found_and_fixed": [
+          {
+            "clause": "C1-Q4-DENSE-READINESS-TWO-MEMBERS",
+            "probe": "absent DenseReadiness::Pending",
+            "fixture": "12u — src/rust/crates/fathomdb-engine/src/readiness_ext.rs referencing the reserved DenseReadiness::Pending. Pre-fix rc=0, post-fix rc=1.",
+            "new_scope": "absent_tree ENG_TREE (*.rs)"
+          },
+          {
+            "clause": "C1-Q6A-THREE-ROLES",
+            "probe": "absent ProjectionRole::Vector, absent ProjectionRole::Fts (two probes)",
+            "fixture": "12t — src/rust/crates/fathomdb-engine/src/tier_labels.rs reintroducing the TIER LABELS as roles. Pre-fix rc=0, post-fix rc=1.",
+            "new_scope": "absent_tree ENG_TREE (*.rs)"
+          },
+          {
+            "clause": "C1-Q6B-ID-NON-NULL",
+            "probe": "absent pub\\s+id\\s*:\\s*Option\\s*<\\s*IdSpace",
+            "fixture": "12s — src/rust/crates/fathomdb-engine/src/hit_v2.rs declaring a NULLABLE typed id carrier while lib.rs's paired `present` probe holds untouched. Pre-fix rc=0, post-fix rc=1.",
+            "new_scope": "absent_tree ENG_TREE (*.rs)"
+          }
+        ],
+        "structural_guard": "Widening seven probes fixes today's holes; DELETING THE FILE-SCOPED NEGATIVE PROBE KIND is what stops the class recurring. ('absent', <file>, regex) was removed from run_probe entirely rather than left unused, so it now falls through to the unknown-kind die_env (exit 2) and a negative probe can only be written as absent_tree. The recurrence suite asserts BOTH that no ('absent', ...) probe is declared and that the kind is not implemented, so re-introducing a single-file negative is a deliberate, reviewed act rather than the path of least resistance."
+      },
+      "probe_scope_inventory": {
+        "as_of": "cc31fef1",
+        "rule": "NEGATIVE probes are TREE-scoped, ALWAYS — their failure mode is a silent green. POSITIVE and STRUCTURAL probes may be FILE-scoped — their failure mode under a too-narrow scope is a false RED, which is the safe side. The asymmetry is now STATED in the gate header (PROBE SCOPE section), not left implicit.",
+        "negative_probes_all_tree_scoped": [
+          {
+            "clause": "C1-Q4-NO-PROVISIONAL-CONCEPT",
+            "n": 1,
+            "tree": "src",
+            "exts": "*.rs",
+            "note": "pre-existing; the amendment's factual assertion is repo-wide, so the tree is all of src/."
+          },
+          {
+            "clause": "C1-Q6B-NO-ENTITYTYPESPEC-NO-IDPREFIX",
+            "n": 3,
+            "tree": "src",
+            "exts": "every text file",
+            "note": "pre-existing; EntityTypeSpec / id_prefix / idPrefix must be absent from ALL of src/ including the Python and TS bindings, hence exts=None."
+          },
+          {
+            "clause": "C1-Q2-NO-DATA-MIGRATION",
+            "n": 2,
+            "tree": "src/rust/crates/fathomdb-schema/src",
+            "exts": "every text file",
+            "note": "fix-3 finding #1. Crate-scoped, not repo-scoped, because the ENGINE's same-transaction projection INSERTs are legitimate. exts=None so an include_str!-ed .sql migration is in scope."
+          },
+          {
+            "clause": "C1-Q4-DENSE-READINESS-TWO-MEMBERS",
+            "n": 1,
+            "tree": "src/rust/crates/fathomdb-engine/src",
+            "exts": "*.rs",
+            "note": "fix-3 sweep. COMPLETE, not merely wider: a variant cannot be added to `enum DenseReadiness` from outside the crate that declares it."
+          },
+          {
+            "clause": "C1-Q6A-THREE-ROLES",
+            "n": 2,
+            "tree": "src/rust/crates/fathomdb-engine/src",
+            "exts": "*.rs",
+            "note": "fix-3 sweep. Same completeness argument as the readiness clause."
+          },
+          {
+            "clause": "C1-Q6B-ID-NON-NULL",
+            "n": 1,
+            "tree": "src/rust/crates/fathomdb-engine/src",
+            "exts": "*.rs",
+            "note": "fix-3 sweep."
+          },
+          {
+            "clause": "C1-TE-CUSTOM-TOKENIZER-DEFERRED",
+            "n": 1,
+            "tree": "src/rust/crates/fathomdb-engine/src",
+            "exts": "every text file",
+            "note": "fix-3 finding #2. Crate-scoped because the obligation is on the ENGINE specifically — the schema migration legitimately owns that DDL. exts=None for the same include_str! reason as the schema clause."
+          }
+        ],
+        "negative_probes_left_file_scoped": "NONE. There are zero file-scoped negative probes, and no probe kind capable of expressing one.",
+        "file_scoped_probes_and_why_that_is_correct": [
+          {
+            "kind": "present",
+            "count": 55,
+            "why": "A positive assertion with too narrow a scope FAILS RED by construction: if the symbol moves to a sibling module the probe finds 0 matches and the gate exits 1 naming the clause. It cannot buy a false green. Naming the file additionally STATES where the contract's structure is expected to live, which a tree-wide search would throw away."
+          },
+          {
+            "kind": "min",
+            "count": 1,
+            "why": "Same argument as `present` — C1-TE-DEFAULT-TOKENIZER requires >=2 occurrences of the default tokenizer string in the schema crate's lib.rs; a scope too narrow to find them fails RED."
+          },
+          {
+            "kind": "enum_exact",
+            "count": 3,
+            "why": "Structural, and its negative half (variant COUNT) is enforced against a body it must first LOCATE. If the enum moves to a sibling module the reader returns None and the probe reports 'could not locate a parseable enum ... reads as a clause failure rather than a skipped probe' — exit 1, the safe side. Rust also forbids declaring an enum's variants outside its declaration, so the file that holds the declaration is the complete scope."
+          },
+          {
+            "kind": "arms_exact",
+            "count": 6,
+            "why": "Same: an impl block it cannot find is a clause FAILURE, never a skip. A conversion surface in ANOTHER impl or a free fn is NOT covered — but that is residual class #4 (documented since fix-2) and is a limit of impl-scoped reading, not of file-scoped reading: widening the file scope would not reach a free fn either."
+          }
+        ],
+        "counts": {
+          "clauses": 26,
+          "probes_total": 76,
+          "negative_tree_scoped": 11,
+          "positive_file_scoped": 56,
+          "structural_file_scoped": 9,
+          "file_scoped_negative": 0,
+          "breakdown": "present 55 + min 1 + enum_exact 3 + arms_exact 6 = 65 file-scoped; absent_tree 11 tree-scoped; 76 total across 26 CHECKABLE clauses."
+        }
+      },
+      "tc37_semantics_change": {
+        "question": "Once a probe's subject is a TREE rather than a FILE, what does 'missing' mean?",
+        "decision": "TWO ways a tree fails to be a subject, both exit 2 (TC-37 evaporation path #4, whose header text was amended to say so). (a) THE DIRECTORY IS ABSENT — unambiguous, and unchanged behaviour. (b) THE DIRECTORY YIELDS ZERO CANDIDATE FILES (empty, or nothing matching exts, or only binaries) — NEW this round, and the judgement call. Decided for exit 2: a NEGATIVE assertion that examined zero files is trivially satisfiable and would report 'no violation found' having looked at nothing. That is the vacuous pass in its purest form and it is exactly what a renamed or moved crate leaves behind.",
+        "implementation_consequence": "walk_tree() now returns a LIST rather than yielding, because 'examined nothing' is only knowable after the walk completes and a caller that returns on the first match would never let a generator get there. It is cached per (tree, exts).",
+        "list_sources_coherence": "--list-sources already emitted `tree<TAB>path` lines and now names the two crate source trees as well as src/. That manifest is what builds EVERY fixture root in the recurrence suite AND the preflight seeder lib/c1-conformance-fixture.sh, so a tree-scoped probe whose tree were not listed would leave those roots without it and silently evaporate. Two new assertions pin both new tree lines.",
+        "coverage": "Four new arms: for each of the two crate trees, an EMPTIED tree and an ABSENT tree, each asserting rc=2, no ok line, and (for the emptied case) that TC-37 is cited. The pre-existing empty-root and missing-file arms still pass unchanged.",
+        "honest_limit_of_that_coverage": "The candidate-less-tree rule cannot be witnessed IN ISOLATION through the CLI, and the arm says so in a comment rather than implying otherwise. Every crate tree the gate scans also holds that crate's lib.rs, which the same clause's file-scoped `present` probes read, so emptying the tree trips the file rule and the tree rule together and the gate reports whichever fires first (the file rule, by clause ordering). What the arms assert is the property that actually matters: NO GREEN IS REACHABLE and the verdict is 'gate could not run' (2), never 'clause failed' (1). The rule is kept because it is the correct semantics for a tree subject and because it is reachable in principle for any future tree probe that has no file-scoped anchor inside it."
+      },
+      "red_to_green_per_arm": [
+        {
+          "arm": "12q schema-crate sibling module backfill (migrations_extra.rs)",
+          "finding": "round3-#1",
+          "red_rc": 0,
+          "green_rc": 1,
+          "clause_attributed": "C1-Q2-NO-DATA-MIGRATION",
+          "also_asserts": "names the offending FILE, and routes the reader to the Steward"
+        },
+        {
+          "arm": "12r engine-crate sibling module FTS DDL (extra_fts.rs, codex's own file name)",
+          "finding": "round3-#2",
+          "red_rc": 0,
+          "green_rc": 1,
+          "clause_attributed": "C1-TE-CUSTOM-TOKENIZER-DEFERRED",
+          "also_asserts": "names the offending FILE"
+        },
+        {
+          "arm": "12s engine-crate sibling module nullable typed id (hit_v2.rs)",
+          "finding": "sweep",
+          "red_rc": 0,
+          "green_rc": 1,
+          "clause_attributed": "C1-Q6B-ID-NON-NULL",
+          "also_asserts": "names the offending FILE; lib.rs untouched so the paired `present` probe still holds"
+        },
+        {
+          "arm": "12t engine-crate sibling module tier-labels-as-roles (tier_labels.rs)",
+          "finding": "sweep",
+          "red_rc": 0,
+          "green_rc": 1,
+          "clause_attributed": "C1-Q6A-THREE-ROLES",
+          "also_asserts": "names the offending FILE; enum_exact/arms_exact both still pass, so the negative probe is the only thing standing"
+        },
+        {
+          "arm": "12u engine-crate sibling module reserved Pending readiness (readiness_ext.rs)",
+          "finding": "sweep",
+          "red_rc": 0,
+          "green_rc": 1,
+          "clause_attributed": "C1-Q4-DENSE-READINESS-TWO-MEMBERS",
+          "also_asserts": "names the offending FILE"
+        },
+        {
+          "arm": "--list-sources names the ENGINE crate source tree",
+          "finding": "TC-37 coherence",
+          "red_rc": "assertion absent from manifest (FAIL)",
+          "green_rc": "present (PASS)",
+          "clause_attributed": "n/a"
+        },
+        {
+          "arm": "--list-sources names the SCHEMA crate source tree",
+          "finding": "TC-37 coherence",
+          "red_rc": "assertion absent from manifest (FAIL)",
+          "green_rc": "present (PASS)",
+          "clause_attributed": "n/a"
+        },
+        {
+          "arm": "no ('absent', <file>, ..) probe is DECLARED in the gate",
+          "finding": "structural guard",
+          "red_rc": "FAIL (7 declared)",
+          "green_rc": "PASS (0 declared)",
+          "clause_attributed": "n/a"
+        },
+        {
+          "arm": "the file-scoped `absent` probe KIND is not IMPLEMENTED in the gate",
+          "finding": "structural guard",
+          "red_rc": "FAIL (implemented)",
+          "green_rc": "PASS (deleted)",
+          "clause_attributed": "n/a"
+        },
+        {
+          "arm": "EMPTIED / ABSENT crate source tree x2 trees (4 arms)",
+          "finding": "TC-37 tree semantics",
+          "red_rc": 2,
+          "green_rc": 2,
+          "clause_attributed": "n/a — exit 2 both before and after; see tc37_semantics_change.honest_limit_of_that_coverage"
+        }
+      ],
+      "residual_scope_amended": "NO, and deliberately not. Round 3 was not a residual class, so absorbing it into the RESIDUAL SCOPE list would have been the wrong repair — it would have converted a fixable defect into a documented limitation. Three EDITS were made to the header instead: (i) a new PROBE SCOPE section carrying the rule, the positive/negative asymmetry, and the full inventory; (ii) the residual section is retitled READ BEFORE ROUND 4 and now says explicitly that fix-3 is NOT on the list and did not belong on it, and that the list is 'not a place to retire findings to'; (iii) CONSEQUENCE FOR REVIEWERS is widened — a finding that the gate misses a pinned name because the probe was pointed at the wrong SUBJECT is a real defect, alongside the existing 'misses a spelling in literal source text'. The seven residual classes themselves are unchanged and none of them was weakened or re-scoped.",
+      "performance": {
+        "measured": "5 consecutive runs of `bash scripts/check-c1-conformance.sh` on the real tree, /usr/bin/time -f %e, same machine, warm page cache.",
+        "before_b0de847b": "0.29 / 0.29 / 0.29 / 0.30 / 0.29 s",
+        "after_cc31fef1": "0.28 / 0.27 / 0.28 / 0.28 / 0.28 s",
+        "why_it_did_not_get_slower": "Two effects cancel and then some. COST: two additional tree walks. But both new trees are STRICT SUBSETS of src/, which the gate already walked, and together they are ~1MB of the source. SAVING: walk_tree is now cached per (tree, exts), so C1-Q6B-NO-ENTITYTYPESPEC-NO-IDPREFIX's three identical full walks of src/ collapse into one. Net -0.01s.",
+        "callers": "Both homes are fine at this cost: the always-on CI job c1-contract-conformance, and scripts/preflight.sh --landing (which is dominated by its other sections). The recurrence suite itself takes 6.0s wall — it drives 46 gate invocations across 26 purpose-built fixture roots plus four throwaway git repos with linked worktrees for the preflight arms."
+      },
+      "not_changed": [
+        "src/ — nothing under it was touched, by construction: this round changed a gate, not the code the gate reads.",
+        "The ratified C-1 contract's bytes — unmoved, so no clause-registry re-derivation was triggered.",
+        "src/conformance/governed-surface-allowlist.json — byte-identical to baseline 23a436dc; it does not appear in `git diff --name-only 23a436dc` at all.",
+        "scripts/c1-conformance-pin.json's hashes, clause ids, categories and counts — only 7 lines of `_comment` prose were added.",
+        ".github/workflows/ci.yml and scripts/preflight.sh — the two wirings are unchanged; both still invoke the SAME script."
+      ]
     }
   ],
-  "agent_verify_result": "GREEN for the slice's own scope, fix-2 round applied. The R-20-H7 gate exists, is dual-homed (preflight --landing + an always-on CI job running the SAME script), and is GREEN: 26/26 CHECKABLE clauses of the ratified C-1 contract hold against as-built code, and the contract is byte-identical to its pin. The recurrence guard is now 142 assertions across 23 arms, every failure arm fixture-driven. All three codex §9 round-2 [P2] findings are closed RED-first (each fixture exited 0 pre-fix, 1 post-fix, attributed to the right clause), and the sweep found and closed one further instance of the same narrow-regex class (C1-Q6B-ID-NON-NULL). SECOND DELIVERABLE: the gate's residual scope is now STATED rather than implied — a named header section enumerating seven evasion classes a static/lexical check does not and cannot close, the gate's epistemic status as a tripwire-against-drift rather than a proof of conformance, which way its errors fall, why this is the right stopping point for a can-i-deploy gate, and what a reviewer should conclude from a finding inside that boundary. A stronger mechanism (runtime sqlite_master assertion and/or a syn parse) is RECOMMENDED, not built. BUDGET WARNING FOR THE ORCHESTRATOR: all three round-2 findings were refinements of the two classes round 1 raised, so under orchestration.md §6 this is round 2 of a maximum 3 on those classes. A round-3 fourth variant of the same two classes must HALT the slice and escalate to the Steward.",
+  "agent_verify_result": "GREEN for the slice's own scope, fix-3 round applied. The R-20-H7 gate exists, is dual-homed (preflight --landing + an always-on CI job running the SAME script), and is GREEN: 26/26 CHECKABLE clauses of the ratified C-1 contract hold against as-built code, and the contract is byte-identical to its pin. The recurrence guard is now 172 assertions across arms 1-17 with 21 fixture sub-arms 12a-12u, every failure arm fixture-driven.\n\nBOTH codex §9 round-3 [P2] findings are closed RED-first, and they were a DIFFERENT class from rounds 1-2: not a regex shape but a SCOPE bug — every negative probe read ONE FILE, so a literal, correctly-spelled, fully schema-qualified violation placed in a SIBLING MODULE of the same crate exited 0. That was a false claim in the gate's own header, not a residual limitation, so it was CLOSED rather than documented. The sweep enumerated all 76 probes by scope and polarity, found 4 more file-scoped negatives than codex named, and fixed all 7.\n\nTHE STRUCTURAL PART IS THE DURABLE PART: the file-scoped negative probe KIND was deleted from the script, so a negative probe can now only be written tree-scoped, and the suite asserts the kind's absence. The positive/negative asymmetry is stated rather than implicit (a too-narrow POSITIVE fails RED by construction and is therefore safe to leave file-scoped). TC-37 path #4 gained a definition for a tree subject: absent directory AND candidate-less directory both exit 2, with the coverage limit of the latter stated honestly rather than papered over.\n\nNothing under src/ was touched in any of the three fix rounds; SCHEMA is unmoved; the governed-surface allowlist is byte-identical to baseline; the contract's bytes and the clause registry are unchanged.",
   "next_step_for_orchestrator": [
-    "Run codex §9 round 3 against this branch — but read fix_rounds[1].budget FIRST. Both prior rounds raised the same two classes (narrow regex over SQL; open string vocabulary), and §6 bounds a repeated class at 3. If round 3 returns a FOURTH variant of those two classes, do NOT commission a fix-3: HALT the slice and escalate to the Steward with the RESIDUAL SCOPE section as the artefact to adjudicate.",
-    "Point round 3 at the fix-2 delta: (i) qualified() and why an optional schema qualifier cannot false-positive (both probes stay scoped to the schema crate); (ii) the INVERTED vocabulary check — every string literal inside a closed-vocabulary fn must be a pinned spelling — and its accepted cost, a false RED on a non-vocabulary literal; (iii) the six new fixture arms 12k-12p, each of which exited 0 pre-fix; (iv) THE RESIDUAL SCOPE SECTION ITSELF, which is a claim about what the gate does NOT prove and is the right thing for a reviewer to argue with.",
-    "Also still worth pushing on from rounds 1-2: (i) the clause registry in scripts/c1-conformance-pin.json — the classification is the slice's real deliverable, especially C1-Q6B-C2-CARRIER-STATUS (PROSE, blocker S30-B3); (ii) the seeder's documented departure from its synthetic sibling (S30-B1).",
+    "Run codex §9 round 4 against this branch if the budget allows — this is round 3 of a maximum 6, NOT round 3 of 3, because the orchestrator ruled the round-3 findings a NEW, DISTINCT class (bounded scope bug) rather than a fourth variant of the rounds-1-2 classes (regex shape over an open vocabulary). Preserve that distinction when adjudicating round 4: a finding on the RESIDUAL SCOPE list is documented scope and is not a defect; a finding that a LITERAL spelling of a pinned name is missed, or that a probe is pointed at the wrong SUBJECT, is a real defect and gets fixed.",
+    "Point round 4 at the fix-3 delta: (i) the PROBE SCOPE header section — the rule, the positive/negative asymmetry and the full 76-probe inventory, all of which are claims a reviewer should try to falsify; (ii) the DELETION of the file-scoped negative probe kind, which is the anti-recurrence mechanism; (iii) the exts choices (None for the SQL negatives so an include_str!-ed .sql is in scope; *.rs for the Rust identifier negatives to avoid pure false REDs); (iv) the TC-37 tree semantics and the STATED limit of their coverage; (v) the five new fixture arms 12q-12u, each of which exited 0 pre-fix.",
+    "Still worth pushing on from rounds 1-3: (i) the clause registry in scripts/c1-conformance-pin.json — the classification is the slice's real deliverable, especially C1-Q6B-C2-CARRIER-STATUS (PROSE, blocker S30-B3); (ii) the seeder's documented departure from its synthetic sibling (S30-B1).",
     "Cherry-pick onto main. Nothing under src/ was touched; SCHEMA is unmoved; no SDK surface changed; the governed-surface allowlist is byte-identical to baseline; no CHANGELOG entry (decision + reason recorded above).",
     "Close R-20-H7 on the board: 'Gate exists and is GREEN' is satisfied. R-20-H7 is a PUBLISH PRECONDITION — an absent-or-failing gate holds the breaking pair — so the publish precondition is now met and the CI job will keep it honest on every push.",
-    "Put fix_rounds[1].recommendation_made_not_built in front of the Steward as a SEPARATE decision: a runtime sqlite_master assertion and/or a syn-based parse would make R-20-H7 a soundness argument instead of a drift tripwire. It is not a blocker on R-20-H7 as ratified and was deliberately not built in a fix round.",
+    "Put fix_rounds[1].recommendation_made_not_built in front of the Steward as a SEPARATE decision: a runtime sqlite_master assertion and/or a syn-based parse would make R-20-H7 a soundness argument instead of a drift tripwire. It is not a blocker on R-20-H7 as ratified and was deliberately not built in any fix round. Note that fix-3 STRENGTHENS the case for leaving it as a tripwire: the scope bug was fixable inside the lexical mechanism, so the mechanism was not the thing at fault.",
     "OPEN A TC for S30-B2 (test_commission_manifest arm 9d is red on main today, and commission-manifest is an always-on CI job).",
     "Note for the Steward, S30-B3: the contract's Q6(b) carries a stale parenthetical ('typed swap not started') contradicted by its own amendment banner four lines below. Fix it at the NEXT amendment, not now — any edit moves the contract's bytes and forces a full re-derivation of the clause registry.",
     "Ladder: Slice 30 was the publish precondition and ran first of the remainder. Next per plan-0.8.20.md §4 is Slice 21 (R-20-CR: TC-57 characterize-then-fix, ac_002 sandbox, TC-71)."
   ],
-  "head_sha_before_fix_2": "52c2bde9"
+  "head_sha_before_fix_2": "52c2bde9",
+  "head_sha_before_fix_3": "b0de847b"
 }
