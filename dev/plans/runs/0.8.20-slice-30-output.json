@@ -2,7 +2,8 @@
   "phase": "0.8.20 Slice 30 — R-20-H7 RUBRIC-H7 `can-i-deploy` contract-conformance gate",
   "baseline_sha": "23a436dcc7321eab86c622c8b403682caf2dfe2c",
   "branch": "orch-0.8.20-s30",
-  "head_sha": "5add8a20bb4d421166ad0dc92346137d14972842",
+  "head_sha": "(fix-1 round: the docs commit that carries this file — see commits[])",
+  "head_sha_before_fix_1": "3475d55e",
   "commits": [
     {
       "sha": "10f018dd",
@@ -30,16 +31,35 @@
       "note": "X3."
     },
     {
-      "sha": "(this commit — self-referential, not knowable before it exists)",
+      "sha": "3475d55e",
       "subject": "docs(0.8.20-s30): slice closure output.json",
-      "note": "This file."
+      "note": "This file, first revision. Round-1 codex §9 ran against this head and returned CONCERN."
+    },
+    {
+      "sha": "15abb967",
+      "subject": "test(0.8.20-s30): RED fix-1 — divergent fixtures the R-20-H7 gate walks past",
+      "note": "FIX-1 ROUND, RED half. Seven new divergent-fixture arms (12d-12j), ALL SEVEN exiting 0 against the pre-fix gate when they must exit 1. Suite rc=1 at this commit: 106 PASS, 20 assertion failures. Every pre-existing arm stayed green, so this is a pure addition that weakens nothing."
+    },
+    {
+      "sha": "86cd81fc",
+      "subject": "fix(0.8.20-s30): GREEN fix-1 — closed vocabularies + case-insensitive SQL",
+      "note": "FIX-1 ROUND, GREEN half. Two new structural probe kinds (enum_exact, arms_exact) + an insert_into() case-insensitive SQL pattern helper; applied across all five affected clauses. Suite rc=0 at this commit: 126 PASS, 0 failures. Gate rc=0 on the real tree."
+    },
+    {
+      "sha": "(this commit — self-referential, not knowable before it exists)",
+      "subject": "docs(0.8.20-s30): fix-1 round — update the slice closure output.json",
+      "note": "This file, fix-1 revision."
     }
   ],
   "findings_addressed": [
     "R-20-H7 — the gate EXISTS and is GREEN. scripts/check-c1-conformance.sh exits 0 on the tree at head; all 26 CHECKABLE clauses of the ratified OPP-12 C-1 converged contract hold against as-built code.",
     "The gate is pinned to the AMENDED contract (efa8d584). The un-amended Q6(b) mandated an anonymous surrogate that the ratified TC-11 pin A forbids ever implementing; a registry derived from that text would have been permanently red and would have held the breaking-pair publish forever. Both the gate header and the pin's _comment record this as the reason the contract's bytes are pinned at all.",
     "Dual-homed per the settled design: preflight.sh --landing §10 (PREVENT) and an always-on ci.yml job (DETECT), both invoking THE SAME script so the predicate cannot diverge.",
-    "Recurrence guard: scripts/tests/test_check_c1_conformance.sh, 106 assertions across 17 arms, every failure arm driven by a purpose-built divergent fixture."
+    "Recurrence guard: scripts/tests/test_check_c1_conformance.sh, 126 assertions across 17 arms (17 after the fix-1 round added seven sub-arms 12d-12j to the existing arm-12 section), every failure arm driven by a purpose-built divergent fixture.",
+    "FIX-1 / codex §9 round 1, finding #1 [P2] — CLOSED. The readiness vocabulary was BLACKLISTED, not pinned: 'EXACTLY {ready, embedding}' was probed as two `present` probes plus one `absent DenseReadiness::Pending`. codex demonstrated `pub enum DenseReadiness { Ready, Embedding, Failed }` clearing the gate with exit 0. Now closed by CONSTRUCTION with two new structural probe kinds — enum_exact (parses the enum body, compares variant SET *and* COUNT) and arms_exact (parses `impl Ty { fn f }`, compares the (variant, string) match-arm pairs as a LIST so a duplicate spelling is visible). A third variant fails whatever it is called; a third accepted STRING spelling fails even with the enum untouched.",
+    "FIX-1 / codex §9 round 1, finding #2 [P2] — CLOSED. The NO-DATA-MIGRATION `absent` regexes were case-sensitive and single-space-anchored; codex cleared the gate with `insert into canonical_attributes select * from old;`. New helper insert_into(table) emits (?i) plus all five SQLite conflict clauses (ABORT/FAIL/IGNORE/REPLACE/ROLLBACK) plus \\s+ between every token (newlines included) plus an optionally quoted/bracketed table name. SCOPE was re-read and is now written into the gate header: the clause forbids a MIGRATION/BACKFILL of PRE-EXISTING rows, the probes stay scoped to the SCHEMA crate (which IS the migration ladder), and the LEGITIMATE same-transaction projection INSERTs live in the ENGINE (configure_projections, lib.rs ~16663/16669) and are out of scope — so widening to case-insensitive cannot false-positive on them. The one residual is stated plainly in the header rather than hidden: a doc comment literally spelling `insert into canonical_attributes` in the schema crate would trip it, which is a false RED (the safe side) rather than the false GREEN it replaces.",
+    "FIX-1 SWEEP — both DEFECT CLASSES were searched for across every other clause assertion, and THREE MORE INSTANCES were found and fixed in the same round. Open-vocabulary probes: C1-Q6A-THREE-ROLES ('exactly {filterable, rankable, searchable}') had a blacklist of two names, so a fourth role under any other name passed; C1-Q6B-IDSPACE-TOTAL-THREE ('total over exactly those three') had FOUR `present` probes and NO negative probe at all, so a fourth variant — the precise violation of totality — could not be detected even in principle. Case-sensitive SQL: C1-TE-CUSTOM-TOKENIZER-DEFERRED's `absent CREATE VIRTUAL TABLE property_search_index` over the ENGINE had the identical uppercase anchor. All three now have their own RED-first fixture arms (12f, 12g, 12j), each of which exited 0 before this round.",
+    "FIX-1 NON-INSTANCES, checked and deliberately left alone: the Rust IDENTIFIER negative probes (ProjectionRole::Vector, ProjectionRole::Fts, EntityTypeSpec, id_prefix, idPrefix, DenseReadiness::Pending, `pub id: Option<IdSpace>`) stay CASE-SENSITIVE because case is significant in Rust — folding case there would manufacture false positives, not close a hole. C1-Q4-NO-PROVISIONAL-CONCEPT was already (?i). C1-Q6B-ID-NON-NULL's `absent pub id: Option<IdSpace>` is a single-spelling blacklist, but its paired `present pub id: IdSpace,` probe carries the obligation on its own (a change to Option makes the present probe fail), so it is not an open vocabulary."
   ],
   "blockers_encountered": [
     {
@@ -155,21 +175,21 @@
     "caveat_for_the_steward": "If Slice 21 fixes TC-71 by requiring the `searchable` role, that is a behavioural change with NO C-1 clause on either side of it — this gate will neither notice nor object. That is correct (the contract is silent), and it is exactly the kind of thing the gate's header warns it does not cover."
   },
   "gates": [
-    { "gate": "scripts/check-c1-conformance.sh (the new gate, real tree)", "exit": 0, "note": "26/26 CHECKABLE clauses hold; contract byte-identical to the pin." },
-    { "gate": "scripts/tests/test_check_c1_conformance.sh (recurrence guard)", "exit": 0, "note": "106 assertions, 17 arms, 0 failures. Was exit 1 at 10f018dd (RED-first)." },
-    { "gate": "scripts/check-governed-surface-pin.sh", "exit": 0, "note": "HELD. src/conformance/governed-surface-allowlist.json byte-identical to baseline 23a436dc (git diff --stat empty). Not expected to trip for a gate-only slice, and it did not." },
-    { "gate": "scripts/preflight.sh --landing (from the worktree)", "exit": 0, "note": "all ten sections ok, hard_fails []." },
-    { "gate": "cargo clippy --workspace --all-targets", "exit": 0, "note": "no Rust changed in this slice; run anyway per release DoD." },
-    { "gate": "cargo check --workspace --all-targets", "exit": 0, "note": "as above." },
-    { "gate": "cargo test --workspace --quiet --no-fail-fast", "exit": 0, "note": "ONE green run. Per TC-72 a single green is not proof of stability on this machine, but no Rust changed in this slice." },
-    { "gate": "scripts/agent-lint.sh", "exit": 0, "note": "required a node_modules symlink to the primary checkout first (the linter itself printed that instruction and HARD-failed rather than skipping — TC-37 behaving correctly)." },
-    { "gate": "actionlint .github/workflows/ci.yml", "exit": 0 },
-    { "gate": "bash -n on every new/modified shell file", "exit": 0, "note": "shellcheck is NOT installed on this machine, so no shellcheck run is claimed." },
-    { "gate": "scripts/tests/test_check_governed_surface_pin.sh", "exit": 0, "note": "was red mid-slice (S30-B1), green after the seeder repair." },
-    { "gate": "scripts/tests/test_preflight_landing.sh", "exit": 0, "note": "as above." },
-    { "gate": "scripts/tests/test_check_ledgers.sh", "exit": 0, "note": "as above." },
-    { "gate": "scripts/tests/test_check_board_currency.sh", "exit": 0, "note": "as above." },
-    { "gate": "scripts/tests/test_commission_manifest.sh", "exit": 1, "note": "PRE-EXISTING RED — reproduced identically at baseline 23a436dc in a throwaway clone. See blocker S30-B2. NOT caused by this slice." },
+    { "gate": "scripts/check-c1-conformance.sh (the gate, real tree)", "exit": 0, "note": "RE-RUN AT THE FIX-1 HEAD. 26/26 CHECKABLE clauses hold; contract byte-identical to the pin. The five strengthened clauses pass on the real tree, which also proves the new structural probes are non-vacuous (a probe that found nothing would report MISSING pair(s) and go red)." },
+    { "gate": "scripts/tests/test_check_c1_conformance.sh (recurrence guard)", "exit": 0, "note": "RE-RUN AT THE FIX-1 HEAD. 126 assertions (was 106), 17 arms including the seven new fix-1 sub-arms 12d-12j, 0 failures. Was exit 1 at 15abb967 with those seven arms RED (RED-first), and exit 1 at 10f018dd for the original slice." },
+    { "gate": "scripts/check-governed-surface-pin.sh", "exit": 0, "note": "RE-RUN AT THE FIX-1 HEAD. HELD. src/conformance/governed-surface-allowlist.json still byte-identical to baseline 23a436dc (git diff --stat 23a436dc -- <allowlist> empty)." },
+    { "gate": "scripts/preflight.sh --landing (from the worktree)", "exit": 0, "note": "RE-RUN AT THE FIX-1 HEAD. All ten sections ok, hard_fails []." },
+    { "gate": "cargo clippy --workspace --all-targets", "exit": 0, "note": "CARRIED from the pre-fix round (run at 3475d55e). NOT re-run in the fix-1 round: no Rust changed — the round touched only scripts/check-c1-conformance.sh, scripts/tests/test_check_c1_conformance.sh and this file." },
+    { "gate": "cargo check --workspace --all-targets", "exit": 0, "note": "CARRIED, as above." },
+    { "gate": "cargo test --workspace --quiet --no-fail-fast", "exit": 0, "note": "CARRIED, as above. ONE green run at 3475d55e; per TC-72 a single green is not proof of stability on this machine." },
+    { "gate": "scripts/agent-lint.sh", "exit": 0, "note": "RE-RUN AT THE FIX-1 HEAD. Required a node_modules symlink to the primary checkout first (the linter itself printed that instruction and HARD-failed rather than skipping — TC-37 behaving correctly)." },
+    { "gate": "actionlint .github/workflows/ci.yml", "exit": 0, "note": "CARRIED; ci.yml unchanged in the fix-1 round." },
+    { "gate": "bash -n on every new/modified shell file", "exit": 0, "note": "RE-RUN AT THE FIX-1 HEAD on both changed shell files. shellcheck is NOT installed on this machine, so no shellcheck run is claimed." },
+    { "gate": "scripts/tests/test_check_governed_surface_pin.sh", "exit": 0, "note": "RE-RUN AT THE FIX-1 HEAD. Was red mid-slice (S30-B1), green after the seeder repair, still green." },
+    { "gate": "scripts/tests/test_preflight_landing.sh", "exit": 0, "note": "RE-RUN AT THE FIX-1 HEAD; as above." },
+    { "gate": "scripts/tests/test_check_ledgers.sh", "exit": 0, "note": "RE-RUN AT THE FIX-1 HEAD; as above." },
+    { "gate": "scripts/tests/test_check_board_currency.sh", "exit": 0, "note": "RE-RUN AT THE FIX-1 HEAD; as above." },
+    { "gate": "scripts/tests/test_commission_manifest.sh", "exit": 1, "note": "PRE-EXISTING RED — reproduced identically at baseline 23a436dc in a throwaway clone. See blocker S30-B2. NOT caused by this slice and untouched by the fix-1 round." },
     { "gate": "scripts/tests/test_smoke_scripts.sh", "exit": 0 },
     { "gate": "scripts/tests/test_lint_plan_anchors.sh", "exit": 0 },
     { "gate": "scripts/tests/test_check_release_state_views.sh", "exit": 0 },
@@ -178,9 +198,37 @@
     { "gate": "scripts/agent-test.sh (aggregate)", "exit": null, "note": "DELIBERATELY NOT RUN AS AN AGGREGATE. Under set -euo pipefail it aborts at the known-red test_actionlint_fixture.sh (TC-16, placed at Slice 40) and never reaches the later steps, so its exit code is vacuous. Every suite above was run individually and its own real exit code quoted." },
     { "gate": "scripts/agent-lint-md.sh (worktree)", "exit": null, "note": "NOT CLAIMED. Per TC-37 this script takes its skip branches in a linked worktree and exits 0 having linted nothing; a worktree exit 0 is not a green and is not reported as one." }
   ],
-  "agent_verify_result": "GREEN for the slice's own scope. The R-20-H7 gate exists, is dual-homed, and is GREEN: 26/26 CHECKABLE clauses of the ratified C-1 contract hold against as-built code, and the contract is byte-identical to its pin. The recurrence guard is 106 assertions strong and every failure arm is fixture-driven. The governed-surface pin HELD byte-identical. Full-workspace clippy and check both exit 0. One pre-existing unrelated red is recorded (S30-B2, test_commission_manifest arm 9d, reproduced at baseline).",
+  "fix_rounds": [
+    {
+      "round": 1,
+      "reviewer": "codex §9, round 1 — verdict CONCERN, two [P2] findings",
+      "budget": "round 1 of a maximum 6 (standard bound; this slice does not touch fathomdb-engine/src, so the engine amendment does not apply)",
+      "clause_registry_change": "NONE. Same 26 CHECKABLE ids, same categories, same pinned counts (26 checkable / 12 cross-repo / 7 prose, 45 total). The contract's bytes are untouched, so no re-derivation was triggered. The defect was entirely in the ASSERTIONS bodies inside scripts/check-c1-conformance.sh; scripts/c1-conformance-pin.json was NOT edited in this round.",
+      "clauses_strengthened": [
+        "C1-Q4-DENSE-READINESS-TWO-MEMBERS  (codex #1)  — + enum_exact + 2x arms_exact",
+        "C1-Q6A-THREE-ROLES                 (sweep)     — + enum_exact + 2x arms_exact",
+        "C1-Q6B-IDSPACE-TOTAL-THREE         (sweep)     — + enum_exact + 2x arms_exact",
+        "C1-Q2-NO-DATA-MIGRATION            (codex #2)  — both `absent` regexes now via insert_into()",
+        "C1-TE-CUSTOM-TOKENIZER-DEFERRED    (sweep)     — `absent` regex now (?i) + \\s+ tolerant"
+      ],
+      "clauses_weakened": "NONE. No probe was removed or loosened; the pre-existing present/absent probes were all KEPT as spelling regression guards alongside the new structural ones.",
+      "red_then_green": [
+        { "arm": "12d third DenseReadiness variant (`Failed`)", "pre_fix_rc": 0, "post_fix_rc": 1, "want": 1 },
+        { "arm": "12e third readiness SPELLING (\"pending\" => Some(DenseReadiness::Ready)), enum untouched", "pre_fix_rc": 0, "post_fix_rc": 1, "want": 1 },
+        { "arm": "12f fourth ProjectionRole (`Embeddable`)", "pre_fix_rc": 0, "post_fix_rc": 1, "want": 1 },
+        { "arm": "12g fourth IdSpaceKind (`Chunk`, prefix \"c:\")", "pre_fix_rc": 0, "post_fix_rc": 1, "want": 1 },
+        { "arm": "12h `insert into canonical_attributes select * from old_attrs;`", "pre_fix_rc": 0, "post_fix_rc": 1, "want": 1 },
+        { "arm": "12i `INSERT OR REPLACE INTO\\n property_search_index(...) SELECT ...`", "pre_fix_rc": 0, "post_fix_rc": 1, "want": 1 },
+        { "arm": "12j lowercase engine-side `create virtual table property_search_index using fts5(...)`", "pre_fix_rc": 0, "post_fix_rc": 1, "want": 1 }
+      ],
+      "suite_rc": { "at_red_commit_15abb967": 1, "at_green_commit_86cd81fc": 0 },
+      "suite_assertions": { "before": 106, "after": 126 }
+    }
+  ],
+  "agent_verify_result": "GREEN for the slice's own scope, fix-1 round applied. The R-20-H7 gate exists, is dual-homed, and is GREEN: 26/26 CHECKABLE clauses of the ratified C-1 contract hold against as-built code, and the contract is byte-identical to its pin. The recurrence guard is 126 assertions strong and every failure arm is fixture-driven. Both codex §9 round-1 [P2] findings are closed, and both DEFECT CLASSES were swept — three further instances of the same two shapes were found in sibling clauses and fixed in the same round, each with its own RED-first arm. The governed-surface pin HELD byte-identical. Full-workspace clippy and check both exit 0 (carried; no Rust changed in the fix round). One pre-existing unrelated red is recorded (S30-B2, test_commission_manifest arm 9d, reproduced at baseline).",
   "next_step_for_orchestrator": [
-    "Run codex §9 against this branch. Point it in particular at: (i) the clause registry in scripts/c1-conformance-pin.json — the classification is the slice's real deliverable and the place a reviewer should push hardest, especially C1-Q6B-C2-CARRIER-STATUS (PROSE, blocker S30-B3) and C1-Q2-NO-DATA-MIGRATION; (ii) the honesty paragraph in the gate header, which is a claim about what the gate does NOT prove; (iii) the seeder's documented departure from its synthetic sibling (S30-B1).",
+    "Run codex §9 round 2 against this branch. Point it at the fix-1 delta: (i) scripts/check-c1-conformance.sh's two new probe kinds (enum_exact / arms_exact) and their deliberately-dumb Rust reader, whose known textual limits are stated in the header rather than papered over; (ii) insert_into() and the SCOPE argument for why the case-insensitive widening cannot false-positive on the engine's legitimate same-transaction projection INSERTs; (iii) the seven new fixture arms 12d-12j, each of which exited 0 pre-fix.",
+    "Also still worth pushing on from round 1: (i) the clause registry in scripts/c1-conformance-pin.json — the classification is the slice's real deliverable, especially C1-Q6B-C2-CARRIER-STATUS (PROSE, blocker S30-B3); (ii) the honesty paragraph in the gate header, which is a claim about what the gate does NOT prove; (iii) the seeder's documented departure from its synthetic sibling (S30-B1).",
     "Cherry-pick onto main. Nothing under src/ was touched; SCHEMA is unmoved; no SDK surface changed; no CHANGELOG entry (decision + reason recorded above).",
     "Close R-20-H7 on the board: 'Gate exists and is GREEN' is satisfied. R-20-H7 is a PUBLISH PRECONDITION — an absent-or-failing gate holds the breaking pair — so the publish precondition is now met and the CI job will keep it honest on every push.",
     "OPEN A TC for S30-B2 (test_commission_manifest arm 9d is red on main today, and commission-manifest is an always-on CI job).",
