@@ -39,20 +39,22 @@
 #     COUNT and its string mappings are exactly the pinned ones — a structural
 #     comparison, NOT a blacklist of the names somebody happened to fear; and
 #   * for BEHAVIOURAL obligations, that THE NAMED TEST WHICH PROVES THAT
-#     BEHAVIOUR STILL EXISTS IN THE TREE.
+#     BEHAVIOUR STILL EXISTS IN THE TREE **AND IS STILL AN ACTIVE TEST** —
+#     carrying a `#[test]`-family attribute, and not disabled by `#[ignore]` or
+#     `#[cfg(..)]` (fix-5).
 #
 # It does NOT re-execute those behavioural suites, and it therefore does NOT
 # prove the behaviour is still correct — only that the proof has not been
-# deleted or renamed away. `cargo test --workspace` is what proves the
-# behaviour; this gate is what notices when the proof disappears or when the
-# contract's structural obligations are no longer met.
+# deleted, renamed away, or SWITCHED OFF. `cargo test --workspace` is what
+# proves the behaviour; this gate is what notices when the proof disappears,
+# stops running, or when the contract's structural obligations are no longer met.
 #
 # So: it CATCHES a symbol/table/variant that was renamed or removed, a
-# forbidden symbol that reappeared, a named test that was deleted, and any edit
-# to the ratified contract. It DOES NOT catch a behavioural regression inside a
-# still-present, still-named test, nor anything the Memex repo does. Claiming
-# otherwise would be a false assurance — which is the TC-37 failure class in a
-# different costume.
+# forbidden symbol that reappeared, a named test that was deleted OR quietly
+# disabled, and any edit to the ratified contract. It DOES NOT catch a
+# behavioural regression inside a still-present, still-named, still-running
+# test, nor anything the Memex repo does. Claiming otherwise would be a false
+# assurance — which is the TC-37 failure class in a different costume.
 #
 # ===================== PROBE SCOPE — WHY THE ASYMMETRY =======================
 # fix-3, codex §9 round 3 findings #1 and #2 [P2]. Every NEGATIVE probe used to
@@ -104,19 +106,21 @@
 # violation. The Rust IDENTIFIER negatives use *.rs, because their subject is
 # Rust syntax and a mention in a neighbouring note would be a pure false RED.
 #
-# ==================== RESIDUAL SCOPE — READ BEFORE ROUND 5 ===================
+# ==================== RESIDUAL SCOPE — READ BEFORE ROUND 6 ===================
 # This gate is a STATIC, LEXICAL check over Rust and SQL SOURCE TEXT. That
 # approach has a boundary, and two review rounds were spent tightening regexes
 # against it (fix-1: SQL case/whitespace, and blacklist ⇒ closed vocabulary;
 # fix-2: schema-qualified table names, and spellings admitted outside a simple
 # match arm). Rather than rediscover the boundary again, it is written down here.
 #
-# NOTE THAT FIX-3 AND FIX-4 ARE NOT ON THIS LIST AND DID NOT BELONG ON IT. Round
-# 3 was a bounded SCOPE bug (one file vs the crate tree) and round 4 a bounded
+# NOTE THAT FIX-3, FIX-4 AND FIX-5 ARE NOT ON THIS LIST AND DID NOT BELONG ON IT.
+# Round 3 was a bounded SCOPE bug (one file vs the crate tree), round 4 a bounded
 # SUBJECT-BINDING bug (a file vs the named table/struct/enum/function the clause
-# is about). Both had definite, complete fixes and both were CLOSED, not
-# documented away. The list below is the set of things a different MECHANISM
-# would be needed for; it is not a place to retire findings to.
+# is about), and round 5 two more bounded ones — the WRONG CRATE'S same-named
+# symbol, and a test function that is no longer a test. All three had definite,
+# complete fixes and all three were CLOSED, not documented away. The list below
+# is the set of things a different MECHANISM would be needed for; it is not a
+# place to retire findings to.
 #
 # WHAT THIS GATE IS. A TRIPWIRE AGAINST DRIFT. Its threat model is a FUTURE
 # CONTRIBUTOR who changes as-built code without noticing that a ratified
@@ -163,19 +167,56 @@
 #      always on. (This class errs RED, not green.)
 #
 #   7. BEHAVIOUR, and THE MEMEX REPO. Stated above: the behavioural clauses
-#      assert only that the NAMED TEST still exists, and 12 contract clauses are
-#      CROSS-REPO by classification and unverifiable from this repo at all.
+#      assert only that the NAMED TEST still exists and is still ENABLED, not
+#      that it still proves anything, and 12 contract clauses are CROSS-REPO by
+#      classification and unverifiable from this repo at all.
 #
-#   8. WHAT A NAMED TEST ACTUALLY ASSERTS. The strongest form of #7, and the one
-#      worth naming separately after fix-4: `fn_defined` proves the named test
-#      still EXISTS as a definition with a body. It cannot prove the body still
-#      asserts anything — `fn atomic_flip_never_exposes_ready_without_the_vector
-#      _under_concurrent_write() {}` (an empty body) satisfies it, and so does one
-#      whose assertions were commented out. That is not a hole a lexical check can
-#      close, and it is not one worth chasing here: `cargo test --workspace` is
-#      the mechanism that executes those bodies, it is a required gate, and an
-#      emptied test is visible in review as a code diff. See the RECOMMENDATION in
-#      the closure JSON for the mechanism that WOULD close it.
+#   8. WHAT A NAMED TEST'S BODY ACTUALLY ASSERTS. The strongest form of #7, and
+#      REWRITTEN AT FIX-5 because the version written at fix-4 claimed more
+#      residual than is now true. An over-broad residual is its own dishonesty:
+#      it retires a defect that the gate does in fact catch.
+#
+#      WHAT IS NOW ENFORCED, by `test_defined`, at all four levels a proof can be
+#      switched off at:
+#        THE FUNCTION   it EXISTS as a definition with a parseable body (not a
+#                       comment, not a string literal, not a call); it CARRIES a
+#                       `#[test]`-family attribute; it is NOT disabled by
+#                       `#[ignore]` / `#[cfg(..)]` / `#[cfg_attr(..)]`.
+#        ITS POSITION   it sits at the TOP LEVEL of the integration-test file, so
+#                       no enclosing (possibly `#[cfg]`-gated) item can silence it
+#                       out of this reader's view.
+#        THE FILE       the file carries no `#![cfg(..)]` inner attribute, which
+#                       would switch every proof in it off at once.
+#        THE TARGET     the owning crate's Cargo.toml neither sets
+#                       `autotests = false` nor declares a `[[test]]` block for
+#                       that file with `required-features` / `test = false`.
+#
+#      So "delete the proof", "rename it away", "leave only a comment mentioning
+#      it", "drop the `#[test]`", "add an `#[ignore]`", "gate the fn", "gate the
+#      module", "gate the file" and "gate the target" are ALL closed. The middle
+#      two were codex §9 round 5 finding #2; the last four came out of turning
+#      that same question on this patch. The TARGET one is not hypothetical:
+#      fathomdb-engine/Cargo.toml already carries nineteen `[[test]]` blocks with
+#      `required-features`, so it is an established pattern in the very file a
+#      contributor would edit.
+#
+#      WHAT REMAINS, precisely, is three things and no more:
+#        (a) THE BODY'S ASSERTIONS. `fn atomic_flip_never_exposes_ready_without
+#            _the_vector_under_concurrent_write() { assert!(true); }` satisfies
+#            every check above, and so does one whose assertions were commented
+#            out. No lexical check can decide whether a body proves the obligation
+#            its name claims — `cargo test --workspace` EXECUTING it is what does,
+#            it is a required gate, and an emptied body is a visible code diff.
+#        (b) THE CRATE, AND THE INVOCATION. This gate reads source and manifest
+#            TEXT. It does not know whether the crate is still a workspace member,
+#            nor how CI actually invokes cargo (a `--exclude`, a filter argument,
+#            a job that stops running).
+#        (c) `#[cfg]` INSIDE the body — an assertion compiled out while the test
+#            still runs and passes vacuously. This is class #6 again.
+#      ALL THREE need the same different mechanism, and it is one mechanism: ask
+#      the TOOLCHAIN what the built test binaries actually contain and what they
+#      did (`cargo test -- --list`, or `--no-run --message-format=json`), instead
+#      of reading text. See the RECOMMENDATION in the closure JSON.
 #
 # WHICH WAY THE ERRORS FALL. Every ambiguity is resolved toward RED: an
 # unparseable enum body, an impl block the reader cannot find, an unreadable file
@@ -198,11 +239,14 @@
 # LIST ABOVE is TRUE and is NOT a defect in the patch — it is the documented
 # scope, and the answer to it is a different mechanism, not another regex. A
 # finding that it misses a spelling of a PINNED NAME in LITERAL source text, that
-# it misses it because the probe was pointed at the wrong SCOPE, or that a probe
-# is satisfied by something OTHER THAN THE SUBJECT ITS CLAUSE NAMES, is a real
-# defect: fix it, and if the fix is another regex, add its class here. Round 3
-# was the second kind (see PROBE SCOPE above) and round 4 the third (see A PROBE
-# IS BOUND TO ITS SUBJECT, beside the assertion table); both were fixed.
+# it misses it because the probe was pointed at the wrong SCOPE, that a probe is
+# satisfied by something OTHER THAN THE SUBJECT ITS CLAUSE NAMES, that it is
+# pointed at a DIFFERENT CRATE'S same-named symbol, or that a "proof still
+# exists" probe is satisfied by a proof that no longer RUNS, is a real defect:
+# fix it, and if the fix is another regex, add its class here. Round 3 was the
+# second kind (see PROBE SCOPE above), round 4 the third and round 5 the fourth
+# and fifth (see A PROBE IS BOUND TO ITS SUBJECT and THE SUBJECT IS A CRATE, NOT
+# A SYMBOL NAME, beside the assertion table); all were fixed.
 #
 # ============================ THE AMENDMENT TRAP =============================
 # The contract was AMENDED at efa8d584 ("amend C-1 contract Q6(b) with the TC-11
@@ -372,6 +416,20 @@ SKIP_DIRS = {
     "dist", "build", ".pytest_cache", ".mypy_cache", ".ruff_cache",
 }
 
+
+def crate_manifest_for(test_path):
+    """The `Cargo.toml` of the crate owning a `<crate>/tests/<file>.rs` path.
+
+    Defined here rather than beside its reader because `--list-sources` needs it:
+    a `test_defined` probe reads that manifest too, and a path missing from the
+    manifest is a fixture root missing a file, i.e. a silent TC-37 #4.
+    """
+    marker = "/tests/"
+    index = test_path.find(marker)
+    if index < 0:
+        return None
+    return test_path[:index] + "/Cargo.toml"
+
 # ---------------------------------------------------------------------------
 # THE IMPLEMENTED ASSERTIONS. One entry per CHECKABLE clause id in the pin; the
 # bijection between this dict's keys and the pin's CHECKABLE ids is predicate
@@ -386,7 +444,26 @@ SKIP_DIRS = {
 #   ("fn_sig", path, fn, regex)        regex must match inside the SIGNATURE of
 #                                      `fn fn` (params + return type)
 #   ("fn_defined", path, fn)           `fn fn` exists as a DEFINITION with a
-#                                      parseable body (not a comment, not a call)
+#                                      parseable body (not a comment, not a call).
+#                                      PRODUCTION code only — the gate REFUSES to
+#                                      run this kind against a `tests/` path
+#                                      (fix-5); use `test_defined` there
+#   ("test_defined", path, fn)         the same, PLUS `fn` is an ACTIVE TEST at
+#                                      all four levels it could be switched off
+#                                      at: a `#[test]`-family attribute with no
+#                                      `#[ignore]`/`#[cfg]`; at the file's top
+#                                      level; in a file with no `#![cfg(..)]`;
+#                                      in a crate whose Cargo.toml does not gate
+#                                      that `[[test]]` target. "The proof still
+#                                      exists" is worth nothing if the proof no
+#                                      longer RUNS (fix-5)
+#   ("const_str_agree", ((path, const), ..), pinned)
+#                                      every named `const/static <const>: &str`
+#                                      is DECLARED in its own file, all of them
+#                                      carry the SAME string literal, and that
+#                                      value equals `pinned`. For an obligation
+#                                      whose subject is a value TWO CRATES must
+#                                      agree on (fix-5)
 #   ("sql_ddl", path, table, regex)    regex must match inside the parenthesised
 #                                      body of every `CREATE [VIRTUAL] TABLE
 #                                      [<schema>.]<table> ( ... )` in path, and
@@ -515,6 +592,87 @@ SKIP_DIRS = {
 # type's inherent impl may legitimately be split across blocks and ANY block
 # suffices (every one of them is still `impl <the named type>`, so the subject
 # binding holds either way).
+#
+# ------------ THE SUBJECT IS A CRATE, NOT A SYMBOL NAME (fix-5) --------------
+# codex §9 round 5 finding #1 [P2]. A REFINEMENT of the fix-4 class, and a
+# different question from the one fix-4's own audit asked. fix-4 asked "is this
+# probe bound to a SUBJECT at all, or merely to a file?". Round 5 asks the next
+# question: "is it bound to the subject THE CLAUSE NAMES, or to a DIFFERENT FILE
+# THAT HAPPENS TO CONTAIN A SIMILAR SYMBOL?" — and a probe can be perfectly,
+# structurally bound and still be bound to the wrong thing.
+#
+# The instance: `C1-TE-DEFAULT-EMBEDDER`'s obligation is "the default embedder is
+# THE ENGINE'S SHIPPED DEFAULT". The probe read `DEFAULT_EMBEDDER_NAME` out of
+# the EMBEDDER crate's `candle_bge.rs`. Both crates declare a constant of that
+# exact name; only the engine's is the engine's shipped default. codex changed
+# `fathomdb-engine/src/lib.rs`'s `DEFAULT_EMBEDDER_NAME` to `"some-other-model"`
+# and the gate exited 0.
+#
+# THE FIX is not to swap one crate for the other — that would drop a real half of
+# the obligation. The two constants MUST AGREE: the engine fails closed on an
+# embedder identity mismatch (ADR-0.6.0-vector-identity-embedder-owned), so a
+# divergence between "the name the engine expects by default" and "the name the
+# pinned embedder reports" is a broken shipped default, not a cosmetic drift.
+# `const_str_agree` therefore asserts the RELATION, exactly as
+# `fts_tokenizer_shared` does for the sibling tokenizer clause: both constants
+# must exist as declarations, must carry the same string, and that string must be
+# the pinned one.
+#
+# THE FIX-5 RE-AUDIT of all 26 CHECKABLE clauses against this question found NO
+# second instance — every other probe's file is the crate the clause names (see
+# the closure JSON for the clause-by-clause table). One clause is deliberately
+# WIDER than its own wording: `C1-Q4-NO-PROVISIONAL-CONCEPT` says "in engine
+# code" and is scanned over the whole of `src/`. That is the SAFE direction for a
+# negative (it can only produce a false RED), and it is what the pin's own
+# recorded evidence asserts, so it stays.
+#
+# ---------------- A DISABLED TEST IS NOT A PROOF (fix-5) --------------------
+# codex §9 round 5 finding #2 [P2], and the TC-37 evaporation shape this whole
+# gate exists to close. Ten clauses are carried by "the named test that proves
+# this still exists in the tree". `fn_defined` proved a DEFINITION existed — so
+# DELETING `#[test]`, or ADDING `#[ignore]`, left a plain function of the same
+# name, `fn_defined` still passed, and `cargo test` silently stopped running the
+# proof. Nothing anywhere went red.
+#
+# That is strictly worse than residual class #8 as fix-4 stated it. #8's claim
+# was "an emptied body is review-visible" — true, and an emptied body genuinely
+# is a diff a human reads. But a deleted attribute is a ONE-TOKEN edit that looks
+# like tidy-up, and unlike an emptied body it IS closeable lexically. So it was
+# closed, for ALL FOURTEEN test probes across the ten behavioural clauses.
+# `fn_defined` survives ONLY for the four PRODUCTION functions, and the gate now
+# REFUSES (exit 2, internal error) to evaluate `fn_defined` against a path under
+# `tests/` so the weaker kind cannot drift back onto a proof.
+#
+# AND THEN THE SAME QUESTION, TURNED ON THIS PATCH: `test_defined` reads the
+# attributes ON THE FUNCTION, so a proof can carry a pristine `#[test]` and still
+# never run because something ABOVE it was switched off. Three more routes, all
+# lexical, all of which exited 0 against the first cut of this fix:
+#   * the proof NESTED inside a `#[cfg]`-gated `mod` (attributes on the module,
+#     not on the fn);
+#   * a `#![cfg(..)]` INNER attribute switching the whole FILE off;
+#   * a `[[test]]` block in the crate's Cargo.toml carrying `required-features`
+#     (or `test = false`, or `autotests = false`), which gates the whole TARGET.
+# The last is the important one, and it is NOT hypothetical: fathomdb-engine's
+# Cargo.toml ALREADY declares nineteen such blocks, because that is how the crate
+# legitimately keeps operator-only and reranker-only suites out of the default
+# build. "Somebody adds a required-features to a test target" is an established
+# pattern in the exact file a contributor would edit — the fix-3 sibling-module
+# argument, one level up. All four levels are checked now.
+#
+# `#[cfg(..)]` is rejected on a proof, on its module and on its file
+# deliberately, and it is the judgement call here: a legitimately feature-gated
+# proof goes RED. That is the safe side (a false RED a human resolves), and it
+# matches the bias stated under WHICH WAY THE ERRORS FALL. What it must NOT be
+# mistaken for is completeness — see residual class #8 for exactly the three
+# things that remain.
+#
+# NO PYTHON OR TYPESCRIPT TEST IS CITED BY ANY CLAUSE. `--list-sources` is the
+# authority: the gate reads seven files (four Rust, one markdown plan, and the
+# two crate lib.rs) and three trees, and not one `.py` or `.ts` among them. The
+# same evaporation exists in those languages (`@pytest.mark.skip`, `xfail`,
+# `describe.skip` / `it.skip` / `.only`, a renamed-away `test_` prefix), so if a
+# future clause ever cites one, it needs its own `test_defined` equivalent — not
+# a `present` probe on a function name.
 # ---------------------------------------------------------------------------
 
 # One SQL identifier, optionally quoted `"x"` / 'x' / `x` / [x].
@@ -582,16 +740,16 @@ ASSERTIONS = {
     ],
     "C1-Q3-DESTRUCTIVE-DELTA": [
         ("in_item", ENG, "enum", "EngineError", r"\bProjectionDestructive\s*\{"),
-        ("fn_defined", T15, "destructive_change_requires_explicit_drop"),
+        ("test_defined", T15, "destructive_change_requires_explicit_drop"),
     ],
     "C1-Q3-OMISSION-NOT-DROP": [
-        ("fn_defined", T15, "role_add_builds_and_explicit_drop_drops_exactly_one"),
-        ("fn_defined", T15, "dropping_an_absent_name_is_a_clean_noop"),
+        ("test_defined", T15, "role_add_builds_and_explicit_drop_drops_exactly_one"),
+        ("test_defined", T15, "dropping_an_absent_name_is_a_clean_noop"),
     ],
     # ---- Q5 --------------------------------------------------------------
     "C1-Q5-DERIVED-CACHE-IDEMPOTENT": [
         ("in_item", ENG, "struct", "ProjectionDelta", r"pub\s+unchanged\s*:\s*bool"),
-        ("fn_defined", T15, "idempotent_reregistration_is_a_noop"),
+        ("test_defined", T15, "idempotent_reregistration_is_a_noop"),
     ],
     # ---- Q2 --------------------------------------------------------------
     # fix-4: the EAV store and the property-FTS were probed by TABLE NAME only,
@@ -610,8 +768,8 @@ ASSERTIONS = {
          r"canonical_attributes\s*\(\s*attr_name\s*,\s*attr_value\s*\)"),
     ],
     "C1-Q2-ENGINE-PROJECTS-VIA-CONFIGURE": [
-        ("fn_defined", T15, "property_filter_returns_correct_rows"),
-        ("fn_defined", T15, "property_fts_search_returns_correct_rows"),
+        ("test_defined", T15, "property_filter_returns_correct_rows"),
+        ("test_defined", T15, "property_fts_search_returns_correct_rows"),
     ],
     # SCOPE (load-bearing, fix-1 then fix-3). The clause forbids a
     # MIGRATION/BACKFILL of PRE-EXISTING rows — not projection writes as such.
@@ -716,8 +874,8 @@ ASSERTIONS = {
     "C1-Q6A-RANKABLE-GRACEFUL-DEFER": [
         ("in_item", ENG, "struct", "ProjectionDelta",
          r"pub\s+deferred\s*:\s*Vec\s*<\s*String\s*>"),
-        ("fn_defined", T15, "rankable_is_graceful_deferred_never_blocking"),
-        ("fn_defined", T15, "idempotent_reregistration_holds_for_deferred_rankable"),
+        ("test_defined", T15, "rankable_is_graceful_deferred_never_blocking"),
+        ("test_defined", T15, "idempotent_reregistration_holds_for_deferred_rankable"),
     ],
     # ---- Q6(b), AS AMENDED at efa8d584 -----------------------------------
     "C1-Q6B-NO-ENTITYTYPESPEC-NO-IDPREFIX": [
@@ -768,22 +926,28 @@ ASSERTIONS = {
     # construction site, so deleting the VARIANT left the probe satisfied.
     "C1-Q6B-H-TERMINAL-NOT-LIFECYCLE-ADDRESSABLE": [
         ("in_item", ENG, "enum", "EngineError", r"\bNotLifecycleAddressable\s*\{"),
-        ("fn_defined", T25,
+        ("test_defined", T25,
          "an_anonymous_write_stays_anonymous_through_the_whole_durable_path"),
     ],
     "C1-Q6B-SURROGATE-GOVERNED-ONLY": [
-        ("fn_defined", T25, "registering_projections_never_alters_a_pre_existing_row_id_space"),
-        ("fn_defined", T25, "the_internal_structural_row_writer_mints_no_logical_id"),
+        ("test_defined", T25, "registering_projections_never_alters_a_pre_existing_row_id_space"),
+        ("test_defined", T25, "the_internal_structural_row_writer_mints_no_logical_id"),
     ],
     # ---- Apply atomicity -------------------------------------------------
-    # fix-4 SWEEP: every "the named proof still exists" probe is `fn_defined`,
-    # which reads the COMMENT-STRIPPED source and requires a parseable body. The
-    # old `fn <name>(` regex could not tell a definition from a doc comment
-    # mentioning the name — so deleting the proof and leaving a reference to it
-    # behind (the most natural thing a contributor does) exited 0.
+    # fix-4 SWEEP: every "the named thing still exists" probe reads the
+    # COMMENT-STRIPPED source and requires a parseable body. The old `fn <name>(`
+    # regex could not tell a definition from a doc comment mentioning the name —
+    # so deleting the proof and leaving a reference to it behind (the most natural
+    # thing a contributor does) exited 0.
+    #
+    # fix-5: and the PROOFS use `test_defined`, not `fn_defined` — a definition
+    # that is no longer an ACTIVE test proves nothing (codex §9 round 5 #2). The
+    # four `fn_defined` probes that remain in this table are all PRODUCTION
+    # functions in the engine; the gate refuses to evaluate `fn_defined` against a
+    # `tests/` path at all.
     "C1-AA-ATOMIC-FLIP": [
         ("fn_defined", ENG, "commit_projection_outcomes"),
-        ("fn_defined", T20,
+        ("test_defined", T20,
          "atomic_flip_never_exposes_ready_without_the_vector_under_concurrent_write"),
     ],
     # fix-4 SWEEP: "the apply ENQUEUES and returns" is a statement about the apply
@@ -792,19 +956,31 @@ ASSERTIONS = {
     "C1-AA-NO-BLOCK-ON-EMBEDDING": [
         ("fn_defined", ENG, "notify_new_work"),
         ("in_item", ENG, "fn", "configure_projections", r"notify_new_work\(\)"),
-        ("fn_defined", T20,
+        ("test_defined", T20,
          "readiness_reads_embedding_while_embeds_are_outstanding_then_flips_to_ready"),
     ],
     "C1-AA-CRASH-HEAL-BOOT-REDERIVE": [
         ("fn_defined", ENG, "load_projection_registry"),
-        ("fn_defined", T15, "boot_rederive_converges_after_simulated_crash"),
+        ("test_defined", T15, "boot_rederive_converges_after_simulated_crash"),
     ],
     # ---- Tokenizer / embedder defaults -----------------------------------
+    # fix-5, codex §9 round 5 finding #1 [P2] — THE FINDING. The obligation names
+    # "the ENGINE'S SHIPPED DEFAULT", and the second probe read the EMBEDDER
+    # crate's `candle_bge.rs` constant. Both crates declare a `DEFAULT_EMBEDDER_
+    # NAME`; only the engine's is the shipped default. Flipping the ENGINE's to
+    # `"some-other-model"` exited 0 — a probe perfectly bound to a subject, and to
+    # the wrong one. See THE SUBJECT IS A CRATE, NOT A SYMBOL NAME above.
+    #
+    # Both constants are asserted, and asserted RELATIONALLY, because the
+    # obligation really is about the pair: the engine fails closed on an embedder
+    # identity mismatch, so engine-default != embedder-identity is a broken
+    # shipped default. Same shape as the sibling tokenizer clause.
     "C1-TE-DEFAULT-EMBEDDER": [
         ("in_item", ENG, "struct", "ProjectionVector",
          r"pub\s+embedder\s*:\s*Option\s*<\s*String\s*>"),
-        ("present", EMB,
-         r'pub const DEFAULT_EMBEDDER_NAME: &str = "fathomdb-bge-small-en-v1\.5";'),
+        ("const_str_agree",
+         ((ENG, "DEFAULT_EMBEDDER_NAME"), (EMB, "DEFAULT_EMBEDDER_NAME")),
+         "fathomdb-bge-small-en-v1.5"),
     ],
     # fix-4, codex §9 round 4 [P2] — THE FINDING. The obligation is RELATIONAL:
     # "the default tokenizer is the ENGINE'S DEFAULT FTS5 TOKENIZER — THE ONE
@@ -882,15 +1058,71 @@ def die_env(msg):
     sys.exit(2)
 
 
+# ------------------------- PROBE-TABLE SELF-CHECK (fix-5) --------------------
+# Runs BEFORE anything else, --list-sources included, so it cannot be reached
+# around. Its only job today is the one rule that a comment could not enforce:
+# `fn_defined` must never be pointed at a TEST FILE. `fn_defined` accepts a
+# function whose `#[test]` was deleted or whose `#[ignore]` was added — the exact
+# round-5 #2 evaporation — so on a test path it is not a weaker probe, it is a
+# broken one. `test_defined` is the probe for those, and this makes reaching for
+# the wrong one a hard error rather than a code-review catch.
+#
+# Belt AND braces: `run_probe` refuses the same combination again at evaluation
+# time. Two independent guards is the right cost for a gate that holds a publish;
+# a future refactor that drops one still leaves the other standing.
+def _is_test_path(path):
+    return isinstance(path, str) and ("/tests/" in path or path.startswith("tests/"))
+
+
+for _clause_id, _probes in sorted(ASSERTIONS.items()):
+    for _probe in _probes:
+        if _probe[0] == "fn_defined" and _is_test_path(_probe[1]):
+            die_env(
+                f"internal error: clause {_clause_id} probes the TEST file {_probe[1]} with "
+                "`fn_defined`. A test's DEFINITION existing is not proof that the test still "
+                "RUNS — deleting `#[test]` or adding `#[ignore]` leaves the definition untouched "
+                "(codex §9 round 5 finding #2). Use `test_defined`."
+            )
+
+
 # --------------------------------------------------------- --list-sources ----
+# The manifest is what BUILDS every fixture root in
+# scripts/tests/test_check_c1_conformance.sh and the preflight seeder, so a probe
+# kind whose path lives somewhere other than probe[1] must be handled EXPLICITLY
+# here. Falling through would put a non-path (a tuple, say) in the file list, the
+# fixture roots would lack a file the assertions read, and every source arm would
+# quietly become a TC-37 path-#4 evaporation instead of a test. Anything that is
+# not a string path is therefore an internal error, not a shrug (fix-5, which
+# added the first multi-file probe kind).
 if LIST_SOURCES:
     files, trees = set(), set()
     for probes in ASSERTIONS.values():
         for probe in probes:
             if probe[0] == "absent_tree":
                 trees.add(probe[1])
+            elif probe[0] == "const_str_agree":
+                for path, _const in probe[1]:
+                    files.add(path)
             else:
                 files.add(probe[1])
+                if probe[0] == "test_defined":
+                    # `test_defined` also reads the owning crate's Cargo.toml, to
+                    # see whether the test TARGET is gated out of a default
+                    # `cargo test`. It must be in the manifest or every fixture
+                    # root would lack it and the check would evaporate.
+                    manifest = crate_manifest_for(probe[1])
+                    if manifest is not None:
+                        files.add(manifest)
+    bad = sorted(p for p in (files | trees) if not isinstance(p, str))
+    if bad:
+        print(
+            "check-c1-conformance: internal error: --list-sources produced "
+            f"non-path entries {bad} — a probe kind reads its source from somewhere "
+            "other than probe[1] and was not taught to this manifest. Fixture roots "
+            "are built FROM this manifest, so shipping it would silently evaporate "
+            "every arm that reads that file (TC-37 path #4)."
+        )
+        sys.exit(2)
     for path in sorted(files):
         print("file\t" + path)
     for path in sorted(trees):
@@ -1290,11 +1522,21 @@ def rust_view(rel):
 
     STRING LITERALS ARE PRESENT here — `arms_exact` and `body_strings` read them
     as their subject. Use `rust_code(rel)` to LOCATE anything.
+
+    LENGTH- AND LINE-PRESERVING (fix-5c, found by turning the round-5 question on
+    this patch). Comments are BLANKED, not deleted: the old version collapsed a
+    multi-line `/* .. */` to a single space, so every offset and every LINE NUMBER
+    downstream of one drifted. Nothing depended on that until fix-5 added a reader
+    that CITES A LINE (`const_str_values`), and a failure message that names the
+    wrong line in a gate whose whole value is actionable failures is a small lie.
+    Blanking also means one index now means the same thing in the raw file, in
+    this view and in `rust_code`.
     """
     if rel not in _view_cache:
         text = read_source(rel)
-        text = re.sub(r"/\*.*?\*/", " ", text, flags=re.S)
-        text = re.sub(r"//[^\n]*", "", text)
+        text = re.sub(r"/\*.*?\*/",
+                      lambda m: re.sub(r"[^\n]", " ", m.group(0)), text, flags=re.S)
+        text = re.sub(r"//[^\n]*", lambda m: " " * len(m.group(0)), text)
         _view_cache[rel] = text
     return _view_cache[rel]
 
@@ -1475,6 +1717,254 @@ def fn_signatures(rel, name):
             re.finditer(r"\bfn\s+" + re.escape(name) + r"\b([^{;]*)\{", code)]
 
 
+# ---------------------------------------------------------------------------
+# ATTRIBUTE READING (fix-5). "The named proof still exists" is worth nothing if
+# the proof no longer RUNS: deleting `#[test]` or adding `#[ignore]` leaves a
+# plain function of the same name, which every `fn <name>` reader accepts while
+# `cargo test` quietly stops executing it. That is the TC-37 evaporation shape
+# this gate exists to close, so the ATTRIBUTES are read too.
+#
+# Everything below reads the blanked CODE view, so an attribute spelled inside a
+# string literal or a comment is not an attribute — the same rule as every other
+# reader here.
+# ---------------------------------------------------------------------------
+_FN_MODIFIERS = {"pub", "async", "unsafe", "const", "extern", "default"}
+
+
+def _attrs_before(code, index):
+    """Every `#[..]` attribute attached to the item whose keyword sits at `index`.
+
+    Walks BACKWARDS over the item's modifiers (`pub`, `pub(crate)`, `async`,
+    `unsafe`, `const`, `extern`) and then over any run of outer attributes.
+    Returns them OUTERMOST-LAST; order does not matter to the caller. `#![..]`
+    (an INNER attribute) terminates the walk: it belongs to the enclosing module,
+    not to this item.
+
+    Erring: anything this cannot parse simply ends the walk, which yields FEWER
+    attributes and therefore a RED verdict — the safe side.
+    """
+    i = index
+    # 1. back up over the fn's modifiers.
+    while True:
+        j = i
+        while j > 0 and code[j - 1].isspace():
+            j -= 1
+        if j == 0:
+            i = j
+            break
+        if code[j - 1] == ")":                      # pub(crate) / pub(in ..)
+            depth, k = 0, j - 1
+            while k >= 0:
+                if code[k] == ")":
+                    depth += 1
+                elif code[k] == "(":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                k -= 1
+            word = re.search(r"([A-Za-z_]\w*)\s*$", code[:k]) if k >= 0 else None
+            if word is not None and word.group(1) == "pub":
+                i = word.start(1)
+                continue
+            i = j
+            break
+        word = re.search(r"([A-Za-z_]\w*)\s*$", code[:j])
+        if word is not None and word.group(1) in _FN_MODIFIERS:
+            i = word.start(1)
+            continue
+        i = j
+        break
+    # 2. consume the run of outer attributes above it.
+    attrs = []
+    while True:
+        j = i
+        while j > 0 and code[j - 1].isspace():
+            j -= 1
+        if j == 0 or code[j - 1] != "]":
+            break
+        depth, k = 0, j - 1
+        while k >= 0:
+            if code[k] == "]":
+                depth += 1
+            elif code[k] == "[":
+                depth -= 1
+                if depth == 0:
+                    break
+            k -= 1
+        if k < 1 or code[k - 1] != "#":
+            break
+        if code[k + 1:k + 2] == "!":                # inner attribute: not ours
+            break
+        attrs.append(code[k - 1:j])
+        i = k - 1
+    return attrs
+
+
+def attr_path(attr):
+    """The dotted path an attribute names: `#[tokio::test]` -> 'tokio::test',
+    `#[ignore = "why"]` -> 'ignore', `#[cfg(feature = "x")]` -> 'cfg'. None when
+    the attribute is not a simple path (a bare literal, say)."""
+    inner = attr[2:-1].strip()
+    match = re.match(r"([A-Za-z_]\w*(?:\s*::\s*[A-Za-z_]\w*)*)", inner)
+    if match is None:
+        return None
+    return "::".join(part.strip() for part in match.group(1).split("::"))
+
+
+def file_inner_attrs(rel):
+    """The `#![..]` INNER attribute paths at the head of a Rust source file.
+
+    A `#![cfg(..)]` there switches the WHOLE FILE off, which for an integration
+    test means every proof in it stops running while each one still reads as a
+    perfectly ordinary `#[test]`.
+    """
+    code = rust_code(rel)
+    found = []
+    for match in re.finditer(r"#!\[", code):
+        depth, i = 0, match.end() - 1
+        while i < len(code):
+            if code[i] == "[":
+                depth += 1
+            elif code[i] == "]":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        if i < len(code):
+            found.append(attr_path("#[" + code[match.end():i] + "]"))
+    return found
+
+
+def fn_definitions(rel, name):
+    """One entry per DEFINITION of `fn <name>`: (attribute paths, brace depth).
+
+    A definition is a `fn <name> ... { .. }` with a brace-matchable body, located
+    in the blanked CODE view. Same subject-binding rule as `rust_items`, but it
+    keeps the ATTRIBUTES rather than the body, and the DEPTH of the enclosing
+    braces — an integration test nested inside anything is not a top-level test
+    target, and whatever encloses it may carry its own `#[cfg]` that this reader
+    would never look at (fix-5 SWEEP).
+    """
+    code, raw = rust_code(rel), rust_view(rel)
+    found = []
+    for match in re.finditer(r"\bfn\s+" + re.escape(name) + r"\b[^{;]*\{", code):
+        if brace_body(code, match.end() - 1, source=raw) is None:
+            continue
+        before = code[:match.start()]
+        depth = before.count("{") - before.count("}")
+        found.append(([attr_path(a) for a in _attrs_before(code, match.start())], depth))
+    return found
+
+
+# Minimal, deliberately dumb TOML block reader — the same stance as the Rust
+# readers above, and for the same reason: hand-rolling it keeps this gate's
+# environment contract at "requires python3", where `tomllib` would quietly
+# require 3.11+ and turn an older runner into an exit-2 that nobody predicted.
+# It reads ONE shape (`[[test]]` tables and their scalar keys) and treats
+# anything it cannot read as a clause failure.
+_TOML_TABLE = re.compile(r"(?m)^\s*(\[\[?[^\]]+\]\]?)\s*$")
+
+
+def cargo_test_target_defect(manifest_rel, stem):
+    """None, or why the test target `stem` does not run on a default `cargo test`.
+
+    fix-5 SWEEP, and NOT a hypothetical: `fathomdb-engine/Cargo.toml` ALREADY
+    carries nineteen `[[test]]` blocks with `required-features`, because that is
+    how this crate legitimately keeps operator-only and reranker-only suites out
+    of the default build. So "somebody adds a `required-features` to a test
+    target" is an established pattern here, exactly as "somebody adds a module"
+    was in fix-3 — and adding one for slice15d/slice20/slice25 would stop the
+    pinned proofs running under `cargo test -p fathomdb-engine` while every
+    attribute this gate reads stayed exactly as it is.
+
+    That is codex §9 round 5 finding #2 one level up: the proof is still a
+    `#[test]`, still un-`#[ignore]`d, and still never executed.
+    """
+    text = read_source(manifest_rel)
+    stripped = re.sub(r"(?m)#.*$", "", text)
+    if re.search(r"(?m)^\s*autotests\s*=\s*false", stripped):
+        return (
+            f"{manifest_rel} sets `autotests = false`, so integration-test files are no longer "
+            "auto-discovered and only explicitly declared `[[test]]` targets are built. This "
+            "gate cannot tell from source text whether the pinned proofs are still among them"
+        )
+    blocks, current, header = [], [], None
+    for line in stripped.splitlines():
+        match = _TOML_TABLE.match(line)
+        if match:
+            blocks.append((header, current))
+            header, current = match.group(1).strip(), []
+        else:
+            current.append(line)
+    blocks.append((header, current))
+    for head, body in blocks:
+        if head != "[[test]]":
+            continue
+        joined = "\n".join(body)
+        name = re.search(r'(?m)^\s*name\s*=\s*"([^"]*)"', joined)
+        if name is None:
+            return (
+                f"{manifest_rel} declares a `[[test]]` target with no readable `name = \"..\"`, so "
+                "this gate cannot tell which test file it configures — and a target block is "
+                "exactly where a pinned proof gets quietly gated out of the default build. "
+                "Reported RED rather than guessed at"
+            )
+        if name.group(1) != stem:
+            continue
+        gate = re.search(r"(?m)^\s*required-features\s*=", joined)
+        if gate is not None:
+            return (
+                f"{manifest_rel} declares `[[test]] name = \"{stem}\"` with `required-features`, so "
+                "the WHOLE target — and every pinned proof in it — is skipped on a default "
+                "`cargo test`. The proof's `#[test]` attribute is untouched and means nothing: "
+                "this is the same evaporation one level up (this crate already gates nineteen "
+                "operator/reranker suites exactly this way)"
+            )
+        if re.search(r"(?m)^\s*test\s*=\s*false", joined):
+            return (
+                f"{manifest_rel} declares `[[test]] name = \"{stem}\"` with `test = false`, so the "
+                "target is excluded from `cargo test` entirely"
+            )
+    return None
+
+
+def const_str_values(rel, name):
+    """(line, value) for every `const`/`static <name>: &str = "..."` DECLARATION.
+
+    Located in the blanked CODE view (a declaration inside a string literal is
+    not a declaration, and `rust_view` has already dropped comments), with the
+    value read back out of the literal-carrying view at the same offset — the two
+    views have identical length by construction.
+
+    `value` is None when the declaration exists but is NOT initialised from a
+    plain string literal (a `concat!`, another const, an `include_str!`). The
+    caller reports that as a clause failure: it is residual class #3 (identifier
+    indirection) and the gate errs RED on it rather than guessing.
+    """
+    code, raw = rust_code(rel), rust_view(rel)
+    pattern = (
+        r"\b(?:pub\s*(?:\([^)]*\)\s*)?)?(?:const|static)\s+"
+        + re.escape(name)
+        + r"\s*:\s*&\s*(?:'[A-Za-z_]\w*\s+)?str\s*=\s*"
+    )
+    found = []
+    for match in re.finditer(pattern, code):
+        i = match.end()
+        if i >= len(raw) or raw[i] != '"':
+            found.append((line_of(code, match), None))
+            continue
+        j = i + 1
+        while j < len(raw):
+            if raw[j] == "\\":
+                j += 2
+                continue
+            if raw[j] == '"':
+                break
+            j += 1
+        found.append((line_of(code, match), raw[i + 1:j]))
+    return found
+
+
 def paren_body(text, open_index):
     """Body of the parenthesised group whose '(' sits at open_index."""
     depth = 0
@@ -1604,12 +2094,134 @@ def run_probe(probe):
         return None
     if kind == "fn_defined":
         _, path, name = probe
+        # fix-5. `fn_defined` is for PRODUCTION functions only. Pointing it at a
+        # test is the round-5 #2 defect by construction — it accepts a function
+        # whose `#[test]` was deleted — so the weaker kind is refused outright
+        # rather than left as the path of least effort for the next editor.
+        if "/tests/" in path or path.startswith("tests/"):
+            die_env(
+                f"internal error: the `fn_defined` probe is pointed at the test file {path}. A "
+                "test's DEFINITION existing is not proof that the test still RUNS: deleting "
+                "`#[test]` or adding `#[ignore]` leaves the definition untouched (codex §9 round "
+                "5 finding #2). Use `test_defined`, which asserts the function is an ACTIVE test."
+            )
         if not rust_items(path, "fn", name):
             return (
                 f"`fn {name}` has no DEFINITION in {path}. The contract's proof of this "
-                "obligation is that named function/test; a comment or doc reference that "
+                "obligation is that named function; a comment or doc reference that "
                 "mentions the name is not the proof (the source is read comment-stripped, and a "
                 "parseable body is required)"
+            )
+        return None
+    if kind == "test_defined":
+        _, path, name = probe
+        definitions = fn_definitions(path, name)
+        if not definitions:
+            return (
+                f"`fn {name}` has no DEFINITION in {path}. The contract's proof of this "
+                "obligation is that named test; a comment, a doc reference or a mention inside a "
+                "string literal is not the proof (the source is read comment-stripped, literals "
+                "are blanked, and a parseable body is required)"
+            )
+        # THE WHOLE FILE, and THE WHOLE TARGET, must run too — a proof switched
+        # off one or two levels up is switched off just the same, and neither is
+        # visible in the function's own attributes (fix-5 SWEEP).
+        gated_file = [a for a in file_inner_attrs(path)
+                      if a and a.split("::")[-1] in ("cfg", "cfg_attr")]
+        if gated_file:
+            return (
+                f"the test file {path} is CONDITIONALLY COMPILED as a whole "
+                f"(inner attribute(s) {gated_file}), so `fn {name}` may never be built at all. "
+                "A file-level `#![cfg(..)]` switches every proof in the file off while each one "
+                "still reads as an ordinary `#[test]`"
+            )
+        manifest = crate_manifest_for(path)
+        if manifest is not None:
+            stem = os.path.basename(path)[:-3] if path.endswith(".rs") else os.path.basename(path)
+            defect = cargo_test_target_defect(manifest, stem)
+            if defect is not None:
+                return defect
+        # EVERY definition of that name must be an active test — a name denoting
+        # several functions is ambiguous, and the strict side is the safe one.
+        for attrs, depth in definitions:
+            if depth != 0:
+                return (
+                    f"`fn {name}` in {path} is NESTED {depth} brace level(s) deep rather than at "
+                    "the top level of the integration-test file. Whatever encloses it may carry a "
+                    "`#[cfg(..)]` this reader never looks at, so its attributes alone no longer "
+                    "establish that the proof runs. Reported RED rather than assumed"
+                )
+            present = [a for a in attrs if a]
+            tail = [a.split("::")[-1] for a in present]
+            if "test" not in tail:
+                return (
+                    f"`fn {name}` in {path} exists but carries NO `#[test]`-family attribute "
+                    f"(it carries {present or 'no attributes at all'}). The clause's proof is a "
+                    "TEST; a function that `cargo test` no longer runs proves nothing, and "
+                    "deleting the attribute is a one-token edit that leaves the definition — and "
+                    "every 'the proof still exists' check — looking untouched (TC-37 evaporation)"
+                )
+            if "ignore" in tail:
+                return (
+                    f"`fn {name}` in {path} is a test but is DISABLED by `#[ignore]`. `cargo "
+                    "test` skips it, so the behavioural obligation this clause pins has no "
+                    "running proof. Re-enable the test, or take the clause back through the "
+                    "contract — do not leave a pinned proof switched off"
+                )
+            gated = [a for a in present if a.split("::")[-1] in ("cfg", "cfg_attr")]
+            if gated:
+                return (
+                    f"`fn {name}` in {path} is a test but is CONDITIONALLY COMPILED "
+                    f"({gated}). Whether it runs then depends on the feature set, and this gate "
+                    "cannot know that from source text, so it refuses to call it a live proof. "
+                    "This is deliberately the RED side: a pinned proof must run unconditionally"
+                )
+        return None
+    if kind == "const_str_agree":
+        _, subjects, pinned = probe
+        seen = {}
+        for path, const_name in subjects:
+            decls = const_str_values(path, const_name)
+            if not decls:
+                return (
+                    f"`const {const_name}` has no DECLARATION in {path}. This clause is about "
+                    "the value THAT constant carries, and every declaration site named here must "
+                    "exist: a renamed, deleted or commented-out constant is the obligation gone, "
+                    "not a probe to relax (the source is read comment-stripped and literals are "
+                    "blanked, so a mention inside a string is not a declaration)"
+                )
+            opaque = [line for line, value in decls if value is None]
+            if opaque:
+                return (
+                    f"`const {const_name}` in {path} (line(s) {opaque}) is not initialised from a "
+                    "plain string literal, so its shipped value cannot be read from source text. "
+                    "That is identifier indirection (residual class #3) and it is reported RED "
+                    "rather than guessed at"
+                )
+            values = sorted({value for _, value in decls})
+            if len(values) > 1:
+                return (
+                    f"`const {const_name}` in {path} is declared with CONFLICTING values "
+                    f"{values} — the shipped value is ambiguous, so the agreement this clause "
+                    "requires cannot be established"
+                )
+            seen[f"{path}::{const_name}"] = values[0]
+        distinct = sorted(set(seen.values()))
+        if len(distinct) > 1:
+            return (
+                "the constants this clause requires to AGREE do not: "
+                + ", ".join(f"{where} = '{value}'" for where, value in seen.items())
+                + ". The engine's shipped default and the pinned embedder's own identity must be "
+                "the same name — the engine fails closed on an identity mismatch, so a "
+                "divergence here is a broken shipped default, not a cosmetic drift"
+            )
+        if distinct[0] != pinned:
+            return (
+                "the constants "
+                + ", ".join(sorted(seen))
+                + f" agree on '{distinct[0]}', but the pinned contract value is '{pinned}'. "
+                "The clause registry was derived from a contract that names this default: "
+                "changing the shipped default is a contract-relevant change, not a re-pin"
             )
         return None
     if kind == "sql_ddl":

@@ -1526,6 +1526,101 @@ for CLAUSE in C1-Q3-DESTRUCTIVE-DELTA C1-Q3-OMISSION-NOT-DROP C1-Q5-DERIVED-CACH
 done
 expect_routes_to_steward "the every-proof-disabled clause failures"
 
+# === Arm 12ah (RED, fix-5 SWEEP): A PROOF SWITCHED OFF ONE LEVEL UP ==========
+# The round-5 question turned on the round-5 patch. `test_defined` reads the
+# attributes ON THE FUNCTION — so a proof can still carry a pristine `#[test]`
+# and still never run, because something ABOVE it was switched off. Three routes,
+# all of them lexical, all of them exiting 0 against the first cut of this fix:
+
+# 12ah-1 — THE `[[test]]` TARGET GATE, and this one is not hypothetical.
+# fathomdb-engine/Cargo.toml ALREADY declares nineteen `[[test]]` blocks with
+# `required-features`, because that is how the crate legitimately keeps its
+# operator-only and reranker-only suites out of the default build. So "somebody
+# adds a required-features to a test target" is an ESTABLISHED PATTERN in this
+# exact file — the fix-3 argument about sibling modules, one level up. Adding one
+# for the dense-readiness suite stops the atomic-flip proof running under
+# `cargo test -p fathomdb-engine` while its `#[test]` sits untouched.
+TARGET_GATED_ROOT="$(make_root proof-target-required-features)"
+cat >>"$TARGET_GATED_ROOT/src/rust/crates/fathomdb-engine/Cargo.toml" <<'TOML'
+
+# Fixture only (fix-5 SWEEP). The whole target is now skipped on a default
+# `cargo test`, so every pinned proof inside it stops running — with no edit to
+# any `#[test]` attribute anywhere.
+[[test]]
+name = "slice20_dense_readiness"
+required-features = ["operator"]
+TOML
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$TARGET_GATED_ROOT"
+expect_rc 1 "gating a proof's whole [[test]] TARGET behind required-features HARD-fails its clauses"
+expect_out 'C1-AA-ATOMIC-FLIP' "the gated-target failure NAMES the atomic-flip clause"
+expect_out 'C1-AA-NO-BLOCK-ON-EMBEDDING' "the gated-target failure NAMES the other clause in that file"
+expect_out 'required-features' "the gated-target failure says what gated the target"
+expect_routes_to_steward "the gated-target clause failures"
+
+# The sibling switch: `autotests = false` stops the files being discovered at all.
+NO_AUTOTESTS_ROOT="$(make_root proof-autotests-disabled)"
+python3 - "$NO_AUTOTESTS_ROOT/src/rust/crates/fathomdb-engine/Cargo.toml" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+old = 'name = "fathomdb-engine"'
+assert text.count(old) == 1
+open(p, "w", encoding="utf-8").write(text.replace(old, old + "\nautotests = false", 1))
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$NO_AUTOTESTS_ROOT"
+expect_rc 1 "\`autotests = false\` HARD-fails every clause whose proof lives in an auto-discovered test file"
+expect_out 'autotests = false' "the autotests failure says what it found"
+
+# 12ah-2 — A FILE-LEVEL `#![cfg(..)]`. Every proof in the file stops being built
+# while each one still reads as an ordinary `#[test]`.
+FILE_CFG_ROOT="$(make_root proof-file-cfg-gated)"
+python3 - "$FILE_CFG_ROOT/src/rust/crates/fathomdb-engine/tests/slice25_registration_identity_inert.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+open(p, "w", encoding="utf-8").write(
+    '#![cfg(feature = "never-enabled")]\n'
+    "// Fixture only (fix-5 SWEEP). The whole file is switched off; every `#[test]`\n"
+    "// below is untouched and none of them run.\n" + text
+)
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$FILE_CFG_ROOT"
+expect_rc 1 "a file-level #![cfg(..)] HARD-fails every clause whose proof lives in that file"
+expect_out 'C1-Q6B-H-TERMINAL-NOT-LIFECYCLE-ADDRESSABLE' "the file-cfg failure NAMES a clause from that file"
+expect_out 'C1-Q6B-SURROGATE-GOVERNED-ONLY' "the file-cfg failure NAMES the other clause from that file"
+expect_out 'CONDITIONALLY COMPILED as a whole' "the file-cfg failure says the whole file is gated"
+
+# 12ah-3 — THE PROOF NESTED inside a module. Its own attributes say nothing about
+# whether the module it now lives in is compiled, so the gate refuses to call it
+# a live proof. Deliberately the RED side of a judgement call, like 12ag-3.
+NESTED_PROOF_ROOT="$(make_root proof-nested-in-a-module)"
+python3 - "$NESTED_PROOF_ROOT/src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+old = "#[test]\nfn atomic_flip_never_exposes_ready_without_the_vector_under_concurrent_write("
+assert text.count(old) == 1
+# Wrap the proof (and everything after it) in a cfg-gated module. The proof's own
+# `#[test]` is copied through untouched — the point of the fixture.
+open(p, "w", encoding="utf-8").write(text.replace(
+    old,
+    '#[cfg(feature = "never-enabled")]\nmod fixture_gated {\nuse super::*;\n' + old,
+    1,
+) + "\n}\n")
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$NESTED_PROOF_ROOT"
+expect_rc 1 "a proof NESTED inside a (cfg-gated) module HARD-fails the clause it carries"
+expect_out 'C1-AA-ATOMIC-FLIP' "the nested-proof failure NAMES the clause id"
+expect_out 'NESTED' "the nested-proof failure says the proof is not at the top level"
+
+# The manifest arm for the same class: the crate Cargo.toml is now a source the
+# assertions READ, so it must appear in --list-sources or every fixture root
+# above would lack it and the whole target check would evaporate (TC-37 #4).
+run_checker --list-sources
+expect_rc 0 "--list-sources still exits 0 with the crate manifest in the set"
+expect_out 'file\s+src/rust/crates/fathomdb-engine/Cargo\.toml' \
+  "--list-sources names the crate manifest the test-target check reads"
+
 # === Arm 13 (RED): a source file an assertion reads is MISSING ===============
 # TC-37 evaporation path #4: the assertion could not be EVALUATED. That is
 # neither a pass (0) nor a clause failure (1) — the gate computed no verdict.

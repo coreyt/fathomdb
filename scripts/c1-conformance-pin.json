@@ -383,7 +383,8 @@
       "obligation": "Defaults: the default embedder is the ENGINE'S SHIPPED DEFAULT (CLS-corrected bge-small); Memex's vector:{embedder} is an OPTIONAL override, absent => engine default.",
       "evidence": [
         "src/rust/crates/fathomdb-engine/src/lib.rs:3957 (pub embedder: Option<String> — None means the engine's shipped default)",
-        "src/rust/crates/fathomdb-embedder/src/candle_bge.rs:44 (DEFAULT_EMBEDDER_NAME = \"fathomdb-bge-small-en-v1.5\")"
+        "src/rust/crates/fathomdb-engine/src/lib.rs:51 (const DEFAULT_EMBEDDER_NAME = \"fathomdb-bge-small-en-v1.5\" — THE ENGINE'S SHIPPED DEFAULT, which is the subject this clause names; added at fix-5 after codex §9 round 5 found the gate probing only the embedder crate's identically-named constant)",
+        "src/rust/crates/fathomdb-embedder/src/candle_bge.rs:44 (DEFAULT_EMBEDDER_NAME = \"fathomdb-bge-small-en-v1.5\" — the pinned embedder's own identity; the engine fails closed on a mismatch per ADR-0.6.0-vector-identity-embedder-owned, so the two MUST agree)"
       ]
     },
     {
