@@ -1,0 +1,426 @@
+{
+  "_comment": [
+    "C-1 CONTRACT-CONFORMANCE PIN — the reviewable record of WHAT WAS CLASSIFIED.",
+    "",
+    "This file is DATA, not a decision. It does not ratify anything and it is not",
+    "itself a design contract: it records (i) the exact bytes of the ratified",
+    "OPP-12 C-1 converged contract that were read, and (ii) the classification of",
+    "EVERY clause in that document into CHECKABLE / CROSS-REPO / PROSE, so that",
+    "scripts/check-c1-conformance.sh can make R-20-H7 mechanical instead of a",
+    "human re-reading prose at publish time.",
+    "",
+    "WHY THE FULL CLAUSE REGISTRY IS COPIED HERE and not just a hash: a reviewer",
+    "must be able to SEE what was classified and why. A bare hash is unreviewable",
+    "— nobody can tell from 8740f087... whether the Q6(b) negative-space clause is",
+    "actually being checked or was quietly demoted to PROSE. Copying the registry",
+    "also makes a lazy re-pin visible: updating only `sha256` to silence the gate",
+    "still fails, because the gate compares this registry against its own",
+    "implemented assertions in BOTH directions.",
+    "",
+    "WHAT THE CATEGORIES MEAN:",
+    "  CHECKABLE  — a falsifiable mechanical assertion over THIS repo's as-built",
+    "               code is possible, and scripts/check-c1-conformance.sh",
+    "               implements it. `evidence` cites where it holds today.",
+    "  CROSS-REPO — the obligation is on the MEMEX repo (spec persistence,",
+    "               register(), promotion policy, the AttributeSpec.index carrier,",
+    "               the forbidden over-build). Not verifiable from here, and",
+    "               pretending otherwise would be a false assurance.",
+    "  PROSE      — no falsifiable mechanical assertion exists: rationale, scope",
+    "               lines, slot/landing notes, status banners.",
+    "",
+    "⚠ THE AMENDMENT THIS PIN EXISTS BECAUSE OF. The contract was AMENDED at",
+    "efa8d584 — clause Q6(b) now reads \"for registry-admitted GOVERNED entities",
+    "only\" and carries the TC-11 pin-A cancellation banner. Before that amendment",
+    "the clause mandated minting an anonymous surrogate logical_id, which the",
+    "ratified TC-11 pin FORBIDS ever implementing and which as-built code does not",
+    "implement. A registry derived from the UN-AMENDED text would have been",
+    "permanently red and would have held the breaking-pair publish forever. This",
+    "pin is keyed to the AMENDED text, and that is exactly why the contract's",
+    "bytes are pinned at all.",
+    "",
+    "HOW TO CHANGE THIS FILE: a contract amendment requires RE-DERIVING the clause",
+    "registry from the new text — reading the whole document again and",
+    "re-classifying every clause — and re-pinning under review, in the SAME change",
+    "that carries the new contract. Recomputing the hash alone is a lie, and",
+    "re-pinning to silence the gate is the exact failure mode the gate exists to",
+    "prevent. Demoting a CHECKABLE clause to PROSE to clear a red is the same",
+    "failure wearing a different hat.",
+    "",
+    "REPRODUCE THE PIN FROM GIT:",
+    "  git rev-parse 23a436dc:dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md",
+    "    -> 93694a5602ae205de05a801f256676b921dc39cc   (= git_blob_sha1 below)",
+    "  git show 23a436dc:dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md | sha256sum",
+    "    -> 8740f0873344088130970360134e4766d1d091645662842e82d711e584ae50bb",
+    "  sha256_whitespace_normalized is sha256 of re.sub(r'\\s+',' ',text).strip(),",
+    "  used ONLY to tell the reader whether a divergence was formatting-only. It is",
+    "  never a substitute for the content hash."
+  ],
+  "requirement": "R-20-H7",
+  "covers": "0.8.20 Slice 30 — the RUBRIC-H7 can-i-deploy contract-conformance gate (a publish precondition)",
+  "pinned_file": "dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md",
+  "pinned_at_commit": "23a436dcc7321eab86c622c8b403682caf2dfe2c",
+  "pinned_at_commit_short": "23a436dc",
+  "amended_at_commit": "efa8d584",
+  "git_blob_sha1": "93694a5602ae205de05a801f256676b921dc39cc",
+  "sha256": "8740f0873344088130970360134e4766d1d091645662842e82d711e584ae50bb",
+  "sha256_whitespace_normalized": "b294bc1d7df643779fb4466cbf678ef753a2285d74550abfec937f80566e6930",
+  "counts": {
+    "checkable": 26,
+    "cross_repo": 12,
+    "prose": 7,
+    "total": 45
+  },
+  "clauses": [
+    {
+      "id": "C1-STATUS-BANNER",
+      "category": "PROSE",
+      "obligation": "Status banner: RATIFIED both sides 2026-07-07; ratification schedules nothing and authorizes no build (build != adopt); provenance of the two-shot loop.",
+      "evidence": []
+    },
+    {
+      "id": "C1-SEAM-ENGINE-BUILD-DROP",
+      "category": "CHECKABLE",
+      "obligation": "Cohesion seam: FathomDB owns structure & mechanism — projection build/drop is an engine verb taking the specs and an EXPLICIT drop list, returning a delta.",
+      "evidence": [
+        "src/rust/crates/fathomdb-engine/src/lib.rs:8198 (pub fn configure_projections(&self, specs: &[ProjectionSpec], drop: &[String]) -> Result<ProjectionDelta, EngineError>)"
+      ]
+    },
+    {
+      "id": "C1-SEAM-MEMEX-SEMANTICS",
+      "category": "CROSS-REPO",
+      "obligation": "Memex owns semantics & judgment — which attributes exist, what they mean, which roles they take, the promotion gate; the LLM stays Memex-side.",
+      "evidence": []
+    },
+    {
+      "id": "C1-Q1-ROLE-SET",
+      "category": "CHECKABLE",
+      "obligation": "Q1: roles are a SET of ProjectionRole — the engine carries a ProjectionRole vocabulary and ProjectionSpec.roles has set semantics.",
+      "evidence": [
+        "src/rust/crates/fathomdb-engine/src/lib.rs:3850 (pub enum ProjectionRole)",
+        "src/rust/crates/fathomdb-engine/src/lib.rs:3984 (pub roles: BTreeSet<ProjectionRole>)"
+      ]
+    },
+    {
+      "id": "C1-Q1-INDEX-CARRIER",
+      "category": "CROSS-REPO",
+      "obligation": "Q1: the optional AttributeSpec.index: Set[ProjectionRole] carrier landed INERT in Commission C (memex 95ed450, persisted, byte-identical round-trip); absent => engine py_type inference.",
+      "evidence": []
+    },
+    {
+      "id": "C1-Q3-SOLE-AUTHORITY",
+      "category": "CHECKABLE",
+      "obligation": "Q3: the engine is the SOLE projection authority — it diffs the supplied specs against ONE durable registry and backfills, reporting the applied delta.",
+      "evidence": [
+        "src/rust/crates/fathomdb-schema/src/lib.rs:848 (CREATE TABLE _fathomdb_projection_registry)",
+        "src/rust/crates/fathomdb-engine/src/lib.rs:16884 (fn apply_projection_config)",
+        "src/rust/crates/fathomdb-engine/src/lib.rs:3993 (pub struct ProjectionDelta)"
+      ]
+    },
+    {
+      "id": "C1-Q3-DESTRUCTIVE-DELTA",
+      "category": "CHECKABLE",
+      "obligation": "Q3: an incompatible change on an existing `name` surfaces a DESTRUCTIVE DELTA requiring an explicit drop — never silent data loss.",
+      "evidence": [
+        "src/rust/crates/fathomdb-engine/src/lib.rs:3642 (EngineError::ProjectionDestructive { name, delta })",
+        "src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs:283 (destructive_change_requires_explicit_drop)"
+      ]
+    },
+    {
+      "id": "C1-Q3-OMISSION-NOT-DROP",
+      "category": "CHECKABLE",
+      "obligation": "Q3: omission != drop — leaving a live projection out of `specs` does NOT remove it; removal requires naming it in `drop`.",
+      "evidence": [
+        "src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs:223 (role_add_builds_and_explicit_drop_drops_exactly_one)",
+        "src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs:1191 (dropping_an_absent_name_is_a_clean_noop)"
+      ]
+    },
+    {
+      "id": "C1-Q3-MEMEX-PURE-DERIVE",
+      "category": "CROSS-REPO",
+      "obligation": "Q3: Memex runs only the pure `derive: EntityTypeSpec -> [ProjectionSpec]` and holds NO projection state.",
+      "evidence": []
+    },
+    {
+      "id": "C1-Q5-DERIVED-CACHE-IDEMPOTENT",
+      "category": "CHECKABLE",
+      "obligation": "Q5: the engine ProjectionSpec is a DERIVED cache re-driven IDEMPOTENTLY — re-applying an unchanged spec diffs to a no-op.",
+      "evidence": [
+        "src/rust/crates/fathomdb-engine/src/lib.rs:4007 (pub unchanged: bool)",
+        "src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs:204 (idempotent_reregistration_is_a_noop)"
+      ]
+    },
+    {
+      "id": "C1-Q5-MEMEX-PERSISTS-SPEC",
+      "category": "CROSS-REPO",
+      "obligation": "Q5: Memex persists the spec (one durable source of truth); drift resolves TO the Memex spec; no two-registry sync; boot runs load_from_store -> derive -> configure_projections.",
+      "evidence": []
+    },
+    {
+      "id": "C1-Q2-ENGINE-EAV-PROPERTY-FTS",
+      "category": "CHECKABLE",
+      "obligation": "Q2 end-state: ONE engine-owned EAV attribute store + property-FTS, with the (attr_name, attr_value) composite index the cheap filterable tier reads.",
+      "evidence": [
+        "src/rust/crates/fathomdb-schema/src/lib.rs:855 (CREATE TABLE canonical_attributes)",
+        "src/rust/crates/fathomdb-schema/src/lib.rs:860 (CREATE INDEX canonical_attributes_name_value_idx)",
+        "src/rust/crates/fathomdb-schema/src/lib.rs:864 (CREATE VIRTUAL TABLE property_search_index USING fts5)"
+      ]
+    },
+    {
+      "id": "C1-Q2-ENGINE-PROJECTS-VIA-CONFIGURE",
+      "category": "CHECKABLE",
+      "obligation": "Q2: the engine builds EAV + property-FTS once and PROJECTS via configure_projections — property-level filter and search are live.",
+      "evidence": [
+        "src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs:413 (property_filter_returns_correct_rows)",
+        "src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs:447 (property_fts_search_returns_correct_rows)"
+      ]
+    },
+    {
+      "id": "C1-Q2-NO-DATA-MIGRATION",
+      "category": "CHECKABLE",
+      "obligation": "Q2: BREAKING, NO DATA MIGRATION (explicit) — existing attributes are not migrated; the EAV/property-FTS migration defines shape only and backfills nothing.",
+      "evidence": [
+        "src/rust/crates/fathomdb-schema/src/lib.rs:847 (step 24 marker: 'NO DATA MIGRATION (HITL 2026-07-21): shape only, no backfill.')",
+        "src/rust/crates/fathomdb-schema/src/lib.rs:848-869 (the step's SQL is CREATE-only; no INSERT ... SELECT backfill)"
+      ]
+    },
+    {
+      "id": "C1-Q2-FORBIDDEN-OVERBUILD",
+      "category": "CROSS-REPO",
+      "obligation": "Q2: forbidden over-build (Memex) — no PERSISTED standalone attribute node/table; WorldModelEntityAttribute stays a read-materialized facade shape.",
+      "evidence": []
+    },
+    {
+      "id": "C1-Q2-MEMEX-REPOINTS-WRITE-PATH",
+      "category": "CROSS-REPO",
+      "obligation": "Q2 co-land: Memex repoints set_entity_attribute onto the governed engine-EAV verb and retires the nested-dict interim.",
+      "evidence": []
+    },
+    {
+      "id": "C1-Q2-SCOPE-LINE-UNTIL-COLAND",
+      "category": "PROSE",
+      "obligation": "Q2: 'property-level projection does not exist until the co-land (recall rides body-FTS + R-B until then — a scope line, not a gap)' — self-labelled a scope line, and overtaken by the co-land itself.",
+      "evidence": []
+    },
+    {
+      "id": "C1-Q4-CHEAP-SAME-TRANSACTION",
+      "category": "CHECKABLE",
+      "obligation": "Q4: the cheap tier (filterable, searchable->FTS) builds IMMEDIATELY, in the same transaction as the apply, and is reported as built.",
+      "evidence": [
+        "src/rust/crates/fathomdb-engine/src/lib.rs:8221 (apply_projection_config(&tx, ...) inside one transaction, committed before return)",
+        "src/rust/crates/fathomdb-engine/src/lib.rs:3997 (pub built: Vec<String>)"
+      ]
+    },
+    {
+      "id": "C1-Q4-DENSE-READINESS-TWO-MEMBERS",
+      "category": "CHECKABLE",
+      "obligation": "Q4: the expensive searchable->vector tier carries a dense_readiness axis — EXACTLY {ready, embedding}; `pending` is reserved for the orthogonal admission axis and is not a readiness spelling.",
+      "evidence": [
+        "src/rust/crates/fathomdb-engine/src/lib.rs:3910 (pub enum DenseReadiness { Ready, Embedding })",
+        "src/rust/crates/fathomdb-engine/src/lib.rs:3929-3934 (as_str: 'ready' / 'embedding'; no Pending variant anywhere)"
+      ]
+    },
+    {
+      "id": "C1-Q4-NO-PROVISIONAL-CONCEPT",
+      "category": "CHECKABLE",
+      "obligation": "Q4 mechanism refinement: the ENGINE NEEDS NO `provisional` CONCEPT — tiering is expressed entirely through Memex's role-declaration timing plus explicit drop, so no provisional notion exists in engine code.",
+      "evidence": [
+        "src/rust/crates/fathomdb-engine/src/lib.rs (zero occurrences of 'provisional' in any .rs file under src/; the only hits repo-wide are natural-language embedding probe corpora, which are test data, not code)"
+      ]
+    },
+    {
+      "id": "C1-Q4-PROMOTE-DEFERS-VECTOR",
+      "category": "CROSS-REPO",
+      "obligation": "Q4 policy: the expensive searchable->vector projection DEFERS to promote() for provisional types. Timing policy is Memex-owned; the engine only builds/drops what is currently declared.",
+      "evidence": []
+    },
+    {
+      "id": "C1-Q4-REJECT-DROPS-CHEAP-ONLY",
+      "category": "CROSS-REPO",
+      "obligation": "Q4 policy: a REJECTED provisional drops only the cheap projections, so there is no embedding rebuild-churn. Memex decides what to drop.",
+      "evidence": []
+    },
+    {
+      "id": "C1-Q6A-THREE-ROLES",
+      "category": "CHECKABLE",
+      "obligation": "Q6(a): filterable + searchable co-land alongside rankable — the role vocabulary is exactly {filterable, rankable, searchable}; searchable->FTS / searchable->vector are TIER LABELS on the sub-objects, not roles.",
+      "evidence": [
+        "src/rust/crates/fathomdb-engine/src/lib.rs:3874-3880 (from_str_opt maps exactly filterable / rankable / searchable)",
+        "src/rust/crates/fathomdb-engine/src/lib.rs:3843-3848 (doc: 'EXACTLY three members'; no ProjectionRole::Vector or ::Fts exists)"
+      ]
+    },
+    {
+      "id": "C1-Q6A-RANKABLE-GRACEFUL-DEFER",
+      "category": "CHECKABLE",
+      "obligation": "Q6(a): rankable is GRACEFUL-ABSENT, never blocking — declaring it is legal, the engine defers the build with no error and grafts it on the next idempotent configure_projections.",
+      "evidence": [
+        "src/rust/crates/fathomdb-engine/src/lib.rs:4004 (pub deferred: Vec<String>)",
+        "src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs:334 (rankable_is_graceful_deferred_never_blocking)",
+        "src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs:1209 (idempotent_reregistration_holds_for_deferred_rankable)"
+      ]
+    },
+    {
+      "id": "C1-Q6B-NO-ENTITYTYPESPEC-NO-IDPREFIX",
+      "category": "CHECKABLE",
+      "obligation": "Q6(b) AS AMENDED: the amendment's own factual assertion — 'no EntityTypeSpec or id_prefix exists anywhere under src/'. As-built agrees with the TC-11 pin, not with the un-amended clause. A perfect negative assertion, checked as one.",
+      "evidence": [
+        "src/ (zero occurrences of EntityTypeSpec, id_prefix or idPrefix anywhere in the tree)",
+        "dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md, Q6(b) amendment banner (added at efa8d584)"
+      ]
+    },
+    {
+      "id": "C1-Q6B-IDSPACE-TOTAL-THREE",
+      "category": "CHECKABLE",
+      "obligation": "Q6(b) amendment: h: is a FIRST-CLASS TERMINAL IdSpace variant, so every hit is l: / h: / p: — the typed id space is total over exactly those three.",
+      "evidence": [
+        "src/rust/crates/fathomdb-engine/src/lib.rs:1465 (pub enum IdSpaceKind { Logical, Content, Passage })",
+        "src/rust/crates/fathomdb-engine/src/lib.rs:1478-1484 (prefix(): 'l:' / 'h:' / 'p:')"
+      ]
+    },
+    {
+      "id": "C1-Q6B-ID-NON-NULL",
+      "category": "CHECKABLE",
+      "obligation": "Q6(b) amendment: hits are NON-NULL by id — no anonymous node is left unaddressed-by-id. SearchHit.id is a total IdSpace, not an Option.",
+      "evidence": [
+        "src/rust/crates/fathomdb-engine/src/lib.rs:1575 (pub id: IdSpace — not Option<IdSpace>)"
+      ]
+    },
+    {
+      "id": "C1-Q6B-H-TERMINAL-NOT-LIFECYCLE-ADDRESSABLE",
+      "category": "CHECKABLE",
+      "obligation": "Q6(b) amendment: anonymous and doc-seeded nodes stay h:<content-hash> PERMANENTLY and are unaddressed only by LIFECYCLE VERB (by design) — a typed refusal, not a fabricated surrogate.",
+      "evidence": [
+        "src/rust/crates/fathomdb-engine/src/lib.rs:3608 (EngineError::NotLifecycleAddressable { id_space })",
+        "src/rust/crates/fathomdb-engine/tests/slice25_registration_identity_inert.rs:532 (an_anonymous_write_stays_anonymous_through_the_whole_durable_path)"
+      ]
+    },
+    {
+      "id": "C1-Q6B-SURROGATE-GOVERNED-ONLY",
+      "category": "CHECKABLE",
+      "obligation": "Q6(b) AS AMENDED: a surrogate serves ONLY registry-admitted GOVERNED entities (R-20-SUR) — the anonymous leg is CANCELLED, not deferred; registration never mints an id for a pre-existing anonymous row.",
+      "evidence": [
+        "src/rust/crates/fathomdb-engine/tests/slice25_registration_identity_inert.rs:205 (registering_projections_never_alters_a_pre_existing_row_id_space)",
+        "src/rust/crates/fathomdb-engine/tests/slice25_registration_identity_inert.rs:500 (the_internal_structural_row_writer_mints_no_logical_id)"
+      ]
+    },
+    {
+      "id": "C1-Q6B-C2-CARRIER-STATUS",
+      "category": "PROSE",
+      "obligation": "Q6(b): the parenthetical status note on the C-2 typed carrier ('additive stable_id base landed, typed swap not started') and the scope line 'C-1 needs only the space/value split, not the typed carrier'. STALE AS WRITTEN and superseded WITHIN THE SAME CLAUSE by the amendment banner ('the C-2 swap shipped ALONE in 0.8.19'); as-built shipped the typed swap in 0.8.19. Classified PROSE because it is a point-in-time status note about a sibling workstream, not an obligation on as-built code — pinning it as CHECKABLE would hold the publish on an already-superseded parenthetical. FLAGGED for the Steward as a documentation defect to fix at the NEXT amendment.",
+      "evidence": []
+    },
+    {
+      "id": "C1-Q6B-AMENDMENT-RATIONALE",
+      "category": "PROSE",
+      "obligation": "Q6(b): the 'Why this amendment exists' block — rationale, the note that the cancellation was applied to api-surface.md on 2026-07-12 and never propagated here, and the pointers to structural-lifecycle-contract.md §2(ii) (OVERRULED) and 0.8.20-erasure-and-h-end-state-v4.md §5.",
+      "evidence": []
+    },
+    {
+      "id": "C1-AA-PERSIST-FIRST",
+      "category": "CROSS-REPO",
+      "obligation": "Apply atomicity 1: PERSIST-FIRST — register() durably writes the Memex spec (WMEntityTypeSpec) BEFORE any projection work.",
+      "evidence": []
+    },
+    {
+      "id": "C1-AA-DERIVE-THEN-CONFIGURE",
+      "category": "CROSS-REPO",
+      "obligation": "Apply atomicity 2: THEN derive -> configure_projections. The derive step is the Memex-side pure function; the engine half (idempotence) is asserted separately at C1-Q5-DERIVED-CACHE-IDEMPOTENT.",
+      "evidence": []
+    },
+    {
+      "id": "C1-AA-ATOMIC-FLIP",
+      "category": "CHECKABLE",
+      "obligation": "Apply atomicity 3: per-projection atomicity — searchable->vector is async with an ATOMIC dense_readiness flip; a torn `ready`-without-vector is FORBIDDEN (the vector row and its terminal commit in ONE transaction).",
+      "evidence": [
+        "src/rust/crates/fathomdb-engine/src/lib.rs:13662 (fn commit_projection_outcomes — one transaction for the vector INSERT and the terminal)",
+        "src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs:352 (atomic_flip_never_exposes_ready_without_the_vector_under_concurrent_write)"
+      ]
+    },
+    {
+      "id": "C1-AA-NO-BLOCK-ON-EMBEDDING",
+      "category": "CHECKABLE",
+      "obligation": "Apply atomicity 4: the apply DOES NOT BLOCK ON EMBEDDING — it returns once the cheap projections are applied and the vector work is ENQUEUED, with readiness reading `embedding` until the embeds land.",
+      "evidence": [
+        "src/rust/crates/fathomdb-engine/src/lib.rs:1208 (notify_new_work — the enqueue-side wake; configure_projections notifies and returns rather than waiting on embeds)",
+        "src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs:270 (readiness_reads_embedding_while_embeds_are_outstanding_then_flips_to_ready)"
+      ]
+    },
+    {
+      "id": "C1-AA-CRASH-HEAL-BOOT-REDERIVE",
+      "category": "CHECKABLE",
+      "obligation": "Apply atomicity 5: CRASH-HEAL — because the registry is durable and the apply is idempotent, a crash at any point self-heals on the next boot re-derive, which diffs actual vs desired and backfills the gap. No cross-step runtime transaction is required.",
+      "evidence": [
+        "src/rust/crates/fathomdb-engine/src/lib.rs:16513 (fn load_projection_registry — the boot read of the durable registry)",
+        "src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs:740 (boot_rederive_converges_after_simulated_crash)"
+      ]
+    },
+    {
+      "id": "C1-AA-P2S0-INTERNAL-DETAIL",
+      "category": "PROSE",
+      "obligation": "Apply atomicity: the residual P2·S0 note — the exact SQLite transaction boundary for the same-transaction tier and the worker-enqueue ordering are FathomDB-internal build detail, not a co-design item.",
+      "evidence": []
+    },
+    {
+      "id": "C1-TE-DEFAULT-EMBEDDER",
+      "category": "CHECKABLE",
+      "obligation": "Defaults: the default embedder is the ENGINE'S SHIPPED DEFAULT (CLS-corrected bge-small); Memex's vector:{embedder} is an OPTIONAL override, absent => engine default.",
+      "evidence": [
+        "src/rust/crates/fathomdb-engine/src/lib.rs:3957 (pub embedder: Option<String> — None means the engine's shipped default)",
+        "src/rust/crates/fathomdb-embedder/src/candle_bge.rs:44 (DEFAULT_EMBEDDER_NAME = \"fathomdb-bge-small-en-v1.5\")"
+      ]
+    },
+    {
+      "id": "C1-TE-DEFAULT-TOKENIZER",
+      "category": "CHECKABLE",
+      "obligation": "Defaults: the default tokenizer is the ENGINE'S DEFAULT FTS5 TOKENIZER — THE ONE body-FTS USES; fts:{tokenizer} is an OPTIONAL override, absent => engine default.",
+      "evidence": [
+        "src/rust/crates/fathomdb-engine/src/lib.rs:3891 (pub tokenizer: Option<String> — None means the engine default)",
+        "src/rust/crates/fathomdb-schema/src/lib.rs:436 and :867 (body-FTS and property-FTS are created with the SAME 'porter unicode61 remove_diacritics 2')"
+      ]
+    },
+    {
+      "id": "C1-TE-CUSTOM-TOKENIZER-DEFERRED",
+      "category": "CHECKABLE",
+      "obligation": "Defaults: custom / per-kind precision tokenizers are the separately-tracked >=0.9.x multi-field FTS work and are NOT a C-1 open item — C-1 co-lands on the default tokenizer; a declared override is RECORDED in the registry but not honoured, and grafts later.",
+      "evidence": [
+        "src/rust/crates/fathomdb-schema/src/lib.rs:851 (fts_tokenizer TEXT — the declaration is recorded)",
+        "src/rust/crates/fathomdb-schema/src/lib.rs:836 ('recorded in the registry but not honoured here (graceful-graft later)')",
+        "src/rust/crates/fathomdb-engine/src/lib.rs (the engine issues no CREATE VIRTUAL TABLE property_search_index — no per-declaration FTS table is built from a caller-supplied tokenizer)"
+      ]
+    },
+    {
+      "id": "C1-NET-NOTHING-OPEN",
+      "category": "PROSE",
+      "obligation": "'Net: nothing is genuinely open at the contract level' — the residual P2·S0 work is pure FathomDB-internal implementation, which every build slice has.",
+      "evidence": []
+    },
+    {
+      "id": "C1-LAND-0820-SLOT",
+      "category": "CHECKABLE",
+      "obligation": "Landing SLOT UPDATE: C-1 now co-lands at 0.8.20 (was 0.9.1 P2·S-F) — read every 0.9.1 / P2·S-F in the contract as the 0.8.20 OPP-12 Phase-2 slot. The 0.8.20 plan must actually carry the C-1 co-land requirements.",
+      "evidence": [
+        "dev/plans/plan-0.8.20.md:192 (R-20-PR — projection registry, C-1)",
+        "dev/plans/plan-0.8.20.md:193 (R-20-EAV — EAV / property-FTS)",
+        "dev/plans/plan-0.8.20.md:194 (R-20-DR — dense_readiness + atomic readiness-flip)",
+        "dev/plans/plan-0.8.20.md:195 (R-20-SUR — surrogate minting, governed entities only)"
+      ]
+    },
+    {
+      "id": "C1-LAND-PUBLISH-IS-SEPARATE-GATE",
+      "category": "PROSE",
+      "obligation": "Landing: co-lands FathomDB 0.8.20 with a coordinated Memex 0.5.x-successor; build != adopt; publish is a SEPARATE HITL gate; the sequencing is unchanged; odd micros may publish by HITL exception (F-20).",
+      "evidence": []
+    },
+    {
+      "id": "C1-LAND-INDEX-CARRIER-MOVED",
+      "category": "CROSS-REPO",
+      "obligation": "Landing: the Commission C `index` carrier is the only piece that had to move now, and it has (memex 95ed450).",
+      "evidence": []
+    },
+    {
+      "id": "C1-LAND-MEMEX-ISOLATION",
+      "category": "CROSS-REPO",
+      "obligation": "Landing: Memex isolation — P2·S-F is isolated from Memex's current work; in 0.5.x Memex stays on the nested-dict interim + body-FTS / R-B recall, and the engine-projection wiring is explicitly deferred Memex-side. The only coupling point is the co-land.",
+      "evidence": []
+    }
+  ]
+}

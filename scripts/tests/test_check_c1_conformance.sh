@@ -170,9 +170,9 @@ PY
 run_checker
 expect_rc 0 "the real repo conforms to the pinned C-1 contract (default args)"
 expect_out 'ok +c1-contract-conformance' "the passing run says ok"
-expect_out '26 checkable / 11 cross-repo / 7 prose' \
+expect_out '26 checkable / 12 cross-repo / 7 prose' \
   "the passing run states the clause tally it verified"
-expect_out '44 total' "the passing run states the grand total of clauses"
+expect_out '45 total' "the passing run states the grand total of clauses"
 
 PIN_SHA="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["sha256"])' "$REAL_PIN")"
 REAL_SHA="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$REAL_CONTRACT")"
@@ -224,7 +224,7 @@ run_checker --contract "$F" --pin "$REAL_PIN" --root "$CLEAN_ROOT"
 expect_rc 1 "a SUBSTANTIVE contract edit HARD-fails (the contract moved)"
 expect_out 'has MOVED' "contract-moved says the contract moved"
 expect_out 'content differs from the pin' "contract-moved reports a content divergence"
-expect_out 're-derived' "contract-moved says the clause registry must be RE-DERIVED"
+expect_out 'RE-DERIVED' "contract-moved says the clause registry must be RE-DERIVED"
 expect_out 'efa8d584' "contract-moved cites the efa8d584 amendment precedent"
 expect_no_out 'formatting-only' "a substantive edit is NOT reported as formatting-only"
 expect_routes_to_steward "contract-moved"
