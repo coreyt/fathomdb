@@ -1,6 +1,13 @@
 ---
-status: ACTIVE
+status: SUPERSEDED
 ---
+
+> **⚠ SUPERSEDED by `STEWARD-SESSION-HANDOFF-2026-07-27-A.md` (2026-07-27).** Every task listed below has
+> been actioned or ruled: Slice 20c was verified, the codex round-5 `[P2]` became **TC-71** (folded into
+> Slice 21), **OOS-12** resolved to a pre-existing `slice15e` flake of the TC-72 family,
+> `t_s34_dump_mutations_lock_held_exits_71` likewise (TC-29/TC-72), the ledgerwrite id-collision repair was
+> **declined by ruling** in favour of the tooling fix, and Slices 21/30 plus DOC-HYGIENE-3 were placed in the
+> re-sequenced tail (master **F-35**). Retained as the decision record; **do not act on it as a task list.**
 
 # Steward session hand-off — 2026-07-26-A
 
