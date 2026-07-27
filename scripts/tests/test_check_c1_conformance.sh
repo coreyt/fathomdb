@@ -65,14 +65,31 @@
 # obligation was violated. Fixed by extracting the named subject structurally and
 # asserting inside it, and by DELETING the `min` count-probe kind outright.
 #
-# READ THE GATE'S "RESIDUAL SCOPE" HEADER SECTION BEFORE ADDING A ROUND 5, AND
+# FIX-5 ARMS (arms 12af–12ag, plus the `fn_defined`-on-a-test guards) are the
+# recurrence guard for codex §9 round 5 — two more bounded classes, both of them
+# false GREENS on ordinary source text:
+#   * THE WRONG CRATE'S SAME-NAMED SYMBOL. A refinement of fix-4. fix-4 asked "is
+#     this probe bound to a subject at all?"; round 5 asks "is it bound to the
+#     subject THE CLAUSE NAMES?". `C1-TE-DEFAULT-EMBEDDER` is about the ENGINE's
+#     shipped default and was probed against the EMBEDDER crate's identically
+#     named constant, so flipping the engine's exited 0.
+#   * A DISABLED TEST IS NOT A PROOF. Ten clauses are carried by "the named test
+#     still exists". Deleting `#[test]` or adding `#[ignore]` leaves a plain
+#     function of the same name — the probe passed, `cargo test` stopped running
+#     the proof, nothing went red. That is the TC-37 evaporation shape this gate
+#     exists to close, and it is a ONE-TOKEN edit that reads as tidy-up.
+#
+# READ THE GATE'S "RESIDUAL SCOPE" HEADER SECTION BEFORE ADDING A ROUND 6, AND
 # CLASSIFY THE FINDING FIRST. The header states, in writing, the evasion classes a
 # static/lexical check CANNOT close (dynamically composed SQL, const/macro-
-# indirected identifiers, ATTACH aliases, normalising comparisons); arms for those
-# belong to a DIFFERENT mechanism — a runtime `sqlite_master` assertion or a real
-# parse — not to another regex here. But round 3 was NOT one of those: a LITERAL
-# spelling of a PINNED name in ordinary source text that this gate does not see is
-# a real defect with a definite fix, and it gets fixed.
+# indirected identifiers, ATTACH aliases, normalising comparisons, and what a
+# still-active test's BODY actually asserts); arms for those belong to a DIFFERENT
+# mechanism — a runtime `sqlite_master` assertion, a real parse, or asking the
+# toolchain which tests the built binary contains — not to another regex here. But
+# rounds 3, 4 and 5 were NOT one of those: a LITERAL spelling of a PINNED name in
+# ordinary source text that this gate does not see, a probe satisfied by something
+# other than its subject, and a proof that no longer runs are real defects with
+# definite fixes, and they get fixed.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -1281,6 +1298,234 @@ run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$DOC_TEXT_GON
 expect_rc 1 "deleting the DOCUMENTED STATEMENT a doc_text probe names HARD-fails its clause"
 expect_out 'DOCUMENTED STATEMENT' "the doc_text failure says what kind of probe it is"
 
+# === Arm 12af (RED, fix-5): THE WRONG CRATE'S SAME-NAMED SYMBOL =============
+# codex §9 round 5 finding #1 [P2]. A REFINEMENT of the fix-4 class, found by
+# asking the NEXT question: fix-4 asked "is this probe bound to a SUBJECT at all,
+# or merely to a file?"; round 5 asks "is it bound to the subject THE CLAUSE
+# NAMES, or to a different file that happens to contain a similar symbol?" — and
+# a probe can be perfectly, structurally bound and still bound to the wrong thing.
+#
+# C1-TE-DEFAULT-EMBEDDER's obligation is "the default embedder is THE ENGINE'S
+# SHIPPED DEFAULT". The probe read `DEFAULT_EMBEDDER_NAME` out of the EMBEDDER
+# crate's candle_bge.rs. BOTH crates declare a constant of that exact name; only
+# the engine's is the shipped default. Every arm below exited 0 before this round.
+#
+# The fix asserts the RELATION (both constants exist, agree, and equal the pinned
+# value) rather than swapping one crate for the other — the engine fails closed
+# on an embedder identity mismatch, so a divergence is a broken shipped default.
+
+# 12af-1 — codex's own demonstration, verbatim: the ENGINE's default flips.
+ENGINE_DEFAULT_ROOT="$(make_root engine-default-embedder-flipped)"
+python3 - "$ENGINE_DEFAULT_ROOT/src/rust/crates/fathomdb-engine/src/lib.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+old = 'const DEFAULT_EMBEDDER_NAME: &str = "fathomdb-bge-small-en-v1.5";'
+assert text.count(old) == 1
+open(p, "w", encoding="utf-8").write(
+    text.replace(old, 'const DEFAULT_EMBEDDER_NAME: &str = "some-other-model";', 1))
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$ENGINE_DEFAULT_ROOT"
+expect_rc 1 "flipping the ENGINE's shipped DEFAULT_EMBEDDER_NAME HARD-fails the default-embedder clause"
+expect_out 'C1-TE-DEFAULT-EMBEDDER' "the engine-default flip NAMES the clause id"
+expect_out 'fathomdb-engine/src/lib\.rs::DEFAULT_EMBEDDER_NAME' \
+  "the engine-default flip NAMES the ENGINE constant (the subject the clause is about)"
+expect_out 'some-other-model' "the engine-default flip NAMES the value it found"
+expect_routes_to_steward "the engine-default-embedder clause failure"
+
+# 12af-2 — the engine's constant RENAMED AWAY. A probe pointed at the other crate
+# could not see this at all; a probe bound to the named constant must.
+ENGINE_DEFAULT_GONE_ROOT="$(make_root engine-default-embedder-renamed)"
+python3 - "$ENGINE_DEFAULT_GONE_ROOT/src/rust/crates/fathomdb-engine/src/lib.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+old = 'const DEFAULT_EMBEDDER_NAME: &str = "fathomdb-bge-small-en-v1.5";'
+assert text.count(old) == 1
+open(p, "w", encoding="utf-8").write(
+    text.replace(old, 'const SHIPPED_MODEL_ID: &str = "fathomdb-bge-small-en-v1.5";', 1))
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$ENGINE_DEFAULT_GONE_ROOT"
+expect_rc 1 "RENAMING the engine's shipped-default constant away HARD-fails the clause"
+expect_out 'C1-TE-DEFAULT-EMBEDDER' "the renamed-constant failure NAMES the clause id"
+expect_out 'no DECLARATION' "the renamed-constant failure says the declaration is gone"
+
+# 12af-3 — BOTH crates flipped CONSISTENTLY. The relation holds, so only the
+# PINNED VALUE stands between this tree and a green: the contract names the
+# CLS-corrected bge-small default, and changing it is a contract-relevant change.
+#
+# HONEST NOTE, because the header above says "every arm exited 0 before this
+# round" and THIS ONE DID NOT: the old gate already went red here, via the
+# `present` probe that pinned the embedder crate's literal. It is kept as the
+# REGRESSION half — the fix replaced that probe, and the value assertion it
+# carried must not have been lost in the replacement.
+BOTH_FLIPPED_ROOT="$(make_root default-embedder-both-crates-flipped)"
+python3 - "$BOTH_FLIPPED_ROOT/src/rust/crates/fathomdb-engine/src/lib.rs" \
+          "$BOTH_FLIPPED_ROOT/src/rust/crates/fathomdb-embedder/src/candle_bge.rs" <<'PY'
+import sys
+for p in sys.argv[1:]:
+    text = open(p, encoding="utf-8").read()
+    old = 'DEFAULT_EMBEDDER_NAME: &str = "fathomdb-bge-small-en-v1.5";'
+    assert text.count(old) == 1, p
+    open(p, "w", encoding="utf-8").write(
+        text.replace(old, 'DEFAULT_EMBEDDER_NAME: &str = "some-other-model";', 1))
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$BOTH_FLIPPED_ROOT"
+expect_rc 1 "flipping the shipped default in BOTH crates consistently still HARD-fails (the value is pinned)"
+expect_out 'C1-TE-DEFAULT-EMBEDDER' "the both-crates flip NAMES the clause id"
+expect_out 'pinned contract value' "the both-crates flip says the pinned value is what failed"
+
+# 12af-4 — THE fix-4b LESSON APPLIED TO THE NEW READER (the sweep's own product,
+# not a codex finding). A reader that took the FIRST declaration it found would be
+# satisfied by a decoy carrying the pinned value while the real constant flipped.
+# Every declaration of the name is collected and they must all agree.
+DECOY_CONST_ROOT="$(make_root default-embedder-decoy-const)"
+python3 - "$DECOY_CONST_ROOT/src/rust/crates/fathomdb-engine/src/lib.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+old = 'const DEFAULT_EMBEDDER_NAME: &str = "fathomdb-bge-small-en-v1.5";'
+assert text.count(old) == 1
+text = text.replace(old, 'const DEFAULT_EMBEDDER_NAME: &str = "some-other-model";', 1)
+# The decoy sits EARLIER in the file than the real declaration, so a reader that
+# stopped at the first hit would report the pinned value and exit 0.
+text = (
+    "// Fixture only (fix-5 SWEEP). A decoy declaration carrying the pinned value,\n"
+    "// ahead of the real one, in a module of its own.\n"
+    "mod fixture_decoy_consts {\n"
+    '    pub const DEFAULT_EMBEDDER_NAME: &str = "fathomdb-bge-small-en-v1.5";\n'
+    "}\n"
+) + text
+open(p, "w", encoding="utf-8").write(text)
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$DECOY_CONST_ROOT"
+expect_rc 1 "a DECOY declaration carrying the pinned value does not rescue a flipped real one"
+expect_out 'C1-TE-DEFAULT-EMBEDDER' "the decoy-const failure NAMES the clause id"
+expect_out 'CONFLICTING' "the decoy-const failure says the shipped value is ambiguous"
+
+# === Arm 12ag (RED, fix-5): A DISABLED TEST IS NOT A PROOF ==================
+# codex §9 round 5 finding #2 [P2], and the TC-37 evaporation shape this whole
+# gate exists to close. Ten clauses are carried by "the named test that proves
+# this still exists in the tree". `fn_defined` proved a DEFINITION existed — so
+# REMOVING `#[test]`, or ADDING `#[ignore]`, left a plain function of the same
+# name: the probe still passed while `cargo test` silently stopped running the
+# proof, and nothing anywhere went red.
+#
+# This is strictly worse than the residual the fix-4 header documented. That
+# residual said "`fn_defined` cannot prove the body still asserts anything", and
+# judged an emptied body review-visible — which it is. A deleted attribute is a
+# ONE-TOKEN edit that looks like tidy-up, and unlike an emptied body it IS
+# closeable lexically. Every arm below exited 0 before this round.
+
+# 12ag-1 — codex's own demonstration: the `#[test]` attribute deleted.
+NO_TEST_ATTR_ROOT="$(make_root proof-test-attribute-removed)"
+python3 - "$NO_TEST_ATTR_ROOT/src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+old = "#[test]\nfn atomic_flip_never_exposes_ready_without_the_vector_under_concurrent_write("
+assert text.count(old) == 1
+open(p, "w", encoding="utf-8").write(text.replace(
+    old, "fn atomic_flip_never_exposes_ready_without_the_vector_under_concurrent_write(", 1))
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$NO_TEST_ATTR_ROOT"
+expect_rc 1 "DELETING #[test] from a named proof HARD-fails the clause it carries"
+expect_out 'C1-AA-ATOMIC-FLIP' "the missing-#\[test\] failure NAMES the atomic-flip clause"
+expect_out 'NO .#\[test\].-family attribute' "the missing-#\[test\] failure says why the proof is not a proof"
+expect_routes_to_steward "the disabled-proof clause failure"
+
+# 12ag-2 — codex's second form: the proof is still a test, but `#[ignore]`d.
+IGNORED_PROOF_ROOT="$(make_root proof-marked-ignore)"
+python3 - "$IGNORED_PROOF_ROOT/src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+old = "#[test]\nfn boot_rederive_converges_after_simulated_crash("
+assert text.count(old) == 1
+open(p, "w", encoding="utf-8").write(text.replace(
+    old,
+    '#[test]\n#[ignore = "flaky, re-enable later"]\n'
+    "fn boot_rederive_converges_after_simulated_crash(",
+    1,
+))
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$IGNORED_PROOF_ROOT"
+expect_rc 1 "adding #[ignore] to a named proof HARD-fails the clause it carries"
+expect_out 'C1-AA-CRASH-HEAL-BOOT-REDERIVE' "the ignored-proof failure NAMES the crash-heal clause"
+expect_out 'DISABLED by .#\[ignore\].' "the ignored-proof failure says the test is disabled"
+
+# 12ag-3 — fix-5 SWEEP: the same evaporation through conditional compilation. A
+# proof behind a feature nobody enables does not run either. This one is
+# deliberately the RED side of a judgement call: a legitimately feature-gated
+# proof would fail here too, and that is the documented bias of this gate.
+CFG_PROOF_ROOT="$(make_root proof-cfg-gated)"
+python3 - "$CFG_PROOF_ROOT/src/rust/crates/fathomdb-engine/tests/slice25_registration_identity_inert.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+old = "#[test]\nfn an_anonymous_write_stays_anonymous_through_the_whole_durable_path("
+assert text.count(old) == 1
+open(p, "w", encoding="utf-8").write(text.replace(
+    old,
+    '#[cfg(feature = "never-enabled")]\n#[test]\n'
+    "fn an_anonymous_write_stays_anonymous_through_the_whole_durable_path(",
+    1,
+))
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$CFG_PROOF_ROOT"
+expect_rc 1 "a proof behind #[cfg(feature = ..)] HARD-fails the clause it carries"
+expect_out 'C1-Q6B-H-TERMINAL-NOT-LIFECYCLE-ADDRESSABLE' "the cfg-gated-proof failure NAMES the clause id"
+expect_out 'CONDITIONALLY COMPILED' "the cfg-gated-proof failure says the proof is conditionally compiled"
+
+# 12ag-4 — THE COMPLETENESS ARM. Every one of the FOURTEEN named proofs across
+# T15/T20/T25 loses its `#[test]` at once, so all TEN behavioural clauses must
+# fail. This is what distinguishes "the class was swept" from "the one probe
+# codex named was fixed": a single-proof arm would pass even if thirteen probes
+# were left on the weaker kind.
+ALL_PROOFS_ROOT="$(make_root every-proof-disabled)"
+python3 - "$ALL_PROOFS_ROOT/src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs" \
+          "$ALL_PROOFS_ROOT/src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs" \
+          "$ALL_PROOFS_ROOT/src/rust/crates/fathomdb-engine/tests/slice25_registration_identity_inert.rs" <<'PY'
+import sys
+NAMES = [
+    "destructive_change_requires_explicit_drop",
+    "role_add_builds_and_explicit_drop_drops_exactly_one",
+    "dropping_an_absent_name_is_a_clean_noop",
+    "idempotent_reregistration_is_a_noop",
+    "property_filter_returns_correct_rows",
+    "property_fts_search_returns_correct_rows",
+    "rankable_is_graceful_deferred_never_blocking",
+    "idempotent_reregistration_holds_for_deferred_rankable",
+    "boot_rederive_converges_after_simulated_crash",
+    "atomic_flip_never_exposes_ready_without_the_vector_under_concurrent_write",
+    "readiness_reads_embedding_while_embeds_are_outstanding_then_flips_to_ready",
+    "an_anonymous_write_stays_anonymous_through_the_whole_durable_path",
+    "registering_projections_never_alters_a_pre_existing_row_id_space",
+    "the_internal_structural_row_writer_mints_no_logical_id",
+]
+disabled = 0
+for path in sys.argv[1:]:
+    text = open(path, encoding="utf-8").read()
+    for name in NAMES:
+        old = "#[test]\nfn " + name + "("
+        if old in text:
+            text = text.replace(old, "fn " + name + "(", 1)
+            disabled += 1
+    open(path, "w", encoding="utf-8").write(text)
+# If this ever trips, a pinned proof was renamed in the tree and the gate's probe
+# list is stale — which is itself the thing to look at.
+assert disabled == 14, disabled
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$ALL_PROOFS_ROOT"
+expect_rc 1 "disabling ALL FOURTEEN named proofs HARD-fails"
+for CLAUSE in C1-Q3-DESTRUCTIVE-DELTA C1-Q3-OMISSION-NOT-DROP C1-Q5-DERIVED-CACHE-IDEMPOTENT \
+              C1-Q2-ENGINE-PROJECTS-VIA-CONFIGURE C1-Q6A-RANKABLE-GRACEFUL-DEFER \
+              C1-Q6B-H-TERMINAL-NOT-LIFECYCLE-ADDRESSABLE C1-Q6B-SURROGATE-GOVERNED-ONLY \
+              C1-AA-ATOMIC-FLIP C1-AA-NO-BLOCK-ON-EMBEDDING C1-AA-CRASH-HEAL-BOOT-REDERIVE; do
+  expect_out "$CLAUSE" "every-proof-disabled NAMES $CLAUSE (all 14 probes were converted, not one)"
+done
+expect_routes_to_steward "the every-proof-disabled clause failures"
+
 # === Arm 13 (RED): a source file an assertion reads is MISSING ===============
 # TC-37 evaporation path #4: the assertion could not be EVALUATED. That is
 # neither a pass (0) nor a clause failure (1) — the gate computed no verdict.
@@ -1380,6 +1625,49 @@ if grep -nE 'kind == "min"' "$REPO_ROOT/scripts/check-c1-conformance.sh" >/dev/n
   fail "the gate still IMPLEMENTS the \`min\` COUNT probe kind — removing the kind is what prevents the fix-4 class from recurring"
 else
   pass "the \`min\` COUNT probe kind is gone from the gate entirely"
+fi
+
+# THE SAME STRUCTURAL GUARD FOR THE fix-5 CLASS. `fn_defined` cannot tell an
+# ACTIVE test from a function whose `#[test]` was deleted, so on a test path it
+# is not a weaker probe, it is a broken one. The kind survives — four PRODUCTION
+# functions legitimately use it — so the guard is on its ARGUMENT rather than on
+# its existence: no `fn_defined` probe may name a test file. Widening fourteen
+# probes fixes today's hole; making the wrong probe UNREACHABLE for a test path is
+# what stops the next editor reaching for it.
+if grep -nE '\("fn_defined", T(15|20|25)' "$REPO_ROOT/scripts/check-c1-conformance.sh" >/dev/null; then
+  fail "the gate still probes a TEST file with \`fn_defined\`; a proof must be asserted with \`test_defined\` (fix-5)"
+else
+  pass "no \`fn_defined\` probe names a test file: every named proof is asserted as an ACTIVE test"
+fi
+
+# ... and the gate ENFORCES that itself, rather than relying on this grep. A COPY
+# of the checker with one probe put back on the weaker kind must exit 2 (broken
+# gate), naming the clause. Without this arm the self-check could be deleted from
+# the gate and only the grep above would notice — a guard that is never exercised
+# is the kind of thing that quietly stops working.
+SWAPPED_CHECKER="$TMPROOT/checker-fn-defined-on-a-test.sh"
+if python3 - "$CHECKER" "$SWAPPED_CHECKER" <<'PY'
+import sys
+text = open(sys.argv[1], encoding="utf-8").read()
+old = '("test_defined", T15, "boot_rederive_converges_after_simulated_crash")'
+assert text.count(old) == 1, "the probe this arm swaps is no longer in the gate"
+open(sys.argv[2], "w", encoding="utf-8").write(
+    text.replace(old, '("fn_defined", T15, "boot_rederive_converges_after_simulated_crash")', 1))
+PY
+then
+  set +e
+  OUT="$(bash "$SWAPPED_CHECKER" --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$CLEAN_ROOT" 2>&1)"
+  RC=$?
+  set -e
+  expect_rc 2 "a gate that probes a TEST with \`fn_defined\` refuses to run at all (exit 2), even on a conforming tree"
+  expect_out 'C1-AA-CRASH-HEAL-BOOT-REDERIVE' "the self-check NAMES the clause holding the wrong probe kind"
+  expect_out 'test_defined' "the self-check names the probe kind that should have been used"
+  expect_no_out 'ok +c1-contract-conformance' "the self-check prints no ok line"
+else
+  # A clean FAIL, not a Python traceback that aborts the whole suite under
+  # `set -e` and takes arms 15–17 down with it. If the named probe moves, that is
+  # a STALE ARM and it must say so in the suite's own vocabulary.
+  fail "could not build the swapped-probe checker copy: the gate no longer declares the \`test_defined\` probe this arm mutates, so the fix-5 self-check is no longer exercised"
 fi
 
 # ================ Arm 15: preflight.sh --landing wiring (PREVENT) ===========
