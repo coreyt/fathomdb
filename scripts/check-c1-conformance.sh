@@ -76,8 +76,9 @@
 #     one again is a deliberate, reviewed act rather than the path of least
 #     effort. scripts/tests/test_check_c1_conformance.sh asserts its absence.
 #
-#   * POSITIVE probes (`present`, `min`) and the STRUCTURAL readers
-#     (`enum_exact`, `arms_exact`) legitimately stay FILE-scoped. Their failure
+#   * POSITIVE probes (`present`, `doc_text`) and the STRUCTURAL readers
+#     (`in_item`, `fn_sig`, `fn_defined`, `sql_ddl`, `fts_tokenizer_shared`,
+#     `enum_exact`, `arms_exact`) legitimately stay FILE-scoped. Their failure
 #     mode is the opposite one: a too-narrow positive scope cannot produce a
 #     false green, it produces a false RED by construction. If the symbol, the
 #     enum or the impl block MOVES to a sibling module, the probe finds 0 matches
@@ -103,17 +104,19 @@
 # violation. The Rust IDENTIFIER negatives use *.rs, because their subject is
 # Rust syntax and a mention in a neighbouring note would be a pure false RED.
 #
-# ==================== RESIDUAL SCOPE — READ BEFORE ROUND 4 ===================
+# ==================== RESIDUAL SCOPE — READ BEFORE ROUND 5 ===================
 # This gate is a STATIC, LEXICAL check over Rust and SQL SOURCE TEXT. That
 # approach has a boundary, and two review rounds were spent tightening regexes
 # against it (fix-1: SQL case/whitespace, and blacklist ⇒ closed vocabulary;
 # fix-2: schema-qualified table names, and spellings admitted outside a simple
 # match arm). Rather than rediscover the boundary again, it is written down here.
 #
-# NOTE THAT FIX-3 IS NOT ON THIS LIST AND DID NOT BELONG ON IT. It was a bounded
-# SCOPE bug with a definite, complete fix, and it was closed, not documented away.
-# The list below is the set of things a different MECHANISM would be needed for;
-# it is not a place to retire findings to.
+# NOTE THAT FIX-3 AND FIX-4 ARE NOT ON THIS LIST AND DID NOT BELONG ON IT. Round
+# 3 was a bounded SCOPE bug (one file vs the crate tree) and round 4 a bounded
+# SUBJECT-BINDING bug (a file vs the named table/struct/enum/function the clause
+# is about). Both had definite, complete fixes and both were CLOSED, not
+# documented away. The list below is the set of things a different MECHANISM
+# would be needed for; it is not a place to retire findings to.
 #
 # WHAT THIS GATE IS. A TRIPWIRE AGAINST DRIFT. Its threat model is a FUTURE
 # CONTRIBUTOR who changes as-built code without noticing that a ratified
@@ -163,6 +166,17 @@
 #      assert only that the NAMED TEST still exists, and 12 contract clauses are
 #      CROSS-REPO by classification and unverifiable from this repo at all.
 #
+#   8. WHAT A NAMED TEST ACTUALLY ASSERTS. The strongest form of #7, and the one
+#      worth naming separately after fix-4: `fn_defined` proves the named test
+#      still EXISTS as a definition with a body. It cannot prove the body still
+#      asserts anything — `fn atomic_flip_never_exposes_ready_without_the_vector
+#      _under_concurrent_write() {}` (an empty body) satisfies it, and so does one
+#      whose assertions were commented out. That is not a hole a lexical check can
+#      close, and it is not one worth chasing here: `cargo test --workspace` is
+#      the mechanism that executes those bodies, it is a required gate, and an
+#      emptied test is visible in review as a code diff. See the RECOMMENDATION in
+#      the closure JSON for the mechanism that WOULD close it.
+#
 # WHICH WAY THE ERRORS FALL. Every ambiguity is resolved toward RED: an
 # unparseable enum body, an impl block the reader cannot find, an unreadable file
 # and a missing tree are all failures (exit 1 / exit 2), never skips; and the
@@ -183,10 +197,12 @@
 # CONSEQUENCE FOR REVIEWERS. A finding that this gate misses something ON THE
 # LIST ABOVE is TRUE and is NOT a defect in the patch — it is the documented
 # scope, and the answer to it is a different mechanism, not another regex. A
-# finding that it misses a spelling of a PINNED NAME in LITERAL source text, or
-# misses it because the probe was pointed at the wrong SUBJECT, is a real defect:
-# fix it, and if the fix is another regex, add its class here. Round 3 was the
-# second kind — see PROBE SCOPE above — and it was fixed.
+# finding that it misses a spelling of a PINNED NAME in LITERAL source text, that
+# it misses it because the probe was pointed at the wrong SCOPE, or that a probe
+# is satisfied by something OTHER THAN THE SUBJECT ITS CLAUSE NAMES, is a real
+# defect: fix it, and if the fix is another regex, add its class here. Round 3
+# was the second kind (see PROBE SCOPE above) and round 4 the third (see A PROBE
+# IS BOUND TO ITS SUBJECT, beside the assertion table); both were fixed.
 #
 # ============================ THE AMENDMENT TRAP =============================
 # The contract was AMENDED at efa8d584 ("amend C-1 contract Q6(b) with the TC-11
@@ -361,20 +377,49 @@ SKIP_DIRS = {
 # bijection between this dict's keys and the pin's CHECKABLE ids is predicate
 # (b) and is enforced in BOTH directions below.
 #
-# Probe kinds:
-#   ("present", path, regex)          regex must match at least once in path
-#   ("min",     path, regex, n)       regex must match at least n times in path
-#   ("absent_tree", tree, regex, exts) regex must not match in any text file
-#                                      under tree (exts=None ⇒ every text file)
-#   ("enum_exact", path, ty, members) the Rust `enum ty` in path has EXACTLY
+# Probe kinds. STRUCTURAL kinds extract THE NAMED SUBJECT and assert inside it;
+# the two text kinds are for subjects whose name IS the text.
+#   ("in_item", path, kw, name, regex) regex must match inside the brace body of
+#                                      the Rust item `<kw> <name>` (kw ∈ struct /
+#                                      enum / impl / fn) — the field, variant,
+#                                      arm or statement is asserted OF THAT ITEM
+#   ("fn_sig", path, fn, regex)        regex must match inside the SIGNATURE of
+#                                      `fn fn` (params + return type)
+#   ("fn_defined", path, fn)           `fn fn` exists as a DEFINITION with a
+#                                      parseable body (not a comment, not a call)
+#   ("sql_ddl", path, table, regex)    regex must match inside the parenthesised
+#                                      body of every `CREATE [VIRTUAL] TABLE
+#                                      [<schema>.]<table> ( ... )` in path, and
+#                                      there must be at least one
+#   ("fts_tokenizer_shared", path, subject, refs, pinned)
+#                                      the `tokenize=` clause of fts5 table
+#                                      `subject` equals that of every table in
+#                                      `refs`, and equals the pinned default
+#   ("enum_exact", path, ty, members)  the Rust `enum ty` in path has EXACTLY
 #                                      these variants — set AND count
 #   ("arms_exact", path, ty, fn, pairs) the match arms inside `impl ty { fn fn }`
 #                                      map EXACTLY these (variant, string) pairs
+#   ("absent_tree", tree, regex, exts) regex must not match in any text file
+#                                      under tree (exts=None ⇒ every text file)
+#   ("present", path, regex)           regex must match at least once in path —
+#                                      ONLY where the regex names its subject
+#                                      uniquely (a declaration by name, a const
+#                                      and its value, a whole table row)
+#   ("doc_text", path, regex)          the same predicate, but declaring what it
+#                                      is: a DOCUMENTED STATEMENT is still in the
+#                                      file. Never the load-bearing half of a
+#                                      clause; see the fix-4 note below.
 #
 # THERE IS NO FILE-SCOPED NEGATIVE PROBE KIND, DELIBERATELY (fix-3). See "PROBE
 # SCOPE" in this file's header: every NEGATIVE assertion is `absent_tree`, and
 # `("absent", <file>, regex)` was DELETED rather than merely left unused, so
 # re-introducing a single-file negative is a deliberate, reviewed act.
+#
+# AND THERE IS NO COUNT PROBE KIND, DELIBERATELY (fix-4). `("min", path, regex,
+# n)` was DELETED for the same reason: a count of file-wide matches is the
+# weakest possible relationship between a probe and its subject. See "SUBJECT
+# BINDING" in this file's header. scripts/tests/test_check_c1_conformance.sh
+# asserts the absence of both kinds.
 #
 # ------------ CLOSED VOCABULARIES ARE STRUCTURAL, NOT BLACKLISTED ------------
 # fix-1, codex §9 round 1 finding #1 [P2]. Three clauses below assert that a
@@ -421,6 +466,50 @@ SKIP_DIRS = {
 # runtime, or a table reached through a view/trigger under a different name, is
 # still invisible here — see RESIDUAL SCOPE in this file's header. `qualified()`
 # closes the spellings of the PINNED name, not every route to the pinned table.
+#
+# ------------- A PROBE IS BOUND TO ITS SUBJECT, NOT TO A FILE ----------------
+# fix-4, codex §9 round 4 [P2] and the sweep it triggered. The FOURTH distinct
+# class, and the most general one: a probe asserted that some text existed
+# SOMEWHERE IN A FILE, while the clause it implements is about a NAMED SUBJECT
+# inside that file. An unrelated coincidence elsewhere in the same file then
+# satisfied the probe while the named subject was broken.
+#
+# codex's demonstration: `C1-TE-DEFAULT-TOKENIZER` COUNTED file-wide occurrences
+# of `tokenize = 'porter unicode61 remove_diacritics 2'` in the schema crate
+# (`min`, n=2). That file already carries several — for `search_index`,
+# `search_index_v2` and the edge index. Changing ONLY `property_search_index`'s
+# tokenizer left the count satisfied by tables the clause is not about, and the
+# gate exited 0 on a tree where the property-FTS no longer shares the engine's
+# default tokenizer. A COUNT IS NOT A BINDING; the `min` kind is gone.
+#
+# THE SWEEP found the same shape in fifteen more clauses, each with a working
+# demonstration in the test suite (arms 12v–12ac): a `pub <field>: <ty>,` probe
+# satisfied by ANY struct rather than the one the contract names (seven clauses);
+# an error-variant probe satisfied by the Display impl after the variant was
+# deleted from the enum (two); the apply verb's three signature fragments probed
+# independently, so they need not describe one function; a statement probed
+# file-wide rather than inside the verb whose body the clause is about (two); a
+# `fn <name>(` probe that cannot tell a DEFINITION from a COMMENT mentioning it
+# (every behavioural clause); an index probed by NAME while the clause is about
+# its COLUMNS; a registry column probed file-wide; and a plan requirement ROW
+# probed as a bare `| id |` mention.
+#
+# THE RULE, in priority order:
+#   1. STRUCTURAL EXTRACTION bound to the named subject (`in_item`, `fn_sig`,
+#      `fn_defined`, `sql_ddl`, `fts_tokenizer_shared`, `enum_exact`,
+#      `arms_exact`). Preferred always.
+#   2. A `present` regex tight enough that it CANNOT be satisfied by a different
+#      declaration — it must name its subject (a unique symbol/table/index name,
+#      a const together with its value, a whole table row).
+#   3. There is no 3. Counts are gone.
+#
+# WHICH WAY THE STRUCTURAL READERS ERR: a subject they cannot locate is a CLAUSE
+# FAILURE (exit 1), never a skip, exactly like `enum_exact`. Where a name could
+# denote several items the readers take the STRICT side — every `struct`/`enum`/
+# `fn` body of that name must satisfy the probe — except for `impl`, where a
+# type's inherent impl may legitimately be split across blocks and ANY block
+# suffices (every one of them is still `impl <the named type>`, so the subject
+# binding holds either way).
 # ---------------------------------------------------------------------------
 
 # One SQL identifier, optionally quoted `"x"` / 'x' / `x` / [x].
@@ -456,44 +545,63 @@ def insert_into(table):
 
 ASSERTIONS = {
     # ---- Cohesion seam --------------------------------------------------
+    # fix-4: the three fragments used to be three INDEPENDENT file-wide probes,
+    # so nothing tied them to one another OR to the apply verb — a decoy function
+    # carrying `drop: &[String],` and the delta return type satisfied them while
+    # `configure_projections` took no drop list at all. They are now read out of
+    # THAT FUNCTION'S SIGNATURE.
     "C1-SEAM-ENGINE-BUILD-DROP": [
         ("present", ENG, r"pub fn configure_projections\("),
-        ("present", ENG, r"drop: &\[String\],"),
-        ("present", ENG, r"-> Result<ProjectionDelta, EngineError>"),
+        ("fn_sig", ENG, "configure_projections", r"specs:\s*&\[ProjectionSpec\]"),
+        ("fn_sig", ENG, "configure_projections", r"drop:\s*&\[String\]"),
+        ("fn_sig", ENG, "configure_projections",
+         r"->\s*Result<\s*ProjectionDelta\s*,\s*EngineError\s*>"),
     ],
     # ---- Q1 --------------------------------------------------------------
     "C1-Q1-ROLE-SET": [
         ("present", ENG, r"pub enum ProjectionRole \{"),
-        ("present", ENG, r"pub roles: BTreeSet<ProjectionRole>,"),
+        ("in_item", ENG, "struct", "ProjectionSpec",
+         r"pub\s+roles\s*:\s*BTreeSet\s*<\s*ProjectionRole\s*>"),
     ],
     # ---- Q3 --------------------------------------------------------------
     "C1-Q3-SOLE-AUTHORITY": [
-        ("present", SCH, r"CREATE TABLE _fathomdb_projection_registry\("),
-        ("present", ENG, r"fn apply_projection_config\("),
+        ("sql_ddl", SCH, "_fathomdb_projection_registry",
+         r"(?i)\bname\s+TEXT\s+PRIMARY\s+KEY\b"),
+        ("fn_defined", ENG, "apply_projection_config"),
         ("present", ENG, r"pub struct ProjectionDelta \{"),
     ],
     "C1-Q3-DESTRUCTIVE-DELTA": [
-        ("present", ENG, r"ProjectionDestructive \{"),
-        ("present", T15, r"fn destructive_change_requires_explicit_drop\(\)"),
+        ("in_item", ENG, "enum", "EngineError", r"\bProjectionDestructive\s*\{"),
+        ("fn_defined", T15, "destructive_change_requires_explicit_drop"),
     ],
     "C1-Q3-OMISSION-NOT-DROP": [
-        ("present", T15, r"fn role_add_builds_and_explicit_drop_drops_exactly_one\(\)"),
-        ("present", T15, r"fn dropping_an_absent_name_is_a_clean_noop\(\)"),
+        ("fn_defined", T15, "role_add_builds_and_explicit_drop_drops_exactly_one"),
+        ("fn_defined", T15, "dropping_an_absent_name_is_a_clean_noop"),
     ],
     # ---- Q5 --------------------------------------------------------------
     "C1-Q5-DERIVED-CACHE-IDEMPOTENT": [
-        ("present", ENG, r"pub unchanged: bool,"),
-        ("present", T15, r"fn idempotent_reregistration_is_a_noop\(\)"),
+        ("in_item", ENG, "struct", "ProjectionDelta", r"pub\s+unchanged\s*:\s*bool"),
+        ("fn_defined", T15, "idempotent_reregistration_is_a_noop"),
     ],
     # ---- Q2 --------------------------------------------------------------
+    # fix-4: the EAV store and the property-FTS were probed by TABLE NAME only,
+    # and the composite index by INDEX NAME only — but the clause is about the
+    # SHAPE: an attribute store keyed by (name, value) and the index the cheap
+    # filterable tier reads. Re-creating that index on ONE column passed. The
+    # table probes are structural now (a `CREATE TABLE` whose body must carry the
+    # columns), and the index probe names its COLUMNS.
     "C1-Q2-ENGINE-EAV-PROPERTY-FTS": [
-        ("present", SCH, r"CREATE TABLE canonical_attributes\("),
-        ("present", SCH, r"CREATE VIRTUAL TABLE property_search_index USING fts5\("),
-        ("present", SCH, r"CREATE INDEX canonical_attributes_name_value_idx"),
+        ("sql_ddl", SCH, "canonical_attributes", r"(?i)\bwrite_cursor\s+INTEGER\b"),
+        ("sql_ddl", SCH, "canonical_attributes", r"(?i)\battr_name\s+TEXT\b"),
+        ("sql_ddl", SCH, "canonical_attributes", r"(?i)\battr_value\s+TEXT\b"),
+        ("sql_ddl", SCH, "property_search_index", r"(?i)\battr_value\b"),
+        ("present", SCH,
+         r"(?i)CREATE\s+INDEX\s+canonical_attributes_name_value_idx\s+ON\s+"
+         r"canonical_attributes\s*\(\s*attr_name\s*,\s*attr_value\s*\)"),
     ],
     "C1-Q2-ENGINE-PROJECTS-VIA-CONFIGURE": [
-        ("present", T15, r"fn property_filter_returns_correct_rows\(\)"),
-        ("present", T15, r"fn property_fts_search_returns_correct_rows\(\)"),
+        ("fn_defined", T15, "property_filter_returns_correct_rows"),
+        ("fn_defined", T15, "property_fts_search_returns_correct_rows"),
     ],
     # SCOPE (load-bearing, fix-1 then fix-3). The clause forbids a
     # MIGRATION/BACKFILL of PRE-EXISTING rows — not projection writes as such.
@@ -516,15 +624,25 @@ ASSERTIONS = {
     # doc comment that literally spells `insert into canonical_attributes` would
     # trip it. That is a false RED (reword the comment), which is the safe side
     # of this gate — unlike the false GREEN it replaces.
+    #
+    # fix-4 AUDIT: the marker probe is a `doc_text` probe and is DECLARED as one.
+    # Its subject IS a documented statement, so there is nothing structural to
+    # bind it to — and it is deliberately not what carries this clause: the two
+    # TREE-scoped negatives are. Demoting the marker to a comment elsewhere would
+    # not violate the obligation (no backfill would thereby appear), which is the
+    # test for whether a text probe is load-bearing.
     "C1-Q2-NO-DATA-MIGRATION": [
-        ("present", SCH, r"NO DATA MIGRATION \(HITL 2026-07-21\): shape only, no backfill\."),
+        ("doc_text", SCH, r"NO DATA MIGRATION \(HITL 2026-07-21\): shape only, no backfill\."),
         ("absent_tree", SCH_TREE, insert_into("canonical_attributes"), None),
         ("absent_tree", SCH_TREE, insert_into("property_search_index"), None),
     ],
     # ---- Q4 --------------------------------------------------------------
+    # fix-4: "IN THE SAME TRANSACTION AS THE APPLY" is a statement about the
+    # apply verb's BODY, and was probed file-wide — a decoy call elsewhere
+    # satisfied it while the real call ran outside the transaction.
     "C1-Q4-CHEAP-SAME-TRANSACTION": [
-        ("present", ENG, r"apply_projection_config\(&tx,"),
-        ("present", ENG, r"pub built: Vec<String>,"),
+        ("in_item", ENG, "fn", "configure_projections", r"apply_projection_config\(&tx,"),
+        ("in_item", ENG, "struct", "ProjectionDelta", r"pub\s+built\s*:\s*Vec\s*<\s*String\s*>"),
     ],
     # "EXACTLY {ready, embedding}" is a CLOSED vocabulary, so it is asserted
     # structurally (fix-1, codex finding #1): the enum has exactly two variants,
@@ -539,10 +657,16 @@ ASSERTIONS = {
     # lib.rs, and since a variant cannot be added to `enum DenseReadiness` from
     # outside the crate that declares it, the crate tree is the COMPLETE scope
     # for this obligation, not merely a wider one.
+    #
+    # fix-4 SWEEP: the two spelling probes are read INSIDE `impl DenseReadiness`
+    # rather than file-wide. They were never a false-green vector (the
+    # `arms_exact` probes below strictly dominate them — any edit that could fool
+    # a file-wide spelling probe fails the exact-pair check), but a probe that
+    # states its subject is worth more than one that happens to be covered.
     "C1-Q4-DENSE-READINESS-TWO-MEMBERS": [
         ("present", ENG, r"pub enum DenseReadiness \{"),
-        ("present", ENG, r'DenseReadiness::Ready => "ready",'),
-        ("present", ENG, r'DenseReadiness::Embedding => "embedding",'),
+        ("in_item", ENG, "impl", "DenseReadiness", r'DenseReadiness::Ready => "ready",'),
+        ("in_item", ENG, "impl", "DenseReadiness", r'DenseReadiness::Embedding => "embedding",'),
         ("absent_tree", ENG_TREE, r"DenseReadiness::Pending", (".rs",)),
         ("enum_exact", ENG, "DenseReadiness", ("Ready", "Embedding")),
         ("arms_exact", ENG, "DenseReadiness", "as_str",
@@ -563,9 +687,12 @@ ASSERTIONS = {
     # for the same reason as the readiness clause: the crate that declares
     # `enum ProjectionRole` is the complete scope in which a role can be named.
     "C1-Q6A-THREE-ROLES": [
-        ("present", ENG, r'"filterable" => Some\(ProjectionRole::Filterable\),'),
-        ("present", ENG, r'"rankable" => Some\(ProjectionRole::Rankable\),'),
-        ("present", ENG, r'"searchable" => Some\(ProjectionRole::Searchable\),'),
+        ("in_item", ENG, "impl", "ProjectionRole",
+         r'"filterable" => Some\(ProjectionRole::Filterable\),'),
+        ("in_item", ENG, "impl", "ProjectionRole",
+         r'"rankable" => Some\(ProjectionRole::Rankable\),'),
+        ("in_item", ENG, "impl", "ProjectionRole",
+         r'"searchable" => Some\(ProjectionRole::Searchable\),'),
         ("absent_tree", ENG_TREE, r"ProjectionRole::Vector\b", (".rs",)),
         ("absent_tree", ENG_TREE, r"ProjectionRole::Fts\b", (".rs",)),
         ("enum_exact", ENG, "ProjectionRole", ("Filterable", "Rankable", "Searchable")),
@@ -577,9 +704,10 @@ ASSERTIONS = {
           ("Searchable", "searchable"))),
     ],
     "C1-Q6A-RANKABLE-GRACEFUL-DEFER": [
-        ("present", ENG, r"pub deferred: Vec<String>,"),
-        ("present", T15, r"fn rankable_is_graceful_deferred_never_blocking\(\)"),
-        ("present", T15, r"fn idempotent_reregistration_holds_for_deferred_rankable\(\)"),
+        ("in_item", ENG, "struct", "ProjectionDelta",
+         r"pub\s+deferred\s*:\s*Vec\s*<\s*String\s*>"),
+        ("fn_defined", T15, "rankable_is_graceful_deferred_never_blocking"),
+        ("fn_defined", T15, "idempotent_reregistration_holds_for_deferred_rankable"),
     ],
     # ---- Q6(b), AS AMENDED at efa8d584 -----------------------------------
     "C1-Q6B-NO-ENTITYTYPESPEC-NO-IDPREFIX": [
@@ -594,9 +722,9 @@ ASSERTIONS = {
     # fns, so a fourth prefix or a fourth discriminant spelling fails too.
     "C1-Q6B-IDSPACE-TOTAL-THREE": [
         ("present", ENG, r"pub enum IdSpaceKind \{"),
-        ("present", ENG, r'Self::Logical => "l:",'),
-        ("present", ENG, r'Self::Content => "h:",'),
-        ("present", ENG, r'Self::Passage => "p:",'),
+        ("in_item", ENG, "impl", "IdSpaceKind", r'Self::Logical => "l:",'),
+        ("in_item", ENG, "impl", "IdSpaceKind", r'Self::Content => "h:",'),
+        ("in_item", ENG, "impl", "IdSpaceKind", r'Self::Passage => "p:",'),
         ("enum_exact", ENG, "IdSpaceKind", ("Logical", "Content", "Passage")),
         ("arms_exact", ENG, "IdSpaceKind", "prefix",
          (("Logical", "l:"), ("Content", "h:"), ("Passage", "p:"))),
@@ -615,42 +743,82 @@ ASSERTIONS = {
     # fix-3 SWEEP: and TREE-scoped. A second, NULLABLE typed-id carrier declared
     # in a sibling module (fixture 12s) is exactly the same violation, and the
     # paired `present` probe in lib.rs holds untouched while it happens.
+    #
+    # fix-4 SWEEP: the paired POSITIVE probe is read out of `struct SearchHit`.
+    # File-wide, it was satisfied by any decoy struct declaring `pub id: IdSpace,`
+    # while SearchHit carried no typed id at all — and note that renaming
+    # SearchHit's field (rather than making it nullable) does not trip the
+    # negative probe either, so the clause had a complete false-green path.
     "C1-Q6B-ID-NON-NULL": [
-        ("present", ENG, r"pub id: IdSpace,"),
+        ("in_item", ENG, "struct", "SearchHit", r"pub\s+id\s*:\s*IdSpace\s*,"),
         ("absent_tree", ENG_TREE, r"pub\s+id\s*:\s*Option\s*<\s*IdSpace", (".rs",)),
     ],
+    # fix-4 SWEEP: the error variant is read out of `enum EngineError`. File-wide,
+    # `NotLifecycleAddressable {` is spelled by the Display impl and by every
+    # construction site, so deleting the VARIANT left the probe satisfied.
     "C1-Q6B-H-TERMINAL-NOT-LIFECYCLE-ADDRESSABLE": [
-        ("present", ENG, r"NotLifecycleAddressable \{"),
-        ("present", T25, r"fn an_anonymous_write_stays_anonymous_through_the_whole_durable_path\(\)"),
+        ("in_item", ENG, "enum", "EngineError", r"\bNotLifecycleAddressable\s*\{"),
+        ("fn_defined", T25,
+         "an_anonymous_write_stays_anonymous_through_the_whole_durable_path"),
     ],
     "C1-Q6B-SURROGATE-GOVERNED-ONLY": [
-        ("present", T25, r"fn registering_projections_never_alters_a_pre_existing_row_id_space\(\)"),
-        ("present", T25, r"fn the_internal_structural_row_writer_mints_no_logical_id\(\)"),
+        ("fn_defined", T25, "registering_projections_never_alters_a_pre_existing_row_id_space"),
+        ("fn_defined", T25, "the_internal_structural_row_writer_mints_no_logical_id"),
     ],
     # ---- Apply atomicity -------------------------------------------------
+    # fix-4 SWEEP: every "the named proof still exists" probe is `fn_defined`,
+    # which reads the COMMENT-STRIPPED source and requires a parseable body. The
+    # old `fn <name>(` regex could not tell a definition from a doc comment
+    # mentioning the name — so deleting the proof and leaving a reference to it
+    # behind (the most natural thing a contributor does) exited 0.
     "C1-AA-ATOMIC-FLIP": [
-        ("present", ENG, r"fn commit_projection_outcomes\("),
-        ("present", T20,
-         r"fn atomic_flip_never_exposes_ready_without_the_vector_under_concurrent_write\(\)"),
+        ("fn_defined", ENG, "commit_projection_outcomes"),
+        ("fn_defined", T20,
+         "atomic_flip_never_exposes_ready_without_the_vector_under_concurrent_write"),
     ],
+    # fix-4 SWEEP: "the apply ENQUEUES and returns" is a statement about the apply
+    # verb. `notify_new_work()` file-wide is satisfied by the engine's three
+    # unrelated wake sites, so removing the wake FROM THE APPLY was invisible.
     "C1-AA-NO-BLOCK-ON-EMBEDDING": [
-        ("present", ENG, r"notify_new_work\(\)"),
-        ("present", T20,
-         r"fn readiness_reads_embedding_while_embeds_are_outstanding_then_flips_to_ready\(\)"),
+        ("fn_defined", ENG, "notify_new_work"),
+        ("in_item", ENG, "fn", "configure_projections", r"notify_new_work\(\)"),
+        ("fn_defined", T20,
+         "readiness_reads_embedding_while_embeds_are_outstanding_then_flips_to_ready"),
     ],
     "C1-AA-CRASH-HEAL-BOOT-REDERIVE": [
-        ("present", ENG, r"fn load_projection_registry\("),
-        ("present", T15, r"fn boot_rederive_converges_after_simulated_crash\(\)"),
+        ("fn_defined", ENG, "load_projection_registry"),
+        ("fn_defined", T15, "boot_rederive_converges_after_simulated_crash"),
     ],
     # ---- Tokenizer / embedder defaults -----------------------------------
     "C1-TE-DEFAULT-EMBEDDER": [
-        ("present", ENG, r"pub embedder: Option<String>,"),
+        ("in_item", ENG, "struct", "ProjectionVector",
+         r"pub\s+embedder\s*:\s*Option\s*<\s*String\s*>"),
         ("present", EMB,
          r'pub const DEFAULT_EMBEDDER_NAME: &str = "fathomdb-bge-small-en-v1\.5";'),
     ],
+    # fix-4, codex §9 round 4 [P2] — THE FINDING. The obligation is RELATIONAL:
+    # "the default tokenizer is the ENGINE'S DEFAULT FTS5 TOKENIZER — THE ONE
+    # body-FTS USES". It was probed as a COUNT of file-wide occurrences of the
+    # default tokenizer string (n=2), and the schema file carries several for
+    # UNRELATED FTS tables, so changing ONLY `property_search_index`'s tokenizer
+    # left the count satisfied and the gate green.
+    #
+    # It is now what the clause says: extract `property_search_index`'s
+    # `tokenize=` clause and the body-FTS tables' `tokenize=` clauses from their
+    # own `CREATE VIRTUAL TABLE ... USING fts5(...)` definitions and COMPARE them,
+    # then check the shared value against the pinned default. Deleting the clause
+    # (fts5 would silently fall back to its own `unicode61`) fails too.
+    #
+    # THE REFERENCE SET is `search_index_v2` (the fielded body-FTS the pin's own
+    # evidence cites as body-FTS, schema lib.rs:436) and `search_index` (the
+    # retained legacy body index). `search_index_edges` is deliberately NOT in it:
+    # the edge index is a different subject, and its equal tokenizer was part of
+    # the coincidence that kept the old count satisfied.
     "C1-TE-DEFAULT-TOKENIZER": [
-        ("present", ENG, r"pub tokenizer: Option<String>,"),
-        ("min", SCH, r"tokenize = 'porter unicode61 remove_diacritics 2'", 2),
+        ("in_item", ENG, "struct", "ProjectionFts",
+         r"pub\s+tokenizer\s*:\s*Option\s*<\s*String\s*>"),
+        ("fts_tokenizer_shared", SCH, "property_search_index",
+         ("search_index_v2", "search_index"), "porter unicode61 remove_diacritics 2"),
     ],
     # The third probe is SQL, so it carries the SAME defect classes as
     # C1-Q2-NO-DATA-MIGRATION and has been fixed in every sweep alongside it:
@@ -666,19 +834,32 @@ ASSERTIONS = {
     # CRATE TREE — the whole of it. exts=None for the same reason as the schema
     # clause: DDL carried in a `.sql` file and `include_str!`-ed is still the
     # engine creating that table.
+    #
+    # fix-4 SWEEP: the RECORDING column is read out of the projection registry's
+    # own DDL — file-wide, `fts_tokenizer TEXT,` was satisfied by any table
+    # declaring that column. The second probe is a `doc_text` probe and is
+    # declared as one: the clause's enforceable content is (i) the registry
+    # records the declaration, (ii) the engine builds no FTS table of its own, and
+    # (iii) the property FTS carries the DEFAULT tokenizer — which is the sibling
+    # clause C1-TE-DEFAULT-TOKENIZER, now a real comparison.
     "C1-TE-CUSTOM-TOKENIZER-DEFERRED": [
-        ("present", SCH, r"fts_tokenizer TEXT,"),
-        ("present", SCH, r"recorded in the registry but not honoured here"),
+        ("sql_ddl", SCH, "_fathomdb_projection_registry", r"(?i)\bfts_tokenizer\s+TEXT\b"),
+        ("doc_text", SCH, r"recorded in the registry but not honoured here"),
         ("absent_tree", ENG_TREE,
          r"(?i)CREATE\s+VIRTUAL\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?"
          + qualified("property_search_index"), None),
     ],
     # ---- Landing ---------------------------------------------------------
+    # fix-4 SWEEP: the clause is "the 0.8.20 plan must actually CARRY the C-1
+    # co-land requirements", i.e. four ROWS of its requirement table. `\| R-20-PR
+    # \|` matched any mention between two pipes, including one inside a sentence
+    # of running prose, so a requirement withdrawn from the table stayed green.
+    # The pattern is now a whole three-cell table row, anchored at line start.
     "C1-LAND-0820-SLOT": [
-        ("present", PLAN, r"\| R-20-PR \|"),
-        ("present", PLAN, r"\| R-20-EAV \|"),
-        ("present", PLAN, r"\| R-20-DR \|"),
-        ("present", PLAN, r"\| R-20-SUR \|"),
+        ("present", PLAN, r"(?m)^\| R-20-PR \| .+ \| .+ \|$"),
+        ("present", PLAN, r"(?m)^\| R-20-EAV \| .+ \| .+ \|$"),
+        ("present", PLAN, r"(?m)^\| R-20-DR \| .+ \| .+ \|$"),
+        ("present", PLAN, r"(?m)^\| R-20-SUR \| .+ \| .+ \|$"),
     ],
 }
 
@@ -1148,27 +1329,227 @@ def body_strings(body):
     return [m.group(1) for m in re.finditer(_STRING_CAP, body)]
 
 
+# ---------------------------------------------------------------------------
+# SUBJECT-BOUND READERS (fix-4). Each locates THE NAMED SUBJECT and hands back
+# its text, so the clause assertion is evaluated against that subject rather than
+# against the whole file. Everything they cannot locate is reported as a CLAUSE
+# DEFECT (exit 1), never skipped — the same stance `enum_exact` has taken since
+# fix-1.
+# ---------------------------------------------------------------------------
+def rust_items(view, kw, name):
+    """Brace bodies of every `<kw> <name>` item in a comment-stripped view.
+
+    `kw` is one of struct / enum / impl / fn. A body that cannot be
+    brace-matched is dropped, which surfaces as "could not locate" at the call
+    site — i.e. RED, not a silent pass.
+    """
+    bodies = []
+    for match in re.finditer(r"\b" + kw + r"\s+" + re.escape(name) + r"\b[^{;]*\{", view):
+        body = brace_body(view, match.end() - 1)
+        if body is not None:
+            bodies.append(body)
+    return bodies
+
+
+def fn_signatures(view, name):
+    """The signature text (params + return type) of every `fn <name>`."""
+    return [m.group(1) for m in
+            re.finditer(r"\bfn\s+" + re.escape(name) + r"\b([^{;]*)\{", view)]
+
+
+def paren_body(text, open_index):
+    """Body of the parenthesised group whose '(' sits at open_index."""
+    depth = 0
+    for i in range(open_index, len(text)):
+        char = text[i]
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0:
+                return text[open_index + 1:i]
+    return None
+
+
+def table_defs(text, table):
+    """(line, body) for every `CREATE [VIRTUAL] TABLE [<schema>.]<table> ( ... )`.
+
+    Case-insensitive, `IF NOT EXISTS`-tolerant and schema-qualifier-tolerant, for
+    the same reasons the negative SQL probes are (fix-1/fix-2): this reads SQLite
+    DDL, not one hand-picked spelling of it. A table legitimately created more
+    than once by the forward-only migration ladder yields several definitions,
+    and the caller decides what that means.
+    """
+    pattern = (
+        r"(?is)\bCREATE\s+(?:VIRTUAL\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?"
+        + qualified(table) + _SQL_IDENT_CLOSE
+        + r"\s*(?:USING\s+[A-Za-z_][A-Za-z0-9_]*\s*)?\("
+    )
+    defs = []
+    for match in re.finditer(pattern, text):
+        body = paren_body(text, match.end() - 1)
+        if body is not None:
+            defs.append((line_of(text, match), body))
+    return defs
+
+
+# FTS5 spells its tokenizer as `tokenize = <string>`, and SQLite accepts the
+# string quoted with ' " ` or [ ]. The VALUE is a whitespace-separated argument
+# list whose tokenizer name SQLite matches case-insensitively, so comparison is
+# on the whitespace-collapsed, lowercased form: `PORTER  unicode61` and
+# `porter unicode61` are the same tokenizer, and reporting them as different
+# would be a false RED with no content.
+_TOKENIZE = re.compile(
+    r"(?is)\btokenize\s*=\s*(?:'([^']*)'|\"([^\"]*)\"|`([^`]*)`|\[([^\]]*)\])"
+)
+
+
+def tokenize_clauses(body):
+    """Every `tokenize=` value declared in an fts5 definition body, normalised."""
+    found = []
+    for match in _TOKENIZE.finditer(body):
+        value = next(g for g in match.groups() if g is not None)
+        found.append(" ".join(value.split()).lower())
+    return found
+
+
 def run_probe(probe):
     """Return a human-readable defect string, or None when the probe holds."""
     kind = probe[0]
-    if kind == "present":
+    if kind in ("present", "doc_text"):
         _, path, pattern = probe
         text = read_source(path)
         if re.search(pattern, text) is None:
+            if kind == "doc_text":
+                return (
+                    f"the DOCUMENTED STATEMENT /{pattern}/ is no longer present in {path}. This "
+                    "probe asserts a written statement, not a structure — the clause's enforceable "
+                    "content is carried by its other probes; see the note beside this clause"
+                )
             return f"expected /{pattern}/ in {path}, found 0 match(es)"
+        return None
+    # ---- the fix-4 SUBJECT-BOUND kinds ------------------------------------
+    if kind == "in_item":
+        _, path, kw, name, pattern = probe
+        bodies = rust_items(rust_view(path), kw, name)
+        if not bodies:
+            return (
+                f"could not locate a parseable `{kw} {name} {{ .. }}` in {path} — the pinned "
+                f"obligation /{pattern}/ is about THAT item, so it cannot be checked, and this "
+                "reads as a clause failure rather than a skipped probe"
+            )
+        # An inherent `impl` may legitimately be split across blocks, so ANY block
+        # satisfies it — every one of them is still `impl <the named type>`. A
+        # struct/enum/fn name denoting several items is ambiguous, so EVERY body
+        # must satisfy the probe (the strict side).
+        hits = [b for b in bodies if re.search(pattern, b) is not None]
+        ok = bool(hits) if kw == "impl" else len(hits) == len(bodies)
+        if not ok:
+            return (
+                f"expected /{pattern}/ INSIDE `{kw} {name}` in {path}; matched {len(hits)} of "
+                f"{len(bodies)} such item(s). The contract makes this statement ABOUT "
+                f"`{name}` — a match elsewhere in the file is a different subject"
+            )
+        return None
+    if kind == "fn_sig":
+        _, path, name, pattern = probe
+        sigs = fn_signatures(rust_view(path), name)
+        if not sigs:
+            return (
+                f"could not locate `fn {name}(..)` in {path} — the pinned signature obligation "
+                f"/{pattern}/ cannot be checked, so this reads as a clause failure rather than a "
+                "skipped probe"
+            )
+        missing = [s for s in sigs if re.search(pattern, s) is None]
+        if missing:
+            return (
+                f"expected /{pattern}/ in the SIGNATURE of `fn {name}` in {path}; "
+                f"{len(missing)} of {len(sigs)} definition(s) do not carry it. The contract "
+                "describes THIS verb's parameters and return type — the same text on another "
+                "function is a different subject"
+            )
+        return None
+    if kind == "fn_defined":
+        _, path, name = probe
+        if not rust_items(rust_view(path), "fn", name):
+            return (
+                f"`fn {name}` has no DEFINITION in {path}. The contract's proof of this "
+                "obligation is that named function/test; a comment or doc reference that "
+                "mentions the name is not the proof (the source is read comment-stripped, and a "
+                "parseable body is required)"
+            )
+        return None
+    if kind == "sql_ddl":
+        _, path, table, pattern = probe
+        defs = table_defs(read_source(path), table)
+        if not defs:
+            return (
+                f"no `CREATE [VIRTUAL] TABLE {table} ( .. )` definition found in {path} — the "
+                f"pinned obligation /{pattern}/ is about that table's SHAPE, so it could not be "
+                "checked; reported as a clause failure, not a skipped probe"
+            )
+        missing = [line for line, body in defs if re.search(pattern, body) is None]
+        if missing:
+            return (
+                f"expected /{pattern}/ INSIDE the definition of table `{table}` in {path}; "
+                f"{len(missing)} of {len(defs)} definition(s) (line(s) {missing}) do not carry "
+                "it. The contract states this of THAT table — the same column text in another "
+                "table is a different subject"
+            )
+        return None
+    if kind == "fts_tokenizer_shared":
+        _, path, subject, refs, pinned = probe
+        text = read_source(path)
+        want = " ".join(pinned.split()).lower()
+        seen = {}
+        for table in (subject,) + tuple(refs):
+            defs = table_defs(text, table)
+            if not defs:
+                return (
+                    f"no `CREATE VIRTUAL TABLE {table} ( .. )` definition found in {path} — this "
+                    "clause COMPARES the property-FTS tokenizer against the body-FTS tokenizer, "
+                    "and one side of the comparison is missing, so it could not be evaluated"
+                )
+            values = sorted({v for _, body in defs for v in tokenize_clauses(body)})
+            if not values:
+                return (
+                    f"table `{table}` in {path} declares NO `tokenize=` clause in any of its "
+                    f"{len(defs)} definition(s). FTS5 then silently uses its OWN default "
+                    "(unicode61), which is not the engine default this clause names"
+                )
+            if len(values) > 1:
+                return (
+                    f"table `{table}` in {path} is created with CONFLICTING tokenizers {values} — "
+                    "the shipped tokenizer of that table is ambiguous, so the comparison this "
+                    "clause requires cannot be made"
+                )
+            seen[table] = values[0]
+        distinct = sorted(set(seen.values()))
+        if len(distinct) > 1:
+            return (
+                f"the property-FTS table `{subject}` does NOT share the body-FTS tokenizer: "
+                + ", ".join(f"{t} = '{v}'" for t, v in seen.items())
+                + ". The clause requires the ENGINE'S DEFAULT FTS5 TOKENIZER — the one body-FTS "
+                "uses — for the property FTS"
+            )
+        if distinct[0] != want:
+            return (
+                f"`{subject}` and the body-FTS table(s) {sorted(refs)} in {path} agree on "
+                f"tokenizer '{distinct[0]}', but the pinned engine default is '{want}'. The "
+                "registry was derived from a contract that names that default: a global "
+                "tokenizer change is a contract-relevant change, not a re-pin"
+            )
         return None
     # NOTE (fix-3): there is deliberately NO file-scoped negative probe kind. A
     # negative assertion scoped to a single file asserts only "nobody added a
     # module", which a growing crate falsifies by default — codex §9 round 3.
     # `absent_tree` below is the only negative kind, and `("absent", <file>, ..)`
     # now falls through to the unknown-kind die_env at the bottom of this fn.
-    if kind == "min":
-        _, path, pattern, least = probe
-        text = read_source(path)
-        found = len(re.findall(pattern, text))
-        if found < least:
-            return f"expected at least {least} match(es) of /{pattern}/ in {path}, found {found}"
-        return None
+    #
+    # NOTE (fix-4): and there is deliberately NO COUNT kind. `("min", path,
+    # regex, n)` counted file-wide matches, which binds a probe to a file rather
+    # than to the subject its clause is about — codex §9 round 4. It too falls
+    # through to the unknown-kind die_env.
     if kind == "absent_tree":
         _, tree, pattern, exts = probe
         scope = "every text file" if exts is None else "files matching " + "/".join(exts)
