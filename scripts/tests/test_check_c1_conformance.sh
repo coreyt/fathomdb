@@ -53,7 +53,19 @@
 # scoping every negative probe to the crate SOURCE TREE and by DELETING the
 # file-scoped negative probe kind outright.
 #
-# READ THE GATE'S "RESIDUAL SCOPE" HEADER SECTION BEFORE ADDING A ROUND 4, AND
+# FIX-4 ARMS (arms 12v–12ac, plus the `min`-probe-kind arms) are the recurrence
+# guard for codex §9 round 4 — a FOURTH distinct class again. Not a regex shape
+# (rounds 1–2) and not a file-vs-tree scope bug (round 3): SUBJECT BINDING. Every
+# probe below asserted that some text existed SOMEWHERE IN A FILE, while the
+# clause it implements is about a NAMED SUBJECT inside that file — a particular
+# table's tokenizer, a particular struct's field, a particular enum's variant, a
+# particular function's signature or body, a particular index's COLUMNS, a
+# particular test's DEFINITION (as opposed to a comment mentioning it). Each
+# fixture leaves a DECOY that satisfies the old probe, so each exited 0 while the
+# obligation was violated. Fixed by extracting the named subject structurally and
+# asserting inside it, and by DELETING the `min` count-probe kind outright.
+#
+# READ THE GATE'S "RESIDUAL SCOPE" HEADER SECTION BEFORE ADDING A ROUND 5, AND
 # CLASSIFY THE FINDING FIRST. The header states, in writing, the evasion classes a
 # static/lexical check CANNOT close (dynamically composed SQL, const/macro-
 # indirected identifiers, ATTACH aliases, normalising comparisons); arms for those
@@ -826,6 +838,326 @@ expect_rc 1 "DenseReadiness::Pending in a SIBLING MODULE HARD-fails the readines
 expect_out 'C1-Q4-DENSE-READINESS-TWO-MEMBERS' "the sibling-module Pending failure NAMES the clause id"
 expect_out 'readiness_ext\.rs' "the sibling-module Pending failure NAMES the offending FILE"
 
+# === Arm 12v–12ac (RED, fix-4): A PROBE MUST BE BOUND TO ITS SUBJECT =========
+# codex §9 round 4 [P2], plus the sweep for the same shape everywhere else. This
+# is a FOURTH distinct class, and again not a regex-shape or scope problem: each
+# probe below was pointed at a FILE rather than at THE THING THE CLAUSE IS ABOUT,
+# so an unrelated coincidence elsewhere in that same file satisfied it while the
+# named subject was broken.
+#
+# The shape, in one sentence: a `present`/`min` probe over a whole file asserts
+# "this text exists SOMEWHERE in this file", but every one of these clauses says
+# something about a NAMED subject — property_search_index's tokenizer,
+# ProjectionSpec's `roles` field, EngineError's variant, the apply verb's
+# signature, the index's COLUMNS, the named test's DEFINITION.
+#
+# EVERY FIXTURE BELOW LEAVES A DECOY (or an existing unrelated occurrence) that
+# satisfies the OLD probe, so every one of them exited 0 before this round while
+# the contract obligation was violated in the tree.
+
+# 12v — codex §9 round 4's own demonstration, verbatim: ONLY
+# `property_search_index`'s tokenizer is changed. The old probe counted file-wide
+# occurrences of the default tokenizer string (`min`, n=2) and the schema file
+# carries several for UNRELATED FTS tables (search_index, search_index_v2, the
+# edge index), so the count stayed satisfied by tables the clause is not about.
+TOKENIZER_ROOT="$(make_root property-fts-tokenizer-diverged)"
+python3 - "$TOKENIZER_ROOT/src/rust/crates/fathomdb-schema/src/lib.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+old = """CREATE VIRTUAL TABLE property_search_index USING fts5(
+                  attr_value,
+                  attr_name UNINDEXED,
+                  write_cursor UNINDEXED,
+                  tokenize = 'porter unicode61 remove_diacritics 2'
+              );"""
+new = """CREATE VIRTUAL TABLE property_search_index USING fts5(
+                  attr_value,
+                  attr_name UNINDEXED,
+                  write_cursor UNINDEXED,
+                  tokenize = 'unicode61'
+              );"""
+assert old in text
+open(p, "w", encoding="utf-8").write(text.replace(old, new, 1))
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$TOKENIZER_ROOT"
+expect_rc 1 "property-FTS diverging from the body-FTS tokenizer HARD-fails the default-tokenizer clause"
+expect_out 'C1-TE-DEFAULT-TOKENIZER' "the diverged-tokenizer failure NAMES the clause id"
+expect_out 'property_search_index' "the diverged-tokenizer failure NAMES the subject table"
+expect_out 'search_index_v2' "the diverged-tokenizer failure NAMES the body-FTS table it is compared against"
+expect_routes_to_steward "the diverged-tokenizer clause failure"
+
+# The same clause must ALSO fail when the property-FTS tokenizer is deleted
+# outright (FTS5 then silently falls back to its own `unicode61` default, which is
+# NOT the engine default the clause names).
+NO_TOKENIZER_ROOT="$(make_root property-fts-tokenizer-deleted)"
+python3 - "$NO_TOKENIZER_ROOT/src/rust/crates/fathomdb-schema/src/lib.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+old = """                  write_cursor UNINDEXED,
+                  tokenize = 'porter unicode61 remove_diacritics 2'
+              );",
+    },
+];"""
+new = """                  write_cursor UNINDEXED
+              );",
+    },
+];"""
+assert old in text
+open(p, "w", encoding="utf-8").write(text.replace(old, new, 1))
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$NO_TOKENIZER_ROOT"
+expect_rc 1 "DELETING the property-FTS tokenize clause HARD-fails (fts5 would default to unicode61)"
+expect_out 'C1-TE-DEFAULT-TOKENIZER' "the deleted-tokenizer failure NAMES the clause id"
+
+# 12w — fix-4 SWEEP: SEVEN clauses whose obligation is a FIELD OF A NAMED STRUCT
+# were probed as a bare `pub <field>: <ty>,` anywhere in engine lib.rs. This
+# fixture renames every one of them IN ITS OWN STRUCT and plants ONE decoy struct
+# carrying the seven original lines, so all seven old probes stay satisfied while
+# ProjectionSpec has no `roles`, ProjectionDelta no `built`/`deferred`/`unchanged`,
+# SearchHit no typed `id`, ProjectionVector no `embedder` and ProjectionFts no
+# `tokenizer`. The gate exited 0 on this tree.
+DECOY_FIELD_ROOT="$(make_root decoy-struct-fields)"
+python3 - "$DECOY_FIELD_ROOT/src/rust/crates/fathomdb-engine/src/lib.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+renames = [
+    ("    pub roles: BTreeSet<ProjectionRole>,", "    pub role_set: BTreeSet<ProjectionRole>,"),
+    ("    pub built: Vec<String>,", "    pub built_names: Vec<String>,"),
+    ("    pub deferred: Vec<String>,", "    pub deferred_names: Vec<String>,"),
+    ("    pub unchanged: bool,", "    pub no_op: bool,"),
+    ("    pub id: IdSpace,", "    pub hit_id: IdSpace,"),
+    ("    pub embedder: Option<String>,", "    pub embedder_name: Option<String>,"),
+    ("    pub tokenizer: Option<String>,", "    pub tokenizer_name: Option<String>,"),
+]
+for old, new in renames:
+    assert text.count(old) == 1, old
+    text = text.replace(old, new, 1)
+text += """
+/// Fixture only (fix-4 SWEEP). A decoy carrying the exact text each clause's
+/// `present` probe looked for — in a struct the contract never names. With this
+/// present, every one of those seven probes holds while the SUBJECT struct of
+/// each clause no longer carries the field at all.
+pub struct FixtureFieldDecoy {
+    pub roles: BTreeSet<ProjectionRole>,
+    pub built: Vec<String>,
+    pub deferred: Vec<String>,
+    pub unchanged: bool,
+    pub id: IdSpace,
+    pub embedder: Option<String>,
+    pub tokenizer: Option<String>,
+}
+"""
+open(p, "w", encoding="utf-8").write(text)
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$DECOY_FIELD_ROOT"
+expect_rc 1 "fields moved OUT of their named structs (with a decoy) HARD-fail every affected clause"
+for CLAUSE in C1-Q1-ROLE-SET C1-Q5-DERIVED-CACHE-IDEMPOTENT C1-Q4-CHEAP-SAME-TRANSACTION \
+              C1-Q6A-RANKABLE-GRACEFUL-DEFER C1-Q6B-ID-NON-NULL C1-TE-DEFAULT-EMBEDDER \
+              C1-TE-DEFAULT-TOKENIZER; do
+  expect_out "$CLAUSE" "the decoy-field failure NAMES $CLAUSE"
+done
+expect_routes_to_steward "the decoy-field clause failures"
+
+# 12x — fix-4 SWEEP: two clauses name an ERROR VARIANT of `enum EngineError`, but
+# were probed for `<Variant> {` anywhere in the file — which the Display impl and
+# the construction sites spell too. This fixture DELETES both variants from the
+# enum and leaves those uses in place.
+DECOY_VARIANT_ROOT="$(make_root variant-deleted-uses-kept)"
+python3 - "$DECOY_VARIANT_ROOT/src/rust/crates/fathomdb-engine/src/lib.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+for decl in ("""    NotLifecycleAddressable {
+        id_space: IdSpaceKind,
+    },
+""", """    ProjectionDestructive {
+        name: String,
+        delta: String,
+    },
+"""):
+    assert text.count(decl) == 1, decl
+    text = text.replace(decl, "", 1)
+open(p, "w", encoding="utf-8").write(text)
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$DECOY_VARIANT_ROOT"
+expect_rc 1 "deleting an error VARIANT while its uses remain HARD-fails the clauses that name it"
+expect_out 'C1-Q3-DESTRUCTIVE-DELTA' "the deleted-variant failure NAMES the destructive-delta clause"
+expect_out 'C1-Q6B-H-TERMINAL-NOT-LIFECYCLE-ADDRESSABLE' \
+  "the deleted-variant failure NAMES the h-terminal clause"
+
+# 12y — fix-4 SWEEP: the COHESION SEAM clause says the engine verb takes the
+# specs AND an explicit drop list and returns a delta. It was three INDEPENDENT
+# file-wide probes, so they need not describe the same function. This fixture
+# rewrites `configure_projections`'s actual signature and plants a decoy verb
+# carrying the three probed fragments.
+DECOY_SIG_ROOT="$(make_root apply-verb-signature-rewritten)"
+python3 - "$DECOY_SIG_ROOT/src/rust/crates/fathomdb-engine/src/lib.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+old = """    pub fn configure_projections(
+        &self,
+        specs: &[ProjectionSpec],
+        drop: &[String],
+    ) -> Result<ProjectionDelta, EngineError> {"""
+new = """    pub fn configure_projections(
+        &self,
+        specs: &[ProjectionSpec],
+    ) -> Result<ProjectionDelta, ()> {
+        let drop: &[String] = &[];"""
+assert text.count(old) == 1
+text = text.replace(old, new, 1)
+text += """
+/// Fixture only (fix-4 SWEEP). A decoy carrying the two signature fragments and
+/// the return type the clause's probes looked for, on a function that is NOT the
+/// projection apply verb.
+pub fn fixture_decoy_verb(
+    specs: &[ProjectionSpec],
+    drop: &[String],
+) -> Result<ProjectionDelta, EngineError> {
+    let _ = (specs, drop);
+    Ok(ProjectionDelta::default())
+}
+"""
+open(p, "w", encoding="utf-8").write(text)
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$DECOY_SIG_ROOT"
+expect_rc 1 "an apply verb that no longer takes an explicit drop list HARD-fails the seam clause"
+expect_out 'C1-SEAM-ENGINE-BUILD-DROP' "the rewritten-signature failure NAMES the seam clause id"
+expect_out 'configure_projections' "the rewritten-signature failure NAMES the subject function"
+
+# 12z — fix-4 SWEEP: two clauses are about what happens INSIDE the apply verb —
+# the cheap tier is built in the SAME TRANSACTION as the apply, and the apply
+# WAKES the dispatcher rather than blocking on embeds. Both were probed as a
+# fragment anywhere in the file. This fixture takes the `&tx` apply out of the
+# transaction and removes the wake, leaving a decoy call and the three unrelated
+# `notify_new_work()` call sites the file already carries.
+OUTSIDE_VERB_ROOT="$(make_root apply-verb-body-gutted)"
+python3 - "$OUTSIDE_VERB_ROOT/src/rust/crates/fathomdb-engine/src/lib.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+old_apply = "            let applied = apply_projection_config(&tx, specs, drop, dense_arm_live)?;"
+new_apply = "            let applied = apply_projection_config(&connection, specs, drop, dense_arm_live)?;"
+assert text.count(old_apply) == 1
+text = text.replace(old_apply, new_apply, 1)
+old_wake = """        if enqueued_backfill {
+            self.projection_runtime.notify_new_work();
+        }"""
+new_wake = """        if enqueued_backfill {
+            let _ = enqueued_backfill;
+        }"""
+assert text.count(old_wake) == 1
+text = text.replace(old_wake, new_wake, 1)
+text += """
+/// Fixture only (fix-4 SWEEP). A decoy carrying the exact call text the
+/// same-transaction clause's probe looked for, OUTSIDE the apply verb.
+pub fn fixture_decoy_apply(tx: &Transaction<'_>) {
+    let _ = apply_projection_config(&tx, &[], &[], true);
+}
+"""
+open(p, "w", encoding="utf-8").write(text)
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$OUTSIDE_VERB_ROOT"
+expect_rc 1 "gutting the apply verb's body HARD-fails the same-transaction and no-block clauses"
+expect_out 'C1-Q4-CHEAP-SAME-TRANSACTION' "the gutted-verb failure NAMES the same-transaction clause"
+expect_out 'C1-AA-NO-BLOCK-ON-EMBEDDING' "the gutted-verb failure NAMES the no-block-on-embedding clause"
+
+# 12aa — fix-4 SWEEP: the BEHAVIOURAL clauses assert that the named test/function
+# still EXISTS. `fn <name>(` matched a COMMENT just as happily as a definition, so
+# deleting the proof and leaving a reference to it behind exited 0.
+COMMENT_ONLY_ROOT="$(make_root definition-replaced-by-comment)"
+python3 - "$COMMENT_ONLY_ROOT/src/rust/crates/fathomdb-engine/src/lib.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+assert text.count("fn commit_projection_outcomes(") == 1
+text = text.replace("fn commit_projection_outcomes(", "fn commit_outcomes_v2(", 1)
+text += """
+// Fixture only (fix-4 SWEEP). The definition is gone; only this reference to
+// `fn commit_projection_outcomes(` remains, and the probe could not tell the
+// difference.
+"""
+open(p, "w", encoding="utf-8").write(text)
+PY
+python3 - "$COMMENT_ONLY_ROOT/src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+assert text.count("fn boot_rederive_converges_after_simulated_crash()") == 1
+text = text.replace("fn boot_rederive_converges_after_simulated_crash()",
+                    "fn boot_rederive_deleted_by_fixture()", 1)
+text += """
+// Fixture only (fix-4 SWEEP). The proof is deleted; only this doc reference to
+// fn boot_rederive_converges_after_simulated_crash() survives.
+"""
+open(p, "w", encoding="utf-8").write(text)
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$COMMENT_ONLY_ROOT"
+expect_rc 1 "a definition deleted but MENTIONED IN A COMMENT HARD-fails the clauses that name it"
+expect_out 'C1-AA-ATOMIC-FLIP' "the comment-only failure NAMES the atomic-flip clause"
+expect_out 'C1-AA-CRASH-HEAL-BOOT-REDERIVE' "the comment-only failure NAMES the crash-heal clause"
+
+# 12ab — fix-4 SWEEP: two SQL probes named a thing but not the OBLIGATION about
+# it. The composite index was probed by NAME only, so re-creating it on a single
+# column (the exact thing the cheap filterable tier cannot use) passed; and
+# `fts_tokenizer TEXT,` was probed file-wide, so moving the recording column out
+# of the projection registry passed as long as any table declared that column.
+SQL_SUBJECT_ROOT="$(make_root sql-subject-swapped)"
+python3 - "$SQL_SUBJECT_ROOT/src/rust/crates/fathomdb-schema/src/lib.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+old_idx = """CREATE INDEX canonical_attributes_name_value_idx
+                  ON canonical_attributes(attr_name, attr_value);"""
+new_idx = """CREATE INDEX canonical_attributes_name_value_idx
+                  ON canonical_attributes(attr_value);"""
+assert text.count(old_idx) == 1
+text = text.replace(old_idx, new_idx, 1)
+assert text.count("fts_tokenizer TEXT,") == 1
+text = text.replace("fts_tokenizer TEXT,", "fts_tokenizer_name TEXT,", 1)
+text += """
+// Fixture only (fix-4 SWEEP). A decoy carrying the exact column text the
+// deferred-tokenizer clause's probe looked for, in a table that is NOT the
+// projection registry.
+const FIXTURE_DECOY_DDL: &str = "CREATE TABLE fixture_notes(
+                  fts_tokenizer TEXT,
+                  note TEXT
+              );";
+"""
+open(p, "w", encoding="utf-8").write(text)
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$SQL_SUBJECT_ROOT"
+expect_rc 1 "an index rebuilt on the wrong columns / a column moved to another table HARD-fails"
+expect_out 'C1-Q2-ENGINE-EAV-PROPERTY-FTS' "the swapped-SQL-subject failure NAMES the EAV clause"
+expect_out 'C1-TE-CUSTOM-TOKENIZER-DEFERRED' \
+  "the swapped-SQL-subject failure NAMES the deferred-tokenizer clause"
+
+# 12ac — fix-4 SWEEP: the landing-slot clause requires the 0.8.20 plan to CARRY
+# the four C-1 co-land requirement ROWS. `\| R-20-PR \|` matched any mention
+# between two pipes, including a sentence in running prose.
+PLAN_MENTION_ROOT="$(make_root plan-row-demoted-to-mention)"
+python3 - "$PLAN_MENTION_ROOT/dev/plans/plan-0.8.20.md" <<'PY'
+import re
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+rows = [line for line in text.splitlines() if line.startswith("| R-20-PR |")]
+assert len(rows) == 1, rows
+text = text.replace(
+    rows[0],
+    "Withdrawn from the requirement table — the old | R-20-PR | row is archived.",
+    1,
+)
+open(p, "w", encoding="utf-8").write(text)
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$PLAN_MENTION_ROOT"
+expect_rc 1 "a requirement ROW demoted to a prose MENTION HARD-fails the landing-slot clause"
+expect_out 'C1-LAND-0820-SLOT' "the demoted-row failure NAMES the landing-slot clause id"
+
 # === Arm 13 (RED): a source file an assertion reads is MISSING ===============
 # TC-37 evaporation path #4: the assertion could not be EVALUATED. That is
 # neither a pass (0) nor a clause failure (1) — the gate computed no verdict.
@@ -906,6 +1238,25 @@ if grep -nE 'kind == "absent"' "$REPO_ROOT/scripts/check-c1-conformance.sh" >/de
   fail "the gate still IMPLEMENTS the file-scoped \`absent\` probe kind — removing the kind is what prevents the fix-3 class from recurring"
 else
   pass "the file-scoped \`absent\` probe kind is gone from the gate entirely"
+fi
+
+# THE SAME STRUCTURAL GUARD FOR THE fix-4 CLASS. `min` was a COUNT of file-wide
+# matches — the weakest possible binding between a probe and its subject, and
+# exactly what let codex §9 round 4 change `property_search_index`'s tokenizer
+# while UNRELATED FTS tables kept the count satisfied. Widening one probe fixes
+# today's hole; deleting the KIND is what stops a future editor reaching for a
+# count again. A count has no legitimate remaining use in this gate: every clause
+# is about a NAMED subject, so the honest probe is a structural extraction bound
+# to that subject (or, failing that, a regex tight enough to name it uniquely).
+if grep -nE '^\s*\("min",' "$REPO_ROOT/scripts/check-c1-conformance.sh" >/dev/null; then
+  fail "the gate still declares (\"min\", <file>, <regex>, n) COUNT probes; a count is not a binding to a subject (fix-4)"
+else
+  pass "no file-wide COUNT (\`min\`) probe remains: no clause is asserted by counting matches"
+fi
+if grep -nE 'kind == "min"' "$REPO_ROOT/scripts/check-c1-conformance.sh" >/dev/null; then
+  fail "the gate still IMPLEMENTS the \`min\` COUNT probe kind — removing the kind is what prevents the fix-4 class from recurring"
+else
+  pass "the \`min\` COUNT probe kind is gone from the gate entirely"
 fi
 
 # ================ Arm 15: preflight.sh --landing wiring (PREVENT) ===========
