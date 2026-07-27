@@ -95,6 +95,7 @@ refresh in the closing commit when you touch a doc).
 | `dev/design/orchestration.md` | Cross-release runbook | binds every slice | 2026-06-26 |
 | `dev/agent-harness-bootstrap-prompt.md` | Method on-ramp (portable distillation) | method on-ramp (cross-release) | 2026-06-26 |
 | `scripts/preflight.sh` | Orchestrator preflight gate | binds every spawn | 2026-06-26 |
+| `scripts/check-c1-conformance.sh` · `scripts/c1-conformance-pin.json` | RUBRIC-H7 `can-i-deploy` gate (R-20-H7) — pins the ratified `OPP-12-C1-converged-contract.md` bytes and asserts its 26 CHECKABLE clauses against as-built code; the pin carries the full reviewable clause registry (26 CHECKABLE / 12 CROSS-REPO / 7 PROSE) | 0.8.20 Slice 30 (R-20-H7); publish precondition | 2026-07-27 |
 | `dev/design/bindings.md` | SDK bindings spec; §1 governed SDK surface invariant (allowlist + parity, AC-074); §10 recovery-unreachability... | 25 rewrote §1/§13/§14; §10 preserved | 2026-06-04 |
 | `dev/design/0.8.0-agent-memory-fit.md` | Agent-memory gap ladder (G0–G12) + §7 read-verb HITL questions | scope source for 0.8.0 | 2026-06-02 |
 | `dev/design/0.8.0-v05-feature-triage.md` | v0.5.x feature triage (ship/defer/drop) | scope source of truth | 2026-06-02 |
