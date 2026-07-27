@@ -1,0 +1,3587 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: high
+reasoning summaries: none
+session id: 019fa430-9624-72d1-8f5f-bccbf4221ab9
+--------
+user
+changes against '23a436dcc7321eab86c622c8b403682caf2dfe2c'
+exec
+/bin/bash -lc "ls && cat MEMORY.md && find . -maxdepth 2 -name 'feedback_*.md' -print" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ exited 1 in 0ms:
+AGENTS.md
+CHANGELOG.md
+Cargo.lock
+Cargo.toml
+LICENSE
+README.md
+deny.toml
+dev
+docs
+experiments
+lychee.toml
+mkdocs.yml
+node_modules
+package-lock.json
+package.json
+rust-toolchain.toml
+rustfmt.toml
+scripts
+src
+target
+test
+tests
+tools
+cat: MEMORY.md: No such file or directory
+
+exec
+/bin/bash -lc "find . -name 'feedback_*.md' -print | sort | xargs -r -n1 sh -c 'echo --- "'$0; sed -n "1,200p" "$0"'"'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+exec
+/bin/bash -lc 'git status --short && git diff --stat 23a436dcc7321eab86c622c8b403682caf2dfe2c && git diff --name-only 23a436dcc7321eab86c622c8b403682caf2dfe2c' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+?? dev/plans/runs/codex/0.8.20/slice-30-20260727T152753Z.log
+ .github/workflows/ci.yml                         |  31 +
+ dev/DOC-INDEX.md                                 |   1 +
+ dev/plans/runs/0.8.20-slice-30-output.json       | 190 ++++++
+ scripts/agent-test.sh                            |   9 +
+ scripts/c1-conformance-pin.json                  | 426 +++++++++++++
+ scripts/check-c1-conformance.sh                  | 744 +++++++++++++++++++++++
+ scripts/preflight.sh                             |  42 ++
+ scripts/tests/lib/c1-conformance-fixture.sh      | 102 ++++
+ scripts/tests/test_check_board_currency.sh       |   3 +
+ scripts/tests/test_check_c1_conformance.sh       | 606 ++++++++++++++++++
+ scripts/tests/test_check_governed_surface_pin.sh |   9 +
+ scripts/tests/test_check_ledgers.sh              |   3 +
+ scripts/tests/test_preflight_landing.sh          |   3 +
+ 13 files changed, 2169 insertions(+)
+.github/workflows/ci.yml
+dev/DOC-INDEX.md
+dev/plans/runs/0.8.20-slice-30-output.json
+scripts/agent-test.sh
+scripts/c1-conformance-pin.json
+scripts/check-c1-conformance.sh
+scripts/preflight.sh
+scripts/tests/lib/c1-conformance-fixture.sh
+scripts/tests/test_check_board_currency.sh
+scripts/tests/test_check_c1_conformance.sh
+scripts/tests/test_check_governed_surface_pin.sh
+scripts/tests/test_check_ledgers.sh
+scripts/tests/test_preflight_landing.sh
+
+exec
+/bin/bash -lc 'git diff --find-renames --find-copies 23a436dcc7321eab86c622c8b403682caf2dfe2c -- .github/workflows/ci.yml scripts/agent-test.sh scripts/preflight.sh dev/DOC-INDEX.md' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 123efc69..ef912681 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -484,6 +484,37 @@ jobs:
+       - name: Governed-surface pin vs the AC-079 pre-sign (DOC-HYGIENE-2 T1e)
+         run: bash scripts/check-governed-surface-pin.sh
+ 
++  # R-20-H7 — the always-on RUBRIC-H7 `can-i-deploy` contract-conformance
++  # backstop. `preflight.sh --landing` is the PREVENT gate at land time; this job
++  # is the DETECT gate for whatever slips it. Reuses
++  # scripts/check-c1-conformance.sh — the SAME script preflight calls — so the
++  # two homes cannot diverge (see that script's header for the predicate, for the
++  # five TC-37 evaporation paths, and for the explicit statement of what this
++  # STATIC STRUCTURAL check does NOT prove).
++  #
++  # Deliberately carries NO `if:` condition and NO `needs:`, and is NOT on the
++  # docs_only fast path. That combination is the whole point of the job. The
++  # subject here straddles both fast paths: the ratified C-1 contract is a DESIGN
++  # DOC (so a code-only push would skip a docs_only-gated job) while the code it
++  # governs is SOURCE (so a docs-only push takes the fast path that skips the
++  # heavy verify job). Either gate would make this job absent on exactly the
++  # pushes that matter — a rename in src/ that breaks a contract obligation, or
++  # an edit to the contract that moves it out from under its clause registry.
++  #
++  # An absent-or-failing gate HOLDS the 0.8.20 ↔ Memex breaking pair
++  # (plan-0.8.20.md §3), so this job is a publish precondition, not decoration.
++  # Default (depth-1) checkout is sufficient: the predicate reads working-tree
++  # files only and walks no history.
++  c1-contract-conformance:
++    runs-on: ubuntu-latest
++    timeout-minutes: 5
++    steps:
++      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
++      - name: As-built code still satisfies the ratified OPP-12 C-1 contract (R-20-H7)
++        run: bash scripts/check-c1-conformance.sh
++      - name: Recurrence guard for the gate itself (fixture arms)
++        run: bash scripts/tests/test_check_c1_conformance.sh
++
+   # DOC-HYGIENE-2 T2a — the always-on single-writer release-state backstop.
+   #
+   # Deliberately carries NO `if:` and NO `needs:`, for the same reason as
+diff --git a/dev/DOC-INDEX.md b/dev/DOC-INDEX.md
+index 4c70df46..fe57e010 100644
+--- a/dev/DOC-INDEX.md
++++ b/dev/DOC-INDEX.md
+@@ -95,6 +95,7 @@ refresh in the closing commit when you touch a doc).
+ | `dev/design/orchestration.md` | Cross-release runbook | binds every slice | 2026-06-26 |
+ | `dev/agent-harness-bootstrap-prompt.md` | Method on-ramp (portable distillation) | method on-ramp (cross-release) | 2026-06-26 |
+ | `scripts/preflight.sh` | Orchestrator preflight gate | binds every spawn | 2026-06-26 |
++| `scripts/check-c1-conformance.sh` · `scripts/c1-conformance-pin.json` | RUBRIC-H7 `can-i-deploy` gate (R-20-H7) — pins the ratified `OPP-12-C1-converged-contract.md` bytes and asserts its 26 CHECKABLE clauses against as-built code; the pin carries the full reviewable clause registry (26 CHECKABLE / 12 CROSS-REPO / 7 PROSE) | 0.8.20 Slice 30 (R-20-H7); publish precondition | 2026-07-27 |
+ | `dev/design/bindings.md` | SDK bindings spec; §1 governed SDK surface invariant (allowlist + parity, AC-074); §10 recovery-unreachability... | 25 rewrote §1/§13/§14; §10 preserved | 2026-06-04 |
+ | `dev/design/0.8.0-agent-memory-fit.md` | Agent-memory gap ladder (G0–G12) + §7 read-verb HITL questions | scope source for 0.8.0 | 2026-06-02 |
+ | `dev/design/0.8.0-v05-feature-triage.md` | v0.5.x feature triage (ship/defer/drop) | scope source of truth | 2026-06-02 |
+diff --git a/scripts/agent-test.sh b/scripts/agent-test.sh
+index ad615245..989b55f4 100755
+--- a/scripts/agent-test.sh
++++ b/scripts/agent-test.sh
+@@ -39,6 +39,15 @@ run_capped test-check-ledgers bash scripts/tests/test_check_ledgers.sh
+ # src/conformance/governed-surface-allowlist.json is never written.
+ run_capped test-check-governed-surface-pin bash scripts/tests/test_check_governed_surface_pin.sh
+ 
++# Scripts (bash): R-20-H7 — the shared scripts/check-c1-conformance.sh predicate
++# (contract content pin + clause-registry bijection + pinned counts + the 26
++# CHECKABLE clause assertions against as-built code), its --landing wiring in
++# preflight.sh, and a static assertion that its CI job is always-on. Fixtures are
++# COPIES of the contract, of the pin and of the source root under mktemp -d (plus
++# throwaway git repos for the preflight arms); neither the ratified contract nor
++# the real src/ tree is ever written.
++run_capped test-check-c1-conformance bash scripts/tests/test_check_c1_conformance.sh
++
+ # Scripts (bash): sibling-package co-tagging assert (AC-052). Offline via
+ # python3 -m http.server fixture; never hits crates.io.
+ run_capped test-assert-co-tagging bash scripts/tests/test_assert_co_tagging.sh
+diff --git a/scripts/preflight.sh b/scripts/preflight.sh
+index de6e1519..6d948b6d 100755
+--- a/scripts/preflight.sh
++++ b/scripts/preflight.sh
+@@ -273,6 +273,48 @@ if [ "$LANDING" -eq 1 ]; then
+   fi
+ fi
+ 
++# --- 10. C-1 contract-conformance gate (R-20-H7, RUBRIC-H7 can-i-deploy) --------
++# Refuse a land whose code no longer satisfies the ratified cross-repo design
++# contract dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md.
++# R-20-H7 is a PUBLISH PRECONDITION: "Gate exists and is GREEN. An
++# absent-or-failing gate HOLDS the breaking pair" (plan-0.8.20.md §3,
++# HITL-directed 2026-07-10).
++#
++# The predicate lives in scripts/check-c1-conformance.sh (see that file's header
++# for the full statement — and, just as importantly, for what it deliberately
++# does NOT claim to check) so preflight and the always-on CI job share ONE
++# implementation and cannot diverge, exactly as §7/§8/§9 do. --landing-only,
++# mirroring their structure: the CI job — deliberately NOT docs_only-gated —
++# covers every non-landing push.
++#
++# Tripping this is CORRECT BEHAVIOUR, not a bug. It means either as-built code
++# drifted from a RATIFIED cross-repo contract, or that contract moved without
++# its clause registry being re-derived — and both must route to the Steward
++# rather than land.
++if [ "$LANDING" -eq 1 ]; then
++  C1_CHECK_OUT="$(bash "$SELF_DIR/check-c1-conformance.sh" 2>&1)" || C1_CHECK_RC=$?
++  C1_CHECK_RC="${C1_CHECK_RC:-0}"
++  if [ "$C1_CHECK_RC" -ne 0 ]; then
++    C1_SAW_FAIL=0
++    while IFS= read -r line; do
++      case "$line" in
++        FAIL*) hard "c1-contract-conformance: $line"; C1_SAW_FAIL=1 ;;
++        *)     info "c1-contract-conformance: $line" ;;
++      esac
++    done <<<"$C1_CHECK_OUT"
++    # Anti-fail-open, as in §8/§9: a non-zero rc with no FAIL line means the
++    # checker itself could not run (exit 2 = python3 absent, a missing contract,
++    # a malformed pin, an unreadable source file, or an evaporated check set).
++    # That must still block the land — a gate that could not see its subject is
++    # exactly the case where landing on its silence is worst.
++    if [ "$C1_SAW_FAIL" -eq 0 ]; then
++      hard "c1-contract-conformance: check-c1-conformance.sh exited $C1_CHECK_RC without reporting a specific defect — refusing to certify this tree for landing"
++    fi
++  else
++    ok "c1-contract-conformance: as-built code still satisfies the pinned OPP-12 C-1 contract (R-20-H7)"
++  fi
++fi
++
+ # --- Summary (JSON, last line) ---------------------------------------------------
+ json_arr() { local out="" x; for x in "$@"; do out="${out:+$out,}\"$(printf '%s' "$x" | sed 's/\\/\\\\/g; s/"/\\"/g')\""; done; printf '[%s]' "$out"; }
+ 
+
+exec
+/bin/bash -lc 'git diff 23a436dcc7321eab86c622c8b403682caf2dfe2c -- scripts/check-c1-conformance.sh' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+diff --git a/scripts/check-c1-conformance.sh b/scripts/check-c1-conformance.sh
+new file mode 100755
+index 00000000..4960ac25
+--- /dev/null
++++ b/scripts/check-c1-conformance.sh
+@@ -0,0 +1,744 @@
++#!/usr/bin/env bash
++# check-c1-conformance.sh — the RUBRIC-H7 `can-i-deploy` contract-conformance
++# gate (R-20-H7, plan-0.8.20.md §3).
++#
++# Shared by two callers, exactly like its siblings scripts/check-ledgers.sh,
++# scripts/check-board-currency.sh and scripts/check-governed-surface-pin.sh:
++#   * scripts/preflight.sh --landing              (PREVENT, land-time gate)
++#   * .github/workflows/ci.yml c1-contract-conformance job
++#                                                 (DETECT, always-on backstop)
++# Reuse, not reimplementation: both callers invoke THIS script so the predicate
++# cannot diverge between the two homes.
++#
++# WHAT THIS ENFORCES
++#   R-20-H7: "a Pact-style can-i-deploy mechanical contract-conformance check:
++#   as-built code still satisfies the ratified
++#   dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md at the
++#   co-land. NOT humans re-reading prose." Acceptance: "Gate exists and is GREEN.
++#   An absent-or-failing gate HOLDS the breaking pair." It is a PUBLISH
++#   PRECONDITION for the 0.8.20 ↔ Memex 0.5.x-successor breaking pair.
++#
++#   Every clause of that contract was read and classified exactly once into
++#   CHECKABLE / CROSS-REPO / PROSE, and the whole classification is recorded, in
++#   reviewable form, in scripts/c1-conformance-pin.json. This gate then does two
++#   different jobs, and the difference matters:
++#     1. it pins the CONTRACT'S BYTES, so the document cannot move underneath a
++#        registry derived from it; and
++#     2. it evaluates the CHECKABLE clauses against as-built code.
++#
++# ================= WHAT THIS GATE DOES *NOT* DO (read this) ==================
++# This is a STATIC STRUCTURAL conformance check. It asserts:
++#   * the PRESENCE of the symbols, tables, error variants and wiring the
++#     contract names;
++#   * the ABSENCE of the negative space the contract names (its Q6(b) amendment
++#     asserts, as a matter of fact, that no `EntityTypeSpec` and no `id_prefix`
++#     exists anywhere under src/ — that is a perfect falsifiable assertion and
++#     it is checked as one); and
++#   * for BEHAVIOURAL obligations, that THE NAMED TEST WHICH PROVES THAT
++#     BEHAVIOUR STILL EXISTS IN THE TREE.
++#
++# It does NOT re-execute those behavioural suites, and it therefore does NOT
++# prove the behaviour is still correct — only that the proof has not been
++# deleted or renamed away. `cargo test --workspace` is what proves the
++# behaviour; this gate is what notices when the proof disappears or when the
++# contract's structural obligations are no longer met.
++#
++# So: it CATCHES a symbol/table/variant that was renamed or removed, a
++# forbidden symbol that reappeared, a named test that was deleted, and any edit
++# to the ratified contract. It DOES NOT catch a behavioural regression inside a
++# still-present, still-named test, nor anything the Memex repo does. Claiming
++# otherwise would be a false assurance — which is the TC-37 failure class in a
++# different costume.
++#
++# ============================ THE AMENDMENT TRAP =============================
++# The contract was AMENDED at efa8d584 ("amend C-1 contract Q6(b) with the TC-11
++# cancellation — unblocks the H7 gate"). Before that amendment, clause Q6(b)
++# mandated minting an anonymous surrogate `logical_id` — behaviour the ratified
++# TC-11 pin A FORBIDS ever implementing, and which as-built code does not
++# implement. A gate authored from the un-amended text would have been
++# PERMANENTLY RED and would have held the breaking-pair publish forever.
++#
++# That is precisely why this gate pins the contract's BYTES. The registry below
++# describes ONE exact revision of the document. If the document moves, the
++# honest answer is not "recompute the hash" — it is RE-DERIVE the clause
++# registry from the new text, re-classify every clause, and re-pin under review.
++#
++# PREDICATE — all four must hold:
++#   (a) CONTRACT PIN. sha256 AND git blob sha1 of the contract file's raw bytes
++#       equal the pin. Both forms are recorded so a reviewer can reproduce the
++#       pin either way (`git rev-parse <commit>:<path>` gives the blob sha1
++#       directly). Divergence ⇒ exit 1.
++#   (b) CLAUSE-REGISTRY INTEGRITY. The pin records every clause id with its
++#       category. This script's implemented assertions and the pin's CHECKABLE
++#       set must match IN BOTH DIRECTIONS: a pin id with no implemented
++#       assertion (an ORPHAN — the pin over-states what is verified) and an
++#       implemented assertion with no pin id (UNREGISTERED — the pinned check
++#       set has shrunk) are both a MALFORMED PIN, exit 2.
++#   (c) PINNED COUNTS. Per-category counts AND the grand total are pinned and
++#       asserted SEPARATELY from the member lists, so an internally inconsistent
++#       (botched) re-pin is caught rather than trusted. EVERY count must be
++#       PRESENT and an integer: a missing or mistyped count is a MALFORMED PIN
++#       (exit 2), never a skipped check. This is the exact hole
++#       check-governed-surface-pin.sh had to close — an absent count read back
++#       as None and silently disabled its own check, so a re-pin that DELETED a
++#       count could buy a green. bool is excluded explicitly because
++#       isinstance(True, int) is True in Python.
++#   (d) CLAUSE ASSERTIONS. Each CHECKABLE clause's assertion is evaluated
++#       against as-built code under --root. Any failure ⇒ exit 1, naming the
++#       clause id, quoting the contract obligation, and citing the evidence.
++#
++# ============ VACUOUS-PASS GUARD — TC-37, five evaporation paths =============
++# A gate that cannot see its subject must NEVER report green. ALL FIVE of these
++# exit 2, never 0 and never 1:
++#   1. python3 is absent.
++#   2. the contract file is missing / unreadable.
++#   3. the pin file is missing / unreadable / unparseable / MALFORMED.
++#   4. a source file (or source tree) a clause's assertion must read is missing
++#      or unreadable — the assertion could not be EVALUATED, which is neither a
++#      pass nor a clause failure.
++#   5. the executed-assertion count is less than the pinned CHECKABLE count —
++#      the check set evaporated.
++#
++# Exit codes: 0 = as-built code conforms to the pinned contract;
++#             1 = a REAL DIVERGENCE — the contract moved, or a clause failed.
++#                 Route to the Steward / HITL;
++#             2 = the gate could not run, or its pin is untrustworthy. This is
++#                 deliberately NOT exit 1: exit 1 says "conformance broke, take
++#                 it to the Steward", whereas exit 2 says "this gate has no
++#                 trustworthy verdict at all".
++#
++# Usage:
++#   scripts/check-c1-conformance.sh [--contract <path>] [--pin <path>]
++#                                   [--root <dir>] [--list-sources] [--help]
++#
++# --contract/--pin/--root exist so the test fixtures can point at COPIES under
++# mktemp -d; the real contract and the real src/ tree are NEVER written by the
++# tests (mutating them is the exact thing this gate exists to catch). Both
++# callers invoke the script with no arguments. --list-sources prints every
++# root-relative path the assertions read, so the fixture roots are built from
++# the gate's own manifest and cannot silently go stale.
++#
++# Requires python3. If it is absent this script exits 2 (env error) LOUDLY
++# rather than skipping — a skip here would be the TC-37 hole.
++set -euo pipefail
++
++SELF="$(basename "${BASH_SOURCE[0]}")"
++
++usage() {
++  cat <<EOF
++Usage: scripts/$SELF [--contract <path>] [--pin <path>] [--root <dir>]
++
++The RUBRIC-H7 \`can-i-deploy\` gate (R-20-H7): fails when as-built code no longer
++satisfies the ratified OPP-12 C-1 converged contract, or when that contract has
++moved relative to the clause registry pinned in scripts/c1-conformance-pin.json.
++See the header of this script for the full predicate, for what this gate does
++NOT check, and for why re-pinning without re-deriving the registry is forbidden.
++
++  --contract <path>  the ratified contract to check against
++                     (default: dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md)
++  --pin <path>       the clause-registry pin
++                     (default: scripts/c1-conformance-pin.json)
++  --root <dir>       the source tree the clause assertions read
++                     (default: the repository root)
++  --list-sources     print every path the assertions read, as
++                     "file<TAB>path" / "tree<TAB>path" lines, and exit
++  --help             show this text
++
++Exit codes: 0 = conforms; 1 = divergence (contract moved, or a clause failed);
++            2 = the gate could not run, or the pin is untrustworthy.
++EOF
++}
++
++CONTRACT="dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md"
++PIN="scripts/c1-conformance-pin.json"
++ROOT=""
++LIST_SOURCES=0
++
++while [ $# -gt 0 ]; do
++  case "$1" in
++    --contract)     CONTRACT="${2:?--contract needs a path}"; shift 2 ;;
++    --pin)          PIN="${2:?--pin needs a path}"; shift 2 ;;
++    --root)         ROOT="${2:?--root needs a directory}"; shift 2 ;;
++    --list-sources) LIST_SOURCES=1; shift ;;
++    -h|--help)      usage; exit 0 ;;
++    *) printf '%s: unknown arg %q\n' "${SELF%.sh}" "$1" >&2; usage >&2; exit 2 ;;
++  esac
++done
++
++# Both callers run from anywhere in the repo; defaults are repo-relative. An
++# absolute --contract/--pin/--root (what the fixtures pass) is unaffected by the
++# cd.
++if TOPLEVEL="$(git rev-parse --show-toplevel 2>/dev/null)"; then
++  cd "$TOPLEVEL"
++fi
++ROOT="${ROOT:-${TOPLEVEL:-.}}"
++
++if ! command -v python3 >/dev/null 2>&1; then
++  printf 'check-c1-conformance: python3 is required to parse the pin, hash the contract and evaluate the clause assertions, and is not on PATH — refusing to report a pass it did not verify (TC-37 evaporation path #1)\n' >&2
++  exit 2
++fi
++
++set +e
++python3 - "$CONTRACT" "$PIN" "$ROOT" "$LIST_SOURCES" >&2 <<'PY'
++import hashlib
++import json
++import os
++import re
++import sys
++
++CONTRACT, PIN, ROOT, LIST_SOURCES = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4] == "1"
++
++# ---------------------------------------------------------------------------
++# Root-relative paths the assertions read. Everything the gate opens is named
++# here, and --list-sources prints exactly this, so a fixture root can be built
++# from the gate's own manifest rather than from a hand-maintained copy that
++# silently rots (a stale fixture root would turn every source arm into a TC-37
++# path-#4 evaporation and stop testing what it claims).
++# ---------------------------------------------------------------------------
++ENG = "src/rust/crates/fathomdb-engine/src/lib.rs"
++SCH = "src/rust/crates/fathomdb-schema/src/lib.rs"
++EMB = "src/rust/crates/fathomdb-embedder/src/candle_bge.rs"
++T15 = "src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs"
++T20 = "src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs"
++T25 = "src/rust/crates/fathomdb-engine/tests/slice25_registration_identity_inert.rs"
++PLAN = "dev/plans/plan-0.8.20.md"
++SRC_TREE = "src"
++
++# Directories never worth walking (and, for node_modules/target, never OURS).
++SKIP_DIRS = {
++    ".git", "node_modules", "target", "__pycache__", ".venv", "venv",
++    "dist", "build", ".pytest_cache", ".mypy_cache", ".ruff_cache",
++}
++
++# ---------------------------------------------------------------------------
++# THE IMPLEMENTED ASSERTIONS. One entry per CHECKABLE clause id in the pin; the
++# bijection between this dict's keys and the pin's CHECKABLE ids is predicate
++# (b) and is enforced in BOTH directions below.
++#
++# Probe kinds:
++#   ("present", path, regex)          regex must match at least once in path
++#   ("absent",  path, regex)          regex must not match anywhere in path
++#   ("min",     path, regex, n)       regex must match at least n times in path
++#   ("absent_tree", tree, regex, exts) regex must not match in any text file
++#                                      under tree (exts=None ⇒ every text file)
++# ---------------------------------------------------------------------------
++ASSERTIONS = {
++    # ---- Cohesion seam --------------------------------------------------
++    "C1-SEAM-ENGINE-BUILD-DROP": [
++        ("present", ENG, r"pub fn configure_projections\("),
++        ("present", ENG, r"drop: &\[String\],"),
++        ("present", ENG, r"-> Result<ProjectionDelta, EngineError>"),
++    ],
++    # ---- Q1 --------------------------------------------------------------
++    "C1-Q1-ROLE-SET": [
++        ("present", ENG, r"pub enum ProjectionRole \{"),
++        ("present", ENG, r"pub roles: BTreeSet<ProjectionRole>,"),
++    ],
++    # ---- Q3 --------------------------------------------------------------
++    "C1-Q3-SOLE-AUTHORITY": [
++        ("present", SCH, r"CREATE TABLE _fathomdb_projection_registry\("),
++        ("present", ENG, r"fn apply_projection_config\("),
++        ("present", ENG, r"pub struct ProjectionDelta \{"),
++    ],
++    "C1-Q3-DESTRUCTIVE-DELTA": [
++        ("present", ENG, r"ProjectionDestructive \{"),
++        ("present", T15, r"fn destructive_change_requires_explicit_drop\(\)"),
++    ],
++    "C1-Q3-OMISSION-NOT-DROP": [
++        ("present", T15, r"fn role_add_builds_and_explicit_drop_drops_exactly_one\(\)"),
++        ("present", T15, r"fn dropping_an_absent_name_is_a_clean_noop\(\)"),
++    ],
++    # ---- Q5 --------------------------------------------------------------
++    "C1-Q5-DERIVED-CACHE-IDEMPOTENT": [
++        ("present", ENG, r"pub unchanged: bool,"),
++        ("present", T15, r"fn idempotent_reregistration_is_a_noop\(\)"),
++    ],
++    # ---- Q2 --------------------------------------------------------------
++    "C1-Q2-ENGINE-EAV-PROPERTY-FTS": [
++        ("present", SCH, r"CREATE TABLE canonical_attributes\("),
++        ("present", SCH, r"CREATE VIRTUAL TABLE property_search_index USING fts5\("),
++        ("present", SCH, r"CREATE INDEX canonical_attributes_name_value_idx"),
++    ],
++    "C1-Q2-ENGINE-PROJECTS-VIA-CONFIGURE": [
++        ("present", T15, r"fn property_filter_returns_correct_rows\(\)"),
++        ("present", T15, r"fn property_fts_search_returns_correct_rows\(\)"),
++    ],
++    "C1-Q2-NO-DATA-MIGRATION": [
++        ("present", SCH, r"NO DATA MIGRATION \(HITL 2026-07-21\): shape only, no backfill\."),
++        ("absent", SCH, r"INSERT INTO canonical_attributes"),
++        ("absent", SCH, r"INSERT INTO property_search_index"),
++    ],
++    # ---- Q4 --------------------------------------------------------------
++    "C1-Q4-CHEAP-SAME-TRANSACTION": [
++        ("present", ENG, r"apply_projection_config\(&tx,"),
++        ("present", ENG, r"pub built: Vec<String>,"),
++    ],
++    "C1-Q4-DENSE-READINESS-TWO-MEMBERS": [
++        ("present", ENG, r"pub enum DenseReadiness \{"),
++        ("present", ENG, r'DenseReadiness::Ready => "ready",'),
++        ("present", ENG, r'DenseReadiness::Embedding => "embedding",'),
++        ("absent", ENG, r"DenseReadiness::Pending"),
++    ],
++    "C1-Q4-NO-PROVISIONAL-CONCEPT": [
++        ("absent_tree", SRC_TREE, r"(?i)provisional", (".rs",)),
++    ],
++    # ---- Q6(a) -----------------------------------------------------------
++    "C1-Q6A-THREE-ROLES": [
++        ("present", ENG, r'"filterable" => Some\(ProjectionRole::Filterable\),'),
++        ("present", ENG, r'"rankable" => Some\(ProjectionRole::Rankable\),'),
++        ("present", ENG, r'"searchable" => Some\(ProjectionRole::Searchable\),'),
++        ("absent", ENG, r"ProjectionRole::Vector\b"),
++        ("absent", ENG, r"ProjectionRole::Fts\b"),
++    ],
++    "C1-Q6A-RANKABLE-GRACEFUL-DEFER": [
++        ("present", ENG, r"pub deferred: Vec<String>,"),
++        ("present", T15, r"fn rankable_is_graceful_deferred_never_blocking\(\)"),
++        ("present", T15, r"fn idempotent_reregistration_holds_for_deferred_rankable\(\)"),
++    ],
++    # ---- Q6(b), AS AMENDED at efa8d584 -----------------------------------
++    "C1-Q6B-NO-ENTITYTYPESPEC-NO-IDPREFIX": [
++        ("absent_tree", SRC_TREE, r"EntityTypeSpec", None),
++        ("absent_tree", SRC_TREE, r"\bid_prefix\b", None),
++        ("absent_tree", SRC_TREE, r"\bidPrefix\b", None),
++    ],
++    "C1-Q6B-IDSPACE-TOTAL-THREE": [
++        ("present", ENG, r"pub enum IdSpaceKind \{"),
++        ("present", ENG, r'Self::Logical => "l:",'),
++        ("present", ENG, r'Self::Content => "h:",'),
++        ("present", ENG, r'Self::Passage => "p:",'),
++    ],
++    "C1-Q6B-ID-NON-NULL": [
++        ("present", ENG, r"pub id: IdSpace,"),
++        ("absent", ENG, r"pub id: Option<IdSpace>"),
++    ],
++    "C1-Q6B-H-TERMINAL-NOT-LIFECYCLE-ADDRESSABLE": [
++        ("present", ENG, r"NotLifecycleAddressable \{"),
++        ("present", T25, r"fn an_anonymous_write_stays_anonymous_through_the_whole_durable_path\(\)"),
++    ],
++    "C1-Q6B-SURROGATE-GOVERNED-ONLY": [
++        ("present", T25, r"fn registering_projections_never_alters_a_pre_existing_row_id_space\(\)"),
++        ("present", T25, r"fn the_internal_structural_row_writer_mints_no_logical_id\(\)"),
++    ],
++    # ---- Apply atomicity -------------------------------------------------
++    "C1-AA-ATOMIC-FLIP": [
++        ("present", ENG, r"fn commit_projection_outcomes\("),
++        ("present", T20,
++         r"fn atomic_flip_never_exposes_ready_without_the_vector_under_concurrent_write\(\)"),
++    ],
++    "C1-AA-NO-BLOCK-ON-EMBEDDING": [
++        ("present", ENG, r"notify_new_work\(\)"),
++        ("present", T20,
++         r"fn readiness_reads_embedding_while_embeds_are_outstanding_then_flips_to_ready\(\)"),
++    ],
++    "C1-AA-CRASH-HEAL-BOOT-REDERIVE": [
++        ("present", ENG, r"fn load_projection_registry\("),
++        ("present", T15, r"fn boot_rederive_converges_after_simulated_crash\(\)"),
++    ],
++    # ---- Tokenizer / embedder defaults -----------------------------------
++    "C1-TE-DEFAULT-EMBEDDER": [
++        ("present", ENG, r"pub embedder: Option<String>,"),
++        ("present", EMB,
++         r'pub const DEFAULT_EMBEDDER_NAME: &str = "fathomdb-bge-small-en-v1\.5";'),
++    ],
++    "C1-TE-DEFAULT-TOKENIZER": [
++        ("present", ENG, r"pub tokenizer: Option<String>,"),
++        ("min", SCH, r"tokenize = 'porter unicode61 remove_diacritics 2'", 2),
++    ],
++    "C1-TE-CUSTOM-TOKENIZER-DEFERRED": [
++        ("present", SCH, r"fts_tokenizer TEXT,"),
++        ("present", SCH, r"recorded in the registry but not honoured here"),
++        ("absent", ENG, r"CREATE VIRTUAL TABLE property_search_index"),
++    ],
++    # ---- Landing ---------------------------------------------------------
++    "C1-LAND-0820-SLOT": [
++        ("present", PLAN, r"\| R-20-PR \|"),
++        ("present", PLAN, r"\| R-20-EAV \|"),
++        ("present", PLAN, r"\| R-20-DR \|"),
++        ("present", PLAN, r"\| R-20-SUR \|"),
++    ],
++}
++
++CATEGORY_COUNT_KEY = {"CHECKABLE": "checkable", "CROSS-REPO": "cross_repo", "PROSE": "prose"}
++COUNT_KEYS = ["checkable", "cross_repo", "prose", "total"]
++
++
++def die_env(msg):
++    print("check-c1-conformance: " + msg)
++    sys.exit(2)
++
++
++# --------------------------------------------------------- --list-sources ----
++if LIST_SOURCES:
++    files, trees = set(), set()
++    for probes in ASSERTIONS.values():
++        for probe in probes:
++            if probe[0] == "absent_tree":
++                trees.add(probe[1])
++            else:
++                files.add(probe[1])
++    for path in sorted(files):
++        print("file\t" + path)
++    for path in sorted(trees):
++        print("tree\t" + path)
++    sys.exit(0)
++
++failures = []
++
++
++def fail(msg):
++    failures.append(msg)
++    print("FAIL  c1-contract-conformance: " + msg)
++
++
++# ---------------------------------------------------------------- the pin ----
++# An unusable pin is a broken GATE (exit 2), not a conformance divergence
++# (exit 1): exit 1 would send the reader to the Steward to re-reconcile a
++# contract that may not have moved at all.
++try:
++    with open(PIN, "rb") as fh:
++        pin = json.loads(fh.read().decode("utf-8"))
++except OSError as exc:
++    die_env(
++        f"cannot read the pin {PIN}: {exc} — the gate cannot run, so it refuses to pass "
++        "(TC-37 evaporation path #3)"
++    )
++except Exception as exc:
++    die_env(
++        f"the pin {PIN} is not valid JSON: {exc} — the gate cannot run, so it refuses to pass "
++        "(TC-37 evaporation path #3)"
++    )
++
++if not isinstance(pin, dict):
++    die_env(f"the pin {PIN} is not a JSON object")
++
++pin_errors = []
++
++
++def pin_broken(msg):
++    pin_errors.append(msg)
++
++
++for key in ["sha256", "git_blob_sha1", "sha256_whitespace_normalized", "counts", "clauses"]:
++    if key not in pin:
++        die_env(f"the pin {PIN} has no {key!r} field — it cannot vouch for anything")
++
++for key in ["sha256", "git_blob_sha1", "sha256_whitespace_normalized"]:
++    if not isinstance(pin[key], str) or not pin[key]:
++        die_env(
++            f"the pin {PIN}: {key!r} is {pin[key]!r}, not a non-empty string — the pin is "
++            "MALFORMED and cannot vouch for any content. Reported as a broken gate (exit 2), "
++            "not as a contract divergence (exit 1): a hash that is not a hash never equals the "
++            "contract's, so exit 1 would send the reader off to reconcile a document that may "
++            "not have moved at all."
++        )
++
++if not isinstance(pin["counts"], dict):
++    die_env(f"the pin {PIN}: 'counts' is not an object")
++if not isinstance(pin["clauses"], list) or not pin["clauses"]:
++    die_env(f"the pin {PIN}: 'clauses' is not a non-empty list — there is no clause registry")
++
++# EVERY pinned count must be PRESENT and an integer. A count the gate cannot
++# read is a MALFORMED PIN, never an implicit skip: read permissively, an absent
++# entry comes back as None and the corresponding check silently disappears —
++# which is how a green gets bought rather than earned (the hole
++# check-governed-surface-pin.sh had to close). bool is excluded explicitly
++# because isinstance(True, int) is True in Python and `True == 1` would let a
++# count of `true` masquerade as 1.
++for key in COUNT_KEYS:
++    if key not in pin["counts"]:
++        die_env(
++            f"the pin {PIN}: 'counts' has no {key!r} entry — the pin is MALFORMED and cannot be "
++            f"trusted. counts.{key} is the backstop that catches a re-pin which edits the clause "
++            "registry but not the tally; if it is absent the gate would silently stop checking "
++            "the size of that category altogether. DO NOT 'fix' this by regenerating the pin: a "
++            "pin is only regenerated by RE-DERIVING the clause registry from the contract text. "
++            "Restore the pin from git instead."
++        )
++    declared = pin["counts"][key]
++    if isinstance(declared, bool) or not isinstance(declared, int):
++        die_env(
++            f"the pin {PIN}: counts.{key} is {declared!r}, which is not an integer — the pin is "
++            "MALFORMED and cannot be trusted. A non-integer count can be compared neither "
++            "against the clause registry nor against anything else, so it weakens this gate to "
++            "exactly the same degree as deleting it. DO NOT 'fix' this by regenerating the pin; "
++            "restore it from git."
++        )
++
++# ---- the clause registry itself --------------------------------------------
++seen_ids = set()
++by_category = {"CHECKABLE": [], "CROSS-REPO": [], "PROSE": []}
++for index, clause in enumerate(pin["clauses"]):
++    if not isinstance(clause, dict):
++        die_env(f"the pin {PIN}: clauses[{index}] is not an object")
++    for key in ["id", "category", "obligation"]:
++        if key not in clause or not isinstance(clause[key], str) or not clause[key]:
++            die_env(
++                f"the pin {PIN}: clauses[{index}] has no usable {key!r} — every clause must "
++                "carry an id, a category and a one-line obligation, or the registry is not "
++                "reviewable and the pin cannot vouch for it."
++            )
++    if clause["category"] not in by_category:
++        die_env(
++            f"the pin {PIN}: clause {clause['id']!r} has category {clause['category']!r}, which "
++            f"is not one of {sorted(by_category)} — the classification is the whole point of the "
++            "registry, so an unknown category is a MALFORMED pin."
++        )
++    if clause["id"] in seen_ids:
++        die_env(f"the pin {PIN}: clause id {clause['id']!r} appears more than once")
++    seen_ids.add(clause["id"])
++    by_category[clause["category"]].append(clause["id"])
++
++# (c) counts vs the registry, asserted separately from the member lists.
++for category, count_key in CATEGORY_COUNT_KEY.items():
++    declared = pin["counts"][count_key]
++    actual = len(by_category[category])
++    if declared != actual:
++        pin_broken(
++            f"the pin {PIN} is internally inconsistent: counts.{count_key} says {declared} but "
++            f"its clause registry holds {actual} {category} clause(s) — a botched re-pin, not a "
++            "usable statement of what was classified."
++        )
++if pin["counts"]["total"] != len(pin["clauses"]):
++    pin_broken(
++        f"the pin {PIN} is internally inconsistent: counts.total says {pin['counts']['total']} "
++        f"but its clause registry holds {len(pin['clauses'])} clause(s)."
++    )
++
++# (b) THE BIJECTION, both directions.
++pinned_checkable = set(by_category["CHECKABLE"])
++implemented = set(ASSERTIONS)
++for orphan in sorted(pinned_checkable - implemented):
++    pin_broken(
++        f"the pin {PIN} registers CHECKABLE clause {orphan!r} for which this gate implements NO "
++        "assertion. The pin therefore OVER-STATES what is verified: it claims a mechanical check "
++        "that does not exist. Either implement the assertion or re-classify the clause honestly "
++        "(CROSS-REPO / PROSE) with a written reason."
++    )
++for unregistered in sorted(implemented - pinned_checkable):
++    where = "is not in the registry at all" if unregistered not in seen_ids \
++        else f"is registered as {next(c['category'] for c in pin['clauses'] if c['id'] == unregistered)!r}"
++    pin_broken(
++        f"this gate implements an assertion for clause {unregistered!r}, which the pin does NOT "
++        f"register as CHECKABLE (it {where}). The pinned check set has SHRUNK — the id VANISHED "
++        "or was RECLASSIFIED out of the checked set, which is the quietest way to buy a green. "
++        "A clause is demoted only by re-deriving the registry from the contract text, under "
++        "review."
++    )
++
++if pin_errors:
++    for msg in pin_errors:
++        print("check-c1-conformance: " + msg)
++    print(
++        "\n"
++        "  The pin is MALFORMED, so this gate has no trustworthy statement of what it is\n"
++        "  supposed to check. That is reported as a BROKEN GATE (exit 2), not as a conformance\n"
++        "  divergence (exit 1): nothing has been shown about the contract or the code either way.\n"
++        "  Restore scripts/c1-conformance-pin.json from git, or re-derive the clause registry\n"
++        "  from the contract text under review."
++    )
++    sys.exit(2)
++
++WHERE = f"pinned at {pin.get('pinned_at_commit_short', '?')}"
++
++# ----------------------------------------------------------- the contract ----
++# TC-37 path #2: missing / unreadable is a HARD failure, and specifically a
++# BROKEN GATE — the gate never saw the document it vouches for, so it has shown
++# nothing about conformance at all.
++try:
++    with open(CONTRACT, "rb") as fh:
++        raw = fh.read()
++except OSError as exc:
++    die_env(
++        f"cannot read the pinned contract {CONTRACT}: {exc}. The gate cannot see the document it "
++        "vouches for, so it refuses to report a verdict (TC-37 evaporation path #2). A gate that "
++        "cannot see its subject and reports green is an active false assurance — and a ratified "
++        "cross-repo contract that has moved or vanished is itself the largest possible change to "
++        "the thing being checked."
++    )
++
++got_sha256 = hashlib.sha256(raw).hexdigest()
++got_blob = hashlib.sha1(b"blob %d\0" % len(raw) + raw).hexdigest()
++contract_moved = got_sha256 != pin["sha256"] or got_blob != pin["git_blob_sha1"]
++
++formatting_only = False
++if contract_moved:
++    try:
++        normalized = re.sub(r"\s+", " ", raw.decode("utf-8")).strip()
++    except UnicodeDecodeError:
++        normalized = None
++    if normalized is not None:
++        got_norm = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
++        formatting_only = got_norm == pin["sha256_whitespace_normalized"]
++    fail(
++        f"the pinned contract {CONTRACT} has MOVED: its content differs from the pin ({WHERE}).\n"
++        f"        pinned   sha256 {pin['sha256']}  git-blob {pin['git_blob_sha1']}\n"
++        f"        on disk  sha256 {got_sha256}  git-blob {got_blob}"
++    )
++    if formatting_only:
++        print(
++            "NOTE  c1-contract-conformance: the contract's normalized text is IDENTICAL — this is "
++            "a WHITESPACE/FORMATTING-ONLY change. It still fails, deliberately: the pin is a "
++            "CONTENT hash over the document's raw bytes, because a 'harmless reformat' is the "
++            "ideal cover for a clause quietly reworded on an adjacent line."
++        )
++
++# ------------------------------------------------- the clause assertions ----
++_file_cache = {}
++
++
++def read_source(rel):
++    """Read a root-relative source file. Unreadable ⇒ TC-37 path #4 (exit 2)."""
++    if rel in _file_cache:
++        return _file_cache[rel]
++    path = os.path.join(ROOT, rel)
++    try:
++        with open(path, "rb") as fh:
++            text = fh.read().decode("utf-8", errors="replace")
++    except OSError as exc:
++        die_env(
++            f"cannot read {rel} under --root {ROOT}: {exc} — a clause assertion could not be "
++            "EVALUATED. That is neither a pass nor a clause failure (TC-37 evaporation path #4): "
++            "the gate computed no verdict for that clause, so it refuses to report one. Point "
++            "--root at a complete source tree, or restore the file."
++        )
++    _file_cache[rel] = text
++    return text
++
++
++def walk_tree(rel, exts):
++    """Yield (path, text) for every text file under a root-relative tree."""
++    base = os.path.join(ROOT, rel)
++    if not os.path.isdir(base):
++        die_env(
++            f"the source tree {rel} does not exist under --root {ROOT} — a clause assertion could "
++            "not be EVALUATED (TC-37 evaporation path #4). The gate computed no verdict for that "
++            "clause, so it refuses to report one."
++        )
++    for dirpath, dirnames, filenames in os.walk(base):
++        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
++        for name in sorted(filenames):
++            if exts is not None and not name.endswith(tuple(exts)):
++                continue
++            full = os.path.join(dirpath, name)
++            try:
++                with open(full, "rb") as fh:
++                    blob = fh.read()
++            except OSError as exc:
++                die_env(
++                    f"cannot read {os.path.relpath(full, ROOT)} while scanning {rel}: {exc} — a "
++                    "clause assertion could not be EVALUATED (TC-37 evaporation path #4)."
++                )
++            if b"\0" in blob[:8192]:
++                continue  # binary; the contract's negative space is about source text
++            yield os.path.relpath(full, ROOT), blob.decode("utf-8", errors="replace")
++
++
++def line_of(text, match):
++    return text.count("\n", 0, match.start()) + 1
++
++
++def run_probe(probe):
++    """Return a human-readable defect string, or None when the probe holds."""
++    kind = probe[0]
++    if kind == "present":
++        _, path, pattern = probe
++        text = read_source(path)
++        if re.search(pattern, text) is None:
++            return f"expected /{pattern}/ in {path}, found 0 match(es)"
++        return None
++    if kind == "absent":
++        _, path, pattern = probe
++        text = read_source(path)
++        found = list(re.finditer(pattern, text))
++        if found:
++            return (
++                f"expected NO match for /{pattern}/ in {path}, found {len(found)} "
++                f"(first at {path}:{line_of(text, found[0])})"
++            )
++        return None
++    if kind == "min":
++        _, path, pattern, least = probe
++        text = read_source(path)
++        found = len(re.findall(pattern, text))
++        if found < least:
++            return f"expected at least {least} match(es) of /{pattern}/ in {path}, found {found}"
++        return None
++    if kind == "absent_tree":
++        _, tree, pattern, exts = probe
++        scope = "every text file" if exts is None else "files matching " + "/".join(exts)
++        for path, text in walk_tree(tree, exts):
++            match = re.search(pattern, text)
++            if match is not None:
++                return (
++                    f"expected NO match for /{pattern}/ in {scope} under {tree}/, but found it at "
++                    f"{path}:{line_of(text, match)}"
++                )
++        return None
++    die_env(f"internal error: unknown probe kind {kind!r}")
++
++
++obligations = {c["id"]: c["obligation"] for c in pin["clauses"]}
++evidence = {c["id"]: c.get("evidence", []) for c in pin["clauses"]}
++
++executed = 0
++for clause_id in sorted(ASSERTIONS):
++    defects = [d for d in (run_probe(p) for p in ASSERTIONS[clause_id]) if d is not None]
++    executed += 1
++    if defects:
++        cited = ", ".join(evidence.get(clause_id, [])) or "(no evidence recorded)"
++        fail(
++            f"clause {clause_id} FAILS: as-built code no longer satisfies the pinned contract "
++            f'obligation "{obligations[clause_id]}".\n'
++            + "".join(f"        - {d}\n" for d in defects)
++            + f"        pinned evidence: {cited}"
++        )
++
++# TC-37 path #5: the check set must not evaporate. `executed` counts assertions
++# actually run; if fewer ran than the pin registers as CHECKABLE, this gate is
++# reporting on less than it claims and must not produce a verdict.
++if executed < pin["counts"]["checkable"]:
++    die_env(
++        f"executed {executed} clause assertion(s) but the pin registers "
++        f"{pin['counts']['checkable']} CHECKABLE clause(s) — the check set EVAPORATED (TC-37 "
++        "evaporation path #5). A gate that silently checks less than it claims is worse than no "
++        "gate."
++    )
++
++if failures:
++    print(
++        "\n"
++        "  R-20-H7 (`can-i-deploy`) is RED: as-built FathomDB code, or the ratified C-1 contract\n"
++        "  itself, no longer matches what was pinned. An absent-or-failing gate HOLDS the 0.8.20 ↔\n"
++        "  Memex breaking pair (plan-0.8.20.md §3, HITL-directed 2026-07-10) — so this blocks the\n"
++        "  publish, by design.\n"
++        "\n"
++        "  DO NOT re-pin to make this pass.\n"
++        "    * If a CLAUSE failed: as-built code drifted away from a ratified CROSS-REPO contract.\n"
++        "      Fix the code, or take the contract back through amendment. Reclassifying the clause\n"
++        "      to PROSE to clear the gate is the failure mode this gate exists to prevent.\n"
++        "    * If the CONTRACT moved: the clause registry was derived from the EXACT text recorded\n"
++        "      in the pin, so it is no longer known to describe the document. The registry must be\n"
++        "      RE-DERIVED from the new text — every clause re-classified CHECKABLE / CROSS-REPO /\n"
++        "      PROSE — and re-pinned under review. Recomputing the hash alone is a lie.\n"
++        "\n"
++        "  PRECEDENT (why this is not paranoia): efa8d584 amended Q6(b) because the un-amended\n"
++        "  clause mandated an anonymous surrogate that the ratified TC-11 pin A forbids ever\n"
++        "  implementing. A gate written against the un-amended text would have been PERMANENTLY\n"
++        "  RED and would have held the publish forever. An un-reconciled contract edit is exactly\n"
++        "  how this gate becomes either permanently red or silently vacuous.\n"
++        "\n"
++        "  Take it to the Steward / HITL."
++    )
++    sys.exit(1)
++
++print(
++    f"ok    c1-contract-conformance: {CONTRACT} matches the pin and all "
++    f"{pin['counts']['checkable']} CHECKABLE clause(s) hold "
++    f"({pin['counts']['checkable']} checkable / {pin['counts']['cross_repo']} cross-repo / "
++    f"{pin['counts']['prose']} prose, {pin['counts']['total']} total, {WHERE})"
++)
++PY
++RC=$?
++set -e
++
++exit "$RC"
+
+exec
+/bin/bash -lc 'git diff 23a436dcc7321eab86c622c8b403682caf2dfe2c -- scripts/tests/test_check_c1_conformance.sh scripts/tests/lib/c1-conformance-fixture.sh scripts/tests/test_preflight_landing.sh scripts/tests/test_check_board_currency.sh scripts/tests/test_check_governed_surface_pin.sh scripts/tests/test_check_ledgers.sh' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+diff --git a/scripts/tests/lib/c1-conformance-fixture.sh b/scripts/tests/lib/c1-conformance-fixture.sh
+new file mode 100644
+index 00000000..2bbbd337
+--- /dev/null
++++ b/scripts/tests/lib/c1-conformance-fixture.sh
+@@ -0,0 +1,102 @@
++#!/usr/bin/env bash
++# scripts/tests/lib/c1-conformance-fixture.sh — seeds a throwaway fixture repo
++# with everything scripts/check-c1-conformance.sh reads, so
++# `scripts/preflight.sh --landing` can be exercised inside a fixture.
++#
++# WHY THIS EXISTS. 0.8.20 Slice 30 (R-20-H7) wired
++# scripts/check-c1-conformance.sh into `preflight.sh --landing` (§10). Every
++# fixture repo that runs `--landing` and does NOT carry the C-1 contract, its pin
++# and the sources the clause assertions read therefore hard-fails:
++#
++#   INFO  c1-contract-conformance: cannot read the pin scripts/c1-conformance-pin.json:
++#         [Errno 2] No such file or directory — the gate cannot run, so it refuses to pass
++#   HARD  c1-contract-conformance: check-c1-conformance.sh exited 2 without reporting
++#         a specific defect — refusing to certify this tree for landing
++#
++# THE GATE IS RIGHT AND IS NOT WEAKENED HERE. Refusing to certify a tree whose
++# subject it cannot see is exactly the TC-37 anti-vacuity stance. What was
++# incomplete is the FIXTURES — they did not model a real checkout. This is the
++# same repair T1b made for ledger-integrity and T1e made for the governed-surface
++# pin (see lib/governed-surface-fixture.sh): give each fixture builder a minimal,
++# consistent instance of what the new gate reads. No bypass, no env escape hatch,
++# no `--skip`, no conditional that makes the gate inert.
++#
++# ⚠ THIS SEEDER COPIES THE REAL ARTIFACTS. That is a DELIBERATE DEPARTURE from
++# lib/governed-surface-fixture.sh, which builds a SYNTHETIC pair on purpose so
++# three unrelated suites are not coupled to the real pin's signing state. A
++# synthetic C-1 pair is not merely undesirable here, it is IMPOSSIBLE:
++# check-c1-conformance.sh's implemented-assertion set is a constant inside the
++# script, and its registry bijection is deliberately rigid in BOTH directions, so
++# any pin that did not register exactly those 26 CHECKABLE ids would be reported
++# as MALFORMED (exit 2) — which is the very failure this seeder exists to remove.
++# A synthetic contract is impossible for the same reason: the pin is a content
++# hash over the real document's bytes.
++#
++# THE COUPLING THAT CREATES IS ACCEPTABLE, AND HERE IS WHY. The governed-surface
++# pin is EXPECTED to trip during 0.8.20 (its own header says so), so coupling
++# unrelated suites to it would turn them red for a correct, unrelated reason. The
++# C-1 pin is NOT expected to trip: it moves only when the ratified contract is
++# amended or when as-built code drifts away from it — and in either case the tree
++# genuinely does not satisfy R-20-H7, `--landing` is genuinely blocked for every
++# slice, and a red in these suites is telling the truth rather than obscuring it.
++# The self-check at the bottom makes that failure name THIS helper.
++#
++# Usage — from a fixture builder, BEFORE its `git add -A`:
++#   . "$SCRIPT_DIR/lib/c1-conformance-fixture.sh"
++#   seed_c1_conformance_fixture "$primary"
++# The caller commits the files; a linked worktree added afterwards inherits them.
++
++# seed_c1_conformance_fixture <repo-dir>
++# Copies the ratified contract, its pin, and every file/tree the gate's own
++# --list-sources manifest names, then proves the result passes the real gate.
++# Returns non-zero (and says why) if it cannot — a fixture seeder that silently
++# produced an unusable tree would just move the confusion downstream.
++#
++# The source list comes from `--list-sources` rather than from a hand-maintained
++# path list here, so a clause added later cannot leave this seeder silently stale
++# (a stale seeder would re-open the exact hard-fail it exists to prevent).
++seed_c1_conformance_fixture() {
++  local repo="${1:?seed_c1_conformance_fixture needs a repo dir}"
++  local lib_dir repo_root gate contract pin manifest kind path
++  lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++  repo_root="$(cd "$lib_dir/../../.." && pwd)"
++  gate="$repo_root/scripts/check-c1-conformance.sh"
++  contract="dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md"
++  pin="scripts/c1-conformance-pin.json"
++
++  if [ ! -f "$gate" ]; then
++    printf 'seed_c1_conformance_fixture: %s is missing — cannot seed or verify\n' "$gate" >&2
++    return 2
++  fi
++  if ! manifest="$(bash "$gate" --list-sources 2>&1)"; then
++    printf 'seed_c1_conformance_fixture: --list-sources failed:\n%s\n' "$manifest" >&2
++    return 2
++  fi
++
++  mkdir -p "$repo/$(dirname "$contract")" "$repo/$(dirname "$pin")"
++  cp "$repo_root/$contract" "$repo/$contract" || return 1
++  cp "$repo_root/$pin" "$repo/$pin" || return 1
++
++  while IFS=$'\t' read -r kind path; do
++    [ -n "${kind:-}" ] || continue
++    case "$kind" in
++      file)
++        mkdir -p "$repo/$(dirname "$path")"
++        cp "$repo_root/$path" "$repo/$path" || return 1
++        ;;
++      tree)
++        mkdir -p "$repo/$path"
++        ;;
++    esac
++  done <<<"$manifest"
++
++  # Self-check: run the REAL gate against the seeded tree. If the gate's
++  # predicate ever gains a requirement this seeder does not satisfy, the failure
++  # surfaces HERE, naming this helper, instead of as a baffling `--landing`
++  # failure in four unrelated suites.
++  local out
++  if ! out="$(bash "$gate" --contract "$repo/$contract" --pin "$repo/$pin" --root "$repo" 2>&1)"; then
++    printf 'seed_c1_conformance_fixture: the seeded tree does NOT satisfy check-c1-conformance.sh:\n%s\n' "$out" >&2
++    return 1
++  fi
++}
+diff --git a/scripts/tests/test_check_board_currency.sh b/scripts/tests/test_check_board_currency.sh
+index 824d7843..164ed134 100755
+--- a/scripts/tests/test_check_board_currency.sh
++++ b/scripts/tests/test_check_board_currency.sh
+@@ -30,6 +30,8 @@ PREFLIGHT="$REPO_ROOT/scripts/preflight.sh"
+ CHECKER="$REPO_ROOT/scripts/check-board-currency.sh"
+ # shellcheck source=lib/governed-surface-fixture.sh
+ . "$SCRIPT_DIR/lib/governed-surface-fixture.sh"
++# shellcheck source=lib/c1-conformance-fixture.sh
++. "$SCRIPT_DIR/lib/c1-conformance-fixture.sh"
+ 
+ FAILED=0
+ pass() { printf 'PASS  %s\n' "$1"; }
+@@ -74,6 +76,7 @@ init_repo() {
+   # beyond its presence, and the gate's own arms live in
+   # scripts/tests/test_check_governed_surface_pin.sh.
+   seed_governed_surface_fixture "$dir"
++  seed_c1_conformance_fixture "$dir"
+ }
+ 
+ # commit_all <dir> <message>
+diff --git a/scripts/tests/test_check_c1_conformance.sh b/scripts/tests/test_check_c1_conformance.sh
+new file mode 100755
+index 00000000..ddefb40a
+--- /dev/null
++++ b/scripts/tests/test_check_c1_conformance.sh
+@@ -0,0 +1,606 @@
++#!/usr/bin/env bash
++# scripts/tests/test_check_c1_conformance.sh — coverage for the RUBRIC-H7
++# `can-i-deploy` contract-conformance gate (scripts/check-c1-conformance.sh) AND
++# for its two wirings: `preflight.sh --landing` (PREVENT) and the always-on CI
++# job (DETECT).
++#
++# WHAT IS BEING PROTECTED: R-20-H7 — as-built FathomDB code still satisfies the
++# ratified cross-repo design contract
++# dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md at the
++# 0.8.20 co-land. The gate is mechanical on purpose ("not humans re-reading
++# prose", plan-0.8.20.md §3), and an absent-or-failing gate HOLDS the breaking
++# pair. So the gate itself needs a recurrence guard: these arms.
++#
++# RED-first: the real tree PASSES today, so asserting only against the real repo
++# would prove nothing — a `true` script would pass it. Every failure arm below
++# therefore runs against a purpose-built DIVERGENT FIXTURE (a mutated COPY of
++# the contract, of the pin, or of the source root), so each arm can only go green
++# because the predicate actually fired. The real-repo arm is the regression half
++# of the same pair.
++#
++# THE FIXTURES ARE COPIES. Neither the real contract nor the real src/ tree is
++# ever written by this suite — mutating them is the exact thing the gate exists
++# to catch. Copies live under mktemp -d (the checker takes --contract/--pin/--root
++# for exactly this reason); the preflight arms build throwaway git repos + linked
++# worktrees.
++#
++# THE FIXTURE ROOTS ARE BUILT FROM `--list-sources`, not from a hand-maintained
++# path list. If a future clause reads a new file, the fixture roots pick it up
++# automatically and cannot silently go stale (a stale fixture root would turn
++# every source arm into a TC-37 #4 evaporation and stop testing what it claims).
++#
++# NOTE ON THE WHITESPACE ARM: failing on a formatting-only change is a
++# DELIBERATE, DOCUMENTED property of a content-hash pin, not an accident — see
++# the gate's header. It is asserted here so the behaviour is a contract.
++set -euo pipefail
++
++SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
++CHECKER="$REPO_ROOT/scripts/check-c1-conformance.sh"
++PREFLIGHT="$REPO_ROOT/scripts/preflight.sh"
++CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
++REAL_CONTRACT="$REPO_ROOT/dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md"
++REAL_PIN="$REPO_ROOT/scripts/c1-conformance-pin.json"
++# shellcheck source=lib/governed-surface-fixture.sh
++. "$SCRIPT_DIR/lib/governed-surface-fixture.sh"
++# shellcheck source=lib/c1-conformance-fixture.sh
++. "$SCRIPT_DIR/lib/c1-conformance-fixture.sh"
++
++# The no-argument arm exercises the checker's REPO-RELATIVE defaults, which it
++# resolves from `git rev-parse --show-toplevel` — i.e. from the cwd. Pin the cwd
++# to this checkout so that arm tests THIS tree no matter where the suite is
++# invoked from (mirrors the governed-surface-pin suite).
++cd "$REPO_ROOT"
++
++FAILED=0
++pass() { printf 'PASS  %s\n' "$1"; }
++fail() { printf 'FAIL  %s\n' "$1" >&2; FAILED=$((FAILED + 1)); }
++
++TMPROOT="$(mktemp -d)"
++cleanup() {
++  case "$TMPROOT" in
++    "${TMPDIR:-/tmp}"/*|/tmp/*) rm -rf "$TMPROOT" ;;
++    *) printf 'refusing to remove unexpected temp path: %s\n' "$TMPROOT" >&2 ;;
++  esac
++}
++trap cleanup EXIT
++
++run_checker() {
++  set +e
++  OUT="$(bash "$CHECKER" "$@" 2>&1)"
++  RC=$?
++  set -e
++}
++
++expect_rc() {
++  local want="$1" desc="$2"
++  if [ "$RC" -eq "$want" ]; then
++    pass "$desc"
++  else
++    fail "$desc — expected rc=$want, got rc=$RC; out: $OUT"
++  fi
++}
++
++# expect_out <regex> <desc>
++expect_out() {
++  if printf '%s' "$OUT" | grep -qE "$1"; then
++    pass "$2"
++  else
++    fail "$2 — expected output matching /$1/; got: $OUT"
++  fi
++}
++
++# expect_no_out <regex> <desc>
++expect_no_out() {
++  if printf '%s' "$OUT" | grep -qE "$1"; then
++    fail "$2 — output must NOT match /$1/; got: $OUT"
++  else
++    pass "$2"
++  fi
++}
++
++# Every real DIVERGENCE (exit 1) must route the reader to the Steward/HITL and
++# must forbid a silent re-pin: a failure the reader cannot act on is how a
++# conformance gate gets quietly neutered.
++expect_routes_to_steward() {
++  local desc="$1" ok=1
++  printf '%s' "$OUT" | grep -q 'DO NOT re-pin' || ok=0
++  printf '%s' "$OUT" | grep -q 'Steward' || ok=0
++  if [ "$ok" -eq 1 ]; then
++    pass "$desc routes the reader to the Steward and forbids a silent re-pin"
++  else
++    fail "$desc did not print the full Steward-routing block; got: $OUT"
++  fi
++}
++
++# ============================================================================
++# Fixture-root construction, driven by the gate's own --list-sources output.
++# ============================================================================
++if ! SOURCE_MANIFEST="$(bash "$CHECKER" --list-sources 2>&1)"; then
++  fail "--list-sources must succeed so the fixture roots can be built from it; got: $SOURCE_MANIFEST"
++  SOURCE_MANIFEST=""
++fi
++
++# make_root <name> -> prints the path of a fresh fixture root carrying a COPY of
++# every file/tree the clause assertions read.
++make_root() {
++  local d="$TMPROOT/root-$1" kind path
++  mkdir -p "$d"
++  while IFS=$'\t' read -r kind path; do
++    [ -n "${kind:-}" ] || continue
++    case "$kind" in
++      file)
++        mkdir -p "$d/$(dirname "$path")"
++        cp "$REPO_ROOT/$path" "$d/$path"
++        ;;
++      tree)
++        mkdir -p "$d/$path"
++        ;;
++    esac
++  done <<<"$SOURCE_MANIFEST"
++  printf '%s' "$d"
++}
++
++# copy_contract <name> -> a COPY of the real contract
++copy_contract() {
++  local d="$TMPROOT/contract-$1"
++  mkdir -p "$d"
++  cp "$REAL_CONTRACT" "$d/contract.md"
++  printf '%s' "$d/contract.md"
++}
++
++# edit_pin <name> <python-body> -> a COPY of the pin, mutated. `pin` is the dict.
++edit_pin() {
++  local name="$1" body="$2" out="$TMPROOT/pin-$1.json"
++  mkdir -p "$TMPROOT"
++  python3 - "$REAL_PIN" "$out" <<PY
++import json, sys
++with open(sys.argv[1]) as fh:
++    pin = json.load(fh)
++$body
++with open(sys.argv[2], "w") as fh:
++    json.dump(pin, fh, indent=2)
++    fh.write("\n")
++PY
++  printf '%s' "$out"
++}
++
++# ================== Arm 1: the real, unmodified tree, defaults ===============
++# Regression half. Also a standing assertion that the pinned contract is itself
++# byte-unmodified: if this suite ever "fixes" a red arm by editing the contract,
++# this arm goes red.
++run_checker
++expect_rc 0 "the real repo conforms to the pinned C-1 contract (default args)"
++expect_out 'ok +c1-contract-conformance' "the passing run says ok"
++expect_out '26 checkable / 12 cross-repo / 7 prose' \
++  "the passing run states the clause tally it verified"
++expect_out '45 total' "the passing run states the grand total of clauses"
++
++PIN_SHA="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["sha256"])' "$REAL_PIN")"
++REAL_SHA="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$REAL_CONTRACT")"
++if [ "$PIN_SHA" = "$REAL_SHA" ]; then
++  pass "the ratified C-1 contract is byte-identical to the pin"
++else
++  fail "the contract no longer matches the pin's sha256 ($REAL_SHA vs $PIN_SHA)"
++fi
++
++# The pin must really be its recorded commit's content — the provenance claim.
++# Skipped (loudly) where that commit is unreachable; the hash arm above still
++# carries the assertion, so this is not a vacuous pass.
++PIN_BLOB="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["git_blob_sha1"])' "$REAL_PIN")"
++PIN_AT="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["pinned_at_commit"])' "$REAL_PIN")"
++PIN_PATH="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["pinned_file"])' "$REAL_PIN")"
++if git -C "$REPO_ROOT" cat-file -e "${PIN_AT}^{commit}" 2>/dev/null; then
++  AT_PIN="$(git -C "$REPO_ROOT" rev-parse "${PIN_AT}:${PIN_PATH}")"
++  if [ "$AT_PIN" = "$PIN_BLOB" ]; then
++    pass "the pin's git_blob_sha1 is exactly ${PIN_AT:0:8}'s blob for the contract"
++  else
++    fail "pin git_blob_sha1 $PIN_BLOB != ${PIN_AT:0:8}'s blob $AT_PIN — the provenance claim is false"
++  fi
++else
++  printf 'SKIP  %s unreachable (shallow checkout) — provenance arm not run\n' "${PIN_AT:0:8}"
++fi
++
++# ============ Arm 2: an unmodified COPY of contract + pin + root =============
++# Byte-identical copies at different paths must pass, proving the gate compares
++# CONTENT and is not keyed to any path or to repo state.
++CLEAN_CONTRACT="$(copy_contract clean)"
++CLEAN_ROOT="$(make_root clean)"
++run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$CLEAN_ROOT"
++expect_rc 0 "an unmodified COPY of the contract + a copied source root passes"
++expect_out 'ok +c1-contract-conformance' "the copied-fixture pass says ok"
++
++# ============ Arm 3 (RED): the contract text moved (substantive) =============
++# The load-bearing pin: the clause registry was derived from THIS text, so a
++# changed contract means the registry is no longer known to describe the doc.
++F="$(copy_contract mutated)"
++python3 - "$F" <<'PY'
++import sys
++p = sys.argv[1]
++text = open(p, encoding="utf-8").read()
++assert "registry-admitted GOVERNED entities only" in text
++text = text.replace("registry-admitted GOVERNED entities only", "anonymous entities", 1)
++open(p, "w", encoding="utf-8").write(text)
++PY
++run_checker --contract "$F" --pin "$REAL_PIN" --root "$CLEAN_ROOT"
++expect_rc 1 "a SUBSTANTIVE contract edit HARD-fails (the contract moved)"
++expect_out 'has MOVED' "contract-moved says the contract moved"
++expect_out 'content differs from the pin' "contract-moved reports a content divergence"
++expect_out 'RE-DERIVED' "contract-moved says the clause registry must be RE-DERIVED"
++expect_out 'efa8d584' "contract-moved cites the efa8d584 amendment precedent"
++expect_no_out 'formatting-only' "a substantive edit is NOT reported as formatting-only"
++expect_routes_to_steward "contract-moved"
++
++# ============ Arm 4 (RED): whitespace / formatting-only change ===============
++# Documented behaviour of a CONTENT-hash pin. The failure must ALSO say the
++# change is formatting-only, so the reader is never left guessing whether the
++# ratified text actually moved.
++F="$(copy_contract whitespace)"
++printf '\n\n' >>"$F"
++run_checker --contract "$F" --pin "$REAL_PIN" --root "$CLEAN_ROOT"
++expect_rc 1 "a whitespace/formatting-only contract change HARD-fails (content-hash pin, by design)"
++expect_out 'content differs from the pin' "whitespace-only reports a content divergence"
++expect_out 'WHITESPACE/FORMATTING-ONLY' "whitespace-only says the change is formatting-only"
++expect_out 'CONTENT hash' "whitespace-only explains that the pin is deliberately a content hash"
++expect_routes_to_steward "whitespace-only"
++
++# ====== Arm 5 (RED): contract missing — TC-37 evaporation path #2 ============
++# A gate that cannot see its subject must never report green, and must not
++# report a DIVERGENCE either: it computed no verdict at all.
++run_checker --contract "$TMPROOT/no-such-contract.md" --pin "$REAL_PIN" --root "$CLEAN_ROOT"
++expect_rc 2 "a MISSING contract exits 2 (TC-37 evaporation), never 0 and never 1"
++expect_out 'cannot read' "contract-missing says it could not read the contract"
++expect_out 'TC-37' "contract-missing cites the vacuous-pass failure class"
++expect_no_out 'ok +c1-contract-conformance' "contract-missing prints no ok line"
++
++# ============ Arm 6 (RED): pin missing — evaporation path #3 =================
++run_checker --contract "$CLEAN_CONTRACT" --pin "$TMPROOT/no-such-pin.json" --root "$CLEAN_ROOT"
++expect_rc 2 "a MISSING pin exits 2 (the gate could not run) and never 0"
++expect_out 'the gate cannot run' "pin-missing says the gate could not run"
++
++# ====== Arm 7 (RED): pin malformed — a counts entry DELETED ==================
++# The counts block is the backstop that catches an internally inconsistent
++# re-pin, which makes the counts block itself a target. A count the gate cannot
++# read is a MALFORMED PIN (exit 2), never a silently skipped check.
++for KEY in checkable cross_repo prose total; do
++  P="$(edit_pin "omit-$KEY" "del pin['counts']['$KEY']")"
++  run_checker --contract "$CLEAN_CONTRACT" --pin "$P" --root "$CLEAN_ROOT"
++  expect_rc 2 "a pin that OMITS counts.$KEY HARD-fails as MALFORMED"
++  expect_out "'counts' has no '$KEY' entry" "omit-counts.$KEY names the missing count entry"
++  expect_out 'MALFORMED' "omit-counts.$KEY says the pin is malformed"
++  expect_out "DO NOT 'fix' this by regenerating the pin" \
++    "omit-counts.$KEY forbids regenerating the pin to clear it"
++  expect_no_out 'ok +c1-contract-conformance' "omit-counts.$KEY prints no ok line"
++done
++
++# ====== Arm 8 (RED): pin malformed — a counts entry MISTYPED =================
++# Same hole through a different door. `true` is included because
++# isinstance(True, int) is True in Python and `True == 1` would let a boolean
++# masquerade as a count; `26.0 == 26` would likewise compare equal.
++P="$(edit_pin "type-string" "pin['counts']['checkable'] = '26'")"
++run_checker --contract "$CLEAN_CONTRACT" --pin "$P" --root "$CLEAN_ROOT"
++expect_rc 2 "a STRING counts.checkable HARD-fails as MALFORMED (never a divergence)"
++expect_out 'not an integer' "string-count says the count is not an integer"
++expect_no_out 'DO NOT re-pin' \
++  "a malformed pin does NOT print the divergence-routing block (broken gate, not a moved contract)"
++
++P="$(edit_pin "type-null" "pin['counts']['prose'] = None")"
++run_checker --contract "$CLEAN_CONTRACT" --pin "$P" --root "$CLEAN_ROOT"
++expect_rc 2 "a NULL counts.prose HARD-fails as MALFORMED"
++expect_out 'not an integer' "null-count says the count is not an integer"
++
++P="$(edit_pin "type-float" "pin['counts']['checkable'] = 26.0")"
++run_checker --contract "$CLEAN_CONTRACT" --pin "$P" --root "$CLEAN_ROOT"
++expect_rc 2 "a FLOAT counts.checkable HARD-fails as MALFORMED (26.0 == 26 would have passed)"
++expect_out 'not an integer' "float-count says the count is not an integer"
++
++P="$(edit_pin "type-bool" "pin['counts']['total'] = True")"
++run_checker --contract "$CLEAN_CONTRACT" --pin "$P" --root "$CLEAN_ROOT"
++expect_rc 2 "a BOOLEAN counts.total HARD-fails (isinstance(True, int) is True in Python)"
++expect_out 'not an integer' "bool-count says the count is not an integer"
++
++P="$(edit_pin "hash-null" "pin['sha256'] = None")"
++run_checker --contract "$CLEAN_CONTRACT" --pin "$P" --root "$CLEAN_ROOT"
++expect_rc 2 "a NULL sha256 in the pin HARD-fails as MALFORMED, not as a divergence"
++expect_out 'not a non-empty string' "bad-hash pin says the hash field is not a string"
++
++# === Arm 9 (RED): a CHECKABLE clause DELETED from the pin registry ===========
++# The check set SHRINKS. The gate implements an assertion the pin no longer
++# registers — that is a malformed pin (exit 2), and the vanished id must be
++# NAMED so the reader can see exactly which check was removed.
++P="$(edit_pin "clause-deleted" \
++  "pin['clauses'] = [c for c in pin['clauses'] if c['id'] != 'C1-Q6B-NO-ENTITYTYPESPEC-NO-IDPREFIX']
++pin['counts']['checkable'] -= 1
++pin['counts']['total'] -= 1")"
++run_checker --contract "$CLEAN_CONTRACT" --pin "$P" --root "$CLEAN_ROOT"
++expect_rc 2 "a CHECKABLE clause DELETED from the pin registry HARD-fails as MALFORMED"
++expect_out 'C1-Q6B-NO-ENTITYTYPESPEC-NO-IDPREFIX' "clause-deleted NAMES the vanished clause id"
++expect_out 'VANISHED|SHRUNK' "clause-deleted says the pinned check set shrank"
++expect_no_out 'ok +c1-contract-conformance' "clause-deleted prints no ok line"
++
++# === Arm 10 (RED): an ORPHAN pin id with no implemented assertion ============
++# The mirror direction: the pin claims a check this gate does not implement, so
++# the pin over-states what is verified. Also exit 2, also NAMED.
++P="$(edit_pin "clause-orphan" \
++  "pin['clauses'].append({'id': 'C1-INVENTED-CLAUSE', 'category': 'CHECKABLE',
++    'obligation': 'a clause nobody implemented', 'evidence': []})
++pin['counts']['checkable'] += 1
++pin['counts']['total'] += 1")"
++run_checker --contract "$CLEAN_CONTRACT" --pin "$P" --root "$CLEAN_ROOT"
++expect_rc 2 "an ORPHAN CHECKABLE pin id (no implemented assertion) HARD-fails as MALFORMED"
++expect_out 'C1-INVENTED-CLAUSE' "clause-orphan NAMES the orphan clause id"
++expect_out 'implements NO assertion' "clause-orphan says the gate implements no assertion for it"
++
++# === Arm 11 (RED): a clause RECLASSIFIED CHECKABLE -> PROSE ==================
++# The quietest way to buy a green: leave the id in the registry but demote it out
++# of the checked set. Caught twice over — the category counts move, and the
++# implemented assertion is no longer registered.
++P="$(edit_pin "clause-reclassified" \
++  "for c in pin['clauses']:
++    if c['id'] == 'C1-Q4-NO-PROVISIONAL-CONCEPT':
++        c['category'] = 'PROSE'")"
++run_checker --contract "$CLEAN_CONTRACT" --pin "$P" --root "$CLEAN_ROOT"
++expect_rc 2 "a clause RECLASSIFIED CHECKABLE -> PROSE HARD-fails as MALFORMED"
++expect_out 'C1-Q4-NO-PROVISIONAL-CONCEPT' "clause-reclassified NAMES the demoted clause id"
++expect_out 'internally inconsistent' "clause-reclassified reports the moved category counts"
++
++# The same demotion with the counts "fixed up" to match is still caught, by the
++# registry bijection alone — this is the arm that proves the counts check is not
++# the only thing standing between a demotion and a green.
++P="$(edit_pin "clause-reclassified-consistent" \
++  "for c in pin['clauses']:
++    if c['id'] == 'C1-Q4-NO-PROVISIONAL-CONCEPT':
++        c['category'] = 'PROSE'
++pin['counts']['checkable'] -= 1
++pin['counts']['prose'] += 1")"
++run_checker --contract "$CLEAN_CONTRACT" --pin "$P" --root "$CLEAN_ROOT"
++expect_rc 2 "a demotion WITH the counts fixed up is still caught by the registry bijection"
++expect_out 'C1-Q4-NO-PROVISIONAL-CONCEPT' "the consistent demotion still NAMES the clause id"
++
++# === Arm 12 (RED): THE LOAD-BEARING SOURCE ARMS =============================
++# Divergent SOURCE fixtures in which a CHECKABLE clause's obligation is actually
++# violated. Without these the whole gate could be satisfied by a `true` script:
++# the real tree passes, so only a fixture that BREAKS the code can prove the
++# clause assertions are wired to anything at all.
++#
++# 12a — the Q6(b) NEGATIVE-SPACE clause. The amendment's own factual assertion is
++# that no EntityTypeSpec / id_prefix symbol exists anywhere under src/. A fixture
++# that INTRODUCES one must FAIL the gate.
++BAD_ROOT="$(make_root entitytypespec)"
++mkdir -p "$BAD_ROOT/src/rust/crates/fathomdb-engine/src"
++cat >"$BAD_ROOT/src/rust/crates/fathomdb-engine/src/entity_type_spec.rs" <<'RS'
++// Fixture only. The un-amended C-1 clause (b) mandated exactly this symbol; the
++// ratified TC-11 pin A forbids it. Its presence must turn the gate RED.
++pub struct EntityTypeSpec {
++    pub id_prefix: String,
++}
++RS
++run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$BAD_ROOT"
++expect_rc 1 "a source root that INTRODUCES EntityTypeSpec/id_prefix HARD-fails the gate"
++expect_out 'C1-Q6B-NO-ENTITYTYPESPEC-NO-IDPREFIX' "the negative-space failure NAMES the clause id"
++expect_out 'entity_type_spec.rs' "the negative-space failure NAMES the offending file"
++expect_out 'FAILS' "the negative-space failure says the clause fails"
++expect_routes_to_steward "the negative-space clause failure"
++expect_no_out 'has MOVED' "a clause failure is not reported as a contract move"
++
++# 12b — a POSITIVE-PRESENCE clause. Remove a required symbol from the copied
++# source and the gate must fail, naming the clause.
++BAD_ROOT2="$(make_root symbol-removed)"
++python3 - "$BAD_ROOT2/src/rust/crates/fathomdb-engine/src/lib.rs" <<'PY'
++import sys
++p = sys.argv[1]
++text = open(p, encoding="utf-8").read()
++assert "pub enum DenseReadiness {" in text
++text = text.replace("pub enum DenseReadiness {", "pub enum VectorFreshness {", 1)
++open(p, "w", encoding="utf-8").write(text)
++PY
++run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$BAD_ROOT2"
++expect_rc 1 "a source root with a REQUIRED symbol removed HARD-fails the gate"
++expect_out 'C1-Q4-DENSE-READINESS-TWO-MEMBERS' "the missing-symbol failure NAMES the clause id"
++expect_out 'found 0 match' "the missing-symbol failure states what it looked for and did not find"
++expect_routes_to_steward "the missing-symbol clause failure"
++
++# 12c — a NAMED-TEST clause. The gate asserts that the test which proves a
++# behavioural obligation still exists in the tree; deleting it must go red.
++BAD_ROOT3="$(make_root test-deleted)"
++python3 - "$BAD_ROOT3/src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs" <<'PY'
++import sys
++p = sys.argv[1]
++text = open(p, encoding="utf-8").read()
++assert "fn boot_rederive_converges_after_simulated_crash()" in text
++text = text.replace("fn boot_rederive_converges_after_simulated_crash()",
++                    "fn boot_rederive_removed_by_fixture()", 1)
++open(p, "w", encoding="utf-8").write(text)
++PY
++run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$BAD_ROOT3"
++expect_rc 1 "deleting the named crash-heal test HARD-fails the gate"
++expect_out 'C1-AA-CRASH-HEAL-BOOT-REDERIVE' "the deleted-test failure NAMES the clause id"
++
++# === Arm 13 (RED): a source file an assertion reads is MISSING ===============
++# TC-37 evaporation path #4: the assertion could not be EVALUATED. That is
++# neither a pass (0) nor a clause failure (1) — the gate computed no verdict.
++GONE_ROOT="$(make_root file-missing)"
++rm -f "$GONE_ROOT/src/rust/crates/fathomdb-schema/src/lib.rs"
++run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$GONE_ROOT"
++expect_rc 2 "a MISSING source file exits 2 (TC-37 #4) — not 0 and not 1"
++expect_out 'could not be EVALUATED' "file-missing says the assertion could not be evaluated"
++expect_out 'TC-37' "file-missing cites the evaporation failure class"
++expect_no_out 'ok +c1-contract-conformance' "file-missing prints no ok line"
++
++# An entirely empty root is the same class, not a vacuous pass.
++mkdir -p "$TMPROOT/root-empty"
++run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$TMPROOT/root-empty"
++expect_rc 2 "an EMPTY source root exits 2 (every assertion evaporates), never 0"
++
++# ==================== Arm 14: usage / environment errors ====================
++run_checker --not-a-flag
++expect_rc 2 "an unknown flag exits 2 (usage), distinct from a divergence"
++
++run_checker --help
++expect_rc 0 "--help exits 0"
++expect_out 'Usage: scripts/check-c1-conformance.sh' "--help prints usage"
++
++run_checker --list-sources
++expect_rc 0 "--list-sources exits 0"
++expect_out 'file\s+src/rust/crates/fathomdb-engine/src/lib.rs' \
++  "--list-sources names the engine source the assertions read"
++expect_out 'tree\s+src' "--list-sources names the tree the negative-space clause scans"
++
++# ================ Arm 15: preflight.sh --landing wiring (PREVENT) ===========
++# Pre-wiring these are the RED witness for the gap: a tree whose code no longer
++# satisfies the ratified contract cleared --landing with 0.
++
++NO_HOOKS="$TMPROOT/no-hooks"
++mkdir -p "$NO_HOOKS"
++
++# make_repo <primary> <linked> — a throwaway repo carrying COPIES of everything
++# preflight's landing gates read, so only the new §10 is under test. A linked
++# worktree is required: TC-RUBRIC-5 forbids --landing in a primary checkout.
++#
++# §9's governed surface is seeded SYNTHETICALLY (lib/governed-surface-fixture.sh)
++# rather than copied: it is incidental to this suite, and that pin is EXPECTED to
++# trip during 0.8.20, so copying the real pair would couple this suite to an
++# unrelated signing state. §10's subject is seeded by lib/c1-conformance-fixture.sh
++# — the same helper the sibling suites use, so the seeder itself gets exercised
++# here too.
++make_repo() {
++  local primary="$1" linked="$2"
++  mkdir -p "$primary/scripts" "$primary/dev/steward"
++  git init -q -b main "$primary"
++  git -C "$primary" config user.email c1-test@example.invalid
++  git -C "$primary" config user.name 'C1 Test'
++  git -C "$primary" config commit.gpgsign false
++  git -C "$primary" config core.hooksPath "$NO_HOOKS"
++  seed_governed_surface_fixture "$primary"
++  seed_c1_conformance_fixture "$primary"
++  printf '{"seq":1,"note":"fixture"}\n' >"$primary/dev/steward/steward-ledger.jsonl"
++  printf '%s' 1 >"$primary/dev/steward/steward-ledger.jsonl.seq"
++  git -C "$primary" add -A
++  git -C "$primary" commit -q -m 'fixture: initial commit'
++  git -C "$primary" worktree add -q -b landing-fixture "$linked" >/dev/null 2>&1
++}
++
++run_preflight() {
++  local cwd="$1"; shift
++  set +e
++  OUT="$(cd "$cwd" && bash "$PREFLIGHT" "$@" 2>&1)"
++  RC=$?
++  set -e
++}
++
++CLEAN_PRIMARY="$TMPROOT/repo-clean"; CLEAN_LINKED="$TMPROOT/repo-clean-wt"
++make_repo "$CLEAN_PRIMARY" "$CLEAN_LINKED"
++
++DIVERGED_PRIMARY="$TMPROOT/repo-diverged"; DIVERGED_LINKED="$TMPROOT/repo-diverged-wt"
++make_repo "$DIVERGED_PRIMARY" "$DIVERGED_LINKED"
++# Break the CODE, not the contract: the point of R-20-H7 is that as-built code
++# must keep satisfying a contract that has NOT moved.
++mkdir -p "$DIVERGED_LINKED/src/rust/crates/fathomdb-engine/src"
++printf 'pub struct EntityTypeSpec { pub id_prefix: String }\n' \
++  >"$DIVERGED_LINKED/src/rust/crates/fathomdb-engine/src/regression.rs"
++
++run_preflight "$DIVERGED_LINKED" --landing
++if [ "$RC" -ne 0 ]; then
++  pass "--landing HARD-fails in a worktree whose code breaks a C-1 clause"
++else
++  fail "--landing MUST fail on a C-1 conformance failure; out: $OUT"
++fi
++if printf '%s' "$OUT" | grep -q 'HARD.*c1-contract-conformance:'; then
++  pass "--landing failure output names the c1-contract-conformance check"
++else
++  fail "expected a HARD line naming c1-contract-conformance; got: $OUT"
++fi
++if printf '%s' "$OUT" | grep -q 'C1-Q6B-NO-ENTITYTYPESPEC-NO-IDPREFIX'; then
++  pass "--landing failure carries the specific clause id through to the operator"
++else
++  fail "expected the HARD line to name the failing clause id; got: $OUT"
++fi
++
++run_preflight "$CLEAN_LINKED" --landing
++if [ "$RC" -eq 0 ]; then
++  pass "--landing still exits 0 in a worktree that conforms to the pinned contract"
++else
++  fail "--landing must not regress a conforming tree; got rc=$RC, out: $OUT"
++fi
++
++# Mirrors §7/§8/§9's contract: --landing-only, so plain preflight stays lean.
++run_preflight "$DIVERGED_LINKED"
++if printf '%s' "$OUT" | grep -q 'c1-contract-conformance:'; then
++  fail "c1-contract-conformance must be --landing-only; it ran without --landing: $OUT"
++else
++  pass "regression guard: c1-contract-conformance is inert without --landing"
++fi
++
++# ANTI-FAIL-OPEN: a non-zero rc with NO FAIL line means the checker itself could
++# not run (exit 2). That must still BLOCK the land, never degrade into INFO lines
++# and a green summary — the exact hole §8/§9 close for their own checkers.
++EVAP_PRIMARY="$TMPROOT/repo-evap"; EVAP_LINKED="$TMPROOT/repo-evap-wt"
++make_repo "$EVAP_PRIMARY" "$EVAP_LINKED"
++rm -f "$EVAP_LINKED/dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md"
++run_preflight "$EVAP_LINKED" --landing
++if [ "$RC" -ne 0 ]; then
++  pass "--landing HARD-fails when the C-1 gate itself cannot run (anti-fail-open)"
++else
++  fail "--landing MUST block when the gate evaporates; out: $OUT"
++fi
++if printf '%s' "$OUT" | grep -q 'refusing to certify this tree for landing'; then
++  pass "the anti-fail-open path says it refuses to certify the tree"
++else
++  fail "expected the anti-fail-open refusal line; got: $OUT"
++fi
++
++# ======================== Arm 16: CI wiring is ALWAYS-ON =====================
++# A docs_only-gated job never fires on a code push — and the C-1 contract is a
++# DESIGN DOC while the code it governs is SOURCE, so either fast path would make
++# this job absent on exactly the pushes that matter. Assert statically that the
++# job exists, runs the SHARED script, carries the recurrence guard, and has no
++# `if:` and no `needs:` at all.
++CI_JOB_BLOCK="$(awk '
++  /^  c1-contract-conformance:/ { inblock = 1; print; next }
++  inblock && /^  [A-Za-z0-9_-]+:/ { inblock = 0 }
++  inblock { print }
++' "$CI_YML")"
++
++if [ -n "$CI_JOB_BLOCK" ]; then
++  pass "ci.yml defines a c1-contract-conformance job"
++else
++  fail "ci.yml has no c1-contract-conformance job"
++fi
++if printf '%s' "$CI_JOB_BLOCK" | grep -q 'scripts/check-c1-conformance.sh'; then
++  pass "the CI job runs the SHARED scripts/check-c1-conformance.sh (one predicate, two callers)"
++else
++  fail "the CI job must invoke scripts/check-c1-conformance.sh, not a reimplementation"
++fi
++if printf '%s' "$CI_JOB_BLOCK" | grep -q 'scripts/tests/test_check_c1_conformance.sh'; then
++  pass "the CI job carries the recurrence guard for the gate itself"
++else
++  fail "the CI job must also run scripts/tests/test_check_c1_conformance.sh"
++fi
++if printf '%s' "$CI_JOB_BLOCK" | grep -qE '^\s*if:'; then
++  fail "the c1-contract-conformance job must be ALWAYS-ON (no if:/docs_only gate); block: $CI_JOB_BLOCK"
++else
++  pass "the c1-contract-conformance job is always-on (no if: condition, not docs_only-gated)"
++fi
++if printf '%s' "$CI_JOB_BLOCK" | grep -qE '^\s*needs:'; then
++  fail "the c1-contract-conformance job must not depend on the changes job; block: $CI_JOB_BLOCK"
++else
++  pass "the c1-contract-conformance job has no needs: (does not ride the changes/docs_only fast path)"
++fi
++if printf '%s' "$CI_JOB_BLOCK" | grep -q 'actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0'; then
++  pass "the CI job pins actions/checkout to the same SHA as its sibling jobs"
++else
++  fail "the CI job must pin actions/checkout by SHA, as the sibling gate jobs do"
++fi
++
++# ================= Arm 17: the fixture suite is registered ===================
++if grep -q 'scripts/tests/test_check_c1_conformance.sh' "$REPO_ROOT/scripts/agent-test.sh"; then
++  pass "agent-test.sh registers this fixture suite alongside its siblings"
++else
++  fail "scripts/agent-test.sh must register scripts/tests/test_check_c1_conformance.sh"
++fi
++
++if [ "$FAILED" -gt 0 ]; then
++  printf '\n%d test(s) failed\n' "$FAILED" >&2
++  exit 1
++fi
++printf '\nAll check-c1-conformance tests passed\n'
+diff --git a/scripts/tests/test_check_governed_surface_pin.sh b/scripts/tests/test_check_governed_surface_pin.sh
+index 53466a56..8412dec8 100644
+--- a/scripts/tests/test_check_governed_surface_pin.sh
++++ b/scripts/tests/test_check_governed_surface_pin.sh
+@@ -40,6 +40,8 @@ PREFLIGHT="$REPO_ROOT/scripts/preflight.sh"
+ CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
+ REAL_FILE="$REPO_ROOT/src/conformance/governed-surface-allowlist.json"
+ REAL_PIN="$REPO_ROOT/scripts/governed-surface-pin.json"
++# shellcheck source=lib/c1-conformance-fixture.sh
++. "$SCRIPT_DIR/lib/c1-conformance-fixture.sh"
+ 
+ # The no-argument arm exercises the checker's REPO-RELATIVE defaults, which it
+ # resolves from `git rev-parse --show-toplevel` — i.e. from the cwd. Pin the cwd
+@@ -454,6 +456,12 @@ mkdir -p "$NO_HOOKS"
+ # governed-surface files plus a consistent ledger (so preflight's §8 passes and
+ # only §9 is under test), plus a linked worktree (TC-RUBRIC-5 forbids --landing
+ # in a primary checkout).
++#
++# It also seeds preflight's §10 subject (the C-1 contract + its pin + the sources
++# that gate reads) via lib/c1-conformance-fixture.sh. Incidental to THIS suite —
++# §10 hard-fails any tree whose subject it cannot see, so without it every
++# `--landing` arm below would fail for a reason that has nothing to do with the
++# governed surface. Same repair §8 and §9 each needed in turn.
+ make_repo() {
+   local primary="$1" linked="$2"
+   mkdir -p "$primary/src/conformance" "$primary/scripts" "$primary/dev/steward"
+@@ -464,6 +472,7 @@ make_repo() {
+   git -C "$primary" config core.hooksPath "$NO_HOOKS"
+   cp "$REAL_FILE" "$primary/src/conformance/governed-surface-allowlist.json"
+   cp "$REAL_PIN" "$primary/scripts/governed-surface-pin.json"
++  seed_c1_conformance_fixture "$primary"
+   printf '{"seq":1,"note":"fixture"}\n' >"$primary/dev/steward/steward-ledger.jsonl"
+   printf '%s' 1 >"$primary/dev/steward/steward-ledger.jsonl.seq"
+   git -C "$primary" add -A
+diff --git a/scripts/tests/test_check_ledgers.sh b/scripts/tests/test_check_ledgers.sh
+index 53994b5a..308ea255 100644
+--- a/scripts/tests/test_check_ledgers.sh
++++ b/scripts/tests/test_check_ledgers.sh
+@@ -36,6 +36,8 @@ PREFLIGHT="$REPO_ROOT/scripts/preflight.sh"
+ CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
+ # shellcheck source=lib/governed-surface-fixture.sh
+ . "$SCRIPT_DIR/lib/governed-surface-fixture.sh"
++# shellcheck source=lib/c1-conformance-fixture.sh
++. "$SCRIPT_DIR/lib/c1-conformance-fixture.sh"
+ 
+ FAILED=0
+ pass() { printf 'PASS  %s\n' "$1"; }
+@@ -356,6 +358,7 @@ make_repo() {
+   # minimal, self-consistent surface + pin, so the only thing these arms can fail
+   # on is the LEDGER state they deliberately plant.
+   seed_governed_surface_fixture "$primary"
++  seed_c1_conformance_fixture "$primary"
+   git -C "$primary" add -A
+   git -C "$primary" commit -q -m 'fixture: initial commit'
+   git -C "$primary" worktree add -q -b landing-fixture "$linked" >/dev/null 2>&1
+diff --git a/scripts/tests/test_preflight_landing.sh b/scripts/tests/test_preflight_landing.sh
+index 62273641..39c17df5 100755
+--- a/scripts/tests/test_preflight_landing.sh
++++ b/scripts/tests/test_preflight_landing.sh
+@@ -31,6 +31,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+ PREFLIGHT="$REPO_ROOT/scripts/preflight.sh"
+ # shellcheck source=lib/governed-surface-fixture.sh
+ . "$SCRIPT_DIR/lib/governed-surface-fixture.sh"
++# shellcheck source=lib/c1-conformance-fixture.sh
++. "$SCRIPT_DIR/lib/c1-conformance-fixture.sh"
+ 
+ FAILED=0
+ pass() { printf 'PASS  %s\n' "$1"; }
+@@ -87,6 +89,7 @@ make_fixture() {
+   # equally correct. This fixture models a real checkout, so it carries one; the
+   # pin's own arms live in scripts/tests/test_check_governed_surface_pin.sh.
+   seed_governed_surface_fixture "$primary"
++  seed_c1_conformance_fixture "$primary"
+   git -C "$primary" add -A
+   git -C "$primary" commit -q -m 'fixture: initial commit'
+   git -C "$primary" worktree add -q -b landing-fixture "$linked" >/dev/null 2>&1
+
+exec
+/bin/bash -lc "grep -n \"CHECK_RC\\|SAW_FAIL\\|check-.*\\.sh\" -n scripts/preflight.sh | sed -n '1,220p'; sed -n '1,340p' scripts/preflight.sh" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+177:# The predicate lives in scripts/check-board-currency.sh (see that file's header
+183:  BOARD_CHECK_OUT="$(bash "$SELF_DIR/check-board-currency.sh" --tip HEAD 2>&1)" || BOARD_CHECK_RC=$?
+184:  BOARD_CHECK_RC="${BOARD_CHECK_RC:-0}"
+185:  if [ "$BOARD_CHECK_RC" -ne 0 ]; then
+205:# The predicate lives in scripts/check-ledgers.sh (see that file's header for
+217:  LEDGER_CHECK_OUT="$(bash "$SELF_DIR/check-ledgers.sh" 2>&1)" || LEDGER_CHECK_RC=$?
+218:  LEDGER_CHECK_RC="${LEDGER_CHECK_RC:-0}"
+219:  if [ "$LEDGER_CHECK_RC" -ne 0 ]; then
+231:      hard "ledger-integrity: check-ledgers.sh exited $LEDGER_CHECK_RC without reporting a specific defect — refusing to certify this tree for landing"
+245:# The predicate lives in scripts/check-governed-surface-pin.sh (see that file's
+255:  SURFACE_CHECK_OUT="$(bash "$SELF_DIR/check-governed-surface-pin.sh" 2>&1)" || SURFACE_CHECK_RC=$?
+256:  SURFACE_CHECK_RC="${SURFACE_CHECK_RC:-0}"
+257:  if [ "$SURFACE_CHECK_RC" -ne 0 ]; then
+258:    SURFACE_SAW_FAIL=0
+261:        FAIL*) hard "governed-surface-pin: $line"; SURFACE_SAW_FAIL=1 ;;
+268:    if [ "$SURFACE_SAW_FAIL" -eq 0 ]; then
+269:      hard "governed-surface-pin: check-governed-surface-pin.sh exited $SURFACE_CHECK_RC without reporting a specific defect — refusing to certify this tree for landing"
+283:# The predicate lives in scripts/check-c1-conformance.sh (see that file's header
+295:  C1_CHECK_OUT="$(bash "$SELF_DIR/check-c1-conformance.sh" 2>&1)" || C1_CHECK_RC=$?
+296:  C1_CHECK_RC="${C1_CHECK_RC:-0}"
+297:  if [ "$C1_CHECK_RC" -ne 0 ]; then
+298:    C1_SAW_FAIL=0
+301:        FAIL*) hard "c1-contract-conformance: $line"; C1_SAW_FAIL=1 ;;
+310:    if [ "$C1_SAW_FAIL" -eq 0 ]; then
+311:      hard "c1-contract-conformance: check-c1-conformance.sh exited $C1_CHECK_RC without reporting a specific defect — refusing to certify this tree for landing"
+#!/usr/bin/env bash
+# preflight.sh — orchestrator-side gate, run BEFORE spawning an implementer.
+#
+# Codifies the checks whose absence has cost real slices:
+#   * agent-worktree-stale-base-trap — a worktree cut from a stale base (main had
+#     advanced ~206 commits) silently lost two slices. The --worktree check below
+#     fails loudly when a worktree's HEAD is neither current main nor a descendant
+#     of it.
+#   * dependency-not-actually-CLOSED — spawning a slice whose declared dependency
+#     never closed. The --expect-closed check greps the plan for the CLOSED block.
+#   * landing-in-the-primary-checkout — TC-RUBRIC-5 requires release orchestration
+#     and all landing git-writes to run in a dedicated linked worktree. --landing
+#     HARD-fails when invoked from the primary checkout.
+#
+# Witness-first (orchestration.md §1.5): every check derives from the repo on disk,
+# never from belief. Emits a one-line JSON summary; exits non-zero on any HARD fail.
+#
+# Usage:
+#   scripts/preflight.sh                              # general repo health (run anytime)
+#   scripts/preflight.sh --worktree /tmp/fdb-slice-5-... # + stale-base guard on a freshly cut WT
+#   scripts/preflight.sh --expect-closed 5 --plan dev/plans/plan-0.8.6.md
+#   scripts/preflight.sh --landing                    # TC-RUBRIC-5: refuse to land in the primary checkout
+#   scripts/preflight.sh --worktree <wt> --expect-closed 5 --plan <plan> --min-disk-gb 15
+#
+# --landing composes with every other flag and is inert unless passed: without it
+# the script behaves exactly as it did before the flag existed.
+#
+# Exit codes: 0 = all HARD checks pass (WARN/INFO may print); 1 = a HARD check failed.
+
+set -euo pipefail
+
+# Resolve this script's own directory BEFORE the toplevel cd below, so the
+# board-currency check (§7) can find its sibling script regardless of which
+# repo/worktree `cd` below lands us in (BASH_SOURCE is a file path, not
+# affected by cwd, but resolving it AFTER a cd elsewhere would be needless
+# fragility for no benefit).
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+cd "$(git rev-parse --show-toplevel)"
+CANON="$(pwd)"
+
+WT=""
+EXPECT_CLOSED=""
+PLAN=""
+MIN_DISK_GB=10
+LANDING=0
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --landing)       LANDING=1; shift ;;
+    --worktree)      WT="${2:?--worktree needs a path}"; shift 2 ;;
+    --expect-closed) EXPECT_CLOSED="${2:?--expect-closed needs a slice id}"; shift 2 ;;
+    --plan)          PLAN="${2:?--plan needs a file}"; shift 2 ;;
+    --min-disk-gb)   MIN_DISK_GB="${2:?--min-disk-gb needs a number}"; shift 2 ;;
+    *) printf 'preflight: unknown arg %q\n' "$1" >&2; exit 2 ;;
+  esac
+done
+
+HARD_FAILS=()
+WARNS=()
+
+hard() { HARD_FAILS+=("$1"); printf 'HARD  %s\n' "$1" >&2; }
+warn() { WARNS+=("$1");      printf 'WARN  %s\n' "$1" >&2; }
+info() { printf 'INFO  %s\n' "$1" >&2; }
+ok()   { printf 'ok    %s\n' "$1" >&2; }
+
+# Resolve an existing directory to its absolute, symlink-resolved path. Uses
+# cd+pwd -P rather than `readlink -f` so this works on macOS too. Prints nothing
+# (and returns non-zero) if the path is not a reachable directory.
+abs_dir() { ( cd "$1" 2>/dev/null && pwd -P ); }
+
+MAIN_SHA="$(git rev-parse main)"
+
+# --- 1. Canonical repo is not mid-operation -------------------------------------
+GITDIR="$(git rev-parse --git-dir)"
+if [ -d "$GITDIR/rebase-merge" ] || [ -d "$GITDIR/rebase-apply" ]; then
+  hard "canonical repo is mid-rebase — finish or abort before spawning"
+elif [ -f "$GITDIR/MERGE_HEAD" ]; then
+  hard "canonical repo is mid-merge — finish or abort before spawning"
+elif [ -f "$GITDIR/CHERRY_PICK_HEAD" ]; then
+  hard "canonical repo is mid-cherry-pick — finish or abort before spawning"
+else
+  ok "canonical repo is not mid-merge/rebase/cherry-pick"
+fi
+
+# --- 2. Tracked source is clean (dev/ docs churn is expected, so only gate src/) -
+DIRTY_SRC="$(git status --porcelain -- src/ scripts/ mkdocs.yml 2>/dev/null || true)"
+if [ -n "$DIRTY_SRC" ]; then
+  warn "tracked source dirty on canonical main (commit/stash before a worktree inherits a stale base):"
+  printf '%s\n' "$DIRTY_SRC" | sed 's/^/        /' >&2
+else
+  ok "tracked source (src/ scripts/ mkdocs.yml) is clean"
+fi
+
+# --- 3. Disk headroom (worktrees + per-worktree target/ are not free) ------------
+WT_PARENT="${WT:+$(dirname "$WT")}"; WT_PARENT="${WT_PARENT:-/tmp}"
+FREE_GB="$(df -BG --output=avail "$WT_PARENT" 2>/dev/null | tail -1 | tr -dc '0-9')"
+if [ -n "$FREE_GB" ] && [ "$FREE_GB" -lt "$MIN_DISK_GB" ]; then
+  hard "only ${FREE_GB}G free on $WT_PARENT (need >= ${MIN_DISK_GB}G; prune stale worktrees)"
+else
+  ok "disk headroom on $WT_PARENT: ${FREE_GB:-?}G free (>= ${MIN_DISK_GB}G)"
+fi
+
+# --- 4. Worktree stale-base guard (the load-bearing check) -----------------------
+if [ -n "$WT" ]; then
+  if [ ! -d "$WT" ]; then
+    hard "worktree path does not exist: $WT"
+  elif [ "$(git -C "$WT" rev-parse --show-toplevel 2>/dev/null || echo MISSING)" != "$WT" ]; then
+    hard "not a git worktree rooted at: $WT"
+  else
+    WT_HEAD="$(git -C "$WT" rev-parse HEAD)"
+    if [ "$WT_HEAD" = "$MAIN_SHA" ]; then
+      ok "worktree HEAD == current main ($MAIN_SHA) — freshly cut, no stale base"
+    elif [ "$(git merge-base "$MAIN_SHA" "$WT_HEAD")" = "$MAIN_SHA" ]; then
+      warn "worktree has advanced past main (main is an ancestor) — OK if it carries this slice's commits"
+    else
+      hard "STALE BASE: worktree HEAD ($WT_HEAD) is not current main and main is not its ancestor."
+      hard "  -> re-create the worktree off \$(git rev-parse main). See agent-worktree-stale-base-trap."
+    fi
+    # maturin/pip -e from a worktree rebinds the shared .venv to the worktree tree.
+    info "reminder: do NOT 'maturin develop' / 'pip install -e' from a worktree — build on the MAIN tree only."
+  fi
+fi
+
+# --- 5. Dependency-CLOSED gate ---------------------------------------------------
+if [ -n "$EXPECT_CLOSED" ]; then
+  if [ -z "$PLAN" ]; then
+    hard "--expect-closed $EXPECT_CLOSED given without --plan <file>"
+  elif [ ! -f "$PLAN" ]; then
+    hard "plan file not found: $PLAN"
+  elif grep -qiE "(Slice|Phase)[^A-Za-z0-9]*${EXPECT_CLOSED}[^0-9].*CLOSED|CLOSED.*(Slice|Phase)[^A-Za-z0-9]*${EXPECT_CLOSED}([^0-9]|$)" "$PLAN"; then
+    ok "dependency Slice/Phase $EXPECT_CLOSED has a CLOSED witness in $PLAN"
+  else
+    hard "dependency Slice/Phase $EXPECT_CLOSED has NO 'CLOSED' block in $PLAN — do not spawn dependents"
+  fi
+fi
+
+# --- 6. Landing-mode guard (TC-RUBRIC-5) -----------------------------------------
+# TC-RUBRIC-5 (HITL-ADOPTED 2026-07-11): release orchestration and ALL landing
+# git-writes run in a dedicated linked worktree, never in the primary checkout.
+#
+# primary checkout <=> --git-dir and --git-common-dir name the SAME directory
+# (a linked worktree's git-dir is <common>/worktrees/<name>).
+#
+# Both paths are canonicalized before comparing. git returns these relative or
+# absolute depending on cwd and version: from a subdirectory, git 2.43 returns an
+# ABSOLUTE --git-dir but a RELATIVE '../.git' --git-common-dir. Today the `cd` to
+# the toplevel above normalizes that away (both read '.git' there), so a raw
+# string compare would happen to work — but only by accident of that cd. Measured:
+# with the toplevel cd removed, a raw compare run from a subdirectory of the
+# primary checkout FAILS OPEN (exit 0, "cleared for landing"), while the
+# canonicalized compare below still correctly HARD-fails. Canonicalizing makes
+# this check self-sufficient rather than dependent on cwd, git version, and the
+# ordering of an unrelated line.
+if [ "$LANDING" -eq 1 ]; then
+  GITDIR_ABS="$(abs_dir "$(git rev-parse --git-dir)" || true)"
+  COMMONDIR_ABS="$(abs_dir "$(git rev-parse --git-common-dir)" || true)"
+  if [ -z "$GITDIR_ABS" ] || [ -z "$COMMONDIR_ABS" ]; then
+    hard "--landing: cannot resolve git-dir/git-common-dir — refusing to certify this tree for landing"
+  elif [ "$GITDIR_ABS" = "$COMMONDIR_ABS" ]; then
+    hard "TC-RUBRIC-5: --landing invoked in the PRIMARY checkout ($CANON) — landing git-writes are forbidden here."
+    hard "  -> re-run from a dedicated linked worktree: git worktree add <path> <branch>, then run this from <path>."
+  else
+    ok "TC-RUBRIC-5: running in a linked worktree ($CANON) — cleared for landing git-writes"
+  fi
+fi
+
+# --- 7. Board-currency gate (status-board-currency-enforcement design, item 2) --
+# Refuse a land that would leave dev/plans/runs/STATUS-0.8.z.md stale. The
+# incident: a slice's merge commit reached origin/main and the board kept saying
+# "not landed" for four days — nobody's explicit job to update it at land time
+# (an ownership seam between the orchestrator, who owns in-flight rows, and the
+# Steward, who lands). See dev/design/status-board-currency-enforcement.md and
+# orchestration.md §12.5 for the seam-ownership contract this gate enforces
+# mechanically.
+#
+# The predicate lives in scripts/check-board-currency.sh (see that file's header
+# for the full statement) so preflight and the CI drift job (item 3) share ONE
+# implementation and cannot diverge. --landing-only: mid-build the board
+# legitimately reads "in flight", so this must never run outside a land (that is
+# precommit's false-positive trap the design doc rejects).
+if [ "$LANDING" -eq 1 ]; then
+  BOARD_CHECK_OUT="$(bash "$SELF_DIR/check-board-currency.sh" --tip HEAD 2>&1)" || BOARD_CHECK_RC=$?
+  BOARD_CHECK_RC="${BOARD_CHECK_RC:-0}"
+  if [ "$BOARD_CHECK_RC" -ne 0 ]; then
+    while IFS= read -r line; do
+      case "$line" in
+        STALE*) hard "board-currency: $line" ;;
+        *)      info "board-currency: $line" ;;
+      esac
+    done <<<"$BOARD_CHECK_OUT"
+  else
+    ok "board-currency: live STATUS-0.8.z.md board(s) match git ancestry for this tip"
+  fi
+fi
+
+# --- 8. Ledger-integrity gate (DOC-HYGIENE-2 T1b) --------------------------------
+# Refuse a land that would ship a `*.jsonl.seq` sidecar disagreeing with its
+# ledger. The incident: 19 consecutive commits (f22e4947 -> 3264114a, four days)
+# shipped dev/steward/steward-ledger.jsonl.seq frozen at 80 while max(seq) in
+# the ledger had reached 98. The sidecar is TRACKED and is the only thing an
+# appender reads to pick the next seq, so every clone taken in that window would
+# have minted colliding seq numbers.
+#
+# The predicate lives in scripts/check-ledgers.sh (see that file's header for
+# the full statement — exactly two checks: sidecar == max(seq), and seq
+# contiguous) so preflight and the always-on CI job share ONE implementation and
+# cannot diverge, exactly as §7 does for board-currency.
+#
+# --landing-only, mirroring §7's structure. The ledger invariant is in fact true
+# at all times (unlike a board, which legitimately reads "in flight" mid-build),
+# so an unconditional run would also be sound; it is kept behind --landing so
+# preflight's non-landing path stays exactly as lean as it was, and the CI job —
+# which is deliberately NOT docs_only-gated — is what covers every non-landing
+# push.
+if [ "$LANDING" -eq 1 ]; then
+  LEDGER_CHECK_OUT="$(bash "$SELF_DIR/check-ledgers.sh" 2>&1)" || LEDGER_CHECK_RC=$?
+  LEDGER_CHECK_RC="${LEDGER_CHECK_RC:-0}"
+  if [ "$LEDGER_CHECK_RC" -ne 0 ]; then
+    LEDGER_SAW_BROKEN=0
+    while IFS= read -r line; do
+      case "$line" in
+        BROKEN*) hard "ledger-integrity: $line"; LEDGER_SAW_BROKEN=1 ;;
+        *)       info "ledger-integrity: $line" ;;
+      esac
+    done <<<"$LEDGER_CHECK_OUT"
+    # Anti-fail-open: a non-zero rc with no BROKEN line means the checker itself
+    # could not run (exit 2 = usage/env, e.g. python3 absent) — that must still
+    # block the land, never degrade into INFO lines and a green summary.
+    if [ "$LEDGER_SAW_BROKEN" -eq 0 ]; then
+      hard "ledger-integrity: check-ledgers.sh exited $LEDGER_CHECK_RC without reporting a specific defect — refusing to certify this tree for landing"
+    fi
+  else
+    ok "ledger-integrity: every *.jsonl.seq sidecar agrees with its ledger and every seq run is contiguous"
+  fi
+fi
+
+# --- 9. Governed-surface pin gate (DOC-HYGIENE-2 T1e) ----------------------------
+# Refuse a land that would ship a governed surface the HITL has not signed. The
+# HITL PRE-SIGNED the accumulated delta of 0.8.20 Slices 5d+10b+15b+15d (AC-079)
+# pinned to the exact content of src/conformance/governed-surface-allowlist.json
+# as of 427d2712 — 30 allowlist members, recovery_denylist unchanged at the five
+# REQ-054 names. This gate makes that pin mechanical.
+#
+# The predicate lives in scripts/check-governed-surface-pin.sh (see that file's
+# header) so preflight and the always-on CI job share ONE implementation and
+# cannot diverge, exactly as §7 and §8 do. --landing-only, mirroring their
+# structure: the CI job — deliberately NOT docs_only-gated — covers every
+# non-landing push.
+#
+# Tripping this is CORRECT BEHAVIOUR, not a bug: Slices 20/25/30 are expected to
+# trip it, and that is exactly what routes a changed surface back to the HITL
+# instead of letting it land under a pre-sign that never covered it.
+if [ "$LANDING" -eq 1 ]; then
+  SURFACE_CHECK_OUT="$(bash "$SELF_DIR/check-governed-surface-pin.sh" 2>&1)" || SURFACE_CHECK_RC=$?
+  SURFACE_CHECK_RC="${SURFACE_CHECK_RC:-0}"
+  if [ "$SURFACE_CHECK_RC" -ne 0 ]; then
+    SURFACE_SAW_FAIL=0
+    while IFS= read -r line; do
+      case "$line" in
+        FAIL*) hard "governed-surface-pin: $line"; SURFACE_SAW_FAIL=1 ;;
+        *)     info "governed-surface-pin: $line" ;;
+      esac
+    done <<<"$SURFACE_CHECK_OUT"
+    # Anti-fail-open, as in §8: a non-zero rc with no FAIL line means the checker
+    # itself could not run (exit 2 = usage/env, e.g. python3 absent or an
+    # unreadable pin) — that must still block the land.
+    if [ "$SURFACE_SAW_FAIL" -eq 0 ]; then
+      hard "governed-surface-pin: check-governed-surface-pin.sh exited $SURFACE_CHECK_RC without reporting a specific defect — refusing to certify this tree for landing"
+    fi
+  else
+    ok "governed-surface-pin: the governed surface matches the AC-079 pre-signed pin"
+  fi
+fi
+
+# --- 10. C-1 contract-conformance gate (R-20-H7, RUBRIC-H7 can-i-deploy) --------
+# Refuse a land whose code no longer satisfies the ratified cross-repo design
+# contract dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md.
+# R-20-H7 is a PUBLISH PRECONDITION: "Gate exists and is GREEN. An
+# absent-or-failing gate HOLDS the breaking pair" (plan-0.8.20.md §3,
+# HITL-directed 2026-07-10).
+#
+# The predicate lives in scripts/check-c1-conformance.sh (see that file's header
+# for the full statement — and, just as importantly, for what it deliberately
+# does NOT claim to check) so preflight and the always-on CI job share ONE
+# implementation and cannot diverge, exactly as §7/§8/§9 do. --landing-only,
+# mirroring their structure: the CI job — deliberately NOT docs_only-gated —
+# covers every non-landing push.
+#
+# Tripping this is CORRECT BEHAVIOUR, not a bug. It means either as-built code
+# drifted from a RATIFIED cross-repo contract, or that contract moved without
+# its clause registry being re-derived — and both must route to the Steward
+# rather than land.
+if [ "$LANDING" -eq 1 ]; then
+  C1_CHECK_OUT="$(bash "$SELF_DIR/check-c1-conformance.sh" 2>&1)" || C1_CHECK_RC=$?
+  C1_CHECK_RC="${C1_CHECK_RC:-0}"
+  if [ "$C1_CHECK_RC" -ne 0 ]; then
+    C1_SAW_FAIL=0
+    while IFS= read -r line; do
+      case "$line" in
+        FAIL*) hard "c1-contract-conformance: $line"; C1_SAW_FAIL=1 ;;
+        *)     info "c1-contract-conformance: $line" ;;
+      esac
+    done <<<"$C1_CHECK_OUT"
+    # Anti-fail-open, as in §8/§9: a non-zero rc with no FAIL line means the
+    # checker itself could not run (exit 2 = python3 absent, a missing contract,
+    # a malformed pin, an unreadable source file, or an evaporated check set).
+    # That must still block the land — a gate that could not see its subject is
+    # exactly the case where landing on its silence is worst.
+    if [ "$C1_SAW_FAIL" -eq 0 ]; then
+      hard "c1-contract-conformance: check-c1-conformance.sh exited $C1_CHECK_RC without reporting a specific defect — refusing to certify this tree for landing"
+    fi
+  else
+    ok "c1-contract-conformance: as-built code still satisfies the pinned OPP-12 C-1 contract (R-20-H7)"
+  fi
+fi
+
+# --- Summary (JSON, last line) ---------------------------------------------------
+json_arr() { local out="" x; for x in "$@"; do out="${out:+$out,}\"$(printf '%s' "$x" | sed 's/\\/\\\\/g; s/"/\\"/g')\""; done; printf '[%s]' "$out"; }
+
+STATUS=$([ ${#HARD_FAILS[@]} -eq 0 ] && echo pass || echo fail)
+printf '{"preflight":"%s","main_sha":"%s","worktree":"%s","hard_fails":%s,"warnings":%s}\n' \
+  "$STATUS" "$MAIN_SHA" "${WT:-}" "$(json_arr "${HARD_FAILS[@]+"${HARD_FAILS[@]}"}")" "$(json_arr "${WARNS[@]+"${WARNS[@]}"}")"
+
+[ "$STATUS" = pass ]
+
+exec
+/bin/bash -lc "python3 - <<'PY'
+import json
+p=json.load(open('scripts/c1-conformance-pin.json'))
+print(p.keys())
+print(p['counts'])
+print(len(p['clauses']))
+from collections import Counter
+print(Counter(c['category'] for c in p['clauses']))
+print(p.get('pinned_at_commit'),p.get('pinned_file'))
+print(p['sha256'],p['git_blob_sha1'],p['sha256_whitespace_normalized'])
+PY
+bash scripts/check-c1-conformance.sh >/tmp/out 2>&1; echo rc="'$?; tail -20 /tmp/out' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 239ms:
+rc=0
+ok    c1-contract-conformance: dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md matches the pin and all 26 CHECKABLE clause(s) hold (26 checkable / 12 cross-repo / 7 prose, 45 total, pinned at 23a436dc)
+
+exec
+/bin/bash -lc 'bash scripts/tests/test_check_c1_conformance.sh' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 2961ms:
+PASS  the real repo conforms to the pinned C-1 contract (default args)
+PASS  the passing run says ok
+PASS  the passing run states the clause tally it verified
+PASS  the passing run states the grand total of clauses
+PASS  the ratified C-1 contract is byte-identical to the pin
+PASS  the pin's git_blob_sha1 is exactly 23a436dc's blob for the contract
+PASS  an unmodified COPY of the contract + a copied source root passes
+PASS  the copied-fixture pass says ok
+PASS  a SUBSTANTIVE contract edit HARD-fails (the contract moved)
+PASS  contract-moved says the contract moved
+PASS  contract-moved reports a content divergence
+PASS  contract-moved says the clause registry must be RE-DERIVED
+PASS  contract-moved cites the efa8d584 amendment precedent
+PASS  a substantive edit is NOT reported as formatting-only
+PASS  contract-moved routes the reader to the Steward and forbids a silent re-pin
+PASS  a whitespace/formatting-only contract change HARD-fails (content-hash pin, by design)
+PASS  whitespace-only reports a content divergence
+PASS  whitespace-only says the change is formatting-only
+PASS  whitespace-only explains that the pin is deliberately a content hash
+PASS  whitespace-only routes the reader to the Steward and forbids a silent re-pin
+PASS  a MISSING contract exits 2 (TC-37 evaporation), never 0 and never 1
+PASS  contract-missing says it could not read the contract
+PASS  contract-missing cites the vacuous-pass failure class
+PASS  contract-missing prints no ok line
+PASS  a MISSING pin exits 2 (the gate could not run) and never 0
+PASS  pin-missing says the gate could not run
+PASS  a pin that OMITS counts.checkable HARD-fails as MALFORMED
+PASS  omit-counts.checkable names the missing count entry
+PASS  omit-counts.checkable says the pin is malformed
+PASS  omit-counts.checkable forbids regenerating the pin to clear it
+PASS  omit-counts.checkable prints no ok line
+PASS  a pin that OMITS counts.cross_repo HARD-fails as MALFORMED
+PASS  omit-counts.cross_repo names the missing count entry
+PASS  omit-counts.cross_repo says the pin is malformed
+PASS  omit-counts.cross_repo forbids regenerating the pin to clear it
+PASS  omit-counts.cross_repo prints no ok line
+PASS  a pin that OMITS counts.prose HARD-fails as MALFORMED
+PASS  omit-counts.prose names the missing count entry
+PASS  omit-counts.prose says the pin is malformed
+PASS  omit-counts.prose forbids regenerating the pin to clear it
+PASS  omit-counts.prose prints no ok line
+PASS  a pin that OMITS counts.total HARD-fails as MALFORMED
+PASS  omit-counts.total names the missing count entry
+PASS  omit-counts.total says the pin is malformed
+PASS  omit-counts.total forbids regenerating the pin to clear it
+PASS  omit-counts.total prints no ok line
+PASS  a STRING counts.checkable HARD-fails as MALFORMED (never a divergence)
+PASS  string-count says the count is not an integer
+PASS  a malformed pin does NOT print the divergence-routing block (broken gate, not a moved contract)
+PASS  a NULL counts.prose HARD-fails as MALFORMED
+PASS  null-count says the count is not an integer
+PASS  a FLOAT counts.checkable HARD-fails as MALFORMED (26.0 == 26 would have passed)
+PASS  float-count says the count is not an integer
+PASS  a BOOLEAN counts.total HARD-fails (isinstance(True, int) is True in Python)
+PASS  bool-count says the count is not an integer
+PASS  a NULL sha256 in the pin HARD-fails as MALFORMED, not as a divergence
+PASS  bad-hash pin says the hash field is not a string
+PASS  a CHECKABLE clause DELETED from the pin registry HARD-fails as MALFORMED
+PASS  clause-deleted NAMES the vanished clause id
+PASS  clause-deleted says the pinned check set shrank
+PASS  clause-deleted prints no ok line
+PASS  an ORPHAN CHECKABLE pin id (no implemented assertion) HARD-fails as MALFORMED
+PASS  clause-orphan NAMES the orphan clause id
+PASS  clause-orphan says the gate implements no assertion for it
+PASS  a clause RECLASSIFIED CHECKABLE -> PROSE HARD-fails as MALFORMED
+PASS  clause-reclassified NAMES the demoted clause id
+PASS  clause-reclassified reports the moved category counts
+PASS  a demotion WITH the counts fixed up is still caught by the registry bijection
+PASS  the consistent demotion still NAMES the clause id
+PASS  a source root that INTRODUCES EntityTypeSpec/id_prefix HARD-fails the gate
+PASS  the negative-space failure NAMES the clause id
+PASS  the negative-space failure NAMES the offending file
+PASS  the negative-space failure says the clause fails
+PASS  the negative-space clause failure routes the reader to the Steward and forbids a silent re-pin
+PASS  a clause failure is not reported as a contract move
+PASS  a source root with a REQUIRED symbol removed HARD-fails the gate
+PASS  the missing-symbol failure NAMES the clause id
+PASS  the missing-symbol failure states what it looked for and did not find
+PASS  the missing-symbol clause failure routes the reader to the Steward and forbids a silent re-pin
+PASS  deleting the named crash-heal test HARD-fails the gate
+PASS  the deleted-test failure NAMES the clause id
+PASS  a MISSING source file exits 2 (TC-37 #4) — not 0 and not 1
+PASS  file-missing says the assertion could not be evaluated
+PASS  file-missing cites the evaporation failure class
+PASS  file-missing prints no ok line
+PASS  an EMPTY source root exits 2 (every assertion evaporates), never 0
+PASS  an unknown flag exits 2 (usage), distinct from a divergence
+PASS  --help exits 0
+PASS  --help prints usage
+PASS  --list-sources exits 0
+PASS  --list-sources names the engine source the assertions read
+PASS  --list-sources names the tree the negative-space clause scans
+PASS  --landing HARD-fails in a worktree whose code breaks a C-1 clause
+PASS  --landing failure output names the c1-contract-conformance check
+PASS  --landing failure carries the specific clause id through to the operator
+PASS  --landing still exits 0 in a worktree that conforms to the pinned contract
+PASS  regression guard: c1-contract-conformance is inert without --landing
+PASS  --landing HARD-fails when the C-1 gate itself cannot run (anti-fail-open)
+PASS  the anti-fail-open path says it refuses to certify the tree
+PASS  ci.yml defines a c1-contract-conformance job
+PASS  the CI job runs the SHARED scripts/check-c1-conformance.sh (one predicate, two callers)
+PASS  the CI job carries the recurrence guard for the gate itself
+PASS  the c1-contract-conformance job is always-on (no if: condition, not docs_only-gated)
+PASS  the c1-contract-conformance job has no needs: (does not ride the changes/docs_only fast path)
+PASS  the CI job pins actions/checkout to the same SHA as its sibling jobs
+PASS  agent-test.sh registers this fixture suite alongside its siblings
+
+All check-c1-conformance tests passed
+
+exec
+/bin/bash -lc "sed -n '430,540p' .github/workflows/ci.yml && grep -n \""'^  .*:" .github/workflows/ci.yml | tail -30' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+  # Deliberately carries NO `if:` condition. A docs_only-gated job never fires on
+  # a code push, and the measured incident (steward-ledger.jsonl.seq frozen at 80
+  # against max(seq) 98 for 19 commits / four days) spanned both docs and code
+  # pushes; the sidecar is tracked, so any clone taken in that window would have
+  # minted colliding seq numbers. Default (depth-1) checkout is sufficient: the
+  # predicate reads working-tree files only and walks no history.
+  ledger-integrity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Ledger sidecar/seq integrity (DOC-HYGIENE-2 T1b)
+        run: bash scripts/check-ledgers.sh
+
+  # DOC-HYGIENE-2 T1d — the always-on line-anchor / citation-integrity backstop.
+  #
+  # Deliberately carries NO `if:` and NO `needs:`. This is the whole point of the
+  # job, not boilerplate. The `markdownlint` job above is gated on
+  # `needs.changes.outputs.docs_only == 'true'`, so it fires only when a push
+  # touches docs and nothing else — but the event that BREAKS a symbol citation
+  # in an ACTIVE plan is a rename in `src/`, i.e. a code push, which docs_only
+  # excludes by construction. A citation gate that cannot run on the push that
+  # invalidates the citation is decorative. Same reasoning that put
+  # `board-currency` and `ledger-integrity` outside the docs_only fast path.
+  #
+  # Default (depth-1) checkout is sufficient: the predicate reads working-tree
+  # files only and walks no history.
+  plan-anchors:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: ACTIVE-plan line-anchor ban + symbol-existence check (DOC-HYGIENE-2 T1d)
+        run: bash scripts/lint-plan-anchors.sh
+      - name: Recurrence guard for the gate itself (fixture arms)
+        run: bash scripts/tests/test_lint_plan_anchors.sh
+
+  # DOC-HYGIENE-2 T1e — the always-on governed-surface pin backstop.
+  # `preflight.sh --landing` is the PREVENT gate at land time; this job is the
+  # DETECT gate for whatever slips it. Reuses scripts/check-governed-surface-pin.sh
+  # — the SAME script preflight calls — so the two homes cannot diverge (see that
+  # script's header for the predicate: content hash + member lists + counts +
+  # REQ-054, against scripts/governed-surface-pin.json).
+  #
+  # Deliberately carries NO `if:` condition and is NOT on the docs_only fast path:
+  # a governed-surface change is BY DEFINITION a code change, so a docs_only gate
+  # would make this job silently absent on exactly the pushes it exists to catch.
+  # Default (depth-1) checkout is sufficient: the predicate reads working-tree
+  # files only and walks no history.
+  governed-surface-pin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Governed-surface pin vs the AC-079 pre-sign (DOC-HYGIENE-2 T1e)
+        run: bash scripts/check-governed-surface-pin.sh
+
+  # R-20-H7 — the always-on RUBRIC-H7 `can-i-deploy` contract-conformance
+  # backstop. `preflight.sh --landing` is the PREVENT gate at land time; this job
+  # is the DETECT gate for whatever slips it. Reuses
+  # scripts/check-c1-conformance.sh — the SAME script preflight calls — so the
+  # two homes cannot diverge (see that script's header for the predicate, for the
+  # five TC-37 evaporation paths, and for the explicit statement of what this
+  # STATIC STRUCTURAL check does NOT prove).
+  #
+  # Deliberately carries NO `if:` condition and NO `needs:`, and is NOT on the
+  # docs_only fast path. That combination is the whole point of the job. The
+  # subject here straddles both fast paths: the ratified C-1 contract is a DESIGN
+  # DOC (so a code-only push would skip a docs_only-gated job) while the code it
+  # governs is SOURCE (so a docs-only push takes the fast path that skips the
+  # heavy verify job). Either gate would make this job absent on exactly the
+  # pushes that matter — a rename in src/ that breaks a contract obligation, or
+  # an edit to the contract that moves it out from under its clause registry.
+  #
+  # An absent-or-failing gate HOLDS the 0.8.20 ↔ Memex breaking pair
+  # (plan-0.8.20.md §3), so this job is a publish precondition, not decoration.
+  # Default (depth-1) checkout is sufficient: the predicate reads working-tree
+  # files only and walks no history.
+  c1-contract-conformance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: As-built code still satisfies the ratified OPP-12 C-1 contract (R-20-H7)
+        run: bash scripts/check-c1-conformance.sh
+      - name: Recurrence guard for the gate itself (fixture arms)
+        run: bash scripts/tests/test_check_c1_conformance.sh
+
+  # DOC-HYGIENE-2 T2a — the always-on single-writer release-state backstop.
+  #
+  # Deliberately carries NO `if:` and NO `needs:`, for the same reason as
+  # board-currency / ledger-integrity / plan-anchors above. The push that
+  # invalidates a generated release-state view is a LANDING push (a slice merges,
+  # SCHEMA moves, the next slice changes) — i.e. a code push, which the
+  # `markdownlint` job's `docs_only` gate excludes by construction. A currency
+  # gate that cannot run on the push that makes the fact wrong is decorative.
+  #
+  # Default (depth-1) checkout is sufficient: the predicate reads working-tree
+  # files only and walks no history.
+  release-state-views:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Release-state generated views are current (DOC-HYGIENE-2 T2a)
+        run: bash scripts/check-release-state-views.sh
+      - name: Recurrence guard for the gate itself (fixture arms)
+        run: bash scripts/tests/test_check_release_state_views.sh
+
+  # DOC-HYGIENE-2 T3b — the generated commission manifest. ALWAYS-ON (no `if:`,
+  # no `needs:`) on purpose, even though the generator is an operator tool rather
+568:    timeout-minutes: 5
+569:    steps:
+570:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+571:      - name: dev/design/**/*.md status frontmatter (T2c)
+572:        run: bash scripts/lint-design-status.sh
+573:      - name: Recurrence guard for the gate itself
+574:        run: bash scripts/tests/test_design_status_frontmatter.sh
+578:  # Deliberately carries NO `if:` and NO `needs:`. The briefing reads DOCS (the
+583:  # runs on every push. Cheap: shell + python3 stdlib, no build.
+588:  steward-orient:
+589:    runs-on: ubuntu-latest
+590:    timeout-minutes: 5
+591:    steps:
+592:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+593:      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+594:        with:
+595:          python-version: "3.12"
+596:      - name: Steward cold-start briefing + its fixture arms (DOC-HYGIENE-2 T3a)
+597:        run: bash scripts/tests/test_steward_orient.sh
+600:  # Intentionally NOT gated on docs_only: it must run for docs/** changes (the
+602:  docs:
+603:    runs-on: ubuntu-latest
+604:    timeout-minutes: 15
+605:    steps:
+606:      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+607:      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+608:        with:
+609:          python-version: "3.12"
+610:      - run: python3 -m pip install --upgrade pip mkdocs
+611:      - run: mkdocs build --strict
+
+exec
+/bin/bash -lc "sed -n '150,360p' scripts/tests/test_check_c1_conformance.sh" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+}
+
+# edit_pin <name> <python-body> -> a COPY of the pin, mutated. `pin` is the dict.
+edit_pin() {
+  local name="$1" body="$2" out="$TMPROOT/pin-$1.json"
+  mkdir -p "$TMPROOT"
+  python3 - "$REAL_PIN" "$out" <<PY
+import json, sys
+with open(sys.argv[1]) as fh:
+    pin = json.load(fh)
+$body
+with open(sys.argv[2], "w") as fh:
+    json.dump(pin, fh, indent=2)
+    fh.write("\n")
+PY
+  printf '%s' "$out"
+}
+
+# ================== Arm 1: the real, unmodified tree, defaults ===============
+# Regression half. Also a standing assertion that the pinned contract is itself
+# byte-unmodified: if this suite ever "fixes" a red arm by editing the contract,
+# this arm goes red.
+run_checker
+expect_rc 0 "the real repo conforms to the pinned C-1 contract (default args)"
+expect_out 'ok +c1-contract-conformance' "the passing run says ok"
+expect_out '26 checkable / 12 cross-repo / 7 prose' \
+  "the passing run states the clause tally it verified"
+expect_out '45 total' "the passing run states the grand total of clauses"
+
+PIN_SHA="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["sha256"])' "$REAL_PIN")"
+REAL_SHA="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$REAL_CONTRACT")"
+if [ "$PIN_SHA" = "$REAL_SHA" ]; then
+  pass "the ratified C-1 contract is byte-identical to the pin"
+else
+  fail "the contract no longer matches the pin's sha256 ($REAL_SHA vs $PIN_SHA)"
+fi
+
+# The pin must really be its recorded commit's content — the provenance claim.
+# Skipped (loudly) where that commit is unreachable; the hash arm above still
+# carries the assertion, so this is not a vacuous pass.
+PIN_BLOB="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["git_blob_sha1"])' "$REAL_PIN")"
+PIN_AT="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["pinned_at_commit"])' "$REAL_PIN")"
+PIN_PATH="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["pinned_file"])' "$REAL_PIN")"
+if git -C "$REPO_ROOT" cat-file -e "${PIN_AT}^{commit}" 2>/dev/null; then
+  AT_PIN="$(git -C "$REPO_ROOT" rev-parse "${PIN_AT}:${PIN_PATH}")"
+  if [ "$AT_PIN" = "$PIN_BLOB" ]; then
+    pass "the pin's git_blob_sha1 is exactly ${PIN_AT:0:8}'s blob for the contract"
+  else
+    fail "pin git_blob_sha1 $PIN_BLOB != ${PIN_AT:0:8}'s blob $AT_PIN — the provenance claim is false"
+  fi
+else
+  printf 'SKIP  %s unreachable (shallow checkout) — provenance arm not run\n' "${PIN_AT:0:8}"
+fi
+
+# ============ Arm 2: an unmodified COPY of contract + pin + root =============
+# Byte-identical copies at different paths must pass, proving the gate compares
+# CONTENT and is not keyed to any path or to repo state.
+CLEAN_CONTRACT="$(copy_contract clean)"
+CLEAN_ROOT="$(make_root clean)"
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$CLEAN_ROOT"
+expect_rc 0 "an unmodified COPY of the contract + a copied source root passes"
+expect_out 'ok +c1-contract-conformance' "the copied-fixture pass says ok"
+
+# ============ Arm 3 (RED): the contract text moved (substantive) =============
+# The load-bearing pin: the clause registry was derived from THIS text, so a
+# changed contract means the registry is no longer known to describe the doc.
+F="$(copy_contract mutated)"
+python3 - "$F" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+assert "registry-admitted GOVERNED entities only" in text
+text = text.replace("registry-admitted GOVERNED entities only", "anonymous entities", 1)
+open(p, "w", encoding="utf-8").write(text)
+PY
+run_checker --contract "$F" --pin "$REAL_PIN" --root "$CLEAN_ROOT"
+expect_rc 1 "a SUBSTANTIVE contract edit HARD-fails (the contract moved)"
+expect_out 'has MOVED' "contract-moved says the contract moved"
+expect_out 'content differs from the pin' "contract-moved reports a content divergence"
+expect_out 'RE-DERIVED' "contract-moved says the clause registry must be RE-DERIVED"
+expect_out 'efa8d584' "contract-moved cites the efa8d584 amendment precedent"
+expect_no_out 'formatting-only' "a substantive edit is NOT reported as formatting-only"
+expect_routes_to_steward "contract-moved"
+
+# ============ Arm 4 (RED): whitespace / formatting-only change ===============
+# Documented behaviour of a CONTENT-hash pin. The failure must ALSO say the
+# change is formatting-only, so the reader is never left guessing whether the
+# ratified text actually moved.
+F="$(copy_contract whitespace)"
+printf '\n\n' >>"$F"
+run_checker --contract "$F" --pin "$REAL_PIN" --root "$CLEAN_ROOT"
+expect_rc 1 "a whitespace/formatting-only contract change HARD-fails (content-hash pin, by design)"
+expect_out 'content differs from the pin' "whitespace-only reports a content divergence"
+expect_out 'WHITESPACE/FORMATTING-ONLY' "whitespace-only says the change is formatting-only"
+expect_out 'CONTENT hash' "whitespace-only explains that the pin is deliberately a content hash"
+expect_routes_to_steward "whitespace-only"
+
+# ====== Arm 5 (RED): contract missing — TC-37 evaporation path #2 ============
+# A gate that cannot see its subject must never report green, and must not
+# report a DIVERGENCE either: it computed no verdict at all.
+run_checker --contract "$TMPROOT/no-such-contract.md" --pin "$REAL_PIN" --root "$CLEAN_ROOT"
+expect_rc 2 "a MISSING contract exits 2 (TC-37 evaporation), never 0 and never 1"
+expect_out 'cannot read' "contract-missing says it could not read the contract"
+expect_out 'TC-37' "contract-missing cites the vacuous-pass failure class"
+expect_no_out 'ok +c1-contract-conformance' "contract-missing prints no ok line"
+
+# ============ Arm 6 (RED): pin missing — evaporation path #3 =================
+run_checker --contract "$CLEAN_CONTRACT" --pin "$TMPROOT/no-such-pin.json" --root "$CLEAN_ROOT"
+expect_rc 2 "a MISSING pin exits 2 (the gate could not run) and never 0"
+expect_out 'the gate cannot run' "pin-missing says the gate could not run"
+
+# ====== Arm 7 (RED): pin malformed — a counts entry DELETED ==================
+# The counts block is the backstop that catches an internally inconsistent
+# re-pin, which makes the counts block itself a target. A count the gate cannot
+# read is a MALFORMED PIN (exit 2), never a silently skipped check.
+for KEY in checkable cross_repo prose total; do
+  P="$(edit_pin "omit-$KEY" "del pin['counts']['$KEY']")"
+  run_checker --contract "$CLEAN_CONTRACT" --pin "$P" --root "$CLEAN_ROOT"
+  expect_rc 2 "a pin that OMITS counts.$KEY HARD-fails as MALFORMED"
+  expect_out "'counts' has no '$KEY' entry" "omit-counts.$KEY names the missing count entry"
+  expect_out 'MALFORMED' "omit-counts.$KEY says the pin is malformed"
+  expect_out "DO NOT 'fix' this by regenerating the pin" \
+    "omit-counts.$KEY forbids regenerating the pin to clear it"
+  expect_no_out 'ok +c1-contract-conformance' "omit-counts.$KEY prints no ok line"
+done
+
+# ====== Arm 8 (RED): pin malformed — a counts entry MISTYPED =================
+# Same hole through a different door. `true` is included because
+# isinstance(True, int) is True in Python and `True == 1` would let a boolean
+# masquerade as a count; `26.0 == 26` would likewise compare equal.
+P="$(edit_pin "type-string" "pin['counts']['checkable'] = '26'")"
+run_checker --contract "$CLEAN_CONTRACT" --pin "$P" --root "$CLEAN_ROOT"
+expect_rc 2 "a STRING counts.checkable HARD-fails as MALFORMED (never a divergence)"
+expect_out 'not an integer' "string-count says the count is not an integer"
+expect_no_out 'DO NOT re-pin' \
+  "a malformed pin does NOT print the divergence-routing block (broken gate, not a moved contract)"
+
+P="$(edit_pin "type-null" "pin['counts']['prose'] = None")"
+run_checker --contract "$CLEAN_CONTRACT" --pin "$P" --root "$CLEAN_ROOT"
+expect_rc 2 "a NULL counts.prose HARD-fails as MALFORMED"
+expect_out 'not an integer' "null-count says the count is not an integer"
+
+P="$(edit_pin "type-float" "pin['counts']['checkable'] = 26.0")"
+run_checker --contract "$CLEAN_CONTRACT" --pin "$P" --root "$CLEAN_ROOT"
+expect_rc 2 "a FLOAT counts.checkable HARD-fails as MALFORMED (26.0 == 26 would have passed)"
+expect_out 'not an integer' "float-count says the count is not an integer"
+
+P="$(edit_pin "type-bool" "pin['counts']['total'] = True")"
+run_checker --contract "$CLEAN_CONTRACT" --pin "$P" --root "$CLEAN_ROOT"
+expect_rc 2 "a BOOLEAN counts.total HARD-fails (isinstance(True, int) is True in Python)"
+expect_out 'not an integer' "bool-count says the count is not an integer"
+
+P="$(edit_pin "hash-null" "pin['sha256'] = None")"
+run_checker --contract "$CLEAN_CONTRACT" --pin "$P" --root "$CLEAN_ROOT"
+expect_rc 2 "a NULL sha256 in the pin HARD-fails as MALFORMED, not as a divergence"
+expect_out 'not a non-empty string' "bad-hash pin says the hash field is not a string"
+
+# === Arm 9 (RED): a CHECKABLE clause DELETED from the pin registry ===========
+# The check set SHRINKS. The gate implements an assertion the pin no longer
+# registers — that is a malformed pin (exit 2), and the vanished id must be
+# NAMED so the reader can see exactly which check was removed.
+P="$(edit_pin "clause-deleted" \
+  "pin['clauses'] = [c for c in pin['clauses'] if c['id'] != 'C1-Q6B-NO-ENTITYTYPESPEC-NO-IDPREFIX']
+pin['counts']['checkable'] -= 1
+pin['counts']['total'] -= 1")"
+run_checker --contract "$CLEAN_CONTRACT" --pin "$P" --root "$CLEAN_ROOT"
+expect_rc 2 "a CHECKABLE clause DELETED from the pin registry HARD-fails as MALFORMED"
+expect_out 'C1-Q6B-NO-ENTITYTYPESPEC-NO-IDPREFIX' "clause-deleted NAMES the vanished clause id"
+expect_out 'VANISHED|SHRUNK' "clause-deleted says the pinned check set shrank"
+expect_no_out 'ok +c1-contract-conformance' "clause-deleted prints no ok line"
+
+# === Arm 10 (RED): an ORPHAN pin id with no implemented assertion ============
+# The mirror direction: the pin claims a check this gate does not implement, so
+# the pin over-states what is verified. Also exit 2, also NAMED.
+P="$(edit_pin "clause-orphan" \
+  "pin['clauses'].append({'id': 'C1-INVENTED-CLAUSE', 'category': 'CHECKABLE',
+    'obligation': 'a clause nobody implemented', 'evidence': []})
+pin['counts']['checkable'] += 1
+pin['counts']['total'] += 1")"
+run_checker --contract "$CLEAN_CONTRACT" --pin "$P" --root "$CLEAN_ROOT"
+expect_rc 2 "an ORPHAN CHECKABLE pin id (no implemented assertion) HARD-fails as MALFORMED"
+expect_out 'C1-INVENTED-CLAUSE' "clause-orphan NAMES the orphan clause id"
+expect_out 'implements NO assertion' "clause-orphan says the gate implements no assertion for it"
+
+# === Arm 11 (RED): a clause RECLASSIFIED CHECKABLE -> PROSE ==================
+# The quietest way to buy a green: leave the id in the registry but demote it out
+# of the checked set. Caught twice over — the category counts move, and the
+# implemented assertion is no longer registered.
+P="$(edit_pin "clause-reclassified" \
+  "for c in pin['clauses']:
+    if c['id'] == 'C1-Q4-NO-PROVISIONAL-CONCEPT':
+        c['category'] = 'PROSE'")"
+run_checker --contract "$CLEAN_CONTRACT" --pin "$P" --root "$CLEAN_ROOT"
+expect_rc 2 "a clause RECLASSIFIED CHECKABLE -> PROSE HARD-fails as MALFORMED"
+expect_out 'C1-Q4-NO-PROVISIONAL-CONCEPT' "clause-reclassified NAMES the demoted clause id"
+expect_out 'internally inconsistent' "clause-reclassified reports the moved category counts"
+
+# The same demotion with the counts "fixed up" to match is still caught, by the
+# registry bijection alone — this is the arm that proves the counts check is not
+# the only thing standing between a demotion and a green.
+P="$(edit_pin "clause-reclassified-consistent" \
+  "for c in pin['clauses']:
+    if c['id'] == 'C1-Q4-NO-PROVISIONAL-CONCEPT':
+        c['category'] = 'PROSE'
+pin['counts']['checkable'] -= 1
+pin['counts']['prose'] += 1")"
+run_checker --contract "$CLEAN_CONTRACT" --pin "$P" --root "$CLEAN_ROOT"
+expect_rc 2 "a demotion WITH the counts fixed up is still caught by the registry bijection"
+expect_out 'C1-Q4-NO-PROVISIONAL-CONCEPT' "the consistent demotion still NAMES the clause id"
+
+# === Arm 12 (RED): THE LOAD-BEARING SOURCE ARMS =============================
+
+exec
+/bin/bash -lc "python3 - <<'PY'
+import yaml,sys
+try:
+  import yaml
+except Exception as e:
+  print('no yaml',e); sys.exit()
+yaml.safe_load(open('.github/workflows/ci.yml'))
+print('ok')
+PY" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+ok
+
+exec
+/bin/bash -lc "git diff 23a436dcc7321eab86c622c8b403682caf2dfe2c -- scripts/c1-conformance-pin.json | sed -n '1,240p'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+diff --git a/scripts/c1-conformance-pin.json b/scripts/c1-conformance-pin.json
+new file mode 100644
+index 00000000..d23c27de
+--- /dev/null
++++ b/scripts/c1-conformance-pin.json
+@@ -0,0 +1,426 @@
++{
++  "_comment": [
++    "C-1 CONTRACT-CONFORMANCE PIN — the reviewable record of WHAT WAS CLASSIFIED.",
++    "",
++    "This file is DATA, not a decision. It does not ratify anything and it is not",
++    "itself a design contract: it records (i) the exact bytes of the ratified",
++    "OPP-12 C-1 converged contract that were read, and (ii) the classification of",
++    "EVERY clause in that document into CHECKABLE / CROSS-REPO / PROSE, so that",
++    "scripts/check-c1-conformance.sh can make R-20-H7 mechanical instead of a",
++    "human re-reading prose at publish time.",
++    "",
++    "WHY THE FULL CLAUSE REGISTRY IS COPIED HERE and not just a hash: a reviewer",
++    "must be able to SEE what was classified and why. A bare hash is unreviewable",
++    "— nobody can tell from 8740f087... whether the Q6(b) negative-space clause is",
++    "actually being checked or was quietly demoted to PROSE. Copying the registry",
++    "also makes a lazy re-pin visible: updating only `sha256` to silence the gate",
++    "still fails, because the gate compares this registry against its own",
++    "implemented assertions in BOTH directions.",
++    "",
++    "WHAT THE CATEGORIES MEAN:",
++    "  CHECKABLE  — a falsifiable mechanical assertion over THIS repo's as-built",
++    "               code is possible, and scripts/check-c1-conformance.sh",
++    "               implements it. `evidence` cites where it holds today.",
++    "  CROSS-REPO — the obligation is on the MEMEX repo (spec persistence,",
++    "               register(), promotion policy, the AttributeSpec.index carrier,",
++    "               the forbidden over-build). Not verifiable from here, and",
++    "               pretending otherwise would be a false assurance.",
++    "  PROSE      — no falsifiable mechanical assertion exists: rationale, scope",
++    "               lines, slot/landing notes, status banners.",
++    "",
++    "⚠ THE AMENDMENT THIS PIN EXISTS BECAUSE OF. The contract was AMENDED at",
++    "efa8d584 — clause Q6(b) now reads \"for registry-admitted GOVERNED entities",
++    "only\" and carries the TC-11 pin-A cancellation banner. Before that amendment",
++    "the clause mandated minting an anonymous surrogate logical_id, which the",
++    "ratified TC-11 pin FORBIDS ever implementing and which as-built code does not",
++    "implement. A registry derived from the UN-AMENDED text would have been",
++    "permanently red and would have held the breaking-pair publish forever. This",
++    "pin is keyed to the AMENDED text, and that is exactly why the contract's",
++    "bytes are pinned at all.",
++    "",
++    "HOW TO CHANGE THIS FILE: a contract amendment requires RE-DERIVING the clause",
++    "registry from the new text — reading the whole document again and",
++    "re-classifying every clause — and re-pinning under review, in the SAME change",
++    "that carries the new contract. Recomputing the hash alone is a lie, and",
++    "re-pinning to silence the gate is the exact failure mode the gate exists to",
++    "prevent. Demoting a CHECKABLE clause to PROSE to clear a red is the same",
++    "failure wearing a different hat.",
++    "",
++    "REPRODUCE THE PIN FROM GIT:",
++    "  git rev-parse 23a436dc:dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md",
++    "    -> 93694a5602ae205de05a801f256676b921dc39cc   (= git_blob_sha1 below)",
++    "  git show 23a436dc:dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md | sha256sum",
++    "    -> 8740f0873344088130970360134e4766d1d091645662842e82d711e584ae50bb",
++    "  sha256_whitespace_normalized is sha256 of re.sub(r'\\s+',' ',text).strip(),",
++    "  used ONLY to tell the reader whether a divergence was formatting-only. It is",
++    "  never a substitute for the content hash."
++  ],
++  "requirement": "R-20-H7",
++  "covers": "0.8.20 Slice 30 — the RUBRIC-H7 can-i-deploy contract-conformance gate (a publish precondition)",
++  "pinned_file": "dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md",
++  "pinned_at_commit": "23a436dcc7321eab86c622c8b403682caf2dfe2c",
++  "pinned_at_commit_short": "23a436dc",
++  "amended_at_commit": "efa8d584",
++  "git_blob_sha1": "93694a5602ae205de05a801f256676b921dc39cc",
++  "sha256": "8740f0873344088130970360134e4766d1d091645662842e82d711e584ae50bb",
++  "sha256_whitespace_normalized": "b294bc1d7df643779fb4466cbf678ef753a2285d74550abfec937f80566e6930",
++  "counts": {
++    "checkable": 26,
++    "cross_repo": 12,
++    "prose": 7,
++    "total": 45
++  },
++  "clauses": [
++    {
++      "id": "C1-STATUS-BANNER",
++      "category": "PROSE",
++      "obligation": "Status banner: RATIFIED both sides 2026-07-07; ratification schedules nothing and authorizes no build (build != adopt); provenance of the two-shot loop.",
++      "evidence": []
++    },
++    {
++      "id": "C1-SEAM-ENGINE-BUILD-DROP",
++      "category": "CHECKABLE",
++      "obligation": "Cohesion seam: FathomDB owns structure & mechanism — projection build/drop is an engine verb taking the specs and an EXPLICIT drop list, returning a delta.",
++      "evidence": [
++        "src/rust/crates/fathomdb-engine/src/lib.rs:8198 (pub fn configure_projections(&self, specs: &[ProjectionSpec], drop: &[String]) -> Result<ProjectionDelta, EngineError>)"
++      ]
++    },
++    {
++      "id": "C1-SEAM-MEMEX-SEMANTICS",
++      "category": "CROSS-REPO",
++      "obligation": "Memex owns semantics & judgment — which attributes exist, what they mean, which roles they take, the promotion gate; the LLM stays Memex-side.",
++      "evidence": []
++    },
++    {
++      "id": "C1-Q1-ROLE-SET",
++      "category": "CHECKABLE",
++      "obligation": "Q1: roles are a SET of ProjectionRole — the engine carries a ProjectionRole vocabulary and ProjectionSpec.roles has set semantics.",
++      "evidence": [
++        "src/rust/crates/fathomdb-engine/src/lib.rs:3850 (pub enum ProjectionRole)",
++        "src/rust/crates/fathomdb-engine/src/lib.rs:3984 (pub roles: BTreeSet<ProjectionRole>)"
++      ]
++    },
++    {
++      "id": "C1-Q1-INDEX-CARRIER",
++      "category": "CROSS-REPO",
++      "obligation": "Q1: the optional AttributeSpec.index: Set[ProjectionRole] carrier landed INERT in Commission C (memex 95ed450, persisted, byte-identical round-trip); absent => engine py_type inference.",
++      "evidence": []
++    },
++    {
++      "id": "C1-Q3-SOLE-AUTHORITY",
++      "category": "CHECKABLE",
++      "obligation": "Q3: the engine is the SOLE projection authority — it diffs the supplied specs against ONE durable registry and backfills, reporting the applied delta.",
++      "evidence": [
++        "src/rust/crates/fathomdb-schema/src/lib.rs:848 (CREATE TABLE _fathomdb_projection_registry)",
++        "src/rust/crates/fathomdb-engine/src/lib.rs:16884 (fn apply_projection_config)",
++        "src/rust/crates/fathomdb-engine/src/lib.rs:3993 (pub struct ProjectionDelta)"
++      ]
++    },
++    {
++      "id": "C1-Q3-DESTRUCTIVE-DELTA",
++      "category": "CHECKABLE",
++      "obligation": "Q3: an incompatible change on an existing `name` surfaces a DESTRUCTIVE DELTA requiring an explicit drop — never silent data loss.",
++      "evidence": [
++        "src/rust/crates/fathomdb-engine/src/lib.rs:3642 (EngineError::ProjectionDestructive { name, delta })",
++        "src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs:283 (destructive_change_requires_explicit_drop)"
++      ]
++    },
++    {
++      "id": "C1-Q3-OMISSION-NOT-DROP",
++      "category": "CHECKABLE",
++      "obligation": "Q3: omission != drop — leaving a live projection out of `specs` does NOT remove it; removal requires naming it in `drop`.",
++      "evidence": [
++        "src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs:223 (role_add_builds_and_explicit_drop_drops_exactly_one)",
++        "src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs:1191 (dropping_an_absent_name_is_a_clean_noop)"
++      ]
++    },
++    {
++      "id": "C1-Q3-MEMEX-PURE-DERIVE",
++      "category": "CROSS-REPO",
++      "obligation": "Q3: Memex runs only the pure `derive: EntityTypeSpec -> [ProjectionSpec]` and holds NO projection state.",
++      "evidence": []
++    },
++    {
++      "id": "C1-Q5-DERIVED-CACHE-IDEMPOTENT",
++      "category": "CHECKABLE",
++      "obligation": "Q5: the engine ProjectionSpec is a DERIVED cache re-driven IDEMPOTENTLY — re-applying an unchanged spec diffs to a no-op.",
++      "evidence": [
++        "src/rust/crates/fathomdb-engine/src/lib.rs:4007 (pub unchanged: bool)",
++        "src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs:204 (idempotent_reregistration_is_a_noop)"
++      ]
++    },
++    {
++      "id": "C1-Q5-MEMEX-PERSISTS-SPEC",
++      "category": "CROSS-REPO",
++      "obligation": "Q5: Memex persists the spec (one durable source of truth); drift resolves TO the Memex spec; no two-registry sync; boot runs load_from_store -> derive -> configure_projections.",
++      "evidence": []
++    },
++    {
++      "id": "C1-Q2-ENGINE-EAV-PROPERTY-FTS",
++      "category": "CHECKABLE",
++      "obligation": "Q2 end-state: ONE engine-owned EAV attribute store + property-FTS, with the (attr_name, attr_value) composite index the cheap filterable tier reads.",
++      "evidence": [
++        "src/rust/crates/fathomdb-schema/src/lib.rs:855 (CREATE TABLE canonical_attributes)",
++        "src/rust/crates/fathomdb-schema/src/lib.rs:860 (CREATE INDEX canonical_attributes_name_value_idx)",
++        "src/rust/crates/fathomdb-schema/src/lib.rs:864 (CREATE VIRTUAL TABLE property_search_index USING fts5)"
++      ]
++    },
++    {
++      "id": "C1-Q2-ENGINE-PROJECTS-VIA-CONFIGURE",
++      "category": "CHECKABLE",
++      "obligation": "Q2: the engine builds EAV + property-FTS once and PROJECTS via configure_projections — property-level filter and search are live.",
++      "evidence": [
++        "src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs:413 (property_filter_returns_correct_rows)",
++        "src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs:447 (property_fts_search_returns_correct_rows)"
++      ]
++    },
++    {
++      "id": "C1-Q2-NO-DATA-MIGRATION",
++      "category": "CHECKABLE",
++      "obligation": "Q2: BREAKING, NO DATA MIGRATION (explicit) — existing attributes are not migrated; the EAV/property-FTS migration defines shape only and backfills nothing.",
++      "evidence": [
++        "src/rust/crates/fathomdb-schema/src/lib.rs:847 (step 24 marker: 'NO DATA MIGRATION (HITL 2026-07-21): shape only, no backfill.')",
++        "src/rust/crates/fathomdb-schema/src/lib.rs:848-869 (the step's SQL is CREATE-only; no INSERT ... SELECT backfill)"
++      ]
++    },
++    {
++      "id": "C1-Q2-FORBIDDEN-OVERBUILD",
++      "category": "CROSS-REPO",
++      "obligation": "Q2: forbidden over-build (Memex) — no PERSISTED standalone attribute node/table; WorldModelEntityAttribute stays a read-materialized facade shape.",
++      "evidence": []
++    },
++    {
++      "id": "C1-Q2-MEMEX-REPOINTS-WRITE-PATH",
++      "category": "CROSS-REPO",
++      "obligation": "Q2 co-land: Memex repoints set_entity_attribute onto the governed engine-EAV verb and retires the nested-dict interim.",
++      "evidence": []
++    },
++    {
++      "id": "C1-Q2-SCOPE-LINE-UNTIL-COLAND",
++      "category": "PROSE",
++      "obligation": "Q2: 'property-level projection does not exist until the co-land (recall rides body-FTS + R-B until then — a scope line, not a gap)' — self-labelled a scope line, and overtaken by the co-land itself.",
++      "evidence": []
++    },
++    {
++      "id": "C1-Q4-CHEAP-SAME-TRANSACTION",
++      "category": "CHECKABLE",
++      "obligation": "Q4: the cheap tier (filterable, searchable->FTS) builds IMMEDIATELY, in the same transaction as the apply, and is reported as built.",
++      "evidence": [
++        "src/rust/crates/fathomdb-engine/src/lib.rs:8221 (apply_projection_config(&tx, ...) inside one transaction, committed before return)",
++        "src/rust/crates/fathomdb-engine/src/lib.rs:3997 (pub built: Vec<String>)"
++      ]
++    },
++    {
++      "id": "C1-Q4-DENSE-READINESS-TWO-MEMBERS",
++      "category": "CHECKABLE",
++      "obligation": "Q4: the expensive searchable->vector tier carries a dense_readiness axis — EXACTLY {ready, embedding}; `pending` is reserved for the orthogonal admission axis and is not a readiness spelling.",
++      "evidence": [
++        "src/rust/crates/fathomdb-engine/src/lib.rs:3910 (pub enum DenseReadiness { Ready, Embedding })",
++        "src/rust/crates/fathomdb-engine/src/lib.rs:3929-3934 (as_str: 'ready' / 'embedding'; no Pending variant anywhere)"
++      ]
++    },
++    {
++      "id": "C1-Q4-NO-PROVISIONAL-CONCEPT",
++      "category": "CHECKABLE",
++      "obligation": "Q4 mechanism refinement: the ENGINE NEEDS NO `provisional` CONCEPT — tiering is expressed entirely through Memex's role-declaration timing plus explicit drop, so no provisional notion exists in engine code.",
++      "evidence": [
++        "src/rust/crates/fathomdb-engine/src/lib.rs (zero occurrences of 'provisional' in any .rs file under src/; the only hits repo-wide are natural-language embedding probe corpora, which are test data, not code)"
++      ]
++    },
++    {
++      "id": "C1-Q4-PROMOTE-DEFERS-VECTOR",
++      "category": "CROSS-REPO",
++      "obligation": "Q4 policy: the expensive searchable->vector projection DEFERS to promote() for provisional types. Timing policy is Memex-owned; the engine only builds/drops what is currently declared.",
++      "evidence": []
+
+exec
+/bin/bash -lc 'shellcheck scripts/check-c1-conformance.sh scripts/tests/lib/c1-conformance-fixture.sh scripts/tests/test_check_c1_conformance.sh 2>/tmp/shellcheck.err || true; cat /tmp/shellcheck.err' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+/bin/bash: line 1: shellcheck: command not found
+
+exec
+/bin/bash -lc 'bash -n scripts/check-c1-conformance.sh scripts/tests/lib/c1-conformance-fixture.sh scripts/tests/test_check_c1_conformance.sh && bash -n scripts/preflight.sh' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+exec
+/bin/bash -lc "nl -ba scripts/check-c1-conformance.sh | sed -n '180,320p'; nl -ba scripts/tests/lib/c1-conformance-fixture.sh | sed -n '60,105p'; nl -ba .github/workflows/ci.yml | sed -n '480,525p'; nl -ba scripts/preflight.sh | sed -n '290,315p'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+   180	
+   181	set +e
+   182	python3 - "$CONTRACT" "$PIN" "$ROOT" "$LIST_SOURCES" >&2 <<'PY'
+   183	import hashlib
+   184	import json
+   185	import os
+   186	import re
+   187	import sys
+   188	
+   189	CONTRACT, PIN, ROOT, LIST_SOURCES = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4] == "1"
+   190	
+   191	# ---------------------------------------------------------------------------
+   192	# Root-relative paths the assertions read. Everything the gate opens is named
+   193	# here, and --list-sources prints exactly this, so a fixture root can be built
+   194	# from the gate's own manifest rather than from a hand-maintained copy that
+   195	# silently rots (a stale fixture root would turn every source arm into a TC-37
+   196	# path-#4 evaporation and stop testing what it claims).
+   197	# ---------------------------------------------------------------------------
+   198	ENG = "src/rust/crates/fathomdb-engine/src/lib.rs"
+   199	SCH = "src/rust/crates/fathomdb-schema/src/lib.rs"
+   200	EMB = "src/rust/crates/fathomdb-embedder/src/candle_bge.rs"
+   201	T15 = "src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs"
+   202	T20 = "src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs"
+   203	T25 = "src/rust/crates/fathomdb-engine/tests/slice25_registration_identity_inert.rs"
+   204	PLAN = "dev/plans/plan-0.8.20.md"
+   205	SRC_TREE = "src"
+   206	
+   207	# Directories never worth walking (and, for node_modules/target, never OURS).
+   208	SKIP_DIRS = {
+   209	    ".git", "node_modules", "target", "__pycache__", ".venv", "venv",
+   210	    "dist", "build", ".pytest_cache", ".mypy_cache", ".ruff_cache",
+   211	}
+   212	
+   213	# ---------------------------------------------------------------------------
+   214	# THE IMPLEMENTED ASSERTIONS. One entry per CHECKABLE clause id in the pin; the
+   215	# bijection between this dict's keys and the pin's CHECKABLE ids is predicate
+   216	# (b) and is enforced in BOTH directions below.
+   217	#
+   218	# Probe kinds:
+   219	#   ("present", path, regex)          regex must match at least once in path
+   220	#   ("absent",  path, regex)          regex must not match anywhere in path
+   221	#   ("min",     path, regex, n)       regex must match at least n times in path
+   222	#   ("absent_tree", tree, regex, exts) regex must not match in any text file
+   223	#                                      under tree (exts=None ⇒ every text file)
+   224	# ---------------------------------------------------------------------------
+   225	ASSERTIONS = {
+   226	    # ---- Cohesion seam --------------------------------------------------
+   227	    "C1-SEAM-ENGINE-BUILD-DROP": [
+   228	        ("present", ENG, r"pub fn configure_projections\("),
+   229	        ("present", ENG, r"drop: &\[String\],"),
+   230	        ("present", ENG, r"-> Result<ProjectionDelta, EngineError>"),
+   231	    ],
+   232	    # ---- Q1 --------------------------------------------------------------
+   233	    "C1-Q1-ROLE-SET": [
+   234	        ("present", ENG, r"pub enum ProjectionRole \{"),
+   235	        ("present", ENG, r"pub roles: BTreeSet<ProjectionRole>,"),
+   236	    ],
+   237	    # ---- Q3 --------------------------------------------------------------
+   238	    "C1-Q3-SOLE-AUTHORITY": [
+   239	        ("present", SCH, r"CREATE TABLE _fathomdb_projection_registry\("),
+   240	        ("present", ENG, r"fn apply_projection_config\("),
+   241	        ("present", ENG, r"pub struct ProjectionDelta \{"),
+   242	    ],
+   243	    "C1-Q3-DESTRUCTIVE-DELTA": [
+   244	        ("present", ENG, r"ProjectionDestructive \{"),
+   245	        ("present", T15, r"fn destructive_change_requires_explicit_drop\(\)"),
+   246	    ],
+   247	    "C1-Q3-OMISSION-NOT-DROP": [
+   248	        ("present", T15, r"fn role_add_builds_and_explicit_drop_drops_exactly_one\(\)"),
+   249	        ("present", T15, r"fn dropping_an_absent_name_is_a_clean_noop\(\)"),
+   250	    ],
+   251	    # ---- Q5 --------------------------------------------------------------
+   252	    "C1-Q5-DERIVED-CACHE-IDEMPOTENT": [
+   253	        ("present", ENG, r"pub unchanged: bool,"),
+   254	        ("present", T15, r"fn idempotent_reregistration_is_a_noop\(\)"),
+   255	    ],
+   256	    # ---- Q2 --------------------------------------------------------------
+   257	    "C1-Q2-ENGINE-EAV-PROPERTY-FTS": [
+   258	        ("present", SCH, r"CREATE TABLE canonical_attributes\("),
+   259	        ("present", SCH, r"CREATE VIRTUAL TABLE property_search_index USING fts5\("),
+   260	        ("present", SCH, r"CREATE INDEX canonical_attributes_name_value_idx"),
+   261	    ],
+   262	    "C1-Q2-ENGINE-PROJECTS-VIA-CONFIGURE": [
+   263	        ("present", T15, r"fn property_filter_returns_correct_rows\(\)"),
+   264	        ("present", T15, r"fn property_fts_search_returns_correct_rows\(\)"),
+   265	    ],
+   266	    "C1-Q2-NO-DATA-MIGRATION": [
+   267	        ("present", SCH, r"NO DATA MIGRATION \(HITL 2026-07-21\): shape only, no backfill\."),
+   268	        ("absent", SCH, r"INSERT INTO canonical_attributes"),
+   269	        ("absent", SCH, r"INSERT INTO property_search_index"),
+   270	    ],
+   271	    # ---- Q4 --------------------------------------------------------------
+   272	    "C1-Q4-CHEAP-SAME-TRANSACTION": [
+   273	        ("present", ENG, r"apply_projection_config\(&tx,"),
+   274	        ("present", ENG, r"pub built: Vec<String>,"),
+   275	    ],
+   276	    "C1-Q4-DENSE-READINESS-TWO-MEMBERS": [
+   277	        ("present", ENG, r"pub enum DenseReadiness \{"),
+   278	        ("present", ENG, r'DenseReadiness::Ready => "ready",'),
+   279	        ("present", ENG, r'DenseReadiness::Embedding => "embedding",'),
+   280	        ("absent", ENG, r"DenseReadiness::Pending"),
+   281	    ],
+   282	    "C1-Q4-NO-PROVISIONAL-CONCEPT": [
+   283	        ("absent_tree", SRC_TREE, r"(?i)provisional", (".rs",)),
+   284	    ],
+   285	    # ---- Q6(a) -----------------------------------------------------------
+   286	    "C1-Q6A-THREE-ROLES": [
+   287	        ("present", ENG, r'"filterable" => Some\(ProjectionRole::Filterable\),'),
+   288	        ("present", ENG, r'"rankable" => Some\(ProjectionRole::Rankable\),'),
+   289	        ("present", ENG, r'"searchable" => Some\(ProjectionRole::Searchable\),'),
+   290	        ("absent", ENG, r"ProjectionRole::Vector\b"),
+   291	        ("absent", ENG, r"ProjectionRole::Fts\b"),
+   292	    ],
+   293	    "C1-Q6A-RANKABLE-GRACEFUL-DEFER": [
+   294	        ("present", ENG, r"pub deferred: Vec<String>,"),
+   295	        ("present", T15, r"fn rankable_is_graceful_deferred_never_blocking\(\)"),
+   296	        ("present", T15, r"fn idempotent_reregistration_holds_for_deferred_rankable\(\)"),
+   297	    ],
+   298	    # ---- Q6(b), AS AMENDED at efa8d584 -----------------------------------
+   299	    "C1-Q6B-NO-ENTITYTYPESPEC-NO-IDPREFIX": [
+   300	        ("absent_tree", SRC_TREE, r"EntityTypeSpec", None),
+   301	        ("absent_tree", SRC_TREE, r"\bid_prefix\b", None),
+   302	        ("absent_tree", SRC_TREE, r"\bidPrefix\b", None),
+   303	    ],
+   304	    "C1-Q6B-IDSPACE-TOTAL-THREE": [
+   305	        ("present", ENG, r"pub enum IdSpaceKind \{"),
+   306	        ("present", ENG, r'Self::Logical => "l:",'),
+   307	        ("present", ENG, r'Self::Content => "h:",'),
+   308	        ("present", ENG, r'Self::Passage => "p:",'),
+   309	    ],
+   310	    "C1-Q6B-ID-NON-NULL": [
+   311	        ("present", ENG, r"pub id: IdSpace,"),
+   312	        ("absent", ENG, r"pub id: Option<IdSpace>"),
+   313	    ],
+   314	    "C1-Q6B-H-TERMINAL-NOT-LIFECYCLE-ADDRESSABLE": [
+   315	        ("present", ENG, r"NotLifecycleAddressable \{"),
+   316	        ("present", T25, r"fn an_anonymous_write_stays_anonymous_through_the_whole_durable_path\(\)"),
+   317	    ],
+   318	    "C1-Q6B-SURROGATE-GOVERNED-ONLY": [
+   319	        ("present", T25, r"fn registering_projections_never_alters_a_pre_existing_row_id_space\(\)"),
+   320	        ("present", T25, r"fn the_internal_structural_row_writer_mints_no_logical_id\(\)"),
+    60	  local lib_dir repo_root gate contract pin manifest kind path
+    61	  lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    62	  repo_root="$(cd "$lib_dir/../../.." && pwd)"
+    63	  gate="$repo_root/scripts/check-c1-conformance.sh"
+    64	  contract="dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md"
+    65	  pin="scripts/c1-conformance-pin.json"
+    66	
+    67	  if [ ! -f "$gate" ]; then
+    68	    printf 'seed_c1_conformance_fixture: %s is missing — cannot seed or verify\n' "$gate" >&2
+    69	    return 2
+    70	  fi
+    71	  if ! manifest="$(bash "$gate" --list-sources 2>&1)"; then
+    72	    printf 'seed_c1_conformance_fixture: --list-sources failed:\n%s\n' "$manifest" >&2
+    73	    return 2
+    74	  fi
+    75	
+    76	  mkdir -p "$repo/$(dirname "$contract")" "$repo/$(dirname "$pin")"
+    77	  cp "$repo_root/$contract" "$repo/$contract" || return 1
+    78	  cp "$repo_root/$pin" "$repo/$pin" || return 1
+    79	
+    80	  while IFS=$'\t' read -r kind path; do
+    81	    [ -n "${kind:-}" ] || continue
+    82	    case "$kind" in
+    83	      file)
+    84	        mkdir -p "$repo/$(dirname "$path")"
+    85	        cp "$repo_root/$path" "$repo/$path" || return 1
+    86	        ;;
+    87	      tree)
+    88	        mkdir -p "$repo/$path"
+    89	        ;;
+    90	    esac
+    91	  done <<<"$manifest"
+    92	
+    93	  # Self-check: run the REAL gate against the seeded tree. If the gate's
+    94	  # predicate ever gains a requirement this seeder does not satisfy, the failure
+    95	  # surfaces HERE, naming this helper, instead of as a baffling `--landing`
+    96	  # failure in four unrelated suites.
+    97	  local out
+    98	  if ! out="$(bash "$gate" --contract "$repo/$contract" --pin "$repo/$pin" --root "$repo" 2>&1)"; then
+    99	    printf 'seed_c1_conformance_fixture: the seeded tree does NOT satisfy check-c1-conformance.sh:\n%s\n' "$out" >&2
+   100	    return 1
+   101	  fi
+   102	}
+   480	    runs-on: ubuntu-latest
+   481	    timeout-minutes: 5
+   482	    steps:
+   483	      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+   484	      - name: Governed-surface pin vs the AC-079 pre-sign (DOC-HYGIENE-2 T1e)
+   485	        run: bash scripts/check-governed-surface-pin.sh
+   486	
+   487	  # R-20-H7 — the always-on RUBRIC-H7 `can-i-deploy` contract-conformance
+   488	  # backstop. `preflight.sh --landing` is the PREVENT gate at land time; this job
+   489	  # is the DETECT gate for whatever slips it. Reuses
+   490	  # scripts/check-c1-conformance.sh — the SAME script preflight calls — so the
+   491	  # two homes cannot diverge (see that script's header for the predicate, for the
+   492	  # five TC-37 evaporation paths, and for the explicit statement of what this
+   493	  # STATIC STRUCTURAL check does NOT prove).
+   494	  #
+   495	  # Deliberately carries NO `if:` condition and NO `needs:`, and is NOT on the
+   496	  # docs_only fast path. That combination is the whole point of the job. The
+   497	  # subject here straddles both fast paths: the ratified C-1 contract is a DESIGN
+   498	  # DOC (so a code-only push would skip a docs_only-gated job) while the code it
+   499	  # governs is SOURCE (so a docs-only push takes the fast path that skips the
+   500	  # heavy verify job). Either gate would make this job absent on exactly the
+   501	  # pushes that matter — a rename in src/ that breaks a contract obligation, or
+   502	  # an edit to the contract that moves it out from under its clause registry.
+   503	  #
+   504	  # An absent-or-failing gate HOLDS the 0.8.20 ↔ Memex breaking pair
+   505	  # (plan-0.8.20.md §3), so this job is a publish precondition, not decoration.
+   506	  # Default (depth-1) checkout is sufficient: the predicate reads working-tree
+   507	  # files only and walks no history.
+   508	  c1-contract-conformance:
+   509	    runs-on: ubuntu-latest
+   510	    timeout-minutes: 5
+   511	    steps:
+   512	      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+   513	      - name: As-built code still satisfies the ratified OPP-12 C-1 contract (R-20-H7)
+   514	        run: bash scripts/check-c1-conformance.sh
+   515	      - name: Recurrence guard for the gate itself (fixture arms)
+   516	        run: bash scripts/tests/test_check_c1_conformance.sh
+   517	
+   518	  # DOC-HYGIENE-2 T2a — the always-on single-writer release-state backstop.
+   519	  #
+   520	  # Deliberately carries NO `if:` and NO `needs:`, for the same reason as
+   521	  # board-currency / ledger-integrity / plan-anchors above. The push that
+   522	  # invalidates a generated release-state view is a LANDING push (a slice merges,
+   523	  # SCHEMA moves, the next slice changes) — i.e. a code push, which the
+   524	  # `markdownlint` job's `docs_only` gate excludes by construction. A currency
+   525	  # gate that cannot run on the push that makes the fact wrong is decorative.
+   290	# Tripping this is CORRECT BEHAVIOUR, not a bug. It means either as-built code
+   291	# drifted from a RATIFIED cross-repo contract, or that contract moved without
+   292	# its clause registry being re-derived — and both must route to the Steward
+   293	# rather than land.
+   294	if [ "$LANDING" -eq 1 ]; then
+   295	  C1_CHECK_OUT="$(bash "$SELF_DIR/check-c1-conformance.sh" 2>&1)" || C1_CHECK_RC=$?
+   296	  C1_CHECK_RC="${C1_CHECK_RC:-0}"
+   297	  if [ "$C1_CHECK_RC" -ne 0 ]; then
+   298	    C1_SAW_FAIL=0
+   299	    while IFS= read -r line; do
+   300	      case "$line" in
+   301	        FAIL*) hard "c1-contract-conformance: $line"; C1_SAW_FAIL=1 ;;
+   302	        *)     info "c1-contract-conformance: $line" ;;
+   303	      esac
+   304	    done <<<"$C1_CHECK_OUT"
+   305	    # Anti-fail-open, as in §8/§9: a non-zero rc with no FAIL line means the
+   306	    # checker itself could not run (exit 2 = python3 absent, a missing contract,
+   307	    # a malformed pin, an unreadable source file, or an evaporated check set).
+   308	    # That must still block the land — a gate that could not see its subject is
+   309	    # exactly the case where landing on its silence is worst.
+   310	    if [ "$C1_SAW_FAIL" -eq 0 ]; then
+   311	      hard "c1-contract-conformance: check-c1-conformance.sh exited $C1_CHECK_RC without reporting a specific defect — refusing to certify this tree for landing"
+   312	    fi
+   313	  else
+   314	    ok "c1-contract-conformance: as-built code still satisfies the pinned OPP-12 C-1 contract (R-20-H7)"
+   315	  fi
+
+exec
+/bin/bash -lc 'head -120 scripts/check-ledgers.sh; grep -n "python3 -" scripts/check-governed-surface-pin.sh scripts/check-ledgers.sh | head -20' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+#!/usr/bin/env bash
+# check-ledgers.sh — ledger integrity gate (sidecar agreement + seq contiguity).
+#
+# Shared by two callers (DOC-HYGIENE-2 T1b), exactly like its sibling
+# scripts/check-board-currency.sh:
+#   * scripts/preflight.sh --landing        (PREVENT, land-time gate)
+#   * .github/workflows/ci.yml ledger-integrity job
+#                                           (DETECT, always-on CI backstop)
+# Reuse, not reimplementation: both callers invoke THIS script so the predicate
+# cannot diverge between the two homes.
+#
+# THE MEASURED FAILURE THIS CLOSES
+#   19 consecutive commits (f22e4947 -> 3264114a, four days) shipped
+#   `dev/steward/steward-ledger.jsonl.seq` frozen at 80 while max(seq) inside
+#   the ledger had already reached 98. The sidecar is a TRACKED file and is the
+#   only thing an appender reads to pick the next seq, so any clone taken in
+#   that window would have minted 81, 82, ... — colliding with 18 entries that
+#   already existed. Nothing in the repo checked that the sidecar agreed with
+#   the file it summarizes.
+#
+# PREDICATE — EXACTLY TWO CHECKS, per discovered ledger. This is deliberate and
+# is not a starting point to grow: the two below are the ones with a measured
+# failure behind them and a mechanical, vocabulary-free answer.
+#   (a) SIDECAR AGREEMENT: the integer in <ledger>.jsonl.seq equals max(seq)
+#       over the entries in <ledger>.jsonl.
+#   (b) CONTIGUITY: the seq values have no gaps and no duplicates.
+# Explicitly NOT checked (each was considered and ruled out): a status
+# vocabulary; a --summary length cap; an `id` field requirement (the steward
+# ledger is a decision trail — 107/107 entries carry no `id`, so demanding one
+# would fail every entry); and the ORDER seqs appear in the file (that would be
+# a third check — (b) is stated over the multiset, not the file order).
+#   Note (b) deliberately does NOT require min(seq)==1: a ledger whose head was
+# ever archived legitimately starts above 1, and pinning the floor would be a
+# third check with no measured failure behind it.
+#
+# SCOPE / DISCOVERY: every `*.jsonl.seq` sidecar found under the root, with
+# .git/, node_modules/, target/ and .venv/ pruned. Discovery is driven by the
+# SIDECAR, never by a hardcoded list, so a ledger added tomorrow is covered the
+# day it gets a sidecar — and a sidecar-less `*.jsonl` (dev/experiments/** run
+# output, test fixtures, golden corpora) is out of scope by construction.
+# Three ledgers qualify today:
+#   dev/steward/steward-ledger.jsonl
+#   dev/todos-and-considerations-ledger.jsonl
+#   dev/design/record-lifecycle-protocol/OPP-12-sub-ledger.jsonl
+#
+# VACUOUS-PASS GUARD (TC-37, this repo's named failure class — the same shape as
+# check-board-currency.sh's fix-1 guard): if discovery finds ZERO sidecars, the
+# per-ledger loop body never runs and the gate would pass green having vouched
+# for nothing. A gate that silently checks nothing is worse than no gate: it is
+# an active false assurance. Zero discovered ledgers is therefore a HARD
+# failure, never exit 0. This can only convert a silent pass into a loud
+# failure; it never fires once >=1 ledger is discovered.
+#
+# DETERMINISTIC EDGE-CASE HANDLING (documented so it is a contract, not an
+# accident of implementation):
+#   blank / whitespace-only line  -> IGNORED (never written by a well-behaved
+#       appender, harmless if present; mirrors ledgerwatch --validate).
+#   line that is not valid JSON   -> HARD fail naming <file>:<line>. The seq set
+#       cannot be trusted past a torn line, so skipping it would be a vacuous
+#       pass over the rest of the file.
+#   entry with no integer `seq`   -> HARD fail naming <file>:<line> (same
+#       reason; `true`/`false` are not integers here).
+#   EMPTY ledger (zero entries)   -> max(seq) is defined as 0, so the sidecar
+#       must read 0; any other value is an unbacked high-water mark and HARD
+#       fails. Contiguity is vacuously satisfied over zero entries — note this
+#       is NOT the vacuous-pass hole, which is about zero LEDGERS, not zero
+#       entries: the sidecar's existence is what puts the file in scope.
+#   sidecar not a non-negative integer (blank, "eighty", multi-line) -> HARD
+#       fail. A trailing newline IS tolerated (the three real sidecars have
+#       none, but an editor may add one).
+#   sidecar with no .jsonl beside it -> HARD fail (dangling sidecar).
+#
+# Usage:
+#   scripts/check-ledgers.sh [--root <dir>]
+#
+# --root exists so the test fixtures can be plain directories rather than
+# throwaway git repos; without it the script operates on the enclosing repo's
+# toplevel, exactly as both real callers invoke it.
+#
+# Requires python3 for JSON parsing. If it is absent this script exits 2 (env
+# error) LOUDLY rather than skipping — a skip here would be the TC-37 hole.
+#
+# Exit codes: 0 = every discovered ledger satisfies (a) and (b);
+#             1 = at least one integrity failure, OR zero ledgers discovered
+#                 (vacuous-pass guard); 2 = usage/environment error.
+set -euo pipefail
+
+ROOT=""
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --root) ROOT="${2:?--root needs a dir}"; shift 2 ;;
+    *) printf 'check-ledgers: unknown arg %q\n' "$1" >&2; exit 2 ;;
+  esac
+done
+
+if [ -n "$ROOT" ]; then
+  if [ ! -d "$ROOT" ]; then
+    printf 'check-ledgers: --root %q is not a directory\n' "$ROOT" >&2
+    exit 2
+  fi
+  cd "$ROOT"
+else
+  if ! TOPLEVEL="$(git rev-parse --show-toplevel 2>/dev/null)"; then
+    printf 'check-ledgers: not inside a git repository (and no --root given)\n' >&2
+    exit 2
+  fi
+  cd "$TOPLEVEL"
+fi
+
+if ! command -v python3 >/dev/null 2>&1; then
+  printf 'check-ledgers: python3 is required to parse the ledgers and is not on PATH — refusing to report a pass it did not verify\n' >&2
+  exit 2
+fi
+
+# Discovery. `-print | sort` rather than `-print0 | sort -z` because `sort -z`
+# is GNU-only and this repo's scripts run on macOS too; ledger paths never
+# contain newlines (a path that did would be pathological, and `read -r` with a
+# cleared IFS still handles every other whitespace character).
+SIDECARS=()
+scripts/check-governed-surface-pin.sh:160:python3 - "$FILE" "$PIN" >&2 <<'PY'
+scripts/check-ledgers.sh:139:python3 - "${SIDECARS[@]}" >&2 <<'PY'
+
+exec
+/bin/bash -lc ./scripts/agent-test.sh in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ exited 1 in 21671ms:
+FAIL test-actionlint-fixture (exit=1, 16ms)
+----
+PASS  actionlint rejects deliberately-broken fixture
+PASS  release.yml carries all 4 canonical napi labels
+FAIL  publish-rust-t1-embedder-api dry-run branch is not cargo publish --dry-run -p
+----
+full log: /tmp/fathomdb-agent-test-actionlint-fixture-520318.log
+
+exec
+/bin/bash -lc "sed -n '1,90p' scripts/tests/test_check_board_currency.sh; sed -n '1,70p' scripts/tests/test_check_ledgers.sh; sed -n '1,60p' scripts/tests/test_preflight_landing.sh" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+#!/usr/bin/env bash
+# scripts/tests/test_check_board_currency.sh — coverage for the shared board/git
+# ancestry drift predicate (status-board-currency-enforcement design, items 2+3)
+# AND for its wiring into `preflight.sh --landing`.
+#
+# The incident this closes: after a slice's merge commit reached `origin/main`,
+# `dev/plans/runs/STATUS-0.8.20.md` still narrated it "not landed" for four days
+# — nobody's explicit job to update the board at land time. Items 1-3 of
+# dev/design/status-board-currency-enforcement.md close the mechanism (not the
+# actor): a shared predicate script (`scripts/check-board-currency.sh`), invoked
+# both by `preflight.sh --landing` (PREVENT, this file's arms 3-5) and by CI on
+# `main` (DETECT, item 3 — same script, not duplicated).
+#
+# Predicate under test (see scripts/check-board-currency.sh header for the full
+# statement): a live (non-CLOSED-banner) STATUS-0.8.z.md board must contain the
+# short SHA of the most recent `merge(0.8.z): Slice N ...` commit reachable from
+# the tip being checked, for every slice N such a commit exists for. Missing =
+# STALE = HARD fail.
+#
+# Isolation: every arm runs against a throwaway repo built under mktemp -d. The
+# test never git-writes into the real checkout and does not depend on the
+# developer's tree being clean. Mirrors test_preflight_landing.sh's fixture
+# hygiene (neutralized global git config: gpgsign / core.hooksPath /
+# init.templateDir all defanged in the fixture's LOCAL config only).
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PREFLIGHT="$REPO_ROOT/scripts/preflight.sh"
+CHECKER="$REPO_ROOT/scripts/check-board-currency.sh"
+# shellcheck source=lib/governed-surface-fixture.sh
+. "$SCRIPT_DIR/lib/governed-surface-fixture.sh"
+# shellcheck source=lib/c1-conformance-fixture.sh
+. "$SCRIPT_DIR/lib/c1-conformance-fixture.sh"
+
+FAILED=0
+pass() { printf 'PASS  %s\n' "$1"; }
+fail() { printf 'FAIL  %s\n' "$1" >&2; FAILED=$((FAILED + 1)); }
+
+TMPROOT="$(mktemp -d)"
+cleanup() {
+  case "$TMPROOT" in
+    "${TMPDIR:-/tmp}"/*|/tmp/*) rm -rf "$TMPROOT" ;;
+    *) printf 'refusing to remove unexpected temp path: %s\n' "$TMPROOT" >&2 ;;
+  esac
+}
+trap cleanup EXIT
+
+NO_HOOKS="$TMPROOT/no-hooks"
+mkdir -p "$NO_HOOKS"
+
+# init_repo <dir> — bare repo with a neutralized local config (see header).
+init_repo() {
+  local dir="$1"
+  mkdir -p "$dir"
+  git init -q -b main "$dir"
+  git -C "$dir" config user.email board-currency-test@example.invalid
+  git -C "$dir" config user.name 'Board Currency Test'
+  git -C "$dir" config commit.gpgsign false
+  git -C "$dir" config core.hooksPath "$NO_HOOKS"
+  # A minimal, CONSISTENT ledger + sidecar (committed by the first commit_all,
+  # which runs `git add -A`). The preflight arms below invoke `--landing`, which
+  # now also runs the ledger-integrity gate (DOC-HYGIENE-2 T1b); its TC-37
+  # vacuous-pass guard HARD-fails a tree in which it discovers zero ledgers, so
+  # these fixtures must model a real checkout and carry one. Nothing here is
+  # ledger-specific beyond its presence — the ledger arms live in
+  # scripts/tests/test_check_ledgers.sh.
+  mkdir -p "$dir/dev/steward"
+  printf '{"seq":1,"note":"fixture"}\n' >"$dir/dev/steward/steward-ledger.jsonl"
+  printf '%s' 1 >"$dir/dev/steward/steward-ledger.jsonl.seq"
+  # Same story one gate later: `--landing` also runs the governed-surface pin
+  # gate (DOC-HYGIENE-2 T1e), which HARD-fails a tree whose pin it cannot read —
+  # correctly, on the same TC-37 grounds. So the fixture carries a minimal,
+  # self-consistent surface+pin pair as well. Seeded by the shared helper, which
+  # verifies the pair against the real gate; nothing here is surface-specific
+  # beyond its presence, and the gate's own arms live in
+  # scripts/tests/test_check_governed_surface_pin.sh.
+  seed_governed_surface_fixture "$dir"
+  seed_c1_conformance_fixture "$dir"
+}
+
+# commit_all <dir> <message>
+commit_all() {
+  local dir="$1" msg="$2"
+  git -C "$dir" add -A
+  git -C "$dir" commit -q -m "$msg" >/dev/null
+}
+
+# --- Fixture A: a "current" board — mentions the landing merge's SHA -----------
+CURRENT_REPO="$TMPROOT/current"
+#!/usr/bin/env bash
+# scripts/tests/test_check_ledgers.sh — coverage for the shared ledger-integrity
+# predicate (scripts/check-ledgers.sh) AND for its two wirings: `preflight.sh
+# --landing` (PREVENT) and the always-on CI job (DETECT).
+#
+# The incident this closes: 19 consecutive commits (f22e4947 -> 3264114a, four
+# days) shipped `dev/steward/steward-ledger.jsonl.seq` frozen at 80 while
+# max(seq) inside the ledger had reached 98. The sidecar is a TRACKED file, so
+# every clone taken in that window would have minted seq numbers starting at 81
+# — silently colliding with 18 already-recorded entries. Nothing in the repo
+# checked that the sidecar agreed with the file it summarizes.
+#
+# Predicate under test (see scripts/check-ledgers.sh header for the full
+# statement) — EXACTLY TWO checks, per ledger:
+#   (a) sidecar agreement: <ledger>.jsonl.seq == max(seq) over the entries.
+#   (b) contiguity:        the seq values have no gaps and no duplicates.
+# Plus the TC-37 vacuous-pass guard: discovering ZERO ledgers is itself a HARD
+# failure, never a silent exit 0.
+#
+# RED-first: both checks pass today on all three real ledgers, so asserting
+# against the real repo alone would prove nothing (a `true` script would pass
+# it). Every failure arm below therefore runs against a purpose-built CORRUPT
+# fixture root, so each arm can only go green because the predicate actually
+# fires. The real-repo arm is the regression half of the same pair.
+#
+# Isolation: fixtures are plain directories under mktemp -d (the checker takes
+# --root for exactly this reason); the preflight arms build throwaway git repos
+# + linked worktrees. Nothing here writes into the real checkout, and no real
+# .jsonl / .jsonl.seq is ever touched.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+CHECKER="$REPO_ROOT/scripts/check-ledgers.sh"
+PREFLIGHT="$REPO_ROOT/scripts/preflight.sh"
+CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
+# shellcheck source=lib/governed-surface-fixture.sh
+. "$SCRIPT_DIR/lib/governed-surface-fixture.sh"
+# shellcheck source=lib/c1-conformance-fixture.sh
+. "$SCRIPT_DIR/lib/c1-conformance-fixture.sh"
+
+FAILED=0
+pass() { printf 'PASS  %s\n' "$1"; }
+fail() { printf 'FAIL  %s\n' "$1" >&2; FAILED=$((FAILED + 1)); }
+
+TMPROOT="$(mktemp -d)"
+cleanup() {
+  case "$TMPROOT" in
+    "${TMPDIR:-/tmp}"/*|/tmp/*) rm -rf "$TMPROOT" ;;
+    *) printf 'refusing to remove unexpected temp path: %s\n' "$TMPROOT" >&2 ;;
+  esac
+}
+trap cleanup EXIT
+
+# mkroot <name> -> prints the fixture root's path (a plain dir, no git needed)
+mkroot() {
+  local d="$TMPROOT/$1"
+  mkdir -p "$d"
+  printf '%s' "$d"
+}
+
+# write_ledger <root> <relpath-without-ext> <sidecar-text> <seq...>
+# Writes <relpath>.jsonl with one entry per given seq, and the sidecar verbatim
+# (verbatim so a garbage / trailing-newline / stale sidecar can be expressed).
+write_ledger() {
+  local root="$1" rel="$2" sidecar="$3"; shift 3
+  mkdir -p "$(dirname "$root/$rel")"
+  : >"$root/$rel.jsonl"
+  local s
+  for s in "$@"; do
+#!/usr/bin/env bash
+# scripts/tests/test_preflight_landing.sh — coverage for `preflight.sh --landing`.
+#
+# TC-RUBRIC-5 (HITL-ADOPTED 2026-07-11) requires that release orchestration and
+# ALL landing git-writes run in a dedicated linked worktree, never in the primary
+# checkout. `--landing` is the mechanical enforcement of that rule, per the
+# standing guardrail-failures-fix-tooling-not-people principle.
+#
+# Detection under test: primary checkout <=> `git rev-parse --git-dir` equals
+# `git rev-parse --git-common-dir`, compared AFTER resolving both to absolute,
+# symlink-resolved paths.
+#
+# On the canonicalization: on git 2.43 invoked from a SUBDIRECTORY, --git-dir
+# returns an absolute path while --git-common-dir returns a relative one
+# ('../.git'). preflight.sh cds to the repo toplevel before the check, which
+# normalizes that away today — so a raw string compare currently behaves the same
+# and the subdir arms below pass either way. The canonicalization still matters:
+# measured, with that toplevel cd removed, a RAW compare from a subdirectory of
+# the primary checkout fails OPEN (exit 0, "cleared for landing") while the
+# canonicalized compare still HARD-fails. Since no behavioral arm can distinguish
+# the two while the cd stands, Arm 7 asserts the canonicalization structurally —
+# same idiom as the 'User-Agent:' grep in test_assert_co_tagging.sh.
+#
+# Isolation: every arm runs against a throwaway repo built under mktemp -d. The
+# test never git-writes into the real checkout and does not care whether the
+# developer's tree is clean.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PREFLIGHT="$REPO_ROOT/scripts/preflight.sh"
+# shellcheck source=lib/governed-surface-fixture.sh
+. "$SCRIPT_DIR/lib/governed-surface-fixture.sh"
+# shellcheck source=lib/c1-conformance-fixture.sh
+. "$SCRIPT_DIR/lib/c1-conformance-fixture.sh"
+
+FAILED=0
+pass() { printf 'PASS  %s\n' "$1"; }
+fail() { printf 'FAIL  %s\n' "$1" >&2; FAILED=$((FAILED + 1)); }
+
+TMPROOT="$(mktemp -d)"
+cleanup() {
+  # Only ever remove a path we created under the system temp dir.
+  case "$TMPROOT" in
+    "${TMPDIR:-/tmp}"/*|/tmp/*) rm -rf "$TMPROOT" ;;
+    *) printf 'refusing to remove unexpected temp path: %s\n' "$TMPROOT" >&2 ;;
+  esac
+}
+trap cleanup EXIT
+
+# --- Fixture: a throwaway primary checkout + a linked worktree inside it -------
+# preflight.sh does `git rev-parse main` under `set -euo pipefail`, so the fixture
+# repo must actually have a `main` branch with a commit.
+#
+# The fixture must not inherit the developer's/CI image's global git config: a
+# global `commit.gpgsign = true` makes the fixture commit try to GPG-sign with the
+# throwaway identity and abort (measured: exit 128, "failed to write commit
+# object"), and a global `core.hooksPath` — or an `init.templateDir` that seeds
+# .git/hooks — runs a foreign pre-commit hook that can veto it (measured: exit 1).
+# Either aborts the script before a single assertion runs, so an unrelated
+
+exec
+/bin/bash -lc 'bash scripts/tests/test_preflight_landing.sh >/tmp/tpl 2>&1; echo preflight=$?; tail -5 /tmp/tpl; bash scripts/tests/test_check_ledgers.sh >/tmp/tl 2>&1; echo ledgers=$?; tail -5 /tmp/tl; bash scripts/tests/test_check_board_currency.sh >/tmp/tb 2>&1; echo board=$?; tail -5 /tmp/tb; bash scripts/tests/test_check_governed_surface_pin.sh >/tmp/tg 2>&1; echo gov=$?; tail -5 /tmp/tg' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 7117ms:
+preflight=0
+PASS  fixture builds under a global config forcing gpgsign + a vetoing hooksPath
+PASS  hostile-config fixture: --landing in the linked worktree still exits 0
+PASS  hostile-config fixture: --landing in the primary checkout still fails
+
+All preflight --landing tests passed
+ledgers=0
+PASS  ci.yml defines a ledger-integrity job
+PASS  the CI job runs the SHARED scripts/check-ledgers.sh (one predicate, two callers)
+PASS  the ledger-integrity job is always-on (no if: condition, not docs_only-gated)
+
+All check-ledgers tests passed
+board=0
+PASS  the current-board --landing run really executed the governed-surface-pin: gate (ok, not skipped)
+PASS  --landing still exits 0 in a worktree whose only board is CLOSED-banner
+PASS  regression guard: board-currency check is inert without --landing
+
+All check-board-currency tests passed
+gov=0
+PASS  the CI job runs the SHARED scripts/check-governed-surface-pin.sh (one predicate, two callers)
+PASS  the governed-surface-pin job is always-on (no if: condition, not docs_only-gated)
+PASS  the governed-surface-pin job has no needs: (does not ride the changes/docs_only fast path)
+
+All check-governed-surface-pin tests passed
+
+exec
+/bin/bash -lc pwd in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+
+exec
+/bin/bash -lc 'tmp=$(mktemp -d); bash scripts/check-c1-conformance.sh --list-sources 2>&1 | while IFS=$'"'\\t' read -r kind path; do [ \""'$kind" = file ] && mkdir -p "$tmp/$(dirname "$path")" && cp "$path" "$tmp/$path"; [ "$kind" = tree ] && mkdir -p "$tmp/$path"; done; python3 - <<'"'PY' \""'$tmp/src/rust/crates/fathomdb-schema/src/lib.rs"
+import sys
+p=sys.argv[1]
+with open(p,'"'a') as f: f.write('\\n-- migration fixture\\ninsert into canonical_attributes select * from old;\\n')
+PY
+bash scripts/check-c1-conformance.sh --root \""'$tmp" >/tmp/c1case 2>&1; echo rc=$?; tail -5 /tmp/c1case; rm -rf "$tmp"' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+rc=0
+ok    c1-contract-conformance: dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md matches the pin and all 26 CHECKABLE clause(s) hold (26 checkable / 12 cross-repo / 7 prose, 45 total, pinned at 23a436dc)
+
+exec
+/bin/bash -lc 'tmp=$(mktemp -d); bash scripts/check-c1-conformance.sh --list-sources 2>&1 | while IFS=$'"'\\t' read -r kind path; do [ \""'$kind" = file ] && mkdir -p "$tmp/$(dirname "$path")" && cp "$path" "$tmp/$path"; [ "$kind" = tree ] && mkdir -p "$tmp/$path"; done; python3 - <<'"'PY' \""'$tmp/src/rust/crates/fathomdb-engine/src/lib.rs"
+import sys
+p=sys.argv[1]
+text=open(p).read()
+text=text.replace('"'pub enum DenseReadiness {\\n    Ready,\\n    Embedding,\\n}', 'pub enum DenseReadiness {\\n    Ready,\\n    Embedding,\\n    Failed,\\n}', 1)
+open(p,'w').write(text)
+PY
+bash scripts/check-c1-conformance.sh --root \""'$tmp" >/tmp/c1dense 2>&1; echo rc=$?; tail -5 /tmp/c1dense; rm -rf "$tmp"' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+rc=0
+ok    c1-contract-conformance: dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md matches the pin and all 26 CHECKABLE clause(s) hold (26 checkable / 12 cross-repo / 7 prose, 45 total, pinned at 23a436dc)
+
+codex
+The new conformance gate can report green for concrete violations of the pinned contract. These false negatives undermine the publish-precondition check added by the patch.
+
+Full review comments:
+
+- [P2] Enforce exact readiness sets, not just missing Pending — /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30/scripts/check-c1-conformance.sh:276-280
+  For the clause that says readiness is EXACTLY `{ready, embedding}`, these probes only require the current two mappings and forbid `Pending`. If a future change adds `DenseReadiness::Failed` or any other third variant, the gate still exits 0 even though the pinned contract was violated. Please assert the enum/string vocabulary is exactly the pinned set rather than blacklisting one disallowed member.
+
+- [P2] Match data-migration inserts case-insensitively — /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30/scripts/check-c1-conformance.sh:268-269
+  For the NO DATA MIGRATION clause, these `absent` regexes only reject uppercase `INSERT INTO canonical_attributes` / `property_search_index`. A valid lowercase or mixed-case SQL backfill such as `insert into canonical_attributes ...`, or an `INSERT OR REPLACE INTO ...`, would pass this gate while doing the migration the contract forbids. Use a case-insensitive pattern that allows optional insert modifiers and whitespace before `INTO`.
+The new conformance gate can report green for concrete violations of the pinned contract. These false negatives undermine the publish-precondition check added by the patch.
+
+Full review comments:
+
+- [P2] Enforce exact readiness sets, not just missing Pending — /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30/scripts/check-c1-conformance.sh:276-280
+  For the clause that says readiness is EXACTLY `{ready, embedding}`, these probes only require the current two mappings and forbid `Pending`. If a future change adds `DenseReadiness::Failed` or any other third variant, the gate still exits 0 even though the pinned contract was violated. Please assert the enum/string vocabulary is exactly the pinned set rather than blacklisting one disallowed member.
+
+- [P2] Match data-migration inserts case-insensitively — /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30/scripts/check-c1-conformance.sh:268-269
+  For the NO DATA MIGRATION clause, these `absent` regexes only reject uppercase `INSERT INTO canonical_attributes` / `property_search_index`. A valid lowercase or mixed-case SQL backfill such as `insert into canonical_attributes ...`, or an `INSERT OR REPLACE INTO ...`, would pass this gate while doing the migration the contract forbids. Use a case-insensitive pattern that allows optional insert modifiers and whitespace before `INTO`.
