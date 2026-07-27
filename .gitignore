@@ -16,6 +16,14 @@
 .claude/*
 !.claude/agents/
 !.claude/commands/
+# .claude/hooks/ is per-user by default (git-commit-check.sh, session-start.sh,
+# session-stop.sh are local), so the directory stays ignored and only SHARED,
+# reviewed hooks are un-ignored by name. seat-path-guard.sh is shared: it is
+# covered by scripts/tests/test_seat_path_guard.sh, which CI runs from a fresh
+# clone, so the file has to be tracked or that suite cannot find it.
+!.claude/hooks/
+.claude/hooks/*
+!.claude/hooks/seat-path-guard.sh
 .claude/settings.local.json
 .local/
 target/

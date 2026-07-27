@@ -514,6 +514,23 @@ else
   fail "arm 42: hook emitted stderr on an allowed call: $ERR"
 fi
 
+# ...including on the junk-input fail-open path. Measured: a NUL byte in stdin
+# makes bash itself warn "ignored null byte in input" from the command
+# substitution that reads the payload. That warning is the shell's, not the
+# hook's, and it still shows up as hook stderr, so the hook has to suppress it.
+JUNK="$TMPROOT/junk.bin"
+printf 'abc\000def{"tool_name":\000"Write"}\000' >"$JUNK"
+JUNK_ERR="$TMPROOT/junk.err"
+set +e
+JUNK_OUT="$(env -u FATHOMDB_SEAT bash "$HOOK" <"$JUNK" 2>"$JUNK_ERR")"
+JUNK_RC=$?
+set -e
+if [ "$JUNK_RC" -eq 0 ] && [ -z "$JUNK_OUT" ] && [ -z "$(cat "$JUNK_ERR")" ]; then
+  pass "arm 43: NUL-bearing binary stdin -> rc=0, no decision, and NO stderr noise"
+else
+  fail "arm 43: junk stdin must be a silent no-op; got rc=$JUNK_RC, out: $JUNK_OUT, err: $(cat "$JUNK_ERR")"
+fi
+
 if [ "$FAILED" -gt 0 ]; then
   printf '\n%d test(s) failed\n' "$FAILED" >&2
   exit 1
