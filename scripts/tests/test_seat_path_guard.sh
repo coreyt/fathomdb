@@ -531,6 +531,131 @@ else
   fail "arm 43: junk stdin must be a silent no-op; got rc=$JUNK_RC, out: $JUNK_OUT, err: $(cat "$JUNK_ERR")"
 fi
 
+# ############################################################################
+# # ARMS 44-56 — ASH-B fix-1, the two codex § 9 findings.                     #
+# # Each arm below was OBSERVED RED against the pre-fix hook (d31430ce)       #
+# # before the fix landed, or is the paired true-positive that must stay      #
+# # green so the fix cannot be a false-negative trade. The RED/green status    #
+# # at the moment each was written is recorded per arm.                       #
+# ############################################################################
+
+# ============ ARMS 44-50 — in-place editors: the PROGRAM is not a path =======
+# codex § 9 finding 1. `sed|gsed|perl|ruby` with an in-place flag take a
+# script/program argument that is NOT a file. The pre-fix branch pushed every
+# non-flag token through consider(), so an edit EXPRESSION that merely CONTAINS
+# a protected path segment denied an otherwise-allowed write. That is the
+# failure mode that gets a guard switched off, so it is the more serious half.
+#
+# NOTE ON THE REVIEWER'S WITNESS: the review cites
+# `sed -i 's#src/rust/lib.rs#x#' dev/plans/note.md` (arm 44). That exact command
+# does NOT reproduce — its `#` delimiters mean `src` is never a bare `/`-segment
+# of the normalized token (`s#src/rust/lib.rs#x#` splits to `s#src`, `rust`,
+# `lib.rs#x#`), so it was already allowed. The MECHANISM is real, though: arms
+# 47-50 are the witnesses that WERE red, where the expression's own tokens do
+# normalize to a protected segment.
+
+# arm 44 — the reviewer's literal witness. Status when written: ALREADY GREEN
+# (see the note above). Kept because it is the case the review names.
+run_hook "$(payload Bash '' "sed -i 's#src/rust/lib.rs#x#' dev/plans/note.md" orchestrator)"
+expect_allow "arm 44: 'sed -i <EXPR mentioning src/**> dev/plans/note.md' is ALLOWED (the EXPR is a program, not a target)"
+
+# arm 45 — `-e` supplied the expression, so EVERY remaining operand is a file.
+# Status when written: ALREADY GREEN (no protected segment in the EXPR).
+run_hook "$(payload Bash '' "sed -i -e 's/a/b/' dev/plans/note.md" orchestrator)"
+expect_allow "arm 45: 'sed -i -e EXPR dev/plans/note.md' is ALLOWED"
+
+# arm 46 — perl's program is attached to -pe. Status when written: ALREADY GREEN.
+run_hook "$(payload Bash '' "perl -i -pe 's#src/lib.rs#x#' dev/plans/note.md" orchestrator)"
+expect_allow "arm 46: 'perl -i -pe <EXPR mentioning src/**> dev/plans/note.md' is ALLOWED"
+
+# arm 47 — OBSERVED RED before the fix: expected NO decision, got
+# permissionDecision=deny. The bare expression `s/src/lib/` normalizes to the
+# segments s | src | lib, so `src` matched and an allowed dev/plans/** write was
+# blocked. This is the minimal reproducing witness for finding 1.
+run_hook "$(payload Bash '' "sed -i 's/src/lib/' dev/plans/note.md" orchestrator)"
+expect_allow "arm 47: 'sed -i s/src/lib/ dev/plans/note.md' is ALLOWED (RED before fix-1: the EXPR's own 'src' segment denied)"
+
+# arm 48 — OBSERVED RED before the fix (same mechanism via `-e`, segment tests).
+run_hook "$(payload Bash '' "sed -i -e 's/tests/checks/' dev/plans/note.md" orchestrator)"
+expect_allow "arm 48: 'sed -i -e s/tests/checks/ dev/plans/note.md' is ALLOWED (RED before fix-1)"
+
+# arm 49 — OBSERVED RED before the fix (perl -pe, segment engine).
+run_hook "$(payload Bash '' "perl -i -pe 's/engine/motor/' dev/plans/note.md" orchestrator)"
+expect_allow "arm 49: 'perl -i -pe s/engine/motor/ dev/plans/note.md' is ALLOWED (RED before fix-1)"
+
+# arm 50 — OBSERVED RED before the fix. A multi-WORD expression: the naive
+# whitespace tokenizer shreds it, and the shard `src/rust/lib.rs,'` normalized
+# straight onto a protected segment. The fix has to skip the whole program
+# argument, not just its first token.
+run_hook "$(payload Bash '' "sed -i 's,^,# see src/rust/lib.rs,' dev/plans/note.md" orchestrator)"
+expect_allow "arm 50: a multi-word sed EXPR quoting src/** does not deny (RED before fix-1)"
+
+# --- the true positives the fix must NOT trade away. All were green pre-fix and
+# must stay green: a false-positive fix that opens a false negative is not a fix.
+run_hook "$(payload Bash '' "sed -i -e 's/a/b/' src/rust/lib.rs" orchestrator)"
+expect_deny "arm 51: 'sed -i -e EXPR src/rust/lib.rs' still DENIES (the -e form must still catch a real operand)"
+
+run_hook "$(payload Bash '' "sed -i.bak 's/a/b/' src/rust/lib.rs" orchestrator)"
+expect_deny "arm 51b: 'sed -i.bak EXPR src/**' still DENIES (suffixed in-place flag)"
+
+run_hook "$(payload Bash '' "perl -i -pe 's/a/b/' src/rust/lib.rs" steward)"
+expect_deny "arm 51c: 'perl -i -pe EXPR src/**' still DENIES"
+
+run_hook "$(payload Bash '' 'sed -i -f fix.sed src/rust/lib.rs' orchestrator)"
+expect_deny "arm 51d: 'sed -i -f script.sed src/**' still DENIES (-f supplies the program; the operand is a file)"
+
+# The -f script file is itself a program source, not a write target, so an
+# in-place run whose only src/** mention is the script name must not deny.
+run_hook "$(payload Bash '' 'sed -i -f dev/plans/fix.sed dev/plans/note.md' orchestrator)"
+expect_allow "arm 51e: 'sed -i -f dev/plans/fix.sed dev/plans/note.md' is ALLOWED"
+
+# No in-place flag at all: sed is a reader, and a reader must stay silent.
+run_hook "$(payload Bash '' "sed -n 's/a/b/p' src/rust/lib.rs" orchestrator)"
+expect_allow "arm 52: 'sed' WITHOUT an in-place flag is ALLOWED (it writes nothing)"
+
+# ============= ARMS 53-56 — glued clobber redirection `>|FILE` ===============
+# codex § 9 finding 2, and it is wider than the review states. The review says
+# the code caught the spaced `>| FILE` and missed only the glued form. In fact
+# BOTH slipped: scan_bash_command rewrites every `|` to a newline BEFORE
+# tokenizing, so `>|` was torn in half and the file landed alone on the next
+# line, where it is just a bare word. Measured pre-fix, seat=orchestrator:
+#   `printf x >|src/rust/lib.rs`   -> no decision   (expected deny)  RED
+#   `printf x >| src/rust/lib.rs`  -> no decision   (expected deny)  RED
+# `>>|` and `&>|` are deliberately NOT covered: bash rejects both as syntax
+# errors, so there is no write to guard.
+run_hook "$(payload Bash '' 'printf x >|src/rust/lib.rs' orchestrator)"
+expect_deny "arm 53: glued clobber redirect 'printf x >|src/**' is DENIED (RED before fix-1)"
+
+run_hook "$(payload Bash '' 'printf x >| src/rust/lib.rs' orchestrator)"
+expect_deny "arm 54: spaced clobber redirect 'printf x >| src/**' is DENIED (RED before fix-1 too, contra the review)"
+
+run_hook "$(payload Bash '' 'printf x 2>|engine/native/log.txt' orchestrator)"
+expect_deny "arm 54b: fd-numbered clobber redirect 'printf x 2>|engine/**' is DENIED"
+
+run_hook "$(payload Bash '' 'printf x >|dev/plans/note.md' orchestrator)"
+expect_allow "arm 55: glued clobber redirect into dev/plans/** is ALLOWED (the fix must not over-block)"
+
+# The `>|`-normalizing rewrite must not turn a quoted MENTION of `>|` into a
+# redirection. A read-only grep for the operator has to stay silent.
+run_hook "$(payload Bash '' "grep -n '>|' dev/plans/note.md" orchestrator)"
+expect_allow "arm 55b: a read-only command quoting the literal '>|' is ALLOWED"
+
+# --- the rest of the forms the header comment claims, asserted rather than
+# believed. Every one of these was green pre-fix; they exist so the comment and
+# the code cannot drift apart again (finding 2 was, at root, that drift).
+run_hook "$(payload Bash '' 'printf x 1>src/rust/lib.rs' orchestrator)"
+expect_deny "arm 56a: '1>' glued is DENIED"
+run_hook "$(payload Bash '' 'printf x 1> src/rust/lib.rs' orchestrator)"
+expect_deny "arm 56b: '1>' spaced is DENIED"
+run_hook "$(payload Bash '' 'printf x 2>>src/rust/lib.rs' orchestrator)"
+expect_deny "arm 56c: '2>>' glued is DENIED"
+run_hook "$(payload Bash '' 'printf x 2>> src/rust/lib.rs' orchestrator)"
+expect_deny "arm 56d: '2>>' spaced is DENIED"
+run_hook "$(payload Bash '' 'printf x &>src/rust/lib.rs' orchestrator)"
+expect_deny "arm 56e: '&>' glued is DENIED"
+run_hook "$(payload Bash '' 'printf x &> src/rust/lib.rs' orchestrator)"
+expect_deny "arm 56f: '&>' spaced is DENIED"
+
 if [ "$FAILED" -gt 0 ]; then
   printf '\n%d test(s) failed\n' "$FAILED" >&2
   exit 1
