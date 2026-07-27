@@ -45,12 +45,22 @@
 # admitted OUTSIDE a simple match arm (an `if` guard, an or-pattern). 12p is the
 # sweep's own product, in the same narrow-regex class.
 #
-# READ THE GATE'S "RESIDUAL SCOPE" HEADER SECTION BEFORE ADDING A ROUND 3. Two
-# rounds of this shape have now landed, and the gate's header now states, in
-# writing, the evasion classes a static/lexical check CANNOT close (dynamically
-# composed SQL, const/macro-indirected identifiers, ATTACH aliases, normalising
-# comparisons). Arms for those belong to a DIFFERENT mechanism — a runtime
-# `sqlite_master` assertion or a real parse — not to another regex here.
+# FIX-3 ARMS (arms 12q–12u, plus the tree-evaporation and probe-kind arms) are
+# the recurrence guard for codex §9 round 3 — a DIFFERENT defect class from
+# rounds 1–2. Not a regex shape: a SCOPE bug. Every negative (`absent`) probe read
+# ONE FILE (a crate's lib.rs), so a literal, correctly-spelled, fully-qualified
+# violation placed in a SIBLING MODULE of the same crate exited 0. Fixed by
+# scoping every negative probe to the crate SOURCE TREE and by DELETING the
+# file-scoped negative probe kind outright.
+#
+# READ THE GATE'S "RESIDUAL SCOPE" HEADER SECTION BEFORE ADDING A ROUND 4, AND
+# CLASSIFY THE FINDING FIRST. The header states, in writing, the evasion classes a
+# static/lexical check CANNOT close (dynamically composed SQL, const/macro-
+# indirected identifiers, ATTACH aliases, normalising comparisons); arms for those
+# belong to a DIFFERENT mechanism — a runtime `sqlite_master` assertion or a real
+# parse — not to another regex here. But round 3 was NOT one of those: a LITERAL
+# spelling of a PINNED name in ordinary source text that this gate does not see is
+# a real defect with a definite fix, and it gets fixed.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -719,6 +729,103 @@ run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$SPACED_OPT_R
 expect_rc 1 "a RESPACED \`pub id : Option < IdSpace >\` HARD-fails the id-non-null clause"
 expect_out 'C1-Q6B-ID-NON-NULL' "the respaced-Option failure NAMES the clause id"
 
+# === Arm 12q–12u (RED, fix-3): A NEGATIVE PROBE'S SCOPE IS THE CRATE TREE ====
+# codex §9 round 3, findings #1 and #2 [P2]. This is NOT another variant of the
+# rounds 1–2 regex-shape class, and it is NOT inside the gate's stated residual
+# scope: every fixture below is a LITERAL, correctly-spelled, fully-qualified
+# violation — precisely what the gate claims to catch — that the gate walked past
+# because its `absent` probes read ONE FILE (the crate's lib.rs) instead of the
+# crate's SOURCE TREE. A migration added as a NEW MODULE next to lib.rs exited 0.
+#
+# The engine crate ALREADY carries sibling modules (lifecycle.rs, pcache2.rs), so
+# "somebody adds a module" is not a hypothetical: it is the default way a crate
+# grows. A negative assertion scoped to one file is only as strong as the
+# assumption that nobody ever does that.
+#
+# Every arm below is a NEW FILE in a crate source tree; lib.rs is untouched, so
+# every `present` / `enum_exact` / `arms_exact` probe of the same clause still
+# holds and the negative probe is the ONLY thing standing. All five exited 0
+# before this round.
+
+# 12q — codex finding #1: a migration/backfill in a SIBLING MODULE of the schema
+# crate. Both halves of the clause are exercised in one file.
+SIBLING_MIGRATION_ROOT="$(make_root schema-sibling-module-backfill)"
+cat >"$SIBLING_MIGRATION_ROOT/src/rust/crates/fathomdb-schema/src/migrations_extra.rs" <<'RS'
+// Fixture only. A NEW MODULE in the schema crate — NOT an edit to lib.rs. Both
+// statements are exactly what the Q2 NO-DATA-MIGRATION clause forbids, spelled
+// literally, correctly and (for the first) fully schema-qualified.
+pub const FIXTURE_BACKFILL_ATTRS: &str =
+    "INSERT INTO main.canonical_attributes SELECT * FROM old_attrs;";
+pub const FIXTURE_BACKFILL_FTS: &str =
+    "INSERT INTO property_search_index(attr_value) SELECT value FROM legacy_props;";
+RS
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$SIBLING_MIGRATION_ROOT"
+expect_rc 1 "a backfill in a SIBLING MODULE of the schema crate HARD-fails NO-DATA-MIGRATION"
+expect_out 'C1-Q2-NO-DATA-MIGRATION' "the sibling-module backfill failure NAMES the clause id"
+expect_out 'migrations_extra\.rs' "the sibling-module backfill failure NAMES the offending FILE"
+expect_routes_to_steward "the sibling-module backfill clause failure"
+
+# 12r — codex finding #2, verbatim: a new engine module that creates the
+# property-FTS table itself.
+SIBLING_FTS_ROOT="$(make_root engine-sibling-module-fts-ddl)"
+cat >"$SIBLING_FTS_ROOT/src/rust/crates/fathomdb-engine/src/extra_fts.rs" <<'RS'
+// Fixture only — codex §9 round 3's own demonstration, file name included. The
+// ENGINE creating the property-FTS table is what the deferred-custom-tokenizer
+// clause forbids; the schema migration owns that table.
+pub const FIXTURE_DDL: &str =
+    "CREATE VIRTUAL TABLE main.property_search_index USING fts5(attr_value)";
+RS
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$SIBLING_FTS_ROOT"
+expect_rc 1 "engine-side property-FTS DDL in a SIBLING MODULE HARD-fails the deferred-tokenizer clause"
+expect_out 'C1-TE-CUSTOM-TOKENIZER-DEFERRED' "the sibling-module DDL failure NAMES the clause id"
+expect_out 'extra_fts\.rs' "the sibling-module DDL failure NAMES the offending FILE"
+
+# 12s — fix-3 SWEEP (not a codex finding): the same module-scope class in
+# C1-Q6B-ID-NON-NULL. A NULLABLE typed id carrier declared next to lib.rs.
+SIBLING_OPT_ID_ROOT="$(make_root engine-sibling-module-optional-id)"
+cat >"$SIBLING_OPT_ID_ROOT/src/rust/crates/fathomdb-engine/src/hit_v2.rs" <<'RS'
+// Fixture only (fix-3 SWEEP). The contract's id is NON-NULL; this sibling module
+// declares a nullable one. lib.rs is untouched, so the clause's `present` probe
+// (`pub id: IdSpace,`) still holds and the negative probe is all that is left.
+pub struct SearchHitV2 {
+    pub id: Option<IdSpace>,
+}
+RS
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$SIBLING_OPT_ID_ROOT"
+expect_rc 1 "a nullable typed id in a SIBLING MODULE HARD-fails the id-non-null clause"
+expect_out 'C1-Q6B-ID-NON-NULL' "the sibling-module optional-id failure NAMES the clause id"
+expect_out 'hit_v2\.rs' "the sibling-module optional-id failure NAMES the offending FILE"
+
+# 12t — fix-3 SWEEP: the same class in C1-Q6A-THREE-ROLES. Vector/Fts are TIER
+# LABELS on the sub-objects, not roles — the confusion the clause calls out — and
+# reintroducing them as roles from a sibling module was invisible.
+SIBLING_TIER_ROOT="$(make_root engine-sibling-module-tier-roles)"
+cat >"$SIBLING_TIER_ROOT/src/rust/crates/fathomdb-engine/src/tier_labels.rs" <<'RS'
+// Fixture only (fix-3 SWEEP). ProjectionRole::Vector / ::Fts reintroduced as
+// roles from a sibling module. The enum in lib.rs still holds exactly three
+// variants, so enum_exact and arms_exact both pass.
+pub const DEFAULT_TIER: ProjectionRole = ProjectionRole::Vector;
+pub const TEXT_TIER: ProjectionRole = ProjectionRole::Fts;
+RS
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$SIBLING_TIER_ROOT"
+expect_rc 1 "ProjectionRole::Vector/::Fts in a SIBLING MODULE HARD-fails the three-roles clause"
+expect_out 'C1-Q6A-THREE-ROLES' "the sibling-module tier-role failure NAMES the clause id"
+expect_out 'tier_labels\.rs' "the sibling-module tier-role failure NAMES the offending FILE"
+
+# 12u — fix-3 SWEEP: the last remaining file-scoped negative, in
+# C1-Q4-DENSE-READINESS-TWO-MEMBERS. `pending` is reserved by the clause for the
+# orthogonal admission axis.
+SIBLING_PENDING_ROOT="$(make_root engine-sibling-module-pending-readiness)"
+cat >"$SIBLING_PENDING_ROOT/src/rust/crates/fathomdb-engine/src/readiness_ext.rs" <<'RS'
+// Fixture only (fix-3 SWEEP). The reserved `Pending` readiness state, referenced
+// from a sibling module. The enum in lib.rs is untouched.
+pub const RESERVED: DenseReadiness = DenseReadiness::Pending;
+RS
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$SIBLING_PENDING_ROOT"
+expect_rc 1 "DenseReadiness::Pending in a SIBLING MODULE HARD-fails the readiness clause"
+expect_out 'C1-Q4-DENSE-READINESS-TWO-MEMBERS' "the sibling-module Pending failure NAMES the clause id"
+expect_out 'readiness_ext\.rs' "the sibling-module Pending failure NAMES the offending FILE"
+
 # === Arm 13 (RED): a source file an assertion reads is MISSING ===============
 # TC-37 evaporation path #4: the assertion could not be EVALUATED. That is
 # neither a pass (0) nor a clause failure (1) — the gate computed no verdict.
@@ -735,6 +842,34 @@ mkdir -p "$TMPROOT/root-empty"
 run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$TMPROOT/root-empty"
 expect_rc 2 "an EMPTY source root exits 2 (every assertion evaporates), never 0"
 
+# TC-37 #4 FOR A TREE-SCOPED PROBE (fix-3). Once a probe's subject is a TREE
+# rather than a file, "missing" needs a definition. The gate's answer, stated in
+# its header: an ABSENT directory is exit 2, and so is a directory that yields
+# ZERO candidate files — a negative assertion that examined nothing has not been
+# evaluated, and reporting it as satisfied is the TC-37 vacuous pass in its
+# purest form.
+#
+# HONEST LIMIT OF THIS ARM: every crate tree the gate scans also holds that
+# crate's lib.rs, which the same clause's file-scoped `present` probes read. So
+# emptying the tree trips BOTH rules and the CLI cannot say which fired first.
+# What the arm asserts is the property that matters — NO GREEN IS REACHABLE, and
+# the verdict is "gate could not run" (2), never "clause failed" (1).
+for TREE in fathomdb-engine fathomdb-schema; do
+  EMPTY_TREE_ROOT="$(make_root "empty-tree-$TREE")"
+  rm -rf "${EMPTY_TREE_ROOT:?}/src/rust/crates/$TREE/src"
+  mkdir -p "$EMPTY_TREE_ROOT/src/rust/crates/$TREE/src"
+  run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$EMPTY_TREE_ROOT"
+  expect_rc 2 "an EMPTIED $TREE source tree exits 2 (TC-37 #4), never 0 and never 1"
+  expect_out 'TC-37' "empty-tree-$TREE cites the evaporation failure class"
+  expect_no_out 'ok +c1-contract-conformance' "empty-tree-$TREE prints no ok line"
+
+  GONE_TREE_ROOT="$(make_root "gone-tree-$TREE")"
+  rm -rf "${GONE_TREE_ROOT:?}/src/rust/crates/$TREE/src"
+  run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$GONE_TREE_ROOT"
+  expect_rc 2 "an ABSENT $TREE source tree exits 2 (TC-37 #4), never 0 and never 1"
+  expect_no_out 'ok +c1-contract-conformance' "gone-tree-$TREE prints no ok line"
+done
+
 # ==================== Arm 14: usage / environment errors ====================
 run_checker --not-a-flag
 expect_rc 2 "an unknown flag exits 2 (usage), distinct from a divergence"
@@ -748,6 +883,30 @@ expect_rc 0 "--list-sources exits 0"
 expect_out 'file\s+src/rust/crates/fathomdb-engine/src/lib.rs' \
   "--list-sources names the engine source the assertions read"
 expect_out 'tree\s+src' "--list-sources names the tree the negative-space clause scans"
+# fix-3: the crate SOURCE TREES are now first-class subjects, so they must appear
+# in the manifest — that manifest is what builds every fixture root here AND the
+# preflight seeder in lib/c1-conformance-fixture.sh. A tree-scoped probe whose
+# tree is not listed would leave those roots without it and silently evaporate.
+expect_out 'tree\s+src/rust/crates/fathomdb-engine/src' \
+  "--list-sources names the ENGINE crate source tree the negative probes scan"
+expect_out 'tree\s+src/rust/crates/fathomdb-schema/src' \
+  "--list-sources names the SCHEMA crate source tree the negative probes scan"
+
+# THE STRUCTURAL GUARD FOR THIS WHOLE CLASS (fix-3). Widening seven probes fixes
+# today's holes; deleting the file-scoped negative probe KIND is what stops the
+# class recurring. `absent` (single file) no longer exists — a negative probe can
+# only be written as `absent_tree`. Assert that, so re-introducing a file-scoped
+# negative is a deliberate, reviewed act rather than the path of least effort.
+if grep -nE '^\s*\("absent",' "$REPO_ROOT/scripts/check-c1-conformance.sh" >/dev/null; then
+  fail "the gate still declares file-scoped (\"absent\", <file>, ...) probes; every negative probe must be tree-scoped (fix-3)"
+else
+  pass "no file-scoped \`absent\` probe remains: every negative assertion is tree-scoped"
+fi
+if grep -nE 'kind == "absent"' "$REPO_ROOT/scripts/check-c1-conformance.sh" >/dev/null; then
+  fail "the gate still IMPLEMENTS the file-scoped \`absent\` probe kind — removing the kind is what prevents the fix-3 class from recurring"
+else
+  pass "the file-scoped \`absent\` probe kind is gone from the gate entirely"
+fi
 
 # ================ Arm 15: preflight.sh --landing wiring (PREVENT) ===========
 # Pre-wiring these are the RED witness for the gap: a tree whose code no longer
