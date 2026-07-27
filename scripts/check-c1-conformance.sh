@@ -1189,17 +1189,98 @@ def line_of(text, match):
 # skipped, so a rename or a refactor that puts the enum somewhere this reader
 # cannot see it goes RED and gets looked at — it never quietly stops checking.
 #
-# Known limits, stated rather than papered over: comment-stripping is textual,
-# so a `//` inside a string literal truncates that line, and brace-matching does
-# not skip braces inside strings. Neither can reach the three blocks read here
-# (their bodies hold only bare identifiers and short string literals), and both
-# would surface as a clause FAILURE, never as a silent pass.
+# A STRING LITERAL IS NOT CODE (fix-4b). Every reader here LOCATES its subject in
+# a view where comments AND string/char literal CONTENTS have been blanked, and
+# then slices the body out of the comment-stripped view that still HAS the
+# literals (`arms_exact` needs them; that is its whole subject). The blanking is
+# LENGTH-PRESERVING precisely so one index means the same thing in both views.
+#
+# Why it matters: without it, `const S: &str = "fn foo() { }";` reads exactly
+# like a definition and `"pub enum DenseReadiness { Ready, Embedding }"` exactly
+# like a declaration — so a deleted test, or a THIRD enum variant with a decoy
+# string ahead of the real declaration, exited 0. That is the fix-4 class (a
+# probe satisfied by something that is not its subject) and it fails GREEN.
+#
+# Known limits, stated rather than papered over: this is a lexer, not a parser.
+# `macro_rules!` bodies and `#[cfg]`-disabled code read like ordinary code; an
+# UNTERMINATED literal blanks to end-of-file; brace-matching still does not
+# understand macros. All of those surface as a clause FAILURE (the reader finds
+# no parseable block, or finds a body it cannot match), never as a silent pass.
 # ---------------------------------------------------------------------------
 _view_cache = {}
+_code_cache = {}
+
+_IDENT_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
+
+
+def blank_literals(text):
+    """`text` with the CONTENTS of every string/char literal replaced by spaces.
+
+    LINE- and LENGTH-preserving (a newline inside a multi-line literal stays a
+    newline), and the delimiters themselves are kept, so offsets and line numbers
+    are identical to the input and `arms_exact` can still read the
+    real literals out of the un-blanked view at the same indices. Handles raw
+    (`r"..."`, `r#"..."#`), byte (`b"..."`, `br#"..."#`) and char literals, and
+    leaves LIFETIMES (`'a`) alone — mistaking one for a char literal would blank
+    real code.
+    """
+    out = list(text)
+    i, n = 0, len(text)
+    while i < n:
+        char = text[i]
+        # Raw/byte-raw string: the escape rules differ, so it is matched first.
+        if char in "rb" and (i == 0 or text[i - 1] not in _IDENT_CHARS):
+            j = i + 1 if (char == "b" and i + 1 < n and text[i + 1] == "r") else i
+            if text[j] == "r":
+                k = j + 1
+                while k < n and text[k] == "#":
+                    k += 1
+                if k < n and text[k] == '"':
+                    close = '"' + "#" * (k - j - 1)
+                    end = text.find(close, k + 1)
+                    end = n if end == -1 else end
+                    for p in range(k + 1, end):
+                        out[p] = "\n" if text[p] == "\n" else " "
+                    i = min(end + len(close), n)
+                    continue
+        if char == '"':
+            j = i + 1
+            while j < n:
+                if text[j] == "\\":
+                    j += 2
+                    continue
+                if text[j] == '"':
+                    break
+                j += 1
+            for p in range(i + 1, min(j, n)):
+                out[p] = "\n" if text[p] == "\n" else " "
+            i = min(j, n) + 1
+            continue
+        if char == "'":
+            if i + 1 < n and text[i + 1] == "\\":       # '\n', '\'', '\u{1F}'
+                j = i + 2
+                while j < n and text[j] != "'":
+                    j += 1
+                for p in range(i + 1, min(j, n)):
+                    out[p] = "\n" if text[p] == "\n" else " "
+                i = min(j, n) + 1
+                continue
+            if i + 2 < n and text[i + 2] == "'":        # 'x'
+                out[i + 1] = " "
+                i += 3
+                continue
+            i += 1                                      # a lifetime / loop label
+            continue
+        i += 1
+    return "".join(out)
 
 
 def rust_view(rel):
-    """A comment-stripped view of a Rust source file (cached)."""
+    """A comment-stripped view of a Rust source file (cached).
+
+    STRING LITERALS ARE PRESENT here — `arms_exact` and `body_strings` read them
+    as their subject. Use `rust_code(rel)` to LOCATE anything.
+    """
     if rel not in _view_cache:
         text = read_source(rel)
         text = re.sub(r"/\*.*?\*/", " ", text, flags=re.S)
@@ -1208,8 +1289,21 @@ def rust_view(rel):
     return _view_cache[rel]
 
 
-def brace_body(text, open_index):
-    """Body of the brace block whose '{' sits at open_index; None if unbalanced."""
+def rust_code(rel):
+    """`rust_view(rel)` with literal CONTENTS blanked — same length, same offsets."""
+    if rel not in _code_cache:
+        _code_cache[rel] = blank_literals(rust_view(rel))
+    return _code_cache[rel]
+
+
+def brace_body(text, open_index, source=None):
+    """Body of the brace block whose '{' sits at open_index; None if unbalanced.
+
+    Braces are counted in `text` (always the blanked CODE view) and the body is
+    sliced out of `source` (the view that still has the literals), which is sound
+    because blanking preserves length.
+    """
+    src = text if source is None else source
     depth = 0
     for i in range(open_index, len(text)):
         char = text[i]
@@ -1218,17 +1312,18 @@ def brace_body(text, open_index):
         elif char == "}":
             depth -= 1
             if depth == 0:
-                return text[open_index + 1:i]
+                return src[open_index + 1:i]
     return None
 
 
-def enum_variants(view, ty):
+def enum_variants(rel, ty):
     """Every variant identifier of `enum ty`, in declaration order; None if the
     declaration is absent or unparseable."""
-    match = re.search(r"\benum\s+" + re.escape(ty) + r"\b[^{;]*\{", view)
+    code = rust_code(rel)
+    match = re.search(r"\benum\s+" + re.escape(ty) + r"\b[^{;]*\{", code)
     if match is None:
         return None
-    body = brace_body(view, match.end() - 1)
+    body = brace_body(code, match.end() - 1)
     if body is None:
         return None
     body = re.sub(r"#\[[^\]]*\]", " ", body)
@@ -1256,16 +1351,24 @@ def enum_variants(view, ty):
     return variants
 
 
-def fn_body(view, ty, fn):
-    """Body of `fn` inside `impl ty { ... }`; None if either is absent."""
-    for match in re.finditer(r"\bimpl\s+" + re.escape(ty) + r"\s*\{", view):
-        block = brace_body(view, match.end() - 1)
-        if block is None:
+def fn_body(rel, ty, fn):
+    """Body of `fn` inside `impl ty { ... }`; None if either is absent.
+
+    Located in the blanked CODE view, returned FROM the view that still carries
+    the string literals — `arms_exact`'s whole subject is those literals, and a
+    blanked body would report every vocabulary as empty (a false green of the
+    worst kind). The two views have identical offsets by construction.
+    """
+    code, raw = rust_code(rel), rust_view(rel)
+    for match in re.finditer(r"\bimpl\s+" + re.escape(ty) + r"\s*\{", code):
+        code_block = brace_body(code, match.end() - 1)
+        raw_block = brace_body(code, match.end() - 1, source=raw)
+        if code_block is None or raw_block is None:
             continue
-        inner = re.search(r"\bfn\s+" + re.escape(fn) + r"\b[^{;]*\{", block)
+        inner = re.search(r"\bfn\s+" + re.escape(fn) + r"\b[^{;]*\{", code_block)
         if inner is None:
             continue
-        body = brace_body(block, inner.end() - 1)
+        body = brace_body(code_block, inner.end() - 1, source=raw_block)
         if body is not None:
             return body
     return None
@@ -1336,25 +1439,30 @@ def body_strings(body):
 # DEFECT (exit 1), never skipped — the same stance `enum_exact` has taken since
 # fix-1.
 # ---------------------------------------------------------------------------
-def rust_items(view, kw, name):
-    """Brace bodies of every `<kw> <name>` item in a comment-stripped view.
+def rust_items(rel, kw, name):
+    """Brace bodies of every `<kw> <name>` item declared in a Rust source file.
 
-    `kw` is one of struct / enum / impl / fn. A body that cannot be
-    brace-matched is dropped, which surfaces as "could not locate" at the call
-    site — i.e. RED, not a silent pass.
+    `kw` is one of struct / enum / impl / fn. LOCATED in the blanked CODE view
+    (fix-4b — a `{ }` inside a string literal is not a declaration) and RETURNED
+    from the view that still carries the literals, because some probes are about
+    a literal inside the item (`DenseReadiness::Ready => "ready",`). A body that
+    cannot be brace-matched is dropped, which surfaces as "could not locate" at
+    the call site — i.e. RED, not a silent pass.
     """
+    code, raw = rust_code(rel), rust_view(rel)
     bodies = []
-    for match in re.finditer(r"\b" + kw + r"\s+" + re.escape(name) + r"\b[^{;]*\{", view):
-        body = brace_body(view, match.end() - 1)
+    for match in re.finditer(r"\b" + kw + r"\s+" + re.escape(name) + r"\b[^{;]*\{", code):
+        body = brace_body(code, match.end() - 1, source=raw)
         if body is not None:
             bodies.append(body)
     return bodies
 
 
-def fn_signatures(view, name):
+def fn_signatures(rel, name):
     """The signature text (params + return type) of every `fn <name>`."""
+    code = rust_code(rel)
     return [m.group(1) for m in
-            re.finditer(r"\bfn\s+" + re.escape(name) + r"\b([^{;]*)\{", view)]
+            re.finditer(r"\bfn\s+" + re.escape(name) + r"\b([^{;]*)\{", code)]
 
 
 def paren_body(text, open_index):
@@ -1431,7 +1539,7 @@ def run_probe(probe):
     # ---- the fix-4 SUBJECT-BOUND kinds ------------------------------------
     if kind == "in_item":
         _, path, kw, name, pattern = probe
-        bodies = rust_items(rust_view(path), kw, name)
+        bodies = rust_items(path, kw, name)
         if not bodies:
             return (
                 f"could not locate a parseable `{kw} {name} {{ .. }}` in {path} — the pinned "
@@ -1453,7 +1561,7 @@ def run_probe(probe):
         return None
     if kind == "fn_sig":
         _, path, name, pattern = probe
-        sigs = fn_signatures(rust_view(path), name)
+        sigs = fn_signatures(path, name)
         if not sigs:
             return (
                 f"could not locate `fn {name}(..)` in {path} — the pinned signature obligation "
@@ -1471,7 +1579,7 @@ def run_probe(probe):
         return None
     if kind == "fn_defined":
         _, path, name = probe
-        if not rust_items(rust_view(path), "fn", name):
+        if not rust_items(path, "fn", name):
             return (
                 f"`fn {name}` has no DEFINITION in {path}. The contract's proof of this "
                 "obligation is that named function/test; a comment or doc reference that "
@@ -1564,7 +1672,7 @@ def run_probe(probe):
     if kind == "enum_exact":
         _, path, ty, expected = probe
         want = list(expected)
-        got = enum_variants(rust_view(path), ty)
+        got = enum_variants(path, ty)
         if got is None:
             return (
                 f"could not locate a parseable `enum {ty}` declaration in {path} — the pinned "
@@ -1585,7 +1693,7 @@ def run_probe(probe):
     if kind == "arms_exact":
         _, path, ty, fn, expected = probe
         want = sorted(tuple(pair) for pair in expected)
-        body = fn_body(rust_view(path), ty, fn)
+        body = fn_body(path, ty, fn)
         if body is None:
             return (
                 f"could not locate `impl {ty} {{ fn {fn}(..) }}` in {path} — the pinned string "
