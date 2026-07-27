@@ -1210,6 +1210,77 @@ expect_out 'C1-Q4-DENSE-READINESS-TWO-MEMBERS' "the string-decoy failure NAMES t
 expect_out 'Failed' "the string-decoy failure NAMES the unpinned variant the real enum carries"
 expect_routes_to_steward "the string-decoy clause failures"
 
+# === Arm 12ae (RED, fix-4 SWEEP): A COMMENT IS NOT A DECLARATION EITHER ======
+# The other half of 12ad, and the last reachable false green in the sweep. The
+# structural readers were taught that a string literal is not code (fix-4b), but
+# the remaining `present` probes still read RAW file text — so COMMENTING OUT a
+# declaration and putting a replacement beside it left them satisfied. Two of
+# those probes are the ONLY probe their clause has for that obligation, which
+# makes this reachable rather than merely untidy:
+#   * the shipped default embedder NAME (nothing else names that const), and
+#   * the composite index the cheap filterable tier reads (the sibling probes are
+#     about the TABLE, not the index).
+# Both exited 0.
+#
+# `doc_text` probes are exempt BY CONSTRUCTION — their subject IS a written
+# statement, and two of them live in ordinary `//` comments.
+COMMENTED_OUT_ROOT="$(make_root declaration-commented-out)"
+python3 - "$COMMENTED_OUT_ROOT/src/rust/crates/fathomdb-embedder/src/candle_bge.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+old = 'pub const DEFAULT_EMBEDDER_NAME: &str = "fathomdb-bge-small-en-v1.5";'
+assert text.count(old) == 1
+text = text.replace(
+    old,
+    'pub const SHIPPED_MODEL_ID: &str = "some-other-model";\n'
+    '// Fixture only (fix-4 SWEEP). The shipped default is gone; the pinned text\n'
+    '// survives only in this comment:\n'
+    '// ' + old,
+    1,
+)
+open(p, "w", encoding="utf-8").write(text)
+PY
+python3 - "$COMMENTED_OUT_ROOT/src/rust/crates/fathomdb-schema/src/lib.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+old = """CREATE INDEX canonical_attributes_name_value_idx
+                  ON canonical_attributes(attr_name, attr_value);"""
+assert text.count(old) == 1
+text = text.replace(old, "", 1)
+text += """
+// Fixture only (fix-4 SWEEP). The index is no longer created; the pinned DDL
+// survives only in this comment:
+// CREATE INDEX canonical_attributes_name_value_idx ON canonical_attributes(attr_name, attr_value);
+"""
+open(p, "w", encoding="utf-8").write(text)
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$COMMENTED_OUT_ROOT"
+expect_rc 1 "a declaration COMMENTED OUT does not satisfy the probe that names it"
+expect_out 'C1-TE-DEFAULT-EMBEDDER' "the commented-out failure NAMES the default-embedder clause"
+expect_out 'C1-Q2-ENGINE-EAV-PROPERTY-FTS' "the commented-out failure NAMES the EAV clause"
+expect_routes_to_steward "the commented-out clause failures"
+
+# The mirror assertion: `doc_text` probes MUST still read comments, or the two
+# clauses that carry one would go permanently red for the wrong reason. This is
+# the regression half of the arm above.
+DOC_TEXT_ROOT="$(make_root doc-text-probe-still-reads-comments)"
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$DOC_TEXT_ROOT"
+expect_rc 0 "a doc_text probe still reads ordinary // comments (its subject IS the statement)"
+DOC_TEXT_GONE_ROOT="$(make_root doc-text-statement-removed)"
+python3 - "$DOC_TEXT_GONE_ROOT/src/rust/crates/fathomdb-schema/src/lib.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+old = "recorded in the registry but not honoured here"
+assert text.count(old) == 1
+open(p, "w", encoding="utf-8").write(text.replace(old, "handled somewhere else now", 1))
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$DOC_TEXT_GONE_ROOT"
+expect_rc 1 "deleting the DOCUMENTED STATEMENT a doc_text probe names HARD-fails its clause"
+expect_out 'DOCUMENTED STATEMENT' "the doc_text failure says what kind of probe it is"
+
 # === Arm 13 (RED): a source file an assertion reads is MISSING ===============
 # TC-37 evaporation path #4: the assertion could not be EVALUATED. That is
 # neither a pass (0) nor a clause failure (1) — the gate computed no verdict.
