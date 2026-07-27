@@ -54,13 +54,66 @@
 # otherwise would be a false assurance — which is the TC-37 failure class in a
 # different costume.
 #
-# ==================== RESIDUAL SCOPE — READ BEFORE ROUND 3 ===================
+# ===================== PROBE SCOPE — WHY THE ASYMMETRY =======================
+# fix-3, codex §9 round 3 findings #1 and #2 [P2]. Every NEGATIVE probe used to
+# read ONE FILE — a crate's lib.rs. So a LITERAL, correctly-spelled, fully
+# schema-qualified `CREATE VIRTUAL TABLE main.property_search_index ...` placed in
+# a NEW module beside lib.rs (codex's `fathomdb-engine/src/extra_fts.rs`) exited
+# 0, and so did an `INSERT INTO canonical_attributes ...` in a new schema-crate
+# module. That is not the residual scope below and not a regex-shape problem: it
+# is exactly what this gate claims to catch, in ordinary source text, missed
+# because the check was pointed at the wrong subject. The engine crate ALREADY
+# carries sibling modules (lifecycle.rs, pcache2.rs); "somebody adds a module" is
+# how a crate grows, not an evasion.
+#
+# THE RULE, AND WHY IT IS NOT SYMMETRIC:
+#
+#   * NEGATIVE probes (`absent_tree`) are TREE-scoped, always. A negative
+#     assertion scoped to one file is only as strong as the assumption that
+#     nobody adds a module, and it fails SILENTLY GREEN when that assumption
+#     breaks. There is no file-scoped negative probe kind in this script — the
+#     `("absent", <file>, regex)` kind was DELETED, not left unused, so writing
+#     one again is a deliberate, reviewed act rather than the path of least
+#     effort. scripts/tests/test_check_c1_conformance.sh asserts its absence.
+#
+#   * POSITIVE probes (`present`, `min`) and the STRUCTURAL readers
+#     (`enum_exact`, `arms_exact`) legitimately stay FILE-scoped. Their failure
+#     mode is the opposite one: a too-narrow positive scope cannot produce a
+#     false green, it produces a false RED by construction. If the symbol, the
+#     enum or the impl block MOVES to a sibling module, the probe finds 0 matches
+#     (or "could not locate a parseable enum") and the gate fails loudly, which
+#     is the safe side. Pinning them to a named file also states WHERE the
+#     contract's structure is expected to live, which is information a tree-wide
+#     search would throw away.
+#
+#   * A CRATE TREE IS THE COMPLETE SCOPE, not merely a wider one, for the Rust
+#     identifier negatives: a variant cannot be added to `enum DenseReadiness` or
+#     `enum ProjectionRole` from outside the crate that declares them.
+#
+# CURRENT INVENTORY (7 negative probes, all tree-scoped; 5 clauses):
+#   src                                     Q4-NO-PROVISIONAL (*.rs);
+#                                           Q6B-NO-ENTITYTYPESPEC ×3 (all text)
+#   fathomdb-schema/src                     Q2-NO-DATA-MIGRATION ×2 (all text)
+#   fathomdb-engine/src                     Q4-DENSE-READINESS ×1 (*.rs),
+#                                           Q6A-THREE-ROLES ×2 (*.rs),
+#                                           Q6B-ID-NON-NULL ×1 (*.rs),
+#                                           TE-CUSTOM-TOKENIZER ×1 (all text)
+# The SQL negatives use exts=None rather than *.rs on purpose: a migration or a
+# DDL carried in a `.sql` file and pulled in with `include_str!` is the same
+# violation. The Rust IDENTIFIER negatives use *.rs, because their subject is
+# Rust syntax and a mention in a neighbouring note would be a pure false RED.
+#
+# ==================== RESIDUAL SCOPE — READ BEFORE ROUND 4 ===================
 # This gate is a STATIC, LEXICAL check over Rust and SQL SOURCE TEXT. That
-# approach has a boundary, and two review rounds have now been spent tightening
-# regexes against it (fix-1: SQL case/whitespace, and blacklist ⇒ closed
-# vocabulary; fix-2: schema-qualified table names, and spellings admitted
-# outside a simple match arm). Rather than rediscover the boundary a third time,
-# it is written down here.
+# approach has a boundary, and two review rounds were spent tightening regexes
+# against it (fix-1: SQL case/whitespace, and blacklist ⇒ closed vocabulary;
+# fix-2: schema-qualified table names, and spellings admitted outside a simple
+# match arm). Rather than rediscover the boundary again, it is written down here.
+#
+# NOTE THAT FIX-3 IS NOT ON THIS LIST AND DID NOT BELONG ON IT. It was a bounded
+# SCOPE bug with a definite, complete fix, and it was closed, not documented away.
+# The list below is the set of things a different MECHANISM would be needed for;
+# it is not a place to retire findings to.
 #
 # WHAT THIS GATE IS. A TRIPWIRE AGAINST DRIFT. Its threat model is a FUTURE
 # CONTRIBUTOR who changes as-built code without noticing that a ratified
@@ -130,8 +183,10 @@
 # CONSEQUENCE FOR REVIEWERS. A finding that this gate misses something ON THE
 # LIST ABOVE is TRUE and is NOT a defect in the patch — it is the documented
 # scope, and the answer to it is a different mechanism, not another regex. A
-# finding that it misses a spelling of a PINNED NAME in LITERAL source text is a
-# real defect: fix it, and if the fix is another regex, add its class here.
+# finding that it misses a spelling of a PINNED NAME in LITERAL source text, or
+# misses it because the probe was pointed at the wrong SUBJECT, is a real defect:
+# fix it, and if the fix is another regex, add its class here. Round 3 was the
+# second kind — see PROBE SCOPE above — and it was fixed.
 #
 # ============================ THE AMENDMENT TRAP =============================
 # The contract was AMENDED at efa8d584 ("amend C-1 contract Q6(b) with the TC-11
@@ -176,9 +231,12 @@
 #   1. python3 is absent.
 #   2. the contract file is missing / unreadable.
 #   3. the pin file is missing / unreadable / unparseable / MALFORMED.
-#   4. a source file (or source tree) a clause's assertion must read is missing
-#      or unreadable — the assertion could not be EVALUATED, which is neither a
-#      pass nor a clause failure.
+#   4. a source file a clause's assertion must read is missing or unreadable, OR
+#      a source TREE it must scan is absent, OR that tree yields ZERO candidate
+#      files (fix-3: a negative assertion that examined nothing has not been
+#      evaluated — reporting it satisfied is the vacuous pass in its purest
+#      form). In every case the assertion could not be EVALUATED, which is
+#      neither a pass nor a clause failure.
 #   5. the executed-assertion count is less than the pinned CHECKABLE count —
 #      the check set evaporated.
 #
@@ -286,6 +344,11 @@ T20 = "src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs"
 T25 = "src/rust/crates/fathomdb-engine/tests/slice25_registration_identity_inert.rs"
 PLAN = "dev/plans/plan-0.8.20.md"
 SRC_TREE = "src"
+# The CRATE SOURCE TREES the negative probes scan (fix-3). ENG and SCH above name
+# the crates' lib.rs; these name the whole module tree each lib.rs is the root of,
+# because that — not one file — is the scope in which a crate's obligations hold.
+ENG_TREE = "src/rust/crates/fathomdb-engine/src"
+SCH_TREE = "src/rust/crates/fathomdb-schema/src"
 
 # Directories never worth walking (and, for node_modules/target, never OURS).
 SKIP_DIRS = {
@@ -300,7 +363,6 @@ SKIP_DIRS = {
 #
 # Probe kinds:
 #   ("present", path, regex)          regex must match at least once in path
-#   ("absent",  path, regex)          regex must not match anywhere in path
 #   ("min",     path, regex, n)       regex must match at least n times in path
 #   ("absent_tree", tree, regex, exts) regex must not match in any text file
 #                                      under tree (exts=None ⇒ every text file)
@@ -308,6 +370,11 @@ SKIP_DIRS = {
 #                                      these variants — set AND count
 #   ("arms_exact", path, ty, fn, pairs) the match arms inside `impl ty { fn fn }`
 #                                      map EXACTLY these (variant, string) pairs
+#
+# THERE IS NO FILE-SCOPED NEGATIVE PROBE KIND, DELIBERATELY (fix-3). See "PROBE
+# SCOPE" in this file's header: every NEGATIVE assertion is `absent_tree`, and
+# `("absent", <file>, regex)` was DELETED rather than merely left unused, so
+# re-introducing a single-file negative is a deliberate, reviewed act.
 #
 # ------------ CLOSED VOCABULARIES ARE STRUCTURAL, NOT BLACKLISTED ------------
 # fix-1, codex §9 round 1 finding #1 [P2]. Three clauses below assert that a
@@ -428,15 +495,22 @@ ASSERTIONS = {
         ("present", T15, r"fn property_filter_returns_correct_rows\(\)"),
         ("present", T15, r"fn property_fts_search_returns_correct_rows\(\)"),
     ],
-    # SCOPE (load-bearing, fix-1). The clause forbids a MIGRATION/BACKFILL of
-    # PRE-EXISTING rows — not projection writes as such. The two `absent` probes
-    # are therefore scoped to SCH, the schema crate, which IS the migration
-    # ladder: any `INSERT ... INTO canonical_attributes` there runs at migrate
-    # time over rows that already existed, which is exactly the forbidden thing.
-    # The LEGITIMATE writes — the per-declaration, same-transaction projection
-    # INSERTs — live in the ENGINE (`configure_projections`, ENG ~16663/16669)
-    # and are deliberately out of this probe's scope, so widening the pattern to
-    # be case-insensitive cannot produce a false positive on them.
+    # SCOPE (load-bearing, fix-1 then fix-3). The clause forbids a
+    # MIGRATION/BACKFILL of PRE-EXISTING rows — not projection writes as such.
+    # The two negative probes are therefore scoped to THE SCHEMA CRATE, which IS
+    # the migration ladder: any `INSERT ... INTO canonical_attributes` there runs
+    # at migrate time over rows that already existed, which is exactly the
+    # forbidden thing. The LEGITIMATE writes — the per-declaration,
+    # same-transaction projection INSERTs — live in the ENGINE
+    # (`configure_projections`) and are deliberately out of scope, so widening
+    # these patterns cannot produce a false positive on them.
+    #
+    # fix-3, codex §9 round 3 finding #1 [P2]: the scope is the crate's SOURCE
+    # TREE (SCH_TREE), not its lib.rs. A backfill added in ANY module of the
+    # schema crate runs at migrate time exactly as one in lib.rs does; scoping
+    # the check to one file only ever asserted "nobody added a module".
+    # exts=None (every text file) rather than *.rs, so a migration carried in a
+    # `.sql` file and pulled in with `include_str!` is in scope too.
     #
     # Residual, stated honestly: the probe reads the schema crate as TEXT, so a
     # doc comment that literally spells `insert into canonical_attributes` would
@@ -444,8 +518,8 @@ ASSERTIONS = {
     # of this gate — unlike the false GREEN it replaces.
     "C1-Q2-NO-DATA-MIGRATION": [
         ("present", SCH, r"NO DATA MIGRATION \(HITL 2026-07-21\): shape only, no backfill\."),
-        ("absent", SCH, insert_into("canonical_attributes")),
-        ("absent", SCH, insert_into("property_search_index")),
+        ("absent_tree", SCH_TREE, insert_into("canonical_attributes"), None),
+        ("absent_tree", SCH_TREE, insert_into("property_search_index"), None),
     ],
     # ---- Q4 --------------------------------------------------------------
     "C1-Q4-CHEAP-SAME-TRANSACTION": [
@@ -455,15 +529,21 @@ ASSERTIONS = {
     # "EXACTLY {ready, embedding}" is a CLOSED vocabulary, so it is asserted
     # structurally (fix-1, codex finding #1): the enum has exactly two variants,
     # and each conversion fn maps exactly two (variant, string) pairs. The
-    # `present` probes are kept as a spelling regression guard, and the `absent`
+    # `present` probes are kept as a spelling regression guard, and the negative
     # `::Pending` probe is kept because the clause names that token
     # specifically ("reserved for the orthogonal admission axis") — but neither
     # is what closes the vocabulary any more.
+    #
+    # fix-3 SWEEP: that negative probe is scoped to the ENGINE CRATE TREE. The
+    # reserved token is just as much a violation in a sibling module as in
+    # lib.rs, and since a variant cannot be added to `enum DenseReadiness` from
+    # outside the crate that declares it, the crate tree is the COMPLETE scope
+    # for this obligation, not merely a wider one.
     "C1-Q4-DENSE-READINESS-TWO-MEMBERS": [
         ("present", ENG, r"pub enum DenseReadiness \{"),
         ("present", ENG, r'DenseReadiness::Ready => "ready",'),
         ("present", ENG, r'DenseReadiness::Embedding => "embedding",'),
-        ("absent", ENG, r"DenseReadiness::Pending"),
+        ("absent_tree", ENG_TREE, r"DenseReadiness::Pending", (".rs",)),
         ("enum_exact", ENG, "DenseReadiness", ("Ready", "Embedding")),
         ("arms_exact", ENG, "DenseReadiness", "as_str",
          (("Ready", "ready"), ("Embedding", "embedding"))),
@@ -477,15 +557,17 @@ ASSERTIONS = {
     # Same CLASS as the readiness clause (fix-1 sweep): "exactly {filterable,
     # rankable, searchable}" was probed as three presents plus a blacklist of
     # two names, so a FOURTH role under any other name passed. Closed
-    # structurally now; the two `absent` probes are kept because Vector/Fts are
+    # structurally now; the two negative probes are kept because Vector/Fts are
     # the specific confusion the clause calls out (they are TIER LABELS on the
-    # sub-objects, not roles).
+    # sub-objects, not roles). fix-3 SWEEP scopes both to the ENGINE CRATE TREE,
+    # for the same reason as the readiness clause: the crate that declares
+    # `enum ProjectionRole` is the complete scope in which a role can be named.
     "C1-Q6A-THREE-ROLES": [
         ("present", ENG, r'"filterable" => Some\(ProjectionRole::Filterable\),'),
         ("present", ENG, r'"rankable" => Some\(ProjectionRole::Rankable\),'),
         ("present", ENG, r'"searchable" => Some\(ProjectionRole::Searchable\),'),
-        ("absent", ENG, r"ProjectionRole::Vector\b"),
-        ("absent", ENG, r"ProjectionRole::Fts\b"),
+        ("absent_tree", ENG_TREE, r"ProjectionRole::Vector\b", (".rs",)),
+        ("absent_tree", ENG_TREE, r"ProjectionRole::Fts\b", (".rs",)),
         ("enum_exact", ENG, "ProjectionRole", ("Filterable", "Rankable", "Searchable")),
         ("arms_exact", ENG, "ProjectionRole", "as_str",
          (("Filterable", "filterable"), ("Rankable", "rankable"),
@@ -527,11 +609,15 @@ ASSERTIONS = {
     # respacing (`pub id : Option < IdSpace >`) evaded it. The clause is not
     # trivially exploitable — the paired `present` probe fails on the same edit —
     # but a decoy struct carrying `pub id: IdSpace,` satisfies that probe and
-    # leaves the narrow `absent` probe as the only thing standing (fixture 12p,
-    # which exited 0 before this round). Whitespace-tolerant now.
+    # leaves the narrow negative probe as the only thing standing (fixture 12p,
+    # which exited 0 before that round). Whitespace-tolerant now.
+    #
+    # fix-3 SWEEP: and TREE-scoped. A second, NULLABLE typed-id carrier declared
+    # in a sibling module (fixture 12s) is exactly the same violation, and the
+    # paired `present` probe in lib.rs holds untouched while it happens.
     "C1-Q6B-ID-NON-NULL": [
         ("present", ENG, r"pub id: IdSpace,"),
-        ("absent", ENG, r"pub\s+id\s*:\s*Option\s*<\s*IdSpace"),
+        ("absent_tree", ENG_TREE, r"pub\s+id\s*:\s*Option\s*<\s*IdSpace", (".rs",)),
     ],
     "C1-Q6B-H-TERMINAL-NOT-LIFECYCLE-ADDRESSABLE": [
         ("present", ENG, r"NotLifecycleAddressable \{"),
@@ -566,19 +652,26 @@ ASSERTIONS = {
         ("present", ENG, r"pub tokenizer: Option<String>,"),
         ("min", SCH, r"tokenize = 'porter unicode61 remove_diacritics 2'", 2),
     ],
-    # The third `absent` probe is SQL, so it carries the SAME defect class as
-    # C1-Q2-NO-DATA-MIGRATION and was fixed in the same sweep (fix-1): a
-    # lowercase `create virtual table property_search_index using fts5(...)` in
-    # the engine cleared the uppercase-anchored original. The obligation is that
-    # the ENGINE does not create the property-FTS table itself (the schema
-    # migration owns it, with the default tokenizer; a declared override is
-    # recorded and not honoured), so the probe is scoped to ENG.
+    # The third probe is SQL, so it carries the SAME defect classes as
+    # C1-Q2-NO-DATA-MIGRATION and has been fixed in every sweep alongside it:
+    # fix-1 (a lowercase `create virtual table property_search_index using
+    # fts5(...)` cleared the uppercase-anchored original), fix-2 (the same DDL
+    # schema-qualified), and now fix-3 — codex §9 round 3 finding #2 [P2]: the
+    # probe read ENGINE lib.rs alone, so the identical DDL in a NEW engine module
+    # (codex's `src/rust/crates/fathomdb-engine/src/extra_fts.rs`) exited 0.
+    #
+    # The obligation is that THE ENGINE does not create the property-FTS table
+    # itself (the schema migration owns it, with the default tokenizer; a
+    # declared override is recorded and not honoured), so the scope is the ENGINE
+    # CRATE TREE — the whole of it. exts=None for the same reason as the schema
+    # clause: DDL carried in a `.sql` file and `include_str!`-ed is still the
+    # engine creating that table.
     "C1-TE-CUSTOM-TOKENIZER-DEFERRED": [
         ("present", SCH, r"fts_tokenizer TEXT,"),
         ("present", SCH, r"recorded in the registry but not honoured here"),
-        ("absent", ENG,
+        ("absent_tree", ENG_TREE,
          r"(?i)CREATE\s+VIRTUAL\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?"
-         + qualified("property_search_index")),
+         + qualified("property_search_index"), None),
     ],
     # ---- Landing ---------------------------------------------------------
     "C1-LAND-0820-SLOT": [
@@ -836,8 +929,34 @@ def read_source(rel):
     return text
 
 
+_tree_cache = {}
+
+
 def walk_tree(rel, exts):
-    """Yield (path, text) for every text file under a root-relative tree."""
+    """Every (path, text) text file under a root-relative tree, as a LIST.
+
+    TC-37 path #4 FOR A TREE-SCOPED SUBJECT (fix-3). Once a probe's subject is a
+    TREE rather than a FILE, "missing" needs a definition, and there are two
+    ways a tree can fail to be a subject:
+
+      * THE DIRECTORY IS ABSENT. Unambiguous: the assertion could not be
+        evaluated at all. exit 2, as it always has been.
+      * THE DIRECTORY YIELDS NO CANDIDATE FILE (it is empty, or holds nothing
+        matching `exts`, or only binaries). Judgement call, decided this way: a
+        NEGATIVE assertion that examined ZERO files is trivially satisfiable and
+        would report "no violation found" having looked at nothing. That is the
+        vacuous pass in its purest form, and it is what a renamed/moved crate
+        leaves behind. exit 2.
+
+    A LIST rather than a generator, because "examined nothing" can only be known
+    after the walk finishes, and a caller that returns early on the first match
+    would never let a generator get there. Cached per (tree, exts): the three
+    negative-space probes of C1-Q6B share one walk of src/, and the whole scan
+    happens once per distinct scope rather than once per probe.
+    """
+    key = (rel, exts)
+    if key in _tree_cache:
+        return _tree_cache[key]
     base = os.path.join(ROOT, rel)
     if not os.path.isdir(base):
         die_env(
@@ -845,6 +964,7 @@ def walk_tree(rel, exts):
             "not be EVALUATED (TC-37 evaporation path #4). The gate computed no verdict for that "
             "clause, so it refuses to report one."
         )
+    found = []
     for dirpath, dirnames, filenames in os.walk(base):
         dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
         for name in sorted(filenames):
@@ -861,7 +981,18 @@ def walk_tree(rel, exts):
                 )
             if b"\0" in blob[:8192]:
                 continue  # binary; the contract's negative space is about source text
-            yield os.path.relpath(full, ROOT), blob.decode("utf-8", errors="replace")
+            found.append((os.path.relpath(full, ROOT), blob.decode("utf-8", errors="replace")))
+    if not found:
+        scope = "text file" if exts is None else "/".join(exts) + " file"
+        die_env(
+            f"the source tree {rel} under --root {ROOT} exists but holds no {scope} — 0 files were "
+            "scanned, so a NEGATIVE clause assertion would have reported 'no violation' having "
+            "examined NOTHING. That is not a pass, it is TC-37 evaporation path #4: the assertion "
+            "could not "
+            "be EVALUATED. Point --root at a complete source tree, or restore the crate."
+        )
+    _tree_cache[key] = found
+    return found
 
 
 def line_of(text, match):
@@ -1026,16 +1157,11 @@ def run_probe(probe):
         if re.search(pattern, text) is None:
             return f"expected /{pattern}/ in {path}, found 0 match(es)"
         return None
-    if kind == "absent":
-        _, path, pattern = probe
-        text = read_source(path)
-        found = list(re.finditer(pattern, text))
-        if found:
-            return (
-                f"expected NO match for /{pattern}/ in {path}, found {len(found)} "
-                f"(first at {path}:{line_of(text, found[0])})"
-            )
-        return None
+    # NOTE (fix-3): there is deliberately NO file-scoped negative probe kind. A
+    # negative assertion scoped to a single file asserts only "nobody added a
+    # module", which a growing crate falsifies by default — codex §9 round 3.
+    # `absent_tree` below is the only negative kind, and `("absent", <file>, ..)`
+    # now falls through to the unknown-kind die_env at the bottom of this fn.
     if kind == "min":
         _, path, pattern, least = probe
         text = read_source(path)
