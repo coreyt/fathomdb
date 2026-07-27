@@ -404,11 +404,16 @@ SKIP_DIRS = {
 #   ("present", path, regex)           regex must match at least once in path —
 #                                      ONLY where the regex names its subject
 #                                      uniquely (a declaration by name, a const
-#                                      and its value, a whole table row)
-#   ("doc_text", path, regex)          the same predicate, but declaring what it
-#                                      is: a DOCUMENTED STATEMENT is still in the
-#                                      file. Never the load-bearing half of a
-#                                      clause; see the fix-4 note below.
+#                                      and its value, a whole table row). In a
+#                                      `.rs` file it reads the COMMENT-STRIPPED
+#                                      text: a commented-out declaration is not a
+#                                      declaration (fix-4c)
+#   ("doc_text", path, regex)          the same predicate over RAW text, and
+#                                      declaring what it is: a DOCUMENTED
+#                                      STATEMENT is still in the file — its
+#                                      subject IS a comment. Never the
+#                                      load-bearing half of a clause; see the
+#                                      fix-4 note below.
 #
 # THERE IS NO FILE-SCOPED NEGATIVE PROBE KIND, DELIBERATELY (fix-3). See "PROBE
 # SCOPE" in this file's header: every NEGATIVE assertion is `absent_tree`, and
@@ -564,11 +569,16 @@ ASSERTIONS = {
          r"pub\s+roles\s*:\s*BTreeSet\s*<\s*ProjectionRole\s*>"),
     ],
     # ---- Q3 --------------------------------------------------------------
+    # fix-4 SWEEP: "reporting the applied delta" is read as a FIELD of
+    # ProjectionDelta (`dropped` — the half of the delta no other clause
+    # asserts), not as a bare `pub struct ProjectionDelta {` line that a decoy or
+    # a comment could carry.
     "C1-Q3-SOLE-AUTHORITY": [
         ("sql_ddl", SCH, "_fathomdb_projection_registry",
          r"(?i)\bname\s+TEXT\s+PRIMARY\s+KEY\b"),
         ("fn_defined", ENG, "apply_projection_config"),
-        ("present", ENG, r"pub struct ProjectionDelta \{"),
+        ("in_item", ENG, "struct", "ProjectionDelta",
+         r"pub\s+dropped\s*:\s*Vec\s*<\s*String\s*>"),
     ],
     "C1-Q3-DESTRUCTIVE-DELTA": [
         ("in_item", ENG, "enum", "EngineError", r"\bProjectionDestructive\s*\{"),
@@ -1526,7 +1536,18 @@ def run_probe(probe):
     kind = probe[0]
     if kind in ("present", "doc_text"):
         _, path, pattern = probe
-        text = read_source(path)
+        # fix-4c. A `present` probe names a DECLARATION, so in a Rust source it
+        # reads the COMMENT-STRIPPED view: commenting a declaration out and
+        # putting a replacement beside it used to leave the probe satisfied, and
+        # for two clauses that probe is the only one carrying the obligation. A
+        # `doc_text` probe is the exact opposite — its subject IS a written
+        # statement, and two of them live in ordinary `//` comments — so it
+        # always reads raw text. Non-Rust subjects (the plan's markdown table)
+        # read raw too: there is no Rust comment syntax there to strip.
+        if kind == "present" and path.endswith(".rs"):
+            text = rust_view(path)
+        else:
+            text = read_source(path)
         if re.search(pattern, text) is None:
             if kind == "doc_text":
                 return (
@@ -1534,7 +1555,11 @@ def run_probe(probe):
                     "probe asserts a written statement, not a structure — the clause's enforceable "
                     "content is carried by its other probes; see the note beside this clause"
                 )
-            return f"expected /{pattern}/ in {path}, found 0 match(es)"
+            return (
+                f"expected /{pattern}/ in {path}, found 0 match(es)"
+                + (" (comments are stripped before this probe runs: a commented-out declaration "
+                   "is not a declaration)" if path.endswith(".rs") else "")
+            )
         return None
     # ---- the fix-4 SUBJECT-BOUND kinds ------------------------------------
     if kind == "in_item":
