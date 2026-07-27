@@ -1158,6 +1158,58 @@ run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$PLAN_MENTION
 expect_rc 1 "a requirement ROW demoted to a prose MENTION HARD-fails the landing-slot clause"
 expect_out 'C1-LAND-0820-SLOT' "the demoted-row failure NAMES the landing-slot clause id"
 
+# === Arm 12ad (RED, fix-4 SWEEP): A STRING LITERAL IS NOT CODE ===============
+# Found by turning the fix-4 question on the fix-4 patch itself: the structural
+# readers read a COMMENT-STRIPPED view, but string literals were left in it, so
+# `fn foo() { }` sitting inside a `&str` constant read exactly like a definition
+# — and `enum DenseReadiness { Ready, Embedding }` inside one read exactly like a
+# declaration. That is the fix-4 class again (a probe satisfied by something that
+# is not its subject), and it is a false GREEN, not the safe direction.
+#
+# Both halves below exited 0 against the fix-4 gate:
+#   * the crash-heal proof DELETED, its name surviving only inside a string;
+#   * a THIRD DenseReadiness variant added to the real enum, with a decoy string
+#     EARLIER in the file carrying a well-formed two-variant enum — `enum_exact`
+#     brace-matched the decoy and reported the vocabulary closed.
+STRING_DECOY_ROOT="$(make_root definition-inside-a-string-literal)"
+python3 - "$STRING_DECOY_ROOT/src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+assert text.count("fn boot_rederive_converges_after_simulated_crash()") == 1
+text = text.replace("fn boot_rederive_converges_after_simulated_crash()",
+                    "fn boot_rederive_deleted_by_fixture()", 1)
+text += """
+// Fixture only (fix-4 SWEEP). The proof is deleted. Its name survives ONLY
+// inside a string literal, which is data, not a definition.
+const FIXTURE_DECOY_FN: &str =
+    "fn boot_rederive_converges_after_simulated_crash() { assert!(true); }";
+"""
+open(p, "w", encoding="utf-8").write(text)
+PY
+python3 - "$STRING_DECOY_ROOT/src/rust/crates/fathomdb-engine/src/lib.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+i = text.index("pub enum DenseReadiness {")
+j = text.index("\n}", i)
+text = text[:j] + "\n    Failed," + text[j:]
+# The decoy must sit EARLIER in the file than the real declaration, because the
+# structural reader takes the first parseable one it finds.
+text = (
+    "// Fixture only (fix-4 SWEEP). A well-formed two-variant enum inside a\n"
+    "// string literal, ahead of the real three-variant declaration.\n"
+    "const FIXTURE_DECOY_ENUM: &str = \"pub enum DenseReadiness { Ready, Embedding }\";\n"
+) + text
+open(p, "w", encoding="utf-8").write(text)
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$STRING_DECOY_ROOT"
+expect_rc 1 "a definition/declaration planted inside a STRING LITERAL does not satisfy a structural probe"
+expect_out 'C1-AA-CRASH-HEAL-BOOT-REDERIVE' "the string-decoy failure NAMES the crash-heal clause"
+expect_out 'C1-Q4-DENSE-READINESS-TWO-MEMBERS' "the string-decoy failure NAMES the readiness clause"
+expect_out 'Failed' "the string-decoy failure NAMES the unpinned variant the real enum carries"
+expect_routes_to_steward "the string-decoy clause failures"
+
 # === Arm 13 (RED): a source file an assertion reads is MISSING ===============
 # TC-37 evaporation path #4: the assertion could not be EVALUATED. That is
 # neither a pass (0) nor a clause failure (1) — the gate computed no verdict.
