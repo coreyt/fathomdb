@@ -38,6 +38,19 @@
 # pinned contract — an open readiness vocabulary guarded only by a blacklist of
 # one name, and case-sensitive `absent` regexes over SQL. Both classes were
 # swept for and are fixed across every clause that carried them.
+#
+# FIX-2 ARMS (arms 12k–12p) are the recurrence guard for codex §9 round 2, which
+# found three REFINEMENTS of those same two classes: a SQL table name may be
+# SCHEMA-QUALIFIED (`main.canonical_attributes`), and an accepted string may be
+# admitted OUTSIDE a simple match arm (an `if` guard, an or-pattern). 12p is the
+# sweep's own product, in the same narrow-regex class.
+#
+# READ THE GATE'S "RESIDUAL SCOPE" HEADER SECTION BEFORE ADDING A ROUND 3. Two
+# rounds of this shape have now landed, and the gate's header now states, in
+# writing, the evasion classes a static/lexical check CANNOT close (dynamically
+# composed SQL, const/macro-indirected identifiers, ATTACH aliases, normalising
+# comparisons). Arms for those belong to a DIFFERENT mechanism — a runtime
+# `sqlite_master` assertion or a real parse — not to another regex here.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -566,6 +579,145 @@ RS
 run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$LOWER_DDL_ROOT"
 expect_rc 1 "a LOWERCASE engine-side property-FTS DDL HARD-fails the deferred-tokenizer clause"
 expect_out 'C1-TE-CUSTOM-TOKENIZER-DEFERRED' "the lowercase-DDL failure NAMES the clause id"
+
+# === Arm 12k–12m (RED, fix-2): SQL TABLE NAMES MAY BE SCHEMA-QUALIFIED =======
+# codex §9 round 2, findings #1 and #2 [P2]. fix-1 widened the SQL negative-space
+# probes for CASE and WHITESPACE but still required the pinned table name to sit
+# IMMEDIATELY after `INTO` / `TABLE`. SQLite names a table as
+# `[<schema>.]<table>`, and `main.` is always a valid schema for the main
+# database, so `INSERT INTO main.canonical_attributes ...` writes exactly the
+# forbidden table and cleared the gate with 0. The same shape cleared the
+# engine-side FTS DDL probe.
+#
+# Each arm below is a VALID SQLite spelling of the forbidden statement. Every one
+# of them exited 0 before this round.
+
+# 12k — the bare `main.` qualifier on the EAV store (codex's own example).
+QUAL_INSERT_ROOT="$(make_root schema-qualified-backfill)"
+cat >>"$QUAL_INSERT_ROOT/src/rust/crates/fathomdb-schema/src/lib.rs" <<'RS'
+
+// Fixture only. A SCHEMA-QUALIFIED migration-time backfill. `main` is always a
+// valid schema name for the main database, so this writes the same table the
+// Q2 NO-DATA-MIGRATION clause forbids backfilling.
+const FIXTURE_BACKFILL_SQL: &str = "INSERT INTO main.canonical_attributes SELECT * FROM old_attrs;";
+RS
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$QUAL_INSERT_ROOT"
+expect_rc 1 "a SCHEMA-QUALIFIED backfill (main.canonical_attributes) HARD-fails NO-DATA-MIGRATION"
+expect_out 'C1-Q2-NO-DATA-MIGRATION' "the schema-qualified-backfill failure NAMES the clause id"
+expect_routes_to_steward "the schema-qualified-backfill clause failure"
+
+# 12l — the same evasion stacked with every fix-1 tolerance at once: lowercase, a
+# conflict clause, a QUOTED schema name, and whitespace around the dot. This is
+# the property-FTS half of the clause.
+QUAL_QUOTED_ROOT="$(make_root schema-qualified-quoted-backfill)"
+cat >>"$QUAL_QUOTED_ROOT/src/rust/crates/fathomdb-schema/src/lib.rs" <<'RS'
+
+// Fixture only. Lowercase + `OR IGNORE` + a QUOTED schema + whitespace around
+// the dot — all four are legal SQLite, and all four are one statement.
+const FIXTURE_BACKFILL_SQL: &str = "insert or ignore into `main` . property_search_index(attr_value) select v from legacy;";
+RS
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$QUAL_QUOTED_ROOT"
+expect_rc 1 "a QUOTED, spaced schema qualifier (\`main\` . property_search_index) HARD-fails"
+expect_out 'C1-Q2-NO-DATA-MIGRATION' "the quoted-qualifier failure NAMES the clause id"
+
+# 12m — the SAME DEFECT CLASS in the sibling clause: the engine creating the
+# property-FTS table under a schema-qualified name.
+QUAL_DDL_ROOT="$(make_root schema-qualified-fts-ddl)"
+cat >>"$QUAL_DDL_ROOT/src/rust/crates/fathomdb-engine/src/lib.rs" <<'RS'
+
+// Fixture only. The ENGINE creating the property-FTS table, schema-qualified.
+const FIXTURE_DDL: &str = "CREATE VIRTUAL TABLE main.property_search_index USING fts5(attr_value)";
+RS
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$QUAL_DDL_ROOT"
+expect_rc 1 "a SCHEMA-QUALIFIED engine-side property-FTS DDL HARD-fails the deferred-tokenizer clause"
+expect_out 'C1-TE-CUSTOM-TOKENIZER-DEFERRED' "the schema-qualified-DDL failure NAMES the clause id"
+
+# === Arm 12n–12o (RED, fix-2): ACCEPTED SPELLINGS OUTSIDE A SIMPLE ARM ======
+# codex §9 round 2, finding #3 [P2]. fix-1 closed the string vocabulary by
+# harvesting `"s" => Some(Ty::V)` match arms — but a token can be ADMITTED by
+# other Rust syntax that never forms such an arm. Two of them are ordinary code
+# a contributor might really write:
+#   * a guard BEFORE the match: `if value == "pending" { return Some(..) }`
+#   * an OR-PATTERN arm: `"vector" | "searchable" => Some(..)`, where only the
+#     LAST alternative sits immediately before the `=>`.
+# In both cases arm_pairs() harvested exactly the pinned pairs and reported the
+# closed vocabulary as EXACT while the function accepted a third token. Both
+# exited 0 before this round.
+
+# 12n — the `if` guard. The enum is untouched and every pinned arm is intact, so
+# enum_exact and the `present` probes all hold; only the extra ACCEPTED TOKEN is
+# the violation, and `pending` is precisely the token the clause reserves for the
+# orthogonal admission axis.
+GUARD_ROOT="$(make_root readiness-if-guard-spelling)"
+python3 - "$GUARD_ROOT/src/rust/crates/fathomdb-engine/src/lib.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+old = '''    pub fn from_str_opt(value: &str) -> Option<Self> {
+        match value {
+            "ready" => Some(DenseReadiness::Ready),'''
+assert old in text
+new = '''    pub fn from_str_opt(value: &str) -> Option<Self> {
+        if value == "pending" {
+            return Some(DenseReadiness::Ready);
+        }
+        match value {
+            "ready" => Some(DenseReadiness::Ready),'''
+open(p, "w", encoding="utf-8").write(text.replace(old, new, 1))
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$GUARD_ROOT"
+expect_rc 1 'an accepted spelling admitted by an `if` GUARD before the match HARD-fails'
+expect_out 'C1-Q4-DENSE-READINESS-TWO-MEMBERS' "the if-guard failure NAMES the clause id"
+expect_out 'pending' "the if-guard failure NAMES the unpinned token it found"
+expect_routes_to_steward "the if-guard vocabulary failure"
+
+# 12o — the OR-PATTERN arm, in a sibling clause. Note this fixture deliberately
+# admits the string `"vector"` and NOT the identifier `ProjectionRole::Vector`,
+# so the clause's existing `absent` probe cannot fire: the only thing that can
+# catch it is a genuinely closed string vocabulary.
+ORPAT_ROOT="$(make_root role-or-pattern-spelling)"
+python3 - "$ORPAT_ROOT/src/rust/crates/fathomdb-engine/src/lib.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+old = '            "searchable" => Some(ProjectionRole::Searchable),'
+assert old in text
+new = '            "vector" | "searchable" => Some(ProjectionRole::Searchable),'
+open(p, "w", encoding="utf-8").write(text.replace(old, new, 1))
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$ORPAT_ROOT"
+expect_rc 1 "an accepted spelling admitted by an OR-PATTERN arm HARD-fails"
+expect_out 'C1-Q6A-THREE-ROLES' "the or-pattern failure NAMES the clause id"
+expect_out 'vector' "the or-pattern failure NAMES the unpinned token it found"
+
+# === Arm 12p (RED, fix-2 SWEEP): the same NARROW-REGEX class, elsewhere ======
+# Not a codex finding — the product of sweeping every remaining negative probe
+# for the shape the three findings share. C1-Q6B-ID-NON-NULL's `absent` probe was
+# the literal string `pub id: Option<IdSpace>`, so any legal Rust respacing
+# (`pub id : Option < IdSpace >`) evades it.
+#
+# The clause is NOT trivially exploitable — its paired `present` probe
+# (`pub id: IdSpace,`) fails on the same edit — so this fixture also plants a
+# decoy struct carrying that exact text. With the present probe satisfied, the
+# narrow `absent` probe was the only thing left standing, and it exited 0.
+SPACED_OPT_ROOT="$(make_root id-non-null-respaced)"
+python3 - "$SPACED_OPT_ROOT/src/rust/crates/fathomdb-engine/src/lib.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+assert "    pub id: IdSpace,\n" in text
+text = text.replace("    pub id: IdSpace,\n", "    pub id : Option < IdSpace > ,\n", 1)
+text += (
+    "\n/// Fixture only. A decoy carrying the exact text the clause's `present`\n"
+    "/// probe looks for, so that probe still holds and the NARROW `absent` probe\n"
+    "/// is the only thing standing between this tree and a green.\n"
+    "pub struct FixtureDecoy {\n    pub id: IdSpace,\n}\n"
+)
+open(p, "w", encoding="utf-8").write(text)
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$SPACED_OPT_ROOT"
+expect_rc 1 "a RESPACED \`pub id : Option < IdSpace >\` HARD-fails the id-non-null clause"
+expect_out 'C1-Q6B-ID-NON-NULL' "the respaced-Option failure NAMES the clause id"
 
 # === Arm 13 (RED): a source file an assertion reads is MISSING ===============
 # TC-37 evaporation path #4: the assertion could not be EVALUATED. That is
