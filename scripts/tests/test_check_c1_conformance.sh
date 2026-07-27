@@ -98,6 +98,16 @@
 #     ran. Note the INVERTED expectation on that arm (rc=0), and the mirror arms
 #     that keep a GENUINE file-level `#![cfg(..)]` red.
 #
+# FIX-6b ARMS (arm 12ak) are the recurrence guard for a regression THE FIX-6
+# PATCH ITSELF OPENED, found by codex re-reviewing that patch: narrowing the
+# inner-attribute scan to the file's LEADING HEADER made the walk stop at the
+# first byte that is neither whitespace nor `#![`, and a Rust file may legally
+# begin with a SHEBANG. `#!/usr/bin/env rust-script` followed by
+# `#![cfg(feature = "..")]` therefore compiled every proof in a pinned test file
+# out while the gate exited 0 — the same false GREEN the whole-file scan had
+# caught. A leading shebang is now part of the header and is skipped, and 12ak
+# holds BOTH directions: shebang + `#![cfg(..)]` is red, a shebang alone is not.
+#
 # READ THE GATE'S "RESIDUAL SCOPE" HEADER SECTION BEFORE ADDING A ROUND 7, AND
 # CLASSIFY THE FINDING FIRST. The header states, in writing, the evasion classes a
 # static/lexical check CANNOT close (dynamically composed SQL, const/macro-
@@ -1758,6 +1768,78 @@ PY
   expect_out 'C1-Q3-DESTRUCTIVE-DELTA' "header-cfg form $IDX NAMES a clause proved in that file"
   expect_out 'CONDITIONALLY COMPILED as a whole' "header-cfg form $IDX says the whole file is gated"
 done
+
+# === Arm 12ak (RED, fix-6b): A LEADING SHEBANG IS PART OF THE HEADER =========
+# codex §9 round 6 RE-REVIEW, and this one is a regression THE FIX-6 PATCH ABOVE
+# OPENED. Narrowing the file-level `#![..]` scan to the file's LEADING HEADER
+# (arm 12aj) closed the nested-module false RED, but the new walk stops at the
+# first byte that is neither whitespace nor `#![` — and a Rust source file may
+# legally BEGIN WITH A SHEBANG. `#!/usr/bin/env rust-script` is not `#![`, so the
+# walk ended at byte 0 and a file-level `#![cfg(..)]` on the NEXT line was never
+# seen: exit 0 on a pinned test file whose every proof is compiled out. codex
+# proved it with the toolchain, not by reading — `rustc --test` on
+# shebang + `#![cfg(feature = "nope")]` + `#[test] fn t() {}` builds, and
+# `--list` reports `0 tests`.
+#
+# The pre-fix-6 whole-file scan caught this. These arms keep BOTH directions
+# closed at once: the shebang must not hide a file-level `#![cfg(..)]` (12ak-1,
+# 12ak-3, rc=1) and must not by itself gate anything (12ak-2, rc=0). The nested
+# module mirror — the false RED fix-6 closed — is arm 12aj above and is NOT
+# duplicated here; it must stay rc=0 for this repair to be in scope.
+#
+# 12ak-1 — codex's own demonstration: a shebang line, then a genuine file-level
+# `#![cfg(..)]`. Same subject file as the 12aj mirror arms, so the only variable
+# against them is the shebang.
+SHEBANG_CFG_ROOT="$(make_root shebang-hides-file-cfg)"
+python3 - "$SHEBANG_CFG_ROOT/src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+open(p, "w", encoding="utf-8").write(
+    "#!/usr/bin/env rust-script\n"
+    '#![cfg(feature = "never-enabled")]\n' + text
+)
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$SHEBANG_CFG_ROOT"
+expect_rc 1 "a file-level #![cfg(..)] hidden behind a leading SHEBANG still HARD-fails the file's clauses"
+expect_out 'C1-Q3-DESTRUCTIVE-DELTA' "the shebang-hidden file-cfg failure NAMES a clause proved in that file"
+expect_out 'CONDITIONALLY COMPILED as a whole' \
+  "the shebang-hidden file-cfg failure says the whole file is gated"
+expect_routes_to_steward "the shebang-hidden file-cfg failure"
+
+# 12ak-2 — THE MIRROR, so skipping the shebang cannot overshoot: a shebang ALONE
+# gates nothing, and a file that grows one must not turn the gate RED.
+SHEBANG_ONLY_ROOT="$(make_root shebang-only)"
+python3 - "$SHEBANG_ONLY_ROOT/src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+open(p, "w", encoding="utf-8").write("#!/usr/bin/env rust-script\n" + text)
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$SHEBANG_ONLY_ROOT"
+expect_rc 0 "a leading SHEBANG on its own does NOT gate the pinned test file"
+expect_out 'ok +c1-contract-conformance' "the shebang-only root still reports ok"
+expect_no_out 'CONDITIONALLY COMPILED as a whole' \
+  "the shebang-only root is not reported as a wholly cfg-gated file"
+
+# 12ak-3 — the walk must RESUME after the shebang, not merely skip one line: a
+# shebang, then an unrelated inner attribute, then the `#![cfg(..)]`.
+SHEBANG_RUN_ROOT="$(make_root shebang-then-attr-run)"
+python3 - "$SHEBANG_RUN_ROOT/src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+open(p, "w", encoding="utf-8").write(
+    "#!/usr/bin/env rust-script\n"
+    "#![allow(dead_code)]\n"
+    '#![cfg(feature = "never-enabled")]\n' + text
+)
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$SHEBANG_RUN_ROOT"
+expect_rc 1 "a #![cfg(..)] after a shebang AND another inner attribute still HARD-fails"
+expect_out 'C1-Q3-DESTRUCTIVE-DELTA' "the shebang+attr-run failure NAMES a clause proved in that file"
+expect_out 'CONDITIONALLY COMPILED as a whole' \
+  "the shebang+attr-run failure says the whole file is gated"
 
 # === Arm 13 (RED): a source file an assertion reads is MISSING ===============
 # TC-37 evaporation path #4: the assertion could not be EVALUATED. That is
