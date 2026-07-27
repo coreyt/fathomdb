@@ -2,7 +2,7 @@
   "phase": "0.8.20 Slice 30 — R-20-H7 RUBRIC-H7 `can-i-deploy` contract-conformance gate",
   "baseline_sha": "23a436dcc7321eab86c622c8b403682caf2dfe2c",
   "branch": "orch-0.8.20-s30",
-  "head_sha": "(fix-4 round: the docs commit that carries this file — see commits[]; the last GREEN code half is 33792f3b)",
+  "head_sha": "(fix-5 round: the docs commit that carries this file — see commits[]; the RED half is a22eee36 and the last GREEN code half is 4aea7578)",
   "head_sha_before_fix_1": "3475d55e",
   "commits": [
     {
@@ -114,6 +114,16 @@
       "sha": "33792f3b",
       "subject": "fix(0.8.20-s30): GREEN fix-4c — a commented-out declaration is not a declaration",
       "note": "`present` reads the comment-stripped view for .rs; `doc_text` still reads raw. Gate rc=0, suite rc=0 (219 PASS / 0 FAIL)."
+    },
+    {
+      "sha": "a22eee36",
+      "subject": "test(0.8.20-s30): RED fix-5 — a wrong-crate constant and four ways a proof stops running",
+      "note": "Ran at f7e1d060 with REAL exit code 1: 221 PASS / 36 FAIL, every failure of the form 'expected rc=1, got rc=0'. Both codex fixtures reproduced verbatim (12af-1, 12ag-1/2) plus the sweep arms."
+    },
+    {
+      "sha": "4aea7578",
+      "subject": "fix(0.8.20-s30): GREEN fix-5 — the ENGINE's default embedder, and a proof that actually RUNS",
+      "note": "`const_str_agree` (relational, both crates) + `test_defined` (active test at four levels: attribute, position, file, cargo target) + two structural guards + the line-preserving rust_view. Gate rc=0 (0.76s), suite rc=0 (276 PASS / 0 FAIL). Pin evidence for C1-TE-DEFAULT-EMBEDDER extended (free text only — no id/category/count moved)."
     }
   ],
   "findings_addressed": [
@@ -409,6 +419,81 @@
       "gate": "bash -n scripts/check-c1-conformance.sh + scripts/tests/test_check_c1_conformance.sh",
       "exit": 0,
       "note": "exit 0 each."
+    },
+    {
+      "gate": "scripts/check-c1-conformance.sh (the gate, real tree)",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-5 HEAD (4aea7578). 26/26 CHECKABLE clauses hold; contract byte-identical to the pin. 0.76s wall. The green is EARNED, not an artefact: the two new probe kinds were each proven to go RED on a divergent fixture before this run (12af-*, 12ag-*, 12ah-*), and all 14 named proofs were independently confirmed present in `cargo test -- --list`."
+    },
+    {
+      "gate": "scripts/tests/test_check_c1_conformance.sh (recurrence guard)",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-5 HEAD. 276 assertions (was 219), 0 failures. Arm 12 now runs to 12ah, with 12af (wrong-crate constant, 4 sub-arms), 12ag (disabled proof, 4 sub-arms) and 12ah (switched off one level up, 4 sub-arms) new this round, plus two structural guards for `fn_defined`-on-a-test. Was exit 1 at the RED commit a22eee36 (221 PASS / 36 FAIL)."
+    },
+    {
+      "gate": "scripts/check-governed-surface-pin.sh",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-5 HEAD. 30 allowlist / 5 core / 5 recovery_denylist, pinned at 427d2712 under AC-079. src/conformance/governed-surface-allowlist.json verified BYTE-IDENTICAL to baseline 23a436dc via `git diff --exit-code`."
+    },
+    {
+      "gate": "scripts/preflight.sh --landing (from the worktree)",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-5 HEAD. All landing gates ok, including §10 c1-contract-conformance. One expected WARN: tracked source dirty on canonical main (the uncommitted docs change at the time of the run)."
+    },
+    {
+      "gate": "scripts/tests/test_check_governed_surface_pin.sh",
+      "exit": 0,
+      "note": "sibling suite, re-run at the fix-5 head."
+    },
+    {
+      "gate": "scripts/tests/test_preflight_landing.sh",
+      "exit": 0,
+      "note": "sibling suite, re-run at the fix-5 head. Exercises lib/c1-conformance-fixture.sh, which is manifest-driven and therefore picked up the newly-read Cargo.toml with no edit."
+    },
+    {
+      "gate": "scripts/tests/test_check_ledgers.sh",
+      "exit": 0,
+      "note": "sibling suite, re-run at the fix-5 head."
+    },
+    {
+      "gate": "scripts/tests/test_check_board_currency.sh",
+      "exit": 0,
+      "note": "sibling suite, re-run at the fix-5 head."
+    },
+    {
+      "gate": "scripts/agent-lint.sh",
+      "exit": 0,
+      "note": "re-run at the fix-5 head."
+    },
+    {
+      "gate": "bash -n scripts/check-c1-conformance.sh",
+      "exit": 0,
+      "note": ""
+    },
+    {
+      "gate": "bash -n scripts/tests/test_check_c1_conformance.sh",
+      "exit": 0,
+      "note": ""
+    },
+    {
+      "gate": "cargo test --workspace --no-run",
+      "exit": 0,
+      "note": "NEW THIS ROUND, because the gate now asserts things about test ATTRIBUTES. Every test target compiles. TC-72: a single workspace run is weak evidence and no Rust changed, so this is a sanity check, not a release claim."
+    },
+    {
+      "gate": "cargo test -p fathomdb-engine --test <T15|T20|T25> -- --list",
+      "exit": 0,
+      "note": "All 14 named proofs appear in the BUILT test binaries — the toolchain confirming, independently of the gate's lexical reading, that every pinned proof is an active test."
+    },
+    {
+      "gate": "cargo test -p fathomdb-engine --test slice20_dense_readiness atomic_flip_never_exposes_ready_without_the_vector_under_concurrent_write -- --exact",
+      "exit": 0,
+      "note": "Spot-check: a named proof actually RUNS and passes (1 passed, 0 failed, 0 ignored)."
+    },
+    {
+      "gate": "cargo clippy/check --workspace --all-targets",
+      "exit": 0,
+      "note": "CARRIED from the fix-1 round — no Rust changed in rounds 2, 3, 4 or 5."
     }
   ],
   "fix_rounds": [
@@ -1151,16 +1236,463 @@
       "residual_scope_amended": "One class ADDED (#8: what a named test actually asserts). The existing seven are unchanged. fix-4 itself is explicitly NOT on the list, for the same reason fix-3 was not: it was a bounded defect with a definite, complete fix, and the RESIDUAL SCOPE section is not a place to retire findings to.",
       "performance": "The gate runs in 0.50s wall on the real tree (was ~0.35s): the structural readers add one literal-blanking pass per Rust source read, cached per file. The recurrence suite runs in 20.6s (was ~16s) for 219 assertions across 26 divergent-fixture roots.",
       "not_changed": "src/ (no Rust changed — clippy/check carried), the C-1 contract's bytes, scripts/c1-conformance-pin.json (not touched at all this round), src/conformance/governed-surface-allowlist.json (byte-identical, verified against the baseline), ci.yml, preflight.sh, agent-test.sh."
+    },
+    {
+      "round": 5,
+      "reviewer": "codex §9, round 5 (fix-4 re-review) — two [P2] findings",
+      "transcript": "dev/plans/runs/codex/0.8.20/slice-30-fix-4-rereview-20260727T174033Z.log",
+      "budget": "Round 5 of a maximum 6 (orchestration.md §6, non-engine slice). THIS FIX PLUS ITS RE-REVIEW CONSUMES ROUND 6 AND EXHAUSTS THE BUDGET — if round 6 is not terminal the slice halts and escalates to the Steward. The 3-same-finding bound has still not fired and the classes remain distinct: rounds 1-2 = REGEX SHAPE; round 3 = SCOPE (file vs crate tree); round 4 = SUBJECT BINDING (a file vs the named item); round 5 = (a) THE WRONG CRATE'S same-named symbol, which is the NEXT question after round 4's, and (b) A PROOF THAT NO LONGER RUNS, which is about test ACTIVENESS rather than about probe binding at all.",
+      "why_this_was_not_residual": "Neither finding is on the documented residual list. #1 edits ONE literal `const ... = \"...\";` in ordinary source text, in the crate the clause names — the probe was simply looking at a DIFFERENT CRATE'S constant of the same name. #2 deletes ONE attribute token; nothing is indirected, composed or macro-generated. Both are definite defects with definite, complete lexical fixes, and both were CLOSED. Note also that #2 required the fix-4 residual class #8 to be REWRITTEN rather than cited: as written, #8 claimed more residual than was true, and an over-broad residual retires a defect the gate does in fact catch.",
+      "clause_registry_change": "NONE. Same 26 CHECKABLE ids, same categories, same pinned counts (26 checkable / 12 cross-repo / 7 prose, 45 total). The contract's bytes are untouched, so no re-derivation was triggered. scripts/c1-conformance-pin.json WAS edited this round, in ONE place and NOT in an id, a category or a count: C1-TE-DEFAULT-EMBEDDER's free-text `evidence` list now also cites engine lib.rs:51 (the shipped default the clause is actually about) and says why the embedder crate's constant is still cited. Flagged loudly here because a pin edit in a round that fixes a wrong-subject bug deserves a reviewer's eye: leaving the evidence pointing only at the crate the gate had been wrongly probing would have been its own small dishonesty.",
+      "findings": [
+        {
+          "id": "round5-#1 [P2] the default-embedder probe checks the WRONG CRATE'S constant",
+          "site": "scripts/check-c1-conformance.sh:806-807 (C1-TE-DEFAULT-EMBEDDER)",
+          "claim_verified": true,
+          "how": "codex's fixture reproduced VERBATIM as arm 12af-1: set fathomdb-engine/src/lib.rs's `const DEFAULT_EMBEDDER_NAME` to \"some-other-model\". Pre-fix gate rc=0 — the probe read fathomdb-embedder/src/candle_bge.rs, which was untouched.",
+          "root_cause": "Both crates declare a constant named DEFAULT_EMBEDDER_NAME (engine lib.rs:51, private; embedder candle_bge.rs:44, pub). The clause's obligation is 'the default embedder is the ENGINE'S SHIPPED DEFAULT'. The probe was perfectly bound to a subject — and to the wrong one.",
+          "fix": "New RELATIONAL probe kind `const_str_agree`, modelled on the sibling tokenizer clause's `fts_tokenizer_shared`: every named `const/static <name>: &str` must EXIST as a declaration (located in the blanked code view, so neither a comment nor a string literal counts), all of them must carry the SAME literal, and that literal must equal the pinned value.",
+          "why_both_and_not_a_swap": "Swapping the embedder crate for the engine crate would have dropped a real half of the obligation. The engine fails closed on an embedder identity mismatch (ADR-0.6.0-vector-identity-embedder-owned), so 'the name the engine defaults to' diverging from 'the name the pinned embedder reports' IS a broken shipped default, not cosmetic drift. The relation is the obligation, exactly as it is for the tokenizer clause — which is also why the same probe SHAPE was reused rather than a second one invented."
+        },
+        {
+          "id": "round5-#2 [P2] `fn_defined` accepts a DISABLED test",
+          "site": "scripts/check-c1-conformance.sh:1605-1607 (all 14 test-backed probes, 10 clauses)",
+          "claim_verified": true,
+          "how": "Both codex forms reproduced VERBATIM as arms 12ag-1 and 12ag-2: delete `#[test]` from the atomic-flip proof; add `#[ignore]` to the crash-heal proof. Pre-fix gate rc=0 in both cases — a plain function of the same name still satisfies `fn_defined`, while `cargo test` stops running the proof.",
+          "severity_note": "This is the TC-37 evaporation shape this gate exists to close, and it is WORSE than residual class #8 as fix-4 wrote it. #8's argument was 'an emptied body is visible in review' — true. But a deleted attribute is a ONE-TOKEN edit that reads as tidy-up, and unlike an emptied body it IS closeable lexically.",
+          "fix": "New `test_defined` probe kind, applied to ALL FOURTEEN test probes. `fn_defined` survives ONLY for the four PRODUCTION engine functions, and the gate now REFUSES (exit 2, 'internal error') to evaluate `fn_defined` against any path under `tests/` — checked once at startup over the whole probe table (so `--list-sources` validates it too) and again at evaluation time."
+        }
+      ],
+      "wrong_subject_re_audit": {
+        "question_asked": "DIFFERENT from fix-4's. fix-4 asked: 'is this probe bound to a SUBJECT at all, or merely to a file?'. Round 5 asks the next one: 'is it bound to the subject THE CLAUSE NAMES, or to a DIFFERENT FILE THAT HAPPENS TO CONTAIN A SIMILAR SYMBOL?' A probe can be perfectly, structurally bound and still bound to the wrong thing.",
+        "method": "Every CHECKABLE clause read against its pinned obligation, naming (i) the crate/module/type the obligation names and (ii) the file each probe actually opens. Then a cross-crate collision scan: for each probed symbol/table/function name, how many of the three crates declare it. That scan is what makes the audit falsifiable rather than a re-reading — it is how the tokenizer clause was cleared (the engine crate really does carry the literal tokenizer string four times) and how the embedder clause was the only hit.",
+        "clauses_audited": 26,
+        "wrong_subject_instances_found": 1,
+        "instances_beyond_the_reviewer_finding": 0,
+        "honest_statement": "For the first time in five rounds the sweep found NOTHING the reviewer had not named. Prior sweeps found 3, 1, 4 and 17 extra instances. That is reported as a fact, not as a claim of completeness — and the same question turned on THIS patch did find four more instances of finding #2's class (see active_test_inventory.sweep_of_this_patch), so the method still paid.",
+        "table": [
+          {
+            "clause": "C1-SEAM-ENGINE-BUILD-DROP",
+            "subject_the_clause_names": "an ENGINE verb (configure_projections)",
+            "file_the_probes_open": "engine lib.rs",
+            "verdict": "MATCH",
+            "note": "present + 3x fn_sig, all on the engine's own apply verb."
+          },
+          {
+            "clause": "C1-Q1-ROLE-SET",
+            "subject_the_clause_names": "the ENGINE's ProjectionRole vocabulary + ProjectionSpec.roles",
+            "file_the_probes_open": "engine lib.rs",
+            "verdict": "MATCH",
+            "note": "Both probes read the engine's declarations. `ProjectionRole`/`ProjectionSpec` are also NAMED in the schema crate, but only in comments — the declarations are the engine's."
+          },
+          {
+            "clause": "C1-Q3-SOLE-AUTHORITY",
+            "subject_the_clause_names": "the ENGINE diffs against ONE durable registry",
+            "file_the_probes_open": "engine lib.rs + schema lib.rs",
+            "verdict": "MATCH",
+            "note": "The registry TABLE is created by the schema crate's migration ladder (pin evidence cites schema lib.rs:848), so sql_ddl on SCH is the named subject; the verb and the delta struct are read from the engine."
+          },
+          {
+            "clause": "C1-Q3-DESTRUCTIVE-DELTA",
+            "subject_the_clause_names": "EngineError variant + the named test",
+            "file_the_probes_open": "engine lib.rs + T15",
+            "verdict": "MATCH",
+            "note": "`enum EngineError` is declared exactly once repo-wide, in engine lib.rs."
+          },
+          {
+            "clause": "C1-Q3-OMISSION-NOT-DROP",
+            "subject_the_clause_names": "two named tests",
+            "file_the_probes_open": "T15",
+            "verdict": "MATCH",
+            "note": "Both names are unique repo-wide (verified: 1 file each)."
+          },
+          {
+            "clause": "C1-Q5-DERIVED-CACHE-IDEMPOTENT",
+            "subject_the_clause_names": "ProjectionDelta.unchanged + a named test",
+            "file_the_probes_open": "engine lib.rs + T15",
+            "verdict": "MATCH",
+            "note": ""
+          },
+          {
+            "clause": "C1-Q2-ENGINE-EAV-PROPERTY-FTS",
+            "subject_the_clause_names": "the EAV store, the property-FTS and the composite index",
+            "file_the_probes_open": "schema lib.rs",
+            "verdict": "MATCH",
+            "note": "'engine-owned' in the obligation means FathomDB-owned rather than Memex-owned; the DDL lives in FathomDB's migration ladder, which IS the schema crate, and the pin's evidence cites schema lib.rs:855/860/864. The engine also MENTIONS these table names (in queries) — the probe correctly reads the crate that CREATES them."
+          },
+          {
+            "clause": "C1-Q2-ENGINE-PROJECTS-VIA-CONFIGURE",
+            "subject_the_clause_names": "two named tests",
+            "file_the_probes_open": "T15",
+            "verdict": "MATCH",
+            "note": ""
+          },
+          {
+            "clause": "C1-Q2-NO-DATA-MIGRATION",
+            "subject_the_clause_names": "the MIGRATION LADDER must not backfill",
+            "file_the_probes_open": "SCH + schema crate TREE",
+            "verdict": "MATCH",
+            "note": "Scope argued in the gate header: a backfill is forbidden where migrations run (the schema crate), and the legitimate per-declaration projection INSERTs live in the engine and are deliberately out of scope."
+          },
+          {
+            "clause": "C1-Q4-CHEAP-SAME-TRANSACTION",
+            "subject_the_clause_names": "the apply verb's BODY + ProjectionDelta.built",
+            "file_the_probes_open": "engine lib.rs",
+            "verdict": "MATCH",
+            "note": ""
+          },
+          {
+            "clause": "C1-Q4-DENSE-READINESS-TWO-MEMBERS",
+            "subject_the_clause_names": "enum DenseReadiness + its conversions",
+            "file_the_probes_open": "engine lib.rs + engine TREE",
+            "verdict": "MATCH",
+            "note": "Declared only in the engine crate, so the engine tree is the COMPLETE scope for the negative."
+          },
+          {
+            "clause": "C1-Q4-NO-PROVISIONAL-CONCEPT",
+            "subject_the_clause_names": "'no provisional notion exists in ENGINE code'",
+            "file_the_probes_open": "the whole of src/ (*.rs)",
+            "verdict": "WIDER THAN THE CLAUSE, DELIBERATELY",
+            "note": "The only clause where probe scope != the clause's literal wording. It is WIDER, which for a NEGATIVE probe can only produce a false RED, never a false green; and the pin's own recorded evidence asserts the wider fact ('zero occurrences in any .rs file under src/'). Kept, and now stated in the gate header."
+          },
+          {
+            "clause": "C1-Q6A-THREE-ROLES",
+            "subject_the_clause_names": "enum ProjectionRole + its conversions",
+            "file_the_probes_open": "engine lib.rs + engine TREE",
+            "verdict": "MATCH",
+            "note": ""
+          },
+          {
+            "clause": "C1-Q6A-RANKABLE-GRACEFUL-DEFER",
+            "subject_the_clause_names": "ProjectionDelta.deferred + two named tests",
+            "file_the_probes_open": "engine lib.rs + T15",
+            "verdict": "MATCH",
+            "note": ""
+          },
+          {
+            "clause": "C1-Q6B-NO-ENTITYTYPESPEC-NO-IDPREFIX",
+            "subject_the_clause_names": "'nothing anywhere under src/'",
+            "file_the_probes_open": "src/ tree",
+            "verdict": "MATCH",
+            "note": "The clause's own wording names src/, and the probe scans exactly src/."
+          },
+          {
+            "clause": "C1-Q6B-IDSPACE-TOTAL-THREE",
+            "subject_the_clause_names": "enum IdSpaceKind + its conversions",
+            "file_the_probes_open": "engine lib.rs",
+            "verdict": "MATCH",
+            "note": ""
+          },
+          {
+            "clause": "C1-Q6B-ID-NON-NULL",
+            "subject_the_clause_names": "SearchHit.id",
+            "file_the_probes_open": "engine lib.rs + engine TREE",
+            "verdict": "MATCH",
+            "note": ""
+          },
+          {
+            "clause": "C1-Q6B-H-TERMINAL-NOT-LIFECYCLE-ADDRESSABLE",
+            "subject_the_clause_names": "EngineError variant + a named test",
+            "file_the_probes_open": "engine lib.rs + T25",
+            "verdict": "MATCH",
+            "note": ""
+          },
+          {
+            "clause": "C1-Q6B-SURROGATE-GOVERNED-ONLY",
+            "subject_the_clause_names": "two named tests",
+            "file_the_probes_open": "T25",
+            "verdict": "MATCH",
+            "note": ""
+          },
+          {
+            "clause": "C1-AA-ATOMIC-FLIP",
+            "subject_the_clause_names": "commit_projection_outcomes + a named test",
+            "file_the_probes_open": "engine lib.rs + T20",
+            "verdict": "MATCH",
+            "note": ""
+          },
+          {
+            "clause": "C1-AA-NO-BLOCK-ON-EMBEDDING",
+            "subject_the_clause_names": "notify_new_work, the apply verb's body, a named test",
+            "file_the_probes_open": "engine lib.rs + T20",
+            "verdict": "MATCH",
+            "note": ""
+          },
+          {
+            "clause": "C1-AA-CRASH-HEAL-BOOT-REDERIVE",
+            "subject_the_clause_names": "load_projection_registry + a named test",
+            "file_the_probes_open": "engine lib.rs + T15",
+            "verdict": "MATCH",
+            "note": ""
+          },
+          {
+            "clause": "C1-TE-DEFAULT-EMBEDDER",
+            "subject_the_clause_names": "the ENGINE'S SHIPPED DEFAULT embedder",
+            "file_the_probes_open": "was: EMBEDDER crate candle_bge.rs ONLY",
+            "verdict": "*** WRONG SUBJECT — codex round 5 #1 ***",
+            "note": "Both crates declare `DEFAULT_EMBEDDER_NAME`; only the engine's is the shipped default. FIXED: const_str_agree over BOTH, asserting they exist, agree, and equal the pinned value."
+          },
+          {
+            "clause": "C1-TE-DEFAULT-TOKENIZER",
+            "subject_the_clause_names": "the ENGINE'S DEFAULT FTS5 TOKENIZER — the one body-FTS uses",
+            "file_the_probes_open": "engine lib.rs + schema lib.rs",
+            "verdict": "MATCH",
+            "note": "Checked specifically for the same trap: the engine crate DOES carry the literal 'porter unicode61 remove_diacritics 2' four times (three doc comments and one in-memory scorer scratch table at engine lib.rs:17569). None is the body-FTS, and the probe correctly compares property_search_index against search_index_v2/search_index in the crate that creates them. The scratch table is a different subject and is correctly not in the reference set."
+          },
+          {
+            "clause": "C1-TE-CUSTOM-TOKENIZER-DEFERRED",
+            "subject_the_clause_names": "the registry records it; the ENGINE builds no FTS table",
+            "file_the_probes_open": "schema lib.rs + engine TREE",
+            "verdict": "MATCH",
+            "note": "The two halves are pointed at different crates ON PURPOSE, and each at the crate its half names."
+          },
+          {
+            "clause": "C1-LAND-0820-SLOT",
+            "subject_the_clause_names": "four requirement ROWS of the 0.8.20 plan",
+            "file_the_probes_open": "dev/plans/plan-0.8.20.md",
+            "verdict": "MATCH",
+            "note": ""
+          }
+        ]
+      },
+      "active_test_inventory": {
+        "rust": {
+          "test_probes_total": 14,
+          "clauses_carried": 10,
+          "attribute_state_at_baseline": "All 14 carry a bare `#[test]` on the line immediately preceding `fn`, none carries `#[ignore]`, none carries `#[cfg]`, all 14 are at the top level of their file, no file carries an `#![cfg]` inner attribute, and none of the three files has a `[[test]]` block in fathomdb-engine/Cargo.toml. Verified from source AND from the toolchain — all 14 appear in `cargo test -- --list` output for their targets.",
+          "all_converted_to_test_defined": true,
+          "files": [
+            {
+              "file": "src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs",
+              "clauses": [
+                "C1-Q3-DESTRUCTIVE-DELTA",
+                "C1-Q3-OMISSION-NOT-DROP",
+                "C1-Q5-DERIVED-CACHE-IDEMPOTENT",
+                "C1-Q2-ENGINE-PROJECTS-VIA-CONFIGURE",
+                "C1-Q6A-RANKABLE-GRACEFUL-DEFER",
+                "C1-AA-CRASH-HEAL-BOOT-REDERIVE"
+              ],
+              "proofs": [
+                "destructive_change_requires_explicit_drop",
+                "role_add_builds_and_explicit_drop_drops_exactly_one",
+                "dropping_an_absent_name_is_a_clean_noop",
+                "idempotent_reregistration_is_a_noop",
+                "property_filter_returns_correct_rows",
+                "property_fts_search_returns_correct_rows",
+                "rankable_is_graceful_deferred_never_blocking",
+                "idempotent_reregistration_holds_for_deferred_rankable",
+                "boot_rederive_converges_after_simulated_crash"
+              ],
+              "count": 9
+            },
+            {
+              "file": "src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs",
+              "clauses": [
+                "C1-AA-ATOMIC-FLIP",
+                "C1-AA-NO-BLOCK-ON-EMBEDDING"
+              ],
+              "proofs": [
+                "atomic_flip_never_exposes_ready_without_the_vector_under_concurrent_write",
+                "readiness_reads_embedding_while_embeds_are_outstanding_then_flips_to_ready"
+              ],
+              "count": 2
+            },
+            {
+              "file": "src/rust/crates/fathomdb-engine/tests/slice25_registration_identity_inert.rs",
+              "clauses": [
+                "C1-Q6B-H-TERMINAL-NOT-LIFECYCLE-ADDRESSABLE",
+                "C1-Q6B-SURROGATE-GOVERNED-ONLY"
+              ],
+              "proofs": [
+                "an_anonymous_write_stays_anonymous_through_the_whole_durable_path",
+                "registering_projections_never_alters_a_pre_existing_row_id_space",
+                "the_internal_structural_row_writer_mints_no_logical_id"
+              ],
+              "count": 3
+            }
+          ]
+        },
+        "python": "ZERO. No clause cites a Python test. Authority: `--list-sources`, which prints every path the assertions read — seven files (engine lib.rs, schema lib.rs, embedder candle_bge.rs, three engine test files, the 0.8.20 plan) plus the engine Cargo.toml added this round, and three trees. Not one `.py` among them. Nothing to fix; the equivalent evaporations there (`@pytest.mark.skip`, `xfail`, a renamed-away `test_` prefix) are recorded in the gate header so a future clause citing a Python test gets a `test_defined` equivalent rather than a `present` probe on a function name.",
+        "typescript": "ZERO, by the same `--list-sources` authority. The equivalent evaporations (`describe.skip`, `it.skip`, `.only`, a renamed-away test) are recorded in the gate header for the same reason.",
+        "sweep_of_this_patch": {
+          "question": "`test_defined` reads the attributes ON THE FUNCTION. What else can switch a proof off without touching them?",
+          "instances_found": 4,
+          "all_exited_0_against_the_first_cut_of_this_fix": true,
+          "instances": [
+            {
+              "shape": "A `[[test]]` block in the crate's Cargo.toml with `required-features` gates the WHOLE TARGET out of a default `cargo test`.",
+              "why_it_matters_most": "NOT hypothetical. fathomdb-engine/Cargo.toml ALREADY declares nineteen `[[test]]` blocks with `required-features`, because that is how the crate legitimately keeps operator-only and reranker-only suites out of the default build. 'Somebody gates a test target' is an established pattern in the exact file a contributor would edit — the fix-3 sibling-module argument, one level up.",
+              "fixture": "12ah-1. Pre-fix rc=0.",
+              "fix": "`test_defined` reads the owning crate's Cargo.toml (derived from the test path, and surfaced in `--list-sources` so fixture roots and the preflight seeder pick it up) and fails on a matching `[[test]]` block carrying `required-features` or `test = false`. A small hand-rolled TOML block reader, deliberately not `tomllib`, so the gate's environment contract stays at 'requires python3' rather than silently becoming 'requires python 3.11+'."
+            },
+            {
+              "shape": "`autotests = false` in the crate manifest stops the test files being discovered.",
+              "fixture": "12ah-1b. Pre-fix rc=0.",
+              "fix": "Same reader; reported RED."
+            },
+            {
+              "shape": "A `#![cfg(..)]` INNER attribute switches the whole FILE off while every `#[test]` in it reads as ordinary.",
+              "fixture": "12ah-2. Pre-fix rc=0.",
+              "fix": "`file_inner_attrs()`; a cfg/cfg_attr inner attribute on a proof's file is a clause failure."
+            },
+            {
+              "shape": "The proof NESTED inside a `#[cfg]`-gated `mod` — the gating attribute is on the module, so the function's own attributes say nothing.",
+              "fixture": "12ah-3. Pre-fix rc=0.",
+              "fix": "`fn_definitions()` now returns the enclosing brace DEPTH, and a proof not at depth 0 is a clause failure. Deliberately the RED side of a judgement call: a legitimately nested integration test would fail here."
+            }
+          ]
+        }
+      },
+      "red_to_green_per_arm": [
+        {
+          "arm": "12af-1",
+          "what": "the ENGINE's DEFAULT_EMBEDDER_NAME := \"some-other-model\"",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "source": "codex round 5 #1, VERBATIM"
+        },
+        {
+          "arm": "12af-2",
+          "what": "the ENGINE's constant renamed away entirely",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "source": "fix-5 sweep"
+        },
+        {
+          "arm": "12af-4",
+          "what": "a DECOY declaration carrying the pinned value planted AHEAD of the flipped real one",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "source": "fix-5 sweep, turned on the new reader"
+        },
+        {
+          "arm": "12ag-1",
+          "what": "`#[test]` DELETED from the atomic-flip proof",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "source": "codex round 5 #2, VERBATIM"
+        },
+        {
+          "arm": "12ag-2",
+          "what": "`#[ignore]` ADDED to the crash-heal proof",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "source": "codex round 5 #2, VERBATIM"
+        },
+        {
+          "arm": "12ag-3",
+          "what": "`#[cfg(feature = \"never-enabled\")]` on the h-terminal proof",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "source": "fix-5 sweep"
+        },
+        {
+          "arm": "12ag-4",
+          "what": "ALL FOURTEEN named proofs lose `#[test]`; all TEN behavioural clauses must fail",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "source": "fix-5 sweep (the completeness arm)"
+        },
+        {
+          "arm": "12ah-1",
+          "what": "a `[[test]] required-features` block gating the dense-readiness TARGET",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "source": "fix-5 sweep, turned on this patch"
+        },
+        {
+          "arm": "12ah-1b",
+          "what": "`autotests = false` in the crate manifest",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "source": "fix-5 sweep, turned on this patch"
+        },
+        {
+          "arm": "12ah-2",
+          "what": "a file-level `#![cfg(..)]`",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "source": "fix-5 sweep, turned on this patch"
+        },
+        {
+          "arm": "12ah-3",
+          "what": "the proof nested inside a `#[cfg]`-gated `mod`",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "source": "fix-5 sweep, turned on this patch"
+        },
+        {
+          "arm": "12af-3",
+          "what": "BOTH crates flipped consistently to a new name — the PINNED-VALUE half",
+          "pre_fix_rc": 1,
+          "post_fix_rc": 1,
+          "source": "fix-5 sweep",
+          "honesty_note": "THE ONE ARM THAT WAS NOT A FALSE GREEN. The old `present` probe on the embedder crate's literal already caught this. Kept as the REGRESSION half: the fix REPLACED that probe, and the value assertion it carried must not be lost in the replacement. Recorded explicitly because the suite's own header says 'every arm below exited 0 before this round' and this one did not."
+        },
+        {
+          "arm": "self-check arm (probe-table guard)",
+          "what": "a COPY of the gate with one probe put back on `fn_defined` for a test path",
+          "pre_fix_rc": "n/a — asserts the NEW self-check exists",
+          "post_fix_rc": 2,
+          "source": "fix-5 sweep",
+          "why": "Without it the startup self-check could be deleted from the gate and only a grep in the suite would notice. A guard that is never exercised is the kind of thing that quietly stops working. The arm FAILS CLEANLY (not a Python traceback under `set -e`) if the probe it mutates ever moves, so a stale arm says so in the suite's own vocabulary instead of taking arms 15-17 down with it."
+        }
+      ],
+      "self_caught_in_this_patch": [
+        {
+          "id": "fix-5c",
+          "what": "`rust_view` was neither length- nor line-preserving: `re.sub(r'/\\*.*?\\*/', ' ')` collapsed a multi-line block comment to ONE SPACE, so every offset and line number downstream of one drifted.",
+          "why_it_only_surfaced_now": "Nothing depended on it until this round added the first reader that CITES A LINE (`const_str_values`). A failure message naming the wrong line, in a gate whose entire value is actionable failures, is a small lie.",
+          "fix": "Comments are BLANKED, not deleted, in both the block and line forms. One index now means the same thing in the raw file, in the comment-stripped view and in the blanked code view. Strictly stronger; no probe regex depended on the removal."
+        },
+        {
+          "id": "fix-5d",
+          "what": "`--list-sources` derived every path as `probe[1]`, which silently breaks the moment a probe kind reads its sources from somewhere else — and this round added the first two that do (`const_str_agree`, and `test_defined`'s crate manifest).",
+          "why_it_matters": "The manifest is what BUILDS every fixture root in the suite AND the preflight seeder. A path missing from it means fixture roots lacking a file the assertions read, which turns every arm that reads it into a silent TC-37 path-#4 evaporation — a test that no longer tests anything.",
+          "fix": "Both kinds handled explicitly, and a non-string entry in the derived set is now an internal error (exit 2) rather than something that ships."
+        }
+      ],
+      "residual_class_8_rewritten": {
+        "why_rewritten": "The prompt is right that an over-broad residual is its own dishonesty. As fix-4 wrote it, #8 said `fn_defined` proves existence and cannot prove the body asserts anything — which after this round understates the gate on one side (presence-and-activeness IS now enforced, at four levels) and, on the first cut of this fix, would have overstated it on another (it implied the module/file/target routes were merely 'not chased', when in fact three of them were closeable and are now closed).",
+        "now_enforced_at_four_levels": [
+          "THE FUNCTION: exists as a definition with a parseable body (not a comment, not a string literal, not a call); carries a `#[test]`-family attribute; is not disabled by `#[ignore]` / `#[cfg(..)]` / `#[cfg_attr(..)]`.",
+          "ITS POSITION: sits at the TOP LEVEL of its file, so no enclosing (possibly cfg-gated) item can silence it out of this reader's view.",
+          "THE FILE: carries no `#![cfg(..)]` inner attribute.",
+          "THE TARGET: the owning crate's Cargo.toml sets no `autotests = false` and declares no `[[test]]` block for that file with `required-features` / `test = false`."
+        ],
+        "what_remains_exactly_three_things": [
+          "(a) THE BODY'S ASSERTIONS. `fn atomic_flip_never_exposes_ready_without_the_vector_under_concurrent_write() { assert!(true); }` satisfies every check above, and so does one whose assertions were commented out. No lexical check can decide whether a body proves the obligation its name claims; `cargo test --workspace` EXECUTING it is what does, it is a required gate, and an emptied body is a visible code diff in review.",
+          "(b) THE CRATE, AND THE INVOCATION. This gate reads source and manifest TEXT. It does not know whether the crate is still a workspace member, nor how CI actually invokes cargo (an `--exclude`, a filter argument, a job that stops running).",
+          "(c) `#[cfg]` INSIDE a body — an assertion compiled out while the test still runs and passes vacuously. Class #6 again."
+        ],
+        "one_mechanism_closes_all_three": "Ask the TOOLCHAIN what the built test binaries actually contain and what they did (`cargo test -- --list`, or `cargo test --no-run --message-format=json`), instead of reading text. Recorded as a RECOMMENDATION, NOT BUILT — it is a slice of its own with its own maintenance surface, and it is not warranted by this gate's threat model (a future contributor who changes as-built code without noticing a ratified cross-repo contract said otherwise)."
+      },
+      "not_lexically_closeable_escalation_content": "NOTHING FROM THIS ROUND'S TWO FINDINGS. Both were lexically closeable and both are closed, along with four further instances of finding #2's class found by turning the question on this patch. The three items under residual_class_8_rewritten.what_remains_exactly_three_things are the honest boundary, and they are NOT deferred defects — they are the point at which a static text check stops and a toolchain-metadata mechanism must start. If a round-6 finding lands on any of those three, the correct adjudication is 'documented scope, different mechanism, its own slice', not another regex here.",
+      "suite_totals": {
+        "assertions_before_this_round": 219,
+        "assertions_after": 276,
+        "red_commit_state": "a22eee36: 221 PASS / 36 FAIL against the gate at f7e1d060 — the in-repo RED-first evidence that every new arm cleared the pre-fix gate.",
+        "green_state": "4aea7578: 276 PASS / 0 FAIL."
+      },
+      "performance": "check-c1-conformance.sh on the real tree: 0.76s wall (was 0.54s before this round). The added cost is the crate-manifest read and the attribute walks; still well inside a preflight budget.",
+      "not_changed": [
+        "The ratified contract's bytes (still byte-identical to the pin).",
+        "The clause registry's ids, categories and pinned counts (26 / 12 / 7, 45 total).",
+        "src/ — no Rust changed this round, so clippy/check --workspace evidence is carried from fix-1. `cargo test --workspace --no-run` was run this round anyway (rc=0) because the gate now asserts things about test attributes, and every one of the 14 named proofs was confirmed present in `cargo test -- --list`; one proof was run `--exact` (rc=0) as a spot-check. Per TC-72 that is a sanity check, not a release claim.",
+        "src/conformance/governed-surface-allowlist.json — verified byte-identical to baseline 23a436dc."
+      ]
     }
   ],
   "agent_verify_result": "GREEN for the slice's own scope, fix-4 round applied. The R-20-H7 gate exists, is dual-homed (preflight --landing + an always-on CI job running the SAME script), and is GREEN: 26/26 CHECKABLE clauses of the ratified C-1 contract hold against as-built code, and the contract is byte-identical to its pin. This round replaced 48 of the 55 file-scoped `present` probes with structural probes bound to the subject their clause names, DELETED the `min` count kind, and closed 18 demonstrated false greens across 18 of the 26 clauses (16 from the sweep of codex's finding, 2 more found by turning the same question on the fix-4 patch itself). The recurrence guard is 219 assertions across arms 1-17 with 26 divergent-fixture sub-arms 12a-12ae, every one of them RED-first with the pre-fix rc recorded. No Rust changed, so the workspace clippy/check evidence is carried.",
   "next_step_for_orchestrator": [
-    "Run codex §9 round 5 against this branch if the budget allows — this is round 4 of a maximum 6. The three-same-finding bound has NOT fired: rounds 1-2 were REGEX SHAPE, round 3 was SCOPE, round 4 was SUBJECT BINDING. Preserve that distinction when adjudicating round 5.",
-    "For round 5, the two things worth knowing before adjudicating: (a) there are now NO file-scoped negative probes and NO count probes, and the gate's test suite asserts both kinds are absent from the source entirely; (b) the eight residual classes in the gate header are the documented boundary of a lexical check, and #8 (a named test proves existence, not that its body still asserts anything) is the one a reviewer is most likely to find next. The answer to a residual-class finding is a different MECHANISM — a runtime sqlite_master + functional conformance suite — not another regex, and that mechanism is a slice of its own.",
-    "No Rust changed in this round; clippy/check --workspace evidence is carried from the fix-1 round.",
-    "Cherry-pick order onto the landing branch: cf240a23, 36f528f1, 7b37186c, 5253934d, aed79cac, 33792f3b, then the docs commit carrying this file."
+    "Run codex §9 round 6 against this branch. ⚠ THIS IS THE LAST ROUND IN THE BUDGET (orchestration.md §6, non-engine slice, max 6). If round 6 is not terminal, HALT the slice and escalate to the Steward rather than opening a round 7.",
+    "For adjudicating round 6, the three things worth knowing: (a) the gate now has no file-scoped negative probe kind, no count probe kind, and no `fn_defined` probe on any test path — all three asserted structurally by the suite, and the last one ALSO enforced by the gate itself at startup (exit 2); (b) every one of the 14 test-backed probes checks the proof is ACTIVE at four levels (attribute, top-level position, file `#![cfg]`, cargo `[[test]]` target); (c) residual class #8 was REWRITTEN this round and now names exactly three remaining things — the body's assertions, the crate/CI invocation, and `#[cfg]` inside a body. A finding on any of those three is documented scope: the answer is one different mechanism (ask the toolchain via `cargo test -- --list` / `--no-run --message-format=json`), which is a slice of its own, not another regex here.",
+    "The sweep this round found ZERO wrong-subject instances beyond the one codex named — the first time in five rounds a sweep came back empty on the reviewer's own axis. It did find four more instances of the OTHER finding's class by turning the question on the patch. Both facts are in fix_rounds[4]; neither is a claim of completeness.",
+    "No Rust changed in this round; clippy/check --workspace evidence is carried from the fix-1 round. `cargo test --workspace --no-run` (rc=0) and `cargo test -- --list` were run anyway because the gate now asserts test attributes — TC-72 sanity check, not a release claim.",
+    "Cherry-pick order onto the landing branch: cf240a23, 36f528f1, 7b37186c, 5253934d, aed79cac, 33792f3b, a22eee36, 4aea7578, then the docs commit carrying this file."
   ],
   "head_sha_before_fix_2": "52c2bde9",
   "head_sha_before_fix_3": "b0de847b",
-  "head_sha_before_fix_4": "0ddb4be7"
+  "head_sha_before_fix_4": "0ddb4be7",
+  "head_sha_before_fix_5": "f7e1d060"
 }
