@@ -111,6 +111,39 @@ grant can write any file via `cat >` / heredoc regardless of `Edit` /
 `Write` grants. Tool lists shape convenience; the path boundary is the
 rule.
 
+**Mechanically checked since 2026-07-28 (TC-85, steward `seq-127`).** The
+`MUST NEVER` column is enforced by a `PreToolUse` hook,
+`.claude/hooks/seat-path-guard.sh`, which inspects `Edit`, `Write` **and**
+`Bash` calls and returns `permissionDecision: deny` for a write under
+`src/**`, `engine/**` or a test source. It is a deny-list, not an
+allow-list: it is silent about every other path, and it fails open on any
+error, so it can never break an ordinary session. Coverage of `Bash` is the
+load-bearing part — the two observed orchestrator sessions made 76 and 193
+`Bash` calls and **zero** `Edit`/`Write` calls, so an `Edit`/`Write`-only
+guard would have inspected none of the real write path.
+
+It is wired **per seat, in agent frontmatter** — a `hooks:` block in
+`.claude/agents/orchestrator.md` and `.claude/agents/steward.md` — and
+deliberately **not** in `.claude/settings.json`. A settings hook is
+project-global: it would fire for every spawned subagent in the checkout,
+including `implementer` slices, which are the one seat that writes source by
+design and must never be blocked. Frontmatter hooks are scoped to the
+declaring seat and are torn down when it finishes. `implementer.md` declares
+no hooks at all, and `scripts/tests/test_seat_path_guard.sh` asserts both
+halves (the wiring exists and resolves to an executable file; settings.json
+never references it).
+
+Know the reach, because it is narrower than "source is blocked": the hook
+identifies a seat from the payload's `agent_type`, which is present for a
+**spawned** subagent and for a main thread started as `claude --agent
+<seat>`, but **absent** from an ordinary `/steward` or `/orchestrate`
+session — the usual shape of a coordinating session. Launch such a session
+with `FATHOMDB_SEAT=steward` (or `orchestrator`) in the environment to opt
+it in; it must be set at launch, since a `Bash` tool call cannot change the
+environment the harness spawns the hook in. An unguarded main-thread seat is
+the normal case, so the discipline above remains the rule and the hook is a
+backstop, not a substitute.
+
 ## 1.5 State spine
 
 The per-slice flow below (§§ 2–11) is a state machine. Keep it
