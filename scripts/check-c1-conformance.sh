@@ -1871,8 +1871,28 @@ def file_inner_attrs(rel):
     inner attribute, not a shebang. The rest of that first line is skipped and
     the leading-attribute walk resumes, so an attribute run after a shebang is
     still read (and the nested-module false RED above stays closed).
+
+    A LEADING UTF-8 BOM IS ALSO PART OF THAT HEADER AND IS SKIPPED FIRST OF ALL
+    (fix-6c, the COMPLETION of that same finding #2 — its scope is the file's own
+    leading inner attributes, and a BOM-prefixed one is one of them). `read_source`
+    decodes with `errors="replace"`, which does NOT strip a byte-order mark, so a
+    BOM arrives here as U+FEFF at index 0 and defeated the walk three ways at once:
+    it is not `#!`, so the shebang branch was skipped; `"﻿".isspace()` is False in
+    Python 3 — U+FEFF is category Cf, a FORMAT character, not whitespace — so the
+    whitespace skip did not advance past it; and it is not `#![`, so the walk broke
+    at byte 0 and never saw a file-level `#![cfg(..)]` on that very line. Same false
+    green as the shebang hole, through a different first byte: `rustc --test` on
+    bytes `ef bb bf` + `#![cfg(feature = "nope")]` + `#[test] fn t() {}` builds and
+    `--list` reports `0 tests`, while the same file without the cfg reports `1 test`.
+    rustc's ordering is followed exactly — it strips ONE leading BOM, and only THEN
+    may the first line be a shebang — so this skip runs BEFORE the shebang branch
+    and BOM + shebang + `#![cfg(..)]` is read too. The strip is local to this walk;
+    `read_source` is deliberately left alone so no other probe's view changes. Only
+    ONE BOM is stripped, as rustc does: a second U+FEFF is not a header byte.
     """
     code = rust_code(rel)
+    if code[:1] == "﻿":                     # ONE leading BOM, stripped as rustc does
+        code = code[1:]
     found, i, n = [], 0, len(code)
     if code[:2] == "#!" and code[2:3] != "[":       # a shebang line, not an attr
         end = code.find("\n")
