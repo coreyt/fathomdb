@@ -42,8 +42,10 @@
 #            transcript captured some other way, a hand-pasted excerpt, a
 #            reviewer substituted per the hand-off's §6 fallback).
 # Both layers read ONE pattern, defined once in scripts/lib/agent-state-paths.sh.
-# See that file for the pattern's three discriminators and why each is
-# load-bearing; do NOT restate the regex here.
+# See that file for the pattern's two discriminators (the `/home/`|`/Users/`
+# absolute prefix and the leading `-` on the encoded project directory), why each
+# is load-bearing, and why the fix-1 widening dropped the original third one; do
+# NOT restate the regex here.
 #
 # ============ WHAT THIS GATE DOES *NOT* DO (read this) =======================
 # It is a HYGIENE gate for a known ACCIDENT SHAPE, not a secrets scanner and not
