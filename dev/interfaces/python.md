@@ -315,6 +315,27 @@ surface scope (opt-in only; sha256-verified; visible via
 opens without an embedder; subsequent vector writes fail with
 `EmbedderNotConfiguredError`.
 
+### `dense_disabled` and the cached equivalence verdict (0.8.20 Slice 22, TC-68)
+
+`OpenReport.dense_disabled` / `engine.dense_disabled()` still mean "the dense arm
+is refusing", and the typed query-time `VectorEquivalenceMismatchError` and the
+FTS-only fallback are unchanged. **What changed is when the check behind them
+runs.** The 0.8.18 vector-equivalence self-check used to re-embed its 45 probes on
+*every* open; since 0.8.20 the engine caches that verdict against a fingerprint of
+the embedder identity, the pinned mean vector, the probe fixture, the divergence
+floors and the stored reference baseline. An open whose fingerprint is unchanged
+does **zero** probe embeds — the dominant cost of opening a vector-indexed
+workspace with a live embedder — and reuses the previous verdict.
+
+Read `dense_disabled` accordingly: it reports the arm's status **as verified at
+the last open whose fingerprint differed**, not a fresh re-verification at this
+open. A backend that drifts without changing its declared identity (the same
+model moved between CPU and GPU, or rebuilt against a new library) is therefore no
+longer caught per-open. An identity *change* is unaffected: it still refuses the
+open with `EmbedderIdentityMismatchError`, ahead of any cache. An unreadable or
+absent cached verdict runs the probe rather than trusting it. Full rationale and
+the residual: `dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`.
+
 `OpenReport` carries four embedder-related fields surfaced by EU-6:
 `embedder_download_ms`, `embedder_events`, `embedder_mean_centering_required`,
 and `embedder_mean_vec_pinned`. Each entry in `embedder_events` is a

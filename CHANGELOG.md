@@ -255,6 +255,42 @@ AC-050c) gates merges against this invariant.
   `DenseReadiness` string union (`"ready" | "embedding"`) are the only net-new
   types from R-20-DR; Python surfaces the value as a plain `str | None` field.
 
+### Changed
+
+- **`Engine.open` no longer re-embeds the 45-probe vector-equivalence set on
+  every open (0.8.20, R-20-VC TC-68).** The 0.8.18 self-check's verdict is now
+  cached against an **embedder fingerprint**, so an open whose fingerprint is
+  unchanged performs **zero** probe embeds instead of 45. (Measured on the
+  shipped path: 0 embeds with no enrolled vector kind, **90** on the one-time
+  baseline-population open — 45 to persist plus 45 to confirm — and **45 on every
+  open thereafter**, which is what this removes. The cost never scaled with the
+  number of enrolled kinds.) No public type, field, method or error changes.
+
+  The fingerprint covers the embedder identity, **the live pinned `mean_vec`**
+  (the Phase-1 check quantizes against it, so a rewritten mean changes the
+  verdict), the committed probe fixture, both divergence floors, and the stored
+  reference baseline including its vectors. Any change to any of those re-runs
+  the full probe. It is stored as one internal marker row; **no schema-version
+  bump and no migration** — an existing database simply runs the probe once more
+  and then stops.
+
+  Fail-safe behaviour is unchanged: an unreadable or absent cached verdict
+  **runs** the probe rather than trusting it, a failing verdict is never cached,
+  and a divergence found on a re-run still yields `denseDisabled` /
+  `dense_disabled` with the dense arm refusing and the text-only path serving.
+
+  *The cost, stated plainly:* a backend that drifts **without changing its
+  declared identity** — the same embedder name/revision moved between CPU and
+  CUDA, or rebuilt against a new library or driver — is **no longer caught on
+  every open**. Nothing in the fingerprint moves, so the cached verdict answers
+  and the drifted backend is never re-probed; it is caught only at the next open
+  whose fingerprint does change. If you rely on open-time re-verification to
+  detect such a swap, force a re-run (for example by recomputing the pinned
+  mean). Identity *changes* are unaffected — they still refuse the open outright,
+  ahead of any cache. Rationale, the inputs in full, and the mitigations
+  considered and rejected:
+  `dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`.
+
 ### Fixed
 
 - **Bulk governed ingest no longer fails with `EngineError::Storage` while the

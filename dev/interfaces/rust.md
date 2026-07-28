@@ -138,6 +138,31 @@ Rust exposes:
 
 `report` is the `OpenReport` owned by `design/engine.md`.
 
+### `OpenReport::dense_disabled` and the cached equivalence verdict (0.8.20 Slice 22, TC-68)
+
+`OpenReport::dense_disabled` / `Engine::dense_disabled()` still mean "the dense arm
+is refusing", and `EngineError::VectorEquivalenceMismatch` plus the
+`Engine::search_text_only` fallback are unchanged. **What changed is when the check
+behind them runs.** The 0.8.18 vector-equivalence self-check used to re-embed its
+45 probes on *every* open; since 0.8.20 the engine caches that verdict against a
+fingerprint of the embedder identity, the pinned `mean_vec`, the probe fixture,
+both divergence floors and the stored reference baseline. An open whose fingerprint
+is unchanged does **zero** probe embeds and reuses the previous verdict. The
+fingerprint is held in one internal marker row — no `SCHEMA_VERSION` bump, no
+migration step, no new public surface.
+
+Read `dense_disabled` accordingly: it reports the arm's status **as verified at the
+last open whose fingerprint differed**, not a fresh re-verification at this open. A
+same-identity backend drift (candle CPU↔CUDA, a rebuilt library or driver) is
+therefore no longer caught per-open — the ruled trade, with the residual and the
+rejected mitigations written up in
+`dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`. An identity
+*change* is unaffected: `EngineOpenError::EmbedderIdentityMismatch` /
+`EmbedderDimensionMismatch` still refuse the open ahead of any cache. An unreadable
+or absent cached verdict runs the probe rather than trusting it, a failing verdict
+is never cached, and a divergence found on a re-run still yields
+`dense_disabled = true` (`R-VEQ-4`, unchanged).
+
 ## Engine-attached instrumentation / control methods
 
 These are public instance methods, not extra top-level SDK verbs:
