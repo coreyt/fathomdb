@@ -40,6 +40,8 @@ PREFLIGHT="$REPO_ROOT/scripts/preflight.sh"
 CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
 REAL_FILE="$REPO_ROOT/src/conformance/governed-surface-allowlist.json"
 REAL_PIN="$REPO_ROOT/scripts/governed-surface-pin.json"
+# shellcheck source=lib/c1-conformance-fixture.sh
+. "$SCRIPT_DIR/lib/c1-conformance-fixture.sh"
 
 # The no-argument arm exercises the checker's REPO-RELATIVE defaults, which it
 # resolves from `git rev-parse --show-toplevel` — i.e. from the cwd. Pin the cwd
@@ -454,6 +456,12 @@ mkdir -p "$NO_HOOKS"
 # governed-surface files plus a consistent ledger (so preflight's §8 passes and
 # only §9 is under test), plus a linked worktree (TC-RUBRIC-5 forbids --landing
 # in a primary checkout).
+#
+# It also seeds preflight's §10 subject (the C-1 contract + its pin + the sources
+# that gate reads) via lib/c1-conformance-fixture.sh. Incidental to THIS suite —
+# §10 hard-fails any tree whose subject it cannot see, so without it every
+# `--landing` arm below would fail for a reason that has nothing to do with the
+# governed surface. Same repair §8 and §9 each needed in turn.
 make_repo() {
   local primary="$1" linked="$2"
   mkdir -p "$primary/src/conformance" "$primary/scripts" "$primary/dev/steward"
@@ -464,6 +472,7 @@ make_repo() {
   git -C "$primary" config core.hooksPath "$NO_HOOKS"
   cp "$REAL_FILE" "$primary/src/conformance/governed-surface-allowlist.json"
   cp "$REAL_PIN" "$primary/scripts/governed-surface-pin.json"
+  seed_c1_conformance_fixture "$primary"
   printf '{"seq":1,"note":"fixture"}\n' >"$primary/dev/steward/steward-ledger.jsonl"
   printf '%s' 1 >"$primary/dev/steward/steward-ledger.jsonl.seq"
   git -C "$primary" add -A

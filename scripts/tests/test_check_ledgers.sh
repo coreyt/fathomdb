@@ -36,6 +36,8 @@ PREFLIGHT="$REPO_ROOT/scripts/preflight.sh"
 CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
 # shellcheck source=lib/governed-surface-fixture.sh
 . "$SCRIPT_DIR/lib/governed-surface-fixture.sh"
+# shellcheck source=lib/c1-conformance-fixture.sh
+. "$SCRIPT_DIR/lib/c1-conformance-fixture.sh"
 
 FAILED=0
 pass() { printf 'PASS  %s\n' "$1"; }
@@ -356,6 +358,7 @@ make_repo() {
   # minimal, self-consistent surface + pin, so the only thing these arms can fail
   # on is the LEDGER state they deliberately plant.
   seed_governed_surface_fixture "$primary"
+  seed_c1_conformance_fixture "$primary"
   git -C "$primary" add -A
   git -C "$primary" commit -q -m 'fixture: initial commit'
   git -C "$primary" worktree add -q -b landing-fixture "$linked" >/dev/null 2>&1

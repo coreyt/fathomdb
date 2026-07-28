@@ -1,0 +1,2319 @@
+Reading additional input from stdin...
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019fa67a-9a08-74e3-9863-c1d0deaae6f9
+--------
+user
+Review the fix-6c delta on branch orch-0.8.20-s30 in worktree /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30: commits 9ef5179b (RED), 0d9b40d7 (GREEN), a26a7655 (closure doc), i.e. `git diff 337c2b12..HEAD`. Three files: scripts/check-c1-conformance.sh, scripts/tests/test_check_c1_conformance.sh, dev/plans/runs/0.8.20-slice-30-output.json. Zero src/ changes.
+
+WHAT THIS IS. Slice 30 builds R-20-H7, a Pact-style can-i-deploy contract-conformance gate that is a PUBLISH PRECONDITION for a first real breaking publish. An absent-or-failing gate HOLDS the publish. Round 6 of the §9 review narrowed the function file_inner_attrs so it only reads a Rust file's OWN LEADING HEADER for a file-level #![cfg(..)] (a nested `mod m { #![cfg(..)] }` had caused a false RED). Round 6's re-review then found the narrowing had opened a regression: a leading shebang is not `#![`, so the walk ended at byte 0 and missed a file-level #![cfg(..)] on the next line — a FALSE GREEN, since the whole test file compiles out while each #[test] still reads normal. fix-6b closed the shebang case.
+
+THIS DELTA closes the same hole reached through a different first byte: a UTF-8 BOM. read_source decodes with errors='replace', which does not strip a BOM, so U+FEFF arrives at index 0; it is not '#!', it is category Cf so .isspace() is False, and it is not '#!['. The entire executable change is two lines placed BEFORE the shebang branch: if code[:1] == BOM then code = code[1:]. Plus fixture arm 12al (3 sub-arms, 10 assertions, 307 -> 317) and a docstring paragraph.
+
+REVIEW FOR, in priority order:
+1. Does the two-line strip actually close the hole for every reachable shape, and does it re-open the nested-module FALSE RED that round 6 fixed, or the shebang FALSE GREEN that fix-6b fixed? Those are regressions in the two directions this function has already failed in.
+2. Is the ORDERING (BOM strip before the shebang branch) right against rustc's real behaviour, and does anything break on BOM+BOM, BOM-only, empty file, or a BOM in the middle?
+3. Is the new fixture arm capable of going RED for the right reason, or could it pass by weakening the round-6 narrowing? Check specifically that it does not just assert 'rc=1' in a way any failure would satisfy.
+4. Any vacuity or false-green surface introduced anywhere in the delta.
+
+Report [P1]/[P2]/[low] with file:line and a concrete failure scenario each. If a severity class is empty, say so plainly. Do not restate the diff.
+codex
+I’ll review this as a code review, starting with the repo’s memory/instruction files and then the exact diff and tests around `file_inner_attrs`.
+exec
+/bin/bash -lc "pwd && rg --files -g 'MEMORY.md' -g 'feedback_*.md' -g 'scripts/check-c1-conformance.sh' -g 'scripts/tests/test_check_c1_conformance.sh' -g 'dev/plans/runs/0.8.20-slice-30-output.json'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+scripts/check-c1-conformance.sh
+scripts/tests/test_check_c1_conformance.sh
+dev/plans/runs/0.8.20-slice-30-output.json
+
+exec
+/bin/bash -lc 'git status --short && git rev-parse --abbrev-ref HEAD && git log --oneline -5' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+orch-0.8.20-s30
+a26a7655 docs(0.8.20-s30): fix-6c — update the slice closure output.json
+0d9b40d7 fix(0.8.20-s30): GREEN fix-6c — the leading header starts after a UTF-8 BOM
+9ef5179b test(0.8.20-s30): RED fix-6c — a leading UTF-8 BOM hides a file-level #![cfg]
+337c2b12 docs(0.8.20-s30): codex §9 rounds 6+7 transcripts — fix-6/6b, with a REFUTED [P2] override
+844df27b docs(0.8.20-s30): fix-6b — update the slice closure output.json
+
+codex
+The branch and commit range match the request. I’m checking the local operating-memory files now, then I’ll inspect the changed function and fixture assertions against the prior regression shapes.
+exec
+/bin/bash -lc 'ls -la' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+total 352
+drwxrwxr-x 14 coreyt coreyt   4096 Jul 27 14:32 .
+drwxrwxr-x  6 coreyt coreyt   4096 Jul 27 20:51 ..
+drwxrwxr-x  4 coreyt coreyt   4096 Jul 27 09:42 .claude
+-rw-rw-r--  1 coreyt coreyt     70 Jul 27 09:42 .git
+drwxrwxr-x  3 coreyt coreyt   4096 Jul 27 09:42 .github
+-rw-rw-r--  1 coreyt coreyt   5008 Jul 27 09:42 .gitignore
+-rw-rw-r--  1 coreyt coreyt   2745 Jul 27 09:42 .markdownlint-cli2.jsonc
+-rw-rw-r--  1 coreyt coreyt   2105 Jul 27 09:42 .markdownlint.jsonc
+-rw-rw-r--  1 coreyt coreyt    657 Jul 27 09:42 .prettierignore
+-rw-rw-r--  1 coreyt coreyt    296 Jul 27 09:42 .prettierrc.json
+drwxrwxr-x  3 coreyt coreyt   4096 Jul 27 10:08 .ruff_cache
+-rw-rw-r--  1 coreyt coreyt  13373 Jul 27 09:42 AGENTS.md
+-rw-rw-r--  1 coreyt coreyt  50881 Jul 27 09:42 CHANGELOG.md
+-rw-rw-r--  1 coreyt coreyt 115594 Jul 27 09:42 Cargo.lock
+-rw-------  1 coreyt coreyt   2434 Jul 27 11:55 Cargo.toml
+-rw-rw-r--  1 coreyt coreyt   1078 Jul 27 09:42 LICENSE
+-rw-rw-r--  1 coreyt coreyt    939 Jul 27 09:42 README.md
+-rw-rw-r--  1 coreyt coreyt    120 Jul 27 09:42 deny.toml
+drwxrwxr-x 30 coreyt coreyt   4096 Jul 27 10:14 dev
+drwxrwxr-x 11 coreyt coreyt   4096 Jul 27 09:42 docs
+drwxrwxr-x  2 coreyt coreyt   4096 Jul 27 09:42 experiments
+-rw-rw-r--  1 coreyt coreyt   1783 Jul 27 09:42 lychee.toml
+-rw-rw-r--  1 coreyt coreyt   1502 Jul 27 09:42 mkdocs.yml
+lrwxrwxrwx  1 coreyt coreyt     43 Jul 27 10:08 node_modules -> /home/coreyt/projects/fathomdb/node_modules
+-rw-rw-r--  1 coreyt coreyt  48768 Jul 27 09:42 package-lock.json
+-rw-rw-r--  1 coreyt coreyt   1249 Jul 27 09:42 package.json
+-rw-rw-r--  1 coreyt coreyt     66 Jul 27 09:42 rust-toolchain.toml
+-rw-rw-r--  1 coreyt coreyt     45 Jul 27 09:42 rustfmt.toml
+drwxrwxr-x  9 coreyt coreyt   4096 Jul 27 21:06 scripts
+drwxrwxr-x  6 coreyt coreyt   4096 Jul 27 09:42 src
+drwxrwxr-x  5 coreyt coreyt   4096 Jul 27 10:16 target
+drwxrwxr-x  6 coreyt coreyt   4096 Jul 27 09:42 test
+drwxrwxr-x  4 coreyt coreyt   4096 Jul 27 09:42 tests
+drwxrwxr-x  3 coreyt coreyt   4096 Jul 27 09:42 tools
+
+exec
+/bin/bash -lc "find .. -maxdepth 2 \\( -name 'MEMORY.md' -o -name 'feedback_*.md' \\) -print" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+exec
+/bin/bash -lc 'git diff --stat 337c2b12..HEAD && git diff --name-only 337c2b12..HEAD' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+ dev/plans/runs/0.8.20-slice-30-output.json | 107 +++++++++++++++++++++++++++--
+ scripts/check-c1-conformance.sh            |  20 ++++++
+ scripts/tests/test_check_c1_conformance.sh |  95 +++++++++++++++++++++++++
+ 3 files changed, 215 insertions(+), 7 deletions(-)
+dev/plans/runs/0.8.20-slice-30-output.json
+scripts/check-c1-conformance.sh
+scripts/tests/test_check_c1_conformance.sh
+
+codex
+There is no `MEMORY.md` or `feedback_*.md` in this worktree or its immediate parent, so I’m proceeding with `AGENTS.md` plus the requested diff. Next I’m reading the exact script/test hunks with line numbers.
+exec
+/bin/bash -lc 'git diff --unified=80 337c2b12..HEAD -- scripts/check-c1-conformance.sh' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+diff --git a/scripts/check-c1-conformance.sh b/scripts/check-c1-conformance.sh
+index 50d96bc5..5f5e5ca0 100755
+--- a/scripts/check-c1-conformance.sh
++++ b/scripts/check-c1-conformance.sh
+@@ -1794,162 +1794,182 @@ def _attrs_before(code, index):
+         word = re.search(r"([A-Za-z_]\w*)\s*$", code[:j])
+         if word is not None and word.group(1) in _FN_MODIFIERS:
+             i = word.start(1)
+             continue
+         i = j
+         break
+     # 2. consume the run of outer attributes above it.
+     attrs = []
+     while True:
+         j = i
+         while j > 0 and code[j - 1].isspace():
+             j -= 1
+         if j == 0 or code[j - 1] != "]":
+             break
+         depth, k = 0, j - 1
+         while k >= 0:
+             if code[k] == "]":
+                 depth += 1
+             elif code[k] == "[":
+                 depth -= 1
+                 if depth == 0:
+                     break
+             k -= 1
+         if k < 1 or code[k - 1] != "#":
+             break
+         if code[k + 1:k + 2] == "!":                # inner attribute: not ours
+             break
+         attrs.append(code[k - 1:j])
+         i = k - 1
+     return attrs
+ 
+ 
+ def attr_path(attr):
+     """The dotted path an attribute names: `#[tokio::test]` -> 'tokio::test',
+     `#[ignore = "why"]` -> 'ignore', `#[cfg(feature = "x")]` -> 'cfg'. None when
+     the attribute is not a simple path (a bare literal, say)."""
+     inner = attr[2:-1].strip()
+     match = re.match(r"([A-Za-z_]\w*(?:\s*::\s*[A-Za-z_]\w*)*)", inner)
+     if match is None:
+         return None
+     return "::".join(part.strip() for part in match.group(1).split("::"))
+ 
+ 
+ def file_inner_attrs(rel):
+     """The `#![..]` INNER attribute paths in a Rust file's OWN LEADING HEADER.
+ 
+     A `#![cfg(..)]` there switches the WHOLE FILE off, which for an integration
+     test means every proof in it stops running while each one still reads as a
+     perfectly ordinary `#[test]`.
+ 
+     "IN THE HEADER" IS LOAD-BEARING (fix-6, codex §9 round 6 finding #2). This
+     used to scan the whole file for `#![`, but Rust permits an inner attribute at
+     the head of ANY braced item, and `mod helpers { #![cfg(feature = "x")] .. }`
+     is ordinary, legal, and switches off THAT MODULE alone. Reading one of those
+     as "the whole test file is conditionally compiled" turns this gate RED and
+     blocks CI and `preflight.sh --landing` while every top-level pinned proof
+     still builds and runs — a FALSE RED, which on a publish precondition is its
+     own failure mode, not the safe side.
+ 
+     So the walk starts at the top of the file and stops at the first thing that
+     is neither whitespace nor an inner attribute — i.e. at the first item. That
+     leading run IS the file header, and it is the only place a FILE-level inner
+     attribute may legally appear, so narrowing to it gives up nothing: a genuine
+     `#![cfg(..)]` is still found when it sits alone at the head, after other
+     leading inner attributes, or after a `//!` doc header (comments, `//!`
+     included, are already blanked to spaces by `rust_view`, so a doc header does
+     not end the run).
+ 
+     A LEADING SHEBANG IS PART OF THAT HEADER AND IS SKIPPED FIRST (fix-6b, codex
+     §9 round 6 RE-REVIEW of the fix-6 patch — a regression the narrowing itself
+     opened). A Rust source file may legally begin with `#!/usr/bin/env ..`, which
+     is not `#![`, so the walk ended at byte 0 and never saw a file-level
+     `#![cfg(..)]` on the NEXT line: the whole test file compiled out, gate green.
+     `rustc --test` on shebang + `#![cfg(feature = "nope")]` + `#[test] fn t() {}`
+     builds and `--list` reports `0 tests`. rustc's own rule is followed exactly:
+     ONLY the very first line can be a shebang, and it is one only when the file
+     starts with `#!` whose next character is NOT `[` — `#![..]` at byte 0 is an
+     inner attribute, not a shebang. The rest of that first line is skipped and
+     the leading-attribute walk resumes, so an attribute run after a shebang is
+     still read (and the nested-module false RED above stays closed).
++
++    A LEADING UTF-8 BOM IS ALSO PART OF THAT HEADER AND IS SKIPPED FIRST OF ALL
++    (fix-6c, the COMPLETION of that same finding #2 — its scope is the file's own
++    leading inner attributes, and a BOM-prefixed one is one of them). `read_source`
++    decodes with `errors="replace"`, which does NOT strip a byte-order mark, so a
++    BOM arrives here as U+FEFF at index 0 and defeated the walk three ways at once:
++    it is not `#!`, so the shebang branch was skipped; `"﻿".isspace()` is False in
++    Python 3 — U+FEFF is category Cf, a FORMAT character, not whitespace — so the
++    whitespace skip did not advance past it; and it is not `#![`, so the walk broke
++    at byte 0 and never saw a file-level `#![cfg(..)]` on that very line. Same false
++    green as the shebang hole, through a different first byte: `rustc --test` on
++    bytes `ef bb bf` + `#![cfg(feature = "nope")]` + `#[test] fn t() {}` builds and
++    `--list` reports `0 tests`, while the same file without the cfg reports `1 test`.
++    rustc's ordering is followed exactly — it strips ONE leading BOM, and only THEN
++    may the first line be a shebang — so this skip runs BEFORE the shebang branch
++    and BOM + shebang + `#![cfg(..)]` is read too. The strip is local to this walk;
++    `read_source` is deliberately left alone so no other probe's view changes. Only
++    ONE BOM is stripped, as rustc does: a second U+FEFF is not a header byte.
+     """
+     code = rust_code(rel)
++    if code[:1] == "﻿":                     # ONE leading BOM, stripped as rustc does
++        code = code[1:]
+     found, i, n = [], 0, len(code)
+     if code[:2] == "#!" and code[2:3] != "[":       # a shebang line, not an attr
+         end = code.find("\n")
+         i = n if end == -1 else end + 1
+     while True:
+         while i < n and code[i].isspace():
+             i += 1
+         if code[i:i + 3] != "#![":
+             break
+         depth, j = 0, i + 2
+         while j < n:
+             if code[j] == "[":
+                 depth += 1
+             elif code[j] == "]":
+                 depth -= 1
+                 if depth == 0:
+                     break
+             j += 1
+         if j >= n:                       # unbalanced: unreadable, so the run ends
+             break
+         found.append(attr_path("#[" + code[i + 3:j] + "]"))
+         i = j + 1
+     return found
+ 
+ 
+ def fn_definitions(rel, name):
+     """One entry per DEFINITION of `fn <name>`: (attribute paths, brace depth).
+ 
+     A definition is a `fn <name> ... { .. }` with a brace-matchable body, located
+     in the blanked CODE view. Same subject-binding rule as `rust_items`, but it
+     keeps the ATTRIBUTES rather than the body, and the DEPTH of the enclosing
+     braces — an integration test nested inside anything is not a top-level test
+     target, and whatever encloses it may carry its own `#[cfg]` that this reader
+     would never look at (fix-5 SWEEP).
+     """
+     code, raw = rust_code(rel), rust_view(rel)
+     found = []
+     for match in re.finditer(r"\bfn\s+" + re.escape(name) + r"\b[^{;]*\{", code):
+         if brace_body(code, match.end() - 1, source=raw) is None:
+             continue
+         before = code[:match.start()]
+         depth = before.count("{") - before.count("}")
+         found.append(([attr_path(a) for a in _attrs_before(code, match.start())], depth))
+     return found
+ 
+ 
+ # Minimal, deliberately dumb TOML block reader — the same stance as the Rust
+ # readers above, and for the same reason: hand-rolling it keeps this gate's
+ # environment contract at "requires python3", where `tomllib` would quietly
+ # require 3.11+ and turn an older runner into an exit-2 that nobody predicted.
+ # It reads ONE shape (`[[test]]` tables and their scalar keys) and treats
+ # anything it cannot read as a clause failure.
+ _TOML_TABLE = re.compile(r"(?m)^\s*(\[\[?[^\]]+\]\]?)\s*$")
+ 
+ 
+ def cargo_test_target_defect(manifest_rel, stem):
+     """None, or why the test target `stem` does not run on a default `cargo test`.
+ 
+     fix-5 SWEEP, and NOT a hypothetical: `fathomdb-engine/Cargo.toml` ALREADY
+     carries nineteen `[[test]]` blocks with `required-features`, because that is
+     how this crate legitimately keeps operator-only and reranker-only suites out
+     of the default build. So "somebody adds a `required-features` to a test
+     target" is an established pattern here, exactly as "somebody adds a module"
+     was in fix-3 — and adding one for slice15d/slice20/slice25 would stop the
+     pinned proofs running under `cargo test -p fathomdb-engine` while every
+     attribute this gate reads stayed exactly as it is.
+ 
+     That is codex §9 round 5 finding #2 one level up: the proof is still a
+     `#[test]`, still un-`#[ignore]`d, and still never executed.
+     """
+     text = read_source(manifest_rel)
+     stripped = re.sub(r"(?m)#.*$", "", text)
+     if re.search(r"(?m)^\s*autotests\s*=\s*false", stripped):
+         return (
+             f"{manifest_rel} sets `autotests = false`, so integration-test files are no longer "
+             "auto-discovered and only explicitly declared `[[test]]` targets are built. This "
+             "gate cannot tell from source text whether the pinned proofs are still among them"
+         )
+     blocks, current, header = [], [], None
+     for line in stripped.splitlines():
+
+exec
+/bin/bash -lc 'git diff --unified=100 337c2b12..HEAD -- scripts/tests/test_check_c1_conformance.sh' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+diff --git a/scripts/tests/test_check_c1_conformance.sh b/scripts/tests/test_check_c1_conformance.sh
+index 7b57936a..41c35fcc 100755
+--- a/scripts/tests/test_check_c1_conformance.sh
++++ b/scripts/tests/test_check_c1_conformance.sh
+@@ -11,200 +11,211 @@
+ # prose", plan-0.8.20.md §3), and an absent-or-failing gate HOLDS the breaking
+ # pair. So the gate itself needs a recurrence guard: these arms.
+ #
+ # RED-first: the real tree PASSES today, so asserting only against the real repo
+ # would prove nothing — a `true` script would pass it. Every failure arm below
+ # therefore runs against a purpose-built DIVERGENT FIXTURE (a mutated COPY of
+ # the contract, of the pin, or of the source root), so each arm can only go green
+ # because the predicate actually fired. The real-repo arm is the regression half
+ # of the same pair.
+ #
+ # THE FIXTURES ARE COPIES. Neither the real contract nor the real src/ tree is
+ # ever written by this suite — mutating them is the exact thing the gate exists
+ # to catch. Copies live under mktemp -d (the checker takes --contract/--pin/--root
+ # for exactly this reason); the preflight arms build throwaway git repos + linked
+ # worktrees.
+ #
+ # THE FIXTURE ROOTS ARE BUILT FROM `--list-sources`, not from a hand-maintained
+ # path list. If a future clause reads a new file, the fixture roots pick it up
+ # automatically and cannot silently go stale (a stale fixture root would turn
+ # every source arm into a TC-37 #4 evaporation and stop testing what it claims).
+ #
+ # NOTE ON THE WHITESPACE ARM: failing on a formatting-only change is a
+ # DELIBERATE, DOCUMENTED property of a content-hash pin, not an accident — see
+ # the gate's header. It is asserted here so the behaviour is a contract.
+ #
+ # FIX-1 ARMS (arms 12d–12j) are the recurrence guard for codex §9 round 1: two
+ # [P2] FALSE NEGATIVES in which the gate exited 0 on a tree that violates the
+ # pinned contract — an open readiness vocabulary guarded only by a blacklist of
+ # one name, and case-sensitive `absent` regexes over SQL. Both classes were
+ # swept for and are fixed across every clause that carried them.
+ #
+ # FIX-2 ARMS (arms 12k–12p) are the recurrence guard for codex §9 round 2, which
+ # found three REFINEMENTS of those same two classes: a SQL table name may be
+ # SCHEMA-QUALIFIED (`main.canonical_attributes`), and an accepted string may be
+ # admitted OUTSIDE a simple match arm (an `if` guard, an or-pattern). 12p is the
+ # sweep's own product, in the same narrow-regex class.
+ #
+ # FIX-3 ARMS (arms 12q–12u, plus the tree-evaporation and probe-kind arms) are
+ # the recurrence guard for codex §9 round 3 — a DIFFERENT defect class from
+ # rounds 1–2. Not a regex shape: a SCOPE bug. Every negative (`absent`) probe read
+ # ONE FILE (a crate's lib.rs), so a literal, correctly-spelled, fully-qualified
+ # violation placed in a SIBLING MODULE of the same crate exited 0. Fixed by
+ # scoping every negative probe to the crate SOURCE TREE and by DELETING the
+ # file-scoped negative probe kind outright.
+ #
+ # FIX-4 ARMS (arms 12v–12ac, plus the `min`-probe-kind arms) are the recurrence
+ # guard for codex §9 round 4 — a FOURTH distinct class again. Not a regex shape
+ # (rounds 1–2) and not a file-vs-tree scope bug (round 3): SUBJECT BINDING. Every
+ # probe below asserted that some text existed SOMEWHERE IN A FILE, while the
+ # clause it implements is about a NAMED SUBJECT inside that file — a particular
+ # table's tokenizer, a particular struct's field, a particular enum's variant, a
+ # particular function's signature or body, a particular index's COLUMNS, a
+ # particular test's DEFINITION (as opposed to a comment mentioning it). Each
+ # fixture leaves a DECOY that satisfies the old probe, so each exited 0 while the
+ # obligation was violated. Fixed by extracting the named subject structurally and
+ # asserting inside it, and by DELETING the `min` count-probe kind outright.
+ #
+ # FIX-5 ARMS (arms 12af–12ag, plus the `fn_defined`-on-a-test guards) are the
+ # recurrence guard for codex §9 round 5 — two more bounded classes, both of them
+ # false GREENS on ordinary source text:
+ #   * THE WRONG CRATE'S SAME-NAMED SYMBOL. A refinement of fix-4. fix-4 asked "is
+ #     this probe bound to a subject at all?"; round 5 asks "is it bound to the
+ #     subject THE CLAUSE NAMES?". `C1-TE-DEFAULT-EMBEDDER` is about the ENGINE's
+ #     shipped default and was probed against the EMBEDDER crate's identically
+ #     named constant, so flipping the engine's exited 0.
+ #   * A DISABLED TEST IS NOT A PROOF. Ten clauses are carried by "the named test
+ #     still exists". Deleting `#[test]` or adding `#[ignore]` leaves a plain
+ #     function of the same name — the probe passed, `cargo test` stopped running
+ #     the proof, nothing went red. That is the TC-37 evaporation shape this gate
+ #     exists to close, and it is a ONE-TOKEN edit that reads as tidy-up.
+ #
+ # FIX-6 ARMS (arms 12ai–12aj) are the recurrence guard for codex §9 round 6 — two
+ # bounded holes, and for the first time in this file they point in OPPOSITE
+ # directions:
+ #   * 12ai, A FALSE GREEN — THE RECEIVER. The cohesion-seam clause reads the apply
+ #     verb's parameter and return TEXT out of its own signature (fix-4), but
+ #     nothing bound it to the `&self` RECEIVER. A free or associated
+ #     `fn configure_projections(specs.., drop..) -> Result<ProjectionDelta,
+ #     EngineError>` carries every probed fragment verbatim while
+ #     `engine.configure_projections(..)` — the instance verb the pin's evidence
+ #     records — stops existing, and the gate stayed green.
+ #   * 12aj, A FALSE RED, and the first one this suite has had to guard. The
+ #     file-level `#![cfg(..)]` check (fix-5 SWEEP) scanned the WHOLE file for
+ #     inner attributes, so a pinned test file that later grows a perfectly legal
+ #     `mod helpers { #![cfg(feature = "x")] .. }` was reported as wholly
+ #     conditionally compiled — turning the gate RED and blocking CI and
+ #     `preflight.sh --landing` — while every top-level pinned test still built and
+ #     ran. Note the INVERTED expectation on that arm (rc=0), and the mirror arms
+ #     that keep a GENUINE file-level `#![cfg(..)]` red.
+ #
+ # FIX-6b ARMS (arm 12ak) are the recurrence guard for a regression THE FIX-6
+ # PATCH ITSELF OPENED, found by codex re-reviewing that patch: narrowing the
+ # inner-attribute scan to the file's LEADING HEADER made the walk stop at the
+ # first byte that is neither whitespace nor `#![`, and a Rust file may legally
+ # begin with a SHEBANG. `#!/usr/bin/env rust-script` followed by
+ # `#![cfg(feature = "..")]` therefore compiled every proof in a pinned test file
+ # out while the gate exited 0 — the same false GREEN the whole-file scan had
+ # caught. A leading shebang is now part of the header and is skipped, and 12ak
+ # holds BOTH directions: shebang + `#![cfg(..)]` is red, a shebang alone is not.
+ #
++# FIX-6c ARMS (arm 12al) COMPLETE that same finding rather than opening a new
++# round: its scope is the file's own leading inner attributes, and a BOM-prefixed
++# one is exactly that. A UTF-8 BOM survives `read_source` (`errors="replace"`
++# does not strip it), is NOT whitespace to Python (U+FEFF is category Cf), and is
++# not `#!` — so the header walk stopped at byte 0 and a file-level `#![cfg(..)]`
++# behind a BOM compiled every proof out at exit 0, the 12ak false green through a
++# different first byte. rustc strips one leading BOM BEFORE the shebang rule
++# applies, so the skip is ordered the same way and BOM + shebang + `#![cfg(..)]`
++# is covered too. Reachability was ZERO when this was written — no tracked file
++# carries a BOM — exactly as the shebang hole was latent when 12ak closed it.
++#
+ # READ THE GATE'S "RESIDUAL SCOPE" HEADER SECTION BEFORE ADDING A ROUND 7, AND
+ # CLASSIFY THE FINDING FIRST. The header states, in writing, the evasion classes a
+ # static/lexical check CANNOT close (dynamically composed SQL, const/macro-
+ # indirected identifiers, ATTACH aliases, normalising comparisons, and what a
+ # still-active test's BODY actually asserts); arms for those belong to a DIFFERENT
+ # mechanism — a runtime `sqlite_master` assertion, a real parse, or asking the
+ # toolchain which tests the built binary contains — not to another regex here. But
+ # rounds 3 through 6 were NOT one of those: a LITERAL spelling of a PINNED name in
+ # ordinary source text that this gate does not see, a probe satisfied by something
+ # other than its subject, a proof that no longer runs, a verb that lost its
+ # receiver, and a legal nested module misread as a switched-off file are real
+ # defects with definite fixes, and they get fixed.
+ set -euo pipefail
+ 
+ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+ CHECKER="$REPO_ROOT/scripts/check-c1-conformance.sh"
+ PREFLIGHT="$REPO_ROOT/scripts/preflight.sh"
+ CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
+ REAL_CONTRACT="$REPO_ROOT/dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md"
+ REAL_PIN="$REPO_ROOT/scripts/c1-conformance-pin.json"
+ # shellcheck source=lib/governed-surface-fixture.sh
+ . "$SCRIPT_DIR/lib/governed-surface-fixture.sh"
+ # shellcheck source=lib/c1-conformance-fixture.sh
+ . "$SCRIPT_DIR/lib/c1-conformance-fixture.sh"
+ 
+ # The no-argument arm exercises the checker's REPO-RELATIVE defaults, which it
+ # resolves from `git rev-parse --show-toplevel` — i.e. from the cwd. Pin the cwd
+ # to this checkout so that arm tests THIS tree no matter where the suite is
+ # invoked from (mirrors the governed-surface-pin suite).
+ cd "$REPO_ROOT"
+ 
+ FAILED=0
+ pass() { printf 'PASS  %s\n' "$1"; }
+ fail() { printf 'FAIL  %s\n' "$1" >&2; FAILED=$((FAILED + 1)); }
+ 
+ TMPROOT="$(mktemp -d)"
+ cleanup() {
+   case "$TMPROOT" in
+     "${TMPDIR:-/tmp}"/*|/tmp/*) rm -rf "$TMPROOT" ;;
+     *) printf 'refusing to remove unexpected temp path: %s\n' "$TMPROOT" >&2 ;;
+   esac
+ }
+ trap cleanup EXIT
+ 
+ run_checker() {
+   set +e
+   OUT="$(bash "$CHECKER" "$@" 2>&1)"
+   RC=$?
+   set -e
+ }
+ 
+ expect_rc() {
+   local want="$1" desc="$2"
+   if [ "$RC" -eq "$want" ]; then
+     pass "$desc"
+   else
+     fail "$desc — expected rc=$want, got rc=$RC; out: $OUT"
+   fi
+ }
+ 
+ # expect_out <regex> <desc>
+ expect_out() {
+   if printf '%s' "$OUT" | grep -qE "$1"; then
+     pass "$2"
+   else
+     fail "$2 — expected output matching /$1/; got: $OUT"
+   fi
+ }
+ 
+ # expect_no_out <regex> <desc>
+ expect_no_out() {
+   if printf '%s' "$OUT" | grep -qE "$1"; then
+     fail "$2 — output must NOT match /$1/; got: $OUT"
+   else
+     pass "$2"
+   fi
+ }
+ 
+ # Every real DIVERGENCE (exit 1) must route the reader to the Steward/HITL and
+ # must forbid a silent re-pin: a failure the reader cannot act on is how a
+ # conformance gate gets quietly neutered.
+ expect_routes_to_steward() {
+   local desc="$1" ok=1
+   printf '%s' "$OUT" | grep -q 'DO NOT re-pin' || ok=0
+   printf '%s' "$OUT" | grep -q 'Steward' || ok=0
+   if [ "$ok" -eq 1 ]; then
+     pass "$desc routes the reader to the Steward and forbids a silent re-pin"
+   else
+     fail "$desc did not print the full Steward-routing block; got: $OUT"
+   fi
+ }
+ 
+ # ============================================================================
+ # Fixture-root construction, driven by the gate's own --list-sources output.
+ # ============================================================================
+ if ! SOURCE_MANIFEST="$(bash "$CHECKER" --list-sources 2>&1)"; then
+   fail "--list-sources must succeed so the fixture roots can be built from it; got: $SOURCE_MANIFEST"
+   SOURCE_MANIFEST=""
+ fi
+@@ -1744,200 +1755,284 @@ expect_no_out 'CONDITIONALLY COMPILED as a whole' \
+ # GENUINE file-level `#![cfg(..)]` must still be RED — including one that is not
+ # the FIRST thing in the header. Rust allows a run of inner attributes at the top
+ # of a file, and a `//!` doc header above them; both are still file level.
+ #   (a) alone, at the very head of the same pinned file;
+ #   (b) after another leading inner attribute;
+ #   (c) after a leading `//!` doc comment.
+ IDX=0
+ for HEAD in \
+   '#![cfg(feature = "never-enabled")]' \
+   '#![allow(dead_code)]
+ #![cfg(feature = "never-enabled")]' \
+   '//! Fixture only (fix-6): a doc header does not stop the next attribute being
+ //! a FILE-level one.
+ #![cfg(feature = "never-enabled")]'; do
+   IDX=$((IDX + 1))
+   HEAD_ROOT="$(make_root "file-cfg-in-header-$IDX")"
+   python3 - "$HEAD_ROOT/src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs" "$HEAD" <<'PY'
+ import sys
+ p, head = sys.argv[1], sys.argv[2]
+ text = open(p, encoding="utf-8").read()
+ open(p, "w", encoding="utf-8").write(head + "\n" + text)
+ PY
+   run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$HEAD_ROOT"
+   expect_rc 1 "a FILE-level #![cfg(..)] in the header (form $IDX) still HARD-fails the file's clauses"
+   expect_out 'C1-Q3-DESTRUCTIVE-DELTA' "header-cfg form $IDX NAMES a clause proved in that file"
+   expect_out 'CONDITIONALLY COMPILED as a whole' "header-cfg form $IDX says the whole file is gated"
+ done
+ 
+ # === Arm 12ak (RED, fix-6b): A LEADING SHEBANG IS PART OF THE HEADER =========
+ # codex §9 round 6 RE-REVIEW, and this one is a regression THE FIX-6 PATCH ABOVE
+ # OPENED. Narrowing the file-level `#![..]` scan to the file's LEADING HEADER
+ # (arm 12aj) closed the nested-module false RED, but the new walk stops at the
+ # first byte that is neither whitespace nor `#![` — and a Rust source file may
+ # legally BEGIN WITH A SHEBANG. `#!/usr/bin/env rust-script` is not `#![`, so the
+ # walk ended at byte 0 and a file-level `#![cfg(..)]` on the NEXT line was never
+ # seen: exit 0 on a pinned test file whose every proof is compiled out. codex
+ # proved it with the toolchain, not by reading — `rustc --test` on
+ # shebang + `#![cfg(feature = "nope")]` + `#[test] fn t() {}` builds, and
+ # `--list` reports `0 tests`.
+ #
+ # The pre-fix-6 whole-file scan caught this. These arms keep BOTH directions
+ # closed at once: the shebang must not hide a file-level `#![cfg(..)]` (12ak-1,
+ # 12ak-3, rc=1) and must not by itself gate anything (12ak-2, rc=0). The nested
+ # module mirror — the false RED fix-6 closed — is arm 12aj above and is NOT
+ # duplicated here; it must stay rc=0 for this repair to be in scope.
+ #
+ # 12ak-1 — codex's own demonstration: a shebang line, then a genuine file-level
+ # `#![cfg(..)]`. Same subject file as the 12aj mirror arms, so the only variable
+ # against them is the shebang.
+ SHEBANG_CFG_ROOT="$(make_root shebang-hides-file-cfg)"
+ python3 - "$SHEBANG_CFG_ROOT/src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs" <<'PY'
+ import sys
+ p = sys.argv[1]
+ text = open(p, encoding="utf-8").read()
+ open(p, "w", encoding="utf-8").write(
+     "#!/usr/bin/env rust-script\n"
+     '#![cfg(feature = "never-enabled")]\n' + text
+ )
+ PY
+ run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$SHEBANG_CFG_ROOT"
+ expect_rc 1 "a file-level #![cfg(..)] hidden behind a leading SHEBANG still HARD-fails the file's clauses"
+ expect_out 'C1-Q3-DESTRUCTIVE-DELTA' "the shebang-hidden file-cfg failure NAMES a clause proved in that file"
+ expect_out 'CONDITIONALLY COMPILED as a whole' \
+   "the shebang-hidden file-cfg failure says the whole file is gated"
+ expect_routes_to_steward "the shebang-hidden file-cfg failure"
+ 
+ # 12ak-2 — THE MIRROR, so skipping the shebang cannot overshoot: a shebang ALONE
+ # gates nothing, and a file that grows one must not turn the gate RED.
+ SHEBANG_ONLY_ROOT="$(make_root shebang-only)"
+ python3 - "$SHEBANG_ONLY_ROOT/src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs" <<'PY'
+ import sys
+ p = sys.argv[1]
+ text = open(p, encoding="utf-8").read()
+ open(p, "w", encoding="utf-8").write("#!/usr/bin/env rust-script\n" + text)
+ PY
+ run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$SHEBANG_ONLY_ROOT"
+ expect_rc 0 "a leading SHEBANG on its own does NOT gate the pinned test file"
+ expect_out 'ok +c1-contract-conformance' "the shebang-only root still reports ok"
+ expect_no_out 'CONDITIONALLY COMPILED as a whole' \
+   "the shebang-only root is not reported as a wholly cfg-gated file"
+ 
+ # 12ak-3 — the walk must RESUME after the shebang, not merely skip one line: a
+ # shebang, then an unrelated inner attribute, then the `#![cfg(..)]`.
+ SHEBANG_RUN_ROOT="$(make_root shebang-then-attr-run)"
+ python3 - "$SHEBANG_RUN_ROOT/src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs" <<'PY'
+ import sys
+ p = sys.argv[1]
+ text = open(p, encoding="utf-8").read()
+ open(p, "w", encoding="utf-8").write(
+     "#!/usr/bin/env rust-script\n"
+     "#![allow(dead_code)]\n"
+     '#![cfg(feature = "never-enabled")]\n' + text
+ )
+ PY
+ run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$SHEBANG_RUN_ROOT"
+ expect_rc 1 "a #![cfg(..)] after a shebang AND another inner attribute still HARD-fails"
+ expect_out 'C1-Q3-DESTRUCTIVE-DELTA' "the shebang+attr-run failure NAMES a clause proved in that file"
+ expect_out 'CONDITIONALLY COMPILED as a whole' \
+   "the shebang+attr-run failure says the whole file is gated"
+ 
++# === Arm 12al (RED, fix-6c): A LEADING UTF-8 BOM IS PART OF THE HEADER =======
++# The completion of codex §9 round-6 finding #2, whose scope is "the file's own
++# leading inner attributes" — and a BOM-prefixed inner attribute is one. Exactly
++# the SHEBANG hole of 12ak, through a different first byte.
++#
++# `read_source` decodes bytes with `.decode("utf-8", errors="replace")`, which
++# does NOT strip a byte-order mark, so a BOM survives into the scanned text as
++# U+FEFF at index 0. The leading-header walk then fails three ways at once:
++# `code[:2] == "#!"` is False so the shebang branch is skipped; `"﻿"
++# .isspace()` is False in Python 3 (it is category Cf, a FORMAT character, not
++# whitespace) so the whitespace skip does not advance past it; and
++# `code[0:3] != "#!["` so the walk breaks at byte 0. A file-level `#![cfg(..)]`
++# on the very same line is never seen — every proof in a pinned test file is
++# compiled out and the gate exits 0. A false GREEN of exactly the 12ak class.
++#
++# Proved with the toolchain, not by reading. `rustc --test` on a file whose
++# bytes begin ef bb bf, then `#![cfg(feature = "nope")]` + `#[test] fn t() {}`,
++# builds and `--list` reports `0 tests`; the same file WITHOUT the cfg reports
++# `1 test`, so it is the cfg that empties it and not the BOM. rustc strips ONE
++# leading BOM and only then may the first line be a shebang, so BOM + shebang +
++# `#![cfg(..)]` also builds to `0 tests` — hence 12al-3, and hence the BOM skip
++# belongs BEFORE the shebang branch rather than after it.
++#
++# Reachability is ZERO today: no tracked source file carries a BOM. So was the
++# shebang hole when 12ak was written. These arms hold both directions, as 12ak
++# does: a BOM must not hide a file-level `#![cfg(..)]` (12al-1, 12al-3, rc=1)
++# and must not by itself gate anything (12al-2, rc=0).
++#
++# 12al-1 — a BOM, then a genuine file-level `#![cfg(..)]` on the same line. Same
++# subject file as the 12aj/12ak mirrors, so the BOM is the only variable.
++BOM_CFG_ROOT="$(make_root bom-hides-file-cfg)"
++python3 - "$BOM_CFG_ROOT/src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs" <<'PY'
++import sys
++p = sys.argv[1]
++text = open(p, encoding="utf-8").read()
++open(p, "w", encoding="utf-8").write(
++    "﻿"
++    '#![cfg(feature = "never-enabled")]\n' + text
++)
++PY
++run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$BOM_CFG_ROOT"
++expect_rc 1 "a file-level #![cfg(..)] hidden behind a leading UTF-8 BOM still HARD-fails the file's clauses"
++expect_out 'C1-Q3-DESTRUCTIVE-DELTA' "the BOM-hidden file-cfg failure NAMES a clause proved in that file"
++expect_out 'CONDITIONALLY COMPILED as a whole' \
++  "the BOM-hidden file-cfg failure says the whole file is gated"
++expect_routes_to_steward "the BOM-hidden file-cfg failure"
++
++# 12al-2 — THE MIRROR, so skipping the BOM cannot overshoot: a BOM ALONE gates
++# nothing, and a file that grows one (an editor's "UTF-8 with signature") must
++# not turn the gate RED.
++BOM_ONLY_ROOT="$(make_root bom-only)"
++python3 - "$BOM_ONLY_ROOT/src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs" <<'PY'
++import sys
++p = sys.argv[1]
++text = open(p, encoding="utf-8").read()
++open(p, "w", encoding="utf-8").write("﻿" + text)
++PY
++run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$BOM_ONLY_ROOT"
++expect_rc 0 "a leading UTF-8 BOM on its own does NOT gate the pinned test file"
++expect_out 'ok +c1-contract-conformance' "the BOM-only root still reports ok"
++expect_no_out 'CONDITIONALLY COMPILED as a whole' \
++  "the BOM-only root is not reported as a wholly cfg-gated file"
++
++# 12al-3 — rustc's ORDER: one BOM is stripped, and only THEN may the first line
++# be a shebang. So a BOM followed by a shebang followed by the `#![cfg(..)]` is
++# a real, buildable file with zero tests, and the BOM skip must run BEFORE the
++# shebang branch for the walk to reach that attribute at all.
++BOM_SHEBANG_ROOT="$(make_root bom-then-shebang)"
++python3 - "$BOM_SHEBANG_ROOT/src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs" <<'PY'
++import sys
++p = sys.argv[1]
++text = open(p, encoding="utf-8").read()
++open(p, "w", encoding="utf-8").write(
++    "﻿"
++    "#!/usr/bin/env rust-script\n"
++    '#![cfg(feature = "never-enabled")]\n' + text
++)
++PY
++run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$BOM_SHEBANG_ROOT"
++expect_rc 1 "a #![cfg(..)] behind a BOM AND a shebang still HARD-fails"
++expect_out 'C1-Q3-DESTRUCTIVE-DELTA' "the BOM+shebang failure NAMES a clause proved in that file"
++expect_out 'CONDITIONALLY COMPILED as a whole' \
++  "the BOM+shebang failure says the whole file is gated"
++
+ # === Arm 13 (RED): a source file an assertion reads is MISSING ===============
+ # TC-37 evaporation path #4: the assertion could not be EVALUATED. That is
+ # neither a pass (0) nor a clause failure (1) — the gate computed no verdict.
+ GONE_ROOT="$(make_root file-missing)"
+ rm -f "$GONE_ROOT/src/rust/crates/fathomdb-schema/src/lib.rs"
+ run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$GONE_ROOT"
+ expect_rc 2 "a MISSING source file exits 2 (TC-37 #4) — not 0 and not 1"
+ expect_out 'could not be EVALUATED' "file-missing says the assertion could not be evaluated"
+ expect_out 'TC-37' "file-missing cites the evaporation failure class"
+ expect_no_out 'ok +c1-contract-conformance' "file-missing prints no ok line"
+ 
+ # An entirely empty root is the same class, not a vacuous pass.
+ mkdir -p "$TMPROOT/root-empty"
+ run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$TMPROOT/root-empty"
+ expect_rc 2 "an EMPTY source root exits 2 (every assertion evaporates), never 0"
+ 
+ # TC-37 #4 FOR A TREE-SCOPED PROBE (fix-3). Once a probe's subject is a TREE
+ # rather than a file, "missing" needs a definition. The gate's answer, stated in
+ # its header: an ABSENT directory is exit 2, and so is a directory that yields
+ # ZERO candidate files — a negative assertion that examined nothing has not been
+ # evaluated, and reporting it as satisfied is the TC-37 vacuous pass in its
+ # purest form.
+ #
+ # HONEST LIMIT OF THIS ARM: every crate tree the gate scans also holds that
+ # crate's lib.rs, which the same clause's file-scoped `present` probes read. So
+ # emptying the tree trips BOTH rules and the CLI cannot say which fired first.
+ # What the arm asserts is the property that matters — NO GREEN IS REACHABLE, and
+ # the verdict is "gate could not run" (2), never "clause failed" (1).
+ for TREE in fathomdb-engine fathomdb-schema; do
+   EMPTY_TREE_ROOT="$(make_root "empty-tree-$TREE")"
+   rm -rf "${EMPTY_TREE_ROOT:?}/src/rust/crates/$TREE/src"
+   mkdir -p "$EMPTY_TREE_ROOT/src/rust/crates/$TREE/src"
+   run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$EMPTY_TREE_ROOT"
+   expect_rc 2 "an EMPTIED $TREE source tree exits 2 (TC-37 #4), never 0 and never 1"
+   expect_out 'TC-37' "empty-tree-$TREE cites the evaporation failure class"
+   expect_no_out 'ok +c1-contract-conformance' "empty-tree-$TREE prints no ok line"
+ 
+   GONE_TREE_ROOT="$(make_root "gone-tree-$TREE")"
+   rm -rf "${GONE_TREE_ROOT:?}/src/rust/crates/$TREE/src"
+   run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$GONE_TREE_ROOT"
+   expect_rc 2 "an ABSENT $TREE source tree exits 2 (TC-37 #4), never 0 and never 1"
+   expect_no_out 'ok +c1-contract-conformance' "gone-tree-$TREE prints no ok line"
+ done
+ 
+ # ==================== Arm 14: usage / environment errors ====================
+ run_checker --not-a-flag
+ expect_rc 2 "an unknown flag exits 2 (usage), distinct from a divergence"
+ 
+ run_checker --help
+ expect_rc 0 "--help exits 0"
+ expect_out 'Usage: scripts/check-c1-conformance.sh' "--help prints usage"
+ 
+ run_checker --list-sources
+ expect_rc 0 "--list-sources exits 0"
+ expect_out 'file\s+src/rust/crates/fathomdb-engine/src/lib.rs' \
+   "--list-sources names the engine source the assertions read"
+ expect_out 'tree\s+src' "--list-sources names the tree the negative-space clause scans"
+ # fix-3: the crate SOURCE TREES are now first-class subjects, so they must appear
+ # in the manifest — that manifest is what builds every fixture root here AND the
+ # preflight seeder in lib/c1-conformance-fixture.sh. A tree-scoped probe whose
+ # tree is not listed would leave those roots without it and silently evaporate.
+ expect_out 'tree\s+src/rust/crates/fathomdb-engine/src' \
+   "--list-sources names the ENGINE crate source tree the negative probes scan"
+ expect_out 'tree\s+src/rust/crates/fathomdb-schema/src' \
+   "--list-sources names the SCHEMA crate source tree the negative probes scan"
+ 
+ # THE STRUCTURAL GUARD FOR THIS WHOLE CLASS (fix-3). Widening seven probes fixes
+ # today's holes; deleting the file-scoped negative probe KIND is what stops the
+ # class recurring. `absent` (single file) no longer exists — a negative probe can
+ # only be written as `absent_tree`. Assert that, so re-introducing a file-scoped
+ # negative is a deliberate, reviewed act rather than the path of least effort.
+ if grep -nE '^\s*\("absent",' "$REPO_ROOT/scripts/check-c1-conformance.sh" >/dev/null; then
+   fail "the gate still declares file-scoped (\"absent\", <file>, ...) probes; every negative probe must be tree-scoped (fix-3)"
+ else
+   pass "no file-scoped \`absent\` probe remains: every negative assertion is tree-scoped"
+ fi
+ if grep -nE 'kind == "absent"' "$REPO_ROOT/scripts/check-c1-conformance.sh" >/dev/null; then
+   fail "the gate still IMPLEMENTS the file-scoped \`absent\` probe kind — removing the kind is what prevents the fix-3 class from recurring"
+ else
+   pass "the file-scoped \`absent\` probe kind is gone from the gate entirely"
+ fi
+ 
+ # THE SAME STRUCTURAL GUARD FOR THE fix-4 CLASS. `min` was a COUNT of file-wide
+ # matches — the weakest possible binding between a probe and its subject, and
+ # exactly what let codex §9 round 4 change `property_search_index`'s tokenizer
+ # while UNRELATED FTS tables kept the count satisfied. Widening one probe fixes
+ # today's hole; deleting the KIND is what stops a future editor reaching for a
+ # count again. A count has no legitimate remaining use in this gate: every clause
+ # is about a NAMED subject, so the honest probe is a structural extraction bound
+ # to that subject (or, failing that, a regex tight enough to name it uniquely).
+ if grep -nE '^\s*\("min",' "$REPO_ROOT/scripts/check-c1-conformance.sh" >/dev/null; then
+   fail "the gate still declares (\"min\", <file>, <regex>, n) COUNT probes; a count is not a binding to a subject (fix-4)"
+ else
+   pass "no file-wide COUNT (\`min\`) probe remains: no clause is asserted by counting matches"
+ fi
+ if grep -nE 'kind == "min"' "$REPO_ROOT/scripts/check-c1-conformance.sh" >/dev/null; then
+   fail "the gate still IMPLEMENTS the \`min\` COUNT probe kind — removing the kind is what prevents the fix-4 class from recurring"
+ else
+   pass "the \`min\` COUNT probe kind is gone from the gate entirely"
+ fi
+
+exec
+/bin/bash -lc "nl -ba scripts/check-c1-conformance.sh | sed -n '1,240p'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+     1	#!/usr/bin/env bash
+     2	# check-c1-conformance.sh — the RUBRIC-H7 `can-i-deploy` contract-conformance
+     3	# gate (R-20-H7, plan-0.8.20.md §3).
+     4	#
+     5	# Shared by two callers, exactly like its siblings scripts/check-ledgers.sh,
+     6	# scripts/check-board-currency.sh and scripts/check-governed-surface-pin.sh:
+     7	#   * scripts/preflight.sh --landing              (PREVENT, land-time gate)
+     8	#   * .github/workflows/ci.yml c1-contract-conformance job
+     9	#                                                 (DETECT, always-on backstop)
+    10	# Reuse, not reimplementation: both callers invoke THIS script so the predicate
+    11	# cannot diverge between the two homes.
+    12	#
+    13	# WHAT THIS ENFORCES
+    14	#   R-20-H7: "a Pact-style can-i-deploy mechanical contract-conformance check:
+    15	#   as-built code still satisfies the ratified
+    16	#   dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md at the
+    17	#   co-land. NOT humans re-reading prose." Acceptance: "Gate exists and is GREEN.
+    18	#   An absent-or-failing gate HOLDS the breaking pair." It is a PUBLISH
+    19	#   PRECONDITION for the 0.8.20 ↔ Memex 0.5.x-successor breaking pair.
+    20	#
+    21	#   Every clause of that contract was read and classified exactly once into
+    22	#   CHECKABLE / CROSS-REPO / PROSE, and the whole classification is recorded, in
+    23	#   reviewable form, in scripts/c1-conformance-pin.json. This gate then does two
+    24	#   different jobs, and the difference matters:
+    25	#     1. it pins the CONTRACT'S BYTES, so the document cannot move underneath a
+    26	#        registry derived from it; and
+    27	#     2. it evaluates the CHECKABLE clauses against as-built code.
+    28	#
+    29	# ================= WHAT THIS GATE DOES *NOT* DO (read this) ==================
+    30	# This is a STATIC STRUCTURAL conformance check. It asserts:
+    31	#   * the PRESENCE of the symbols, tables, error variants and wiring the
+    32	#     contract names;
+    33	#   * the ABSENCE of the negative space the contract names (its Q6(b) amendment
+    34	#     asserts, as a matter of fact, that no `EntityTypeSpec` and no `id_prefix`
+    35	#     exists anywhere under src/ — that is a perfect falsifiable assertion and
+    36	#     it is checked as one);
+    37	#   * for CLOSED VOCABULARIES ("EXACTLY {ready, embedding}", "exactly three
+    38	#     roles", "total over exactly those three"), that the enum's variant SET and
+    39	#     COUNT and its string mappings are exactly the pinned ones — a structural
+    40	#     comparison, NOT a blacklist of the names somebody happened to fear; and
+    41	#   * for BEHAVIOURAL obligations, that THE NAMED TEST WHICH PROVES THAT
+    42	#     BEHAVIOUR STILL EXISTS IN THE TREE **AND IS STILL AN ACTIVE TEST** —
+    43	#     carrying a `#[test]`-family attribute, and not disabled by `#[ignore]` or
+    44	#     `#[cfg(..)]` (fix-5).
+    45	#
+    46	# It does NOT re-execute those behavioural suites, and it therefore does NOT
+    47	# prove the behaviour is still correct — only that the proof has not been
+    48	# deleted, renamed away, or SWITCHED OFF. `cargo test --workspace` is what
+    49	# proves the behaviour; this gate is what notices when the proof disappears,
+    50	# stops running, or when the contract's structural obligations are no longer met.
+    51	#
+    52	# So: it CATCHES a symbol/table/variant that was renamed or removed, a
+    53	# forbidden symbol that reappeared, a named test that was deleted OR quietly
+    54	# disabled, and any edit to the ratified contract. It DOES NOT catch a
+    55	# behavioural regression inside a still-present, still-named, still-running
+    56	# test, nor anything the Memex repo does. Claiming otherwise would be a false
+    57	# assurance — which is the TC-37 failure class in a different costume.
+    58	#
+    59	# ===================== PROBE SCOPE — WHY THE ASYMMETRY =======================
+    60	# fix-3, codex §9 round 3 findings #1 and #2 [P2]. Every NEGATIVE probe used to
+    61	# read ONE FILE — a crate's lib.rs. So a LITERAL, correctly-spelled, fully
+    62	# schema-qualified `CREATE VIRTUAL TABLE main.property_search_index ...` placed in
+    63	# a NEW module beside lib.rs (codex's `fathomdb-engine/src/extra_fts.rs`) exited
+    64	# 0, and so did an `INSERT INTO canonical_attributes ...` in a new schema-crate
+    65	# module. That is not the residual scope below and not a regex-shape problem: it
+    66	# is exactly what this gate claims to catch, in ordinary source text, missed
+    67	# because the check was pointed at the wrong subject. The engine crate ALREADY
+    68	# carries sibling modules (lifecycle.rs, pcache2.rs); "somebody adds a module" is
+    69	# how a crate grows, not an evasion.
+    70	#
+    71	# THE RULE, AND WHY IT IS NOT SYMMETRIC:
+    72	#
+    73	#   * NEGATIVE probes (`absent_tree`) are TREE-scoped, always. A negative
+    74	#     assertion scoped to one file is only as strong as the assumption that
+    75	#     nobody adds a module, and it fails SILENTLY GREEN when that assumption
+    76	#     breaks. There is no file-scoped negative probe kind in this script — the
+    77	#     `("absent", <file>, regex)` kind was DELETED, not left unused, so writing
+    78	#     one again is a deliberate, reviewed act rather than the path of least
+    79	#     effort. scripts/tests/test_check_c1_conformance.sh asserts its absence.
+    80	#
+    81	#   * POSITIVE probes (`present`, `doc_text`) and the STRUCTURAL readers
+    82	#     (`in_item`, `fn_sig`, `fn_defined`, `sql_ddl`, `fts_tokenizer_shared`,
+    83	#     `enum_exact`, `arms_exact`) legitimately stay FILE-scoped. Their failure
+    84	#     mode is the opposite one: a too-narrow positive scope cannot produce a
+    85	#     false green, it produces a false RED by construction. If the symbol, the
+    86	#     enum or the impl block MOVES to a sibling module, the probe finds 0 matches
+    87	#     (or "could not locate a parseable enum") and the gate fails loudly, which
+    88	#     is the safe side. Pinning them to a named file also states WHERE the
+    89	#     contract's structure is expected to live, which is information a tree-wide
+    90	#     search would throw away.
+    91	#
+    92	#   * A CRATE TREE IS THE COMPLETE SCOPE, not merely a wider one, for the Rust
+    93	#     identifier negatives: a variant cannot be added to `enum DenseReadiness` or
+    94	#     `enum ProjectionRole` from outside the crate that declares them.
+    95	#
+    96	# CURRENT INVENTORY (7 negative probes, all tree-scoped; 5 clauses):
+    97	#   src                                     Q4-NO-PROVISIONAL (*.rs);
+    98	#                                           Q6B-NO-ENTITYTYPESPEC ×3 (all text)
+    99	#   fathomdb-schema/src                     Q2-NO-DATA-MIGRATION ×2 (all text)
+   100	#   fathomdb-engine/src                     Q4-DENSE-READINESS ×1 (*.rs),
+   101	#                                           Q6A-THREE-ROLES ×2 (*.rs),
+   102	#                                           Q6B-ID-NON-NULL ×1 (*.rs),
+   103	#                                           TE-CUSTOM-TOKENIZER ×1 (all text)
+   104	# The SQL negatives use exts=None rather than *.rs on purpose: a migration or a
+   105	# DDL carried in a `.sql` file and pulled in with `include_str!` is the same
+   106	# violation. The Rust IDENTIFIER negatives use *.rs, because their subject is
+   107	# Rust syntax and a mention in a neighbouring note would be a pure false RED.
+   108	#
+   109	# ==================== RESIDUAL SCOPE — READ BEFORE ROUND 6 ===================
+   110	# This gate is a STATIC, LEXICAL check over Rust and SQL SOURCE TEXT. That
+   111	# approach has a boundary, and two review rounds were spent tightening regexes
+   112	# against it (fix-1: SQL case/whitespace, and blacklist ⇒ closed vocabulary;
+   113	# fix-2: schema-qualified table names, and spellings admitted outside a simple
+   114	# match arm). Rather than rediscover the boundary again, it is written down here.
+   115	#
+   116	# NOTE THAT FIX-3, FIX-4 AND FIX-5 ARE NOT ON THIS LIST AND DID NOT BELONG ON IT.
+   117	# Round 3 was a bounded SCOPE bug (one file vs the crate tree), round 4 a bounded
+   118	# SUBJECT-BINDING bug (a file vs the named table/struct/enum/function the clause
+   119	# is about), and round 5 two more bounded ones — the WRONG CRATE'S same-named
+   120	# symbol, and a test function that is no longer a test. All three had definite,
+   121	# complete fixes and all three were CLOSED, not documented away. The list below
+   122	# is the set of things a different MECHANISM would be needed for; it is not a
+   123	# place to retire findings to.
+   124	#
+   125	# WHAT THIS GATE IS. A TRIPWIRE AGAINST DRIFT. Its threat model is a FUTURE
+   126	# CONTRIBUTOR who changes as-built code without noticing that a ratified
+   127	# cross-repo contract said otherwise — the ordinary way a `can-i-deploy`
+   128	# precondition rots. It is NOT a proof of conformance and NOT an adversarial
+   129	# control: it cannot stop someone deliberately smuggling a backfill past CI, and
+   130	# nothing assembled out of regexes over source text could.
+   131	#
+   132	# THE CLASSES IT DOES NOT AND CANNOT CATCH, concretely:
+   133	#
+   134	#   1. DYNAMICALLY COMPOSED SQL. The probes read literal source text. A
+   135	#      `format!("INSERT INTO {} SELECT ...", TABLE)`, a `push_str` built from
+   136	#      fragments, or a table name held in a `const`/`static` all reach the
+   137	#      forbidden table while the text this gate reads contains only `{}`.
+   138	#
+   139	#   2. ANOTHER ROUTE TO THE SAME TABLE. `qualified()` closes the SPELLINGS of
+   140	#      the PINNED NAME (`main.canonical_attributes`, `` `main` . x ``, `[main].x`,
+   141	#      any case, any whitespace). It does not close every ROUTE: an ATTACHed
+   142	#      database whose alias is chosen at runtime, a VIEW or an `INSTEAD OF`
+   143	#      TRIGGER that writes the table under a different name, or an
+   144	#      `ALTER TABLE ... RENAME` are all invisible to it.
+   145	#
+   146	#   3. IDENTIFIER INDIRECTION IN RUST. `const PENDING: &str = "pending";` used
+   147	#      in place of a literal defeats the string-literal vocabulary check;
+   148	#      `macro_rules!` / `paste!`-generated enum bodies and impl blocks are never
+   149	#      expanded; `concat_idents!`-style construction defeats the `EntityTypeSpec`
+   150	#      / `id_prefix` negative-space probes; a type alias or a re-export under
+   151	#      another name defeats the identifier probes.
+   152	#
+   153	#   4. CONVERSION SURFACES OUTSIDE THE NAMED FUNCTION. `arms_exact` reads exactly
+   154	#      `impl <Ty> { fn <fn> }`. An `impl FromStr for <Ty>`, a `From<&str>`, or a
+   155	#      free `fn parse_readiness(&str) -> Option<DenseReadiness>` can admit an
+   156	#      extra spelling without touching the block this gate reads. This is the
+   157	#      clearest proof the approach cannot be COMPLETED by widening: a free
+   158	#      function is ordinary Rust, and no impl-scoped check can reach it.
+   159	#
+   160	#   5. NORMALISING COMPARISONS. `value.to_lowercase()`, `.trim()`,
+   161	#      `eq_ignore_ascii_case` widen the accepted vocabulary WITHOUT introducing a
+   162	#      new string literal, so the vocabulary check has nothing to see.
+   163	#
+   164	#   6. CONDITIONAL COMPILATION. Nothing here models `#[cfg(...)]`: text under a
+   165	#      disabled feature reads exactly like shipped code, and a violation
+   166	#      introduced only behind a feature flag reads exactly like one that is
+   167	#      always on. (This class errs RED, not green.)
+   168	#
+   169	#   7. BEHAVIOUR, and THE MEMEX REPO. Stated above: the behavioural clauses
+   170	#      assert only that the NAMED TEST still exists and is still ENABLED, not
+   171	#      that it still proves anything, and 12 contract clauses are CROSS-REPO by
+   172	#      classification and unverifiable from this repo at all.
+   173	#
+   174	#   8. WHAT A NAMED TEST'S BODY ACTUALLY ASSERTS. The strongest form of #7, and
+   175	#      REWRITTEN AT FIX-5 because the version written at fix-4 claimed more
+   176	#      residual than is now true. An over-broad residual is its own dishonesty:
+   177	#      it retires a defect that the gate does in fact catch.
+   178	#
+   179	#      WHAT IS NOW ENFORCED, by `test_defined`, at all four levels a proof can be
+   180	#      switched off at:
+   181	#        THE FUNCTION   it EXISTS as a definition with a parseable body (not a
+   182	#                       comment, not a string literal, not a call); it CARRIES a
+   183	#                       `#[test]`-family attribute; it is NOT disabled by
+   184	#                       `#[ignore]` / `#[cfg(..)]` / `#[cfg_attr(..)]`.
+   185	#        ITS POSITION   it sits at the TOP LEVEL of the integration-test file, so
+   186	#                       no enclosing (possibly `#[cfg]`-gated) item can silence it
+   187	#                       out of this reader's view.
+   188	#        THE FILE       the file's own LEADING HEADER carries no `#![cfg(..)]`
+   189	#                       inner attribute, which would switch every proof in it off
+   190	#                       at once. Read at the header and nowhere else (fix-6): an
+   191	#                       inner attribute inside a nested `mod` belongs to THAT
+   192	#                       module, and reading it as the file's was a false RED.
+   193	#        THE TARGET     the owning crate's Cargo.toml neither sets
+   194	#                       `autotests = false` nor declares a `[[test]]` block for
+   195	#                       that file with `required-features` / `test = false`.
+   196	#
+   197	#      So "delete the proof", "rename it away", "leave only a comment mentioning
+   198	#      it", "drop the `#[test]`", "add an `#[ignore]`", "gate the fn", "gate the
+   199	#      module", "gate the file" and "gate the target" are ALL closed. The middle
+   200	#      two were codex §9 round 5 finding #2; the last four came out of turning
+   201	#      that same question on this patch. The TARGET one is not hypothetical:
+   202	#      fathomdb-engine/Cargo.toml already carries nineteen `[[test]]` blocks with
+   203	#      `required-features`, so it is an established pattern in the very file a
+   204	#      contributor would edit.
+   205	#
+   206	#      WHAT REMAINS, precisely, is three things and no more:
+   207	#        (a) THE BODY'S ASSERTIONS. `fn atomic_flip_never_exposes_ready_without
+   208	#            _the_vector_under_concurrent_write() { assert!(true); }` satisfies
+   209	#            every check above, and so does one whose assertions were commented
+   210	#            out. No lexical check can decide whether a body proves the obligation
+   211	#            its name claims — `cargo test --workspace` EXECUTING it is what does,
+   212	#            it is a required gate, and an emptied body is a visible code diff.
+   213	#        (b) THE CRATE, AND THE INVOCATION. This gate reads source and manifest
+   214	#            TEXT. It does not know whether the crate is still a workspace member,
+   215	#            nor how CI actually invokes cargo (a `--exclude`, a filter argument,
+   216	#            a job that stops running).
+   217	#        (c) `#[cfg]` INSIDE the body — an assertion compiled out while the test
+   218	#            still runs and passes vacuously. This is class #6 again.
+   219	#      ALL THREE need the same different mechanism, and it is one mechanism: ask
+   220	#      the TOOLCHAIN what the built test binaries actually contain and what they
+   221	#      did (`cargo test -- --list`, or `--no-run --message-format=json`), instead
+   222	#      of reading text. See the RECOMMENDATION in the closure JSON.
+   223	#
+   224	# WHICH WAY THE ERRORS FALL. Every ambiguity is resolved toward RED: an
+   225	# unparseable enum body, an impl block the reader cannot find, an unreadable file
+   226	# and a missing tree are all failures (exit 1 / exit 2), never skips; and the
+   227	# text-scoped probes WILL trip on a doc comment or an error message that happens
+   228	# to spell the forbidden thing. Noisy false positives, and false negatives
+   229	# confined to the list above, is the correct bias for a gate that HOLDS A
+   230	# PUBLISH.
+   231	#
+   232	# WHY THIS IS THE RIGHT STOPPING POINT. A stronger mechanism exists and is
+   233	# deliberately NOT built here: asserting the shipped schema against
+   234	# `sqlite_master` at runtime (which sees the table however the SQL was spelled or
+   235	# composed), and/or parsing Rust with `syn` (which sees every conversion surface,
+   236	# macro-expanded). Both are real work with their own maintenance surface, both
+   237	# belong to a slice of their own, and neither is warranted by the threat model
+   238	# above. Recorded as a RECOMMENDATION in
+   239	# dev/plans/runs/0.8.20-slice-30-output.json, not as a defect being deferred.
+   240	#
+
+codex
+The executable change is exactly localized to `file_inner_attrs`. I’m now checking the helper context (`read_source`, comment blanking, test_defined call sites) and running the targeted test script if practical, because the review hinges on whether the new fixtures fail for the intended predicate rather than for any generic rc=1.
+exec
+/bin/bash -lc 'rg -n "def read_source|def rust_code|def rust_view|file_inner_attrs|CONDITIONALLY COMPILED|defect|test_defined" scripts/check-c1-conformance.sh' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+177:#      it retires a defect that the gate does in fact catch.
+179:#      WHAT IS NOW ENFORCED, by `test_defined`, at all four levels a proof can be
+239:# dev/plans/runs/0.8.20-slice-30-output.json, not as a defect being deferred.
+242:# LIST ABOVE is TRUE and is NOT a defect in the patch — it is the documented
+248:# exists" probe is satisfied by a proof that no longer RUNS, is a real defect:
+427:    a `test_defined` probe reads that manifest too, and a path missing from the
+453:#                                      (fix-5); use `test_defined` there
+454:#   ("test_defined", path, fn)         the same, PLUS `fn` is an ACTIVE TEST at
+651:# AND THEN THE SAME QUESTION, TURNED ON THIS PATCH: `test_defined` reads the
+679:# future clause ever cites one, it needs its own `test_defined` equivalent — not
+766:        ("test_defined", T15, "destructive_change_requires_explicit_drop"),
+769:        ("test_defined", T15, "role_add_builds_and_explicit_drop_drops_exactly_one"),
+770:        ("test_defined", T15, "dropping_an_absent_name_is_a_clean_noop"),
+775:        ("test_defined", T15, "idempotent_reregistration_is_a_noop"),
+794:        ("test_defined", T15, "property_filter_returns_correct_rows"),
+795:        ("test_defined", T15, "property_fts_search_returns_correct_rows"),
+900:        ("test_defined", T15, "rankable_is_graceful_deferred_never_blocking"),
+901:        ("test_defined", T15, "idempotent_reregistration_holds_for_deferred_rankable"),
+952:        ("test_defined", T25,
+956:        ("test_defined", T25, "registering_projections_never_alters_a_pre_existing_row_id_space"),
+957:        ("test_defined", T25, "the_internal_structural_row_writer_mints_no_logical_id"),
+966:    # fix-5: and the PROOFS use `test_defined`, not `fn_defined` — a definition
+973:        ("test_defined", T20,
+982:        ("test_defined", T20,
+987:        ("test_defined", T15, "boot_rederive_converges_after_simulated_crash"),
+1032:    # The third probe is SQL, so it carries the SAME defect classes as
+1090:# broken one. `test_defined` is the probe for those, and this makes reaching for
+1107:                "(codex §9 round 5 finding #2). Use `test_defined`."
+1131:                if probe[0] == "test_defined":
+1132:                    # `test_defined` also reads the owning crate's Cargo.toml, to
+1359:def read_source(rel):
+1543:def rust_view(rel):
+1567:def rust_code(rel):
+1837:def file_inner_attrs(rel):
+1951:def cargo_test_target_defect(manifest_rel, stem):
+2108:    """Return a human-readable defect string, or None when the probe holds."""
+2181:        # test is the round-5 #2 defect by construction — it accepts a function
+2189:                "5 finding #2). Use `test_defined`, which asserts the function is an ACTIVE test."
+2199:    if kind == "test_defined":
+2212:        gated_file = [a for a in file_inner_attrs(path)
+2216:                f"the test file {path} is CONDITIONALLY COMPILED as a whole "
+2224:            defect = cargo_test_target_defect(manifest, stem)
+2225:            if defect is not None:
+2226:                return defect
+2257:                    f"`fn {name}` in {path} is a test but is CONDITIONALLY COMPILED "
+2423:        defects = []
+2428:            defects.append(
+2441:            defects.append(
+2450:        if defects:
+2451:            return "\n        - ".join(defects)
+2461:    defects = [d for d in (run_probe(p) for p in ASSERTIONS[clause_id]) if d is not None]
+2463:    if defects:
+2468:            + "".join(f"        - {d}\n" for d in defects)
+
+exec
+/bin/bash -lc "nl -ba scripts/check-c1-conformance.sh | sed -n '1600,1905p'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+  1600	        return None
+  1601	    body = brace_body(code, match.end() - 1)
+  1602	    if body is None:
+  1603	        return None
+  1604	    body = re.sub(r"#\[[^\]]*\]", " ", body)
+  1605	    chunks, depth, current = [], 0, ""
+  1606	    for char in body:
+  1607	        if char in "({[":
+  1608	            depth += 1
+  1609	        elif char in ")}]":
+  1610	            depth -= 1
+  1611	        if char == "," and depth == 0:
+  1612	            chunks.append(current)
+  1613	            current = ""
+  1614	        else:
+  1615	            current += char
+  1616	    chunks.append(current)
+  1617	    variants = []
+  1618	    for chunk in chunks:
+  1619	        chunk = chunk.strip()
+  1620	        if not chunk:
+  1621	            continue
+  1622	        name = re.match(r"([A-Za-z_][A-Za-z0-9_]*)", chunk)
+  1623	        if name is None:
+  1624	            return None
+  1625	        variants.append(name.group(1))
+  1626	    return variants
+  1627	
+  1628	
+  1629	def fn_body(rel, ty, fn):
+  1630	    """Body of `fn` inside `impl ty { ... }`; None if either is absent.
+  1631	
+  1632	    Located in the blanked CODE view, returned FROM the view that still carries
+  1633	    the string literals — `arms_exact`'s whole subject is those literals, and a
+  1634	    blanked body would report every vocabulary as empty (a false green of the
+  1635	    worst kind). The two views have identical offsets by construction.
+  1636	    """
+  1637	    code, raw = rust_code(rel), rust_view(rel)
+  1638	    for match in re.finditer(r"\bimpl\s+" + re.escape(ty) + r"\s*\{", code):
+  1639	        code_block = brace_body(code, match.end() - 1)
+  1640	        raw_block = brace_body(code, match.end() - 1, source=raw)
+  1641	        if code_block is None or raw_block is None:
+  1642	            continue
+  1643	        inner = re.search(r"\bfn\s+" + re.escape(fn) + r"\b[^{;]*\{", code_block)
+  1644	        if inner is None:
+  1645	            continue
+  1646	        body = brace_body(code_block, inner.end() - 1, source=raw_block)
+  1647	        if body is not None:
+  1648	            return body
+  1649	    return None
+  1650	
+  1651	
+  1652	_STRING_LIT = r'"(?:[^"\\]|\\.)*"'
+  1653	_STRING_CAP = r'"((?:[^"\\]|\\.)*)"'
+  1654	
+  1655	
+  1656	def arm_pairs(body, ty):
+  1657	    """Every (variant, string) match arm in `body`, both directions, sorted.
+  1658	
+  1659	    A LIST, not a dict: two arms mapping the same variant to two different
+  1660	    spellings is itself a vocabulary that is not closed, and collapsing them
+  1661	    into a dict would hide exactly that.
+  1662	
+  1663	    OR-PATTERNS are expanded (fix-2, codex §9 round 2 finding #3): in
+  1664	    `"vector" | "searchable" => Some(Ty::Searchable)` only the LAST alternative
+  1665	    sits immediately before the `=>`, so a single-literal pattern harvested the
+  1666	    pinned pair and reported the vocabulary as exact while the arm accepted a
+  1667	    second token. Each alternative now yields its own pair, in BOTH directions.
+  1668	    """
+  1669	    who = r"(?:Self|" + re.escape(ty) + r")"
+  1670	    variant = who + r"::[A-Za-z_]\w*"
+  1671	    pairs = []
+  1672	    # [Ty::A |] Ty::B => "s"
+  1673	    for match in re.finditer(
+  1674	        r"((?:" + variant + r"\s*\|\s*)*" + variant + r")\s*=>\s*" + _STRING_CAP, body
+  1675	    ):
+  1676	        for name in re.findall(who + r"::([A-Za-z_]\w*)", match.group(1)):
+  1677	            pairs.append((name, match.group(2)))
+  1678	    # ["a" |] "b" => Some(Ty::A)
+  1679	    for match in re.finditer(
+  1680	        r"((?:" + _STRING_LIT + r"\s*\|\s*)*" + _STRING_LIT + r")\s*=>\s*Some\("
+  1681	        + who + r"::([A-Za-z_]\w*)\)",
+  1682	        body,
+  1683	    ):
+  1684	        for spelling in re.findall(_STRING_CAP, match.group(1)):
+  1685	            pairs.append((match.group(2), spelling))
+  1686	    return sorted(pairs)
+  1687	
+  1688	
+  1689	def body_strings(body):
+  1690	    """Every string literal appearing anywhere in `body`.
+  1691	
+  1692	    The NEGATIVE half of the closed-vocabulary check (fix-2, codex §9 round 2
+  1693	    finding #3). Expanding or-patterns closes ONE extra syntax; it does not close
+  1694	    the general case, because a token can be admitted by syntax that never forms
+  1695	    a match arm at all — an `if value == "pending" { return Some(..) }` guard
+  1696	    before the match, a `matches!`, a `starts_with`. Rather than enumerate those
+  1697	    forms (an open set — the same asymptote this gate has now been asked to chase
+  1698	    twice), the check is inverted: inside a function whose whole job is to map a
+  1699	    CLOSED vocabulary, EVERY string literal must be one of the pinned spellings.
+  1700	
+  1701	    Consequence, stated plainly: a legitimate non-vocabulary literal added to one
+  1702	    of these three tiny functions (an error message, say) turns the gate RED. It
+  1703	    is a false RED — the safe side of a publish-precondition gate, and the same
+  1704	    trade already documented for the SQL text probes. What it is NOT is the
+  1705	    silent green it replaces.
+  1706	    """
+  1707	    return [m.group(1) for m in re.finditer(_STRING_CAP, body)]
+  1708	
+  1709	
+  1710	# ---------------------------------------------------------------------------
+  1711	# SUBJECT-BOUND READERS (fix-4). Each locates THE NAMED SUBJECT and hands back
+  1712	# its text, so the clause assertion is evaluated against that subject rather than
+  1713	# against the whole file. Everything they cannot locate is reported as a CLAUSE
+  1714	# DEFECT (exit 1), never skipped — the same stance `enum_exact` has taken since
+  1715	# fix-1.
+  1716	# ---------------------------------------------------------------------------
+  1717	def rust_items(rel, kw, name):
+  1718	    """Brace bodies of every `<kw> <name>` item declared in a Rust source file.
+  1719	
+  1720	    `kw` is one of struct / enum / impl / fn. LOCATED in the blanked CODE view
+  1721	    (fix-4b — a `{ }` inside a string literal is not a declaration) and RETURNED
+  1722	    from the view that still carries the literals, because some probes are about
+  1723	    a literal inside the item (`DenseReadiness::Ready => "ready",`). A body that
+  1724	    cannot be brace-matched is dropped, which surfaces as "could not locate" at
+  1725	    the call site — i.e. RED, not a silent pass.
+  1726	    """
+  1727	    code, raw = rust_code(rel), rust_view(rel)
+  1728	    bodies = []
+  1729	    for match in re.finditer(r"\b" + kw + r"\s+" + re.escape(name) + r"\b[^{;]*\{", code):
+  1730	        body = brace_body(code, match.end() - 1, source=raw)
+  1731	        if body is not None:
+  1732	            bodies.append(body)
+  1733	    return bodies
+  1734	
+  1735	
+  1736	def fn_signatures(rel, name):
+  1737	    """The signature text (params + return type) of every `fn <name>`."""
+  1738	    code = rust_code(rel)
+  1739	    return [m.group(1) for m in
+  1740	            re.finditer(r"\bfn\s+" + re.escape(name) + r"\b([^{;]*)\{", code)]
+  1741	
+  1742	
+  1743	# ---------------------------------------------------------------------------
+  1744	# ATTRIBUTE READING (fix-5). "The named proof still exists" is worth nothing if
+  1745	# the proof no longer RUNS: deleting `#[test]` or adding `#[ignore]` leaves a
+  1746	# plain function of the same name, which every `fn <name>` reader accepts while
+  1747	# `cargo test` quietly stops executing it. That is the TC-37 evaporation shape
+  1748	# this gate exists to close, so the ATTRIBUTES are read too.
+  1749	#
+  1750	# Everything below reads the blanked CODE view, so an attribute spelled inside a
+  1751	# string literal or a comment is not an attribute — the same rule as every other
+  1752	# reader here.
+  1753	# ---------------------------------------------------------------------------
+  1754	_FN_MODIFIERS = {"pub", "async", "unsafe", "const", "extern", "default"}
+  1755	
+  1756	
+  1757	def _attrs_before(code, index):
+  1758	    """Every `#[..]` attribute attached to the item whose keyword sits at `index`.
+  1759	
+  1760	    Walks BACKWARDS over the item's modifiers (`pub`, `pub(crate)`, `async`,
+  1761	    `unsafe`, `const`, `extern`) and then over any run of outer attributes.
+  1762	    Returns them OUTERMOST-LAST; order does not matter to the caller. `#![..]`
+  1763	    (an INNER attribute) terminates the walk: it belongs to the enclosing module,
+  1764	    not to this item.
+  1765	
+  1766	    Erring: anything this cannot parse simply ends the walk, which yields FEWER
+  1767	    attributes and therefore a RED verdict — the safe side.
+  1768	    """
+  1769	    i = index
+  1770	    # 1. back up over the fn's modifiers.
+  1771	    while True:
+  1772	        j = i
+  1773	        while j > 0 and code[j - 1].isspace():
+  1774	            j -= 1
+  1775	        if j == 0:
+  1776	            i = j
+  1777	            break
+  1778	        if code[j - 1] == ")":                      # pub(crate) / pub(in ..)
+  1779	            depth, k = 0, j - 1
+  1780	            while k >= 0:
+  1781	                if code[k] == ")":
+  1782	                    depth += 1
+  1783	                elif code[k] == "(":
+  1784	                    depth -= 1
+  1785	                    if depth == 0:
+  1786	                        break
+  1787	                k -= 1
+  1788	            word = re.search(r"([A-Za-z_]\w*)\s*$", code[:k]) if k >= 0 else None
+  1789	            if word is not None and word.group(1) == "pub":
+  1790	                i = word.start(1)
+  1791	                continue
+  1792	            i = j
+  1793	            break
+  1794	        word = re.search(r"([A-Za-z_]\w*)\s*$", code[:j])
+  1795	        if word is not None and word.group(1) in _FN_MODIFIERS:
+  1796	            i = word.start(1)
+  1797	            continue
+  1798	        i = j
+  1799	        break
+  1800	    # 2. consume the run of outer attributes above it.
+  1801	    attrs = []
+  1802	    while True:
+  1803	        j = i
+  1804	        while j > 0 and code[j - 1].isspace():
+  1805	            j -= 1
+  1806	        if j == 0 or code[j - 1] != "]":
+  1807	            break
+  1808	        depth, k = 0, j - 1
+  1809	        while k >= 0:
+  1810	            if code[k] == "]":
+  1811	                depth += 1
+  1812	            elif code[k] == "[":
+  1813	                depth -= 1
+  1814	                if depth == 0:
+  1815	                    break
+  1816	            k -= 1
+  1817	        if k < 1 or code[k - 1] != "#":
+  1818	            break
+  1819	        if code[k + 1:k + 2] == "!":                # inner attribute: not ours
+  1820	            break
+  1821	        attrs.append(code[k - 1:j])
+  1822	        i = k - 1
+  1823	    return attrs
+  1824	
+  1825	
+  1826	def attr_path(attr):
+  1827	    """The dotted path an attribute names: `#[tokio::test]` -> 'tokio::test',
+  1828	    `#[ignore = "why"]` -> 'ignore', `#[cfg(feature = "x")]` -> 'cfg'. None when
+  1829	    the attribute is not a simple path (a bare literal, say)."""
+  1830	    inner = attr[2:-1].strip()
+  1831	    match = re.match(r"([A-Za-z_]\w*(?:\s*::\s*[A-Za-z_]\w*)*)", inner)
+  1832	    if match is None:
+  1833	        return None
+  1834	    return "::".join(part.strip() for part in match.group(1).split("::"))
+  1835	
+  1836	
+  1837	def file_inner_attrs(rel):
+  1838	    """The `#![..]` INNER attribute paths in a Rust file's OWN LEADING HEADER.
+  1839	
+  1840	    A `#![cfg(..)]` there switches the WHOLE FILE off, which for an integration
+  1841	    test means every proof in it stops running while each one still reads as a
+  1842	    perfectly ordinary `#[test]`.
+  1843	
+  1844	    "IN THE HEADER" IS LOAD-BEARING (fix-6, codex §9 round 6 finding #2). This
+  1845	    used to scan the whole file for `#![`, but Rust permits an inner attribute at
+  1846	    the head of ANY braced item, and `mod helpers { #![cfg(feature = "x")] .. }`
+  1847	    is ordinary, legal, and switches off THAT MODULE alone. Reading one of those
+  1848	    as "the whole test file is conditionally compiled" turns this gate RED and
+  1849	    blocks CI and `preflight.sh --landing` while every top-level pinned proof
+  1850	    still builds and runs — a FALSE RED, which on a publish precondition is its
+  1851	    own failure mode, not the safe side.
+  1852	
+  1853	    So the walk starts at the top of the file and stops at the first thing that
+  1854	    is neither whitespace nor an inner attribute — i.e. at the first item. That
+  1855	    leading run IS the file header, and it is the only place a FILE-level inner
+  1856	    attribute may legally appear, so narrowing to it gives up nothing: a genuine
+  1857	    `#![cfg(..)]` is still found when it sits alone at the head, after other
+  1858	    leading inner attributes, or after a `//!` doc header (comments, `//!`
+  1859	    included, are already blanked to spaces by `rust_view`, so a doc header does
+  1860	    not end the run).
+  1861	
+  1862	    A LEADING SHEBANG IS PART OF THAT HEADER AND IS SKIPPED FIRST (fix-6b, codex
+  1863	    §9 round 6 RE-REVIEW of the fix-6 patch — a regression the narrowing itself
+  1864	    opened). A Rust source file may legally begin with `#!/usr/bin/env ..`, which
+  1865	    is not `#![`, so the walk ended at byte 0 and never saw a file-level
+  1866	    `#![cfg(..)]` on the NEXT line: the whole test file compiled out, gate green.
+  1867	    `rustc --test` on shebang + `#![cfg(feature = "nope")]` + `#[test] fn t() {}`
+  1868	    builds and `--list` reports `0 tests`. rustc's own rule is followed exactly:
+  1869	    ONLY the very first line can be a shebang, and it is one only when the file
+  1870	    starts with `#!` whose next character is NOT `[` — `#![..]` at byte 0 is an
+  1871	    inner attribute, not a shebang. The rest of that first line is skipped and
+  1872	    the leading-attribute walk resumes, so an attribute run after a shebang is
+  1873	    still read (and the nested-module false RED above stays closed).
+  1874	
+  1875	    A LEADING UTF-8 BOM IS ALSO PART OF THAT HEADER AND IS SKIPPED FIRST OF ALL
+  1876	    (fix-6c, the COMPLETION of that same finding #2 — its scope is the file's own
+  1877	    leading inner attributes, and a BOM-prefixed one is one of them). `read_source`
+  1878	    decodes with `errors="replace"`, which does NOT strip a byte-order mark, so a
+  1879	    BOM arrives here as U+FEFF at index 0 and defeated the walk three ways at once:
+  1880	    it is not `#!`, so the shebang branch was skipped; `"﻿".isspace()` is False in
+  1881	    Python 3 — U+FEFF is category Cf, a FORMAT character, not whitespace — so the
+  1882	    whitespace skip did not advance past it; and it is not `#![`, so the walk broke
+  1883	    at byte 0 and never saw a file-level `#![cfg(..)]` on that very line. Same false
+  1884	    green as the shebang hole, through a different first byte: `rustc --test` on
+  1885	    bytes `ef bb bf` + `#![cfg(feature = "nope")]` + `#[test] fn t() {}` builds and
+  1886	    `--list` reports `0 tests`, while the same file without the cfg reports `1 test`.
+  1887	    rustc's ordering is followed exactly — it strips ONE leading BOM, and only THEN
+  1888	    may the first line be a shebang — so this skip runs BEFORE the shebang branch
+  1889	    and BOM + shebang + `#![cfg(..)]` is read too. The strip is local to this walk;
+  1890	    `read_source` is deliberately left alone so no other probe's view changes. Only
+  1891	    ONE BOM is stripped, as rustc does: a second U+FEFF is not a header byte.
+  1892	    """
+  1893	    code = rust_code(rel)
+  1894	    if code[:1] == "﻿":                     # ONE leading BOM, stripped as rustc does
+  1895	        code = code[1:]
+  1896	    found, i, n = [], 0, len(code)
+  1897	    if code[:2] == "#!" and code[2:3] != "[":       # a shebang line, not an attr
+  1898	        end = code.find("\n")
+  1899	        i = n if end == -1 else end + 1
+  1900	    while True:
+  1901	        while i < n and code[i].isspace():
+  1902	            i += 1
+  1903	        if code[i:i + 3] != "#![":
+  1904	            break
+  1905	        depth, j = 0, i + 2
+
+exec
+/bin/bash -lc "nl -ba scripts/tests/test_check_c1_conformance.sh | sed -n '1720,1885p'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+  1720	PY
+  1721	  run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$MIRROR_ROOT"
+  1722	  expect_rc 0 "the receiver spelled \`$SPELLING\` is still a receiver (no false RED)"
+  1723	done
+  1724	
+  1725	# === Arm 12aj (fix-6): A NESTED MODULE'S INNER ATTRIBUTE IS NOT THE FILE'S ====
+  1726	# codex §9 round 6 finding #2, and THE DIRECTION IS INVERTED versus every other
+  1727	# arm above: this fixture must exit 0. It is a FALSE RED that this arm guards.
+  1728	#
+  1729	# The fix-5 SWEEP taught `test_defined` that a file-level `#![cfg(..)]` switches
+  1730	# every proof in a file off (arm 12ah-2). The reader it used scanned the WHOLE
+  1731	# file for `#![`, and Rust permits an inner attribute at the head of ANY braced
+  1732	# item — `mod helpers { #![cfg(feature = "x")] .. }` is ordinary, legal, and
+  1733	# switches off THAT MODULE alone. One of those in a pinned test file made the
+  1734	# gate report the whole integration test as conditionally compiled: exit 1, CI
+  1735	# and `preflight.sh --landing` blocked, with every top-level pinned proof still
+  1736	# building and running. No such module exists in the tree today; this arm is here
+  1737	# so the first one to arrive does not stop the release.
+  1738	NESTED_INNER_ATTR_ROOT="$(make_root nested-module-inner-attr)"
+  1739	cat >>"$NESTED_INNER_ATTR_ROOT/src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs" <<'RS'
+  1740	
+  1741	// Fixture only (fix-6). A perfectly legal nested module carrying its OWN inner
+  1742	// attribute. Every pinned top-level test above is untouched and still runs.
+  1743	mod helpers {
+  1744	    #![cfg(feature = "never-enabled")]
+  1745	    pub fn h() {}
+  1746	}
+  1747	RS
+  1748	run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$NESTED_INNER_ATTR_ROOT"
+  1749	expect_rc 0 "a NESTED module's own inner \`#![cfg(..)]\` does NOT gate the pinned test file"
+  1750	expect_out 'ok +c1-contract-conformance' "the nested-inner-attribute root still reports ok"
+  1751	expect_no_out 'CONDITIONALLY COMPILED as a whole' \
+  1752	  "the nested-inner-attribute root is not reported as a wholly cfg-gated file"
+  1753	
+  1754	# THE MIRROR ARMS, so narrowing the scan cannot overshoot into a false GREEN. A
+  1755	# GENUINE file-level `#![cfg(..)]` must still be RED — including one that is not
+  1756	# the FIRST thing in the header. Rust allows a run of inner attributes at the top
+  1757	# of a file, and a `//!` doc header above them; both are still file level.
+  1758	#   (a) alone, at the very head of the same pinned file;
+  1759	#   (b) after another leading inner attribute;
+  1760	#   (c) after a leading `//!` doc comment.
+  1761	IDX=0
+  1762	for HEAD in \
+  1763	  '#![cfg(feature = "never-enabled")]' \
+  1764	  '#![allow(dead_code)]
+  1765	#![cfg(feature = "never-enabled")]' \
+  1766	  '//! Fixture only (fix-6): a doc header does not stop the next attribute being
+  1767	//! a FILE-level one.
+  1768	#![cfg(feature = "never-enabled")]'; do
+  1769	  IDX=$((IDX + 1))
+  1770	  HEAD_ROOT="$(make_root "file-cfg-in-header-$IDX")"
+  1771	  python3 - "$HEAD_ROOT/src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs" "$HEAD" <<'PY'
+  1772	import sys
+  1773	p, head = sys.argv[1], sys.argv[2]
+  1774	text = open(p, encoding="utf-8").read()
+  1775	open(p, "w", encoding="utf-8").write(head + "\n" + text)
+  1776	PY
+  1777	  run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$HEAD_ROOT"
+  1778	  expect_rc 1 "a FILE-level #![cfg(..)] in the header (form $IDX) still HARD-fails the file's clauses"
+  1779	  expect_out 'C1-Q3-DESTRUCTIVE-DELTA' "header-cfg form $IDX NAMES a clause proved in that file"
+  1780	  expect_out 'CONDITIONALLY COMPILED as a whole' "header-cfg form $IDX says the whole file is gated"
+  1781	done
+  1782	
+  1783	# === Arm 12ak (RED, fix-6b): A LEADING SHEBANG IS PART OF THE HEADER =========
+  1784	# codex §9 round 6 RE-REVIEW, and this one is a regression THE FIX-6 PATCH ABOVE
+  1785	# OPENED. Narrowing the file-level `#![..]` scan to the file's LEADING HEADER
+  1786	# (arm 12aj) closed the nested-module false RED, but the new walk stops at the
+  1787	# first byte that is neither whitespace nor `#![` — and a Rust source file may
+  1788	# legally BEGIN WITH A SHEBANG. `#!/usr/bin/env rust-script` is not `#![`, so the
+  1789	# walk ended at byte 0 and a file-level `#![cfg(..)]` on the NEXT line was never
+  1790	# seen: exit 0 on a pinned test file whose every proof is compiled out. codex
+  1791	# proved it with the toolchain, not by reading — `rustc --test` on
+  1792	# shebang + `#![cfg(feature = "nope")]` + `#[test] fn t() {}` builds, and
+  1793	# `--list` reports `0 tests`.
+  1794	#
+  1795	# The pre-fix-6 whole-file scan caught this. These arms keep BOTH directions
+  1796	# closed at once: the shebang must not hide a file-level `#![cfg(..)]` (12ak-1,
+  1797	# 12ak-3, rc=1) and must not by itself gate anything (12ak-2, rc=0). The nested
+  1798	# module mirror — the false RED fix-6 closed — is arm 12aj above and is NOT
+  1799	# duplicated here; it must stay rc=0 for this repair to be in scope.
+  1800	#
+  1801	# 12ak-1 — codex's own demonstration: a shebang line, then a genuine file-level
+  1802	# `#![cfg(..)]`. Same subject file as the 12aj mirror arms, so the only variable
+  1803	# against them is the shebang.
+  1804	SHEBANG_CFG_ROOT="$(make_root shebang-hides-file-cfg)"
+  1805	python3 - "$SHEBANG_CFG_ROOT/src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs" <<'PY'
+  1806	import sys
+  1807	p = sys.argv[1]
+  1808	text = open(p, encoding="utf-8").read()
+  1809	open(p, "w", encoding="utf-8").write(
+  1810	    "#!/usr/bin/env rust-script\n"
+  1811	    '#![cfg(feature = "never-enabled")]\n' + text
+  1812	)
+  1813	PY
+  1814	run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$SHEBANG_CFG_ROOT"
+  1815	expect_rc 1 "a file-level #![cfg(..)] hidden behind a leading SHEBANG still HARD-fails the file's clauses"
+  1816	expect_out 'C1-Q3-DESTRUCTIVE-DELTA' "the shebang-hidden file-cfg failure NAMES a clause proved in that file"
+  1817	expect_out 'CONDITIONALLY COMPILED as a whole' \
+  1818	  "the shebang-hidden file-cfg failure says the whole file is gated"
+  1819	expect_routes_to_steward "the shebang-hidden file-cfg failure"
+  1820	
+  1821	# 12ak-2 — THE MIRROR, so skipping the shebang cannot overshoot: a shebang ALONE
+  1822	# gates nothing, and a file that grows one must not turn the gate RED.
+  1823	SHEBANG_ONLY_ROOT="$(make_root shebang-only)"
+  1824	python3 - "$SHEBANG_ONLY_ROOT/src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs" <<'PY'
+  1825	import sys
+  1826	p = sys.argv[1]
+  1827	text = open(p, encoding="utf-8").read()
+  1828	open(p, "w", encoding="utf-8").write("#!/usr/bin/env rust-script\n" + text)
+  1829	PY
+  1830	run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$SHEBANG_ONLY_ROOT"
+  1831	expect_rc 0 "a leading SHEBANG on its own does NOT gate the pinned test file"
+  1832	expect_out 'ok +c1-contract-conformance' "the shebang-only root still reports ok"
+  1833	expect_no_out 'CONDITIONALLY COMPILED as a whole' \
+  1834	  "the shebang-only root is not reported as a wholly cfg-gated file"
+  1835	
+  1836	# 12ak-3 — the walk must RESUME after the shebang, not merely skip one line: a
+  1837	# shebang, then an unrelated inner attribute, then the `#![cfg(..)]`.
+  1838	SHEBANG_RUN_ROOT="$(make_root shebang-then-attr-run)"
+  1839	python3 - "$SHEBANG_RUN_ROOT/src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs" <<'PY'
+  1840	import sys
+  1841	p = sys.argv[1]
+  1842	text = open(p, encoding="utf-8").read()
+  1843	open(p, "w", encoding="utf-8").write(
+  1844	    "#!/usr/bin/env rust-script\n"
+  1845	    "#![allow(dead_code)]\n"
+  1846	    '#![cfg(feature = "never-enabled")]\n' + text
+  1847	)
+  1848	PY
+  1849	run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$SHEBANG_RUN_ROOT"
+  1850	expect_rc 1 "a #![cfg(..)] after a shebang AND another inner attribute still HARD-fails"
+  1851	expect_out 'C1-Q3-DESTRUCTIVE-DELTA' "the shebang+attr-run failure NAMES a clause proved in that file"
+  1852	expect_out 'CONDITIONALLY COMPILED as a whole' \
+  1853	  "the shebang+attr-run failure says the whole file is gated"
+  1854	
+  1855	# === Arm 12al (RED, fix-6c): A LEADING UTF-8 BOM IS PART OF THE HEADER =======
+  1856	# The completion of codex §9 round-6 finding #2, whose scope is "the file's own
+  1857	# leading inner attributes" — and a BOM-prefixed inner attribute is one. Exactly
+  1858	# the SHEBANG hole of 12ak, through a different first byte.
+  1859	#
+  1860	# `read_source` decodes bytes with `.decode("utf-8", errors="replace")`, which
+  1861	# does NOT strip a byte-order mark, so a BOM survives into the scanned text as
+  1862	# U+FEFF at index 0. The leading-header walk then fails three ways at once:
+  1863	# `code[:2] == "#!"` is False so the shebang branch is skipped; `"﻿"
+  1864	# .isspace()` is False in Python 3 (it is category Cf, a FORMAT character, not
+  1865	# whitespace) so the whitespace skip does not advance past it; and
+  1866	# `code[0:3] != "#!["` so the walk breaks at byte 0. A file-level `#![cfg(..)]`
+  1867	# on the very same line is never seen — every proof in a pinned test file is
+  1868	# compiled out and the gate exits 0. A false GREEN of exactly the 12ak class.
+  1869	#
+  1870	# Proved with the toolchain, not by reading. `rustc --test` on a file whose
+  1871	# bytes begin ef bb bf, then `#![cfg(feature = "nope")]` + `#[test] fn t() {}`,
+  1872	# builds and `--list` reports `0 tests`; the same file WITHOUT the cfg reports
+  1873	# `1 test`, so it is the cfg that empties it and not the BOM. rustc strips ONE
+  1874	# leading BOM and only then may the first line be a shebang, so BOM + shebang +
+  1875	# `#![cfg(..)]` also builds to `0 tests` — hence 12al-3, and hence the BOM skip
+  1876	# belongs BEFORE the shebang branch rather than after it.
+  1877	#
+  1878	# Reachability is ZERO today: no tracked source file carries a BOM. So was the
+  1879	# shebang hole when 12ak was written. These arms hold both directions, as 12ak
+  1880	# does: a BOM must not hide a file-level `#![cfg(..)]` (12al-1, 12al-3, rc=1)
+  1881	# and must not by itself gate anything (12al-2, rc=0).
+  1882	#
+  1883	# 12al-1 — a BOM, then a genuine file-level `#![cfg(..)]` on the same line. Same
+  1884	# subject file as the 12aj/12ak mirrors, so the BOM is the only variable.
+  1885	BOM_CFG_ROOT="$(make_root bom-hides-file-cfg)"
+
+exec
+/bin/bash -lc "nl -ba scripts/tests/test_check_c1_conformance.sh | sed -n '1883,1945p'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+  1883	# 12al-1 — a BOM, then a genuine file-level `#![cfg(..)]` on the same line. Same
+  1884	# subject file as the 12aj/12ak mirrors, so the BOM is the only variable.
+  1885	BOM_CFG_ROOT="$(make_root bom-hides-file-cfg)"
+  1886	python3 - "$BOM_CFG_ROOT/src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs" <<'PY'
+  1887	import sys
+  1888	p = sys.argv[1]
+  1889	text = open(p, encoding="utf-8").read()
+  1890	open(p, "w", encoding="utf-8").write(
+  1891	    "﻿"
+  1892	    '#![cfg(feature = "never-enabled")]\n' + text
+  1893	)
+  1894	PY
+  1895	run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$BOM_CFG_ROOT"
+  1896	expect_rc 1 "a file-level #![cfg(..)] hidden behind a leading UTF-8 BOM still HARD-fails the file's clauses"
+  1897	expect_out 'C1-Q3-DESTRUCTIVE-DELTA' "the BOM-hidden file-cfg failure NAMES a clause proved in that file"
+  1898	expect_out 'CONDITIONALLY COMPILED as a whole' \
+  1899	  "the BOM-hidden file-cfg failure says the whole file is gated"
+  1900	expect_routes_to_steward "the BOM-hidden file-cfg failure"
+  1901	
+  1902	# 12al-2 — THE MIRROR, so skipping the BOM cannot overshoot: a BOM ALONE gates
+  1903	# nothing, and a file that grows one (an editor's "UTF-8 with signature") must
+  1904	# not turn the gate RED.
+  1905	BOM_ONLY_ROOT="$(make_root bom-only)"
+  1906	python3 - "$BOM_ONLY_ROOT/src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs" <<'PY'
+  1907	import sys
+  1908	p = sys.argv[1]
+  1909	text = open(p, encoding="utf-8").read()
+  1910	open(p, "w", encoding="utf-8").write("﻿" + text)
+  1911	PY
+  1912	run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$BOM_ONLY_ROOT"
+  1913	expect_rc 0 "a leading UTF-8 BOM on its own does NOT gate the pinned test file"
+  1914	expect_out 'ok +c1-contract-conformance' "the BOM-only root still reports ok"
+  1915	expect_no_out 'CONDITIONALLY COMPILED as a whole' \
+  1916	  "the BOM-only root is not reported as a wholly cfg-gated file"
+  1917	
+  1918	# 12al-3 — rustc's ORDER: one BOM is stripped, and only THEN may the first line
+  1919	# be a shebang. So a BOM followed by a shebang followed by the `#![cfg(..)]` is
+  1920	# a real, buildable file with zero tests, and the BOM skip must run BEFORE the
+  1921	# shebang branch for the walk to reach that attribute at all.
+  1922	BOM_SHEBANG_ROOT="$(make_root bom-then-shebang)"
+  1923	python3 - "$BOM_SHEBANG_ROOT/src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs" <<'PY'
+  1924	import sys
+  1925	p = sys.argv[1]
+  1926	text = open(p, encoding="utf-8").read()
+  1927	open(p, "w", encoding="utf-8").write(
+  1928	    "﻿"
+  1929	    "#!/usr/bin/env rust-script\n"
+  1930	    '#![cfg(feature = "never-enabled")]\n' + text
+  1931	)
+  1932	PY
+  1933	run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$BOM_SHEBANG_ROOT"
+  1934	expect_rc 1 "a #![cfg(..)] behind a BOM AND a shebang still HARD-fails"
+  1935	expect_out 'C1-Q3-DESTRUCTIVE-DELTA' "the BOM+shebang failure NAMES a clause proved in that file"
+  1936	expect_out 'CONDITIONALLY COMPILED as a whole' \
+  1937	  "the BOM+shebang failure says the whole file is gated"
+  1938	
+  1939	# === Arm 13 (RED): a source file an assertion reads is MISSING ===============
+  1940	# TC-37 evaporation path #4: the assertion could not be EVALUATED. That is
+  1941	# neither a pass (0) nor a clause failure (1) — the gate computed no verdict.
+  1942	GONE_ROOT="$(make_root file-missing)"
+  1943	rm -f "$GONE_ROOT/src/rust/crates/fathomdb-schema/src/lib.rs"
+  1944	run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$GONE_ROOT"
+  1945	expect_rc 2 "a MISSING source file exits 2 (TC-37 #4) — not 0 and not 1"
+
+exec
+/bin/bash -lc "nl -ba scripts/check-c1-conformance.sh | sed -n '1348,1580p;2190,2230p'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 0ms:
+  1348	        print(
+  1349	            "NOTE  c1-contract-conformance: the contract's normalized text is IDENTICAL — this is "
+  1350	            "a WHITESPACE/FORMATTING-ONLY change. It still fails, deliberately: the pin is a "
+  1351	            "CONTENT hash over the document's raw bytes, because a 'harmless reformat' is the "
+  1352	            "ideal cover for a clause quietly reworded on an adjacent line."
+  1353	        )
+  1354	
+  1355	# ------------------------------------------------- the clause assertions ----
+  1356	_file_cache = {}
+  1357	
+  1358	
+  1359	def read_source(rel):
+  1360	    """Read a root-relative source file. Unreadable ⇒ TC-37 path #4 (exit 2)."""
+  1361	    if rel in _file_cache:
+  1362	        return _file_cache[rel]
+  1363	    path = os.path.join(ROOT, rel)
+  1364	    try:
+  1365	        with open(path, "rb") as fh:
+  1366	            text = fh.read().decode("utf-8", errors="replace")
+  1367	    except OSError as exc:
+  1368	        die_env(
+  1369	            f"cannot read {rel} under --root {ROOT}: {exc} — a clause assertion could not be "
+  1370	            "EVALUATED. That is neither a pass nor a clause failure (TC-37 evaporation path #4): "
+  1371	            "the gate computed no verdict for that clause, so it refuses to report one. Point "
+  1372	            "--root at a complete source tree, or restore the file."
+  1373	        )
+  1374	    _file_cache[rel] = text
+  1375	    return text
+  1376	
+  1377	
+  1378	_tree_cache = {}
+  1379	
+  1380	
+  1381	def walk_tree(rel, exts):
+  1382	    """Every (path, text) text file under a root-relative tree, as a LIST.
+  1383	
+  1384	    TC-37 path #4 FOR A TREE-SCOPED SUBJECT (fix-3). Once a probe's subject is a
+  1385	    TREE rather than a FILE, "missing" needs a definition, and there are two
+  1386	    ways a tree can fail to be a subject:
+  1387	
+  1388	      * THE DIRECTORY IS ABSENT. Unambiguous: the assertion could not be
+  1389	        evaluated at all. exit 2, as it always has been.
+  1390	      * THE DIRECTORY YIELDS NO CANDIDATE FILE (it is empty, or holds nothing
+  1391	        matching `exts`, or only binaries). Judgement call, decided this way: a
+  1392	        NEGATIVE assertion that examined ZERO files is trivially satisfiable and
+  1393	        would report "no violation found" having looked at nothing. That is the
+  1394	        vacuous pass in its purest form, and it is what a renamed/moved crate
+  1395	        leaves behind. exit 2.
+  1396	
+  1397	    A LIST rather than a generator, because "examined nothing" can only be known
+  1398	    after the walk finishes, and a caller that returns early on the first match
+  1399	    would never let a generator get there. Cached per (tree, exts): the three
+  1400	    negative-space probes of C1-Q6B share one walk of src/, and the whole scan
+  1401	    happens once per distinct scope rather than once per probe.
+  1402	    """
+  1403	    key = (rel, exts)
+  1404	    if key in _tree_cache:
+  1405	        return _tree_cache[key]
+  1406	    base = os.path.join(ROOT, rel)
+  1407	    if not os.path.isdir(base):
+  1408	        die_env(
+  1409	            f"the source tree {rel} does not exist under --root {ROOT} — a clause assertion could "
+  1410	            "not be EVALUATED (TC-37 evaporation path #4). The gate computed no verdict for that "
+  1411	            "clause, so it refuses to report one."
+  1412	        )
+  1413	    found = []
+  1414	    for dirpath, dirnames, filenames in os.walk(base):
+  1415	        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
+  1416	        for name in sorted(filenames):
+  1417	            if exts is not None and not name.endswith(tuple(exts)):
+  1418	                continue
+  1419	            full = os.path.join(dirpath, name)
+  1420	            try:
+  1421	                with open(full, "rb") as fh:
+  1422	                    blob = fh.read()
+  1423	            except OSError as exc:
+  1424	                die_env(
+  1425	                    f"cannot read {os.path.relpath(full, ROOT)} while scanning {rel}: {exc} — a "
+  1426	                    "clause assertion could not be EVALUATED (TC-37 evaporation path #4)."
+  1427	                )
+  1428	            if b"\0" in blob[:8192]:
+  1429	                continue  # binary; the contract's negative space is about source text
+  1430	            found.append((os.path.relpath(full, ROOT), blob.decode("utf-8", errors="replace")))
+  1431	    if not found:
+  1432	        scope = "text file" if exts is None else "/".join(exts) + " file"
+  1433	        die_env(
+  1434	            f"the source tree {rel} under --root {ROOT} exists but holds no {scope} — 0 files were "
+  1435	            "scanned, so a NEGATIVE clause assertion would have reported 'no violation' having "
+  1436	            "examined NOTHING. That is not a pass, it is TC-37 evaporation path #4: the assertion "
+  1437	            "could not "
+  1438	            "be EVALUATED. Point --root at a complete source tree, or restore the crate."
+  1439	        )
+  1440	    _tree_cache[key] = found
+  1441	    return found
+  1442	
+  1443	
+  1444	def line_of(text, match):
+  1445	    return text.count("\n", 0, match.start()) + 1
+  1446	
+  1447	
+  1448	# ---------------------------------------------------------------------------
+  1449	# STRUCTURAL RUST READING for the CLOSED-VOCABULARY probes (fix-1).
+  1450	#
+  1451	# Deliberately a small, dumb reader, not a Rust parser: it strips comments,
+  1452	# brace-matches ONE named block, and reads what is inside. Everything it can
+  1453	# fail to find is reported as a CLAUSE DEFECT (exit 1) rather than being
+  1454	# skipped, so a rename or a refactor that puts the enum somewhere this reader
+  1455	# cannot see it goes RED and gets looked at — it never quietly stops checking.
+  1456	#
+  1457	# A STRING LITERAL IS NOT CODE (fix-4b). Every reader here LOCATES its subject in
+  1458	# a view where comments AND string/char literal CONTENTS have been blanked, and
+  1459	# then slices the body out of the comment-stripped view that still HAS the
+  1460	# literals (`arms_exact` needs them; that is its whole subject). The blanking is
+  1461	# LENGTH-PRESERVING precisely so one index means the same thing in both views.
+  1462	#
+  1463	# Why it matters: without it, `const S: &str = "fn foo() { }";` reads exactly
+  1464	# like a definition and `"pub enum DenseReadiness { Ready, Embedding }"` exactly
+  1465	# like a declaration — so a deleted test, or a THIRD enum variant with a decoy
+  1466	# string ahead of the real declaration, exited 0. That is the fix-4 class (a
+  1467	# probe satisfied by something that is not its subject) and it fails GREEN.
+  1468	#
+  1469	# Known limits, stated rather than papered over: this is a lexer, not a parser.
+  1470	# `macro_rules!` bodies and `#[cfg]`-disabled code read like ordinary code; an
+  1471	# UNTERMINATED literal blanks to end-of-file; brace-matching still does not
+  1472	# understand macros. All of those surface as a clause FAILURE (the reader finds
+  1473	# no parseable block, or finds a body it cannot match), never as a silent pass.
+  1474	# ---------------------------------------------------------------------------
+  1475	_view_cache = {}
+  1476	_code_cache = {}
+  1477	
+  1478	_IDENT_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
+  1479	
+  1480	
+  1481	def blank_literals(text):
+  1482	    """`text` with the CONTENTS of every string/char literal replaced by spaces.
+  1483	
+  1484	    LINE- and LENGTH-preserving (a newline inside a multi-line literal stays a
+  1485	    newline), and the delimiters themselves are kept, so offsets and line numbers
+  1486	    are identical to the input and `arms_exact` can still read the
+  1487	    real literals out of the un-blanked view at the same indices. Handles raw
+  1488	    (`r"..."`, `r#"..."#`), byte (`b"..."`, `br#"..."#`) and char literals, and
+  1489	    leaves LIFETIMES (`'a`) alone — mistaking one for a char literal would blank
+  1490	    real code.
+  1491	    """
+  1492	    out = list(text)
+  1493	    i, n = 0, len(text)
+  1494	    while i < n:
+  1495	        char = text[i]
+  1496	        # Raw/byte-raw string: the escape rules differ, so it is matched first.
+  1497	        if char in "rb" and (i == 0 or text[i - 1] not in _IDENT_CHARS):
+  1498	            j = i + 1 if (char == "b" and i + 1 < n and text[i + 1] == "r") else i
+  1499	            if text[j] == "r":
+  1500	                k = j + 1
+  1501	                while k < n and text[k] == "#":
+  1502	                    k += 1
+  1503	                if k < n and text[k] == '"':
+  1504	                    close = '"' + "#" * (k - j - 1)
+  1505	                    end = text.find(close, k + 1)
+  1506	                    end = n if end == -1 else end
+  1507	                    for p in range(k + 1, end):
+  1508	                        out[p] = "\n" if text[p] == "\n" else " "
+  1509	                    i = min(end + len(close), n)
+  1510	                    continue
+  1511	        if char == '"':
+  1512	            j = i + 1
+  1513	            while j < n:
+  1514	                if text[j] == "\\":
+  1515	                    j += 2
+  1516	                    continue
+  1517	                if text[j] == '"':
+  1518	                    break
+  1519	                j += 1
+  1520	            for p in range(i + 1, min(j, n)):
+  1521	                out[p] = "\n" if text[p] == "\n" else " "
+  1522	            i = min(j, n) + 1
+  1523	            continue
+  1524	        if char == "'":
+  1525	            if i + 1 < n and text[i + 1] == "\\":       # '\n', '\'', '\u{1F}'
+  1526	                j = i + 2
+  1527	                while j < n and text[j] != "'":
+  1528	                    j += 1
+  1529	                for p in range(i + 1, min(j, n)):
+  1530	                    out[p] = "\n" if text[p] == "\n" else " "
+  1531	                i = min(j, n) + 1
+  1532	                continue
+  1533	            if i + 2 < n and text[i + 2] == "'":        # 'x'
+  1534	                out[i + 1] = " "
+  1535	                i += 3
+  1536	                continue
+  1537	            i += 1                                      # a lifetime / loop label
+  1538	            continue
+  1539	        i += 1
+  1540	    return "".join(out)
+  1541	
+  1542	
+  1543	def rust_view(rel):
+  1544	    """A comment-stripped view of a Rust source file (cached).
+  1545	
+  1546	    STRING LITERALS ARE PRESENT here — `arms_exact` and `body_strings` read them
+  1547	    as their subject. Use `rust_code(rel)` to LOCATE anything.
+  1548	
+  1549	    LENGTH- AND LINE-PRESERVING (fix-5c, found by turning the round-5 question on
+  1550	    this patch). Comments are BLANKED, not deleted: the old version collapsed a
+  1551	    multi-line `/* .. */` to a single space, so every offset and every LINE NUMBER
+  1552	    downstream of one drifted. Nothing depended on that until fix-5 added a reader
+  1553	    that CITES A LINE (`const_str_values`), and a failure message that names the
+  1554	    wrong line in a gate whose whole value is actionable failures is a small lie.
+  1555	    Blanking also means one index now means the same thing in the raw file, in
+  1556	    this view and in `rust_code`.
+  1557	    """
+  1558	    if rel not in _view_cache:
+  1559	        text = read_source(rel)
+  1560	        text = re.sub(r"/\*.*?\*/",
+  1561	                      lambda m: re.sub(r"[^\n]", " ", m.group(0)), text, flags=re.S)
+  1562	        text = re.sub(r"//[^\n]*", lambda m: " " * len(m.group(0)), text)
+  1563	        _view_cache[rel] = text
+  1564	    return _view_cache[rel]
+  1565	
+  1566	
+  1567	def rust_code(rel):
+  1568	    """`rust_view(rel)` with literal CONTENTS blanked — same length, same offsets."""
+  1569	    if rel not in _code_cache:
+  1570	        _code_cache[rel] = blank_literals(rust_view(rel))
+  1571	    return _code_cache[rel]
+  1572	
+  1573	
+  1574	def brace_body(text, open_index, source=None):
+  1575	    """Body of the brace block whose '{' sits at open_index; None if unbalanced.
+  1576	
+  1577	    Braces are counted in `text` (always the blanked CODE view) and the body is
+  1578	    sliced out of `source` (the view that still has the literals), which is sound
+  1579	    because blanking preserves length.
+  1580	    """
+  2190	            )
+  2191	        if not rust_items(path, "fn", name):
+  2192	            return (
+  2193	                f"`fn {name}` has no DEFINITION in {path}. The contract's proof of this "
+  2194	                "obligation is that named function; a comment or doc reference that "
+  2195	                "mentions the name is not the proof (the source is read comment-stripped, and a "
+  2196	                "parseable body is required)"
+  2197	            )
+  2198	        return None
+  2199	    if kind == "test_defined":
+  2200	        _, path, name = probe
+  2201	        definitions = fn_definitions(path, name)
+  2202	        if not definitions:
+  2203	            return (
+  2204	                f"`fn {name}` has no DEFINITION in {path}. The contract's proof of this "
+  2205	                "obligation is that named test; a comment, a doc reference or a mention inside a "
+  2206	                "string literal is not the proof (the source is read comment-stripped, literals "
+  2207	                "are blanked, and a parseable body is required)"
+  2208	            )
+  2209	        # THE WHOLE FILE, and THE WHOLE TARGET, must run too — a proof switched
+  2210	        # off one or two levels up is switched off just the same, and neither is
+  2211	        # visible in the function's own attributes (fix-5 SWEEP).
+  2212	        gated_file = [a for a in file_inner_attrs(path)
+  2213	                      if a and a.split("::")[-1] in ("cfg", "cfg_attr")]
+  2214	        if gated_file:
+  2215	            return (
+  2216	                f"the test file {path} is CONDITIONALLY COMPILED as a whole "
+  2217	                f"(inner attribute(s) {gated_file}), so `fn {name}` may never be built at all. "
+  2218	                "A file-level `#![cfg(..)]` switches every proof in the file off while each one "
+  2219	                "still reads as an ordinary `#[test]`"
+  2220	            )
+  2221	        manifest = crate_manifest_for(path)
+  2222	        if manifest is not None:
+  2223	            stem = os.path.basename(path)[:-3] if path.endswith(".rs") else os.path.basename(path)
+  2224	            defect = cargo_test_target_defect(manifest, stem)
+  2225	            if defect is not None:
+  2226	                return defect
+  2227	        # EVERY definition of that name must be an active test — a name denoting
+  2228	        # several functions is ambiguous, and the strict side is the safe one.
+  2229	        for attrs, depth in definitions:
+  2230	            if depth != 0:
+
+exec
+/bin/bash -lc ./scripts/tests/test_check_c1_conformance.sh in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+codex
+The fixture script is still running and has reached the later regression arms cleanly. So far the old nested-module false-red guard and the older shebang guards are still represented with both rc and diagnostic-content checks.
+ succeeded in 48751ms:
+PASS  the real repo conforms to the pinned C-1 contract (default args)
+PASS  the passing run says ok
+PASS  the passing run states the clause tally it verified
+PASS  the passing run states the grand total of clauses
+PASS  the ratified C-1 contract is byte-identical to the pin
+PASS  the pin's git_blob_sha1 is exactly 23a436dc's blob for the contract
+PASS  an unmodified COPY of the contract + a copied source root passes
+PASS  the copied-fixture pass says ok
+PASS  a SUBSTANTIVE contract edit HARD-fails (the contract moved)
+PASS  contract-moved says the contract moved
+PASS  contract-moved reports a content divergence
+PASS  contract-moved says the clause registry must be RE-DERIVED
+PASS  contract-moved cites the efa8d584 amendment precedent
+PASS  a substantive edit is NOT reported as formatting-only
+PASS  contract-moved routes the reader to the Steward and forbids a silent re-pin
+PASS  a whitespace/formatting-only contract change HARD-fails (content-hash pin, by design)
+PASS  whitespace-only reports a content divergence
+PASS  whitespace-only says the change is formatting-only
+PASS  whitespace-only explains that the pin is deliberately a content hash
+PASS  whitespace-only routes the reader to the Steward and forbids a silent re-pin
+PASS  a MISSING contract exits 2 (TC-37 evaporation), never 0 and never 1
+PASS  contract-missing says it could not read the contract
+PASS  contract-missing cites the vacuous-pass failure class
+PASS  contract-missing prints no ok line
+PASS  a MISSING pin exits 2 (the gate could not run) and never 0
+PASS  pin-missing says the gate could not run
+PASS  a pin that OMITS counts.checkable HARD-fails as MALFORMED
+PASS  omit-counts.checkable names the missing count entry
+PASS  omit-counts.checkable says the pin is malformed
+PASS  omit-counts.checkable forbids regenerating the pin to clear it
+PASS  omit-counts.checkable prints no ok line
+PASS  a pin that OMITS counts.cross_repo HARD-fails as MALFORMED
+PASS  omit-counts.cross_repo names the missing count entry
+PASS  omit-counts.cross_repo says the pin is malformed
+PASS  omit-counts.cross_repo forbids regenerating the pin to clear it
+PASS  omit-counts.cross_repo prints no ok line
+PASS  a pin that OMITS counts.prose HARD-fails as MALFORMED
+PASS  omit-counts.prose names the missing count entry
+PASS  omit-counts.prose says the pin is malformed
+PASS  omit-counts.prose forbids regenerating the pin to clear it
+PASS  omit-counts.prose prints no ok line
+PASS  a pin that OMITS counts.total HARD-fails as MALFORMED
+PASS  omit-counts.total names the missing count entry
+PASS  omit-counts.total says the pin is malformed
+PASS  omit-counts.total forbids regenerating the pin to clear it
+PASS  omit-counts.total prints no ok line
+PASS  a STRING counts.checkable HARD-fails as MALFORMED (never a divergence)
+PASS  string-count says the count is not an integer
+PASS  a malformed pin does NOT print the divergence-routing block (broken gate, not a moved contract)
+PASS  a NULL counts.prose HARD-fails as MALFORMED
+PASS  null-count says the count is not an integer
+PASS  a FLOAT counts.checkable HARD-fails as MALFORMED (26.0 == 26 would have passed)
+PASS  float-count says the count is not an integer
+PASS  a BOOLEAN counts.total HARD-fails (isinstance(True, int) is True in Python)
+PASS  bool-count says the count is not an integer
+PASS  a NULL sha256 in the pin HARD-fails as MALFORMED, not as a divergence
+PASS  bad-hash pin says the hash field is not a string
+PASS  a CHECKABLE clause DELETED from the pin registry HARD-fails as MALFORMED
+PASS  clause-deleted NAMES the vanished clause id
+PASS  clause-deleted says the pinned check set shrank
+PASS  clause-deleted prints no ok line
+PASS  an ORPHAN CHECKABLE pin id (no implemented assertion) HARD-fails as MALFORMED
+PASS  clause-orphan NAMES the orphan clause id
+PASS  clause-orphan says the gate implements no assertion for it
+PASS  a clause RECLASSIFIED CHECKABLE -> PROSE HARD-fails as MALFORMED
+PASS  clause-reclassified NAMES the demoted clause id
+PASS  clause-reclassified reports the moved category counts
+PASS  a demotion WITH the counts fixed up is still caught by the registry bijection
+PASS  the consistent demotion still NAMES the clause id
+PASS  a source root that INTRODUCES EntityTypeSpec/id_prefix HARD-fails the gate
+PASS  the negative-space failure NAMES the clause id
+PASS  the negative-space failure NAMES the offending file
+PASS  the negative-space failure says the clause fails
+PASS  the negative-space clause failure routes the reader to the Steward and forbids a silent re-pin
+PASS  a clause failure is not reported as a contract move
+PASS  a source root with a REQUIRED symbol removed HARD-fails the gate
+PASS  the missing-symbol failure NAMES the clause id
+PASS  the missing-symbol failure states what it looked for and did not find
+PASS  the missing-symbol clause failure routes the reader to the Steward and forbids a silent re-pin
+PASS  deleting the named crash-heal test HARD-fails the gate
+PASS  the deleted-test failure NAMES the clause id
+PASS  a THIRD DenseReadiness variant HARD-fails (the readiness vocabulary is CLOSED)
+PASS  the third-variant failure NAMES the clause id
+PASS  the third-variant failure NAMES the unpinned variant it found
+PASS  the readiness-vocabulary failure routes the reader to the Steward and forbids a silent re-pin
+PASS  a THIRD accepted readiness SPELLING HARD-fails even with the enum unchanged
+PASS  the third-spelling failure NAMES the clause id
+PASS  the third-spelling failure NAMES the reserved token it found
+PASS  a FOURTH ProjectionRole HARD-fails (the role vocabulary is exactly three)
+PASS  the fourth-role failure NAMES the clause id
+PASS  the fourth-role failure NAMES the unpinned role it found
+PASS  a FOURTH IdSpaceKind HARD-fails (the typed id space is total over exactly three)
+PASS  the fourth-id-space failure NAMES the clause id
+PASS  the fourth-id-space failure NAMES the unpinned variant it found
+PASS  a LOWERCASE backfill into the EAV store HARD-fails the NO-DATA-MIGRATION clause
+PASS  the lowercase-backfill failure NAMES the clause id
+PASS  the lowercase-backfill clause failure routes the reader to the Steward and forbids a silent re-pin
+PASS  an INSERT OR REPLACE INTO backfill (newline before the table) HARD-fails
+PASS  the modifier-backfill failure NAMES the clause id
+PASS  a LOWERCASE engine-side property-FTS DDL HARD-fails the deferred-tokenizer clause
+PASS  the lowercase-DDL failure NAMES the clause id
+PASS  a SCHEMA-QUALIFIED backfill (main.canonical_attributes) HARD-fails NO-DATA-MIGRATION
+PASS  the schema-qualified-backfill failure NAMES the clause id
+PASS  the schema-qualified-backfill clause failure routes the reader to the Steward and forbids a silent re-pin
+PASS  a QUOTED, spaced schema qualifier (`main` . property_search_index) HARD-fails
+PASS  the quoted-qualifier failure NAMES the clause id
+PASS  a SCHEMA-QUALIFIED engine-side property-FTS DDL HARD-fails the deferred-tokenizer clause
+PASS  the schema-qualified-DDL failure NAMES the clause id
+PASS  an accepted spelling admitted by an `if` GUARD before the match HARD-fails
+PASS  the if-guard failure NAMES the clause id
+PASS  the if-guard failure NAMES the unpinned token it found
+PASS  the if-guard vocabulary failure routes the reader to the Steward and forbids a silent re-pin
+PASS  an accepted spelling admitted by an OR-PATTERN arm HARD-fails
+PASS  the or-pattern failure NAMES the clause id
+PASS  the or-pattern failure NAMES the unpinned token it found
+PASS  a RESPACED `pub id : Option < IdSpace >` HARD-fails the id-non-null clause
+PASS  the respaced-Option failure NAMES the clause id
+PASS  a backfill in a SIBLING MODULE of the schema crate HARD-fails NO-DATA-MIGRATION
+PASS  the sibling-module backfill failure NAMES the clause id
+PASS  the sibling-module backfill failure NAMES the offending FILE
+PASS  the sibling-module backfill clause failure routes the reader to the Steward and forbids a silent re-pin
+PASS  engine-side property-FTS DDL in a SIBLING MODULE HARD-fails the deferred-tokenizer clause
+PASS  the sibling-module DDL failure NAMES the clause id
+PASS  the sibling-module DDL failure NAMES the offending FILE
+PASS  a nullable typed id in a SIBLING MODULE HARD-fails the id-non-null clause
+PASS  the sibling-module optional-id failure NAMES the clause id
+PASS  the sibling-module optional-id failure NAMES the offending FILE
+PASS  ProjectionRole::Vector/::Fts in a SIBLING MODULE HARD-fails the three-roles clause
+PASS  the sibling-module tier-role failure NAMES the clause id
+PASS  the sibling-module tier-role failure NAMES the offending FILE
+PASS  DenseReadiness::Pending in a SIBLING MODULE HARD-fails the readiness clause
+PASS  the sibling-module Pending failure NAMES the clause id
+PASS  the sibling-module Pending failure NAMES the offending FILE
+PASS  property-FTS diverging from the body-FTS tokenizer HARD-fails the default-tokenizer clause
+PASS  the diverged-tokenizer failure NAMES the clause id
+PASS  the diverged-tokenizer failure NAMES the subject table
+PASS  the diverged-tokenizer failure NAMES the body-FTS table it is compared against
+PASS  the diverged-tokenizer clause failure routes the reader to the Steward and forbids a silent re-pin
+PASS  DELETING the property-FTS tokenize clause HARD-fails (fts5 would default to unicode61)
+PASS  the deleted-tokenizer failure NAMES the clause id
+PASS  fields moved OUT of their named structs (with a decoy) HARD-fail every affected clause
+PASS  the decoy-field failure NAMES C1-Q1-ROLE-SET
+PASS  the decoy-field failure NAMES C1-Q5-DERIVED-CACHE-IDEMPOTENT
+PASS  the decoy-field failure NAMES C1-Q4-CHEAP-SAME-TRANSACTION
+PASS  the decoy-field failure NAMES C1-Q6A-RANKABLE-GRACEFUL-DEFER
+PASS  the decoy-field failure NAMES C1-Q6B-ID-NON-NULL
+PASS  the decoy-field failure NAMES C1-TE-DEFAULT-EMBEDDER
+PASS  the decoy-field failure NAMES C1-TE-DEFAULT-TOKENIZER
+PASS  the decoy-field clause failures routes the reader to the Steward and forbids a silent re-pin
+PASS  deleting an error VARIANT while its uses remain HARD-fails the clauses that name it
+PASS  the deleted-variant failure NAMES the destructive-delta clause
+PASS  the deleted-variant failure NAMES the h-terminal clause
+PASS  an apply verb that no longer takes an explicit drop list HARD-fails the seam clause
+PASS  the rewritten-signature failure NAMES the seam clause id
+PASS  the rewritten-signature failure NAMES the subject function
+PASS  gutting the apply verb's body HARD-fails the same-transaction and no-block clauses
+PASS  the gutted-verb failure NAMES the same-transaction clause
+PASS  the gutted-verb failure NAMES the no-block-on-embedding clause
+PASS  a definition deleted but MENTIONED IN A COMMENT HARD-fails the clauses that name it
+PASS  the comment-only failure NAMES the atomic-flip clause
+PASS  the comment-only failure NAMES the crash-heal clause
+PASS  an index rebuilt on the wrong columns / a column moved to another table HARD-fails
+PASS  the swapped-SQL-subject failure NAMES the EAV clause
+PASS  the swapped-SQL-subject failure NAMES the deferred-tokenizer clause
+PASS  a requirement ROW demoted to a prose MENTION HARD-fails the landing-slot clause
+PASS  the demoted-row failure NAMES the landing-slot clause id
+PASS  a definition/declaration planted inside a STRING LITERAL does not satisfy a structural probe
+PASS  the string-decoy failure NAMES the crash-heal clause
+PASS  the string-decoy failure NAMES the readiness clause
+PASS  the string-decoy failure NAMES the unpinned variant the real enum carries
+PASS  the string-decoy clause failures routes the reader to the Steward and forbids a silent re-pin
+PASS  a declaration COMMENTED OUT does not satisfy the probe that names it
+PASS  the commented-out failure NAMES the default-embedder clause
+PASS  the commented-out failure NAMES the EAV clause
+PASS  the commented-out clause failures routes the reader to the Steward and forbids a silent re-pin
+PASS  a doc_text probe still reads ordinary // comments (its subject IS the statement)
+PASS  deleting the DOCUMENTED STATEMENT a doc_text probe names HARD-fails its clause
+PASS  the doc_text failure says what kind of probe it is
+PASS  flipping the ENGINE's shipped DEFAULT_EMBEDDER_NAME HARD-fails the default-embedder clause
+PASS  the engine-default flip NAMES the clause id
+PASS  the engine-default flip NAMES the ENGINE constant (the subject the clause is about)
+PASS  the engine-default flip NAMES the value it found
+PASS  the engine-default-embedder clause failure routes the reader to the Steward and forbids a silent re-pin
+PASS  RENAMING the engine's shipped-default constant away HARD-fails the clause
+PASS  the renamed-constant failure NAMES the clause id
+PASS  the renamed-constant failure says the declaration is gone
+PASS  flipping the shipped default in BOTH crates consistently still HARD-fails (the value is pinned)
+PASS  the both-crates flip NAMES the clause id
+PASS  the both-crates flip says the pinned value is what failed
+PASS  a DECOY declaration carrying the pinned value does not rescue a flipped real one
+PASS  the decoy-const failure NAMES the clause id
+PASS  the decoy-const failure says the shipped value is ambiguous
+PASS  DELETING #[test] from a named proof HARD-fails the clause it carries
+PASS  the missing-#\[test\] failure NAMES the atomic-flip clause
+PASS  the missing-#\[test\] failure says why the proof is not a proof
+PASS  the disabled-proof clause failure routes the reader to the Steward and forbids a silent re-pin
+PASS  adding #[ignore] to a named proof HARD-fails the clause it carries
+PASS  the ignored-proof failure NAMES the crash-heal clause
+PASS  the ignored-proof failure says the test is disabled
+PASS  a proof behind #[cfg(feature = ..)] HARD-fails the clause it carries
+PASS  the cfg-gated-proof failure NAMES the clause id
+PASS  the cfg-gated-proof failure says the proof is conditionally compiled
+PASS  disabling ALL FOURTEEN named proofs HARD-fails
+PASS  every-proof-disabled NAMES C1-Q3-DESTRUCTIVE-DELTA (all 14 probes were converted, not one)
+PASS  every-proof-disabled NAMES C1-Q3-OMISSION-NOT-DROP (all 14 probes were converted, not one)
+PASS  every-proof-disabled NAMES C1-Q5-DERIVED-CACHE-IDEMPOTENT (all 14 probes were converted, not one)
+PASS  every-proof-disabled NAMES C1-Q2-ENGINE-PROJECTS-VIA-CONFIGURE (all 14 probes were converted, not one)
+PASS  every-proof-disabled NAMES C1-Q6A-RANKABLE-GRACEFUL-DEFER (all 14 probes were converted, not one)
+PASS  every-proof-disabled NAMES C1-Q6B-H-TERMINAL-NOT-LIFECYCLE-ADDRESSABLE (all 14 probes were converted, not one)
+PASS  every-proof-disabled NAMES C1-Q6B-SURROGATE-GOVERNED-ONLY (all 14 probes were converted, not one)
+PASS  every-proof-disabled NAMES C1-AA-ATOMIC-FLIP (all 14 probes were converted, not one)
+PASS  every-proof-disabled NAMES C1-AA-NO-BLOCK-ON-EMBEDDING (all 14 probes were converted, not one)
+PASS  every-proof-disabled NAMES C1-AA-CRASH-HEAL-BOOT-REDERIVE (all 14 probes were converted, not one)
+PASS  the every-proof-disabled clause failures routes the reader to the Steward and forbids a silent re-pin
+PASS  gating a proof's whole [[test]] TARGET behind required-features HARD-fails its clauses
+PASS  the gated-target failure NAMES the atomic-flip clause
+PASS  the gated-target failure NAMES the other clause in that file
+PASS  the gated-target failure says what gated the target
+PASS  the gated-target clause failures routes the reader to the Steward and forbids a silent re-pin
+PASS  `autotests = false` HARD-fails every clause whose proof lives in an auto-discovered test file
+PASS  the autotests failure says what it found
+PASS  a file-level #![cfg(..)] HARD-fails every clause whose proof lives in that file
+PASS  the file-cfg failure NAMES a clause from that file
+PASS  the file-cfg failure NAMES the other clause from that file
+PASS  the file-cfg failure says the whole file is gated
+PASS  a proof NESTED inside a (cfg-gated) module HARD-fails the clause it carries
+PASS  the nested-proof failure NAMES the clause id
+PASS  the nested-proof failure says the proof is not at the top level
+PASS  --list-sources still exits 0 with the crate manifest in the set
+PASS  --list-sources names the crate manifest the test-target check reads
+PASS  an apply verb that LOST ITS `&self` RECEIVER HARD-fails the seam clause
+PASS  the receiver-less failure NAMES the seam clause id
+PASS  the receiver-less failure NAMES the subject function
+PASS  the receiver-less seam failure routes the reader to the Steward and forbids a silent re-pin
+PASS  the receiver spelled `& self,` is still a receiver (no false RED)
+PASS  the receiver spelled `&mut self,` is still a receiver (no false RED)
+PASS  the receiver spelled `&'life self,` is still a receiver (no false RED)
+PASS  the receiver spelled `mut self,` is still a receiver (no false RED)
+PASS  the receiver spelled `self,` is still a receiver (no false RED)
+PASS  a NESTED module's own inner `#![cfg(..)]` does NOT gate the pinned test file
+PASS  the nested-inner-attribute root still reports ok
+PASS  the nested-inner-attribute root is not reported as a wholly cfg-gated file
+PASS  a FILE-level #![cfg(..)] in the header (form 1) still HARD-fails the file's clauses
+PASS  header-cfg form 1 NAMES a clause proved in that file
+PASS  header-cfg form 1 says the whole file is gated
+PASS  a FILE-level #![cfg(..)] in the header (form 2) still HARD-fails the file's clauses
+PASS  header-cfg form 2 NAMES a clause proved in that file
+PASS  header-cfg form 2 says the whole file is gated
+PASS  a FILE-level #![cfg(..)] in the header (form 3) still HARD-fails the file's clauses
+PASS  header-cfg form 3 NAMES a clause proved in that file
+PASS  header-cfg form 3 says the whole file is gated
+PASS  a file-level #![cfg(..)] hidden behind a leading SHEBANG still HARD-fails the file's clauses
+PASS  the shebang-hidden file-cfg failure NAMES a clause proved in that file
+PASS  the shebang-hidden file-cfg failure says the whole file is gated
+PASS  the shebang-hidden file-cfg failure routes the reader to the Steward and forbids a silent re-pin
+PASS  a leading SHEBANG on its own does NOT gate the pinned test file
+PASS  the shebang-only root still reports ok
+PASS  the shebang-only root is not reported as a wholly cfg-gated file
+PASS  a #![cfg(..)] after a shebang AND another inner attribute still HARD-fails
+PASS  the shebang+attr-run failure NAMES a clause proved in that file
+PASS  the shebang+attr-run failure says the whole file is gated
+PASS  a file-level #![cfg(..)] hidden behind a leading UTF-8 BOM still HARD-fails the file's clauses
+PASS  the BOM-hidden file-cfg failure NAMES a clause proved in that file
+PASS  the BOM-hidden file-cfg failure says the whole file is gated
+PASS  the BOM-hidden file-cfg failure routes the reader to the Steward and forbids a silent re-pin
+PASS  a leading UTF-8 BOM on its own does NOT gate the pinned test file
+PASS  the BOM-only root still reports ok
+PASS  the BOM-only root is not reported as a wholly cfg-gated file
+PASS  a #![cfg(..)] behind a BOM AND a shebang still HARD-fails
+PASS  the BOM+shebang failure NAMES a clause proved in that file
+PASS  the BOM+shebang failure says the whole file is gated
+PASS  a MISSING source file exits 2 (TC-37 #4) — not 0 and not 1
+PASS  file-missing says the assertion could not be evaluated
+PASS  file-missing cites the evaporation failure class
+PASS  file-missing prints no ok line
+PASS  an EMPTY source root exits 2 (every assertion evaporates), never 0
+PASS  an EMPTIED fathomdb-engine source tree exits 2 (TC-37 #4), never 0 and never 1
+PASS  empty-tree-fathomdb-engine cites the evaporation failure class
+PASS  empty-tree-fathomdb-engine prints no ok line
+PASS  an ABSENT fathomdb-engine source tree exits 2 (TC-37 #4), never 0 and never 1
+PASS  gone-tree-fathomdb-engine prints no ok line
+PASS  an EMPTIED fathomdb-schema source tree exits 2 (TC-37 #4), never 0 and never 1
+PASS  empty-tree-fathomdb-schema cites the evaporation failure class
+PASS  empty-tree-fathomdb-schema prints no ok line
+PASS  an ABSENT fathomdb-schema source tree exits 2 (TC-37 #4), never 0 and never 1
+PASS  gone-tree-fathomdb-schema prints no ok line
+PASS  an unknown flag exits 2 (usage), distinct from a divergence
+PASS  --help exits 0
+PASS  --help prints usage
+PASS  --list-sources exits 0
+PASS  --list-sources names the engine source the assertions read
+PASS  --list-sources names the tree the negative-space clause scans
+PASS  --list-sources names the ENGINE crate source tree the negative probes scan
+PASS  --list-sources names the SCHEMA crate source tree the negative probes scan
+PASS  no file-scoped `absent` probe remains: every negative assertion is tree-scoped
+PASS  the file-scoped `absent` probe kind is gone from the gate entirely
+PASS  no file-wide COUNT (`min`) probe remains: no clause is asserted by counting matches
+PASS  the `min` COUNT probe kind is gone from the gate entirely
+PASS  no `fn_defined` probe names a test file: every named proof is asserted as an ACTIVE test
+PASS  a gate that probes a TEST with `fn_defined` refuses to run at all (exit 2), even on a conforming tree
+PASS  the self-check NAMES the clause holding the wrong probe kind
+PASS  the self-check names the probe kind that should have been used
+PASS  the self-check prints no ok line
+PASS  --landing HARD-fails in a worktree whose code breaks a C-1 clause
+PASS  --landing failure output names the c1-contract-conformance check
+PASS  --landing failure carries the specific clause id through to the operator
+PASS  --landing still exits 0 in a worktree that conforms to the pinned contract
+PASS  regression guard: c1-contract-conformance is inert without --landing
+PASS  --landing HARD-fails when the C-1 gate itself cannot run (anti-fail-open)
+PASS  the anti-fail-open path says it refuses to certify the tree
+PASS  ci.yml defines a c1-contract-conformance job
+PASS  the CI job runs the SHARED scripts/check-c1-conformance.sh (one predicate, two callers)
+PASS  the CI job carries the recurrence guard for the gate itself
+PASS  the c1-contract-conformance job is always-on (no if: condition, not docs_only-gated)
+PASS  the c1-contract-conformance job has no needs: (does not ride the changes/docs_only fast path)
+PASS  the CI job pins actions/checkout to the same SHA as its sibling jobs
+PASS  agent-test.sh registers this fixture suite alongside its siblings
+
+All check-c1-conformance tests passed
+
+codex
+The full `scripts/tests/test_check_c1_conformance.sh` suite passed, including the new 12al arms and the existing 12aj/12ak regression guards. I’m doing one final direct `rustc --test --list` sanity check for the edge ordering cases the review asks about: BOM+shebang, double BOM, BOM-only, and mid-file BOM.
+exec
+/bin/bash -lc 'tmp="$(mktemp -d)"; 
+printf '"'\\357\\273\\277#"'![cfg(feature = "nope")]'"\\n#[test]\\nfn t() {}\\n' > \""'$tmp/bom_cfg.rs"; 
+printf '"'\\357\\273\\277#"'!/usr/bin/env rust-script'"\\n#"'![cfg(feature = "nope")]'"\\n#[test]\\nfn t() {}\\n' > \""'$tmp/bom_shebang_cfg.rs"; 
+printf '"'\\357\\273\\277\\357\\273\\277#"'![cfg(feature = "nope")]'"\\n#[test]\\nfn t() {}\\n' > \""'$tmp/double_bom_cfg.rs"; 
+printf '"'\\357\\273\\277#[test]\\nfn t() {}\\n' > \""'$tmp/bom_only.rs"; 
+printf '"'#"'![allow(dead_code)]'"\\n\\357\\273\\277#"'![cfg(feature = "nope")]'"\\n#[test]\\nfn t() {}\\n' > \""'$tmp/mid_bom_cfg.rs"; 
+for f in bom_cfg bom_shebang_cfg double_bom_cfg bom_only mid_bom_cfg; do
+  echo "CASE $f";
+  if rustc --test "$tmp/$f.rs" -o "$tmp/$f.bin" 2>"$tmp/$f.err"; then
+    "$tmp/$f.bin" --list;
+  else
+    sed -n '"'1,80p' \""'$tmp/$f.err";
+  fi;
+done' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30
+ succeeded in 273ms:
+0 tests, 0 benchmarks
+CASE double_bom_cfg
+error: unknown start of token: \u{feff}
+ --> /tmp/tmp.W1BtNHN6zv/double_bom_cfg.rs:1:1
+  |
+1 | ﻿#![cfg(feature = "nope")]
+  | ^
+
+error: aborting due to 1 previous error
+
+CASE bom_only
+t: test
+
+1 test, 0 benchmarks
+CASE mid_bom_cfg
+error: unknown start of token: \u{feff}
+ --> /tmp/tmp.W1BtNHN6zv/mid_bom_cfg.rs:2:1
+  |
+2 | ﻿#![cfg(feature = "nope")]
+  | ^
+
+error: aborting due to 1 previous error
+
+
+codex
+[P1] None.
+
+[P2] None.
+
+[low] None.
+
+I did not find a regression in the fix-6c delta. The BOM strip at [scripts/check-c1-conformance.sh](/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30/scripts/check-c1-conformance.sh:1893) is ordered correctly before shebang handling, strips exactly one leading U+FEFF, and does not widen the scan past the file’s leading header. The existing nested-module guard at [scripts/tests/test_check_c1_conformance.sh](/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30/scripts/tests/test_check_c1_conformance.sh:1738) still covers the prior false-red direction, and the shebang guards plus new BOM+shebang arm cover the prior false-green direction.
+
+The new 12al fixture is not just `rc=1`: it also asserts the clause name and the specific `CONDITIONALLY COMPILED as a whole` diagnostic at [scripts/tests/test_check_c1_conformance.sh](/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30/scripts/tests/test_check_c1_conformance.sh:1895) and [scripts/tests/test_check_c1_conformance.sh](/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30/scripts/tests/test_check_c1_conformance.sh:1933). 12al by itself would not detect a full-file scan regression, but the adjacent 12aj arm still does, so the suite keeps both directions closed.
+
+Verification run: `./scripts/tests/test_check_c1_conformance.sh` passed. I also checked `rustc --test --list` directly: BOM+cfg and BOM+shebang+cfg produce `0 tests`; BOM-only lists `1 test`; double-BOM and mid-file BOM are rustc syntax errors, not silent test evaporation paths.
+tokens used
+54,907
+[P1] None.
+
+[P2] None.
+
+[low] None.
+
+I did not find a regression in the fix-6c delta. The BOM strip at [scripts/check-c1-conformance.sh](/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30/scripts/check-c1-conformance.sh:1893) is ordered correctly before shebang handling, strips exactly one leading U+FEFF, and does not widen the scan past the file’s leading header. The existing nested-module guard at [scripts/tests/test_check_c1_conformance.sh](/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30/scripts/tests/test_check_c1_conformance.sh:1738) still covers the prior false-red direction, and the shebang guards plus new BOM+shebang arm cover the prior false-green direction.
+
+The new 12al fixture is not just `rc=1`: it also asserts the clause name and the specific `CONDITIONALLY COMPILED as a whole` diagnostic at [scripts/tests/test_check_c1_conformance.sh](/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30/scripts/tests/test_check_c1_conformance.sh:1895) and [scripts/tests/test_check_c1_conformance.sh](/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s30/scripts/tests/test_check_c1_conformance.sh:1933). 12al by itself would not detect a full-file scan regression, but the adjacent 12aj arm still does, so the suite keeps both directions closed.
+
+Verification run: `./scripts/tests/test_check_c1_conformance.sh` passed. I also checked `rustc --test --list` directly: BOM+cfg and BOM+shebang+cfg produce `0 tests`; BOM-only lists `1 test`; double-BOM and mid-file BOM are rustc syntax errors, not silent test evaporation paths.

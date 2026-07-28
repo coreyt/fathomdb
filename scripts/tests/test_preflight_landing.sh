@@ -31,6 +31,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PREFLIGHT="$REPO_ROOT/scripts/preflight.sh"
 # shellcheck source=lib/governed-surface-fixture.sh
 . "$SCRIPT_DIR/lib/governed-surface-fixture.sh"
+# shellcheck source=lib/c1-conformance-fixture.sh
+. "$SCRIPT_DIR/lib/c1-conformance-fixture.sh"
 
 FAILED=0
 pass() { printf 'PASS  %s\n' "$1"; }
@@ -87,6 +89,7 @@ make_fixture() {
   # equally correct. This fixture models a real checkout, so it carries one; the
   # pin's own arms live in scripts/tests/test_check_governed_surface_pin.sh.
   seed_governed_surface_fixture "$primary"
+  seed_c1_conformance_fixture "$primary"
   git -C "$primary" add -A
   git -C "$primary" commit -q -m 'fixture: initial commit'
   git -C "$primary" worktree add -q -b landing-fixture "$linked" >/dev/null 2>&1

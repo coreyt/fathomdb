@@ -39,6 +39,15 @@ run_capped test-check-ledgers bash scripts/tests/test_check_ledgers.sh
 # src/conformance/governed-surface-allowlist.json is never written.
 run_capped test-check-governed-surface-pin bash scripts/tests/test_check_governed_surface_pin.sh
 
+# Scripts (bash): R-20-H7 — the shared scripts/check-c1-conformance.sh predicate
+# (contract content pin + clause-registry bijection + pinned counts + the 26
+# CHECKABLE clause assertions against as-built code), its --landing wiring in
+# preflight.sh, and a static assertion that its CI job is always-on. Fixtures are
+# COPIES of the contract, of the pin and of the source root under mktemp -d (plus
+# throwaway git repos for the preflight arms); neither the ratified contract nor
+# the real src/ tree is ever written.
+run_capped test-check-c1-conformance bash scripts/tests/test_check_c1_conformance.sh
+
 # Scripts (bash): sibling-package co-tagging assert (AC-052). Offline via
 # python3 -m http.server fixture; never hits crates.io.
 run_capped test-assert-co-tagging bash scripts/tests/test_assert_co_tagging.sh

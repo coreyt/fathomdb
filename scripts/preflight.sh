@@ -273,6 +273,48 @@ if [ "$LANDING" -eq 1 ]; then
   fi
 fi
 
+# --- 10. C-1 contract-conformance gate (R-20-H7, RUBRIC-H7 can-i-deploy) --------
+# Refuse a land whose code no longer satisfies the ratified cross-repo design
+# contract dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md.
+# R-20-H7 is a PUBLISH PRECONDITION: "Gate exists and is GREEN. An
+# absent-or-failing gate HOLDS the breaking pair" (plan-0.8.20.md §3,
+# HITL-directed 2026-07-10).
+#
+# The predicate lives in scripts/check-c1-conformance.sh (see that file's header
+# for the full statement — and, just as importantly, for what it deliberately
+# does NOT claim to check) so preflight and the always-on CI job share ONE
+# implementation and cannot diverge, exactly as §7/§8/§9 do. --landing-only,
+# mirroring their structure: the CI job — deliberately NOT docs_only-gated —
+# covers every non-landing push.
+#
+# Tripping this is CORRECT BEHAVIOUR, not a bug. It means either as-built code
+# drifted from a RATIFIED cross-repo contract, or that contract moved without
+# its clause registry being re-derived — and both must route to the Steward
+# rather than land.
+if [ "$LANDING" -eq 1 ]; then
+  C1_CHECK_OUT="$(bash "$SELF_DIR/check-c1-conformance.sh" 2>&1)" || C1_CHECK_RC=$?
+  C1_CHECK_RC="${C1_CHECK_RC:-0}"
+  if [ "$C1_CHECK_RC" -ne 0 ]; then
+    C1_SAW_FAIL=0
+    while IFS= read -r line; do
+      case "$line" in
+        FAIL*) hard "c1-contract-conformance: $line"; C1_SAW_FAIL=1 ;;
+        *)     info "c1-contract-conformance: $line" ;;
+      esac
+    done <<<"$C1_CHECK_OUT"
+    # Anti-fail-open, as in §8/§9: a non-zero rc with no FAIL line means the
+    # checker itself could not run (exit 2 = python3 absent, a missing contract,
+    # a malformed pin, an unreadable source file, or an evaporated check set).
+    # That must still block the land — a gate that could not see its subject is
+    # exactly the case where landing on its silence is worst.
+    if [ "$C1_SAW_FAIL" -eq 0 ]; then
+      hard "c1-contract-conformance: check-c1-conformance.sh exited $C1_CHECK_RC without reporting a specific defect — refusing to certify this tree for landing"
+    fi
+  else
+    ok "c1-contract-conformance: as-built code still satisfies the pinned OPP-12 C-1 contract (R-20-H7)"
+  fi
+fi
+
 # --- Summary (JSON, last line) ---------------------------------------------------
 json_arr() { local out="" x; for x in "$@"; do out="${out:+$out,}\"$(printf '%s' "$x" | sed 's/\\/\\\\/g; s/"/\\"/g')\""; done; printf '[%s]' "$out"; }
 

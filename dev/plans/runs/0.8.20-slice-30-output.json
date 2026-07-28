@@ -1,0 +1,2095 @@
+{
+  "phase": "0.8.20 Slice 30 — R-20-H7 RUBRIC-H7 `can-i-deploy` contract-conformance gate",
+  "baseline_sha": "23a436dcc7321eab86c622c8b403682caf2dfe2c",
+  "branch": "orch-0.8.20-s30",
+  "head_sha": "(fix-6c round: the docs commit that carries this file — see commits[]; the RED half is 9ef5179b and the GREEN code half is 0d9b40d7)",
+  "head_sha_before_fix_1": "3475d55e",
+  "commits": [
+    {
+      "sha": "10f018dd",
+      "subject": "test(0.8.20-s30): RED — fixture suite for the R-20-H7 can-i-deploy gate",
+      "note": "RED-first. Ran at this commit with REAL exit code 1 (the gate did not exist: rc=127 from every checker invocation)."
+    },
+    {
+      "sha": "e48d5796",
+      "subject": "feat(0.8.20-s30): the R-20-H7 can-i-deploy gate + its reviewable clause pin",
+      "note": "scripts/check-c1-conformance.sh + scripts/c1-conformance-pin.json. Also corrected two expectations in the RED suite: the clause tally (12 cross-repo / 45 total, not 11 / 44) and a case-sensitive regex. The tally error was caught by the pin's OWN counts backstop — the gate refused its own first pin as internally inconsistent (exit 2), which is the backstop working as designed."
+    },
+    {
+      "sha": "43faa5f3",
+      "subject": "feat(0.8.20-s30): dual-home the R-20-H7 gate — preflight --landing + always-on CI",
+      "note": "preflight.sh §10 (PREVENT, with the anti-fail-open clause) + ci.yml c1-contract-conformance (DETECT, no if:, no needs:) + agent-test.sh registration."
+    },
+    {
+      "sha": "cd6a2e19",
+      "subject": "fix(0.8.20-s30): seed the C-1 subject into every --landing fixture repo",
+      "note": "Repairs a regression this slice introduced in four sibling suites. See blockers_encountered."
+    },
+    {
+      "sha": "5add8a20",
+      "subject": "docs(0.8.20-s30): DOC-INDEX row for the R-20-H7 gate + its clause pin",
+      "note": "X3."
+    },
+    {
+      "sha": "3475d55e",
+      "subject": "docs(0.8.20-s30): slice closure output.json",
+      "note": "This file, first revision. Round-1 codex §9 ran against this head and returned CONCERN."
+    },
+    {
+      "sha": "15abb967",
+      "subject": "test(0.8.20-s30): RED fix-1 — divergent fixtures the R-20-H7 gate walks past",
+      "note": "FIX-1 ROUND, RED half. Seven new divergent-fixture arms (12d-12j), ALL SEVEN exiting 0 against the pre-fix gate when they must exit 1. Suite rc=1 at this commit: 106 PASS, 20 assertion failures. Every pre-existing arm stayed green, so this is a pure addition that weakens nothing."
+    },
+    {
+      "sha": "86cd81fc",
+      "subject": "fix(0.8.20-s30): GREEN fix-1 — closed vocabularies + case-insensitive SQL",
+      "note": "FIX-1 ROUND, GREEN half. Two new structural probe kinds (enum_exact, arms_exact) + an insert_into() case-insensitive SQL pattern helper; applied across all five affected clauses. Suite rc=0 at this commit: 126 PASS, 0 failures. Gate rc=0 on the real tree."
+    },
+    {
+      "sha": "(this commit — self-referential, not knowable before it exists)",
+      "subject": "docs(0.8.20-s30): fix-1 round — update the slice closure output.json",
+      "note": "This file, fix-1 revision."
+    },
+    {
+      "sha": "9a0335fc",
+      "subject": "docs(0.8.20-s30): codex §9 round 1 transcript (TC-RUBRIC-7)",
+      "note": "Review artefact, no code."
+    },
+    {
+      "sha": "52c2bde9",
+      "subject": "docs(0.8.20-s30): codex §9 round 2 (fix-1 re-review) transcript (TC-RUBRIC-7)",
+      "note": "Review artefact, no code. Verdict CONCERN, three [P2] findings — all three REFINEMENTS of the two classes round 1 raised."
+    },
+    {
+      "sha": "041e729e",
+      "subject": "test(0.8.20-s30): RED fix-2 — six divergent fixtures the R-20-H7 gate still walks past",
+      "note": "FIX-2 ROUND, RED half. Six new divergent-fixture arms (12k-12p), ALL SIX exiting 0 against the pre-fix gate when they must exit 1. Suite rc=1 at this commit: 126 PASS, 16 assertion failures. Every pre-existing arm stayed green, so this is a pure addition that weakens nothing."
+    },
+    {
+      "sha": "1fdbca4f",
+      "subject": "fix(0.8.20-s30): GREEN fix-2 — schema-qualified SQL, spellings outside a match arm, and a STATED residual scope",
+      "note": "FIX-2 ROUND, GREEN half. qualified() (a SQL table reference is [<schema>.]<table>); arm_pairs() expands or-patterns; a new INVERTED check — every string literal inside a closed-vocabulary fn must be a pinned spelling; one sweep fix (C1-Q6B-ID-NON-NULL whitespace). PLUS the RESIDUAL SCOPE section in the gate header and its one-paragraph mirror in the pin's _comment. Suite rc=0: 142 PASS, 0 failures. Gate rc=0 on the real tree."
+    },
+    {
+      "sha": "b0de847b",
+      "subject": "docs(0.8.20-s30): codex §9 round 3 (fix-2 re-review) transcript (TC-RUBRIC-7)",
+      "note": "Review artefact, no code. Verdict CONCERN, two [P2] findings — NOT refinements of the rounds 1-2 classes. See fix_rounds[2].budget: the orchestrator ruled this a NEW, DISTINCT defect class, so the 3-same-finding bound did not fire."
+    },
+    {
+      "sha": "2b0d76c8",
+      "subject": "test(0.8.20-s30): RED fix-3 — five literal violations in SIBLING MODULES the gate walks past",
+      "note": "FIX-3 ROUND, RED half. Five new divergent-fixture arms (12q-12u), each a NEW FILE beside the crate's lib.rs with lib.rs UNTOUCHED, ALL FIVE exiting 0 against the pre-fix gate when they must exit 1. Plus --list-sources tree assertions, TC-37 tree-evaporation arms, and the structural probe-kind guard. Suite rc=1 at this commit: 152 PASS, 20 assertion failures. Every pre-existing arm stayed green, so this is a pure addition that weakens nothing."
+    },
+    {
+      "sha": "cc31fef1",
+      "subject": "fix(0.8.20-s30): GREEN fix-3 — every NEGATIVE probe is crate-TREE-scoped, and the file-scoped kind is gone",
+      "note": "FIX-3 ROUND, GREEN half. All seven file-scoped negative probes converted to absent_tree over the owning crate's SOURCE TREE; the ('absent', <file>, regex) probe kind DELETED from the script; walk_tree returns a cached LIST and exits 2 on a candidate-less tree. Suite rc=0 at this commit: 172 PASS, 0 failures. Gate rc=0 on the real tree. scripts/c1-conformance-pin.json `_comment` prose only."
+    },
+    {
+      "sha": "cf240a23",
+      "subject": "test(0.8.20-s30): RED fix-4 — ten fixtures the R-20-H7 gate reports GREEN while the named subject is broken",
+      "note": "FIX-4 ROUND, RED half. Ten new fixture roots (arms 12v-12ac) + the `min`-probe-kind structural guards. Ran at this commit with REAL exit code 1: 172 PASS / 35 FAIL, every new fixture root reporting 'expected rc=1, got rc=0'."
+    },
+    {
+      "sha": "36f528f1",
+      "subject": "fix(0.8.20-s30): GREEN fix-4 — every probe is bound to the SUBJECT its clause names, and the count kind is gone",
+      "note": "The gate only. 55 `present` probes became 10 `present` + 2 `doc_text` + 48 structural probes across six new kinds; the `min` kind was DELETED. Gate rc=0, suite rc=0 (207 PASS / 0 FAIL)."
+    },
+    {
+      "sha": "7b37186c",
+      "subject": "test(0.8.20-s30): RED fix-4b — a string literal read as code (the fix-4 class, found in the fix-4 patch)",
+      "note": "Self-adversarial: the fix-4 readers (and enum_exact/arms_exact since fix-1) read string literals as code. Ran at 36f528f1 with REAL exit code 1, 'expected rc=1, got rc=0'."
+    },
+    {
+      "sha": "5253934d",
+      "subject": "fix(0.8.20-s30): GREEN fix-4b — the structural readers no longer read string literals as code",
+      "note": "Length- and line-preserving literal blanking; bodies still sliced from the literal-bearing view so arms_exact keeps its subject. Gate rc=0, suite rc=0 (212 PASS / 0 FAIL)."
+    },
+    {
+      "sha": "aed79cac",
+      "subject": "test(0.8.20-s30): RED fix-4c — a COMMENTED-OUT declaration still satisfies the probe that names it",
+      "note": "The last reachable false green of the sweep. Ran at 5253934d with REAL exit code 1, 'expected rc=1, got rc=0'. Includes the MIRROR arm so the fix cannot overshoot doc_text."
+    },
+    {
+      "sha": "33792f3b",
+      "subject": "fix(0.8.20-s30): GREEN fix-4c — a commented-out declaration is not a declaration",
+      "note": "`present` reads the comment-stripped view for .rs; `doc_text` still reads raw. Gate rc=0, suite rc=0 (219 PASS / 0 FAIL)."
+    },
+    {
+      "sha": "a22eee36",
+      "subject": "test(0.8.20-s30): RED fix-5 — a wrong-crate constant and four ways a proof stops running",
+      "note": "Ran at f7e1d060 with REAL exit code 1: 221 PASS / 36 FAIL, every failure of the form 'expected rc=1, got rc=0'. Both codex fixtures reproduced verbatim (12af-1, 12ag-1/2) plus the sweep arms."
+    },
+    {
+      "sha": "4aea7578",
+      "subject": "fix(0.8.20-s30): GREEN fix-5 — the ENGINE's default embedder, and a proof that actually RUNS",
+      "note": "`const_str_agree` (relational, both crates) + `test_defined` (active test at four levels: attribute, position, file, cargo target) + two structural guards + the line-preserving rust_view. Gate rc=0 (0.76s), suite rc=0 (276 PASS / 0 FAIL). Pin evidence for C1-TE-DEFAULT-EMBEDDER extended (free text only — no id/category/count moved)."
+    },
+    {
+      "sha": "12ac854e",
+      "subject": "test(0.8.20-s30): RED fix-6 — a receiver-less configure_projections and a nested module's inner cfg",
+      "note": "FIX-6 ROUND, RED half. Two new fixture arms (12ai, 12aj) plus eight mirror arms. Ran at this commit with REAL suite rc=1: 290 PASS, \"7 test(s) failed\". The two direction-carrying failures, verbatim: `FAIL  an apply verb that LOST ITS \\`&self\\` RECEIVER HARD-fails the seam clause — expected rc=1, got rc=0` and `FAIL  a NESTED module's own inner \\`#![cfg(..)]\\` does NOT gate the pinned test file — expected rc=0, got rc=1`. Note the SECOND is INVERTED versus every prior round: it is a FALSE RED, not a false green. All eight mirror arms passed at the RED commit, so the fix is held to not overshoot in either direction. Every pre-existing arm stayed green (276 -> 290 PASS is pure addition)."
+    },
+    {
+      "sha": "8b43a58c",
+      "subject": "fix(0.8.20-s30): GREEN fix-6 — bind the seam probe to the receiver; leading inner attributes only",
+      "note": "FIX-6 ROUND, GREEN half. The gate only. (a) C1-SEAM-ENGINE-BUILD-DROP gains a fourth `fn_sig` probe requiring a `self` RECEIVER on configure_projections; the three existing parameter/return probes are untouched. (b) file_inner_attrs() walks the file's own LEADING HEADER instead of scanning the whole file for `#![`. Gate rc=0 (26 checkable / 12 cross-repo / 7 prose, 45 total, pinned at 23a436dc); suite rc=0, 297 PASS / 0 FAIL."
+    },
+    {
+      "sha": "(this commit — self-referential, not knowable before it exists)",
+      "subject": "docs(0.8.20-s30): fix-6 round — update the slice closure output.json",
+      "note": "This file, fix-6 revision."
+    },
+    {
+      "sha": "f4c7aab9",
+      "subject": "test(0.8.20-s30): RED fix-6b — a leading shebang hides a file-level #![cfg]",
+      "note": "FIX-6b ROUND, RED half. Arm 12ak, three sub-arms, guarding a regression THE FIX-6 PATCH ITSELF OPENED. Ran at this commit against the UNCHANGED fix-6 checker with REAL suite rc=1: 300 PASS / 7 FAIL. The direction-carrying failure, verbatim: `FAIL  a file-level #![cfg(..)] hidden behind a leading SHEBANG still HARD-fails the file's clauses — expected rc=1, got rc=0` (same form on 12ak-3). 12ak-2 (a shebang ALONE must stay rc=0) PASSED at the RED commit, so the arm cannot go green by reverting fix-6, and arm 12aj (the nested-module false RED fix-6 closed) stayed green — 297 -> 300 PASS is pure addition."
+    },
+    {
+      "sha": "a7a85e34",
+      "subject": "fix(0.8.20-s30): GREEN fix-6b — the leading header starts after a shebang",
+      "note": "FIX-6b ROUND, GREEN half. The gate only, one function: file_inner_attrs() skips a leading Rust shebang before walking the leading inner attributes, following rustc's rule exactly (only the very first line can be a shebang, and only when the file starts with `#!` whose next character is NOT `[`). The walk then resumes unchanged, so an attribute RUN after a shebang is still read and the nested-module false RED fix-6 closed stays closed — no return to the pre-fix-6 whole-file scan. Gate rc=0 (26 checkable / 12 cross-repo / 7 prose, 45 total, pinned at 23a436dc); suite rc=0, 307 PASS / 0 FAIL. codex's own demonstration re-run against the fixed checker now exits 1 and prints `CONDITIONALLY COMPILED as a whole`."
+    },
+    {
+      "sha": "(this commit — self-referential, not knowable before it exists)",
+      "subject": "docs(0.8.20-s30): fix-6b — update the slice closure output.json",
+      "note": "This file, fix-6b revision."
+    },
+    {
+      "sha": "9ef5179b",
+      "subject": "test(0.8.20-s30): RED fix-6c — a leading UTF-8 BOM hides a file-level #![cfg]",
+      "note": "FIX-6c ROUND, RED half. Arm 12al, three sub-arms, closing the LAST first-byte that defeats the leading-header walk. Ran at this commit against the UNCHANGED fix-6b checker with REAL suite rc=1: 310 PASS / 7 FAIL. The direction-carrying failure, verbatim: `FAIL  a file-level #![cfg(..)] hidden behind a leading UTF-8 BOM still HARD-fails the file's clauses — expected rc=1, got rc=0` (same form on 12al-3, the BOM+shebang sub-arm). 12al-2 (a BOM ALONE must stay rc=0) PASSED at the RED commit, so the arm cannot go green by weakening the fix-6/fix-6b narrowing, and arms 12aj/12ak stayed green — 307 -> 310 PASS is pure addition."
+    },
+    {
+      "sha": "0d9b40d7",
+      "subject": "fix(0.8.20-s30): GREEN fix-6c — the leading header starts after a UTF-8 BOM",
+      "note": "FIX-6c ROUND, GREEN half. The gate only, the same one function: file_inner_attrs() strips ONE leading U+FEFF before the shebang test, following rustc's ORDER exactly (rustc strips one BOM, and only THEN may the first line be a shebang — so BOM + shebang + `#![cfg(..)]` is read too). The strip is LOCAL to this walk; read_source() was deliberately NOT changed, so no other probe's view of any file moves. No return to the pre-fix-6 whole-file scan: arms 12aj and 12ak stay green. Gate rc=0 (26 checkable / 12 cross-repo / 7 prose, 45 total, pinned at 23a436dc); suite rc=0, 317 PASS / 0 FAIL. clippy and check --workspace --all-targets re-run rather than carried, both rc=0."
+    },
+    {
+      "sha": "(this commit — self-referential, not knowable before it exists)",
+      "subject": "docs(0.8.20-s30): fix-6c — update the slice closure output.json",
+      "note": "This file, fix-6c revision."
+    }
+  ],
+  "findings_addressed": [
+    "R-20-H7 — the gate EXISTS and is GREEN. scripts/check-c1-conformance.sh exits 0 on the tree at head; all 26 CHECKABLE clauses of the ratified OPP-12 C-1 converged contract hold against as-built code.",
+    "The gate is pinned to the AMENDED contract (efa8d584). The un-amended Q6(b) mandated an anonymous surrogate that the ratified TC-11 pin A forbids ever implementing; a registry derived from that text would have been permanently red and would have held the breaking-pair publish forever. Both the gate header and the pin's _comment record this as the reason the contract's bytes are pinned at all.",
+    "Dual-homed per the settled design: preflight.sh --landing §10 (PREVENT) and an always-on ci.yml job (DETECT), both invoking THE SAME script so the predicate cannot diverge.",
+    "Recurrence guard: scripts/tests/test_check_c1_conformance.sh, 126 assertions across 17 arms (17 after the fix-1 round added seven sub-arms 12d-12j to the existing arm-12 section), every failure arm driven by a purpose-built divergent fixture.",
+    "FIX-1 / codex §9 round 1, finding #1 [P2] — CLOSED. The readiness vocabulary was BLACKLISTED, not pinned: 'EXACTLY {ready, embedding}' was probed as two `present` probes plus one `absent DenseReadiness::Pending`. codex demonstrated `pub enum DenseReadiness { Ready, Embedding, Failed }` clearing the gate with exit 0. Now closed by CONSTRUCTION with two new structural probe kinds — enum_exact (parses the enum body, compares variant SET *and* COUNT) and arms_exact (parses `impl Ty { fn f }`, compares the (variant, string) match-arm pairs as a LIST so a duplicate spelling is visible). A third variant fails whatever it is called; a third accepted STRING spelling fails even with the enum untouched.",
+    "FIX-1 / codex §9 round 1, finding #2 [P2] — CLOSED. The NO-DATA-MIGRATION `absent` regexes were case-sensitive and single-space-anchored; codex cleared the gate with `insert into canonical_attributes select * from old;`. New helper insert_into(table) emits (?i) plus all five SQLite conflict clauses (ABORT/FAIL/IGNORE/REPLACE/ROLLBACK) plus \\s+ between every token (newlines included) plus an optionally quoted/bracketed table name. SCOPE was re-read and is now written into the gate header: the clause forbids a MIGRATION/BACKFILL of PRE-EXISTING rows, the probes stay scoped to the SCHEMA crate (which IS the migration ladder), and the LEGITIMATE same-transaction projection INSERTs live in the ENGINE (configure_projections, lib.rs ~16663/16669) and are out of scope — so widening to case-insensitive cannot false-positive on them. The one residual is stated plainly in the header rather than hidden: a doc comment literally spelling `insert into canonical_attributes` in the schema crate would trip it, which is a false RED (the safe side) rather than the false GREEN it replaces.",
+    "FIX-1 SWEEP — both DEFECT CLASSES were searched for across every other clause assertion, and THREE MORE INSTANCES were found and fixed in the same round. Open-vocabulary probes: C1-Q6A-THREE-ROLES ('exactly {filterable, rankable, searchable}') had a blacklist of two names, so a fourth role under any other name passed; C1-Q6B-IDSPACE-TOTAL-THREE ('total over exactly those three') had FOUR `present` probes and NO negative probe at all, so a fourth variant — the precise violation of totality — could not be detected even in principle. Case-sensitive SQL: C1-TE-CUSTOM-TOKENIZER-DEFERRED's `absent CREATE VIRTUAL TABLE property_search_index` over the ENGINE had the identical uppercase anchor. All three now have their own RED-first fixture arms (12f, 12g, 12j), each of which exited 0 before this round.",
+    "FIX-1 NON-INSTANCES, checked and deliberately left alone: the Rust IDENTIFIER negative probes (ProjectionRole::Vector, ProjectionRole::Fts, EntityTypeSpec, id_prefix, idPrefix, DenseReadiness::Pending, `pub id: Option<IdSpace>`) stay CASE-SENSITIVE because case is significant in Rust — folding case there would manufacture false positives, not close a hole. C1-Q4-NO-PROVISIONAL-CONCEPT was already (?i). C1-Q6B-ID-NON-NULL's `absent pub id: Option<IdSpace>` is a single-spelling blacklist, but its paired `present pub id: IdSpace,` probe carries the obligation on its own (a change to Option makes the present probe fail), so it is not an open vocabulary."
+  ],
+  "blockers_encountered": [
+    {
+      "id": "S30-B1",
+      "status": "RESOLVED IN SLICE",
+      "what": "Wiring the gate into preflight §10 turned FOUR sibling suites red (test_preflight_landing, test_check_ledgers, test_check_board_currency, test_check_governed_surface_pin). Their throwaway fixture repos carry no C-1 contract, no pin and no sources, so the gate exited 2 and the anti-fail-open clause correctly refused to certify the tree.",
+      "how": "The gate was NOT weakened. Followed the established repair (T1b for ledger-integrity, T1e for the governed-surface pin): a new seeder helper scripts/tests/lib/c1-conformance-fixture.sh, called from each fixture builder. No bypass, no env escape hatch, no --skip, no conditional that makes the gate inert.",
+      "deviation_recorded": "The seeder COPIES the real artifacts, a deliberate departure from its synthetic sibling lib/governed-surface-fixture.sh. A synthetic C-1 pair is IMPOSSIBLE, not merely undesirable: the gate's implemented-assertion set is a constant inside the script and the registry bijection is rigid in both directions, so any pin not registering exactly the 26 CHECKABLE ids reports MALFORMED — the very failure the seeder exists to remove. The header states this and why the resulting coupling is acceptable (the C-1 pin, unlike the governed-surface pin, is not expected to trip during 0.8.20)."
+    },
+    {
+      "id": "S30-B2",
+      "status": "PRE-EXISTING, NOT THIS SLICE — for the orchestrator",
+      "what": "scripts/tests/test_commission_manifest.sh is RED, arm 9d: `FAIL arm 9d (real base line): base=[  base sha         a2022957  (Slice 15 — the newest LANDED slice STRICTLY BEFORE Slice 20)]`.",
+      "evidence": "Reproduced at the BASELINE 23a436dc in a throwaway local clone (not a worktree) with the identical failure line. REAL exit code 1 at baseline and at head. Nothing in Slice 30 touches commission-manifest.",
+      "recommendation": "Worth a TC. It is a live always-on CI job (commission-manifest), so this is presumably red in CI on main today."
+    },
+    {
+      "id": "S30-B3",
+      "status": "OBSERVATION, NOT A GATE FAILURE — for the Steward",
+      "what": "The contract contains an internal inconsistency inside clause Q6(b). The parenthetical says the C-2 typed carrier's `typed swap [is] not started`, while the amendment banner four lines below says `The C-2 swap shipped ALONE in 0.8.19` — and as-built agrees with the banner (SearchHit.id is a non-Option IdSpace, engine lib.rs:1575).",
+      "classification": "Registered as C1-Q6B-C2-CARRIER-STATUS, category PROSE, with the reason written into the pin: it is a point-in-time status note about a sibling workstream, superseded WITHIN THE SAME CLAUSE by the banner, not an obligation on as-built code. Pinning it CHECKABLE would hold the publish on an already-superseded parenthetical — the exact hazard the efa8d584 amendment was made to remove.",
+      "recommendation": "Fix the stale parenthetical at the NEXT contract amendment. Not worth an amendment of its own, and NOT a blocker: doing it now would move the contract's bytes and force a re-derivation of the whole registry."
+    }
+  ],
+  "additional_changes_made_in_scope": [
+    "scripts/tests/lib/c1-conformance-fixture.sh — new seeder (see S30-B1).",
+    "scripts/tests/test_check_governed_surface_pin.sh, test_check_ledgers.sh, test_check_board_currency.sh, test_preflight_landing.sh — each now seeds preflight's §10 subject. Two added lines apiece plus a comment; no assertion of any suite was changed.",
+    "scripts/tests/test_check_c1_conformance.sh now seeds §9's governed surface SYNTHETICALLY via the sibling helper instead of copying the real pair — that pin is expected to trip during 0.8.20 and this suite has no business being coupled to its signing state.",
+    "The gate carries a --list-sources flag (not in the brief). It prints every path the assertions read, and both the fixture roots and the seeder are built from it, so a clause added later cannot leave them silently stale. A stale fixture root would turn every source arm into a TC-37 path-#4 evaporation and stop testing what it claims.",
+    "The pin carries sha256_whitespace_normalized in addition to sha256 + git_blob_sha1. It is used ONLY to tell the reader whether a divergence was formatting-only (the brief requires that message); it is never a substitute for the content hash."
+  ],
+  "changelog_decision": {
+    "decision": "NO CHANGELOG ENTRY",
+    "reason": "This slice adds no consumer-visible behaviour and no SDK surface. It is a repo gate, its pin, its fixtures and two CI/preflight wirings — nothing a consumer of the Python, TypeScript, Rust or CLI surface can observe. The governed-surface pin holding byte-identical is the mechanical corroboration of that claim.",
+    "recorded_in": "the docs commit message and here"
+  },
+  "clause_registry": {
+    "subject": "dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md",
+    "pinned_at_commit": "23a436dcc7321eab86c622c8b403682caf2dfe2c",
+    "amended_at_commit": "efa8d584",
+    "sha256": "8740f0873344088130970360134e4766d1d091645662842e82d711e584ae50bb",
+    "git_blob_sha1": "93694a5602ae205de05a801f256676b921dc39cc",
+    "totals": {
+      "checkable": 26,
+      "cross_repo": 12,
+      "prose": 7,
+      "total": 45
+    },
+    "failing_clauses": [],
+    "prior_pass_reconciliation": {
+      "prior_report": "17 checkable / 16 passing / 7 cross-repo / 6 prose",
+      "this_pass": "26 checkable / 26 passing / 12 cross-repo / 7 prose (45 total)",
+      "why_they_differ": "This registry is FINER-GRAINED, derived clause-by-clause from the document rather than inherited. Q3 alone yields three distinct obligations the prior tally appears to have merged (sole authority; the destructive delta; the explicit `omission != drop` parenthetical). Q6(b) as amended yields five (the negative-space assertion; id-space totality; non-null id; h: terminal + lifecycle-addressability; surrogate-governed-only). The two cross-repo entries about the Commission C `index` carrier are two distinct sentences in two distinct sections (Q1 and Landing) and are registered separately. Critically, the prior report's '16 of 17 passing' is NOT reproduced: on this pass EVERY clause classified CHECKABLE passes. No clause was demoted to make that true — the full registry with per-clause reasons is in scripts/c1-conformance-pin.json.",
+      "governing": "this pass"
+    },
+    "checkable": [
+      "C1-SEAM-ENGINE-BUILD-DROP — engine owns projection build/drop: configure_projections(specs, drop) -> ProjectionDelta. engine lib.rs:8198",
+      "C1-Q1-ROLE-SET — roles are a Set[ProjectionRole]. engine lib.rs:3850, :3984",
+      "C1-Q3-SOLE-AUTHORITY — one durable registry, engine diffs + backfills. schema lib.rs:848; engine lib.rs:16884, :3993",
+      "C1-Q3-DESTRUCTIVE-DELTA — incompatible change surfaces a destructive delta. engine lib.rs:3642; slice15d:283",
+      "C1-Q3-OMISSION-NOT-DROP — omission != drop. slice15d:223, :1191",
+      "C1-Q5-DERIVED-CACHE-IDEMPOTENT — re-apply diffs to a no-op. engine lib.rs:4007; slice15d:204",
+      "C1-Q2-ENGINE-EAV-PROPERTY-FTS — one engine-owned EAV + property-FTS + composite index. schema lib.rs:855, :860, :864",
+      "C1-Q2-ENGINE-PROJECTS-VIA-CONFIGURE — property filter + property FTS live. slice15d:413, :447",
+      "C1-Q2-NO-DATA-MIGRATION — the EAV migration is shape-only, no backfill. schema lib.rs:847 (step 24, CREATE-only SQL)",
+      "C1-Q4-CHEAP-SAME-TRANSACTION — filterable + searchable->FTS build in the apply transaction. engine lib.rs:8221, :3997",
+      "C1-Q4-DENSE-READINESS-TWO-MEMBERS — exactly {ready, embedding}; `pending` reserved for the admission axis. engine lib.rs:3910",
+      "C1-Q4-NO-PROVISIONAL-CONCEPT — NEGATIVE: zero `provisional` occurrences in any .rs under src/",
+      "C1-Q6A-THREE-ROLES — exactly {filterable, rankable, searchable}; the FTS/vector tiers are sub-object labels, not roles. engine lib.rs:3874-3880",
+      "C1-Q6A-RANKABLE-GRACEFUL-DEFER — declared, deferred, never errors, grafts later. engine lib.rs:4004; slice15d:334, :1209",
+      "C1-Q6B-NO-ENTITYTYPESPEC-NO-IDPREFIX — NEGATIVE: zero EntityTypeSpec / id_prefix / idPrefix anywhere under src/. This is the amendment's own factual assertion, checked as one.",
+      "C1-Q6B-IDSPACE-TOTAL-THREE — every hit is l:/h:/p:. engine lib.rs:1465, :1478-1484",
+      "C1-Q6B-ID-NON-NULL — SearchHit.id is IdSpace, not Option<IdSpace>. engine lib.rs:1575",
+      "C1-Q6B-H-TERMINAL-NOT-LIFECYCLE-ADDRESSABLE — typed refusal, no fabricated surrogate. engine lib.rs:3608; slice25:532",
+      "C1-Q6B-SURROGATE-GOVERNED-ONLY — registration never mints an id for a pre-existing anonymous row. slice25:205, :500",
+      "C1-AA-ATOMIC-FLIP — vector row + terminal in ONE transaction; torn ready-without-vector forbidden. engine lib.rs:13662; slice20:352",
+      "C1-AA-NO-BLOCK-ON-EMBEDDING — apply enqueues and returns; readiness reads `embedding`. engine lib.rs:1208; slice20:270",
+      "C1-AA-CRASH-HEAL-BOOT-REDERIVE — boot re-derive converges after a simulated crash. engine lib.rs:16513; slice15d:740",
+      "C1-TE-DEFAULT-EMBEDDER — Option override, None => the engine's shipped default. engine lib.rs:3957; candle_bge.rs:44",
+      "C1-TE-DEFAULT-TOKENIZER — Option override, None => the SAME tokenizer body-FTS uses. engine lib.rs:3891; schema lib.rs:436 and :867",
+      "C1-TE-CUSTOM-TOKENIZER-DEFERRED — recorded in the registry, not honoured; no per-declaration FTS table. schema lib.rs:851, :836",
+      "C1-LAND-0820-SLOT — the 0.8.20 plan actually carries the C-1 co-land requirements. plan-0.8.20.md:192-195"
+    ],
+    "cross_repo": [
+      "C1-SEAM-MEMEX-SEMANTICS — Memex owns which attributes exist, what they mean, their roles, the promotion gate; the LLM stays Memex-side.",
+      "C1-Q1-INDEX-CARRIER — the optional AttributeSpec.index carrier landed inert in Commission C (memex 95ed450).",
+      "C1-Q3-MEMEX-PURE-DERIVE — Memex runs only the pure derive and holds no projection state.",
+      "C1-Q5-MEMEX-PERSISTS-SPEC — Memex persists the spec; drift resolves to it; no two-registry sync.",
+      "C1-Q2-FORBIDDEN-OVERBUILD — no persisted standalone attribute node/table Memex-side.",
+      "C1-Q2-MEMEX-REPOINTS-WRITE-PATH — Memex repoints set_entity_attribute and retires the interim at the co-land.",
+      "C1-Q4-PROMOTE-DEFERS-VECTOR — the vector tier defers to promote(); timing policy is Memex-owned.",
+      "C1-Q4-REJECT-DROPS-CHEAP-ONLY — a rejected provisional drops only the cheap projections.",
+      "C1-AA-PERSIST-FIRST — register() durably writes the Memex spec before any projection work.",
+      "C1-AA-DERIVE-THEN-CONFIGURE — the derive step is the Memex-side pure function.",
+      "C1-LAND-INDEX-CARRIER-MOVED — 'the only piece that had to move now, and it has' (memex 95ed450).",
+      "C1-LAND-MEMEX-ISOLATION — P2·S-F is isolated from Memex's current work; engine wiring deferred Memex-side."
+    ],
+    "prose": [
+      "C1-STATUS-BANNER",
+      "C1-Q2-SCOPE-LINE-UNTIL-COLAND",
+      "C1-Q6B-C2-CARRIER-STATUS  (see blocker S30-B3 — stale parenthetical, flagged for the next amendment)",
+      "C1-Q6B-AMENDMENT-RATIONALE",
+      "C1-AA-P2S0-INTERNAL-DETAIL",
+      "C1-NET-NOTHING-OPEN",
+      "C1-LAND-PUBLISH-IS-SEPARATE-GATE"
+    ]
+  },
+  "tc71_assessment": {
+    "question": "Does TC-71 (vector_projection_declared keys off the stored `vector` sub-object alone and ignores the `searchable` role) contradict any C-1 clause?",
+    "verdict": "NO — but the tension is real and is recorded here rather than papered over.",
+    "reasoning": "C-1 never states the negative-space rule TC-71 violates. It names a TIER, `searchable->vector`, and assigns it a cost policy (defers to promote()); it nowhere says 'an attribute without the searchable role must not receive a vector projection'. The engine does persist and honour the vector sub-object a caller explicitly declared, so no clause of this document is falsified. The rule TC-71 is measured against is the ENGINE'S OWN doc-comment (lib.rs:3843-3848: the sub-objects select the sub-target of a Searchable attribute) plus the accept-inert ruling — a FathomDB-internal API-shape defect, not a cross-repo contract breach.",
+    "consequence": "No clause was weakened, reclassified or skipped on TC-71's account, and Slice 30 does not touch it. It stays scoped to Slice 21 (R-20-CR).",
+    "caveat_for_the_steward": "If Slice 21 fixes TC-71 by requiring the `searchable` role, that is a behavioural change with NO C-1 clause on either side of it — this gate will neither notice nor object. That is correct (the contract is silent), and it is exactly the kind of thing the gate's header warns it does not cover."
+  },
+  "gates": [
+    {
+      "gate": "scripts/check-c1-conformance.sh (the gate, real tree)",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-3 HEAD (cc31fef1). 26/26 CHECKABLE clauses hold; contract byte-identical to the pin. The seven newly TREE-scoped negative probes pass on the real tree, and they are non-vacuous: a grep for each pattern over both crate trees before the change returned zero matches, so the green is earned rather than an artefact of scanning the wrong place."
+    },
+    {
+      "gate": "scripts/tests/test_check_c1_conformance.sh (recurrence guard)",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-3 HEAD (cc31fef1). 172 assertions (was 142), 0 failures. Arms 1-17, with arm 12 expanded into 21 divergent-fixture sub-arms 12a-12u — five of them new this round (12q-12u). Also new: four TC-37 tree-evaporation arms (EMPTIED and ABSENT, for each of the two crate trees), two --list-sources tree assertions, and two structural probe-kind guards. Was exit 1 at the RED commit 2b0d76c8 (152 PASS / 20 FAIL) — the RED-first evidence that all five sibling-module fixtures cleared the pre-fix gate with 0."
+    },
+    {
+      "gate": "scripts/check-governed-surface-pin.sh",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-3 HEAD (cc31fef1). HELD. src/conformance/governed-surface-allowlist.json is still byte-identical to baseline 23a436dc — it does not appear in `git diff --name-only 23a436dc` at all."
+    },
+    {
+      "gate": "scripts/preflight.sh --landing (from the worktree)",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-3 HEAD (cc31fef1). All sections ok, hard_fails [], warnings []. The c1-contract-conformance section reports ok."
+    },
+    {
+      "gate": "cargo clippy --workspace --all-targets",
+      "exit": 0,
+      "note": "CARRIED from the pre-fix round (run at 3475d55e). NOT re-run in fix-1, fix-2 or fix-3: no Rust changed in any of them — the three fix rounds touched only scripts/check-c1-conformance.sh, scripts/tests/test_check_c1_conformance.sh, scripts/c1-conformance-pin.json (prose only) and this file."
+    },
+    {
+      "gate": "cargo check --workspace --all-targets",
+      "exit": 0,
+      "note": "CARRIED from the pre-fix round (run at 3475d55e). NOT re-run in fix-1, fix-2 or fix-3: no Rust changed in any of them — the three fix rounds touched only scripts/check-c1-conformance.sh, scripts/tests/test_check_c1_conformance.sh, scripts/c1-conformance-pin.json (prose only) and this file."
+    },
+    {
+      "gate": "cargo test --workspace --quiet --no-fail-fast",
+      "exit": 0,
+      "note": "CARRIED from the pre-fix round (run at 3475d55e). NOT re-run in fix-1, fix-2 or fix-3: no Rust changed in any of them — the three fix rounds touched only scripts/check-c1-conformance.sh, scripts/tests/test_check_c1_conformance.sh, scripts/c1-conformance-pin.json (prose only) and this file."
+    },
+    {
+      "gate": "scripts/agent-lint.sh",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-3 HEAD (cc31fef1). Exit 0."
+    },
+    {
+      "gate": "actionlint .github/workflows/ci.yml",
+      "exit": 0,
+      "note": "CARRIED. .github/workflows/ci.yml is unchanged in fix-1, fix-2 and fix-3 — the CI wiring invokes the same shared script and did not need to move."
+    },
+    {
+      "gate": "bash -n on every new/modified shell file",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-1 HEAD on both changed shell files. shellcheck is NOT installed on this machine, so no shellcheck run is claimed."
+    },
+    {
+      "gate": "scripts/tests/test_check_governed_surface_pin.sh",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-3 HEAD (cc31fef1). Exit 0. Sibling suite 1 of 4 — it consumes lib/c1-conformance-fixture.sh, which builds its fixture root from the gate's --list-sources manifest, so the two new tree entries had to flow through correctly for this to stay green."
+    },
+    {
+      "gate": "scripts/tests/test_preflight_landing.sh",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-3 HEAD (cc31fef1). Exit 0. Sibling suite 2 of 4."
+    },
+    {
+      "gate": "scripts/tests/test_check_ledgers.sh",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-3 HEAD (cc31fef1). Exit 0. Sibling suite 3 of 4."
+    },
+    {
+      "gate": "scripts/tests/test_check_board_currency.sh",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-3 HEAD (cc31fef1). Exit 0. Sibling suite 4 of 4."
+    },
+    {
+      "gate": "scripts/tests/test_commission_manifest.sh",
+      "exit": 1,
+      "note": "PRE-EXISTING RED — reproduced identically at baseline 23a436dc in a throwaway clone. See blocker S30-B2. NOT caused by this slice and untouched by the fix-1 round."
+    },
+    {
+      "gate": "scripts/tests/test_smoke_scripts.sh",
+      "exit": 0
+    },
+    {
+      "gate": "scripts/tests/test_lint_plan_anchors.sh",
+      "exit": 0
+    },
+    {
+      "gate": "scripts/tests/test_check_release_state_views.sh",
+      "exit": 0
+    },
+    {
+      "gate": "scripts/tests/test_plans_status_frontmatter.sh",
+      "exit": 0
+    },
+    {
+      "gate": "scripts/tests/test_design_status_frontmatter.sh",
+      "exit": 0
+    },
+    {
+      "gate": "scripts/agent-test.sh (aggregate)",
+      "exit": null,
+      "note": "NOT RUN, TC-16. The aggregate is vacuous as a slice gate; the individual suites above are what carry the signal. Unchanged in fix-3."
+    },
+    {
+      "gate": "scripts/agent-lint-md.sh (worktree)",
+      "exit": null,
+      "note": "NOT CLAIMED. Per TC-37 this script takes its skip branches in a linked worktree and exits 0 having linted nothing; a worktree exit 0 is not a green and is not reported as one."
+    },
+    {
+      "gate": "bash -n scripts/check-c1-conformance.sh",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-3 HEAD (cc31fef1). Exit 0."
+    },
+    {
+      "gate": "bash -n scripts/tests/test_check_c1_conformance.sh",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-3 HEAD (cc31fef1). Exit 0."
+    },
+    {
+      "gate": "timing: 5x `bash scripts/check-c1-conformance.sh` on the real tree",
+      "exit": 0,
+      "note": "0.28 / 0.27 / 0.28 / 0.28 / 0.28 s at cc31fef1 vs 0.29 / 0.29 / 0.29 / 0.30 / 0.29 s at b0de847b. Tree-scoping two extra crate trees did NOT slow the gate: both are subsets of src/, and the new per-(tree,exts) walk cache collapses C1-Q6B-NO-ENTITYTYPESPEC's three identical full walks of src/ into one. Relevant because the gate runs in an always-on CI job and in preflight --landing."
+    },
+    {
+      "gate": "scripts/check-c1-conformance.sh (the gate, real tree)",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-4 HEAD (33792f3b). exit 0 in 0.50s wall. 26/26 CHECKABLE clauses hold; contract byte-identical to the pin. The green is EARNED, not an artefact of looking in the wrong place: every one of the 18 demonstrated false greens this round is now a RED arm in the recurrence suite."
+    },
+    {
+      "gate": "scripts/tests/test_check_c1_conformance.sh (recurrence guard)",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-4 HEAD (33792f3b). exit 0, 219 assertions (was 172), 0 failures, 20.6s. Arm 12 now carries 26 divergent-fixture sub-arms 12a-12ae. RED-first evidence: exit 1 at cf240a23 (172 PASS / 35 FAIL), at 7b37186c and at aed79cac."
+    },
+    {
+      "gate": "scripts/check-governed-surface-pin.sh",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-4 HEAD (33792f3b). exit 0 — 30 allowlist / 5 core / 5 recovery_denylist, AC-079 pin. src/conformance/governed-surface-allowlist.json is byte-identical to the baseline 23a436dc (git diff empty)."
+    },
+    {
+      "gate": "scripts/preflight.sh --landing (from the worktree)",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-4 HEAD (33792f3b). exit 0 in 0.89s. §10 reports ok c1-contract-conformance."
+    },
+    {
+      "gate": "scripts/tests/test_check_ledgers.sh",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-4 HEAD (33792f3b). exit 0."
+    },
+    {
+      "gate": "scripts/tests/test_check_board_currency.sh",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-4 HEAD (33792f3b). exit 0."
+    },
+    {
+      "gate": "scripts/tests/test_check_governed_surface_pin.sh",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-4 HEAD (33792f3b). exit 0."
+    },
+    {
+      "gate": "scripts/tests/test_preflight_landing.sh",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-4 HEAD (33792f3b). exit 0."
+    },
+    {
+      "gate": "scripts/agent-lint.sh",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-4 HEAD (33792f3b). exit 0."
+    },
+    {
+      "gate": "bash -n scripts/check-c1-conformance.sh + scripts/tests/test_check_c1_conformance.sh",
+      "exit": 0,
+      "note": "exit 0 each."
+    },
+    {
+      "gate": "scripts/check-c1-conformance.sh (the gate, real tree)",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-5 HEAD (4aea7578). 26/26 CHECKABLE clauses hold; contract byte-identical to the pin. 0.76s wall. The green is EARNED, not an artefact: the two new probe kinds were each proven to go RED on a divergent fixture before this run (12af-*, 12ag-*, 12ah-*), and all 14 named proofs were independently confirmed present in `cargo test -- --list`."
+    },
+    {
+      "gate": "scripts/tests/test_check_c1_conformance.sh (recurrence guard)",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-5 HEAD. 276 assertions (was 219), 0 failures. Arm 12 now runs to 12ah, with 12af (wrong-crate constant, 4 sub-arms), 12ag (disabled proof, 4 sub-arms) and 12ah (switched off one level up, 4 sub-arms) new this round, plus two structural guards for `fn_defined`-on-a-test. Was exit 1 at the RED commit a22eee36 (221 PASS / 36 FAIL)."
+    },
+    {
+      "gate": "scripts/check-governed-surface-pin.sh",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-5 HEAD. 30 allowlist / 5 core / 5 recovery_denylist, pinned at 427d2712 under AC-079. src/conformance/governed-surface-allowlist.json verified BYTE-IDENTICAL to baseline 23a436dc via `git diff --exit-code`."
+    },
+    {
+      "gate": "scripts/preflight.sh --landing (from the worktree)",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-5 HEAD. All landing gates ok, including §10 c1-contract-conformance. One expected WARN: tracked source dirty on canonical main (the uncommitted docs change at the time of the run)."
+    },
+    {
+      "gate": "scripts/tests/test_check_governed_surface_pin.sh",
+      "exit": 0,
+      "note": "sibling suite, re-run at the fix-5 head."
+    },
+    {
+      "gate": "scripts/tests/test_preflight_landing.sh",
+      "exit": 0,
+      "note": "sibling suite, re-run at the fix-5 head. Exercises lib/c1-conformance-fixture.sh, which is manifest-driven and therefore picked up the newly-read Cargo.toml with no edit."
+    },
+    {
+      "gate": "scripts/tests/test_check_ledgers.sh",
+      "exit": 0,
+      "note": "sibling suite, re-run at the fix-5 head."
+    },
+    {
+      "gate": "scripts/tests/test_check_board_currency.sh",
+      "exit": 0,
+      "note": "sibling suite, re-run at the fix-5 head."
+    },
+    {
+      "gate": "scripts/agent-lint.sh",
+      "exit": 0,
+      "note": "re-run at the fix-5 head."
+    },
+    {
+      "gate": "bash -n scripts/check-c1-conformance.sh",
+      "exit": 0,
+      "note": ""
+    },
+    {
+      "gate": "bash -n scripts/tests/test_check_c1_conformance.sh",
+      "exit": 0,
+      "note": ""
+    },
+    {
+      "gate": "cargo test --workspace --no-run",
+      "exit": 0,
+      "note": "NEW THIS ROUND, because the gate now asserts things about test ATTRIBUTES. Every test target compiles. TC-72: a single workspace run is weak evidence and no Rust changed, so this is a sanity check, not a release claim."
+    },
+    {
+      "gate": "cargo test -p fathomdb-engine --test <T15|T20|T25> -- --list",
+      "exit": 0,
+      "note": "All 14 named proofs appear in the BUILT test binaries — the toolchain confirming, independently of the gate's lexical reading, that every pinned proof is an active test."
+    },
+    {
+      "gate": "cargo test -p fathomdb-engine --test slice20_dense_readiness atomic_flip_never_exposes_ready_without_the_vector_under_concurrent_write -- --exact",
+      "exit": 0,
+      "note": "Spot-check: a named proof actually RUNS and passes (1 passed, 0 failed, 0 ignored)."
+    },
+    {
+      "gate": "cargo clippy/check --workspace --all-targets",
+      "exit": 0,
+      "note": "CARRIED from the fix-1 round — no Rust changed in rounds 2, 3, 4 or 5."
+    },
+    {
+      "gate": "scripts/check-c1-conformance.sh (the gate, real tree)",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-6 HEAD (8b43a58c). Prints `26 checkable / 12 cross-repo / 7 prose, 45 total, pinned at 23a436dc` — the registry did NOT move this round."
+    },
+    {
+      "gate": "scripts/tests/test_check_c1_conformance.sh (recurrence guard)",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-6 HEAD. 297 assertions (was 276), 0 failures. Arm 12 now runs to 12aj. RED-first evidence: suite rc=1 at the RED commit 12ac854e (290 PASS, 7 failed), with `expected rc=1, got rc=0` on 12ai and `expected rc=0, got rc=1` on 12aj."
+    },
+    {
+      "gate": "scripts/check-governed-surface-pin.sh",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-6 HEAD. 30 allowlist / 5 core / 5 recovery_denylist, pinned at 427d2712 under AC-079."
+    },
+    {
+      "gate": "git diff --exit-code 23a436dc -- src/conformance/governed-surface-allowlist.json",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-6 HEAD. Empty diff — the governed surface is BYTE-IDENTICAL to the slice baseline."
+    },
+    {
+      "gate": "scripts/preflight.sh --landing (from the worktree)",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-6 HEAD, AFTER the GREEN commit. hard_fails [], warnings [] — clean this time (the fix-5 round's `tracked source dirty` WARN was the then-uncommitted edit and does not recur)."
+    },
+    {
+      "gate": "cargo clippy --workspace --all-targets",
+      "exit": 0,
+      "note": "RE-RUN THIS ROUND rather than carried, at the fix-6 working tree. rc=0."
+    },
+    {
+      "gate": "cargo check --workspace --all-targets",
+      "exit": 0,
+      "note": "RE-RUN THIS ROUND rather than carried, at the fix-6 working tree. rc=0. No Rust changed in fix-6 — the round touched only scripts/check-c1-conformance.sh, scripts/tests/test_check_c1_conformance.sh and this file — but both were run rather than carried."
+    },
+    {
+      "gate": "bash -n scripts/check-c1-conformance.sh",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-6 HEAD."
+    },
+    {
+      "gate": "bash -n scripts/tests/test_check_c1_conformance.sh",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-6 HEAD."
+    },
+    {
+      "gate": "scripts/tests/test_preflight_landing.sh",
+      "exit": 0,
+      "note": "sibling suite 1 of 4, re-run at the fix-6 head."
+    },
+    {
+      "gate": "scripts/tests/test_check_ledgers.sh",
+      "exit": 0,
+      "note": "sibling suite 2 of 4, re-run at the fix-6 head."
+    },
+    {
+      "gate": "scripts/tests/test_check_board_currency.sh",
+      "exit": 0,
+      "note": "sibling suite 3 of 4, re-run at the fix-6 head."
+    },
+    {
+      "gate": "scripts/tests/test_check_governed_surface_pin.sh",
+      "exit": 0,
+      "note": "sibling suite 4 of 4, re-run at the fix-6 head."
+    },
+    {
+      "gate": "scripts/agent-test.sh (aggregate)",
+      "exit": null,
+      "note": "NOT RUN, TC-16, and NOT a signal: its aggregate exit is VACUOUS because it aborts early on a known-red fixture and never reaches the Rust or Python steps. The individual suites above carry the signal."
+    },
+    {
+      "gate": "scripts/tests/test_commission_manifest.sh",
+      "exit": 1,
+      "note": "PRE-EXISTING RED on main (TC-79, arm 9d). Not run this round; recorded so the reviewer is not surprised. Not caused by and not touched by fix-6."
+    },
+    {
+      "gate": "scripts/agent-lint-md.sh (worktree)",
+      "exit": null,
+      "note": "NOT CLAIMED. TC-37: this script takes its skip branches in a linked worktree, so a worktree exit 0 is not a green."
+    },
+    {
+      "gate": "scripts/preflight.sh --worktree",
+      "exit": null,
+      "note": "NOT RUN. Known to HARD-fail STALE BASE on this worktree; adjudicated by the Steward (canonical main advanced only by ledger/docs files since base 23a436dc). The worktree was NOT re-created."
+    },
+    {
+      "gate": "scripts/check-c1-conformance.sh (the gate, real tree)",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-6b HEAD. rc=0, and the registry line is unchanged: `26 checkable / 12 cross-repo / 7 prose, 45 total, pinned at 23a436dc`."
+    },
+    {
+      "gate": "scripts/tests/test_check_c1_conformance.sh (recurrence guard)",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-6b HEAD. 307 assertions (was 297), 0 failures. Arm 12 now runs to 12ak. RED-first evidence: suite rc=1 at the RED commit f4c7aab9 (300 PASS / 7 FAIL), with `expected rc=1, got rc=0` on 12ak-1 and 12ak-3 while the shebang-alone mirror 12ak-2 and the fix-6 arm 12aj were already green."
+    },
+    {
+      "gate": "scripts/check-governed-surface-pin.sh",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-6b HEAD. 30 allowlist / 5 core / 5 recovery_denylist, pinned at 427d2712 under AC-079."
+    },
+    {
+      "gate": "git diff --exit-code 23a436dc -- src/conformance/governed-surface-allowlist.json",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-6b HEAD. Empty diff. `git diff --name-only 23a436dc HEAD -- src/` is also EMPTY — no file under src/ moved in this slice."
+    },
+    {
+      "gate": "scripts/preflight.sh --landing (from the worktree)",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-6b HEAD, after the GREEN commit. hard_fails []; one warning, `tracked source dirty on canonical main`, which is about the CANONICAL MAIN checkout (untracked/dirty files there), not this worktree."
+    },
+    {
+      "gate": "bash -n scripts/check-c1-conformance.sh",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-6b HEAD."
+    },
+    {
+      "gate": "bash -n scripts/tests/test_check_c1_conformance.sh",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-6b HEAD."
+    },
+    {
+      "gate": "scripts/tests/test_preflight_landing.sh",
+      "exit": 0,
+      "note": "sibling suite 1 of 4, re-run at the fix-6b head."
+    },
+    {
+      "gate": "scripts/tests/test_check_ledgers.sh",
+      "exit": 0,
+      "note": "sibling suite 2 of 4, re-run at the fix-6b head."
+    },
+    {
+      "gate": "scripts/tests/test_check_board_currency.sh",
+      "exit": 0,
+      "note": "sibling suite 3 of 4, re-run at the fix-6b head."
+    },
+    {
+      "gate": "scripts/tests/test_check_governed_surface_pin.sh",
+      "exit": 0,
+      "note": "sibling suite 4 of 4, re-run at the fix-6b head."
+    },
+    {
+      "gate": "cargo clippy --workspace --all-targets",
+      "exit": 0,
+      "note": "CARRIED from the fix-6 round (measured rc=0 at 8b43a58c). NOT re-run in fix-6b: no Rust changed — the round touched only scripts/check-c1-conformance.sh, scripts/tests/test_check_c1_conformance.sh and this file."
+    },
+    {
+      "gate": "cargo check --workspace --all-targets",
+      "exit": 0,
+      "note": "CARRIED from the fix-6 round (measured rc=0 at 8b43a58c). NOT re-run in fix-6b: no Rust changed."
+    },
+    {
+      "gate": "scripts/agent-test.sh (aggregate)",
+      "exit": null,
+      "note": "NOT RUN, TC-16 — its aggregate exit is VACUOUS (it aborts early on a known-red fixture). The individual suites above carry the signal."
+    },
+    {
+      "gate": "scripts/tests/test_commission_manifest.sh",
+      "exit": 1,
+      "note": "PRE-EXISTING RED on main (TC-79, arm 9d). Not run this round, not touched by fix-6b."
+    },
+    {
+      "gate": "scripts/preflight.sh --worktree",
+      "exit": null,
+      "note": "NOT RUN. Adjudicated STALE BASE on this worktree; unchanged from the fix-6 round."
+    },
+    {
+      "gate": "scripts/check-c1-conformance.sh (the gate, real tree)",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-6c HEAD. rc=0, and the registry line is unchanged: `26 checkable / 12 cross-repo / 7 prose, 45 total, pinned at 23a436dc`."
+    },
+    {
+      "gate": "scripts/tests/test_check_c1_conformance.sh (recurrence guard)",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-6c HEAD. 317 assertions (was 307), 0 failures — PURE ADDITION, nothing removed or weakened. Arm 12 now runs to 12al. RED-first evidence: suite rc=1 at the RED commit 9ef5179b (310 PASS / 7 FAIL), with `expected rc=1, got rc=0` on 12al-1 and 12al-3 while the BOM-alone mirror 12al-2 and the earlier arms 12aj/12ak were already green."
+    },
+    {
+      "gate": "scripts/check-governed-surface-pin.sh",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-6c HEAD. rc=0, `30 allowlist / 5 core / 5 recovery_denylist, pinned at 427d2712 under AC-079` — pin UNMOVED and the allowlist BYTE-IDENTICAL (`git diff 337c2b12 -- src/conformance/governed-surface-allowlist.json` is empty)."
+    },
+    {
+      "gate": "scripts/preflight.sh --landing",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-6c HEAD. rc=0, `{\"preflight\":\"pass\",...,\"hard_fails\":[]}`. The one warning is the pre-existing 'tracked source dirty on canonical main', which is about the CANONICAL checkout, not this worktree."
+    },
+    {
+      "gate": "bash -n scripts/check-c1-conformance.sh + bash -n scripts/tests/test_check_c1_conformance.sh",
+      "exit": 0,
+      "note": "Both changed shell files parse at the fix-6c head."
+    },
+    {
+      "gate": "scripts/tests/test_preflight_landing.sh + test_check_ledgers.sh + test_check_board_currency.sh + test_check_governed_surface_pin.sh",
+      "exit": 0,
+      "note": "All four sibling suites re-run at the fix-6c head, each rc=0."
+    },
+    {
+      "gate": "cargo clippy --workspace --all-targets",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-6c HEAD rather than carried, even though no Rust changed. rc=0."
+    },
+    {
+      "gate": "cargo check --workspace --all-targets",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-6c HEAD rather than carried, even though no Rust changed. rc=0."
+    },
+    {
+      "gate": "rustc --test (throwaway, the fix-6c premise check)",
+      "exit": 0,
+      "note": "The BOM claim was confirmed against the TOOLCHAIN before the fix was relied on, as fix-6b did. `ef bb bf` + `#![cfg(feature = \"nope\")]` + `#[test] fn t() {}` -> builds, `--list` prints `0 tests, 0 benchmarks`. The SAME file without the cfg -> `t3: test` / `1 test, 0 benchmarks`, so the cfg empties it and not the BOM. `ef bb bf` + `#!/usr/bin/env rust-script` + `#![cfg(..)]` + `#[test]` -> builds, `--list` prints `0 tests, 0 benchmarks`, which is what fixes the ORDER of the two skips. The throwaway files were deleted."
+    },
+    {
+      "gate": "cargo test --workspace",
+      "exit": null,
+      "note": "NOT RUN and NOT USED as evidence either way — a known-unstable signal in this repo (roughly 1 run in 3 fails on plain main, a different concurrency test each time)."
+    }
+  ],
+  "fix_rounds": [
+    {
+      "round": 1,
+      "reviewer": "codex §9, round 1 — verdict CONCERN, two [P2] findings",
+      "budget": "round 1 of a maximum 6 (standard bound; this slice does not touch fathomdb-engine/src, so the engine amendment does not apply)",
+      "clause_registry_change": "NONE. Same 26 CHECKABLE ids, same categories, same pinned counts (26 checkable / 12 cross-repo / 7 prose, 45 total). The contract's bytes are untouched, so no re-derivation was triggered. The defect was entirely in the ASSERTIONS bodies inside scripts/check-c1-conformance.sh; scripts/c1-conformance-pin.json was NOT edited in this round.",
+      "clauses_strengthened": [
+        "C1-Q4-DENSE-READINESS-TWO-MEMBERS  (codex #1)  — + enum_exact + 2x arms_exact",
+        "C1-Q6A-THREE-ROLES                 (sweep)     — + enum_exact + 2x arms_exact",
+        "C1-Q6B-IDSPACE-TOTAL-THREE         (sweep)     — + enum_exact + 2x arms_exact",
+        "C1-Q2-NO-DATA-MIGRATION            (codex #2)  — both `absent` regexes now via insert_into()",
+        "C1-TE-CUSTOM-TOKENIZER-DEFERRED    (sweep)     — `absent` regex now (?i) + \\s+ tolerant"
+      ],
+      "clauses_weakened": "NONE. No probe was removed or loosened; the pre-existing present/absent probes were all KEPT as spelling regression guards alongside the new structural ones.",
+      "red_then_green": [
+        {
+          "arm": "12d third DenseReadiness variant (`Failed`)",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "want": 1
+        },
+        {
+          "arm": "12e third readiness SPELLING (\"pending\" => Some(DenseReadiness::Ready)), enum untouched",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "want": 1
+        },
+        {
+          "arm": "12f fourth ProjectionRole (`Embeddable`)",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "want": 1
+        },
+        {
+          "arm": "12g fourth IdSpaceKind (`Chunk`, prefix \"c:\")",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "want": 1
+        },
+        {
+          "arm": "12h `insert into canonical_attributes select * from old_attrs;`",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "want": 1
+        },
+        {
+          "arm": "12i `INSERT OR REPLACE INTO\\n property_search_index(...) SELECT ...`",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "want": 1
+        },
+        {
+          "arm": "12j lowercase engine-side `create virtual table property_search_index using fts5(...)`",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "want": 1
+        }
+      ],
+      "suite_rc": {
+        "at_red_commit_15abb967": 1,
+        "at_green_commit_86cd81fc": 0
+      },
+      "suite_assertions": {
+        "before": 106,
+        "after": 126
+      }
+    },
+    {
+      "round": 2,
+      "reviewer": "codex §9, round 2 (fix-1 re-review) — verdict CONCERN, three [P2] findings",
+      "transcript": "dev/plans/runs/codex/0.8.20/slice-30-fix-1-rereview-20260727T155657Z.log",
+      "budget": "SAME-FINDING BOUND: orchestration.md §6 bounds a repeated finding class at 3. All three round-2 findings are REFINEMENTS of the two classes round 1 raised (narrow regex over SQL; an open string vocabulary), so this is round 2 of 3 on those classes. A round-3 fourth variant of the same two classes MUST halt the slice and escalate to the Steward rather than be fixed in-line. The RESIDUAL SCOPE statement added in this round exists precisely so that a round-3 finding can be adjudicated against a documented boundary instead of an implied one.",
+      "clause_registry_change": "NONE. Same 26 CHECKABLE ids, same categories, same pinned counts (26 checkable / 12 cross-repo / 7 prose, 45 total). The contract's bytes are untouched, so no re-derivation was triggered. scripts/c1-conformance-pin.json WAS edited this round, but only its `_comment` prose (the residual-scope mirror) — no id, category, count or hash moved.",
+      "findings": [
+        {
+          "id": "round2-#1 [P2] Catch schema-qualified INSERT targets",
+          "site": "scripts/check-c1-conformance.sh:273-277 (insert_into())",
+          "claim_verified": true,
+          "how": "Reproduced as fixture 12k: `INSERT INTO main.canonical_attributes SELECT * FROM old_attrs;` appended to the schema crate. Pre-fix gate rc=0.",
+          "fix": "New qualified(table) helper: an optional schema identifier — quoted/bracketed/bare, with whitespace tolerated around the dot, all of which SQLite accepts — before the pinned table name. insert_into() now composes it.",
+          "scope_note": "The widening cannot false-positive on the engine's legitimate same-transaction projection INSERTs: both probes remain scoped to the SCHEMA crate (the migration ladder), which is the only place a backfill of PRE-EXISTING rows can run."
+        },
+        {
+          "id": "round2-#2 [P2] Catch schema-qualified FTS DDL",
+          "site": "scripts/check-c1-conformance.sh:460-462 (C1-TE-CUSTOM-TOKENIZER-DEFERRED)",
+          "claim_verified": true,
+          "how": "Reproduced as fixture 12m: `CREATE VIRTUAL TABLE main.property_search_index USING fts5(attr_value)` appended to the engine. Pre-fix gate rc=0.",
+          "fix": "The same qualified() helper, composed into the CREATE VIRTUAL TABLE pattern after the optional IF NOT EXISTS."
+        },
+        {
+          "id": "round2-#3 [P2] Detect extra accepted spellings outside simple arms",
+          "site": "scripts/check-c1-conformance.sh:852-855 (arm_pairs())",
+          "claim_verified": true,
+          "how": "Reproduced as TWO fixtures, one per syntax codex named. 12n: an `if value == \"pending\" { return Some(DenseReadiness::Ready); }` guard before the match. 12o: an or-pattern arm `\"vector\" | \"searchable\" => Some(ProjectionRole::Searchable),` — note 12o admits the STRING \"vector\", not the identifier ProjectionRole::Vector, so the clause's pre-existing `absent` probe cannot fire and only a genuinely closed string vocabulary catches it. Both pre-fix rc=0.",
+          "fix": "TWO changes, deliberately, because expanding syntax alone cannot close this class. (a) arm_pairs() now expands OR-PATTERNS in both directions — only the LAST alternative sits immediately before the `=>`, so the pinned pair was harvested while the extra token stayed invisible. (b) The check is INVERTED as well: inside a function whose whole job is to map a CLOSED vocabulary, EVERY string literal must be one of the pinned spellings. (b) is what catches the `if` guard, the `matches!`, and the next form nobody has thought of — it does not enumerate admitting syntaxes, which is an open set.",
+          "cost_accepted": "A legitimate NON-vocabulary literal added to one of these three small functions (an error message, say) turns the gate RED. That is a false RED — the safe side of a publish-precondition gate, the same trade already accepted for the SQL text probes — and the failure message tells the reader to move the literal out of the function rather than widen the check."
+        }
+      ],
+      "sweep": {
+        "method": "Enumerated EVERY negative probe in the gate (absent / absent_tree) and asked of each whether the narrow-regex shape the three findings share could produce a FALSE GREEN there.",
+        "instances_found": 1,
+        "detail": [
+          "C1-Q6B-ID-NON-NULL — FIXED. Its `absent` probe was the literal string `pub id: Option<IdSpace>`, so any legal Rust respacing (`pub id : Option < IdSpace >`) evaded it. Not trivially exploitable, because the clause's paired `present` probe fails on the same edit — so fixture 12p also plants a decoy struct carrying `pub id: IdSpace,`, which satisfies the present probe and leaves the narrow absent probe as the only thing standing. Pre-fix rc=0. Now whitespace-tolerant.",
+          "C1-Q4-DENSE-READINESS-TWO-MEMBERS `absent DenseReadiness::Pending` — EXAMINED, NOT CHANGED. A Rust identifier probe, and the clause is now closed three ways over (enum_exact + 2x arms_exact + the new string-literal check), so this probe is belt-and-braces on top of structural closure rather than the thing holding the clause up.",
+          "C1-Q6A-THREE-ROLES `absent ProjectionRole::Vector|Fts` — EXAMINED, NOT CHANGED. Same argument.",
+          "C1-Q6B-NO-ENTITYTYPESPEC-NO-IDPREFIX (EntityTypeSpec / id_prefix / idPrefix) and C1-Q4-NO-PROVISIONAL-CONCEPT ((?i)provisional) — EXAMINED, NOT CHANGED. Single identifiers over a whole tree: there is no whitespace or case to widen. Their residual is macro/const-constructed identifiers, which is documented in RESIDUAL SCOPE class 3 and is not reachable by regex.",
+          "All `present` and `min` probes — EXAMINED, NOT CHANGED. A too-narrow POSITIVE probe fails RED when the code's spelling moves; it is on the safe side by construction and cannot buy a green."
+        ]
+      },
+      "red_then_green": [
+        {
+          "arm": "12k `INSERT INTO main.canonical_attributes SELECT * FROM old_attrs;`",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "want": 1,
+          "clause": "C1-Q2-NO-DATA-MIGRATION"
+        },
+        {
+          "arm": "12l ``insert or ignore into `main` . property_search_index(...) select ...`` (lowercase + conflict clause + QUOTED schema + spaces around the dot)",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "want": 1,
+          "clause": "C1-Q2-NO-DATA-MIGRATION"
+        },
+        {
+          "arm": "12m `CREATE VIRTUAL TABLE main.property_search_index USING fts5(attr_value)` in the ENGINE",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "want": 1,
+          "clause": "C1-TE-CUSTOM-TOKENIZER-DEFERRED"
+        },
+        {
+          "arm": "12n `if value == \"pending\" { return Some(DenseReadiness::Ready); }` before the match",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "want": 1,
+          "clause": "C1-Q4-DENSE-READINESS-TWO-MEMBERS"
+        },
+        {
+          "arm": "12o or-pattern arm `\"vector\" | \"searchable\" => Some(ProjectionRole::Searchable),`",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "want": 1,
+          "clause": "C1-Q6A-THREE-ROLES"
+        },
+        {
+          "arm": "12p (SWEEP) respaced `pub id : Option < IdSpace > ,` with a decoy satisfying the present probe",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "want": 1,
+          "clause": "C1-Q6B-ID-NON-NULL"
+        }
+      ],
+      "suite_rc": {
+        "at_red_commit_041e729e": 1,
+        "at_green_commit_1fdbca4f": 0
+      },
+      "suite_assertions": {
+        "before": 126,
+        "after": 142,
+        "arms": "23 (was 17): 12k-12p added"
+      },
+      "residual_scope_statement": {
+        "where": "scripts/check-c1-conformance.sh header, section 'RESIDUAL SCOPE — READ BEFORE ROUND 3'; one-paragraph mirror in scripts/c1-conformance-pin.json's _comment.",
+        "epistemic_status_claimed": "This gate is a TRIPWIRE AGAINST DRIFT, not a proof of conformance. Threat model: a future contributor who changes as-built code without noticing that a ratified cross-repo contract said otherwise. NOT an adversarial control — it cannot stop someone deliberately smuggling a backfill past CI, and nothing assembled out of regexes over source text could.",
+        "classes_documented_as_uncatchable": [
+          "1. DYNAMICALLY COMPOSED SQL — format!(\"INSERT INTO {} ...\", TABLE), push_str from fragments, a table name in a const/static. The gate reads `{}`, not the table.",
+          "2. ANOTHER ROUTE TO THE SAME TABLE — qualified() closes the SPELLINGS of the pinned NAME, not every ROUTE: an ATTACHed alias chosen at runtime, a VIEW or INSTEAD OF TRIGGER writing the table under a different name, ALTER TABLE ... RENAME.",
+          "3. IDENTIFIER INDIRECTION IN RUST — `const PENDING: &str = \"pending\";` defeats the string-literal check; macro_rules!/paste!-generated enum bodies and impl blocks are never expanded; concat_idents!-style construction defeats the EntityTypeSpec/id_prefix negative-space probes; a type alias or re-export defeats the identifier probes.",
+          "4. CONVERSION SURFACES OUTSIDE THE NAMED FUNCTION — arms_exact reads exactly `impl <Ty> { fn <fn> }`. An `impl FromStr for <Ty>`, a `From<&str>`, or a free `fn parse_readiness(&str) -> Option<DenseReadiness>` admits an extra spelling without touching the block the gate reads. This is the clearest proof the approach cannot be COMPLETED by widening: a free function is ordinary Rust and no impl-scoped check can reach it.",
+          "5. NORMALISING COMPARISONS — to_lowercase()/trim()/eq_ignore_ascii_case widen the accepted vocabulary WITHOUT introducing a new string literal.",
+          "6. CONDITIONAL COMPILATION — nothing models #[cfg(...)]; text under a disabled feature reads exactly like shipped code. (Errs RED, not green.)",
+          "7. BEHAVIOUR, and THE MEMEX REPO — already stated before this round: behavioural clauses assert only that the NAMED TEST still exists, and 12 clauses are CROSS-REPO by classification."
+        ],
+        "error_bias_documented": "Every ambiguity resolves toward RED: an unparseable enum body, an impl block the reader cannot find, an unreadable file and a missing tree are all failures (exit 1 / exit 2), never skips; and the text-scoped probes WILL trip on a doc comment or an error message that spells the forbidden thing. Noisy false positives with false negatives confined to the documented list is the correct bias for a gate that HOLDS A PUBLISH.",
+        "why_this_stopping_point": "The threat model is accidental drift by a future contributor, not a malicious actor. Residual class 4 is the decisive argument that no amount of further widening reaches soundness — a free conversion function is ordinary Rust and lies outside any impl-scoped check — so the marginal return on a third regex round is ~0 while the same-finding budget is finite. Making the boundary EXPLICIT converts an open-ended asymptote into a reviewable scope decision.",
+        "consequence_for_reviewers": "Stated in the header: a finding that the gate misses something ON the documented list is TRUE and is NOT a defect in the patch — the answer to it is a different mechanism, not another regex. A finding that it misses a spelling of a PINNED NAME in LITERAL source text IS a real defect."
+      },
+      "recommendation_made_not_built": {
+        "recommendation": "If R-20-H7 is ever required to be a SOUNDNESS argument rather than a drift tripwire, replace the lexical layer rather than widen it: (a) assert the shipped schema against `sqlite_master` at runtime in an integration test — it sees the table however the SQL was spelled, qualified or composed, and closes residual classes 1, 2 and 6 outright; and/or (b) parse Rust with `syn` — it sees every conversion surface including trait impls, free functions and macro-expanded bodies, closing classes 3 and 4.",
+        "why_not_built_here": "Both are real work with their own maintenance surface and belong to a slice of their own; neither is warranted by the stated threat model; and silently building one inside a §9 fix round would be scope creep in the exact costume OOB forbids. Raised as a recommendation, per the fix-round brief, rather than implemented.",
+        "who_decides": "Steward / HITL. It is NOT a blocker on R-20-H7 as ratified: the acceptance is 'Gate exists and is GREEN', which is satisfied."
+      }
+    },
+    {
+      "round": 3,
+      "reviewer": "codex §9, round 3 (fix-2 re-review) — verdict CONCERN, two [P2] findings",
+      "transcript": "dev/plans/runs/codex/0.8.20/slice-30-fix-2-rereview-20260727T162303Z.log",
+      "budget": "THE 3-SAME-FINDING BOUND DID NOT FIRE, and the distinction is load-bearing. orchestration.md §6 bounds a REPEATED finding class at 3. Rounds 1-2 were an ASYMPTOTE: regex shape over an open vocabulary of spellings, unwinnable by widening, correctly closed first by INVERTING the check and then by STATING the residual. Round 3 is a different animal — a BOUNDED SCOPE BUG with a definite, complete fix: the probes were pointed at ONE FILE instead of the crate's SOURCE TREE. The orchestrator ruled it a NEW, DISTINCT class; this is therefore round 3 of a maximum 6 total, not round 3 of 3 on the rounds-1-2 classes. It was CLOSED, not documented away, and the RESIDUAL SCOPE section was deliberately NOT extended to absorb it.",
+      "why_this_was_not_residual": "The gate's stated residual covers INDIRECTION and NON-LITERAL routes (format!-composed SQL, const/macro-indirected identifiers, ATTACH aliases, conversion surfaces outside the named impl, normalising comparisons). codex's fixture is none of those: it is a LITERAL, correctly-spelled, fully schema-qualified `CREATE VIRTUAL TABLE main.property_search_index USING fts5(...)` — exactly what the gate claims to catch — sitting in a sibling file. The header's claim was therefore FALSE AS WRITTEN, which is the real severity here, and the honest repair is to make the claim true rather than to narrow the claim.",
+      "clause_registry_change": "NONE. Same 26 CHECKABLE ids, same categories, same pinned counts (26 checkable / 12 cross-repo / 7 prose, 45 total). The contract's bytes are untouched, so no re-derivation was triggered. scripts/c1-conformance-pin.json WAS edited this round, but only its `_comment` prose (7 added lines stating that SCOPE is not a residual class) — no id, category, count or hash moved.",
+      "findings": [
+        {
+          "id": "round3-#1 [P2] schema-crate module scope",
+          "site": "scripts/check-c1-conformance.sh:447-448 (C1-Q2-NO-DATA-MIGRATION absent probes)",
+          "claim_verified": true,
+          "how": "Reproduced as fixture 12q: a NEW module src/rust/crates/fathomdb-schema/src/migrations_extra.rs carrying `INSERT INTO main.canonical_attributes SELECT * FROM old_attrs;` and `INSERT INTO property_search_index(attr_value) SELECT value FROM legacy_props;`, with lib.rs untouched. Pre-fix gate rc=0.",
+          "fix": "Both probes become ('absent_tree', SCH_TREE, insert_into(<table>), None) over src/rust/crates/fathomdb-schema/src. exts=None (every text file) rather than *.rs, so a migration carried in a .sql file and pulled in with include_str! is in scope.",
+          "scope_note": "The scope is still THE SCHEMA CRATE and not all of src/: the clause forbids a backfill of PRE-EXISTING rows, and the LEGITIMATE per-declaration, same-transaction projection INSERTs live in the ENGINE. Widening to the crate tree cannot false-positive on them. Verified by grep over the real tree before the change: zero matches in either crate tree."
+        },
+        {
+          "id": "round3-#2 [P2] engine-crate module scope",
+          "site": "scripts/check-c1-conformance.sh:579-581 (C1-TE-CUSTOM-TOKENIZER-DEFERRED)",
+          "claim_verified": true,
+          "how": "Reproduced as fixture 12r, using codex's own file name: a NEW module src/rust/crates/fathomdb-engine/src/extra_fts.rs carrying `CREATE VIRTUAL TABLE main.property_search_index USING fts5(attr_value)`, with lib.rs untouched. Pre-fix gate rc=0.",
+          "fix": "('absent_tree', ENG_TREE, <the fix-1/fix-2 case-insensitive, schema-qualified CREATE VIRTUAL TABLE pattern>, None) over src/rust/crates/fathomdb-engine/src.",
+          "scope_note": "The engine crate ALREADY carries sibling modules on main (lifecycle.rs, pcache2.rs) plus a non-.rs text file (vector_equivalence_probes.txt), so 'somebody adds a module' is not a hypothetical shape — it is how this crate already looks."
+        }
+      ],
+      "sweep": {
+        "method": "Enumerated EVERY probe of all 26 CHECKABLE clauses and classified each by SCOPE (single file vs tree) and by POLARITY (positive vs negative). codex named 3 of the 7 file-scoped negative probes; the sweep found the other 4 and closed them in the same commit. This is the third consecutive sweep to find instances the reviewer had not named (fix-1 found 3, fix-2 found 1, fix-3 found 4).",
+        "extra_instances_found_and_fixed": [
+          {
+            "clause": "C1-Q4-DENSE-READINESS-TWO-MEMBERS",
+            "probe": "absent DenseReadiness::Pending",
+            "fixture": "12u — src/rust/crates/fathomdb-engine/src/readiness_ext.rs referencing the reserved DenseReadiness::Pending. Pre-fix rc=0, post-fix rc=1.",
+            "new_scope": "absent_tree ENG_TREE (*.rs)"
+          },
+          {
+            "clause": "C1-Q6A-THREE-ROLES",
+            "probe": "absent ProjectionRole::Vector, absent ProjectionRole::Fts (two probes)",
+            "fixture": "12t — src/rust/crates/fathomdb-engine/src/tier_labels.rs reintroducing the TIER LABELS as roles. Pre-fix rc=0, post-fix rc=1.",
+            "new_scope": "absent_tree ENG_TREE (*.rs)"
+          },
+          {
+            "clause": "C1-Q6B-ID-NON-NULL",
+            "probe": "absent pub\\s+id\\s*:\\s*Option\\s*<\\s*IdSpace",
+            "fixture": "12s — src/rust/crates/fathomdb-engine/src/hit_v2.rs declaring a NULLABLE typed id carrier while lib.rs's paired `present` probe holds untouched. Pre-fix rc=0, post-fix rc=1.",
+            "new_scope": "absent_tree ENG_TREE (*.rs)"
+          }
+        ],
+        "structural_guard": "Widening seven probes fixes today's holes; DELETING THE FILE-SCOPED NEGATIVE PROBE KIND is what stops the class recurring. ('absent', <file>, regex) was removed from run_probe entirely rather than left unused, so it now falls through to the unknown-kind die_env (exit 2) and a negative probe can only be written as absent_tree. The recurrence suite asserts BOTH that no ('absent', ...) probe is declared and that the kind is not implemented, so re-introducing a single-file negative is a deliberate, reviewed act rather than the path of least resistance."
+      },
+      "probe_scope_inventory": {
+        "as_of": "cc31fef1",
+        "rule": "NEGATIVE probes are TREE-scoped, ALWAYS — their failure mode is a silent green. POSITIVE and STRUCTURAL probes may be FILE-scoped — their failure mode under a too-narrow scope is a false RED, which is the safe side. The asymmetry is now STATED in the gate header (PROBE SCOPE section), not left implicit.",
+        "negative_probes_all_tree_scoped": [
+          {
+            "clause": "C1-Q4-NO-PROVISIONAL-CONCEPT",
+            "n": 1,
+            "tree": "src",
+            "exts": "*.rs",
+            "note": "pre-existing; the amendment's factual assertion is repo-wide, so the tree is all of src/."
+          },
+          {
+            "clause": "C1-Q6B-NO-ENTITYTYPESPEC-NO-IDPREFIX",
+            "n": 3,
+            "tree": "src",
+            "exts": "every text file",
+            "note": "pre-existing; EntityTypeSpec / id_prefix / idPrefix must be absent from ALL of src/ including the Python and TS bindings, hence exts=None."
+          },
+          {
+            "clause": "C1-Q2-NO-DATA-MIGRATION",
+            "n": 2,
+            "tree": "src/rust/crates/fathomdb-schema/src",
+            "exts": "every text file",
+            "note": "fix-3 finding #1. Crate-scoped, not repo-scoped, because the ENGINE's same-transaction projection INSERTs are legitimate. exts=None so an include_str!-ed .sql migration is in scope."
+          },
+          {
+            "clause": "C1-Q4-DENSE-READINESS-TWO-MEMBERS",
+            "n": 1,
+            "tree": "src/rust/crates/fathomdb-engine/src",
+            "exts": "*.rs",
+            "note": "fix-3 sweep. COMPLETE, not merely wider: a variant cannot be added to `enum DenseReadiness` from outside the crate that declares it."
+          },
+          {
+            "clause": "C1-Q6A-THREE-ROLES",
+            "n": 2,
+            "tree": "src/rust/crates/fathomdb-engine/src",
+            "exts": "*.rs",
+            "note": "fix-3 sweep. Same completeness argument as the readiness clause."
+          },
+          {
+            "clause": "C1-Q6B-ID-NON-NULL",
+            "n": 1,
+            "tree": "src/rust/crates/fathomdb-engine/src",
+            "exts": "*.rs",
+            "note": "fix-3 sweep."
+          },
+          {
+            "clause": "C1-TE-CUSTOM-TOKENIZER-DEFERRED",
+            "n": 1,
+            "tree": "src/rust/crates/fathomdb-engine/src",
+            "exts": "every text file",
+            "note": "fix-3 finding #2. Crate-scoped because the obligation is on the ENGINE specifically — the schema migration legitimately owns that DDL. exts=None for the same include_str! reason as the schema clause."
+          }
+        ],
+        "negative_probes_left_file_scoped": "NONE. There are zero file-scoped negative probes, and no probe kind capable of expressing one.",
+        "file_scoped_probes_and_why_that_is_correct": [
+          {
+            "kind": "present",
+            "count": 55,
+            "why": "A positive assertion with too narrow a scope FAILS RED by construction: if the symbol moves to a sibling module the probe finds 0 matches and the gate exits 1 naming the clause. It cannot buy a false green. Naming the file additionally STATES where the contract's structure is expected to live, which a tree-wide search would throw away."
+          },
+          {
+            "kind": "min",
+            "count": 1,
+            "why": "Same argument as `present` — C1-TE-DEFAULT-TOKENIZER requires >=2 occurrences of the default tokenizer string in the schema crate's lib.rs; a scope too narrow to find them fails RED."
+          },
+          {
+            "kind": "enum_exact",
+            "count": 3,
+            "why": "Structural, and its negative half (variant COUNT) is enforced against a body it must first LOCATE. If the enum moves to a sibling module the reader returns None and the probe reports 'could not locate a parseable enum ... reads as a clause failure rather than a skipped probe' — exit 1, the safe side. Rust also forbids declaring an enum's variants outside its declaration, so the file that holds the declaration is the complete scope."
+          },
+          {
+            "kind": "arms_exact",
+            "count": 6,
+            "why": "Same: an impl block it cannot find is a clause FAILURE, never a skip. A conversion surface in ANOTHER impl or a free fn is NOT covered — but that is residual class #4 (documented since fix-2) and is a limit of impl-scoped reading, not of file-scoped reading: widening the file scope would not reach a free fn either."
+          }
+        ],
+        "counts": {
+          "clauses": 26,
+          "probes_total": 76,
+          "negative_tree_scoped": 11,
+          "positive_file_scoped": 56,
+          "structural_file_scoped": 9,
+          "file_scoped_negative": 0,
+          "breakdown": "present 55 + min 1 + enum_exact 3 + arms_exact 6 = 65 file-scoped; absent_tree 11 tree-scoped; 76 total across 26 CHECKABLE clauses."
+        }
+      },
+      "tc37_semantics_change": {
+        "question": "Once a probe's subject is a TREE rather than a FILE, what does 'missing' mean?",
+        "decision": "TWO ways a tree fails to be a subject, both exit 2 (TC-37 evaporation path #4, whose header text was amended to say so). (a) THE DIRECTORY IS ABSENT — unambiguous, and unchanged behaviour. (b) THE DIRECTORY YIELDS ZERO CANDIDATE FILES (empty, or nothing matching exts, or only binaries) — NEW this round, and the judgement call. Decided for exit 2: a NEGATIVE assertion that examined zero files is trivially satisfiable and would report 'no violation found' having looked at nothing. That is the vacuous pass in its purest form and it is exactly what a renamed or moved crate leaves behind.",
+        "implementation_consequence": "walk_tree() now returns a LIST rather than yielding, because 'examined nothing' is only knowable after the walk completes and a caller that returns on the first match would never let a generator get there. It is cached per (tree, exts).",
+        "list_sources_coherence": "--list-sources already emitted `tree<TAB>path` lines and now names the two crate source trees as well as src/. That manifest is what builds EVERY fixture root in the recurrence suite AND the preflight seeder lib/c1-conformance-fixture.sh, so a tree-scoped probe whose tree were not listed would leave those roots without it and silently evaporate. Two new assertions pin both new tree lines.",
+        "coverage": "Four new arms: for each of the two crate trees, an EMPTIED tree and an ABSENT tree, each asserting rc=2, no ok line, and (for the emptied case) that TC-37 is cited. The pre-existing empty-root and missing-file arms still pass unchanged.",
+        "honest_limit_of_that_coverage": "The candidate-less-tree rule cannot be witnessed IN ISOLATION through the CLI, and the arm says so in a comment rather than implying otherwise. Every crate tree the gate scans also holds that crate's lib.rs, which the same clause's file-scoped `present` probes read, so emptying the tree trips the file rule and the tree rule together and the gate reports whichever fires first (the file rule, by clause ordering). What the arms assert is the property that actually matters: NO GREEN IS REACHABLE and the verdict is 'gate could not run' (2), never 'clause failed' (1). The rule is kept because it is the correct semantics for a tree subject and because it is reachable in principle for any future tree probe that has no file-scoped anchor inside it."
+      },
+      "red_to_green_per_arm": [
+        {
+          "arm": "12q schema-crate sibling module backfill (migrations_extra.rs)",
+          "finding": "round3-#1",
+          "red_rc": 0,
+          "green_rc": 1,
+          "clause_attributed": "C1-Q2-NO-DATA-MIGRATION",
+          "also_asserts": "names the offending FILE, and routes the reader to the Steward"
+        },
+        {
+          "arm": "12r engine-crate sibling module FTS DDL (extra_fts.rs, codex's own file name)",
+          "finding": "round3-#2",
+          "red_rc": 0,
+          "green_rc": 1,
+          "clause_attributed": "C1-TE-CUSTOM-TOKENIZER-DEFERRED",
+          "also_asserts": "names the offending FILE"
+        },
+        {
+          "arm": "12s engine-crate sibling module nullable typed id (hit_v2.rs)",
+          "finding": "sweep",
+          "red_rc": 0,
+          "green_rc": 1,
+          "clause_attributed": "C1-Q6B-ID-NON-NULL",
+          "also_asserts": "names the offending FILE; lib.rs untouched so the paired `present` probe still holds"
+        },
+        {
+          "arm": "12t engine-crate sibling module tier-labels-as-roles (tier_labels.rs)",
+          "finding": "sweep",
+          "red_rc": 0,
+          "green_rc": 1,
+          "clause_attributed": "C1-Q6A-THREE-ROLES",
+          "also_asserts": "names the offending FILE; enum_exact/arms_exact both still pass, so the negative probe is the only thing standing"
+        },
+        {
+          "arm": "12u engine-crate sibling module reserved Pending readiness (readiness_ext.rs)",
+          "finding": "sweep",
+          "red_rc": 0,
+          "green_rc": 1,
+          "clause_attributed": "C1-Q4-DENSE-READINESS-TWO-MEMBERS",
+          "also_asserts": "names the offending FILE"
+        },
+        {
+          "arm": "--list-sources names the ENGINE crate source tree",
+          "finding": "TC-37 coherence",
+          "red_rc": "assertion absent from manifest (FAIL)",
+          "green_rc": "present (PASS)",
+          "clause_attributed": "n/a"
+        },
+        {
+          "arm": "--list-sources names the SCHEMA crate source tree",
+          "finding": "TC-37 coherence",
+          "red_rc": "assertion absent from manifest (FAIL)",
+          "green_rc": "present (PASS)",
+          "clause_attributed": "n/a"
+        },
+        {
+          "arm": "no ('absent', <file>, ..) probe is DECLARED in the gate",
+          "finding": "structural guard",
+          "red_rc": "FAIL (7 declared)",
+          "green_rc": "PASS (0 declared)",
+          "clause_attributed": "n/a"
+        },
+        {
+          "arm": "the file-scoped `absent` probe KIND is not IMPLEMENTED in the gate",
+          "finding": "structural guard",
+          "red_rc": "FAIL (implemented)",
+          "green_rc": "PASS (deleted)",
+          "clause_attributed": "n/a"
+        },
+        {
+          "arm": "EMPTIED / ABSENT crate source tree x2 trees (4 arms)",
+          "finding": "TC-37 tree semantics",
+          "red_rc": 2,
+          "green_rc": 2,
+          "clause_attributed": "n/a — exit 2 both before and after; see tc37_semantics_change.honest_limit_of_that_coverage"
+        }
+      ],
+      "residual_scope_amended": "NO, and deliberately not. Round 3 was not a residual class, so absorbing it into the RESIDUAL SCOPE list would have been the wrong repair — it would have converted a fixable defect into a documented limitation. Three EDITS were made to the header instead: (i) a new PROBE SCOPE section carrying the rule, the positive/negative asymmetry, and the full inventory; (ii) the residual section is retitled READ BEFORE ROUND 4 and now says explicitly that fix-3 is NOT on the list and did not belong on it, and that the list is 'not a place to retire findings to'; (iii) CONSEQUENCE FOR REVIEWERS is widened — a finding that the gate misses a pinned name because the probe was pointed at the wrong SUBJECT is a real defect, alongside the existing 'misses a spelling in literal source text'. The seven residual classes themselves are unchanged and none of them was weakened or re-scoped.",
+      "performance": {
+        "measured": "5 consecutive runs of `bash scripts/check-c1-conformance.sh` on the real tree, /usr/bin/time -f %e, same machine, warm page cache.",
+        "before_b0de847b": "0.29 / 0.29 / 0.29 / 0.30 / 0.29 s",
+        "after_cc31fef1": "0.28 / 0.27 / 0.28 / 0.28 / 0.28 s",
+        "why_it_did_not_get_slower": "Two effects cancel and then some. COST: two additional tree walks. But both new trees are STRICT SUBSETS of src/, which the gate already walked, and together they are ~1MB of the source. SAVING: walk_tree is now cached per (tree, exts), so C1-Q6B-NO-ENTITYTYPESPEC-NO-IDPREFIX's three identical full walks of src/ collapse into one. Net -0.01s.",
+        "callers": "Both homes are fine at this cost: the always-on CI job c1-contract-conformance, and scripts/preflight.sh --landing (which is dominated by its other sections). The recurrence suite itself takes 6.0s wall — it drives 46 gate invocations across 26 purpose-built fixture roots plus four throwaway git repos with linked worktrees for the preflight arms."
+      },
+      "not_changed": [
+        "src/ — nothing under it was touched, by construction: this round changed a gate, not the code the gate reads.",
+        "The ratified C-1 contract's bytes — unmoved, so no clause-registry re-derivation was triggered.",
+        "src/conformance/governed-surface-allowlist.json — byte-identical to baseline 23a436dc; it does not appear in `git diff --name-only 23a436dc` at all.",
+        "scripts/c1-conformance-pin.json's hashes, clause ids, categories and counts — only 7 lines of `_comment` prose were added.",
+        ".github/workflows/ci.yml and scripts/preflight.sh — the two wirings are unchanged; both still invoke the SAME script."
+      ]
+    },
+    {
+      "round": 4,
+      "reviewer": "codex §9, round 4 (fix-3 re-review) — one [P2] finding",
+      "transcript": "dev/plans/runs/codex/0.8.20/slice-30-fix-3-rereview-20260727T165252Z.log",
+      "budget": "Round 4 of a maximum 6. The 3-same-finding bound has still not fired, and the four classes are genuinely distinct: rounds 1-2 = REGEX SHAPE over an open vocabulary (SQL case/whitespace, schema qualifiers, spellings outside a match arm); round 3 = SCOPE (one file vs the crate source tree); round 4 = SUBJECT BINDING (a file vs the named table / struct / enum / function / index / test the clause is actually about). Each was a bounded defect with a definite, complete fix, and each was CLOSED rather than retired into RESIDUAL SCOPE.",
+      "why_this_was_not_residual": "The gate's residual covers INDIRECTION and NON-LITERAL routes. codex's fixture is neither: it edits ONE literal `tokenize = '...'` clause in ordinary source text, in the exact table the clause names. The probe simply was not looking at that table — it was COUNTING file-wide matches, and other FTS tables in the same file kept the count satisfied. A definite defect with a definite fix.",
+      "clause_registry_change": "NONE. Same 26 CHECKABLE ids, same categories, same pinned counts (26 checkable / 12 cross-repo / 7 prose, 45 total). The contract's bytes are untouched, so no re-derivation was triggered. scripts/c1-conformance-pin.json was NOT edited this round at all.",
+      "findings": [
+        {
+          "id": "round4-#1 [P2] the default-tokenizer probe is not bound to its subject",
+          "site": "scripts/check-c1-conformance.sh:651-654 (C1-TE-DEFAULT-TOKENIZER)",
+          "claim_verified": true,
+          "how": "Reproduced verbatim as fixture 12v: change ONLY property_search_index's `tokenize = 'porter unicode61 remove_diacritics 2'` to `'unicode61'`. Pre-fix gate rc=0 — the `min` probe (n=2) stayed satisfied by search_index, search_index_v2 and search_index_edges, none of which the clause is about.",
+          "fix": "New `fts_tokenizer_shared` probe. It extracts the `tokenize=` clause from property_search_index's OWN `CREATE VIRTUAL TABLE ... USING fts5( ... )` body and from the body-FTS tables' bodies, requires them EQUAL (the clause is relational: 'the ENGINE'S DEFAULT FTS5 TOKENIZER — THE ONE body-FTS USES'), and requires the shared value to equal the pinned default. Comparison is on the whitespace-collapsed, lowercased value, because SQLite matches fts5 tokenizer names that way; a `tokenize=` value may be quoted with ' \" ` or [ ].",
+          "reference_set_choice": "search_index_v2 (the fielded body-FTS the pin's own evidence cites as body-FTS at schema lib.rs:436) plus search_index (the retained legacy body index, whose effective tokenizer comes from the step-11 drop+recreate). search_index_edges is deliberately EXCLUDED: the edge index is a different subject, and its equal tokenizer was part of the coincidence that kept the old count green.",
+          "second_arm": "A second fixture DELETES property_search_index's tokenize clause outright. That is also a violation — fts5 then silently uses its own unicode61 default, which is not the engine default the clause names — and it also exited 0 before this round."
+        }
+      ],
+      "sweep": {
+        "method": "For EVERY probe: is this assertion bound to the contract's actual subject, or merely to a file that happens to contain something matching? Where the answer was 'a file', a fixture was built that leaves a DECOY satisfying the old probe while the named subject is broken, and the pre-fix rc was recorded.",
+        "instances_found_beyond_the_reviewer_finding": 15,
+        "extra_self_adversarial_rounds": "Two more, both found by turning the same question on the fix-4 patch itself (fix-4b, fix-4c). Both were REACHABLE false greens, both were closed with their own RED-first arms.",
+        "instances": [
+          {
+            "clauses": [
+              "C1-Q1-ROLE-SET",
+              "C1-Q5-DERIVED-CACHE-IDEMPOTENT",
+              "C1-Q4-CHEAP-SAME-TRANSACTION",
+              "C1-Q6A-RANKABLE-GRACEFUL-DEFER",
+              "C1-Q6B-ID-NON-NULL",
+              "C1-TE-DEFAULT-EMBEDDER",
+              "C1-TE-DEFAULT-TOKENIZER"
+            ],
+            "shape": "A field of a NAMED STRUCT probed as a bare `pub <field>: <ty>,` anywhere in engine lib.rs.",
+            "fixture": "12w — each of the seven fields renamed IN ITS OWN struct, one decoy struct carrying the seven original lines. Pre-fix rc=0.",
+            "fix": "in_item(struct <the struct the contract names>, <field regex>)."
+          },
+          {
+            "clauses": [
+              "C1-Q3-DESTRUCTIVE-DELTA",
+              "C1-Q6B-H-TERMINAL-NOT-LIFECYCLE-ADDRESSABLE"
+            ],
+            "shape": "An EngineError VARIANT probed as `<Variant> {` anywhere — which the Display impl and every construction site also spell.",
+            "fixture": "12x — both variants deleted from `enum EngineError`, uses left in place. Pre-fix rc=0.",
+            "fix": "in_item(enum EngineError, <variant regex>)."
+          },
+          {
+            "clauses": [
+              "C1-SEAM-ENGINE-BUILD-DROP"
+            ],
+            "shape": "Three INDEPENDENT file-wide probes for the apply verb's specs param, drop param and return type — nothing tied them to one another or to configure_projections.",
+            "fixture": "12y — the real signature rewritten (no drop list, error type changed) + a decoy verb carrying all three fragments. Pre-fix rc=0.",
+            "fix": "fn_sig(configure_projections, ...) x3, read out of THAT function's signature."
+          },
+          {
+            "clauses": [
+              "C1-Q4-CHEAP-SAME-TRANSACTION",
+              "C1-AA-NO-BLOCK-ON-EMBEDDING"
+            ],
+            "shape": "Statements about what happens INSIDE the apply verb, probed file-wide.",
+            "fixture": "12z — the `&tx` apply moved out of the transaction and the dispatcher wake removed, with a decoy call and the engine's three unrelated notify_new_work() sites keeping both probes satisfied. Pre-fix rc=0.",
+            "fix": "in_item(fn configure_projections, ...)."
+          },
+          {
+            "clauses": [
+              "C1-AA-ATOMIC-FLIP",
+              "C1-AA-CRASH-HEAL-BOOT-REDERIVE",
+              "and every other behavioural clause (18 probes in total)"
+            ],
+            "shape": "`fn <name>(` cannot tell a DEFINITION from a COMMENT mentioning the name.",
+            "fixture": "12aa — one engine fn and one named test deleted, each name left in a comment. Pre-fix rc=0.",
+            "fix": "fn_defined, which requires a parseable body in the comment-stripped source."
+          },
+          {
+            "clauses": [
+              "C1-Q2-ENGINE-EAV-PROPERTY-FTS",
+              "C1-TE-CUSTOM-TOKENIZER-DEFERRED"
+            ],
+            "shape": "The composite index probed by NAME while the clause is about its COLUMNS; the registry's fts_tokenizer column probed file-wide.",
+            "fixture": "12ab — the index re-created on ONE column (exactly what the cheap filterable tier cannot use) and the column moved to a decoy table. Pre-fix rc=0.",
+            "fix": "the index regex now names its columns; the column is read via sql_ddl inside _fathomdb_projection_registry's own CREATE TABLE body."
+          },
+          {
+            "clauses": [
+              "C1-LAND-0820-SLOT"
+            ],
+            "shape": "A requirement ROW probed as a bare `| id |` mention, which running prose can carry.",
+            "fixture": "12ac — the row demoted to a sentence. Pre-fix rc=0.",
+            "fix": "a whole three-cell table row anchored at line start."
+          },
+          {
+            "clauses": [
+              "C1-AA-CRASH-HEAL-BOOT-REDERIVE",
+              "C1-Q4-DENSE-READINESS-TWO-MEMBERS"
+            ],
+            "shape": "fix-4b, SELF-ADVERSARIAL. The structural readers read a comment-stripped view that still contained STRING LITERALS, so `fn foo() { }` inside a &str read like a definition and `enum DenseReadiness { Ready, Embedding }` inside one read like a declaration. NOT confined to the new readers: enum_exact/arms_exact have brace-matched over string literals since fix-1.",
+            "fixture": "12ad — the crash-heal proof deleted with its name surviving only in a string constant, AND a THIRD `Failed` variant added to the real enum with a decoy string ahead of it. Pre-fix rc=0 (at 36f528f1).",
+            "fix": "blank_literals(): a LINE- and LENGTH-preserving code view in which literal CONTENTS are blanked. Readers LOCATE in that view and SLICE bodies from the literal-bearing view, so arms_exact keeps its subject. Handles raw/byte/char literals and leaves lifetimes alone."
+          },
+          {
+            "clauses": [
+              "C1-TE-DEFAULT-EMBEDDER",
+              "C1-Q2-ENGINE-EAV-PROPERTY-FTS"
+            ],
+            "shape": "fix-4c, SELF-ADVERSARIAL. The remaining `present` probes read RAW text, so COMMENTING OUT a declaration and putting a replacement beside it left them satisfied. Reachable because for these two obligations that probe is the only one carrying it.",
+            "fixture": "12ae — DEFAULT_EMBEDDER_NAME renamed to `some-other-model` with the pinned line left in a comment, and the composite index not created at all with its DDL left in a one-line comment. Pre-fix rc=0 (at 5253934d).",
+            "fix": "`present` reads the comment-stripped view for .rs subjects; `doc_text` still reads raw, and the suite asserts BOTH directions so the fix cannot overshoot."
+          }
+        ]
+      },
+      "probe_kind_deleted": {
+        "kind": "min — (\"min\", path, regex, n), a count of file-wide matches",
+        "uses_before": 1,
+        "legitimate_remaining_use": "NONE. Every clause in this registry is about a named subject, so the honest probe is a structural extraction bound to that subject, or failing that a regex tight enough to name it uniquely. A count relates a probe to a FILE, which is precisely the defect this round found.",
+        "deleted_not_left_unused": "The kind is gone from the gate entirely — the same move fix-3 made for the file-scoped `absent` kind — so writing a count again is a deliberate, reviewed act. scripts/tests/test_check_c1_conformance.sh asserts both the absence of any (\"min\", ...) declaration and the absence of the `kind == \"min\"` implementation."
+      },
+      "probe_audit": {
+        "as_of": "33792f3b",
+        "totals_before": {
+          "present": 55,
+          "min": 1,
+          "absent_tree": 11,
+          "enum_exact": 3,
+          "arms_exact": 6,
+          "total": 76
+        },
+        "totals_after": {
+          "in_item": 20,
+          "fn_defined": 18,
+          "absent_tree": 11,
+          "present": 10,
+          "sql_ddl": 6,
+          "arms_exact": 6,
+          "fn_sig": 3,
+          "enum_exact": 3,
+          "doc_text": 2,
+          "fts_tokenizer_shared": 1,
+          "total": 80
+        },
+        "reading": "48 of the 55 file-scoped `present` probes became structural probes bound to a named subject; 2 became `doc_text` (declared as documentary); 10 remain `present`. The clause count, the ids and the pinned counts are unchanged.",
+        "every_remaining_present_probe_and_why_it_is_subject_bound": [
+          {
+            "clause": "C1-SEAM-ENGINE-BUILD-DROP",
+            "probe": "pub fn configure_projections\\(",
+            "subject": "the uniquely-named public engine verb",
+            "bound": true,
+            "why": "The identifier IS the subject; comments are stripped (fix-4c). Also strictly dominated by the three fn_sig probes on the same clause, which fail if the function is absent."
+          },
+          {
+            "clause": "C1-Q1-ROLE-SET",
+            "probe": "pub enum ProjectionRole \\{",
+            "subject": "the uniquely-named enum",
+            "bound": true,
+            "why": "Identifier = subject; dominated by enum_exact on C1-Q6A-THREE-ROLES."
+          },
+          {
+            "clause": "C1-Q4-DENSE-READINESS-TWO-MEMBERS",
+            "probe": "pub enum DenseReadiness \\{",
+            "subject": "the uniquely-named enum",
+            "bound": true,
+            "why": "Identifier = subject; dominated by enum_exact on the same clause."
+          },
+          {
+            "clause": "C1-Q6B-IDSPACE-TOTAL-THREE",
+            "probe": "pub enum IdSpaceKind \\{",
+            "subject": "the uniquely-named enum",
+            "bound": true,
+            "why": "Identifier = subject; dominated by enum_exact on the same clause."
+          },
+          {
+            "clause": "C1-Q2-ENGINE-EAV-PROPERTY-FTS",
+            "probe": "CREATE INDEX canonical_attributes_name_value_idx ON canonical_attributes(attr_name, attr_value)",
+            "subject": "that index AND its columns",
+            "bound": true,
+            "why": "fix-4: the regex now carries the whole obligation (name + table + both columns, case- and whitespace-tolerant), so it cannot be satisfied by a differently-shaped index. Comments stripped (fix-4c)."
+          },
+          {
+            "clause": "C1-TE-DEFAULT-EMBEDDER",
+            "probe": "pub const DEFAULT_EMBEDDER_NAME: &str = \"fathomdb-bge-small-en-v1.5\";",
+            "subject": "that const AND its value",
+            "bound": true,
+            "why": "Names the const and pins its exact value; nothing else in the file can satisfy it. Comments stripped (fix-4c) — this was the fix-4c finding."
+          },
+          {
+            "clause": "C1-LAND-0820-SLOT",
+            "probe": "^| R-20-PR | .+ | .+ |$ (and R-20-EAV / R-20-DR / R-20-SUR)",
+            "subject": "a whole requirement ROW of the 0.8.20 plan's table",
+            "bound": true,
+            "why": "fix-4: anchored at line start and requiring three cells, so a mention inside running prose no longer satisfies it. Raw text deliberately (markdown, not Rust)."
+          }
+        ],
+        "doc_text_probes_and_why_they_are_not_load_bearing": [
+          {
+            "clause": "C1-Q2-NO-DATA-MIGRATION",
+            "probe": "the step-24 'NO DATA MIGRATION (HITL 2026-07-21): shape only, no backfill.' marker",
+            "why_not_bound_structurally": "Its subject IS a written statement. Demoting it to a comment elsewhere would not violate the obligation (no backfill would thereby appear), which is the test for whether a text probe is load-bearing.",
+            "what_actually_carries_the_clause": "two TREE-scoped `absent_tree` negatives over the whole schema crate (any INSERT/REPLACE INTO canonical_attributes or property_search_index, in any spelling SQLite accepts)."
+          },
+          {
+            "clause": "C1-TE-CUSTOM-TOKENIZER-DEFERRED",
+            "probe": "'recorded in the registry but not honoured here'",
+            "why_not_bound_structurally": "Same: it is a documented statement in an ordinary // comment.",
+            "what_actually_carries_the_clause": "sql_ddl (the registry DECLARES an fts_tokenizer column, read inside that table's own DDL) + absent_tree over the engine crate tree (the engine builds no property-FTS table of its own) + the sibling clause C1-TE-DEFAULT-TOKENIZER, which is now a real tokenizer comparison."
+          }
+        ],
+        "structural_probes": "20 in_item (7 struct fields, 2 enum variants, 8 impl-scoped spellings, 2 statements inside configure_projections' body, 1 ProjectionDelta.dropped), 18 fn_defined, 6 sql_ddl, 3 fn_sig, 3 enum_exact, 6 arms_exact, 1 fts_tokenizer_shared. Every one names its subject.",
+        "negative_probes": "11 absent_tree, unchanged from fix-3 and all TREE-scoped.",
+        "multiplicity_semantics": "A subject name that denotes several items is resolved on the STRICT side: every struct/enum/fn body of that name must satisfy the probe. `impl` is the documented exception — a type's inherent impl may legitimately be split across blocks, and ANY block suffices because every one of them is still `impl <the named type>`, so the subject binding holds either way."
+      },
+      "not_lexically_bindable": {
+        "verdict": "NONE of the 26 clauses was found unbindable this round. Every probe now names its subject, and the two that cannot (by nature) are DECLARED as `doc_text` and are not the load-bearing half of their clause.",
+        "the_honest_boundary_worth_the_Steward_knowing": {
+          "what": "A named test proves EXISTENCE, never that its body still asserts anything. `fn atomic_flip_never_exposes_ready_without_the_vector_under_concurrent_write() {}` — an empty body — satisfies fn_defined, and so does one whose assertions were commented out. This is now residual class #8 in the gate header.",
+          "affected": "all 12 behavioural clauses (the ones whose evidence is a named test).",
+          "why_it_is_not_a_defect_in_this_gate": "The gate's own header has said since the first commit that it does NOT re-execute behavioural suites and proves only that the proof has not been deleted or renamed away. `cargo test --workspace` is the mechanism that executes those bodies, it is a required gate, and an emptied test body is visible in review as a code diff.",
+          "recommended_mechanism_if_it_is_ever_wanted": "Not another regex. Either (a) assert the shipped schema against `sqlite_master` at runtime and the behavioural obligations against a real engine instance — a functional conformance suite, which is a slice of its own; or (b) parse Rust with `syn` and assert that each named test's body contains at least one assertion macro. (b) is cheap but shallow (it cannot tell a real assertion from `assert!(true)`); (a) is the real answer and is the same recommendation this slice already recorded for dynamically-composed SQL. NEITHER IS BUILT HERE."
+        }
+      },
+      "red_to_green_per_arm": [
+        {
+          "arm": "12v property-FTS tokenizer diverged (codex's own fixture, verbatim)",
+          "red_rc": 0,
+          "green_rc": 1,
+          "red_at": "cf240a23",
+          "green_at": "36f528f1"
+        },
+        {
+          "arm": "12v-b property-FTS tokenize clause DELETED",
+          "red_rc": 0,
+          "green_rc": 1,
+          "red_at": "cf240a23",
+          "green_at": "36f528f1"
+        },
+        {
+          "arm": "12w seven struct fields moved out of their named structs (decoy struct)",
+          "red_rc": 0,
+          "green_rc": 1,
+          "red_at": "cf240a23",
+          "green_at": "36f528f1"
+        },
+        {
+          "arm": "12x two EngineError variants deleted, uses kept",
+          "red_rc": 0,
+          "green_rc": 1,
+          "red_at": "cf240a23",
+          "green_at": "36f528f1"
+        },
+        {
+          "arm": "12y configure_projections' signature rewritten (decoy verb)",
+          "red_rc": 0,
+          "green_rc": 1,
+          "red_at": "cf240a23",
+          "green_at": "36f528f1"
+        },
+        {
+          "arm": "12z the apply verb's body gutted (decoy call + unrelated wake sites)",
+          "red_rc": 0,
+          "green_rc": 1,
+          "red_at": "cf240a23",
+          "green_at": "36f528f1"
+        },
+        {
+          "arm": "12aa definitions deleted, names left in comments",
+          "red_rc": 0,
+          "green_rc": 1,
+          "red_at": "cf240a23",
+          "green_at": "36f528f1"
+        },
+        {
+          "arm": "12ab index rebuilt on one column + registry column moved to a decoy table",
+          "red_rc": 0,
+          "green_rc": 1,
+          "red_at": "cf240a23",
+          "green_at": "36f528f1"
+        },
+        {
+          "arm": "12ac requirement row demoted to a prose mention",
+          "red_rc": 0,
+          "green_rc": 1,
+          "red_at": "cf240a23",
+          "green_at": "36f528f1"
+        },
+        {
+          "arm": "min probe-kind structural guards (declaration + implementation)",
+          "red_rc": "FAIL",
+          "green_rc": "PASS",
+          "red_at": "cf240a23",
+          "green_at": "36f528f1"
+        },
+        {
+          "arm": "12ad definition/declaration planted inside a STRING LITERAL",
+          "red_rc": 0,
+          "green_rc": 1,
+          "red_at": "7b37186c",
+          "green_at": "5253934d"
+        },
+        {
+          "arm": "12ae declaration COMMENTED OUT (embedder const + composite index)",
+          "red_rc": 0,
+          "green_rc": 1,
+          "red_at": "aed79cac",
+          "green_at": "33792f3b"
+        },
+        {
+          "arm": "12ae-mirror doc_text must STILL read // comments (regression half)",
+          "red_rc": "PASS",
+          "green_rc": "PASS",
+          "red_at": "aed79cac",
+          "green_at": "33792f3b"
+        }
+      ],
+      "suite_totals": {
+        "before_fix_4": "172 assertions",
+        "after_fix_4": "219 assertions, 0 failures",
+        "arms": "1-17, with arm 12 expanded to 26 divergent-fixture sub-arms 12a-12ae"
+      },
+      "residual_scope_amended": "One class ADDED (#8: what a named test actually asserts). The existing seven are unchanged. fix-4 itself is explicitly NOT on the list, for the same reason fix-3 was not: it was a bounded defect with a definite, complete fix, and the RESIDUAL SCOPE section is not a place to retire findings to.",
+      "performance": "The gate runs in 0.50s wall on the real tree (was ~0.35s): the structural readers add one literal-blanking pass per Rust source read, cached per file. The recurrence suite runs in 20.6s (was ~16s) for 219 assertions across 26 divergent-fixture roots.",
+      "not_changed": "src/ (no Rust changed — clippy/check carried), the C-1 contract's bytes, scripts/c1-conformance-pin.json (not touched at all this round), src/conformance/governed-surface-allowlist.json (byte-identical, verified against the baseline), ci.yml, preflight.sh, agent-test.sh."
+    },
+    {
+      "round": 5,
+      "reviewer": "codex §9, round 5 (fix-4 re-review) — two [P2] findings",
+      "transcript": "dev/plans/runs/codex/0.8.20/slice-30-fix-4-rereview-20260727T174033Z.log",
+      "budget": "Round 5 of a maximum 6 (orchestration.md §6, non-engine slice). THIS FIX PLUS ITS RE-REVIEW CONSUMES ROUND 6 AND EXHAUSTS THE BUDGET — if round 6 is not terminal the slice halts and escalates to the Steward. The 3-same-finding bound has still not fired and the classes remain distinct: rounds 1-2 = REGEX SHAPE; round 3 = SCOPE (file vs crate tree); round 4 = SUBJECT BINDING (a file vs the named item); round 5 = (a) THE WRONG CRATE'S same-named symbol, which is the NEXT question after round 4's, and (b) A PROOF THAT NO LONGER RUNS, which is about test ACTIVENESS rather than about probe binding at all.",
+      "why_this_was_not_residual": "Neither finding is on the documented residual list. #1 edits ONE literal `const ... = \"...\";` in ordinary source text, in the crate the clause names — the probe was simply looking at a DIFFERENT CRATE'S constant of the same name. #2 deletes ONE attribute token; nothing is indirected, composed or macro-generated. Both are definite defects with definite, complete lexical fixes, and both were CLOSED. Note also that #2 required the fix-4 residual class #8 to be REWRITTEN rather than cited: as written, #8 claimed more residual than was true, and an over-broad residual retires a defect the gate does in fact catch.",
+      "clause_registry_change": "NONE. Same 26 CHECKABLE ids, same categories, same pinned counts (26 checkable / 12 cross-repo / 7 prose, 45 total). The contract's bytes are untouched, so no re-derivation was triggered. scripts/c1-conformance-pin.json WAS edited this round, in ONE place and NOT in an id, a category or a count: C1-TE-DEFAULT-EMBEDDER's free-text `evidence` list now also cites engine lib.rs:51 (the shipped default the clause is actually about) and says why the embedder crate's constant is still cited. Flagged loudly here because a pin edit in a round that fixes a wrong-subject bug deserves a reviewer's eye: leaving the evidence pointing only at the crate the gate had been wrongly probing would have been its own small dishonesty.",
+      "findings": [
+        {
+          "id": "round5-#1 [P2] the default-embedder probe checks the WRONG CRATE'S constant",
+          "site": "scripts/check-c1-conformance.sh:806-807 (C1-TE-DEFAULT-EMBEDDER)",
+          "claim_verified": true,
+          "how": "codex's fixture reproduced VERBATIM as arm 12af-1: set fathomdb-engine/src/lib.rs's `const DEFAULT_EMBEDDER_NAME` to \"some-other-model\". Pre-fix gate rc=0 — the probe read fathomdb-embedder/src/candle_bge.rs, which was untouched.",
+          "root_cause": "Both crates declare a constant named DEFAULT_EMBEDDER_NAME (engine lib.rs:51, private; embedder candle_bge.rs:44, pub). The clause's obligation is 'the default embedder is the ENGINE'S SHIPPED DEFAULT'. The probe was perfectly bound to a subject — and to the wrong one.",
+          "fix": "New RELATIONAL probe kind `const_str_agree`, modelled on the sibling tokenizer clause's `fts_tokenizer_shared`: every named `const/static <name>: &str` must EXIST as a declaration (located in the blanked code view, so neither a comment nor a string literal counts), all of them must carry the SAME literal, and that literal must equal the pinned value.",
+          "why_both_and_not_a_swap": "Swapping the embedder crate for the engine crate would have dropped a real half of the obligation. The engine fails closed on an embedder identity mismatch (ADR-0.6.0-vector-identity-embedder-owned), so 'the name the engine defaults to' diverging from 'the name the pinned embedder reports' IS a broken shipped default, not cosmetic drift. The relation is the obligation, exactly as it is for the tokenizer clause — which is also why the same probe SHAPE was reused rather than a second one invented."
+        },
+        {
+          "id": "round5-#2 [P2] `fn_defined` accepts a DISABLED test",
+          "site": "scripts/check-c1-conformance.sh:1605-1607 (all 14 test-backed probes, 10 clauses)",
+          "claim_verified": true,
+          "how": "Both codex forms reproduced VERBATIM as arms 12ag-1 and 12ag-2: delete `#[test]` from the atomic-flip proof; add `#[ignore]` to the crash-heal proof. Pre-fix gate rc=0 in both cases — a plain function of the same name still satisfies `fn_defined`, while `cargo test` stops running the proof.",
+          "severity_note": "This is the TC-37 evaporation shape this gate exists to close, and it is WORSE than residual class #8 as fix-4 wrote it. #8's argument was 'an emptied body is visible in review' — true. But a deleted attribute is a ONE-TOKEN edit that reads as tidy-up, and unlike an emptied body it IS closeable lexically.",
+          "fix": "New `test_defined` probe kind, applied to ALL FOURTEEN test probes. `fn_defined` survives ONLY for the four PRODUCTION engine functions, and the gate now REFUSES (exit 2, 'internal error') to evaluate `fn_defined` against any path under `tests/` — checked once at startup over the whole probe table (so `--list-sources` validates it too) and again at evaluation time."
+        }
+      ],
+      "wrong_subject_re_audit": {
+        "question_asked": "DIFFERENT from fix-4's. fix-4 asked: 'is this probe bound to a SUBJECT at all, or merely to a file?'. Round 5 asks the next one: 'is it bound to the subject THE CLAUSE NAMES, or to a DIFFERENT FILE THAT HAPPENS TO CONTAIN A SIMILAR SYMBOL?' A probe can be perfectly, structurally bound and still bound to the wrong thing.",
+        "method": "Every CHECKABLE clause read against its pinned obligation, naming (i) the crate/module/type the obligation names and (ii) the file each probe actually opens. Then a cross-crate collision scan: for each probed symbol/table/function name, how many of the three crates declare it. That scan is what makes the audit falsifiable rather than a re-reading — it is how the tokenizer clause was cleared (the engine crate really does carry the literal tokenizer string four times) and how the embedder clause was the only hit.",
+        "clauses_audited": 26,
+        "wrong_subject_instances_found": 1,
+        "instances_beyond_the_reviewer_finding": 0,
+        "honest_statement": "For the first time in five rounds the sweep found NOTHING the reviewer had not named. Prior sweeps found 3, 1, 4 and 17 extra instances. That is reported as a fact, not as a claim of completeness — and the same question turned on THIS patch did find four more instances of finding #2's class (see active_test_inventory.sweep_of_this_patch), so the method still paid.",
+        "table": [
+          {
+            "clause": "C1-SEAM-ENGINE-BUILD-DROP",
+            "subject_the_clause_names": "an ENGINE verb (configure_projections)",
+            "file_the_probes_open": "engine lib.rs",
+            "verdict": "MATCH",
+            "note": "present + 3x fn_sig, all on the engine's own apply verb."
+          },
+          {
+            "clause": "C1-Q1-ROLE-SET",
+            "subject_the_clause_names": "the ENGINE's ProjectionRole vocabulary + ProjectionSpec.roles",
+            "file_the_probes_open": "engine lib.rs",
+            "verdict": "MATCH",
+            "note": "Both probes read the engine's declarations. `ProjectionRole`/`ProjectionSpec` are also NAMED in the schema crate, but only in comments — the declarations are the engine's."
+          },
+          {
+            "clause": "C1-Q3-SOLE-AUTHORITY",
+            "subject_the_clause_names": "the ENGINE diffs against ONE durable registry",
+            "file_the_probes_open": "engine lib.rs + schema lib.rs",
+            "verdict": "MATCH",
+            "note": "The registry TABLE is created by the schema crate's migration ladder (pin evidence cites schema lib.rs:848), so sql_ddl on SCH is the named subject; the verb and the delta struct are read from the engine."
+          },
+          {
+            "clause": "C1-Q3-DESTRUCTIVE-DELTA",
+            "subject_the_clause_names": "EngineError variant + the named test",
+            "file_the_probes_open": "engine lib.rs + T15",
+            "verdict": "MATCH",
+            "note": "`enum EngineError` is declared exactly once repo-wide, in engine lib.rs."
+          },
+          {
+            "clause": "C1-Q3-OMISSION-NOT-DROP",
+            "subject_the_clause_names": "two named tests",
+            "file_the_probes_open": "T15",
+            "verdict": "MATCH",
+            "note": "Both names are unique repo-wide (verified: 1 file each)."
+          },
+          {
+            "clause": "C1-Q5-DERIVED-CACHE-IDEMPOTENT",
+            "subject_the_clause_names": "ProjectionDelta.unchanged + a named test",
+            "file_the_probes_open": "engine lib.rs + T15",
+            "verdict": "MATCH",
+            "note": ""
+          },
+          {
+            "clause": "C1-Q2-ENGINE-EAV-PROPERTY-FTS",
+            "subject_the_clause_names": "the EAV store, the property-FTS and the composite index",
+            "file_the_probes_open": "schema lib.rs",
+            "verdict": "MATCH",
+            "note": "'engine-owned' in the obligation means FathomDB-owned rather than Memex-owned; the DDL lives in FathomDB's migration ladder, which IS the schema crate, and the pin's evidence cites schema lib.rs:855/860/864. The engine also MENTIONS these table names (in queries) — the probe correctly reads the crate that CREATES them."
+          },
+          {
+            "clause": "C1-Q2-ENGINE-PROJECTS-VIA-CONFIGURE",
+            "subject_the_clause_names": "two named tests",
+            "file_the_probes_open": "T15",
+            "verdict": "MATCH",
+            "note": ""
+          },
+          {
+            "clause": "C1-Q2-NO-DATA-MIGRATION",
+            "subject_the_clause_names": "the MIGRATION LADDER must not backfill",
+            "file_the_probes_open": "SCH + schema crate TREE",
+            "verdict": "MATCH",
+            "note": "Scope argued in the gate header: a backfill is forbidden where migrations run (the schema crate), and the legitimate per-declaration projection INSERTs live in the engine and are deliberately out of scope."
+          },
+          {
+            "clause": "C1-Q4-CHEAP-SAME-TRANSACTION",
+            "subject_the_clause_names": "the apply verb's BODY + ProjectionDelta.built",
+            "file_the_probes_open": "engine lib.rs",
+            "verdict": "MATCH",
+            "note": ""
+          },
+          {
+            "clause": "C1-Q4-DENSE-READINESS-TWO-MEMBERS",
+            "subject_the_clause_names": "enum DenseReadiness + its conversions",
+            "file_the_probes_open": "engine lib.rs + engine TREE",
+            "verdict": "MATCH",
+            "note": "Declared only in the engine crate, so the engine tree is the COMPLETE scope for the negative."
+          },
+          {
+            "clause": "C1-Q4-NO-PROVISIONAL-CONCEPT",
+            "subject_the_clause_names": "'no provisional notion exists in ENGINE code'",
+            "file_the_probes_open": "the whole of src/ (*.rs)",
+            "verdict": "WIDER THAN THE CLAUSE, DELIBERATELY",
+            "note": "The only clause where probe scope != the clause's literal wording. It is WIDER, which for a NEGATIVE probe can only produce a false RED, never a false green; and the pin's own recorded evidence asserts the wider fact ('zero occurrences in any .rs file under src/'). Kept, and now stated in the gate header."
+          },
+          {
+            "clause": "C1-Q6A-THREE-ROLES",
+            "subject_the_clause_names": "enum ProjectionRole + its conversions",
+            "file_the_probes_open": "engine lib.rs + engine TREE",
+            "verdict": "MATCH",
+            "note": ""
+          },
+          {
+            "clause": "C1-Q6A-RANKABLE-GRACEFUL-DEFER",
+            "subject_the_clause_names": "ProjectionDelta.deferred + two named tests",
+            "file_the_probes_open": "engine lib.rs + T15",
+            "verdict": "MATCH",
+            "note": ""
+          },
+          {
+            "clause": "C1-Q6B-NO-ENTITYTYPESPEC-NO-IDPREFIX",
+            "subject_the_clause_names": "'nothing anywhere under src/'",
+            "file_the_probes_open": "src/ tree",
+            "verdict": "MATCH",
+            "note": "The clause's own wording names src/, and the probe scans exactly src/."
+          },
+          {
+            "clause": "C1-Q6B-IDSPACE-TOTAL-THREE",
+            "subject_the_clause_names": "enum IdSpaceKind + its conversions",
+            "file_the_probes_open": "engine lib.rs",
+            "verdict": "MATCH",
+            "note": ""
+          },
+          {
+            "clause": "C1-Q6B-ID-NON-NULL",
+            "subject_the_clause_names": "SearchHit.id",
+            "file_the_probes_open": "engine lib.rs + engine TREE",
+            "verdict": "MATCH",
+            "note": ""
+          },
+          {
+            "clause": "C1-Q6B-H-TERMINAL-NOT-LIFECYCLE-ADDRESSABLE",
+            "subject_the_clause_names": "EngineError variant + a named test",
+            "file_the_probes_open": "engine lib.rs + T25",
+            "verdict": "MATCH",
+            "note": ""
+          },
+          {
+            "clause": "C1-Q6B-SURROGATE-GOVERNED-ONLY",
+            "subject_the_clause_names": "two named tests",
+            "file_the_probes_open": "T25",
+            "verdict": "MATCH",
+            "note": ""
+          },
+          {
+            "clause": "C1-AA-ATOMIC-FLIP",
+            "subject_the_clause_names": "commit_projection_outcomes + a named test",
+            "file_the_probes_open": "engine lib.rs + T20",
+            "verdict": "MATCH",
+            "note": ""
+          },
+          {
+            "clause": "C1-AA-NO-BLOCK-ON-EMBEDDING",
+            "subject_the_clause_names": "notify_new_work, the apply verb's body, a named test",
+            "file_the_probes_open": "engine lib.rs + T20",
+            "verdict": "MATCH",
+            "note": ""
+          },
+          {
+            "clause": "C1-AA-CRASH-HEAL-BOOT-REDERIVE",
+            "subject_the_clause_names": "load_projection_registry + a named test",
+            "file_the_probes_open": "engine lib.rs + T15",
+            "verdict": "MATCH",
+            "note": ""
+          },
+          {
+            "clause": "C1-TE-DEFAULT-EMBEDDER",
+            "subject_the_clause_names": "the ENGINE'S SHIPPED DEFAULT embedder",
+            "file_the_probes_open": "was: EMBEDDER crate candle_bge.rs ONLY",
+            "verdict": "*** WRONG SUBJECT — codex round 5 #1 ***",
+            "note": "Both crates declare `DEFAULT_EMBEDDER_NAME`; only the engine's is the shipped default. FIXED: const_str_agree over BOTH, asserting they exist, agree, and equal the pinned value."
+          },
+          {
+            "clause": "C1-TE-DEFAULT-TOKENIZER",
+            "subject_the_clause_names": "the ENGINE'S DEFAULT FTS5 TOKENIZER — the one body-FTS uses",
+            "file_the_probes_open": "engine lib.rs + schema lib.rs",
+            "verdict": "MATCH",
+            "note": "Checked specifically for the same trap: the engine crate DOES carry the literal 'porter unicode61 remove_diacritics 2' four times (three doc comments and one in-memory scorer scratch table at engine lib.rs:17569). None is the body-FTS, and the probe correctly compares property_search_index against search_index_v2/search_index in the crate that creates them. The scratch table is a different subject and is correctly not in the reference set."
+          },
+          {
+            "clause": "C1-TE-CUSTOM-TOKENIZER-DEFERRED",
+            "subject_the_clause_names": "the registry records it; the ENGINE builds no FTS table",
+            "file_the_probes_open": "schema lib.rs + engine TREE",
+            "verdict": "MATCH",
+            "note": "The two halves are pointed at different crates ON PURPOSE, and each at the crate its half names."
+          },
+          {
+            "clause": "C1-LAND-0820-SLOT",
+            "subject_the_clause_names": "four requirement ROWS of the 0.8.20 plan",
+            "file_the_probes_open": "dev/plans/plan-0.8.20.md",
+            "verdict": "MATCH",
+            "note": ""
+          }
+        ]
+      },
+      "active_test_inventory": {
+        "rust": {
+          "test_probes_total": 14,
+          "clauses_carried": 10,
+          "attribute_state_at_baseline": "All 14 carry a bare `#[test]` on the line immediately preceding `fn`, none carries `#[ignore]`, none carries `#[cfg]`, all 14 are at the top level of their file, no file carries an `#![cfg]` inner attribute, and none of the three files has a `[[test]]` block in fathomdb-engine/Cargo.toml. Verified from source AND from the toolchain — all 14 appear in `cargo test -- --list` output for their targets.",
+          "all_converted_to_test_defined": true,
+          "files": [
+            {
+              "file": "src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs",
+              "clauses": [
+                "C1-Q3-DESTRUCTIVE-DELTA",
+                "C1-Q3-OMISSION-NOT-DROP",
+                "C1-Q5-DERIVED-CACHE-IDEMPOTENT",
+                "C1-Q2-ENGINE-PROJECTS-VIA-CONFIGURE",
+                "C1-Q6A-RANKABLE-GRACEFUL-DEFER",
+                "C1-AA-CRASH-HEAL-BOOT-REDERIVE"
+              ],
+              "proofs": [
+                "destructive_change_requires_explicit_drop",
+                "role_add_builds_and_explicit_drop_drops_exactly_one",
+                "dropping_an_absent_name_is_a_clean_noop",
+                "idempotent_reregistration_is_a_noop",
+                "property_filter_returns_correct_rows",
+                "property_fts_search_returns_correct_rows",
+                "rankable_is_graceful_deferred_never_blocking",
+                "idempotent_reregistration_holds_for_deferred_rankable",
+                "boot_rederive_converges_after_simulated_crash"
+              ],
+              "count": 9
+            },
+            {
+              "file": "src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs",
+              "clauses": [
+                "C1-AA-ATOMIC-FLIP",
+                "C1-AA-NO-BLOCK-ON-EMBEDDING"
+              ],
+              "proofs": [
+                "atomic_flip_never_exposes_ready_without_the_vector_under_concurrent_write",
+                "readiness_reads_embedding_while_embeds_are_outstanding_then_flips_to_ready"
+              ],
+              "count": 2
+            },
+            {
+              "file": "src/rust/crates/fathomdb-engine/tests/slice25_registration_identity_inert.rs",
+              "clauses": [
+                "C1-Q6B-H-TERMINAL-NOT-LIFECYCLE-ADDRESSABLE",
+                "C1-Q6B-SURROGATE-GOVERNED-ONLY"
+              ],
+              "proofs": [
+                "an_anonymous_write_stays_anonymous_through_the_whole_durable_path",
+                "registering_projections_never_alters_a_pre_existing_row_id_space",
+                "the_internal_structural_row_writer_mints_no_logical_id"
+              ],
+              "count": 3
+            }
+          ]
+        },
+        "python": "ZERO. No clause cites a Python test. Authority: `--list-sources`, which prints every path the assertions read — seven files (engine lib.rs, schema lib.rs, embedder candle_bge.rs, three engine test files, the 0.8.20 plan) plus the engine Cargo.toml added this round, and three trees. Not one `.py` among them. Nothing to fix; the equivalent evaporations there (`@pytest.mark.skip`, `xfail`, a renamed-away `test_` prefix) are recorded in the gate header so a future clause citing a Python test gets a `test_defined` equivalent rather than a `present` probe on a function name.",
+        "typescript": "ZERO, by the same `--list-sources` authority. The equivalent evaporations (`describe.skip`, `it.skip`, `.only`, a renamed-away test) are recorded in the gate header for the same reason.",
+        "sweep_of_this_patch": {
+          "question": "`test_defined` reads the attributes ON THE FUNCTION. What else can switch a proof off without touching them?",
+          "instances_found": 4,
+          "all_exited_0_against_the_first_cut_of_this_fix": true,
+          "instances": [
+            {
+              "shape": "A `[[test]]` block in the crate's Cargo.toml with `required-features` gates the WHOLE TARGET out of a default `cargo test`.",
+              "why_it_matters_most": "NOT hypothetical. fathomdb-engine/Cargo.toml ALREADY declares nineteen `[[test]]` blocks with `required-features`, because that is how the crate legitimately keeps operator-only and reranker-only suites out of the default build. 'Somebody gates a test target' is an established pattern in the exact file a contributor would edit — the fix-3 sibling-module argument, one level up.",
+              "fixture": "12ah-1. Pre-fix rc=0.",
+              "fix": "`test_defined` reads the owning crate's Cargo.toml (derived from the test path, and surfaced in `--list-sources` so fixture roots and the preflight seeder pick it up) and fails on a matching `[[test]]` block carrying `required-features` or `test = false`. A small hand-rolled TOML block reader, deliberately not `tomllib`, so the gate's environment contract stays at 'requires python3' rather than silently becoming 'requires python 3.11+'."
+            },
+            {
+              "shape": "`autotests = false` in the crate manifest stops the test files being discovered.",
+              "fixture": "12ah-1b. Pre-fix rc=0.",
+              "fix": "Same reader; reported RED."
+            },
+            {
+              "shape": "A `#![cfg(..)]` INNER attribute switches the whole FILE off while every `#[test]` in it reads as ordinary.",
+              "fixture": "12ah-2. Pre-fix rc=0.",
+              "fix": "`file_inner_attrs()`; a cfg/cfg_attr inner attribute on a proof's file is a clause failure."
+            },
+            {
+              "shape": "The proof NESTED inside a `#[cfg]`-gated `mod` — the gating attribute is on the module, so the function's own attributes say nothing.",
+              "fixture": "12ah-3. Pre-fix rc=0.",
+              "fix": "`fn_definitions()` now returns the enclosing brace DEPTH, and a proof not at depth 0 is a clause failure. Deliberately the RED side of a judgement call: a legitimately nested integration test would fail here."
+            }
+          ]
+        }
+      },
+      "red_to_green_per_arm": [
+        {
+          "arm": "12af-1",
+          "what": "the ENGINE's DEFAULT_EMBEDDER_NAME := \"some-other-model\"",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "source": "codex round 5 #1, VERBATIM"
+        },
+        {
+          "arm": "12af-2",
+          "what": "the ENGINE's constant renamed away entirely",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "source": "fix-5 sweep"
+        },
+        {
+          "arm": "12af-4",
+          "what": "a DECOY declaration carrying the pinned value planted AHEAD of the flipped real one",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "source": "fix-5 sweep, turned on the new reader"
+        },
+        {
+          "arm": "12ag-1",
+          "what": "`#[test]` DELETED from the atomic-flip proof",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "source": "codex round 5 #2, VERBATIM"
+        },
+        {
+          "arm": "12ag-2",
+          "what": "`#[ignore]` ADDED to the crash-heal proof",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "source": "codex round 5 #2, VERBATIM"
+        },
+        {
+          "arm": "12ag-3",
+          "what": "`#[cfg(feature = \"never-enabled\")]` on the h-terminal proof",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "source": "fix-5 sweep"
+        },
+        {
+          "arm": "12ag-4",
+          "what": "ALL FOURTEEN named proofs lose `#[test]`; all TEN behavioural clauses must fail",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "source": "fix-5 sweep (the completeness arm)"
+        },
+        {
+          "arm": "12ah-1",
+          "what": "a `[[test]] required-features` block gating the dense-readiness TARGET",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "source": "fix-5 sweep, turned on this patch"
+        },
+        {
+          "arm": "12ah-1b",
+          "what": "`autotests = false` in the crate manifest",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "source": "fix-5 sweep, turned on this patch"
+        },
+        {
+          "arm": "12ah-2",
+          "what": "a file-level `#![cfg(..)]`",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "source": "fix-5 sweep, turned on this patch"
+        },
+        {
+          "arm": "12ah-3",
+          "what": "the proof nested inside a `#[cfg]`-gated `mod`",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "source": "fix-5 sweep, turned on this patch"
+        },
+        {
+          "arm": "12af-3",
+          "what": "BOTH crates flipped consistently to a new name — the PINNED-VALUE half",
+          "pre_fix_rc": 1,
+          "post_fix_rc": 1,
+          "source": "fix-5 sweep",
+          "honesty_note": "THE ONE ARM THAT WAS NOT A FALSE GREEN. The old `present` probe on the embedder crate's literal already caught this. Kept as the REGRESSION half: the fix REPLACED that probe, and the value assertion it carried must not be lost in the replacement. Recorded explicitly because the suite's own header says 'every arm below exited 0 before this round' and this one did not."
+        },
+        {
+          "arm": "self-check arm (probe-table guard)",
+          "what": "a COPY of the gate with one probe put back on `fn_defined` for a test path",
+          "pre_fix_rc": "n/a — asserts the NEW self-check exists",
+          "post_fix_rc": 2,
+          "source": "fix-5 sweep",
+          "why": "Without it the startup self-check could be deleted from the gate and only a grep in the suite would notice. A guard that is never exercised is the kind of thing that quietly stops working. The arm FAILS CLEANLY (not a Python traceback under `set -e`) if the probe it mutates ever moves, so a stale arm says so in the suite's own vocabulary instead of taking arms 15-17 down with it."
+        }
+      ],
+      "self_caught_in_this_patch": [
+        {
+          "id": "fix-5c",
+          "what": "`rust_view` was neither length- nor line-preserving: `re.sub(r'/\\*.*?\\*/', ' ')` collapsed a multi-line block comment to ONE SPACE, so every offset and line number downstream of one drifted.",
+          "why_it_only_surfaced_now": "Nothing depended on it until this round added the first reader that CITES A LINE (`const_str_values`). A failure message naming the wrong line, in a gate whose entire value is actionable failures, is a small lie.",
+          "fix": "Comments are BLANKED, not deleted, in both the block and line forms. One index now means the same thing in the raw file, in the comment-stripped view and in the blanked code view. Strictly stronger; no probe regex depended on the removal."
+        },
+        {
+          "id": "fix-5d",
+          "what": "`--list-sources` derived every path as `probe[1]`, which silently breaks the moment a probe kind reads its sources from somewhere else — and this round added the first two that do (`const_str_agree`, and `test_defined`'s crate manifest).",
+          "why_it_matters": "The manifest is what BUILDS every fixture root in the suite AND the preflight seeder. A path missing from it means fixture roots lacking a file the assertions read, which turns every arm that reads it into a silent TC-37 path-#4 evaporation — a test that no longer tests anything.",
+          "fix": "Both kinds handled explicitly, and a non-string entry in the derived set is now an internal error (exit 2) rather than something that ships."
+        }
+      ],
+      "residual_class_8_rewritten": {
+        "why_rewritten": "The prompt is right that an over-broad residual is its own dishonesty. As fix-4 wrote it, #8 said `fn_defined` proves existence and cannot prove the body asserts anything — which after this round understates the gate on one side (presence-and-activeness IS now enforced, at four levels) and, on the first cut of this fix, would have overstated it on another (it implied the module/file/target routes were merely 'not chased', when in fact three of them were closeable and are now closed).",
+        "now_enforced_at_four_levels": [
+          "THE FUNCTION: exists as a definition with a parseable body (not a comment, not a string literal, not a call); carries a `#[test]`-family attribute; is not disabled by `#[ignore]` / `#[cfg(..)]` / `#[cfg_attr(..)]`.",
+          "ITS POSITION: sits at the TOP LEVEL of its file, so no enclosing (possibly cfg-gated) item can silence it out of this reader's view.",
+          "THE FILE: carries no `#![cfg(..)]` inner attribute.",
+          "THE TARGET: the owning crate's Cargo.toml sets no `autotests = false` and declares no `[[test]]` block for that file with `required-features` / `test = false`."
+        ],
+        "what_remains_exactly_three_things": [
+          "(a) THE BODY'S ASSERTIONS. `fn atomic_flip_never_exposes_ready_without_the_vector_under_concurrent_write() { assert!(true); }` satisfies every check above, and so does one whose assertions were commented out. No lexical check can decide whether a body proves the obligation its name claims; `cargo test --workspace` EXECUTING it is what does, it is a required gate, and an emptied body is a visible code diff in review.",
+          "(b) THE CRATE, AND THE INVOCATION. This gate reads source and manifest TEXT. It does not know whether the crate is still a workspace member, nor how CI actually invokes cargo (an `--exclude`, a filter argument, a job that stops running).",
+          "(c) `#[cfg]` INSIDE a body — an assertion compiled out while the test still runs and passes vacuously. Class #6 again."
+        ],
+        "one_mechanism_closes_all_three": "Ask the TOOLCHAIN what the built test binaries actually contain and what they did (`cargo test -- --list`, or `cargo test --no-run --message-format=json`), instead of reading text. Recorded as a RECOMMENDATION, NOT BUILT — it is a slice of its own with its own maintenance surface, and it is not warranted by this gate's threat model (a future contributor who changes as-built code without noticing a ratified cross-repo contract said otherwise)."
+      },
+      "not_lexically_closeable_escalation_content": "NOTHING FROM THIS ROUND'S TWO FINDINGS. Both were lexically closeable and both are closed, along with four further instances of finding #2's class found by turning the question on this patch. The three items under residual_class_8_rewritten.what_remains_exactly_three_things are the honest boundary, and they are NOT deferred defects — they are the point at which a static text check stops and a toolchain-metadata mechanism must start. If a round-6 finding lands on any of those three, the correct adjudication is 'documented scope, different mechanism, its own slice', not another regex here.",
+      "suite_totals": {
+        "assertions_before_this_round": 219,
+        "assertions_after": 276,
+        "red_commit_state": "a22eee36: 221 PASS / 36 FAIL against the gate at f7e1d060 — the in-repo RED-first evidence that every new arm cleared the pre-fix gate.",
+        "green_state": "4aea7578: 276 PASS / 0 FAIL."
+      },
+      "performance": "check-c1-conformance.sh on the real tree: 0.76s wall (was 0.54s before this round). The added cost is the crate-manifest read and the attribute walks; still well inside a preflight budget.",
+      "not_changed": [
+        "The ratified contract's bytes (still byte-identical to the pin).",
+        "The clause registry's ids, categories and pinned counts (26 / 12 / 7, 45 total).",
+        "src/ — no Rust changed this round, so clippy/check --workspace evidence is carried from fix-1. `cargo test --workspace --no-run` was run this round anyway (rc=0) because the gate now asserts things about test attributes, and every one of the 14 named proofs was confirmed present in `cargo test -- --list`; one proof was run `--exact` (rc=0) as a spot-check. Per TC-72 that is a sanity check, not a release claim.",
+        "src/conformance/governed-surface-allowlist.json — verified byte-identical to baseline 23a436dc."
+      ]
+    },
+    {
+      "round": 6,
+      "reviewer": "codex §9, round 6 (fix-5 re-review) — two [P2] findings",
+      "transcript": "dev/plans/runs/codex/0.8.20/slice-30-fix-5-rereview-20260727T182439Z.log",
+      "budget": "ROUND 7 OF THE SLICE, AND THE LAST AUTHORIZED ONE. The standard §6 bound of 6 was EXHAUSTED at round 6; this round exists only because the FathomDB Program Steward authorized a BOUNDED, single-round fix pass (steward ledger seq-124) scoped to EXACTLY the two known findings below. Scope was held: no third defect was swept for, and the two things noticed in passing are recorded in `noticed_but_out_of_scope` rather than fixed.",
+      "scope_discipline": "The Steward's instruction was explicit that the previous six rounds each surfaced a NEW, DISTINCT defect class and that the round cap had fired, so this pass closes the two named holes and nothing else. Two candidate hardenings were identified while working and deliberately LEFT ALONE; see noticed_but_out_of_scope.",
+      "clause_registry_change": "NONE. Same 26 CHECKABLE ids, same categories, same pinned counts (26 checkable / 12 cross-repo / 7 prose, 45 total). The contract's bytes are untouched, so no re-derivation was triggered. scripts/c1-conformance-pin.json was NOT edited at all this round — not even its _comment.",
+      "files_touched": [
+        "scripts/check-c1-conformance.sh — one probe added to C1-SEAM-ENGINE-BUILD-DROP; file_inner_attrs() rewritten; two header/docstring sections updated to say 'leading header'.",
+        "scripts/tests/test_check_c1_conformance.sh — arms 12ai and 12aj plus eight mirror arms; the file header's fix-round narrative extended.",
+        "dev/plans/runs/0.8.20-slice-30-output.json — this file."
+      ],
+      "findings": [
+        {
+          "id": "round6-#1 [P2] `fn_sig` does not bind the `&self` receiver — a bounded FALSE GREEN",
+          "site": "scripts/check-c1-conformance.sh:718-721 (C1-SEAM-ENGINE-BUILD-DROP), fn_signatures() at ~:1713",
+          "claim_verified": true,
+          "how": "Reproduced as arm 12ai: delete ONLY the `&self,` line from `pub fn configure_projections(..)` in the engine's lib.rs, leaving the specs parameter, the drop parameter and the return type character-for-character identical. Pre-fix gate rc=0 — the suite printed `expected rc=1, got rc=0`.",
+          "root_cause": "fix-4 bound the three fragments to THE FUNCTION'S SIGNATURE, which was the right subject, but `fn_signatures()` returns the text between `fn <name>` and `{` and nothing in it required a receiver. A signature is not a method: the same text is legal on a free function and on a receiver-less associated function, either of which breaks `engine.configure_projections(..)` — the instance verb the pin's evidence records (engine lib.rs:8198) and the shape every call site in this repo uses.",
+          "fix": "A FOURTH `fn_sig` probe on the same clause, using the existing probe kind rather than extending the reader (the smaller change): `\\(\\s*(?:&\\s*(?:'[A-Za-z_]\\w*\\s+)?)?(?:mut\\s+)?self\\b`. A `self` receiver is legal ONLY inside an `impl`/trait block, so requiring one excludes both shapes the finding names, without this gate having to decide which `impl` it landed in — which is also what the Steward scoped.",
+          "why_not_bound_to_impl_engine": "Deliberately NOT additionally anchored to `impl Engine`. The receiver requirement fully closes the demonstrated hole; anchoring to a particular impl block would add a second thing that a legal refactor (an inherent impl split, a trait impl) could trip, i.e. a false-RED surface bought for no extra coverage.",
+          "false_red_guard": "Five MIRROR arms hold the fix to legal respellings — `& self,`, `&mut self,`, `&'life self,`, `mut self,` and a by-value `self,` — all rc=0 before AND after. `self` may only ever be the FIRST parameter in Rust, so the open paren the pattern anchors on can only be the parameter list's.",
+          "existing_probes": "The three parameter/return probes were KEPT unchanged as spelling regression guards. This round is purely additive to the clause."
+        },
+        {
+          "id": "round6-#2 [P2] the inner-attribute scan reads the whole file — a latent FALSE RED",
+          "site": "scripts/check-c1-conformance.sh:1814-1835 (file_inner_attrs), consumed by test_defined at ~:2129",
+          "claim_verified": true,
+          "how": "Reproduced as arm 12aj: append `mod helpers { #![cfg(feature = \"never-enabled\")] pub fn h() {} }` to the pinned test file slice15d_projection_registry.rs, leaving every pinned top-level test untouched. Pre-fix gate rc=1, failing SIX clauses with `the test file ... is CONDITIONALLY COMPILED as a whole`. The suite printed `expected rc=0, got rc=1`.",
+          "direction": "INVERTED versus every prior round of this slice. Rounds 1-6 finding #1 were all FALSE GREENS; this is a FALSE RED. On a publish-precondition gate that is not the safe side — it blocks CI and `scripts/preflight.sh --landing` while every top-level pinned proof still builds and runs, and the reader is told something about the file that is not true.",
+          "root_cause": "`re.finditer(r\"#!\\[\", code)` over the ENTIRE file. Rust permits an inner attribute at the head of ANY braced item, so a nested module's own `#![cfg(..)]` — ordinary, legal, and scoped to that module alone — was read as the file's.",
+          "fix": "The walk now starts at byte 0 and stops at the first thing that is neither whitespace nor an inner attribute, i.e. at the first item. That leading run IS the file header, and it is the only place a FILE-level inner attribute may legally appear, so narrowing gives up nothing.",
+          "false_green_guard": "Three MIRROR arms keep a GENUINE file-level `#![cfg(..)]` RED, each on the same pinned file: (a) alone at the very head; (b) after a leading `#![allow(dead_code)]`, since Rust allows a RUN of inner attributes; (c) after a leading `//!` doc header — which works because `rust_view` already blanks comments to spaces, so the doc header does not end the run. Arm 12ah-2 (the fix-5 file-cfg arm, on a different pinned file) also still passes.",
+          "erring": "An unbalanced `#![` in the header ends the walk. That is unreachable in valid Rust and every other structural reader in this gate would already have failed on such a file."
+        }
+      ],
+      "red_then_green": [
+        {
+          "arm": "12ai receiver-less `configure_projections` (only the `&self,` line deleted; specs, drop and return type identical)",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 1,
+          "want": 1,
+          "clause": "C1-SEAM-ENGINE-BUILD-DROP",
+          "direction": "FALSE GREEN closed"
+        },
+        {
+          "arm": "12ai mirrors — `& self,` / `&mut self,` / `&'life self,` / `mut self,` / `self,`",
+          "pre_fix_rc": 0,
+          "post_fix_rc": 0,
+          "want": 0,
+          "direction": "overshoot guard: a legal respelling must NOT manufacture a false RED"
+        },
+        {
+          "arm": "12aj a nested `mod helpers { #![cfg(feature = \"never-enabled\")] .. }` appended to the pinned test file T15",
+          "pre_fix_rc": 1,
+          "post_fix_rc": 0,
+          "want": 0,
+          "clause": "six clauses proved in slice15d_projection_registry.rs",
+          "direction": "FALSE RED closed — NOTE THE INVERSION"
+        },
+        {
+          "arm": "12aj mirrors — a GENUINE `#![cfg(..)]` in the header of the same file: alone / after `#![allow(dead_code)]` / after a `//!` doc header",
+          "pre_fix_rc": 1,
+          "post_fix_rc": 1,
+          "want": 1,
+          "direction": "overshoot guard: narrowing the scan must NOT buy a false green"
+        }
+      ],
+      "suite_rc": {
+        "at_red_commit_12ac854e": 1,
+        "at_green_commit_8b43a58c": 0
+      },
+      "suite_assertions": {
+        "before": 276,
+        "after": 297,
+        "arms": "arm 12 now runs 12a-12aj; 12ai and 12aj added"
+      },
+      "noticed_but_out_of_scope": [
+        "The RECEIVER OBLIGATION IS ON ONE CLAUSE ONLY. C1-SEAM-ENGINE-BUILD-DROP is the only clause whose subject is an instance verb, so it is the only place the round-6 #1 shape can bite today — but nothing structural stops a future clause adding an `fn_sig` probe to a method and forgetting the receiver. A general answer (a `method_sig` probe kind, or a probe-table self-check that refuses `fn_sig` on a name the pin's evidence records as `x.name(..)`) was NOT built: it is new mechanism, and the Steward scoped this round to the demonstrated hole. Worth a TC if the pin ever grows a second instance-verb clause.",
+        "`fn_signatures()` STILL RETURNS RAW TEXT rather than a parsed signature, so every `fn_sig` probe remains a regex over that text (generic parameters, where-clauses and default arguments are all just characters to it). That is the gate's documented stance for every structural reader in the file, not a new residual, and changing it would be a rewrite rather than a fix."
+      ],
+      "residual_scope_change": "NONE. No residual class was added, widened or retired this round. Class #6 (conditional compilation) was RE-READ because finding #2 lives next to it, and it is still accurate: the gate models `#[cfg]`/`#![cfg]` only lexically. What changed is WHERE it looks for a file-level one, which makes the existing statement more true, not less."
+    },
+    {
+      "round": "6b",
+      "reviewer": "codex §9, re-review of the fix-6 patch — one [P2] finding, a regression the fix-6 patch itself opened",
+      "transcript": "dev/plans/runs/codex/0.8.20/slice-30-fix-6-rereview-20260727T191545Z.log",
+      "budget": "NOT A NEW ROUND. A bounded, mechanical REPAIR of code the fix-6 round wrote in the same authorized pass (Steward ledger seq-124). No new scope, no sweep, one function touched.",
+      "scope_discipline": "Exactly the named regression and nothing else. The narrowing fix-6 made (leading header, not whole file) is KEPT — arm 12aj must stay rc=0 — and only the shebang case is added to it. Files touched: the gate, its fixture suite, and this file.",
+      "clause_registry_change": "NONE. Same 26 CHECKABLE ids, same categories, same pinned counts (26 checkable / 12 cross-repo / 7 prose, 45 total). The contract's bytes are untouched and scripts/c1-conformance-pin.json was NOT edited.",
+      "files_touched": [
+        "scripts/check-c1-conformance.sh — file_inner_attrs() skips a leading shebang; its docstring corrected (the leading run no longer starts at byte 0).",
+        "scripts/tests/test_check_c1_conformance.sh — arm 12ak (three sub-arms); the file header's fix-round narrative extended with FIX-6b.",
+        "dev/plans/runs/0.8.20-slice-30-output.json — this file."
+      ],
+      "findings": [
+        {
+          "id": "fix-6-rereview [P2] a leading Rust shebang hides a file-level `#![cfg(..)]` — a FALSE GREEN the fix-6 patch opened",
+          "site": "scripts/check-c1-conformance.sh, file_inner_attrs() at ~:1862",
+          "claim_verified": true,
+          "how": "codex proved it with the TOOLCHAIN, not by inspection: `rustc --test` on a file of `#!/usr/bin/env rust-script` + `#![cfg(feature = \"nope\")]` + `#[test] fn t() {}` compiles, and `--list` reports `0 tests`. Prepending those two lines to tests/slice15d_projection_registry.rs in a copied root left the gate at rc=0, printing `all 26 CHECKABLE clause(s) hold`. Reproduced here as arm 12ak-1 (`expected rc=1, got rc=0`) and re-run after the fix: rc=1 with `CONDITIONALLY COMPILED as a whole`.",
+          "root_cause": "fix-6 narrowed the inner-attribute scan from the whole file to the file's LEADING HEADER, correctly. But the new walk breaks at the first byte that is neither whitespace nor `#![`, and a Rust source file may legally BEGIN WITH A SHEBANG: `#!/usr/bin/env ..` is not `#![`, so the walk ended at byte 0 and returned no attributes at all. The pre-fix-6 whole-file scan happened to catch this case.",
+          "fix": "A leading shebang is part of the header and is skipped first, then the existing walk resumes. rustc's rule exactly: only the very first line can be a shebang, and it is one only when the file starts with `#!` whose next character is NOT `[` (`#![..]` at byte 0 is an inner attribute, not a shebang). Everything else the loop does is unchanged.",
+          "guard": "Arm 12ak: (1) shebang + `#![cfg(..)]` -> rc=1, asserting the failure names `CONDITIONALLY COMPILED as a whole` so a green cannot come from an unrelated clause failing; (2) a shebang ALONE -> rc=0, the anti-overshoot mirror; (3) shebang + `#![allow(dead_code)]` + `#![cfg(..)]` -> rc=1, proving the walk RESUMES rather than skipping one line. The nested-module mirror is the pre-existing arm 12aj (rc=0) and was deliberately NOT duplicated."
+        }
+      ]
+    },
+    {
+      "round": "6c",
+      "reviewer": "NO NEW REVIEW. The Steward's diagnosis, ruled to be the COMPLETION of codex §9 round-6 finding #2 — whose scope statement is 'the file's own leading inner attributes', and a BOM-prefixed inner attribute is one of them.",
+      "transcript": "None — this round was not opened by a review. The governing round-6/6b transcripts are dev/plans/runs/codex/0.8.20/slice-30-fix-6-rereview-20260727T191545Z.log and the rounds 6+7 transcripts at 337c2b12.",
+      "budget": "NOT A ROUND 8. A single authorized micro-fix, scoped by the Steward to approximately one line in the predicate plus one fixture arm. No sweep, no widening, one function touched — the same function fix-6 and fix-6b touched.",
+      "scope_discipline": "Exactly the named hole. read_source() was explicitly NOT changed: stripping the BOM there would alter what EVERY other probe sees and was outside the authorization, so the strip is local to file_inner_attrs(). The fix-6 narrowing and the fix-6b shebang skip are both KEPT — arms 12aj and 12ak must stay green. NOT touched: anything under src/, any release-state-*.json, the governed-surface allowlist, scripts/agent-test.sh, and every ledger. Files touched: the gate, its fixture suite, and this file.",
+      "clause_registry_change": "NONE. Same 26 CHECKABLE ids, same categories, same pinned counts (26 checkable / 12 cross-repo / 7 prose, 45 total). The contract's bytes are untouched and scripts/c1-conformance-pin.json was NOT edited.",
+      "files_touched": [
+        "scripts/check-c1-conformance.sh — file_inner_attrs() strips ONE leading U+FEFF before the shebang test; its docstring gains the BOM paragraph in the voice of the existing shebang one.",
+        "scripts/tests/test_check_c1_conformance.sh — arm 12al (three sub-arms); the file header's fix-round narrative extended with FIX-6c.",
+        "dev/plans/runs/0.8.20-slice-30-output.json — this file."
+      ],
+      "findings": [
+        {
+          "id": "fix-6c [P2] a leading UTF-8 BOM hides a file-level `#![cfg(..)]` — a FALSE GREEN of the fix-6b class, through a different first byte",
+          "site": "scripts/check-c1-conformance.sh, file_inner_attrs() at ~:1875",
+          "claim_verified": true,
+          "reachability": "ZERO TODAY. Every tracked .rs/.py/.ts/.sh was scanned and no file carries a BOM, so nothing is currently mis-read. Purely LATENT — exactly the state the shebang hole was in when fix-6b closed it, and the reason it is worth closing rather than a reason not to.",
+          "how": "Confirmed against the TOOLCHAIN before being relied on, the way fix-6b was. A throwaway whose bytes begin `ef bb bf` then `#![cfg(feature = \"nope\")]` then `#[test] fn t() {}` builds under `rustc --test` (rc=0) and `--list` prints `0 tests, 0 benchmarks`; the SAME file without the cfg prints `t3: test` / `1 test, 0 benchmarks`, proving it is the cfg that empties the binary and not the BOM; and `ef bb bf` + `#!/usr/bin/env rust-script` + `#![cfg(..)]` + `#[test]` also builds to `0 tests`, which is what fixes the ORDER of the two skips. The Python half was observed directly too: `'\\ufeff'.isspace()` is False and unicodedata.category is 'Cf'. Reproduced as arm 12al-1 / 12al-3 (`expected rc=1, got rc=0`) and re-run after the fix: rc=1 with `CONDITIONALLY COMPILED as a whole`. Throwaways deleted.",
+          "root_cause": "read_source() decodes with `.decode(\"utf-8\", errors=\"replace\")`, which does NOT strip a byte-order mark, so a BOM arrives at the leading-header walk as U+FEFF at index 0 and defeats it three ways at once: it is not `#!`, so the fix-6b shebang branch is skipped; it is NOT whitespace to Python (U+FEFF is category Cf, a FORMAT character), so the whitespace skip does not advance past it; and it is not `#![`, so the walk breaks at byte 0 and returns no attributes at all. A file-level `#![cfg(..)]` on that very line is never seen: every proof in a pinned test file compiles out while each still reads as an ordinary `#[test]`, and the gate exits 0.",
+          "fix": "One leading U+FEFF is stripped before the shebang test — rustc's own rule and rustc's own ORDER: it strips ONE BOM, and only then may the first line be a shebang. Everything after that is unchanged. Only ONE BOM is stripped, as rustc does; a second U+FEFF is not a header byte. The strip is deliberately local to this walk rather than in read_source(), so no other probe's view of any file changes.",
+          "guard": "Arm 12al: (1) BOM + `#![cfg(..)]` -> rc=1, asserting the failure names `CONDITIONALLY COMPILED as a whole` so a green cannot come from an unrelated clause failing, plus the Steward-routing block; (2) a BOM ALONE -> rc=0, the anti-overshoot mirror — an editor writing 'UTF-8 with signature' must not turn this publish precondition RED; (3) BOM + shebang + `#![cfg(..)]` -> rc=1, which is what pins the ORDER of the two skips and would fail if the BOM strip were placed after the shebang branch. The nested-module mirror (12aj) and the shebang mirrors (12ak) are pre-existing and were deliberately NOT duplicated; both stayed green throughout."
+        }
+      ]
+    }
+  ],
+  "agent_verify_result_fix_6c": "GREEN for the slice's own scope, fix-6c applied. The R-20-H7 gate is rc=0 with its registry line unmoved (26 checkable / 12 cross-repo / 7 prose, 45 total, pinned at 23a436dc). fix-6c is the COMPLETION of codex §9 round-6 finding #2, not a new round: the leading-header walk that fix-6 introduced and fix-6b repaired for shebangs was still defeated at byte 0 by a UTF-8 BOM, because read_source() does not strip one and U+FEFF is neither `#!` nor `#![` nor — in Python — whitespace. A file-level `#![cfg(..)]` behind a BOM therefore compiled every proof in a pinned test file out at exit 0: the same FALSE GREEN class, through a different first byte. Reachability was ZERO at the time of the fix (no tracked file carries a BOM), so this is a latent-hole closure, and the premise was verified against rustc rather than assumed. RED-first with the real pre-fix exit codes recorded (suite rc=1, 310 PASS / 7 FAIL at 9ef5179b), fixed at 0d9b40d7 (suite rc=0, 317 PASS / 0 FAIL), and guarded with a MIRROR arm so the fix cannot overshoot. 307 -> 317 assertions is PURE ADDITION: nothing was removed or weakened, and arms 12aj and 12ak stayed green. Gates at this head: c1-conformance 0, governed-surface-pin 0 (allowlist byte-identical), preflight --landing 0, clippy 0, check 0. No Rust changed, but clippy and check --workspace --all-targets were re-run rather than carried.",
+  "agent_verify_result": "GREEN for the slice's own scope, fix-6 round applied. The R-20-H7 gate exists, is dual-homed (preflight --landing + an always-on CI job running the SAME script), and is GREEN: 26/26 CHECKABLE clauses of the ratified C-1 contract hold against as-built code and the contract is byte-identical to its pin — 26 checkable / 12 cross-repo / 7 prose, 45 total, pinned at 23a436dc, unmoved by this round. This round closed the two codex round-6 [P2] findings and NOTHING ELSE, per the Steward's bounded authorization: a FALSE GREEN (the seam clause did not require configure_projections to keep its `&self` receiver) and a FALSE RED (a nested module's own inner `#![cfg(..)]` was read as the whole test file's, which would have blocked CI and preflight --landing on a perfectly legal edit). Both are RED-first with the real pre-fix exit codes recorded, and both carry MIRROR arms in the opposite direction so the fix cannot overshoot. Recurrence guard: 297 assertions, 0 failures. No Rust changed, but clippy and check --workspace --all-targets were re-run rather than carried, and both exit 0.",
+  "next_step_for_orchestrator": [
+    "fix-6c is NOT a round 8 and was NOT opened by a review: it is the single authorized micro-fix COMPLETING codex §9 round-6 finding #2, whose scope statement is 'the file's own leading inner attributes'. A BOM-prefixed inner attribute is one of them, and it defeated the leading-header walk in exactly the way the shebang did. Steward ledger seq-124's authorization still governs — if the confirming re-review is not terminal, HALT and return to the Steward rather than opening another pass.",
+    "For adjudicating it: (a) ONE line of predicate moved — file_inner_attrs() strips one leading U+FEFF — plus its docstring; read_source() was deliberately NOT changed, so no other probe's view of any file moved; (b) the fix-6 narrowing and the fix-6b shebang skip are both KEPT and asserted — arms 12aj and 12ak stay green, so the repair cannot have overshot back to the whole-file scan; (c) the guard runs in BOTH directions — BOM + `#![cfg(..)]` is rc=1 (and the message must name `CONDITIONALLY COMPILED as a whole`), a BOM ALONE is rc=0, and BOM + shebang + `#![cfg(..)]` is rc=1, which is what pins the ORDER of the two skips; (d) the clause registry did not move — same 26 ids, same categories, same counts, and scripts/c1-conformance-pin.json was not edited.",
+    "REACHABILITY OF THE FIXED HOLE IS ZERO TODAY — no tracked source file carries a BOM. That was already known before the fix and is not a reason to skip it; the shebang hole fix-6b closed was equally latent. The premise was nonetheless confirmed against the toolchain rather than assumed: `rustc --test` on BOM + `#![cfg(feature = \"nope\")]` + `#[test]` builds and `--list` reports `0 tests`, while the same file without the cfg reports `1 test`.",
+    "`git diff --name-only 337c2b12 HEAD` is exactly three files: scripts/check-c1-conformance.sh, scripts/tests/test_check_c1_conformance.sh and this file. Nothing under src/ moved in the whole slice (`git diff --name-only 23a436dc HEAD -- src/` is empty), the ratified contract's bytes are untouched, and the governed-surface allowlist is BYTE-IDENTICAL with its pin unmoved at 427d2712.",
+    "scripts/agent-test.sh's aggregate exit is VACUOUS (TC-16) and scripts/tests/test_commission_manifest.sh is PRE-EXISTING RED on main (TC-79, arm 9d). Neither is a fix-6c signal. `cargo test --workspace` was NOT used as evidence either way — a known-unstable signal here (~1 run in 3 fails on plain main). cargo clippy and cargo check --workspace --all-targets WERE re-run at this head, not carried, and both exit 0.",
+    "Cherry-pick order onto the landing branch, fix-6c tail appended to the prior list: ..., 12ac854e, 8b43a58c, the fix-6 docs commit 2c9dff51, f4c7aab9, a7a85e34, the fix-6b docs commit 844df27b, the round-6/7 transcripts 337c2b12, 9ef5179b, 0d9b40d7, then the docs commit carrying this file."
+  ],
+  "head_sha_before_fix_2": "52c2bde9",
+  "head_sha_before_fix_3": "b0de847b",
+  "head_sha_before_fix_4": "0ddb4be7",
+  "head_sha_before_fix_5": "f7e1d060",
+  "head_sha_before_fix_6": "e8e35260",
+  "head_sha_before_fix_6b": "2c9dff51",
+  "head_sha_before_fix_6c": "337c2b12"
+}
