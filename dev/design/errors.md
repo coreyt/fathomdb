@@ -9,6 +9,10 @@ status: locked
 
 # Errors Design
 
+> **Requirement traceability (added 2026-07-28, Steward — bookkeeping, no design change):** error
+> taxonomy of record for **`R-20-VC` / decision #18** (0.8.20 Slice 22) — settle the `InvalidArgument`
+> vs `WriteValidation` family inconsistency before the surface is signed. Back-linked per TC-92.
+
 This file is the design owner named by `architecture.md` for the cross-cutting
 error surface.
 

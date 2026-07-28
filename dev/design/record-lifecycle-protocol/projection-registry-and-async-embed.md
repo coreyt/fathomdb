@@ -8,6 +8,12 @@ status: UNREVIEWED
 > that lets **interpretive content be retrievable** without recreating CR-057 — and the execution/concurrency
 > contract for the one projection type (vector) that cannot be same-transaction. Companion:
 > [structural lifecycle contract](structural-lifecycle-contract.md).
+>
+> **Requirement traceability (added 2026-07-28, Steward — bookkeeping, no design change):** design of
+> record for **`R-20-VC` / TC-67** (0.8.20 Slice 22) — declaring a `searchable→vector` projection over a
+> kind the vector writer cannot commit must **REPORT** (HITL option (c)); the `resolve_source_type`
+> vocabulary is **NOT** grown. Back-linked because the requirement id was minted 2026-07-27, long after
+> this doc, so `scripts/commission-manifest.sh` could not find it (TC-92).
 
 ## 1. Why this exists — the retrievability-of-meaning problem
 
