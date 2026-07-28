@@ -8,20 +8,21 @@
 //! The companion written characterization is
 //! `dev/design/0.8.20-tc57-write-race-characterization.md`.
 //!
-//! ## Status of the two engine-level arms: EXPECTED RED AT BASELINE
+//! ## Status of the two engine-level arms: LIVE — and RED as of this commit
 //!
 //! [`tc57_repro_governed_write_loop_races_projection_worker`] and its control
-//! [`tc57_control_anonymous_write_loop_does_not_race`] are BOTH `#[ignore]`d in
-//! this commit **on purpose**:
+//! [`tc57_control_anonymous_write_loop_does_not_race`] were BOTH `#[ignore]`d in
+//! the characterization commit `a569246a` on purpose — the repro arm was expected
+//! **RED** at baseline `41a81c17`, and the control was disabled alongside it so
+//! the pair was enabled and disabled as one unit (the characterization is a
+//! COMPARISON, and half a comparison is worse than none).
 //!
-//! * the repro arm is expected **RED** at baseline `41a81c17` — that is the
-//!   whole point of it, and an un-ignored red would break the merge gate;
-//! * the control arm is `#[ignore]`d **alongside** it so the pair is enabled and
-//!   disabled as one unit. The characterization is a COMPARISON (governed vs
-//!   anonymous), not an anecdote, and half a comparison is worse than none.
-//!
-//! **Slice 21a-2 removes both `#[ignore]` attributes as its RED→GREEN step.**
-//! Nothing else in this file should need to change to do that.
+//! **Slice 21a-2 removes both `#[ignore]` attributes as its RED→GREEN step. This
+//! commit is the RED half**: the attributes are gone, `src/lib.rs` is still
+//! byte-identical to baseline, and the repro arm therefore FAILS. The fix lands
+//! in the very next commit. Nothing else in this file changes across the pair —
+//! the arms assert exactly what they asserted while they were ignored, which is
+//! what makes the green a real signal rather than a rewritten goalpost.
 //!
 //! The three `tc57_mechanism_*` tests are pure-rusqlite pins. They are NOT
 //! `#[ignore]`d: they assert what SQLite does, not what the engine does, and
@@ -278,9 +279,8 @@ impl Embedder for CountingDelay {
 /// the busy handler, so no `busy_timeout` value could absorb it — see
 /// [`tc57_mechanism_held_write_lock_upgrade_is_unretryable_busy_5`].
 ///
-/// `#[ignore]` is REMOVED by Slice 21a-2 as its RED→GREEN step.
+/// `#[ignore]` was REMOVED by Slice 21a-2 as its RED→GREEN step.
 #[test]
-#[ignore = "TC-57 characterization: expected RED at baseline 41a81c17; Slice 21a-2 un-ignores this as its RED->GREEN step"]
 fn tc57_repro_governed_write_loop_races_projection_worker() {
     let outcome = run_arm(true);
     assert!(
@@ -312,9 +312,8 @@ fn tc57_repro_governed_write_loop_races_projection_worker() {
 /// If this arm ever fails, that is a FINDING, not a flake: it would refute the
 /// "`Some`-only" half of the diagnosis. Report it; do not suppress it.
 ///
-/// `#[ignore]` is REMOVED by Slice 21a-2 together with the repro arm.
+/// `#[ignore]` was REMOVED by Slice 21a-2 together with the repro arm.
 #[test]
-#[ignore = "TC-57 characterization: enabled as a pair with the repro arm by Slice 21a-2"]
 fn tc57_control_anonymous_write_loop_does_not_race() {
     let outcome = run_arm(false);
     assert!(
