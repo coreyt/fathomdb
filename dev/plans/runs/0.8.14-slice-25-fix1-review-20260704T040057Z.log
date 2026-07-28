@@ -1,3 +1,22 @@
+=== STEWARD REDACTION (TC-86 transcript hygiene) ===
+34 line(s) redacted in place in this transcript before it was committed.
+OUT-OF-REPO DIRECTORY INVENTORY (34 line(s) in 1 block(s)):
+the commands echoed above ENUMERATED a directory that is not part of
+this repository or its worktrees — a home directory, a projects directory, a
+package cache, a state directory. Their output was therefore a listing of files
+and directories on the operator's machine that have nothing to do with this
+project. The commands themselves are kept: an echo is path-only and is the
+evidence of what happened. The LISTINGS are reported as a COUNT ONLY and are
+deliberately NOT enumerated — naming them here would put back exactly what the
+redaction removed.
+PROJECTS TOUCHED: (none identified)
+WHY REMOVED: github.com/coreyt/fathomdb is a PUBLIC repository. Committing
+session transcripts or state contents into it would publish them.
+NO FINDING WAS LOST: no review finding came from the removed lines. Every verdict
+and all reasoning above and below are intact.
+NOT DELETED: each removed line was REPLACED IN PLACE by a marker, so this
+transcript still stands as TC-RUBRIC-7 evidence.
+=== END STEWARD REDACTION ===
 OpenAI Codex v0.136.0
 --------
 workdir: /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z
@@ -93,40 +112,7 @@ drwxrwxr-x 12 coreyt coreyt 4096 Jul  3 15:47 tooling-mermaid-renderer
 exec
 /bin/bash -c 'ls -la ../..' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z
  succeeded in 0ms:
-total 132
-drwxrwxr-x 33 coreyt coreyt 4096 Jun 29 21:49 .
-drwxr-x--- 42 coreyt coreyt 4096 Jul  3 22:36 ..
-drwxrwxr-x 11 coreyt coreyt 4096 Mar 30 19:14 7thplacenw-client
-drwxrwxr-x 17 coreyt coreyt 4096 Jun 26 14:37 ado-mcp
-drwxrwxr-x 24 coreyt coreyt 4096 Jun 28 21:23 airlock
-drwxrwxr-x 11 coreyt coreyt 4096 Mar 30 19:14 armada
-drwxrwxr-x 15 coreyt coreyt 4096 Mar 30 19:14 bosun
-drwxrwxr-x 10 coreyt coreyt 4096 Mar 30 19:14 coral
-drwxrwxr-x  9 coreyt coreyt 4096 Mar 30 19:14 cotudes
-drwxrwxr-x  7 coreyt coreyt 4096 Mar 30 19:14 cpptudes
-drwxrwxr-x  3 coreyt coreyt 4096 Mar 30 19:14 dependency-scout
-drwxrwxr-x 20 coreyt coreyt 4096 Jun 12 11:43 dicom-de-id
-drwxrwxr-x  2 coreyt coreyt 4096 Jun  8 15:13 dicom-de-id-worktrees
-drwxrwxr-x 28 coreyt coreyt 4096 Jul  3 15:55 fathomdb
-drwxrwxr-x  7 coreyt coreyt 4096 Jul  3 22:39 fathomdb-worktrees
-drwxrwxr-x  8 coreyt coreyt 4096 Mar 30 19:14 graph-ir
-drwxrwxr-x 12 coreyt coreyt 4096 Mar 30 19:14 graph-ir-tools
-drwxrwxr-x  9 coreyt coreyt 4096 Jun 26 14:37 libavoided-js
-drwxrwxr-x  9 coreyt coreyt 4096 Jun 27 18:02 local
-drwxrwxr-x 12 coreyt coreyt 4096 Mar 30 19:14 lookout
-drwxrwxr-x 11 coreyt coreyt 4096 Mar 30 19:14 margie
-drwxrwxr-x  5 coreyt coreyt 4096 Jun  2 05:51 md-render
-drwxrwxr-x 25 coreyt coreyt 4096 Jul  3 12:13 memex
-drwxrwxr-x  4 coreyt coreyt 4096 Jul  3 19:07 memex-worktrees
-drwxrwxr-x 18 coreyt coreyt 4096 Jun  6 17:00 mesh-seam-ripper
-drwxrwxr-x  8 coreyt coreyt 4096 Jun 28 19:28 monospace-design-tui
-drwxrwxr-x 16 coreyt coreyt 4096 Mar 30 19:14 one-0-one
-drwxrwxr-x 10 coreyt coreyt 4096 Mar 30 19:14 ros2-igus-rebel
-drwxrwxr-x  7 coreyt coreyt 4096 Mar 30 19:14 schooner
-drwxrwxr-x  2 coreyt coreyt 4096 Jun  2 09:53 temp
-drwxrwxr-x 19 coreyt coreyt 4096 Apr 15 22:35 wake
-drwxrwxr-x  3 coreyt coreyt 4096 Apr  6 23:40 windchill-llm
-drwxrwxr-x  8 coreyt coreyt 4096 Mar 30 19:14 wopr-markii
+[REDACTED TC-86] 34 line(s) removed: this block was the OUTPUT of the command echoed above, which enumerated an out-of-repo directory. The echo is kept; the listing is not published.
 
 exec
 /bin/bash -c "sed -n '1,220p' /home/coreyt/projects/fathomdb/MEMORY.md" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z

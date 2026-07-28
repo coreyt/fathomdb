@@ -1,3 +1,22 @@
+=== STEWARD REDACTION (TC-86 transcript hygiene) ===
+62 line(s) redacted in place in this transcript before it was committed.
+OUT-OF-REPO DIRECTORY INVENTORY (62 line(s) in 2 block(s)):
+the commands echoed above ENUMERATED a directory that is not part of
+this repository or its worktrees — a home directory, a projects directory, a
+package cache, a state directory. Their output was therefore a listing of files
+and directories on the operator's machine that have nothing to do with this
+project. The commands themselves are kept: an echo is path-only and is the
+evidence of what happened. The LISTINGS are reported as a COUNT ONLY and are
+deliberately NOT enumerated — naming them here would put back exactly what the
+redaction removed.
+PROJECTS TOUCHED: (none identified)
+WHY REMOVED: github.com/coreyt/fathomdb is a PUBLIC repository. Committing
+session transcripts or state contents into it would publish them.
+NO FINDING WAS LOST: no review finding came from the removed lines. Every verdict
+and all reasoning above and below are intact.
+NOT DELETED: each removed line was REPLACED IN PLACE by a marker, so this
+transcript still stands as TC-RUBRIC-7 evidence.
+=== END STEWARD REDACTION ===
 OpenAI Codex v0.136.0
 --------
 workdir: /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-10-20260704T002826Z
@@ -961,72 +980,12 @@ tooling-mermaid-renderer
 exec
 /bin/bash -c 'ls ../..' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-10-20260704T002826Z
  succeeded in 0ms:
-7thplacenw-client
-ado-mcp
-airlock
-armada
-bosun
-coral
-cotudes
-cpptudes
-dependency-scout
-dicom-de-id
-dicom-de-id-worktrees
-fathomdb
-fathomdb-worktrees
-graph-ir
-graph-ir-tools
-libavoided-js
-local
-lookout
-margie
-md-render
-memex
-memex-worktrees
-mesh-seam-ripper
-monospace-design-tui
-one-0-one
-ros2-igus-rebel
-schooner
-temp
-wake
-windchill-llm
-wopr-markii
+[REDACTED TC-86] 31 line(s) removed: this block was the OUTPUT of the command echoed above, which enumerated an out-of-repo directory. The echo is kept; the listing is not published.
 
 exec
 /bin/bash -c 'ls /home/coreyt/projects' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-10-20260704T002826Z
  succeeded in 0ms:
-7thplacenw-client
-ado-mcp
-airlock
-armada
-bosun
-coral
-cotudes
-cpptudes
-dependency-scout
-dicom-de-id
-dicom-de-id-worktrees
-fathomdb
-fathomdb-worktrees
-graph-ir
-graph-ir-tools
-libavoided-js
-local
-lookout
-margie
-md-render
-memex
-memex-worktrees
-mesh-seam-ripper
-monospace-design-tui
-one-0-one
-ros2-igus-rebel
-schooner
-temp
-wake
-windchill-llm
-wopr-markii
+[REDACTED TC-86] 31 line(s) removed: this block was the OUTPUT of the command echoed above, which enumerated an out-of-repo directory. The echo is kept; the listing is not published.
 
 exec
 /bin/bash -c "sed -n '1,260p' /home/coreyt/projects/fathomdb/MEMORY.md" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-10-20260704T002826Z

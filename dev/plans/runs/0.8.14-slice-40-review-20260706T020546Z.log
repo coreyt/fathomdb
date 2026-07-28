@@ -1,3 +1,22 @@
+=== STEWARD REDACTION (TC-86 transcript hygiene) ===
+24 line(s) redacted in place in this transcript before it was committed.
+OUT-OF-REPO DIRECTORY INVENTORY (24 line(s) in 3 block(s)):
+the commands echoed above ENUMERATED a directory that is not part of
+this repository or its worktrees — a home directory, a projects directory, a
+package cache, a state directory. Their output was therefore a listing of files
+and directories on the operator's machine that have nothing to do with this
+project. The commands themselves are kept: an echo is path-only and is the
+evidence of what happened. The LISTINGS are reported as a COUNT ONLY and are
+deliberately NOT enumerated — naming them here would put back exactly what the
+redaction removed.
+PROJECTS TOUCHED: (none identified)
+WHY REMOVED: github.com/coreyt/fathomdb is a PUBLIC repository. Committing
+session transcripts or state contents into it would publish them.
+NO FINDING WAS LOST: no review finding came from the removed lines. Every verdict
+and all reasoning above and below are intact.
+NOT DELETED: each removed line was REPLACED IN PLACE by a marker, so this
+transcript still stands as TC-RUBRIC-7 evidence.
+=== END STEWARD REDACTION ===
 OpenAI Codex v0.136.0
 --------
 workdir: /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
@@ -292,38 +311,17 @@ implementer.md	orchestrator.md  steward.md
 exec
 /bin/sh -c 'ls /home/coreyt' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
  succeeded in 0ms:
-Desktop    Videos	       ngccli_arm64.zip  rtw89-restore.sh
-Documents  agent-smt.md        nltk_data	 script-tools
-Downloads  fathomdb-worktrees  nvidia		 snap
-Music	   go		       orin-recover	 vllm-env
-Pictures   memex	       projects		 wifi-signal.sh
-Public	   ngc-cli	       projects2
-Templates  ngc-cli.md5	       projects3
+[REDACTED TC-86] 7 line(s) removed: this block was the OUTPUT of the command echoed above, which enumerated an out-of-repo directory. The echo is kept; the listing is not published.
 
 exec
 /bin/sh -c 'ls /home/coreyt/.codex' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
  succeeded in 0ms:
-auth.json	    logs_2.sqlite	   rules
-cache		    logs_2.sqlite-shm	   sessions
-config.toml	    logs_2.sqlite-wal	   shell_snapshots
-goals_1.sqlite	    memories		   skills
-goals_1.sqlite-shm  memories_1.sqlite	   state_5.sqlite
-goals_1.sqlite-wal  memories_1.sqlite-shm  state_5.sqlite-shm
-history.jsonl	    memories_1.sqlite-wal  state_5.sqlite-wal
-installation_id     models_cache.json	   tmp
-log		    plugins		   version.json
+[REDACTED TC-86] 9 line(s) removed: this block was the OUTPUT of the command echoed above, which enumerated an out-of-repo directory. The echo is kept; the listing is not published.
 
 exec
 /bin/sh -c 'ls /home/coreyt/projects' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
  succeeded in 0ms:
-7thplacenw-client  dependency-scout	  local			one-0-one
-ado-mcp		   dicom-de-id		  lookout		ros2-igus-rebel
-airlock		   dicom-de-id-worktrees  margie		schooner
-armada		   fathomdb		  md-render		temp
-bosun		   fathomdb-worktrees	  memex			wake
-coral		   graph-ir		  memex-worktrees	windchill-llm
-cotudes		   graph-ir-tools	  mesh-seam-ripper	wopr-markii
-cpptudes	   libavoided-js	  monospace-design-tui
+[REDACTED TC-86] 8 line(s) removed: this block was the OUTPUT of the command echoed above, which enumerated an out-of-repo directory. The echo is kept; the listing is not published.
 
 exec
 /bin/sh -c 'git status --short' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
