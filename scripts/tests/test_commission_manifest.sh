@@ -808,17 +808,83 @@ else
   fail "arm 9b (real line-anchor ban): the manifest emitted a bare line anchor"
 fi
 
-# --- Arm 9d: the real repo's base SHA is Slice 15's merge, on the LINE ------
-# The live regression half of the predecessor fix. Slice 20 is not yet landed,
-# so predecessor and max(landed) agree TODAY — asserting the base LINE (not the
-# whole manifest, where every landing SHA appears in the roll-up) is what keeps
-# this honest the day Slice 20 lands.
-REAL_BASE_LINE="$(grep -m1 '^  base sha' <<<"$REAL_OUT" || true)"
-if grep -q 'a2022957' <<<"$REAL_BASE_LINE" && grep -q 'Slice 15' <<<"$REAL_BASE_LINE" \
-   && ! grep -qi 'HISTORICAL' <<<"$REAL_OUT"; then
-  pass "real repo — Slice 20's base is Slice 15's landing merge (a2022957), on the base line"
+# --- Arm 9d: the real repo's base line, STATE-DERIVED (TC-79 / TC-81) -------
+# The live regression half of the predecessor fix. It asserts the base LINE and
+# not the whole manifest, because every landing SHA also appears in the `landed
+# so far` roll-up, so a whole-manifest grep cannot tell a correct base from a
+# wrong one. That intent is unchanged.
+#
+# WHY IT IS DERIVED RATHER THAN LITERAL. The previous form hardcoded Slice 20 as
+# its "currently in flight" example, hardcoded Slice 15 / a2022957 as the
+# expected base, and asserted UNCONDITIONALLY that the real manifest carried no
+# HISTORICAL banner. Its own comment said the predecessor and max(landed) agree
+# "TODAY" — it documented its own expiry date and shipped anyway. Slice 20 then
+# landed (841c307b), the generator CORRECTLY began emitting
+# `⚠ HISTORICAL  Slice 20 is ITSELF LANDED`, and this arm went permanently RED
+# against a tool that was right: a time-bombed assertion, the TC-81 hazard class
+# (first instance efa8d584). Re-pointing the literal at a later slice is the
+# same bomb with a later fuse, so it was rejected.
+#
+# The form below reads the target (`next_slice`, unlanded by definition), its
+# predecessor (the greatest `landed` entry STRICTLY below the target) and that
+# predecessor's landing SHA out of the single-writer state file, and asserts the
+# HISTORICAL banner as an EQUIVALENCE: present if and only if the target is
+# itself in `landed`. That is strictly stronger than the old one-directional
+# prohibition — it now also catches a banner that fails to appear — and it stays
+# true whatever the ladder does next.
+#
+# NON-VACUITY IS THE POINT: there is no skip path. Every way the derivation can
+# come up empty (end-of-ladder `next_slice: null`, no landed predecessor, a
+# predecessor with no recorded SHA, an unreadable state file) routes to fail(),
+# never to a silent pass. A vacuously-green gate is worse than the bug it was
+# meant to catch, and this repo has been bitten by exactly that before.
+D9D_STATE_FILE="$REPO_ROOT/dev/plans/release-state-0.8.20.json"
+set +e
+D9D_DERIVED="$(python3 -c '
+import json, sys
+try:
+    s = json.load(open(sys.argv[1]))
+except Exception as e:
+    print("ERR unreadable state file: %s" % e); raise SystemExit(0)
+t = s.get("next_slice")
+if isinstance(t, bool) or not isinstance(t, int):
+    print("ERR next_slice is %r, not an int — end-of-ladder or malformed. "
+          "Re-point this arm at a live release; do NOT skip it." % (t,))
+    raise SystemExit(0)
+landed = sorted(n for n in (s.get("landed") or []) if isinstance(n, int))
+prior = [n for n in landed if n < t]
+if not prior:
+    print("ERR no landed slice strictly below next_slice %d" % t); raise SystemExit(0)
+b = prior[-1]
+sha = next((e.get("sha") for e in (s.get("ladder") or []) if e.get("slice") == b), None)
+if not sha:
+    print("ERR predecessor Slice %d records no landing sha" % b); raise SystemExit(0)
+print("OK %d %d %s %s" % (t, b, sha, "LANDED" if t in landed else "PENDING"))
+' "$D9D_STATE_FILE" 2>&1)"
+D9D_DERIVE_RC=$?
+set -e
+read -r D9D_OK D9D_TARGET D9D_BASE D9D_SHA D9D_TARGET_STATE <<<"$D9D_DERIVED" || true
+if [ "$D9D_DERIVE_RC" -ne 0 ] || [ "${D9D_OK:-}" != "OK" ]; then
+  fail "arm 9d (state derivation): rc=$D9D_DERIVE_RC out=[$D9D_DERIVED]"
 else
-  fail "arm 9d (real base line): base=[$REAL_BASE_LINE]"
+  # The banner MUST track the target's landed state in both directions.
+  if [ "$D9D_TARGET_STATE" = "LANDED" ]; then D9D_WANT_BANNER=present
+  else D9D_WANT_BANNER=absent; fi
+  set +e
+  D9D_OUT="$("$REPO_ROOT/scripts/commission-manifest.sh" 0.8.20 "$D9D_TARGET" 2>&1)"
+  D9D_RC=$?
+  set -e
+  D9D_BASE_LINE="$(grep -m1 '^  base sha' <<<"$D9D_OUT" || true)"
+  if grep -q '⚠ HISTORICAL' <<<"$D9D_OUT"; then D9D_GOT_BANNER=present
+  else D9D_GOT_BANNER=absent; fi
+  if [ "$D9D_RC" -eq 0 ] \
+     && grep -qF "$D9D_SHA" <<<"$D9D_BASE_LINE" \
+     && grep -qF "(Slice $D9D_BASE " <<<"$D9D_BASE_LINE" \
+     && [ "$D9D_GOT_BANNER" = "$D9D_WANT_BANNER" ]; then
+    pass "real repo — Slice $D9D_TARGET's base is Slice $D9D_BASE's landing merge ($D9D_SHA) on the base line, and the HISTORICAL banner is $D9D_GOT_BANNER as the state file's landed set requires ($D9D_TARGET_STATE)"
+  else
+    fail "arm 9d (real base line, derived target=Slice $D9D_TARGET): rc=$D9D_RC want base=[Slice $D9D_BASE / $D9D_SHA] banner=$D9D_WANT_BANNER; got banner=$D9D_GOT_BANNER line=[$D9D_BASE_LINE]"
+  fi
 fi
 
 # --- Arm 9e: the REAL manifest's pin path is emitted as a CITATION ----------
