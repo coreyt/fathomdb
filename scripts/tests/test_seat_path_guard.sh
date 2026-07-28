@@ -854,12 +854,30 @@ expect_allow "arm 64e: an ordinary 'cp' between allowed paths is ALLOWED (alread
 #   is silently inert, which is the false green that matters most here — so arm
 #   70 stats the resolved path.
 #
+# AND WHY A PARSE ALONE IS STILL NOT ENOUGH — codex § 9 fix-1, the [P1]
+#   Parsing bought "wired, not merely mentioned"; it did NOT buy ATTACHMENT. The
+#   first cut asked its three questions of the FILE, so a guard bolted to a
+#   matcher that never fires on a write satisfied every one of them. Arms 67-72
+#   are now read off a single record per GUARD-CARRYING entry (see the
+#   guard-wiring query below), and arm 73 runs that detector against synthetic
+#   fixtures — the reproduced attack among them — every run.
+#
 # OBSERVED RED (run against the unwired files, before the frontmatter existed):
 #   arms 67, 68, 70, 71 and 72 FAILED for BOTH coordinating seats — "declares NO
 #   PreToolUse command hook", "the wiring is inert", "MISSING:Edit,Write,Bash" —
 #   12 test(s) failed, rc=1, 123 passed. Arms 65/66/69 were green then and must
 #   stay green: they are the "nothing else moved" controls, so they carry no
 #   RED witness of their own and are not evidence of wiring.
+#
+# OBSERVED RED AGAIN at fix-1, against the CORRECT hook and a TAMPERED
+# frontmatter (the whole point: these arms guard the wiring, not the hook):
+#   attack fixture (guard on "Read", another command on "Edit|Write|Bash")
+#     -> pre-fix rc=0, 135/135 pass;  post-fix rc=1, arm 71 (orchestrator) fails
+#   guard on "Edit|Write" only            -> arm 71 fails  "MISSING:Bash"
+#   guard command -> a non-existent file  -> arm 70 fails x2 (off-target, inert)
+#   guard command -> a literal abs path   -> arm 72 fails   (unanchored)
+#   model: inherit changed / deleted      -> arm 66 fails
+#   ".*" and "(Edit|Write|Bash)" matchers -> still PASS (regex, not strcmp)
 
 # ---------------------------------------------------------------------------
 # fm <file> <query> [args...] — parse an agent file's YAML frontmatter and
@@ -874,9 +892,40 @@ expect_allow "arm 64e: an ordinary 'cp' between allowed paths is ALLOWED (alread
 #     has-hooks         -> "yes" / "no" (is the `hooks:` key present at all)
 #     pretool-commands  -> one line per hooks.PreToolUse[*].hooks[*].command
 #     pretool-types     -> one line per hooks.PreToolUse[*].hooks[*].type
-#     matcher-covers V.. -> "COVERS" iff every PreToolUse matcher-group taken
-#                          together fullmatches each verb V (regex semantics,
-#                          the same shape the harness applies)
+#     guard-wiring ROOT NEEDLE V.. -> the ATTACHMENT report (see below)
+#
+# WHY `guard-wiring` EXISTS — codex § 9 fix-1 on the Phase-2 wiring (TC-85)
+#   The first cut of arms 71/72 asked three questions of the FILE and never
+#   joined them: "does some matcher cover Edit/Write/Bash", "does some command
+#   name the guard", "does some command mention CLAUDE_PROJECT_DIR". All three
+#   can be true while the guard is attached to a matcher that never fires on a
+#   write. REPRODUCED, verbatim, against the pre-fix suite: with
+#   orchestrator.md rewritten to
+#       - matcher: "Read"               -> command: .../seat-path-guard.sh
+#       - matcher: "Edit|Write|Bash"    -> command: .../some-other-thing.sh
+#   (the second script does not exist), the whole suite stayed rc=0, 135 pass.
+#   The guard was wired to Read alone and every arm was green.
+#
+#   So this query answers the ATTACHMENT question instead: it walks
+#   hooks.PreToolUse[*] and, for each `type: command` entry whose RESOLVED
+#   command contains NEEDLE, emits the entry TOGETHER WITH THE MATCHER OF THE
+#   GROUP IT LIVES IN. Coverage is then computed over the matchers of the
+#   GUARD-CARRYING entries ONLY — a matcher belonging to some other command
+#   contributes nothing. Output, tab-separated, one record per line:
+#     ENTRY <TAB> matcher <TAB> raw-command <TAB> resolved-command <TAB> yes|no
+#         ...one per guard-carrying entry; the final field is "is the raw
+#         command anchored on ${CLAUDE_PROJECT_DIR}", bound to THIS entry.
+#     COUNT <TAB> n            -- number of guard-carrying entries
+#     OTHER <TAB> n            -- PreToolUse command entries that are NOT the
+#                                 guard (reported so a half-wired file is
+#                                 legible in the failure text, not asserted on)
+#     COVERAGE <TAB> COVERS | MISSING:V,V
+#         -- each verb V is MATCHED AS A REGEX against each guard-carrying
+#            matcher (re.fullmatch, the shape the harness applies), never
+#            string-compared. So ".*", "Edit|Write|Bash", "(Edit|Write|Bash)"
+#            and "Edit|Write|Bash|Read" all COVER, while "Read", "Edit|Write"
+#            and "Bash" alone do not — and a matcher spread across two
+#            guard-carrying entries ("Edit|Write" + "Bash") covers by union.
 # ---------------------------------------------------------------------------
 fm() {
   local f="$1"
@@ -925,6 +974,13 @@ def entries():
                 yield g, h
 
 
+def resolve(cmd, root):
+    # ${CLAUDE_PROJECT_DIR} first: the braced spelling contains the bare one.
+    return cmd.replace("${CLAUDE_PROJECT_DIR}", root).replace(
+        "$CLAUDE_PROJECT_DIR", root
+    )
+
+
 if query == "parse":
     sys.stdout.write("OK")
 elif query in ("name", "tools"):
@@ -946,21 +1002,50 @@ elif query == "pretool-commands":
 elif query == "pretool-types":
     for _, h in entries():
         sys.stdout.write(str(h.get("type")) + "\n")
-elif query == "matcher-covers":
-    matchers = [str(g.get("matcher", "")) for g in pretool_groups()]
+elif query == "guard-wiring":
+    root, needle, verbs = rest[0], rest[1], rest[2:]
+    guard_matchers = []
+    other = 0
+    out = []
+    for g, h in entries():
+        if h.get("type") != "command" or not h.get("command"):
+            continue
+        raw = str(h["command"])
+        resolved = resolve(raw, root)
+        if needle not in resolved:
+            other += 1
+            continue
+        matcher = str(g.get("matcher", ""))
+        guard_matchers.append(matcher)
+        anchored = (
+            "yes"
+            if ("${CLAUDE_PROJECT_DIR}" in raw or "$CLAUDE_PROJECT_DIR" in raw)
+            else "no"
+        )
+        # A tab in any field would corrupt the record the caller splits on.
+        for field in (matcher, raw, resolved):
+            if "\t" in field or "\n" in field:
+                sys.stderr.write("guard entry field contains a tab/newline\n")
+                sys.exit(5)
+        out.append("\t".join(["ENTRY", matcher, raw, resolved, anchored]))
     missing = []
-    for verb in rest:
+    for verb in verbs:
         hit = False
-        for m in matchers:
+        for m in guard_matchers:
             try:
                 if re.fullmatch(m, verb):
                     hit = True
                     break
             except re.error:
+                # An unparseable matcher covers nothing. It must never be
+                # silently treated as covering, and it must not crash the arm.
                 pass
         if not hit:
             missing.append(verb)
-    sys.stdout.write("COVERS" if not missing else "MISSING:" + ",".join(missing))
+    out.append("COUNT\t%d" % len(guard_matchers))
+    out.append("OTHER\t%d" % other)
+    out.append("COVERAGE\t" + ("COVERS" if not missing else "MISSING:" + ",".join(missing)))
+    sys.stdout.write("\n".join(out) + "\n")
 else:
     sys.stderr.write("unknown query: %s\n" % query)
     sys.exit(4)
@@ -972,16 +1057,10 @@ PY
   rm -f "$TMPROOT/fm.err"
 }
 
-# resolve_hook_cmd <command> -> the command with ${CLAUDE_PROJECT_DIR} expanded
-# to this checkout. The frontmatter must use that variable rather than a literal
-# absolute path (arm 72), so resolution is what turns the declaration into a
-# path we can stat.
-resolve_hook_cmd() {
-  local c="$1"
-  c="${c//\$\{CLAUDE_PROJECT_DIR\}/$REPO_ROOT}"
-  c="${c//\$CLAUDE_PROJECT_DIR/$REPO_ROOT}"
-  printf '%s' "$c"
-}
+# ${CLAUDE_PROJECT_DIR} resolution used to live here as a shell helper. It moved
+# INTO the guard-wiring query (codex § 9 fix-1) so that the resolved path and
+# the matcher it is attached to are produced by the same walk and can never be
+# recombined from different entries by the caller.
 
 AGENTS_DIR="$REPO_ROOT/.claude/agents"
 
@@ -1044,114 +1123,150 @@ for spec in "${SEAT_NAME_TOOLS[@]}"; do
   fi
 done
 
+# read_guard_wiring <agent-file> — run the guard-wiring query for the three
+# write verbs and unpack the record set into shell variables. Every arm below
+# reads ONLY these, so no arm can drift back onto a file-wide question:
+#   GW_RC/GW_ERR       the query's own status (a parse failure must be loud)
+#   GW_COUNT           how many PreToolUse entries CARRY the guard
+#   GW_OTHER           how many carry something else (for failure text only)
+#   GW_COVERAGE        COVERS | MISSING:...   over the GUARD entries' matchers
+#   GW_MATCHERS        those matchers, for the failure text
+#   GW_WRONG_TARGET    guard entries resolving somewhere other than $HOOK
+#   GW_INERT           guard entries whose resolved path is missing/non-exec
+#   GW_UNANCHORED      guard entries not written via ${CLAUDE_PROJECT_DIR}
+read_guard_wiring() {
+  fm "$1" guard-wiring "$REPO_ROOT" seat-path-guard.sh Edit Write Bash
+  GW_RC="$FM_RC"
+  GW_ERR="$FM_ERR"
+  GW_COUNT=0
+  GW_OTHER=0
+  GW_COVERAGE=""
+  GW_MATCHERS=""
+  GW_WRONG_TARGET=""
+  GW_INERT=""
+  GW_UNANCHORED=""
+  local key v1 v2 v3 v4
+  while IFS="$(printf '\t')" read -r key v1 v2 v3 v4; do
+    case "$key" in
+      ENTRY)
+        GW_MATCHERS="${GW_MATCHERS}${GW_MATCHERS:+, }'${v1}'"
+        [ "$v3" = "$HOOK" ] ||
+          GW_WRONG_TARGET="${GW_WRONG_TARGET}${GW_WRONG_TARGET:+; }'${v3}'"
+        { [ -f "$v3" ] && [ -x "$v3" ]; } ||
+          GW_INERT="${GW_INERT}${GW_INERT:+; }'${v3}'"
+        [ "$v4" = "yes" ] ||
+          GW_UNANCHORED="${GW_UNANCHORED}${GW_UNANCHORED:+; }'${v2}'"
+        ;;
+      COUNT) GW_COUNT="$v1" ;;
+      OTHER) GW_OTHER="$v1" ;;
+      COVERAGE) GW_COVERAGE="$v1" ;;
+    esac
+  done <<EOF
+$FM_OUT
+EOF
+}
+
 # arms 67/68 — each COORDINATING seat declares a PreToolUse hook that resolves
 # to this repo's seat-path-guard.sh. Loop body is shared; the labels are per
 # seat so a half-wired state names which half.
+#
+# EVERY ARM IN THIS LOOP IS BOUND TO THE GUARD-CARRYING ENTRY (codex § 9 fix-1).
+# Before the fix each arm asked its question of the whole file, so the three
+# facts "a matcher covers the write verbs", "a command names the guard" and "a
+# command is anchored" could each be supplied by a DIFFERENT entry. That is not
+# a hypothesis: the attack fixture in the guard-wiring comment above kept the
+# suite at rc=0/135-pass with the guard attached to `Read` alone. Coverage,
+# target, executability and anchoring are now all read off the same ENTRY
+# record, so satisfying them requires ONE entry (or a set of guard-carrying
+# entries) that actually fires on Edit, Write and Bash.
 SEAT_ARM_IDS=("orchestrator|arm 67" "steward|arm 68")
 for spec in "${SEAT_ARM_IDS[@]}"; do
   seat="${spec%%|*}"
   arm="${spec#*|}"
   f="$AGENTS_DIR/$seat.md"
 
-  fm "$f" pretool-commands
-  cmds="$FM_OUT"
-  if [ "$FM_RC" -ne 0 ]; then
-    fail "$arm ($seat): could not read PreToolUse hooks — rc=$FM_RC, err: $FM_ERR"
-    continue
-  fi
-  matched=""
-  while IFS= read -r line; do
-    [ -n "$line" ] || continue
-    resolved="$(resolve_hook_cmd "$line")"
-    case "$resolved" in
-      *seat-path-guard.sh*) matched="$resolved" ;;
-    esac
-  done <<EOF
-$cmds
-EOF
+  read_guard_wiring "$f"
 
   # Deliberately NO short-circuit below: when the seat is unwired, arms 70/71/72
   # must each go red on their own terms rather than being skipped. A skipped arm
   # is an arm nobody has ever seen fail.
-  if [ -n "$matched" ]; then
-    pass "$arm ($seat): declares a PreToolUse hook whose command names seat-path-guard.sh"
-  elif [ -z "$cmds" ]; then
+  if [ "$GW_RC" -ne 0 ]; then
+    fail "$arm ($seat): could not read the PreToolUse wiring — rc=$GW_RC, err: $GW_ERR"
+  elif [ "$GW_COUNT" -ge 1 ]; then
+    pass "$arm ($seat): $GW_COUNT PreToolUse entr(y/ies) CARRY a command resolving to seat-path-guard.sh"
+  elif [ "$GW_OTHER" -eq 0 ]; then
     fail "$arm ($seat): declares NO PreToolUse command hook — the guard is not wired for this seat"
   else
-    fail "$arm ($seat): PreToolUse hooks exist but none resolves to seat-path-guard.sh; got: $(printf '%s' "$cmds" | tr '\n' ' ')"
+    fail "$arm ($seat): $GW_OTHER PreToolUse command hook(s) exist but NONE resolves to seat-path-guard.sh"
   fi
 
   # arm 70 — the wiring points at a file that EXISTS and is EXECUTABLE, and is
   # the very hook this suite exercises. A frontmatter entry naming a missing
   # script is accepted by the harness and simply never guards anything: the
-  # static assertion above would be green while the seat ran unguarded.
-  if [ -n "$matched" ] && [ "$matched" = "$HOOK" ]; then
-    pass "arm 70 ($seat): the wired command IS this suite's hook ($HOOK)"
+  # static assertion above would be green while the seat ran unguarded. Asserted
+  # over EVERY guard-carrying entry, not "some entry somewhere in the file".
+  if [ "$GW_COUNT" -ge 1 ] && [ -z "$GW_WRONG_TARGET" ]; then
+    pass "arm 70 ($seat): every guard-carrying entry commands THIS suite's hook ($HOOK)"
   else
-    fail "arm 70 ($seat): wired command resolves to '${matched:-<nothing>}', not the hook under test '$HOOK'"
+    fail "arm 70 ($seat): guard-carrying entries resolve to ${GW_WRONG_TARGET:-<no guard-carrying entry at all>}, not the hook under test '$HOOK'"
   fi
-  if [ -n "$matched" ] && [ -f "$matched" ] && [ -x "$matched" ]; then
-    pass "arm 70 ($seat): the wired command exists and is executable"
+  if [ "$GW_COUNT" -ge 1 ] && [ -z "$GW_INERT" ]; then
+    pass "arm 70 ($seat): every guard-carrying entry's command exists and is executable"
   else
-    fail "arm 70 ($seat): the wired command is missing or not executable: '${matched:-<nothing>}' — the wiring is inert"
+    fail "arm 70 ($seat): guard-carrying command missing or not executable: ${GW_INERT:-<no guard-carrying entry at all>} — the wiring is inert"
   fi
 
-  # arm 71 — the matcher covers all three write verbs. Bash is the load-bearing
-  # one (see the header: 76 and 193 Bash calls, ZERO Edit/Write, on the two
-  # observed orchestrator sessions), so a matcher of "Edit|Write" would wire a
-  # guard onto the path the seats do not use.
-  fm "$f" matcher-covers Edit Write Bash
-  if [ "$FM_RC" -eq 0 ] && [ "$FM_OUT" = "COVERS" ]; then
-    pass "arm 71 ($seat): the PreToolUse matcher covers Edit, Write AND Bash"
+  # arm 71 — THE MATCHERS OF THE GUARD-CARRYING ENTRIES cover all three write
+  # verbs. Bash is the load-bearing one (see the header: 76 and 193 Bash calls,
+  # ZERO Edit/Write, on the two observed orchestrator sessions), so a guard
+  # attached to "Edit|Write" wires it onto the path the seats do not use — and a
+  # guard attached to "Read" while some OTHER command holds "Edit|Write|Bash"
+  # (the reproduced attack) leaves the write path completely unguarded. The
+  # verbs are regex-matched against each matcher, never string-compared, so
+  # ".*" and "(Edit|Write|Bash)" pass and "Read" fails, on merit.
+  if [ "$GW_RC" -eq 0 ] && [ "$GW_COVERAGE" = "COVERS" ]; then
+    pass "arm 71 ($seat): the matcher(s) OF THE GUARD-CARRYING entr(y/ies) — ${GW_MATCHERS} — cover Edit, Write AND Bash"
   else
-    fail "arm 71 ($seat): matcher does not cover all write verbs — got '$FM_OUT' (rc=$FM_RC, err: $FM_ERR)"
+    fail "arm 71 ($seat): the guard is NOT attached to a matcher covering every write verb — got '${GW_COVERAGE:-<no coverage record>}' from guard matcher(s) ${GW_MATCHERS:-<none>} (rc=$GW_RC, err: $GW_ERR). Note: a matcher covering the verbs on some OTHER command does not count."
   fi
 
   # arm 72 — type: command, and the path is expressed via ${CLAUDE_PROJECT_DIR}
   # rather than a literal absolute path, which would work on exactly one
-  # machine and fail open (silently) on every other clone.
+  # machine and fail open (silently) on every other clone. The type check is
+  # file-wide ON PURPOSE (no entry of any kind may be a non-command); the
+  # anchoring check is bound to the guard-carrying entries, because a literal
+  # guard path plus an unrelated anchored command used to satisfy it.
   fm "$f" pretool-types
   if [ "$FM_RC" -eq 0 ] && [ -n "$FM_OUT" ] && [ -z "$(printf '%s' "$FM_OUT" | grep -v '^command$' || true)" ]; then
     pass "arm 72 ($seat): every declared PreToolUse hook is type: command"
   else
     fail "arm 72 ($seat): unexpected PreToolUse hook type(s): '$FM_OUT' (rc=$FM_RC, err: $FM_ERR)"
   fi
-  fm "$f" pretool-commands
-  if printf '%s' "$FM_OUT" | grep -qF 'CLAUDE_PROJECT_DIR'; then
-    pass "arm 72 ($seat): the hook path is anchored on \$CLAUDE_PROJECT_DIR (portable across clones)"
+  if [ "$GW_COUNT" -ge 1 ] && [ -z "$GW_UNANCHORED" ]; then
+    pass "arm 72 ($seat): every GUARD-CARRYING command is anchored on \$CLAUDE_PROJECT_DIR (portable across clones)"
   else
-    fail "arm 72 ($seat): the hook path is not anchored on \$CLAUDE_PROJECT_DIR — a literal path only works in one checkout; got: $(printf '%s' "$FM_OUT" | tr '\n' ' ')"
+    fail "arm 72 ($seat): a guard-carrying command is not anchored on \$CLAUDE_PROJECT_DIR — a literal path only works in one checkout; offending: ${GW_UNANCHORED:-<no guard-carrying entry at all>}"
   fi
 done
 
 # ============================ ARM 73 =========================================
 # ############################################################################
-# # THE ATTACHMENT QUESTION — codex § 9 fix-1, the [P1]. RED AS COMMITTED.    #
+# # THE ATTACHMENT DETECTOR'S OWN NEGATIVE CONTROLS — codex § 9 fix-1.        #
+# # Arms 67-72 above are now bound to the guard-carrying entry, but they only #
+# # ever run against the two REAL, CORRECT seat files, so they can only ever  #
+# # be seen passing. That is exactly the state the pre-fix arms were in when  #
+# # they were wrong. This arm runs the same detector over synthetic           #
+# # frontmatter fixtures — including the attack that defeated the pre-fix     #
+# # suite verbatim — so the discrimination is asserted every run, not just    #
+# # once by hand in a review. Same idea as arm 16a's positive control.        #
 # #                                                                           #
-# # Arms 71 and 72 prove AGGREGATE facts about the file and never join them:  #
-# #   arm 71  "SOME PreToolUse matcher covers Edit, Write and Bash"           #
-# #   arm 67  "SOME command in the frontmatter names seat-path-guard.sh"      #
-# #   arm 72  "SOME command mentions ${CLAUDE_PROJECT_DIR}"                   #
-# # All three can be true while the guard hangs off a matcher that never      #
-# # fires on a write. REPRODUCED, verbatim, on 81dcb00c: rewriting            #
-# # .claude/agents/orchestrator.md's hooks block to                           #
-# #     - matcher: "Read"            -> .../seat-path-guard.sh                #
-# #     - matcher: "Edit|Write|Bash" -> .../some-other-thing.sh   (NO SUCH    #
-# #                                                                FILE)      #
-# # left the whole suite at rc=0, 135/135 PASSING. The guard was wired to     #
-# # Read alone and the write path was completely unguarded.                   #
-# #                                                                           #
-# # This arm states the requirement the arms above should have been stating:  #
-# # a fixture is ATTACHED only when the guard's OWN matcher covers the write  #
-# # verbs. It is evaluated below with the only detector this commit has — the #
-# # file-wide one — which CANNOT express that, so 73attack FAILS here. That   #
-# # failure IS the [P1]. The next commit rebuilds the detector to answer per  #
-# # guard-carrying ENTRY and this arm goes green.                             #
+# # 73a IS THE REPRODUCED [P1]. Against the pre-fix suite that exact          #
+# # orchestrator.md gave rc=0 with 135/135 passing.                           #
 # ############################################################################
 
 # fx <name> — write a synthetic agent file whose hooks: block is read from
-# stdin. The fixture lives in TMPROOT and is removed with it; no tracked file is
-# touched, and no real seat file is ever tampered with by an arm.
+# stdin, and echo nothing. The fixture lives in TMPROOT and is removed with it;
+# no tracked file is touched.
 fx() {
   local p="$TMPROOT/fx-$1.md"
   {
@@ -1161,42 +1276,21 @@ fx() {
   } >"$p"
 }
 
-# aggregate_verdict <file> -> ATTACHED | NOT-ATTACHED, computed the way arms
-# 67/71 compute it TODAY: "some matcher covers the verbs" AND "some command
-# names the guard", with no link between the two. Replaced in the fix commit.
-aggregate_verdict() {
-  local f="$1" cov guard=no line
-  fm "$f" matcher-covers Edit Write Bash
-  cov="$FM_OUT"
-  fm "$f" pretool-commands
-  while IFS= read -r line; do
-    [ -n "$line" ] || continue
-    case "$(resolve_hook_cmd "$line")" in
-      *seat-path-guard.sh*) guard=yes ;;
-    esac
-  done <<EOF
-$FM_OUT
-EOF
-  if [ "$cov" = "COVERS" ] && [ "$guard" = "yes" ]; then
-    printf 'ATTACHED'
-  else
-    printf 'NOT-ATTACHED'
-  fi
-}
-
-# gw_case <name> <ATTACHED|NOT-ATTACHED> <desc>
+# gw_case <name> <want-count> <want-coverage> <desc>
 gw_case() {
-  local name="$1" want="$2" desc="$3" got
-  got="$(aggregate_verdict "$TMPROOT/fx-$name.md")"
-  if [ "$got" = "$want" ]; then
+  local name="$1" want_count="$2" want_cov="$3" desc="$4"
+  read_guard_wiring "$TMPROOT/fx-$name.md"
+  if [ "$GW_RC" -eq 0 ] && [ "$GW_COUNT" = "$want_count" ] && [ "$GW_COVERAGE" = "$want_cov" ]; then
     pass "arm 73$name: $desc"
   else
-    fail "arm 73$name: $desc — the guard's ATTACHMENT is '$got', want '$want'"
+    fail "arm 73$name: $desc — got COUNT=$GW_COUNT COVERAGE='$GW_COVERAGE' (want COUNT=$want_count COVERAGE='$want_cov'); rc=$GW_RC, err: $GW_ERR"
   fi
 }
 
-# --- 73attack: THE REPRODUCED [P1]. Guard on Read; an unrelated (and
-# non-existent) command holds Edit|Write|Bash. FAILS as committed.
+# --- 73a: THE REPRODUCED ATTACK. Guard on Read; an unrelated (and NON-EXISTENT)
+# command holds Edit|Write|Bash. Aggregate arms saw "a matcher covers the write
+# verbs" and "a command names the guard" and passed. Bound arms must see that
+# the guard's OWN matcher covers nothing.
 fx attack <<'YAML'
 hooks:
   PreToolUse:
@@ -1209,10 +1303,10 @@ hooks:
         - type: command
           command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/some-other-thing.sh"
 YAML
-gw_case attack NOT-ATTACHED "the guard attached to 'Read' while ANOTHER command holds 'Edit|Write|Bash' does NOT guard the write path"
+gw_case attack 1 "MISSING:Edit,Write,Bash" "the guard attached to 'Read' while ANOTHER command holds 'Edit|Write|Bash' does NOT cover the write path (the reproduced [P1]: pre-fix this file kept the suite at rc=0, 135 pass)"
 
-# --- the matcher spellings that MUST keep passing. Evaluated as regexes, so a
-# string comparison against "Edit|Write|Bash" would break all three.
+# --- 73b/73c/73d: matcher spellings that MUST keep passing. Evaluated as
+# regexes, so a string comparison against "Edit|Write|Bash" would break all three.
 fx dotstar <<'YAML'
 hooks:
   PreToolUse:
@@ -1221,7 +1315,7 @@ hooks:
         - type: command
           command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/seat-path-guard.sh"
 YAML
-gw_case dotstar ATTACHED "matcher '.*' covers all three verbs (regex semantics, not string equality)"
+gw_case dotstar 1 COVERS "matcher '.*' COVERS all three verbs (regex semantics, not string equality)"
 
 fx parens <<'YAML'
 hooks:
@@ -1231,7 +1325,7 @@ hooks:
         - type: command
           command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/seat-path-guard.sh"
 YAML
-gw_case parens ATTACHED "matcher '(Edit|Write|Bash)' covers (parenthesised alternation)"
+gw_case parens 1 COVERS "matcher '(Edit|Write|Bash)' COVERS (parenthesised alternation)"
 
 fx superset <<'YAML'
 hooks:
@@ -1241,9 +1335,10 @@ hooks:
         - type: command
           command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/seat-path-guard.sh"
 YAML
-gw_case superset ATTACHED "matcher 'Edit|Write|Bash|Read' covers (a superset is still coverage)"
+gw_case superset 1 COVERS "matcher 'Edit|Write|Bash|Read' COVERS (a superset is still coverage)"
 
-# --- the guard split across TWO entries: legitimate wiring, covers by union.
+# --- 73e: the guard split across TWO entries. Coverage is the UNION over
+# guard-carrying entries, so this is legitimate wiring and must pass.
 fx split <<'YAML'
 hooks:
   PreToolUse:
@@ -1256,10 +1351,10 @@ hooks:
         - type: command
           command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/seat-path-guard.sh"
 YAML
-gw_case split ATTACHED "the guard split across two entries ('Edit|Write' + 'Bash') covers by union"
+gw_case split 2 COVERS "the guard split across two entries ('Edit|Write' + 'Bash') COVERS by union"
 
-# --- partial attachment. Bash uncovered is the one that matters most (76 and
-# 193 Bash calls, ZERO Edit/Write, on the two observed sessions).
+# --- 73f/73g: partial attachment. Bash uncovered is the one that matters most
+# (76 and 193 Bash calls, ZERO Edit/Write, on the two observed sessions).
 fx nobash <<'YAML'
 hooks:
   PreToolUse:
@@ -1268,7 +1363,7 @@ hooks:
         - type: command
           command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/seat-path-guard.sh"
 YAML
-gw_case nobash NOT-ATTACHED "matcher 'Edit|Write' leaves Bash — the seats' REAL write path — unguarded"
+gw_case nobash 1 "MISSING:Bash" "matcher 'Edit|Write' leaves Bash — the seats' REAL write path — unguarded"
 
 fx bashonly <<'YAML'
 hooks:
@@ -1278,10 +1373,10 @@ hooks:
         - type: command
           command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/seat-path-guard.sh"
 YAML
-gw_case bashonly NOT-ATTACHED "matcher 'Bash' alone leaves Edit and Write uncovered"
+gw_case bashonly 1 "MISSING:Edit,Write" "matcher 'Bash' alone leaves Edit and Write uncovered"
 
-# --- no guard-carrying entry at all, though PreToolUse hooks exist: the unwired
-# state arms 67/68 must catch.
+# --- 73h: no guard-carrying entry at all, though PreToolUse hooks exist. The
+# unwired state arms 67/68 must catch.
 fx unwired <<'YAML'
 hooks:
   PreToolUse:
@@ -1290,7 +1385,45 @@ hooks:
         - type: command
           command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/some-other-thing.sh"
 YAML
-gw_case unwired NOT-ATTACHED "a PreToolUse hook that is NOT the guard leaves the seat unwired"
+gw_case unwired 0 "MISSING:Edit,Write,Bash" "a PreToolUse hook that is NOT the guard yields ZERO guard-carrying entries"
+
+# --- 73i: the guard wired to a path that does not exist. Coverage is perfect;
+# the wiring is inert. Arm 70's stat is what has to fire, bound to this entry.
+fx missing <<'YAML'
+hooks:
+  PreToolUse:
+    - matcher: "Edit|Write|Bash"
+      hooks:
+        - type: command
+          command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/nope/seat-path-guard.sh"
+YAML
+read_guard_wiring "$TMPROOT/fx-missing.md"
+if [ "$GW_RC" -eq 0 ] && [ "$GW_COUNT" = 1 ] && [ "$GW_COVERAGE" = COVERS ] &&
+  [ -n "$GW_INERT" ] && [ -n "$GW_WRONG_TARGET" ] && [ -z "$GW_UNANCHORED" ]; then
+  pass "arm 73i: a guard-carrying entry pointing at a NON-EXISTENT file is reported inert and off-target, while its coverage and anchoring are still fine (the failure is isolated to arm 70)"
+else
+  fail "arm 73i: a missing guard target was not isolated — COUNT=$GW_COUNT COVERAGE='$GW_COVERAGE' INERT='$GW_INERT' WRONG_TARGET='$GW_WRONG_TARGET' UNANCHORED='$GW_UNANCHORED' (rc=$GW_RC, err: $GW_ERR)"
+fi
+
+# --- 73j: the guard wired by LITERAL absolute path. It resolves, it exists, it
+# covers — and it works in exactly one checkout. Only the anchoring half of arm
+# 72 may fire, and it must fire on THIS entry rather than on any command in the
+# file. Unquoted heredoc: $HOOK is deliberately baked in as the literal path.
+fx literal <<YAML
+hooks:
+  PreToolUse:
+    - matcher: "Edit|Write|Bash"
+      hooks:
+        - type: command
+          command: "$HOOK"
+YAML
+read_guard_wiring "$TMPROOT/fx-literal.md"
+if [ "$GW_RC" -eq 0 ] && [ "$GW_COUNT" = 1 ] && [ "$GW_COVERAGE" = COVERS ] &&
+  [ -z "$GW_INERT" ] && [ -z "$GW_WRONG_TARGET" ] && [ -n "$GW_UNANCHORED" ]; then
+  pass "arm 73j: a guard wired by LITERAL absolute path is reported unanchored, and ONLY unanchored (coverage/target/exec all still fine)"
+else
+  fail "arm 73j: a literal-path guard was not isolated to the anchoring failure — COUNT=$GW_COUNT COVERAGE='$GW_COVERAGE' INERT='$GW_INERT' WRONG_TARGET='$GW_WRONG_TARGET' UNANCHORED='$GW_UNANCHORED' (rc=$GW_RC, err: $GW_ERR)"
+fi
 
 # arm 69 — the IMPLEMENTER declares no hooks at all. This is the complement of
 # arms 67/68 and the reason frontmatter was chosen over settings.json: the seat
