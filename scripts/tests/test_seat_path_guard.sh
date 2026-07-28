@@ -1131,6 +1131,8 @@ done
 #   GW_OTHER           how many carry something else (for failure text only)
 #   GW_COVERAGE        COVERS | MISSING:...   over the GUARD entries' matchers
 #   GW_MATCHERS        those matchers, for the failure text
+#   GW_NOTSIMPLE       guard matchers that are NOT a simple tool-name list, and
+#                      therefore mean whatever some regex engine says they mean
 #   GW_WRONG_TARGET    guard entries resolving somewhere other than $HOOK
 #   GW_INERT           guard entries whose resolved path is missing/non-exec
 #   GW_UNANCHORED      guard entries not written via ${CLAUDE_PROJECT_DIR}
@@ -1142,6 +1144,7 @@ read_guard_wiring() {
   GW_OTHER=0
   GW_COVERAGE=""
   GW_MATCHERS=""
+  GW_NOTSIMPLE=""
   GW_WRONG_TARGET=""
   GW_INERT=""
   GW_UNANCHORED=""
@@ -1160,6 +1163,7 @@ read_guard_wiring() {
       COUNT) GW_COUNT="$v1" ;;
       OTHER) GW_OTHER="$v1" ;;
       COVERAGE) GW_COVERAGE="$v1" ;;
+      NOTSIMPLE) GW_NOTSIMPLE="$v1" ;;
     esac
   done <<EOF
 $FM_OUT
@@ -1221,13 +1225,18 @@ for spec in "${SEAT_ARM_IDS[@]}"; do
   # ZERO Edit/Write, on the two observed orchestrator sessions), so a guard
   # attached to "Edit|Write" wires it onto the path the seats do not use — and a
   # guard attached to "Read" while some OTHER command holds "Edit|Write|Bash"
-  # (the reproduced attack) leaves the write path completely unguarded. The
-  # verbs are regex-matched against each matcher, never string-compared, so
-  # ".*" and "(Edit|Write|Bash)" pass and "Read" fails, on merit.
-  if [ "$GW_RC" -eq 0 ] && [ "$GW_COVERAGE" = "COVERS" ]; then
-    pass "arm 71 ($seat): the matcher(s) OF THE GUARD-CARRYING entr(y/ies) — ${GW_MATCHERS} — cover Edit, Write AND Bash"
+  # (the reproduced attack) leaves the write path completely unguarded.
+  #
+  # TWO CONDITIONS, codex § 9 fix-2 (the [P2]). Coverage is decided by SET
+  # MEMBERSHIP over a simple tool-name list, so the matcher must FIRST be such a
+  # list; a matcher that is anything else is rejected outright rather than
+  # interpreted. See the guard-wiring query for why. Both halves are one
+  # assertion on purpose: "the guard is attached to the write verbs" is a single
+  # claim, and either failure mode falsifies it.
+  if [ "$GW_RC" -eq 0 ] && [ "$GW_COVERAGE" = "COVERS" ] && [ -z "$GW_NOTSIMPLE" ]; then
+    pass "arm 71 ($seat): the matcher(s) OF THE GUARD-CARRYING entr(y/ies) — ${GW_MATCHERS} — are simple tool-name lists AND cover Edit, Write AND Bash"
   else
-    fail "arm 71 ($seat): the guard is NOT attached to a matcher covering every write verb — got '${GW_COVERAGE:-<no coverage record>}' from guard matcher(s) ${GW_MATCHERS:-<none>} (rc=$GW_RC, err: $GW_ERR). Note: a matcher covering the verbs on some OTHER command does not count."
+    fail "arm 71 ($seat): the guard is NOT attached to a simple matcher covering every write verb — got '${GW_COVERAGE:-<no coverage record>}' from guard matcher(s) ${GW_MATCHERS:-<none>}${GW_NOTSIMPLE:+; NOT A SIMPLE TOOL-NAME LIST: $GW_NOTSIMPLE} (rc=$GW_RC, err: $GW_ERR). Note: a matcher covering the verbs on some OTHER command does not count."
   fi
 
   # arm 72 — type: command, and the path is expressed via ${CLAUDE_PROJECT_DIR}
@@ -1276,14 +1285,35 @@ fx() {
   } >"$p"
 }
 
-# gw_case <name> <want-count> <want-coverage> <desc>
+# gw_case <name> <want-count> <want-coverage> <desc> — a fixture whose matchers
+# are all SIMPLE tool-name lists. NOTSIMPLE must be empty, always: if a fixture
+# here ever started being rejected as non-simple its COVERAGE would go MISSING
+# for the wrong reason, and the arm would still look like it was talking about
+# coverage. Asserting emptiness keeps the two failure modes separable.
 gw_case() {
   local name="$1" want_count="$2" want_cov="$3" desc="$4"
   read_guard_wiring "$TMPROOT/fx-$name.md"
-  if [ "$GW_RC" -eq 0 ] && [ "$GW_COUNT" = "$want_count" ] && [ "$GW_COVERAGE" = "$want_cov" ]; then
+  if [ "$GW_RC" -eq 0 ] && [ "$GW_COUNT" = "$want_count" ] &&
+    [ "$GW_COVERAGE" = "$want_cov" ] && [ -z "$GW_NOTSIMPLE" ]; then
     pass "arm 73$name: $desc"
   else
-    fail "arm 73$name: $desc — got COUNT=$GW_COUNT COVERAGE='$GW_COVERAGE' (want COUNT=$want_count COVERAGE='$want_cov'); rc=$GW_RC, err: $GW_ERR"
+    fail "arm 73$name: $desc — got COUNT=$GW_COUNT COVERAGE='$GW_COVERAGE' NOTSIMPLE='$GW_NOTSIMPLE' (want COUNT=$want_count COVERAGE='$want_cov' NOTSIMPLE=''); rc=$GW_RC, err: $GW_ERR"
+  fi
+}
+
+# gw_reject <name> <want-count> <want-notsimple> <desc> — the complement: a
+# fixture whose guard matcher is NOT a simple tool-name list. It must be named
+# in NOTSIMPLE *and* contribute NOTHING to coverage. Both are asserted, because
+# "rejected" and "silently treated as covering nothing" look identical from the
+# COVERAGE line alone, and only the first is a diagnosis.
+gw_reject() {
+  local name="$1" want_count="$2" want_ns="$3" desc="$4"
+  read_guard_wiring "$TMPROOT/fx-$name.md"
+  if [ "$GW_RC" -eq 0 ] && [ "$GW_COUNT" = "$want_count" ] &&
+    [ "$GW_NOTSIMPLE" = "$want_ns" ] && [ "$GW_COVERAGE" = "MISSING:Edit,Write,Bash" ]; then
+    pass "arm 73$name: $desc"
+  else
+    fail "arm 73$name: $desc — got COUNT=$GW_COUNT NOTSIMPLE='$GW_NOTSIMPLE' COVERAGE='$GW_COVERAGE' (want COUNT=$want_count NOTSIMPLE='$want_ns' COVERAGE='MISSING:Edit,Write,Bash'); rc=$GW_RC, err: $GW_ERR"
   fi
 }
 
@@ -1305,8 +1335,11 @@ hooks:
 YAML
 gw_case attack 1 "MISSING:Edit,Write,Bash" "the guard attached to 'Read' while ANOTHER command holds 'Edit|Write|Bash' does NOT cover the write path (the reproduced [P1]: pre-fix this file kept the suite at rc=0, 135 pass)"
 
-# --- 73b/73c/73d: matcher spellings that MUST keep passing. Evaluated as
-# regexes, so a string comparison against "Edit|Write|Bash" would break all three.
+# --- 73b/73c: TIGHTENED BY codex § 9 fix-2 (the [P2]) — both were pinned here
+# as PASSING and both are now REJECTED. Neither is an exact-match tool list, so
+# both land on the harness's unanchored-REGEX path, which is precisely the path
+# a guard's wiring may not sit on. Full reasoning, and the rest of the reject
+# table, in the 73k-73q block below.
 fx dotstar <<'YAML'
 hooks:
   PreToolUse:
@@ -1315,7 +1348,7 @@ hooks:
         - type: command
           command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/seat-path-guard.sh"
 YAML
-gw_case dotstar 1 COVERS "matcher '.*' COVERS all three verbs (regex semantics, not string equality)"
+gw_reject dotstar 1 "'.*'" "matcher '.*' is REJECTED, not accepted as covering: '.' and '*' force the regex path, and what an unanchored '.*' does is an engine question (WAS PINNED AS A PASS pre-fix-2)"
 
 fx parens <<'YAML'
 hooks:
@@ -1325,8 +1358,11 @@ hooks:
         - type: command
           command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/seat-path-guard.sh"
 YAML
-gw_case parens 1 COVERS "matcher '(Edit|Write|Bash)' COVERS (parenthesised alternation)"
+gw_reject parens 1 "'(Edit|Write|Bash)'" "matcher '(Edit|Write|Bash)' is REJECTED: the parens are not in the exact-match set, so the harness reads the WHOLE matcher as a regex — it is not the list it looks like (WAS PINNED AS A PASS pre-fix-2)"
 
+# --- 73d: a SUPERSET list still covers. This is the arm that stops the rule
+# from collapsing into a string comparison against the shipped matcher: the
+# question is set membership, not equality, so extra tools are irrelevant.
 fx superset <<'YAML'
 hooks:
   PreToolUse:
@@ -1424,6 +1460,161 @@ if [ "$GW_RC" -eq 0 ] && [ "$GW_COUNT" = 1 ] && [ "$GW_COVERAGE" = COVERS ] &&
 else
   fail "arm 73j: a literal-path guard was not isolated to the anchoring failure — COUNT=$GW_COUNT COVERAGE='$GW_COVERAGE' INERT='$GW_INERT' WRONG_TARGET='$GW_WRONG_TARGET' UNANCHORED='$GW_UNANCHORED' (rc=$GW_RC, err: $GW_ERR)"
 fi
+
+# ========================= ARM 73k-73q ======================================
+# ############################################################################
+# # THE MATCHER MUST BE A SIMPLE TOOL-NAME LIST — codex § 9 fix-2, the [P2]. #
+# #                                                                          #
+# # THE DEFECT. Coverage used to be decided with Python's re.fullmatch(): a  #
+# # matcher was treated as a regex and each verb was matched against it.     #
+# # That is not the algorithm the harness runs, and it is not even the same  #
+# # LANGUAGE. Per the documented semantics (code.claude.com/docs/en/         #
+# # agent-sdk/hooks#matchers) the harness has TWO paths:                     #
+# #   * a matcher made only of letters, digits, `_`, `-`, spaces, `,` and    #
+# #     `|` is compared as an EXACT STRING, with `|` or `,` separating       #
+# #     alternatives and surrounding whitespace ignored — so `Edit|Write`    #
+# #     and `Edit, Write` are LISTS, matched by equality, not by regex;      #
+# #   * a matcher containing ANY other character is an UNANCHORED regular    #
+# #     expression, evaluated by JavaScript's engine at runtime.             #
+# # Python's oracle therefore disagreed with the harness twice over: it      #
+# # anchored (fullmatch) what the harness leaves unanchored, and it parsed   #
+# # with a different regex dialect. The concrete false green codex gave:     #
+# # `(?P<tool>Edit)|Write|Bash` — Python accepts the named group and reports #
+# # all three verbs covered, so arms 67/70/71/72 stayed green, while         #
+# # JavaScript REJECTS `(?P<...>)` outright, so the guard would not reliably #
+# # attach at runtime. The suite would have been asserting a wiring that did #
+# # not exist. Reachability was ZERO — the shipped matcher is the plain      #
+# # `Edit|Write|Bash` — so this is a latent false green, fixed for the same  #
+# # reason the Slice-30 BOM finding was: the entire purpose of this suite is #
+# # to stop a wiring claim that is not true.                                 #
+# #                                                                          #
+# # WHY NOT EMULATE JAVASCRIPT. The obvious repair — make the Python oracle  #
+# # behave like JS (unanchored search, JS dialect) — is reimplementing       #
+# # another language's regex parser inside a shell test. The mismatch would  #
+# # not go away, it would just move to whichever construct the two engines   #
+# # next disagree about (`\d` in classes, lookbehind, `\u{...}`, unicode     #
+# # property escapes...), and each move is a fresh silent false green.       #
+# #                                                                          #
+# # THE FIX: refuse the ambiguity instead of modelling it. A guard-carrying  #
+# # matcher must be a SIMPLE TOOL-NAME LIST — one or more names of           #
+# # [A-Za-z0-9_] separated by `|` or `,`, with optional surrounding spaces.  #
+# # That is exactly the harness's EXACT-STRING path, and on that path the    #
+# # harness itself decides by SET MEMBERSHIP. So the oracle is no longer an  #
+# # approximation of a regex engine; it is the harness's own algorithm, and  #
+# # the answer cannot depend on which engine reads it. Anything else — named #
+# # groups, lookaround, character classes, `.*`, quantifiers, anchors,       #
+# # parens — FAILS LOUDLY as NOT-SIMPLE.                                     #
+# #                                                                          #
+# # THE JUDGEMENT CALLS, stated so they are reviewable rather than implied:  #
+# #  (1) `(Edit|Write|Bash)` is REJECTED (73c), not accepted by stripping    #
+# #      the outer parens. Stripping would mean the oracle re-classifies as  #
+# #      a list something the harness classifies as a regex — inventing a    #
+# #      transformation the harness does not perform, which is the very      #
+# #      false-green class being closed here.                                #
+# #  (2) `*`, `""` and an ABSENT matcher key are REJECTED (73o, 73p) even    #
+# #      though the docs say each matches EVERY event and would therefore    #
+# #      genuinely cover the write verbs. They are a third special case,     #
+# #      taken before either path above, and they rest wholly on that        #
+# #      special case: handed to any regex engine a bare `*` is a syntax     #
+# #      error. A security guard's wiring must NAME the verbs it claims, so  #
+# #      that coverage can be read off the matcher by a human reviewer.      #
+# #      This is a deliberate tightening; nothing shipped uses these forms.  #
+# #  (3) HYPHENS are excluded from the name charset even though the docs put #
+# #      `-` in the exact-match set, because that membership is gated on a   #
+# #      Claude Code runtime of v2.1.195 or later — on an older runtime the  #
+# #      same matcher is a regex. A matcher whose meaning depends on the     #
+# #      reader's version is the ambiguity this block exists to refuse. No   #
+# #      built-in tool name contains a hyphen, so nothing is lost.           #
+# ############################################################################
+
+# --- 73k: CODEX'S EXACT FIXTURE. Python's re accepts `(?P<tool>...)`; JS does
+# not. Pre-fix-2 this file reported COVERS and the whole suite stayed rc=0.
+fx namedgroup <<'YAML'
+hooks:
+  PreToolUse:
+    - matcher: "(?P<tool>Edit)|Write|Bash"
+      hooks:
+        - type: command
+          command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/seat-path-guard.sh"
+YAML
+gw_reject namedgroup 1 "'(?P<tool>Edit)|Write|Bash'" "the reproduced [P2]: a Python-only named group '(?P<tool>Edit)|Write|Bash' is REJECTED — pre-fix-2 Python read it as covering all three verbs while JS would refuse to compile it"
+
+# --- 73l: lookahead. Parsed by both engines here, which is the point: it is
+# rejected for being a regex at all, not for being an incompatible one.
+fx lookahead <<'YAML'
+hooks:
+  PreToolUse:
+    - matcher: "(?!Read)(Edit|Write|Bash)"
+      hooks:
+        - type: command
+          command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/seat-path-guard.sh"
+YAML
+gw_reject lookahead 1 "'(?!Read)(Edit|Write|Bash)'" "a lookahead matcher '(?!Read)(Edit|Write|Bash)' is REJECTED — the rule is 'is this a tool-name list', not 'does some engine happen to agree today'"
+
+# --- 73m: anchors. The harness's regex path is UNANCHORED, so '^...$' is a
+# matcher whose author is reasoning about a different matching mode than the
+# one that will run. Rejected rather than second-guessed.
+fx anchored <<'YAML'
+hooks:
+  PreToolUse:
+    - matcher: "^(Edit|Write|Bash)$"
+      hooks:
+        - type: command
+          command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/seat-path-guard.sh"
+YAML
+gw_reject anchored 1 "'^(Edit|Write|Bash)\$'" "an anchored matcher '^(Edit|Write|Bash)\$' is REJECTED — anchoring is exactly the axis the old fullmatch() oracle got wrong"
+
+# --- 73n: a character class, i.e. a matcher that covers by INFERENCE rather
+# than by naming. '[EW].*' would catch Edit and Write and also NotebookEdit,
+# and a reader cannot tell which verbs are guarded without running it.
+fx charclass <<'YAML'
+hooks:
+  PreToolUse:
+    - matcher: "[EW].*|Bash"
+      hooks:
+        - type: command
+          command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/seat-path-guard.sh"
+YAML
+gw_reject charclass 1 "'[EW].*|Bash'" "a character-class matcher '[EW].*|Bash' is REJECTED — a guard must name the verbs it guards, not imply them"
+
+# --- 73o: the documented universal wildcard. It really does match every event.
+# Rejected anyway, per judgement call (2) above.
+fx star <<'YAML'
+hooks:
+  PreToolUse:
+    - matcher: "*"
+      hooks:
+        - type: command
+          command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/seat-path-guard.sh"
+YAML
+gw_reject star 1 "'*'" "the wildcard matcher '*' is REJECTED even though it documentedly matches every event — a guard's wiring must enumerate the verbs it claims, and '*' is a pre-regex special case, not a pattern"
+
+# --- 73p: the matcher key ABSENT entirely (the same semantics as ""). This is
+# the easiest one to produce by accident — delete a line — and it is the one
+# where a permissive oracle would silently report full coverage.
+fx nomatcher <<'YAML'
+hooks:
+  PreToolUse:
+    - hooks:
+        - type: command
+          command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/seat-path-guard.sh"
+YAML
+gw_reject nomatcher 1 "''" "an ABSENT matcher key is REJECTED — it matches every event, so a permissive oracle would call it full coverage, and a deleted line would silently become an unreadable wiring"
+
+# --- 73q: the COMMA list. Documented as equivalent to the '|' list, with
+# surrounding whitespace ignored ('Write, Edit' matches exactly those two
+# tools), so it must COVER — and it must do so through the set-membership path,
+# never as a regex, where a bare ',' would be a literal character and match
+# nothing at all. This is the positive control on the separator rule.
+fx commalist <<'YAML'
+hooks:
+  PreToolUse:
+    - matcher: "Edit, Write, Bash"
+      hooks:
+        - type: command
+          command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/seat-path-guard.sh"
+YAML
+gw_case commalist 1 COVERS "matcher 'Edit, Write, Bash' COVERS — ',' is a documented alternative separator and surrounding whitespace is ignored (as a regex this would have matched nothing)"
 
 # arm 69 — the IMPLEMENTER declares no hooks at all. This is the complement of
 # arms 67/68 and the reason frontmatter was chosen over settings.json: the seat
