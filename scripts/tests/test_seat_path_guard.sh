@@ -40,7 +40,8 @@
 # WIRING (Phase 2, TC-85 / steward seq-127)
 #   The guard is wired through AGENT FRONTMATTER (`hooks:` in
 #   .claude/agents/{orchestrator,steward}.md), NOT through .claude/settings.json.
-#   Arms 65-72 assert that wiring exists and resolves; arm 16 asserts the
+#   Arms 65-73 assert that the wiring exists, resolves and is ATTACHED to the
+#   write verbs; arm 16 asserts the
 #   settings.json route stays permanently unused. The two are complements:
 #   arm 16 is no longer a temporary marker, it is the boundary.
 #
@@ -49,8 +50,9 @@
 #   under `env -u FATHOMDB_SEAT` (or an explicit FATHOMDB_SEAT=...). The hook is
 #   a pure stdin->stdout function: it never touches the filesystem, so the only
 #   temp state here is the mktemp -d fixture used by arm 16's positive control.
-#   Arms 65-72 are static parses of tracked files. No real file is ever written
-#   by an arm, and no arm mutates this checkout.
+#   Arms 65-73 are static parses: of tracked files, and (arm 73) of synthetic
+#   frontmatter fixtures written under the same mktemp -d root. No real file is
+#   ever written by an arm, and no arm mutates this checkout.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -355,7 +357,7 @@ fi
 # # settings.json reference to this hook is over-broad wiring by construction.#
 # # If this arm ever goes RED, someone has widened the guard's blast radius   #
 # # from two coordinating seats to the whole project. Fix the settings file;  #
-# # do not relax this arm. The positive wiring is asserted by arms 65-72.     #
+# # do not relax this arm. The positive wiring is asserted by arms 65-73.     #
 # ############################################################################
 # Vacuity trap this arm has to dodge: .claude/settings.json is gitignored
 # (.gitignore's `.claude/*` block) and therefore ABSENT from a fresh clone, from
@@ -833,7 +835,7 @@ expect_allow "arm 64d: 'cp -t dev/plans/runs <file>' is ALLOWED (the allow half;
 run_hook "$(payload Bash '' 'cp -p dev/plans/a.md dev/plans/b.md' orchestrator)"
 expect_allow "arm 64e: an ordinary 'cp' between allowed paths is ALLOWED (already green)"
 
-# ================== ARMS 65-72 — PHASE-2 WIRING (TC-85 / seq-127) ============
+# ================ ARMS 65-73 — PHASE-2 WIRING (TC-85 / seq-127) =============
 # Every arm above proves the hook BEHAVES correctly when something runs it.
 # None of them proves anything ever runs it. That gap is what shipped in Phase 1
 # ("deliberately UNWIRED") and these arms close it: the guard is wired through
@@ -866,6 +868,9 @@ expect_allow "arm 64e: an ordinary 'cp' between allowed paths is ALLOWED (alread
 #     parse             -> "OK" iff the frontmatter block is well-formed YAML
 #     name              -> the `name:` scalar
 #     tools             -> the `tools:` scalar, verbatim
+#     key K             -> the `K:` scalar, or the literal "__ABSENT__" when the
+#                          key is not present at all (absent != empty: arm 66
+#                          has to tell "model: was deleted" from "model: ''")
 #     has-hooks         -> "yes" / "no" (is the `hooks:` key present at all)
 #     pretool-commands  -> one line per hooks.PreToolUse[*].hooks[*].command
 #     pretool-types     -> one line per hooks.PreToolUse[*].hooks[*].type
@@ -925,6 +930,13 @@ if query == "parse":
 elif query in ("name", "tools"):
     v = fm.get(query)
     sys.stdout.write("" if v is None else str(v))
+elif query == "key":
+    k = rest[0]
+    if k not in fm:
+        sys.stdout.write("__ABSENT__")
+    else:
+        v = fm.get(k)
+        sys.stdout.write("" if v is None else str(v))
 elif query == "has-hooks":
     sys.stdout.write("yes" if "hooks" in fm else "no")
 elif query == "pretool-commands":
@@ -986,18 +998,28 @@ for seat in orchestrator steward implementer; do
   fi
 done
 
-# arm 66 — name/tools are unchanged. Pinned as literals because "do not change
-# any tools: line" is a hard boundary of this work, and a boundary nobody
+# arm 66 — name/tools/model are unchanged. Pinned as literals because "do not
+# change any tools: line" is a hard boundary of this work, and a boundary nobody
 # asserts is a boundary that erodes. NOTE the implementer keeps Edit/Write: it
 # is the seat that writes source, and the guard must never obstruct it.
+#
+# `model:` added by codex § 9 fix-1 (the [low]): it was the one frontmatter
+# scalar this arm left unpinned, so `model: inherit` could be changed to a fixed
+# model — silently re-pricing every seat — or deleted, and the suite stayed
+# green. Pinned per seat rather than globally, because the three files genuinely
+# differ: the two coordinating seats carry `model: inherit` and the implementer
+# carries NO model: key at all. "__ABSENT__" is the sentinel for that, so a
+# `model:` line APPEARING on the implementer trips this arm too.
 declare -a SEAT_NAME_TOOLS=(
-  "orchestrator|Read, Bash, Grep, Glob, Agent, Task"
-  "steward|Read, Bash, Grep, Glob, Agent, Task"
-  "implementer|Read, Edit, Write, Bash, Grep, Glob"
+  "orchestrator|Read, Bash, Grep, Glob, Agent, Task|inherit"
+  "steward|Read, Bash, Grep, Glob, Agent, Task|inherit"
+  "implementer|Read, Edit, Write, Bash, Grep, Glob|__ABSENT__"
 )
 for spec in "${SEAT_NAME_TOOLS[@]}"; do
   seat="${spec%%|*}"
-  want_tools="${spec#*|}"
+  rest_spec="${spec#*|}"
+  want_tools="${rest_spec%%|*}"
+  want_model="${rest_spec##*|}"
   fm "$AGENTS_DIR/$seat.md" name
   if [ "$FM_RC" -eq 0 ] && [ "$FM_OUT" = "$seat" ]; then
     pass "arm 66 ($seat): name: is still '$seat'"
@@ -1009,6 +1031,16 @@ for spec in "${SEAT_NAME_TOOLS[@]}"; do
     pass "arm 66 ($seat): tools: is unchanged ('$want_tools')"
   else
     fail "arm 66 ($seat): tools: CHANGED — want '$want_tools', got '$FM_OUT' (rc=$FM_RC, err: $FM_ERR)"
+  fi
+  fm "$AGENTS_DIR/$seat.md" key model
+  if [ "$FM_RC" -eq 0 ] && [ "$FM_OUT" = "$want_model" ]; then
+    if [ "$want_model" = "__ABSENT__" ]; then
+      pass "arm 66 ($seat): no model: key, as shipped"
+    else
+      pass "arm 66 ($seat): model: is unchanged ('$want_model')"
+    fi
+  else
+    fail "arm 66 ($seat): model: CHANGED — want '$want_model' (__ABSENT__ = the key must not exist), got '$FM_OUT' (rc=$FM_RC, err: $FM_ERR)"
   fi
 done
 
@@ -1091,6 +1123,174 @@ EOF
     fail "arm 72 ($seat): the hook path is not anchored on \$CLAUDE_PROJECT_DIR — a literal path only works in one checkout; got: $(printf '%s' "$FM_OUT" | tr '\n' ' ')"
   fi
 done
+
+# ============================ ARM 73 =========================================
+# ############################################################################
+# # THE ATTACHMENT QUESTION — codex § 9 fix-1, the [P1]. RED AS COMMITTED.    #
+# #                                                                           #
+# # Arms 71 and 72 prove AGGREGATE facts about the file and never join them:  #
+# #   arm 71  "SOME PreToolUse matcher covers Edit, Write and Bash"           #
+# #   arm 67  "SOME command in the frontmatter names seat-path-guard.sh"      #
+# #   arm 72  "SOME command mentions ${CLAUDE_PROJECT_DIR}"                   #
+# # All three can be true while the guard hangs off a matcher that never      #
+# # fires on a write. REPRODUCED, verbatim, on 81dcb00c: rewriting            #
+# # .claude/agents/orchestrator.md's hooks block to                           #
+# #     - matcher: "Read"            -> .../seat-path-guard.sh                #
+# #     - matcher: "Edit|Write|Bash" -> .../some-other-thing.sh   (NO SUCH    #
+# #                                                                FILE)      #
+# # left the whole suite at rc=0, 135/135 PASSING. The guard was wired to     #
+# # Read alone and the write path was completely unguarded.                   #
+# #                                                                           #
+# # This arm states the requirement the arms above should have been stating:  #
+# # a fixture is ATTACHED only when the guard's OWN matcher covers the write  #
+# # verbs. It is evaluated below with the only detector this commit has — the #
+# # file-wide one — which CANNOT express that, so 73attack FAILS here. That   #
+# # failure IS the [P1]. The next commit rebuilds the detector to answer per  #
+# # guard-carrying ENTRY and this arm goes green.                             #
+# ############################################################################
+
+# fx <name> — write a synthetic agent file whose hooks: block is read from
+# stdin. The fixture lives in TMPROOT and is removed with it; no tracked file is
+# touched, and no real seat file is ever tampered with by an arm.
+fx() {
+  local p="$TMPROOT/fx-$1.md"
+  {
+    printf '%s\n' '---' 'name: fixture' 'tools: Read'
+    cat
+    printf '%s\n' '---' '' 'body'
+  } >"$p"
+}
+
+# aggregate_verdict <file> -> ATTACHED | NOT-ATTACHED, computed the way arms
+# 67/71 compute it TODAY: "some matcher covers the verbs" AND "some command
+# names the guard", with no link between the two. Replaced in the fix commit.
+aggregate_verdict() {
+  local f="$1" cov guard=no line
+  fm "$f" matcher-covers Edit Write Bash
+  cov="$FM_OUT"
+  fm "$f" pretool-commands
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    case "$(resolve_hook_cmd "$line")" in
+      *seat-path-guard.sh*) guard=yes ;;
+    esac
+  done <<EOF
+$FM_OUT
+EOF
+  if [ "$cov" = "COVERS" ] && [ "$guard" = "yes" ]; then
+    printf 'ATTACHED'
+  else
+    printf 'NOT-ATTACHED'
+  fi
+}
+
+# gw_case <name> <ATTACHED|NOT-ATTACHED> <desc>
+gw_case() {
+  local name="$1" want="$2" desc="$3" got
+  got="$(aggregate_verdict "$TMPROOT/fx-$name.md")"
+  if [ "$got" = "$want" ]; then
+    pass "arm 73$name: $desc"
+  else
+    fail "arm 73$name: $desc — the guard's ATTACHMENT is '$got', want '$want'"
+  fi
+}
+
+# --- 73attack: THE REPRODUCED [P1]. Guard on Read; an unrelated (and
+# non-existent) command holds Edit|Write|Bash. FAILS as committed.
+fx attack <<'YAML'
+hooks:
+  PreToolUse:
+    - matcher: "Read"
+      hooks:
+        - type: command
+          command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/seat-path-guard.sh"
+    - matcher: "Edit|Write|Bash"
+      hooks:
+        - type: command
+          command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/some-other-thing.sh"
+YAML
+gw_case attack NOT-ATTACHED "the guard attached to 'Read' while ANOTHER command holds 'Edit|Write|Bash' does NOT guard the write path"
+
+# --- the matcher spellings that MUST keep passing. Evaluated as regexes, so a
+# string comparison against "Edit|Write|Bash" would break all three.
+fx dotstar <<'YAML'
+hooks:
+  PreToolUse:
+    - matcher: ".*"
+      hooks:
+        - type: command
+          command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/seat-path-guard.sh"
+YAML
+gw_case dotstar ATTACHED "matcher '.*' covers all three verbs (regex semantics, not string equality)"
+
+fx parens <<'YAML'
+hooks:
+  PreToolUse:
+    - matcher: "(Edit|Write|Bash)"
+      hooks:
+        - type: command
+          command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/seat-path-guard.sh"
+YAML
+gw_case parens ATTACHED "matcher '(Edit|Write|Bash)' covers (parenthesised alternation)"
+
+fx superset <<'YAML'
+hooks:
+  PreToolUse:
+    - matcher: "Edit|Write|Bash|Read"
+      hooks:
+        - type: command
+          command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/seat-path-guard.sh"
+YAML
+gw_case superset ATTACHED "matcher 'Edit|Write|Bash|Read' covers (a superset is still coverage)"
+
+# --- the guard split across TWO entries: legitimate wiring, covers by union.
+fx split <<'YAML'
+hooks:
+  PreToolUse:
+    - matcher: "Edit|Write"
+      hooks:
+        - type: command
+          command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/seat-path-guard.sh"
+    - matcher: "Bash"
+      hooks:
+        - type: command
+          command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/seat-path-guard.sh"
+YAML
+gw_case split ATTACHED "the guard split across two entries ('Edit|Write' + 'Bash') covers by union"
+
+# --- partial attachment. Bash uncovered is the one that matters most (76 and
+# 193 Bash calls, ZERO Edit/Write, on the two observed sessions).
+fx nobash <<'YAML'
+hooks:
+  PreToolUse:
+    - matcher: "Edit|Write"
+      hooks:
+        - type: command
+          command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/seat-path-guard.sh"
+YAML
+gw_case nobash NOT-ATTACHED "matcher 'Edit|Write' leaves Bash — the seats' REAL write path — unguarded"
+
+fx bashonly <<'YAML'
+hooks:
+  PreToolUse:
+    - matcher: "Bash"
+      hooks:
+        - type: command
+          command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/seat-path-guard.sh"
+YAML
+gw_case bashonly NOT-ATTACHED "matcher 'Bash' alone leaves Edit and Write uncovered"
+
+# --- no guard-carrying entry at all, though PreToolUse hooks exist: the unwired
+# state arms 67/68 must catch.
+fx unwired <<'YAML'
+hooks:
+  PreToolUse:
+    - matcher: "Edit|Write|Bash"
+      hooks:
+        - type: command
+          command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/some-other-thing.sh"
+YAML
+gw_case unwired NOT-ATTACHED "a PreToolUse hook that is NOT the guard leaves the seat unwired"
 
 # arm 69 — the IMPLEMENTER declares no hooks at all. This is the complement of
 # arms 67/68 and the reason frontmatter was chosen over settings.json: the seat
