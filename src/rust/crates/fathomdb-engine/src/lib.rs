@@ -17495,6 +17495,18 @@ fn apply_projection_config(
     // registry no longer declares.
     let vector_declared_after = vector_projection_declared(tx).map_err(|_| EngineError::Storage)?;
     let enqueued = if vector_declared_after {
+        // 0.8.20 Slice 22 (R-20-VC / TC-67) — THE REPORT. Scoped to a live dense
+        // -arm declaration (with no `searchable→vector` projection there is
+        // nothing for a kind to be unsupported FOR, so reporting would be noise
+        // on every `filterable`/FTS-only call), but deliberately OUTSIDE the
+        // `dense_arm_live` gate below — see [`unsupported_vector_kinds`].
+        //
+        // Placed AFTER `delta.unchanged` is computed, and it does not feed it:
+        // this is a STATE report, not a diff, so an idempotent re-apply still
+        // carries it (that is also the documented refresh path for the
+        // declare-time residual).
+        delta.vector_unsupported_kinds =
+            unsupported_vector_kinds(tx).map_err(|_| EngineError::Storage)?;
         if dense_arm_live {
             enqueue_declared_vector_backfill(tx).map_err(|_| EngineError::Storage)?
         } else {
@@ -17890,6 +17902,58 @@ fn register_vector_kind(tx: &Connection, kind: &str) -> rusqlite::Result<()> {
 /// This re-enqueues embed work inside ONE live database at the caller's request.
 /// It converts no rows across a version step, and `SCHEMA_VERSION` stays 24
 /// (HITL 2026-07-21; cf. TC-46's in-place vec0 reshape).
+/// 0.8.20 Slice 22 (R-20-VC / **TC-67**) — the ONE scan of "which node kinds in
+/// this corpus are candidates for the dense arm?".
+///
+/// `row_kind IN ('leaf', 'coverage')` is the `index_targets_for_row_kind` vector
+/// -eligibility predicate: `graph` rows are lexically searchable but NEVER
+/// embedded, so they are excluded here on a ROW-KIND axis that has nothing to do
+/// with the `kind` vocabulary — including them would make TC-67 report structural
+/// rows as "unsupported kinds", which is a different (and false) statement.
+///
+/// Extracted so [`enqueue_declared_vector_backfill`] (which enrols the
+/// commit-able half) and [`unsupported_vector_kinds`] (which reports the other
+/// half) partition ONE list rather than running two hand-copied queries that
+/// could drift — the same TC-56 anti-drift discipline that made
+/// [`kind_is_vector_committable`] delegate to [`resolve_source_type`].
+///
+/// `SELECT DISTINCT … ORDER BY kind` gives the caller a sorted, de-duplicated
+/// list for free, which is the reported ordering.
+fn vector_eligible_node_kinds(tx: &Connection) -> rusqlite::Result<Vec<String>> {
+    let mut stmt = tx.prepare(
+        "SELECT DISTINCT kind FROM canonical_nodes
+         WHERE row_kind IN ('leaf', 'coverage')
+         ORDER BY kind",
+    )?;
+    let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+    rows.collect::<rusqlite::Result<Vec<String>>>()
+}
+
+/// 0.8.20 Slice 22 (R-20-VC / **TC-67**) — **the report that replaces the
+/// silence.** The vector-eligible node kinds present in the corpus that
+/// [`kind_is_vector_committable`] excludes, i.e. the exact complement of the set
+/// [`enqueue_declared_vector_backfill`] enrols.
+///
+/// Populates [`ProjectionDelta::vector_unsupported_kinds`]. Read that field's
+/// doc-comment for the naming, the state-not-diff semantics and the residual;
+/// what belongs HERE is the one thing the call SITE decides:
+///
+/// **It is deliberately NOT gated on `dense_arm_live`.** The enrolment it mirrors
+/// is (`apply_projection_config` only calls `enqueue_declared_vector_backfill`
+/// with a live embedder, the Q6a graceful-absent path), but this answer does not
+/// depend on the session: [`resolve_source_type`]'s vocabulary is a compile-time
+/// constant, so "this kind can never be embedded" is equally true with no
+/// embedder attached. Gating it would hide the permanent fact behind the
+/// transient one, which is the very conflation TC-67 exists to end — a
+/// no-embedder caller is exactly the caller who most needs to know that
+/// attaching an embedder later will still not embed these kinds.
+fn unsupported_vector_kinds(tx: &Connection) -> rusqlite::Result<Vec<String>> {
+    Ok(vector_eligible_node_kinds(tx)?
+        .into_iter()
+        .filter(|kind| !kind_is_vector_committable(kind))
+        .collect())
+}
+
 fn enqueue_declared_vector_backfill(tx: &Connection) -> rusqlite::Result<bool> {
     if !vector_projection_declared(tx)? {
         return Ok(false);
@@ -17900,14 +17964,12 @@ fn enqueue_declared_vector_backfill(tx: &Connection) -> rusqlite::Result<bool> {
     // ([`kind_is_vector_committable`], fix-2 / codex §9 [P1]). Enrolling a kind
     // outside `resolve_source_type`'s locked vocabulary wedges the projection
     // worker forever and starves every other kind with it.
-    let kinds: Vec<String> = {
-        let mut stmt = tx.prepare(
-            "SELECT DISTINCT kind FROM canonical_nodes
-             WHERE row_kind IN ('leaf', 'coverage')",
-        )?;
-        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-        rows.collect::<rusqlite::Result<Vec<String>>>()?
-    };
+    //
+    // 0.8.20 Slice 22 (TC-67) — the kinds this filter DROPS are what
+    // [`unsupported_vector_kinds`] reports; both read the same scan through
+    // [`vector_eligible_node_kinds`] so the report can never describe a
+    // different set from the one actually excluded.
+    let kinds = vector_eligible_node_kinds(tx)?;
     for kind in kinds.iter().filter(|kind| kind_is_vector_committable(kind)) {
         register_vector_kind(tx, kind)?;
     }
