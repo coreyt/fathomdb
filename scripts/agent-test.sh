@@ -48,6 +48,15 @@ run_capped test-check-governed-surface-pin bash scripts/tests/test_check_governe
 # the real src/ tree is ever written.
 run_capped test-check-c1-conformance bash scripts/tests/test_check_c1_conformance.sh
 
+# Scripts (bash): agent-seat-hardening ASH-B — the PreToolUse write-path guard
+# .claude/hooks/seat-path-guard.sh, which enforces dev/design/orchestration.md
+# § 1.2 (coordinating seats must never write src/**, engine/** or test sources;
+# the implementer seat must never be blocked). The hook ships UNWIRED and arm 16
+# asserts that; wiring it is an HITL-gated Phase-2 act. Pure stdin->stdout
+# function under test — the suite feeds synthetic PreToolUse payloads and never
+# touches the filesystem beyond one mktemp -d fixture.
+run_capped test-seat-path-guard bash scripts/tests/test_seat_path_guard.sh
+
 # Scripts (bash): sibling-package co-tagging assert (AC-052). Offline via
 # python3 -m http.server fixture; never hits crates.io.
 run_capped test-assert-co-tagging bash scripts/tests/test_assert_co_tagging.sh
