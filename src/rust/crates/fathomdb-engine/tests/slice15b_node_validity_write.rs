@@ -30,7 +30,9 @@
 //!   caller reading at a pre-1970 instant).
 //! - **W5 typed refusal** — a window that can never match anything
 //!   (`valid_from >= valid_until`) is rejected with a typed error rather than
-//!   silently stored, and the refusal rejects the WHOLE batch.
+//!   silently stored, and the refusal rejects the WHOLE batch. **0.8.20 Slice 22
+//!   / decision #18:** that typed error is now `EngineError::WriteValidation`,
+//!   the ONE family `validate_write` uses — it was `InvalidArgument { msg }`.
 //! - **W6 boundary hook end-to-end** — `crossed_boundary_since` reports a
 //!   crossing for a window authored through the SDK rather than through raw SQL.
 //!
@@ -324,24 +326,31 @@ fn tc34_unsatisfiable_window_is_a_typed_refusal() {
     // Strictly inverted.
     let inverted = engine.write(&[node_win("BAD", "inverted", Some(2000), Some(1000))]);
     assert!(
-        matches!(inverted, Err(EngineError::InvalidArgument { .. })),
-        "an inverted window must be a typed InvalidArgument refusal, got {inverted:?}"
+        matches!(inverted, Err(EngineError::WriteValidation)),
+        "an inverted window must be a typed WriteValidation refusal, got {inverted:?}"
     );
 
     // Empty (from == until) — half-open, so this matches nothing either.
     let empty = engine.write(&[node_win("BAD", "empty", Some(1500), Some(1500))]);
     assert!(
-        matches!(empty, Err(EngineError::InvalidArgument { .. })),
+        matches!(empty, Err(EngineError::WriteValidation)),
         "an empty half-open window must be a typed refusal, got {empty:?}"
     );
 
-    // The refusal must name the offending values, or a caller cannot act on it.
-    let Err(EngineError::InvalidArgument { msg }) =
-        engine.write(&[node_win("BAD", "inverted", Some(2000), Some(1000))])
-    else {
-        panic!("expected InvalidArgument");
-    };
-    assert!(msg.contains("2000") && msg.contains("1000"), "message must name the bounds: {msg}");
+    // 0.8.20 Slice 22 / decision #18 — the refusal NO LONGER names the offending
+    // bounds. `WriteValidation` is a unit variant, so the settlement that put
+    // `validate_write` on ONE family gave up that diagnostic; the prior
+    // `InvalidArgument { msg }` carried both bounds. The loss is deliberate and
+    // recorded (CHANGELOG 0.8.20 breaking-behaviour, dev/design/errors.md
+    // amendment, dev/interfaces/{rust,python,typescript}.md). Restoring it needs
+    // a message-carrying `WriteValidation { msg }`, which is its own slice.
+    assert!(
+        !matches!(
+            engine.write(&[node_win("BAD", "inverted", Some(2000), Some(1000))]),
+            Err(EngineError::InvalidArgument { .. })
+        ),
+        "validate_write must not raise InvalidArgument for any rejection (decision #18)"
+    );
 
     engine.close().expect("close");
     assert_eq!(row_count(&path, "BAD"), 0, "a refused write must not land a row");
@@ -358,7 +367,7 @@ fn tc34_unsatisfiable_window_rejects_the_whole_batch() {
 
     let result = engine
         .write(&[node("GOOD", "well formed"), node_win("BAD", "inverted", Some(2000), Some(1000))]);
-    assert!(matches!(result, Err(EngineError::InvalidArgument { .. })));
+    assert!(matches!(result, Err(EngineError::WriteValidation)));
 
     engine.close().expect("close");
     assert_eq!(row_count(&path, "GOOD"), 0, "batch rejection must not commit the sibling row");

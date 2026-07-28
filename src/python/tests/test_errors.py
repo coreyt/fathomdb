@@ -21,6 +21,7 @@ from fathomdb.errors import (
     EmbedderNotConfiguredError,
     EngineError,
     IncompatibleSchemaVersionError,
+    InvalidArgumentError,
     KindNotVectorIndexedError,
     MigrationError,
     OpStoreError,
@@ -52,6 +53,10 @@ LEAF_CLASSES = [
     EmbedderDimensionMismatchError,
     EmbedderNotConfiguredError,
     KindNotVectorIndexedError,
+    # 0.8.20 Slice 22 / decision #18 — `InvalidArgumentError` was absent from both
+    # tables in `dev/design/errors.md` despite being a live SDK class. The
+    # settlement adds it to the taxonomy of record; this row pins it here too.
+    InvalidArgumentError,
 ]
 
 
@@ -116,3 +121,57 @@ def test_search_rejects_empty_query_via_write_validation_under_engine_error(
         assert isinstance(excinfo.value, WriteValidationError)
     finally:
         engine.close()
+
+
+# ---------------------------------------------------------------------------
+# 0.8.20 Slice 22 (R-20-VC) — decision #18: one family at the write boundary
+# ---------------------------------------------------------------------------
+
+_SOURCE_ID = "py-test:decision-18"
+
+
+def _node(logical_id: str, body: str, **extra: object) -> dict:
+    return {"kind": "doc", "body": body, "logical_id": logical_id,
+            "source_id": _SOURCE_ID, **extra}
+
+
+def test_write_validation_boundary_is_exactly_one_error_family(db_path: str) -> None:
+    """Decision #18 — every rejection from the engine's write-validation boundary
+    raises ``WriteValidationError``, never ``InvalidArgumentError``.
+
+    The consumer-visible defect this settles: the SAME ``engine.write`` call used
+    to raise ``InvalidArgumentError`` for an inverted validity window but
+    ``WriteValidationError`` for a non-integer bound. ``dev/design/errors.md``
+    defines ``WriteValidationError`` as "malformed typed write shape", which is
+    exactly what that boundary checks.
+    """
+
+    engine = Engine.open(db_path, use_default_embedder=False)
+    try:
+        cases = {
+            "empty body": _node("B1", "   "),
+            "empty logical_id": _node("", "ok"),
+            "inverted window": _node("W1", "ok", valid_from=2000, valid_until=1000),
+            "empty half-open window": _node("W2", "ok", valid_from=1500, valid_until=1500),
+            "non-integer bound": _node("W3", "ok", valid_from="1000"),
+        }
+        for label, item in cases.items():
+            with pytest.raises(WriteValidationError) as excinfo:
+                engine.write([item])
+            assert not isinstance(excinfo.value, InvalidArgumentError), (
+                f"{label} must not raise InvalidArgumentError (decision #18)"
+            )
+    finally:
+        engine.close()
+
+
+def test_invalid_argument_error_survives_as_a_distinct_leaf() -> None:
+    """Decision #18 narrows WHERE ``InvalidArgumentError`` is used; it does not
+    remove it. It stays the message-carrying class for caller-argument rejections
+    OUTSIDE the write-validation boundary (e.g. an out-of-range traversal depth).
+    """
+
+    assert issubclass(InvalidArgumentError, EngineError)
+    assert not issubclass(InvalidArgumentError, WriteValidationError)
+    assert not issubclass(WriteValidationError, InvalidArgumentError)
+    assert str(InvalidArgumentError("depth must be 1-3, got 9")).startswith("depth must be 1-3")

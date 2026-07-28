@@ -282,16 +282,24 @@ def test_unsatisfiable_window_is_a_typed_refusal(db_path: str) -> None:
 
     engine = _open(db_path)
     try:
-        with pytest.raises(InvalidArgumentError):
+        with pytest.raises(WriteValidationError):
             engine.write([_windowed("BAD", "inverted", 2000, 1000)])
-        with pytest.raises(InvalidArgumentError):
+        with pytest.raises(WriteValidationError):
             engine.write([_windowed("BAD", "empty", 1500, 1500)])
 
         # The refusal rejects the WHOLE batch.
-        with pytest.raises(InvalidArgumentError):
+        with pytest.raises(WriteValidationError):
             engine.write(
                 [_plain("GOOD", "well formed"), _windowed("BAD", "inverted", 2000, 1000)]
             )
+
+        # 0.8.20 Slice 22 / decision #18 — it must NOT be InvalidArgumentError any
+        # more: the write-validation boundary is ONE family. The bounds are no
+        # longer carried in the message (WriteValidationError is message-less);
+        # that diagnostic loss is deliberate and recorded in the CHANGELOG.
+        with pytest.raises(WriteValidationError) as excinfo:
+            engine.write([_windowed("BAD", "inverted", 2000, 1000)])
+        assert not isinstance(excinfo.value, InvalidArgumentError)
     finally:
         engine.close()
 
