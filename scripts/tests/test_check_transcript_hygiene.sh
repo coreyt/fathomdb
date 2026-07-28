@@ -130,6 +130,52 @@ macos_slurped_line() {
     '.claude' "${1:--Users-alice-work-secret-client}"
 }
 
+# ---------------------------------------------------------------------------
+# FIX-1 FIXTURES (TC-86, steward `seq-129`). The pattern originally also demanded
+# a `.jsonl` or `subagents/` component BENEATH the project directory. That was
+# narrower than the threat: Claude Code writes PERSISTED TOOL OUTPUT under
+# <session>/tool-results/ whenever a tool result is too large to inline, and
+# those files hold the full untruncated output of whatever the tool did — the
+# same content class that leaked, in the same directory, one component over. A
+# reviewer running `rg` across ~/.claude (exactly what produced this gate) hits
+# them just as readily. The three builders below are the shapes that escaped.
+# ---------------------------------------------------------------------------
+
+# tool_results_line — THE REGRESSION. `rg` output naming a persisted tool-result
+# file under a session directory. No `.jsonl`, no `subagents/`; the old pattern
+# returned rc=0 on this and the gate would have certified a transcript with it.
+tool_results_line() {
+  printf '/home/coreyt/%s/projects/%s/019fa6d5-3392-77e3-9890-bdc0c24403c1/tool-results/leak.txt:1:PERSISTED TOOL OUTPUT FROM ANOTHER PROJECT\n' \
+    '.claude' "${1:--home-coreyt-projects-memex}"
+}
+
+# shell_snapshot_line — a second non-`.jsonl` shape. Claude Code snapshots the
+# invoking shell under <project>/shell-snapshots/; those carry the user's
+# environment and aliases.
+shell_snapshot_line() {
+  printf '/home/coreyt/%s/projects/%s/shell-snapshots/snapshot-bash-1753670000-9c2f.sh:alias deploy=PRIVATE COMMAND FROM ANOTHER PROJECT\n' \
+    '.claude' "${1:--home-coreyt-projects-hermes}"
+}
+
+# state_dir_listing_line — a third: `ls -l`/`find` output, macOS spelling, with
+# the path at the END of the line rather than the start. Neither `.jsonl` nor
+# `subagents/`, and the file it names is auto-memory prose.
+state_dir_listing_line() {
+  printf -- '-rw-rw-r-- 1 alice staff 12288 Jul 28 10:47 /Users/alice/%s/projects/%s/memory/MEMORY.md\n' \
+    '.claude' "${1:--Users-alice-work-secret-client}"
+}
+
+# projects_prefix_only_line — the WIDENING'S BOUNDARY, and the control that says
+# the widening did not become "match the word projects". This is the shape of the
+# redaction banner already on main in
+# dev/plans/runs/codex/agent-seat-hardening/ASH-Phase2-20260728T034657Z.log: the
+# quoted string stops AT `projects/` with NO component beneath it. A gate that
+# tripped on the record of its own predecessor incident would be self-defeating.
+projects_prefix_only_line() {
+  printf 'NO PRIOR EXPOSURE: `git grep -l %s^/home/coreyt/%s/projects/%s -- dev/plans/runs/codex/**`\n' \
+    "'" '.claude' "'"
+}
+
 # synthetic_placeholder_line — the PreToolUse fixture already tracked in
 # scripts/tests/test_seat_path_guard.sh (and quoted back inside ten codex
 # transcripts under dev/plans/runs/codex/**). `x` is an invented placeholder, not
@@ -277,6 +323,93 @@ run_checker --root "$G_DIR"
 expect_rc 0 "the redaction banner already on main (which quotes the incident's git grep) is NOT flagged"
 
 # ============================================================================
+# Arm K — FIX-1 REGRESSION: shapes with NO `.jsonl` and NO `subagents/`.
+# ============================================================================
+# The pattern as first written required a `.jsonl` or `subagents/` component
+# beneath the project directory. That was narrower than the threat and these
+# three lines all returned rc=0 against it. `tool-results/` in particular is
+# neither hypothetical nor rare — it is where the harness persists tool output
+# too large to inline, i.e. the full untruncated result of whatever the tool did,
+# sitting in the same session directory as the transcript. Each of these arms is
+# a shape a bypass-sandboxed reviewer's `rg` across ~/.claude produces, and each
+# would have been CERTIFIED CLEAN. They are separate files so a single arm's
+# failure names the shape that regressed.
+K_DIR="$TMPROOT/widened"
+mkdir -p "$K_DIR"
+{ printf '%s\n' "$CLEAN_PROSE"; tool_results_line; } >"$K_DIR/tool-results.log"
+
+run_checker "$K_DIR/tool-results.log"
+expect_rc 1 "a persisted tool-result path under a session dir is detected (no .jsonl, no subagents/)"
+expect_out 'tool-results\.log' "the tool-results failure names its file"
+
+{ printf '%s\n' "$CLEAN_PROSE"; shell_snapshot_line; } >"$K_DIR/shell-snapshot.log"
+run_checker "$K_DIR/shell-snapshot.log"
+expect_rc 1 "a shell-snapshot path under an encoded project dir is detected"
+
+{ printf '%s\n' "$CLEAN_PROSE"; state_dir_listing_line; } >"$K_DIR/listing.log"
+run_checker "$K_DIR/listing.log"
+expect_rc 1 "an ls-style line with the agent-state path at the END (macOS spelling) is detected"
+
+# All three at once: the count must be the true 3, and all three project
+# directories must be identifiable for the banner.
+{
+  printf '%s\n' "$CLEAN_PROSE"
+  tool_results_line
+  shell_snapshot_line
+  state_dir_listing_line
+} >"$K_DIR/all-three.log"
+run_checker "$K_DIR/all-three.log"
+expect_rc 1 "three widened-shape lines fail the gate"
+expect_out '3 (line|match)' "the widened shapes are counted individually, not collapsed"
+
+# ============================================================================
+# Arm K2 — the widening's FALSE-POSITIVE BOUNDARY.
+# ============================================================================
+# Widening is exactly when false positives appear, so the two discriminators that
+# were KEPT are asserted here rather than argued:
+#   * a path that stops AT `projects/` with nothing beneath it stays clean — that
+#     is the banner already on main, quoting the incident's own `git grep`;
+#   * the leading `-` on the project directory still discriminates, so the
+#     synthetic /home/nobody/.../projects/x/y.jsonl fixture in
+#     scripts/tests/test_seat_path_guard.sh:98 (and the ten transcripts quoting
+#     it) stay clean. Arm F covers the .jsonl spelling; this adds the widened
+#     non-.jsonl spelling of the same placeholder, which is the case the widening
+#     could newly have broken.
+K2_DIR="$TMPROOT/widened-boundary"
+mkdir -p "$K2_DIR"
+projects_prefix_only_line >"$K2_DIR/prefix-only.log"
+run_checker "$K2_DIR/prefix-only.log"
+expect_rc 0 "a path that stops AT projects/ (no component beneath) is still NOT flagged"
+
+{
+  synthetic_placeholder_line
+  printf '    "cwd": "/home/nobody/%s/projects/x/tool-results/z.txt",\n' '.claude'
+} >"$K2_DIR/synthetic.log"
+run_checker "$K2_DIR/synthetic.log"
+expect_rc 0 "the widening did NOT break the leading-'-' discriminator (projects/x/... stays clean)"
+
+relative_claude_refs >"$K2_DIR/relative.log"
+run_checker "$K2_DIR/relative.log"
+expect_rc 0 "relative .claude/ references stay clean under the WIDENED pattern too"
+
+# The two files the Steward named explicitly: they must be clean under their own
+# gate WITHOUT any exemption, and so must the banner already on main. These scan
+# the REAL TRACKED FILES, not copies — Arm A covers the whole tree, but a
+# whole-tree pass says nothing about which file it was that could have tripped.
+for tracked in \
+  "$REPO_ROOT/scripts/lib/agent-state-paths.sh" \
+  "$REPO_ROOT/scripts/tests/test_check_transcript_hygiene.sh" \
+  "$REPO_ROOT/dev/plans/runs/codex/agent-seat-hardening/ASH-Phase2-20260728T034657Z.log"
+do
+  if [ ! -f "$tracked" ]; then
+    fail "expected tracked file $tracked to exist"
+    continue
+  fi
+  run_checker "$tracked"
+  expect_rc 0 "$(basename "$tracked") is clean under the WIDENED pattern, with no exemption"
+done
+
+# ============================================================================
 # Arm H — --redact: REDACT, NEVER DELETE.
 # ============================================================================
 # TC-RUBRIC-7 closes a review on a persisted terminal artifact, so the transcript
@@ -365,6 +498,94 @@ if cmp -s "$H_FILE" "$TMPROOT/redact-first-pass.snapshot"; then
 else
   fail "--redact is not idempotent; diff: $(diff "$TMPROOT/redact-first-pass.snapshot" "$H_FILE" || true)"
 fi
+
+# ============================================================================
+# Arm K3 — --redact works END TO END on the WIDENED shapes, and still converges.
+# ============================================================================
+# Detecting a shape the remediation cannot clean would leave an operator with a
+# red gate and no way out but weakening the pattern — the one thing the failure
+# prose tells them not to do. So the widened shapes are driven all the way
+# through --redact: content gone, marker in place, project named in the banner,
+# surrounding lines byte-intact, and a second pass byte-identical (the banner and
+# the marker must not themselves match the WIDENED pattern, or --redact would
+# stack banners forever).
+K3_DIR="$TMPROOT/redact-widened"
+mkdir -p "$K3_DIR"
+K3_FILE="$K3_DIR/tool-results-review.log"
+{
+  printf 'line-before-untouched\n'
+  tool_results_line '-home-coreyt-projects-memex'
+  printf 'line-after-untouched\n'
+  shell_snapshot_line '-home-coreyt-projects-hermes'
+  printf 'verdict: no [P1] findings\n'
+} >"$K3_FILE"
+
+run_checker --root "$K3_DIR" --redact
+expect_rc 0 "--redact exits 0 after cleaning the widened shapes"
+
+if grep -q 'PERSISTED TOOL OUTPUT FROM ANOTHER PROJECT' "$K3_FILE" \
+   || grep -q 'PRIVATE COMMAND FROM ANOTHER PROJECT' "$K3_FILE"; then
+  fail "widened-shape content SURVIVED --redact; got: $(cat "$K3_FILE")"
+else
+  pass "the tool-results and shell-snapshot content is gone from the redacted file"
+fi
+if grep -q 'REDACTED TC-86' "$K3_FILE"; then
+  pass "each widened-shape line is REPLACED IN PLACE by the shared marker"
+else
+  fail "expected the in-place marker on the widened shapes; got: $(cat "$K3_FILE")"
+fi
+if grep -q '2 line' "$K3_FILE"; then
+  pass "the banner states the removed-line count for the widened shapes"
+else
+  fail "the banner must count the widened-shape lines; got: $(cat "$K3_FILE")"
+fi
+if grep -q -- '-home-coreyt-projects-memex' "$K3_FILE" \
+   && grep -q -- '-home-coreyt-projects-hermes' "$K3_FILE"; then
+  pass "the banner names the foreign projects behind the widened shapes"
+else
+  fail "the banner must name the widened shapes' projects; got: $(cat "$K3_FILE")"
+fi
+if grep -qx 'line-before-untouched' "$K3_FILE" \
+   && grep -qx 'line-after-untouched' "$K3_FILE" \
+   && grep -qx 'verdict: no \[P1\] findings' "$K3_FILE"; then
+  pass "surrounding content survives redaction of the widened shapes byte-intact"
+else
+  fail "--redact disturbed unmatched lines; got: $(cat "$K3_FILE")"
+fi
+
+run_checker --root "$K3_DIR"
+expect_rc 0 "a re-run of the gate over the redacted widened tree now PASSES"
+
+cp "$K3_FILE" "$TMPROOT/redact-widened-first-pass.snapshot"
+run_checker --root "$K3_DIR" --redact
+expect_rc 0 "a second --redact over the widened tree exits 0"
+if cmp -s "$K3_FILE" "$TMPROOT/redact-widened-first-pass.snapshot"; then
+  pass "--redact stays IDEMPOTENT on the widened shapes (banner+marker do not self-match)"
+else
+  fail "--redact is not idempotent on widened shapes; diff: $(diff "$TMPROOT/redact-widened-first-pass.snapshot" "$K3_FILE" || true)"
+fi
+
+# The CAPTURE-TIME filter must widen with the gate — if it did not, the two
+# layers have drifted and the gate's silence about a wrapper-captured transcript
+# would mean nothing. Asserted here on the wrapper's own stub in Arm M's style,
+# but for a tool-results line. (Arms L–R below cover the wrapper generally.)
+WIDEN_STUB_DIR="$TMPROOT/widen-stub-bin"
+mkdir -p "$WIDEN_STUB_DIR"
+{
+  printf '#!/usr/bin/env bash\n'
+  printf 'echo "OpenAI Codex v0.136.0"\n'
+  printf 'printf "/home/coreyt/%%s/projects/%%s/019fa6d5/tool-results/leak.txt:1:LEAKED TOOL OUTPUT\\n" ".claude" "-home-coreyt-projects-memex"\n'
+  printf 'echo "verdict: no [P1]"\n'
+  printf 'exit 0\n'
+} >"$WIDEN_STUB_DIR/codex"
+chmod +x "$WIDEN_STUB_DIR/codex"
+set +e
+OUT="$(PATH="$WIDEN_STUB_DIR:$PATH" bash "$WRAPPER" exec review 2>&1)"
+RC=$?
+set -e
+expect_rc 0 "the wrapper still reports codex's exit code on a tool-results line"
+expect_no_out 'LEAKED TOOL OUTPUT' "the CAPTURE-TIME filter widened with the gate (tool-results never reaches the transcript)"
+expect_out 'REDACTED TC-86' "the wrapper marks the filtered tool-results line rather than dropping it"
 
 # ============================================================================
 # Arm J — explicit path arguments, and a missing path is an ERROR not a pass.
