@@ -165,6 +165,48 @@ state_dir_listing_line() {
     '.claude' "${1:--Users-alice-work-secret-client}"
 }
 
+# ---------------------------------------------------------------------------
+# FIX-2 FIXTURES (TC-86, steward `seq-130`). The HITL ruled the threat model:
+# FOREIGN project state is a HARD failure; THIS repo's own project state is an
+# advisory WARNING. The builders below are the own-project side of that split.
+# The literal is spelled here as a bare directory name (no `/home/` prefix), so
+# this file stays clean under its own gate — discriminator 1 doing its job.
+# ---------------------------------------------------------------------------
+OWN_PROJECT_DIR_LITERAL='-home-coreyt-projects-fathomdb'
+
+# own_slurped_line — the incident shape, but pointing at THIS repo's own project
+# state. WARN, not FAIL.
+own_slurped_line() {
+  printf '/home/coreyt/%s/projects/%s/019fa6d5-3392-77e3-9890-bdc0c24403c1.jsonl:{"type":"user","message":{"role":"user","content":"THIS REPOS OWN CONVERSATION"}}\n' \
+    '.claude' "$OWN_PROJECT_DIR_LITERAL"
+}
+
+# own_tool_results_line — the ACCEPTED RESIDUAL, named explicitly so it is a
+# tested property rather than a claim: this repo's own persisted tool output can
+# still be committed, and the WARN is the only thing that surfaces it.
+own_tool_results_line() {
+  printf '/home/coreyt/%s/projects/%s/019fa6d5-3392-77e3-9890-bdc0c24403c1/tool-results/own.txt:1:THIS REPOS OWN PERSISTED TOOL OUTPUT\n' \
+    '.claude' "$OWN_PROJECT_DIR_LITERAL"
+}
+
+# own_exec_content_block — the 0.8.14 SHAPE, and the one TC-86 exists to stop.
+# A codex `exec` record: the command ECHO names a Claude Code state directory,
+# then the transcript carries that command's OUTPUT — the state's CONTENT, not
+# merely its path. The echo is path-only (WARN); the output block is content and
+# `--redact` must remove it. Terminated by a top-level `codex` marker, with blank
+# lines INSIDE the block (the 0.8.14 dump has them, so a blank-line terminator
+# would truncate the redaction and leave content behind).
+own_exec_content_block() {
+  printf 'exec\n'
+  printf "/bin/bash -c 'ls /home/coreyt/%s/projects/%s/memory' in /home/coreyt/projects/fathomdb\n" \
+    '.claude' "$OWN_PROJECT_DIR_LITERAL"
+  printf ' succeeded in 0ms:\n'
+  printf 'OWN-MEMORY-CONTENT-ALPHA\n'
+  printf '\n'
+  printf 'OWN-MEMORY-CONTENT-BETA\n'
+  printf '\n'
+}
+
 # projects_prefix_only_line — the WIDENING'S BOUNDARY, and the control that says
 # the widening did not become "match the word projects". This is the shape of the
 # redaction banner already on main in
@@ -221,9 +263,21 @@ CLEAN_PROSE='OpenAI Codex v0.136.0 -- workdir: /home/coreyt/projects/fathomdb --
 # TC-16 / F-30: a new always-on CI job that is red the day it lands is worse than
 # no job, because the repo learns to ignore a red main. This arm is the promise
 # that TC-86 did not ship one.
+#
+# FIX-2 (steward `seq-130`) makes this arm say something POSITIVE rather than
+# resting on `exit 0`. Under the ruled threat model the real tree is not
+# hit-free: it carries own-project agent-state paths in docs, prompts and
+# measurement snapshots (README/handoff prompts cite this project's own memory
+# store by absolute path, deliberately). Those are WARN, not FAIL. So the arm
+# asserts the SPLIT — zero foreign, non-zero own-warn — instead of a bare rc=0,
+# which would also have been satisfied by a gate that had stopped looking.
 run_checker
 expect_rc 0 "the real tree passes the transcript-hygiene gate over all tracked files"
 expect_out 'transcript-hygiene: no .*agent-state path' "the clean run reports the specific predicate it verified, not a bare 'ok'"
+expect_no_out '^FAIL' "the real tree carries ZERO FOREIGN-project agent-state paths (asserted, not inferred from rc)"
+expect_out '^WARN  transcript-hygiene: .*[0-9]+ own-project agent-state path' \
+  "the real tree's own-project hits are REPORTED as warnings, not silently dropped"
+expect_out 'SELF-EXEMPTION' "every run states, in its own output, what it is NOT hard-checking"
 
 # ============================================================================
 # Arm B — POSITIVE CONTROL. A slurped line IS detected.
@@ -910,6 +964,251 @@ if printf '%s' "$PREFLIGHT_BLOCK" | grep -q 'check-transcript-hygiene.sh'; then
   pass "preflight invokes the SHARED checker (one predicate, two callers)"
 else
   fail "preflight must invoke scripts/check-transcript-hygiene.sh"
+fi
+
+# ============================================================================
+# Arm Y — FIX-2: the RULED threat model. FOREIGN = HARD, OWN = WARN.
+# ============================================================================
+# Steward `seq-130`. The fix-1 widening reached `tool-results/`, and that made
+# the gate red on the real tree — because this repo's own docs, prompts and
+# measurement snapshots legitimately cite paths into THIS project's own Claude
+# Code state. The HITL ruled the axis: another project's state is never
+# legitimate here (HARD); this project's own is (WARN). Both halves are asserted,
+# in both the `.jsonl` and the `tool-results/` shape, because a split asserted
+# on only one shape is a split that can silently regress on the other.
+
+# ---- Y1: FOREIGN, .jsonl shape → HARD ------------------------------------
+Y_DIR="$TMPROOT/threat-model"
+mkdir -p "$Y_DIR"
+{ printf '%s\n' "$CLEAN_PROSE"; slurped_line '-home-coreyt-projects-memex'; } >"$Y_DIR/foreign-jsonl.log"
+run_checker "$Y_DIR/foreign-jsonl.log"
+expect_rc 1 "a FOREIGN project's .jsonl path HARD-fails the gate"
+expect_out 'FAIL.*foreign-jsonl\.log' "the foreign .jsonl failure names its file on a FAIL line"
+
+# ---- Y2: FOREIGN, tool-results/ shape → HARD ------------------------------
+# The shape the fix-1 widening reached. It stays hard: the ruling closed the
+# incident class "completely, INCLUDING the tool-results/ shape".
+{ printf '%s\n' "$CLEAN_PROSE"; tool_results_line '-home-coreyt-projects-agent-aware'; } >"$Y_DIR/foreign-tool-results.log"
+run_checker "$Y_DIR/foreign-tool-results.log"
+expect_rc 1 "a FOREIGN project's tool-results/ path HARD-fails the gate (the widened shape stays hard)"
+expect_out 'FAIL.*foreign-tool-results\.log' "the foreign tool-results failure names its file on a FAIL line"
+
+# ---- Y3: OWN, .jsonl shape → WARN, exit 0 ---------------------------------
+{ printf '%s\n' "$CLEAN_PROSE"; own_slurped_line; } >"$Y_DIR/own-jsonl.log"
+run_checker "$Y_DIR/own-jsonl.log"
+expect_rc 0 "an OWN-project .jsonl path is a WARNING, not a failure (exit 0)"
+expect_out '^WARN' "the own-project hit is reported on a WARN line"
+expect_out 'WARN.*own-jsonl\.log' "the own-project warning NAMES the file"
+expect_out 'own-jsonl\.log.*1 line' "the own-project warning states the match COUNT for that file"
+expect_no_out '^FAIL' "an own-project hit produces no FAIL line (preflight must not promote it to HARD)"
+
+# ---- Y4: OWN, tool-results/ shape → WARN, exit 0 --------------------------
+# This is the ACCEPTED RESIDUAL in test form.
+{ printf '%s\n' "$CLEAN_PROSE"; own_tool_results_line; } >"$Y_DIR/own-tool-results.log"
+run_checker "$Y_DIR/own-tool-results.log"
+expect_rc 0 "an OWN-project tool-results/ path is a WARNING, not a failure (the accepted residual)"
+expect_out 'WARN.*own-tool-results\.log' "the own tool-results warning names its file"
+
+# ---- Y5: BOTH in one tree → HARD, and the own warning is STILL reported ----
+# The trap this arm exists for: a gate that reports the foreign failure and then
+# returns early would hide the own-project warning exactly when the operator is
+# already elbow-deep in the tree.
+Y5_DIR="$TMPROOT/threat-model-mixed"
+mkdir -p "$Y5_DIR"
+{ printf '%s\n' "$CLEAN_PROSE"; slurped_line '-home-coreyt-projects-memex'; } >"$Y5_DIR/foreign.log"
+{ printf '%s\n' "$CLEAN_PROSE"; own_tool_results_line; } >"$Y5_DIR/own.log"
+run_checker --root "$Y5_DIR"
+expect_rc 1 "a tree with BOTH foreign and own hits HARD-fails (the foreign half decides the exit code)"
+expect_out 'FAIL.*foreign\.log' "the mixed run reports the FOREIGN failure"
+expect_out 'WARN.*own\.log' "the mixed run STILL reports the own-project warning alongside the failure"
+
+# ---- Y6: the warning is NOT silently suppressible -------------------------
+# A warning that can be turned off is a warning that will be turned off, and the
+# own-project class is the ONLY thing that surfaces the accepted residual.
+set +e
+OUT="$(TC86_QUIET=1 TC86_NO_WARN=1 QUIET=1 NO_COLOR=1 CI=1 bash "$CHECKER" "$Y_DIR/own-tool-results.log" 2>&1)"
+RC=$?
+set -e
+expect_rc 0 "the own-project run still exits 0 with quiet-looking env vars set"
+expect_out '^WARN' "no environment variable suppresses the own-project warning"
+run_checker --quiet "$Y_DIR/own-tool-results.log"
+expect_rc 2 "a suppression FLAG is rejected as an unknown option (exit 2), never silently honoured"
+
+# ---- Y7: the SELF-EXEMPTION is visible in the gate's own output -----------
+# The crux of `seq-130`: a self-exemption buried in a regex was explicitly
+# REJECTED. A reader must be able to see, from running the gate, exactly what is
+# not hard-checked and why — including on a tree with NO hits at all, where there
+# is no warning to carry the message.
+Y7_DIR="$TMPROOT/threat-model-clean"
+mkdir -p "$Y7_DIR"
+printf '%s\n' "$CLEAN_PROSE" >"$Y7_DIR/clean.log"
+run_checker --root "$Y7_DIR"
+expect_rc 0 "a tree with no hits at all passes"
+expect_out 'SELF-EXEMPTION' "the exemption is announced even on a fully clean run"
+expect_out 'NOT HARD-CHECKED' "the exemption says plainly what is not being hard-checked"
+expect_out "$OWN_PROJECT_DIR_LITERAL" "the exemption NAMES the exempted project directory"
+expect_out 'ACCEPTED RESIDUAL' "the exemption states the accepted residual"
+expect_out 'tool-results' "the residual names the tool-results/ content that can still be committed"
+
+run_checker "$Y_DIR/foreign-jsonl.log"
+expect_out 'SELF-EXEMPTION' "the exemption is announced on a FAILING run too"
+
+# ---- Y8: the own-project identity is DERIVED, and its derivation is tested --
+# `seq-130`: derived, not hardcoded blindly, but not over-engineered either. One
+# named constant, defined as the '/'->'-' encoding of this repo's absolute path,
+# with the encoding itself executable so it can be asserted rather than believed.
+# shellcheck source=../lib/agent-state-paths.sh
+. "$SHARED_LIB"
+if [ "${AGENT_STATE_OWN_PROJECT_DIR:-}" = "$OWN_PROJECT_DIR_LITERAL" ]; then
+  pass "AGENT_STATE_OWN_PROJECT_DIR is this repo's encoded project directory"
+else
+  fail "AGENT_STATE_OWN_PROJECT_DIR must be $OWN_PROJECT_DIR_LITERAL, got '${AGENT_STATE_OWN_PROJECT_DIR:-<unset>}'"
+fi
+if [ "$(agent_state_encode_project_dir /home/coreyt/projects/memex 2>/dev/null || true)" = '-home-coreyt-projects-memex' ]; then
+  pass "agent_state_encode_project_dir implements the '/'->'-' encoding Claude Code uses"
+else
+  fail "agent_state_encode_project_dir must map an absolute path to its encoded project directory"
+fi
+# Both sides must be NON-EMPTY as well as equal — an unset constant and a missing
+# function compare equal as "", which is precisely the vacuous green this repo
+# has been bitten by (see `conformance-rewrite-vacuous-green-trap`).
+DERIVED_OWN="$(agent_state_encode_project_dir "${AGENT_STATE_OWN_PROJECT_ABS:-}" 2>/dev/null || true)"
+if [ -n "$DERIVED_OWN" ] && [ -n "${AGENT_STATE_OWN_PROJECT_DIR:-}" ] \
+   && [ "$DERIVED_OWN" = "${AGENT_STATE_OWN_PROJECT_DIR}" ]; then
+  pass "the own-project constant is DERIVED from this repo's absolute path, not restated"
+else
+  fail "AGENT_STATE_OWN_PROJECT_DIR must be agent_state_encode_project_dir(AGENT_STATE_OWN_PROJECT_ABS); got '$DERIVED_OWN' vs '${AGENT_STATE_OWN_PROJECT_DIR:-<unset>}'"
+fi
+
+# ---- Y9: --redact does NOT touch own-project PATH lines -------------------
+# The own-project exemption covers PATHS. Auto-rewriting them would gut the
+# README, the handoff prompts and the measurement snapshots that cite this
+# project's own memory store on purpose — and would do it behind a banner, which
+# is worse than the warning it replaced.
+Y9_DIR="$TMPROOT/redact-own-paths"
+mkdir -p "$Y9_DIR"
+Y9_FILE="$Y9_DIR/own-paths.md"
+{ printf 'prose-before\n'; own_slurped_line; own_tool_results_line; printf 'prose-after\n'; } >"$Y9_FILE"
+cp "$Y9_FILE" "$TMPROOT/own-paths.snapshot"
+run_checker --root "$Y9_DIR" --redact
+expect_rc 0 "--redact over an own-project-only tree exits 0"
+if cmp -s "$Y9_FILE" "$TMPROOT/own-paths.snapshot"; then
+  pass "--redact leaves own-project PATH lines BYTE-IDENTICAL (no banner, no marker)"
+else
+  fail "--redact rewrote own-project path lines; diff: $(diff "$TMPROOT/own-paths.snapshot" "$Y9_FILE" || true)"
+fi
+
+# ============================================================================
+# Arm Z — FIX-2: CONTENT-BLOCK redaction. The 0.8.14 shape.
+# ============================================================================
+# `seq-130` ruling 2. The own-project exemption covers PATHS, not CONTENT: a
+# transcript that echoes `ls ~/.claude/projects/<own>/memory` and then carries
+# that command's OUTPUT is publishing this repo's private agent state, which the
+# path-level gate never sees (the content lines carry no path prefix at all).
+# `--redact` therefore removes the OUTPUT BLOCK of any agent-state-reading
+# command while KEEPING the echo — the echo is evidence of what happened, and is
+# path-only, hence WARN.
+Z_DIR="$TMPROOT/redact-content-block"
+mkdir -p "$Z_DIR"
+Z_FILE="$Z_DIR/exec-block.log"
+{
+  printf 'line-before-untouched\n'
+  own_exec_content_block
+  printf 'codex\n'
+  printf 'verdict: no [P1] findings\n'
+} >"$Z_FILE"
+
+run_checker --root "$Z_DIR" --redact
+expect_rc 0 "--redact exits 0 after cleaning a content block"
+
+if grep -q 'OWN-MEMORY-CONTENT-ALPHA' "$Z_FILE" || grep -q 'OWN-MEMORY-CONTENT-BETA' "$Z_FILE"; then
+  fail "the slurped CONTENT survived --redact; got: $(cat "$Z_FILE")"
+else
+  pass "the command's OUTPUT (the state's CONTENT) is gone from the redacted file"
+fi
+if grep -q 'REDACTED TC-86' "$Z_FILE"; then
+  pass "the removed content block is REPLACED IN PLACE by a marker, not silently dropped"
+else
+  fail "expected a content-block marker; got: $(cat "$Z_FILE")"
+fi
+if grep -q "projects/$OWN_PROJECT_DIR_LITERAL/memory" "$Z_FILE"; then
+  pass "the command ECHO survives (path-only evidence of what happened)"
+else
+  fail "--redact must keep the command echo, only its output goes; got: $(cat "$Z_FILE")"
+fi
+if grep -qx 'line-before-untouched' "$Z_FILE" \
+   && grep -qx 'codex' "$Z_FILE" \
+   && grep -qx 'verdict: no \[P1\] findings' "$Z_FILE"; then
+  pass "the block terminator and the surrounding transcript are intact (the file is not gutted)"
+else
+  fail "--redact disturbed the surrounding transcript; got: $(cat "$Z_FILE")"
+fi
+if grep -q 'STEWARD REDACTION' "$Z_FILE" && grep -q -- "$OWN_PROJECT_DIR_LITERAL" "$Z_FILE"; then
+  pass "the banner is prepended and names this repo's OWN project directory"
+else
+  fail "expected a banner naming the own project; got: $(cat "$Z_FILE")"
+fi
+if grep -q 'OWN PROJECT' "$Z_FILE" && grep -q 'NO FINDING WAS LOST' "$Z_FILE" && grep -q 'PUBLIC' "$Z_FILE"; then
+  pass "the banner states it was this repo's own state, the reason, and that no finding was lost"
+else
+  fail "the banner must state the own-project provenance, the reason and the no-finding-lost claim; got: $(cat "$Z_FILE")"
+fi
+
+run_checker --root "$Z_DIR"
+expect_rc 0 "the redacted content-block tree passes the gate"
+expect_out '^WARN' "the surviving command echo is still surfaced as an own-project warning"
+
+cp "$Z_FILE" "$TMPROOT/content-block-first-pass.snapshot"
+run_checker --root "$Z_DIR" --redact
+expect_rc 0 "a second --redact over the content-block tree exits 0"
+if cmp -s "$Z_FILE" "$TMPROOT/content-block-first-pass.snapshot"; then
+  pass "content-block redaction is IDEMPOTENT (the marker and banner do not re-trigger it)"
+else
+  fail "content-block redaction is not idempotent; diff: $(diff "$TMPROOT/content-block-first-pass.snapshot" "$Z_FILE" || true)"
+fi
+
+# ============================================================================
+# Arm AA — the REAL 0.8.14 transcript, redacted per `seq-130` ruling 2.
+# ============================================================================
+# dev/plans/runs/0.8.14-slice-10-fix1-review-20260704T011100Z.log (on main at
+# 5e202ea8) is the ONE committed instance of agent-state CONTENT rather than a
+# mere path: a codex session `ls`'d and then `sed`'d this repo's memory store and
+# the transcript carried the results. It is under dev/plans/runs/, NOT
+# dev/plans/runs/codex/**, so the standing prohibition on rewriting transcripts
+# does not cover it, and this redaction was explicitly authorised.
+#
+# TC-RUBRIC-7 closes a review on a PERSISTED artifact, so the two halves are
+# asserted together: the slurped content is gone AND the verdict survives.
+LOG_0814="$REPO_ROOT/dev/plans/runs/0.8.14-slice-10-fix1-review-20260704T011100Z.log"
+if [ ! -f "$LOG_0814" ]; then
+  fail "the 0.8.14 review transcript must still exist (redact, never delete)"
+else
+  pass "the 0.8.14 review transcript still exists after redaction (TC-RUBRIC-7 evidence)"
+  for needle in '# Memory index' 'originSessionId' 'node_type: memory' 'code-grounded-audit.md'; do
+    if grep -qF -- "$needle" "$LOG_0814"; then
+      fail "the 0.8.14 log still carries slurped memory content: '$needle'"
+    else
+      pass "the 0.8.14 log is clean of the slurped memory content: '$needle'"
+    fi
+  done
+  if grep -qF -- '## Verdict: CONCERN' "$LOG_0814"; then
+    pass "the 0.8.14 review's VERDICT survives the redaction"
+  else
+    fail "the 0.8.14 redaction destroyed the review verdict"
+  fi
+  if grep -qF -- 'Step-17 migration comment still claims' "$LOG_0814"; then
+    pass "the 0.8.14 review's finding and reasoning survive the redaction"
+  else
+    fail "the 0.8.14 redaction destroyed the review's reasoning"
+  fi
+  if grep -qF -- 'STEWARD REDACTION' "$LOG_0814" && grep -qF -- 'REDACTED TC-86' "$LOG_0814"; then
+    pass "the 0.8.14 redaction is VISIBLE (banner + in-place markers), not silent"
+  else
+    fail "the 0.8.14 redaction must be visible via the shared banner and marker"
+  fi
+  run_checker "$LOG_0814"
+  expect_rc 0 "the redacted 0.8.14 log passes the gate"
+  expect_out '^WARN' "its surviving command echoes are own-project warnings, as ruled"
 fi
 
 if [ "$FAILED" -gt 0 ]; then
