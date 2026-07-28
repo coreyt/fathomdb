@@ -7,7 +7,7 @@
   "master": "dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md",
   "schema_version": 24,
   "schema_version_source": "pub const SCHEMA_VERSION in src/rust/crates/fathomdb-schema/src/lib.rs",
-  "landed_verified_at": "fae276b9",
+  "landed_verified_at": "9b3ed0e3",
   "landed_verified_how": "each SHA below is the landing merge commit for its slice AND is an ancestor of origin/main (git merge-base --is-ancestor), with the merge subject matching this repo's `merge(0.8.20): Slice[- ]N` landing convention",
   "ladder": [
     {
@@ -108,9 +108,10 @@
         20,
         25
       ],
-      "status": "NOT_STARTED",
-      "sha": null,
-      "publish_precondition": true
+      "status": "LANDED",
+      "sha": "9b3ed0e3",
+      "publish_precondition": true,
+      "merge_subject": "merge(0.8.20): Slice 30 COMPLETE — R-20-H7 can-i-deploy contract-conformance gate"
     },
     {
       "slice": 31,
@@ -142,11 +143,11 @@
     10,
     15,
     20,
-    25
+    25,
+    30
   ],
-  "next_slice": 30,
+  "next_slice": 21,
   "remaining_ladder": [
-    30,
     21,
     22,
     31,
@@ -155,12 +156,11 @@
   "ladder_order": "SEQUENTIAL — HITL-approved 2026-07-27 (steward seq-119). Execution order: 30 (publish precondition, first on the critical path) → 21 → 22 → 31 (Library Sweep #3) → DOC-HYGIENE-3 (cross-cutting, NOT a ladder slice and carries no pico label, per seq-106) → the batched governed-surface decision (HITL) → 40. Parallel 20 || 25 was declined earlier (master F-34).",
   "unblocked": [
     21,
-    22,
-    30
+    22
   ],
   "unblocked_by": {
-    "requirement": "the Slice 20 + Slice 25 landing pair",
-    "gloss": "R-20-DR and R-20-SUR, the last dependency any of the three was waiting on"
+    "requirement": "the Slice 30 landing (R-20-H7)",
+    "gloss": "the publish precondition is now SATISFIED and LANDED; 21 and 22 were already unblocked by the Slice 20 + Slice 25 pair and are next in the sequential order"
   },
   "publish_precondition_slice": 30,
   "acceptance": {

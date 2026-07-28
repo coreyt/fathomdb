@@ -31,7 +31,7 @@ step 24). Ledger tip **`3264114a`** (steward seq-98).
 > close records (§11 Slice 5, §12 Slice 10, §13 Slice 15b) are retained **as history**; their "not landed" /
 > "Slice 15 OPEN" banners describe the on-branch state at the time they were written, **not** current truth.
 
-**Last updated:** 2026-07-26 (**Slice 20c LANDED — `841c307b`; R-20-DR CLOSED**; close record §16. Slice 25 landed `83b1c818`, close record §15).
+**Last updated:** 2026-07-28 (**Slice 30 LANDED — `9b3ed0e3`; R-20-H7 CLOSED and the PUBLISH PRECONDITION SATISFIED**; close record §17. Prior: Slice 20c `841c307b` §16, Slice 25 `83b1c818` §15).
 
 ---
 
@@ -39,10 +39,10 @@ step 24). Ledger tip **`3264114a`** (steward seq-98).
 
 | | |
 |---|---|
-| **Slice in flight** | **NONE — Slice 20c landed (`841c307b`) and Slice 25 landed (`83b1c818`).** The ladder is between slices; **Slice 20 is now COMPLETE** — R-20-DR is closed and the flush barrier shipped on the existing `drain` (§16). |
+| **Slice in flight** | **NONE — Slice 30 landed (`9b3ed0e3`).** The ladder is between slices. **The PUBLISH PRECONDITION is now SATISFIED and LANDED**: R-20-H7's `can-i-deploy` contract-conformance gate exists and is green (close record §17). Prior: Slice 20c (`841c307b`) and Slice 25 (`83b1c818`). |
 | **Status** | **Slices 0, 5, 10, 15 all COMPLETE and LANDED on `origin/main`** (header table). The keystone landed **R-20-PR + R-20-EAV + `filterable` pre-KNN + TC-33 + TC-34 + Finding-1 (A) + `#[non_exhaustive] SearchFilter`**; codex §9 **terminal-clean**; gates re-verified by the Steward (clippy 0, check 0, (A) pin 1/1, AC-041 3/3). **SCHEMA 24.** |
-| **Unblocks** | <!-- BEGIN GENERATED release-state:0.8.20:status-unblocks -->**Slices 21, 22 and 30 are NOW UNBLOCKED** — the Slice 20 + Slice 25 landing pair (R-20-DR and R-20-SUR, the last dependency any of the three was waiting on) now exists. Slice 30 (H7) depends on 10/15/20/25. **AC-079 is PRE-SIGNED** — the HITL signed off on the accumulated governed-surface delta (Slices 5d + 10b + 15b + 15d) on 2026-07-25 (master F-34), pinned to the content of `src/conformance/governed-surface-allowlist.json`; any diff to that file re-opens it (the T1e pin). Pre-signing is NOT minting: AC-079 is minted and recorded as SIGNED at Slice 40 (§4 #1). **Publish is gated by the separate HITL publish gate, not by this AC.**<!-- END GENERATED release-state:0.8.20:status-unblocks --> |
-| **Immediate next action** | **Commission Slice 30 — R-20-H7 `can-i-deploy` contract-conformance gate. It is a PUBLISH PRECONDITION: absent-or-failing HOLDS the breaking pair.** It depends on 10/15/20/25, **all of which are now LANDED**. **FULL REMAINING SEQUENCE, HITL-approved 2026-07-27 (steward `seq-119`), SEQUENTIAL: 30 → 21 → 22 → 31 → DOC-HYGIENE-3 → ⟨batched governed-surface decision⟩ → 40.** Slice 30 runs **first** of the remainder by ruling — it is the publish precondition and the likeliest source of a downstream-reshaping surprise. **21** = R-20-CR (TC-57 characterize→fix · ac_002 oracle replacement · **TC-71**, no longer a carry — it is now scoped work); **22** = R-20-VC (TC-67 option (c) · TC-68 fingerprint-cache · Slice-15b decision #18 · sqlite-vec #99 probe); **31** = Library Sweep #3, **no requirement id** (TC-76); **DOC-HYGIENE-3** is cross-cutting, not a ladder slice, no pico label. **The governed-surface pin never tripped in 20c** — the allowlist is byte-identical and AC-079's pre-sign (F-34) is intact; the batched ceremony happens ONCE, and now sits **after 22** rather than strictly at 30 → 40, because 22 may add surface (TC-67/#18) — a pin trip means **HALT AND ESCALATE TO THE STEWARD** (`seq-113`), never a workaround. **Engine fix-round cap for 21/22 (TC-75):** 3 same-finding · **10 total** · mandatory Steward check-in at 6. Commission each as an **orchestrator** (`/orchestrate`); **NOT `/goal`** — standing ruling **steward `seq-104`** (`927ffb35`). |
+| **Unblocks** | <!-- BEGIN GENERATED release-state:0.8.20:status-unblocks -->**Slices 21 and 22 are NOW UNBLOCKED** — the Slice 30 landing (R-20-H7) (the publish precondition is now SATISFIED and LANDED; 21 and 22 were already unblocked by the Slice 20 + Slice 25 pair and are next in the sequential order) now exists. Slice 30 (H7) depends on 10/15/20/25. **AC-079 is PRE-SIGNED** — the HITL signed off on the accumulated governed-surface delta (Slices 5d + 10b + 15b + 15d) on 2026-07-25 (master F-34), pinned to the content of `src/conformance/governed-surface-allowlist.json`; any diff to that file re-opens it (the T1e pin). Pre-signing is NOT minting: AC-079 is minted and recorded as SIGNED at Slice 40 (§4 #1). **Publish is gated by the separate HITL publish gate, not by this AC.**<!-- END GENERATED release-state:0.8.20:status-unblocks --> |
+| **Immediate next action** | **Commission Slice 21 — R-20-CR.** Slice 30 is **DONE** (`9b3ed0e3`), so the publish precondition is satisfied and the remainder runs in order. **REMAINING SEQUENCE, HITL-approved 2026-07-27 (steward `seq-119`), SEQUENTIAL: 21 → 22 → 31 → DOC-HYGIENE-3 → ⟨batched governed-surface decision⟩ → 40.** **21** = R-20-CR (TC-57 characterize→fix · ac_002 oracle replacement · **TC-71**, no longer a carry — it is now scoped work); **22** = R-20-VC (TC-67 option (c) · TC-68 fingerprint-cache · Slice-15b decision #18 · sqlite-vec #99 probe); **31** = Library Sweep #3, **no requirement id** (TC-76); **DOC-HYGIENE-3** is cross-cutting, not a ladder slice, no pico label. **The governed-surface pin never tripped in 20c or in 30** — the allowlist is byte-identical and AC-079's pre-sign (F-34) is intact; the batched ceremony happens ONCE, and sits **after 22**, because 22 may add surface (TC-67/#18) — a pin trip means **HALT AND ESCALATE TO THE STEWARD** (`seq-113`), never a workaround. **Fix-round cap for 21/22 — RE-KEYED TO ROUND PRODUCTIVITY (TC-82, steward `seq-125`, HITL 2026-07-28; supersedes TC-75's directory predicate):** 3 same-finding, **universal** Steward check-in at **6**, extension to **10** only where every round found a *new and distinct* defect, beyond 10 an HITL halt. A **mid-flight `SendMessage` steer is NOT a round** (TC-84) — the cap bounds rounds, not correction volume. Commission each as an **orchestrator** (`/orchestrate`); **NOT `/goal`** — standing ruling **steward `seq-104`** (`927ffb35`). |
 
 **Slices 0, 5, 10, 15 close records** are §11 (Slice 5), §12 (Slice 10), §13 (Slice 15b — TC-34 only; the
 registry/EAV/TC-33 remainder that also landed in the keystone `a2022957` is summarised in §8 and in
@@ -62,17 +62,16 @@ by that ruling.
 | **15** | **Projection registry (C-1) + EAV/property-FTS (R-20-PR, R-20-EAV) + TC-34 + TC-33 + Finding-1 (A) + `#[non_exhaustive] SearchFilter`** | 0, 10 | **COMPLETE — LANDED `a2022957`** (merge, Phase-2 keystone) — SCHEMA →24; codex §9 terminal-clean; Steward-verified gates. §13 = the TC-34 sub-part only; registry/EAV/TC-33 remainder summarised in §8 |
 | **20** | `dense_readiness` + flush-to-readiness barrier (R-20-DR) **+ TC-45 supersession-terminal fix** | 15 | **✅ COMPLETE — 20b `26b237c0` + 20c `841c307b`** (merges). **TC-45** closed (both `commit_batch` sites record `'up_to_date'`; SCHEMA stays 24). **R-20-DR closed:** part 1 = `DenseReadiness {Ready, Embedding}` derived onto `ProjectionSpec.vector` + the atomic flip; part 2 = the **flush-to-readiness barrier, shipped by REUSING `drain`** per `api-surface.md` **C4** — **there is NO `flush_embeddings()` verb** (TC-55 = INSTRUMENTATION). Fixed entirely on the **enqueue** side; `drain` stays passive and `connection_has_pending_projection_work` was not restructured (TC-56). **ZERO net-new governed commands; allowlist byte-identical; pin exit 0; SCHEMA 24.** Five codex §9 rounds, all RED-first; **one finding left OPEN at the circuit breaker = TC-71**. Close record **§16** |
 | **25** | Surrogate minting — governed entities ONLY (R-20-SUR) | 15 | ✅ **LANDED `83b1c818`** — D1 static migration guard + D2 dynamic whole-ladder proof (`NULL → NOT NULL == 0`) + D3 registration-inertness; zero engine source change, SCHEMA stays 24, allowlist byte-identical, pin exit 0. codex §9: 3 fix rounds, halted at the circuit-breaker on a 4th same-family [P2]; residual ACCEPTED by Steward ruling (D2 is row-based ⇒ shape-independent). Residual recorded as **TC-66**. |
-| **30** | **RUBRIC-H7 `can-i-deploy` contract gate (R-20-H7)** — ⚑ **runs FIRST of the remainder** | 10,15,20,25 | **not started — publish precondition; NEXT TO COMMISSION** |
+| **30** | **RUBRIC-H7 `can-i-deploy` contract gate (R-20-H7)** | 10,15,20,25 | ✅ **COMPLETE — LANDED `9b3ed0e3`** (merge). **The PUBLISH PRECONDITION is SATISFIED.** 45 C-1 clauses (26 CHECKABLE / 12 cross-repo / 7 prose), **zero failing**; zero engine source; allowlist byte-identical, pin exit 0; SCHEMA stays 24. Seven codex §9 rounds + the fix-6c micro-fix, **every round productive** and the 3-same-finding bound never firing — fix-4 alone found **18 of 26** clauses had a demonstrable false green; fixtures 106 → 276 → **317**. Final [P2] **REFUTED** by Steward test, not accepted as risk. fix-6c review **terminal-clean** (no P1/P2/low). Close record **§17** |
 | **21** | **Concurrency + test-oracle repair (R-20-CR)** — TC-57 · ac_002 oracle · TC-71 | 20 | not started — reserved gap, 20 band |
 | **22** | **Vector-arm consumer contract (R-20-VC)** — TC-67 (c) · TC-68 · decision #18 · #99 probe | 15,20 | not started — reserved gap, 20 band |
 | **31** | **Library Sweep #3** — dependency hygiene, **no requirement id** (TC-76) | — | not started — sequenced after 30 by ruling, no technical dep |
 | 40 | Verification + release readiness (publish-or-hold); **TC-16 determination FIRST** (`seq-118`) | 5,30 | not started |
 
-**Ladder remaining: 30 → 21 → 22 → 31 → DOC-HYGIENE-3 → ⟨batched governed-surface decision⟩ → 40, run
+**Ladder remaining: 21 → 22 → 31 → DOC-HYGIENE-3 → ⟨batched governed-surface decision⟩ → 40, run
 SEQUENTIALLY** (HITL 2026-07-27, steward `seq-119`; parallel was declined earlier at F-34). Slices
-**0/5/10/15/20/25 are all LANDED**. **Immediate next: Slice 30** — fully specified at `plan-0.8.20.md`
-§3 R-20-H7, all four dependencies landed, and the C-1 Q6(b) amendment (`efa8d584`) removed the
-permanently-red hazard that would have held the gate forever.
+**0/5/10/15/20/25/30 are all LANDED**. **Immediate next: Slice 21** (R-20-CR) — specified at
+`plan-0.8.20.md` §3, its only dependency (20) landed.
 
 **Band occupancy (plan §5):** the 20 band holds 21 and 22 — **two of four slots used**. The tripwire stays
 at band overflow (**TC-77**), *conditionally*: if 21 or 22 spawns two or more further slices, it returns to
@@ -1286,3 +1285,79 @@ Commits: `ddaf7320` (RED) · `da7c5b76` (GREEN) · `e7a4676a` (Leg B + docs) · 
 `77bca9d4`/`c7c0f527`/`0759715a` (fix-1) · `63554cee`/`0efcf9cd`/`1b0cf514` (fix-2) ·
 `87ac6491` (revert of fix-3) · `3ebfb373`/`35de816c`/`1f46438b` (fix-4 = R2) ·
 `d5cc51e0`/`e2df8646`/`30ab62df` (fix-5) · merge **`841c307b`**.
+
+---
+
+## 17. Slice 30 close — **R-20-H7 COMPLETE**; the publish precondition is SATISFIED
+
+**LANDED `9b3ed0e3`** (merge, 2026-07-28), off branch `orch-0.8.20-s30`. **Zero engine source** —
+`git diff --name-only main...orch-0.8.20-s30 -- src/` is empty across the whole slice. SCHEMA stays **24**.
+Governed-surface allowlist **byte-identical**, pin exit 0, so **AC-079's pre-sign (F-34) is intact** and the
+batched ceremony still happens once, after Slice 22.
+
+### 17.1 What shipped
+
+A Pact-style **`can-i-deploy` contract-conformance gate** (`scripts/check-c1-conformance.sh` + its pin
+`scripts/c1-conformance-pin.json`) that mechanically verifies as-built code still satisfies the ratified
+`OPP-12-C1-converged-contract.md` — instead of humans re-reading prose at the co-land. Wired into
+`.github/workflows/ci.yml` and into `scripts/preflight.sh --landing`, with a **2 240-line fixture suite**.
+
+**C-1 decomposition: 45 clauses — 26 CHECKABLE / 12 cross-repo / 7 prose, ZERO failing.**
+
+> ⚠ **The "17 clauses, 16 passing" figure from `seq-115` does not reproduce and was never true.** The prior
+> Steward relayed it into the commission brief as scaffolding; the orchestrator derived its own decomposition
+> and was **right to discard it**. Do not reintroduce it.
+
+### 17.2 codex §9 — seven rounds plus a micro-fix, and the review was LOAD-BEARING
+
+Every round found a **new and distinct** defect; the **3-same-finding anti-thrash bound never fired once**.
+Round 1 regex shape + open vocabulary · 2 refinements of both · 3 **file scope** (negative probes read one
+`lib.rs`, missing a literal violation in a sibling module) · 4 **subject binding** · 5 **wrong subject +
+inactive proof** (`fn_defined` accepted a function with `#[test]` removed) · 6 a receiver-less `fn_sig` false
+green **and** a nested-inner-attribute false RED · 6b a **leading shebang** false green the round-6 narrowing
+had itself opened · **6c a leading UTF-8 BOM**, the same false green through a different first byte.
+
+**fix-4 alone found that 18 of 26 clauses had a demonstrable false green.** Two weak probe kinds were deleted
+outright rather than left unused; a third was made unreachable for test paths. Fixture assertions grew
+**106 → 276 → 317**. **The round-1 gate would have been substantially decorative.**
+
+**fix-6c (the landing delta).** `read_source` decodes with `errors="replace"`, which does **not** strip a BOM,
+so U+FEFF arrived at index 0 and defeated the leading-header walk three ways at once — it is not `#!`, it is
+category **Cf** so `.isspace()` is **False**, and it is not `#![` — leaving a BOM-prefixed file with a
+file-level `#![cfg(..)]` reading as un-gated. **Reachability today is ZERO**: no tracked source file carries a
+BOM, exactly as the shebang hole was latent when it was fixed. Two lines, ordered **before** the shebang branch
+as rustc orders it (`rustc` strips one BOM, and only then may line 1 be a shebang), plus fixture arm 12al.
+Ruled the **completion of finding #2**, not a round 8.
+
+**An override stands, and it is on a REFUTATION — not on accepted risk.** Codex's final `[P2]` claimed the
+receiver probe false-REDs on `self: &Self`. The Steward tested the shipped regex against ten cases:
+`(self: &Self`, `(self: &mut Self`, `(&self`, `(&mut self`, `(&'a self`, `(self`, `(mut self` all **match**;
+`(specs: …, drop: bool)` and `(specs: …, myself: u8)` correctly **do not**. **Codex was factually wrong.**
+
+**fix-6c review verdict: TERMINAL CLEAN — no [P1], no [P2], no [low].** It independently ran
+`rustc --test --list`: BOM+cfg and BOM+shebang+cfg give `0 tests`, BOM-only gives `1 test`, and double-BOM and
+mid-file BOM are rustc **syntax errors**, not silent test-evaporation paths.
+
+### 17.3 Gates — Steward-re-run at `a26a7655`, exit codes captured individually
+
+`check-c1-conformance` **0** (26/12/7, 45 total — counts unmoved) · fixture suite **0** at **317** assertions
+(307 → 317, pure addition) · `check-governed-surface-pin` **0**, allowlist byte-identical vs `337c2b12` ·
+`preflight.sh --landing` **0** *(in the worktree — TC-RUBRIC-5 makes it HARD-fail in the primary checkout by
+design, which is not a defect)* · `cargo clippy --workspace --all-targets` **0** ·
+`cargo check --workspace --all-targets` **0**.
+
+**Steward-verified independently, not taken from the orchestrator's report.** Diff scope confirmed from git,
+and the new BOM arm was demonstrated to **BIND**: reverting only the two-line strip turns the suite **rc=1**
+with 7 FAILs naming the right clause and the `CONDITIONALLY COMPILED as a whole` diagnostic; restored, **rc=0**.
+
+### 17.4 What this slice changed about the PROGRAM
+
+Slice 30 is why the fix-round cap now keys on **round productivity** rather than on which directory a slice
+touches (**TC-82**, steward `seq-125`, HITL 2026-07-28): it touched **zero engine source** and still ran seven
+productive rounds, so TC-75's directory predicate could not reach it. See `orchestration.md` §6.
+
+### 17.5 Closure artifacts
+
+Commits: `9ef5179b` (RED fix-6c) · `0d9b40d7` (GREEN fix-6c) · `a26a7655` (closure `output.json`) ·
+`892ba0ec` (fix-6c transcript) · merge **`9b3ed0e3`**. Eight codex transcripts under
+`dev/plans/runs/codex/0.8.20/` (TC-RUBRIC-7). Closure `dev/plans/runs/0.8.20-slice-30-output.json`.
