@@ -431,23 +431,36 @@ forward backfill, the drop inverse **and** late enrolment, so a fix must re-veri
 loss** — the write is accepted, stays lexically searchable, and is embedded on the next embedder-backed open.
 Documented in `dev/interfaces/{rust,python,typescript}.md` + `CHANGELOG.md`.
 
-**➡ IMMEDIATE NEXT: Slice 30** (R-20-H7 `can-i-deploy` contract-conformance gate — a **publish precondition**).
+**Landed since the Slice-20 narration above:** **Slice 25** at `83b1c818`, **Slice 30** (R-20-H7
+`can-i-deploy` contract-conformance gate) at `9b3ed0e3` — **the publish precondition is SATISFIED** — and the
+cross-cutting **⟨TC-86 transcript-hygiene fix⟩** at `0a500de9`. SCHEMA is **24**.
 
-**Remaining ladder, HITL-approved 2026-07-27 (steward `seq-119`), SEQUENTIAL:**
-**30 → 21 → 22 → 31 → DOC-HYGIENE-3 → ⟨batched governed-surface decision⟩ → 40.**
-Slice 30 runs first of the remainder by ruling — see §4. **21** (R-20-CR) and **22** (R-20-VC) are
-reserved-gap slices in the 20 band; **31** is Library Sweep #3 and carries no requirement id (TC-76);
-**DOC-HYGIENE-3** is cross-cutting and is not a ladder slice. Commission each as an **orchestrator** —
-**NOT** `/goal` (standing ruling `927ffb35` · steward `seq-104`). Board of record:
-`runs/STATUS-0.8.20.md`; open HITL decisions: §11 — the **live** open set is **two**
+**➡ IMMEDIATE NEXT: Slice 21** (R-20-CR — concurrency + test-oracle repair: **TC-57** characterize-then-fix ·
+**ac_002** oracle replacement · **TC-71**, the finding §9 left open at the Slice-20c breaker, above).
+
+**Remaining ladder, HITL-approved 2026-07-28 (F-36 · steward `seq-129`), SEQUENTIAL — this SUPERSEDES the
+F-35 order (`seq-119`), whose leading `30` and `TC-86` legs are now both landed:**
+**21 → 22 → 31 → DOC-HYGIENE-3 → ⟨batched governed-surface decision⟩ → 40.**
+**21** (R-20-CR) and **22** (R-20-VC) are reserved-gap slices in the 20 band; **31** is Library Sweep #3 and
+carries no requirement id (TC-76); **DOC-HYGIENE-3** is cross-cutting and is not a ladder slice. The batched
+surface decision sits **after 22** (22 may add surface via TC-67 / #18), not at the 30 → 40 boundary.
+Commission each as an **orchestrator** — **NOT** `/goal` (standing ruling `927ffb35` · steward `seq-104`).
+Board of record: `runs/STATUS-0.8.20.md`; open HITL decisions: §11 — the **live** open set is **two**
 (batched governed-surface decision, publish), per `release-state-0.8.20.json` `decisions.unruled`.
 
-> **Fix-round cap for these slices (TC-75, HITL-ruled 2026-07-27 — `seq-119`).** 21 and 22 both touch
-> `fathomdb-engine/src`, so the **engine** bound applies: **3 rounds on the same finding** (unchanged — the
-> anti-thrash rule), **10 rounds total** (was 6), with a **mandatory Steward check-in at 6** where the
-> orchestrator reports what each round found and the Steward rules continue / re-scope / escalate. Basis:
-> in Slice 20c the same-finding rule never fired — every round found a **new, distinct** defect — so the
-> binding constraint was the total, and the breaker fired on a *productive* loop.
+> **Fix-round cap for these slices — PRODUCTIVITY predicate (TC-82, HITL-ruled 2026-07-28 — `seq-125`).**
+> **This SUPERSEDES the TC-75 engine amendment (`seq-119`): the predicate is NO LONGER which directory a
+> slice touches.** On **every** slice: **3 rounds on the same finding** (unchanged — the anti-thrash rule),
+> and at **round 6** a **mandatory halt and Steward check-in** where the orchestrator reports what each round
+> found and the Steward rules continue / re-scope / escalate. Rounds 7-10 are **not authorized without it**;
+> the Steward may extend to **10 only where every round has been PRODUCTIVE** (each finding a *new and
+> distinct* defect) — a repeated or empty round means **6 binds**. Beyond 10 is an **HITL halt**. Basis:
+> Slice 30 touched **zero engine source** and still ran seven rounds, each finding a new, distinct
+> false-negative class — directory is a poor proxy for risk.
+>
+> **What counts as a round (TC-84, `seq-125`):** a round is a **review-verdict cycle** (verdict → fix →
+> re-review). A **mid-flight `SendMessage` steer is NOT a round** and does not advance the counter. That
+> consequence is known and accepted; it is **not** licence to drip-feed corrections to dodge the check-in.
 
 *(Everything below in §9 is retained as landed history — the Slice-15 ratified decisions and the pre-keystone
 "Slice 15 is OPEN" close notes describe the state before the keystone merged. Do not act on the "OPEN / BLOCKED"
