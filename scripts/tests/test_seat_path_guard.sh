@@ -32,17 +32,25 @@
 #         -> every ALLOW arm GREEN, every DENY arm RED. That second run is the
 #            real witness: it proves the DENY arms, and only the DENY arms,
 #            discriminate a working guard from a no-op.
-#   Arm 16 (the UNWIRED marker) carries its own vacuity trap — the file it reads
-#   is gitignored and absent from a fresh clone — so it first proves its own
-#   detector fires against a positive fixture before applying it to the real
+#   Arm 16 (the settings.json boundary) carries its own vacuity trap — the file
+#   it reads is gitignored and absent from a fresh clone — so it first proves its
+#   own detector fires against a positive fixture before applying it to the real
 #   settings file(s).
 #
+# WIRING (Phase 2, TC-85 / steward seq-127)
+#   The guard is wired through AGENT FRONTMATTER (`hooks:` in
+#   .claude/agents/{orchestrator,steward}.md), NOT through .claude/settings.json.
+#   Arms 65-72 assert that wiring exists and resolves; arm 16 asserts the
+#   settings.json route stays permanently unused. The two are complements:
+#   arm 16 is no longer a temporary marker, it is the boundary.
+#
 # ISOLATION
-#   Every arm pipes a synthetic PreToolUse payload into the hook under
-#   `env -u FATHOMDB_SEAT` (or an explicit FATHOMDB_SEAT=...). The hook is a
-#   pure stdin->stdout function: it never touches the filesystem, so the only
+#   Every behavioural arm pipes a synthetic PreToolUse payload into the hook
+#   under `env -u FATHOMDB_SEAT` (or an explicit FATHOMDB_SEAT=...). The hook is
+#   a pure stdin->stdout function: it never touches the filesystem, so the only
 #   temp state here is the mktemp -d fixture used by arm 16's positive control.
-#   No real file is ever written by an arm, and no arm mutates this checkout.
+#   Arms 65-72 are static parses of tracked files. No real file is ever written
+#   by an arm, and no arm mutates this checkout.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -335,15 +343,19 @@ fi
 
 # ================================ ARM 16 =====================================
 # ############################################################################
-# # PHASE-1 UNWIRED MARKER — FLIP THIS ARM WHEN PHASE 2 WIRES THE HOOK.       #
-# # ASH-B ships the guard DELIBERATELY UNWIRED: nothing in .claude/settings   #
-# # .json references seat-path-guard, so installing this branch changes the   #
-# # behaviour of exactly zero running sessions. Hooks in settings.json are    #
+# # PERMANENT BOUNDARY — settings.json IS NEVER THE WIRING HOME.              #
+# # This is NOT a temporary marker and there is nothing here to "flip". Phase #
+# # 2 (TC-85, steward seq-127) wired the guard, and the HITL ruling that      #
+# # authorised the wiring chose AGENT FRONTMATTER as the mechanism and ruled  #
+# # settings.json out permanently. Reason: hooks in settings.json are         #
 # # PROJECT-GLOBAL — they fire for the main thread AND every spawned subagent #
-# # — so wiring is an HITL-gated act, not an implementation detail. When      #
-# # Phase 2 wires it, THIS ARM GOES RED. That is the point: the red arm is    #
-# # the tripwire that forces wiring to be a conscious, reviewed change rather #
-# # than something that drifts in.                                            #
+# # in this checkout, including implementer slices, which is exactly the seat #
+# # the guard must never block — whereas a frontmatter hook is scoped to the  #
+# # declaring seat and is torn down when that subagent finishes. So a         #
+# # settings.json reference to this hook is over-broad wiring by construction.#
+# # If this arm ever goes RED, someone has widened the guard's blast radius   #
+# # from two coordinating seats to the whole project. Fix the settings file;  #
+# # do not relax this arm. The positive wiring is asserted by arms 65-72.     #
 # ############################################################################
 # Vacuity trap this arm has to dodge: .claude/settings.json is gitignored
 # (.gitignore's `.claude/*` block) and therefore ABSENT from a fresh clone, from
@@ -359,9 +371,9 @@ cat >"$POSITIVE" <<'JSON'
 "command":"$CLAUDE_PROJECT_DIR/.claude/hooks/seat-path-guard.sh"}]}]}}
 JSON
 if grep -qF "$NEEDLE" "$POSITIVE"; then
-  pass "arm 16a: the unwired-detector fires on a positive fixture (not a vacuous grep)"
+  pass "arm 16a: the settings-wiring detector fires on a positive fixture (not a vacuous grep)"
 else
-  fail "arm 16a: the unwired-detector failed to fire on a settings file that DOES wire the hook"
+  fail "arm 16a: the settings-wiring detector failed to fire on a settings file that DOES wire the hook"
 fi
 
 SETTINGS_CANDIDATES=()
@@ -386,15 +398,15 @@ done
 
 if [ "${#SETTINGS_CANDIDATES[@]}" -eq 0 ]; then
   # Not a failure: .claude/settings.json is per-user and gitignored, so a fresh
-  # clone legitimately has none — and "no settings file" IS "not wired".
+  # clone legitimately has none — and "no settings file" IS "not wired here".
   # Reported loudly so the pass is never mistaken for a positive observation.
-  pass "arm 16b: no .claude/settings*.json exists here (gitignored/per-user) — UNWIRED holds vacuously, detector proven above"
+  pass "arm 16b: no .claude/settings*.json exists here (gitignored/per-user) — the boundary holds vacuously, detector proven above"
 else
   for f in "${SETTINGS_CANDIDATES[@]}"; do
     if grep -qF "$NEEDLE" "$f"; then
-      fail "arm 16b: PHASE-1 MARKER TRIPPED — $f references '$NEEDLE'. ASH-B ships the hook UNWIRED; wiring is an HITL-gated Phase-2 act. If this is intentional, flip this arm."
+      fail "arm 16b: BOUNDARY VIOLATED — $f references '$NEEDLE'. settings.json hooks are project-global and would fire for implementer slices too; this guard is wired per-seat in .claude/agents/{orchestrator,steward}.md (TC-85). Remove the settings.json wiring — this arm is permanent, not a marker to flip."
     else
-      pass "arm 16b: $f does NOT reference '$NEEDLE' (hook still UNWIRED, as ASH-B intends)"
+      pass "arm 16b: $f does NOT reference '$NEEDLE' (settings.json is not the wiring home, as ruled)"
     fi
   done
 fi
@@ -820,6 +832,277 @@ run_hook "$(payload Bash '' 'cp -t dev/plans/runs dev/plans/x.md' orchestrator)"
 expect_allow "arm 64d: 'cp -t dev/plans/runs <file>' is ALLOWED (the allow half; -t handling must not over-block)"
 run_hook "$(payload Bash '' 'cp -p dev/plans/a.md dev/plans/b.md' orchestrator)"
 expect_allow "arm 64e: an ordinary 'cp' between allowed paths is ALLOWED (already green)"
+
+# ================== ARMS 65-72 — PHASE-2 WIRING (TC-85 / seq-127) ============
+# Every arm above proves the hook BEHAVES correctly when something runs it.
+# None of them proves anything ever runs it. That gap is what shipped in Phase 1
+# ("deliberately UNWIRED") and these arms close it: the guard is wired through
+# AGENT FRONTMATTER — a `hooks:` block in .claude/agents/{orchestrator,steward}
+# .md — which fires for that seat's own tool calls when it is spawned as a
+# subagent, and for a main thread launched as `claude --agent <seat>`, and is
+# torn down when the subagent finishes (it does not leak to siblings or to the
+# parent). settings.json is ruled out permanently; arm 16 holds that boundary.
+#
+# WHY THESE ASSERT ON PARSED YAML, NOT ON A SUBSTRING
+#   `grep -q seat-path-guard .claude/agents/steward.md` is satisfied by the
+#   PROSE in that file, by a commented-out block, or by a `hooks:` block nested
+#   under the wrong event key. Only a parse can tell "wired" from "mentioned".
+#   The one thing a parse still cannot tell you is whether the command it names
+#   is a real program — a wiring that points at a missing or non-executable file
+#   is silently inert, which is the false green that matters most here — so arm
+#   70 stats the resolved path.
+#
+# OBSERVED RED (run against the unwired files, before the frontmatter existed):
+#   arms 67, 68, 70, 71 and 72 FAILED for BOTH coordinating seats — "declares NO
+#   PreToolUse command hook", "the wiring is inert", "MISSING:Edit,Write,Bash" —
+#   12 test(s) failed, rc=1, 123 passed. Arms 65/66/69 were green then and must
+#   stay green: they are the "nothing else moved" controls, so they carry no
+#   RED witness of their own and are not evidence of wiring.
+
+# ---------------------------------------------------------------------------
+# fm <file> <query> [args...] — parse an agent file's YAML frontmatter and
+#   answer one structured question about it. Sets FM_OUT / FM_RC / FM_ERR.
+#   Queries:
+#     parse             -> "OK" iff the frontmatter block is well-formed YAML
+#     name              -> the `name:` scalar
+#     tools             -> the `tools:` scalar, verbatim
+#     has-hooks         -> "yes" / "no" (is the `hooks:` key present at all)
+#     pretool-commands  -> one line per hooks.PreToolUse[*].hooks[*].command
+#     pretool-types     -> one line per hooks.PreToolUse[*].hooks[*].type
+#     matcher-covers V.. -> "COVERS" iff every PreToolUse matcher-group taken
+#                          together fullmatches each verb V (regex semantics,
+#                          the same shape the harness applies)
+# ---------------------------------------------------------------------------
+fm() {
+  local f="$1"
+  shift
+  set +e
+  FM_OUT="$(python3 - "$f" "$@" 2>"$TMPROOT/fm.err" <<'PY'
+import re
+import sys
+
+import yaml
+
+path, query = sys.argv[1], sys.argv[2]
+rest = sys.argv[3:]
+raw = open(path, encoding="utf-8").read()
+if not raw.startswith("---\n"):
+    sys.stderr.write("no opening frontmatter delimiter\n")
+    sys.exit(3)
+end = raw.find("\n---\n", 3)
+if end < 0:
+    sys.stderr.write("unterminated frontmatter block\n")
+    sys.exit(3)
+try:
+    fm = yaml.safe_load(raw[4:end + 1])
+except Exception as exc:  # malformed YAML must be loud, never a silent pass
+    sys.stderr.write("frontmatter is not valid YAML: %s\n" % exc)
+    sys.exit(3)
+if not isinstance(fm, dict):
+    sys.stderr.write("frontmatter is not a mapping\n")
+    sys.exit(3)
+
+
+def pretool_groups():
+    hooks = fm.get("hooks")
+    if not isinstance(hooks, dict):
+        return []
+    groups = hooks.get("PreToolUse")
+    if not isinstance(groups, list):
+        return []
+    return [g for g in groups if isinstance(g, dict)]
+
+
+def entries():
+    for g in pretool_groups():
+        for h in g.get("hooks") or []:
+            if isinstance(h, dict):
+                yield g, h
+
+
+if query == "parse":
+    sys.stdout.write("OK")
+elif query in ("name", "tools"):
+    v = fm.get(query)
+    sys.stdout.write("" if v is None else str(v))
+elif query == "has-hooks":
+    sys.stdout.write("yes" if "hooks" in fm else "no")
+elif query == "pretool-commands":
+    for _, h in entries():
+        if h.get("type") == "command" and h.get("command"):
+            sys.stdout.write(str(h["command"]) + "\n")
+elif query == "pretool-types":
+    for _, h in entries():
+        sys.stdout.write(str(h.get("type")) + "\n")
+elif query == "matcher-covers":
+    matchers = [str(g.get("matcher", "")) for g in pretool_groups()]
+    missing = []
+    for verb in rest:
+        hit = False
+        for m in matchers:
+            try:
+                if re.fullmatch(m, verb):
+                    hit = True
+                    break
+            except re.error:
+                pass
+        if not hit:
+            missing.append(verb)
+    sys.stdout.write("COVERS" if not missing else "MISSING:" + ",".join(missing))
+else:
+    sys.stderr.write("unknown query: %s\n" % query)
+    sys.exit(4)
+PY
+)"
+  FM_RC=$?
+  set -e
+  FM_ERR="$(cat "$TMPROOT/fm.err" 2>/dev/null || true)"
+  rm -f "$TMPROOT/fm.err"
+}
+
+# resolve_hook_cmd <command> -> the command with ${CLAUDE_PROJECT_DIR} expanded
+# to this checkout. The frontmatter must use that variable rather than a literal
+# absolute path (arm 72), so resolution is what turns the declaration into a
+# path we can stat.
+resolve_hook_cmd() {
+  local c="$1"
+  c="${c//\$\{CLAUDE_PROJECT_DIR\}/$REPO_ROOT}"
+  c="${c//\$CLAUDE_PROJECT_DIR/$REPO_ROOT}"
+  printf '%s' "$c"
+}
+
+AGENTS_DIR="$REPO_ROOT/.claude/agents"
+
+# arm 65 — the frontmatter of every seat file still parses. A `hooks:` block is
+# the first nested structure any of these files has carried; a botched indent
+# would make the WHOLE file's frontmatter unreadable to the harness, silently
+# demoting the seat, and every other arm here would still pass.
+for seat in orchestrator steward implementer; do
+  fm "$AGENTS_DIR/$seat.md" parse
+  if [ "$FM_RC" -eq 0 ] && [ "$FM_OUT" = "OK" ]; then
+    pass "arm 65 ($seat): frontmatter parses as YAML"
+  else
+    fail "arm 65 ($seat): frontmatter does not parse — rc=$FM_RC, err: $FM_ERR"
+  fi
+done
+
+# arm 66 — name/tools are unchanged. Pinned as literals because "do not change
+# any tools: line" is a hard boundary of this work, and a boundary nobody
+# asserts is a boundary that erodes. NOTE the implementer keeps Edit/Write: it
+# is the seat that writes source, and the guard must never obstruct it.
+declare -a SEAT_NAME_TOOLS=(
+  "orchestrator|Read, Bash, Grep, Glob, Agent, Task"
+  "steward|Read, Bash, Grep, Glob, Agent, Task"
+  "implementer|Read, Edit, Write, Bash, Grep, Glob"
+)
+for spec in "${SEAT_NAME_TOOLS[@]}"; do
+  seat="${spec%%|*}"
+  want_tools="${spec#*|}"
+  fm "$AGENTS_DIR/$seat.md" name
+  if [ "$FM_RC" -eq 0 ] && [ "$FM_OUT" = "$seat" ]; then
+    pass "arm 66 ($seat): name: is still '$seat'"
+  else
+    fail "arm 66 ($seat): name: changed — got '$FM_OUT' (rc=$FM_RC, err: $FM_ERR)"
+  fi
+  fm "$AGENTS_DIR/$seat.md" tools
+  if [ "$FM_RC" -eq 0 ] && [ "$FM_OUT" = "$want_tools" ]; then
+    pass "arm 66 ($seat): tools: is unchanged ('$want_tools')"
+  else
+    fail "arm 66 ($seat): tools: CHANGED — want '$want_tools', got '$FM_OUT' (rc=$FM_RC, err: $FM_ERR)"
+  fi
+done
+
+# arms 67/68 — each COORDINATING seat declares a PreToolUse hook that resolves
+# to this repo's seat-path-guard.sh. Loop body is shared; the labels are per
+# seat so a half-wired state names which half.
+SEAT_ARM_IDS=("orchestrator|arm 67" "steward|arm 68")
+for spec in "${SEAT_ARM_IDS[@]}"; do
+  seat="${spec%%|*}"
+  arm="${spec#*|}"
+  f="$AGENTS_DIR/$seat.md"
+
+  fm "$f" pretool-commands
+  cmds="$FM_OUT"
+  if [ "$FM_RC" -ne 0 ]; then
+    fail "$arm ($seat): could not read PreToolUse hooks — rc=$FM_RC, err: $FM_ERR"
+    continue
+  fi
+  matched=""
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    resolved="$(resolve_hook_cmd "$line")"
+    case "$resolved" in
+      *seat-path-guard.sh*) matched="$resolved" ;;
+    esac
+  done <<EOF
+$cmds
+EOF
+
+  # Deliberately NO short-circuit below: when the seat is unwired, arms 70/71/72
+  # must each go red on their own terms rather than being skipped. A skipped arm
+  # is an arm nobody has ever seen fail.
+  if [ -n "$matched" ]; then
+    pass "$arm ($seat): declares a PreToolUse hook whose command names seat-path-guard.sh"
+  elif [ -z "$cmds" ]; then
+    fail "$arm ($seat): declares NO PreToolUse command hook — the guard is not wired for this seat"
+  else
+    fail "$arm ($seat): PreToolUse hooks exist but none resolves to seat-path-guard.sh; got: $(printf '%s' "$cmds" | tr '\n' ' ')"
+  fi
+
+  # arm 70 — the wiring points at a file that EXISTS and is EXECUTABLE, and is
+  # the very hook this suite exercises. A frontmatter entry naming a missing
+  # script is accepted by the harness and simply never guards anything: the
+  # static assertion above would be green while the seat ran unguarded.
+  if [ -n "$matched" ] && [ "$matched" = "$HOOK" ]; then
+    pass "arm 70 ($seat): the wired command IS this suite's hook ($HOOK)"
+  else
+    fail "arm 70 ($seat): wired command resolves to '${matched:-<nothing>}', not the hook under test '$HOOK'"
+  fi
+  if [ -n "$matched" ] && [ -f "$matched" ] && [ -x "$matched" ]; then
+    pass "arm 70 ($seat): the wired command exists and is executable"
+  else
+    fail "arm 70 ($seat): the wired command is missing or not executable: '${matched:-<nothing>}' — the wiring is inert"
+  fi
+
+  # arm 71 — the matcher covers all three write verbs. Bash is the load-bearing
+  # one (see the header: 76 and 193 Bash calls, ZERO Edit/Write, on the two
+  # observed orchestrator sessions), so a matcher of "Edit|Write" would wire a
+  # guard onto the path the seats do not use.
+  fm "$f" matcher-covers Edit Write Bash
+  if [ "$FM_RC" -eq 0 ] && [ "$FM_OUT" = "COVERS" ]; then
+    pass "arm 71 ($seat): the PreToolUse matcher covers Edit, Write AND Bash"
+  else
+    fail "arm 71 ($seat): matcher does not cover all write verbs — got '$FM_OUT' (rc=$FM_RC, err: $FM_ERR)"
+  fi
+
+  # arm 72 — type: command, and the path is expressed via ${CLAUDE_PROJECT_DIR}
+  # rather than a literal absolute path, which would work on exactly one
+  # machine and fail open (silently) on every other clone.
+  fm "$f" pretool-types
+  if [ "$FM_RC" -eq 0 ] && [ -n "$FM_OUT" ] && [ -z "$(printf '%s' "$FM_OUT" | grep -v '^command$' || true)" ]; then
+    pass "arm 72 ($seat): every declared PreToolUse hook is type: command"
+  else
+    fail "arm 72 ($seat): unexpected PreToolUse hook type(s): '$FM_OUT' (rc=$FM_RC, err: $FM_ERR)"
+  fi
+  fm "$f" pretool-commands
+  if printf '%s' "$FM_OUT" | grep -qF 'CLAUDE_PROJECT_DIR'; then
+    pass "arm 72 ($seat): the hook path is anchored on \$CLAUDE_PROJECT_DIR (portable across clones)"
+  else
+    fail "arm 72 ($seat): the hook path is not anchored on \$CLAUDE_PROJECT_DIR — a literal path only works in one checkout; got: $(printf '%s' "$FM_OUT" | tr '\n' ' ')"
+  fi
+done
+
+# arm 69 — the IMPLEMENTER declares no hooks at all. This is the complement of
+# arms 67/68 and the reason frontmatter was chosen over settings.json: the seat
+# that legitimately writes src/** and tests/** must be reachable by NO copy of
+# this guard. Asserted as "the hooks: key is absent", not "no PreToolUse hook",
+# so that wiring the implementer to any other event also trips it.
+fm "$AGENTS_DIR/implementer.md" has-hooks
+if [ "$FM_RC" -eq 0 ] && [ "$FM_OUT" = "no" ]; then
+  pass "arm 69 (implementer): declares NO hooks — the seat the guard must never block stays unhooked"
+else
+  fail "arm 69 (implementer): declares a hooks: block ('$FM_OUT') — the implementer must never carry the seat guard (rc=$FM_RC, err: $FM_ERR)"
+fi
 
 if [ "$FAILED" -gt 0 ]; then
   printf '\n%d test(s) failed\n' "$FAILED" >&2
