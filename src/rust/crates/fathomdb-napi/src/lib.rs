@@ -646,6 +646,11 @@ pub struct ProjectionDelta {
     pub dropped: Vec<String>,
     pub deferred: Vec<String>,
     pub unchanged: bool,
+    /// 0.8.20 Slice 22 (R-20-VC / TC-67) — node KINDS the vector writer can never
+    /// commit. A different axis from the three attribute-name lists above; the
+    /// name says so. Output-only: `configureProjections` takes specs, never a
+    /// delta, so there is no inbound direction to round-trip.
+    pub vector_unsupported_kinds: Vec<String>,
 }
 
 impl ProjectionDelta {
@@ -655,6 +660,7 @@ impl ProjectionDelta {
             dropped: d.dropped.clone(),
             deferred: d.deferred.clone(),
             unchanged: d.unchanged,
+            vector_unsupported_kinds: d.vector_unsupported_kinds.clone(),
         }
     }
 }

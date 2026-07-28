@@ -4026,6 +4026,51 @@ pub struct ProjectionDelta {
     /// True iff nothing was built, dropped, or newly deferred — the whole apply
     /// diffed to a no-op.
     pub unchanged: bool,
+    /// 0.8.20 Slice 22 (R-20-VC / **TC-67**) — **node KINDS, not attribute
+    /// names.** The vector-eligible node kinds present in the corpus that the
+    /// vector writer can NEVER commit, so no `searchable→vector` declaration
+    /// will ever produce an embedding for them.
+    ///
+    /// # Why this field exists — the silence it replaces
+    ///
+    /// [`kind_is_vector_committable`] (Slice 20c fix-2) restricted enrolment to
+    /// the kinds [`resolve_source_type`] maps, because enrolling any other kind
+    /// is a permanent liveness wedge. That fix was correct and is unchanged —
+    /// but it made the exclusion **silent**: the declaration persists, its name
+    /// is pushed onto [`ProjectionDelta::deferred`], and the caller cannot tell
+    /// "waiting on the embedder" (transient) from "this kind will never be
+    /// embedded" (permanent). Per the HITL ruling on TC-67 the remedy is
+    /// option **(c) REPORT** — the vocabulary is NOT grown and the Pack-1 D3
+    /// partition-key lock is NOT touched (`dev/design/0.7.0-vector-quant-pack1.md`).
+    ///
+    /// # Axis, and why the name is what it is
+    ///
+    /// `built` / `dropped` / `deferred` are all lists of **projection attribute
+    /// names**. This one is a list of **node kinds** — a different axis entirely,
+    /// so the name says `kinds` explicitly and is prefixed `vector_` to bind it
+    /// to the dense arm (an unsupported kind is still fully FTS/lexically
+    /// searchable). Sorted and de-duplicated (`SELECT DISTINCT … ORDER BY kind`).
+    ///
+    /// # It is a STATE report, not a diff
+    ///
+    /// Unlike the other three vectors it does not describe what this call
+    /// changed; it describes the corpus as it stands. So it is populated on an
+    /// idempotent re-apply too (where `unchanged == true` and the other three
+    /// are empty), and it deliberately does NOT feed [`ProjectionDelta::unchanged`].
+    /// That is what makes the declare-time residual cheap to live with: to
+    /// refresh the report after writing new kinds, re-apply the same spec — a
+    /// no-op that still returns a current report.
+    ///
+    /// # Independent of the embedder
+    ///
+    /// Computed whenever a `searchable→vector` projection is declared, whether
+    /// or not this session has a live embedder. The vocabulary is static, so
+    /// "this kind can never be embedded" is true in a no-embedder session too —
+    /// and must not be conflated with the Q6a graceful-absent deferral, which is
+    /// transient and is reported through `deferred`.
+    ///
+    /// Empty (never absent) when there is nothing to report.
+    pub vector_unsupported_kinds: Vec<String>,
 }
 
 /// 0.8.20 Slice 5b (R-20-E7) — outcome of

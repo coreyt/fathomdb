@@ -326,6 +326,9 @@ class ProjectionDelta:
     dropped: list[str]
     deferred: list[str]
     unchanged: bool
+    # 0.8.20 Slice 22 (R-20-VC / TC-67) — node KINDS (not attribute names) the
+    # vector writer can never commit. Empty, never absent.
+    vector_unsupported_kinds: list[str]
 
 def configure_projections(
     engine: Engine, specs: list[ProjectionSpec], drop: list[str] | None = ...
