@@ -147,7 +147,10 @@ test("decision #18: the write-validation boundary is exactly one error family", 
   // to reject an inverted validity window with InvalidArgumentError but a
   // non-integer bound with WriteValidationError. dev/design/errors.md defines
   // WriteValidationError as "malformed typed write shape", which is exactly what
-  // that boundary checks.
+  // that boundary checks. One documented exception, left deliberately: an
+  // unrenderable edge tValid/tInvalid epoch still rejects with
+  // InvalidArgumentError naming the field, because that message is the TC-33
+  // fix-1 contract; it is pinned in the engine's tests/error_taxonomy.rs.
   const engine = await Engine.open(freshDbPath(), { useDefaultEmbedder: false });
   try {
     const cases: Array<[string, Record<string, unknown>]> = [

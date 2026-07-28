@@ -16087,22 +16087,35 @@ fn validate_write(
             // `[valid_from, valid_until)`, so a pair with `from >= until` selects
             // no instant at all: the row would be written but no default read
             // could ever return it. Silently accepting that is a trap, so it is a
-            // typed refusal carrying the offending bounds. `InvalidArgument` (not
-            // the message-less `WriteValidation`) is deliberate — a caller has to
-            // be able to tell WHICH pair was rejected, and it already maps to
-            // `InvalidArgumentError` in both bindings.
+            // typed refusal.
+            //
+            // 0.8.20 Slice 22 (R-20-VC) — **decision #18, SETTLED: one family.**
+            // This site used to return `EngineError::InvalidArgument { msg }`
+            // carrying both bounds, which made `validate_write` — ONE function —
+            // reject across TWO error families, so the same `write` call raised
+            // `InvalidArgumentError` for an inverted window and
+            // `WriteValidationError` for a non-integer bound. `dev/design/errors.md`
+            // (status: locked) defines `WriteValidationError` as "malformed typed
+            // write shape" / "the submitted typed write is malformed **before**
+            // schema-sensitive payload checks run" — which is exactly this
+            // boundary — so the code now agrees with the taxonomy of record.
+            // `InvalidArgument` stays the family for caller-argument rejections
+            // OUTSIDE this boundary (see the errors.md 2026-07-28 amendment).
+            //
+            // **The cost, stated:** `WriteValidation` is a UNIT variant and both
+            // bindings map it to a fixed message-less string, so the offending
+            // bounds are no longer recoverable from the error. That is a breaking
+            // behaviour change on a published surface (CHANGELOG 0.8.20) and it is
+            // the diagnostic the prior split existed to preserve. Restoring it
+            // needs a message-carrying `WriteValidation { msg }`, which is a
+            // cross-cutting change across every engine + binding raise site and
+            // both binding payload shapes — its own slice, not this one.
             //
             // Only the PAIR can be empty. A one-sided window is unbounded on the
             // missing side and can never be empty, so it is never refused.
             if let (Some(from), Some(until)) = (valid_from, valid_until) {
                 if from >= until {
-                    return Err(EngineError::InvalidArgument {
-                        msg: format!(
-                            "invalid validity window: valid_from ({from}) must be strictly less \
-                             than valid_until ({until}); the window is half-open \
-                             [valid_from, valid_until), so this pair can never match any instant"
-                        ),
-                    });
+                    return Err(EngineError::WriteValidation);
                 }
             }
             // R-20-E3: `source_id` needs no emptiness check here — `SourceId`

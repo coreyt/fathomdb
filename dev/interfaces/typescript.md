@@ -106,8 +106,18 @@ Refusals (the rule is enforced in the engine's `validate_write`, so it is
 identical across Rust / Python / TypeScript and cannot drift):
 
 - Both bounds present with `validFrom >= validUntil` is an UNSATISFIABLE window
-  and rejects with `InvalidArgumentError`. Validation runs before any insert, so
-  the **whole batch** is rejected.
+  and rejects with **`WriteValidationError`**. Validation runs before any insert,
+  so the **whole batch** is rejected.
+
+  > **BREAKING (0.8.20 Slice 22, decision #18).** This rejected with
+  > `InvalidArgumentError` (napi code `FDB_INVALID_ARGUMENT`) **carrying both
+  > bounds in `message`**, while a non-integral bound from the same call rejected
+  > with `WriteValidationError`. Both are now `WriteValidationError` — one family
+  > for the whole write-validation boundary (`dev/design/errors.md`, 2026-07-28
+  > amendment). The envelope is now `FDB_WRITE_VALIDATION` with the fixed message
+  > `"write validation error"` and `data: null`; **the bounds are gone**. A caller
+  > that read them out of `message` must validate the pair before calling.
+  > `InvalidArgumentError` is unchanged for every other use.
 - A **one-sided** window is never refused, however extreme its single bound.
 - A non-integral bound rejects with `WriteValidationError`; the value is never
   truncated or coerced.

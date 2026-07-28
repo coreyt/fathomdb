@@ -136,14 +136,20 @@ def _node(logical_id: str, body: str, **extra: object) -> dict:
 
 
 def test_write_validation_boundary_is_exactly_one_error_family(db_path: str) -> None:
-    """Decision #18 — every rejection from the engine's write-validation boundary
-    raises ``WriteValidationError``, never ``InvalidArgumentError``.
+    """Decision #18 — every write-SHAPE rejection from the engine's
+    write-validation boundary raises ``WriteValidationError``, never
+    ``InvalidArgumentError``.
 
     The consumer-visible defect this settles: the SAME ``engine.write`` call used
     to raise ``InvalidArgumentError`` for an inverted validity window but
     ``WriteValidationError`` for a non-integer bound. ``dev/design/errors.md``
     defines ``WriteValidationError`` as "malformed typed write shape", which is
     exactly what that boundary checks.
+
+    One documented exception, left deliberately: an unrenderable edge
+    ``t_valid``/``t_invalid`` epoch still raises ``InvalidArgumentError`` naming
+    the field, because that message is the TC-33 fix-1 contract. It is pinned in
+    ``src/rust/crates/fathomdb-engine/tests/error_taxonomy.rs``.
     """
 
     engine = Engine.open(db_path, use_default_embedder=False)

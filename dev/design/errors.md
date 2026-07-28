@@ -49,6 +49,7 @@ different remediation or cross-doc ownership.
 | `SchedulerError`                | scheduler startup/shutdown / queue orchestration   | `EngineError`     | `design/scheduler.md`   | queue and shutdown failures are not vector math or write-shape failures         |
 | `OpStoreError`                  | unknown collection, kind mismatch, registry misuse | `EngineError`     | `design/op-store.md`    | op-store contract failures are separate from primary graph writes               |
 | `WriteValidationError`          | malformed typed write shape                        | `EngineError`     | `design/engine.md`      | fix caller-submitted field shape / variant construction                         |
+| `InvalidArgument { msg }`       | caller-argument rejections OUTSIDE the write-validation boundary | `EngineError`     | `design/engine.md`      | carries an actionable message naming the offending argument; `WriteValidation` is a unit variant and cannot |
 | `SchemaValidationError`         | JSON Schema rejection for op-store payloads        | `EngineError`     | `design/op-store.md`    | fix payload contents against registered `schema_id`                             |
 | `EmbedderIdentityMismatchError` | open-time stored-vs-supplied identity comparison   | `EngineOpenError` | `design/embedder.md`    | open-time incompatibility, not runtime write/query failure                      |
 | `MigrationError`                | schema migration execution                         | `EngineOpenError` | `design/migrations.md`  | open-time schema transition failure with per-step reporting                     |
@@ -74,6 +75,57 @@ bindings:
   but fails the registered `schema_id` JSON Schema at save time.
 - `EmbedderIdentityMismatchError` is not a write-time validation at all; it is
   an open-time compatibility failure.
+- `InvalidArgument` carries caller-argument rejections **outside** the
+  write-validation boundary.
+
+**The rule (2026-07-28 amendment, decision #18):** a malformed typed write SHAPE
+at the write-validation boundary is `WriteValidation`; `InvalidArgument` carries
+caller-argument rejections outside that boundary, plus the one boundary refusal
+that must name the offending argument (below).
+
+Concretely, every SHAPE rejection returned by the engine's `validate_write` is
+`WriteValidation`: empty `kind` / `body` / endpoints, an empty or
+record-separator-bearing `logical_id`, and — as of this amendment — an
+unsatisfiable `[valid_from, valid_until)` window. `InvalidArgument` remains
+correct for arguments that are not a typed write shape at all: an out-of-range
+traversal `depth`, a malformed `ProjectionSpec` / `drop` name, a `ReadView` that
+relaxes an axis the verb does not permit.
+
+**One NAMED exception inside the boundary, retained deliberately.**
+`validate_write`'s Edge branch delegates to `reject_unrenderable_edge_epoch`,
+which still returns `InvalidArgument { msg }` naming the offending field
+(`t_valid` / `t_invalid`) and the epoch-seconds bound. That message is a
+*required* contract, not an accident: TC-33 fix-1 (a codex §9 finding) exists
+precisely because an unrenderable epoch renders to `null` on the consolidation
+wire and silently resurrects an invalidated edge, so the refusal must tell the
+caller WHICH field and WHICH bound. Collapsing it onto the message-less
+`WriteValidation` would destroy that diagnostic, so decision #18 does **not**
+touch it. It is pinned by `tests/tc33_fix1_unrenderable_epoch.rs` and asserted as
+a documented exception in `tests/error_taxonomy.rs`.
+
+So the honest statement of the settled rule is: **the write-SHAPE boundary is one
+family (`WriteValidation`); the only `InvalidArgument` reachable from
+`validate_write` is the edge-epoch range guard, and it is there because its
+message is load-bearing.** Whether that exception should also collapse is
+reserved for the follow-up that gives `WriteValidation` a message payload — after
+which both can be one family with no diagnostic loss.
+
+**Known cost of the collapse, accepted:** `EngineError::WriteValidation` is a
+UNIT variant, and both bindings map it to a fixed, message-less string
+(`WriteValidationError::new_err("write validation error")`;
+`CODE_WRITE_VALIDATION` + `"write validation error"` + `data: null`). The
+unsatisfiable-window refusal therefore **no longer names the offending bounds** —
+the diagnostic the pre-amendment split existed to preserve. Restoring it requires
+a message-carrying `WriteValidation { msg }`, a cross-cutting change across every
+engine and binding raise site plus both binding payload shapes; that is tracked
+separately and is deliberately **not** part of this amendment.
+
+**Known remaining inconsistency, flagged not fixed:**
+`Engine::excise_collection_record` has the same two-family split shape
+(`WriteValidation` and `InvalidArgument` in one function). The rule above implies
+it should collapse too, but decision #18's scope is the `validate_write`
+boundary; the excise verb is left for a follow-up so this amendment stays
+one-line-reversible.
 
 `design/engine.md`, `design/op-store.md`, `design/bindings.md`, and
 `acceptance.md` must preserve this split.
@@ -109,6 +161,7 @@ rename the semantic class stems or collapse distinct rows.
 | `SchedulerError`                     | `SchedulerError`                 | `SchedulerError`                 | runtime failure       |
 | `OpStoreError`                       | `OpStoreError`                   | `OpStoreError`                   | runtime failure       |
 | `WriteValidationError`               | `WriteValidationError`           | `WriteValidationError`           | runtime failure       |
+| `EngineError::InvalidArgument`       | `InvalidArgumentError`           | `InvalidArgumentError`           | runtime failure       |
 | `SchemaValidationError`              | `SchemaValidationError`          | `SchemaValidationError`          | runtime failure       |
 | `Overloaded`                         | `OverloadedError`                | `OverloadedError`                | runtime failure       |
 | `Closing`                            | `ClosingError`                   | `ClosingError`                   | runtime failure       |
@@ -121,6 +174,15 @@ rename the semantic class stems or collapse distinct rows.
 | `EngineError::EmbedderNotConfigured` | `EmbedderNotConfiguredError`     | `EmbedderNotConfiguredError`     | runtime failure       |
 | `EngineError::KindNotVectorIndexed`  | `KindNotVectorIndexedError`      | `KindNotVectorIndexedError`      | runtime failure       |
 | `EngineError::VectorEquivalenceMismatch` | `VectorEquivalenceMismatchError` | `VectorEquivalenceMismatchError` | dense refused (query-time) |
+
+2026-07-28 amendment (0.8.20 Slice 22, R-20-VC decision #18): `InvalidArgument`
+added to BOTH tables above. It was absent from the module taxonomy and from this
+matrix despite ~15 engine raise sites and a live `InvalidArgumentError` /
+`FDB_INVALID_ARGUMENT` class in both SDKs — a documentation defect in the
+taxonomy of record, not a new surface. The napi envelope code is
+`FDB_INVALID_ARGUMENT`; unlike the message-less `WriteValidation` it carries an
+actionable message. See the Validation boundary section for the rule that now
+separates the two.
 
 2026-05-16 amendment: `EmbedderNotConfigured` and `KindNotVectorIndexed` leaf
 classes added per Phase 11a codex reviewer finding #3. Python and TS bindings

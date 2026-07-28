@@ -12,6 +12,36 @@ AC-050c) gates merges against this invariant.
 
 ### Changed — BREAKING
 
+- **An unsatisfiable node validity window is now `WriteValidationError`, not
+  `InvalidArgumentError` (0.8.20, R-20-VC decision #18).** Writing a node with
+  both `valid_from` and `valid_until` present and `valid_from >= valid_until`
+  still fails the whole batch — but with a different error class, and **without
+  the offending bounds**.
+
+  | | before | after |
+  | --- | --- | --- |
+  | Rust | `EngineError::InvalidArgument { msg }` | `EngineError::WriteValidation` |
+  | Python | `InvalidArgumentError`, message naming both bounds | `WriteValidationError`, message `"write validation error"` |
+  | TypeScript | `InvalidArgumentError` (`FDB_INVALID_ARGUMENT`), message naming both bounds | `WriteValidationError` (`FDB_WRITE_VALIDATION`), `data: null` |
+
+  *Why:* the engine's `validate_write` rejected across **two** error families
+  from one function, so the same call raised `InvalidArgumentError` for an
+  inverted window but `WriteValidationError` for a non-integer bound.
+  `dev/design/errors.md` defines `WriteValidationError` as "malformed typed write
+  shape", which is exactly that boundary, so the code now matches the taxonomy.
+
+  *The cost, stated plainly:* `WriteValidation` carries no payload, so **the
+  offending `valid_from` / `valid_until` values are no longer recoverable from
+  the error**. If you parsed them out of the message, validate the pair before
+  calling instead.
+
+  *Unaffected:* `InvalidArgumentError` / `FDB_INVALID_ARGUMENT` is unchanged
+  everywhere else — traversal `depth`, projection-spec and `drop` rejections,
+  `ReadView` misuse. A one-sided window is still never refused. **An unrenderable
+  edge `t_valid` / `t_invalid` epoch also still raises `InvalidArgumentError`
+  naming the offending field**, deliberately: that message is the TC-33 contract
+  that stops a `null`-rendering epoch silently resurrecting an invalidated edge.
+
 - **Multi-document `ingest_with_extractor` batches now require per-entity
   attribution (0.8.20, R-20-E2).** Provenance is taken from the caller's
   `ExtractDocument.source_doc_id`; the model's echo of that field is accepted

@@ -211,8 +211,19 @@ fn corruption_detail_source_chain_terminates() {
 /// `WriteValidationError` for a non-integer bound.
 ///
 /// Decision #18's DoD is literally "one family, tests updated". This pins the
-/// family: EVERY `validate_write` node/edge rejection is
-/// `EngineError::WriteValidation`, and NONE is `InvalidArgument`.
+/// family for every write-SHAPE rejection: `EngineError::WriteValidation`, never
+/// `InvalidArgument`.
+///
+/// **The one documented exception**, asserted below so it can never drift
+/// silently: `validate_write`'s Edge branch delegates to
+/// `reject_unrenderable_edge_epoch`, which still returns
+/// `InvalidArgument { msg }` naming the offending field and bound. That message
+/// is a required contract from TC-33 fix-1 (a codex §9 finding — an unrenderable
+/// epoch renders to `null` on the consolidation wire and silently resurrects an
+/// invalidated edge, so the caller must be told WHICH field). Collapsing it onto
+/// the message-less `WriteValidation` would destroy the diagnostic, so decision
+/// #18 deliberately does not touch it. See the `dev/design/errors.md` 2026-07-28
+/// amendment.
 #[test]
 fn write_validation_boundary_is_exactly_one_error_family() {
     let dir = TempDir::new().unwrap();
@@ -264,6 +275,34 @@ fn write_validation_boundary_is_exactly_one_error_family() {
             "`{label}` must not use InvalidArgument, which is reserved for caller-argument \
              rejections OUTSIDE the write-validation boundary"
         );
+    }
+
+    // THE DOCUMENTED EXCEPTION — an unrenderable edge epoch still raises
+    // `InvalidArgument`, and its message still names the field. Pinned here so a
+    // later "tidy-up" cannot quietly collapse it and lose the TC-33 fix-1
+    // diagnostic without this test going red.
+    let unrenderable = engine.write(&[PreparedWrite::Edge {
+        kind: "link".to_string(),
+        from: "A".to_string(),
+        to: "B".to_string(),
+        source_id: src(),
+        logical_id: Some("E1".to_string()),
+        body: None,
+        t_valid: Some(i64::MAX),
+        t_invalid: None,
+        confidence: None,
+        extractor_model_id: None,
+        temporal_fallback: None,
+    }]);
+    match unrenderable.expect_err("an unrenderable edge epoch must be refused") {
+        EngineError::InvalidArgument { msg } => assert!(
+            msg.contains("t_valid"),
+            "the retained exception must still NAME the offending field (TC-33 fix-1): {msg}"
+        ),
+        other => panic!(
+            "decision #18 must NOT collapse the edge-epoch guard — its message is the \
+             TC-33 fix-1 contract; got {other:?}"
+        ),
     }
 
     engine.close().expect("close");

@@ -96,8 +96,18 @@ Refusals (the rule is enforced in the engine's `validate_write`, so it is
 identical across Rust / Python / TypeScript and cannot drift):
 
 - Both bounds present with `valid_from >= valid_until` is an UNSATISFIABLE
-  window and raises `InvalidArgumentError`. Validation runs before any insert,
-  so the **whole batch** is rejected.
+  window and raises **`WriteValidationError`**. Validation runs before any
+  insert, so the **whole batch** is rejected.
+
+  > **BREAKING (0.8.20 Slice 22, decision #18).** This raised
+  > `InvalidArgumentError` **with both bounds in the message**, while a
+  > non-integer bound from the same call raised `WriteValidationError`. Both are
+  > now `WriteValidationError` — one family for the whole write-validation
+  > boundary (`dev/design/errors.md`, 2026-07-28 amendment). **The message is now
+  > the fixed string `"write validation error"`; the bounds are gone.** A caller
+  > that read them out of the message must validate the pair before calling.
+  > `InvalidArgumentError` is unchanged for every other use (e.g. traversal
+  > `depth`, projection-spec rejections, `ReadView` misuse).
 - A **one-sided** window is never refused, however extreme its single bound.
 - A non-integer bound raises `WriteValidationError`; the value is never coerced.
   `bool` is rejected **explicitly** — it subclasses `int`, so `True` must not be

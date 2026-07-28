@@ -210,9 +210,17 @@ drift:
 
 - Both bounds present with `valid_from >= valid_until` describes an
   UNSATISFIABLE half-open window that no instant can ever match. It is refused
-  with `EngineError::InvalidArgument` naming both bounds. Validation runs
-  **before any INSERT**, so the WHOLE batch is rejected. It surfaces as
-  `InvalidArgumentError` in both bindings.
+  with **`EngineError::WriteValidation`**. Validation runs **before any INSERT**,
+  so the WHOLE batch is rejected. It surfaces as `WriteValidationError` in both
+  bindings.
+
+  > **BREAKING (0.8.20 Slice 22, decision #18).** This was
+  > `EngineError::InvalidArgument { msg }` **naming both bounds**, which made
+  > `validate_write` — one function — reject across two error families. It is now
+  > the ONE family the taxonomy of record assigns to that boundary
+  > (`dev/design/errors.md`, 2026-07-28 amendment). **`WriteValidation` is a unit
+  > variant, so the offending bounds are NO LONGER carried in the error.** A
+  > caller that parsed them out must instead validate the pair before calling.
 - A **one-sided** window (exactly one bound present) can never be empty and is
   **never** refused, however extreme its single bound.
 
