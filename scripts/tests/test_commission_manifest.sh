@@ -875,7 +875,14 @@ else
   D9D_RC=$?
   set -e
   D9D_BASE_LINE="$(grep -m1 '^  base sha' <<<"$D9D_OUT" || true)"
-  if grep -q '⚠ HISTORICAL' <<<"$D9D_OUT"; then D9D_GOT_BANNER=present
+  # Match the banner by its SEMANTIC content — the word plus the slice-specific
+  # claim — not by its presentation. An earlier draft grepped the literal `⚠`
+  # glyph, which would have gone RED on a cosmetic ASCII-ification of a banner
+  # whose behaviour was intact: the same time-bombed-assertion class (TC-81)
+  # this arm exists to stop. Codex §9 [low], accepted and fixed rather than
+  # carried.
+  if grep -qiE "HISTORICAL.*Slice $D9D_TARGET is ITSELF LANDED" <<<"$D9D_OUT"; then
+    D9D_GOT_BANNER=present
   else D9D_GOT_BANNER=absent; fi
   if [ "$D9D_RC" -eq 0 ] \
      && grep -qF "$D9D_SHA" <<<"$D9D_BASE_LINE" \
