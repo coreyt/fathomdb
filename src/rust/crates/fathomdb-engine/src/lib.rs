@@ -5873,9 +5873,9 @@ impl Engine {
     ) -> Result<(), EngineError> {
         tx.execute("DELETE FROM search_index_edges WHERE write_cursor = ?1", [cursor])
             .map_err(|_| EngineError::Storage)?;
-        // vec0 rowid is the canonical row's write_cursor.
-        tx.execute("DELETE FROM vector_default WHERE rowid = ?1", [cursor])
-            .map_err(|_| EngineError::Storage)?;
+        // vec0 rowid is the canonical row's write_cursor. TC-76: via the one
+        // vec0-delete primitive ([`delete_vector_partition_row`]).
+        delete_vector_partition_row(tx, cursor).map_err(|_| EngineError::Storage)?;
         tx.execute("DELETE FROM _fathomdb_vector_rows WHERE write_cursor = ?1", [cursor])
             .map_err(|_| EngineError::Storage)?;
         if !keep_terminal {
@@ -9618,8 +9618,10 @@ fn run_pin_and_requantize_pass(
             .map_err(|_| EngineError::Storage)?
         };
 
-        tx.execute("DELETE FROM vector_default WHERE rowid = ?1", params![rowid])
-            .map_err(|_| EngineError::Storage)?;
+        // TC-76: the attr VALUES were read above, so neutralizing them inside
+        // [`delete_vector_partition_row`] cannot lose them; the re-INSERT below
+        // re-binds `attr_vals` verbatim.
+        delete_vector_partition_row(tx, *rowid).map_err(|_| EngineError::Storage)?;
 
         // Slice 10 / G10 — `status` ships the empty-string sentinel (vec0 TEXT
         // metadata is NOT NULL-able).
@@ -13439,8 +13441,9 @@ fn prune_orphaned_edge_vectors(connection: &Connection) -> rusqlite::Result<()> 
         for rowid in vec_rowids {
             if !sidecar.contains(&rowid) {
                 // vec0 rowid IS the canonical write_cursor; delete by rowid (the
-                // proven vec0 delete form, as `prune_edge_projection_shadows`).
-                connection.execute("DELETE FROM vector_default WHERE rowid = ?1", [rowid])?;
+                // proven vec0 delete form, as `prune_edge_projection_shadows`),
+                // through the one TC-76-safe vec0-delete primitive.
+                delete_vector_partition_row(connection, rowid)?;
             }
         }
         connection.execute(
@@ -14731,6 +14734,93 @@ fn actual_vector_attr_columns(conn: &Connection) -> rusqlite::Result<Vec<String>
     flush(&mut token, &mut cols);
     cols.sort();
     Ok(cols)
+}
+
+/// TC-76 (sqlite-vec issue **#99**) — **the** way to delete ONE `vector_default`
+/// row by rowid. Every by-rowid vec0 delete in this crate goes through here.
+///
+/// # The upstream defect this works around
+///
+/// A vec0 plain-TEXT metadata column stores a 16-byte inline view per row: a
+/// 4-byte length plus the first 12 bytes of the value
+/// (`VEC0_METADATA_TEXT_VIEW_DATA_LENGTH`). A value longer than those 12 bytes
+/// ALSO gets a row in the `<tbl>_metadatatext<NN>` shadow table.
+///
+/// In `sqlite-vec` `=0.1.7`, `vec0Update_Delete_ClearMetadata`
+/// (`sqlite-vec.c:8888`) deletes that shadow row (`sqlite-vec.c:8934-8952`) and
+/// then returns `sqlite3_step`'s `SQLITE_DONE` (101) verbatim — it never resets
+/// `rc` to `SQLITE_OK`. `vec0Update_Delete` (`sqlite-vec.c:9027`) reads
+/// `101 != SQLITE_OK` as a failure and aborts the entire `DELETE`. The
+/// INSERT/UPDATE twin of that code (`sqlite-vec.c:8258-8320`) is saved by an
+/// unconditional `rc = sqlite3_blob_close(...)` after its switch, which is why
+/// only DELETE carries the defect — and why the neutralizing `UPDATE` below is a
+/// sound workaround rather than the same bug by another name.
+///
+/// # Why FathomDB is exposed
+///
+/// `vector_default` carries three plain-TEXT metadata columns
+/// ([`vector_partition_create_sql`]): `kind`, `status` and one `attr_<hex>` per
+/// declared `filterable` projection. Only the `attr_*` VALUES are caller-supplied
+/// and unbounded, and Slice 15e stores them marker-encoded (`\x01 || V`), so a
+/// raw attribute value of **12 or more UTF-8 bytes** trips #99 and makes
+/// `erase_source` / `purge` / edge supersession / the open-path orphan sweep fail
+/// with [`EngineError::Storage`], leaving the row AND its shadowed value at rest.
+/// `kind` is bounded to `resolve_source_type`'s locked vocabulary (max 9 bytes)
+/// at every enrolment door via [`kind_is_vector_committable`], and `status` ships
+/// the `''` sentinel — so neither needs neutralizing, and neither is touched.
+///
+/// # The workaround
+///
+/// Blank the `attr_*` columns FIRST. vec0's UPDATE path takes the `n <= 12 &&
+/// prev_n > 12` branch (`sqlite-vec.c:8300-8319`), which deletes the shadow row
+/// AND returns `SQLITE_OK`, then the DELETE no longer has an over-length value to
+/// clear. Measured: the `embedding` bytes and the other metadata columns survive
+/// the metadata-only UPDATE verbatim, and the `_metadatatext<NN>` row is gone —
+/// so this is erasure-COMPLETE, not merely error-suppressing.
+///
+/// Pinned by `tests/tc76_vec0_long_metadata_delete.rs`, whose bare-vec0 test is
+/// the tripwire: it fails once `sqlite-vec` ships a fix for #99, which is the
+/// signal to delete the neutralize step.
+///
+/// A no-op UPDATE (no `attr_*` columns declared — every corpus before a
+/// `filterable` projection exists) is skipped entirely, so the shipped
+/// no-projection path issues the same single `DELETE` it always did.
+fn delete_vector_partition_row(conn: &Connection, rowid: i64) -> rusqlite::Result<usize> {
+    neutralize_vector_partition_attr_values(conn, Some(rowid))?;
+    conn.execute(&format!("DELETE FROM {DEFAULT_VECTOR_PARTITION} WHERE rowid = ?1"), [rowid])
+}
+
+/// TC-76 (sqlite-vec **#99**) — blank every `attr_<hex>` value on `vector_default`
+/// (one row when `rowid` is `Some`, the whole table when `None`) so that a
+/// following `DELETE` never has an over-length TEXT metadata value to clear. See
+/// [`delete_vector_partition_row`] for the mechanism and the evidence.
+///
+/// A pure no-op when no `filterable` projection is declared — which is every
+/// corpus that predates Slice 15e — so the shipped delete paths issue exactly the
+/// statements they always did.
+fn neutralize_vector_partition_attr_values(
+    conn: &Connection,
+    rowid: Option<i64>,
+) -> rusqlite::Result<()> {
+    let attr_cols = actual_vector_attr_columns(conn)?;
+    if attr_cols.is_empty() {
+        return Ok(());
+    }
+    // `attr_cols` are `^attr_[0-9a-f]+$` identifiers derived by
+    // `attr_vec0_column`, never caller text: safe to interpolate.
+    let sets = attr_cols.iter().map(|c| format!("{c}=''")).collect::<Vec<_>>().join(", ");
+    match rowid {
+        Some(rowid) => {
+            conn.execute(
+                &format!("UPDATE {DEFAULT_VECTOR_PARTITION} SET {sets} WHERE rowid = ?1"),
+                [rowid],
+            )?;
+        }
+        None => {
+            conn.execute(&format!("UPDATE {DEFAULT_VECTOR_PARTITION} SET {sets}"), [])?;
+        }
+    }
+    Ok(())
 }
 
 /// 0.8.20 Slice 15e — reconcile the live `vector_default` attribute columns with
@@ -16305,11 +16395,30 @@ const ROW_OWNED_PROJECTIONS: &[RowOwnedProjection] = &[
 fn erase_row_projections(tx: &Connection, write_cursor: i64) -> rusqlite::Result<u64> {
     let mut deleted: u64 = 0;
     for projection in ROW_OWNED_PROJECTIONS {
-        let sql =
-            format!("DELETE FROM {} WHERE {} = ?1", projection.table, projection.cursor_column);
-        deleted = deleted.saturating_add(tx.execute(&sql, [write_cursor])? as u64);
+        deleted =
+            saturating_add_u64(deleted, delete_row_owned_projection(tx, projection, write_cursor)?);
     }
     Ok(deleted)
+}
+
+/// TC-76 — delete one row-owned projection's rows for one `write_cursor`. The vec0
+/// partition is routed through [`delete_vector_partition_row`] (sqlite-vec `#99`
+/// makes a naked `DELETE` fail whenever a TEXT metadata value spills the 12-byte
+/// inline view); every other table is the plain registry-driven statement.
+fn delete_row_owned_projection(
+    tx: &Connection,
+    projection: &RowOwnedProjection,
+    write_cursor: i64,
+) -> rusqlite::Result<usize> {
+    if projection.table == DEFAULT_VECTOR_PARTITION {
+        return delete_vector_partition_row(tx, write_cursor);
+    }
+    let sql = format!("DELETE FROM {} WHERE {} = ?1", projection.table, projection.cursor_column);
+    tx.execute(&sql, [write_cursor])
+}
+
+fn saturating_add_u64(acc: u64, n: usize) -> u64 {
+    acc.saturating_add(n as u64)
 }
 
 /// 0.8.20 Slice 15d fix-1 finding 2 [P2] — purge the row-owned projections in
@@ -16328,9 +16437,8 @@ fn purge_row_projections_for_cursor_in(
 ) -> rusqlite::Result<u64> {
     let mut deleted: u64 = 0;
     for projection in ROW_OWNED_PROJECTIONS.iter().filter(|p| classes.contains(&p.class)) {
-        let sql =
-            format!("DELETE FROM {} WHERE {} = ?1", projection.table, projection.cursor_column);
-        deleted = deleted.saturating_add(tx.execute(&sql, [write_cursor])? as u64);
+        deleted =
+            saturating_add_u64(deleted, delete_row_owned_projection(tx, projection, write_cursor)?);
     }
     Ok(deleted)
 }
@@ -16343,6 +16451,13 @@ fn truncate_row_projections_in(
 ) -> rusqlite::Result<u64> {
     let mut deleted: u64 = 0;
     for projection in ROW_OWNED_PROJECTIONS.iter().filter(|p| classes.contains(&p.class)) {
+        if projection.table == DEFAULT_VECTOR_PARTITION {
+            // TC-76 (sqlite-vec `#99`) — an unqualified `DELETE FROM vector_default`
+            // still dispatches vec0's per-row delete, so it fails on the FIRST row
+            // whose TEXT metadata spills the 12-byte inline view. Blank the whole
+            // column first.
+            neutralize_vector_partition_attr_values(tx, None)?;
+        }
         let sql = format!("DELETE FROM {}", projection.table);
         deleted = deleted.saturating_add(tx.execute(&sql, [])? as u64);
     }
@@ -18230,7 +18345,7 @@ fn commit_batch(
                         params![cursor, logical_id],
                     )?;
                     for sc in &prior_g0 {
-                        tx.execute("DELETE FROM vector_default WHERE rowid = ?1", [sc])?;
+                        delete_vector_partition_row(&tx, *sc)?;
                         tx.execute(
                             "DELETE FROM _fathomdb_vector_rows WHERE write_cursor = ?1",
                             [sc],
@@ -18266,7 +18381,7 @@ fn commit_batch(
                         params![cursor, from, to, kind],
                     )?;
                     for sc in &prior_g11 {
-                        tx.execute("DELETE FROM vector_default WHERE rowid = ?1", [sc])?;
+                        delete_vector_partition_row(&tx, *sc)?;
                         tx.execute(
                             "DELETE FROM _fathomdb_vector_rows WHERE write_cursor = ?1",
                             [sc],
