@@ -351,6 +351,12 @@
         "ruling": "option A - fix NOW as cross-cutting CI hygiene in a state-derived form, NOT deferred to Slice 40; TC-16 stays at Slice 40 per seq-118",
         "ruled_on": "2026-07-28",
         "source": "seq-125 · todos TC-79"
+      },
+      {
+        "id": "tc-85-option-b-phase-2",
+        "ruling": "(a) AUTHORIZED NOW as cross-cutting - rebase agent-seat-hardening onto the landed Slice 30 and wire seat-path-guard.sh via AGENT FRONTMATTER, not project-global .claude/settings.json. Rejected: defer to DOC-HYGIENE-3, land Phase 1 only, abandon",
+        "ruled_on": "2026-07-28",
+        "source": "seq-127 · todos TC-85"
       }
     ]
   },
