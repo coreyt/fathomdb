@@ -1168,6 +1168,135 @@ else
 fi
 
 # ============================================================================
+# Arm ZB — FIX-3: a FOREIGN PROJECT INVENTORY (bare directory listing).
+# ============================================================================
+# `seq-130` ruling 1, applied to a shape the PATH predicate cannot see. The
+# 0.8.14 transcript carries the output of `ls ~/.claude/projects`: seventeen bare
+# encoded directory names, an inventory of a private project portfolio, in a
+# PUBLIC repo. The echo stops AT `projects` with nothing beneath it, so it does
+# not match — and the listed lines are bare names, so nothing matches.
+#
+# THE KNOWN LIMIT IS ASSERTED, NOT PAPERED OVER. The gate deliberately does NOT
+# hard-fail on this: a predicate that saw bare directory names would trip on the
+# repo's own prose, on the shared library, and on the redaction banners. Widening
+# it is not authorised. So this arm pins BOTH halves — the gate stays silent
+# (rc=0), and `--redact` removes it anyway when a human points it at the file.
+# Remediation reaching further than detection is the design, stated in
+# scripts/lib/agent-state-paths.sh.
+ZB_DIR="$TMPROOT/foreign-inventory"
+mkdir -p "$ZB_DIR"
+ZB_FILE="$ZB_DIR/inventory.log"
+{
+  printf 'line-before-untouched\n'
+  printf 'exec\n'
+  printf "/bin/bash -c 'ls /home/coreyt/%s/projects' in /home/coreyt/projects/fathomdb\n" '.claude'
+  printf ' succeeded in 0ms:\n'
+  # INVENTED names, deliberately. The real listing's entries are the very
+  # things fix-3 removes from this repo; re-typing them into a tracked fixture
+  # would undo the redaction in a different file.
+  printf -- '-home-someone-projects-alpha-widget\n'
+  printf -- '-home-someone-projects-beta-service\n'
+  printf -- '%s\n' "$OWN_PROJECT_DIR_LITERAL"
+  printf '\n'
+  printf 'codex\n'
+  printf 'verdict: no [P1] findings\n'
+} >"$ZB_FILE"
+
+# Half 1: the GATE does not see it. This is the recorded limit, tested.
+run_checker "$ZB_FILE"
+expect_rc 0 "the gate does NOT hard-fail on a bare foreign-project-directory listing (recorded reach limit)"
+
+# Half 2: --redact removes it anyway.
+run_checker --root "$ZB_DIR" --redact
+expect_rc 0 "--redact exits 0 after removing a foreign project inventory"
+if grep -q 'alpha-widget' "$ZB_FILE" || grep -q 'beta-service' "$ZB_FILE"; then
+  fail "foreign project NAMES survived --redact; got: $(cat "$ZB_FILE")"
+else
+  pass "the foreign project directory names are gone from the redacted file"
+fi
+if grep -q 'REDACTED TC-86' "$ZB_FILE"; then
+  pass "the inventory is REPLACED IN PLACE by a marker, not silently dropped"
+else
+  fail "expected a marker in place of the inventory; got: $(cat "$ZB_FILE")"
+fi
+if grep -q "ls /home/coreyt/.claude/projects' in" "$ZB_FILE"; then
+  pass "the command ECHO survives the inventory redaction (path-only evidence)"
+else
+  fail "--redact must keep the echo, only its output goes; got: $(cat "$ZB_FILE")"
+fi
+if grep -qx 'line-before-untouched' "$ZB_FILE" && grep -qx 'verdict: no \[P1\] findings' "$ZB_FILE"; then
+  pass "the surrounding transcript survives the inventory redaction byte-intact"
+else
+  fail "--redact disturbed the surrounding transcript; got: $(cat "$ZB_FILE")"
+fi
+# The banner must COUNT the foreign names without NAMING them — enumerating them
+# would put back exactly what was removed. Two of the three listed dirs are
+# foreign; the own one is not counted.
+if grep -q 'FOREIGN PROJECT INVENTORY (2 line' "$ZB_FILE"; then
+  pass "the banner counts the foreign directory names (2), excluding this repo's own"
+else
+  fail "the banner must count the foreign inventory lines; got: $(cat "$ZB_FILE")"
+fi
+if grep -q 'NOT enumerated' "$ZB_FILE"; then
+  pass "the banner says plainly that it does not name them, and why"
+else
+  fail "the banner must state why the names are withheld; got: $(cat "$ZB_FILE")"
+fi
+
+cp "$ZB_FILE" "$TMPROOT/inventory-first-pass.snapshot"
+run_checker --root "$ZB_DIR" --redact
+expect_rc 0 "a second --redact over the inventory tree exits 0"
+if cmp -s "$ZB_FILE" "$TMPROOT/inventory-first-pass.snapshot"; then
+  pass "once redacted, the inventory STAYS redacted (second pass byte-identical)"
+else
+  fail "inventory redaction is not idempotent; diff: $(diff "$TMPROOT/inventory-first-pass.snapshot" "$ZB_FILE" || true)"
+fi
+
+# ---- ZB2: the sibling block that must NOT be touched ----------------------
+# `ls ~/.claude/projects/<own>` lists THIS repo's own session files. Entry on the
+# bare state-directory prefix alone would swallow it; requiring an actual foreign
+# NAME in the body is what keeps `--redact` off it. Ruling 1 makes own-project
+# state advisory, and the coordinator scoped this fix to the foreign half only.
+ZB2_DIR="$TMPROOT/own-session-listing"
+mkdir -p "$ZB2_DIR"
+ZB2_FILE="$ZB2_DIR/own-listing.log"
+{
+  printf 'exec\n'
+  printf "/bin/bash -c 'ls /home/coreyt/%s/projects/%s' in /home/coreyt/projects/fathomdb\n" \
+    '.claude' "$OWN_PROJECT_DIR_LITERAL"
+  printf ' succeeded in 0ms:\n'
+  printf '00869a09-1b56-463d-823c-2285c13af9ab.jsonl\n'
+  printf 'memory\n'
+  printf '\n'
+  printf 'codex\n'
+} >"$ZB2_FILE"
+cp "$ZB2_FILE" "$TMPROOT/own-listing.snapshot"
+run_checker --root "$ZB2_DIR" --redact
+expect_rc 0 "--redact over an own-session listing exits 0"
+if cmp -s "$ZB2_FILE" "$TMPROOT/own-listing.snapshot"; then
+  pass "a listing of THIS repo's own session files is left BYTE-IDENTICAL (no foreign name in it)"
+else
+  fail "--redact must not touch the own-session listing; diff: $(diff "$TMPROOT/own-listing.snapshot" "$ZB2_FILE" || true)"
+fi
+
+# ---- ZB3: `---` front matter is not mistaken for a directory name ---------
+# The memory files dumped in the 0.8.14 transcript open and close with a YAML
+# `---`, which matches "a line that is a dash followed by non-space" unless the
+# second character is excluded. Left unfixed it inflated the banner's inventory
+# count by four, and a banner that miscounts what it removed is worse than one
+# that says nothing.
+if printf -- '---\n' | grep -qE -- "$AGENT_STATE_BARE_PROJECT_DIR_RE"; then
+  fail "YAML front-matter '---' must NOT count as an encoded project directory name"
+else
+  pass "YAML front-matter '---' is not counted as a project directory name"
+fi
+if printf -- '-home-coreyt-projects-memex\n' | grep -qE -- "$AGENT_STATE_BARE_PROJECT_DIR_RE"; then
+  pass "a real encoded project directory name IS recognised as an inventory entry"
+else
+  fail "the bare-name rule must still match a real encoded project directory"
+fi
+
+# ============================================================================
 # Arm AA — the REAL 0.8.14 transcript, redacted per `seq-130` ruling 2.
 # ============================================================================
 # dev/plans/runs/0.8.14-slice-10-fix1-review-20260704T011100Z.log (on main at
@@ -1191,6 +1320,33 @@ else
       pass "the 0.8.14 log is clean of the slurped memory content: '$needle'"
     fi
   done
+  # FIX-3, ruling 1: the `ls ~/.claude/projects` block listed seventeen encoded
+  # directory names — an inventory of a private project portfolio in a PUBLIC
+  # repo, with several entries reading as client or domain work. The needles are
+  # assembled from fragments so this suite does not re-type the names it is
+  # asserting the absence of.
+  for frag in 'dicom-de' 'windchill-' 'ado-mc' 'mesh-seam-ripp' 'decimation-prot'; do
+    if grep -qF -- "-home-coreyt-projects-${frag}" "$LOG_0814"; then
+      fail "the 0.8.14 log still carries a foreign project directory name: '${frag}...'"
+    else
+      pass "the 0.8.14 log is clean of the foreign project inventory: '${frag}...'"
+    fi
+  done
+  if grep -qF -- "ls /home/coreyt/.claude/projects' in" "$LOG_0814"; then
+    pass "the inventory's command ECHO survives (path-only, own-project WARN as ruled)"
+  else
+    fail "the 0.8.14 inventory redaction must keep the command echo"
+  fi
+  if grep -qxF -- 'memory' "$LOG_0814"; then
+    pass "the sibling listing of THIS repo's own session files was left untouched, as scoped"
+  else
+    fail "fix-3 must not have touched the own-project session listing"
+  fi
+  if grep -qF -- 'FOREIGN PROJECT INVENTORY' "$LOG_0814"; then
+    pass "the 0.8.14 banner records that a foreign project inventory was removed"
+  else
+    fail "the banner must record the foreign inventory removal"
+  fi
   if grep -qF -- '## Verdict: CONCERN' "$LOG_0814"; then
     pass "the 0.8.14 review's VERDICT survives the redaction"
   else

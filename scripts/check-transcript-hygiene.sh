@@ -238,17 +238,25 @@ fi
 # Two passes on purpose: one batched `grep -l` over everything (fast, and `-I`
 # drops binaries), then a per-file CLASSIFICATION only for the files that hit.
 #
-# The hit list is also the candidate set for `--redact`'s content-block mode: a
-# dumped output block is always introduced by an echoed command whose text
-# carries the path, so a file with zero pattern matches cannot contain one.
+# collect_hits takes the pattern, because REPORTING and REDACTION do not use the
+# same candidate set and conflating them is a real bug, not a tidiness point:
+#   * REPORTING scans for AGENT_STATE_PATH_RE — the gate's predicate, unchanged.
+#   * REDACTION scans for AGENT_STATE_PROJECTS_DIR_RE, the strictly broader bare
+#     state-directory prefix, because a foreign project INVENTORY
+#     (`ls ~/.claude/projects` and its output) contains no path-shaped line at
+#     all. Under the narrow set such a file is never even opened by --redact.
+#     Widening the CANDIDATE set is safe where widening the PREDICATE is not:
+#     redact_file is a no-op unless it actually finds something to remove, so a
+#     doc that merely names the directory is scanned and left byte-identical.
 HITS=()
 collect_hits() {
+  local pattern="${1:-$AGENT_STATE_PATH_RE}"
   HITS=()
   [ "${#FILES[@]}" -gt 0 ] || return 0
   while IFS= read -r -d '' p; do
     [ -n "$p" ] && HITS+=("$p")
   done < <(printf '%s\0' "${FILES[@]}" \
-             | xargs -0 --no-run-if-empty grep -IlZE -e "$AGENT_STATE_PATH_RE" -- 2>/dev/null \
+             | xargs -0 --no-run-if-empty grep -IlZE -e "$pattern" -- 2>/dev/null \
              || true)
 }
 
@@ -264,10 +272,10 @@ collect_hits() {
 redact_file() {
   local p="$1"
   local tmp1="$p.tc86-redact1.$$" tmp2="$p.tc86-redact2.$$" cf="$p.tc86-counts.$$"
-  local content_lines=0 blocks=0 path_lines=0 total=0 own=0 dirs projects
+  local content_lines=0 blocks=0 fnames=0 path_lines=0 total=0 own=0 dirs projects
 
   agent_state_redact_content_blocks "$p" "$tmp1" "$cf"
-  read -r content_lines blocks <"$cf" || { content_lines=0; blocks=0; }
+  read -r content_lines blocks fnames <"$cf" || { content_lines=0; blocks=0; fnames=0; }
   rm -f "$cf"
 
   # Foreign path lines are counted on the CONTENT-REDACTED stream: a foreign path
@@ -288,7 +296,7 @@ redact_file() {
 
   {
     agent_state_redaction_banner "$total" "${projects:-(none identified)}" \
-      "$path_lines" "$content_lines" "$blocks" "$own"
+      "$path_lines" "$content_lines" "$blocks" "$own" "$fnames"
     cat "$tmp2"
   } >"$tmp1"
   # `cat >` rather than `mv`: rewrites the EXISTING inode, so the file keeps its
@@ -296,13 +304,13 @@ redact_file() {
   cat "$tmp1" >"$p"
   rm -f "$tmp1" "$tmp2"
 
-  printf 'redacted %s line(s) in %s (%s foreign path line(s); %s content line(s) in %s block(s); projects: %s)\n' \
-    "$total" "$p" "$path_lines" "$content_lines" "$blocks" "${projects:-(none identified)}"
+  printf 'redacted %s line(s) in %s (%s foreign path line(s); %s content line(s) in %s block(s), of which %s foreign project-directory name(s); projects: %s)\n' \
+    "$total" "$p" "$path_lines" "$content_lines" "$blocks" "$fnames" "${projects:-(none identified)}"
   return 0
 }
 
 if [ "$REDACT" -eq 1 ]; then
-  collect_hits
+  collect_hits "$AGENT_STATE_PROJECTS_DIR_RE"
   REDACTED=0
   for p in "${HITS[@]+"${HITS[@]}"}"; do
     if redact_file "$p"; then REDACTED=$((REDACTED + 1)); fi

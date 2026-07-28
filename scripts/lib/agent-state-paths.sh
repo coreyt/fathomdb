@@ -205,7 +205,8 @@ function tc86_is_foreign(line,   m, found) {
   }
   return found
 }
-BEGIN { RE = ENVIRON["TC86_RE"]; OWN = ENVIRON["TC86_OWN"] }
+BEGIN { RE = ENVIRON["TC86_RE"]; OWN = ENVIRON["TC86_OWN"];
+        PROJRE = ENVIRON["TC86_PROJRE"]; BARERE = ENVIRON["TC86_BARERE"] }
 '
 
 # agent_state_classify_file <file> — print "<foreign-line-count> <own-line-count>".
@@ -260,6 +261,75 @@ AGENT_STATE_REDACTION_MARKER='[REDACTED TC-86] agent-state path removed (foreign
 #
 # This is a `--redact` capability, NOT a gate predicate: the gate's two classes
 # stay exactly the two `seq-130` ruled, so no tree becomes red because of it.
+#
+# ============================================================================
+# FIX-3: FOREIGN PROJECT *INVENTORIES* (steward `seq-130`, ruling 1).
+# ============================================================================
+# The 0.8.14 transcript carries one more block the fix-2 pass did not reach:
+#
+#     exec
+#     /bin/bash -c 'ls /home/coreyt/.claude/projects' in <cwd>
+#      succeeded in 0ms:
+#     -home-coreyt-projects-ado-mcp
+#     -home-coreyt-projects-airlock
+#     ... 17 lines ...
+#
+# That is an INVENTORY OF A PRIVATE PROJECT PORTFOLIO in a PUBLIC repository, and
+# several of the names read as client or domain work. It is lower severity than
+# conversation content, but ruling 1 is unambiguous: another project's session
+# state is never legitimately here. So it is redacted.
+#
+# TWO REACH PROBLEMS, both deliberate, both recorded here rather than fixed by
+# widening anything:
+#
+#  1. THE ECHO DOES NOT MATCH AGENT_STATE_PATH_RE. The command stops AT
+#     `projects` with no component beneath it — which is the very boundary that
+#     keeps the pattern off prose, off this file, and off the ASH-Phase2 banner
+#     already on main. So block ENTRY (remediation only) also accepts
+#     AGENT_STATE_PROJECTS_DIR_RE below, the bare state-directory prefix.
+#
+#  2. KNOWN LIMIT, STATED PLAINLY: **the gate does NOT detect a bare directory
+#     listing.** The listed lines are bare encoded directory names with nothing
+#     beneath them; no path predicate that could see them would survive contact
+#     with ordinary prose naming a project directory (this repo's own docs, this
+#     very comment, and the redaction banners all do it). Widening the predicate
+#     is NOT authorised and would re-create the false-positive problem `seq-130`
+#     ruled against. So detection stays where it is and REMEDIATION REACHES
+#     FURTHER THAN DETECTION: `--redact` can remove such a listing WHEN A HUMAN
+#     POINTS IT AT THE FILE. Finding one is a review act, not a gate act.
+#
+# WHICH BLOCKS QUALIFY. Entry on the bare prefix alone would also catch
+# `ls ~/.claude/projects/<own>` — whose output is this repo's OWN session-file
+# names, which ruling 1 makes advisory and which must NOT be touched. So a block
+# entered on the bare prefix is redacted only if its output actually CONTAINS a
+# foreign inventory: at least one line that is, by itself, an encoded project
+# directory name (`^-<no-space-no-slash>$`) other than this repo's own. A listing
+# of session UUIDs contains none, and is replayed byte-intact.
+#
+# THE BANNER DOES NOT NAME THEM. `agent_state_redaction_banner` names PROJECTS
+# TOUCHED for path-shaped removals, but the foreign inventory is reported as a
+# COUNT ONLY: enumerating the names in the banner would put back exactly what the
+# redaction removed.
+
+# The bare Claude Code state-directory prefix — `.../.claude/projects` with NO
+# component required beneath it. FOR REMEDIATION REACH ONLY. It is deliberately
+# NOT the gate's predicate and must never become one: without the
+# one-component-beneath boundary it matches prose, this file, and the redaction
+# banners themselves. It is used solely to decide that an exec block's OUTPUT is
+# worth INSPECTING for a foreign inventory; the decision to redact then rests on
+# the output's own contents.
+AGENT_STATE_PROJECTS_DIR_RE='/(home|Users)/[^/[:space:]]+/\.claude/projects'
+
+# One line that IS an encoded project directory name and nothing else — the shape
+# of a `ls ~/.claude/projects` listing entry.
+#
+# The SECOND character must not be another `-`. That is not decoration: an
+# encoded cwd always begins `-<first-path-component>`, while `---` is a YAML
+# front-matter delimiter, and the memory files dumped elsewhere in the 0.8.14
+# transcript open and close with one. Without this the inventory COUNT reported in
+# the banner is inflated by four, and a banner that miscounts what it removed is
+# the sort of small dishonesty that makes the rest of it unreadable.
+AGENT_STATE_BARE_PROJECT_DIR_RE='^-[^-/[:space:]][^/[:space:]]*$'
 
 # The in-place replacement for one removed output block — a printf FORMAT, since
 # the marker states how many lines it stands in for. Defined once here and handed
@@ -270,22 +340,32 @@ AGENT_STATE_CONTENT_MARKER_FMT='[REDACTED TC-86] %d line(s) of agent-state CONTE
 
 # agent_state_redact_content_blocks <in-file> <out-file> <count-file>
 #
-# Writes the redacted stream to <out-file> and "<removed-lines> <blocks>" to
-# <count-file>. Non-block lines pass through byte-intact; a file with no
-# agent-state-reading exec record comes through unchanged, which is what makes
-# `--redact` a no-op on the sixteen ordinary own-project path citations.
+# Writes the redacted stream to <out-file> and
+# "<removed-lines> <blocks> <foreign-inventory-lines>" to <count-file>. Non-block
+# lines pass through byte-intact; a file with no agent-state-reading exec record
+# comes through unchanged, which is what makes `--redact` a no-op on the sixteen
+# ordinary own-project path citations.
 agent_state_redact_content_blocks() {
   local in="${1:?agent_state_redact_content_blocks needs an input file}"
   local out="${2:?agent_state_redact_content_blocks needs an output file}"
   local cf="${3:?agent_state_redact_content_blocks needs a count file}"
   TC86_RE="$AGENT_STATE_PATH_RE" TC86_OWN="$AGENT_STATE_OWN_PROJECT_DIR" \
+  TC86_PROJRE="$AGENT_STATE_PROJECTS_DIR_RE" TC86_BARERE="$AGENT_STATE_BARE_PROJECT_DIR_RE" \
   TC86_COUNTFILE="$cf" TC86_CFMT="$AGENT_STATE_CONTENT_MARKER_FMT" \
   awk "$AGENT_STATE_AWK_PROLOGUE"'
     function flush(   i) {
       if (in_block) {
-        if (fresh > 0) {
+        # A block is removed when it still holds unredacted lines AND it is
+        # either (a) the output of a command whose echo carried a full
+        # agent-state PATH, or (b) an INVENTORY: output that itself lists other
+        # projects\047 encoded directory names. (b) is what reaches the bare
+        # `ls ~/.claude/projects` listing whose echo the path pattern cannot see;
+        # requiring an actual foreign name in the body is what keeps it OFF the
+        # sibling block that lists this repo\047s own session files.
+        if (fresh > 0 && (echo_is_path || foreignnames > 0)) {
           blocks++
           removed += nonblank
+          fnames += foreignnames
           printf "%s\n\n", sprintf(ENVIRON["TC86_CFMT"], nonblank)
         } else {
           # IDEMPOTENCE. After one pass the block body IS the marker, and the
@@ -307,6 +387,7 @@ agent_state_redact_content_blocks() {
         if ($0 != "") {
           nonblank++
           if ($0 !~ /^\[REDACTED TC-86\]/) fresh++
+          if ($0 ~ BARERE && $0 != OWN) foreignnames++
         }
         next
       }
@@ -318,6 +399,8 @@ agent_state_redact_content_blocks() {
           nonblank = 0
           fresh = 0
           nbuf = 0
+          foreignnames = 0
+          echo_is_path = pending_is_path
           prev = $0
           next
         }
@@ -326,11 +409,19 @@ agent_state_redact_content_blocks() {
       # anchoring matters: without it, an output line that happens to carry a
       # path (the 0.8.14 log has one — a `sed: read error ...` message) would be
       # mistaken for the start of a new block.
-      if (prev == "exec" && $0 ~ RE) { pending = 1 }
+      #
+      # PROJRE (the bare state-directory prefix) only makes the block a
+      # CANDIDATE; whether it is actually removed is decided in flush() from the
+      # block\047s own contents. That split is what lets remediation reach a
+      # listing the path predicate cannot see without widening the predicate.
+      if (prev == "exec" && ($0 ~ RE || $0 ~ PROJRE)) {
+        pending = 1
+        pending_is_path = ($0 ~ RE)
+      }
       print
       prev = $0
     }
-    END { flush(); printf "%d %d\n", removed + 0, blocks + 0 > ENVIRON["TC86_COUNTFILE"] }
+    END { flush(); printf "%d %d %d\n", removed + 0, blocks + 0, fnames + 0 > ENVIRON["TC86_COUNTFILE"] }
   ' "$in" >"$out"
 }
 
@@ -404,7 +495,7 @@ note  transcript-hygiene: SELF-EXEMPTION, STATED IN THE OPEN (TC-86, steward seq
 NOTICE
 }
 
-# agent_state_redaction_banner <total> <projects-csv> <path-lines> <content-lines> <blocks> <own:0|1>
+# agent_state_redaction_banner <total> <projects-csv> <path-lines> <content-lines> <blocks> <own:0|1> [foreign-inventory-lines]
 #
 # The block prepended to a redacted file. Shape descended from the banner already
 # on main in dev/plans/runs/codex/agent-seat-hardening/ASH-Phase2-20260728T034657Z.log:
@@ -426,6 +517,7 @@ agent_state_redaction_banner() {
   local content_lines="${4:-0}"
   local blocks="${5:-0}"
   local own="${6:-0}"
+  local fnames="${7:-0}"
   printf '=== STEWARD REDACTION (TC-86 transcript hygiene) ===\n'
   printf '%s line(s) redacted in place in this transcript before it was committed.\n' "$total"
   if [ "$path_lines" -gt 0 ]; then
@@ -443,6 +535,15 @@ echoed in this transcript that READ a Claude Code state directory — i.e. the
 CONTENT of that state, not merely its path. The command echoes themselves are
 kept: they are the evidence of what happened, and they are path-only.
 CONTENT
+  fi
+  if [ "$fnames" -gt 0 ]; then
+    cat <<INVENTORY
+FOREIGN PROJECT INVENTORY (${fnames} line(s) of the above): part of the removed
+output was a listing of ~/.claude/projects — bare encoded directory names
+belonging to OTHER projects, i.e. an inventory of a private project portfolio.
+They are reported here as a COUNT ONLY and are deliberately NOT enumerated:
+naming them in this banner would put back exactly what the redaction removed.
+INVENTORY
   fi
   printf 'PROJECTS TOUCHED: %s\n' "$projects"
   if [ "$own" -eq 1 ]; then

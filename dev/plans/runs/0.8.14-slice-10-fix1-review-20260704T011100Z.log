@@ -1,9 +1,14 @@
 === STEWARD REDACTION (TC-86 transcript hygiene) ===
-172 line(s) redacted in place in this transcript before it was committed.
-WHAT THEY WERE (172 line(s) in 5 block(s)): the OUTPUT of commands
+189 line(s) redacted in place in this transcript before it was committed.
+WHAT THEY WERE (189 line(s) in 6 block(s)): the OUTPUT of commands
 echoed in this transcript that READ a Claude Code state directory — i.e. the
 CONTENT of that state, not merely its path. The command echoes themselves are
 kept: they are the evidence of what happened, and they are path-only.
+FOREIGN PROJECT INVENTORY (16 line(s) of the above): part of the removed
+output was a listing of ~/.claude/projects — bare encoded directory names
+belonging to OTHER projects, i.e. an inventory of a private project portfolio.
+They are reported here as a COUNT ONLY and are deliberately NOT enumerated:
+naming them in this banner would put back exactly what the redaction removed.
 PROJECTS TOUCHED: -home-coreyt-projects-fathomdb
 OWN PROJECT: this content came from THIS repository's own Claude Code state
 directory (-home-coreyt-projects-fathomdb) — this project's own memory store.
@@ -1429,23 +1434,7 @@ memory
 exec
 /bin/bash -c 'ls /home/coreyt/.claude/projects' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-10-20260704T002826Z
  succeeded in 0ms:
--home-coreyt-projects-ado-mcp
--home-coreyt-projects-airlock
--home-coreyt-projects-decimation-proto
--home-coreyt-projects-dicom-de-id
--home-coreyt-projects-fathomdb
--home-coreyt-projects-fathomdb--claude-worktrees-exp-subagent-persistence
--home-coreyt-projects-fathomdb-data
--home-coreyt-projects-fathomdb-worktrees-0-8-11-2
--home-coreyt-projects-fathomdb-worktrees-tooling-mermaid-renderer
--home-coreyt-projects-local
--home-coreyt-projects-md-render
--home-coreyt-projects-memex
--home-coreyt-projects-memex--claude-worktrees-chore-arch-cruft-review
--home-coreyt-projects-memex--claude-worktrees-refactor-0-5-x
--home-coreyt-projects-mesh-seam-ripper
--home-coreyt-projects-wake
--home-coreyt-projects-windchill-llm
+[REDACTED TC-86] 17 line(s) of agent-state CONTENT removed: this block was the OUTPUT of the command echoed above, which read a Claude Code state directory.
 
 exec
 /bin/bash -c 'ls /home/coreyt/.claude/projects/-home-coreyt-projects-fathomdb-worktrees-0.8.14-slice-10-20260704T002826Z' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-10-20260704T002826Z
