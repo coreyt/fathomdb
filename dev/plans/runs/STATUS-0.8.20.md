@@ -31,7 +31,7 @@ step 24). Ledger tip **`3264114a`** (steward seq-98).
 > close records (§11 Slice 5, §12 Slice 10, §13 Slice 15b) are retained **as history**; their "not landed" /
 > "Slice 15 OPEN" banners describe the on-branch state at the time they were written, **not** current truth.
 
-**Last updated:** 2026-07-28 (**Slice 30 LANDED — `9b3ed0e3`; R-20-H7 CLOSED and the PUBLISH PRECONDITION SATISFIED**; close record §17. Prior: Slice 20c `841c307b` §16, Slice 25 `83b1c818` §15).
+**Last updated:** 2026-07-28 (**Slice 21 LANDED — `77be504b`; R-20-CR CLOSED — TC-57 + ac_002 + TC-71**; close record §18. Prior: Slice 30 `9b3ed0e3` §17, Slice 20c `841c307b` §16, Slice 25 `83b1c818` §15).
 
 ---
 
@@ -63,7 +63,7 @@ by that ruling.
 | **20** | `dense_readiness` + flush-to-readiness barrier (R-20-DR) **+ TC-45 supersession-terminal fix** | 15 | **✅ COMPLETE — 20b `26b237c0` + 20c `841c307b`** (merges). **TC-45** closed (both `commit_batch` sites record `'up_to_date'`; SCHEMA stays 24). **R-20-DR closed:** part 1 = `DenseReadiness {Ready, Embedding}` derived onto `ProjectionSpec.vector` + the atomic flip; part 2 = the **flush-to-readiness barrier, shipped by REUSING `drain`** per `api-surface.md` **C4** — **there is NO `flush_embeddings()` verb** (TC-55 = INSTRUMENTATION). Fixed entirely on the **enqueue** side; `drain` stays passive and `connection_has_pending_projection_work` was not restructured (TC-56). **ZERO net-new governed commands; allowlist byte-identical; pin exit 0; SCHEMA 24.** Five codex §9 rounds, all RED-first; **one finding left OPEN at the circuit breaker = TC-71**. Close record **§16** |
 | **25** | Surrogate minting — governed entities ONLY (R-20-SUR) | 15 | ✅ **LANDED `83b1c818`** — D1 static migration guard + D2 dynamic whole-ladder proof (`NULL → NOT NULL == 0`) + D3 registration-inertness; zero engine source change, SCHEMA stays 24, allowlist byte-identical, pin exit 0. codex §9: 3 fix rounds, halted at the circuit-breaker on a 4th same-family [P2]; residual ACCEPTED by Steward ruling (D2 is row-based ⇒ shape-independent). Residual recorded as **TC-66**. |
 | **30** | **RUBRIC-H7 `can-i-deploy` contract gate (R-20-H7)** | 10,15,20,25 | ✅ **COMPLETE — LANDED `9b3ed0e3`** (merge). **The PUBLISH PRECONDITION is SATISFIED.** 45 C-1 clauses (26 CHECKABLE / 12 cross-repo / 7 prose), **zero failing**; zero engine source; allowlist byte-identical, pin exit 0; SCHEMA stays 24. Seven codex §9 rounds + the fix-6c micro-fix, **every round productive** and the 3-same-finding bound never firing — fix-4 alone found **18 of 26** clauses had a demonstrable false green; fixtures 106 → 276 → **317**. Final [P2] **REFUTED** by Steward test, not accepted as risk. fix-6c review **terminal-clean** (no P1/P2/low). Close record **§17** |
-| **21** | **Concurrency + test-oracle repair (R-20-CR)** — TC-57 · ac_002 oracle · TC-71 | 20 | not started — reserved gap, 20 band |
+| **21** | **Concurrency + test-oracle repair (R-20-CR)** — TC-57 · ac_002 oracle · TC-71 | 20 | **COMPLETE — LANDED `77be504b`**. Close record §18 |
 | **22** | **Vector-arm consumer contract (R-20-VC)** — TC-67 (c) · TC-68 · decision #18 · #99 probe | 15,20 | not started — reserved gap, 20 band |
 | **31** | **Library Sweep #3** — dependency hygiene, **no requirement id** (TC-76) | — | not started — sequenced after 30 by ruling, no technical dep |
 | 40 | Verification + release readiness (publish-or-hold); **TC-16 determination FIRST** (`seq-118`) | 5,30 | not started |
@@ -1362,3 +1362,77 @@ productive rounds, so TC-75's directory predicate could not reach it. See `orche
 Commits: `9ef5179b` (RED fix-6c) · `0d9b40d7` (GREEN fix-6c) · `a26a7655` (closure `output.json`) ·
 `892ba0ec` (fix-6c transcript) · merge **`9b3ed0e3`**. Eight codex transcripts under
 `dev/plans/runs/codex/0.8.20/` (TC-RUBRIC-7). Closure `dev/plans/runs/0.8.20-slice-30-output.json`.
+
+---
+
+## 18. Slice 21 close — **R-20-CR COMPLETE** (TC-57 · ac_002 · TC-71)
+
+**LANDED `77be504b`** (merge of `orch-0.8.20-s21` onto `main` @ `3e660f95`). **SCHEMA stays 24.**
+Governed surface **byte-identical** — `check-governed-surface-pin.sh` exits **0**, no trip, no re-pin.
+
+### The three legs
+
+| Leg | Outcome |
+|---|---|
+| **TC-57** — governed-write vs projection-worker race | **CHARACTERIZED FIRST** per the ruled ordering (`seq-111`), then fixed. Repro **10/10 → 0/10**; control **0/10** throughout |
+| **ac_002** — test-oracle repair | PWD/HOME/XDG/TMPDIR substring scan replaced by a **per-test sandbox in a child process**; the oracle asserts **emptiness** outside the DB path, not a name pattern. Part 1 (DB-parent allowlist) KEPT verbatim |
+| **TC-71** — `vector_projection_declared` | Now requires the **`searchable` role**. Re-verified across **all three** gated paths: forward backfill, drop inverse, late enrolment |
+
+### The characterization corrected the record (this is the durable finding)
+
+TC-57's prior write-ups were **wrong on the mechanism**. Measured, not argued:
+
+- The engine takes **plain `SQLITE_BUSY` (5) with the busy handler invoked ZERO times** — SQLite skips the
+  handler for deadlock avoidance when a `BEGIN DEFERRED` transaction tries to promote while another connection
+  holds the write lock. It is **NOT** `SQLITE_BUSY_SNAPSHOT` (517). 517 is real and is pinned by a standalone
+  probe, but was **never observed from the engine** in 20 runs. **A fix scoped to "retry on 517" would have
+  been inert** — which is precisely what the characterize-before-scope ruling exists to prevent.
+- The rate is **10/10**, not "7 of 8" — deterministic at the right shape, failing on the third write.
+- `PRAGMA busy_timeout` is **proven inert** here (the handler is never consulted on either exit).
+
+Design of record: `dev/design/0.8.20-tc57-write-race-characterization.md` (`status: ACTIVE`).
+**The fix is one line** — `commit_batch` takes `TransactionBehavior::Immediate`, so the transaction never
+promotes. Unconditional, not conditional: a content-dependent transaction behaviour would be a new correctness
+surface (mixed batches, edge arms), and the anonymous path already took the write lock at its first statement.
+
+### codex §9 — 2 rounds, both transcripts persisted (TC-RUBRIC-7)
+
+| Round | Transcript | Verdict |
+|---|---|---|
+| 1 | `dev/plans/runs/codex/0.8.20/slice-21-review-20260728T184947Z.log` | **0 P1, 1 distinct P2** → fix-1 |
+| 2 | `dev/plans/runs/codex/0.8.20/slice-21-fix-1-rereview-20260728T192456Z.log` | **CLEAN** — zero `Review comment:` blocks |
+
+**The round-1 P2 was substantive and was FIXED, not overridden.** Its claim: the role-aware predicate corrects
+the *decision* to enrol but not the *already-enrolled state* — `vector_kind_needs_enrolment` checks
+`kind_is_vector_indexed` **before** `vector_projection_declared`, and `project_canonical_node_row` gates the
+embed enqueue **solely** on `_fathomdb_vector_kinds` membership, so a database that already ran the old code
+keeps embedding forever. That is **TC-71's entire stated harm surviving the fix**. Verified against the code,
+then closed by an **open-time reconciliation**, narrowly conditioned so legacy and healthy databases are
+untouched. The load-bearing condition is `EXISTS(vector_declared = 1)` — **not** the table-exists probe, because
+schema step 24 **creates** the registry table on every open, so a legacy database reaches boot with the table
+present but empty.
+
+### Gates (each captured individually, no pipe)
+
+`clippy --workspace --all-targets` **0** · `check --workspace --all-targets` **0** · `fmt --check` **0** ·
+`tc57_governed_write_race` **0** · `tc57_worker_commit_pressure` **0** · `tc71_fix1_inert_enrolment_reconcile` **0** ·
+`slice21c_vector_role_gate` **0** · `lifecycle_observability` **0** · `slice15d_projection_registry` **0** ·
+`slice20c_flush_barrier` **0** · `slice20_dense_readiness` **0** · `check-governed-surface-pin.sh` **0** ·
+`lint-design-status.sh` **0** · `agent-lint-md.sh` **0** · `check-transcript-hygiene.sh` **0**.
+
+**TC-57 acceptance bar (characterization §1.4), run to the bar and not off one pass:** repro **0/10** ·
+control **0/10** · the three `tc57_mechanism_*` pins **0/3 failures** · OOS-17 guard
+(`rebuild_projections --features operator`) **rc 0**.
+
+### Carried forward — NOT fixed here, recorded so they are not lost
+
+1. **~50% duplicate embeds at baseline.** An instrument built for this slice measured ~104 of 200 rows embedded
+   **twice**, on the **anonymous** arm too (zero caller errors, no race present). Unrelated to TC-57 and
+   unchanged by the fix.
+2. **Worker-side commit failures are silently discarded.** `let _ = commit_projection_outcomes(...)` — a
+   worker-side *commit* failure writes **no** `'failed'` terminal and **no** `projection_failures` row; the row
+   keeps `terminal IS NULL` and is re-embedded. The `'failed'` arm is for *embed* failures only.
+3. **`Engine::transition`'s own transaction is still a read-then-upgrade DEFERRED transaction** with the same
+   exposure TC-57 closed in `commit_batch`, mitigated only by the pre-emptive `drain()` above it.
+4. **R2 (bounded busy retry) as defence-in-depth** — needs the error path restructured first, since
+   `commit_batch`'s `rusqlite::Error` is discarded and there is nothing to branch on.

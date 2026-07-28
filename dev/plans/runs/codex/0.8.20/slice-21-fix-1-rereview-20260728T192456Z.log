@@ -1,0 +1,3832 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s21
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019faa2f-f460-7dd1-9d34-d8ab14da9484
+--------
+user
+changes against '41a81c17bf184ca8194f8108c5e688b011bbcf4f'
+exec
+/bin/bash -lc "cat MEMORY.md 2>/dev/null || true && printf '\\n--- feedback files ---\\n' && ls feedback_*.md 2>/dev/null || true" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s21
+ succeeded in 0ms:
+
+--- feedback files ---
+
+exec
+/bin/bash -lc 'git diff --stat 41a81c17bf184ca8194f8108c5e688b011bbcf4f && git diff --name-only 41a81c17bf184ca8194f8108c5e688b011bbcf4f' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s21
+ succeeded in 0ms:
+ CHANGELOG.md                                       |  62 ++
+ .../0.8.20-tc57-write-race-characterization.md     | 636 ++++++++++++++++++
+ dev/interfaces/python.md                           |  11 +
+ dev/interfaces/rust.md                             |  14 +
+ dev/interfaces/typescript.md                       |  11 +
+ src/rust/crates/fathomdb-engine/src/lib.rs         | 402 ++++++++++-
+ .../tests/lifecycle_observability.rs               | 382 ++++++++---
+ .../tests/slice20_dense_readiness.rs               |  40 +-
+ .../tests/slice21c_vector_role_gate.rs             | 686 +++++++++++++++++++
+ .../tests/tc57_governed_write_race.rs              | 572 ++++++++++++++++
+ .../tests/tc57_worker_commit_pressure.rs           | 371 ++++++++++
+ .../tests/tc71_fix1_inert_enrolment_reconcile.rs   | 745 +++++++++++++++++++++
+ 12 files changed, 3805 insertions(+), 127 deletions(-)
+CHANGELOG.md
+dev/design/0.8.20-tc57-write-race-characterization.md
+dev/interfaces/python.md
+dev/interfaces/rust.md
+dev/interfaces/typescript.md
+src/rust/crates/fathomdb-engine/src/lib.rs
+src/rust/crates/fathomdb-engine/tests/lifecycle_observability.rs
+src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs
+src/rust/crates/fathomdb-engine/tests/slice21c_vector_role_gate.rs
+src/rust/crates/fathomdb-engine/tests/tc57_governed_write_race.rs
+src/rust/crates/fathomdb-engine/tests/tc57_worker_commit_pressure.rs
+src/rust/crates/fathomdb-engine/tests/tc71_fix1_inert_enrolment_reconcile.rs
+
+exec
+/bin/bash -lc 'git diff 41a81c17bf184ca8194f8108c5e688b011bbcf4f -- src/rust/crates/fathomdb-engine/src/lib.rs' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s21
+ succeeded in 0ms:
+diff --git a/src/rust/crates/fathomdb-engine/src/lib.rs b/src/rust/crates/fathomdb-engine/src/lib.rs
+index eea94acf..7076a6e0 100644
+--- a/src/rust/crates/fathomdb-engine/src/lib.rs
++++ b/src/rust/crates/fathomdb-engine/src/lib.rs
+@@ -4619,6 +4619,28 @@ impl Engine {
+             message: "could not re-derive projection registry on boot".to_string(),
+         })?;
+ 
++        // 0.8.20 Slice 21 fix-1 (codex §9 round 1 [P2], ledger `TC-71`) — bring an
++        // ALREADY-ENROLLED inert vector kind into agreement with the role-aware
++        // decision. Slice 21c closed the three forward doors, but a database that
++        // already ran the old code under `{roles:[filterable], vector:{}}` keeps
++        // its `_fathomdb_vector_kinds` rows — `vector_kind_needs_enrolment`
++        // short-circuits on `kind_is_vector_indexed` and never reaches the new
++        // predicate, and `project_canonical_node_row` reads only the registry
++        // membership — so upgrading did not actually stop the unwanted embeddings.
++        // Narrowly authorised (registry EXISTS, declares a `vector` sub-object,
++        // and declares no `searchable→vector` projection) so a LEGACY workspace
++        // with a working dense arm is never touched; see
++        // [`registry_governs_an_inert_dense_arm`]. Deletes no embedding. Runs
++        // BEFORE `run_vector_equivalence_probe` (which fires after `open_locked`
++        // returns), so a database whose only enrolment was the inert one pays no
++        // probe embeds on the healing open. Another boot reconciliation on the
++        // writer connection, single-threaded, before readers spawn.
++        reconcile_inert_vector_enrolments_on_boot(&connection).map_err(|_| {
++            EngineOpenError::Io {
++                message: "could not reconcile inert vector kind enrolments on boot".to_string(),
++            }
++        })?;
++
+         // 0.8.20 Slice 15e — reconcile the live `vector_default` attribute columns
+         // with the registry's `filterable` set. On a DB whose vec0 shape already
+         // matches the registry (the common case, incl. every reopen of a DB that
+@@ -4804,13 +4826,18 @@ impl Engine {
+     /// what stops this path re-enrolling immediately after
+     /// [`unenrol_registry_vector_node_kinds`] has run: the inverse removes the
+     /// registry row, and with no active declaration this returns without
+-    /// re-adding it. (The kind registry DOES now have a delete path; it is that
+-    /// one, reachable only from `configure_projections`.)
++    /// re-adding it. (The kind registry DOES now have delete paths: that one, plus
++    /// the Slice-21 fix-1 reconciliation
++    /// [`reconcile_inert_vector_enrolments_on_boot`]. Both are gated on the SAME
++    /// predicate this probe reads, so neither can be undone by a later write.)
+     ///
+     /// Cost: the registry probe is skipped entirely once the kind is enrolled, so
+     /// a workspace with a live dense arm pays nothing; a workspace that never
+     /// declared a vector projection pays two `prepare_cached` `EXISTS` probes per
+-    /// batch-row of an unenrolled kind.
++    /// batch-row of an unenrolled kind. (Slice 21c / `TC-71` made that probe
++    /// require the `searchable` ROLE, and deliberately kept the second `EXISTS`
++    /// as a fast negative so this cost is unchanged — see
++    /// [`vector_projection_declared`].)
+     ///
+     /// fix-2 (codex §9 [P2]) — a late enrolment now runs the SAME stranded-row
+     /// treatment the declare-time door runs ([`reenqueue_stranded_vector_rows`]),
+@@ -8095,10 +8122,23 @@ impl Engine {
+         let lid = Self::resolve_lifecycle_target(logical_id)?;
+ 
+         // Settle in-flight projection work first: the async projection worker
+-        // commits vector/FTS shadows on its OWN connection via `BEGIN IMMEDIATE`,
+-        // so a state flip issued while a worker holds the write lock would
+-        // SQLITE_BUSY. Draining (unfrozen so any unprojected row completes) leaves
+-        // the worker idle; a bare state flip enqueues no new projection work.
++        // commits vector/FTS shadows on its OWN connection, so a state flip issued
++        // while a worker holds the write lock would SQLITE_BUSY. Draining
++        // (unfrozen so any unprojected row completes) leaves the worker idle; a
++        // bare state flip enqueues no new projection work.
++        //
++        // 0.8.20 Slice 21a-2 (TC-57) — this comment used to say the worker commits
++        // "via `BEGIN IMMEDIATE`". It does NOT and never did:
++        // `commit_projection_outcomes` opens `connection.transaction()`, i.e.
++        // rusqlite's `BEGIN DEFERRED` default, and reads before it writes. Its
++        // CONCLUSION stands, and in fact more strongly than the original wording
++        // implied — BOTH sides of that contention are read-then-upgrade deferred
++        // transactions, which SQLite refuses to promote WITHOUT consulting the busy
++        // handler (see the `TransactionBehavior::Immediate` note in `commit_batch`).
++        // So the `drain()` below is load-bearing, not belt-and-braces: it is what
++        // keeps this flip's own read-then-upgrade transaction (`:query_row` above
++        // the `UPDATE` below) out of a worker's write window. TC-57's fix is scoped
++        // to `commit_batch`; converting this path is a separate change.
+         self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS)?;
+ 
+         let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+@@ -8202,8 +8242,10 @@ impl Engine {
+     ) -> Result<ProjectionDelta, EngineError> {
+         self.ensure_open()?;
+         // Settle in-flight async projection work first (same rationale as
+-        // `transition`): the async worker commits on its own connection, so a
+-        // backfill issued while it holds the write lock would SQLITE_BUSY.
++        // `transition`, including the 0.8.20 Slice 21a-2 / TC-57 correction
++        // recorded there: the worker commits on its own connection with a rusqlite
++        // DEFERRED transaction, NOT `BEGIN IMMEDIATE`). A backfill issued while it
++        // holds the write lock would SQLITE_BUSY.
+         self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS)?;
+ 
+         // 0.8.20 Slice 20c (R-20-DR remainder) — the backfill is gated on a LIVE
+@@ -12825,12 +12867,21 @@ fn run_projection_job(shared: &ProjectionRuntimeShared, job: &ProjectionJob) ->
+     //
+     // Their LADDER is left alone for a second, separately MEASURED reason:
+     // shortening it makes the worker's terminal-commit land while a caller's own
+-    // write is still open, which trips the PRE-EXISTING `SQLITE_BUSY_SNAPSHOT`
+-    // write-race already documented in `slice20_dense_readiness.rs` (governed
+-    // supersession reads before it writes, so `busy_timeout` cannot retry it).
+-    // Measured on `consolidate_provider` under 6-way concurrency: 0/48 failures
+-    // with the ladder, 8/48 without. Left byte-for-byte as shipped; the race is
++    // write is still open, which used to trip the governed write-race. Measured on
++    // `consolidate_provider` under 6-way concurrency: 0/48 failures with the
++    // ladder, 8/48 without. Left byte-for-byte as shipped; the ladder length is
+     // reported as OOS-17 rather than newly exposed by a fix round.
++    //
++    // 0.8.20 Slice 21 (TC-57) — this note used to name that race
++    // `SQLITE_BUSY_SNAPSHOT` and call it PRE-EXISTING. Both are corrected: the
++    // characterized mechanism is plain `SQLITE_BUSY` (5) on a read→write lock
++    // PROMOTION, with the busy handler invoked ZERO times (SQLite skips it for
++    // deadlock avoidance), so no `busy_timeout` could absorb it;
++    // `SQLITE_BUSY_SNAPSHOT` (517) is only a second, narrower exit of the same
++    // shape. And the race is FIXED — `commit_batch` now takes `BEGIN IMMEDIATE`
++    // (see the note there), so the governed path never promotes. The 0/48-vs-8/48
++    // measurement above stands as the reason not to shorten the ladder, but it is
++    // no longer load-bearing for correctness of the governed write path.
+     if shared.embedder.is_none() && job.kind != EDGE_FACT_KIND {
+         return ProjectionOutcome::Deferred;
+     }
+@@ -16399,6 +16450,30 @@ impl StoredProjection {
+         self.roles.contains(&ProjectionRole::Searchable) && self.fts_present
+     }
+ 
++    /// 0.8.20 Slice 21c (ledger `TC-71`) — **THE `searchable→vector` predicate.**
++    /// True iff this declaration puts the attribute on the dense arm: the
++    /// `searchable` role AND a `vector` sub-object. The exact analogue of
++    /// [`StoredProjection::wants_property_fts`], for the same reason — the
++    /// sub-object SELECTS a sub-target of `searchable`; it does not confer one.
++    ///
++    /// [`vector_projection_declared`] — the corpus-wide predicate gating all
++    /// three enrolment paths (declare-time backfill, its drop inverse, and the
++    /// write path's late enrolment) — routes through this so no call site can
++    /// re-derive the rule and drift. Before it existed, that predicate keyed off
++    /// `vector_declared` ALONE, so `{roles: [filterable], vector: {}}` — the
++    /// combination Slice 15d documents as inert-but-round-trippable — enrolled
++    /// node kinds, backfilled the corpus and made every later write enqueue an
++    /// embedding in any session with a live embedder.
++    ///
++    /// **Deliberately NOT the same as [`StoredProjection::has_deferred`]**, which
++    /// keys off `vector_declared` alone and must keep doing so: that one feeds
++    /// `ProjectionDelta.deferred`, a REPORTING field, and the round-trip contract
++    /// wants a stored-but-unbuilt `vector` sub-object reported however it was
++    /// declared. TC-71 changes what the engine DOES, not what it says.
++    fn wants_vector(&self) -> bool {
++        self.roles.contains(&ProjectionRole::Searchable) && self.vector_declared
++    }
++
+     /// The `fts_tokenizer` column value: `None` (SQL NULL) when no `fts`
+     /// sub-object, else the custom tokenizer or `""` for engine-default.
+     fn fts_column(&self) -> Option<String> {
+@@ -16881,6 +16956,13 @@ fn describe_projection_delta(existing: &StoredProjection, desired: &StoredProjec
+ /// that removes the LAST `searchable→vector` declaration un-enrols the node kinds
+ /// the forward path enrolled ([`unenrol_registry_vector_node_kinds`]), on this
+ /// same transaction. It deletes no embedding.
++///
++/// 0.8.20 Slice 21 fix-1 (codex §9 round 1 [P2]) — and, beside that transition, a
++/// state-keyed RECONCILIATION ([`registry_governs_an_inert_dense_arm`]) so that a
++/// database already carrying an inert enrolment from before the Slice-21c role
++/// gate is healed by any `configure_projections` call, not only by a
++/// searchable-vector-to-none transition it may never perform. The boot arm is
++/// [`reconcile_inert_vector_enrolments_on_boot`].
+ fn apply_projection_config(
+     tx: &Connection,
+     specs: &[ProjectionSpec],
+@@ -17046,7 +17128,21 @@ fn apply_projection_config(
+             false
+         }
+     } else {
+-        if vector_declared_before {
++        // fix-1 (codex §9 round 1 [P2], ledger `TC-71`) — the transition arm is
++        // KEPT as-is and a state-keyed reconciliation is added BESIDE it; neither
++        // subsumes the other. The transition fires when this very call removed the
++        // last dense-arm declaration, including the case where it removed the last
++        // `vector` sub-object with it (which leaves
++        // `registry_governs_an_inert_dense_arm` false). The reconciliation covers
++        // the ALREADY-AFFECTED database whose user calls `configure_projections`
++        // again with anything at all: there `before` is already `false`, so the
++        // transition arm is inert and the inert enrolment used to survive
++        // indefinitely. `||` short-circuits, so the transition case pays nothing
++        // extra; the other case pays two cached `EXISTS` probes on a governed call,
++        // never on the hot write path.
++        if vector_declared_before
++            || registry_governs_an_inert_dense_arm(tx).map_err(|_| EngineError::Storage)?
++        {
+             unenrol_registry_vector_node_kinds(tx).map_err(|_| EngineError::Storage)?;
+         }
+         false
+@@ -17093,6 +17189,20 @@ fn apply_projection_config(
+ /// ([`Engine::enrol_vector_kind_if_declared`] is gated on
+ /// [`vector_projection_declared`]).
+ ///
++/// # 0.8.20 Slice 21 fix-1 — a SECOND, narrower authorisation now exists
++///
++/// The reasoning above is why the bare post-state cannot authorise this DELETE,
++/// and it still stands. What it does not cover is a database that ran the
++/// PRE-Slice-21c code and enrolled node kinds off a `{filterable, vector}`
++/// declaration: there the registry DID own the enrolment, and no transition will
++/// ever fire for it. [`registry_governs_an_inert_dense_arm`] adds exactly that
++/// case — positively conditioned on the registry existing AND declaring a
++/// `vector` sub-object AND declaring no `searchable→vector` projection, which is
++/// strictly narrower than the bare post-state and in particular excludes every
++/// workspace whose enrolment the registry never made. Its callers are
++/// [`reconcile_inert_vector_enrolments_on_boot`] and the drop arm of
++/// [`apply_projection_config`].
++///
+ /// # `'edge_fact'` is excluded, deliberately
+ ///
+ /// [`project_canonical_edge_row`] (G11) auto-registers `'edge_fact'` off the
+@@ -17113,6 +17223,154 @@ fn unenrol_registry_vector_node_kinds(tx: &Connection) -> rusqlite::Result<()> {
+     Ok(())
+ }
+ 
++/// 0.8.20 Slice 21 fix-1 (codex §9 round 1 `[P2]`, ledger `TC-71`) — **does the
++/// registry GOVERN the dense arm while declaring none?** The narrow,
++/// positively-conditioned predicate that authorises
++/// [`unenrol_registry_vector_node_kinds`] on a bare STATE rather than on the
++/// `declared_before && !declared_after` transition.
++///
++/// # Why a state-keyed authorisation exists at all
++///
++/// Slice 21c gated the dense arm on the `searchable` ROLE, which closes the three
++/// FORWARD doors. It cannot reach a database that already ran the old code: those
++/// node kinds are already in `_fathomdb_vector_kinds`, and
++///
++/// - [`Engine::vector_kind_needs_enrolment`] returns early the moment
++///   [`kind_is_vector_indexed`] is true, so it never consults the new role-aware
++///   predicate for an EXISTING registration; and
++/// - [`project_canonical_node_row`] gates the embed enqueue solely on registry
++///   membership (deliberately — that is the hot write path, and the decision is
++///   meant to live upstream).
++///
++/// So without this, upgrading does not actually stop the billable, unexpected
++/// embeddings for exactly the population TC-71 was raised for — the finding's
++/// whole harm survives the fix unless the user happens to perform a
++/// searchable-vector-to-none transition later.
++///
++/// # THE TRAP: why it is not `!vector_projection_declared`
++///
++/// [`vector_projection_declared`] answers `false` when the registry table is
++/// ABSENT (pre-step-24) or merely EMPTY — which is every LEGACY database, many of
++/// which have a legitimately working dense arm enrolled by other means (the
++/// `#[doc(hidden)]` `configure_vector_kind_for_test` hook is one; before this
++/// slice `production_vector_kind_surface=[]`, but a workspace is not obliged to
++/// have reached its enrolment through the registry). Un-enrolling on that bare
++/// negative would silently switch vector search OFF for all of them — a far worse
++/// regression than TC-71 itself. So the rule is POSITIVE on all three counts:
++///
++///   1. `_fathomdb_projection_registry` EXISTS; **and**
++///   2. at least one row carries a `vector` sub-object (`vector_declared = 1`) —
++///      someone actually asked for a dense arm through the registry, which is
++///      precisely what identifies the affected population; **and**
++///   3. NO projection satisfies [`StoredProjection::wants_vector`], i.e. none of
++///      them is `searchable`.
++///
++/// Condition 2 is the load-bearing one. It leaves untouched a registry-governed
++/// database that declares no `vector` sub-object at all but holds enrolments from
++/// a pre-registry era (`slice15e_prekn_filterable` is exactly that shape). Being
++/// conservative here is the correct direction: never destroy a working dense arm.
++///
++/// Conditions 1+2 are the SAME two `prepare_cached` `EXISTS` probes
++/// [`vector_projection_declared`] opens with, so a workspace that never declared
++/// a `vector` sub-object — the overwhelmingly common shape — pays nothing beyond
++/// them and never reaches the typed [`load_projection_registry`] read. Condition 3
++/// is delegated to [`vector_projection_declared`] verbatim rather than re-derived,
++/// so the authorisation and the gate cannot drift.
++fn registry_governs_an_inert_dense_arm(conn: &Connection) -> rusqlite::Result<bool> {
++    // (1) the registry must EXIST. A pre-step-24 database has no registry at all
++    // and is therefore not registry-governed — hands off.
++    let table_exists: bool = conn
++        .prepare_cached(
++            "SELECT EXISTS(
++                 SELECT 1 FROM sqlite_master
++                 WHERE type = 'table' AND name = '_fathomdb_projection_registry'
++             )",
++        )?
++        .query_row([], |row| row.get(0))?;
++    if !table_exists {
++        return Ok(false);
++    }
++    // (2) …and it must actually DECLARE a `vector` sub-object somewhere. An empty
++    // or vector-less registry governs no dense arm, so any enrolment present came
++    // from outside it and is not ours to remove.
++    let any_vector_subobject: bool = conn
++        .prepare_cached(
++            "SELECT EXISTS(SELECT 1 FROM _fathomdb_projection_registry WHERE vector_declared = 1)",
++        )?
++        .query_row([], |row| row.get(0))?;
++    if !any_vector_subobject {
++        return Ok(false);
++    }
++    // (3) …while declaring no `searchable→vector` projection. THE predicate,
++    // reused, so this can never disagree with the gate the write path applies.
++    Ok(!vector_projection_declared(conn)?)
++}
++
++/// 0.8.20 Slice 21 fix-1 (codex §9 round 1 `[P2]`) — the BOOT arm of the
++/// reconciliation: on every open, bring an already-enrolled inert vector kind
++/// into agreement with the role-aware decision, so an affected database
++/// self-heals without the user calling anything. Returns `true` iff it un-enrolled
++/// something.
++///
++/// Authorised by [`registry_governs_an_inert_dense_arm`] (read that for the trap
++/// this must not fall into), and performed by
++/// [`unenrol_registry_vector_node_kinds`] — the SAME writer the drop inverse uses,
++/// so `'edge_fact'` is excluded (G11 auto-registers it off the presence of an edge
++/// body, independently of the projection registry) and **no embedding is deleted**.
++///
++/// # It mirrors the drop inverse exactly, because that inverse does nothing else
++///
++/// `apply_projection_config`'s drop arm is a single call to
++/// [`unenrol_registry_vector_node_kinds`]: no terminal record is touched, no
++/// readiness watermark is rewound, no row is un-stranded, and nothing is notified
++/// (it returns `enqueued = false`). So leaving the database in "the state a drop
++/// transition would have left it in" is exactly that one `DELETE`, and there is
++/// no second half to mirror.
++///
++/// # Cheap when there is nothing to do, and idempotent
++///
++/// A workspace with no `vector` sub-object pays only the two cached `EXISTS`
++/// probes the authorisation opens with. When the authorisation DOES fire, a third
++/// cached `EXISTS` checks whether any node kind is actually enrolled, so the
++/// steady state after the first healing open is a pure READ — no write
++/// transaction, no `DELETE`, nothing to oscillate. `DELETE … WHERE kind <>
++/// 'edge_fact'` is a single statement, hence atomic on its own; no explicit
++/// transaction is opened around it.
++///
++/// # Placement
++///
++/// Runs inside `open_locked` on the writer connection, single-threaded, before
++/// readers and the projection workers spawn — alongside the other boot
++/// reconciliations ([`rederive_projections_on_boot`],
++/// [`reconcile_vector_attr_columns`]) and therefore BEFORE
++/// [`run_vector_equivalence_probe`], which is deliberate: on a database whose only
++/// enrolment was the inert one, reconciling first leaves `_fathomdb_vector_kinds`
++/// empty, so the probe correctly finds no dense arm to guard and the healing open
++/// spends no embed calls at all.
++///
++/// # Not a data migration
++///
++/// It removes a registration row inside ONE live database to match that
++/// database's own declarations. It converts no row across a version step, and
++/// `SCHEMA_VERSION` stays 24.
++fn reconcile_inert_vector_enrolments_on_boot(conn: &Connection) -> rusqlite::Result<bool> {
++    if !registry_governs_an_inert_dense_arm(conn)? {
++        return Ok(false);
++    }
++    // Nothing enrolled beyond the G11 edge arm ⇒ nothing to do. Keeps the steady
++    // state a pure read instead of a no-op write transaction on every open.
++    let any_node_kind: bool = conn
++        .prepare_cached(
++            "SELECT EXISTS(SELECT 1 FROM _fathomdb_vector_kinds WHERE kind <> 'edge_fact')",
++        )?
++        .query_row([], |row| row.get(0))?;
++    if !any_node_kind {
++        return Ok(false);
++    }
++    unenrol_registry_vector_node_kinds(conn)?;
++    Ok(true)
++}
++
+ /// 0.8.20 Slice 20c (R-20-DR remainder) — is ANY `searchable→vector` projection
+ /// declared in the durable registry?
+ ///
+@@ -17127,6 +17385,42 @@ fn unenrol_registry_vector_node_kinds(tx: &Connection) -> rusqlite::Result<()> {
+ /// absent table means nothing is declared, not an error. Mirrors the guard in
+ /// [`load_projection_registry`], and uses `prepare_cached` because the write path
+ /// calls this once per un-registered-kind row.
++///
++/// # 0.8.20 Slice 21c (ledger `TC-71`) — it requires the `searchable` ROLE
++///
++/// This used to answer `EXISTS(… WHERE vector_declared = 1)`, reading the stored
++/// `vector` sub-object and never the `roles` column. But the sub-object SELECTS
++/// a sub-target of `searchable`; it does not confer one (exactly as `fts` does
++/// not — see [`StoredProjection::wants_property_fts`]). So
++/// `{roles: [filterable], vector: {}}`, which Slice 15d documents as
++/// inert-but-round-trippable, turned the dense arm ON in any session with a live
++/// embedder: it enrolled node kinds, backfilled the corpus, and made every later
++/// write of those kinds enqueue an embedding. Wasted embed work and unexpected
++/// vectors at rest for a projection meant to do nothing. The answer now comes
++/// from [`StoredProjection::wants_vector`], the ONE predicate, so the three
++/// gated paths cannot drift.
++///
++/// **This flips the forward AND inverse arms of [`apply_projection_config`] at
++/// once**, which is a real semantic consequence and not an accident: demoting
++/// the last `{searchable, vector}` projection to `{filterable, vector}` (or
++/// dropping it while an inert `{filterable, vector}` sibling survives) now reads
++/// `declared → not-declared` and therefore UN-ENROLS, where before the surviving
++/// `vector_declared = 1` row masked the transition and the write path kept
++/// embedding. Pinned in `tests/slice21c_vector_role_gate.rs`.
++///
++/// # Why the cheap `EXISTS` survives as a pre-filter
++///
++/// The write path calls this once per un-registered-kind row, and the
++/// overwhelmingly common shape is a workspace that declared no `vector`
++/// sub-object at all. `EXISTS(… vector_declared = 1)` is a NECESSARY condition
++/// for [`StoredProjection::wants_vector`], so keeping it as a fast negative
++/// leaves that workspace paying exactly the two cached `EXISTS` probes it paid
++/// before — no typed load, no `BTreeMap`, no uncached `prepare`. Only a
++/// workspace that HAS a `vector` sub-object somewhere pays the
++/// [`load_projection_registry`] read, and there the registry is a handful of
++/// app-declared rows; in the ordinary `searchable→vector` case the kind is
++/// enrolled after the first probe and `kind_is_vector_indexed` short-circuits
++/// this call entirely from then on.
+ fn vector_projection_declared(conn: &Connection) -> rusqlite::Result<bool> {
+     let table_exists: bool = conn
+         .prepare_cached(
+@@ -17139,10 +17433,20 @@ fn vector_projection_declared(conn: &Connection) -> rusqlite::Result<bool> {
+     if !table_exists {
+         return Ok(false);
+     }
+-    conn.prepare_cached(
+-        "SELECT EXISTS(SELECT 1 FROM _fathomdb_projection_registry WHERE vector_declared = 1)",
+-    )?
+-    .query_row([], |row| row.get(0))
++    // Fast negative: no `vector` sub-object anywhere ⇒ certainly no dense arm.
++    let any_vector_subobject: bool = conn
++        .prepare_cached(
++            "SELECT EXISTS(SELECT 1 FROM _fathomdb_projection_registry WHERE vector_declared = 1)",
++        )?
++        .query_row([], |row| row.get(0))?;
++    if !any_vector_subobject {
++        return Ok(false);
++    }
++    // `roles` is persisted as a comma-joined sorted string, so it is not a
++    // trustworthy SQL predicate (a `LIKE` would match a forward-compat token that
++    // merely CONTAINS a role spelling). Answer through the typed registry and the
++    // ONE predicate instead.
++    Ok(load_projection_registry(conn)?.values().any(StoredProjection::wants_vector))
+ }
+ 
+ /// 0.8.20 Slice 20c (R-20-DR remainder) — enrol `kind` in the vector pipeline.
+@@ -17761,7 +18065,40 @@ fn commit_batch(
+     base_cursor: u64,
+     provenance_row_cap: u64,
+ ) -> rusqlite::Result<u64> {
+-    let tx = connection.transaction()?;
++    // 0.8.20 Slice 21a-2 (TC-57) — `BEGIN IMMEDIATE`, not rusqlite's `BEGIN
++    // DEFERRED` default. Take the WAL write lock AT `BEGIN`, before the
++    // supersession SELECT below, so this transaction never has to PROMOTE a read
++    // lock to a write lock.
++    //
++    // The defect this closes (characterized in
++    // `dev/design/0.8.20-tc57-write-race-characterization.md`, repro 10/10 at
++    // baseline `41a81c17`): for a GOVERNED write (`logical_id: Some`) the first
++    // statement in this transaction is a read —
++    // `prior_node_cursors_by_logical_id` — and the second is the supersession
++    // UPDATE. When the async projection worker holds the write lock on its own
++    // connection at that instant, SQLite refuses the promotion with plain
++    // `SQLITE_BUSY` (5) and SKIPS the busy handler entirely, for deadlock
++    // avoidance (`sqlite3_busy_handler`: "if SQLite determines that invoking the
++    // busy handler could result in a deadlock, it will go ahead and return
++    // SQLITE_BUSY"). MEASURED: handler invoked ZERO times, error returned in 0 ms
++    // against rusqlite's 5 000 ms default timeout. So NO `busy_timeout` value
++    // could ever have absorbed it, and the caller saw an opaque, un-retryable
++    // `EngineError::Storage` mid-ingest. The same shape also has a second,
++    // narrower exit — `SQLITE_BUSY_SNAPSHOT` (517) when the WAL advances past the
++    // read snapshot — which this closes too, by construction.
++    //
++    // UNCONDITIONAL rather than gated on `logical_id`, deliberately: an anonymous
++    // batch's first statement is already the INSERT below, so it takes the write
++    // lock essentially immediately anyway and the delta is microseconds, whereas a
++    // content-dependent transaction behaviour would be a NEW correctness surface
++    // (mixed batches, edge arms, future write kinds) with a place to be wrong in
++    // each. MEASURED cost on the anonymous arm: none detectable
++    // (`tc57_worker_commit_pressure.rs`).
++    //
++    // `BEGIN IMMEDIATE` can itself return `SQLITE_BUSY` — but WITH the busy
++    // handler consulted, i.e. absorbed by the existing 5 s default instead of
++    // surfaced (pinned by `tc57_mechanism_control_write_first_is_retryable`).
++    let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+ 
+     for (i, (write, plan)) in batch.iter().zip(plans).enumerate() {
+         // Per-row cursor: row i gets `base_cursor + i + 1`. See the
+@@ -18142,13 +18479,24 @@ fn max_cursor(connection: &Connection, table: &str) -> rusqlite::Result<u64> {
+ /// — bare-extended-code matching covers the rest with a stable
+ /// `"SQLITE_UNKNOWN"` fallback so subscribers always see a typed code.
+ ///
+-/// Diagnostic completeness for unmapped codes: when this helper returns
+-/// `"SQLITE_UNKNOWN"`, the numeric extended code is not lost — it
+-/// remains on the underlying `rusqlite::Error::SqliteFailure` carried
+-/// in the engine error chain that subscribers can inspect via
+-/// `EngineError`'s `source()`. Expanding the enumerated subset (or
+-/// surfacing the numeric code as a typed payload field) is a 0.7+
+-/// improvement.
++/// Diagnostic completeness for unmapped codes — **corrected 0.8.20 Slice 21a-2
++/// (TC-57)**. This comment used to claim that when the helper returns
++/// `"SQLITE_UNKNOWN"` the numeric extended code "is not lost — it remains on the
++/// underlying `rusqlite::Error::SqliteFailure` carried in the engine error chain
++/// that subscribers can inspect via `EngineError`'s `source()`". **That is
++/// false.** There is no such chain: `EngineError::Storage` is a UNIT variant with
++/// no payload and no `source()`, and `write_inner` drops the `rusqlite::Error`
++/// immediately after emitting the lifecycle event. So for an unmapped code the
++/// numeric value IS lost, and the only signal a host receives is the string
++/// `"SQLITE_UNKNOWN"`.
++///
++/// Concretely: `SQLITE_BUSY_SNAPSHOT` (517) matches none of the PRIMARY constants
++/// below — the match is on the EXTENDED value — so it reaches subscribers as
++/// `"SQLITE_UNKNOWN"` and is unrecoverable from the public API. Restructuring the
++/// error path so busy codes are distinguishable (and surfacing the numeric code as
++/// a typed payload field) is candidate R2 of
++/// `dev/design/0.8.20-tc57-write-race-characterization.md` §7, explicitly OUT of
++/// scope for the 21a-2 fix and recorded here rather than silently carried.
+ fn sqlite_extended_code_name(err: &rusqlite::Error) -> Option<&'static str> {
+     let sqlite_error = err.sqlite_error()?;
+     let extended = sqlite_error.extended_code;
+
+exec
+/bin/bash -lc "grep -n \"fn load_projection_registry\\|struct StoredProjection\\|enum ProjectionRole\\|vector_declared\\|roles\" -n src/rust/crates/fathomdb-engine/src/lib.rs | head -80" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s21
+ succeeded in 0ms:
+3846:/// `searchable→FTS` and `searchable→vector` are NOT roles — they are tier labels
+3850:pub enum ProjectionRole {
+3951:/// `vector_embedder` + `vector_declared` still round-trip the declaration) —
+3977:/// `{ name, roles: Set<ProjectionRole>, fts?, vector? }`. `roles` carries SET
+3980:/// `roles`, not `kind` (`kind` is the node/edge type discriminator).
+3984:    pub roles: BTreeSet<ProjectionRole>,
+4001:    /// Attribute names whose declared roles were persisted but NOT built:
+4625:        // already ran the old code under `{roles:[filterable], vector:{}}` keeps
+10390:            registry.get(name).is_some_and(|s| s.roles.contains(&ProjectionRole::Filterable));
+14690:        .filter(|(_, stored)| stored.roles.contains(&ProjectionRole::Filterable))
+16424:/// mirrors it with an explicit `vector_declared` bit plus a nullable
+16427:struct StoredProjection {
+16428:    roles: BTreeSet<ProjectionRole>,
+16433:    vector_declared: bool,
+16438:    /// True iff the declared roles want the attribute VALUE stored at rest in
+16443:        self.roles.contains(&ProjectionRole::Filterable)
+16444:            || self.roles.contains(&ProjectionRole::Searchable)
+16450:        self.roles.contains(&ProjectionRole::Searchable) && self.fts_present
+16463:    /// `vector_declared` ALONE, so `{roles: [filterable], vector: {}}` — the
+16469:    /// keys off `vector_declared` alone and must keep doing so: that one feeds
+16474:        self.roles.contains(&ProjectionRole::Searchable) && self.vector_declared
+16497:            roles: spec.roles.clone(),
+16504:            vector_declared: spec.vector.is_some(),
+16517:            roles: self.roles.clone(),
+16523:            vector: if self.vector_declared {
+16543:        self.roles.contains(&ProjectionRole::Rankable) || self.vector_declared
+16588:fn load_projection_registry(
+16609:        "SELECT name, roles, fts_tokenizer, vector_embedder, vector_declared
+16614:        let roles_json: String = row.get(1)?;
+16617:        let vector_declared: i64 = row.get(4)?;
+16618:        Ok((name, roles_json, fts_tokenizer, vector_embedder, vector_declared))
+16621:        let (name, roles_json, fts_col, vector_embedder, vector_declared) = row?;
+16622:        let roles: BTreeSet<ProjectionRole> = parse_roles_json(&roles_json);
+16628:                roles,
+16631:                vector_declared: vector_declared != 0,
+16641:fn parse_roles_json(s: &str) -> BTreeSet<ProjectionRole> {
+16645:fn roles_to_storage(roles: &BTreeSet<ProjectionRole>) -> String {
+16646:    roles.iter().map(|r| r.as_str()).collect::<Vec<_>>().join(",")
+16657:             (name, roles, fts_tokenizer, vector_embedder, vector_declared)
+16660:             roles = excluded.roles,
+16663:             vector_declared = excluded.vector_declared",
+16666:            roles_to_storage(&stored.roles),
+16669:            i64::from(stored.vector_declared),
+16899:    if existing.roles.iter().any(|r| !desired.roles.contains(r)) {
+16907:    if existing.vector_declared
+16908:        && (!desired.vector_declared || existing.vector_embedder != desired.vector_embedder)
+16919:    for r in &existing.roles {
+16920:        if !desired.roles.contains(r) {
+16929:    if existing.vector_declared && !desired.vector_declared {
+16931:    } else if existing.vector_declared && existing.vector_embedder != desired.vector_embedder {
+16996:        if spec.roles.is_empty() {
+16998:                msg: format!("projection '{}' declares no roles", spec.name),
+17029:    let vector_declared_before =
+17123:    let vector_declared_after = vector_projection_declared(tx).map_err(|_| EngineError::Storage)?;
+17124:    let enqueued = if vector_declared_after {
+17143:        if vector_declared_before
+17262:///   2. at least one row carries a `vector` sub-object (`vector_declared = 1`) —
+17298:            "SELECT EXISTS(SELECT 1 FROM _fathomdb_projection_registry WHERE vector_declared = 1)",
+17391:/// This used to answer `EXISTS(… WHERE vector_declared = 1)`, reading the stored
+17392:/// `vector` sub-object and never the `roles` column. But the sub-object SELECTS
+17395:/// `{roles: [filterable], vector: {}}`, which Slice 15d documents as
+17408:/// `vector_declared = 1` row masked the transition and the write path kept
+17415:/// sub-object at all. `EXISTS(… vector_declared = 1)` is a NECESSARY condition
+17439:            "SELECT EXISTS(SELECT 1 FROM _fathomdb_projection_registry WHERE vector_declared = 1)",
+17445:    // `roles` is persisted as a comma-joined sorted string, so it is not a
+
+exec
+/bin/bash -lc "sed -n '3830,4020p;16400,16680p;16980,17160p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s21
+ succeeded in 0ms:
+    pub projection_cursor_after: u64,
+}
+
+/// Phase 9 Pack B excise report (AC-028a/b/c). Counts are post-excise
+/// totals; `projections_invalidated` reports the shadow-row invalidation
+/// total (FTS5 + vec0 + projection terminal) for the excised source.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExciseReport {
+    pub source_ref: String,
+    pub nodes_excised: u64,
+    pub edges_excised: u64,
+    pub projections_invalidated: u64,
+}
+
+/// 0.8.20 Slice 15d (R-20-PR, C-1) — one member of a [`ProjectionSpec`]'s role
+/// set. **Exactly three members** (HITL-ratified S8, `api-surface.md:87`):
+/// `searchable→FTS` and `searchable→vector` are NOT roles — they are tier labels
+/// carried by the `fts`/`vector` sub-objects of the spec, so an attribute is
+/// `Searchable` once and the sub-objects select FTS-only / vector-only / both.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum ProjectionRole {
+    /// Projects into the EAV store + its `(attr_name, attr_value)` composite
+    /// index — cheap equality/range, built same-transaction.
+    Filterable,
+    /// The F9 importance/recency signal. **Graceful-absent (Q6a):** declaring
+    /// it is legal and never errors, but the engine DEFERS the build until F9
+    /// exists and grafts it on the next idempotent `configure_projections`.
+    Rankable,
+    /// Full-text / dense recall of the meaning text. The `fts`/`vector`
+    /// sub-objects select the sub-target.
+    Searchable,
+}
+
+impl ProjectionRole {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ProjectionRole::Filterable => "filterable",
+            ProjectionRole::Rankable => "rankable",
+            ProjectionRole::Searchable => "searchable",
+        }
+    }
+
+    #[must_use]
+    pub fn from_str_opt(value: &str) -> Option<Self> {
+        match value {
+            "filterable" => Some(ProjectionRole::Filterable),
+            "rankable" => Some(ProjectionRole::Rankable),
+            "searchable" => Some(ProjectionRole::Searchable),
+            _ => None,
+        }
+    }
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — the `searchable→FTS` sub-target selector.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ProjectionFts {
+    /// Optional tokenizer override; `None` ⇒ the engine default FTS5 tokenizer
+    /// (`body`-FTS's `porter unicode61 remove_diacritics 2`). A custom
+    /// per-attr tokenizer is the ≥0.9.x multi-field FTS work — recorded but
+    /// not honoured here (graceful-graft later, same as `rankable`).
+    pub tokenizer: Option<String>,
+}
+
+/// 0.8.20 Slice 20 (R-20-DR) — the ENGINE-SET readiness of the
+/// `searchable→vector` projection, per
+/// `dev/design/record-lifecycle-protocol/projection-registry-and-async-embed.md`
+/// §3.
+///
+/// **Exactly two members.** `filterable` and `searchable→FTS` are
+/// same-transaction (non-stale on commit) so they need no readiness axis at all;
+/// `searchable→vector` is **async, rebuild-durable**, so it carries one.
+///
+/// **Naming discipline (load-bearing).** The token **`pending` is RESERVED for
+/// the admission axis** (quarantine/trust — an app judgment). Index-readiness is
+/// a DIFFERENT, orthogonal dimension (a record can be
+/// `active ∧ is_latest ∧ admissible` yet `dense_readiness = embedding`), so this
+/// enum deliberately does **not** reuse that word: the non-ready member is
+/// `Embedding`, never `Pending`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum DenseReadiness {
+    /// Every row in the vector projection's row set has reached a projection
+    /// terminal — the dense arm is caught up. Because the vector INSERT and the
+    /// terminal record are written in ONE transaction
+    /// ([`commit_projection_outcomes`]), `Ready` can never be observed with the
+    /// vector row absent (design §4.1 invariant 1).
+    Ready,
+    /// At least one row in the projection's row set has not yet reached a
+    /// projection terminal — embedding is outstanding. This is the ONLY
+    /// tolerable torn state: readiness `embedding` with the vector absent (the
+    /// dense arm reads as partial and RRF under-ranks; it does not hide).
+    Embedding,
+}
+
+impl DenseReadiness {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DenseReadiness::Ready => "ready",
+            DenseReadiness::Embedding => "embedding",
+        }
+    }
+
+    /// The two accepted spellings. `"pending"` is DELIBERATELY not one of them
+    /// (reserved for the admission axis) and so parses to `None`.
+    #[must_use]
+    pub fn from_str_opt(value: &str) -> Option<Self> {
+        match value {
+            "ready" => Some(DenseReadiness::Ready),
+            "embedding" => Some(DenseReadiness::Embedding),
+            _ => None,
+        }
+    }
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — the `searchable→vector` sub-target selector.
+///
+/// **Slice 20 (R-20-DR) attached `dense_readiness` HERE, additively:** this
+/// sub-object is STORED by 15d (so the shape exists and a caller can declare a
+/// vector projection); Slice 20 hangs the READ-METADATA readiness flag off it.
+/// Nothing in 15d's persisted shape changed (the registry columns
+/// `vector_embedder` + `vector_declared` still round-trip the declaration) —
+/// **readiness is DERIVED, never stored**, so there is no schema step and no
+/// separate flag that could tear (see [`derive_dense_readiness`]).
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ProjectionVector {
+    /// Optional embedder override; `None` ⇒ the engine's shipped default.
+    pub embedder: Option<String>,
+    /// 0.8.20 Slice 20 (R-20-DR) — **READ METADATA, engine-set.** Populated by
+    /// [`Engine::read_projections`]; `None` on every caller-authored spec.
+    ///
+    /// It is **not part of the declaration**: `configure_projections` neither
+    /// stores nor honours it (see [`StoredProjection::from_spec`], which reads
+    /// only `embedder`), so a value supplied here is INERT — the engine always
+    /// reports the derived truth. This is deliberately accept-inert rather than
+    /// hard-reject so `read.projections` output stays feedable straight back
+    /// into `configure_projections` (the fix-4 read→configure round-trip, which
+    /// both bindings pin with a test); it mirrors the already-audited
+    /// accept-inert ruling on an `fts`/`vector` sub-object declared without the
+    /// `searchable` role. The bindings still HARD-REJECT the shapes that could
+    /// not round-trip: a readiness supplied with `vector = false`, and any
+    /// spelling outside `{ready, embedding}`.
+    pub dense_readiness: Option<DenseReadiness>,
+}
+
+/// 0.8.20 Slice 15d (R-20-PR / C-1) — a single declarative projection
+/// declaration. HITL-ratified shape (`api-surface.md:85-89`):
+/// `{ name, roles: Set<ProjectionRole>, fts?, vector? }`. `roles` carries SET
+/// semantics (dedup + membership; an attribute can be `Filterable` AND
+/// `Searchable`) — encoded here as a sorted, de-duplicated `BTreeSet`. Named
+/// `roles`, not `kind` (`kind` is the node/edge type discriminator).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProjectionSpec {
+    pub name: String,
+    pub roles: BTreeSet<ProjectionRole>,
+    pub fts: Option<ProjectionFts>,
+    pub vector: Option<ProjectionVector>,
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — the diff [`Engine::configure_projections`]
+/// applied. Idempotent re-registration yields `unchanged == true` with all
+/// vecs empty (the "re-registration is a no-op" acceptance signal). A
+/// destructive change without an explicit `drop` is an `Err`, not a delta.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ProjectionDelta {
+    /// Attribute names whose same-transaction projections (EAV / property-FTS)
+    /// were (re)built by this apply.
+    pub built: Vec<String>,
+    /// Attribute names dropped (explicit `drop` list) — their EAV + property-FTS
+    /// rows and registry row removed.
+    pub dropped: Vec<String>,
+    /// Attribute names whose declared roles were persisted but NOT built:
+    /// `rankable` (F9 not yet live) and the `searchable→vector` sub-target
+    /// (Slice 20). These graft on a future idempotent apply. No error.
+    pub deferred: Vec<String>,
+    /// True iff nothing was built, dropped, or newly deferred — the whole apply
+    /// diffed to a no-op.
+    pub unchanged: bool,
+}
+
+/// 0.8.20 Slice 5b (R-20-E7) — outcome of
+/// [`Engine::excise_collection_record`]. `records_excised` counts the erased
+/// `operational_mutations` versions (an append-only-log collection keeps every
+/// version of a key); `state_rows_excised` counts the erased
+/// `operational_state` row (0 or 1).
+///
+/// `record_digest` is `SHA-256(collection + 0x1F + record_key)` — the audit
+/// handle. The raw `record_key` is deliberately NOT carried: it is arbitrary
+/// caller-supplied text and may itself be the identifier being erased, so
+/// echoing it into a durable audit row would defeat the erasure.
+#[derive(Clone, Debug, Eq, PartialEq)]
+        matches!(self, ProjectionPass::Write | ProjectionPass::VectorOnly)
+    }
+
+    /// 0.8.20 Slice 15d (R-20-EAV) — whether this pass (re)projects the declared
+    /// attribute set into the EAV store + property-FTS. Only the full `Write`
+    /// pass does: the `FtsOnly` tokenizer-upgrade reproject predates step 24 (no
+    /// registry/attribute tables exist at that migration point, so it must not
+    /// touch them), and `VectorOnly` rebuilds only the async vector shadows. The
+    /// operator FTS rebuild uses `Write`, so a full `rebuild_projections`
+    /// re-derives attributes cleanly after `truncate_all_row_projections` clears
+    /// the two attribute classes.
+    fn writes_attributes(self) -> bool {
+        matches!(self, ProjectionPass::Write)
+    }
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — the on-disk registry row for one declared
+/// projection, read back from `_fathomdb_projection_registry`.
+///
+/// **On-disk encoding of the optional sub-objects.** The `fts_tokenizer` column
+/// is tri-valued: SQL `NULL` = no `fts` sub-object; empty string `""` = `fts`
+/// present with the engine-default tokenizer; a non-empty string = `fts` with a
+/// custom tokenizer. This is what lets `searchable→FTS with default tokenizer`
+/// be distinguished durably from `searchable` with no FTS sub-target. `vector`
+/// mirrors it with an explicit `vector_declared` bit plus a nullable
+/// `vector_embedder`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct StoredProjection {
+    roles: BTreeSet<ProjectionRole>,
+    fts_present: bool,
+    /// `Some(custom)` custom tokenizer; `None` = engine default (only
+    /// meaningful when `fts_present`).
+    fts_tokenizer: Option<String>,
+    vector_declared: bool,
+    vector_embedder: Option<String>,
+}
+
+impl StoredProjection {
+    /// True iff the declared roles want the attribute VALUE stored at rest in
+    /// the EAV store: `filterable` (the value IS the filter target) or
+    /// `searchable` (the value is the retrievable meaning, and Slice 20's vector
+    /// embed will read it from here). `rankable`-only wants no value at rest.
+    fn wants_eav(&self) -> bool {
+        self.roles.contains(&ProjectionRole::Filterable)
+            || self.roles.contains(&ProjectionRole::Searchable)
+    }
+
+    /// True iff a `searchable→FTS` property-FTS row should be written: the
+    /// `searchable` role AND an `fts` sub-object.
+    fn wants_property_fts(&self) -> bool {
+        self.roles.contains(&ProjectionRole::Searchable) && self.fts_present
+    }
+
+    /// 0.8.20 Slice 21c (ledger `TC-71`) — **THE `searchable→vector` predicate.**
+    /// True iff this declaration puts the attribute on the dense arm: the
+    /// `searchable` role AND a `vector` sub-object. The exact analogue of
+    /// [`StoredProjection::wants_property_fts`], for the same reason — the
+    /// sub-object SELECTS a sub-target of `searchable`; it does not confer one.
+    ///
+    /// [`vector_projection_declared`] — the corpus-wide predicate gating all
+    /// three enrolment paths (declare-time backfill, its drop inverse, and the
+    /// write path's late enrolment) — routes through this so no call site can
+    /// re-derive the rule and drift. Before it existed, that predicate keyed off
+    /// `vector_declared` ALONE, so `{roles: [filterable], vector: {}}` — the
+    /// combination Slice 15d documents as inert-but-round-trippable — enrolled
+    /// node kinds, backfilled the corpus and made every later write enqueue an
+    /// embedding in any session with a live embedder.
+    ///
+    /// **Deliberately NOT the same as [`StoredProjection::has_deferred`]**, which
+    /// keys off `vector_declared` alone and must keep doing so: that one feeds
+    /// `ProjectionDelta.deferred`, a REPORTING field, and the round-trip contract
+    /// wants a stored-but-unbuilt `vector` sub-object reported however it was
+    /// declared. TC-71 changes what the engine DOES, not what it says.
+    fn wants_vector(&self) -> bool {
+        self.roles.contains(&ProjectionRole::Searchable) && self.vector_declared
+    }
+
+    /// The `fts_tokenizer` column value: `None` (SQL NULL) when no `fts`
+    /// sub-object, else the custom tokenizer or `""` for engine-default.
+    fn fts_column(&self) -> Option<String> {
+        if self.fts_present {
+            Some(self.fts_tokenizer.clone().unwrap_or_default())
+        } else {
+            None
+        }
+    }
+
+    /// Build from the public [`ProjectionSpec`].
+    ///
+    /// 0.8.20 Slice 20 (R-20-DR) — note what is DELIBERATELY not read here:
+    /// `spec.vector.dense_readiness`. Readiness is engine-set READ METADATA, not
+    /// part of the declaration, so it never reaches the durable registry. That
+    /// is what makes a caller-supplied value INERT (the engine always reports the
+    /// derived truth) and what keeps it out of the destructive-change diff — a
+    /// readiness difference can never look like a projection change.
+    fn from_spec(spec: &ProjectionSpec) -> Self {
+        StoredProjection {
+            roles: spec.roles.clone(),
+            fts_present: spec.fts.is_some(),
+            fts_tokenizer: spec
+                .fts
+                .as_ref()
+                .and_then(|f| f.tokenizer.clone())
+                .filter(|t| !t.is_empty()),
+            vector_declared: spec.vector.is_some(),
+            vector_embedder: spec
+                .vector
+                .as_ref()
+                .and_then(|v| v.embedder.clone())
+                .filter(|e| !e.is_empty()),
+        }
+    }
+
+    /// Reconstruct the public [`ProjectionSpec`] for `read_projections`.
+    fn to_spec(&self, name: &str) -> ProjectionSpec {
+        ProjectionSpec {
+            name: name.to_string(),
+            roles: self.roles.clone(),
+            fts: if self.fts_present {
+                Some(ProjectionFts { tokenizer: self.fts_tokenizer.clone() })
+            } else {
+                None
+            },
+            vector: if self.vector_declared {
+                // 0.8.20 Slice 20 (R-20-DR) — the registry knows nothing about
+                // readiness (it is DERIVED, never stored), so the durable shape
+                // reconstructs with `dense_readiness: None`.
+                // [`Engine::read_projections`] fills it from
+                // [`derive_dense_readiness`] on the way out.
+                Some(ProjectionVector {
+                    embedder: self.vector_embedder.clone(),
+                    dense_readiness: None,
+                })
+            } else {
+                None
+            },
+        }
+    }
+
+    /// The set of ROLE spellings this declaration DEFERS rather than builds:
+    /// `rankable` (F9 not live) and, since 15d builds no embedding, the
+    /// `searchable→vector` sub-target. Used to populate `ProjectionDelta.deferred`.
+    fn has_deferred(&self) -> bool {
+        self.roles.contains(&ProjectionRole::Rankable) || self.vector_declared
+    }
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — is `name` a well-formed attribute name?
+///
+/// Establishes the invariant "a name that `configure_projections` ACCEPTS must be
+/// POPULATABLE": the write-path extraction compiles the SQLite JSON path
+/// `$."<name>"` (double-quoted key). A name must therefore round-trip through
+/// that quoted-key form unchanged. Rejects:
+///   - empty;
+///   - a double-quote `"` (would terminate the quoted key early → malformed path,
+///     ERRORing inside the write transaction);
+///   - a BACKSLASH `\` (fix-4 finding 1 [P2]): SQLite treats `\` as an escape
+///     introducer inside the double-quoted JSON-path key, so a body key literally
+///     containing `\` (e.g. `a\b`) is NOT matched by `$."a\b"`. Pre-fix the name
+///     was accepted yet the attribute silently NEVER populated
+///     `canonical_attributes` — an accept-then-never-populate footgun. Rejecting
+///     it keeps the accept ⟹ works contract (mirrors the TC-33 hard-reject
+///     philosophy);
+///   - any ASCII control char (incl. NUL): not a safe/legible key spelling and
+///     not reliably matchable through the quoted-key form.
+///
+/// Projection names are app-declared identifiers, so this charset restriction is
+/// a legitimate contract. Caller-supplied, so it is validated at
+/// `configure_projections` time (spec names AND the `drop` list).
+fn is_valid_attribute_name(name: &str) -> bool {
+    !name.is_empty()
+        && !name.contains('"')
+        && !name.contains('\\')
+        && !name.chars().any(|c| c.is_control())
+}
+
+/// 0.8.20 Slice 15d — the SQLite JSON path that extracts attribute `name` from a
+/// node body. `name` is pre-validated by [`is_valid_attribute_name`]; the path
+/// is bound as a PARAMETER (never interpolated into SQL), so this is not an
+/// injection surface even before that validation.
+fn attribute_json_path(name: &str) -> String {
+    format!("$.\"{name}\"")
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — load the durable projection registry
+/// (`_fathomdb_projection_registry`) into a name→[`StoredProjection`] map. This
+/// is the derived-cache source (Q5) that boot re-derive and every
+/// `configure_projections` diff read.
+fn load_projection_registry(
+    conn: &Connection,
+) -> rusqlite::Result<BTreeMap<String, StoredProjection>> {
+    let mut out = BTreeMap::new();
+    // The registry table is created by schema step 24; a DB migrated to a
+    // pre-24 head (e.g. a compatibility/partial-migration test open) does not
+    // have it. Absent ⇒ no projections declared ⇒ empty registry, not an error.
+    // This keeps boot re-derive and the write-path attribute projector safe on
+    // every pre-24 schema.
+    let table_exists: bool = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_fathomdb_projection_registry'",
+            [],
+            |_| Ok(true),
+        )
+        .optional()?
+        .unwrap_or(false);
+    if !table_exists {
+        return Ok(out);
+    }
+    let mut stmt = conn.prepare(
+        "SELECT name, roles, fts_tokenizer, vector_embedder, vector_declared
+         FROM _fathomdb_projection_registry",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        let name: String = row.get(0)?;
+        let roles_json: String = row.get(1)?;
+        let fts_tokenizer: Option<String> = row.get(2)?;
+        let vector_embedder: Option<String> = row.get(3)?;
+        let vector_declared: i64 = row.get(4)?;
+        Ok((name, roles_json, fts_tokenizer, vector_embedder, vector_declared))
+    })?;
+    for row in rows {
+        let (name, roles_json, fts_col, vector_embedder, vector_declared) = row?;
+        let roles: BTreeSet<ProjectionRole> = parse_roles_json(&roles_json);
+        let fts_present = fts_col.is_some();
+        let fts_tokenizer = fts_col.filter(|t| !t.is_empty());
+        out.insert(
+            name,
+            StoredProjection {
+                roles,
+                fts_present,
+                fts_tokenizer,
+                vector_declared: vector_declared != 0,
+                vector_embedder,
+            },
+        );
+    }
+    Ok(out)
+}
+
+/// Roles are persisted as a compact, sorted, comma-separated list (set
+/// semantics; order-independent). Unknown tokens are ignored (forward-compat).
+fn parse_roles_json(s: &str) -> BTreeSet<ProjectionRole> {
+    s.split(',').filter_map(|t| ProjectionRole::from_str_opt(t.trim())).collect()
+}
+
+fn roles_to_storage(roles: &BTreeSet<ProjectionRole>) -> String {
+    roles.iter().map(|r| r.as_str()).collect::<Vec<_>>().join(",")
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — write/overwrite one registry row.
+fn persist_projection_row(
+    tx: &Connection,
+    name: &str,
+    stored: &StoredProjection,
+) -> rusqlite::Result<()> {
+    tx.execute(
+        "INSERT INTO _fathomdb_projection_registry
+             (name, roles, fts_tokenizer, vector_embedder, vector_declared)
+         VALUES(?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(name) DO UPDATE SET
+             roles = excluded.roles,
+             fts_tokenizer = excluded.fts_tokenizer,
+             vector_embedder = excluded.vector_embedder,
+             vector_declared = excluded.vector_declared",
+        params![
+            name,
+            roles_to_storage(&stored.roles),
+            stored.fts_column(),
+            stored.vector_embedder,
+            i64::from(stored.vector_declared),
+        ],
+    )?;
+    Ok(())
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — delete one registry row.
+fn remove_projection_row(tx: &Connection, name: &str) -> rusqlite::Result<()> {
+    tx.execute("DELETE FROM _fathomdb_projection_registry WHERE name = ?1", params![name])?;
+    Ok(())
+}
+
+    // registry ended rankable-only (which builds nothing) — the returned delta
+    // DIVERGED from the persisted registry, breaking the fix-4 "accept ⟹ correct"
+    // contract. A duplicate `drop` entry likewise reported the drop twice though
+    // the row was removed once. A single request naming the same projection twice
+    // is ambiguous/malformed, so we refuse it (rejection, not last-wins coalesce)
+    // — a rejected request is a total no-op, keeping the registry and delta
+    // consistent with the accepted input. A name that appears in BOTH `specs` and
+    // `drop` is NOT a duplicate: that is the documented drop-then-rebuild-fresh
+    // pattern (drops apply first, then the fresh spec builds), so it is allowed.
+    let mut seen_spec_names: BTreeSet<&str> = BTreeSet::new();
+    for spec in specs {
+        if !is_valid_attribute_name(&spec.name) {
+            return Err(EngineError::InvalidArgument {
+                msg: format!("invalid projection attribute name: {:?}", spec.name),
+            });
+        }
+        if spec.roles.is_empty() {
+            return Err(EngineError::InvalidArgument {
+                msg: format!("projection '{}' declares no roles", spec.name),
+            });
+        }
+        if !seen_spec_names.insert(spec.name.as_str()) {
+            return Err(EngineError::InvalidArgument {
+                msg: format!("duplicate projection name in one request: '{}'", spec.name),
+            });
+        }
+    }
+    let mut seen_drop_names: BTreeSet<&str> = BTreeSet::new();
+    for name in drop {
+        if !is_valid_attribute_name(name) {
+            return Err(EngineError::InvalidArgument {
+                msg: format!("invalid projection drop name: {name:?}"),
+            });
+        }
+        if !seen_drop_names.insert(name.as_str()) {
+            return Err(EngineError::InvalidArgument {
+                msg: format!("duplicate projection drop in one request: '{name}'"),
+            });
+        }
+    }
+
+    let mut delta = ProjectionDelta::default();
+
+    // 0.8.20 Slice 20c fix-1 (codex §9 [P2]) — snapshot "is the dense arm
+    // declared?" BEFORE any registry mutation. Together with the same read taken
+    // after them it identifies the ONE transition that owns the inverse of this
+    // slice's enrolment: declared -> not-declared. See
+    // [`unenrol_registry_vector_node_kinds`] for why the inverse is keyed to that
+    // TRANSITION rather than to the bare post-state.
+    let vector_declared_before =
+        vector_projection_declared(tx).map_err(|_| EngineError::Storage)?;
+
+    // (1) Explicit drops. Omission never drops (C3); only this list does.
+    let before_drop = load_projection_registry(tx).map_err(|_| EngineError::Storage)?;
+    for name in drop {
+        if before_drop.contains_key(name) {
+            clear_attribute_projection(tx, name).map_err(|_| EngineError::Storage)?;
+            remove_projection_row(tx, name).map_err(|_| EngineError::Storage)?;
+            delta.dropped.push(name.clone());
+        }
+        // dropping an absent projection is an idempotent no-op, not an error.
+    }
+
+    // (2) Diff each spec against the post-drop registry.
+    let current = load_projection_registry(tx).map_err(|_| EngineError::Storage)?;
+    for spec in specs {
+        let desired = StoredProjection::from_spec(spec);
+        match current.get(&spec.name) {
+            Some(existing) if existing == &desired => {
+                // Idempotent re-registration — no-op (the keystone acceptance).
+            }
+            Some(existing) => {
+                if is_destructive_projection_change(existing, &desired) {
+                    return Err(EngineError::ProjectionDestructive {
+                        name: spec.name.clone(),
+                        delta: describe_projection_delta(existing, &desired),
+                    });
+                }
+                persist_projection_row(tx, &spec.name, &desired)
+                    .map_err(|_| EngineError::Storage)?;
+                clear_attribute_projection(tx, &spec.name).map_err(|_| EngineError::Storage)?;
+                backfill_attribute(tx, &spec.name, &desired).map_err(|_| EngineError::Storage)?;
+                if desired.wants_eav() {
+                    delta.built.push(spec.name.clone());
+                }
+                // 0.8.20 Slice 15e fix-2 finding 2 [P2] — this arm ONLY runs when
+                // the registry row actually CHANGED (`existing != desired`), so the
+                // delta MUST reflect that change; otherwise an accepted mutation
+                // reports `unchanged = true` — a no-op lie to SDK callers. The prior
+                // `&& !existing.has_deferred()` guard suppressed a deferred-ONLY
+                // change (e.g. `rankable` → `rankable + vector`, which builds no EAV
+                // so `built` stays empty): the row persisted but `delta` came back
+                // empty. Mirror the fresh-registration push (`if
+                // desired.has_deferred()`). Every valid non-empty spec has
+                // `wants_eav()` OR `has_deferred()`, so on a real change at least one
+                // of `built`/`deferred` is now populated ⇒ `unchanged` can never be
+                // `true` on a persisted change. A genuine no-op (identical spec)
+                // takes the idempotent arm above and is untouched.
+                if desired.has_deferred() {
+                    delta.deferred.push(spec.name.clone());
+                }
+            }
+            None => {
+                persist_projection_row(tx, &spec.name, &desired)
+                    .map_err(|_| EngineError::Storage)?;
+                clear_attribute_projection(tx, &spec.name).map_err(|_| EngineError::Storage)?;
+                backfill_attribute(tx, &spec.name, &desired).map_err(|_| EngineError::Storage)?;
+                if desired.wants_eav() {
+                    delta.built.push(spec.name.clone());
+                }
+                if desired.has_deferred() {
+                    delta.deferred.push(spec.name.clone());
+                }
+            }
+        }
+    }
+
+    // 0.8.20 Slice 15e — after the registry mutations, reconcile the live vec0
+    // shape with the (possibly changed) `filterable` set: a NON-DESTRUCTIVE
+    // reshape adds/removes the `attr_<hex>` pre-KNN columns preserving every
+    // row's embedding (TC-46, HITL Option 1). Runs on the caller's write
+    // transaction, so the reshape commits atomically with the registry row. On an
+    // idempotent re-registration the desired set equals the live set, so this is a
+    // no-op (vec0 untouched) and `delta.unchanged` above is unaffected. Skipped
+    // when there is no embedder profile (⇒ no `vector_default` to reshape).
+    if let Ok(dimension) = default_profile_dimension(tx) {
+        reconcile_vector_attr_columns(tx, dimension).map_err(|_| EngineError::Storage)?;
+    }
+
+    delta.unchanged =
+        delta.built.is_empty() && delta.dropped.is_empty() && delta.deferred.is_empty();
+
+    // 0.8.20 Slice 20c (R-20-DR remainder) — THE C4 RIDER. Everything above has
+    // only *persisted* the `searchable→vector` declaration and pushed its name
+    // onto `delta.deferred`. Acknowledging deferred work and then dropping it on
+    // the floor is what made `drain` a FALSE-READY barrier; this call is where the
+    // deferred work is actually enqueued onto the runtime `drain` waits on.
+    //
+    // fix-1 (codex §9 [P2]) — and its SYMMETRIC INVERSE, on the same
+    // transaction. If this call removed the last `searchable→vector` declaration,
+    // un-enrol the node kinds the forward path enrols; otherwise enrolment is a
+    // one-way door and the write path keeps embedding for a projection the
+    // registry no longer declares.
+    let vector_declared_after = vector_projection_declared(tx).map_err(|_| EngineError::Storage)?;
+    let enqueued = if vector_declared_after {
+        if dense_arm_live {
+            enqueue_declared_vector_backfill(tx).map_err(|_| EngineError::Storage)?
+        } else {
+            false
+        }
+    } else {
+        // fix-1 (codex §9 round 1 [P2], ledger `TC-71`) — the transition arm is
+        // KEPT as-is and a state-keyed reconciliation is added BESIDE it; neither
+        // subsumes the other. The transition fires when this very call removed the
+        // last dense-arm declaration, including the case where it removed the last
+        // `vector` sub-object with it (which leaves
+        // `registry_governs_an_inert_dense_arm` false). The reconciliation covers
+        // the ALREADY-AFFECTED database whose user calls `configure_projections`
+        // again with anything at all: there `before` is already `false`, so the
+        // transition arm is inert and the inert enrolment used to survive
+        // indefinitely. `||` short-circuits, so the transition case pays nothing
+        // extra; the other case pays two cached `EXISTS` probes on a governed call,
+        // never on the hot write path.
+        if vector_declared_before
+            || registry_governs_an_inert_dense_arm(tx).map_err(|_| EngineError::Storage)?
+        {
+            unenrol_registry_vector_node_kinds(tx).map_err(|_| EngineError::Storage)?;
+        }
+        false
+    };
+    Ok((delta, enqueued))
+}
+
+/// 0.8.20 Slice 20c fix-1 (codex §9 [P2] "Stop embedding after vector projection
+/// drops") — **the inverse of [`enqueue_declared_vector_backfill`]'s enrolment.**
+///
+/// Slice 20c gave `_fathomdb_vector_kinds` its first governed-call-reachable
+/// writer for a NODE kind (before it, the only one was the `#[doc(hidden)]`
+/// `configure_vector_kind_for_test` hook). Forward without reverse is the defect:
+/// after `drop`ping the last `searchable→vector` declaration,
+/// [`project_canonical_node_row`]'s `kind_is_vector_indexed` gate and
+
+exec
+/bin/bash -lc "grep -n \"fn open_locked\\|run_vector_equivalence_probe\\|rederive_projections_on_boot\\|ensure_schema\" -n src/rust/crates/fathomdb-engine/src/lib.rs | head -80 && sed -n '4550,4660p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s21
+ succeeded in 0ms:
+4416:                let veq = run_vector_equivalence_probe(
+4500:    fn open_locked(
+4618:        rederive_projections_on_boot(&connection).map_err(|_| EngineOpenError::Io {
+4634:        // BEFORE `run_vector_equivalence_probe` (which fires after `open_locked`
+4817:    /// same as `rankable`). It mirrors the `run_vector_equivalence_probe` gate:
+4854:    /// [`rederive_projections_on_boot`] and
+15136:fn run_vector_equivalence_probe(
+17344:/// reconciliations ([`rederive_projections_on_boot`],
+17346:/// [`run_vector_equivalence_probe`], which is deliberate: on a database whose only
+17635:fn rederive_projections_on_boot(conn: &Connection) -> rusqlite::Result<()> {
+        // drops + recreates `search_index` with the new tokenizer, leaving it
+        // EMPTY on a migrated DB. The projection scheduler will NOT
+        // repopulate it (`database_has_pending_projection_work` keys "pending"
+        // off `_fathomdb_projection_terminal`, which the migration does not
+        // clear). Re-tokenize from the canonical source rows here, on the
+        // writer connection, single-threaded, before readers spawn —
+        // projection-only, no source-record migration.
+        //
+        // Crash-retryable (fix-1): step 11 commits `user_version = 11` with an
+        // empty index in its OWN transaction; this reproject commits in a
+        // LATER transaction. A crash in that window leaves a durable v11 + empty
+        // index, on which a boundary-crossing guard (`before < 11`) is FALSE,
+        // skipping repair forever. So gate on the completion marker's ABSENCE
+        // (written atomically with the reindex) instead: idempotent, and a
+        // crash before the reindex commit simply re-runs on the next open.
+        if migration.schema_version_after >= SEARCH_INDEX_TOKENIZER_SCHEMA_VERSION
+            && !search_index_tokenizer_reproject_complete(&connection).map_err(|_| {
+                EngineOpenError::Io {
+                    message: "could not read search_index tokenizer reproject marker".to_string(),
+                }
+            })?
+        {
+            reproject_search_index_after_tokenizer_upgrade(&connection).map_err(|_| {
+                EngineOpenError::Io {
+                    message: "could not re-tokenize search_index after tokenizer upgrade"
+                        .to_string(),
+                }
+            })?;
+        }
+        let mut embedder_mean_vec_pinned = check_embedder_profile(&connection, embedder_identity)?;
+        ensure_vector_partition(&mut connection, embedder_identity.dimension).map_err(|_| {
+            EngineOpenError::Io { message: "could not initialize vector partition".to_string() }
+        })?;
+
+        // 0.8.20 Slice 15c (TC-33) fix-6 [codex §9 P1] — the step-23
+        // `canonical_edges` recreate drops every edge row (NO DATA MIGRATION) and
+        // removes their `_fathomdb_vector_rows` sidecar rows, but the vec0
+        // `vector_default` shadow those mirror is engine-created + dim-aware, so
+        // the migration cannot delete its rows. Left behind, an orphaned edge vec0
+        // row (whose `canonical_edges` row is gone) still occupies a top-K KNN
+        // candidate slot — `build_vector_phase1_sql` reads candidates DIRECTLY
+        // from `vector_default` before hydrating them through the canonical tables
+        // — and is then discarded at hydration, so an upgraded DB silently returns
+        // too few / no vector results. Prune the orphans now that
+        // `ensure_vector_partition` guarantees `vector_default` exists, BEFORE the
+        // mean-vec row-count recovery below (so the count excludes them). One-time
+        // and crash-retryable via the durable completion marker; a no-op on any
+        // healthy corpus (every vec0 row has a sidecar entry), so recall / eu7
+        // fidelity are unchanged on a DB that never dropped edges.
+        if migration.schema_version_after >= EDGE_TEMPORAL_EPOCH_SCHEMA_VERSION
+            && !edge_vector_prune_complete(&connection).map_err(|_| EngineOpenError::Io {
+                message: "could not read edge-vector prune marker".to_string(),
+            })?
+        {
+            prune_orphaned_edge_vectors(&connection).map_err(|_| EngineOpenError::Io {
+                message: "could not prune orphaned edge vector rows".to_string(),
+            })?;
+        }
+
+        // 0.8.20 Slice 15d (R-20-PR, Q5) — boot re-derive the projection registry
+        // (the engine `ProjectionSpec` is a derived cache). For every persisted
+        // declaration, clear + backfill its EAV / property-FTS rows from the
+        // canonical nodes so a crash window (registry row survives, projection
+        // rows partial) self-heals idempotently. A no-op single empty-table read
+        // on every DB that has not declared a projection. On the writer
+        // connection, single-threaded, before readers spawn — like the tokenizer
+        // reproject above. Runs after the fix-6 edge-vector prune above; the two
+        // are independent boot reconciliations.
+        rederive_projections_on_boot(&connection).map_err(|_| EngineOpenError::Io {
+            message: "could not re-derive projection registry on boot".to_string(),
+        })?;
+
+        // 0.8.20 Slice 21 fix-1 (codex §9 round 1 [P2], ledger `TC-71`) — bring an
+        // ALREADY-ENROLLED inert vector kind into agreement with the role-aware
+        // decision. Slice 21c closed the three forward doors, but a database that
+        // already ran the old code under `{roles:[filterable], vector:{}}` keeps
+        // its `_fathomdb_vector_kinds` rows — `vector_kind_needs_enrolment`
+        // short-circuits on `kind_is_vector_indexed` and never reaches the new
+        // predicate, and `project_canonical_node_row` reads only the registry
+        // membership — so upgrading did not actually stop the unwanted embeddings.
+        // Narrowly authorised (registry EXISTS, declares a `vector` sub-object,
+        // and declares no `searchable→vector` projection) so a LEGACY workspace
+        // with a working dense arm is never touched; see
+        // [`registry_governs_an_inert_dense_arm`]. Deletes no embedding. Runs
+        // BEFORE `run_vector_equivalence_probe` (which fires after `open_locked`
+        // returns), so a database whose only enrolment was the inert one pays no
+        // probe embeds on the healing open. Another boot reconciliation on the
+        // writer connection, single-threaded, before readers spawn.
+        reconcile_inert_vector_enrolments_on_boot(&connection).map_err(|_| {
+            EngineOpenError::Io {
+                message: "could not reconcile inert vector kind enrolments on boot".to_string(),
+            }
+        })?;
+
+        // 0.8.20 Slice 15e — reconcile the live `vector_default` attribute columns
+        // with the registry's `filterable` set. On a DB whose vec0 shape already
+        // matches the registry (the common case, incl. every reopen of a DB that
+        // declared filterable projections in a prior session) this is a pure
+        // no-op: the diff is empty, so boot never re-inserts and NEVER silently
+        // wipes the corpus. It converges only a shape that drifted from the
+        // registry (e.g. a restored registry row). A no-op when the table is
+        // absent (no embedder). Runs on the writer connection, single-threaded,
+        // before readers spawn — like the boot re-derive above.
+        {
+            let tx = connection.transaction().map_err(|_| EngineOpenError::Io {
+                message: "could not begin vector-attr reconcile on boot".to_string(),
+            })?;
+            reconcile_vector_attr_columns(&tx, embedder_identity.dimension).map_err(|_| {
+                EngineOpenError::Io {
+                    message: "could not reconcile vector attribute columns on boot".to_string(),
+                }
+
+exec
+/bin/bash -lc 'git diff 41a81c17bf184ca8194f8108c5e688b011bbcf4f --unified=40 -- src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs src/rust/crates/fathomdb-engine/tests/lifecycle_observability.rs' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s21
+ succeeded in 0ms:
+diff --git a/src/rust/crates/fathomdb-engine/tests/lifecycle_observability.rs b/src/rust/crates/fathomdb-engine/tests/lifecycle_observability.rs
+index b7f7504f..931d3de0 100644
+--- a/src/rust/crates/fathomdb-engine/tests/lifecycle_observability.rs
++++ b/src/rust/crates/fathomdb-engine/tests/lifecycle_observability.rs
+@@ -56,211 +56,415 @@ impl Subscriber for CapturingSubscriber {
+ #[test]
+ fn ac_001_phase_enum_has_five_typed_variants() {
+     let variants = [Phase::Started, Phase::Slow, Phase::Heartbeat, Phase::Finished, Phase::Failed];
+ 
+     // Pattern-match each variant exhaustively to confirm enum shape.
+     for phase in variants {
+         match phase {
+             Phase::Started | Phase::Slow | Phase::Heartbeat | Phase::Finished | Phase::Failed => {}
+         }
+     }
+ 
+     assert_ne!(Phase::Started, Phase::Slow);
+     assert_ne!(Phase::Started, Phase::Heartbeat);
+     assert_ne!(Phase::Started, Phase::Finished);
+     assert_ne!(Phase::Started, Phase::Failed);
+     assert_ne!(Phase::Finished, Phase::Failed);
+     assert_ne!(Phase::Slow, Phase::Heartbeat);
+ }
+ 
+ // AC-001 supporting: Event struct exposes typed source + category.
+ #[test]
+ fn ac_001_event_struct_carries_typed_source_and_category() {
+     let event = Event {
+         phase: Phase::Started,
+         source: EventSource::Engine,
+         category: EventCategory::Writer,
+         code: None,
+     };
+     assert_eq!(event.phase, Phase::Started);
+     assert_eq!(event.source, EventSource::Engine);
+     assert_eq!(event.category, EventCategory::Writer);
+     assert_eq!(event.code, None);
+ }
+ 
+ // AC-002: No log files written without subscriber.
+ //
+ // Measurement (`dev/acceptance.md`): "Snapshot recursive directory tree
+ // of `$PWD`, `$HOME`, `$XDG_*`, `$TMPDIR` pre+post; assert diff = subset
+ // of allow-list paths."
+ //
++// 0.8.20 Slice 21b (R-20-CR): the measurement roots are a PRIVATE, per-test
++// sandbox rather than the ambient `$HOME` / `$XDG_*` / `$TMPDIR` / `$PWD`, so
++// the pre/post diff over shared, concurrently-written directories is gone.
++// The prior Part-2 substring scan is retired: it was flaky-positive (another
++// process's file landing in a shared root mid-test was attributed to the
++// engine) and simultaneously vacuous (an engine artifact not containing the
++// literal "fathomdb" / "fathom_" passed cleanly — see
++// `ac_002_sandbox_oracle_catches_unsigned_artifact`).
++//
+ // Two-part assertion:
+-// 1. Every new file inside the DB's parent directory matches the
+-//    documented allow-list (DB file, `.lock`, `-wal`, `-shm`, optional
+-//    `-journal`) per
+-//    ADR-0.6.0-database-lock-mechanism-reader-pool-revision.
+-// 2. No new file in `$PWD` / `$HOME` / `$XDG_*` whose path or name
+-//    contains a fathomdb signature appears — i.e. the engine does not
+-//    create a private log / telemetry spool outside the DB path.
+-//    Pre/post diff under noisy roots is unavoidable in a parallel test
+-//    process; the signature filter is the strongest assertion we can
+-//    bind without serializing the whole runner.
++// 1. Inside the DB parent: only the documented allow-list (DB file, `.lock`,
++//    `-wal`, `-shm`, optional `-journal`) per
++//    ADR-0.6.0-database-lock-mechanism-reader-pool-revision. UNCHANGED.
++// 2. Outside the DB parent: every sandbox root is EMPTY. Not "contains
++//    nothing matching a signature" — empty.
+ #[test]
+ fn ac_002_no_log_files_without_subscriber() {
+-    use std::collections::BTreeSet;
+-    use std::path::PathBuf;
++    let sandbox = Ac002Sandbox::new();
++    ac_002_run_workload(&sandbox, false);
+ 
+-    fn walk(root: &std::path::Path, out: &mut BTreeSet<PathBuf>, depth: u32) {
+-        if depth > 6 {
+-            return;
+-        }
+-        let Ok(entries) = std::fs::read_dir(root) else {
+-            return;
+-        };
+-        for entry in entries.flatten() {
+-            let path = entry.path();
+-            let Ok(meta) = entry.metadata() else { continue };
+-            out.insert(path.clone());
+-            if meta.is_dir() && !meta.file_type().is_symlink() {
+-                walk(&path, out, depth + 1);
+-            }
++    // Anti-vacuity: both assertions below are trivially satisfiable by a
++    // workload that never ran, so pin that the engine really opened inside the
++    // sandbox.
++    let db_path = sandbox.db_parent().join("nolog.sqlite");
++    assert!(
++        db_path.exists(),
++        "workload child must have created the database in the sandbox: {}",
++        db_path.display(),
++    );
++
++    if let Err(msg) = ac_002_db_parent_allowlist(&sandbox) {
++        panic!("{msg}");
++    }
++    if let Err(msg) = ac_002_no_artifacts_outside_db_path(&sandbox) {
++        panic!("{msg}");
++    }
++}
++
++// ── AC-002 oracle strength: per-test sandbox (0.8.20 Slice 21b, R-20-CR) ─────
++//
++// The AC-002 claim is "the engine writes nothing outside the DB path when no
++// subscriber is attached". That is an ISOLATION property, so it is asserted by
++// isolation: the workload runs against a private, freshly created sandbox and
++// every root in that sandbox other than the DB parent must end up EMPTY.
++// Anything appearing there is necessarily the workload's, whatever it is named.
++//
++// ISOLATION MECHANISM — option (a), child process. `std::env::set_var` and
++// `std::env::set_current_dir` are process-global, and Rust's test harness runs
++// the ~20 tests of this binary as THREADS IN ONE PROCESS; several of them open
++// engines concurrently and `Engine`'s own open/search paths read process env
++// (`src/lib.rs` FATHOMDB_PERF_* / FATHOMDB_PROJECTION_BATCH reads). Mutating
++// env or CWD in-process here would therefore race every other test in this
++// binary — making this test a SOURCE of flakiness rather than a fix for the
++// one it replaces. A process-wide mutex (option (b)) cannot fix that, because
++// the racing readers are inside the library under test and are not funnelled
++// through any lock; and CWD has no per-thread analogue at all. So the workload
++// is re-executed as a child process with a sandbox-pointing environment and
++// its own CWD, following the established pattern in this crate
++// (`durability_soak.rs`, `durability_open_path.rs`, `lifecycle_reliability.rs`:
++// `Command::new(current_exe()) --exact --ignored <entry>` + env sentinel).
++
++/// Recursive enumeration of every path under `root`, bounded at depth 6.
++fn ac_002_walk(
++    root: &std::path::Path,
++    out: &mut std::collections::BTreeSet<std::path::PathBuf>,
++    depth: u32,
++) {
++    if depth > 6 {
++        return;
++    }
++    let Ok(entries) = std::fs::read_dir(root) else {
++        return;
++    };
++    for entry in entries.flatten() {
++        let path = entry.path();
++        let Ok(meta) = entry.metadata() else { continue };
++        out.insert(path.clone());
++        if meta.is_dir() && !meta.file_type().is_symlink() {
++            ac_002_walk(&path, out, depth + 1);
+         }
+     }
++}
+ 
+-    fn snapshot(roots: &[PathBuf]) -> BTreeSet<PathBuf> {
+-        let mut out = BTreeSet::new();
+-        for root in roots {
+-            walk(root, &mut out, 0);
++/// Per-test filesystem sandbox for AC-002. One `TempDir` holding the DB parent
++/// plus a private stand-in for each ambient path-producing variable the engine
++/// could consult (`$HOME`, `$XDG_*`, `$TMPDIR`, the process CWD).
++struct Ac002Sandbox {
++    dir: TempDir,
++}
++
++impl Ac002Sandbox {
++    /// Sandbox roots that must stay EMPTY — i.e. everything except `db/`.
++    const OUTSIDE: [&'static str; 7] =
++        ["home", "cwd", "tmp", "xdg/config", "xdg/data", "xdg/cache", "xdg/state"];
++
++    fn new() -> Self {
++        let dir = TempDir::new().expect("ac_002 sandbox tempdir");
++        for rel in Self::OUTSIDE.iter().copied().chain(["db"]) {
++            std::fs::create_dir_all(dir.path().join(rel)).expect("ac_002 sandbox subdir");
+         }
+-        out
++        Self { dir }
+     }
+ 
+-    let dir = TempDir::new().unwrap();
+-    let db_path = dir.path().join("nolog.sqlite");
+-    let db_parent = db_path.parent().expect("db parent").to_path_buf();
++    fn root(&self) -> &std::path::Path {
++        self.dir.path()
++    }
+ 
+-    // AC-002 measurement-protocol roots: $PWD, $HOME, $XDG_*, $TMPDIR.
+-    let mut roots: Vec<PathBuf> = Vec::new();
+-    if let Ok(p) = std::env::current_dir() {
+-        roots.push(p);
++    fn sub(&self, rel: &str) -> std::path::PathBuf {
++        self.root().join(rel)
+     }
+-    if let Some(home) = std::env::var_os("HOME") {
+-        roots.push(PathBuf::from(home));
++
++    fn db_parent(&self) -> std::path::PathBuf {
++        self.sub("db")
+     }
+-    for var in ["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"] {
+-        if let Some(v) = std::env::var_os(var) {
+-            roots.push(PathBuf::from(v));
+-        }
++
++    fn outside_roots(&self) -> Vec<std::path::PathBuf> {
++        Self::OUTSIDE.iter().map(|rel| self.sub(rel)).collect()
++    }
++}
++
++/// Point every ambient path-producing variable at the sandbox. `TMP`/`TEMP`/
++/// `USERPROFILE` are set alongside their POSIX counterparts so the redirection
++/// also holds on Windows, where `std::env::temp_dir` ignores `TMPDIR`.
++fn ac_002_apply_sandbox_env(cmd: &mut std::process::Command, root: &std::path::Path) {
++    cmd.env("FATHOMDB_AC002_SANDBOX", root)
++        .env("HOME", root.join("home"))
++        .env("USERPROFILE", root.join("home"))
++        .env("XDG_CONFIG_HOME", root.join("xdg/config"))
++        .env("XDG_DATA_HOME", root.join("xdg/data"))
++        .env("XDG_CACHE_HOME", root.join("xdg/cache"))
++        .env("XDG_STATE_HOME", root.join("xdg/state"))
++        .env("TMPDIR", root.join("tmp"))
++        .env("TMP", root.join("tmp"))
++        .env("TEMP", root.join("tmp"))
++        .env_remove("XDG_RUNTIME_DIR")
++        .env_remove("SQLITE_TMPDIR");
++}
++
++/// Run the AC-002 workload (open, one node write, one search, close) inside
++/// `sandbox`, as a child process so no process-global state of THIS process is
++/// touched. `plant_probe` additionally plants the divergent fixture (see
++/// `ac_002_sandbox_oracle_catches_unsigned_artifact`).
++fn ac_002_run_workload(sandbox: &Ac002Sandbox, plant_probe: bool) {
++    let exe = std::env::current_exe().expect("test binary path");
++    let mut cmd = std::process::Command::new(&exe);
++    cmd.args(["--exact", "--ignored", "_ac_002_sandbox_workload_entry"])
++        .current_dir(sandbox.sub("cwd"));
++    ac_002_apply_sandbox_env(&mut cmd, sandbox.root());
++    if plant_probe {
++        cmd.env("FATHOMDB_AC002_PLANT_PROBE", "1");
++    }
++    let out = cmd.output().expect("spawn ac_002 sandbox workload child");
++    assert!(
++        out.status.success(),
++        "ac_002 sandbox workload child failed ({:?})\n--- stdout ---\n{}\n--- stderr ---\n{}",
++        out.status.code(),
++        String::from_utf8_lossy(&out.stdout),
++        String::from_utf8_lossy(&out.stderr),
++    );
++}
++
++/// Sandboxed AC-002 workload entry-point. Re-invoked by `ac_002_run_workload`
++/// via `Command::new(current_exe()) --exact --ignored`. Without the sentinel
++/// env var the body is a no-op, so a bare
++/// `cargo test --test lifecycle_observability -- --ignored` stays safe.
++#[test]
++#[ignore = "sandboxed workload entry-point for AC-002 (spawned as a child process)"]
++fn _ac_002_sandbox_workload_entry() {
++    let Some(root) = std::env::var_os("FATHOMDB_AC002_SANDBOX") else {
++        return;
++    };
++    let root = std::path::PathBuf::from(root);
++
++    // Fail loudly if the parent's redirection did not take: a workload that
++    // still saw the real $HOME / $TMPDIR / $PWD would make the parent's
++    // emptiness assertion vacuously true.
++    let same = |a: &std::path::Path, b: &std::path::Path| match (a.canonicalize(), b.canonicalize())
++    {
++        (Ok(x), Ok(y)) => x == y,
++        _ => a == b,
++    };
++    assert!(
++        same(&std::env::temp_dir(), &root.join("tmp")),
++        "TMPDIR redirection did not take: temp_dir() = {}",
++        std::env::temp_dir().display(),
++    );
++    let cwd = std::env::current_dir().expect("child cwd");
++    assert!(same(&cwd, &root.join("cwd")), "CWD redirection did not take: {}", cwd.display());
++    let mut expected_vars: Vec<(&str, &str)> = vec![
++        ("XDG_CONFIG_HOME", "xdg/config"),
++        ("XDG_DATA_HOME", "xdg/data"),
++        ("XDG_CACHE_HOME", "xdg/cache"),
++        ("XDG_STATE_HOME", "xdg/state"),
++    ];
++    expected_vars.push(if cfg!(windows) { ("USERPROFILE", "home") } else { ("HOME", "home") });
++    for (var, rel) in expected_vars {
++        let raw =
++            std::env::var_os(var).unwrap_or_else(|| panic!("{var} must be set by the parent"));
++        assert!(
++            same(std::path::Path::new(&raw), &root.join(rel)),
++            "{var} redirection did not take: {:?}",
++            raw,
++        );
+     }
+-    roots.push(std::env::temp_dir());
+ 
+-    let before = snapshot(&roots);
++    if std::env::var_os("FATHOMDB_AC002_PLANT_PROBE").is_some() {
++        // Divergent fixture: an artifact OUTSIDE the DB parent but INSIDE the
++        // sandbox whose name contains neither "fathomdb" nor "fathom_" — the
++        // exact shape the pre-21b substring scan waved through.
++        std::fs::write(root.join("home").join("telemetry.spool"), b"probe")
++            .expect("plant ac_002 divergent fixture");
++    }
+ 
+-    let opened = Engine::open(&db_path).expect("open");
++    let opened = Engine::open(root.join("db").join("nolog.sqlite")).expect("open");
+     opened
+         .engine
+         .write(&[PreparedWrite::Node {
+             kind: "doc".to_string(),
+             body: "hello".to_string(),
+             source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
+             logical_id: None,
+             state: fathomdb_engine::InitialState::Active,
+             reason: None,
+             valid_from: None,
+             valid_until: None,
+         }])
+         .expect("write");
+     let _ = opened.engine.search("hello").expect("search");
+     opened.engine.close().expect("close");
++}
+ 
+-    let after = snapshot(&roots);
+-    let new: Vec<&PathBuf> = after.difference(&before).collect();
++/// AC-002 oracle: nothing may appear outside the DB path.
++///
++/// ISOLATION, not detection. Each sandbox root is created empty and only the
++/// workload child runs against it, so the assertion is plain EMPTINESS —
++/// whatever the artifact is named, whatever it contains, it is caught.
++fn ac_002_no_artifacts_outside_db_path(sandbox: &Ac002Sandbox) -> Result<(), String> {
++    for root in sandbox.outside_roots() {
++        let mut found = std::collections::BTreeSet::new();
++        ac_002_walk(&root, &mut found, 0);
++        if let Some(first) = found.iter().next() {
++            return Err(format!(
++                "engine created {} path(s) outside the DB path, under {} — first: {}",
++                found.len(),
++                root.display(),
++                first.display(),
++            ));
++        }
++    }
++    Ok(())
++}
+ 
+-    let allowed_names = [
++/// The pre-21b Part-2 oracle, reproduced verbatim. Retained ONLY as the
++/// negative control in `ac_002_sandbox_oracle_catches_unsigned_artifact`; it is
++/// not part of the AC-002 assertion any more.
++fn ac_002_legacy_substring_oracle(sandbox: &Ac002Sandbox) -> Result<(), String> {
++    let roots = sandbox.outside_roots();
++    let mut found = std::collections::BTreeSet::new();
++    for root in &roots {
++        ac_002_walk(root, &mut found, 0);
++    }
++    for path in &found {
++        // Strip the MOST SPECIFIC (longest) matching root, as the pre-21b
++        // implementation did.
++        let relative = roots
++            .iter()
++            .filter_map(|root| path.strip_prefix(root).ok())
++            .min_by_key(|rel| rel.components().count())
++            .unwrap_or(path.as_path());
++        let rel_lossy = relative.to_string_lossy().to_lowercase();
++        if rel_lossy.contains("fathomdb") || rel_lossy.contains("fathom_") {
++            return Err(format!(
++                "engine created a fathomdb-named artifact outside the DB path: {}",
++                path.display()
++            ));
++        }
++    }
++    Ok(())
++}
++
++/// Part 1 of the AC-002 assertion, unchanged since 0.6.0: inside the DB parent
++/// only the documented lock/WAL/journal siblings may appear
++/// (ADR-0.6.0-database-lock-mechanism-reader-pool-revision).
++fn ac_002_db_parent_allowlist(sandbox: &Ac002Sandbox) -> Result<(), String> {
++    const ALLOWED_NAMES: [&str; 5] = [
+         "nolog.sqlite",
+         "nolog.sqlite.lock",
+         "nolog.sqlite-wal",
+         "nolog.sqlite-shm",
+         "nolog.sqlite-journal",
+     ];
+-
+-    for path in &new {
+-        // Part 1: every new file inside the DB parent must be on the
+-        // allow-list.
+-        if path.starts_with(&db_parent) {
+-            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+-            // Allow the DB parent itself if it shows up as "new" (it
+-            // was created as part of the TempDir).
+-            if *path == &db_parent {
+-                continue;
+-            }
+-            assert!(
+-                allowed_names.contains(&name),
++    let db_parent = sandbox.db_parent();
++    let mut found = std::collections::BTreeSet::new();
++    ac_002_walk(&db_parent, &mut found, 0);
++    for path in &found {
++        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
++        if !ALLOWED_NAMES.contains(&name) {
++            return Err(format!(
+                 "engine created unexpected artifact inside DB parent: {}",
+-                path.display(),
+-            );
+-            continue;
++                path.display()
++            ));
+         }
+-
+-        // Part 2: no fathomdb-signature file appears anywhere in the measurement
+-        // roots. Check the path RELATIVE to its measurement root, not the absolute
+-        // path: the root prefix is incidental — CI sets TMPDIR to
+-        // `.../fathomdb-<run-id>/...`, which would false-positive every file under
+-        // it — while anything the engine creates *below* a root (including a
+-        // signature-bearing subdirectory, not just the leaf name) is still caught.
+-        // (0.8.9 Slice 20, F-9.)
+-        // Strip the MOST SPECIFIC (longest) matching root — i.e. the shortest
+-        // remaining relative path — so an incidental signature in an overlapping
+-        // outer root (e.g. $HOME ⊃ $XDG_CACHE_HOME=.../fathomdb-ci) is not left in
+-        // the checked path.
+-        let relative = roots
+-            .iter()
+-            .filter_map(|root| path.strip_prefix(root).ok())
+-            .min_by_key(|rel| rel.components().count())
+-            .unwrap_or(path.as_path());
+-        let rel_lossy = relative.to_string_lossy().to_lowercase();
+-        assert!(
+-            !rel_lossy.contains("fathomdb") && !rel_lossy.contains("fathom_"),
+-            "engine created a fathomdb-named artifact outside the DB path: {}",
+-            path.display(),
+-        );
+     }
++    Ok(())
++}
++
++// AC-002 oracle-strength probe (permanent negative control).
++//
++// Pins the DIVERGENCE that motivated Slice 21b: an artifact outside the DB
++// parent whose name contains neither "fathomdb" nor "fathom_" is waved through
++// by the pre-21b substring scan and caught by the sandbox oracle. If this test
++// ever goes green by the oracle weakening back to a name-pattern scan, AC-002
++// has become vacuous — hence both directions are asserted here.
++#[test]
++fn ac_002_sandbox_oracle_catches_unsigned_artifact() {
++    let sandbox = Ac002Sandbox::new();
++    ac_002_run_workload(&sandbox, true);
++
++    let probe = sandbox.sub("home").join("telemetry.spool");
++    assert!(probe.exists(), "divergent fixture must have been planted: {}", probe.display());
++
++    // (i) the pre-21b oracle is VACUOUS on this artifact — that is the defect.
++    assert!(
++        ac_002_legacy_substring_oracle(&sandbox).is_ok(),
++        "negative control: the pre-21b substring scan is expected to PASS an \
++         unsigned artifact; if it now fails, this control no longer witnesses \
++         the divergence it was written for",
++    );
++
++    // (ii) the sandbox oracle CATCHES it.
++    let err = ac_002_no_artifacts_outside_db_path(&sandbox).expect_err(
++        "AC-002 oracle must reject an artifact outside the DB path even though its \
++         name carries no fathomdb signature",
++    );
++    assert!(err.contains("telemetry.spool"), "oracle must name the offending artifact; got: {err}");
+ }
+ 
+ // AC-003a: Writer events flow to host subscriber.
+ #[test]
+ fn ac_003a_writer_events_flow_to_subscriber() {
+     let (_dir, engine) = fixture();
+     let sink = Arc::new(CapturingSubscriber::default());
+     let _sub = engine.subscribe(sink.clone());
+     let _ = engine.write(&[PreparedWrite::Node {
+         kind: "doc".to_string(),
+         body: "hello".to_string(),
+         source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
+         logical_id: None,
+         state: fathomdb_engine::InitialState::Active,
+         reason: None,
+         valid_from: None,
+         valid_until: None,
+     }]);
+     let captured = sink.events.lock().unwrap();
+     assert!(captured
+         .iter()
+         .any(|e| e.source == EventSource::Engine && e.category == EventCategory::Writer));
+ }
+ 
+ // AC-003b: Search events flow to host subscriber.
+ #[test]
+ fn ac_003b_search_events_flow_to_subscriber() {
+     let (_dir, engine) = fixture();
+     let sink = Arc::new(CapturingSubscriber::default());
+     let _sub = engine.subscribe(sink.clone());
+     let _ = engine.search("hello");
+     let captured = sink.events.lock().unwrap();
+     assert!(captured
+         .iter()
+         .any(|e| e.source == EventSource::Engine && e.category == EventCategory::Search));
+ }
+ 
+ // AC-003c: Admin events flow to host subscriber.
+ #[test]
+ fn ac_003c_admin_events_flow_to_subscriber() {
+diff --git a/src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs b/src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs
+index 0c41fb1e..b4a09bd9 100644
+--- a/src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs
++++ b/src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs
+@@ -82,91 +82,109 @@ impl Embedder for DelayEmbedder {
+         let mut v = vec![0.0_f32; self.identity.dimension as usize];
+         v[0] = 1.0;
+         Ok(v)
+     }
+ }
+ 
+ fn db_path(dir: &TempDir, name: &str) -> PathBuf {
+     dir.path().join(format!("{name}{SQLITE_SUFFIX}"))
+ }
+ 
+ fn roles(rs: &[ProjectionRole]) -> BTreeSet<ProjectionRole> {
+     rs.iter().copied().collect()
+ }
+ 
+ /// A caller-authored `searchable→vector` spec. `dense_readiness` is `None` —
+ /// a caller never authors it (it is engine-set read metadata).
+ fn vector_spec(name: &str) -> ProjectionSpec {
+     ProjectionSpec {
+         name: name.to_string(),
+         roles: roles(&[ProjectionRole::Searchable]),
+         fts: None,
+         vector: Some(ProjectionVector { embedder: None, dense_readiness: None }),
+     }
+ }
+ 
+ fn node(logical_id: &str, body_json: &str) -> PreparedWrite {
+     PreparedWrite::Node {
+         kind: "doc".to_string(),
+         body: body_json.to_string(),
+         source_id: SourceId::new("test:fixture").expect("source id"),
+         logical_id: Some(logical_id.to_string()),
+         state: InitialState::Active,
+         reason: None,
+         valid_from: None,
+         valid_until: None,
+     }
+ }
+ 
+ /// An ANONYMOUS (no `logical_id`) vector-kind write.
+ ///
+-/// Why the P2 stream uses this rather than the governed `node` helper: a tight
+-/// loop of GOVERNED writes racing the async projection worker intermittently
+-/// fails with `EngineError::Storage` — reproduced at the Slice-20 BASELINE
+-/// (`9db32765`) in 7 of 8 runs with no Slice-20 code in the build, and never
+-/// reproducible with anonymous writes. That is a PRE-EXISTING write-path defect
+-/// (the governed supersession path reads before it writes, so its deferred
+-/// transaction must upgrade to a writer and takes `SQLITE_BUSY_SNAPSHOT`, which
+-/// `busy_timeout` cannot retry); it is recorded for triage and is NOT in
+-/// R-20-DR's scope. Readiness is indifferent to `logical_id` — the vector
+-/// projection consumes the same rows either way — so the atomicity property is
+-/// exercised exactly as well without dragging in an unrelated red.
++/// Why the P2 stream uses this rather than the governed `node` helper: when this
++/// suite was written, a tight loop of GOVERNED writes racing the async projection
++/// worker intermittently failed with `EngineError::Storage` — reproducible at the
++/// Slice-20 BASELINE (`9db32765`) with no Slice-20 code in the build, and never
++/// with anonymous writes. It was a PRE-EXISTING write-path defect, out of
++/// R-20-DR's scope, so this suite routed around it.
++///
++/// **That race was FIXED in 0.8.20 Slice 21 (ledger `TC-57`)**: `commit_batch`
++/// now opens its transaction with `BEGIN IMMEDIATE`, taking the WAL write lock
++/// before the supersession SELECT, so the governed path never has to promote a
++/// read lock to a write lock.
++///
++/// The mechanism recorded here previously was WRONG, and correcting it matters
++/// because a misnamed mechanism is how the next reader scopes an inert fix. It
++/// was **plain `SQLITE_BUSY` (5) with the busy handler invoked ZERO times** —
++/// SQLite skips the handler on a lock promotion for deadlock avoidance, so the
++/// error came back in 0 ms against rusqlite's 5 000 ms default and no
++/// `busy_timeout` value could ever have absorbed it. It was **not**
++/// `SQLITE_BUSY_SNAPSHOT` (517), which is a second, narrower exit of the same
++/// shape. The repro rate at baseline `41a81c17` was **10/10**, not the "7 of 8"
++/// this comment used to claim. Characterized in
++/// `dev/design/0.8.20-tc57-write-race-characterization.md` and pinned by
++/// `tests/tc57_governed_write_race.rs`.
++///
++/// The helper STAYS. Readiness is indifferent to `logical_id` — the vector
++/// projection consumes the same rows either way — so these tests assert exactly
++/// the same atomicity property with anonymous writes, and rewriting them to
++/// governed writes would buy no coverage while re-coupling this suite to the
++/// write path's concurrency behaviour. `TC-57`'s own suite owns that property now.
+ fn anon_node(body_json: &str) -> PreparedWrite {
+     PreparedWrite::Node {
+         kind: "doc".to_string(),
+         body: body_json.to_string(),
+         source_id: SourceId::new("test:fixture").expect("source id"),
+         logical_id: None,
+         state: InitialState::Active,
+         reason: None,
+         valid_from: None,
+         valid_until: None,
+     }
+ }
+ 
+ /// The readiness the engine reports for projection `name`, via the governed
+ /// `read.projections` path.
+ fn readiness(engine: &Engine, name: &str) -> Option<DenseReadiness> {
+     engine
+         .read_projections()
+         .expect("read_projections")
+         .into_iter()
+         .find(|s| s.name == name)
+         .and_then(|s| s.vector)
+         .and_then(|v| v.dense_readiness)
+ }
+ 
+ /// A raw READ-ONLY connection to the live database file. The engine's exclusive
+ /// hold is a lock FILE, not a SQLite lock, so this observes committed WAL state
+ /// while the engine is open. `mode=ro` (never `immutable=1`) so WAL frames are
+ /// visible.
+ fn ro(path: &Path) -> rusqlite::Connection {
+     rusqlite::Connection::open_with_flags(
+         path,
+         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+     )
+     .expect("open read-only")
+ }
+ 
+ /// Raw: does `_fathomdb_vector_rows` carry a row for this write cursor? This is
+ /// the vector-at-rest oracle for the flip.
+ fn vector_row_exists(conn: &rusqlite::Connection, cursor: i64) -> bool {
+
+exec
+/bin/bash -lc "git diff 41a81c17bf184ca8194f8108c5e688b011bbcf4f -- src/rust/crates/fathomdb-engine/tests/slice21c_vector_role_gate.rs | sed -n '1,260p'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s21
+ succeeded in 0ms:
+diff --git a/src/rust/crates/fathomdb-engine/tests/slice21c_vector_role_gate.rs b/src/rust/crates/fathomdb-engine/tests/slice21c_vector_role_gate.rs
+new file mode 100644
+index 00000000..2bdb3525
+--- /dev/null
++++ b/src/rust/crates/fathomdb-engine/tests/slice21c_vector_role_gate.rs
+@@ -0,0 +1,686 @@
++//! 0.8.20 Slice 21c (`R-20-CR`, leg 3 / ledger **TC-71**) — **the dense arm is
++//! gated on the `searchable` ROLE, not on the bare `vector` sub-object.**
++//!
++//! ## The defect these tests close
++//!
++//! `vector_projection_declared` — the corpus-wide "is the dense arm declared?"
++//! predicate that gates all three enrolment paths — answered
++//! `EXISTS(… WHERE vector_declared = 1)` and never read the `roles` column. So a
++//! projection declared `{roles: [filterable], vector: {}}` — a combination the
++//! shipped Slice-15d contract documents as **inert but round-trippable**
++//! (`vector_subobject_is_stored_not_built`) — turned the dense arm ON in any
++//! session with a live embedder: it enrolled the node kinds, backfilled the
++//! corpus, and made every later write of those kinds enqueue an embedding.
++//!
++//! **Severity.** This is wasted embed work plus unexpected vectors at rest for a
++//! projection meant to be inert. It is **not** a false-ready and **not** data
++//! loss — no reader is wrong, and nothing is deleted. It is pinned here because
++//! "declaring `filterable` silently starts embedding your whole corpus" is a
++//! surprising, billable side effect of a declaration documented as doing nothing.
++//!
++//! ## Why the shipped suites do not catch it
++//!
++//! `slice15d_projection_registry::vector_subobject_is_stored_not_built` opens
++//! with plain `Engine::open` — **no embedder** — so every dense-arm path it
++//! could have tripped is short-circuited by the `runtime_embedder.is_none()`
++//! precondition; it passes **vacuously**. It also declares
++//! `{searchable, vector}`, which is legitimately vector-declared, so it never
++//! even exercises the offending shape. The only shipped test of the offending
++//! shape is TypeScript (`src/ts/tests/slice15d-projection-registry.test.ts`,
++//! "vector sub-object round-trips"), and it likewise opens without an embedder
++//! and asserts round-trip fidelity only, never at-rest inertness.
++//!
++//! Every test below therefore opens with a **live** [`CountingEmbedder`] and
++//! asserts on RAW TABLES (`_fathomdb_vector_kinds`, `_fathomdb_vector_rows`,
++//! `vector_default`) plus the embedder's call count. A returned
++//! [`fathomdb_engine::ProjectionDelta`] is NOT a falsifying oracle here: the
++//! delta is identical before and after the fix (that is the point of the
++//! round-trip pin below).
++//!
++//! ## The three gated paths, and the fourth pin
++//!
++//! `vector_projection_declared` has exactly four call sites, covering three
++//! paths; each has a test here:
++//!
++//! - **(a) forward backfill** — `enqueue_declared_vector_backfill`'s entry guard
++//!   and `apply_projection_config`'s `vector_declared_after` fork:
++//!   [`a_filterable_vector_declaration_backfills_nothing_and_embeds_nothing`].
++//! - **(b) drop inverse** — the `vector_declared_before` snapshot, which decides
++//!   whether `unenrol_registry_vector_node_kinds` fires. Making the predicate
++//!   role-aware flips the forward AND inverse arms at once, so the demotion
++//!   `{searchable, vector}` → `{filterable, vector}` must now UN-ENROL:
++//!   [`demoting_a_searchable_vector_projection_to_filterable_un_enrols_the_kind`]
++//!   and [`dropping_the_last_searchable_vector_projection_un_enrols_past_an_inert_sibling`].
++//! - **(c) late enrolment** — `Engine::vector_kind_needs_enrolment`, the write
++//!   path's fourth guard:
++//!   [`a_write_under_a_filterable_vector_declaration_enqueues_no_embedding`].
++//!
++//! And the boundary that stops the fix from over-reaching: the projection must
++//! become INERT, not DISAPPEAR —
++//! [`a_filterable_vector_declaration_round_trips_verbatim_without_an_embedder`]
++//! plus the round-trip assertions inside path (a)'s test.
++
++use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
++use fathomdb_engine::{
++    DenseReadiness, Engine, InitialState, PreparedWrite, ProjectionRole, ProjectionSpec,
++    ProjectionVector, SourceId,
++};
++use fathomdb_schema::SQLITE_SUFFIX;
++use std::collections::BTreeSet;
++use std::path::{Path, PathBuf};
++use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
++use std::sync::Arc;
++use std::time::Duration;
++use tempfile::TempDir;
++
++// ---------------------------------------------------------------------------
++// Helpers (the `slice20c_flush_barrier` shapes; kept local so this suite is
++// self-contained and its oracles cannot drift with another file's edits)
++// ---------------------------------------------------------------------------
++
++/// A deterministic embedder that COUNTS its calls. "No embed work happened" is
++/// the central assertion of this suite, and a call count is the only way to
++/// state it as a fact rather than infer it from absent rows.
++#[derive(Clone, Debug)]
++struct CountingEmbedder {
++    identity: EmbedderIdentity,
++    calls: Arc<AtomicUsize>,
++    /// A settable per-call delay, so "`drain` returned promptly because nothing
++    /// was enqueued" is falsifiable in BOTH directions: with the embedder slowed
++    /// to 8 s, a 2 s barrier can only return `Ok` if the queue was empty.
++    delay_ms: Arc<AtomicU64>,
++}
++
++impl CountingEmbedder {
++    fn new() -> Self {
++        Self {
++            identity: EmbedderIdentity::new("deterministic", "rev-a", 384),
++            calls: Arc::new(AtomicUsize::new(0)),
++            delay_ms: Arc::new(AtomicU64::new(0)),
++        }
++    }
++}
++
++impl Embedder for CountingEmbedder {
++    fn identity(&self) -> EmbedderIdentity {
++        self.identity.clone()
++    }
++
++    fn embed(&self, _text: &str) -> Result<Vector, EmbedderError> {
++        self.calls.fetch_add(1, Ordering::SeqCst);
++        let delay = self.delay_ms.load(Ordering::SeqCst);
++        if delay > 0 {
++            std::thread::sleep(Duration::from_millis(delay));
++        }
++        let mut v = vec![0.0_f32; self.identity.dimension as usize];
++        v[0] = 1.0;
++        Ok(v)
++    }
++}
++
++fn db_path(dir: &TempDir, name: &str) -> PathBuf {
++    dir.path().join(format!("{name}{SQLITE_SUFFIX}"))
++}
++
++fn roles(rs: &[ProjectionRole]) -> BTreeSet<ProjectionRole> {
++    rs.iter().copied().collect()
++}
++
++/// **The shape under test**: a `vector` sub-object WITHOUT the `searchable`
++/// role. Documented inert-but-round-trippable; before TC-71 it turned the dense
++/// arm on.
++fn filterable_vector_spec(name: &str) -> ProjectionSpec {
++    ProjectionSpec {
++        name: name.to_string(),
++        roles: roles(&[ProjectionRole::Filterable]),
++        fts: None,
++        vector: Some(ProjectionVector { embedder: None, dense_readiness: None }),
++    }
++}
++
++/// The legitimate dense-arm declaration — the control. Every assertion that the
++/// inert shape does nothing is paired with this one still doing everything.
++fn searchable_vector_spec(name: &str) -> ProjectionSpec {
++    ProjectionSpec {
++        name: name.to_string(),
++        roles: roles(&[ProjectionRole::Searchable]),
++        fts: None,
++        vector: Some(ProjectionVector { embedder: None, dense_readiness: None }),
++    }
++}
++
++fn node(kind: &str, logical_id: &str, body_json: &str) -> PreparedWrite {
++    PreparedWrite::Node {
++        kind: kind.to_string(),
++        body: body_json.to_string(),
++        source_id: SourceId::new("test:fixture").expect("source id"),
++        logical_id: Some(logical_id.to_string()),
++        state: InitialState::Active,
++        reason: None,
++        valid_from: None,
++        valid_until: None,
++    }
++}
++
++/// A raw READ-ONLY connection to the live file. The engine's exclusive hold is a
++/// lock FILE, not a SQLite lock, so committed WAL state is visible. `mode=ro`,
++/// never `immutable=1`.
++fn ro(path: &Path) -> rusqlite::Connection {
++    rusqlite::Connection::open_with_flags(
++        path,
++        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
++    )
++    .expect("open read-only")
++}
++
++fn active_cursor(conn: &rusqlite::Connection, logical_id: &str) -> i64 {
++    conn.query_row(
++        "SELECT write_cursor FROM canonical_nodes
++         WHERE logical_id = ?1 AND superseded_at IS NULL",
++        [logical_id],
++        |r| r.get::<_, i64>(0),
++    )
++    .expect("active cursor")
++}
++
++/// AT-REST oracle #1 — the `_fathomdb_vector_rows` bookkeeping row.
++fn vector_row_exists(conn: &rusqlite::Connection, cursor: i64) -> bool {
++    conn.query_row(
++        "SELECT COUNT(*) FROM _fathomdb_vector_rows WHERE write_cursor = ?1",
++        [cursor],
++        |r| r.get::<_, i64>(0),
++    )
++    .expect("vector row probe")
++        > 0
++}
++
++/// AT-REST oracle #2 — the vec0 row itself, so no assertion can pass off the
++/// bookkeeping table alone.
++fn vec0_row_exists(conn: &rusqlite::Connection, cursor: i64) -> bool {
++    conn.query_row("SELECT COUNT(*) FROM vector_default WHERE rowid = ?1", [cursor], |r| {
++        r.get::<_, i64>(0)
++    })
++    .unwrap_or(0)
++        > 0
++}
++
++/// AT-REST oracle #3 — the enrolment itself. This is the row TC-71's predicate
++/// decides whether to write.
++fn vector_kind_registered(conn: &rusqlite::Connection, kind: &str) -> bool {
++    conn.query_row("SELECT COUNT(*) FROM _fathomdb_vector_kinds WHERE kind = ?1", [kind], |r| {
++        r.get::<_, i64>(0)
++    })
++    .expect("vector kind probe")
++        > 0
++}
++
++/// The EAV values at rest for `attr_name` — the "inert, NOT absent" oracle. A
++/// `filterable` projection must still store its value even though it embeds
++/// nothing.
++fn eav_values(conn: &rusqlite::Connection, attr_name: &str) -> Vec<String> {
++    let mut stmt = conn
++        .prepare(
++            "SELECT attr_value FROM canonical_attributes WHERE attr_name = ?1 ORDER BY attr_value",
++        )
++        .expect("prepare eav probe");
++    let v: Vec<String> = stmt
++        .query_map([attr_name], |r| r.get::<_, String>(0))
++        .expect("eav query")
++        .map(|r| r.expect("eav row"))
++        .collect();
++    v
++}
++
++// ===========================================================================
++// (a) forward backfill — the declare-time door
++// ===========================================================================
++
++/// **Path (a).** Declaring `{roles: [filterable], vector: {}}` over an EXISTING
++/// corpus, in a session with a LIVE embedder, must enrol nothing, backfill
++/// nothing and embed nothing — while still persisting and reporting the
++/// declaration exactly as the Slice-15d contract says.
++///
++/// Post-conditions (1-4 fail at the TC-71 baseline):
++///   1. the node kind is NOT enrolled in `_fathomdb_vector_kinds`;
++///   2. the embedder is never called;
++///   3. nothing is at rest in `_fathomdb_vector_rows` / `vector_default`;
++///   4. `drain` does not wait on it (embedder slowed to 8 s, a 2 s barrier still
++///      returns `Ok`);
++///   5. **INERT, NOT ABSENT** — the `filterable` value IS stored in the EAV
++///      table, the delta still reports the name `built` (filterable wants EAV)
++///      AND `deferred` (the `vector` sub-object defers), and
++///      `read_projections` round-trips the declaration verbatim. This is the
++///      boundary between fixing TC-71 and breaking the Slice-15d contract.
++#[test]
+
+exec
+/bin/bash -lc 'cargo test -p fathomdb-engine --no-default-features --tests --quiet' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s21/src/rust
+exec
+/bin/bash -lc "git diff 41a81c17bf184ca8194f8108c5e688b011bbcf4f -- src/rust/crates/fathomdb-engine/tests/tc57_governed_write_race.rs | sed -n '1,240p' && git diff 41a81c17bf184ca8194f8108c5e688b011bbcf4f -- src/rust/crates/fathomdb-engine/tests/tc57_worker_commit_pressure.rs | sed -n '1,220p'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s21
+ succeeded in 0ms:
+diff --git a/src/rust/crates/fathomdb-engine/tests/tc57_governed_write_race.rs b/src/rust/crates/fathomdb-engine/tests/tc57_governed_write_race.rs
+new file mode 100644
+index 00000000..9bed2f1a
+--- /dev/null
++++ b/src/rust/crates/fathomdb-engine/tests/tc57_governed_write_race.rs
+@@ -0,0 +1,572 @@
++//! 0.8.20 Slice 21a-1 (R-20-CR) — **TC-57 characterization harness**.
++//!
++//! ## What this file is
++//!
++//! This is the CHARACTERIZATION harness for TC-57 (ledger seq-84): a loop of
++//! **governed** writes (`PreparedWrite::Node { logical_id: Some(..) }`) racing
++//! the async projection worker intermittently returns `EngineError::Storage`.
++//! The companion written characterization is
++//! `dev/design/0.8.20-tc57-write-race-characterization.md`.
++//!
++//! ## Status of the two engine-level arms: LIVE — and RED as of this commit
++//!
++//! [`tc57_repro_governed_write_loop_races_projection_worker`] and its control
++//! [`tc57_control_anonymous_write_loop_does_not_race`] were BOTH `#[ignore]`d in
++//! the characterization commit `a569246a` on purpose — the repro arm was expected
++//! **RED** at baseline `41a81c17`, and the control was disabled alongside it so
++//! the pair was enabled and disabled as one unit (the characterization is a
++//! COMPARISON, and half a comparison is worse than none).
++//!
++//! **Slice 21a-2 removed both `#[ignore]` attributes as its RED→GREEN step**, in
++//! the commit immediately before the fix, so the pair is reviewable in git as a
++//! real red followed by a real green. Nothing else in this file changed across
++//! that pair — the arms assert exactly what they asserted while they were ignored,
++//! which is what makes the green a signal rather than a rewritten goalpost.
++//!
++//! **The fix is one line.** `commit_batch` now opens
++//! `transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)` instead
++//! of rusqlite's `BEGIN DEFERRED` default, so the transaction holds the WAL write
++//! lock from `BEGIN` and never promotes. Applied UNCONDITIONALLY, not gated on
++//! `logical_id`: see the comment at the call site. MEASURED after the fix: repro
++//! **0/10**, control **0/10**.
++//!
++//! The three `tc57_mechanism_*` tests are pure-rusqlite pins. They are NOT
++//! `#[ignore]`d: they assert what SQLite does, not what the engine does, and
++//! they pass at baseline.
++//!
++//! ## What was MEASURED at baseline `41a81c17`
++//!
++//! | arm | result |
++//! |---|---|
++//! | repro (`logical_id: Some`) | **10/10 runs failed**, always at write index 2 |
++//! | control (`logical_id: None`) | **0/10 runs failed** |
++//!
++//! The failure emits the lifecycle code `"SQLITE_BUSY"` — i.e. EXTENDED code 5,
++//! **not** 517 — and returns in **0 ms** against rusqlite's default 5 000 ms busy
++//! timeout (measured). So the engine's failure is the HELD-WRITE-LOCK promotion
++//! case pinned by [`tc57_mechanism_held_write_lock_upgrade_is_unretryable_busy_5`],
++//! not the stale-snapshot 517 case pinned by
++//! [`tc57_mechanism_stale_snapshot_upgrade_is_busy_snapshot_517`]. Both are the
++//! SAME root cause (a DEFERRED transaction that reads before it writes) and
++//! neither is retryable by `busy_timeout`; the prior write-ups that named 517
++//! alone were describing only one of the two exits. See
++//! `dev/design/0.8.20-tc57-write-race-characterization.md`.
++//!
++//! ## Deliberately NOT fixed by Slice 21a-2
++//!
++//! * **The opaque error path.** `write_inner` still discards the
++//!   `rusqlite::Error` and returns the unit variant `EngineError::Storage`, so a
++//!   host still cannot tell a transient lock conflict from a permanent storage
++//!   failure. That is candidate R2 of the characterization, explicitly out of
++//!   scope; the stale doc comment that claimed the numeric code survived via
++//!   `EngineError::source()` was corrected in place.
++//! * **The worker side.** `commit_projection_outcomes` keeps its DEFERRED
++//!   read-then-upgrade shape. Not changed because the risk that the caller-side
++//!   fix would push failures onto the worker was MEASURED and did not
++//!   materialize — see `tc57_worker_commit_pressure.rs`.
++
++use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
++use fathomdb_engine::lifecycle::{Event, EventSource, Subscriber};
++use fathomdb_engine::{Engine, EngineError, InitialState, PreparedWrite, SourceId};
++use fathomdb_schema::SQLITE_SUFFIX;
++use std::sync::atomic::{AtomicUsize, Ordering};
++use std::sync::{Arc, Mutex};
++use std::time::{Duration, Instant};
++use tempfile::TempDir;
++
++// ---------------------------------------------------------------------------
++// Fixture
++// ---------------------------------------------------------------------------
++
++/// A live, in-process, deterministic embedder with a small per-call delay.
++///
++/// Why a LIVE embedder and not the `default-embedder` cargo feature: the
++/// projection worker only performs vector work (and therefore only commits on
++/// its own runtime connection) when `shared.embedder.is_some()` — see the
++/// `Deferred` early-return in `run_projection_job` (`lib.rs:12834`). Without a
++/// live embedder there is no second writer and the race cannot exist.
++/// `Engine::open_with_embedder_for_test` (`lib.rs:4340`) supplies one with no
++/// feature flag and no network, so this target compiles to REAL tests in the
++/// default merge gate rather than to zero tests.
++#[derive(Clone, Debug)]
++struct DelayEmbedder {
++    identity: EmbedderIdentity,
++    delay: Duration,
++}
++
++impl DelayEmbedder {
++    fn new(delay: Duration) -> Self {
++        Self { identity: EmbedderIdentity::new("deterministic", "rev-a", 384), delay }
++    }
++}
++
++impl Embedder for DelayEmbedder {
++    fn identity(&self) -> EmbedderIdentity {
++        self.identity.clone()
++    }
++
++    fn embed(&self, _text: &str) -> Result<Vector, EmbedderError> {
++        if !self.delay.is_zero() {
++            std::thread::sleep(self.delay);
++        }
++        let mut v = vec![0.0_f32; self.identity.dimension as usize];
++        v[0] = 1.0;
++        Ok(v)
++    }
++}
++
++/// Captures every `EventSource::SqliteInternal` code the engine emits.
++///
++/// This is the ONLY route by which a caller can learn anything about the
++/// underlying rusqlite error on this path: `write_inner` calls
++/// `emit_sqlite_internal_error(&err)` and then returns the UNIT variant
++/// `EngineError::Storage` (`lib.rs:4994-4996`), dropping `err`. `EngineError`
++/// carries no `source()` payload for `Storage` (`lib.rs:3537`), so the numeric
++/// extended code is unrecoverable from the public API.
++#[derive(Default)]
++struct SqliteCodeSink {
++    codes: Mutex<Vec<&'static str>>,
++}
++
++impl Subscriber for SqliteCodeSink {
++    fn on_event(&self, event: &Event) {
++        if event.source == EventSource::SqliteInternal {
++            if let Some(code) = event.code {
++                self.codes.lock().unwrap().push(code);
++            }
++        }
++    }
++}
++
++/// A GOVERNED node write — `logical_id: Some(..)`. This is the arm under test:
++/// it takes the `commit_batch` supersession branch (`lib.rs:17791-17820`), whose
++/// FIRST statement inside the deferred transaction is a READ
++/// (`prior_node_cursors_by_logical_id`, `lib.rs:17799`).
++fn governed_node(i: usize) -> PreparedWrite {
++    PreparedWrite::Node {
++        kind: "doc".to_string(),
++        body: format!(r#"{{"summary":"meaning {i}"}}"#),
++        source_id: SourceId::new("test:fixture").expect("source id"),
++        logical_id: Some(format!("tc57-{i}")),
++        state: InitialState::Active,
++        reason: None,
++        valid_from: None,
++        valid_until: None,
++    }
++}
++
++/// The CONTROL — an ANONYMOUS node write, `logical_id: None`. Byte-identical to
++/// [`governed_node`] in every other field, so the only independent variable is
++/// the supersession read.
++fn anonymous_node(i: usize) -> PreparedWrite {
++    PreparedWrite::Node {
++        kind: "doc".to_string(),
++        body: format!(r#"{{"summary":"meaning {i}"}}"#),
++        source_id: SourceId::new("test:fixture").expect("source id"),
++        logical_id: None,
++        state: InitialState::Active,
++        reason: None,
++        valid_from: None,
++        valid_until: None,
++    }
++}
++
++/// How many writes one arm issues. Sized from the ledger repro (which failed at
++/// write 4 of a 300-write loop): large enough that the SELECT→UPDATE window is
++/// offered to the worker hundreds of times, small enough to run in ~2 s.
++const WRITES: usize = 300;
++
++/// The outcome of one arm: which write index (if any) failed, and every
++/// SQLite-internal code the engine emitted along the way.
++struct ArmOutcome {
++    first_failure: Option<(usize, EngineError)>,
++    sqlite_codes: Vec<&'static str>,
++    embed_calls: usize,
++    /// Wall time of the FAILING `Engine::write` call. This is load-bearing
++    /// evidence, not decoration: a plain `SQLITE_BUSY` reached by exhausting a
++    /// busy handler takes the whole busy timeout, whereas `SQLITE_BUSY_SNAPSHOT`
++    /// (and a zero busy timeout) return immediately. The duration therefore
++    /// discriminates the two even though the engine discards the numeric code.
++    failure_wall_ms: u128,
++    /// Wall time of the SLOWEST successful write, as the baseline the failing
++    /// write's duration is read against.
++    slowest_ok_ms: u128,
++}
++
++/// Run one arm of the comparison: `WRITES` single-row writes in a tight loop
++/// against an engine whose async projection worker is live and committing on its
++/// OWN connection.
++///
++/// `governed = true` uses [`governed_node`], `false` uses [`anonymous_node`].
++/// Everything else — embedder, vector-kind enrolment, loop shape, pacing — is
++/// identical between the arms.
++fn run_arm(governed: bool) -> ArmOutcome {
++    let dir = TempDir::new().expect("tempdir");
++    let path = dir.path().join(format!("tc57_{}{SQLITE_SUFFIX}", if governed { "g" } else { "a" }));
++    let embed_calls = Arc::new(AtomicUsize::new(0));
++    let opened = Engine::open_with_embedder_for_test(
++        &path,
++        Arc::new(CountingDelay::new(embed_calls.clone())),
++    )
++    .expect("open");
++    let engine = &opened.engine;
++    let sink = Arc::new(SqliteCodeSink::default());
++    let _subscription = engine.subscribe(sink.clone());
++    // Enrol `doc` as a vector kind so every write enqueues an embed job; without
++    // this the worker has nothing to commit and never contends.
++    engine.configure_vector_kind_for_test("doc").expect("vector kind");
++
++    let mut first_failure = None;
++    let mut failure_wall_ms = 0_u128;
++    let mut slowest_ok_ms = 0_u128;
++    for i in 0..WRITES {
++        let batch = if governed { governed_node(i) } else { anonymous_node(i) };
++        let started = Instant::now();
++        let result = engine.write(&[batch]);
++        let elapsed = started.elapsed().as_millis();
++        match result {
++            Ok(_) => slowest_ok_ms = slowest_ok_ms.max(elapsed),
++            Err(err) => {
++                first_failure = Some((i, err));
++                failure_wall_ms = elapsed;
++                break;
++            }
++        }
+diff --git a/src/rust/crates/fathomdb-engine/tests/tc57_worker_commit_pressure.rs b/src/rust/crates/fathomdb-engine/tests/tc57_worker_commit_pressure.rs
+new file mode 100644
+index 00000000..f6aa8cd5
+--- /dev/null
++++ b/src/rust/crates/fathomdb-engine/tests/tc57_worker_commit_pressure.rs
+@@ -0,0 +1,371 @@
++//! 0.8.20 Slice 21a-2 (R-20-CR) — **TC-57 fix: the WORKER-SIDE half, measured.**
++//!
++//! ## Why this file exists
++//!
++//! The TC-57 fix (`commit_batch` opens `BEGIN IMMEDIATE` instead of rusqlite's
++//! `BEGIN DEFERRED` default, `lib.rs:17764`) removes the CALLER-side promotion.
++//! But the characterization's biggest residual risk
++//! (`dev/design/0.8.20-tc57-write-race-characterization.md` §7, "What I am unsure
++//! about" item 3) is the *other* direction: `commit_projection_outcomes`
++//! (`lib.rs:13662`, tx at `:13672`) has the SAME read-then-upgrade shape, and
++//! making the engine the write-lock HOLDER more often could *increase*
++//! worker-side promote failures.
++//!
++//! `tc57_governed_write_race.rs` structurally cannot see that: it only observes
++//! `Engine::write`'s return value, and a worker-side commit failure never reaches
++//! the caller. So this file is the second instrument.
++//!
++//! ## What a worker-side commit failure actually looks like — READ THIS
++//!
++//! It is **not** a `'failed'` terminal and **not** a `projection_failures` audit
++//! row. Those two are written by the `ProjectionOutcome::Failure` arm
++//! (`lib.rs:13825-13848`), which represents an **embed** failure. A *commit*
++//! failure is discarded outright:
++//!
++//! ```text
++//! lib.rs:12584   let _ = commit_projection_outcomes(connection, &outcomes, shared);
++//! ```
++//!
++//! The whole transaction rolls back, so no terminal is written, the row keeps
++//! `terminal IS NULL`, the worker loop sets `pending_scan = true`
++//! (`lib.rs:12536`), the dispatcher re-fetches the row and it is **embedded
++//! again**.
++//!
++//! So the sharp instrument is **re-embeds**: every row in this fixture carries a
++//! UNIQUE body, the embedder counts calls PER TEXT, and a text embedded twice is a
++//! row that was dispatched twice — i.e. an outcome that was computed and then
++//! never became durable. The `'failed'` terminal / `projection_failures` counts
++//! are recorded too (they are the observable the slice brief named, and they must
++//! stay at zero), but on their own they would have been a VACUOUS instrument for
++//! this risk, because the failure mode they measure is a different one.
++//!
++//! **Read `repeat_embeds` as a RELATIVE number, not an absolute one.** MEASURED at
++//! baseline `41a81c17`: ~104 of 200 rows are already embedded twice, on BOTH arms,
++//! including the anonymous arm where zero caller errors occur. That pre-existing
++//! ~50 % duplicate-dispatch rate is unrelated to TC-57 (it is present with no
++//! write race at all) and is out of scope here — it is reported, not fixed. What
++//! matters for Part C is whether the fix MOVES that number: measured governed
++//! 105.0 → 106.2 mean over N=5 each, i.e. inside run-to-run spread, so the
++//! caller-side fix does not push failures onto the worker.
++//!
++//! ## Equalized load — why every caller error is retried
++//!
++//! At baseline the governed arm dies on its third write, so an un-retried loop
++//! would compare ~3 rows of worker pressure against ~200. Both arms here retry a
++//! failed `Engine::write` up to [`MAX_ATTEMPTS`] times so that **the same number
++//! of rows** reaches the worker before and after the fix, and the caller-error
++//! count is reported separately rather than terminating the load.
++//!
++//! ## Throughput
++//!
++//! Characterization §7 uncertainty 2: holding the WAL write lock from `BEGIN`
++//! rather than from the first write statement is a longer hold. Each arm sums the
++//! wall time of its **successful** `Engine::write` calls only (`ok_write_wall_ms`)
++//! so the number is a per-write cost comparison uncontaminated by retry overhead,
++//! and reports the total alongside it.
++//!
++//! The anonymous arm is the CLEAN throughput comparison: it never fails at
++//! baseline, so its before/after numbers contain no retries in either direction —
++//! and since the fix is applied UNCONDITIONALLY it is exactly the arm where a
++//! regression from taking the lock earlier would show up first. MEASURED, N=5
++//! each: anonymous `ok_write_wall_ms` 410.0 → 415.2 mean (+1.3 %), anonymous
++//! `total_wall_ms` 712.6 → 720.8 (+1.2 %) — i.e. no detectable cost.
++//!
++//! The governed arm's `ok_write_wall_ms` is NOT comparable across the fix (before,
++//! it excludes ~98 failed attempts and counts retries that ran against a lock the
++//! 5 ms backoff had already let go). Its honest number is `total_wall_ms`: 920.8 →
++//! 720.2 mean, i.e. the fix is ~22 % FASTER end-to-end, because the failed-write
++//! and backoff cycles are gone.
++
++use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
++use fathomdb_engine::{Engine, InitialState, PreparedWrite, SourceId};
++use fathomdb_schema::SQLITE_SUFFIX;
++use std::collections::HashMap;
++use std::path::{Path, PathBuf};
++use std::sync::atomic::{AtomicUsize, Ordering};
++use std::sync::{Arc, Mutex};
++use std::time::{Duration, Instant};
++use tempfile::TempDir;
++
++/// Rows per arm. Large enough that the worker commits many times against a live
++/// writer, small enough to run in a few seconds.
++const ROWS: usize = 200;
++
++/// Bounded — never an unbounded retry. A row that cannot land in this many tries
++/// is counted as permanently lost and reported.
++const MAX_ATTEMPTS: usize = 8;
++
++// ---------------------------------------------------------------------------
++// Fixture
++// ---------------------------------------------------------------------------
++
++/// Deterministic, in-process, call-counting embedder with a 1 ms delay — the same
++/// shape as `tc57_governed_write_race.rs`'s, so the two files put comparable
++/// pressure on the worker.
++#[derive(Debug)]
++struct CountingDelayEmbedder {
++    identity: EmbedderIdentity,
++    calls: Arc<AtomicUsize>,
++    /// Per-text call counts. `embed` is called with the row's extracted field, and
++    /// every row in this fixture carries a UNIQUE body, so a text embedded twice
++    /// is a row that was dispatched twice — i.e. a projection outcome that never
++    /// became durable. This is what makes "re-embed" a falsifiable count rather
++    /// than an inference from a total.
++    texts: Arc<Mutex<HashMap<String, usize>>>,
++}
++
++impl CountingDelayEmbedder {
++    fn new(calls: Arc<AtomicUsize>, texts: Arc<Mutex<HashMap<String, usize>>>) -> Self {
++        Self { identity: EmbedderIdentity::new("deterministic", "rev-a", 384), calls, texts }
++    }
++}
++
++impl Embedder for CountingDelayEmbedder {
++    fn identity(&self) -> EmbedderIdentity {
++        self.identity.clone()
++    }
++
++    fn embed(&self, text: &str) -> Result<Vector, EmbedderError> {
++        self.calls.fetch_add(1, Ordering::SeqCst);
++        *self
++            .texts
++            .lock()
++            .unwrap_or_else(|poisoned| poisoned.into_inner())
++            .entry(text.to_string())
++            .or_insert(0) += 1;
++        std::thread::sleep(Duration::from_millis(1));
++        let mut v = vec![0.0_f32; self.identity.dimension as usize];
++        v[0] = 1.0;
++        Ok(v)
++    }
++}
++
++fn node(i: usize, governed: bool) -> PreparedWrite {
++    PreparedWrite::Node {
++        kind: "doc".to_string(),
++        body: format!(r#"{{"summary":"meaning {i}"}}"#),
++        source_id: SourceId::new("test:fixture").expect("source id"),
++        logical_id: if governed { Some(format!("tc57-wp-{i}")) } else { None },
++        state: InitialState::Active,
++        reason: None,
++        valid_from: None,
++        valid_until: None,
++    }
++}
++
++fn ro(path: &Path) -> rusqlite::Connection {
++    rusqlite::Connection::open_with_flags(
++        path,
++        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
++    )
++    .expect("open read-only")
++}
++
++fn db_path(dir: &TempDir, name: &str) -> PathBuf {
++    dir.path().join(format!("{name}{SQLITE_SUFFIX}"))
++}
++
++fn count(conn: &rusqlite::Connection, sql: &str) -> i64 {
++    conn.query_row(sql, [], |r| r.get::<_, i64>(0)).unwrap_or(-1)
++}
++
++/// Everything one arm measured. Printed as a single greppable line by
++/// [`LoadOutcome::report`] so a before/after comparison is a `grep`, not a
++/// transcription.
++struct LoadOutcome {
++    label: &'static str,
++    rows_written: usize,
++    rows_lost: usize,
++    caller_errors: usize,
++    ok_write_wall_ms: u128,
++    total_wall_ms: u128,
++    embed_calls: usize,
++    /// How many DISTINCT texts were embedded more than once. Each one is a row
++    /// whose projection outcome was computed and then never became durable.
++    repeated_texts: usize,
++    /// Total embeds beyond the first for any text — i.e. total wasted embeds.
++    repeat_embeds: usize,
++    drain_ok: bool,
++    drain_ms: u128,
++    failure_audit_rows: i64,
++    failed_terminals: i64,
++    vector_rows: i64,
++}
++
++impl LoadOutcome {
++    fn report(&self) {
++        println!(
++            "TC57-PARTC arm={} rows_written={} rows_lost={} caller_errors={} \
++             embed_calls={} repeated_texts={} repeat_embeds={} failed_terminals={} \
++             failure_audit_rows={} vector_rows={} drain_ok={} drain_ms={} \
++             ok_write_wall_ms={} total_wall_ms={}",
++            self.label,
++            self.rows_written,
++            self.rows_lost,
++            self.caller_errors,
++            self.embed_calls,
++            self.repeated_texts,
++            self.repeat_embeds,
++            self.failed_terminals,
++            self.failure_audit_rows,
++            self.vector_rows,
++            self.drain_ok,
++            self.drain_ms,
++            self.ok_write_wall_ms,
+
+ succeeded in 432225ms:
+
+running 6 tests
+......
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s
+
+
+running 2 tests
+..
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+
+running 8 tests
+........
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+
+running 12 tests
+[stub_harness] stub harness started
+[stub_harness] unknown protocol: fathomdb.consolidate.v1
+[stub_consolidate_harness] stub consolidate harness started
+[stub_consolidate_harness] sent ready: model=stub-consolidate-v1
+[stub_consolidate_harness] sent result for request_id=req-0: 2 verdicts
+[stub_consolidate_harness] stub consolidate harness started
+[stub_consolidate_harness] sent ready: model=stub-consolidate-v1
+[stub_consolidate_harness] stub consolidate harness started
+[stub_consolidate_harness] sent ready: model=stub-consolidate-v1
+[stub_consolidate_harness] sent result for request_id=req-0: 2 verdicts
+[stub_consolidate_harness] stub consolidate harness started
+[stub_consolidate_harness] sent ready: model=stub-consolidate-v1
+[stub_consolidate_harness] sent result for request_id=req-0: 2 verdicts
+[stub_consolidate_harness] stub consolidate harness started
+[stub_consolidate_harness] sent ready: model=stub-consolidate-v1
+[stub_consolidate_harness] sent result for request_id=req-0: 2 verdicts
+............
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.28s
+
+
+running 1 test
+[stub_consolidate_harness] stub consolidate harness started
+[stub_consolidate_harness] sent ready: model=stub-consolidate-v1
+[stub_consolidate_harness] sent result for request_id=req-0: 2 verdicts
+[stub_consolidate_harness] sent result for request_id=req-1: 2 verdicts
+[stub_consolidate_harness] sent result for request_id=req-2: 2 verdicts
+[stub_consolidate_harness] sent result for request_id=req-3: 2 verdicts
+[stub_consolidate_harness] sent result for request_id=req-4: 2 verdicts
+[stub_consolidate_harness] sent result for request_id=req-5: 2 verdicts
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.07s
+
+
+running 1 test
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 1 test
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 4 tests
+....
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 1 test
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 1 test
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 4 tests
+....
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.47s
+
+
+running 13 tests
+i............
+test result: ok. 12 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.85s
+
+
+running 3 tests
+ii.
+test result: ok. 1 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 1 test
+[elps_conformance_stub] Loaded 8 golden cases: ['d1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8']
+[elps_conformance_stub] stub harness started
+[elps_conformance_stub] sending ready
+[elps_conformance_stub] sending result for source_doc_id='d1' request_id=req-0: 2 entities, 1 edges
+[elps_conformance_stub] Loaded 8 golden cases: ['d1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8']
+[elps_conformance_stub] stub harness started
+[elps_conformance_stub] sending ready
+[elps_conformance_stub] sending result for source_doc_id='d2' request_id=req-0: 2 entities, 1 edges
+[elps_conformance_stub] Loaded 8 golden cases: ['d1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8']
+[elps_conformance_stub] stub harness started
+[elps_conformance_stub] sending ready
+[elps_conformance_stub] sending result for source_doc_id='d3' request_id=req-0: 3 entities, 2 edges
+[elps_conformance_stub] Loaded 8 golden cases: ['d1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8']
+[elps_conformance_stub] stub harness started
+[elps_conformance_stub] sending ready
+[elps_conformance_stub] sending result for source_doc_id='d4' request_id=req-0: 0 entities, 0 edges
+[elps_conformance_stub] Loaded 8 golden cases: ['d1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8']
+[elps_conformance_stub] stub harness started
+[elps_conformance_stub] sending ready
+[elps_conformance_stub] sending result for source_doc_id='d5' request_id=req-0: 2 entities, 1 edges
+[elps_conformance_stub] Loaded 8 golden cases: ['d1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8']
+[elps_conformance_stub] stub harness started
+[elps_conformance_stub] sending ready
+[elps_conformance_stub] sending result for source_doc_id='d6' request_id=req-0: 2 entities, 1 edges
+[elps_conformance_stub] Loaded 8 golden cases: ['d1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8']
+[elps_conformance_stub] stub harness started
+[elps_conformance_stub] sending ready
+[elps_conformance_stub] sending result for source_doc_id='d7' request_id=req-0: 2 entities, 1 edges
+[elps_conformance_stub] Loaded 8 golden cases: ['d1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8']
+[elps_conformance_stub] stub harness started
+[elps_conformance_stub] sending ready
+[elps_conformance_stub] sending result for source_doc_id='d8' request_id=req-0: 5 entities, 2 edges
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.53s
+
+
+running 1 test
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
+
+
+running 13 tests
+.............
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+
+running 5 tests
+.....
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+
+running 9 tests
+.........
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+
+running 5 tests
+.....
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.39s
+
+
+running 6 tests
+......
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.76s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 5 tests
+.....
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+
+running 3 tests
+...
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+
+running 3 tests
+...
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+
+running 10 tests
+..........
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.10s
+
+
+running 2 tests
+..
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+
+running 2 tests
+..
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 5 tests
+.....
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+
+running 1 test
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 11 tests
+...........
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+
+running 4 tests
+....
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 2 tests
+..
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 15 tests
+...............
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+
+running 23 tests
+i......................
+test result: ok. 22 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 10.42s
+
+
+running 7 tests
+iii....
+test result: ok. 4 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 5.11s
+
+
+running 5 tests
+[provenance_omitting_harness] started (source_doc_id will be omitted from every element)
+[multidoc_echo_harness] started (mode=valid)
+[provenance_omitting_harness] started (source_doc_id will be omitted from every element)
+[multidoc_echo_harness] started (mode=foreign)
+.[elps_harness] starting (model=claude-haiku base_url=http://localhost:4000/v1 stub=True)
+....
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 42.28s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 7 tests
+.......
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+
+running 6 tests
+......
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+
+running 8 tests
+........
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+
+
+running 15 tests
+....iiiiii....test ac_017_vector_projection_freshness_p99_le_five_seconds has been running for over 60 seconds
+.
+test result: ok. 9 passed; 0 failed; 6 ignored; 0 measured; 0 filtered out; finished in 109.64s
+
+
+running 3 tests
+...
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 1 test
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.42s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 1 test
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.07s
+
+
+running 5 tests
+.....
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.60s
+
+
+running 5 tests
+.....
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.11s
+
+
+running 5 tests
+.....
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 8 tests
+........
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+
+running 6 tests
+......
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.13s
+
+
+running 6 tests
+......
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+
+running 5 tests
+.....
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 5 tests
+.....
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+
+running 9 tests
+.........
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s
+
+
+running 1 test
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+
+running 1 test
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+
+running 7 tests
+.......
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+
+running 9 tests
+.........
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.30s
+
+
+running 8 tests
+........
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+
+running 10 tests
+..........
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.11s
+
+
+running 13 tests
+i............
+test result: ok. 12 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 8.95s
+
+
+running 1 test
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 3 tests
+...
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.49s
+
+
+running 6 tests
+......
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+
+running 3 tests
+...
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 2 tests
+..
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+
+running 12 tests
+............
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.38s
+
+
+running 12 tests
+............
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s
+
+
+running 21 tests
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 0 entities, 0 edges
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 4 entities, 2 edges
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+.[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 5 entities, 3 edges
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 5 entities, 3 edges
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 4 entities, 2 edges
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+........[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 4 entities, 2 edges
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 5 entities, 3 edges
+............
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.55s
+
+
+running 9 tests
+.........
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s
+
+
+running 8 tests
+........
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s
+
+
+running 3 tests
+...
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+
+
+running 24 tests
+........................
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.80s
+
+
+running 11 tests
+...........
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s
+
+
+running 8 tests
+........
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 30.19s
+
+
+running 18 tests
+..................
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.46s
+
+
+running 12 tests
+...........test dropping_a_vector_projection_leaves_edge_fact_enrolled has been running for over 60 seconds
+.
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 60.29s
+
+
+running 5 tests
+.....
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+
+
+running 8 tests
+....[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+....
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 21.24s
+
+
+running 4 tests
+....
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.09s
+
+
+running 19 tests
+...................
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s
+
+
+running 6 tests
+......
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+
+running 3 tests
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+...
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.10s
+
+
+running 3 tests
+...
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 4 tests
+....
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+
+running 6 tests
+......
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 21.15s
+
+
+running 11 tests
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+.[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+..........
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s
+
+
+running 3 tests
+...
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+
+running 1 test
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 21.05s
+
+
+running 2 tests
+..
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.06s
+
+
+running 8 tests
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+....[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+....
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.18s
+
+
+running 2 tests
+..
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+
+running 2 tests
+..
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+
+running 8 tests
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+[stub_harness] stub harness started
+.[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+[stub_harness] stub harness started
+[stub_harness] sending ready: model=stub-v1
+[stub_harness] sending result for request_id=req-0: 2 entities, 1 edges
+.......
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.15s
+
+
+running 5 tests
+.....
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.16s
+
+
+running 2 tests
+..
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.79s
+
+
+running 6 tests
+......
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 30.22s
+
+
+running 4 tests
+....
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+
+running 3 tests
+...
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+
+running 7 tests
+.......
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.03s
+
+
+running 23 tests
+.......................
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.38s
+
+
+running 1 test
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 4 tests
+....
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+
+exec
+/bin/bash -lc "sed -n '17680,17890p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s21
+ succeeded in 0ms:
+        RowKind::Graph => IndexTargetSet { fts: true, vector: false },
+    }
+}
+
+/// EXP-S (0.8.14 Slice 5, D2/D5) — apply the per-`row_kind` index-target
+/// dispatch for one just-inserted canonical node row (write_cursor `cursor`).
+///
+/// Preserves the OPP-12-shaped split (D5(b)): FTS is written in THIS
+/// transaction (same-txn `searchable->FTS`); vector work is only *enqueued*
+/// here into `_fathomdb_projection_state` and embedded later, asynchronously,
+/// by the projection worker pool (`searchable->vector`). When the row projects
+/// into no async vector index, its readiness is terminated up-front (D5(c),
+/// per-kind-extensible) so `advance_projection_cursor` can walk past it.
+///
+/// Returns `true` iff async vector work was enqueued (the caller must then
+/// `notify_new_work`). For `RowKind::Leaf` this is behavior-identical to the
+/// pre-EXP-S inline node path.
+fn project_canonical_node_row(
+    tx: &Connection,
+    cursor: u64,
+    kind: &str,
+    body: &str,
+    row_kind: RowKind,
+    pass: ProjectionPass,
+    node_active: bool,
+) -> rusqlite::Result<bool> {
+    let targets = index_targets_for_row_kind(row_kind);
+    if targets.fts && pass.writes_fts() {
+        tx.execute(
+            "INSERT INTO search_index(body, kind, write_cursor) VALUES(?1, ?2, ?3)",
+            params![body, kind, cursor],
+        )?;
+        // F5 (0.8.14 Slice 10) — same coexisting `searchable->FTS` target also
+        // populates the multi-column `search_index_v2` (kind/body/status) so a
+        // BM25F query can field-weight the lexical arm. Written SYNCHRONOUSLY in
+        // THIS transaction, exactly like `search_index` (rowid==write_cursor
+        // identity preserved). The `status` field mirrors the migration-17
+        // O(N) re-index: `$.status` from a JSON body, guarded by `json_valid` so
+        // non-JSON bodies index an empty status. NOTE (codex fix-1 finding 2):
+        // this is F5's OWN `$.status`-derived field for the BM25F `status`
+        // column — it is NOT (yet) the value the shipped G10 SearchFilter reads.
+        // G10 filtering reads the vec0 `status` column, which is still hardwired
+        // to the empty-string sentinel; wiring G10 onto this field is out of
+        // scope for F5. Determinism (R-SUB-2) is preserved: the derivation is
+        // a pure function of `body`, evaluated in-SQL identically on every run.
+        tx.execute(
+            "INSERT INTO search_index_v2(kind, body, status, write_cursor)
+             VALUES(
+                 ?1,
+                 ?2,
+                 CASE WHEN json_valid(?2)
+                      THEN COALESCE(json_extract(?2, '$.status'), '')
+                      ELSE '' END,
+                 ?3
+             )",
+            params![kind, body, cursor],
+        )?;
+    }
+    // 0.8.20 Slice 15d (R-20-EAV) — same-transaction attribute projection. Only
+    // the full `Write` pass re-derives attributes (see `writes_attributes`): the
+    // FtsOnly tokenizer reproject predates step 24 and must not touch the
+    // registry/attribute tables; VectorOnly rebuilds only vector shadows. A full
+    // operator FTS rebuild uses `Write`, so it re-derives attributes after the
+    // truncate.
+    //
+    // fix-2 [P2]: gated on `node_active`. The at-rest attribute projection tracks
+    // EXACTLY the backfill's row set — `state = 'active' AND superseded_at IS NULL`
+    // (see `backfill_attribute`). Unlike node-FTS / vector shadows (whose stale
+    // versions are excluded by the canonical read path's `superseded_at IS NULL`
+    // / `state = 'active'` join), the property tables carry NO read-side lifecycle
+    // filter (`property_search_index` is an FTS5 table that cannot), so a pending
+    // or superseded node's attribute values would otherwise LEAK into a
+    // same-session property filter / property-FTS. The write path passes
+    // `state == Active`; a projector-replay rebuild passes `active ∧ non-superseded`
+    // per row. Lifecycle transitions maintain the store directly (see
+    // `Engine::transition`). Passes where `writes_attributes()` is false ignore the
+    // flag entirely.
+    if pass.writes_attributes() && node_active {
+        project_node_attributes(tx, cursor as i64, body)?;
+    }
+    // 0.8.20 Slice 20c (R-20-DR remainder) — UNCHANGED, deliberately. Late
+    // enrolment of a kind first written AFTER a `searchable→vector` declaration
+    // happens in [`Engine::enrol_vector_kind_if_declared`], upstream of this
+    // transaction, NOT here: the decision needs the engine's LIVE embedder, which
+    // a free function holding only a `Connection` cannot see. Enrolling without
+    // one would queue embeds that can only retry-then-fail.
+    let enqueue_vector = targets.vector && kind_is_vector_indexed(tx, kind).unwrap_or(false);
+    if pass.writes_vector_state() {
+        if enqueue_vector {
+            tx.execute(
+                "INSERT INTO _fathomdb_projection_state(kind, last_enqueued_cursor, updated_at)
+                 VALUES(?1, ?2, 0)
+                 ON CONFLICT(kind) DO UPDATE SET last_enqueued_cursor = excluded.last_enqueued_cursor",
+                params![kind, cursor],
+            )?;
+        } else {
+            // Never-vector-projected rows terminate the cursor up-front so
+            // `advance_projection_cursor` can advance the readiness watermark.
+            record_projection_terminal(tx, cursor, "up_to_date")?;
+        }
+    }
+    Ok(enqueue_vector)
+}
+
+/// 0.8.20 Slice 5a (R-20-E1, work item 1) — the EDGE half of the total
+/// projector, extracted verbatim from the inlined `commit_batch` edge arm.
+///
+/// Before this extraction there was NO edge projector function: `commit_batch`
+/// inlined the edge FTS insert + the edge vector enqueue, and
+/// `rebuild_shadow_state` re-implemented a SUBSET of it (edge FTS only, and only
+/// for body-carrying edges), so a projector-replay rebuild silently dropped the
+/// rest — notably the `up_to_date` readiness terminal that the write path
+/// records for a body-less structural edge. With both sites now calling this one
+/// function, the write path and the rebuild path produce identical edge
+/// projections by construction.
+///
+/// Mirrors [`project_canonical_node_row`]'s split (ADR-0.8.14 §D5(b)): FTS in
+/// THIS transaction; vector work only ENQUEUED, embedded later by the worker
+/// pool. Edge bodies enqueue under the fixed kind `"edge_fact"` so
+/// `resolve_source_type` maps them to `source_type = "edge_fact"` in
+/// `vector_default` (partition correctness); that kind is auto-registered in
+/// `_fathomdb_vector_kinds` (idempotent).
+///
+/// Returns `true` iff async vector work was enqueued.
+fn project_canonical_edge_row(
+    tx: &Connection,
+    cursor: u64,
+    kind: &str,
+    body: Option<&str>,
+    pass: ProjectionPass,
+) -> rusqlite::Result<bool> {
+    // G11 — edge FTS projection into `search_index_edges` (separate table from
+    // node-body `search_index` — Option B partition). Body-less structural
+    // edges carry no lexical content and project no FTS row.
+    if pass.writes_fts() {
+        if let Some(edge_body) = body {
+            tx.execute(
+                "INSERT INTO search_index_edges(body, kind, write_cursor)
+                 VALUES(?1, ?2, ?3)",
+                params![edge_body, kind, cursor],
+            )?;
+        }
+    }
+    let enqueue_vector = body.is_some();
+    if pass.writes_vector_state() {
+        if enqueue_vector {
+            let now_unix =
+                SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
+            tx.execute(
+                "INSERT OR IGNORE INTO _fathomdb_vector_kinds(kind, profile, created_at)
+                 VALUES('edge_fact', 'default', ?1)",
+                params![now_unix],
+            )?;
+            tx.execute(
+                "INSERT INTO _fathomdb_projection_state(
+                     kind, last_enqueued_cursor, updated_at
+                 ) VALUES('edge_fact', ?1, 0)
+                 ON CONFLICT(kind) DO UPDATE
+                     SET last_enqueued_cursor = excluded.last_enqueued_cursor",
+                params![cursor],
+            )?;
+            // Do NOT call record_projection_terminal — let the scheduler embed
+            // the body and mark it terminal after projection.
+        } else {
+            record_projection_terminal(tx, cursor, "up_to_date")?;
+        }
+    }
+    Ok(enqueue_vector)
+}
+
+/// F5 (0.8.14 Slice 10, fix-1) — tokenizer for the in-engine BM25F scorer.
+///
+/// Tokenizes `text` through the SAME FTS5 tokenizer that `search_index_v2` uses
+/// for candidate recall (`porter unicode61 remove_diacritics 2`), so the scorer
+/// measures term-frequency, document-frequency, field length, and average field
+/// length under the index's own tokenization — porter stemming + unicode61
+/// case-fold + diacritic folding. The previous implementation hand-rolled a
+/// second lowercase-alnum splitter; a stemmed/diacritic variant recalled by
+/// `MATCH` (e.g. query `run` vs indexed `running`, or `cafe` vs `café`) was then
+/// scored as if the term were absent, so ranking was wrong for exactly those
+/// variants (codex §9 fix-1 finding 1). Reusing FTS5 itself makes scoring
+/// tokenization-faithful without re-implementing porter/unicode61 in Rust.
+///
+/// Mechanism: round-trip `text` through a temp single-column FTS5 table with the
+/// identical tokenizer, then read the emitted token instances back via the
+/// `fts5vocab(..., 'instance')` companion. The token multiset is returned in
+/// index order (duplicates kept) so callers count tf and field length directly.
+/// Query terms and every candidate field go through this one path, so all four
+/// statistics are consistent with each other and with the FTS5 index the scorer
+/// ranks.
+fn fts5_tokenize(connection: &Connection, text: &str) -> rusqlite::Result<Vec<String>> {
+    connection.execute_batch(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS temp.bm25f_tok
+             USING fts5(t, tokenize = 'porter unicode61 remove_diacritics 2');
+         CREATE VIRTUAL TABLE IF NOT EXISTS temp.bm25f_tok_vocab
+             USING fts5vocab('bm25f_tok', 'instance');
+         DELETE FROM temp.bm25f_tok;",
+    )?;
+    connection.execute("INSERT INTO temp.bm25f_tok(t) VALUES(?1)", params![text])?;
+    let mut stmt =
+        connection.prepare("SELECT term FROM temp.bm25f_tok_vocab ORDER BY \"offset\"")?;
+    let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+    rows.collect()
+}
+
+/// F5 (0.8.14 Slice 10) — build the FTS5 `MATCH` expression for candidate
+/// recall from the query's tokens: each token is a double-quoted FTS5 string
+/// (tokens are FTS5-emitted stems — unicode61 alnum, no embedded quotes),
+/// OR-joined.
+fn bm25f_match_expression(terms: &[String]) -> String {
+    terms.iter().map(|t| format!("\"{t}\"")).collect::<Vec<_>>().join(" OR ")
+
+exec
+/bin/bash -lc "grep -n \"commit_batch(\" -n src/rust/crates/fathomdb-engine/src/lib.rs | head -20 && sed -n '4950,5050p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s21
+ succeeded in 0ms:
+5013:        let dangling_edge_endpoints = match commit_batch(
+18061:fn commit_batch(
+        connection.execute_batch("BEGIN IMMEDIATE").map_err(|_| EngineError::Storage)?;
+        let result = (|| -> rusqlite::Result<bool> {
+            for kind in kinds {
+                register_vector_kind(connection, kind)?;
+            }
+            reenqueue_stranded_vector_rows(connection)
+        })();
+        match result {
+            Ok(enqueued) => {
+                connection.execute_batch("COMMIT").map_err(|_| EngineError::Storage)?;
+                Ok(enqueued)
+            }
+            Err(_) => {
+                let _ = connection.execute_batch("ROLLBACK");
+                Err(EngineError::Storage)
+            }
+        }
+    }
+
+    fn write_inner(&self, batch: &[PreparedWrite]) -> Result<WriteReceipt, EngineError> {
+        self.ensure_open()?;
+
+        if batch.is_empty() {
+            return Err(EngineError::WriteValidation);
+        }
+
+        let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+        let plans = validate_batch(connection, batch)?;
+        // 0.8.20 Slice 20c (R-20-DR remainder) — LATE ENROLMENT, before
+        // `collect_projection_jobs` reads the vector-kind registry to decide
+        // whether the dispatcher needs waking. See
+        // `Engine::enrol_batch_vector_kinds`.
+        //
+        // fix-2 (codex §9 [P2]) — the flag says the enrolment ALSO un-stranded
+        // rows outside this batch. Those rows are not in `projection_jobs` (that
+        // only walks the batch), so it is OR-ed into `pending_projection` below:
+        // `drain` is a passive barrier and never a trigger (C4 rider), so work
+        // enqueued without a wake would sit until the next unrelated write.
+        let unstranded = self.enrol_batch_vector_kinds(connection, batch)?;
+        let projection_jobs = collect_projection_jobs(connection, batch)?;
+        #[cfg(debug_assertions)]
+        if self.force_next_commit_failure.swap(false, Ordering::SeqCst) {
+            return Err(EngineError::Storage);
+        }
+        // One cursor per row. `base_cursor` is the last committed cursor;
+        // row i in the batch gets cursor `base_cursor + i + 1`, and the
+        // batch's final cursor (returned in WriteReceipt and stored as
+        // the new `next_cursor`) is `base_cursor + batch.len()`. Sharing
+        // one cursor across the batch previously collapsed every vec0
+        // INSERT onto the same rowid via `INSERT OR IGNORE` — see
+        // `dev/notes/0.7.0-engine-batch-vec0-collapse.md`.
+        let base_cursor = self.next_cursor.load(Ordering::SeqCst);
+        let increment = u64::try_from(batch.len()).unwrap_or(u64::MAX);
+        let last_cursor = base_cursor.saturating_add(increment);
+        // G11 (Slice 15) — edge bodies also need projection-runtime notification.
+        // `collect_projection_jobs` only tracks Node items (pre-fetched for
+        // cursor assignment); edge bodies update `_fathomdb_projection_state` in
+        // `commit_batch` but need the scanner to wake up via `notify_new_work`.
+        let has_edge_body_work =
+            batch.iter().any(|w| matches!(w, PreparedWrite::Edge { body: Some(_), .. }));
+        let pending_projection = !projection_jobs.is_empty() || has_edge_body_work || unstranded;
+
+        let dangling_edge_endpoints = match commit_batch(
+            connection,
+            batch,
+            &plans,
+            base_cursor,
+            self.provenance_row_cap.load(Ordering::Relaxed),
+        ) {
+            Ok(count) => count,
+            Err(err) => {
+                self.emit_sqlite_internal_error(&err);
+                return Err(EngineError::Storage);
+            }
+        };
+        self.next_cursor.store(last_cursor, Ordering::SeqCst);
+        if pending_projection {
+            self.projection_runtime.notify_new_work();
+        }
+
+        // G0 — surface the per-row cursors (1:1 with input order). Row i got
+        // `base_cursor + i + 1`, matching the allocation in `commit_batch`.
+        let row_cursors = (0..batch.len())
+            .map(|i| base_cursor.saturating_add((i as u64).saturating_add(1)))
+            .collect();
+        Ok(WriteReceipt { cursor: last_cursor, row_cursors, dangling_edge_endpoints })
+    }
+
+    /// G11 (Slice 15) — BYO-LLM ingest: spawn an external extraction harness
+    /// speaking the `fathomdb.extract.v1` NDJSON-over-stdio protocol, send
+    /// documents for extraction, and write the resulting entities
+    /// (→ `canonical_nodes`) and fact-edges (→ `canonical_edges` with G11
+    /// enrichment columns) to the store.
+    ///
+    /// `cmd` is argv (first element = program, rest = args). Documents are
+    /// batched per the harness's `max_docs_per_request`. Entity `logical_id`
+    /// is derived as `sha256("<type>:<name>")` (lowercase, hex-encoded) for
+    /// stable cross-re-ingestion identity. Edge `logical_id` is derived as
+    /// `sha256("<from_lid>:<to_lid>:<relation>")`. Both are consistent with
+    /// G0 supersession: re-ingesting the same document yields the same ids,
+
+codex
+I did not identify any discrete correctness issues in the diff. The engine test suite for fathomdb-engine also passed locally.
+I did not identify any discrete correctness issues in the diff. The engine test suite for fathomdb-engine also passed locally.
+CODEX_RC=0
