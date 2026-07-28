@@ -108,6 +108,17 @@
 # caught. A leading shebang is now part of the header and is skipped, and 12ak
 # holds BOTH directions: shebang + `#![cfg(..)]` is red, a shebang alone is not.
 #
+# FIX-6c ARMS (arm 12al) COMPLETE that same finding rather than opening a new
+# round: its scope is the file's own leading inner attributes, and a BOM-prefixed
+# one is exactly that. A UTF-8 BOM survives `read_source` (`errors="replace"`
+# does not strip it), is NOT whitespace to Python (U+FEFF is category Cf), and is
+# not `#!` — so the header walk stopped at byte 0 and a file-level `#![cfg(..)]`
+# behind a BOM compiled every proof out at exit 0, the 12ak false green through a
+# different first byte. rustc strips one leading BOM BEFORE the shebang rule
+# applies, so the skip is ordered the same way and BOM + shebang + `#![cfg(..)]`
+# is covered too. Reachability was ZERO when this was written — no tracked file
+# carries a BOM — exactly as the shebang hole was latent when 12ak closed it.
+#
 # READ THE GATE'S "RESIDUAL SCOPE" HEADER SECTION BEFORE ADDING A ROUND 7, AND
 # CLASSIFY THE FINDING FIRST. The header states, in writing, the evasion classes a
 # static/lexical check CANNOT close (dynamically composed SQL, const/macro-
@@ -1840,6 +1851,90 @@ expect_rc 1 "a #![cfg(..)] after a shebang AND another inner attribute still HAR
 expect_out 'C1-Q3-DESTRUCTIVE-DELTA' "the shebang+attr-run failure NAMES a clause proved in that file"
 expect_out 'CONDITIONALLY COMPILED as a whole' \
   "the shebang+attr-run failure says the whole file is gated"
+
+# === Arm 12al (RED, fix-6c): A LEADING UTF-8 BOM IS PART OF THE HEADER =======
+# The completion of codex §9 round-6 finding #2, whose scope is "the file's own
+# leading inner attributes" — and a BOM-prefixed inner attribute is one. Exactly
+# the SHEBANG hole of 12ak, through a different first byte.
+#
+# `read_source` decodes bytes with `.decode("utf-8", errors="replace")`, which
+# does NOT strip a byte-order mark, so a BOM survives into the scanned text as
+# U+FEFF at index 0. The leading-header walk then fails three ways at once:
+# `code[:2] == "#!"` is False so the shebang branch is skipped; `"﻿"
+# .isspace()` is False in Python 3 (it is category Cf, a FORMAT character, not
+# whitespace) so the whitespace skip does not advance past it; and
+# `code[0:3] != "#!["` so the walk breaks at byte 0. A file-level `#![cfg(..)]`
+# on the very same line is never seen — every proof in a pinned test file is
+# compiled out and the gate exits 0. A false GREEN of exactly the 12ak class.
+#
+# Proved with the toolchain, not by reading. `rustc --test` on a file whose
+# bytes begin ef bb bf, then `#![cfg(feature = "nope")]` + `#[test] fn t() {}`,
+# builds and `--list` reports `0 tests`; the same file WITHOUT the cfg reports
+# `1 test`, so it is the cfg that empties it and not the BOM. rustc strips ONE
+# leading BOM and only then may the first line be a shebang, so BOM + shebang +
+# `#![cfg(..)]` also builds to `0 tests` — hence 12al-3, and hence the BOM skip
+# belongs BEFORE the shebang branch rather than after it.
+#
+# Reachability is ZERO today: no tracked source file carries a BOM. So was the
+# shebang hole when 12ak was written. These arms hold both directions, as 12ak
+# does: a BOM must not hide a file-level `#![cfg(..)]` (12al-1, 12al-3, rc=1)
+# and must not by itself gate anything (12al-2, rc=0).
+#
+# 12al-1 — a BOM, then a genuine file-level `#![cfg(..)]` on the same line. Same
+# subject file as the 12aj/12ak mirrors, so the BOM is the only variable.
+BOM_CFG_ROOT="$(make_root bom-hides-file-cfg)"
+python3 - "$BOM_CFG_ROOT/src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+open(p, "w", encoding="utf-8").write(
+    "﻿"
+    '#![cfg(feature = "never-enabled")]\n' + text
+)
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$BOM_CFG_ROOT"
+expect_rc 1 "a file-level #![cfg(..)] hidden behind a leading UTF-8 BOM still HARD-fails the file's clauses"
+expect_out 'C1-Q3-DESTRUCTIVE-DELTA' "the BOM-hidden file-cfg failure NAMES a clause proved in that file"
+expect_out 'CONDITIONALLY COMPILED as a whole' \
+  "the BOM-hidden file-cfg failure says the whole file is gated"
+expect_routes_to_steward "the BOM-hidden file-cfg failure"
+
+# 12al-2 — THE MIRROR, so skipping the BOM cannot overshoot: a BOM ALONE gates
+# nothing, and a file that grows one (an editor's "UTF-8 with signature") must
+# not turn the gate RED.
+BOM_ONLY_ROOT="$(make_root bom-only)"
+python3 - "$BOM_ONLY_ROOT/src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+open(p, "w", encoding="utf-8").write("﻿" + text)
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$BOM_ONLY_ROOT"
+expect_rc 0 "a leading UTF-8 BOM on its own does NOT gate the pinned test file"
+expect_out 'ok +c1-contract-conformance' "the BOM-only root still reports ok"
+expect_no_out 'CONDITIONALLY COMPILED as a whole' \
+  "the BOM-only root is not reported as a wholly cfg-gated file"
+
+# 12al-3 — rustc's ORDER: one BOM is stripped, and only THEN may the first line
+# be a shebang. So a BOM followed by a shebang followed by the `#![cfg(..)]` is
+# a real, buildable file with zero tests, and the BOM skip must run BEFORE the
+# shebang branch for the walk to reach that attribute at all.
+BOM_SHEBANG_ROOT="$(make_root bom-then-shebang)"
+python3 - "$BOM_SHEBANG_ROOT/src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+open(p, "w", encoding="utf-8").write(
+    "﻿"
+    "#!/usr/bin/env rust-script\n"
+    '#![cfg(feature = "never-enabled")]\n' + text
+)
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$BOM_SHEBANG_ROOT"
+expect_rc 1 "a #![cfg(..)] behind a BOM AND a shebang still HARD-fails"
+expect_out 'C1-Q3-DESTRUCTIVE-DELTA' "the BOM+shebang failure NAMES a clause proved in that file"
+expect_out 'CONDITIONALLY COMPILED as a whole' \
+  "the BOM+shebang failure says the whole file is gated"
 
 # === Arm 13 (RED): a source file an assertion reads is MISSING ===============
 # TC-37 evaporation path #4: the assertion could not be EVALUATED. That is
