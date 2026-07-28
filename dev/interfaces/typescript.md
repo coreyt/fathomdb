@@ -270,6 +270,17 @@ Rust, Python and TypeScript:
   survive the drop, exactly as they always have. Re-declaring re-enrols and
   backfills, so a row written while the arm was off is picked up, not stranded.
   Edge-body vectors are unaffected.
+- **The dense arm requires the `searchable` ROLE, not merely `vector: true`**
+  (0.8.20 Slice 21c, `TC-71`). A spec such as
+  `{ name: "summary", roles: ["filterable"], vector: true }` is accepted and
+  round-trips verbatim, but it is **INERT**: it enrols no kind, backfills nothing,
+  and makes no later write enqueue an embedding. Previously the engine keyed the
+  dense arm off the stored `vector` sub-object alone, so declaring that
+  combination against a session with an embedder silently embedded the whole
+  corpus. The inverse moves with it: demoting the last `searchable→vector`
+  projection to `filterable + vector`, or dropping it while an inert
+  `filterable + vector` sibling survives, now un-enrols exactly as a literal drop
+  does. The name is still reported in `deferred`.
 - **Graceful-absent without a live embedder:** the declaration persists and
   defers, then grafts on when re-applied in a session that has one.
 - **…but graceful-absent stops at the enrolment boundary** (fix-4). Once a kind

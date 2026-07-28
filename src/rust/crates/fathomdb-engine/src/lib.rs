@@ -4810,7 +4810,10 @@ impl Engine {
     /// Cost: the registry probe is skipped entirely once the kind is enrolled, so
     /// a workspace with a live dense arm pays nothing; a workspace that never
     /// declared a vector projection pays two `prepare_cached` `EXISTS` probes per
-    /// batch-row of an unenrolled kind.
+    /// batch-row of an unenrolled kind. (Slice 21c / `TC-71` made that probe
+    /// require the `searchable` ROLE, and deliberately kept the second `EXISTS`
+    /// as a fast negative so this cost is unchanged — see
+    /// [`vector_projection_declared`].)
     ///
     /// fix-2 (codex §9 [P2]) — a late enrolment now runs the SAME stranded-row
     /// treatment the declare-time door runs ([`reenqueue_stranded_vector_rows`]),
@@ -16414,6 +16417,30 @@ impl StoredProjection {
         self.roles.contains(&ProjectionRole::Searchable) && self.fts_present
     }
 
+    /// 0.8.20 Slice 21c (ledger `TC-71`) — **THE `searchable→vector` predicate.**
+    /// True iff this declaration puts the attribute on the dense arm: the
+    /// `searchable` role AND a `vector` sub-object. The exact analogue of
+    /// [`StoredProjection::wants_property_fts`], for the same reason — the
+    /// sub-object SELECTS a sub-target of `searchable`; it does not confer one.
+    ///
+    /// [`vector_projection_declared`] — the corpus-wide predicate gating all
+    /// three enrolment paths (declare-time backfill, its drop inverse, and the
+    /// write path's late enrolment) — routes through this so no call site can
+    /// re-derive the rule and drift. Before it existed, that predicate keyed off
+    /// `vector_declared` ALONE, so `{roles: [filterable], vector: {}}` — the
+    /// combination Slice 15d documents as inert-but-round-trippable — enrolled
+    /// node kinds, backfilled the corpus and made every later write enqueue an
+    /// embedding in any session with a live embedder.
+    ///
+    /// **Deliberately NOT the same as [`StoredProjection::has_deferred`]**, which
+    /// keys off `vector_declared` alone and must keep doing so: that one feeds
+    /// `ProjectionDelta.deferred`, a REPORTING field, and the round-trip contract
+    /// wants a stored-but-unbuilt `vector` sub-object reported however it was
+    /// declared. TC-71 changes what the engine DOES, not what it says.
+    fn wants_vector(&self) -> bool {
+        self.roles.contains(&ProjectionRole::Searchable) && self.vector_declared
+    }
+
     /// The `fts_tokenizer` column value: `None` (SQL NULL) when no `fts`
     /// sub-object, else the custom tokenizer or `""` for engine-default.
     fn fts_column(&self) -> Option<String> {
@@ -17142,6 +17169,42 @@ fn unenrol_registry_vector_node_kinds(tx: &Connection) -> rusqlite::Result<()> {
 /// absent table means nothing is declared, not an error. Mirrors the guard in
 /// [`load_projection_registry`], and uses `prepare_cached` because the write path
 /// calls this once per un-registered-kind row.
+///
+/// # 0.8.20 Slice 21c (ledger `TC-71`) — it requires the `searchable` ROLE
+///
+/// This used to answer `EXISTS(… WHERE vector_declared = 1)`, reading the stored
+/// `vector` sub-object and never the `roles` column. But the sub-object SELECTS
+/// a sub-target of `searchable`; it does not confer one (exactly as `fts` does
+/// not — see [`StoredProjection::wants_property_fts`]). So
+/// `{roles: [filterable], vector: {}}`, which Slice 15d documents as
+/// inert-but-round-trippable, turned the dense arm ON in any session with a live
+/// embedder: it enrolled node kinds, backfilled the corpus, and made every later
+/// write of those kinds enqueue an embedding. Wasted embed work and unexpected
+/// vectors at rest for a projection meant to do nothing. The answer now comes
+/// from [`StoredProjection::wants_vector`], the ONE predicate, so the three
+/// gated paths cannot drift.
+///
+/// **This flips the forward AND inverse arms of [`apply_projection_config`] at
+/// once**, which is a real semantic consequence and not an accident: demoting
+/// the last `{searchable, vector}` projection to `{filterable, vector}` (or
+/// dropping it while an inert `{filterable, vector}` sibling survives) now reads
+/// `declared → not-declared` and therefore UN-ENROLS, where before the surviving
+/// `vector_declared = 1` row masked the transition and the write path kept
+/// embedding. Pinned in `tests/slice21c_vector_role_gate.rs`.
+///
+/// # Why the cheap `EXISTS` survives as a pre-filter
+///
+/// The write path calls this once per un-registered-kind row, and the
+/// overwhelmingly common shape is a workspace that declared no `vector`
+/// sub-object at all. `EXISTS(… vector_declared = 1)` is a NECESSARY condition
+/// for [`StoredProjection::wants_vector`], so keeping it as a fast negative
+/// leaves that workspace paying exactly the two cached `EXISTS` probes it paid
+/// before — no typed load, no `BTreeMap`, no uncached `prepare`. Only a
+/// workspace that HAS a `vector` sub-object somewhere pays the
+/// [`load_projection_registry`] read, and there the registry is a handful of
+/// app-declared rows; in the ordinary `searchable→vector` case the kind is
+/// enrolled after the first probe and `kind_is_vector_indexed` short-circuits
+/// this call entirely from then on.
 fn vector_projection_declared(conn: &Connection) -> rusqlite::Result<bool> {
     let table_exists: bool = conn
         .prepare_cached(
@@ -17154,10 +17217,20 @@ fn vector_projection_declared(conn: &Connection) -> rusqlite::Result<bool> {
     if !table_exists {
         return Ok(false);
     }
-    conn.prepare_cached(
-        "SELECT EXISTS(SELECT 1 FROM _fathomdb_projection_registry WHERE vector_declared = 1)",
-    )?
-    .query_row([], |row| row.get(0))
+    // Fast negative: no `vector` sub-object anywhere ⇒ certainly no dense arm.
+    let any_vector_subobject: bool = conn
+        .prepare_cached(
+            "SELECT EXISTS(SELECT 1 FROM _fathomdb_projection_registry WHERE vector_declared = 1)",
+        )?
+        .query_row([], |row| row.get(0))?;
+    if !any_vector_subobject {
+        return Ok(false);
+    }
+    // `roles` is persisted as a comma-joined sorted string, so it is not a
+    // trustworthy SQL predicate (a `LIKE` would match a forward-compat token that
+    // merely CONTAINS a role spelling). Answer through the typed registry and the
+    // ONE predicate instead.
+    Ok(load_projection_registry(conn)?.values().any(StoredProjection::wants_vector))
 }
 
 /// 0.8.20 Slice 20c (R-20-DR remainder) — enrol `kind` in the vector pipeline.

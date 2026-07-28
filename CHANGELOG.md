@@ -247,6 +247,30 @@ AC-050c) gates merges against this invariant.
   embedder is also measurably faster end-to-end, because the failed attempts and
   caller-side backoff are gone. Anonymous (no `logical_id`) writes were never
   affected and are unchanged.
+- **A `vector` sub-object declared WITHOUT the `searchable` role no longer
+  activates the dense arm (0.8.20, R-20-CR).** A projection such as
+  `{roles: ["filterable"], vector: true}` is documented as accepted, faithfully
+  round-tripped and otherwise **inert** — but the engine keyed the dense arm off
+  the stored `vector` sub-object alone and never read the declared roles. So in
+  any session with a live embedder that combination enrolled the node kinds,
+  backfilled the existing corpus, and made every later write of those kinds
+  enqueue an embedding: real embed spend and unexpected vectors at rest for a
+  declaration that was supposed to do nothing. The dense arm now requires the
+  `searchable` role, exactly as the `fts` sub-object already did.
+
+  **The inverse moved with it.** The engine turns the dense arm back off when the
+  LAST `searchable→vector` declaration goes away, and that transition is now
+  evaluated on the same role-aware rule. Two cases that previously kept embedding
+  now correctly un-enrol: demoting the last `searchable→vector` projection to
+  `filterable` + `vector` (drop-then-redeclare), and dropping a
+  `searchable→vector` projection while an inert `filterable` + `vector` sibling
+  survives in the registry.
+
+  *No API change and nothing is deleted.* The declaration still persists and
+  round-trips verbatim, is still reported in `ProjectionDelta.deferred`, still
+  stores its `filterable` value at rest, and vectors already embedded are
+  untouched. Adding the `searchable` role turns the dense arm on and backfills
+  the rows written while it was off.
 
 ### Documentation
 
