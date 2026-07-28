@@ -432,16 +432,24 @@ loss** — the write is accepted, stays lexically searchable, and is embedded on
 Documented in `dev/interfaces/{rust,python,typescript}.md` + `CHANGELOG.md`.
 
 **Landed since the Slice-20 narration above:** **Slice 25** at `83b1c818`, **Slice 30** (R-20-H7
-`can-i-deploy` contract-conformance gate) at `9b3ed0e3` — **the publish precondition is SATISFIED** — and the
-cross-cutting **⟨TC-86 transcript-hygiene fix⟩** at `0a500de9`. SCHEMA is **24**.
+`can-i-deploy` contract-conformance gate) at `9b3ed0e3` — **the publish precondition is SATISFIED** — the
+cross-cutting **⟨TC-86 transcript-hygiene fix⟩** at `0a500de9`, and **Slice 21** (R-20-CR — TC-57 write race ·
+ac_002 sandbox oracle · TC-71 role-gated dense arm) at **`77be504b`**, close record board §18. SCHEMA is **24**.
 
-**➡ IMMEDIATE NEXT: Slice 21** (R-20-CR — concurrency + test-oracle repair: **TC-57** characterize-then-fix ·
-**ac_002** oracle replacement · **TC-71**, the finding §9 left open at the Slice-20c breaker, above).
+> ⚠ **This pointer is HAND-WRITTEN and has gone stale at two consecutive landings** (`62486a01`, and again
+> here). `scripts/commission-manifest.sh` cites this section as a brief's `{{MANDATE}}` anchor, so a stale
+> pointer is copied into the next commission. **Re-verify it against
+> `release-state-0.8.20.json` `next_slice` before commissioning anything.** Making it a generated view is
+> **TC-89**, placed in DOC-HYGIENE-3.
+
+**➡ IMMEDIATE NEXT: Slice 22** (R-20-VC — vector-arm consumer contract: **TC-67** option (c) *report* ·
+**TC-68** fingerprint-cached equivalence probe · Slice-15b decision **#18** error-family · **sqlite-vec #99**
+`vec0` DELETE probe).
 
 **Remaining ladder, HITL-approved 2026-07-28 (F-36 · steward `seq-129`), SEQUENTIAL — this SUPERSEDES the
-F-35 order (`seq-119`), whose leading `30` and `TC-86` legs are now both landed:**
-**21 → 22 → 31 → DOC-HYGIENE-3 → ⟨batched governed-surface decision⟩ → 40.**
-**21** (R-20-CR) and **22** (R-20-VC) are reserved-gap slices in the 20 band; **31** is Library Sweep #3 and
+F-35 order (`seq-119`); its leading `30`, `TC-86` and `21` legs are all now landed:**
+**22 → 31 → DOC-HYGIENE-3 → ⟨batched governed-surface decision⟩ → 40.**
+**21** (R-20-CR, landed) and **22** (R-20-VC) are reserved-gap slices in the 20 band; **31** is Library Sweep #3 and
 carries no requirement id (TC-76); **DOC-HYGIENE-3** is cross-cutting and is not a ladder slice. The batched
 surface decision sits **after 22** (22 may add surface via TC-67 / #18), not at the 30 → 40 boundary.
 Commission each as an **orchestrator** — **NOT** `/goal` (standing ruling `927ffb35` · steward `seq-104`).
