@@ -312,7 +312,7 @@
       },
       {
         "id": "tc-75-engine-fix-round-cap",
-        "ruling": "(a) same-finding stays 3; per-slice total 6->10 for fathomdb-engine/src slices; mandatory Steward check-in at 6. NOT YET IN FORCE - durable rule homes still read 3/6",
+        "ruling": "(a) same-finding stays 3; per-slice total 6->10; mandatory Steward check-in at 6. IN FORCE in both durable rule homes (orchestration.md section 6, orchestrator hand-off section 6) - the earlier 'NOT YET IN FORCE' text here was STALE and is corrected. SUPERSEDED IN PREDICATE by TC-82: the extension no longer keys on fathomdb-engine/src",
         "ruled_on": "2026-07-27",
         "source": "seq-119 · todos TC-75"
       },
@@ -333,6 +333,24 @@
         "ruling": "(a) FOR NOW - terminal hold until after publish; MONITOR for (c) if the Slice-40 rehearsal fails on npm auth",
         "ruled_on": "2026-07-27",
         "source": "seq-119 · todos TC-78"
+      },
+      {
+        "id": "tc-82-fix-round-cap-predicate",
+        "ruling": "AMEND - the fix-N cap keys on ROUND PRODUCTIVITY, not on which directory a slice touches. Same-finding stays 3; default total stays 6; the Steward may extend to 10 only where every round found a new and distinct defect; the check-in at 6 is now universal. Landed in both durable rule homes",
+        "ruled_on": "2026-07-28",
+        "source": "seq-125 · todos TC-82"
+      },
+      {
+        "id": "tc-84-steer-vs-round",
+        "ruling": "a mid-flight SendMessage steer does NOT count against the fix-N round cap; a round is a review-verdict cycle. Residual accepted-known: the cap bounds rounds, not correction volume. UNBLOCKS Option B Phase 2",
+        "ruled_on": "2026-07-28",
+        "source": "seq-125 · todos TC-84"
+      },
+      {
+        "id": "tc-79-commission-manifest-red",
+        "ruling": "option A - fix NOW as cross-cutting CI hygiene in a state-derived form, NOT deferred to Slice 40; TC-16 stays at Slice 40 per seq-118",
+        "ruled_on": "2026-07-28",
+        "source": "seq-125 · todos TC-79"
       }
     ]
   },

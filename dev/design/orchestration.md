@@ -371,20 +371,45 @@ After fix-N: cherry-pick the new commit(s), re-spawn the reviewer for
 re-verdict. Iterate until PASS or orchestrator override.
 
 **Round cap — the circuit-breaker (STANDING RULE, HITL 2026-07-25;
-engine amendment HITL 2026-07-27).**
+engine amendment HITL 2026-07-27; RE-KEYED TO ROUND PRODUCTIVITY,
+HITL 2026-07-28).**
 The fix-N loop is bounded. An orchestrator **escalates after 3 fix-N
 rounds on the SAME finding, or 6 rounds total on a slice** — whichever
 comes first — rather than iterating indefinitely. This replaces the
 former unquantified "small bound" (§ 1.5 invariant 3), which left the
 bound to the orchestrator's judgement and therefore did not bind.
 
-**Engine amendment (HITL 2026-07-27, steward ledger seq-119 · todos
-TC-75).** For a slice touching `src/rust/crates/fathomdb-engine/src`,
-the **same-finding bound stays at 3** and the **per-slice total is 10**,
-with a **MANDATORY Steward check-in at 6**: the orchestrator reports
-what each round found, and the Steward rules continue / re-scope /
-escalate. The check-in is not optional and not a notification — rounds
-7-10 require it to have happened.
+**Productivity amendment (HITL 2026-07-28, steward ledger seq-125 ·
+todos TC-82). This SUPERSEDES the engine amendment of 2026-07-27
+(seq-119 · TC-75): the predicate is no longer WHICH DIRECTORY a slice
+touches.** At 6 rounds the orchestrator **halts and checks in with the
+Steward** — on *every* slice, not only engine slices. The check-in is
+mandatory, is not a notification, and rounds 7-10 require it to have
+happened: the orchestrator reports what each round found, and the
+Steward rules continue / re-scope / escalate. The Steward may extend
+the per-slice total to **10** only where the rounds have been
+**PRODUCTIVE** — each round finding a **new and distinct** defect. A
+repeated or empty round means the default total of **6** binds. The
+**same-finding bound stays at 3** in every case, and beyond 10 is an
+HITL halt.
+
+Why productivity and not the slice path. The 2026-07-27 form extended
+the total for slices touching `src/rust/crates/fathomdb-engine/src`.
+0.8.20 Slice 30 falsified that predicate: it touches **zero engine
+source** and still ran seven rounds in which **every** round found a
+new and distinct false-negative class, the same-finding bound never
+fired once, and fix-4 alone showed **18 of 26** contract clauses had a
+demonstrable false green. A gate or tooling slice auditing a whole
+contract surface has the same round-productivity profile as an engine
+slice — directory is a poor proxy for risk.
+
+**What counts as a round (HITL 2026-07-28, todos TC-84).** A round is
+a **review-verdict cycle**: reviewer verdict → fix → re-review. A
+**mid-flight `SendMessage` steer into an in-progress round does NOT
+count as a round** and does not advance the counter. Known and
+accepted consequence, recorded so no reader mistakes it for an
+oversight: the cap therefore bounds **rounds, not correction volume**
+— serial steers inside one round never trip it.
 
 Why the two bounds move independently: they guard different failures.
 The same-finding bound is the **anti-thrash** rule — three attempts at
