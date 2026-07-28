@@ -1202,9 +1202,19 @@ ZB_FILE="$ZB_DIR/inventory.log"
   printf 'verdict: no [P1] findings\n'
 } >"$ZB_FILE"
 
-# Half 1: the GATE does not see it. This is the recorded limit, tested.
+# Half 1: SUPERSEDED BY FIX-4, and flipped rather than deleted.
+#
+# Fix-3 recorded this as a REACH LIMIT: the gate could not see a bare directory
+# listing, because no PATH predicate that could see the listed lines would
+# survive contact with ordinary prose. That reasoning was about the wrong half of
+# the record. The listing's ENTRIES are unmatched prose, but the COMMAND ECHO
+# above them is not: `ls <a directory outside this repository>` followed by an
+# output block is a mechanical shape with no legitimate use in a committed
+# transcript. Fix-4 (HITL 2026-07-28, ruling "A+D") adds that as a SECOND
+# predicate, so this class is now HARD, and the arm asserts the closure instead
+# of the limit it replaced. The polarity flip is the deliverable.
 run_checker "$ZB_FILE"
-expect_rc 0 "the gate does NOT hard-fail on a bare foreign-project-directory listing (recorded reach limit)"
+expect_rc 1 "the gate now HARD-FAILS a bare foreign-project-directory listing (fix-4 closes the fix-3 reach limit)"
 
 # Half 2: --redact removes it anyway.
 run_checker --root "$ZB_DIR" --redact
@@ -1252,11 +1262,19 @@ else
   fail "inventory redaction is not idempotent; diff: $(diff "$TMPROOT/inventory-first-pass.snapshot" "$ZB_FILE" || true)"
 fi
 
-# ---- ZB2: the sibling block that must NOT be touched ----------------------
-# `ls ~/.claude/projects/<own>` lists THIS repo's own session files. Entry on the
-# bare state-directory prefix alone would swallow it; requiring an actual foreign
-# NAME in the body is what keeps `--redact` off it. Ruling 1 makes own-project
-# state advisory, and the coordinator scoped this fix to the foreign half only.
+# ---- ZB2: the sibling block — SUPERSEDED BY FIX-4, flipped, not deleted ----
+# `ls ~/.claude/projects/<own>` lists THIS repo's own session files. Under fix-3
+# it was left BYTE-IDENTICAL: the FOREIGN-INVENTORY rule requires a foreign name
+# in the body, and there is none.
+#
+# Fix-4's predicate is a different axis and the HITL ruled it explicitly: an
+# OUT-OF-REPO directory inventory is hard, with NO own/foreign split, because
+# `~/.claude/projects/<own>` is still a directory outside this repository and its
+# listing is still the user's private machine state in a PUBLIC repo. So this
+# block is now REMOVED. The fix-3 expectation is inverted here rather than
+# dropped, so the supersession is legible instead of silent — and the two halves
+# that still hold (the echo survives; the surrounding transcript is intact) are
+# asserted alongside it.
 ZB2_DIR="$TMPROOT/own-session-listing"
 mkdir -p "$ZB2_DIR"
 ZB2_FILE="$ZB2_DIR/own-listing.log"
@@ -1270,13 +1288,19 @@ ZB2_FILE="$ZB2_DIR/own-listing.log"
   printf '\n'
   printf 'codex\n'
 } >"$ZB2_FILE"
-cp "$ZB2_FILE" "$TMPROOT/own-listing.snapshot"
+run_checker --root "$ZB2_DIR"
+expect_rc 1 "an own-project session listing is ALSO out-of-repo and now hard-fails (no own/foreign split on this axis)"
 run_checker --root "$ZB2_DIR" --redact
 expect_rc 0 "--redact over an own-session listing exits 0"
-if cmp -s "$ZB2_FILE" "$TMPROOT/own-listing.snapshot"; then
-  pass "a listing of THIS repo's own session files is left BYTE-IDENTICAL (no foreign name in it)"
+if grep -q '00869a09-1b56-463d-823c-2285c13af9ab' "$ZB2_FILE"; then
+  fail "the own-session file names survived --redact; got: $(cat "$ZB2_FILE")"
 else
-  fail "--redact must not touch the own-session listing; diff: $(diff "$TMPROOT/own-listing.snapshot" "$ZB2_FILE" || true)"
+  pass "the own-session file names are removed too (fix-4 has no own/foreign split)"
+fi
+if grep -q "projects/$OWN_PROJECT_DIR_LITERAL' in" "$ZB2_FILE" && grep -qx 'codex' "$ZB2_FILE"; then
+  pass "the own-session listing's ECHO and terminator survive (path-only evidence kept)"
+else
+  fail "--redact must keep the echo and the surrounding transcript; got: $(cat "$ZB2_FILE")"
 fi
 
 # ---- ZB3: `---` front matter is not mistaken for a directory name ---------
@@ -1337,10 +1361,15 @@ else
   else
     fail "the 0.8.14 inventory redaction must keep the command echo"
   fi
+  # SUPERSEDED BY FIX-4 and flipped, for the reason argued at ZB2: fix-3 left the
+  # sibling `ls ~/.claude/projects/<own>` listing byte-intact because it carried
+  # no FOREIGN name. Fix-4's axis is "is the enumerated directory outside this
+  # repository", which that one is, and the HITL ruled the axis has no
+  # own/foreign split. The bare `memory` line was the tail of that listing.
   if grep -qxF -- 'memory' "$LOG_0814"; then
-    pass "the sibling listing of THIS repo's own session files was left untouched, as scoped"
+    fail "fix-4 must also remove the own-project session listing from the 0.8.14 log"
   else
-    fail "fix-3 must not have touched the own-project session listing"
+    pass "the own-project session listing is removed too (fix-4: out-of-repo is out-of-repo)"
   fi
   if grep -qF -- 'FOREIGN PROJECT INVENTORY' "$LOG_0814"; then
     pass "the 0.8.14 banner records that a foreign project inventory was removed"
@@ -1366,6 +1395,365 @@ else
   expect_rc 0 "the redacted 0.8.14 log passes the gate"
   expect_out '^WARN' "its surviving command echoes are own-project warnings, as ruled"
 fi
+
+# ============================================================================
+# Arm ZC — FIX-4: the SECOND PREDICATE. An OUT-OF-REPO DIRECTORY INVENTORY.
+# ============================================================================
+# HITL 2026-07-28, ruling "A+D". Fix-3 redacted the `ls ~/.claude/projects`
+# inventory and recorded the detection gap as an accepted limit. It missed a
+# SECOND, EARLIER block in the same transcript — `ls /home/coreyt/projects`,
+# whose output was an inventory of the user's ENTIRE private project portfolio
+# (33 directory names, several reading as client or domain work). It had been on
+# origin/main for roughly three weeks, in four tracked files.
+#
+# TC-86's agent-state pattern could never have seen it: there is no `.claude/`
+# component anywhere in that command or its output. The gap is not the pattern
+# being too narrow — it is that ONE predicate was being asked to cover TWO
+# different shapes. So fix-4 adds a SECOND predicate beside it, sharing the same
+# library:
+#
+#   PREDICATE 1 (fix-1/2/3, unchanged) : a home-anchored path INTO a Claude Code
+#       project state directory. FOREIGN = hard, OWN = warn.
+#   PREDICATE 2 (fix-4, here)          : a command ECHO that ENUMERATES a
+#       directory NOT under this repository's root, FOLLOWED BY AN OUTPUT BLOCK.
+#       HARD, with NO own/foreign split — an out-of-repo directory inventory is
+#       never legitimate in a committed transcript, whoever owns the directory.
+#
+# WHY THE "FOLLOWED BY AN OUTPUT BLOCK" CLAUSE IS LOAD-BEARING. The echo alone is
+# path-only and is kept, exactly as fix-2 keeps agent-state echoes: it is the
+# evidence of what happened. What must not be published is the LISTING. So an
+# echo with an empty output block, or one whose only output is the command's own
+# "No such file or directory", is NOT a finding, and ZC9/ZC10 pin that.
+#
+# WHY THE FIXTURES ARE ASSEMBLED FROM printf. Same reason as every other builder
+# in this file: a literal `exec` / echo / status triple in these bytes would make
+# THIS FILE a positive under the very predicate it tests. Nothing is excluded
+# from the scan to make that work. The output names are INVENTED — re-typing the
+# real portfolio names into a tracked fixture would undo, in a second file,
+# exactly what Job A removed from the first.
+# The cwd every fixture echo records. It is the REAL worktree the exposed blocks
+# ran in, and it is spelled out rather than parameterised because the `..`
+# resolution arms (ZC5/ZC6) only mean something against a cwd whose relationship
+# to the repo root is fixed and known: one `..` lands on the worktrees root
+# (inside the working set), two land on the user's projects directory (outside).
+ZC_WT='/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-10-20260704T002826Z'
+
+# zc_exec_block <shell> <command> <cwd> <status> [output-line...]
+zc_exec_block() {
+  local sh="$1" cmd="$2" cwd="$3" status="$4"
+  shift 4
+  printf 'exec\n'
+  printf '%s -c %s%s%s in %s\n' "$sh" "'" "$cmd" "'" "$cwd"
+  printf ' %s in 0ms:\n' "$status"
+  local l
+  for l in "$@"; do printf '%s\n' "$l"; done
+  printf '\n'
+}
+
+# The invented stand-in for the real portfolio listing.
+ZC_NAMES=(alpha-widget-client beta-domain-svc gamma-proto delta-mesh-tool epsilon-render)
+
+zc_fixture() {  # zc_fixture <dir> <file> <builder-args...>
+  local d="$1" f="$2"
+  shift 2
+  mkdir -p "$d"
+  {
+    printf 'line-before-untouched\n'
+    zc_exec_block "$@"
+    printf 'codex\n'
+    printf 'verdict: no [P1] findings\n'
+  } >"$d/$f"
+}
+
+# ---- ZC1: THE REAL SHAPE. `ls /home/coreyt/projects` + its listing ---------
+# The block that was actually exposed, reproduced byte-for-byte in structure with
+# invented names. This is the arm that says fix-4 would have caught the thing it
+# was written for.
+ZC1_DIR="$TMPROOT/oor-projects-listing"
+zc_fixture "$ZC1_DIR" 'projects.log' '/bin/bash' 'ls /home/coreyt/projects' "$ZC_WT" 'succeeded' "${ZC_NAMES[@]}"
+run_checker --root "$ZC1_DIR"
+expect_rc 1 "an \`ls\` of the user's whole projects directory HARD-FAILS the gate (the shape that leaked)"
+expect_out 'FAIL  transcript-hygiene: .*out-of-repo' "the failure names the out-of-repo directory-inventory predicate, not the agent-state one"
+expect_out 'projects\.log' "the failure names the offending FILE"
+
+# ---- ZC2/ZC3/ZC4: the other spellings of "somewhere outside this repo" -----
+ZC2_DIR="$TMPROOT/oor-tilde"
+zc_fixture "$ZC2_DIR" 'tilde.log' '/bin/bash' 'ls -la ~' "$ZC_WT" 'succeeded' 'Documents' 'Downloads' 'private-notes.md'
+run_checker --root "$ZC2_DIR"
+expect_rc 1 "a tilde-anchored listing (\`ls -la ~\`) hard-fails"
+
+ZC3_DIR="$TMPROOT/oor-homevar"
+zc_fixture "$ZC3_DIR" 'homevar.log' '/bin/sh' 'ls $HOME/projects2' "$ZC_WT" 'succeeded' 'zeta-client-work'
+run_checker --root "$ZC3_DIR"
+expect_rc 1 "a \$HOME-anchored listing hard-fails"
+
+ZC4_DIR="$TMPROOT/oor-macos"
+zc_fixture "$ZC4_DIR" 'macos.log' '/bin/bash' 'find /Users/alice/clients -maxdepth 1' '/Users/alice/projects/fathomdb' 'succeeded' '/Users/alice/clients/eta-account'
+run_checker --root "$ZC4_DIR"
+expect_rc 1 "the macOS (/Users/) spelling hard-fails too"
+
+# ---- ZC5: a `..` that ESCAPES. The shape the mandate names explicitly ------
+# Two of the four exposed files reached the same portfolio listing through
+# `ls ../..` from a worktree, with no home-anchored text on the echo at all. A
+# predicate that only read absolute targets would have missed half the incident,
+# so the target is RESOLVED against the cwd the echo itself records.
+ZC5_DIR="$TMPROOT/oor-dotdot"
+zc_fixture "$ZC5_DIR" 'dotdot.log' '/bin/bash' 'ls -la ../..' "$ZC_WT" 'succeeded' "${ZC_NAMES[@]}"
+run_checker --root "$ZC5_DIR"
+expect_rc 1 "a relative \`../..\` that resolves OUTSIDE the repo hard-fails (the second half of the real incident)"
+
+# ---- ZC6/ZC7: FALSE-POSITIVE CONTROLS. The gate must stay usable ----------
+# `..` from a linked worktree resolves to the WORKTREES ROOT, which is part of
+# this repository's own working set. A gate that failed on `ls ..` from a
+# worktree would fire on almost every codex review in the tree and be switched
+# off, which is the failure mode this whole file is written against.
+ZC6_DIR="$TMPROOT/oor-dotdot-inside"
+zc_fixture "$ZC6_DIR" 'inside.log' '/bin/bash' 'ls ..' "$ZC_WT" 'succeeded' '0.8.11.2' '0.8.12-gpu-rerank'
+run_checker --root "$ZC6_DIR"
+expect_rc 0 "\`ls ..\` from a linked worktree resolves INSIDE the repo's working set and does NOT fail"
+
+ZC7_DIR="$TMPROOT/oor-inrepo"
+mkdir -p "$ZC7_DIR"
+{
+  printf 'line-before-untouched\n'
+  zc_exec_block '/bin/bash' 'ls /home/coreyt/projects/fathomdb/dev' "$ZC_WT" 'succeeded' 'design' 'plans'
+  zc_exec_block '/bin/bash' 'ls -la /home/coreyt/projects/fathomdb-worktrees/tc86/scripts' "$ZC_WT" 'succeeded' 'preflight.sh'
+  zc_exec_block '/bin/bash' 'ls dev/plans/runs' "$ZC_WT" 'succeeded' 'slice-10.log'
+  zc_exec_block '/bin/bash' 'tree -L 1 .' "$ZC_WT" 'succeeded' './scripts'
+  printf 'codex\n'
+} >"$ZC7_DIR/inrepo.log"
+run_checker --root "$ZC7_DIR"
+expect_rc 0 "absolute IN-REPO targets, worktree targets and ordinary relative targets do NOT fail"
+
+# ---- ZC8: prose that merely MENTIONS such a command ------------------------
+# The predicate is anchored to a codex `exec` record — an echo, then a status
+# line, then output. Documentation that discusses `ls ~` (this repo's own docs,
+# the library header, and the redaction banner all do) must not trip it.
+ZC8_DIR="$TMPROOT/oor-prose"
+mkdir -p "$ZC8_DIR"
+cat >"$ZC8_DIR/prose.md" <<'PROSE'
+Reviewers sometimes run `ls ~` or `find /home/someone/projects` while orienting.
+Do not: the transcript is committed to a PUBLIC repository. Use `ls ..` instead,
+and never `ls -la /Users/alice/clients`.
+PROSE
+run_checker --root "$ZC8_DIR"
+expect_rc 0 "PROSE that merely mentions an out-of-repo listing command does NOT trip the gate"
+
+# ---- ZC9/ZC10: no output block = no finding -------------------------------
+ZC9_DIR="$TMPROOT/oor-empty"
+zc_fixture "$ZC9_DIR" 'empty.log' '/bin/bash' 'ls /home/coreyt/M*' "$ZC_WT" 'succeeded'
+run_checker --root "$ZC9_DIR"
+expect_rc 0 "an out-of-repo echo with an EMPTY output block is not a finding (nothing was enumerated)"
+
+ZC10_DIR="$TMPROOT/oor-error"
+zc_fixture "$ZC10_DIR" 'error.log' '/bin/bash' 'ls /home/coreyt/.claude/feedback_*' "$ZC_WT" 'exited 2' \
+  "ls: cannot access '/home/coreyt/.claude/feedback_*': No such file or directory"
+run_checker --root "$ZC10_DIR"
+expect_rc 0 "a block whose only output is the command's own error is not a finding"
+
+# ---- ZC11: NO OWN/FOREIGN SPLIT on this axis ------------------------------
+ZC11_DIR="$TMPROOT/oor-own-state"
+zc_fixture "$ZC11_DIR" 'own-state.log' '/bin/bash' \
+  "ls /home/coreyt/.claude/projects/$OWN_PROJECT_DIR_LITERAL" "$ZC_WT" 'succeeded' \
+  '00869a09-1b56-463d-823c-2285c13af9ab.jsonl' 'memory'
+run_checker --root "$ZC11_DIR"
+expect_rc 1 "enumerating THIS repo's own ~/.claude state directory hard-fails too (ruled: no own/foreign split)"
+
+# ---- ZC12: the fix-2 split on PREDICATE 1 is UNCHANGED --------------------
+# The new predicate must not have leaked into the old one. An own-project agent
+# state PATH, on its own, is still an advisory WARN and still exits 0.
+ZC12_DIR="$TMPROOT/oor-predicate1-intact"
+mkdir -p "$ZC12_DIR"
+{ printf 'prose-before\n'; own_slurped_line; own_tool_results_line; printf 'prose-after\n'; } >"$ZC12_DIR/own.md"
+run_checker --root "$ZC12_DIR"
+expect_rc 0 "PREDICATE 1's foreign-hard / own-warn split is untouched by fix-4"
+expect_out '^WARN' "own-project agent-state paths are still reported as advisory warnings"
+{ printf 'prose-before\n'; slurped_line; } >"$ZC12_DIR/foreign.md"
+run_checker --root "$ZC12_DIR"
+expect_rc 1 "PREDICATE 1 still hard-fails a FOREIGN agent-state path"
+expect_out 'FOREIGN agent-state path' "the two predicates report under their own names, not merged into one message"
+
+# ---- ZC13: `rg --files` is an ENUMERATOR; `rg PATTERN` is not -------------
+# One of the four exposed files reached the portfolio through
+# `rg --files ... . .. ../.. ../../..`, not through `ls`. `rg --files` lists a
+# directory tree and is therefore in; `rg PATTERN <dir>` is a content search and
+# is deliberately OUT, because sweeping every out-of-repo read into this
+# predicate would make it a different (and much broader) control than the one
+# ruled. That boundary is stated here as an assertion, not left to inference.
+ZC13_DIR="$TMPROOT/oor-rg-files"
+zc_fixture "$ZC13_DIR" 'rgfiles.log' '/bin/bash' "rg --files -g 'MEMORY.md' . .. ../.. ../../.." "$ZC_WT" 'exited 2' \
+  '../../../projects2/zeta-client-work/MEMORY.md'
+run_checker --root "$ZC13_DIR"
+expect_rc 1 "\`rg --files\` over an escaping relative target hard-fails (it enumerates a tree)"
+
+ZC13B_DIR="$TMPROOT/oor-rg-search"
+zc_fixture "$ZC13B_DIR" 'rgsearch.log' '/bin/bash' 'rg -n "fn is_available" /home/coreyt/.cargo/registry/src' "$ZC_WT" 'succeeded' \
+  'execution_providers.rs:41: fn is_available(&self) -> Result<bool>'
+run_checker --root "$ZC13B_DIR"
+expect_rc 0 "a content-search \`rg PATTERN <dir>\` is NOT an enumeration — the ruled boundary, asserted"
+
+# ---- ZC14: --redact end to end, and it CONVERGES --------------------------
+ZC14_DIR="$TMPROOT/oor-redact"
+zc_fixture "$ZC14_DIR" 'redact.log' '/bin/bash' 'ls /home/coreyt/projects' "$ZC_WT" 'succeeded' "${ZC_NAMES[@]}"
+ZC14_FILE="$ZC14_DIR/redact.log"
+run_checker --root "$ZC14_DIR" --redact
+expect_rc 0 "--redact clears an out-of-repo inventory and the gate then exits 0"
+ZC14_LEFT=0
+for n in "${ZC_NAMES[@]}"; do
+  if grep -qF -- "$n" "$ZC14_FILE"; then ZC14_LEFT=$((ZC14_LEFT + 1)); fi
+done
+if [ "$ZC14_LEFT" -eq 0 ]; then
+  pass "every enumerated directory name is gone from the redacted transcript"
+else
+  fail "$ZC14_LEFT enumerated name(s) survived --redact; got: $(cat "$ZC14_FILE")"
+fi
+if grep -qF -- "ls /home/coreyt/projects' in" "$ZC14_FILE"; then
+  pass "the command ECHO survives (path-only; it is the evidence of what happened)"
+else
+  fail "--redact must keep the out-of-repo command echo; got: $(cat "$ZC14_FILE")"
+fi
+if grep -q 'REDACTED TC-86' "$ZC14_FILE" && grep -q 'out-of-repo' "$ZC14_FILE"; then
+  pass "the removed listing is REPLACED IN PLACE by a marker naming the reason"
+else
+  fail "expected an out-of-repo marker in place of the listing; got: $(cat "$ZC14_FILE")"
+fi
+if grep -qx 'line-before-untouched' "$ZC14_FILE" \
+   && grep -qx 'codex' "$ZC14_FILE" \
+   && grep -qx 'verdict: no \[P1\] findings' "$ZC14_FILE"; then
+  pass "the verdict and the surrounding transcript survive the out-of-repo redaction (TC-RUBRIC-7)"
+else
+  fail "--redact gutted the surrounding transcript; got: $(cat "$ZC14_FILE")"
+fi
+if grep -qE 'OUT-OF-REPO DIRECTORY (INVENTORY|LISTING).*[0-9]+ line' "$ZC14_FILE"; then
+  pass "the banner states the out-of-repo removal WITH A COUNT"
+else
+  fail "the banner must state the out-of-repo removal and its line count; got: $(cat "$ZC14_FILE")"
+fi
+if grep -q 'PUBLIC' "$ZC14_FILE" && grep -q 'NO FINDING WAS LOST' "$ZC14_FILE"; then
+  pass "the banner states the reason and the no-finding-lost claim"
+else
+  fail "the banner must state the reason; got: $(cat "$ZC14_FILE")"
+fi
+cp "$ZC14_FILE" "$TMPROOT/oor-first-pass.snapshot"
+run_checker --root "$ZC14_DIR" --redact
+expect_rc 0 "a second --redact over the out-of-repo tree exits 0"
+if cmp -s "$ZC14_FILE" "$TMPROOT/oor-first-pass.snapshot"; then
+  pass "out-of-repo redaction is IDEMPOTENT (marker and banner do not re-trigger it)"
+else
+  fail "out-of-repo redaction is not idempotent; diff: $(diff "$TMPROOT/oor-first-pass.snapshot" "$ZC14_FILE" || true)"
+fi
+
+# ---- ZC15: the BANNER MUST NOT ENUMERATE WHAT IT REMOVED ------------------
+# The ZC14 check above already proves the names are absent from the whole file,
+# banner included — this arm states it as its own property so a future change
+# that "helpfully" lists the removed directories in the banner is caught by an
+# assertion whose name says why it exists.
+if grep -qE 'alpha-widget|beta-domain|gamma-proto|delta-mesh|epsilon-render' "$ZC14_FILE"; then
+  fail "the banner enumerated the very names the redaction removed"
+else
+  pass "the banner reports a COUNT and a REASON, never the names it removed"
+fi
+
+# ---- ZC16: DETECTION AND REMEDIATION AGREE (the anti-drift assertion) -----
+# The gate's silence must mean the redactor found nothing, and the redactor's
+# no-op must mean the gate would pass. If those two ever drift the result is a
+# FALSE GREEN BUILT INTO THE DESIGN — the same argument that gives the path
+# pattern exactly one home. Asserted as a round trip on the same bytes.
+ZC16_DIR="$TMPROOT/oor-agreement"
+zc_fixture "$ZC16_DIR" 'agree.log' '/bin/bash' 'ls /home/coreyt/projects' "$ZC_WT" 'succeeded' "${ZC_NAMES[@]}"
+run_checker --root "$ZC16_DIR"
+ZC16_BEFORE="$RC"
+run_checker --root "$ZC16_DIR" --redact
+run_checker --root "$ZC16_DIR"
+ZC16_AFTER="$RC"
+if [ "$ZC16_BEFORE" -eq 1 ] && [ "$ZC16_AFTER" -eq 0 ]; then
+  pass "detection and remediation agree: the gate fails, --redact fixes it, the gate then passes"
+else
+  fail "detect/remediate drift — before rc=$ZC16_BEFORE (want 1), after rc=$ZC16_AFTER (want 0)"
+fi
+
+# ---- ZC17: PROOF ON THE REAL BYTES, not on a hand-built lookalike ---------
+# A fixture proves the predicate fires on a shape someone typed into this file.
+# It does not prove it would have fired on the thing that actually leaked. So
+# this arm takes the REAL, now-redacted 0.8.14 transcript and puts a listing back
+# where fix-4 removed one — every byte of the `exec` record, the echo, the cwd
+# and the status line is the original's. Only the enumerated names are invented.
+# If the gate passes that file, fix-4 does not close the incident.
+ZC17_SRC="$REPO_ROOT/dev/plans/runs/0.8.14-slice-10-fix1-review-20260704T011100Z.log"
+if [ ! -f "$ZC17_SRC" ]; then
+  fail "the real 0.8.14 transcript must exist for the fix-4 proof arm"
+else
+  ZC17_DIR="$TMPROOT/oor-real-bytes"
+  mkdir -p "$ZC17_DIR"
+  sed 's/^\[REDACTED TC-86\].*out-of-repo.*$/REINSTATED-DIRECTORY-ENTRY-A/' "$ZC17_SRC" \
+    >"$ZC17_DIR/reinstated.log"
+  # ANTI-VACUOUS: if the substitution matched nothing the arm below would pass
+  # for the wrong reason — a clean file that was never dirtied.
+  if cmp -s "$ZC17_SRC" "$ZC17_DIR/reinstated.log"; then
+    fail "the fix-4 proof arm substituted nothing — the real log carries no out-of-repo marker to reinstate"
+  else
+    pass "the real 0.8.14 log carries an out-of-repo marker, so the proof arm has something to reinstate"
+    run_checker "$ZC17_DIR/reinstated.log"
+    expect_rc 1 "PRE-REMEDIATION PROOF: the real 0.8.14 exec record, with its listing put back, HARD-FAILS the gate"
+  fi
+fi
+
+# ---- ZC18: the real tree is CLEAN under the new predicate -----------------
+# The regression half. Arm A asserts the tree passes; this asserts it passes for
+# the fix-4 reason as well, by naming the predicate in the clean report.
+run_checker
+expect_rc 0 "the real tree passes with BOTH predicates active"
+expect_no_out '^FAIL' "no tracked file carries an out-of-repo directory inventory"
+expect_out 'out-of-repo' "the clean run names the second predicate it verified, so its silence is legible"
+
+# ---- ZC19: ONE definition of the fix-4 constants, and the gate sources it --
+# Arm S/T's anti-drift argument applied to the new predicate: the roots it
+# measures "outside" against must have exactly one home, or the gate and the
+# redactor can disagree about what "outside" means.
+for sym in AGENT_STATE_OWN_HOME_ABS AGENT_STATE_OWN_WORKTREES_ABS AGENT_STATE_EXEC_STATUS_RE \
+           AGENT_STATE_ENUM_COMMANDS AGENT_STATE_OOR_MARKER_FMT; do
+  ZC19_FILES="$(git -C "$REPO_ROOT" grep -l -E "^${sym}=" || true)"
+  ZC19_N="$(printf '%s' "$ZC19_FILES" | grep -c . || true)"
+  if [ "$ZC19_N" -eq 1 ] && [ "$ZC19_FILES" = 'scripts/lib/agent-state-paths.sh' ]; then
+    pass "$sym is assigned exactly once, in scripts/lib/agent-state-paths.sh"
+  else
+    fail "$sym must be assigned exactly once in the shared library; found $ZC19_N: $ZC19_FILES"
+  fi
+done
+if [ "${AGENT_STATE_OWN_WORKTREES_ABS:-}" = "${AGENT_STATE_OWN_PROJECT_ABS:-x}-worktrees" ]; then
+  pass "the worktrees root is DERIVED from the repo root, not restated"
+else
+  fail "AGENT_STATE_OWN_WORKTREES_ABS must be \${AGENT_STATE_OWN_PROJECT_ABS}-worktrees; got '${AGENT_STATE_OWN_WORKTREES_ABS:-<unset>}'"
+fi
+case "${AGENT_STATE_OWN_PROJECT_ABS:-}" in
+  "${AGENT_STATE_OWN_HOME_ABS:-/nonexistent}"/*)
+    pass "the repo root is under the stated home directory, so ~ expansion is coherent" ;;
+  *)
+    fail "AGENT_STATE_OWN_PROJECT_ABS must live under AGENT_STATE_OWN_HOME_ABS ('${AGENT_STATE_OWN_HOME_ABS:-<unset>}')" ;;
+esac
+
+# ---- ZC20: the ACCEPTANCE. The exposed names are gone from the WHOLE TREE --
+# The fix-3 report claimed the exposed names "all now count 0 in the file" after
+# checking only the block it had edited; four of them were still present
+# elsewhere in the same tree. So the acceptance is encoded here as a TREE-WIDE
+# assertion that cannot be satisfied by looking at one block.
+#
+# EACH NEEDLE IS SPLIT ACROSS A `|` AND REJOINED AT RUNTIME. Not decoration: a
+# literal needle in these bytes would make THIS FILE the file that carries the
+# name, and the assertion would fail on itself — or, worse, be "fixed" by
+# excluding this file from its own check.
+for ZC20_PAIR in '7thplacenw|-client' 'dicom|-de-id' 'windchill|-llm' 'wopr|-markii' \
+                 'mesh|-seam-ripper' 'schoo|ner' 'ado|-mcp' 'md|-render' \
+                 'decimation|-proto' 'arm|ada'; do
+  ZC20_NEEDLE="${ZC20_PAIR%%|*}${ZC20_PAIR##*|}"
+  ZC20_FILES="$(git -C "$REPO_ROOT" grep -l -F -- "$ZC20_NEEDLE" || true)"
+  ZC20_N="$(printf '%s' "$ZC20_FILES" | grep -c . || true)"
+  if [ "$ZC20_N" -eq 0 ]; then
+    pass "no tracked file anywhere in the tree carries the exposed name '${ZC20_PAIR}'"
+  else
+    fail "'${ZC20_PAIR}' still appears in $ZC20_N tracked file(s): $(printf '%s' "$ZC20_FILES" | tr '\n' ' ')"
+  fi
+done
 
 if [ "$FAILED" -gt 0 ]; then
   printf '\n%d test(s) failed\n' "$FAILED" >&2
