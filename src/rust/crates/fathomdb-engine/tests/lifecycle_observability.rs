@@ -93,136 +93,41 @@ fn ac_001_event_struct_carries_typed_source_and_category() {
 // of `$PWD`, `$HOME`, `$XDG_*`, `$TMPDIR` pre+post; assert diff = subset
 // of allow-list paths."
 //
+// 0.8.20 Slice 21b (R-20-CR): the measurement roots are a PRIVATE, per-test
+// sandbox rather than the ambient `$HOME` / `$XDG_*` / `$TMPDIR` / `$PWD`, so
+// the pre/post diff over shared, concurrently-written directories is gone.
+// The prior Part-2 substring scan is retired: it was flaky-positive (another
+// process's file landing in a shared root mid-test was attributed to the
+// engine) and simultaneously vacuous (an engine artifact not containing the
+// literal "fathomdb" / "fathom_" passed cleanly — see
+// `ac_002_sandbox_oracle_catches_unsigned_artifact`).
+//
 // Two-part assertion:
-// 1. Every new file inside the DB's parent directory matches the
-//    documented allow-list (DB file, `.lock`, `-wal`, `-shm`, optional
-//    `-journal`) per
-//    ADR-0.6.0-database-lock-mechanism-reader-pool-revision.
-// 2. No new file in `$PWD` / `$HOME` / `$XDG_*` whose path or name
-//    contains a fathomdb signature appears — i.e. the engine does not
-//    create a private log / telemetry spool outside the DB path.
-//    Pre/post diff under noisy roots is unavoidable in a parallel test
-//    process; the signature filter is the strongest assertion we can
-//    bind without serializing the whole runner.
+// 1. Inside the DB parent: only the documented allow-list (DB file, `.lock`,
+//    `-wal`, `-shm`, optional `-journal`) per
+//    ADR-0.6.0-database-lock-mechanism-reader-pool-revision. UNCHANGED.
+// 2. Outside the DB parent: every sandbox root is EMPTY. Not "contains
+//    nothing matching a signature" — empty.
 #[test]
 fn ac_002_no_log_files_without_subscriber() {
-    use std::collections::BTreeSet;
-    use std::path::PathBuf;
+    let sandbox = Ac002Sandbox::new();
+    ac_002_run_workload(&sandbox, false);
 
-    fn walk(root: &std::path::Path, out: &mut BTreeSet<PathBuf>, depth: u32) {
-        if depth > 6 {
-            return;
-        }
-        let Ok(entries) = std::fs::read_dir(root) else {
-            return;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let Ok(meta) = entry.metadata() else { continue };
-            out.insert(path.clone());
-            if meta.is_dir() && !meta.file_type().is_symlink() {
-                walk(&path, out, depth + 1);
-            }
-        }
+    // Anti-vacuity: both assertions below are trivially satisfiable by a
+    // workload that never ran, so pin that the engine really opened inside the
+    // sandbox.
+    let db_path = sandbox.db_parent().join("nolog.sqlite");
+    assert!(
+        db_path.exists(),
+        "workload child must have created the database in the sandbox: {}",
+        db_path.display(),
+    );
+
+    if let Err(msg) = ac_002_db_parent_allowlist(&sandbox) {
+        panic!("{msg}");
     }
-
-    fn snapshot(roots: &[PathBuf]) -> BTreeSet<PathBuf> {
-        let mut out = BTreeSet::new();
-        for root in roots {
-            walk(root, &mut out, 0);
-        }
-        out
-    }
-
-    let dir = TempDir::new().unwrap();
-    let db_path = dir.path().join("nolog.sqlite");
-    let db_parent = db_path.parent().expect("db parent").to_path_buf();
-
-    // AC-002 measurement-protocol roots: $PWD, $HOME, $XDG_*, $TMPDIR.
-    let mut roots: Vec<PathBuf> = Vec::new();
-    if let Ok(p) = std::env::current_dir() {
-        roots.push(p);
-    }
-    if let Some(home) = std::env::var_os("HOME") {
-        roots.push(PathBuf::from(home));
-    }
-    for var in ["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"] {
-        if let Some(v) = std::env::var_os(var) {
-            roots.push(PathBuf::from(v));
-        }
-    }
-    roots.push(std::env::temp_dir());
-
-    let before = snapshot(&roots);
-
-    let opened = Engine::open(&db_path).expect("open");
-    opened
-        .engine
-        .write(&[PreparedWrite::Node {
-            kind: "doc".to_string(),
-            body: "hello".to_string(),
-            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
-            logical_id: None,
-            state: fathomdb_engine::InitialState::Active,
-            reason: None,
-            valid_from: None,
-            valid_until: None,
-        }])
-        .expect("write");
-    let _ = opened.engine.search("hello").expect("search");
-    opened.engine.close().expect("close");
-
-    let after = snapshot(&roots);
-    let new: Vec<&PathBuf> = after.difference(&before).collect();
-
-    let allowed_names = [
-        "nolog.sqlite",
-        "nolog.sqlite.lock",
-        "nolog.sqlite-wal",
-        "nolog.sqlite-shm",
-        "nolog.sqlite-journal",
-    ];
-
-    for path in &new {
-        // Part 1: every new file inside the DB parent must be on the
-        // allow-list.
-        if path.starts_with(&db_parent) {
-            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            // Allow the DB parent itself if it shows up as "new" (it
-            // was created as part of the TempDir).
-            if *path == &db_parent {
-                continue;
-            }
-            assert!(
-                allowed_names.contains(&name),
-                "engine created unexpected artifact inside DB parent: {}",
-                path.display(),
-            );
-            continue;
-        }
-
-        // Part 2: no fathomdb-signature file appears anywhere in the measurement
-        // roots. Check the path RELATIVE to its measurement root, not the absolute
-        // path: the root prefix is incidental — CI sets TMPDIR to
-        // `.../fathomdb-<run-id>/...`, which would false-positive every file under
-        // it — while anything the engine creates *below* a root (including a
-        // signature-bearing subdirectory, not just the leaf name) is still caught.
-        // (0.8.9 Slice 20, F-9.)
-        // Strip the MOST SPECIFIC (longest) matching root — i.e. the shortest
-        // remaining relative path — so an incidental signature in an overlapping
-        // outer root (e.g. $HOME ⊃ $XDG_CACHE_HOME=.../fathomdb-ci) is not left in
-        // the checked path.
-        let relative = roots
-            .iter()
-            .filter_map(|root| path.strip_prefix(root).ok())
-            .min_by_key(|rel| rel.components().count())
-            .unwrap_or(path.as_path());
-        let rel_lossy = relative.to_string_lossy().to_lowercase();
-        assert!(
-            !rel_lossy.contains("fathomdb") && !rel_lossy.contains("fathom_"),
-            "engine created a fathomdb-named artifact outside the DB path: {}",
-            path.display(),
-        );
+    if let Err(msg) = ac_002_no_artifacts_outside_db_path(&sandbox) {
+        panic!("{msg}");
     }
 }
 
@@ -420,17 +325,38 @@ fn _ac_002_sandbox_workload_entry() {
 }
 
 /// AC-002 oracle: nothing may appear outside the DB path.
+///
+/// ISOLATION, not detection. Each sandbox root is created empty and only the
+/// workload child runs against it, so the assertion is plain EMPTINESS —
+/// whatever the artifact is named, whatever it contains, it is caught.
 fn ac_002_no_artifacts_outside_db_path(sandbox: &Ac002Sandbox) -> Result<(), String> {
-    // RED body (Slice 21b): the pre-21b substring scan, reproduced verbatim
-    // against the sandbox roots. It is DETECTION, and detects the wrong thing:
-    // an artifact whose name lacks the literal "fathomdb" / "fathom_" passes
-    // cleanly. Slice 21b replaces this body with an emptiness assertion.
+    for root in sandbox.outside_roots() {
+        let mut found = std::collections::BTreeSet::new();
+        ac_002_walk(&root, &mut found, 0);
+        if let Some(first) = found.iter().next() {
+            return Err(format!(
+                "engine created {} path(s) outside the DB path, under {} — first: {}",
+                found.len(),
+                root.display(),
+                first.display(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The pre-21b Part-2 oracle, reproduced verbatim. Retained ONLY as the
+/// negative control in `ac_002_sandbox_oracle_catches_unsigned_artifact`; it is
+/// not part of the AC-002 assertion any more.
+fn ac_002_legacy_substring_oracle(sandbox: &Ac002Sandbox) -> Result<(), String> {
     let roots = sandbox.outside_roots();
     let mut found = std::collections::BTreeSet::new();
     for root in &roots {
         ac_002_walk(root, &mut found, 0);
     }
     for path in &found {
+        // Strip the MOST SPECIFIC (longest) matching root, as the pre-21b
+        // implementation did.
         let relative = roots
             .iter()
             .filter_map(|root| path.strip_prefix(root).ok())
@@ -439,7 +365,33 @@ fn ac_002_no_artifacts_outside_db_path(sandbox: &Ac002Sandbox) -> Result<(), Str
         let rel_lossy = relative.to_string_lossy().to_lowercase();
         if rel_lossy.contains("fathomdb") || rel_lossy.contains("fathom_") {
             return Err(format!(
-                "engine created an artifact outside the DB path: {}",
+                "engine created a fathomdb-named artifact outside the DB path: {}",
+                path.display()
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Part 1 of the AC-002 assertion, unchanged since 0.6.0: inside the DB parent
+/// only the documented lock/WAL/journal siblings may appear
+/// (ADR-0.6.0-database-lock-mechanism-reader-pool-revision).
+fn ac_002_db_parent_allowlist(sandbox: &Ac002Sandbox) -> Result<(), String> {
+    const ALLOWED_NAMES: [&str; 5] = [
+        "nolog.sqlite",
+        "nolog.sqlite.lock",
+        "nolog.sqlite-wal",
+        "nolog.sqlite-shm",
+        "nolog.sqlite-journal",
+    ];
+    let db_parent = sandbox.db_parent();
+    let mut found = std::collections::BTreeSet::new();
+    ac_002_walk(&db_parent, &mut found, 0);
+    for path in &found {
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if !ALLOWED_NAMES.contains(&name) {
+            return Err(format!(
+                "engine created unexpected artifact inside DB parent: {}",
                 path.display()
             ));
         }
@@ -449,10 +401,11 @@ fn ac_002_no_artifacts_outside_db_path(sandbox: &Ac002Sandbox) -> Result<(), Str
 
 // AC-002 oracle-strength probe (permanent negative control).
 //
-// Pins that the AC-002 oracle catches an artifact the pre-21b substring scan
-// waved through: a file outside the DB parent, inside the sandbox, whose name
-// contains neither "fathomdb" nor "fathom_". If this test ever goes green by
-// the oracle weakening back to a name-pattern scan, AC-002 has become vacuous.
+// Pins the DIVERGENCE that motivated Slice 21b: an artifact outside the DB
+// parent whose name contains neither "fathomdb" nor "fathom_" is waved through
+// by the pre-21b substring scan and caught by the sandbox oracle. If this test
+// ever goes green by the oracle weakening back to a name-pattern scan, AC-002
+// has become vacuous — hence both directions are asserted here.
 #[test]
 fn ac_002_sandbox_oracle_catches_unsigned_artifact() {
     let sandbox = Ac002Sandbox::new();
@@ -461,12 +414,20 @@ fn ac_002_sandbox_oracle_catches_unsigned_artifact() {
     let probe = sandbox.sub("home").join("telemetry.spool");
     assert!(probe.exists(), "divergent fixture must have been planted: {}", probe.display());
 
-    let verdict = ac_002_no_artifacts_outside_db_path(&sandbox);
-    let err = verdict.expect_err(
+    // (i) the pre-21b oracle is VACUOUS on this artifact — that is the defect.
+    assert!(
+        ac_002_legacy_substring_oracle(&sandbox).is_ok(),
+        "negative control: the pre-21b substring scan is expected to PASS an \
+         unsigned artifact; if it now fails, this control no longer witnesses \
+         the divergence it was written for",
+    );
+
+    // (ii) the sandbox oracle CATCHES it.
+    let err = ac_002_no_artifacts_outside_db_path(&sandbox).expect_err(
         "AC-002 oracle must reject an artifact outside the DB path even though its \
          name carries no fathomdb signature",
     );
-    assert!(err.contains("telemetry.spool"), "oracle must name the offending artifact; got: {err}",);
+    assert!(err.contains("telemetry.spool"), "oracle must name the offending artifact; got: {err}");
 }
 
 // AC-003a: Writer events flow to host subscriber.
