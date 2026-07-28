@@ -1,0 +1,1866 @@
+Reading additional input from stdin...
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/fix-tc79
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019fa667-46fb-75d2-ae60-b53d7beec3c6
+--------
+user
+Review this single-commit change to a bash fixture suite in the FathomDB repo. Worktree: /home/coreyt/projects/fathomdb-worktrees/fix-tc79, branch fix-tc79-commission-manifest, base 2824d270, one commit 430c5cfe touching only scripts/tests/test_commission_manifest.sh.
+
+CONTEXT. Arm 9d of that suite was permanently RED. It hardcoded Slice 20 as an in-flight example and asserted unconditionally that the generated manifest contains no HISTORICAL banner. Slice 20 has since landed, so scripts/commission-manifest.sh correctly emits a regeneration banner and the arm failed against a correct tool. commission-manifest is an always-on CI job. The fix makes arm 9d state-derived: it reads next_slice and the landed set from dev/plans/release-state-0.8.20.json and asserts the banner is present if and only if the target slice is itself landed.
+
+REVIEW FOR, in priority order:
+1. VACUITY / FALSE GREEN. Can the new arm pass without actually testing anything? Trace every path where the python derivation returns early, where read fails to populate variables, where a grep silently matches nothing, or where set +e masks a failure. A silently-skipping arm is the worst possible outcome here and is an explicit non-goal.
+2. Whether the banner equivalence can be satisfied trivially because both the expectation and the tool read the SAME state file. Say clearly what class of defect this arm can and cannot catch.
+3. Brittleness in the other direction: assertions that will expire again, or that depend on incidental formatting (note it greps the literal glyph U+26A0 plus the word HISTORICAL).
+4. Ordinary bash correctness: quoting, IFS/read behavior, exit-code capture, unbound variables under set -u.
+
+Report findings as [P1]/[P2]/[low] with file:line and a concrete failure scenario for each. If you find nothing of a given severity, say so plainly. Do not restate the diff back to me.
+codex
+I’ll review this as a code review, starting with the repo’s memory/instructions and then tracing the single changed test paths against the commit.
+exec
+/bin/bash -lc "pwd && rg --files -g 'MEMORY.md' -g 'feedback_*.md' -g 'scripts/tests/test_commission_manifest.sh' -g 'dev/plans/release-state-0.8.20.json'" in /home/coreyt/projects/fathomdb-worktrees/fix-tc79
+ succeeded in 0ms:
+/home/coreyt/projects/fathomdb-worktrees/fix-tc79
+scripts/tests/test_commission_manifest.sh
+dev/plans/release-state-0.8.20.json
+
+exec
+/bin/bash -lc 'git status --short --branch && git show --stat --oneline --decorate --no-renames 430c5cfe && git diff --no-ext-diff --unified=80 2824d270 430c5cfe -- scripts/tests/test_commission_manifest.sh' in /home/coreyt/projects/fathomdb-worktrees/fix-tc79
+ succeeded in 0ms:
+## fix-tc79-commission-manifest
+430c5cfe (HEAD -> fix-tc79-commission-manifest) test(commission-manifest): TC-79 — make arm 9d state-derived so it cannot expire
+ scripts/tests/test_commission_manifest.sh | 88 +++++++++++++++++++++++++++----
+ 1 file changed, 77 insertions(+), 11 deletions(-)
+diff --git a/scripts/tests/test_commission_manifest.sh b/scripts/tests/test_commission_manifest.sh
+index 7931262a..82c885f2 100644
+--- a/scripts/tests/test_commission_manifest.sh
++++ b/scripts/tests/test_commission_manifest.sh
+@@ -731,152 +731,218 @@ BASE_BLOCK="$(grep -m1 -A3 '^  base sha' <<<"$OUT" || true)"
+ if [ "$RC" -eq 0 ] && grep -qi 'no landed slice precedes' <<<"$BASE_LINE" \
+    && ! grep -qE '[0-9a-f]{8}' <<<"$BASE_LINE" \
+    && grep -qi 'first slice' <<<"$BASE_BLOCK" \
+    && grep -q 'branch from `git rev-parse origin/main`' <<<"$BASE_BLOCK"; then
+   pass "first slice — no predecessor is stated in words + branch-from-tip, not left blank"
+ else
+   fail "arm 8h (first slice): rc=$RC base=[$BASE_LINE] block=[$BASE_BLOCK]"
+ fi
+ 
+ # --- Arm 8i: first slice, but LATER slices have landed -> the tip is AHEAD ---
+ # Regenerating a historical first-slice brief: branching from the tip would pick
+ # up work that slice never had, so the manifest has to say the tip has moved on
+ # instead of implying the tip IS the point of cut.
+ setup_fixture
+ printf -- '---\nstatus: ACTIVE\n---\n\n# Slice 0 memo\n' >"$FIX/dev/design/9.9.9-slice-0-design.md"
+ mutate_state "L[0]['status'] = 'UNBLOCKED'; L[0]['sha'] = None
+ s['landed'] = [5]; s['next_slice'] = 0"
+ run_gen 9.9.9 0
+ BASE_LINE="$(base_line)"
+ if [ "$RC" -eq 0 ] && ! grep -qE '[0-9a-f]{8}' <<<"$BASE_LINE" \
+    && grep -q 'TIP IS AHEAD' <<<"$OUT" && grep -q 'bbbb2222' <<<"$OUT"; then
+   pass "no predecessor but later landings exist — the manifest warns the tip is AHEAD"
+ else
+   fail "arm 8i (tip ahead): rc=$RC base=[$BASE_LINE] out=$OUT"
+ fi
+ 
+ # --- Arm 8i2: ...and the warning is not contradicted by an instruction ------
+ # codex §9 [P2]. The warning alone was not enough: the no-predecessor branch ALSO
+ # printed "branch from \`git rev-parse origin/main\`", so the same brief warned the
+ # tip was ahead and then told the operator to branch from it anyway. An operator
+ # follows the instruction, not the caveat beside it, so the two cases must be
+ # mutually exclusive. Reuses arm 8i's run (same fixture, same $OUT).
+ # NOTE: the generic "re-verify \`git rev-parse origin/main\`" line is a different
+ # statement and stays; the assertion targets the BRANCH instruction only.
+ if ! grep -q 'branch from `git rev-parse origin/main`' <<<"$OUT" \
+    && grep -q 'do NOT branch from the tip' <<<"$OUT" \
+    && grep -q 'NO correct automatic' <<<"$OUT" \
+    && grep -q 'git log' <<<"$OUT"; then
+   pass "a historical first-slice brief is never ALSO told to branch from the tip"
+ else
+   fail "arm 8i2 (contradictory branch-from-tip instruction): rc=$RC out=$OUT"
+ fi
+ 
+ # --- Arm 8j: GAPS in `landed` -> the greatest landed slice BELOW the target --
+ # Slice 5 never landed; the predecessor is Slice 10, not "the target minus one"
+ # and not the oldest landing.
+ setup_fixture
+ printf -- '---\nstatus: ACTIVE\n---\n\n# Slice 30 memo\n' >"$FIX/dev/design/9.9.9-slice-30-design.md"
+ mutate_state "L[5]['status'] = 'NOT_STARTED'; L[5]['sha'] = None
+ L[10]['status'] = 'LANDED'; L[10]['sha'] = 'dddd5555'
+ s['landed'] = [0, 10]; s['next_slice'] = 30"
+ run_gen 9.9.9 30
+ BASE_LINE="$(base_line)"
+ if [ "$RC" -eq 0 ] && grep -q 'dddd5555' <<<"$BASE_LINE" \
+    && ! grep -q 'aaaa1111' <<<"$BASE_LINE" && ! grep -q 'bbbb2222' <<<"$BASE_LINE"; then
+   pass "gaps in \`landed\` — the base is the greatest landed slice strictly below the target"
+ else
+   fail "arm 8j (gapped landed): rc=$RC base=[$BASE_LINE]"
+ fi
+ 
+ # --- Arm 9: the REAL repo — Slice 20 of 0.8.20 (the acceptance criterion) --
+ # Every emitted path must resolve. This is the regression half of the pair and
+ # the tranche's stated bar.
+ set +e
+ REAL_OUT="$("$REPO_ROOT/scripts/commission-manifest.sh" 0.8.20 20 2>&1)"
+ REAL_RC=$?
+ set -e
+ if [ "$REAL_RC" -eq 0 ] && grep -q 'R-20-DR' <<<"$REAL_OUT" && grep -q 'a2022957' <<<"$REAL_OUT"; then
+   pass "real repo — the 0.8.20 Slice 20 manifest generates with every path resolving"
+ else
+   fail "arm 9 (real Slice 20): rc=$REAL_RC out=$REAL_OUT"
+ fi
+ 
+ # --- Arm 9b: the real manifest carries no bare line anchors ----------------
+ if ! grep -qE '`[A-Za-z_][A-Za-z0-9_.+-]*:[0-9]{3,}(-[0-9]+)?\+?`' <<<"$REAL_OUT"; then
+   pass "the real manifest emits section anchors only — no \`name:line\` pointers"
+ else
+   fail "arm 9b (real line-anchor ban): the manifest emitted a bare line anchor"
+ fi
+ 
+-# --- Arm 9d: the real repo's base SHA is Slice 15's merge, on the LINE ------
+-# The live regression half of the predecessor fix. Slice 20 is not yet landed,
+-# so predecessor and max(landed) agree TODAY — asserting the base LINE (not the
+-# whole manifest, where every landing SHA appears in the roll-up) is what keeps
+-# this honest the day Slice 20 lands.
+-REAL_BASE_LINE="$(grep -m1 '^  base sha' <<<"$REAL_OUT" || true)"
+-if grep -q 'a2022957' <<<"$REAL_BASE_LINE" && grep -q 'Slice 15' <<<"$REAL_BASE_LINE" \
+-   && ! grep -qi 'HISTORICAL' <<<"$REAL_OUT"; then
+-  pass "real repo — Slice 20's base is Slice 15's landing merge (a2022957), on the base line"
+-else
+-  fail "arm 9d (real base line): base=[$REAL_BASE_LINE]"
++# --- Arm 9d: the real repo's base line, STATE-DERIVED (TC-79 / TC-81) -------
++# The live regression half of the predecessor fix. It asserts the base LINE and
++# not the whole manifest, because every landing SHA also appears in the `landed
++# so far` roll-up, so a whole-manifest grep cannot tell a correct base from a
++# wrong one. That intent is unchanged.
++#
++# WHY IT IS DERIVED RATHER THAN LITERAL. The previous form hardcoded Slice 20 as
++# its "currently in flight" example, hardcoded Slice 15 / a2022957 as the
++# expected base, and asserted UNCONDITIONALLY that the real manifest carried no
++# HISTORICAL banner. Its own comment said the predecessor and max(landed) agree
++# "TODAY" — it documented its own expiry date and shipped anyway. Slice 20 then
++# landed (841c307b), the generator CORRECTLY began emitting
++# `⚠ HISTORICAL  Slice 20 is ITSELF LANDED`, and this arm went permanently RED
++# against a tool that was right: a time-bombed assertion, the TC-81 hazard class
++# (first instance efa8d584). Re-pointing the literal at a later slice is the
++# same bomb with a later fuse, so it was rejected.
++#
++# The form below reads the target (`next_slice`, unlanded by definition), its
++# predecessor (the greatest `landed` entry STRICTLY below the target) and that
++# predecessor's landing SHA out of the single-writer state file, and asserts the
++# HISTORICAL banner as an EQUIVALENCE: present if and only if the target is
++# itself in `landed`. That is strictly stronger than the old one-directional
++# prohibition — it now also catches a banner that fails to appear — and it stays
++# true whatever the ladder does next.
++#
++# NON-VACUITY IS THE POINT: there is no skip path. Every way the derivation can
++# come up empty (end-of-ladder `next_slice: null`, no landed predecessor, a
++# predecessor with no recorded SHA, an unreadable state file) routes to fail(),
++# never to a silent pass. A vacuously-green gate is worse than the bug it was
++# meant to catch, and this repo has been bitten by exactly that before.
++D9D_STATE_FILE="$REPO_ROOT/dev/plans/release-state-0.8.20.json"
++set +e
++D9D_DERIVED="$(python3 -c '
++import json, sys
++try:
++    s = json.load(open(sys.argv[1]))
++except Exception as e:
++    print("ERR unreadable state file: %s" % e); raise SystemExit(0)
++t = s.get("next_slice")
++if isinstance(t, bool) or not isinstance(t, int):
++    print("ERR next_slice is %r, not an int — end-of-ladder or malformed. "
++          "Re-point this arm at a live release; do NOT skip it." % (t,))
++    raise SystemExit(0)
++landed = sorted(n for n in (s.get("landed") or []) if isinstance(n, int))
++prior = [n for n in landed if n < t]
++if not prior:
++    print("ERR no landed slice strictly below next_slice %d" % t); raise SystemExit(0)
++b = prior[-1]
++sha = next((e.get("sha") for e in (s.get("ladder") or []) if e.get("slice") == b), None)
++if not sha:
++    print("ERR predecessor Slice %d records no landing sha" % b); raise SystemExit(0)
++print("OK %d %d %s %s" % (t, b, sha, "LANDED" if t in landed else "PENDING"))
++' "$D9D_STATE_FILE" 2>&1)"
++D9D_DERIVE_RC=$?
++set -e
++read -r D9D_OK D9D_TARGET D9D_BASE D9D_SHA D9D_TARGET_STATE <<<"$D9D_DERIVED" || true
++if [ "$D9D_DERIVE_RC" -ne 0 ] || [ "${D9D_OK:-}" != "OK" ]; then
++  fail "arm 9d (state derivation): rc=$D9D_DERIVE_RC out=[$D9D_DERIVED]"
++else
++  # The banner MUST track the target's landed state in both directions.
++  if [ "$D9D_TARGET_STATE" = "LANDED" ]; then D9D_WANT_BANNER=present
++  else D9D_WANT_BANNER=absent; fi
++  set +e
++  D9D_OUT="$("$REPO_ROOT/scripts/commission-manifest.sh" 0.8.20 "$D9D_TARGET" 2>&1)"
++  D9D_RC=$?
++  set -e
++  D9D_BASE_LINE="$(grep -m1 '^  base sha' <<<"$D9D_OUT" || true)"
++  if grep -q '⚠ HISTORICAL' <<<"$D9D_OUT"; then D9D_GOT_BANNER=present
++  else D9D_GOT_BANNER=absent; fi
++  if [ "$D9D_RC" -eq 0 ] \
++     && grep -qF "$D9D_SHA" <<<"$D9D_BASE_LINE" \
++     && grep -qF "(Slice $D9D_BASE " <<<"$D9D_BASE_LINE" \
++     && [ "$D9D_GOT_BANNER" = "$D9D_WANT_BANNER" ]; then
++    pass "real repo — Slice $D9D_TARGET's base is Slice $D9D_BASE's landing merge ($D9D_SHA) on the base line, and the HISTORICAL banner is $D9D_GOT_BANNER as the state file's landed set requires ($D9D_TARGET_STATE)"
++  else
++    fail "arm 9d (real base line, derived target=Slice $D9D_TARGET): rc=$D9D_RC want base=[Slice $D9D_BASE / $D9D_SHA] banner=$D9D_WANT_BANNER; got banner=$D9D_GOT_BANNER line=[$D9D_BASE_LINE]"
++  fi
+ fi
+ 
+ # --- Arm 9e: the REAL manifest's pin path is emitted as a CITATION ----------
+ # The live half of arms 5h/5i. The pin line must render the path the way every
+ # other cited path renders (through `m.cite`, i.e. backticked and therefore
+ # existence-checked), and the path it names must resolve in this checkout. The
+ # assertion is value-agnostic — it reads whatever the state file pins to — so it
+ # keeps holding when the pin moves. Pre-fix the line was raw text: measured RED.
+ REAL_PIN_LINE="$(grep -m1 '^      pinned to' <<<"$REAL_OUT" || true)"
+ REAL_PIN="$(sed 's/^ *pinned to *//; s/`//g' <<<"$REAL_PIN_LINE")"
+ if grep -qE '^ +pinned to +`[^`]+`$' <<<"$REAL_PIN_LINE" \
+    && [ -n "$REAL_PIN" ] && [ -e "$REPO_ROOT/$REAL_PIN" ]; then
+   pass "real repo — the publish-gate pin is emitted as a citation and resolves ($REAL_PIN)"
+ else
+   fail "arm 9e (real pin citation): line=[$REAL_PIN_LINE] pin=[$REAL_PIN]"
+ fi
+ 
+ # --- Arm 9c: the real repo's every-release sweep is green ------------------
+ set +e
+ SWEEP_OUT="$("$REPO_ROOT/scripts/commission-manifest.sh" --verify-all 2>&1)"
+ SWEEP_RC=$?
+ set -e
+ if [ "$SWEEP_RC" -eq 0 ]; then
+   pass "real repo — --verify-all is green across every live release-state file"
+ else
+   fail "arm 9c (real sweep): rc=$SWEEP_RC out=$SWEEP_OUT"
+ fi
+ 
+ # --- Arm 10: wired into agent-test.sh and into an ALWAYS-ON CI job ---------
+ if grep -q 'scripts/tests/test_commission_manifest.sh' "$AGENT_TEST"; then
+   pass "agent-test.sh runs this fixture suite"
+ else
+   fail "agent-test.sh does not run scripts/tests/test_commission_manifest.sh"
+ fi
+ 
+ CI_JOB_BLOCK="$(awk '
+   /^  commission-manifest:/ { inblock = 1; print; next }
+   inblock && /^  [A-Za-z0-9_-]+:/ { inblock = 0 }
+   inblock { print }
+ ' "$CI_YML")"
+ if [ -n "$CI_JOB_BLOCK" ]; then
+   pass "ci.yml defines a commission-manifest job"
+ else
+   fail "ci.yml has no commission-manifest job"
+ fi
+ if printf '%s' "$CI_JOB_BLOCK" | grep -q 'scripts/commission-manifest.sh'; then
+   pass "the CI job runs the SHARED scripts/commission-manifest.sh"
+ else
+   fail "the CI job must invoke scripts/commission-manifest.sh, not a reimplementation"
+ fi
+ if printf '%s' "$CI_JOB_BLOCK" | grep -qE '^\s*(if|needs):'; then
+   fail "the commission-manifest job must be ALWAYS-ON (no if:/needs:); block: $CI_JOB_BLOCK"
+ else
+   pass "the commission-manifest job is always-on (no if:, no needs:, not docs_only-gated)"
+ fi
+ 
+ if [ "$FAILED" -gt 0 ]; then
+   printf '\n%d test(s) failed\n' "$FAILED" >&2
+   exit 1
+ fi
+ printf '\nAll commission-manifest tests passed\n'
+
+codex
+The diff is isolated to arm 9d as described. I’m checking the repo memory now, then I’ll inspect the surrounding helper functions so failures through `fail`, `set +e`, and `read` are traced against actual control flow.
+exec
+/bin/bash -lc "sed -n '1,180p' scripts/tests/test_commission_manifest.sh && sed -n '700,840p' scripts/tests/test_commission_manifest.sh" in /home/coreyt/projects/fathomdb-worktrees/fix-tc79
+ succeeded in 0ms:
+#!/usr/bin/env bash
+# scripts/tests/test_commission_manifest.sh — T3b recurrence guard
+# (DOC-HYGIENE-2): the GENERATED COMMISSION MANIFEST.
+#
+# The incident this closes: briefing an orchestrator for a slice meant
+# hand-assembling the same citation list every time — design-of-record paths,
+# contract paths, plan section anchors, the base SHA, the worktree rules, the
+# stop conditions — out of a 5-12 file fan-out, with NOTHING checking that the
+# cited paths still resolved. T1d already measured what that costs: the TC-45
+# line anchors in plan-0.8.20.md were ~2,100 lines off and had never been
+# correct. A citation nobody checks is a citation that rots silently.
+#
+# Predicate under test (see scripts/commission-manifest.sh for the statement):
+# for a given release + slice, the emitted manifest cites only paths that EXIST
+# and only anchors that actually OCCUR in the file they name — and it hard-fails
+# rather than emitting anything if either is false, or if it would emit nothing.
+#
+# RED-first: the predicate passes on the real repo today (arm 8), so asserting
+# against the real checkout alone would prove nothing — a `true` script would
+# pass it. Every failure arm below runs against a purpose-built fixture repo in
+# which exactly one fault is planted, so an arm can only go green because the
+# generator's own check fired.
+#
+# NON-VACUITY: the suite honours $GATE_UNDER_TEST, so a MUTANT generator — one
+# whose path-existence test always answers "exists" — can be pointed at it. That
+# mutant turns arms 1/1b RED, which is the evidence that a green here is
+# load-bearing rather than a script that merely exits 0.
+#
+# SECOND PREDICATE (codex §9 [P2], arms 8e-8j): the emitted base SHA is the
+# TARGET SLICE'S PREDECESSOR — the greatest LANDED slice strictly below it —
+# never max(landed). Measured RED against the pre-fix generator: with Slice 10
+# in `landed`, the manifest for Slice 10 printed
+#   `base sha  dddd5555  (Slice 10, the newest LANDED slice's landing merge)`
+# i.e. branch from the very work you are being commissioned to do; and with a
+# later slice landed it printed Slice 30's merge as the base for Slice 10. That
+# is the agent-worktree-stale-base trap in printed form, and it becomes live the
+# moment 0.8.20 Slice 20 lands. These arms assert the base LINE specifically,
+# because every landing SHA also appears in the `landed so far` roll-up and a
+# whole-output grep therefore cannot distinguish a right base from a wrong one.
+#
+# THIRD PREDICATE (codex §9 [P2], arms 5h/5i/9e): the publish gate's
+# `pre_sign.pinned_to` is a REGISTERED CITATION, not printed text. It names the
+# file whose content the HITL pre-sign is bound to, and it was emitted raw — so
+# a mistyped or renamed pin path was still printed while `--verify` reported 0
+# dead citations and CI stayed green. That is CHECK 1's guarantee not holding
+# over the one path it matters most for. Arm 5h asserts the failure direction, 5i
+# asserts the verified-path COUNT moves (a bolted-on existence check beside the
+# citation list would satisfy 5h alone), and 9e asserts it on the live state file.
+#
+# Isolation: fixtures are throwaway git repos under mktemp -d (the generator
+# does `cd "$(git rev-parse --show-toplevel)"`, so each fixture must BE a repo).
+# Nothing here writes into the real checkout — arm 9 asserts that mechanically.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+GEN="${GATE_UNDER_TEST:-$REPO_ROOT/scripts/commission-manifest.sh}"
+CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
+AGENT_TEST="$REPO_ROOT/scripts/agent-test.sh"
+
+FAILED=0
+pass() { printf 'PASS  %s\n' "$1"; }
+fail() { printf 'FAIL  %s\n' "$1" >&2; FAILED=$((FAILED + 1)); }
+
+TMPROOT="$(mktemp -d)"
+cleanup() {
+  case "$TMPROOT" in
+    "${TMPDIR:-/tmp}"/*|/tmp/*) rm -rf "$TMPROOT" ;;
+    *) printf 'refusing to remove unexpected temp path: %s\n' "$TMPROOT" >&2 ;;
+  esac
+}
+trap cleanup EXIT
+
+FIX="$TMPROOT/repo"
+OUT=""
+RC=0
+
+# A minimal but REAL fixture release: a state file with a landed prefix and one
+# UNBLOCKED slice whose short/title carry the tokens the design scan keys on, a
+# plan carrying every required role heading, and the fixed infrastructure the
+# manifest cites (orchestration doc, release hand-off, preflight, AC register,
+# governed-surface pin, schema source). Every arm mutates ONE thing from this
+# baseline, so a red arm isolates exactly one fault.
+setup_fixture() {
+  rm -rf "$FIX"
+  mkdir -p "$FIX/dev/plans/runs/codex" "$FIX/dev/plans/prompts" "$FIX/dev/design/sub" \
+           "$FIX/scripts" "$FIX/src/conformance" "$FIX/src/rust/crates/fathomdb-schema/src"
+  cp "$GEN" "$FIX/scripts/commission-manifest.sh"
+  chmod +x "$FIX/scripts/commission-manifest.sh"
+  (cd "$FIX" && git init -q && git config user.email t@example.com && git config user.name t)
+
+  # The publish-gate fact set. THREE DISTINCT FACTS — pre-sign, minting, and who
+  # actually gates publish — never one collapsed word. The predecessor model
+  # carried `state_word: "unsigned"` and this manifest printed it, so a Slice-20
+  # brief told the next orchestrator that publish awaited an AC-079 signature the
+  # HITL had ALREADY GIVEN (pre-signed 2026-07-25, master F-34). Briefing an
+  # orchestrator with a settled call restated as open is how it gets re-decided.
+  case "${1:-presigned}" in
+    presigned)
+      GATE_JSON='"ac": "AC-999",
+      "covers": "the accumulated governed-surface delta",
+      "pre_sign_state": "PRE_SIGNED",
+      "pre_sign": {"on": "2026-01-02", "by": "HITL", "source": "master F-99",
+                   "pinned_to": "src/conformance/governed-surface-allowlist.json",
+                   "reopens_if": "any diff to that file re-opens it (the pin)"},
+      "minted": false, "minted_as": "SIGNED", "sign_off_slice": 30,
+      "publish_gated_by": "the separate HITL publish gate",
+      "board_ref": "§4 #1"'
+      ;;
+    notpresigned)
+      GATE_JSON='"ac": "AC-999",
+      "covers": "the accumulated governed-surface delta",
+      "pre_sign_state": "NOT_PRE_SIGNED",
+      "minted": false, "minted_as": "SIGNED", "sign_off_slice": 30,
+      "publish_gated_by": "the separate HITL publish gate",
+      "board_ref": "§4 #1"'
+      ;;
+    *) printf 'setup_fixture: unknown gate mode %q\n' "$1" >&2; exit 2 ;;
+  esac
+
+  cat >"$FIX/dev/plans/release-state-9.9.9.json" <<EOF
+{
+  "release": "9.9.9",
+  "release_kind": "even, publish",
+  "board": "dev/plans/runs/board.md",
+  "plan": "dev/plans/plan-9.9.9.md",
+  "master": "dev/plans/master.md",
+  "schema_version": 42,
+  "schema_version_source": "pub const SCHEMA_VERSION in src/rust/crates/fathomdb-schema/src/lib.rs",
+  "ladder": [
+    {"slice": 0,  "short": "X0",    "title": "X0 design gate",                        "depends_on": [],      "status": "LANDED",      "sha": "aaaa1111"},
+    {"slice": 5,  "short": "R-9-A", "title": "the keystone",                          "depends_on": [0],     "status": "LANDED",      "sha": "bbbb2222"},
+    {"slice": 10, "short": "R-9-B", "title": "widget_readiness + the TC-99 terminal fix", "depends_on": [5], "status": "UNBLOCKED",   "sha": null},
+    {"slice": 30, "short": "H7",    "title": "can-i-deploy contract gate",            "depends_on": [10],    "status": "NOT_STARTED", "sha": null, "publish_precondition": true}
+  ],
+  "landed": [0, 5],
+  "next_slice": 10,
+  "remaining_ladder": [10, 30],
+  "unblocked": [10],
+  "publish_precondition_slice": 30,
+  "acceptance": {
+    "highest_defined_non_reserved": "AC-900",
+    "publish_gate": {
+      ${GATE_JSON}
+    }
+  },
+  "decisions": {
+    "unruled": [
+      {"id": "publish", "title": "PUBLISH the pair", "gated_at": "Slice 30", "halts_run": true,
+       "source": "plan-9.9.9.md §11 item 3"},
+      {"id": "batched-surface", "title": "the batched governed-surface delta", "gated_at": "the 30 boundary",
+       "halts_run": false, "source": "plan-9.9.9.md §11 item 2"}
+    ],
+    "ruled": [
+      {"id": "already-settled", "ruling": "CLOSED BY DECISION", "ruled_on": "2026-01-01",
+       "source": "plan-9.9.9.md §10"}
+    ]
+  },
+  "generated_views": []
+}
+EOF
+
+  cat >"$FIX/dev/plans/plan-9.9.9.md" <<'EOF'
+---
+status: ACTIVE
+---
+
+# 9.9.9 — Plan
+
+## 1. Goal & scope
+
+## 2. Decisions already taken (do NOT re-litigate)
+
+## 3. Requirements + acceptance criteria (release DoD — frozen at Slice 0)
+
+## 4. Slice ladder (mod-5)
+
+## 5. Reserved-gap policy
+
+## 6. Cross-cutting DoD (X0/X1/X2/X3 — bind EVERY slice)
+  fail "arm 8f (historical marker): out=$OUT"
+fi
+
+# --- Arm 8g: LATER slices landed too -> still the IMMEDIATE predecessor ------
+# max(landed) here is Slice 30, two slices past the target. The base must not
+# drift forward just because the release moved on.
+setup_fixture
+mutate_state "L[10]['status'] = 'LANDED'; L[10]['sha'] = 'dddd5555'
+L[30]['status'] = 'LANDED'; L[30]['sha'] = 'eeee6666'
+s['landed'] = [0, 5, 10, 30]; s['next_slice'] = None"
+run_gen 9.9.9 10
+BASE_LINE="$(base_line)"
+if [ "$RC" -eq 0 ] && grep -q 'bbbb2222' <<<"$BASE_LINE" \
+   && ! grep -q 'dddd5555' <<<"$BASE_LINE" && ! grep -q 'eeee6666' <<<"$BASE_LINE"; then
+  pass "later slices landed — the base stays the target's immediate predecessor"
+else
+  fail "arm 8g (no forward drift): rc=$RC base=[$BASE_LINE]"
+fi
+
+# --- Arm 8h: THE FIRST SLICE — nothing precedes it --------------------------
+# Documented behaviour: there is no predecessor merge, so the manifest says so
+# in words and sends the operator to `git rev-parse origin/main`. It must never
+# print an empty base, and it must never borrow a later slice's SHA.
+setup_fixture
+printf -- '---\nstatus: ACTIVE\n---\n\n# Slice 0 memo\n' >"$FIX/dev/design/9.9.9-slice-0-design.md"
+mutate_state "L[0]['status'] = 'UNBLOCKED'; L[0]['sha'] = None
+L[5]['status'] = 'NOT_STARTED'; L[5]['sha'] = None
+s['landed'] = []; s['next_slice'] = 0"
+run_gen 9.9.9 0
+BASE_LINE="$(base_line)"
+BASE_BLOCK="$(grep -m1 -A3 '^  base sha' <<<"$OUT" || true)"
+if [ "$RC" -eq 0 ] && grep -qi 'no landed slice precedes' <<<"$BASE_LINE" \
+   && ! grep -qE '[0-9a-f]{8}' <<<"$BASE_LINE" \
+   && grep -qi 'first slice' <<<"$BASE_BLOCK" \
+   && grep -q 'branch from `git rev-parse origin/main`' <<<"$BASE_BLOCK"; then
+  pass "first slice — no predecessor is stated in words + branch-from-tip, not left blank"
+else
+  fail "arm 8h (first slice): rc=$RC base=[$BASE_LINE] block=[$BASE_BLOCK]"
+fi
+
+# --- Arm 8i: first slice, but LATER slices have landed -> the tip is AHEAD ---
+# Regenerating a historical first-slice brief: branching from the tip would pick
+# up work that slice never had, so the manifest has to say the tip has moved on
+# instead of implying the tip IS the point of cut.
+setup_fixture
+printf -- '---\nstatus: ACTIVE\n---\n\n# Slice 0 memo\n' >"$FIX/dev/design/9.9.9-slice-0-design.md"
+mutate_state "L[0]['status'] = 'UNBLOCKED'; L[0]['sha'] = None
+s['landed'] = [5]; s['next_slice'] = 0"
+run_gen 9.9.9 0
+BASE_LINE="$(base_line)"
+if [ "$RC" -eq 0 ] && ! grep -qE '[0-9a-f]{8}' <<<"$BASE_LINE" \
+   && grep -q 'TIP IS AHEAD' <<<"$OUT" && grep -q 'bbbb2222' <<<"$OUT"; then
+  pass "no predecessor but later landings exist — the manifest warns the tip is AHEAD"
+else
+  fail "arm 8i (tip ahead): rc=$RC base=[$BASE_LINE] out=$OUT"
+fi
+
+# --- Arm 8i2: ...and the warning is not contradicted by an instruction ------
+# codex §9 [P2]. The warning alone was not enough: the no-predecessor branch ALSO
+# printed "branch from \`git rev-parse origin/main\`", so the same brief warned the
+# tip was ahead and then told the operator to branch from it anyway. An operator
+# follows the instruction, not the caveat beside it, so the two cases must be
+# mutually exclusive. Reuses arm 8i's run (same fixture, same $OUT).
+# NOTE: the generic "re-verify \`git rev-parse origin/main\`" line is a different
+# statement and stays; the assertion targets the BRANCH instruction only.
+if ! grep -q 'branch from `git rev-parse origin/main`' <<<"$OUT" \
+   && grep -q 'do NOT branch from the tip' <<<"$OUT" \
+   && grep -q 'NO correct automatic' <<<"$OUT" \
+   && grep -q 'git log' <<<"$OUT"; then
+  pass "a historical first-slice brief is never ALSO told to branch from the tip"
+else
+  fail "arm 8i2 (contradictory branch-from-tip instruction): rc=$RC out=$OUT"
+fi
+
+# --- Arm 8j: GAPS in `landed` -> the greatest landed slice BELOW the target --
+# Slice 5 never landed; the predecessor is Slice 10, not "the target minus one"
+# and not the oldest landing.
+setup_fixture
+printf -- '---\nstatus: ACTIVE\n---\n\n# Slice 30 memo\n' >"$FIX/dev/design/9.9.9-slice-30-design.md"
+mutate_state "L[5]['status'] = 'NOT_STARTED'; L[5]['sha'] = None
+L[10]['status'] = 'LANDED'; L[10]['sha'] = 'dddd5555'
+s['landed'] = [0, 10]; s['next_slice'] = 30"
+run_gen 9.9.9 30
+BASE_LINE="$(base_line)"
+if [ "$RC" -eq 0 ] && grep -q 'dddd5555' <<<"$BASE_LINE" \
+   && ! grep -q 'aaaa1111' <<<"$BASE_LINE" && ! grep -q 'bbbb2222' <<<"$BASE_LINE"; then
+  pass "gaps in \`landed\` — the base is the greatest landed slice strictly below the target"
+else
+  fail "arm 8j (gapped landed): rc=$RC base=[$BASE_LINE]"
+fi
+
+# --- Arm 9: the REAL repo — Slice 20 of 0.8.20 (the acceptance criterion) --
+# Every emitted path must resolve. This is the regression half of the pair and
+# the tranche's stated bar.
+set +e
+REAL_OUT="$("$REPO_ROOT/scripts/commission-manifest.sh" 0.8.20 20 2>&1)"
+REAL_RC=$?
+set -e
+if [ "$REAL_RC" -eq 0 ] && grep -q 'R-20-DR' <<<"$REAL_OUT" && grep -q 'a2022957' <<<"$REAL_OUT"; then
+  pass "real repo — the 0.8.20 Slice 20 manifest generates with every path resolving"
+else
+  fail "arm 9 (real Slice 20): rc=$REAL_RC out=$REAL_OUT"
+fi
+
+# --- Arm 9b: the real manifest carries no bare line anchors ----------------
+if ! grep -qE '`[A-Za-z_][A-Za-z0-9_.+-]*:[0-9]{3,}(-[0-9]+)?\+?`' <<<"$REAL_OUT"; then
+  pass "the real manifest emits section anchors only — no \`name:line\` pointers"
+else
+  fail "arm 9b (real line-anchor ban): the manifest emitted a bare line anchor"
+fi
+
+# --- Arm 9d: the real repo's base line, STATE-DERIVED (TC-79 / TC-81) -------
+# The live regression half of the predecessor fix. It asserts the base LINE and
+# not the whole manifest, because every landing SHA also appears in the `landed
+# so far` roll-up, so a whole-manifest grep cannot tell a correct base from a
+# wrong one. That intent is unchanged.
+#
+# WHY IT IS DERIVED RATHER THAN LITERAL. The previous form hardcoded Slice 20 as
+# its "currently in flight" example, hardcoded Slice 15 / a2022957 as the
+# expected base, and asserted UNCONDITIONALLY that the real manifest carried no
+# HISTORICAL banner. Its own comment said the predecessor and max(landed) agree
+# "TODAY" — it documented its own expiry date and shipped anyway. Slice 20 then
+# landed (841c307b), the generator CORRECTLY began emitting
+# `⚠ HISTORICAL  Slice 20 is ITSELF LANDED`, and this arm went permanently RED
+# against a tool that was right: a time-bombed assertion, the TC-81 hazard class
+# (first instance efa8d584). Re-pointing the literal at a later slice is the
+# same bomb with a later fuse, so it was rejected.
+#
+# The form below reads the target (`next_slice`, unlanded by definition), its
+# predecessor (the greatest `landed` entry STRICTLY below the target) and that
+# predecessor's landing SHA out of the single-writer state file, and asserts the
+# HISTORICAL banner as an EQUIVALENCE: present if and only if the target is
+# itself in `landed`. That is strictly stronger than the old one-directional
+# prohibition — it now also catches a banner that fails to appear — and it stays
+# true whatever the ladder does next.
+#
+# NON-VACUITY IS THE POINT: there is no skip path. Every way the derivation can
+# come up empty (end-of-ladder `next_slice: null`, no landed predecessor, a
+# predecessor with no recorded SHA, an unreadable state file) routes to fail(),
+# never to a silent pass. A vacuously-green gate is worse than the bug it was
+# meant to catch, and this repo has been bitten by exactly that before.
+
+exec
+/bin/bash -lc "ls -la && find .. -maxdepth 2 \\( -name MEMORY.md -o -name 'feedback_*.md' \\) -print" in /home/coreyt/projects/fathomdb-worktrees/fix-tc79
+ succeeded in 0ms:
+total 344
+drwxrwxr-x 12 coreyt coreyt   4096 Jul 27 20:43 .
+drwxrwxr-x  7 coreyt coreyt   4096 Jul 27 20:38 ..
+drwxrwxr-x  4 coreyt coreyt   4096 Jul 27 20:38 .claude
+-rw-rw-r--  1 coreyt coreyt     63 Jul 27 20:38 .git
+drwxrwxr-x  3 coreyt coreyt   4096 Jul 27 20:38 .github
+-rw-rw-r--  1 coreyt coreyt   5008 Jul 27 20:38 .gitignore
+-rw-rw-r--  1 coreyt coreyt   2745 Jul 27 20:38 .markdownlint-cli2.jsonc
+-rw-rw-r--  1 coreyt coreyt   2105 Jul 27 20:38 .markdownlint.jsonc
+-rw-rw-r--  1 coreyt coreyt    657 Jul 27 20:38 .prettierignore
+-rw-rw-r--  1 coreyt coreyt    296 Jul 27 20:38 .prettierrc.json
+-rw-rw-r--  1 coreyt coreyt  13373 Jul 27 20:38 AGENTS.md
+-rw-rw-r--  1 coreyt coreyt  50881 Jul 27 20:38 CHANGELOG.md
+-rw-rw-r--  1 coreyt coreyt 115594 Jul 27 20:38 Cargo.lock
+-rw-rw-r--  1 coreyt coreyt   2434 Jul 27 20:38 Cargo.toml
+-rw-rw-r--  1 coreyt coreyt   1078 Jul 27 20:38 LICENSE
+-rw-rw-r--  1 coreyt coreyt    939 Jul 27 20:38 README.md
+-rw-rw-r--  1 coreyt coreyt    120 Jul 27 20:38 deny.toml
+drwxrwxr-x 30 coreyt coreyt   4096 Jul 27 20:38 dev
+drwxrwxr-x 11 coreyt coreyt   4096 Jul 27 20:38 docs
+drwxrwxr-x  2 coreyt coreyt   4096 Jul 27 20:38 experiments
+-rw-rw-r--  1 coreyt coreyt   1783 Jul 27 20:38 lychee.toml
+-rw-rw-r--  1 coreyt coreyt   1502 Jul 27 20:38 mkdocs.yml
+lrwxrwxrwx  1 coreyt coreyt     43 Jul 27 20:43 node_modules -> /home/coreyt/projects/fathomdb/node_modules
+-rw-rw-r--  1 coreyt coreyt  48768 Jul 27 20:38 package-lock.json
+-rw-rw-r--  1 coreyt coreyt   1249 Jul 27 20:38 package.json
+-rw-rw-r--  1 coreyt coreyt     66 Jul 27 20:38 rust-toolchain.toml
+-rw-rw-r--  1 coreyt coreyt     45 Jul 27 20:38 rustfmt.toml
+drwxrwxr-x  9 coreyt coreyt   4096 Jul 27 20:46 scripts
+drwxrwxr-x  6 coreyt coreyt   4096 Jul 27 20:38 src
+drwxrwxr-x  6 coreyt coreyt   4096 Jul 27 20:38 test
+drwxrwxr-x  4 coreyt coreyt   4096 Jul 27 20:38 tests
+drwxrwxr-x  3 coreyt coreyt   4096 Jul 27 20:38 tools
+
+exec
+/bin/bash -lc "git show 430c5cfe:scripts/tests/test_commission_manifest.sh | nl -ba | sed -n '760,850p'" in /home/coreyt/projects/fathomdb-worktrees/fix-tc79
+ succeeded in 0ms:
+   760	# tip was ahead and then told the operator to branch from it anyway. An operator
+   761	# follows the instruction, not the caveat beside it, so the two cases must be
+   762	# mutually exclusive. Reuses arm 8i's run (same fixture, same $OUT).
+   763	# NOTE: the generic "re-verify \`git rev-parse origin/main\`" line is a different
+   764	# statement and stays; the assertion targets the BRANCH instruction only.
+   765	if ! grep -q 'branch from `git rev-parse origin/main`' <<<"$OUT" \
+   766	   && grep -q 'do NOT branch from the tip' <<<"$OUT" \
+   767	   && grep -q 'NO correct automatic' <<<"$OUT" \
+   768	   && grep -q 'git log' <<<"$OUT"; then
+   769	  pass "a historical first-slice brief is never ALSO told to branch from the tip"
+   770	else
+   771	  fail "arm 8i2 (contradictory branch-from-tip instruction): rc=$RC out=$OUT"
+   772	fi
+   773	
+   774	# --- Arm 8j: GAPS in `landed` -> the greatest landed slice BELOW the target --
+   775	# Slice 5 never landed; the predecessor is Slice 10, not "the target minus one"
+   776	# and not the oldest landing.
+   777	setup_fixture
+   778	printf -- '---\nstatus: ACTIVE\n---\n\n# Slice 30 memo\n' >"$FIX/dev/design/9.9.9-slice-30-design.md"
+   779	mutate_state "L[5]['status'] = 'NOT_STARTED'; L[5]['sha'] = None
+   780	L[10]['status'] = 'LANDED'; L[10]['sha'] = 'dddd5555'
+   781	s['landed'] = [0, 10]; s['next_slice'] = 30"
+   782	run_gen 9.9.9 30
+   783	BASE_LINE="$(base_line)"
+   784	if [ "$RC" -eq 0 ] && grep -q 'dddd5555' <<<"$BASE_LINE" \
+   785	   && ! grep -q 'aaaa1111' <<<"$BASE_LINE" && ! grep -q 'bbbb2222' <<<"$BASE_LINE"; then
+   786	  pass "gaps in \`landed\` — the base is the greatest landed slice strictly below the target"
+   787	else
+   788	  fail "arm 8j (gapped landed): rc=$RC base=[$BASE_LINE]"
+   789	fi
+   790	
+   791	# --- Arm 9: the REAL repo — Slice 20 of 0.8.20 (the acceptance criterion) --
+   792	# Every emitted path must resolve. This is the regression half of the pair and
+   793	# the tranche's stated bar.
+   794	set +e
+   795	REAL_OUT="$("$REPO_ROOT/scripts/commission-manifest.sh" 0.8.20 20 2>&1)"
+   796	REAL_RC=$?
+   797	set -e
+   798	if [ "$REAL_RC" -eq 0 ] && grep -q 'R-20-DR' <<<"$REAL_OUT" && grep -q 'a2022957' <<<"$REAL_OUT"; then
+   799	  pass "real repo — the 0.8.20 Slice 20 manifest generates with every path resolving"
+   800	else
+   801	  fail "arm 9 (real Slice 20): rc=$REAL_RC out=$REAL_OUT"
+   802	fi
+   803	
+   804	# --- Arm 9b: the real manifest carries no bare line anchors ----------------
+   805	if ! grep -qE '`[A-Za-z_][A-Za-z0-9_.+-]*:[0-9]{3,}(-[0-9]+)?\+?`' <<<"$REAL_OUT"; then
+   806	  pass "the real manifest emits section anchors only — no \`name:line\` pointers"
+   807	else
+   808	  fail "arm 9b (real line-anchor ban): the manifest emitted a bare line anchor"
+   809	fi
+   810	
+   811	# --- Arm 9d: the real repo's base line, STATE-DERIVED (TC-79 / TC-81) -------
+   812	# The live regression half of the predecessor fix. It asserts the base LINE and
+   813	# not the whole manifest, because every landing SHA also appears in the `landed
+   814	# so far` roll-up, so a whole-manifest grep cannot tell a correct base from a
+   815	# wrong one. That intent is unchanged.
+   816	#
+   817	# WHY IT IS DERIVED RATHER THAN LITERAL. The previous form hardcoded Slice 20 as
+   818	# its "currently in flight" example, hardcoded Slice 15 / a2022957 as the
+   819	# expected base, and asserted UNCONDITIONALLY that the real manifest carried no
+   820	# HISTORICAL banner. Its own comment said the predecessor and max(landed) agree
+   821	# "TODAY" — it documented its own expiry date and shipped anyway. Slice 20 then
+   822	# landed (841c307b), the generator CORRECTLY began emitting
+   823	# `⚠ HISTORICAL  Slice 20 is ITSELF LANDED`, and this arm went permanently RED
+   824	# against a tool that was right: a time-bombed assertion, the TC-81 hazard class
+   825	# (first instance efa8d584). Re-pointing the literal at a later slice is the
+   826	# same bomb with a later fuse, so it was rejected.
+   827	#
+   828	# The form below reads the target (`next_slice`, unlanded by definition), its
+   829	# predecessor (the greatest `landed` entry STRICTLY below the target) and that
+   830	# predecessor's landing SHA out of the single-writer state file, and asserts the
+   831	# HISTORICAL banner as an EQUIVALENCE: present if and only if the target is
+   832	# itself in `landed`. That is strictly stronger than the old one-directional
+   833	# prohibition — it now also catches a banner that fails to appear — and it stays
+   834	# true whatever the ladder does next.
+   835	#
+   836	# NON-VACUITY IS THE POINT: there is no skip path. Every way the derivation can
+   837	# come up empty (end-of-ladder `next_slice: null`, no landed predecessor, a
+   838	# predecessor with no recorded SHA, an unreadable state file) routes to fail(),
+   839	# never to a silent pass. A vacuously-green gate is worse than the bug it was
+   840	# meant to catch, and this repo has been bitten by exactly that before.
+   841	D9D_STATE_FILE="$REPO_ROOT/dev/plans/release-state-0.8.20.json"
+   842	set +e
+   843	D9D_DERIVED="$(python3 -c '
+   844	import json, sys
+   845	try:
+   846	    s = json.load(open(sys.argv[1]))
+   847	except Exception as e:
+   848	    print("ERR unreadable state file: %s" % e); raise SystemExit(0)
+   849	t = s.get("next_slice")
+   850	if isinstance(t, bool) or not isinstance(t, int):
+
+exec
+/bin/bash -lc "sed -n '1,220p' dev/plans/release-state-0.8.20.json" in /home/coreyt/projects/fathomdb-worktrees/fix-tc79
+ succeeded in 0ms:
+{
+  "_comment": "SINGLE WRITER for 0.8.20 release state (DOC-HYGIENE-2 T2a). THIS FILE IS THE ONLY PLACE THESE FACTS ARE AUTHORED: landed slices + their landing SHAs, the SCHEMA version, the next slice, the remaining ladder, AC status, and the ruled/unruled decision set. WHY: before this file, that state was narrated across a 5-12 file write-side fan-out (the master release plan, the STATUS board, the plan, the Steward hand-off, the ledgers) with NOTHING checking that the copies agreed - one reconciliation commit (b70629e5) had to touch 7 files, and the live board is ~79 KB, too large to read whole. HOW IT IS ENFORCED: `generated_views` below names the marker-delimited regions that are RENDERED from this file by scripts/check-release-state-views.sh. That script regenerates each region into a temp buffer and diffs it against what is in the document; any difference is a HARD failure, so a hand-edit of a view, or a change here without a regenerate, both go red. Regenerate with `scripts/check-release-state-views.sh --write`. TO CHANGE A FACT: edit it HERE, then run --write, then commit both. Do NOT hand-edit inside the markers. SCOPE: this file records state, it does not decide anything - it changes no release slot, no scope, no requirement and no AC. Every fact below was re-verified from git (merge-commit ancestry on origin/main; `pub const SCHEMA_VERSION` in src/rust/crates/fathomdb-schema/src/lib.rs) rather than copied from narration.",
+  "release": "0.8.20",
+  "release_kind": "even, publish",
+  "board": "dev/plans/runs/STATUS-0.8.20.md",
+  "plan": "dev/plans/plan-0.8.20.md",
+  "master": "dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md",
+  "schema_version": 24,
+  "schema_version_source": "pub const SCHEMA_VERSION in src/rust/crates/fathomdb-schema/src/lib.rs",
+  "landed_verified_at": "fae276b9",
+  "landed_verified_how": "each SHA below is the landing merge commit for its slice AND is an ancestor of origin/main (git merge-base --is-ancestor), with the merge subject matching this repo's `merge(0.8.20): Slice[- ]N` landing convention",
+  "ladder": [
+    {
+      "slice": 0,
+      "short": "X0",
+      "title": "X0 design gate",
+      "depends_on": [],
+      "status": "LANDED",
+      "sha": "403eb254",
+      "merge_subject": "merge(0.8.20): Slice-0 X0 design gate — HITL-SIGNED 2026-07-19"
+    },
+    {
+      "slice": 5,
+      "short": "R-20-E1..E8",
+      "title": "erasure completeness",
+      "depends_on": [
+        0
+      ],
+      "status": "LANDED",
+      "sha": "1f8ed8bf",
+      "merge_subject": "merge(0.8.20): Slice 5 — erasure completeness (R-20-E1..E8)"
+    },
+    {
+      "slice": 10,
+      "short": "R-20-RV, R-20-NV",
+      "title": "ReadView / read-modes + node-validity",
+      "depends_on": [
+        0
+      ],
+      "status": "LANDED",
+      "sha": "3cfb3cda",
+      "merge_subject": "merge(0.8.20): Slice 10 — ReadView/read-modes + node-validity + TC-31"
+    },
+    {
+      "slice": 15,
+      "short": "R-20-PR, R-20-EAV",
+      "title": "projection registry (C-1) + EAV/property-FTS + TC-33 + TC-34",
+      "depends_on": [
+        0,
+        10
+      ],
+      "status": "LANDED",
+      "sha": "a2022957",
+      "merge_subject": "merge(0.8.20): Slice 15 keystone COMPLETE — registry + EAV + filterable pre-KNN + TC-33"
+    },
+    {
+      "slice": 20,
+      "short": "R-20-DR",
+      "title": "dense_readiness + flush_embeddings() + the TC-45 supersession-terminal fix",
+      "depends_on": [
+        15
+      ],
+      "status": "LANDED",
+      "sha": "841c307b",
+      "merge_subject": "merge(0.8.20): Slice 20c — R-20-DR flush-to-readiness barrier via the shipped `drain` (C4)"
+    },
+    {
+      "slice": 21,
+      "short": "R-20-CR",
+      "title": "concurrency + test-oracle repair — TC-57 characterize-then-fix, ac_002 oracle replacement, TC-71 vector-predicate fix",
+      "depends_on": [
+        20
+      ],
+      "status": "NOT_STARTED",
+      "sha": null,
+      "reserved_gap": true
+    },
+    {
+      "slice": 22,
+      "short": "R-20-VC",
+      "title": "vector-arm consumer contract — TC-67 (c) typed report, TC-68 fingerprint-cache, Slice-15b decision #18 error-variant, sqlite-vec #99 vec0 DELETE probe",
+      "depends_on": [
+        15,
+        20
+      ],
+      "status": "NOT_STARTED",
+      "sha": null,
+      "reserved_gap": true
+    },
+    {
+      "slice": 25,
+      "short": "R-20-SUR",
+      "title": "surrogate minting — governed entities ONLY",
+      "depends_on": [
+        15
+      ],
+      "status": "LANDED",
+      "sha": "83b1c818",
+      "merge_subject": "merge(0.8.20): Slice 25 COMPLETE — R-20-SUR surrogate minting, governed entities ONLY"
+    },
+    {
+      "slice": 30,
+      "short": "H7",
+      "title": "RUBRIC-H7 can-i-deploy contract gate (R-20-H7)",
+      "depends_on": [
+        10,
+        15,
+        20,
+        25
+      ],
+      "status": "NOT_STARTED",
+      "sha": null,
+      "publish_precondition": true
+    },
+    {
+      "slice": 31,
+      "short": "LIB",
+      "title": "Library Sweep #3 — dependency hygiene; carries NO R-20-xx requirement id (TC-76), a deliberate departure from the F-12 pico precedent",
+      "depends_on": [],
+      "status": "NOT_STARTED",
+      "sha": null,
+      "reserved_gap": true,
+      "no_requirement_id": true,
+      "sequenced_after": 30,
+      "sequencing_note": "no technical dependency on 30; placed after it by HITL ruling 2026-07-27 so the publish precondition stays first on the critical path"
+    },
+    {
+      "slice": 40,
+      "short": "R-20-PUB",
+      "title": "verification + release readiness (publish-or-hold)",
+      "depends_on": [
+        5,
+        30
+      ],
+      "status": "NOT_STARTED",
+      "sha": null
+    }
+  ],
+  "landed": [
+    0,
+    5,
+    10,
+    15,
+    20,
+    25
+  ],
+  "next_slice": 30,
+  "remaining_ladder": [
+    30,
+    21,
+    22,
+    31,
+    40
+  ],
+  "ladder_order": "SEQUENTIAL — HITL-approved 2026-07-27 (steward seq-119). Execution order: 30 (publish precondition, first on the critical path) → 21 → 22 → 31 (Library Sweep #3) → DOC-HYGIENE-3 (cross-cutting, NOT a ladder slice and carries no pico label, per seq-106) → the batched governed-surface decision (HITL) → 40. Parallel 20 || 25 was declined earlier (master F-34).",
+  "unblocked": [
+    21,
+    22,
+    30
+  ],
+  "unblocked_by": {
+    "requirement": "the Slice 20 + Slice 25 landing pair",
+    "gloss": "R-20-DR and R-20-SUR, the last dependency any of the three was waiting on"
+  },
+  "publish_precondition_slice": 30,
+  "acceptance": {
+    "highest_defined_non_reserved": "AC-076",
+    "reservations": [
+      {
+        "ac": "AC-077",
+        "state": "RESERVED",
+        "initiative": "IR-eval IR-1/IR-2",
+        "note": "reserved placeholder in dev/acceptance.md; thresholds TBD"
+      },
+      {
+        "ac": "AC-078",
+        "state": "CONDITIONALLY RESERVED",
+        "initiative": "IR-eval IR-1/IR-2",
+        "note": "minted only if the consensus splits the measure"
+      }
+    ],
+    "publish_gate": {
+      "_model": "THREE DISTINCT FACTS, deliberately NOT collapsed into one word. The predecessor model carried `minted`/`signed` plus a single `state_word: \"unsigned\"`, and the STATUS §1 `Unblocks` view rendered its sentence off that one word — so the board told every reader `**Publish remains blocked on AC-079**, which is **still unsigned**` AFTER the HITL had PRE-SIGNED that delta on 2026-07-25 (master F-34). Restating a settled call as still open is precisely how a settled call gets re-decided. The three facts a consumer MUST read separately: (1) `pre_sign_state` - has the HITL signed off on the CONTENT of the delta yet? (2) `minted` + `sign_off_slice` - has the AC been minted into dev/acceptance.md and recorded there as SIGNED yet? PRE-SIGN IS NOT MINTING. (3) `publish_gated_by` - what actually holds publish, which is the separate HITL publish gate (`decisions.unruled` id `publish`), NOT an unsigned AC. No consumer may derive a single status word from `minted`/`signed` alone; both renderers (scripts/check-release-state-views.sh render_status_unblocks, scripts/commission-manifest.sh publish-gate line) branch on `pre_sign_state` and hard-fail on an unrecognised value or a reintroduced `state_word`.",
+      "ac": "AC-079",
+      "covers": "the accumulated governed-surface delta (Slices 5d + 10b + 15b + 15d)",
+      "pre_sign_state": "PRE_SIGNED",
+      "pre_sign": {
+        "on": "2026-07-25",
+        "by": "HITL",
+        "source": "master F-34",
+        "pinned_to": "src/conformance/governed-surface-allowlist.json",
+        "reopens_if": "any diff to that file re-opens it (the T1e pin)",
+        "provenance": "HITL 2026-07-25 — PRE-SIGNED and pinned to the content of src/conformance/governed-surface-allowlist.json; any diff to that file re-opens the gate (T1e pin). PRE-SIGN IS NOT MINTING: AC-079 is still minted and recorded as SIGNED at Slice 40.",
+        "enforced_by": "scripts/check-governed-surface-pin.sh (the pin), run from scripts/preflight.sh"
+      },
+      "minted": false,
+      "minted_as": "SIGNED",
+      "sign_off_slice": 40,
+      "publish_gated_by": "the separate HITL publish gate",
+      "publish_gate_decision_id": "publish",
+      "board_ref": "§4 #1"
+    },
+    "re_verified_green": [
+      "AC-041",
+      "AC-080"
+    ]
+  },
+  "decisions": {
+    "_comment": "Ruled vs unruled, as of 2026-07-25. Sources of record: dev/plans/runs/STATUS-0.8.20.md §4 (the historical queue banner) and dev/plans/plan-0.8.20.md §11 (the live queue + the 2026-07-24 and 2026-07-25 ruling blocks). Recorded here so the ruled/unruled split has ONE writer; the two prose sections stay exactly as they are.",
+    "unruled": [
+      {
+        "id": "batched-governed-surface",
+        "title": "the batched governed-surface decision — the accumulated Slice 20/25/30 allowlist delta",
+        "gated_at": "the Slice 30 -> Slice 40 boundary",
+        "halts_run": false,
+        "source": "plan-0.8.20.md §11 (2026-07-25 rulings, item 2)"
+      },
+      {
+        "id": "publish",
+        "title": "PUBLISH the 0.8.20 breaking pair (manifests 0.8.9 -> 0.8.20)",
+
+codex
+There’s no `MEMORY.md` or `feedback_*.md` visible in this worktree or its immediate parent, so I’m proceeding with the supplied `AGENTS.md` constraints and the changed file. The current real state has `next_slice: 30` and landed includes 25, which matters for the “same state file” concern.
+exec
+/bin/bash -lc "git show 430c5cfe:scripts/tests/test_commission_manifest.sh | nl -ba | sed -n '840,910p'" in /home/coreyt/projects/fathomdb-worktrees/fix-tc79
+ succeeded in 0ms:
+   840	# meant to catch, and this repo has been bitten by exactly that before.
+   841	D9D_STATE_FILE="$REPO_ROOT/dev/plans/release-state-0.8.20.json"
+   842	set +e
+   843	D9D_DERIVED="$(python3 -c '
+   844	import json, sys
+   845	try:
+   846	    s = json.load(open(sys.argv[1]))
+   847	except Exception as e:
+   848	    print("ERR unreadable state file: %s" % e); raise SystemExit(0)
+   849	t = s.get("next_slice")
+   850	if isinstance(t, bool) or not isinstance(t, int):
+   851	    print("ERR next_slice is %r, not an int — end-of-ladder or malformed. "
+   852	          "Re-point this arm at a live release; do NOT skip it." % (t,))
+   853	    raise SystemExit(0)
+   854	landed = sorted(n for n in (s.get("landed") or []) if isinstance(n, int))
+   855	prior = [n for n in landed if n < t]
+   856	if not prior:
+   857	    print("ERR no landed slice strictly below next_slice %d" % t); raise SystemExit(0)
+   858	b = prior[-1]
+   859	sha = next((e.get("sha") for e in (s.get("ladder") or []) if e.get("slice") == b), None)
+   860	if not sha:
+   861	    print("ERR predecessor Slice %d records no landing sha" % b); raise SystemExit(0)
+   862	print("OK %d %d %s %s" % (t, b, sha, "LANDED" if t in landed else "PENDING"))
+   863	' "$D9D_STATE_FILE" 2>&1)"
+   864	D9D_DERIVE_RC=$?
+   865	set -e
+   866	read -r D9D_OK D9D_TARGET D9D_BASE D9D_SHA D9D_TARGET_STATE <<<"$D9D_DERIVED" || true
+   867	if [ "$D9D_DERIVE_RC" -ne 0 ] || [ "${D9D_OK:-}" != "OK" ]; then
+   868	  fail "arm 9d (state derivation): rc=$D9D_DERIVE_RC out=[$D9D_DERIVED]"
+   869	else
+   870	  # The banner MUST track the target's landed state in both directions.
+   871	  if [ "$D9D_TARGET_STATE" = "LANDED" ]; then D9D_WANT_BANNER=present
+   872	  else D9D_WANT_BANNER=absent; fi
+   873	  set +e
+   874	  D9D_OUT="$("$REPO_ROOT/scripts/commission-manifest.sh" 0.8.20 "$D9D_TARGET" 2>&1)"
+   875	  D9D_RC=$?
+   876	  set -e
+   877	  D9D_BASE_LINE="$(grep -m1 '^  base sha' <<<"$D9D_OUT" || true)"
+   878	  if grep -q '⚠ HISTORICAL' <<<"$D9D_OUT"; then D9D_GOT_BANNER=present
+   879	  else D9D_GOT_BANNER=absent; fi
+   880	  if [ "$D9D_RC" -eq 0 ] \
+   881	     && grep -qF "$D9D_SHA" <<<"$D9D_BASE_LINE" \
+   882	     && grep -qF "(Slice $D9D_BASE " <<<"$D9D_BASE_LINE" \
+   883	     && [ "$D9D_GOT_BANNER" = "$D9D_WANT_BANNER" ]; then
+   884	    pass "real repo — Slice $D9D_TARGET's base is Slice $D9D_BASE's landing merge ($D9D_SHA) on the base line, and the HISTORICAL banner is $D9D_GOT_BANNER as the state file's landed set requires ($D9D_TARGET_STATE)"
+   885	  else
+   886	    fail "arm 9d (real base line, derived target=Slice $D9D_TARGET): rc=$D9D_RC want base=[Slice $D9D_BASE / $D9D_SHA] banner=$D9D_WANT_BANNER; got banner=$D9D_GOT_BANNER line=[$D9D_BASE_LINE]"
+   887	  fi
+   888	fi
+   889	
+   890	# --- Arm 9e: the REAL manifest's pin path is emitted as a CITATION ----------
+   891	# The live half of arms 5h/5i. The pin line must render the path the way every
+   892	# other cited path renders (through `m.cite`, i.e. backticked and therefore
+   893	# existence-checked), and the path it names must resolve in this checkout. The
+   894	# assertion is value-agnostic — it reads whatever the state file pins to — so it
+   895	# keeps holding when the pin moves. Pre-fix the line was raw text: measured RED.
+   896	REAL_PIN_LINE="$(grep -m1 '^      pinned to' <<<"$REAL_OUT" || true)"
+   897	REAL_PIN="$(sed 's/^ *pinned to *//; s/`//g' <<<"$REAL_PIN_LINE")"
+   898	if grep -qE '^ +pinned to +`[^`]+`$' <<<"$REAL_PIN_LINE" \
+   899	   && [ -n "$REAL_PIN" ] && [ -e "$REPO_ROOT/$REAL_PIN" ]; then
+   900	  pass "real repo — the publish-gate pin is emitted as a citation and resolves ($REAL_PIN)"
+   901	else
+   902	  fail "arm 9e (real pin citation): line=[$REAL_PIN_LINE] pin=[$REAL_PIN]"
+   903	fi
+   904	
+   905	# --- Arm 9c: the real repo's every-release sweep is green ------------------
+   906	set +e
+   907	SWEEP_OUT="$("$REPO_ROOT/scripts/commission-manifest.sh" --verify-all 2>&1)"
+   908	SWEEP_RC=$?
+   909	set -e
+   910	if [ "$SWEEP_RC" -eq 0 ]; then
+
+exec
+/bin/bash -lc 'rg -n "HISTORICAL|base sha|next_slice|landed|prior|predecessor|target" scripts/commission-manifest.sh' in /home/coreyt/projects/fathomdb-worktrees/fix-tc79
+ succeeded in 0ms:
+33:#     ladder, the landed slices + their landing SHAs, the SCHEMA version, the
+65:# CHECK 3 — THE BASE SHA IS THE TARGET SLICE'S PREDECESSOR, never `max(landed)`.
+66:#   For any slice that is not the next one, the newest landed slice can BE the
+67:#   target (or later), and a manifest that says "branch from here" while naming
+68:#   the target's own merge is the agent-worktree-stale-base trap in printed
+69:#   form. §2 takes the greatest landed slice STRICTLY BELOW the target, marks a
+70:#   regeneration of an already-landed slice as HISTORICAL, and says plainly
+71:#   when no predecessor exists rather than emitting a blank or a wrong SHA.
+280:        sel = state.get("next_slice")
+282:            die(["FAIL commission-manifest: `%s` names no `next_slice`." % state_path])
+368:    predecessor model a `.get("state_word")` against a state file that no longer
+449:    landed = state.get("landed") or []
+450:    next_slice = state.get("next_slice")
+479:    if next_slice == slice_no:
+483:              % next_slice)
+493:    # STRICTLY BELOW slice_no. It is NOT max(landed). For any slice that is not
+495:    # can select the target's OWN landing merge or a later one, i.e. tell an
+500:    # relative to the target and never to the tip of `landed`.
+504:    # every slice landed since — the same stale-base trap from the other side.
+505:    # The predecessor is the ancestry-maximal choice that still excludes the
+506:    # target itself, so dependencies are CROSS-CHECKED against it instead.
+508:    landed_nums = sorted({s for s in landed if isinstance(s, int)})
+509:    prior_landed = [s for s in landed_nums if s < slice_no]
+510:    later_landed = [s for s in landed_nums if s > slice_no]
+511:    base_slice = max(prior_landed) if prior_landed else None
+513:    if slice_no in landed_nums:
+514:        m.out("  ⚠ HISTORICAL     Slice %s is ITSELF LANDED (%s), so this is a regeneration:"
+518:        m.out("  base sha         %s  (Slice %s — the newest LANDED slice STRICTLY BEFORE Slice %s)"
+521:        m.out("  base sha         (Slice %s is the predecessor but records NO landing sha)"
+526:        m.out("  base sha         (none — NO landed slice precedes Slice %s)" % slice_no)
+527:        # These two cases are MUTUALLY EXCLUSIVE. "No predecessor" means branch
+529:        # later slices have landed, origin/main carries their merges, so printing
+533:        if later_landed:
+534:            m.out("  ⚠ TIP IS AHEAD   Slice(s) %s landed AFTER this one, so origin/main already"
+535:                  % ", ".join(str(s) for s in later_landed))
+542:            m.out("                   predecessor merge: branch from `git rev-parse origin/main` at STEP 0.")
+553:    m.out("  landed so far    %s" % (", ".join(
+556:        for s in landed) or "none"))
+
+exec
+/bin/bash -lc "sed -n '1,260p' scripts/commission-manifest.sh" in /home/coreyt/projects/fathomdb-worktrees/fix-tc79
+ succeeded in 0ms:
+#!/usr/bin/env bash
+# scripts/commission-manifest.sh — T3b (DOC-HYGIENE-2): the GENERATED COMMISSION
+# MANIFEST. Given a release and a slice, emit the citation list an orchestrator
+# brief needs — design-of-record paths, contract paths, plan section anchors, the
+# base SHA, the worktree rules and the stop conditions — and HARD-FAIL if any of
+# it has rotted.
+#
+# ---------------------------------------------------------------------------
+# WHY (measured, not hypothetical)
+# ---------------------------------------------------------------------------
+# Commissioning a slice meant hand-assembling the same list every time out of a
+# 5-12 file fan-out (the master, the plan, the STATUS board, the hand-off, the
+# ledgers, the design tier), and NOTHING checked that the paths it cited still
+# resolved. T1d measured what that costs on the anchor axis: the TC-45 pointers
+# in `dev/plans/plan-0.8.20.md` were ~2,100 lines off and, per `git log`, had
+# never been correct. A citation nobody checks rots silently.
+#
+# THIS REPLACES A HAND-MAINTAINED BRIEF TEMPLATE; it does not add one. That shape
+# already exists twice in-repo, and the section set emitted below is DERIVED from
+# what those two documents actually contain, so the generated manifest is a real
+# substitute rather than a parallel invention:
+#   * dev/plans/prompts/LIBRARY-BUMP-ORCHESTRATOR-TEMPLATE.md — Assignment
+#     (branch-from tip, worktree path, coupling), STEP 0 Isolate, Escalate-to-LBS,
+#     Closure output.
+#   * dev/plans/prompts/0.8.0-SLICE-TEMPLATE.md — {{CONTRACT_REF}}, {{READING}},
+#     {{MANDATE}}, {{DEFERRED}}, {{AC_IDS}}, {{GUARDRAILS}}, {{DOD}}, §6 scope
+#     discipline, §7 recovery, §9 closure schema.
+#
+# ---------------------------------------------------------------------------
+# WHERE THE FACTS COME FROM (it re-scrapes nothing that already has an owner)
+# ---------------------------------------------------------------------------
+#   * dev/plans/release-state-<release>.json (T2a) is the SINGLE WRITER for the
+#     ladder, the landed slices + their landing SHAs, the SCHEMA version, the
+#     next slice, the AC state and the ruled/unruled decision set. Every one of
+#     those facts below is read from it — never re-derived from prose. Change a
+#     fact THERE and the manifest follows.
+#   * `status:` frontmatter on dev/design/**/*.md (T2c) selects the design tier,
+#     so the design-of-record list is derived, not a hardcoded list.
+#   * The plan's own `##` headings supply the section anchors, looked up by ROLE
+#     keyword rather than by line number (T1d's ban) or by a frozen title string.
+#
+# ---------------------------------------------------------------------------
+# HOW UNREVIEWED IS HANDLED (deliberate, and the honest part)
+# ---------------------------------------------------------------------------
+# T2c's backfill was conservative on purpose: most design docs are UNREVIEWED,
+# which means "nobody has classified this yet" — NOT "this is current" — and
+# scripts/lint-design-status.sh proves the PRESENCE of a status field, never its
+# TRUTH (the classification is a separate owed slice, TC-50). So this manifest
+# NEVER presents an UNREVIEWED doc as authoritative: each cited doc carries its
+# recorded status inline, UNREVIEWED/UNKNOWN rows are explicitly marked
+# unclassified with the TC-50 pointer, and the section header says the status is
+# recorded rather than verified. The reader judges; the generator does not
+# launder.
+#
+# ---------------------------------------------------------------------------
+# WHAT IT ENFORCES (two hard checks + one guard)
+# ---------------------------------------------------------------------------
+# CHECK 1 — EVERY CITED PATH MUST EXIST. Always on, not a `--verify` extra. A
+#   path that does not resolve is a HARD failure and the manifest is NOT emitted:
+#   printing a brief with one dead citation in it is the artifact this replaces.
+# CHECK 2 — EVERY CITED ANCHOR MUST OCCUR. Anchors are greppable section
+#   headings/symbols, never `file:line` (T1d RULE 1), and each is verified by
+#   literal match inside the file it names (T1d RULE 2). Swapping an unverified
+#   NUMBER for an unverified SYMBOL would just launder a bad pointer.
+# CHECK 3 — THE BASE SHA IS THE TARGET SLICE'S PREDECESSOR, never `max(landed)`.
+#   For any slice that is not the next one, the newest landed slice can BE the
+#   target (or later), and a manifest that says "branch from here" while naming
+#   the target's own merge is the agent-worktree-stale-base trap in printed
+#   form. §2 takes the greatest landed slice STRICTLY BELOW the target, marks a
+#   regeneration of an already-landed slice as HISTORICAL, and says plainly
+#   when no predecessor exists rather than emitting a blank or a wrong SHA.
+# GUARD — TC-37 VACUOUS PASS (this repo's named failure class). Zero design
+#   citations for the slice, zero citations overall, zero paths verified, or a
+#   sweep that discovers zero state files: all HARD failures. A manifest that is
+#   empty has briefed nobody while looking green.
+#
+# READ-ONLY: emits to stdout, writes no file into the repo. It records state and
+# cites decisions; it changes no slot, scope, requirement, AC or ruling.
+#
+# Usage:
+#   scripts/commission-manifest.sh <release> <slice|next> [--verify]
+#   scripts/commission-manifest.sh --verify-all
+# Exit: 0 = manifest emitted (or verified) with every path and anchor resolving;
+#       1 = a dead citation, an unknown release/slice, or a vacuous manifest.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+usage() {
+  cat <<'USAGE'
+usage:
+  scripts/commission-manifest.sh <release> <slice|next> [--verify]
+  scripts/commission-manifest.sh --verify-all
+
+  <release>   a release with a dev/plans/release-state-<release>.json (e.g. 0.8.20)
+  <slice>     a slice number in that file's ladder, or the word `next`
+  --verify    run the path/anchor existence checks and print only the counts
+  --verify-all  verify the NEXT slice of every release-state file (CI shape)
+USAGE
+}
+
+MODE="emit"
+RELEASE=""
+SLICE=""
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help) usage; exit 0 ;;
+    --verify) MODE="verify" ;;
+    --verify-all) MODE="verify-all" ;;
+    -*) echo "FAIL commission-manifest: unknown option $arg" >&2; usage >&2; exit 1 ;;
+    *)
+      if [ -z "$RELEASE" ]; then RELEASE="$arg"
+      elif [ -z "$SLICE" ]; then SLICE="$arg"
+      else echo "FAIL commission-manifest: unexpected argument $arg" >&2; usage >&2; exit 1; fi ;;
+  esac
+done
+
+if [ "$MODE" != "verify-all" ] && { [ -z "$RELEASE" ] || [ -z "$SLICE" ]; }; then
+  echo "FAIL commission-manifest: a release AND a slice are required." >&2
+  usage >&2
+  exit 1
+fi
+
+# python3 carries the JSON parse, the design-tier scan and the citation checks.
+# A gate that cannot run must fail loudly, never skip (TC-37).
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "FAIL commission-manifest: python3 not found; the state-file parser and the" >&2
+  echo "  citation existence checks cannot run. A tool that cannot check its own" >&2
+  echo "  citations must not emit them (TC-37)." >&2
+  exit 1
+fi
+
+MODE="$MODE" RELEASE="$RELEASE" SLICE="$SLICE" python3 - <<'PY'
+import glob
+import json
+import os
+import re
+import sys
+
+MODE = os.environ["MODE"]
+RELEASE = os.environ["RELEASE"]
+SLICE_SEL = os.environ["SLICE"]
+
+STATE_GLOB = "dev/plans/release-state-*.json"
+
+# Fixed infrastructure the manifest cites. These are SOURCES OF RECORD, not
+# restatements: the manifest points at them and stops. Every one is existence-
+# checked, so a rename fails here rather than being handed to an agent.
+ORCH = "dev/design/orchestration.md"
+HANDOFF = "dev/plans/prompts/0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md"
+LBO_TEMPLATE = "dev/plans/prompts/LIBRARY-BUMP-ORCHESTRATOR-TEMPLATE.md"
+SLICE_TEMPLATE = "dev/plans/prompts/0.8.0-SLICE-TEMPLATE.md"
+PREFLIGHT = "scripts/preflight.sh"
+ACCEPTANCE = "dev/acceptance.md"
+AGENTS = "AGENTS.md"
+SURFACE_ALLOWLIST = "src/conformance/governed-surface-allowlist.json"
+SURFACE_PIN = "scripts/governed-surface-pin.json"
+CODEX_DIR = "dev/plans/runs/codex"
+DESIGN_ROOT = "dev/design"
+
+# T1d RULE 1's shape, applied to this tool's OWN output: a manifest that emitted
+# a `name:123` pointer would reintroduce the class T1d closed.
+LINE_ANCHOR_RE = re.compile(r"`[A-Za-z_][A-Za-z0-9_.+-]*:[0-9]{3,}(-[0-9]+)?\+?`")
+
+# Status ordering for the design tier. Lower sorts first. UNREVIEWED/UNKNOWN sit
+# BELOW every classified value on purpose — they are queue markers, not verdicts.
+STATUS_RANK = {
+    "ACTIVE": 0, "locked": 1, "accepted": 1, "adopted": 1, "ratified": 1,
+    "signed": 1, "proposal": 3, "proposed": 3, "COMPLETE": 2, "PROPOSED": 3,
+    "UNKNOWN": 8, "UNREVIEWED": 9, "SUPERSEDED": 10,
+}
+UNCLASSIFIED = ("UNREVIEWED", "UNKNOWN")
+
+
+def die(lines):
+    for ln in lines:
+        print(ln, file=sys.stderr)
+    sys.exit(1)
+
+
+def read(path):
+    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+        return fh.read()
+
+
+def frontmatter_status(path):
+    """Parse `status:` exactly as scripts/lint-design-status.sh does."""
+    try:
+        text = read(path)
+    except OSError:
+        return None
+    lines = text.split("\n")
+    if not lines or lines[0].strip() != "---":
+        return None
+    block = []
+    for ln in lines[1:]:
+        if ln.rstrip() == "---":
+            break
+        block.append(ln)
+    else:
+        return None
+    for ln in block:
+        m = re.match(r"^status:\s*(.*?)\s*$", ln)
+        if m and m.group(1):
+            return m.group(1)
+    return None
+
+
+class Manifest:
+    """Accumulates the emitted lines AND the citations they make, so the
+    existence checks run over exactly what the brief says — not a parallel list
+    that could drift from it."""
+
+    def __init__(self):
+        self.lines = []
+        self.cites = []      # (path, needle|None, label)
+        self.problems = []
+
+    def out(self, text=""):
+        self.lines.append(text)
+
+    def cite(self, path, needle=None, label=""):
+        self.cites.append((path, needle, label))
+        if needle is not None:
+            return "`%s` in `%s`" % (needle, path)
+        return "`%s`" % path
+
+    def anchor(self, path, keywords, role, required=True):
+        """Resolve a section anchor by ROLE keyword against the file's own
+        headings. Never a line number (T1d RULE 1); always verified (RULE 2)."""
+        try:
+            text = read(path)
+        except OSError:
+            self.problems.append(
+                "FAIL commission-manifest: cannot read `%s` while resolving the %s anchor."
+                % (path, role))
+            self.cites.append((path, None, role))
+            return None
+        for ln in text.split("\n"):
+            if not ln.startswith("#"):
+                continue
+            low = ln.lower()
+            if all(k in low for k in keywords):
+                return self.cite(path, ln.strip(), role)
+        if required:
+            self.problems.append(
+                "FAIL commission-manifest: `%s` has no heading matching %s (role %s).\n"
+                "  The section was renamed or removed, so the brief would cite a heading\n"
+                "  that no longer exists. Re-point the role or restore the heading."
+                % (path, " + ".join("'%s'" % k for k in keywords), role))
+        return None
+
+
+def load_state(release):
+    path = "dev/plans/release-state-%s.json" % release
+    known = sorted(
+        re.sub(r"^dev/plans/release-state-(.*)\.json$", r"\1", p)
+        for p in glob.glob(STATE_GLOB))
+    if not known:
+        die(["FAIL commission-manifest: ZERO release-state files under %s." % STATE_GLOB,
+             "  There is nothing to generate a manifest FROM, so exiting 0 would vouch",
+
+codex
+I’ve traced the changed arm through the generator. The new derivation does fail loudly on malformed or missing state despite the Python exits being `0`, because the shell checks the first parsed token; the more important question is whether the assertions are independent enough to catch the intended defect.
+exec
+/bin/bash -lc "sed -n '260,580p' scripts/commission-manifest.sh" in /home/coreyt/projects/fathomdb-worktrees/fix-tc79
+ succeeded in 0ms:
+             "  There is nothing to generate a manifest FROM, so exiting 0 would vouch",
+             "  for nothing (TC-37). Either the state files moved or this is not the repo."])
+    if not os.path.isfile(path):
+        die(["FAIL commission-manifest: unknown release '%s' — no release-state file at" % release,
+             "  `%s`. Releases that DO have one: %s." % (path, ", ".join(known)),
+             "  The state file is the single writer (T2a); a manifest is not generated",
+             "  from prose."])
+    try:
+        return path, json.loads(read(path))
+    except (OSError, ValueError) as exc:
+        die(["FAIL commission-manifest: `%s` is not parseable as JSON: %s" % (path, exc)])
+
+
+def pick_slice(state, state_path, sel):
+    ladder = state.get("ladder") or []
+    known = [e.get("slice") for e in ladder]
+    if not ladder:
+        die(["FAIL commission-manifest: `%s` declares an EMPTY ladder." % state_path,
+             "  A manifest cannot be generated for a release with no slices (TC-37)."])
+    if str(sel).lower() == "next":
+        sel = state.get("next_slice")
+        if sel is None:
+            die(["FAIL commission-manifest: `%s` names no `next_slice`." % state_path])
+    try:
+        want = int(sel)
+    except (TypeError, ValueError):
+        die(["FAIL commission-manifest: slice '%s' is not a number (or the word `next`)." % sel])
+    for entry in ladder:
+        if entry.get("slice") == want:
+            return want, entry
+    die(["FAIL commission-manifest: slice %s is not in the %s ladder declared by `%s`."
+         % (want, state.get("release", "?"), state_path),
+         "  Known slices: %s." % ", ".join(str(s) for s in known)])
+
+
+def slice_tokens(entry):
+    """Derive the search tokens for the design tier from T2a's OWN fields, so the
+    required-reading list follows the state file rather than a hardcoded map.
+    Shapes only — snake_case identifiers and the repo's structured ids."""
+    blob = "%s %s" % (entry.get("short") or "", entry.get("title") or "")
+    pats = [
+        r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b",   # dense_readiness, flush_embeddings
+        r"\bTC-[0-9]+\b",                        # carry/todo ids
+        r"\bR-[0-9]+-[A-Za-z0-9]+\b",            # requirement ids: R-20-DR
+        r"\bC-[0-9]+\b",                         # contract ids
+        r"\bAC-[0-9]+\b",
+        r"\bRUBRIC-[A-Za-z0-9]+\b",
+        r"\b[A-Z]{2,}-[0-9]+\b",                 # OPP-12, EXP-…
+    ]
+    tokens = []
+    for pat in pats:
+        for tok in re.findall(pat, blob):
+            if tok not in tokens:
+                tokens.append(tok)
+    return tokens
+
+
+def scan_design(tokens, release, slice_no):
+    # Second selector, alongside the token scan: a doc whose FILENAME names this
+    # release AND this slice is that slice's own design memo (SLICE-TEMPLATE §3.0
+    # writes one per slice). The release is required in the name precisely
+    # because `dev/design/slice-30-design.md` is 0.8.0's — pulling it into a
+    # 0.8.20 Slice-30 brief would be a wrong citation that still resolves.
+    name_re = re.compile(r"slice[-_ ]?0*%d(?![0-9])" % slice_no, re.I)
+    hits = []
+    for root, dirs, files in os.walk(DESIGN_ROOT):
+        dirs.sort()
+        for name in sorted(files):
+            if not name.endswith(".md"):
+                continue
+            path = os.path.join(root, name)
+            try:
+                text = read(path)
+            except OSError:
+                continue
+            matched = [t for t in tokens if t in text]
+            if release in name and name_re.search(name):
+                matched.append("filename: %s slice %s" % (release, slice_no))
+            if not matched:
+                continue
+            status = frontmatter_status(path) or "(no status:)"
+            hits.append((STATUS_RANK.get(status.split()[0], 7), path, status, matched))
+    hits.sort(key=lambda h: (h[0], h[1]))
+    return hits
+
+
+PRE_SIGN_STATES = ("PRE_SIGNED", "NOT_PRE_SIGNED")
+
+
+def emit_publish_gate(m, gate, state_path):
+    """Brief the publish gate as THREE DISTINCT FACTS, never one status word.
+
+    WHAT WENT WRONG HERE. This line used to print `gate["state_word"]`, a single
+    word the state file derived from `signed: false`. It rendered "AC-079 —
+    unsigned, minted=False" INTO A SLICE-20 COMMISSION MANIFEST, after the HITL
+    had PRE-SIGNED that governed-surface delta (2026-07-25, master F-34), pinned
+    to the exact content of the allowlist. Briefing the next orchestrator that a
+    settled sign-off is still outstanding is how a settled call gets re-decided —
+    the failure this whole manifest exists to prevent (see §8: "Ruled decisions
+    are CITED, never re-decided or restated").
+
+    The three facts, kept apart on purpose:
+      1. `pre_sign_state` — has the HITL signed off on the CONTENT of the delta?
+      2. `minted` / `sign_off_slice` — has the AC been minted and recorded SIGNED?
+         PRE-SIGN IS NOT MINTING; the AC does not exist in the register yet.
+      3. `publish_gated_by` — what actually holds publish. Not an unsigned AC.
+
+    Every required field is read with `[...]`, not `.get(...)`. Under the
+    predecessor model a `.get("state_word")` against a state file that no longer
+    carried the key printed the literal text `AC-999 — None` and every gate still
+    passed: a stale reference rendering a blank is the same defect wearing a
+    different hat, so a missing fact dies here instead."""
+    try:
+        for retired in ("state_word", "signed"):
+            if retired in gate:
+                raise ValueError(
+                    "`acceptance.publish_gate` carries the RETIRED field `%s`. That single "
+                    "collapsed word is what made a Slice-20 manifest brief an already-given "
+                    "HITL pre-sign as an outstanding one. Model the facts separately: "
+                    "pre_sign_state + pre_sign, minted + minted_as + sign_off_slice, "
+                    "publish_gated_by." % retired)
+
+        state_word = gate["pre_sign_state"]
+        if state_word not in PRE_SIGN_STATES:
+            raise ValueError(
+                "`acceptance.publish_gate.pre_sign_state` is %r; it must be one of %s. An "
+                "unrecognised value must fail loudly rather than brief a guessed claim about "
+                "whether the HITL has signed." % (state_word, " or ".join(PRE_SIGN_STATES)))
+
+        ac       = gate["ac"]
+        covers   = gate["covers"]
+        minted   = gate["minted"]
+        mint_slice = gate["sign_off_slice"]
+        as_word  = gate["minted_as"]
+        board_rf = gate["board_ref"]
+        gated_by = gate["publish_gated_by"]
+        pre      = gate["pre_sign"] if state_word == "PRE_SIGNED" else None
+        if state_word == "PRE_SIGNED" and not isinstance(pre, dict):
+            raise ValueError(
+                "`acceptance.publish_gate.pre_sign_state` is PRE_SIGNED but there is no "
+                "`pre_sign` object recording WHO signed, WHEN, on what authority and what "
+                "the pre-sign is PINNED to. A pre-sign with no provenance is not citable.")
+    except (KeyError, ValueError, TypeError) as exc:
+        detail = exc.args[0] if exc.args else exc
+        die(["FAIL commission-manifest: the publish gate in `%s` cannot be briefed —"
+             % state_path,
+             "  %s" % detail,
+             "  A manifest that printed a blank or guessed sign-off status would brief the",
+             "  next orchestrator with a claim nobody made (TC-37: a gate that cannot run",
+             "  must not report a pass)."])
+
+    if minted:
+        head = "%s — MINTED and recorded as %s at Slice %s (board %s)" % (
+            ac, as_word, mint_slice, board_rf)
+    elif state_word == "PRE_SIGNED":
+        head = "%s — PRE-SIGNED by %s on %s (%s); NOT YET MINTED" % (
+            ac, pre["by"], pre["on"], pre["source"])
+    else:
+        head = "%s — NOT PRE-SIGNED, awaiting HITL sign-off; NOT YET MINTED" % ac
+
+    m.out("  publish gate                      %s" % head)
+    m.out("      covers                        %s" % covers)
+    if pre:
+        # REGISTERED, not printed. `pinned_to` names the file whose CONTENT the
+        # HITL pre-sign is bound to — the single most load-bearing path in the
+        # manifest, since the pin is what makes the pre-sign citable at all. It
+        # used to be emitted as raw text, so CHECK 1 never saw it: a mistyped or
+        # renamed pin path still printed, `--verify` still reported 0 dead
+        # citations, and CI stayed green while the brief pointed an orchestrator
+        # at a file that does not exist. Going through `m.cite` is what makes the
+        # path existence-checked like every other cited path.
+        m.out("      pinned to                     %s"
+              % m.cite(pre["pinned_to"], label="publish-gate pre-sign pin"))
+        m.out("      re-opens if                   %s" % pre["reopens_if"])
+    if not minted:
+        m.out("      mints at                      Slice %s, recorded as %s (board %s)"
+              % (mint_slice, as_word, board_rf))
+    if state_word == "PRE_SIGNED":
+        m.out("      publish is gated by           %s — NOT by this AC." % gated_by)
+        m.out("      The pre-sign is a RULED decision: cite it, never re-decide it. Do not")
+        m.out("      brief it as outstanding and do not seek it again.")
+    else:
+        m.out("      publish is gated by           that sign-off AND %s." % gated_by)
+        m.out("      Escalate for the sign-off; never re-decide it yourself.")
+
+
+def build(release, state_path, state, slice_no, entry):
+    m = Manifest()
+    ladder = {e.get("slice"): e for e in state.get("ladder") or []}
+    landed = state.get("landed") or []
+    next_slice = state.get("next_slice")
+    plan = state.get("plan") or ""
+    board = state.get("board") or ""
+    master = state.get("master") or ""
+
+    tokens = slice_tokens(entry)
+    design = scan_design(tokens, release, slice_no)
+
+    # ---- 1. ASSIGNMENT (LBO "Assignment"; SLICE-TEMPLATE heading + §2) -----
+    m.out("=" * 100)
+    m.out("COMMISSION MANIFEST — %s Slice %s (%s)" % (release, slice_no, entry.get("short") or "?"))
+    m.out("=" * 100)
+    m.out("GENERATED, READ-ONLY. It CITES sources of record; it restates no ruling and decides")
+    m.out("nothing. Facts come from the single-writer state file %s" % m.cite(state_path))
+    m.out("(T2a) and from `status:` frontmatter under `%s/` (T2c). Section set derived from" % DESIGN_ROOT)
+    m.out("%s" % m.cite(LBO_TEMPLATE))
+    m.out("and %s — this REPLACES those as the brief" % m.cite(SLICE_TEMPLATE))
+    m.out("assembly step; it does not add a third template to maintain.")
+    m.out()
+    m.out("## 1. ASSIGNMENT   [LBO 'Assignment (filled by LBS)'; SLICE-TEMPLATE title line + §2]")
+    m.out("  release          %s (%s)" % (release, state.get("release_kind") or "kind not stated"))
+    m.out("  slice            %s — %s" % (slice_no, entry.get("title") or "(no title)"))
+    m.out("  requirement id   %s" % (entry.get("short") or "(none)"))
+    m.out("  ladder status    %s" % (entry.get("status") or "?"))
+    m.out("  depends on       %s" % (", ".join(
+        "Slice %s [%s%s]" % (d, (ladder.get(d) or {}).get("status", "UNKNOWN"),
+                             ", %s" % (ladder.get(d) or {}).get("sha")
+                             if (ladder.get(d) or {}).get("sha") else "")
+        for d in (entry.get("depends_on") or [])) or "— (none)"))
+    if next_slice == slice_no:
+        m.out("  sequencing       ✅ this IS the next slice per the state file")
+    else:
+        m.out("  sequencing       ⚠ this is NOT the next slice — the state file says next = %s"
+              % next_slice)
+    m.out("  plan             %s" % m.cite(plan))
+    m.out("  board of record  %s" % m.cite(board))
+    m.out("  master           %s" % m.cite(master))
+    m.out("  codex §9         transcripts go under %s, release-namespaced (TC-RUBRIC-7)"
+          % m.cite(CODEX_DIR))
+    m.out()
+
+    # ---- 2. BASE SHA (LBO "Branch from tip"; SLICE-TEMPLATE §0) ------------
+    # The base is the TARGET SLICE'S PREDECESSOR: the greatest LANDED slice
+    # STRICTLY BELOW slice_no. It is NOT max(landed). For any slice that is not
+    # the next one — a historical regeneration, an out-of-order brief — max()
+    # can select the target's OWN landing merge or a later one, i.e. tell an
+    # operator to branch from the very work they are being commissioned to do.
+    # A wrong branch point is this repo's named agent-worktree-stale-base trap
+    # (it has already cost two slices), and a confidently printed wrong SHA is
+    # exactly what defeats the human sanity check, so this is computed
+    # relative to the target and never to the tip of `landed`.
+    #
+    # `depends_on` is deliberately NOT the base. Dependencies state the MINIMUM
+    # ancestry a slice needs; branching from that minimum would silently drop
+    # every slice landed since — the same stale-base trap from the other side.
+    # The predecessor is the ancestry-maximal choice that still excludes the
+    # target itself, so dependencies are CROSS-CHECKED against it instead.
+    m.out("## 2. BASE SHA + BRANCH POINT   [LBO 'Branch from tip'; SLICE-TEMPLATE §0]")
+    landed_nums = sorted({s for s in landed if isinstance(s, int)})
+    prior_landed = [s for s in landed_nums if s < slice_no]
+    later_landed = [s for s in landed_nums if s > slice_no]
+    base_slice = max(prior_landed) if prior_landed else None
+    base_sha = (ladder.get(base_slice) or {}).get("sha") if base_slice is not None else None
+    if slice_no in landed_nums:
+        m.out("  ⚠ HISTORICAL     Slice %s is ITSELF LANDED (%s), so this is a regeneration:"
+              % (slice_no, (ladder.get(slice_no) or {}).get("sha") or "no sha recorded"))
+        m.out("                   the base below is that slice's PREDECESSOR, never its own merge.")
+    if base_sha:
+        m.out("  base sha         %s  (Slice %s — the newest LANDED slice STRICTLY BEFORE Slice %s)"
+              % (base_sha, base_slice, slice_no))
+    elif base_slice is not None:
+        m.out("  base sha         (Slice %s is the predecessor but records NO landing sha)"
+              % base_slice)
+        m.out("                   The state file is incomplete: take the branch point from")
+        m.out("                   `git log` for that landing and record it in output.json. Do NOT guess.")
+    else:
+        m.out("  base sha         (none — NO landed slice precedes Slice %s)" % slice_no)
+        # These two cases are MUTUALLY EXCLUSIVE. "No predecessor" means branch
+        # from the tip ONLY while the tip is still where this slice was cut. Once
+        # later slices have landed, origin/main carries their merges, so printing
+        # the branch-from-tip instruction beside the TIP IS AHEAD warning emits
+        # precisely the stale-base instruction this section exists to prevent —
+        # and an operator follows the instruction, not the caveat next to it.
+        if later_landed:
+            m.out("  ⚠ TIP IS AHEAD   Slice(s) %s landed AFTER this one, so origin/main already"
+                  % ", ".join(str(s) for s in later_landed))
+            m.out("                   carries work Slice %s never had. There is NO correct automatic"
+                  % slice_no)
+            m.out("                   base for this regeneration: do NOT branch from the tip. Recover")
+            m.out("                   the point of cut from `git log` and record it in output.json.")
+        else:
+            m.out("                   This is the first slice of the release to be cut, so there is no")
+            m.out("                   predecessor merge: branch from `git rev-parse origin/main` at STEP 0.")
+    dep_gap = [d for d in (entry.get("depends_on") or [])
+               if (ladder.get(d) or {}).get("status") == "LANDED"
+               and (base_slice is None or d > base_slice)]
+    if dep_gap:
+        m.out("  ⚠ DEP NOT IN BASE dependency Slice(s) %s are LANDED but do NOT sit at or below the"
+              % ", ".join(str(d) for d in dep_gap))
+        m.out("                   base slice, so the base merge does not contain them. Re-derive the")
+        m.out("                   branch point from `git log` before cutting the worktree.")
+    m.out("  re-verify        `git rev-parse origin/main` at STEP 0 — a later landing may have")
+    m.out("                   advanced the tip since the state file was written.")
+    m.out("  landed so far    %s" % (", ".join(
+        "%s (%s)%s" % (s, (ladder.get(s) or {}).get("sha") or "no sha",
+                       " ⚠ at/after Slice %s" % slice_no if isinstance(s, int) and s >= slice_no else "")
+        for s in landed) or "none"))
+    m.out("  SCHEMA           %s — %s"
+          % (state.get("schema_version"),
+             m.cite(schema_src_path(state), "pub const SCHEMA_VERSION", "schema source")))
+    m.out()
+
+    # ---- 3. WORKTREE RULES (LBO STEP 0; SLICE-TEMPLATE §0) ----------------
+    m.out("## 3. WORKTREE RULES   [LBO 'STEP 0 — Isolate'; SLICE-TEMPLATE §0] — cite, do not restate")
+    for label, kw in (("preflight gate ", ["preflight gate"]),
+                      ("hard rules     ", ["hard rules"]),
+                      ("worktree cleanup", ["worktree cleanup"])):
+        a = m.anchor(ORCH, kw, label.strip())
+        if a:
+            m.out("  %s %s" % (label, a))
+    for label, kw in (("session preflight", ["hard preflight checks"]),
+                      ("mechanics       ", ["orchestration mechanics"])):
+        a = m.anchor(HANDOFF, kw, label.strip())
+        if a:
+            m.out("  %s %s" % (label, a))
+    m.out("  TC-RUBRIC-5      all landing git-writes run in a dedicated linked worktree;")
+    m.out("                   %s hard-fails on the primary checkout"
+          % m.cite(PREFLIGHT, "--landing", "TC-RUBRIC-5"))
+    a = m.anchor(LBO_TEMPLATE, ["step 0"], "LBO isolate step")
+    if a:
+        m.out("  isolate step     %s" % a)
+
+exec
+/bin/bash -lc ./scripts/tests/test_commission_manifest.sh in /home/coreyt/projects/fathomdb-worktrees/fix-tc79
+ exited 126 in 0ms:
+/bin/bash: line 1: ./scripts/tests/test_commission_manifest.sh: Permission denied
+
+exec
+/bin/bash -lc "python3 -c '
+import json
+s=json.load(open(\"dev/plans/release-state-0.8.20.json\"))
+t=s.get(\"next_slice\")
+landed=sorted(n for n in (s.get(\"landed\") or []) if isinstance(n,int))
+prior=[n for n in landed if n<t]
+b=prior[-1]
+sha=next((e.get(\"sha\") for e in (s.get(\"ladder\") or []) if e.get(\"slice\")==b), None)
+print(t,b,sha,\"LANDED\" if t in landed else \"PENDING\")
+' && ./scripts/commission-manifest.sh 0.8.20 30 | sed -n '1,80p'" in /home/coreyt/projects/fathomdb-worktrees/fix-tc79
+ succeeded in 0ms:
+30 25 83b1c818 PENDING
+====================================================================================================
+COMMISSION MANIFEST — 0.8.20 Slice 30 (H7)
+====================================================================================================
+GENERATED, READ-ONLY. It CITES sources of record; it restates no ruling and decides
+nothing. Facts come from the single-writer state file `dev/plans/release-state-0.8.20.json`
+(T2a) and from `status:` frontmatter under `dev/design/` (T2c). Section set derived from
+`dev/plans/prompts/LIBRARY-BUMP-ORCHESTRATOR-TEMPLATE.md`
+and `dev/plans/prompts/0.8.0-SLICE-TEMPLATE.md` — this REPLACES those as the brief
+assembly step; it does not add a third template to maintain.
+
+## 1. ASSIGNMENT   [LBO 'Assignment (filled by LBS)'; SLICE-TEMPLATE title line + §2]
+  release          0.8.20 (even, publish)
+  slice            30 — RUBRIC-H7 can-i-deploy contract gate (R-20-H7)
+  requirement id   H7
+  ladder status    NOT_STARTED
+  depends on       Slice 10 [LANDED, 3cfb3cda], Slice 15 [LANDED, a2022957], Slice 20 [LANDED, 841c307b], Slice 25 [LANDED, 83b1c818]
+  sequencing       ✅ this IS the next slice per the state file
+  plan             `dev/plans/plan-0.8.20.md`
+  board of record  `dev/plans/runs/STATUS-0.8.20.md`
+  master           `dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md`
+  codex §9         transcripts go under `dev/plans/runs/codex`, release-namespaced (TC-RUBRIC-7)
+
+## 2. BASE SHA + BRANCH POINT   [LBO 'Branch from tip'; SLICE-TEMPLATE §0]
+  base sha         83b1c818  (Slice 25 — the newest LANDED slice STRICTLY BEFORE Slice 30)
+  re-verify        `git rev-parse origin/main` at STEP 0 — a later landing may have
+                   advanced the tip since the state file was written.
+  landed so far    0 (403eb254), 5 (1f8ed8bf), 10 (3cfb3cda), 15 (a2022957), 20 (841c307b), 25 (83b1c818)
+  SCHEMA           24 — `pub const SCHEMA_VERSION` in `src/rust/crates/fathomdb-schema/src/lib.rs`
+
+## 3. WORKTREE RULES   [LBO 'STEP 0 — Isolate'; SLICE-TEMPLATE §0] — cite, do not restate
+  preflight gate  `## 1.6 Preflight gate (run before every worktree spawn)` in `dev/design/orchestration.md`
+  hard rules      `## 10. Hard rules summary` in `dev/design/orchestration.md`
+  worktree cleanup `## 11. Worktree cleanup (after phase family closes)` in `dev/design/orchestration.md`
+  session preflight `## 0. Hard preflight checks (CURRENT — apply every session, regardless of the 0.8.3/0.8.4 body below)` in `dev/plans/prompts/0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md`
+  mechanics        `## 6. Orchestration mechanics` in `dev/plans/prompts/0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md`
+  TC-RUBRIC-5      all landing git-writes run in a dedicated linked worktree;
+                   `--landing` in `scripts/preflight.sh` hard-fails on the primary checkout
+  isolate step     `## STEP 0 — Isolate (fail-fast)` in `dev/plans/prompts/LIBRARY-BUMP-ORCHESTRATOR-TEMPLATE.md`
+
+## 4. CONTRACT PATHS   [SLICE-TEMPLATE §1.2 {{CONTRACT_REF}} — on any conflict with a
+   brief, the CONTRACT wins and the conflict is flagged in output.json]
+  requirements/ACs `## 3. Requirements + acceptance criteria (release DoD — frozen at Slice 0)` in `dev/plans/plan-0.8.20.md`
+  AC register      `dev/acceptance.md`
+  invariants       `AGENTS.md` (TDD mandatory; no DB mocking; never --no-verify)
+  governed surface `src/conformance/governed-surface-allowlist.json`
+                   pinned by `scripts/governed-surface-pin.json`
+  design contract  [UNREVIEWED] `dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md`
+
+## 5. PLAN SECTION ANCHORS   [{{MANDATE}}/{{DEFERRED}}/{{DOD}}/{{GUARDRAILS}}] — greppable
+   headings, never `file:line` (T1d ban); each is verified to occur in the file it names.
+  mandate            `## 9. Immediate next slice` in `dev/plans/plan-0.8.20.md`
+  ladder             `## 4. Slice ladder (mod-5)` in `dev/plans/plan-0.8.20.md`
+  scope              `## 1. Goal & scope` in `dev/plans/plan-0.8.20.md`
+  deferred           `### Reserved-gap requirements (D) — minted 2026-07-27` in `dev/plans/plan-0.8.20.md`
+  cross-cut DoD      `## 6. Cross-cutting DoD (X0/X1/X2/X3 — bind EVERY slice)` in `dev/plans/plan-0.8.20.md`
+  do-not-relitigate  `## 2. Decisions already taken (do NOT re-litigate)` in `dev/plans/plan-0.8.20.md`
+  prerequisites      `## 7. Prerequisites` in `dev/plans/plan-0.8.20.md`
+  rulings            `## 10. Decisions taken (recorded)` in `dev/plans/plan-0.8.20.md`
+  open queue         `## 11. Open HITL decision queue (as of 2026-07-24)` in `dev/plans/plan-0.8.20.md`
+
+## 6. DESIGN DOCS FOR THIS SLICE   [SLICE-TEMPLATE §1.4 {{READING}}]
+   Selected by the slice's OWN tokens from the state file: R-20-H7, RUBRIC-H7
+   Status is AS RECORDED in `status:` frontmatter (T2c) — it is NOT a currency claim.
+   scripts/lint-design-status.sh proves the PRESENCE of a status, never its TRUTH;
+   UNREVIEWED means 'nobody has classified this yet' and the classification is owed
+   at TC-50. Rows marked ⚠ unclassified are candidates, NOT design of record.
+  [PROPOSED] `dev/design/0.8.20-slice0-erasure-design.md`
+        matched: R-20-H7
+  [UNREVIEWED] ⚠ unclassified (TC-50) `dev/design/agent-sendmessage-tool-availability-analysis.md`
+        matched: R-20-H7, RUBRIC-H7
+  [UNREVIEWED] ⚠ unclassified (TC-50) `dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md`
+        matched: R-20-H7
+  -> 3 doc(s) matched: 1 classified, 2 unclassified.
+
+## 7. ACCEPTANCE STATE   [SLICE-TEMPLATE §3.1 {{AC_IDS}}] — from the state file, verbatim
+  highest defined non-reserved AC   AC-076
+  reserved                          AC-077 [RESERVED] IR-eval IR-1/IR-2
+  reserved                          AC-078 [CONDITIONALLY RESERVED] IR-eval IR-1/IR-2
+  publish gate                      AC-079 — PRE-SIGNED by HITL on 2026-07-25 (master F-34); NOT YET MINTED
+      covers                        the accumulated governed-surface delta (Slices 5d + 10b + 15b + 15d)
+
+codex
+The suite file is not executable, so direct `./scripts/tests/test_commission_manifest.sh` gets permission denied; the harness likely invokes it with `bash`. I’ll run it that way only to verify the changed arm’s behavior, then finish the review.
+exec
+/bin/bash -lc "rg -n \"test_commission_manifest|bash scripts/tests|scripts/tests/.*\\.sh\" scripts/agent-test.sh .github/workflows/ci.yml" in /home/coreyt/projects/fathomdb-worktrees/fix-tc79
+ succeeded in 0ms:
+.github/workflows/ci.yml:465:        run: bash scripts/tests/test_lint_plan_anchors.sh
+.github/workflows/ci.yml:506:        run: bash scripts/tests/test_check_release_state_views.sh
+.github/workflows/ci.yml:524:        run: bash scripts/tests/test_commission_manifest.sh
+.github/workflows/ci.yml:543:        run: bash scripts/tests/test_design_status_frontmatter.sh
+.github/workflows/ci.yml:566:        run: bash scripts/tests/test_steward_orient.sh
+scripts/agent-test.sh:11:run_capped test-set-version bash scripts/tests/test_set_version.sh
+scripts/agent-test.sh:14:run_capped test-verify-release-gates bash scripts/tests/test_verify_release_gates.sh
+scripts/agent-test.sh:19:run_capped test-preflight-landing bash scripts/tests/test_preflight_landing.sh
+scripts/agent-test.sh:25:run_capped test-check-board-currency bash scripts/tests/test_check_board_currency.sh
+scripts/agent-test.sh:32:run_capped test-check-ledgers bash scripts/tests/test_check_ledgers.sh
+scripts/agent-test.sh:40:run_capped test-check-governed-surface-pin bash scripts/tests/test_check_governed_surface_pin.sh
+scripts/agent-test.sh:44:run_capped test-assert-co-tagging bash scripts/tests/test_assert_co_tagging.sh
+scripts/agent-test.sh:49:run_capped test-embedder-api-no-drift bash scripts/tests/test_verify_embedder_api_no_drift.sh
+scripts/agent-test.sh:54:run_capped test-smoke-scripts bash scripts/tests/test_smoke_scripts.sh
+scripts/agent-test.sh:59:run_capped test-release-workflow-scope bash scripts/tests/test_release_workflow_scope.sh
+scripts/agent-test.sh:64:run_capped test-idempotent-republish bash scripts/tests/test_idempotent_republish.sh
+scripts/agent-test.sh:69:run_capped test-pypi-publish-roundtrip bash scripts/tests/test_pypi_publish_roundtrip.sh
+scripts/agent-test.sh:73:run_capped test-publish-registry-safety bash scripts/tests/test_publish_registry_safety.sh
+scripts/agent-test.sh:77:run_capped test-wait-for-crate-version bash scripts/tests/test_wait_for_crate_version.sh
+scripts/agent-test.sh:81:run_capped test-npm-inject-optional-deps bash scripts/tests/test_npm_inject_optional_deps.sh
+scripts/agent-test.sh:84:run_capped test-actionlint-fixture bash scripts/tests/test_actionlint_fixture.sh
+scripts/agent-test.sh:89:run_capped test-lint-md-hard-fail-on-missing-linter bash scripts/tests/test_lint_md_hard_fail_on_missing_linter.sh
+scripts/agent-test.sh:93:run_capped test-plans-status-frontmatter bash scripts/tests/test_plans_status_frontmatter.sh
+scripts/agent-test.sh:99:run_capped test-lint-plan-anchors bash scripts/tests/test_lint_plan_anchors.sh
+scripts/agent-test.sh:105:run_capped test-check-release-state-views bash scripts/tests/test_check_release_state_views.sh
+scripts/agent-test.sh:114:run_capped test-steward-orient bash scripts/tests/test_steward_orient.sh
+scripts/agent-test.sh:121:run_capped test-commission-manifest bash scripts/tests/test_commission_manifest.sh
+scripts/agent-test.sh:129:run_capped test-md-generators bash scripts/tests/test_md_generators.sh
+
+exec
+/bin/bash -lc 'bash scripts/tests/test_commission_manifest.sh' in /home/coreyt/projects/fathomdb-worktrees/fix-tc79
+ succeeded in 1773ms:
+PASS  rotted plan anchor — a role heading that no longer exists HARD-fails
+PASS  rotted orchestration anchor — the worktree-rules citation HARD-fails
+PASS  rotted symbol — the TC-RUBRIC-5 `--landing` citation HARD-fails when it stops occurring
+PASS  rotted symbol — the state file's SCHEMA source citation HARD-fails
+PASS  zero design citations — an empty manifest HARD-fails (TC-37), never exit 0
+PASS  unknown release — HARD fails and names the releases that DO have a state file
+PASS  unknown slice — HARD fails and names the ladder it is not in
+PASS  known slice — base SHA, contract, design, worktree rules and stop conditions all present
+PASS  publish gate — a PRE-SIGNED gate briefs pre-sign + pin + minting + the separate gate
+PASS  publish gate — a gate that is genuinely NOT pre-signed briefs as awaiting sign-off
+PASS  a state file still carrying the retired `state_word` HARD-fails the manifest
+PASS  pre-sign pin — a `pinned_to` that does not resolve HARD-fails and names the dead path
+PASS  pre-sign pin — a distinct `pinned_to` raises the verified-path count by exactly 1
+PASS  an unrelated design doc is not cited (the scan is token-driven, not a dump)
+PASS  filename selector — this release's slice memo is cited, another release's is not
+PASS  UNREVIEWED docs are surfaced with their status + the TC-50 caveat
+PASS  state-file-driven — a changed base SHA and next slice both move the manifest
+PASS  no bare `name:line` anchors in the emitted manifest (T1d shape)
+PASS  read-only — a generate leaves the worktree byte-clean
+PASS  --verify checks the citations without emitting the brief
+PASS  --verify-all verifies the next slice of every release-state file
+PASS  vacuity guard — a sweep that discovers zero state files HARD-fails
+PASS  target slice already landed — the base is its PREDECESSOR, never its own landing merge
+PASS  an already-landed target is marked HISTORICAL rather than briefed as if pending
+PASS  later slices landed — the base stays the target's immediate predecessor
+PASS  first slice — no predecessor is stated in words + branch-from-tip, not left blank
+PASS  no predecessor but later landings exist — the manifest warns the tip is AHEAD
+PASS  a historical first-slice brief is never ALSO told to branch from the tip
+PASS  gaps in `landed` — the base is the greatest landed slice strictly below the target
+PASS  real repo — the 0.8.20 Slice 20 manifest generates with every path resolving
+PASS  the real manifest emits section anchors only — no `name:line` pointers
+PASS  real repo — Slice 30's base is Slice 25's landing merge (83b1c818) on the base line, and the HISTORICAL banner is absent as the state file's landed set requires (PENDING)
+PASS  real repo — the publish-gate pin is emitted as a citation and resolves (src/conformance/governed-surface-allowlist.json)
+PASS  real repo — --verify-all is green across every live release-state file
+PASS  agent-test.sh runs this fixture suite
+PASS  ci.yml defines a commission-manifest job
+PASS  the CI job runs the SHARED scripts/commission-manifest.sh
+PASS  the commission-manifest job is always-on (no if:, no needs:, not docs_only-gated)
+
+All commission-manifest tests passed
+
+codex
+**Findings**
+
+[low] [scripts/tests/test_commission_manifest.sh:878](/home/coreyt/projects/fathomdb-worktrees/fix-tc79/scripts/tests/test_commission_manifest.sh:878) depends on the literal warning glyph plus `HISTORICAL`. If `commission-manifest.sh` keeps the semantic banner but changes presentation to ASCII, e.g. `WARNING HISTORICAL`, this arm fails even though the behavior is intact. Matching `HISTORICAL` plus the slice-specific text would make it less formatting-sensitive.
+
+**No [P1] findings.** I don’t see a vacuous green path in the new arm: unreadable/malformed state, `next_slice: null`, no predecessor, missing predecessor SHA, failed generator run, missing base line, wrong SHA, wrong slice label, and banner mismatch all route to `fail`. The `set +e` regions capture and check return codes, and the `read ... || true` does not create a silent pass because `${D9D_OK:-}` must be `OK`.
+
+**No [P2] findings.** The arm does use the same state file as the tool for expected target/base/banner state, so it cannot catch defects where the state file itself is wrong or internally inconsistent but both derivations interpret it the same way. It can catch generator drift from that state-derived contract: wrong predecessor selection, wrong base-line SHA, wrong slice label, generator failure, or banner presence not matching `target in landed`. In the current state, `next_slice` is Slice 30 and pending, so this real-repo arm exercises the “banner absent” side; the “banner present for landed target” side remains covered by fixture arm 8f, not by this real-state arm.
+
+Verified with `bash scripts/tests/test_commission_manifest.sh`; it passes.
+tokens used
+50,441
+**Findings**
+
+[low] [scripts/tests/test_commission_manifest.sh:878](/home/coreyt/projects/fathomdb-worktrees/fix-tc79/scripts/tests/test_commission_manifest.sh:878) depends on the literal warning glyph plus `HISTORICAL`. If `commission-manifest.sh` keeps the semantic banner but changes presentation to ASCII, e.g. `WARNING HISTORICAL`, this arm fails even though the behavior is intact. Matching `HISTORICAL` plus the slice-specific text would make it less formatting-sensitive.
+
+**No [P1] findings.** I don’t see a vacuous green path in the new arm: unreadable/malformed state, `next_slice: null`, no predecessor, missing predecessor SHA, failed generator run, missing base line, wrong SHA, wrong slice label, and banner mismatch all route to `fail`. The `set +e` regions capture and check return codes, and the `read ... || true` does not create a silent pass because `${D9D_OK:-}` must be `OK`.
+
+**No [P2] findings.** The arm does use the same state file as the tool for expected target/base/banner state, so it cannot catch defects where the state file itself is wrong or internally inconsistent but both derivations interpret it the same way. It can catch generator drift from that state-derived contract: wrong predecessor selection, wrong base-line SHA, wrong slice label, generator failure, or banner presence not matching `target in landed`. In the current state, `next_slice` is Slice 30 and pending, so this real-repo arm exercises the “banner absent” side; the “banner present for landed target” side remains covered by fixture arm 8f, not by this real-state arm.
+
+Verified with `bash scripts/tests/test_commission_manifest.sh`; it passes.
