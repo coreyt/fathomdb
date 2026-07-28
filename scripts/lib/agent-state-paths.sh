@@ -39,16 +39,34 @@
 # reintroduced silently.
 #
 # ========================= WHAT THE PATTERN MATCHES ==========================
-# HOME-ANCHORED ABSOLUTE paths into a user's Claude Code state directory:
+# HOME-ANCHORED ABSOLUTE paths to ANYTHING beneath a user's encoded Claude Code
+# PROJECT directory:
 #
-#     /home/<user>/.claude/projects/<PROJ>/<session>.jsonl
-#     /Users/<user>/.claude/projects/<PROJ>/subagents/<session>.jsonl
+#     /home/<user>/.claude/projects/<PROJ>/<anything>
+#     /Users/<user>/.claude/projects/<PROJ>/<anything>
 #
 # where <PROJ> is the encoded-cwd project directory, which always begins with a
 # `-` (see discriminator 2). The placeholders above are written WITHOUT that
 # leading `-` on purpose, so this header does not trip the gate it documents.
 #
-# Three deliberate discriminators, each load-bearing:
+# WIDENED IN FIX-1 (TC-86, steward `seq-129`). The pattern originally ALSO
+# demanded a `.jsonl` or `subagents/` component beneath <PROJ>. That was
+# NARROWER THAN THE THREAT and it was found by the implementer's own disclosure,
+# not by a leak: Claude Code writes PERSISTED TOOL OUTPUT under
+# <PROJ>/<session>/tool-results/, whenever a tool result is too large to inline,
+# and those files hold the FULL UNTRUNCATED OUTPUT of whatever the tool did. That
+# is the same content class that leaked in the incident below, in the same
+# directory, ONE COMPONENT OVER — and a reviewer running `rg` across ~/.claude
+# (exactly what produced this gate) hits them just as readily as the .jsonl
+# files. The old pattern returned rc=0 on such a line, so the gate would have
+# CERTIFIED a transcript that leaked them. Session state is not only transcripts;
+# the shape that matters is "a path INTO someone's project state", so that is now
+# what is matched. The widening is STRICT: everything matched before still
+# matches (a `.jsonl`/`subagents/` component is itself a component beneath
+# <PROJ>), so no prior positive was traded away for it.
+#
+# Two deliberate discriminators, each load-bearing and each KEPT through the
+# widening — the pattern is anchored, not loosened into "the word projects":
 #
 #  1. `/home/` or `/Users/` PREFIX REQUIRED. A RELATIVE `.claude/...` reference
 #     — `.claude/agents/steward.md`, `.claude/hooks/seat-path-guard.sh`,
@@ -68,21 +86,24 @@
 #     invented placeholders, not anyone's session state. `x` has no leading `-`;
 #     a real leak always does. See the "GREEN ON THE TREE" note below.
 #
-#  3. A `.jsonl` OR `subagents/` COMPONENT BENEATH THE PROJECT DIRECTORY. That is
-#     the transcript shape — the thing whose leakage publishes conversation
-#     content. It also keeps the pattern off PROSE that merely *names* the
-#     directory, including the redaction banner this very file emits and the one
-#     already on main in
-#     dev/plans/runs/codex/agent-seat-hardening/ASH-Phase2-20260728T034657Z.log,
-#     which quotes `git grep -l '^/home/coreyt/.claude/projects/'`. That string
-#     stops AT `projects/` with no segment beneath it, so it does not match — a
-#     gate that tripped on the record of its own predecessor incident would be
-#     self-defeating.
+# AT LEAST ONE COMPONENT BENEATH <PROJ> is still required — `[^[:space:]]` at the
+# tail, one non-space byte after the project directory's `/`. This is not a third
+# discriminator on the content's SHAPE (that is what fix-1 removed); it is the
+# boundary that keeps the pattern off PROSE that merely *names* the directory,
+# including the redaction banner this very file emits and the one already on main
+# in dev/plans/runs/codex/agent-seat-hardening/ASH-Phase2-20260728T034657Z.log,
+# which quotes `git grep -l '^/home/coreyt/.claude/projects/'`. That string stops
+# AT `projects/` with nothing beneath it, so it does not match — a gate that
+# tripped on the record of its own predecessor incident would be self-defeating.
+# A path with a real component beneath <PROJ> names a real file in someone's
+# project state, whatever its extension.
 #
-# GREEN ON THE TREE: with discriminator 2 in place this pattern has ZERO matches
-# across ALL TRACKED FILES at baseline 1cbde587. Scope therefore did NOT have to
-# be narrowed to dev/plans/runs/**; the gate scans everything tracked, which is
-# what catches a transcript written somewhere unexpected.
+# GREEN ON THE TREE: with both discriminators in place this pattern has ZERO
+# matches across ALL TRACKED FILES — verified at baseline 1cbde587 before the
+# widening and RE-VERIFIED across all tracked files after it, since widening is
+# exactly when false positives appear. Scope therefore did NOT have to be
+# narrowed to dev/plans/runs/**; the gate scans everything tracked, which is what
+# catches a transcript written somewhere unexpected.
 #
 # ============================== WHAT IT IS NOT ===============================
 # This is a HYGIENE pattern for an ACCIDENT, not a secrets scanner and not an
@@ -101,7 +122,7 @@
 # `/`). Note the regex text itself does NOT match the regex: `(home|Users)` and
 # `[^/[:space:]]+` are not literal path bytes, which is why this file is clean
 # under its own gate without needing an exemption.
-AGENT_STATE_PATH_RE='/(home|Users)/[^/[:space:]]+/\.claude/projects/-[^/[:space:]]*/[^[:space:]]*(\.jsonl|subagents/)'
+AGENT_STATE_PATH_RE='/(home|Users)/[^/[:space:]]+/\.claude/projects/-[^/[:space:]]*/[^[:space:]]'
 
 # The in-place replacement for one matched line. REDACT, NEVER DELETE:
 # TC-RUBRIC-7 closes a review on a persisted terminal artifact, so the transcript
@@ -118,8 +139,12 @@ AGENT_STATE_REDACTION_MARKER='[REDACTED TC-86] agent-state path removed (foreign
 #
 # The banner must never match AGENT_STATE_PATH_RE — otherwise redacting a file
 # would leave it dirty and `--redact` could never converge. It names project
-# DIRECTORIES only (no `/home/` prefix, no session file), which is discriminator
-# 3 doing its job.
+# DIRECTORIES only, with NO `/home/`|`/Users/` prefix, which is discriminator 1
+# doing its job. (Under the fix-1 widening the tail no longer requires a
+# `.jsonl`/`subagents/` shape, so the prefix — not the extension — is what keeps
+# the banner clean. Asserted, not assumed: the idempotence arms in
+# scripts/tests/test_check_transcript_hygiene.sh prove a second `--redact` pass
+# is byte-identical, for the widened shapes too.)
 agent_state_redaction_banner() {
   local count="${1:?agent_state_redaction_banner needs a line count}"
   local projects="${2:-(none identified)}"
