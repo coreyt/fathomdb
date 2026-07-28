@@ -182,6 +182,19 @@ agent_state_encode_project_dir() {
 # The `--root` fixture mode has no repo at all. One named constant, one reason.
 AGENT_STATE_OWN_PROJECT_ABS='/home/coreyt/projects/fathomdb'
 
+# The linked-worktree root. DERIVED, because `git worktree add` puts every linked
+# worktree under `<repo>-worktrees/<name>` by this project's convention
+# (TC-RUBRIC-5), and a codex review almost always runs with its cwd there rather
+# than in the primary checkout. Predicate 2 below treats both as INSIDE.
+AGENT_STATE_OWN_WORKTREES_ABS="${AGENT_STATE_OWN_PROJECT_ABS}-worktrees"
+
+# The home directory the repository lives under. Needed only to expand `~` and
+# `$HOME` in a command echo into something comparable with the two roots above.
+# Stated rather than derived by string surgery on the repo path, and the fixture
+# suite asserts the two are consistent (AGENT_STATE_OWN_PROJECT_ABS must live
+# under it) so the pair cannot drift into incoherence unnoticed.
+AGENT_STATE_OWN_HOME_ABS='/home/coreyt'
+
 # The encoded project directory that is NOT hard-checked. Derived, so the
 # encoding rule is exercised rather than transcribed.
 AGENT_STATE_OWN_PROJECT_DIR="$(agent_state_encode_project_dir "$AGENT_STATE_OWN_PROJECT_ABS")"
@@ -205,8 +218,135 @@ function tc86_is_foreign(line,   m, found) {
   }
   return found
 }
+
+# ---- PREDICATE 2 (fix-4): is this echo enumerating a directory OUTSIDE? -----
+# See "FIX-4" below for the argument. These four functions are the whole of it,
+# and they live in the shared prologue for the same reason the pattern does: the
+# GATE and the REDACTOR must agree, byte for byte, on what "outside" means.
+
+# tc86_norm — lexical path normalisation. Deliberately NOT realpath: the paths
+# here come out of a transcript recorded on some other day, in a worktree that
+# no longer exists, so nothing is resolvable and a symlink-following answer
+# would be wrong as often as right. Lexical is also the conservative direction:
+# it cannot be tricked into calling an outside path inside.
+function tc86_norm(p,   n, i, out, parts, k, r) {
+  gsub(/\/+/, "/", p)
+  n = split(p, parts, "/")
+  k = 0
+  for (i = 1; i <= n; i++) {
+    if (parts[i] == "" || parts[i] == ".") continue
+    if (parts[i] == "..") { if (k > 0) k-- ; continue }
+    k++
+    out[k] = parts[i]
+  }
+  r = ""
+  for (i = 1; i <= k; i++) r = r "/" out[i]
+  if (r == "") r = "/"
+  return r
+}
+
+# tc86_under — component-boundary containment. `index(p, root)` alone would call
+# /home/coreyt/projects/fathomdb-notes "inside" /home/coreyt/projects/fathomdb.
+function tc86_under(p, root) {
+  if (root == "") return 0
+  if (p == root) return 1
+  if (index(p, root "/") == 1) return 1
+  return 0
+}
+
+# tc86_target_is_oor — is this argument a directory outside this repository?
+#
+# THE JUDGEMENT IS DELIBERATELY NARROW, and the narrowness is the reason the gate
+# is usable. Only a HOME-ANCHORED resolved path counts as outside: /home/<user>/
+# or /Users/<user>/. A listing of /tmp, /etc or /usr is not this threat — it is
+# not the operator private data this gate exists for, and /tmp in particular is
+# where every fixture in the suite lives. Everything else that is not under one
+# of the two repo roots is simply not judged.
+function tc86_target_is_oor(t, cwd,   abs) {
+  gsub(QRE, "", t)
+  if (t == "") return 0
+  # A command substitution or a variable this gate cannot resolve is not
+  # guessed at. Silence here is a reach limit, stated, not a clearance.
+  if (substr(t, 1, 2) == "$(") return 0
+  if (substr(t, 1, 1) == "`") return 0
+  if (t == "~") t = HOMEABS
+  else if (substr(t, 1, 2) == "~/") t = HOMEABS substr(t, 2)
+  else if (t == "$HOME" || t == "${HOME}") t = HOMEABS
+  else if (substr(t, 1, 6) == "$HOME/") t = HOMEABS substr(t, 6)
+  else if (substr(t, 1, 8) == "${HOME}/") t = HOMEABS substr(t, 8)
+  if (substr(t, 1, 1) == "/") abs = t
+  else {
+    # A relative target with no `..` cannot leave the cwd, and the cwd of a
+    # codex review is the worktree. Only an ESCAPING relative path is resolved,
+    # which is what keeps this off the thousands of ordinary `ls dev/...` lines.
+    if (t !~ /(^|\/)\.\.(\/|$)/) return 0
+    if (cwd == "") return 0
+    abs = cwd "/" t
+  }
+  abs = tc86_norm(abs)
+  if (abs !~ /^\/home($|\/)/ && abs !~ /^\/Users($|\/)/) return 0
+  if (tc86_under(abs, ROOT1)) return 0
+  if (tc86_under(abs, ROOT2)) return 0
+  return 1
+}
+
+# tc86_echo_is_oor — how many out-of-repo targets does this command echo carry?
+#
+# The echo is a codex exec record: `<shell> -c <command> in <cwd>`. The cwd is
+# taken from the echo ITSELF, not from the environment running the gate — the
+# transcript is the only witness to where the command ran, and `../..` means
+# nothing without it.
+function tc86_echo_is_oor(line,   cwd, payload, n, i, tok, bare, coll, rgenum, hits) {
+  cwd = ""
+  payload = line
+  if (match(line, / in \/[^ ]+$/)) {
+    cwd = substr(line, RSTART + 4)
+    payload = substr(line, 1, RSTART - 1)
+  }
+  # `rg` is an enumerator ONLY with --files. `rg PATTERN <dir>` is a content
+  # search; sweeping it in would make this a far broader control than the one
+  # that was ruled. Checked on the whole payload before separators are rewritten.
+  rgenum = (payload ~ /(^|[ \t])--files([ \t]|$)/)
+  gsub(/[;|&<>()]+/, " @TC86SEP@ ", payload)
+  n = split(payload, tok, /[ \t]+/)
+  coll = 0
+  hits = 0
+  for (i = 1; i <= n; i++) {
+    bare = tok[i]
+    gsub(QRE, "", bare)
+    if (bare == "") continue
+    if (bare == "@TC86SEP@") { coll = 0; continue }
+    if (bare in ENUM) { coll = 1; continue }
+    if (bare == RGCMD) { coll = rgenum; continue }
+    if (!coll) continue
+    if (substr(bare, 1, 1) == "-") continue
+    if (tc86_target_is_oor(bare, cwd)) hits++
+  }
+  return hits
+}
+
+# tc86_is_cmd_noise — a line that is the COMMAND COMPLAINING, not a listing.
+# `ls: cannot access ...: No such file or directory` enumerates nothing, and
+# treating it as a finding would put a redaction banner on top of a transcript
+# that leaked precisely nothing.
+function tc86_is_cmd_noise(l) {
+  if (l ~ /: No such file or directory$/) return 1
+  if (l ~ /: Permission denied$/) return 1
+  if (l ~ /(^|[ \t])(ls|find|tree|rg|sed|grep|cat): /) return 1
+  return 0
+}
+
 BEGIN { RE = ENVIRON["TC86_RE"]; OWN = ENVIRON["TC86_OWN"];
-        PROJRE = ENVIRON["TC86_PROJRE"]; BARERE = ENVIRON["TC86_BARERE"] }
+        PROJRE = ENVIRON["TC86_PROJRE"]; BARERE = ENVIRON["TC86_BARERE"]
+        HOMEABS = ENVIRON["TC86_HOMEABS"]; ROOT1 = ENVIRON["TC86_ROOT1"]
+        ROOT2 = ENVIRON["TC86_ROOT2"]; STATUSRE = ENVIRON["TC86_STATUSRE"]
+        RGCMD = ENVIRON["TC86_RGCMD"]; QUIET = (ENVIRON["TC86_MODE"] == "count")
+        # The quote characters are built rather than written: this whole program
+        # is a single-quoted shell string, so a literal apostrophe in it would
+        # end the string. chr(39) is that apostrophe.
+        QRE = "[" sprintf("%c", 39) "\"]"
+        tc86_nc = split(ENVIRON["TC86_ENUMCMDS"], tc86_cv, " ")
+        for (tc86_ci = 1; tc86_ci <= tc86_nc; tc86_ci++) ENUM[tc86_cv[tc86_ci]] = 1 }
 '
 
 # agent_state_classify_file <file> — print "<foreign-line-count> <own-line-count>".
@@ -270,9 +410,18 @@ AGENT_STATE_REDACTION_MARKER='[REDACTED TC-86] agent-state path removed (foreign
 #     exec
 #     /bin/bash -c 'ls /home/coreyt/.claude/projects' in <cwd>
 #      succeeded in 0ms:
-#     -home-coreyt-projects-ado-mcp
-#     -home-coreyt-projects-airlock
+#     -home-someone-projects-<a client name>
+#     -home-someone-projects-<a domain name>
 #     ... 17 lines ...
+#
+# The two sample lines above are PLACEHOLDERS, and they were not always. This
+# comment originally reproduced two of the real encoded directory names, which
+# meant the file explaining the redaction was itself one of the files carrying
+# what had been redacted: `git grep` found one of them right here, in the
+# library, weeks after fix-3 declared the tree clean. Documentation of a leak is
+# not exempt from the leak, and naming the offender in the correction repeats it
+# — which is why the sentence you are reading does not name it either. Do not put
+# a real name back.
 #
 # That is an INVENTORY OF A PRIVATE PROJECT PORTFOLIO in a PUBLIC repository, and
 # several of the names read as client or domain work. It is lower severity than
@@ -288,15 +437,17 @@ AGENT_STATE_REDACTION_MARKER='[REDACTED TC-86] agent-state path removed (foreign
 #     already on main. So block ENTRY (remediation only) also accepts
 #     AGENT_STATE_PROJECTS_DIR_RE below, the bare state-directory prefix.
 #
-#  2. KNOWN LIMIT, STATED PLAINLY: **the gate does NOT detect a bare directory
-#     listing.** The listed lines are bare encoded directory names with nothing
-#     beneath them; no path predicate that could see them would survive contact
-#     with ordinary prose naming a project directory (this repo's own docs, this
-#     very comment, and the redaction banners all do it). Widening the predicate
-#     is NOT authorised and would re-create the false-positive problem `seq-130`
-#     ruled against. So detection stays where it is and REMEDIATION REACHES
-#     FURTHER THAN DETECTION: `--redact` can remove such a listing WHEN A HUMAN
-#     POINTS IT AT THE FILE. Finding one is a review act, not a gate act.
+#  2. CLAIMED LIMIT — **SUPERSEDED BY FIX-4 BELOW, AND IT WAS WRONG.** Fix-3
+#     recorded that "the gate does NOT detect a bare directory listing", on the
+#     ground that the listed lines are bare names and no PATH predicate that
+#     could see them would survive contact with prose. The premise was true and
+#     the conclusion did not follow: the listing is unmatched, but the COMMAND
+#     ECHO ABOVE IT is a mechanical shape, and fix-4 detects THAT instead. The
+#     lesson is worth more than the paragraph it replaces — "no predicate can see
+#     this content" was allowed to stand in for "no predicate can see this
+#     event", and a whole class stayed undetected for it. Remediation-reaches-
+#     further-than-detection was a real design in fix-2; here it was a reasoning
+#     error dressed in the same words.
 #
 # WHICH BLOCKS QUALIFY. Entry on the bare prefix alone would also catch
 # `ls ~/.claude/projects/<own>` — whose output is this repo's OWN session-file
@@ -338,42 +489,145 @@ AGENT_STATE_BARE_PROJECT_DIR_RE='^-[^-/[:space:]][^/[:space:]]*$'
 # AGENT_STATE_PATH_RE and `--redact` converges (asserted in Arm Z).
 AGENT_STATE_CONTENT_MARKER_FMT='[REDACTED TC-86] %d line(s) of agent-state CONTENT removed: this block was the OUTPUT of the command echoed above, which read a Claude Code state directory.'
 
-# agent_state_redact_content_blocks <in-file> <out-file> <count-file>
+# ============================================================================
+# FIX-4: OUT-OF-REPO DIRECTORY INVENTORIES (HITL 2026-07-28, ruling "A+D").
+# ============================================================================
+# Fix-3 redacted the `ls ~/.claude/projects` inventory and closed. It missed a
+# SECOND, EARLIER block in the very same transcript:
 #
-# Writes the redacted stream to <out-file> and
-# "<removed-lines> <blocks> <foreign-inventory-lines>" to <count-file>. Non-block
-# lines pass through byte-intact; a file with no agent-state-reading exec record
-# comes through unchanged, which is what makes `--redact` a no-op on the sixteen
-# ordinary own-project path citations.
-agent_state_redact_content_blocks() {
-  local in="${1:?agent_state_redact_content_blocks needs an input file}"
-  local out="${2:?agent_state_redact_content_blocks needs an output file}"
-  local cf="${3:?agent_state_redact_content_blocks needs a count file}"
-  TC86_RE="$AGENT_STATE_PATH_RE" TC86_OWN="$AGENT_STATE_OWN_PROJECT_DIR" \
-  TC86_PROJRE="$AGENT_STATE_PROJECTS_DIR_RE" TC86_BARERE="$AGENT_STATE_BARE_PROJECT_DIR_RE" \
-  TC86_COUNTFILE="$cf" TC86_CFMT="$AGENT_STATE_CONTENT_MARKER_FMT" \
-  awk "$AGENT_STATE_AWK_PROLOGUE"'
+#     exec
+#     /bin/bash -c 'ls /home/coreyt/projects' in <a worktree>
+#      succeeded in 0ms:
+#     <33 directory names, several of them client or domain work>
+#
+# No `.claude/` component appears anywhere in that command or its output, so
+# AGENT_STATE_PATH_RE cannot see it in ANY of its widenings, and neither can
+# AGENT_STATE_PROJECTS_DIR_RE. It had been on origin/main for roughly three
+# weeks, in four tracked files, two of which reached the same listing through
+# `ls ../..` from a worktree — with no home-anchored text on the echo at all.
+#
+# THE DIAGNOSIS IS NOT "THE PATTERN WAS TOO NARROW". It is that ONE predicate was
+# being asked to cover TWO shapes. Predicate 1 answers "does this line name a
+# file inside somebody\047s Claude Code project state?" — a good question, and no
+# widening of it reaches a listing of the user\047s home directory, because that
+# listing has nothing to do with Claude Code. So fix-4 adds a SECOND predicate
+# beside it rather than stretching the first:
+#
+#   PREDICATE 2 — a command ECHO that ENUMERATES a directory NOT under this
+#                 repository, FOLLOWED BY AN OUTPUT BLOCK.
+#
+# HARD, WITH NO OWN/FOREIGN SPLIT. That asymmetry with predicate 1 is deliberate
+# and was ruled explicitly. Predicate 1 has an exemption because this repo\047s
+# docs cite its own memory store BY PATH on purpose, constantly, and a gate that
+# failed on those would be switched off. Nothing in this repository ever needs
+# the OUTPUT of `ls` on a directory outside it. There is no legitimate case to
+# exempt, so there is no exemption — including for `~/.claude/projects/<own>`,
+# which fix-3 left byte-intact on the FOREIGN axis and which is removed here on
+# this one. Two axes, two answers, and the transcript is judged on both.
+#
+# WHAT COUNTS AS "ENUMERATES":
+#   * AGENT_STATE_ENUM_COMMANDS — `ls`, `find`, `tree`. Their non-flag arguments
+#     are targets.
+#   * `rg` ONLY WITH --files. `rg --files` lists a tree; `rg PATTERN <dir>` is a
+#     content search. One of the four exposed files reached the portfolio through
+#     `rg --files . .. ../.. ../../..`, so --files had to be in; sweeping in every
+#     out-of-repo READ would make this a much broader control than the one ruled,
+#     so the rest is out. The boundary is asserted in the fixture suite (ZC13), so
+#     it is a decision on the record rather than an accident of implementation.
+#
+# WHAT COUNTS AS "NOT UNDER THIS REPOSITORY": see tc86_target_is_oor in the awk
+# prologue. In short — the target is resolved (`~`/`$HOME` expanded, `..`
+# resolved against the cwd the ECHO ITSELF records), and it is out only if it
+# lands under /home/ or /Users/ and outside both AGENT_STATE_OWN_PROJECT_ABS and
+# AGENT_STATE_OWN_WORKTREES_ABS. A linked worktree is INSIDE, so the extremely
+# common `ls ..` from a review worktree is not a finding; `ls ../..` from the
+# same place is.
+#
+# WHY "FOLLOWED BY AN OUTPUT BLOCK" IS PART OF THE PREDICATE. The echo is kept —
+# it is path-only, and it is the evidence of what happened, exactly as fix-2
+# keeps agent-state echoes. What must not be published is the LISTING. So an echo
+# whose output block is empty, or whose only output is the command complaining
+# (`No such file or directory`), is NOT a finding: nothing was enumerated, and
+# putting a redaction banner on such a transcript would be theatre.
+#
+# THE BANNER STATES COUNTS AND THE REASON, AND NEVER THE NAMES. Same rule as the
+# foreign inventory, for the same reason: enumerating them in the banner would
+# put back exactly what the redaction removed.
+
+# The status line that separates a codex command echo from its output. Its
+# presence is also the CHEAP NECESSARY CONDITION the gate prefilters on: a block
+# cannot exist without one, so a file with no such line cannot carry a finding —
+# which makes the prefilter provably non-hiding rather than merely fast.
+AGENT_STATE_EXEC_STATUS_RE='^ (succeeded|exited [0-9]+) in .*:$'
+
+# The commands whose non-flag arguments are directory targets.
+AGENT_STATE_ENUM_COMMANDS='ls find tree'
+
+# `rg` enumerates only under this flag; see the argument above.
+AGENT_STATE_ENUM_CONDITIONAL_COMMAND='rg'
+
+# The in-place replacement for a removed out-of-repo listing. Like its sibling
+# above it is a printf FORMAT carrying the line count, it contains no
+# `/home/`|`/Users/` prefix so it can never match AGENT_STATE_PATH_RE, and it
+# begins with the same `[REDACTED TC-86]` prefix so the idempotence rule in
+# flush() recognises it. It names the reason in words the next reader can act on.
+AGENT_STATE_OOR_MARKER_FMT='[REDACTED TC-86] %d line(s) removed: this block was the OUTPUT of the command echoed above, which enumerated an out-of-repo directory. The echo is kept; the listing is not published.'
+
+# ---------------------------------------------------------------------------
+# THE BLOCK WALK — ONE implementation, two modes.
+# ---------------------------------------------------------------------------
+# The GATE must fail on exactly the blocks `--redact` removes. If those two ever
+# disagree the result is a FALSE GREEN BUILT INTO THE DESIGN — the gate certifies
+# a file the redactor would have cleaned, or the redactor cleans a shape the gate
+# never fails on and the gate\047s silence means nothing. That is the same
+# argument that gives AGENT_STATE_PATH_RE exactly one home, so the walk gets one
+# home too: this program, with TC86_MODE selecting whether it emits the redacted
+# stream or only counts. `emit()` is the only difference between the two.
+AGENT_STATE_BLOCK_WALK_AWK='
+    function emit(s) { if (!QUIET) print s }
     function flush(   i) {
       if (in_block) {
-        # A block is removed when it still holds unredacted lines AND it is
-        # either (a) the output of a command whose echo carried a full
-        # agent-state PATH, or (b) an INVENTORY: output that itself lists other
-        # projects\047 encoded directory names. (b) is what reaches the bare
-        # `ls ~/.claude/projects` listing whose echo the path pattern cannot see;
-        # requiring an actual foreign name in the body is what keeps it OFF the
-        # sibling block that lists this repo\047s own session files.
-        if (fresh > 0 && (echo_is_path || foreignnames > 0)) {
-          blocks++
-          removed += nonblank
-          fnames += foreignnames
-          printf "%s\n\n", sprintf(ENVIRON["TC86_CFMT"], nonblank)
+        # A block is removed when it still holds unredacted lines AND one of:
+        #  (a) the echo carried a full agent-state PATH;
+        #  (b) the output itself lists other projects\047 encoded directory names
+        #      (the fix-3 FOREIGN INVENTORY, whose echo the path pattern cannot
+        #      see, and which must not swallow the sibling own-session listing);
+        #  (c) fix-4: the echo ENUMERATED AN OUT-OF-REPO DIRECTORY and the block
+        #      actually holds a listing rather than an error message.
+        if ((fresh > 0 && (echo_is_path || foreignnames > 0)) || (echo_is_oor && oorfresh > 0)) {
+          # PREDICATE 2 DETECTION is counted FIRST and INDEPENDENTLY of which
+          # cause gets the credit below. The distinction is load-bearing and was
+          # a live bug for one round: a block can satisfy BOTH predicates (`ls
+          # ~/.claude/projects` is an out-of-repo enumeration AND a foreign
+          # inventory), and attributing it to the graver cause for the banner
+          # must not make it invisible to the gate. What the GATE fails on is
+          # "the fix-4 predicate held"; what the BANNER reports is "which cause
+          # removed these lines". Those are different questions.
+          if (echo_is_oor && oorfresh > 0) { oorhitblocks++; oorhitlines += nonblank }
+          # The marker, and the COUNT, must describe THIS block truthfully.
+          # Saying "read a Claude Code state directory" over a listing of the
+          # user\047s home directory would be a small lie in the one place a
+          # reader has nothing else to go on. So the two causes get two markers
+          # and two DISJOINT tallies, and the banner can state each without
+          # borrowing the other\047s justification. A block that qualifies under
+          # both is attributed to the agent-state cause, which is the graver one.
+          if (echo_is_path || foreignnames > 0) {
+            blocks++
+            removed += nonblank
+            fnames += foreignnames
+            emit(sprintf(ENVIRON["TC86_CFMT"], nonblank) "\n")
+          } else {
+            oorblocks++
+            oorlines += nonblank
+            emit(sprintf(ENVIRON["TC86_OORFMT"], nonblank) "\n")
+          }
         } else {
           # IDEMPOTENCE. After one pass the block body IS the marker, and the
-          # echo above it still matches the pattern — so a second pass would
-          # otherwise redact the marker, emit a fresh banner, and never converge.
-          # A block whose every non-blank line is already a marker is replayed
-          # verbatim and counted as nothing.
-          for (i = 1; i <= nbuf; i++) print buf[i]
+          # echo above it still matches — so a second pass would otherwise redact
+          # the marker, emit a fresh banner, and never converge. A block whose
+          # every non-blank line is already a marker is replayed verbatim and
+          # counted as nothing.
+          for (i = 1; i <= nbuf; i++) emit(buf[i])
         }
         in_block = 0
       }
@@ -382,47 +636,104 @@ agent_state_redact_content_blocks() {
       if (in_block) {
         # Top-level record markers END the block. NOT a blank line: real dumps
         # contain blank lines, and stopping at one would leave content behind.
-        if ($0 == "exec" || $0 == "codex") { flush(); print; prev = $0; next }
-        buf[++nbuf] = $0
+        if ($0 == "exec" || $0 == "codex") {
+          flush(); emit($0); in_echo = ($0 == "exec"); echobuf = ""; next
+        }
+        nbuf++
+        buf[nbuf] = $0
         if ($0 != "") {
           nonblank++
-          if ($0 !~ /^\[REDACTED TC-86\]/) fresh++
+          if ($0 !~ /^\[REDACTED TC-86\]/) {
+            fresh++
+            if (!tc86_is_cmd_noise($0)) oorfresh++
+          }
           if ($0 ~ BARERE && $0 != OWN) foreignnames++
         }
         next
       }
-      if (pending) {
-        pending = 0
-        if ($0 ~ /^ (succeeded|exited [0-9]+) in .*:$/) {
-          print
-          in_block = 1
-          nonblank = 0
-          fresh = 0
-          nbuf = 0
-          foreignnames = 0
-          echo_is_path = pending_is_path
-          prev = $0
+      if ($0 == "exec" || $0 == "codex") {
+        in_echo = ($0 == "exec"); echobuf = ""; emit($0); next
+      }
+      if (in_echo) {
+        # The ECHO is everything between the `exec` marker and the status line.
+        # Fix-2 read only the single line directly under `exec`; a codex command
+        # echo can wrap across lines, and a wrapped echo would then have been
+        # invisible to BOTH predicates. Accumulating to the status line also
+        # keeps the original anchoring property that mattered — an OUTPUT line
+        # carrying a path (the 0.8.14 log has one, a `sed: read error` message)
+        # is inside a block, never an echo, so it cannot start a phantom block.
+        if ($0 ~ STATUSRE) {
+          emit($0)
+          echo_is_path = (echobuf ~ RE)
+          echo_is_oor = (tc86_echo_is_oor(echobuf) > 0)
+          # Entering a block BUFFERS it, so entry stays restricted to blocks that
+          # could actually be removed. An ordinary `cargo test` block in a
+          # multi-megabyte transcript is streamed, not held in memory.
+          if (echo_is_path || echobuf ~ PROJRE || echo_is_oor) {
+            in_block = 1; nonblank = 0; fresh = 0; oorfresh = 0
+            nbuf = 0; foreignnames = 0
+          }
+          in_echo = 0
           next
         }
+        echobuf = echobuf " " $0
+        emit($0)
+        next
       }
-      # An ECHO is a pattern-matching line DIRECTLY under an `exec` marker. The
-      # anchoring matters: without it, an output line that happens to carry a
-      # path (the 0.8.14 log has one — a `sed: read error ...` message) would be
-      # mistaken for the start of a new block.
-      #
-      # PROJRE (the bare state-directory prefix) only makes the block a
-      # CANDIDATE; whether it is actually removed is decided in flush() from the
-      # block\047s own contents. That split is what lets remediation reach a
-      # listing the path predicate cannot see without widening the predicate.
-      if (prev == "exec" && ($0 ~ RE || $0 ~ PROJRE)) {
-        pending = 1
-        pending_is_path = ($0 ~ RE)
-      }
-      print
-      prev = $0
+      emit($0)
     }
-    END { flush(); printf "%d %d %d\n", removed + 0, blocks + 0, fnames + 0 > ENVIRON["TC86_COUNTFILE"] }
-  ' "$in" >"$out"
+    END {
+      flush()
+      if (QUIET)
+        printf "%d %d %d %d %d %d %d\n", removed + 0, blocks + 0, fnames + 0, \
+               oorblocks + 0, oorlines + 0, oorhitblocks + 0, oorhitlines + 0
+      else
+        printf "%d %d %d %d %d %d %d\n", removed + 0, blocks + 0, fnames + 0, \
+               oorblocks + 0, oorlines + 0, oorhitblocks + 0, oorhitlines + 0 > ENVIRON["TC86_COUNTFILE"]
+    }
+'
+
+# agent_state_block_walk_env — the ENVIRON handoff for the walk, in one place.
+# Everything arrives through the environment rather than `awk -v`, because -v
+# processes escape sequences: it would turn `\.claude` into `.claude` (any char,
+# not a literal dot) and quietly loosen the pattern.
+agent_state_block_walk() {
+  TC86_RE="$AGENT_STATE_PATH_RE" TC86_OWN="$AGENT_STATE_OWN_PROJECT_DIR" \
+  TC86_PROJRE="$AGENT_STATE_PROJECTS_DIR_RE" TC86_BARERE="$AGENT_STATE_BARE_PROJECT_DIR_RE" \
+  TC86_HOMEABS="$AGENT_STATE_OWN_HOME_ABS" TC86_ROOT1="$AGENT_STATE_OWN_PROJECT_ABS" \
+  TC86_ROOT2="$AGENT_STATE_OWN_WORKTREES_ABS" TC86_STATUSRE="$AGENT_STATE_EXEC_STATUS_RE" \
+  TC86_ENUMCMDS="$AGENT_STATE_ENUM_COMMANDS" TC86_RGCMD="$AGENT_STATE_ENUM_CONDITIONAL_COMMAND" \
+  TC86_CFMT="$AGENT_STATE_CONTENT_MARKER_FMT" TC86_OORFMT="$AGENT_STATE_OOR_MARKER_FMT" \
+  TC86_MODE="${TC86_MODE:-redact}" TC86_COUNTFILE="${TC86_COUNTFILE:-/dev/null}" \
+  awk "$AGENT_STATE_AWK_PROLOGUE$AGENT_STATE_BLOCK_WALK_AWK" "$@"
+}
+
+# agent_state_redact_content_blocks <in-file> <out-file> <count-file>
+#
+# Writes the redacted stream to <out-file> and, to <count-file>, seven fields:
+# "<content-lines> <content-blocks> <foreign-inventory-lines> <oor-blocks>
+#  <oor-lines> <predicate2-blocks> <predicate2-lines>".
+# The first five are BANNER ATTRIBUTION and are disjoint; the last two are
+# PREDICATE 2 DETECTION and are a superset of fields 4/5 — see flush().
+# Non-block lines pass through byte-intact; a file with nothing
+# to remove comes through unchanged, which is what makes `--redact` a no-op on
+# the sixteen ordinary own-project path citations.
+agent_state_redact_content_blocks() {
+  local in="${1:?agent_state_redact_content_blocks needs an input file}"
+  local out="${2:?agent_state_redact_content_blocks needs an output file}"
+  local cf="${3:?agent_state_redact_content_blocks needs a count file}"
+  TC86_MODE=redact TC86_COUNTFILE="$cf" agent_state_block_walk "$in" >"$out"
+}
+
+# agent_state_count_out_of_repo_blocks <file> — print "<blocks> <lines>".
+#
+# THE GATE\047S SECOND PREDICATE, evaluated by running the SAME walk in count
+# mode. Not a parallel re-implementation: the whole point of the two-mode program
+# above is that "what the gate fails on" and "what --redact removes" cannot drift
+# apart, because they are the same code reading the same bytes.
+agent_state_count_out_of_repo_blocks() {
+  TC86_MODE=count agent_state_block_walk "${1:?agent_state_count_out_of_repo_blocks needs a file}" \
+    | awk '{ printf "%d %d\n", $6 + 0, $7 + 0 }'
 }
 
 # agent_state_redact_stream — filter stdin to stdout, rewriting every line that
@@ -476,6 +787,12 @@ agent_state_foreign_project_dirs() {
 agent_state_self_exemption_notice() {
   cat <<NOTICE
 note  transcript-hygiene: SELF-EXEMPTION, STATED IN THE OPEN (TC-86, steward seq-130).
+      SCOPE : this exemption applies to PREDICATE 1 (agent-state PATHS) ONLY.
+                     PREDICATE 2 — a command that ENUMERATES a directory outside this
+                     repository, followed by its output — has NO exemption of any kind,
+                     including for this project's own state directory. Nothing in this
+                     repository legitimately contains such a listing, so there was
+                     nothing to trade (HITL 2026-07-28).
       HARD-CHECKED : every encoded Claude Code project directory EXCEPT this repo's own.
                      A path into another project's session state is never legitimate
                      here and fails this gate, in every shape, tool-results/ included.
@@ -495,7 +812,7 @@ note  transcript-hygiene: SELF-EXEMPTION, STATED IN THE OPEN (TC-86, steward seq
 NOTICE
 }
 
-# agent_state_redaction_banner <total> <projects-csv> <path-lines> <content-lines> <blocks> <own:0|1> [foreign-inventory-lines]
+# agent_state_redaction_banner <total> <projects-csv> <path-lines> <content-lines> <blocks> <own:0|1> [foreign-inventory-lines] [oor-blocks] [oor-lines]
 #
 # The block prepended to a redacted file. Shape descended from the banner already
 # on main in dev/plans/runs/codex/agent-seat-hardening/ASH-Phase2-20260728T034657Z.log:
@@ -518,6 +835,8 @@ agent_state_redaction_banner() {
   local blocks="${5:-0}"
   local own="${6:-0}"
   local fnames="${7:-0}"
+  local oor_blocks="${8:-0}"
+  local oor_lines="${9:-0}"
   printf '=== STEWARD REDACTION (TC-86 transcript hygiene) ===\n'
   printf '%s line(s) redacted in place in this transcript before it was committed.\n' "$total"
   if [ "$path_lines" -gt 0 ]; then
@@ -545,8 +864,23 @@ They are reported here as a COUNT ONLY and are deliberately NOT enumerated:
 naming them in this banner would put back exactly what the redaction removed.
 INVENTORY
   fi
+  if [ "$oor_lines" -gt 0 ]; then
+    cat <<OOR
+OUT-OF-REPO DIRECTORY INVENTORY (${oor_lines} line(s) in ${oor_blocks} block(s)):
+the commands echoed above ENUMERATED a directory that is not part of
+this repository or its worktrees — a home directory, a projects directory, a
+package cache, a state directory. Their output was therefore a listing of files
+and directories on the operator's machine that have nothing to do with this
+project. The commands themselves are kept: an echo is path-only and is the
+evidence of what happened. The LISTINGS are reported as a COUNT ONLY and are
+deliberately NOT enumerated — naming them here would put back exactly what the
+redaction removed.
+OOR
+  fi
   printf 'PROJECTS TOUCHED: %s\n' "$projects"
-  if [ "$own" -eq 1 ]; then
+  # The own-project provenance note explains a CONTENT removal. With nothing
+  # removed on that cause it would be describing lines that are not there.
+  if [ "$own" -eq 1 ] && [ "$content_lines" -gt 0 ]; then
     cat <<OWN
 OWN PROJECT: this content came from THIS repository's own Claude Code state
 directory (${AGENT_STATE_OWN_PROJECT_DIR}) — this project's own memory store.

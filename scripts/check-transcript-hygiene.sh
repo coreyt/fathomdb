@@ -269,13 +269,35 @@ collect_hits() {
 # exemption covers own-project PATHS, and rewriting them behind a banner would be
 # worse than the warning it replaced. Only two things are removed — foreign path
 # lines, and the OUTPUT of a command that read a Claude Code state directory.
+# The scratch files redact_file writes NEXT TO its subject (same directory, so
+# the final `cat >` cannot cross a filesystem boundary). They are registered here
+# and removed on ANY exit, because `set -e` plus a mid-rewrite failure otherwise
+# leaves them behind — and a leaked scratch file is not merely untidy: it sits
+# beside a tracked transcript holding a PARTIALLY redacted copy of it, and
+# `--root` mode would then scan the leak as if it were a file of the tree. That
+# is not hypothetical; it happened once during this fix.
+TC86_TMPFILES=()
+tc86_cleanup_tmpfiles() {
+  [ "${#TC86_TMPFILES[@]}" -gt 0 ] || return 0
+  rm -f "${TC86_TMPFILES[@]+"${TC86_TMPFILES[@]}"}" 2>/dev/null || true
+}
+trap tc86_cleanup_tmpfiles EXIT
+
 redact_file() {
   local p="$1"
   local tmp1="$p.tc86-redact1.$$" tmp2="$p.tc86-redact2.$$" cf="$p.tc86-counts.$$"
+  TC86_TMPFILES+=("$tmp1" "$tmp2" "$cf")
   local content_lines=0 blocks=0 fnames=0 path_lines=0 total=0 own=0 dirs projects
+  local oor_blocks=0 oor_lines=0 hit_blocks=0 hit_lines=0
 
+  # SEVEN fields, and every one of them is read. `read` assigns the remainder of
+  # the line to its LAST variable, so under-reading here does not truncate — it
+  # silently stuffs "0 0 0" into a variable the arithmetic below then chokes on.
+  # Fields 6/7 (predicate-2 detections) are not used by the banner; they are read
+  # so that a future field cannot be swallowed by field 5.
   agent_state_redact_content_blocks "$p" "$tmp1" "$cf"
-  read -r content_lines blocks fnames <"$cf" || { content_lines=0; blocks=0; fnames=0; }
+  read -r content_lines blocks fnames oor_blocks oor_lines hit_blocks hit_lines <"$cf" \
+    || { content_lines=0; blocks=0; fnames=0; oor_blocks=0; oor_lines=0; hit_blocks=0; hit_lines=0; }
   rm -f "$cf"
 
   # Foreign path lines are counted on the CONTENT-REDACTED stream: a foreign path
@@ -284,7 +306,10 @@ redact_file() {
   path_lines="$(agent_state_classify_file "$tmp1" | cut -d' ' -f1)"
   agent_state_redact_stream <"$tmp1" >"$tmp2"
 
-  total=$((content_lines + path_lines))
+  # The three causes are DISJOINT by construction (see flush() in the shared
+  # library), so the banner's headline total is their plain sum and no line is
+  # counted twice.
+  total=$((content_lines + oor_lines + path_lines))
   if [ "$total" -eq 0 ]; then
     rm -f "$tmp1" "$tmp2"
     return 1
@@ -296,7 +321,7 @@ redact_file() {
 
   {
     agent_state_redaction_banner "$total" "${projects:-(none identified)}" \
-      "$path_lines" "$content_lines" "$blocks" "$own" "$fnames"
+      "$path_lines" "$content_lines" "$blocks" "$own" "$fnames" "$oor_blocks" "$oor_lines"
     cat "$tmp2"
   } >"$tmp1"
   # `cat >` rather than `mv`: rewrites the EXISTING inode, so the file keeps its
@@ -304,13 +329,19 @@ redact_file() {
   cat "$tmp1" >"$p"
   rm -f "$tmp1" "$tmp2"
 
-  printf 'redacted %s line(s) in %s (%s foreign path line(s); %s content line(s) in %s block(s), of which %s foreign project-directory name(s); projects: %s)\n' \
-    "$total" "$p" "$path_lines" "$content_lines" "$blocks" "$fnames" "${projects:-(none identified)}"
+  printf 'redacted %s line(s) in %s (%s foreign path line(s); %s content line(s) in %s block(s), of which %s foreign project-directory name(s) and %s line(s) in %s out-of-repo directory listing(s); projects: %s)\n' \
+    "$total" "$p" "$path_lines" "$content_lines" "$blocks" "$fnames" "$oor_lines" "$oor_blocks" \
+    "${projects:-(none identified)}"
   return 0
 }
 
 if [ "$REDACT" -eq 1 ]; then
-  collect_hits "$AGENT_STATE_PROJECTS_DIR_RE"
+  # The redaction CANDIDATE set is the union of both predicates' reach: the bare
+  # state-directory prefix (predicate 1's remediation reach, fix-3) OR any codex
+  # exec status line (the necessary condition for a block at all, fix-4). A
+  # candidate is only a candidate — redact_file is a no-op unless it actually
+  # finds something, so widening the set costs a scan and never a rewrite.
+  collect_hits "$AGENT_STATE_PROJECTS_DIR_RE|$AGENT_STATE_EXEC_STATUS_RE"
   REDACTED=0
   for p in "${HITS[@]+"${HITS[@]}"}"; do
     if redact_file "$p"; then REDACTED=$((REDACTED + 1)); fi
@@ -340,6 +371,41 @@ for p in "${HITS[@]+"${HITS[@]}"}"; do
   fi
 done
 
+# ------------------------------------------------- PREDICATE 2 (fix-4) scan --
+# An out-of-repo directory inventory: a command echo that ENUMERATED a directory
+# outside this repository and its worktrees, followed by an output block that
+# actually holds a listing. HARD, with NO own/foreign split — the argument for
+# the asymmetry with predicate 1 is at the definition site in
+# scripts/lib/agent-state-paths.sh. This is a SECOND predicate, deliberately not
+# a widening of the first: no widening of "a path into a Claude Code project
+# state directory" reaches `ls /home/<user>/projects`, which has nothing to do
+# with Claude Code and was the thing that actually leaked.
+#
+# PREFILTER, AND WHY IT CANNOT HIDE ANYTHING. A block requires a status line by
+# construction of the walk, so a file with none cannot carry a finding; the
+# prefilter is a proof-carrying restriction rather than a speed heuristic that
+# might silently drop a file. Full per-file classification then runs only on the
+# codex transcripts, which is what keeps this gate sub-second on a 29 MB corpus.
+OOR_CANDIDATES=()
+if [ "${#FILES[@]}" -gt 0 ]; then
+  while IFS= read -r -d '' p; do
+    [ -n "$p" ] && OOR_CANDIDATES+=("$p")
+  done < <(printf '%s\0' "${FILES[@]}" \
+             | xargs -0 --no-run-if-empty grep -IlZE -e "$AGENT_STATE_EXEC_STATUS_RE" -- 2>/dev/null \
+             || true)
+fi
+
+OOR_FILES=(); OOR_N=(); OOR_L=()
+OOR_TOTAL=0; OOR_LINES_TOTAL=0
+for p in "${OOR_CANDIDATES[@]+"${OOR_CANDIDATES[@]}"}"; do
+  read -r ocount olines <<<"$(agent_state_count_out_of_repo_blocks "$p")"
+  if [ "${ocount:-0}" -gt 0 ]; then
+    OOR_FILES+=("$p"); OOR_N+=("$ocount"); OOR_L+=("$olines")
+    OOR_TOTAL=$((OOR_TOTAL + ocount))
+    OOR_LINES_TOTAL=$((OOR_LINES_TOTAL + olines))
+  fi
+done
+
 # print_own_warnings — ALWAYS called, on the failing path as well as the clean
 # one. A run that reported the foreign failure and returned early would hide the
 # own-project residual at exactly the moment the operator is already in the tree.
@@ -357,25 +423,40 @@ print_own_warnings() {
 }
 
 # ------------------------------------------------------------------ clean path --
-if [ "${#FOREIGN_FILES[@]}" -eq 0 ]; then
-  printf 'ok    transcript-hygiene: no file carries a FOREIGN agent-state path (%s scanned, %d file(s))\n' \
-    "$SCOPE_DESC" "${#FILES[@]}"
+if [ "${#FOREIGN_FILES[@]}" -eq 0 ] && [ "${#OOR_FILES[@]}" -eq 0 ]; then
+  # BOTH predicates are named in the clean report. A gate that says only "ok"
+  # tells a reader nothing about what its silence covers, and this one now covers
+  # two different things.
+  printf 'ok    transcript-hygiene: no file carries a FOREIGN agent-state path, and none carries an out-of-repo directory inventory (%s scanned, %d file(s); %d checked for exec blocks)\n' \
+    "$SCOPE_DESC" "${#FILES[@]}" "${#OOR_CANDIDATES[@]}"
   print_own_warnings
   agent_state_self_exemption_notice
   exit 0
 fi
 
 # ---------------------------------------------------------------------- fail --
-# One FAIL line per offending file, naming the file AND its foreign match count.
-# preflight.sh promotes every FAIL line to a HARD fail, so nothing below this
-# point may start with FAIL unless it is a real defect.
+# One FAIL line per offending file, naming the file AND its match count, under
+# the predicate that fired. preflight.sh promotes every FAIL line to a HARD fail,
+# so nothing below this point may start with FAIL unless it is a real defect.
 for i in "${!FOREIGN_FILES[@]}"; do
   printf 'FAIL  transcript-hygiene: %s carries %s line(s) with a FOREIGN agent-state path\n' \
     "${FOREIGN_FILES[$i]}" "${FOREIGN_N[$i]}"
 done
 
-printf 'FAIL  transcript-hygiene: %d file(s) carry %d line(s) of another project'"'"'s Claude Code session-transcript paths\n' \
-  "${#FOREIGN_FILES[@]}" "$FOREIGN_TOTAL"
+if [ "${#FOREIGN_FILES[@]}" -gt 0 ]; then
+  printf 'FAIL  transcript-hygiene: %d file(s) carry %d line(s) of another project'"'"'s Claude Code session-transcript paths\n' \
+    "${#FOREIGN_FILES[@]}" "$FOREIGN_TOTAL"
+fi
+
+for i in "${!OOR_FILES[@]}"; do
+  printf 'FAIL  transcript-hygiene: %s carries %s out-of-repo directory-inventory block(s) (%s line(s) of listing)\n' \
+    "${OOR_FILES[$i]}" "${OOR_N[$i]}" "${OOR_L[$i]}"
+done
+
+if [ "${#OOR_FILES[@]}" -gt 0 ]; then
+  printf 'FAIL  transcript-hygiene: %d file(s) carry %d out-of-repo directory inventor(y/ies), %d line(s) of listing in total\n' \
+    "${#OOR_FILES[@]}" "$OOR_TOTAL" "$OOR_LINES_TOTAL"
+fi
 
 print_own_warnings
 
@@ -386,12 +467,25 @@ print_own_warnings
 # variable is printf'd above/below instead.
 cat <<'EOF'
 
-WHAT THIS MEANS. A line matching the shared agent-state pattern is `rg`/`ls`
-output naming a file under a user's ~/.claude state directory — and in the
-incident that produced this gate, the rest of that line was the session JSONL
-itself: another project's conversation content. github.com/coreyt/fathomdb is a
-PUBLIC repository, so committing it publishes it. The FAIL lines above name
-ANOTHER project's state, which is never legitimately in this repository.
+WHAT THIS MEANS. Two different predicates can produce the FAIL lines above.
+
+  FOREIGN AGENT-STATE PATH. A line matching the shared agent-state pattern is
+  `rg`/`ls` output naming a file under a user's ~/.claude state directory — and
+  in the incident that produced this gate, the rest of that line was the session
+  JSONL itself: another project's conversation content. That is never
+  legitimately in this repository.
+
+  OUT-OF-REPO DIRECTORY INVENTORY. A command echoed in the transcript ENUMERATED
+  a directory that is not part of this repository or its worktrees — a home
+  directory, a projects directory, a state directory — and the transcript then
+  carried the LISTING. The exposure that added this predicate was
+  `ls /home/<user>/projects` inside a §9 review: 33 private project names, some
+  of them client work, published for three weeks. It has NO own/foreign split,
+  because unlike an agent-state path there is no legitimate reason for this
+  repository to contain one.
+
+github.com/coreyt/fathomdb is a PUBLIC repository, so committing either of them
+publishes it.
 
 HOW IT GETS THERE. codex §9 reviews run under
 --dangerously-bypass-approvals-and-sandbox, which lets the reviewer read outside
@@ -402,10 +496,12 @@ its own transcript.
 WHAT TO DO.
   1. Run: scripts/check-transcript-hygiene.sh --redact
      It rewrites the foreign lines IN PLACE, and removes the OUTPUT of any
-     echoed command that read a Claude Code state directory, behind a banner
-     stating the counts, the projects touched, the reason, and that no review
-     finding came from them. It NEVER deletes the file — TC-RUBRIC-7 closes a
-     review on a persisted artifact, so the transcript must survive as evidence.
+     echoed command that read a Claude Code state directory OR enumerated a
+     directory outside this repository, behind a banner stating the counts, the
+     projects touched, the reason, and that no review finding came from them.
+     The command ECHOES are KEPT: they are path-only, and they are the evidence
+     of what happened. It NEVER deletes the file — TC-RUBRIC-7 closes a review
+     on a persisted artifact, so the transcript must survive as evidence.
   2. Re-run this gate; it must exit 0.
   3. If the match is NOT session content — i.e. this gate has a FALSE POSITIVE —
      do NOT weaken the pattern to get green, and do NOT add a second exemption.

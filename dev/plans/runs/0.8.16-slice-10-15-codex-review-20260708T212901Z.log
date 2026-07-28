@@ -1,3 +1,22 @@
+=== STEWARD REDACTION (TC-86 transcript hygiene) ===
+59 line(s) redacted in place in this transcript before it was committed.
+OUT-OF-REPO DIRECTORY INVENTORY (59 line(s) in 2 block(s)):
+the commands echoed above ENUMERATED a directory that is not part of
+this repository or its worktrees — a home directory, a projects directory, a
+package cache, a state directory. Their output was therefore a listing of files
+and directories on the operator's machine that have nothing to do with this
+project. The commands themselves are kept: an echo is path-only and is the
+evidence of what happened. The LISTINGS are reported as a COUNT ONLY and are
+deliberately NOT enumerated — naming them here would put back exactly what the
+redaction removed.
+PROJECTS TOUCHED: (none identified)
+WHY REMOVED: github.com/coreyt/fathomdb is a PUBLIC repository. Committing
+session transcripts or state contents into it would publish them.
+NO FINDING WAS LOST: no review finding came from the removed lines. Every verdict
+and all reasoning above and below are intact.
+NOT DELETED: each removed line was REPLACED IN PLACE by a marker, so this
+transcript still stands as TC-RUBRIC-7 evidence.
+=== END STEWARD REDACTION ===
 OpenAI Codex v0.136.0
 --------
 workdir: /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-10-20260708T192441Z
@@ -3509,69 +3528,12 @@ sed: can't read /home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557
 exec
 /bin/bash -lc "ls ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f | grep '"'^ort-'"'" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-10-20260708T192441Z
  succeeded in 0ms:
-ort-2.0.0-rc.10
-ort-2.0.0-rc.12
-ort-sys-2.0.0-rc.10
-ort-sys-2.0.0-rc.12
+[REDACTED TC-86] 4 line(s) removed: this block was the OUTPUT of the command echoed above, which enumerated an out-of-repo directory. The echo is kept; the listing is not published.
 
 exec
 /bin/bash -lc 'find ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src -maxdepth 2 -type f | head -80' in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-10-20260708T192441Z
  succeeded in 0ms:
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/error.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/environment.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/logging.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/metadata.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/util.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/memory.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/tensor/types.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/tensor/ndarray.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/tensor/mod.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/lib.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/compiler.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/xnnpack.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/openvino.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/rknpu.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/tvm.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/tensorrt.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/nv.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cpu.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/onednn.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/nnapi.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/qnn.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/directml.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/acl.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/rocm.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/azure.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cann.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cuda.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/webgpu.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/mod.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/coreml.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/migraphx.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/vitis.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/armnn.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/session/output.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/session/run_options.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/session/async.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/session/mod.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/session/input.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/value/impl_map.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/value/type.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/value/impl_sequence.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/value/mod.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/private.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/adapter.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/editor/tests.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/editor/mod.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/training/trainer.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/training/mod.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/operator/io.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/operator/tests.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/operator/attribute.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/operator/kernel.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/operator/bound.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/operator/mod.rs
-/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/io_binding.rs
+[REDACTED TC-86] 55 line(s) removed: this block was the OUTPUT of the command echoed above, which enumerated an out-of-repo directory. The echo is kept; the listing is not published.
 
 exec
 /bin/bash -lc "sed -n '1,220p' ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/mod.rs && sed -n '1,140p' ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cuda.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-10-20260708T192441Z

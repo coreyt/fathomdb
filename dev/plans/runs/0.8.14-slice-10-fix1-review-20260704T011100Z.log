@@ -1,4 +1,23 @@
 === STEWARD REDACTION (TC-86 transcript hygiene) ===
+273 line(s) redacted in place in this transcript before it was committed.
+OUT-OF-REPO DIRECTORY INVENTORY (273 line(s) in 4 block(s)):
+the commands echoed above ENUMERATED a directory that is not part of
+this repository or its worktrees — a home directory, a projects directory, a
+package cache, a state directory. Their output was therefore a listing of files
+and directories on the operator's machine that have nothing to do with this
+project. The commands themselves are kept: an echo is path-only and is the
+evidence of what happened. The LISTINGS are reported as a COUNT ONLY and are
+deliberately NOT enumerated — naming them here would put back exactly what the
+redaction removed.
+PROJECTS TOUCHED: -home-coreyt-projects-fathomdb
+WHY REMOVED: github.com/coreyt/fathomdb is a PUBLIC repository. Committing
+session transcripts or state contents into it would publish them.
+NO FINDING WAS LOST: no review finding came from the removed lines. Every verdict
+and all reasoning above and below are intact.
+NOT DELETED: each removed line was REPLACED IN PLACE by a marker, so this
+transcript still stands as TC-RUBRIC-7 evidence.
+=== END STEWARD REDACTION ===
+=== STEWARD REDACTION (TC-86 transcript hygiene) ===
 189 line(s) redacted in place in this transcript before it was committed.
 WHAT THEY WERE (189 line(s) in 6 block(s)): the OUTPUT of commands
 echoed in this transcript that READ a Claude Code state directory — i.e. the
@@ -385,37 +404,7 @@ tooling-mermaid-renderer
 exec
 /bin/bash -c 'ls /home/coreyt/projects' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-10-20260704T002826Z
  succeeded in 0ms:
-7thplacenw-client
-ado-mcp
-airlock
-armada
-bosun
-coral
-cotudes
-cpptudes
-dependency-scout
-dicom-de-id
-dicom-de-id-worktrees
-fathomdb
-fathomdb-worktrees
-graph-ir
-graph-ir-tools
-libavoided-js
-local
-lookout
-margie
-md-render
-memex
-memex-worktrees
-mesh-seam-ripper
-monospace-design-tui
-one-0-one
-ros2-igus-rebel
-schooner
-temp
-wake
-windchill-llm
-wopr-markii
+[REDACTED TC-86] 31 line(s) removed: this block was the OUTPUT of the command echoed above, which enumerated an out-of-repo directory. The echo is kept; the listing is not published.
 
 exec
 /bin/bash -c 'ls -a' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-10-20260704T002826Z
@@ -1091,32 +1080,7 @@ v3-decomposition-quality-research.md
 exec
 /bin/bash -c 'ls /home/coreyt' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-10-20260704T002826Z
  succeeded in 0ms:
-Desktop
-Documents
-Downloads
-Music
-Pictures
-Public
-Templates
-Videos
-agent-smt.md
-fathomdb-worktrees
-go
-memex
-ngc-cli
-ngc-cli.md5
-ngccli_arm64.zip
-nltk_data
-nvidia
-orin-recover
-projects
-projects2
-projects3
-rtw89-restore.sh
-script-tools
-snap
-vllm-env
-wifi-signal.sh
+[REDACTED TC-86] 26 line(s) removed: this block was the OUTPUT of the command echoed above, which enumerated an out-of-repo directory. The echo is kept; the listing is not published.
 
 exec
 /bin/bash -c 'ls /home/coreyt/M*' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-10-20260704T002826Z
@@ -1200,22 +1164,7 @@ ls: cannot access '/home/coreyt/projects/fathomdb/feedback_*': No such file or d
 exec
 /bin/bash -c 'ls /home/coreyt/.claude' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-10-20260704T002826Z
  succeeded in 0ms:
-backups
-cache
-downloads
-file-history
-history.jsonl
-mcp-needs-auth-cache.json
-paste-cache
-plans
-plugins
-projects
-session-env
-sessions
-settings.json
-shell-snapshots
-tasks
-telemetry
+[REDACTED TC-86] 16 line(s) removed: this block was the OUTPUT of the command echoed above, which enumerated an out-of-repo directory. The echo is kept; the listing is not published.
 
 exec
 /bin/bash -c "sed -n '1,220p' /home/coreyt/.claude/MEMORY.md" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-10-20260704T002826Z
@@ -1230,206 +1179,7 @@ ls: cannot access '/home/coreyt/.claude/feedback_*': No such file or directory
 exec
 /bin/bash -c 'ls /home/coreyt/.claude/projects/-home-coreyt-projects-fathomdb' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-10-20260704T002826Z
  succeeded in 0ms:
-00869a09-1b56-463d-823c-2285c13af9ab
-00869a09-1b56-463d-823c-2285c13af9ab.jsonl
-011b5a59-0975-4f0e-b783-f75e9be15c53
-011b5a59-0975-4f0e-b783-f75e9be15c53.jsonl
-07584d88-bc6c-45bc-9b51-6fe02a606368
-0a6e63f1-c44b-4702-b04f-c956a7ffcd34
-0a6e63f1-c44b-4702-b04f-c956a7ffcd34.jsonl
-0b648ac9-0875-4e55-b7e7-35645b13e613
-0b648ac9-0875-4e55-b7e7-35645b13e613.jsonl
-0bd06db6-8716-4c70-934e-487dba1d6414
-0ea10aaa-185c-4f77-85a4-0469ef2cea3d
-0ea10aaa-185c-4f77-85a4-0469ef2cea3d.jsonl
-1a66de90-c67e-434a-a0e5-9ae699d3289c
-1a66de90-c67e-434a-a0e5-9ae699d3289c.jsonl
-1ca602a1-a2f1-4e36-bfc8-17ee640761da
-1ca602a1-a2f1-4e36-bfc8-17ee640761da.jsonl
-2290eb62-96fe-4233-b941-c61ff19fdbd3
-2290eb62-96fe-4233-b941-c61ff19fdbd3.jsonl
-232806e5-a370-4754-bd02-e9c4d21b7179
-246b99f9-15f5-433a-98f1-469bbdd40867
-25d84b60-1428-4f9d-af6e-6a0d6e669065
-2d34f00b-44ad-4991-9e29-f4f059ed3f52
-2d34f00b-44ad-4991-9e29-f4f059ed3f52.jsonl
-3020228d-f490-4df0-aac1-ae3f134936dd
-3020228d-f490-4df0-aac1-ae3f134936dd.jsonl
-3630dc80-b6b4-4120-9b5e-47b1570229fc
-37d91381-66e3-4fe5-9f6f-2dd78ca963c3
-38ee5bc8-38fe-49ce-a937-2c608bff124f
-3cb23f1e-22a6-422f-a420-08fdaced0956
-3cb23f1e-22a6-422f-a420-08fdaced0956.jsonl
-42c20de3-34fa-4972-b836-711dee6efabf
-42c20de3-34fa-4972-b836-711dee6efabf.jsonl
-43a853f1-50fb-42eb-a8c0-e53f4db57539
-43be0429-a250-4081-8215-bfbeced0dd55
-43be0429-a250-4081-8215-bfbeced0dd55.jsonl
-49c8c62d-be77-42cc-b11b-b9ab981c523c
-49c8c62d-be77-42cc-b11b-b9ab981c523c.jsonl
-49de1549-41f3-420f-920a-dba62dfb5259
-49de1549-41f3-420f-920a-dba62dfb5259.jsonl
-4adb59a2-6faa-41c5-ab83-c4e3cd5f1e34
-4adb59a2-6faa-41c5-ab83-c4e3cd5f1e34.jsonl
-522bc3d1-9370-4af2-ac6f-55d97ddb5399
-522bc3d1-9370-4af2-ac6f-55d97ddb5399.jsonl
-54df08ae-c01b-4eae-8862-514eb2cfd198
-54df08ae-c01b-4eae-8862-514eb2cfd198.jsonl
-56d840a1-47f6-42ee-84b2-6184c3fb7523
-570eba59-27da-48a3-9bc6-44552f12da81
-570eba59-27da-48a3-9bc6-44552f12da81.jsonl
-5712b64b-db95-4ff4-af7c-3780a864f18e
-5b3699c3-d171-4708-ae6b-9c1cb2ac970e
-5b3699c3-d171-4708-ae6b-9c1cb2ac970e.jsonl
-5ecb659d-eb0a-438a-82a8-523ac501461b
-5ecb659d-eb0a-438a-82a8-523ac501461b.jsonl
-60b48af5-141d-42fb-8d85-51d4010f8eb3
-60b48af5-141d-42fb-8d85-51d4010f8eb3.jsonl
-6174f57c-62ec-4433-bd05-faa4c247b94d
-6174f57c-62ec-4433-bd05-faa4c247b94d.jsonl
-62c2ab48-1193-4a9c-a2dd-4edc4d896618
-62c2ab48-1193-4a9c-a2dd-4edc4d896618.jsonl
-63f9931e-1d30-456b-961d-fc6b31bf5234
-63f9931e-1d30-456b-961d-fc6b31bf5234.jsonl
-642a21bd-5c38-480e-a3da-80f499d4b571
-642a21bd-5c38-480e-a3da-80f499d4b571.jsonl
-65a84e28-61d6-4e85-955f-970f579b7632
-65a84e28-61d6-4e85-955f-970f579b7632.jsonl
-66260db6-d24b-4f43-916b-ae2bfb12a246
-66260db6-d24b-4f43-916b-ae2bfb12a246.jsonl
-679f052c-39be-4e99-9d51-535ac4fed4a1
-682480fb-aca9-4691-80bb-7a219832290c
-682480fb-aca9-4691-80bb-7a219832290c.jsonl
-69add36c-3493-401c-b71c-b2870b73736e
-69add36c-3493-401c-b71c-b2870b73736e.jsonl
-6b7ffe45-aac1-4a4e-a3c1-45327f097529
-6b7ffe45-aac1-4a4e-a3c1-45327f097529.jsonl
-6fb34faa-ffc4-4a19-a58f-2a7713bcd3be
-6fb34faa-ffc4-4a19-a58f-2a7713bcd3be.jsonl
-715703ab-2e18-484c-88f8-41eebe24ef5b
-720802e6-53f0-4bef-881f-49e5388f20bc
-72f743a0-cab0-4dd1-b74d-a41a2dfa1e0d
-7578ce22-7453-45e4-9faa-145f10eb9f0f
-7578ce22-7453-45e4-9faa-145f10eb9f0f.jsonl
-7aacd556-dd31-405f-8249-33744be5eb59
-7aacd556-dd31-405f-8249-33744be5eb59.jsonl
-7b8f9496-c368-4640-b749-59f8ea642029
-7ba1a685-64b9-404f-83a8-4ea3eeca9ff3
-7ba1a685-64b9-404f-83a8-4ea3eeca9ff3.jsonl
-7f634e3b-3263-40ad-a51d-569a2b870276
-7f634e3b-3263-40ad-a51d-569a2b870276.jsonl
-82591852-2935-4ada-add8-1289b2b6fa95
-82591852-2935-4ada-add8-1289b2b6fa95.jsonl
-84c20eec-9395-4d4f-ab23-755783a04af6
-84c20eec-9395-4d4f-ab23-755783a04af6.jsonl
-857bb76f-928c-49c7-a858-4ecfbb197057
-857bb76f-928c-49c7-a858-4ecfbb197057.jsonl
-8640892f-1593-4ecf-a327-f9a46f4cfe36
-8640892f-1593-4ecf-a327-f9a46f4cfe36.jsonl
-877994fe-e936-4cee-a736-2830b16041af
-877994fe-e936-4cee-a736-2830b16041af.jsonl
-877c4685-2521-4dd8-9b74-61df76c3985b
-877c4685-2521-4dd8-9b74-61df76c3985b.jsonl
-8abda1c1-aaf7-42df-af5d-b14c37342bae
-8e1bb177-f291-44ac-8f28-e9e1660bf9b0
-8e1bb177-f291-44ac-8f28-e9e1660bf9b0.jsonl
-9396339d-4fb0-41ca-94b0-baa1bac87805
-9396339d-4fb0-41ca-94b0-baa1bac87805.jsonl
-961110b6-a158-4fc4-9e77-9bc501dede60
-96d2e0e2-26b0-4612-8991-223b599a12fa
-96d2e0e2-26b0-4612-8991-223b599a12fa.jsonl
-96e4e413-ca17-4a36-a348-762259ee12c5
-96e4e413-ca17-4a36-a348-762259ee12c5.jsonl
-98c53ebb-0295-4ad0-9740-ada64146d9eb
-9962f658-9293-4f75-bae3-cc95e4bc8462
-9962f658-9293-4f75-bae3-cc95e4bc8462.jsonl
-9c081152-5f54-47d2-8c9a-3f3d13a43ba6
-9c081152-5f54-47d2-8c9a-3f3d13a43ba6.jsonl
-9c5c7fa1-95e0-4dd0-b882-a025c0d65cae
-9c5c7fa1-95e0-4dd0-b882-a025c0d65cae.jsonl
-9f553e86-63a9-4a1d-9527-9eef2d129e2b
-a221c5a2-48ed-40cb-aaa2-b6184cebebf1
-a221c5a2-48ed-40cb-aaa2-b6184cebebf1.jsonl
-a6f7b8e5-3e3c-45cb-b551-77108e9bb892
-a6f7b8e5-3e3c-45cb-b551-77108e9bb892.jsonl
-a8a340ca-d9ec-46ec-8d51-91a4ba19434a
-a8a340ca-d9ec-46ec-8d51-91a4ba19434a.jsonl
-aa7e8e2b-768d-4863-bb5a-3c1f3040fd57
-aa7e8e2b-768d-4863-bb5a-3c1f3040fd57.jsonl
-ab57b044-078e-49b0-93c9-cbfa1d38ece3
-ab57b044-078e-49b0-93c9-cbfa1d38ece3.jsonl
-ac9a45b5-e726-4cba-9baa-69053b7c3bab
-ac9a45b5-e726-4cba-9baa-69053b7c3bab.jsonl
-ad68ba83-49bf-4d7c-b2cf-f814626b41c2
-ad68ba83-49bf-4d7c-b2cf-f814626b41c2.jsonl
-b0d2e02e-0478-412c-9372-a4b7baf13d99
-b0d2e02e-0478-412c-9372-a4b7baf13d99.jsonl
-b1ce10d4-8249-46ad-ace4-02e43580b8e8
-b1ce10d4-8249-46ad-ace4-02e43580b8e8.jsonl
-b2566877-6d04-4e49-bed8-150d31d1c275
-b2566877-6d04-4e49-bed8-150d31d1c275.jsonl
-b79c3ba5-7c8b-4f7b-8d81-208842f49418
-b79c3ba5-7c8b-4f7b-8d81-208842f49418.jsonl
-b7d95508-8f3d-42a9-9865-720392751700
-b7d95508-8f3d-42a9-9865-720392751700.jsonl
-b85797e1-49f7-430f-b148-73c90a223082
-b85797e1-49f7-430f-b148-73c90a223082.jsonl
-b9422d49-4abd-4b4d-8145-f72f13b6974f
-b9422d49-4abd-4b4d-8145-f72f13b6974f.jsonl
-b9c3de22-af95-4fc9-88f8-d95dc9c4f682
-b9c3de22-af95-4fc9-88f8-d95dc9c4f682.jsonl
-bb55209b-1ae8-4c2a-89d4-dbb3334a3e03
-bb55209b-1ae8-4c2a-89d4-dbb3334a3e03.jsonl
-bd0d214b-d534-4934-b468-99cbcc7ac740
-bd0d214b-d534-4934-b468-99cbcc7ac740.jsonl
-bef05bc1-1b62-4fa6-b640-f1ec2360e4c1
-bef05bc1-1b62-4fa6-b640-f1ec2360e4c1.jsonl
-c0392a30-7083-4382-a2d2-eb122576917d
-c0392a30-7083-4382-a2d2-eb122576917d.jsonl
-c1471996-bfab-4a8a-8078-9594e5703514
-c1471996-bfab-4a8a-8078-9594e5703514.jsonl
-c2742b5c-9247-4645-b7c9-53ed841368c4
-c2742b5c-9247-4645-b7c9-53ed841368c4.jsonl
-c2818263-d909-4fc1-a5b4-9b31dce320a5
-c2818263-d909-4fc1-a5b4-9b31dce320a5.jsonl
-c3cbde01-d95d-4142-b0de-e9dc14ea714b
-c3cbde01-d95d-4142-b0de-e9dc14ea714b.jsonl
-ca3e43e1-b7bb-41e2-896f-04d2f3ba5d7c
-ca3e43e1-b7bb-41e2-896f-04d2f3ba5d7c.jsonl
-cb557bcc-877e-437c-a25f-9e2514edcce4
-cb557bcc-877e-437c-a25f-9e2514edcce4.jsonl
-cdc37fd6-5330-48dc-9a5d-4371de62412d
-cdc37fd6-5330-48dc-9a5d-4371de62412d.jsonl
-ce865493-b128-4d2c-a97e-eae4564d983f
-ce865493-b128-4d2c-a97e-eae4564d983f.jsonl
-cf5b302f-3670-4d8e-aabb-d290b4002dc3
-cf5b302f-3670-4d8e-aabb-d290b4002dc3.jsonl
-d0a8d7f8-9363-452e-8a3b-31c50ef1976d
-d0a8d7f8-9363-452e-8a3b-31c50ef1976d.jsonl
-d953dabe-e131-4552-843e-d416403203cf
-d953dabe-e131-4552-843e-d416403203cf.jsonl
-e482bbc8-8f6f-4712-bd5b-a81523e9f708
-e482bbc8-8f6f-4712-bd5b-a81523e9f708.jsonl
-e5fa1a19-9179-49ae-9409-c2fe0ac72535
-e5fa1a19-9179-49ae-9409-c2fe0ac72535.jsonl
-ea8ebf5d-7e29-4981-9565-4d4323076723
-ea8ebf5d-7e29-4981-9565-4d4323076723.jsonl
-ebe16ffe-f7d3-406f-9589-c6ac2bbb06fc
-ebe16ffe-f7d3-406f-9589-c6ac2bbb06fc.jsonl
-ebec94c7-c59d-493e-816d-ef55e9d6eea5
-ebec94c7-c59d-493e-816d-ef55e9d6eea5.jsonl
-f2c53824-5c77-43cb-8367-c3bf41bdd4aa
-f2c53824-5c77-43cb-8367-c3bf41bdd4aa.jsonl
-f2f071a5-99c0-4644-afab-be158878c0ba
-f2f071a5-99c0-4644-afab-be158878c0ba.jsonl
-f6d5fbcb-b62d-4deb-97cc-2f15327bb83e
-fa850752-48c8-43ad-8594-6cd3facd8bc2
-fa850752-48c8-43ad-8594-6cd3facd8bc2.jsonl
-fd1911e9-62f6-426d-98bc-cb6005377a69
-fd1911e9-62f6-426d-98bc-cb6005377a69.jsonl
-fed84f3a-fa50-4d04-a316-d6b1dbb51601
-fed84f3a-fa50-4d04-a316-d6b1dbb51601.jsonl
-memory
+[REDACTED TC-86] 200 line(s) removed: this block was the OUTPUT of the command echoed above, which enumerated an out-of-repo directory. The echo is kept; the listing is not published.
 
 exec
 /bin/bash -c 'ls /home/coreyt/.claude/projects' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-10-20260704T002826Z

@@ -1,3 +1,22 @@
+=== STEWARD REDACTION (TC-86 transcript hygiene) ===
+87 line(s) redacted in place in this transcript before it was committed.
+OUT-OF-REPO DIRECTORY INVENTORY (87 line(s) in 2 block(s)):
+the commands echoed above ENUMERATED a directory that is not part of
+this repository or its worktrees — a home directory, a projects directory, a
+package cache, a state directory. Their output was therefore a listing of files
+and directories on the operator's machine that have nothing to do with this
+project. The commands themselves are kept: an echo is path-only and is the
+evidence of what happened. The LISTINGS are reported as a COUNT ONLY and are
+deliberately NOT enumerated — naming them here would put back exactly what the
+redaction removed.
+PROJECTS TOUCHED: (none identified)
+WHY REMOVED: github.com/coreyt/fathomdb is a PUBLIC repository. Committing
+session transcripts or state contents into it would publish them.
+NO FINDING WAS LOST: no review finding came from the removed lines. Every verdict
+and all reasoning above and below are intact.
+NOT DELETED: each removed line was REPLACED IN PLACE by a marker, so this
+transcript still stands as TC-RUBRIC-7 evidence.
+=== END STEWARD REDACTION ===
 Reading additional input from stdin...
 OpenAI Codex v0.136.0
 --------
@@ -397,97 +416,12 @@ drwxrwxr-x  2 coreyt coreyt 4096 Jun 29 07:41 worktrees
 exec
 /bin/bash -c "ls -la /home/coreyt | sed -n '1,200p'" in /home/coreyt/projects/fathomdb-worktrees/agent-seat-hardening
  succeeded in 0ms:
-total 55132
-drwxr-x--- 43 coreyt coreyt     4096 Jul 27 13:26 .
-drwxr-xr-x  4 root   root       4096 Apr 14 18:22 ..
-drwxrwxr-x  2 coreyt coreyt     4096 Jun 15 17:10 .ado-mcp
-drwxrwxr-x  3 coreyt coreyt     4096 Jun 15 17:10 .azure-devops
--rw-------  1 coreyt coreyt    26267 Jul 24 09:50 .bash_history
--rw-r--r--  1 coreyt coreyt      220 Mar 31  2024 .bash_logout
--rw-r--r--  1 coreyt coreyt     4091 Apr 10 11:43 .bashrc
-drwx------ 35 coreyt coreyt     4096 Jul  3 15:46 .cache
-drwxrwxr-x  5 coreyt coreyt     4096 Jul 27 13:22 .cargo
-drwxrwxr-x 17 coreyt coreyt     4096 Jul 27 13:33 .claude
--rw-------  1 coreyt coreyt    89905 Jul 27 13:26 .claude.json
-drwxrwxr-x 12 coreyt coreyt     4096 Jul 27 13:34 .codex
-drwx------ 26 coreyt coreyt     4096 Jul 12 20:36 .config
-drwx------  3 coreyt coreyt     4096 May 16 16:05 .docker
--rw-rw-r--  1 coreyt coreyt      360 Apr 15 11:13 .env
-drwxrwxr-x  4 coreyt coreyt     4096 Apr 15 11:13 .gemini
--rw-rw-r--  1 coreyt coreyt      237 Jun 29 07:16 .gitconfig
-drwx------  2 root   root       4096 Apr  1 09:03 .gnupg
--rw-------  1 coreyt coreyt       20 Jun 27 08:10 .lesshst
-drwxrwxr-x  3 coreyt coreyt     4096 Jun 22 12:18 .lhotse
-drwx------  6 coreyt coreyt     4096 Apr  6 22:22 .local
-drwxrwxr-x  2 coreyt coreyt     4096 Jun 22 03:07 .mem0
-drwxrwxr-x  3 coreyt coreyt     4096 Jun 13 14:34 .memex
-drwxrwxr-x  6 coreyt coreyt     4096 May 22 10:25 .npm
-drwx------  3 coreyt coreyt     4096 Jun 11 22:46 .nv
-drwxrwxr-x  8 coreyt coreyt     4096 Apr 10 07:37 .nvm
-drwxrwxr-x  9 coreyt coreyt     4096 Jul 22 12:00 .nvsdkm
-drwx------  3 coreyt coreyt     4096 Apr  1 07:24 .pki
--rw-r--r--  1 coreyt coreyt      828 Apr 10 08:58 .profile
--rw-------  1 coreyt coreyt       12 Mar 31 09:41 .python_history
-drwxrwxr-x  6 coreyt coreyt     4096 Apr 10 08:58 .rustup
-drwx------  2 coreyt coreyt     4096 Jul 26 19:21 .ssh
--rw-r--r--  1 coreyt coreyt        0 Mar 31 09:55 .sudo_as_admin_successful
--rw-rw-r--  1 coreyt coreyt      455 Jun 27 16:38 .tmux.conf
-drwxr-xr-x  3 coreyt coreyt     4096 Jun 27 16:14 Desktop
-drwxr-xr-x  2 coreyt coreyt     4096 Mar 31 09:00 Documents
-drwxr-xr-x  3 coreyt coreyt     4096 Jul 20 22:58 Downloads
-drwxr-xr-x  2 coreyt coreyt     4096 Mar 31 09:00 Music
-drwxr-xr-x  3 coreyt coreyt     4096 Jun 30 15:24 Pictures
-drwxr-xr-x  2 coreyt coreyt     4096 Mar 31 09:00 Public
-drwxr-xr-x  2 coreyt coreyt     4096 Mar 31 09:00 Templates
-drwxr-xr-x  2 coreyt coreyt     4096 Mar 31 09:00 Videos
--rw-rw-r--  1 coreyt coreyt    25233 May 17 10:03 agent-smt.md
-lrwxrwxrwx  1 coreyt coreyt       40 Jul  2 07:08 fathomdb-worktrees -> /home/coreyt/projects/fathomdb-worktrees
-drwxrwxr-x  4 coreyt coreyt     4096 May 25 09:45 go
-drwxrwxr-x  3 coreyt coreyt     4096 Apr  5 20:02 memex
-drwxr-xr-x  3 coreyt coreyt     4096 Apr  5 20:03 ngc-cli
--rw-r--r--  1 coreyt coreyt       36 Apr  5 20:03 ngc-cli.md5
--rw-rw-r--  1 coreyt coreyt 56074601 Apr  5 20:03 ngccli_arm64.zip
-drwxrwxr-x  3 coreyt coreyt     4096 Jun 21 12:04 nltk_data
-drwxrwxr-x  3 coreyt coreyt     4096 Apr  1 08:25 nvidia
-lrwxrwxrwx  1 coreyt coreyt       31 Apr  5 08:00 orin-recover -> /mnt/orin_recovery/home/coreyt/
-drwxrwxr-x 35 coreyt coreyt     4096 Jul 26 11:55 projects
-drwxrwxr-x 30 coreyt coreyt     4096 Apr  5 07:57 projects2
-drwxrwxr-x 30 coreyt coreyt     4096 Apr  5 17:49 projects3
--rwxrwxr-x  1 coreyt coreyt     5257 Jun 27 17:00 rtw89-restore.sh
-drwxrwxr-x  3 coreyt coreyt     4096 Apr  5 20:02 script-tools
-drwx------  7 coreyt coreyt     4096 Apr  5 14:49 snap
-drwxrwxr-x  5 coreyt coreyt     4096 Jul  9 11:47 transcript-data
-drwxrwxr-x  6 coreyt coreyt     4096 Apr 11 16:47 vllm-env
--rwxrwxr-x  1 coreyt coreyt     1653 Jun 27 17:16 wifi-signal.sh
+[REDACTED TC-86] 62 line(s) removed: this block was the OUTPUT of the command echoed above, which enumerated an out-of-repo directory. The echo is kept; the listing is not published.
 
 exec
 /bin/bash -c "ls -la /home/coreyt/.claude | sed -n '1,200p'" in /home/coreyt/projects/fathomdb-worktrees/agent-seat-hardening
  succeeded in 0ms:
-total 1600
-drwxrwxr-x  17 coreyt coreyt    4096 Jul 27 13:33 .
-drwxr-x---  43 coreyt coreyt    4096 Jul 27 13:26 ..
--rw-------   1 coreyt coreyt     509 Jul 27 10:39 .credentials.json
--rw-rw-r--   1 coreyt coreyt      24 Jul 27 08:30 .last-cleanup
--rw-rw-r--   1 coreyt coreyt     161 Jul 25 10:40 .last-update-result.json
-drwxrwxr-x   2 coreyt coreyt    4096 Jul 27 13:26 backups
-drwxrwxr-x   2 coreyt coreyt    4096 Apr  5 14:44 cache
-drwx------   3 coreyt coreyt    4096 Jul 24 10:21 daemon
--rw-rw-r--   1 coreyt coreyt    8597 Jul 24 10:00 daemon.log
-drwxrwxr-x   2 coreyt coreyt    4096 Apr 10 07:39 downloads
-drwxrwxr-x 111 coreyt coreyt   16384 Jul 27 11:33 file-history
--rw-------   1 coreyt coreyt 1470753 Jul 27 13:33 history.jsonl
-drwx------   7 coreyt coreyt    4096 Jul 25 11:20 jobs
-drwxrwxr-x   2 coreyt coreyt   12288 Jul 27 09:35 paste-cache
-drwxrwxr-x   2 coreyt coreyt    4096 Jul 24 09:40 plans
-drwxrwxr-x   3 coreyt coreyt    4096 Jul 27 07:52 plugins
-drwx------  22 coreyt coreyt    4096 Jul 27 08:30 projects
-drwxrwxr-x 140 coreyt coreyt   20480 Jul 27 08:36 session-env
-drwx------   2 coreyt coreyt    4096 Jul 27 07:49 sessions
--rw-rw-r--   1 coreyt coreyt     306 Jul 25 10:40 settings.json
-drwxrwxr-x   2 coreyt coreyt    4096 Jul 27 08:36 shell-snapshots
--rw-------   1 coreyt coreyt   12871 Jul 26 19:06 stats-cache.json
-drwxrwxr-x  20 coreyt coreyt    4096 Jul 27 08:30 tasks
-drwxrwxr-x   2 coreyt coreyt    4096 Jul 26 16:13 telemetry
+[REDACTED TC-86] 25 line(s) removed: this block was the OUTPUT of the command echoed above, which enumerated an out-of-repo directory. The echo is kept; the listing is not published.
 
 exec
 /bin/bash -c "sed -n '1,260p' .claude/hooks/seat-path-guard.sh" in /home/coreyt/projects/fathomdb-worktrees/agent-seat-hardening
