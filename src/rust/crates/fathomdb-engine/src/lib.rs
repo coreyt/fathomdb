@@ -88,6 +88,27 @@ const VECTOR_EQUIVALENCE_L2_EPSILON: f32 = 1e-5;
 /// tolerated Phase-1 mean-centered `embedding_bin` sign-flip count across all 45
 /// probes. `0` = exact: any single flip ⇒ divergence ⇒ dense refused.
 const VECTOR_EQUIVALENCE_P1_FLIP_FLOOR: u64 = 0;
+
+/// 0.8.20 Slice 22 (TC-68) — `_fathomdb_open_state` key holding the
+/// [`probe_verification_fingerprint`] of the last open at which the
+/// vector-equivalence probe actually RAN and PASSED on this workspace. An open
+/// whose freshly computed fingerprint equals this value reuses that verdict and
+/// performs ZERO probe embeds; anything else re-runs the full probe.
+///
+/// It lives in `_fathomdb_open_state` — the engine's existing open-time
+/// durable-marker KV table (migration step 1) — alongside
+/// [`SEARCH_INDEX_TOKENIZER_REPROJECT_MARKER_KEY`] and
+/// [`EDGE_VECTOR_PRUNE_MARKER_KEY`], which is exactly this shape of state. So
+/// TC-68 adds **no** table, **no** migration step and **no** `SCHEMA_VERSION`
+/// bump: an old DB simply has no row here and re-runs the probe once.
+const VECTOR_EQUIVALENCE_VERDICT_CACHE_KEY: &str = "vector_equivalence_verified_fingerprint";
+
+/// 0.8.20 Slice 22 (TC-68) — recipe tag mixed into every verdict fingerprint.
+/// **Bump it whenever the SET of fingerprint inputs changes.** Every cached
+/// verdict in the field then stops matching and the probe re-runs once per
+/// workspace — the fail-SAFE direction, and the reason a stale recipe can never
+/// silently keep vouching for a narrower check than the current build performs.
+const VECTOR_EQUIVALENCE_FINGERPRINT_RECIPE: &str = "fathomdb-veq-verdict-v1";
 /// Default drain budget for `rebuild_projections` / `rebuild_vec0`. The
 /// rebuild path freezes the scheduler before truncating shadow rows, so
 /// the only outstanding work is whatever workers were mid-flight when
@@ -15355,14 +15376,161 @@ fn probe_populate_baseline(
     Ok(())
 }
 
+/// 0.8.20 Slice 22 (TC-68) — one row of the stored probe baseline:
+/// `(probe_ordinal, probe_text, reference_vec, embedder_name, embedder_revision, dim)`.
+type StoredProbeRow = (i64, String, Vec<u8>, String, String, i64);
+
+/// 0.8.20 Slice 22 (TC-68) — length-prefixed field feed for the verdict
+/// fingerprint. The `u64` length prefix makes the concatenation UNAMBIGUOUS: two
+/// different input tuples can never produce the same byte stream by sliding a
+/// delimiter (e.g. name `"ab"` + revision `"c"` vs name `"a"` + revision `"bc"`).
+fn hash_fingerprint_field(hasher: &mut Sha256, bytes: &[u8]) {
+    hasher.update((bytes.len() as u64).to_le_bytes());
+    hasher.update(bytes);
+}
+
+/// 0.8.20 Slice 22 (TC-68) — the **embedder-identity fingerprint** the cached
+/// equivalence verdict is keyed on: a SHA-256 over EVERY input the probe's verdict
+/// depends on. Two opens sharing a fingerprint would, by construction, compute the
+/// same P1/P2 answer, so the second may reuse the first's.
+///
+/// The inputs, and why each is load-bearing:
+///
+/// - **the recipe tag** ([`VECTOR_EQUIVALENCE_FINGERPRINT_RECIPE`]) — bumping it
+///   invalidates every cached verdict in the field at once;
+/// - **`identity.{name, revision, dimension}`** — the nominal embedder. This is
+///   *defence in depth only*: `check_embedder_profile` already REFUSES the open
+///   with `EmbedderIdentityMismatch`/`EmbedderDimensionMismatch` before the probe
+///   is reached, so an identity change is never observed here in practice;
+/// - **the live pinned `mean_vec`** (and whether centering is applied at all) —
+///   this one is NOT optional. P1 quantizes through
+///   `vec_quantize_binary(sign(x − mean_vec))`, so rewriting the pinned mean
+///   changes the verdict *for the same embedder and the same baseline*. A
+///   fingerprint over the identity triple alone would be stale by construction,
+///   because open-time mean-recovery/requantize and the operator `recompute_mean`
+///   verb both rewrite it;
+/// - **the committed probe fixture** — a cached verdict computed over a different
+///   probe set means nothing. (`vector_equivalence_probe_fixture_drift.rs` does
+///   NOT make this redundant: it pins the engine's copy equal to the embedder
+///   crate's copy — it guards COPY drift between two committed files, not the
+///   fixture's content across releases. The stored-baseline completeness check
+///   below does fail closed first on a fixture edit, so this input is belt-and-
+///   braces rather than the only guard; it is one hash of a ~3 KB constant.);
+/// - **both D4 floors** — a verdict that passed under a loose ε must not be
+///   inherited by a build that tightened it;
+/// - **the STORED baseline rows, reference blobs included** — the 0.8.18 fix-2
+///   completeness check pins each row's shape (count, ordinal, text, blob LENGTH,
+///   identity) but not the blob CONTENT, which the re-embed comparison used to
+///   catch. Hashing the blobs keeps that external-tamper closure intact at
+///   negligible cost (~69 KB of SHA-256 against 45 model invocations).
+fn probe_verification_fingerprint(
+    identity: &EmbedderIdentity,
+    mean_vec: Option<&[f32]>,
+    stored: &[StoredProbeRow],
+) -> String {
+    let mut hasher = Sha256::new();
+    hash_fingerprint_field(&mut hasher, VECTOR_EQUIVALENCE_FINGERPRINT_RECIPE.as_bytes());
+    hash_fingerprint_field(&mut hasher, identity.name.as_bytes());
+    hash_fingerprint_field(&mut hasher, identity.revision.as_bytes());
+    hash_fingerprint_field(&mut hasher, &identity.dimension.to_le_bytes());
+    match mean_vec {
+        Some(mean) => {
+            hash_fingerprint_field(&mut hasher, b"mean-centered");
+            hash_fingerprint_field(&mut hasher, &encode_vector_blob(mean));
+        }
+        None => hash_fingerprint_field(&mut hasher, b"un-centered"),
+    }
+    hash_fingerprint_field(&mut hasher, VECTOR_EQUIVALENCE_PROBE_FIXTURE.as_bytes());
+    hash_fingerprint_field(&mut hasher, &VECTOR_EQUIVALENCE_P1_FLIP_FLOOR.to_le_bytes());
+    hash_fingerprint_field(&mut hasher, &VECTOR_EQUIVALENCE_L2_EPSILON.to_le_bytes());
+    hash_fingerprint_field(&mut hasher, &(stored.len() as u64).to_le_bytes());
+    for (ordinal, probe_text, reference_vec, name, revision, dim) in stored {
+        hash_fingerprint_field(&mut hasher, &ordinal.to_le_bytes());
+        hash_fingerprint_field(&mut hasher, probe_text.as_bytes());
+        hash_fingerprint_field(&mut hasher, reference_vec);
+        hash_fingerprint_field(&mut hasher, name.as_bytes());
+        hash_fingerprint_field(&mut hasher, revision.as_bytes());
+        hash_fingerprint_field(&mut hasher, &dim.to_le_bytes());
+    }
+    hasher.finalize().iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// 0.8.20 Slice 22 (TC-68) — is `fingerprint` the fingerprint under which the
+/// probe last RAN and PASSED on this workspace?
+///
+/// Fail-SAFE by construction (R-VEQ-4): **every** failure mode answers `false`,
+/// which means "run the probe". A missing `_fathomdb_open_state` table, an absent
+/// row, a non-TEXT value, a truncated or garbled value, any SQL error — none of
+/// them can be mistaken for a pass. The only `true` is an exact match against a
+/// value this engine wrote after a verification it performed itself.
+fn probe_verification_is_cached(connection: &Connection, fingerprint: &str) -> bool {
+    connection
+        .query_row(
+            "SELECT value FROM _fathomdb_open_state WHERE key = ?1",
+            [VECTOR_EQUIVALENCE_VERDICT_CACHE_KEY],
+            |row| row.get::<_, String>(0),
+        )
+        .map(|cached| cached == fingerprint)
+        .unwrap_or(false)
+}
+
+/// 0.8.20 Slice 22 (TC-68) — record that the probe RAN and PASSED under
+/// `fingerprint`.
+///
+/// A write failure is deliberately SWALLOWED rather than turned into a verdict
+/// failure. The arm has just been verified, so refusing dense because a marker
+/// could not be persisted (read-only file, disk full) would be a false refusal;
+/// and the consequence of the missing marker is simply that the next open re-runs
+/// the probe — more work, never less. That is the fail-safe direction.
+fn record_probe_verification(connection: &Connection, fingerprint: &str) {
+    let _ = connection.execute(
+        "INSERT INTO _fathomdb_open_state(key, value) VALUES(?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![VECTOR_EQUIVALENCE_VERDICT_CACHE_KEY, fingerprint],
+    );
+}
+
+/// 0.8.20 Slice 22 (TC-68) — drop any cached verdict.
+///
+/// Called on EVERY failure path of the check, so a workspace that could not be
+/// verified never carries a marker a later open might match. A failing verdict is
+/// therefore never cached: the probe re-runs each open until it passes again.
+fn clear_probe_verification(connection: &Connection) {
+    let _ = connection.execute(
+        "DELETE FROM _fathomdb_open_state WHERE key = ?1",
+        [VECTOR_EQUIVALENCE_VERDICT_CACHE_KEY],
+    );
+}
+
 /// 0.8.18 Slice 5 — SUBSEQUENT open: re-embed the 45 probes and assert BOTH
 /// dense-pipeline representations against the stored references — **(P1)** the
 /// mean-centered `embedding_bin` sign-flip count (floor 0, exact) and **(P2)** the
-/// un-centered Phase-2 L2 (within `VECTOR_EQUIVALENCE_L2_EPSILON`). Fail-SAFE
-/// (fix-1 DEFECT #1): a probe embed that panics/errors/returns wrong-dim, a
-/// malformed/missing reference row, an unreadable pinned mean, or a
-/// `vec_quantize_binary`/L2 SQL failure each ⇒ `Err` (cannot verify ⇒ refuse
-/// dense), never a silent skip-and-serve.
+/// un-centered Phase-2 L2 (within `VECTOR_EQUIVALENCE_L2_EPSILON`).
+///
+/// 0.8.20 Slice 22 (TC-68) — this wrapper adds the failure half of the verdict
+/// cache: ANY `Err` from the inner check drops the cached marker, so a workspace
+/// that could not be verified never leaves a stale "verified" marker behind for a
+/// later open to match. (A failing verdict is never *written*; this also clears a
+/// marker left by an earlier, passing open whose fingerprint has since changed.)
+fn probe_check_against_baseline(
+    connection: &Connection,
+    embedder: &dyn Embedder,
+    identity: &EmbedderIdentity,
+    mean_pinned: bool,
+    probes: &[&str],
+) -> Result<(), String> {
+    let outcome =
+        probe_check_against_baseline_inner(connection, embedder, identity, mean_pinned, probes);
+    if outcome.is_err() {
+        clear_probe_verification(connection);
+    }
+    outcome
+}
+
+/// 0.8.18 Slice 5 — the check proper. Fail-SAFE (fix-1 DEFECT #1): a probe embed
+/// that panics/errors/returns wrong-dim, a malformed/missing reference row, an
+/// unreadable pinned mean, or a `vec_quantize_binary`/L2 SQL failure each ⇒ `Err`
+/// (cannot verify ⇒ refuse dense), never a silent skip-and-serve.
 ///
 /// fix-2 (DEFECT #1 residual): BEFORE the divergence check, the STORED baseline is
 /// validated to be EXACTLY the committed probe set — the expected row count, a
@@ -15372,7 +15540,16 @@ fn probe_populate_baseline(
 /// one. This closes the partial-baseline / external-tamper fail-open (a 44-of-45
 /// table, or a re-attributed/mangled row, previously verified only the rows present
 /// or re-embedded a tampered `probe_text` against itself). Any mismatch ⇒ `Err`.
-fn probe_check_against_baseline(
+///
+/// 0.8.20 Slice 22 (TC-68) — the 45 re-embeds are CACHED against
+/// [`probe_verification_fingerprint`]. Note WHERE the cache check sits: after the
+/// mean resolution and after the fix-2 completeness validation, before the
+/// re-embed loop. That split is deliberate — everything cheap keeps running on
+/// EVERY open (so a short, re-attributed, mangled or fixture-mismatched baseline
+/// still fails closed immediately), and only the expensive part, the 45 model
+/// invocations, is skipped. The residual this buys is recorded in
+/// `dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`.
+fn probe_check_against_baseline_inner(
     connection: &Connection,
     embedder: &dyn Embedder,
     identity: &EmbedderIdentity,
@@ -15409,7 +15586,7 @@ fn probe_check_against_baseline(
              FROM _fathomdb_embed_probe ORDER BY probe_ordinal",
         )
         .map_err(|e| format!("could not read the stored probe references: {e}; cannot verify"))?;
-    let stored: Vec<(i64, String, Vec<u8>, String, String, i64)> = stmt
+    let stored: Vec<StoredProbeRow> = stmt
         .query_map([], |row| {
             Ok((
                 row.get::<_, i64>(0)?,
@@ -15485,6 +15662,23 @@ fn probe_check_against_baseline(
         }
     }
 
+    // 0.8.20 Slice 22 (TC-68) — the CACHE gate. Everything above this line ran on
+    // this open and still fails closed; everything below it is the 45 model
+    // invocations that made `Engine::open` cost a flat 45 embeds FOREVER (measured
+    // at `94bb33ef`: 0 with no enrolled kind, 90 on the one-time population open,
+    // 45 on every open thereafter — independent of the enrolled-kind count, since
+    // the probe gate is an `EXISTS` and the body never iterates kinds).
+    //
+    // If the probe already RAN and PASSED under this exact fingerprint, re-running
+    // it is a pure re-computation of a known answer, so the verdict is reused.
+    // Fail-SAFE: `probe_verification_is_cached` answers `false` for every failure
+    // mode — missing table, absent row, garbled value, SQL error — so an
+    // unreadable cache RUNS the probe, it never short-circuits to trusting it.
+    let fingerprint = probe_verification_fingerprint(identity, mean_vec.as_deref(), &stored);
+    if probe_verification_is_cached(connection, &fingerprint) {
+        return Ok(());
+    }
+
     let mut total_flips: u64 = 0;
     let mut max_l2: f32 = 0.0;
     let mut worst_probe: Option<String> = None;
@@ -15530,6 +15724,12 @@ fn probe_check_against_baseline(
              worst probe {probe_hint:?}"
         ));
     }
+
+    // 0.8.20 Slice 22 (TC-68) — the probe RAN and PASSED; record the fingerprint
+    // so the next open with identical inputs need not repeat it. Only a verdict
+    // this engine reached itself is ever written (the failure paths above return
+    // early, and the wrapper clears any prior marker on them).
+    record_probe_verification(connection, &fingerprint);
     Ok(())
 }
 
