@@ -4619,6 +4619,28 @@ impl Engine {
             message: "could not re-derive projection registry on boot".to_string(),
         })?;
 
+        // 0.8.20 Slice 21 fix-1 (codex §9 round 1 [P2], ledger `TC-71`) — bring an
+        // ALREADY-ENROLLED inert vector kind into agreement with the role-aware
+        // decision. Slice 21c closed the three forward doors, but a database that
+        // already ran the old code under `{roles:[filterable], vector:{}}` keeps
+        // its `_fathomdb_vector_kinds` rows — `vector_kind_needs_enrolment`
+        // short-circuits on `kind_is_vector_indexed` and never reaches the new
+        // predicate, and `project_canonical_node_row` reads only the registry
+        // membership — so upgrading did not actually stop the unwanted embeddings.
+        // Narrowly authorised (registry EXISTS, declares a `vector` sub-object,
+        // and declares no `searchable→vector` projection) so a LEGACY workspace
+        // with a working dense arm is never touched; see
+        // [`registry_governs_an_inert_dense_arm`]. Deletes no embedding. Runs
+        // BEFORE `run_vector_equivalence_probe` (which fires after `open_locked`
+        // returns), so a database whose only enrolment was the inert one pays no
+        // probe embeds on the healing open. Another boot reconciliation on the
+        // writer connection, single-threaded, before readers spawn.
+        reconcile_inert_vector_enrolments_on_boot(&connection).map_err(|_| {
+            EngineOpenError::Io {
+                message: "could not reconcile inert vector kind enrolments on boot".to_string(),
+            }
+        })?;
+
         // 0.8.20 Slice 15e — reconcile the live `vector_default` attribute columns
         // with the registry's `filterable` set. On a DB whose vec0 shape already
         // matches the registry (the common case, incl. every reopen of a DB that
@@ -4804,13 +4826,18 @@ impl Engine {
     /// what stops this path re-enrolling immediately after
     /// [`unenrol_registry_vector_node_kinds`] has run: the inverse removes the
     /// registry row, and with no active declaration this returns without
-    /// re-adding it. (The kind registry DOES now have a delete path; it is that
-    /// one, reachable only from `configure_projections`.)
+    /// re-adding it. (The kind registry DOES now have delete paths: that one, plus
+    /// the Slice-21 fix-1 reconciliation
+    /// [`reconcile_inert_vector_enrolments_on_boot`]. Both are gated on the SAME
+    /// predicate this probe reads, so neither can be undone by a later write.)
     ///
     /// Cost: the registry probe is skipped entirely once the kind is enrolled, so
     /// a workspace with a live dense arm pays nothing; a workspace that never
     /// declared a vector projection pays two `prepare_cached` `EXISTS` probes per
-    /// batch-row of an unenrolled kind.
+    /// batch-row of an unenrolled kind. (Slice 21c / `TC-71` made that probe
+    /// require the `searchable` ROLE, and deliberately kept the second `EXISTS`
+    /// as a fast negative so this cost is unchanged — see
+    /// [`vector_projection_declared`].)
     ///
     /// fix-2 (codex §9 [P2]) — a late enrolment now runs the SAME stranded-row
     /// treatment the declare-time door runs ([`reenqueue_stranded_vector_rows`]),
@@ -8095,10 +8122,23 @@ impl Engine {
         let lid = Self::resolve_lifecycle_target(logical_id)?;
 
         // Settle in-flight projection work first: the async projection worker
-        // commits vector/FTS shadows on its OWN connection via `BEGIN IMMEDIATE`,
-        // so a state flip issued while a worker holds the write lock would
-        // SQLITE_BUSY. Draining (unfrozen so any unprojected row completes) leaves
-        // the worker idle; a bare state flip enqueues no new projection work.
+        // commits vector/FTS shadows on its OWN connection, so a state flip issued
+        // while a worker holds the write lock would SQLITE_BUSY. Draining
+        // (unfrozen so any unprojected row completes) leaves the worker idle; a
+        // bare state flip enqueues no new projection work.
+        //
+        // 0.8.20 Slice 21a-2 (TC-57) — this comment used to say the worker commits
+        // "via `BEGIN IMMEDIATE`". It does NOT and never did:
+        // `commit_projection_outcomes` opens `connection.transaction()`, i.e.
+        // rusqlite's `BEGIN DEFERRED` default, and reads before it writes. Its
+        // CONCLUSION stands, and in fact more strongly than the original wording
+        // implied — BOTH sides of that contention are read-then-upgrade deferred
+        // transactions, which SQLite refuses to promote WITHOUT consulting the busy
+        // handler (see the `TransactionBehavior::Immediate` note in `commit_batch`).
+        // So the `drain()` below is load-bearing, not belt-and-braces: it is what
+        // keeps this flip's own read-then-upgrade transaction (`:query_row` above
+        // the `UPDATE` below) out of a worker's write window. TC-57's fix is scoped
+        // to `commit_batch`; converting this path is a separate change.
         self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS)?;
 
         let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
@@ -8202,8 +8242,10 @@ impl Engine {
     ) -> Result<ProjectionDelta, EngineError> {
         self.ensure_open()?;
         // Settle in-flight async projection work first (same rationale as
-        // `transition`): the async worker commits on its own connection, so a
-        // backfill issued while it holds the write lock would SQLITE_BUSY.
+        // `transition`, including the 0.8.20 Slice 21a-2 / TC-57 correction
+        // recorded there: the worker commits on its own connection with a rusqlite
+        // DEFERRED transaction, NOT `BEGIN IMMEDIATE`). A backfill issued while it
+        // holds the write lock would SQLITE_BUSY.
         self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS)?;
 
         // 0.8.20 Slice 20c (R-20-DR remainder) — the backfill is gated on a LIVE
@@ -12825,12 +12867,21 @@ fn run_projection_job(shared: &ProjectionRuntimeShared, job: &ProjectionJob) -> 
     //
     // Their LADDER is left alone for a second, separately MEASURED reason:
     // shortening it makes the worker's terminal-commit land while a caller's own
-    // write is still open, which trips the PRE-EXISTING `SQLITE_BUSY_SNAPSHOT`
-    // write-race already documented in `slice20_dense_readiness.rs` (governed
-    // supersession reads before it writes, so `busy_timeout` cannot retry it).
-    // Measured on `consolidate_provider` under 6-way concurrency: 0/48 failures
-    // with the ladder, 8/48 without. Left byte-for-byte as shipped; the race is
+    // write is still open, which used to trip the governed write-race. Measured on
+    // `consolidate_provider` under 6-way concurrency: 0/48 failures with the
+    // ladder, 8/48 without. Left byte-for-byte as shipped; the ladder length is
     // reported as OOS-17 rather than newly exposed by a fix round.
+    //
+    // 0.8.20 Slice 21 (TC-57) — this note used to name that race
+    // `SQLITE_BUSY_SNAPSHOT` and call it PRE-EXISTING. Both are corrected: the
+    // characterized mechanism is plain `SQLITE_BUSY` (5) on a read→write lock
+    // PROMOTION, with the busy handler invoked ZERO times (SQLite skips it for
+    // deadlock avoidance), so no `busy_timeout` could absorb it;
+    // `SQLITE_BUSY_SNAPSHOT` (517) is only a second, narrower exit of the same
+    // shape. And the race is FIXED — `commit_batch` now takes `BEGIN IMMEDIATE`
+    // (see the note there), so the governed path never promotes. The 0/48-vs-8/48
+    // measurement above stands as the reason not to shorten the ladder, but it is
+    // no longer load-bearing for correctness of the governed write path.
     if shared.embedder.is_none() && job.kind != EDGE_FACT_KIND {
         return ProjectionOutcome::Deferred;
     }
@@ -16399,6 +16450,30 @@ impl StoredProjection {
         self.roles.contains(&ProjectionRole::Searchable) && self.fts_present
     }
 
+    /// 0.8.20 Slice 21c (ledger `TC-71`) — **THE `searchable→vector` predicate.**
+    /// True iff this declaration puts the attribute on the dense arm: the
+    /// `searchable` role AND a `vector` sub-object. The exact analogue of
+    /// [`StoredProjection::wants_property_fts`], for the same reason — the
+    /// sub-object SELECTS a sub-target of `searchable`; it does not confer one.
+    ///
+    /// [`vector_projection_declared`] — the corpus-wide predicate gating all
+    /// three enrolment paths (declare-time backfill, its drop inverse, and the
+    /// write path's late enrolment) — routes through this so no call site can
+    /// re-derive the rule and drift. Before it existed, that predicate keyed off
+    /// `vector_declared` ALONE, so `{roles: [filterable], vector: {}}` — the
+    /// combination Slice 15d documents as inert-but-round-trippable — enrolled
+    /// node kinds, backfilled the corpus and made every later write enqueue an
+    /// embedding in any session with a live embedder.
+    ///
+    /// **Deliberately NOT the same as [`StoredProjection::has_deferred`]**, which
+    /// keys off `vector_declared` alone and must keep doing so: that one feeds
+    /// `ProjectionDelta.deferred`, a REPORTING field, and the round-trip contract
+    /// wants a stored-but-unbuilt `vector` sub-object reported however it was
+    /// declared. TC-71 changes what the engine DOES, not what it says.
+    fn wants_vector(&self) -> bool {
+        self.roles.contains(&ProjectionRole::Searchable) && self.vector_declared
+    }
+
     /// The `fts_tokenizer` column value: `None` (SQL NULL) when no `fts`
     /// sub-object, else the custom tokenizer or `""` for engine-default.
     fn fts_column(&self) -> Option<String> {
@@ -16881,6 +16956,13 @@ fn describe_projection_delta(existing: &StoredProjection, desired: &StoredProjec
 /// that removes the LAST `searchable→vector` declaration un-enrols the node kinds
 /// the forward path enrolled ([`unenrol_registry_vector_node_kinds`]), on this
 /// same transaction. It deletes no embedding.
+///
+/// 0.8.20 Slice 21 fix-1 (codex §9 round 1 [P2]) — and, beside that transition, a
+/// state-keyed RECONCILIATION ([`registry_governs_an_inert_dense_arm`]) so that a
+/// database already carrying an inert enrolment from before the Slice-21c role
+/// gate is healed by any `configure_projections` call, not only by a
+/// searchable-vector-to-none transition it may never perform. The boot arm is
+/// [`reconcile_inert_vector_enrolments_on_boot`].
 fn apply_projection_config(
     tx: &Connection,
     specs: &[ProjectionSpec],
@@ -17046,7 +17128,21 @@ fn apply_projection_config(
             false
         }
     } else {
-        if vector_declared_before {
+        // fix-1 (codex §9 round 1 [P2], ledger `TC-71`) — the transition arm is
+        // KEPT as-is and a state-keyed reconciliation is added BESIDE it; neither
+        // subsumes the other. The transition fires when this very call removed the
+        // last dense-arm declaration, including the case where it removed the last
+        // `vector` sub-object with it (which leaves
+        // `registry_governs_an_inert_dense_arm` false). The reconciliation covers
+        // the ALREADY-AFFECTED database whose user calls `configure_projections`
+        // again with anything at all: there `before` is already `false`, so the
+        // transition arm is inert and the inert enrolment used to survive
+        // indefinitely. `||` short-circuits, so the transition case pays nothing
+        // extra; the other case pays two cached `EXISTS` probes on a governed call,
+        // never on the hot write path.
+        if vector_declared_before
+            || registry_governs_an_inert_dense_arm(tx).map_err(|_| EngineError::Storage)?
+        {
             unenrol_registry_vector_node_kinds(tx).map_err(|_| EngineError::Storage)?;
         }
         false
@@ -17093,6 +17189,20 @@ fn apply_projection_config(
 /// ([`Engine::enrol_vector_kind_if_declared`] is gated on
 /// [`vector_projection_declared`]).
 ///
+/// # 0.8.20 Slice 21 fix-1 — a SECOND, narrower authorisation now exists
+///
+/// The reasoning above is why the bare post-state cannot authorise this DELETE,
+/// and it still stands. What it does not cover is a database that ran the
+/// PRE-Slice-21c code and enrolled node kinds off a `{filterable, vector}`
+/// declaration: there the registry DID own the enrolment, and no transition will
+/// ever fire for it. [`registry_governs_an_inert_dense_arm`] adds exactly that
+/// case — positively conditioned on the registry existing AND declaring a
+/// `vector` sub-object AND declaring no `searchable→vector` projection, which is
+/// strictly narrower than the bare post-state and in particular excludes every
+/// workspace whose enrolment the registry never made. Its callers are
+/// [`reconcile_inert_vector_enrolments_on_boot`] and the drop arm of
+/// [`apply_projection_config`].
+///
 /// # `'edge_fact'` is excluded, deliberately
 ///
 /// [`project_canonical_edge_row`] (G11) auto-registers `'edge_fact'` off the
@@ -17113,6 +17223,154 @@ fn unenrol_registry_vector_node_kinds(tx: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// 0.8.20 Slice 21 fix-1 (codex §9 round 1 `[P2]`, ledger `TC-71`) — **does the
+/// registry GOVERN the dense arm while declaring none?** The narrow,
+/// positively-conditioned predicate that authorises
+/// [`unenrol_registry_vector_node_kinds`] on a bare STATE rather than on the
+/// `declared_before && !declared_after` transition.
+///
+/// # Why a state-keyed authorisation exists at all
+///
+/// Slice 21c gated the dense arm on the `searchable` ROLE, which closes the three
+/// FORWARD doors. It cannot reach a database that already ran the old code: those
+/// node kinds are already in `_fathomdb_vector_kinds`, and
+///
+/// - [`Engine::vector_kind_needs_enrolment`] returns early the moment
+///   [`kind_is_vector_indexed`] is true, so it never consults the new role-aware
+///   predicate for an EXISTING registration; and
+/// - [`project_canonical_node_row`] gates the embed enqueue solely on registry
+///   membership (deliberately — that is the hot write path, and the decision is
+///   meant to live upstream).
+///
+/// So without this, upgrading does not actually stop the billable, unexpected
+/// embeddings for exactly the population TC-71 was raised for — the finding's
+/// whole harm survives the fix unless the user happens to perform a
+/// searchable-vector-to-none transition later.
+///
+/// # THE TRAP: why it is not `!vector_projection_declared`
+///
+/// [`vector_projection_declared`] answers `false` when the registry table is
+/// ABSENT (pre-step-24) or merely EMPTY — which is every LEGACY database, many of
+/// which have a legitimately working dense arm enrolled by other means (the
+/// `#[doc(hidden)]` `configure_vector_kind_for_test` hook is one; before this
+/// slice `production_vector_kind_surface=[]`, but a workspace is not obliged to
+/// have reached its enrolment through the registry). Un-enrolling on that bare
+/// negative would silently switch vector search OFF for all of them — a far worse
+/// regression than TC-71 itself. So the rule is POSITIVE on all three counts:
+///
+///   1. `_fathomdb_projection_registry` EXISTS; **and**
+///   2. at least one row carries a `vector` sub-object (`vector_declared = 1`) —
+///      someone actually asked for a dense arm through the registry, which is
+///      precisely what identifies the affected population; **and**
+///   3. NO projection satisfies [`StoredProjection::wants_vector`], i.e. none of
+///      them is `searchable`.
+///
+/// Condition 2 is the load-bearing one. It leaves untouched a registry-governed
+/// database that declares no `vector` sub-object at all but holds enrolments from
+/// a pre-registry era (`slice15e_prekn_filterable` is exactly that shape). Being
+/// conservative here is the correct direction: never destroy a working dense arm.
+///
+/// Conditions 1+2 are the SAME two `prepare_cached` `EXISTS` probes
+/// [`vector_projection_declared`] opens with, so a workspace that never declared
+/// a `vector` sub-object — the overwhelmingly common shape — pays nothing beyond
+/// them and never reaches the typed [`load_projection_registry`] read. Condition 3
+/// is delegated to [`vector_projection_declared`] verbatim rather than re-derived,
+/// so the authorisation and the gate cannot drift.
+fn registry_governs_an_inert_dense_arm(conn: &Connection) -> rusqlite::Result<bool> {
+    // (1) the registry must EXIST. A pre-step-24 database has no registry at all
+    // and is therefore not registry-governed — hands off.
+    let table_exists: bool = conn
+        .prepare_cached(
+            "SELECT EXISTS(
+                 SELECT 1 FROM sqlite_master
+                 WHERE type = 'table' AND name = '_fathomdb_projection_registry'
+             )",
+        )?
+        .query_row([], |row| row.get(0))?;
+    if !table_exists {
+        return Ok(false);
+    }
+    // (2) …and it must actually DECLARE a `vector` sub-object somewhere. An empty
+    // or vector-less registry governs no dense arm, so any enrolment present came
+    // from outside it and is not ours to remove.
+    let any_vector_subobject: bool = conn
+        .prepare_cached(
+            "SELECT EXISTS(SELECT 1 FROM _fathomdb_projection_registry WHERE vector_declared = 1)",
+        )?
+        .query_row([], |row| row.get(0))?;
+    if !any_vector_subobject {
+        return Ok(false);
+    }
+    // (3) …while declaring no `searchable→vector` projection. THE predicate,
+    // reused, so this can never disagree with the gate the write path applies.
+    Ok(!vector_projection_declared(conn)?)
+}
+
+/// 0.8.20 Slice 21 fix-1 (codex §9 round 1 `[P2]`) — the BOOT arm of the
+/// reconciliation: on every open, bring an already-enrolled inert vector kind
+/// into agreement with the role-aware decision, so an affected database
+/// self-heals without the user calling anything. Returns `true` iff it un-enrolled
+/// something.
+///
+/// Authorised by [`registry_governs_an_inert_dense_arm`] (read that for the trap
+/// this must not fall into), and performed by
+/// [`unenrol_registry_vector_node_kinds`] — the SAME writer the drop inverse uses,
+/// so `'edge_fact'` is excluded (G11 auto-registers it off the presence of an edge
+/// body, independently of the projection registry) and **no embedding is deleted**.
+///
+/// # It mirrors the drop inverse exactly, because that inverse does nothing else
+///
+/// `apply_projection_config`'s drop arm is a single call to
+/// [`unenrol_registry_vector_node_kinds`]: no terminal record is touched, no
+/// readiness watermark is rewound, no row is un-stranded, and nothing is notified
+/// (it returns `enqueued = false`). So leaving the database in "the state a drop
+/// transition would have left it in" is exactly that one `DELETE`, and there is
+/// no second half to mirror.
+///
+/// # Cheap when there is nothing to do, and idempotent
+///
+/// A workspace with no `vector` sub-object pays only the two cached `EXISTS`
+/// probes the authorisation opens with. When the authorisation DOES fire, a third
+/// cached `EXISTS` checks whether any node kind is actually enrolled, so the
+/// steady state after the first healing open is a pure READ — no write
+/// transaction, no `DELETE`, nothing to oscillate. `DELETE … WHERE kind <>
+/// 'edge_fact'` is a single statement, hence atomic on its own; no explicit
+/// transaction is opened around it.
+///
+/// # Placement
+///
+/// Runs inside `open_locked` on the writer connection, single-threaded, before
+/// readers and the projection workers spawn — alongside the other boot
+/// reconciliations ([`rederive_projections_on_boot`],
+/// [`reconcile_vector_attr_columns`]) and therefore BEFORE
+/// [`run_vector_equivalence_probe`], which is deliberate: on a database whose only
+/// enrolment was the inert one, reconciling first leaves `_fathomdb_vector_kinds`
+/// empty, so the probe correctly finds no dense arm to guard and the healing open
+/// spends no embed calls at all.
+///
+/// # Not a data migration
+///
+/// It removes a registration row inside ONE live database to match that
+/// database's own declarations. It converts no row across a version step, and
+/// `SCHEMA_VERSION` stays 24.
+fn reconcile_inert_vector_enrolments_on_boot(conn: &Connection) -> rusqlite::Result<bool> {
+    if !registry_governs_an_inert_dense_arm(conn)? {
+        return Ok(false);
+    }
+    // Nothing enrolled beyond the G11 edge arm ⇒ nothing to do. Keeps the steady
+    // state a pure read instead of a no-op write transaction on every open.
+    let any_node_kind: bool = conn
+        .prepare_cached(
+            "SELECT EXISTS(SELECT 1 FROM _fathomdb_vector_kinds WHERE kind <> 'edge_fact')",
+        )?
+        .query_row([], |row| row.get(0))?;
+    if !any_node_kind {
+        return Ok(false);
+    }
+    unenrol_registry_vector_node_kinds(conn)?;
+    Ok(true)
+}
+
 /// 0.8.20 Slice 20c (R-20-DR remainder) — is ANY `searchable→vector` projection
 /// declared in the durable registry?
 ///
@@ -17127,6 +17385,42 @@ fn unenrol_registry_vector_node_kinds(tx: &Connection) -> rusqlite::Result<()> {
 /// absent table means nothing is declared, not an error. Mirrors the guard in
 /// [`load_projection_registry`], and uses `prepare_cached` because the write path
 /// calls this once per un-registered-kind row.
+///
+/// # 0.8.20 Slice 21c (ledger `TC-71`) — it requires the `searchable` ROLE
+///
+/// This used to answer `EXISTS(… WHERE vector_declared = 1)`, reading the stored
+/// `vector` sub-object and never the `roles` column. But the sub-object SELECTS
+/// a sub-target of `searchable`; it does not confer one (exactly as `fts` does
+/// not — see [`StoredProjection::wants_property_fts`]). So
+/// `{roles: [filterable], vector: {}}`, which Slice 15d documents as
+/// inert-but-round-trippable, turned the dense arm ON in any session with a live
+/// embedder: it enrolled node kinds, backfilled the corpus, and made every later
+/// write of those kinds enqueue an embedding. Wasted embed work and unexpected
+/// vectors at rest for a projection meant to do nothing. The answer now comes
+/// from [`StoredProjection::wants_vector`], the ONE predicate, so the three
+/// gated paths cannot drift.
+///
+/// **This flips the forward AND inverse arms of [`apply_projection_config`] at
+/// once**, which is a real semantic consequence and not an accident: demoting
+/// the last `{searchable, vector}` projection to `{filterable, vector}` (or
+/// dropping it while an inert `{filterable, vector}` sibling survives) now reads
+/// `declared → not-declared` and therefore UN-ENROLS, where before the surviving
+/// `vector_declared = 1` row masked the transition and the write path kept
+/// embedding. Pinned in `tests/slice21c_vector_role_gate.rs`.
+///
+/// # Why the cheap `EXISTS` survives as a pre-filter
+///
+/// The write path calls this once per un-registered-kind row, and the
+/// overwhelmingly common shape is a workspace that declared no `vector`
+/// sub-object at all. `EXISTS(… vector_declared = 1)` is a NECESSARY condition
+/// for [`StoredProjection::wants_vector`], so keeping it as a fast negative
+/// leaves that workspace paying exactly the two cached `EXISTS` probes it paid
+/// before — no typed load, no `BTreeMap`, no uncached `prepare`. Only a
+/// workspace that HAS a `vector` sub-object somewhere pays the
+/// [`load_projection_registry`] read, and there the registry is a handful of
+/// app-declared rows; in the ordinary `searchable→vector` case the kind is
+/// enrolled after the first probe and `kind_is_vector_indexed` short-circuits
+/// this call entirely from then on.
 fn vector_projection_declared(conn: &Connection) -> rusqlite::Result<bool> {
     let table_exists: bool = conn
         .prepare_cached(
@@ -17139,10 +17433,20 @@ fn vector_projection_declared(conn: &Connection) -> rusqlite::Result<bool> {
     if !table_exists {
         return Ok(false);
     }
-    conn.prepare_cached(
-        "SELECT EXISTS(SELECT 1 FROM _fathomdb_projection_registry WHERE vector_declared = 1)",
-    )?
-    .query_row([], |row| row.get(0))
+    // Fast negative: no `vector` sub-object anywhere ⇒ certainly no dense arm.
+    let any_vector_subobject: bool = conn
+        .prepare_cached(
+            "SELECT EXISTS(SELECT 1 FROM _fathomdb_projection_registry WHERE vector_declared = 1)",
+        )?
+        .query_row([], |row| row.get(0))?;
+    if !any_vector_subobject {
+        return Ok(false);
+    }
+    // `roles` is persisted as a comma-joined sorted string, so it is not a
+    // trustworthy SQL predicate (a `LIKE` would match a forward-compat token that
+    // merely CONTAINS a role spelling). Answer through the typed registry and the
+    // ONE predicate instead.
+    Ok(load_projection_registry(conn)?.values().any(StoredProjection::wants_vector))
 }
 
 /// 0.8.20 Slice 20c (R-20-DR remainder) — enrol `kind` in the vector pipeline.
@@ -17761,7 +18065,40 @@ fn commit_batch(
     base_cursor: u64,
     provenance_row_cap: u64,
 ) -> rusqlite::Result<u64> {
-    let tx = connection.transaction()?;
+    // 0.8.20 Slice 21a-2 (TC-57) — `BEGIN IMMEDIATE`, not rusqlite's `BEGIN
+    // DEFERRED` default. Take the WAL write lock AT `BEGIN`, before the
+    // supersession SELECT below, so this transaction never has to PROMOTE a read
+    // lock to a write lock.
+    //
+    // The defect this closes (characterized in
+    // `dev/design/0.8.20-tc57-write-race-characterization.md`, repro 10/10 at
+    // baseline `41a81c17`): for a GOVERNED write (`logical_id: Some`) the first
+    // statement in this transaction is a read —
+    // `prior_node_cursors_by_logical_id` — and the second is the supersession
+    // UPDATE. When the async projection worker holds the write lock on its own
+    // connection at that instant, SQLite refuses the promotion with plain
+    // `SQLITE_BUSY` (5) and SKIPS the busy handler entirely, for deadlock
+    // avoidance (`sqlite3_busy_handler`: "if SQLite determines that invoking the
+    // busy handler could result in a deadlock, it will go ahead and return
+    // SQLITE_BUSY"). MEASURED: handler invoked ZERO times, error returned in 0 ms
+    // against rusqlite's 5 000 ms default timeout. So NO `busy_timeout` value
+    // could ever have absorbed it, and the caller saw an opaque, un-retryable
+    // `EngineError::Storage` mid-ingest. The same shape also has a second,
+    // narrower exit — `SQLITE_BUSY_SNAPSHOT` (517) when the WAL advances past the
+    // read snapshot — which this closes too, by construction.
+    //
+    // UNCONDITIONAL rather than gated on `logical_id`, deliberately: an anonymous
+    // batch's first statement is already the INSERT below, so it takes the write
+    // lock essentially immediately anyway and the delta is microseconds, whereas a
+    // content-dependent transaction behaviour would be a NEW correctness surface
+    // (mixed batches, edge arms, future write kinds) with a place to be wrong in
+    // each. MEASURED cost on the anonymous arm: none detectable
+    // (`tc57_worker_commit_pressure.rs`).
+    //
+    // `BEGIN IMMEDIATE` can itself return `SQLITE_BUSY` — but WITH the busy
+    // handler consulted, i.e. absorbed by the existing 5 s default instead of
+    // surfaced (pinned by `tc57_mechanism_control_write_first_is_retryable`).
+    let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
 
     for (i, (write, plan)) in batch.iter().zip(plans).enumerate() {
         // Per-row cursor: row i gets `base_cursor + i + 1`. See the
@@ -18142,13 +18479,24 @@ fn max_cursor(connection: &Connection, table: &str) -> rusqlite::Result<u64> {
 /// — bare-extended-code matching covers the rest with a stable
 /// `"SQLITE_UNKNOWN"` fallback so subscribers always see a typed code.
 ///
-/// Diagnostic completeness for unmapped codes: when this helper returns
-/// `"SQLITE_UNKNOWN"`, the numeric extended code is not lost — it
-/// remains on the underlying `rusqlite::Error::SqliteFailure` carried
-/// in the engine error chain that subscribers can inspect via
-/// `EngineError`'s `source()`. Expanding the enumerated subset (or
-/// surfacing the numeric code as a typed payload field) is a 0.7+
-/// improvement.
+/// Diagnostic completeness for unmapped codes — **corrected 0.8.20 Slice 21a-2
+/// (TC-57)**. This comment used to claim that when the helper returns
+/// `"SQLITE_UNKNOWN"` the numeric extended code "is not lost — it remains on the
+/// underlying `rusqlite::Error::SqliteFailure` carried in the engine error chain
+/// that subscribers can inspect via `EngineError`'s `source()`". **That is
+/// false.** There is no such chain: `EngineError::Storage` is a UNIT variant with
+/// no payload and no `source()`, and `write_inner` drops the `rusqlite::Error`
+/// immediately after emitting the lifecycle event. So for an unmapped code the
+/// numeric value IS lost, and the only signal a host receives is the string
+/// `"SQLITE_UNKNOWN"`.
+///
+/// Concretely: `SQLITE_BUSY_SNAPSHOT` (517) matches none of the PRIMARY constants
+/// below — the match is on the EXTENDED value — so it reaches subscribers as
+/// `"SQLITE_UNKNOWN"` and is unrecoverable from the public API. Restructuring the
+/// error path so busy codes are distinguishable (and surfacing the numeric code as
+/// a typed payload field) is candidate R2 of
+/// `dev/design/0.8.20-tc57-write-race-characterization.md` §7, explicitly OUT of
+/// scope for the 21a-2 fix and recorded here rather than silently carried.
 fn sqlite_extended_code_name(err: &rusqlite::Error) -> Option<&'static str> {
     let sqlite_error = err.sqlite_error()?;
     let extended = sqlite_error.extended_code;

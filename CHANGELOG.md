@@ -225,6 +225,68 @@ AC-050c) gates merges against this invariant.
   `DenseReadiness` string union (`"ready" | "embedding"`) are the only net-new
   types from R-20-DR; Python surfaces the value as a plain `str | None` field.
 
+### Fixed
+
+- **Bulk governed ingest no longer fails with `EngineError::Storage` while the
+  embedding worker is busy (0.8.20, TC-57).** Writing records that carry a
+  `logical_id` (the governed upsert/supersession path) against a vector-indexed
+  kind could return an opaque storage error part-way through an ingest — reliably
+  within the first few hundred rows, and as early as the third write. Nothing was
+  corrupted (the failed batch rolled back), but the error was indistinguishable
+  from a permanent storage failure and no `busy_timeout` setting could avoid it,
+  so there was no host-side workaround short of blind retries.
+
+  *Cause:* the write transaction read the prior version before it wrote the
+  tombstone, so it had to upgrade a read lock to a write lock; SQLite refuses that
+  upgrade outright, without waiting, when another connection — here the engine's
+  own background embedding worker — holds the write lock. The transaction now
+  takes the write lock up front, so there is no upgrade to refuse and ordinary
+  contention is simply waited out.
+
+  *Impact:* no API, schema or on-disk change; governed ingest under a live
+  embedder is also measurably faster end-to-end, because the failed attempts and
+  caller-side backoff are gone. Anonymous (no `logical_id`) writes were never
+  affected and are unchanged.
+- **A `vector` sub-object declared WITHOUT the `searchable` role no longer
+  activates the dense arm (0.8.20, R-20-CR).** A projection such as
+  `{roles: ["filterable"], vector: true}` is documented as accepted, faithfully
+  round-tripped and otherwise **inert** — but the engine keyed the dense arm off
+  the stored `vector` sub-object alone and never read the declared roles. So in
+  any session with a live embedder that combination enrolled the node kinds,
+  backfilled the existing corpus, and made every later write of those kinds
+  enqueue an embedding: real embed spend and unexpected vectors at rest for a
+  declaration that was supposed to do nothing. The dense arm now requires the
+  `searchable` role, exactly as the `fts` sub-object already did.
+
+  **The inverse moved with it.** The engine turns the dense arm back off when the
+  LAST `searchable→vector` declaration goes away, and that transition is now
+  evaluated on the same role-aware rule. Two cases that previously kept embedding
+  now correctly un-enrol: demoting the last `searchable→vector` projection to
+  `filterable` + `vector` (drop-then-redeclare), and dropping a
+  `searchable→vector` projection while an inert `filterable` + `vector` sibling
+  survives in the registry.
+
+  **Upgrading now actually stops the unwanted embedding.** The role rule above
+  only closes the doors that *start* the dense arm; a database that already ran
+  the old code has the node kinds registered, and the write path decides whether
+  to enqueue an embedding from that registration alone. Such a database therefore
+  kept spending embed calls after the upgrade. Opening it now **reconciles** the
+  stale registration away, so the fix reaches the databases it was raised for
+  without the application calling anything. Any `configure_projections` call does
+  the same, for a long-lived process that never reopens.
+
+  This is deliberately narrow: it applies only when the projection registry
+  exists, declares a `vector` sub-object somewhere, and declares **no**
+  `searchable→vector` projection. A database whose dense arm was enrolled by
+  other means — including every pre-registry one — is left exactly as it is.
+
+  *No API change and nothing is deleted.* The declaration still persists and
+  round-trips verbatim, is still reported in `ProjectionDelta.deferred`, still
+  stores its `filterable` value at rest, and vectors already embedded are
+  untouched (including on the reconciling open — no embedding is ever removed).
+  Adding the `searchable` role turns the dense arm on and backfills the rows
+  written while it was off.
+
 ### Documentation
 
 - **[Erasure](https://fathomdb.dev/operations/erasure/) (new).** What
