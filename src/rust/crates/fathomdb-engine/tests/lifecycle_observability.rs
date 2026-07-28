@@ -226,6 +226,249 @@ fn ac_002_no_log_files_without_subscriber() {
     }
 }
 
+// ── AC-002 oracle strength: per-test sandbox (0.8.20 Slice 21b, R-20-CR) ─────
+//
+// The AC-002 claim is "the engine writes nothing outside the DB path when no
+// subscriber is attached". That is an ISOLATION property, so it is asserted by
+// isolation: the workload runs against a private, freshly created sandbox and
+// every root in that sandbox other than the DB parent must end up EMPTY.
+// Anything appearing there is necessarily the workload's, whatever it is named.
+//
+// ISOLATION MECHANISM — option (a), child process. `std::env::set_var` and
+// `std::env::set_current_dir` are process-global, and Rust's test harness runs
+// the ~20 tests of this binary as THREADS IN ONE PROCESS; several of them open
+// engines concurrently and `Engine`'s own open/search paths read process env
+// (`src/lib.rs` FATHOMDB_PERF_* / FATHOMDB_PROJECTION_BATCH reads). Mutating
+// env or CWD in-process here would therefore race every other test in this
+// binary — making this test a SOURCE of flakiness rather than a fix for the
+// one it replaces. A process-wide mutex (option (b)) cannot fix that, because
+// the racing readers are inside the library under test and are not funnelled
+// through any lock; and CWD has no per-thread analogue at all. So the workload
+// is re-executed as a child process with a sandbox-pointing environment and
+// its own CWD, following the established pattern in this crate
+// (`durability_soak.rs`, `durability_open_path.rs`, `lifecycle_reliability.rs`:
+// `Command::new(current_exe()) --exact --ignored <entry>` + env sentinel).
+
+/// Recursive enumeration of every path under `root`, bounded at depth 6.
+fn ac_002_walk(
+    root: &std::path::Path,
+    out: &mut std::collections::BTreeSet<std::path::PathBuf>,
+    depth: u32,
+) {
+    if depth > 6 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(meta) = entry.metadata() else { continue };
+        out.insert(path.clone());
+        if meta.is_dir() && !meta.file_type().is_symlink() {
+            ac_002_walk(&path, out, depth + 1);
+        }
+    }
+}
+
+/// Per-test filesystem sandbox for AC-002. One `TempDir` holding the DB parent
+/// plus a private stand-in for each ambient path-producing variable the engine
+/// could consult (`$HOME`, `$XDG_*`, `$TMPDIR`, the process CWD).
+struct Ac002Sandbox {
+    dir: TempDir,
+}
+
+impl Ac002Sandbox {
+    /// Sandbox roots that must stay EMPTY — i.e. everything except `db/`.
+    const OUTSIDE: [&'static str; 7] =
+        ["home", "cwd", "tmp", "xdg/config", "xdg/data", "xdg/cache", "xdg/state"];
+
+    fn new() -> Self {
+        let dir = TempDir::new().expect("ac_002 sandbox tempdir");
+        for rel in Self::OUTSIDE.iter().copied().chain(["db"]) {
+            std::fs::create_dir_all(dir.path().join(rel)).expect("ac_002 sandbox subdir");
+        }
+        Self { dir }
+    }
+
+    fn root(&self) -> &std::path::Path {
+        self.dir.path()
+    }
+
+    fn sub(&self, rel: &str) -> std::path::PathBuf {
+        self.root().join(rel)
+    }
+
+    fn db_parent(&self) -> std::path::PathBuf {
+        self.sub("db")
+    }
+
+    fn outside_roots(&self) -> Vec<std::path::PathBuf> {
+        Self::OUTSIDE.iter().map(|rel| self.sub(rel)).collect()
+    }
+}
+
+/// Point every ambient path-producing variable at the sandbox. `TMP`/`TEMP`/
+/// `USERPROFILE` are set alongside their POSIX counterparts so the redirection
+/// also holds on Windows, where `std::env::temp_dir` ignores `TMPDIR`.
+fn ac_002_apply_sandbox_env(cmd: &mut std::process::Command, root: &std::path::Path) {
+    cmd.env("FATHOMDB_AC002_SANDBOX", root)
+        .env("HOME", root.join("home"))
+        .env("USERPROFILE", root.join("home"))
+        .env("XDG_CONFIG_HOME", root.join("xdg/config"))
+        .env("XDG_DATA_HOME", root.join("xdg/data"))
+        .env("XDG_CACHE_HOME", root.join("xdg/cache"))
+        .env("XDG_STATE_HOME", root.join("xdg/state"))
+        .env("TMPDIR", root.join("tmp"))
+        .env("TMP", root.join("tmp"))
+        .env("TEMP", root.join("tmp"))
+        .env_remove("XDG_RUNTIME_DIR")
+        .env_remove("SQLITE_TMPDIR");
+}
+
+/// Run the AC-002 workload (open, one node write, one search, close) inside
+/// `sandbox`, as a child process so no process-global state of THIS process is
+/// touched. `plant_probe` additionally plants the divergent fixture (see
+/// `ac_002_sandbox_oracle_catches_unsigned_artifact`).
+fn ac_002_run_workload(sandbox: &Ac002Sandbox, plant_probe: bool) {
+    let exe = std::env::current_exe().expect("test binary path");
+    let mut cmd = std::process::Command::new(&exe);
+    cmd.args(["--exact", "--ignored", "_ac_002_sandbox_workload_entry"])
+        .current_dir(sandbox.sub("cwd"));
+    ac_002_apply_sandbox_env(&mut cmd, sandbox.root());
+    if plant_probe {
+        cmd.env("FATHOMDB_AC002_PLANT_PROBE", "1");
+    }
+    let out = cmd.output().expect("spawn ac_002 sandbox workload child");
+    assert!(
+        out.status.success(),
+        "ac_002 sandbox workload child failed ({:?})\n--- stdout ---\n{}\n--- stderr ---\n{}",
+        out.status.code(),
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+/// Sandboxed AC-002 workload entry-point. Re-invoked by `ac_002_run_workload`
+/// via `Command::new(current_exe()) --exact --ignored`. Without the sentinel
+/// env var the body is a no-op, so a bare
+/// `cargo test --test lifecycle_observability -- --ignored` stays safe.
+#[test]
+#[ignore = "sandboxed workload entry-point for AC-002 (spawned as a child process)"]
+fn _ac_002_sandbox_workload_entry() {
+    let Some(root) = std::env::var_os("FATHOMDB_AC002_SANDBOX") else {
+        return;
+    };
+    let root = std::path::PathBuf::from(root);
+
+    // Fail loudly if the parent's redirection did not take: a workload that
+    // still saw the real $HOME / $TMPDIR / $PWD would make the parent's
+    // emptiness assertion vacuously true.
+    let same = |a: &std::path::Path, b: &std::path::Path| match (a.canonicalize(), b.canonicalize())
+    {
+        (Ok(x), Ok(y)) => x == y,
+        _ => a == b,
+    };
+    assert!(
+        same(&std::env::temp_dir(), &root.join("tmp")),
+        "TMPDIR redirection did not take: temp_dir() = {}",
+        std::env::temp_dir().display(),
+    );
+    let cwd = std::env::current_dir().expect("child cwd");
+    assert!(same(&cwd, &root.join("cwd")), "CWD redirection did not take: {}", cwd.display());
+    let mut expected_vars: Vec<(&str, &str)> = vec![
+        ("XDG_CONFIG_HOME", "xdg/config"),
+        ("XDG_DATA_HOME", "xdg/data"),
+        ("XDG_CACHE_HOME", "xdg/cache"),
+        ("XDG_STATE_HOME", "xdg/state"),
+    ];
+    expected_vars.push(if cfg!(windows) { ("USERPROFILE", "home") } else { ("HOME", "home") });
+    for (var, rel) in expected_vars {
+        let raw =
+            std::env::var_os(var).unwrap_or_else(|| panic!("{var} must be set by the parent"));
+        assert!(
+            same(std::path::Path::new(&raw), &root.join(rel)),
+            "{var} redirection did not take: {:?}",
+            raw,
+        );
+    }
+
+    if std::env::var_os("FATHOMDB_AC002_PLANT_PROBE").is_some() {
+        // Divergent fixture: an artifact OUTSIDE the DB parent but INSIDE the
+        // sandbox whose name contains neither "fathomdb" nor "fathom_" — the
+        // exact shape the pre-21b substring scan waved through.
+        std::fs::write(root.join("home").join("telemetry.spool"), b"probe")
+            .expect("plant ac_002 divergent fixture");
+    }
+
+    let opened = Engine::open(root.join("db").join("nolog.sqlite")).expect("open");
+    opened
+        .engine
+        .write(&[PreparedWrite::Node {
+            kind: "doc".to_string(),
+            body: "hello".to_string(),
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
+            logical_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
+            valid_from: None,
+            valid_until: None,
+        }])
+        .expect("write");
+    let _ = opened.engine.search("hello").expect("search");
+    opened.engine.close().expect("close");
+}
+
+/// AC-002 oracle: nothing may appear outside the DB path.
+fn ac_002_no_artifacts_outside_db_path(sandbox: &Ac002Sandbox) -> Result<(), String> {
+    // RED body (Slice 21b): the pre-21b substring scan, reproduced verbatim
+    // against the sandbox roots. It is DETECTION, and detects the wrong thing:
+    // an artifact whose name lacks the literal "fathomdb" / "fathom_" passes
+    // cleanly. Slice 21b replaces this body with an emptiness assertion.
+    let roots = sandbox.outside_roots();
+    let mut found = std::collections::BTreeSet::new();
+    for root in &roots {
+        ac_002_walk(root, &mut found, 0);
+    }
+    for path in &found {
+        let relative = roots
+            .iter()
+            .filter_map(|root| path.strip_prefix(root).ok())
+            .min_by_key(|rel| rel.components().count())
+            .unwrap_or(path.as_path());
+        let rel_lossy = relative.to_string_lossy().to_lowercase();
+        if rel_lossy.contains("fathomdb") || rel_lossy.contains("fathom_") {
+            return Err(format!(
+                "engine created an artifact outside the DB path: {}",
+                path.display()
+            ));
+        }
+    }
+    Ok(())
+}
+
+// AC-002 oracle-strength probe (permanent negative control).
+//
+// Pins that the AC-002 oracle catches an artifact the pre-21b substring scan
+// waved through: a file outside the DB parent, inside the sandbox, whose name
+// contains neither "fathomdb" nor "fathom_". If this test ever goes green by
+// the oracle weakening back to a name-pattern scan, AC-002 has become vacuous.
+#[test]
+fn ac_002_sandbox_oracle_catches_unsigned_artifact() {
+    let sandbox = Ac002Sandbox::new();
+    ac_002_run_workload(&sandbox, true);
+
+    let probe = sandbox.sub("home").join("telemetry.spool");
+    assert!(probe.exists(), "divergent fixture must have been planted: {}", probe.display());
+
+    let verdict = ac_002_no_artifacts_outside_db_path(&sandbox);
+    let err = verdict.expect_err(
+        "AC-002 oracle must reject an artifact outside the DB path even though its \
+         name carries no fathomdb signature",
+    );
+    assert!(err.contains("telemetry.spool"), "oracle must name the offending artifact; got: {err}",);
+}
+
 // AC-003a: Writer events flow to host subscriber.
 #[test]
 fn ac_003a_writer_events_flow_to_subscriber() {
