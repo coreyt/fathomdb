@@ -119,17 +119,35 @@ fn node(logical_id: &str, body_json: &str) -> PreparedWrite {
 
 /// An ANONYMOUS (no `logical_id`) vector-kind write.
 ///
-/// Why the P2 stream uses this rather than the governed `node` helper: a tight
-/// loop of GOVERNED writes racing the async projection worker intermittently
-/// fails with `EngineError::Storage` — reproduced at the Slice-20 BASELINE
-/// (`9db32765`) in 7 of 8 runs with no Slice-20 code in the build, and never
-/// reproducible with anonymous writes. That is a PRE-EXISTING write-path defect
-/// (the governed supersession path reads before it writes, so its deferred
-/// transaction must upgrade to a writer and takes `SQLITE_BUSY_SNAPSHOT`, which
-/// `busy_timeout` cannot retry); it is recorded for triage and is NOT in
-/// R-20-DR's scope. Readiness is indifferent to `logical_id` — the vector
-/// projection consumes the same rows either way — so the atomicity property is
-/// exercised exactly as well without dragging in an unrelated red.
+/// Why the P2 stream uses this rather than the governed `node` helper: when this
+/// suite was written, a tight loop of GOVERNED writes racing the async projection
+/// worker intermittently failed with `EngineError::Storage` — reproducible at the
+/// Slice-20 BASELINE (`9db32765`) with no Slice-20 code in the build, and never
+/// with anonymous writes. It was a PRE-EXISTING write-path defect, out of
+/// R-20-DR's scope, so this suite routed around it.
+///
+/// **That race was FIXED in 0.8.20 Slice 21 (ledger `TC-57`)**: `commit_batch`
+/// now opens its transaction with `BEGIN IMMEDIATE`, taking the WAL write lock
+/// before the supersession SELECT, so the governed path never has to promote a
+/// read lock to a write lock.
+///
+/// The mechanism recorded here previously was WRONG, and correcting it matters
+/// because a misnamed mechanism is how the next reader scopes an inert fix. It
+/// was **plain `SQLITE_BUSY` (5) with the busy handler invoked ZERO times** —
+/// SQLite skips the handler on a lock promotion for deadlock avoidance, so the
+/// error came back in 0 ms against rusqlite's 5 000 ms default and no
+/// `busy_timeout` value could ever have absorbed it. It was **not**
+/// `SQLITE_BUSY_SNAPSHOT` (517), which is a second, narrower exit of the same
+/// shape. The repro rate at baseline `41a81c17` was **10/10**, not the "7 of 8"
+/// this comment used to claim. Characterized in
+/// `dev/design/0.8.20-tc57-write-race-characterization.md` and pinned by
+/// `tests/tc57_governed_write_race.rs`.
+///
+/// The helper STAYS. Readiness is indifferent to `logical_id` — the vector
+/// projection consumes the same rows either way — so these tests assert exactly
+/// the same atomicity property with anonymous writes, and rewriting them to
+/// governed writes would buy no coverage while re-coupling this suite to the
+/// write path's concurrency behaviour. `TC-57`'s own suite owns that property now.
 fn anon_node(body_json: &str) -> PreparedWrite {
     PreparedWrite::Node {
         kind: "doc".to_string(),

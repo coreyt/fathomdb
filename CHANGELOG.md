@@ -266,11 +266,26 @@ AC-050c) gates merges against this invariant.
   `searchable→vector` projection while an inert `filterable` + `vector` sibling
   survives in the registry.
 
+  **Upgrading now actually stops the unwanted embedding.** The role rule above
+  only closes the doors that *start* the dense arm; a database that already ran
+  the old code has the node kinds registered, and the write path decides whether
+  to enqueue an embedding from that registration alone. Such a database therefore
+  kept spending embed calls after the upgrade. Opening it now **reconciles** the
+  stale registration away, so the fix reaches the databases it was raised for
+  without the application calling anything. Any `configure_projections` call does
+  the same, for a long-lived process that never reopens.
+
+  This is deliberately narrow: it applies only when the projection registry
+  exists, declares a `vector` sub-object somewhere, and declares **no**
+  `searchable→vector` projection. A database whose dense arm was enrolled by
+  other means — including every pre-registry one — is left exactly as it is.
+
   *No API change and nothing is deleted.* The declaration still persists and
   round-trips verbatim, is still reported in `ProjectionDelta.deferred`, still
   stores its `filterable` value at rest, and vectors already embedded are
-  untouched. Adding the `searchable` role turns the dense arm on and backfills
-  the rows written while it was off.
+  untouched (including on the reconciling open — no embedding is ever removed).
+  Adding the `searchable` role turns the dense arm on and backfills the rows
+  written while it was off.
 
 ### Documentation
 
