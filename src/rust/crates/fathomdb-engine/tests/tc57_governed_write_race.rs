@@ -17,12 +17,18 @@
 //! the pair was enabled and disabled as one unit (the characterization is a
 //! COMPARISON, and half a comparison is worse than none).
 //!
-//! **Slice 21a-2 removes both `#[ignore]` attributes as its RED→GREEN step. This
-//! commit is the RED half**: the attributes are gone, `src/lib.rs` is still
-//! byte-identical to baseline, and the repro arm therefore FAILS. The fix lands
-//! in the very next commit. Nothing else in this file changes across the pair —
-//! the arms assert exactly what they asserted while they were ignored, which is
-//! what makes the green a real signal rather than a rewritten goalpost.
+//! **Slice 21a-2 removed both `#[ignore]` attributes as its RED→GREEN step**, in
+//! the commit immediately before the fix, so the pair is reviewable in git as a
+//! real red followed by a real green. Nothing else in this file changed across
+//! that pair — the arms assert exactly what they asserted while they were ignored,
+//! which is what makes the green a signal rather than a rewritten goalpost.
+//!
+//! **The fix is one line.** `commit_batch` now opens
+//! `transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)` instead
+//! of rusqlite's `BEGIN DEFERRED` default, so the transaction holds the WAL write
+//! lock from `BEGIN` and never promotes. Applied UNCONDITIONALLY, not gated on
+//! `logical_id`: see the comment at the call site. MEASURED after the fix: repro
+//! **0/10**, control **0/10**.
 //!
 //! The three `tc57_mechanism_*` tests are pure-rusqlite pins. They are NOT
 //! `#[ignore]`d: they assert what SQLite does, not what the engine does, and
@@ -46,10 +52,18 @@
 //! alone were describing only one of the two exits. See
 //! `dev/design/0.8.20-tc57-write-race-characterization.md`.
 //!
-//! ## Deliberately NOT fixed here
+//! ## Deliberately NOT fixed by Slice 21a-2
 //!
-//! Slice 21a-1 is characterization only (ruling `seq-111`). This file adds
-//! tests and nothing else; `src/lib.rs` is byte-identical to baseline.
+//! * **The opaque error path.** `write_inner` still discards the
+//!   `rusqlite::Error` and returns the unit variant `EngineError::Storage`, so a
+//!   host still cannot tell a transient lock conflict from a permanent storage
+//!   failure. That is candidate R2 of the characterization, explicitly out of
+//!   scope; the stale doc comment that claimed the numeric code survived via
+//!   `EngineError::source()` was corrected in place.
+//! * **The worker side.** `commit_projection_outcomes` keeps its DEFERRED
+//!   read-then-upgrade shape. Not changed because the risk that the caller-side
+//!   fix would push failures onto the worker was MEASURED and did not
+//!   materialize — see `tc57_worker_commit_pressure.rs`.
 
 use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
 use fathomdb_engine::lifecycle::{Event, EventSource, Subscriber};

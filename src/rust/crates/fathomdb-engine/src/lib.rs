@@ -8095,10 +8095,23 @@ impl Engine {
         let lid = Self::resolve_lifecycle_target(logical_id)?;
 
         // Settle in-flight projection work first: the async projection worker
-        // commits vector/FTS shadows on its OWN connection via `BEGIN IMMEDIATE`,
-        // so a state flip issued while a worker holds the write lock would
-        // SQLITE_BUSY. Draining (unfrozen so any unprojected row completes) leaves
-        // the worker idle; a bare state flip enqueues no new projection work.
+        // commits vector/FTS shadows on its OWN connection, so a state flip issued
+        // while a worker holds the write lock would SQLITE_BUSY. Draining
+        // (unfrozen so any unprojected row completes) leaves the worker idle; a
+        // bare state flip enqueues no new projection work.
+        //
+        // 0.8.20 Slice 21a-2 (TC-57) — this comment used to say the worker commits
+        // "via `BEGIN IMMEDIATE`". It does NOT and never did:
+        // `commit_projection_outcomes` opens `connection.transaction()`, i.e.
+        // rusqlite's `BEGIN DEFERRED` default, and reads before it writes. Its
+        // CONCLUSION stands, and in fact more strongly than the original wording
+        // implied — BOTH sides of that contention are read-then-upgrade deferred
+        // transactions, which SQLite refuses to promote WITHOUT consulting the busy
+        // handler (see the `TransactionBehavior::Immediate` note in `commit_batch`).
+        // So the `drain()` below is load-bearing, not belt-and-braces: it is what
+        // keeps this flip's own read-then-upgrade transaction (`:query_row` above
+        // the `UPDATE` below) out of a worker's write window. TC-57's fix is scoped
+        // to `commit_batch`; converting this path is a separate change.
         self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS)?;
 
         let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
@@ -8202,8 +8215,10 @@ impl Engine {
     ) -> Result<ProjectionDelta, EngineError> {
         self.ensure_open()?;
         // Settle in-flight async projection work first (same rationale as
-        // `transition`): the async worker commits on its own connection, so a
-        // backfill issued while it holds the write lock would SQLITE_BUSY.
+        // `transition`, including the 0.8.20 Slice 21a-2 / TC-57 correction
+        // recorded there: the worker commits on its own connection with a rusqlite
+        // DEFERRED transaction, NOT `BEGIN IMMEDIATE`). A backfill issued while it
+        // holds the write lock would SQLITE_BUSY.
         self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS)?;
 
         // 0.8.20 Slice 20c (R-20-DR remainder) — the backfill is gated on a LIVE
@@ -17761,7 +17776,40 @@ fn commit_batch(
     base_cursor: u64,
     provenance_row_cap: u64,
 ) -> rusqlite::Result<u64> {
-    let tx = connection.transaction()?;
+    // 0.8.20 Slice 21a-2 (TC-57) — `BEGIN IMMEDIATE`, not rusqlite's `BEGIN
+    // DEFERRED` default. Take the WAL write lock AT `BEGIN`, before the
+    // supersession SELECT below, so this transaction never has to PROMOTE a read
+    // lock to a write lock.
+    //
+    // The defect this closes (characterized in
+    // `dev/design/0.8.20-tc57-write-race-characterization.md`, repro 10/10 at
+    // baseline `41a81c17`): for a GOVERNED write (`logical_id: Some`) the first
+    // statement in this transaction is a read —
+    // `prior_node_cursors_by_logical_id` — and the second is the supersession
+    // UPDATE. When the async projection worker holds the write lock on its own
+    // connection at that instant, SQLite refuses the promotion with plain
+    // `SQLITE_BUSY` (5) and SKIPS the busy handler entirely, for deadlock
+    // avoidance (`sqlite3_busy_handler`: "if SQLite determines that invoking the
+    // busy handler could result in a deadlock, it will go ahead and return
+    // SQLITE_BUSY"). MEASURED: handler invoked ZERO times, error returned in 0 ms
+    // against rusqlite's 5 000 ms default timeout. So NO `busy_timeout` value
+    // could ever have absorbed it, and the caller saw an opaque, un-retryable
+    // `EngineError::Storage` mid-ingest. The same shape also has a second,
+    // narrower exit — `SQLITE_BUSY_SNAPSHOT` (517) when the WAL advances past the
+    // read snapshot — which this closes too, by construction.
+    //
+    // UNCONDITIONAL rather than gated on `logical_id`, deliberately: an anonymous
+    // batch's first statement is already the INSERT below, so it takes the write
+    // lock essentially immediately anyway and the delta is microseconds, whereas a
+    // content-dependent transaction behaviour would be a NEW correctness surface
+    // (mixed batches, edge arms, future write kinds) with a place to be wrong in
+    // each. MEASURED cost on the anonymous arm: none detectable
+    // (`tc57_worker_commit_pressure.rs`).
+    //
+    // `BEGIN IMMEDIATE` can itself return `SQLITE_BUSY` — but WITH the busy
+    // handler consulted, i.e. absorbed by the existing 5 s default instead of
+    // surfaced (pinned by `tc57_mechanism_control_write_first_is_retryable`).
+    let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
 
     for (i, (write, plan)) in batch.iter().zip(plans).enumerate() {
         // Per-row cursor: row i gets `base_cursor + i + 1`. See the
@@ -18142,13 +18190,24 @@ fn max_cursor(connection: &Connection, table: &str) -> rusqlite::Result<u64> {
 /// — bare-extended-code matching covers the rest with a stable
 /// `"SQLITE_UNKNOWN"` fallback so subscribers always see a typed code.
 ///
-/// Diagnostic completeness for unmapped codes: when this helper returns
-/// `"SQLITE_UNKNOWN"`, the numeric extended code is not lost — it
-/// remains on the underlying `rusqlite::Error::SqliteFailure` carried
-/// in the engine error chain that subscribers can inspect via
-/// `EngineError`'s `source()`. Expanding the enumerated subset (or
-/// surfacing the numeric code as a typed payload field) is a 0.7+
-/// improvement.
+/// Diagnostic completeness for unmapped codes — **corrected 0.8.20 Slice 21a-2
+/// (TC-57)**. This comment used to claim that when the helper returns
+/// `"SQLITE_UNKNOWN"` the numeric extended code "is not lost — it remains on the
+/// underlying `rusqlite::Error::SqliteFailure` carried in the engine error chain
+/// that subscribers can inspect via `EngineError`'s `source()`". **That is
+/// false.** There is no such chain: `EngineError::Storage` is a UNIT variant with
+/// no payload and no `source()`, and `write_inner` drops the `rusqlite::Error`
+/// immediately after emitting the lifecycle event. So for an unmapped code the
+/// numeric value IS lost, and the only signal a host receives is the string
+/// `"SQLITE_UNKNOWN"`.
+///
+/// Concretely: `SQLITE_BUSY_SNAPSHOT` (517) matches none of the PRIMARY constants
+/// below — the match is on the EXTENDED value — so it reaches subscribers as
+/// `"SQLITE_UNKNOWN"` and is unrecoverable from the public API. Restructuring the
+/// error path so busy codes are distinguishable (and surfacing the numeric code as
+/// a typed payload field) is candidate R2 of
+/// `dev/design/0.8.20-tc57-write-race-characterization.md` §7, explicitly OUT of
+/// scope for the 21a-2 fix and recorded here rather than silently carried.
 fn sqlite_extended_code_name(err: &rusqlite::Error) -> Option<&'static str> {
     let sqlite_error = err.sqlite_error()?;
     let extended = sqlite_error.extended_code;
