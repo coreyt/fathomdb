@@ -2,7 +2,7 @@
   "phase": "0.8.20 Slice 30 — R-20-H7 RUBRIC-H7 `can-i-deploy` contract-conformance gate",
   "baseline_sha": "23a436dcc7321eab86c622c8b403682caf2dfe2c",
   "branch": "orch-0.8.20-s30",
-  "head_sha": "(fix-6b round: the docs commit that carries this file — see commits[]; the RED half is f4c7aab9 and the GREEN code half is a7a85e34)",
+  "head_sha": "(fix-6c round: the docs commit that carries this file — see commits[]; the RED half is 9ef5179b and the GREEN code half is 0d9b40d7)",
   "head_sha_before_fix_1": "3475d55e",
   "commits": [
     {
@@ -154,6 +154,21 @@
       "sha": "(this commit — self-referential, not knowable before it exists)",
       "subject": "docs(0.8.20-s30): fix-6b — update the slice closure output.json",
       "note": "This file, fix-6b revision."
+    },
+    {
+      "sha": "9ef5179b",
+      "subject": "test(0.8.20-s30): RED fix-6c — a leading UTF-8 BOM hides a file-level #![cfg]",
+      "note": "FIX-6c ROUND, RED half. Arm 12al, three sub-arms, closing the LAST first-byte that defeats the leading-header walk. Ran at this commit against the UNCHANGED fix-6b checker with REAL suite rc=1: 310 PASS / 7 FAIL. The direction-carrying failure, verbatim: `FAIL  a file-level #![cfg(..)] hidden behind a leading UTF-8 BOM still HARD-fails the file's clauses — expected rc=1, got rc=0` (same form on 12al-3, the BOM+shebang sub-arm). 12al-2 (a BOM ALONE must stay rc=0) PASSED at the RED commit, so the arm cannot go green by weakening the fix-6/fix-6b narrowing, and arms 12aj/12ak stayed green — 307 -> 310 PASS is pure addition."
+    },
+    {
+      "sha": "0d9b40d7",
+      "subject": "fix(0.8.20-s30): GREEN fix-6c — the leading header starts after a UTF-8 BOM",
+      "note": "FIX-6c ROUND, GREEN half. The gate only, the same one function: file_inner_attrs() strips ONE leading U+FEFF before the shebang test, following rustc's ORDER exactly (rustc strips one BOM, and only THEN may the first line be a shebang — so BOM + shebang + `#![cfg(..)]` is read too). The strip is LOCAL to this walk; read_source() was deliberately NOT changed, so no other probe's view of any file moves. No return to the pre-fix-6 whole-file scan: arms 12aj and 12ak stay green. Gate rc=0 (26 checkable / 12 cross-repo / 7 prose, 45 total, pinned at 23a436dc); suite rc=0, 317 PASS / 0 FAIL. clippy and check --workspace --all-targets re-run rather than carried, both rc=0."
+    },
+    {
+      "sha": "(this commit — self-referential, not knowable before it exists)",
+      "subject": "docs(0.8.20-s30): fix-6c — update the slice closure output.json",
+      "note": "This file, fix-6c revision."
     }
   ],
   "findings_addressed": [
@@ -689,6 +704,56 @@
       "gate": "scripts/preflight.sh --worktree",
       "exit": null,
       "note": "NOT RUN. Adjudicated STALE BASE on this worktree; unchanged from the fix-6 round."
+    },
+    {
+      "gate": "scripts/check-c1-conformance.sh (the gate, real tree)",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-6c HEAD. rc=0, and the registry line is unchanged: `26 checkable / 12 cross-repo / 7 prose, 45 total, pinned at 23a436dc`."
+    },
+    {
+      "gate": "scripts/tests/test_check_c1_conformance.sh (recurrence guard)",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-6c HEAD. 317 assertions (was 307), 0 failures — PURE ADDITION, nothing removed or weakened. Arm 12 now runs to 12al. RED-first evidence: suite rc=1 at the RED commit 9ef5179b (310 PASS / 7 FAIL), with `expected rc=1, got rc=0` on 12al-1 and 12al-3 while the BOM-alone mirror 12al-2 and the earlier arms 12aj/12ak were already green."
+    },
+    {
+      "gate": "scripts/check-governed-surface-pin.sh",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-6c HEAD. rc=0, `30 allowlist / 5 core / 5 recovery_denylist, pinned at 427d2712 under AC-079` — pin UNMOVED and the allowlist BYTE-IDENTICAL (`git diff 337c2b12 -- src/conformance/governed-surface-allowlist.json` is empty)."
+    },
+    {
+      "gate": "scripts/preflight.sh --landing",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-6c HEAD. rc=0, `{\"preflight\":\"pass\",...,\"hard_fails\":[]}`. The one warning is the pre-existing 'tracked source dirty on canonical main', which is about the CANONICAL checkout, not this worktree."
+    },
+    {
+      "gate": "bash -n scripts/check-c1-conformance.sh + bash -n scripts/tests/test_check_c1_conformance.sh",
+      "exit": 0,
+      "note": "Both changed shell files parse at the fix-6c head."
+    },
+    {
+      "gate": "scripts/tests/test_preflight_landing.sh + test_check_ledgers.sh + test_check_board_currency.sh + test_check_governed_surface_pin.sh",
+      "exit": 0,
+      "note": "All four sibling suites re-run at the fix-6c head, each rc=0."
+    },
+    {
+      "gate": "cargo clippy --workspace --all-targets",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-6c HEAD rather than carried, even though no Rust changed. rc=0."
+    },
+    {
+      "gate": "cargo check --workspace --all-targets",
+      "exit": 0,
+      "note": "RE-RUN AT THE FIX-6c HEAD rather than carried, even though no Rust changed. rc=0."
+    },
+    {
+      "gate": "rustc --test (throwaway, the fix-6c premise check)",
+      "exit": 0,
+      "note": "The BOM claim was confirmed against the TOOLCHAIN before the fix was relied on, as fix-6b did. `ef bb bf` + `#![cfg(feature = \"nope\")]` + `#[test] fn t() {}` -> builds, `--list` prints `0 tests, 0 benchmarks`. The SAME file without the cfg -> `t3: test` / `1 test, 0 benchmarks`, so the cfg empties it and not the BOM. `ef bb bf` + `#!/usr/bin/env rust-script` + `#![cfg(..)]` + `#[test]` -> builds, `--list` prints `0 tests, 0 benchmarks`, which is what fixes the ORDER of the two skips. The throwaway files were deleted."
+    },
+    {
+      "gate": "cargo test --workspace",
+      "exit": null,
+      "note": "NOT RUN and NOT USED as evidence either way — a known-unstable signal in this repo (roughly 1 run in 3 fails on plain main, a different concurrency test each time)."
     }
   ],
   "fix_rounds": [
@@ -1983,20 +2048,48 @@
           "guard": "Arm 12ak: (1) shebang + `#![cfg(..)]` -> rc=1, asserting the failure names `CONDITIONALLY COMPILED as a whole` so a green cannot come from an unrelated clause failing; (2) a shebang ALONE -> rc=0, the anti-overshoot mirror; (3) shebang + `#![allow(dead_code)]` + `#![cfg(..)]` -> rc=1, proving the walk RESUMES rather than skipping one line. The nested-module mirror is the pre-existing arm 12aj (rc=0) and was deliberately NOT duplicated."
         }
       ]
+    },
+    {
+      "round": "6c",
+      "reviewer": "NO NEW REVIEW. The Steward's diagnosis, ruled to be the COMPLETION of codex §9 round-6 finding #2 — whose scope statement is 'the file's own leading inner attributes', and a BOM-prefixed inner attribute is one of them.",
+      "transcript": "None — this round was not opened by a review. The governing round-6/6b transcripts are dev/plans/runs/codex/0.8.20/slice-30-fix-6-rereview-20260727T191545Z.log and the rounds 6+7 transcripts at 337c2b12.",
+      "budget": "NOT A ROUND 8. A single authorized micro-fix, scoped by the Steward to approximately one line in the predicate plus one fixture arm. No sweep, no widening, one function touched — the same function fix-6 and fix-6b touched.",
+      "scope_discipline": "Exactly the named hole. read_source() was explicitly NOT changed: stripping the BOM there would alter what EVERY other probe sees and was outside the authorization, so the strip is local to file_inner_attrs(). The fix-6 narrowing and the fix-6b shebang skip are both KEPT — arms 12aj and 12ak must stay green. NOT touched: anything under src/, any release-state-*.json, the governed-surface allowlist, scripts/agent-test.sh, and every ledger. Files touched: the gate, its fixture suite, and this file.",
+      "clause_registry_change": "NONE. Same 26 CHECKABLE ids, same categories, same pinned counts (26 checkable / 12 cross-repo / 7 prose, 45 total). The contract's bytes are untouched and scripts/c1-conformance-pin.json was NOT edited.",
+      "files_touched": [
+        "scripts/check-c1-conformance.sh — file_inner_attrs() strips ONE leading U+FEFF before the shebang test; its docstring gains the BOM paragraph in the voice of the existing shebang one.",
+        "scripts/tests/test_check_c1_conformance.sh — arm 12al (three sub-arms); the file header's fix-round narrative extended with FIX-6c.",
+        "dev/plans/runs/0.8.20-slice-30-output.json — this file."
+      ],
+      "findings": [
+        {
+          "id": "fix-6c [P2] a leading UTF-8 BOM hides a file-level `#![cfg(..)]` — a FALSE GREEN of the fix-6b class, through a different first byte",
+          "site": "scripts/check-c1-conformance.sh, file_inner_attrs() at ~:1875",
+          "claim_verified": true,
+          "reachability": "ZERO TODAY. Every tracked .rs/.py/.ts/.sh was scanned and no file carries a BOM, so nothing is currently mis-read. Purely LATENT — exactly the state the shebang hole was in when fix-6b closed it, and the reason it is worth closing rather than a reason not to.",
+          "how": "Confirmed against the TOOLCHAIN before being relied on, the way fix-6b was. A throwaway whose bytes begin `ef bb bf` then `#![cfg(feature = \"nope\")]` then `#[test] fn t() {}` builds under `rustc --test` (rc=0) and `--list` prints `0 tests, 0 benchmarks`; the SAME file without the cfg prints `t3: test` / `1 test, 0 benchmarks`, proving it is the cfg that empties the binary and not the BOM; and `ef bb bf` + `#!/usr/bin/env rust-script` + `#![cfg(..)]` + `#[test]` also builds to `0 tests`, which is what fixes the ORDER of the two skips. The Python half was observed directly too: `'\\ufeff'.isspace()` is False and unicodedata.category is 'Cf'. Reproduced as arm 12al-1 / 12al-3 (`expected rc=1, got rc=0`) and re-run after the fix: rc=1 with `CONDITIONALLY COMPILED as a whole`. Throwaways deleted.",
+          "root_cause": "read_source() decodes with `.decode(\"utf-8\", errors=\"replace\")`, which does NOT strip a byte-order mark, so a BOM arrives at the leading-header walk as U+FEFF at index 0 and defeats it three ways at once: it is not `#!`, so the fix-6b shebang branch is skipped; it is NOT whitespace to Python (U+FEFF is category Cf, a FORMAT character), so the whitespace skip does not advance past it; and it is not `#![`, so the walk breaks at byte 0 and returns no attributes at all. A file-level `#![cfg(..)]` on that very line is never seen: every proof in a pinned test file compiles out while each still reads as an ordinary `#[test]`, and the gate exits 0.",
+          "fix": "One leading U+FEFF is stripped before the shebang test — rustc's own rule and rustc's own ORDER: it strips ONE BOM, and only then may the first line be a shebang. Everything after that is unchanged. Only ONE BOM is stripped, as rustc does; a second U+FEFF is not a header byte. The strip is deliberately local to this walk rather than in read_source(), so no other probe's view of any file changes.",
+          "guard": "Arm 12al: (1) BOM + `#![cfg(..)]` -> rc=1, asserting the failure names `CONDITIONALLY COMPILED as a whole` so a green cannot come from an unrelated clause failing, plus the Steward-routing block; (2) a BOM ALONE -> rc=0, the anti-overshoot mirror — an editor writing 'UTF-8 with signature' must not turn this publish precondition RED; (3) BOM + shebang + `#![cfg(..)]` -> rc=1, which is what pins the ORDER of the two skips and would fail if the BOM strip were placed after the shebang branch. The nested-module mirror (12aj) and the shebang mirrors (12ak) are pre-existing and were deliberately NOT duplicated; both stayed green throughout."
+        }
+      ]
     }
   ],
+  "agent_verify_result_fix_6c": "GREEN for the slice's own scope, fix-6c applied. The R-20-H7 gate is rc=0 with its registry line unmoved (26 checkable / 12 cross-repo / 7 prose, 45 total, pinned at 23a436dc). fix-6c is the COMPLETION of codex §9 round-6 finding #2, not a new round: the leading-header walk that fix-6 introduced and fix-6b repaired for shebangs was still defeated at byte 0 by a UTF-8 BOM, because read_source() does not strip one and U+FEFF is neither `#!` nor `#![` nor — in Python — whitespace. A file-level `#![cfg(..)]` behind a BOM therefore compiled every proof in a pinned test file out at exit 0: the same FALSE GREEN class, through a different first byte. Reachability was ZERO at the time of the fix (no tracked file carries a BOM), so this is a latent-hole closure, and the premise was verified against rustc rather than assumed. RED-first with the real pre-fix exit codes recorded (suite rc=1, 310 PASS / 7 FAIL at 9ef5179b), fixed at 0d9b40d7 (suite rc=0, 317 PASS / 0 FAIL), and guarded with a MIRROR arm so the fix cannot overshoot. 307 -> 317 assertions is PURE ADDITION: nothing was removed or weakened, and arms 12aj and 12ak stayed green. Gates at this head: c1-conformance 0, governed-surface-pin 0 (allowlist byte-identical), preflight --landing 0, clippy 0, check 0. No Rust changed, but clippy and check --workspace --all-targets were re-run rather than carried.",
   "agent_verify_result": "GREEN for the slice's own scope, fix-6 round applied. The R-20-H7 gate exists, is dual-homed (preflight --landing + an always-on CI job running the SAME script), and is GREEN: 26/26 CHECKABLE clauses of the ratified C-1 contract hold against as-built code and the contract is byte-identical to its pin — 26 checkable / 12 cross-repo / 7 prose, 45 total, pinned at 23a436dc, unmoved by this round. This round closed the two codex round-6 [P2] findings and NOTHING ELSE, per the Steward's bounded authorization: a FALSE GREEN (the seam clause did not require configure_projections to keep its `&self` receiver) and a FALSE RED (a nested module's own inner `#![cfg(..)]` was read as the whole test file's, which would have blocked CI and preflight --landing on a perfectly legal edit). Both are RED-first with the real pre-fix exit codes recorded, and both carry MIRROR arms in the opposite direction so the fix cannot overshoot. Recurrence guard: 297 assertions, 0 failures. No Rust changed, but clippy and check --workspace --all-targets were re-run rather than carried, and both exit 0.",
   "next_step_for_orchestrator": [
-    "Run codex §9 against this branch as the confirming re-review. fix-6b is NOT a new round: it is a bounded, mechanical repair of a regression the fix-6 patch itself opened (a leading Rust shebang made the narrowed header walk return no file-level attributes at all), found by codex re-reviewing that patch. Steward ledger seq-124's single-round authorization still governs — if the re-review is not terminal, HALT and return to the Steward.",
-    "For adjudicating it: (a) one function moved, file_inner_attrs(), and the fix-6 narrowing is KEPT — arm 12aj (the nested-module false RED) is asserted still rc=0, so the repair cannot have overshot back to the whole-file scan; (b) the guard runs in BOTH directions — shebang + `#![cfg(..)]` is rc=1 (and the message must name `CONDITIONALLY COMPILED as a whole`), a shebang alone is rc=0, and a shebang followed by another inner attribute then `#![cfg(..)]` is rc=1; (c) the clause registry did not move — same 26 ids, same categories, same counts, and scripts/c1-conformance-pin.json was not edited.",
-    "`git diff --name-only 2c9dff51 HEAD` is exactly three files: scripts/check-c1-conformance.sh, scripts/tests/test_check_c1_conformance.sh and this file. Nothing under src/ moved in the whole slice (`git diff --name-only 23a436dc HEAD -- src/` is empty), the ratified contract's bytes are untouched, and the governed surface is byte-identical to baseline 23a436dc.",
-    "scripts/agent-test.sh's aggregate exit is VACUOUS (TC-16) and scripts/tests/test_commission_manifest.sh is PRE-EXISTING RED on main (TC-79, arm 9d). Neither is a fix-6b signal. cargo clippy/check are CARRIED from 8b43a58c — no Rust changed in fix-6b.",
-    "Cherry-pick order onto the landing branch, fix-6b tail appended to the prior list: ..., 12ac854e, 8b43a58c, the fix-6 docs commit 2c9dff51, f4c7aab9, a7a85e34, then the docs commit carrying this file."
+    "fix-6c is NOT a round 8 and was NOT opened by a review: it is the single authorized micro-fix COMPLETING codex §9 round-6 finding #2, whose scope statement is 'the file's own leading inner attributes'. A BOM-prefixed inner attribute is one of them, and it defeated the leading-header walk in exactly the way the shebang did. Steward ledger seq-124's authorization still governs — if the confirming re-review is not terminal, HALT and return to the Steward rather than opening another pass.",
+    "For adjudicating it: (a) ONE line of predicate moved — file_inner_attrs() strips one leading U+FEFF — plus its docstring; read_source() was deliberately NOT changed, so no other probe's view of any file moved; (b) the fix-6 narrowing and the fix-6b shebang skip are both KEPT and asserted — arms 12aj and 12ak stay green, so the repair cannot have overshot back to the whole-file scan; (c) the guard runs in BOTH directions — BOM + `#![cfg(..)]` is rc=1 (and the message must name `CONDITIONALLY COMPILED as a whole`), a BOM ALONE is rc=0, and BOM + shebang + `#![cfg(..)]` is rc=1, which is what pins the ORDER of the two skips; (d) the clause registry did not move — same 26 ids, same categories, same counts, and scripts/c1-conformance-pin.json was not edited.",
+    "REACHABILITY OF THE FIXED HOLE IS ZERO TODAY — no tracked source file carries a BOM. That was already known before the fix and is not a reason to skip it; the shebang hole fix-6b closed was equally latent. The premise was nonetheless confirmed against the toolchain rather than assumed: `rustc --test` on BOM + `#![cfg(feature = \"nope\")]` + `#[test]` builds and `--list` reports `0 tests`, while the same file without the cfg reports `1 test`.",
+    "`git diff --name-only 337c2b12 HEAD` is exactly three files: scripts/check-c1-conformance.sh, scripts/tests/test_check_c1_conformance.sh and this file. Nothing under src/ moved in the whole slice (`git diff --name-only 23a436dc HEAD -- src/` is empty), the ratified contract's bytes are untouched, and the governed-surface allowlist is BYTE-IDENTICAL with its pin unmoved at 427d2712.",
+    "scripts/agent-test.sh's aggregate exit is VACUOUS (TC-16) and scripts/tests/test_commission_manifest.sh is PRE-EXISTING RED on main (TC-79, arm 9d). Neither is a fix-6c signal. `cargo test --workspace` was NOT used as evidence either way — a known-unstable signal here (~1 run in 3 fails on plain main). cargo clippy and cargo check --workspace --all-targets WERE re-run at this head, not carried, and both exit 0.",
+    "Cherry-pick order onto the landing branch, fix-6c tail appended to the prior list: ..., 12ac854e, 8b43a58c, the fix-6 docs commit 2c9dff51, f4c7aab9, a7a85e34, the fix-6b docs commit 844df27b, the round-6/7 transcripts 337c2b12, 9ef5179b, 0d9b40d7, then the docs commit carrying this file."
   ],
   "head_sha_before_fix_2": "52c2bde9",
   "head_sha_before_fix_3": "b0de847b",
   "head_sha_before_fix_4": "0ddb4be7",
   "head_sha_before_fix_5": "f7e1d060",
   "head_sha_before_fix_6": "e8e35260",
-  "head_sha_before_fix_6b": "2c9dff51"
+  "head_sha_before_fix_6b": "2c9dff51",
+  "head_sha_before_fix_6c": "337c2b12"
 }
