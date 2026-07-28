@@ -515,6 +515,39 @@ jobs:
       - name: Recurrence guard for the gate itself (fixture arms)
         run: bash scripts/tests/test_check_c1_conformance.sh
 
+  # TC-86 — transcript hygiene. No tracked file in this PUBLIC repository may
+  # carry a home-anchored path into a user's Claude Code state directory, because
+  # such a line is raw agent SESSION TRANSCRIPT content.
+  #
+  # A codex §9 transcript arrived carrying 216 lines of raw session JSONL from
+  # three OTHER projects: codex runs under
+  # --dangerously-bypass-approvals-and-sandbox (which is what lets it read
+  # outside the repo), it `rg`'d across ~/.claude, and TC-RUBRIC-7 then required
+  # its stdout be persisted under a tracked path. Caught and redacted before
+  # landing; reachability in history is ZERO.
+  #
+  # Deliberately carries NO `if:` and NO `needs:`, for the same reason as
+  # c1-contract-conformance / board-currency / ledger-integrity above — and for
+  # one more that is specific to this gate: CI IS ITS LOAD-BEARING HOME. A
+  # pre-commit hook is bypassable with `--no-verify`, and a `preflight --landing`
+  # gate only fires at a land, while a transcript is committed on an ordinary
+  # push in the middle of a review loop. A transcript is a `.log` under
+  # dev/plans/runs/**, i.e. a NON-markdown path, so `docs_only` would not have
+  # excluded it — but making this job's existence contingent on another job is
+  # exactly what "always-on" forbids.
+  #
+  # Default (depth-1) checkout is sufficient: the predicate reads working-tree
+  # files only and walks no history.
+  transcript-hygiene:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: No tracked file carries a Claude Code agent-state path (TC-86)
+        run: bash scripts/check-transcript-hygiene.sh
+      - name: Recurrence guard for the gate itself (fixture arms)
+        run: bash scripts/tests/test_check_transcript_hygiene.sh
+
   # DOC-HYGIENE-2 T2a — the always-on single-writer release-state backstop.
   #
   # Deliberately carries NO `if:` and NO `needs:`, for the same reason as

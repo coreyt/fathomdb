@@ -197,6 +197,17 @@ expect_out 'review\.log' "the failure NAMES the offending file"
 expect_out '1 line' "the failure reports a match count"
 expect_out 'PUBLIC' "the failure explains the stake (this repository is public)"
 expect_out '--redact' "the failure tells the reader how to fix it"
+expect_out '(Steward|STEWARD)' "the failure routes a suspected false positive to the Steward rather than a pattern edit"
+
+# The failure prose is EXPLANATORY TEXT containing backticks and `$`. It first
+# shipped in an UNQUOTED heredoc, so bash ran those backticks as command
+# substitutions: `ls` output was spliced into the middle of a security message
+# and a "rg: command not found" error was emitted alongside it. That is a real
+# defect — the operator reading a hygiene failure is reading garbage at exactly
+# the moment they must act correctly — and it is invisible to any arm that only
+# greps for keywords. These two arms are its recurrence guard.
+expect_no_out 'command not found' "the failure prose does not EXECUTE its own backticks (quoted heredoc)"
+expect_out 'rg.{1,3}ls' "the failure prose keeps its backticked prose literal"
 
 # ============================================================================
 # Arm C — the reported count is real, not a boolean dressed up as one.
@@ -312,6 +323,13 @@ if grep -q 'PUBLIC' "$H_FILE" && grep -qi 'no .*finding' "$H_FILE"; then
   pass "the banner states the reason and that no finding came from the removed lines"
 else
   fail "the banner must state the reason and the no-finding-lost claim; got: $(cat "$H_FILE")"
+fi
+# Same class as the failure-prose arm: the banner is a heredoc too, and it MUST
+# interpolate its two variables while executing nothing.
+if grep -q 'command not found' "$H_FILE"; then
+  fail "the redaction banner executed something instead of printing it; got: $(cat "$H_FILE")"
+else
+  pass "the redaction banner prints prose without executing any of it"
 fi
 if grep -q 'REDACTED TC-86' "$H_FILE"; then
   pass "each removed line is REPLACED IN PLACE by the shared marker"

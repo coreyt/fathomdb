@@ -48,6 +48,17 @@ run_capped test-check-governed-surface-pin bash scripts/tests/test_check_governe
 # the real src/ tree is ever written.
 run_capped test-check-c1-conformance bash scripts/tests/test_check_c1_conformance.sh
 
+# Scripts (bash): TC-86 transcript hygiene — the ONE shared agent-state pattern
+# (scripts/lib/agent-state-paths.sh), the capture-time filter folded into
+# dev/agent-tools/codex-nostdin.sh, and the shared
+# scripts/check-transcript-hygiene.sh predicate with both of its wirings
+# (`preflight.sh --landing` and an always-on CI job). Guards against a codex §9
+# transcript carrying another project's raw Claude Code session JSONL into this
+# PUBLIC repo, which happened once (caught pre-land; reachability in history is
+# ZERO). Dirty fixtures and throwaway repos live under mktemp -d; no real
+# transcript under dev/plans/runs/** is ever written.
+run_capped test-check-transcript-hygiene bash scripts/tests/test_check_transcript_hygiene.sh
+
 # Scripts (bash): agent-seat-hardening ASH-B — the PreToolUse write-path guard
 # .claude/hooks/seat-path-guard.sh, which enforces dev/design/orchestration.md
 # § 1.2 (coordinating seats must never write src/**, engine/** or test sources;

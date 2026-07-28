@@ -315,6 +315,57 @@ if [ "$LANDING" -eq 1 ]; then
   fi
 fi
 
+# --- 11. TC-86 transcript-hygiene gate -------------------------------------------
+# Refuse to land a tree in which any TRACKED file carries a home-anchored path
+# into a user's Claude Code state directory — i.e. raw agent SESSION TRANSCRIPT
+# content. github.com/coreyt/fathomdb is PUBLIC, so landing such a line publishes
+# another project's conversation.
+#
+# This is not hypothetical. On 2026-07-28 a codex §9 review transcript arrived
+# carrying 216 lines of raw session JSONL from three OTHER projects: codex runs
+# under --dangerously-bypass-approvals-and-sandbox (which is what lets it read
+# outside the repo), it `rg`'d across ~/.claude, and TC-RUBRIC-7 then required
+# its stdout be persisted under a tracked path. Caught and redacted before
+# landing; `git grep` proved reachability in history is ZERO. TC-86, steward
+# `seq-129`, todos `TC-86`, master `F-36`.
+#
+# The predicate lives in scripts/check-transcript-hygiene.sh — see that file's
+# header for the pattern's discriminators and, just as importantly, for what it
+# deliberately does NOT claim to check (it is not a secrets scanner). preflight
+# and the always-on CI job share ONE implementation and cannot diverge, exactly
+# as §7–§10 do. --landing-only, mirroring their structure: the CI job —
+# deliberately NOT docs_only-gated — covers every non-landing push, and is the
+# load-bearing home because a pre-commit hook is bypassable with --no-verify.
+#
+# Tripping this is CORRECT BEHAVIOUR. The fix is `scripts/check-transcript-hygiene.sh
+# --redact`, which rewrites the offending lines IN PLACE behind a banner and
+# never deletes the transcript (TC-RUBRIC-7 closes a review on a persisted
+# artifact). Do NOT weaken the pattern to clear a land — route that to the
+# Steward.
+if [ "$LANDING" -eq 1 ]; then
+  TH_CHECK_OUT="$(bash "$SELF_DIR/check-transcript-hygiene.sh" 2>&1)" || TH_CHECK_RC=$?
+  TH_CHECK_RC="${TH_CHECK_RC:-0}"
+  if [ "$TH_CHECK_RC" -ne 0 ]; then
+    TH_SAW_FAIL=0
+    while IFS= read -r line; do
+      case "$line" in
+        FAIL*) hard "transcript-hygiene: $line"; TH_SAW_FAIL=1 ;;
+        *)     info "transcript-hygiene: $line" ;;
+      esac
+    done <<<"$TH_CHECK_OUT"
+    # Anti-fail-open, as in §8/§9/§10: a non-zero rc with no FAIL line means the
+    # checker itself could not run (exit 2 = missing shared pattern, unreadable
+    # path, not a git repo, or an evaporated tracked-file set). That must still
+    # block the land — a gate that could not see its subject is exactly the case
+    # where landing on its silence is worst.
+    if [ "$TH_SAW_FAIL" -eq 0 ]; then
+      hard "transcript-hygiene: check-transcript-hygiene.sh exited $TH_CHECK_RC without reporting a specific defect — refusing to certify this tree for landing"
+    fi
+  else
+    ok "transcript-hygiene: no tracked file carries a Claude Code agent-state path (TC-86)"
+  fi
+fi
+
 # --- Summary (JSON, last line) ---------------------------------------------------
 json_arr() { local out="" x; for x in "$@"; do out="${out:+$out,}\"$(printf '%s' "$x" | sed 's/\\/\\\\/g; s/"/\\"/g')\""; done; printf '[%s]' "$out"; }
 
