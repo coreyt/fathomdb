@@ -399,6 +399,20 @@ in Rust, Python and TypeScript:
   row written while the arm was off is picked up, not stranded. Edge-body vectors
   are unaffected — the `edge_fact` kind is registered off the presence of an edge
   body, not off the projection registry.
+- **The dense arm requires the `searchable` ROLE, not merely the `vector`
+  sub-object** (0.8.20 Slice 21c, `TC-71`). A spec such as
+  `{ roles: {Filterable}, vector: Some(_) }` is accepted and round-trips
+  verbatim, but it is **INERT**: it enrols no kind, backfills nothing, and makes
+  no later write enqueue an embedding — the accept-inert ruling above, now
+  honoured by the engine and not only by the bindings. Previously the engine keyed
+  the dense arm off the stored `vector` sub-object alone, so declaring that
+  combination in a session with a live embedder silently embedded the whole
+  corpus. **The inverse moves with it:** demoting the last `searchable→vector`
+  projection to `{filterable} + vector`, or dropping it while an inert
+  `{filterable} + vector` sibling survives, now un-enrols exactly as a literal
+  drop does. `ProjectionDelta.deferred` still reports the stored-but-unbuilt
+  `vector` sub-object however it was declared — the change is to what the engine
+  DOES, not to what it reports.
 - **Graceful-absent without a live embedder.** Opened with `EmbedderChoice::None`
   there is no dense arm, so the declaration persists and DEFERS rather than
   queueing embeds that could only fail; it **grafts on** when the same spec is
