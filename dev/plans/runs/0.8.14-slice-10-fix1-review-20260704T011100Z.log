@@ -1,3 +1,22 @@
+=== STEWARD REDACTION (TC-86 transcript hygiene) ===
+172 line(s) redacted in place in this transcript before it was committed.
+WHAT THEY WERE (172 line(s) in 5 block(s)): the OUTPUT of commands
+echoed in this transcript that READ a Claude Code state directory — i.e. the
+CONTENT of that state, not merely its path. The command echoes themselves are
+kept: they are the evidence of what happened, and they are path-only.
+PROJECTS TOUCHED: -home-coreyt-projects-fathomdb
+OWN PROJECT: this content came from THIS repository's own Claude Code state
+directory (-home-coreyt-projects-fathomdb) — this project's own memory store.
+Under the TC-86 threat model (steward seq-130) an own-project PATH is only a
+WARNING, but its CONTENT is still this project's private agent state and does not
+belong in a PUBLIC repository, so it is removed here.
+WHY REMOVED: github.com/coreyt/fathomdb is a PUBLIC repository. Committing
+session transcripts or state contents into it would publish them.
+NO FINDING WAS LOST: no review finding came from the removed lines. Every verdict
+and all reasoning above and below are intact.
+NOT DELETED: each removed line was REPLACED IN PLACE by a marker, so this
+transcript still stands as TC-RUBRIC-7 evidence.
+=== END STEWARD REDACTION ===
 OpenAI Codex v0.136.0
 --------
 workdir: /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-10-20260704T002826Z
@@ -1438,202 +1457,27 @@ I found the Claude project memory store. I’m reading the repo-specific memory 
 exec
 /bin/bash -c "sed -n '1,220p' /home/coreyt/.claude/projects/-home-coreyt-projects-fathomdb/memory" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-10-20260704T002826Z
  exited 4 in 0ms:
-sed: read error on /home/coreyt/.claude/projects/-home-coreyt-projects-fathomdb/memory: Is a directory
+[REDACTED TC-86] 1 line(s) of agent-state CONTENT removed: this block was the OUTPUT of the command echoed above, which read a Claude Code state directory.
 
 exec
 /bin/bash -c 'ls /home/coreyt/.claude/projects/-home-coreyt-projects-fathomdb/memory' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-10-20260704T002826Z
  succeeded in 0ms:
-0.8.0-ga-blocked-recall-corpus.md
-0.8.1-budget-discipline-cheap-validate-and-ledger.md
-0.8.11-complete-planner-router-screening.md
-0.8.11.2-launched-autonomous-envelope.md
-0.8.12-plan-of-record-location.md
-0.8.3-0.8.4-competitor-parity-reframe.md
-0.8.3-0.8.4-corpus-adequacy-and-locomo.md
-0.8.3-mem0-parity-closed.md
-0.8.4-gating-rerun-split-verdict.md
-0.8.6-0.8.7-parallel-build-venv-mutex.md
-0.8.6-complete-foundations-shippability.md
-0.8.7-complete-gpu-embedder.md
-0.8.8-exp-obs-slice5-landed.md
-0.8.8-pyo3-fix-requires-0.29.md
-0.8.9-publish-staged-tag-held.md
-0.8.9-verdict-complete-merge-parked.md
-0.8.9.1-markdown-toolchain-prettier-corrupts.md
-0.8.x-portfolio-features-and-experiment-tree.md
-0.8.x-release-numbering-publish-governance-policy.md
-1-2M-scaling-kernel-first-not-ann.md
-MEMORY.md
-acceptance-md-locked-no-feature-acs.md
-agent-worktree-stale-base-trap.md
-airlock-operational-notes.md
-background-exit-masks-real-exit.md
-characterize-underperformance-then-hitl.md
-codex-unavailable-use-claude-code-review.md
-conformance-rewrite-vacuous-green-trap.md
-dont-dismiss-user-directed-subagents.md
-dont-gate-trivial-changes-on-ci.md
-embed-completeness-and-gpu-readiness.md
-eu5f-hitl-signoff.md
-eu7-0937-0896-bisect-not-cls.md
-eval-environment-operational-notes.md
-fathomdb-080-plan-approved.md
-fathomdb-consumer-agents.md
-fathomdb-function-over-footprint-user-spend.md
-fathomdb-recall-fidelity-vs-relevance.md
-fathomdb-v05-graph-lineage.md
-g0-identity-scope-logical-id-alone.md
-gpu-not-retrieval-lever-hnsw-at-0.8.20.md
-gpu-vllm-embedding-mutex.md
-graph-arm-doesnt-beat-bm25-pivot.md
-guardrail-failures-fix-tooling-not-people.md
-library-bump-steward-pattern.md
-m1-graph-arm-nogo-registered-n300.md
-multifield-fts-deferred-0.9.x.md
-no-memex-ledger-response-without-hitl-agreement.md
-oob-creep-vs-justified-deviation.md
-opp1-v3-decomposition-verdict-adopt-hold-0.5.5.md
-opp12-record-lifecycle-protocol.md
-orchestration-execution-traps.md
-perf-recall-gates-masked-and-ac013b-conflation.md
-perf-tuning-design-sweeps-not-adhoc.md
-planner-router-experiment-ladder-never-ran.md
-pr2a-go-recompute-split.md
-pr3-tiered-latency-budget.md
-priced-runs-need-resilience-before-spend.md
-push-scope-fathomdb-only.md
-recovery-denylist-five-names.md
-release-dod-requires-full-workspace-gate.md
-release-publish-gotchas.md
-shared-checkout-branch-can-be-stale-vs-session-env.md
-shared-ledger-full-tail-read-before-append.md
-slice-prompt-verify-test-claims.md
-steward-delegate-dont-hand-do.md
-steward-orchestration-tooling-ported-from-memex.md
-subagent-persistence-orchestration-economics.md
-verify-design-against-code-not-just-architecture.md
+[REDACTED TC-86] 69 line(s) of agent-state CONTENT removed: this block was the OUTPUT of the command echoed above, which read a Claude Code state directory.
 
 exec
 /bin/bash -c "sed -n '1,260p' /home/coreyt/.claude/projects/-home-coreyt-projects-fathomdb/memory/MEMORY.md" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-10-20260704T002826Z
  succeeded in 0ms:
-# Memory index
-
-- [0.8.12 COMPLETE + MERGED (d4cfeec4, label-only)](0.8.12-plan-of-record-location.md) — memory-quality: consolidation #7 opt-in (STAY-OFF), t_invalid rebuild-durable, TS X1; OPP-6 #6 de-prioritized (EXP-COV-1=CEILING-ABSORBED, F-15).
-- [Release DoD requires FULL workspace clippy+check](release-dod-requires-full-workspace-gate.md) — per-crate/feature verify masks cross-crate breaks; run `cargo clippy/check --workspace --all-targets` (both exit 0) before any green claim.
-- [OPP-12 record-lifecycle protocol (Memex⇄FathomDB), RATIFIED both sides](opp12-record-lifecycle-protocol.md) — mechanism/policy seam; 3 axes (existence × superseded_at-currency NOT is_latest × edge-only validity) + projection registry; C-1 hard (EntityTypeSpec drives ProjectionSpec) + C-2 binding (SearchHit.id typed IdSpace, Cause-A id-carrier). 5 docs main:dev/design/record-lifecycle-protocol/ @c3b3d631; enum thread seq 1→13 CLOSED (MEMEX seq-12 agree + applied mirror). DESIGN contract only — schedules nothing / no build (build≠adopt); roadmap TBD ≥0.9.x.
-- [Verify design against code, not just architecture](verify-design-against-code-not-just-architecture.md) — the OPP-12 lifecycle design passed 4 adversarial architecture rounds but was ~90% net-new reading as near-shipped + contradicted shipped/signed mechanisms (superseded_at not is_latest; edge-only validity; engine already owns the async embed worker; no EAV store). Run a code-grounded exists-vs-net-new pass before drafting/committing a design contract.
-- [No Memex ledger response without HITL agreement](no-memex-ledger-response-without-hitl-agreement.md) — never append voice=FATHOM to the memex enum-ledger until HITL approves the content; WRITES only; never push memex.
-- [Shared ledger: full-tail read before every append](shared-ledger-full-tail-read-before-append.md) — voice-filtered ledgerwatch hides other voices; full unfiltered tail read before every append; verify seq contiguous.
-- [Multi-field FTS deferred ≥0.9.x; Memex uses 0.8.x first](multifield-fts-deferred-0.9.x.md) — multi-field/recursive-payload FTS + custom tokenizer NOT in 0.8.x; Memex must use 0.8.x governed FTS+CE+vector+search_expand first.
-- [Don't gate trivial changes on CI](dont-gate-trivial-changes-on-ci.md) — main NOT branch-protected; CI advisory; merge docs/config-only immediately; reserve full CI+Monitor for code/build/CI changes.
-- [0.8.x numbering/publish/governance (renumbered 2026-07-01)](0.8.x-release-numbering-publish-governance-policy.md) — TWO-TIER: x.y.z real (even publishable w/HITL), x.y.z.p pico label-only; '13' forbidden; 0.8.12 memory-quality, EXP-S@0.8.14, ONNX@0.8.16, vec/GA@0.8.18, dispatcher@0.8.15.
-- [Steward: delegate, don't hand-do](steward-delegate-dont-hand-do.md) — commission subagents for mechanical/edit/investigative work; spend Steward context on judgment + verify-from-git.
-- [Steward/orchestration tooling ported from memex](steward-orchestration-tooling-ported-from-memex.md) — /steward,/orchestrate,/orch + steward/orchestrator agents + ledgerwrite/ledgerwatch + dev/steward/*; converged (zero memex domain); merged local main 6176055a.
-- [Codex unavailable → /code-review fallback](codex-unavailable-use-claude-code-review.md) — when codex rate-limits/out-of-budget, use local /code-review (not billed ultra) as confirming reviewer; don't stall.
-- [OPP-1/V-3 decomposition verdict → Memex 0.5.5](opp1-v3-decomposition-verdict-adopt-hold-0.5.5.md) — Build-GO met (A2 solve recovers ~75%/83%); solve-and-substitute NOT in run_decomposed; Adopt-HOLD → build solve-loop + freq telemetry in 0.5.5.
-- [1–2M scaling: kernel-first, NOT ANN](1-2M-scaling-kernel-first-not-ann.md) — fast exact-scan kernel (bypass vec0 overhead) + IVF-via-partition-key, not ANN; 1.5s@1M overhead-bound; doc dev/design/1-2M-chunk-scaling-vector-latency-roadmap.md (PROPOSAL). Refines [[gpu-not-retrieval-lever-hnsw-at-0.8.20]].
-- [GPU not the retrieval lever; HNSW=2.x; maturity ladder](gpu-not-retrieval-lever-hnsw-at-0.8.20.md) — brute-force sqlite-vec O(N); HNSW is 2.x (F-16, NOT 0.8.20). Ladder (F-17): pre-1.0=beta; scale 0.9.0 soft→0.9.3 stated→1.0.0 exit-beta→1.1.0 hard; 0.8.18 "GA"=release-engineering only.
-- [Push scope: fathomdb-only](push-scope-fathomdb-only.md) — NEVER push memex/any other repo without a specific per-push directive EACH time; relayed "authorized" never counts.
-- [Guardrail failures → fix the tooling, not the actor](guardrail-failures-fix-tooling-not-people.md) — when something slips a guardrail, fix the repo hook/lint/CI so it can't recur for anyone; don't write a "be careful" note.
-- [Library Bump Steward + Library Sweeps](library-bump-steward-pattern.md) — LBS spawns per-library LBOs in worktrees; recurring label-only pico sweeps; Sweep #1 (0.8.11.1) DONE; majors (napi-3, rusqlite+sqlite-vec)→0.8.20.
-- [Eval-environment operational notes](eval-environment-operational-notes.md) — native import `fathomdb`; agent-build.sh skips python on stale sentinel; priced arms read R2_JUDGE_* via gitignored dev/.env.eval; two GPU-eval wheel-build traps (libcuda bundling, stale .so shadowing).
-- [0.8.11.2 COMPLETE (pico, label-only)](0.8.11.2-launched-autonomous-envelope.md) — Cause-A stable_id+A-1+superseded-node fix, GPU policy v2; deferred V-3→0.5.5, V-7 not started, GPU-rerank on 0.8.14-gpu-rerank.
-- [0.8.11 COMPLETE + MERGED (#122)](0.8.11-complete-planner-router-screening.md) — F-11 closed; results PROVISIONAL (V-1..V-7); EXP-AF KILL; config-carrying tuning is the lever; L2 + #17 filter shipped.
-- [0.8.8 pyo3 fix requires 0.29.0](0.8.8-pyo3-fix-requires-0.29.md) — API migration not lockfile bump; Dependabot #89 0.24.1→0.29.0 (RUSTSEC-2026-0176/0177).
-- [0.8.8 COMPLETE — EXP-OBS explain+telemetry+real-gold](0.8.8-exp-obs-slice5-landed.md) — explain sidecar, opt-in no-egress telemetry, real-gold; verify GREEN; record_feedback reclassify@0.8.11.
-- [Planner-router ladder never ran → folded into 0.8.11 (F-11)](planner-router-experiment-ladder-never-ran.md) — Gate-0/2·EXP-A/M4·EXP-B′·Fr-acc never ran as $0 float; folded into 0.8.11; only EXP-S@0.8.14 left for dispatcher.
-- [Shared checkout branch can be stale](shared-checkout-branch-can-be-stale-vs-session-env.md) — verify `git rev-parse --abbrev-ref HEAD` before every commit/push; release on own worktree off origin/main. Extends [[agent-worktree-stale-base-trap]].
-- [0.8.9.1 — markdown debt→0; prettier corrupts](0.8.9.1-markdown-toolchain-prettier-corrupts.md) — agent-lint-md.sh AST-neutral; prettier REMOVED (corrupts `*`→`_`); don't reintroduce for md.
-- [0.8.9 SHIPPED to unblock Memex; survived partial-publish](0.8.9-publish-staged-tag-held.md) — crates/PyPI/npm; tag-push partial-failed (embedder-api bump missed); recovery + Axis-E drift guard (PR #123).
-- [0.8.9/0.8.9.2 COMPLETE — first green Windows; verify gate honest](0.8.9-verdict-complete-merge-parked.md) — CI-integrity micros; pyo3 mac/win fix; unmasked 4-deep verify-gate masked-failure; main FULLY GREEN.
-- [0.8.6 COMPLETE — Foundations & shippability](0.8.6-complete-foundations-shippability.md) — provider seam OPP-8 + embed Py↔TS parity; masked gates → 0.8.9 CI-integrity closes.
-- [0.8.7 COMPLETE — GPU embedder (OOB)](0.8.7-complete-gpu-embedder.md) — parse_device_request; RTX 3090 (15.6×/93×); CPU↔CUDA 1-bit identical; default CPU byte-identical.
-- [0.8.6∥0.8.7 parallel build — shared .venv mutex](0.8.6-0.8.7-parallel-build-venv-mutex.md) — isolated source, SHARED main-tree build; one maturin develop at a time; 3090s=cuda:0/1, K620=display.
-- [0.8.x portfolio features + experiment tree](0.8.x-portfolio-features-and-experiment-tree.md) — F0–F5/Fg/Fr compose functions; spine EXP-0→EXP-A→EXP-B′; doc dev/design/0.8.x-portfolio-features-and-experiment-tree.md.
-- [0.8.3 Mem0-parity CLOSED — precision is the cause](0.8.3-mem0-parity-closed.md) — cause=retrieval PRECISION (oracle +0.39); lever CE-rerank α=1.0/pool_n=10 (MRR .347→.587); NO embedder swap (keep CLS-corrected bge-small).
-- [Airlock operational notes](airlock-operational-notes.md) — batch BYPASSES quarantine (~50% cheaper); 429+200-empty=drain; GraphRAG→local Qwen $0; gemini reasoning_effort=minimal (never on claude judge); meter via logs/query.log.
-- [Under-performance → characterize, then HITL](characterize-underperformance-then-hitl.md) — on any competitor loss: split real-vs-artifact, name mechanism, enumerate cheap+heavy fixes w/ $, bring to HITL; never accept loss or fork solo.
-- [FathomDB: function over footprint](fathomdb-function-over-footprint-user-spend.md) — function can outweigh small/local/CPU-only; LLMs+GPU are USER-controlled opt-in; footprint invariant = one operating point, not a gate.
-- [Perf tuning = design a sweep, not ad-hoc probes](perf-tuning-design-sweeps-not-adhoc.md) — present a controlled sweep + decision rule; don't improvise one-off timing runs.
-- [Graph arm does NOT beat BM25](graph-arm-doesnt-beat-bm25-pivot.md) — BFS arm ~0 recall; entity co-mingling=length-norm bias; seed from lexical top-K.
-- [0.8.3/0.8.4 corpus adequacy + LOCOMO/AP-News](0.8.3-0.8.4-corpus-adequacy-and-locomo.md) — LME-only underpowers multi_session/temporal/ku; LOCOMO(CC-BY-NC)+AP-News gitignored EVAL-ONLY, never commit payloads.
-- [0.8.3/0.8.4 competitor-PARITY reframe](0.8.3-0.8.4-competitor-parity-reframe.md) — gate = near-parity-or-better vs Mem0(0.8.3)/GraphRAG(0.8.4); surpass-option before sign-off.
-- [Embed completeness + GPU readiness](embed-completeness-and-gpu-readiness.md) — verify coverage via _fathomdb_vector_rows.kind; WAL trap (mode=ro not immutable=1); embedder CPU-pinned; tool eval/verify_embed_db.py.
-- [0.8.1 budget discipline](0.8.1-budget-discipline-cheap-validate-and-ledger.md) — cheap-validate field-population w/ gemini-2.5-flash-lite before ANY priced run; keep running $ tally.
-- [Priced runs need resilience BEFORE spend](priced-runs-need-resilience-before-spend.md) — checkpoint + verified --resume + 429/5xx backoff + completeness guard as hard preconditions; skipping burned ~$15.
-- [Agent worktree stale-base trap](agent-worktree-stale-base-trap.md) — isolation:worktree cuts from stale base + breaks .venv; pre-create+verify from $(git rev-parse main); forbid maturin develop / pip install -e from a worktree.
-- [eu7 recall-floor RESOLVED (one-sided CI)](0.8.0-ga-blocked-recall-corpus.md) — floor 0.90 but gate ONE-SIDED (ci_hi≥floor); eu7=0.896 CI[.864,.925] PASS; cause=vector-stage/SUT not CLS.
-- [eu7 0.937→0.896 = vector-path/SUT, NOT CLS](eu7-0937-0896-bisect-not-cls.md) — embedder src + quant/KNN byte-identical; cause=vector_stage_only SUT; recovery=quant-path.
-- [Recall = fidelity vs relevance (two axes)](fathomdb-recall-fidelity-vs-relevance.md) — 0.90 floor = ANN-quant FIDELITY not IR relevance; eu8 relevance ceiling ≈0.571 (embedder-bound).
-- [Background exit can mask real exit](background-exit-masks-real-exit.md) — trailing echo faked pytest exit 0 over exit-2; read PIPESTATUS/$? of the actual command; collection/import error ≠ code defect.
-- [G0 identity = logical_id alone](g0-identity-scope-logical-id-alone.md) — active-uniqueness = logical_id ALONE on canonical_nodes+edges, reversing compound (logical_id,kind); migration step-12.
-- [Conformance rewrites can be vacuously green](conformance-rewrite-vacuous-green-trap.md) — surface-test rewrite passed but codex found 2×P1; use real dir() minus exclusion set + single shared allowlist; codex §9 load-bearing.
-- [acceptance.md locked; no per-feature ACs](acceptance-md-locked-no-feature-acs.md) — track by G-gap + TDD test names, NOT AC ids; new ACs only at gated slices.
-- [Recovery denylist = five names](recovery-denylist-five-names.md) — {recover,restore,repair,fix,rebuild}; doctor is SDK-absent via allowlist; stays five.
-- [PR-2a GO OVERTURNED — recall was a measurement artifact](pr2a-go-recompute-split.md) — 0.7.2 RESOLVED; floor kept 0.90 (ANN 0.937 not IR); manual doctor kept.
-- [Don't dismiss user-directed subagents](dont-dismiss-user-directed-subagents.md) — unexpected-but-coherent subagent output may be user-directed; treat as a real deliverable.
-- [OOB: creep vs justified deviation](oob-creep-vs-justified-deviation.md) — creep forbidden; justified-deviation required when blocked (smallest change, loud, escalate); protocol SLICE-TEMPLATE §6.
-- [Verify test-assertion claims in slice prompts](slice-prompt-verify-test-claims.md) — read test X IN FULL at baseline before stating "test does/doesn't assert Y" as a guardrail.
-- [Orchestration execution traps](orchestration-execution-traps.md) — don't parallel-batch dependent git ops; verify state from git; codex = PROVEN §9 reviewer via --dangerously-bypass-approvals-and-sandbox; subagent=fallback.
-- [Subagent persistence / orchestration economics](subagent-persistence-orchestration-economics.md) — fresh-spawn ~$1.77, warm ~$0.15-0.28, crossover K=2; resume-from-transcript; study exp/subagent-persistence.
-- [FathomDB consumer agents](fathomdb-consumer-agents.md) — Memex/Hermes/OpenClaw = real local-first agent-memory; SQLite+sqlite-vec/FTS5; define FathomDB's requirement surface.
-- [Release publish gotchas](release-publish-gotchas.md) — pushing a v* tag auto-fires REAL crates/PyPI/npm publish (dry-run first); use set-version.sh; cargo tier embedder→engine.
-- [FathomDB v0.5.x graph lineage](fathomdb-v05-graph-lineage.md) — v0.5.x full doc+graph+KV (nodes/edges); 0.6.0 stripped to 5 verbs; 0.8.0 revives subset; use via git for G5/G8.
-- [Perf/recall gates masked + ac_013b conflation](perf-recall-gates-masked-and-ac013b-conflation.md) — ac_012/013/013b/019/020 AGENT_LONG-gated (vacuously green per-push); ac_013b asserts 0.90 on a SYNTHETIC embedder.
-- [0.8.0: Slices 0..35 CLOSED; GA verify HALTED](fathomdb-080-plan-approved.md) — filter-grammar ACCEPTED (G4↔G10 gap-37, shipped 0.8.11); G0 keystone landed; read.* verbs (logical_id-alone).
+[REDACTED TC-86] 64 line(s) of agent-state CONTENT removed: this block was the OUTPUT of the command echoed above, which read a Claude Code state directory.
 
 exec
 /bin/bash -c "sed -n '1,220p' /home/coreyt/.claude/projects/-home-coreyt-projects-fathomdb/memory/verify-design-against-code-not-just-architecture.md" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-10-20260704T002826Z
  succeeded in 0ms:
----
-name: verify-design-against-code-not-just-architecture
-description: "A design contract must be verified against the actual code/substrate, not only by adversarial architecture review — the latter misses exists-vs-build and contradictions with shipped/signed mechanisms"
-metadata: 
-  node_type: memory
-  type: feedback
-  originSessionId: 60b48af5-141d-42fb-8d85-51d4010f8eb3
----
-
-The OPP-12 record-lifecycle design ([[opp12-record-lifecycle-protocol]]) passed **4 adversarial
-ARCHITECTURE rounds** (Fable 5) + a correctness pass, yet a code-grounded audit found it was **~90%
-net-new while reading as near-shipped**, and it **contradicted shipped / HITL-signed mechanisms**:
-
-- currency is the shipped **`superseded_at`** logical_id-alone partial-unique index (G0 / ADR-0.8.0,
-  `UNIQUE(logical_id) WHERE superseded_at IS NULL`), NOT an invented `is_latest` column;
-- banning "tombstone" / `t_invalid` collides with frozen schema/engine vocab + a live edge column;
-- temporal validity is **EDGE-ONLY, ISO-8601 text, inline `datetime('now')`** — not node-level integer
-  windows via `SearchFilter` + a bound `:now`;
-- the engine **already owns an async projection worker pool** — contradicting the "no-daemon, host-driven,
-  sync-inline default" model;
-- there is **no EAV / property-FTS** store (only `body`-FTS), so the projection registry has nothing to
-  project from.
-
-**Why:** architecture review checks *internal consistency*, not fidelity to the substrate. Consistent /
-green ≠ correct-vs-reality — same family as [[conformance-rewrite-vacuous-green-trap]] and
-[[release-dod-requires-full-workspace-gate]].
-
-**How to apply:** before drafting/committing a design contract, run a **code-grounded pass** (grep the real
-schema/engine) and add an explicit **"what exists today vs net-new"** delta; reconcile every claim's naming
-with shipped/signed decisions; mark net-new pieces as net-new. Memex's code-verified response + the HITL
-caught this after the fact — do it *before*. Audit saved at `dev/design/record-lifecycle-protocol/code-grounded-audit.md`.
+[REDACTED TC-86] 27 line(s) of agent-state CONTENT removed: this block was the OUTPUT of the command echoed above, which read a Claude Code state directory.
 
 exec
 /bin/bash -c "sed -n '1,220p' /home/coreyt/.claude/projects/-home-coreyt-projects-fathomdb/memory/slice-prompt-verify-test-claims.md" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-10-20260704T002826Z
  succeeded in 0ms:
----
-name: slice-prompt-verify-test-claims
-description: "When a slice prompt's guardrail/mechanism hinges on what a test asserts, read the WHOLE test file first — a partial read put a false premise in the Slice 21 prompt."
-metadata: 
-  node_type: memory
-  type: feedback
-  originSessionId: d953dabe-e131-4552-843e-d416403203cf
----
-
-When authoring a slice prompt whose guardrail or prescribed mechanism depends on **what an existing test asserts**, read the ENTIRE test file and confirm the assertion before stating it as fact in the prompt. Do not infer test behavior from the first screen of a file.
-
-**Why:** In the Slice 21 (pyright-zero) prompt I wrote that `test_pyright_narrowing.py` "does NOT assert the line-30 negative error" and prescribed two mechanisms (a `# pyright: ignore` on the fixture, or a `[tool.pyright] exclude`) on that premise. The premise was **false** — `test_pyright_flags_unnarrowed_variant_key_access` (lines 121–146) requires pyright to emit that exact error. I had read lines 1–70 of the test (which only showed the reveal_type expectations) and assumed the rest. Both prescribed mechanisms would have broken a green test to fake a clean pyright. The Slice 21 agent caught it, escalated (didn't force), and amended with a cleaner fix: **relocate the negative-error fixture `tests/ → src/python/_typecheck_fixtures/` (byte-identical), outside pyright's `include`, repointing only the test's `_FIXTURE` path** — so `agent-verify`'s `pyright -p src/python` is 0/0 while the subprocess test still analyzes the fixture explicitly and the diagnostic still fires. Honest zero, config not weakened.
-
-**How to apply:** Before a slice prompt asserts "test X does/doesn't check Y" as a load-bearing fact, open test X fully and verify. This is acute for prompts that rewrite or constrain conformance suites — e.g. the imminent Slice 25 (supersession conformance rewrite) makes many claims about `test_surface.py`, `surface.test.ts`, and the `no_recovery_surface` suites; read each in full before writing guardrails around them. A forced deviation is a defect report on the prompt ([[oob-creep-vs-justified-deviation]]); a false factual premise is worse — it can produce a *silently wrong* green if the implementer doesn't escalate. Treat such escalations as real saves ([[dont-dismiss-user-directed-subagents]]).
+[REDACTED TC-86] 11 line(s) of agent-state CONTENT removed: this block was the OUTPUT of the command echoed above, which read a Claude Code state directory.
 
 codex
 I can’t rely on `git grep` in this sandbox, so I’m reading the likely touched files directly from the known paths: engine scorer, schema tokenizer declaration, and the F5 tests.

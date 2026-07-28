@@ -362,7 +362,13 @@ if [ "$LANDING" -eq 1 ]; then
       hard "transcript-hygiene: check-transcript-hygiene.sh exited $TH_CHECK_RC without reporting a specific defect — refusing to certify this tree for landing"
     fi
   else
-    ok "transcript-hygiene: no tracked file carries a Claude Code agent-state path (TC-86)"
+    # SAY ONLY WHAT WAS VERIFIED. Under the `seq-130` threat model this gate
+    # hard-checks FOREIGN project state only; paths into THIS repo's own Claude
+    # Code project directory are advisory and exit 0. So an unqualified "no
+    # tracked file carries an agent-state path" would be a FALSE claim on a tree
+    # that in fact carries sixteen of them. Run the gate directly to see the
+    # WARN lines and its printed self-exemption.
+    ok "transcript-hygiene: no tracked file carries a FOREIGN Claude Code agent-state path (TC-86; own-project paths are advisory — run scripts/check-transcript-hygiene.sh to see them)"
   fi
 fi
 

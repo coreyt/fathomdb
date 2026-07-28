@@ -1,10 +1,33 @@
 #!/usr/bin/env bash
 # check-transcript-hygiene.sh — the TC-86 landing gate: no tracked file in this
-# PUBLIC repository may carry a home-anchored path into a user's Claude Code
-# state directory, because such a line is raw agent SESSION TRANSCRIPT content.
+# PUBLIC repository may carry a home-anchored path into ANOTHER project's Claude
+# Code state directory, because such a line is raw agent SESSION TRANSCRIPT
+# content.
 #
-# TC-86, steward `seq-129`, todos `TC-86`, master `F-36`. Cross-cutting — no
-# slice number, no `R-20-xx` id, no pico label.
+# TC-86, steward `seq-129` (raised) + `seq-130` (threat model ruled), todos
+# `TC-86`, master `F-36`. Cross-cutting — no slice number, no `R-20-xx` id, no
+# pico label.
+#
+# ======================= THE RULED THREAT MODEL (seq-130) ====================
+# FOREIGN project state  -> HARD FAIL (exit 1). Another project's session state
+#                           is never legitimately in this repository. After the
+#                           fix-1 widening the class is closed completely,
+#                           INCLUDING the `tool-results/` shape.
+# THIS repo's own state  -> WARN (exit 0). This repository's README, hand-off
+#                           prompts and prune measurements cite paths into this
+#                           project's own memory store deliberately; a gate that
+#                           hard-failed them would be switched off.
+#
+# The self-exemption is DELIBERATELY VISIBLE: this script prints
+# agent_state_self_exemption_notice on EVERY run, clean or failing, naming the
+# exempted directory, the reason, and the ACCEPTED RESIDUAL (this repo's own
+# session state, tool-results/ content included, can still be committed; the WARN
+# lines are the only thing that surfaces it). `seq-130` explicitly rejected an
+# exemption hidden inside the regex, because such an exemption is invisible at
+# the only moment it matters — when a reader takes the green output to mean the
+# tree is clean. Nothing suppresses the warnings; there is no quiet flag.
+# The exemption's argument lives at its definition site,
+# scripts/lib/agent-state-paths.sh.
 #
 # Shared by two callers, exactly like its siblings scripts/check-ledgers.sh,
 # scripts/check-board-currency.sh, scripts/check-governed-surface-pin.sh and
@@ -47,13 +70,26 @@
 # is load-bearing, and why the fix-1 widening dropped the original third one; do
 # NOT restate the regex here.
 #
+# Fix-2 does NOT add a third discriminator, and that is the point. The FOREIGN /
+# OWN split above is applied AFTER the pattern matches, by comparing the matched
+# project directory to one named constant — it is a SEVERITY axis, not a matching
+# rule. Folding it into the regex would have made the exemption invisible, which
+# is precisely what `seq-130` rejected. The pattern still matches everything it
+# matched at fix-1; what changed is what the gate DOES with a match.
+#
 # ============ WHAT THIS GATE DOES *NOT* DO (read this) =======================
 # It is a HYGIENE gate for a known ACCIDENT SHAPE, not a secrets scanner and not
 # an adversarial control:
 #   * It finds session content that arrived WITH its home-anchored path prefix —
 #     the `rg`/`ls`/`find` output shape by which a bypass-sandboxed reviewer's
 #     tool output carries another project's transcript into this repo. Content
-#     pasted WITHOUT that prefix is outside its reach, by construction.
+#     pasted WITHOUT that prefix is outside its reach, by construction. (That is
+#     a real gap, not a theoretical one: see `--redact`'s CONTENT-BLOCK mode in
+#     scripts/lib/agent-state-paths.sh, which exists because the 0.8.14 review
+#     transcript carries dumped memory-store CONTENT that this predicate cannot
+#     see. Remediation reaches further than detection, on purpose.)
+#   * It does not hard-check this repository's OWN project directory. That is a
+#     stated, printed exemption with a stated residual — see above.
 #   * It does not detect credentials, tokens, PII, or any other class of secret.
 #     Its silence is NOT a statement that a file is safe to publish; it is a
 #     statement about exactly one mechanical shape.
@@ -63,19 +99,31 @@
 # ============================ SCOPE OF THE SCAN ==============================
 # ALL TRACKED FILES by default — not just dev/plans/runs/**. A transcript written
 # somewhere unexpected is exactly the case a runs/-only scope would miss, and the
-# pattern is narrow enough that ordinary prose does not trip it. That was
-# verified EMPIRICALLY, not assumed: at baseline 1cbde587 the pattern has zero
-# matches across every tracked file, so this gate is GREEN THE DAY IT LANDS. No
-# narrowing to dev/plans/runs/** was needed and none was applied. (A new
-# always-on CI job that is red on arrival is the TC-16 / F-30 failure this repo
-# is still carrying; shipping another would be worse than shipping nothing.)
+# pattern is narrow enough that ordinary prose does not trip it. No narrowing to
+# dev/plans/runs/** was needed and none was applied. (A new always-on CI job that
+# is red on arrival is the TC-16 / F-30 failure this repo is still carrying;
+# shipping another would be worse than shipping nothing.)
+#
+# GREEN ON THE TREE, HONESTLY STATED. The FOREIGN class has ZERO matches across
+# every tracked file, which is why this gate can be always-on. The OWN class has
+# SIXTEEN, in eleven files, all of them deliberate citations of this project's own
+# memory store. Those are printed as WARN on every run; the earlier claim that the
+# pattern had "zero matches across every tracked file" was true only of the
+# narrower pre-fix-1 pattern and is corrected here rather than left standing.
 #
 # ============================= FIXING A FAILURE ==============================
-# `--redact` REWRITES the matched lines in place, using the shared banner and
-# marker. REDACT, NEVER DELETE: TC-RUBRIC-7 closes a review on a persisted
-# terminal artifact, so the transcript has to survive as evidence with the
-# removal VISIBLE. Deleting the file, or silently dropping the lines, trades one
-# integrity problem for another.
+# `--redact` REWRITES in place, using the shared banner and markers. REDACT,
+# NEVER DELETE: TC-RUBRIC-7 closes a review on a persisted terminal artifact, so
+# the transcript has to survive as evidence with the removal VISIBLE. Deleting
+# the file, or silently dropping the lines, trades one integrity problem for
+# another. Two modes, both in scripts/lib/agent-state-paths.sh:
+#   * FOREIGN PATH LINES  — whole-line replacement (the incident shape: the rest
+#                           of such a line is the slurped content itself).
+#   * CONTENT BLOCKS      — the OUTPUT of an echoed command that read a Claude
+#                           Code state directory, foreign or own. The echo is
+#                           KEPT; only its output goes.
+# OWN-project path lines are NOT rewritten: the exemption covers paths, and
+# auto-rewriting them would gut this repo's own docs behind a banner.
 #
 # Usage:
 #   scripts/check-transcript-hygiene.sh                 # all tracked files
@@ -87,9 +135,13 @@
 # (scripts/tests/test_check_transcript_hygiene.sh); both real callers invoke this
 # script with no arguments, or with --redact alone.
 #
+# There is deliberately NO quiet/suppress option. A warning that can be turned
+# off is a warning that will be turned off, and the own-project WARN is the only
+# thing that surfaces the accepted residual.
+#
 # Exit codes:
-#   0  clean (or: --redact ran and the tree is now clean)
-#   1  at least one file carries an agent-state path
+#   0  no FOREIGN agent-state path (own-project hits, if any, are WARN)
+#   1  at least one file carries a FOREIGN agent-state path
 #   2  the checker could not run (bad usage, unreadable path, no shared pattern,
 #      not a git repository). ANTI-FAIL-OPEN: a gate that could not see its
 #      subject must never be mistaken for a gate that saw a clean subject.
@@ -184,55 +236,140 @@ fi
 
 # ---------------------------------------------------------------------- scan --
 # Two passes on purpose: one batched `grep -l` over everything (fast, and `-I`
-# drops binaries), then a per-file count only for the files that actually hit.
+# drops binaries), then a per-file CLASSIFICATION only for the files that hit.
+#
+# The hit list is also the candidate set for `--redact`'s content-block mode: a
+# dumped output block is always introduced by an echoed command whose text
+# carries the path, so a file with zero pattern matches cannot contain one.
 HITS=()
-if [ "${#FILES[@]}" -gt 0 ]; then
+collect_hits() {
+  HITS=()
+  [ "${#FILES[@]}" -gt 0 ] || return 0
   while IFS= read -r -d '' p; do
     [ -n "$p" ] && HITS+=("$p")
   done < <(printf '%s\0' "${FILES[@]}" \
              | xargs -0 --no-run-if-empty grep -IlZE -e "$AGENT_STATE_PATH_RE" -- 2>/dev/null \
              || true)
-fi
-
-if [ "${#HITS[@]}" -eq 0 ]; then
-  printf 'ok    transcript-hygiene: no %s carries an agent-state path (%s scanned, %d file(s))\n' \
-    'file' "$SCOPE_DESC" "${#FILES[@]}"
-  exit 0
-fi
+}
 
 # -------------------------------------------------------------------- redact --
+# redact_file <path> — returns 0 if the file was rewritten, 1 if it was a no-op.
+#
+# A NO-OP IS THE COMMON CASE AND IT MATTERS. Eleven tracked files carry
+# own-project path citations (this repo's README, its hand-off prompts, its prune
+# measurements). `--redact` must leave those BYTE-IDENTICAL: the `seq-130`
+# exemption covers own-project PATHS, and rewriting them behind a banner would be
+# worse than the warning it replaced. Only two things are removed — foreign path
+# lines, and the OUTPUT of a command that read a Claude Code state directory.
+redact_file() {
+  local p="$1"
+  local tmp1="$p.tc86-redact1.$$" tmp2="$p.tc86-redact2.$$" cf="$p.tc86-counts.$$"
+  local content_lines=0 blocks=0 path_lines=0 total=0 own=0 dirs projects
+
+  agent_state_redact_content_blocks "$p" "$tmp1" "$cf"
+  read -r content_lines blocks <"$cf" || { content_lines=0; blocks=0; }
+  rm -f "$cf"
+
+  # Foreign path lines are counted on the CONTENT-REDACTED stream: a foreign path
+  # that sat inside a removed output block is already gone, and counting it in
+  # both totals would put a wrong number in the banner.
+  path_lines="$(agent_state_classify_file "$tmp1" | cut -d' ' -f1)"
+  agent_state_redact_stream <"$tmp1" >"$tmp2"
+
+  total=$((content_lines + path_lines))
+  if [ "$total" -eq 0 ]; then
+    rm -f "$tmp1" "$tmp2"
+    return 1
+  fi
+
+  dirs="$(agent_state_project_dirs <"$p" || true)"
+  projects="$(printf '%s' "$dirs" | paste -sd', ' -)"
+  if grep -qxF -- "$AGENT_STATE_OWN_PROJECT_DIR" <<<"$dirs"; then own=1; fi
+
+  {
+    agent_state_redaction_banner "$total" "${projects:-(none identified)}" \
+      "$path_lines" "$content_lines" "$blocks" "$own"
+    cat "$tmp2"
+  } >"$tmp1"
+  # `cat >` rather than `mv`: rewrites the EXISTING inode, so the file keeps its
+  # mode and its identity. The transcript is evidence; it is edited, not replaced.
+  cat "$tmp1" >"$p"
+  rm -f "$tmp1" "$tmp2"
+
+  printf 'redacted %s line(s) in %s (%s foreign path line(s); %s content line(s) in %s block(s); projects: %s)\n' \
+    "$total" "$p" "$path_lines" "$content_lines" "$blocks" "${projects:-(none identified)}"
+  return 0
+}
+
 if [ "$REDACT" -eq 1 ]; then
-  for p in "${HITS[@]}"; do
-    count="$(grep -IcE -e "$AGENT_STATE_PATH_RE" -- "$p" || true)"
-    projects="$(agent_state_project_dirs <"$p" | paste -sd', ' - || true)"
-    tmp="$p.tc86-redact.$$"
-    {
-      agent_state_redaction_banner "$count" "${projects:-(none identified)}"
-      agent_state_redact_stream <"$p"
-    } >"$tmp"
-    # `cat >` rather than `mv`: rewrites the EXISTING inode, so the file keeps
-    # its mode and its identity. The transcript is evidence; it is edited, not
-    # replaced.
-    cat "$tmp" >"$p"
-    rm -f "$tmp"
-    printf 'redacted %s line(s) in %s (projects: %s)\n' "$count" "$p" "${projects:-(none identified)}"
+  collect_hits
+  REDACTED=0
+  for p in "${HITS[@]+"${HITS[@]}"}"; do
+    if redact_file "$p"; then REDACTED=$((REDACTED + 1)); fi
   done
   printf 'ok    transcript-hygiene: %d file(s) redacted in place; every transcript still present as TC-RUBRIC-7 evidence\n' \
-    "${#HITS[@]}"
+    "$REDACTED"
+fi
+
+# ------------------------------------------------------------------- classify --
+# Re-scan AFTER any redaction, so what is reported is the tree as it now stands
+# rather than the tree as it was found. This is also what makes `--redact`
+# self-verifying: if a redaction failed to converge, the report below says so
+# instead of the run ending on an optimistic summary.
+collect_hits
+
+FOREIGN_FILES=(); FOREIGN_N=(); OWN_FILES=(); OWN_N=()
+FOREIGN_TOTAL=0; OWN_TOTAL=0
+for p in "${HITS[@]+"${HITS[@]}"}"; do
+  read -r fcount ocount <<<"$(agent_state_classify_file "$p")"
+  if [ "${fcount:-0}" -gt 0 ]; then
+    FOREIGN_FILES+=("$p"); FOREIGN_N+=("$fcount")
+    FOREIGN_TOTAL=$((FOREIGN_TOTAL + fcount))
+  fi
+  if [ "${ocount:-0}" -gt 0 ]; then
+    OWN_FILES+=("$p"); OWN_N+=("$ocount")
+    OWN_TOTAL=$((OWN_TOTAL + ocount))
+  fi
+done
+
+# print_own_warnings — ALWAYS called, on the failing path as well as the clean
+# one. A run that reported the foreign failure and returned early would hide the
+# own-project residual at exactly the moment the operator is already in the tree.
+# These lines must NOT start with FAIL: preflight.sh promotes every FAIL line to
+# a HARD fail, and `seq-130` ruled this class advisory.
+print_own_warnings() {
+  local i
+  [ "${#OWN_FILES[@]}" -gt 0 ] || return 0
+  for i in "${!OWN_FILES[@]}"; do
+    printf "WARN  transcript-hygiene: %s carries %s line(s) into this repo's OWN Claude Code project state (advisory — does not fail this gate)\n" \
+      "${OWN_FILES[$i]}" "${OWN_N[$i]}"
+  done
+  printf 'WARN  transcript-hygiene: %d file(s) carry %d own-project agent-state path line(s) — advisory only, exit 0\n' \
+    "${#OWN_FILES[@]}" "$OWN_TOTAL"
+}
+
+# ------------------------------------------------------------------ clean path --
+if [ "${#FOREIGN_FILES[@]}" -eq 0 ]; then
+  printf 'ok    transcript-hygiene: no file carries a FOREIGN agent-state path (%s scanned, %d file(s))\n' \
+    "$SCOPE_DESC" "${#FILES[@]}"
+  print_own_warnings
+  agent_state_self_exemption_notice
   exit 0
 fi
 
 # ---------------------------------------------------------------------- fail --
-# One FAIL line per offending file, naming the file AND its match count.
+# One FAIL line per offending file, naming the file AND its foreign match count.
 # preflight.sh promotes every FAIL line to a HARD fail, so nothing below this
 # point may start with FAIL unless it is a real defect.
-for p in "${HITS[@]}"; do
-  count="$(grep -IcE -e "$AGENT_STATE_PATH_RE" -- "$p" || true)"
-  printf 'FAIL  transcript-hygiene: %s carries %s line(s) with an agent-state path\n' "$p" "$count"
+for i in "${!FOREIGN_FILES[@]}"; do
+  printf 'FAIL  transcript-hygiene: %s carries %s line(s) with a FOREIGN agent-state path\n' \
+    "${FOREIGN_FILES[$i]}" "${FOREIGN_N[$i]}"
 done
 
-printf 'FAIL  transcript-hygiene: %d file(s) carry raw Claude Code session-transcript paths\n' \
-  "${#HITS[@]}"
+printf 'FAIL  transcript-hygiene: %d file(s) carry %d line(s) of another project'"'"'s Claude Code session-transcript paths\n' \
+  "${#FOREIGN_FILES[@]}" "$FOREIGN_TOTAL"
+
+print_own_warnings
 
 # QUOTED heredoc delimiter, deliberately: this prose contains backticks and `$`,
 # and an UNQUOTED delimiter would run them as command substitutions — which is
@@ -245,7 +382,8 @@ WHAT THIS MEANS. A line matching the shared agent-state pattern is `rg`/`ls`
 output naming a file under a user's ~/.claude state directory — and in the
 incident that produced this gate, the rest of that line was the session JSONL
 itself: another project's conversation content. github.com/coreyt/fathomdb is a
-PUBLIC repository, so committing it publishes it.
+PUBLIC repository, so committing it publishes it. The FAIL lines above name
+ANOTHER project's state, which is never legitimately in this repository.
 
 HOW IT GETS THERE. codex §9 reviews run under
 --dangerously-bypass-approvals-and-sandbox, which lets the reviewer read outside
@@ -255,17 +393,20 @@ its own transcript.
 
 WHAT TO DO.
   1. Run: scripts/check-transcript-hygiene.sh --redact
-     It rewrites the matched lines IN PLACE with a banner stating the count, the
-     projects touched, the reason, and that no review finding came from them. It
-     NEVER deletes the file — TC-RUBRIC-7 closes a review on a persisted
-     artifact, so the transcript must survive as evidence.
+     It rewrites the foreign lines IN PLACE, and removes the OUTPUT of any
+     echoed command that read a Claude Code state directory, behind a banner
+     stating the counts, the projects touched, the reason, and that no review
+     finding came from them. It NEVER deletes the file — TC-RUBRIC-7 closes a
+     review on a persisted artifact, so the transcript must survive as evidence.
   2. Re-run this gate; it must exit 0.
   3. If the match is NOT session content — i.e. this gate has a FALSE POSITIVE —
-     do NOT weaken the pattern to get green. Take it to the STEWARD: the pattern
-     lives in scripts/lib/agent-state-paths.sh and its discriminators are argued
-     there, and a hygiene gate quietly loosened to clear a land is how this class
-     comes back.
+     do NOT weaken the pattern to get green, and do NOT add a second exemption.
+     Take it to the STEWARD: the pattern and the one stated exemption live in
+     scripts/lib/agent-state-paths.sh and are argued there, and a hygiene gate
+     quietly loosened to clear a land is how this class comes back.
 
 DO NOT land this tree, and do not push it, until this exits 0.
 EOF
+
+agent_state_self_exemption_notice
 exit 1
