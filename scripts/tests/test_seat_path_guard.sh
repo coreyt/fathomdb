@@ -877,7 +877,15 @@ expect_allow "arm 64e: an ordinary 'cp' between allowed paths is ALLOWED (alread
 #   guard command -> a non-existent file  -> arm 70 fails x2 (off-target, inert)
 #   guard command -> a literal abs path   -> arm 72 fails   (unanchored)
 #   model: inherit changed / deleted      -> arm 66 fails
-#   ".*" and "(Edit|Write|Bash)" matchers -> still PASS (regex, not strcmp)
+#
+# AND OBSERVED RED A THIRD TIME at fix-2 (codex § 9, the [P2]), against the
+# CORRECT hook and the CORRECT frontmatter, by changing only the matcher SHAPE:
+#   "(?P<tool>Edit)|Write|Bash"           -> pre-fix COVERS (the false green);
+#                                            post-fix arm 71 fails NOT SIMPLE
+#   ".*" and "(Edit|Write|Bash)"          -> were pinned PASSING, now REJECTED
+#   "Edit, Write, Bash"                   -> pre-fix MISSING all three (a
+#                                            regex oracle cannot read a comma
+#                                            list); post-fix COVERS
 
 # ---------------------------------------------------------------------------
 # fm <file> <query> [args...] — parse an agent file's YAML frontmatter and
@@ -920,12 +928,20 @@ expect_allow "arm 64e: an ordinary 'cp' between allowed paths is ALLOWED (alread
 #                                 guard (reported so a half-wired file is
 #                                 legible in the failure text, not asserted on)
 #     COVERAGE <TAB> COVERS | MISSING:V,V
-#         -- each verb V is MATCHED AS A REGEX against each guard-carrying
-#            matcher (re.fullmatch, the shape the harness applies), never
-#            string-compared. So ".*", "Edit|Write|Bash", "(Edit|Write|Bash)"
-#            and "Edit|Write|Bash|Read" all COVER, while "Read", "Edit|Write"
-#            and "Bash" alone do not — and a matcher spread across two
+#         -- each verb V is looked up by SET MEMBERSHIP in the union of the
+#            names listed by the guard-carrying matchers. NOT by regex: see
+#            NOTSIMPLE below and the 73k-73q block (codex § 9 fix-2, the
+#            [P2]). So "Edit|Write|Bash", "Edit, Write, Bash" and
+#            "Edit|Write|Bash|Read" COVER, while "Read", "Edit|Write" and
+#            "Bash" alone do not — and a matcher spread across two
 #            guard-carrying entries ("Edit|Write" + "Bash") covers by union.
+#     NOTSIMPLE <TAB> ''; ''...   (empty when there are none)
+#         -- guard-carrying matchers that are NOT a simple tool-name list
+#            ([A-Za-z0-9_] names separated by "|" or ",", optional
+#            surrounding whitespace). They contribute NOTHING to coverage and
+#            are named here so the arm can fail with a diagnosis rather than
+#            with a bare MISSING. ".*", "(Edit|Write|Bash)", "^Edit$", "*",
+#            "" and "(?P<t>Edit)|Write|Bash" all land here.
 # ---------------------------------------------------------------------------
 fm() {
   local f="$1"
@@ -1028,23 +1044,32 @@ elif query == "guard-wiring":
                 sys.stderr.write("guard entry field contains a tab/newline\n")
                 sys.exit(5)
         out.append("\t".join(["ENTRY", matcher, raw, resolved, anchored]))
-    missing = []
-    for verb in verbs:
-        hit = False
-        for m in guard_matchers:
-            try:
-                if re.fullmatch(m, verb):
-                    hit = True
-                    break
-            except re.error:
-                # An unparseable matcher covers nothing. It must never be
-                # silently treated as covering, and it must not crash the arm.
-                pass
-        if not hit:
-            missing.append(verb)
+    # A guard-carrying matcher must be a SIMPLE TOOL-NAME LIST: one or more
+    # names of [A-Za-z0-9_] separated by "|" or ",", with optional surrounding
+    # whitespace. That is precisely the harness's EXACT-STRING path, and on
+    # that path matching IS set membership -- so what follows runs the
+    # harness's own algorithm instead of approximating a regex engine's.
+    # Anything else is reported as NOT SIMPLE and covers nothing. See the
+    # 73k-73q block for the reasoning and the judgement calls.
+    #
+    # THE fullmatch() BELOW IS NOT THE DEFECT THAT WAS FIXED. It is applied to
+    # a FIXED grammar written here, to classify the matcher's SHAPE. The
+    # matcher itself is never compiled, never executed as a pattern, and never
+    # asked to match anything -- which is the whole point.
+    simple = re.compile(r"[A-Za-z0-9_]+(?:[ \t]*[|,][ \t]*[A-Za-z0-9_]+)*")
+    covered = set()
+    not_simple = []
+    for m in guard_matchers:
+        s = m.strip()
+        if simple.fullmatch(s):
+            covered.update(name.strip() for name in re.split(r"[|,]", s))
+        else:
+            not_simple.append(m)
+    missing = [v for v in verbs if v not in covered]
     out.append("COUNT\t%d" % len(guard_matchers))
     out.append("OTHER\t%d" % other)
     out.append("COVERAGE\t" + ("COVERS" if not missing else "MISSING:" + ",".join(missing)))
+    out.append("NOTSIMPLE\t" + "; ".join("'%s'" % m for m in not_simple))
     sys.stdout.write("\n".join(out) + "\n")
 else:
     sys.stderr.write("unknown query: %s\n" % query)
