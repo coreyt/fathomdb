@@ -153,7 +153,7 @@
     31,
     40
   ],
-  "ladder_order": "SEQUENTIAL — HITL-approved 2026-07-27 (steward seq-119). Execution order: 30 (publish precondition, first on the critical path) → 21 → 22 → 31 (Library Sweep #3) → DOC-HYGIENE-3 (cross-cutting, NOT a ladder slice and carries no pico label, per seq-106) → the batched governed-surface decision (HITL) → 40. Parallel 20 || 25 was declined earlier (master F-34).",
+  "ladder_order": "SEQUENTIAL — re-sequenced by HITL 2026-07-28 (steward seq-129), superseding the seq-119 order. Execution order: the TC-86 transcript-hygiene fix (CROSS-CUTTING — not a ladder slice, no slice number, no R-20-xx id, no pico label, the DOC-HYGIENE-3 treatment per seq-106) → 21 → 22 → 31 (Library Sweep #3) → DOC-HYGIENE-3 → the batched governed-surface decision (HITL) → 40. Slice 30, the publish precondition, LANDED 2026-07-28 at 9b3ed0e3. Parallel 20 || 25 was declined earlier (master F-34).",
   "unblocked": [
     21,
     22
@@ -357,6 +357,12 @@
         "ruling": "(a) AUTHORIZED NOW as cross-cutting - rebase agent-seat-hardening onto the landed Slice 30 and wire seat-path-guard.sh via AGENT FRONTMATTER, not project-global .claude/settings.json. Rejected: defer to DOC-HYGIENE-3, land Phase 1 only, abandon",
         "ruled_on": "2026-07-28",
         "source": "seq-127 · todos TC-85"
+      },
+      {
+        "id": "tc-86-transcript-hygiene-placement",
+        "ruling": "approach APPROVED as proposed and placed FIRST, ahead of Slice 21 — not deferred to DOC-HYGIENE-3. Two layers: a capture-time redaction wrapper around the codex tee, plus scripts/check-transcript-hygiene.sh dual-homed into agent-test.sh, preflight --landing and an always-on CI job. Redact-never-delete, RED-first with a positive control. Out of scope by ruling: gitignoring transcripts, dropping the codex bypass flag, history rewrite",
+        "ruled_on": "2026-07-28",
+        "source": "seq-129 · todos TC-86"
       }
     ]
   },
