@@ -32,12 +32,14 @@ Usage:
 
 Exit status:
   0  the record was appended (or, with --dry-run, would be) and echoed
-  2  error — missing/invalid argument, bad --field, or an I/O failure
+  2  error — missing/invalid argument, bad --field, shell-substitution residue
+     in a free-text argument, or an I/O failure
 """
 
 import argparse
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
 
@@ -45,6 +47,246 @@ try:
     import fcntl  # POSIX advisory locking; absent on Windows.
 except ImportError:  # pragma: no cover - platform fallback
     fcntl = None
+
+
+# ---------------------------------------------------------------------------
+# THE SHELL-SUBSTITUTION RESIDUE GUARD (TC-53)
+# ---------------------------------------------------------------------------
+# WHAT WENT WRONG, twice, measured. ledgerwrite silently wrote two mangled
+# entries: seq-95/96, where a backtick substitution ate one word, and
+# seq-108/109, where `$?` expanded to `0` and a `$(...)` expanded to empty with
+# `basename: missing operand` on stderr. A third is quoted inside steward
+# seq-147. Every one was caught only because a human re-read the record, and the
+# ledger is APPEND-ONLY: a mangled entry can be ANNOTATED by a follow-up entry
+# and never repaired in place.
+#
+# THE LIMIT, STATED HONESTLY BECAUSE IT IS THE WHOLE SHAPE OF THE FIX. The
+# failure happens AT THE CALLER. The shell expands before ledgerwrite is even
+# executed, so this code can only ever see RESIDUE — never INTENT. NONE OF THE
+# THREE REAL INCIDENTS ABOVE IS DETECTABLE HERE: `$?` becomes the ordinary
+# character `0`, and an eaten word leaves nothing but a gap. That is why
+# `dev/steward/README.md` carries the load-bearing half of TC-53 (single-quote
+# `--summary` and `--body`, always) and why nothing below claims to catch a
+# substitution that already succeeded.
+#
+# WHY THE REFUSAL SET IS SO SMALL, AND WHY THAT IS THE POINT. This tool sits on
+# the ACTIVE commit path and is named by three seat/command definitions. A false
+# refusal blocks the Steward from recording a ruling, and TC-121 is the live
+# precedent for what happens next: `seat-path-guard.sh` read prose as a write
+# target and two different agents independently routed around it. So the rule is
+# WARN-AND-PROCEED wherever intent is ambiguous, and refuse ONLY residue that
+# carries zero information. The boundary is not a taste call: it is calibrated
+# against every `summary` and `body` in the repo's three live ledgers
+# (test_guard_refuses_no_record_in_the_repos_three_real_ledgers), which is what
+# demoted `$()` from a refusal to a warning — TC-53's own summary contains the
+# literal text "an empty $() residue".
+#
+# Measured at the time of writing: 450 fields over 378 records, 0 refusals,
+# 10 warnings (2.2%).
+
+OVERRIDE_FLAG = "--accept-shell-residue"
+
+
+class Finding:
+    """One residue hit: a stable `name`, and prose that says what it implies."""
+
+    def __init__(self, name, why):
+        self.name = name
+        self.why = why
+
+    def __repr__(self):  # pragma: no cover - debugging aid
+        return "Finding(%r)" % self.name
+
+
+# REFUSALS — zero information. Each entry is (name, predicate, why), and each
+# carries its own justification for being a hard stop rather than a warning.
+#
+#  * torn-expansion — an unclosed `$(` or `${`. bash cannot hand you this from a
+#    substitution that RAN: an unterminated one is a syntax error and the command
+#    never executes. Its presence means the argument was assembled from a
+#    partially-quoted fragment, and the text is a fragment too. 0 in the corpus.
+#  * empty-parameter-expansion — a literal `${}`. Also a bash syntax error, so it
+#    cannot be a surviving literal from a working command line, and no author
+#    types it in prose. 0 in the corpus. (Note `$()` is NOT here: it is valid
+#    shell, it survives single quotes, and a real ledger entry contains it.)
+#  * control-characters — C0/DEL other than tab and newline. This is what
+#    capturing a colourised tool's output into a summary leaves behind. It says
+#    nothing a reader can use and it corrupts every downstream consumer of the
+#    JSONL stream. 0 in the corpus.
+#  * residue-only — after stripping whitespace and shell punctuation, nothing is
+#    left. Everything the author wrote expanded away and only the skeleton
+#    remains; there is no entry here to record. 0 in the corpus.
+_UNCLOSED = re.compile(r"\$\((?![^()]*\))|\$\{(?![^{}]*\})")
+_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+_RESIDUE_ONLY = re.compile(r"^[\s$(){}\[\]`'\"|;&<>*?~!#-]*$")
+
+REFUSALS = (
+    (
+        "torn-expansion",
+        _UNCLOSED.search,
+        "an UNCLOSED `$(` or `${`. A substitution that ran cannot leave one "
+        "(it is a shell syntax error), so this text is a fragment of a "
+        "partially-quoted argument",
+    ),
+    (
+        "empty-parameter-expansion",
+        lambda t: "${}" in t,
+        "a literal `${}`, which is a shell syntax error and is not prose either",
+    ),
+    (
+        "control-characters",
+        _CONTROL.search,
+        "raw control characters (ANSI escapes from a colourised tool's output). "
+        "They carry no information and corrupt every reader of the JSONL stream",
+    ),
+    (
+        "residue-only",
+        lambda t: bool(t) and bool(_RESIDUE_ONLY.match(t)),
+        "nothing but whitespace and shell punctuation — every word expanded away "
+        "and only the skeleton is left",
+    ),
+)
+
+# WARNINGS — ambiguous, so they NEVER change the exit code.
+#
+#  * expansion-syntax-survived — the text still contains `$(`, `${`, `$NAME`,
+#    `$0`/`$1`, `$?` or a backtick. These SURVIVED, which means this particular
+#    call was quoted correctly; the warning is that the same text sent through
+#    DOUBLE quotes would have been rewritten silently, and that this repo's
+#    prose habits (`$0 probe`, `~$1.77`, `$15 spend`, single-quoted code spans)
+#    put it one quoting slip away from the incident. 8/450 in the corpus.
+#  * collapsed-whitespace — an interior run of two or more spaces. This is the
+#    ONE real-incident shape the tool can see: `"An optional `design_refs`
+#    array"` through double quotes becomes `"An optional  array"`, and the
+#    doubled space is the only trace (steward seq-147 quotes exactly that).
+#    2/450 in the corpus, both of them prose ABOUT an eaten word.
+#  * empty-substitution-skeleton — a literal `$()`, `( )` or `[ ]`. Consistent
+#    with a substitution that expanded to nothing, and also with prose quoting
+#    the syntax, which is why it warns. 1/450 in the corpus (TC-53's own entry).
+#  * unbalanced-backticks — an odd number of backticks: a torn code span. 0/450,
+#    but a lone backtick discussing the character itself is plausible enough that
+#    refusing would be a guess about intent.
+_EXPANSION = re.compile(r"\$\(|\$\{|\$[0-9?!*@#$]|\$[A-Za-z_]|`")
+_GAP = re.compile(r"\S {2,}\S")
+_EMPTY_SKELETON = re.compile(r"\$\(\)|\(\s+\)|\[\s+\]")
+
+WARNINGS = (
+    (
+        "expansion-syntax-survived",
+        _EXPANSION.search,
+        "shell expansion syntax that SURVIVED, so this call was quoted "
+        "correctly — but the same text in DOUBLE quotes would have been "
+        "rewritten with no error. Confirm this is the text you typed",
+    ),
+    (
+        "collapsed-whitespace",
+        _GAP.search,
+        "an interior run of two or more spaces, which is exactly what a "
+        "substitution that expanded to empty leaves behind (steward seq-147)",
+    ),
+    (
+        "empty-substitution-skeleton",
+        _EMPTY_SKELETON.search,
+        "an empty `$()`, `( )` or `[ ]` — consistent with a substitution that "
+        "expanded to nothing, and also with prose quoting the syntax",
+    ),
+    (
+        "unbalanced-backticks",
+        lambda t: t.count("`") % 2 == 1,
+        "an odd number of backticks, i.e. a torn code span",
+    ),
+)
+
+
+def scan_shell_residue(text):
+    """Return (refusals, warnings) as lists of Finding for one free-text value.
+
+    Pure and side-effect free so the calibration test can run it over every
+    record in the live ledgers without going near argparse or the filesystem.
+    """
+    if not isinstance(text, str):
+        return [], []
+    refusals = [Finding(n, why) for n, pred, why in REFUSALS if pred(text)]
+    warnings = [Finding(n, why) for n, pred, why in WARNINGS if pred(text)]
+    return refusals, warnings
+
+
+def _requote_hint(arg_label, err):
+    """Say EXACTLY how to get the text through, and name the override.
+
+    A refusal that leaves an agent with no sanctioned path forward is how a
+    hand-append to an append-only ledger happens, which is strictly worse than
+    the corruption being prevented. So every refusal prints both routes.
+    """
+    print(
+        "  FIX — single-quote the argument so the shell cannot expand it at all:",
+        file=err,
+    )
+    print(
+        "    python3 dev/agent-tools/ledgerwrite/ledgerwrite.py <ledger.jsonl> \\",
+        file=err,
+    )
+    print(
+        "      --kind decision %s 'text with $VARS and `backticks` kept literal'"
+        % arg_label,
+        file=err,
+    )
+    print(
+        "    A single-quoted string cannot contain a single quote; break out with",
+        file=err,
+    )
+    print("    '\"'\"' or pass the text from a file via a shell variable.", file=err)
+    print(
+        "  OVERRIDE — if the residue really is the text you meant, re-run with %s."
+        % OVERRIDE_FLAG,
+        file=err,
+    )
+
+
+def guard_free_text(arg_label, text, err, override):
+    """Apply the guard to one argument. Returns True if the write may proceed.
+
+    Warnings always print and never block. Refusals block unless `override` is
+    set, in which case they print anyway — naming each class — so the choice is
+    auditable in the transcript rather than silent.
+    """
+    refusals, warnings = scan_shell_residue(text)
+    for finding in warnings:
+        print(
+            "ledgerwrite: WARNING [%s] %s contains %s."
+            % (finding.name, arg_label, finding.why),
+            file=err,
+        )
+    if not refusals:
+        return True
+    names = ", ".join(f.name for f in refusals)
+    if override:
+        print(
+            "ledgerwrite: %s given — proceeding despite shell-substitution "
+            "residue in %s (%s)." % (OVERRIDE_FLAG, arg_label, names),
+            file=err,
+        )
+        return True
+    print(
+        "ledgerwrite: REFUSED — shell-substitution residue in %s (%s)."
+        % (arg_label, names),
+        file=err,
+    )
+    for finding in refusals:
+        print("    %s: %s." % (finding.name, finding.why), file=err)
+    print(
+        "  The shell expands BEFORE this tool runs, so what arrived here is not "
+        "what",
+        file=err,
+    )
+    print(
+        "  you typed. The ledger is APPEND-ONLY: a mangled entry can only be "
+        "annotated",
+        file=err,
+    )
+    print("  by a follow-up entry, never repaired (TC-53).", file=err)
+    _requote_hint(arg_label, err)
+    return False
 
 
 def utc_ts() -> str:
@@ -149,6 +391,16 @@ def run(argv, out=sys.stdout, err=sys.stderr) -> int:
     parser.add_argument(
         "--quiet", action="store_true", help="do not echo the record on success"
     )
+    # ONE override, named so it is obvious in a shell history and a transcript
+    # what was waived. See the residue-guard block above for why a sanctioned
+    # escape hatch is load-bearing rather than a weakness.
+    parser.add_argument(
+        OVERRIDE_FLAG,
+        dest="accept_shell_residue",
+        action="store_true",
+        help="write anyway despite shell-substitution residue (TC-53); the "
+        "waived classes are named on stderr",
+    )
     args = parser.parse_args(argv)
 
     if not args.file:
@@ -165,6 +417,29 @@ def run(argv, out=sys.stdout, err=sys.stderr) -> int:
         fields = parse_fields(args.field)
     except ValueError as exc:
         print(f"ledgerwrite: {exc}", file=err)
+        return 2
+
+    # THE RESIDUE GUARD RUNS BEFORE --dry-run IS HONOURED, deliberately: --dry-run
+    # is precisely the peek mode a careful caller uses to see what the shell did
+    # to their string, so it is the LAST place the guard may be switched off. It
+    # also runs before the seq counter is touched, so a refusal consumes nothing.
+    #
+    # SCOPE: the free-text arguments only. `--kind` and `--ref` are structured
+    # tokens (`decision`, `git:abc123`) whose vocabulary is checked by their
+    # readers; guarding them would add noise without adding a catch.
+    guard_targets = [("--summary", args.summary)]
+    if args.body is not None:
+        guard_targets.append(("--body", args.body))
+    for key in sorted(fields):
+        guard_targets.append(("--field %s" % key, fields[key]))
+    # A LIST, not a generator: `all()` would short-circuit and report only the
+    # first bad argument, so a caller with two mangled values would fix one and
+    # be refused again. Every target is scanned and every finding is printed.
+    ok = [
+        guard_free_text(label, text, err, args.accept_shell_residue)
+        for label, text in guard_targets
+    ]
+    if not all(ok):
         return 2
 
     tail, clobbered = build_record(args, fields)
