@@ -19,6 +19,15 @@ status: UNREVIEWED
 > **cited, never edited**. ⚠ **§4 below is PARTLY STALE:** it still specs a `flush_embeddings()` verb that
 > was ruled out of existence (`tc-55-flush-classification`, `seq-110` — flush is INSTRUMENTATION, reuse
 > `drain`; there is NO `flush_embeddings()`). Status is `UNREVIEWED` = unclassified (TC-50), not current.
+>
+> **Requirement traceability (Steward, 2026-07-29).** Also CONSULTED BY **`R-20-SV`** (0.8.20 Slice 23) for
+> **TC-91** — the async-embed execution model here is the context for the ~50% *baseline* duplicate-embed
+> rate (present in the **anonymous** arm too, so **not** TC-57's doing) and for projection-worker commit
+> failures discarded via `let _ = commit_projection_outcomes(..)`, which additionally makes any attempt to
+> measure worker risk by counting `'failed'` terminals **structurally blind**. **Characterization only, no
+> fix** (`seq-136`). Note TC-91 must be separated from TC-68's probe re-embeds (45 per open) before any
+> rate is attributed. **This doc is NOT the authority and did not decide any of it**; status `UNREVIEWED`
+> = unclassified (TC-50).
 
 ## 1. Why this exists — the retrievability-of-meaning problem
 

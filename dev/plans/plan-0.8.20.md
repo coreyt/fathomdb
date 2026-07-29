@@ -453,8 +453,11 @@ ac_002 sandbox oracle · TC-71 role-gated dense arm) at **`77be504b`**, close re
 
 **➡ IMMEDIATE NEXT: Slice 23** (R-20-SV — the `fts`/`vector` reject ruled 2026-07-24, now unblocked because
 **#18 settled the error family onto `WriteValidation` in Slice 22**, plus the **TC-90/TC-91 characterization
-ONLY, no fix**, `seq-136`). ⚠ **Two HITL items are open first** (`seq-142`): the **`sqlite-vec` 0.1.9** bump
-(TC-76 trigger **FIRED**) and whether **#18**'s one named exception satisfies "one family".
+ONLY, no fix**, `seq-136`). ⚠ **CORRECTION (`seq-143`):** an earlier version of this line said two HITL items were open *first*.
+**Neither gates Slice 23.** `sqlite-vec` 0.1.9 (TC-76, trigger **FIRED**) is a Slice 31 / 0.8.22 dependency
+and publish-risk question — **HITL is holding it**. **#18**'s family is already settled onto
+`WriteValidation`, which this slice's reject uses; its one exception is an edge-epoch bounds check on a
+different path — **TC-98, deferred by the HITL until after Slice 23**, and retrospective about Slice 22.
 
 **Remaining ladder, HITL-approved 2026-07-28 (F-36 · steward `seq-129`), SEQUENTIAL — this SUPERSEDES the
 F-35 order (`seq-119`); its leading `30`, `TC-86` and `21` legs are all now landed:**

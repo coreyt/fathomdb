@@ -22,6 +22,14 @@ status: locked
 > `InvalidArgument` is a later-minted direct variant it never assigned to a module. Settling #18 changed
 > this file's canonical class matrix **and** all of `dev/interfaces/*.md` (`AGENTS.md:25`; TC-39 records
 > that obligation is routinely missed — it was met here; see the Slice 22 entries in each).
+>
+> **Requirement traceability (Steward, 2026-07-29).** Also CONSULTED BY **`R-20-SV`** (0.8.20 Slice 23) for
+> the **`fts`/`vector` reject** — an `fts`/`vector` sub-object declared without the `searchable` role is an
+> **invalid spec** (ruled 2026-07-24, `plan-0.8.20.md` §11 item 4) and must now raise, not accept-inert.
+> **The family is already settled: `EngineError::WriteValidation`** (decision #18, Slice 22 — `lib.rs:3570`,
+> used at `:2979`); the reject uses it and does **not** re-open that question. The one documented exception
+> (`reject_unrenderable_edge_epoch`, an EDGE-EPOCH bounds check) is **TC-98, deferred by the HITL until
+> after Slice 23** — it is a different validation path and does not gate this leg.
 
 This file is the design owner named by `architecture.md` for the cross-cutting
 error surface.
