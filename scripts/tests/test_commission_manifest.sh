@@ -1026,6 +1026,96 @@ else
   fail "arm 11h (escaping design_refs path): rc=$RC out=$OUT"
 fi
 
+# --- Arm 11i: a curated CONTRACT reaches §4, not only §6 -------------------
+# §4 is where an orchestrator looks for the document that WINS on conflict, and
+# the motivating case is exactly a contract: 0.8.20 Slice 22 cites
+# `OPP-12-C1-converged-contract.md`, byte-pinned by scripts/c1-conformance-pin.json
+# (sha256 AND git blob sha1), the ratified contract whose Q4/Q6(a) clause a TC-67
+# implementation can turn RED. A pinned file can never be back-linked — any edit
+# breaks the pin — so citation is the ONLY mechanism that can put it in front of
+# the orchestrator, and §6 alone is the wrong place for it.
+#
+# The fixture doc carries no slice token and is not named for this release+slice,
+# so neither selector can reach it. The default fixture ALSO has a scan-reached
+# contract (`sub/widget-contract.md`), and this arm asserts the two render
+# DIFFERENTLY: curated is marked, scanned is not. Pre-change: RED (§4 iterates
+# scan hits only, so the curated contract never appears).
+setup_fixture
+cat >"$FIX/dev/design/hand-picked-contract.md" <<'EOF'
+---
+status: ratified
+---
+
+# Hand-picked contract
+
+Nothing in here names this slice, its requirement or its carries.
+EOF
+mutate_state "L[10]['design_refs'] = ['dev/design/hand-picked-contract.md']"
+run_gen 9.9.9 10
+S4="$(sed -n '/^## 4\. CONTRACT PATHS/,/^## 5\./p' <<<"$OUT")"
+if [ "$RC" -eq 0 ] \
+   && grep -qE 'design contract.*CURATED.*hand-picked-contract\.md' <<<"$S4" \
+   && grep -q 'ratified' <<<"$S4" \
+   && grep -q 'sub/widget-contract.md' <<<"$S4" \
+   && ! grep -qE 'CURATED.*sub/widget-contract\.md' <<<"$S4"; then
+  pass "design_refs — a curated CONTRACT reaches §4 marked CURATED, and a scanned one is not marked"
+else
+  fail "arm 11i (curated contract in §4): rc=$RC s4=[$S4]"
+fi
+
+# --- Arm 11i2: a curated NON-contract does NOT leak into §4 ----------------
+# Without this, "feed design_refs into §4" degenerates into pasting §6 into §4
+# and the CONTRACT PATHS section stops meaning anything. §4 selects on the same
+# predicate it always did — the basename — applied to the curated set as well.
+setup_fixture
+cat >"$FIX/dev/design/hand-picked.md" <<'EOF'
+---
+status: locked
+---
+
+# Hand-picked
+
+Nothing in here names this slice, its requirement or its carries.
+EOF
+mutate_state "L[10]['design_refs'] = ['dev/design/hand-picked.md']"
+run_gen 9.9.9 10
+S4="$(sed -n '/^## 4\. CONTRACT PATHS/,/^## 5\./p' <<<"$OUT")"
+if [ "$RC" -eq 0 ] \
+   && ! grep -q 'hand-picked.md' <<<"$S4" \
+   && grep -qE 'CURATED.*hand-picked\.md' <<<"$OUT"; then
+  pass "design_refs — a curated doc that is NOT a contract stays in §6 and out of §4"
+else
+  fail "arm 11i3 (curated non-contract leaks into §4): rc=$RC s4=[$S4]"
+fi
+
+# --- Arm 11i3: §4 is byte-identical when `design_refs` is absent ------------
+# Asserted, not assumed. Arm 11d compares the WHOLE manifest, which subsumes
+# this; §4 is called out separately because it is the section this change
+# reaches into, and a section-scoped failure message is what a future reader
+# needs. Reuses the pre-change generator arm 11d recovered from git.
+if [ -z "${PRE_SHA:-}" ]; then
+  fail "arm 11i4 (§4 additivity): no pre-change generator recovered (see arm 11d) — do NOT skip this"
+else
+  S4_DRIFT=""
+  for d11i_slice in 10 30; do
+    setup_fixture
+    printf -- '---\nstatus: ACTIVE\n---\n\n# Slice 30 memo\n' >"$FIX/dev/design/9.9.9-slice-30-design.md"
+    set +e
+    S4_PRE="$(cd "$FIX" && bash "$PRE_GEN" 9.9.9 "$d11i_slice" 2>&1 \
+              | sed -n '/^## 4\. CONTRACT PATHS/,/^## 5\./p')"
+    S4_POST="$(cd "$FIX" && ./scripts/commission-manifest.sh 9.9.9 "$d11i_slice" 2>&1 \
+               | sed -n '/^## 4\. CONTRACT PATHS/,/^## 5\./p')"
+    set -e
+    [ -n "$S4_PRE" ] || S4_DRIFT="$S4_DRIFT slice-$d11i_slice:empty-pre-section"
+    [ "$S4_PRE" = "$S4_POST" ] || S4_DRIFT="$S4_DRIFT slice-$d11i_slice:changed"
+  done
+  if [ -z "$S4_DRIFT" ]; then
+    pass "§4 CONTRACT PATHS is byte-identical to the pre-change generator when \`design_refs\` is absent"
+  else
+    fail "arm 11i4 (§4 additivity): drift:$S4_DRIFT"
+  fi
+fi
+
 # --- Arm 9: the REAL repo — Slice 20 of 0.8.20 (the acceptance criterion) --
 # Every emitted path must resolve. This is the regression half of the pair and
 # the tranche's stated bar.
@@ -1206,11 +1296,27 @@ else
     fi
     grep -F "$c9f_ref" <<<"$C9F_OUT" | grep -q 'CURATED' \
       || C9F_BAD="$C9F_BAD $c9f_rel/$c9f_slice:$c9f_ref-not-curated"
+    # A curated CONTRACT must also reach §4, where an orchestrator looks for the
+    # document that WINS on conflict. The live instance is 0.8.20 Slice 22's
+    # byte-pinned `OPP-12-C1-converged-contract.md`, which cannot be back-linked
+    # and so can only ever get there by citation. Derived from the basename, so
+    # it follows whatever the state file curates next.
+    case "$(basename "$c9f_ref")" in
+      *contract*|*CONTRACT*)
+        sed -n '/^## 4\. CONTRACT PATHS/,/^## 5\./p' <<<"$C9F_OUT" \
+          | grep -F "$c9f_ref" | grep -q 'CURATED' \
+          || C9F_BAD="$C9F_BAD $c9f_rel/$c9f_slice:$c9f_ref-not-in-section-4"
+        C9F_CONTRACTS=$((${C9F_CONTRACTS:-0} + 1))
+        ;;
+    esac
   done <<<"$CURATED_PAIRS"
-  if [ -z "$C9F_BAD" ] && [ "$C9F_SEEN" -gt 0 ]; then
-    pass "real repo — every ladder entry carrying \`design_refs\` generates and cites all $C9F_SEEN curated doc(s)"
+  # NON-VACUITY, second half: at least one live curation must be a CONTRACT, or
+  # the §4 half of this arm asserted nothing. 0.8.20 Slice 22's byte-pinned C-1
+  # contract is that case and is the reason the §4 reach exists at all.
+  if [ -z "$C9F_BAD" ] && [ "$C9F_SEEN" -gt 0 ] && [ "${C9F_CONTRACTS:-0}" -gt 0 ]; then
+    pass "real repo — every ladder entry carrying \`design_refs\` generates and cites all $C9F_SEEN curated doc(s), ${C9F_CONTRACTS:-0} of them into §4 as contracts"
   else
-    fail "arm 9f (live curated citations): seen=$C9F_SEEN bad:$C9F_BAD"
+    fail "arm 9f (live curated citations): seen=$C9F_SEEN contracts=${C9F_CONTRACTS:-0} bad:$C9F_BAD"
   fi
 fi
 
