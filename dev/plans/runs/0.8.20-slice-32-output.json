@@ -1,37 +1,52 @@
 {
-  "phase": "0.8.20 Slice 32 (SBOM-CODE) — Library Sweep #3, leg 2 of 3 — the implementation that turns Slice 31's 23 RED acceptance tests GREEN. CODE ONLY. FIX-1 (codex §9 round 1 closed: one [P2], no [P0]/[P1]).",
-  "baseline_sha": "be759b0f5a64152394e98726aea71aae43385957",
-  "branch": "0.8.20-slice-32-sbom-code",
-  "head_sha": "a45e91d870ec05ce008c864376a0a2cf58c6ce6b",
-  "criterion_count": {
-    "was": 23,
-    "is": 24,
-    "moved_by": "HITL ruling seq-168, TC-112 ruled (a) — the Slice-31 acceptance suite unfrozen for EXACTLY ONE added criterion.",
-    "added": "AC-SBOM-24 — `scripts/sbom-survey/tests/test_cyclonedx.py::test_no_component_carries_a_constraint_its_version_violates`. 'No component may carry a `fathomdb:constraint` that its own version does not satisfy.' Numbered LAST rather than slotted in, per the AC-SBOM-23 precedent in design §4, so every existing id keeps its meaning.",
-    "why_it_was_needed": "My own fix-1 report established that mutations M13 and M14 both left all 23 criteria GREEN: the oracle could not detect the defect it had just shipped a fix for, and codex had to find it by reading. `depth` and `edit_sites` are the two fields Slice 33 decides on, and that survey feeds 0.8.22, so a permissive oracle here propagates into real dependency decisions.",
-    "not_updated_deliberately": "dev/design/0.8.20-slice-31-sbom-survey-tool.md (the AC-table and design-of-record update is the orchestrator's, in parallel) and dev/plans/runs/0.8.20-slice-31-output.json (it recorded 23 at Slice 31's close and that was TRUE then; a landed slice's history is not rewritten). scripts/sbom-survey/README.md WAS updated 23 -> 24 so the operating note stays true."
-  },
-  "round_accounting": {
-    "round": "fix-3",
-    "fix_2": {
-      "codex_verdict": "one [P1] and one [P2], both new; rounds 1's finding stayed closed.",
-      "taken": "[P1] ONLY — the tier-rule default resolved against the installed package instead of the surveyed repository, so `pip install ./scripts/sbom-survey` followed by `sbom-survey --repo . --offline --out DIR` exited 1 with a bare FileNotFoundError. CLOSED in commit 6fbe05df.",
-      "not_taken": "The [P2] is ESCALATED TO THE STEWARD by the orchestrator because it collides with a frozen oracle. I did not touch it and did not touch `scripts/sbom-survey/tests/test_report.py`.",
-      "productive": "A NEW AND DISTINCT defect from fix-1's, so the rounds remain productive under TC-75: fix-1 was wrong ATTACHMENT of declarations, fix-2 is wrong RESOLUTION of the rule file. 2 of 3 rounds used on the branch; neither round re-opened the other's finding.",
-      "self_assessment": "This one I could not have caught with the tools I was using, and that is itself the lesson. Every verification I ran — the 24-criterion suite, the 16-mutation sweep, the clean-room `pip install '…[dev]'` I performed at fix-1 — exercised the tool through `sys.path`/PYTHONPATH from the source tree, where the package-relative and repo-relative paths RESOLVE TO THE SAME FILE. I installed the tool at fix-1 and still never RAN the installed console script against the repository. Verifying an install by installing, rather than by invoking what was installed, is the gap."
+  "additional_changes_made_in_scope": [
+    "scripts/sbom-survey/README.md kept TRUE rather than merely status-bumped: the Slice-31-era claims that the directory contains 'only this README and the RED acceptance suite', that '23 failed' is expected, and that pytest runs the suite with 'no config file' are all now false, so each was corrected. The 'Deliberately NOT wired into CI' section keeps its ruling verbatim in substance and now states seq-166 explicitly — GREEN DOES NOT AUTHORIZE WIRING; green AND HITL approval are both required, neither sufficient.",
+    "A Layout table was added to the README so a reader can find each design section's implementation without grepping."
+  ],
+  "agent_verify_result": "not run — scripts/agent-verify.sh is the heavy Rust/engine gate and is out of scope for a slice that touches no Rust and no engine source. The gates actually applicable to this diff were all run individually and all exit 0; see the `gates` array, each rc captured with `rc=$?` on the immediately following line.",
+  "baseline_note": "Rebased onto origin/main taken FROM GIT at land time, never from a message — a fabricated SHA was relayed twice during this slice. Original cut was be759b0f; the 12 slice commits replayed with zero conflicts and zero file overlap (origin/main had moved only the two ledgers).",
+  "baseline_sha": "13b5e1f684db9870ab5ebae49e950f8ea8a2fbb2",
+  "blockers_encountered": [
+    {
+      "description": "Gate 3's expected allowlist blob SHA in the task prompt (93ef3a8616e460c443417cdffc1e9f711ceb12f8) does not match HEAD (140c0f638d2f6c659b58fa1b6225a0da73421b55).",
+      "id": "B-1",
+      "resolution": "NOT A BLOCKER AND NOT A PIN TRIP — a stale expectation carried over from Slice 31. 93ef3a86 is the blob at cbb56212 (Slice 31's baseline); c239908b changed the file on main afterwards and IS an ancestor of this slice's baseline be759b0f but is NOT an ancestor of cbb56212. The blob is identical at be759b0f, origin/main and HEAD, `git diff --name-only be759b0f -- src/conformance/` is empty, and the real guard scripts/check-governed-surface-pin.sh exits 0. No re-pin, no allowlist widening. Recorded for the orchestrator so the stale value is corrected in the next prompt rather than re-triggering a HALT."
     },
-    "note_on_the_seq_168_amendment": "Per the Steward, AC-SBOM-24 was part of the fix-1 work and NOT a new fix round.",
-    "governing_rule": "TC-75 — 3 rounds on the same finding; mandatory Steward check-in at 6.",
-    "codex_verdict_this_round": "exactly one [P2], no [P0]/[P1]/[P3]",
-    "finding": "[P2] a declaration attached to EVERY locked version of its name, so `sha2 0.10.9` carried `constraint='0.11'`, `thiserror 2.0.18` was `direct` under `1`, and `tokenizers 0.22.2` was `direct` under `0.20`. `depth` and `edit_sites` are the two fields Slice 33 decides on.",
-    "outcome": "CLOSED in commit cdfdd3fc. Rounds used on this finding: 1 of 3.",
-    "self_assessment": "codex is right and the finding is one I had already flagged myself as `DESIGN AMBIGUITY RESOLVED 2/3` in the round-0 closure — I recorded the name-level attachment as a deliberate resolution without noticing it produced false rows on this very repository. Flagging an ambiguity is not the same as checking what it does to the data; I should have emitted the table and looked. That is the lesson, and it is why the fix ships with the six-row before/after table rather than a claim.",
-    "fix_3": {
-      "codex_verdict": "exactly one [P3] and nothing else; rounds 1 and 2 stayed closed.",
-      "taken": "[P3] — a malformed `--now` produced contradictory provenance across artifacts. CLOSED in commit a45e91d8.",
-      "productive": "A NEW AND DISTINCT defect again: fix-1 was wrong ATTACHMENT of declarations, fix-2 wrong RESOLUTION of the rule file, fix-3 missing VALIDATION of provenance input. The same-finding bound of 3 under TC-75 is therefore not tripped by any of them; 3 rounds used on the branch, each closing a different defect and none re-opening another.",
-      "self_assessment": "The silent fallback in `cyclonedx._timestamp()` was MINE, written at round 0, and I even marked it `# pragma: no cover - resolve_timestamp normalizes first`. That comment was an assumption about a function in another module, asserted rather than checked — and it was false, because `resolve_timestamp` returned unparseable input verbatim. A `pragma: no cover` that explains why a branch is unreachable is a claim; if it is worth writing it is worth verifying, and I did neither."
+    {
+      "description": "scripts/agent-lint-md.sh exited 1 on first invocation: markdownlint-cli2 not found at node_modules/.bin/markdownlint-cli2 (a linked worktree has no node_modules).",
+      "id": "B-2",
+      "resolution": "Resolved exactly as that script's own remedy text prescribes — symlinked the primary checkout's node_modules into the worktree. .gitignore line 47 already ignores a bare `node_modules` symlink (as distinct from the `node_modules/` directory rule), so `git status --porcelain` stays clean. Gate re-run: rc=0. Nothing in the primary checkout was modified."
+    },
+    {
+      "description": "All 23 tests passed on the very FIRST run, which is itself a reason for suspicion rather than confidence on a slice whose predecessor spent six review rounds hardening the oracles.",
+      "id": "B-3",
+      "resolution": "Corroborated independently before claiming green: (a) a 14-mutation sweep, 14/14 detected, 0 undetected — see findings_addressed; (b) an out-of-band re-derivation over the real repository of the three properties the oracles can only observe indirectly (published.latest() call count == component count; single-origin tier equality against TierMap.classify(); zero depth/origin contradictions); (c) an explicit pytest-config probe for TC-97. No test, assertion, docstring or conftest.py line was modified. FIX-1 POSTSCRIPT: this corroboration was necessary but NOT sufficient. Every one of those checks was derived from what the frozen tests grade, so none of them asked whether the EMITTED DATA was true — which is how the constraint-attachment defect survived. See the LESSON entry in findings_addressed."
+    },
+    {
+      "description": "The fix-1 edits were destroyed mid-round: the mutation-sweep script reverts each mutation with `git checkout -- .`, and I ran it against an UNCOMMITTED working tree.",
+      "id": "B-4",
+      "resolution": "Self-inflicted, caught immediately, no work lost. `git status` and a targeted grep confirmed survey.py, cyclonedx.py and .gitignore had reverted to the committed round-0 state (constraints.py survived as an untracked file). All five edits were re-applied from the round's own record, re-verified (suite, six-row table, invariants, gitignore checks) and COMMITTED as cdfdd3fc BEFORE the sweep was re-run. Recorded because the ordering matters for anyone reusing that script: commit first, sweep second."
+    },
+    {
+      "description": "An untracked file appeared in the worktree that is not mine: dev/plans/runs/codex/0.8.20/slice-32-round1-20260729T170255Z.log",
+      "id": "B-5",
+      "resolution": "Left UNTRACKED and unstaged. MY CITED REASONING WAS WRONG AND THE ORCHESTRATOR CORRECTED IT: I cited Slice 31's `c08a62df` as precedent for leaving such a log untracked, but that commit is the one that TRACKED Slice 31's transcripts, and TC-RUBRIC-7 requires a tracked path. So the file DOES belong in the repository — it simply is not mine to commit. The orchestrator is handling the transcript commits and has instructed me to leave `dev/plans/runs/codex/0.8.20/` alone, which I have. It remains the only entry in `git status --porcelain` at the branch tip; the worktree is otherwise clean."
+    },
+    {
+      "description": "The scope amendment's 'behaviour must not change for a single candidate' (fix-1 brief) is contradicted by the criterion it asked me to add (AC-SBOM-24), on real data: `pkg:pypi/packaging@26.2` vs `constraint='<26.0,>=24.0'`.",
+      "id": "B-6",
+      "resolution": "Not silently reconciled. The HITL ruling (seq-168) is the higher authority, so the single-candidate carve-out was removed and `_resolve_ambiguous` became `_resolve_targets`, running for any number of locked candidates. The fix-1 brief's STATED PURPOSE for that carve-out — 'no imperfection in the range grammar can regress a correct attachment' — is preserved exactly by distinguishing `None` from `False`: only a DEFINITE mismatch de-attaches. Flagged in the commit message, here, and in my report to the orchestrator, because departing from a written instruction should never be discovered later from a diff."
     }
+  ],
+  "branch": "0.8.20-slice-32-sbom-code",
+  "codex_review": {
+    "gate": "codex exec review --base <sha> --dangerously-bypass-approvals-and-sandbox, via dev/agent-tools/codex-nostdin.sh",
+    "round1": "one [P2], no [P0]/[P1] — a declaration attached to every locked version of a name. FIXED (fix-1).",
+    "round2": "one [P1] + one [P2]. [P1] default tiers.toml resolved into site-packages, breaking the install flow TC-111 says Slice 33 must use — FIXED (fix-2). [P2] row sort order — OVERRIDDEN by steward seq-170, recorded TC-114.",
+    "round3": "one [P3] — malformed --now accepted, then resolved differently by the two writers. FIXED (fix-3).",
+    "round4": "one [P2], no [P0]/[P1] — tiers.toml `prefix = \"package\"` is over-broad. NOT fixed; Slice 33 handoff under the seq-173 cap.",
+    "terminal_state": "No [P0] or [P1] outstanding. Two [P2]s carried forward as recorded handoffs, both spec-originated rather than implementation defects.",
+    "transcripts": "dev/plans/runs/codex/0.8.20/slice-32-round{1,2,3,4}-*.log — all four TRACKED (TC-RUBRIC-7) and TC-86-inspected before commit"
   },
   "commits": [
     "fc0a6da4: feat(0.8.20 Slice 32): sbom-survey implementation — 23/23 acceptance criteria GREEN",
@@ -47,134 +62,23 @@
     "a45e91d8: fix(0.8.20 Slice 32): fix-3 — one timestamp door; a malformed --now is rejected, never substituted",
     "(+ the fix-3 closure-JSON docs commit sitting on top of a45e91d8 at the branch tip — this file. head_sha names a45e91d8, the last SUBSTANTIVE commit of mine, which is where the gate table below was captured; a closure JSON cannot name its own sha.)"
   ],
-  "pytest": {
-    "command": "/home/coreyt/projects/fathomdb-worktrees/slice-32-venv/bin/python -m pytest scripts/sbom-survey/tests -q -rsE",
-    "rc": 0,
-    "summary_line": "24 passed in 10.99s",
-    "passed": 24,
-    "failed": 0,
-    "skipped": 0,
-    "errors": 0,
-    "collected": 24,
-    "note": "pytest prints only non-zero counters, so the literal line is `23 passed`. The zeroes are established by `collected 23 items` equalling `23 passed` (nothing failed, nothing errored during collection) and by `-rsE` emitting NO skipped and NO error section. Third-party deps live in an isolated venv OUTSIDE the repo tree at /home/coreyt/projects/fathomdb-worktrees/slice-32-venv; the repo's shared .venv was never touched and the mini-project itself need NOT be installed (tests/conftest.py puts scripts/sbom-survey/ on sys.path and on PYTHONPATH for the CLI subprocess).",
-    "GREEN_REQUIRES_INSTALLING_THE_DECLARED_DEPENDENCIES": {
-      "statement": "GREEN REQUIRES INSTALLING THE MINI-PROJECT'S DECLARED DEPENDENCIES, AND NOTHING IN THE REPOSITORY PERFORMS THAT INSTALL. There is no bootstrap hook, no scripts/bootstrap.sh entry, no CI step and no Makefile target that provisions them — by design, since the tool is deliberately not wired into anything (REQ-12). A reader who runs the suite with a bare interpreter sees a large red suite and no instruction telling them why.",
-      "bare_interpreter_reproduction": {
-        "command": "cd <worktree> && python3 -m pytest scripts/sbom-survey/tests -q -rsE",
-        "interpreter": "/usr/bin/python3 — Python 3.12.3, no third-party deps",
-        "rc": 1,
-        "summary_line": "16 failed, 7 passed in 0.70s",
-        "skipped": 0,
-        "errors": 0,
-        "why_it_is_correct_behaviour": "This is the DESIGNED failure mode, not a defect. `conftest.require()` and `conftest.require_external()` convert a missing module into a `pytest.fail` naming the criterion — never a `pytest.skip` — precisely because an ungraded criterion reporting success is the vacuous green design §5.7 forbids. 0 skipped is the proof. The 7 that pass are the criteria reachable with stdlib alone (paths, and the tiering/discovery criteria that need only `tomllib`).",
-        "trace_detail_note": "The failing traces name `No module named 'semver'` rather than `'cyclonedx'`. That changed with fix-1: `sbom_survey.survey` now imports `sbom_survey.constraints`, which imports `semver` at module level, so `semver` is simply the first missing import to be hit. Before fix-1 the same runs named `cyclonedx`. Either way the cause is identical — the declared dependency set is absent — and the orchestrator's round-0 observation stands."
-      },
-      "green_reproduction_sequence": {
-        "1_create_venv": "python3 -m venv /path/outside/the/repo/venv   # OUTSIDE the repo tree, so the worktree stays pristine and cleanup is `rm -rf`",
-        "2_install": "EITHER `<venv>/bin/pip install '<worktree>/scripts/sbom-survey[dev]'` (installs the tool AND its declared deps, including the pytest dev extra) OR install the four runtime deps plus pytest directly: `<venv>/bin/pip install 'cyclonedx-python-lib[json-validation]>=8.0,<9.0' 'packageurl-python>=0.15,<1.0' 'packaging>=24.0,<26.0' 'semver>=3.0,<4.0' 'pytest>=8.0,<10.0'`",
-        "3_working_directory": "the worktree root (the repository root) — conftest.py derives REPO_ROOT from its own __file__, but `git ls-files` and the CLI subprocess both run against it",
-        "4_run": "<venv>/bin/python -m pytest scripts/sbom-survey/tests -q -rsE",
-        "5_expected": "rc=0, `23 passed`, 0 failed, 0 skipped, 0 errors",
-        "verified_both_ways": "Confirmed with BOTH install routes: the deps-only venv used for every gate in this closure, and a clean-room `pip install '<worktree>/scripts/sbom-survey[dev]'` venv built from the tool's own pyproject.toml alone — both give `23 passed`, rc=0.",
-        "note_for_the_installer_route": "`pip install <path>` leaves `scripts/sbom-survey/build/` and `scripts/sbom-survey/sbom_survey.egg-info/` on disk. fix-1 adds both to .gitignore (see the orchestrator steer below), so `git status` stays a reliable signal while Slice 33 works. NEVER install into the repository's shared .venv at /home/coreyt/projects/fathomdb/.venv."
-      },
-      "who_needs_this": "Slice 33, which cannot run the tool without performing this install; and the CI-wiring decision, which must weigh that CI would need a provisioning step this repository does not currently have anywhere. Recorded as a finding rather than hidden as a wart.",
-      "fix_2_update": "TC-111's install-then-run flow WAS BROKEN AS SHIPPED AT FIX-1 and is fixed at fix-2 (codex §9 round 2 [P1]). `pip install ./scripts/sbom-survey` then `sbom-survey --repo <repo> --offline --out DIR` now exits 0 and writes all three artifacts; before fix-2 it exited 1 with a bare FileNotFoundError, because the tier-rule default was resolved relative to the installed PACKAGE rather than the surveyed REPOSITORY. Note for whoever reads this sequence: at fix-1 I verified the install by INSTALLING and then running the SUITE, never by invoking the installed console script — which is exactly how a broken install passed verification. The install-then-run command above is now the primary evidence, and the suite is secondary."
-    }
+  "criterion_count": {
+    "added": "AC-SBOM-24 — `scripts/sbom-survey/tests/test_cyclonedx.py::test_no_component_carries_a_constraint_its_version_violates`. 'No component may carry a `fathomdb:constraint` that its own version does not satisfy.' Numbered LAST rather than slotted in, per the AC-SBOM-23 precedent in design §4, so every existing id keeps its meaning.",
+    "is": 24,
+    "moved_by": "HITL ruling seq-168, TC-112 ruled (a) — the Slice-31 acceptance suite unfrozen for EXACTLY ONE added criterion.",
+    "not_updated_deliberately": "dev/design/0.8.20-slice-31-sbom-survey-tool.md (the AC-table and design-of-record update is the orchestrator's, in parallel) and dev/plans/runs/0.8.20-slice-31-output.json (it recorded 23 at Slice 31's close and that was TRUE then; a landed slice's history is not rewritten). scripts/sbom-survey/README.md WAS updated 23 -> 24 so the operating note stays true.",
+    "was": 23,
+    "why_it_was_needed": "My own fix-1 report established that mutations M13 and M14 both left all 23 criteria GREEN: the oracle could not detect the defect it had just shipped a fix for, and codex had to find it by reading. `depth` and `edit_sites` are the two fields Slice 33 decides on, and that survey feeds 0.8.22, so a permissive oracle here propagates into real dependency decisions."
   },
-  "gates": [
-    {
-      "n": 1,
-      "command": "python -m pytest scripts/sbom-survey/tests -q -rsE  (slice-32-venv interpreter)",
-      "rc": 0,
-      "observed": "24 passed in 10.99s — 0 failed, 0 skipped, 0 errors"
-    },
-    {
-      "n": "extra-2",
-      "command": "git diff be759b0f -- scripts/sbom-survey/tests | grep -c '^-[^-]'",
-      "rc": 0,
-      "observed": "0 — ZERO deletion lines. `git diff --stat` reports `1 file changed, 275 insertions(+)`. The suite diff is ADDITIONS ONLY, as the amendment's bound #2 requires: no existing test, assertion or docstring was modified, relaxed, renamed or deleted, and conftest.py was not touched at all."
-    },
-    {
-      "n": "extra-3",
-      "command": "git diff --name-only be759b0f -- dev/design/ dev/plans/runs/0.8.20-slice-31-output.json",
-      "rc": 0,
-      "observed": "(empty) — the design of record and Slice 31's landed closure JSON are both untouched, per the amendment."
-    },
-    {
-      "n": 2,
-      "command": "bash scripts/check-governed-surface-pin.sh",
-      "rc": 0,
-      "observed": "ok governed-surface-pin: matches the AC-079 pin (30 allowlist / 5 core / 5 recovery_denylist, pinned at c239908b under AC-079). NO pin trip; nothing under src/conformance/ was touched."
-    },
-    {
-      "n": 3,
-      "command": "git rev-parse HEAD:src/conformance/governed-surface-allowlist.json",
-      "rc": 0,
-      "observed": "140c0f638d2f6c659b58fa1b6225a0da73421b55",
-      "resolved_at_fix_1": "The orchestrator has since confirmed 140c0f63… is the correct expected value at be759b0f and that the pin never tripped, and asked that the stale figure not be re-propagated. Recorded here so the correction travels with the artifact.",
-      "discrepancy": "THE ROUND-0 TASK PROMPT EXPECTED 93ef3a8616e460c443417cdffc1e9f711ceb12f8. That value is STALE, not a pin trip. 93ef3a86 is the blob at cbb56212 — SLICE 31's baseline. Between cbb56212 and this slice's baseline be759b0f (= origin/main), commit c239908b ('fix(governance): TC-52 — record the signature in the allowlist; re-issue the pin') changed the file: `git merge-base --is-ancestor c239908b be759b0f` -> YES, `... c239908b cbb56212` -> NO. VERIFIED UNCHANGED BY THIS SLICE: the blob is byte-identical at be759b0f, at origin/main and at HEAD (all 140c0f63...), and `git diff --name-only be759b0f -- src/conformance/` is EMPTY. The real guard (gate 2) exits 0. No re-pin was performed and no allowlist was widened."
-    },
-    {
-      "n": 4,
-      "command": "grep -n 'SCHEMA_VERSION: u32' src/rust/crates/fathomdb-schema/src/lib.rs",
-      "rc": 0,
-      "observed": "6:pub const SCHEMA_VERSION: u32 = 24;  — unchanged"
-    },
-    {
-      "n": 5,
-      "command": "bash scripts/agent-lint-md.sh",
-      "rc": 0,
-      "observed": "clean. First invocation exited 1 with 'markdownlint-cli2 not found at node_modules/.bin/markdownlint-cli2' (TC-37: a missing structural linter must never report a silent pass); resolved exactly as that script's own remedy text prescribes for a linked worktree — `ln -s /home/coreyt/projects/fathomdb/node_modules node_modules`. .gitignore line 47 already ignores a bare `node_modules` SYMLINK, so the worktree stays clean."
-    },
-    {
-      "n": 6,
-      "command": "bash scripts/lint-design-status.sh",
-      "rc": 0,
-      "observed": "clean"
-    },
-    {
-      "n": 7,
-      "command": "bash scripts/lint-findings.sh",
-      "rc": 0,
-      "observed": "ok lint-findings: 39 finding ids, all unique — register untouched"
-    },
-    {
-      "n": 8,
-      "command": "bash scripts/check-board-currency.sh",
-      "rc": 0,
-      "observed": "ok board-currency: no live STATUS board contradicts git ancestry"
-    },
-    {
-      "n": 9,
-      "command": "bash scripts/check-release-state-views.sh",
-      "rc": 0,
-      "observed": "ok check-release-state-views: 5 generated blocks across 1 release-state file match their render"
-    },
-    {
-      "n": 10,
-      "command": "git diff --name-only be759b0f",
-      "rc": 0,
-      "observed": "19 files: .gitignore, scripts/sbom-survey/README.md, scripts/sbom-survey/pyproject.toml, scripts/sbom-survey/tiers.toml and the 15 files of scripts/sbom-survey/sbom_survey/. NO manifest, NO lockfile, nothing under src/, engine/ or .github/ — verified by grepping the diff list against '^(src/|engine/|\\.github/)|Cargo\\.(toml|lock)$|(^|/)package(-lock)?\\.json$|(^|/)uv\\.lock$|requirements.*\\.txt$|dev/tools/mermaid/', which matched nothing. `git diff --stat be759b0f -- scripts/sbom-survey/tests` is EMPTY: the frozen suite was not touched."
-    },
-    {
-      "n": 11,
-      "command": "git status --porcelain",
-      "rc": 0,
-      "observed": "clean — no stray untracked files (the node_modules symlink and scripts/sbom-survey/out/ are both ignored)"
-    },
-    {
-      "n": "extra",
-      "command": "ruff check scripts/sbom-survey/sbom_survey/",
-      "rc": 0,
-      "observed": "All checks passed! — also run automatically by the pre-commit hook on the staged .py files. No --no-verify was used on any commit."
-    },
-    {
-      "n": "extra-4",
-      "command": "fresh venv + `rm -rf scripts/sbom-survey/build scripts/sbom-survey/*.egg-info` + `pip install ./scripts/sbom-survey` + the INSTALLED `sbom-survey --repo . --offline --out DIR`",
-      "rc": 0,
-      "observed": "install_rc=0 then CLI_RC=0 — 774 components, all three artifacts. Scrubbing the build tree BEFORE installing is deliberate: a stale build/ produces a wheel of pre-fix code and burns a verification cycle."
-    }
+  "deliberately_not_done": [
+    "NO CI WIRING. .github/**, scripts/agent-test.sh, scripts/agent-verify.sh, scripts/check.sh, every ruff/pyright scope and every pytest config are untouched. test_cli.py::test_tool_declares_non_ci_gating_and_is_absent_from_ci_wiring stays green BECAUSE THE WIRING IS ABSENT. Standing HITL ruling seq-166.",
+    "NO dependency bump, and NO manifest or lockfile edited anywhere in the repository. The single manifest added is the mini-project's own scripts/sbom-survey/pyproject.toml, which is the tool's manifest and not the repo's. Root Cargo.toml / Cargo.lock, package.json / package-lock.json, src/python/pyproject.toml, src/python/uv.lock, src/ts/**, tools/docs/requirements.txt and dev/tools/mermaid/** are all byte-identical to the baseline.",
+    "NOTHING under src/rust/, src/python/, src/ts/ or engine/. No engine or binding change. SCHEMA_VERSION stays 24.",
+    "NO Slice 33 work. The tool was RUN only to make tests pass and to sanity-check the implementation; dev/plans/runs/0.8.20-slice-33-library-sweep-3-FINDINGS.md was NOT created, no survey/findings document was written, and no staleness verdict, surgical-SLOC judgement or dependabot.yml reconciliation was recorded anywhere.",
+    "NO AC minted in dev/acceptance.md and NO R-20-xx requirement id (TC-76). This slice is gated by TDD test name only.",
+    "NO edit to dev/plans/release-state-0.8.20.json, dev/plans/plan-0.8.20.md, dev/plans/runs/STATUS-0.8.20.md, dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md, dev/design/0.8.20-slice-31-sbom-survey-tool.md, dev/DOC-INDEX.md or any ledger — those belong to the orchestrator and the Steward.",
+    "NO push, no worktree created/moved/removed, no subagent spawned, no `git commit --no-verify`, and nothing installed into the repo's shared .venv at /home/coreyt/projects/fathomdb/.venv (the tool's dependencies live in an isolated venv OUTSIDE the repo tree at /home/coreyt/projects/fathomdb-worktrees/slice-32-venv, which the orchestrator may delete).",
+    "NO Rust/engine test suite run — out of scope and it contends with wall-clock assertions elsewhere. scripts/agent-test.sh was NOT used for any green claim (its aggregate exit is vacuous, TC-16)."
   ],
   "files_added": [
     "scripts/sbom-survey/pyproject.toml — the isolated project manifest. NOT a Cargo workspace member, NOT referenced by src/python/pyproject.toml, NOT a dependency of the root package.json. Dependencies are exactly design §5.7's four (cyclonedx-python-lib[json-validation]>=8.0,<9.0; packageurl-python>=0.15,<1.0; packaging>=24.0,<26.0; semver>=3.0,<4.0) with pytest>=8.0,<10.0 as a DEV-ONLY extra. requires-python >= 3.11 so `tomllib` is stdlib. §5.7's 'Deliberately NOT taken' honoured in full: no HTTP client, no TOML library, no jsonschema, no GitPython, no setup.py/AST tooling. It carries NO [tool.pytest.ini_options] table — see the TC-97 entry below.",
@@ -247,57 +151,109 @@
     "DESIGN AMBIGUITY RESOLVED 3/3 — THE fathomdb:edge-kind = 'resolved' TAG. §5.5 says lock-derived edges are tagged 'resolved', but CycloneDX `dependencies` entries carry no property bag, so an edge cannot literally hold one. RESOLUTION: the tag is emitted as a COMPONENT property on every component whose outgoing edges came from a lockfile, and the real normal/dev/build kinds — which only manifest-derived declarations carry — travel in staleness.json's `declared_in[].kind`. The §5.5 limitation is thereby recorded rather than papered over.",
     "IMPLEMENTATION CHOICE WORTH FLAGGING — THE DOCUMENT IS BUILT BY THE LIBRARY, NOT HAND-ROLLED. §5.7 makes cyclonedx-python-lib load-bearing twice: to 'build and serialize' the document, and to supply the schema validator. Both uses are taken. sbom_survey/cyclonedx.py assembles a real Bom / Component / Dependency model and serializes with JsonV1Dot6, so the emitted `$schema` / `bomFormat` / `specVersion` / key ordering / dependency array come from the upstream serializer, and the hand-rolled-JSON failure mode REQ-6 exists to prevent is structurally avoided. Determinism was checked against that decision rather than assumed: the serializer sorts components, properties and dependencies, the serialNumber is a UUIDv5 over the sorted bom-ref set (never uuid4), the timestamp is the fixed epoch, and two independent runs are byte-identical."
   ],
-  "blockers_encountered": [
+  "gates": {
+    "SCHEMA_VERSION": "24 — unchanged",
+    "agent-lint-md.sh": "rc=0",
+    "check-board-currency.sh": "rc=0",
+    "check-governed-surface-pin.sh": "rc=0",
+    "check-release-state-views.sh": "rc=0",
+    "ci_wiring_absent": "no `sbom` reference in .github/, agent-test.sh, agent-verify.sh or check.sh",
+    "diff_scope": "no manifest, no lockfile, nothing under src/, engine/ or .github/",
+    "governed_surface_allowlist_blob": "140c0f638d2f6c659b58fa1b6225a0da73421b55 — byte-identical to the base",
+    "installed_console_script": "rc=0 — pip install into a fresh venv, then the INSTALLED `sbom-survey --repo . --offline --out DIR`: 774 components (52 direct, 722 transitive), all three artifacts written. Exercised because fix-2 was a packaging change; installing is not verifying an install.",
+    "lint-design-status.sh": "rc=0",
+    "lint-findings.sh": "rc=0",
+    "note": "ALL RE-RUN AFTER THE REBASE onto 13b5e1f6 — a clean rebase is not a correct rebase. Each rc captured on the line immediately following its command.",
+    "pytest_clean_venv": "rc=0 — `24 passed`, 0 failed, 0 skipped, 0 errors",
+    "tests_additions_only": "275 insertions, 0 deletions on test_cyclonedx.py; no other test file touched"
+  },
+  "head_sha": "78af8d02 (pre-closure); this closure commit is the final head",
+  "next_step_for_orchestrator": "(ROUND 0, superseded by the fix-1 entry above.) Cherry-pick fc0a6da4 (+ this closure-JSON commit) onto the 0.8.20 mainline, then spawn the codex §9 reviewer on this branch HEAD. Two things the reviewer should be pointed at rather than made to rediscover: (1) the TC-97 `configfile:` line is this directory's OWN pyproject.toml acting as a rootdir anchor with an EMPTY applied config — probed values are in findings_addressed, and the mechanism is quotable from _pytest/config/findpaths.py::locate_config; (2) the three design ambiguities §5 does not settle (component tier under multiple manifests, which versions a name-level declaration attaches to, and where fathomdb:edge-kind can live given CycloneDX dependency entries carry no properties) are resolved and recorded here — if the reviewer disagrees with any of them, only the first has a visible consequence on this repo (`packaging` tiers dev-tooling), and the frozen AC-SBOM-11 forces it. ALSO: correct the stale gate-3 allowlist blob SHA (93ef3a86 -> 140c0f63) in the Slice-33 prompt. And a standing reminder for whoever writes that prompt: getting this suite GREEN does NOT authorize wiring it into CI (seq-166).",
+  "next_step_for_orchestrator_fix_1": "(SUPERSEDED by the seq-168 entry above.) Cherry-pick cdfdd3fc (+ this closure-JSON commit) on top of what you already took, then re-spawn codex on the branch HEAD for the fix-1 re-review. FIVE THINGS TO CARRY FORWARD. (1) THE FIX IS NOT PROTECTED BY A REGRESSION TEST — mutations M13 and M14 restore the exact defect and the frozen suite stays GREEN. If the suite is ever unfrozen, a criterion asserting 'no component carries a `fathomdb:constraint` its own version does not satisfy' closes it cheaply and would have caught this at Slice 31. Please carry that to the Steward as a Slice-33-or-later item; I could not add it here. (2) GREEN REQUIRES INSTALLING THE DECLARED DEPENDENCIES and nothing in the repo does that install — the full reproduction sequence, both install routes, and the bare-interpreter numbers (`16 failed, 7 passed`, 0 skipped, 0 errors) are under `pytest.GREEN_REQUIRES_INSTALLING_THE_DECLARED_DEPENDENCIES`. Note one detail has shifted since your round-0 observation: the failing traces now name `semver` rather than `cyclonedx`, because `sbom_survey.survey` imports `sbom_survey.constraints` which imports `semver` at module level. Same cause, different first casualty. (3) The `pip install` route leaves `build/` and `*.egg-info/`; fix-1 ignores both, verified clean-room, and AC-SBOM-18's two verdicts are unchanged (`git check-ignore -v` output quoted in files_changed). (4) The stale allowlist blob SHA is recorded as corrected and will not be re-propagated. (5) dev/plans/runs/codex/0.8.20/slice-32-round1-20260729T170255Z.log is yours — I left it untracked per Slice 31's precedent.",
+  "next_step_for_orchestrator_fix_2": "(SUPERSEDED by the fix-3 entry above.) Cherry-pick 6fbe05df (+ this closure-JSON commit) and re-spawn codex for the fix-2 re-review. FIVE THINGS. (1) ACCEPTANCE IS MET AND WAS MEASURED, NOT ARGUED: install_rc=0 / CLI_RC=0 for the TC-111 flow; MISSING_RC=3 with a legible message for a repo without the tracked rules; REMEDY_RC=0 proving the message's own advice works; SRC_RC=0 for the source-tree path; and the installed and source-tree runs produce BYTE-IDENTICAL artifacts. 24 passed; suite additions-only (`275 0`). (2) THE ROUTE IS `repo_root`, AND `pyproject.toml` WAS NOT TOUCHED — the three-reason defence is in findings_addressed and in `paths.tiers_file_for`'s docstring; the strongest of the three is that packaging the file would let `AC-SBOM-08`/`AC-SBOM-11` grade a file the survey never read. (3) THE SUITE STRUCTURALLY CANNOT CATCH THIS CLASS: mutation M17 (revert to package-relative) leaves all 24 GREEN, because the tests run from the source tree where both paths are the same file. The guard that would catch it is an install-then-run SHELL smoke, not a pytest criterion. I did not add it and did not wire anything — seq-166 — but the Steward should know the gap exists and that it is the same shape as fix-1's. (4) I did NOT touch the [P2], `test_report.py`, `dev/design/**` or `dev/plans/runs/codex/**`; 79d3bd1d is yours and is the parent of my fix-2 commit. (5) Round accounting: fix-2, a NEW and DISTINCT defect from fix-1's (wrong ATTACHMENT vs wrong RESOLUTION), so 2 of 3 under TC-75 with neither round re-opening the other.",
+  "next_step_for_orchestrator_fix_3": "Cherry-pick a45e91d8 (+ this closure-JSON commit) and re-spawn codex for the fix-3 re-review. FIVE THINGS. (1) ACCEPTANCE IS MET AND MEASURED, all five items: valid `--now` still works and AC-SBOM-22's exact pinned value was checked in the test source BEFORE tightening the parser; `--now not-a-date` writes nothing and exits 64; the default path is byte-identical with the fixed epoch 17011 days from the wall clock; 24 GREEN and additions-only; and the installed console script re-run after SCRUBBING build/ and *.egg-info/ gives install_rc=0 / CLI_RC=0. (2) EXIT CODE 64 IS A DELIBERATE NON-COLLISION — argparse's own usage code is 2, which is §5.9's 'untiered manifest'; 64 is EX_USAGE, outside the ruled set. Every argparse usage error routes there, so `--bogus` also moved 2 -> 64. If the Steward would rather the CLI kept argparse's 2, that is a one-line revert of `_Parser`, but I think it would make AC-SBOM-21's signal ambiguous. (3) TC-115 CARRIED AND NOT ACTED ON: no criterion added, nothing wired. Note the same blindness recurred here — the frozen suite catches neither fix-3 regression mutation, because it only ever passes a well-formed `now`. That is now the THIRD consecutive round found by reading rather than by the oracle, which is itself a datum for wherever the install-then-run smoke question lands. (4) The fix-2 reasoning the Steward called durable is preserved verbatim in findings_addressed: AC-SBOM-08/AC-SBOM-11 load the TRACKED tiers.toml and grade it against a document run_survey() produced with no tier_map, so a wheel-bundled default would let those two diverge. (5) The round-3 codex transcript in this worktree is yours and is left untracked; dev/design/**, dev/plans/runs/codex/** and test_report.py were not touched, and I did not go near the escalated [P2].",
+  "next_step_for_orchestrator_seq_168": "(SUPERSEDED by the fix-2 entry above.) Cherry-pick 8926d9bf (+ this closure-JSON commit). FOUR THINGS. (1) THE AMENDMENT'S ACCEPTANCE EVIDENCE IS MET: M13 and M14 BOTH fail against AC-SBOM-24, output quoted verbatim in findings_addressed; full suite `24 passed`, 0 failed / 0 skipped / 0 errors; the suite diff is 275 insertions and ZERO deletions. (2) I DEPARTED FROM A WRITTEN INSTRUCTION AND AM FLAGGING IT RATHER THAN LETTING YOU FIND IT IN A DIFF: the fix-1 brief said a single-candidate name must not change behaviour, and AC-SBOM-24 proved that rule emits a false row (`pkg:pypi/packaging@26.2` under `<26.0,>=24.0`). The carve-out is gone; its stated purpose is preserved by de-attaching only on a DEFINITE mismatch, never on an unevaluable one. See blocker B-6. (3) `AC-SBOM-24` also made M14 detectable for the first time — at fix-1 I reported it as a no-op and it genuinely was, because the no-match fallback was dead code until `packaging` reached it. That reverses my earlier statement and the reversal is recorded. (4) TC-113 is closed structurally: the sweep now refuses to run on a dirty tree, and the guard fired for real on this round, on this work. STILL OUTSTANDING FROM FIX-1 AND UNCHANGED: the install-required finding (TC-111) under `pytest.GREEN_REQUIRES_INSTALLING_THE_DECLARED_DEPENDENCIES`; and NO CI WIRING — reaching 24/24 authorizes nothing (seq-166).",
+  "phase": "0.8.20 Slice 32 (SBOM-CODE) — Library Sweep #3, leg 2 of 3. The implementation that turns Slice 31's RED acceptance suite GREEN. CODE ONLY. CLOSED after codex §9 rounds 1-4: fix-1 (one [P2]), fix-2 (one [P1]), fix-3 (one [P3]). Round 4 returned one [P2] and no [P0]/[P1]; under the HITL cap (steward seq-173) it is recorded as a Slice 33 handoff rather than a further fix round.",
+  "pytest": {
+    "GREEN_REQUIRES_INSTALLING_THE_DECLARED_DEPENDENCIES": {
+      "bare_interpreter_reproduction": {
+        "command": "cd <worktree> && python3 -m pytest scripts/sbom-survey/tests -q -rsE",
+        "errors": 0,
+        "interpreter": "/usr/bin/python3 — Python 3.12.3, no third-party deps",
+        "rc": 1,
+        "skipped": 0,
+        "summary_line": "16 failed, 7 passed in 0.70s",
+        "trace_detail_note": "The failing traces name `No module named 'semver'` rather than `'cyclonedx'`. That changed with fix-1: `sbom_survey.survey` now imports `sbom_survey.constraints`, which imports `semver` at module level, so `semver` is simply the first missing import to be hit. Before fix-1 the same runs named `cyclonedx`. Either way the cause is identical — the declared dependency set is absent — and the orchestrator's round-0 observation stands.",
+        "why_it_is_correct_behaviour": "This is the DESIGNED failure mode, not a defect. `conftest.require()` and `conftest.require_external()` convert a missing module into a `pytest.fail` naming the criterion — never a `pytest.skip` — precisely because an ungraded criterion reporting success is the vacuous green design §5.7 forbids. 0 skipped is the proof. The 7 that pass are the criteria reachable with stdlib alone (paths, and the tiering/discovery criteria that need only `tomllib`)."
+      },
+      "fix_2_update": "TC-111's install-then-run flow WAS BROKEN AS SHIPPED AT FIX-1 and is fixed at fix-2 (codex §9 round 2 [P1]). `pip install ./scripts/sbom-survey` then `sbom-survey --repo <repo> --offline --out DIR` now exits 0 and writes all three artifacts; before fix-2 it exited 1 with a bare FileNotFoundError, because the tier-rule default was resolved relative to the installed PACKAGE rather than the surveyed REPOSITORY. Note for whoever reads this sequence: at fix-1 I verified the install by INSTALLING and then running the SUITE, never by invoking the installed console script — which is exactly how a broken install passed verification. The install-then-run command above is now the primary evidence, and the suite is secondary.",
+      "green_reproduction_sequence": {
+        "1_create_venv": "python3 -m venv /path/outside/the/repo/venv   # OUTSIDE the repo tree, so the worktree stays pristine and cleanup is `rm -rf`",
+        "2_install": "EITHER `<venv>/bin/pip install '<worktree>/scripts/sbom-survey[dev]'` (installs the tool AND its declared deps, including the pytest dev extra) OR install the four runtime deps plus pytest directly: `<venv>/bin/pip install 'cyclonedx-python-lib[json-validation]>=8.0,<9.0' 'packageurl-python>=0.15,<1.0' 'packaging>=24.0,<26.0' 'semver>=3.0,<4.0' 'pytest>=8.0,<10.0'`",
+        "3_working_directory": "the worktree root (the repository root) — conftest.py derives REPO_ROOT from its own __file__, but `git ls-files` and the CLI subprocess both run against it",
+        "4_run": "<venv>/bin/python -m pytest scripts/sbom-survey/tests -q -rsE",
+        "5_expected": "rc=0, `23 passed`, 0 failed, 0 skipped, 0 errors",
+        "note_for_the_installer_route": "`pip install <path>` leaves `scripts/sbom-survey/build/` and `scripts/sbom-survey/sbom_survey.egg-info/` on disk. fix-1 adds both to .gitignore (see the orchestrator steer below), so `git status` stays a reliable signal while Slice 33 works. NEVER install into the repository's shared .venv at /home/coreyt/projects/fathomdb/.venv.",
+        "verified_both_ways": "Confirmed with BOTH install routes: the deps-only venv used for every gate in this closure, and a clean-room `pip install '<worktree>/scripts/sbom-survey[dev]'` venv built from the tool's own pyproject.toml alone — both give `23 passed`, rc=0."
+      },
+      "statement": "GREEN REQUIRES INSTALLING THE MINI-PROJECT'S DECLARED DEPENDENCIES, AND NOTHING IN THE REPOSITORY PERFORMS THAT INSTALL. There is no bootstrap hook, no scripts/bootstrap.sh entry, no CI step and no Makefile target that provisions them — by design, since the tool is deliberately not wired into anything (REQ-12). A reader who runs the suite with a bare interpreter sees a large red suite and no instruction telling them why.",
+      "who_needs_this": "Slice 33, which cannot run the tool without performing this install; and the CI-wiring decision, which must weigh that CI would need a provisioning step this repository does not currently have anywhere. Recorded as a finding rather than hidden as a wart."
+    },
+    "collected": 24,
+    "command": "/home/coreyt/projects/fathomdb-worktrees/slice-32-venv/bin/python -m pytest scripts/sbom-survey/tests -q -rsE",
+    "errors": 0,
+    "failed": 0,
+    "note": "pytest prints only non-zero counters, so the literal line is `23 passed`. The zeroes are established by `collected 23 items` equalling `23 passed` (nothing failed, nothing errored during collection) and by `-rsE` emitting NO skipped and NO error section. Third-party deps live in an isolated venv OUTSIDE the repo tree at /home/coreyt/projects/fathomdb-worktrees/slice-32-venv; the repo's shared .venv was never touched and the mini-project itself need NOT be installed (tests/conftest.py puts scripts/sbom-survey/ on sys.path and on PYTHONPATH for the CLI subprocess).",
+    "passed": 24,
+    "rc": 0,
+    "skipped": 0,
+    "summary_line": "24 passed in 10.99s"
+  },
+  "round_accounting": {
+    "cap": "TC-75 — 3 rounds on the same finding; mandatory Steward check-in at 6",
+    "capped_by": "steward seq-173 — further findings route to Slice 33 as recorded TCs.",
+    "detail": "fix-1 wrong ATTACHMENT (declaration to every locked version) · fix-2 wrong RESOLUTION (tiers file from the installed package) · fix-3 wrong VALIDATION (malformed --now substituted rather than rejected). All three new and distinct; none re-opened another, so the same-finding bound of 3 was never approached.",
+    "rounds_used": 3
+  },
+  "rulings_applied": {
+    "seq-164 / TC-115": "Install-then-run smoke placed at Slice 33, not built here.",
+    "seq-168 / TC-112 (a)": "Suite unfrozen for EXACTLY ONE criterion — AC-SBOM-24. Verified additions-only: 275 insertions, 0 deletions; conftest.py untouched; 24 test functions.",
+    "seq-170 / TC-114": "Round-2 [P2] OVERRIDDEN; option (b) second unfreeze DECLINED.",
+    "seq-172": "The SBOM suite is NOT being wired into CI — RULED, not deferred. SUPERSEDES seq-166. GREEN at 24 passed does not re-open it. Verified: no reference to sbom in .github/, scripts/agent-test.sh, agent-verify.sh or check.sh.",
+    "seq-173": "Slice 32 CAPPED. Round-4 [P2] routed to Slice 33 rather than opening fix-4."
+  },
+  "slice_33_handoffs": [
     {
-      "id": "B-1",
-      "description": "Gate 3's expected allowlist blob SHA in the task prompt (93ef3a8616e460c443417cdffc1e9f711ceb12f8) does not match HEAD (140c0f638d2f6c659b58fa1b6225a0da73421b55).",
-      "resolution": "NOT A BLOCKER AND NOT A PIN TRIP — a stale expectation carried over from Slice 31. 93ef3a86 is the blob at cbb56212 (Slice 31's baseline); c239908b changed the file on main afterwards and IS an ancestor of this slice's baseline be759b0f but is NOT an ancestor of cbb56212. The blob is identical at be759b0f, origin/main and HEAD, `git diff --name-only be759b0f -- src/conformance/` is empty, and the real guard scripts/check-governed-surface-pin.sh exits 0. No re-pin, no allowlist widening. Recorded for the orchestrator so the stale value is corrected in the next prompt rather than re-triggering a HALT."
+      "id": "TC-114",
+      "impact": "Presentation only. Every field is present and correctly labelled; Slice 33 can group by tier on read.",
+      "source": "codex §9 round 2 [P2]; steward seq-170 ruled (a)+(c) — OVERRIDDEN for Slice 32",
+      "what": "Staleness rows sort on the raw tier string, so `dev-tooling` < `eval-only` < `shipped` puts the HIGHEST-priority tier LAST.",
+      "why_not_fixed_here": "The inconsistency is in the SPEC, not the code. Design :768 states the sort tuple literally as (tier, ecosystem, name, locked_version), while :754 and :817 promise `shipped` outranks the rest. The implementation matches BOTH the spec and the frozen AC-SBOM-22 (test_report.py:180-181 and :209-213 pin `keys == sorted(keys)` on the raw string), so there is no Slice-32 defect to fix. Changing it would need a second unfreeze, DECLINED: falsity justifies unfreezing a frozen oracle, ergonomics does not."
     },
     {
-      "id": "B-2",
-      "description": "scripts/agent-lint-md.sh exited 1 on first invocation: markdownlint-cli2 not found at node_modules/.bin/markdownlint-cli2 (a linked worktree has no node_modules).",
-      "resolution": "Resolved exactly as that script's own remedy text prescribes — symlinked the primary checkout's node_modules into the worktree. .gitignore line 47 already ignores a bare `node_modules` symlink (as distinct from the `node_modules/` directory rule), so `git status --porcelain` stays clean. Gate re-run: rc=0. Nothing in the primary checkout was modified."
+      "id": "UNASSIGNED — steward to place",
+      "note": "Nothing tracked matches `packages/` today, so this is latent, not live.",
+      "source": "codex §9 round 4 [P2]",
+      "suggested_fix": "Split into exact-path rules for `package.json` and `package-lock.json`. No code change required — tiers.toml is data, and AC-SBOM-23 already proves matching is longest-prefix and order-independent.",
+      "what": "The tiers.toml rule `prefix = \"package\"` matches any path starting with that string. A future top-level `packages/...` manifest would be silently tagged `dev-tooling` instead of raising UntieredManifestError.",
+      "why_it_matters": "It undermines REQ-4's loud-gap guarantee and design §5.3's explicit 'There is deliberately NO catch-all / default rule' — the exact event the tool exists to catch would become a silent mis-tag.",
+      "why_not_fixed_here": "The rule is VERBATIM from design §5.3's frozen tiers.toml shape, so it is a spec-originated wart, not an implementation deviation. Fixing it means editing the ruled data shape, and the HITL cap (seq-173) routes non-[P0]/[P1] findings to Slice 33."
     },
     {
-      "id": "B-3",
-      "description": "All 23 tests passed on the very FIRST run, which is itself a reason for suspicion rather than confidence on a slice whose predecessor spent six review rounds hardening the oracles.",
-      "resolution": "Corroborated independently before claiming green: (a) a 14-mutation sweep, 14/14 detected, 0 undetected — see findings_addressed; (b) an out-of-band re-derivation over the real repository of the three properties the oracles can only observe indirectly (published.latest() call count == component count; single-origin tier equality against TierMap.classify(); zero depth/origin contradictions); (c) an explicit pytest-config probe for TC-97. No test, assertion, docstring or conftest.py line was modified. FIX-1 POSTSCRIPT: this corroboration was necessary but NOT sufficient. Every one of those checks was derived from what the frozen tests grade, so none of them asked whether the EMITTED DATA was true — which is how the constraint-attachment defect survived. See the LESSON entry in findings_addressed."
+      "guard_required": "A shell-level install-then-run smoke, explicitly authorised for Slice 33: pip install into a throwaway venv -> invoke the INSTALLED console script -> assert rc=0 AND artifacts byte-identical to a source-tree run.",
+      "id": "TC-115",
+      "not_built_here": "seq-168 unfroze exactly one criterion (AC-SBOM-24) and no pytest criterion can close this class.",
+      "source": "implementer mutation M17; steward seq-164 PLACED AT SLICE 33",
+      "what": "Reverting the tiers-file default to package-relative leaves all 24 tests GREEN. The suite structurally cannot catch this class: every test drives the tool through sys.path from the source tree, where both resolutions point at the same file. Only the installed entry point distinguishes them.",
+      "why_it_stands_alone": "With CI wiring ruled out entirely (seq-172), this smoke is the ONLY guard for the install-path defect class. It must be real, not nominal."
     },
     {
-      "id": "B-4",
-      "description": "The fix-1 edits were destroyed mid-round: the mutation-sweep script reverts each mutation with `git checkout -- .`, and I ran it against an UNCOMMITTED working tree.",
-      "resolution": "Self-inflicted, caught immediately, no work lost. `git status` and a targeted grep confirmed survey.py, cyclonedx.py and .gitignore had reverted to the committed round-0 state (constraints.py survived as an untracked file). All five edits were re-applied from the round's own record, re-verified (suite, six-row table, invariants, gitignore checks) and COMMITTED as cdfdd3fc BEFORE the sweep was re-run. Recorded because the ordering matters for anyone reusing that script: commit first, sweep second."
-    },
-    {
-      "id": "B-5",
-      "description": "An untracked file appeared in the worktree that is not mine: dev/plans/runs/codex/0.8.20/slice-32-round1-20260729T170255Z.log",
-      "resolution": "Left UNTRACKED and unstaged. MY CITED REASONING WAS WRONG AND THE ORCHESTRATOR CORRECTED IT: I cited Slice 31's `c08a62df` as precedent for leaving such a log untracked, but that commit is the one that TRACKED Slice 31's transcripts, and TC-RUBRIC-7 requires a tracked path. So the file DOES belong in the repository — it simply is not mine to commit. The orchestrator is handling the transcript commits and has instructed me to leave `dev/plans/runs/codex/0.8.20/` alone, which I have. It remains the only entry in `git status --porcelain` at the branch tip; the worktree is otherwise clean."
-    },
-    {
-      "id": "B-6",
-      "description": "The scope amendment's 'behaviour must not change for a single candidate' (fix-1 brief) is contradicted by the criterion it asked me to add (AC-SBOM-24), on real data: `pkg:pypi/packaging@26.2` vs `constraint='<26.0,>=24.0'`.",
-      "resolution": "Not silently reconciled. The HITL ruling (seq-168) is the higher authority, so the single-candidate carve-out was removed and `_resolve_ambiguous` became `_resolve_targets`, running for any number of locked candidates. The fix-1 brief's STATED PURPOSE for that carve-out — 'no imperfection in the range grammar can regress a correct attachment' — is preserved exactly by distinguishing `None` from `False`: only a DEFINITE mismatch de-attaches. Flagged in the commit message, here, and in my report to the orchestrator, because departing from a written instruction should never be discovered later from a diff."
+      "id": "TC-111",
+      "source": "Slice 32 verification",
+      "status": "Designed behaviour (require_external fails rather than skips, §5.7) — but a precondition Slice 33 must satisfy before it can run the tool.",
+      "what": "The suite is GREEN only when the mini-project's declared dependencies are installed; nothing in the repo performs that install. With a bare interpreter: 16 failed, 7 passed, rc=1, ZERO skips, every failure tracing to `No module named 'cyclonedx'`."
     }
   ],
   "tests_frozen_verification": "AT ROUND 0 AND AT FIX-1: `git diff --stat be759b0f -- scripts/sbom-survey/tests` was EMPTY. AFTER THE seq-168 AMENDMENT it is `1 file changed, 275 insertions(+)` with ZERO deletion lines (`git diff … | grep -c '^-[^-]'` -> 0) — the single added criterion AC-SBOM-24 and its independent comparator, appended to test_cyclonedx.py, plus two pure-insertion import lines. No existing test was edited, weakened, deleted, renamed, skipped, xfailed or parametrized away; no existing docstring or assertion was altered; conftest.py was NOT touched at all. NO test was found to be incorrect or unsatisfiable — all 24 are satisfiable, and each was shown falsifiable by at least one mutation.",
-  "additional_changes_made_in_scope": [
-    "scripts/sbom-survey/README.md kept TRUE rather than merely status-bumped: the Slice-31-era claims that the directory contains 'only this README and the RED acceptance suite', that '23 failed' is expected, and that pytest runs the suite with 'no config file' are all now false, so each was corrected. The 'Deliberately NOT wired into CI' section keeps its ruling verbatim in substance and now states seq-166 explicitly — GREEN DOES NOT AUTHORIZE WIRING; green AND HITL approval are both required, neither sufficient.",
-    "A Layout table was added to the README so a reader can find each design section's implementation without grepping."
-  ],
-  "deliberately_not_done": [
-    "NO CI WIRING. .github/**, scripts/agent-test.sh, scripts/agent-verify.sh, scripts/check.sh, every ruff/pyright scope and every pytest config are untouched. test_cli.py::test_tool_declares_non_ci_gating_and_is_absent_from_ci_wiring stays green BECAUSE THE WIRING IS ABSENT. Standing HITL ruling seq-166.",
-    "NO dependency bump, and NO manifest or lockfile edited anywhere in the repository. The single manifest added is the mini-project's own scripts/sbom-survey/pyproject.toml, which is the tool's manifest and not the repo's. Root Cargo.toml / Cargo.lock, package.json / package-lock.json, src/python/pyproject.toml, src/python/uv.lock, src/ts/**, tools/docs/requirements.txt and dev/tools/mermaid/** are all byte-identical to the baseline.",
-    "NOTHING under src/rust/, src/python/, src/ts/ or engine/. No engine or binding change. SCHEMA_VERSION stays 24.",
-    "NO Slice 33 work. The tool was RUN only to make tests pass and to sanity-check the implementation; dev/plans/runs/0.8.20-slice-33-library-sweep-3-FINDINGS.md was NOT created, no survey/findings document was written, and no staleness verdict, surgical-SLOC judgement or dependabot.yml reconciliation was recorded anywhere.",
-    "NO AC minted in dev/acceptance.md and NO R-20-xx requirement id (TC-76). This slice is gated by TDD test name only.",
-    "NO edit to dev/plans/release-state-0.8.20.json, dev/plans/plan-0.8.20.md, dev/plans/runs/STATUS-0.8.20.md, dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md, dev/design/0.8.20-slice-31-sbom-survey-tool.md, dev/DOC-INDEX.md or any ledger — those belong to the orchestrator and the Steward.",
-    "NO push, no worktree created/moved/removed, no subagent spawned, no `git commit --no-verify`, and nothing installed into the repo's shared .venv at /home/coreyt/projects/fathomdb/.venv (the tool's dependencies live in an isolated venv OUTSIDE the repo tree at /home/coreyt/projects/fathomdb-worktrees/slice-32-venv, which the orchestrator may delete).",
-    "NO Rust/engine test suite run — out of scope and it contends with wall-clock assertions elsewhere. scripts/agent-test.sh was NOT used for any green claim (its aggregate exit is vacuous, TC-16)."
-  ],
-  "agent_verify_result": "not run — scripts/agent-verify.sh is the heavy Rust/engine gate and is out of scope for a slice that touches no Rust and no engine source. The gates actually applicable to this diff were all run individually and all exit 0; see the `gates` array, each rc captured with `rc=$?` on the immediately following line.",
-  "next_step_for_orchestrator_seq_168": "(SUPERSEDED by the fix-2 entry above.) Cherry-pick 8926d9bf (+ this closure-JSON commit). FOUR THINGS. (1) THE AMENDMENT'S ACCEPTANCE EVIDENCE IS MET: M13 and M14 BOTH fail against AC-SBOM-24, output quoted verbatim in findings_addressed; full suite `24 passed`, 0 failed / 0 skipped / 0 errors; the suite diff is 275 insertions and ZERO deletions. (2) I DEPARTED FROM A WRITTEN INSTRUCTION AND AM FLAGGING IT RATHER THAN LETTING YOU FIND IT IN A DIFF: the fix-1 brief said a single-candidate name must not change behaviour, and AC-SBOM-24 proved that rule emits a false row (`pkg:pypi/packaging@26.2` under `<26.0,>=24.0`). The carve-out is gone; its stated purpose is preserved by de-attaching only on a DEFINITE mismatch, never on an unevaluable one. See blocker B-6. (3) `AC-SBOM-24` also made M14 detectable for the first time — at fix-1 I reported it as a no-op and it genuinely was, because the no-match fallback was dead code until `packaging` reached it. That reverses my earlier statement and the reversal is recorded. (4) TC-113 is closed structurally: the sweep now refuses to run on a dirty tree, and the guard fired for real on this round, on this work. STILL OUTSTANDING FROM FIX-1 AND UNCHANGED: the install-required finding (TC-111) under `pytest.GREEN_REQUIRES_INSTALLING_THE_DECLARED_DEPENDENCIES`; and NO CI WIRING — reaching 24/24 authorizes nothing (seq-166).",
-  "next_step_for_orchestrator_fix_1": "(SUPERSEDED by the seq-168 entry above.) Cherry-pick cdfdd3fc (+ this closure-JSON commit) on top of what you already took, then re-spawn codex on the branch HEAD for the fix-1 re-review. FIVE THINGS TO CARRY FORWARD. (1) THE FIX IS NOT PROTECTED BY A REGRESSION TEST — mutations M13 and M14 restore the exact defect and the frozen suite stays GREEN. If the suite is ever unfrozen, a criterion asserting 'no component carries a `fathomdb:constraint` its own version does not satisfy' closes it cheaply and would have caught this at Slice 31. Please carry that to the Steward as a Slice-33-or-later item; I could not add it here. (2) GREEN REQUIRES INSTALLING THE DECLARED DEPENDENCIES and nothing in the repo does that install — the full reproduction sequence, both install routes, and the bare-interpreter numbers (`16 failed, 7 passed`, 0 skipped, 0 errors) are under `pytest.GREEN_REQUIRES_INSTALLING_THE_DECLARED_DEPENDENCIES`. Note one detail has shifted since your round-0 observation: the failing traces now name `semver` rather than `cyclonedx`, because `sbom_survey.survey` imports `sbom_survey.constraints` which imports `semver` at module level. Same cause, different first casualty. (3) The `pip install` route leaves `build/` and `*.egg-info/`; fix-1 ignores both, verified clean-room, and AC-SBOM-18's two verdicts are unchanged (`git check-ignore -v` output quoted in files_changed). (4) The stale allowlist blob SHA is recorded as corrected and will not be re-propagated. (5) dev/plans/runs/codex/0.8.20/slice-32-round1-20260729T170255Z.log is yours — I left it untracked per Slice 31's precedent.",
-  "next_step_for_orchestrator": "(ROUND 0, superseded by the fix-1 entry above.) Cherry-pick fc0a6da4 (+ this closure-JSON commit) onto the 0.8.20 mainline, then spawn the codex §9 reviewer on this branch HEAD. Two things the reviewer should be pointed at rather than made to rediscover: (1) the TC-97 `configfile:` line is this directory's OWN pyproject.toml acting as a rootdir anchor with an EMPTY applied config — probed values are in findings_addressed, and the mechanism is quotable from _pytest/config/findpaths.py::locate_config; (2) the three design ambiguities §5 does not settle (component tier under multiple manifests, which versions a name-level declaration attaches to, and where fathomdb:edge-kind can live given CycloneDX dependency entries carry no properties) are resolved and recorded here — if the reviewer disagrees with any of them, only the first has a visible consequence on this repo (`packaging` tiers dev-tooling), and the frozen AC-SBOM-11 forces it. ALSO: correct the stale gate-3 allowlist blob SHA (93ef3a86 -> 140c0f63) in the Slice-33 prompt. And a standing reminder for whoever writes that prompt: getting this suite GREEN does NOT authorize wiring it into CI (seq-166).",
-  "next_step_for_orchestrator_fix_3": "Cherry-pick a45e91d8 (+ this closure-JSON commit) and re-spawn codex for the fix-3 re-review. FIVE THINGS. (1) ACCEPTANCE IS MET AND MEASURED, all five items: valid `--now` still works and AC-SBOM-22's exact pinned value was checked in the test source BEFORE tightening the parser; `--now not-a-date` writes nothing and exits 64; the default path is byte-identical with the fixed epoch 17011 days from the wall clock; 24 GREEN and additions-only; and the installed console script re-run after SCRUBBING build/ and *.egg-info/ gives install_rc=0 / CLI_RC=0. (2) EXIT CODE 64 IS A DELIBERATE NON-COLLISION — argparse's own usage code is 2, which is §5.9's 'untiered manifest'; 64 is EX_USAGE, outside the ruled set. Every argparse usage error routes there, so `--bogus` also moved 2 -> 64. If the Steward would rather the CLI kept argparse's 2, that is a one-line revert of `_Parser`, but I think it would make AC-SBOM-21's signal ambiguous. (3) TC-115 CARRIED AND NOT ACTED ON: no criterion added, nothing wired. Note the same blindness recurred here — the frozen suite catches neither fix-3 regression mutation, because it only ever passes a well-formed `now`. That is now the THIRD consecutive round found by reading rather than by the oracle, which is itself a datum for wherever the install-then-run smoke question lands. (4) The fix-2 reasoning the Steward called durable is preserved verbatim in findings_addressed: AC-SBOM-08/AC-SBOM-11 load the TRACKED tiers.toml and grade it against a document run_survey() produced with no tier_map, so a wheel-bundled default would let those two diverge. (5) The round-3 codex transcript in this worktree is yours and is left untracked; dev/design/**, dev/plans/runs/codex/** and test_report.py were not touched, and I did not go near the escalated [P2].",
-  "next_step_for_orchestrator_fix_2": "(SUPERSEDED by the fix-3 entry above.) Cherry-pick 6fbe05df (+ this closure-JSON commit) and re-spawn codex for the fix-2 re-review. FIVE THINGS. (1) ACCEPTANCE IS MET AND WAS MEASURED, NOT ARGUED: install_rc=0 / CLI_RC=0 for the TC-111 flow; MISSING_RC=3 with a legible message for a repo without the tracked rules; REMEDY_RC=0 proving the message's own advice works; SRC_RC=0 for the source-tree path; and the installed and source-tree runs produce BYTE-IDENTICAL artifacts. 24 passed; suite additions-only (`275 0`). (2) THE ROUTE IS `repo_root`, AND `pyproject.toml` WAS NOT TOUCHED — the three-reason defence is in findings_addressed and in `paths.tiers_file_for`'s docstring; the strongest of the three is that packaging the file would let `AC-SBOM-08`/`AC-SBOM-11` grade a file the survey never read. (3) THE SUITE STRUCTURALLY CANNOT CATCH THIS CLASS: mutation M17 (revert to package-relative) leaves all 24 GREEN, because the tests run from the source tree where both paths are the same file. The guard that would catch it is an install-then-run SHELL smoke, not a pytest criterion. I did not add it and did not wire anything — seq-166 — but the Steward should know the gap exists and that it is the same shape as fix-1's. (4) I did NOT touch the [P2], `test_report.py`, `dev/design/**` or `dev/plans/runs/codex/**`; 79d3bd1d is yours and is the parent of my fix-2 commit. (5) Round accounting: fix-2, a NEW and DISTINCT defect from fix-1's (wrong ATTACHMENT vs wrong RESOLUTION), so 2 of 3 under TC-75 with neither round re-opening the other."
+  "tiers_file_resolution_reasoning": "The durable argument for fix-2, kept per steward seq-171: AC-SBOM-08 and AC-SBOM-11 load the TRACKED tiers.toml and grade it against a document run_survey() produced with NO tier_map. A wheel-bundled default would let those two diverge — the exact TC-105 integration-boundary class this slice fought throughout. Resolving from repo_root makes them byte-for-byte the same file. The tier rules are tracked data ABOUT THE SURVEYED REPOSITORY, so they travel with the repo, not with the wheel."
 }
