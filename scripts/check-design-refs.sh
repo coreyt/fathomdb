@@ -316,8 +316,23 @@ if [ "$STAGED_ONLY" -eq 1 ]; then
                   -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES \
                   -u GIT_COMMON_DIR -u GIT_PREFIX \
                   git rev-parse --show-toplevel 2>/dev/null || true)"
+  # `cd`+`pwd -P`, NOT `readlink -f`. This is the repo's existing portable idiom
+  # (scripts/preflight.sh `abs_dir`, whose comment says why): BSD/macOS
+  # `readlink` has no `-f`. That mattered here in the worst possible way — BOTH
+  # sides of the comparison would have degraded to the empty string, `"" != ""`
+  # is FALSE, and this guard would have SILENTLY PASSED. A check that goes green
+  # because both of its inputs failed identically is the same vacuous-green class
+  # as the arm-17 that watched a live defect go by, and this is the one guard
+  # whose entire job is to prove the toplevel resolved INSIDE the snapshot.
+  abs_dir() { ( cd "$1" 2>/dev/null && pwd -P ); }
+  SNAP_TOP_ABS="$(abs_dir "${SNAP_TOP:-/nonexistent}")"
+  SNAPSHOT_ABS="$(abs_dir "$SNAPSHOT")"
+  # FAIL CLOSED. An empty normalisation means the path was not a reachable
+  # directory, so there is nothing to compare — never let empty-equals-empty be a
+  # reachable pass.
   if [ ! -d "$SNAPSHOT/.git" ] \
-     || [ "$(readlink -f "${SNAP_TOP:-/nonexistent}")" != "$(readlink -f "$SNAPSHOT")" ]; then
+     || [ -z "$SNAP_TOP_ABS" ] || [ -z "$SNAPSHOT_ABS" ] \
+     || [ "$SNAP_TOP_ABS" != "$SNAPSHOT_ABS" ]; then
     printf 'check-design-refs: NOT CHECKED — the index snapshot does not resolve to itself\n' >&2
     printf '  (toplevel came back as "%s"). Refusing to sweep, because a git call that\n' "$SNAP_TOP" >&2
     printf '  resolves outside the snapshot would answer about the wrong tree. Design\n' >&2

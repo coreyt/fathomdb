@@ -93,7 +93,11 @@ case "$REAL_COMMON_DIR" in
   /*) : ;;
   *)  REAL_COMMON_DIR="$REPO_ROOT/$REAL_COMMON_DIR" ;;
 esac
-COMMON_BEFORE="$(cat "$REAL_COMMON_DIR/config" 2>/dev/null | md5sum)"
+# `cksum` is POSIX; `md5sum` is GNU and would hash nothing on BSD, making this
+# canary compare an empty string against an empty string and pass regardless.
+# The raw bytes are kept so arm 18 can assert they were actually read.
+COMMON_CFG_BEFORE="$(cat "$REAL_COMMON_DIR/config" 2>/dev/null || true)"
+COMMON_BEFORE="$(printf '%s' "$COMMON_CFG_BEFORE" | cksum)"
 BARE_BEFORE="$(git -C "$REPO_ROOT" config --get core.bare 2>/dev/null || echo unset)"
 
 TMPROOT="$(mktemp -d)"
@@ -681,17 +685,25 @@ fi
 # `cd "$(git rev-parse --show-toplevel)"` degrades to `cd ""`, a bash no-op), so
 # a verdict-only assertion CANNOT see this — which is exactly how the old arm 17
 # passed over it.
-admin_signature() { find "$1" -printf '%P %T@\n' 2>/dev/null | LC_ALL=C sort | md5sum; }
+# `cksum` (POSIX) rather than `md5sum` (GNU). And the raw listing is emitted
+# BEFORE hashing so the caller can assert it is NON-EMPTY: `find -printf` is
+# GNU-only, and on BSD it would fail, hash nothing, and yield the SAME constant
+# both times — an arm about fail-open that itself fails open.
+admin_listing() { find "$1" -printf '%P %T@\n' 2>/dev/null | LC_ALL=C sort; }
 setup_fixture
 (cd "$FIX" && git rm -q dev/design/widget-design.md)
-SIG_BEFORE="$(admin_signature "$FIX/.git")"
+LIST_BEFORE="$(admin_listing "$FIX/.git")"
+SIG_BEFORE="$(printf '%s' "$LIST_BEFORE" | cksum)"
 set +e
 OUT="$(cd "$FIX" && GIT_DIR="$FIX/.git" GIT_INDEX_FILE="$FIX/.git/index" \
         bash ./scripts/check-design-refs.sh --staged-only --release 9.9.9 --slice 0 2>&1)"
 RC=$?
 set -e
-SIG_AFTER="$(admin_signature "$FIX/.git")"
-if [ "$RC" -eq 1 ] && [ "$SIG_BEFORE" = "$SIG_AFTER" ]; then
+SIG_AFTER="$(printf '%s' "$(admin_listing "$FIX/.git")" | cksum)"
+if [ -z "$LIST_BEFORE" ]; then
+  fail "arm 17b (no write into the gated repo): the admin listing came back EMPTY, so the \
+comparison would pass no matter what the gate did (find -printf unsupported?)"
+elif [ "$RC" -eq 1 ] && [ "$SIG_BEFORE" = "$SIG_AFTER" ]; then
   pass "read-only under an exported absolute GIT_DIR — the gated repo's .git is untouched"
 else
   fail "arm 17b (no write into the gated repo): rc=$RC signature changed=$( \
@@ -773,6 +785,58 @@ else
   fail "arm 17e (self-resolution): $GATE does not verify the snapshot's own toplevel"
 fi
 
+# --- Arm 17f: THE SELF-CHECK STILL REFUSES UNDER A BSD `readlink` ----------
+# A PURE-LINUX ARM CANNOT SEE THIS DEFECT, which is exactly how it got here. The
+# self-check used `readlink -f`, which BSD/macOS `readlink` does not support:
+# both sides of the comparison degrade to the empty string, `"" != ""` is false,
+# and the guard whose whole job is to prove the toplevel resolved inside the
+# snapshot SILENTLY PASSES. So this arm shadows `readlink` on PATH with a stub
+# that behaves like BSD's — rejecting `-f` — and requires the gate to still
+# reach a correct verdict rather than sail through.
+setup_fixture
+mkdir -p "$TMPROOT/bsdbin"
+cat >"$TMPROOT/bsdbin/readlink" <<'EOF'
+#!/usr/bin/env bash
+# BSD/macOS readlink: no -f. Behave exactly as it does — complain and fail.
+for a in "$@"; do
+  case "$a" in
+    -f|-f*) printf 'readlink: illegal option -- f\n' >&2; exit 1 ;;
+  esac
+done
+exec /usr/bin/readlink "$@"
+EOF
+chmod +x "$TMPROOT/bsdbin/readlink"
+(cd "$FIX" && git rm -q dev/design/widget-design.md)
+set +e
+OUT="$(cd "$FIX" && PATH="$TMPROOT/bsdbin:$PATH" \
+        bash ./scripts/check-design-refs.sh --staged-only --release 9.9.9 --slice 0 2>&1)"
+RC=$?
+set -e
+# NON-VACUITY: prove the stub really is on PATH and really refuses -f, otherwise
+# this arm is testing a GNU readlink under a different name.
+STUB_RC=0
+PATH="$TMPROOT/bsdbin:$PATH" readlink -f / >/dev/null 2>&1 || STUB_RC=1
+if [ "$STUB_RC" -ne 1 ]; then
+  fail "arm 17f (BSD readlink): the stub did not reject -f, so the arm is vacuous"
+elif [ "$RC" -eq 1 ] && grep -qE 'R-9-A|widget_readiness' <<<"$OUT" \
+     && ! grep -qi 'readlink' <<<"$OUT"; then
+  pass "the self-check works under a BSD readlink (no -f) — correct verdict, no readlink errors"
+else
+  fail "arm 17f (BSD readlink): rc=$RC out=$OUT"
+fi
+
+# --- Arm 17g: NO GNU-ONLY CONSTRUCT IN THE GATE ----------------------------
+# The gate runs on the commit path on whatever machine an agent is using. Its
+# only GNU dependency was `readlink -f`, and that one failed OPEN. Keep the list
+# empty rather than re-auditing by hand each round.
+GNUISMS="$(grep -nE '(^|[^-[:alnum:]_])(readlink[[:space:]]+-f|grep[[:space:]]+-P|sed[[:space:]]+-i[[:space:]]|stat[[:space:]]+-c|date[[:space:]]+-d|md5sum)' \
+             <(sed 's/^[[:space:]]*#.*$//' "$GATE") || true)"
+if [ -z "$GNUISMS" ]; then
+  pass "the gate uses no GNU-only construct (readlink -f, grep -P, sed -i, stat -c, date -d, md5sum)"
+else
+  fail "arm 17g (portability): GNU-only construct(s) in $GATE: $GNUISMS"
+fi
+
 # --- Arm 18: THE PRIMARY CHECKOUT'S CONFIG IS UNTOUCHED BY THIS WHOLE SUITE -
 # THE ARM THAT WOULD HAVE CAUGHT TC-128, and it is deliberately scoped to the
 # ENTIRE suite rather than to one gate invocation: the damage was done by a
@@ -780,9 +844,12 @@ fi
 # common dir is where `core.bare` lives, and it is shared by every linked
 # worktree — so this is the canary for the primary checkout, from a test that
 # only ever means to touch a fixture under mktemp -d.
-COMMON_AFTER="$(cat "$REAL_COMMON_DIR/config" 2>/dev/null | md5sum)"
+COMMON_AFTER="$(printf '%s' "$(cat "$REAL_COMMON_DIR/config" 2>/dev/null || true)" | cksum)"
 BARE_AFTER="$(git -C "$REPO_ROOT" config --get core.bare 2>/dev/null || echo unset)"
-if [ "$COMMON_BEFORE" = "$COMMON_AFTER" ] && [ "$BARE_BEFORE" = "$BARE_AFTER" ]; then
+if [ -z "$COMMON_CFG_BEFORE" ]; then
+  fail "arm 18 (primary config canary): the shared config at $REAL_COMMON_DIR/config read \
+back EMPTY, so this canary would pass no matter what happened to it"
+elif [ "$COMMON_BEFORE" = "$COMMON_AFTER" ] && [ "$BARE_BEFORE" = "$BARE_AFTER" ]; then
   pass "the primary checkout's git config is byte-identical after the suite (core.bare=$BARE_AFTER)"
 else
   fail "arm 18 (primary config canary): the shared git config CHANGED during this suite. \
