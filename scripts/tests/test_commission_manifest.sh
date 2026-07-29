@@ -788,6 +788,244 @@ else
   fail "arm 8j (gapped landed): rc=$RC base=[$BASE_LINE]"
 fi
 
+# ===========================================================================
+# FOURTH PREDICATE (TC-92 / TC-94), arms 11a-11h: a slice may CITE its design
+# docs by hand, and a cited doc is checked exactly like every other citation.
+# ===========================================================================
+# THE INCIDENT, MEASURED. The design tier has two DISCOVERY selectors — a
+# filename selector (`<release>-slice-NN-*.md`) and a token selector over
+# `dev/design/**` content — and an entire class of slice defeats both BY
+# CONSTRUCTION. `plan-<release>.md` §3 is frozen at Slice 0, so a RESERVED-GAP
+# slice minted mid-release by HITL ruling carries requirement ids (R-20-CR,
+# R-20-VC, R-20-SV and their TC-* carries) that appear NOWHERE in dev/design/**,
+# and it never got a §3.0 memo of its own either. The filename selector hit
+# exactly 1 of the 12 slices in the 0.8.20 ladder. The TC-37 vacuous-pass guard
+# therefore hard-failed (exit 1) on a perfectly well-designed slice — three in a
+# row: Slices 21, 22 and 23.
+#
+# The fix is an OPTIONAL `design_refs` list on the ladder entry. It is CITATION,
+# not discovery, and three properties are the whole point:
+#   * ABSENT MEANS ABSENT (arm 11d) — every byte of the manifest for a slice
+#     without `design_refs` is what it was before the feature existed, asserted
+#     against the PRE-CHANGE generator recovered from git, not against a
+#     hand-copied golden.
+#   * A CURATED PATH IS A CHECKED PATH (arm 11b) — CHECK 1 applies with no
+#     exemption, because curation nobody checks rots exactly like a scan hit.
+#   * IT REACHES OUTSIDE `dev/design/` (arms 11c/11c2) — dev/adr/**,
+#     dev/interfaces/** — which the scan's walker can never do.
+# And the guard it unblocks must not be weakened by it (arms 11e/11e2).
+
+# --- Arm 11a: a `design_refs` doc reaches §6, marked CURATED ----------------
+# The cited doc carries NO slice token and is NOT named for this release+slice,
+# so NEITHER discovery selector can reach it: if it appears, it appears because
+# it was curated. Pre-change the key is ignored entirely — measured RED.
+setup_fixture
+cat >"$FIX/dev/design/hand-picked.md" <<'EOF'
+---
+status: locked
+---
+
+# Hand-picked
+
+Nothing in here names this slice, its requirement or its carries.
+EOF
+mutate_state "L[10]['design_refs'] = ['dev/design/hand-picked.md']"
+run_gen 9.9.9 10
+if [ "$RC" -eq 0 ] \
+   && grep -qE 'CURATED.*dev/design/hand-picked\.md' <<<"$OUT" \
+   && grep -qE 'CURATED.*\[locked\]|\[locked\].*CURATED' <<<"$OUT" \
+   && ! grep -qE 'CURATED.*widget-design\.md' <<<"$OUT"; then
+  pass "design_refs — a hand-cited doc neither selector can find is emitted, marked CURATED"
+else
+  fail "arm 11a (design_refs emitted + marked): rc=$RC out=$OUT"
+fi
+
+# --- Arm 11b: a `design_refs` path that does NOT resolve -> hard FAIL -------
+# CHECK 1 with no exemption. A curated citation is the one a human chose, so a
+# dead one is MORE misleading than a dead scan hit, not less: it carries the
+# Steward's authority. Pre-change: the key was ignored, so the manifest was
+# emitted and exited 0 — measured RED.
+setup_fixture
+mutate_state "L[10]['design_refs'] = ['dev/design/NO-SUCH-DESIGN.md']"
+run_gen 9.9.9 10
+if [ "$RC" -ne 0 ] \
+   && grep -q 'NO-SUCH-DESIGN.md' <<<"$OUT" \
+   && grep -qi 'does NOT exist' <<<"$OUT" \
+   && ! grep -q 'COMMISSION MANIFEST' <<<"$OUT"; then
+  pass "design_refs — a curated path that does not resolve HARD-fails and emits no manifest"
+else
+  fail "arm 11b (dead design_refs path): rc=$RC out=$OUT"
+fi
+
+# --- Arm 11c: a doc OUTSIDE `dev/design/` is reachable, status told honestly -
+# DESIGN_ROOT is a real boundary and the walker is NOT widened (that would drag
+# every unrelated doc in); `design_refs` is the mechanism for dev/adr/** and
+# dev/interfaces/**. This fixture ADR has no frontmatter at all, so the manifest
+# must SAY there is no recorded status rather than invent one.
+setup_fixture
+mkdir -p "$FIX/dev/adr"
+printf '# ADR-9.9.9 — error taxonomy\n\nNo frontmatter at all.\n' \
+  >"$FIX/dev/adr/ADR-9.9.9-taxonomy.md"
+mutate_state "L[10]['design_refs'] = ['dev/adr/ADR-9.9.9-taxonomy.md']"
+run_gen 9.9.9 10
+ADR_ROW="$(grep -m1 'ADR-9.9.9-taxonomy.md' <<<"$OUT" || true)"
+if [ "$RC" -eq 0 ] \
+   && grep -q 'CURATED' <<<"$ADR_ROW" \
+   && grep -qiE 'no .?status:' <<<"$ADR_ROW" \
+   && ! grep -qE '\[(ACTIVE|locked|accepted|UNREVIEWED)\]' <<<"$ADR_ROW"; then
+  pass "design_refs — a dev/adr doc the scan can never reach is cited, and its MISSING status is said so"
+else
+  fail "arm 11c (out-of-tree design_ref): rc=$RC row=[$ADR_ROW]"
+fi
+
+# --- Arm 11c2: ...and an out-of-tree doc that DOES record a status shows it --
+# Without this, arm 11c would be satisfied by a generator that simply never
+# reads frontmatter outside DESIGN_ROOT.
+setup_fixture
+mkdir -p "$FIX/dev/adr"
+printf -- '---\nstatus: accepted\n---\n\n# ADR-9.9.9\n' >"$FIX/dev/adr/ADR-9.9.9-signed.md"
+mutate_state "L[10]['design_refs'] = ['dev/adr/ADR-9.9.9-signed.md']"
+run_gen 9.9.9 10
+ADR_ROW="$(grep -m1 'ADR-9.9.9-signed.md' <<<"$OUT" || true)"
+if [ "$RC" -eq 0 ] && grep -q 'CURATED' <<<"$ADR_ROW" && grep -q 'accepted' <<<"$ADR_ROW"; then
+  pass "design_refs — an out-of-tree doc's RECORDED status is read and reported"
+else
+  fail "arm 11c2 (out-of-tree status read): rc=$RC row=[$ADR_ROW]"
+fi
+
+# --- Arm 11d: ABSENT `design_refs` -> byte-identical to the PRE-CHANGE tool --
+# The additivity claim, asserted rather than asserted-about. The comparison
+# runs the generator as it stood BEFORE `design_refs` existed — recovered from
+# git by walking this file's history back to the newest revision that does not
+# mention `design_refs` — against the current one, over the SAME fixture, with
+# no `design_refs` anywhere in the state file. Any drift at all is a fail.
+#
+# NON-VACUITY: every way the recovery can come up empty (squashed history, a
+# shallow clone, the file renamed) routes to fail(), never to a silent pass. A
+# comparison that quietly compares nothing is worse than no comparison.
+PRE_GEN="$TMPROOT/commission-manifest-pre.sh"
+PRE_SHA=""
+while read -r c; do
+  [ -n "$c" ] || continue
+  if ! (cd "$REPO_ROOT" && git show "$c:scripts/commission-manifest.sh" 2>/dev/null) \
+       | grep -q 'design_refs'; then PRE_SHA="$c"; break; fi
+done < <(cd "$REPO_ROOT" && git log --format=%H -- scripts/commission-manifest.sh)
+if [ -z "$PRE_SHA" ]; then
+  fail "arm 11d (pre-change generator): no revision of scripts/commission-manifest.sh predates design_refs — cannot prove additivity; do NOT skip this"
+else
+  (cd "$REPO_ROOT" && git show "$PRE_SHA:scripts/commission-manifest.sh") >"$PRE_GEN"
+  chmod +x "$PRE_GEN"
+  D11D_DRIFT=""
+  for d11d_slice in 10 30; do
+    setup_fixture
+    printf -- '---\nstatus: ACTIVE\n---\n\n# Slice 30 memo\n' >"$FIX/dev/design/9.9.9-slice-30-design.md"
+    set +e
+    PRE_OUT="$(cd "$FIX" && bash "$PRE_GEN" 9.9.9 "$d11d_slice" 2>&1)"
+    PRE_RC=$?
+    POST_OUT="$(cd "$FIX" && ./scripts/commission-manifest.sh 9.9.9 "$d11d_slice" 2>&1)"
+    POST_RC=$?
+    set -e
+    [ "$PRE_RC" -eq 0 ] && [ "$POST_RC" -eq 0 ] \
+      || D11D_DRIFT="$D11D_DRIFT slice-$d11d_slice:rc($PRE_RC/$POST_RC)"
+    [ "$PRE_OUT" = "$POST_OUT" ] \
+      || D11D_DRIFT="$D11D_DRIFT slice-$d11d_slice:$(diff <(printf '%s\n' "$PRE_OUT") <(printf '%s\n' "$POST_OUT") | head -20 | tr '\n' '~')"
+  done
+  if [ -z "$D11D_DRIFT" ]; then
+    pass "design_refs is ADDITIVE — with the key absent the manifest is byte-identical to the pre-change generator ($PRE_SHA)"
+  else
+    fail "arm 11d (additivity): drift:$D11D_DRIFT"
+  fi
+fi
+
+# --- Arm 11e: the TC-37 vacuous guard is NOT weakened by the feature --------
+# `design_refs: []` is not a design of record. With both selectors empty AND an
+# empty curated list, the manifest still briefs nobody, so it must still die.
+setup_fixture
+perl -0777 -pi -e 's/"short": "R-9-B", "title": "widget_readiness \+ the TC-99 terminal fix"/"short": "R-0-ZZ", "title": "nothing matches this"/' \
+  "$FIX/dev/plans/release-state-9.9.9.json"
+rm -f "$FIX/dev/design/9.9.9-slice-10-design.md"
+mutate_state "L[10]['design_refs'] = []"
+run_gen 9.9.9 10
+if [ "$RC" -ne 0 ] && grep -q 'TC-37' <<<"$OUT" && ! grep -q 'COMMISSION MANIFEST' <<<"$OUT"; then
+  pass "vacuity guard — an EMPTY \`design_refs\` plus an empty scan still HARD-fails (TC-37)"
+else
+  fail "arm 11e (empty design_refs still vacuous): rc=$RC out=$OUT"
+fi
+
+# --- Arm 11e2: ...but a NON-empty one legitimately unblocks the same slice ---
+# The direction the feature exists for, and the proof that arm 11e's green is
+# about emptiness rather than about the generator refusing to look. Same
+# otherwise-vacuous slice, one curated citation added. Pre-change: RED (dies).
+setup_fixture
+cat >"$FIX/dev/design/hand-picked.md" <<'EOF'
+---
+status: locked
+---
+
+# Hand-picked
+
+Nothing in here names this slice, its requirement or its carries.
+EOF
+perl -0777 -pi -e 's/"short": "R-9-B", "title": "widget_readiness \+ the TC-99 terminal fix"/"short": "R-0-ZZ", "title": "nothing matches this"/' \
+  "$FIX/dev/plans/release-state-9.9.9.json"
+rm -f "$FIX/dev/design/9.9.9-slice-10-design.md"
+mutate_state "L[10]['design_refs'] = ['dev/design/hand-picked.md']"
+run_gen 9.9.9 10
+if [ "$RC" -eq 0 ] && grep -qE 'CURATED.*hand-picked\.md' <<<"$OUT" \
+   && grep -q 'COMMISSION MANIFEST' <<<"$OUT"; then
+  pass "design_refs — a reserved-gap slice both selectors miss is commissionable via curation"
+else
+  fail "arm 11e2 (curation unblocks the guard): rc=$RC out=$OUT"
+fi
+
+# --- Arm 11f: the coverage report names unmatched tokens even when others hit
+# TC-94 defect 3. A slice with ONE weak incidental match must not read like a
+# slice with full coverage: the report is per-TOKEN, so a token nothing mentions
+# is named even while its neighbours matched. Kept a REPORT, never a failure —
+# the run still exits 0.
+#
+# HONEST LABEL: this arm is GREEN at baseline. The brief that commissioned it
+# stated the report fired "only when every token misses"; that premise is
+# measurably false (0.8.20 Slices 15/20/21/31 all emit it with other tokens
+# matched, and `git log -S` shows the block has never changed since 1b9cf9a3).
+# It is therefore a LOCK on existing behaviour, not a RED-first test.
+setup_fixture
+mutate_state "L[10]['title'] = L[10]['title'] + ' and the TC-404 carry'"
+run_gen 9.9.9 10
+if [ "$RC" -eq 0 ] \
+   && grep -q 'NO design doc mentions' <<<"$OUT" \
+   && grep -qE 'NO design doc mentions:[^.]*TC-404' <<<"$OUT" \
+   && grep -q 'dev/design/widget-design.md' <<<"$OUT" \
+   && ! grep -qE 'NO design doc mentions:[^.]*(TC-99|widget_readiness)' <<<"$OUT"; then
+  pass "coverage report — an unmatched token is named even though the slice's other tokens matched"
+else
+  fail "arm 11f (partial-coverage report): rc=$RC out=$OUT"
+fi
+
+# --- Arm 11g: a malformed `design_refs` HARD-fails rather than being ignored -
+# Silently dropping a mistyped curation would put the slice straight back into
+# the vacuous-guard failure it was added to fix, with no explanation.
+setup_fixture
+mutate_state "L[10]['design_refs'] = 'dev/design/widget-design.md'"
+run_gen 9.9.9 10
+if [ "$RC" -ne 0 ] && grep -q 'design_refs' <<<"$OUT" && ! grep -q 'COMMISSION MANIFEST' <<<"$OUT"; then
+  pass "design_refs — a non-list value HARD-fails instead of being silently ignored"
+else
+  fail "arm 11g (malformed design_refs): rc=$RC out=$OUT"
+fi
+
+# --- Arm 11h: an ABSOLUTE or escaping `design_refs` path HARD-fails ---------
+# Every other cited path in the manifest is repo-relative; a curated one that
+# escapes the checkout would resolve on the author's machine and nowhere else.
+setup_fixture
+mutate_state "L[10]['design_refs'] = ['../outside.md']"
+run_gen 9.9.9 10
+if [ "$RC" -ne 0 ] && grep -q 'design_refs' <<<"$OUT" && ! grep -q 'COMMISSION MANIFEST' <<<"$OUT"; then
+  pass "design_refs — a path escaping the repo root HARD-fails"
+else
+  fail "arm 11h (escaping design_refs path): rc=$RC out=$OUT"
+fi
+
 # --- Arm 9: the REAL repo — Slice 20 of 0.8.20 (the acceptance criterion) --
 # Every emitted path must resolve. This is the regression half of the pair and
 # the tranche's stated bar.
@@ -918,6 +1156,62 @@ if [ "$SWEEP_RC" -eq 0 ]; then
   pass "real repo — --verify-all is green across every live release-state file"
 else
   fail "arm 9c (real sweep): rc=$SWEEP_RC out=$SWEEP_OUT"
+fi
+
+# --- Arm 9f: the REAL repo's curated slices generate, and cite what they name
+# The live half of arms 11a-11c. DERIVED from the state file, never literal: it
+# reads every ladder entry that carries `design_refs`, generates that slice's
+# manifest, and asserts exit 0 plus a CURATED row for each named path. Adding,
+# removing or re-pointing a curation moves the assertion with it, so this cannot
+# become the time-bombed literal that TC-81 named (arm 9d's history).
+#
+# NON-VACUITY: if NO entry in the live release-state files carries `design_refs`
+# the arm FAILS. The three reserved-gap slices (21/22/23) are exactly why the
+# feature exists; a repo where the curation silently vanished must go red here,
+# not quietly pass with an empty loop.
+set +e
+CURATED_PAIRS="$(cd "$REPO_ROOT" && python3 -c '
+import glob, json, sys
+rows = []
+for p in sorted(glob.glob("dev/plans/release-state-*.json")):
+    rel = p[len("dev/plans/release-state-"):-len(".json")]
+    try:
+        s = json.load(open(p))
+    except Exception as e:
+        print("ERR %s unreadable: %s" % (p, e)); raise SystemExit(0)
+    for e in s.get("ladder") or []:
+        for ref in e.get("design_refs") or []:
+            rows.append("%s %s %s" % (rel, e.get("slice"), ref))
+print("\n".join(rows))
+' 2>&1)"
+CURATED_RC=$?
+set -e
+if [ "$CURATED_RC" -ne 0 ] || grep -q '^ERR' <<<"$CURATED_PAIRS" || [ -z "$CURATED_PAIRS" ]; then
+  fail "arm 9f (live design_refs): rc=$CURATED_RC no curated ladder entry found — out=[$CURATED_PAIRS]"
+else
+  C9F_BAD=""
+  C9F_SEEN=0
+  C9F_LAST=""
+  C9F_OUT=""
+  while read -r c9f_rel c9f_slice c9f_ref; do
+    [ -n "$c9f_ref" ] || continue
+    C9F_SEEN=$((C9F_SEEN + 1))
+    if [ "$c9f_rel/$c9f_slice" != "$C9F_LAST" ]; then
+      C9F_LAST="$c9f_rel/$c9f_slice"
+      set +e
+      C9F_OUT="$("$REPO_ROOT/scripts/commission-manifest.sh" "$c9f_rel" "$c9f_slice" 2>&1)"
+      C9F_RC=$?
+      set -e
+      [ "$C9F_RC" -eq 0 ] || C9F_BAD="$C9F_BAD $c9f_rel/$c9f_slice:rc=$C9F_RC"
+    fi
+    grep -F "$c9f_ref" <<<"$C9F_OUT" | grep -q 'CURATED' \
+      || C9F_BAD="$C9F_BAD $c9f_rel/$c9f_slice:$c9f_ref-not-curated"
+  done <<<"$CURATED_PAIRS"
+  if [ -z "$C9F_BAD" ] && [ "$C9F_SEEN" -gt 0 ]; then
+    pass "real repo — every ladder entry carrying \`design_refs\` generates and cites all $C9F_SEEN curated doc(s)"
+  else
+    fail "arm 9f (live curated citations): seen=$C9F_SEEN bad:$C9F_BAD"
+  fi
 fi
 
 # --- Arm 10: wired into agent-test.sh and into an ALWAYS-ON CI job ---------
