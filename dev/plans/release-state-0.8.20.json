@@ -145,15 +145,46 @@
     },
     {
       "slice": 31,
-      "short": "LIB",
-      "title": "Library Sweep #3 — dependency hygiene; carries NO R-20-xx requirement id (TC-76), a deliberate departure from the F-12 pico precedent",
+      "short": "SBOM-SPEC",
+      "title": "Library Sweep #3, leg 1 of 3 — SBOM/dependency-survey tool: requirements + acceptance criteria + design + RED tests. NO code. Carries NO R-20-xx requirement id (the TC-76 precedent)",
       "depends_on": [],
       "status": "NOT_STARTED",
       "sha": null,
       "reserved_gap": true,
       "no_requirement_id": true,
       "sequenced_after": 30,
-      "sequencing_note": "no technical dependency on 30; placed after it by HITL ruling 2026-07-27 so the publish precondition stays first on the critical path"
+      "sequencing_note": "no technical dependency on 30; placed after it by HITL ruling 2026-07-27 so the publish precondition stays first on the critical path. RE-SCOPED by HITL 2026-07-29 (steward seq-153): the un-enumerated manual sweep is replaced by a TOOL built across slices 31/32/33.",
+      "design_refs": [
+        "dev/plans/prompts/LIBRARY-BUMP-STEWARD.md"
+      ]
+    },
+    {
+      "slice": 32,
+      "short": "SBOM-CODE",
+      "title": "Library Sweep #3, leg 2 of 3 — implement the SBOM/dependency-survey tool against slice 31's RED tests. CODE ONLY; applies no bump and edits no manifest or lockfile",
+      "depends_on": [
+        31
+      ],
+      "status": "NOT_STARTED",
+      "sha": null,
+      "reserved_gap": true,
+      "no_requirement_id": true,
+      "sequenced_after": 31,
+      "sequencing_note": "minted by HITL 2026-07-29 (steward seq-153). 30-band gap; §5 pre-authorizes 31-39."
+    },
+    {
+      "slice": 33,
+      "short": "SBOM-RUN",
+      "title": "Library Sweep #3, leg 3 of 3 — RUN the tool and produce the dependency survey: (1) what is actually stale across every tracked Cargo/npm/Python manifest, (2) whether a SURGICAL ~1-5 SLOC change would likely land each upgrade — ASCERTAIN ONLY, NEVER IMPLEMENT. Output is an INPUT to 0.8.22",
+      "depends_on": [
+        32
+      ],
+      "status": "NOT_STARTED",
+      "sha": null,
+      "reserved_gap": true,
+      "no_requirement_id": true,
+      "sequenced_after": 32,
+      "sequencing_note": "minted by HITL 2026-07-29 (steward seq-153). HARD SCOPE GUARD: anything beyond a surgical ~1-5 SLOC assessment is merely NOTED for the project to handle, never attempted. No bump is applied and no manifest or lockfile changes in 0.8.20."
     },
     {
       "slice": 40,
@@ -182,16 +213,17 @@
   "next_slice": 31,
   "remaining_ladder": [
     31,
+    32,
+    33,
     40
   ],
-  "ladder_order": "SEQUENTIAL — re-sequenced by HITL 2026-07-28 (steward seq-129), superseding the seq-119 order. Execution order: 21 (the TC-86 transcript-hygiene fix, cross-cutting, LANDED 2026-07-28 at 2956d98d) → 22 → 31 (Library Sweep #3) → DOC-HYGIENE-3 → the batched governed-surface decision (HITL) → 40. Slice 30, the publish precondition, LANDED 2026-07-28 at 9b3ed0e3. Parallel 20 || 25 was declined earlier (master F-34).",
+  "ladder_order": "SEQUENTIAL — re-sequenced by HITL 2026-07-29 (steward seq-153), superseding the seq-129 order. Execution order: 31 → 32 → 33 → DOC-HYGIENE-3 → the batched governed-surface decision (HITL) → 40. Slices 21, 22 and 23 have LANDED; Slice 30, the publish precondition, LANDED 2026-07-28 at 9b3ed0e3. Slice 31 was RE-SCOPED and slices 32/33 MINTED at seq-153: Library Sweep #3 becomes a three-leg build of an SBOM/dependency-survey TOOL (31 spec+design+RED tests, 32 code, 33 run-and-survey) instead of a manual backlog-and-triage sweep, and NONE of the three applies a dependency bump — the survey is an INPUT to 0.8.22. Parallel 20 || 25 was declined earlier (master F-34).",
   "unblocked": [
-    21,
-    22
+    31
   ],
   "unblocked_by": {
-    "requirement": "the Slice 30 landing (R-20-H7)",
-    "gloss": "the publish precondition is now SATISFIED and LANDED; 21 and 22 were already unblocked by the Slice 20 + Slice 25 pair and are next in the sequential order"
+    "requirement": "the Slice 23 landing (R-20-SV) and the Slice 31 re-scope (steward seq-153)",
+    "gloss": "21, 22 and 23 have all LANDED and the publish precondition (Slice 30) is SATISFIED, so Slice 31 — re-scoped by the HITL on 2026-07-29 to the SBOM-tool spec+design+RED-tests leg — is next in the sequential order. 32 depends on 31 and 33 on 32; neither is unblocked yet."
   },
   "publish_precondition_slice": 30,
   "acceptance": {

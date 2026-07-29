@@ -256,20 +256,64 @@ the 20 band**, which §5 pre-authorizes; neither changes the mod-5 spine, the re
 | R-20-VC | **Vector-arm consumer contract** (Slice 22). Four legs: **TC-67** — declaring a `searchable→vector` projection over a kind the vector writer cannot commit must **REPORT**, per HITL option (c); the `resolve_source_type` vocabulary is **NOT grown** and the Pack-1 D3 partition-key lock is **not touched**; **TC-68** — cache the 0.8.18 equivalence probe against an **embedder-identity fingerprint** so `Engine::open` cost is constant again, preserving the guarantee rather than weakening it; **decision #18** — settle the `InvalidArgument` vs `WriteValidation` family inconsistency before the surface is signed; **sqlite-vec #99 probe** — exercise `excise_source`/`purge` against a `vec0` row whose `kind` or `attr_*` value exceeds 12 chars and record whether 0.1.7 reports a spurious `DELETE` error. | TC-67: a typed report, not silence; readiness semantics unchanged. TC-68: open cost independent of enrolled-kind count, with the probe still running on an identity change. #18: one family, tests updated. #99: a written finding either way — it informs whether `sqlite-vec` should move out of the 0.8.22 placement (**TC-76** re-open trigger). |
 | R-20-SV | **Spec-validation reject + carried-defect characterization** (Slice 23). Two legs: **the `fts`/`vector` reject** — an `fts` or `vector` sub-object declared **without the `searchable` role** is an **invalid spec** and is REJECTED, replacing today's accept-and-round-trip; ruled **2026-07-24** (§11 item 4, *gated non-blocking at "the next `configure_projections` slice"*), landed here rather than in 22 because the reject needs an **error** and decision **#18** settles that family in 22 — the reverse order would pick a family #18 may change. Also corrects `dev/interfaces/rust.md:352`, which still cites the **overruled** accept-inert position as precedent (**TC-39** class). **TC-90/TC-91 characterization** — owed by `seq-136` (*characterize in 0.8.20, fix at 0.8.21*), which left it without a slot: **TC-90** `Engine::transition`'s read-then-upgrade under `BEGIN DEFERRED` (the TC-57 class at a second site) and **TC-91** the ~50% baseline duplicate-embed rate + silently-discarded worker commit failures. | Reject: a typed error on the invalid shape, round-trip preserved for valid specs, all four `dev/interfaces/*.md` updated (**AGENTS.md:25**). Characterization: a **written** repro protocol with numbers for TC-90 and TC-91 — **no fix**, per `seq-136`; TC-57's own lesson is that a concurrency fix scoped before measurement ships inert. |
 
-> **Slice 31 (Library Sweep #3) deliberately carries NO requirement id** — **TC-76**, HITL-ruled
-> 2026-07-27. It is **dependency hygiene, not a release requirement**, and master **F-12** treats a Library
-> Sweep as a **pico** (label-only, never published). Placing this one **in-ladder before publish** is a
-> **deliberate departure** from that precedent, recorded here so a later Steward does not silently
-> overwrite F-12 by following this instance. Minting `R-20-LIB` was declined: it would convert a recurring
-> hygiene programme into a one-off requirement of 0.8.20, the category error F-12 exists to fix.
+> **Slices 31, 32 and 33 (Library Sweep #3) deliberately carry NO requirement id** — **TC-76**, HITL-ruled
+> 2026-07-27 and re-affirmed for all three legs at `seq-153`. It is **dependency hygiene, not a release
+> requirement**, and master **F-12** treats a Library Sweep as a **pico** (label-only, never published).
+> Placing this one **in-ladder before publish** is a **deliberate departure** from that precedent, recorded
+> here so a later Steward does not silently overwrite F-12 by following this instance. Minting `R-20-LIB`
+> was declined: it would convert a recurring hygiene programme into a one-off requirement of 0.8.20, the
+> category error F-12 exists to fix.
+
+### 3a. Library Sweep #3 — RE-SCOPED to a TOOL (HITL 2026-07-29, steward `seq-153`)
+
+**What Slice 31 was before this ruling: nothing enumerated.** No doc ever listed its contents. It inherited
+the **`LIBRARY-BUMP-STEWARD.md` §1–2** manual loop by reference — *"union of open Dependabot PRs, a fresh
+`cargo upgrade --dry-run` / `npm outdated` / equivalent, and `gh api …/dependabot/alerts`"*, then a
+five-question triage per candidate. The only item ever *named* against 31 was **TC-76**, which moved to
+**0.8.22** at `seq-151`.
+
+**The HITL replaces that manual sweep with a tool**, expressly so the exercise is **~90% mechanical and
+automated** rather than a token-burning search → review → check → reason loop. A small, tight, **isolated
+mini-project under `scripts/`** with its own requirements, acceptance criteria, design, tests and code.
+It produces a **CycloneDX-JSON SBOM** over every tracked manifest, enumerates **library↔library**
+dependencies, and **diffs used-versus-published** versions. External libraries are permitted and **must be
+named in the design**.
+
+**Three legs, one per slice.**
+
+| Leg | Slice | Deliverable | Gate |
+|---|---|---|---|
+| 1 | **31** | requirements · acceptance criteria · design · **RED tests**. **No code.** | **codex §9 reviews the req/AC/design; FIX-*n* complete before close.** No X0-style HITL sign-off |
+| 2 | **32** | the code that turns 31's RED tests GREEN. **Code only** | codex §9 terminal-clean |
+| 3 | **33** | **runs** the tool; writes the survey | codex §9 terminal-clean |
+
+**Slice 33's scope guard — the one most likely to be violated.** 33 answers two questions and stops:
+**(1)** what is actually stale across the Cargo / npm / Python (and any other tracked) manifests; **(2)**
+whether a **surgical change of roughly 1–5 SLOC** would *likely* land each upgrade. **(2) is ASCERTAIN, NOT
+IMPLEMENT.** Anything larger than surgical is **merely NOTED for the project itself to handle** — never
+attempted, never scoped further inside 33.
+
+**Hard guardrails binding all three legs.**
+
+- **No leg applies a dependency bump.** **No manifest and no lockfile changes inside 0.8.20.** The survey is
+  an **INPUT to 0.8.22**, which already owns `napi 2→3`, `rusqlite 0.31→0.40 + sqlite-vec`, the
+  `sqlite-vec 0.1.9` bump (`seq-151`) and the six Dependabot advisories (`seq-152`).
+- **Python**; **CycloneDX JSON**; the mini-project's **own manifests stay isolated** from the shipped and
+  root dependency trees, so it can never enlarge the published graph or the advisory backlog.
+- **Generated reports are GITIGNORED.** ⚠ Slice 33's *findings* therefore need a **tracked** durable home —
+  the raw tool output is not one.
+- **Recurring by design, NOT CI-gating.** It is an **informational** tool (F-12's recurring-programme shape),
+  and wiring it into CI is explicitly out of scope.
+- Every leg is **BOM scope = everything tracked on `main`**, with each component tagged by tier —
+  `shipped` / `dev-tooling` / `eval-only`. That tagging is what made TC-93 a cheap call.
 
 ---
 
 ## 4. Slice ladder (mod-5)
 
 ```text
-0 → 5 → 10 → 15 → 20 → 25 → [30] → 21 → 22 → 31 → DOC-HYGIENE-3 → ⟨batched surface decision⟩ → 40
-                              ↑ publish precondition, first on the critical path
+0 → 5 → 10 → 15 → 20 → 25 → [30] → 21 → 22 → 23 → 31 → 32 → 33 → DOC-HYGIENE-3 → ⟨batched surface decision⟩ → 40
+                              ↑ publish precondition                  ↑ Library Sweep #3: spec → code → run
 ```
 
 **Execution order ≠ numeric order, and that is deliberate** (HITL-approved 2026-07-27, steward `seq-119`).
@@ -291,7 +335,9 @@ carries **no pico label** (`seq-106`; DOC-HYGIENE-1 precedent, F-33). Execution 
 | **21** | **Concurrency + test-oracle repair** (R-20-CR) — TC-57 characterize→fix · ac_002 oracle replacement · TC-71 | implementation | 20 |
 | **22** | **Vector-arm consumer contract** (R-20-VC) — TC-67 (c) · TC-68 fingerprint-cache · decision #18 · sqlite-vec #99 probe | implementation | 15, 20 |
 | **23** | **Spec-validation reject + carried-defect characterization** (R-20-SV) — the `fts`/`vector` reject (ruled 2026-07-24) · TC-90/TC-91 characterization (no fix, `seq-136`) | implementation + investigation | 22 (needs #18's error family settled) |
-| **31** | **Library Sweep #3** — dependency hygiene; **NO requirement id** (TC-76), a deliberate F-12 departure | dependency hygiene | — (sequenced after 30 by ruling, no technical dep) |
+| **31** | **Library Sweep #3, leg 1/3** — SBOM/dependency-survey tool: **req + AC + design + RED tests, NO code**; **NO requirement id** (TC-76 precedent), a deliberate F-12 departure | design + RED tests | — (sequenced after 30 by ruling, no technical dep) |
+| **32** | **Library Sweep #3, leg 2/3** — implement the tool against 31's RED tests. **CODE ONLY**; applies no bump, edits no manifest or lockfile | implementation | 31 |
+| **33** | **Library Sweep #3, leg 3/3** — **RUN** the tool: what is stale across every tracked manifest, and whether a **surgical ~1–5 SLOC** change would likely land each upgrade — **ASCERTAIN ONLY, NEVER IMPLEMENT**. Output is an **input to 0.8.22** | investigation | 32 |
 | **40** | **Verification + release readiness** — full DoD, X1, **AC-079 sign-off** (R-20-EU7 is **CLOSED — run NO eu7**, see §3), **TC-16 determination FIRST** (`seq-118`), **publish-or-hold per the HITL gate** | verification | 5,30 |
 
 **Keystones / hard gates.**
@@ -318,7 +364,9 @@ Gaps `1–4, 6–9, 11–14, 16–19, 21–24, 26–29, 31–39` absorb unplanne
 **HALT to HITL on band overflow** — never spill into the next mod-5.
 
 **Band occupancy (updated 2026-07-28, `seq-139`).** The **20 band** now holds **21** (R-20-CR, landed),
-**22** (R-20-VC) and **23** (R-20-SV) — **three of four slots used, ONE remaining**. The **30 band** holds **31** (Library Sweep #3).
+**22** (R-20-VC) and **23** (R-20-SV) — **three of four slots used, ONE remaining**. The **30 band** (gaps
+**31–39**, nine slots) holds **31**, **32** and **33** — Library Sweep #3's three legs (`seq-153`) —
+**three of nine used, SIX remaining**.
 
 **The tripwire stays at band overflow — TC-77, HITL-ruled 2026-07-27, and it is CONDITIONAL.** Tightening
 it to halt on the *next* new slice was declined: the band was sized as slack deliberately, and halting
@@ -461,7 +509,7 @@ different path — **TC-98, deferred by the HITL until after Slice 23**, and ret
 
 **Remaining ladder, HITL-approved 2026-07-28 (F-36 · steward `seq-129`), SEQUENTIAL — this SUPERSEDES the
 F-35 order (`seq-119`); its leading `30`, `TC-86` and `21` legs are all now landed:**
-**⟨batched governed-surface decision — DUE NOW, HITL⟩ → 31 → DOC-HYGIENE-3 → 40.**
+**⟨batched governed-surface decision — DUE NOW, HITL⟩ → 31 → 32 → 33 → DOC-HYGIENE-3 → 40** (`seq-153`).
 **21** (R-20-CR, landed) and **22** (R-20-VC) are reserved-gap slices in the 20 band; **31** is Library Sweep #3 and
 carries no requirement id (TC-76); **DOC-HYGIENE-3** is cross-cutting and is not a ladder slice. The batched
 surface decision is taken **AT THE CLOSE OF SLICE 23** (HITL `seq-141`, superseding `seq-134`/`seq-140`).
