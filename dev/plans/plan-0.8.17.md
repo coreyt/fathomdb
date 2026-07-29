@@ -1,8 +1,26 @@
 ---
-status: PROPOSED
+status: SUPERSEDED
 ---
 
 # FathomDB 0.8.17 — Plan (state-machine ladder) · **Router hardening / forks**
+
+> ## ⛔ RETIRED — DISPOSITIONED 2026-07-29 (HITL, steward-ledger `seq-184`)
+>
+> **This release is RETIRED. Do not commission it.** Frontmatter reads `SUPERSEDED` because that is the
+> value `scripts/lint-plans-status.sh` accepts; the intent is retirement.
+>
+> **Workstreams A and B are retired outright.** **B** (EXP-AF productization) is a **closed KILL whose
+> NO-GO path is already executed in code** — `feedback_arm` defaults False and `_maybe_escalate()` is a
+> deliberate no-op — so re-opening it would re-litigate a settled verdict. **A** already exists as a
+> validated artifact (`dev/prototypes/l2-router/registry.json` and `check_forbidden()`, re-validated by
+> V-1); its only remaining content was *in-library* wiring, which dies with the retired 0.8.15.
+>
+> **⚠ RESCUED — Workstream C (EXP-C / EXP-D / EXP-E) is NOT retired.** It has **zero dispatcher
+> dependency** and was mis-filed here purely by co-location. It lives on as **`TC-125`**.
+>
+> Per-item dispositions and evidence: **`TC-124`**. V-gate disposition: **`TC-123`**.
+
+---
 
 > **Plan-as-state-machine.** Mod-5 ladder + reserved-gap policy + "Immediate Next Slice". Authoritative
 > contracts → `0.8.17-implementation.md` (authored at Slice 0); live state → `runs/STATUS-0.8.17.md`;

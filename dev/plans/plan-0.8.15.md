@@ -1,8 +1,32 @@
 ---
-status: PROPOSED
+status: SUPERSEDED
 ---
 
 # FathomDB 0.8.15 — Plan (state-machine ladder) · **In-library dispatcher build (EXP-Fr)**
+
+> ## ⛔ RETIRED — DISPOSITIONED 2026-07-29 (HITL, steward-ledger `seq-184`)
+>
+> **This release is RETIRED. Do not commission it, and do not read the scheduling language below as live.**
+> Frontmatter reads `SUPERSEDED` because that is the value `scripts/lint-plans-status.sh` accepts; the
+> intent is retirement.
+>
+> **Why:** only **1 of the 7 V-gate items passed cleanly** (`TC-123`). **V-7 never ran** — and it was a
+> *packaging decision*, not a measurement, so it is now **CLOSED BY DECISION**: CE-reranker stays
+> default-OFF, cascade stays OFF, as both repos had already ratified. The empirical question it existed to
+> settle was discharged by **V-1**. The dispatcher itself would have built a mechanism 0.8.11's own Gate-2
+> says buys ≈0, steered by a classifier scoring 0.500 on needle whose replacement gate (V-4) never ran.
+>
+> **Per-item dispositions: `TC-124`.** The agent-side L2 prototype is COMPLETE-ELSEWHERE (0.8.11 Slice 35);
+> `record_feedback` F-8b is a resolved NO-OP under the EXP-AF KILL; §10 multi-field FTS is SUPERSEDED to
+> ≥0.9.x; §14 governed physical-purge is COMPLETE-ELSEWHERE, landed as OPP-12 `transition`/`purge` plus
+> `erase_source` in 0.8.19/0.8.20.
+>
+> **⚠ RESCUED — the four §11–§13 adjacencies are NOT retired:** `read.state` list/scan, the touch verb,
+> `graph.neighbors` label-scope, and the 50-cap. They live on as **`TC-126`**, and they are the reason this
+> disposition was done — they sat in this file by accident of co-location, not because they are dispatcher
+> work.
+
+---
 
 > **Plan-as-state-machine.** Mod-5 ladder + reserved-gap policy + "Immediate Next Slice". Authoritative
 > contracts → `dev/plans/0.8.15-implementation.md` (authored at Slice 0); live state →
