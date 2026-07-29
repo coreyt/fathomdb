@@ -83,6 +83,19 @@ FAILED=0
 pass() { printf 'PASS  %s\n' "$1"; }
 fail() { printf 'FAIL  %s\n' "$1" >&2; FAILED=$((FAILED + 1)); }
 
+# TC-128 CANARY, captured BEFORE anything runs and asserted by arm 18 at the end.
+# The shared common dir is where `core.bare` lives and it is shared by every
+# linked worktree, so a stray write from anything in this suite shows up here.
+# This exists because a `git init` in the gate reached the PRIMARY CHECKOUT twice
+# on 2026-07-29 and set `bare = true`, and no test noticed.
+REAL_COMMON_DIR="$(git -C "$REPO_ROOT" rev-parse --git-common-dir 2>/dev/null)"
+case "$REAL_COMMON_DIR" in
+  /*) : ;;
+  *)  REAL_COMMON_DIR="$REPO_ROOT/$REAL_COMMON_DIR" ;;
+esac
+COMMON_BEFORE="$(cat "$REAL_COMMON_DIR/config" 2>/dev/null | md5sum)"
+BARE_BEFORE="$(git -C "$REPO_ROOT" config --get core.bare 2>/dev/null || echo unset)"
+
 TMPROOT="$(mktemp -d)"
 cleanup() {
   case "$TMPROOT" in
@@ -608,22 +621,172 @@ else
   fail "arm 16 (unmerged): rc=$RC out=$OUT"
 fi
 
-# --- Arm 17: THE GIT_* ENVIRONMENT IS SCRUBBED INSIDE THE SNAPSHOT ---------
-# MEASURED: git exports `GIT_INDEX_FILE=.git/index` — a RELATIVE path — into
-# hooks, and some versions export GIT_DIR. Left set, git inside the snapshot
-# resolves against the REAL repository and the snapshot silently does nothing.
-# This arm reproduces the hook environment and pins that the answer is unchanged.
+# --- Arm 17: A REAL LINKED-WORKTREE PRE-COMMIT HOOK, END TO END ------------
+# THE PREDECESSOR OF THIS ARM WENT GREEN OVER A LIVE DEFECT, which is the reason
+# it was rebuilt. It hand-made an approximation of the hook environment
+# (`GIT_INDEX_FILE=.git/index GIT_DIR=.git`, both RELATIVE) and asserted the
+# verdict. A real LINKED-WORKTREE hook — how every orchestrated commit in this
+# repo is made — exports both as ABSOLUTE paths, and it is the absolute `GIT_DIR`
+# that breaks `git init`. A guard-test that reproduces the wrong environment is
+# the vacuous-green class this repo has named twice, so this arm now builds a
+# genuine worktree, installs a genuine hook and makes a genuine commit, and takes
+# the environment from git rather than from a guess.
+#
+# `git worktree add` here is entirely inside the throwaway fixture repo under
+# mktemp -d; it never goes near the real checkout.
+setup_fixture
+LINKED="$TMPROOT/linked"
+ENVCAP="$TMPROOT/hookenv.txt"
+rm -rf "$LINKED" "$ENVCAP"
+(cd "$FIX" && git worktree add -q "$LINKED" -b hookarm)
+cat >"$FIX/.git/hooks/pre-commit" <<EOF
+#!/usr/bin/env bash
+env | grep '^GIT_' | sort >"$ENVCAP"
+exec ./scripts/check-design-refs.sh --staged-only --release 9.9.9 --slice 0
+EOF
+chmod +x "$FIX/.git/hooks/pre-commit"
+set +e
+OUT="$(cd "$LINKED" && git rm -q dev/design/widget-design.md && git commit -m 'drop the design of record' 2>&1)"
+RC=$?
+set -e
+HOOK_GIT_DIR="$(sed -n 's/^GIT_DIR=//p' "$ENVCAP" 2>/dev/null || true)"
+# NON-VACUITY, and it is the whole lesson of this round: if the hook did not
+# actually export an ABSOLUTE GIT_DIR then this arm is testing the same fiction
+# the old one did, and it must say so rather than pass.
+case "$HOOK_GIT_DIR" in
+  /*) ENV_OK=1 ;;
+  *)  ENV_OK=0 ;;
+esac
+if [ "$ENV_OK" -ne 1 ]; then
+  fail "arm 17 (linked-worktree hook): the hook exported GIT_DIR=[$HOOK_GIT_DIR], not an \
+absolute path — the arm did not reproduce the environment it claims to test"
+elif [ "$RC" -ne 0 ] && grep -qE 'R-9-A|widget_readiness' <<<"$OUT"; then
+  pass "a real linked-worktree hook (absolute GIT_DIR) refuses the commit that deletes coverage"
+else
+  fail "arm 17 (linked-worktree hook): rc=$RC out=$OUT"
+fi
+
+# --- Arm 17b: THE GATE MUST NOT WRITE INTO THE REPOSITORY IT IS GATING -----
+# THE [P1], stated as the property it actually violated. With `GIT_DIR` still
+# exported, `git init -q --template= "$SNAPSHOT"` does not create
+# `$SNAPSHOT/.git` at all — GIT_DIR wins, so git REINITIALISES THE GATED
+# REPOSITORY instead. MEASURED: `git init` under an exported GIT_DIR rewrites
+# that repository's `.git/config`; the gate's three real-side reads
+# (`diff --cached`, `ls-files --unmerged`, `checkout-index`) leave the admin
+# directory byte-for-byte untouched, so this signature is a stable assertion and
+# not a flaky one.
+#
+# A gate whose header says READ-ONLY must be read-only. This is also the honest
+# statement of the defect: the verdict happened to stay correct (the manifest's
+# `cd "$(git rev-parse --show-toplevel)"` degrades to `cd ""`, a bash no-op), so
+# a verdict-only assertion CANNOT see this — which is exactly how the old arm 17
+# passed over it.
+admin_signature() { find "$1" -printf '%P %T@\n' 2>/dev/null | LC_ALL=C sort | md5sum; }
 setup_fixture
 (cd "$FIX" && git rm -q dev/design/widget-design.md)
+SIG_BEFORE="$(admin_signature "$FIX/.git")"
 set +e
-OUT="$(cd "$FIX" && GIT_INDEX_FILE=.git/index GIT_DIR=.git \
+OUT="$(cd "$FIX" && GIT_DIR="$FIX/.git" GIT_INDEX_FILE="$FIX/.git/index" \
         bash ./scripts/check-design-refs.sh --staged-only --release 9.9.9 --slice 0 2>&1)"
 RC=$?
 set -e
-if [ "$RC" -eq 1 ] && grep -qE 'R-9-A|widget_readiness' <<<"$OUT"; then
-  pass "the snapshot still governs with GIT_DIR/GIT_INDEX_FILE exported, as in a real hook"
+SIG_AFTER="$(admin_signature "$FIX/.git")"
+if [ "$RC" -eq 1 ] && [ "$SIG_BEFORE" = "$SIG_AFTER" ]; then
+  pass "read-only under an exported absolute GIT_DIR — the gated repo's .git is untouched"
 else
-  fail "arm 17 (git env scrub): rc=$RC out=$OUT"
+  fail "arm 17b (no write into the gated repo): rc=$RC signature changed=$( \
+[ "$SIG_BEFORE" = "$SIG_AFTER" ] && echo no || echo YES)"
+fi
+
+# --- Arm 17c: THE GATE CONTAINS NO GIT WRITE OF ANY KIND (TC-128) ----------
+# THE ARM THAT MAKES THE SAFETY STRUCTURAL. An earlier version called
+# `git init "$SNAPSHOT"`; with an ABSOLUTE `GIT_DIR` exported — which every real
+# linked-worktree pre-commit hook does — GIT_DIR wins and git reinitialises the
+# repository GIT_DIR names instead. TWICE on 2026-07-29 (18:14:51 and 18:26:28)
+# that was the PRIMARY CHECKOUT, which gained `bare = true` and refused every
+# work-tree operation while `git rev-parse HEAD` still resolved.
+#
+# The remedy is not a better-ordered environment scrub. A guard on the commit
+# path must not be ABLE to damage what it guards, so the single writing git call
+# was REMOVED: the snapshot is made a repository with `mkdir` and `printf`, no
+# git binary involved. With no write in the path, a leaked GIT_* can at worst
+# produce a wrong answer from a docs-hygiene gate.
+#
+# This arm is a pure grep — it never executes the gate — so it is safe to run
+# against any revision, including the ones that caused the incidents.
+git_write_verbs() {
+  # Strip whole-line comments first: the header discusses `git init` at length
+  # and matching prose would report a defect that is not in the code (and, worse,
+  # could be "fixed" by deleting the explanation).
+  local src="$1" v
+  sed 's/^[[:space:]]*#.*$//' "$src" >"$TMPROOT/code-only.sh"
+  for v in init config add commit reset rm mv stash clean gc prune repack push \
+           fetch pull merge rebase apply am cherry-pick revert update-ref \
+           symbolic-ref write-tree commit-tree hash-object tag branch worktree \
+           notes replace; do
+    if grep -qE "(^|[^-[:alnum:]_])git( --[a-z-]+)* $v( |\$)" "$TMPROOT/code-only.sh"; then
+      printf '%s ' "$v"
+    fi
+  done
+}
+if [ ! -f "$GATE" ]; then
+  fail "arm 17c (no git write): $GATE does not exist, so the assertion is vacuous"
+else
+  WRITES="$(git_write_verbs "$GATE")"
+  # `checkout-index` is the one permitted writer and is excluded from the list
+  # above by construction: it writes ONLY inside the mktemp -d snapshot.
+  if [ -z "$WRITES" ]; then
+    pass "the gate contains NO git write verb — write-safety is structural, not a promise"
+  else
+    fail "arm 17c (no git write): $GATE invokes git write verb(s): $WRITES"
+  fi
+fi
+
+# --- Arm 17d: THE SCRUB STILL FOLLOWS THE LAST REAL-REPO READ --------------
+# Safety no longer depends on this, but CORRECTNESS does. `checkout-index` must
+# see the hook's `GIT_INDEX_FILE`, because a PARTIAL commit
+# (`git commit -- <paths>`) puts the content that will be committed into a
+# TEMPORARY index and names it there (measured: `.git/next-index-*.lock`).
+# Scrubbing before it would snapshot the repository's ordinary index — the wrong
+# tree — and silently reintroduce the worktree-vs-index defect.
+if [ ! -f "$GATE" ]; then
+  fail "arm 17d (scrub ordering): $GATE does not exist, so the assertion is vacuous"
+else
+  CO_LINE="$(grep -n '^[[:space:]]*if ! git checkout-index' "$GATE" | head -1 | cut -d: -f1)"
+  UNSET_LINE="$(grep -n '^[[:space:]]*unset GIT_DIR' "$GATE" | head -1 | cut -d: -f1)"
+  if [ -n "$CO_LINE" ] && [ -n "$UNSET_LINE" ] && [ "$CO_LINE" -lt "$UNSET_LINE" ]; then
+    pass "the GIT_* scrub follows the last real-repo read (checkout-index=$CO_LINE, unset=$UNSET_LINE)"
+  else
+    fail "arm 17d (scrub ordering): checkout-index=$CO_LINE unset=$UNSET_LINE — the scrub \
+must follow checkout-index so a partial commit's temporary index is the one snapshotted"
+  fi
+fi
+
+# --- Arm 17e: THE SNAPSHOT MUST RESOLVE TO ITSELF --------------------------
+# Belt and braces. Without it, a snapshot whose toplevel resolved elsewhere would
+# let the sweep answer about the wrong tree, and a snapshot with no `.git` would
+# limp along on `cd ""` — a bash no-op that POSIX leaves unspecified, and exactly
+# the accidental correctness that hid the mis-ordering.
+if grep -q 'show-toplevel' "$GATE" && grep -qE 'NOT CHECKED.*resolve|resolve to itself' "$GATE"; then
+  pass "the gate proves the snapshot resolves to itself before sweeping, or reports NOT CHECKED"
+else
+  fail "arm 17e (self-resolution): $GATE does not verify the snapshot's own toplevel"
+fi
+
+# --- Arm 18: THE PRIMARY CHECKOUT'S CONFIG IS UNTOUCHED BY THIS WHOLE SUITE -
+# THE ARM THAT WOULD HAVE CAUGHT TC-128, and it is deliberately scoped to the
+# ENTIRE suite rather than to one gate invocation: the damage was done by a
+# `git init` reaching a repository nobody in the test was thinking about. The
+# common dir is where `core.bare` lives, and it is shared by every linked
+# worktree — so this is the canary for the primary checkout, from a test that
+# only ever means to touch a fixture under mktemp -d.
+COMMON_AFTER="$(cat "$REAL_COMMON_DIR/config" 2>/dev/null | md5sum)"
+BARE_AFTER="$(git -C "$REPO_ROOT" config --get core.bare 2>/dev/null || echo unset)"
+if [ "$COMMON_BEFORE" = "$COMMON_AFTER" ] && [ "$BARE_BEFORE" = "$BARE_AFTER" ]; then
+  pass "the primary checkout's git config is byte-identical after the suite (core.bare=$BARE_AFTER)"
+else
+  fail "arm 18 (primary config canary): the shared git config CHANGED during this suite. \
+core.bare before=[$BARE_BEFORE] after=[$BARE_AFTER] (TC-128)"
 fi
 
 if [ "$FAILED" -gt 0 ]; then

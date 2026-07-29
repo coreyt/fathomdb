@@ -105,11 +105,45 @@
 # BYTE-IDENTICAL to the worktree run. The manifest is NOT modified; byte-identity
 # is its safety argument and it stays intact. Cost: ~0.26s for 2121 files.
 #
-# THE GIT_* ENVIRONMENT IS SCRUBBED for everything run inside the snapshot.
-# Measured: git exports `GIT_INDEX_FILE=.git/index` — RELATIVE — to hooks, and
-# some versions export `GIT_DIR` too. Left in place, a `git` invocation inside
-# the snapshot would resolve against the real repository and silently undo the
-# whole point.
+# NO GIT WRITE, EVER — AND THAT IS A STRUCTURAL PROPERTY, NOT A PROMISE (TC-128)
+# This script invokes exactly four git commands, and every one of them is
+# READ-ONLY:
+#     git rev-parse --show-toplevel        (resolve the repo root)
+#     git --no-optional-locks diff --cached --name-only   (the trigger scan)
+#     git ls-files --unmerged              (the cannot-certify probe)
+#     git checkout-index --all --prefix=…  (writes ONLY inside $SNAPSHOT)
+# There is NO `git init`, no `git config`, no `git add`, no `git stash`, nothing
+# that can alter a repository. The snapshot is made a git repository BY HAND with
+# `mkdir` and `printf`; no git binary is involved in creating it.
+#
+# WHY IT IS BUILT THAT WAY, measured twice on 2026-07-29 (18:14:51 and 18:26:28).
+# An earlier version called `git init "$SNAPSHOT"`. A real linked-worktree
+# pre-commit hook — how every orchestrated commit in this repo is made — exports
+# `GIT_DIR` as an ABSOLUTE path, and with GIT_DIR set `git init` DOES NOT create
+# `$SNAPSHOT/.git`: GIT_DIR wins and git reinitialises the repository GIT_DIR
+# names. Both times that was the PRIMARY CHECKOUT, whose `.git/config` gained
+# `bare = true`, breaking every work-tree operation there while `git rev-parse
+# HEAD` still resolved — half-alive, not obviously broken. (A plain checkout
+# exports no `GIT_DIR` and a RELATIVE `GIT_INDEX_FILE`, which is why testing only
+# that shape reproduces the harmless case and misses this one entirely.)
+#
+# Ordering the environment scrub correctly WOULD also have fixed it. That was
+# rejected: it leaves a gate on the commit path whose worst-case failure is
+# corrupting the repository it guards, and which any later edit moving one line
+# can re-arm. With no write anywhere in the path, the worst case of a leaked
+# GIT_* is a WRONG ANSWER FROM A DOCS-HYGIENE GATE. Take the route where damage
+# is impossible, not the one where it is unlikely.
+#
+# THE ENVIRONMENT BOUNDARY STILL MATTERS FOR CORRECTNESS (not for safety):
+#   REAL-REPO SIDE, environment INTACT: the trigger scan, the unmerged probe and
+#     `checkout-index` MUST see the hook's `GIT_INDEX_FILE`, because a PARTIAL
+#     commit (`git commit -- <paths>`) puts the content that will be committed
+#     into a TEMPORARY index and names it there (measured:
+#     `.git/next-index-*.lock`). Scrubbing before them would snapshot the wrong
+#     tree and silently reintroduce the worktree-vs-index defect.
+#   SNAPSHOT SIDE, environment SCRUBBED: the manifest, and the self-check below.
+# And the snapshot is required to RESOLVE TO ITSELF before the sweep runs, so a
+# git call can never quietly answer about a different tree.
 #
 # THE RESIDUAL, NAMED RATHER THAN IMPLIED. Two states cannot be certified and are
 # reported LOUDLY and then let through (exit 0), never failed: an UNMERGED index,
@@ -194,7 +228,11 @@ if [ "$STAGED_ONLY" -eq 1 ]; then
   # token's coverage, and filtering deletions out of the trigger scan let it
   # through the early exit untouched. Deleted paths decide only WHETHER to run —
   # the sweep reads the index snapshot and so never tries to open one.
-  STAGED="$(git diff --cached --name-only)"
+  # `--no-optional-locks` so even this read cannot write: a plain `git diff` may
+  # refresh the index's stat cache, which is a write into the repository being
+  # gated. Harmless, but the claim in the header is that this gate writes
+  # NOTHING, and a claim with an exception is a claim nobody can rely on.
+  STAGED="$(git --no-optional-locks diff --cached --name-only)"
   if ! grep -qE '^dev/plans/release-state-.*\.json$|^dev/design/' <<<"$STAGED"; then
     exit 0
   fi
@@ -211,7 +249,17 @@ if [ "$STAGED_ONLY" -eq 1 ]; then
   fi
 
   SNAPSHOT="$(mktemp -d)"
+  # ---- REAL-REPO SIDE OF THE BOUNDARY — the git environment stays INTACT ----
   # `:0:` semantics for the whole tree: exactly the bytes `git commit` writes.
+  #
+  # `GIT_INDEX_FILE` MUST STILL BE SET HERE, and this is load-bearing rather than
+  # incidental. A PARTIAL commit (`git commit -- <paths>`) builds a TEMPORARY
+  # index holding exactly the content that will be committed and names it in
+  # `GIT_INDEX_FILE` (measured: `.git/next-index-<pid>.lock`). Scrubbing the
+  # environment before this line would snapshot the repository's ordinary index
+  # instead — the wrong tree — and silently reintroduce the worktree-vs-index
+  # defect in a subtler form. The same applies to the `git diff --cached` and
+  # `git ls-files --unmerged` calls above.
   if ! git checkout-index --all --prefix="$SNAPSHOT/" 2>/dev/null; then
     printf 'check-design-refs: NOT CHECKED — could not materialise the index into a\n' >&2
     printf '  snapshot; git checkout-index --all failed. Design coverage for this commit\n' >&2
@@ -219,17 +267,64 @@ if [ "$STAGED_ONLY" -eq 1 ]; then
     printf '    scripts/check-design-refs.sh\n' >&2
     exit 0
   fi
-  # The manifest does exactly one git thing: `cd "$(git rev-parse --show-toplevel)"`.
-  # An empty repo satisfies it. `--template=` keeps a user `init.templateDir` (and
-  # its sample hooks) out of a directory this script is about to delete.
-  git init -q --template= "$SNAPSHOT"
-  cd "$SNAPSHOT"
-  # MEASURED: git exports `GIT_INDEX_FILE=.git/index` — a RELATIVE path — to
-  # hooks, and some versions export GIT_DIR. Any of these left set would make git
-  # inside the snapshot resolve against the REAL repository and quietly undo the
-  # snapshot.
+
+  # ================= THE BOUNDARY — everything below is SNAPSHOT-SIDE ========
+  # Defence in depth, NOT the safety argument. Everything below is read-only by
+  # construction (see NO GIT WRITE, EVER, in the header), so a leaked GIT_* can
+  # at worst produce a WRONG ANSWER from a docs-hygiene gate — never a damaged
+  # repository. The scrub is here anyway because a wrong answer is still bad.
   unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
         GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_COMMON_DIR GIT_PREFIX
+
+  # ---- THE SNAPSHOT IS MADE A REPOSITORY BY HAND: mkdir + printf, NO GIT -----
+  # `git init` USED TO BE HERE AND IT CAUSED TWO LIVE INCIDENTS (TC-128). With
+  # GIT_DIR exported — which a real linked-worktree pre-commit hook always does,
+  # as an ABSOLUTE path — `git init "$SNAPSHOT"` does not create
+  # `$SNAPSHOT/.git` at all. GIT_DIR wins, and git REINITIALISES THE REPOSITORY
+  # GIT_DIR NAMES: on 2026-07-29 at 18:14:51 and again at 18:26:28 that was the
+  # primary checkout, whose `.git/config` was rewritten with `bare = true`,
+  # breaking every work-tree operation there (`git add`, `git commit`,
+  # `git status` all refusing with "must be run in a work tree") while
+  # `git rev-parse HEAD` still resolved, so it read as half-alive rather than
+  # broken. Repaired both times with `git config core.bare false`; blast radius
+  # assessed as exactly that one line, with refs, remote, identity and
+  # `core.hooksPath` intact.
+  #
+  # THE FIX IS NOT A BETTER-ORDERED SCRUB, IT IS REMOVING THE ONLY WRITE. A guard
+  # on the commit path must not be ABLE to damage the thing it guards. `git init`
+  # was the single git call in this whole path that writes anything; with it gone
+  # the write-safety is structural rather than dependent on getting an
+  # environment scrub exactly right forever.
+  #
+  # MEASURED: this is all `git rev-parse --show-toplevel` needs, from the root and
+  # from any subdirectory. No git binary is invoked to build it.
+  mkdir -p "$SNAPSHOT/.git/objects" "$SNAPSHOT/.git/refs/heads"
+  printf 'ref: refs/heads/main\n' >"$SNAPSHOT/.git/HEAD"
+  printf '[core]\n\trepositoryformatversion = 0\n\tbare = false\n' >"$SNAPSHOT/.git/config"
+
+  cd "$SNAPSHOT"
+
+  # ---- BELT AND BRACES: prove the snapshot is self-contained before using it --
+  # Without a resolvable toplevel the manifest's `cd "$(git rev-parse
+  # --show-toplevel)"` degrades to `cd ""` — a bash no-op returning 0 — and the
+  # sweep would limp along on behaviour POSIX leaves unspecified. Worse, a git
+  # call that resolved OUTSIDE the snapshot would silently answer about the wrong
+  # tree. So require the snapshot to resolve to ITSELF, and refuse to proceed on
+  # anything else. `rev-parse` is read-only, and `env -u` scrubs on the same
+  # invocation so this check cannot be broken by a later edit moving a line.
+  SNAP_TOP="$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE \
+                  -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES \
+                  -u GIT_COMMON_DIR -u GIT_PREFIX \
+                  git rev-parse --show-toplevel 2>/dev/null || true)"
+  if [ ! -d "$SNAPSHOT/.git" ] \
+     || [ "$(readlink -f "${SNAP_TOP:-/nonexistent}")" != "$(readlink -f "$SNAPSHOT")" ]; then
+    printf 'check-design-refs: NOT CHECKED — the index snapshot does not resolve to itself\n' >&2
+    printf '  (toplevel came back as "%s"). Refusing to sweep, because a git call that\n' "$SNAP_TOP" >&2
+    printf '  resolves outside the snapshot would answer about the wrong tree. Design\n' >&2
+    printf '  coverage for this commit is UNVERIFIED (TC-92). Re-run after committing:\n' >&2
+    printf '    scripts/check-design-refs.sh\n' >&2
+    exit 0
+  fi
 fi
 
 if ! command -v python3 >/dev/null 2>&1; then
