@@ -318,12 +318,20 @@ AC-050c) gates merges against this invariant.
   `dense_disabled` with the dense arm refusing and the text-only path serving.
 
   *Scope, stated so it is not over-read:* this self-check guards against
-  **accidental** backend drift and a corrupt baseline. It is **not** an integrity
-  boundary against an actor with write access to your database file — such an
-  actor can rewrite the stored probe baseline (which defeats the check even when
-  it runs in full, as it always did), the cached marker, or the corpus and its
-  vectors outright. Unchanged by this release, and now written down: threat model
-  in §8 of `dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`.
+  **accidental** backend drift and a corrupt baseline. It is **not** tamper
+  evidence, and `denseDisabled` / `dense_disabled` is not a tamper signal.
+  Nothing in a FathomDB file is authenticated: an actor with write access can
+  rewrite the stored probe baseline (which defeats the check even when it runs in
+  full, exactly as it did before this release), the cached marker, or the corpus
+  and its vectors outright. **Stated without softening: the cache does make one of
+  those routes cheaper.** Forging the marker needs only a digest anyone can
+  compute from the file; re-authoring the baseline needs the other backend's 45
+  exact probe embeddings. So a writer of your database file can now skip the
+  check more easily than before — though the drift it would have caught is, in the
+  steady state, already served without any forgery, because a same-identity swap
+  moves nothing in the fingerprint (see the paragraph below). Threat model, the
+  concession and the bound: §8.4/§8.5 of
+  `dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`.
 
   *The cost, stated plainly:* a backend that drifts **without changing its
   declared identity** — the same embedder name/revision moved between CPU and

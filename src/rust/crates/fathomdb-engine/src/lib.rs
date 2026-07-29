@@ -15519,18 +15519,33 @@ fn probe_verification_fingerprint(
 /// local-first engine holds no secret with which to authenticate one, and a salt
 /// would be readable by the same actor.
 ///
-/// That is **not a new exposure**. The same actor already defeats the same arm
-/// through the pre-slice path, by re-baselining `_fathomdb_embed_probe`'s
-/// `reference_vec` blobs to their drifted backend's own output — the probe then
-/// runs in full and verifies the drifted backend against itself. Measured by
+/// The same actor also defeats the same arm through the **pre-slice** path, by
+/// re-baselining `_fathomdb_embed_probe`'s `reference_vec` blobs to their drifted
+/// backend's own output — the probe then runs in full and verifies the drifted
+/// backend against itself. Measured by
 /// `tests/tc68_probe_fingerprint_cache.rs::a_forged_stored_baseline_defeats_the_probe_even_when_it_fully_runs`
 /// (marker deleted, all 45 embeds performed, dense still enabled), with the
-/// un-forged control caught. The equivalence probe is a **correctness self-check
-/// against backend drift, not an integrity boundary against a hostile writer**;
-/// see §8 of `dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`.
+/// un-forged control caught.
 ///
-/// What forging buys is also bounded: a digest is valid only for the state it was
-/// computed over, so it stops working at the next change to any fingerprint input.
+/// **That is the same actor, NOT the same cost, and fix-2 struck the claim that it
+/// was.** Forging this marker needs only a publicly computable digest — usually the
+/// value already sitting in the row. Re-baselining additionally needs the target
+/// backend's 45 exact embeddings, encoded into every row. **So the cache IS a
+/// cheaper bypass** for a writer of the database file.
+///
+/// What bounds it is the ruled residual, not this marker. A same-identity backend
+/// drift moves no fingerprint input, so a marker recorded by an **honest** earlier
+/// open already skips the probe and already serves the drifted backend, with no
+/// forgery anywhere
+/// (`residual_same_identity_backend_drift_is_not_caught_on_a_cached_open`). Forgery
+/// adds capability only on an open where no valid marker exists for the *current*
+/// fingerprint — and a digest is valid only for the state it was computed over, so
+/// it stops working at the next change to any fingerprint input.
+///
+/// The equivalence probe is a **correctness self-check against backend drift, not
+/// tamper evidence**; `dense_disabled` is not a tamper signal. Threat model, with
+/// the concession and the bound: §8.4/§8.5 of
+/// `dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`.
 fn probe_verification_is_cached(connection: &Connection, fingerprint: &str) -> bool {
     connection
         .query_row(

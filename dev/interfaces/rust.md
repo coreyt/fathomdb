@@ -164,13 +164,18 @@ is never cached, and a divergence found on a re-run still yields
 `dense_disabled = true` (`R-VEQ-4`, unchanged).
 
 **Scope.** `R-VEQ-4` is a guarantee about **accident** — corruption, truncation, a
-half-written or pre-cache workspace. The self-check is **not** an integrity
-boundary against an actor with write access to the database file: such an actor can
-rewrite `_fathomdb_embed_probe`'s stored references, which defeats the check even
-when it runs all 45 embeds — exactly as it did before the cache existed — or the
-cached marker, or the corpus and its vectors outright. Do not read
-`dense_disabled` as a tamper signal. Threat model, with the measurement:
-§8 of `dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`.
+half-written or pre-cache workspace. The self-check is **not** tamper evidence: an
+actor with write access to the database file can rewrite `_fathomdb_embed_probe`'s
+stored references, which defeats the check even when it runs all 45 embeds — exactly
+as it did before the cache existed — or the cached marker, or the corpus and its
+vectors outright. Nothing at rest is authenticated. Do not read `dense_disabled` as
+a tamper signal. **The cache does make one of those routes cheaper**, and that is
+conceded rather than argued away: forging the marker needs only a publicly
+computable digest, where re-authoring the baseline needs the other backend's 45
+exact embeddings. Its bound is the residual above — a same-identity drift is already
+served off an honestly recorded marker, no forgery required. Threat model, the
+measurement, the concession and the bound: §8.3–§8.5 of
+`dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`.
 
 ## Engine-attached instrumentation / control methods
 

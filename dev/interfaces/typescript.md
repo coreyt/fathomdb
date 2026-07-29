@@ -397,11 +397,15 @@ verdict runs the probe rather than trusting it. Full rationale and the residual:
 `dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`.
 
 **Scope.** The self-check guards **accidental** backend drift and a corrupt
-baseline. It is **not** an integrity boundary against an actor with write access to
-the database file: such an actor can rewrite the stored probe baseline — which
-defeats the check even when it runs in full, exactly as it did before the cache —
-or the cached marker, or the vectors themselves. Do not read `denseDisabled` as a
-tamper signal. Threat model: §8 of the design note above.
+baseline. It is **not** tamper evidence: an actor with write access to the database
+file can rewrite the stored probe baseline — which defeats the check even when it
+runs in full, exactly as it did before the cache — or the cached marker, or the
+vectors themselves. Nothing at rest is authenticated. Do not read `denseDisabled`
+as a tamper signal. **The cache does make one of those routes cheaper** (a forged
+marker needs only a publicly computable digest; re-authoring the baseline needs the
+other backend's 45 exact embeddings), bounded by the residual above: a
+same-identity drift is already served off an honestly recorded marker, no forgery
+required. Threat model, concession and bound: §8.3–§8.5 of the design note above.
 
 `OpenReport` carries four embedder-related fields surfaced by EU-6
 (camelCase per TS convention): `embedderDownloadMs`, `embedderEvents`,
