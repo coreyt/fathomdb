@@ -373,9 +373,9 @@
       },
       {
         "id": "doc-hygiene-3-scope",
-        "ruling": "(a) ABSORB ALL THREE — DOC-HYGIENE-3 scope is TC-53 + TC-88 + TC-89 + TC-92. All four are one class (a fact maintained in two places with nothing checking they agree) with one remedy shape (render from the single writer).",
+        "ruling": "(a) ABSORB ALL THREE — DOC-HYGIENE-3 scope is TC-53 + TC-88 + TC-89 + TC-92, AMENDED 2026-07-28 (steward seq-138) to ADD TC-94 (the commission-manifest SELECTOR defects: dev/adr/** and dev/interfaces/** unreachable by construction, bare-number legs invisible to the token regex, and a full token match suppressing the honest \"NO design doc mentions\" warning). All five are one class — a fact maintained in two places with nothing checking they agree — with one remedy shape: render from the single writer instead of maintaining by hand.",
         "ruled_on": "2026-07-28",
-        "source": "steward seq-137"
+        "source": "steward seq-137; amended at steward seq-138"
       }
     ]
   },
