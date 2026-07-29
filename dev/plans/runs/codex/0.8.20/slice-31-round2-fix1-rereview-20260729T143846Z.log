@@ -1,0 +1,2714 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/slice-31-sbom-spec
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019fae50-5230-74d3-9eb6-ba991c151f90
+--------
+user
+changes against 'cbb56212e0af3c7aa657ca3e0219e8fcd6e5dca1'
+exec
+/bin/bash -lc "cat MEMORY.md 2>/dev/null; printf '\\n--- feedback files ---\\n'; ls feedback_*.md 2>/dev/null; for f in feedback_*.md; do echo '---' "'$f; cat "$f"; done' in /home/coreyt/projects/fathomdb-worktrees/slice-31-sbom-spec
+ exited 1 in 0ms:
+
+--- feedback files ---
+--- feedback_*.md
+cat: 'feedback_*.md': No such file or directory
+
+exec
+/bin/bash -lc 'git diff --stat cbb56212e0af3c7aa657ca3e0219e8fcd6e5dca1 && git diff --name-only cbb56212e0af3c7aa657ca3e0219e8fcd6e5dca1' in /home/coreyt/projects/fathomdb-worktrees/slice-31-sbom-spec
+ succeeded in 0ms:
+ dev/DOC-INDEX.md                               |   2 +
+ dev/design/0.8.20-slice-31-sbom-survey-tool.md | 782 +++++++++++++++++++++++++
+ dev/plans/runs/0.8.20-slice-31-output.json     |  39 ++
+ scripts/sbom-survey/README.md                  |  79 +++
+ scripts/sbom-survey/tests/conftest.py          | 196 +++++++
+ scripts/sbom-survey/tests/test_cli.py          | 112 ++++
+ scripts/sbom-survey/tests/test_cyclonedx.py    | 261 +++++++++
+ scripts/sbom-survey/tests/test_discovery.py    | 136 +++++
+ scripts/sbom-survey/tests/test_paths.py        |  48 ++
+ scripts/sbom-survey/tests/test_registry.py     | 153 +++++
+ scripts/sbom-survey/tests/test_report.py       |  83 +++
+ scripts/sbom-survey/tests/test_tiering.py      | 196 +++++++
+ 12 files changed, 2087 insertions(+)
+dev/DOC-INDEX.md
+dev/design/0.8.20-slice-31-sbom-survey-tool.md
+dev/plans/runs/0.8.20-slice-31-output.json
+scripts/sbom-survey/README.md
+scripts/sbom-survey/tests/conftest.py
+scripts/sbom-survey/tests/test_cli.py
+scripts/sbom-survey/tests/test_cyclonedx.py
+scripts/sbom-survey/tests/test_discovery.py
+scripts/sbom-survey/tests/test_paths.py
+scripts/sbom-survey/tests/test_registry.py
+scripts/sbom-survey/tests/test_report.py
+scripts/sbom-survey/tests/test_tiering.py
+
+exec
+/bin/bash -lc "git diff --find-renames --find-copies cbb56212e0af3c7aa657ca3e0219e8fcd6e5dca1 -- scripts/sbom-survey dev/DOC-INDEX.md dev/plans/runs/0.8.20-slice-31-output.json | sed -n '1,260p'" in /home/coreyt/projects/fathomdb-worktrees/slice-31-sbom-spec
+ succeeded in 0ms:
+diff --git a/dev/DOC-INDEX.md b/dev/DOC-INDEX.md
+index 8193869f..ed4deff2 100644
+--- a/dev/DOC-INDEX.md
++++ b/dev/DOC-INDEX.md
+@@ -136,6 +136,8 @@ refresh in the closing commit when you touch a doc).
+ | `dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md` | Cache the 0.8.18 vector-equivalence verdict on an embedder-identity fingerprint so `Engine::open` cost is constant | 0.8.20 Slice 22 (R-20-VC leg 2) | 2026-07-28 |
+ | `dev/design/0.8.20-tc67-unsupported-vector-kind-report.md` | `ProjectionDelta.vector_unsupported_kinds` — report node kinds the vector writer can never commit, instead of silence | 0.8.20 Slice 22 (R-20-VC leg 1) | 2026-07-28 |
+ | `dev/design/0.8.20-tc90-tc91-characterization.md` | Characterization (no fix) — `Engine::transition`'s deferred write race (reproduces 10/10 under stress), and the cadence-sensitive duplicate embeds whose discarded worker commit is structurally invisible to terminal-state counting | 0.8.20 Slice 23 (R-20-SV leg 2); TC-90/TC-91, fix at 0.8.21 | 2026-07-29 |
++| `dev/design/0.8.20-slice-31-sbom-survey-tool.md` | Spec of record for `scripts/sbom-survey` — CycloneDX SBOM over tracked manifests, tiering, used-vs-published diff; 22 criteria | 0.8.20 Slice 31 (Library Sweep #3 leg 1/3; no requirement id, TC-76) | 2026-07-29 |
++| `scripts/sbom-survey/README.md` | Operating note for the dependency-survey mini-project — how to run the suite, and why it is deliberately not CI-gating | 0.8.20 Slice 31 (Library Sweep #3 leg 1/3) | 2026-07-29 |
+ 
+ ## `dev/adr/` — architecture decision records
+ 
+diff --git a/dev/plans/runs/0.8.20-slice-31-output.json b/dev/plans/runs/0.8.20-slice-31-output.json
+new file mode 100644
+index 00000000..c1f577ae
+--- /dev/null
++++ b/dev/plans/runs/0.8.20-slice-31-output.json
+@@ -0,0 +1,39 @@
++{
++  "phase": "0.8.20 Slice 31 (SBOM-SPEC) — Library Sweep #3, leg 1 of 3 — FIX-1 (codex §9 round 1 closed)",
++  "baseline_sha": "cbb56212e0af3c7aa657ca3e0219e8fcd6e5dca1",
++  "branch": "0.8.20-slice-31-sbom-spec",
++  "head_sha": "8766e868",
++  "commits": [
++    "a58e7bec: docs(0.8.20 Slice 31): sbom-survey — requirements, 22 acceptance criteria, design",
++    "cb4e4034: test(0.8.20 Slice 31): sbom-survey RED acceptance suite — 22 failed, 0 passed",
++    "f1b919bc: docs(0.8.20 Slice 31): closure output.json — sbom-survey spec + RED suite (round-0 closure)",
++    "9953c5eb: docs(0.8.20 Slice 31): closure output.json — head_sha/commits self-reference (round-0 closure, amended list)",
++    "92367b41: test(0.8.20 Slice 31): fix-1 — close three codex [P2] oracle gaps; still 22 failed",
++    "8766e868: docs(0.8.20 Slice 31): fix-1 — dependabot.yml as tier source of record; findings home re-ruled",
++    "(+ the fix-1 closure-JSON docs commit sitting on top of 8766e868 at the branch tip — this file. head_sha names 8766e868, the last SUBSTANTIVE commit, which is where the §8 gate table was captured; a closure JSON cannot name its own sha.)"
++  ],
++  "findings_addressed": [
++    "FIX-1 [P2] 1/3 — `setup.cfg` missing from the manifest oracle (conftest.py:39-51). The design's recognized-manifest table listed `setup.cfg`; `tracked_manifest_paths()` did not, so a tracked `setup.cfg` added later is silently missed while AC-SBOM-03 still passes — the design stated a requirement the tests did not enforce. CLOSED: `setup.cfg` added to MANIFEST_BASENAMES, and rather than patching the one name the ENTIRE recognized table was re-diffed against the helper — `poetry.lock`, `Pipfile`, `yarn.lock` and `pnpm-lock.yaml` were confirmed already present on both sides. The tuple is now split into 'matches tracked paths today' / 'recognized, forward-looking' with an explicit lockstep warning, and design §5.1 was promoted from a prose list to the same two-group table. Verified none of the five forward-looking names is tracked at cbb56212 (`git ls-files | grep -E '(^|/)(setup\\.cfg|Pipfile|poetry\\.lock|yarn\\.lock|pnpm-lock\\.yaml)$'` exits 1 with no output), so §5.1's 28-path enumeration is unchanged.",
++    "FIX-1 [P2] 2/3 — no `purl` assertion (test_cyclonedx.py:32-35). REQ-6 requires a purl per component and §5.5 makes the purl the bom-ref — the component identity an advisory feed matches a locked version against — but CycloneDX 1.6 accepts `name` + `version` alone, so a purl-less document passed AC-SBOM-10. CLOSED: AC-SBOM-10 now asserts per component that `purl` is present, carries an ecosystem prefix in {pkg:cargo/, pkg:npm/, pkg:pypi/}, EQUALS the `bom-ref`, and (for resolved components) has an `@version` segment equal to the component's own version; plus a document-level assertion that the purl-type set is EXACTLY {cargo, npm, pypi} — this repo tracks manifests in all three, so a missing type means an entire ecosystem was dropped and a fourth type means something leaked in. Test renamed test_cyclonedx_document_is_schema_valid_and_purl_identified; §4's AC table and §5.5 restate the contract.",
++    "FIX-1 [P2] 3/3 — dependency-graph coverage was vacuous (test_cyclonedx.py:91-98). `doc.get(\"dependencies\", [])` tolerates an EMPTY array, which is trivially 'closed', and the only depth assertion required a `direct` component — so an implementation emitting the manifest-derived direct set with ZERO lockfile-derived library<->library edges passed, i.e. REQ-8 was unenforced and the core reason the tool exists went ungated. CLOSED: AC-SBOM-12 now asserts the array is non-empty; the graph is closed in BOTH directions (every declared component has a `ref` entry, leaves carrying an empty `dependsOn` — direction 1 alone is what an empty array satisfies); at least one edge originates at a library rather than the metadata root component; and at least one KNOWN LOCKFILE-ONLY crate arrives tagged `transitive`. The sentinel set is proc-macro2 / quote / syn / unicode-ident / serde_derive, each present in the tracked Cargo.lock and declared by NO dependency table of any tracked non-excluded Cargo.toml at cbb56212 (378 of the 410 locked crates are in that position, computed from the tree), so they can only reach the BOM by walking the lock's edges. Only ONE survivor is required, which is the deliberate drift allowance; §5.5 records the caveat and the test says so in its failure message.",
++    "FIX-1 STEER 1 — .github/dependabot.yml is an existing tracked source of record for the tiering, and the first pass never cited it. §5.3 now derives the tier rules from it entry by entry (pip /src/python -> shipped, cargo / -> shipped incl. all src/rust/crates/* members, npm /src/ts -> shipped, npm / -> dev-tooling per the R-DEP-2 note, github-actions / -> out of BOM scope and recorded as deliberate) together with its explicit 'Deliberately NOT covered (do NOT add ...)' list (/python as the uv-managed EVAL ENV and 'the source of the idna/torch security-alert noise'; dev/research/** and data/corpus-data/** requirements files; dev/release/fixtures/cargo-skew/**). Consequence (a): §5.2 now records that the fixture exclusion is the ALREADY-RULED position — on disk since 0.8.11.1 / R-SW-5, for the same stated reason (noise/orphans) — which is considerably stronger than a fresh carve-out; pip-skew is unnamed there only because no pip directory was ever configured near it, and it takes the identical rule. Consequence (b): dev/tools/mermaid/package.json is a REAL tracked npm manifest covered by NO configured Dependabot directory (the npm entries are /src/ts and / only) — a genuine coverage gap of the same class as the R-DEP-2 note, which records that the root package-lock.json carried two live advisories (markdown-it GHSA-6v5v-wf23-fmfq, js-yaml GHSA-h67p-54hq-rp68) while under no directory so its security PRs never auto-opened. 0.8.20 rules NOTHING about it — .github/** is out of bounds for every leg — but the tool surfaces it mechanically as a set-difference over its own discovery output, which is a cashable demonstration of value given that LIBRARY-BUMP-STEWARD.md's own DoD includes 'dependabot.yml reconciled' (now cited in §1). Handed to Slice 33 §4 / 0.8.22.",
++    "FIX-1 STEER 2 — findings home weighed against all three conventions; RULING CHANGED. §5.6 was rewritten as a three-way comparison and the home moved from dev/design/0.8.20-slice-33-library-sweep-3-findings.md to dev/plans/runs/0.8.20-slice-33-library-sweep-3-FINDINGS.md. Basis: (a) dev/plans/runs/<version>-<slug>-FINDINGS.md is the dominant house convention for a DATED RUN REPORT (0.8.2-m1-FINDINGS.md, 0.8.3-rerank-tune-FINDINGS.md, 0.8.4-cost-probe-FINDINGS.md, IR-C-retrieval-findings.md), dev/plans/README.md scopes runs/ to 'slice logs, reviewer notes, and status boards' and dev/plans/ to 'release execution planning + run artifacts', and the slice's own -output.json already lands there under the house split (durable .md + -output.json tracked, raw logs gitignored by per-run glob). (b) dev/design/ is the weakest of the three on its OWN README's terms ('keep here: engine, retrieval, scheduler, vector, recovery, release design docs / cross-cutting design constraints') — a survey of ~400 third-party versions is neither — and the dev/design/0.8.20-sqlite-vec-99-vec0-delete-probe.md precedent is off-point, because that probe was commissioned to settle a DESIGN question so its output WAS a design constraint, whereas this one settles nothing about FathomDB's design and feeds 0.8.22's backlog. (c) dev/deps/ stays the home for PER-DEPENDENCY DOSSIERS, which Slice 33 mints none of (ASCERTAIN, NEVER IMPLEMENT), and its README explicitly forbids 'generated audit output dumps with no summary'. Division of labour recorded in §5.6: dev/plans/runs/ holds run-level findings, dev/deps/ holds per-dependency dossiers, and a later sweep that re-reviews a dependency writes dev/deps/<dep>.md citing the run report by path. Cost acknowledged honestly: lint-design-status.sh's frontmatter gate does not reach dev/plans/runs/** (nor does lint-plans-status.sh, which is top-level dev/plans/*.md only); this is consistent rather than a regression, since NO existing runs/ findings doc carries frontmatter, so the fixed doc shape adopts the H1 + bolded provenance line convention instead of importing a gate that would not fire. AC-SBOM-18's expected SLICE_33_FINDINGS_DOC moved with the ruling and the new path was verified NOT gitignored (`git check-ignore -v` exits 1).",
++    "Round-0 content unchanged and still in force: plan-0.8.20.md §3a leg 1/3 — requirements + acceptance criteria + design + RED tests, NO implementation code, delivered as dev/design/0.8.20-slice-31-sbom-survey-tool.md (§3 REQ-1..REQ-14, §4 the 22 AC->test map, §5 the design) plus scripts/sbom-survey/{README.md,tests/}. §5.1 git-ls-files discovery with python/pyproject.toml UNTRACKED and out of scope; §5.2 data-driven fixture exclusion proven data-driven by AC-SBOM-06; §5.3 longest-prefix-wins tiering with NO catch-all and a loud UntieredManifestError; §5.4 injectable published-version seam where 'current' is reachable only from a parsed pair on both sides; §5.5 lockfile-parse edges with no cargo-metadata/npm-ls subprocess; §5.7 named external libraries with constraints and the deliberately-not-taken list; §5.8 the Slice-33 consumer field set and determinism. No part of Slice 33 was built."
++  ],
++  "blockers_encountered": [
++    {
++      "id": "NONE-BLOCKING",
++      "description": "No blocker in fix-1. The governed-surface pin was checked before and after every commit and never moved; no manifest, lockfile or .gitignore was touched; no implementation code was added while strengthening the failing assertions.",
++      "resolution": "n/a — the three [P2]s were all closable by strengthening assertions inside existing tests, so the criterion count stayed at 22 and no AC table renumbering was needed."
++    }
++  ],
++  "additional_changes_made_in_scope": [
++    "dev/design/0.8.20-slice-31-sbom-survey-tool.md §10 (new) — the fix-1 record: each [P2] with what closed it, and the two steers with their outcomes. Kept in the spec of record rather than only in this JSON so the next reviewer can see the round-1 delta without the transcript.",
++    "dev/design §1 — added the LIBRARY-BUMP-STEWARD.md DoD item 'dependabot.yml reconciled' as the sixth thing every sweep owes, and framed .github/dependabot.yml as the existing tracked ruling this tool reconciles with rather than a bystander.",
++    "scripts/sbom-survey/README.md — the findings-home line now names the new dev/plans/runs/ path and points at §5.6 for the three-way comparison. The '22 tests, 22 failures' statements in the README, the design (§4 header, §8) and this JSON all still agree; N did not change.",
++    "dev/design §8 — the verification table was re-run at fix-1 and relabelled accordingly; all eight rc values are unchanged from the round-0 close.",
++    "NOT committed and NOT deleted: dev/plans/runs/codex/0.8.20/slice-31-round1-20260729T141744Z.log remains untracked on the branch, per the fix-1 instruction that the orchestrator handles it."
++  ],
++  "agent_verify_result": "pass — every gate re-run at head 8766e868 with rc=$? captured on the line IMMEDIATELY following each command (never after a pipe or a $(...)). (1) bash scripts/check-governed-surface-pin.sh -> rc=0 ('ok governed-surface-pin: ... matches the AC-079 pin (30 allowlist / 5 core / 5 recovery_denylist, pinned at 427d2712 under AC-079)'). (2) git rev-parse HEAD:src/conformance/governed-surface-allowlist.json -> rc=0, prints 93ef3a8616e460c443417cdffc1e9f711ceb12f8 — BYTE-IDENTICAL to the pin, no allowlist widened, no re-pin. (3) bash scripts/lint-design-status.sh -> rc=0. (4) bash scripts/agent-lint-md.sh -> rc=0 (silent pass; prettier NOT run — it corrupts * -> _ in this repo). (5) bash scripts/lint-findings.sh -> rc=0 ('39 finding ids in dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md, all unique'). (6) python3 -m pytest scripts/sbom-survey/tests --tb=no -q -rsE -> rc=1; 'collected 22 items' and '22 failed in 0.20s' — 0 passed (failed == collected), 0 skipped and 0 errors (-rsE emitted neither a skipped nor an error section, and collection completed). N is unchanged at 22 = the number of acceptance criteria; every statement of that number (design §4 header, §8, README, this JSON) agrees. TC-97 re-confirmed: the pytest header prints 'rootdir: /home/coreyt/projects/fathomdb-worktrees/slice-31-sbom-spec' with NO 'configfile:' line. (7) git diff --name-only cbb56212e0af3c7aa657ca3e0219e8fcd6e5dca1 -> rc=0, exactly 12 paths: dev/DOC-INDEX.md, dev/design/0.8.20-slice-31-sbom-survey-tool.md, dev/plans/runs/0.8.20-slice-31-output.json, scripts/sbom-survey/README.md and the 8 files under scripts/sbom-survey/tests/ — NO manifest, NO lockfile, NO .gitignore, nothing under src/, engine/ or .github/. (8) grep -n 'SCHEMA_VERSION: u32' src/rust/crates/fathomdb-schema/src/lib.rs -> rc=0, 'pub const SCHEMA_VERSION: u32 = 24;'. scripts/agent-test.sh was NOT run for a green claim (TC-16: its aggregate exit code is vacuous — it aborts at a known-red actionlint fixture and never reaches later steps).",
++  "next_step_for_orchestrator": "Run codex §9 round 2 against the same surface (dev/design/0.8.20-slice-31-sbom-survey-tool.md plus scripts/sbom-survey/{README.md,tests/}); plan-0.8.20.md §3a gates leg 1 on 'codex §9 reviews the req/AC/design; FIX-n complete before close', with no X0-style HITL sign-off. Three round-1 [P2]s are closed and two design steers folded in; the two reviewable deltas most worth a second look are (a) the strengthened AC-SBOM-12 contract, which now requires the CycloneDX dependency graph to be closed in BOTH directions — every declared component gets a `ref` entry — a real added obligation on Slice 32, and (b) the §5.6 findings-home ruling, which CHANGED from dev/design/ to dev/plans/runs/0.8.20-slice-33-library-sweep-3-FINDINGS.md and moved AC-SBOM-18's expected constant with it. Then cherry-pick the branch's full commit set IN ORDER — a58e7bec, cb4e4034, f1b919bc, 9953c5eb, 92367b41, 8766e868 and the fix-1 closure-JSON commit at the branch tip (enumerate with `git -C <wt> log --oneline --reverse cbb56212..HEAD`) — onto the integration tip, re-run gates 1-8 there, and update the board. Do NOT cherry-pick dev/plans/runs/codex/0.8.20/slice-31-round1-20260729T141744Z.log — it is deliberately untracked. Slice 32 (implement against these 22 RED tests) is unblocked by this landing; Slice 33 depends on 32. Note for the Steward: this slice mints NO AC and carries NO R-20-xx id (TC-76) — the AC-SBOM-nn ids are tool-level criteria scoped to the design doc and must never be cited as dev/acceptance.md register entries. Two items are handed forward for 0.8.22 rather than acted on here: the dev/tools/mermaid/** Dependabot coverage gap (§5.3), and the whole staleness backlog (§2)."
++}
+diff --git a/scripts/sbom-survey/README.md b/scripts/sbom-survey/README.md
+new file mode 100644
+index 00000000..1734f374
+--- /dev/null
++++ b/scripts/sbom-survey/README.md
+@@ -0,0 +1,79 @@
++# `sbom-survey` — dependency survey tool (Library Sweep #3)
++
++An **isolated Python mini-project** that produces a **CycloneDX 1.6 JSON** SBOM over every
++dependency manifest **tracked on `main`**, enumerates the **library↔library** dependency graph, and
++diffs **used (locked) versus published (registry latest)** versions.
++
++It mechanizes the manual triage loop in `dev/plans/prompts/LIBRARY-BUMP-STEWARD.md` §1–2 — is the
++manifest tracked, is the dependency direct or transitive, is the locked version already at target —
++so a Library Sweep is ~90% mechanical instead of a search → review → check → reason cycle per
++candidate.
++
++**Spec of record:** `dev/design/0.8.20-slice-31-sbom-survey-tool.md` — requirements, the 22
++acceptance criteria, the design, and the answers to every resolved design question. Read that first;
++this file is only the operating note.
++
++## Status
++
++| Slice | Deliverable | State |
++|---|---|---|
++| **31** | requirements · acceptance criteria · design · **RED tests** | **this directory today** |
++| **32** | the code that turns the RED tests GREEN | not started |
++| **33** | **runs** the tool and writes the survey findings | not started |
++
++At Slice 31 this directory contains **only** this README and the RED acceptance suite. There is no
++`sbom_survey` package, no `pyproject.toml`, no `tiers.toml` and no CLI yet — that is Slice 32. The
++suite is therefore **RED by construction**: 22 tests, 22 failures, one per acceptance criterion.
++
++## Running the suite
++
++From the repository root, with a neutral working directory:
++
++```bash
++python3 -m pytest scripts/sbom-survey/tests
++```
++
++Expected at Slice 31: **`22 failed, 0 passed, 0 skipped, 0 errors`** (exit code `1`).
++
++- **No test may skip and no test may pass** before Slice 32. A skip is a vacuous green.
++- **No module-level `import sbom_survey`.** The import happens inside each test body via the
++  `require()` helper in `tests/conftest.py`, so a missing package produces 22 attributable FAILEDs
++  rather than one collection error that hides 21 of them.
++- The suite needs **no network**. The published-version lookup is behind an injectable seam; the
++  tests inject `OfflineSource` / `StaticSource`, and one test asserts zero socket I/O.
++- **TC-97.** The only pytest configuration in this repository is `src/python/pyproject.toml`, whose
++  `pythonpath = ["."]` shadows an installed wheel. It is **not** an ancestor of
++  `scripts/sbom-survey/tests`, so pytest runs this suite with **no config file** and cannot inherit
++  it. Do not add a `pyproject.toml` above this directory.
++
++## Deliberately NOT wired into CI
++
++This tool is **recurring by design and NOT CI-gating** — it is **informational**
++(`plan-0.8.20.md` §3a, HITL 2026-07-29, steward `seq-153`).
++
++- It is **not** registered in `scripts/agent-test.sh`.
++- It is **not** referenced by `.github/workflows/ci.yml`.
++- It is **not** part of `scripts/agent-verify.sh`, `scripts/check.sh`, or any lint/typecheck scope
++  (`ruff` and `pyright` are scoped to `src/python`).
++
++Do not wire it in. Beyond the standing ruling, the acceptance suite is red until Slice 32 lands, so
++registering it would turn `main` red. `tests/test_cli.py::test_tool_declares_non_ci_gating_and_is_absent_from_ci_wiring`
++is the standing guard: it greps both wiring files and fails if either grows a reference.
++
++## Isolation
++
++The mini-project's own `pyproject.toml` (a Slice 32 artifact) is standalone: not a Cargo workspace
++member, not referenced by `src/python/pyproject.toml`, not a dependency of the root `package.json`.
++It can never enlarge the published dependency graph or the advisory backlog. Its own dependencies
++are surveyed by the tool and tagged `dev-tooling` — the tool appears in its own SBOM, by design.
++
++Generated reports go to `scripts/sbom-survey/out/`, which Slice 32 adds to `.gitignore`. Slice 33's
++**findings** have a separate tracked home:
++`dev/plans/runs/0.8.20-slice-33-library-sweep-3-FINDINGS.md` — the house convention for a dated run
++report, weighed against `dev/design/` and `dev/deps/` in design §5.6.
++
++## Scope guard
++
++The tool **never** applies a dependency bump and **never** edits a manifest or a lockfile. Its only
++write path is its own gitignored output directory. The survey is an **input to 0.8.22**, which owns
++the actual upgrades.
+diff --git a/scripts/sbom-survey/tests/conftest.py b/scripts/sbom-survey/tests/conftest.py
+new file mode 100644
+index 00000000..86eaf637
+--- /dev/null
++++ b/scripts/sbom-survey/tests/conftest.py
+@@ -0,0 +1,196 @@
++"""Shared support for the `sbom-survey` acceptance suite (0.8.20 Slice 31).
++
++This suite is **RED by construction**: Slice 31 ships requirements, acceptance
++criteria, design and tests; Slice 32 ships the code that turns them GREEN.
++
++The one structural rule this file exists to enforce: **nothing imports
++`sbom_survey` at module level.** A top-level import of a package that does not
++exist yet raises at collection time, which aborts the whole module and hides
++every criterion after the first. Tests call `require()` *inside the test body*
++instead, so each acceptance criterion produces its own attributable FAILED with
++the required behaviour restated in the message.
++
++A `pytest.skip` would be a vacuous green and is used nowhere in this suite.
++"""
++
++from __future__ import annotations
++
++import importlib
++import json
++import os
++import subprocess
++import sys
++from pathlib import Path
++
++import pytest
++
++# <repo>/scripts/sbom-survey/tests/conftest.py
++TESTS_DIR = Path(__file__).resolve().parent
++PROJECT_ROOT = TESTS_DIR.parent
++REPO_ROOT = PROJECT_ROOT.parents[1]
++
++# The mini-project is deliberately isolated (its own pyproject.toml, no
++# workspace membership), so the suite must be runnable without installing it.
++if str(PROJECT_ROOT) not in sys.path:
++    sys.path.insert(0, str(PROJECT_ROOT))
++
++# Basenames the survey recognizes as dependency manifests / lockfiles.
++#
++# ⚠ THIS TUPLE MIRRORS THE RECOGNIZED-BASENAME TABLE IN THE DESIGN (§5.1) 1:1 AND
++# MUST BE KEPT IN LOCKSTEP WITH IT. It is the oracle AC-SBOM-03 grades against:
++# a name that is in the design table but missing here is a manifest the tool may
++# silently skip while the suite still reports green (codex §9 round 1, fix-1
++# finding 1 — `setup.cfg` was exactly that).
++#
++# Split in two: the first group matches tracked paths TODAY (§5.1's 28-path
++# enumeration); the second group currently matches nothing and is present so
++# that adding one of those files to the repo is DISCOVERED (and then fails REQ-4
++# tiering loudly) rather than silently ignored. `requirements*.txt` is a glob and
++# so lives in `tracked_manifest_paths()` below rather than in this tuple.
++MANIFEST_BASENAMES = (
++    # matched by tracked paths at cbb56212
++    "Cargo.toml",
++    "Cargo.lock",
++    "package.json",
++    "package-lock.json",
++    "pyproject.toml",
++    "uv.lock",
++    "setup.py",
++    # recognized, forward-looking: nothing tracked matches these today
++    "yarn.lock",
++    "pnpm-lock.yaml",
++    "poetry.lock",
++    "Pipfile",
++    "setup.cfg",
++)
++
++TIER_VOCABULARY = ("shipped", "dev-tooling", "eval-only")
++
++FIXTURE_PREFIX = "dev/release/fixtures/"
++
++# purl (`bom-ref`) prefix per ecosystem — the component identity an advisory feed
++# matches against (REQ-6, design §5.5). Every ecosystem the repo tracks must be
++# represented in the BOM, and no fourth purl type may appear.
++PURL_PREFIX_BY_ECOSYSTEM = {
++    "cargo": "pkg:cargo/",
++    "npm": "pkg:npm/",
++    "pypi": "pkg:pypi/",
++}
++PURL_PREFIXES = tuple(PURL_PREFIX_BY_ECOSYSTEM.values())
++
++# Cargo crates present in the tracked `Cargo.lock` that are declared by NO
++# dependency table of any tracked, non-excluded `Cargo.toml` — i.e. they exist
++# ONLY because a lockfile-derived library<->library edge put them there. If none
++# of these reaches the BOM tagged `transitive`, the implementation emitted the
++# direct set and dropped the dependency graph (codex §9 round 1, fix-1
++# finding 3). Verified lockfile-only at cbb56212; see design §5.5 for the
++# drift note (a future direct adoption of one of these is a legitimate reason
++# for it to leave this set, and the assertion only needs ONE survivor).
++KNOWN_TRANSITIVE_ONLY_CARGO = (
++    "proc-macro2",
++    "quote",
++    "syn",
++    "unicode-ident",
++    "serde_derive",
++)
++
++
++def purl_type(purl: object) -> str | None:
++    """The purl `type` segment (`pkg:<type>/…`), or None if it is not a purl."""
++    if not isinstance(purl, str) or not purl.startswith("pkg:"):
++        return None
++    return purl[len("pkg:") :].split("/", 1)[0]
++
++
++def require(module: str, criterion: str, behaviour: str):
++    """Import `module`, or FAIL naming the criterion and the missing behaviour.
++
++    Never skips. A missing implementation is a failed acceptance criterion,
++    not an absent test.
++    """
++    try:
+
+exec
+/bin/bash -lc "git diff cbb56212e0af3c7aa657ca3e0219e8fcd6e5dca1 -- scripts/sbom-survey/tests/conftest.py scripts/sbom-survey/tests/test_*.py | sed -n '260,760p'" in /home/coreyt/projects/fathomdb-worktrees/slice-31-sbom-spec
+ succeeded in 0ms:
++    """
++    out = tmp_path / "out"
++    proc = run_cli(
++        ["--repo", str(REPO_ROOT), "--offline", "--out", str(out)],
++        "AC-SBOM-20",
++        "`sbom-survey --repo R --offline --out DIR` must exit 0 and write"
++        " sbom.cdx.json, staleness.json and staleness.md into DIR.",
++    )
++    assert proc.returncode == 0, (
++        f"offline survey exited {proc.returncode}\nstdout:\n{proc.stdout}\n"
++        f"stderr:\n{proc.stderr}"
++    )
++    for artifact in ("sbom.cdx.json", "staleness.json", "staleness.md"):
++        assert (out / artifact).is_file(), f"{artifact} was not written to {out}"
++
++    doc = json.loads((out / "sbom.cdx.json").read_text(encoding="utf-8"))
++    assert doc["bomFormat"] == "CycloneDX"
++    assert doc["specVersion"] == "1.6"
++
++
++def test_cli_exits_two_naming_the_untiered_manifest(tmp_path: Path) -> None:
++    """AC-SBOM-21.
++
++    REQ-4 at the CLI boundary. A tier map that does not cover a tracked
++    manifest must exit 2 and name the offending path on stderr — never exit 0
++    with an untagged component.
++    """
++    incomplete = tmp_path / "tiers.toml"
++    incomplete.write_text(
++        "schema = 1\n\n"
++        "[[rule]]\n"
++        'prefix = "dev/release/fixtures/"\n'
++        'action = "exclude"\n'
++        'reason = "fixture"\n',
++        encoding="utf-8",
++    )
++
++    out = tmp_path / "out"
++    proc = run_cli(
++        [
++            "--repo",
++            str(REPO_ROOT),
++            "--offline",
++            "--out",
++            str(out),
++            "--tiers",
++            str(incomplete),
++        ],
++        "AC-SBOM-21",
++        "with a tier map that covers no real manifest, the CLI must exit 2 and"
++        " NAME the untiered path on stderr (never exit 0, never emit an"
++        " untagged component).",
++    )
++    assert proc.returncode == 2, (
++        f"expected exit 2 for an untiered manifest, got {proc.returncode}\n"
++        f"stderr:\n{proc.stderr}"
++    )
++    assert "Cargo.toml" in proc.stderr, (
++        "stderr must name the offending manifest path so the fix is obvious;"
++        f" got:\n{proc.stderr}"
++    )
+diff --git a/scripts/sbom-survey/tests/test_cyclonedx.py b/scripts/sbom-survey/tests/test_cyclonedx.py
+new file mode 100644
+index 00000000..ed278641
+--- /dev/null
++++ b/scripts/sbom-survey/tests/test_cyclonedx.py
+@@ -0,0 +1,261 @@
++"""AC-SBOM-10 .. AC-SBOM-13 — the CycloneDX document.
++
++REQ-6 (CycloneDX 1.6), REQ-7 (resolved versions), REQ-8 (direct vs transitive).
++Design: dev/design/0.8.20-slice-31-sbom-survey-tool.md §5.5.
++"""
++
++from __future__ import annotations
++
++from urllib.parse import unquote
++
++from conftest import (
++    KNOWN_TRANSITIVE_ONLY_CARGO,
++    PURL_PREFIX_BY_ECOSYSTEM,
++    PURL_PREFIXES,
++    REPO_ROOT,
++    TIER_VOCABULARY,
++    purl_type,
++    require,
++)
++
++
++def _offline_survey(criterion: str, behaviour: str):
++    survey_mod = require("sbom_survey.survey", criterion, behaviour)
++    registry = require("sbom_survey.registry", criterion, behaviour)
++    return survey_mod.run_survey(REPO_ROOT, published=registry.OfflineSource())
++
++
++def test_cyclonedx_document_is_schema_valid_and_purl_identified() -> None:
++    """AC-SBOM-10.
++
++    The emitted document validates against the bundled CycloneDX 1.6 JSON
++    schema. Hand-rolled JSON that no consumer will validate is not an SBOM.
++
++    Schema validity alone is NOT enough, and asserting only it was the gap
++    codex §9 round 1 caught: `name` + `version` satisfy the 1.6 schema, so a
++    purl-less document would have passed. REQ-6 requires a `purl` PER
++    COMPONENT, and §5.5 makes the purl the `bom-ref` — the component identity
++    an advisory feed matches a locked version against. A component without one
++    is unmatchable, which defeats the reason the SBOM is produced.
++    """
++    survey = _offline_survey(
++        "AC-SBOM-10",
++        "Survey.to_cyclonedx() must produce a document that validates against"
++        " the bundled CycloneDX 1.6 JSON schema"
++        " (cyclonedx-python-lib[json-validation]), AND every component must"
++        " carry a `purl` that IS its `bom-ref`, bears the ecosystem prefix"
++        f" ({', '.join(PURL_PREFIXES)}) and encodes the component's own"
++        " locked version.",
++    )
++    doc = survey.to_cyclonedx()
++
++    assert doc.get("bomFormat") == "CycloneDX"
++    assert doc.get("specVersion") == "1.6"
++    assert str(doc.get("serialNumber", "")).startswith("urn:uuid:")
++    assert doc.get("components"), "the BOM has no components"
++
++    seen_types: set[str] = set()
++    for component in doc["components"]:
++        name = component.get("name")
++        purl = component.get("purl")
++        assert purl, (
++            f"{name!r}: component has NO purl — REQ-6 requires one per component,"
++            " and without it the component cannot be matched against an advisory"
++        )
++        assert purl.startswith(PURL_PREFIXES), (
++            f"{name!r}: purl {purl!r} does not carry a recognized ecosystem"
++            f" prefix (expected one of {PURL_PREFIXES})"
++        )
++        assert component.get("bom-ref") == purl, (
++            f"{name!r}: bom-ref {component.get('bom-ref')!r} != purl {purl!r} —"
++            " §5.5 makes the purl the bom-ref so refs are stable across runs"
++        )
++        seen_types.add(purl_type(purl) or "")
++
++        props = {p["name"]: p["value"] for p in component.get("properties", [])}
++        if props.get("fathomdb:resolution") != "unresolved":
++            version = component.get("version")
++            assert version, f"{purl}: resolved component has no version"
++            assert "@" in purl, (
++                f"{purl}: a resolved component's purl must pin its version"
++            )
++            assert unquote(purl.rsplit("@", 1)[-1]) == version, (
++                f"{purl}: purl version does not match component version"
++                f" {version!r} — the identity and the reported version disagree"
++            )
++
++    assert seen_types == set(PURL_PREFIX_BY_ECOSYSTEM), (
++        "the BOM's purl types must be exactly"
++        f" {sorted(PURL_PREFIX_BY_ECOSYSTEM)} — this repo tracks cargo, npm and"
++        f" pypi manifests, so all three must be represented; got {sorted(seen_types)}"
++    )
++
++    validator_mod = require(
++        "sbom_survey.cyclonedx",
++        "AC-SBOM-10",
++        "sbom_survey.cyclonedx.validate(doc) must run the CycloneDX 1.6 schema"
++        " validator and return None on success / a diagnostic on failure.",
++    )
++    problem = validator_mod.validate(doc)
++    assert problem is None, f"CycloneDX 1.6 schema validation failed: {problem}"
++
++
++def test_every_component_carries_a_tier_property() -> None:
++    """AC-SBOM-11.
++
++    Tier tagging is what made TC-93 a cheap call. Every component carries
++    exactly one `fathomdb:tier` property, and its value is in the ruled
++    vocabulary.
++    """
++    survey = _offline_survey(
++        "AC-SBOM-11",
++        "every CycloneDX component must carry EXACTLY ONE `fathomdb:tier`"
++        f" property whose value is one of {TIER_VOCABULARY!r}.",
++    )
++    doc = survey.to_cyclonedx()
++
++    for component in doc["components"]:
++        tiers = [
++            p["value"]
++            for p in component.get("properties", [])
++            if p.get("name") == "fathomdb:tier"
++        ]
++        ref = component.get("bom-ref", component.get("name"))
++        assert len(tiers) == 1, f"{ref}: expected one fathomdb:tier, got {tiers}"
++        assert tiers[0] in TIER_VOCABULARY, f"{ref}: bad tier {tiers[0]!r}"
++
++
++def test_dependency_graph_is_closed_and_depth_tagged() -> None:
++    """AC-SBOM-12.
++
++    library<->library enumeration. The `dependencies` array is the edge set;
++    every `dependsOn` ref must resolve to a declared component (no dangling
++    refs), and every component is tagged direct or transitive — LBS §2's
++    triage turns on that distinction.
++
++    Closure ALONE is vacuous, and that was codex §9 round 1's third finding: an
++    empty `dependencies` array is trivially closed, so an implementation that
++    emitted the manifest-derived DIRECT set and skipped every lockfile-derived
++    library<->library edge used to pass. The graph is therefore asserted
++    non-empty, closed in BOTH directions (every declared component appears as a
++    `ref`, leaves carrying an empty `dependsOn`), to contain at least one edge
++    whose source is a library rather than the root component, and to have
++    carried at least one known lockfile-only crate through as `transitive`.
++    """
++    survey = _offline_survey(
++        "AC-SBOM-12",
++        "the CycloneDX `dependencies` array must be NON-EMPTY and CLOSED IN BOTH"
++        " DIRECTIONS (every dependsOn ref resolves to a declared component"
++        " bom-ref, and every declared component appears as a `ref` entry), must"
++        " contain at least one library->library edge, and every component must"
++        " carry `fathomdb:depth` in {direct, transitive} with at least one"
++        " lockfile-only package tagged `transitive`.",
++    )
++    doc = survey.to_cyclonedx()
++
++    component_refs = {c["bom-ref"] for c in doc["components"]}
++    root_ref = doc["metadata"]["component"]["bom-ref"]
++    declared = component_refs | {root_ref}
++
++    entries = doc.get("dependencies")
++    assert isinstance(entries, list) and entries, (
++        "the `dependencies` array is empty — REQ-8 and §5.5 require the"
++        " lockfile-derived library<->library edge set, and an empty graph is"
++        " vacuously 'closed' while enumerating nothing"
++    )
++
++    dangling: list[str] = []
++    for entry in entries:
++        if entry["ref"] not in declared:
++            dangling.append(entry["ref"])
++        for target in entry.get("dependsOn", []):
++            if target not in declared:
++                dangling.append(target)
++    assert not dangling, f"dangling dependency refs (graph not closed): {sorted(set(dangling))}"
++
++    ungraphed = sorted(component_refs - {e["ref"] for e in entries})
++    assert not ungraphed, (
++        "these components have no `dependencies` entry, so the graph does not"
++        f" cover the component list (leaves take an empty dependsOn): {ungraphed[:5]}"
++        f" (+{max(0, len(ungraphed) - 5)} more)"
++    )
++
++    library_edges = [
++        e for e in entries if e["ref"] != root_ref and e.get("dependsOn")
++    ]
++    assert library_edges, (
++        "every edge in the graph originates at the root component — not one"
++        " library->library edge was emitted, which is the core of REQ-8"
++    )
++
++    for component in doc["components"]:
++        depths = [
++            p["value"]
++            for p in component.get("properties", [])
++            if p.get("name") == "fathomdb:depth"
++        ]
++        ref = component["bom-ref"]
++        assert len(depths) == 1, f"{ref}: expected one fathomdb:depth, got {depths}"
++        assert depths[0] in ("direct", "transitive"), f"{ref}: bad depth {depths[0]!r}"
++
++    def _depth(component: dict) -> str | None:
++        for prop in component.get("properties", []):
++            if prop.get("name") == "fathomdb:depth":
++                return prop.get("value")
++        return None
++
++    assert any(_depth(c) == "direct" for c in doc["components"]), (
++        "no component was tagged direct — the manifest-derived direct set is empty"
++    )
++
++    transitive_cargo = {
++        c.get("name")
++        for c in doc["components"]
++        if _depth(c) == "transitive"
++        and str(c.get("purl", "")).startswith(PURL_PREFIX_BY_ECOSYSTEM["cargo"])
++    }
++    lockfile_only_seen = sorted(set(KNOWN_TRANSITIVE_ONLY_CARGO) & transitive_cargo)
++    assert lockfile_only_seen, (
++        "not one of the known lockfile-only crates"
++        f" {list(KNOWN_TRANSITIVE_ONLY_CARGO)} reached the BOM tagged"
++        " `transitive` — these are declared by NO tracked Cargo.toml, so their"
++        " absence means the Cargo.lock library<->library graph was never walked"
++        f" (transitive cargo components seen: {len(transitive_cargo)})"
++    )
++
++
++def test_component_version_is_locked_and_constraint_preserved() -> None:
++    """AC-SBOM-13.
++
++    "What version are we using" is answered by the tracked LOCKFILE, not by a
++    manifest range. The declared constraint survives alongside it so triage can
++    see both.
++    """
++    survey = _offline_survey(
++        "AC-SBOM-13",
++        "a component's `version` must be the LOCKED/resolved version from the"
++        " tracked lockfile (never a manifest range such as \"1.0\"), and the"
++        " declared range must survive as a `fathomdb:constraint` property on"
++        " every DIRECT component.",
++    )
++    doc = survey.to_cyclonedx()
++
++    range_chars = set("^~*><= ,|")
++    for component in doc["components"]:
++        version = component.get("version")
++        props = {p["name"]: p["value"] for p in component.get("properties", [])}
++        ref = component["bom-ref"]
++        if props.get("fathomdb:resolution") == "unresolved":
++            assert version in (None, ""), (
++                f"{ref}: an unresolved component must carry no version, got {version!r}"
++            )
++            continue
++        assert version, f"{ref}: resolved component has no version"
++        assert not (set(version) & range_chars), (
++            f"{ref}: version {version!r} looks like a manifest RANGE, not a"
++            " locked version"
++        )
++        if props.get("fathomdb:depth") == "direct":
++            assert "fathomdb:constraint" in props, (
++                f"{ref}: direct component lost its declared constraint"
++            )
+diff --git a/scripts/sbom-survey/tests/test_discovery.py b/scripts/sbom-survey/tests/test_discovery.py
+new file mode 100644
+index 00000000..a77fc640
+--- /dev/null
++++ b/scripts/sbom-survey/tests/test_discovery.py
+@@ -0,0 +1,136 @@
++"""AC-SBOM-01 .. AC-SBOM-04 — manifest discovery.
++
++REQ-1 (discovery is `git ls-files`-derived) and REQ-2 (completeness).
++Design: dev/design/0.8.20-slice-31-sbom-survey-tool.md §5.1.
++"""
++
++from __future__ import annotations
++
++from pathlib import Path
++
++from conftest import (
++    REPO_ROOT,
++    require,
++    tracked_manifest_paths,
++    tracked_paths,
++)
++
++
++def test_discovery_uses_git_ls_files_not_a_filesystem_walk(tmp_path: Path) -> None:
++    """AC-SBOM-01.
++
++    Discovery takes its candidate set from an injected `git ls-files` runner.
++    A manifest that exists on disk but is NOT reported by that runner must be
++    absent from the result — that is what makes `python/pyproject.toml`,
++    `target/**` and `node_modules/**` structurally unreachable.
++    """
++    discovery = require(
++        "sbom_survey.discovery",
++        "AC-SBOM-01",
++        "discover_manifests(root, *, ls_files=...) must derive its candidate set"
++        " from the injected `git ls-files` runner ONLY; a manifest present on"
++        " disk but untracked must never appear in the result.",
++    )
++
++    # Tracked, per the injected runner.
++    (tmp_path / "Cargo.toml").write_text("[package]\nname='x'\n", encoding="utf-8")
++    # On disk but NOT reported by the runner -> must be invisible.
++    untracked = tmp_path / "vendored"
++    untracked.mkdir()
++    (untracked / "package.json").write_text("{}", encoding="utf-8")
++
++    calls: list[Path] = []
++
++    def fake_ls_files(root: Path) -> list[str]:
++        calls.append(root)
++        return ["Cargo.toml"]
++
++    refs = discovery.discover_manifests(tmp_path, ls_files=fake_ls_files)
++
++    assert calls, "the injected ls_files runner was never called"
++    found = {r.path for r in refs}
++    assert found == {"Cargo.toml"}, (
++        "discovery must return exactly what git reports; got "
++        f"{sorted(found)} — an untracked on-disk manifest leaked in"
++    )
++
++
++def test_gitignored_top_level_python_dir_is_out_of_scope() -> None:
++    """AC-SBOM-02.
++
++    `.gitignore` ignores `/python/` in its entirety (the sourceless recovered
++    binding kept on disk for Memex). `python/pyproject.toml` is therefore
++    UNTRACKED and out of BOM scope, even on a developer machine where the
++    directory exists. This is the LBS charter §2 "noise against gitignored
++    dev/eval lockfiles" trap.
++    """
++    assert not any(p.startswith("python/") for p in tracked_paths()), (
++        "precondition changed: `python/` is now tracked — the design's scope"
++        " ruling (§5.1) must be revisited before this criterion is re-graded"
++    )
++
++    discovery = require(
++        "sbom_survey.discovery",
++        "AC-SBOM-02",
++        "discover_manifests(REPO_ROOT) must return no path under `python/`,"
++        " because `.gitignore` ignores the whole `/python/` tree and the SBOM"
++        " scope is `everything tracked on main`.",
++    )
++
++    refs = discovery.discover_manifests(REPO_ROOT)
++    leaked = sorted(r.path for r in refs if r.path.startswith("python/"))
++    assert not leaked, f"gitignored `/python/` leaked into the BOM scope: {leaked}"
++
++
++def test_every_tracked_manifest_is_discovered() -> None:
++    """AC-SBOM-03.
++
++    Rule-based, not a frozen list: every tracked path whose basename is a
++    recognized manifest name must be discovered. Nothing tracked is silently
++    missed (REQ-2).
++    """
++    expected = tracked_manifest_paths()
++    assert expected, "vacuous-pass guard: git reported zero tracked manifests"
++
++    discovery = require(
++        "sbom_survey.discovery",
++        "AC-SBOM-03",
++        "discover_manifests(REPO_ROOT) must return EVERY tracked path whose"
++        " basename is a recognized manifest/lockfile name — computed from"
++        " `git ls-files` at run time, not a frozen list.",
++    )
++
++    found = {r.path for r in discovery.discover_manifests(REPO_ROOT)}
++    missing = sorted(set(expected) - found)
++    assert not missing, f"tracked manifests not discovered: {missing}"
++
++
++def test_ecosystem_and_kind_classification() -> None:
++    """AC-SBOM-04.
++
++    Each ref carries ecosystem in {cargo, npm, pypi} and kind in
++    {manifest, lockfile}. Checked against four real tracked paths.
++    """
++    discovery = require(
++        "sbom_survey.discovery",
++        "AC-SBOM-04",
++        "each ManifestRef must carry ecosystem in {cargo, npm, pypi} and kind"
++        " in {manifest, lockfile}; e.g. Cargo.lock -> (cargo, lockfile),"
++        " src/ts/package.json -> (npm, manifest), src/python/uv.lock ->"
++        " (pypi, lockfile), tools/docs/requirements.txt -> (pypi, manifest).",
++    )
++
++    by_path = {r.path: r for r in discovery.discover_manifests(REPO_ROOT)}
++    expected = {
++        "Cargo.lock": ("cargo", "lockfile"),
++        "src/ts/package.json": ("npm", "manifest"),
++        "src/python/uv.lock": ("pypi", "lockfile"),
++        "tools/docs/requirements.txt": ("pypi", "manifest"),
++    }
++    for path, (ecosystem, kind) in expected.items():
++        ref = by_path.get(path)
++        assert ref is not None, f"{path} was not discovered"
++        assert (ref.ecosystem, ref.kind) == (ecosystem, kind), (
++            f"{path}: expected ({ecosystem}, {kind}), got "
++            f"({ref.ecosystem}, {ref.kind})"
++        )
+diff --git a/scripts/sbom-survey/tests/test_paths.py b/scripts/sbom-survey/tests/test_paths.py
+new file mode 100644
+index 00000000..c4aa3741
+--- /dev/null
++++ b/scripts/sbom-survey/tests/test_paths.py
+@@ -0,0 +1,48 @@
++"""AC-SBOM-18 — gitignored reports, tracked findings home.
++
++REQ-11. Design: dev/design/0.8.20-slice-31-sbom-survey-tool.md §5.6.
++"""
++
++from __future__ import annotations
++
++from conftest import REPO_ROOT, is_gitignored, require
++
++
++def test_report_dir_is_gitignored_and_findings_home_is_tracked() -> None:
++    """AC-SBOM-18.
++
++    Generated reports are gitignored (HITL-ruled). Slice 33's *findings*
++    therefore need a separate, deliberately NOT-ignored durable home — the raw
++    tool output is not one.
++
++    The home is `dev/plans/runs/` — the dominant house convention for a dated
++    run report (`0.8.2-m1-FINDINGS.md`, `0.8.3-rerank-tune-FINDINGS.md`,
++    `0.8.4-cost-probe-FINDINGS.md`), and where the slice's own `-output.json`
++    already lands. See design §5.6 for the comparison against `dev/design/`
++    and `dev/deps/`.
++    """
++    paths = require(
++        "sbom_survey.paths",
+
+exec
+/bin/bash -lc "git diff cbb56212e0af3c7aa657ca3e0219e8fcd6e5dca1 -- scripts/sbom-survey/tests/conftest.py scripts/sbom-survey/tests/test_*.py | sed -n '760,1320p'" in /home/coreyt/projects/fathomdb-worktrees/slice-31-sbom-spec
+ succeeded in 0ms:
++        "sbom_survey.paths",
++        "AC-SBOM-18",
++        "sbom_survey.paths must expose DEFAULT_REPORT_DIR (repo-relative,"
++        " GITIGNORED — Slice 32 adds the `scripts/sbom-survey/out/` rule) and"
++        " SLICE_33_FINDINGS_DOC (repo-relative, NOT ignored — the tracked"
++        " durable home for the survey findings).",
++    )
++
++    report_dir = paths.DEFAULT_REPORT_DIR
++    findings_doc = paths.SLICE_33_FINDINGS_DOC
++
++    assert report_dir == "scripts/sbom-survey/out"
++    assert findings_doc == "dev/plans/runs/0.8.20-slice-33-library-sweep-3-FINDINGS.md"
++
++    probe = f"{report_dir}/sbom.cdx.json"
++    assert is_gitignored(probe), (
++        f"{probe} is NOT gitignored — generated reports must never be"
++        " committable (add `scripts/sbom-survey/out/` to .gitignore)"
++    )
++    assert not is_gitignored(findings_doc), (
++        f"{findings_doc} is gitignored — it is the TRACKED durable home for"
++        " Slice 33's findings and must be committable"
++    )
++    assert (REPO_ROOT / "dev" / "plans" / "runs").is_dir()
+diff --git a/scripts/sbom-survey/tests/test_registry.py b/scripts/sbom-survey/tests/test_registry.py
+new file mode 100644
+index 00000000..2882266b
+--- /dev/null
++++ b/scripts/sbom-survey/tests/test_registry.py
+@@ -0,0 +1,153 @@
++"""AC-SBOM-14 .. AC-SBOM-17 — the published-version seam.
++
++REQ-9 (injectable registry), REQ-10 (honest degradation).
++Design: dev/design/0.8.20-slice-31-sbom-survey-tool.md §5.4.
++
++A false "up-to-date" is the single worst output this tool can produce: it would
++let a live advisory be closed as `CLOSE-satisfied` in the LIBRARY-BUMP-STEWARD
++§2 triage. AC-SBOM-15 and AC-SBOM-16 are the two named guards against it.
++"""
++
++from __future__ import annotations
++
++import socket
++
++import pytest
++
++from conftest import REPO_ROOT, require
++
++
++def test_survey_performs_no_network_io_by_default() -> None:
++    """AC-SBOM-14.
++
++    `run_survey` takes `published` as a REQUIRED keyword-only argument, so no
++    code path reaches the network implicitly. With `OfflineSource` a full
++    survey must open zero sockets — proved by making `socket.socket` explode.
++    """
++    survey_mod = require(
++        "sbom_survey.survey",
++        "AC-SBOM-14",
++        "run_survey(root, *, published=...) must take the published-version"
++        " source as a REQUIRED keyword-only argument and must perform ZERO"
++        " socket I/O when given an OfflineSource.",
++    )
++    registry = require(
++        "sbom_survey.registry",
++        "AC-SBOM-14",
++        "registry.OfflineSource must be a PublishedVersionSource that never"
++        " touches the network.",
++    )
++
++    with pytest.raises(TypeError):
++        survey_mod.run_survey(REPO_ROOT)  # `published` must not have a default
++
++    real_socket = socket.socket
++    opened: list[object] = []
++
++    def exploding_socket(*args, **kwargs):
++        opened.append(args)
++        raise AssertionError("the offline survey opened a socket")
++
++    socket.socket = exploding_socket  # type: ignore[assignment]
++    try:
++        survey_mod.run_survey(REPO_ROOT, published=registry.OfflineSource())
++    finally:
++        socket.socket = real_socket  # type: ignore[assignment]
++
++    assert not opened, "the offline survey opened a socket"
++
++
++def test_unknown_latest_is_never_reported_current() -> None:
++    """AC-SBOM-15.
++
++    With no registry available, every row is `unknown`. NOT ONE row may be
++    `current`: "we could not check" must never be rendered as "up to date".
++    """
++    survey_mod = require(
++        "sbom_survey.survey",
++        "AC-SBOM-15",
++        "when the published-version source returns None for every lookup, every"
++        " staleness row must have status == 'unknown' and latest_version is"
++        " None. NO row may be 'current' — an unknown latest must never be"
++        " rendered as up-to-date.",
++    )
++    registry = require("sbom_survey.registry", "AC-SBOM-15", "OfflineSource returns None for every lookup.")
++
++    survey = survey_mod.run_survey(REPO_ROOT, published=registry.OfflineSource())
++    rows = survey.staleness()
++    assert rows, "vacuous-pass guard: the survey produced zero staleness rows"
++
++    falsely_current = [r.name for r in rows if r.status == "current"]
++    assert not falsely_current, (
++        "offline run reported packages as 'current' with no registry data: "
++        f"{sorted(falsely_current)}"
++    )
++    for row in rows:
++        assert row.status == "unknown", f"{row.name}: expected 'unknown', got {row.status!r}"
++        assert row.latest_version is None, f"{row.name}: latest_version leaked {row.latest_version!r}"
++
++
++def test_registry_error_degrades_to_unknown() -> None:
++    """AC-SBOM-16.
++
++    A source that RAISES (DNS failure, 503, timeout, malformed JSON) degrades
++    to `unknown` with the reason recorded. It must not crash the run and must
++    not fall back to `current`.
++    """
++    survey_mod = require(
++        "sbom_survey.survey",
++        "AC-SBOM-16",
++        "a PublishedVersionSource that raises must degrade the affected rows to"
++        " status='unknown' with `lookup_error` recorded — the run must not"
++        " crash, and must not fall back to 'current'.",
++    )
++    require("sbom_survey.registry", "AC-SBOM-16", "the source protocol lives here.")
++
++    class ExplodingSource:
++        def latest(self, ecosystem: str, name: str) -> str | None:
++            raise ConnectionError(f"registry unreachable for {ecosystem}/{name}")
++
++    survey = survey_mod.run_survey(REPO_ROOT, published=ExplodingSource())
++    rows = survey.staleness()
++    assert rows, "vacuous-pass guard: the survey produced zero staleness rows"
++
++    for row in rows:
++        assert row.status == "unknown", f"{row.name}: expected 'unknown', got {row.status!r}"
++        assert row.lookup_error, f"{row.name}: the failure reason was not recorded"
++
++
++def test_static_source_classifies_current_outdated_ahead() -> None:
++    """AC-SBOM-17.
++
++    The positive path, with an injected source and no network: locked < latest
++    is `outdated`, locked == latest is `current`, locked > latest is `ahead`.
++    Both comparators are exercised (semver for cargo/npm, PEP 440 for pypi).
++    """
++    staleness_mod = require(
++        "sbom_survey.survey",
++        "AC-SBOM-17",
++        "classify_status(ecosystem, locked, latest) must return 'outdated' when"
++        " locked < latest, 'current' when equal, 'ahead' when locked > latest,"
++        " and 'unknown' when either side is None or unparseable — using semver"
++        " ordering for cargo/npm and PEP 440 ordering for pypi.",
++    )
++
++    cases = [
++        ("cargo", "1.0.0", "1.2.0", "outdated"),
++        ("cargo", "1.2.0", "1.2.0", "current"),
++        ("cargo", "1.3.0", "1.2.0", "ahead"),
++        ("cargo", "1.2.3-rc.1", "1.2.3", "outdated"),
++        ("npm", "0.22.1", "0.23.0", "outdated"),
++        ("pypi", "1.6.1", "1.6.1", "current"),
++        ("pypi", "1.6.1", "1.7.0", "outdated"),
++        ("pypi", "2.0.0.post1", "2.0.0", "ahead"),
++        ("cargo", None, "1.2.0", "unknown"),
++        ("cargo", "1.2.0", None, "unknown"),
++        ("cargo", "not-a-version", "1.2.0", "unknown"),
++    ]
++    for ecosystem, locked, latest, expected in cases:
++        got = staleness_mod.classify_status(ecosystem, locked, latest)
++        assert got == expected, (
++            f"{ecosystem} locked={locked!r} latest={latest!r}: expected"
++            f" {expected!r}, got {got!r}"
++        )
+diff --git a/scripts/sbom-survey/tests/test_report.py b/scripts/sbom-survey/tests/test_report.py
+new file mode 100644
+index 00000000..2455471a
+--- /dev/null
++++ b/scripts/sbom-survey/tests/test_report.py
+@@ -0,0 +1,83 @@
++"""AC-SBOM-22 — the Slice-33 consumer contract.
++
++REQ-13 (determinism) and REQ-14 (consumer fields).
++Design: dev/design/0.8.20-slice-31-sbom-survey-tool.md §5.8.
++
++Slice 33 answers exactly two questions and stops: what is stale, and would a
++surgical ~1-5 SLOC change likely land it. This report must let it answer both
++without re-deriving anything. Nothing in Slice 33 is built here.
++"""
++
++from __future__ import annotations
++
++from pathlib import Path
++
++from conftest import REPO_ROOT, require
++
++SLICE_33_ROW_FIELDS = {
++    "ecosystem",
++    "name",
++    "tier",
++    "depth",
++    "locked_version",
++    "latest_version",
++    "status",
++    "lookup_error",
++    "declared_in",
++    "edit_sites",
++    "edit_site_count",
++}
++
++
++def test_staleness_rows_carry_slice_33_fields_and_are_deterministic(tmp_path: Path) -> None:
++    """AC-SBOM-22."""
++    survey_mod = require(
++        "sbom_survey.survey",
++        "AC-SBOM-22",
++        "each staleness row must carry exactly the Slice-33 consumer fields"
++        f" {sorted(SLICE_33_ROW_FIELDS)}, sorted by"
++        " (tier, ecosystem, name, locked_version); and two runs over identical"
++        " inputs must write BYTE-IDENTICAL artifacts (UUIDv5 serialNumber, no"
++        " wall-clock timestamp) so a re-run diffs to nothing.",
++    )
++    registry = require("sbom_survey.registry", "AC-SBOM-22", "OfflineSource keeps the run hermetic.")
++    report = require(
++        "sbom_survey.report",
++        "AC-SBOM-22",
++        "sbom_survey.report.write_reports(survey, out_dir) must emit"
++        " sbom.cdx.json, staleness.json and staleness.md deterministically.",
++    )
++
++    def once(out: Path) -> dict[str, bytes]:
++        survey = survey_mod.run_survey(
++            REPO_ROOT, published=registry.OfflineSource(), now="1970-01-01T00:00:00Z"
++        )
++        report.write_reports(survey, out)
++        return {p.name: p.read_bytes() for p in sorted(out.iterdir())}
++
++    first = once(tmp_path / "a")
++    second = once(tmp_path / "b")
++    assert first.keys() == second.keys()
++    for name in first:
++        assert first[name] == second[name], (
++            f"{name} is not byte-identical across two runs — the report is"
++            " non-deterministic, so a recurring re-run cannot diff cleanly"
++        )
++
++    survey = survey_mod.run_survey(REPO_ROOT, published=registry.OfflineSource())
++    rows = [r.as_dict() for r in survey.staleness()]
++    assert rows, "vacuous-pass guard: zero staleness rows"
++
++    for row in rows:
++        assert set(row) == SLICE_33_ROW_FIELDS, (
++            "staleness row field set drifted from the Slice-33 contract:"
++            f" missing={sorted(SLICE_33_ROW_FIELDS - set(row))}"
++            f" unexpected={sorted(set(row) - SLICE_33_ROW_FIELDS)}"
++        )
++        assert isinstance(row["edit_sites"], list)
++        assert row["edit_site_count"] == len(row["edit_sites"])
++        for site in row["edit_sites"]:
++            assert not site.startswith("/"), "edit_sites must be repo-relative"
++
++    keys = [(r["tier"], r["ecosystem"], r["name"], r["locked_version"] or "") for r in rows]
++    assert keys == sorted(keys), "staleness rows are not deterministically sorted"
+diff --git a/scripts/sbom-survey/tests/test_tiering.py b/scripts/sbom-survey/tests/test_tiering.py
+new file mode 100644
+index 00000000..598d834a
+--- /dev/null
++++ b/scripts/sbom-survey/tests/test_tiering.py
+@@ -0,0 +1,196 @@
++"""AC-SBOM-05 .. AC-SBOM-09 — tiering, fixture exclusion, and the loud gap.
++
++REQ-3 (tiering), REQ-4 (loud gaps), REQ-5 (fixture exclusion).
++Design: dev/design/0.8.20-slice-31-sbom-survey-tool.md §5.2 and §5.3.
++"""
++
++from __future__ import annotations
++
++from pathlib import Path
++
++import pytest
++
++from conftest import (
++    FIXTURE_PREFIX,
++    PROJECT_ROOT,
++    REPO_ROOT,
++    TIER_VOCABULARY,
++    require,
++    tracked_manifest_paths,
++)
++
++
++def _fixture_manifests() -> list[str]:
++    return [p for p in tracked_manifest_paths() if p.startswith(FIXTURE_PREFIX)]
++
++
++def test_release_fixtures_are_excluded_and_auditable() -> None:
++    """AC-SBOM-05.
++
++    `dev/release/fixtures/cargo-skew/**` and `dev/release/fixtures/pip-skew/**`
++    are deliberately fake, deliberately skewed manifests that exist to make the
++    release version-skew gates demonstrate their catch. They must contribute
++    ZERO components, and the exclusion must be RECORDED (auditable), not silent.
++    """
++    fixtures = _fixture_manifests()
++    assert len(fixtures) == 8, (
++        "precondition changed: expected the 8 tracked skew fixtures, found "
++        f"{len(fixtures)}: {fixtures}"
++    )
++
++    survey_mod = require(
++        "sbom_survey.survey",
++        "AC-SBOM-05",
++        "run_survey() must exclude every dev/release/fixtures/** manifest from"
++        " `components` AND record each one in `survey.excluded` with"
++        " reason='fixture' — excluded, but auditable, never silently dropped.",
++    )
++    registry = require(
++        "sbom_survey.registry",
++        "AC-SBOM-05",
++        "an OfflineSource is needed to run the survey without network.",
++    )
++
++    survey = survey_mod.run_survey(REPO_ROOT, published=registry.OfflineSource())
++
++    excluded = {e.path: e.reason for e in survey.excluded}
++    for path in fixtures:
++        assert excluded.get(path) == "fixture", (
++            f"{path} must appear in survey.excluded with reason='fixture';"
++            f" got {excluded.get(path)!r}"
++        )
++
++    doc = survey.to_cyclonedx()
++    origins = {
++        prop.get("value")
++        for component in doc.get("components", [])
++        for prop in component.get("properties", [])
++        if prop.get("name") == "fathomdb:declared-in"
++    }
++    leaked = sorted(o for o in origins if o and o.startswith(FIXTURE_PREFIX))
++    assert not leaked, f"fixture manifests produced real components: {leaked}"
++
++
++def test_fixture_exclusion_is_data_driven_not_hardcoded() -> None:
++    """AC-SBOM-06.
++
++    The exclusion must be a rule in the tracked `tiers.toml`, not an `if` in
++    code. Proof: load a tier map with the fixture rule REMOVED and the fixture
++    manifests must then flow through to tiering (and, having no rule, trip the
++    REQ-4 loud failure). A hardcoded special case cannot satisfy this.
++    """
++    tiers_file = PROJECT_ROOT / "tiers.toml"
++    tiers = require(
++        "sbom_survey.tiers",
++        "AC-SBOM-06",
++        "the fixture exclusion must live as an `action = \"exclude\"` rule in the"
++        " tracked scripts/sbom-survey/tiers.toml; removing that rule from a"
++        " loaded TierMap must change the behaviour, proving the rule is data,"
++        " not a hardcoded path check in code.",
++    )
++
++    assert tiers_file.is_file(), (
++        f"{tiers_file} does not exist — the tier/exclusion rules must be tracked"
++        " DATA (Slice 32 artifact), not code"
++    )
++    text = tiers_file.read_text(encoding="utf-8")
++    assert FIXTURE_PREFIX in text, (
++        f"{tiers_file} carries no rule for {FIXTURE_PREFIX!r}; the exclusion is"
++        " not data-driven"
++    )
++
++    full = tiers.load_tier_map(tiers_file)
++    assert full.classify(FIXTURE_PREFIX + "cargo-skew/Cargo.toml").action == "exclude"
++
++    stripped = tiers.TierMap(
++        [r for r in full.rules if not r.prefix.startswith(FIXTURE_PREFIX)]
++    )
++    with pytest.raises(tiers.UntieredManifestError):
++        stripped.classify(FIXTURE_PREFIX + "cargo-skew/Cargo.toml")
++
++
++def test_untiered_manifest_raises_untiered_manifest_error() -> None:
++    """AC-SBOM-07.
++
++    A tracked manifest matched by NO rule is a hard error naming the path.
++    There is deliberately no catch-all rule: a default would turn "somebody
++    added a manifest and nobody classified it" — the event this tool exists to
++    catch — into a silent mis-tag.
++    """
++    tiers = require(
++        "sbom_survey.tiers",
++        "AC-SBOM-07",
++        "TierMap.classify() must raise UntieredManifestError NAMING THE PATH for"
++        " a tracked manifest that matches no rule. It must never return a null"
++        " tier, never fall back to a default tier, and never drop the manifest.",
++    )
++
++    tier_map = tiers.TierMap(
++        [tiers.TierRule(prefix="src/rust/crates/", action="tier", tier="shipped")]
++    )
++    with pytest.raises(tiers.UntieredManifestError) as excinfo:
++        tier_map.classify("some/brand/new/Cargo.toml")
++    assert "some/brand/new/Cargo.toml" in str(excinfo.value), (
++        "the error must name the offending path so the fix is obvious; got: "
++        f"{excinfo.value}"
++    )
++
++
++def test_tier_map_covers_every_discovered_manifest() -> None:
++    """AC-SBOM-08.
++
++    The repository's own tiers.toml must classify every path discovery
++    currently returns. This is the drift detector: a manifest added tomorrow
++    goes red here until somebody tiers it.
++    """
++    tiers = require(
++        "sbom_survey.tiers",
++        "AC-SBOM-08",
++        "scripts/sbom-survey/tiers.toml must classify EVERY tracked manifest"
++        " this repository currently has — an unclassified one fails loudly.",
++    )
++    discovery = require(
++        "sbom_survey.discovery",
++        "AC-SBOM-08",
++        "discovery supplies the paths that the tier map must cover.",
++    )
++
++    tier_map = tiers.load_tier_map(PROJECT_ROOT / "tiers.toml")
++    unclassified: list[str] = []
++    for ref in discovery.discover_manifests(REPO_ROOT):
++        try:
++            tier_map.classify(ref.path)
++        except tiers.UntieredManifestError:
++            unclassified.append(ref.path)
++    assert not unclassified, (
++        "tracked manifests with no tier assignment: "
++        f"{sorted(unclassified)} — add a rule to {PROJECT_ROOT / 'tiers.toml'}"
++    )
++
++
++def test_tier_vocabulary_is_exactly_the_three_ruled_values() -> None:
++    """AC-SBOM-09.
++
++    The tier vocabulary is HITL-ruled: shipped / dev-tooling / eval-only.
++    `fixture` is an EXCLUSION REASON, not a fourth tier — putting fake packages
++    in the component list under any tier would hand a vulnerability feed real-
++    looking phantoms.
++    """
++    pkg = require(
++        "sbom_survey",
++        "AC-SBOM-09",
++        "sbom_survey.TIER_VOCABULARY must be exactly"
++        f" {TIER_VOCABULARY!r} — the three HITL-ruled values, with `fixture`"
++        " modelled as an exclusion reason rather than a fourth tier.",
++    )
++    assert tuple(pkg.TIER_VOCABULARY) == TIER_VOCABULARY
++    assert "fixture" not in pkg.TIER_VOCABULARY
++
++    tiers = require("sbom_survey.tiers", "AC-SBOM-09", "tier rules must validate against the vocabulary.")
++    tier_map = tiers.load_tier_map(Path(PROJECT_ROOT) / "tiers.toml")
++    for rule in tier_map.rules:
++        if rule.action == "tier":
++            assert rule.tier in TIER_VOCABULARY, (
++                f"rule {rule.prefix!r} uses tier {rule.tier!r}, outside the"
++                f" ruled vocabulary {TIER_VOCABULARY!r}"
++            )
+
+exec
+/bin/bash -lc "sed -n '1,240p' scripts/sbom-survey/tests/conftest.py && sed -n '1,180p' scripts/sbom-survey/tests/test_cli.py" in /home/coreyt/projects/fathomdb-worktrees/slice-31-sbom-spec
+ succeeded in 0ms:
+"""Shared support for the `sbom-survey` acceptance suite (0.8.20 Slice 31).
+
+This suite is **RED by construction**: Slice 31 ships requirements, acceptance
+criteria, design and tests; Slice 32 ships the code that turns them GREEN.
+
+The one structural rule this file exists to enforce: **nothing imports
+`sbom_survey` at module level.** A top-level import of a package that does not
+exist yet raises at collection time, which aborts the whole module and hides
+every criterion after the first. Tests call `require()` *inside the test body*
+instead, so each acceptance criterion produces its own attributable FAILED with
+the required behaviour restated in the message.
+
+A `pytest.skip` would be a vacuous green and is used nowhere in this suite.
+"""
+
+from __future__ import annotations
+
+import importlib
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+# <repo>/scripts/sbom-survey/tests/conftest.py
+TESTS_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = TESTS_DIR.parent
+REPO_ROOT = PROJECT_ROOT.parents[1]
+
+# The mini-project is deliberately isolated (its own pyproject.toml, no
+# workspace membership), so the suite must be runnable without installing it.
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+# Basenames the survey recognizes as dependency manifests / lockfiles.
+#
+# ⚠ THIS TUPLE MIRRORS THE RECOGNIZED-BASENAME TABLE IN THE DESIGN (§5.1) 1:1 AND
+# MUST BE KEPT IN LOCKSTEP WITH IT. It is the oracle AC-SBOM-03 grades against:
+# a name that is in the design table but missing here is a manifest the tool may
+# silently skip while the suite still reports green (codex §9 round 1, fix-1
+# finding 1 — `setup.cfg` was exactly that).
+#
+# Split in two: the first group matches tracked paths TODAY (§5.1's 28-path
+# enumeration); the second group currently matches nothing and is present so
+# that adding one of those files to the repo is DISCOVERED (and then fails REQ-4
+# tiering loudly) rather than silently ignored. `requirements*.txt` is a glob and
+# so lives in `tracked_manifest_paths()` below rather than in this tuple.
+MANIFEST_BASENAMES = (
+    # matched by tracked paths at cbb56212
+    "Cargo.toml",
+    "Cargo.lock",
+    "package.json",
+    "package-lock.json",
+    "pyproject.toml",
+    "uv.lock",
+    "setup.py",
+    # recognized, forward-looking: nothing tracked matches these today
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "poetry.lock",
+    "Pipfile",
+    "setup.cfg",
+)
+
+TIER_VOCABULARY = ("shipped", "dev-tooling", "eval-only")
+
+FIXTURE_PREFIX = "dev/release/fixtures/"
+
+# purl (`bom-ref`) prefix per ecosystem — the component identity an advisory feed
+# matches against (REQ-6, design §5.5). Every ecosystem the repo tracks must be
+# represented in the BOM, and no fourth purl type may appear.
+PURL_PREFIX_BY_ECOSYSTEM = {
+    "cargo": "pkg:cargo/",
+    "npm": "pkg:npm/",
+    "pypi": "pkg:pypi/",
+}
+PURL_PREFIXES = tuple(PURL_PREFIX_BY_ECOSYSTEM.values())
+
+# Cargo crates present in the tracked `Cargo.lock` that are declared by NO
+# dependency table of any tracked, non-excluded `Cargo.toml` — i.e. they exist
+# ONLY because a lockfile-derived library<->library edge put them there. If none
+# of these reaches the BOM tagged `transitive`, the implementation emitted the
+# direct set and dropped the dependency graph (codex §9 round 1, fix-1
+# finding 3). Verified lockfile-only at cbb56212; see design §5.5 for the
+# drift note (a future direct adoption of one of these is a legitimate reason
+# for it to leave this set, and the assertion only needs ONE survivor).
+KNOWN_TRANSITIVE_ONLY_CARGO = (
+    "proc-macro2",
+    "quote",
+    "syn",
+    "unicode-ident",
+    "serde_derive",
+)
+
+
+def purl_type(purl: object) -> str | None:
+    """The purl `type` segment (`pkg:<type>/…`), or None if it is not a purl."""
+    if not isinstance(purl, str) or not purl.startswith("pkg:"):
+        return None
+    return purl[len("pkg:") :].split("/", 1)[0]
+
+
+def require(module: str, criterion: str, behaviour: str):
+    """Import `module`, or FAIL naming the criterion and the missing behaviour.
+
+    Never skips. A missing implementation is a failed acceptance criterion,
+    not an absent test.
+    """
+    try:
+        return importlib.import_module(module)
+    except Exception as exc:  # noqa: BLE001 - any import-time failure is a RED result
+        pytest.fail(
+            f"{criterion} is NOT SATISFIED: `{module}` is not implemented yet"
+            " (it lands in 0.8.20 Slice 32).\n"
+            f"  REQUIRED BEHAVIOUR: {behaviour}\n"
+            f"  import {module!r} raised: {exc!r}"
+        )
+
+
+def run_cli(args: list[str], criterion: str, behaviour: str) -> subprocess.CompletedProcess:
+    """Drive the CLI as a subprocess, or FAIL naming the criterion.
+
+    Driving the CLI out-of-process is the second half of the no-module-level-
+    import rule: an absent entry point becomes a normal process result rather
+    than a collection error.
+    """
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join(
+        [str(PROJECT_ROOT), env.get("PYTHONPATH", "")]
+    ).rstrip(os.pathsep)
+    proc = subprocess.run(  # noqa: S603 - fixed argv, no shell
+        [sys.executable, "-m", "sbom_survey", *args],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=str(REPO_ROOT),
+    )
+    if "No module named" in proc.stderr and "sbom_survey" in proc.stderr:
+        pytest.fail(
+            f"{criterion} is NOT SATISFIED: the `sbom-survey` CLI does not exist yet"
+            " (it lands in 0.8.20 Slice 32).\n"
+            f"  REQUIRED BEHAVIOUR: {behaviour}\n"
+            f"  `python -m sbom_survey {' '.join(args)}` exited {proc.returncode}"
+            f" with: {proc.stderr.strip().splitlines()[-1] if proc.stderr.strip() else '<no stderr>'}"
+        )
+    return proc
+
+
+def tracked_paths() -> list[str]:
+    """Every path tracked in this repository, straight from git."""
+    out = subprocess.run(  # noqa: S603 - fixed argv, no shell
+        ["git", "-C", str(REPO_ROOT), "ls-files", "-z"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    return [p for p in out.split("\0") if p]
+
+
+def tracked_manifest_paths() -> list[str]:
+    """The tracked paths whose basename is a recognized manifest name."""
+    return sorted(
+        p
+        for p in tracked_paths()
+        if Path(p).name in MANIFEST_BASENAMES
+        or (Path(p).name.startswith("requirements") and p.endswith(".txt"))
+    )
+
+
+def is_gitignored(path: str) -> bool:
+    proc = subprocess.run(  # noqa: S603 - fixed argv, no shell
+        ["git", "-C", str(REPO_ROOT), "check-ignore", "-q", "--", path],
+        capture_output=True,
+        text=True,
+    )
+    return proc.returncode == 0
+
+
+@pytest.fixture()
+def repo_root() -> Path:
+    return REPO_ROOT
+
+
+@pytest.fixture()
+def project_root() -> Path:
+    return PROJECT_ROOT
+
+
+def read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def load_json(path: Path):
+    return json.loads(read_text(path))
+"""AC-SBOM-19 .. AC-SBOM-21 — the CLI contract.
+
+REQ-4 (loud gaps, CLI surface) and REQ-12 (not CI-gating).
+Design: dev/design/0.8.20-slice-31-sbom-survey-tool.md §5.9.
+
+Every test here drives the tool OUT OF PROCESS. That is deliberate: an absent
+entry point becomes an ordinary process result instead of a collection error,
+so each criterion still reports its own FAILED.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from conftest import REPO_ROOT, run_cli
+
+
+def test_tool_declares_non_ci_gating_and_is_absent_from_ci_wiring() -> None:
+    """AC-SBOM-19.
+
+    The tool is recurring by design but explicitly NOT CI-gating. It says so
+    itself (`--describe`), and that declaration is cross-checked against the
+    real wiring — a self-description nobody verifies is worthless.
+    """
+    for wiring in ("scripts/agent-test.sh", ".github/workflows/ci.yml"):
+        text = (REPO_ROOT / wiring).read_text(encoding="utf-8")
+        assert "sbom-survey" not in text and "sbom_survey" not in text, (
+            f"{wiring} references the survey tool. It is informational and must"
+            " NOT gate CI (plan-0.8.20.md §3a)."
+        )
+
+    proc = run_cli(
+        ["--describe"],
+        "AC-SBOM-19",
+        "`sbom-survey --describe` must print JSON declaring"
+        ' {"ci_gating": false, "recurring": true} plus the tier vocabulary,'
+        " and exit 0.",
+    )
+    assert proc.returncode == 0, f"--describe exited {proc.returncode}: {proc.stderr}"
+    described = json.loads(proc.stdout)
+    assert described["ci_gating"] is False
+    assert described["recurring"] is True
+    assert described["name"] == "sbom-survey"
+
+
+def test_cli_writes_all_artifacts_and_exits_zero(tmp_path: Path) -> None:
+    """AC-SBOM-20.
+
+    The happy path: an offline run over the real repository writes all three
+    artifacts into the requested output directory and exits 0.
+    """
+    out = tmp_path / "out"
+    proc = run_cli(
+        ["--repo", str(REPO_ROOT), "--offline", "--out", str(out)],
+        "AC-SBOM-20",
+        "`sbom-survey --repo R --offline --out DIR` must exit 0 and write"
+        " sbom.cdx.json, staleness.json and staleness.md into DIR.",
+    )
+    assert proc.returncode == 0, (
+        f"offline survey exited {proc.returncode}\nstdout:\n{proc.stdout}\n"
+        f"stderr:\n{proc.stderr}"
+    )
+    for artifact in ("sbom.cdx.json", "staleness.json", "staleness.md"):
+        assert (out / artifact).is_file(), f"{artifact} was not written to {out}"
+
+    doc = json.loads((out / "sbom.cdx.json").read_text(encoding="utf-8"))
+    assert doc["bomFormat"] == "CycloneDX"
+    assert doc["specVersion"] == "1.6"
+
+
+def test_cli_exits_two_naming_the_untiered_manifest(tmp_path: Path) -> None:
+    """AC-SBOM-21.
+
+    REQ-4 at the CLI boundary. A tier map that does not cover a tracked
+    manifest must exit 2 and name the offending path on stderr — never exit 0
+    with an untagged component.
+    """
+    incomplete = tmp_path / "tiers.toml"
+    incomplete.write_text(
+        "schema = 1\n\n"
+        "[[rule]]\n"
+        'prefix = "dev/release/fixtures/"\n'
+        'action = "exclude"\n'
+        'reason = "fixture"\n',
+        encoding="utf-8",
+    )
+
+    out = tmp_path / "out"
+    proc = run_cli(
+        [
+            "--repo",
+            str(REPO_ROOT),
+            "--offline",
+            "--out",
+            str(out),
+            "--tiers",
+            str(incomplete),
+        ],
+        "AC-SBOM-21",
+        "with a tier map that covers no real manifest, the CLI must exit 2 and"
+        " NAME the untiered path on stderr (never exit 0, never emit an"
+        " untagged component).",
+    )
+    assert proc.returncode == 2, (
+        f"expected exit 2 for an untiered manifest, got {proc.returncode}\n"
+        f"stderr:\n{proc.stderr}"
+    )
+    assert "Cargo.toml" in proc.stderr, (
+        "stderr must name the offending manifest path so the fix is obvious;"
+        f" got:\n{proc.stderr}"
+    )
+
+exec
+/bin/bash -lc 'python3 -m pytest scripts/sbom-survey/tests --tb=short -q' in /home/coreyt/projects/fathomdb-worktrees/slice-31-sbom-spec
+ exited 1 in 447ms:
+FFFFFFFFFFFFFFFFFFFFFF                                                   [100%]
+=================================== FAILURES ===================================
+________ test_tool_declares_non_ci_gating_and_is_absent_from_ci_wiring _________
+scripts/sbom-survey/tests/test_cli.py:33: in test_tool_declares_non_ci_gating_and_is_absent_from_ci_wiring
+    proc = run_cli(
+scripts/sbom-survey/tests/conftest.py:141: in run_cli
+    pytest.fail(
+E   Failed: AC-SBOM-19 is NOT SATISFIED: the `sbom-survey` CLI does not exist yet (it lands in 0.8.20 Slice 32).
+E     REQUIRED BEHAVIOUR: `sbom-survey --describe` must print JSON declaring {"ci_gating": false, "recurring": true} plus the tier vocabulary, and exit 0.
+E     `python -m sbom_survey --describe` exited 1 with: /usr/bin/python3: No module named sbom_survey
+_________________ test_cli_writes_all_artifacts_and_exits_zero _________________
+scripts/sbom-survey/tests/test_cli.py:54: in test_cli_writes_all_artifacts_and_exits_zero
+    proc = run_cli(
+scripts/sbom-survey/tests/conftest.py:141: in run_cli
+    pytest.fail(
+E   Failed: AC-SBOM-20 is NOT SATISFIED: the `sbom-survey` CLI does not exist yet (it lands in 0.8.20 Slice 32).
+E     REQUIRED BEHAVIOUR: `sbom-survey --repo R --offline --out DIR` must exit 0 and write sbom.cdx.json, staleness.json and staleness.md into DIR.
+E     `python -m sbom_survey --repo /home/coreyt/projects/fathomdb-worktrees/slice-31-sbom-spec --offline --out /tmp/pytest-of-coreyt/pytest-21/test_cli_writes_all_artifacts_0/out` exited 1 with: /usr/bin/python3: No module named sbom_survey
+_______________ test_cli_exits_two_naming_the_untiered_manifest ________________
+scripts/sbom-survey/tests/test_cli.py:90: in test_cli_exits_two_naming_the_untiered_manifest
+    proc = run_cli(
+scripts/sbom-survey/tests/conftest.py:141: in run_cli
+    pytest.fail(
+E   Failed: AC-SBOM-21 is NOT SATISFIED: the `sbom-survey` CLI does not exist yet (it lands in 0.8.20 Slice 32).
+E     REQUIRED BEHAVIOUR: with a tier map that covers no real manifest, the CLI must exit 2 and NAME the untiered path on stderr (never exit 0, never emit an untagged component).
+E     `python -m sbom_survey --repo /home/coreyt/projects/fathomdb-worktrees/slice-31-sbom-spec --offline --out /tmp/pytest-of-coreyt/pytest-21/test_cli_exits_two_naming_the_0/out --tiers /tmp/pytest-of-coreyt/pytest-21/test_cli_exits_two_naming_the_0/tiers.toml` exited 1 with: /usr/bin/python3: No module named sbom_survey
+_________ test_cyclonedx_document_is_schema_valid_and_purl_identified __________
+scripts/sbom-survey/tests/conftest.py:112: in require
+    return importlib.import_module(module)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   ModuleNotFoundError: No module named 'sbom_survey'
+
+During handling of the above exception, another exception occurred:
+scripts/sbom-survey/tests/test_cyclonedx.py:41: in test_cyclonedx_document_is_schema_valid_and_purl_identified
+    survey = _offline_survey(
+scripts/sbom-survey/tests/test_cyclonedx.py:23: in _offline_survey
+    survey_mod = require("sbom_survey.survey", criterion, behaviour)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/sbom-survey/tests/conftest.py:114: in require
+    pytest.fail(
+E   Failed: AC-SBOM-10 is NOT SATISFIED: `sbom_survey.survey` is not implemented yet (it lands in 0.8.20 Slice 32).
+E     REQUIRED BEHAVIOUR: Survey.to_cyclonedx() must produce a document that validates against the bundled CycloneDX 1.6 JSON schema (cyclonedx-python-lib[json-validation]), AND every component must carry a `purl` that IS its `bom-ref`, bears the ecosystem prefix (pkg:cargo/, pkg:npm/, pkg:pypi/) and encodes the component's own locked version.
+E     import 'sbom_survey.survey' raised: ModuleNotFoundError("No module named 'sbom_survey'")
+_________________ test_every_component_carries_a_tier_property _________________
+scripts/sbom-survey/tests/conftest.py:112: in require
+    return importlib.import_module(module)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   ModuleNotFoundError: No module named 'sbom_survey'
+
+During handling of the above exception, another exception occurred:
+scripts/sbom-survey/tests/test_cyclonedx.py:110: in test_every_component_carries_a_tier_property
+    survey = _offline_survey(
+scripts/sbom-survey/tests/test_cyclonedx.py:23: in _offline_survey
+    survey_mod = require("sbom_survey.survey", criterion, behaviour)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/sbom-survey/tests/conftest.py:114: in require
+    pytest.fail(
+E   Failed: AC-SBOM-11 is NOT SATISFIED: `sbom_survey.survey` is not implemented yet (it lands in 0.8.20 Slice 32).
+E     REQUIRED BEHAVIOUR: every CycloneDX component must carry EXACTLY ONE `fathomdb:tier` property whose value is one of ('shipped', 'dev-tooling', 'eval-only').
+E     import 'sbom_survey.survey' raised: ModuleNotFoundError("No module named 'sbom_survey'")
+_______________ test_dependency_graph_is_closed_and_depth_tagged _______________
+scripts/sbom-survey/tests/conftest.py:112: in require
+    return importlib.import_module(module)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   ModuleNotFoundError: No module named 'sbom_survey'
+
+During handling of the above exception, another exception occurred:
+scripts/sbom-survey/tests/test_cyclonedx.py:145: in test_dependency_graph_is_closed_and_depth_tagged
+    survey = _offline_survey(
+scripts/sbom-survey/tests/test_cyclonedx.py:23: in _offline_survey
+    survey_mod = require("sbom_survey.survey", criterion, behaviour)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/sbom-survey/tests/conftest.py:114: in require
+    pytest.fail(
+E   Failed: AC-SBOM-12 is NOT SATISFIED: `sbom_survey.survey` is not implemented yet (it lands in 0.8.20 Slice 32).
+E     REQUIRED BEHAVIOUR: the CycloneDX `dependencies` array must be NON-EMPTY and CLOSED IN BOTH DIRECTIONS (every dependsOn ref resolves to a declared component bom-ref, and every declared component appears as a `ref` entry), must contain at least one library->library edge, and every component must carry `fathomdb:depth` in {direct, transitive} with at least one lockfile-only package tagged `transitive`.
+E     import 'sbom_survey.survey' raised: ModuleNotFoundError("No module named 'sbom_survey'")
+__________ test_component_version_is_locked_and_constraint_preserved ___________
+scripts/sbom-survey/tests/conftest.py:112: in require
+    return importlib.import_module(module)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   ModuleNotFoundError: No module named 'sbom_survey'
+
+During handling of the above exception, another exception occurred:
+scripts/sbom-survey/tests/test_cyclonedx.py:234: in test_component_version_is_locked_and_constraint_preserved
+    survey = _offline_survey(
+scripts/sbom-survey/tests/test_cyclonedx.py:23: in _offline_survey
+    survey_mod = require("sbom_survey.survey", criterion, behaviour)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/sbom-survey/tests/conftest.py:114: in require
+    pytest.fail(
+E   Failed: AC-SBOM-13 is NOT SATISFIED: `sbom_survey.survey` is not implemented yet (it lands in 0.8.20 Slice 32).
+E     REQUIRED BEHAVIOUR: a component's `version` must be the LOCKED/resolved version from the tracked lockfile (never a manifest range such as "1.0"), and the declared range must survive as a `fathomdb:constraint` property on every DIRECT component.
+E     import 'sbom_survey.survey' raised: ModuleNotFoundError("No module named 'sbom_survey'")
+____________ test_discovery_uses_git_ls_files_not_a_filesystem_walk ____________
+scripts/sbom-survey/tests/conftest.py:112: in require
+    return importlib.import_module(module)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   ModuleNotFoundError: No module named 'sbom_survey'
+
+During handling of the above exception, another exception occurred:
+scripts/sbom-survey/tests/test_discovery.py:27: in test_discovery_uses_git_ls_files_not_a_filesystem_walk
+    discovery = require(
+scripts/sbom-survey/tests/conftest.py:114: in require
+    pytest.fail(
+E   Failed: AC-SBOM-01 is NOT SATISFIED: `sbom_survey.discovery` is not implemented yet (it lands in 0.8.20 Slice 32).
+E     REQUIRED BEHAVIOUR: discover_manifests(root, *, ls_files=...) must derive its candidate set from the injected `git ls-files` runner ONLY; a manifest present on disk but untracked must never appear in the result.
+E     import 'sbom_survey.discovery' raised: ModuleNotFoundError("No module named 'sbom_survey'")
+_____________ test_gitignored_top_level_python_dir_is_out_of_scope _____________
+scripts/sbom-survey/tests/conftest.py:112: in require
+    return importlib.import_module(module)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   ModuleNotFoundError: No module named 'sbom_survey'
+
+During handling of the above exception, another exception occurred:
+scripts/sbom-survey/tests/test_discovery.py:72: in test_gitignored_top_level_python_dir_is_out_of_scope
+    discovery = require(
+scripts/sbom-survey/tests/conftest.py:114: in require
+    pytest.fail(
+E   Failed: AC-SBOM-02 is NOT SATISFIED: `sbom_survey.discovery` is not implemented yet (it lands in 0.8.20 Slice 32).
+E     REQUIRED BEHAVIOUR: discover_manifests(REPO_ROOT) must return no path under `python/`, because `.gitignore` ignores the whole `/python/` tree and the SBOM scope is `everything tracked on main`.
+E     import 'sbom_survey.discovery' raised: ModuleNotFoundError("No module named 'sbom_survey'")
+__________________ test_every_tracked_manifest_is_discovered ___________________
+scripts/sbom-survey/tests/conftest.py:112: in require
+    return importlib.import_module(module)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   ModuleNotFoundError: No module named 'sbom_survey'
+
+During handling of the above exception, another exception occurred:
+scripts/sbom-survey/tests/test_discovery.py:95: in test_every_tracked_manifest_is_discovered
+    discovery = require(
+scripts/sbom-survey/tests/conftest.py:114: in require
+    pytest.fail(
+E   Failed: AC-SBOM-03 is NOT SATISFIED: `sbom_survey.discovery` is not implemented yet (it lands in 0.8.20 Slice 32).
+E     REQUIRED BEHAVIOUR: discover_manifests(REPO_ROOT) must return EVERY tracked path whose basename is a recognized manifest/lockfile name — computed from `git ls-files` at run time, not a frozen list.
+E     import 'sbom_survey.discovery' raised: ModuleNotFoundError("No module named 'sbom_survey'")
+____________________ test_ecosystem_and_kind_classification ____________________
+scripts/sbom-survey/tests/conftest.py:112: in require
+    return importlib.import_module(module)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   ModuleNotFoundError: No module named 'sbom_survey'
+
+During handling of the above exception, another exception occurred:
+scripts/sbom-survey/tests/test_discovery.py:114: in test_ecosystem_and_kind_classification
+    discovery = require(
+scripts/sbom-survey/tests/conftest.py:114: in require
+    pytest.fail(
+E   Failed: AC-SBOM-04 is NOT SATISFIED: `sbom_survey.discovery` is not implemented yet (it lands in 0.8.20 Slice 32).
+E     REQUIRED BEHAVIOUR: each ManifestRef must carry ecosystem in {cargo, npm, pypi} and kind in {manifest, lockfile}; e.g. Cargo.lock -> (cargo, lockfile), src/ts/package.json -> (npm, manifest), src/python/uv.lock -> (pypi, lockfile), tools/docs/requirements.txt -> (pypi, manifest).
+E     import 'sbom_survey.discovery' raised: ModuleNotFoundError("No module named 'sbom_survey'")
+__________ test_report_dir_is_gitignored_and_findings_home_is_tracked __________
+scripts/sbom-survey/tests/conftest.py:112: in require
+    return importlib.import_module(module)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   ModuleNotFoundError: No module named 'sbom_survey'
+
+During handling of the above exception, another exception occurred:
+scripts/sbom-survey/tests/test_paths.py:24: in test_report_dir_is_gitignored_and_findings_home_is_tracked
+    paths = require(
+scripts/sbom-survey/tests/conftest.py:114: in require
+    pytest.fail(
+E   Failed: AC-SBOM-18 is NOT SATISFIED: `sbom_survey.paths` is not implemented yet (it lands in 0.8.20 Slice 32).
+E     REQUIRED BEHAVIOUR: sbom_survey.paths must expose DEFAULT_REPORT_DIR (repo-relative, GITIGNORED — Slice 32 adds the `scripts/sbom-survey/out/` rule) and SLICE_33_FINDINGS_DOC (repo-relative, NOT ignored — the tracked durable home for the survey findings).
+E     import 'sbom_survey.paths' raised: ModuleNotFoundError("No module named 'sbom_survey'")
+________________ test_survey_performs_no_network_io_by_default _________________
+scripts/sbom-survey/tests/conftest.py:112: in require
+    return importlib.import_module(module)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   ModuleNotFoundError: No module named 'sbom_survey'
+
+During handling of the above exception, another exception occurred:
+scripts/sbom-survey/tests/test_registry.py:27: in test_survey_performs_no_network_io_by_default
+    survey_mod = require(
+scripts/sbom-survey/tests/conftest.py:114: in require
+    pytest.fail(
+E   Failed: AC-SBOM-14 is NOT SATISFIED: `sbom_survey.survey` is not implemented yet (it lands in 0.8.20 Slice 32).
+E     REQUIRED BEHAVIOUR: run_survey(root, *, published=...) must take the published-version source as a REQUIRED keyword-only argument and must perform ZERO socket I/O when given an OfflineSource.
+E     import 'sbom_survey.survey' raised: ModuleNotFoundError("No module named 'sbom_survey'")
+________________ test_unknown_latest_is_never_reported_current _________________
+scripts/sbom-survey/tests/conftest.py:112: in require
+    return importlib.import_module(module)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   ModuleNotFoundError: No module named 'sbom_survey'
+
+During handling of the above exception, another exception occurred:
+scripts/sbom-survey/tests/test_registry.py:66: in test_unknown_latest_is_never_reported_current
+    survey_mod = require(
+scripts/sbom-survey/tests/conftest.py:114: in require
+    pytest.fail(
+E   Failed: AC-SBOM-15 is NOT SATISFIED: `sbom_survey.survey` is not implemented yet (it lands in 0.8.20 Slice 32).
+E     REQUIRED BEHAVIOUR: when the published-version source returns None for every lookup, every staleness row must have status == 'unknown' and latest_version is None. NO row may be 'current' — an unknown latest must never be rendered as up-to-date.
+E     import 'sbom_survey.survey' raised: ModuleNotFoundError("No module named 'sbom_survey'")
+___________________ test_registry_error_degrades_to_unknown ____________________
+scripts/sbom-survey/tests/conftest.py:112: in require
+    return importlib.import_module(module)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   ModuleNotFoundError: No module named 'sbom_survey'
+
+During handling of the above exception, another exception occurred:
+scripts/sbom-survey/tests/test_registry.py:97: in test_registry_error_degrades_to_unknown
+    survey_mod = require(
+scripts/sbom-survey/tests/conftest.py:114: in require
+    pytest.fail(
+E   Failed: AC-SBOM-16 is NOT SATISFIED: `sbom_survey.survey` is not implemented yet (it lands in 0.8.20 Slice 32).
+E     REQUIRED BEHAVIOUR: a PublishedVersionSource that raises must degrade the affected rows to status='unknown' with `lookup_error` recorded — the run must not crash, and must not fall back to 'current'.
+E     import 'sbom_survey.survey' raised: ModuleNotFoundError("No module named 'sbom_survey'")
+_____________ test_static_source_classifies_current_outdated_ahead _____________
+scripts/sbom-survey/tests/conftest.py:112: in require
+    return importlib.import_module(module)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   ModuleNotFoundError: No module named 'sbom_survey'
+
+During handling of the above exception, another exception occurred:
+scripts/sbom-survey/tests/test_registry.py:126: in test_static_source_classifies_current_outdated_ahead
+    staleness_mod = require(
+scripts/sbom-survey/tests/conftest.py:114: in require
+    pytest.fail(
+E   Failed: AC-SBOM-17 is NOT SATISFIED: `sbom_survey.survey` is not implemented yet (it lands in 0.8.20 Slice 32).
+E     REQUIRED BEHAVIOUR: classify_status(ecosystem, locked, latest) must return 'outdated' when locked < latest, 'current' when equal, 'ahead' when locked > latest, and 'unknown' when either side is None or unparseable — using semver ordering for cargo/npm and PEP 440 ordering for pypi.
+E     import 'sbom_survey.survey' raised: ModuleNotFoundError("No module named 'sbom_survey'")
+_______ test_staleness_rows_carry_slice_33_fields_and_are_deterministic ________
+scripts/sbom-survey/tests/conftest.py:112: in require
+    return importlib.import_module(module)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   ModuleNotFoundError: No module named 'sbom_survey'
+
+During handling of the above exception, another exception occurred:
+scripts/sbom-survey/tests/test_report.py:34: in test_staleness_rows_carry_slice_33_fields_and_are_deterministic
+    survey_mod = require(
+scripts/sbom-survey/tests/conftest.py:114: in require
+    pytest.fail(
+E   Failed: AC-SBOM-22 is NOT SATISFIED: `sbom_survey.survey` is not implemented yet (it lands in 0.8.20 Slice 32).
+E     REQUIRED BEHAVIOUR: each staleness row must carry exactly the Slice-33 consumer fields ['declared_in', 'depth', 'ecosystem', 'edit_site_count', 'edit_sites', 'latest_version', 'locked_version', 'lookup_error', 'name', 'status', 'tier'], sorted by (tier, ecosystem, name, locked_version); and two runs over identical inputs must write BYTE-IDENTICAL artifacts (UUIDv5 serialNumber, no wall-clock timestamp) so a re-run diffs to nothing.
+E     import 'sbom_survey.survey' raised: ModuleNotFoundError("No module named 'sbom_survey'")
+_______________ test_release_fixtures_are_excluded_and_auditable _______________
+scripts/sbom-survey/tests/conftest.py:112: in require
+    return importlib.import_module(module)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   ModuleNotFoundError: No module named 'sbom_survey'
+
+During handling of the above exception, another exception occurred:
+scripts/sbom-survey/tests/test_tiering.py:41: in test_release_fixtures_are_excluded_and_auditable
+    survey_mod = require(
+scripts/sbom-survey/tests/conftest.py:114: in require
+    pytest.fail(
+E   Failed: AC-SBOM-05 is NOT SATISFIED: `sbom_survey.survey` is not implemented yet (it lands in 0.8.20 Slice 32).
+E     REQUIRED BEHAVIOUR: run_survey() must exclude every dev/release/fixtures/** manifest from `components` AND record each one in `survey.excluded` with reason='fixture' — excluded, but auditable, never silently dropped.
+E     import 'sbom_survey.survey' raised: ModuleNotFoundError("No module named 'sbom_survey'")
+_____________ test_fixture_exclusion_is_data_driven_not_hardcoded ______________
+scripts/sbom-survey/tests/conftest.py:112: in require
+    return importlib.import_module(module)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   ModuleNotFoundError: No module named 'sbom_survey'
+
+During handling of the above exception, another exception occurred:
+scripts/sbom-survey/tests/test_tiering.py:83: in test_fixture_exclusion_is_data_driven_not_hardcoded
+    tiers = require(
+scripts/sbom-survey/tests/conftest.py:114: in require
+    pytest.fail(
+E   Failed: AC-SBOM-06 is NOT SATISFIED: `sbom_survey.tiers` is not implemented yet (it lands in 0.8.20 Slice 32).
+E     REQUIRED BEHAVIOUR: the fixture exclusion must live as an `action = "exclude"` rule in the tracked scripts/sbom-survey/tiers.toml; removing that rule from a loaded TierMap must change the behaviour, proving the rule is data, not a hardcoded path check in code.
+E     import 'sbom_survey.tiers' raised: ModuleNotFoundError("No module named 'sbom_survey'")
+____________ test_untiered_manifest_raises_untiered_manifest_error _____________
+scripts/sbom-survey/tests/conftest.py:112: in require
+    return importlib.import_module(module)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   ModuleNotFoundError: No module named 'sbom_survey'
+
+During handling of the above exception, another exception occurred:
+scripts/sbom-survey/tests/test_tiering.py:120: in test_untiered_manifest_raises_untiered_manifest_error
+    tiers = require(
+scripts/sbom-survey/tests/conftest.py:114: in require
+    pytest.fail(
+E   Failed: AC-SBOM-07 is NOT SATISFIED: `sbom_survey.tiers` is not implemented yet (it lands in 0.8.20 Slice 32).
+E     REQUIRED BEHAVIOUR: TierMap.classify() must raise UntieredManifestError NAMING THE PATH for a tracked manifest that matches no rule. It must never return a null tier, never fall back to a default tier, and never drop the manifest.
+E     import 'sbom_survey.tiers' raised: ModuleNotFoundError("No module named 'sbom_survey'")
+________________ test_tier_map_covers_every_discovered_manifest ________________
+scripts/sbom-survey/tests/conftest.py:112: in require
+    return importlib.import_module(module)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   ModuleNotFoundError: No module named 'sbom_survey'
+
+During handling of the above exception, another exception occurred:
+scripts/sbom-survey/tests/test_tiering.py:146: in test_tier_map_covers_every_discovered_manifest
+    tiers = require(
+scripts/sbom-survey/tests/conftest.py:114: in require
+    pytest.fail(
+E   Failed: AC-SBOM-08 is NOT SATISFIED: `sbom_survey.tiers` is not implemented yet (it lands in 0.8.20 Slice 32).
+E     REQUIRED BEHAVIOUR: scripts/sbom-survey/tiers.toml must classify EVERY tracked manifest this repository currently has — an unclassified one fails loudly.
+E     import 'sbom_survey.tiers' raised: ModuleNotFoundError("No module named 'sbom_survey'")
+____________ test_tier_vocabulary_is_exactly_the_three_ruled_values ____________
+scripts/sbom-survey/tests/conftest.py:112: in require
+    return importlib.import_module(module)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   ModuleNotFoundError: No module named 'sbom_survey'
+
+During handling of the above exception, another exception occurred:
+scripts/sbom-survey/tests/test_tiering.py:179: in test_tier_vocabulary_is_exactly_the_three_ruled_values
+    pkg = require(
+scripts/sbom-survey/tests/conftest.py:114: in require
+    pytest.fail(
+E   Failed: AC-SBOM-09 is NOT SATISFIED: `sbom_survey` is not implemented yet (it lands in 0.8.20 Slice 32).
+E     REQUIRED BEHAVIOUR: sbom_survey.TIER_VOCABULARY must be exactly ('shipped', 'dev-tooling', 'eval-only') — the three HITL-ruled values, with `fixture` modelled as an exclusion reason rather than a fourth tier.
+E     import 'sbom_survey' raised: ModuleNotFoundError("No module named 'sbom_survey'")
+=========================== short test summary info ============================
+FAILED scripts/sbom-survey/tests/test_cli.py::test_tool_declares_non_ci_gating_and_is_absent_from_ci_wiring
+FAILED scripts/sbom-survey/tests/test_cli.py::test_cli_writes_all_artifacts_and_exits_zero
+FAILED scripts/sbom-survey/tests/test_cli.py::test_cli_exits_two_naming_the_untiered_manifest
+FAILED scripts/sbom-survey/tests/test_cyclonedx.py::test_cyclonedx_document_is_schema_valid_and_purl_identified
+FAILED scripts/sbom-survey/tests/test_cyclonedx.py::test_every_component_carries_a_tier_property
+FAILED scripts/sbom-survey/tests/test_cyclonedx.py::test_dependency_graph_is_closed_and_depth_tagged
+FAILED scripts/sbom-survey/tests/test_cyclonedx.py::test_component_version_is_locked_and_constraint_preserved
+FAILED scripts/sbom-survey/tests/test_discovery.py::test_discovery_uses_git_ls_files_not_a_filesystem_walk
+FAILED scripts/sbom-survey/tests/test_discovery.py::test_gitignored_top_level_python_dir_is_out_of_scope
+FAILED scripts/sbom-survey/tests/test_discovery.py::test_every_tracked_manifest_is_discovered
+FAILED scripts/sbom-survey/tests/test_discovery.py::test_ecosystem_and_kind_classification
+FAILED scripts/sbom-survey/tests/test_paths.py::test_report_dir_is_gitignored_and_findings_home_is_tracked
+FAILED scripts/sbom-survey/tests/test_registry.py::test_survey_performs_no_network_io_by_default
+FAILED scripts/sbom-survey/tests/test_registry.py::test_unknown_latest_is_never_reported_current
+FAILED scripts/sbom-survey/tests/test_registry.py::test_registry_error_degrades_to_unknown
+FAILED scripts/sbom-survey/tests/test_registry.py::test_static_source_classifies_current_outdated_ahead
+FAILED scripts/sbom-survey/tests/test_report.py::test_staleness_rows_carry_slice_33_fields_and_are_deterministic
+FAILED scripts/sbom-survey/tests/test_tiering.py::test_release_fixtures_are_excluded_and_auditable
+FAILED scripts/sbom-survey/tests/test_tiering.py::test_fixture_exclusion_is_data_driven_not_hardcoded
+FAILED scripts/sbom-survey/tests/test_tiering.py::test_untiered_manifest_raises_untiered_manifest_error
+FAILED scripts/sbom-survey/tests/test_tiering.py::test_tier_map_covers_every_discovered_manifest
+FAILED scripts/sbom-survey/tests/test_tiering.py::test_tier_vocabulary_is_exactly_the_three_ruled_values
+22 failed in 0.30s
+
+exec
+/bin/bash -lc 'grep -n "''^##'"\\|AC-SBOM\\|REQ-\\|setup.cfg\\|requirements\\|dependency\\|dependencies\\|tiers\\|Direct\" dev/design/0.8.20-slice-31-sbom-survey-tool.md | sed -n '1,240p'" in /home/coreyt/projects/fathomdb-worktrees/slice-31-sbom-spec
+ succeeded in 0ms:
+5:# `sbom-survey` — requirements, acceptance criteria and design (0.8.20 Slice 31)
+7:**Library Sweep #3, leg 1 of 3.** Spec of record for the SBOM / dependency-survey tool
+10:- **Slice 31 (this doc)** — requirements · acceptance criteria · design · **RED tests**. **No implementation code.**
+15:for all three legs at `seq-153`) and **mints no AC** in `dev/acceptance.md`. The `AC-SBOM-nn`
+23:## 1. Why this exists
+52:## 2. Scope, and the hard guardrails that bind every leg
+56:1. discovers every **tracked** dependency manifest and lockfile on `main`;
+58:3. emits a **CycloneDX 1.6 JSON** SBOM including the **library↔library** dependency graph;
+64:- **No leg applies a dependency bump. No manifest and no lockfile changes inside 0.8.20.** The
+77:by `src/python/pyproject.toml`, and **not** a dependency of the root `package.json`. It can
+78:therefore never enlarge the published dependency graph or the advisory backlog. Its own dependencies
+84:## 3. Requirements
+88:| **REQ-1 Discovery** | The candidate manifest set is derived from `git ls-files` — the set of paths **tracked on `main`** — never from a filesystem walk. |
+89:| **REQ-2 Completeness** | Every tracked path whose basename is a recognized manifest or lockfile name is discovered. Nothing tracked is silently missed. |
+90:| **REQ-3 Tiering** | Every emitted component carries exactly one tier from the ruled vocabulary `{shipped, dev-tooling, eval-only}`, assigned from a **tracked data file**. |
+91:| **REQ-4 Loud gaps** | A tracked manifest with no tier assignment is a **hard error naming the path**. It is never emitted untagged and never silently dropped. |
+92:| **REQ-5 Fixture exclusion** | Deliberately fake test-fixture manifests are excluded from the BOM by a **data-driven, auditable** rule — never by a hardcoded special case in code. |
+93:| **REQ-6 CycloneDX** | Output is schema-valid **CycloneDX 1.6 JSON**, with a closed `dependencies` graph and a `purl` per component. |
+94:| **REQ-7 Resolved versions** | A component's `version` is the **locked/resolved** version, not a manifest range. The declared constraint is preserved alongside it. |
+95:| **REQ-8 Direct vs transitive** | Every component is tagged `direct` or `transitive`. LBS §2's triage turns on this distinction. |
+96:| **REQ-9 Injectable registry** | The published-version lookup is behind an injectable seam. The test suite **never** requires network. |
+97:| **REQ-10 Honest degradation** | An unavailable, erroring or unparseable "latest" is reported **`unknown`**. It is **never** reported `current`. This is the single worst failure this tool can have. |
+98:| **REQ-11 Gitignored reports** | Generated reports land in a **gitignored** directory. Slice 33's *findings* have a separate **tracked** home. |
+99:| **REQ-12 Not CI-gating** | The tool declares its own non-gating status, and that declaration is cross-checked against the actual CI wiring. |
+100:| **REQ-13 Determinism** | Two runs over identical inputs produce byte-identical artifacts, so a re-run diffs cleanly. |
+101:| **REQ-14 Slice-33 consumer** | The staleness report carries every field Slice 33 needs to answer "what is stale" and "would a surgical ~1–5 SLOC change land it", without re-deriving anything. |
+105:## 4. Acceptance criteria → test map
+113:| **AC-SBOM-01** | Discovery calls an injected `git ls-files` runner and returns only what that runner reports; an untracked file present on disk is absent from the result. | `test_discovery.py::test_discovery_uses_git_ls_files_not_a_filesystem_walk` | `sbom_survey.discovery` does not exist. |
+114:| **AC-SBOM-02** | `python/pyproject.toml` is **untracked** (`.gitignore` `/python/`) and is therefore absent from discovery over the real repo. | `test_discovery.py::test_gitignored_top_level_python_dir_is_out_of_scope` | same |
+115:| **AC-SBOM-03** | Every tracked path whose basename is a recognized manifest name is discovered (computed from `git ls-files` at test time, not a frozen list). The recognized set is §5.1's table, mirrored 1:1 by `MANIFEST_BASENAMES` in `tests/conftest.py`. | `test_discovery.py::test_every_tracked_manifest_is_discovered` | same |
+116:| **AC-SBOM-04** | Each ref carries `ecosystem ∈ {cargo, npm, pypi}` and `kind ∈ {manifest, lockfile}`, correct for four known real paths. | `test_discovery.py::test_ecosystem_and_kind_classification` | same |
+117:| **AC-SBOM-05** | The 8 `dev/release/fixtures/**` manifests appear in `survey.excluded` with reason `fixture`, and contribute **zero** components. | `test_tiering.py::test_release_fixtures_are_excluded_and_auditable` | `sbom_survey.tiers` and `tiers.toml` do not exist. |
+118:| **AC-SBOM-06** | The fixture exclusion is driven by the tracked `tiers.toml` data file: loading a map without that rule changes the outcome. | `test_tiering.py::test_fixture_exclusion_is_data_driven_not_hardcoded` | same |
+119:| **AC-SBOM-07** | A tracked manifest matched by no rule raises `UntieredManifestError` **naming the path**; nothing is emitted with a null tier. | `test_tiering.py::test_untiered_manifest_raises_untiered_manifest_error` | same |
+120:| **AC-SBOM-08** | The repository's own `tiers.toml` covers every path discovery currently returns. | `test_tiering.py::test_tier_map_covers_every_discovered_manifest` | same |
+121:| **AC-SBOM-09** | `TIER_VOCABULARY == ("shipped", "dev-tooling", "eval-only")` — exactly the three ruled values; `fixture` is an exclusion reason, not a tier. | `test_tiering.py::test_tier_vocabulary_is_exactly_the_three_ruled_values` | same |
+122:| **AC-SBOM-10** | The emitted document validates against the bundled CycloneDX **1.6** JSON schema, **and** every component carries a `purl` that *is* its `bom-ref`, bears one of the three ecosystem prefixes, and encodes its own locked version; the document's purl types are exactly `{cargo, npm, pypi}`. | `test_cyclonedx.py::test_cyclonedx_document_is_schema_valid_and_purl_identified` | `sbom_survey.survey` does not exist. |
+123:| **AC-SBOM-11** | Every component carries exactly one `fathomdb:tier` property whose value is in the vocabulary. | `test_cyclonedx.py::test_every_component_carries_a_tier_property` | same |
+124:| **AC-SBOM-12** | The `dependencies` array is **non-empty** and closed **in both directions** (every `dependsOn` ref resolves to a declared component; every declared component has a `ref` entry), contains at least one **library→library** edge, and every component carries `fathomdb:depth ∈ {direct, transitive}` with at least one **known lockfile-only** crate tagged `transitive`. | `test_cyclonedx.py::test_dependency_graph_is_closed_and_depth_tagged` | same |
+125:| **AC-SBOM-13** | A component's `version` is the locked version; the manifest constraint survives as `fathomdb:constraint`. | `test_cyclonedx.py::test_component_version_is_locked_and_constraint_preserved` | same |
+126:| **AC-SBOM-14** | A survey run with `OfflineSource` performs **zero** socket I/O (`socket.socket` monkeypatched to raise). | `test_registry.py::test_survey_performs_no_network_io_by_default` | `sbom_survey.registry` does not exist. |
+127:| **AC-SBOM-15** | With `OfflineSource`, every staleness row is `status="unknown"` / `latest_version=None`, and **no** row is `current`. | `test_registry.py::test_unknown_latest_is_never_reported_current` | same |
+128:| **AC-SBOM-16** | A source that **raises** yields `status="unknown"` plus a recorded `lookup_error`; the run does not crash and reports nothing `current`. | `test_registry.py::test_registry_error_degrades_to_unknown` | same |
+129:| **AC-SBOM-17** | With a `StaticSource`: locked `<` latest → `outdated`; `==` → `current`; `>` → `ahead`. | `test_registry.py::test_static_source_classifies_current_outdated_ahead` | same |
+130:| **AC-SBOM-18** | `DEFAULT_REPORT_DIR` is git-ignored; `SLICE_33_FINDINGS_DOC` is `dev/plans/runs/0.8.20-slice-33-library-sweep-3-FINDINGS.md` and is **not** ignored (it is the tracked durable home — §5.6). | `test_paths.py::test_report_dir_is_gitignored_and_findings_home_is_tracked` | `sbom_survey.paths` does not exist; no `.gitignore` rule yet. |
+131:| **AC-SBOM-19** | `sbom-survey --describe` emits `{"ci_gating": false, "recurring": true, …}`, **and** neither `scripts/agent-test.sh` nor `.github/workflows/ci.yml` mentions `sbom-survey`. | `test_cli.py::test_tool_declares_non_ci_gating_and_is_absent_from_ci_wiring` | the CLI does not exist. |
+132:| **AC-SBOM-20** | `sbom-survey --repo … --offline --out DIR` exits **0** and writes `sbom.cdx.json`, `staleness.json`, `staleness.md`. | `test_cli.py::test_cli_writes_all_artifacts_and_exits_zero` | same |
+133:| **AC-SBOM-21** | On an untiered manifest the CLI exits **2** and names the offending path on stderr. | `test_cli.py::test_cli_exits_two_naming_the_untiered_manifest` | same |
+134:| **AC-SBOM-22** | Staleness rows carry the full Slice-33 field set, are sorted deterministically, and two runs are byte-identical. | `test_report.py::test_staleness_rows_carry_slice_33_fields_and_are_deterministic` | `sbom_survey.survey` does not exist. |
+138:## 5. Design — the eight points this will be probed on
+140:### 5.1 Discovery is `git ls-files`-derived, not a filesystem walk
+149:against gitignored dev/eval lockfiles"* — and would manufacture a backlog of dependency bumps for
+155:git ls-files | grep -E '(^|/)(Cargo\.toml|Cargo\.lock|package\.json|package-lock\.json|pyproject\.toml|uv\.lock|requirements[^/]*\.txt|setup\.py)$'
+180:| `tools/docs/requirements.txt` | pypi | manifest | `dev-tooling` |
+214:| Matches today | `Cargo.toml`, `Cargo.lock`, `package.json`, `package-lock.json`, `pyproject.toml`, `uv.lock`, `setup.py`, and the glob `requirements*.txt` | the 28 paths above |
+215:| Recognized, forward-looking | `yarn.lock`, `pnpm-lock.yaml`, `poetry.lock`, `Pipfile`, `setup.cfg` | **none** — verified: `git ls-files \| grep -E '(^\|/)(setup\.cfg\|Pipfile\|poetry\.lock\|yarn\.lock\|pnpm-lock\.yaml)$'` exits `1` with no output |
+218:fails REQ-4 tiering loudly) rather than silently ignored. Because none of them matches anything
+223:and the two must be kept in lockstep.** That tuple is the oracle `AC-SBOM-03` grades against, so a
+226:`setup.cfg` was exactly that divergence (codex §9 round 1, fix-1 finding 1); the whole table was
+230:### 5.2 Fixture manifests — excluded by a data rule, and audibly so
+235:real dependencies, and every downstream consumer then sees phantom packages at wrong versions.
+246:(`0.8.11.1`, `R-SW-5`), that these manifests are out of dependency scope — and it ruled it for the
+254:`tiers.toml`, with `reason = "fixture"` — and the excluded set is **carried in the survey output**
+262:manifests, they are tracked, they are knowingly not dependencies.
+264:**Why data-driven.** The rule lives in `scripts/sbom-survey/tiers.toml` next to the tier rules, in
+269:- `AC-SBOM-06` can *prove* it is data-driven — the test loads a tier map with the rule removed and
+270:  asserts the fixture manifests then flow through (and trip REQ-4), which a hardcoded `if
+276:discovered, hits no tier rule, and fails loudly (REQ-4) rather than being mis-parsed.
+278:### 5.3 Tier assignment, and the loud failure for a new manifest
+283:names, explicitly, what is *"Deliberately NOT covered (do NOT add …)"*. Deriving `tiers.toml` from it
+295:| NOT covered: `dev/research/**`, `data/corpus-data/**` `requirements*.txt` | "eval/corpus fetch artifacts" | the `eval-only` tier exists for exactly these; all are gitignored today, which is why it currently matches nothing |
+320:**`scripts/sbom-survey/tiers.toml`** (Slice 32 artifact; shape frozen here):
+329:note   = "deliberately fake/skewed release-gate fixtures; not real dependencies"
+382:event this tool exists to catch — into a silent mis-tag. This is `AC-SBOM-07` (unit) and
+383:`AC-SBOM-21` (CLI), and it is the failure mode that gets its own named test per §5 item 3.
+392:### 5.4 The published-version seam — injectable, and honest when offline
+402:| `StaticSource({(eco, name): version})` | returns the mapping, `None` if absent | tests (`AC-SBOM-17`) |
+408:`AC-SBOM-14` proves it by monkeypatching `socket.socket` to raise for the whole survey.
+424:closed as `CLOSE-satisfied` in LBS §2 triage — so it is `AC-SBOM-15` (offline) and `AC-SBOM-16`
+433:### 5.5 library↔library edges — lockfiles, no subprocess
+437:| Ecosystem | Component + edge source | Direct-ness + constraint source |
+439:| cargo | `Cargo.lock` — `[[package]]` `name`/`version`/`dependencies` (TOML, `tomllib`) | `[dependencies]`, `[dev-dependencies]`, `[build-dependencies]` of the 10 tracked workspace `Cargo.toml` files |
+440:| npm | `package-lock.json` v3 — the `packages` map (`node_modules/<name>` keys → `version`, plus per-entry `dependencies`) | `dependencies`/`devDependencies`/`optionalDependencies` of the tracked `package.json` files |
+441:| pypi (locked) | `src/python/uv.lock` — `[[package]]` `name`/`version`/`dependencies` (TOML) | `project.dependencies` + `project.optional-dependencies` of `src/python/pyproject.toml` |
+442:| pypi (unlocked) | `tools/docs/requirements.txt` — no lock exists | the file itself; `==` pins give a locked version, anything looser yields `locked_version=None` → `status="unknown"` |
+448:   and violate REQ-9 at its root.
+456:**Direct vs transitive.** `depth = "direct"` iff the package name appears in a dependency table of
+460:**Honest limitation, recorded rather than papered over.** Cargo lockfile `dependencies` lists are
+465:components with distinct `bom-ref`s, so the graph stays closed (`AC-SBOM-12`).
+468:version) and stable across runs — a prerequisite for REQ-13. Every component therefore carries a
+471:CycloneDX 1.6 accepts a component with only `name` + `version` — so `AC-SBOM-10` asserts it
+476:**What "closed" means here, stated so it cannot be satisfied vacuously.** The `dependencies` array
+481:   `dependsOn`. This is CycloneDX's own guidance ("dependencies should be provided for every
+486:Two further live-repo assertions make the graph non-vacuous (`AC-SBOM-12`):
+490:  library↔library enumeration is a core reason this tool exists (REQ-8, §3a).
+493:  tracked `Cargo.lock` and declared by **no** dependency table of any tracked, non-excluded
+500:### 5.6 The tracked durable home for Slice 33's findings
+502:Generated reports are gitignored (REQ-11), so Slice 33's *findings* need a tracked home. Three
+510:| `dev/deps/<dep>.md` | one dossier per reviewed dependency (`rusqlite.md`, `napi.md`, … 35 files) + `README.md` + `index.md` | `dev/deps/README.md`: keep "dependency adoption criteria, audit summaries, per-dependency evaluation files"; **do not** keep "lockfiles or package manifests / **generated audit output dumps with no summary**". |
+524:labour is therefore: **`dev/plans/runs/` holds run-level findings; `dev/deps/` holds per-dependency
+525:dossiers**, and a future sweep that *does* re-review a dependency writes into `dev/deps/<dep>.md`
+552:4. §3 **Surgical verdict** per outdated **direct** dependency: `SURGICAL ~n SLOC` (with the exact
+561:`.gitignore` additions (a **Slice 32** edit — `AC-SBOM-18` is RED until it lands):
+564:### 5.7 Named external libraries
+566:§3a requires them named. The dependency set is kept deliberately small: this is a tool whose subject
+567:is dependency hygiene, so a bloated dependency set would be self-refuting.
+571:| `cyclonedx-python-lib[json-validation]` | `>=8.0,<9.0` | Build and serialize the CycloneDX 1.6 document; the `json-validation` extra supplies the bundled normative schemas used by `AC-SBOM-10`. | CycloneDX is a versioned spec with normative JSON schemas and `bom-ref` semantics. Hand-rolling the JSON produces a document no consumer will validate, and pins us to re-implementing the schema on every spec bump. |
+573:| `packaging` | `>=24.0,<26.0` | PEP 440 version ordering for the pypi arm, and `Requirement` parsing for `requirements.txt`. | No stdlib version comparator exists. `pkg_resources` is deprecated and string comparison is wrong (`"1.10" < "1.9"`). |
+575:| `pytest` | `>=8.0,<10.0` | Test runner. **Dev-only extra**, not a runtime dependency. | — |
+580:  `urllib.request`. Adding an HTTP stack to a dependency-hygiene tool for three calls is exactly the
+583:  `Cargo.lock`, `uv.lock`, `pyproject.toml` and `tiers.toml`. `tomli`/`toml`/`tomlkit` are not
+590:### 5.8 Forward compatibility with Slice 33 — make the consumer cheap
+596:"rows": [...]}`. Each row (`AC-SBOM-22`):
+616:**Determinism (REQ-13).** Rows are sorted by `(tier, ecosystem, name, locked_version)`; JSON is
+622:### 5.9 CLI contract
+625:sbom-survey --repo PATH [--offline | --online] [--out DIR] [--tiers FILE] [--now ISO8601]
+632:| `2` | a tracked manifest has no tier assignment (path named on stderr) — REQ-4 |
+636:`--describe` prints `{"name": "sbom-survey", "ci_gating": false, "recurring": true, "tiers": [...]}`
+637:— the machine-readable form of "this is informational" (`AC-SBOM-19`).
+641:## 6. Module layout (Slice 32 builds all of this)
+648:  tiers.toml           # Slice 32 — the tracked tier/exclusion data (§5.3)
+653:    tiers.py           # load_tier_map, TierMap, UntieredManifestError
+666:## 7. Why landing the RED suite turns no existing gate red
+688:`setup.cfg` on any ancestor path, and `src/python/pyproject.toml` is not an ancestor. The suite is
+698:## 8. Verification at `cbb56212` (Slice 31 close, re-run at fix-1)
+730:E  Failed: AC-SBOM-07 is NOT SATISFIED: `sbom_survey.tiers` is not implemented yet (it lands in 0.8.20 Slice 32).
+734:E    import 'sbom_survey.tiers' raised: ModuleNotFoundError("No module named 'sbom_survey'")
+736:E  Failed: AC-SBOM-15 is NOT SATISFIED: `sbom_survey.survey` is not implemented yet (it lands in 0.8.20 Slice 32).
+749:## 9. Deliberately not done in Slice 31
+751:- **No implementation.** No `sbom_survey` package, no `pyproject.toml`, no `tiers.toml`, no CLI.
+752:- **No dependency bump, no manifest edit, no lockfile edit** — the hard guardrail binding all three
+754:- **No `.gitignore` edit.** The `scripts/sbom-survey/out/` rule is a Slice 32 artifact; `AC-SBOM-18`
+762:## 10. FIX-1 — codex §9 round 1 (`slice-31-round1-20260729T141744Z`)
+772:| 1 | `setup.cfg` is in the design's recognized-manifest table but missing from `tracked_manifest_paths()`, so a tracked `setup.cfg` added later is silently missed and `AC-SBOM-03` still passes | `setup.cfg` added to `MANIFEST_BASENAMES`; the **whole** table re-diffed against the helper and split into "matches today" / "forward-looking" (§5.1), with the lockstep requirement stated on both sides. `poetry.lock`, `Pipfile`, `yarn.lock`, `pnpm-lock.yaml` were confirmed already present in both. None of the five is tracked at `cbb56212`, so the 28-path enumeration is unchanged. |
+773:| 2 | No `purl` assertion — a document with only schema-valid `name`/`version` passed `AC-SBOM-10`, though REQ-6 requires a `purl` per component and §5.5 makes it the `bom-ref`/identity for advisory matching | `AC-SBOM-10` now asserts per component: `purl` present, ecosystem prefix in `{pkg:cargo/, pkg:npm/, pkg:pypi/}`, `bom-ref == purl`, and the `@version` segment equals the component's own locked version; plus a document-level assertion that the purl-type set is **exactly** `{cargo, npm, pypi}`. Test renamed `…_is_schema_valid_and_purl_identified`. |
+774:| 3 | `doc.get("dependencies", [])` tolerates an **empty** graph and the only depth assertion needed a `direct` component, so emitting direct components with **zero** lockfile-derived library↔library edges passed `AC-SBOM-12` — i.e. REQ-8 was unenforced | `AC-SBOM-12` now asserts the array is non-empty, closed in **both** directions (every declared component has a `ref` entry, leaves with empty `dependsOn`), contains at least one edge whose source is a library rather than the root component, and that at least one of five pinned lockfile-only crates arrives tagged `transitive` (§5.5). |
+782:| Weigh the findings home against all three conventions, not one precedent | **§5.6 rewritten and the ruling CHANGED** to `dev/plans/runs/0.8.20-slice-33-library-sweep-3-FINDINGS.md`. `dev/plans/runs/` is the dominant house convention for a dated run report and is where the slice's `-output.json` already lands; `dev/design/`'s own README scopes it to subsystem design, and the `vec0-delete-probe` precedent is off-point (that probe's output *was* a design constraint); `dev/deps/` stays the home for **per-dependency dossiers**, which Slice 33 mints none of, and its README forbids "generated audit output dumps". `AC-SBOM-18`'s expected `SLICE_33_FINDINGS_DOC` moved with it. |
+
+exec
+/bin/bash -lc "sed -n '140,390p' dev/design/0.8.20-slice-31-sbom-survey-tool.md; sed -n '433,500p' dev/design/0.8.20-slice-31-sbom-survey-tool.md; sed -n '590,620p' dev/design/0.8.20-slice-31-sbom-survey-tool.md" in /home/coreyt/projects/fathomdb-worktrees/slice-31-sbom-spec
+ succeeded in 0ms:
+### 5.1 Discovery is `git ls-files`-derived, not a filesystem walk
+
+`discover_manifests(repo_root, *, ls_files=None)` obtains its candidate paths by running
+`git ls-files -z` at `repo_root` (injectable for tests), filters by basename against the recognized
+manifest table, and returns `ManifestRef(path, ecosystem, kind)`.
+
+**Why not a walk.** A walk sees `target/`, `node_modules/`, `.venv/`, `site/` and every gitignored
+scratch tree; on this repo that is tens of thousands of vendored manifests, none of which the
+project owns. Worse, it sees precisely the class of file the LBS charter §2 warns about — *"noise
+against gitignored dev/eval lockfiles"* — and would manufacture a backlog of dependency bumps for
+artifacts that do not exist on `main`.
+
+**The tracked manifest set at `cbb56212` — 28 paths, enumerated.** Reproduce with:
+
+```bash
+git ls-files | grep -E '(^|/)(Cargo\.toml|Cargo\.lock|package\.json|package-lock\.json|pyproject\.toml|uv\.lock|requirements[^/]*\.txt|setup\.py)$'
+```
+
+| Path | Ecosystem | Kind | Disposition |
+|---|---|---|---|
+| `Cargo.toml` | cargo | manifest | `shipped` |
+| `Cargo.lock` | cargo | lockfile | `shipped` |
+| `src/rust/crates/fathomdb/Cargo.toml` | cargo | manifest | `shipped` |
+| `src/rust/crates/fathomdb-cli/Cargo.toml` | cargo | manifest | `shipped` |
+| `src/rust/crates/fathomdb-embedder/Cargo.toml` | cargo | manifest | `shipped` |
+| `src/rust/crates/fathomdb-embedder-api/Cargo.toml` | cargo | manifest | `shipped` |
+| `src/rust/crates/fathomdb-engine/Cargo.toml` | cargo | manifest | `shipped` |
+| `src/rust/crates/fathomdb-napi/Cargo.toml` | cargo | manifest | `shipped` |
+| `src/rust/crates/fathomdb-py/Cargo.toml` | cargo | manifest | `shipped` |
+| `src/rust/crates/fathomdb-query/Cargo.toml` | cargo | manifest | `shipped` |
+| `src/rust/crates/fathomdb-schema/Cargo.toml` | cargo | manifest | `shipped` |
+| `src/python/pyproject.toml` | pypi | manifest | `shipped` |
+| `src/python/uv.lock` | pypi | lockfile | `shipped` |
+| `src/ts/package.json` | npm | manifest | `shipped` |
+| `src/ts/package-lock.json` | npm | lockfile | `shipped` |
+| `src/ts/npm/linux-x64-gnu/package.json` | npm | manifest | `shipped` |
+| `package.json` | npm | manifest | `dev-tooling` |
+| `package-lock.json` | npm | lockfile | `dev-tooling` |
+| `dev/tools/mermaid/package.json` | npm | manifest | `dev-tooling` |
+| `dev/tools/mermaid/package-lock.json` | npm | lockfile | `dev-tooling` |
+| `tools/docs/requirements.txt` | pypi | manifest | `dev-tooling` |
+| `dev/release/fixtures/cargo-skew/Cargo.toml` | cargo | manifest | **excluded** (`fixture`) |
+| `dev/release/fixtures/cargo-skew/mock-skew-api/Cargo.toml` | cargo | manifest | **excluded** (`fixture`) |
+| `dev/release/fixtures/cargo-skew/mock-skew-consumer-a/Cargo.toml` | cargo | manifest | **excluded** (`fixture`) |
+| `dev/release/fixtures/cargo-skew/mock-skew-consumer-b/Cargo.toml` | cargo | manifest | **excluded** (`fixture`) |
+| `dev/release/fixtures/pip-skew/api-v1/setup.py` | pypi | manifest | **excluded** (`fixture`) |
+| `dev/release/fixtures/pip-skew/api-v2/setup.py` | pypi | manifest | **excluded** (`fixture`) |
+| `dev/release/fixtures/pip-skew/probe-a/setup.py` | pypi | manifest | **excluded** (`fixture`) |
+| `dev/release/fixtures/pip-skew/probe-b/setup.py` | pypi | manifest | **excluded** (`fixture`) |
+
+Slice 32 adds a 29th, `scripts/sbom-survey/pyproject.toml` → `dev-tooling`.
+
+**`python/pyproject.toml` is OUT OF SCOPE, and this is the trap.** `.gitignore` line 88 ignores
+`/python/` **in its entirety** (root-anchored; the comment there explains it is a sourceless
+recovered binding kept on disk for Memex). Verified at `cbb56212`:
+
+```text
+$ git check-ignore -v python/pyproject.toml
+.gitignore:88:/python/    python/pyproject.toml   <- (TAB in real output)
+$ git ls-files python/
+(empty)
+```
+
+The directory does not even exist in this worktree. It is cited elsewhere in the program's records
+as if it were a real manifest; it is not tracked, so it is not in BOM scope, and a filesystem-walk
+discovery on a developer machine that *does* have it would silently pull a pinned `0.1.0` shim into
+the SBOM. This is the exact "noise against gitignored dev/eval lockfiles" case LBS §2 names.
+`git ls-files` makes it structurally impossible.
+
+**Recognized basenames — the table, and its mirror in the test oracle.** Twelve exact basenames plus
+one glob, in two groups:
+
+| Group | Names | Tracked matches at `cbb56212` |
+|---|---|---|
+| Matches today | `Cargo.toml`, `Cargo.lock`, `package.json`, `package-lock.json`, `pyproject.toml`, `uv.lock`, `setup.py`, and the glob `requirements*.txt` | the 28 paths above |
+| Recognized, forward-looking | `yarn.lock`, `pnpm-lock.yaml`, `poetry.lock`, `Pipfile`, `setup.cfg` | **none** — verified: `git ls-files \| grep -E '(^\|/)(setup\.cfg\|Pipfile\|poetry\.lock\|yarn\.lock\|pnpm-lock\.yaml)$'` exits `1` with no output |
+
+The second group is present so that adding one of those files to the repo is *discovered* (and then
+fails REQ-4 tiering loudly) rather than silently ignored. Because none of them matches anything
+today, the group is a pure forward guard: it changes no discovered path and leaves §5.1's 28-path
+enumeration exact.
+
+⚠ **This table is mirrored 1:1 by `MANIFEST_BASENAMES` in `scripts/sbom-survey/tests/conftest.py`,
+and the two must be kept in lockstep.** That tuple is the oracle `AC-SBOM-03` grades against, so a
+name that appears here but not there is a manifest the implementation may silently skip *while the
+suite still reports green* — the design would state a requirement the tests do not enforce.
+`setup.cfg` was exactly that divergence (codex §9 round 1, fix-1 finding 1); the whole table was
+re-diffed against the helper when it was closed, and `poetry.lock` / `Pipfile` / `yarn.lock` /
+`pnpm-lock.yaml` were confirmed already present on both sides.
+
+### 5.2 Fixture manifests — excluded by a data rule, and audibly so
+
+`dev/release/fixtures/cargo-skew/**` (4 × `Cargo.toml`) and `dev/release/fixtures/pip-skew/**`
+(4 × `setup.py`) are **deliberately fake, deliberately skewed** manifests that exist to make the
+release version-skew gates demonstrate their catch. A naive "everything tracked" scope emits them as
+real dependencies, and every downstream consumer then sees phantom packages at wrong versions.
+
+**This is not a fresh decision — it re-states a ruling already on disk.** `.github/dependabot.yml`'s
+header carries an explicit *"Deliberately NOT covered (do NOT add — adding any of these reintroduces
+noise/orphans)"* list, and its third entry is verbatim:
+
+```text
+#   - dev/release/fixtures/cargo-skew/**  (intentional mock crates for release-skew tests).
+```
+
+The repository has therefore **already ruled**, under the reconciliation that closed Library Sweep #1
+(`0.8.11.1`, `R-SW-5`), that these manifests are out of dependency scope — and it ruled it for the
+same stated reason (noise / orphans). Excluding them here is *reconciling with* that ruling, not
+re-litigating it, which is what makes the decision cheap. The tool extends it in one direction the
+Dependabot config could not: `dev/release/fixtures/pip-skew/**` (the 4 `setup.py`) is not named
+there only because no `pip` directory was ever configured near it, so no orphan PR could be
+generated; it is the identical class of artifact and takes the identical rule.
+
+**Decision.** They are **excluded from the BOM**, by an `action = "exclude"` rule in the tracked
+`tiers.toml`, with `reason = "fixture"` — and the excluded set is **carried in the survey output**
+(`survey.excluded`, mirrored into the CycloneDX `metadata.properties` as
+`fathomdb:excluded-manifest`) so the exclusion is auditable rather than invisible.
+
+**Why exclusion and not a fourth tier.** §3a ruled the tier vocabulary as
+`shipped` / `dev-tooling` / `eval-only`. Adding `fixture` would silently re-litigate a HITL ruling
+and, worse, would put non-existent packages in the component list where a vulnerability feed or a
+`purl` consumer would treat them as real. Exclusion-with-a-record is the honest shape: they are
+manifests, they are tracked, they are knowingly not dependencies.
+
+**Why data-driven.** The rule lives in `scripts/sbom-survey/tiers.toml` next to the tier rules, in
+the same first-class rule list, so:
+
+- it is reviewable in one file rather than grep-able out of a code path;
+- a future fixture directory is added by editing data, with no code change;
+- `AC-SBOM-06` can *prove* it is data-driven — the test loads a tier map with the rule removed and
+  asserts the fixture manifests then flow through (and trip REQ-4), which a hardcoded `if
+  path.startswith("dev/release/fixtures/")` could not satisfy.
+
+**Free consequence.** Because the only tracked `setup.py` files are the four excluded pip-skew
+fixtures, the tool needs **no `setup.py` execution or AST parsing** — the single most fragile parser
+in the Python packaging space is never written. If a real `setup.py` is ever tracked it is
+discovered, hits no tier rule, and fails loudly (REQ-4) rather than being mis-parsed.
+
+### 5.3 Tier assignment, and the loud failure for a new manifest
+
+**The tier partition is derived from `.github/dependabot.yml`, not invented here.** That file is a
+tracked source of record whose header already partitions this repository along the same axis the
+tier vocabulary does — it names the entries that *"cover every SHIPPED/tracked manifest"*, and then
+names, explicitly, what is *"Deliberately NOT covered (do NOT add …)"*. Deriving `tiers.toml` from it
+means `shipped` / `dev-tooling` / `eval-only` reconcile with an existing ruling instead of a second
+opinion drifting away from it:
+
+| `dependabot.yml` entry / exclusion | Verbatim rationale in that file | Tier rule it yields |
+|---|---|---|
+| `pip /src/python` | "shipped Python package" | `src/python/` → `shipped` |
+| `cargo /` | "workspace root — covers all `src/rust/crates/*` members" | `Cargo.` + `src/rust/crates/` → `shipped` |
+| `npm /src/ts` | "TypeScript binding" | `src/ts/` → `shipped` |
+| `npm /` | "root markdown dev tooling — see `R-DEP-2` note" | `package` → `dev-tooling` |
+| `github-actions /` | "all `.github/workflows/*`" | **out of BOM scope** — no ecosystem in `{cargo, npm, pypi}`, no manifest basename; recorded here so its absence is deliberate, not an omission |
+| NOT covered: `/python` | "uv-managed **EVAL ENV**; `python/uv.lock` is gitignored, not shipped … the source of the idna/torch security-alert noise — keeping it uncovered is intentional" | out of scope by **untracked-ness** (§5.1), which is the stronger mechanism: `git ls-files` cannot reach it at all |
+| NOT covered: `dev/research/**`, `data/corpus-data/**` `requirements*.txt` | "eval/corpus fetch artifacts" | the `eval-only` tier exists for exactly these; all are gitignored today, which is why it currently matches nothing |
+| NOT covered: `dev/release/fixtures/cargo-skew/**` | "intentional mock crates for release-skew tests" | the `action = "exclude"` / `reason = "fixture"` rule (§5.2) |
+
+Two things fall out of reading it, and both are worth stating plainly.
+
+**(a) The fixture exclusion is the already-ruled position** (§5.2), which strengthens it
+considerably: this design is not asking for a new carve-out, it is honouring one that has been on
+disk since `0.8.11.1`.
+
+**(b) `dev/tools/mermaid/package.json` is a real, tracked npm manifest covered by NO Dependabot
+directory** — the configured `npm` entries are `/src/ts` and `/` only. That is a genuine coverage
+gap of the **same class as the `R-DEP-2` note** in that file, which records that the root
+`package-lock.json` carried two live advisories (`markdown-it` GHSA-6v5v-wf23-fmfq, `js-yaml`
+GHSA-h67p-54hq-rp68) while sitting under no configured directory, so its security PRs never
+auto-opened. `dev/tools/mermaid/` is in that position today.
+
+This design **rules nothing** about it — no manifest and no config is edited in 0.8.20 (§2), and
+`.github/**` is out of bounds for every leg. What matters here is that **the tool surfaces it
+mechanically**: `dev/tools/mermaid/package.json` and `dev/tools/mermaid/package-lock.json` are two of
+the 28 discovered paths, they tier as `dev-tooling`, and the set-difference against the five
+configured Dependabot directories is a one-line consumer of that output. Since LBS's own Definition
+of Done includes "`dependabot.yml` reconciled" (§1), that is a concrete, already-cashable
+demonstration of the tool's value: the manual sweep had this gap and did not report it. It is
+recorded here and handed to **Slice 33's §4 hand-off to 0.8.22**, which owns config changes.
+
+**`scripts/sbom-survey/tiers.toml`** (Slice 32 artifact; shape frozen here):
+
+```toml
+schema = 1
+
+[[rule]]
+prefix = "dev/release/fixtures/"
+action = "exclude"
+reason = "fixture"
+note   = "deliberately fake/skewed release-gate fixtures; not real dependencies"
+
+[[rule]]
+prefix = "src/rust/crates/"
+action = "tier"
+tier   = "shipped"
+
+[[rule]]
+prefix = "src/python/"
+action = "tier"
+tier   = "shipped"
+
+[[rule]]
+prefix = "src/ts/"
+action = "tier"
+tier   = "shipped"
+
+[[rule]]
+prefix = "Cargo."
+action = "tier"
+tier   = "shipped"
+note   = "root workspace manifest + lockfile"
+
+[[rule]]
+prefix = "package"
+action = "tier"
+tier   = "dev-tooling"
+note   = "root package.json/package-lock.json — name is literally fathomdb-dev-tooling, private, not published"
+
+[[rule]]
+prefix = "dev/tools/"
+action = "tier"
+tier   = "dev-tooling"
+
+[[rule]]
+prefix = "tools/docs/"
+action = "tier"
+tier   = "dev-tooling"
+
+[[rule]]
+prefix = "scripts/sbom-survey/"
+action = "tier"
+tier   = "dev-tooling"
+note   = "this tool surveys itself"
+```
+
+**Matching is longest-prefix-wins, not first-match-wins.** File order is then irrelevant, so
+reordering the rules can never change the answer — a property worth having in a file that will be
+edited by whoever adds the next manifest. Duplicate prefixes are a load-time error.
+
+**There is deliberately NO catch-all / default rule.** A tracked manifest matched by no rule raises
+`UntieredManifestError(path)`; `run_survey` propagates it and the CLI exits `2` with the path on
+stderr. A default would convert "somebody added a manifest and nobody classified it" — the exact
+event this tool exists to catch — into a silent mis-tag. This is `AC-SBOM-07` (unit) and
+`AC-SBOM-21` (CLI), and it is the failure mode that gets its own named test per §5 item 3.
+
+**`eval-only` currently matches nothing.** The eval/corpus trees (`data/corpus-data/**`,
+`dev/research/**` and `eval/**` lockfiles) are gitignored today, so no tracked manifest is
+eval-only — and those are precisely the trees `dependabot.yml` lists as deliberately uncovered. The
+value stays in the vocabulary because if one ever *becomes* tracked it must be taggable as eval-only
+rather than silently absorbed into `shipped`; the file's own note that `/python` "is the source of
+the idna/torch security-alert noise" is the concrete record of what mis-tagging an eval tree costs.
+### 5.5 library↔library edges — lockfiles, no subprocess
+
+**Edges come from lockfiles; constraints and direct-ness come from manifests.**
+
+| Ecosystem | Component + edge source | Direct-ness + constraint source |
+|---|---|---|
+| cargo | `Cargo.lock` — `[[package]]` `name`/`version`/`dependencies` (TOML, `tomllib`) | `[dependencies]`, `[dev-dependencies]`, `[build-dependencies]` of the 10 tracked workspace `Cargo.toml` files |
+| npm | `package-lock.json` v3 — the `packages` map (`node_modules/<name>` keys → `version`, plus per-entry `dependencies`) | `dependencies`/`devDependencies`/`optionalDependencies` of the tracked `package.json` files |
+| pypi (locked) | `src/python/uv.lock` — `[[package]]` `name`/`version`/`dependencies` (TOML) | `project.dependencies` + `project.optional-dependencies` of `src/python/pyproject.toml` |
+| pypi (unlocked) | `tools/docs/requirements.txt` — no lock exists | the file itself; `==` pins give a locked version, anything looser yields `locked_version=None` → `status="unknown"` |
+
+**Why lockfile parse and not `cargo metadata` / `npm ls`.** Three reasons, in order of weight:
+
+1. **Hermeticity.** `cargo metadata` and `npm ls` need the toolchain installed, a populated
+   registry cache, and frequently the network. That would make the acceptance suite non-hermetic
+   and violate REQ-9 at its root.
+2. **Fidelity to the question.** "What version are we *using*?" is answered by the tracked lockfile,
+   by definition. A subprocess can resolve differently from the committed lock (different feature
+   set, `--offline` cache state, a newer index) and would then report something the repository does
+   not actually contain.
+3. **Cost.** The whole point of the re-scope is a fast mechanical run; a cold `cargo metadata` on
+   this workspace is minutes.
+
+**Direct vs transitive.** `depth = "direct"` iff the package name appears in a dependency table of
+at least one **tracked, non-excluded** manifest; otherwise `"transitive"`. This is exactly LBS §2's
+second triage question ("*transitive bump usually moot*"), so Slice 33 filters on it.
+
+**Honest limitation, recorded rather than papered over.** Cargo lockfile `dependencies` lists are
+already feature-resolved and do not distinguish normal / dev / build edges. The tool therefore tags
+lock-derived edges `fathomdb:edge-kind = "resolved"`, and only manifest-derived direct edges carry
+the real `normal` / `dev` / `build` kind. An npm `package-lock` v3 `packages` key can also carry
+nested `node_modules/a/node_modules/b` paths for conflicting versions; those are emitted as distinct
+components with distinct `bom-ref`s, so the graph stays closed (`AC-SBOM-12`).
+
+**`bom-ref`** is `<purl>` (e.g. `pkg:cargo/serde@1.0.219`), which is unique per (ecosystem, name,
+version) and stable across runs — a prerequisite for REQ-13. Every component therefore carries a
+`purl`, it equals the `bom-ref`, its type is one of `cargo` / `npm` / `pypi`, and its `@version`
+segment is the component's own locked version. Schema validity does **not** imply any of this —
+CycloneDX 1.6 accepts a component with only `name` + `version` — so `AC-SBOM-10` asserts it
+per-component and additionally requires the document's purl-type set to be *exactly*
+`{cargo, npm, pypi}`: this repo tracks manifests in all three, so a missing type means a whole
+ecosystem was dropped, and a fourth type means something leaked in.
+
+**What "closed" means here, stated so it cannot be satisfied vacuously.** The `dependencies` array
+is closed in **both** directions:
+
+1. every `dependsOn` target resolves to a declared component `bom-ref` (no dangling refs), **and**
+2. every declared component appears as a `ref` entry — a leaf takes an entry with an empty
+   `dependsOn`. This is CycloneDX's own guidance ("dependencies should be provided for every
+   component") and it is the half that carries the weight: direction 1 alone is *trivially* true of
+   an empty array, so an implementation could emit 400 components and zero edges and still be
+   "closed".
+
+Two further live-repo assertions make the graph non-vacuous (`AC-SBOM-12`):
+
+- **At least one library→library edge** — an entry whose `ref` is a component rather than the
+  `metadata.component` root, with a non-empty `dependsOn`. Without this the BOM is a flat list, and
+  library↔library enumeration is a core reason this tool exists (REQ-8, §3a).
+- **At least one known lockfile-only crate arrives tagged `transitive`.** The suite pins a small
+  sentinel set — `proc-macro2`, `quote`, `syn`, `unicode-ident`, `serde_derive` — each present in the
+  tracked `Cargo.lock` and declared by **no** dependency table of any tracked, non-excluded
+  `Cargo.toml` at `cbb56212` (378 of the 410 locked crates are in that position). They can only
+  reach the BOM by walking the lock's edges, so their absence proves the walk never happened. The
+  assertion needs only **one** survivor, which is the drift allowance: if a future slice adopts, say,
+  `syn` directly, the crate legitimately leaves the set and the other four still hold the line. If
+  *all five* ever become direct, the set must be re-picked — the test says so in its failure message.
+
+### 5.6 The tracked durable home for Slice 33's findings
+### 5.8 Forward compatibility with Slice 33 — make the consumer cheap
+
+Slice 33 answers exactly two questions and stops: **(1)** what is actually stale, and **(2)** would
+a **surgical ~1–5 SLOC** change *likely* land each upgrade — **ASCERTAIN, NEVER IMPLEMENT**.
+
+`staleness.json` is a JSON object `{"generated": …, "source": "offline"|"http", "summary": {…},
+"rows": [...]}`. Each row (`AC-SBOM-22`):
+
+| Field | Type | Why Slice 33 needs it |
+|---|---|---|
+| `ecosystem` | `"cargo"｜"npm"｜"pypi"` | groups the survey |
+| `name` | str | the candidate |
+| `tier` | tier | `shipped` outranks `dev-tooling`; drives priority |
+| `depth` | `"direct"｜"transitive"` | LBS §2: transitive bumps are usually moot |
+| `locked_version` | str｜null | "what are we using" |
+| `latest_version` | str｜null | "what is published" — `null` ⇒ `unknown` |
+| `status` | `current｜outdated｜ahead｜unknown` | question (1), answered directly |
+| `lookup_error` | str｜null | why a row is `unknown`, so §5 of the findings doc writes itself |
+| `declared_in` | list of `{path, constraint, kind}` | which tracked manifests declare it, with the range and `normal`/`dev`/`build` |
+| `edit_sites` | list of str | **the input to question (2)** — the exact manifest paths a bump must touch |
+| `edit_site_count` | int | a one-line proxy for "surgical?": one version string per site |
+
+Question (2) is a **judgement** — a major with an API break is not surgical even at one edit site.
+The tool supplies the *inputs* (`edit_site_count`, `depth`, the constraint strings) and states no
+verdict. **No part of Slice 33 is built here.**
+
+**Determinism (REQ-13).** Rows are sorted by `(tier, ecosystem, name, locked_version)`; JSON is
+written with sorted keys and a trailing newline; the CycloneDX `serialNumber` is a **UUIDv5 over the
+sorted `bom-ref` set** (not `uuid4`), and `metadata.timestamp` comes from `SOURCE_DATE_EPOCH` or an
+explicit `--now`, defaulting to a fixed epoch rather than wall-clock. A re-run therefore diffs to
+nothing when nothing changed — which is what makes this a *recurring* tool rather than a one-off.
+
+exec
+/bin/bash -lc "git ls-files | grep -E '("'^|/)(Cargo'"\\.toml|Cargo\\.lock|package\\.json|package-lock\\.json|pyproject\\.toml|uv\\.lock|requirements["'^/]*'"\\.txt|setup\\.py)"'$'"' | nl -ba && git ls-files | grep -E '("'^|/)(setup'"\\.cfg|Pipfile|poetry\\.lock|yarn\\.lock|pnpm-lock\\.yaml)"'$'"' || true" in /home/coreyt/projects/fathomdb-worktrees/slice-31-sbom-spec
+ succeeded in 0ms:
+     1	Cargo.lock
+     2	Cargo.toml
+     3	dev/release/fixtures/cargo-skew/Cargo.toml
+     4	dev/release/fixtures/cargo-skew/mock-skew-api/Cargo.toml
+     5	dev/release/fixtures/cargo-skew/mock-skew-consumer-a/Cargo.toml
+     6	dev/release/fixtures/cargo-skew/mock-skew-consumer-b/Cargo.toml
+     7	dev/release/fixtures/pip-skew/api-v1/setup.py
+     8	dev/release/fixtures/pip-skew/api-v2/setup.py
+     9	dev/release/fixtures/pip-skew/probe-a/setup.py
+    10	dev/release/fixtures/pip-skew/probe-b/setup.py
+    11	dev/tools/mermaid/package-lock.json
+    12	dev/tools/mermaid/package.json
+    13	package-lock.json
+    14	package.json
+    15	src/python/pyproject.toml
+    16	src/python/uv.lock
+    17	src/rust/crates/fathomdb-cli/Cargo.toml
+    18	src/rust/crates/fathomdb-embedder-api/Cargo.toml
+    19	src/rust/crates/fathomdb-embedder/Cargo.toml
+    20	src/rust/crates/fathomdb-engine/Cargo.toml
+    21	src/rust/crates/fathomdb-napi/Cargo.toml
+    22	src/rust/crates/fathomdb-py/Cargo.toml
+    23	src/rust/crates/fathomdb-query/Cargo.toml
+    24	src/rust/crates/fathomdb-schema/Cargo.toml
+    25	src/rust/crates/fathomdb/Cargo.toml
+    26	src/ts/npm/linux-x64-gnu/package.json
+    27	src/ts/package-lock.json
+    28	src/ts/package.json
+    29	tools/docs/requirements.txt
+
+exec
+/bin/bash -lc "nl -ba dev/design/0.8.20-slice-31-sbom-survey-tool.md | sed -n '148,186p' && nl -ba dev/design/0.8.20-slice-31-sbom-survey-tool.md | sed -n '210,222p' && nl -ba dev/plans/runs/0.8.20-slice-31-output.json | sed -n '13,18p'" in /home/coreyt/projects/fathomdb-worktrees/slice-31-sbom-spec
+ succeeded in 0ms:
+   148	project owns. Worse, it sees precisely the class of file the LBS charter §2 warns about — *"noise
+   149	against gitignored dev/eval lockfiles"* — and would manufacture a backlog of dependency bumps for
+   150	artifacts that do not exist on `main`.
+   151	
+   152	**The tracked manifest set at `cbb56212` — 28 paths, enumerated.** Reproduce with:
+   153	
+   154	```bash
+   155	git ls-files | grep -E '(^|/)(Cargo\.toml|Cargo\.lock|package\.json|package-lock\.json|pyproject\.toml|uv\.lock|requirements[^/]*\.txt|setup\.py)$'
+   156	```
+   157	
+   158	| Path | Ecosystem | Kind | Disposition |
+   159	|---|---|---|---|
+   160	| `Cargo.toml` | cargo | manifest | `shipped` |
+   161	| `Cargo.lock` | cargo | lockfile | `shipped` |
+   162	| `src/rust/crates/fathomdb/Cargo.toml` | cargo | manifest | `shipped` |
+   163	| `src/rust/crates/fathomdb-cli/Cargo.toml` | cargo | manifest | `shipped` |
+   164	| `src/rust/crates/fathomdb-embedder/Cargo.toml` | cargo | manifest | `shipped` |
+   165	| `src/rust/crates/fathomdb-embedder-api/Cargo.toml` | cargo | manifest | `shipped` |
+   166	| `src/rust/crates/fathomdb-engine/Cargo.toml` | cargo | manifest | `shipped` |
+   167	| `src/rust/crates/fathomdb-napi/Cargo.toml` | cargo | manifest | `shipped` |
+   168	| `src/rust/crates/fathomdb-py/Cargo.toml` | cargo | manifest | `shipped` |
+   169	| `src/rust/crates/fathomdb-query/Cargo.toml` | cargo | manifest | `shipped` |
+   170	| `src/rust/crates/fathomdb-schema/Cargo.toml` | cargo | manifest | `shipped` |
+   171	| `src/python/pyproject.toml` | pypi | manifest | `shipped` |
+   172	| `src/python/uv.lock` | pypi | lockfile | `shipped` |
+   173	| `src/ts/package.json` | npm | manifest | `shipped` |
+   174	| `src/ts/package-lock.json` | npm | lockfile | `shipped` |
+   175	| `src/ts/npm/linux-x64-gnu/package.json` | npm | manifest | `shipped` |
+   176	| `package.json` | npm | manifest | `dev-tooling` |
+   177	| `package-lock.json` | npm | lockfile | `dev-tooling` |
+   178	| `dev/tools/mermaid/package.json` | npm | manifest | `dev-tooling` |
+   179	| `dev/tools/mermaid/package-lock.json` | npm | lockfile | `dev-tooling` |
+   180	| `tools/docs/requirements.txt` | pypi | manifest | `dev-tooling` |
+   181	| `dev/release/fixtures/cargo-skew/Cargo.toml` | cargo | manifest | **excluded** (`fixture`) |
+   182	| `dev/release/fixtures/cargo-skew/mock-skew-api/Cargo.toml` | cargo | manifest | **excluded** (`fixture`) |
+   183	| `dev/release/fixtures/cargo-skew/mock-skew-consumer-a/Cargo.toml` | cargo | manifest | **excluded** (`fixture`) |
+   184	| `dev/release/fixtures/cargo-skew/mock-skew-consumer-b/Cargo.toml` | cargo | manifest | **excluded** (`fixture`) |
+   185	| `dev/release/fixtures/pip-skew/api-v1/setup.py` | pypi | manifest | **excluded** (`fixture`) |
+   186	| `dev/release/fixtures/pip-skew/api-v2/setup.py` | pypi | manifest | **excluded** (`fixture`) |
+   210	one glob, in two groups:
+   211	
+   212	| Group | Names | Tracked matches at `cbb56212` |
+   213	|---|---|---|
+   214	| Matches today | `Cargo.toml`, `Cargo.lock`, `package.json`, `package-lock.json`, `pyproject.toml`, `uv.lock`, `setup.py`, and the glob `requirements*.txt` | the 28 paths above |
+   215	| Recognized, forward-looking | `yarn.lock`, `pnpm-lock.yaml`, `poetry.lock`, `Pipfile`, `setup.cfg` | **none** — verified: `git ls-files \| grep -E '(^\|/)(setup\.cfg\|Pipfile\|poetry\.lock\|yarn\.lock\|pnpm-lock\.yaml)$'` exits `1` with no output |
+   216	
+   217	The second group is present so that adding one of those files to the repo is *discovered* (and then
+   218	fails REQ-4 tiering loudly) rather than silently ignored. Because none of them matches anything
+   219	today, the group is a pure forward guard: it changes no discovered path and leaves §5.1's 28-path
+   220	enumeration exact.
+   221	
+   222	⚠ **This table is mirrored 1:1 by `MANIFEST_BASENAMES` in `scripts/sbom-survey/tests/conftest.py`,
+    13	    "(+ the fix-1 closure-JSON docs commit sitting on top of 8766e868 at the branch tip — this file. head_sha names 8766e868, the last SUBSTANTIVE commit, which is where the §8 gate table was captured; a closure JSON cannot name its own sha.)"
+    14	  ],
+    15	  "findings_addressed": [
+    16	    "FIX-1 [P2] 1/3 — `setup.cfg` missing from the manifest oracle (conftest.py:39-51). The design's recognized-manifest table listed `setup.cfg`; `tracked_manifest_paths()` did not, so a tracked `setup.cfg` added later is silently missed while AC-SBOM-03 still passes — the design stated a requirement the tests did not enforce. CLOSED: `setup.cfg` added to MANIFEST_BASENAMES, and rather than patching the one name the ENTIRE recognized table was re-diffed against the helper — `poetry.lock`, `Pipfile`, `yarn.lock` and `pnpm-lock.yaml` were confirmed already present on both sides. The tuple is now split into 'matches tracked paths today' / 'recognized, forward-looking' with an explicit lockstep warning, and design §5.1 was promoted from a prose list to the same two-group table. Verified none of the five forward-looking names is tracked at cbb56212 (`git ls-files | grep -E '(^|/)(setup\\.cfg|Pipfile|poetry\\.lock|yarn\\.lock|pnpm-lock\\.yaml)$'` exits 1 with no output), so §5.1's 28-path enumeration is unchanged.",
+    17	    "FIX-1 [P2] 2/3 — no `purl` assertion (test_cyclonedx.py:32-35). REQ-6 requires a purl per component and §5.5 makes the purl the bom-ref — the component identity an advisory feed matches a locked version against — but CycloneDX 1.6 accepts `name` + `version` alone, so a purl-less document passed AC-SBOM-10. CLOSED: AC-SBOM-10 now asserts per component that `purl` is present, carries an ecosystem prefix in {pkg:cargo/, pkg:npm/, pkg:pypi/}, EQUALS the `bom-ref`, and (for resolved components) has an `@version` segment equal to the component's own version; plus a document-level assertion that the purl-type set is EXACTLY {cargo, npm, pypi} — this repo tracks manifests in all three, so a missing type means an entire ecosystem was dropped and a fourth type means something leaked in. Test renamed test_cyclonedx_document_is_schema_valid_and_purl_identified; §4's AC table and §5.5 restate the contract.",
+    18	    "FIX-1 [P2] 3/3 — dependency-graph coverage was vacuous (test_cyclonedx.py:91-98). `doc.get(\"dependencies\", [])` tolerates an EMPTY array, which is trivially 'closed', and the only depth assertion required a `direct` component — so an implementation emitting the manifest-derived direct set with ZERO lockfile-derived library<->library edges passed, i.e. REQ-8 was unenforced and the core reason the tool exists went ungated. CLOSED: AC-SBOM-12 now asserts the array is non-empty; the graph is closed in BOTH directions (every declared component has a `ref` entry, leaves carrying an empty `dependsOn` — direction 1 alone is what an empty array satisfies); at least one edge originates at a library rather than the metadata root component; and at least one KNOWN LOCKFILE-ONLY crate arrives tagged `transitive`. The sentinel set is proc-macro2 / quote / syn / unicode-ident / serde_derive, each present in the tracked Cargo.lock and declared by NO dependency table of any tracked non-excluded Cargo.toml at cbb56212 (378 of the 410 locked crates are in that position, computed from the tree), so they can only reach the BOM by walking the lock's edges. Only ONE survivor is required, which is the deliberate drift allowance; §5.5 records the caveat and the test says so in its failure message.",
+
+exec
+/bin/bash -lc "nl -ba scripts/sbom-survey/tests/test_cyclonedx.py | sed -n '86,108p'" in /home/coreyt/projects/fathomdb-worktrees/slice-31-sbom-spec
+ succeeded in 0ms:
+    86	
+    87	    assert seen_types == set(PURL_PREFIX_BY_ECOSYSTEM), (
+    88	        "the BOM's purl types must be exactly"
+    89	        f" {sorted(PURL_PREFIX_BY_ECOSYSTEM)} — this repo tracks cargo, npm and"
+    90	        f" pypi manifests, so all three must be represented; got {sorted(seen_types)}"
+    91	    )
+    92	
+    93	    validator_mod = require(
+    94	        "sbom_survey.cyclonedx",
+    95	        "AC-SBOM-10",
+    96	        "sbom_survey.cyclonedx.validate(doc) must run the CycloneDX 1.6 schema"
+    97	        " validator and return None on success / a diagnostic on failure.",
+    98	    )
+    99	    problem = validator_mod.validate(doc)
+   100	    assert problem is None, f"CycloneDX 1.6 schema validation failed: {problem}"
+   101	
+   102	
+   103	def test_every_component_carries_a_tier_property() -> None:
+   104	    """AC-SBOM-11.
+   105	
+   106	    Tier tagging is what made TC-93 a cheap call. Every component carries
+   107	    exactly one `fathomdb:tier` property, and its value is in the ruled
+   108	    vocabulary.
+
+exec
+/bin/bash -lc "nl -ba scripts/sbom-survey/tests/test_report.py | sed -n '40,58p'" in /home/coreyt/projects/fathomdb-worktrees/slice-31-sbom-spec
+ succeeded in 0ms:
+    40	        " inputs must write BYTE-IDENTICAL artifacts (UUIDv5 serialNumber, no"
+    41	        " wall-clock timestamp) so a re-run diffs to nothing.",
+    42	    )
+    43	    registry = require("sbom_survey.registry", "AC-SBOM-22", "OfflineSource keeps the run hermetic.")
+    44	    report = require(
+    45	        "sbom_survey.report",
+    46	        "AC-SBOM-22",
+    47	        "sbom_survey.report.write_reports(survey, out_dir) must emit"
+    48	        " sbom.cdx.json, staleness.json and staleness.md deterministically.",
+    49	    )
+    50	
+    51	    def once(out: Path) -> dict[str, bytes]:
+    52	        survey = survey_mod.run_survey(
+    53	            REPO_ROOT, published=registry.OfflineSource(), now="1970-01-01T00:00:00Z"
+    54	        )
+    55	        report.write_reports(survey, out)
+    56	        return {p.name: p.read_bytes() for p in sorted(out.iterdir())}
+    57	
+    58	    first = once(tmp_path / "a")
+
+exec
+/bin/bash -lc "nl -ba scripts/sbom-survey/tests/test_tiering.py | sed -n '72,112p'" in /home/coreyt/projects/fathomdb-worktrees/slice-31-sbom-spec
+ succeeded in 0ms:
+    72	
+    73	
+    74	def test_fixture_exclusion_is_data_driven_not_hardcoded() -> None:
+    75	    """AC-SBOM-06.
+    76	
+    77	    The exclusion must be a rule in the tracked `tiers.toml`, not an `if` in
+    78	    code. Proof: load a tier map with the fixture rule REMOVED and the fixture
+    79	    manifests must then flow through to tiering (and, having no rule, trip the
+    80	    REQ-4 loud failure). A hardcoded special case cannot satisfy this.
+    81	    """
+    82	    tiers_file = PROJECT_ROOT / "tiers.toml"
+    83	    tiers = require(
+    84	        "sbom_survey.tiers",
+    85	        "AC-SBOM-06",
+    86	        "the fixture exclusion must live as an `action = \"exclude\"` rule in the"
+    87	        " tracked scripts/sbom-survey/tiers.toml; removing that rule from a"
+    88	        " loaded TierMap must change the behaviour, proving the rule is data,"
+    89	        " not a hardcoded path check in code.",
+    90	    )
+    91	
+    92	    assert tiers_file.is_file(), (
+    93	        f"{tiers_file} does not exist — the tier/exclusion rules must be tracked"
+    94	        " DATA (Slice 32 artifact), not code"
+    95	    )
+    96	    text = tiers_file.read_text(encoding="utf-8")
+    97	    assert FIXTURE_PREFIX in text, (
+    98	        f"{tiers_file} carries no rule for {FIXTURE_PREFIX!r}; the exclusion is"
+    99	        " not data-driven"
+   100	    )
+   101	
+   102	    full = tiers.load_tier_map(tiers_file)
+   103	    assert full.classify(FIXTURE_PREFIX + "cargo-skew/Cargo.toml").action == "exclude"
+   104	
+   105	    stripped = tiers.TierMap(
+   106	        [r for r in full.rules if not r.prefix.startswith(FIXTURE_PREFIX)]
+   107	    )
+   108	    with pytest.raises(tiers.UntieredManifestError):
+   109	        stripped.classify(FIXTURE_PREFIX + "cargo-skew/Cargo.toml")
+   110	
+   111	
+   112	def test_untiered_manifest_raises_untiered_manifest_error() -> None:
+
+codex
+The patch is a RED acceptance/spec slice, but several tests leave key requirements unenforced or self-certified, so Slice 32 could pass the suite while violating the documented contract. There is also a stale manifest count in the spec of record.
+
+Full review comments:
+
+- [P2] Validate CycloneDX with an independent oracle — /home/coreyt/projects/fathomdb-worktrees/slice-31-sbom-spec/scripts/sbom-survey/tests/test_cyclonedx.py:99-100
+  For AC-SBOM-10, this test trusts `sbom_survey.cyclonedx.validate()` from the implementation under test to prove schema validity, so an implementation that returns `None` unconditionally can pass while emitting invalid CycloneDX JSON. Since the criterion is specifically guarding against hand-rolled invalid SBOMs, the test should invoke an independent CycloneDX/json-schema validator directly or include a known-invalid negative check.
+
+- [P2] Exercise fixture exclusion through survey behavior — /home/coreyt/projects/fathomdb-worktrees/slice-31-sbom-spec/scripts/sbom-survey/tests/test_tiering.py:105-109
+  When Slice 32 implements this, `TierMap.classify()` can be data-driven here while `run_survey()` still hardcodes `path.startswith("dev/release/fixtures/")` and passes both AC-SBOM-05 and this test. That leaves REQ-5's “never by a hardcoded special case in code” untested at the actual survey boundary; the stripped tier map needs to be passed into the survey path/CLI and shown to make fixture manifests fail tiering instead of being excluded.
+
+- [P2] Test determinism without pinning `now` — /home/coreyt/projects/fathomdb-worktrees/slice-31-sbom-spec/scripts/sbom-survey/tests/test_report.py:52-54
+  This determinism check passes an explicit timestamp on both runs, so an implementation that defaults to wall-clock time when `now`/`--now` is omitted still passes even though REQ-13 and §5.8 require ordinary repeated runs to be byte-identical. Please compare two default/offline runs as well, or drive the CLI twice without `--now`, so the default timestamp path is covered.
+
+- [P3] Correct the tracked manifest count — /home/coreyt/projects/fathomdb-worktrees/slice-31-sbom-spec/dev/design/0.8.20-slice-31-sbom-survey-tool.md:152-152
+  At `cbb56212`, the reproduction command currently returns 29 tracked manifest paths, and the table below also lists 29 entries; `src/ts/npm/linux-x64-gnu/package.json` appears to be the extra one. Because this document is the spec of record for Slice 32, the repeated “28 paths” count should be corrected to avoid downstream implementers reconciling against the wrong total.
+The patch is a RED acceptance/spec slice, but several tests leave key requirements unenforced or self-certified, so Slice 32 could pass the suite while violating the documented contract. There is also a stale manifest count in the spec of record.
+
+Full review comments:
+
+- [P2] Validate CycloneDX with an independent oracle — /home/coreyt/projects/fathomdb-worktrees/slice-31-sbom-spec/scripts/sbom-survey/tests/test_cyclonedx.py:99-100
+  For AC-SBOM-10, this test trusts `sbom_survey.cyclonedx.validate()` from the implementation under test to prove schema validity, so an implementation that returns `None` unconditionally can pass while emitting invalid CycloneDX JSON. Since the criterion is specifically guarding against hand-rolled invalid SBOMs, the test should invoke an independent CycloneDX/json-schema validator directly or include a known-invalid negative check.
+
+- [P2] Exercise fixture exclusion through survey behavior — /home/coreyt/projects/fathomdb-worktrees/slice-31-sbom-spec/scripts/sbom-survey/tests/test_tiering.py:105-109
+  When Slice 32 implements this, `TierMap.classify()` can be data-driven here while `run_survey()` still hardcodes `path.startswith("dev/release/fixtures/")` and passes both AC-SBOM-05 and this test. That leaves REQ-5's “never by a hardcoded special case in code” untested at the actual survey boundary; the stripped tier map needs to be passed into the survey path/CLI and shown to make fixture manifests fail tiering instead of being excluded.
+
+- [P2] Test determinism without pinning `now` — /home/coreyt/projects/fathomdb-worktrees/slice-31-sbom-spec/scripts/sbom-survey/tests/test_report.py:52-54
+  This determinism check passes an explicit timestamp on both runs, so an implementation that defaults to wall-clock time when `now`/`--now` is omitted still passes even though REQ-13 and §5.8 require ordinary repeated runs to be byte-identical. Please compare two default/offline runs as well, or drive the CLI twice without `--now`, so the default timestamp path is covered.
+
+- [P3] Correct the tracked manifest count — /home/coreyt/projects/fathomdb-worktrees/slice-31-sbom-spec/dev/design/0.8.20-slice-31-sbom-survey-tool.md:152-152
+  At `cbb56212`, the reproduction command currently returns 29 tracked manifest paths, and the table below also lists 29 entries; `src/ts/npm/linux-x64-gnu/package.json` appears to be the extra one. Because this document is the spec of record for Slice 32, the repeated “28 paths” count should be corrected to avoid downstream implementers reconciling against the wrong total.
