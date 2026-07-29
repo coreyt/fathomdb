@@ -116,6 +116,23 @@ def purl_type(purl: object) -> str | None:
     return purl[len("pkg:") :].split("/", 1)[0]
 
 
+def declared_in_origins(doc) -> set[str]:
+    """Every `fathomdb:declared-in` value carried by a CycloneDX document.
+
+    This is the only place the emitted document says **which tracked files the
+    survey actually read**, which makes it the observable that lets a discovery
+    criterion be graded at the `run_survey` boundary rather than against
+    `discover_manifests()` alone. Components with no declaring manifest (the
+    lockfile-only transitives of §5.5) simply contribute nothing here.
+    """
+    return {
+        prop.get("value")
+        for component in doc.get("components", [])
+        for prop in component.get("properties", [])
+        if prop.get("name") == "fathomdb:declared-in" and prop.get("value")
+    }
+
+
 def require(module: str, criterion: str, behaviour: str):
     """Import `module`, or FAIL naming the criterion and the missing behaviour.
 
@@ -208,7 +225,19 @@ def independent_cyclonedx_validator(criterion: str):
         problem = validator.validate_str(json.dumps(doc))
         return None if problem is None else str(problem)
 
-    return validate
+    # NEGATIVE CONTROL, run here so that EVERY caller receives a validator that
+    # has already been shown to reject something. An "independent validator"
+    # that accepts anything is no better than the self-certifying one it
+    # replaced, and a clean verdict from it would prove nothing — so no caller
+    # is allowed to trust this oracle before it has bitten once.
+    if validate(KNOWN_INVALID_CYCLONEDX_DOC) is not None:
+        return validate
+    pytest.fail(
+        f"{criterion} CANNOT BE GRADED: the independent CycloneDX 1.6 validator"
+        " ACCEPTED a document whose only component carries no `type`, which the"
+        " 1.6 schema makes REQUIRED. The oracle is not validating, so any clean"
+        " verdict from it is meaningless."
+    )
 
 
 def run_cli(args: list[str], criterion: str, behaviour: str) -> subprocess.CompletedProcess:

@@ -64,6 +64,10 @@ def test_staleness_rows_carry_slice_33_fields_and_are_deterministic(
     Three determinism legs are therefore run: pinned `now`, the in-process
     default, and the CLI default (argparse has a default of its own and could
     hand `run_survey` a wall-clock `now` explicitly, bypassing the other two).
+
+    The consumer contract is then graded twice: once on `Survey.staleness()`,
+    and once on the `staleness.json` the CLI WROTE — because that file, not the
+    in-process object, is the thing Slice 33 opens.
     """
     survey_mod = require(
         "sbom_survey.survey",
@@ -81,7 +85,9 @@ def test_staleness_rows_carry_slice_33_fields_and_are_deterministic(
         "sbom_survey.report",
         "AC-SBOM-22",
         "sbom_survey.report.write_reports(survey, out_dir) must emit"
-        " sbom.cdx.json, staleness.json and staleness.md deterministically.",
+        " sbom.cdx.json, staleness.json and staleness.md deterministically, and"
+        ' staleness.json must be {"generated", "source", "summary", "rows"} with'
+        " every row carrying the Slice-33 field set in the ruled sort order.",
     )
 
     # Cleared so the PURE built-in default is exercised, not an environment
@@ -173,3 +179,38 @@ def test_staleness_rows_carry_slice_33_fields_and_are_deterministic(
 
     keys = [(r["tier"], r["ecosystem"], r["name"], r["locked_version"] or "") for r in rows]
     assert keys == sorted(keys), "staleness rows are not deterministically sorted"
+
+    # --- and in the ARTIFACT, which is what Slice 33 actually opens ----------
+    #
+    # Everything above grades `Survey.staleness()` in process. Slice 33 never
+    # calls that; it reads `staleness.json`, so `report.write_reports()` could
+    # project a different, poorer row shape and the consumer contract would
+    # still be green. §5.8 fixes both the envelope and the row.
+    written = json.loads(cli_runs[0]["staleness.json"])
+    assert set(written) == {"generated", "source", "summary", "rows"}, (
+        "staleness.json's top-level envelope drifted from §5.8's"
+        ' {"generated", "source", "summary", "rows"}: got'
+        f" {sorted(written)}"
+    )
+    assert written["source"] == "offline", (
+        "an --offline run must record source='offline' — Slice 33 uses it to"
+        f" tell a checked run from an unchecked one; got {written['source']!r}"
+    )
+    assert written["rows"], "vacuous-pass guard: staleness.json carries zero rows"
+
+    for row in written["rows"]:
+        assert set(row) == SLICE_33_ROW_FIELDS, (
+            "a staleness.json row does not carry the Slice-33 field set:"
+            f" missing={sorted(SLICE_33_ROW_FIELDS - set(row))}"
+            f" unexpected={sorted(set(row) - SLICE_33_ROW_FIELDS)}"
+        )
+
+    written_keys = [
+        (r["tier"], r["ecosystem"], r["name"], r["locked_version"] or "")
+        for r in written["rows"]
+    ]
+    assert written_keys == sorted(written_keys), (
+        "staleness.json's rows are not in the (tier, ecosystem, name,"
+        " locked_version) order §5.8 fixes, so a recurring re-run cannot diff"
+        " cleanly even when the survey itself is stable"
+    )

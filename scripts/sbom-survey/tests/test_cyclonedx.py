@@ -11,6 +11,7 @@ from urllib.parse import unquote
 from conftest import (
     KNOWN_INVALID_CYCLONEDX_DOC,
     KNOWN_TRANSITIVE_ONLY_CARGO,
+    PROJECT_ROOT,
     PURL_PREFIX_BY_ECOSYSTEM,
     PURL_PREFIXES,
     REPO_ROOT,
@@ -150,11 +151,24 @@ def test_every_component_carries_a_tier_property() -> None:
     Tier tagging is what made TC-93 a cheap call. Every component carries
     exactly one `fathomdb:tier` property, and its value is in the ruled
     vocabulary.
+
+    Membership in the vocabulary is NOT on its own a grade of the value: an
+    implementation that stamped `dev-tooling` on all 400 components would
+    satisfy it while every tier in the BOM was wrong, and Slice 33 prioritises
+    on exactly this field. So the tag is also required to AGREE with
+    `TierMap.classify()` of the manifest that declares the component — which is
+    the rule set `AC-SBOM-23` grades for longest-prefix correctness and
+    `AC-SBOM-06` proves `run_survey()` consults. Only components with EXACTLY
+    ONE declaring manifest are checked: a package declared by two manifests of
+    different tiers has no single ruled answer in §5.2/§5.3, so demanding one
+    would invent a contract.
     """
     survey = _offline_survey(
         "AC-SBOM-11",
         "every CycloneDX component must carry EXACTLY ONE `fathomdb:tier`"
-        f" property whose value is one of {TIER_VOCABULARY!r}.",
+        f" property whose value is one of {TIER_VOCABULARY!r}, and that value"
+        " must EQUAL TierMap.classify(<its declaring manifest>).tier for every"
+        " component declared by exactly one manifest.",
     )
     doc = survey.to_cyclonedx()
 
@@ -167,6 +181,46 @@ def test_every_component_carries_a_tier_property() -> None:
         ref = component.get("bom-ref", component.get("name"))
         assert len(tiers) == 1, f"{ref}: expected one fathomdb:tier, got {tiers}"
         assert tiers[0] in TIER_VOCABULARY, f"{ref}: bad tier {tiers[0]!r}"
+
+    # --- the value itself, against the tracked rules ------------------------
+    tiers_mod = require(
+        "sbom_survey.tiers",
+        "AC-SBOM-11",
+        "the tracked tiers.toml is the source of record for a component's tier;"
+        " the property must carry the tier that map assigns to the declaring"
+        " manifest, not merely some value from the vocabulary.",
+    )
+    tier_map = tiers_mod.load_tier_map(PROJECT_ROOT / "tiers.toml")
+
+    graded = 0
+    for component in doc["components"]:
+        props = component.get("properties", [])
+        origins = [
+            p["value"] for p in props if p.get("name") == "fathomdb:declared-in"
+        ]
+        if len(origins) != 1:
+            continue
+        tier = next(p["value"] for p in props if p.get("name") == "fathomdb:tier")
+        ref = component.get("bom-ref", component.get("name"))
+        verdict = tier_map.classify(origins[0])
+        assert verdict.action == "tier", (
+            f"{ref}: its only declaring manifest {origins[0]!r} is"
+            f" {verdict.action!r} in tiers.toml, so it must contribute no"
+            " component at all"
+        )
+        assert tier == verdict.tier, (
+            f"{ref}: tagged {tier!r} but its declaring manifest {origins[0]!r}"
+            f" tiers {verdict.tier!r} per the tracked tiers.toml — the tag does"
+            " not come from the rules, so Slice 33 would prioritise on a"
+            " fabricated value"
+        )
+        graded += 1
+
+    assert graded, (
+        "vacuous-pass guard: no component carried exactly one"
+        " `fathomdb:declared-in` origin, so not one tier value was graded"
+        " against the rules"
+    )
 
 
 def test_dependency_graph_is_closed_and_depth_tagged() -> None:

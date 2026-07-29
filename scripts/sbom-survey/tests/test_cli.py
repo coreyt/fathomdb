@@ -13,7 +13,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from conftest import REPO_ROOT, run_cli
+from conftest import (
+    REPO_ROOT,
+    TIER_VOCABULARY,
+    independent_cyclonedx_validator,
+    run_cli,
+)
 
 
 def test_tool_declares_non_ci_gating_and_is_absent_from_ci_wiring() -> None:
@@ -22,6 +27,13 @@ def test_tool_declares_non_ci_gating_and_is_absent_from_ci_wiring() -> None:
     The tool is recurring by design but explicitly NOT CI-gating. It says so
     itself (`--describe`), and that declaration is cross-checked against the
     real wiring — a self-description nobody verifies is worthless.
+
+    `--describe` also publishes the tier vocabulary (§5.9), which is how
+    downstream tooling discovers the ruled values without importing the
+    package. Asserting only `ci_gating` / `recurring` / `name` left that half
+    of the contract ungraded — the command could omit `tiers` entirely, or emit
+    the wrong values, and the criterion stayed green (codex §9 round 4). The
+    field is therefore required to equal `TIER_VOCABULARY`, in the ruled order.
     """
     for wiring in ("scripts/agent-test.sh", ".github/workflows/ci.yml"):
         text = (REPO_ROOT / wiring).read_text(encoding="utf-8")
@@ -34,8 +46,8 @@ def test_tool_declares_non_ci_gating_and_is_absent_from_ci_wiring() -> None:
         ["--describe"],
         "AC-SBOM-19",
         "`sbom-survey --describe` must print JSON declaring"
-        ' {"ci_gating": false, "recurring": true} plus the tier vocabulary,'
-        " and exit 0.",
+        ' {"name": "sbom-survey", "ci_gating": false, "recurring": true,'
+        f' "tiers": {list(TIER_VOCABULARY)}}} and exit 0.',
     )
     assert proc.returncode == 0, f"--describe exited {proc.returncode}: {proc.stderr}"
     described = json.loads(proc.stdout)
@@ -43,19 +55,41 @@ def test_tool_declares_non_ci_gating_and_is_absent_from_ci_wiring() -> None:
     assert described["recurring"] is True
     assert described["name"] == "sbom-survey"
 
+    assert "tiers" in described, (
+        "`--describe` published no `tiers` field, so downstream tooling cannot"
+        " discover the ruled tier vocabulary without importing the package"
+        f" (§5.9). Keys present: {sorted(described)}"
+    )
+    assert tuple(described["tiers"]) == TIER_VOCABULARY, (
+        f"`--describe` published tiers {described['tiers']!r}; §5.9 and"
+        f" sbom_survey.TIER_VOCABULARY make it exactly {list(TIER_VOCABULARY)},"
+        " in that ruled order (shipped first — it is the one that outranks the"
+        " others in Slice 33's triage)"
+    )
+
 
 def test_cli_writes_all_artifacts_and_exits_zero(tmp_path: Path) -> None:
     """AC-SBOM-20.
 
     The happy path: an offline run over the real repository writes all three
     artifacts into the requested output directory and exits 0.
+
+    The CLI is the only path a real consumer takes, so the ARTIFACT IT WRITES is
+    what has to be a CycloneDX 1.6 document. `AC-SBOM-10` grades
+    `Survey.to_cyclonedx()` in process; checking only `bomFormat` /
+    `specVersion` here left the written file able to be anything that carries
+    those two strings. It is therefore put through the same INDEPENDENT
+    upstream validator (which `independent_cyclonedx_validator` proves bites,
+    on a known-invalid control, before returning).
     """
     out = tmp_path / "out"
     proc = run_cli(
         ["--repo", str(REPO_ROOT), "--offline", "--out", str(out)],
         "AC-SBOM-20",
         "`sbom-survey --repo R --offline --out DIR` must exit 0 and write"
-        " sbom.cdx.json, staleness.json and staleness.md into DIR.",
+        " sbom.cdx.json, staleness.json and staleness.md into DIR — and the"
+        " sbom.cdx.json it writes must itself validate against the CycloneDX"
+        " 1.6 schema.",
     )
     assert proc.returncode == 0, (
         f"offline survey exited {proc.returncode}\nstdout:\n{proc.stdout}\n"
@@ -67,6 +101,15 @@ def test_cli_writes_all_artifacts_and_exits_zero(tmp_path: Path) -> None:
     doc = json.loads((out / "sbom.cdx.json").read_text(encoding="utf-8"))
     assert doc["bomFormat"] == "CycloneDX"
     assert doc["specVersion"] == "1.6"
+
+    problem = independent_cyclonedx_validator("AC-SBOM-20")(doc)
+    assert problem is None, (
+        "the sbom.cdx.json the CLI WROTE fails CycloneDX 1.6 schema validation"
+        f" (independent upstream validator): {problem}. Two `bomFormat` /"
+        " `specVersion` strings do not make a document an SBOM, and this file —"
+        " not the in-process object AC-SBOM-10 grades — is what a consumer"
+        " reads."
+    )
 
 
 def test_cli_exits_two_naming_the_untiered_manifest(tmp_path: Path) -> None:

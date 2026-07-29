@@ -10,6 +10,7 @@ from pathlib import Path
 
 from conftest import (
     REPO_ROOT,
+    declared_in_origins,
     require,
     tracked_manifest_paths,
     tracked_paths,
@@ -23,6 +24,13 @@ def test_discovery_uses_git_ls_files_not_a_filesystem_walk(tmp_path: Path) -> No
     A manifest that exists on disk but is NOT reported by that runner must be
     absent from the result — that is what makes `python/pyproject.toml`,
     `target/**` and `node_modules/**` structurally unreachable.
+
+    Proving it against `discover_manifests()` alone is not enough: Slice 32
+    could honour the injected runner there and still walk the filesystem inside
+    `run_survey()`, which is the function that actually has to call it. The
+    second leg therefore drives a real survey and requires every manifest the
+    document attributes a component to (`fathomdb:declared-in`) to be a path
+    git tracks.
     """
     discovery = require(
         "sbom_survey.discovery",
@@ -54,6 +62,38 @@ def test_discovery_uses_git_ls_files_not_a_filesystem_walk(tmp_path: Path) -> No
         f"{sorted(found)} — an untracked on-disk manifest leaked in"
     )
 
+    # --- and now at the SURVEY BOUNDARY, which is the caller that matters ----
+    survey_mod = require(
+        "sbom_survey.survey",
+        "AC-SBOM-01",
+        "run_survey() must take its candidate manifests from the same"
+        " git-derived discovery: every `fathomdb:declared-in` origin in the"
+        " emitted document must be a path `git ls-files` reports, so an"
+        " untracked on-disk manifest (target/**, node_modules/**, the"
+        " gitignored python/ tree) can never contribute a component.",
+    )
+    registry = require(
+        "sbom_survey.registry",
+        "AC-SBOM-01",
+        "an OfflineSource keeps the survey-boundary run hermetic.",
+    )
+
+    doc = survey_mod.run_survey(
+        REPO_ROOT, published=registry.OfflineSource()
+    ).to_cyclonedx()
+    origins = declared_in_origins(doc)
+    assert origins, (
+        "vacuous-pass guard: not one component recorded a `fathomdb:declared-in`"
+        " manifest, so this leg would grade nothing"
+    )
+    untracked_origins = sorted(origins - set(tracked_manifest_paths()))
+    assert not untracked_origins, (
+        "run_survey() attributed components to manifests that git does not"
+        f" track: {untracked_origins}. Discovery is `git ls-files`-derived"
+        " (REQ-1); an origin outside that set means the survey walked the"
+        " filesystem instead of asking git."
+    )
+
 
 def test_gitignored_top_level_python_dir_is_out_of_scope() -> None:
     """AC-SBOM-02.
@@ -80,6 +120,34 @@ def test_gitignored_top_level_python_dir_is_out_of_scope() -> None:
     refs = discovery.discover_manifests(REPO_ROOT)
     leaked = sorted(r.path for r in refs if r.path.startswith("python/"))
     assert not leaked, f"gitignored `/python/` leaked into the BOM scope: {leaked}"
+
+    # --- and at the SURVEY BOUNDARY: "out of BOM scope" is a statement about
+    # the emitted BOM, so it is graded there too. discover_manifests() staying
+    # clean does not stop run_survey() from reading `python/pyproject.toml`
+    # directly.
+    survey_mod = require(
+        "sbom_survey.survey",
+        "AC-SBOM-02",
+        "no component in the emitted document may be attributed to a manifest"
+        " under `python/`: the whole tree is gitignored and therefore outside"
+        " the BOM scope (§5.1).",
+    )
+    registry = require(
+        "sbom_survey.registry",
+        "AC-SBOM-02",
+        "an OfflineSource keeps the survey-boundary run hermetic.",
+    )
+
+    doc = survey_mod.run_survey(
+        REPO_ROOT, published=registry.OfflineSource()
+    ).to_cyclonedx()
+    leaked_origins = sorted(
+        o for o in declared_in_origins(doc) if o.startswith("python/")
+    )
+    assert not leaked_origins, (
+        "the gitignored `/python/` tree reached the emitted BOM through"
+        f" run_survey(): {leaked_origins}"
+    )
 
 
 def test_every_tracked_manifest_is_discovered() -> None:
