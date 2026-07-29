@@ -1243,41 +1243,58 @@ fn idempotent_reregistration_holds_for_deferred_rankable() {
     opened.engine.close().unwrap();
 }
 
-/// **fix-2 finding 2 [P2].** A DEFERRED-ONLY registry mutation (e.g. `rankable` →
-/// `rankable + vector`) PERSISTS a changed registry row, yet pre-fix returned an
-/// EMPTY delta with `unchanged = true` — an accepted mutation reported to SDK
-/// callers as an idempotent no-op (a lie about what happened). The delta must
-/// reflect reality: when the persisted registry row actually CHANGES,
-/// `unchanged` is `false` and the change appears in `delta` (here
-/// `delta.deferred`). A GENUINE no-op (identical spec) still diffs to
-/// `unchanged = true`.
+/// **fix-2 finding 2 [P2] — THE PIN: the `Some(existing)` branch must report a
+/// deferral even when `existing` was ALREADY deferred.**
 ///
-/// Mechanism: the `Some(existing) =>` non-destructive persist branch of
+/// RENAMED at 0.8.20 Slice 23 fix-1 from
+/// `deferred_only_mutation_is_reported_not_unchanged`; grep that name and land
+/// here. The rename is not cosmetic — see "what this test does and does NOT
+/// oracle" below. Historical run records under `dev/plans/runs/` still carry the
+/// old name and are left alone (they record what was true when they ran).
+///
+/// ## The defect
+///
+/// The `Some(existing) =>` non-destructive persist branch of
 /// `apply_projection_config` gated the `delta.deferred` push on
-/// `!existing.has_deferred()`, so a change that STAYED deferred (adding the
-/// deferred vector sub-target to an already-deferred rankable) persisted the row
-/// but suppressed the delta. Because every valid non-empty spec has `wants_eav()`
-/// OR `has_deferred()`, mirroring the fresh-registration push
-/// (`if desired.has_deferred()`) makes the changed branch always report the
-/// change, so `unchanged` can never be `true` on a real mutation.
+/// `desired.has_deferred() && !existing.has_deferred()`. A change that STAYED
+/// deferred therefore persisted a CHANGED registry row while suppressing the
+/// delta — and when nothing else populated the delta, that surfaced to SDK
+/// callers as `unchanged = true`: an accepted mutation reported as an idempotent
+/// no-op, a lie about what happened. The fix mirrors the fresh-registration push
+/// (`if desired.has_deferred()`), dropping the `&& !existing.has_deferred()`
+/// conjunct.
 ///
-/// ## 0.8.20 Slice 23 (`R-20-SV`) — what changed here, and what did NOT
+/// ## What this test does and does NOT oracle (0.8.20 Slice 23)
+///
+/// **`second.deferred.contains("importance")` is THE PIN.** It is the assertion
+/// that fails against the pre-fix guard: the raw legacy seed makes
+/// `existing.has_deferred() == true`, so the extra conjunct suppresses the push
+/// and the pre-fix engine returns an empty `deferred`.
+///
+/// **`!second.unchanged` is NOT load-bearing under this construction, and is
+/// marked as such at its assertion site.** The promoted spec carries
+/// `searchable`, so `desired.wants_eav()` is true and the changed branch pushes
+/// `delta.built` regardless of the deferred guard — meaning `!second.unchanged`
+/// would pass even against the OLD bad guard. It is kept as a consistency check
+/// on the delta as a whole, not as the oracle for this [P2]. Naming the test
+/// after it (as the old name did) told a future reader the decorative half was
+/// the point.
+///
+/// ## Why the construction had to change — and why it cannot change back
 ///
 /// The HITL ruled on **2026-07-24** (`dev/plans/plan-0.8.20.md` §11 item 4,
 /// option (b)) that an `fts`/`vector` sub-object without the `searchable` role
-/// is an INVALID SPEC. That has a STRUCTURAL consequence for this test, and it
-/// is recorded rather than papered over.
+/// is an INVALID SPEC. A "deferred-only mutation" — the shape this test used to
+/// make — requires `!desired.wants_eav()`, i.e. `desired.roles ⊆ {Rankable}`. A
+/// non-destructive change can only ADD roles, so `existing.roles =
+/// desired.roles = {Rankable}` and the change must therefore be in `fts` /
+/// `vector` — every one of which Slice 23 now rejects. **The pure deferred-only
+/// mutation is unconstructible through the public verb**, so the
+/// "`unchanged = true` on a persisted change" half of this [P2] is now
+/// impossible BY CONSTRUCTION, not merely untested. That is asserted below as a
+/// fact.
 ///
-/// A "deferred-only mutation" requires `!desired.wants_eav()`, i.e.
-/// `desired.roles ⊆ {Rankable}`. A non-destructive change can only ADD roles, so
-/// `existing.roles = desired.roles = {Rankable}` and the change must therefore be
-/// in `fts` / `vector` — every one of which Slice 23 now rejects. **The pure
-/// deferred-only mutation is unconstructible through the public verb**, so the
-/// "`unchanged = true` on a persisted change" half of this [P2] is now impossible
-/// BY CONSTRUCTION, not merely untested. That is asserted below as a fact.
-///
-/// The CODE DEFECT is still reachable and is still pinned: the removed guard was
-/// `desired.has_deferred() && !existing.has_deferred()`, so what falsifies the
+/// The CODE DEFECT is still reachable and is still pinned: what falsifies the
 /// pre-fix branch is an `existing` that ALREADY has a deferred axis. That state
 /// (`rankable` + a stored `vector` sub-object with no `searchable` role) is now a
 /// LEGACY at-rest state, reached here through [`legacy_add_vector_subobject`] —
@@ -1285,7 +1302,7 @@ fn idempotent_reregistration_holds_for_deferred_rankable() {
 /// `tc71_fix1_inert_enrolment_reconcile.rs` use, for the same reason. Coverage of
 /// the guard is preserved; only the route changed.
 #[test]
-fn deferred_only_mutation_is_reported_not_unchanged() {
+fn a_changed_registry_row_reports_its_deferral_even_when_already_deferred() {
     let dir = TempDir::new().unwrap();
     let path = db_path(&dir, "deferred_mutation");
     let opened = Engine::open(path.clone()).unwrap();
@@ -1338,11 +1355,18 @@ fn deferred_only_mutation_is_reported_not_unchanged() {
             &[],
         )
         .unwrap();
+    // NOT LOAD-BEARING under this construction — kept as a consistency check on
+    // the delta, NOT as the oracle for fix-2 finding 2 [P2]. The promoted spec
+    // carries `searchable`, so `desired.wants_eav()` is true and the changed
+    // branch pushes `delta.built` whatever the deferred guard does; this
+    // assertion would therefore pass even against the OLD bad guard. The pin is
+    // the NEXT assertion. (0.8.20 Slice 23 fix-1, codex §9 round 2 finding 2.)
     assert!(
         !second.unchanged,
         "a mutation that persisted a changed registry row must NOT report unchanged, got \
          {second:?}"
     );
+    // THE PIN — the one assertion that fails against the pre-fix guard.
     assert!(
         second.deferred.contains(&"importance".to_string()),
         "THE PIN (fix-2 finding 2 [P2]): the `Some(existing)` branch must push `delta.deferred` \

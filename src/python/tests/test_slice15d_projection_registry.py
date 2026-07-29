@@ -92,6 +92,50 @@ def _pfts_match(path: str, attr_name: str, query: str) -> list[int]:
         conn.close()
 
 
+def _seed_legacy_registry_row(
+    path: str,
+    name: str,
+    roles_csv: str,
+    fts_tokenizer: str | None,
+    vector_declared: bool,
+) -> None:
+    """0.8.20 Slice 23 (``R-20-SV``) — write a registry row the way the SHIPPED
+    PRE-Slice-23 engine wrote it, back when an ``fts``/``vector`` sub-object
+    without the ``searchable`` role was ACCEPTED.
+
+    A raw ``UPDATE``/``INSERT`` is the only way to reach that at-rest state now
+    that the verb refuses it, and this is the population a real consumer
+    database will be in when it upgrades — so the SDKs must cover it, not only
+    the rejection path nobody in the field is on yet. Mirrors the Rust
+    ``seed_legacy_registry_row`` in
+    ``src/rust/crates/fathomdb-engine/tests/slice23_spec_validation_reject.rs``
+    (same columns, same encoding: ``fts_tokenizer = ''`` is "an ``fts``
+    sub-object with the DEFAULT tokenizer", ``NULL`` is "no ``fts``
+    sub-object").
+
+    MUST be called on a CLOSED database. A raw RW connection opened while the
+    engine is live perturbs the async dispatcher (a duplicate embed, the TC-91
+    class — it passes in isolation and fails in a full suite run), so the seed
+    goes between a ``close()`` and the next ``Engine.open``.
+    """
+    conn = sqlite3.connect(path)
+    try:
+        conn.execute(
+            "INSERT INTO _fathomdb_projection_registry"
+            "     (name, roles, fts_tokenizer, vector_embedder, vector_declared)"
+            " VALUES(?, ?, ?, NULL, ?)"
+            " ON CONFLICT(name) DO UPDATE SET"
+            "     roles = excluded.roles,"
+            "     fts_tokenizer = excluded.fts_tokenizer,"
+            "     vector_embedder = excluded.vector_embedder,"
+            "     vector_declared = excluded.vector_declared",
+            (name, roles_csv, fts_tokenizer, int(vector_declared)),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def test_configure_and_read_projections_round_trip(tmp_path) -> None:
     engine = _open(str(tmp_path / "round_trip.sqlite"))
     try:
@@ -479,6 +523,69 @@ def test_fts_or_vector_without_searchable_role_is_rejected(tmp_path) -> None:
         # metadata, which is not a declaration and is never authored by a caller.
         assert dataclasses.replace(got, vector_dense_readiness=None) == sent
         assert got.fts is True and got.vector is True
+    finally:
+        engine.close()
+
+
+def test_a_legacy_registry_row_reads_back_verbatim_but_no_longer_re_applies(tmp_path) -> None:
+    """0.8.20 Slice 23 (``R-20-SV``) — **the UPGRADE path**, the one a real
+    consumer database is actually on.
+
+    Databases that declared ``fts``/``vector`` without the ``searchable`` role
+    while the engine ACCEPTED it still exist. This slice must not make them
+    unreadable. ``read.projections`` is a pure read and rejects nothing, so the
+    legacy row is reported **verbatim** — but feeding that output straight back
+    into ``configure_projections`` (the shipped fix-4 read→configure round-trip)
+    now RAISES ``WriteValidationError``.
+
+    That asymmetry is the honest, documented consequence of the HITL ruling
+    (2026-07-24, ``dev/plans/plan-0.8.20.md`` §11 item 4, option **(b)**): for
+    the legacy population the round-trip is broken BY DESIGN, and the remedy is
+    to ADD the ``searchable`` role (asserted here) or to name the projection in
+    ``drop``.
+
+    X1 parity twin of the Rust
+    ``a_legacy_registry_row_reads_back_verbatim_but_no_longer_re_applies``
+    (``slice23_spec_validation_reject.rs``) and the TS
+    ``R-20-SV — a LEGACY registry row reads back verbatim but no longer
+    re-applies``. Same seed, same three oracles, same semantics — deliberately
+    NOT a per-binding invention.
+    """
+    path = str(tmp_path / "legacy_round_trip.sqlite")
+    engine = _open(path)
+    try:
+        engine.write([_node("N1", "src:1", '{"status":"open"}')])
+    finally:
+        engine.close()
+
+    # The legacy state, written the way the shipped pre-Slice-23 engine wrote
+    # it. On a CLOSED database — see the helper's ordering note.
+    _seed_legacy_registry_row(path, "status", "filterable", "", True)
+
+    engine = _open(path)
+    try:
+        # (a) Still READABLE, and reported verbatim.
+        back = read.projections(engine)
+        assert len(back) == 1, "a legacy row must still be readable"
+        assert back[0].name == "status"
+        assert back[0].roles == frozenset({"filterable"})
+        assert back[0].fts is True, "the legacy `fts` sub-object is reported verbatim"
+        assert back[0].vector is True, "…and the legacy `vector` sub-object too"
+
+        # (b) …but it can no longer be RE-APPLIED. Feeding `read.projections`
+        # output straight back in is exactly the shipped fix-4 round-trip.
+        with pytest.raises(WriteValidationError):
+            engine.configure_projections(list(back))
+
+        # (c) The remedy closes it again: ADD the `searchable` role. Everything
+        # else about the declaration is untouched.
+        fixed = dataclasses.replace(back[0], roles=back[0].roles | {ProjectionRole.SEARCHABLE})
+        engine.configure_projections([fixed])
+        after = read.projections(engine)
+        assert len(after) == 1
+        assert after[0].roles == frozenset({"filterable", "searchable"})
+        assert after[0].fts is True and after[0].vector is True
+        engine.drain(timeout_s=5)
     finally:
         engine.close()
 
