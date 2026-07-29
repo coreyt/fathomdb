@@ -471,9 +471,9 @@ to the HITL.
 ### ▶ Immediate next
 
 <!-- BEGIN GENERATED release-state:0.8.20:plan-immediate-next -->
-**IMMEDIATE NEXT: Slice 33** (`SBOM-RUN`) — Library Sweep #3, leg 3 of 3 — RUN the tool and produce the dependency survey: (1) what is actually stale across every tracked Cargo/npm/Python manifest, (2) whether a SURGICAL ~1-5 SLOC change would likely land each upgrade — ASCERTAIN ONLY, NEVER IMPLEMENT. Output is an INPUT to 0.8.22
+**IMMEDIATE NEXT: Slice 34** (`NE`) — EngineError #[non_exhaustive] — TC-103 part (b), pulled back into 0.8.20 because adding the attribute is ITSELF a breaking change and 0.8.20 is the breaking pair
 
-**Remaining ladder:** 33 → 34 → 40.<!-- END GENERATED release-state:0.8.20:plan-immediate-next -->
+**Remaining ladder:** 34 → 40.<!-- END GENERATED release-state:0.8.20:plan-immediate-next -->
 
 **Specified in full at §3a.** Re-scoped by the HITL on 2026-07-29 (steward `seq-153`). **No dependencies**;
 Slices 0/5/10/15/20/21/22/23/25/30 have all LANDED and the publish precondition (Slice 30) is **SATISFIED**.

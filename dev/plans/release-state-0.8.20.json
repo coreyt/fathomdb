@@ -7,7 +7,7 @@
   "master": "dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md",
   "schema_version": 24,
   "schema_version_source": "pub const SCHEMA_VERSION in src/rust/crates/fathomdb-schema/src/lib.rs",
-  "landed_verified_at": "31d33293",
+  "landed_verified_at": "f02dc5b4",
   "landed_verified_how": "each SHA below is the landing merge commit for its slice AND is an ancestor of origin/main (git merge-base --is-ancestor), with the merge subject matching this repo's `merge(0.8.20): Slice[- ]N` landing convention",
   "ladder": [
     {
@@ -184,15 +184,16 @@
       "depends_on": [
         32
       ],
-      "status": "NOT_STARTED",
-      "sha": null,
+      "status": "LANDED",
+      "sha": "f02dc5b4",
       "reserved_gap": true,
       "no_requirement_id": true,
       "sequenced_after": 32,
       "sequencing_note": "minted by HITL 2026-07-29 (steward seq-153). HARD SCOPE GUARD: anything beyond a surgical ~1-5 SLOC assessment is merely NOTED for the project to handle, never attempted. No bump is applied and no manifest or lockfile changes in 0.8.20.",
       "design_refs": [
         "dev/design/0.8.20-slice-31-sbom-survey-tool.md"
-      ]
+      ],
+      "merge_subject": "Slice 33 COMPLETE — Library Sweep #3 leg 3/3, the ONLINE survey of record + the TC-115 install-then-run smoke"
     },
     {
       "slice": 34,
@@ -236,21 +237,21 @@
     22,
     23,
     31,
-    32
+    32,
+    33
   ],
-  "next_slice": 33,
+  "next_slice": 34,
   "remaining_ladder": [
-    33,
     34,
     40
   ],
   "ladder_order": "SEQUENTIAL — re-sequenced by HITL 2026-07-29 (steward seq-153), superseding the seq-129 order. Execution order: 33 → 34 → DOC-HYGIENE-3 → the batched governed-surface decision (HITL) → 40. Slices 21, 22 and 23 have LANDED; Slice 30, the publish precondition, LANDED 2026-07-28 at 9b3ed0e3. Slice 31 was RE-SCOPED and slices 32/33 MINTED at seq-153: Library Sweep #3 becomes a three-leg build of an SBOM/dependency-survey TOOL (31 spec+design+RED tests, 32 code, 33 run-and-survey) instead of a manual backlog-and-triage sweep, and NONE of the three applies a dependency bump — the survey is an INPUT to 0.8.22. Parallel 20 || 25 was declined earlier (master F-34).",
   "unblocked": [
-    33
+    34
   ],
   "unblocked_by": {
-    "requirement": "the Slice 32 landing (sbom-survey implementation) at 31d33293",
-    "gloss": "Slice 32 leg 2/3 LANDED after 4 codex §9 rounds and 3 distinct fixes; suite 24/24 GREEN and the INSTALLED console script verified rc=0. Slice 33 — RUN the tool and produce the survey — is unblocked. It inherits: TC-115 (install-then-run smoke, now the ONLY guard for that defect class since CI wiring is ruled out at seq-172), TC-111 (GREEN needs an install nothing in the repo performs), TC-114 and TC-116 (two SPEC-originated defects, sort order and the `package` prefix catch-all), and TC-106. Slice 33 ASCERTAINS, never implements; its output is an input to 0.8.22."
+    "requirement": "the Slice 33 landing (Library Sweep #3 leg 3/3) at f02dc5b4",
+    "gloss": "Library Sweep #3 is COMPLETE across all three legs. The ONLINE survey of record is tracked at dev/plans/runs/0.8.20-slice-33-library-sweep-3-FINDINGS.md — 774 components, 28 direct outdated, and a §4 hand-off to 0.8.22. The TC-115 install-then-run smoke is landed and PROVED to bite (broken-wheel A/B). Slice 34 — EngineError #[non_exhaustive], TC-103(b) — is now unblocked; scoping is at TC-122, which recommends 7 of the 12 facade enums plus EngineOpenError and POSTPONES 5 whose signed ADR/AC pins the attribute would silently void."
   },
   "publish_precondition_slice": 30,
   "acceptance": {
