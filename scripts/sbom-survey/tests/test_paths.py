@@ -14,6 +14,12 @@ def test_report_dir_is_gitignored_and_findings_home_is_tracked() -> None:
     Generated reports are gitignored (HITL-ruled). Slice 33's *findings*
     therefore need a separate, deliberately NOT-ignored durable home — the raw
     tool output is not one.
+
+    The home is `dev/plans/runs/` — the dominant house convention for a dated
+    run report (`0.8.2-m1-FINDINGS.md`, `0.8.3-rerank-tune-FINDINGS.md`,
+    `0.8.4-cost-probe-FINDINGS.md`), and where the slice's own `-output.json`
+    already lands. See design §5.6 for the comparison against `dev/design/`
+    and `dev/deps/`.
     """
     paths = require(
         "sbom_survey.paths",
@@ -28,7 +34,7 @@ def test_report_dir_is_gitignored_and_findings_home_is_tracked() -> None:
     findings_doc = paths.SLICE_33_FINDINGS_DOC
 
     assert report_dir == "scripts/sbom-survey/out"
-    assert findings_doc == "dev/design/0.8.20-slice-33-library-sweep-3-findings.md"
+    assert findings_doc == "dev/plans/runs/0.8.20-slice-33-library-sweep-3-FINDINGS.md"
 
     probe = f"{report_dir}/sbom.cdx.json"
     assert is_gitignored(probe), (
@@ -39,4 +45,4 @@ def test_report_dir_is_gitignored_and_findings_home_is_tracked() -> None:
         f"{findings_doc} is gitignored — it is the TRACKED durable home for"
         " Slice 33's findings and must be committable"
     )
-    assert (REPO_ROOT / "dev" / "design").is_dir()
+    assert (REPO_ROOT / "dev" / "plans" / "runs").is_dir()

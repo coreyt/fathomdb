@@ -6,7 +6,17 @@ Design: dev/design/0.8.20-slice-31-sbom-survey-tool.md §5.5.
 
 from __future__ import annotations
 
-from conftest import REPO_ROOT, TIER_VOCABULARY, require
+from urllib.parse import unquote
+
+from conftest import (
+    KNOWN_TRANSITIVE_ONLY_CARGO,
+    PURL_PREFIX_BY_ECOSYSTEM,
+    PURL_PREFIXES,
+    REPO_ROOT,
+    TIER_VOCABULARY,
+    purl_type,
+    require,
+)
 
 
 def _offline_survey(criterion: str, behaviour: str):
@@ -15,17 +25,27 @@ def _offline_survey(criterion: str, behaviour: str):
     return survey_mod.run_survey(REPO_ROOT, published=registry.OfflineSource())
 
 
-def test_cyclonedx_document_is_schema_valid() -> None:
+def test_cyclonedx_document_is_schema_valid_and_purl_identified() -> None:
     """AC-SBOM-10.
 
     The emitted document validates against the bundled CycloneDX 1.6 JSON
     schema. Hand-rolled JSON that no consumer will validate is not an SBOM.
+
+    Schema validity alone is NOT enough, and asserting only it was the gap
+    codex §9 round 1 caught: `name` + `version` satisfy the 1.6 schema, so a
+    purl-less document would have passed. REQ-6 requires a `purl` PER
+    COMPONENT, and §5.5 makes the purl the `bom-ref` — the component identity
+    an advisory feed matches a locked version against. A component without one
+    is unmatchable, which defeats the reason the SBOM is produced.
     """
     survey = _offline_survey(
         "AC-SBOM-10",
         "Survey.to_cyclonedx() must produce a document that validates against"
         " the bundled CycloneDX 1.6 JSON schema"
-        " (cyclonedx-python-lib[json-validation]).",
+        " (cyclonedx-python-lib[json-validation]), AND every component must"
+        " carry a `purl` that IS its `bom-ref`, bears the ecosystem prefix"
+        f" ({', '.join(PURL_PREFIXES)}) and encodes the component's own"
+        " locked version.",
     )
     doc = survey.to_cyclonedx()
 
@@ -33,6 +53,42 @@ def test_cyclonedx_document_is_schema_valid() -> None:
     assert doc.get("specVersion") == "1.6"
     assert str(doc.get("serialNumber", "")).startswith("urn:uuid:")
     assert doc.get("components"), "the BOM has no components"
+
+    seen_types: set[str] = set()
+    for component in doc["components"]:
+        name = component.get("name")
+        purl = component.get("purl")
+        assert purl, (
+            f"{name!r}: component has NO purl — REQ-6 requires one per component,"
+            " and without it the component cannot be matched against an advisory"
+        )
+        assert purl.startswith(PURL_PREFIXES), (
+            f"{name!r}: purl {purl!r} does not carry a recognized ecosystem"
+            f" prefix (expected one of {PURL_PREFIXES})"
+        )
+        assert component.get("bom-ref") == purl, (
+            f"{name!r}: bom-ref {component.get('bom-ref')!r} != purl {purl!r} —"
+            " §5.5 makes the purl the bom-ref so refs are stable across runs"
+        )
+        seen_types.add(purl_type(purl) or "")
+
+        props = {p["name"]: p["value"] for p in component.get("properties", [])}
+        if props.get("fathomdb:resolution") != "unresolved":
+            version = component.get("version")
+            assert version, f"{purl}: resolved component has no version"
+            assert "@" in purl, (
+                f"{purl}: a resolved component's purl must pin its version"
+            )
+            assert unquote(purl.rsplit("@", 1)[-1]) == version, (
+                f"{purl}: purl version does not match component version"
+                f" {version!r} — the identity and the reported version disagree"
+            )
+
+    assert seen_types == set(PURL_PREFIX_BY_ECOSYSTEM), (
+        "the BOM's purl types must be exactly"
+        f" {sorted(PURL_PREFIX_BY_ECOSYSTEM)} — this repo tracks cargo, npm and"
+        f" pypi manifests, so all three must be represented; got {sorted(seen_types)}"
+    )
 
     validator_mod = require(
         "sbom_survey.cyclonedx",
@@ -76,26 +132,61 @@ def test_dependency_graph_is_closed_and_depth_tagged() -> None:
     every `dependsOn` ref must resolve to a declared component (no dangling
     refs), and every component is tagged direct or transitive — LBS §2's
     triage turns on that distinction.
+
+    Closure ALONE is vacuous, and that was codex §9 round 1's third finding: an
+    empty `dependencies` array is trivially closed, so an implementation that
+    emitted the manifest-derived DIRECT set and skipped every lockfile-derived
+    library<->library edge used to pass. The graph is therefore asserted
+    non-empty, closed in BOTH directions (every declared component appears as a
+    `ref`, leaves carrying an empty `dependsOn`), to contain at least one edge
+    whose source is a library rather than the root component, and to have
+    carried at least one known lockfile-only crate through as `transitive`.
     """
     survey = _offline_survey(
         "AC-SBOM-12",
-        "the CycloneDX `dependencies` array must be CLOSED (every dependsOn ref"
-        " resolves to a declared component bom-ref) and every component must"
-        " carry `fathomdb:depth` in {direct, transitive}.",
+        "the CycloneDX `dependencies` array must be NON-EMPTY and CLOSED IN BOTH"
+        " DIRECTIONS (every dependsOn ref resolves to a declared component"
+        " bom-ref, and every declared component appears as a `ref` entry), must"
+        " contain at least one library->library edge, and every component must"
+        " carry `fathomdb:depth` in {direct, transitive} with at least one"
+        " lockfile-only package tagged `transitive`.",
     )
     doc = survey.to_cyclonedx()
 
-    declared = {c["bom-ref"] for c in doc["components"]}
-    declared.add(doc["metadata"]["component"]["bom-ref"])
+    component_refs = {c["bom-ref"] for c in doc["components"]}
+    root_ref = doc["metadata"]["component"]["bom-ref"]
+    declared = component_refs | {root_ref}
+
+    entries = doc.get("dependencies")
+    assert isinstance(entries, list) and entries, (
+        "the `dependencies` array is empty — REQ-8 and §5.5 require the"
+        " lockfile-derived library<->library edge set, and an empty graph is"
+        " vacuously 'closed' while enumerating nothing"
+    )
 
     dangling: list[str] = []
-    for entry in doc.get("dependencies", []):
+    for entry in entries:
         if entry["ref"] not in declared:
             dangling.append(entry["ref"])
         for target in entry.get("dependsOn", []):
             if target not in declared:
                 dangling.append(target)
     assert not dangling, f"dangling dependency refs (graph not closed): {sorted(set(dangling))}"
+
+    ungraphed = sorted(component_refs - {e["ref"] for e in entries})
+    assert not ungraphed, (
+        "these components have no `dependencies` entry, so the graph does not"
+        f" cover the component list (leaves take an empty dependsOn): {ungraphed[:5]}"
+        f" (+{max(0, len(ungraphed) - 5)} more)"
+    )
+
+    library_edges = [
+        e for e in entries if e["ref"] != root_ref and e.get("dependsOn")
+    ]
+    assert library_edges, (
+        "every edge in the graph originates at the root component — not one"
+        " library->library edge was emitted, which is the core of REQ-8"
+    )
 
     for component in doc["components"]:
         depths = [
@@ -107,12 +198,30 @@ def test_dependency_graph_is_closed_and_depth_tagged() -> None:
         assert len(depths) == 1, f"{ref}: expected one fathomdb:depth, got {depths}"
         assert depths[0] in ("direct", "transitive"), f"{ref}: bad depth {depths[0]!r}"
 
-    assert any(
-        p.get("value") == "direct"
+    def _depth(component: dict) -> str | None:
+        for prop in component.get("properties", []):
+            if prop.get("name") == "fathomdb:depth":
+                return prop.get("value")
+        return None
+
+    assert any(_depth(c) == "direct" for c in doc["components"]), (
+        "no component was tagged direct — the manifest-derived direct set is empty"
+    )
+
+    transitive_cargo = {
+        c.get("name")
         for c in doc["components"]
-        for p in c.get("properties", [])
-        if p.get("name") == "fathomdb:depth"
-    ), "no component was tagged direct — the manifest-derived direct set is empty"
+        if _depth(c) == "transitive"
+        and str(c.get("purl", "")).startswith(PURL_PREFIX_BY_ECOSYSTEM["cargo"])
+    }
+    lockfile_only_seen = sorted(set(KNOWN_TRANSITIVE_ONLY_CARGO) & transitive_cargo)
+    assert lockfile_only_seen, (
+        "not one of the known lockfile-only crates"
+        f" {list(KNOWN_TRANSITIVE_ONLY_CARGO)} reached the BOM tagged"
+        " `transitive` — these are declared by NO tracked Cargo.toml, so their"
+        " absence means the Cargo.lock library<->library graph was never walked"
+        f" (transitive cargo components seen: {len(transitive_cargo)})"
+    )
 
 
 def test_component_version_is_locked_and_constraint_preserved() -> None:

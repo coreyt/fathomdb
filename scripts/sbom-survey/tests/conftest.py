@@ -35,8 +35,20 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 # Basenames the survey recognizes as dependency manifests / lockfiles.
-# Kept here as well as in the design doc so the suite is self-contained.
+#
+# ⚠ THIS TUPLE MIRRORS THE RECOGNIZED-BASENAME TABLE IN THE DESIGN (§5.1) 1:1 AND
+# MUST BE KEPT IN LOCKSTEP WITH IT. It is the oracle AC-SBOM-03 grades against:
+# a name that is in the design table but missing here is a manifest the tool may
+# silently skip while the suite still reports green (codex §9 round 1, fix-1
+# finding 1 — `setup.cfg` was exactly that).
+#
+# Split in two: the first group matches tracked paths TODAY (§5.1's 28-path
+# enumeration); the second group currently matches nothing and is present so
+# that adding one of those files to the repo is DISCOVERED (and then fails REQ-4
+# tiering loudly) rather than silently ignored. `requirements*.txt` is a glob and
+# so lives in `tracked_manifest_paths()` below rather than in this tuple.
 MANIFEST_BASENAMES = (
+    # matched by tracked paths at cbb56212
     "Cargo.toml",
     "Cargo.lock",
     "package.json",
@@ -44,15 +56,50 @@ MANIFEST_BASENAMES = (
     "pyproject.toml",
     "uv.lock",
     "setup.py",
+    # recognized, forward-looking: nothing tracked matches these today
     "yarn.lock",
     "pnpm-lock.yaml",
     "poetry.lock",
     "Pipfile",
+    "setup.cfg",
 )
 
 TIER_VOCABULARY = ("shipped", "dev-tooling", "eval-only")
 
 FIXTURE_PREFIX = "dev/release/fixtures/"
+
+# purl (`bom-ref`) prefix per ecosystem — the component identity an advisory feed
+# matches against (REQ-6, design §5.5). Every ecosystem the repo tracks must be
+# represented in the BOM, and no fourth purl type may appear.
+PURL_PREFIX_BY_ECOSYSTEM = {
+    "cargo": "pkg:cargo/",
+    "npm": "pkg:npm/",
+    "pypi": "pkg:pypi/",
+}
+PURL_PREFIXES = tuple(PURL_PREFIX_BY_ECOSYSTEM.values())
+
+# Cargo crates present in the tracked `Cargo.lock` that are declared by NO
+# dependency table of any tracked, non-excluded `Cargo.toml` — i.e. they exist
+# ONLY because a lockfile-derived library<->library edge put them there. If none
+# of these reaches the BOM tagged `transitive`, the implementation emitted the
+# direct set and dropped the dependency graph (codex §9 round 1, fix-1
+# finding 3). Verified lockfile-only at cbb56212; see design §5.5 for the
+# drift note (a future direct adoption of one of these is a legitimate reason
+# for it to leave this set, and the assertion only needs ONE survivor).
+KNOWN_TRANSITIVE_ONLY_CARGO = (
+    "proc-macro2",
+    "quote",
+    "syn",
+    "unicode-ident",
+    "serde_derive",
+)
+
+
+def purl_type(purl: object) -> str | None:
+    """The purl `type` segment (`pkg:<type>/…`), or None if it is not a purl."""
+    if not isinstance(purl, str) or not purl.startswith("pkg:"):
+        return None
+    return purl[len("pkg:") :].split("/", 1)[0]
 
 
 def require(module: str, criterion: str, behaviour: str):
