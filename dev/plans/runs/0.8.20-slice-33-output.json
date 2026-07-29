@@ -1,0 +1,112 @@
+{
+  "acceptance_criteria": "none minted; dev/acceptance.md untouched. Graded by the frozen AC-SBOM-01..24 suite (24/24) plus the new TC-115 smoke.",
+  "agent_verify_result": "not run — scripts/agent-verify.sh is the heavy Rust/engine gate and this slice touches no Rust and no engine source. The gates applicable to this diff were run individually; see `gates`.",
+  "baseline_sha": "a6b6834236aa4a88567cbd37ecf3e31387b8b160",
+  "branch": "0.8.20-slice-33-sbom-run",
+  "codex_review": {
+    "gate": "dev/agent-tools/codex-nostdin.sh exec review --base <baseline> --dangerously-bypass-approvals-and-sandbox",
+    "round1": "[P3] the findings doc said the three lookup_error rows were 'all cargo' while the table listed `packaging` as pypi. Correct, and mine. FIXED.",
+    "round2": "[P2] the smoke's INSTALLED leg inherited the caller's PYTHONPATH — an ambient path could make RUN A import the source tree: a vacuous pass on the one leg the script exists to prove. FIXED by an ASSERTION that RUN A resolves inside site-packages, not merely an `env -u` scrub — unsetting arranges for the right thing, an assertion proves it.",
+    "round3": "[P2] run from scripts/sbom-survey/, the provenance probe imported the tree via cwd and the smoke FAILED (rc=1) before RUN A executed. REPRODUCED BY THE ORCHESTRATOR before acting. A false failure, so it erred safe — but a guard that cries wolf gets ignored. FIXED by running probes from a neutral cwd.",
+    "round4": "[P2] the round-1 transcript embedded binary __pycache__ bytes, so a tracked .md read as BINARY to grep. The orchestrator's own artifact. FIXED by line-wise sanitization with visible markers (never a silent strip). A first attempt inflated the file 223KB->796KB and was reverted from git and redone.",
+    "round5": "TERMINAL CLEAN — 'I did not identify any actionable defects introduced by the patch.' No [P0]/[P1]/[P2]/[P3]. This is what the slice lands on.",
+    "round_accounting": "5 rounds, 4 fixes, every finding real and every round a NEW and DISTINCT defect. The TC-75 same-finding bound of 3 was never approached; the 6-round total check-in was never reached.",
+    "transcripts": "dev/plans/runs/codex/0.8.20/slice-33-round{1..5}-*.md — all five TRACKED (TC-RUBRIC-7), all TEXT, all retaining their verdict blocks, TC-86-inspected before each commit"
+  },
+  "corrections_made_to_the_commission": [
+    "TC-119 FRAMING. Briefed to state plainly that a shipped direct dependency is three pre-releases behind. Reading src/rust/crates/fathomdb-embedder/Cargo.toml:34-50 rather than only the survey row showed the second half was right and THE FIRST HALF WAS NOT DRIFT: the pin is HITL-ACCEPTED (2026-07-08), reasoned (rc.12 has an ort/ort-sys VitisAI EP mismatch), and already tracked as TC-9. Reported upward before writing §4; the Steward adopted the correction (seq-177).",
+    "TYPESCRIPT VERDICT. Down-graded from the researcher subagent's SURGICAL-LIKELY to UNDETERMINED, with the disagreement and the reasoning both recorded in §3.9 rather than passing through a verdict the orchestrator did not believe.",
+    "TC-120 ID COLLISION. TC-120 was speculatively minted in the fix-4 sanitization markers; seq-179 then ruled TC-120 to mean something else. Caught while landing and corrected — 77 citations re-labelled to self-describing text citing no id. The wrong id remains in the fix-4 COMMIT MESSAGE, which is immutable history and was not rewritten for a label. Reciprocal lesson recorded at seq-180: mint before citing, check before minting."
+  ],
+  "deliverables": {
+    "doc_index_rows": "dev/DOC-INDEX.md — two rows (findings doc + smoke)",
+    "findings_doc": "dev/plans/runs/0.8.20-slice-33-library-sweep-3-FINDINGS.md (tracked, the AC-SBOM-18 pinned path)",
+    "handoff_section": "§4 hand-off to 0.8.22, including §4.0 the advisory-scope limitation",
+    "tc115_smoke": "scripts/sbom-survey/smoke-install-run.sh (executable, deliberately NOT CI-wired)"
+  },
+  "durable_rules_produced": [
+    "A PROVENANCE PROBE MUST BE CONSTRUCTED TO BE INDISTINGUISHABLE FROM THE INVOCATION IT CERTIFIES, NOT MERELY TO LOOK LIKE IT. Rounds 2 and 3 were two instances of this one class (TC-105's shape): `python -c` puts cwd on sys.path[0] while an executed console script does not, so the probe measured a different import environment than the thing it graded.",
+    "A NEGATIVE CONTROL THAT FAILS TO FAIL DESERVES AS MUCH SCRUTINY AS A POSITIVE ONE. The implementer's first RUN B bite attempt returned rc=0 — its own exported hostile PYTHONPATH re-supplied exactly what the mutation had removed. It caught this itself and re-ran clean. A green from a broken harness is how vacuous passes get certified.",
+    "INSTALLING IS NOT VERIFYING AN INSTALL — INVOKING WHAT WAS INSTALLED IS. Carried in from Slice 32, and now mechanically enforced by the TC-115 smoke."
+  ],
+  "escalations": [
+    "SEAT-PATH-GUARD DENIAL #1, not retried and not worked around: `rm -rf scripts/sbom-survey/tests/__pycache__` was DENIED because the path contains a 'tests/' segment. The target was gitignored bytecode, not test source, but the guard cannot distinguish and blocking is correct conservative behaviour. Immaterial in the event — codex did not ingest it at round 5, which came back TEXT.",
+    "SEAT-PATH-GUARD DENIAL #2 — A FALSE POSITIVE ON PROSE, escalated rather than edited around, and RULED at TC-121. Writing this closure file via Bash was denied because the hook text-scans the command and matched the literal string src/python/uv.lock inside an English sentence in the TC-118 finding, reporting the whole sentence as a filename. The orchestrator refused to reword the finding to slip past a path control — quietly reshaping text to pass a control is how a control stops meaning anything — and escalated instead. HITL ruled option 3: an implementer writes the file with the `Write` tool, whose hook branch evaluates the explicit file_path argument and cannot suffer the defect. No prose changed; no guard changed mid-flight.",
+    "UNIDENTIFIED FINDING STILL NEEDING AN ID: codex holds --dangerously-bypass-approvals-and-sandbox and greps the worktree, so gitignored __pycache__/*.pyc bytes land in stdout, which TC-RUBRIC-7 then requires be persisted to a TRACKED path in a PUBLIC repo. Same shape as TC-86, different source (build artifacts vs agent state). Durable remedy belongs in codex-nostdin.sh, which already filters agent-state paths and could strip control bytes on the same pass. NOT self-assigned an id a second time, per the seq-180 lesson."
+  ],
+  "findings_handed_to_0_8_22": {
+    "TC-106_widened": "the Dependabot coverage gap is THREE tracked manifest directories, not one: dev/tools/mermaid/ (npm), tools/docs/ (pip), scripts/sbom-survey/ (pip — created by Slice 32 itself). None appears on dependabot.yml's explicit 'Deliberately NOT covered' list, so that file's own header claim to cover every tracked manifest is mechanically falsified.",
+    "TC-114_TC-116": "NOTED, NOT FIXED, as briefed — the raw-tier-string sort order, and the tiers.toml `prefix = \"package\"` latent catch-all.",
+    "TC-117": "lookup_error explains only 3 of 13 unknown rows; design §5.8 promised it would explain all of them. Reporting gap; REQ-10's hard guarantee (never falsely `current`) is intact.",
+    "TC-118": "src/python/uv.lock locks only 15 packages and OMITS five declared optional dependencies (maturin, numpy, scipy, networkx, pyyaml) — exactly the M1-harness deps a codex §9 [P1] added at 0.8.3 Slice 5. `uv sync` from that lock does not reproduce the declared dev environment. Re-locking is a LOCKFILE EDIT, forbidden in 0.8.20, hence a hand-off and not a deferred fix.",
+    "TC-119": "the survey is structurally blind to pre-release-only dependencies (it reads max_stable_version, which is null forever for `ort`). CORRECTED FRAMING: the `ort` =2.0.0-rc.10 pin is NOT drift — it is HITL-ACCEPTED 2026-07-08 with a recorded reason (rc.12 has an ort/ort-sys VitisAI EP mismatch) and the eventual stable bump is already tracked as TC-9. The finding is that when TC-9 comes due, THIS TOOL CANNOT HELP with it.",
+    "advisory_scope_limitation": "STATED PLAINLY IN §4.0 because silence would mislead: the tool consults NO advisory database — three version-metadata GETs, no OSV/GHSA/RUSTSEC, and no `vulnerabilities` array in the emitted CycloneDX. It surfaced no security advisories AND COULD NOT HAVE. The six advisories at seq-152 remain open, neither confirmed nor cleared by this document."
+  },
+  "gates": "all re-run AFTER the final rebase onto a6b68342, each rc captured on the immediately following line: pytest suite 24 passed rc=0 | TC-115 smoke rc=0 from repo root, rc=0 from scripts/sbom-survey/, rc=0 under hostile PYTHONPATH | check-governed-surface-pin rc=0 | lint-findings rc=0 | check-release-state-views rc=0 | lint-design-status rc=0 | lint-plans-status rc=0 | check-transcript-hygiene rc=0 | agent-lint-md rc=0 | SCHEMA_VERSION = 24 | preflight --landing pass",
+  "head_sha_before_closure": "6ea64a227541b2d6a6e35da82bcdf41c44e94dd8",
+  "most_decision_relevant_finding": "THE napi ORDERING CONSTRAINT, which seq-151 does not record. napi-derive 3 PANICS at proc-macro expansion under @napi-rs/cli 2 — the panic names it: 'missing environment variables. please upgrade `@napi-rs/cli` to the latest version.' The reverse direction works and is inert in this repo (CLI 3 emits a header-only index.d.ts, which is gitignored, outside both tsconfig include globs, and consumed by nothing). The coupling is therefore ASYMMETRIC, and the @napi-rs/cli bump is a ONE-WAY PREREQUISITE for 0.8.22's napi 2->3 migration: land the CLI first, or move both in one commit. 0.8.22 would otherwise hit this blind.",
+  "next_slice": "34 (EngineError #[non_exhaustive], net-new at seq-178), then the DOC-HYGIENE-3 remainder, then 40.",
+  "online_run_of_record": {
+    "components": 774,
+    "direct": 52,
+    "direct_breakdown": {"ahead": 0, "current": 14, "outdated": 28, "unknown": 10},
+    "ecosystems": {"cargo": 468, "npm": 282, "pypi": 24},
+    "egress": "three plain urllib GETs (crates.io, registry.npmjs.org, pypi.org); no request body, no repository data sent",
+    "exit_code": 0,
+    "generated_field": "1980-01-01T00:00:00+00:00 — the ruled fixed epoch, NOT wall-clock",
+    "invocation": "sbom-survey --repo . --online --out scripts/sbom-survey/out (installed console script; venv OUTSIDE the repo tree)",
+    "lookup_failure_count": 3,
+    "lookup_failure_note": "two cargo, one pypi. The two cargo rows are this repo's OWN unpublished crates (fathomdb-napi, fathomdb-py) 404ing on crates.io, which is correct behaviour. Only ONE is a genuine registry-side gap. Registry availability was NOT a limiting factor in this survey.",
+    "manifests_contributing": 14,
+    "manifests_excluded": 8,
+    "offline_control": "an --offline run at the same commit returns 774 unknown / 0 resolved, proving every resolved verdict came from the registries and none from a cached or inferred default",
+    "source_field": "http",
+    "totals": {"ahead": 1, "current": 429, "outdated": 331, "unknown": 13},
+    "transitive": 722
+  },
+  "question_1_what_is_stale": {
+    "bucket_A_lockfile_only": 13,
+    "bucket_B_genuinely_new": 11,
+    "bucket_B_owned_by_0_8_22": 4,
+    "method_that_bounded_the_work": "28 direct rows are behind, but only 11 needed a judgement. The reducing step is mechanical and free: does the ALREADY-DECLARED constraint admit `latest`? Computed from declared_in[].constraint and latest_version with each ecosystem's own comparator (semver for cargo/npm, PEP 440 for pypi); 0 of 28 were unparseable. Where the answer is yes, the upgrade needs ZERO SLOC of manifest change and a re-lock lands it. Without this step the survey would have been 28 changelog investigations."
+  },
+  "question_2_surgical_verdicts": {
+    "LARGER": ["ureq 2.12.1->3.3.0 — a ground-up rewrite on the `http` crate; this repo both pattern-matches AND synthesizes Error::Status / Error::Transport, which no longer exist in that shape, across ~14 call sites plus an error enum and a retry-policy fn designed around ureq 2's error shape. Noted, deliberately NOT scoped further, per §3a."],
+    "SURGICAL_LIKELY": [
+      "candle-core + candle-nn + candle-transformers 0.10.2->0.11.0 (~3 SLOC, one coupled investigation) — residual risk is NUMERIC not syntactic: pinned cross-backend fixtures may need regeneration",
+      "tokenizers 0.20.4->0.23.1 (~1 SLOC) — 0.22.2 already builds in-tree via candle, so the bump de-duplicates",
+      "thiserror 1.0.69->2.0.19 (~1 SLOC) — all four 2.0 breaking changes checked individually against both derive sites; none applies",
+      "dirs 5.0.1->6.0.0 (~1 SLOC)",
+      "jsonschema 0.18.3->0.49.2 (~2 SLOC) — 31 minors, still surgical because the repo's surface is two lines; but 0.25's default-draft change to 2020-12 is a release-note/ADR question, not SLOC",
+      "httpmock 0.7.0->0.8.3 (~2 SLOC, dev-dependency — sequence FIRST; blast radius is the test suite only). The second line is required only because clippy runs -D warnings, promoting the assert_hits->assert_calls deprecation to a hard error",
+      "@napi-rs/cli 2.18.4->3.8.0 (~3 SLOC) — and see most_decision_relevant_finding"
+    ],
+    "UNDETERMINED": ["typescript 6.0.3->7.0.2 — DELIBERATELY DOWN-GRADED from the researcher subagent's SURGICAL-LIKELY, and the disagreement is recorded rather than silently resolved. The edit is 1 SLOC and no tsconfig key needs to change; both were established and are recorded in §3.9 so 0.8.22 need not re-derive them. But the question is whether the change would LIKELY LAND, not whether the diff is small, and 7.0 is the completed Go-native compiler port sitting in the SHIPPED emit path (tsc emits dist/, which is what is published). Swapping the compiler implementation is not a version bump in the sense the other ten rows are, and whether a different checker emits zero new diagnostics across 6 source and 44 test files cannot be told cheaply and was not tested. Labelling it SURGICAL-LIKELY would invite 0.8.22 to schedule a compiler swap as a quick win. Named tripwire so the check is cheap when someone runs it: six @ts-expect-error directives that become unused-directive errors if the new checker declines to report at those exact sites."],
+    "evidence_standard": "every SURGICAL-LIKELY names its specific change with file:line, ALL re-verified against the tree before publication. Nothing was built, installed, or attempted — no trial upgrade, no manifest touched even temporarily.",
+    "investigations": 9,
+    "rows_covered": 11
+  },
+  "release": "0.8.20",
+  "requirement_id": "none — no R-20-xx minted (TC-76 precedent); gated by TDD test name",
+  "scope_discipline": "ASCERTAIN ONLY. No dependency bump. No manifest and no lockfile edited in any ecosystem. sbom_survey/** and tests/** byte-untouched vs baseline. No CI wiring (seq-172 ruled it OUT, not deferred). Nothing under src/ or engine/. Governed-surface allowlist byte-identical; SCHEMA stays 24.",
+  "short": "SBOM-RUN",
+  "slice": 33,
+  "tc115_smoke_value_proof": {
+    "fixed_script": {"outcome": "pip install reported success, so the wheel does not contain an importable package. This is the install-path defect.", "rc": 1},
+    "independently_reverified_by_orchestrator": "yes — the orchestrator re-ran the broken-wheel A/B itself on a mutated COPY (placed in the gitignored out/ dir, then removed) AFTER fix-3, specifically to confirm the neutral-cwd change had not made the guard permissive. rc=1 with the correct diagnostic. The fix could have weakened it; it did not.",
+    "pre_fix_script": {"outcome": "smoke: PASS ... 774 components — THE VACUOUS PASS, REPRODUCED", "rc": 0},
+    "what_it_is": "the A/B that justifies TC-115's placement here — an identical, deliberately broken wheel (pip install succeeds, then the installed package directory is removed leaving the console script shim intact), same hostile ambient PYTHONPATH",
+    "why_it_matters": "not asserted — DEMONSTRATED. Same broken wheel: the old script certifies it, the new one refuses it. With CI wiring ruled out at seq-172, this script is the ONLY guard for the install-path defect class."
+  },
+  "title": "Library Sweep #3 leg 3/3 — RUN the sbom-survey tool and write the dependency survey",
+  "what_was_deliberately_not_done": [
+    "Applied no dependency bump; edited no manifest and no lockfile, not even temporarily to test a build.",
+    "Ran no trial build and no throwaway upgrade attempt for any surveyed dependency. Installed the TOOL freely (TC-111); never a surveyed dependency.",
+    "Wired nothing into CI (seq-172). .github/**, agent-test.sh, agent-verify.sh, check.sh and all pytest/ruff config untouched.",
+    "Did not modify the sbom-survey implementation or its acceptance suite — byte-untouched vs baseline. TC-114 and TC-116 were NOTED, not fixed.",
+    "Did not enumerate 722 transitive rows as prose; summarised in aggregate per the LBS triage.",
+    "Did not run a sixth codex round — round 5 is terminal-clean and is what the slice lands on.",
+    "Did not reword the TC-118 finding to evade a path-guard false positive; escalated instead (TC-121).",
+    "Did not touch release-state-0.8.20.json, the master, STATUS-0.8.20.md, or any ledger — the Steward reconciles after the land."
+  ]
+}
