@@ -682,6 +682,182 @@ else
 fi
 
 
+# ===========================================================================
+# TC-89, arms 10a-10f: the PLAN's "IMMEDIATE NEXT" pointer is a GENERATED VIEW.
+# ===========================================================================
+# THE MEASURED FAILURE. `dev/plans/plan-0.8.20.md` §9 carried a HAND-WRITTEN
+# "IMMEDIATE NEXT: Slice N" pointer while `release-state-0.8.20.json` already
+# owned `next_slice` and was already kept true at every landing. It went stale at
+# THREE CONSECUTIVE COMMISSIONS. Twice measured in a single session: at the Slice
+# 21 commission it still said "Slice 30" although Slice 30 had landed at
+# 9b3ed0e3 (fixed at 62486a01, but only because the Steward happened to read the
+# anchor); hours later, immediately after Slice 21 landed, it said "Slice 21".
+#
+# WHY IT IS WORSE THAN ORDINARY DOC ROT. `scripts/commission-manifest.sh`
+# resolves `## 9. Immediate next slice` as the `{{MANDATE}}` anchor for an
+# orchestrator brief, and its CHECK 2 verifies that the HEADING EXISTS, not that
+# the prose under it is current. A heading cannot rot; the prose under it does.
+# So a generated, path-verified brief handed an orchestrator a hand-written
+# pointer at the wrong slice, with the manifest's authority behind it, and the
+# staleness was copied into the next commission.
+#
+# THE REMEDY IS THE ONE DOC-HYGIENE-2 ALREADY BUILT, not a second mechanism: a
+# `generated_views` entry + a renderer here + marker-delimited region, so drift
+# is mechanically impossible rather than something each Steward must remember at
+# land time. The interim mitigation that was in place — a warning blockquote
+# telling the reader to re-verify against `next_slice` — is a NOTE, not a
+# control, and notes are what this repo has ruled against.
+#
+# The expectations below are written LONGHAND, exactly as GATE_SENTENCE is, so a
+# renderer change that alters the claim cannot also silently alter the
+# expectation.
+
+B_PLANNEXT='<!-- BEGIN GENERATED release-state:9.9.9:plan-immediate-next -->'
+E_PLANNEXT='<!-- END GENERATED release-state:9.9.9:plan-immediate-next -->'
+
+# Adds the plan document, its fenced region and the view declaration to the
+# baseline fixture. Kept OUT of setup_fixture on purpose: arms 6/6b delete the
+# fixture's view targets to exercise the vacuity guards, and a fifth target they
+# do not know about would make those arms fail for the wrong reason.
+plannext_fixture() {
+  python3 - "$FIX/dev/plans/release-state-9.9.9.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+s = json.load(open(p))
+titles = {0: "the design gate", 5: "the keystone", 10: "the widget leg",
+          20: "the second leg", 30: "can-i-deploy contract gate", 40: "publish"}
+for e in s["ladder"]:
+    e["title"] = titles[e["slice"]]
+s["generated_views"].append({"id": "plan-immediate-next",
+                             "file": "dev/plans/plan-9.9.9.md"})
+json.dump(s, open(p, "w"), indent=2)
+PY
+  cat >"$FIX/dev/plans/plan-9.9.9.md" <<EOF
+# 9.9.9 — Plan
+
+## 9. Immediate next slice
+
+${B_PLANNEXT}
+**IMMEDIATE NEXT: Slice 10** (\`R-B\`) — the widget leg
+
+**Remaining ladder:** 10 → 20 → 30 → 40.${E_PLANNEXT}
+
+Hand-written prose below the region, which must never be touched.
+EOF
+}
+
+# --- Arm 10a: the plan's pointer renders from `next_slice` -----------------
+# RED before the renderer existed: `plan-immediate-next` had no entry in
+# RENDERERS, so the gate exited 1 with "has no renderer ... an unrenderable view
+# is a failure, not an unchecked region" — which is the correct behaviour of the
+# OLD gate and the proof this arm was measuring something absent.
+setup_fixture
+plannext_fixture
+run_gate
+if [ "$RC" -eq 0 ]; then
+  pass "plan-immediate-next — the plan's IMMEDIATE NEXT pointer renders from the state file (TC-89)"
+else
+  fail "arm 10a (plan-immediate-next baseline): rc=$RC out=$OUT"
+fi
+
+# --- Arm 10b: the pointer goes STALE the moment `next_slice` moves ---------
+# The whole point. This is the exact shape of the measured incident: a slice
+# lands, the single writer is updated, and the plan's prose is not.
+setup_fixture
+plannext_fixture
+perl -0777 -pi -e 's/"next_slice": 10/"next_slice": 20/' \
+  "$FIX/dev/plans/release-state-9.9.9.json"
+run_gate
+if [ "$RC" -ne 0 ] && grep -q 'is STALE' <<<"$OUT" && grep -q 'plan-immediate-next' <<<"$OUT" \
+   && grep -q 'Slice 20' <<<"$OUT"; then
+  pass "plan-immediate-next — a landing that moves \`next_slice\` turns the plan's pointer RED"
+else
+  fail "arm 10b (next_slice drift): rc=$RC out=$OUT"
+fi
+
+# --- Arm 10c: --write repairs it, and the repair names the NEW slice -------
+run_gate --write
+run_gate
+PLAN_DOC="$(cat "$FIX/dev/plans/plan-9.9.9.md")"
+if [ "$RC" -eq 0 ] \
+   && grep -q 'IMMEDIATE NEXT: Slice 20' <<<"$PLAN_DOC" \
+   && ! grep -q 'IMMEDIATE NEXT: Slice 10' <<<"$PLAN_DOC" \
+   && grep -q 'the second leg' <<<"$PLAN_DOC" \
+   && grep -q 'Hand-written prose below the region' <<<"$PLAN_DOC"; then
+  pass "plan-immediate-next — --write repoints the pointer and leaves the surrounding prose intact"
+else
+  fail "arm 10c (write repairs the pointer): rc=$RC doc=$PLAN_DOC"
+fi
+
+# --- Arm 10d: a HAND-EDIT inside the markers is caught --------------------
+# The other direction of the same seam, and the one a well-meaning Steward
+# actually produces: somebody "just fixes" the slice number in the prose.
+setup_fixture
+plannext_fixture
+perl -0777 -pi -e 's/IMMEDIATE NEXT: Slice 10/IMMEDIATE NEXT: Slice 99/' \
+  "$FIX/dev/plans/plan-9.9.9.md"
+run_gate
+if [ "$RC" -ne 0 ] && grep -q 'is STALE' <<<"$OUT" && grep -q 'plan-immediate-next' <<<"$OUT"; then
+  pass "plan-immediate-next — hand-editing the slice number inside the markers HARD-fails"
+else
+  fail "arm 10d (hand-edited pointer): rc=$RC out=$OUT"
+fi
+
+# --- Arm 10e: END OF LADDER — the renderer REFUSES, it does not blank ------
+# `next_slice: null` is a real end-of-release state. A renderer that emitted
+# "Slice None" would put a fabricated pointer in front of the next orchestrator
+# with the gate's authority behind it — the precise failure class this view
+# exists to close, wearing a different hat. It must fail with the REASON.
+setup_fixture
+plannext_fixture
+perl -0777 -pi -e 's/"next_slice": 10/"next_slice": null/' \
+  "$FIX/dev/plans/release-state-9.9.9.json"
+run_gate
+# `plan-immediate-next` must be NAMED in the failure: `handoff-next-step` also
+# reads `next_slice` and also refuses to render it, so an assertion that merely
+# checked "something failed" would be satisfied by the neighbouring view and
+# would still pass with this renderer absent entirely.
+if [ "$RC" -ne 0 ] && grep -q 'plan-immediate-next' <<<"$OUT" \
+   && grep -qi 'next_slice' <<<"$OUT" && ! grep -q 'Slice None' <<<"$OUT"; then
+  pass "plan-immediate-next — an end-of-ladder \`next_slice: null\` fails with the reason, never renders a blank pointer"
+else
+  fail "arm 10e (null next_slice): rc=$RC out=$OUT"
+fi
+
+# --- Arm 10f: the REAL plan's pointer is generated and CURRENT -------------
+# TC-89 asserted against the shipped documents, DERIVED from the state file so it
+# cannot become the time-bombed literal TC-81 named. It reads `next_slice` out of
+# the live state file and requires the live plan's fenced region to name that
+# slice — and it requires the region to EXIST, so deleting the fence to dodge the
+# check is itself a failure.
+REAL_PLAN_STATE="$REPO_ROOT/dev/plans/release-state-0.8.20.json"
+REAL_PLAN_PATH="$(python3 -c '
+import json, sys
+s = json.load(open(sys.argv[1]))
+for v in s.get("generated_views") or []:
+    if v.get("id") == "plan-immediate-next":
+        print(v.get("file", "")); break
+' "$REAL_PLAN_STATE")"
+REAL_NEXT="$(python3 -c '
+import json, sys
+print(json.load(open(sys.argv[1])).get("next_slice"))' "$REAL_PLAN_STATE")"
+if [ -z "$REAL_PLAN_PATH" ]; then
+  fail "arm 10f: no live release-state file declares a plan-immediate-next view — TC-89's pointer is still hand-written"
+elif [ ! -f "$REPO_ROOT/$REAL_PLAN_PATH" ]; then
+  fail "arm 10f: the declared plan-immediate-next target \`$REAL_PLAN_PATH\` is not a file"
+else
+  RPB='<!-- BEGIN GENERATED release-state:0.8.20:plan-immediate-next -->'
+  RPE='<!-- END GENERATED release-state:0.8.20:plan-immediate-next -->'
+  REAL_PTR="$(perl -0777 -ne 'print $1 if /\Q'"$RPB"'\E(.*?)\Q'"$RPE"'\E/s' "$REPO_ROOT/$REAL_PLAN_PATH")"
+  if [ -n "$REAL_PTR" ] \
+     && [ "$REAL_NEXT" != "None" ] \
+     && grep -qF "IMMEDIATE NEXT: Slice $REAL_NEXT" <<<"$REAL_PTR"; then
+    pass "real repo — the plan's IMMEDIATE NEXT pointer is a generated region and names Slice $REAL_NEXT, as the state file says"
+  else
+    fail "arm 10f (live plan pointer): next=$REAL_NEXT region=[$REAL_PTR]"
+  fi
+fi
+
 # --- Arm 9: the CI job is ALWAYS-ON, and reuses the shared script ----------
 # Same reasoning as board-currency / ledger-integrity / plan-anchors: the push
 # that breaks a generated view is a LANDING push, which the docs_only fast path
