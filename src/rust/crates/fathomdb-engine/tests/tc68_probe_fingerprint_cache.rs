@@ -42,6 +42,34 @@
 //! the ruled trade, and
 //! `residual_same_identity_backend_drift_is_not_caught_on_a_cached_open` states it
 //! as an executable fact.
+//!
+//! ## fix-1 — the THREAT MODEL, measured rather than asserted
+//!
+//! codex §9 round 2 raised a `[P1]`: the cached marker is a SHA-256 over
+//! deterministic, publicly derivable DB and build inputs, so an actor with write
+//! access to the SQLite file can compute the current digest, write it into
+//! `_fathomdb_open_state`, and force the early `Ok(())` before the 45-probe
+//! verification runs. That is true, and
+//! `a_marker_matching_the_current_state_serves_a_drifted_backend` proves it.
+//!
+//! The question that decides what to DO about it is whether the cache introduced
+//! that exposure or merely restated it. It restated it:
+//! `a_forged_stored_baseline_defeats_the_probe_even_when_it_fully_runs` shows the
+//! SAME actor defeats the SAME arm through the **pre-slice** path — forge
+//! `_fathomdb_embed_probe.reference_vec` to the drifted backend's own output and
+//! the probe runs all 45 embeds and PASSES. The check body exercised there is
+//! byte-identical to the one shipped at the slice baseline `fe85337f` (the TC-68
+//! diff adds only the cache gate and the recording call), and the marker is
+//! deleted first so the cache demonstrably plays no part.
+//!
+//! So the equivalence probe is a **correctness self-check against backend drift,
+//! not an integrity boundary against a hostile writer** — it never was one, and
+//! there is no secret in an embedded local-first engine with which to make the
+//! marker unforgeable. What the cache *does* narrow is recorded in §6 of the
+//! design note and in `residual_…` above. What forging buys is bounded:
+//! `a_replayed_verdict_marker_is_defeated_by_a_mutated_baseline` and
+//! `a_replayed_verdict_marker_is_defeated_by_a_rewritten_pinned_mean` show a known
+//! digest stops working at the next change to any fingerprint input.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -62,6 +90,12 @@ const BGE_REV: &str = "veq-tc68-mc";
 
 /// The full committed probe fixture size (`src/vector_equivalence_probes.txt`).
 const PROBE_COUNT: u64 = 45;
+
+/// The `_fathomdb_open_state` key under which the engine records the fingerprint
+/// of the last open at which the probe RAN and PASSED (mirrors
+/// `vector_equivalence_probe.rs`). fix-1 needs to name it: the threat-model tests
+/// read, delete and re-install that exact row the way an external writer would.
+const VEQ_VERDICT_CACHE_KEY: &str = "vector_equivalence_verified_fingerprint";
 
 /// Deterministic per-text reference vector, every component in `[0.5, 1.5)` —
 /// strictly positive, so the raw 1-bit sign quantization is all-ones and sits
@@ -157,6 +191,73 @@ fn set_pinned_mean(path: &std::path::Path, mean: Vec<u8>) {
         rusqlite::params![mean],
     )
     .expect("pin mean_vec");
+}
+
+/// LE-f32 encode a vector into the engine's `reference_vec` blob shape.
+fn encode_vector_blob(vector: &[f32]) -> Vec<u8> {
+    vector.iter().flat_map(|x| x.to_le_bytes()).collect()
+}
+
+/// fix-1 — read the cached verdict marker exactly as an external actor would.
+fn read_verdict_marker(path: &std::path::Path) -> Option<String> {
+    let conn = rusqlite::Connection::open(path).unwrap();
+    conn.query_row(
+        "SELECT value FROM _fathomdb_open_state WHERE key = ?1",
+        [VEQ_VERDICT_CACHE_KEY],
+        |row| row.get::<_, String>(0),
+    )
+    .ok()
+}
+
+/// fix-1 — write an arbitrary value into the marker row: the forgery itself.
+fn install_verdict_marker(path: &std::path::Path, value: &str) {
+    let conn = rusqlite::Connection::open(path).unwrap();
+    conn.execute(
+        "INSERT INTO _fathomdb_open_state(key, value) VALUES(?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        rusqlite::params![VEQ_VERDICT_CACHE_KEY, value],
+    )
+    .expect("install the verdict marker");
+}
+
+/// fix-1 — drop the marker, so the next open runs the pre-slice check path.
+fn clear_verdict_marker(path: &std::path::Path) {
+    let conn = rusqlite::Connection::open(path).unwrap();
+    conn.execute("DELETE FROM _fathomdb_open_state WHERE key = ?1", [VEQ_VERDICT_CACHE_KEY])
+        .expect("clear the verdict marker");
+}
+
+/// fix-1 — rewrite EVERY stored `reference_vec` to `f(probe_text)`, leaving the
+/// ordinal, the text, the identity triple and the blob LENGTH untouched. This is
+/// the pre-slice forgery: the 0.8.18 fix-2 completeness validation pins each row's
+/// shape but never its blob CONTENT, so a hostile writer can re-baseline the probe
+/// against whatever their backend currently emits.
+fn forge_stored_baseline(path: &std::path::Path, f: impl Fn(&str) -> Vec<f32>) {
+    let conn = rusqlite::Connection::open(path).unwrap();
+    let rows: Vec<(i64, String, usize)> = {
+        let mut stmt = conn
+            .prepare(
+                "SELECT probe_ordinal, probe_text, length(reference_vec) \
+                 FROM _fathomdb_embed_probe ORDER BY probe_ordinal",
+            )
+            .unwrap();
+        let rows = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? as usize)))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        rows
+    };
+    assert_eq!(rows.len() as u64, PROBE_COUNT, "the baseline must be the full committed set");
+    for (ordinal, text, blob_len) in rows {
+        let blob = encode_vector_blob(&f(&text));
+        assert_eq!(blob.len(), blob_len, "the forgery must preserve the blob length");
+        conn.execute(
+            "UPDATE _fathomdb_embed_probe SET reference_vec = ?1 WHERE probe_ordinal = ?2",
+            rusqlite::params![blob, ordinal],
+        )
+        .expect("forge one reference row");
+    }
 }
 
 /// Open, snapshot the embed-call delta across the open, close. Returns
@@ -547,4 +648,198 @@ fn residual_same_identity_backend_drift_is_not_caught_on_a_cached_open() {
         "RESIDUAL: same-identity backend drift is NOT caught on a cached open — \
          it is caught only at the next open whose fingerprint changed"
     );
+}
+
+// ---- fix-1 (codex §9 round 2 [P1]) — the THREAT MODEL, measured ------------
+//
+// Transcript:
+// `dev/plans/runs/codex/0.8.20/slice-22-review-round2-targeted-20260729T004445Z.log`.
+//
+// The finding is correct as stated: a writer who can compute the current digest
+// forces the probe to be skipped. These four tests establish what that is worth —
+// that the SAME actor already defeated the SAME arm before the cache existed, and
+// that a known digest expires at the next change to any fingerprint input.
+
+/// **THE HYPOTHESIS TEST.** Is the pre-slice design an integrity boundary against
+/// a hostile writer? No — and this is the measurement that says so.
+///
+/// The 0.8.18 probe re-embeds the 45 committed probes and compares them to the
+/// STORED references. Those references live in an ordinary table in the same file.
+/// An actor with write access re-baselines them to their drifted backend's own
+/// output — same ordinals, same texts, same identity triple, same blob lengths, so
+/// the fix-2 completeness validation sees nothing — and the probe then verifies the
+/// drifted backend against itself and PASSES.
+///
+/// The cache is removed from the picture entirely: the marker is DELETED before
+/// the open, and the test asserts all 45 embeds actually happen. What runs is the
+/// check body as shipped at the slice baseline `fe85337f` (the TC-68 diff over that
+/// function adds only the cache gate and the `record_probe_verification` call).
+///
+/// The control leg proves the forgery is what does it: the identical drifted
+/// backend against an UN-forged baseline is caught and refuses dense.
+#[test]
+fn a_forged_stored_baseline_defeats_the_probe_even_when_it_fully_runs() {
+    // -- control: drift alone, with the cache out of the way, IS caught. --------
+    let control_dir = TempDir::new().unwrap();
+    let control_path = db_path(&control_dir);
+    let control_calls = counter();
+    seed_verified_workspace(&control_path, &control_calls);
+    clear_verdict_marker(&control_path);
+    let (control_embeds, control_degraded) = open_count_close(
+        &control_path,
+        Arc::new(CountingDivergentEmbedder { calls: control_calls.clone() }),
+        &control_calls,
+    );
+    assert_eq!(control_embeds, PROBE_COUNT, "control: the probe must actually run");
+    assert!(control_degraded, "control: un-forged baseline + drifted backend ⇒ dense REFUSED");
+
+    // -- the forgery: re-baseline the references to the drifted backend's output.
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+    let calls = counter();
+    seed_verified_workspace(&path, &calls);
+    forge_stored_baseline(&path, |text| reference_vector(text).into_iter().map(|x| -x).collect());
+    clear_verdict_marker(&path);
+    assert_eq!(read_verdict_marker(&path), None, "the cache must play NO part in this leg");
+
+    let before = calls.load(Ordering::SeqCst);
+    let opened = Engine::open_with_embedder_for_test(
+        &path,
+        Arc::new(CountingDivergentEmbedder { calls: calls.clone() }),
+    )
+    .expect("open must succeed");
+    let embeds = calls.load(Ordering::SeqCst) - before;
+
+    assert_eq!(embeds, PROBE_COUNT, "the FULL pre-slice check ran — nothing was skipped");
+    assert!(
+        !opened.report.dense_disabled,
+        "PRE-EXISTING: a forged stored baseline defeats the probe on the pre-slice path — \
+         the probe is a correctness self-check against backend drift, NOT an integrity \
+         boundary against an actor with write access to the database file"
+    );
+    if let Err(EngineError::VectorEquivalenceMismatch { .. }) = opened.engine.search("memory") {
+        panic!("the dense arm must be SERVING — that is the point of this measurement");
+    }
+    opened.engine.close().unwrap();
+}
+
+/// **THE FINDING, as an executable fact.** A marker that matches the current state
+/// — however it got there — skips the probe, so a drifted backend is served. On the
+/// SAME workspace, with the marker absent, that drift is caught. The marker is
+/// therefore not an engine-authenticated attestation; it is a statement that the
+/// fingerprint inputs are unchanged since *some* engine recorded a pass.
+///
+/// Paired with `a_forged_stored_baseline_defeats_the_probe_even_when_it_fully_runs`,
+/// this is the whole argument: both routes are open to exactly the same actor, and
+/// one of them predates the cache.
+#[test]
+fn a_marker_matching_the_current_state_serves_a_drifted_backend() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+    let calls = counter();
+    seed_verified_workspace(&path, &calls);
+
+    // The digest for THIS state. An external actor derives it from the same
+    // public inputs (identity, pinned mean, fixture, floors, stored baseline); the
+    // test simply reads the row, which is the same value by construction.
+    let digest = read_verdict_marker(&path).expect("a verified workspace carries a marker");
+
+    // Without it, the drift is caught — and the failing open clears the marker
+    // again without touching any fingerprint input, so `digest` stays current.
+    clear_verdict_marker(&path);
+    let (caught_embeds, caught_degraded) = open_count_close(
+        &path,
+        Arc::new(CountingDivergentEmbedder { calls: calls.clone() }),
+        &calls,
+    );
+    assert_eq!(caught_embeds, PROBE_COUNT, "no marker ⇒ the probe runs");
+    assert!(caught_degraded, "no marker ⇒ the drifted backend is CAUGHT");
+    assert_eq!(read_verdict_marker(&path), None, "a failing verdict is never cached");
+
+    // Write the digest back — the forgery — and the same drifted backend is served.
+    install_verdict_marker(&path, &digest);
+    let (forged_embeds, forged_degraded) = open_count_close(
+        &path,
+        Arc::new(CountingDivergentEmbedder { calls: calls.clone() }),
+        &calls,
+    );
+    assert_eq!(forged_embeds, 0, "a matching marker skips the 45-probe verification");
+    assert!(
+        !forged_degraded,
+        "codex §9 round-2 [P1]: a marker matching the current state serves a drifted \
+         backend — the marker proves the fingerprint inputs are unchanged since SOME \
+         engine recorded a pass, not that THIS engine verified THIS backend"
+    );
+}
+
+/// What forging buys is bounded in time: a digest is valid only for the state it
+/// was computed over. Re-installing a known digest after mutating a reference blob
+/// does not keep the probe skipped — the fingerprint moved, so the probe re-runs
+/// and catches the mutation.
+#[test]
+fn a_replayed_verdict_marker_is_defeated_by_a_mutated_baseline() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+    let calls = counter();
+    seed_verified_workspace(&path, &calls);
+    let digest = read_verdict_marker(&path).expect("a verified workspace carries a marker");
+
+    // Mutate ONE reference (length preserved) and re-assert the known digest.
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        let blob: Vec<u8> = conn
+            .query_row(
+                "SELECT reference_vec FROM _fathomdb_embed_probe WHERE probe_ordinal = 0",
+                [],
+                |r| r.get(0),
+            )
+            .expect("read reference 0");
+        let flipped: Vec<u8> = blob
+            .chunks_exact(4)
+            .flat_map(|c| (-f32::from_le_bytes([c[0], c[1], c[2], c[3]])).to_le_bytes())
+            .collect();
+        conn.execute(
+            "UPDATE _fathomdb_embed_probe SET reference_vec = ?1 WHERE probe_ordinal = 0",
+            rusqlite::params![flipped],
+        )
+        .expect("mutate reference 0");
+    }
+    install_verdict_marker(&path, &digest);
+
+    let (embeds, degraded) =
+        open_count_close(&path, Arc::new(CountingRefEmbedder { calls: calls.clone() }), &calls);
+    assert_eq!(embeds, PROBE_COUNT, "the stale digest cannot keep the probe skipped");
+    assert!(degraded, "…and the re-run catches the mutated reference (fail-safe, R-VEQ-4)");
+}
+
+/// The same bound on the other end-to-end-reachable fingerprint input: replaying a
+/// known digest across a rewritten pinned `mean_vec` does not buy a skip either.
+#[test]
+fn a_replayed_verdict_marker_is_defeated_by_a_rewritten_pinned_mean() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+    let calls = counter();
+
+    {
+        let opened = Engine::open_with_embedder_for_test(
+            &path,
+            Arc::new(CountingBgeRefEmbedder { calls: calls.clone() }),
+        )
+        .expect("bge enrolment open");
+        opened.engine.configure_vector_kind_for_test("note").expect("enrol vector kind");
+        opened.engine.close().expect("close");
+    }
+    set_pinned_mean(&path, mean_blob(1.0));
+    let (population, _) =
+        open_count_close(&path, Arc::new(CountingBgeRefEmbedder { calls: calls.clone() }), &calls);
+    assert_eq!(population, 2 * PROBE_COUNT, "population open under a pinned mean");
+    let digest = read_verdict_marker(&path).expect("a verified workspace carries a marker");
+
+    set_pinned_mean(&path, mean_blob(0.9));
+    install_verdict_marker(&path, &digest);
+
+    let (embeds, degraded) =
+        open_count_close(&path, Arc::new(CountingBgeRefEmbedder { calls: calls.clone() }), &calls);
+    assert_eq!(embeds, PROBE_COUNT, "a rewritten mean invalidates the replayed digest");
+    assert!(!degraded, "…and a faithful backend still passes the forced re-run");
 }
