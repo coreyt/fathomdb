@@ -68,7 +68,9 @@ It can never enlarge the published dependency graph or the advisory backlog. Its
 are surveyed by the tool and tagged `dev-tooling` — the tool appears in its own SBOM, by design.
 
 Generated reports go to `scripts/sbom-survey/out/`, which Slice 32 adds to `.gitignore`. Slice 33's
-**findings** have a separate tracked home: `dev/design/0.8.20-slice-33-library-sweep-3-findings.md`.
+**findings** have a separate tracked home:
+`dev/plans/runs/0.8.20-slice-33-library-sweep-3-FINDINGS.md` — the house convention for a dated run
+report, weighed against `dev/design/` and `dev/deps/` in design §5.6.
 
 ## Scope guard
 
