@@ -1,0 +1,431 @@
+{
+  "phase": "0.8.20-slice-23",
+  "baseline_sha": "b0ac02b5a96d3d345775904375ed77ec0e08e7bb",
+  "branch": "slice-23-sv",
+  "head_sha": "151c0b45c171fa2b15f387b529029dce06da3948",
+  "commits": [
+    "b3b0c4b4: test(0.8.20 Slice 23): RED — R-20-SV, fts/vector without `searchable` must REJECT",
+    "d5afdc24: fix(0.8.20 Slice 23): GREEN — R-20-SV, fts/vector without `searchable` REJECTS",
+    "c6b612d1: merge — origin/main 179d3850 forward into slice-23-sv (orchestrator; scripts/** + state/ledgers only, no source conflict)",
+    "94f09d7d: test(0.8.20 Slice 23 fix-1): X1 legacy-path parity + name the real oracle",
+    "20e5cb11: docs(0.8.20 Slice 23 leg 2): TC-90/TC-91 CHARACTERIZATION — no fix, lib.rs byte-identical",
+    "d339bdb0: docs(0.8.20 Slice 23 fix-2): TC-90/TC-91 — assert the protocol, narrow the claim (codex §9 round 4; TEST- AND DOC-ONLY, lib.rs byte-identical to 94f09d7d, allowlist delta 0)",
+    "b79e22f0: docs(0.8.20 Slice 23 fix-3): TC-90/TC-91 — pin 3 stops racing; the last overclaims go (codex §9 round 5; TEST- AND DOC-ONLY, lib.rs byte-identical to 94f09d7d, allowlist delta 0)",
+    "151c0b45: test(0.8.20 Slice 23 fix-4): TC-90/TC-91 — pin 3's hold now provably spans the measured call (codex §9 round 6 finding 1; TEST- AND DOC-ONLY, lib.rs byte-identical to 94f09d7d, allowlist delta 0)"
+  ],
+  "findings_addressed": [
+    "fix-1 FINDING 1 [P2] (codex §9 round 2) — Python and TS under-covered the LEGACY case. Rust pinned the at-rest legacy behaviour in `slice23_spec_validation_reject.rs::a_legacy_registry_row_reads_back_verbatim_but_no_longer_re_applies`; Python and TS asserted only the NEW-spec rejection plus the control. CONFIRMED BY READING BEFORE IMPLEMENTING and accepted as the orchestrator framed it: the rejection path is the one nobody in the field is on yet, and the legacy path is the one a real Memex/consumer database hits on upgrade — under-covering it in exactly the two SDKs consumers use is the wrong asymmetry, and X1 parity is a release gate, not a follow-up. Both bindings now seed the legacy `{filterable} + fts + vector` registry row through a raw SQLite INSERT on `_fathomdb_projection_registry` (`_seed_legacy_registry_row` in Python, `seedLegacyRegistryRow` in TS, mirroring the Rust `seed_legacy_registry_row` column-for-column, same encoding — `fts_tokenizer = ''` is an `fts` sub-object with the DEFAULT tokenizer, NULL is no sub-object) and assert the SAME three oracles as Rust: (a) `read.projections` reports the row VERBATIM (name, roles = {filterable}, fts, vector), (b) feeding that output straight back into `configure_projections` raises `WriteValidationError` / `FDB_WRITE_VALIDATION` — the shipped fix-4 read→configure round-trip, broken by design for this population, (c) adding the `searchable` role is the remedy and the rest of the declaration is untouched. NO per-binding semantics invented. ORDERING DISCIPLINE APPLIED, per the FLAKE this slice had already found and removed: both seeds run on a CLOSED database, between `close()` and the next `Engine.open` — never between `configure_projections` and `drain`, where a raw RW connection perturbs the dispatcher into a duplicate embed (the TC-91 class, passes in isolation and fails in a full run). Both helpers carry that reason in their doc-comments so the trap is not re-entered. New counts: Python 267→268 passed, TS 250→251 passed.",
+    "fix-1 FINDING 2 [P3] (codex §9 round 2) — `deferred_only_mutation_is_reported_not_unchanged` had become misnamed with a decorative primary oracle. CONFIRMED, and then VERIFIED BY MUTATION rather than by argument: temporarily re-adding the pre-fix conjunct `desired.has_deferred() && !existing.has_deferred()` to `lib.rs` makes the test fail with `ProjectionDelta { built: [\"importance\"], dropped: [], deferred: [], unchanged: false, vector_unsupported_kinds: [] }` — which demonstrates BOTH halves of the finding in one run: the pin (`second.deferred.contains(..)`) fails, while `!second.unchanged` passes because the promoted spec carries `searchable` ⇒ `desired.wants_eav()` ⇒ `delta.built` is pushed regardless of the deferred guard. Mutation reverted and the revert verified by grep + a clean re-run. REMEDY, per AGENTS.md 'stale > missing': renamed to `a_changed_registry_row_reports_its_deferral_even_when_already_deferred`; `second.deferred.contains(..)` is marked THE PIN at its assertion site; `!second.unchanged` is marked NOT LOAD-BEARING UNDER THIS CONSTRUCTION with the reason spelled out, and kept only as a whole-delta consistency check. The doc-comment's structural 'the pure deferred-only mutation is unconstructible through the public verb' argument is UNCHANGED — codex verified it TRUE, so it stands as written. RENAME SAFETY: the old spelling had no other reference in the tree (the only other hits are historical `dev/plans/runs/*.json` and a codex log, which record what was true when they ran and are deliberately left alone); the new doc-comment names the old spelling explicitly, so a grep on it still lands on this test.",
+    "R-20-SV, the fts/vector reject (HITL ruling 2026-07-24, plan-0.8.20.md §11 item 4, option (b) REJECT). `apply_projection_config` now refuses any ProjectionSpec carrying an `fts` or `vector` sub-object whose `roles` lacks `Searchable`, with `EngineError::WriteValidation` — decision #18's write-SHAPE family, cited not re-decided. Nine lines of engine logic in a SEPARATE loop after the existing name checks, so the InvalidArgument/WriteValidation split stays visible in the code and the change is one-line-reversible. Keyed on the ABSENCE of `searchable` ALONE (filterable/rankable are orthogonal). A rejected request is a TOTAL no-op. read_projections is unaffected.",
+    "TC-39 class — dev/interfaces/rust.md cited the now-OVERRULED accept-inert position as precedent for `dense_readiness` accept-inert. Corrected in all three interface docs AND in the engine doc comment on `ProjectionVector::dense_readiness`. `dense_readiness` accept-inert itself is UNCHANGED and now stands on its own footing (engine-set READ METADATA); only the citation was wrong.",
+    "dev/design/errors.md self-contradiction — resolved as the orchestrator directed, verified against the code first. The 'Validation boundary' line read 'a malformed `ProjectionSpec` / `drop` name', which parses two ways; only the ProjectionSpec-NAME / drop-NAME reading is true of the code, and it now says so explicitly. Added: the R-20-SV shape reject and its family, the TC-95/TC-98 diagnostic cost, and a SECOND flagged-not-fixed inconsistency (below).",
+    "X3 — CHANGELOG.md BREAKING entry (before/after matrix per language, the reason, the diagnostic cost, the migration) plus a narrowing of the decision-#18 entry's now-stale 'Unaffected … projection-spec and `drop` rejections' line to NAME rejections.",
+    "Nine existing tests converted to the legacy-stored-row route (5 slice21c + 3 tc71_fix1 + 1 slice15d). None deleted, none weakened; every oracle unchanged; each converted test asserts the reject in place so it states why it takes the back door.",
+    "LEG 2 / TC-90 (seq-128, p1) — CHARACTERIZED, REPRODUCES 10/10, NO FIX. The ledger claim is CORRECT on the code: `Engine::transition` opens `connection.transaction()` (rusqlite BEGIN DEFERRED, lib.rs:8221), reads first (`SELECT state, write_cursor, body FROM canonical_nodes ...`, lib.rs:8229) and writes second (`UPDATE canonical_nodes SET state = ?1 ...`, lib.rs:8259) — structurally identical to commit_batch's pre-TC-57-fix shape. What it ALSO has, and commit_batch did not, are two mitigations: a `drain(30s)` before the transaction (lib.rs:8217) and the shared writer-connection mutex (lib.rs:8219, same mutex write_inner takes at lib.rs:5051). Those narrow the in-process window to the gap between `drain` returning and the mutex being acquired. MEASURED at 94f09d7d, N=10 per arm: stress repro (2 writer threads x 24-row bursts, 1 ms pace, 0 ms embed) 10/10 FAILED, mean 5.9 EngineError::Storage per 40 transitions = 14.8 %, scheduler_errors 0 and other_errors 0 in every run; stress control (identical load, no vector kind ⇒ no second writer) 0/10 with embed_calls 0.",
+    "LEG 2 / TC-90 — THE NEGATIVE THAT WAS NEARLY FILED. The TC-57-shaped PACED arm (1 writer, 1 row per write, 3 ms pace, 2 ms embed) is 0/10 over 1200 transitions with a live worker, and its control is 0/10. Reporting only that arm would have been a clean, well-measured, completely FALSE negative. The governing parameter is the EMBED DELAY: the worker cannot hold the write lock until at least one embed latency after the competing write released the connection mutex, whereas `transition` travels from acquiring that mutex to its promoting UPDATE in microseconds. Setting embed delay to 0 collapses the offset and the defect appears 10/10. General lesson recorded in the doc §2.4: a 0/10 at one load shape is not evidence of absence — name the parameter that governs the window and vary THAT.",
+    "LEG 2 / TC-90 — MECHANISM CAPTURED, NOT ASSUMED (the TC-57 §0 lesson applied). `transition` is WORSE than commit_batch on the error path: it maps every rusqlite error through `.map_err(|_| EngineError::Storage)` and never calls `emit_sqlite_internal_error`, so the numeric code is not merely opaque to the host — it is never produced, and no lifecycle sink can capture it. The mechanism was therefore pinned DETERMINISTICALLY by holding the write lock rather than racing for it. `tc90_mechanism_transition_sql_shape_on_real_schema_is_busy_5` replays transition's two statements character-for-character against a REAL engine-created `canonical_nodes`, with a 5 s busy timeout and a counting busy handler installed: primary=DatabaseBusy, EXTENDED code = 5 (plain SQLITE_BUSY, NOT SQLITE_BUSY_SNAPSHOT/517), busy handler invoked ZERO times, returned in 0 ms. Identical to TC-57's Exit B. A fix scoped to retrying 517 would ship INERT here too. 517 never observed; treated as reachable-but-unobserved, same as TC-57 §2.4.",
+    "LEG 2 / TC-90 — DOES TC-57's R1 (BEGIN IMMEDIATE) TRANSFER? MEASURED, NOT ASSUMED, as the brief required. Two pins apply the IDENTICAL contention (one external connection holding the WAL write lock) and differ only in which engine entry point is called: `Engine::transition` (BEGIN DEFERRED, read-then-upgrade) returns Err(Storage) in 0 ms; `Engine::write` (already BEGIN IMMEDIATE since Slice 21a-2, lib.rs:18637) WAITS 834 ms for the lock and SUCCEEDS. Same database, same contention, same 5 000 ms default busy timeout, opposite outcomes. That is direct evidence the remedy is applicable — but §7 R-A also records the measured reason it is NOT free: making the engine the lock holder more often is exactly the input that drives TC-91's worker-side commit loss, so R-A alone could reduce TC-90 while INCREASING TC-91 duplicates. Enumerated, not implemented.",
+    "LEG 2 / TC-90 — A SECOND, DISTINCT DEFECT FOUND WHILE BOUNDING AN ARM, recorded and NOT folded into TC-90. At fully saturating load (writer_pace_ms 0) `transition`'s own `drain` NEVER reaches idle: in 181 seconds the loop issued 5 transitions of which 4 failed with EngineError::Scheduler, each having burned the full LIFECYCLE_DRAIN_TIMEOUT_MS (30 s), while 596,928 competing rows landed. This is an AVAILABILITY property of the drain-then-act design, not the promote race: under sustained write pressure a lifecycle verb can be starved indefinitely, one 30-second timeout at a time, and the caller sees an opaque Scheduler error. `configure_projections` (lib.rs:8332), `purge` (lib.rs:8441/8443) and the verb at lib.rs:8646-8648 take the same drain-first path and are PRESUMED to share it — NOT measured, flagged. The shipped arms use writer_pace_ms 1 so drain can still reach idle, hence scheduler_errors 0 across all 10 stress runs.",
+    "LEG 2 / TC-91 (a) (seq-129, p2) — THE ~50 % BASELINE DUPLICATE RATE, CONFIRMED AT HEAD WITH THE PROBE CONTRIBUTION SEPARATED. Definition counted: every row carries a UNIQUE body, the embedder records the exact `text` of every embed() call, and a duplicate is an embed call beyond the FIRST for any single text — a count, not an inference from a total. MEASURED N=10 per arm at 94f09d7d: governed (logical_id: Some) 102-106 duplicates over 200 rows, mean 104.0 = 52.0 %; anonymous (logical_id: None) 103-110, mean 105.0 = 52.5 %. Indistinguishable (0.5 pp apart, inside spread), and the anonymous path has no read-then-upgrade window at all — so the ledger claim that this is NOT the TC-57 race is CONFIRMED. In all 20 runs ingest_distinct == 200, vector_rows == 200, up_to_date_terminals == 200, failed_terminals == 0, failure_audit_rows == 0.",
+    "LEG 2 / TC-91 (a) — THE MEASUREMENT TRAP, DISARMED FIRST AND VERIFIED RATHER THAN ASSUMED. Two defences, both mechanical: (i) every duplicate arm runs inside a SINGLE open of a fresh workspace whose embed log starts empty — `_fathomdb_vector_kinds` is empty at open so `run_vector_equivalence_probe` returns early (lib.rs:15348-15353) having embedded nothing, and the kind is enrolled AFTER open; (ii) every body carries the marker `tc91marker` which no probe text contains, ingest and probe embeds are counted separately and NEVER summed, and EVERY duplicate arm asserts `probe_calls == 0` so a broken separation fails the arm instead of silently contaminating the number. Measured probe contribution: 0 in all 20 duplicate runs.",
+    "LEG 2 / TC-91 — A STALE FIGURE THIS REPO CARRIES, CORRECTED BY MEASUREMENT AT HEAD. The ledger note describing 45 probe re-embeds on every open PREDATES TC-68's landing in Slice 22 (572475f2), so it was not inherited as a constant. `tc91_probe_embed_cost_per_open_at_head` measures three consecutive opens of one workspace as DELTAS (per seq-125: absolute embed counts are unusable as an oracle across a reopen): open 1 (fresh, no vector kind) = 0; open 2 (vector kind present, probe table empty ⇒ populate 45 + check 45) = 90; open 3 (TC-68 fingerprint verdict cache live) = 0. TC-68 took the steady-state reopen probe cost to ZERO, not merely reduced it. The 90 on the population open is unchanged and still must be subtracted; the 45-per-open figure is NO LONGER TRUE for any open after that. The test asserts open3 < open2 rather than == 0, so an unrelated fingerprint change does not read as a defect.",
+    "LEG 2 / TC-91 (b) — THE SILENTLY DISCARDED WORKER COMMIT, LOCATED, QUOTED AND PROVEN BLIND BY A FORCED-FAILURE EXPERIMENT. Call sites: `let _ = commit_projection_outcomes(connection, &outcomes, shared);` at lib.rs:12711 (run_projection_jobs) and lib.rs:12824 (commit_projection_panic_failures). Both discard a rusqlite::Result<()> — no error, no log, no telemetry, no counter. THE DURABLE POINT: a 'failed' terminal and a projection_failures audit row are written ONLY by the ProjectionOutcome::Failure arm (lib.rs:13962-13984), which represents an EMBED failure; a COMMIT failure never reaches that arm at all — the transaction rolls back, the row keeps terminal IS NULL, the worker sets pending_scan = true (lib.rs:12663), the dispatcher re-fetches and the row is embedded AGAIN. Therefore COUNTING 'failed' TERMINAL STATES IS STRUCTURALLY INCAPABLE OF SEEING THIS FAILURE CLASS, because the failure never reaches a terminal state at all; any future attempt to quantify worker reliability that way reports a FALSELY CLEAN ZERO no matter how many commits are lost. PROVEN by holding the WAL write lock from an ordinary second connection (BEGIN IMMEDIATE) for 1 500 ms over a 96-row batch: N=10, duplicate embeds 80-96 (mean 86.4, ~90 %), 32 distinct rows re-embedded in EVERY run, while failed_terminals == 0 AND failure_audit_rows == 0 in EVERY run. vector_rows == 96 throughout — this is WASTED WORK and an OBSERVABILITY hole, not data loss. The test asserts the blindness (counters zero WHILE duplicates non-zero), so a green run means work was computed, thrown away, recomputed, and the terminal census reported a perfectly clean run.",
+    "LEG 2 / TC-91 — MECHANISM IDENTIFIED: (a) IS (b), DRIVEN BY THE ENGINE'S OWN WRITER. `tc91_mechanism_duplicate_rate_versus_write_cadence` runs the same 60 governed rows twice varying ONLY the spacing between Engine::write calls: tight (1 ms) = 31-33 duplicates, mean 32.5 = 54.2 %; spaced (25 ms) = 0 in all 10 runs. The §5.4 control (one 96-row batch, no concurrent writer) is also 0. So a duplicate REQUIRES a second writer holding the WAL write lock across the worker's commit: commit_batch holds BEGIN IMMEDIATE (lib.rs:18637, the TC-57 fix) for the duration of every write, while commit_projection_outcomes (lib.rs:13809) is a DEFERRED read-then-upgrade (reads at :13813 and :13828 before its writes at :13863), so when they overlap the worker's promotion is refused with plain SQLITE_BUSY and `let _ =` discards the outcome. THE ~50 % IS A PROPERTY OF THE WRITE CADENCE, NOT A CONSTANT OF THE SCHEDULER — quoting it without the cadence it was measured at is not meaningful. This also closes TC-57 §7 uncertainty 3 in a direction that document could not see: its §8.2 measured worker pressure only RELATIVELY (before vs after the caller-side fix) and had no no-concurrency baseline, so it could not show that the ~104/200 it recorded as 'pre-existing' was already this defect.",
+    "LEG 2 / TC-91 (c) — TC-57 REMEDY R2 CARRIED FORWARD IN THE DOC ONLY, as instructed. R2 (bounded retry on the busy codes in the caller path) remains UNIMPLEMENTED pending the error-path restructure it depends on (commit_batch's rusqlite::Error is discarded at lib.rs:5096-5099, so there is nothing to branch on). R1 shipped and closed the measured defect, so R2 is AN OPTION, NOT AN OBLIGATION (TC-57 §8.4). TC-90 does not change that verdict but adds one data point: transition's error path is WORSE than commit_batch's (no lifecycle event at all), so if the restructure is ever undertaken transition should be in its scope. Recorded as R-E, lower priority than R-A/R-B/R-C, not recommended for 0.8.21 on its own.",
+    "fix-2 FINDING 1 [measurement-trust] (codex §9 round 4) — the TC-90 stress-arm non-vacuity assertions were too weak to defend the protocol. `tc90_transition_write_race.rs:599` asserted only `attempted > 0` and `storage_errors == 0`; it did NOT assert `attempted == STRESS_TRANSITIONS`, `truncated == false`, `scheduler_errors == 0` or `other_errors == 0`. CONFIRMED BY READING: a run that issued ONE transition, or truncated at its wall-clock budget, or was dominated by `Scheduler` drain timeouts, would have satisfied the eventual 0.8.21 green bar (design doc §4) WITHOUT ever measuring the 40-transition promote race the doc documents at characterization line 168. The numbers were in the report but not in the code. FIX: a new shared `assert_protocol_ran(outcome, expected_transitions)` pinning `attempted == transitions`, `truncated == false`, `competing_writes > 0`, `scheduler_errors == 0`, `other_errors == 0`. Applied to ALL FOUR arms, not only the two codex named — the PACED pair asserted no `Scheduler`/`other` counts either, so the same weakness existed there and generalizing the helper was the smaller change than fixing half of it. Deliberate consequence recorded at `ArmConfig::budget` and in design doc §2.1: the budget becomes a safety valve whose USE IS A FAILURE, not a licence to measure less. RE-MEASURED N=10/arm after tightening (session B): stress repro 10/10 reproduce with `attempted=40 truncated=false scheduler_errors=0 other_errors=0` in every run and the failure landing on the `storage_errors` oracle (i.e. every protocol assertion passed first); stress control 0/10; paced repro 0/10; paced control 0/10. NO assertion was loosened.",
+    "fix-2 FINDING 1 COROLLARY [new finding, surfaced BY the re-measurement] — the TC-90 per-run failure RATE does not replicate across sessions, though the reproduction rate does. Session A (first draft): 3,4,10,3,6,6,5,5,8,9 → mean 5.9/40 (14.8 %). Session B (after tightening, same commit, same machine, quiet): 8,4,4,1,4,2,4,4,3,4 → mean 3.8/40 (9.5 %). The arm reproduced 10/10 in BOTH sessions — that is the stable, load-bearing result. Reported rather than smoothed over: the design doc no longer quotes '14.8 %' anywhere, quotes the pooled range 1–10 failures per 40 transitions (N=20), and §4's acceptance bar now explicitly says to judge the 0.8.21 fix on the REPRODUCTION rate. Logged as §8 unsure-item 7 (I did not chase what varied) and as §6 item 7 (what this characterization did NOT establish).",
+    "fix-2 FINDING 2 [measurement-trust] (codex §9 round 4) — the corrected TC-68 figure was not pinned. `tc91_...:547` asserted only `open3_probe_embeds < open2_probe_embeds` while the design doc (line 369) presents a measured `0 / 90 / 0` and corrects the record's stale 45. CONFIRMED: a regression back to 45 on open 3 would still have passed (`45 < 90`) while the doc continued to publish 0 — and this document is CORRECTING a figure other agents subtract, so a wrong correction is worse than the stale figure it replaces. FIX: the exact assertion, as the steward asked for. `open1 == 0`, `open2 == POPULATION_OPEN_PROBE_EMBEDS` (= `PROBE_FIXTURE_SIZE` 45 × 2 = 90), `open3 == 0`. MEASURED 20/20 IDENTICAL with ZERO variance, so no instability caveat is warranted and none is claimed. The 90 derives from the checked-in `vector_equivalence_probes.txt`, so it has no run-to-run variance at all — only a deliberate fixture edit moves it, and the assertion's failure text says such an edit must move the doc's quoted figure with it. Design doc §5.2's paragraph DEFENDING the weak assertion ('pinning the exact zero would make an unrelated fingerprint change look like a defect') is replaced by an explanation of why that reasoning was wrong, since it is the same error §0 of the TC-57 doc warns about, in miniature.",
+    "fix-2 FINDING 3 [scope claim] (codex §9 round 4) — the new targets were not fully ignore-gated, and the deliverable's scope claim did not match the tree. CONFIRMED exactly as codex and the steward framed it: a documentation/claim mismatch, not necessarily a defect. NOT reflexively `#[ignore]`d. Decided deliberately per target and WRITTEN DOWN, in a new design-doc §3.4 (a per-target table plus the evidence) and a 'Test profile' inventory in BOTH module headers. Inventory: 13 new tests, 9 `#[ignore]`d, 4 live — which is exactly what the default profile reports (4 passed / 0 failed / 9 ignored). KEPT LIVE: the three `tc90_mechanism_*` pins, on the same basis TC-57's own `tc57_mechanism_*` pins run that way — none of them races, the contending write lock is TAKEN AND HELD by a second connection across the whole measured call, so the outcome is decided by SQLite's documented promotion behaviour rather than by scheduling. Pin 3 is the only target with a thread and the only genuine judgment call; it is kept live because it is the load-bearing evidence that TC-57's R1 remedy transfers (§3.3) and a 0.8.21 fix scoped against R-A would otherwise be reasoning from a test nobody runs. Its margin is MEASURED, not argued: 20 consecutive default-profile runs gave 832–838 ms (spread 6 ms) against a `>= 450 ms` assertion, with the holder SLEEPING 900 ms (so early release is impossible by construction) and ~4.1 s of slack under the 5 000 ms busy timeout. Written at the site and in §3.4: IF IT EVER FLAKES, GATE IT — DO NOT WIDEN THE BOUND. Also kept live: `tc91_probe_embed_cost_per_open_at_head`, which IS a measurement and is the one place the 'all characterization arms are gated' shorthand was untrue — deliberate, because it is sequential and deterministic (no thread, no wall-clock assertion, every drain awaited) and gating it would put the corrected `0/90/0` figure this document publishes behind a flag nobody runs.",
+    "fix-2 FINDING 4 [OVERCLAIM — the important one] (codex §9 round 4) — TC-91's causal language exceeded its instrumentation. Characterization line 488 asserted 'TC-91 (a) IS TC-91 (b)' and 'a duplicate requires a second writer holding the WAL write lock across the worker commit'. CONFIRMED as an overclaim and REWRITTEN to the narrower, defensible claim across §0 item 4, §5.5 (restructured into 5.5.1 MEASURED / 5.5.2 HYPOTHESIS / 5.5.3 what would close it / 5.5.4 TC-57 uncertainty 3), §5.4's heading, §5.6 item 8, §6 item 6, §8 unsure-item 1 (PROMOTED to first), the tc91 module header, and the mechanism test's doc-comment. WHAT IS MEASURED AND KEPT: (1) the duplicate rate is CADENCE-SENSITIVE under this 1 ms embed / 1 ms write shape — 32.5/60 tight, exactly 0/60 at 25 ms spacing, 0/96 for one batch with no concurrent writer; (2) an externally held WAL write lock makes discarded worker commits INVISIBLE — 86.4/96 duplicates while `'failed'` terminals and `projection_failures` rows both read zero. WHAT IS NOT ESTABLISHED: that a duplicate REQUIRES that overlap, or that (a) is (b) in all cases. The reason is now stated in the doc as a durable finding in its own right: THERE IS NO DIRECT INSTRUMENTATION OF WORKER COMMIT FAILURES IN THE BASELINE DUPLICATE ARMS, BECAUSE THE DEFECT UNDER STUDY IS PRECISELY THAT THOSE FAILURES ARE DISCARDED by `let _ =` — i.e. TC-91 (b) IS THE REASON TC-91 (a) CANNOT BE CLOSED BY MEASUREMENT. That is a limit on what could be OBSERVED, not a proof of identity; the forced-lock arm supplies the holder EXTERNALLY, so it reproduces the mechanism and proves the blind spot but cannot attribute the baseline population. §5.5.3 names R-C as what converts the hypothesis into a measurement (the main reason it is recommended first), and §4 bar item 9 plus §5.6 item 8 now FORBID scoping a 0.8.21 fix against the unproven identity, citing TC-57 §0: the prior write-ups were confidently wrong about 517 and a fix would have shipped inert.",
+    "fix-3 ITEM 1 [determinism — the only round-5 finding with teeth] (codex §9 round 5) — live pin 3 was timing-sensitive AND sat in the DEFAULT merge gate. `tc90_transition_write_race.rs:995` started the blocker thread, slept a fixed 100 ms, and then ASSUMED the blocker held the WAL write lock. CONFIRMED BY READING: under loaded scheduling the writer can reach `BEGIN IMMEDIATE` before the blocker ever acquires the lock, and `elapsed >= HOLD / 2` then fails while the engine is behaving correctly. The fix-2 evidence (20 runs, 832-838 ms) measured the HAPPY path only; it does not bound the LOST-RACE path, which is exactly what a loaded CI box produces. It also made the design doc's 'the lock is HELD, not raced' framing (§3.4) untrue of pin 3's own setup. Given TC-72 (~1 workspace run in 3 already fails on plain `main`), a sleep-timed assertion in the merge gate is the wrong direction. FIXED AT THE ROOT RATHER THAN GATED, as the steward directed: the blocker now SIGNALS on a `std::sync::mpsc` channel AFTER its `BEGIN IMMEDIATE` has returned and it has written under the lock, and the main thread blocks on `recv_timeout(READY_TIMEOUT)` before it starts timing; `HOLD` begins at that same instant. The lock therefore genuinely IS held for the whole measured call — the property pins 1 and 2 get from being single-threaded — so the pin stays LIVE and honest and the §3.4 framing is now true of all four live targets instead of three. `READY_TIMEOUT` is 30 s and is NOT a timing assertion: it exists so a blocker that never starts fails LOUDLY instead of hanging the suite. INVENTORY UNCHANGED at 13 tests / 9 ignored / 4 live — nothing was gated, so neither §3.4 nor either module header needed a count change. RE-MEASURED N=10 after the rework: 10/10 green, pin 3 at 931-937 ms (a second confirming N=10: 932-937). The spread is 6 ms, the SAME as the sleep version — the rework did not tighten the happy path and was never meant to; what it removed is the UNBOUNDED path, which no number of quiet-machine runs can bound. Under a deliberate 24-way CPU load on a 24-thread box, 10 further runs stayed green at 934-941 ms, still more than double the 450 ms bound. The measured wait moved 834 -> ~935 ms for the expected reason (the 900 ms hold now begins when the writer does, instead of overlapping a 100 ms head start, plus the writer's own ~35 ms), so every stale 834 in the doc — §0 headline item 3, §3.3's pin table, §3.3's prose — was corrected rather than left to rot. `Mutex` import dropped (the `released` flag it guarded was write-only and is gone).",
+    "fix-3 ITEM 2 [residual overclaim] (codex §9 round 5) — the TC-91 module header still contradicted its own corrected body. Line 3 said the two defects 'share one mechanism' and line 66 said 'MEASURED ... and (a) turns out to BE (b)', both stronger than the hypothesis language at lines 92-103 of the SAME file and than design-doc §5.5.2. CONFIRMED and brought into line: the header now says two defects on the same code path which the file HYPOTHESISES — but does not establish — share one mechanism, pointing at 'What those numbers DO and DO NOT prove' and §5.5.2; and the results table is headed plainly 'MEASURED at 94f09d7d' with an explicit note that the counts do NOT license the identity claim.",
+    "fix-3 ITEM 3 [residual overclaim in an assertion message] (codex §9 round 5) — `tc91_...:519`'s failure text asserted 'The variable is write CADENCE - i.e. how often the engine's own ... writer holds the WAL write lock' and 'If this ever becomes non-zero, a SECOND duplicate source exists'. CONFIRMED: the arm manipulates SPACING and never observes a baseline worker commit failing — `let _ =` (lib.rs:12711) discards precisely that signal — so it can establish neither the IDENTITY nor the UNIQUENESS of the source. Reworded to cadence sensitivity plus an explicitly NAMED hypothesis, with the reason it cannot see the failure stated inline; the trip condition is now 'the cadence sensitivity itself has changed', not 'a second source exists'. The test's doc-comment headline 'the causal experiment' became 'the CADENCE experiment ... a question it narrows but does not answer'. Same correction applied to the R-A remedy sentence in design doc §7, which said writer/worker overlap is 'exactly what drives' the duplicate rate: it now says §5.5.1 measured strong cadence SENSITIVITY, which IMPLICATES overlap as the driver without observing it, for the §5.5.2 reason.",
+    "fix-3 ITEM 4 [PARTLY WRONG AS CODEX FRAMED IT — three of five sites KEPT, and the steward was right] (codex §9 round 5) — codex flagged the rate figures at characterization lines 191-200 and 835 as residual rate-derived claims that should be removed. INSPECTED ALL FIVE SITES; four are the DISCLOSURE, not the claim, and deleting them would have destroyed the transparency fix-2 added. KEPT AS IS: lines 193-195, the two-session table (A 5.9 / B 3.8 / pooled 1-10, mean 4.9) which IS the non-replication disclosure; line 200, which literally reads `not as \"14.8 %\"` and is therefore the correction rather than the claim; line 707, which sits under 'what I am unsure about' and lists ~14.8 % as a figure NOT to trust — the right place for it. FIXED: line 835 only, where 'A ~12 % failure rate under stress is bad' used a loose settled quantity inside an open-question section. Restated against §4's reproduction-rate bar: 'a verb that fails under stress in 10 of 10 runs, at 1-10 failures per 40 transitions and a per-run count that moved between sessions on the same commit (§2.2 — so do not read a single percentage off it)'. A characterization's honesty lives in its disclosed instabilities; stripping them to satisfy a 'remove the percentage' instruction would have been the same defect class in the opposite direction. No evidence was found that the steward mis-scoped any of the four sites.",
+    "fix-4 ITEM 1 [the round-6 residual — CLOSED BY CONSTRUCTION, path (a), no fallback needed] (codex §9 round 6, the ONLY finding left open; codex closed items 2/3/4 outright). The readiness signal introduced in fix-3 was correctly PLACED and READY_TIMEOUT is correctly a hang-guard, but at tc90_transition_write_race.rs:1021-1022 the holder called `ready_tx.send(())` and IMMEDIATELY began `sleep(HOLD)`. The window between the main thread's `recv_timeout` returning and `started = Instant::now()` was unguarded: a ~485 ms deschedule there released the lock before the measured `engine.write` began and `elapsed >= HOLD/2` would fail on a CORRECT engine. CONFIRMED BY READING before touching anything. FIXED with a two-phase handshake `ready` -> `ack` -> hold: the holder announces the lock and then WAITS; the main thread receives `ready`, takes `started = Instant::now()`, and ONLY THEN sends `ack`; the holder begins `sleep(HOLD)` on the ack. Because `started <= ack sent <= ack received = hold begins`, the lock is released no earlier than `started + HOLD`, and the measured call cannot return before that release because it needs the very lock the holder is sitting on. A main-thread stall before the ack only makes elapsed LARGER; a holder stall after it only extends the hold. Neither can shorten it. Both waits keep the 30 s READY_TIMEOUT hang-guard and `holder.join()` is now CHECKED so a panicking blocker surfaces as a panicking test rather than being swallowed by `let _ =`. The bound was NOT loosened and the pin was NOT gated.",
+    "fix-4 ITEM 2 [the two mandated overclaim corrections — landed on their own merits, not contingent on ITEM 1]. (i) The source comment 'no scheduling race decides whether this pin passes' (tc90_transition_write_race.rs ~line 1005) is GONE — grep count 0 — replaced by the explicit happens-before argument plus a paragraph naming what is NOT claimed (the pin is not timing-free; it still asserts a wall-clock lower bound against the 5 000 ms busy timeout). (ii) 'an early release is impossible by construction' in the characterization doc §3.4 table is GONE — grep count 0 — replaced by 'release cannot precede `started + 900 ms`, by the ordering above', which is the precise claim the construction actually supports. §6 gains a new item 8 stating outright that pin 3 is NOT established to be free of wall-clock dependence. This is the TC-57 §0 error class (517 vs 5) and it was in the document written to prevent it.",
+    "fix-4 ITEM 3 [finding A made the HEADLINE — the false negative is now §0.1, ahead of every engine result]. The design doc's §0 was restructured into §0.1 (protocol) and §0.2 (engine). §0.1 states in a table that the TC-57-shaped paced repro reports 0/10 — 'the bug does not exist' — against the stress arm's 10/10 with a 0/10 control at identical load, then draws two consequences explicitly: (1) THE TC-57 TEMPLATE WAS INSUFFICIENT, IT NEEDED A STRESS ARM, and an agent told to 'follow the TC-57 template' and nothing else would conclude Engine::transition is clean and would be wrong — with the reason (commit_batch had no mitigations; transition has two, narrowing the window to microseconds a paced repro cannot hit); (2) REPRODUCTION IS THE BAR, NOT RATE, because 5.9/40 vs 3.8/40 across two sessions on the same commit and machine shows the rate is not stable enough for any threshold to gate on. The same finding was added to the tc90 module header so it is visible to an agent who never opens the design doc.",
+    "fix-4 ITEM 4 [finding B given its OWN numbered finding, not a footnote to the race]. §0.2 finding 2 is now: Engine::transition never calls emit_sqlite_internal_error, so the extended code is NEVER PRODUCED AT ALL. Framed as a DIAGNOSABILITY defect distinct from the concurrency defect — different cause, different blast radius, different and cheaper fix — with the forward-looking consequence stated: the next agent investigating a transition failure will look for the numeric code and find that nothing anywhere ever emitted it, with no signal distinguishing 'not captured here' from 'never produced'. §3.1 was expanded with the same framing and with why it forced §3.2/§3.3 to pin the mechanism from a SECOND CONNECTION rather than from the engine's own report. R-C gained a caller-side companion bullet so the remedies list is not silent on a named defect — one call, no taxonomy decision, no transaction semantics, and it must not wait on R-A.",
+    "fix-4 ITEM 5 [finding C preserved as a hypothesis, with an explicit anti-tidying instruction]. §0.2 finding 4 now separates the two MEASURED TC-91 results from the identity claim and states the honest form: '(a) is not proven to be (b), and the reason it cannot be closed by measurement IS (b)' — the discarded commit leaves no trace to measure, which is the content of (b) itself — followed by 'Do not tidy this into a conclusion in a later revision.' This is consistent with, and cross-references, the already-correct §5.5.2 and §6 item 6.",
+    "fix-4 ITEM 6 [in-scope correction found while editing]. The design doc referred to its own '§8' in three places (at the §2.5 triage note, at the end of §3.3, and in §6's preamble) but the document ends at §7. Retargeted to §7's 'What I am unsure about' and to §6 respectively. Dangling self-references make the next investigation harder, which is the theme of the whole revision. References to TC-57's §8.x are a different document and were left alone."
+  ],
+  "conflicts": [
+    {
+      "id": "error-family-for-the-R-20-SV-reject",
+      "what_happened": "The orchestrator initially OVERRODE the implementer and ruled the reject should be `EngineError::InvalidArgument`, on the strength of dev/design/errors.md's 'Validation boundary' section (a general 2026-07-28 passage listing 'a malformed ProjectionSpec / drop name' under InvalidArgument, naming no requirement id). The implementer HALTED rather than comply and surfaced three sources that name R-20-SV BY ID and settle the family on WriteValidation: dev/design/errors.md:26-32 (the 2026-07-29 R-20-SV traceability note, added in the commission commit b0ac02b5 itself), dev/plans/runs/STATUS-0.8.20.md:45, and dev/plans/plan-0.8.20.md:257. All three are later and more specific than the counter-evidence. The orchestrator verified the evidence independently and WITHDREW the override.",
+      "resolution": "IMPLEMENTED AS `EngineError::WriteValidation`, per decision #18 (0.8.20 Slice 22). CLOSED — do not re-open. The orchestrator recorded the cause on its own side as re-deciding a ruled decision instead of citing it.",
+      "why_this_is_here": "The codex §9 reviewer will read errors.md and hit the same apparent contradiction. This is the audit trail. errors.md itself is now fixed so the contradiction does not survive into the review."
+    }
+  ],
+  "blockers_encountered": [
+    {
+      "id": "HALT-1-error-family",
+      "description": "Orchestrator override of the settled error family (see `conflicts` above).",
+      "resolution": "Resolved before code. Override withdrawn; WriteValidation implemented."
+    },
+    {
+      "id": "HALT-2-rankable-axis",
+      "description": "Whether an `fts`/`vector` sub-object accompanied by `rankable` (rather than `filterable`) should also reject, i.e. whether the reject keys on the absence of `searchable` or on the presence of `filterable`.",
+      "resolution": "ACCEPTED as the implementer proposed: sub-objects belong to `searchable` ALONE; reject on the absence of `searchable` regardless of the other roles. Evidence: lib.rs:3865-3869 (three roles; fts/vector are TIER LABELS), :3879-3881, TC-71's `wants_vector` doc — 'the sub-object SELECTS a sub-target of `searchable`; it does not confer one' — and §11 item 4's own 'meaningless config'. Pinned by `the_reject_is_keyed_on_searchable_alone_not_on_the_other_roles`, which sweeps 3 non-searchable role sets x 3 sub-object combinations = 9 cases, so the fix cannot be mis-implemented as 'reject only when filterable'."
+    },
+    {
+      "id": "MECHANICAL-LIMIT-deferred-only-mutation",
+      "description": "`slice15d_projection_registry.rs::deferred_only_mutation_is_reported_not_unchanged` (0.8.20 Slice 15e fix-2 finding 2 [P2]) CANNOT be reconstructed as a deferred-ONLY mutation — not by the legacy-stored-row route, not by any route. PROOF: 'deferred-only' requires `!desired.wants_eav()`, i.e. `desired.roles ⊆ {Rankable}`; a non-destructive change can only ADD roles, so `existing.roles = desired.roles = {Rankable}`; the change must therefore be in `fts`/`vector`, and every such spec is now rejected. Reported as instructed rather than worked around.",
+      "resolution": "COVERAGE PRESERVED, and the test is arguably stronger. (1) The 'unchanged = true on a persisted change' lie is now IMPOSSIBLE BY CONSTRUCTION, and the test asserts that as a fact — it asserts the old mutation `{rankable} + vector` is refused with WriteValidation, which is what makes the whole class unconstructible. (2) The CODE defect is still pinned. The guard fix-2 removed was `desired.has_deferred() && !existing.has_deferred()`, so what falsifies it is an `existing` that ALREADY carries a deferred axis. That is now a LEGACY at-rest state (`{rankable}` + a stored `vector` sub-object), reached via `legacy_add_vector_subobject`, and promoted to a VALID `{rankable, searchable} + vector` — a non-destructive change that still routes through the `Some(existing)` branch and still fails against the pre-fix guard. (3) The genuine-no-op CONTROL is retained. Nothing was deleted. FIX-1 UPDATE (codex §9 round 2 finding 2 [P3]): the resolution above was CORRECT on the merits — codex confirmed the reroute is NOT vacuous and that the 'unconstructible through the public verb' argument is TRUE — but it left the test's NAME and doc-comment presenting the now-decorative `!unchanged` half as the point, while the load-bearing oracle had silently become `deferred.contains(..)` alone. Corrected in 94f09d7d: renamed to `a_changed_registry_row_reports_its_deferral_even_when_already_deferred`, both assertions labelled at their sites (PIN vs NOT load-bearing, with the `searchable` ⇒ `wants_eav` ⇒ `built` reason), verified by mutating the guard back in and observing exactly that split. The old name survives only in this file, in earlier `dev/plans/runs/` records and in a codex log — all historical, all left alone — plus in the new doc-comment, which names it so a grep still lands on the test."
+    },
+    {
+      "id": "FLAKE-introduced-and-removed",
+      "description": "First conversion of `dropping_the_last_searchable_vector_projection_un_enrols_past_an_inert_sibling` opened the raw RW connection BETWEEN `configure_projections` and `drain`. That perturbed the dispatcher and produced a DUPLICATE embed (the TC-91 class), tripping the suite's `assert_eq!(calls, 1)`. It passed in isolation and failed in the full workspace run.",
+      "resolution": "The legacy registry write moved to AFTER the drain, with a comment saying why. 8 consecutive isolated runs green plus two full-workspace runs green. NOT a TC-91 fix and not TC-91 characterization — the slice does no TC-90/TC-91 work; this was only avoiding a fixture that provoked it."
+    },
+    {
+      "id": "LEG-2-NONE",
+      "description": "Leg 2 hit no permission denial, no pin trip and no ambiguity requiring a HALT. The single course-correction was self-imposed and is recorded as a finding rather than a blocker: the first stress arm saturated the engine so hard that transition's own drain never returned, making the arm unbounded (one trial run had to be killed after 300 s). Resolved by adding an explicit wall-clock budget plus a 1 ms writer pace, which also turned the observation into the §2.5 Scheduler-starvation finding.",
+      "resolution": "Self-resolved. No orchestrator input required."
+    },
+    {
+      "id": "LEG-2-HARNESS-ARTIFACT-CAUGHT-AND-REMOVED",
+      "description": "The first draft of the TC-90 loop derived each transition's target state from the LOOP INDEX. A failed transition rolls back, so the subject keeps its previous state and the next flip aims at the state the row is already in — a self-loop, correctly refused with IllegalTransition. That cascade artifact contaminated the very counter under measurement: an early stress run reported storage_errors=1 other_errors=1, where the second was pure artifact.",
+      "resolution": "The loop now tracks each subject's state from OBSERVED outcomes and advances only on success, so storage_errors is uncontaminated. `other_error_kinds` is collected and printed so a future recurrence is visible rather than silent. All ten final stress runs report other_errors=0. Recorded in the doc §2.3 because it is the kind of artifact that would otherwise be read as a second defect."
+    }
+  ],
+  "additional_changes_made_in_scope": [
+    "MIGRATION CONSEQUENCE DISCOVERED AND DOCUMENTED (not in the brief, but owed by 'stale > missing'): a LEGACY row is not merely un-re-appliable. Re-declaring only its VALID half is refused as `EngineError::ProjectionDestructive`, because that removes the stored sub-object. So the legacy population has exactly TWO remedies — ADD the `searchable` role (non-destructive, accepted) or NAME the projection in `drop`. Both are asserted in `a_filterable_vector_declaration_round_trips_verbatim_without_an_embedder` and both are written into all three interface docs and the CHANGELOG migration note.",
+    "SECOND ERRORS.MD INCONSISTENCY FOUND BY THE CODE-FIRST READ THE ORCHESTRATOR REQUIRED, and deliberately NOT fixed: `apply_projection_config`'s `\"projection '<name>' declares no roles\"` refusal (lib.rs, the `spec.roles.is_empty()` arm) is a SHAPE rejection that still returns `InvalidArgument { msg }`. It is NOT name-related, so the narrow 'NAME rejections stay InvalidArgument' resolution does not cover it. LEFT EXACTLY AS IT IS per instruction — retro-classifying a shipped rejection is not this slice's job — flagged in errors.md alongside the existing `excise_collection_record` flag, and pinned AS-IS by a test assertion carrying that reasoning, so the state of affairs cannot drift unnoticed in either direction.",
+    "The three converted Rust suites each gained a documented `declare_legacy_filterable_vector` / `legacy_add_vector_subobject` helper naming this slice and the 2026-07-24 ruling, so the next reader knows why the back door exists. Kept LOCAL to each file, matching those suites' stated discipline that their oracles must not drift with another file's edits.",
+    "`a_configure_projections_call_reconciles_an_already_enrolled_inert_kind` (tc71_fix1) used an idempotent re-apply of the inert spec as its 'weakest possible trigger'. That spec is now rejected, so the trigger dropped to an EMPTY request — weaker still, and it makes the same point more sharply.",
+    "LEG 2 — NO FIX, AND THE NO-FIX IS MECHANICALLY VERIFIED, NOT ASSERTED. `git diff 94f09d7d HEAD -- src/rust/crates/fathomdb-engine/src/lib.rs` is EMPTY (0 bytes). The leg-2 commit touches exactly 4 files: 2 new test targets, 1 new design doc, 1 DOC-INDEX row (+2308/-0). No engine source, no schema, no manifest, no version bump, no gate weakened.",
+    "LEG 2 — MERGE-GATE HYGIENE. Every measurement arm is `#[ignore]`d (4 in tc90, 5 in tc91), exactly as TC-57's pair was, so `cargo test --workspace` — already an unstable signal per TC-72 — is not destabilised further by nine new concurrency arms. What DOES run in the default gate is only the deterministic material: 3 tc90 mechanism pins (held-lock, no race) and 1 tc91 probe-cost measurement. Both new targets pass with rc=0 in the default profile.",
+    "LEG 2 — ACCEPTANCE BARS WRITTEN FOR 0.8.21, which is what makes the doc useful rather than decorative. §4 (TC-90, 7 items) and §5.6 (TC-91, 7 items) are the §1.4 analogues. Two of those items are deliberately unusual and are the ones a future agent is most likely to get wrong: TC-90 bar item 6 requires the TC-91 tight-cadence duplicate count to be RE-MEASURED, not assumed, because R-A makes the engine the lock holder more often and that is the direction that increases worker-side loss; TC-91 bar item 5 states that `tc91_forced_commit_failure_is_invisible_to_terminal_counting` must be RE-READ, NOT RE-RUN — its assertions encode the DEFECT (counters zero while duplicates non-zero), so a fix that surfaces lost commits will make it FAIL, and that failure is the SUCCESS signal. That instruction is duplicated into the test's own failure text so it cannot be missed by someone who only reads the red output.",
+    "LEG 2 — SIX REMEDIES ENUMERATED, NONE IMPLEMENTED (doc §7, TC-57 §7 style). R-A BEGIN IMMEDIATE for transition; R-B BEGIN IMMEDIATE for commit_projection_outcomes; R-C stop discarding the worker commit result; R-D bounded retry of the worker commit; R-E TC-57's R2 carried forward; R-F PRAGMA busy_timeout, REJECTED as proven inert (handler invoked 0 times; a 5 000 ms default is already present). Recommendation recorded as R-C first (additive, cannot regress anything, and makes everything else measurable), then R-B (it targets the mechanism §5.5 actually proved), then R-A with the bar-item-6 re-measurement in place to catch the interaction — R-A and R-B point in OPPOSITE directions on TC-91, which is the single most important thing in the section. A 5-item 'What I am unsure about' section is included per the brief, headed by the unmeasured magnitude of R-A's effect on TC-91.",
+    "LEG 2 — §6 'What this characterization did NOT establish', kept separate from the uncertainty list because these are gaps in the MEASUREMENT, not open design questions: multi-process contention (every arm is in-process, and transition's connection-mutex mitigation does nothing against a second OS process — presumed strictly worse, NOT measured); the other drain-first verbs; whether 517 is reachable from transition; edge bodies (TC-57 §4.2's still-uncharacterized second route to a concurrent worker commit); and any throughput number for any candidate remedy.",
+    "fix-2 — §2.5 saturating-load AVAILABILITY defect re-scoped per the steward, PRESERVED but not allowed to read as characterized. Split into a MEASURED paragraph (`Engine::transition` only: 5 calls in 181 s, 4 `Scheduler` after burning the full 30 s `LIFECYCLE_DRAIN_TIMEOUT_MS`, 596,928 competing rows) and a BLOCKQUOTED 'PRESUMED, NOT MEASURED' for the three sibling sites `configure_projections` (`lib.rs:8332`), `purge` (`lib.rs:8441`, `8443`) and `lib.rs:8646-8648`: they share the `drain`-first shape BY CODE READING, NO ARM EXERCISED ANY OF THEM, and they do NOT inherit `transition`'s numbers. §6 item 2 reworded to match. Still explicitly out of scope for a fix here and flagged as possibly the more important defect (§8 unsure-item 3).",
+    "fix-2 — R-A/R-B opposite-direction interaction and the R-C → R-B → R-A recommendation PRESERVED as an enumeration, NONE implemented, and tightened to match the narrowed §5.5. R-B's 'Pro' no longer claims §5.5 shows every duplicate traces to a refused worker promotion (it says the effect on the ~104/200 is PREDICTED, not measured, and that R-C is what turns the prediction into a reading). R-A's 'Con' now separates the measured DIRECTION from the unmeasured MAGNITUDE and cross-references R-B's interaction bullet. The recommendation is explicitly labelled AN ENUMERATION, NOT A SCHEDULE, and is marked re-derivable: if R-C's instrumentation refutes §5.5.2, R-B's priority changes.",
+    "fix-2 — DOC-INDEX row for the characterization reworded so the index itself does not carry the overclaim ('cadence-sensitive duplicate embeds whose discarded worker commit is structurally invisible to terminal-state counting', rather than 'the discarded worker commit that causes duplicate embeds').",
+    "fix-3 — design doc §3.4 rewritten around pin 3 rather than patched. It now (i) records that the 'held, not raced' framing was NOT true of pin 3's old setup and says so in codex's own terms, (ii) names TC-72 as the reason a sleep-timed merge-gate assertion is the wrong direction, (iii) reports BOTH measurement sets side by side (sleep N=20: 832-838 ms, spread 6 ms; signal N=10: 931-937 ms, spread 6 ms) instead of quietly replacing the old numbers, and (iv) states plainly that the spread did NOT tighten and that tightening was never the point — what the rework removed is the unbounded path. Also adds the 24-way-load result (934-941 ms, 10/10 green) as the evidence the old shape could not supply. §3.3's pin table and prose and §0 headline item 3 updated from 834 to ~935 ms.",
+    "fix-3 — clippy's coverage of the two new test targets was VERIFIED, not assumed. `cargo clippy --workspace --all-targets` finished in 0.24 s from cache, which is not by itself evidence it looked at the edited files, so the target list was dumped with `--message-format=json` and confirmed to include `('tc90_transition_write_race', ('test',))` and `('tc91_duplicate_embeds_and_silent_commit_loss', ('test',))`. A green gate whose coverage is unverified is the same defect class this slice has been fixing all round."
+  ],
+  "agent_verify_result": "fix-4 (codex §9 round 6, finding 1) — GREEN, path (a).\nGates, each re-run after the final edit: cargo clippy --workspace --all-targets rc=0 · cargo check --workspace --all-targets rc=0 · scripts/lint-design-status.sh rc=0 · scripts/agent-lint-md.sh rc=0 · scripts/check-governed-surface-pin.sh rc=0 (30 allowlist / 5 core / 5 recovery_denylist, unchanged ⇒ delta 0).\nPin 3 re-measured on the committed source. QUIET: 20 runs, 0 failures — 10 of the pin in isolation at 930-936 ms and 10 of the whole default-profile target at 932-937 ms; pooled 930-937 ms, spread 7 ms. LOADED (24 spinning processes on a 24-thread box, load average 0.74 -> 5.66): 10 runs, 0 failures, 934-940 ms, spread 6 ms. The loaded run is as tight as the quiet one, which is the observable a construction-sound bound predicts and the single-signal shape could not have offered. The >= 450 ms bound was NOT loosened; pin 3 was NOT gated; the 13/9/4 inventory is UNCHANGED and correct as written in §3.4 and both module headers.\nScope: lib.rs byte-identical to 94f09d7d — 959690 bytes, blob 6a519e1f63c84a23ac7bcb03c2123a50c42f0368; the whole fathomdb-engine/src tree diffs empty against 94f09d7d. Allowlist delta 0. fix-4 touched exactly 2 files (tc90_transition_write_race.rs, 0.8.20-tc90-tc91-characterization.md).\nBoth mandated overclaim corrections landed and are verified absent by grep: 'no scheduling race decides whether this pin passes' 0 hits, 'impossible by construction' 0 hits.",
+  "next_step_for_orchestrator": "PATH TAKEN: (a) — the ack-handshake CLOSED the race. The pre-committed fallback (b) (#[ignore] pin 3, re-inventory to 13/10/3) was not needed and was not taken; the inventory stays 13/9/4 and is correct everywhere it appears.\n\nHEAD = 151c0b45c171fa2b15f387b529029dce06da3948 on branch slice-23-sv. fix-4 is one commit, 151c0b45, TEST- AND DOC-ONLY.\n\nWhat changed, for the round-7 review if you run one:\n1. tc90_transition_write_race.rs — pin 3 gains a second mpsc channel. The holder sends `ready` then BLOCKS on `ack` (30 s hang-guard) before `sleep(HOLD)`; the main thread receives `ready`, takes `started`, then sends `ack`. `started <= ack sent <= ack received = hold begins` ⇒ release >= started + HOLD ⇒ elapsed >= HOLD on every schedule. `holder.join()` is now checked instead of `let _ =`. Roughly 5 lines of mechanism; the rest of the diff is comment and module-header prose.\n2. Both mandated overclaims are gone, and §6 gains item 8 stating what is NOT established — pin 3 is not claimed to be free of wall-clock dependence, only of the early-release path.\n3. Design doc §0 restructured: §0.1 leads with the FALSE NEGATIVE (template insufficient, needed a stress arm; reproduction not rate), §0.2 carries the engine findings with the 'never produced' diagnosability defect promoted to its own numbered finding and the TC-91 (a)-is-not-(b) hypothesis preserved with an explicit anti-tidying instruction.\n4. Three dangling self-references to a nonexistent '§8' retargeted.\n\nNOTHING ELSE was touched. No engine source, no allowlist, no manifest, no version, no TC-98 work, no sqlite-vec bump, tc76_vec0_long_metadata_delete.rs retained.\n\nPer the standing steward ruling there is NO round 8 on pin 3. If a reviewer still objects to the pin, the disposition is fallback (b) — gate it and re-inventory to 13/10/3 — not another rework and not a widened bound.",
+  "leg_2_measurements": {
+    "baseline_sha": "94f09d7d412784e4d02e4d03ae08d6b0e42bcad5",
+    "harnesses": [
+      "src/rust/crates/fathomdb-engine/tests/tc90_transition_write_race.rs",
+      "src/rust/crates/fathomdb-engine/tests/tc91_duplicate_embeds_and_silent_commit_loss.rs"
+    ],
+    "design_doc": "dev/design/0.8.20-tc90-tc91-characterization.md",
+    "tc90": {
+      "paced_repro": {
+        "runs": 10,
+        "failed": 0,
+        "note": "TC-57-shaped; 120 transitions/run; embed_calls 132-202; competing_writes 122-147"
+      },
+      "paced_control": {
+        "runs": 10,
+        "failed": 0,
+        "note": "embed_calls 0 every run"
+      },
+      "stress_repro": {
+        "runs": 10,
+        "failed": 10,
+        "storage_errors_per_run": [
+          3,
+          4,
+          10,
+          3,
+          6,
+          6,
+          5,
+          5,
+          8,
+          9
+        ],
+        "mean_storage_errors": 5.9,
+        "transitions_per_run": 40,
+        "failure_rate_pct": 14.8,
+        "scheduler_errors": 0,
+        "other_errors": 0,
+        "first_failure_index_range": [
+          0,
+          20
+        ],
+        "failing_call_ms_range": [
+          9,
+          61
+        ]
+      },
+      "stress_control": {
+        "runs": 10,
+        "failed": 0,
+        "note": "embed_calls 0; 1944-1968 competing writes/run"
+      },
+      "mechanism_sql_shape": {
+        "primary": "DatabaseBusy",
+        "extended_code": 5,
+        "busy_handler_invocations": 0,
+        "elapsed_ms": 0,
+        "busy_timeout_ms": 5000
+      },
+      "mechanism_engine_transition_under_held_lock": {
+        "result": "Err(Storage)",
+        "elapsed_ms": 0
+      },
+      "mechanism_control_engine_write_under_held_lock": {
+        "result": "Ok",
+        "elapsed_ms": 935,
+        "hold_ms": 900,
+        "elapsed_ms_before_fix3_sleep_shape": 834,
+        "note": "fix-3 reworked the blocker handshake from a fixed 100 ms sleep to an mpsc readiness signal sent after `BEGIN IMMEDIATE` returns, so `HOLD` now starts when the writer does. 931-937 ms over N=10 (confirming N=10: 932-937; 24-way CPU load N=10: 934-941), all 10/10 green against a `>= 450 ms` assertion. The pre-fix-3 sleep shape measured 832-838 ms over N=20."
+      },
+      "scheduler_starvation_probe": {
+        "writer_pace_ms": 0,
+        "wall_s": 181,
+        "transitions_attempted": 5,
+        "scheduler_errors": 4,
+        "competing_writes": 596928
+      }
+    },
+    "tc91": {
+      "duplicate_governed": {
+        "runs": 10,
+        "rows": 200,
+        "duplicates_range": [
+          102,
+          106
+        ],
+        "mean": 104.0,
+        "rate_pct": 52.0,
+        "probe_calls": 0
+      },
+      "duplicate_anonymous": {
+        "runs": 10,
+        "rows": 200,
+        "duplicates_range": [
+          103,
+          110
+        ],
+        "mean": 105.0,
+        "rate_pct": 52.5,
+        "probe_calls": 0
+      },
+      "probe_cost_per_open": {
+        "open1_no_vector_kind": 0,
+        "open2_populate_then_check": 90,
+        "open3_after_tc68_cache": 0
+      },
+      "forced_commit_failure_blocked": {
+        "runs": 10,
+        "rows": 96,
+        "hold_ms": 1500,
+        "duplicates_range": [
+          80,
+          96
+        ],
+        "mean": 86.4,
+        "repeated_texts": 32,
+        "failed_terminals": 0,
+        "failure_audit_rows": 0,
+        "vector_rows": 96
+      },
+      "forced_commit_failure_control": {
+        "runs": 10,
+        "rows": 96,
+        "duplicates": 0,
+        "failed_terminals": 0,
+        "failure_audit_rows": 0,
+        "vector_rows": 96
+      },
+      "mechanism_cadence": {
+        "runs": 10,
+        "rows": 60,
+        "tight_pace_ms": 1,
+        "tight_duplicates_range": [
+          31,
+          33
+        ],
+        "tight_mean": 32.5,
+        "spaced_pace_ms": 25,
+        "spaced_duplicates": 0
+      }
+    },
+    "fix_2_codex_round_4": {
+      "review_transcript": "dev/plans/runs/codex/0.8.20/slice-23-leg2-round4-characterization-20260729T075614Z.log",
+      "findings": 4,
+      "pushed_back_on": 0,
+      "note": "All four confirmed against the code before implementing. Codex could not byte-verify lib.rs (its sandbox blocked git plumbing: `bwrap: loopback: Failed RTM_NEWADDR`); the steward closed that independently and it was re-verified here at HEAD as a 0-byte diff.",
+      "tc90_stress_session_b": {
+        "per_run_storage_errors": [
+          8,
+          4,
+          4,
+          1,
+          4,
+          2,
+          4,
+          4,
+          3,
+          4
+        ],
+        "mean": 3.8,
+        "reproduced": "10/10",
+        "protocol_pins_in_every_run": "attempted=40, truncated=false, scheduler_errors=0, other_errors=0",
+        "session_a_comparison": {
+          "per_run": [
+            3,
+            4,
+            10,
+            3,
+            6,
+            6,
+            5,
+            5,
+            8,
+            9
+          ],
+          "mean": 5.9,
+          "reproduced": "10/10"
+        },
+        "verdict": "reproduction rate replicated; per-run rate did NOT. Quote 1-10 per 40 (pooled N=20), not a percentage."
+      },
+      "tc91_probe_exact_pin": {
+        "runs": 20,
+        "measured": "open1=0 open2=90 open3=0",
+        "variance": "zero",
+        "failures": 0
+      },
+      "tc90_mechanism_pins_default_profile": {
+        "runs": 20,
+        "failures": 0,
+        "pin3_elapsed_ms_range": [
+          832,
+          838
+        ],
+        "pin3_assertion": ">= 450 ms"
+      },
+      "default_profile_inventory": {
+        "new_tests": 13,
+        "ignored": 9,
+        "live": 4,
+        "observed": "4 passed / 0 failed / 9 ignored"
+      }
+    },
+    "fix_3_codex_round_5": {
+      "review_transcript": "dev/plans/runs/codex/0.8.20/slice-23-leg2-round5-fix2-rereview-retry-20260729T082259Z.log",
+      "findings": 4,
+      "pushed_back_on": 1,
+      "closed_by_codex": "F1 (assert_protocol_ran genuinely prevents a vacuous pass; ArmConfig::budget can no longer silently truncate) and F2 (TC-68 correction independently re-derived: 45 fixture lines, populate-then-check, PROBE_FIXTURE_SIZE * 2 == 90, a regression to 45 now fails). codex also ran the live pins itself: 3/3 TC-90 plus tc91_probe_embed_cost_per_open_at_head.",
+      "note": "ITEM 4 was partly wrong as codex framed it. Three of the five flagged rate sites are the disclosure of the non-replication, not a residual claim, and were KEPT after inspection; only doc line 835 was restated. See findings_addressed 'fix-3 ITEM 4'.",
+      "pin3_rework": {
+        "from": "std::thread::sleep(Duration::from_millis(100)) then ASSUME the lock is held",
+        "to": "std::sync::mpsc readiness signal sent after the blocker's BEGIN IMMEDIATE returns and it has written under the lock; main thread recv_timeout(30s) before timing",
+        "gated": false,
+        "inventory_after": "13 tests / 9 ignored / 4 live — UNCHANGED",
+        "assertion": ">= 450 ms",
+        "quiet_n10_ms_range": [
+          931,
+          937
+        ],
+        "quiet_n10_confirming_ms_range": [
+          932,
+          937
+        ],
+        "loaded_n10_ms_range": [
+          934,
+          941
+        ],
+        "load_shape": "24 spinning processes on a 24-thread box",
+        "failures": 0,
+        "spread_ms": 6,
+        "spread_ms_before": 6,
+        "verdict": "The rework did not tighten the happy path and was not meant to; it removed the UNBOUNDED lost-race path, which no quiet-machine run count can bound."
+      },
+      "tc91_probe_pin_rerun": {
+        "runs": 10,
+        "measured": "open1=0 open2=90 open3=0",
+        "variance": "zero",
+        "failures": 0
+      },
+      "gates": {
+        "cargo clippy --workspace --all-targets": 0,
+        "cargo check --workspace --all-targets": 0,
+        "scripts/lint-design-status.sh": 0,
+        "scripts/agent-lint-md.sh": 0,
+        "scripts/check-governed-surface-pin.sh": 0,
+        "clippy_target_coverage_verified": "via --message-format=json; both tc90/tc91 test targets present"
+      },
+      "scope": {
+        "lib_rs_diff_bytes_vs_94f09d7d": 0,
+        "engine_src_tree_diff_vs_94f09d7d": "empty",
+        "allowlist_diff_bytes_vs_94f09d7d": 0,
+        "allowlist_delta": 0,
+        "files_changed_vs_94f09d7d": 4
+      }
+    },
+    "fix_4_codex_round_6": {
+      "review_transcript": "dev/plans/runs/codex/0.8.20/slice-23-leg2-round6-fix3-rereview-20260729T084100Z.log",
+      "findings": 4,
+      "closed_by_codex_outright": "items 2, 3 and 4",
+      "left_open": "item 1 only — the unguarded window between recv_timeout returning and Instant::now()",
+      "path_taken": "(a) THE HANDSHAKE — it closed the race; the pre-committed fallback (b) (#[ignore] pin 3 and re-inventory to 13/10/3) was NOT needed and was NOT taken",
+      "pin3_rework": {
+        "from": "single readiness signal; the holder began sleep(HOLD) at the instant it signalled, leaving the main thread's recv_timeout -> Instant::now() gap unguarded",
+        "to": "two-phase handshake ready -> ack -> hold; the holder begins sleep(HOLD) only after the main thread has taken `started` and acknowledged",
+        "soundness_argument": "started <= ack sent <= ack received = hold begins, therefore release >= started + HOLD; and the measured engine.write cannot return before the release because it needs the same lock. Hence elapsed >= HOLD on every schedule. A main-thread stall before the ack only enlarges elapsed; a holder stall after it only extends the hold.",
+        "hang_guards": "READY_TIMEOUT (30 s) on BOTH waits; holder.join() now CHECKED (was `let _ =`) so a panicking blocker fails the test loudly",
+        "gated": false,
+        "bound_loosened": false,
+        "inventory_after": "13 tests / 9 ignored / 4 live — UNCHANGED",
+        "assertion": ">= 450 ms",
+        "quiet_n10_isolated_ms_range": [
+          930,
+          936
+        ],
+        "quiet_n10_default_profile_target_ms_range": [
+          932,
+          937
+        ],
+        "quiet_n20_pooled_ms_range": [
+          930,
+          937
+        ],
+        "quiet_spread_ms": 7,
+        "loaded_n10_ms_range": [
+          934,
+          940
+        ],
+        "loaded_spread_ms": 6,
+        "load_shape": "24 spinning shell processes on a 24-thread box; load average 0.74 -> 5.66 across the run",
+        "failures": 0,
+        "verdict": "The loaded distribution is as tight as the quiet one (6 ms vs 7 ms), which is what a construction-sound bound should look like. Note explicitly recorded in §3.4: the happy-path numbers barely moved across all three shapes (sleep 832-838, signal 931-937, handshake 930-937), so NO amount of quiet-machine green distinguished them — only reading the ordering did. A measurement cannot show a race is absent; it can only fail to find it."
+      },
+      "overclaims_removed": {
+        "src_no_scheduling_race_decides_whether_this_pin_passes": "grep count 0",
+        "doc_early_release_is_impossible_by_construction": "grep count 0",
+        "replacement_claim": "release cannot precede `started + 900 ms`, by the ordering — plus a new §6 item 8 stating the pin is NOT claimed free of wall-clock dependence"
+      },
+      "findings_made_prominent": {
+        "A_false_negative": "design doc §0.1, now the LEAD section, plus the tc90 module header — 'the TC-57 template was INSUFFICIENT, it needed a stress arm' and 'reproduction is the bar, NOT rate' (5.9 vs 3.8 per 40, same commit, same machine)",
+        "B_never_produced": "design doc §0.2 finding 2 as its OWN numbered finding, expanded §3.1, plus a caller-side companion bullet under R-C",
+        "C_a_is_not_b": "design doc §0.2 finding 4 — '(a) is not proven to be (b), and the reason it cannot be closed by measurement IS (b)', with 'Do not tidy this into a conclusion in a later revision.'"
+      },
+      "gates": {
+        "cargo clippy --workspace --all-targets": 0,
+        "cargo check --workspace --all-targets": 0,
+        "scripts/lint-design-status.sh": 0,
+        "scripts/agent-lint-md.sh": 0,
+        "scripts/check-governed-surface-pin.sh": 0,
+        "clippy_target_coverage_verified": "re-verified via --message-format=json after touching both files: tc90_transition_write_race (kind=test) and tc91_duplicate_embeds_and_silent_commit_loss (kind=test) both compiled by the clippy run",
+        "tc90_default_profile_target": "3 passed / 0 failed / 4 ignored, 10 consecutive runs"
+      },
+      "scope": {
+        "lib_rs_bytes": 959690,
+        "lib_rs_blob_sha": "6a519e1f63c84a23ac7bcb03c2123a50c42f0368",
+        "lib_rs_identical_to_94f09d7d": true,
+        "engine_src_tree_diff_vs_94f09d7d": "empty",
+        "allowlist_delta": 0,
+        "files_changed_by_fix_4": 2,
+        "files_changed_vs_94f09d7d": 4,
+        "hard_stops_honoured": "no TC-90/TC-91 fix; no reject_unrenderable_edge_epoch / error_taxonomy.rs (TC-98); no sqlite-vec bump; tc76_vec0_long_metadata_delete.rs retained untouched; no allowlist edit; no publish / manifest / tag / version bump"
+      }
+    }
+  }
+}
