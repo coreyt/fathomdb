@@ -17,16 +17,20 @@
 #
 # WHAT IT ASSERTS
 #   A. the installed console script FILE exists and is executable;
-#   B. RUN A — `$VENV/bin/sbom-survey` (the real entry point) exits 0;
-#   C. PROVENANCE — after uninstalling, `import sbom_survey` resolves under the
-#      repo source tree, so RUN B genuinely exercises the tree and the identity
-#      check below cannot be vacuously true against the still-installed copy
-#      (TC-105: Slice 31's dominant defect class was a criterion graded against
-#      a helper while the real boundary went ungraded);
-#   D. RUN B — `python -m sbom_survey` from the source tree exits 0;
-#   E. the artifact SETS are identical (an extra/missing file is caught too);
-#   F. all three artifacts are byte-identical between the two runs;
-#   G. VACUITY GUARD — two empty files are byte-identical, so the run is only
+#   B. PROVENANCE (RUN A) — under a scrubbed import environment, the installed
+#      `sbom_survey` resolves inside the venv's site-packages and NOT under the
+#      repo. An ambient `PYTHONPATH` would otherwise make the "installed" run
+#      import the source tree, passing while the wheel is broken;
+#   C. RUN A — `$VENV/bin/sbom-survey` (the real entry point) exits 0;
+#   D. PROVENANCE (RUN B) — after uninstalling, `import sbom_survey` resolves
+#      under the repo source tree, so RUN B genuinely exercises the tree and the
+#      identity check below cannot be vacuously true against the still-installed
+#      copy (TC-105: Slice 31's dominant defect class was a criterion graded
+#      against a helper while the real boundary went ungraded);
+#   E. RUN B — `python -m sbom_survey` from the source tree exits 0;
+#   F. the artifact SETS are identical (an extra/missing file is caught too);
+#   G. all three artifacts are byte-identical between the two runs;
+#   H. VACUITY GUARD — two empty files are byte-identical, so the run is only
 #      believed when `summary.components > 0` and `rows` is non-empty.
 #
 # DELIBERATELY NOT CI-WIRED (`seq-172`). Do not add it to `scripts/agent-test.sh`,
@@ -136,10 +140,69 @@ echo "smoke: console script present and executable: $CONSOLE"
 OUT_INSTALLED="$WORK/out-installed"
 OUT_SOURCE="$WORK/out-source"
 
-# --- 6. RUN A — the INSTALLED path, the real entry point ------------------------
+# --- 6a. PROVENANCE ASSERTION FOR RUN A — symmetric with RUN B's (codex §9 rd 2)
+#
+# RUN A inherits the caller's environment, and `PYTHONPATH` beats site-packages
+# on `sys.path`. So an ambient `PYTHONPATH` pointing at THIS checkout (or any
+# checkout carrying `sbom_survey`) makes the installed console script import the
+# SOURCE TREE — and the smoke then passes while the installed wheel is broken,
+# incomplete, or missing files entirely. That is a vacuous pass on the exact leg
+# this script exists to prove.
+#
+# Two things are needed, and only the second is a guard:
+#   * RUN A is invoked under `env -u PYTHONPATH -u PYTHONHOME` — scrubbed
+#     PER-INVOCATION, never globally, because RUN B *needs* `PYTHONPATH`;
+#   * and that arrangement is ASSERTED here. Unsetting only ARRANGES for the
+#     right thing; the assertion PROVES it. RUN B's provenance was graded from
+#     the start and RUN A's was not — that asymmetry was the finding.
+set +e
+SITE_PACKAGES="$(env -u PYTHONPATH -u PYTHONHOME "$VENV/bin/python" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
+rc=$?
+set -e
+if [ "$rc" -ne 0 ] || [ -z "$SITE_PACKAGES" ]; then
+    echo "smoke: FAIL — could not resolve the venv's site-packages (rc=$rc)." >&2
+    exit 1
+fi
+
+set +e
+RESOLVED_A="$(env -u PYTHONPATH -u PYTHONHOME "$VENV/bin/python" -c 'import sbom_survey; print(sbom_survey.__file__)')"
+rc=$?
+set -e
+if [ "$rc" -ne 0 ]; then
+    echo "smoke: FAIL — the INSTALLED sbom_survey is not importable from the venv (rc=$rc)." >&2
+    echo "smoke:        pip install reported success, so the wheel does not contain" >&2
+    echo "smoke:        an importable package. This is the install-path defect." >&2
+    exit 1
+fi
+case "$RESOLVED_A" in
+    "$REPO"/*)
+        echo "smoke: FAIL — provenance (RUN A). The installed entry point resolves to:" >&2
+        echo "smoke:        $RESOLVED_A" >&2
+        echo "smoke:        which is INSIDE the repo ($REPO), not the venv's" >&2
+        echo "smoke:        site-packages ($SITE_PACKAGES). RUN A would exercise the" >&2
+        echo "smoke:        SOURCE TREE, so a PASS would say nothing about the wheel." >&2
+        exit 1
+        ;;
+esac
+case "$RESOLVED_A" in
+    "$SITE_PACKAGES"/*)
+        echo "smoke: provenance OK (RUN A) — installed sbom_survey resolves to $RESOLVED_A"
+        ;;
+    *)
+        echo "smoke: FAIL — provenance (RUN A). The installed entry point resolves to:" >&2
+        echo "smoke:        $RESOLVED_A" >&2
+        echo "smoke:        expected a path under the venv's site-packages:" >&2
+        echo "smoke:        $SITE_PACKAGES" >&2
+        exit 1
+        ;;
+esac
+
+# --- 6b. RUN A — the INSTALLED path, the real entry point -----------------------
+# `env -u PYTHONPATH -u PYTHONHOME` per-invocation: the same scrubbed environment
+# the assertion above was made under, so what was proved is what runs.
 echo "smoke: RUN A — installed console script"
 set +e
-"$CONSOLE" --repo "$REPO" --offline --out "$OUT_INSTALLED"
+env -u PYTHONPATH -u PYTHONHOME "$CONSOLE" --repo "$REPO" --offline --out "$OUT_INSTALLED"
 rc_a=$?
 set -e
 if [ "$rc_a" -ne 0 ]; then
@@ -159,9 +222,10 @@ if [ "$rc" -ne 0 ]; then
     exit 1
 fi
 
-# --- 8. PROVENANCE ASSERTION — RUN B must really be the source tree ------------
+# --- 8. PROVENANCE ASSERTION (RUN B) — it must really be the source tree -------
 # Without this, RUN B could silently still be the installed copy and the
-# byte-identity check below would be vacuously true.
+# byte-identity check below would be vacuously true. The mirror image of §6a:
+# there the repo must NOT be on the import path, here it must be.
 set +e
 RESOLVED="$(PYTHONPATH="$PROJECT" "$VENV/bin/python" -c 'import sbom_survey; print(sbom_survey.__file__)')"
 rc=$?
@@ -172,10 +236,10 @@ if [ "$rc" -ne 0 ]; then
 fi
 case "$RESOLVED" in
     "$PROJECT"/*)
-        echo "smoke: provenance OK — sbom_survey resolves to $RESOLVED"
+        echo "smoke: provenance OK (RUN B) — sbom_survey resolves to $RESOLVED"
         ;;
     *)
-        echo "smoke: FAIL — provenance. sbom_survey resolved to:" >&2
+        echo "smoke: FAIL — provenance (RUN B). sbom_survey resolved to:" >&2
         echo "smoke:        $RESOLVED" >&2
         echo "smoke:        expected a path under $PROJECT. RUN B would have been" >&2
         echo "smoke:        the installed copy again, making the byte-identity" >&2
@@ -281,5 +345,5 @@ if [ "$rc" -ne 0 ]; then
 fi
 
 # --- 12. PASS -----------------------------------------------------------------
-echo "smoke: PASS — installed run rc=$rc_a, source run rc=$rc_b, artifacts byte-identical over ${COMPONENTS} components (sbom.cdx.json, staleness.json, staleness.md); provenance and vacuity guards both held."
+echo "smoke: PASS — installed run rc=$rc_a, source run rc=$rc_b, artifacts byte-identical over ${COMPONENTS} components (sbom.cdx.json, staleness.json, staleness.md); both provenance guards (installed=site-packages, source=tree) and the vacuity guard held."
 exit 0

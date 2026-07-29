@@ -140,11 +140,13 @@ script**, then re-runs the same survey from the source tree and asserts the two 
 bash scripts/sbom-survey/smoke-install-run.sh     # exit 0 = PASS
 ```
 
-It asserts: the console-script file exists and is executable · both runs exit `0` · a **provenance**
-check that the source-tree run really is the tree (not the still-installed copy) · identical artifact
-**sets** · byte-identical `sbom.cdx.json` / `staleness.json` / `staleness.md` · and a **vacuity
-guard** (`summary.components > 0`, non-empty `rows`) — two empty files are byte-identical. Only the
-`pip install` needs network; both surveys run `--offline`.
+It asserts: the console-script file exists and is executable · both runs exit `0` · **two symmetric
+provenance** checks — the installed run resolves inside the venv's `site-packages` (invoked under
+`env -u PYTHONPATH -u PYTHONHOME`, so an ambient `PYTHONPATH` cannot smuggle the source tree into
+the "installed" leg) and the source run resolves under `scripts/sbom-survey` (not the still-installed
+copy) · identical artifact **sets** · byte-identical `sbom.cdx.json` / `staleness.json` /
+`staleness.md` · and a **vacuity guard** (`summary.components > 0`, non-empty `rows`) — two empty
+files are byte-identical. Only the `pip install` needs network; both surveys run `--offline`.
 
 **It is deliberately NOT CI-wired** (steward `seq-172` ruled wiring out, not deferred) — run it by
 hand, and do not add it to `agent-test.sh` or `ci.yml`.
