@@ -31,7 +31,7 @@ step 24). Ledger tip **`3264114a`** (steward seq-98).
 > close records (§11 Slice 5, §12 Slice 10, §13 Slice 15b) are retained **as history**; their "not landed" /
 > "Slice 15 OPEN" banners describe the on-branch state at the time they were written, **not** current truth.
 
-**Last updated:** 2026-07-28 (**Slice 21 LANDED — `77be504b`; R-20-CR CLOSED — TC-57 + ac_002 + TC-71**; close record §18. Prior: Slice 30 `9b3ed0e3` §17, Slice 20c `841c307b` §16, Slice 25 `83b1c818` §15).
+**Last updated:** 2026-07-29 (**Slice 31 LANDED — `d0287620`; Library Sweep #3 leg 1/3 — SBOM-survey tool spec + 23 RED tests**; close record §20. Prior: Slice 23 `30102ecd`, Slice 21 `77be504b` §18, Slice 30 `9b3ed0e3` §17).
 
 ---
 
@@ -39,7 +39,7 @@ step 24). Ledger tip **`3264114a`** (steward seq-98).
 
 | | |
 |---|---|
-| **Slice in flight** | **NONE — Slice 23 LANDED (`30102ecd`, tip `3a6bdd8e`).** R-20-SV closed both legs — the **`fts`/`vector` reject** (`EngineError::WriteValidation`, before any mutation; 9 shipped tests converted, the TC-71 runtime gate PRESERVED for legacy DBs, all three interface docs updated incl. the **overruled** accept-inert precedent) and the **TC-90/TC-91 characterization ONLY — `lib.rs` byte-identical across leg 2**, Steward-verified. **7 codex rounds, 4 fix rounds**, round-6 Steward check-in ruled at `seq-148`. **🔴 ALLOWLIST DELTA ZERO — and FINAL: 23 was the last unit that could move the surface.** Prior: 22 (`572475f2`, §19), 21 (`77be504b`, §18), 30 (`9b3ed0e3`, §17 — publish precondition), 25, 20c. |
+| **Slice in flight** | **NONE — Slice 31 LANDED (`d0287620`).** Library Sweep #3 **leg 1 of 3**: the SBOM/dependency-survey tool's **requirements + 23 acceptance criteria + design + RED tests**. **NO implementation code** (that is Slice 32) and **no survey run** (Slice 33). **23 failed / 0 passed / 0 skipped / 0 errors** — RED by construction, each test failing inside its own body naming its criterion, and wired into **no gate at all** (not CI, not `agent-test.sh`, not `ruff`, not any pytest config), so a permanently-failing suite on `main` turns nothing red. **codex §9: 7 rounds, 12 findings, ZERO repeats** — the same-finding bound of 3 never engaged; round 6 hit the **TC-82 cap** and halted to the Steward, who ruled the rounds productive and authorized **one bounded round 7** with the exit pre-committed (`seq-162`); **round 7 TERMINAL-CLEAN**. **Governed-surface delta ZERO** (blob `93ef3a86` byte-identical, pin exit 0, never tripped); **SCHEMA stays 24**; **no dependency bump, no manifest or lockfile touched**. Prior: 23 (`30102ecd`), 22 (`572475f2`, §19), 21 (`77be504b`, §18), 30 (`9b3ed0e3`, §17 — publish precondition). |
 | **Status** | **Slices 0, 5, 10, 15 all COMPLETE and LANDED on `origin/main`** (header table). The keystone landed **R-20-PR + R-20-EAV + `filterable` pre-KNN + TC-33 + TC-34 + Finding-1 (A) + `#[non_exhaustive] SearchFilter`**; codex §9 **terminal-clean**; gates re-verified by the Steward (clippy 0, check 0, (A) pin 1/1, AC-041 3/3). **SCHEMA 24.** |
 | **Unblocks** | <!-- BEGIN GENERATED release-state:0.8.20:status-unblocks -->**Slices 31 are NOW UNBLOCKED** — the Slice 23 landing (R-20-SV) and the Slice 31 re-scope (steward seq-153) (21, 22 and 23 have all LANDED and the publish precondition (Slice 30) is SATISFIED, so Slice 31 — re-scoped by the HITL on 2026-07-29 to the SBOM-tool spec+design+RED-tests leg — is next in the sequential order. 32 depends on 31 and 33 on 32; neither is unblocked yet.) now exists. Slice 30 (H7) depends on 10/15/20/25. **AC-079 is PRE-SIGNED** — the HITL signed off on the accumulated governed-surface delta (Slices 5d + 10b + 15b + 15d) on 2026-07-25 (master F-34), pinned to the content of `src/conformance/governed-surface-allowlist.json`; any diff to that file re-opens it (the T1e pin). Pre-signing is NOT minting: AC-079 is minted and recorded as SIGNED at Slice 40 (§4 #1). **Publish is gated by the separate HITL publish gate, not by this AC.**<!-- END GENERATED release-state:0.8.20:status-unblocks --> |
 | **Immediate next action** | **✅ The batched governed-surface decision is SIGNED** (`seq-157`) — cite it, never re-open it. **PUBLISH is now the ONLY unruled decision.** **Sequence: 31 → 32 → 33 → DOC-HYGIENE-3 → 40** (`seq-153`). **Library Sweep #3 is RE-SCOPED to a TOOL** — an isolated CycloneDX-JSON SBOM + version-diff mini-project under `scripts/`, three legs (**31** req/AC/design/RED tests · **32** code · **33** run-and-survey), no `R-20-xx` id on any. **Full spec: `plan-0.8.20.md` §3a.** ⚠ **No leg applies a dependency bump or edits a manifest/lockfile in 0.8.20** — the survey is an input to **0.8.22**, which also owns `sqlite-vec` 0.1.9 (`seq-151`), the six Dependabot advisories (`seq-152`) and the TC-103 error-taxonomy review (`seq-156`). **DOC-HYGIENE-3** = TC-53 + TC-88 + TC-89 + TC-92 + TC-94 + TC-100 (six ids, `seq-155`). **Commission via `scripts/commission-manifest.sh 0.8.20 <slice>`.** |
@@ -66,7 +66,7 @@ by that ruling.
 | **21** | **Concurrency + test-oracle repair (R-20-CR)** — TC-57 · ac_002 oracle · TC-71 | 20 | **COMPLETE — LANDED `77be504b`**. Close record §18 |
 | **22** | **Vector-arm consumer contract (R-20-VC)** — TC-67 (c) · TC-68 · decision #18 · #99 probe | 15,20 | **COMPLETE — LANDED `572475f2`** (merge). All four legs closed. **SCHEMA stays 24**; governed surface **byte-identical**, `check-governed-surface-pin.sh` **0**, the AC-079 pin **never tripped**; `check-c1-conformance.sh` **0** (26/26) — the Slice-30 publish precondition intact. **`#99` REPRODUCED and was LIVE** — `erase_source`/`purge` errored and left the vec0 row at rest; remediated engine-side. codex §9 **4 rounds**, one [P1], CLOSED. **X1 ran live before the land** (TS 250/250, Py 46/46). Close record **§19** |
 | **23** | **Spec-validation reject + carried-defect characterization (R-20-SV)** — the `fts`/`vector` reject · TC-90/TC-91 characterization | 22 | **COMPLETE — LANDED `30102ecd`** (merge). **Leg 1:** an `fts`/`vector` sub-object without the `searchable` role is now an **INVALID SPEC** rejected with **`EngineError::WriteValidation`** (HITL 2026-07-24, §11 item 4 (b); decision **#18**'s family, NOT re-opened), replacing accept-and-round-trip; validation precedes any mutation, so a mixed valid/invalid request is a total no-op. The **TC-71 runtime gate is preserved** — legacy `{filterable, vector}` rows at rest are unreachable by a configure-time reject, so nine pinned tests were **converted, not deleted**, and a legacy row's only remedies are ADD `searchable` or DROP (re-declaring its valid half alone is `ProjectionDestructive`) — asserted in **all three** languages. `dev/interfaces/{rust,python,typescript}.md` updated incl. the **overruled** accept-inert precedent; `cli.md`/`wire.md` carry no projection surface and were left alone. **Leg 2 — CHARACTERIZATION ONLY, NO FIX** (`seq-136`), engine source **byte-identical**: **TC-90 REPRODUCES**, and the TC-57-shaped protocol **alone would have filed a FALSE NEGATIVE** (paced **0/10** vs stress **10/10**, control 0/10) — the template needed a **stress arm**, and **reproduction, not rate**, is the bar (per-run count did not replicate: 5.9 vs 3.8 per 40). Mechanism captured not assumed: plain **`SQLITE_BUSY` (5)**, NOT 517, in 0 ms, busy handler invoked **zero** times; `BEGIN IMMEDIATE` transfer **measured**. Separate diagnosability defect: `Engine::transition` **never calls `emit_sqlite_internal_error`**, so the code is never produced at all. **TC-91(a)** 52.0 % governed vs 52.5 % anonymous (⇒ not the TC-57 race), falling to 0 as spacing goes 1 ms→25 ms; **(b)** forcing yields 86.4/96 duplicates while `failed` terminals are **0/10 runs** ⇒ terminal-state counting is **structurally blind**. **(a) is NOT proven to be (b), and the reason it cannot be closed by measurement IS (b).** Corrects a stale figure of record: **TC-68 took reopen probe cost to 0, not 45** (measured 0/90/0, 20/20). **Governed-surface delta ZERO** (byte-identical, pin **0**) — **23 was the last unit that could move it**. codex §9 **7 rounds / 4 fix rounds**; a terminal-clean round 1 was **deliberately not banked** (it never engaged the riskiest change) and the targeted re-review found a [P2] + [P3]. Round-6 cap **halted to the Steward**, who ruled round 7 bounded with `#[ignore]` pre-committed as fallback; round 7 **closed it**. **X1 live before land** (TS 251/251, Py 268 passed/2 skipped/0 failed via a throwaway-venv wheel; shared `.venv` verified unrebound) |
-| **31** | **Library Sweep #3** — dependency hygiene, **no requirement id** (TC-76) | — | not started — sequenced after 30 by ruling, no technical dep |
+| **31** | **Library Sweep #3, leg 1/3** — SBOM-survey tool: req + AC + design + RED tests, **NO code**; **no requirement id** (TC-76) | — | **COMPLETE — LANDED `d0287620`**. Spec of record `dev/design/0.8.20-slice-31-sbom-survey-tool.md`: requirements, **23 acceptance criteria each bound 1:1 to a named test**, design. Suite `scripts/sbom-survey/tests/` is **23 failed / 0 passed / 0 skipped / 0 errors**, RED by construction and **wired into no gate**. Tier rules derived from `.github/dependabot.yml` rather than re-decided; discovery is `git ls-files`-derived so untracked manifests (the gitignored `/python/`) are structurally out of scope; the 8 `dev/release/fixtures` skew manifests are excluded by **tracked data**, auditably; the published-version lookup sits behind an **injectable seam** so the suite never needs the network and an unknown latest can never render as up-to-date. Slice 33's findings home ruled: `dev/plans/runs/0.8.20-slice-33-library-sweep-3-FINDINGS.md`. **Surfaced en route (TC-106):** `dev/tools/mermaid/package.json` is a tracked npm manifest under **no** configured Dependabot directory. codex §9 **7 rounds / 6 fix rounds**, terminal-clean. Close record **§20** |
 | 40 | Verification + release readiness (publish-or-hold); **TC-16 determination FIRST** (`seq-118`) | 5,30 | not started |
 
 **Ladder remaining: 31 → 32 → 33 → DOC-HYGIENE-3 → ⟨batched
@@ -1656,3 +1656,110 @@ either way. **Do not run the engine suite alongside a reviewer.**
   **101 without running**.
 - **`cargo clippy --workspace --all-targets --all-features` cannot work in this repo** — it pulls `objc2`,
   which hard-errors off Apple platforms. Pre-existing.
+
+---
+
+## 20. Slice 31 close — **Library Sweep #3 leg 1/3**: SBOM-survey tool spec + RED tests
+
+**LANDED `d0287620`** (merge). Branch `0.8.20-slice-31-sbom-spec`, cut from `cbb56212`, `origin/main` integrated
+before the land. **Carries no `R-20-xx` requirement id** (the TC-76 precedent) and **mints no AC** — gated by TDD
+test name, per plan §3a.
+
+### 20.1 What shipped
+
+The four deliverables §3a asks for, and nothing else: **requirements · 23 acceptance criteria · design · RED tests.**
+
+| Artifact | Path |
+|---|---|
+| Spec of record (req + AC + design + per-round fix records) | `dev/design/0.8.20-slice-31-sbom-survey-tool.md` |
+| RED acceptance suite (8 files, 23 tests) | `scripts/sbom-survey/tests/` |
+| Operating note — how to run it, why it is not CI-gating | `scripts/sbom-survey/README.md` |
+| Index rows | `dev/DOC-INDEX.md` |
+| Closure record | `dev/plans/runs/0.8.20-slice-31-output.json` |
+| codex §9 transcripts, rounds 1–7 | `dev/plans/runs/codex/0.8.20/slice-31-round{1..7}-*.log` |
+
+**NO implementation code** — the `sbom_survey` package, its `pyproject.toml`, its `tiers.toml` and its CLI are all
+**Slice 32**. Running the tool is **Slice 33**.
+
+### 20.2 The RED contract — and why landing a failing suite is safe
+
+The suite is **23 failed / 0 passed / 0 skipped / 0 errors**, exit 1. That shape is the deliverable, not an accident:
+
+- Every test fails **inside its own body**, naming its criterion and the behaviour Slice 32 owes. Nothing fails at
+  **collection**, so no failure can hide another — a module-level import of the absent package would have aborted
+  collection and masked the rest.
+- **Zero skips.** A skip here would be a vacuous green. Even the missing optional CycloneDX validator is made to
+  **fail** rather than skip.
+- It is wired into **no gate whatsoever** — not `.github/workflows/ci.yml`, not `scripts/agent-test.sh` (whose
+  `scripts/tests/**` entries are registered one-by-one, and this is a *different* directory), not `ruff` (scoped to
+  `src/python`), and not any pytest config (the repo's only one is `src/python/pyproject.toml`, not an ancestor).
+  **Verified, not assumed.** So a permanently-red suite sits on `main` without turning anything red.
+
+⚠ **The forcing function for Slice 32:** do **not** wire this suite into CI or `agent-test.sh` until it is GREEN.
+
+### 20.3 Design decisions of record
+
+- **Discovery is `git ls-files`-derived**, so untracked manifests are structurally out of BOM scope — including the
+  wholly-gitignored `/python/` tree, exactly the "gitignored dev/eval lockfile" trap `LIBRARY-BUMP-STEWARD.md` §2 warns of.
+- **Tier rules (`shipped` / `dev-tooling` / `eval-only`) are derived from `.github/dependabot.yml`**, an existing
+  tracked source of record, rather than re-decided. Matching is **longest-prefix-wins and order-independent**, with
+  **no catch-all**: an untiered tracked manifest is a hard error naming the path, and the CLI exits 2.
+- The **8 `dev/release/fixtures` skew manifests are excluded by tracked data**, not a hardcoded path test, and the
+  exclusion is recorded in `survey.excluded` so it stays auditable. `dependabot.yml` already ruled the same way.
+- The **published-version lookup sits behind an injectable seam**: the suite never needs the network, and an unknown
+  latest can **never** render as up-to-date — the single worst failure this tool could have, and it has its own test.
+- **Slice 33's findings home** is `dev/plans/runs/0.8.20-slice-33-library-sweep-3-FINDINGS.md` (house convention,
+  chosen over `dev/design/` and `dev/deps/` after weighing all three). Generated reports stay **gitignored**.
+
+### 20.4 Gates — real exit codes, re-verified by the orchestrator after merging `origin/main`
+
+| Command | rc |
+|---|---|
+| `bash scripts/check-governed-surface-pin.sh` | **0** |
+| `git rev-parse HEAD:src/conformance/governed-surface-allowlist.json` | `93ef3a86…` — **byte-identical to base** |
+| `bash scripts/check-ledgers.sh` | **0** |
+| `bash scripts/lint-design-status.sh` | **0** |
+| `bash scripts/agent-lint-md.sh` | **0** |
+| `bash scripts/lint-findings.sh` | **0** |
+| `bash scripts/check-transcript-hygiene.sh` | **0** |
+| `bash scripts/check-release-state-views.sh` | **0** |
+| `python3 -m pytest scripts/sbom-survey/tests -q` | **1** — 23 failed, 0 passed, 0 skipped, 0 errors |
+| `grep SCHEMA_VERSION …/fathomdb-schema/src/lib.rs` | **24** |
+
+**Guardrails held:** no dependency bump; **no manifest and no lockfile edited or created**; no `.gitignore` edit;
+governed-surface allowlist byte-identical (pin never tripped); SCHEMA stays 24; no AC minted; no CI wiring.
+`scripts/agent-test.sh` was **not** used for any green claim (TC-16 — its aggregate exit is vacuous).
+
+### 20.5 codex §9 — seven rounds, twelve findings, **zero repeats**
+
+| Round | Findings |
+|---|---|
+| 1 | 3×`[P2]` — `setup.cfg` absent from the manifest oracle; no `purl` assertion; dependency graph tolerated **empty** |
+| 2 | 3×`[P2]` + `[P3]` — CycloneDX validity **self-certified by the code under test**; fixture exclusion proven only below the survey boundary; determinism tested only on the pinned-`now` path; manifest count stated 28, actually **29** |
+| 3 | 1×`[P2]` — longest-prefix tier matching frozen in spec, ungraded by any test |
+| 4 | `[P2]`+`[P3]` — injected published-source never driven through `run_survey`; `--describe` tier vocabulary unasserted |
+| 5 | 1×`[P2]` — **inverse class**: CLI oracle over-specific, would have rejected a *correct* implementation |
+| 6 | 1×`[P2]` — originless **direct** components skipped past the tier oracle |
+| 7 | **TERMINAL-CLEAN** — *"I found no discrete, actionable bugs in the added spec/docs and RED acceptance tests."* |
+
+**The dominant class, worth carrying forward (TC-105):** *a criterion graded against a helper while the integration
+boundary that must call it goes ungraded.* It recurred three times before a **directed sweep of all 23 criteria** at
+fix-4 closed six further instances at once and dropped the finding rate from 3–4 per round to 1. **For a spec-and-RED-
+test slice the oracle IS the deliverable**, so a permissive oracle is a defect in the product itself — which is why
+none of these was carried.
+
+**Round-cap history.** Round 6 hit the **TC-82 cap**. The orchestrator halted and checked in rather than opening round
+7. The Steward ruled the rounds **productive** — twelve findings, all new and distinct, so the same-finding bound of 3
+never engaged — and authorized **one bounded round 7** with the exit **pre-committed** (record the residual as a TC and
+land; round 8 forbidden), `seq-162`. Round 7 closed it and the fallback did not fire.
+
+### 20.6 Owed / handed on
+
+- **Slice 32** inherits two obligations discovered during review: `cyclonedx-python-lib[json-validation]` must actually
+  be installed, and `run_survey` must accept a `tier_map` seam. Both are in the spec of record.
+- **TC-106** — `dev/tools/mermaid/package.json` is a **tracked npm manifest under no configured Dependabot directory**,
+  the same class as the `R-DEP-2` root-manifest note. Nothing was changed about it; handed to Slice 33 / **0.8.22**.
+- **TC-105** — the review-cost generalisation above, for budgeting Slices 32 and 33.
+- **Steward reconciliation owed:** `dev/plans/release-state-0.8.20.json` (ladder 31 → LANDED + sha, `next_slice` → 32,
+  `landed` list) and the master's generated ladder-progress view. Per the Slice 23 precedent (`603af000`) those are the
+  Steward's, not the orchestrator's, and this land deliberately left both untouched.
