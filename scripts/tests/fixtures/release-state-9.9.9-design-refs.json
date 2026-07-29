@@ -1,0 +1,59 @@
+{
+  "_fixture": "scripts/tests/test_check_design_refs.sh (TC-92). NOT a real release. It is copied into a throwaway git repo as dev/plans/release-state-9.9.9.json so the failing arms never go near dev/plans/release-state-0.8.20.json. Slice 0 is fully covered (non-vacuity), Slice 5 is a LANDED slice with an uncovered token (the synthetic third gap), Slice 10 is covered by a curated design_ref that lives OUTSIDE the scanned roots.",
+  "release": "9.9.9",
+  "release_kind": "even, publish",
+  "board": "dev/plans/runs/board.md",
+  "plan": "dev/plans/plan-9.9.9.md",
+  "master": "dev/plans/master.md",
+  "schema_version": 42,
+  "schema_version_source": "pub const SCHEMA_VERSION in src/rust/crates/fathomdb-schema/src/lib.rs",
+  "ladder": [
+    {
+      "slice": 0,
+      "short": "R-9-A",
+      "title": "widget_readiness keystone",
+      "depends_on": [],
+      "status": "LANDED",
+      "sha": "aaaa1111"
+    },
+    {
+      "slice": 5,
+      "short": "R-9-B",
+      "title": "the TC-999 gap leg",
+      "depends_on": [0],
+      "status": "LANDED",
+      "sha": "bbbb2222"
+    },
+    {
+      "slice": 10,
+      "short": "R-9-C",
+      "title": "the TC-998 curated leg",
+      "depends_on": [5],
+      "status": "UNBLOCKED",
+      "sha": null,
+      "design_refs": ["dev/plans/prompts/CURATED-OUT-OF-ROOT.md"]
+    }
+  ],
+  "landed": [0, 5],
+  "next_slice": 10,
+  "remaining_ladder": [10],
+  "unblocked": [10],
+  "acceptance": {
+    "highest_defined_non_reserved": "AC-900",
+    "publish_gate": {
+      "ac": "AC-999",
+      "covers": "the accumulated governed-surface delta",
+      "pre_sign_state": "NOT_PRE_SIGNED",
+      "minted": false,
+      "minted_as": "SIGNED",
+      "sign_off_slice": 10,
+      "publish_gated_by": "the separate HITL publish gate",
+      "board_ref": "§4 #1"
+    }
+  },
+  "decisions": {
+    "unruled": [],
+    "ruled": []
+  },
+  "generated_views": []
+}
