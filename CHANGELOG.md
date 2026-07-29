@@ -12,6 +12,43 @@ AC-050c) gates merges against this invariant.
 
 ### Changed — BREAKING
 
+- **An `fts` or `vector` sub-object without the `searchable` role is now
+  REJECTED, not accepted (0.8.20, R-20-SV).** `configure_projections` refuses a
+  `ProjectionSpec` that sets `fts` or `vector` while `roles` does not contain
+  `searchable`.
+
+  | | before | after |
+  | --- | --- | --- |
+  | Rust | accepted; stored and round-tripped verbatim | `EngineError::WriteValidation` |
+  | Python | accepted | `WriteValidationError`, message `"write validation error"` |
+  | TypeScript | accepted | `WriteValidationError` (`FDB_WRITE_VALIDATION`), `data: null` |
+
+  *Why:* `searchable→FTS` and `searchable→vector` are tier labels, not roles —
+  the sub-objects **select** a sub-target of `searchable` and do not **confer**
+  one. Both engine build predicates are conjunctions with the role, so without it
+  the declaration builds no property-FTS, enrols no node kind and embeds nothing.
+  It was a config that could not do anything, accepted silently. Fail-fast
+  matches the hard-reject philosophy applied everywhere else in the projection
+  registry, and additive strictness is safe pre-1.0.
+
+  *Scope:* the refusal is keyed on the **absence of `searchable`** and nothing
+  else — `filterable` and `rankable` neither supply nor substitute for it. A
+  rejected request is a **total no-op**: validation runs before any write, so one
+  invalid spec anywhere in the list aborts the whole call and valid siblings are
+  not registered. `read.projections` is a pure read and is **unaffected**.
+
+  *The cost, stated plainly:* `WriteValidation` carries no payload, so when you
+  pass a LIST of specs **the error does not name which spec was invalid**.
+  Validate before calling, or apply specs one at a time while migrating.
+
+  *Migration for existing databases:* a projection declared in this shape while
+  the engine accepted it is still stored, and `read.projections` still reports it
+  verbatim — but that output can no longer be fed straight back into
+  `configure_projections`. Re-applying it raises; re-declaring only its valid half
+  raises `ProjectionDestructiveError`, because that removes the stored
+  sub-object. Two remedies: **add the `searchable` role** (a non-destructive
+  change, accepted), or **name the projection in `drop`**.
+
 - **An unsatisfiable node validity window is now `WriteValidationError`, not
   `InvalidArgumentError` (0.8.20, R-20-VC decision #18).** Writing a node with
   both `valid_from` and `valid_until` present and `valid_from >= valid_until`
@@ -36,8 +73,11 @@ AC-050c) gates merges against this invariant.
   calling instead.
 
   *Unaffected:* `InvalidArgumentError` / `FDB_INVALID_ARGUMENT` is unchanged
-  everywhere else — traversal `depth`, projection-spec and `drop` rejections,
-  `ReadView` misuse. A one-sided window is still never refused. **An unrenderable
+  everywhere else — traversal `depth`, projection **name** and `drop` **name**
+  rejections, `ReadView` misuse. (The projection **shape** reject added by
+  R-20-SV above is `WriteValidationError`; the name rejections keep
+  `InvalidArgumentError` because their message names the offending value.)
+  A one-sided window is still never refused. **An unrenderable
   edge `t_valid` / `t_invalid` epoch also still raises `InvalidArgumentError`
   naming the offending field**, deliberately: that message is the TC-33 contract
   that stops a `null`-rendering epoch silently resurrecting an invalidated edge.

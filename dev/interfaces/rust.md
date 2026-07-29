@@ -386,6 +386,42 @@ Types:
     `Ready` (see the enrolment bullet below), nothing is rejected, and no
     `projection_failures` row is written.
 
+**Spec-validation reject — an `fts`/`vector` sub-object REQUIRES the `searchable`
+role (0.8.20 Slice 23, `R-20-SV`).** ⚠ **BREAKING.**
+`Engine::configure_projections` REFUSES a `ProjectionSpec` that carries
+`fts: Some(_)` or `vector: Some(_)` while `roles` does not contain
+`ProjectionRole::Searchable`. The error is **`EngineError::WriteValidation`** —
+the decision-#18 write-SHAPE family — surfaced as `WriteValidationError` in
+Python and as code `FDB_WRITE_VALIDATION` (message `"write validation error"`,
+`data: null`) in TypeScript.
+
+- **Why.** `searchable→FTS` and `searchable→vector` are TIER LABELS, not roles:
+  the sub-objects SELECT a sub-target of `searchable` and do not CONFER one. Both
+  engine build predicates are conjunctions with the role, so without it the
+  declaration builds no property-FTS, enrols no kind and embeds nothing — a
+  meaningless config. HITL ruling 2026-07-24 (`dev/plans/plan-0.8.20.md` §11
+  item 4, option (b) REJECT).
+- **This SUPERSEDES the 0.8.20 Slice 15d fix-4 accept-and-round-trip position**
+  and the "accept-inert ruling" this document previously cited as precedent
+  (below). Nothing else about that fix changed.
+- **Keyed on the ABSENCE of `searchable` alone.** `Filterable` / `Rankable` are
+  orthogonal axes; neither supplies nor substitutes for the role, so every
+  non-`searchable` role set is refused identically.
+- **A rejected request is a TOTAL no-op.** Validation runs before any write, so a
+  single invalid spec anywhere in `specs` aborts the whole call: valid siblings
+  are not registered and `drop` entries do not apply.
+- **`read_projections` is UNAFFECTED** — it is a pure read and rejects nothing.
+- **Migration for the LEGACY population.** Databases that declared the shape
+  while the engine accepted it still hold it at rest. Those rows still READ back
+  verbatim, but the `read_projections` → `configure_projections` round-trip no
+  longer closes for them: re-applying raises, and re-declaring only the valid
+  half is refused as `ProjectionDestructive` (it removes the stored sub-object).
+  The two remedies are **add the `searchable` role** (non-destructive, accepted)
+  or **name the projection in `drop`**.
+- **Known diagnostic cost (TC-95/TC-98, HITL-deferred).** `WriteValidation` is a
+  UNIT variant, so with a LIST of specs the refusal cannot name WHICH spec was
+  invalid. See `dev/design/errors.md`.
+
 **Projection-name contract (0.8.20 Slice 15d fix-4).** A projection `name` is an
 app-declared identifier that becomes a SQLite JSON-path key (`$."<name>"`) at
 write time, so `configure_projections` REJECTS — with
@@ -420,8 +456,14 @@ axis. It is `None` on every caller-authored spec.
 - **ACCEPT-INERT on the way in.** `Engine::configure_projections` neither stores
   nor honours a caller-supplied `dense_readiness` (`StoredProjection::from_spec`
   reads only `embedder`), so `read_projections` output re-applies as a no-op —
-  the shipped read→configure round-trip. Mirrors the accept-inert ruling on an
-  `fts`/`vector` sub-object declared without the `searchable` role.
+  the shipped read→configure round-trip.
+  **⚠ 0.8.20 Slice 23 (`R-20-SV`) correction (TC-39 class):** this bullet used to
+  cite "the accept-inert ruling on an `fts`/`vector` sub-object declared without
+  the `searchable` role" as its precedent. **That ruling is OVERRULED** — the
+  HITL ruled the shape an INVALID SPEC on 2026-07-24 and Slice 23 rejects it (see
+  the spec-validation reject above). `dense_readiness` accept-inert stands on its
+  OWN footing and is unchanged: it is engine-set READ METADATA, not part of the
+  declaration, and the round-trip it protects is still live.
 - **The BINDINGS hard-reject** the two shapes that could never round-trip: a
   readiness supplied with `vector = false`, and any spelling outside
   `{ready, embedding}` (notably `pending`, and the empty string). Both reuse the
@@ -477,10 +519,11 @@ in Rust, Python and TypeScript:
   body, not off the projection registry.
 - **The dense arm requires the `searchable` ROLE, not merely the `vector`
   sub-object** (0.8.20 Slice 21c, `TC-71`). A spec such as
-  `{ roles: {Filterable}, vector: Some(_) }` is accepted and round-trips
-  verbatim, but it is **INERT**: it enrols no kind, backfills nothing, and makes
-  no later write enqueue an embedding — the accept-inert ruling above, now
-  honoured by the engine and not only by the bindings. Previously the engine keyed
+  `{ roles: {Filterable}, vector: Some(_) }` is **REJECTED since 0.8.20 Slice 23**
+  (`R-20-SV`, above); until then it was accepted and round-tripped verbatim while
+  being **INERT**: it enrolled no kind, backfilled nothing, and made no later
+  write enqueue an embedding. The inertness still governs the LEGACY population
+  that holds the shape at rest. Previously the engine keyed
   the dense arm off the stored `vector` sub-object alone, so declaring that
   combination in a session with a live embedder silently embedded the whole
   corpus. **The inverse moves with it:** demoting the last `searchable→vector`

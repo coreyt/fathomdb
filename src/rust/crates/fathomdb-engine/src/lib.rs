@@ -3985,9 +3985,18 @@ pub struct ProjectionVector {
     /// reports the derived truth. This is deliberately accept-inert rather than
     /// hard-reject so `read.projections` output stays feedable straight back
     /// into `configure_projections` (the fix-4 read→configure round-trip, which
-    /// both bindings pin with a test); it mirrors the already-audited
-    /// accept-inert ruling on an `fts`/`vector` sub-object declared without the
-    /// `searchable` role. The bindings still HARD-REJECT the shapes that could
+    /// both bindings pin with a test).
+    ///
+    /// **0.8.20 Slice 23 (`R-20-SV`) correction (TC-39 class).** This doc used to
+    /// justify accept-inert by analogy with "the already-audited accept-inert
+    /// ruling on an `fts`/`vector` sub-object declared without the `searchable`
+    /// role". **That ruling is OVERRULED** — the HITL ruled the shape an INVALID
+    /// SPEC on 2026-07-24 and [`apply_projection_config`] now rejects it with
+    /// [`EngineError::WriteValidation`]. `dense_readiness` accept-inert is
+    /// UNCHANGED and stands on its own footing: it is engine-set READ METADATA,
+    /// never part of the declaration, so there is nothing about it to reject.
+    ///
+    /// The bindings still HARD-REJECT the shapes that could
     /// not round-trip: a readiness supplied with `vector = false`, and any
     /// spelling outside `{ready, embedding}`.
     pub dense_readiness: Option<DenseReadiness>,
@@ -8291,6 +8300,14 @@ impl Engine {
     /// (`filterable`, `searchable→FTS`) are built same-transaction; `rankable`
     /// and the `searchable→vector` sub-target are PERSISTED but deferred (F9 /
     /// Slice 20) — declaring them never errors (graceful-absent, Q6a).
+    ///
+    /// 0.8.20 Slice 23 (`R-20-SV`) — **SPEC VALIDATION.** A spec that carries an
+    /// `fts` or `vector` sub-object WITHOUT [`ProjectionRole::Searchable`] is an
+    /// INVALID SPEC and is refused with [`EngineError::WriteValidation`] (HITL
+    /// 2026-07-24; see [`apply_projection_config`] for the full rationale). A
+    /// rejected request is a TOTAL no-op. `read_projections` is unaffected — it
+    /// is a pure read — so a LEGACY row in that shape still reports verbatim but
+    /// can no longer be re-applied.
     ///
     /// `drop` is EXPLICIT (C3, `api-surface.md:27`): omission of a live
     /// projection from `specs` does NOT drop it; removal requires naming it in
@@ -16872,9 +16889,15 @@ impl StoredProjection {
     /// write path's late enrolment) — routes through this so no call site can
     /// re-derive the rule and drift. Before it existed, that predicate keyed off
     /// `vector_declared` ALONE, so `{roles: [filterable], vector: {}}` — the
-    /// combination Slice 15d documents as inert-but-round-trippable — enrolled
+    /// combination Slice 15d documented as inert-but-round-trippable — enrolled
     /// node kinds, backfilled the corpus and made every later write enqueue an
     /// embedding in any session with a live embedder.
+    ///
+    /// **0.8.20 Slice 23 (`R-20-SV`):** that combination is no longer DECLARABLE
+    /// — [`apply_projection_config`] rejects it as an invalid spec. This
+    /// predicate still governs, because the shape survives at rest in every
+    /// database that declared it while the engine accepted it, and it is read
+    /// from the registry, not from a caller's spec.
     ///
     /// **Deliberately NOT the same as [`StoredProjection::has_deferred`]**, which
     /// keys off `vector_declared` alone and must keep doing so: that one feeds
@@ -17426,6 +17449,46 @@ fn apply_projection_config(
             return Err(EngineError::InvalidArgument {
                 msg: format!("duplicate projection drop in one request: '{name}'"),
             });
+        }
+    }
+
+    // 0.8.20 Slice 23 (`R-20-SV`) — REJECT an `fts` or `vector` sub-object
+    // declared WITHOUT the `searchable` role.
+    //
+    // HITL ruling 2026-07-24 (`dev/plans/plan-0.8.20.md` §11 item 4, option (b)):
+    // *"it is a meaningless config; fail-fast matches the hard-reject philosophy,
+    // and additive strictness is safe pre-1.0"*, to be implemented "at the next
+    // `configure_projections` slice". This OVERTURNS the shipped 15d fix-4
+    // position, which accepted the shape because it round-tripped faithfully.
+    //
+    // WHY it is meaningless: `searchable→FTS` and `searchable→vector` are TIER
+    // LABELS, not roles ([`ProjectionRole`] has exactly three members). The
+    // sub-objects SELECT a sub-target of `searchable`; they do not CONFER one —
+    // both build predicates ([`StoredProjection::wants_property_fts`] and
+    // [`StoredProjection::wants_vector`]) are conjunctions with
+    // `roles.contains(Searchable)`. So without the role the declaration builds no
+    // property-FTS, enrols no kind and embeds nothing: it names a sub-target of a
+    // projection that does not exist. The reject is therefore keyed on the
+    // ABSENCE of `searchable` and on nothing else — `filterable` / `rankable` are
+    // orthogonal axes that neither supply nor substitute for it.
+    //
+    // FAMILY: [`EngineError::WriteValidation`], per decision #18 (0.8.20 Slice 22)
+    // — the write-SHAPE boundary is ONE family, and this is a shape rejection.
+    // Deliberately a SEPARATE loop from the name checks above: those are NAME
+    // rejections that keep `InvalidArgument { msg }` because the message naming
+    // the offending value is the caller's only handle on it. `dev/design/errors.md`
+    // ("Validation boundary") states that split; keeping the two loops apart keeps
+    // the split visible in the code and this change one-line-reversible.
+    //
+    // KNOWN COST (TC-95/TC-98, HITL-deferred): `WriteValidation` is a UNIT
+    // variant, so this refusal cannot name WHICH spec in `specs` was invalid —
+    // strictly worse than the name rejections above. Recorded, not worked around.
+    for spec in specs {
+        if spec.roles.contains(&ProjectionRole::Searchable) {
+            continue;
+        }
+        if spec.fts.is_some() || spec.vector.is_some() {
+            return Err(EngineError::WriteValidation);
         }
     }
 

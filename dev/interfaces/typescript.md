@@ -193,6 +193,38 @@ sub-target are persisted-but-deferred (reported in `ProjectionDelta.deferred`).
 `{ built, dropped, deferred, unchanged, vectorUnsupportedKinds }`. Field names
 are camelCase per this file's casing rule.
 
+### `fts` / `vector` require the `searchable` role (0.8.20 Slice 23, R-20-SV)
+
+⚠ **BREAKING.** `engine.configureProjections` REJECTS a `ProjectionSpec` with
+`fts: true` or `vector: true` whose `roles` does not include `"searchable"`. The
+promise rejects with **`WriteValidationError`**, mapped from the
+`FDB_WRITE_VALIDATION` envelope (message `"write validation error"`,
+`data: null` — the variant is message-less).
+
+- **Why.** `searchable→FTS` / `searchable→vector` are tier labels: the sub-object
+  flags SELECT a sub-target of `searchable` and do not CONFER it, so without the
+  role the declaration builds, embeds and enrols nothing. HITL ruling
+  2026-07-24 (`dev/plans/plan-0.8.20.md` §11 item 4, option (b) REJECT). The
+  family is `WriteValidationError` per decision #18 — a malformed submitted SHAPE
+  is one family (`dev/design/errors.md`).
+- **This SUPERSEDES the Slice 15d fix-4 accept-and-round-trip position** for this
+  shape, and with it the "accept-inert" precedent cited under
+  `vectorDenseReadiness` below.
+- **Keyed on the ABSENCE of `"searchable"` alone** — `"filterable"` /
+  `"rankable"` are orthogonal and neither substitutes for it.
+- **A rejected request is a TOTAL no-op**: validation runs before any write, so
+  one invalid spec anywhere in `specs` aborts the whole call — valid siblings are
+  not registered and `drop` entries do not apply.
+- **`read.projections(engine)` is UNAFFECTED** — a pure read that rejects nothing.
+- **LEGACY databases.** Rows declared in this shape while the engine accepted it
+  still read back verbatim, but `read.projections` output can no longer be fed
+  straight back into `configureProjections` for them: re-applying rejects, and
+  re-declaring only the valid half rejects with `ProjectionDestructiveError` (it
+  removes the stored sub-object). Remedies: add `"searchable"` to `roles`, or name
+  the projection in `drop`.
+- **Known diagnostic cost (TC-95/TC-98, HITL-deferred).** The envelope carries
+  `data: null`, so with an ARRAY of specs it cannot name WHICH one was invalid.
+
 ### `vectorUnsupportedKinds` (0.8.20 Slice 22, R-20-VC / TC-67)
 
 `ProjectionDelta.vectorUnsupportedKinds` is a `string[]` of node **kinds** — not
@@ -259,6 +291,11 @@ and rebuild-durable, so it carries one.
   `configureProjections` as a no-op (`{ unchanged: true }`); an explicit `null`
   is normalized to `undefined` on the way in, exactly as for `ftsTokenizer` /
   `vectorEmbedder`.
+  **⚠ 0.8.20 Slice 23 correction:** this accept-inert rule used to be justified by
+  analogy with the `fts`/`vector`-without-`searchable` shape. That analogy is
+  **OVERRULED** — that shape is now rejected (see above). `vectorDenseReadiness`
+  accept-inert is unchanged and stands on its own: it is engine-set READ METADATA,
+  never part of a declaration.
 - **Two shapes are still hard-rejected**, because they could never round-trip: a
   readiness supplied with `vector: false`, and any spelling outside
   `{"ready", "embedding"}` (including `"pending"`, `""`, and `"Ready"`). Both
@@ -317,9 +354,12 @@ Rust, Python and TypeScript:
   Edge-body vectors are unaffected.
 - **The dense arm requires the `searchable` ROLE, not merely `vector: true`**
   (0.8.20 Slice 21c, `TC-71`). A spec such as
-  `{ name: "summary", roles: ["filterable"], vector: true }` is accepted and
-  round-trips verbatim, but it is **INERT**: it enrols no kind, backfills nothing,
-  and makes no later write enqueue an embedding. Previously the engine keyed the
+  `{ name: "summary", roles: ["filterable"], vector: true }` is **REJECTED since
+  0.8.20 Slice 23** (`R-20-SV`, above); until then it was accepted and
+  round-tripped verbatim while being **INERT**: it enrolled no kind, backfilled
+  nothing, and made no later write enqueue an embedding. That inertness still
+  governs the LEGACY population holding the shape at rest. Previously the engine
+  keyed the
   dense arm off the stored `vector` sub-object alone, so declaring that
   combination against a session with an embedder silently embedded the whole
   corpus. The inverse moves with it: demoting the last `searchable→vector`

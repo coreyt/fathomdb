@@ -178,6 +178,38 @@ roles (`filterable`, `searchable→FTS`) build same-transaction; `rankable` and 
 `ProjectionDelta.deferred`). `ProjectionDelta` is
 `{ built, dropped, deferred, unchanged, vector_unsupported_kinds }`.
 
+### `fts` / `vector` require the `searchable` role (0.8.20 Slice 23, R-20-SV)
+
+⚠ **BREAKING.** `engine.configure_projections` REFUSES a `ProjectionSpec` with
+`fts=True` or `vector=True` whose `roles` does not contain
+`ProjectionRole.SEARCHABLE`, raising **`fathomdb.errors.WriteValidationError`**
+(message `"write validation error"` — the variant is message-less).
+
+- **Why.** `searchable→FTS` / `searchable→vector` are tier labels: the sub-object
+  flags SELECT a sub-target of `searchable` and do not CONFER it, so without the
+  role the declaration builds, embeds and enrols nothing. HITL ruling
+  2026-07-24 (`dev/plans/plan-0.8.20.md` §11 item 4, option (b) REJECT). The
+  family is `WriteValidationError` per decision #18 — a malformed submitted SHAPE
+  is one family (`dev/design/errors.md`).
+- **This SUPERSEDES the Slice 15d fix-4 accept-and-round-trip position** for this
+  shape, and with it the "accept-inert" precedent cited under
+  `vector_dense_readiness` below.
+- **Keyed on the ABSENCE of `searchable` alone** — `filterable` / `rankable` are
+  orthogonal and neither substitutes for it.
+- **A rejected request is a TOTAL no-op**: validation runs before any write, so
+  one invalid spec anywhere in `specs` aborts the whole call — valid siblings are
+  not registered and `drop` entries do not apply.
+- **`read.projections(engine)` is UNAFFECTED** — a pure read that rejects nothing.
+- **LEGACY databases.** Rows declared in this shape while the engine accepted it
+  still read back verbatim, but `read.projections` output can no longer be fed
+  straight back into `configure_projections` for them: re-applying raises, and
+  re-declaring only the valid half raises `ProjectionDestructiveError` (it removes
+  the stored sub-object). Remedies: add `ProjectionRole.SEARCHABLE`, or name the
+  projection in `drop`.
+- **Known diagnostic cost (TC-95/TC-98, HITL-deferred).** `WriteValidationError`
+  carries no payload, so with a LIST of specs it cannot name WHICH one was
+  invalid.
+
 ### `vector_unsupported_kinds` (0.8.20 Slice 22, R-20-VC / TC-67)
 
 `ProjectionDelta.vector_unsupported_kinds` is a `list[str]` of node **kinds** —
@@ -236,6 +268,11 @@ same-transaction (non-stale on commit) so they have no readiness axis at all;
   part of the declaration and the engine always reports the derived truth. That
   is deliberate, so `read.projections` output stays feedable straight back into
   `configure_projections` as a no-op (`ProjectionDelta(unchanged=True)`).
+  **⚠ 0.8.20 Slice 23 correction:** this accept-inert rule used to be justified by
+  analogy with the `fts`/`vector`-without-`searchable` shape. That analogy is
+  **OVERRULED** — that shape is now rejected (see above). `vector_dense_readiness`
+  accept-inert is unchanged and stands on its own: it is engine-set READ METADATA,
+  never part of a declaration.
 - **Two shapes are still hard-rejected**, because they could never round-trip:
   a readiness supplied with `vector=False`, and any spelling outside
   `{"ready", "embedding"}` (including `"pending"`, `""`, and `"Ready"`). Both
@@ -293,9 +330,12 @@ commands. The pinned invariant, tested in Rust, Python and TypeScript:
   Edge-body vectors are unaffected.
 - **The dense arm requires the `searchable` ROLE, not merely `vector=True`**
   (0.8.20 Slice 21c, `TC-71`). A spec such as
-  `{"name": "summary", "roles": ["filterable"], "vector": True}` is accepted and
-  round-trips verbatim, but it is **INERT**: it enrols no kind, backfills nothing,
-  and makes no later write enqueue an embedding. Previously the engine keyed the
+  `{"name": "summary", "roles": ["filterable"], "vector": True}` is **REJECTED
+  since 0.8.20 Slice 23** (`R-20-SV`, above); until then it was accepted and
+  round-tripped verbatim while being **INERT**: it enrolled no kind, backfilled
+  nothing, and made no later write enqueue an embedding. That inertness still
+  governs the LEGACY population holding the shape at rest. Previously the engine
+  keyed the
   dense arm off the stored `vector` sub-object alone, so declaring that
   combination against a session with an embedder silently embedded the whole
   corpus. The inverse moves with it: demoting the last `searchable→vector`

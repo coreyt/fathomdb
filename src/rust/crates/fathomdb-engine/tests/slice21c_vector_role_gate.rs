@@ -59,6 +59,18 @@
 //! become INERT, not DISAPPEAR —
 //! [`a_filterable_vector_declaration_round_trips_verbatim_without_an_embedder`]
 //! plus the round-trip assertions inside path (a)'s test.
+//!
+//! ## 0.8.20 Slice 23 (`R-20-SV`) — the ROUTE changed; the coverage did not
+//!
+//! The HITL ruled on 2026-07-24 that this suite's shape is an INVALID SPEC, and
+//! Slice 23 rejects it with `EngineError::WriteValidation`. The shape is
+//! therefore no longer constructible through `configure_projections` — but it is
+//! still at rest in every database that declared it while the engine accepted
+//! it, which is the population TC-71 exists for. Each test below now builds that
+//! state through the documented legacy back door
+//! ([`declare_legacy_filterable_vector`]) and asserts the reject in place on the
+//! way past. **Every oracle is unchanged**; nothing here was deleted or
+//! weakened.
 
 use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
 use fathomdb_engine::{
@@ -129,6 +141,10 @@ fn roles(rs: &[ProjectionRole]) -> BTreeSet<ProjectionRole> {
 /// **The shape under test**: a `vector` sub-object WITHOUT the `searchable`
 /// role. Documented inert-but-round-trippable; before TC-71 it turned the dense
 /// arm on.
+///
+/// **0.8.20 Slice 23 (`R-20-SV`) — this spec is no longer ACCEPTED.** It is kept
+/// so every test below can assert the reject in place (see
+/// [`declare_legacy_filterable_vector`]).
 fn filterable_vector_spec(name: &str) -> ProjectionSpec {
     ProjectionSpec {
         name: name.to_string(),
@@ -136,6 +152,78 @@ fn filterable_vector_spec(name: &str) -> ProjectionSpec {
         fts: None,
         vector: Some(ProjectionVector { embedder: None, dense_readiness: None }),
     }
+}
+
+/// The VALID half of the shape under test — `filterable`, no sub-object. This
+/// part `configure_projections` still accepts, and it is what builds the EAV
+/// rows the "inert, NOT absent" assertions read.
+fn filterable_only_spec(name: &str) -> ProjectionSpec {
+    ProjectionSpec {
+        name: name.to_string(),
+        roles: roles(&[ProjectionRole::Filterable]),
+        fts: None,
+        vector: None,
+    }
+}
+
+/// **0.8.20 Slice 23 (`R-20-SV`) — THE LEGACY BACK DOOR, and why this suite now
+/// uses it.**
+///
+/// The HITL ruled on **2026-07-24** (`dev/plans/plan-0.8.20.md` §11 item 4,
+/// option (b)) that an `fts`/`vector` sub-object declared WITHOUT the
+/// `searchable` role is an **INVALID SPEC**; Slice 23 implements that reject as
+/// `EngineError::WriteValidation` (pinned in
+/// `tests/slice23_spec_validation_reject.rs`). So the shape TC-71 is about is no
+/// longer constructible through the public verb.
+///
+/// It has NOT stopped existing. It survives as the AT-REST state of every
+/// database that declared it while the engine still accepted it — which is
+/// precisely the affected population TC-71 was raised for, and precisely the
+/// population `tc71_fix1_inert_enrolment_reconcile.rs` reconciles. Deleting this
+/// coverage would retire the defect class while its population is still live, so
+/// the coverage is KEPT and only the ROUTE moves: declare the valid `filterable`
+/// half through the verb, then set `vector_declared = 1` with the raw UPDATE the
+/// pre-Slice-23 `persist_projection_row` would have written for the same
+/// declaration. **Every ORACLE below is unchanged** — raw
+/// `_fathomdb_vector_kinds` / `_fathomdb_vector_rows` / `vector_default` rows
+/// plus the embedder call count.
+///
+/// It also asserts the reject IN PLACE, so each test states why it takes the
+/// back door and pins the front door shut at the same time.
+fn declare_legacy_filterable_vector(
+    engine: &Engine,
+    path: &Path,
+    name: &str,
+) -> fathomdb_engine::ProjectionDelta {
+    // Front door, pinned shut.
+    assert_eq!(
+        engine.configure_projections(&[filterable_vector_spec(name)], &[]).expect_err(
+            "R-20-SV: a `vector` sub-object without `searchable` is now an invalid spec"
+        ),
+        fathomdb_engine::EngineError::WriteValidation,
+    );
+    // Valid half through the verb — this is what builds the EAV projection.
+    let delta = engine
+        .configure_projections(&[filterable_only_spec(name)], &[])
+        .expect("the `filterable` half is still a valid declaration");
+    legacy_add_vector_subobject(path, name);
+    delta
+}
+
+/// Set `vector_declared = 1` on an EXISTING registry row through a raw RW
+/// connection — the legacy half of [`declare_legacy_filterable_vector`], split
+/// out for the tests that need it applied to a row declared some other way.
+/// This is the exact column `persist_projection_row` set for the same
+/// declaration before Slice 23 refused it.
+fn legacy_add_vector_subobject(path: &Path, name: &str) {
+    let conn = rusqlite::Connection::open(path).expect("open rw");
+    let n = conn
+        .execute(
+            "UPDATE _fathomdb_projection_registry SET vector_declared = 1 WHERE name = ?1",
+            [name],
+        )
+        .expect("legacy vector sub-object");
+    assert_eq!(n, 1, "the registry row must exist before the legacy sub-object is added");
 }
 
 /// The legitimate dense-arm declaration — the control. Every assertion that the
@@ -271,23 +359,31 @@ fn a_filterable_vector_declaration_backfills_nothing_and_embeds_nothing() {
     delay_ms.store(8_000, Ordering::SeqCst);
 
     let spec = filterable_vector_spec("summary");
-    let delta = engine
-        .configure_projections(std::slice::from_ref(&spec), &[])
-        .expect("a filterable+vector declaration is legal and never errors");
+    let delta = declare_legacy_filterable_vector(engine, &path, "summary");
 
-    // (5a) INERT, NOT ABSENT — the delta is UNCHANGED by this fix.
+    // (5a) INERT, NOT ABSENT — the `filterable` half still builds.
     assert_eq!(
         delta.built,
         vec!["summary".to_string()],
         "the `filterable` role still builds its EAV projection"
     );
-    assert_eq!(
-        delta.deferred,
-        vec!["summary".to_string()],
-        "the stored `vector` sub-object is still REPORTED deferred — the round-trip contract \
-         wants it reported; TC-71 changes what the engine DOES, not what it says"
+    assert!(
+        delta.deferred.is_empty(),
+        "0.8.20 Slice 23 (R-20-SV): the declaration that reaches the verb no longer CARRIES the \
+         `vector` sub-object — it is refused. The legacy half is added at rest, exactly as a \
+         pre-Slice-23 database carries it, and is still REPORTED by `read_projections` below \
+         (post-5b) — the round-trip contract this assertion originally protected"
     );
     assert!(!delta.unchanged, "a fresh declaration is not a no-op");
+
+    // The governed call that runs the SAME declare-time fork the old
+    // `{filterable, vector}` declaration ran (`vector_declared_after` +
+    // `enqueue_declared_vector_backfill`'s entry guard), now with the legacy row
+    // in place. This is the door path (a) is about.
+    let after = engine
+        .configure_projections(&[], &[])
+        .expect("an empty request still runs the declare-time fork");
+    assert!(after.unchanged, "…and diffs to a no-op");
 
     // (1) THE assertion, and it is checked FIRST: enrolment happens inside the
     // `configure_projections` write transaction, so it is settled and race-free
@@ -390,9 +486,9 @@ fn a_write_under_a_filterable_vector_declaration_enqueues_no_embedding() {
     // Declaration FIRST, on an EMPTY corpus: `enqueue_declared_vector_backfill`
     // finds no `canonical_nodes` rows, so it enrols nothing regardless of the
     // predicate. Whatever happens next is the WRITE path's doing alone.
-    engine
-        .configure_projections(&[filterable_vector_spec("summary")], &[])
-        .expect("configure on an empty corpus");
+    // (0.8.20 Slice 23 — via the legacy back door; see
+    // [`declare_legacy_filterable_vector`].)
+    declare_legacy_filterable_vector(engine, &path, "summary");
     let conn = ro(&path);
     assert!(
         !vector_kind_registered(&conn, "doc"),
@@ -496,12 +592,31 @@ fn demoting_a_searchable_vector_projection_to_filterable_un_enrols_the_kind() {
 
     // ---- the demotion: same name, `searchable` replaced by `filterable`, the
     //      `vector` sub-object retained ----
-    let demoted = filterable_vector_spec("summary");
+    //
+    // 0.8.20 Slice 23 (`R-20-SV`) — the demotion's TARGET spec
+    // (`{filterable} + vector`) is now an invalid spec, so the demotion runs in
+    // the two steps a pre-Slice-23 database's registry ended up in: the
+    // drop-then-redeclare of the VALID half through the verb — which is the call
+    // that takes the `vector_declared_before && !after` TRANSITION arm this test
+    // is about — followed by the legacy `vector_declared = 1` the old engine
+    // would have persisted in the same call. Splitting them is STRICTER: the
+    // surviving legacy sub-object must not resurrect the arm afterwards either,
+    // which is asserted below.
+    assert_eq!(
+        engine
+            .configure_projections(&[filterable_vector_spec("summary")], &["summary".to_string()])
+            .expect_err("R-20-SV: the demoted shape is no longer a valid spec"),
+        fathomdb_engine::EngineError::WriteValidation,
+    );
     let delta = engine
-        .configure_projections(std::slice::from_ref(&demoted), &["summary".to_string()])
+        .configure_projections(&[filterable_only_spec("summary")], &["summary".to_string()])
         .expect("drop-then-redeclare is the documented path for a destructive role change");
     assert!(delta.dropped.contains(&"summary".to_string()), "the drop half is reported");
     assert!(delta.built.contains(&"summary".to_string()), "the fresh `filterable` half is built");
+    legacy_add_vector_subobject(&path, "summary");
+    // …and a LATER governed call must not let the surviving `vector_declared = 1`
+    // row switch the arm back on.
+    engine.configure_projections(&[], &[]).expect("a later governed call is a no-op");
 
     let conn = ro(&path);
     // (1) THE assertion.
@@ -577,13 +692,20 @@ fn dropping_the_last_searchable_vector_projection_un_enrols_past_an_inert_siblin
         .write(&[node("doc", "N1", r#"{"summary":"a dense meaning","tag":"alpha"}"#)])
         .expect("write N1");
     // TWO projections: one real dense arm, one inert `vector` sub-object.
+    // (0.8.20 Slice 23 — the inert sibling now only reaches the registry through
+    // the legacy back door; the real dense arm is declared normally.)
     engine
         .configure_projections(
-            &[searchable_vector_spec("summary"), filterable_vector_spec("tag")],
+            &[searchable_vector_spec("summary"), filterable_only_spec("tag")],
             &[],
         )
         .expect("configure both");
     engine.drain(30_000).expect("drain");
+    // The sibling's legacy `vector` sub-object, added at rest once the real arm
+    // is settled. Deliberately AFTER the drain: a raw RW connection opened while
+    // embed work is in flight perturbs the dispatcher's timing, and this suite's
+    // embed-count oracles must not depend on that.
+    legacy_add_vector_subobject(&path, "tag");
     let conn = ro(&path);
     let c1 = active_cursor(&conn, "N1");
     assert!(vector_kind_registered(&conn, "doc"), "fixture: the SEARCHABLE one enrolled `doc`");
@@ -650,13 +772,8 @@ fn a_filterable_vector_declaration_round_trips_verbatim_without_an_embedder() {
     engine.write(&[node("doc", "N1", r#"{"summary":"a dense meaning"}"#)]).expect("write N1");
 
     let spec = filterable_vector_spec("summary");
-    let delta = engine.configure_projections(std::slice::from_ref(&spec), &[]).expect("configure");
+    let delta = declare_legacy_filterable_vector(engine, &path, "summary");
     assert_eq!(delta.built, vec!["summary".to_string()]);
-    assert_eq!(
-        delta.deferred,
-        vec!["summary".to_string()],
-        "the stored-but-unbuilt `vector` sub-object is still reported deferred"
-    );
 
     assert_eq!(
         engine.read_projections().expect("read_projections"),
@@ -667,12 +784,42 @@ fn a_filterable_vector_declaration_round_trips_verbatim_without_an_embedder() {
             }),
             ..spec.clone()
         }],
-        "the `vector` sub-object persists verbatim, plus the engine-set readiness"
+        "the `vector` sub-object persists verbatim, plus the engine-set readiness — READS are \
+         unaffected by Slice 23's reject, which is a WRITE-path spec validation"
     );
 
-    // Idempotent re-apply is still a no-op.
-    let again = engine.configure_projections(std::slice::from_ref(&spec), &[]).expect("re-apply");
-    assert!(again.unchanged, "re-registering the same inert spec diffs to a no-op");
+    // 0.8.20 Slice 23 (`R-20-SV`) — what re-applying now does, stated as a fact
+    // so the legacy population's operators are not left to discover it. The
+    // idempotent re-apply that used to diff to a no-op RAISES, because the spec
+    // it would re-apply is the invalid one…
+    assert_eq!(
+        engine
+            .configure_projections(std::slice::from_ref(&spec), &[])
+            .expect_err("re-applying the legacy shape now raises"),
+        fathomdb_engine::EngineError::WriteValidation,
+    );
+    // …and re-declaring only its VALID half is a DESTRUCTIVE change (it removes
+    // the stored `vector` sub-object), so it is refused too. A legacy row has
+    // exactly two remedies: ADD the `searchable` role (non-destructive), or name
+    // it in `drop`.
+    assert!(
+        matches!(
+            engine.configure_projections(&[filterable_only_spec("summary")], &[]),
+            Err(fathomdb_engine::EngineError::ProjectionDestructive { .. })
+        ),
+        "re-declaring the valid half alone removes the stored `vector` sub-object"
+    );
+    let promoted = ProjectionSpec {
+        roles: roles(&[ProjectionRole::Filterable, ProjectionRole::Searchable]),
+        ..spec.clone()
+    };
+    engine
+        .configure_projections(std::slice::from_ref(&promoted), &[])
+        .expect("REMEDY 1: adding the `searchable` role is non-destructive and accepted");
+    let again = engine
+        .configure_projections(std::slice::from_ref(&promoted), &[])
+        .expect("re-apply the promoted spec");
+    assert!(again.unchanged, "re-registering the same VALID spec still diffs to a no-op");
 
     opened.engine.drain(5_000).unwrap();
     opened.engine.close().unwrap();
