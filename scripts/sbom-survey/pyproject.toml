@@ -1,0 +1,58 @@
+# `sbom-survey` — the dependency-survey mini-project (0.8.20 Slice 32).
+#
+# ISOLATION (design §2). This project is deliberately standalone:
+#   * NOT a member of the Cargo workspace,
+#   * NOT referenced by `src/python/pyproject.toml`,
+#   * NOT a dependency of the root `package.json`.
+# It can therefore never enlarge the published dependency graph or the advisory
+# backlog. Its own dependencies are surveyed BY the tool and tier `dev-tooling`
+# — the tool appears in its own SBOM, which is the correct answer.
+#
+# TC-97 — THERE IS DELIBERATELY NO `[tool.pytest.ini_options]` TABLE HERE.
+# pytest only treats a `pyproject.toml` as its *configfile* when that table is
+# present. Adding one would make this file the configfile for
+# `scripts/sbom-survey/tests` and start importing settings (the repo's only
+# other pytest config, `src/python/pyproject.toml`, sets `pythonpath = ["."]`,
+# which shadows an installed wheel). The suite must run with NO configfile: the
+# pytest header prints `rootdir:` and no `configfile:` line. Do not add one.
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sbom-survey"
+version = "0.1.0"
+description = "CycloneDX 1.6 dependency survey over FathomDB's tracked manifests (Library Sweep #3)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+
+# Design §5.7 names every one of these and why stdlib is insufficient. The set
+# is kept deliberately small: a dependency-hygiene tool with a bloated
+# dependency set is self-refuting.
+#
+# Deliberately NOT taken (§5.7, binding):
+#   * no HTTP client   — stdlib `urllib.request` covers three GET-JSON calls;
+#   * no TOML library  — `tomllib` is stdlib from 3.11 (hence requires-python);
+#   * no `jsonschema`  — the `json-validation` extra already binds a validator
+#                        to the normative 1.6 schema; a second one would drift;
+#   * no `GitPython`   — one `git ls-files -z` via `subprocess` is the whole
+#                        git surface;
+#   * no setup.py/AST tooling — §5.2.
+dependencies = [
+    "cyclonedx-python-lib[json-validation]>=8.0,<9.0",
+    "packageurl-python>=0.15,<1.0",
+    "packaging>=24.0,<26.0",
+    "semver>=3.0,<4.0",
+]
+
+[project.optional-dependencies]
+# Dev-only. `pytest` is NOT a runtime dependency of the tool.
+dev = ["pytest>=8.0,<10.0"]
+
+[project.scripts]
+sbom-survey = "sbom_survey.cli:console_main"
+
+[tool.setuptools]
+packages = ["sbom_survey", "sbom_survey.parse"]

@@ -13,31 +13,53 @@ candidate.
 acceptance criteria, the design, and the answers to every resolved design question. Read that first;
 this file is only the operating note.
 
+## Layout
+
+| Path | What it is |
+|---|---|
+| `pyproject.toml` | the isolated project manifest — dependencies per design §5.7 |
+| `tiers.toml` | the **tracked tier/exclusion data** (§5.3); rules are DATA, never code |
+| `sbom_survey/discovery.py` | `git ls-files`-derived manifest discovery (§5.1) |
+| `sbom_survey/tiers.py` | longest-prefix-wins matching, `UntieredManifestError` (§5.3) |
+| `sbom_survey/parse/` | `Cargo.lock`/`Cargo.toml`, `package-lock.json`/`package.json`, `uv.lock`/`pyproject.toml`/`requirements*.txt` (§5.5) |
+| `sbom_survey/registry.py` | the injectable published-version seam (§5.4) |
+| `sbom_survey/survey.py` | `run_survey` · `classify_status` · the staleness rows (§5.4, §5.8) |
+| `sbom_survey/cyclonedx.py` | CycloneDX 1.6 assembly + real schema `validate()` (§5.5, §5.7) |
+| `sbom_survey/report.py` | `sbom.cdx.json` · `staleness.json` · `staleness.md` (§5.6, §5.8) |
+| `sbom_survey/cli.py` | the `argparse` entry point and its exit codes (§5.9) |
+
 ## Status
 
 | Slice | Deliverable | State |
 |---|---|---|
-| **31** | requirements · acceptance criteria · design · **RED tests** | **this directory today** |
-| **32** | the code that turns the RED tests GREEN | not started |
+| **31** | requirements · acceptance criteria · design · **RED tests** | landed |
+| **32** | the code that turns the RED tests GREEN | **landed — 23 passed, 0 failed, 0 skipped, 0 errors** |
 | **33** | **runs** the tool and writes the survey findings | not started |
 
-At Slice 31 this directory contains **only** this README and the RED acceptance suite. There is no
-`sbom_survey` package, no `pyproject.toml`, no `tiers.toml` and no CLI yet — that is Slice 32. The
-suite is therefore **RED by construction**: 23 tests, 23 failures, one per acceptance criterion.
+This directory now contains the implementation as well: the `sbom_survey` package, its isolated
+`pyproject.toml`, the tracked `tiers.toml` rule data and the CLI. Slice 32 turned all 23 acceptance
+criteria GREEN **without changing what any test asserts**.
 
 ## Running the suite
 
-From the repository root, with a neutral working directory:
+The mini-project is deliberately **not installed**: `tests/conftest.py` puts `scripts/sbom-survey/`
+on `sys.path` itself (and on `PYTHONPATH` for the CLI subprocess). Only the third-party dependencies
+declared in `pyproject.toml` need to be importable by the interpreter running pytest — build a venv
+for them **outside the repository tree**, and never install anything into the repo's shared `.venv`.
 
 ```bash
-python3 -m pytest scripts/sbom-survey/tests
+python3 -m venv /tmp/sbom-survey-venv
+/tmp/sbom-survey-venv/bin/pip install \
+  'cyclonedx-python-lib[json-validation]>=8.0,<9.0' 'packageurl-python>=0.15,<1.0' \
+  'packaging>=24.0,<26.0' 'semver>=3.0,<4.0' 'pytest>=8.0,<10.0'
+/tmp/sbom-survey-venv/bin/python -m pytest scripts/sbom-survey/tests -q
 ```
 
-Expected at Slice 31: **`23 failed, 0 passed, 0 skipped, 0 errors`** (exit code `1`).
+Expected: **`23 passed, 0 failed, 0 skipped, 0 errors`** (exit code `0`).
 
-- **No test may skip and no test may pass** before Slice 32. A skip is a vacuous green.
+- **No test may skip.** A skip is a vacuous green — an ungraded criterion reporting success.
 - **No module-level `import sbom_survey`.** The import happens inside each test body via the
-  `require()` helper in `tests/conftest.py`, so a missing package produces 23 attributable FAILEDs
+  `require()` helper in `tests/conftest.py`, so a broken package produces 23 attributable FAILEDs
   rather than one collection error that hides 22 of them.
 - The suite needs **no network**. The published-version lookup is behind an injectable seam; the
   tests inject `OfflineSource` / `StaticSource`, and one test asserts zero socket I/O.
@@ -46,10 +68,16 @@ Expected at Slice 31: **`23 failed, 0 passed, 0 skipped, 0 errors`** (exit code 
   `sbom_survey.cyclonedx.validate()`, which would be self-certification. From Slice 32 that
   distribution must be installed: if it is missing the criterion **FAILS** naming what to install.
   It does **not** skip, because an ungraded criterion is a green that means nothing (design §5.7).
-- **TC-97.** The only pytest configuration in this repository is `src/python/pyproject.toml`, whose
-  `pythonpath = ["."]` shadows an installed wheel. It is **not** an ancestor of
-  `scripts/sbom-survey/tests`, so pytest runs this suite with **no config file** and cannot inherit
-  it. Do not add a `pyproject.toml` above this directory.
+- **TC-97.** The only pytest *settings* in this repository live in `src/python/pyproject.toml`, whose
+  `pythonpath = ["."]` shadows an installed wheel. That file is **not** an ancestor of
+  `scripts/sbom-survey/tests`, so this suite can never inherit it. Since Slice 32 the header does
+  print `configfile: pyproject.toml`, pointing at **this directory's own** `pyproject.toml`: from
+  pytest 8.1 a `pyproject.toml` found while walking up from the test arguments becomes the rootdir
+  anchor even when it carries no `[tool.pytest.ini_options]` table, in which case the applied
+  settings are the empty dict (verified: `config.inicfg == {}`, `config.getini("pythonpath") == []`).
+  **Do not add a `[tool.pytest.ini_options]` table here, and do not add a `pyproject.toml`,
+  `pytest.ini`, `tox.ini` or `setup.cfg` above this directory** — either would start applying real
+  settings to this suite.
 
 ## Deliberately NOT wired into CI
 
@@ -61,9 +89,11 @@ This tool is **recurring by design and NOT CI-gating** — it is **informational
 - It is **not** part of `scripts/agent-verify.sh`, `scripts/check.sh`, or any lint/typecheck scope
   (`ruff` and `pyright` are scoped to `src/python`).
 
-Do not wire it in. Beyond the standing ruling, the acceptance suite is red until Slice 32 lands, so
-registering it would turn `main` red. `tests/test_cli.py::test_tool_declares_non_ci_gating_and_is_absent_from_ci_wiring`
-is the standing guard: it greps both wiring files and fails if either grows a reference.
+Do not wire it in. **The suite being GREEN does not authorize wiring**: the standing HITL ruling
+(`seq-166`) is that the suite may be wired only when it is green **AND** the HITL has approved —
+both required, neither sufficient. `tests/test_cli.py::test_tool_declares_non_ci_gating_and_is_absent_from_ci_wiring`
+is the standing guard: it greps both wiring files and fails if either grows a reference, so it stays
+green precisely **because the wiring is absent**.
 
 ## Isolation
 
@@ -72,7 +102,7 @@ member, not referenced by `src/python/pyproject.toml`, not a dependency of the r
 It can never enlarge the published dependency graph or the advisory backlog. Its own dependencies
 are surveyed by the tool and tagged `dev-tooling` — the tool appears in its own SBOM, by design.
 
-Generated reports go to `scripts/sbom-survey/out/`, which Slice 32 adds to `.gitignore`. Slice 33's
+Generated reports go to `scripts/sbom-survey/out/`, which Slice 32 added to `.gitignore`. Slice 33's
 **findings** have a separate tracked home:
 `dev/plans/runs/0.8.20-slice-33-library-sweep-3-FINDINGS.md` — the house convention for a dated run
 report, weighed against `dev/design/` and `dev/deps/` in design §5.6.

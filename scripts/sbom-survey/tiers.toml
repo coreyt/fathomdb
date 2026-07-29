@@ -1,0 +1,50 @@
+schema = 1
+
+[[rule]]
+prefix = "dev/release/fixtures/"
+action = "exclude"
+reason = "fixture"
+note   = "deliberately fake/skewed release-gate fixtures; not real dependencies"
+
+[[rule]]
+prefix = "src/rust/crates/"
+action = "tier"
+tier   = "shipped"
+
+[[rule]]
+prefix = "src/python/"
+action = "tier"
+tier   = "shipped"
+
+[[rule]]
+prefix = "src/ts/"
+action = "tier"
+tier   = "shipped"
+
+[[rule]]
+prefix = "Cargo."
+action = "tier"
+tier   = "shipped"
+note   = "root workspace manifest + lockfile"
+
+[[rule]]
+prefix = "package"
+action = "tier"
+tier   = "dev-tooling"
+note   = "root package.json/package-lock.json — name is literally fathomdb-dev-tooling, private, not published"
+
+[[rule]]
+prefix = "dev/tools/"
+action = "tier"
+tier   = "dev-tooling"
+
+[[rule]]
+prefix = "tools/docs/"
+action = "tier"
+tier   = "dev-tooling"
+
+[[rule]]
+prefix = "scripts/sbom-survey/"
+action = "tier"
+tier   = "dev-tooling"
+note   = "this tool surveys itself"
