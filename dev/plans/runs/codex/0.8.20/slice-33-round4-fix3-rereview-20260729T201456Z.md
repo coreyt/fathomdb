@@ -5597,21 +5597,21 @@ dev/plans/runs/codex/0.8.20/slice-33-round1-20260729T193509Z.md:349: trailing wh
 dev/plans/runs/codex/0.8.20/slice-33-round1-20260729T193509Z.md:1662: trailing whitespace.
 +�
 dev/plans/runs/codex/0.8.20/slice-33-round1-20260729T193509Z.md:1719: trailing whitespace.
-[SANITIZED TC-120: 1 line(s) / 2 bytes of binary __pycache__/*.pyc output removed - not review content]
+[SANITIZED (codex-transcript binary bytes, Slice 33 fix-4): 1 line(s) / 2 bytes of binary __pycache__/*.pyc output removed - not review content]
 dev/plans/runs/codex/0.8.20/slice-33-round1-20260729T193509Z.md:1743: trailing whitespace.
 +�
 dev/plans/runs/codex/0.8.20/slice-33-round1-20260729T193509Z.md:1747: trailing whitespace.
 +�
 dev/plans/runs/codex/0.8.20/slice-33-round1-20260729T193509Z.md:1755: trailing whitespace.
-[SANITIZED TC-120: 1 line(s) / 28 bytes of binary __pycache__/*.pyc output removed - not review content]
+[SANITIZED (codex-transcript binary bytes, Slice 33 fix-4): 1 line(s) / 28 bytes of binary __pycache__/*.pyc output removed - not review content]
 dev/plans/runs/codex/0.8.20/slice-33-round1-20260729T193509Z.md:1809: trailing whitespace.
 +�
 dev/plans/runs/codex/0.8.20/slice-33-round1-20260729T193509Z.md:1876: trailing whitespace.
 +�
 dev/plans/runs/codex/0.8.20/slice-33-round1-20260729T193509Z.md:1910: trailing whitespace.
-[SANITIZED TC-120: 1 line(s) / 2 bytes of binary __pycache__/*.pyc output removed - not review content]
+[SANITIZED (codex-transcript binary bytes, Slice 33 fix-4): 1 line(s) / 2 bytes of binary __pycache__/*.pyc output removed - not review content]
 dev/plans/runs/codex/0.8.20/slice-33-round1-20260729T193509Z.md:1916: trailing whitespace.
-[SANITIZED TC-120: 1 line(s) / 4 bytes of binary __pycache__/*.pyc output removed - not review content]
+[SANITIZED (codex-transcript binary bytes, Slice 33 fix-4): 1 line(s) / 4 bytes of binary __pycache__/*.pyc output removed - not review content]
 dev/plans/runs/codex/0.8.20/slice-33-round1-20260729T193509Z.md:1937: trailing whitespace.
 +�
 dev/plans/runs/codex/0.8.20/slice-33-round1-20260729T193509Z.md:1984: trailing whitespace.
@@ -5619,13 +5619,13 @@ dev/plans/runs/codex/0.8.20/slice-33-round1-20260729T193509Z.md:1984: trailing w
 dev/plans/runs/codex/0.8.20/slice-33-round1-20260729T193509Z.md:1997: trailing whitespace.
 +�
 dev/plans/runs/codex/0.8.20/slice-33-round1-20260729T193509Z.md:2013: trailing whitespace.
-[SANITIZED TC-120: 1 line(s) / 226 bytes of binary __pycache__/*.pyc output removed - not review content]
+[SANITIZED (codex-transcript binary bytes, Slice 33 fix-4): 1 line(s) / 226 bytes of binary __pycache__/*.pyc output removed - not review content]
 dev/plans/runs/codex/0.8.20/slice-33-round1-20260729T193509Z.md:2028: trailing whitespace.
-[SANITIZED TC-120: 1 line(s) / 27 bytes of binary __pycache__/*.pyc output removed - not review content]
+[SANITIZED (codex-transcript binary bytes, Slice 33 fix-4): 1 line(s) / 27 bytes of binary __pycache__/*.pyc output removed - not review content]
 dev/plans/runs/codex/0.8.20/slice-33-round1-20260729T193509Z.md:2038: trailing whitespace.
-[SANITIZED TC-120: 1 line(s) / 130 bytes of binary __pycache__/*.pyc output removed - not review content]
+[SANITIZED (codex-transcript binary bytes, Slice 33 fix-4): 1 line(s) / 130 bytes of binary __pycache__/*.pyc output removed - not review content]
 dev/plans/runs/codex/0.8.20/slice-33-round1-20260729T193509Z.md:2064: trailing whitespace.
-[SANITIZED TC-120: 1 line(s) / 2 bytes of binary __pycache__/*.pyc output removed - not review content]
+[SANITIZED (codex-transcript binary bytes, Slice 33 fix-4): 1 line(s) / 2 bytes of binary __pycache__/*.pyc output removed - not review content]
 dev/plans/runs/codex/0.8.20/slice-33-round1-20260729T193509Z.md:2078: trailing whitespace.
 +�
 dev/plans/runs/codex/0.8.20/slice-33-round1-20260729T193509Z.md:2159: trailing whitespace.
@@ -5635,9 +5635,9 @@ dev/plans/runs/codex/0.8.20/slice-33-round1-20260729T193509Z.md:2201: trailing w
 dev/plans/runs/codex/0.8.20/slice-33-round1-20260729T193509Z.md:2241: trailing whitespace.
 +�
 dev/plans/runs/codex/0.8.20/slice-33-round1-20260729T193509Z.md:2285: trailing whitespace.
-[SANITIZED TC-120: 1 line(s) / 17 bytes of binary __pycache__/*.pyc output removed - not review content]
+[SANITIZED (codex-transcript binary bytes, Slice 33 fix-4): 1 line(s) / 17 bytes of binary __pycache__/*.pyc output removed - not review content]
 dev/plans/runs/codex/0.8.20/slice-33-round1-20260729T193509Z.md:2286: trailing whitespace.
-[SANITIZED TC-120: 1 line(s) / 27 bytes of binary __pycache__/*.pyc output removed - not review content]
+[SANITIZED (codex-transcript binary bytes, Slice 33 fix-4): 1 line(s) / 27 bytes of binary __pycache__/*.pyc output removed - not review content]
 dev/plans/runs/codex/0.8.20/slice-33-round1-20260729T193509Z.md:2970: trailing whitespace.
 +    42	
 dev/plans/runs/codex/0.8.20/slice-33-round1-20260729T193509Z.md:2972: trailing whitespace.
