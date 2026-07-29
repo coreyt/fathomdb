@@ -135,7 +135,7 @@ refresh in the closing commit when you touch a doc).
 | `dev/design/0.8.20-sqlite-vec-99-vec0-delete-probe.md` | Finding — sqlite-vec `vec0` DELETE fails for >12-byte TEXT metadata; engine workaround; remedy is a bump to 0.1.9 | 0.8.20 Slice 22 (R-20-VC leg 4); TC-76 re-open trigger | 2026-07-28 |
 | `dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md` | Cache the 0.8.18 vector-equivalence verdict on an embedder-identity fingerprint so `Engine::open` cost is constant | 0.8.20 Slice 22 (R-20-VC leg 2) | 2026-07-28 |
 | `dev/design/0.8.20-tc67-unsupported-vector-kind-report.md` | `ProjectionDelta.vector_unsupported_kinds` — report node kinds the vector writer can never commit, instead of silence | 0.8.20 Slice 22 (R-20-VC leg 1) | 2026-07-28 |
-| `dev/design/0.8.20-tc90-tc91-characterization.md` | Characterization (no fix) — `Engine::transition`'s deferred write race, and the discarded worker commit that causes duplicate embeds | 0.8.20 Slice 23 (R-20-SV leg 2); TC-90/TC-91, fix at 0.8.21 | 2026-07-29 |
+| `dev/design/0.8.20-tc90-tc91-characterization.md` | Characterization (no fix) — `Engine::transition`'s deferred write race (reproduces 10/10 under stress), and the cadence-sensitive duplicate embeds whose discarded worker commit is structurally invisible to terminal-state counting | 0.8.20 Slice 23 (R-20-SV leg 2); TC-90/TC-91, fix at 0.8.21 | 2026-07-29 |
 
 ## `dev/adr/` — architecture decision records
 

@@ -50,25 +50,33 @@
 //!
 //! ## MEASURED at `94f09d7d` — the window is real, and it is NARROW
 //!
+//! Two independent sessions of 10 runs per arm; every arm replicated exactly.
+//!
 //! | arm | writers x burst | pace | embed | runs | failed |
 //! |---|---|---|---|---|---|
-//! | [`tc90_repro_transition_loop_races_projection_worker`] | 1 x 1 | 3 ms | 2 ms | 10 | **0/10** |
-//! | [`tc90_control_transition_loop_without_second_writer`] | 1 x 1 | 3 ms | — | 10 | **0/10** |
-//! | [`tc90_stress_transition_loop_under_saturating_burst_load`] | 2 x 24 | 1 ms | 0 ms | 10 | **10/10** |
-//! | [`tc90_stress_control_without_second_writer`] | 2 x 24 | 1 ms | — | 10 | **0/10** |
+//! | [`tc90_repro_transition_loop_races_projection_worker`] | 1 x 1 | 3 ms | 2 ms | 20 | **0/20** |
+//! | [`tc90_control_transition_loop_without_second_writer`] | 1 x 1 | 3 ms | — | 20 | **0/20** |
+//! | [`tc90_stress_transition_loop_under_saturating_burst_load`] | 2 x 24 | 1 ms | 0 ms | 20 | **20/20** |
+//! | [`tc90_stress_control_without_second_writer`] | 2 x 24 | 1 ms | — | 20 | **0/20** |
 //!
 //! The TC-57-shaped paced arm does **not** reproduce: at a 2 ms embed the worker
 //! cannot reach its commit inside the microseconds `transition` spends between
 //! acquiring the connection mutex and promoting. **The stress arm reproduces
-//! 10/10** — 3 to 10 `EngineError::Storage` failures per 40 transitions (mean
-//! 5.9, i.e. **14.8 %**), zero `Scheduler`, zero other variants — against a
-//! control that is **0/10** with the identical load.
+//! 10/10** — against a control that is **0/10** with the identical load.
+//!
+//! **Quote the reproduction rate, not the failure rate.** Two independent
+//! sessions on the same commit and machine gave per-run means of **5.9** and
+//! **3.8** failures per 40 transitions; the 10/10 reproduction replicated, the
+//! rate did not. Pooled over N = 20 the range is **1–10 per 40** (≈ 2.5 %–25 %).
+//! In all 20 runs: `attempted == 40`, `truncated == false`, zero `Scheduler` and
+//! zero other variants — and since codex §9 round 4 those are **asserted**
+//! ([`assert_protocol_ran`]), not merely reported.
 //!
 //! Had only the paced arm been run, this file would have reported a clean and
 //! completely false NEGATIVE. The knob that decided it is
 //! [`ArmConfig::embed_delay_ms`].
 //!
-//! ## Mechanism pins — deterministic, NOT `#[ignore]`d
+//! ## Mechanism pins — deterministic, and deliberately NOT `#[ignore]`d
 //!
 //! The loop arms measure whether the window is *reachable*. They cannot say what
 //! SQLite returns when it IS reached, because `transition` maps every rusqlite
@@ -88,6 +96,38 @@
 //! * [`tc90_mechanism_control_engine_write_under_held_write_lock_survives`] drives
 //!   the already-`BEGIN IMMEDIATE` [`Engine::write`] under the SAME held lock. It
 //!   is the direct evidence for whether TC-57's R1 remedy transfers here.
+//!
+//! ## Test profile — which targets run in the DEFAULT `cargo test` gate
+//!
+//! Decided deliberately per target, not by reflex (codex §9 round 4 finding 3).
+//! The gating question is TC-72: roughly 1 workspace run in 3 already fails on
+//! plain `main`, so anything timing-sensitive added to the default profile makes
+//! that worse and must earn its place.
+//!
+//! **`#[ignore]`d — all four LOOP arms.** They race a live projection worker
+//! against live writer threads; their results are RATES, i.e. measurements, and
+//! `cargo test --workspace` is not a stable signal for them. The pair is enabled
+//! and disabled as one unit — a comparison with one arm running is worse than no
+//! comparison. Run with `--ignored`.
+//!
+//! **LIVE in the default profile — all three `tc90_mechanism_*` pins**, on the
+//! same basis TC-57's own `tc57_mechanism_*` pins run that way. None of them
+//! races for anything: the contending write lock is TAKEN and HELD by a second
+//! connection for the whole measured call, so the outcome is decided by SQLite's
+//! documented promotion behaviour rather than by scheduling. Their wall-clock
+//! assertions are one-sided bounds with large margins, not equalities:
+//!
+//! | pin | shape | timing assertion | measured | margin |
+//! |---|---|---|---|---|
+//! | 1 (`..._sql_shape_...`) | two connections, ONE thread, no sleeps | `< 500 ms` | 0 ms | fails instantly by construction — the busy handler is skipped |
+//! | 2 (`..._engine_transition_...`) | blocker held on the calling thread | `< 2 000 ms` | 0 ms | same construction; no `drain` work is outstanding |
+//! | 3 (`..._control_engine_write_...`) | blocker thread holds 900 ms | `>= 450 ms` | ~834 ms | the holder SLEEPS 900 ms, so releasing early is impossible; and the writer's 5 000 ms busy timeout leaves ~4.1 s of slack over a 900 ms hold |
+//!
+//! Pin 3 is the only one with a thread, and it is the one deliberate call: it is
+//! kept live because it is the load-bearing evidence that TC-57's R1 remedy
+//! transfers (design doc §3.3), and a fix scoped against R-A would otherwise be
+//! reasoning from an ignored test. **If it ever does flake, gate it — do not
+//! widen the bound**, which is the assertion that makes it mean anything.
 
 use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
 use fathomdb_engine::{Engine, EngineError, InitialState, LifecycleState, PreparedWrite, SourceId};
@@ -167,6 +207,16 @@ const TRANSITIONS: usize = 120;
 /// it will attempt.
 const STRESS_TRANSITIONS: usize = 40;
 
+/// Wall-clock budget for the STRESS arms.
+///
+/// A safety valve, NOT a measurement parameter: it stops an arm that has hit the
+/// §2.5 drain-starvation shape from running unbounded. Since codex §9 round 4
+/// finding 1, hitting it is a hard failure — see [`assert_stress_protocol_ran`].
+/// MEASURED at `94f09d7d`: a full 40-transition stress run completes in ~20-45 s,
+/// so 120 s is roughly a 3x margin and truncation means something has genuinely
+/// changed.
+const STRESS_BUDGET: Duration = Duration::from_secs(120);
+
 /// How one arm loads the engine. The arms differ ONLY in these fields, and each
 /// pairing below changes exactly one of them relative to its control.
 struct ArmConfig {
@@ -207,16 +257,23 @@ struct ArmConfig {
     /// `LIFECYCLE_DRAIN_TIMEOUT_MS` (30 s) and returns `EngineError::Scheduler` —
     /// an unbounded arm, and a finding in its own right. The loop therefore stops
     /// at the budget and reports `attempted` / `truncated` rather than hanging.
+    ///
+    /// It is a safety valve, **not** a licence to measure less. Every arm asserts
+    /// `attempted == transitions` and `!truncated`, so hitting this budget is a
+    /// hard failure that reports itself rather than a quietly shorter run
+    /// (codex §9 round 4 finding 1).
     budget: Duration,
 }
 
 /// The outcome of one arm.
 struct ArmOutcome {
     label: &'static str,
-    /// How many `transition` calls were issued. Non-vacuity: an arm that issued
-    /// none proves nothing.
+    /// How many `transition` calls were issued. Non-vacuity: every arm asserts
+    /// this equals the protocol's transition count, not merely that it is
+    /// non-zero — an arm that issued one proves nothing either.
     attempted: usize,
     /// The loop hit its wall-clock budget before issuing every transition.
+    /// Asserted `false` by every arm; see [`assert_stress_protocol_ran`].
     truncated: bool,
     /// First `EngineError::Storage` observed, as `(index, error)`. This is the
     /// TC-90 signal; `Scheduler` and everything else are counted separately.
@@ -431,7 +488,8 @@ fn run_arm(config: &ArmConfig) -> ArmOutcome {
 /// **TC-90 REPRO ARM (TC-57-shaped, paced).** A loop of `Engine::transition` calls
 /// against a live projection worker.
 ///
-/// **MEASURED 0/10 at `94f09d7d`** — 120 transitions, ~135 competing writes,
+/// **MEASURED 0/20 at `94f09d7d`** (two sessions of 10) — 120 transitions,
+/// 122-147 competing writes,
 /// ~175 embeds per run. This arm does NOT reproduce TC-90; the stress arm does.
 /// It is kept because it is the arm directly comparable to TC-57's, and because a
 /// fix must keep it green.
@@ -461,15 +519,7 @@ fn tc90_repro_transition_loop_races_projection_worker() {
         "non-vacuity: the projection worker must have embedded at least one row, else there \
          was no second writer and the promote window never existed"
     );
-    assert_eq!(
-        outcome.attempted, TRANSITIONS,
-        "non-vacuity: the loop must have issued every transition it claims to have measured"
-    );
-    assert!(
-        outcome.competing_writes > 0,
-        "non-vacuity: the competing writer must have landed rows, else nothing ever re-armed \
-         the dispatcher between `drain` and the connection mutex"
-    );
+    assert_protocol_ran(&outcome, TRANSITIONS);
     if let Some((i, err)) = &outcome.first_storage_failure {
         panic!(
             "TC-90 REPRO: transition {i} of {} failed with {err:?} after {} ms \
@@ -497,7 +547,8 @@ fn tc90_repro_transition_loop_races_projection_worker() {
 /// same isolation TC-57 §4.2 performed. If this arm ever fails, the failure is
 /// NOT a promote race and must be reported as a separate finding.
 ///
-/// **MEASURED 0/10 at `94f09d7d`**, `embed_calls == 0` in every run.
+/// **MEASURED 0/20 at `94f09d7d`** (two sessions of 10), `embed_calls == 0` in
+/// every run.
 #[test]
 #[ignore = "TC-90 characterization arm — run explicitly with --ignored; see the design doc"]
 fn tc90_control_transition_loop_without_second_writer() {
@@ -516,15 +567,7 @@ fn tc90_control_transition_loop_without_second_writer() {
         "the control's defining property: with no vector kind enrolled the worker performs no \
          embed and therefore never commits — there is no second writer"
     );
-    assert_eq!(
-        outcome.attempted, TRANSITIONS,
-        "non-vacuity: the loop must have issued every transition it claims to have measured"
-    );
-    assert!(
-        outcome.competing_writes > 0,
-        "non-vacuity: the competing writer must have landed rows, so the only difference from \
-         the repro arm is the ABSENCE of the worker, not the absence of load"
-    );
+    assert_protocol_ran(&outcome, TRANSITIONS);
     if let Some((i, err)) = &outcome.first_storage_failure {
         panic!(
             "TC-90 CONTROL FAILED — this is a FINDING, not a flake: transition {i} of {} \
@@ -569,15 +612,87 @@ fn tc90_control_transition_loop_without_second_writer() {
 // reported SEPARATELY for exactly that reason, and it is a finding in its own
 // right (see the design doc).
 
+/// **The protocol, asserted rather than described.** ALL FOUR arms call this
+/// BEFORE their `storage_errors` oracle.
+///
+/// codex §9 round 4 finding 1. The first draft of the stress arms asserted only
+/// `attempted > 0`, which is far too weak for what the design doc claims they
+/// measure, and no arm asserted its `Scheduler` / other-variant counts at all.
+/// Under that bar a run that issued **one** transition, or truncated at its
+/// wall-clock budget, or was dominated by `Scheduler` drain timeouts, would still
+/// satisfy the 0.8.21 green bar in design doc §4 — without ever having measured
+/// the promote race the doc documents. **An acceptance bar is only as good as
+/// what it refuses to accept**, so every parameter of the protocol is pinned
+/// here.
+///
+/// These are not aspirational numbers. All four conditions are what the baseline
+/// measurement at `94f09d7d` actually produced, in **every** one of the 10 runs
+/// of each of the four arms: the full transition count attempted, never
+/// truncated, `scheduler_errors == 0`, `other_errors == 0`. Re-measured after
+/// this tightening — see design doc §2.2.
+///
+/// Note the deliberate consequence for [`ArmConfig::budget`]: truncation is now a
+/// hard FAILURE rather than a silently shorter measurement. The budget remains a
+/// safety valve against an unbounded arm — the `writer_pace_ms: 0` shape burns a
+/// 30 s drain timeout per call (design doc §2.5) — but an arm that hits it has
+/// not run the protocol, and must say so loudly instead of reporting a clean pass
+/// over fewer transitions.
+fn assert_protocol_ran(outcome: &ArmOutcome, expected_transitions: usize) {
+    assert_eq!(
+        outcome.attempted, expected_transitions,
+        "non-vacuity: the arm must have issued the FULL protocol it claims to measure — \
+         {} of {expected_transitions} transitions issued (truncated={})",
+        outcome.attempted, outcome.truncated,
+    );
+    assert!(
+        !outcome.truncated,
+        "non-vacuity: the loop hit its wall-clock budget before issuing every transition, so \
+         this run measured a SHORTER protocol than the one on the record. Do not loosen this \
+         assertion to make it pass — a budget hit is itself a finding (design doc §2.5: under \
+         saturating load `transition`'s own `drain` can burn 30 s per call).",
+    );
+    assert!(
+        outcome.competing_writes > 0,
+        "non-vacuity: the competing writer(s) must have landed rows, else nothing ever re-armed \
+         the dispatcher and there was no load to compare against"
+    );
+    assert_eq!(
+        outcome.scheduler_errors, 0,
+        "the arm must be measuring the PROMOTE RACE, not drain starvation: {} of {} transitions \
+         returned `EngineError::Scheduler` (a burnt 30 s drain timeout, design doc §2.5). A run \
+         dominated by these has not measured TC-90 at all. `writer_pace_ms` is the knob — 1 ms is \
+         near-saturating but still lets `drain` reach idle; 0 ms does not.",
+        outcome.scheduler_errors, outcome.attempted,
+    );
+    assert_eq!(
+        outcome.other_errors, 0,
+        "the arm must produce no error variant other than `Storage`: {} seen, kinds={:?}. \
+         `IllegalTransition` here would mean the harness's own subject-state tracking has \
+         regressed into the self-loop cascade artifact described at `subject_states`, which \
+         contaminates the counter under measurement.",
+        outcome.other_errors, outcome.other_error_kinds,
+    );
+}
+
 /// **TC-90 STRESS REPRO ARM — this is the arm that REPRODUCES.** The widest
 /// promote window the in-process shape can be given.
 ///
-/// **MEASURED 10/10 at `94f09d7d`.** Storage failures per 40 transitions across
-/// the ten runs: 3, 4, 10, 3, 6, 6, 5, 5, 8, 9 (mean **5.9**, i.e. **14.8 %**).
-/// `scheduler_errors == 0` and `other_errors == 0` in every run, so the signal is
-/// the promote race and nothing else. First failure landed as early as index 0 and
-/// as late as index 20; the failing call returned in 9-61 ms, essentially all of
-/// which is its own `drain`.
+/// **MEASURED 10/10 at `94f09d7d`, in each of TWO independent sessions.** Storage
+/// failures per 40 transitions:
+///
+/// * session A (before the assertions were tightened): 3, 4, 10, 3, 6, 6, 5, 5, 8,
+///   9 — mean **5.9**
+/// * session B (after): 8, 4, 4, 1, 4, 2, 4, 4, 3, 4 — mean **3.8**
+///
+/// **The 10/10 reproduction replicated; the per-run rate did NOT** (5.9 vs 3.8,
+/// same commit, same machine). Pooled range **1-10 per 40**. Judge this arm — and
+/// the eventual 0.8.21 fix — on the reproduction rate; do not quote a percentage.
+///
+/// `attempted == 40`, `truncated == false`, `scheduler_errors == 0` and
+/// `other_errors == 0` in all 20 runs, so the signal is the promote race and
+/// nothing else — and [`assert_protocol_ran`] now PINS that rather than trusting
+/// it. First failure landed as early as index 0 and as late as index 20; the
+/// failing call returned in 9-84 ms, essentially all of which is its own `drain`.
 #[test]
 #[ignore = "TC-90 characterization arm — run explicitly with --ignored; see the design doc"]
 fn tc90_stress_transition_loop_under_saturating_burst_load() {
@@ -589,18 +704,14 @@ fn tc90_stress_transition_loop_under_saturating_burst_load() {
         writer_pace_ms: 1,
         embed_delay_ms: 0,
         transitions: STRESS_TRANSITIONS,
-        budget: Duration::from_secs(120),
+        budget: STRESS_BUDGET,
     });
     assert!(
         outcome.embed_calls > 0,
         "non-vacuity: the projection worker must have embedded at least one row, else there \
          was no second writer and the promote window never existed"
     );
-    assert!(
-        outcome.attempted > 0,
-        "non-vacuity: the loop must have issued at least one transition within its budget"
-    );
-    assert!(outcome.competing_writes > 0, "non-vacuity: the competing writers must have landed");
+    assert_protocol_ran(&outcome, STRESS_TRANSITIONS);
     assert_eq!(
         outcome.storage_errors,
         0,
@@ -622,7 +733,8 @@ fn tc90_stress_transition_loop_under_saturating_burst_load() {
 /// arms, which is what lets any stress-arm failure be attributed to the worker
 /// rather than to the load.
 ///
-/// **MEASURED 0/10 at `94f09d7d`**, ~1950 competing writes per run and
+/// **MEASURED 0/20 at `94f09d7d`** (two sessions of 10), 1920-1968 competing
+/// writes per run and
 /// `embed_calls == 0`. The load alone does not break `transition`.
 #[test]
 #[ignore = "TC-90 characterization arm — run explicitly with --ignored; see the design doc"]
@@ -635,17 +747,13 @@ fn tc90_stress_control_without_second_writer() {
         writer_pace_ms: 1,
         embed_delay_ms: 0,
         transitions: STRESS_TRANSITIONS,
-        budget: Duration::from_secs(120),
+        budget: STRESS_BUDGET,
     });
     assert_eq!(
         outcome.embed_calls, 0,
         "the control's defining property: no vector kind ⇒ no embed ⇒ no worker commit"
     );
-    assert!(
-        outcome.attempted > 0,
-        "non-vacuity: the loop must have issued at least one transition within its budget"
-    );
-    assert!(outcome.competing_writes > 0, "non-vacuity: the competing writers must have landed");
+    assert_protocol_ran(&outcome, STRESS_TRANSITIONS);
     assert_eq!(
         outcome.storage_errors,
         0,

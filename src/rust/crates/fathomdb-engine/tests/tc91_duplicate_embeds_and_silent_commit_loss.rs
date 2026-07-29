@@ -74,20 +74,69 @@
 //! | [`tc91_mechanism_duplicate_rate_versus_write_cadence`] | 60 rows, 1 ms vs 25 ms apart | 10 | 31-33 vs **0** |
 //!
 //! Governed and anonymous are indistinguishable, confirming the ledger claim that
-//! this is not the TC-57 race. The last two rows identify the actual cause: a
-//! duplicate needs a SECOND WRITER HOLDING THE WAL WRITE LOCK ACROSS THE WORKER'S
-//! COMMIT. Remove the concurrency (one batch, or 25 ms spacing) and the rate goes
-//! to **zero**; supply the lock holder externally and it goes to ~100 %.
+//! this is not the TC-57 race.
 //!
-//! So **TC-91 (a) is TC-91 (b)**, driven by the engine's own writer: `commit_batch`
-//! holds `BEGIN IMMEDIATE` (`lib.rs:18637`, the TC-57 fix) while
-//! `commit_projection_outcomes` (`lib.rs:13809`) is a DEFERRED read-then-upgrade,
-//! so the worker's promotion is refused with plain `SQLITE_BUSY` and `let _ =`
-//! throws the outcome away. The ~50 % is a property of the write CADENCE, not a
-//! constant of the scheduler.
+//! ## What those numbers DO and DO NOT prove — read this before quoting them
+//!
+//! Two claims are **measured**, and they are the deliverable:
+//!
+//! 1. The duplicate rate is **CADENCE-SENSITIVE** under this 1 ms embed / 1 ms
+//!    write shape: 32.5/60 at 1 ms spacing, **0/60 at 25 ms**, 10/10, and 0/96 for
+//!    a single batch with no concurrent writer. So the ~50 % is a property of the
+//!    write **cadence**, not a constant of the scheduler, and quoting it without
+//!    the cadence it was measured at is meaningless.
+//! 2. An **externally held WAL write lock makes discarded worker commits
+//!    invisible**: 86.4/96 duplicates while `'failed'` terminals and
+//!    `projection_failures` rows are both ZERO, 10/10.
+//!
+//! The tempting third claim — *"(a) IS (b)"*, i.e. that a duplicate REQUIRES a
+//! second writer holding the WAL write lock across the worker's commit — is a
+//! **HYPOTHESIS strongly implicated by (1) + (2), not a measured identity**
+//! (codex §9 round 4 finding 4). The gap is specific and worth naming, because it
+//! is not an oversight:
+//!
+//! > **There is no direct instrumentation of worker commit failures in the
+//! > baseline duplicate arms — because the defect under study is precisely that
+//! > those failures are discarded by `let _ =`.** TC-91 **(b) is the reason
+//! > TC-91 (a) cannot be closed by measurement.** The forced-lock experiment
+//! > reproduces the mechanism, but it supplies the lock holder externally; it
+//! > cannot show that every baseline duplicate came from the engine's own writer.
+//!
+//! The supporting code reading is real — `commit_batch` holds `BEGIN IMMEDIATE`
+//! (`lib.rs:18637`, the TC-57 fix) while `commit_projection_outcomes`
+//! (`lib.rs:13809`) is a DEFERRED read-then-upgrade — but it is a reading, and
+//! §0 of the TC-57 characterization is the standing warning about confident
+//! readings on this exact code path. Landing **R-C** (stop discarding the commit
+//! result) is what would convert the hypothesis into a measurement; that is the
+//! main reason R-C is recommended FIRST in the design doc §7.
 //!
 //! In EVERY one of the 50 runs above, `failed_terminals == 0` and
 //! `failure_audit_rows == 0`.
+//!
+//! ## Test profile — which targets run in the DEFAULT `cargo test` gate
+//!
+//! Decided deliberately per target, not by reflex (codex §9 round 4 finding 3).
+//! The gating question is TC-72: roughly 1 workspace run in 3 already fails on
+//! plain `main`, so anything timing-sensitive added to the default profile makes
+//! that worse and must earn its place.
+//!
+//! **`#[ignore]`d — every arm whose result is a RATE measured under concurrency:**
+//! [`tc91_duplicate_embed_rate_governed`], [`tc91_duplicate_embed_rate_anonymous`],
+//! [`tc91_mechanism_duplicate_rate_versus_write_cadence`],
+//! [`tc91_forced_commit_failure_is_invisible_to_terminal_counting`],
+//! [`tc91_control_unblocked_worker_commits`]. Each races a live projection worker
+//! against a live writer; their baseline values are MEASUREMENTS, not merge-gate
+//! invariants. Run them with `--ignored`.
+//!
+//! **LIVE in the default profile — one target:**
+//! [`tc91_probe_embed_cost_per_open_at_head`]. It is a measurement too, but it is
+//! **sequential and deterministic**: three opens of one workspace, one write, every
+//! `drain` awaited to idle, no second thread and no wall-clock assertion anywhere.
+//! Its value comes from a checked-in fixture (`vector_equivalence_probes.txt`) and
+//! a code path, so it has no run-to-run variance to flake on — and since it now
+//! pins `0 / 90 / 0` exactly, leaving it live is what actually defends the
+//! correction the design doc publishes. Gating it would put the corrected figure
+//! behind a flag nobody runs.
 
 use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
 use fathomdb_engine::{Engine, InitialState, PreparedWrite, SourceId};
@@ -434,12 +483,18 @@ const SPACED_PACE_MS: u64 = 25;
 /// * **spaced** (`pace_ms: 25`) — the same rows, the same embedder, the same
 ///   worker; only the overlap is removed.
 ///
-/// If the duplicate rate collapses in the spaced arm, TC-91 (a) IS TC-91 (b),
-/// driven by the engine's own writer — and the ~50 % figure is a property of the
-/// write CADENCE, not a fixed constant of the scheduler.
+/// **What a collapse in the spaced arm does and does not establish.** It
+/// establishes that the duplicate rate is CADENCE-SENSITIVE — the ~50 % is a
+/// property of the write cadence, not a fixed constant of the scheduler. It does
+/// **not**, on its own, establish that TC-91 (a) *is* TC-91 (b): spacing the
+/// writes changes overlap, but nothing in this arm observes a worker commit
+/// failing, because `let _ =` (`lib.rs:12711`) discards exactly that signal. Read
+/// together with [`tc91_forced_commit_failure_is_invisible_to_terminal_counting`]
+/// it strongly implicates the engine's own writer; see the module header's
+/// "What those numbers DO and DO NOT prove" for the precise boundary.
 ///
-/// `#[ignore]`d with the other characterization arms; it is a measurement, not a
-/// merge-gate invariant.
+/// `#[ignore]`d with the other concurrency arms; it is a measurement, not a
+/// merge-gate invariant. See the module header's test-profile inventory.
 #[test]
 #[ignore = "TC-91 characterization arm — run explicitly with --ignored; see the design doc"]
 fn tc91_mechanism_duplicate_rate_versus_write_cadence() {
@@ -475,10 +530,23 @@ fn tc91_mechanism_duplicate_rate_versus_write_cadence() {
 // The probe's cost at HEAD — the trap, disarmed by measurement
 // ---------------------------------------------------------------------------
 
+/// Probes in the committed `vector_equivalence_probes.txt` fixture — the
+/// non-empty, non-comment lines `vector_equivalence_probes()` parses
+/// (`lib.rs:15242-15251`). Deterministic: the fixture is checked in, so this is a
+/// property of the tree, not of the run.
+const PROBE_FIXTURE_SIZE: usize = 45;
+
+/// What the POPULATION open costs: `probe_populate_or_check` populates the
+/// baseline (one embed per probe) and then immediately checks against it (one
+/// more each).
+const POPULATION_OPEN_PROBE_EMBEDS: usize = PROBE_FIXTURE_SIZE * 2;
+
 /// **What the vector-equivalence probe actually costs per open at HEAD.**
 ///
-/// Not `#[ignore]`d: it is deterministic, sequential and fast, and it is the
-/// figure every other embed measurement in this repo has to subtract.
+/// Not `#[ignore]`d — see the module header's test-profile inventory. It is
+/// sequential and fully deterministic (no threads, no racing writer, every
+/// `drain` awaited), and it is the figure every other embed measurement in this
+/// repo has to subtract.
 ///
 /// Three opens of ONE workspace, each measured as a DELTA (ledger `seq-125`:
 /// absolute embed counts are unusable as an oracle across a reopen):
@@ -491,7 +559,13 @@ fn tc91_mechanism_duplicate_rate_versus_write_cadence() {
 /// 3. **open 3** — the TC-68 fingerprint verdict cache (`lib.rs:15566`) decides
 ///    whether the 45 re-embeds happen again.
 ///
-/// The numbers are printed either way; that is the deliverable.
+/// **All three opens are pinned EXACTLY** (`0 / 90 / 0`), which is a change from
+/// this file's first draft — codex §9 round 4 finding 2. The first draft asserted
+/// only `open3 < open2`, while the design doc published a measured `0 / 90 / 0`
+/// as a *correction* to a stale on-the-record figure of 45 re-embeds per open. A
+/// regression back to 45 would have passed `45 < 90` silently, leaving the doc
+/// publishing a zero the tree no longer honoured. When a characterization's whole
+/// value is the number, the number is what must be asserted.
 #[test]
 fn tc91_probe_embed_cost_per_open_at_head() {
     let dir = TempDir::new().expect("tempdir");
@@ -540,16 +614,23 @@ fn tc91_probe_embed_cost_per_open_at_head() {
         "a fresh workspace with no registered vector kind must cost ZERO probe embeds at open \
          (`lib.rs:15348-15353`)"
     );
-    assert!(
-        open2_probe_embeds > 0,
-        "the population open must actually run the probe, else this measurement is vacuous"
+    assert_eq!(
+        open2_probe_embeds, POPULATION_OPEN_PROBE_EMBEDS,
+        "the POPULATION open must cost exactly {POPULATION_OPEN_PROBE_EMBEDS} = populate \
+         {PROBE_FIXTURE_SIZE} + check {PROBE_FIXTURE_SIZE} \
+         (`probe_populate_or_check`, `lib.rs:15384-15389`); measured {open2_probe_embeds}. \
+         If you deliberately changed `vector_equivalence_probes.txt`, this constant AND the \
+         figure quoted in `dev/design/0.8.20-tc90-tc91-characterization.md` §5.2 must both move \
+         with it — the doc publishes this number as a correction other agents subtract."
     );
-    assert!(
-        open3_probe_embeds < open2_probe_embeds,
-        "TC-68's fingerprint verdict cache (landed Slice 22, `572475f2`) must make a steady-state \
-         reopen CHEAPER than the population open — measured open2={open2_probe_embeds} \
-         open3={open3_probe_embeds}. If this ever fails, the '45 re-embeds on every open' figure \
-         is live again and every embed oracle in the repo must re-subtract it."
+    assert_eq!(
+        open3_probe_embeds, 0,
+        "TC-68's fingerprint verdict cache (landed Slice 22, `572475f2`) took the steady-state \
+         reopen probe cost to ZERO, not merely to 'cheaper'; measured open2={open2_probe_embeds} \
+         open3={open3_probe_embeds}. This is asserted EXACTLY, on purpose: the design doc §5.2 \
+         corrects a stale on-the-record figure of 45 re-embeds per open, and a weaker \
+         `open3 < open2` bar would let a regression back to 45 pass while the doc still \
+         published 0. A wrong correction is worse than the stale figure it replaces."
     );
 }
 
