@@ -10,12 +10,18 @@ status: locked
 # Errors Design
 
 > **Requirement traceability (Steward, 2026-07-28; corrected after independent audit).** CONSULTED BY
-> **`R-20-VC` / decision #18** (0.8.20 Slice 22) as the module error taxonomy. ⚠ **This document does NOT
-> name `InvalidArgument` anywhere** and therefore does not by itself settle #18. The literal statements are
-> `dev/interfaces/rust.md:213-215` and `:352`; the variant was minted at `dev/design/slice-20-design.md:113`;
-> the ruling ADR for the family split is `dev/adr/ADR-0.6.0-error-taxonomy.md` (accepted). Settling #18
-> changes this file's canonical class matrix **and** all of `dev/interfaces/*.md` (`AGENTS.md:25`; TC-39
-> records that obligation is routinely missed).
+> **`R-20-VC` / decision #18** (0.8.20 Slice 22) as the module error taxonomy. The Steward's audit recorded
+> that this document did **not** name `InvalidArgument` anywhere and so could not by itself settle #18. That
+> was true when written and is **no longer true**: Slice 22 settled #18 and, as part of the settlement,
+> **added `InvalidArgument` to both the module-taxonomy table and the binding-facing class matrix below** —
+> closing exactly the gap the audit identified. Retained here because the audit's reasoning still governs
+> where the AUTHORITY lies: the literal statements are `dev/interfaces/rust.md:213-215` and `:352`; the
+> variant was minted at `dev/design/slice-20-design.md:113`; the ruling ADR for the family split is
+> `dev/adr/ADR-0.6.0-error-taxonomy.md` (accepted), whose per-module-vs-direct-variant rule is what makes
+> the settlement correct — `WriteValidationError` is one of the module errors that ADR names, while
+> `InvalidArgument` is a later-minted direct variant it never assigned to a module. Settling #18 changed
+> this file's canonical class matrix **and** all of `dev/interfaces/*.md` (`AGENTS.md:25`; TC-39 records
+> that obligation is routinely missed — it was met here; see the Slice 22 entries in each).
 
 This file is the design owner named by `architecture.md` for the cross-cutting
 error surface.
