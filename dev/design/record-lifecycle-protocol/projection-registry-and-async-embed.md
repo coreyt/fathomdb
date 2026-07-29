@@ -9,11 +9,16 @@ status: UNREVIEWED
 > contract for the one projection type (vector) that cannot be same-transaction. Companion:
 > [structural lifecycle contract](structural-lifecycle-contract.md).
 >
-> **Requirement traceability (added 2026-07-28, Steward — bookkeeping, no design change):** design of
-> record for **`R-20-VC` / TC-67** (0.8.20 Slice 22) — declaring a `searchable→vector` projection over a
-> kind the vector writer cannot commit must **REPORT** (HITL option (c)); the `resolve_source_type`
-> vocabulary is **NOT** grown. Back-linked because the requirement id was minted 2026-07-27, long after
-> this doc, so `scripts/commission-manifest.sh` could not find it (TC-92).
+> **Requirement traceability (Steward, 2026-07-28; corrected after independent audit).** CONSULTED BY
+> **`R-20-VC` / TC-67** (0.8.20 Slice 22) for the `searchable→vector` staleness axis (§3) and the
+> atomic-flip invariant (§4.1.1). **This document is NOT the authority for TC-67 and did not decide it** —
+> it is silent on declaration validation, on the kind vocabulary, and on any report. The ruling lives at
+> steward-ledger `seq-117`; the governing contract is
+> [`OPP-12-C1-converged-contract.md`](OPP-12-C1-converged-contract.md) **Q4 / Q6(a)** (graceful-graft:
+> defer, *no error, no build*), which is **byte-pinned** by `scripts/c1-conformance-pin.json` and must be
+> **cited, never edited**. ⚠ **§4 below is PARTLY STALE:** it still specs a `flush_embeddings()` verb that
+> was ruled out of existence (`tc-55-flush-classification`, `seq-110` — flush is INSTRUMENTATION, reuse
+> `drain`; there is NO `flush_embeddings()`). Status is `UNREVIEWED` = unclassified (TC-50), not current.
 
 ## 1. Why this exists — the retrievability-of-meaning problem
 
