@@ -1,0 +1,163 @@
+{
+  "phase": "0.8.20 Slice 32 (SBOM-CODE) — Library Sweep #3, leg 2 of 3 — the implementation that turns Slice 31's 23 RED acceptance tests GREEN. CODE ONLY.",
+  "baseline_sha": "be759b0f5a64152394e98726aea71aae43385957",
+  "branch": "0.8.20-slice-32-sbom-code",
+  "head_sha": "fc0a6da41ed46593b72433cb3e4aa57252ac452e",
+  "commits": [
+    "fc0a6da4: feat(0.8.20 Slice 32): sbom-survey implementation — 23/23 acceptance criteria GREEN",
+    "(+ the closure-JSON docs commit sitting on top of fc0a6da4 at the branch tip — this file. head_sha names fc0a6da4, the last SUBSTANTIVE commit, which is where the gate table below was captured; a closure JSON cannot name its own sha.)"
+  ],
+  "pytest": {
+    "command": "/home/coreyt/projects/fathomdb-worktrees/slice-32-venv/bin/python -m pytest scripts/sbom-survey/tests -q -rsE",
+    "rc": 0,
+    "summary_line": "23 passed in 10.02s",
+    "passed": 23,
+    "failed": 0,
+    "skipped": 0,
+    "errors": 0,
+    "collected": 23,
+    "note": "pytest prints only non-zero counters, so the literal line is `23 passed`. The zeroes are established by `collected 23 items` equalling `23 passed` (nothing failed, nothing errored during collection) and by `-rsE` emitting NO skipped and NO error section. Third-party deps live in an isolated venv OUTSIDE the repo tree at /home/coreyt/projects/fathomdb-worktrees/slice-32-venv; the repo's shared .venv was never touched and the mini-project itself is NOT installed (tests/conftest.py puts scripts/sbom-survey/ on sys.path and on PYTHONPATH for the CLI subprocess)."
+  },
+  "gates": [
+    {
+      "n": 1,
+      "command": "python -m pytest scripts/sbom-survey/tests -q -rsE  (slice-32-venv interpreter)",
+      "rc": 0,
+      "observed": "23 passed in 10.02s — 0 failed, 0 skipped, 0 errors"
+    },
+    {
+      "n": 2,
+      "command": "bash scripts/check-governed-surface-pin.sh",
+      "rc": 0,
+      "observed": "ok governed-surface-pin: matches the AC-079 pin (30 allowlist / 5 core / 5 recovery_denylist, pinned at c239908b under AC-079). NO pin trip; nothing under src/conformance/ was touched."
+    },
+    {
+      "n": 3,
+      "command": "git rev-parse HEAD:src/conformance/governed-surface-allowlist.json",
+      "rc": 0,
+      "observed": "140c0f638d2f6c659b58fa1b6225a0da73421b55",
+      "discrepancy": "THE TASK PROMPT EXPECTED 93ef3a8616e460c443417cdffc1e9f711ceb12f8. That value is STALE, not a pin trip. 93ef3a86 is the blob at cbb56212 — SLICE 31's baseline. Between cbb56212 and this slice's baseline be759b0f (= origin/main), commit c239908b ('fix(governance): TC-52 — record the signature in the allowlist; re-issue the pin') changed the file: `git merge-base --is-ancestor c239908b be759b0f` -> YES, `... c239908b cbb56212` -> NO. VERIFIED UNCHANGED BY THIS SLICE: the blob is byte-identical at be759b0f, at origin/main and at HEAD (all 140c0f63...), and `git diff --name-only be759b0f -- src/conformance/` is EMPTY. The real guard (gate 2) exits 0. No re-pin was performed and no allowlist was widened."
+    },
+    {
+      "n": 4,
+      "command": "grep -n 'SCHEMA_VERSION: u32' src/rust/crates/fathomdb-schema/src/lib.rs",
+      "rc": 0,
+      "observed": "6:pub const SCHEMA_VERSION: u32 = 24;  — unchanged"
+    },
+    {
+      "n": 5,
+      "command": "bash scripts/agent-lint-md.sh",
+      "rc": 0,
+      "observed": "clean. First invocation exited 1 with 'markdownlint-cli2 not found at node_modules/.bin/markdownlint-cli2' (TC-37: a missing structural linter must never report a silent pass); resolved exactly as that script's own remedy text prescribes for a linked worktree — `ln -s /home/coreyt/projects/fathomdb/node_modules node_modules`. .gitignore line 47 already ignores a bare `node_modules` SYMLINK, so the worktree stays clean."
+    },
+    {
+      "n": 6,
+      "command": "bash scripts/lint-design-status.sh",
+      "rc": 0,
+      "observed": "clean"
+    },
+    {
+      "n": 7,
+      "command": "bash scripts/lint-findings.sh",
+      "rc": 0,
+      "observed": "ok lint-findings: 39 finding ids, all unique — register untouched"
+    },
+    {
+      "n": 8,
+      "command": "bash scripts/check-board-currency.sh",
+      "rc": 0,
+      "observed": "ok board-currency: no live STATUS board contradicts git ancestry"
+    },
+    {
+      "n": 9,
+      "command": "bash scripts/check-release-state-views.sh",
+      "rc": 0,
+      "observed": "ok check-release-state-views: 5 generated blocks across 1 release-state file match their render"
+    },
+    {
+      "n": 10,
+      "command": "git diff --name-only be759b0f",
+      "rc": 0,
+      "observed": "19 files: .gitignore, scripts/sbom-survey/README.md, scripts/sbom-survey/pyproject.toml, scripts/sbom-survey/tiers.toml and the 15 files of scripts/sbom-survey/sbom_survey/. NO manifest, NO lockfile, nothing under src/, engine/ or .github/ — verified by grepping the diff list against '^(src/|engine/|\\.github/)|Cargo\\.(toml|lock)$|(^|/)package(-lock)?\\.json$|(^|/)uv\\.lock$|requirements.*\\.txt$|dev/tools/mermaid/', which matched nothing. `git diff --stat be759b0f -- scripts/sbom-survey/tests` is EMPTY: the frozen suite was not touched."
+    },
+    {
+      "n": 11,
+      "command": "git status --porcelain",
+      "rc": 0,
+      "observed": "clean — no stray untracked files (the node_modules symlink and scripts/sbom-survey/out/ are both ignored)"
+    },
+    {
+      "n": "extra",
+      "command": "ruff check scripts/sbom-survey/sbom_survey/",
+      "rc": 0,
+      "observed": "All checks passed! — also run automatically by the pre-commit hook on the staged .py files. No --no-verify was used on any commit."
+    }
+  ],
+  "files_added": [
+    "scripts/sbom-survey/pyproject.toml — the isolated project manifest. NOT a Cargo workspace member, NOT referenced by src/python/pyproject.toml, NOT a dependency of the root package.json. Dependencies are exactly design §5.7's four (cyclonedx-python-lib[json-validation]>=8.0,<9.0; packageurl-python>=0.15,<1.0; packaging>=24.0,<26.0; semver>=3.0,<4.0) with pytest>=8.0,<10.0 as a DEV-ONLY extra. requires-python >= 3.11 so `tomllib` is stdlib. §5.7's 'Deliberately NOT taken' honoured in full: no HTTP client, no TOML library, no jsonschema, no GitPython, no setup.py/AST tooling. It carries NO [tool.pytest.ini_options] table — see the TC-97 entry below.",
+    "scripts/sbom-survey/tiers.toml — the tracked tier/exclusion DATA, verbatim from the shape frozen at design §5.3 (9 rules: 1 exclude + 8 tier).",
+    "scripts/sbom-survey/sbom_survey/__init__.py — TIER_VOCABULARY ('shipped','dev-tooling','eval-only') in the ruled order, plus __version__.",
+    "scripts/sbom-survey/sbom_survey/paths.py — DEFAULT_REPORT_DIR, SLICE_33_FINDINGS_DOC, DEFAULT_TIERS_FILE, DEFAULT_EPOCH_TIMESTAMP.",
+    "scripts/sbom-survey/sbom_survey/discovery.py — ManifestRef + discover_manifests(root, *, ls_files=None), driven by `git ls-files -z`. MANIFEST_TABLE mirrors design §5.1 and tests/conftest.py's MANIFEST_BASENAMES 1:1 including the forward-looking group (yarn.lock, pnpm-lock.yaml, poetry.lock, Pipfile, setup.cfg) plus the requirements*.txt glob.",
+    "scripts/sbom-survey/sbom_survey/tiers.py — TierRule / TierMap / TierVerdict, UntieredManifestError, DuplicateTierPrefixError, TierRuleFileError, load_tier_map().",
+    "scripts/sbom-survey/sbom_survey/parse/__init__.py — Declaration, LockPackage, ManifestParseError, plus the recorded reasoning for parsing lockfiles rather than shelling out to cargo metadata / npm ls.",
+    "scripts/sbom-survey/sbom_survey/parse/cargo.py — Cargo.lock [[package]] + edges (resolving both the bare 'name' and the disambiguated 'name version' forms), Cargo.toml [dependencies]/[dev-dependencies]/[build-dependencies], and [workspace.dependencies] pins folded in as the constraint for a member's `foo.workspace = true`.",
+    "scripts/sbom-survey/sbom_survey/parse/npm.py — package-lock.json v3 `packages` map with npm's own NEAREST-node_modules edge resolution (so a nested `node_modules/a/node_modules/b` conflicting version keeps its own edges instead of inheriting the hoisted one), and package.json dependencies/devDependencies/optionalDependencies.",
+    "scripts/sbom-survey/sbom_survey/parse/python.py — uv.lock [[package]] + edges (skipping the editable/virtual/directory entry, which IS the project being locked rather than a dependency of it), PEP 621 pyproject.toml, and requirements*.txt where a single `==` pin IS the locked version and anything looser yields None -> 'unknown'. NO setup.py is executed or AST-parsed (§5.2).",
+    "scripts/sbom-survey/sbom_survey/registry.py — PublishedVersionSource protocol, OfflineSource, StaticSource, HttpRegistrySource (stdlib urllib.request against crates.io / the npm registry / PyPI JSON), and source_kind().",
+    "scripts/sbom-survey/sbom_survey/survey.py — run_survey(repo_root, *, published, tier_map=None, now=None) with `published` REQUIRED keyword-only and NO default; Survey (to_cyclonedx / to_cyclonedx_json / staleness / summary); StalenessRow with the 11-field as_dict(); classify_status(); resolve_timestamp().",
+    "scripts/sbom-survey/sbom_survey/cyclonedx.py — the document is BUILT AND SERIALIZED by the upstream cyclonedx-python-lib model (Bom / Component / JsonV1Dot6), not hand-rolled; validate() runs the real normative CycloneDX 1.6 schema from the json-validation extra.",
+    "scripts/sbom-survey/sbom_survey/report.py — write_reports() emits sbom.cdx.json, staleness.json (envelope exactly {generated, source, summary, rows}) and staleness.md, all deterministic.",
+    "scripts/sbom-survey/sbom_survey/cli.py — the argparse entry point; exits 0 / 2 (untiered, path named on stderr) / 3 (unparseable) / 1 (internal) per §5.9; --describe prints {name, version, ci_gating:false, recurring:true, tiers}.",
+    "scripts/sbom-survey/sbom_survey/util.py — make_purl(), the component identity that is also the bom-ref, built with packageurl-python (npm scopes become purl namespaces and percent-encode, so `@napi-rs/cli` is `pkg:npm/%40napi-rs/cli@2.18.4`).",
+    "scripts/sbom-survey/sbom_survey/__main__.py — `python -m sbom_survey` -> cli.main(sys.argv[1:])."
+  ],
+  "files_changed": [
+    ".gitignore — added `scripts/sbom-survey/out/` and `scripts/sbom-survey/.venv/` (design §5.6). AC-SBOM-18 was RED until this landed; the mutation sweep confirms removing the rule turns it RED again.",
+    "scripts/sbom-survey/README.md — Status table made TRUE (Slice 31 landed; Slice 32 landed, 23 passed / 0 failed / 0 skipped / 0 errors); a Layout table added; the 'Running the suite' section rewritten to describe the real, verified procedure (an isolated venv OUTSIDE the repo tree, the mini-project NOT installed); the TC-97 note CORRECTED (below); and the 'Deliberately NOT wired into CI' section kept with its ruling intact and strengthened with seq-166."
+  ],
+  "findings_addressed": [
+    "TC-97 — THE PYTEST HEADER NOW PRINTS `configfile:`, AND IT IS NOT A LEAK. The task prompt flagged any `configfile:` line as a possible leak of src/python/pyproject.toml's `pythonpath = [\".\"]` and required an explicit check. MEASURED: header reads `rootdir: <wt>/scripts/sbom-survey` + `configfile: pyproject.toml`. The configfile is THIS DIRECTORY'S OWN pyproject.toml — an unavoidable consequence of design §6 requiring the file at scripts/sbom-survey/, which IS an ancestor of scripts/sbom-survey/tests. NOTHING IS INHERITED: probed via a pytest plugin, config.inipath == <wt>/scripts/sbom-survey/pyproject.toml, config.rootpath == <wt>/scripts/sbom-survey, config.inicfg == {} (EMPTY), config.getini('pythonpath') == []. The mechanism is explicit in the installed pytest source (_pytest/config/findpaths.py::locate_config): a pyproject.toml carrying no [tool.pytest.ini_options] makes load_config_dict_from_file return None, and the function then falls through to `if found_pyproject_toml is not None: return found_pyproject_toml.parent, found_pyproject_toml, {}, []` — i.e. the file becomes the ROOTDIR ANCHOR with an EMPTY config dict. src/python/pyproject.toml is not on the ancestor chain and is never reached. Measured on pytest 9.1.1 / Python 3.12.3. The prompt anticipated exactly this and permitted it 'only if it changes nothing'; it changes nothing. NO [tool.pytest.ini_options] table was added, and no pyproject.toml / pytest.ini / tox.ini / setup.cfg was created above scripts/sbom-survey/. The README's TC-97 bullet was rewritten to state this accurately instead of the now-false claim that the suite runs with no config file.",
+    "TC-105 / §7 BOUNDARY-DEFECT SWEEP — 'a criterion graded against a helper while the integration boundary that must call it goes ungraded' produced 9 of Slice 31's 12 review findings. Slice 32 is the mirror image of that: an implementation can satisfy a helper's contract while the boundary does not do the thing. EVERY ITEM the prompt listed was swept, and each was verified TWICE — once by reading/writing the code, and once EMPIRICALLY by deliberately breaking it and confirming the frozen suite goes RED (the 14-mutation sweep below). (1) run_survey takes its manifests ONLY from discover_manifests(): grep across scripts/sbom-survey/sbom_survey/ for os.walk / rglob / iglob / glob. / import glob / .iterdir() / scandir returns ONLY docstring and comment hits, and there is no literal 'python/' path in code. (2) run_survey calls published.latest() ONCE PER COMPONENT — instrumented a counting source over the real repo: 773 components, 773 calls, 704 distinct (ecosystem, name) keys. (3) Exclusion and tiering come ONLY from the injected/loaded TierMap: the string 'dev/release/fixtures/' appears in the repository's code path nowhere — only in tiers.toml (data) and in prose. (4) Tier matching is longest-prefix-wins via max(len(prefix)) over EVERY matching rule, so it is order-independent by construction; two distinct prefixes of equal length cannot both prefix one string, so the winner is unique. Duplicate prefixes raise DuplicateTierPrefixError (a TierRuleFileError/ValueError, deliberately NOT an UntieredManifestError) from load_tier_map(), naming the prefix. (5) The BOM's fathomdb:tier is derived from the DECLARING MANIFEST's rule verdict — independently recomputed over the real repo: 42 components carry exactly one origin, 0 tier mismatches against TierMap.classify(origin).tier. (6) `direct` is DEFINED as 'has at least one tracked declaring manifest', so a direct component with no fathomdb:declared-in origin is impossible by construction — verified: 0 depth/origin contradictions across 773 components. (7) The default timestamp is a fixed epoch produced by ONE function, resolve_timestamp(), shared by run_survey and the CLI; argparse's --now default is None PRECISELY so the parser cannot inject a wall-clock stamp behind the survey's back, and SOURCE_DATE_EPOCH keeps working as §5.8's override. There is no datetime.now() / utcnow() / time.time() / date.today() call anywhere in the package. (8) write_reports() PRODUCES the artifact shape rather than projecting a poorer one — mutation M9 proves the criterion bites. (9) sbom_survey.cyclonedx.validate() really runs the schema: it returns None for the emitted document and a diagnostic for the known-invalid control, verified out of band as well as by AC-SBOM-10.",
+    "MUTATION SWEEP — 14 DELIBERATE DEFECTS, 14 DETECTED, 0 UNDETECTED. Because the suite went green on the FIRST run, the green needed independent corroboration that it grades THIS implementation rather than passing vacuously. Each mutation was applied to the committed tree, the owning test node run, and the tree reverted with `git checkout -- .`: M1 fixture exclusion hardcoded inside run_survey (bypassing the injected tier_map) -> AC-SBOM-06 RED; M2 run_survey never asks the injected published source -> AC-SBOM-17 RED; M3 validate() stubbed to return None -> AC-SBOM-10 RED; M4 one constant tier stamped on every component -> AC-SBOM-11 RED; M5 first-match-wins tier matching -> AC-SBOM-23 RED; M5b duplicate prefixes resolved silently instead of at load time -> AC-SBOM-23 RED; M6 wall-clock default timestamp -> AC-SBOM-22 RED; M6b argparse defaulting --now to wall-clock with the in-process default untouched -> AC-SBOM-22 RED; M7 run_survey reading an UNTRACKED manifest (python/pyproject.toml, the untracked-origin-leakage case) -> AC-SBOM-01 RED; M8 the lockfile library<->library edge set dropped -> AC-SBOM-12 RED; M9 write_reports projecting a poorer staleness.json row shape -> AC-SBOM-22 RED; M10 the .gitignore report-dir rule removed -> AC-SBOM-18 RED; M11 --describe omitting the tier vocabulary -> AC-SBOM-19 RED; M12 the CLI exiting 0 on an untiered manifest -> AC-SBOM-21 RED. The working tree was verified clean and the full suite re-run GREEN afterwards.",
+    "REAL-REPO BEHAVIOUR (sanity, not a Slice-33 deliverable). An offline run over this repository produces 773 components (490 shipped / 283 dev-tooling; 51-ish direct, the rest transitive) across 468 cargo + 282 npm + 20-odd pypi purls, 771+ dependency entries, and the 8 tracked skew fixtures in survey.excluded with reason='fixture', mirrored into metadata.properties as fathomdb:excluded-manifest. All five §5.5 sentinel crates (proc-macro2, quote, syn, unicode-ident, serde_derive) arrive tagged `transitive`, which is what proves the Cargo.lock edge graph was really walked. 14 distinct manifests contribute a fathomdb:declared-in origin and every one is a path `git ls-files` reports; none is under python/ and none is under dev/release/fixtures/. Two independent in-process runs are byte-identical (490,259 bytes). NO SURVEY OR FINDINGS DOCUMENT WAS WRITTEN — that is Slice 33.",
+    "DESIGN AMBIGUITY RESOLVED 1/3 — THE TIER OF A COMPONENT REACHABLE FROM SEVERAL MANIFESTS. §5.3 fixes the tier of a MANIFEST; it does not say what tier a COMPONENT takes when it is declared by more than one manifest, or when it is a transitive with no declaring manifest at all. RESOLUTION, forced by the frozen oracle: a component's tier candidates are the tiers of its DECLARING MANIFESTS when it has any, and otherwise the tiers of the LOCKFILES that resolved it; the highest-priority tier wins (shipped > dev-tooling > eval-only, i.e. TIER_VOCABULARY order). With exactly one origin this reduces to that origin's tier, which is what AC-SBOM-11 requires. NOTE the consequence, stated rather than hidden: `packaging` is both a transitive of the shipped src/python/uv.lock AND a direct dependency of this dev-tooling mini-project, so it tiers dev-tooling. Including the lockfile tier in the candidate set would make it `shipped` and would then FAIL AC-SBOM-11, since it carries exactly one origin. Origins-win is therefore the rule the frozen oracle demands, not a preference.",
+    "DESIGN AMBIGUITY RESOLVED 2/3 — WHICH VERSIONS A MANIFEST DECLARATION ATTACHES TO. §5.5 defines direct-ness by NAME ('the package name appears in a dependency table'), while components are identified per (ecosystem, name, version). A declaration is therefore attached to every component sharing its (ecosystem, name) — with pypi names canonicalized per PEP 503, so a pyproject.toml saying `PyYAML` and a lock saying `pyyaml` are one package. A declared name with NO matching lock entry materializes an UNRESOLVED component: version omitted, purl without an @version segment, and fathomdb:resolution='unresolved'. That case is real on this repo (maturin, networkx, numpy, pyyaml, scipy are declared in src/python/pyproject.toml's optional groups but absent from uv.lock) and is exactly the shape test_cyclonedx.py and test_report.py were written to accommodate — the prompt flagged that `fathomdb:resolution == 'unresolved'` is required by the tests and not spelled out in §5.",
+    "DESIGN AMBIGUITY RESOLVED 3/3 — THE fathomdb:edge-kind = 'resolved' TAG. §5.5 says lock-derived edges are tagged 'resolved', but CycloneDX `dependencies` entries carry no property bag, so an edge cannot literally hold one. RESOLUTION: the tag is emitted as a COMPONENT property on every component whose outgoing edges came from a lockfile, and the real normal/dev/build kinds — which only manifest-derived declarations carry — travel in staleness.json's `declared_in[].kind`. The §5.5 limitation is thereby recorded rather than papered over.",
+    "IMPLEMENTATION CHOICE WORTH FLAGGING — THE DOCUMENT IS BUILT BY THE LIBRARY, NOT HAND-ROLLED. §5.7 makes cyclonedx-python-lib load-bearing twice: to 'build and serialize' the document, and to supply the schema validator. Both uses are taken. sbom_survey/cyclonedx.py assembles a real Bom / Component / Dependency model and serializes with JsonV1Dot6, so the emitted `$schema` / `bomFormat` / `specVersion` / key ordering / dependency array come from the upstream serializer, and the hand-rolled-JSON failure mode REQ-6 exists to prevent is structurally avoided. Determinism was checked against that decision rather than assumed: the serializer sorts components, properties and dependencies, the serialNumber is a UUIDv5 over the sorted bom-ref set (never uuid4), the timestamp is the fixed epoch, and two independent runs are byte-identical."
+  ],
+  "blockers_encountered": [
+    {
+      "id": "B-1",
+      "description": "Gate 3's expected allowlist blob SHA in the task prompt (93ef3a8616e460c443417cdffc1e9f711ceb12f8) does not match HEAD (140c0f638d2f6c659b58fa1b6225a0da73421b55).",
+      "resolution": "NOT A BLOCKER AND NOT A PIN TRIP — a stale expectation carried over from Slice 31. 93ef3a86 is the blob at cbb56212 (Slice 31's baseline); c239908b changed the file on main afterwards and IS an ancestor of this slice's baseline be759b0f but is NOT an ancestor of cbb56212. The blob is identical at be759b0f, origin/main and HEAD, `git diff --name-only be759b0f -- src/conformance/` is empty, and the real guard scripts/check-governed-surface-pin.sh exits 0. No re-pin, no allowlist widening. Recorded for the orchestrator so the stale value is corrected in the next prompt rather than re-triggering a HALT."
+    },
+    {
+      "id": "B-2",
+      "description": "scripts/agent-lint-md.sh exited 1 on first invocation: markdownlint-cli2 not found at node_modules/.bin/markdownlint-cli2 (a linked worktree has no node_modules).",
+      "resolution": "Resolved exactly as that script's own remedy text prescribes — symlinked the primary checkout's node_modules into the worktree. .gitignore line 47 already ignores a bare `node_modules` symlink (as distinct from the `node_modules/` directory rule), so `git status --porcelain` stays clean. Gate re-run: rc=0. Nothing in the primary checkout was modified."
+    },
+    {
+      "id": "B-3",
+      "description": "All 23 tests passed on the very FIRST run, which is itself a reason for suspicion rather than confidence on a slice whose predecessor spent six review rounds hardening the oracles.",
+      "resolution": "Corroborated independently before claiming green: (a) a 14-mutation sweep, 14/14 detected, 0 undetected — see findings_addressed; (b) an out-of-band re-derivation over the real repository of the three properties the oracles can only observe indirectly (published.latest() call count == component count; single-origin tier equality against TierMap.classify(); zero depth/origin contradictions); (c) an explicit pytest-config probe for TC-97. No test, assertion, docstring or conftest.py line was modified."
+    }
+  ],
+  "tests_frozen_verification": "`git diff --stat be759b0f -- scripts/sbom-survey/tests` is EMPTY. No test was edited, weakened, deleted, renamed, skipped, xfailed or parametrized away; no docstring and no line of conftest.py was touched. NO test was found to be incorrect or unsatisfiable — every one of the 23 is satisfiable, and each was shown to be falsifiable by at least one mutation.",
+  "additional_changes_made_in_scope": [
+    "scripts/sbom-survey/README.md kept TRUE rather than merely status-bumped: the Slice-31-era claims that the directory contains 'only this README and the RED acceptance suite', that '23 failed' is expected, and that pytest runs the suite with 'no config file' are all now false, so each was corrected. The 'Deliberately NOT wired into CI' section keeps its ruling verbatim in substance and now states seq-166 explicitly — GREEN DOES NOT AUTHORIZE WIRING; green AND HITL approval are both required, neither sufficient.",
+    "A Layout table was added to the README so a reader can find each design section's implementation without grepping."
+  ],
+  "deliberately_not_done": [
+    "NO CI WIRING. .github/**, scripts/agent-test.sh, scripts/agent-verify.sh, scripts/check.sh, every ruff/pyright scope and every pytest config are untouched. test_cli.py::test_tool_declares_non_ci_gating_and_is_absent_from_ci_wiring stays green BECAUSE THE WIRING IS ABSENT. Standing HITL ruling seq-166.",
+    "NO dependency bump, and NO manifest or lockfile edited anywhere in the repository. The single manifest added is the mini-project's own scripts/sbom-survey/pyproject.toml, which is the tool's manifest and not the repo's. Root Cargo.toml / Cargo.lock, package.json / package-lock.json, src/python/pyproject.toml, src/python/uv.lock, src/ts/**, tools/docs/requirements.txt and dev/tools/mermaid/** are all byte-identical to the baseline.",
+    "NOTHING under src/rust/, src/python/, src/ts/ or engine/. No engine or binding change. SCHEMA_VERSION stays 24.",
+    "NO Slice 33 work. The tool was RUN only to make tests pass and to sanity-check the implementation; dev/plans/runs/0.8.20-slice-33-library-sweep-3-FINDINGS.md was NOT created, no survey/findings document was written, and no staleness verdict, surgical-SLOC judgement or dependabot.yml reconciliation was recorded anywhere.",
+    "NO AC minted in dev/acceptance.md and NO R-20-xx requirement id (TC-76). This slice is gated by TDD test name only.",
+    "NO edit to dev/plans/release-state-0.8.20.json, dev/plans/plan-0.8.20.md, dev/plans/runs/STATUS-0.8.20.md, dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md, dev/design/0.8.20-slice-31-sbom-survey-tool.md, dev/DOC-INDEX.md or any ledger — those belong to the orchestrator and the Steward.",
+    "NO push, no worktree created/moved/removed, no subagent spawned, no `git commit --no-verify`, and nothing installed into the repo's shared .venv at /home/coreyt/projects/fathomdb/.venv (the tool's dependencies live in an isolated venv OUTSIDE the repo tree at /home/coreyt/projects/fathomdb-worktrees/slice-32-venv, which the orchestrator may delete).",
+    "NO Rust/engine test suite run — out of scope and it contends with wall-clock assertions elsewhere. scripts/agent-test.sh was NOT used for any green claim (its aggregate exit is vacuous, TC-16)."
+  ],
+  "agent_verify_result": "not run — scripts/agent-verify.sh is the heavy Rust/engine gate and is out of scope for a slice that touches no Rust and no engine source. The gates actually applicable to this diff were all run individually and all exit 0; see the `gates` array, each rc captured with `rc=$?` on the immediately following line.",
+  "next_step_for_orchestrator": "Cherry-pick fc0a6da4 (+ this closure-JSON commit) onto the 0.8.20 mainline, then spawn the codex §9 reviewer on this branch HEAD. Two things the reviewer should be pointed at rather than made to rediscover: (1) the TC-97 `configfile:` line is this directory's OWN pyproject.toml acting as a rootdir anchor with an EMPTY applied config — probed values are in findings_addressed, and the mechanism is quotable from _pytest/config/findpaths.py::locate_config; (2) the three design ambiguities §5 does not settle (component tier under multiple manifests, which versions a name-level declaration attaches to, and where fathomdb:edge-kind can live given CycloneDX dependency entries carry no properties) are resolved and recorded here — if the reviewer disagrees with any of them, only the first has a visible consequence on this repo (`packaging` tiers dev-tooling), and the frozen AC-SBOM-11 forces it. ALSO: correct the stale gate-3 allowlist blob SHA (93ef3a86 -> 140c0f63) in the Slice-33 prompt. And a standing reminder for whoever writes that prompt: getting this suite GREEN does NOT authorize wiring it into CI (seq-166)."
+}
