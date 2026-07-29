@@ -1,5 +1,5 @@
 ---
-status: ACTIVE
+status: SUPERSEDED
 ---
 
 # FathomDB — Steward Session Hand-off (2026-07-27-A)
@@ -7,6 +7,13 @@ status: ACTIVE
 > **Boot:** run **`/steward`**, do its §3 cold-start reading (start with `scripts/steward-orient.sh`),
 > then read THIS doc, return a short orientation, and **WAIT for the HITL** before mutating anything.
 > Supersedes `STEWARD-SESSION-HANDOFF-2026-07-26-A.md`.
+>
+> ## ⚠ SUPERSEDED 2026-07-29 by `STEWARD-SESSION-HANDOFF-2026-07-29-A.md`. **Read that one.**
+>
+> Retained as record. Its state table is FOUR SLICES BEHIND (Slice 30 was unlanded when it was written;
+> 30, 21, 22 and 23 have all landed since), and its §4 warning that `/decisions` under-reports has been
+> RESOLVED — the four session-only items were written into `decisions.unruled` at `seq-150`, so the live
+> count is now generated and true. **Do not act on this document's numbers.**
 
 ## 0. State, verified from git at hand-off
 
