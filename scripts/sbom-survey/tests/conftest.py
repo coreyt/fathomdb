@@ -42,7 +42,7 @@ if str(PROJECT_ROOT) not in sys.path:
 # silently skip while the suite still reports green (codex §9 round 1, fix-1
 # finding 1 — `setup.cfg` was exactly that).
 #
-# Split in two: the first group matches tracked paths TODAY (§5.1's 28-path
+# Split in two: the first group matches tracked paths TODAY (§5.1's 29-path
 # enumeration); the second group currently matches nothing and is present so
 # that adding one of those files to the repo is DISCOVERED (and then fails REQ-4
 # tiering loudly) rather than silently ignored. `requirements*.txt` is a glob and

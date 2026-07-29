@@ -9,7 +9,7 @@ manifest tracked, is the dependency direct or transitive, is the locked version 
 so a Library Sweep is ~90% mechanical instead of a search → review → check → reason cycle per
 candidate.
 
-**Spec of record:** `dev/design/0.8.20-slice-31-sbom-survey-tool.md` — requirements, the 22
+**Spec of record:** `dev/design/0.8.20-slice-31-sbom-survey-tool.md` — requirements, the 23
 acceptance criteria, the design, and the answers to every resolved design question. Read that first;
 this file is only the operating note.
 
@@ -23,7 +23,7 @@ this file is only the operating note.
 
 At Slice 31 this directory contains **only** this README and the RED acceptance suite. There is no
 `sbom_survey` package, no `pyproject.toml`, no `tiers.toml` and no CLI yet — that is Slice 32. The
-suite is therefore **RED by construction**: 22 tests, 22 failures, one per acceptance criterion.
+suite is therefore **RED by construction**: 23 tests, 23 failures, one per acceptance criterion.
 
 ## Running the suite
 
@@ -33,12 +33,12 @@ From the repository root, with a neutral working directory:
 python3 -m pytest scripts/sbom-survey/tests
 ```
 
-Expected at Slice 31: **`22 failed, 0 passed, 0 skipped, 0 errors`** (exit code `1`).
+Expected at Slice 31: **`23 failed, 0 passed, 0 skipped, 0 errors`** (exit code `1`).
 
 - **No test may skip and no test may pass** before Slice 32. A skip is a vacuous green.
 - **No module-level `import sbom_survey`.** The import happens inside each test body via the
-  `require()` helper in `tests/conftest.py`, so a missing package produces 22 attributable FAILEDs
-  rather than one collection error that hides 21 of them.
+  `require()` helper in `tests/conftest.py`, so a missing package produces 23 attributable FAILEDs
+  rather than one collection error that hides 22 of them.
 - The suite needs **no network**. The published-version lookup is behind an injectable seam; the
   tests inject `OfflineSource` / `StaticSource`, and one test asserts zero socket I/O.
 - **`AC-SBOM-10` grades CycloneDX validity with an INDEPENDENT validator** — the upstream

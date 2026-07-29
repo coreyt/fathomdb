@@ -1,7 +1,13 @@
-"""AC-SBOM-05 .. AC-SBOM-09 — tiering, fixture exclusion, and the loud gap.
+"""AC-SBOM-05 .. AC-SBOM-09 and AC-SBOM-23 — tiering, fixture exclusion, the
+loud gap, and the longest-prefix matching rule.
 
 REQ-3 (tiering), REQ-4 (loud gaps), REQ-5 (fixture exclusion).
 Design: dev/design/0.8.20-slice-31-sbom-survey-tool.md §5.2 and §5.3.
+
+`AC-SBOM-23` carries a criterion id out of file order: it was added at fix-3
+(codex §9 round 3) and numbered last so that AC-SBOM-10..22 keep the ids the
+design, the README and the closure JSON already cite. Its subject matter is
+§5.3, which is why the test lives here beside AC-SBOM-05..09.
 """
 
 from __future__ import annotations
@@ -22,6 +28,40 @@ from conftest import (
 
 def _fixture_manifests() -> list[str]:
     return [p for p in tracked_manifest_paths() if p.startswith(FIXTURE_PREFIX)]
+
+
+# --- AC-SBOM-23 overlapping-rule fixture data (design §5.3) -----------------
+#
+# `_SPECIFIC_PREFIX` is a PROPER PREFIX EXTENSION of `_BROAD_PREFIX`, and the
+# two map to DIFFERENT tiers, so first-match-wins and longest-prefix-wins give
+# DIFFERENT answers for `_OVERLAP_PATH`. That divergence is the whole point:
+# with two rules that agree, or that cannot both match, every matching strategy
+# looks identical and the criterion would be vacuous.
+#
+# Neither path needs to exist on disk. `TierMap.classify()` is a pure function
+# of the rule set and the path string, and deliberately so — a rule for a
+# subtree that does not exist yet must still be expressible.
+_BROAD_PREFIX = "dev/tools/"
+_SPECIFIC_PREFIX = "dev/tools/vendored-shipped/"
+_OVERLAP_PATH = _SPECIFIC_PREFIX + "Cargo.toml"
+_BROAD_ONLY_PATH = _BROAD_PREFIX + "mermaid/package.json"
+
+# A tier file with the SAME prefix twice — a load-time error per §5.3. Written
+# to pytest's `tmp_path` scratch dir at test time; Slice 31 creates no tracked
+# `tiers.toml` (that is a Slice 32 artifact, §6).
+_DUPLICATE_PREFIX_TOML = f"""\
+schema = 1
+
+[[rule]]
+prefix = "{_BROAD_PREFIX}"
+action = "tier"
+tier   = "dev-tooling"
+
+[[rule]]
+prefix = "{_BROAD_PREFIX}"
+action = "tier"
+tier   = "shipped"
+"""
 
 
 def test_release_fixtures_are_excluded_and_auditable() -> None:
@@ -242,3 +282,101 @@ def test_tier_vocabulary_is_exactly_the_three_ruled_values() -> None:
                 f"rule {rule.prefix!r} uses tier {rule.tier!r}, outside the"
                 f" ruled vocabulary {TIER_VOCABULARY!r}"
             )
+
+
+def test_longest_prefix_wins_and_rule_order_is_irrelevant(tmp_path: Path) -> None:
+    """AC-SBOM-23.
+
+    §5.3 freezes matching as LONGEST-PREFIX-WINS, and promises in terms that
+    reordering `tiers.toml` "can never change the answer" — a property that
+    matters precisely because that file will be edited by whoever adds the next
+    manifest, and a re-tiering caused by moving a block is silent.
+
+    Nothing enforced it (codex §9 round 3). A first-match-wins implementation
+    passes every other criterion whenever the tracked file happens to list the
+    more specific rule first, and then a later reordering silently re-tiers
+    manifests despite the design saying it cannot.
+
+    Three obligations, all from the same paragraph:
+
+    1. With two overlapping rules — one prefix a proper extension of the other,
+       mapping to DIFFERENT tiers — the LONGEST match wins.
+    2. The same rule set in BOTH orders classifies IDENTICALLY. First-match-wins
+       necessarily fails one of the two orderings, which is what makes this
+       falsifiable rather than decorative.
+    3. Duplicate prefixes are a LOAD-TIME error naming the offending prefix.
+
+    Obligation 1 is checked against a second path that matches ONLY the broad
+    rule, so "always answer with the longest rule in the map" — which would pass
+    a single-path test — is caught too.
+    """
+    tiers = require(
+        "sbom_survey.tiers",
+        "AC-SBOM-23",
+        "TierMap.classify() must select the LONGEST matching prefix, not the"
+        " first one in file order, so the answer is independent of rule order"
+        " in tiers.toml (design §5.3); and load_tier_map() must REJECT a file"
+        " carrying the same prefix twice, naming that prefix.",
+    )
+
+    broad = tiers.TierRule(prefix=_BROAD_PREFIX, action="tier", tier="dev-tooling")
+    specific = tiers.TierRule(prefix=_SPECIFIC_PREFIX, action="tier", tier="shipped")
+
+    verdicts: dict[str, tuple[tuple[str, str], tuple[str, str]]] = {}
+    for label, rules in (
+        ("specific-rule-first", [specific, broad]),
+        ("broad-rule-first", [broad, specific]),
+    ):
+        tier_map = tiers.TierMap(list(rules))
+
+        overlap = tier_map.classify(_OVERLAP_PATH)
+        assert (overlap.action, overlap.tier) == ("tier", "shipped"), (
+            f"[{label}] {_OVERLAP_PATH!r} matches BOTH {_BROAD_PREFIX!r}"
+            f" (-> dev-tooling) and the longer {_SPECIFIC_PREFIX!r} (-> shipped)."
+            " §5.3 makes matching LONGEST-PREFIX-WINS, so the answer must be"
+            f" ('tier', 'shipped'); got {(overlap.action, overlap.tier)!r}. A"
+            " first-match-wins implementation produces exactly this failure in"
+            " one of the two rule orders."
+        )
+
+        broad_only = tier_map.classify(_BROAD_ONLY_PATH)
+        assert (broad_only.action, broad_only.tier) == ("tier", "dev-tooling"), (
+            f"[{label}] {_BROAD_ONLY_PATH!r} matches ONLY {_BROAD_PREFIX!r}, so"
+            " it must tier dev-tooling; got"
+            f" {(broad_only.action, broad_only.tier)!r}. 'Longest prefix' means"
+            " the longest rule that ACTUALLY MATCHES — never simply the longest"
+            " rule present in the map."
+        )
+
+        verdicts[label] = (
+            (overlap.action, overlap.tier),
+            (broad_only.action, broad_only.tier),
+        )
+
+    assert verdicts["specific-rule-first"] == verdicts["broad-rule-first"], (
+        "ORDER-INDEPENDENCE FAILED: the same two rules classified differently"
+        " when their order was swapped —"
+        f" specific-first={verdicts['specific-rule-first']!r} vs"
+        f" broad-first={verdicts['broad-rule-first']!r}. §5.3 states that"
+        " reordering tiers.toml 'can never change the answer'; here it did, so"
+        " a later edit that merely moves a block would silently re-tier"
+        " manifests."
+    )
+
+    # --- obligation 3: duplicate prefixes are a LOAD-TIME error --------------
+    duplicate_file = tmp_path / "duplicate-prefix-tiers.toml"
+    duplicate_file.write_text(_DUPLICATE_PREFIX_TOML, encoding="utf-8")
+
+    with pytest.raises(Exception) as excinfo:  # noqa: PT011 - no error type is frozen by §5.3
+        tiers.load_tier_map(duplicate_file)
+
+    assert not isinstance(excinfo.value, tiers.UntieredManifestError), (
+        "a duplicated prefix must fail while LOADING the rules, before any path"
+        " is classified, so UntieredManifestError ('no rule matched this path')"
+        f" is the wrong signal; got {excinfo.value!r}"
+    )
+    assert _BROAD_PREFIX in str(excinfo.value), (
+        "the load-time error must NAME the duplicated prefix so the fix is"
+        f" obvious; expected {_BROAD_PREFIX!r} in the message, got:"
+        f" {excinfo.value}"
+    )
