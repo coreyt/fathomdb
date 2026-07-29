@@ -62,11 +62,16 @@
 #   2. CHECKED LIKE EVERY OTHER PATH. A curated citation carries the Steward's
 #      authority, so a dead one misleads MORE than a dead scan hit, not less:
 #      CHECK 1 applies with no exemption and the manifest is not emitted.
-#   3. IT REACHES OUTSIDE `dev/design/`. dev/adr/**, dev/interfaces/** — the
-#      walker can never go there and is NOT widened to (that would drag every
-#      unrelated doc into every brief). Out-of-tree docs often carry no
-#      `status:` frontmatter at all, and the row then SAYS there is none rather
-#      than inventing one, exactly as the UNREVIEWED rows refuse to launder.
+#   3. IT REACHES ANYTHING IN THE CHECKOUT, including tiers the walker does not
+#      cover. (When this was written the walker covered `dev/design/` alone and
+#      this was the ONLY route to `dev/adr/**` and `dev/interfaces/**`; TC-94
+#      defect 1 has since put those two tiers inside the scan — see
+#      DESIGN_ROOTS — so curation is no longer the only way to reach them. It is
+#      still the only way to reach anything else, and it is still the only way to
+#      put a BYTE-PINNED contract in front of an orchestrator, since a pinned
+#      file can never be back-linked.) Curated docs often carry no `status:`
+#      frontmatter at all, and the row then SAYS there is none rather than
+#      inventing one, exactly as the UNREVIEWED rows refuse to launder.
 #   4. IT IS NEVER BLENDED WITH THE SCAN. Curated rows are labelled CURATED and
 #      kept in their own block, so a reader can always tell a doc somebody chose
 #      from a doc a substring match found.
@@ -189,7 +194,31 @@ AGENTS = "AGENTS.md"
 SURFACE_ALLOWLIST = "src/conformance/governed-surface-allowlist.json"
 SURFACE_PIN = "scripts/governed-surface-pin.json"
 CODEX_DIR = "dev/plans/runs/codex"
-DESIGN_ROOT = "dev/design"
+
+# THE ROOTS THE DISCOVERY SCAN WALKS. Exactly three, and the list is a bound, not
+# a starting point (TC-94 defect 1).
+#
+# It used to be `dev/design` alone, which made `dev/adr/**` and
+# `dev/interfaces/**` unreachable BY CONSTRUCTION, at any status, no matter what
+# was back-linked into them. That excluded precisely the strongest evidence: an
+# ADR is a HIGHER tier of authority than a design memo
+# (`ADR-0.6.0-error-taxonomy.md` is the ruling document for decision #18;
+# `ADR-0.8.18-vector-equivalence-self-check.md` is HITL-SIGNED), and
+# `dev/interfaces/*.md` is the surface AGENTS.md obliges an error-surface change
+# to update — an obligation TC-39 already records as routinely missed.
+#
+# WHY NOT WIDER. Walking all of `dev/` would drag planning notes, run artifacts
+# and hand-off memos into every brief; `dev/plans/**` alone is larger than the
+# design tier and is narrative, not authority. The three roots below are the tiers
+# that CARRY design authority, and the bound is asserted (test arm 12c3).
+#
+# WHY THIS IS SAFE ONLY ALONGSIDE THE WORD-BOUNDARY FIX. Widening the walker
+# under substring matching would have multiplied TC-100's spurious hits across
+# three times as many documents. The two changes ship together for that reason.
+DESIGN_ROOTS = ("dev/design", "dev/adr", "dev/interfaces")
+# The primary root, used where the prose names one tree (the `status:` frontmatter
+# convention T2c established lives under it).
+DESIGN_ROOT = DESIGN_ROOTS[0]
 
 # T1d RULE 1's shape, applied to this tool's OWN output: a manifest that emitted
 # a `name:123` pointer would reintroduce the class T1d closed.
@@ -339,6 +368,28 @@ def slice_tokens(entry):
         r"\bAC-[0-9]+\b",
         r"\bRUBRIC-[A-Za-z0-9]+\b",
         r"\b[A-Z]{2,}-[0-9]+\b",                 # OPP-12, EXP-…
+        # BARE-NUMBER LEGS (TC-94 defect 2). `#18` and `#99` matched none of the
+        # patterns above, so two of 0.8.20 Slice 22's four legs — "Slice-15b
+        # decision #18 error-variant" and "sqlite-vec #99 vec0 DELETE probe" —
+        # contributed NOTHING to selection and no document could ever be matched
+        # for them.
+        #
+        # TWO OR MORE DIGITS, and that floor is measured rather than tidy.
+        # Word-bounded across the three roots at the time of this change: `#18`
+        # occurs in 6 documents (errors.md, the sqlite-vec #99 probe memo,
+        # ADR-0.6.0-error-taxonomy.md and all three dev/interfaces surfaces) and
+        # `#99` in 3 — every one genuinely about that decision or that upstream
+        # issue. `#3` occurs in 11 and `#1` in 16, none of them a leg: they are
+        # prose ordinals ("item #3").
+        #
+        # THE COST OF ONE DIGIT IS NOT NOISE, IT IS THE GUARD. Slices 31/32/33
+        # are titled "Library Sweep #3, leg N of 3" — a sweep ordinal, not a
+        # design id. Slices 32 and 33 have no design of record yet and correctly
+        # HARD-FAIL the TC-37 vacuous-pass guard; a one-digit token would have
+        # matched them 11 incidental documents apiece and turned that honest hard
+        # failure into a brief that merely LOOKS supported. That is TC-100's
+        # disease reintroduced by TC-94 (2)'s cure, so the floor stays.
+        r"(?<![0-9A-Za-z_])#[0-9]{2,}(?![0-9A-Za-z_])",
     ]
     tokens = []
     for pat in pats:
@@ -346,6 +397,32 @@ def slice_tokens(entry):
             if tok not in tokens:
                 tokens.append(tok)
     return tokens
+
+
+def token_re(tok):
+    """Compile a WHOLE-TOKEN matcher for `tok` (TC-100).
+
+    The predecessor was `t in text`, a bare substring test. MEASURED: `"C-1" in
+    "TC-15"` is True, so 0.8.20 Slice 15 cited EIGHTEEN documents on that one
+    token — among them `0.8.4-graphrag-sensemaking.md` (which only ever says
+    `C-10` and `C-15`) and four `fathomdb-memex-overall-roadmap/*` drafts. A
+    required-reading list padded with documents that cannot inform the slice
+    costs the orchestrator context AND makes thin coverage read as thorough,
+    which is the exact condition the TC-37 guard exists to surface. Short ids are
+    the hazard: `C-1`, `C-2`, and any `AC-NN`/`TC-NN` that is a prefix of a
+    longer id.
+
+    The boundaries are spelled out rather than written `\\b` because a token may
+    BEGIN with a non-word character (`#18`), where `\\b` asserts the opposite of
+    what is wanted. Over tokens that start and end in word characters this is
+    exactly `\\b...\\b`; over `#18` it correctly requires that the `#` not be
+    glued to a preceding word character and that the digits not run on into
+    `#180`.
+
+    Both sides matter and both are asserted (test arms 12a/12b/12d2): guarding
+    only the leading edge would still match `TC-99` inside `TC-990`.
+    """
+    return re.compile(r"(?<![0-9A-Za-z_])" + re.escape(tok) + r"(?![0-9A-Za-z_])")
 
 
 def curated_design_refs(entry, state_path, slice_no):
@@ -411,24 +488,36 @@ def scan_design(tokens, release, slice_no):
     # because `dev/design/slice-30-design.md` is 0.8.0's — pulling it into a
     # 0.8.20 Slice-30 brief would be a wrong citation that still resolves.
     name_re = re.compile(r"slice[-_ ]?0*%d(?![0-9])" % slice_no, re.I)
+    # Compiled ONCE per run, not once per (document, token) pair: the scan now
+    # walks three roots, and re-compiling inside the inner loop would make the
+    # cost quadratic in the tier for no benefit.
+    token_res = [(t, token_re(t)) for t in tokens]
     hits = []
-    for root, dirs, files in os.walk(DESIGN_ROOT):
-        dirs.sort()
-        for name in sorted(files):
-            if not name.endswith(".md"):
-                continue
-            path = os.path.join(root, name)
-            try:
-                text = read(path)
-            except OSError:
-                continue
-            matched = [t for t in tokens if t in text]
-            if release in name and name_re.search(name):
-                matched.append("filename: %s slice %s" % (release, slice_no))
-            if not matched:
-                continue
-            status = frontmatter_status(path) or "(no status:)"
-            hits.append((STATUS_RANK.get(status.split()[0], 7), path, status, matched))
+    seen = set()
+    for design_root in DESIGN_ROOTS:
+        for root, dirs, files in os.walk(design_root):
+            dirs.sort()
+            for name in sorted(files):
+                if not name.endswith(".md"):
+                    continue
+                path = os.path.join(root, name)
+                # The roots are disjoint today; de-duplicating anyway means a
+                # future nested root cannot silently double-count a document.
+                if path in seen:
+                    continue
+                seen.add(path)
+                try:
+                    text = read(path)
+                except OSError:
+                    continue
+                # WHOLE-TOKEN, never substring (TC-100). See token_re().
+                matched = [t for t, rx in token_res if rx.search(text)]
+                if release in name and name_re.search(name):
+                    matched.append("filename: %s slice %s" % (release, slice_no))
+                if not matched:
+                    continue
+                status = frontmatter_status(path) or "(no status:)"
+                hits.append((STATUS_RANK.get(status.split()[0], 7), path, status, matched))
     hits.sort(key=lambda h: (h[0], h[1]))
     return hits
 
@@ -552,7 +641,13 @@ def build(release, state_path, state, slice_no, entry, curated=None):
     m.out("=" * 100)
     m.out("GENERATED, READ-ONLY. It CITES sources of record; it restates no ruling and decides")
     m.out("nothing. Facts come from the single-writer state file %s" % m.cite(state_path))
-    m.out("(T2a) and from `status:` frontmatter under `%s/` (T2c). Section set derived from" % DESIGN_ROOT)
+    # THE ROOTS ARE DISCLOSED IN THE BRIEF ITSELF. A reader has to be able to tell
+    # what the scan could and could not have seen; before TC-94 defect 1 this line
+    # named `dev/design/` alone and that was also the whole truth. Now it names
+    # all three, because a manifest that understated its own reach would be the
+    # same stale generated statement this file exists to prevent.
+    m.out("(T2a) and from `status:` frontmatter under %s (T2c). Section set derived from"
+          % ", ".join("`%s/`" % r for r in DESIGN_ROOTS))
     m.out("%s" % m.cite(LBO_TEMPLATE))
     m.out("and %s — this REPLACES those as the brief" % m.cite(SLICE_TEMPLATE))
     m.out("assembly step; it does not add a third template to maintain.")
@@ -739,12 +834,12 @@ def build(release, state_path, state, slice_no, entry, curated=None):
     # the state file's `design_refs`; SCANNED rows were discovered by the two
     # selectors. A reader has to be able to tell them apart, because they carry
     # different warrants: a curated row is somebody's judgement, a scanned row is
-    # a substring match that may well be incidental.
+    # a whole-token match that may still be incidental.
     m.out("## 6. DESIGN DOCS FOR THIS SLICE   [SLICE-TEMPLATE §1.4 {{READING}}]")
     if curated:
         m.out("   TWO PROVENANCES, kept apart. CURATED rows are named by this ladder entry's")
         m.out("   `design_refs` in the state file — chosen, not discovered — and may sit OUTSIDE")
-        m.out("   `%s/` (e.g. `dev/adr/`, `dev/interfaces/`), where the scan below cannot" % DESIGN_ROOT)
+        m.out("   the scanned roots, where the scan below cannot")
         m.out("   reach. SCANNED rows were found by the selectors and are listed after them.")
     m.out("   Selected by the slice's OWN tokens from the state file: %s" % ", ".join(tokens))
     m.out("   Status is AS RECORDED in `status:` frontmatter (T2c) — it is NOT a currency claim.")
@@ -770,9 +865,17 @@ def build(release, state_path, state, slice_no, entry, curated=None):
                         if recorded.split()[0] in UNCLASSIFIED else "")
             m.out("  CURATED [%s]%s %s"
                   % (status_word, flag, m.cite(path, label="design_refs (curated)")))
-            if not path.startswith(DESIGN_ROOT + "/"):
-                m.out("        outside `%s/` — cited BECAUSE the scan cannot reach it."
-                      % DESIGN_ROOT)
+            # "OUTSIDE THE ROOTS" IS NOW A COMPUTED FACT, NOT A CONSTANT. This row
+            # used to say "outside `dev/design/` — cited BECAUSE the scan cannot
+            # reach it" for every curated path outside that one tree, which became
+            # FALSE for `dev/adr/**` and `dev/interfaces/**` the moment the scan
+            # was widened (TC-94 defect 1). A generated line that asserts the tool
+            # cannot do something it now does is the same class of stale
+            # restatement this whole file exists to remove, so the test is against
+            # DESIGN_ROOTS and moves with it.
+            if not any(path.startswith(r + "/") for r in DESIGN_ROOTS):
+                m.out("        outside the scanned roots (%s) — cited BECAUSE the scan cannot reach it."
+                      % ", ".join("`%s/`" % r for r in DESIGN_ROOTS))
             also = scan_matched.get(path)
             if also:
                 m.out("        the scan reached it too, on: %s" % ", ".join(also))
@@ -781,8 +884,8 @@ def build(release, state_path, state, slice_no, entry, curated=None):
                     "FAIL commission-manifest: `design_refs` entry `%s` is a DIRECTORY, not a\n"
                     "  design document. Cite the file to be read, not the folder it sits in."
                     % path)
-        m.out("  -- SCANNED (filename + token selectors over `%s/`) ------------------"
-              % DESIGN_ROOT)
+        m.out("  -- SCANNED (filename + token selectors over %s) ------------------"
+              % ", ".join("`%s/`" % r for r in DESIGN_ROOTS))
     # A curated doc the scan ALSO reached is reported once, in the curated block,
     # with its scan hits folded in. Printing it twice would double-count the tier
     # and make the reader reconcile two rows for one document.

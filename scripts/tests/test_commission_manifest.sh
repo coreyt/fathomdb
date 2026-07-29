@@ -903,18 +903,63 @@ fi
 # NON-VACUITY: every way the recovery can come up empty (squashed history, a
 # shallow clone, the file renamed) routes to fail(), never to a silent pass. A
 # comparison that quietly compares nothing is worse than no comparison.
+#
+# ---------------------------------------------------------------------------
+# TWO CHANGES MADE HERE BY DOC-HYGIENE-3, both loud on purpose.
+# ---------------------------------------------------------------------------
+# (1) IT USED TO ABORT THE WHOLE SUITE ON ITS FIRST REAL DRIFT. The drift capture
+#     ran `$(diff … | head -20 | tr …)` under `set -euo pipefail`; `diff` exits 1
+#     when the files differ, `pipefail` propagates that through the pipeline, the
+#     assignment inherits it, and the `||` compound therefore returned 1 — so the
+#     first genuine difference killed the script instead of reporting it. MEASURED
+#     here: the suite exited 1 after arm 11c2 with NO `FAIL` line printed and 25
+#     later arms never run. A test that dies rather than reports is worse than a
+#     test that is wrong, because its silence reads like the end of a clean run.
+#     Fixed by capturing the diff with `|| true`.
+#
+# (2) ONE ENUMERATED, JUSTIFIED ALLOWANCE. TC-94 defect 1 widened the design scan
+#     from `dev/design` alone to `dev/design` + `dev/adr` + `dev/interfaces`, and
+#     the manifest DISCLOSES the roots it scanned in its own header. That header
+#     line therefore differs from the pre-change generator's, for a reason that
+#     has nothing to do with `design_refs`. Freezing the whole output against a
+#     historical revision forever is the TC-81 time-bomb class this suite already
+#     rejected once (see arm 9d's history): any correct improvement to the tool
+#     turns it red against a tool that is right.
+#
+#     The allowance is NOT "ignore differences". Exactly one line is exempt, it is
+#     named by its literal text, and BOTH sides must still carry it — so a second
+#     drifting line, or the disappearance of the header line altogether, is still
+#     a hard failure. Everything else stays pinned byte-for-byte, which is the
+#     property `design_refs` actually needs.
+# (3) THE BASELINE RECOVERY WAS NON-DETERMINISTIC, and it silently chose the
+#     WRONG revision. The test read `! (git show …) | grep -q design_refs`: under
+#     `set -o pipefail` the PIPELINE's status is what `!` inverts, and `grep -q`
+#     exits the moment it matches, which SIGPIPEs `git show` (exit 141). A
+#     non-zero pipeline then reads as "this revision does not mention
+#     design_refs" and the loop breaks on it. MEASURED here across three
+#     consecutive runs of this suite on the same history: two picked 220347b4
+#     (correct — the last revision before the feature) and one picked 0eb588ba,
+#     which is THE COMMIT THAT ADDED `design_refs` and contains the string 21
+#     times. An additivity arm comparing the tool against a baseline that already
+#     has the feature proves nothing while printing a green line naming a SHA.
+#     Fixed by materialising the blob first and grepping the variable, and by
+#     treating an empty blob as "not a candidate" rather than as a match.
 PRE_GEN="$TMPROOT/commission-manifest-pre.sh"
 PRE_SHA=""
 while read -r c; do
   [ -n "$c" ] || continue
-  if ! (cd "$REPO_ROOT" && git show "$c:scripts/commission-manifest.sh" 2>/dev/null) \
-       | grep -q 'design_refs'; then PRE_SHA="$c"; break; fi
+  PRE_BLOB="$(cd "$REPO_ROOT" && git show "$c:scripts/commission-manifest.sh" 2>/dev/null || true)"
+  [ -n "$PRE_BLOB" ] || continue
+  if ! grep -q 'design_refs' <<<"$PRE_BLOB"; then PRE_SHA="$c"; break; fi
 done < <(cd "$REPO_ROOT" && git log --format=%H -- scripts/commission-manifest.sh)
 if [ -z "$PRE_SHA" ]; then
   fail "arm 11d (pre-change generator): no revision of scripts/commission-manifest.sh predates design_refs — cannot prove additivity; do NOT skip this"
 else
   (cd "$REPO_ROOT" && git show "$PRE_SHA:scripts/commission-manifest.sh") >"$PRE_GEN"
   chmod +x "$PRE_GEN"
+  # The single exempt line, named by the literal text both sides share. Anything
+  # that does not contain this needle is compared byte-for-byte.
+  ROOTS_LINE_NEEDLE='frontmatter under'
   D11D_DRIFT=""
   for d11d_slice in 10 30; do
     setup_fixture
@@ -927,11 +972,24 @@ else
     set -e
     [ "$PRE_RC" -eq 0 ] && [ "$POST_RC" -eq 0 ] \
       || D11D_DRIFT="$D11D_DRIFT slice-$d11d_slice:rc($PRE_RC/$POST_RC)"
-    [ "$PRE_OUT" = "$POST_OUT" ] \
-      || D11D_DRIFT="$D11D_DRIFT slice-$d11d_slice:$(diff <(printf '%s\n' "$PRE_OUT") <(printf '%s\n' "$POST_OUT") | head -20 | tr '\n' '~')"
+    # THE ALLOWANCE MUST HAVE SOMETHING TO ALLOW, on both sides. If either
+    # generator stops emitting the roots-disclosure line, the exemption would be
+    # silently exempting a line that no longer exists — so that is a failure, not
+    # a pass.
+    PRE_ROOTS_N="$(grep -c "$ROOTS_LINE_NEEDLE" <<<"$PRE_OUT" || true)"
+    POST_ROOTS_N="$(grep -c "$ROOTS_LINE_NEEDLE" <<<"$POST_OUT" || true)"
+    [ "$PRE_ROOTS_N" -eq 1 ] && [ "$POST_ROOTS_N" -eq 1 ] \
+      || D11D_DRIFT="$D11D_DRIFT slice-$d11d_slice:roots-line-count($PRE_ROOTS_N/$POST_ROOTS_N)"
+    # EVERY OTHER LINE stays pinned byte-for-byte.
+    PRE_REST="$(grep -v "$ROOTS_LINE_NEEDLE" <<<"$PRE_OUT" || true)"
+    POST_REST="$(grep -v "$ROOTS_LINE_NEEDLE" <<<"$POST_OUT" || true)"
+    if [ "$PRE_REST" != "$POST_REST" ]; then
+      D11D_DIFF="$(diff <(printf '%s\n' "$PRE_REST") <(printf '%s\n' "$POST_REST") | head -20 | tr '\n' '~' || true)"
+      D11D_DRIFT="$D11D_DRIFT slice-$d11d_slice:$D11D_DIFF"
+    fi
   done
   if [ -z "$D11D_DRIFT" ]; then
-    pass "design_refs is ADDITIVE — with the key absent the manifest is byte-identical to the pre-change generator ($PRE_SHA)"
+    pass "design_refs is ADDITIVE — with the key absent every line except the enumerated roots-disclosure line is byte-identical to the pre-change generator ($PRE_SHA)"
   else
     fail "arm 11d (additivity): drift:$D11D_DRIFT"
   fi
