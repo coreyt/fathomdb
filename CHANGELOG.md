@@ -317,6 +317,14 @@ AC-050c) gates merges against this invariant.
   and a divergence found on a re-run still yields `denseDisabled` /
   `dense_disabled` with the dense arm refusing and the text-only path serving.
 
+  *Scope, stated so it is not over-read:* this self-check guards against
+  **accidental** backend drift and a corrupt baseline. It is **not** an integrity
+  boundary against an actor with write access to your database file — such an
+  actor can rewrite the stored probe baseline (which defeats the check even when
+  it runs in full, as it always did), the cached marker, or the corpus and its
+  vectors outright. Unchanged by this release, and now written down: threat model
+  in §8 of `dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`.
+
   *The cost, stated plainly:* a backend that drifts **without changing its
   declared identity** — the same embedder name/revision moved between CPU and
   CUDA, or rebuilt against a new library or driver — is **no longer caught on

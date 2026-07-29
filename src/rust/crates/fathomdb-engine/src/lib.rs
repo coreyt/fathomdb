@@ -15503,11 +15503,34 @@ fn probe_verification_fingerprint(
 /// 0.8.20 Slice 22 (TC-68) — is `fingerprint` the fingerprint under which the
 /// probe last RAN and PASSED on this workspace?
 ///
-/// Fail-SAFE by construction (R-VEQ-4): **every** failure mode answers `false`,
+/// Fail-SAFE against ACCIDENT (R-VEQ-4): **every** failure mode answers `false`,
 /// which means "run the probe". A missing `_fathomdb_open_state` table, an absent
-/// row, a non-TEXT value, a truncated or garbled value, any SQL error — none of
-/// them can be mistaken for a pass. The only `true` is an exact match against a
-/// value this engine wrote after a verification it performed itself.
+/// row, a non-TEXT value, a truncated or garbled value, a stale fingerprint, any
+/// SQL error — none of them can be mistaken for a pass.
+///
+/// # What a `true` does and does not mean (fix-1, codex §9 round 2 [P1])
+///
+/// `true` means: **the fingerprint inputs are unchanged since *some* engine
+/// recorded a pass.** It does NOT mean "this engine verified this backend", and it
+/// cannot: the fingerprint is a SHA-256 over deterministic, publicly derivable DB
+/// and build inputs, so an actor with write access to the file can compute the
+/// current digest and write it here, skipping the 45-probe verification. This
+/// marker is not — and cannot be — an authenticated attestation; an embedded
+/// local-first engine holds no secret with which to authenticate one, and a salt
+/// would be readable by the same actor.
+///
+/// That is **not a new exposure**. The same actor already defeats the same arm
+/// through the pre-slice path, by re-baselining `_fathomdb_embed_probe`'s
+/// `reference_vec` blobs to their drifted backend's own output — the probe then
+/// runs in full and verifies the drifted backend against itself. Measured by
+/// `tests/tc68_probe_fingerprint_cache.rs::a_forged_stored_baseline_defeats_the_probe_even_when_it_fully_runs`
+/// (marker deleted, all 45 embeds performed, dense still enabled), with the
+/// un-forged control caught. The equivalence probe is a **correctness self-check
+/// against backend drift, not an integrity boundary against a hostile writer**;
+/// see §8 of `dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`.
+///
+/// What forging buys is also bounded: a digest is valid only for the state it was
+/// computed over, so it stops working at the next change to any fingerprint input.
 fn probe_verification_is_cached(connection: &Connection, fingerprint: &str) -> bool {
     connection
         .query_row(
