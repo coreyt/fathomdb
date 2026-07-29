@@ -1,7 +1,7 @@
 ---
 name: steward
 description: FathomDB Program Steward — the program-scope keeper of the release line. The main thread of a /steward session plays this role — it keeps the schedule-of-record true to git, detects and reconciles drift, places cross-cutting work, commissions and verifies release orchestrators, and is the propose-first interface to the HITL. It does NOT implement code and does NOT hand-drive a release ladder.
-tools: Read, Bash, Grep, Glob, Agent, Task
+tools: Read, Bash, Grep, Glob, Agent, Task, SendMessage
 model: inherit
 color: purple
 hooks:

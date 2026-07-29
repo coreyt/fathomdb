@@ -461,13 +461,42 @@ closed** — on-disk state is the contract, and a warm resident is never a
 steer never replaces the brief, the `output.json`, or the codex § 9
 gate.
 
-**Caveat — OPEN, UNRULED (HITL).** Whether a mid-flight steer counts
-against the round cap below is *not ruled*. The breaker counts
-**rounds** (a round = a discrete briefed spawn), and a steer is not a
-round — so drip-fed corrections inside a single round would never trip
-the cap. Until that is ruled, the seats are **not** granted
-`SendMessage`: this paragraph states intent, not a currently-available
-capability.
+**RULED (HITL 2026-07-28 TC-84, re-affirmed 2026-07-29 steward `seq-159`).**
+A mid-flight steer **does NOT count against the round cap** below. The
+breaker counts **rounds** (a round = a discrete briefed spawn). The
+consequence is **accepted with eyes open, not overlooked**: because the
+cap counts rounds and not corrections, drip-fed steers inside one round
+never trip it, so the cap bounds *rounds*, not *correction volume*. A
+guard was offered and **declined**.
+
+**GRANTED (HITL 2026-07-29, steward `seq-158`) — but EFFECTIVE
+AVAILABILITY IS UNVERIFIED; see `TC-104`.** `.claude/agents/orchestrator.md`
+and `.claude/agents/steward.md` now declare `SendMessage`;
+`implementer.md` deliberately does **not** (its role contract forbids
+lateral agent traffic). The grant also removes an undocumented split in
+the § 9 mechanism choice: the allowlist is *inert* for a main-thread
+seat, so `/orchestrate` always had `SendMessage` while a Steward-spawned
+orchestrator did not.
+
+⚠ **A RED→GREEN probe measured the tool as STILL ABSENT in a spawned seat
+after the grant landed on disk.** Do not read that as "the harness blocks
+sibling messaging" — **no message was ever attempted at transport level,
+because the tool did not exist to call.** The leading explanation is that
+**agent definitions load once at session start**, so a session begun
+*before* the edit keeps the pre-edit registry. Direct evidence: the
+probing session's own agent registry listed the pre-edit tool list while
+disk showed the post-edit one. **The decisive test is to re-run the probe
+in a session started AFTER the edit** — if the tool appears, it was
+staleness; if it stays absent while the registry advertises it, a real
+seat-level restriction exists. **Until that runs, treat a mid-flight
+steer as unavailable and fall back to fresh-spawn** (which § 12.1 makes
+the intended mechanism anyway).
+
+*Not evidence of a seat trim:* `Grep` and `Glob` are declared in these
+seats yet uncallable — but they are **absent session-wide, including from
+the main thread**, so that is a session tool policy, not the seats being
+narrowed. `Task` is untested, not absent: no call could be emitted that
+was distinguishable from `Agent`.
 
 After fix-N: cherry-pick the new commit(s), re-spawn the reviewer for
 re-verdict. Iterate until PASS or orchestrator override.
