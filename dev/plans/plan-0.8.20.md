@@ -461,7 +461,7 @@ different path — **TC-98, deferred by the HITL until after Slice 23**, and ret
 
 **Remaining ladder, HITL-approved 2026-07-28 (F-36 · steward `seq-129`), SEQUENTIAL — this SUPERSEDES the
 F-35 order (`seq-119`); its leading `30`, `TC-86` and `21` legs are all now landed:**
-**23 → ⟨batched governed-surface decision⟩ → 31 → DOC-HYGIENE-3 → 40.**
+**⟨batched governed-surface decision — DUE NOW, HITL⟩ → 31 → DOC-HYGIENE-3 → 40.**
 **21** (R-20-CR, landed) and **22** (R-20-VC) are reserved-gap slices in the 20 band; **31** is Library Sweep #3 and
 carries no requirement id (TC-76); **DOC-HYGIENE-3** is cross-cutting and is not a ladder slice. The batched
 surface decision is taken **AT THE CLOSE OF SLICE 23** (HITL `seq-141`, superseding `seq-134`/`seq-140`).

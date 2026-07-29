@@ -1,0 +1,3076 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019fac95-797a-7cc0-a877-0e96a45414d3
+--------
+user
+changes against 'b0ac02b5a96d3d345775904375ed77ec0e08e7bb'
+exec
+/bin/bash -lc "cat MEMORY.md 2>/dev/null; printf '\\n---feedback---\\n'; ls feedback_*.md 2>/dev/null | xargs -r -n1 sh -c 'echo ---"'$0---; cat "$0"'"'" in /home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+ succeeded in 0ms:
+
+---feedback---
+
+exec
+/bin/bash -lc 'git diff --stat b0ac02b5a96d3d345775904375ed77ec0e08e7bb && git diff --name-only b0ac02b5a96d3d345775904375ed77ec0e08e7bb' in /home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+ succeeded in 0ms:
+ CHANGELOG.md                                       |  44 +-
+ dev/design/errors.md                               |  44 +-
+ dev/interfaces/python.md                           |  46 +-
+ dev/interfaces/rust.md                             |  55 ++-
+ dev/interfaces/typescript.md                       |  46 +-
+ dev/plans/release-state-0.8.20.json                |  17 +
+ dev/steward/steward-ledger.jsonl                   |   3 +
+ dev/steward/steward-ledger.jsonl.seq               |   2 +-
+ dev/todos-and-considerations-ledger.jsonl          |   3 +
+ dev/todos-and-considerations-ledger.jsonl.seq      |   2 +-
+ scripts/commission-manifest.sh                     | 205 ++++++++-
+ scripts/tests/test_commission_manifest.sh          | 400 ++++++++++++++++++
+ .../tests/test_slice15d_projection_registry.py     |  64 ++-
+ src/rust/crates/fathomdb-engine/src/lib.rs         |  71 +++-
+ .../tests/slice15d_projection_registry.rs          | 107 ++++-
+ .../tests/slice21c_vector_role_gate.rs             | 197 +++++++--
+ .../tests/slice23_spec_validation_reject.rs        | 462 +++++++++++++++++++++
+ .../tests/tc71_fix1_inert_enrolment_reconcile.rs   |  63 ++-
+ src/ts/tests/slice15d-projection-registry.test.ts  |  46 +-
+ 19 files changed, 1775 insertions(+), 102 deletions(-)
+CHANGELOG.md
+dev/design/errors.md
+dev/interfaces/python.md
+dev/interfaces/rust.md
+dev/interfaces/typescript.md
+dev/plans/release-state-0.8.20.json
+dev/steward/steward-ledger.jsonl
+dev/steward/steward-ledger.jsonl.seq
+dev/todos-and-considerations-ledger.jsonl
+dev/todos-and-considerations-ledger.jsonl.seq
+scripts/commission-manifest.sh
+scripts/tests/test_commission_manifest.sh
+src/python/tests/test_slice15d_projection_registry.py
+src/rust/crates/fathomdb-engine/src/lib.rs
+src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs
+src/rust/crates/fathomdb-engine/tests/slice21c_vector_role_gate.rs
+src/rust/crates/fathomdb-engine/tests/slice23_spec_validation_reject.rs
+src/rust/crates/fathomdb-engine/tests/tc71_fix1_inert_enrolment_reconcile.rs
+src/ts/tests/slice15d-projection-registry.test.ts
+
+exec
+/bin/bash -lc 'git diff b0ac02b5a96d3d345775904375ed77ec0e08e7bb -- src/rust/crates/fathomdb-engine/src/lib.rs scripts/commission-manifest.sh' in /home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+ succeeded in 0ms:
+diff --git a/scripts/commission-manifest.sh b/scripts/commission-manifest.sh
+index e438c87c..c8522ee7 100755
+--- a/scripts/commission-manifest.sh
++++ b/scripts/commission-manifest.sh
+@@ -40,6 +40,40 @@
+ #     keyword rather than by line number (T1d's ban) or by a frozen title string.
+ #
+ # ---------------------------------------------------------------------------
++# THE DESIGN TIER HAS TWO HALVES: DISCOVERY, AND CITATION (`design_refs`)
++# ---------------------------------------------------------------------------
++# The discovery half is the pair of selectors in scan_design(): a doc whose
++# FILENAME names this release AND this slice, and a doc whose CONTENT mentions a
++# token derived from the ladder entry's own `short`/`title`. Both are measured,
++# and both MISS AN ENTIRE CLASS OF SLICE BY CONSTRUCTION:
++#   * The filename selector hit 1 of the 12 slices in the 0.8.20 ladder.
++#   * `plan-<release>.md` §3 is "frozen at Slice 0", so a RESERVED-GAP slice
++#     minted mid-release by HITL ruling has requirement ids (R-20-CR, R-20-VC,
++#     R-20-SV and their TC-* carries) that appear NOWHERE under dev/design/ —
++#     the design package predates them — and it never got a §3.0 memo of its
++#     own either.
++# The TC-37 vacuous-pass guard therefore hard-failed on three well-designed
++# slices in a row: 21, 22 and 23 (tracked as TC-92 and TC-94).
++#
++# `design_refs` on a ladder entry is the CITATION half. The Steward names the
++# docs; nothing is inferred. Four properties are deliberate:
++#   1. OPTIONAL AND INERT. No key ⇒ byte-for-byte the behaviour that predates
++#      it. It adds a tier; it does not reinterpret the existing one.
++#   2. CHECKED LIKE EVERY OTHER PATH. A curated citation carries the Steward's
++#      authority, so a dead one misleads MORE than a dead scan hit, not less:
++#      CHECK 1 applies with no exemption and the manifest is not emitted.
++#   3. IT REACHES OUTSIDE `dev/design/`. dev/adr/**, dev/interfaces/** — the
++#      walker can never go there and is NOT widened to (that would drag every
++#      unrelated doc into every brief). Out-of-tree docs often carry no
++#      `status:` frontmatter at all, and the row then SAYS there is none rather
++#      than inventing one, exactly as the UNREVIEWED rows refuse to launder.
++#   4. IT IS NEVER BLENDED WITH THE SCAN. Curated rows are labelled CURATED and
++#      kept in their own block, so a reader can always tell a doc somebody chose
++#      from a doc a substring match found.
++# It does NOT weaken the guard: an empty/absent `design_refs` AND an empty scan
++# is still a hard failure.
++#
++# ---------------------------------------------------------------------------
+ # HOW UNREVIEWED IS HANDLED (deliberate, and the honest part)
+ # ---------------------------------------------------------------------------
+ # T2c's backfill was conservative on purpose: most design docs are UNREVIEWED,
+@@ -314,6 +348,62 @@ def slice_tokens(entry):
+     return tokens
+ 
+ 
++def curated_design_refs(entry, state_path, slice_no):
++    """The CITATION half of the design tier: `design_refs` on a ladder entry.
++
++    OPTIONAL. Absent means absent — the caller emits exactly what it emitted
++    before this existed. Present, it is a list of repo-relative paths that the
++    Steward chose for this slice, in the order they should be read.
++
++    Everything about it is validated HERE and fatally, because the failure mode
++    of a silently-dropped curation is that the slice falls straight back into
++    the TC-37 vacuous-pass hard-failure this key was added to fix — with no
++    explanation of why the curation the author wrote did nothing. A typo must
++    say so. Two rules beyond "it is a list of non-empty strings":
++      * REPO-RELATIVE ONLY. Every other cited path in the manifest is relative
++        to the checkout root; an absolute path, or one that climbs out with
++        `..`, would resolve on the author's machine and nowhere else — a
++        citation that passes CHECK 1 for one person only is worse than a dead
++        one, because it goes green.
++      * DE-DUPLICATED, ORDER PRESERVED. A repeated path is the author's slip,
++        not a second reading; printing the row twice would inflate the tier.
++    Existence is NOT checked here: it is checked by CHECK 1 over the emitted
++    citation list, so a curated path fails through the same machinery, with the
++    same message, as every other path the brief names.
++    """
++    if "design_refs" not in entry:
++        return []
++    raw = entry.get("design_refs")
++    where = "ladder entry for Slice %s in `%s`" % (slice_no, state_path)
++    if not isinstance(raw, list):
++        die(["FAIL commission-manifest: `design_refs` in the %s is %s, not a list of"
++             % (where, type(raw).__name__),
++             "  repo-relative paths. A malformed curation must fail loudly: dropping it",
++             "  silently puts the slice back into the TC-37 vacuous-pass failure that",
++             "  `design_refs` exists to fix, with nothing saying why."])
++    refs = []
++    for item in raw:
++        if not isinstance(item, str) or not item.strip():
++            die(["FAIL commission-manifest: `design_refs` in the %s contains %r, which is"
++                 % (where, item),
++                 "  not a non-empty path string."])
++        path = item.strip()
++        if path.startswith("/") or path.startswith("~") or os.path.isabs(path):
++            die(["FAIL commission-manifest: `design_refs` entry `%s` in the %s is ABSOLUTE."
++                 % (path, where),
++                 "  Every cited path in this manifest is relative to the checkout root. An",
++                 "  absolute path resolves on one machine and nowhere else, so CHECK 1 would",
++                 "  go green for its author and dead for everyone the brief is written for."])
++        parts = path.replace("\\", "/").split("/")
++        if ".." in parts:
++            die(["FAIL commission-manifest: `design_refs` entry `%s` in the %s climbs out of"
++                 % (path, where),
++                 "  the repository with `..`. A brief may only cite what the checkout contains."])
++        if path not in refs:
++            refs.append(path)
++    return refs
++
++
+ def scan_design(tokens, release, slice_no):
+     # Second selector, alongside the token scan: a doc whose FILENAME names this
+     # release AND this slice is that slice's own design memo (SLICE-TEMPLATE §3.0
+@@ -443,8 +533,9 @@ def emit_publish_gate(m, gate, state_path):
+         m.out("      Escalate for the sign-off; never re-decide it yourself.")
+ 
+ 
+-def build(release, state_path, state, slice_no, entry):
++def build(release, state_path, state, slice_no, entry, curated=None):
+     m = Manifest()
++    curated = list(curated or [])
+     ladder = {e.get("slice"): e for e in state.get("ladder") or []}
+     landed = state.get("landed") or []
+     next_slice = state.get("next_slice")
+@@ -590,7 +681,35 @@ def build(release, state_path, state, slice_no, entry):
+     m.out("  invariants       %s (TDD mandatory; no DB mocking; never --no-verify)" % m.cite(AGENTS))
+     m.out("  governed surface %s" % m.cite(SURFACE_ALLOWLIST))
+     m.out("                   pinned by %s" % m.cite(SURFACE_PIN))
++    # §4 IS THE CONFLICT-WINS SHELF, so a curated contract belongs HERE and not
++    # only in §6. The motivating case: 0.8.20 Slice 22 cites
++    # `record-lifecycle-protocol/OPP-12-C1-converged-contract.md`, byte-pinned by
++    # scripts/c1-conformance-pin.json (sha256 AND git blob sha1) — the ratified
++    # contract a TC-67 implementation can turn RED. A pinned file can NEVER be
++    # back-linked, because any edit breaks the pin, so citation is the only route
++    # by which it can reach an orchestrator at all.
++    #
++    # The SELECTION PREDICATE IS UNCHANGED — the basename says `contract` — it is
++    # merely applied to the curated set as well. A curated doc that is not a
++    # contract stays in §6; otherwise §4 degenerates into a second copy of §6 and
++    # stops meaning "the thing that wins".
++    curated_contracts = [p for p in curated
++                         if "contract" in os.path.basename(p).lower()]
++    for path in curated_contracts:
++        recorded = frontmatter_status(path)
++        if recorded is None:
++            status_word, flag = "no `status:` field recorded", " ⚠ unclassified (TC-50)"
++        else:
++            status_word = recorded
++            flag = " ⚠ unclassified (TC-50)" if recorded.split()[0] in UNCLASSIFIED else ""
++        m.out("  design contract  CURATED [%s]%s %s"
++              % (status_word, flag,
++                 m.cite(path, label="design_refs (curated contract)")))
+     for _rank, path, status, _matched in design:
++        # A curated contract the scan ALSO reached is already printed above; a
++        # second row for one document would make the reader reconcile two.
++        if path in curated_contracts:
++            continue
+         if "contract" in os.path.basename(path).lower():
+             m.out("  design contract  [%s] %s" % (status, m.cite(path)))
+     m.out()
+@@ -616,26 +735,85 @@ def build(release, state_path, state, slice_no, entry):
+     m.out()
+ 
+     # ---- 6. DESIGN DOCS ({{READING}}) -------------------------------------
++    # TWO PROVENANCES, NEVER BLENDED. CURATED rows were chosen by the Steward in
++    # the state file's `design_refs`; SCANNED rows were discovered by the two
++    # selectors. A reader has to be able to tell them apart, because they carry
++    # different warrants: a curated row is somebody's judgement, a scanned row is
++    # a substring match that may well be incidental.
+     m.out("## 6. DESIGN DOCS FOR THIS SLICE   [SLICE-TEMPLATE §1.4 {{READING}}]")
++    if curated:
++        m.out("   TWO PROVENANCES, kept apart. CURATED rows are named by this ladder entry's")
++        m.out("   `design_refs` in the state file — chosen, not discovered — and may sit OUTSIDE")
++        m.out("   `%s/` (e.g. `dev/adr/`, `dev/interfaces/`), where the scan below cannot" % DESIGN_ROOT)
++        m.out("   reach. SCANNED rows were found by the selectors and are listed after them.")
+     m.out("   Selected by the slice's OWN tokens from the state file: %s" % ", ".join(tokens))
+     m.out("   Status is AS RECORDED in `status:` frontmatter (T2c) — it is NOT a currency claim.")
+     m.out("   scripts/lint-design-status.sh proves the PRESENCE of a status, never its TRUTH;")
+     m.out("   UNREVIEWED means 'nobody has classified this yet' and the classification is owed")
+     m.out("   at TC-50. Rows marked ⚠ unclassified are candidates, NOT design of record.")
+-    for _rank, path, status, matched in design:
++    scan_matched = {h[1]: h[3] for h in design}
++    if curated:
++        m.out("  -- CURATED (`design_refs`, hand-cited in the state file) ------------------")
++        for path in curated:
++            # frontmatter_status() answers None for BOTH "no status: field" and
++            # "unreadable/absent file". A missing file is caught by CHECK 1 and
++            # the manifest is never emitted, so the honest wording for the row
++            # that does get printed is the former: say the field is absent
++            # rather than manufacture a classification the doc never made.
++            recorded = frontmatter_status(path)
++            if recorded is None:
++                status_word = "no `status:` field recorded"
++                flag = " ⚠ unclassified (TC-50)"
++            else:
++                status_word = recorded
++                flag = (" ⚠ unclassified (TC-50)"
++                        if recorded.split()[0] in UNCLASSIFIED else "")
++            m.out("  CURATED [%s]%s %s"
++                  % (status_word, flag, m.cite(path, label="design_refs (curated)")))
++            if not path.startswith(DESIGN_ROOT + "/"):
++                m.out("        outside `%s/` — cited BECAUSE the scan cannot reach it."
++                      % DESIGN_ROOT)
++            also = scan_matched.get(path)
++            if also:
++                m.out("        the scan reached it too, on: %s" % ", ".join(also))
++            if os.path.exists(path) and not os.path.isfile(path):
++                m.problems.append(
++                    "FAIL commission-manifest: `design_refs` entry `%s` is a DIRECTORY, not a\n"
++                    "  design document. Cite the file to be read, not the folder it sits in."
++                    % path)
++        m.out("  -- SCANNED (filename + token selectors over `%s/`) ------------------"
++              % DESIGN_ROOT)
++    # A curated doc the scan ALSO reached is reported once, in the curated block,
++    # with its scan hits folded in. Printing it twice would double-count the tier
++    # and make the reader reconcile two rows for one document.
++    scanned = [h for h in design if h[1] not in set(curated)]
++    for _rank, path, status, matched in scanned:
+         flag = " ⚠ unclassified (TC-50)" if status.split()[0] in UNCLASSIFIED else ""
+         m.out("  [%s]%s %s" % (status, flag, m.cite(path)))
+         m.out("        matched: %s" % ", ".join(matched))
+-    classified = [h for h in design if h[2].split()[0] not in UNCLASSIFIED]
+-    m.out("  -> %d doc(s) matched: %d classified, %d unclassified."
+-          % (len(design), len(classified), len(design) - len(classified)))
++    if curated:
++        classified = [h for h in scanned if h[2].split()[0] not in UNCLASSIFIED]
++        m.out("  -> %d curated doc(s) cited; %d further doc(s) matched by the scan: "
++              "%d classified, %d unclassified."
++              % (len(curated), len(scanned), len(classified), len(scanned) - len(classified)))
++    else:
++        classified = [h for h in design if h[2].split()[0] not in UNCLASSIFIED]
++        m.out("  -> %d doc(s) matched: %d classified, %d unclassified."
++              % (len(design), len(classified), len(design) - len(classified)))
+     matched_tokens = {t for _r, _p, _s, ms in design for t in ms}
++    # PER-TOKEN, not all-or-nothing: a token nothing mentions is named even when
++    # its neighbours matched, so a slice with one weak incidental hit does not
++    # read like a slice with full coverage. It stays a REPORT — the run exits 0.
+     unmatched = [t for t in tokens if t not in matched_tokens]
+     if unmatched:
+         m.out("  -> NO design doc mentions: %s. That part of the slice has no design of record;"
+               % ", ".join(unmatched))
+         m.out("     its authority is whatever the plan's rulings/requirements sections say — read")
+         m.out("     them there, and do not infer a design that does not exist.")
++        if curated:
++            m.out("     (The %d CURATED doc(s) above were cited by hand and are NOT token-matched, so"
++                  % len(curated))
++            m.out("     read them before concluding the token is genuinely undesigned.)")
+     m.out()
+ 
+     # ---- 7. ACCEPTANCE ({{AC_IDS}}) ---------------------------------------
+@@ -762,15 +940,24 @@ def generate(release, slice_sel):
+     slice_no, entry = pick_slice(state, state_path, slice_sel)
+ 
+     tokens = slice_tokens(entry)
+-    if not scan_design(tokens, release, slice_no):
++    # The guard is NOT weakened by `design_refs`: it now asks whether the design
++    # tier is empty by EITHER route. A non-empty curation satisfies it (that is
++    # the whole point — a reserved-gap slice both selectors miss by construction
++    # is still a designed slice), but an empty or absent one leaves the original
++    # hard failure exactly where it was. `design_refs: []` is not a design.
++    curated = curated_design_refs(entry, state_path, slice_no)
++    if not curated and not scan_design(tokens, release, slice_no):
+         die(["FAIL commission-manifest: ZERO design docs matched %s Slice %s (tokens: %s)."
+              % (release, slice_no, ", ".join(tokens) or "none derived"),
+              "  The required-reading list would be EMPTY, so the manifest would brief nobody",
+              "  while exiting 0 — this repo's named TC-37 vacuous-pass class. Fix it by",
+-             "  authoring/citing the design of record for this slice, or by naming the slice's",
+-             "  requirement id in the state file's `short`/`title` so the scan can find it."])
++             "  authoring/citing the design of record for this slice, by naming the slice's",
++             "  requirement id in the state file's `short`/`title` so the scan can find it, or",
++             "  — for a reserved-gap slice whose ids postdate the design package and which both",
++             "  selectors therefore miss by construction — by listing the docs to read in this",
++             "  ladder entry's `design_refs`."])
+ 
+-    m = build(release, state_path, state, slice_no, entry)
++    m = build(release, state_path, state, slice_no, entry, curated)
+     paths_ok, anchors_ok, problems = verify(m, release, slice_no)
+     if problems:
+         problems.append(
+diff --git a/src/rust/crates/fathomdb-engine/src/lib.rs b/src/rust/crates/fathomdb-engine/src/lib.rs
+index a078df11..6a519e1f 100644
+--- a/src/rust/crates/fathomdb-engine/src/lib.rs
++++ b/src/rust/crates/fathomdb-engine/src/lib.rs
+@@ -3985,9 +3985,18 @@ pub struct ProjectionVector {
+     /// reports the derived truth. This is deliberately accept-inert rather than
+     /// hard-reject so `read.projections` output stays feedable straight back
+     /// into `configure_projections` (the fix-4 read→configure round-trip, which
+-    /// both bindings pin with a test); it mirrors the already-audited
+-    /// accept-inert ruling on an `fts`/`vector` sub-object declared without the
+-    /// `searchable` role. The bindings still HARD-REJECT the shapes that could
++    /// both bindings pin with a test).
++    ///
++    /// **0.8.20 Slice 23 (`R-20-SV`) correction (TC-39 class).** This doc used to
++    /// justify accept-inert by analogy with "the already-audited accept-inert
++    /// ruling on an `fts`/`vector` sub-object declared without the `searchable`
++    /// role". **That ruling is OVERRULED** — the HITL ruled the shape an INVALID
++    /// SPEC on 2026-07-24 and [`apply_projection_config`] now rejects it with
++    /// [`EngineError::WriteValidation`]. `dense_readiness` accept-inert is
++    /// UNCHANGED and stands on its own footing: it is engine-set READ METADATA,
++    /// never part of the declaration, so there is nothing about it to reject.
++    ///
++    /// The bindings still HARD-REJECT the shapes that could
+     /// not round-trip: a readiness supplied with `vector = false`, and any
+     /// spelling outside `{ready, embedding}`.
+     pub dense_readiness: Option<DenseReadiness>,
+@@ -8292,6 +8301,14 @@ impl Engine {
+     /// and the `searchable→vector` sub-target are PERSISTED but deferred (F9 /
+     /// Slice 20) — declaring them never errors (graceful-absent, Q6a).
+     ///
++    /// 0.8.20 Slice 23 (`R-20-SV`) — **SPEC VALIDATION.** A spec that carries an
++    /// `fts` or `vector` sub-object WITHOUT [`ProjectionRole::Searchable`] is an
++    /// INVALID SPEC and is refused with [`EngineError::WriteValidation`] (HITL
++    /// 2026-07-24; see [`apply_projection_config`] for the full rationale). A
++    /// rejected request is a TOTAL no-op. `read_projections` is unaffected — it
++    /// is a pure read — so a LEGACY row in that shape still reports verbatim but
++    /// can no longer be re-applied.
++    ///
+     /// `drop` is EXPLICIT (C3, `api-surface.md:27`): omission of a live
+     /// projection from `specs` does NOT drop it; removal requires naming it in
+     /// `drop`. An incompatible/destructive change to a live projection that is
+@@ -16872,10 +16889,16 @@ impl StoredProjection {
+     /// write path's late enrolment) — routes through this so no call site can
+     /// re-derive the rule and drift. Before it existed, that predicate keyed off
+     /// `vector_declared` ALONE, so `{roles: [filterable], vector: {}}` — the
+-    /// combination Slice 15d documents as inert-but-round-trippable — enrolled
++    /// combination Slice 15d documented as inert-but-round-trippable — enrolled
+     /// node kinds, backfilled the corpus and made every later write enqueue an
+     /// embedding in any session with a live embedder.
+     ///
++    /// **0.8.20 Slice 23 (`R-20-SV`):** that combination is no longer DECLARABLE
++    /// — [`apply_projection_config`] rejects it as an invalid spec. This
++    /// predicate still governs, because the shape survives at rest in every
++    /// database that declared it while the engine accepted it, and it is read
++    /// from the registry, not from a caller's spec.
++    ///
+     /// **Deliberately NOT the same as [`StoredProjection::has_deferred`]**, which
+     /// keys off `vector_declared` alone and must keep doing so: that one feeds
+     /// `ProjectionDelta.deferred`, a REPORTING field, and the round-trip contract
+@@ -17429,6 +17452,46 @@ fn apply_projection_config(
+         }
+     }
+ 
++    // 0.8.20 Slice 23 (`R-20-SV`) — REJECT an `fts` or `vector` sub-object
++    // declared WITHOUT the `searchable` role.
++    //
++    // HITL ruling 2026-07-24 (`dev/plans/plan-0.8.20.md` §11 item 4, option (b)):
++    // *"it is a meaningless config; fail-fast matches the hard-reject philosophy,
++    // and additive strictness is safe pre-1.0"*, to be implemented "at the next
++    // `configure_projections` slice". This OVERTURNS the shipped 15d fix-4
++    // position, which accepted the shape because it round-tripped faithfully.
++    //
++    // WHY it is meaningless: `searchable→FTS` and `searchable→vector` are TIER
++    // LABELS, not roles ([`ProjectionRole`] has exactly three members). The
++    // sub-objects SELECT a sub-target of `searchable`; they do not CONFER one —
++    // both build predicates ([`StoredProjection::wants_property_fts`] and
++    // [`StoredProjection::wants_vector`]) are conjunctions with
++    // `roles.contains(Searchable)`. So without the role the declaration builds no
++    // property-FTS, enrols no kind and embeds nothing: it names a sub-target of a
++    // projection that does not exist. The reject is therefore keyed on the
++    // ABSENCE of `searchable` and on nothing else — `filterable` / `rankable` are
++    // orthogonal axes that neither supply nor substitute for it.
++    //
++    // FAMILY: [`EngineError::WriteValidation`], per decision #18 (0.8.20 Slice 22)
++    // — the write-SHAPE boundary is ONE family, and this is a shape rejection.
++    // Deliberately a SEPARATE loop from the name checks above: those are NAME
++    // rejections that keep `InvalidArgument { msg }` because the message naming
++    // the offending value is the caller's only handle on it. `dev/design/errors.md`
++    // ("Validation boundary") states that split; keeping the two loops apart keeps
++    // the split visible in the code and this change one-line-reversible.
++    //
++    // KNOWN COST (TC-95/TC-98, HITL-deferred): `WriteValidation` is a UNIT
++    // variant, so this refusal cannot name WHICH spec in `specs` was invalid —
++    // strictly worse than the name rejections above. Recorded, not worked around.
++    for spec in specs {
++        if spec.roles.contains(&ProjectionRole::Searchable) {
++            continue;
++        }
++        if spec.fts.is_some() || spec.vector.is_some() {
++            return Err(EngineError::WriteValidation);
++        }
++    }
++
+     let mut delta = ProjectionDelta::default();
+ 
+     // 0.8.20 Slice 20c fix-1 (codex §9 [P2]) — snapshot "is the dense arm
+
+exec
+/bin/bash -lc 'git diff b0ac02b5a96d3d345775904375ed77ec0e08e7bb -- src/rust/crates/fathomdb-engine/tests/slice23_spec_validation_reject.rs src/rust/crates/fathomdb-engine/tests/slice21c_vector_role_gate.rs src/python/tests/test_slice15d_projection_registry.py src/ts/tests/slice15d-projection-registry.test.ts' in /home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+ succeeded in 0ms:
+diff --git a/src/python/tests/test_slice15d_projection_registry.py b/src/python/tests/test_slice15d_projection_registry.py
+index db73f3d5..563305c5 100644
+--- a/src/python/tests/test_slice15d_projection_registry.py
++++ b/src/python/tests/test_slice15d_projection_registry.py
+@@ -415,18 +415,61 @@ def test_consistent_fts_spec_round_trips(tmp_path) -> None:
+         engine.close()
+ 
+ 
+-def test_fts_without_searchable_role_round_trips(tmp_path) -> None:
+-    """fix-4 AUDIT — an `fts` sub-object WITHOUT the `searchable` role is a
+-    contradiction the engine treats as inert (no property-FTS built), BUT the
+-    declaration is stored and read back FAITHFULLY, so it round-trips and is NOT
+-    a binding-boundary violation. It is therefore ACCEPTED (making it a hard
+-    error would be an engine-semantics change, out of scope for a round-trip
+-    fidelity fix). Same for a `vector` sub-object without `searchable`."""
++def test_fts_or_vector_without_searchable_role_is_rejected(tmp_path) -> None:
++    """0.8.20 Slice 23 (``R-20-SV``) — an ``fts`` or ``vector`` sub-object
++    declared WITHOUT the ``searchable`` role is an **INVALID SPEC** and is
++    REJECTED with ``WriteValidationError``.
++
++    **This OVERTURNS the shipped 15d fix-4 position** that the same shape is
++    accepted and round-trips faithfully (this test asserted exactly that until
++    this slice). HITL ruling 2026-07-24, ``dev/plans/plan-0.8.20.md`` §11 item 4,
++    option **(b) REJECT**: the sub-objects SELECT a sub-target of ``searchable``
++    and do not confer it, so without the role the declaration is a meaningless
++    config that builds, embeds and enrols nothing.
++
++    The error family is ``WriteValidationError`` per decision #18 (Slice 22): a
++    malformed write SHAPE is one family. It is message-less by construction, so
++    the refusal does not name which spec in the list was invalid (TC-95/TC-98,
++    deferred by the HITL).
++
++    ``read.projections`` is a pure read and is UNAFFECTED — a legacy row in this
++    shape is still reported verbatim; it simply can no longer be re-applied.
++    """
+     engine = _open(str(tmp_path / "fts_no_searchable.sqlite"))
+     try:
++        for fts, vector in ((True, False), (False, True), (True, True)):
++            with pytest.raises(WriteValidationError):
++                engine.configure_projections(
++                    [
++                        ProjectionSpec(
++                            name="status",
++                            roles=frozenset({ProjectionRole.FILTERABLE}),
++                            fts=fts,
++                            vector=vector,
++                        )
++                    ]
++                )
++        # `rankable` does not supply the role either — the reject is keyed on the
++        # ABSENCE of `searchable`, not on which other roles are present.
++        with pytest.raises(WriteValidationError):
++            engine.configure_projections(
++                [
++                    ProjectionSpec(
++                        name="status",
++                        roles=frozenset({ProjectionRole.RANKABLE}),
++                        fts=False,
++                        vector=True,
++                    )
++                ]
++            )
++        # Nothing was persisted by any refused call.
++        assert read.projections(engine) == []
++
++        # CONTROL — with `searchable` present the identical sub-objects are a
++        # VALID spec and still round-trip.
+         sent = ProjectionSpec(
+             name="status",
+-            roles=frozenset({ProjectionRole.FILTERABLE}),
++            roles=frozenset({ProjectionRole.FILTERABLE, ProjectionRole.SEARCHABLE}),
+             fts=True,
+             vector=True,
+         )
+@@ -434,11 +477,8 @@ def test_fts_without_searchable_role_round_trips(tmp_path) -> None:
+         got = next(s for s in read.projections(engine) if s.name == "status")
+         # 0.8.20 Slice 20 (R-20-DR) — modulo the engine-set readiness read
+         # metadata, which is not a declaration and is never authored by a caller.
+-        assert (
+-            dataclasses.replace(got, vector_dense_readiness=None) == sent
+-        ), "fts/vector-without-searchable must round-trip faithfully"
++        assert dataclasses.replace(got, vector_dense_readiness=None) == sent
+         assert got.fts is True and got.vector is True
+-        assert got.roles == frozenset({"filterable"})
+     finally:
+         engine.close()
+ 
+diff --git a/src/rust/crates/fathomdb-engine/tests/slice21c_vector_role_gate.rs b/src/rust/crates/fathomdb-engine/tests/slice21c_vector_role_gate.rs
+index 2bdb3525..251ed936 100644
+--- a/src/rust/crates/fathomdb-engine/tests/slice21c_vector_role_gate.rs
++++ b/src/rust/crates/fathomdb-engine/tests/slice21c_vector_role_gate.rs
+@@ -59,6 +59,18 @@
+ //! become INERT, not DISAPPEAR —
+ //! [`a_filterable_vector_declaration_round_trips_verbatim_without_an_embedder`]
+ //! plus the round-trip assertions inside path (a)'s test.
++//!
++//! ## 0.8.20 Slice 23 (`R-20-SV`) — the ROUTE changed; the coverage did not
++//!
++//! The HITL ruled on 2026-07-24 that this suite's shape is an INVALID SPEC, and
++//! Slice 23 rejects it with `EngineError::WriteValidation`. The shape is
++//! therefore no longer constructible through `configure_projections` — but it is
++//! still at rest in every database that declared it while the engine accepted
++//! it, which is the population TC-71 exists for. Each test below now builds that
++//! state through the documented legacy back door
++//! ([`declare_legacy_filterable_vector`]) and asserts the reject in place on the
++//! way past. **Every oracle is unchanged**; nothing here was deleted or
++//! weakened.
+ 
+ use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
+ use fathomdb_engine::{
+@@ -129,6 +141,10 @@ fn roles(rs: &[ProjectionRole]) -> BTreeSet<ProjectionRole> {
+ /// **The shape under test**: a `vector` sub-object WITHOUT the `searchable`
+ /// role. Documented inert-but-round-trippable; before TC-71 it turned the dense
+ /// arm on.
++///
++/// **0.8.20 Slice 23 (`R-20-SV`) — this spec is no longer ACCEPTED.** It is kept
++/// so every test below can assert the reject in place (see
++/// [`declare_legacy_filterable_vector`]).
+ fn filterable_vector_spec(name: &str) -> ProjectionSpec {
+     ProjectionSpec {
+         name: name.to_string(),
+@@ -138,6 +154,78 @@ fn filterable_vector_spec(name: &str) -> ProjectionSpec {
+     }
+ }
+ 
++/// The VALID half of the shape under test — `filterable`, no sub-object. This
++/// part `configure_projections` still accepts, and it is what builds the EAV
++/// rows the "inert, NOT absent" assertions read.
++fn filterable_only_spec(name: &str) -> ProjectionSpec {
++    ProjectionSpec {
++        name: name.to_string(),
++        roles: roles(&[ProjectionRole::Filterable]),
++        fts: None,
++        vector: None,
++    }
++}
++
++/// **0.8.20 Slice 23 (`R-20-SV`) — THE LEGACY BACK DOOR, and why this suite now
++/// uses it.**
++///
++/// The HITL ruled on **2026-07-24** (`dev/plans/plan-0.8.20.md` §11 item 4,
++/// option (b)) that an `fts`/`vector` sub-object declared WITHOUT the
++/// `searchable` role is an **INVALID SPEC**; Slice 23 implements that reject as
++/// `EngineError::WriteValidation` (pinned in
++/// `tests/slice23_spec_validation_reject.rs`). So the shape TC-71 is about is no
++/// longer constructible through the public verb.
++///
++/// It has NOT stopped existing. It survives as the AT-REST state of every
++/// database that declared it while the engine still accepted it — which is
++/// precisely the affected population TC-71 was raised for, and precisely the
++/// population `tc71_fix1_inert_enrolment_reconcile.rs` reconciles. Deleting this
++/// coverage would retire the defect class while its population is still live, so
++/// the coverage is KEPT and only the ROUTE moves: declare the valid `filterable`
++/// half through the verb, then set `vector_declared = 1` with the raw UPDATE the
++/// pre-Slice-23 `persist_projection_row` would have written for the same
++/// declaration. **Every ORACLE below is unchanged** — raw
++/// `_fathomdb_vector_kinds` / `_fathomdb_vector_rows` / `vector_default` rows
++/// plus the embedder call count.
++///
++/// It also asserts the reject IN PLACE, so each test states why it takes the
++/// back door and pins the front door shut at the same time.
++fn declare_legacy_filterable_vector(
++    engine: &Engine,
++    path: &Path,
++    name: &str,
++) -> fathomdb_engine::ProjectionDelta {
++    // Front door, pinned shut.
++    assert_eq!(
++        engine.configure_projections(&[filterable_vector_spec(name)], &[]).expect_err(
++            "R-20-SV: a `vector` sub-object without `searchable` is now an invalid spec"
++        ),
++        fathomdb_engine::EngineError::WriteValidation,
++    );
++    // Valid half through the verb — this is what builds the EAV projection.
++    let delta = engine
++        .configure_projections(&[filterable_only_spec(name)], &[])
++        .expect("the `filterable` half is still a valid declaration");
++    legacy_add_vector_subobject(path, name);
++    delta
++}
++
++/// Set `vector_declared = 1` on an EXISTING registry row through a raw RW
++/// connection — the legacy half of [`declare_legacy_filterable_vector`], split
++/// out for the tests that need it applied to a row declared some other way.
++/// This is the exact column `persist_projection_row` set for the same
++/// declaration before Slice 23 refused it.
++fn legacy_add_vector_subobject(path: &Path, name: &str) {
++    let conn = rusqlite::Connection::open(path).expect("open rw");
++    let n = conn
++        .execute(
++            "UPDATE _fathomdb_projection_registry SET vector_declared = 1 WHERE name = ?1",
++            [name],
++        )
++        .expect("legacy vector sub-object");
++    assert_eq!(n, 1, "the registry row must exist before the legacy sub-object is added");
++}
++
+ /// The legitimate dense-arm declaration — the control. Every assertion that the
+ /// inert shape does nothing is paired with this one still doing everything.
+ fn searchable_vector_spec(name: &str) -> ProjectionSpec {
+@@ -271,24 +359,32 @@ fn a_filterable_vector_declaration_backfills_nothing_and_embeds_nothing() {
+     delay_ms.store(8_000, Ordering::SeqCst);
+ 
+     let spec = filterable_vector_spec("summary");
+-    let delta = engine
+-        .configure_projections(std::slice::from_ref(&spec), &[])
+-        .expect("a filterable+vector declaration is legal and never errors");
++    let delta = declare_legacy_filterable_vector(engine, &path, "summary");
+ 
+-    // (5a) INERT, NOT ABSENT — the delta is UNCHANGED by this fix.
++    // (5a) INERT, NOT ABSENT — the `filterable` half still builds.
+     assert_eq!(
+         delta.built,
+         vec!["summary".to_string()],
+         "the `filterable` role still builds its EAV projection"
+     );
+-    assert_eq!(
+-        delta.deferred,
+-        vec!["summary".to_string()],
+-        "the stored `vector` sub-object is still REPORTED deferred — the round-trip contract \
+-         wants it reported; TC-71 changes what the engine DOES, not what it says"
++    assert!(
++        delta.deferred.is_empty(),
++        "0.8.20 Slice 23 (R-20-SV): the declaration that reaches the verb no longer CARRIES the \
++         `vector` sub-object — it is refused. The legacy half is added at rest, exactly as a \
++         pre-Slice-23 database carries it, and is still REPORTED by `read_projections` below \
++         (post-5b) — the round-trip contract this assertion originally protected"
+     );
+     assert!(!delta.unchanged, "a fresh declaration is not a no-op");
+ 
++    // The governed call that runs the SAME declare-time fork the old
++    // `{filterable, vector}` declaration ran (`vector_declared_after` +
++    // `enqueue_declared_vector_backfill`'s entry guard), now with the legacy row
++    // in place. This is the door path (a) is about.
++    let after = engine
++        .configure_projections(&[], &[])
++        .expect("an empty request still runs the declare-time fork");
++    assert!(after.unchanged, "…and diffs to a no-op");
++
+     // (1) THE assertion, and it is checked FIRST: enrolment happens inside the
+     // `configure_projections` write transaction, so it is settled and race-free
+     // the instant that call returns — no barrier needed, no timing proxy.
+@@ -390,9 +486,9 @@ fn a_write_under_a_filterable_vector_declaration_enqueues_no_embedding() {
+     // Declaration FIRST, on an EMPTY corpus: `enqueue_declared_vector_backfill`
+     // finds no `canonical_nodes` rows, so it enrols nothing regardless of the
+     // predicate. Whatever happens next is the WRITE path's doing alone.
+-    engine
+-        .configure_projections(&[filterable_vector_spec("summary")], &[])
+-        .expect("configure on an empty corpus");
++    // (0.8.20 Slice 23 — via the legacy back door; see
++    // [`declare_legacy_filterable_vector`].)
++    declare_legacy_filterable_vector(engine, &path, "summary");
+     let conn = ro(&path);
+     assert!(
+         !vector_kind_registered(&conn, "doc"),
+@@ -496,12 +592,31 @@ fn demoting_a_searchable_vector_projection_to_filterable_un_enrols_the_kind() {
+ 
+     // ---- the demotion: same name, `searchable` replaced by `filterable`, the
+     //      `vector` sub-object retained ----
+-    let demoted = filterable_vector_spec("summary");
++    //
++    // 0.8.20 Slice 23 (`R-20-SV`) — the demotion's TARGET spec
++    // (`{filterable} + vector`) is now an invalid spec, so the demotion runs in
++    // the two steps a pre-Slice-23 database's registry ended up in: the
++    // drop-then-redeclare of the VALID half through the verb — which is the call
++    // that takes the `vector_declared_before && !after` TRANSITION arm this test
++    // is about — followed by the legacy `vector_declared = 1` the old engine
++    // would have persisted in the same call. Splitting them is STRICTER: the
++    // surviving legacy sub-object must not resurrect the arm afterwards either,
++    // which is asserted below.
++    assert_eq!(
++        engine
++            .configure_projections(&[filterable_vector_spec("summary")], &["summary".to_string()])
++            .expect_err("R-20-SV: the demoted shape is no longer a valid spec"),
++        fathomdb_engine::EngineError::WriteValidation,
++    );
+     let delta = engine
+-        .configure_projections(std::slice::from_ref(&demoted), &["summary".to_string()])
++        .configure_projections(&[filterable_only_spec("summary")], &["summary".to_string()])
+         .expect("drop-then-redeclare is the documented path for a destructive role change");
+     assert!(delta.dropped.contains(&"summary".to_string()), "the drop half is reported");
+     assert!(delta.built.contains(&"summary".to_string()), "the fresh `filterable` half is built");
++    legacy_add_vector_subobject(&path, "summary");
++    // …and a LATER governed call must not let the surviving `vector_declared = 1`
++    // row switch the arm back on.
++    engine.configure_projections(&[], &[]).expect("a later governed call is a no-op");
+ 
+     let conn = ro(&path);
+     // (1) THE assertion.
+@@ -577,13 +692,20 @@ fn dropping_the_last_searchable_vector_projection_un_enrols_past_an_inert_siblin
+         .write(&[node("doc", "N1", r#"{"summary":"a dense meaning","tag":"alpha"}"#)])
+         .expect("write N1");
+     // TWO projections: one real dense arm, one inert `vector` sub-object.
++    // (0.8.20 Slice 23 — the inert sibling now only reaches the registry through
++    // the legacy back door; the real dense arm is declared normally.)
+     engine
+         .configure_projections(
+-            &[searchable_vector_spec("summary"), filterable_vector_spec("tag")],
++            &[searchable_vector_spec("summary"), filterable_only_spec("tag")],
+             &[],
+         )
+         .expect("configure both");
+     engine.drain(30_000).expect("drain");
++    // The sibling's legacy `vector` sub-object, added at rest once the real arm
++    // is settled. Deliberately AFTER the drain: a raw RW connection opened while
++    // embed work is in flight perturbs the dispatcher's timing, and this suite's
++    // embed-count oracles must not depend on that.
++    legacy_add_vector_subobject(&path, "tag");
+     let conn = ro(&path);
+     let c1 = active_cursor(&conn, "N1");
+     assert!(vector_kind_registered(&conn, "doc"), "fixture: the SEARCHABLE one enrolled `doc`");
+@@ -650,13 +772,8 @@ fn a_filterable_vector_declaration_round_trips_verbatim_without_an_embedder() {
+     engine.write(&[node("doc", "N1", r#"{"summary":"a dense meaning"}"#)]).expect("write N1");
+ 
+     let spec = filterable_vector_spec("summary");
+-    let delta = engine.configure_projections(std::slice::from_ref(&spec), &[]).expect("configure");
++    let delta = declare_legacy_filterable_vector(engine, &path, "summary");
+     assert_eq!(delta.built, vec!["summary".to_string()]);
+-    assert_eq!(
+-        delta.deferred,
+-        vec!["summary".to_string()],
+-        "the stored-but-unbuilt `vector` sub-object is still reported deferred"
+-    );
+ 
+     assert_eq!(
+         engine.read_projections().expect("read_projections"),
+@@ -667,12 +784,42 @@ fn a_filterable_vector_declaration_round_trips_verbatim_without_an_embedder() {
+             }),
+             ..spec.clone()
+         }],
+-        "the `vector` sub-object persists verbatim, plus the engine-set readiness"
++        "the `vector` sub-object persists verbatim, plus the engine-set readiness — READS are \
++         unaffected by Slice 23's reject, which is a WRITE-path spec validation"
+     );
+ 
+-    // Idempotent re-apply is still a no-op.
+-    let again = engine.configure_projections(std::slice::from_ref(&spec), &[]).expect("re-apply");
+-    assert!(again.unchanged, "re-registering the same inert spec diffs to a no-op");
++    // 0.8.20 Slice 23 (`R-20-SV`) — what re-applying now does, stated as a fact
++    // so the legacy population's operators are not left to discover it. The
++    // idempotent re-apply that used to diff to a no-op RAISES, because the spec
++    // it would re-apply is the invalid one…
++    assert_eq!(
++        engine
++            .configure_projections(std::slice::from_ref(&spec), &[])
++            .expect_err("re-applying the legacy shape now raises"),
++        fathomdb_engine::EngineError::WriteValidation,
++    );
++    // …and re-declaring only its VALID half is a DESTRUCTIVE change (it removes
++    // the stored `vector` sub-object), so it is refused too. A legacy row has
++    // exactly two remedies: ADD the `searchable` role (non-destructive), or name
++    // it in `drop`.
++    assert!(
++        matches!(
++            engine.configure_projections(&[filterable_only_spec("summary")], &[]),
++            Err(fathomdb_engine::EngineError::ProjectionDestructive { .. })
++        ),
++        "re-declaring the valid half alone removes the stored `vector` sub-object"
++    );
++    let promoted = ProjectionSpec {
++        roles: roles(&[ProjectionRole::Filterable, ProjectionRole::Searchable]),
++        ..spec.clone()
++    };
++    engine
++        .configure_projections(std::slice::from_ref(&promoted), &[])
++        .expect("REMEDY 1: adding the `searchable` role is non-destructive and accepted");
++    let again = engine
++        .configure_projections(std::slice::from_ref(&promoted), &[])
++        .expect("re-apply the promoted spec");
++    assert!(again.unchanged, "re-registering the same VALID spec still diffs to a no-op");
+ 
+     opened.engine.drain(5_000).unwrap();
+     opened.engine.close().unwrap();
+diff --git a/src/rust/crates/fathomdb-engine/tests/slice23_spec_validation_reject.rs b/src/rust/crates/fathomdb-engine/tests/slice23_spec_validation_reject.rs
+new file mode 100644
+index 00000000..81c44258
+--- /dev/null
++++ b/src/rust/crates/fathomdb-engine/tests/slice23_spec_validation_reject.rs
+@@ -0,0 +1,462 @@
++//! 0.8.20 Slice 23 (`R-20-SV`) — **an `fts` or `vector` sub-object declared
++//! WITHOUT the `searchable` role is an INVALID SPEC and is REJECTED.**
++//!
++//! ## The ruling this implements
++//!
++//! HITL, **2026-07-24** (`dev/plans/plan-0.8.20.md` §11 item 4): option **(b)
++//! REJECT** — *"it is a meaningless config; fail-fast matches the hard-reject
++//! philosophy, and additive strictness is safe pre-1.0"*, to be implemented *"at
++//! the next `configure_projections` slice"*. That is this slice. It **overturns**
++//! the shipped 15d fix-4 accept-and-round-trip position, which is why the tests
++//! that pinned the old behaviour move to a legacy back door rather than
++//! disappear (see below).
++//!
++//! ## Why the sub-object cannot confer the role
++//!
++//! `searchable→FTS` and `searchable→vector` are **tier labels**, not roles
++//! (`ProjectionRole` has exactly three members, HITL-ratified S8): the
++//! `fts`/`vector` sub-objects **SELECT a sub-target of `searchable`; they do not
++//! confer one** — the wording is `StoredProjection::wants_vector`'s own doc
++//! comment, and both engine predicates (`wants_property_fts`, `wants_vector`)
++//! are conjunctions with `roles.contains(Searchable)`. So without the role the
++//! sub-object selects a sub-target of a projection that does not exist: it
++//! builds nothing, embeds nothing, and enrols nothing. It is the "meaningless
++//! config" the ruling names.
++//!
++//! The reject therefore keys on the **absence of `searchable`**, and on nothing
++//! else — `rankable` and `filterable` are orthogonal axes that neither supply
++//! nor substitute for it.
++//!
++//! ## The error family — settled, not chosen here
++//!
++//! `EngineError::WriteValidation`, per **decision #18** (0.8.20 Slice 22,
++//! `R-20-VC`): the write-SHAPE boundary is ONE family. This is a SHAPE rejection
++//! — the submitted spec's shape is malformed — so it takes that family. The
++//! surviving `InvalidArgument { msg }` rejections in the same function are the
++//! projection/drop **NAME** rejections, whose message names the offending value;
++//! they are untouched and are pinned below so the boundary cannot drift.
++//!
++//! **Known diagnostic cost, accepted (TC-95/TC-98).** `WriteValidation` is a UNIT
++//! variant, so when `configure_projections` is handed a LIST of specs the refusal
++//! cannot name WHICH spec was invalid — strictly worse than its name-rejecting
++//! siblings in the same function. Deferred by the HITL until after this slice;
++//! recorded, not worked around.
++
++use fathomdb_engine::{
++    Engine, EngineError, InitialState, PreparedWrite, ProjectionFts, ProjectionRole,
++    ProjectionSpec, ProjectionVector, SourceId,
++};
++use fathomdb_schema::SQLITE_SUFFIX;
++use std::collections::BTreeSet;
++use std::path::{Path, PathBuf};
++use tempfile::TempDir;
++
++// ---------------------------------------------------------------------------
++// Helpers
++// ---------------------------------------------------------------------------
++
++fn db_path(dir: &TempDir, name: &str) -> PathBuf {
++    dir.path().join(format!("{name}{SQLITE_SUFFIX}"))
++}
++
++fn roles(rs: &[ProjectionRole]) -> BTreeSet<ProjectionRole> {
++    rs.iter().copied().collect()
++}
++
++fn spec(name: &str, rs: &[ProjectionRole], fts: bool, vector: bool) -> ProjectionSpec {
++    ProjectionSpec {
++        name: name.to_string(),
++        roles: roles(rs),
++        fts: fts.then_some(ProjectionFts { tokenizer: None }),
++        vector: vector.then_some(ProjectionVector { embedder: None, dense_readiness: None }),
++    }
++}
++
++fn node(logical_id: &str, body_json: &str) -> PreparedWrite {
++    PreparedWrite::Node {
++        kind: "doc".to_string(),
++        body: body_json.to_string(),
++        source_id: SourceId::new("test:fixture").expect("source id"),
++        logical_id: Some(logical_id.to_string()),
++        state: InitialState::Active,
++        reason: None,
++        valid_from: None,
++        valid_until: None,
++    }
++}
++
++/// A raw READ-ONLY connection to the live file. `mode=ro`, never `immutable=1`.
++fn ro(path: &Path) -> rusqlite::Connection {
++    rusqlite::Connection::open_with_flags(
++        path,
++        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
++    )
++    .expect("open read-only")
++}
++
++/// The registry rows at rest, as `(name, roles, fts_tokenizer, vector_declared)`.
++/// The reject's "total no-op" contract is asserted HERE, on the durable table,
++/// not on a returned struct.
++fn registry_rows(path: &Path) -> Vec<(String, String, Option<String>, i64)> {
++    let conn = ro(path);
++    let mut stmt = conn
++        .prepare(
++            "SELECT name, roles, fts_tokenizer, vector_declared
++             FROM _fathomdb_projection_registry ORDER BY name",
++        )
++        .expect("prepare registry probe");
++    let v: Vec<(String, String, Option<String>, i64)> = stmt
++        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
++        .expect("registry query")
++        .map(|r| r.expect("registry row"))
++        .collect();
++    v
++}
++
++fn eav_values(path: &Path, attr_name: &str) -> Vec<String> {
++    let conn = ro(path);
++    let mut stmt = conn
++        .prepare(
++            "SELECT attr_value FROM canonical_attributes WHERE attr_name = ?1 ORDER BY attr_value",
++        )
++        .expect("prepare eav probe");
++    let v: Vec<String> = stmt
++        .query_map([attr_name], |r| r.get::<_, String>(0))
++        .expect("eav query")
++        .map(|r| r.expect("eav row"))
++        .collect();
++    v
++}
++
++/// Seed ONE `_fathomdb_projection_registry` row on a raw RW connection, i.e.
++/// through the back door the shipped 15d code used before this slice's reject.
++/// This is the ONLY way to reach the LEGACY population — a database that
++/// declared `fts`/`vector` without `searchable` while the engine still accepted
++/// it — now that the public verb refuses to create it.
++///
++/// The INSERT shape is `persist_projection_row`'s, verbatim
++/// (`name, roles, fts_tokenizer, vector_embedder, vector_declared`); `roles` is
++/// the compact sorted comma-separated list `roles_to_storage` writes, and
++/// `fts_tokenizer` is NULL for "no `fts` sub-object" / `''` for
++/// "`fts` sub-object, engine-default tokenizer".
++fn seed_legacy_registry_row(
++    path: &Path,
++    name: &str,
++    roles_csv: &str,
++    fts_tokenizer: Option<&str>,
++    vector_declared: bool,
++) {
++    let conn = rusqlite::Connection::open(path).expect("open rw");
++    conn.execute(
++        "INSERT INTO _fathomdb_projection_registry
++             (name, roles, fts_tokenizer, vector_embedder, vector_declared)
++         VALUES(?1, ?2, ?3, NULL, ?4)
++         ON CONFLICT(name) DO UPDATE SET
++             roles = excluded.roles,
++             fts_tokenizer = excluded.fts_tokenizer,
++             vector_embedder = excluded.vector_embedder,
++             vector_declared = excluded.vector_declared",
++        rusqlite::params![name, roles_csv, fts_tokenizer, i64::from(vector_declared)],
++    )
++    .expect("seed legacy registry row");
++}
++
++// ===========================================================================
++// The reject itself
++// ===========================================================================
++
++/// An `fts` sub-object with no `searchable` role — `WriteValidation`.
++#[test]
++fn an_fts_sub_object_without_the_searchable_role_is_rejected() {
++    let dir = TempDir::new().unwrap();
++    let opened = Engine::open(db_path(&dir, "sv_fts_no_searchable")).unwrap();
++    let engine = &opened.engine;
++
++    let err = engine
++        .configure_projections(&[spec("status", &[ProjectionRole::Filterable], true, false)], &[])
++        .expect_err(
++            "R-20-SV (HITL 2026-07-24, plan §11 item 4): an `fts` sub-object without the \
++             `searchable` role is an INVALID SPEC and must be REJECTED, not accepted-inert",
++        );
++    assert_eq!(
++        err,
++        EngineError::WriteValidation,
++        "decision #18 settles the write-SHAPE boundary on ONE family; this is a shape reject"
++    );
++
++    opened.engine.close().unwrap();
++}
++
++/// A `vector` sub-object with no `searchable` role — `WriteValidation`. This is
++/// the shape `TC-71` made inert; the ruling makes it unconstructible.
++#[test]
++fn a_vector_sub_object_without_the_searchable_role_is_rejected() {
++    let dir = TempDir::new().unwrap();
++    let opened = Engine::open(db_path(&dir, "sv_vector_no_searchable")).unwrap();
++    let engine = &opened.engine;
++
++    let err = engine
++        .configure_projections(&[spec("status", &[ProjectionRole::Filterable], false, true)], &[])
++        .expect_err("a `vector` sub-object without the `searchable` role is an invalid spec");
++    assert_eq!(err, EngineError::WriteValidation);
++
++    opened.engine.close().unwrap();
++}
++
++/// **The reject keys on the ABSENCE of `searchable`, and on nothing else.**
++/// `rankable` and `filterable` are orthogonal axes: neither supplies the role
++/// nor substitutes for it, so every non-`searchable` role set is refused
++/// identically. Without this the fix could be mis-implemented as "reject only
++/// when `filterable`", leaving `{rankable} + vector` — the exact shape the
++/// 15e fix-2 finding-2 delta test used — silently accepted.
++#[test]
++fn the_reject_is_keyed_on_searchable_alone_not_on_the_other_roles() {
++    let dir = TempDir::new().unwrap();
++    let opened = Engine::open(db_path(&dir, "sv_role_axes")).unwrap();
++    let engine = &opened.engine;
++
++    for (label, rs) in [
++        ("filterable-only", vec![ProjectionRole::Filterable]),
++        ("rankable-only", vec![ProjectionRole::Rankable]),
++        ("filterable+rankable", vec![ProjectionRole::Filterable, ProjectionRole::Rankable]),
++    ] {
++        for (fts, vector) in [(true, false), (false, true), (true, true)] {
++            let err = engine
++                .configure_projections(&[spec("status", &rs, fts, vector)], &[])
++                .expect_err(&format!(
++                    "{label} with fts={fts} vector={vector} declares a sub-target of a \
++                     `searchable` projection that does not exist"
++                ));
++            assert_eq!(err, EngineError::WriteValidation, "{label} fts={fts} vector={vector}");
++        }
++    }
++
++    opened.engine.close().unwrap();
++}
++
++/// **The CONTROL — the reject must not over-reach.** With `searchable` present
++/// the identical sub-objects are valid, build, and round-trip. A reject that
++/// also refused these would be a far worse regression than the config it closes.
++#[test]
++fn the_searchable_role_makes_the_same_sub_objects_valid() {
++    let dir = TempDir::new().unwrap();
++    let path = db_path(&dir, "sv_control_valid");
++    let opened = Engine::open(path.clone()).unwrap();
++    let engine = &opened.engine;
++    engine.write(&[node("N1", r#"{"summary":"a dense meaning"}"#)]).unwrap();
++
++    let s = spec("summary", &[ProjectionRole::Filterable, ProjectionRole::Searchable], true, true);
++    let delta = engine
++        .configure_projections(std::slice::from_ref(&s), &[])
++        .expect("CONTROL: with the `searchable` role the same sub-objects are a VALID spec");
++    assert_eq!(delta.built, vec!["summary".to_string()]);
++    assert_eq!(delta.deferred, vec!["summary".to_string()], "the vector sub-target still defers");
++
++    let back = engine.read_projections().expect("read_projections");
++    assert_eq!(back.len(), 1);
++    assert_eq!(back[0].name, "summary");
++    assert!(back[0].fts.is_some() && back[0].vector.is_some(), "both sub-objects round-trip");
++    assert_eq!(back[0].roles, roles(&[ProjectionRole::Filterable, ProjectionRole::Searchable]));
++
++    // …and `searchable` with NO sub-object at all is still valid: the reject is
++    // about a sub-object without the role, never about the role without a
++    // sub-object.
++    engine
++        .configure_projections(&[spec("title", &[ProjectionRole::Searchable], false, false)], &[])
++        .expect("CONTROL: a bare `searchable` declaration is unaffected");
++
++    opened.engine.drain(5_000).unwrap();
++    opened.engine.close().unwrap();
++    assert_eq!(eav_values(&path, "summary"), vec!["a dense meaning".to_string()]);
++}
++
++// ===========================================================================
++// A rejected request is a TOTAL no-op
++// ===========================================================================
++
++/// The fix-6 "a rejected request is a total no-op" contract extends to this
++/// reject: `apply_projection_config` validates the WHOLE request up front, so
++/// one invalid spec anywhere in the list aborts before any write — the valid
++/// sibling in the same call must NOT be applied, and a pre-existing registry
++/// must be untouched.
++#[test]
++fn a_rejected_spec_makes_the_whole_request_a_total_no_op() {
++    let dir = TempDir::new().unwrap();
++    let path = db_path(&dir, "sv_total_noop");
++    let opened = Engine::open(path.clone()).unwrap();
++    let engine = &opened.engine;
++    engine.write(&[node("N1", r#"{"summary":"a meaning","status":"open"}"#)]).unwrap();
++
++    // A live, valid registry first, so "untouched" is falsifiable.
++    engine
++        .configure_projections(&[spec("summary", &[ProjectionRole::Searchable], true, false)], &[])
++        .expect("seed a valid projection");
++    let before = registry_rows(&path);
++    assert_eq!(before.len(), 1, "fixture: exactly one live projection");
++
++    // A batch whose FIRST spec is valid and SECOND is not.
++    let err = engine
++        .configure_projections(
++            &[
++                spec("title", &[ProjectionRole::Filterable], false, false),
++                spec("status", &[ProjectionRole::Filterable], true, false),
++            ],
++            &["summary".to_string()],
++        )
++        .expect_err("the invalid second spec rejects the request");
++    assert_eq!(err, EngineError::WriteValidation);
++
++    assert_eq!(
++        registry_rows(&path),
++        before,
++        "a rejected request is a TOTAL no-op: the valid sibling was not registered and the \
++         named drop did not apply"
++    );
++    assert!(
++        eav_values(&path, "title").is_empty(),
++        "…and the valid sibling built no EAV rows either"
++    );
++    assert_eq!(
++        eav_values(&path, "summary"),
++        vec!["a meaning".to_string()],
++        "…while the pre-existing projection's rows survive the refused drop"
++    );
++
++    opened.engine.drain(5_000).unwrap();
++    opened.engine.close().unwrap();
++}
++
++// ===========================================================================
++// The boundary the reject must NOT cross — NAME rejections stay InvalidArgument
++// ===========================================================================
++
++/// **The `InvalidArgument` / `WriteValidation` boundary inside one function.**
++/// `dev/design/errors.md` now states it explicitly: projection/drop **NAME**
++/// rejections keep `InvalidArgument { msg }` — their message names the offending
++/// value and is the caller's only handle on it — while the fts/vector-without-
++/// `searchable` **SHAPE** reject is `WriteValidation` per decision #18. Pinned
++/// here so neither side drifts onto the other.
++///
++/// (The `"projection '<name>' declares no roles"` refusal is a SHAPE rejection
++/// that still returns `InvalidArgument`. It is shipped behaviour, out of this
++/// slice's scope, and is asserted as-is — flagged in `errors.md`, not
++/// retro-classified.)
++#[test]
++fn name_rejections_keep_invalid_argument_while_the_shape_reject_is_write_validation() {
++    let dir = TempDir::new().unwrap();
++    let opened = Engine::open(db_path(&dir, "sv_boundary")).unwrap();
++    let engine = &opened.engine;
++
++    let bad_name = engine
++        .configure_projections(&[spec("a\\b", &[ProjectionRole::Filterable], false, false)], &[])
++        .expect_err("a backslash name is still refused");
++    assert!(
++        matches!(bad_name, EngineError::InvalidArgument { ref msg }
++            if msg.contains("invalid projection attribute name") && msg.contains('b')),
++        "a NAME rejection must keep the message that names the offending value, got {bad_name:?}"
++    );
++
++    let bad_drop = engine
++        .configure_projections(&[], &["a\"b".to_string()])
++        .expect_err("a quote in a drop name is still refused");
++    assert!(
++        matches!(bad_drop, EngineError::InvalidArgument { .. }),
++        "a DROP-NAME rejection stays InvalidArgument, got {bad_drop:?}"
++    );
++
++    let dup = engine
++        .configure_projections(
++            &[
++                spec("status", &[ProjectionRole::Filterable], false, false),
++                spec("status", &[ProjectionRole::Filterable], false, false),
++            ],
++            &[],
++        )
++        .expect_err("a duplicated name in one request is still refused");
++    assert!(
++        matches!(dup, EngineError::InvalidArgument { ref msg } if msg.contains("status")),
++        "a duplicate-NAME rejection stays InvalidArgument, got {dup:?}"
++    );
++
++    let no_roles = engine
++        .configure_projections(&[spec("status", &[], false, false)], &[])
++        .expect_err("an empty role set is still refused");
++    assert!(
++        matches!(no_roles, EngineError::InvalidArgument { ref msg } if msg.contains("no roles")),
++        "SHIPPED, deliberately unchanged by this slice: the empty-roles refusal is a SHAPE \
++         rejection that still returns InvalidArgument. Retro-classifying it is not R-20-SV's \
++         job; it is flagged in dev/design/errors.md, got {no_roles:?}"
++    );
++
++    // …and the shape reject, in the same function, in the same session.
++    assert_eq!(
++        engine
++            .configure_projections(
++                &[spec("status", &[ProjectionRole::Filterable], false, true)],
++                &[]
++            )
++            .expect_err("the shape reject"),
++        EngineError::WriteValidation,
++    );
++
++    opened.engine.close().unwrap();
++}
++
++// ===========================================================================
++// The LEGACY population — readable, reportable, no longer re-appliable
++// ===========================================================================
++
++/// **The legacy round-trip.** Databases that declared `fts`/`vector` without
++/// `searchable` while the engine ACCEPTED it still exist; this slice must not
++/// make them unreadable. `read_projections` is a pure read and rejects nothing,
++/// so the legacy row is reported **verbatim** — but feeding that output straight
++/// back into `configure_projections` (the shipped fix-4 read→configure
++/// round-trip) now RAISES.
++///
++/// That asymmetry is the honest, documented consequence of the ruling and is
++/// pinned here rather than left to be discovered: for the legacy population the
++/// round-trip is broken BY DESIGN, and the remedy is to add the `searchable`
++/// role or drop the sub-object.
++#[test]
++fn a_legacy_registry_row_reads_back_verbatim_but_no_longer_re_applies() {
++    let dir = TempDir::new().unwrap();
++    let path = db_path(&dir, "sv_legacy_round_trip");
++    let opened = Engine::open(path.clone()).unwrap();
++    opened.engine.write(&[node("N1", r#"{"status":"open"}"#)]).unwrap();
++    opened.engine.close().unwrap();
++
++    // The legacy state, written the way the shipped pre-Slice-23 engine wrote it.
++    seed_legacy_registry_row(&path, "status", "filterable", Some(""), true);
++
++    let opened = Engine::open(path.clone()).unwrap();
++    let engine = &opened.engine;
++
++    let back = engine.read_projections().expect("a legacy row must still be READABLE");
++    assert_eq!(back.len(), 1);
++    assert_eq!(back[0].name, "status");
++    assert_eq!(back[0].roles, roles(&[ProjectionRole::Filterable]));
++    assert!(back[0].fts.is_some(), "the legacy `fts` sub-object is reported verbatim");
++    assert!(back[0].vector.is_some(), "…and the legacy `vector` sub-object too");
++
++    // …but it can no longer be re-applied.
++    let err = engine
++        .configure_projections(&back, &[])
++        .expect_err("re-applying the legacy shape now raises");
++    assert_eq!(
++        err,
++        EngineError::WriteValidation,
++        "BREAKING, by design: for the legacy fts/vector-without-`searchable` population the \
++         read.projections -> configure_projections round-trip no longer closes. Add the \
++         `searchable` role or drop the sub-object"
++    );
++
++    // The remedy closes it again, and the row is otherwise untouched.
++    let mut fixed = back[0].clone();
++    fixed.roles.insert(ProjectionRole::Searchable);
++    engine
++        .configure_projections(&[fixed], &[])
++        .expect("adding the `searchable` role makes the legacy declaration valid again");
++
++    opened.engine.drain(5_000).unwrap();
++    opened.engine.close().unwrap();
++}
+diff --git a/src/ts/tests/slice15d-projection-registry.test.ts b/src/ts/tests/slice15d-projection-registry.test.ts
+index 1f30cacd..7736680e 100644
+--- a/src/ts/tests/slice15d-projection-registry.test.ts
++++ b/src/ts/tests/slice15d-projection-registry.test.ts
+@@ -568,24 +568,52 @@ test("fix-4 CONTROL — a consistent spec round-trips verbatim via read.projecti
+   }
+ });
+ 
+-test("fix-4 AUDIT — fts/vector without the searchable role round-trips (inert but faithful)", async () => {
++test("R-20-SV — fts/vector without the searchable role is REJECTED (WriteValidationError)", async () => {
++  // 0.8.20 Slice 23 (`R-20-SV`). This test asserted the OPPOSITE until this
++  // slice: the shipped 15d fix-4 position was that the shape is accepted and
++  // round-trips faithfully. HITL ruling 2026-07-24 (`dev/plans/plan-0.8.20.md`
++  // §11 item 4) chose option (b) REJECT — the `fts`/`vector` sub-objects SELECT
++  // a sub-target of `searchable` and do not confer it, so without the role the
++  // declaration builds, embeds and enrols nothing: a meaningless config.
++  //
++  // Family: `WriteValidationError` (`FDB_WRITE_VALIDATION`) per decision #18 —
++  // a malformed write SHAPE is one family. It is message-less by construction,
++  // so the refusal cannot name WHICH spec in the list was invalid
++  // (TC-95/TC-98, deferred by the HITL).
+   const path = freshDbPath();
+   const engine = await Engine.open(path);
+   try {
+-    // A contradiction the engine treats as inert (no property-FTS built), but
+-    // the declaration is stored + read back faithfully, so it round-trips and
+-    // is NOT a binding-boundary violation — accepted, not rejected. (Rejecting
+-    // it would be an engine-semantics change, out of scope for a round-trip
+-    // fidelity fix.) Fields omitted (not null) to isolate this from the
+-    // null-normalization round-trip covered separately below.
++    for (const [fts, vector] of [
++      [true, false],
++      [false, true],
++      [true, true],
++    ] as const) {
++      await assert.rejects(
++        engine.configureProjections([{ name: "status", roles: ["filterable"], fts, vector }]),
++        WriteValidationError,
++        `fts=${fts} vector=${vector} without the searchable role must be rejected`,
++      );
++    }
++    // `rankable` does not supply the role either — the reject is keyed on the
++    // ABSENCE of `searchable`, not on which other roles are present.
++    await assert.rejects(
++      engine.configureProjections([
++        { name: "status", roles: ["rankable"], fts: false, vector: true },
++      ]),
++      WriteValidationError,
++    );
++    assert.deepEqual(await read.projections(engine), [], "no refused call persisted anything");
++
++    // CONTROL — with `searchable` present the identical sub-objects are VALID
++    // and still round-trip.
+     await engine.configureProjections([
+-      { name: "status", roles: ["filterable"], fts: true, vector: true },
++      { name: "status", roles: ["filterable", "searchable"], fts: true, vector: true },
+     ]);
+     const got = (await read.projections(engine)).find((s) => s.name === "status");
+     assert.ok(got, "the projection must exist");
+     assert.equal(got.fts, true);
+     assert.equal(got.vector, true);
+-    assert.deepEqual([...got.roles].sort(), ["filterable"]);
++    assert.deepEqual([...got.roles].sort(), ["filterable", "searchable"]);
+   } finally {
+     await engine.close();
+   }
+
+exec
+/bin/bash -lc "sed -n '17360,17640p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+ succeeded in 0ms:
+    } else if existing.fts_present && existing.fts_tokenizer != desired.fts_tokenizer {
+        parts.push("fts tokenizer changed".to_string());
+    }
+    if existing.vector_declared && !desired.vector_declared {
+        parts.push("vector sub-target removed".to_string());
+    } else if existing.vector_declared && existing.vector_embedder != desired.vector_embedder {
+        parts.push("vector embedder changed".to_string());
+    }
+    if parts.is_empty() {
+        "incompatible change".to_string()
+    } else {
+        parts.join("; ")
+    }
+}
+
+/// 0.8.20 Slice 15d (R-20-PR) — the declarative, idempotent diff+backfill apply
+/// that backs [`Engine::configure_projections`]. Runs inside the caller's write
+/// transaction `tx`. Order: apply `drop`s first (so a drop+re-declare in one
+/// call rebuilds fresh), then diff each spec. Idempotent re-registration diffs to
+/// an empty delta (`unchanged`). A destructive change without an explicit drop is
+/// refused with [`EngineError::ProjectionDestructive`].
+///
+/// 0.8.20 Slice 20c (R-20-DR remainder) — returns `(delta, enqueued_backfill)`.
+/// The second member is `true` iff [`enqueue_declared_vector_backfill`] put
+/// deferred embed work on the queue, in which case the CALLER must
+/// `notify_new_work()` after committing (the flag cannot ride on
+/// [`ProjectionDelta`]: that is the caller-facing diff, and this is a runtime
+/// signal, not part of the declaration's result).
+///
+/// 0.8.20 Slice 20c fix-1 (codex §9 [P2]) — and the symmetric inverse: a call
+/// that removes the LAST `searchable→vector` declaration un-enrols the node kinds
+/// the forward path enrolled ([`unenrol_registry_vector_node_kinds`]), on this
+/// same transaction. It deletes no embedding.
+///
+/// 0.8.20 Slice 21 fix-1 (codex §9 round 1 [P2]) — and, beside that transition, a
+/// state-keyed RECONCILIATION ([`registry_governs_an_inert_dense_arm`]) so that a
+/// database already carrying an inert enrolment from before the Slice-21c role
+/// gate is healed by any `configure_projections` call, not only by a
+/// searchable-vector-to-none transition it may never perform. The boot arm is
+/// [`reconcile_inert_vector_enrolments_on_boot`].
+fn apply_projection_config(
+    tx: &Connection,
+    specs: &[ProjectionSpec],
+    drop: &[String],
+    dense_arm_live: bool,
+) -> Result<(ProjectionDelta, bool), EngineError> {
+    // Validate up-front so a bad name aborts before any write.
+    //
+    // fix-6 finding [P2] — REJECT a duplicate projection `name` within `specs`
+    // (and a duplicate entry within `drop`) up front. The diff loop below diffs
+    // every spec against the ONE pre-loop registry snapshot, so a name repeated
+    // in `specs` diffed the SECOND spec against state that never saw the first
+    // spec's just-persisted row: on a fresh DB `[status(searchable+fts),
+    // status(rankable-only)]` reported `built=[status]` in the delta while the
+    // registry ended rankable-only (which builds nothing) — the returned delta
+    // DIVERGED from the persisted registry, breaking the fix-4 "accept ⟹ correct"
+    // contract. A duplicate `drop` entry likewise reported the drop twice though
+    // the row was removed once. A single request naming the same projection twice
+    // is ambiguous/malformed, so we refuse it (rejection, not last-wins coalesce)
+    // — a rejected request is a total no-op, keeping the registry and delta
+    // consistent with the accepted input. A name that appears in BOTH `specs` and
+    // `drop` is NOT a duplicate: that is the documented drop-then-rebuild-fresh
+    // pattern (drops apply first, then the fresh spec builds), so it is allowed.
+    let mut seen_spec_names: BTreeSet<&str> = BTreeSet::new();
+    for spec in specs {
+        if !is_valid_attribute_name(&spec.name) {
+            return Err(EngineError::InvalidArgument {
+                msg: format!("invalid projection attribute name: {:?}", spec.name),
+            });
+        }
+        if spec.roles.is_empty() {
+            return Err(EngineError::InvalidArgument {
+                msg: format!("projection '{}' declares no roles", spec.name),
+            });
+        }
+        if !seen_spec_names.insert(spec.name.as_str()) {
+            return Err(EngineError::InvalidArgument {
+                msg: format!("duplicate projection name in one request: '{}'", spec.name),
+            });
+        }
+    }
+    let mut seen_drop_names: BTreeSet<&str> = BTreeSet::new();
+    for name in drop {
+        if !is_valid_attribute_name(name) {
+            return Err(EngineError::InvalidArgument {
+                msg: format!("invalid projection drop name: {name:?}"),
+            });
+        }
+        if !seen_drop_names.insert(name.as_str()) {
+            return Err(EngineError::InvalidArgument {
+                msg: format!("duplicate projection drop in one request: '{name}'"),
+            });
+        }
+    }
+
+    // 0.8.20 Slice 23 (`R-20-SV`) — REJECT an `fts` or `vector` sub-object
+    // declared WITHOUT the `searchable` role.
+    //
+    // HITL ruling 2026-07-24 (`dev/plans/plan-0.8.20.md` §11 item 4, option (b)):
+    // *"it is a meaningless config; fail-fast matches the hard-reject philosophy,
+    // and additive strictness is safe pre-1.0"*, to be implemented "at the next
+    // `configure_projections` slice". This OVERTURNS the shipped 15d fix-4
+    // position, which accepted the shape because it round-tripped faithfully.
+    //
+    // WHY it is meaningless: `searchable→FTS` and `searchable→vector` are TIER
+    // LABELS, not roles ([`ProjectionRole`] has exactly three members). The
+    // sub-objects SELECT a sub-target of `searchable`; they do not CONFER one —
+    // both build predicates ([`StoredProjection::wants_property_fts`] and
+    // [`StoredProjection::wants_vector`]) are conjunctions with
+    // `roles.contains(Searchable)`. So without the role the declaration builds no
+    // property-FTS, enrols no kind and embeds nothing: it names a sub-target of a
+    // projection that does not exist. The reject is therefore keyed on the
+    // ABSENCE of `searchable` and on nothing else — `filterable` / `rankable` are
+    // orthogonal axes that neither supply nor substitute for it.
+    //
+    // FAMILY: [`EngineError::WriteValidation`], per decision #18 (0.8.20 Slice 22)
+    // — the write-SHAPE boundary is ONE family, and this is a shape rejection.
+    // Deliberately a SEPARATE loop from the name checks above: those are NAME
+    // rejections that keep `InvalidArgument { msg }` because the message naming
+    // the offending value is the caller's only handle on it. `dev/design/errors.md`
+    // ("Validation boundary") states that split; keeping the two loops apart keeps
+    // the split visible in the code and this change one-line-reversible.
+    //
+    // KNOWN COST (TC-95/TC-98, HITL-deferred): `WriteValidation` is a UNIT
+    // variant, so this refusal cannot name WHICH spec in `specs` was invalid —
+    // strictly worse than the name rejections above. Recorded, not worked around.
+    for spec in specs {
+        if spec.roles.contains(&ProjectionRole::Searchable) {
+            continue;
+        }
+        if spec.fts.is_some() || spec.vector.is_some() {
+            return Err(EngineError::WriteValidation);
+        }
+    }
+
+    let mut delta = ProjectionDelta::default();
+
+    // 0.8.20 Slice 20c fix-1 (codex §9 [P2]) — snapshot "is the dense arm
+    // declared?" BEFORE any registry mutation. Together with the same read taken
+    // after them it identifies the ONE transition that owns the inverse of this
+    // slice's enrolment: declared -> not-declared. See
+    // [`unenrol_registry_vector_node_kinds`] for why the inverse is keyed to that
+    // TRANSITION rather than to the bare post-state.
+    let vector_declared_before =
+        vector_projection_declared(tx).map_err(|_| EngineError::Storage)?;
+
+    // (1) Explicit drops. Omission never drops (C3); only this list does.
+    let before_drop = load_projection_registry(tx).map_err(|_| EngineError::Storage)?;
+    for name in drop {
+        if before_drop.contains_key(name) {
+            clear_attribute_projection(tx, name).map_err(|_| EngineError::Storage)?;
+            remove_projection_row(tx, name).map_err(|_| EngineError::Storage)?;
+            delta.dropped.push(name.clone());
+        }
+        // dropping an absent projection is an idempotent no-op, not an error.
+    }
+
+    // (2) Diff each spec against the post-drop registry.
+    let current = load_projection_registry(tx).map_err(|_| EngineError::Storage)?;
+    for spec in specs {
+        let desired = StoredProjection::from_spec(spec);
+        match current.get(&spec.name) {
+            Some(existing) if existing == &desired => {
+                // Idempotent re-registration — no-op (the keystone acceptance).
+            }
+            Some(existing) => {
+                if is_destructive_projection_change(existing, &desired) {
+                    return Err(EngineError::ProjectionDestructive {
+                        name: spec.name.clone(),
+                        delta: describe_projection_delta(existing, &desired),
+                    });
+                }
+                persist_projection_row(tx, &spec.name, &desired)
+                    .map_err(|_| EngineError::Storage)?;
+                clear_attribute_projection(tx, &spec.name).map_err(|_| EngineError::Storage)?;
+                backfill_attribute(tx, &spec.name, &desired).map_err(|_| EngineError::Storage)?;
+                if desired.wants_eav() {
+                    delta.built.push(spec.name.clone());
+                }
+                // 0.8.20 Slice 15e fix-2 finding 2 [P2] — this arm ONLY runs when
+                // the registry row actually CHANGED (`existing != desired`), so the
+                // delta MUST reflect that change; otherwise an accepted mutation
+                // reports `unchanged = true` — a no-op lie to SDK callers. The prior
+                // `&& !existing.has_deferred()` guard suppressed a deferred-ONLY
+                // change (e.g. `rankable` → `rankable + vector`, which builds no EAV
+                // so `built` stays empty): the row persisted but `delta` came back
+                // empty. Mirror the fresh-registration push (`if
+                // desired.has_deferred()`). Every valid non-empty spec has
+                // `wants_eav()` OR `has_deferred()`, so on a real change at least one
+                // of `built`/`deferred` is now populated ⇒ `unchanged` can never be
+                // `true` on a persisted change. A genuine no-op (identical spec)
+                // takes the idempotent arm above and is untouched.
+                if desired.has_deferred() {
+                    delta.deferred.push(spec.name.clone());
+                }
+            }
+            None => {
+                persist_projection_row(tx, &spec.name, &desired)
+                    .map_err(|_| EngineError::Storage)?;
+                clear_attribute_projection(tx, &spec.name).map_err(|_| EngineError::Storage)?;
+                backfill_attribute(tx, &spec.name, &desired).map_err(|_| EngineError::Storage)?;
+                if desired.wants_eav() {
+                    delta.built.push(spec.name.clone());
+                }
+                if desired.has_deferred() {
+                    delta.deferred.push(spec.name.clone());
+                }
+            }
+        }
+    }
+
+    // 0.8.20 Slice 15e — after the registry mutations, reconcile the live vec0
+    // shape with the (possibly changed) `filterable` set: a NON-DESTRUCTIVE
+    // reshape adds/removes the `attr_<hex>` pre-KNN columns preserving every
+    // row's embedding (TC-46, HITL Option 1). Runs on the caller's write
+    // transaction, so the reshape commits atomically with the registry row. On an
+    // idempotent re-registration the desired set equals the live set, so this is a
+    // no-op (vec0 untouched) and `delta.unchanged` above is unaffected. Skipped
+    // when there is no embedder profile (⇒ no `vector_default` to reshape).
+    if let Ok(dimension) = default_profile_dimension(tx) {
+        reconcile_vector_attr_columns(tx, dimension).map_err(|_| EngineError::Storage)?;
+    }
+
+    delta.unchanged =
+        delta.built.is_empty() && delta.dropped.is_empty() && delta.deferred.is_empty();
+
+    // 0.8.20 Slice 20c (R-20-DR remainder) — THE C4 RIDER. Everything above has
+    // only *persisted* the `searchable→vector` declaration and pushed its name
+    // onto `delta.deferred`. Acknowledging deferred work and then dropping it on
+    // the floor is what made `drain` a FALSE-READY barrier; this call is where the
+    // deferred work is actually enqueued onto the runtime `drain` waits on.
+    //
+    // fix-1 (codex §9 [P2]) — and its SYMMETRIC INVERSE, on the same
+    // transaction. If this call removed the last `searchable→vector` declaration,
+    // un-enrol the node kinds the forward path enrols; otherwise enrolment is a
+    // one-way door and the write path keeps embedding for a projection the
+    // registry no longer declares.
+    let vector_declared_after = vector_projection_declared(tx).map_err(|_| EngineError::Storage)?;
+    let enqueued = if vector_declared_after {
+        // 0.8.20 Slice 22 (R-20-VC / TC-67) — THE REPORT. Scoped to a live dense
+        // -arm declaration (with no `searchable→vector` projection there is
+        // nothing for a kind to be unsupported FOR, so reporting would be noise
+        // on every `filterable`/FTS-only call), but deliberately OUTSIDE the
+        // `dense_arm_live` gate below — see [`unsupported_vector_kinds`].
+        //
+        // Placed AFTER `delta.unchanged` is computed, and it does not feed it:
+        // this is a STATE report, not a diff, so an idempotent re-apply still
+        // carries it (that is also the documented refresh path for the
+        // declare-time residual).
+        delta.vector_unsupported_kinds =
+            unsupported_vector_kinds(tx).map_err(|_| EngineError::Storage)?;
+        if dense_arm_live {
+            enqueue_declared_vector_backfill(tx).map_err(|_| EngineError::Storage)?
+        } else {
+            false
+        }
+    } else {
+        // fix-1 (codex §9 round 1 [P2], ledger `TC-71`) — the transition arm is
+        // KEPT as-is and a state-keyed reconciliation is added BESIDE it; neither
+        // subsumes the other. The transition fires when this very call removed the
+        // last dense-arm declaration, including the case where it removed the last
+        // `vector` sub-object with it (which leaves
+        // `registry_governs_an_inert_dense_arm` false). The reconciliation covers
+        // the ALREADY-AFFECTED database whose user calls `configure_projections`
+        // again with anything at all: there `before` is already `false`, so the
+        // transition arm is inert and the inert enrolment used to survive
+        // indefinitely. `||` short-circuits, so the transition case pays nothing
+        // extra; the other case pays two cached `EXISTS` probes on a governed call,
+        // never on the hot write path.
+        if vector_declared_before
+            || registry_governs_an_inert_dense_arm(tx).map_err(|_| EngineError::Storage)?
+        {
+            unenrol_registry_vector_node_kinds(tx).map_err(|_| EngineError::Storage)?;
+        }
+        false
+    };
+    Ok((delta, enqueued))
+}
+
+/// 0.8.20 Slice 20c fix-1 (codex §9 [P2] "Stop embedding after vector projection
+/// drops") — **the inverse of [`enqueue_declared_vector_backfill`]'s enrolment.**
+
+exec
+/bin/bash -lc "grep -n \"fn configure_projections\" -n src/rust/crates/fathomdb-engine/src/lib.rs && sed -n '8350,8450p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+ succeeded in 0ms:
+8321:    pub fn configure_projections(
+        // enrolment + terminal-clear committed above; now WAKE the dispatcher, or
+        // it sleeps on `pending_scan == false` and the very next `drain` burns its
+        // whole timeout waiting for work nobody scheduled. `drain` itself stays
+        // PASSIVE (a barrier, never a trigger) — the notify belongs here, on the
+        // enqueue side. Deliberately after the connection guard is dropped: the
+        // dispatcher immediately opens its own connection to scan.
+        if enqueued_backfill {
+            self.projection_runtime.notify_new_work();
+        }
+        self.counters.record_admin();
+        Ok(delta)
+    }
+
+    /// 0.8.20 Slice 15d (R-20-PR) — read the current projection registry (C5
+    /// introspection: `read.projections`). Returns every declared
+    /// [`ProjectionSpec`] sorted by name, so a caller can inspect current state
+    /// (and the destructive delta a change would cause) BEFORE applying. Pure
+    /// read; never mutates.
+    ///
+    /// 0.8.20 Slice 20 (R-20-DR) — this is ALSO the surface that populates the
+    /// engine-set [`ProjectionVector::dense_readiness`] READ METADATA. It is
+    /// derived here, on the way out (see [`derive_dense_readiness`]); the durable
+    /// registry stores no readiness. Only a spec that declares the
+    /// `searchable→vector` sub-object carries one — `filterable` and
+    /// `searchable→FTS` are same-transaction and have no readiness axis.
+    pub fn read_projections(&self) -> Result<Vec<ProjectionSpec>, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        let registry = load_projection_registry(connection).map_err(|_| EngineError::Storage)?;
+        // Derived ONCE per call, so every vector projection in one read reports a
+        // consistent readiness (they are all served by the one vector pipeline).
+        // Skipped entirely when no vector projection is declared, keeping the
+        // no-vector default path free of the extra probe.
+        let mut readiness: Option<DenseReadiness> = None;
+        let mut specs: Vec<ProjectionSpec> =
+            registry.iter().map(|(name, stored)| stored.to_spec(name)).collect();
+        for spec in &mut specs {
+            if let Some(vector) = spec.vector.as_mut() {
+                let value = match readiness {
+                    Some(value) => value,
+                    None => {
+                        let value = derive_dense_readiness(connection)?;
+                        readiness = Some(value);
+                        value
+                    }
+                };
+                vector.dense_readiness = Some(value);
+            }
+        }
+        Ok(specs)
+    }
+
+    /// OPP-12 Phase-1 (0.8.19 Slice 10, R-PG-1/2) — irreversibly hard-erase a
+    /// governed node. A SEPARATE verb from [`Engine::transition`] (NOT on the
+    /// `recovery_denylist`). Precondition: DELETED-FIRST — legal only from
+    /// `deleted` (else a typed [`EngineError::IllegalTransition`] to `purged`);
+    /// IDEMPOTENT — purging an already-absent/already-purged id is a no-op
+    /// success. Keys on the bare `logical_id` (`l:` only); `h:`/`p:` →
+    /// [`EngineError::NotLifecycleAddressable`].
+    ///
+    /// In ONE transaction, physically erases every ROW-OWNED target for the node
+    /// (design §3 / gap-3): all `canonical_nodes` versions; its `search_index`,
+    /// `search_index_edges`, `search_index_v2` FTS rows; its `vector_default`
+    /// (vec0) + `_fathomdb_vector_rows` vectors; its `_fathomdb_projection_terminal`
+    /// bookkeeping; and — CASCADE-REMOVE, no content-free stubs — every
+    /// `canonical_edges` row touching it (`from_id`/`to_id`) plus those edges'
+    /// projection shadows. The global/kind-level registries
+    /// `_fathomdb_projection_state` and `_fathomdb_vector_kinds` are NOT keyed to
+    /// a node id and are DELIBERATELY untouched.
+    ///
+    /// Erasure completeness relies on the standing `PRAGMA secure_delete=ON`
+    /// (design §3 gap-4) which zeroes every freed page — so no per-purge `VACUUM`.
+    /// (Freelist content written on a pre-20 DB before `secure_delete` was on is a
+    /// documented residual; there is no forced migration-time `VACUUM`.)
+    pub fn purge(&self, logical_id: &str) -> Result<(), EngineError> {
+        self.ensure_open()?;
+        let lid = Self::resolve_lifecycle_target(logical_id)?;
+
+        // Drain in-flight projection work before the erase, exactly as
+        // `excise_source` does: SQLite-WAL would otherwise let a worker that
+        // already dequeued a job for a purged cursor commit its vec0 /
+        // `_fathomdb_vector_rows` INSERT after our DELETE releases the writer
+        // lock, leaving residue that defeats the erasure sweep.
+        // Settle every pending projection FIRST (unfrozen) so no unprojected row
+        // is left behind that a subsequent freeze would wedge `drain` on, and so
+        // the async worker is idle. THEN freeze the scanner (no new work is queued
+        // while we erase), confirm idle, and erase in one writer transaction.
+        // Freezing before the first drain would stall projection of any
+        // just-written row → `database_has_pending_projection_work` never clears →
+        // `drain` times out into `Scheduler`.
+        self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS)?;
+        self.projection_runtime.set_frozen(true);
+        let outcome = self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS).and_then(|()| self.purge_inner(&lid));
+        self.projection_runtime.set_frozen(false);
+        // 0.8.20 Slice 5b (R-20-E5/E6) — the rows are gone from the tables; now
+        // finish the erasure AT REST (telemetry sink + `-wal` bytes) before
+        // reporting success. Runs after the connection guard inside
+        // `purge_inner` has been dropped: `complete_erasure_at_rest` re-acquires
+        // it for the checkpoint.
+        outcome?;
+
+exec
+/bin/bash -lc "sed -n '8295,8350p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+ succeeded in 0ms:
+
+    /// 0.8.20 Slice 15d (R-20-PR / C-1) — the projection registry as a
+    /// DECLARATIVE, IDEMPOTENT apply. The engine is the SOLE projection authority
+    /// (Q3): it diffs the supplied `specs` against the durable registry and
+    /// backfills the difference in ONE transaction. Cheap projections
+    /// (`filterable`, `searchable→FTS`) are built same-transaction; `rankable`
+    /// and the `searchable→vector` sub-target are PERSISTED but deferred (F9 /
+    /// Slice 20) — declaring them never errors (graceful-absent, Q6a).
+    ///
+    /// 0.8.20 Slice 23 (`R-20-SV`) — **SPEC VALIDATION.** A spec that carries an
+    /// `fts` or `vector` sub-object WITHOUT [`ProjectionRole::Searchable`] is an
+    /// INVALID SPEC and is refused with [`EngineError::WriteValidation`] (HITL
+    /// 2026-07-24; see [`apply_projection_config`] for the full rationale). A
+    /// rejected request is a TOTAL no-op. `read_projections` is unaffected — it
+    /// is a pure read — so a LEGACY row in that shape still reports verbatim but
+    /// can no longer be re-applied.
+    ///
+    /// `drop` is EXPLICIT (C3, `api-surface.md:27`): omission of a live
+    /// projection from `specs` does NOT drop it; removal requires naming it in
+    /// `drop`. An incompatible/destructive change to a live projection that is
+    /// NOT in `drop` is refused with [`EngineError::ProjectionDestructive`], the
+    /// destructive delta surfaced — never silent data loss. Re-applying an
+    /// unchanged spec diffs to a no-op ([`ProjectionDelta::unchanged`]).
+    ///
+    /// Pair with [`Engine::read_projections`] to see current state before
+    /// applying.
+    pub fn configure_projections(
+        &self,
+        specs: &[ProjectionSpec],
+        drop: &[String],
+    ) -> Result<ProjectionDelta, EngineError> {
+        self.ensure_open()?;
+        // Settle in-flight async projection work first (same rationale as
+        // `transition`, including the 0.8.20 Slice 21a-2 / TC-57 correction
+        // recorded there: the worker commits on its own connection with a rusqlite
+        // DEFERRED transaction, NOT `BEGIN IMMEDIATE`). A backfill issued while it
+        // holds the write lock would SQLITE_BUSY.
+        self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS)?;
+
+        // 0.8.20 Slice 20c (R-20-DR remainder) — the backfill is gated on a LIVE
+        // embedder. With `EmbedderChoice::None` there is no dense arm, so the
+        // declaration persists and DEFERS (Q6a graceful-absent, exactly like
+        // `rankable`) rather than queueing embeds that could only retry to a
+        // `failed` terminal. Re-applying the same spec in a session that HAS an
+        // embedder grafts the backfill on — the shipped graceful-graft contract.
+        let dense_arm_live = self.runtime_embedder.is_some();
+        let (delta, enqueued_backfill) = {
+            let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+            let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+            let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
+            let applied = apply_projection_config(&tx, specs, drop, dense_arm_live)?;
+            tx.commit().map_err(|_| EngineError::Storage)?;
+            applied
+        };
+        // 0.8.20 Slice 20c (R-20-DR remainder) — the C4 rider's second half. The
+        // enrolment + terminal-clear committed above; now WAKE the dispatcher, or
+
+exec
+/bin/bash -lc "sed -n '1,260p' scripts/commission-manifest.sh && sed -n '850,1010p' scripts/commission-manifest.sh" in /home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+ succeeded in 0ms:
+#!/usr/bin/env bash
+# scripts/commission-manifest.sh — T3b (DOC-HYGIENE-2): the GENERATED COMMISSION
+# MANIFEST. Given a release and a slice, emit the citation list an orchestrator
+# brief needs — design-of-record paths, contract paths, plan section anchors, the
+# base SHA, the worktree rules and the stop conditions — and HARD-FAIL if any of
+# it has rotted.
+#
+# ---------------------------------------------------------------------------
+# WHY (measured, not hypothetical)
+# ---------------------------------------------------------------------------
+# Commissioning a slice meant hand-assembling the same list every time out of a
+# 5-12 file fan-out (the master, the plan, the STATUS board, the hand-off, the
+# ledgers, the design tier), and NOTHING checked that the paths it cited still
+# resolved. T1d measured what that costs on the anchor axis: the TC-45 pointers
+# in `dev/plans/plan-0.8.20.md` were ~2,100 lines off and, per `git log`, had
+# never been correct. A citation nobody checks rots silently.
+#
+# THIS REPLACES A HAND-MAINTAINED BRIEF TEMPLATE; it does not add one. That shape
+# already exists twice in-repo, and the section set emitted below is DERIVED from
+# what those two documents actually contain, so the generated manifest is a real
+# substitute rather than a parallel invention:
+#   * dev/plans/prompts/LIBRARY-BUMP-ORCHESTRATOR-TEMPLATE.md — Assignment
+#     (branch-from tip, worktree path, coupling), STEP 0 Isolate, Escalate-to-LBS,
+#     Closure output.
+#   * dev/plans/prompts/0.8.0-SLICE-TEMPLATE.md — {{CONTRACT_REF}}, {{READING}},
+#     {{MANDATE}}, {{DEFERRED}}, {{AC_IDS}}, {{GUARDRAILS}}, {{DOD}}, §6 scope
+#     discipline, §7 recovery, §9 closure schema.
+#
+# ---------------------------------------------------------------------------
+# WHERE THE FACTS COME FROM (it re-scrapes nothing that already has an owner)
+# ---------------------------------------------------------------------------
+#   * dev/plans/release-state-<release>.json (T2a) is the SINGLE WRITER for the
+#     ladder, the landed slices + their landing SHAs, the SCHEMA version, the
+#     next slice, the AC state and the ruled/unruled decision set. Every one of
+#     those facts below is read from it — never re-derived from prose. Change a
+#     fact THERE and the manifest follows.
+#   * `status:` frontmatter on dev/design/**/*.md (T2c) selects the design tier,
+#     so the design-of-record list is derived, not a hardcoded list.
+#   * The plan's own `##` headings supply the section anchors, looked up by ROLE
+#     keyword rather than by line number (T1d's ban) or by a frozen title string.
+#
+# ---------------------------------------------------------------------------
+# THE DESIGN TIER HAS TWO HALVES: DISCOVERY, AND CITATION (`design_refs`)
+# ---------------------------------------------------------------------------
+# The discovery half is the pair of selectors in scan_design(): a doc whose
+# FILENAME names this release AND this slice, and a doc whose CONTENT mentions a
+# token derived from the ladder entry's own `short`/`title`. Both are measured,
+# and both MISS AN ENTIRE CLASS OF SLICE BY CONSTRUCTION:
+#   * The filename selector hit 1 of the 12 slices in the 0.8.20 ladder.
+#   * `plan-<release>.md` §3 is "frozen at Slice 0", so a RESERVED-GAP slice
+#     minted mid-release by HITL ruling has requirement ids (R-20-CR, R-20-VC,
+#     R-20-SV and their TC-* carries) that appear NOWHERE under dev/design/ —
+#     the design package predates them — and it never got a §3.0 memo of its
+#     own either.
+# The TC-37 vacuous-pass guard therefore hard-failed on three well-designed
+# slices in a row: 21, 22 and 23 (tracked as TC-92 and TC-94).
+#
+# `design_refs` on a ladder entry is the CITATION half. The Steward names the
+# docs; nothing is inferred. Four properties are deliberate:
+#   1. OPTIONAL AND INERT. No key ⇒ byte-for-byte the behaviour that predates
+#      it. It adds a tier; it does not reinterpret the existing one.
+#   2. CHECKED LIKE EVERY OTHER PATH. A curated citation carries the Steward's
+#      authority, so a dead one misleads MORE than a dead scan hit, not less:
+#      CHECK 1 applies with no exemption and the manifest is not emitted.
+#   3. IT REACHES OUTSIDE `dev/design/`. dev/adr/**, dev/interfaces/** — the
+#      walker can never go there and is NOT widened to (that would drag every
+#      unrelated doc into every brief). Out-of-tree docs often carry no
+#      `status:` frontmatter at all, and the row then SAYS there is none rather
+#      than inventing one, exactly as the UNREVIEWED rows refuse to launder.
+#   4. IT IS NEVER BLENDED WITH THE SCAN. Curated rows are labelled CURATED and
+#      kept in their own block, so a reader can always tell a doc somebody chose
+#      from a doc a substring match found.
+# It does NOT weaken the guard: an empty/absent `design_refs` AND an empty scan
+# is still a hard failure.
+#
+# ---------------------------------------------------------------------------
+# HOW UNREVIEWED IS HANDLED (deliberate, and the honest part)
+# ---------------------------------------------------------------------------
+# T2c's backfill was conservative on purpose: most design docs are UNREVIEWED,
+# which means "nobody has classified this yet" — NOT "this is current" — and
+# scripts/lint-design-status.sh proves the PRESENCE of a status field, never its
+# TRUTH (the classification is a separate owed slice, TC-50). So this manifest
+# NEVER presents an UNREVIEWED doc as authoritative: each cited doc carries its
+# recorded status inline, UNREVIEWED/UNKNOWN rows are explicitly marked
+# unclassified with the TC-50 pointer, and the section header says the status is
+# recorded rather than verified. The reader judges; the generator does not
+# launder.
+#
+# ---------------------------------------------------------------------------
+# WHAT IT ENFORCES (two hard checks + one guard)
+# ---------------------------------------------------------------------------
+# CHECK 1 — EVERY CITED PATH MUST EXIST. Always on, not a `--verify` extra. A
+#   path that does not resolve is a HARD failure and the manifest is NOT emitted:
+#   printing a brief with one dead citation in it is the artifact this replaces.
+# CHECK 2 — EVERY CITED ANCHOR MUST OCCUR. Anchors are greppable section
+#   headings/symbols, never `file:line` (T1d RULE 1), and each is verified by
+#   literal match inside the file it names (T1d RULE 2). Swapping an unverified
+#   NUMBER for an unverified SYMBOL would just launder a bad pointer.
+# CHECK 3 — THE BASE SHA IS THE TARGET SLICE'S PREDECESSOR, never `max(landed)`.
+#   For any slice that is not the next one, the newest landed slice can BE the
+#   target (or later), and a manifest that says "branch from here" while naming
+#   the target's own merge is the agent-worktree-stale-base trap in printed
+#   form. §2 takes the greatest landed slice STRICTLY BELOW the target, marks a
+#   regeneration of an already-landed slice as HISTORICAL, and says plainly
+#   when no predecessor exists rather than emitting a blank or a wrong SHA.
+# GUARD — TC-37 VACUOUS PASS (this repo's named failure class). Zero design
+#   citations for the slice, zero citations overall, zero paths verified, or a
+#   sweep that discovers zero state files: all HARD failures. A manifest that is
+#   empty has briefed nobody while looking green.
+#
+# READ-ONLY: emits to stdout, writes no file into the repo. It records state and
+# cites decisions; it changes no slot, scope, requirement, AC or ruling.
+#
+# Usage:
+#   scripts/commission-manifest.sh <release> <slice|next> [--verify]
+#   scripts/commission-manifest.sh --verify-all
+# Exit: 0 = manifest emitted (or verified) with every path and anchor resolving;
+#       1 = a dead citation, an unknown release/slice, or a vacuous manifest.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+usage() {
+  cat <<'USAGE'
+usage:
+  scripts/commission-manifest.sh <release> <slice|next> [--verify]
+  scripts/commission-manifest.sh --verify-all
+
+  <release>   a release with a dev/plans/release-state-<release>.json (e.g. 0.8.20)
+  <slice>     a slice number in that file's ladder, or the word `next`
+  --verify    run the path/anchor existence checks and print only the counts
+  --verify-all  verify the NEXT slice of every release-state file (CI shape)
+USAGE
+}
+
+MODE="emit"
+RELEASE=""
+SLICE=""
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help) usage; exit 0 ;;
+    --verify) MODE="verify" ;;
+    --verify-all) MODE="verify-all" ;;
+    -*) echo "FAIL commission-manifest: unknown option $arg" >&2; usage >&2; exit 1 ;;
+    *)
+      if [ -z "$RELEASE" ]; then RELEASE="$arg"
+      elif [ -z "$SLICE" ]; then SLICE="$arg"
+      else echo "FAIL commission-manifest: unexpected argument $arg" >&2; usage >&2; exit 1; fi ;;
+  esac
+done
+
+if [ "$MODE" != "verify-all" ] && { [ -z "$RELEASE" ] || [ -z "$SLICE" ]; }; then
+  echo "FAIL commission-manifest: a release AND a slice are required." >&2
+  usage >&2
+  exit 1
+fi
+
+# python3 carries the JSON parse, the design-tier scan and the citation checks.
+# A gate that cannot run must fail loudly, never skip (TC-37).
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "FAIL commission-manifest: python3 not found; the state-file parser and the" >&2
+  echo "  citation existence checks cannot run. A tool that cannot check its own" >&2
+  echo "  citations must not emit them (TC-37)." >&2
+  exit 1
+fi
+
+MODE="$MODE" RELEASE="$RELEASE" SLICE="$SLICE" python3 - <<'PY'
+import glob
+import json
+import os
+import re
+import sys
+
+MODE = os.environ["MODE"]
+RELEASE = os.environ["RELEASE"]
+SLICE_SEL = os.environ["SLICE"]
+
+STATE_GLOB = "dev/plans/release-state-*.json"
+
+# Fixed infrastructure the manifest cites. These are SOURCES OF RECORD, not
+# restatements: the manifest points at them and stops. Every one is existence-
+# checked, so a rename fails here rather than being handed to an agent.
+ORCH = "dev/design/orchestration.md"
+HANDOFF = "dev/plans/prompts/0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md"
+LBO_TEMPLATE = "dev/plans/prompts/LIBRARY-BUMP-ORCHESTRATOR-TEMPLATE.md"
+SLICE_TEMPLATE = "dev/plans/prompts/0.8.0-SLICE-TEMPLATE.md"
+PREFLIGHT = "scripts/preflight.sh"
+ACCEPTANCE = "dev/acceptance.md"
+AGENTS = "AGENTS.md"
+SURFACE_ALLOWLIST = "src/conformance/governed-surface-allowlist.json"
+SURFACE_PIN = "scripts/governed-surface-pin.json"
+CODEX_DIR = "dev/plans/runs/codex"
+DESIGN_ROOT = "dev/design"
+
+# T1d RULE 1's shape, applied to this tool's OWN output: a manifest that emitted
+# a `name:123` pointer would reintroduce the class T1d closed.
+LINE_ANCHOR_RE = re.compile(r"`[A-Za-z_][A-Za-z0-9_.+-]*:[0-9]{3,}(-[0-9]+)?\+?`")
+
+# Status ordering for the design tier. Lower sorts first. UNREVIEWED/UNKNOWN sit
+# BELOW every classified value on purpose — they are queue markers, not verdicts.
+STATUS_RANK = {
+    "ACTIVE": 0, "locked": 1, "accepted": 1, "adopted": 1, "ratified": 1,
+    "signed": 1, "proposal": 3, "proposed": 3, "COMPLETE": 2, "PROPOSED": 3,
+    "UNKNOWN": 8, "UNREVIEWED": 9, "SUPERSEDED": 10,
+}
+UNCLASSIFIED = ("UNREVIEWED", "UNKNOWN")
+
+
+def die(lines):
+    for ln in lines:
+        print(ln, file=sys.stderr)
+    sys.exit(1)
+
+
+def read(path):
+    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+        return fh.read()
+
+
+def frontmatter_status(path):
+    """Parse `status:` exactly as scripts/lint-design-status.sh does."""
+    try:
+        text = read(path)
+    except OSError:
+        return None
+    lines = text.split("\n")
+    if not lines or lines[0].strip() != "---":
+        return None
+    block = []
+    for ln in lines[1:]:
+        if ln.rstrip() == "---":
+            break
+        block.append(ln)
+    else:
+        return None
+    for ln in block:
+        m = re.match(r"^status:\s*(.*?)\s*$", ln)
+        if m and m.group(1):
+            return m.group(1)
+    return None
+
+
+class Manifest:
+    """Accumulates the emitted lines AND the citations they make, so the
+    existence checks run over exactly what the brief says — not a parallel list
+    that could drift from it."""
+
+    def __init__(self):
+        self.lines = []
+        self.cites = []      # (path, needle|None, label)
+        self.problems = []
+
+    def out(self, text=""):
+        self.lines.append(text)
+
+    def cite(self, path, needle=None, label=""):
+        self.cites.append((path, needle, label))
+        if needle is not None:
+            return "`%s` in `%s`" % (needle, path)
+        return "`%s`" % path
+
+                  % (d, dep.get("status")))
+    m.out("  Ruled decisions are CITED, never re-decided or restated: %d ruling(s) recorded in the"
+          % len(dec.get("ruled") or []))
+    m.out("  state file's `decisions.ruled` with their sources; read them there.")
+    for label, path, kw in (("hard rules", ORCH, ["hard rules"]),
+                            ("scope discipline", SLICE_TEMPLATE, ["scope discipline"]),
+                            ("recovery", SLICE_TEMPLATE, ["when something goes wrong"]),
+                            ("escalate", LBO_TEMPLATE, ["escalate to lbs"])):
+        a = m.anchor(path, kw, label)
+        if a:
+            m.out("  %-17s %s" % (label, a))
+    m.out()
+
+    # ---- 9. CLOSURE (orchestration §8; LBO 'Closure output') --------------
+    m.out("## 9. CLOSURE   [orchestration §8 schema; LBO 'Closure output'; SLICE-TEMPLATE §9]")
+    a = m.anchor(ORCH, ["closure output"], "closure schema")
+    if a:
+        m.out("  output.json      %s" % a)
+    a = m.anchor(SLICE_TEMPLATE, ["closure"], "slice closure", required=False)
+    if a:
+        m.out("  slice closure    %s" % a)
+    m.out("  write it LAST, after every commit, and report the head SHA to the orchestrator.")
+    m.out()
+    return m
+
+
+def schema_src_path(state):
+    """The state file states the SCHEMA source as prose ('pub const X in <path>');
+    take the path out of it rather than hardcoding a second copy."""
+    src = state.get("schema_version_source") or ""
+    for tok in src.split():
+        if "/" in tok:
+            return tok
+    return "src/rust/crates/fathomdb-schema/src/lib.rs"
+
+
+def verify(m, release, slice_no):
+    """CHECK 1 + CHECK 2 + the TC-37 guard. Returns (paths, anchors) verified."""
+    problems = list(m.problems)
+    paths_ok = 0
+    anchors_ok = 0
+    seen = set()
+    for path, needle, label in m.cites:
+        exists = os.path.exists(path)   # MUTATION POINT (see the test suite)
+        if not exists:
+            problems.append(
+                "FAIL commission-manifest: cited path `%s` does NOT exist in the worktree\n"
+                "  (citation role: %s). The file was renamed, moved or deleted; a brief built\n"
+                "  on it would send an agent to a dead path." % (path, label or "unlabelled"))
+            continue
+        if path not in seen:
+            seen.add(path)
+            paths_ok += 1
+        if needle is not None:
+            if os.path.isdir(path):
+                problems.append(
+                    "FAIL commission-manifest: `%s` is a directory but the citation names the\n"
+                    "  symbol `%s` (role: %s)." % (path, needle, label))
+                continue
+            if needle not in read(path):
+                problems.append(
+                    "FAIL commission-manifest: cited symbol `%s`\n"
+                    "  does NOT occur in `%s` (role: %s). The heading or symbol was renamed —\n"
+                    "  an unverified pointer must never be laundered as a verified one."
+                    % (needle, path, label))
+                continue
+            anchors_ok += 1
+
+    body = "\n".join(m.lines)
+    hit = LINE_ANCHOR_RE.search(body)
+    if hit:
+        problems.append(
+            "FAIL commission-manifest: the manifest emitted a bare line anchor %s.\n"
+            "  `<name>:<line>` pointers are banned (T1d): emit a greppable section anchor."
+            % hit.group(0))
+
+    if not m.cites:
+        problems.append(
+            "FAIL commission-manifest: ZERO citations emitted for %s Slice %s.\n"
+            "  An empty manifest briefs nobody while looking green — the TC-37 vacuous-pass\n"
+            "  class. This is a hard failure, never an exit 0." % (release, slice_no))
+    if paths_ok == 0 and not problems:
+        problems.append(
+            "FAIL commission-manifest: ZERO paths verified for %s Slice %s (TC-37)."
+            % (release, slice_no))
+    return paths_ok, anchors_ok, problems
+
+
+def generate(release, slice_sel):
+    state_path, state = load_state(release)
+    slice_no, entry = pick_slice(state, state_path, slice_sel)
+
+    tokens = slice_tokens(entry)
+    # The guard is NOT weakened by `design_refs`: it now asks whether the design
+    # tier is empty by EITHER route. A non-empty curation satisfies it (that is
+    # the whole point — a reserved-gap slice both selectors miss by construction
+    # is still a designed slice), but an empty or absent one leaves the original
+    # hard failure exactly where it was. `design_refs: []` is not a design.
+    curated = curated_design_refs(entry, state_path, slice_no)
+    if not curated and not scan_design(tokens, release, slice_no):
+        die(["FAIL commission-manifest: ZERO design docs matched %s Slice %s (tokens: %s)."
+             % (release, slice_no, ", ".join(tokens) or "none derived"),
+             "  The required-reading list would be EMPTY, so the manifest would brief nobody",
+             "  while exiting 0 — this repo's named TC-37 vacuous-pass class. Fix it by",
+             "  authoring/citing the design of record for this slice, by naming the slice's",
+             "  requirement id in the state file's `short`/`title` so the scan can find it, or",
+             "  — for a reserved-gap slice whose ids postdate the design package and which both",
+             "  selectors therefore miss by construction — by listing the docs to read in this",
+             "  ladder entry's `design_refs`."])
+
+    m = build(release, state_path, state, slice_no, entry, curated)
+    paths_ok, anchors_ok, problems = verify(m, release, slice_no)
+    if problems:
+        problems.append(
+            "\ncommission-manifest: %d dead citation(s) for %s Slice %s — manifest NOT emitted."
+            % (len(problems), release, slice_no))
+        die(problems)
+    return slice_no, entry, m, paths_ok, anchors_ok
+
+
+if MODE == "verify-all":
+    states = sorted(glob.glob(STATE_GLOB))
+    if not states:
+        die(["FAIL commission-manifest: ZERO release-state files under %s." % STATE_GLOB,
+             "  The sweep loop never ran, so exiting 0 would vouch for nothing (TC-37)."])
+    for sp in states:
+        rel = re.sub(r"^dev/plans/release-state-(.*)\.json$", r"\1", sp)
+        sl, entry, m, paths_ok, anchors_ok = generate(rel, "next")
+        print("commission-manifest: %s next slice %s (%s) — %d path(s) and %d anchor(s) verified."
+              % (rel, sl, entry.get("short") or "?", paths_ok, anchors_ok))
+    sys.exit(0)
+
+slice_no, entry, m, paths_ok, anchors_ok = generate(RELEASE, SLICE_SEL)
+if MODE == "verify":
+    print("commission-manifest: %s Slice %s (%s) — %d path(s) and %d anchor(s) verified, 0 dead."
+          % (RELEASE, slice_no, entry.get("short") or "?", paths_ok, anchors_ok))
+    sys.exit(0)
+
+print("\n".join(m.lines))
+print("-" * 100)
+print("PATH VERIFICATION: %d distinct path(s) exist, %d anchor(s) verified to occur, 0 dead."
+      % (paths_ok, anchors_ok))
+print("Every citation above was checked at generation time. Re-run before reusing this brief.")
+PY
+
+exec
+/bin/bash -lc './scripts/commission-manifest.sh --verify-all' in /home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+ succeeded in 0ms:
+commission-manifest: 0.8.20 next slice 23 (R-20-SV) — 19 path(s) and 24 anchor(s) verified.
+
+exec
+/bin/bash -lc 'cargo test -p fathomdb-engine --test slice23_spec_validation_reject --test slice21c_vector_role_gate --test tc71_fix1_inert_enrolment_reconcile -- --nocapture' in /home/coreyt/projects/fathomdb-worktrees/slice-23-sv/src/rust
+ succeeded in 32683ms:
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.12s
+     Running tests/slice21c_vector_role_gate.rs (/home/coreyt/projects/fathomdb-worktrees/slice-23-sv/target/debug/deps/slice21c_vector_role_gate-69e62403a1fe09fe)
+
+running 5 tests
+test dropping_the_last_searchable_vector_projection_un_enrols_past_an_inert_sibling ... ok
+test a_filterable_vector_declaration_round_trips_verbatim_without_an_embedder ... ok
+test a_filterable_vector_declaration_backfills_nothing_and_embeds_nothing ... ok
+test a_write_under_a_filterable_vector_declaration_enqueues_no_embedding ... ok
+test demoting_a_searchable_vector_projection_to_filterable_un_enrols_the_kind ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+     Running tests/slice23_spec_validation_reject.rs (/home/coreyt/projects/fathomdb-worktrees/slice-23-sv/target/debug/deps/slice23_spec_validation_reject-0e41aa93e66268c3)
+
+running 7 tests
+test a_vector_sub_object_without_the_searchable_role_is_rejected ... ok
+test an_fts_sub_object_without_the_searchable_role_is_rejected ... ok
+test name_rejections_keep_invalid_argument_while_the_shape_reject_is_write_validation ... ok
+test a_rejected_spec_makes_the_whole_request_a_total_no_op ... ok
+test the_reject_is_keyed_on_searchable_alone_not_on_the_other_roles ... ok
+test the_searchable_role_makes_the_same_sub_objects_valid ... ok
+test a_legacy_registry_row_reads_back_verbatim_but_no_longer_re_applies ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+     Running tests/tc71_fix1_inert_enrolment_reconcile.rs (/home/coreyt/projects/fathomdb-worktrees/slice-23-sv/target/debug/deps/tc71_fix1_inert_enrolment_reconcile-a0268df90f3d79a9)
+
+running 6 tests
+test a_configure_projections_call_reconciles_an_already_enrolled_inert_kind ... ok
+test an_already_enrolled_inert_vector_kind_is_un_enrolled_on_reopen ... ok
+test a_registry_with_no_vector_subobject_leaves_a_pre_registry_enrolment_untouched ... ok
+test edge_fact_survives_the_reconciliation_which_is_idempotent_across_reopens ... ok
+test a_database_with_no_projection_registry_is_left_untouched_on_reopen ... ok
+test a_healthy_searchable_vector_registry_is_untouched_on_reopen ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 30.21s
+
+
+exec
+/bin/bash -lc 'git diff b0ac02b5a96d3d345775904375ed77ec0e08e7bb -- dev/plans/release-state-0.8.20.json scripts/tests/test_commission_manifest.sh' in /home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+ succeeded in 0ms:
+diff --git a/dev/plans/release-state-0.8.20.json b/dev/plans/release-state-0.8.20.json
+index b4f69d80..35b51cc2 100644
+--- a/dev/plans/release-state-0.8.20.json
++++ b/dev/plans/release-state-0.8.20.json
+@@ -72,6 +72,9 @@
+         20
+       ],
+       "status": "LANDED",
++      "design_refs": [
++        "dev/design/0.8.20-tc57-write-race-characterization.md"
++      ],
+       "sha": "77be504b",
+       "reserved_gap": true,
+       "merge_subject": "merge(0.8.20): Slice 21 COMPLETE — R-20-CR concurrency + test-oracle repair"
+@@ -85,6 +88,14 @@
+         20
+       ],
+       "status": "LANDED",
++      "design_refs": [
++        "dev/design/0.7.0-vector-quant-pack1.md",
++        "dev/design/0.8.18-slice-0-vector-equivalence-publish-design.md",
++        "dev/design/errors.md",
++        "dev/design/0.8.20-slice0-erasure-design.md",
++        "dev/design/embedder.md",
++        "dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md"
++      ],
+       "sha": "572475f2",
+       "reserved_gap": true,
+       "merge_subject": "merge(0.8.20): Slice 22 COMPLETE — R-20-VC vector-arm consumer contract"
+@@ -97,6 +108,12 @@
+         22
+       ],
+       "status": "NOT_STARTED",
++      "design_refs": [
++        "dev/design/0.8.20-tc57-write-race-characterization.md",
++        "dev/design/errors.md",
++        "dev/design/record-lifecycle-protocol/projection-registry-and-async-embed.md",
++        "dev/adr/ADR-0.6.0-error-taxonomy.md"
++      ],
+       "sha": null,
+       "merge_subject": null
+     },
+diff --git a/scripts/tests/test_commission_manifest.sh b/scripts/tests/test_commission_manifest.sh
+index 05e80ec6..9e91757d 100644
+--- a/scripts/tests/test_commission_manifest.sh
++++ b/scripts/tests/test_commission_manifest.sh
+@@ -788,6 +788,334 @@ else
+   fail "arm 8j (gapped landed): rc=$RC base=[$BASE_LINE]"
+ fi
+ 
++# ===========================================================================
++# FOURTH PREDICATE (TC-92 / TC-94), arms 11a-11h: a slice may CITE its design
++# docs by hand, and a cited doc is checked exactly like every other citation.
++# ===========================================================================
++# THE INCIDENT, MEASURED. The design tier has two DISCOVERY selectors — a
++# filename selector (`<release>-slice-NN-*.md`) and a token selector over
++# `dev/design/**` content — and an entire class of slice defeats both BY
++# CONSTRUCTION. `plan-<release>.md` §3 is frozen at Slice 0, so a RESERVED-GAP
++# slice minted mid-release by HITL ruling carries requirement ids (R-20-CR,
++# R-20-VC, R-20-SV and their TC-* carries) that appear NOWHERE in dev/design/**,
++# and it never got a §3.0 memo of its own either. The filename selector hit
++# exactly 1 of the 12 slices in the 0.8.20 ladder. The TC-37 vacuous-pass guard
++# therefore hard-failed (exit 1) on a perfectly well-designed slice — three in a
++# row: Slices 21, 22 and 23.
++#
++# The fix is an OPTIONAL `design_refs` list on the ladder entry. It is CITATION,
++# not discovery, and three properties are the whole point:
++#   * ABSENT MEANS ABSENT (arm 11d) — every byte of the manifest for a slice
++#     without `design_refs` is what it was before the feature existed, asserted
++#     against the PRE-CHANGE generator recovered from git, not against a
++#     hand-copied golden.
++#   * A CURATED PATH IS A CHECKED PATH (arm 11b) — CHECK 1 applies with no
++#     exemption, because curation nobody checks rots exactly like a scan hit.
++#   * IT REACHES OUTSIDE `dev/design/` (arms 11c/11c2) — dev/adr/**,
++#     dev/interfaces/** — which the scan's walker can never do.
++# And the guard it unblocks must not be weakened by it (arms 11e/11e2).
++
++# --- Arm 11a: a `design_refs` doc reaches §6, marked CURATED ----------------
++# The cited doc carries NO slice token and is NOT named for this release+slice,
++# so NEITHER discovery selector can reach it: if it appears, it appears because
++# it was curated. Pre-change the key is ignored entirely — measured RED.
++setup_fixture
++cat >"$FIX/dev/design/hand-picked.md" <<'EOF'
++---
++status: locked
++---
++
++# Hand-picked
++
++Nothing in here names this slice, its requirement or its carries.
++EOF
++mutate_state "L[10]['design_refs'] = ['dev/design/hand-picked.md']"
++run_gen 9.9.9 10
++if [ "$RC" -eq 0 ] \
++   && grep -qE 'CURATED.*dev/design/hand-picked\.md' <<<"$OUT" \
++   && grep -qE 'CURATED.*\[locked\]|\[locked\].*CURATED' <<<"$OUT" \
++   && ! grep -qE 'CURATED.*widget-design\.md' <<<"$OUT"; then
++  pass "design_refs — a hand-cited doc neither selector can find is emitted, marked CURATED"
++else
++  fail "arm 11a (design_refs emitted + marked): rc=$RC out=$OUT"
++fi
++
++# --- Arm 11b: a `design_refs` path that does NOT resolve -> hard FAIL -------
++# CHECK 1 with no exemption. A curated citation is the one a human chose, so a
++# dead one is MORE misleading than a dead scan hit, not less: it carries the
++# Steward's authority. Pre-change: the key was ignored, so the manifest was
++# emitted and exited 0 — measured RED.
++setup_fixture
++mutate_state "L[10]['design_refs'] = ['dev/design/NO-SUCH-DESIGN.md']"
++run_gen 9.9.9 10
++if [ "$RC" -ne 0 ] \
++   && grep -q 'NO-SUCH-DESIGN.md' <<<"$OUT" \
++   && grep -qi 'does NOT exist' <<<"$OUT" \
++   && ! grep -q 'COMMISSION MANIFEST' <<<"$OUT"; then
++  pass "design_refs — a curated path that does not resolve HARD-fails and emits no manifest"
++else
++  fail "arm 11b (dead design_refs path): rc=$RC out=$OUT"
++fi
++
++# --- Arm 11c: a doc OUTSIDE `dev/design/` is reachable, status told honestly -
++# DESIGN_ROOT is a real boundary and the walker is NOT widened (that would drag
++# every unrelated doc in); `design_refs` is the mechanism for dev/adr/** and
++# dev/interfaces/**. This fixture ADR has no frontmatter at all, so the manifest
++# must SAY there is no recorded status rather than invent one.
++setup_fixture
++mkdir -p "$FIX/dev/adr"
++printf '# ADR-9.9.9 — error taxonomy\n\nNo frontmatter at all.\n' \
++  >"$FIX/dev/adr/ADR-9.9.9-taxonomy.md"
++mutate_state "L[10]['design_refs'] = ['dev/adr/ADR-9.9.9-taxonomy.md']"
++run_gen 9.9.9 10
++ADR_ROW="$(grep -m1 'ADR-9.9.9-taxonomy.md' <<<"$OUT" || true)"
++if [ "$RC" -eq 0 ] \
++   && grep -q 'CURATED' <<<"$ADR_ROW" \
++   && grep -qiE 'no .?status:' <<<"$ADR_ROW" \
++   && ! grep -qE '\[(ACTIVE|locked|accepted|UNREVIEWED)\]' <<<"$ADR_ROW"; then
++  pass "design_refs — a dev/adr doc the scan can never reach is cited, and its MISSING status is said so"
++else
++  fail "arm 11c (out-of-tree design_ref): rc=$RC row=[$ADR_ROW]"
++fi
++
++# --- Arm 11c2: ...and an out-of-tree doc that DOES record a status shows it --
++# Without this, arm 11c would be satisfied by a generator that simply never
++# reads frontmatter outside DESIGN_ROOT.
++setup_fixture
++mkdir -p "$FIX/dev/adr"
++printf -- '---\nstatus: accepted\n---\n\n# ADR-9.9.9\n' >"$FIX/dev/adr/ADR-9.9.9-signed.md"
++mutate_state "L[10]['design_refs'] = ['dev/adr/ADR-9.9.9-signed.md']"
++run_gen 9.9.9 10
++ADR_ROW="$(grep -m1 'ADR-9.9.9-signed.md' <<<"$OUT" || true)"
++if [ "$RC" -eq 0 ] && grep -q 'CURATED' <<<"$ADR_ROW" && grep -q 'accepted' <<<"$ADR_ROW"; then
++  pass "design_refs — an out-of-tree doc's RECORDED status is read and reported"
++else
++  fail "arm 11c2 (out-of-tree status read): rc=$RC row=[$ADR_ROW]"
++fi
++
++# --- Arm 11d: ABSENT `design_refs` -> byte-identical to the PRE-CHANGE tool --
++# The additivity claim, asserted rather than asserted-about. The comparison
++# runs the generator as it stood BEFORE `design_refs` existed — recovered from
++# git by walking this file's history back to the newest revision that does not
++# mention `design_refs` — against the current one, over the SAME fixture, with
++# no `design_refs` anywhere in the state file. Any drift at all is a fail.
++#
++# NON-VACUITY: every way the recovery can come up empty (squashed history, a
++# shallow clone, the file renamed) routes to fail(), never to a silent pass. A
++# comparison that quietly compares nothing is worse than no comparison.
++PRE_GEN="$TMPROOT/commission-manifest-pre.sh"
++PRE_SHA=""
++while read -r c; do
++  [ -n "$c" ] || continue
++  if ! (cd "$REPO_ROOT" && git show "$c:scripts/commission-manifest.sh" 2>/dev/null) \
++       | grep -q 'design_refs'; then PRE_SHA="$c"; break; fi
++done < <(cd "$REPO_ROOT" && git log --format=%H -- scripts/commission-manifest.sh)
++if [ -z "$PRE_SHA" ]; then
++  fail "arm 11d (pre-change generator): no revision of scripts/commission-manifest.sh predates design_refs — cannot prove additivity; do NOT skip this"
++else
++  (cd "$REPO_ROOT" && git show "$PRE_SHA:scripts/commission-manifest.sh") >"$PRE_GEN"
++  chmod +x "$PRE_GEN"
++  D11D_DRIFT=""
++  for d11d_slice in 10 30; do
++    setup_fixture
++    printf -- '---\nstatus: ACTIVE\n---\n\n# Slice 30 memo\n' >"$FIX/dev/design/9.9.9-slice-30-design.md"
++    set +e
++    PRE_OUT="$(cd "$FIX" && bash "$PRE_GEN" 9.9.9 "$d11d_slice" 2>&1)"
++    PRE_RC=$?
++    POST_OUT="$(cd "$FIX" && ./scripts/commission-manifest.sh 9.9.9 "$d11d_slice" 2>&1)"
++    POST_RC=$?
++    set -e
++    [ "$PRE_RC" -eq 0 ] && [ "$POST_RC" -eq 0 ] \
++      || D11D_DRIFT="$D11D_DRIFT slice-$d11d_slice:rc($PRE_RC/$POST_RC)"
++    [ "$PRE_OUT" = "$POST_OUT" ] \
++      || D11D_DRIFT="$D11D_DRIFT slice-$d11d_slice:$(diff <(printf '%s\n' "$PRE_OUT") <(printf '%s\n' "$POST_OUT") | head -20 | tr '\n' '~')"
++  done
++  if [ -z "$D11D_DRIFT" ]; then
++    pass "design_refs is ADDITIVE — with the key absent the manifest is byte-identical to the pre-change generator ($PRE_SHA)"
++  else
++    fail "arm 11d (additivity): drift:$D11D_DRIFT"
++  fi
++fi
++
++# --- Arm 11e: the TC-37 vacuous guard is NOT weakened by the feature --------
++# `design_refs: []` is not a design of record. With both selectors empty AND an
++# empty curated list, the manifest still briefs nobody, so it must still die.
++setup_fixture
++perl -0777 -pi -e 's/"short": "R-9-B", "title": "widget_readiness \+ the TC-99 terminal fix"/"short": "R-0-ZZ", "title": "nothing matches this"/' \
++  "$FIX/dev/plans/release-state-9.9.9.json"
++rm -f "$FIX/dev/design/9.9.9-slice-10-design.md"
++mutate_state "L[10]['design_refs'] = []"
++run_gen 9.9.9 10
++if [ "$RC" -ne 0 ] && grep -q 'TC-37' <<<"$OUT" && ! grep -q 'COMMISSION MANIFEST' <<<"$OUT"; then
++  pass "vacuity guard — an EMPTY \`design_refs\` plus an empty scan still HARD-fails (TC-37)"
++else
++  fail "arm 11e (empty design_refs still vacuous): rc=$RC out=$OUT"
++fi
++
++# --- Arm 11e2: ...but a NON-empty one legitimately unblocks the same slice ---
++# The direction the feature exists for, and the proof that arm 11e's green is
++# about emptiness rather than about the generator refusing to look. Same
++# otherwise-vacuous slice, one curated citation added. Pre-change: RED (dies).
++setup_fixture
++cat >"$FIX/dev/design/hand-picked.md" <<'EOF'
++---
++status: locked
++---
++
++# Hand-picked
++
++Nothing in here names this slice, its requirement or its carries.
++EOF
++perl -0777 -pi -e 's/"short": "R-9-B", "title": "widget_readiness \+ the TC-99 terminal fix"/"short": "R-0-ZZ", "title": "nothing matches this"/' \
++  "$FIX/dev/plans/release-state-9.9.9.json"
++rm -f "$FIX/dev/design/9.9.9-slice-10-design.md"
++mutate_state "L[10]['design_refs'] = ['dev/design/hand-picked.md']"
++run_gen 9.9.9 10
++if [ "$RC" -eq 0 ] && grep -qE 'CURATED.*hand-picked\.md' <<<"$OUT" \
++   && grep -q 'COMMISSION MANIFEST' <<<"$OUT"; then
++  pass "design_refs — a reserved-gap slice both selectors miss is commissionable via curation"
++else
++  fail "arm 11e2 (curation unblocks the guard): rc=$RC out=$OUT"
++fi
++
++# --- Arm 11f: the coverage report names unmatched tokens even when others hit
++# TC-94 defect 3. A slice with ONE weak incidental match must not read like a
++# slice with full coverage: the report is per-TOKEN, so a token nothing mentions
++# is named even while its neighbours matched. Kept a REPORT, never a failure —
++# the run still exits 0.
++#
++# HONEST LABEL: this arm is GREEN at baseline. The brief that commissioned it
++# stated the report fired "only when every token misses"; that premise is
++# measurably false (0.8.20 Slices 15/20/21/31 all emit it with other tokens
++# matched, and `git log -S` shows the block has never changed since 1b9cf9a3).
++# It is therefore a LOCK on existing behaviour, not a RED-first test.
++setup_fixture
++mutate_state "L[10]['title'] = L[10]['title'] + ' and the TC-404 carry'"
++run_gen 9.9.9 10
++if [ "$RC" -eq 0 ] \
++   && grep -q 'NO design doc mentions' <<<"$OUT" \
++   && grep -qE 'NO design doc mentions:[^.]*TC-404' <<<"$OUT" \
++   && grep -q 'dev/design/widget-design.md' <<<"$OUT" \
++   && ! grep -qE 'NO design doc mentions:[^.]*(TC-99|widget_readiness)' <<<"$OUT"; then
++  pass "coverage report — an unmatched token is named even though the slice's other tokens matched"
++else
++  fail "arm 11f (partial-coverage report): rc=$RC out=$OUT"
++fi
++
++# --- Arm 11g: a malformed `design_refs` HARD-fails rather than being ignored -
++# Silently dropping a mistyped curation would put the slice straight back into
++# the vacuous-guard failure it was added to fix, with no explanation.
++setup_fixture
++mutate_state "L[10]['design_refs'] = 'dev/design/widget-design.md'"
++run_gen 9.9.9 10
++if [ "$RC" -ne 0 ] && grep -q 'design_refs' <<<"$OUT" && ! grep -q 'COMMISSION MANIFEST' <<<"$OUT"; then
++  pass "design_refs — a non-list value HARD-fails instead of being silently ignored"
++else
++  fail "arm 11g (malformed design_refs): rc=$RC out=$OUT"
++fi
++
++# --- Arm 11h: an ABSOLUTE or escaping `design_refs` path HARD-fails ---------
++# Every other cited path in the manifest is repo-relative; a curated one that
++# escapes the checkout would resolve on the author's machine and nowhere else.
++setup_fixture
++mutate_state "L[10]['design_refs'] = ['../outside.md']"
++run_gen 9.9.9 10
++if [ "$RC" -ne 0 ] && grep -q 'design_refs' <<<"$OUT" && ! grep -q 'COMMISSION MANIFEST' <<<"$OUT"; then
++  pass "design_refs — a path escaping the repo root HARD-fails"
++else
++  fail "arm 11h (escaping design_refs path): rc=$RC out=$OUT"
++fi
++
++# --- Arm 11i: a curated CONTRACT reaches §4, not only §6 -------------------
++# §4 is where an orchestrator looks for the document that WINS on conflict, and
++# the motivating case is exactly a contract: 0.8.20 Slice 22 cites
++# `OPP-12-C1-converged-contract.md`, byte-pinned by scripts/c1-conformance-pin.json
++# (sha256 AND git blob sha1), the ratified contract whose Q4/Q6(a) clause a TC-67
++# implementation can turn RED. A pinned file can never be back-linked — any edit
++# breaks the pin — so citation is the ONLY mechanism that can put it in front of
++# the orchestrator, and §6 alone is the wrong place for it.
++#
++# The fixture doc carries no slice token and is not named for this release+slice,
++# so neither selector can reach it. The default fixture ALSO has a scan-reached
++# contract (`sub/widget-contract.md`), and this arm asserts the two render
++# DIFFERENTLY: curated is marked, scanned is not. Pre-change: RED (§4 iterates
++# scan hits only, so the curated contract never appears).
++setup_fixture
++cat >"$FIX/dev/design/hand-picked-contract.md" <<'EOF'
++---
++status: ratified
++---
++
++# Hand-picked contract
++
++Nothing in here names this slice, its requirement or its carries.
++EOF
++mutate_state "L[10]['design_refs'] = ['dev/design/hand-picked-contract.md']"
++run_gen 9.9.9 10
++S4="$(sed -n '/^## 4\. CONTRACT PATHS/,/^## 5\./p' <<<"$OUT")"
++if [ "$RC" -eq 0 ] \
++   && grep -qE 'design contract.*CURATED.*hand-picked-contract\.md' <<<"$S4" \
++   && grep -q 'ratified' <<<"$S4" \
++   && grep -q 'sub/widget-contract.md' <<<"$S4" \
++   && ! grep -qE 'CURATED.*sub/widget-contract\.md' <<<"$S4"; then
++  pass "design_refs — a curated CONTRACT reaches §4 marked CURATED, and a scanned one is not marked"
++else
++  fail "arm 11i (curated contract in §4): rc=$RC s4=[$S4]"
++fi
++
++# --- Arm 11i2: a curated NON-contract does NOT leak into §4 ----------------
++# Without this, "feed design_refs into §4" degenerates into pasting §6 into §4
++# and the CONTRACT PATHS section stops meaning anything. §4 selects on the same
++# predicate it always did — the basename — applied to the curated set as well.
++setup_fixture
++cat >"$FIX/dev/design/hand-picked.md" <<'EOF'
++---
++status: locked
++---
++
++# Hand-picked
++
++Nothing in here names this slice, its requirement or its carries.
++EOF
++mutate_state "L[10]['design_refs'] = ['dev/design/hand-picked.md']"
++run_gen 9.9.9 10
++S4="$(sed -n '/^## 4\. CONTRACT PATHS/,/^## 5\./p' <<<"$OUT")"
++if [ "$RC" -eq 0 ] \
++   && ! grep -q 'hand-picked.md' <<<"$S4" \
++   && grep -qE 'CURATED.*hand-picked\.md' <<<"$OUT"; then
++  pass "design_refs — a curated doc that is NOT a contract stays in §6 and out of §4"
++else
++  fail "arm 11i3 (curated non-contract leaks into §4): rc=$RC s4=[$S4]"
++fi
++
++# --- Arm 11i3: §4 is byte-identical when `design_refs` is absent ------------
++# Asserted, not assumed. Arm 11d compares the WHOLE manifest, which subsumes
++# this; §4 is called out separately because it is the section this change
++# reaches into, and a section-scoped failure message is what a future reader
++# needs. Reuses the pre-change generator arm 11d recovered from git.
++if [ -z "${PRE_SHA:-}" ]; then
++  fail "arm 11i4 (§4 additivity): no pre-change generator recovered (see arm 11d) — do NOT skip this"
++else
++  S4_DRIFT=""
++  for d11i_slice in 10 30; do
++    setup_fixture
++    printf -- '---\nstatus: ACTIVE\n---\n\n# Slice 30 memo\n' >"$FIX/dev/design/9.9.9-slice-30-design.md"
++    set +e
++    S4_PRE="$(cd "$FIX" && bash "$PRE_GEN" 9.9.9 "$d11i_slice" 2>&1 \
++              | sed -n '/^## 4\. CONTRACT PATHS/,/^## 5\./p')"
++    S4_POST="$(cd "$FIX" && ./scripts/commission-manifest.sh 9.9.9 "$d11i_slice" 2>&1 \
++               | sed -n '/^## 4\. CONTRACT PATHS/,/^## 5\./p')"
++    set -e
++    [ -n "$S4_PRE" ] || S4_DRIFT="$S4_DRIFT slice-$d11i_slice:empty-pre-section"
++    [ "$S4_PRE" = "$S4_POST" ] || S4_DRIFT="$S4_DRIFT slice-$d11i_slice:changed"
++  done
++  if [ -z "$S4_DRIFT" ]; then
++    pass "§4 CONTRACT PATHS is byte-identical to the pre-change generator when \`design_refs\` is absent"
++  else
++    fail "arm 11i4 (§4 additivity): drift:$S4_DRIFT"
++  fi
++fi
++
+ # --- Arm 9: the REAL repo — Slice 20 of 0.8.20 (the acceptance criterion) --
+ # Every emitted path must resolve. This is the regression half of the pair and
+ # the tranche's stated bar.
+@@ -920,6 +1248,78 @@ else
+   fail "arm 9c (real sweep): rc=$SWEEP_RC out=$SWEEP_OUT"
+ fi
+ 
++# --- Arm 9f: the REAL repo's curated slices generate, and cite what they name
++# The live half of arms 11a-11c. DERIVED from the state file, never literal: it
++# reads every ladder entry that carries `design_refs`, generates that slice's
++# manifest, and asserts exit 0 plus a CURATED row for each named path. Adding,
++# removing or re-pointing a curation moves the assertion with it, so this cannot
++# become the time-bombed literal that TC-81 named (arm 9d's history).
++#
++# NON-VACUITY: if NO entry in the live release-state files carries `design_refs`
++# the arm FAILS. The three reserved-gap slices (21/22/23) are exactly why the
++# feature exists; a repo where the curation silently vanished must go red here,
++# not quietly pass with an empty loop.
++set +e
++CURATED_PAIRS="$(cd "$REPO_ROOT" && python3 -c '
++import glob, json, sys
++rows = []
++for p in sorted(glob.glob("dev/plans/release-state-*.json")):
++    rel = p[len("dev/plans/release-state-"):-len(".json")]
++    try:
++        s = json.load(open(p))
++    except Exception as e:
++        print("ERR %s unreadable: %s" % (p, e)); raise SystemExit(0)
++    for e in s.get("ladder") or []:
++        for ref in e.get("design_refs") or []:
++            rows.append("%s %s %s" % (rel, e.get("slice"), ref))
++print("\n".join(rows))
++' 2>&1)"
++CURATED_RC=$?
++set -e
++if [ "$CURATED_RC" -ne 0 ] || grep -q '^ERR' <<<"$CURATED_PAIRS" || [ -z "$CURATED_PAIRS" ]; then
++  fail "arm 9f (live design_refs): rc=$CURATED_RC no curated ladder entry found — out=[$CURATED_PAIRS]"
++else
++  C9F_BAD=""
++  C9F_SEEN=0
++  C9F_LAST=""
++  C9F_OUT=""
++  while read -r c9f_rel c9f_slice c9f_ref; do
++    [ -n "$c9f_ref" ] || continue
++    C9F_SEEN=$((C9F_SEEN + 1))
++    if [ "$c9f_rel/$c9f_slice" != "$C9F_LAST" ]; then
++      C9F_LAST="$c9f_rel/$c9f_slice"
++      set +e
++      C9F_OUT="$("$REPO_ROOT/scripts/commission-manifest.sh" "$c9f_rel" "$c9f_slice" 2>&1)"
++      C9F_RC=$?
++      set -e
++      [ "$C9F_RC" -eq 0 ] || C9F_BAD="$C9F_BAD $c9f_rel/$c9f_slice:rc=$C9F_RC"
++    fi
++    grep -F "$c9f_ref" <<<"$C9F_OUT" | grep -q 'CURATED' \
++      || C9F_BAD="$C9F_BAD $c9f_rel/$c9f_slice:$c9f_ref-not-curated"
++    # A curated CONTRACT must also reach §4, where an orchestrator looks for the
++    # document that WINS on conflict. The live instance is 0.8.20 Slice 22's
++    # byte-pinned `OPP-12-C1-converged-contract.md`, which cannot be back-linked
++    # and so can only ever get there by citation. Derived from the basename, so
++    # it follows whatever the state file curates next.
++    case "$(basename "$c9f_ref")" in
++      *contract*|*CONTRACT*)
++        sed -n '/^## 4\. CONTRACT PATHS/,/^## 5\./p' <<<"$C9F_OUT" \
++          | grep -F "$c9f_ref" | grep -q 'CURATED' \
++          || C9F_BAD="$C9F_BAD $c9f_rel/$c9f_slice:$c9f_ref-not-in-section-4"
++        C9F_CONTRACTS=$((${C9F_CONTRACTS:-0} + 1))
++        ;;
++    esac
++  done <<<"$CURATED_PAIRS"
++  # NON-VACUITY, second half: at least one live curation must be a CONTRACT, or
++  # the §4 half of this arm asserted nothing. 0.8.20 Slice 22's byte-pinned C-1
++  # contract is that case and is the reason the §4 reach exists at all.
++  if [ -z "$C9F_BAD" ] && [ "$C9F_SEEN" -gt 0 ] && [ "${C9F_CONTRACTS:-0}" -gt 0 ]; then
++    pass "real repo — every ladder entry carrying \`design_refs\` generates and cites all $C9F_SEEN curated doc(s), ${C9F_CONTRACTS:-0} of them into §4 as contracts"
++  else
++    fail "arm 9f (live curated citations): seen=$C9F_SEEN contracts=${C9F_CONTRACTS:-0} bad:$C9F_BAD"
++  fi
++fi
++
+ # --- Arm 10: wired into agent-test.sh and into an ALWAYS-ON CI job ---------
+ if grep -q 'scripts/tests/test_commission_manifest.sh' "$AGENT_TEST"; then
+   pass "agent-test.sh runs this fixture suite"
+
+exec
+/bin/bash -lc 'grep -n "fn is_destructive_projection_change" -A80 src/rust/crates/fathomdb-engine/src/lib.rs' in /home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+ succeeded in 0ms:
+17329:fn is_destructive_projection_change(
+17330-    existing: &StoredProjection,
+17331-    desired: &StoredProjection,
+17332-) -> bool {
+17333-    if existing.roles.iter().any(|r| !desired.roles.contains(r)) {
+17334-        return true;
+17335-    }
+17336-    if existing.fts_present
+17337-        && (!desired.fts_present || existing.fts_tokenizer != desired.fts_tokenizer)
+17338-    {
+17339-        return true;
+17340-    }
+17341-    if existing.vector_declared
+17342-        && (!desired.vector_declared || existing.vector_embedder != desired.vector_embedder)
+17343-    {
+17344-        return true;
+17345-    }
+17346-    false
+17347-}
+17348-
+17349-/// Human-readable summary of the destructive delta, surfaced in
+17350-/// [`EngineError::ProjectionDestructive`] so the caller sees WHAT it must drop.
+17351-fn describe_projection_delta(existing: &StoredProjection, desired: &StoredProjection) -> String {
+17352-    let mut parts: Vec<String> = Vec::new();
+17353-    for r in &existing.roles {
+17354-        if !desired.roles.contains(r) {
+17355-            parts.push(format!("role '{}' removed", r.as_str()));
+17356-        }
+17357-    }
+17358-    if existing.fts_present && !desired.fts_present {
+17359-        parts.push("fts sub-target removed".to_string());
+17360-    } else if existing.fts_present && existing.fts_tokenizer != desired.fts_tokenizer {
+17361-        parts.push("fts tokenizer changed".to_string());
+17362-    }
+17363-    if existing.vector_declared && !desired.vector_declared {
+17364-        parts.push("vector sub-target removed".to_string());
+17365-    } else if existing.vector_declared && existing.vector_embedder != desired.vector_embedder {
+17366-        parts.push("vector embedder changed".to_string());
+17367-    }
+17368-    if parts.is_empty() {
+17369-        "incompatible change".to_string()
+17370-    } else {
+17371-        parts.join("; ")
+17372-    }
+17373-}
+17374-
+17375-/// 0.8.20 Slice 15d (R-20-PR) — the declarative, idempotent diff+backfill apply
+17376-/// that backs [`Engine::configure_projections`]. Runs inside the caller's write
+17377-/// transaction `tx`. Order: apply `drop`s first (so a drop+re-declare in one
+17378-/// call rebuilds fresh), then diff each spec. Idempotent re-registration diffs to
+17379-/// an empty delta (`unchanged`). A destructive change without an explicit drop is
+17380-/// refused with [`EngineError::ProjectionDestructive`].
+17381-///
+17382-/// 0.8.20 Slice 20c (R-20-DR remainder) — returns `(delta, enqueued_backfill)`.
+17383-/// The second member is `true` iff [`enqueue_declared_vector_backfill`] put
+17384-/// deferred embed work on the queue, in which case the CALLER must
+17385-/// `notify_new_work()` after committing (the flag cannot ride on
+17386-/// [`ProjectionDelta`]: that is the caller-facing diff, and this is a runtime
+17387-/// signal, not part of the declaration's result).
+17388-///
+17389-/// 0.8.20 Slice 20c fix-1 (codex §9 [P2]) — and the symmetric inverse: a call
+17390-/// that removes the LAST `searchable→vector` declaration un-enrols the node kinds
+17391-/// the forward path enrolled ([`unenrol_registry_vector_node_kinds`]), on this
+17392-/// same transaction. It deletes no embedding.
+17393-///
+17394-/// 0.8.20 Slice 21 fix-1 (codex §9 round 1 [P2]) — and, beside that transition, a
+17395-/// state-keyed RECONCILIATION ([`registry_governs_an_inert_dense_arm`]) so that a
+17396-/// database already carrying an inert enrolment from before the Slice-21c role
+17397-/// gate is healed by any `configure_projections` call, not only by a
+17398-/// searchable-vector-to-none transition it may never perform. The boot arm is
+17399-/// [`reconcile_inert_vector_enrolments_on_boot`].
+17400-fn apply_projection_config(
+17401-    tx: &Connection,
+17402-    specs: &[ProjectionSpec],
+17403-    drop: &[String],
+17404-    dense_arm_live: bool,
+17405-) -> Result<(ProjectionDelta, bool), EngineError> {
+17406-    // Validate up-front so a bad name aborts before any write.
+17407-    //
+17408-    // fix-6 finding [P2] — REJECT a duplicate projection `name` within `specs`
+17409-    // (and a duplicate entry within `drop`) up front. The diff loop below diffs
+
+exec
+/bin/bash -lc "grep -n \"struct ProjectionSpec\\|pub struct ProjectionFts\\|pub struct ProjectionVector\" -A70 src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+ succeeded in 0ms:
+3907:pub struct ProjectionFts {
+3908-    /// Optional tokenizer override; `None` ⇒ the engine default FTS5 tokenizer
+3909-    /// (`body`-FTS's `porter unicode61 remove_diacritics 2`). A custom
+3910-    /// per-attr tokenizer is the ≥0.9.x multi-field FTS work — recorded but
+3911-    /// not honoured here (graceful-graft later, same as `rankable`).
+3912-    pub tokenizer: Option<String>,
+3913-}
+3914-
+3915-/// 0.8.20 Slice 20 (R-20-DR) — the ENGINE-SET readiness of the
+3916-/// `searchable→vector` projection, per
+3917-/// `dev/design/record-lifecycle-protocol/projection-registry-and-async-embed.md`
+3918-/// §3.
+3919-///
+3920-/// **Exactly two members.** `filterable` and `searchable→FTS` are
+3921-/// same-transaction (non-stale on commit) so they need no readiness axis at all;
+3922-/// `searchable→vector` is **async, rebuild-durable**, so it carries one.
+3923-///
+3924-/// **Naming discipline (load-bearing).** The token **`pending` is RESERVED for
+3925-/// the admission axis** (quarantine/trust — an app judgment). Index-readiness is
+3926-/// a DIFFERENT, orthogonal dimension (a record can be
+3927-/// `active ∧ is_latest ∧ admissible` yet `dense_readiness = embedding`), so this
+3928-/// enum deliberately does **not** reuse that word: the non-ready member is
+3929-/// `Embedding`, never `Pending`.
+3930-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+3931-pub enum DenseReadiness {
+3932-    /// Every row in the vector projection's row set has reached a projection
+3933-    /// terminal — the dense arm is caught up. Because the vector INSERT and the
+3934-    /// terminal record are written in ONE transaction
+3935-    /// ([`commit_projection_outcomes`]), `Ready` can never be observed with the
+3936-    /// vector row absent (design §4.1 invariant 1).
+3937-    Ready,
+3938-    /// At least one row in the projection's row set has not yet reached a
+3939-    /// projection terminal — embedding is outstanding. This is the ONLY
+3940-    /// tolerable torn state: readiness `embedding` with the vector absent (the
+3941-    /// dense arm reads as partial and RRF under-ranks; it does not hide).
+3942-    Embedding,
+3943-}
+3944-
+3945-impl DenseReadiness {
+3946-    #[must_use]
+3947-    pub fn as_str(self) -> &'static str {
+3948-        match self {
+3949-            DenseReadiness::Ready => "ready",
+3950-            DenseReadiness::Embedding => "embedding",
+3951-        }
+3952-    }
+3953-
+3954-    /// The two accepted spellings. `"pending"` is DELIBERATELY not one of them
+3955-    /// (reserved for the admission axis) and so parses to `None`.
+3956-    #[must_use]
+3957-    pub fn from_str_opt(value: &str) -> Option<Self> {
+3958-        match value {
+3959-            "ready" => Some(DenseReadiness::Ready),
+3960-            "embedding" => Some(DenseReadiness::Embedding),
+3961-            _ => None,
+3962-        }
+3963-    }
+3964-}
+3965-
+3966-/// 0.8.20 Slice 15d (R-20-PR) — the `searchable→vector` sub-target selector.
+3967-///
+3968-/// **Slice 20 (R-20-DR) attached `dense_readiness` HERE, additively:** this
+3969-/// sub-object is STORED by 15d (so the shape exists and a caller can declare a
+3970-/// vector projection); Slice 20 hangs the READ-METADATA readiness flag off it.
+3971-/// Nothing in 15d's persisted shape changed (the registry columns
+3972-/// `vector_embedder` + `vector_declared` still round-trip the declaration) —
+3973-/// **readiness is DERIVED, never stored**, so there is no schema step and no
+3974-/// separate flag that could tear (see [`derive_dense_readiness`]).
+3975-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+3976:pub struct ProjectionVector {
+3977-    /// Optional embedder override; `None` ⇒ the engine's shipped default.
+3978-    pub embedder: Option<String>,
+3979-    /// 0.8.20 Slice 20 (R-20-DR) — **READ METADATA, engine-set.** Populated by
+3980-    /// [`Engine::read_projections`]; `None` on every caller-authored spec.
+3981-    ///
+3982-    /// It is **not part of the declaration**: `configure_projections` neither
+3983-    /// stores nor honours it (see [`StoredProjection::from_spec`], which reads
+3984-    /// only `embedder`), so a value supplied here is INERT — the engine always
+3985-    /// reports the derived truth. This is deliberately accept-inert rather than
+3986-    /// hard-reject so `read.projections` output stays feedable straight back
+3987-    /// into `configure_projections` (the fix-4 read→configure round-trip, which
+3988-    /// both bindings pin with a test).
+3989-    ///
+3990-    /// **0.8.20 Slice 23 (`R-20-SV`) correction (TC-39 class).** This doc used to
+3991-    /// justify accept-inert by analogy with "the already-audited accept-inert
+3992-    /// ruling on an `fts`/`vector` sub-object declared without the `searchable`
+3993-    /// role". **That ruling is OVERRULED** — the HITL ruled the shape an INVALID
+3994-    /// SPEC on 2026-07-24 and [`apply_projection_config`] now rejects it with
+3995-    /// [`EngineError::WriteValidation`]. `dense_readiness` accept-inert is
+3996-    /// UNCHANGED and stands on its own footing: it is engine-set READ METADATA,
+3997-    /// never part of the declaration, so there is nothing about it to reject.
+3998-    ///
+3999-    /// The bindings still HARD-REJECT the shapes that could
+4000-    /// not round-trip: a readiness supplied with `vector = false`, and any
+4001-    /// spelling outside `{ready, embedding}`.
+4002-    pub dense_readiness: Option<DenseReadiness>,
+4003-}
+4004-
+4005-/// 0.8.20 Slice 15d (R-20-PR / C-1) — a single declarative projection
+4006-/// declaration. HITL-ratified shape (`api-surface.md:85-89`):
+4007-/// `{ name, roles: Set<ProjectionRole>, fts?, vector? }`. `roles` carries SET
+4008-/// semantics (dedup + membership; an attribute can be `Filterable` AND
+4009-/// `Searchable`) — encoded here as a sorted, de-duplicated `BTreeSet`. Named
+4010-/// `roles`, not `kind` (`kind` is the node/edge type discriminator).
+4011-#[derive(Clone, Debug, Eq, PartialEq)]
+4012:pub struct ProjectionSpec {
+4013-    pub name: String,
+4014-    pub roles: BTreeSet<ProjectionRole>,
+4015-    pub fts: Option<ProjectionFts>,
+4016-    pub vector: Option<ProjectionVector>,
+4017-}
+4018-
+4019-/// 0.8.20 Slice 15d (R-20-PR) — the diff [`Engine::configure_projections`]
+4020-/// applied. Idempotent re-registration yields `unchanged == true` with all
+4021-/// vecs empty (the "re-registration is a no-op" acceptance signal). A
+4022-/// destructive change without an explicit `drop` is an `Err`, not a delta.
+4023-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+4024-pub struct ProjectionDelta {
+4025-    /// Attribute names whose same-transaction projections (EAV / property-FTS)
+4026-    /// were (re)built by this apply.
+4027-    pub built: Vec<String>,
+4028-    /// Attribute names dropped (explicit `drop` list) — their EAV + property-FTS
+4029-    /// rows and registry row removed.
+4030-    pub dropped: Vec<String>,
+4031-    /// Attribute names whose declared roles were persisted but NOT built:
+4032-    /// `rankable` (F9 not yet live) and the `searchable→vector` sub-target
+4033-    /// (Slice 20). These graft on a future idempotent apply. No error.
+4034-    pub deferred: Vec<String>,
+4035-    /// True iff nothing was built, dropped, or newly deferred — the whole apply
+4036-    /// diffed to a no-op.
+4037-    pub unchanged: bool,
+4038-    /// 0.8.20 Slice 22 (R-20-VC / **TC-67**) — **node KINDS, not attribute
+4039-    /// names.** The vector-eligible node kinds present in the corpus that the
+4040-    /// vector writer can NEVER commit, so no `searchable→vector` declaration
+4041-    /// will ever produce an embedding for them.
+4042-    ///
+4043-    /// # Why this field exists — the silence it replaces
+4044-    ///
+4045-    /// [`kind_is_vector_committable`] (Slice 20c fix-2) restricted enrolment to
+4046-    /// the kinds [`resolve_source_type`] maps, because enrolling any other kind
+4047-    /// is a permanent liveness wedge. That fix was correct and is unchanged —
+4048-    /// but it made the exclusion **silent**: the declaration persists, its name
+4049-    /// is pushed onto [`ProjectionDelta::deferred`], and the caller cannot tell
+4050-    /// "waiting on the embedder" (transient) from "this kind will never be
+4051-    /// embedded" (permanent). Per the HITL ruling on TC-67 the remedy is
+4052-    /// option **(c) REPORT** — the vocabulary is NOT grown and the Pack-1 D3
+4053-    /// partition-key lock is NOT touched (`dev/design/0.7.0-vector-quant-pack1.md`).
+4054-    ///
+4055-    /// # Axis, and why the name is what it is
+4056-    ///
+4057-    /// `built` / `dropped` / `deferred` are all lists of **projection attribute
+4058-    /// names**. This one is a list of **node kinds** — a different axis entirely,
+4059-    /// so the name says `kinds` explicitly and is prefixed `vector_` to bind it
+4060-    /// to the dense arm (an unsupported kind is still fully FTS/lexically
+4061-    /// searchable). Sorted and de-duplicated (`SELECT DISTINCT … ORDER BY kind`).
+4062-    ///
+4063-    /// # It is a STATE report, not a diff
+4064-    ///
+4065-    /// Unlike the other three vectors it does not describe what this call
+4066-    /// changed; it describes the corpus as it stands. So it is populated on an
+4067-    /// idempotent re-apply too (where `unchanged == true` and the other three
+4068-    /// are empty), and it deliberately does NOT feed [`ProjectionDelta::unchanged`].
+4069-    /// That is what makes the declare-time residual cheap to live with: to
+4070-    /// refresh the report after writing new kinds, re-apply the same spec — a
+4071-    /// no-op that still returns a current report.
+4072-    ///
+4073-    /// # Independent of the embedder
+4074-    ///
+4075-    /// Computed whenever a `searchable→vector` projection is declared, whether
+4076-    /// or not this session has a live embedder. The vocabulary is static, so
+4077-    /// "this kind can never be embedded" is true in a no-embedder session too —
+4078-    /// and must not be conflated with the Q6a graceful-absent deferral, which is
+4079-    /// transient and is reported through `deferred`.
+4080-    ///
+4081-    /// Empty (never absent) when there is nothing to report.
+4082-    pub vector_unsupported_kinds: Vec<String>,
+
+exec
+/bin/bash -lc 'bash scripts/tests/test_commission_manifest.sh' in /home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+ succeeded in 3113ms:
+PASS  rotted plan anchor — a role heading that no longer exists HARD-fails
+PASS  rotted orchestration anchor — the worktree-rules citation HARD-fails
+PASS  rotted symbol — the TC-RUBRIC-5 `--landing` citation HARD-fails when it stops occurring
+PASS  rotted symbol — the state file's SCHEMA source citation HARD-fails
+PASS  zero design citations — an empty manifest HARD-fails (TC-37), never exit 0
+PASS  unknown release — HARD fails and names the releases that DO have a state file
+PASS  unknown slice — HARD fails and names the ladder it is not in
+PASS  known slice — base SHA, contract, design, worktree rules and stop conditions all present
+PASS  publish gate — a PRE-SIGNED gate briefs pre-sign + pin + minting + the separate gate
+PASS  publish gate — a gate that is genuinely NOT pre-signed briefs as awaiting sign-off
+PASS  a state file still carrying the retired `state_word` HARD-fails the manifest
+PASS  pre-sign pin — a `pinned_to` that does not resolve HARD-fails and names the dead path
+PASS  pre-sign pin — a distinct `pinned_to` raises the verified-path count by exactly 1
+PASS  an unrelated design doc is not cited (the scan is token-driven, not a dump)
+PASS  filename selector — this release's slice memo is cited, another release's is not
+PASS  UNREVIEWED docs are surfaced with their status + the TC-50 caveat
+PASS  state-file-driven — a changed base SHA and next slice both move the manifest
+PASS  no bare `name:line` anchors in the emitted manifest (T1d shape)
+PASS  read-only — a generate leaves the worktree byte-clean
+PASS  --verify checks the citations without emitting the brief
+PASS  --verify-all verifies the next slice of every release-state file
+PASS  vacuity guard — a sweep that discovers zero state files HARD-fails
+PASS  target slice already landed — the base is its PREDECESSOR, never its own landing merge
+PASS  an already-landed target is marked HISTORICAL rather than briefed as if pending
+PASS  later slices landed — the base stays the target's immediate predecessor
+PASS  first slice — no predecessor is stated in words + branch-from-tip, not left blank
+PASS  no predecessor but later landings exist — the manifest warns the tip is AHEAD
+PASS  a historical first-slice brief is never ALSO told to branch from the tip
+PASS  gaps in `landed` — the base is the greatest landed slice strictly below the target
+PASS  design_refs — a hand-cited doc neither selector can find is emitted, marked CURATED
+PASS  design_refs — a curated path that does not resolve HARD-fails and emits no manifest
+PASS  design_refs — a dev/adr doc the scan can never reach is cited, and its MISSING status is said so
+PASS  design_refs — an out-of-tree doc's RECORDED status is read and reported
+PASS  design_refs is ADDITIVE — with the key absent the manifest is byte-identical to the pre-change generator (0eb588ba170a99f05a0a9cd7987a522a70a63758)
+PASS  vacuity guard — an EMPTY `design_refs` plus an empty scan still HARD-fails (TC-37)
+PASS  design_refs — a reserved-gap slice both selectors miss is commissionable via curation
+PASS  coverage report — an unmatched token is named even though the slice's other tokens matched
+PASS  design_refs — a non-list value HARD-fails instead of being silently ignored
+PASS  design_refs — a path escaping the repo root HARD-fails
+PASS  design_refs — a curated CONTRACT reaches §4 marked CURATED, and a scanned one is not marked
+PASS  design_refs — a curated doc that is NOT a contract stays in §6 and out of §4
+PASS  §4 CONTRACT PATHS is byte-identical to the pre-change generator when `design_refs` is absent
+PASS  real repo — the 0.8.20 Slice 20 manifest generates with every path resolving
+PASS  the real manifest emits section anchors only — no `name:line` pointers
+PASS  real repo — Slice 23's base is Slice 22's landing merge (572475f2) on the base line, and the HISTORICAL banner is absent as the state file's landed set requires (PENDING)
+PASS  real repo — the publish-gate pin is emitted as a citation and resolves (src/conformance/governed-surface-allowlist.json)
+PASS  real repo — --verify-all is green across every live release-state file
+PASS  real repo — every ladder entry carrying `design_refs` generates and cites all 11 curated doc(s), 1 of them into §4 as contracts
+PASS  agent-test.sh runs this fixture suite
+PASS  ci.yml defines a commission-manifest job
+PASS  the CI job runs the SHARED scripts/commission-manifest.sh
+PASS  the commission-manifest job is always-on (no if:, no needs:, not docs_only-gated)
+
+All commission-manifest tests passed
+
+exec
+/bin/bash -lc 'grep -n "WriteValidationError" -n src/python/tests/test_slice15d_projection_registry.py src/ts/tests/slice15d-projection-registry.test.ts | head -20' in /home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+ succeeded in 0ms:
+src/python/tests/test_slice15d_projection_registry.py:27:    WriteValidationError,
+src/python/tests/test_slice15d_projection_registry.py:201:    binding (WriteValidationError) and no registry row is persisted."""
+src/python/tests/test_slice15d_projection_registry.py:205:        with pytest.raises(WriteValidationError) as exc:
+src/python/tests/test_slice15d_projection_registry.py:225:        with pytest.raises(WriteValidationError) as exc:
+src/python/tests/test_slice15d_projection_registry.py:245:        with pytest.raises(WriteValidationError) as exc:
+src/python/tests/test_slice15d_projection_registry.py:262:        with pytest.raises(WriteValidationError) as exc:
+src/python/tests/test_slice15d_projection_registry.py:421:    REJECTED with ``WriteValidationError``.
+src/python/tests/test_slice15d_projection_registry.py:430:    The error family is ``WriteValidationError`` per decision #18 (Slice 22): a
+src/python/tests/test_slice15d_projection_registry.py:441:            with pytest.raises(WriteValidationError):
+src/python/tests/test_slice15d_projection_registry.py:454:        with pytest.raises(WriteValidationError):
+src/ts/tests/slice15d-projection-registry.test.ts:22:  WriteValidationError,
+src/ts/tests/slice15d-projection-registry.test.ts:40:// raising WriteValidationError. Mirrors the AC-068b surrogate cases in
+src/ts/tests/slice15d-projection-registry.test.ts:229:        assert.ok(err instanceof WriteValidationError, "must be WriteValidationError");
+src/ts/tests/slice15d-projection-registry.test.ts:250:        assert.ok(err instanceof WriteValidationError, "must be WriteValidationError");
+src/ts/tests/slice15d-projection-registry.test.ts:270:        assert.ok(err instanceof WriteValidationError, "must be WriteValidationError");
+src/ts/tests/slice15d-projection-registry.test.ts:290:        assert.ok(err instanceof WriteValidationError, "must be WriteValidationError");
+src/ts/tests/slice15d-projection-registry.test.ts:313:        assert.ok(err instanceof WriteValidationError, "must be WriteValidationError");
+src/ts/tests/slice15d-projection-registry.test.ts:338:        assert.ok(err instanceof WriteValidationError, "must be WriteValidationError");
+src/ts/tests/slice15d-projection-registry.test.ts:362:        assert.ok(err instanceof WriteValidationError, "must be WriteValidationError");
+src/ts/tests/slice15d-projection-registry.test.ts:389:        assert.ok(err instanceof WriteValidationError, "must be WriteValidationError");
+
+codex
+No actionable correctness issues were found in the diff. The new projection spec validation is applied before mutation and is covered by Rust, Python, and TypeScript tests; the commission-manifest changes also pass their fixture suite and live verification.
+No actionable correctness issues were found in the diff. The new projection spec validation is applied before mutation and is covered by Rust, Python, and TypeScript tests; the commission-manifest changes also pass their fixture suite and live verification.

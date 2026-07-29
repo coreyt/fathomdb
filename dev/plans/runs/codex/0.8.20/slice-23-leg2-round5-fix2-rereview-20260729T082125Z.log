@@ -1,0 +1,204 @@
+Reading additional input from stdin...
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: medium
+reasoning summaries: none
+session id: 019facf6-d61c-7771-9fb0-badbf98c92e4
+--------
+user
+Re-review of fix-2 ONLY. Scope strictly to 'git diff 20e5cb11 d339bdb0' - four files: dev/design/0.8.20-tc90-tc91-characterization.md, dev/DOC-INDEX.md, tests/tc90_transition_write_race.rs, tests/tc91_duplicate_embeds_and_silent_commit_loss.rs. Note: I have externally byte-verified that src/rust/crates/fathomdb-engine/src/lib.rs is UNCHANGED (0 bytes diff) - do not spend effort re-verifying that, and do not treat a blocked git command as evidence either way.
+
+Four findings from the prior round were addressed. Verify each was ACTUALLY closed and that the fix introduced no new defect or new overclaim.
+
+FINDING 1 - stress-arm non-vacuity was too weak. Fix: a shared assert_protocol_ran(outcome, expected) pinning attempted == transitions, truncated == false, competing_writes > 0, scheduler_errors == 0, other_errors == 0, applied to ALL FOUR arms (not just the two named). VERIFY: does it genuinely prevent a vacuous pass now? Is applying it to the paced arms correct or does it over-constrain an arm that legitimately behaves differently? Is ArmConfig::budget really a safety valve whose use is a failure, or can a run still silently truncate?
+
+FINDING 1 COROLLARY - the implementer self-reported a NEW uncertainty: the per-run failure RATE did not replicate across sessions (mean 5.9/40 vs 3.8/40, same commit, same quiet machine), though the 10/10 REPRODUCTION replicated both times. They removed the '14.8 percent' figure everywhere and now quote a pooled range 1-10 per 40 over N=20, with the acceptance bar judging a fix on REPRODUCTION rate not failure rate. VERIFY: is that the right call, is the doc now free of any rate-derived claim, and does the acceptance bar still discriminate a real fix from a lucky quiet run?
+
+FINDING 2 - the TC-68 correction was unpinned. Fix: exact assertions open1 == 0, open2 == 90, open3 == 0, with 90 derived as PROBE_FIXTURE_SIZE * 2 from the checked-in vector_equivalence_probes.txt, claimed 20/20 identical zero variance. VERIFY: is the derivation of 90 correct against the actual fixture and the actual TC-68 code path, and is the assertion now strong enough to catch a regression to 45?
+
+FINDING 3 - targets were not fully ignore-gated. Fix: a deliberate per-target decision, 13 new tests, 9 ignored, 4 live, documented in design-doc section 3.4 and both module headers. The judgment call was pin 3, kept live on evidence of 20 consecutive runs at 832-838 ms against a >= 450 ms assertion. VERIFY: is each of the 4 LIVE tests genuinely deterministic enough for a merge gate given TC-72, or is one of them timing-sensitive in a way the implementer talked themselves past? Be specific about pin 3 and about tc91_probe_embed_cost_per_open_at_head.
+
+FINDING 4 - TC-91 overclaimed causality. Fix: rewritten across sections 0, 5.4, 5.5 (split into 5.5.1 MEASURED / 5.5.2 HYPOTHESIS / 5.5.3 what would close it / 5.5.4), 5.6, 6, 8, plus both module headers. Section 4 item 9 and 5.6 item 8 now FORBID scoping a 0.8.21 fix against the unproven identity. VERIFY: read the whole doc for RESIDUAL overclaim - is there any remaining sentence that states the (a) is (b) identity, or any other causal claim, more confidently than the instrumentation supports? Also check section 2.5's PRESUMED-NOT-MEASURED split for configure_projections/purge/lib.rs:8646 is honest and cannot be misread as characterized.
+
+Report concrete problems with file:line. Where an item is closed, say so explicitly by number. Overclaiming is the primary defect class - flag any number or causal statement asserted more confidently than its evidence supports.
+warning: Codex's Linux sandbox uses bubblewrap and needs access to create user namespaces.
+codex
+I’ll keep this in review mode and constrain it to the requested diff/files. I’m first loading the repo memory and then I’ll inspect the four-file diff plus relevant test/fixture references needed to validate the claims.
+exec
+/bin/bash -lc "sed -n '1,220p' MEMORY.md" in /home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+ exited 2 in 0ms:
+sed: can't read MEMORY.md: No such file or directory
+
+exec
+/bin/bash -lc "pwd && rg --files -g 'MEMORY.md' -g 'feedback_*.md' -g 'vector_equivalence_probes.txt' -g 'tc68*' -g '*.rs' | sed -n '1,120p'" in /home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+ succeeded in 0ms:
+/home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+scripts/tests/fixtures/ast-shim/rust/nested-block-real/nested_real.rs
+scripts/tests/fixtures/ast-shim/rust/verb-reroute/api.rs
+scripts/tests/fixtures/ast-shim/rust/crate-root/lib.rs
+scripts/tests/fixtures/ast-shim/rust/block-comment-real/real.rs
+scripts/tests/fixtures/ast-shim/rust/clean/nested_block_comment_safe.rs
+scripts/tests/fixtures/ast-shim/rust/clean/ok.rs
+scripts/tests/fixtures/ast-shim/rust/clean/block_comment_safe.rs
+scripts/tests/fixtures/ast-shim/rust/dirty/legacy_admin.rs
+dev/release/fixtures/cargo-skew/mock-skew-consumer-b/src/lib.rs
+dev/release/fixtures/cargo-skew/mock-skew-consumer-a/src/lib.rs
+dev/release/fixtures/cargo-skew/src/lib.rs
+dev/release/fixtures/cargo-skew/mock-skew-api/src/lib.rs
+src/rust/crates/fathomdb-embedder/src/nomic.rs
+src/rust/crates/fathomdb-engine/src/pcache2.rs
+src/rust/crates/fathomdb-embedder/src/ort_bge.rs
+src/rust/crates/fathomdb-engine/src/vector_equivalence_probes.txt
+src/rust/crates/fathomdb-embedder/src/device.rs
+src/rust/crates/fathomdb-engine/src/lib.rs
+src/rust/crates/fathomdb-embedder/src/loader.rs
+src/rust/crates/fathomdb-engine/src/lifecycle.rs
+src/rust/crates/fathomdb-embedder/src/lib.rs
+src/rust/crates/fathomdb-embedder/src/candle_bge.rs
+src/rust/crates/fathomdb-embedder/src/candle_reranker.rs
+src/rust/crates/fathomdb-embedder-api/src/lib.rs
+src/rust/crates/fathomdb/src/lib.rs
+src/rust/crates/fathomdb-schema/src/lib.rs
+src/rust/crates/fathomdb-engine/examples/ingest_corpus.rs
+src/rust/crates/fathomdb-query/tests/property_template.rs
+src/rust/crates/fathomdb-engine/examples/security_cycle.rs
+src/rust/crates/fathomdb/tests/compile_fail_provenance.rs
+src/rust/crates/fathomdb/tests/reexports.rs
+src/rust/crates/fathomdb-embedder/examples/gpu_speedup.rs
+src/rust/crates/fathomdb-cli/src/main.rs
+src/rust/crates/fathomdb-cli/src/lib.rs
+src/rust/crates/fathomdb-query/src/lib.rs
+src/rust/crates/fathomdb-embedder/tests/candle_onnx_equivalence.rs
+src/rust/crates/fathomdb-embedder/tests/no_engine_dep.rs
+src/rust/crates/fathomdb/tests/ui/unprovenanced_public_write.rs
+src/rust/crates/fathomdb/tests/no_recovery_surface.rs
+src/rust/crates/fathomdb-embedder/tests/candle_dump.rs
+src/rust/crates/fathomdb/tests/sdk_only_erasure.rs
+src/rust/crates/fathomdb/tests/governed_surface.rs
+src/rust/crates/fathomdb-embedder/tests/cross_backend_calibration.rs
+src/rust/crates/fathomdb-embedder/tests/candle_bge.rs
+src/rust/crates/fathomdb-embedder/tests/loader.rs
+src/rust/crates/fathomdb-napi/build.rs
+src/rust/crates/fathomdb-engine/tests/durability_open_path.rs
+src/rust/crates/fathomdb-engine/tests/ir_gold_resolved.rs
+src/rust/crates/fathomdb-engine/tests/search_result_shape.rs
+src/rust/crates/fathomdb-engine/tests/telemetry_capture.rs
+src/rust/crates/fathomdb-engine/tests/pr_g3_read_collection.rs
+src/rust/crates/fathomdb-engine/tests/property_template.rs
+src/rust/crates/fathomdb-engine/tests/excise_source.rs
+src/rust/crates/fathomdb-engine/tests/tc68_probe_fingerprint_cache.rs
+src/rust/crates/fathomdb-engine/tests/gen_cross_backend_mean_fixture.rs
+src/rust/crates/fathomdb-engine/tests/safe_export.rs
+src/rust/crates/fathomdb-engine/tests/pr_g1_tokenizer_recall.rs
+src/rust/crates/fathomdb-engine/tests/slice30_graph_arm.rs
+src/rust/crates/fathomdb-engine/tests/opp12_lifecycle_verbs.rs
+src/rust/crates/fathomdb-engine/tests/slice23_spec_validation_reject.rs
+src/rust/crates/fathomdb-engine/tests/compatibility.rs
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs
+src/rust/crates/fathomdb-engine/tests/tc33_edge_temporal_epoch.rs
+src/rust/crates/fathomdb-engine/tests/op_store.rs
+src/rust/crates/fathomdb-engine/tests/pr_g12_recency.rs
+src/rust/crates/fathomdb-engine/tests/slice15b_node_validity_write.rs
+src/rust/crates/fathomdb-engine/tests/vector_quant_pack1.rs
+src/rust/crates/fathomdb-engine/tests/tc33_fix2_edge_validity_on_search.rs
+src/rust/crates/fathomdb-engine/tests/tc90_transition_write_race.rs
+src/rust/crates/fathomdb-engine/tests/slice10_read_view.rs
+src/rust/crates/fathomdb-engine/tests/elps_conformance_golden.rs
+src/rust/crates/fathomdb-engine/tests/eu5a2_machinery.rs
+src/rust/crates/fathomdb-engine/tests/slice15b_search_validity.rs
+src/rust/crates/fathomdb-engine/tests/tc57_worker_commit_pressure.rs
+src/rust/crates/fathomdb-schema/tests/step14_migration.rs
+src/rust/crates/fathomdb-engine/tests/provenance_mandatory.rs
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs
+src/rust/crates/fathomdb-schema/tests/step24_migration.rs
+src/rust/crates/fathomdb-engine/tests/slice20_graph_traversal.rs
+src/rust/crates/fathomdb-engine/tests/truncate_wal.rs
+src/rust/crates/fathomdb-engine/tests/pr9_embed_serialization.rs
+src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs
+src/rust/crates/fathomdb-engine/tests/tc33_fix1_unrenderable_epoch.rs
+src/rust/crates/fathomdb-engine/tests/exp_s_substrate.rs
+src/rust/crates/fathomdb-engine/tests/slice10_node_validity.rs
+src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs
+src/rust/crates/fathomdb-schema/tests/step21_migration.rs
+src/rust/crates/fathomdb-engine/tests/pr_e2_rerank_passages.rs
+src/rust/crates/fathomdb-engine/tests/ir_recall_eval.rs
+src/rust/crates/fathomdb-engine/tests/tc33_fix6_edge_vector_prune.rs
+src/rust/crates/fathomdb-schema/tests/migrations.rs
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs
+src/rust/crates/fathomdb-schema/tests/step17_migration.rs
+src/rust/crates/fathomdb-schema/tests/step15_to_17_migration.rs
+src/rust/crates/fathomdb-schema/tests/property_template.rs
+src/rust/crates/fathomdb-schema/tests/tc33_fix6_edge_vector_sidecar.rs
+src/rust/crates/fathomdb-schema/tests/step22_migration.rs
+src/rust/crates/fathomdb-schema/tests/wire_constants.rs
+src/rust/crates/fathomdb-schema/tests/step20_migration.rs
+src/rust/crates/fathomdb-py/src/lib.rs
+src/rust/crates/fathomdb-cli/tests/recovery_cli.rs
+src/rust/crates/fathomdb-cli/tests/operator_cli.rs
+src/rust/crates/fathomdb-schema/tests/step19_migration.rs
+src/rust/crates/fathomdb-cli/tests/perf_regression_check.rs
+src/rust/crates/fathomdb-cli/tests/cli_warm_cache.rs
+src/rust/crates/fathomdb-schema/tests/step16_migration.rs
+src/rust/crates/fathomdb-cli/tests/parser.rs
+src/rust/crates/fathomdb-napi/src/lib.rs
+src/rust/crates/fathomdb-cli/src/bin/perf-regression-check.rs
+src/rust/crates/fathomdb-schema/tests/slice25_logical_id_pin.rs
+src/rust/crates/fathomdb-schema/tests/step18_migration.rs
+src/rust/crates/fathomdb-schema/tests/tc33_fix4_projection_cursor_stall.rs
+src/rust/crates/fathomdb-engine/tests/erasure_projection_registry.rs
+src/rust/crates/fathomdb-engine/tests/vector_equivalence_probe.rs
+src/rust/crates/fathomdb-engine/tests/cursor_read_after_write.rs
+src/rust/crates/fathomdb-engine/tests/check_integrity.rs
+src/rust/crates/fathomdb-engine/tests/slice20_dense_readiness.rs
+src/rust/crates/fathomdb-engine/tests/source_id_writes.rs
+src/rust/crates/fathomdb-engine/tests/slice5_provider_seam.rs
+src/rust/crates/fathomdb-engine/tests/trace_source_ref.rs
+
+codex
+`git diff` is being blocked by the harness before it can produce output, so I’m not using that as evidence. I’ll inspect the current four files directly with line numbers and use repository fixtures/tests for the specific derivations you asked to verify.
+exec
+/bin/bash -lc "rg --files -g 'MEMORY.md' -g 'feedback_*.md' -g 'dev/design/0.8.20-tc90-tc91-characterization.md' -g 'dev/DOC-INDEX.md' -g 'tc90_transition_write_race.rs' -g 'tc91_duplicate_embeds_and_silent_commit_loss.rs'" in /home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+ succeeded in 0ms:
+dev/DOC-INDEX.md
+dev/design/0.8.20-tc90-tc91-characterization.md
+src/rust/crates/fathomdb-engine/tests/tc90_transition_write_race.rs
+src/rust/crates/fathomdb-engine/tests/tc91_duplicate_embeds_and_silent_commit_loss.rs
+
+codex
+Most shell commands that open a full shell are failing in this read-only sandbox with the same `bwrap` error. I’m switching to simpler direct invocations where possible so the review can still proceed from the checked-out files.
+codex
+The sandbox is now blocking even read-only `rg` invocations, so I’m testing whether direct file readers are available. If the environment keeps rejecting all reads, I’ll report that as a tooling limitation rather than inferring anything about the diff.
+codex
+At this point the local command runner is consistently failing before command execution, including `cat`. I’ll make one more attempt through MCP resource discovery; if there’s no file resource exposed, I won’t fabricate line-level findings.
+mcp: codex/list_mcp_resources started
+mcp: codex/list_mcp_resources (completed)
+codex
+I can’t perform the requested re-review in this environment.
+
+What happened:
+- `git diff 20e5cb11 d339bdb0 ...` failed before execution with:
+  `bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted`
+- Direct read attempts for the four scoped files also failed with the same sandbox error, including `cat` and `rg -n`.
+- MCP resource discovery exposed no file resources.
+
+I did not treat the blocked `git` command as evidence about `lib.rs` or the diff. I also can’t honestly mark findings 1-4 closed or open without reading the actual file contents and line numbers.
+
+Current review status: blocked by read-only sandbox command execution failure, not by repository evidence.
+tokens used
+16,712
+I can’t perform the requested re-review in this environment.
+
+What happened:
+- `git diff 20e5cb11 d339bdb0 ...` failed before execution with:
+  `bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted`
+- Direct read attempts for the four scoped files also failed with the same sandbox error, including `cat` and `rg -n`.
+- MCP resource discovery exposed no file resources.
+
+I did not treat the blocked `git` command as evidence about `lib.rs` or the diff. I also can’t honestly mark findings 1-4 closed or open without reading the actual file contents and line numbers.
+
+Current review status: blocked by read-only sandbox command execution failure, not by repository evidence.

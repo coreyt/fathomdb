@@ -7,7 +7,7 @@
   "master": "dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md",
   "schema_version": 24,
   "schema_version_source": "pub const SCHEMA_VERSION in src/rust/crates/fathomdb-schema/src/lib.rs",
-  "landed_verified_at": "b32e38ca",
+  "landed_verified_at": "3a6bdd8e",
   "landed_verified_how": "each SHA below is the landing merge commit for its slice AND is an ancestor of origin/main (git merge-base --is-ancestor), with the merge subject matching this repo's `merge(0.8.20): Slice[- ]N` landing convention",
   "ladder": [
     {
@@ -107,15 +107,15 @@
       "depends_on": [
         22
       ],
-      "status": "NOT_STARTED",
+      "status": "LANDED",
       "design_refs": [
         "dev/design/0.8.20-tc57-write-race-characterization.md",
         "dev/design/errors.md",
         "dev/design/record-lifecycle-protocol/projection-registry-and-async-embed.md",
         "dev/adr/ADR-0.6.0-error-taxonomy.md"
       ],
-      "sha": null,
-      "merge_subject": null
+      "sha": "30102ecd",
+      "merge_subject": "merge(0.8.20 Slice 23): R-20-SV — spec-validation reject + TC-90/TC-91 characterization"
     },
     {
       "slice": 25,
@@ -176,11 +176,11 @@
     25,
     30,
     21,
-    22
+    22,
+    23
   ],
-  "next_slice": 23,
+  "next_slice": 31,
   "remaining_ladder": [
-    23,
     31,
     40
   ],

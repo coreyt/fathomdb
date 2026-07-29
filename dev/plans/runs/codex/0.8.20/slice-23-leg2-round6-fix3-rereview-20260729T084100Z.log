@@ -1,0 +1,2478 @@
+Reading additional input from stdin...
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019fad08-c503-7d71-afba-45a35194978c
+--------
+user
+FINAL re-review of fix-3 ONLY, branch slice-23-sv. Scope strictly to 'git diff d339bdb0 b79e22f0'. Do NOT read outside this repository worktree. src/rust/crates/fathomdb-engine/src/lib.rs is externally byte-verified UNCHANGED - do not re-verify.
+
+This is the LAST review round available under a hard fix-round cap, so be decisive: state for each item CLOSED or NOT CLOSED, and raise a NEW issue only if it is genuinely material to landing. Do not re-litigate items already settled - in particular, item 4 below was explicitly adjudicated and a re-raise of the kept sites will be treated as re-litigation.
+
+ITEM 1 (the material one) - live pin 3 was timing-sensitive: it slept 100 ms and then ASSUMED the blocker held the WAL write lock, so a lost race would fail the >= 450 ms assertion while the engine behaved correctly. Fix: the blocker now signals on an mpsc channel AFTER its BEGIN IMMEDIATE returns and after it has written under the lock; the main thread blocks on recv_timeout(READY_TIMEOUT=30s) before timing starts, and HOLD begins at that instant. Claimed evidence: N=10 quiet 931-937 ms, confirming N=10 932-937 ms, and N=10 under 24 spinning processes on 24 threads 934-941 ms, all 10/10 green against >= 450 ms. Pin stays LIVE, inventory unchanged at 13 tests / 9 ignored / 4 live. VERIFY: is the readiness signal correct and race-free (can the main thread proceed before the lock is genuinely held, or can the signal be sent and the lock then released early)? Is READY_TIMEOUT a hang-guard rather than a timing assertion? Is the pin now genuinely safe for the DEFAULT merge gate given TC-72? Did the stale 834 ms figures get updated everywhere the doc quotes them?
+
+ITEM 2 - overclaim in the tc91 module header (line 3 'share one mechanism'; line 66 '(a) turns out to BE (b)'). Fix: line 3 now says the file HYPOTHESISES but does not establish a shared mechanism; line 66 is plain MEASURED plus an explicit note the counts do not license the identity. VERIFY closed, and check no other line in that header reintroduces it.
+
+ITEM 3 - overclaim in an assertion message at tc91 ~line 519 ('The variable is write CADENCE - i.e. how often the engine's own writer holds the WAL write lock' and 'If this ever becomes non-zero, a SECOND duplicate source exists'), plus the R-A sentence in design section 7 ('exactly what drives'). Fix: reworded to cadence sensitivity with the hypothesis named and the observability gap stated inline; trip condition became 'the cadence sensitivity itself has changed'. VERIFY closed.
+
+ITEM 4 - ADJUDICATED, DO NOT RE-RAISE the kept sites. The orchestrator ruled that characterization lines 193-195 (the two-session disclosure table), line 200 (which literally reads 'not as 14.8 percent') and line 707 (under 'what I am unsure about') are the DISCLOSURE of the instability, not a claim of it, and must be KEPT. Only line 835's loose '~12 % failure rate' was to be restated. VERIFY ONLY that line 835 was restated against the pooled range with its instability attached, and that the kept sites are intact.
+
+Finally: read the design doc's section 0 headline and section 4 acceptance bar once more and confirm a future 0.8.21 agent could act on them without being misled about what was proven. Report file:line for anything not closed.
+codex
+Using review stance for this pass. I’ll first load the repo memory/instructions, then inspect only the requested diff range and the affected in-repo files/lines needed to decide closure.
+exec
+/bin/bash -lc "pwd && rg --files -g 'MEMORY.md' -g 'feedback_*.md' -g 'AGENTS.md'" in /home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+ succeeded in 0ms:
+/home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+AGENTS.md
+
+exec
+/bin/bash -lc 'git diff --name-only d339bdb0 b79e22f0' in /home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+ succeeded in 0ms:
+dev/design/0.8.20-tc90-tc91-characterization.md
+src/rust/crates/fathomdb-engine/tests/tc90_transition_write_race.rs
+src/rust/crates/fathomdb-engine/tests/tc91_duplicate_embeds_and_silent_commit_loss.rs
+
+codex
+`MEMORY.md` is not present in this worktree, so there are no pointed feedback files to load locally. The requested diff touches the design note plus the two Rust test files; I’m reading those hunks now and will avoid `lib.rs` as instructed.
+exec
+/bin/bash -lc 'git diff --unified=120 d339bdb0 b79e22f0 -- src/rust/crates/fathomdb-engine/tests/tc90_transition_write_race.rs' in /home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+ succeeded in 0ms:
+diff --git a/src/rust/crates/fathomdb-engine/tests/tc90_transition_write_race.rs b/src/rust/crates/fathomdb-engine/tests/tc90_transition_write_race.rs
+index 8e6872f8..dfbe01ae 100644
+--- a/src/rust/crates/fathomdb-engine/tests/tc90_transition_write_race.rs
++++ b/src/rust/crates/fathomdb-engine/tests/tc90_transition_write_race.rs
+@@ -4,253 +4,262 @@
+ //!
+ //! TC-90 (ledger `seq-128`, p1, `area: engine`) claims [`Engine::transition`] has
+ //! the SAME shape TC-57 fixed in `commit_batch`: it READS before it WRITES inside
+ //! a rusqlite `BEGIN DEFERRED` transaction, so the transaction must promote a read
+ //! lock to the WAL write lock while the async projection worker holds it.
+ //!
+ //! **CHARACTERIZATION ONLY — NO FIX** (steward `seq-136`: the fix lands at
+ //! 0.8.21). `src/rust/crates/fathomdb-engine/src/lib.rs` is byte-identical to the
+ //! baseline `94f09d7d` in the commit that lands this file. The written
+ //! characterization is `dev/design/0.8.20-tc90-tc91-characterization.md`; the
+ //! template it follows is `dev/design/0.8.20-tc57-write-race-characterization.md`.
+ //!
+ //! ## The shape IS there — quoted from `lib.rs` at `94f09d7d`
+ //!
+ //! ```text
+ //! lib.rs:8221   let tx = connection.transaction()...;                  // BEGIN DEFERRED
+ //! lib.rs:8227   let current: Option<(String, i64, String)> = tx.query_row(
+ //! lib.rs:8229       "SELECT state, write_cursor, body FROM canonical_nodes \
+ //! lib.rs:8230        WHERE logical_id = ?1 AND superseded_at IS NULL", ...)   // READ  -> read lock
+ //! lib.rs:8258   tx.execute(
+ //! lib.rs:8259       "UPDATE canonical_nodes SET state = ?1, reason = ?2 \
+ //! lib.rs:8260        WHERE logical_id = ?3 AND superseded_at IS NULL", ...)   // WRITE -> PROMOTE
+ //! ```
+ //!
+ //! That is structurally identical to `commit_batch`'s pre-TC-57-fix shape. What
+ //! differs is the MITIGATION already present at the call site, and it is that
+ //! difference — not the transaction shape — that the two loop arms measure.
+ //!
+ //! ## The two mitigations `transition` has and `commit_batch` did not
+ //!
+ //! 1. **`lib.rs:8217` — `self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS)?` before the
+ //!    transaction.** Waits for `active_jobs == 0 && queued_jobs == 0` AND for the
+ //!    on-disk `database_has_pending_projection_work` predicate to go false
+ //!    (`lib.rs:1246-1273`), so at the instant `drain` returns there is no worker
+ //!    commit in flight and none pending.
+ //! 2. **`lib.rs:8219` — `self.connection.lock()`.** `write_inner` takes the SAME
+ //!    mutex (`lib.rs:5051`), so no in-process `Engine::write` can commit — and
+ //!    therefore no new projection job can be enqueued — while `transition` holds
+ //!    its transaction open.
+ //!
+ //! Neither is present in `commit_batch`. Together they mean the in-process race
+ //! window is NOT "the whole transaction" (as it was for TC-57) but only the gap
+ //! between `drain` returning and the connection mutex being acquired: a competing
+ //! `Engine::write` that wins the mutex in that gap can commit, wake the
+ //! dispatcher, and have a worker holding the write lock by the time `transition`
+ //! promotes.
+ //!
+ //! ## MEASURED at `94f09d7d` — the window is real, and it is NARROW
+ //!
+ //! Two independent sessions of 10 runs per arm; every arm replicated exactly.
+ //!
+ //! | arm | writers x burst | pace | embed | runs | failed |
+ //! |---|---|---|---|---|---|
+ //! | [`tc90_repro_transition_loop_races_projection_worker`] | 1 x 1 | 3 ms | 2 ms | 20 | **0/20** |
+ //! | [`tc90_control_transition_loop_without_second_writer`] | 1 x 1 | 3 ms | — | 20 | **0/20** |
+ //! | [`tc90_stress_transition_loop_under_saturating_burst_load`] | 2 x 24 | 1 ms | 0 ms | 20 | **20/20** |
+ //! | [`tc90_stress_control_without_second_writer`] | 2 x 24 | 1 ms | — | 20 | **0/20** |
+ //!
+ //! The TC-57-shaped paced arm does **not** reproduce: at a 2 ms embed the worker
+ //! cannot reach its commit inside the microseconds `transition` spends between
+ //! acquiring the connection mutex and promoting. **The stress arm reproduces
+ //! 10/10** — against a control that is **0/10** with the identical load.
+ //!
+ //! **Quote the reproduction rate, not the failure rate.** Two independent
+ //! sessions on the same commit and machine gave per-run means of **5.9** and
+ //! **3.8** failures per 40 transitions; the 10/10 reproduction replicated, the
+ //! rate did not. Pooled over N = 20 the range is **1–10 per 40** (≈ 2.5 %–25 %).
+ //! In all 20 runs: `attempted == 40`, `truncated == false`, zero `Scheduler` and
+ //! zero other variants — and since codex §9 round 4 those are **asserted**
+ //! ([`assert_protocol_ran`]), not merely reported.
+ //!
+ //! Had only the paced arm been run, this file would have reported a clean and
+ //! completely false NEGATIVE. The knob that decided it is
+ //! [`ArmConfig::embed_delay_ms`].
+ //!
+ //! ## Mechanism pins — deterministic, and deliberately NOT `#[ignore]`d
+ //!
+ //! The loop arms measure whether the window is *reachable*. They cannot say what
+ //! SQLite returns when it IS reached, because `transition` maps every rusqlite
+ //! error to the unit variant `EngineError::Storage` with `.map_err(|_| ...)` and —
+ //! unlike `write_inner`, which at least calls `emit_sqlite_internal_error`
+ //! (`lib.rs:5097`) — emits NO lifecycle event at all. The numeric code is not
+ //! merely opaque on this path, it is never produced.
+ //!
+ //! So the mechanism is pinned deterministically instead, by holding the write lock
+ //! from a second connection rather than racing for it:
+ //!
+ //! * [`tc90_mechanism_transition_sql_shape_on_real_schema_is_busy_5`] replays
+ //!   `transition`'s two statements VERBATIM against a real engine-created
+ //!   `canonical_nodes`, with a counting busy handler installed.
+ //! * [`tc90_mechanism_engine_transition_under_held_write_lock_fails_immediately`]
+ //!   drives the real [`Engine::transition`] under the same held lock.
+ //! * [`tc90_mechanism_control_engine_write_under_held_write_lock_survives`] drives
+ //!   the already-`BEGIN IMMEDIATE` [`Engine::write`] under the SAME held lock. It
+ //!   is the direct evidence for whether TC-57's R1 remedy transfers here.
+ //!
+ //! ## Test profile — which targets run in the DEFAULT `cargo test` gate
+ //!
+ //! Decided deliberately per target, not by reflex (codex §9 round 4 finding 3).
+ //! The gating question is TC-72: roughly 1 workspace run in 3 already fails on
+ //! plain `main`, so anything timing-sensitive added to the default profile makes
+ //! that worse and must earn its place.
+ //!
+ //! **`#[ignore]`d — all four LOOP arms.** They race a live projection worker
+ //! against live writer threads; their results are RATES, i.e. measurements, and
+ //! `cargo test --workspace` is not a stable signal for them. The pair is enabled
+ //! and disabled as one unit — a comparison with one arm running is worse than no
+ //! comparison. Run with `--ignored`.
+ //!
+ //! **LIVE in the default profile — all three `tc90_mechanism_*` pins**, on the
+ //! same basis TC-57's own `tc57_mechanism_*` pins run that way. None of them
+ //! races for anything: the contending write lock is TAKEN and HELD by a second
+ //! connection for the whole measured call, so the outcome is decided by SQLite's
+ //! documented promotion behaviour rather than by scheduling. Their wall-clock
+ //! assertions are one-sided bounds with large margins, not equalities:
+ //!
+ //! | pin | shape | timing assertion | measured | margin |
+ //! |---|---|---|---|---|
+ //! | 1 (`..._sql_shape_...`) | two connections, ONE thread, no sleeps | `< 500 ms` | 0 ms | fails instantly by construction — the busy handler is skipped |
+ //! | 2 (`..._engine_transition_...`) | blocker held on the calling thread | `< 2 000 ms` | 0 ms | same construction; no `drain` work is outstanding |
+-//! | 3 (`..._control_engine_write_...`) | blocker thread holds 900 ms | `>= 450 ms` | ~834 ms | the holder SLEEPS 900 ms, so releasing early is impossible; and the writer's 5 000 ms busy timeout leaves ~4.1 s of slack over a 900 ms hold |
++//! | 3 (`..._control_engine_write_...`) | blocker thread SIGNALS readiness, then holds 900 ms | `>= 450 ms` | 931–937 ms (N = 10); 934–941 ms under a 24-way CPU load | the writer does not start until the blocker has signalled that `BEGIN IMMEDIATE` returned, and the holder then SLEEPS 900 ms; the writer's 5 000 ms busy timeout leaves ~4.1 s of slack |
+ //!
+ //! Pin 3 is the only one with a thread, and it is the one deliberate call: it is
+ //! kept live because it is the load-bearing evidence that TC-57's R1 remedy
+ //! transfers (design doc §3.3), and a fix scoped against R-A would otherwise be
+-//! reasoning from an ignored test. **If it ever does flake, gate it — do not
+-//! widen the bound**, which is the assertion that makes it mean anything.
++//! reasoning from an ignored test.
++//!
++//! Its thread is synchronised by a **readiness channel, not a sleep** (codex §9
++//! round 5 finding 4). The earlier fixed 100 ms sleep only *assumed* the blocker
++//! had won the scheduler; on a loaded box the writer could have started before
++//! the lock was ever taken, and the `>= 450 ms` bound would then have failed on
++//! a correct engine — precisely the kind of target TC-72 says must not be added
++//! to the merge gate. With the signal, pin 3's lock is held for the whole
++//! measured call exactly as pins 1 and 2's are. **If it ever does flake, gate it
++//! — do not widen the bound**, which is the assertion that makes it mean
++//! anything.
+ 
+ use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
+ use fathomdb_engine::{Engine, EngineError, InitialState, LifecycleState, PreparedWrite, SourceId};
+ use fathomdb_schema::SQLITE_SUFFIX;
+ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+-use std::sync::{Arc, Mutex};
++use std::sync::Arc;
+ use std::time::{Duration, Instant};
+ use tempfile::TempDir;
+ 
+ // ---------------------------------------------------------------------------
+ // Fixture
+ // ---------------------------------------------------------------------------
+ 
+ /// Deterministic in-process embedder with a per-call delay and a call counter.
+ /// Same shape as `tc57_governed_write_race.rs`'s, so the worker pressure is
+ /// comparable between the two characterizations.
+ ///
+ /// A LIVE embedder (not the `default-embedder` cargo feature) for the reason
+ /// TC-57 records: `run_projection_job` returns `Deferred` and writes NOTHING when
+ /// `shared.embedder` is `None`, so without one there is no second writer and no
+ /// race can exist. `open_with_embedder_for_test` supplies one with no feature flag
+ /// and no network, so this target compiles to REAL tests in the default gate.
+ #[derive(Debug)]
+ struct CountingDelayEmbedder {
+     identity: EmbedderIdentity,
+     calls: Arc<AtomicUsize>,
+     delay: Duration,
+ }
+ 
+ impl CountingDelayEmbedder {
+     fn new(calls: Arc<AtomicUsize>, delay: Duration) -> Self {
+         Self { identity: EmbedderIdentity::new("deterministic", "rev-a", 384), calls, delay }
+     }
+ }
+ 
+ impl Embedder for CountingDelayEmbedder {
+     fn identity(&self) -> EmbedderIdentity {
+         self.identity.clone()
+     }
+ 
+     fn embed(&self, _text: &str) -> Result<Vector, EmbedderError> {
+         self.calls.fetch_add(1, Ordering::SeqCst);
+         if !self.delay.is_zero() {
+             std::thread::sleep(self.delay);
+         }
+         let mut v = vec![0.0_f32; self.identity.dimension as usize];
+         v[0] = 1.0;
+         Ok(v)
+     }
+ }
+ 
+ fn governed_node(logical_id: &str, body_tag: &str) -> PreparedWrite {
+     PreparedWrite::Node {
+         kind: "doc".to_string(),
+         body: format!(r#"{{"summary":"tc90 {body_tag}"}}"#),
+         source_id: SourceId::new("test:fixture").expect("source id"),
+         logical_id: Some(logical_id.to_string()),
+         state: InitialState::Active,
+         reason: None,
+         valid_from: None,
+         valid_until: None,
+     }
+ }
+ 
+ /// Governed rows seeded up front and then flipped back and forth by the
+ /// transition loop.
+ const SUBJECTS: usize = 8;
+ 
+ /// `transition` calls per arm. Each is a full `active -> deleted` or
+ /// `deleted -> active` flip, so every one of them executes the read-then-upgrade
+ /// transaction under measurement.
+ const TRANSITIONS: usize = 120;
+ 
+ /// `transition` calls for the STRESS pairing. Lower than [`TRANSITIONS`] because
+ /// under saturating load each call can burn the full 30 s `drain` timeout, so the
+ /// arm is bounded by [`ArmConfig::budget`] and this is only an upper bound on what
+ /// it will attempt.
+ const STRESS_TRANSITIONS: usize = 40;
+ 
+ /// Wall-clock budget for the STRESS arms.
+ ///
+ /// A safety valve, NOT a measurement parameter: it stops an arm that has hit the
+ /// §2.5 drain-starvation shape from running unbounded. Since codex §9 round 4
+ /// finding 1, hitting it is a hard failure — see [`assert_stress_protocol_ran`].
+ /// MEASURED at `94f09d7d`: a full 40-transition stress run completes in ~20-45 s,
+ /// so 120 s is roughly a 3x margin and truncation means something has genuinely
+ /// changed.
+ const STRESS_BUDGET: Duration = Duration::from_secs(120);
+ 
+ /// How one arm loads the engine. The arms differ ONLY in these fields, and each
+ /// pairing below changes exactly one of them relative to its control.
+ struct ArmConfig {
+     label: &'static str,
+     /// Enrol `doc` as a vector kind. THIS is the independent variable of the
+     /// repro/control pairing: with it the projection worker embeds and commits on
+     /// its own connection (a second writer exists); without it the worker never
+     /// commits (no second writer).
+     second_writer: bool,
+     /// Competing `Engine::write` threads. They exist to keep re-arming the
+     /// dispatcher in the only in-process gap `transition` leaves open — between
+     /// `drain` returning idle and the connection mutex being acquired.
+     writer_threads: usize,
+     /// Rows per competing `Engine::write` call. A burst larger than
+     /// `PROJECTION_COMMIT_BATCH` (16) makes the worker commit FULL 16-job
+     /// transactions, which is the longest write-lock hold the worker ever takes —
+     /// i.e. the widest target the promote window can be offered.
+     burst: usize,
+     /// Sleep between competing writes. `0` saturates; a few ms lets
+     /// `transition`'s own `drain` reach idle instead of burning its timeout.
+     writer_pace_ms: u64,
+     /// How many `transition` calls to attempt.
+     transitions: usize,
+     /// Per-`embed()` sleep for the arm's embedder.
+     ///
+     /// This is the sharpest knob on the promote window. The worker can only hold
+     /// the write lock `embed_delay_ms` AFTER the competing write that enqueued its
+     /// job released the connection mutex, whereas `transition` reaches its
+     /// promoting `UPDATE` microseconds after acquiring that same mutex. Setting it
+     /// to **0** is therefore the tightest interleaving the in-process shape admits,
+     /// and any negative result must be measured there, not only at TC-57's 1-2 ms.
+     embed_delay_ms: u64,
+     /// Wall-clock budget for the transition loop.
+     ///
+     /// This is NOT decoration. MEASURED at `94f09d7d`: with `writer_pace_ms: 0`
+     /// and two burst-24 writer threads, `transition`'s own `drain`
+     /// (`lib.rs:8217`) never reaches idle, so every call burns the full
+@@ -838,179 +847,204 @@ fn tc90_mechanism_transition_sql_shape_on_real_schema_is_busy_5() {
+     assert_eq!(state, "active", "fixture sanity: the seeded row is active");
+ 
+     let started = Instant::now();
+     let err = a
+         .execute(
+             "UPDATE canonical_nodes SET state = ?1, reason = ?2 \
+              WHERE logical_id = ?3 AND superseded_at IS NULL",
+             rusqlite::params!["deleted", None::<String>, "tc90-mech"],
+         )
+         .expect_err("the promotion must fail while B holds the write lock");
+     let elapsed = started.elapsed();
+     let sqlite_err =
+         err.sqlite_error().unwrap_or_else(|| panic!("expected a SqliteFailure, got {err:?}"));
+ 
+     println!(
+         "TC90-MECH sql_shape primary={:?} extended={} handler_calls={} elapsed_ms={}",
+         sqlite_err.code,
+         sqlite_err.extended_code,
+         TRANSITION_HANDLER_CALLS.load(Ordering::SeqCst),
+         elapsed.as_millis(),
+     );
+ 
+     assert_eq!(
+         sqlite_err.code,
+         rusqlite::ErrorCode::DatabaseBusy,
+         "the primary code of a refused promotion is SQLITE_BUSY"
+     );
+     assert_eq!(
+         sqlite_err.extended_code,
+         rusqlite::ffi::SQLITE_BUSY,
+         "and the EXTENDED code is plain 5, not SQLITE_BUSY_SNAPSHOT (517) — the same \
+          correction TC-57 §0 had to make. Got {}",
+         sqlite_err.extended_code
+     );
+     assert_eq!(
+         TRANSITION_HANDLER_CALLS.load(Ordering::SeqCst),
+         0,
+         "THE POINT: SQLite skips the busy handler when promoting a read transaction \
+          (deadlock avoidance), so no `busy_timeout` value could retry `transition` either"
+     );
+     assert!(
+         elapsed < Duration::from_millis(500),
+         "and it fails instantly rather than after any backoff (took {elapsed:?})"
+     );
+ 
+     let _ = a.execute_batch("ROLLBACK;");
+     let _ = b.execute_batch("ROLLBACK;");
+ }
+ 
+ /// **Pin 2 — the real [`Engine::transition`] under the same HELD write lock.**
+ ///
+ /// Deterministic: the lock is taken by a second connection and held for the whole
+ /// call, so nothing here depends on winning a race. This is the engine-level
+ /// counterpart to pin 1 and it is what makes "the shape reaches SQLite" a
+ /// measurement rather than a code reading.
+ ///
+ /// Note what is NOT asserted: the numeric code. `transition` maps every rusqlite
+ /// error through `.map_err(|_| EngineError::Storage)` and — unlike `write_inner`
+ /// (`lib.rs:5097`) — never calls `emit_sqlite_internal_error`, so on this path the
+ /// code is not merely opaque to the host, it is never emitted at all. Pin 1 is
+ /// where the code comes from.
+ #[test]
+ fn tc90_mechanism_engine_transition_under_held_write_lock_fails_immediately() {
+     let dir = TempDir::new().expect("tempdir");
+     let path = dir.path().join(format!("tc90_mech_engine{SQLITE_SUFFIX}"));
+     let calls = Arc::new(AtomicUsize::new(0));
+     let opened = Engine::open_with_embedder_for_test(
+         &path,
+         Arc::new(CountingDelayEmbedder::new(calls, Duration::ZERO)),
+     )
+     .expect("open");
+     let engine = &opened.engine;
+     engine.write(&[governed_node("tc90-held", "held-lock subject")]).expect("seed");
+     engine.drain(60_000).expect("drain");
+ 
+     let blocker = rusqlite::Connection::open(&path).expect("open blocker");
+     blocker.execute_batch("BEGIN IMMEDIATE;").expect("blocker takes the write lock");
+     blocker
+         .execute(
+             "INSERT OR IGNORE INTO _fathomdb_projection_terminal(write_cursor, state) \
+              VALUES(?1, ?2)",
+             rusqlite::params![9_999_998_i64, "up_to_date"],
+         )
+         .expect("blocker writes under its lock");
+ 
+     let started = Instant::now();
+     let result = engine.transition("tc90-held", LifecycleState::Deleted, None);
+     let elapsed = started.elapsed();
+     println!(
+         "TC90-MECH engine_transition result={:?} elapsed_ms={}",
+         result.as_ref().err(),
+         elapsed.as_millis()
+     );
+ 
+     assert!(
+         matches!(result, Err(EngineError::Storage)),
+         "TC-90: `Engine::transition` under a held WAL write lock returns the opaque unit \
+          variant `EngineError::Storage`; got {result:?}"
+     );
+     assert!(
+         elapsed < Duration::from_millis(2_000),
+         "and it returns IMMEDIATELY — the busy handler is skipped for a promotion, so no \
+          backoff happens (took {elapsed:?})"
+     );
+ 
+     let _ = blocker.execute_batch("ROLLBACK;");
+     drop(blocker);
+     let _ = engine.close();
+ }
+ 
+ /// **Pin 3 — the CONTROL, and the direct evidence on whether TC-57's R1 remedy
+ /// transfers.**
+ ///
+ /// [`Engine::write`] ALREADY opens `BEGIN IMMEDIATE` (`lib.rs:18637`, the Slice
+ /// 21a-2 fix). Under the identical held-write-lock contention that pin 2 shows
+ /// killing `transition`, an `IMMEDIATE` transaction goes through the busy handler
+ /// instead of being refused: it WAITS for the lock and then succeeds.
+ ///
+ /// The blocker releases after [`HOLD`], well inside rusqlite's default 5 000 ms
+ /// busy timeout, so the wait is bounded and the test cannot hang.
++///
++/// **The blocker's readiness is SIGNALLED, never slept for** (codex §9 round 5
++/// finding 4). An earlier draft slept a fixed 100 ms and then *assumed* the
++/// blocker had taken the lock. That assumption is a race: on a loaded box the
++/// writer could reach `BEGIN IMMEDIATE` before the blocker ever acquired the
++/// WAL write lock, and then the `elapsed >= HOLD / 2` assertion would fail on a
++/// perfectly correct engine. The blocker now sends on a channel only *after* its
++/// `BEGIN IMMEDIATE` has returned and it has written under the lock, and the
++/// main thread blocks on that before it starts timing. The lock therefore
++/// genuinely **is** held for the whole measured call — the same property the
++/// other two pins get from being single-threaded — so this pin observes the
++/// contention rather than racing for it.
+ #[test]
+ fn tc90_mechanism_control_engine_write_under_held_write_lock_survives() {
+     /// How long the blocker holds the write lock. Must be comfortably under
+     /// rusqlite's 5 000 ms default busy timeout so the waiting writer succeeds.
+     const HOLD: Duration = Duration::from_millis(900);
++    /// Upper bound on waiting for the blocker's readiness signal. Generous: it
++    /// exists only so a blocker that never starts fails LOUDLY instead of
++    /// hanging the suite. It is not a timing assertion.
++    const READY_TIMEOUT: Duration = Duration::from_secs(30);
+ 
+     let dir = TempDir::new().expect("tempdir");
+     let path = dir.path().join(format!("tc90_mech_control{SQLITE_SUFFIX}"));
+     let calls = Arc::new(AtomicUsize::new(0));
+     let opened = Engine::open_with_embedder_for_test(
+         &path,
+         Arc::new(CountingDelayEmbedder::new(calls, Duration::ZERO)),
+     )
+     .expect("open");
+     let engine = &opened.engine;
+     engine.write(&[governed_node("tc90-control-seed", "control seed")]).expect("seed");
+     engine.drain(60_000).expect("drain");
+ 
+-    let released = Arc::new(Mutex::new(false));
++    // Readiness SIGNAL, not a sleep. `ready_tx` fires only once the blocker's
++    // `BEGIN IMMEDIATE` has returned and it has written under the lock, so when
++    // `recv_timeout` below returns, the WAL write lock IS held. `HOLD` starts at
++    // that same instant, so the writer's wait is bounded below by `HOLD` minus
++    // only the microseconds it takes to reach its own `BEGIN` — no scheduling
++    // race decides whether this pin passes.
++    let (ready_tx, ready_rx) = std::sync::mpsc::channel::<()>();
+     let holder = {
+         let path = path.clone();
+-        let released = Arc::clone(&released);
+         std::thread::spawn(move || {
+             let blocker = rusqlite::Connection::open(&path).expect("open blocker");
+             blocker.execute_batch("BEGIN IMMEDIATE;").expect("blocker takes the write lock");
+             blocker
+                 .execute(
+                     "INSERT OR IGNORE INTO _fathomdb_projection_terminal(write_cursor, state) \
+                      VALUES(?1, ?2)",
+                     rusqlite::params![9_999_997_i64, "up_to_date"],
+                 )
+                 .expect("blocker writes under its lock");
++            // The lock is now HELD. Only now may the writer start.
++            ready_tx.send(()).expect("blocker signals that it holds the write lock");
+             std::thread::sleep(HOLD);
+             blocker.execute_batch("ROLLBACK;").expect("blocker releases");
+-            *released.lock().expect("released lock") = true;
+         })
+     };
+-    // Give the holder time to actually take the lock before the writer starts.
+-    std::thread::sleep(Duration::from_millis(100));
++    ready_rx
++        .recv_timeout(READY_TIMEOUT)
++        .expect("the blocker must signal that it HOLDS the write lock before the writer starts");
+ 
+     let started = Instant::now();
+     let result = engine.write(&[governed_node("tc90-control-2", "control write")]);
+     let elapsed = started.elapsed();
+     let _ = holder.join();
+     println!("TC90-MECH control_write ok={} elapsed_ms={}", result.is_ok(), elapsed.as_millis());
+ 
+     assert!(
+         result.is_ok(),
+         "the `BEGIN IMMEDIATE` writer must SURVIVE the identical contention that refuses \
+          `transition`'s promotion — got {result:?}"
+     );
+     assert!(
+         elapsed >= HOLD / 2,
+         "and it must have WAITED for the lock ({elapsed:?} < half of {HOLD:?}), which is the \
+-         proof the busy handler was consulted rather than skipped"
++         proof the busy handler was consulted rather than skipped. The blocker SIGNALLED that \
++         it held the lock before this call started and then held it for {HOLD:?}, so a short \
++         elapsed here is an engine result, not a lost scheduling race"
+     );
+ 
+     let _ = engine.close();
+ }
+
+exec
+/bin/bash -lc 'git diff --unified=80 d339bdb0 b79e22f0 -- dev/design/0.8.20-tc90-tc91-characterization.md' in /home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+ succeeded in 0ms:
+diff --git a/dev/design/0.8.20-tc90-tc91-characterization.md b/dev/design/0.8.20-tc90-tc91-characterization.md
+index d928eff4..2248c547 100644
+--- a/dev/design/0.8.20-tc90-tc91-characterization.md
++++ b/dev/design/0.8.20-tc90-tc91-characterization.md
+@@ -1,124 +1,124 @@
+ ---
+ status: ACTIVE
+ ---
+ 
+ # TC-90 / TC-91 — `Engine::transition`'s write race and the silently-lost projection commit: CHARACTERIZATION
+ 
+ > **Requirement traceability.** 0.8.20 **Slice 23, leg 2** (`R-20-SV` part b). Covers
+ > **TC-90** (ledger `seq-128`, p1, `area: engine`) and **TC-91** (ledger `seq-129`, p2).
+ > **CHARACTERIZATION ONLY — NO FIX**, per steward ruling **`seq-136`**: characterize inside
+ > 0.8.20, fix at **0.8.21**. `src/rust/crates/fathomdb-engine/src/lib.rs` is **byte-identical**
+ > to the baseline in the commit that lands this document.
+ > **Primary design of record / template:** `dev/design/0.8.20-tc57-write-race-characterization.md`
+ > — §1's repro protocol and §1.4's acceptance bar are the shape followed here, and its §0 is the
+ > warning that earns the ordering. `dev/design/errors.md` (locked) and
+ > `dev/design/record-lifecycle-protocol/projection-registry-and-async-embed.md` (`status:
+ > UNREVIEWED` — *nobody has classified it*, which is not the same as *current*) are **consulted
+ > by** this document, not authority over it.
+ 
+ - **Baseline measured at:** `94f09d7d412784e4d02e4d03ae08d6b0e42bcad5` (branch `slice-23-sv`, leg 1 landed)
+ - **Harnesses:**
+   - `src/rust/crates/fathomdb-engine/tests/tc90_transition_write_race.rs`
+   - `src/rust/crates/fathomdb-engine/tests/tc91_duplicate_embeds_and_silent_commit_loss.rs`
+ - **Machine:** quiet during every measurement run; nothing else heavy was running concurrently
+   (TC-97: `ac_029` is a wall-clock ratio assertion and heavy neighbours poison it — the same
+   applies to every number below).
+ 
+ ---
+ 
+ ## 0. Headline
+ 
+ Four findings, three of them positive, one of them a correction to a figure this repo has been
+ carrying.
+ 
+ 1. **TC-90 is REAL and reproduces 10/10** — but **only** at a load shape the obvious
+    TC-57-style repro never reaches. The TC-57-shaped paced arm is **0/10**. Had this slice run
+    only that arm it would have filed a clean, well-measured, and completely **false negative**.
+    §2.
+ 2. **The mechanism is confirmed at the SQLite level and is identical to TC-57's Exit B:** plain
+    **`SQLITE_BUSY` (extended code 5)**, returned immediately, **busy handler invoked 0 times**.
+    Measured by replaying `transition`'s two statements verbatim against a real
+    `canonical_nodes`. §3.
+ 3. **TC-57's R1 remedy (`BEGIN IMMEDIATE`) demonstrably transfers** — not by analogy, by
+    measurement: under the *identical* held-write-lock contention that kills `transition` in
+-   0 ms, the already-`IMMEDIATE` `Engine::write` **waits 834 ms and succeeds**. §3.3.
++   0 ms, the already-`IMMEDIATE` `Engine::write` **waits ~935 ms and succeeds**. §3.3.
+ 4. **TC-91's duplicate rate is a CADENCE, not a scheduler constant** — 32.5/60 at a 1 ms write
+    spacing, **exactly 0/60 at 25 ms**, 10/10 — and an **externally held WAL write lock makes
+    discarded worker commits invisible**: 86.4/96 duplicates while `'failed'` terminals and
+    `projection_failures` rows both read **zero**. Those two are measured. The further claim that
+    *TC-91 (a) **is** TC-91 (b)* is a **HYPOTHESIS, strongly implicated and reproduced under
+    forced lock contention, but NOT confirmed** — and §5.5 explains why it structurally cannot be,
+    at this baseline, by measurement. §5.
+ 
+ And one correction:
+ 
+ | | figure on the record | measured at `94f09d7d` |
+ |---|---|---|
+ | probe re-embeds per steady-state reopen | **45** ("on every open thereafter") | **0** — TC-68 (Slice 22, `572475f2`) took it to zero |
+ 
+ The 45 is still correct for the *population* open (90 = populate 45 + check 45). It is **no
+ longer correct for any open after that**. §6.
+ 
+ Both figures are **pinned exactly** by `tc91_probe_embed_cost_per_open_at_head`
+ (`open1 == 0`, `open2 == 90`, `open3 == 0`), which runs in the default `cargo test` profile:
+ **20/20 identical**, zero variance. A correction that other agents subtract has to be defended by
+ an assertion, not by a paragraph — a wrong correction is worse than the stale figure it replaces.
+ 
+ ---
+ 
+ ## 1. TC-90 — the claim, and what the code actually says
+ 
+ ### 1.1 The shape IS there — PROVEN
+ 
+ `Engine::transition` (`lib.rs:8190`):
+ 
+ ```rust
+ lib.rs:8221   let tx = connection.transaction().map_err(|_| EngineError::Storage)?;   // BEGIN DEFERRED
+ lib.rs:8227   let current: Option<(String, i64, String)> = tx
+ lib.rs:8228       .query_row(
+ lib.rs:8229           "SELECT state, write_cursor, body FROM canonical_nodes \
+ lib.rs:8230            WHERE logical_id = ?1 AND superseded_at IS NULL",              // READ  -> read lock
+                       ...
+ lib.rs:8258   tx.execute(
+ lib.rs:8259       "UPDATE canonical_nodes SET state = ?1, reason = ?2 \
+ lib.rs:8260        WHERE logical_id = ?3 AND superseded_at IS NULL",                  // WRITE -> PROMOTE
+ ```
+ 
+ `connection.transaction()` is rusqlite's `TransactionBehavior::Deferred`. The first statement in
+ the transaction is a **SELECT**, the second is an **UPDATE**. That is structurally identical to
+ `commit_batch`'s pre-TC-57-fix shape. **The ledger claim is correct on the code.**
+ 
+ ### 1.2 What TC-90 has that TC-57 did not — and why it matters
+ 
+ Two mitigations exist at this call site and at no equivalent point in `commit_batch`:
+ 
+ 1. **`lib.rs:8217` — `self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS)?`** before the transaction is
+    opened. `wait_for_idle` (`lib.rs:1246-1273`) requires `active_jobs == 0 && queued_jobs == 0`
+    **and** the on-disk `database_has_pending_projection_work` predicate to be false. So at the
+    instant `drain` returns, no worker commit is in flight and none is pending.
+ 2. **`lib.rs:8219` — `self.connection.lock()`.** `write_inner` takes the **same** mutex
+    (`lib.rs:5051`), so while `transition` holds its transaction open no in-process
+    `Engine::write` can commit, and therefore no new projection job can be enqueued.
+ 
+ Consequently the in-process race window is **not** "the whole transaction", as it was for
+ TC-57. It is the **gap between `drain` returning and the connection mutex being acquired**: a
+ competing `Engine::write` that wins the mutex in that gap commits, wakes the dispatcher, and can
+ have a worker holding the WAL write lock by the time `transition` promotes.
+ 
+ That window is narrow, and its width is governed by one thing above all: **how long after the
+ competing write's commit the worker reaches its own commit** — i.e. the embed latency.
+ 
+ ---
+ 
+ ## 2. Repro protocol — TC-90
+ 
+ ### 2.1 Commands
+ 
+ From the repository root. All four **loop** arms are `#[ignore]`d at baseline (they are
+ measurements, not merge-gate invariants, and `cargo test --workspace` is not a stable signal for
+ concurrency tests — ledger TC-72), hence `--ignored`. The three `tc90_mechanism_*` pins are
+ **not** ignored; §3.4 states that decision and its evidence.
+ 
+ **What every arm asserts before it measures anything** (`assert_protocol_ran`). The first draft
+ of the stress arms asserted only `attempted > 0`, which is far too weak for the protocol this
+ section documents: a run that issued **one** transition, or truncated at its wall-clock budget,
+@@ -267,206 +267,231 @@ transitions, of which **4 failed with `EngineError::Scheduler`** — each having
+ 
+ This is **not** the promote race. It is a separate availability property of the
+ drain-then-act design: under sustained write pressure a lifecycle verb can be starved
+ indefinitely, one 30-second timeout at a time, and the caller sees an opaque
+ `EngineError::Scheduler`.
+ 
+ > **PRESUMED, NOT MEASURED — the three sibling call sites.** `configure_projections`
+ > (`lib.rs:8332`), `purge` (`lib.rs:8441`, `8443`) and the verb at `lib.rs:8646-8648` take the
+ > same `drain`-first path **by code reading**. **No arm in this slice exercised any of them.**
+ > Nothing here is evidence about their behaviour under load; the shared shape is a reason to
+ > triage them, not a characterization of them. Whoever picks this up measures them — they do not
+ > inherit the `transition` numbers above.
+ 
+ Recorded here because it was found; **out of scope for a fix in this slice**, and it should be
+ triaged separately rather than folded into a TC-90 fix. See §8 "What I am unsure about" item 2 —
+ this may well be the more important defect of the two.
+ 
+ The measured arms therefore use `writer_pace_ms: 1`, which is near-saturating but still lets
+ `drain` reach idle — hence `scheduler_errors == 0` across all 10 stress runs.
+ 
+ ---
+ 
+ ## 3. Mechanism — what SQLite ACTUALLY returns
+ 
+ ### 3.1 The error is not merely opaque here — it is never produced
+ 
+ `transition` maps every rusqlite error through `.map_err(|_| EngineError::Storage)` and, unlike
+ `write_inner` (which at least calls `emit_sqlite_internal_error`, `lib.rs:5097`), **emits no
+ lifecycle event at all**. `EngineError::Storage` is a unit variant with no payload and no
+ `source()`. So on this path the numeric code is not just unrecoverable through the public API —
+ it is never emitted to anything, including a subscriber. TC-57's harness could at least capture
+ `"SQLITE_BUSY"` from the lifecycle sink; this one cannot.
+ 
+ The mechanism is therefore pinned **deterministically** instead, by *holding* the write lock
+ from a second connection rather than racing for it. All three pins below are **not**
+ `#[ignore]`d: they assert what SQLite does, and they pass at baseline.
+ 
+ ### 3.2 Pin 1 — `transition`'s own SQL, on a real `canonical_nodes`
+ 
+ `tc90_mechanism_transition_sql_shape_on_real_schema_is_busy_5` builds a real engine database,
+ seeds one governed `active` row, closes it, and then replays the two statements **copied
+ character-for-character** from `lib.rs:8229-8230` and `lib.rs:8259-8260` on a connection that
+ has a 5 s busy timeout **and** a counting busy handler installed, while a second connection
+ holds the write lock uncommitted.
+ 
+ ```text
+ TC90-MECH sql_shape primary=DatabaseBusy extended=5 handler_calls=0 elapsed_ms=0
+ ```
+ 
+ | observable | measured |
+ |---|---|
+ | primary code | `DatabaseBusy` |
+ | **extended code** | **5** — plain `SQLITE_BUSY`, **not** `SQLITE_BUSY_SNAPSHOT` (517) |
+ | **busy-handler invocations** | **0** |
+ | wall time | **0 ms**, against a 5 000 ms timeout |
+ 
+ This is TC-57's **Exit B**, exactly. SQLite skips the busy handler when promoting a read
+ transaction, by design — per the `sqlite3_busy_handler` documentation, *"if SQLite determines
+ that invoking the busy handler could result in a deadlock, it will go ahead and return
+ SQLITE_BUSY"*. **No `busy_timeout` value could ever retry this**, and the handler is instrumented
+ to always request a retry so "called zero times" cannot be explained away.
+ 
+ §0 of the TC-57 characterization exists because every prior write-up named 517. This measurement
+ says the same thing about TC-90 that TC-57's did about `commit_batch`: **a fix scoped to
+ retrying 517 would ship inert.**
+ 
+ **Is 517 reachable here?** Not observed in any run. It requires the worker to *commit* inside
+ the microseconds between `transition`'s SELECT and its UPDATE, whereas Exit B only requires the
+ worker to be *holding* the lock at that instant. Treated as **reachable-but-unobserved**, same
+ as TC-57 §2.4. A fix must cover both.
+ 
+ ### 3.3 Pins 2 and 3 — and the answer to "does `BEGIN IMMEDIATE` transfer?"
+ 
+ The brief's standing instruction was not to assume TC-57's remedy transfers. It was measured.
+ Both pins apply the **identical** contention — one external connection holding the WAL write
+ lock — and differ only in which engine entry point is called.
+ 
+ | pin | engine call | transaction behaviour | result | wall time |
+ |---|---|---|---|---|
+ | 2 | `Engine::transition` | `BEGIN DEFERRED`, read-then-upgrade (`lib.rs:8221`) | **`Err(Storage)`** | **0 ms** |
+-| 3 | `Engine::write` | `BEGIN IMMEDIATE` (`lib.rs:18637`, the TC-57 fix) | **`Ok`** | **834 ms** |
++| 3 | `Engine::write` | `BEGIN IMMEDIATE` (`lib.rs:18637`, the TC-57 fix) | **`Ok`** | **~935 ms** |
+ 
+-Pin 3's blocker holds the lock for 900 ms and then releases. The writer **waited** for it and
++Pin 3's blocker **signals** once its `BEGIN IMMEDIATE` has returned, holds the lock for a
++further 900 ms, and then releases; the writer does not start until that signal arrives, so the
++lock is held for its whole call rather than raced for (§3.4). The writer **waited** for it and
+ then succeeded — which is the positive proof that the busy handler *was* consulted on that path,
+ in direct contrast to pin 1's zero invocations on the promoting path.
+ 
+ **So the answer is: yes, empirically, on this engine, at this baseline.** The remedy is not
+ being transferred by analogy — the very same database, the very same contention, and the very
+ same 5 000 ms default busy timeout produce a hard 0 ms failure for the DEFERRED promoting
+-transaction and a successful 834 ms wait for the `IMMEDIATE` one. That is as direct as this
++transaction and a successful ~935 ms wait for the `IMMEDIATE` one. That is as direct as this
+ evidence gets without implementing anything.
+ 
+ **What it does NOT establish** is listed in §8. In particular it says nothing about throughput,
+ nothing about `transition`'s interaction with its own preceding `drain`, and nothing about the
+ worker side — which §5 shows is the *other* half of the same problem and which an `IMMEDIATE`
+ `transition` would make **worse**, not better.
+ 
+ ### 3.4 Test profile — exactly which of these targets run in the default gate, and why
+ 
+ This slice adds **13 test functions across two targets. 9 are `#[ignore]`d; 4 run in the default
+ `cargo test` profile.** The decision was taken per target, not by reflex, and the gating question
+ is ledger **TC-72**: roughly 1 workspace run in 3 already fails on plain `main`, so anything
+ timing-sensitive added to the default profile makes that worse and has to earn its place.
+ 
+ | target | default profile | why |
+ |---|---|---|
+ | the 4 `tc90_*` loop arms | **`#[ignore]`d** | race a live worker against live writer threads; results are RATES, and §2.2 shows the per-run count is not even stable session to session |
+ | the 5 `tc91_*` concurrency arms | **`#[ignore]`d** | same — live worker vs live writer, measured rates |
+ | `tc90_mechanism_transition_sql_shape_on_real_schema_is_busy_5` | **LIVE** | two connections, **one thread**, no sleeps; the lock is HELD, not raced |
+ | `tc90_mechanism_engine_transition_under_held_write_lock_fails_immediately` | **LIVE** | blocker held on the calling thread; no outstanding `drain` work |
+-| `tc90_mechanism_control_engine_write_under_held_write_lock_survives` | **LIVE** | the one target with a thread — see below |
++| `tc90_mechanism_control_engine_write_under_held_write_lock_survives` | **LIVE** | the one target with a thread; its readiness is **signalled**, so the lock is held, not raced — see below |
+ | `tc91_probe_embed_cost_per_open_at_head` | **LIVE** | sequential; 3 opens, 1 write, every `drain` awaited; no thread, no wall-clock assertion |
+ 
+ Running the mechanism pins live is the same posture TC-57's own `tc57_mechanism_*` pins have.
+ None of them races for anything: the contending write lock is **taken and held** by a second
+ connection across the whole measured call, so the outcome is decided by SQLite's documented
+ promotion behaviour rather than by scheduling.
+ 
+-The one deliberate call is **pin 3**, the only target here that spawns a thread. Its assertions
+-are one-sided bounds with large margins, and the margins were **measured, not asserted from the
+-armchair — 20 consecutive default-profile runs**:
+-
+-| observable | assertion | measured across 20 runs | margin |
+-|---|---|---|---|
+-| `Engine::write` succeeds | `is_ok()` | ok in 20/20 | blocker holds 900 ms against a 5 000 ms busy timeout ⇒ ~4.1 s slack |
+-| it WAITED for the lock | `>= 450 ms` | **832–838 ms** (spread of **6 ms**) | the holder *sleeps* 900 ms, so an early release is impossible by construction |
++The one deliberate call is **pin 3**, the only target here that spawns a thread.
++
++**Its readiness is signalled, not slept for — and that correction matters.** The version this
++document first described started the blocker thread, slept a fixed 100 ms, and then *assumed*
++the lock had been taken. codex §9 round 5 (finding 4) was right that the "held, not raced"
++framing above was not then true of pin 3's own setup: on a loaded box the writer could reach
++`BEGIN IMMEDIATE` before the blocker acquired the WAL write lock, and the `>= 450 ms` bound
++would fail while the engine behaved correctly. The 20-run spread quoted below was measured on
++the *happy* path and did not bound the lost-race path. Given **TC-72** — roughly 1 workspace
++run in 3 already fails on plain `main` — putting a sleep-timed assertion in the merge gate is
++the wrong direction. The blocker now sends on a channel *after* its `BEGIN IMMEDIATE` returns
++and it has written under the lock, and the main thread blocks on that before it starts timing.
++The pin stays live and the framing above is now true of all four live targets.
++
++Its assertions are one-sided bounds with large margins, and the margins were **measured, not
++asserted from the armchair — 20 consecutive default-profile runs before the rework, and 10
++after it**:
++
++| observable | assertion | measured (sleep, N = 20) | measured (signal, N = 10) | margin |
++|---|---|---|---|---|
++| `Engine::write` succeeds | `is_ok()` | ok in 20/20 | ok in 10/10 | blocker holds 900 ms against a 5 000 ms busy timeout ⇒ ~4.1 s slack |
++| it WAITED for the lock | `>= 450 ms` | **832–838 ms** (spread **6 ms**) | **931–937 ms** (spread **6 ms**) | the holder *sleeps* 900 ms **starting from the signal**, so an early release is impossible by construction and the wait no longer depends on a sleep winning a race |
++
++The signalled numbers sit at ~935 ms rather than ~834 ms for the expected reason: the 900 ms
++hold now begins when the writer does, instead of overlapping a 100 ms head start, and the
++writer's own ~35 ms of work is on top. **The spread is 6 ms either way — the rework did not
++tighten the happy path, and that is not what it was for.** What it removed is the *unbounded*
++path: the old shape's assertion could fail outright if the blocker lost the scheduler, and no
++number of quiet-machine runs bounds that. Under a deliberate load of 24 spinning processes on a
++24-thread box, 10 further runs stayed green at **934–941 ms** — a spread of 7 ms and still more
++than double the 450 ms bound, where the sleep-based shape had no guarantee at all.
+ 
+ Pin 3 is kept live because it is the load-bearing evidence that TC-57's R1 remedy transfers
+ (§3.3), and a 0.8.21 fix scoped against **R-A** would otherwise be reasoning from a test nobody
+ runs. **If it ever does flake, gate it — do not widen the bound**, which is the assertion that
+ makes it mean anything.
+ 
+ `tc91_probe_embed_cost_per_open_at_head` is a **measurement** and is nonetheless live, which is
+ the one place the "characterization arms are all gated" shorthand does not hold. That is
+ deliberate: since §5.2 it pins `0 / 90 / 0` **exactly**, and gating it would put the corrected
+ figure this document publishes behind a flag nobody runs. It measured identically in **20/20**
+ default-profile runs.
+ 
+ ---
+ 
+ ## 4. Acceptance bar for the TC-90 fix at 0.8.21
+ 
+ This is the §1.4 analogue. A later agent should be able to paste §2.1 verbatim.
+ 
+ 1. Remove the `#[ignore]` attributes from all four loop arms in
+    `tc90_transition_write_race.rs`, as a RED→GREEN step in the commit **before** the fix, so the
+    pair is reviewable in git as a real red followed by a real green (Slice 21a-2's discipline).
+ 2. **Stress repro arm: 0/10** failures (was **10/10**). Judge on the **reproduction rate**, not
+    on the per-run failure count — §2.2 shows the latter is not stable across sessions.
+ 3. **Stress control arm: 0/10** (unchanged).
+ 4. **Paced repro and paced control: 0/10** each (unchanged — they were already green, and a fix
+    that breaks them is a regression).
+ 5. **`assert_protocol_ran` must pass in every one of those runs, unmodified** — i.e. each arm
+    really issued its full transition count, did not truncate, and recorded
+    `scheduler_errors == 0` and `other_errors == 0`. This is what stops a "0/10" being bought by
+    measuring less. **A fix that needs these loosened has not passed the bar**; a fix that makes
+    them fail has found something and must report it, not relax them.
+ 6. The three `tc90_mechanism_*` pins stay green **and unmodified**. They assert SQLite's
+    behaviour, not the engine's, so a correct fix must not need them to change. In particular pin
+    3 must still show the `IMMEDIATE` writer waiting and succeeding.
+ 7. **TC-91's `tc91_mechanism_duplicate_rate_versus_write_cadence` must not regress**, and should
+    be re-measured: if the fix converts `transition` to `IMMEDIATE` it makes the engine the lock
+    holder *more* often, which is the direction that increases worker-side commit loss (§5).
+    Report the tight-arm duplicate count before and after; do not assume it is unchanged.
+ 8. The §2.5 `Scheduler`-starvation finding is **explicitly not** in this bar. It is a separate
+    defect; closing TC-90 does not close it and must not be claimed to.
+ 9. **Do not scope this fix against §5.5.2's hypothesis.** TC-90's mechanism is measured (§3);
+    TC-91's identity claim is not. A TC-90 fix stands on §3 alone and must not import "(a) is (b)"
+    as a premise.
+ 
+ ---
+ 
+ ## 5. TC-91 — the duplicate embeds and the discarded worker commit
+ 
+ ### 5.1 The measurement trap, disarmed FIRST
+ 
+ `run_vector_equivalence_probe` (`lib.rs:15309`) embeds the 45-probe fixture at **open**. Two
+ figures are on the record and **both are true, of different opens** — 90 on the population open,
+ 45 on every open thereafter. Ledger `seq-125` (the TC-71 close) states the consequence plainly:
+ *absolute embed counts are unusable as an oracle across a reopen*; every embed assertion must be
+ a **delta from a post-open snapshot**.
+ 
+ Two separate defences are used here, and both are **verified rather than assumed**:
+ 
+ - **Single-open measurement.** Every duplicate arm runs in one open of a fresh workspace whose
+   embed log starts empty. `_fathomdb_vector_kinds` is empty at open, so the probe returns early
+   (`lib.rs:15348-15353`) having embedded nothing; the kind is enrolled *after* open.
+ - **Text-level separation.** Every body this fixture writes carries the marker `tc91marker`,
+   which no probe text contains. Ingest and probe embeds are counted **separately and never
+   summed**, and **every duplicate arm asserts `probe_calls == 0`** — so if the separation ever
+   breaks, the arm fails rather than quietly reporting a contaminated number.
+ 
+ ### 5.2 The probe's cost at HEAD — the ledger figure is STALE
+ 
+ `tc91_probe_embed_cost_per_open_at_head` (not `#[ignore]`d; deterministic and fast) measures
+ three consecutive opens of one workspace as deltas:
+ 
+ ```text
+ TC91-PROBE open1_no_vector_kind=0 open2_populate_then_check=90 open3_after_tc68_cache=0
+ ```
+ 
+ | open | state | probe embeds |
+ |---|---|---|
+ | 1 | fresh workspace, no vector kind registered | **0** |
+ | 2 | vector kind present, `_fathomdb_embed_probe` empty ⇒ populate 45 + check 45 | **90** |
+ | 3 | probe table populated, TC-68 fingerprint verdict cache live | **0** |
+@@ -646,210 +671,213 @@ would be needed. That is the principal reason R-C is recommended to land **first
+ 
+ #### 5.5.4 What this does say about TC-57 §7 uncertainty 3
+ 
+ TC-57 §8.2 measured worker-side pressure *relatively* — before vs after the caller-side fix —
+ found no increase, and correctly declined to act. What it could not see, having no
+ no-concurrency baseline to compare against, is that the ~104/200 it recorded as "pre-existing"
+ was **already a defect** rather than a floor. §5.3's absolute baseline plus §5.5.1's zero at
+ 25 ms spacing supplies that comparison. This narrows TC-57's uncertainty 3 rather than closing
+ it, on the same evidentiary limit as §5.5.2.
+ 
+ ### 5.6 Acceptance bar for the TC-91 fix at 0.8.21
+ 
+ 1. Remove the `#[ignore]` attributes from the TC-91 measurement arms as a RED→GREEN step.
+ 2. `tc91_duplicate_embed_rate_governed` and `_anonymous`: **0 duplicates / 200 rows** (were
+    ~104 and ~105).
+ 3. `tc91_mechanism_duplicate_rate_versus_write_cadence`: **tight arm 0**, spaced arm 0
+    (unchanged). Because the fix must remove the *cadence sensitivity*, not merely shift it, the
+    tight arm is the load-bearing assertion here.
+ 4. `tc91_control_unblocked_worker_commits`: unchanged at 0 duplicates.
+ 5. **`tc91_forced_commit_failure_is_invisible_to_terminal_counting` must be RE-READ, NOT
+    RE-RUN.** Its assertions encode the *defect*: they require `failed_terminals == 0` while
+    duplicates are non-zero. A fix that surfaces lost commits will make it fail, and that failure
+    is the **success signal**. Whoever lands the fix must rewrite this test to assert the new
+    contract (a lost commit is observable) and must say so explicitly in the commit message. It
+    is deliberately worded that way in the test's own failure text so this cannot be missed.
+ 6. `tc91_probe_embed_cost_per_open_at_head` stays green and unmodified, including its exact
+    `0 / 90 / 0` pins. It runs in the default profile, so a regression surfaces without `--ignored`.
+ 7. Non-vacuity must survive: `ingest_distinct == rows` and `vector_rows == rows` in every arm.
+    A "fix" that reduces duplicates by dropping rows is a regression, and these assertions are
+    what catch it. `probe_calls == 0` likewise — a duplicate count contaminated by probe embeds is
+    not a duplicate count.
+ 8. **Whoever lands this must resolve §5.5.2's hypothesis rather than inherit it.** If R-C lands
+    first (as §7 recommends), the instrumentation exists to say directly whether each baseline
+    duplicate followed a refused promotion — so *report that*, and correct §5.5 in either
+    direction. Do not carry "(a) is (b)" forward as though this slice had established it.
+ 
+ ---
+ 
+ ## 6. What this characterization did NOT establish
+ 
+ Stated separately from §8 because these are gaps in the *measurement*, not open design
+ questions.
+ 
+ 1. **Multi-process contention.** Every arm here is in-process. `transition`'s connection-mutex
+    mitigation (§1.2) does nothing against a second OS process on the same file, and the drain
+    mitigation does nothing about *that* process's workers. The exposure is presumed strictly
+    worse and was **not measured**.
+ 2. **The other `drain`-first verbs.** `configure_projections`, `purge` and the verb at
+    `lib.rs:8646` share `transition`'s shape **by code reading** and are presumed to share both
+    TC-90 and the §2.5 starvation. **No arm exercised any of them — NOT MEASURED.** They do not
+    inherit `transition`'s numbers.
+ 3. **Whether 517 is reachable from `transition`.** Never observed; not proven unreachable.
+ 4. **Edge bodies.** `edge_fact` jobs are exempted from the no-embedder `Deferred` return, so an
+    embedder-less deployment writing edge bodies is a second route to a concurrent worker commit.
+    Flagged in TC-57 §4.2, still **not characterized**.
+ 5. **Any throughput number.** No arm here measures the cost of a candidate remedy.
+ 6. **That TC-91 (a) IS TC-91 (b).** §5.5.2. The cadence sensitivity and the observability
+    blindness are measured; the identity is a hypothesis, and the reason it could not be closed is
+    that the discarded-commit defect destroys the only signal that would confirm it. **This is the
+    single most important line in this section** — it is the one an 0.8.21 fix is most likely to
+    scope against by mistake.
+ 7. **That the per-run TC-90 failure count is ~14.8 %.** §2.2: two sessions on the same commit and
+    machine gave means of 5.9 and 3.8. **The 10/10 reproduction rate replicated; the rate did
+    not.** Quote 1–10 failures per 40 transitions, or quote nothing.
+ 
+ ---
+ 
+ ## 7. Candidate remedies — enumerated, NONE implemented
+ 
+ Per `seq-136` nothing below was built. The style follows TC-57 §7.
+ 
+ ### R-A — `BEGIN IMMEDIATE` for `Engine::transition`
+ 
+ `lib.rs:8221` becomes `transaction_with_behavior(TransactionBehavior::Immediate)`.
+ 
+ - **Pro:** removes the promotion by construction — closes both Exit A and Exit B. One line.
+ - **Pro:** **measured to work under the exact contention**, via pin 3 (§3.3): the engine's
+   already-`IMMEDIATE` writer survives what kills `transition` in 0 ms.
+ - **Pro:** consistent with the shipped `commit_batch` remedy; makes the *whole* engine writer
+   path `IMMEDIATE` rather than one path of two.
+-- **Con — the direction is measured, the magnitude is not:** it makes the engine the lock holder
+-  **more often**, and §5.5.1 measured that writer/worker overlap is exactly what drives the
+-  duplicate rate (0 at 25 ms spacing, 32.5/60 at 1 ms). So R-A could reduce TC-90 caller errors
+-  while **increasing** TC-91 (a) duplicates. TC-57 §8.2 measured no increase from the analogous
+-  change, but it had no absolute baseline; §5.3 now supplies one. **This must be re-measured, not
+-  assumed** — see §4 bar item 7. Note that **R-A and R-B point in opposite directions on TC-91**;
+-  see R-B's *Interaction* bullet.
++- **Con — the direction is implicated, the magnitude is not:** it makes the engine the lock
++  holder **more often**, and §5.5.1 measured that the duplicate rate is strongly sensitive to
++  write cadence (0 at 25 ms spacing, 32.5/60 at 1 ms) — which implicates writer/worker overlap
++  as the driver without observing it, for the §5.5.2 reason. So R-A could reduce TC-90 caller
++  errors while **increasing** TC-91 (a) duplicates. TC-57 §8.2 measured no increase from the
++  analogous change, but it had no absolute baseline; §5.3 now supplies one. **This must be
++  re-measured, not assumed** — see §4 bar item 7. Note that **R-A and R-B point in opposite
++  directions on TC-91**; see R-B's *Interaction* bullet.
+ - **Con:** `transition` already holds the connection mutex plus a completed `drain`; adding a
+   third serialisation may be redundant for the in-process case and only buy the multi-process
+   case (§6.1) — which is real, but unmeasured.
+ 
+ ### R-B — `BEGIN IMMEDIATE` for `commit_projection_outcomes` (the worker side)
+ 
+ `lib.rs:13809` becomes `transaction_with_behavior(Immediate)`.
+ 
+ - **Pro:** this is the one that targets **TC-91 (b) directly, and (a) if §5.5.2's hypothesis
+   holds**. A worker that takes the write lock at `BEGIN` goes through the busy handler instead
+   (pin 3's measured behaviour) and waits, absorbing the contention within the existing 5 000 ms
+   default rather than losing the outcome. Note the conditional: §5.5.2 did **not** establish that
+   every baseline duplicate traces to a refused worker promotion, so R-B's effect on the ~104/200
+   is predicted, not measured. Landing R-C first is what turns that prediction into a reading.
+ - **Pro:** it also makes the `lib.rs:8205-8216` and `lib.rs:8327+` comments true as *originally*
+   written — those comments claimed the worker used `BEGIN IMMEDIATE`; TC-57 §5 proved them false
+   and Slice 21a-2 corrected the prose rather than the code.
+ - **Con:** the worker now holds the write lock across its whole commit, including the mean-vec
+   read and the per-row `terminal_state_for_cursor` checks. Under a live writer this serialises
+   the two more strongly; throughput **not measured**.
+ - **Con:** `commit_gate` (`lib.rs:13808`) already serialises workers against each other, so this
+   changes only worker-vs-engine. That is the axis that matters, but it means the change is not
+   as small as it looks — it interacts with the gate's ordering guarantees for the at-pin
+   re-quantize.
+ - **Interaction:** R-A and R-B point in **opposite** directions on TC-91. R-A alone plausibly
+   makes duplicates worse. R-B alone fixes duplicates and does nothing for TC-90. **Doing both is
+   the combination that is coherent**, and it is the combination whose throughput nobody has
+   measured.
+ 
+ ### R-C — stop discarding the worker commit result
+ 
+ Replace `let _ = commit_projection_outcomes(..)` (`lib.rs:12711`, `lib.rs:12824`) with something
+ that at minimum emits a lifecycle event and increments a counter, and ideally records a distinct
+ non-terminal audit row.
+ 
+ - **Pro:** it is the **observability** half, and it is independently valuable regardless of which
+   locking remedy lands. Without it, "how reliable is the projection worker?" is unanswerable —
+   §5.4 shows the only counters that exist report zero by construction.
+ - **Pro:** strictly additive; changes no transaction semantics; cannot regress TC-90.
+ - **Pro:** it is what makes any *future* claim about worker reliability checkable at all. This
+   characterization needed a forced-failure experiment and a unique-body embed census to see
+   something the engine should simply have reported.
+ - **Con:** requires deciding what a lost commit *is* in the taxonomy — it is not an embed
+   failure and it must not be recorded as one (that would corrupt the `projection_failures`
+   contract, and `dev/design/errors.md` is locked). A new observable, not a reuse of an old one.
+ - **Con:** must not turn a transient, self-healing loss into a hard failure. The row genuinely
+   does get re-embedded and does land; making this fatal would be a regression.
+ - **Recommended to land FIRST**, before either locking remedy, precisely so R-A/R-B can be
+   measured against something other than a re-embed census assembled by hand.
+ 
+ ### R-D — retry the worker commit in place
+ 
+ Wrap the `commit_projection_outcomes` call in a bounded retry on the busy codes.
+ 
+ - **Pro:** contained; no transaction-semantics change; would eliminate most duplicates.
+ - **Con:** it is the **symptom**. The transaction still promotes; the window still exists; an
+   unlucky worker still loses outcomes after the retry budget.
+ - **Con:** the embed has already been paid for by the time the commit is attempted, so a retry
+   is cheap here — which makes this *more* attractive than R2 was for TC-57, where a retry re-ran
+   the whole batch. Worth noting as a genuine asymmetry.
+ - **Con:** needs R-C first to know whether the retry budget is ever exhausted.
+ 
+ ### R-E — TC-57's **R2**, bounded retry on the busy codes in the caller path
+ 
+ **Carried forward, unchanged in priority.** TC-57 §7 R2 remains **unimplemented**, pending the
+ error-path restructuring it depends on (`commit_batch`'s `rusqlite::Error` is discarded at
+ `lib.rs:5096-5099`, so there is nothing to branch on). R1 shipped and closed the measured defect,
+ so **R2 is an option, not an obligation** (TC-57 §8.4).
+ 
+ TC-90 does not change that verdict, but it does add one data point: `transition`'s error path is
+ **worse** than `commit_batch`'s (§3.1 — no lifecycle event at all, not merely an opaque
+ variant), so if the error-path restructuring is ever undertaken, `transition` should be included
+ in its scope. **Lower priority than R-A/R-B/R-C. Not recommended for 0.8.21 on its own.**
+ 
+ ### R-F — `PRAGMA busy_timeout`
+ 
+ Closed out for completeness: **proven inert** (§3.2 — handler invoked 0 times; a 5 000 ms default
+ is already present). **Reject.**
+ 
+ ### Recommendation
+ 
+ **R-C first** (observability, additive, cannot regress anything, and — per §5.5.3 — it is what
+ converts §5.5.2's hypothesis into a measurement, so everything after it can be judged on
+ evidence rather than prediction), then **R-B** (the remedy aimed at the mechanism §5.5.1
+ measured), then **R-A** with the §4 bar item 7 re-measurement in place to catch the interaction.
+ R-D only if R-C shows residual loss after R-B. R-E stays parked. R-F rejected.
+ 
+ **This ordering is an ENUMERATION, not a schedule, and nothing in it was implemented**
+ (`seq-136`). It is also not independent of the open question: if R-C's instrumentation refutes
+ §5.5.2, R-B's priority changes. Re-derive the order from what R-C reports; do not inherit it.
+ 
+ ### What I am unsure about
+ 
+ 1. **Whether TC-91 (a) really IS TC-91 (b).** §5.5.2. Promoted to the top of this list, because
+    it is the one an 0.8.21 fix is most likely to scope against by mistake, and because an earlier
+    draft of this document asserted it outright. The cadence sensitivity and the observability
+    blindness are measured; the identity is not, and it structurally **cannot** be at this
+    baseline — the counters that would confirm it are the ones `let _ =` destroys. R-C is what
+    resolves it.
+ 2. **Whether R-A alone makes TC-91 worse, and by how much.** §5.5.1 gives the direction; nothing
+    here gives the magnitude. It is the reason §4's bar demands the tight-cadence duplicate count
+    be re-measured rather than assumed.
+-3. **Whether the §2.5 `Scheduler` starvation is the more important defect.** A ~12 % failure rate
+-   under stress is bad; a verb that returns after 30 s of nothing, four times in five, may be
+-   worse for a host. I found it while bounding an arm and did not characterize it — and I did not
+-   touch `configure_projections` / `purge` / `lib.rs:8646` at all, which is where a host would
+-   most likely meet it. It is p1 material and I am not confident it should queue behind TC-90.
++3. **Whether the §2.5 `Scheduler` starvation is the more important defect.** A verb that fails
++   under stress in **10 of 10 runs**, at 1–10 failures per 40 transitions and a per-run count
++   that moved between sessions on the same commit (§2.2 — so do not read a single percentage off
++   it), is bad; a verb that returns after 30 s of nothing, four times in five, may be worse for a
++   host. I found it while bounding an arm and did not characterize it — and I did not touch
++   `configure_projections` / `purge` / `lib.rs:8646` at all, which is where a host would most
++   likely meet it. It is p1 material and I am not confident it should queue behind TC-90.
+ 4. **Whether `transition` needs `IMMEDIATE` at all in-process.** It already has `drain` plus the
+    connection mutex; the stress arm shows those are insufficient, but I did not isolate *which*
+    of the two is leaking — i.e. whether the failures come from the drain/mutex gap I theorised
+    in §1.2 or from some other path. The repro is real either way, but a fix aimed at the wrong
+    half would pass §4's bar for the wrong reason.
+ 5. **Whether the ~90 % blocked-arm duplicate rate saturates.** 32 distinct rows repeated in
+    every single run, at both 80 and 96 total duplicates, looks like a structural boundary
+    (`PROJECTION_INFLIGHT_LIMIT` is 32) rather than a coincidence. I did not chase it, and it may
+    mean the loss is bounded by the in-flight window in a way that matters for R-D's budget.
+ 6. **Whether a multi-process host already sees TC-90 constantly.** §6.1. If so, the priority
+    ordering above is wrong.
+ 7. **Why the TC-90 per-run failure count moved between sessions** (§2.2, mean 5.9 → 3.8 on the
+    same commit and machine). The reproduction was 10/10 both times, so it does not affect any
+    verdict here, but I do not know what varied and I did not chase it. It is a reason to treat
+    any future *rate* comparison on this arm with suspicion unless both sides were measured in one
+    session.
+
+exec
+/bin/bash -lc 'git diff --unified=120 d339bdb0 b79e22f0 -- src/rust/crates/fathomdb-engine/tests/tc91_duplicate_embeds_and_silent_commit_loss.rs' in /home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+ succeeded in 0ms:
+diff --git a/src/rust/crates/fathomdb-engine/tests/tc91_duplicate_embeds_and_silent_commit_loss.rs b/src/rust/crates/fathomdb-engine/tests/tc91_duplicate_embeds_and_silent_commit_loss.rs
+index b9c1ef4e..42c78e74 100644
+--- a/src/rust/crates/fathomdb-engine/tests/tc91_duplicate_embeds_and_silent_commit_loss.rs
++++ b/src/rust/crates/fathomdb-engine/tests/tc91_duplicate_embeds_and_silent_commit_loss.rs
+@@ -1,186 +1,191 @@
+ //! 0.8.20 Slice 23 (R-20-SV, leg 2) — **TC-91 characterization harness.**
+ //!
+-//! TC-91 (ledger `seq-129`, p2) is two defects that share one mechanism:
++//! TC-91 (ledger `seq-129`, p2) is two defects on the same code path, which this
++//! file HYPOTHESISES — but does **not** establish — share one mechanism (see
++//! "What those numbers DO and DO NOT prove" below, and design doc §5.5.2):
+ //!
+ //! * **(a)** roughly half of all embeds at baseline are DUPLICATES. It reproduces
+ //!   on the ANONYMOUS arm too, so it is not the governed-write race TC-57 fixed,
+ //!   and it did not go away with that fix. Harm class: wasted embed work.
+ //!   Invisible to correctness tests, because a duplicate embed produces the right
+ //!   answer — twice.
+ //! * **(b)** the projection worker's commit is invoked as
+ //!   `let _ = commit_projection_outcomes(..)` (`lib.rs:12711` and `lib.rs:12824`).
+ //!   A commit failure is dropped with no error, no log and no telemetry.
+ //!
+ //! **CHARACTERIZATION ONLY — NO FIX** (steward `seq-136`: the fix lands at
+ //! 0.8.21). `src/rust/crates/fathomdb-engine/src/lib.rs` is byte-identical to the
+ //! baseline `94f09d7d` in the commit that lands this file. Written
+ //! characterization: `dev/design/0.8.20-tc90-tc91-characterization.md`.
+ //!
+ //! ## The durable point of (b), and why it is the most valuable thing here
+ //!
+ //! ```text
+ //! lib.rs:12711   let _ = commit_projection_outcomes(connection, &outcomes, shared);
+ //! lib.rs:12824   let _ = commit_projection_outcomes(connection, &outcomes, shared);
+ //! ```
+ //!
+ //! A `'failed'` terminal and a `projection_failures` audit row are written by the
+ //! `ProjectionOutcome::Failure` arm (`lib.rs:13962-13984`), which represents an
+ //! **embed** failure. A **commit** failure never reaches that arm at all: the
+ //! whole transaction rolls back, the row keeps `terminal IS NULL`, the worker loop
+ //! sets `pending_scan = true` (`lib.rs:12663`), the dispatcher re-fetches the row
+ //! and it is embedded AGAIN.
+ //!
+ //! Therefore **counting `'failed'` terminal states is STRUCTURALLY INCAPABLE of
+ //! seeing this class of failure.** Any future attempt to quantify worker
+ //! reliability that way will report a falsely clean number — zero — no matter how
+ //! many commits are being lost. [`tc91_forced_commit_failure_is_invisible_to_terminal_counting`]
+ //! proves this by forcing the failure and measuring both.
+ //!
+ //! ## The measurement trap that had to be disarmed FIRST
+ //!
+ //! `run_vector_equivalence_probe` (`lib.rs:15309`) embeds the 45-probe fixture at
+ //! OPEN. Two different figures are on the record and BOTH are true, of different
+ //! opens: **90** embeds on the population open (populate 45 + check 45), **45** on
+ //! every open thereafter. Ledger `seq-125` (the TC-71 close) states the
+ //! consequence: *absolute embed counts are unusable as an oracle across a reopen*
+ //! — every embed assertion must be a DELTA from a post-open snapshot.
+ //!
+ //! **And TC-68 LANDED in Slice 22 (`572475f2`)**, adding the fingerprint verdict
+ //! cache (`probe_verification_is_cached`, `lib.rs:15566`). The ledger note calling
+ //! the 45 re-embeds something TC-68 "is scheduled to cache away" PREDATES that
+ //! landing, so the 45 must not be inherited as a constant.
+ //! [`tc91_probe_embed_cost_per_open_at_head`] MEASURES it at HEAD instead.
+ //!
+ //! Every duplicate figure below is therefore taken from a SINGLE open whose
+ //! embed log starts empty, and ingest embeds are separated from probe embeds by
+ //! text: this fixture's bodies all carry [`INGEST_MARKER`], which no probe text
+ //! contains. The two counts are reported separately, never summed.
+ //!
+ //! **MEASURED at HEAD (`94f09d7d`)** by [`tc91_probe_embed_cost_per_open_at_head`]:
+ //! open 1 (no vector kind) **0**; open 2 (populate + check) **90**; open 3, after
+ //! TC-68's verdict cache, **0**. The "45 on every open thereafter" figure is
+ //! therefore NO LONGER TRUE at HEAD — TC-68 took the steady-state reopen probe
+ //! cost to zero, not merely reduced it. `probe_calls == 0` is asserted in every
+ //! duplicate arm, so the separation is verified rather than assumed.
+ //!
+-//! ## MEASURED at `94f09d7d` — and (a) turns out to BE (b)
++//! ## MEASURED at `94f09d7d`
++//!
++//! These are the counts. What they do and do not license is the section that
++//! follows the table — in particular they do **not** establish that (a) is (b).
+ //!
+ //! | arm | shape | runs | ingest duplicates / rows |
+ //! |---|---|---|---|
+ //! | [`tc91_duplicate_embed_rate_governed`] | 200 x 1-row writes, 1 ms apart | 10 | 102-106 / 200 (**52.1 %**) |
+ //! | [`tc91_duplicate_embed_rate_anonymous`] | same, `logical_id: None` | 10 | 103-110 / 200 (**52.8 %**) |
+ //! | [`tc91_control_unblocked_worker_commits`] | ONE 96-row batch, no concurrent writer | 10 | **0 / 96** |
+ //! | [`tc91_forced_commit_failure_is_invisible_to_terminal_counting`] | same batch + held write lock | 10 | 80-96 / 96 |
+ //! | [`tc91_mechanism_duplicate_rate_versus_write_cadence`] | 60 rows, 1 ms vs 25 ms apart | 10 | 31-33 vs **0** |
+ //!
+ //! Governed and anonymous are indistinguishable, confirming the ledger claim that
+ //! this is not the TC-57 race.
+ //!
+ //! ## What those numbers DO and DO NOT prove — read this before quoting them
+ //!
+ //! Two claims are **measured**, and they are the deliverable:
+ //!
+ //! 1. The duplicate rate is **CADENCE-SENSITIVE** under this 1 ms embed / 1 ms
+ //!    write shape: 32.5/60 at 1 ms spacing, **0/60 at 25 ms**, 10/10, and 0/96 for
+ //!    a single batch with no concurrent writer. So the ~50 % is a property of the
+ //!    write **cadence**, not a constant of the scheduler, and quoting it without
+ //!    the cadence it was measured at is meaningless.
+ //! 2. An **externally held WAL write lock makes discarded worker commits
+ //!    invisible**: 86.4/96 duplicates while `'failed'` terminals and
+ //!    `projection_failures` rows are both ZERO, 10/10.
+ //!
+ //! The tempting third claim — *"(a) IS (b)"*, i.e. that a duplicate REQUIRES a
+ //! second writer holding the WAL write lock across the worker's commit — is a
+ //! **HYPOTHESIS strongly implicated by (1) + (2), not a measured identity**
+ //! (codex §9 round 4 finding 4). The gap is specific and worth naming, because it
+ //! is not an oversight:
+ //!
+ //! > **There is no direct instrumentation of worker commit failures in the
+ //! > baseline duplicate arms — because the defect under study is precisely that
+ //! > those failures are discarded by `let _ =`.** TC-91 **(b) is the reason
+ //! > TC-91 (a) cannot be closed by measurement.** The forced-lock experiment
+ //! > reproduces the mechanism, but it supplies the lock holder externally; it
+ //! > cannot show that every baseline duplicate came from the engine's own writer.
+ //!
+ //! The supporting code reading is real — `commit_batch` holds `BEGIN IMMEDIATE`
+ //! (`lib.rs:18637`, the TC-57 fix) while `commit_projection_outcomes`
+ //! (`lib.rs:13809`) is a DEFERRED read-then-upgrade — but it is a reading, and
+ //! §0 of the TC-57 characterization is the standing warning about confident
+ //! readings on this exact code path. Landing **R-C** (stop discarding the commit
+ //! result) is what would convert the hypothesis into a measurement; that is the
+ //! main reason R-C is recommended FIRST in the design doc §7.
+ //!
+ //! In EVERY one of the 50 runs above, `failed_terminals == 0` and
+ //! `failure_audit_rows == 0`.
+ //!
+ //! ## Test profile — which targets run in the DEFAULT `cargo test` gate
+ //!
+ //! Decided deliberately per target, not by reflex (codex §9 round 4 finding 3).
+ //! The gating question is TC-72: roughly 1 workspace run in 3 already fails on
+ //! plain `main`, so anything timing-sensitive added to the default profile makes
+ //! that worse and must earn its place.
+ //!
+ //! **`#[ignore]`d — every arm whose result is a RATE measured under concurrency:**
+ //! [`tc91_duplicate_embed_rate_governed`], [`tc91_duplicate_embed_rate_anonymous`],
+ //! [`tc91_mechanism_duplicate_rate_versus_write_cadence`],
+ //! [`tc91_forced_commit_failure_is_invisible_to_terminal_counting`],
+ //! [`tc91_control_unblocked_worker_commits`]. Each races a live projection worker
+ //! against a live writer; their baseline values are MEASUREMENTS, not merge-gate
+ //! invariants. Run them with `--ignored`.
+ //!
+ //! **LIVE in the default profile — one target:**
+ //! [`tc91_probe_embed_cost_per_open_at_head`]. It is a measurement too, but it is
+ //! **sequential and deterministic**: three opens of one workspace, one write, every
+ //! `drain` awaited to idle, no second thread and no wall-clock assertion anywhere.
+ //! Its value comes from a checked-in fixture (`vector_equivalence_probes.txt`) and
+ //! a code path, so it has no run-to-run variance to flake on — and since it now
+ //! pins `0 / 90 / 0` exactly, leaving it live is what actually defends the
+ //! correction the design doc publishes. Gating it would put the corrected figure
+ //! behind a flag nobody runs.
+ 
+ use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
+ use fathomdb_engine::{Engine, InitialState, PreparedWrite, SourceId};
+ use fathomdb_schema::SQLITE_SUFFIX;
+ use std::collections::HashMap;
+ use std::path::{Path, PathBuf};
+ use std::sync::atomic::{AtomicUsize, Ordering};
+ use std::sync::{Arc, Mutex};
+ use std::time::{Duration, Instant};
+ use tempfile::TempDir;
+ 
+ /// Present in every body this fixture writes and in no probe text, so ingest
+ /// embeds and probe embeds can be told apart WITHIN one open rather than inferred
+ /// from a total.
+ const INGEST_MARKER: &str = "tc91marker";
+ 
+ /// Rows per duplicate-rate arm.
+ const ROWS: usize = 200;
+ 
+ // ---------------------------------------------------------------------------
+ // Fixture
+ // ---------------------------------------------------------------------------
+ 
+ /// Records the exact `text` of every `embed()` call.
+ ///
+ /// A text embedded twice is a row that was DISPATCHED twice — i.e. an outcome
+ /// that was computed and then never became durable. Every row this fixture writes
+ /// carries a unique body, which is what makes "duplicate" a falsifiable count
+ /// rather than an inference from a total.
+ #[derive(Debug)]
+ struct RecordingEmbedder {
+     identity: EmbedderIdentity,
+     calls: Arc<AtomicUsize>,
+     texts: Arc<Mutex<HashMap<String, usize>>>,
+     delay: Duration,
+ }
+ 
+ impl RecordingEmbedder {
+     fn new(log: &EmbedLog, delay: Duration) -> Self {
+         Self {
+             identity: EmbedderIdentity::new("deterministic", "rev-a", 384),
+             calls: Arc::clone(&log.calls),
+             texts: Arc::clone(&log.texts),
+             delay,
+         }
+     }
+ }
+@@ -353,292 +358,296 @@ impl DuplicateOutcome {
+     }
+ }
+ 
+ /// One duplicate-rate arm, measured inside a SINGLE open.
+ ///
+ /// The workspace is fresh, so `_fathomdb_vector_kinds` is EMPTY at open and the
+ /// vector-equivalence probe returns early having done ZERO embeds
+ /// (`lib.rs:15348-15353`). The kind is enrolled AFTER open. Every `embed()` in
+ /// this arm is therefore an ingest embed, and `probe_calls` is expected to be 0 —
+ /// which the arm asserts, so the separation is verified rather than assumed.
+ fn run_duplicate_arm(
+     label: &'static str,
+     governed: bool,
+     rows: usize,
+     pace_ms: u64,
+ ) -> DuplicateOutcome {
+     let dir = TempDir::new().expect("tempdir");
+     let path = dir.path().join(format!("tc91_dup_{label}{SQLITE_SUFFIX}"));
+     let log = EmbedLog::default();
+     let opened = Engine::open_with_embedder_for_test(
+         &path,
+         Arc::new(RecordingEmbedder::new(&log, Duration::from_millis(1))),
+     )
+     .expect("open");
+     let engine = &opened.engine;
+     engine.configure_vector_kind_for_test("doc").expect("vector kind");
+ 
+     for i in 0..rows {
+         engine.write(&[node(i, governed)]).expect("write must succeed");
+         // Yield so the worker interleaves rather than being starved. `pace_ms` is
+         // the independent variable of the mechanism experiment below.
+         std::thread::sleep(Duration::from_millis(pace_ms));
+     }
+     let drain_ok = engine.drain(120_000).is_ok();
+     let split = log.split();
+     let total_embeds = log.total();
+     opened.engine.close().expect("close");
+ 
+     let outcome = DuplicateOutcome {
+         label,
+         rows,
+         pace_ms,
+         split,
+         total_embeds,
+         drain_ok,
+         census: census(&path),
+     };
+     outcome.report();
+     outcome
+ }
+ 
+ /// Assertions shared by both duplicate arms. Non-vacuity first: an arm where the
+ /// worker never embedded, or never committed, says nothing about a duplicate rate.
+ fn assert_duplicate_arm(outcome: &DuplicateOutcome) {
+     assert!(outcome.drain_ok, "non-vacuity: drain must reach idle, else work is still outstanding");
+     assert_eq!(
+         outcome.split.ingest_distinct, outcome.rows,
+         "non-vacuity: every one of the {} unique rows must have been embedded at least once",
+         outcome.rows
+     );
+     assert_eq!(
+         outcome.census.vector_rows, outcome.rows as i64,
+         "non-vacuity: every row must have reached a durable vector, else the duplicates would \
+          be explained by rows that simply never landed"
+     );
+     assert_eq!(
+         outcome.split.probe_calls, 0,
+         "the probe MUST contribute zero embeds on a fresh workspace whose vector kind is \
+          enrolled after open (`lib.rs:15348-15353`) — if this is non-zero the ingest/probe \
+          separation is broken and every duplicate number below is contaminated"
+     );
+ }
+ 
+ /// **TC-91 (a) — GOVERNED arm.** `logical_id: Some(..)`.
+ #[test]
+ #[ignore = "TC-91 characterization arm — run explicitly with --ignored; see the design doc"]
+ fn tc91_duplicate_embed_rate_governed() {
+     let outcome = run_duplicate_arm("governed", true, ROWS, 1);
+     assert_duplicate_arm(&outcome);
+     assert_eq!(
+         outcome.split.ingest_duplicates, 0,
+         "TC-91 (a): {} duplicate embeds over {ROWS} rows ({} distinct rows embedded more than \
+          once) — wasted embed work, invisible to every correctness test because a duplicate \
+          embed produces the right answer twice",
+         outcome.split.ingest_duplicates, outcome.split.ingest_repeated_texts,
+     );
+ }
+ 
+ /// **TC-91 (a) — ANONYMOUS arm.** `logical_id: None`.
+ ///
+ /// This arm is the load-bearing one for attribution. The anonymous write path has
+ /// NO read-then-upgrade window and never produced a caller error even before the
+ /// TC-57 fix, so a duplicate rate here cannot be caused by the governed-write
+ /// race. If both arms show the same rate, the cause is elsewhere.
+ #[test]
+ #[ignore = "TC-91 characterization arm — run explicitly with --ignored; see the design doc"]
+ fn tc91_duplicate_embed_rate_anonymous() {
+     let outcome = run_duplicate_arm("anonymous", false, ROWS, 1);
+     assert_duplicate_arm(&outcome);
+     assert_eq!(
+         outcome.split.ingest_duplicates, 0,
+         "TC-91 (a): {} duplicate embeds over {ROWS} rows ({} distinct rows embedded more than \
+          once) on the ANONYMOUS arm — so the cause is NOT the governed-write race TC-57 fixed",
+         outcome.split.ingest_duplicates, outcome.split.ingest_repeated_texts,
+     );
+ }
+ 
+ // ---------------------------------------------------------------------------
+ // TC-91 (a) — the MECHANISM experiment
+ // ---------------------------------------------------------------------------
+ 
+ /// Rows for the mechanism experiment. Fewer than [`ROWS`] because the spaced arm
+ /// pays `SPACED_PACE_MS` per row.
+ const MECHANISM_ROWS: usize = 60;
+ 
+ /// Write spacing for the SPACED arm. Comfortably longer than the 1 ms embed, so a
+ /// worker's commit for row *i* has finished before row *i+1*'s `Engine::write`
+ /// opens its `BEGIN IMMEDIATE` transaction.
+ const SPACED_PACE_MS: u64 = 25;
+ 
+-/// **The causal experiment for TC-91 (a): is the duplicate rate caused by the
+-/// ENGINE'S OWN WRITER holding the WAL write lock across the worker's commit?**
++/// **The CADENCE experiment for TC-91 (a). The question it is aimed at — is the
++/// duplicate rate caused by the ENGINE'S OWN WRITER holding the WAL write lock
++/// across the worker's commit? — is one it narrows but does not answer.**
+ ///
+ /// Two arms of the same governed load differing ONLY in write spacing:
+ ///
+ /// * **tight** (`pace_ms: 1`) — a write lands roughly every millisecond, which is
+ ///   also the embed latency, so `commit_projection_outcomes`' DEFERRED promotion
+ ///   (`lib.rs:13809`, reads at `:13813` / `:13828` before its writes at `:13863`)
+ ///   frequently lands while `commit_batch`'s `BEGIN IMMEDIATE` (`lib.rs:18637`)
+ ///   holds the lock.
+ /// * **spaced** (`pace_ms: 25`) — the same rows, the same embedder, the same
+ ///   worker; only the overlap is removed.
+ ///
+ /// **What a collapse in the spaced arm does and does not establish.** It
+ /// establishes that the duplicate rate is CADENCE-SENSITIVE — the ~50 % is a
+ /// property of the write cadence, not a fixed constant of the scheduler. It does
+ /// **not**, on its own, establish that TC-91 (a) *is* TC-91 (b): spacing the
+ /// writes changes overlap, but nothing in this arm observes a worker commit
+ /// failing, because `let _ =` (`lib.rs:12711`) discards exactly that signal. Read
+ /// together with [`tc91_forced_commit_failure_is_invisible_to_terminal_counting`]
+ /// it strongly implicates the engine's own writer; see the module header's
+ /// "What those numbers DO and DO NOT prove" for the precise boundary.
+ ///
+ /// `#[ignore]`d with the other concurrency arms; it is a measurement, not a
+ /// merge-gate invariant. See the module header's test-profile inventory.
+ #[test]
+ #[ignore = "TC-91 characterization arm — run explicitly with --ignored; see the design doc"]
+ fn tc91_mechanism_duplicate_rate_versus_write_cadence() {
+     let tight = run_duplicate_arm("mech_tight", true, MECHANISM_ROWS, 1);
+     assert_duplicate_arm(&tight);
+     let spaced = run_duplicate_arm("mech_spaced", true, MECHANISM_ROWS, SPACED_PACE_MS);
+     assert_duplicate_arm(&spaced);
+ 
+     println!(
+         "TC91-MECH tight_duplicates={} spaced_duplicates={} rows={MECHANISM_ROWS}",
+         tight.split.ingest_duplicates, spaced.split.ingest_duplicates
+     );
+ 
+     assert!(
+         tight.split.ingest_duplicates > 0,
+         "non-vacuity: the TIGHT arm must reproduce the duplicate rate, else there is no effect \
+          to explain (duplicates={})",
+         tight.split.ingest_duplicates
+     );
+     assert_eq!(
+         spaced.split.ingest_duplicates, 0,
+-        "TC-91 (a) MECHANISM: spacing writes to {SPACED_PACE_MS} ms took duplicates from {} to \
+-         {} over {MECHANISM_ROWS} identical rows. The variable is write CADENCE — i.e. how often \
+-         the engine's own `BEGIN IMMEDIATE` writer holds the WAL write lock across the worker's \
+-         DEFERRED commit promotion. If this ever becomes non-zero, a SECOND duplicate source \
+-         exists that this experiment does not explain, and the design doc's mechanism section \
+-         must be re-opened.",
++        "TC-91 (a) CADENCE SENSITIVITY: spacing writes to {SPACED_PACE_MS} ms took duplicates \
++         from {} to {} over {MECHANISM_ROWS} identical rows. The variable this arm manipulates \
++         is write SPACING; the HYPOTHESISED mechanism it implicates — not one it observes — is \
++         how often the engine's own `BEGIN IMMEDIATE` writer holds the WAL write lock across \
++         the worker's DEFERRED commit promotion. This arm cannot see a worker commit fail, \
++         because `let _ =` (`lib.rs:12711`) discards exactly that signal, so it establishes \
++         neither the identity nor the uniqueness of the source. If this ever becomes non-zero, \
++         the cadence sensitivity itself has changed and the design doc's mechanism section must \
++         be re-opened.",
+         tight.split.ingest_duplicates, spaced.split.ingest_duplicates,
+     );
+ }
+ 
+ // ---------------------------------------------------------------------------
+ // The probe's cost at HEAD — the trap, disarmed by measurement
+ // ---------------------------------------------------------------------------
+ 
+ /// Probes in the committed `vector_equivalence_probes.txt` fixture — the
+ /// non-empty, non-comment lines `vector_equivalence_probes()` parses
+ /// (`lib.rs:15242-15251`). Deterministic: the fixture is checked in, so this is a
+ /// property of the tree, not of the run.
+ const PROBE_FIXTURE_SIZE: usize = 45;
+ 
+ /// What the POPULATION open costs: `probe_populate_or_check` populates the
+ /// baseline (one embed per probe) and then immediately checks against it (one
+ /// more each).
+ const POPULATION_OPEN_PROBE_EMBEDS: usize = PROBE_FIXTURE_SIZE * 2;
+ 
+ /// **What the vector-equivalence probe actually costs per open at HEAD.**
+ ///
+ /// Not `#[ignore]`d — see the module header's test-profile inventory. It is
+ /// sequential and fully deterministic (no threads, no racing writer, every
+ /// `drain` awaited), and it is the figure every other embed measurement in this
+ /// repo has to subtract.
+ ///
+ /// Three opens of ONE workspace, each measured as a DELTA (ledger `seq-125`:
+ /// absolute embed counts are unusable as an oracle across a reopen):
+ ///
+ /// 1. **open 1** — fresh workspace, no vector kind yet ⇒ the probe returns early
+ ///    at `lib.rs:15351` having embedded nothing. The kind is enrolled after open.
+ /// 2. **open 2** — a vector kind now exists and `_fathomdb_embed_probe` is empty
+ ///    ⇒ `probe_populate_or_check` (`lib.rs:15384-15389`) POPULATES 45 and then
+ ///    CHECKS 45.
+ /// 3. **open 3** — the TC-68 fingerprint verdict cache (`lib.rs:15566`) decides
+ ///    whether the 45 re-embeds happen again.
+ ///
+ /// **All three opens are pinned EXACTLY** (`0 / 90 / 0`), which is a change from
+ /// this file's first draft — codex §9 round 4 finding 2. The first draft asserted
+ /// only `open3 < open2`, while the design doc published a measured `0 / 90 / 0`
+ /// as a *correction* to a stale on-the-record figure of 45 re-embeds per open. A
+ /// regression back to 45 would have passed `45 < 90` silently, leaving the doc
+ /// publishing a zero the tree no longer honoured. When a characterization's whole
+ /// value is the number, the number is what must be asserted.
+ #[test]
+ fn tc91_probe_embed_cost_per_open_at_head() {
+     let dir = TempDir::new().expect("tempdir");
+     let path = dir.path().join(format!("tc91_probe{SQLITE_SUFFIX}"));
+ 
+     // --- open 1: fresh workspace, kind enrolled AFTER open ------------------
+     let log1 = EmbedLog::default();
+     let opened = Engine::open_with_embedder_for_test(
+         &path,
+         Arc::new(RecordingEmbedder::new(&log1, Duration::ZERO)),
+     )
+     .expect("open 1");
+     let open1_probe_embeds = log1.total();
+     opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+     opened.engine.write(&[node(0, true)]).expect("seed write");
+     opened.engine.drain(60_000).expect("drain 1");
+     opened.engine.close().expect("close 1");
+ 
+     // --- open 2: vector kind present, probe table empty ---------------------
+     let log2 = EmbedLog::default();
+     let opened = Engine::open_with_embedder_for_test(
+         &path,
+         Arc::new(RecordingEmbedder::new(&log2, Duration::ZERO)),
+     )
+     .expect("open 2");
+     let open2_probe_embeds = log2.total();
+     opened.engine.close().expect("close 2");
+ 
+     // --- open 3: probe table populated; TC-68 cache decides -----------------
+     let log3 = EmbedLog::default();
+     let opened = Engine::open_with_embedder_for_test(
+         &path,
+         Arc::new(RecordingEmbedder::new(&log3, Duration::ZERO)),
+     )
+     .expect("open 3");
+     let open3_probe_embeds = log3.total();
+     opened.engine.close().expect("close 3");
+ 
+     println!(
+         "TC91-PROBE open1_no_vector_kind={open1_probe_embeds} open2_populate_then_check=\
+          {open2_probe_embeds} open3_after_tc68_cache={open3_probe_embeds}"
+     );
+ 
+     assert_eq!(
+         open1_probe_embeds, 0,
+         "a fresh workspace with no registered vector kind must cost ZERO probe embeds at open \
+          (`lib.rs:15348-15353`)"
+     );
+     assert_eq!(
+         open2_probe_embeds, POPULATION_OPEN_PROBE_EMBEDS,
+         "the POPULATION open must cost exactly {POPULATION_OPEN_PROBE_EMBEDS} = populate \
+          {PROBE_FIXTURE_SIZE} + check {PROBE_FIXTURE_SIZE} \
+          (`probe_populate_or_check`, `lib.rs:15384-15389`); measured {open2_probe_embeds}. \
+          If you deliberately changed `vector_equivalence_probes.txt`, this constant AND the \
+          figure quoted in `dev/design/0.8.20-tc90-tc91-characterization.md` §5.2 must both move \
+          with it — the doc publishes this number as a correction other agents subtract."
+     );
+     assert_eq!(
+         open3_probe_embeds, 0,
+         "TC-68's fingerprint verdict cache (landed Slice 22, `572475f2`) took the steady-state \
+          reopen probe cost to ZERO, not merely to 'cheaper'; measured open2={open2_probe_embeds} \
+          open3={open3_probe_embeds}. This is asserted EXACTLY, on purpose: the design doc §5.2 \
+          corrects a stale on-the-record figure of 45 re-embeds per open, and a weaker \
+          `open3 < open2` bar would let a regression back to 45 pass while the doc still \
+          published 0. A wrong correction is worse than the stale figure it replaces."
+     );
+ }
+ 
+ // ---------------------------------------------------------------------------
+ // TC-91 (b) — the silently discarded worker commit
+ // ---------------------------------------------------------------------------
+ 
+ struct CommitLossOutcome {
+     label: &'static str,
+     split: EmbedSplit,
+     drain_ok: bool,
+
+codex
+The pin-3 code now uses an `mpsc` readiness signal after `BEGIN IMMEDIATE` plus a write under the transaction. I’m checking the remaining prose/search hits for stale figures or overclaims, then I’ll give closure status item by item.
+exec
+/bin/bash -lc "nl -ba dev/design/0.8.20-tc90-tc91-characterization.md | sed -n '1,90p;180,210p;320,390p;680,725p;820,850p'" in /home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+ succeeded in 0ms:
+     1	---
+     2	status: ACTIVE
+     3	---
+     4	
+     5	# TC-90 / TC-91 — `Engine::transition`'s write race and the silently-lost projection commit: CHARACTERIZATION
+     6	
+     7	> **Requirement traceability.** 0.8.20 **Slice 23, leg 2** (`R-20-SV` part b). Covers
+     8	> **TC-90** (ledger `seq-128`, p1, `area: engine`) and **TC-91** (ledger `seq-129`, p2).
+     9	> **CHARACTERIZATION ONLY — NO FIX**, per steward ruling **`seq-136`**: characterize inside
+    10	> 0.8.20, fix at **0.8.21**. `src/rust/crates/fathomdb-engine/src/lib.rs` is **byte-identical**
+    11	> to the baseline in the commit that lands this document.
+    12	> **Primary design of record / template:** `dev/design/0.8.20-tc57-write-race-characterization.md`
+    13	> — §1's repro protocol and §1.4's acceptance bar are the shape followed here, and its §0 is the
+    14	> warning that earns the ordering. `dev/design/errors.md` (locked) and
+    15	> `dev/design/record-lifecycle-protocol/projection-registry-and-async-embed.md` (`status:
+    16	> UNREVIEWED` — *nobody has classified it*, which is not the same as *current*) are **consulted
+    17	> by** this document, not authority over it.
+    18	
+    19	- **Baseline measured at:** `94f09d7d412784e4d02e4d03ae08d6b0e42bcad5` (branch `slice-23-sv`, leg 1 landed)
+    20	- **Harnesses:**
+    21	  - `src/rust/crates/fathomdb-engine/tests/tc90_transition_write_race.rs`
+    22	  - `src/rust/crates/fathomdb-engine/tests/tc91_duplicate_embeds_and_silent_commit_loss.rs`
+    23	- **Machine:** quiet during every measurement run; nothing else heavy was running concurrently
+    24	  (TC-97: `ac_029` is a wall-clock ratio assertion and heavy neighbours poison it — the same
+    25	  applies to every number below).
+    26	
+    27	---
+    28	
+    29	## 0. Headline
+    30	
+    31	Four findings, three of them positive, one of them a correction to a figure this repo has been
+    32	carrying.
+    33	
+    34	1. **TC-90 is REAL and reproduces 10/10** — but **only** at a load shape the obvious
+    35	   TC-57-style repro never reaches. The TC-57-shaped paced arm is **0/10**. Had this slice run
+    36	   only that arm it would have filed a clean, well-measured, and completely **false negative**.
+    37	   §2.
+    38	2. **The mechanism is confirmed at the SQLite level and is identical to TC-57's Exit B:** plain
+    39	   **`SQLITE_BUSY` (extended code 5)**, returned immediately, **busy handler invoked 0 times**.
+    40	   Measured by replaying `transition`'s two statements verbatim against a real
+    41	   `canonical_nodes`. §3.
+    42	3. **TC-57's R1 remedy (`BEGIN IMMEDIATE`) demonstrably transfers** — not by analogy, by
+    43	   measurement: under the *identical* held-write-lock contention that kills `transition` in
+    44	   0 ms, the already-`IMMEDIATE` `Engine::write` **waits ~935 ms and succeeds**. §3.3.
+    45	4. **TC-91's duplicate rate is a CADENCE, not a scheduler constant** — 32.5/60 at a 1 ms write
+    46	   spacing, **exactly 0/60 at 25 ms**, 10/10 — and an **externally held WAL write lock makes
+    47	   discarded worker commits invisible**: 86.4/96 duplicates while `'failed'` terminals and
+    48	   `projection_failures` rows both read **zero**. Those two are measured. The further claim that
+    49	   *TC-91 (a) **is** TC-91 (b)* is a **HYPOTHESIS, strongly implicated and reproduced under
+    50	   forced lock contention, but NOT confirmed** — and §5.5 explains why it structurally cannot be,
+    51	   at this baseline, by measurement. §5.
+    52	
+    53	And one correction:
+    54	
+    55	| | figure on the record | measured at `94f09d7d` |
+    56	|---|---|---|
+    57	| probe re-embeds per steady-state reopen | **45** ("on every open thereafter") | **0** — TC-68 (Slice 22, `572475f2`) took it to zero |
+    58	
+    59	The 45 is still correct for the *population* open (90 = populate 45 + check 45). It is **no
+    60	longer correct for any open after that**. §6.
+    61	
+    62	Both figures are **pinned exactly** by `tc91_probe_embed_cost_per_open_at_head`
+    63	(`open1 == 0`, `open2 == 90`, `open3 == 0`), which runs in the default `cargo test` profile:
+    64	**20/20 identical**, zero variance. A correction that other agents subtract has to be defended by
+    65	an assertion, not by a paragraph — a wrong correction is worse than the stale figure it replaces.
+    66	
+    67	---
+    68	
+    69	## 1. TC-90 — the claim, and what the code actually says
+    70	
+    71	### 1.1 The shape IS there — PROVEN
+    72	
+    73	`Engine::transition` (`lib.rs:8190`):
+    74	
+    75	```rust
+    76	lib.rs:8221   let tx = connection.transaction().map_err(|_| EngineError::Storage)?;   // BEGIN DEFERRED
+    77	lib.rs:8227   let current: Option<(String, i64, String)> = tx
+    78	lib.rs:8228       .query_row(
+    79	lib.rs:8229           "SELECT state, write_cursor, body FROM canonical_nodes \
+    80	lib.rs:8230            WHERE logical_id = ?1 AND superseded_at IS NULL",              // READ  -> read lock
+    81	                      ...
+    82	lib.rs:8258   tx.execute(
+    83	lib.rs:8259       "UPDATE canonical_nodes SET state = ?1, reason = ?2 \
+    84	lib.rs:8260        WHERE logical_id = ?3 AND superseded_at IS NULL",                  // WRITE -> PROMOTE
+    85	```
+    86	
+    87	`connection.transaction()` is rusqlite's `TransactionBehavior::Deferred`. The first statement in
+    88	the transaction is a **SELECT**, the second is an **UPDATE**. That is structurally identical to
+    89	`commit_batch`'s pre-TC-57-fix shape. **The ledger claim is correct on the code.**
+    90	
+   180	
+   181	| arm | writers × burst | write pace | embed delay | vector kind | runs | failed |
+   182	|---|---|---|---|---|---|---|
+   183	| paced repro | 1 × 1 | 3 ms | 2 ms | yes | 20 | **0/20** |
+   184	| paced control | 1 × 1 | 3 ms | 2 ms | **no** | 20 | **0/20** |
+   185	| **stress repro** | 2 × 24 | 1 ms | **0 ms** | yes | 20 | **20/20** |
+   186	| stress control | 2 × 24 | 1 ms | 0 ms | **no** | 20 | **0/20** |
+   187	
+   188	Stress repro detail, per run — `EngineError::Storage` failures out of 40 transitions. **Two
+   189	independent measurement sessions**, the second run after the assertions were tightened:
+   190	
+   191	| session | per-run storage errors | mean | rate |
+   192	|---|---|---|---|
+   193	| A (first draft) | 3, 4, 10, 3, 6, 6, 5, 5, 8, 9 | **5.9** | 14.8 % |
+   194	| B (tightened assertions) | 8, 4, 4, 1, 4, 2, 4, 4, 3, 4 | **3.8** | 9.5 % |
+   195	| **pooled (N = 20)** | **1 – 10** | **4.9** | **12.1 %** |
+   196	
+   197	**Read the reproduction rate, not the failure rate.** The arm reproduced **10/10 in both
+   198	sessions** — that is the stable, load-bearing result. The *per-run count* is not stable across
+   199	sessions (mean 5.9 vs 3.8 on the same machine, same commit, same arm), so **quote it as a range,
+   200	1–10 failures per 40 transitions (≈ 2.5 %–25 %), not as "14.8 %".** §4's bar is written against
+   201	the reproduction rate for exactly this reason.
+   202	
+   203	In **all 20** runs across both sessions: `attempted == 40`, `truncated == false`,
+   204	`scheduler_errors == 0`, `other_errors == 0` — so the signal is the promote race and nothing
+   205	else, and (since session B) that is asserted rather than merely reported. The first failure
+   206	landed as early as index **0** and as late as index **20**; the failing call returned in
+   207	**9–84 ms**, essentially all of which is its own `drain`. Competing writes per run: 2280–2952.
+   208	Embeds per run: 6353–9612.
+   209	
+   210	Stress control: `embed_calls == 0`, 1920–1968 competing writes, **0 storage errors in all 20
+   320	| **busy-handler invocations** | **0** |
+   321	| wall time | **0 ms**, against a 5 000 ms timeout |
+   322	
+   323	This is TC-57's **Exit B**, exactly. SQLite skips the busy handler when promoting a read
+   324	transaction, by design — per the `sqlite3_busy_handler` documentation, *"if SQLite determines
+   325	that invoking the busy handler could result in a deadlock, it will go ahead and return
+   326	SQLITE_BUSY"*. **No `busy_timeout` value could ever retry this**, and the handler is instrumented
+   327	to always request a retry so "called zero times" cannot be explained away.
+   328	
+   329	§0 of the TC-57 characterization exists because every prior write-up named 517. This measurement
+   330	says the same thing about TC-90 that TC-57's did about `commit_batch`: **a fix scoped to
+   331	retrying 517 would ship inert.**
+   332	
+   333	**Is 517 reachable here?** Not observed in any run. It requires the worker to *commit* inside
+   334	the microseconds between `transition`'s SELECT and its UPDATE, whereas Exit B only requires the
+   335	worker to be *holding* the lock at that instant. Treated as **reachable-but-unobserved**, same
+   336	as TC-57 §2.4. A fix must cover both.
+   337	
+   338	### 3.3 Pins 2 and 3 — and the answer to "does `BEGIN IMMEDIATE` transfer?"
+   339	
+   340	The brief's standing instruction was not to assume TC-57's remedy transfers. It was measured.
+   341	Both pins apply the **identical** contention — one external connection holding the WAL write
+   342	lock — and differ only in which engine entry point is called.
+   343	
+   344	| pin | engine call | transaction behaviour | result | wall time |
+   345	|---|---|---|---|---|
+   346	| 2 | `Engine::transition` | `BEGIN DEFERRED`, read-then-upgrade (`lib.rs:8221`) | **`Err(Storage)`** | **0 ms** |
+   347	| 3 | `Engine::write` | `BEGIN IMMEDIATE` (`lib.rs:18637`, the TC-57 fix) | **`Ok`** | **~935 ms** |
+   348	
+   349	Pin 3's blocker **signals** once its `BEGIN IMMEDIATE` has returned, holds the lock for a
+   350	further 900 ms, and then releases; the writer does not start until that signal arrives, so the
+   351	lock is held for its whole call rather than raced for (§3.4). The writer **waited** for it and
+   352	then succeeded — which is the positive proof that the busy handler *was* consulted on that path,
+   353	in direct contrast to pin 1's zero invocations on the promoting path.
+   354	
+   355	**So the answer is: yes, empirically, on this engine, at this baseline.** The remedy is not
+   356	being transferred by analogy — the very same database, the very same contention, and the very
+   357	same 5 000 ms default busy timeout produce a hard 0 ms failure for the DEFERRED promoting
+   358	transaction and a successful ~935 ms wait for the `IMMEDIATE` one. That is as direct as this
+   359	evidence gets without implementing anything.
+   360	
+   361	**What it does NOT establish** is listed in §8. In particular it says nothing about throughput,
+   362	nothing about `transition`'s interaction with its own preceding `drain`, and nothing about the
+   363	worker side — which §5 shows is the *other* half of the same problem and which an `IMMEDIATE`
+   364	`transition` would make **worse**, not better.
+   365	
+   366	### 3.4 Test profile — exactly which of these targets run in the default gate, and why
+   367	
+   368	This slice adds **13 test functions across two targets. 9 are `#[ignore]`d; 4 run in the default
+   369	`cargo test` profile.** The decision was taken per target, not by reflex, and the gating question
+   370	is ledger **TC-72**: roughly 1 workspace run in 3 already fails on plain `main`, so anything
+   371	timing-sensitive added to the default profile makes that worse and has to earn its place.
+   372	
+   373	| target | default profile | why |
+   374	|---|---|---|
+   375	| the 4 `tc90_*` loop arms | **`#[ignore]`d** | race a live worker against live writer threads; results are RATES, and §2.2 shows the per-run count is not even stable session to session |
+   376	| the 5 `tc91_*` concurrency arms | **`#[ignore]`d** | same — live worker vs live writer, measured rates |
+   377	| `tc90_mechanism_transition_sql_shape_on_real_schema_is_busy_5` | **LIVE** | two connections, **one thread**, no sleeps; the lock is HELD, not raced |
+   378	| `tc90_mechanism_engine_transition_under_held_write_lock_fails_immediately` | **LIVE** | blocker held on the calling thread; no outstanding `drain` work |
+   379	| `tc90_mechanism_control_engine_write_under_held_write_lock_survives` | **LIVE** | the one target with a thread; its readiness is **signalled**, so the lock is held, not raced — see below |
+   380	| `tc91_probe_embed_cost_per_open_at_head` | **LIVE** | sequential; 3 opens, 1 write, every `drain` awaited; no thread, no wall-clock assertion |
+   381	
+   382	Running the mechanism pins live is the same posture TC-57's own `tc57_mechanism_*` pins have.
+   383	None of them races for anything: the contending write lock is **taken and held** by a second
+   384	connection across the whole measured call, so the outcome is decided by SQLite's documented
+   385	promotion behaviour rather than by scheduling.
+   386	
+   387	The one deliberate call is **pin 3**, the only target here that spawns a thread.
+   388	
+   389	**Its readiness is signalled, not slept for — and that correction matters.** The version this
+   390	document first described started the blocker thread, slept a fixed 100 ms, and then *assumed*
+   680	
+   681	### 5.6 Acceptance bar for the TC-91 fix at 0.8.21
+   682	
+   683	1. Remove the `#[ignore]` attributes from the TC-91 measurement arms as a RED→GREEN step.
+   684	2. `tc91_duplicate_embed_rate_governed` and `_anonymous`: **0 duplicates / 200 rows** (were
+   685	   ~104 and ~105).
+   686	3. `tc91_mechanism_duplicate_rate_versus_write_cadence`: **tight arm 0**, spaced arm 0
+   687	   (unchanged). Because the fix must remove the *cadence sensitivity*, not merely shift it, the
+   688	   tight arm is the load-bearing assertion here.
+   689	4. `tc91_control_unblocked_worker_commits`: unchanged at 0 duplicates.
+   690	5. **`tc91_forced_commit_failure_is_invisible_to_terminal_counting` must be RE-READ, NOT
+   691	   RE-RUN.** Its assertions encode the *defect*: they require `failed_terminals == 0` while
+   692	   duplicates are non-zero. A fix that surfaces lost commits will make it fail, and that failure
+   693	   is the **success signal**. Whoever lands the fix must rewrite this test to assert the new
+   694	   contract (a lost commit is observable) and must say so explicitly in the commit message. It
+   695	   is deliberately worded that way in the test's own failure text so this cannot be missed.
+   696	6. `tc91_probe_embed_cost_per_open_at_head` stays green and unmodified, including its exact
+   697	   `0 / 90 / 0` pins. It runs in the default profile, so a regression surfaces without `--ignored`.
+   698	7. Non-vacuity must survive: `ingest_distinct == rows` and `vector_rows == rows` in every arm.
+   699	   A "fix" that reduces duplicates by dropping rows is a regression, and these assertions are
+   700	   what catch it. `probe_calls == 0` likewise — a duplicate count contaminated by probe embeds is
+   701	   not a duplicate count.
+   702	8. **Whoever lands this must resolve §5.5.2's hypothesis rather than inherit it.** If R-C lands
+   703	   first (as §7 recommends), the instrumentation exists to say directly whether each baseline
+   704	   duplicate followed a refused promotion — so *report that*, and correct §5.5 in either
+   705	   direction. Do not carry "(a) is (b)" forward as though this slice had established it.
+   706	
+   707	---
+   708	
+   709	## 6. What this characterization did NOT establish
+   710	
+   711	Stated separately from §8 because these are gaps in the *measurement*, not open design
+   712	questions.
+   713	
+   714	1. **Multi-process contention.** Every arm here is in-process. `transition`'s connection-mutex
+   715	   mitigation (§1.2) does nothing against a second OS process on the same file, and the drain
+   716	   mitigation does nothing about *that* process's workers. The exposure is presumed strictly
+   717	   worse and was **not measured**.
+   718	2. **The other `drain`-first verbs.** `configure_projections`, `purge` and the verb at
+   719	   `lib.rs:8646` share `transition`'s shape **by code reading** and are presumed to share both
+   720	   TC-90 and the §2.5 starvation. **No arm exercised any of them — NOT MEASURED.** They do not
+   721	   inherit `transition`'s numbers.
+   722	3. **Whether 517 is reachable from `transition`.** Never observed; not proven unreachable.
+   723	4. **Edge bodies.** `edge_fact` jobs are exempted from the no-embedder `Deferred` return, so an
+   724	   embedder-less deployment writing edge bodies is a second route to a concurrent worker commit.
+   725	   Flagged in TC-57 §4.2, still **not characterized**.
+   820	
+   821	### R-E — TC-57's **R2**, bounded retry on the busy codes in the caller path
+   822	
+   823	**Carried forward, unchanged in priority.** TC-57 §7 R2 remains **unimplemented**, pending the
+   824	error-path restructuring it depends on (`commit_batch`'s `rusqlite::Error` is discarded at
+   825	`lib.rs:5096-5099`, so there is nothing to branch on). R1 shipped and closed the measured defect,
+   826	so **R2 is an option, not an obligation** (TC-57 §8.4).
+   827	
+   828	TC-90 does not change that verdict, but it does add one data point: `transition`'s error path is
+   829	**worse** than `commit_batch`'s (§3.1 — no lifecycle event at all, not merely an opaque
+   830	variant), so if the error-path restructuring is ever undertaken, `transition` should be included
+   831	in its scope. **Lower priority than R-A/R-B/R-C. Not recommended for 0.8.21 on its own.**
+   832	
+   833	### R-F — `PRAGMA busy_timeout`
+   834	
+   835	Closed out for completeness: **proven inert** (§3.2 — handler invoked 0 times; a 5 000 ms default
+   836	is already present). **Reject.**
+   837	
+   838	### Recommendation
+   839	
+   840	**R-C first** (observability, additive, cannot regress anything, and — per §5.5.3 — it is what
+   841	converts §5.5.2's hypothesis into a measurement, so everything after it can be judged on
+   842	evidence rather than prediction), then **R-B** (the remedy aimed at the mechanism §5.5.1
+   843	measured), then **R-A** with the §4 bar item 7 re-measurement in place to catch the interaction.
+   844	R-D only if R-C shows residual loss after R-B. R-E stays parked. R-F rejected.
+   845	
+   846	**This ordering is an ENUMERATION, not a schedule, and nothing in it was implemented**
+   847	(`seq-136`). It is also not independent of the open question: if R-C's instrumentation refutes
+   848	§5.5.2, R-B's priority changes. Re-derive the order from what R-C reports; do not inherit it.
+   849	
+   850	### What I am unsure about
+
+exec
+/bin/bash -lc "rg -n \"834|832|838|~12|12 %|share one mechanism|turns out|exactly what drives|SECOND duplicate source|write CADENCE|not as 14\\.8|14\\.8|1–10|931|937|934|941\" dev/design/0.8.20-tc90-tc91-characterization.md src/rust/crates/fathomdb-engine/tests/tc90_transition_write_race.rs src/rust/crates/fathomdb-engine/tests/tc91_duplicate_embeds_and_silent_commit_loss.rs" in /home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+ succeeded in 0ms:
+src/rust/crates/fathomdb-engine/tests/tc91_duplicate_embeds_and_silent_commit_loss.rs:4://! file HYPOTHESISES — but does **not** establish — share one mechanism (see
+dev/design/0.8.20-tc90-tc91-characterization.md:193:| A (first draft) | 3, 4, 10, 3, 6, 6, 5, 5, 8, 9 | **5.9** | 14.8 % |
+dev/design/0.8.20-tc90-tc91-characterization.md:200:1–10 failures per 40 transitions (≈ 2.5 %–25 %), not as "14.8 %".** §4's bar is written against
+dev/design/0.8.20-tc90-tc91-characterization.md:408:| it WAITED for the lock | `>= 450 ms` | **832–838 ms** (spread **6 ms**) | **931–937 ms** (spread **6 ms**) | the holder *sleeps* 900 ms **starting from the signal**, so an early release is impossible by construction and the wait no longer depends on a sleep winning a race |
+dev/design/0.8.20-tc90-tc91-characterization.md:410:The signalled numbers sit at ~935 ms rather than ~834 ms for the expected reason: the 900 ms
+dev/design/0.8.20-tc90-tc91-characterization.md:416:24-thread box, 10 further runs stayed green at **934–941 ms** — a spread of 7 ms and still more
+dev/design/0.8.20-tc90-tc91-characterization.md:732:7. **That the per-run TC-90 failure count is ~14.8 %.** §2.2: two sessions on the same commit and
+dev/design/0.8.20-tc90-tc91-characterization.md:734:   not.** Quote 1–10 failures per 40 transitions, or quote nothing.
+dev/design/0.8.20-tc90-tc91-characterization.md:773:- **Pro:** it also makes the `lib.rs:8205-8216` and `lib.rs:8327+` comments true as *originally*
+dev/design/0.8.20-tc90-tc91-characterization.md:862:   under stress in **10 of 10 runs**, at 1–10 failures per 40 transitions and a per-run count
+src/rust/crates/fathomdb-engine/tests/tc90_transition_write_race.rs:70://! rate did not. Pooled over N = 20 the range is **1–10 per 40** (≈ 2.5 %–25 %).
+src/rust/crates/fathomdb-engine/tests/tc90_transition_write_race.rs:124://! | 3 (`..._control_engine_write_...`) | blocker thread SIGNALS readiness, then holds 900 ms | `>= 450 ms` | 931–937 ms (N = 10); 934–941 ms under a 24-way CPU load | the writer does not start until the blocker has signalled that `BEGIN IMMEDIATE` returned, and the holder then SLEEPS 900 ms; the writer's 5 000 ms busy timeout leaves ~4.1 s of slack |
+
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-engine/tests/tc90_transition_write_race.rs | sed -n '100,155p;900,990p'" in /home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+ succeeded in 0ms:
+   100	//! ## Test profile — which targets run in the DEFAULT `cargo test` gate
+   101	//!
+   102	//! Decided deliberately per target, not by reflex (codex §9 round 4 finding 3).
+   103	//! The gating question is TC-72: roughly 1 workspace run in 3 already fails on
+   104	//! plain `main`, so anything timing-sensitive added to the default profile makes
+   105	//! that worse and must earn its place.
+   106	//!
+   107	//! **`#[ignore]`d — all four LOOP arms.** They race a live projection worker
+   108	//! against live writer threads; their results are RATES, i.e. measurements, and
+   109	//! `cargo test --workspace` is not a stable signal for them. The pair is enabled
+   110	//! and disabled as one unit — a comparison with one arm running is worse than no
+   111	//! comparison. Run with `--ignored`.
+   112	//!
+   113	//! **LIVE in the default profile — all three `tc90_mechanism_*` pins**, on the
+   114	//! same basis TC-57's own `tc57_mechanism_*` pins run that way. None of them
+   115	//! races for anything: the contending write lock is TAKEN and HELD by a second
+   116	//! connection for the whole measured call, so the outcome is decided by SQLite's
+   117	//! documented promotion behaviour rather than by scheduling. Their wall-clock
+   118	//! assertions are one-sided bounds with large margins, not equalities:
+   119	//!
+   120	//! | pin | shape | timing assertion | measured | margin |
+   121	//! |---|---|---|---|---|
+   122	//! | 1 (`..._sql_shape_...`) | two connections, ONE thread, no sleeps | `< 500 ms` | 0 ms | fails instantly by construction — the busy handler is skipped |
+   123	//! | 2 (`..._engine_transition_...`) | blocker held on the calling thread | `< 2 000 ms` | 0 ms | same construction; no `drain` work is outstanding |
+   124	//! | 3 (`..._control_engine_write_...`) | blocker thread SIGNALS readiness, then holds 900 ms | `>= 450 ms` | 931–937 ms (N = 10); 934–941 ms under a 24-way CPU load | the writer does not start until the blocker has signalled that `BEGIN IMMEDIATE` returned, and the holder then SLEEPS 900 ms; the writer's 5 000 ms busy timeout leaves ~4.1 s of slack |
+   125	//!
+   126	//! Pin 3 is the only one with a thread, and it is the one deliberate call: it is
+   127	//! kept live because it is the load-bearing evidence that TC-57's R1 remedy
+   128	//! transfers (design doc §3.3), and a fix scoped against R-A would otherwise be
+   129	//! reasoning from an ignored test.
+   130	//!
+   131	//! Its thread is synchronised by a **readiness channel, not a sleep** (codex §9
+   132	//! round 5 finding 4). The earlier fixed 100 ms sleep only *assumed* the blocker
+   133	//! had won the scheduler; on a loaded box the writer could have started before
+   134	//! the lock was ever taken, and the `>= 450 ms` bound would then have failed on
+   135	//! a correct engine — precisely the kind of target TC-72 says must not be added
+   136	//! to the merge gate. With the signal, pin 3's lock is held for the whole
+   137	//! measured call exactly as pins 1 and 2's are. **If it ever does flake, gate it
+   138	//! — do not widen the bound**, which is the assertion that makes it mean
+   139	//! anything.
+   140	
+   141	use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
+   142	use fathomdb_engine::{Engine, EngineError, InitialState, LifecycleState, PreparedWrite, SourceId};
+   143	use fathomdb_schema::SQLITE_SUFFIX;
+   144	use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+   145	use std::sync::Arc;
+   146	use std::time::{Duration, Instant};
+   147	use tempfile::TempDir;
+   148	
+   149	// ---------------------------------------------------------------------------
+   150	// Fixture
+   151	// ---------------------------------------------------------------------------
+   152	
+   153	/// Deterministic in-process embedder with a per-call delay and a call counter.
+   154	/// Same shape as `tc57_governed_write_race.rs`'s, so the worker pressure is
+   155	/// comparable between the two characterizations.
+   900	/// counterpart to pin 1 and it is what makes "the shape reaches SQLite" a
+   901	/// measurement rather than a code reading.
+   902	///
+   903	/// Note what is NOT asserted: the numeric code. `transition` maps every rusqlite
+   904	/// error through `.map_err(|_| EngineError::Storage)` and — unlike `write_inner`
+   905	/// (`lib.rs:5097`) — never calls `emit_sqlite_internal_error`, so on this path the
+   906	/// code is not merely opaque to the host, it is never emitted at all. Pin 1 is
+   907	/// where the code comes from.
+   908	#[test]
+   909	fn tc90_mechanism_engine_transition_under_held_write_lock_fails_immediately() {
+   910	    let dir = TempDir::new().expect("tempdir");
+   911	    let path = dir.path().join(format!("tc90_mech_engine{SQLITE_SUFFIX}"));
+   912	    let calls = Arc::new(AtomicUsize::new(0));
+   913	    let opened = Engine::open_with_embedder_for_test(
+   914	        &path,
+   915	        Arc::new(CountingDelayEmbedder::new(calls, Duration::ZERO)),
+   916	    )
+   917	    .expect("open");
+   918	    let engine = &opened.engine;
+   919	    engine.write(&[governed_node("tc90-held", "held-lock subject")]).expect("seed");
+   920	    engine.drain(60_000).expect("drain");
+   921	
+   922	    let blocker = rusqlite::Connection::open(&path).expect("open blocker");
+   923	    blocker.execute_batch("BEGIN IMMEDIATE;").expect("blocker takes the write lock");
+   924	    blocker
+   925	        .execute(
+   926	            "INSERT OR IGNORE INTO _fathomdb_projection_terminal(write_cursor, state) \
+   927	             VALUES(?1, ?2)",
+   928	            rusqlite::params![9_999_998_i64, "up_to_date"],
+   929	        )
+   930	        .expect("blocker writes under its lock");
+   931	
+   932	    let started = Instant::now();
+   933	    let result = engine.transition("tc90-held", LifecycleState::Deleted, None);
+   934	    let elapsed = started.elapsed();
+   935	    println!(
+   936	        "TC90-MECH engine_transition result={:?} elapsed_ms={}",
+   937	        result.as_ref().err(),
+   938	        elapsed.as_millis()
+   939	    );
+   940	
+   941	    assert!(
+   942	        matches!(result, Err(EngineError::Storage)),
+   943	        "TC-90: `Engine::transition` under a held WAL write lock returns the opaque unit \
+   944	         variant `EngineError::Storage`; got {result:?}"
+   945	    );
+   946	    assert!(
+   947	        elapsed < Duration::from_millis(2_000),
+   948	        "and it returns IMMEDIATELY — the busy handler is skipped for a promotion, so no \
+   949	         backoff happens (took {elapsed:?})"
+   950	    );
+   951	
+   952	    let _ = blocker.execute_batch("ROLLBACK;");
+   953	    drop(blocker);
+   954	    let _ = engine.close();
+   955	}
+   956	
+   957	/// **Pin 3 — the CONTROL, and the direct evidence on whether TC-57's R1 remedy
+   958	/// transfers.**
+   959	///
+   960	/// [`Engine::write`] ALREADY opens `BEGIN IMMEDIATE` (`lib.rs:18637`, the Slice
+   961	/// 21a-2 fix). Under the identical held-write-lock contention that pin 2 shows
+   962	/// killing `transition`, an `IMMEDIATE` transaction goes through the busy handler
+   963	/// instead of being refused: it WAITS for the lock and then succeeds.
+   964	///
+   965	/// The blocker releases after [`HOLD`], well inside rusqlite's default 5 000 ms
+   966	/// busy timeout, so the wait is bounded and the test cannot hang.
+   967	///
+   968	/// **The blocker's readiness is SIGNALLED, never slept for** (codex §9 round 5
+   969	/// finding 4). An earlier draft slept a fixed 100 ms and then *assumed* the
+   970	/// blocker had taken the lock. That assumption is a race: on a loaded box the
+   971	/// writer could reach `BEGIN IMMEDIATE` before the blocker ever acquired the
+   972	/// WAL write lock, and then the `elapsed >= HOLD / 2` assertion would fail on a
+   973	/// perfectly correct engine. The blocker now sends on a channel only *after* its
+   974	/// `BEGIN IMMEDIATE` has returned and it has written under the lock, and the
+   975	/// main thread blocks on that before it starts timing. The lock therefore
+   976	/// genuinely **is** held for the whole measured call — the same property the
+   977	/// other two pins get from being single-threaded — so this pin observes the
+   978	/// contention rather than racing for it.
+   979	#[test]
+   980	fn tc90_mechanism_control_engine_write_under_held_write_lock_survives() {
+   981	    /// How long the blocker holds the write lock. Must be comfortably under
+   982	    /// rusqlite's 5 000 ms default busy timeout so the waiting writer succeeds.
+   983	    const HOLD: Duration = Duration::from_millis(900);
+   984	    /// Upper bound on waiting for the blocker's readiness signal. Generous: it
+   985	    /// exists only so a blocker that never starts fails LOUDLY instead of
+   986	    /// hanging the suite. It is not a timing assertion.
+   987	    const READY_TIMEOUT: Duration = Duration::from_secs(30);
+   988	
+   989	    let dir = TempDir::new().expect("tempdir");
+   990	    let path = dir.path().join(format!("tc90_mech_control{SQLITE_SUFFIX}"));
+
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-engine/tests/tc91_duplicate_embeds_and_silent_commit_loss.rs | sed -n '1,95p;490,545p'" in /home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+ succeeded in 0ms:
+     1	//! 0.8.20 Slice 23 (R-20-SV, leg 2) — **TC-91 characterization harness.**
+     2	//!
+     3	//! TC-91 (ledger `seq-129`, p2) is two defects on the same code path, which this
+     4	//! file HYPOTHESISES — but does **not** establish — share one mechanism (see
+     5	//! "What those numbers DO and DO NOT prove" below, and design doc §5.5.2):
+     6	//!
+     7	//! * **(a)** roughly half of all embeds at baseline are DUPLICATES. It reproduces
+     8	//!   on the ANONYMOUS arm too, so it is not the governed-write race TC-57 fixed,
+     9	//!   and it did not go away with that fix. Harm class: wasted embed work.
+    10	//!   Invisible to correctness tests, because a duplicate embed produces the right
+    11	//!   answer — twice.
+    12	//! * **(b)** the projection worker's commit is invoked as
+    13	//!   `let _ = commit_projection_outcomes(..)` (`lib.rs:12711` and `lib.rs:12824`).
+    14	//!   A commit failure is dropped with no error, no log and no telemetry.
+    15	//!
+    16	//! **CHARACTERIZATION ONLY — NO FIX** (steward `seq-136`: the fix lands at
+    17	//! 0.8.21). `src/rust/crates/fathomdb-engine/src/lib.rs` is byte-identical to the
+    18	//! baseline `94f09d7d` in the commit that lands this file. Written
+    19	//! characterization: `dev/design/0.8.20-tc90-tc91-characterization.md`.
+    20	//!
+    21	//! ## The durable point of (b), and why it is the most valuable thing here
+    22	//!
+    23	//! ```text
+    24	//! lib.rs:12711   let _ = commit_projection_outcomes(connection, &outcomes, shared);
+    25	//! lib.rs:12824   let _ = commit_projection_outcomes(connection, &outcomes, shared);
+    26	//! ```
+    27	//!
+    28	//! A `'failed'` terminal and a `projection_failures` audit row are written by the
+    29	//! `ProjectionOutcome::Failure` arm (`lib.rs:13962-13984`), which represents an
+    30	//! **embed** failure. A **commit** failure never reaches that arm at all: the
+    31	//! whole transaction rolls back, the row keeps `terminal IS NULL`, the worker loop
+    32	//! sets `pending_scan = true` (`lib.rs:12663`), the dispatcher re-fetches the row
+    33	//! and it is embedded AGAIN.
+    34	//!
+    35	//! Therefore **counting `'failed'` terminal states is STRUCTURALLY INCAPABLE of
+    36	//! seeing this class of failure.** Any future attempt to quantify worker
+    37	//! reliability that way will report a falsely clean number — zero — no matter how
+    38	//! many commits are being lost. [`tc91_forced_commit_failure_is_invisible_to_terminal_counting`]
+    39	//! proves this by forcing the failure and measuring both.
+    40	//!
+    41	//! ## The measurement trap that had to be disarmed FIRST
+    42	//!
+    43	//! `run_vector_equivalence_probe` (`lib.rs:15309`) embeds the 45-probe fixture at
+    44	//! OPEN. Two different figures are on the record and BOTH are true, of different
+    45	//! opens: **90** embeds on the population open (populate 45 + check 45), **45** on
+    46	//! every open thereafter. Ledger `seq-125` (the TC-71 close) states the
+    47	//! consequence: *absolute embed counts are unusable as an oracle across a reopen*
+    48	//! — every embed assertion must be a DELTA from a post-open snapshot.
+    49	//!
+    50	//! **And TC-68 LANDED in Slice 22 (`572475f2`)**, adding the fingerprint verdict
+    51	//! cache (`probe_verification_is_cached`, `lib.rs:15566`). The ledger note calling
+    52	//! the 45 re-embeds something TC-68 "is scheduled to cache away" PREDATES that
+    53	//! landing, so the 45 must not be inherited as a constant.
+    54	//! [`tc91_probe_embed_cost_per_open_at_head`] MEASURES it at HEAD instead.
+    55	//!
+    56	//! Every duplicate figure below is therefore taken from a SINGLE open whose
+    57	//! embed log starts empty, and ingest embeds are separated from probe embeds by
+    58	//! text: this fixture's bodies all carry [`INGEST_MARKER`], which no probe text
+    59	//! contains. The two counts are reported separately, never summed.
+    60	//!
+    61	//! **MEASURED at HEAD (`94f09d7d`)** by [`tc91_probe_embed_cost_per_open_at_head`]:
+    62	//! open 1 (no vector kind) **0**; open 2 (populate + check) **90**; open 3, after
+    63	//! TC-68's verdict cache, **0**. The "45 on every open thereafter" figure is
+    64	//! therefore NO LONGER TRUE at HEAD — TC-68 took the steady-state reopen probe
+    65	//! cost to zero, not merely reduced it. `probe_calls == 0` is asserted in every
+    66	//! duplicate arm, so the separation is verified rather than assumed.
+    67	//!
+    68	//! ## MEASURED at `94f09d7d`
+    69	//!
+    70	//! These are the counts. What they do and do not license is the section that
+    71	//! follows the table — in particular they do **not** establish that (a) is (b).
+    72	//!
+    73	//! | arm | shape | runs | ingest duplicates / rows |
+    74	//! |---|---|---|---|
+    75	//! | [`tc91_duplicate_embed_rate_governed`] | 200 x 1-row writes, 1 ms apart | 10 | 102-106 / 200 (**52.1 %**) |
+    76	//! | [`tc91_duplicate_embed_rate_anonymous`] | same, `logical_id: None` | 10 | 103-110 / 200 (**52.8 %**) |
+    77	//! | [`tc91_control_unblocked_worker_commits`] | ONE 96-row batch, no concurrent writer | 10 | **0 / 96** |
+    78	//! | [`tc91_forced_commit_failure_is_invisible_to_terminal_counting`] | same batch + held write lock | 10 | 80-96 / 96 |
+    79	//! | [`tc91_mechanism_duplicate_rate_versus_write_cadence`] | 60 rows, 1 ms vs 25 ms apart | 10 | 31-33 vs **0** |
+    80	//!
+    81	//! Governed and anonymous are indistinguishable, confirming the ledger claim that
+    82	//! this is not the TC-57 race.
+    83	//!
+    84	//! ## What those numbers DO and DO NOT prove — read this before quoting them
+    85	//!
+    86	//! Two claims are **measured**, and they are the deliverable:
+    87	//!
+    88	//! 1. The duplicate rate is **CADENCE-SENSITIVE** under this 1 ms embed / 1 ms
+    89	//!    write shape: 32.5/60 at 1 ms spacing, **0/60 at 25 ms**, 10/10, and 0/96 for
+    90	//!    a single batch with no concurrent writer. So the ~50 % is a property of the
+    91	//!    write **cadence**, not a constant of the scheduler, and quoting it without
+    92	//!    the cadence it was measured at is meaningless.
+    93	//! 2. An **externally held WAL write lock makes discarded worker commits
+    94	//!    invisible**: 86.4/96 duplicates while `'failed'` terminals and
+    95	//!    `projection_failures` rows are both ZERO, 10/10.
+   490	///   worker; only the overlap is removed.
+   491	///
+   492	/// **What a collapse in the spaced arm does and does not establish.** It
+   493	/// establishes that the duplicate rate is CADENCE-SENSITIVE — the ~50 % is a
+   494	/// property of the write cadence, not a fixed constant of the scheduler. It does
+   495	/// **not**, on its own, establish that TC-91 (a) *is* TC-91 (b): spacing the
+   496	/// writes changes overlap, but nothing in this arm observes a worker commit
+   497	/// failing, because `let _ =` (`lib.rs:12711`) discards exactly that signal. Read
+   498	/// together with [`tc91_forced_commit_failure_is_invisible_to_terminal_counting`]
+   499	/// it strongly implicates the engine's own writer; see the module header's
+   500	/// "What those numbers DO and DO NOT prove" for the precise boundary.
+   501	///
+   502	/// `#[ignore]`d with the other concurrency arms; it is a measurement, not a
+   503	/// merge-gate invariant. See the module header's test-profile inventory.
+   504	#[test]
+   505	#[ignore = "TC-91 characterization arm — run explicitly with --ignored; see the design doc"]
+   506	fn tc91_mechanism_duplicate_rate_versus_write_cadence() {
+   507	    let tight = run_duplicate_arm("mech_tight", true, MECHANISM_ROWS, 1);
+   508	    assert_duplicate_arm(&tight);
+   509	    let spaced = run_duplicate_arm("mech_spaced", true, MECHANISM_ROWS, SPACED_PACE_MS);
+   510	    assert_duplicate_arm(&spaced);
+   511	
+   512	    println!(
+   513	        "TC91-MECH tight_duplicates={} spaced_duplicates={} rows={MECHANISM_ROWS}",
+   514	        tight.split.ingest_duplicates, spaced.split.ingest_duplicates
+   515	    );
+   516	
+   517	    assert!(
+   518	        tight.split.ingest_duplicates > 0,
+   519	        "non-vacuity: the TIGHT arm must reproduce the duplicate rate, else there is no effect \
+   520	         to explain (duplicates={})",
+   521	        tight.split.ingest_duplicates
+   522	    );
+   523	    assert_eq!(
+   524	        spaced.split.ingest_duplicates, 0,
+   525	        "TC-91 (a) CADENCE SENSITIVITY: spacing writes to {SPACED_PACE_MS} ms took duplicates \
+   526	         from {} to {} over {MECHANISM_ROWS} identical rows. The variable this arm manipulates \
+   527	         is write SPACING; the HYPOTHESISED mechanism it implicates — not one it observes — is \
+   528	         how often the engine's own `BEGIN IMMEDIATE` writer holds the WAL write lock across \
+   529	         the worker's DEFERRED commit promotion. This arm cannot see a worker commit fail, \
+   530	         because `let _ =` (`lib.rs:12711`) discards exactly that signal, so it establishes \
+   531	         neither the identity nor the uniqueness of the source. If this ever becomes non-zero, \
+   532	         the cadence sensitivity itself has changed and the design doc's mechanism section must \
+   533	         be re-opened.",
+   534	        tight.split.ingest_duplicates, spaced.split.ingest_duplicates,
+   535	    );
+   536	}
+   537	
+   538	// ---------------------------------------------------------------------------
+   539	// The probe's cost at HEAD — the trap, disarmed by measurement
+   540	// ---------------------------------------------------------------------------
+   541	
+   542	/// Probes in the committed `vector_equivalence_probes.txt` fixture — the
+   543	/// non-empty, non-comment lines `vector_equivalence_probes()` parses
+   544	/// (`lib.rs:15242-15251`). Deterministic: the fixture is checked in, so this is a
+   545	/// property of the tree, not of the run.
+
+codex
+I found the kept Item 4 disclosure lines intact, and the loose `~12 %` phrasing has been replaced in the uncertainty section. One remaining nuance I’m checking is whether the blocker thread can send readiness and then die/release before the measured write reaches its transaction.
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-engine/tests/tc90_transition_write_race.rs | sed -n '990,1045p'" in /home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+ succeeded in 0ms:
+   990	    let path = dir.path().join(format!("tc90_mech_control{SQLITE_SUFFIX}"));
+   991	    let calls = Arc::new(AtomicUsize::new(0));
+   992	    let opened = Engine::open_with_embedder_for_test(
+   993	        &path,
+   994	        Arc::new(CountingDelayEmbedder::new(calls, Duration::ZERO)),
+   995	    )
+   996	    .expect("open");
+   997	    let engine = &opened.engine;
+   998	    engine.write(&[governed_node("tc90-control-seed", "control seed")]).expect("seed");
+   999	    engine.drain(60_000).expect("drain");
+  1000	
+  1001	    // Readiness SIGNAL, not a sleep. `ready_tx` fires only once the blocker's
+  1002	    // `BEGIN IMMEDIATE` has returned and it has written under the lock, so when
+  1003	    // `recv_timeout` below returns, the WAL write lock IS held. `HOLD` starts at
+  1004	    // that same instant, so the writer's wait is bounded below by `HOLD` minus
+  1005	    // only the microseconds it takes to reach its own `BEGIN` — no scheduling
+  1006	    // race decides whether this pin passes.
+  1007	    let (ready_tx, ready_rx) = std::sync::mpsc::channel::<()>();
+  1008	    let holder = {
+  1009	        let path = path.clone();
+  1010	        std::thread::spawn(move || {
+  1011	            let blocker = rusqlite::Connection::open(&path).expect("open blocker");
+  1012	            blocker.execute_batch("BEGIN IMMEDIATE;").expect("blocker takes the write lock");
+  1013	            blocker
+  1014	                .execute(
+  1015	                    "INSERT OR IGNORE INTO _fathomdb_projection_terminal(write_cursor, state) \
+  1016	                     VALUES(?1, ?2)",
+  1017	                    rusqlite::params![9_999_997_i64, "up_to_date"],
+  1018	                )
+  1019	                .expect("blocker writes under its lock");
+  1020	            // The lock is now HELD. Only now may the writer start.
+  1021	            ready_tx.send(()).expect("blocker signals that it holds the write lock");
+  1022	            std::thread::sleep(HOLD);
+  1023	            blocker.execute_batch("ROLLBACK;").expect("blocker releases");
+  1024	        })
+  1025	    };
+  1026	    ready_rx
+  1027	        .recv_timeout(READY_TIMEOUT)
+  1028	        .expect("the blocker must signal that it HOLDS the write lock before the writer starts");
+  1029	
+  1030	    let started = Instant::now();
+  1031	    let result = engine.write(&[governed_node("tc90-control-2", "control write")]);
+  1032	    let elapsed = started.elapsed();
+  1033	    let _ = holder.join();
+  1034	    println!("TC90-MECH control_write ok={} elapsed_ms={}", result.is_ok(), elapsed.as_millis());
+  1035	
+  1036	    assert!(
+  1037	        result.is_ok(),
+  1038	        "the `BEGIN IMMEDIATE` writer must SURVIVE the identical contention that refuses \
+  1039	         `transition`'s promotion — got {result:?}"
+  1040	    );
+  1041	    assert!(
+  1042	        elapsed >= HOLD / 2,
+  1043	        "and it must have WAITED for the lock ({elapsed:?} < half of {HOLD:?}), which is the \
+  1044	         proof the busy handler was consulted rather than skipped. The blocker SIGNALLED that \
+  1045	         it held the lock before this call started and then held it for {HOLD:?}, so a short \
+
+exec
+/bin/bash -lc "nl -ba dev/design/0.8.20-tc90-tc91-characterization.md | sed -n '386,420p;748,765p;850,870p'" in /home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+ succeeded in 0ms:
+   386	
+   387	The one deliberate call is **pin 3**, the only target here that spawns a thread.
+   388	
+   389	**Its readiness is signalled, not slept for — and that correction matters.** The version this
+   390	document first described started the blocker thread, slept a fixed 100 ms, and then *assumed*
+   391	the lock had been taken. codex §9 round 5 (finding 4) was right that the "held, not raced"
+   392	framing above was not then true of pin 3's own setup: on a loaded box the writer could reach
+   393	`BEGIN IMMEDIATE` before the blocker acquired the WAL write lock, and the `>= 450 ms` bound
+   394	would fail while the engine behaved correctly. The 20-run spread quoted below was measured on
+   395	the *happy* path and did not bound the lost-race path. Given **TC-72** — roughly 1 workspace
+   396	run in 3 already fails on plain `main` — putting a sleep-timed assertion in the merge gate is
+   397	the wrong direction. The blocker now sends on a channel *after* its `BEGIN IMMEDIATE` returns
+   398	and it has written under the lock, and the main thread blocks on that before it starts timing.
+   399	The pin stays live and the framing above is now true of all four live targets.
+   400	
+   401	Its assertions are one-sided bounds with large margins, and the margins were **measured, not
+   402	asserted from the armchair — 20 consecutive default-profile runs before the rework, and 10
+   403	after it**:
+   404	
+   405	| observable | assertion | measured (sleep, N = 20) | measured (signal, N = 10) | margin |
+   406	|---|---|---|---|---|
+   407	| `Engine::write` succeeds | `is_ok()` | ok in 20/20 | ok in 10/10 | blocker holds 900 ms against a 5 000 ms busy timeout ⇒ ~4.1 s slack |
+   408	| it WAITED for the lock | `>= 450 ms` | **832–838 ms** (spread **6 ms**) | **931–937 ms** (spread **6 ms**) | the holder *sleeps* 900 ms **starting from the signal**, so an early release is impossible by construction and the wait no longer depends on a sleep winning a race |
+   409	
+   410	The signalled numbers sit at ~935 ms rather than ~834 ms for the expected reason: the 900 ms
+   411	hold now begins when the writer does, instead of overlapping a 100 ms head start, and the
+   412	writer's own ~35 ms of work is on top. **The spread is 6 ms either way — the rework did not
+   413	tighten the happy path, and that is not what it was for.** What it removed is the *unbounded*
+   414	path: the old shape's assertion could fail outright if the blocker lost the scheduler, and no
+   415	number of quiet-machine runs bounds that. Under a deliberate load of 24 spinning processes on a
+   416	24-thread box, 10 further runs stayed green at **934–941 ms** — a spread of 7 ms and still more
+   417	than double the 450 ms bound, where the sleep-based shape had no guarantee at all.
+   418	
+   419	Pin 3 is kept live because it is the load-bearing evidence that TC-57's R1 remedy transfers
+   420	(§3.3), and a 0.8.21 fix scoped against **R-A** would otherwise be reasoning from a test nobody
+   748	  already-`IMMEDIATE` writer survives what kills `transition` in 0 ms.
+   749	- **Pro:** consistent with the shipped `commit_batch` remedy; makes the *whole* engine writer
+   750	  path `IMMEDIATE` rather than one path of two.
+   751	- **Con — the direction is implicated, the magnitude is not:** it makes the engine the lock
+   752	  holder **more often**, and §5.5.1 measured that the duplicate rate is strongly sensitive to
+   753	  write cadence (0 at 25 ms spacing, 32.5/60 at 1 ms) — which implicates writer/worker overlap
+   754	  as the driver without observing it, for the §5.5.2 reason. So R-A could reduce TC-90 caller
+   755	  errors while **increasing** TC-91 (a) duplicates. TC-57 §8.2 measured no increase from the
+   756	  analogous change, but it had no absolute baseline; §5.3 now supplies one. **This must be
+   757	  re-measured, not assumed** — see §4 bar item 7. Note that **R-A and R-B point in opposite
+   758	  directions on TC-91**; see R-B's *Interaction* bullet.
+   759	- **Con:** `transition` already holds the connection mutex plus a completed `drain`; adding a
+   760	  third serialisation may be redundant for the in-process case and only buy the multi-process
+   761	  case (§6.1) — which is real, but unmeasured.
+   762	
+   763	### R-B — `BEGIN IMMEDIATE` for `commit_projection_outcomes` (the worker side)
+   764	
+   765	`lib.rs:13809` becomes `transaction_with_behavior(Immediate)`.
+   850	### What I am unsure about
+   851	
+   852	1. **Whether TC-91 (a) really IS TC-91 (b).** §5.5.2. Promoted to the top of this list, because
+   853	   it is the one an 0.8.21 fix is most likely to scope against by mistake, and because an earlier
+   854	   draft of this document asserted it outright. The cadence sensitivity and the observability
+   855	   blindness are measured; the identity is not, and it structurally **cannot** be at this
+   856	   baseline — the counters that would confirm it are the ones `let _ =` destroys. R-C is what
+   857	   resolves it.
+   858	2. **Whether R-A alone makes TC-91 worse, and by how much.** §5.5.1 gives the direction; nothing
+   859	   here gives the magnitude. It is the reason §4's bar demands the tight-cadence duplicate count
+   860	   be re-measured rather than assumed.
+   861	3. **Whether the §2.5 `Scheduler` starvation is the more important defect.** A verb that fails
+   862	   under stress in **10 of 10 runs**, at 1–10 failures per 40 transitions and a per-run count
+   863	   that moved between sessions on the same commit (§2.2 — so do not read a single percentage off
+   864	   it), is bad; a verb that returns after 30 s of nothing, four times in five, may be worse for a
+   865	   host. I found it while bounding an arm and did not characterize it — and I did not touch
+   866	   `configure_projections` / `purge` / `lib.rs:8646` at all, which is where a host would most
+   867	   likely meet it. It is p1 material and I am not confident it should queue behind TC-90.
+   868	4. **Whether `transition` needs `IMMEDIATE` at all in-process.** It already has `drain` plus the
+   869	   connection mutex; the stress arm shows those are insufficient, but I did not isolate *which*
+   870	   of the two is leaking — i.e. whether the failures come from the drain/mutex gap I theorised
+
+exec
+/bin/bash -lc "rg -n \"is TC-91 \\(b\\)|IS TC-91|is \\(b\\)|exactly|proven|confirmed|driver|drives|HYPOTHESIS|not confirmed|does not establish|does NOT establish\" dev/design/0.8.20-tc90-tc91-characterization.md src/rust/crates/fathomdb-engine/tests/tc91_duplicate_embeds_and_silent_commit_loss.rs" in /home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+ succeeded in 0ms:
+src/rust/crates/fathomdb-engine/tests/tc91_duplicate_embeds_and_silent_commit_loss.rs:4://! file HYPOTHESISES — but does **not** establish — share one mechanism (see
+src/rust/crates/fathomdb-engine/tests/tc91_duplicate_embeds_and_silent_commit_loss.rs:71://! follows the table — in particular they do **not** establish that (a) is (b).
+src/rust/crates/fathomdb-engine/tests/tc91_duplicate_embeds_and_silent_commit_loss.rs:99://! **HYPOTHESIS strongly implicated by (1) + (2), not a measured identity**
+src/rust/crates/fathomdb-engine/tests/tc91_duplicate_embeds_and_silent_commit_loss.rs:142://! pins `0 / 90 / 0` exactly, leaving it live is what actually defends the
+src/rust/crates/fathomdb-engine/tests/tc91_duplicate_embeds_and_silent_commit_loss.rs:492:/// **What a collapse in the spaced arm does and does not establish.** It
+src/rust/crates/fathomdb-engine/tests/tc91_duplicate_embeds_and_silent_commit_loss.rs:497:/// failing, because `let _ =` (`lib.rs:12711`) discards exactly that signal. Read
+src/rust/crates/fathomdb-engine/tests/tc91_duplicate_embeds_and_silent_commit_loss.rs:527:         is write SPACING; the HYPOTHESISED mechanism it implicates — not one it observes — is \
+src/rust/crates/fathomdb-engine/tests/tc91_duplicate_embeds_and_silent_commit_loss.rs:530:         because `let _ =` (`lib.rs:12711`) discards exactly that signal, so it establishes \
+src/rust/crates/fathomdb-engine/tests/tc91_duplicate_embeds_and_silent_commit_loss.rs:628:        "the POPULATION open must cost exactly {POPULATION_OPEN_PROBE_EMBEDS} = populate \
+src/rust/crates/fathomdb-engine/tests/tc91_duplicate_embeds_and_silent_commit_loss.rs:693:/// IMMEDIATE`. That is exactly the contention TC-90's mechanism pins characterize,
+dev/design/0.8.20-tc90-tc91-characterization.md:38:2. **The mechanism is confirmed at the SQLite level and is identical to TC-57's Exit B:** plain
+dev/design/0.8.20-tc90-tc91-characterization.md:46:   spacing, **exactly 0/60 at 25 ms**, 10/10 — and an **externally held WAL write lock makes
+dev/design/0.8.20-tc90-tc91-characterization.md:49:   *TC-91 (a) **is** TC-91 (b)* is a **HYPOTHESIS, strongly implicated and reproduced under
+dev/design/0.8.20-tc90-tc91-characterization.md:50:   forced lock contention, but NOT confirmed** — and §5.5 explains why it structurally cannot be,
+dev/design/0.8.20-tc90-tc91-characterization.md:62:Both figures are **pinned exactly** by `tc91_probe_embed_cost_per_open_at_head`
+dev/design/0.8.20-tc90-tc91-characterization.md:179:(§2.1). **Every arm replicated exactly.**
+dev/design/0.8.20-tc90-tc91-characterization.md:201:the reproduction rate for exactly this reason.
+dev/design/0.8.20-tc90-tc91-characterization.md:323:This is TC-57's **Exit B**, exactly. SQLite skips the busy handler when promoting a read
+dev/design/0.8.20-tc90-tc91-characterization.md:361:**What it does NOT establish** is listed in §8. In particular it says nothing about throughput,
+dev/design/0.8.20-tc90-tc91-characterization.md:366:### 3.4 Test profile — exactly which of these targets run in the default gate, and why
+dev/design/0.8.20-tc90-tc91-characterization.md:426:deliberate: since §5.2 it pins `0 / 90 / 0` **exactly**, and gating it would put the corrected
+dev/design/0.8.20-tc90-tc91-characterization.md:459:   TC-91's identity claim is not. A TC-90 fix stands on §3 alone and must not import "(a) is (b)"
+dev/design/0.8.20-tc90-tc91-characterization.md:555:**The ledger claim is confirmed in full.** The rate is ~52 %, it is **indistinguishable between
+dev/design/0.8.20-tc90-tc91-characterization.md:558:fixed. Harm class is exactly as filed: **wasted embed work**, invisible to every correctness
+dev/design/0.8.20-tc90-tc91-characterization.md:604:for the **ordinary** reason (nothing failed) — which is exactly why they cannot discriminate,
+dev/design/0.8.20-tc90-tc91-characterization.md:605:and exactly why a future agent must not use them.
+dev/design/0.8.20-tc90-tc91-characterization.md:624:   at 1 ms spacing; **exactly 0/60 at 25 ms**, 10/10; and **0/96** for the §5.4 control, one
+dev/design/0.8.20-tc90-tc91-characterization.md:632:#### 5.5.2 HYPOTHESIS — strongly implicated, NOT confirmed
+dev/design/0.8.20-tc90-tc91-characterization.md:637:**It is not proven, and it must be carried forward as a hypothesis with its gap named** (codex
+dev/design/0.8.20-tc90-tc91-characterization.md:705:   direction. Do not carry "(a) is (b)" forward as though this slice had established it.
+dev/design/0.8.20-tc90-tc91-characterization.md:722:3. **Whether 517 is reachable from `transition`.** Never observed; not proven unreachable.
+dev/design/0.8.20-tc90-tc91-characterization.md:727:6. **That TC-91 (a) IS TC-91 (b).** §5.5.2. The cadence sensitivity and the observability
+dev/design/0.8.20-tc90-tc91-characterization.md:754:  as the driver without observing it, for the §5.5.2 reason. So R-A could reduce TC-90 caller
+dev/design/0.8.20-tc90-tc91-characterization.md:835:Closed out for completeness: **proven inert** (§3.2 — handler invoked 0 times; a 5 000 ms default
+dev/design/0.8.20-tc90-tc91-characterization.md:852:1. **Whether TC-91 (a) really IS TC-91 (b).** §5.5.2. Promoted to the top of this list, because
+
+exec
+/bin/bash -lc "nl -ba dev/design/0.8.20-tc90-tc91-characterization.md | sed -n '434,462p'" in /home/coreyt/projects/fathomdb-worktrees/slice-23-sv
+ succeeded in 0ms:
+   434	This is the §1.4 analogue. A later agent should be able to paste §2.1 verbatim.
+   435	
+   436	1. Remove the `#[ignore]` attributes from all four loop arms in
+   437	   `tc90_transition_write_race.rs`, as a RED→GREEN step in the commit **before** the fix, so the
+   438	   pair is reviewable in git as a real red followed by a real green (Slice 21a-2's discipline).
+   439	2. **Stress repro arm: 0/10** failures (was **10/10**). Judge on the **reproduction rate**, not
+   440	   on the per-run failure count — §2.2 shows the latter is not stable across sessions.
+   441	3. **Stress control arm: 0/10** (unchanged).
+   442	4. **Paced repro and paced control: 0/10** each (unchanged — they were already green, and a fix
+   443	   that breaks them is a regression).
+   444	5. **`assert_protocol_ran` must pass in every one of those runs, unmodified** — i.e. each arm
+   445	   really issued its full transition count, did not truncate, and recorded
+   446	   `scheduler_errors == 0` and `other_errors == 0`. This is what stops a "0/10" being bought by
+   447	   measuring less. **A fix that needs these loosened has not passed the bar**; a fix that makes
+   448	   them fail has found something and must report it, not relax them.
+   449	6. The three `tc90_mechanism_*` pins stay green **and unmodified**. They assert SQLite's
+   450	   behaviour, not the engine's, so a correct fix must not need them to change. In particular pin
+   451	   3 must still show the `IMMEDIATE` writer waiting and succeeding.
+   452	7. **TC-91's `tc91_mechanism_duplicate_rate_versus_write_cadence` must not regress**, and should
+   453	   be re-measured: if the fix converts `transition` to `IMMEDIATE` it makes the engine the lock
+   454	   holder *more* often, which is the direction that increases worker-side commit loss (§5).
+   455	   Report the tight-arm duplicate count before and after; do not assume it is unchanged.
+   456	8. The §2.5 `Scheduler`-starvation finding is **explicitly not** in this bar. It is a separate
+   457	   defect; closing TC-90 does not close it and must not be claimed to.
+   458	9. **Do not scope this fix against §5.5.2's hypothesis.** TC-90's mechanism is measured (§3);
+   459	   TC-91's identity claim is not. A TC-90 fix stands on §3 alone and must not import "(a) is (b)"
+   460	   as a premise.
+   461	
+   462	---
+
+codex
+**Finding:** Item 1 is **NOT CLOSED**.
+
+[src/rust/crates/fathomdb-engine/tests/tc90_transition_write_race.rs](/home/coreyt/projects/fathomdb-worktrees/slice-23-sv/src/rust/crates/fathomdb-engine/tests/tc90_transition_write_race.rs:1021): the blocker sends readiness after `BEGIN IMMEDIATE` and after writing under the lock, so the signal itself is correctly placed. `READY_TIMEOUT` is also a hang guard, not a timing assertion.
+
+The remaining race is after `recv_timeout` returns and before `started = Instant::now()` at line 1030. The holder begins its 900 ms sleep immediately after sending readiness at lines 1021-1022. If the main thread is descheduled in that small pre-timing gap for long enough, the lock can be released before the measured `Engine::write` begins, causing the `>= HOLD / 2` assertion to fail on a correct engine. That means the doc’s “early release is impossible by construction” claim is still too strong at [dev/design/0.8.20-tc90-tc91-characterization.md](/home/coreyt/projects/fathomdb-worktrees/slice-23-sv/dev/design/0.8.20-tc90-tc91-characterization.md:408). Under TC-72, I would not call this genuinely race-free for a default merge-gate pin yet.
+
+Item 2 is **CLOSED**. The module header now says the shared mechanism is hypothesized, not established, and the measured-counts section explicitly says the table does not establish “(a) is (b)”.
+
+Item 3 is **CLOSED**. The assertion message now frames cadence sensitivity as the measured result and names the observability gap. The R-A wording now says “implicates writer/worker overlap as the driver without observing it,” which is appropriately qualified.
+
+Item 4 is **CLOSED**. The adjudicated disclosure table and “not as 14.8 percent” text remain intact. The loose `~12 % failure rate` uncertainty wording was replaced with the pooled range plus instability.
+
+Section 0 headline and section 4 acceptance bar are otherwise actionable for a future 0.8.21 agent: they do not import the TC-91 identity hypothesis, and the TC-90 acceptance bar is reproduction-rate based. I did not run tests; this was a diff-only final re-review.
+tokens used
+58,163
+**Finding:** Item 1 is **NOT CLOSED**.
+
+[src/rust/crates/fathomdb-engine/tests/tc90_transition_write_race.rs](/home/coreyt/projects/fathomdb-worktrees/slice-23-sv/src/rust/crates/fathomdb-engine/tests/tc90_transition_write_race.rs:1021): the blocker sends readiness after `BEGIN IMMEDIATE` and after writing under the lock, so the signal itself is correctly placed. `READY_TIMEOUT` is also a hang guard, not a timing assertion.
+
+The remaining race is after `recv_timeout` returns and before `started = Instant::now()` at line 1030. The holder begins its 900 ms sleep immediately after sending readiness at lines 1021-1022. If the main thread is descheduled in that small pre-timing gap for long enough, the lock can be released before the measured `Engine::write` begins, causing the `>= HOLD / 2` assertion to fail on a correct engine. That means the doc’s “early release is impossible by construction” claim is still too strong at [dev/design/0.8.20-tc90-tc91-characterization.md](/home/coreyt/projects/fathomdb-worktrees/slice-23-sv/dev/design/0.8.20-tc90-tc91-characterization.md:408). Under TC-72, I would not call this genuinely race-free for a default merge-gate pin yet.
+
+Item 2 is **CLOSED**. The module header now says the shared mechanism is hypothesized, not established, and the measured-counts section explicitly says the table does not establish “(a) is (b)”.
+
+Item 3 is **CLOSED**. The assertion message now frames cadence sensitivity as the measured result and names the observability gap. The R-A wording now says “implicates writer/worker overlap as the driver without observing it,” which is appropriately qualified.
+
+Item 4 is **CLOSED**. The adjudicated disclosure table and “not as 14.8 percent” text remain intact. The loose `~12 % failure rate` uncertainty wording was replaced with the pooled range plus instability.
+
+Section 0 headline and section 4 acceptance bar are otherwise actionable for a future 0.8.21 agent: they do not import the TC-91 identity hypothesis, and the TC-90 acceptance bar is reproduction-rate based. I did not run tests; this was a diff-only final re-review.
