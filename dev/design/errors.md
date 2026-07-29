@@ -9,9 +9,13 @@ status: locked
 
 # Errors Design
 
-> **Requirement traceability (added 2026-07-28, Steward — bookkeeping, no design change):** error
-> taxonomy of record for **`R-20-VC` / decision #18** (0.8.20 Slice 22) — settle the `InvalidArgument`
-> vs `WriteValidation` family inconsistency before the surface is signed. Back-linked per TC-92.
+> **Requirement traceability (Steward, 2026-07-28; corrected after independent audit).** CONSULTED BY
+> **`R-20-VC` / decision #18** (0.8.20 Slice 22) as the module error taxonomy. ⚠ **This document does NOT
+> name `InvalidArgument` anywhere** and therefore does not by itself settle #18. The literal statements are
+> `dev/interfaces/rust.md:213-215` and `:352`; the variant was minted at `dev/design/slice-20-design.md:113`;
+> the ruling ADR for the family split is `dev/adr/ADR-0.6.0-error-taxonomy.md` (accepted). Settling #18
+> changes this file's canonical class matrix **and** all of `dev/interfaces/*.md` (`AGENTS.md:25`; TC-39
+> records that obligation is routinely missed).
 
 This file is the design owner named by `architecture.md` for the cross-cutting
 error surface.

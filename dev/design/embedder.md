@@ -11,6 +11,13 @@ status: locked
 
 # Embedder Design
 
+> **Requirement traceability (Steward, 2026-07-28; added after independent audit).** CONSULTED BY
+> **`R-20-VC` / TC-68** (0.8.20 Slice 22) — `_fathomdb_embedder_profiles.identity_name` and the
+> fail-closed profile pin define what an *embedder identity* is, and therefore what TC-68's fingerprint
+> must key on. Ruling ADR: `dev/adr/ADR-0.6.0-vector-identity-embedder-owned.md` — `(model_identity,
+> model_version, dimension, normalization)`. A fingerprint over the embedder NAME alone would silently
+> fail to re-fire on a revision or dimension change, defeating the guarantee TC-68 must preserve.
+
 This file owns dispatch onto the engine-owned embedder pool, eager warmup,
 per-call timeout handling, and the runtime mechanics behind
 `EmbedderIdentityMismatch`.
