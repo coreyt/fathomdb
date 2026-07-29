@@ -129,6 +129,26 @@ Expected: **`24 passed, 0 failed, 0 skipped, 0 errors`** (exit code `0`).
   `pytest.ini`, `tox.ini` or `setup.cfg` above this directory** — either would start applying real
   settings to this suite.
 
+## Install-then-run smoke (TC-115)
+
+`scripts/sbom-survey/smoke-install-run.sh` guards the **install path**, which the suite above does
+not reach: **installing is not verifying an install — invoking what was installed is.** It builds a
+throwaway venv **outside** the repo, `pip install`s this project, runs the **installed console
+script**, then re-runs the same survey from the source tree and asserts the two agree.
+
+```bash
+bash scripts/sbom-survey/smoke-install-run.sh     # exit 0 = PASS
+```
+
+It asserts: the console-script file exists and is executable · both runs exit `0` · a **provenance**
+check that the source-tree run really is the tree (not the still-installed copy) · identical artifact
+**sets** · byte-identical `sbom.cdx.json` / `staleness.json` / `staleness.md` · and a **vacuity
+guard** (`summary.components > 0`, non-empty `rows`) — two empty files are byte-identical. Only the
+`pip install` needs network; both surveys run `--offline`.
+
+**It is deliberately NOT CI-wired** (steward `seq-172` ruled wiring out, not deferred) — run it by
+hand, and do not add it to `agent-test.sh` or `ci.yml`.
+
 ## Deliberately NOT wired into CI
 
 This tool is **recurring by design and NOT CI-gating** — it is **informational**
