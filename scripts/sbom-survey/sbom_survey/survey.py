@@ -29,7 +29,7 @@ from . import TIER_VOCABULARY
 from .constraints import matches as constraint_matches
 from .cyclonedx import build_document
 from .discovery import ManifestRef, discover_manifests
-from .paths import DEFAULT_EPOCH_TIMESTAMP, DEFAULT_TIERS_FILE
+from .paths import DEFAULT_EPOCH_TIMESTAMP, tiers_file_for
 from .parse import Declaration, LockPackage, ManifestParseError
 from .parse import cargo as cargo_parse
 from .parse import npm as npm_parse
@@ -480,10 +480,14 @@ def run_survey(
     load-bearing.
 
     Raises `UntieredManifestError` (naming the path) for a tracked manifest that
-    matches no rule, and `ManifestParseError` for one that cannot be parsed.
+    matches no rule, `TierRuleFileError` when the tier rules cannot be read, and
+    `ManifestParseError` for a manifest that cannot be parsed.
     """
     root = Path(repo_root)
-    rules = tier_map if tier_map is not None else load_tier_map(DEFAULT_TIERS_FILE)
+    # Resolved against the SURVEYED REPOSITORY, never against the installed
+    # package — see `paths.tiers_file_for` for why that distinction is
+    # load-bearing rather than incidental.
+    rules = tier_map if tier_map is not None else load_tier_map(tiers_file_for(root))
     timestamp = resolve_timestamp(now)
 
     manifests = discover_manifests(root)

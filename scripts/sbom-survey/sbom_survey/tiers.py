@@ -21,12 +21,14 @@ from pathlib import Path
 from typing import Iterable
 
 from . import TIER_VOCABULARY
+from .paths import TIERS_RELPATH
 
 __all__ = [
     "DuplicateTierPrefixError",
     "TierMap",
     "TierRule",
     "TierRuleFileError",
+    "TierRuleFileNotFoundError",
     "TierVerdict",
     "UntieredManifestError",
     "load_tier_map",
@@ -52,6 +54,32 @@ class UntieredManifestError(Exception):
 
 class TierRuleFileError(ValueError):
     """A `tiers.toml` that cannot be trusted — rejected at LOAD time."""
+
+
+class TierRuleFileNotFoundError(TierRuleFileError):
+    """The tier rule file could not be read.
+
+    A tool whose entire purpose is to fail loudly on an unclassified manifest
+    must not itself die with an unhandled stdlib `FileNotFoundError`, so this
+    names the file it wanted, says where that path comes from, and says how to
+    override it (codex §9 round 2 `[P1]`).
+    """
+
+    def __init__(self, path: str, cause: OSError) -> None:
+        self.path = path
+        self.cause = cause
+        super().__init__(
+            f"tier rules not readable: {path}\n"
+            f"  ({type(cause).__name__}: {cause})\n"
+            "  The tier/exclusion rules are TRACKED DATA ABOUT THE SURVEYED"
+            " REPOSITORY, so they are read from"
+            f" <repo>/{TIERS_RELPATH} — never from the installed package,"
+            " which would describe whatever repository it was built from.\n"
+            "  Fix: survey a repository that tracks that file, or pass an"
+            " explicit `--tiers FILE`. There is deliberately no built-in"
+            " default rule set: guessing tiers for an unknown repository is"
+            " exactly the silent mis-tag this tool exists to prevent."
+        )
 
 
 class DuplicateTierPrefixError(TierRuleFileError):
@@ -137,8 +165,13 @@ def load_tier_map(path: Path | str) -> TierMap:
     prefix, whose error message names the offending prefix.
     """
     source = str(path)
-    with open(path, "rb") as handle:
-        data = tomllib.load(handle)
+    try:
+        with open(path, "rb") as handle:
+            data = tomllib.load(handle)
+    except OSError as exc:
+        raise TierRuleFileNotFoundError(source, exc) from exc
+    except tomllib.TOMLDecodeError as exc:
+        raise TierRuleFileError(f"{source}: not valid TOML — {exc}") from exc
 
     schema = data.get("schema")
     if schema != 1:

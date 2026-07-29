@@ -123,6 +123,13 @@ def main(argv: list[str] | None = None) -> int:
         # obvious, and never exit 0 with an untagged component.
         print(f"sbom-survey: {exc}", file=sys.stderr)
         return EXIT_UNTIERED
+    except TierRuleFileError as exc:
+        # The DEFAULT tier-rule file is resolved from `--repo`, so this is
+        # reachable without `--tiers` and must not fall through to the bare
+        # `Exception` handler below: an unreadable rule file is a legible input
+        # problem, not an internal error (codex §9 round 2 [P1]).
+        print(f"sbom-survey: {exc}", file=sys.stderr)
+        return EXIT_UNPARSEABLE
     except ManifestParseError as exc:
         print(f"sbom-survey: {exc}", file=sys.stderr)
         return EXIT_UNPARSEABLE

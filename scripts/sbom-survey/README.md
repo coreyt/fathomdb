@@ -50,6 +50,28 @@ declaration was attached to every locked version sharing its name, so `sha2 0.10
 `edit_sites` are the two fields Slice 33 decides on. The id is numbered last rather than slotted in,
 per the `AC-SBOM-23` precedent in design §4, so every existing id keeps its meaning.
 
+## Running the tool
+
+```bash
+sbom-survey --repo PATH [--offline | --online] [--out DIR] [--tiers FILE] [--now ISO8601]
+sbom-survey --describe
+```
+
+**The tier rules are read from the SURVEYED repository — `<repo>/scripts/sbom-survey/tiers.toml` —
+never from the installed package.** They are data *about a repository* (every rule is a path prefix
+into the surveyed tree), so a copy baked into a wheel would describe whichever repository the wheel
+was built from. It also keeps `AC-SBOM-08` / `AC-SBOM-11` grading the very file the survey consumed.
+
+Consequences worth knowing before Slice 33 runs this:
+
+- `pip install ./scripts/sbom-survey` followed by `sbom-survey --repo <that repo> --offline --out DIR`
+  works and exits `0`. (Before fix-2 it exited `1` with a bare `FileNotFoundError`, because the
+  default was resolved relative to the *package* and no package data is declared.)
+- Surveying a repository that does **not** track `scripts/sbom-survey/tiers.toml` requires an
+  explicit `--tiers FILE`. That is deliberate: §5.3 rules there is **no catch-all tier rule**, so
+  guessing a rule set for an unknown repository would be the silent mis-tag REQ-4 exists to prevent.
+  The tool exits `3` and names both the file it wanted and the `--tiers` override.
+
 ## Running the suite
 
 The mini-project is deliberately **not installed**: `tests/conftest.py` puts `scripts/sbom-survey/`
