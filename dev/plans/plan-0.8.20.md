@@ -455,6 +455,35 @@ to the HITL.
 
 ## 9. Immediate next slice
 
+> ⚠ **THIS SECTION IS HAND-WRITTEN AND HAS GONE STALE AT THREE CONSECUTIVE COMMISSIONS (TC-89).**
+> `release-state-0.8.20.json` already owns `next_slice`, and `commission-manifest.sh` cites this section as a
+> brief's **`{{MANDATE}}` anchor** — so the staleness is *copied into the next commission*. **Making it a
+> generated view is scoped into `DOC-HYGIENE-3`.** Until then: **re-verify this heading against
+> `release-state-0.8.20.json` `next_slice` BEFORE every commission**, and trust the state file on conflict.
+
+### ▶ IMMEDIATE NEXT: **Slice 31** — Library Sweep #3, leg 1/3 (SBOM tool: req + AC + design + RED tests)
+
+**Specified in full at §3a.** Re-scoped by the HITL on 2026-07-29 (steward `seq-153`). **No dependencies**;
+Slices 0/5/10/15/20/21/22/23/25/30 have all LANDED and the publish precondition (Slice 30) is **SATISFIED**.
+
+**Deliverables: requirements · acceptance criteria · design · RED tests. NO CODE** — the code is Slice 32,
+and running the tool is Slice 33. **Gate:** codex §9 reviews the req/AC/design and **FIX-*n* is complete
+before close**; there is **no X0-style HITL sign-off** on 31, 32 or 33.
+
+**Hard guardrails (§3a).** **Applies no dependency bump. Edits no manifest and no lockfile.** Nothing in
+0.8.20 changes a dependency version — the eventual survey is an **INPUT to 0.8.22**, which owns
+`napi 2→3`, `rusqlite 0.31→0.40 + sqlite-vec`, the `sqlite-vec 0.1.9` bump (`seq-151`) and the six
+Dependabot advisories (`seq-152`). **Carries no `R-20-xx` requirement id** (TC-76 precedent) — gate by TDD
+test name. **Touches no governed surface, no schema, no shipped code:** the allowlist must stay
+**byte-identical** (`check-governed-surface-pin.sh` exit 0) and **SCHEMA stays 24**.
+
+**Design input of record:** `dev/plans/prompts/LIBRARY-BUMP-STEWARD.md` §1–2 is the manual loop this tool
+mechanizes; it is the closest thing to a requirements draft already in the repo.
+
+---
+
+### Historical — the landed slices this section used to point at
+
 **✅ SLICE 20 IS COMPLETE — Slice 20c LANDED at `841c307b`; R-20-DR is CLOSED.** Slice 20b had landed
 **TC-45** (supersession terminal) and **R-20-DR part 1** (`DenseReadiness {Ready, Embedding}` derived onto the
 `ProjectionSpec.vector` sub-object + the atomic flip) at `26b237c0`. **Slice 20c landed the remaining leg —
