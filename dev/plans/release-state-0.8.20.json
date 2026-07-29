@@ -7,7 +7,7 @@
   "master": "dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md",
   "schema_version": 24,
   "schema_version_source": "pub const SCHEMA_VERSION in src/rust/crates/fathomdb-schema/src/lib.rs",
-  "landed_verified_at": "3a6bdd8e",
+  "landed_verified_at": "d0287620",
   "landed_verified_how": "each SHA below is the landing merge commit for its slice AND is an ancestor of origin/main (git merge-base --is-ancestor), with the merge subject matching this repo's `merge(0.8.20): Slice[- ]N` landing convention",
   "ladder": [
     {
@@ -148,15 +148,16 @@
       "short": "SBOM-SPEC",
       "title": "Library Sweep #3, leg 1 of 3 — SBOM/dependency-survey tool: requirements + acceptance criteria + design + RED tests. NO code. Carries NO R-20-xx requirement id (the TC-76 precedent)",
       "depends_on": [],
-      "status": "NOT_STARTED",
-      "sha": null,
+      "status": "LANDED",
+      "sha": "d0287620",
       "reserved_gap": true,
       "no_requirement_id": true,
       "sequenced_after": 30,
       "sequencing_note": "no technical dependency on 30; placed after it by HITL ruling 2026-07-27 so the publish precondition stays first on the critical path. RE-SCOPED by HITL 2026-07-29 (steward seq-153): the un-enumerated manual sweep is replaced by a TOOL built across slices 31/32/33.",
       "design_refs": [
         "dev/plans/prompts/LIBRARY-BUMP-STEWARD.md"
-      ]
+      ],
+      "merge_subject": "merge(0.8.20): Slice 31 COMPLETE — Library Sweep #3 leg 1/3, SBOM-survey tool spec + RED tests"
     },
     {
       "slice": 32,
@@ -208,22 +209,22 @@
     30,
     21,
     22,
-    23
+    23,
+    31
   ],
-  "next_slice": 31,
+  "next_slice": 32,
   "remaining_ladder": [
-    31,
     32,
     33,
     40
   ],
   "ladder_order": "SEQUENTIAL — re-sequenced by HITL 2026-07-29 (steward seq-153), superseding the seq-129 order. Execution order: 31 → 32 → 33 → DOC-HYGIENE-3 → the batched governed-surface decision (HITL) → 40. Slices 21, 22 and 23 have LANDED; Slice 30, the publish precondition, LANDED 2026-07-28 at 9b3ed0e3. Slice 31 was RE-SCOPED and slices 32/33 MINTED at seq-153: Library Sweep #3 becomes a three-leg build of an SBOM/dependency-survey TOOL (31 spec+design+RED tests, 32 code, 33 run-and-survey) instead of a manual backlog-and-triage sweep, and NONE of the three applies a dependency bump — the survey is an INPUT to 0.8.22. Parallel 20 || 25 was declined earlier (master F-34).",
   "unblocked": [
-    31
+    32
   ],
   "unblocked_by": {
-    "requirement": "the Slice 23 landing (R-20-SV) and the Slice 31 re-scope (steward seq-153)",
-    "gloss": "21, 22 and 23 have all LANDED and the publish precondition (Slice 30) is SATISFIED, so Slice 31 — re-scoped by the HITL on 2026-07-29 to the SBOM-tool spec+design+RED-tests leg — is next in the sequential order. 32 depends on 31 and 33 on 32; neither is unblocked yet."
+    "requirement": "the Slice 31 landing (SBOM-survey tool spec + RED tests) at d0287620",
+    "gloss": "Slice 31 leg 1/3 LANDED terminal-clean after 7 codex §9 rounds (12 findings, zero repeats; round 7 bounded by steward seq-162, fallback never fired). Slice 32 — the CODE ONLY leg — is now unblocked and turns Slice 31's 23 RED tests GREEN. 33 depends on 32. The RED suite is wired into NO gate, so a permanently-red suite on main turns nothing red; do NOT wire it into CI until it is GREEN."
   },
   "publish_precondition_slice": 30,
   "acceptance": {
