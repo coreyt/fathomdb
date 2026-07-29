@@ -6,6 +6,26 @@ set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
+# TC-88 — a ledger and its `.seq` sidecar cannot be committed apart.
+#
+# FIRST, and deliberately not behind the `-z "$STAGED"` early exit below: this
+# gate reasons about the INDEX, and it must run before any formatter touches
+# anything. It exits 0 immediately when the commit stages no ledger path, so it
+# costs unrelated commits nothing.
+#
+# WHY IT IS HERE AT ALL. `ledgerwrite.py` writes `<ledger>.jsonl` AND a sibling
+# `<ledger>.jsonl.seq`; `git add <ledger>.jsonl` does not imply the sidecar, and
+# nothing warned. Two commits in one session (41a81c17, 3e660f95) stranded it,
+# which breaks `preflight --landing` on main FOR THE NEXT AGENT while the author
+# sees nothing wrong — the worktree on their machine is consistent, and that is
+# exactly why the existing worktree-reading gates could not catch it. TC-88 rules
+# out fixing this with a "remember the sidecar" note.
+if [ -x scripts/check-staged-ledger-sidecars.sh ]; then
+  scripts/check-staged-ledger-sidecars.sh
+elif [ -f scripts/check-staged-ledger-sidecars.sh ]; then
+  bash scripts/check-staged-ledger-sidecars.sh
+fi
+
 # --diff-filter=ACMR excludes deletions so tools don't try to read missing files.
 STAGED=$(git diff --cached --name-only --diff-filter=ACMR)
 

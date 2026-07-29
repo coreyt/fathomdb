@@ -31,6 +31,16 @@ run_capped test-check-board-currency bash scripts/tests/test_check_board_currenc
 # preflight arms); no real .jsonl / .jsonl.seq is ever touched.
 run_capped test-check-ledgers bash scripts/tests/test_check_ledgers.sh
 
+# Scripts (bash): DOC-HYGIENE-3 TC-88 — scripts/check-staged-ledger-sidecars.sh,
+# the COMMIT-TIME half of the same invariant. check-ledgers.sh reads the WORKING
+# TREE, which is consistent on the machine that stages a `.jsonl` without its
+# `.seq` sidecar — only the COMMIT is torn, so both existing homes went green for
+# the author and red for everyone downstream (41a81c17, 3e660f95). This gate
+# reads the INDEX and reuses check-ledgers.sh --root over a materialised staged
+# tree, so the two predicates cannot diverge. Fixtures are throwaway git repos
+# under mktemp -d; no real ledger is ever touched.
+run_capped test-staged-ledger-sidecar bash scripts/tests/test_staged_ledger_sidecar.sh
+
 # Scripts (bash): DOC-HYGIENE-2 T1e — the shared scripts/check-governed-surface-pin.sh
 # predicate (content hash + member lists + counts + REQ-054 against
 # scripts/governed-surface-pin.json), its --landing wiring in preflight.sh, and a
