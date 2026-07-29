@@ -501,3 +501,199 @@ def test_body_and_fields_escape_special_chars(tmp_path):
     rec = json.loads(lines[0])
     assert rec["body"] == 'line1\nline2 "q" ☃'
     assert rec["path"] == "/a\\b"
+
+
+# --- TC-53: the shell-substitution residue guard ----------------------------
+# THE MEASURED DEFECT. ledgerwrite has silently written two mangled entries:
+# seq-95/96 (a backtick substitution ate one word) and seq-108/109 (`$?` expanded
+# to `0`, and a `$(...)` expanded to empty, its stderr showing
+# `basename: missing operand`). A third is quoted inside steward seq-147. The
+# ledger is APPEND-ONLY, so a mangled entry can only be ANNOTATED by a follow-up
+# entry, never repaired.
+#
+# THE HONEST LIMIT, and it is the reason `dev/steward/README.md` is half the fix:
+# the shell expands BEFORE ledgerwrite sees the string, so an in-tool check can
+# only ever see RESIDUE, never INTENT. None of the three real incidents above is
+# detectable in-tool. These tests pin the residue the guard CAN see, and pin the
+# refusal boundary against the whole real corpus so it never grows teeth it has
+# not earned.
+
+REAL_LEDGERS = (
+    "dev/steward/steward-ledger.jsonl",
+    "dev/todos-and-considerations-ledger.jsonl",
+    "dev/design/record-lifecycle-protocol/OPP-12-sub-ledger.jsonl",
+)
+REPO_ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
+
+
+def real_ledger_texts():
+    """Every `summary` and `body` in the repo's three live ledgers."""
+    texts = []
+    for rel in REAL_LEDGERS:
+        path = os.path.join(REPO_ROOT, rel)
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                rec = json.loads(line)
+                for key in ("summary", "body"):
+                    if isinstance(rec.get(key), str):
+                        texts.append((rel, rec.get("seq"), key, rec[key]))
+    return texts
+
+
+def test_zero_information_substitution_residue_in_summary_is_refused(tmp_path):
+    """A TORN expansion skeleton cannot be what any author meant: bash never
+    hands you an unclosed `$(` from a substitution that RAN (it is a syntax
+    error), so its presence means the argument was assembled from a
+    partially-quoted fragment. Refuse, and write nothing."""
+    ledger = str(tmp_path / "l.jsonl")
+    rc, _, err = call(
+        [ledger, "--kind", "note", "--summary", "landed at $(git rev-parse HEAD"]
+    )
+    assert rc == 2
+    assert "shell-substitution residue" in err
+    assert not os.path.exists(ledger)  # refused BEFORE any write
+
+
+def test_ambiguous_shell_metacharacters_warn_but_the_write_proceeds(tmp_path):
+    """`$0`, `~$1.77`, `$15` and single-quoted `code` spans are ORDINARY in this
+    repo's prose. They survived, which means THIS call was quoted correctly — so
+    refusing would be a false positive on real, legitimate text. Warn, and
+    proceed: a guard that blocks the Steward from recording a ruling gets routed
+    around (TC-121), which is strictly worse than the corruption it prevents."""
+    ledger = str(tmp_path / "l.jsonl")
+    rc, _, err = call(
+        [
+            ledger,
+            "--kind",
+            "decision",
+            "--summary",
+            "EXP-COV-1 re-run, $0 cache-reuse; extends the shipped `drain`",
+        ]
+    )
+    assert rc == 0  # WARNINGS NEVER CHANGE THE EXIT CODE
+    assert json.loads(read_lines(ledger)[0])["kind"] == "decision"
+    assert "warning" in err.lower()
+    # Specific, not generic: it names the argument and what to check.
+    assert "--summary" in err
+    assert "expansion" in err.lower()
+
+
+def test_collapsed_whitespace_warns_because_that_is_what_an_eaten_word_leaves(
+    tmp_path,
+):
+    """`"An optional `design_refs` array"` passed through double quotes becomes
+    `"An optional  array"` — the two backticks and the word between them are
+    gone and the ONLY trace is the doubled space. That is steward seq-147's
+    quoted corruption, and it is the one real-incident shape the tool can see."""
+    ledger = str(tmp_path / "l.jsonl")
+    rc, _, err = call(
+        [ledger, "--kind", "note", "--summary", "An optional  array on a ladder entry"]
+    )
+    assert rc == 0
+    assert "warning" in err.lower()
+    assert "expanded to empty" in err
+
+
+def test_refusal_message_names_the_override_and_the_requoting_fix(tmp_path):
+    """A refusal that leaves no sanctioned path forward gets routed around — the
+    agent hand-appends to the ledger, which is worse than the corruption. Every
+    refusal must name BOTH the re-quoting fix and the explicit override."""
+    ledger = str(tmp_path / "l.jsonl")
+    rc, _, err = call([ledger, "--kind", "note", "--summary", "torn ${BROKEN"])
+    assert rc == 2
+    assert "--accept-shell-residue" in err  # the sanctioned override
+    assert "single-quote" in err  # the actual fix
+    assert "ledgerwrite.py" in err  # a copy-pasteable re-quoted form
+
+
+def test_override_flag_permits_an_otherwise_refused_summary(tmp_path):
+    ledger = str(tmp_path / "l.jsonl")
+    argv = [ledger, "--kind", "note", "--summary", "torn ${BROKEN"]
+    assert call(argv)[0] == 2
+    rc, _, err = call(argv + ["--accept-shell-residue"])
+    assert rc == 0
+    assert json.loads(read_lines(ledger)[0])["summary"] == "torn ${BROKEN"
+    # Overriding is loud: it says WHAT was overridden, so the choice is auditable.
+    assert "--accept-shell-residue" in err
+    assert "torn-expansion" in err
+
+
+def test_guard_refuses_no_record_in_the_repos_three_real_ledgers():
+    """THE REFUSAL BOUNDARY IS CALIBRATED EMPIRICALLY, and this is the bar.
+
+    Every `summary` and `body` already in the three live ledgers must pass. The
+    corpus is read from disk rather than snapshotted, so it keeps testing the
+    guard as it grows: the first refusal class that would have blocked a real,
+    legitimate entry fails here instead of blocking a Steward mid-ruling.
+    """
+    texts = real_ledger_texts()
+    assert len(texts) > 400, "corpus did not load; the calibration would be vacuous"
+    false_refusals = [
+        (rel, seq, key, [r.name for r in lw.scan_shell_residue(text)[0]])
+        for rel, seq, key, text in texts
+        if lw.scan_shell_residue(text)[0]
+    ]
+    assert false_refusals == []
+
+
+def test_warn_rate_over_the_real_ledgers_stays_low():
+    """A guard that warns on most real entries is noise and gets tuned out. The
+    measured rate at the time of writing is 10/450 fields (2.2%); the ceiling is
+    a ratchet, not the measurement."""
+    texts = real_ledger_texts()
+    warned = [t for t in texts if lw.scan_shell_residue(t[3])[1]]
+    assert len(warned) / len(texts) < 0.10
+
+
+def test_body_and_field_values_are_guarded_too(tmp_path):
+    """Only `--summary` is size-bounded prose, but a mangled `--body` or
+    `--field` value is just as unrepairable in an append-only ledger."""
+    ledger = str(tmp_path / "l.jsonl")
+    rc, _, err = call(
+        [ledger, "--kind", "note", "--summary", "fine", "--body", "torn $(basename"]
+    )
+    assert rc == 2
+    assert "--body" in err
+    assert not os.path.exists(ledger)
+
+    rc, _, err = call(
+        [
+            ledger,
+            "--kind",
+            "note",
+            "--summary",
+            "fine",
+            "--field",
+            "sha=$(git rev-parse",
+        ]
+    )
+    assert rc == 2
+    assert "--field sha" in err
+    assert not os.path.exists(ledger)
+
+
+def test_dry_run_still_runs_the_guard(tmp_path):
+    """--dry-run is exactly the peek mode a careful caller uses to check what the
+    shell did to their string, so it is the LAST place the guard may be off."""
+    ledger = str(tmp_path / "l.jsonl")
+    rc, out, err = call(
+        [ledger, "--kind", "note", "--summary", "torn $(basename", "--dry-run"]
+    )
+    assert rc == 2
+    assert out == ""  # nothing echoed, so nothing to copy-paste onward
+    assert "shell-substitution residue" in err
+
+
+def test_control_characters_are_refused(tmp_path):
+    """Capturing a colourised tool's output into a summary injects ANSI escapes.
+    They carry no information a reader can use and they corrupt every downstream
+    consumer of the JSONL stream."""
+    ledger = str(tmp_path / "l.jsonl")
+    rc, _, err = call(
+        [ledger, "--kind", "note", "--summary", "build \x1b[31mFAILED\x1b[0m"]
+    )
+    assert rc == 2
+    assert "control-characters" in err
