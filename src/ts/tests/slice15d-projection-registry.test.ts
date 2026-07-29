@@ -82,6 +82,45 @@ function registryNames(path: string): string[] {
   }
 }
 
+// 0.8.20 Slice 23 (`R-20-SV`) — write a registry row the way the SHIPPED
+// PRE-Slice-23 engine wrote it, back when an `fts`/`vector` sub-object without
+// the `searchable` role was ACCEPTED. A raw INSERT is the only way to reach that
+// at-rest state now that the verb refuses it, and it is the population a real
+// consumer database will be in when it upgrades — so the SDKs must cover it,
+// not only the rejection path nobody in the field is on yet. Mirrors the Rust
+// `seed_legacy_registry_row` in `src/rust/crates/fathomdb-engine/tests/
+// slice23_spec_validation_reject.rs` and the Python `_seed_legacy_registry_row`
+// (same columns, same encoding: `fts_tokenizer = ''` is "an `fts` sub-object
+// with the DEFAULT tokenizer", NULL is "no `fts` sub-object").
+//
+// MUST be called on a CLOSED database. A raw RW connection opened while the
+// engine is live perturbs the async dispatcher (a duplicate embed, the TC-91
+// class — it passes in isolation and fails in a full suite run), so the seed
+// goes between a `close()` and the next `Engine.open`.
+function seedLegacyRegistryRow(
+  path: string,
+  name: string,
+  rolesCsv: string,
+  ftsTokenizer: string | null,
+  vectorDeclared: boolean,
+): void {
+  const db = new DatabaseSync(path);
+  try {
+    db.prepare(
+      "INSERT INTO _fathomdb_projection_registry" +
+        " (name, roles, fts_tokenizer, vector_embedder, vector_declared)" +
+        " VALUES(?, ?, ?, NULL, ?)" +
+        " ON CONFLICT(name) DO UPDATE SET" +
+        " roles = excluded.roles," +
+        " fts_tokenizer = excluded.fts_tokenizer," +
+        " vector_embedder = excluded.vector_embedder," +
+        " vector_declared = excluded.vector_declared",
+    ).run(name, rolesCsv, ftsTokenizer, vectorDeclared ? 1 : 0);
+  } finally {
+    db.close();
+  }
+}
+
 function pftsMatch(path: string, attrName: string, query: string): number[] {
   const db = new DatabaseSync(path);
   try {
@@ -568,24 +607,126 @@ test("fix-4 CONTROL — a consistent spec round-trips verbatim via read.projecti
   }
 });
 
-test("fix-4 AUDIT — fts/vector without the searchable role round-trips (inert but faithful)", async () => {
+test("R-20-SV — fts/vector without the searchable role is REJECTED (WriteValidationError)", async () => {
+  // 0.8.20 Slice 23 (`R-20-SV`). This test asserted the OPPOSITE until this
+  // slice: the shipped 15d fix-4 position was that the shape is accepted and
+  // round-trips faithfully. HITL ruling 2026-07-24 (`dev/plans/plan-0.8.20.md`
+  // §11 item 4) chose option (b) REJECT — the `fts`/`vector` sub-objects SELECT
+  // a sub-target of `searchable` and do not confer it, so without the role the
+  // declaration builds, embeds and enrols nothing: a meaningless config.
+  //
+  // Family: `WriteValidationError` (`FDB_WRITE_VALIDATION`) per decision #18 —
+  // a malformed write SHAPE is one family. It is message-less by construction,
+  // so the refusal cannot name WHICH spec in the list was invalid
+  // (TC-95/TC-98, deferred by the HITL).
   const path = freshDbPath();
   const engine = await Engine.open(path);
   try {
-    // A contradiction the engine treats as inert (no property-FTS built), but
-    // the declaration is stored + read back faithfully, so it round-trips and
-    // is NOT a binding-boundary violation — accepted, not rejected. (Rejecting
-    // it would be an engine-semantics change, out of scope for a round-trip
-    // fidelity fix.) Fields omitted (not null) to isolate this from the
-    // null-normalization round-trip covered separately below.
+    for (const [fts, vector] of [
+      [true, false],
+      [false, true],
+      [true, true],
+    ] as const) {
+      await assert.rejects(
+        engine.configureProjections([{ name: "status", roles: ["filterable"], fts, vector }]),
+        WriteValidationError,
+        `fts=${fts} vector=${vector} without the searchable role must be rejected`,
+      );
+    }
+    // `rankable` does not supply the role either — the reject is keyed on the
+    // ABSENCE of `searchable`, not on which other roles are present.
+    await assert.rejects(
+      engine.configureProjections([
+        { name: "status", roles: ["rankable"], fts: false, vector: true },
+      ]),
+      WriteValidationError,
+    );
+    assert.deepEqual(await read.projections(engine), [], "no refused call persisted anything");
+
+    // CONTROL — with `searchable` present the identical sub-objects are VALID
+    // and still round-trip.
     await engine.configureProjections([
-      { name: "status", roles: ["filterable"], fts: true, vector: true },
+      { name: "status", roles: ["filterable", "searchable"], fts: true, vector: true },
     ]);
     const got = (await read.projections(engine)).find((s) => s.name === "status");
     assert.ok(got, "the projection must exist");
     assert.equal(got.fts, true);
     assert.equal(got.vector, true);
-    assert.deepEqual([...got.roles].sort(), ["filterable"]);
+    assert.deepEqual([...got.roles].sort(), ["filterable", "searchable"]);
+  } finally {
+    await engine.close();
+  }
+});
+
+test("R-20-SV — a LEGACY registry row reads back verbatim but no longer re-applies", async () => {
+  // 0.8.20 Slice 23 (`R-20-SV`) — THE UPGRADE PATH, the one a real consumer
+  // database is actually on.
+  //
+  // Databases that declared `fts`/`vector` without the `searchable` role while
+  // the engine ACCEPTED it still exist. This slice must not make them
+  // unreadable. `read.projections` is a pure read and rejects nothing, so the
+  // legacy row is reported VERBATIM — but feeding that output straight back into
+  // `configureProjections` (the shipped fix-4 read→configure round-trip) now
+  // RAISES `WriteValidationError` (`FDB_WRITE_VALIDATION`).
+  //
+  // That asymmetry is the honest, documented consequence of the HITL ruling
+  // (2026-07-24, `dev/plans/plan-0.8.20.md` §11 item 4, option (b)): for the
+  // legacy population the round-trip is broken BY DESIGN, and the remedy is to
+  // ADD the `searchable` role (asserted here) or to name the projection in
+  // `drop`.
+  //
+  // X1 parity twin of the Rust
+  // `a_legacy_registry_row_reads_back_verbatim_but_no_longer_re_applies`
+  // (`slice23_spec_validation_reject.rs`) and the Python
+  // `test_a_legacy_registry_row_reads_back_verbatim_but_no_longer_re_applies`.
+  // Same seed, same three oracles, same semantics — deliberately NOT a
+  // per-binding invention.
+  const path = freshDbPath();
+  {
+    const engine = await Engine.open(path);
+    try {
+      await engine.write([node("N1", SOURCE, JSON.stringify({ status: "open" }))]);
+    } finally {
+      await engine.close();
+    }
+  }
+
+  // The legacy state, written the way the shipped pre-Slice-23 engine wrote it.
+  // On a CLOSED database — see the helper's ordering note.
+  seedLegacyRegistryRow(path, "status", "filterable", "", true);
+
+  const engine = await Engine.open(path);
+  try {
+    // (a) Still READABLE, and reported verbatim.
+    const back = await read.projections(engine);
+    assert.equal(back.length, 1, "a legacy row must still be readable");
+    assert.equal(back[0].name, "status");
+    assert.deepEqual([...back[0].roles].sort(), ["filterable"]);
+    assert.equal(back[0].fts, true, "the legacy `fts` sub-object is reported verbatim");
+    assert.equal(back[0].vector, true, "…and the legacy `vector` sub-object too");
+
+    // (b) …but it can no longer be RE-APPLIED. Feeding `read.projections`
+    // output straight back in is exactly the shipped fix-4 round-trip.
+    await assert.rejects(
+      engine.configureProjections(back),
+      WriteValidationError,
+      "BREAKING, by design: for the legacy fts/vector-without-`searchable` population the " +
+        "read.projections -> configureProjections round-trip no longer closes",
+    );
+
+    // (c) The remedy closes it again: ADD the `searchable` role. Everything else
+    // about the declaration is untouched.
+    const fixed: ProjectionSpec = {
+      ...back[0],
+      roles: [...back[0].roles, "searchable"] as ProjectionRole[],
+    };
+    await engine.configureProjections([fixed]);
+    const after = await read.projections(engine);
+    assert.equal(after.length, 1);
+    assert.deepEqual([...after[0].roles].sort(), ["filterable", "searchable"]);
+    assert.equal(after[0].fts, true);
+    assert.equal(after[0].vector, true);
+    await engine.drain(5_000);
   } finally {
     await engine.close();
   }

@@ -30,6 +30,9 @@ status: locked
 > used at `:2979`); the reject uses it and does **not** re-open that question. The one documented exception
 > (`reject_unrenderable_edge_epoch`, an EDGE-EPOCH bounds check) is **TC-98, deferred by the HITL until
 > after Slice 23** — it is a different validation path and does not gate this leg.
+> **IMPLEMENTED in Slice 23**; the Validation-boundary section below now states the projection split
+> explicitly (NAME rejections `InvalidArgument`, the sub-object SHAPE reject `WriteValidation`), which is
+> the clarification this slice owed that section.
 
 This file is the design owner named by `architecture.md` for the cross-cutting
 error surface.
@@ -106,8 +109,45 @@ Concretely, every SHAPE rejection returned by the engine's `validate_write` is
 record-separator-bearing `logical_id`, and — as of this amendment — an
 unsatisfiable `[valid_from, valid_until)` window. `InvalidArgument` remains
 correct for arguments that are not a typed write shape at all: an out-of-range
-traversal `depth`, a malformed `ProjectionSpec` / `drop` name, a `ReadView` that
-relaxes an axis the verb does not permit.
+traversal `depth`, a malformed projection **NAME** or `drop` **NAME**, a
+`ReadView` that relaxes an axis the verb does not permit.
+
+**2026-07-29 amendment (0.8.20 Slice 23, `R-20-SV`) — the projection line above
+said "a malformed `ProjectionSpec` / `drop` name", which read ambiguously as
+either *a malformed ProjectionSpec, or a malformed drop name* or *a malformed
+ProjectionSpec-name / drop-name*. Only the second reading is true of the code,
+and it is now written that way.** Inside `apply_projection_config` the split is:
+
+- **NAME rejections keep `InvalidArgument { msg }`** — an invalid projection
+  attribute name, an invalid `drop` name, a name repeated within one request's
+  `specs`, a `drop` entry repeated within one request. Every one of these names
+  the offending value in its message, which is the caller's only handle on WHICH
+  entry of a list-valued argument was refused.
+- **The SHAPE reject is `WriteValidation`** — an `fts` or `vector` sub-object
+  declared **without the `searchable` role**, ruled an invalid spec by the HITL
+  on 2026-07-24 (`plan-0.8.20.md` §11 item 4, option (b)) and implemented in
+  Slice 23. `searchable→FTS` / `searchable→vector` are tier labels: the
+  sub-objects *select* a sub-target of `searchable` and do not *confer* one, so
+  without the role the declaration builds, embeds and enrols nothing. This is a
+  malformed submitted shape, so it takes the decision-#18 family. Pinned by
+  `tests/slice23_spec_validation_reject.rs`, plus the Py/TS twins.
+
+**Known cost of THIS reject, accepted and deferred (TC-95 / TC-98).**
+`configure_projections` takes a **list** of specs, and `WriteValidation` is a
+unit variant, so the refusal **cannot name which spec was invalid** — strictly
+worse than the name rejections in the same function, which do. The HITL deferred
+the message-payload question until after Slice 23; it is recorded here rather
+than worked around, and the reject is implemented as ruled.
+
+**Second known remaining inconsistency, flagged not fixed (0.8.20 Slice 23).**
+`apply_projection_config`'s `"projection '<name>' declares no roles"` refusal is
+a SHAPE rejection (an empty `roles` set is a malformed spec, not a bad name) that
+still returns `InvalidArgument { msg }`. The rule above implies it should be
+`WriteValidation`. It is **shipped behaviour and deliberately untouched**:
+retro-classifying an existing rejection is outside `R-20-SV`'s scope, which is
+the new reject only. Asserted as-is in
+`tests/slice23_spec_validation_reject.rs::name_rejections_keep_invalid_argument_while_the_shape_reject_is_write_validation`
+so the state of affairs is pinned rather than merely described.
 
 **One NAMED exception inside the boundary, retained deliberately.**
 `validate_write`'s Edge branch delegates to `reject_unrenderable_edge_epoch`,

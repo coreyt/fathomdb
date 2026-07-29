@@ -119,6 +119,9 @@ fn roles(rs: &[ProjectionRole]) -> BTreeSet<ProjectionRole> {
 
 /// The shape that identifies the affected population: a `vector` sub-object
 /// WITHOUT the `searchable` role.
+///
+/// **0.8.20 Slice 23 (`R-20-SV`) — no longer ACCEPTED by the verb.** Kept so the
+/// reject can be asserted in place; see [`declare_legacy_filterable_vector`].
 fn filterable_vector_spec(name: &str) -> ProjectionSpec {
     ProjectionSpec {
         name: name.to_string(),
@@ -126,6 +129,43 @@ fn filterable_vector_spec(name: &str) -> ProjectionSpec {
         fts: None,
         vector: Some(ProjectionVector { embedder: None, dense_readiness: None }),
     }
+}
+
+/// **0.8.20 Slice 23 (`R-20-SV`) — THE LEGACY BACK DOOR.**
+///
+/// The HITL ruled on 2026-07-24 (`plan-0.8.20.md` §11 item 4, option (b)) that
+/// this suite's shape is an INVALID SPEC, and Slice 23 rejects it with
+/// `EngineError::WriteValidation` (pinned in
+/// `tests/slice23_spec_validation_reject.rs`). That makes the shape
+/// unconstructible through the public verb — which is exactly why this suite
+/// matters MORE, not less: it is the suite about databases that already hold the
+/// shape at rest, and after Slice 23 a raw registry write is the ONLY way to
+/// build that state. So the fixture route moves and every ORACLE
+/// (`_fathomdb_vector_kinds`, `_fathomdb_vector_rows`, `vector_default`, the
+/// embedder call count) is unchanged.
+///
+/// Declares the VALID `filterable` half through the verb, then sets
+/// `vector_declared = 1` with the raw UPDATE the pre-Slice-23
+/// `persist_projection_row` wrote for the same declaration — and asserts the
+/// front door is shut on the way past.
+fn declare_legacy_filterable_vector(engine: &Engine, path: &Path, name: &str) {
+    assert_eq!(
+        engine.configure_projections(&[filterable_vector_spec(name)], &[]).expect_err(
+            "R-20-SV: a `vector` sub-object without `searchable` is now an invalid spec"
+        ),
+        fathomdb_engine::EngineError::WriteValidation,
+    );
+    engine
+        .configure_projections(&[filterable_only_spec(name)], &[])
+        .expect("the `filterable` half is still a valid declaration");
+    let conn = rusqlite::Connection::open(path).expect("open rw");
+    let n = conn
+        .execute(
+            "UPDATE _fathomdb_projection_registry SET vector_declared = 1 WHERE name = ?1",
+            [name],
+        )
+        .expect("legacy vector sub-object");
+    assert_eq!(n, 1, "the registry row must exist before the legacy sub-object is added");
 }
 
 /// The legitimate dense-arm declaration — the control.
@@ -285,9 +325,7 @@ fn an_already_enrolled_inert_vector_kind_is_un_enrolled_on_reopen() {
         let opened = Engine::open_with_embedder_for_test(&path, Arc::new(embedder)).expect("open");
         let engine = &opened.engine;
 
-        engine
-            .configure_projections(&[filterable_vector_spec("summary")], &[])
-            .expect("declare the inert shape");
+        declare_legacy_filterable_vector(engine, &path, "summary");
         // What the OLD `vector_projection_declared` did on that declaration:
         // enrol the node kind. The `#[doc(hidden)]` hook reproduces the resulting
         // at-rest state exactly (`INSERT OR REPLACE` into `_fathomdb_vector_kinds`
@@ -611,9 +649,7 @@ fn edge_fact_survives_the_reconciliation_which_is_idempotent_across_reopens() {
         let embedder = CountingEmbedder::new();
         let opened = Engine::open_with_embedder_for_test(&path, Arc::new(embedder)).expect("open");
         let engine = &opened.engine;
-        engine
-            .configure_projections(&[filterable_vector_spec("summary")], &[])
-            .expect("declare the inert shape");
+        declare_legacy_filterable_vector(engine, &path, "summary");
         engine.configure_vector_kind_for_test("doc").expect("enrol as the old code did");
         engine.configure_vector_kind_for_test("note").expect("a second affected node kind");
         engine.configure_vector_kind_for_test("edge_fact").expect("the G11 edge enrolment");
@@ -695,10 +731,7 @@ fn a_configure_projections_call_reconciles_an_already_enrolled_inert_kind() {
     let opened = Engine::open_with_embedder_for_test(&path, Arc::new(embedder)).expect("open");
     let engine = &opened.engine;
 
-    let spec = filterable_vector_spec("summary");
-    engine
-        .configure_projections(std::slice::from_ref(&spec), &[])
-        .expect("declare the inert shape");
+    declare_legacy_filterable_vector(engine, &path, "summary");
     engine.configure_vector_kind_for_test("doc").expect("enrol as the old code did");
     engine.configure_vector_kind_for_test("edge_fact").expect("the G11 edge enrolment");
 
@@ -706,9 +739,13 @@ fn a_configure_projections_call_reconciles_an_already_enrolled_inert_kind() {
     assert!(vector_kind_registered(&conn, "doc"), "fixture: the affected state");
     drop(conn);
 
-    // The weakest trigger there is: an idempotent re-apply.
-    let delta = engine.configure_projections(std::slice::from_ref(&spec), &[]).expect("re-apply");
-    assert!(delta.unchanged, "an idempotent re-apply is still reported as a no-op to the caller");
+    // The weakest trigger there is. Before 0.8.20 Slice 23 this was an IDEMPOTENT
+    // RE-APPLY of the inert spec; that spec is now rejected, so the trigger drops
+    // to an EMPTY request — weaker still, and it makes the same point: the
+    // transition arm is provably inert (`declared_before` is already `false`),
+    // nothing about the registry moves, and the reconciliation must fire anyway.
+    let delta = engine.configure_projections(&[], &[]).expect("empty request");
+    assert!(delta.unchanged, "an empty request is still reported as a no-op to the caller");
 
     let conn = ro(&path);
     assert_eq!(

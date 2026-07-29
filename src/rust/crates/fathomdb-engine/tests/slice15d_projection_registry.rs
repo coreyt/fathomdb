@@ -110,6 +110,23 @@ fn ro(path: &Path) -> rusqlite::Connection {
     .expect("open read-only")
 }
 
+/// **0.8.20 Slice 23 (`R-20-SV`) — the legacy back door.** Sets
+/// `vector_declared = 1` on an existing registry row through a raw RW
+/// connection: the exact column `persist_projection_row` wrote for a `vector`
+/// sub-object before Slice 23 made the sub-object-without-`searchable` shape an
+/// invalid spec. It is now the ONLY way to reach that at-rest state, which the
+/// legacy population still holds.
+fn legacy_add_vector_subobject(path: &Path, name: &str) {
+    let conn = rusqlite::Connection::open(path).expect("open rw");
+    let n = conn
+        .execute(
+            "UPDATE _fathomdb_projection_registry SET vector_declared = 1 WHERE name = ?1",
+            [name],
+        )
+        .expect("legacy vector sub-object");
+    assert_eq!(n, 1, "the registry row must exist before the legacy sub-object is added");
+}
+
 /// Raw EAV rows for one attribute: `(attr_value)` ordered — the data-at-rest
 /// oracle for `filterable`.
 fn eav_values(path: &Path, attr_name: &str) -> Vec<String> {
@@ -1226,27 +1243,69 @@ fn idempotent_reregistration_holds_for_deferred_rankable() {
     opened.engine.close().unwrap();
 }
 
-/// **fix-2 finding 2 [P2].** A DEFERRED-ONLY registry mutation (e.g. `rankable` →
-/// `rankable + vector`) PERSISTS a changed registry row, yet pre-fix returned an
-/// EMPTY delta with `unchanged = true` — an accepted mutation reported to SDK
-/// callers as an idempotent no-op (a lie about what happened). The delta must
-/// reflect reality: when the persisted registry row actually CHANGES,
-/// `unchanged` is `false` and the change appears in `delta` (here
-/// `delta.deferred`). A GENUINE no-op (identical spec) still diffs to
-/// `unchanged = true`.
+/// **fix-2 finding 2 [P2] — THE PIN: the `Some(existing)` branch must report a
+/// deferral even when `existing` was ALREADY deferred.**
 ///
-/// Mechanism: the `Some(existing) =>` non-destructive persist branch of
+/// RENAMED at 0.8.20 Slice 23 fix-1 from
+/// `deferred_only_mutation_is_reported_not_unchanged`; grep that name and land
+/// here. The rename is not cosmetic — see "what this test does and does NOT
+/// oracle" below. Historical run records under `dev/plans/runs/` still carry the
+/// old name and are left alone (they record what was true when they ran).
+///
+/// ## The defect
+///
+/// The `Some(existing) =>` non-destructive persist branch of
 /// `apply_projection_config` gated the `delta.deferred` push on
-/// `!existing.has_deferred()`, so a change that STAYED deferred (adding the
-/// deferred vector sub-target to an already-deferred rankable) persisted the row
-/// but suppressed the delta. Because every valid non-empty spec has `wants_eav()`
-/// OR `has_deferred()`, mirroring the fresh-registration push
-/// (`if desired.has_deferred()`) makes the changed branch always report the
-/// change, so `unchanged` can never be `true` on a real mutation.
+/// `desired.has_deferred() && !existing.has_deferred()`. A change that STAYED
+/// deferred therefore persisted a CHANGED registry row while suppressing the
+/// delta — and when nothing else populated the delta, that surfaced to SDK
+/// callers as `unchanged = true`: an accepted mutation reported as an idempotent
+/// no-op, a lie about what happened. The fix mirrors the fresh-registration push
+/// (`if desired.has_deferred()`), dropping the `&& !existing.has_deferred()`
+/// conjunct.
+///
+/// ## What this test does and does NOT oracle (0.8.20 Slice 23)
+///
+/// **`second.deferred.contains("importance")` is THE PIN.** It is the assertion
+/// that fails against the pre-fix guard: the raw legacy seed makes
+/// `existing.has_deferred() == true`, so the extra conjunct suppresses the push
+/// and the pre-fix engine returns an empty `deferred`.
+///
+/// **`!second.unchanged` is NOT load-bearing under this construction, and is
+/// marked as such at its assertion site.** The promoted spec carries
+/// `searchable`, so `desired.wants_eav()` is true and the changed branch pushes
+/// `delta.built` regardless of the deferred guard — meaning `!second.unchanged`
+/// would pass even against the OLD bad guard. It is kept as a consistency check
+/// on the delta as a whole, not as the oracle for this [P2]. Naming the test
+/// after it (as the old name did) told a future reader the decorative half was
+/// the point.
+///
+/// ## Why the construction had to change — and why it cannot change back
+///
+/// The HITL ruled on **2026-07-24** (`dev/plans/plan-0.8.20.md` §11 item 4,
+/// option (b)) that an `fts`/`vector` sub-object without the `searchable` role
+/// is an INVALID SPEC. A "deferred-only mutation" — the shape this test used to
+/// make — requires `!desired.wants_eav()`, i.e. `desired.roles ⊆ {Rankable}`. A
+/// non-destructive change can only ADD roles, so `existing.roles =
+/// desired.roles = {Rankable}` and the change must therefore be in `fts` /
+/// `vector` — every one of which Slice 23 now rejects. **The pure deferred-only
+/// mutation is unconstructible through the public verb**, so the
+/// "`unchanged = true` on a persisted change" half of this [P2] is now
+/// impossible BY CONSTRUCTION, not merely untested. That is asserted below as a
+/// fact.
+///
+/// The CODE DEFECT is still reachable and is still pinned: what falsifies the
+/// pre-fix branch is an `existing` that ALREADY has a deferred axis. That state
+/// (`rankable` + a stored `vector` sub-object with no `searchable` role) is now a
+/// LEGACY at-rest state, reached here through [`legacy_add_vector_subobject`] —
+/// the same back door `slice21c_vector_role_gate.rs` and
+/// `tc71_fix1_inert_enrolment_reconcile.rs` use, for the same reason. Coverage of
+/// the guard is preserved; only the route changed.
 #[test]
-fn deferred_only_mutation_is_reported_not_unchanged() {
+fn a_changed_registry_row_reports_its_deferral_even_when_already_deferred() {
     let dir = TempDir::new().unwrap();
-    let opened = Engine::open(db_path(&dir, "deferred_mutation")).unwrap();
+    let path = db_path(&dir, "deferred_mutation");
+    let opened = Engine::open(path.clone()).unwrap();
     let engine = &opened.engine;
     engine.write(&[node("N1", "src:1", r#"{"importance":"high"}"#)]).unwrap();
 
@@ -1260,20 +1319,59 @@ fn deferred_only_mutation_is_reported_not_unchanged() {
     assert_eq!(first.deferred, vec!["importance".to_string()], "first apply defers rankable");
     assert!(!first.unchanged);
 
-    // Add a deferred VECTOR sub-target: rankable → rankable+vector. Non-destructive
-    // (nothing removed), NO EAV build (still deferred-only), but the registry row
-    // DID change (vector_declared false→true) — so it is NOT a no-op.
+    // 0.8.20 Slice 23 — the mutation this test used to make (`rankable` →
+    // `rankable + vector`) is now an INVALID SPEC, and its refusal is what makes
+    // the `unchanged = true` lie unconstructible. Asserted, not assumed.
+    assert_eq!(
+        engine
+            .configure_projections(
+                &[spec("importance", &[ProjectionRole::Rankable], false, true)],
+                &[]
+            )
+            .expect_err("R-20-SV: a `vector` sub-object without `searchable` is an invalid spec"),
+        fathomdb_engine::EngineError::WriteValidation,
+        "every deferred-ONLY mutation needs roles ⊆ {{Rankable}} and a change in fts/vector, so \
+         the reject makes the whole class unconstructible through the verb"
+    );
+
+    // The LEGACY at-rest state that still falsifies the removed guard: `existing`
+    // already carries a deferred axis (`rankable` AND a stored `vector`
+    // sub-object), so the pre-fix `&& !existing.has_deferred()` suppressed the
+    // push. Reached the only way it now can be.
+    legacy_add_vector_subobject(&path, "importance");
+
+    // Promote to a VALID spec: add `searchable`, keeping the stored `vector`
+    // sub-object. Non-destructive (a role is added, nothing removed), and the
+    // registry row DID change — so it is not a no-op and the deferral must be
+    // reported even though `existing.has_deferred()` was already true.
     let second = engine
-        .configure_projections(&[spec("importance", &[ProjectionRole::Rankable], false, true)], &[])
+        .configure_projections(
+            &[spec(
+                "importance",
+                &[ProjectionRole::Rankable, ProjectionRole::Searchable],
+                false,
+                true,
+            )],
+            &[],
+        )
         .unwrap();
+    // NOT LOAD-BEARING under this construction — kept as a consistency check on
+    // the delta, NOT as the oracle for fix-2 finding 2 [P2]. The promoted spec
+    // carries `searchable`, so `desired.wants_eav()` is true and the changed
+    // branch pushes `delta.built` whatever the deferred guard does; this
+    // assertion would therefore pass even against the OLD bad guard. The pin is
+    // the NEXT assertion. (0.8.20 Slice 23 fix-1, codex §9 round 2 finding 2.)
     assert!(
         !second.unchanged,
-        "a deferred-only mutation that persisted a changed registry row must NOT report \
-         unchanged, got {second:?}"
+        "a mutation that persisted a changed registry row must NOT report unchanged, got \
+         {second:?}"
     );
+    // THE PIN — the one assertion that fails against the pre-fix guard.
     assert!(
         second.deferred.contains(&"importance".to_string()),
-        "the deferred-only change must appear in delta.deferred, got {second:?}"
+        "THE PIN (fix-2 finding 2 [P2]): the `Some(existing)` branch must push `delta.deferred` \
+         even when `existing.has_deferred()` is ALREADY true — that extra conjunct is exactly \
+         what the pre-fix guard had, and it suppressed the report, got {second:?}"
     );
 
     // registry/delta alignment: read_projections reflects the persisted new spec.
@@ -1281,13 +1379,21 @@ fn deferred_only_mutation_is_reported_not_unchanged() {
     assert_eq!(read.len(), 1, "exactly one projection declared");
     assert!(
         read[0].vector.is_some(),
-        "the persisted registry row carries the newly-declared vector sub-target: {read:?}"
+        "the persisted registry row carries the vector sub-target: {read:?}"
     );
 
-    // CONTROL — re-registering the SAME (rankable+vector) spec is still a TRUE
-    // no-op: identical spec ⇒ the idempotent arm ⇒ empty delta, unchanged=true.
+    // CONTROL — re-registering the SAME spec is still a TRUE no-op: identical
+    // spec ⇒ the idempotent arm ⇒ empty delta, unchanged=true.
     let third = engine
-        .configure_projections(&[spec("importance", &[ProjectionRole::Rankable], false, true)], &[])
+        .configure_projections(
+            &[spec(
+                "importance",
+                &[ProjectionRole::Rankable, ProjectionRole::Searchable],
+                false,
+                true,
+            )],
+            &[],
+        )
         .unwrap();
     assert!(third.unchanged, "identical re-registration must still diff to a no-op, got {third:?}");
     assert!(
@@ -1295,5 +1401,6 @@ fn deferred_only_mutation_is_reported_not_unchanged() {
         "the same-spec re-registration delta must be empty, got {third:?}"
     );
 
+    opened.engine.drain(5_000).unwrap();
     opened.engine.close().unwrap();
 }
