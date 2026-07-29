@@ -52,8 +52,6 @@
 //! verification runs. That is true, and
 //! `a_marker_matching_the_current_state_serves_a_drifted_backend` proves it.
 //!
-//! The question that decides what to DO about it is whether the cache introduced
-//! that exposure or merely restated it. It restated it:
 //! `a_forged_stored_baseline_defeats_the_probe_even_when_it_fully_runs` shows the
 //! SAME actor defeats the SAME arm through the **pre-slice** path — forge
 //! `_fathomdb_embed_probe.reference_vec` to the drifted backend's own output and
@@ -63,10 +61,23 @@
 //! deleted first so the cache demonstrably plays no part.
 //!
 //! So the equivalence probe is a **correctness self-check against backend drift,
-//! not an integrity boundary against a hostile writer** — it never was one, and
-//! there is no secret in an embedded local-first engine with which to make the
-//! marker unforgeable. What the cache *does* narrow is recorded in §6 of the
-//! design note and in `residual_…` above. What forging buys is bounded:
+//! not tamper evidence** — it never was, and there is no secret in an embedded
+//! local-first engine with which to make the marker unforgeable.
+//!
+//! ## fix-2 — the same actor, but NOT the same cost
+//!
+//! fix-1 concluded from the pair above that "the cache adds no new attack surface".
+//! The codex re-review rejected that and was right: forging the marker needs only a
+//! publicly computable digest (usually the one already in the row), while
+//! re-baselining needs the target backend's 45 exact embeddings encoded into every
+//! row — a materially higher bar. **The cache IS a cheaper bypass.** The claim is
+//! struck; see §8.4 of the design note.
+//!
+//! What bounds the finding is the ruled residual, not the marker:
+//! `residual_same_identity_backend_drift_is_not_caught_on_a_cached_open` shows an
+//! **honestly recorded** marker already serves a drifted backend with NO forgery at
+//! all, so forgery adds capability only where no valid marker exists for the current
+//! fingerprint (§8.5). And it is bounded in time too:
 //! `a_replayed_verdict_marker_is_defeated_by_a_mutated_baseline` and
 //! `a_replayed_verdict_marker_is_defeated_by_a_rewritten_pinned_mean` show a known
 //! digest stops working at the next change to any fingerprint input.
@@ -627,12 +638,26 @@ fn a_divergence_on_a_rerun_still_disables_dense() {
 ///
 /// At `94bb33ef` this test FAILS — the drift *is* caught. That failure is the
 /// honest statement of what changes.
+///
+/// **fix-2 — this is also the BOUND on the forged-marker finding (§8.5 of the design
+/// note).** There is no forgery anywhere in this test: the marker is the one the
+/// ENGINE ITSELF recorded at the honest population open, asserted below to be
+/// present beforehand and byte-unchanged afterwards. A same-identity backend swap
+/// moves no fingerprint input, so that honest marker still matches and the drifted
+/// backend is served anyway. Whatever forging a marker buys an attacker, it does not
+/// buy *this* — the ruled trade already grants it, free. Forgery adds capability
+/// only on an open where no valid marker exists for the CURRENT fingerprint.
 #[test]
 fn residual_same_identity_backend_drift_is_not_caught_on_a_cached_open() {
     let dir = TempDir::new().unwrap();
     let path = db_path(&dir);
     let calls = counter();
     seed_verified_workspace(&path, &calls);
+
+    // fix-2: the marker in play is the ENGINE'S OWN, written by the honest
+    // population open above. Nothing in this test writes or computes a digest.
+    let honest_marker =
+        read_verdict_marker(&path).expect("the honest population open records its own verdict");
 
     // Same identity, same pinned mean (none), same baseline, same fixture — only
     // the BACKEND changed, which no fingerprint input can see.
@@ -648,6 +673,12 @@ fn residual_same_identity_backend_drift_is_not_caught_on_a_cached_open() {
         "RESIDUAL: same-identity backend drift is NOT caught on a cached open — \
          it is caught only at the next open whose fingerprint changed"
     );
+    assert_eq!(
+        read_verdict_marker(&path).as_deref(),
+        Some(honest_marker.as_str()),
+        "fix-2 (§8.5): the drifted backend was served off the ENGINE'S OWN marker, \
+         unchanged — no forgery was involved, so a forged marker buys nothing here"
+    );
 }
 
 // ---- fix-1 (codex §9 round 2 [P1]) — the THREAT MODEL, measured ------------
@@ -659,9 +690,20 @@ fn residual_same_identity_backend_drift_is_not_caught_on_a_cached_open() {
 // forces the probe to be skipped. These four tests establish what that is worth —
 // that the SAME actor already defeated the SAME arm before the cache existed, and
 // that a known digest expires at the next change to any fingerprint input.
+//
+// fix-2: same actor, NOT same cost — the marker route is the cheaper one, and that
+// concession is §8.4 of the design note. The bound on the finding is the ruled
+// residual above, not these tests.
 
-/// **THE HYPOTHESIS TEST.** Is the pre-slice design an integrity boundary against
-/// a hostile writer? No — and this is the measurement that says so.
+/// **THE HYPOTHESIS TEST.** Is the pre-slice design tamper-evident against a hostile
+/// writer? No — and this is the measurement that says so.
+///
+/// **fix-2 — read the scope of this measurement carefully.** It establishes that the
+/// same actor had a route that defeats the probe while it runs in full. It does NOT
+/// establish that the two routes cost the same: this one needs the drifted backend's
+/// 45 exact embeddings, the marker route needs a publicly computable digest. fix-1
+/// drew "the cache adds no new attack surface" from this test; that inference was
+/// wrong and is struck (§8.4).
 ///
 /// The 0.8.18 probe re-embeds the 45 committed probes and compares them to the
 /// STORED references. Those references live in an ordinary table in the same file.
@@ -729,9 +771,14 @@ fn a_forged_stored_baseline_defeats_the_probe_even_when_it_fully_runs() {
 /// therefore not an engine-authenticated attestation; it is a statement that the
 /// fingerprint inputs are unchanged since *some* engine recorded a pass.
 ///
-/// Paired with `a_forged_stored_baseline_defeats_the_probe_even_when_it_fully_runs`,
-/// this is the whole argument: both routes are open to exactly the same actor, and
-/// one of them predates the cache.
+/// Paired with `a_forged_stored_baseline_defeats_the_probe_even_when_it_fully_runs`:
+/// both routes are open to exactly the same actor and one of them predates the
+/// cache — but **this one is the cheaper route** (fix-2, §8.4), which is precisely
+/// why the finding is conceded rather than argued away. Its *bound* is
+/// `residual_same_identity_backend_drift_is_not_caught_on_a_cached_open`: note that
+/// the digest installed here is the one the engine itself wrote moments earlier, and
+/// that leaving it in place would have served the same drifted backend with no
+/// forgery at all.
 #[test]
 fn a_marker_matching_the_current_state_serves_a_drifted_backend() {
     let dir = TempDir::new().unwrap();
