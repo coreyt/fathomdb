@@ -470,9 +470,9 @@ to the HITL.
 ### ▶ Immediate next
 
 <!-- BEGIN GENERATED release-state:0.8.20:plan-immediate-next -->
-**IMMEDIATE NEXT: Slice 31** (`SBOM-SPEC`) — Library Sweep #3, leg 1 of 3 — SBOM/dependency-survey tool: requirements + acceptance criteria + design + RED tests. NO code. Carries NO R-20-xx requirement id (the TC-76 precedent)
+**IMMEDIATE NEXT: Slice 32** (`SBOM-CODE`) — Library Sweep #3, leg 2 of 3 — implement the SBOM/dependency-survey tool against slice 31's RED tests. CODE ONLY; applies no bump and edits no manifest or lockfile
 
-**Remaining ladder:** 31 → 32 → 33 → 40.<!-- END GENERATED release-state:0.8.20:plan-immediate-next -->
+**Remaining ladder:** 32 → 33 → 40.<!-- END GENERATED release-state:0.8.20:plan-immediate-next -->
 
 **Specified in full at §3a.** Re-scoped by the HITL on 2026-07-29 (steward `seq-153`). **No dependencies**;
 Slices 0/5/10/15/20/21/22/23/25/30 have all LANDED and the publish precondition (Slice 30) is **SATISFIED**.
