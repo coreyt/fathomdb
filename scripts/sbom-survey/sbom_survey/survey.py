@@ -352,18 +352,32 @@ class _Assembler:
         1. **No lock entry for the name** — unchanged: materialize an unresolved
            component carrying the declaration (this is how a declared-but-never-
            locked package such as `numpy` reaches the BOM).
-        2. **Exactly one candidate** — unchanged, and deliberately so: there is
-           no ambiguity to resolve, so the constraint is not consulted and no
-           imperfection in the range grammar can regress a correct attachment.
-        3. **Several candidates** — consult `constraints.matches()` and attach
-           ONLY to the entries the constraint admits.
+        2. **One or more locked candidates** — consult `constraints.matches()`
+           and attach ONLY to the entries the constraint admits.
 
-        In case 3, when the constraint admits NONE of them — or when it could not
+        In case 2, when the constraint admits NONE of them — or when it could not
         be evaluated at all — the declaration is **not** widened back onto every
         candidate. That fallback IS the defect. Instead the declaration lands on
         an unresolved component that records WHY, so the manifest still appears
         in `edit_sites` (a real declaration is never silently dropped) while no
         locked version is falsely claimed to satisfy it.
+
+        **A DEFINITE mismatch de-attaches even when there is only ONE candidate**
+        (fix-1 amendment, `AC-SBOM-24` / `seq-168`). The first cut of this method
+        attached a lone candidate unconditionally, on the reasoning that a single
+        entry carries no ambiguity to resolve. That reasoning is wrong whenever
+        the lone entry comes from *another project's* lockfile: this tool's own
+        `pyproject.toml` declares `packaging>=24.0,<26.0`, the only locked
+        `packaging` anywhere in the repository is `26.2` in `src/python/uv.lock`,
+        and attaching regardless stamped `constraint='<26.0,>=24.0'` onto version
+        `26.2` — a component carrying a constraint its own version violates,
+        which is exactly what `AC-SBOM-24` forbids.
+
+        The guarantee that reasoning was protecting is kept intact, and it is the
+        reason `None` and `False` are handled differently: only a **definite**
+        `False` de-attaches. An UNEVALUABLE constraint on a lone candidate still
+        attaches, so no imperfection in the range grammar can ever regress a
+        correct attachment — it can only ever fail to catch a wrong one.
         """
         index = self.by_match_key()
         pins = dict(pinned or {})
@@ -383,15 +397,13 @@ class _Assembler:
                 build = self.ensure(declaration.ecosystem, declaration.name, pin)
                 index.setdefault(key, []).append(build)
                 targets: list[_Build] = [build]
-            elif len(candidates) == 1:
-                targets = list(candidates)
             else:
-                targets = self._resolve_ambiguous(declaration, candidates, index, key)
+                targets = self._resolve_targets(declaration, candidates, index, key)
 
             for build in targets:
                 build.origins[(origin.path, origin.kind)] = origin
 
-    def _resolve_ambiguous(
+    def _resolve_targets(
         self,
         declaration: Declaration,
         candidates: list[_Build],
@@ -400,6 +412,11 @@ class _Assembler:
     ) -> list[_Build]:
         """The locked entries `declaration`'s constraint admits — or an honest miss."""
         locked = [build for build in candidates if build.version is not None]
+        if not locked:
+            # Only an unresolved build exists for this name (an earlier
+            # declaration created it). Nothing to check a version against.
+            return list(candidates)
+
         verdicts = [
             (
                 build,
@@ -413,8 +430,16 @@ class _Assembler:
         if admitted:
             return admitted
 
-        # Nothing admitted. Say so in the data; NEVER widen back onto everything.
         unevaluable = any(verdict is None for _build, verdict in verdicts)
+
+        if len(locked) == 1 and unevaluable:
+            # A LONE candidate the range grammar could not judge. Attach, exactly
+            # as before this method consulted constraints at all: an unparseable
+            # range must never be able to de-attach a correct declaration. Only a
+            # DEFINITE mismatch does that.
+            return locked
+
+        # Nothing admitted. Say so in the data; NEVER widen back onto everything.
         versions = ", ".join(sorted(build.version or "" for build in locked))
         if unevaluable:
             note = (

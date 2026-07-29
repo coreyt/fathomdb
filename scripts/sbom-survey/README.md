@@ -9,7 +9,7 @@ manifest tracked, is the dependency direct or transitive, is the locked version 
 so a Library Sweep is ~90% mechanical instead of a search → review → check → reason cycle per
 candidate.
 
-**Spec of record:** `dev/design/0.8.20-slice-31-sbom-survey-tool.md` — requirements, the 23
+**Spec of record:** `dev/design/0.8.20-slice-31-sbom-survey-tool.md` — requirements, the 24
 acceptance criteria, the design, and the answers to every resolved design question. Read that first;
 this file is only the operating note.
 
@@ -33,12 +33,22 @@ this file is only the operating note.
 | Slice | Deliverable | State |
 |---|---|---|
 | **31** | requirements · acceptance criteria · design · **RED tests** | landed |
-| **32** | the code that turns the RED tests GREEN | **landed — 23 passed, 0 failed, 0 skipped, 0 errors** |
+| **32** | the code that turns the RED tests GREEN | **landed — 24 passed, 0 failed, 0 skipped, 0 errors** |
 | **33** | **runs** the tool and writes the survey findings | not started |
 
 This directory now contains the implementation as well: the `sbom_survey` package, its isolated
-`pyproject.toml`, the tracked `tiers.toml` rule data and the CLI. Slice 32 turned all 23 acceptance
-criteria GREEN **without changing what any test asserts**.
+`pyproject.toml`, the tracked `tiers.toml` rule data and the CLI. Slice 32 turned all 24 acceptance
+criteria GREEN **without weakening any assertion Slice 31 wrote**.
+
+**The count moved 23 → 24 at fix-1**, under HITL ruling `seq-168` (`TC-112` (a)) — the single
+occasion the Slice-31 suite has been unfrozen. `AC-SBOM-24`
+(`tests/test_cyclonedx.py::test_no_component_carries_a_constraint_its_version_violates`) rules that
+**no component may carry a `fathomdb:constraint` that its own version does not satisfy**. It exists
+because codex §9 round 1 found, by reading, a defect the other 23 criteria could not see: a
+declaration was attached to every locked version sharing its name, so `sha2 0.10.9` carried
+`constraint = "0.11"` and `thiserror 2.0.18` was tagged `direct` under `"1"`. `depth` and
+`edit_sites` are the two fields Slice 33 decides on. The id is numbered last rather than slotted in,
+per the `AC-SBOM-23` precedent in design §4, so every existing id keeps its meaning.
 
 ## Running the suite
 
@@ -55,12 +65,12 @@ python3 -m venv /tmp/sbom-survey-venv
 /tmp/sbom-survey-venv/bin/python -m pytest scripts/sbom-survey/tests -q
 ```
 
-Expected: **`23 passed, 0 failed, 0 skipped, 0 errors`** (exit code `0`).
+Expected: **`24 passed, 0 failed, 0 skipped, 0 errors`** (exit code `0`).
 
 - **No test may skip.** A skip is a vacuous green — an ungraded criterion reporting success.
 - **No module-level `import sbom_survey`.** The import happens inside each test body via the
-  `require()` helper in `tests/conftest.py`, so a broken package produces 23 attributable FAILEDs
-  rather than one collection error that hides 22 of them.
+  `require()` helper in `tests/conftest.py`, so a broken package produces 24 attributable FAILEDs
+  rather than one collection error that hides 23 of them.
 - The suite needs **no network**. The published-version lookup is behind an injectable seam; the
   tests inject `OfflineSource` / `StaticSource`, and one test asserts zero socket I/O.
 - **`AC-SBOM-10` grades CycloneDX validity with an INDEPENDENT validator** — the upstream

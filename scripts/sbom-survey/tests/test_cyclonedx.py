@@ -6,6 +6,7 @@ Design: dev/design/0.8.20-slice-31-sbom-survey-tool.md §5.5.
 
 from __future__ import annotations
 
+import re
 from urllib.parse import unquote
 
 from conftest import (
@@ -19,6 +20,7 @@ from conftest import (
     independent_cyclonedx_validator,
     purl_type,
     require,
+    require_external,
 )
 
 
@@ -394,3 +396,276 @@ def test_component_version_is_locked_and_constraint_preserved() -> None:
             assert "fathomdb:constraint" in props, (
                 f"{ref}: direct component lost its declared constraint"
             )
+
+
+# --- AC-SBOM-24 support (added under seq-168 / TC-112(a)) --------------------
+#
+# A SECOND, INDEPENDENT implementation of "does this range admit this version",
+# built ONLY on the upstream ordering primitives (`semver.Version` for the
+# cargo/npm arms, `packaging` for the pypi arm — both already declared in the
+# mini-project's pyproject.toml, so no dependency is added for this criterion).
+#
+# It deliberately does NOT import `sbom_survey.constraints`. Grading the
+# survey's constraint logic WITH the survey's own constraint logic is
+# self-certification — an implementation whose matcher answered `True` to
+# everything would attach every declaration to every locked version and then
+# certify itself clean. That is the identical failure `AC-SBOM-10` was rewritten
+# to remove at codex §9 round 2, and it is the reason this oracle is a separate
+# implementation rather than a call into the package under test.
+
+_AC24_PARTIAL = re.compile(
+    r"^v?(\d+|[xX*])"
+    r"(?:\.(\d+|[xX*]))?"
+    r"(?:\.(\d+|[xX*]))?"
+    r"(?:-([0-9A-Za-z.\-]+))?"
+    r"(?:\+[0-9A-Za-z.\-]+)?$"
+)
+_AC24_COMPARATOR = re.compile(
+    r"\s*(\^|~>|~|>=|<=|>|<|==|=)?\s*(v?[0-9xX*][0-9A-Za-z.\-+*xX]*)\s*"
+)
+
+# Constraint FORMS this oracle does not attempt to read: registry aliases, VCS
+# and filesystem specifiers, and the placeholders a survey may legitimately emit
+# for a dependency that carries no range at all. They are TOLERATED as
+# unevaluable and excluded from the graded count.
+#
+# EVERYTHING ELSE THAT FAILS TO PARSE IS A FAILURE, NOT A SHRUG. Without that
+# rule, "emit constraints this oracle cannot read" would be a hole straight
+# through the criterion — a wrong implementation could evade it by degrading its
+# own output, which is the vacuous-green class Slice 31 spent six rounds on.
+_AC24_OPAQUE_WORDS = ("workspace", "path", "git")
+_AC24_OPAQUE_CHARS = (":", "/", "\\")
+
+
+def _ac24_is_opaque_form(constraint: str) -> bool:
+    text = constraint.strip()
+    return text in _AC24_OPAQUE_WORDS or any(c in text for c in _AC24_OPAQUE_CHARS)
+
+
+def _ac24_satisfies(ecosystem, constraint, version, semver_mod, version_mod, specifiers_mod):
+    """True / False, or None when THIS ORACLE cannot evaluate the form."""
+    text = (constraint or "").strip()
+    if text in ("", "*", "x", "X"):
+        return True
+
+    if ecosystem == "pypi":
+        try:
+            specifier = specifiers_mod.SpecifierSet(text)
+            parsed = version_mod.Version(version)
+        except Exception:  # noqa: BLE001 - an unreadable form is None, never True
+            return None
+        return specifier.contains(parsed, prereleases=True)
+
+    if ecosystem not in ("cargo", "npm") or _ac24_is_opaque_form(text):
+        return None
+    try:
+        actual = semver_mod.Version.parse(version)
+    except Exception:  # noqa: BLE001
+        return None
+
+    def segment(raw):
+        return None if raw is None or raw in ("x", "X", "*") else int(raw)
+
+    def at(major, minor, patch, pre=None):
+        return semver_mod.Version(major, minor or 0, patch or 0, prerelease=pre)
+
+    satisfied_any = False
+    for alternative in text.split("||"):
+        cleaned = alternative.replace(",", " ").strip()
+        if not cleaned:
+            satisfied_any = True
+            continue
+        pairs, position = [], 0
+        while position < len(cleaned):
+            match = _AC24_COMPARATOR.match(cleaned, position)
+            if match is None or match.end() == position:
+                return None
+            pairs.append((match.group(1), match.group(2)))
+            position = match.end()
+        if not pairs:
+            return None
+
+        holds = True
+        for operator, raw in pairs:
+            parsed = _AC24_PARTIAL.match(raw)
+            if parsed is None:
+                return None
+            major = segment(parsed.group(1))
+            if major is None:
+                continue
+            minor, patch = segment(parsed.group(2)), segment(parsed.group(3))
+            pre = parsed.group(4)
+            if operator is None:
+                # cargo reads a bare requirement as CARET; npm reads a bare full
+                # version as EXACT and a bare partial as a prefix range.
+                operator = "^" if ecosystem == "cargo" else "="
+            low = at(major, minor, patch, pre)
+            if operator == "^":
+                if major > 0 or minor is None:
+                    high = at(major + 1, 0, 0)
+                elif minor > 0 or patch is None:
+                    high = at(0, minor + 1, 0)
+                else:
+                    high = at(0, 0, patch + 1)
+                verdict = low <= actual < high
+            elif operator in ("~", "~>"):
+                high = at(major + 1, 0, 0) if minor is None else at(major, minor + 1, 0)
+                verdict = low <= actual < high
+            elif operator == ">=":
+                verdict = actual >= low
+            elif operator == ">":
+                verdict = actual > low
+            elif operator == "<=":
+                verdict = actual <= low
+            elif operator == "<":
+                verdict = actual < low
+            elif minor is None:
+                verdict = low <= actual < at(major + 1, 0, 0)
+            elif patch is None:
+                verdict = low <= actual < at(major, minor + 1, 0)
+            else:
+                verdict = actual == low
+            if not verdict:
+                holds = False
+                break
+        satisfied_any = satisfied_any or holds
+    return satisfied_any
+
+
+def test_no_component_carries_a_constraint_its_version_violates() -> None:
+    """AC-SBOM-24.
+
+    NO COMPONENT MAY CARRY A `fathomdb:constraint` THAT ITS OWN VERSION DOES NOT
+    SATISFY. (HITL ruling `seq-168`, TC-112(a); the one criterion the Slice-31
+    suite was unfrozen for.)
+
+    Why it exists. A manifest declares a dependency by NAME and RANGE; a
+    lockfile resolves it to concrete versions. An implementation that attaches a
+    declaration to every locked version of that name stamps ranges onto versions
+    they cannot resolve to — on this repository it produced `sha2 0.10.9` under
+    `constraint = "0.11"`, `thiserror 2.0.18` under `"1"` and `tokenizers
+    0.22.2` under `"0.20"`, each of them tagged `direct`. `depth` and
+    `edit_sites` are the two fields Slice 33 makes its surgical /
+    not-surgical call on, and that survey feeds 0.8.22, so a permissive oracle
+    here propagates into real dependency decisions.
+
+    The suite could not see any of it: the defect was found by reading the code,
+    and mutations restoring it left all 23 other criteria GREEN. This criterion
+    closes that hole.
+
+    Graded ON THE EMITTED DOCUMENT — `run_survey(...)` -> `to_cyclonedx()` — and
+    not against any helper. That is the TC-105 class this slice has been
+    fighting throughout, and re-introducing it from the test side would be no
+    better than from the implementation side.
+
+    THE RULE FOR CONSTRAINTS THIS ORACLE CANNOT READ, stated because a silent
+    "unparseable therefore fine" would be the hole this criterion is meant to
+    close:
+
+    * a constraint whose FORM is deliberately opaque — a registry alias, a VCS
+      or filesystem specifier, or a bare `workspace` / `path` / `git`
+      placeholder — is TOLERATED and excluded from the graded count. Demanding a
+      verdict on those would reject a correct implementation, which is the
+      inverse defect codex §9 round 5 caught in `AC-SBOM-21`;
+    * ANY OTHER unreadable constraint FAILS THE CRITERION, naming it. An
+      implementation cannot escape this oracle by degrading its own output into
+      something unparseable.
+
+    Components carrying no version (`fathomdb:resolution = "unresolved"`) are
+    outside the criterion by construction: they claim no version, so there is
+    nothing for a constraint to contradict. That is the honest destination for a
+    declaration whose range matches nothing, and it must stay available — the
+    alternative is the fabrication this criterion forbids.
+    """
+    semver_mod = require_external(
+        "semver",
+        "AC-SBOM-24",
+        "semver>=3.0,<4.0",
+        "the cargo/npm arms of this criterion need semver ORDERING from the"
+        " upstream library, so that the check is independent of the code under"
+        " test rather than a call back into it.",
+    )
+    version_mod = require_external(
+        "packaging.version",
+        "AC-SBOM-24",
+        "packaging>=24.0,<26.0",
+        "the pypi arm needs PEP 440 version parsing from upstream `packaging`.",
+    )
+    specifiers_mod = require_external(
+        "packaging.specifiers",
+        "AC-SBOM-24",
+        "packaging>=24.0,<26.0",
+        "the pypi arm needs PEP 440 specifier evaluation from upstream"
+        " `packaging`; PEP 440 ordering cannot be re-derived by hand.",
+    )
+
+    survey = _offline_survey(
+        "AC-SBOM-24",
+        "no component in the emitted document may carry a `fathomdb:constraint`"
+        " that its own `version` does not satisfy. A declaration must be"
+        " attached only to the locked versions its declared range can actually"
+        " resolve to — never to every locked version sharing the name.",
+    )
+    doc = survey.to_cyclonedx()
+
+    graded = 0
+    tolerated = 0
+    violations: list[str] = []
+    unreadable: list[str] = []
+
+    for component in doc["components"]:
+        version = component.get("version")
+        if not version:
+            continue  # unresolved: claims no version, so nothing to contradict
+        ecosystem = purl_type(component.get("purl"))
+        ref = component.get("bom-ref", component.get("name"))
+        for prop in component.get("properties", []):
+            if prop.get("name") != "fathomdb:constraint":
+                continue
+            constraint = prop.get("value")
+            verdict = _ac24_satisfies(
+                ecosystem, constraint, version, semver_mod, version_mod, specifiers_mod
+            )
+            if verdict is None:
+                if _ac24_is_opaque_form(str(constraint)):
+                    tolerated += 1
+                else:
+                    unreadable.append(f"{ref}: constraint {constraint!r}")
+                continue
+            graded += 1
+            if not verdict:
+                violations.append(
+                    f"{ref}: version {version!r} does NOT satisfy its own"
+                    f" declared constraint {constraint!r}"
+                )
+
+    assert not unreadable, (
+        "these components carry a `fathomdb:constraint` this criterion could not"
+        " read, and whose form is not one of the tolerated opaque specifiers"
+        f" ({list(_AC24_OPAQUE_WORDS)}, or anything containing"
+        f" {list(_AC24_OPAQUE_CHARS)}):\n  " + "\n  ".join(sorted(unreadable)[:10])
+        + "\nAn unreadable constraint is NOT a pass. Emitting ranges this oracle"
+        " cannot evaluate would let a wrong implementation escape the criterion"
+        " by degrading its own output."
+    )
+
+    assert graded, (
+        "VACUOUS-PASS GUARD: this criterion graded ZERO (component, constraint)"
+        f" pairs — {tolerated} were tolerated as opaque and"
+        f" {len(doc['components'])} components were examined. Either no"
+        " component carries `fathomdb:constraint` any more, or every constraint"
+        " became unevaluable. Both turn AC-SBOM-24 green by EMPTINESS while the"
+        " property it exists to enforce goes unchecked, which is exactly the"
+        " failure class this suite was hardened against."
+    )
+
+    assert not violations, (
+        f"{len(violations)} of {graded} graded (component, constraint) pairs"
+        " carry a constraint the component's own version does not satisfy:\n  "
+        + "\n  ".join(sorted(violations)[:15])
+        + "\nA declaration must be attached only to the locked versions its"
+        " declared range can actually resolve to. Attaching it to every locked"
+        " version sharing the name corrupts `depth` and `edit_sites` — the two"
+        " fields Slice 33 makes its surgical/not-surgical call on — and that"
+        " survey feeds 0.8.22's dependency decisions."
+    )

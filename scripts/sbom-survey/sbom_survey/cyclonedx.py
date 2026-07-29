@@ -109,11 +109,17 @@ def build_document(survey: Survey) -> tuple[dict[str, Any], str]:
             properties.append(
                 Property(name="fathomdb:declared-in", value=origin.path)
             )
-        if surveyed.origins:
-            constraints = sorted({origin.constraint for origin in surveyed.origins})
-            properties.append(
-                Property(name="fathomdb:constraint", value=", ".join(constraints))
-            )
+        # ONE PROPERTY PER DISTINCT CONSTRAINT, never a joined string. Joining
+        # them made the value ambiguous exactly where it has to be machine-
+        # readable: `", "` is also the AND separator inside a cargo range, so a
+        # component declared at `0.20` by one manifest and `0.22` by another
+        # serialized as `"0.20, 0.22"` — indistinguishable from a single
+        # unsatisfiable conjunction. `AC-SBOM-24` reads this property back and
+        # checks the component's own version against it, so it must round-trip
+        # unambiguously. `fathomdb:declared-in` is already multi-valued the same
+        # way, and CycloneDX allows repeated property names.
+        for constraint in sorted({origin.constraint for origin in surveyed.origins}):
+            properties.append(Property(name="fathomdb:constraint", value=constraint))
         if surveyed.lock_derived_edges:
             # §5.5's honest limitation: lock `dependencies` lists are already
             # feature-resolved and carry no normal/dev/build distinction, so the
