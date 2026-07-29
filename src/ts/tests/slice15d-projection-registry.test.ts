@@ -568,24 +568,52 @@ test("fix-4 CONTROL — a consistent spec round-trips verbatim via read.projecti
   }
 });
 
-test("fix-4 AUDIT — fts/vector without the searchable role round-trips (inert but faithful)", async () => {
+test("R-20-SV — fts/vector without the searchable role is REJECTED (WriteValidationError)", async () => {
+  // 0.8.20 Slice 23 (`R-20-SV`). This test asserted the OPPOSITE until this
+  // slice: the shipped 15d fix-4 position was that the shape is accepted and
+  // round-trips faithfully. HITL ruling 2026-07-24 (`dev/plans/plan-0.8.20.md`
+  // §11 item 4) chose option (b) REJECT — the `fts`/`vector` sub-objects SELECT
+  // a sub-target of `searchable` and do not confer it, so without the role the
+  // declaration builds, embeds and enrols nothing: a meaningless config.
+  //
+  // Family: `WriteValidationError` (`FDB_WRITE_VALIDATION`) per decision #18 —
+  // a malformed write SHAPE is one family. It is message-less by construction,
+  // so the refusal cannot name WHICH spec in the list was invalid
+  // (TC-95/TC-98, deferred by the HITL).
   const path = freshDbPath();
   const engine = await Engine.open(path);
   try {
-    // A contradiction the engine treats as inert (no property-FTS built), but
-    // the declaration is stored + read back faithfully, so it round-trips and
-    // is NOT a binding-boundary violation — accepted, not rejected. (Rejecting
-    // it would be an engine-semantics change, out of scope for a round-trip
-    // fidelity fix.) Fields omitted (not null) to isolate this from the
-    // null-normalization round-trip covered separately below.
+    for (const [fts, vector] of [
+      [true, false],
+      [false, true],
+      [true, true],
+    ] as const) {
+      await assert.rejects(
+        engine.configureProjections([{ name: "status", roles: ["filterable"], fts, vector }]),
+        WriteValidationError,
+        `fts=${fts} vector=${vector} without the searchable role must be rejected`,
+      );
+    }
+    // `rankable` does not supply the role either — the reject is keyed on the
+    // ABSENCE of `searchable`, not on which other roles are present.
+    await assert.rejects(
+      engine.configureProjections([
+        { name: "status", roles: ["rankable"], fts: false, vector: true },
+      ]),
+      WriteValidationError,
+    );
+    assert.deepEqual(await read.projections(engine), [], "no refused call persisted anything");
+
+    // CONTROL — with `searchable` present the identical sub-objects are VALID
+    // and still round-trip.
     await engine.configureProjections([
-      { name: "status", roles: ["filterable"], fts: true, vector: true },
+      { name: "status", roles: ["filterable", "searchable"], fts: true, vector: true },
     ]);
     const got = (await read.projections(engine)).find((s) => s.name === "status");
     assert.ok(got, "the projection must exist");
     assert.equal(got.fts, true);
     assert.equal(got.vector, true);
-    assert.deepEqual([...got.roles].sort(), ["filterable"]);
+    assert.deepEqual([...got.roles].sort(), ["filterable", "searchable"]);
   } finally {
     await engine.close();
   }

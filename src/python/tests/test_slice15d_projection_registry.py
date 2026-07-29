@@ -415,18 +415,61 @@ def test_consistent_fts_spec_round_trips(tmp_path) -> None:
         engine.close()
 
 
-def test_fts_without_searchable_role_round_trips(tmp_path) -> None:
-    """fix-4 AUDIT — an `fts` sub-object WITHOUT the `searchable` role is a
-    contradiction the engine treats as inert (no property-FTS built), BUT the
-    declaration is stored and read back FAITHFULLY, so it round-trips and is NOT
-    a binding-boundary violation. It is therefore ACCEPTED (making it a hard
-    error would be an engine-semantics change, out of scope for a round-trip
-    fidelity fix). Same for a `vector` sub-object without `searchable`."""
+def test_fts_or_vector_without_searchable_role_is_rejected(tmp_path) -> None:
+    """0.8.20 Slice 23 (``R-20-SV``) — an ``fts`` or ``vector`` sub-object
+    declared WITHOUT the ``searchable`` role is an **INVALID SPEC** and is
+    REJECTED with ``WriteValidationError``.
+
+    **This OVERTURNS the shipped 15d fix-4 position** that the same shape is
+    accepted and round-trips faithfully (this test asserted exactly that until
+    this slice). HITL ruling 2026-07-24, ``dev/plans/plan-0.8.20.md`` §11 item 4,
+    option **(b) REJECT**: the sub-objects SELECT a sub-target of ``searchable``
+    and do not confer it, so without the role the declaration is a meaningless
+    config that builds, embeds and enrols nothing.
+
+    The error family is ``WriteValidationError`` per decision #18 (Slice 22): a
+    malformed write SHAPE is one family. It is message-less by construction, so
+    the refusal does not name which spec in the list was invalid (TC-95/TC-98,
+    deferred by the HITL).
+
+    ``read.projections`` is a pure read and is UNAFFECTED — a legacy row in this
+    shape is still reported verbatim; it simply can no longer be re-applied.
+    """
     engine = _open(str(tmp_path / "fts_no_searchable.sqlite"))
     try:
+        for fts, vector in ((True, False), (False, True), (True, True)):
+            with pytest.raises(WriteValidationError):
+                engine.configure_projections(
+                    [
+                        ProjectionSpec(
+                            name="status",
+                            roles=frozenset({ProjectionRole.FILTERABLE}),
+                            fts=fts,
+                            vector=vector,
+                        )
+                    ]
+                )
+        # `rankable` does not supply the role either — the reject is keyed on the
+        # ABSENCE of `searchable`, not on which other roles are present.
+        with pytest.raises(WriteValidationError):
+            engine.configure_projections(
+                [
+                    ProjectionSpec(
+                        name="status",
+                        roles=frozenset({ProjectionRole.RANKABLE}),
+                        fts=False,
+                        vector=True,
+                    )
+                ]
+            )
+        # Nothing was persisted by any refused call.
+        assert read.projections(engine) == []
+
+        # CONTROL — with `searchable` present the identical sub-objects are a
+        # VALID spec and still round-trip.
         sent = ProjectionSpec(
             name="status",
-            roles=frozenset({ProjectionRole.FILTERABLE}),
+            roles=frozenset({ProjectionRole.FILTERABLE, ProjectionRole.SEARCHABLE}),
             fts=True,
             vector=True,
         )
@@ -434,11 +477,8 @@ def test_fts_without_searchable_role_round_trips(tmp_path) -> None:
         got = next(s for s in read.projections(engine) if s.name == "status")
         # 0.8.20 Slice 20 (R-20-DR) — modulo the engine-set readiness read
         # metadata, which is not a declaration and is never authored by a caller.
-        assert (
-            dataclasses.replace(got, vector_dense_readiness=None) == sent
-        ), "fts/vector-without-searchable must round-trip faithfully"
+        assert dataclasses.replace(got, vector_dense_readiness=None) == sent
         assert got.fts is True and got.vector is True
-        assert got.roles == frozenset({"filterable"})
     finally:
         engine.close()
 
