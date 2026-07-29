@@ -14,10 +14,12 @@ import json
 from pathlib import Path
 
 from conftest import (
+    FIXTURE_PREFIX,
     REPO_ROOT,
     TIER_VOCABULARY,
     independent_cyclonedx_validator,
     run_cli,
+    tracked_manifest_paths,
 )
 
 
@@ -118,6 +120,15 @@ def test_cli_exits_two_naming_the_untiered_manifest(tmp_path: Path) -> None:
     REQ-4 at the CLI boundary. A tier map that does not cover a tracked
     manifest must exit 2 and name the offending path on stderr — never exit 0
     with an untagged component.
+
+    REQ-4 requires *an* offending path, not a particular one. Asserting the
+    literal `Cargo.toml` (codex §9 round 5) was the inverse of every earlier
+    finding: too STRICT rather than too permissive, and so able to reject a
+    CORRECT implementation — one that walks discovered paths in `git ls-files`
+    order legitimately fails first on `Cargo.lock`, names that, and satisfies
+    REQ-4 in full. The oracle is therefore the SET of currently-untiered tracked
+    manifests, derived from git via the same helper the rest of the suite uses;
+    a second hand-written literal list is exactly what drifted in rounds 1-3.
     """
     incomplete = tmp_path / "tiers.toml"
     incomplete.write_text(
@@ -149,7 +160,18 @@ def test_cli_exits_two_naming_the_untiered_manifest(tmp_path: Path) -> None:
         f"expected exit 2 for an untiered manifest, got {proc.returncode}\n"
         f"stderr:\n{proc.stderr}"
     )
-    assert "Cargo.toml" in proc.stderr, (
-        "stderr must name the offending manifest path so the fix is obvious;"
+    # The map above assigns NO tier: its single rule excludes the fixture
+    # prefix. So every tracked manifest outside that prefix is untiered, and any
+    # one of them is a correct thing for the CLI to name.
+    untiered = [p for p in tracked_manifest_paths() if not p.startswith(FIXTURE_PREFIX)]
+    assert untiered, (
+        "precondition changed: every tracked manifest now lies under"
+        f" {FIXTURE_PREFIX!r}, so this tier map covers the whole repository and"
+        " the criterion cannot be graded"
+    )
+    assert any(path in proc.stderr for path in untiered), (
+        "stderr must NAME an offending untiered manifest path so the fix is"
+        f" obvious, but none of the {len(untiered)} tracked manifests this tier"
+        f" map leaves untiered appears in it. Expected one of {untiered};"
         f" got:\n{proc.stderr}"
     )
