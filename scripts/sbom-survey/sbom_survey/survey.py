@@ -26,6 +26,7 @@ from typing import Any, Iterable, Mapping
 from packaging.utils import canonicalize_name
 
 from . import TIER_VOCABULARY
+from .constraints import matches as constraint_matches
 from .cyclonedx import build_document
 from .discovery import ManifestRef, discover_manifests
 from .paths import DEFAULT_EPOCH_TIMESTAMP, DEFAULT_TIERS_FILE
@@ -132,6 +133,11 @@ class SurveyComponent:
     origins: list[Origin] = field(default_factory=list)
     depends_on: list[str] = field(default_factory=list)
     lock_derived_edges: bool = False
+    #: Present only on an unresolved component whose declaring constraint could
+    #: not be matched to any locked version. Surfaced in the BOM and in the
+    #: staleness row's `lookup_error`, so "why is this unknown" is answerable
+    #: without re-deriving anything (REQ-14).
+    resolution_note: str | None = None
 
     @property
     def edit_sites(self) -> list[str]:
@@ -267,6 +273,10 @@ class _Build:
     origins: dict[tuple[str, str], Origin] = field(default_factory=dict)
     depends_on: set[str] = field(default_factory=set)
     lock_derived_edges: bool = False
+    #: Why this build carries no locked version, when that is not simply
+    #: "nothing in any lockfile declares this name". Recorded rather than
+    #: guessed — see `add_declarations`.
+    resolution_notes: set[str] = field(default_factory=set)
 
 
 def _match_key(ecosystem: str, name: str) -> tuple[str, str]:
@@ -325,23 +335,105 @@ class _Assembler:
         *,
         pinned: Mapping[tuple[str, str, str], str] | None = None,
     ) -> None:
+        """Attach each declaration to the locked entries its constraint admits.
+
+        A manifest declares a dependency by NAME and RANGE; a lockfile resolves
+        it to one or more concrete versions. Attaching the declaration to EVERY
+        locked version of that name is wrong the moment the lock carries more
+        than one, and it produced provably false rows on this repository —
+        `sha2 0.10.9` tagged `direct` under `constraint = "0.11"`, `thiserror
+        2.0.18` under `constraint = "1"`, `tokenizers 0.22.2` under
+        `constraint = "0.20"` (codex §9 round 1, fix-1). `depth` and
+        `edit_sites` are the two fields Slice 33 decides on, so that corrupted
+        the output the tool exists to produce.
+
+        Three cases, and the third is the one that matters:
+
+        1. **No lock entry for the name** — unchanged: materialize an unresolved
+           component carrying the declaration (this is how a declared-but-never-
+           locked package such as `numpy` reaches the BOM).
+        2. **Exactly one candidate** — unchanged, and deliberately so: there is
+           no ambiguity to resolve, so the constraint is not consulted and no
+           imperfection in the range grammar can regress a correct attachment.
+        3. **Several candidates** — consult `constraints.matches()` and attach
+           ONLY to the entries the constraint admits.
+
+        In case 3, when the constraint admits NONE of them — or when it could not
+        be evaluated at all — the declaration is **not** widened back onto every
+        candidate. That fallback IS the defect. Instead the declaration lands on
+        an unresolved component that records WHY, so the manifest still appears
+        in `edit_sites` (a real declaration is never silently dropped) while no
+        locked version is falsely claimed to satisfy it.
+        """
         index = self.by_match_key()
         pins = dict(pinned or {})
         for declaration in declarations:
             key = _match_key(declaration.ecosystem, declaration.name)
-            targets = index.get(key)
-            if not targets:
-                pin = pins.get((declaration.ecosystem, declaration.name, declaration.manifest_path))
-                build = self.ensure(declaration.ecosystem, declaration.name, pin)
-                index.setdefault(key, []).append(build)
-                targets = [build]
+            candidates = index.get(key) or []
             origin = Origin(
                 path=declaration.manifest_path,
                 constraint=declaration.constraint,
                 kind=declaration.kind,
             )
+
+            if not candidates:
+                pin = pins.get(
+                    (declaration.ecosystem, declaration.name, declaration.manifest_path)
+                )
+                build = self.ensure(declaration.ecosystem, declaration.name, pin)
+                index.setdefault(key, []).append(build)
+                targets: list[_Build] = [build]
+            elif len(candidates) == 1:
+                targets = list(candidates)
+            else:
+                targets = self._resolve_ambiguous(declaration, candidates, index, key)
+
             for build in targets:
                 build.origins[(origin.path, origin.kind)] = origin
+
+    def _resolve_ambiguous(
+        self,
+        declaration: Declaration,
+        candidates: list[_Build],
+        index: dict[tuple[str, str], list[_Build]],
+        key: tuple[str, str],
+    ) -> list[_Build]:
+        """The locked entries `declaration`'s constraint admits — or an honest miss."""
+        locked = [build for build in candidates if build.version is not None]
+        verdicts = [
+            (
+                build,
+                constraint_matches(
+                    declaration.ecosystem, declaration.constraint, build.version
+                ),
+            )
+            for build in locked
+        ]
+        admitted = [build for build, verdict in verdicts if verdict is True]
+        if admitted:
+            return admitted
+
+        # Nothing admitted. Say so in the data; NEVER widen back onto everything.
+        unevaluable = any(verdict is None for _build, verdict in verdicts)
+        versions = ", ".join(sorted(build.version or "" for build in locked))
+        if unevaluable:
+            note = (
+                f"constraint {declaration.constraint!r} could not be evaluated"
+                f" against the {len(locked)} locked versions of"
+                f" {declaration.name!r} ({versions}), so no locked version is"
+                " claimed to satisfy it"
+            )
+        else:
+            note = (
+                f"constraint {declaration.constraint!r} admits none of the"
+                f" {len(locked)} locked versions of {declaration.name!r}"
+                f" ({versions})"
+            )
+        build = self.ensure(declaration.ecosystem, declaration.name, None)
+        build.resolution_notes.add(note)
+        if build not in index.setdefault(key, []):
+            index[key].append(build)
+        return [build]
 
 
 # --------------------------------------------------------------------------- #
@@ -468,6 +560,11 @@ def run_survey(
                 origins=origins,
                 depends_on=sorted(build.depends_on),
                 lock_derived_edges=build.lock_derived_edges,
+                resolution_note=(
+                    "; ".join(sorted(build.resolution_notes))
+                    if build.resolution_notes
+                    else None
+                ),
             )
         )
 
@@ -502,32 +599,47 @@ def _staleness_rows(components: Iterable[SurveyComponent], published) -> list[St
     rows: list[StalenessRow] = []
     for component in components:
         latest: str | None = None
-        lookup_error: str | None = None
+        # A row can be `unknown` for more than one reason at once, and Slice 33's
+        # §5 "Unknowns" section needs all of them, so they ACCUMULATE rather than
+        # overwrite. An unmatched constraint is recorded FIRST because it is a
+        # property of the repository, not of the lookup.
+        reasons: list[str] = []
+        if component.resolution_note:
+            reasons.append(component.resolution_note)
+        # Tracked separately from `reasons`: a constraint that matched no locked
+        # version says nothing about whether the REGISTRY answer is trustworthy,
+        # so it must not suppress a perfectly good `latest`.
+        lookup_failed = False
         try:
             latest = published.latest(component.ecosystem, component.name)
         except Exception as exc:  # noqa: BLE001 - any failure degrades to `unknown`
             latest = None
-            lookup_error = f"{type(exc).__name__}: {exc}"
+            lookup_failed = True
+            reasons.append(f"{type(exc).__name__}: {exc}")
         if latest is not None and not isinstance(latest, str):
-            lookup_error = f"published source returned a non-string latest: {latest!r}"
+            reasons.append(f"published source returned a non-string latest: {latest!r}")
             latest = None
+            lookup_failed = True
 
         status = classify_status(component.ecosystem, component.version, latest)
         if (
             status == "unknown"
-            and lookup_error is None
+            and not lookup_failed
             and component.version is not None
             and latest is not None
         ):
-            lookup_error = (
+            reasons.append(
                 "version comparison failed: could not parse"
                 f" locked={component.version!r} / latest={latest!r} under the"
                 f" {component.ecosystem} comparator"
             )
-        if status == "unknown":
+            lookup_failed = True
+        if status == "unknown" and lookup_failed:
             # An unparseable or unavailable latest is never carried forward as a
             # version anybody could act on.
-            latest = latest if lookup_error is None else None
+            latest = None
+
+        lookup_error = "; ".join(reasons) if reasons else None
 
         edit_sites = component.edit_sites
         rows.append(

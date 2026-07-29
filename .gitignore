@@ -159,4 +159,10 @@ dev/.ledgerwatch-todos*
 # covers it; named here so the tool's ignore surface is readable in one place).
 scripts/sbom-survey/out/
 scripts/sbom-survey/.venv/
+# ...and the artifacts a `pip install scripts/sbom-survey` leaves behind. Slice
+# 33 HAS to install the tool to run it, and neither `build/` nor `*.egg-info/`
+# is covered anywhere else in this file, so without these two rules `git status`
+# stops being a reliable signal at exactly the moment Slice 33 is working.
+scripts/sbom-survey/build/
+scripts/sbom-survey/*.egg-info/
 

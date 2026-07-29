@@ -94,6 +94,17 @@ def build_document(survey: Survey) -> tuple[dict[str, Any], str]:
         ]
         if surveyed.version is None:
             properties.append(Property(name="fathomdb:resolution", value="unresolved"))
+            if surveyed.resolution_note:
+                # WHY it is unresolved, when the reason is not simply "no
+                # lockfile mentions this name" — e.g. a declared constraint that
+                # admits none of the locked versions of that name. Recorded so
+                # the survey never has to guess and never silently widens.
+                properties.append(
+                    Property(
+                        name="fathomdb:resolution-note",
+                        value=surveyed.resolution_note,
+                    )
+                )
         for origin in surveyed.origins:
             properties.append(
                 Property(name="fathomdb:declared-in", value=origin.path)
