@@ -221,7 +221,8 @@ AC-050c) gates merges against this invariant.
     the internal `edge_fact` for edge bodies). Rows of any other `kind` are
     accepted and stay lexically searchable but get no vector, and are not counted
     as outstanding work, so readiness still reaches `"ready"`. This is not an
-    error condition: nothing rejects the write and no new surface reports it.
+    error condition: nothing rejects the write. It is **no longer silent**
+    either — see `vector_unsupported_kinds` below (R-20-VC).
   - **Idempotent.** Re-applying a satisfied declaration rewinds nothing and
     re-embeds nothing.
   - **Reversible.** `drop`ping the last `searchable→vector` declaration turns
@@ -247,6 +248,43 @@ AC-050c) gates merges against this invariant.
     `ready`-without-vector, i.e. the silent miss this work exists to eliminate.
   - **Additive**, no schema step (`SCHEMA_VERSION` unchanged), and no data
     migration: this re-enqueues work inside one live database.
+
+- **`ProjectionDelta.vector_unsupported_kinds` — FathomDB now tells you which of
+  your kinds will never get vectors (0.8.20, R-20-VC).**
+  `vector_unsupported_kinds` (Python, Rust), `vectorUnsupportedKinds`
+  (TypeScript). A list of node **kinds** — not attribute names, unlike the
+  `built` / `dropped` / `deferred` lists beside it.
+
+  **Why you want this.** The dense arm covers only the engine's locked `kind`
+  vocabulary (`{email, article, paper, meeting, note, todo, doc}`, plus the
+  internal `edge_fact`). If your domain uses other kinds — an `entity`, an
+  `invoice` — those rows are accepted and stay fully **FTS- and
+  lexically searchable**, but they will **never** get an embedding, in this
+  session or any future one. Until now that exclusion was silent: the
+  declaration came back with the projection's name in `deferred`, which is
+  *also* what you see while you are simply waiting on the embedder. There was
+  no way to tell "not embedded yet" from "never will be", so the honest reading
+  of a deferred projection was "keep waiting" — sometimes forever.
+
+  Now `configure_projections` / `configureProjections` names the kinds:
+
+  - **Sorted, de-duplicated, and empty rather than absent** — read it
+    unconditionally.
+  - **A state report, not a diff.** It does not affect `unchanged`, so an
+    idempotent re-apply comes back `unchanged` **with the report populated** —
+    which is also how you refresh it, since it is computed at declaration time
+    and will not know about kinds you write afterwards.
+  - **The same with or without an embedder.** The vocabulary is static, so a
+    session opened with no embedder still gets the permanent answer. Do not
+    confuse it with the deferral.
+  - **Output-only, and not an error.** `configure_projections` accepts specs,
+    never a delta, so `read.projections` output still re-applies as a no-op.
+    Nothing is rejected, and readiness still reaches `"ready"` — an un-enrolled
+    kind is not outstanding work.
+
+  **Additive**, no new type, no new governed command, no schema step
+  (`SCHEMA_VERSION` unchanged). Your options if a kind is reported: use one of
+  the mapped kinds, or accept lexical-only retrieval for those rows.
 
 - **New public types.** Rust: `SourceId`, `OrphanProvenanceReport`,
   `OrphanProvenanceSource`; `ExciseReport` is no longer behind the `operator`

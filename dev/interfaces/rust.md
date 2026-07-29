@@ -341,10 +341,36 @@ Types:
   `as_str` / `from_str_opt` giving the `"ready" | "embedding"` wire spellings.
   0.8.20 Slice 20 (R-20-DR), **PROPOSED, NOT SIGNED**; the only net-new type in
   that slice, which adds ZERO net-new governed commands.
-- `ProjectionDelta { built, dropped, deferred, unchanged }`. Cheap roles
-  (`filterable`, `searchable→FTS`) build same-transaction; `rankable` and the
-  `searchable→vector` sub-target are persisted-but-deferred (reported in
+- `ProjectionDelta { built, dropped, deferred, unchanged, vector_unsupported_kinds }`.
+  Cheap roles (`filterable`, `searchable→FTS`) build same-transaction; `rankable`
+  and the `searchable→vector` sub-target are persisted-but-deferred (reported in
   `deferred`, never an error).
+  `vector_unsupported_kinds: Vec<String>` was added additively by 0.8.20 Slice 22
+  (R-20-VC, `TC-67`); see below.
+- **`ProjectionDelta::vector_unsupported_kinds` — node KINDS, not attribute
+  names** (0.8.20 Slice 22, `TC-67`). The first three vectors list projection
+  attribute names; this one lists the vector-eligible node **kinds** present in
+  the corpus that the vector writer can **never** commit, so no
+  `searchable→vector` declaration will ever produce an embedding for them. Those
+  rows stay fully FTS/lexically searchable. It exists because `deferred` alone
+  could not distinguish *transient* ("no embedder attached this session, or an
+  embed still in flight") from *permanent* ("outside the locked `source_type`
+  vocabulary — never, in any session"): both produced the same `deferred` entry.
+  Sorted, de-duplicated, and **empty rather than absent**.
+  - It is a **STATE report, not a diff**: it does not feed `unchanged`, so an
+    idempotent re-apply returns `unchanged: true` with the three diff vectors
+    empty **and the report populated**.
+  - It is **embedder-independent** — reported identically with and without a live
+    embedder, because the vocabulary is static. Do not read it as the deferral.
+  - It is **OUTPUT-ONLY**: `configure_projections` takes `&[ProjectionSpec]`, so
+    the field has no inbound direction and cannot affect the `read_projections` →
+    `configure_projections` round-trip.
+  - **Residual — it is computed at DECLARE time.** A non-committable kind written
+    *after* the call is not in a delta the caller already holds. To refresh it,
+    re-apply the same spec: an idempotent no-op that returns a current report.
+  - It is **not an error and not a readiness change**: readiness still reaches
+    `Ready` (see the enrolment bullet below), nothing is rejected, and no
+    `projection_failures` row is written.
 
 **Projection-name contract (0.8.20 Slice 15d fix-4).** A projection `name` is an
 app-declared identifier that becomes a SQLite JSON-path key (`$."<name>"`) at
@@ -420,8 +446,11 @@ in Rust, Python and TypeScript:
   `edge_fact` for edge bodies). Rows of ANY other `kind` are accepted and stay
   lexically searchable, but get **no vector** and are not counted as outstanding
   work, so readiness still reaches `Ready`. This is **not** an error condition:
-  the write is not rejected, no typed error is raised, and there is no verb to
-  ask about it — it is the same treatment those kinds had before Slice 20c.
+  the write is not rejected and no typed error is raised.
+  **Since 0.8.20 Slice 22 (`TC-67`) it is no longer silent, either:** the excluded
+  kinds are named in `ProjectionDelta::vector_unsupported_kinds`. Only the
+  reporting changed — the exclusion, the readiness semantics and the absence of an
+  error are exactly as Slice 20c left them.
 - **Idempotent.** Re-applying an already-satisfied declaration re-opens nothing,
   rewinds no watermark, and re-embeds nothing (`ProjectionDelta::unchanged`).
 - **Dropping the last `searchable→vector` declaration turns the dense arm back

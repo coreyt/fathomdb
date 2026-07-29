@@ -189,8 +189,43 @@ vectorDenseReadiness? }`.
 `fts`/`vector` sub-object flags, not roles. Cheap roles (`filterable`,
 `searchable→FTS`) build same-transaction; `rankable` and the `searchable→vector`
 sub-target are persisted-but-deferred (reported in `ProjectionDelta.deferred`).
-`ProjectionDelta` is `{ built, dropped, deferred, unchanged }`. Field names
+`ProjectionDelta` is
+`{ built, dropped, deferred, unchanged, vectorUnsupportedKinds }`. Field names
 are camelCase per this file's casing rule.
+
+### `vectorUnsupportedKinds` (0.8.20 Slice 22, R-20-VC / TC-67)
+
+`ProjectionDelta.vectorUnsupportedKinds` is a `string[]` of node **kinds** — not
+attribute names. The first three arrays carry projection attribute names; this one
+carries the vector-eligible node kinds present in the corpus that the vector
+writer can **never** commit, so no `searchable→vector` declaration will ever
+produce an embedding for them.
+
+**What it means for your data.** Rows of a reported kind still get **FTS and
+lexical search**; they will simply never participate in dense/vector retrieval —
+in this session or any future one. Your options are to use one of the kinds the
+engine's locked vocabulary maps, or to accept lexical-only retrieval for those
+rows. Waiting is not one of them, which is exactly what the field exists to say:
+before it, "no embedder attached this session" (transient) and "this kind will
+never be embedded" (permanent) both arrived as the same `deferred` entry.
+
+- **Sorted, de-duplicated, and empty (`[]`) rather than absent** — read it
+  unconditionally.
+- **A STATE report, not a diff.** It does not feed `unchanged`, so an idempotent
+  re-apply resolves to `{ unchanged: true }` with `built`/`dropped`/`deferred`
+  empty **and this array populated**.
+- **Embedder-independent.** Identical whether or not the engine was opened with
+  an embedder — the vocabulary is static, so the fact does not depend on the
+  session. Do not read it as the deferral.
+- **Output-only.** `configureProjections` accepts specs, never a delta, so this
+  field has no inbound direction and cannot affect the `read.projections` →
+  `configureProjections` round-trip.
+- **Residual — computed at DECLARE time.** A non-committable kind written *after*
+  the call is not in a delta you already hold. To refresh, re-apply the same spec:
+  an idempotent no-op that returns a current report.
+- **Not an error, not a readiness change.** Nothing is rejected and
+  `vectorDenseReadiness` still reaches `"ready"` — an un-enrolled kind is not
+  outstanding work.
 
 ### `vectorDenseReadiness` (0.8.20 Slice 20, R-20-DR)
 
