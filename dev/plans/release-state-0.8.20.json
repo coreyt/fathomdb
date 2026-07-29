@@ -291,16 +291,15 @@
         "gated_at": "DEFERRED by the HITL until after Slice 23 (seq-143); Slice 23 LANDED 30102ecd, so it is NOW DUE. Retrospective about the landed Slice 22, not a forward gate.",
         "halts_run": false,
         "source": "steward seq-143 · todos TC-98"
-      },
-      {
-        "id": "tc-100-placement",
-        "title": "TC-100 placement — does the bare-substring token-scan defect (\"C-1\" matches inside \"TC-15\"; Slice 15 cites 18 docs on that token) join DOC-HYGIENE-3?",
-        "gated_at": "Open. seq-137/seq-138 ruled DOC-HYGIENE-3 scope at five ids (TC-53, TC-88, TC-89, TC-92, TC-94); a sixth is an HITL call.",
-        "halts_run": false,
-        "source": "steward seq-146 · todos TC-100"
       }
     ],
     "ruled": [
+      {
+        "id": "tc-100-placement",
+        "ruling": "(a) — TC-100 JOINS DOC-HYGIENE-3 as a SIXTH id (TC-53, TC-88, TC-89, TC-92, TC-94, TC-100), expanding the scope ruled at five in seq-137/seq-138. Basis: all three surviving defects sit in ONE pipeline in scripts/commission-manifest.sh — TC-100 is the match predicate at :425 and TC-94 defect (1) the file-set selection at :415/:192, in the SAME function `scan_design`; TC-94 defect (2) is in `slice_tokens` (:329-347), which feeds it. DoD CONSEQUENCE: DOC-HYGIENE-3 verification MUST include a before/after citation-set diff across the landed slices, because TC-100 and TC-94(1) both change which docs existing slices cite.",
+        "ruled_on": "2026-07-29",
+        "source": "steward seq-155 · todos TC-100"
+      },
       {
         "id": "sqlite-vec-0-1-9",
         "ruling": "(a) — HOLD sqlite-vec at =0.1.7 for 0.8.20; ship the engine-side workaround + the tc76_vec0_long_metadata_delete.rs tripwire. TAKE the 0.1.9 bump at 0.8.22, together with rusqlite 0.31→0.40 (the master already couples them). The bump and the tripwire MUST move together or a successful upgrade turns the suite red.",
