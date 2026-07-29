@@ -681,7 +681,35 @@ def build(release, state_path, state, slice_no, entry, curated=None):
     m.out("  invariants       %s (TDD mandatory; no DB mocking; never --no-verify)" % m.cite(AGENTS))
     m.out("  governed surface %s" % m.cite(SURFACE_ALLOWLIST))
     m.out("                   pinned by %s" % m.cite(SURFACE_PIN))
+    # §4 IS THE CONFLICT-WINS SHELF, so a curated contract belongs HERE and not
+    # only in §6. The motivating case: 0.8.20 Slice 22 cites
+    # `record-lifecycle-protocol/OPP-12-C1-converged-contract.md`, byte-pinned by
+    # scripts/c1-conformance-pin.json (sha256 AND git blob sha1) — the ratified
+    # contract a TC-67 implementation can turn RED. A pinned file can NEVER be
+    # back-linked, because any edit breaks the pin, so citation is the only route
+    # by which it can reach an orchestrator at all.
+    #
+    # The SELECTION PREDICATE IS UNCHANGED — the basename says `contract` — it is
+    # merely applied to the curated set as well. A curated doc that is not a
+    # contract stays in §6; otherwise §4 degenerates into a second copy of §6 and
+    # stops meaning "the thing that wins".
+    curated_contracts = [p for p in curated
+                         if "contract" in os.path.basename(p).lower()]
+    for path in curated_contracts:
+        recorded = frontmatter_status(path)
+        if recorded is None:
+            status_word, flag = "no `status:` field recorded", " ⚠ unclassified (TC-50)"
+        else:
+            status_word = recorded
+            flag = " ⚠ unclassified (TC-50)" if recorded.split()[0] in UNCLASSIFIED else ""
+        m.out("  design contract  CURATED [%s]%s %s"
+              % (status_word, flag,
+                 m.cite(path, label="design_refs (curated contract)")))
     for _rank, path, status, _matched in design:
+        # A curated contract the scan ALSO reached is already printed above; a
+        # second row for one document would make the reader reconcile two.
+        if path in curated_contracts:
+            continue
         if "contract" in os.path.basename(path).lower():
             m.out("  design contract  [%s] %s" % (status, m.cite(path)))
     m.out()
