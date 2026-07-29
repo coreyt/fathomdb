@@ -171,7 +171,10 @@
       "reserved_gap": true,
       "no_requirement_id": true,
       "sequenced_after": 31,
-      "sequencing_note": "minted by HITL 2026-07-29 (steward seq-153). 30-band gap; §5 pre-authorizes 31-39."
+      "sequencing_note": "minted by HITL 2026-07-29 (steward seq-153). 30-band gap; §5 pre-authorizes 31-39.",
+      "design_refs": [
+        "dev/design/0.8.20-slice-31-sbom-survey-tool.md"
+      ]
     },
     {
       "slice": 33,
@@ -185,7 +188,10 @@
       "reserved_gap": true,
       "no_requirement_id": true,
       "sequenced_after": 32,
-      "sequencing_note": "minted by HITL 2026-07-29 (steward seq-153). HARD SCOPE GUARD: anything beyond a surgical ~1-5 SLOC assessment is merely NOTED for the project to handle, never attempted. No bump is applied and no manifest or lockfile changes in 0.8.20."
+      "sequencing_note": "minted by HITL 2026-07-29 (steward seq-153). HARD SCOPE GUARD: anything beyond a surgical ~1-5 SLOC assessment is merely NOTED for the project to handle, never attempted. No bump is applied and no manifest or lockfile changes in 0.8.20.",
+      "design_refs": [
+        "dev/design/0.8.20-slice-31-sbom-survey-tool.md"
+      ]
     },
     {
       "slice": 40,
