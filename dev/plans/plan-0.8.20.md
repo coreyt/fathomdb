@@ -337,6 +337,7 @@ carries **no pico label** (`seq-106`; DOC-HYGIENE-1 precedent, F-33). Execution 
 | **23** | **Spec-validation reject + carried-defect characterization** (R-20-SV) — the `fts`/`vector` reject (ruled 2026-07-24) · TC-90/TC-91 characterization (no fix, `seq-136`) | implementation + investigation | 22 (needs #18's error family settled) |
 | **31** | **Library Sweep #3, leg 1/3** — SBOM/dependency-survey tool: **req + AC + design + RED tests, NO code**; **NO requirement id** (TC-76 precedent), a deliberate F-12 departure | design + RED tests | — (sequenced after 30 by ruling, no technical dep) |
 | **32** | **Library Sweep #3, leg 2/3** — implement the tool against 31's RED tests. **CODE ONLY**; applies no bump, edits no manifest or lockfile | implementation | 31 |
+| **34** | **`EngineError` `#[non_exhaustive]`** — TC-103 part (b), pulled back into 0.8.20 (`seq-178`). Adding the attribute is **itself a breaking change**, so it needs a breaking venue; 0.8.20 is the breaking pair and the next one is 0.9.0. **No requirement id.** Downstream-only: 70 `EngineError::` refs in cli/napi/py | implementation | 33 |
 | **33** | **Library Sweep #3, leg 3/3** — **RUN** the tool: what is stale across every tracked manifest, and whether a **surgical ~1–5 SLOC** change would likely land each upgrade — **ASCERTAIN ONLY, NEVER IMPLEMENT**. Output is an **input to 0.8.22** | investigation | 32 |
 | **40** | **Verification + release readiness** — full DoD, X1, **AC-079 sign-off** (R-20-EU7 is **CLOSED — run NO eu7**, see §3), **TC-16 determination FIRST** (`seq-118`), **publish-or-hold per the HITL gate** | verification | 5,30 |
 
@@ -366,7 +367,7 @@ Gaps `1–4, 6–9, 11–14, 16–19, 21–24, 26–29, 31–39` absorb unplanne
 **Band occupancy (updated 2026-07-28, `seq-139`).** The **20 band** now holds **21** (R-20-CR, landed),
 **22** (R-20-VC) and **23** (R-20-SV) — **three of four slots used, ONE remaining**. The **30 band** (gaps
 **31–39**, nine slots) holds **31**, **32** and **33** — Library Sweep #3's three legs (`seq-153`) —
-**three of nine used, SIX remaining**.
+**four of nine used, FIVE remaining** (31, 32, 33, 34).
 
 **The tripwire stays at band overflow — TC-77, HITL-ruled 2026-07-27, and it is CONDITIONAL.** Tightening
 it to halt on the *next* new slice was declined: the band was sized as slack deliberately, and halting
@@ -472,7 +473,7 @@ to the HITL.
 <!-- BEGIN GENERATED release-state:0.8.20:plan-immediate-next -->
 **IMMEDIATE NEXT: Slice 33** (`SBOM-RUN`) — Library Sweep #3, leg 3 of 3 — RUN the tool and produce the dependency survey: (1) what is actually stale across every tracked Cargo/npm/Python manifest, (2) whether a SURGICAL ~1-5 SLOC change would likely land each upgrade — ASCERTAIN ONLY, NEVER IMPLEMENT. Output is an INPUT to 0.8.22
 
-**Remaining ladder:** 33 → 40.<!-- END GENERATED release-state:0.8.20:plan-immediate-next -->
+**Remaining ladder:** 33 → 34 → 40.<!-- END GENERATED release-state:0.8.20:plan-immediate-next -->
 
 **Specified in full at §3a.** Re-scoped by the HITL on 2026-07-29 (steward `seq-153`). **No dependencies**;
 Slices 0/5/10/15/20/21/22/23/25/30 have all LANDED and the publish precondition (Slice 30) is **SATISFIED**.

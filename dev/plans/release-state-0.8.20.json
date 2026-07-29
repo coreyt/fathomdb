@@ -195,6 +195,24 @@
       ]
     },
     {
+      "slice": 34,
+      "short": "NE",
+      "title": "EngineError #[non_exhaustive] — TC-103 part (b), pulled back into 0.8.20 because adding the attribute is ITSELF a breaking change and 0.8.20 is the breaking pair",
+      "depends_on": [
+        33
+      ],
+      "status": "NOT_STARTED",
+      "sha": null,
+      "reserved_gap": true,
+      "no_requirement_id": true,
+      "sequenced_after": 33,
+      "sequencing_note": "Minted by HITL 2026-07-29 (steward seq-178), partially superseding seq-156 which had placed all of TC-103 at 0.8.22. Runs immediately after 33: it is the higher-risk engine change and the Slice-30-first principle says surface reshaping surprises early. Downstream-only impact — #[non_exhaustive] does not affect matches inside the defining crate — so the surface is 70 EngineError:: refs in fathomdb-cli (26), fathomdb-napi (22), fathomdb-py (22); the fathomdb facade crate has zero. AC-079 does NOT mechanically re-open: the T1e pin hashes allowlist NAMES and this changes a type SHAPE, so it is documented as a breaking change rather than re-signed.",
+      "design_refs": [
+        "dev/design/errors.md",
+        "dev/adr/ADR-0.6.0-error-taxonomy.md"
+      ]
+    },
+    {
       "slice": 40,
       "short": "R-20-PUB",
       "title": "verification + release readiness (publish-or-hold)",
@@ -223,9 +241,10 @@
   "next_slice": 33,
   "remaining_ladder": [
     33,
+    34,
     40
   ],
-  "ladder_order": "SEQUENTIAL — re-sequenced by HITL 2026-07-29 (steward seq-153), superseding the seq-129 order. Execution order: 31 → 32 → 33 → DOC-HYGIENE-3 → the batched governed-surface decision (HITL) → 40. Slices 21, 22 and 23 have LANDED; Slice 30, the publish precondition, LANDED 2026-07-28 at 9b3ed0e3. Slice 31 was RE-SCOPED and slices 32/33 MINTED at seq-153: Library Sweep #3 becomes a three-leg build of an SBOM/dependency-survey TOOL (31 spec+design+RED tests, 32 code, 33 run-and-survey) instead of a manual backlog-and-triage sweep, and NONE of the three applies a dependency bump — the survey is an INPUT to 0.8.22. Parallel 20 || 25 was declined earlier (master F-34).",
+  "ladder_order": "SEQUENTIAL — re-sequenced by HITL 2026-07-29 (steward seq-153), superseding the seq-129 order. Execution order: 33 → 34 → DOC-HYGIENE-3 → the batched governed-surface decision (HITL) → 40. Slices 21, 22 and 23 have LANDED; Slice 30, the publish precondition, LANDED 2026-07-28 at 9b3ed0e3. Slice 31 was RE-SCOPED and slices 32/33 MINTED at seq-153: Library Sweep #3 becomes a three-leg build of an SBOM/dependency-survey TOOL (31 spec+design+RED tests, 32 code, 33 run-and-survey) instead of a manual backlog-and-triage sweep, and NONE of the three applies a dependency bump — the survey is an INPUT to 0.8.22. Parallel 20 || 25 was declined earlier (master F-34).",
   "unblocked": [
     33
   ],
