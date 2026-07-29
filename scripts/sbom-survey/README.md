@@ -41,6 +41,11 @@ Expected at Slice 31: **`22 failed, 0 passed, 0 skipped, 0 errors`** (exit code 
   rather than one collection error that hides 21 of them.
 - The suite needs **no network**. The published-version lookup is behind an injectable seam; the
   tests inject `OfflineSource` / `StaticSource`, and one test asserts zero socket I/O.
+- **`AC-SBOM-10` grades CycloneDX validity with an INDEPENDENT validator** — the upstream
+  `cyclonedx-python-lib[json-validation]` one, plus a known-invalid negative control — never with
+  `sbom_survey.cyclonedx.validate()`, which would be self-certification. From Slice 32 that
+  distribution must be installed: if it is missing the criterion **FAILS** naming what to install.
+  It does **not** skip, because an ungraded criterion is a green that means nothing (design §5.7).
 - **TC-97.** The only pytest configuration in this repository is `src/python/pyproject.toml`, whose
   `pythonpath = ["."]` shadows an installed wheel. It is **not** an ancestor of
   `scripts/sbom-survey/tests`, so pytest runs this suite with **no config file** and cannot inherit
