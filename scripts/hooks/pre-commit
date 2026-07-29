@@ -26,6 +26,28 @@ elif [ -f scripts/check-staged-ledger-sidecars.sh ]; then
   bash scripts/check-staged-ledger-sidecars.sh
 fi
 
+# TC-92 — a requirement id must have DESIGN COVERAGE at the moment it is minted.
+#
+# Same shape as the TC-88 gate above, and for the same reason: it reasons about
+# the INDEX, and `--staged-only` makes it exit 0 immediately unless the commit
+# stages a `dev/plans/release-state-*.json` or a path under `dev/design/` — the
+# two places an id gets minted or its design of record moves. Unrelated commits
+# pay one `git diff --cached` and nothing else.
+#
+# WHY THE HOOK AND NOT THE LANDING GATE. `commission-manifest.sh 0.8.20 22`
+# hard-failed with "ZERO design docs matched … (tokens: TC-67, TC-68, R-20-VC)"
+# even though the design of record existed for every leg — the ids were minted
+# long after those documents were written, so a token scan cannot see a
+# dependency that runs backward in time. TC-92 names the remedy as a back-link
+# "at exactly the moment the knowledge exists", and this commit is that moment.
+# It is deliberately NOT in `preflight.sh --landing`: every check there is paired
+# with a mirrored CI job, and this one has none.
+if [ -x scripts/check-design-refs.sh ]; then
+  scripts/check-design-refs.sh --staged-only
+elif [ -f scripts/check-design-refs.sh ]; then
+  bash scripts/check-design-refs.sh --staged-only
+fi
+
 # --diff-filter=ACMR excludes deletions so tools don't try to read missing files.
 STAGED=$(git diff --cached --name-only --diff-filter=ACMR)
 

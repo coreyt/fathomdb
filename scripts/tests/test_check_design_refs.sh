@@ -400,8 +400,14 @@ fi
 # It must fire when the commit stages a release-state file or anything under the
 # design tier, and cost unrelated commits nothing. A gate that taxes every commit
 # in the repo gets turned off, and a gate that is turned off is worse than none.
-if grep -qE 'release-state|dev/design' "$PRE_COMMIT"; then
-  pass "the hook triggers the gate on release-state-*.json / dev/design/** only"
+#
+# The trigger set lives in ONE place — the gate's own `--staged-only` branch —
+# rather than being restated in the hook, so the two can never disagree about
+# when it fires. The hook is asserted to pass the flag; the gate is asserted to
+# own the pattern.
+if grep -q 'check-design-refs.sh --staged-only' "$PRE_COMMIT" \
+   && grep -qE 'release-state.*json.*\|.*dev/design|dev/design.*\|.*release-state' "$GATE"; then
+  pass "the hook passes --staged-only and the gate owns the release-state/dev/design trigger set"
 else
   fail "arm 8b (path gating): the hook does not gate the gate on a staged path set"
 fi
@@ -450,13 +456,27 @@ fi
 # mode TC-92 is actually about. Slice 5 in the fixture is LANDED and must still
 # fail (arm 3 proved it does); this arm pins that the source contains no
 # status-based bypass.
-# NON-VACUITY: an absent gate greps clean too, so the file must exist first.
+# Two assertions, one behavioural and one structural, because a prose grep for
+# the word LANDED would fire on the comment that EXPLAINS the ban.
+#
+# Behavioural: the fixture's gap slice is LANDED, and arm 3 already showed it
+# fails. Restate the premise here so the arm cannot pass because the fixture
+# drifted to a non-landed status.
+setup_fixture
+FIX_STATUS="$(python3 -c 'import json,sys
+s=json.load(open(sys.argv[1]))
+print([e["status"] for e in s["ladder"] if e["slice"]==5][0])' "$FIX/dev/plans/release-state-9.9.9.json")"
+run_gate --release 9.9.9 --slice 5
+# Structural: the check never reads a ladder entry's `status` at all, so it
+# CANNOT branch on LANDED — a stronger statement than "no skip appears".
 if [ ! -f "$GATE" ]; then
   fail "arm 11 (no LANDED bypass): $GATE does not exist, so the assertion is vacuous"
-elif grep -qE '(skip|continue|bypass|exempt).*LANDED|LANDED.*(skip|continue|bypass)' "$GATE"; then
-  fail "arm 11 (no LANDED bypass): $GATE appears to skip landed slices"
+elif [ "$FIX_STATUS" = "LANDED" ] && [ "$RC" -eq 1 ] \
+     && ! grep -qE '"status"|get\("status"\)|\.status' "$GATE"; then
+  pass "no LANDED bypass — the check never reads a ladder status, and a LANDED gap still fails"
 else
-  pass "the check has no LANDED-based bypass — a landed slice is checked like any other"
+  fail "arm 11 (no LANDED bypass): fixture status=$FIX_STATUS rc=$RC; \
+$GATE may branch on ladder status"
 fi
 
 # --- Arm 12: READ-ONLY — the real state file is never touched --------------
