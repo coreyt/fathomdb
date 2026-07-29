@@ -89,6 +89,17 @@
       "reserved_gap": true
     },
     {
+      "slice": 23,
+      "short": "R-20-SV",
+      "title": "spec-validation reject + the TC-90/TC-91 characterization",
+      "depends_on": [
+        22
+      ],
+      "status": "NOT_STARTED",
+      "sha": null,
+      "merge_subject": null
+    },
+    {
       "slice": 25,
       "short": "R-20-SUR",
       "title": "surrogate minting — governed entities ONLY",
@@ -151,6 +162,7 @@
   "next_slice": 22,
   "remaining_ladder": [
     22,
+    23,
     31,
     40
   ],
