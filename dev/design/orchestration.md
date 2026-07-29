@@ -478,25 +478,39 @@ the § 9 mechanism choice: the allowlist is *inert* for a main-thread
 seat, so `/orchestrate` always had `SendMessage` while a Steward-spawned
 orchestrator did not.
 
-⚠ **A RED→GREEN probe measured the tool as STILL ABSENT in a spawned seat
-after the grant landed on disk.** Do not read that as "the harness blocks
-sibling messaging" — **no message was ever attempted at transport level,
-because the tool did not exist to call.** The leading explanation is that
-**agent definitions load once at session start**, so a session begun
-*before* the edit keeps the pre-edit registry. Direct evidence: the
-probing session's own agent registry listed the pre-edit tool list while
-disk showed the post-edit one. **The decisive test is to re-run the probe
-in a session started AFTER the edit** — if the tool appears, it was
-staleness; if it stays absent while the registry advertises it, a real
-seat-level restriction exists. **Until that runs, treat a mid-flight
-steer as unavailable and fall back to fresh-spawn** (which § 12.1 makes
-the intended mechanism anyway).
+**VERIFIED BY PROBE (2026-07-29).** A spawned background `orchestrator`
+seat **does** receive `SendMessage` from the frontmatter grant, and
+**child → main delivery is PROVEN**: the probe's ping arrived in the
+Steward's session as an `<agent-message from="orchestrator">`. **No fresh
+session is required** — Claude Code *watches* `.claude/agents/` and the
+next delegation uses the updated definition within seconds.
 
-*Not evidence of a seat trim:* `Grep` and `Glob` are declared in these
-seats yet uncallable — but they are **absent session-wide, including from
-the main thread**, so that is a session tool policy, not the seats being
-narrowed. `Task` is untested, not absent: no call could be emitted that
-was distinguishable from `Agent`.
+⚠ **Steward correction, recorded so it is not re-derived.** An earlier
+probe run **seconds after** the edit found the tool absent, and the
+Steward wrote that up as "registry staleness, needs a fresh session."
+**That was wrong** — it was a race against the file watcher, caused by
+spawning the probe in the same breath as the edit. The experiment
+measured the Steward's own timing, not the harness.
+
+**Still UNPROVEN — child → child delivery.** The send was *accepted*
+(`success: true`, *"queued for delivery … at its next tool round"*) but
+the trivial probe child finished in 8.4 s and never had a next tool round
+to deliver into. That is a probe-design race, **not** evidence of a broken
+transport — and note the failure mode **cannot** occur in the real
+mid-flight-steering case, where the child is long-running by definition.
+Confirming it needs a long-running child instructed to report what it
+receives.
+
+*Two traps for whoever tests this next.* (1) **The sibling roster is NOT
+a reliable grant signal.** The docs say it *"appears only when the
+subagent's tools include `SendMessage`"*, but the probe held the grant and
+received **no roster** — so roster-absence does not imply grant-absence.
+(2) **The advertised agent registry over-reports.** It listed
+`Grep, Glob, Task` for this seat while the actual grant was
+`Read, Bash, Agent, SendMessage`. Explanation: subagents inherit the main
+conversation's tool pool, `Grep`/`Glob` are absent **session-wide
+including from the main thread**, and `Task` is not in the background
+keep-list. **Neither is a seat trim.**
 
 After fix-N: cherry-pick the new commit(s), re-spawn the reviewer for
 re-verdict. Iterate until PASS or orchestrator override.
