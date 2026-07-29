@@ -455,13 +455,24 @@ to the HITL.
 
 ## 9. Immediate next slice
 
-> ⚠ **THIS SECTION IS HAND-WRITTEN AND HAS GONE STALE AT THREE CONSECUTIVE COMMISSIONS (TC-89).**
-> `release-state-0.8.20.json` already owns `next_slice`, and `commission-manifest.sh` cites this section as a
-> brief's **`{{MANDATE}}` anchor** — so the staleness is *copied into the next commission*. **Making it a
-> generated view is scoped into `DOC-HYGIENE-3`.** Until then: **re-verify this heading against
-> `release-state-0.8.20.json` `next_slice` BEFORE every commission**, and trust the state file on conflict.
+> ✅ **THE POINTER BELOW IS A GENERATED VIEW (TC-89, closed in `DOC-HYGIENE-3`).** It is rendered from
+> `release-state-0.8.20.json` — `next_slice`, that slice's ladder `short`/`title`, and `remaining_ladder` —
+> by `scripts/check-release-state-views.sh`, which hard-fails on any drift or hand-edit.
+> **NEVER EDIT INSIDE THE MARKERS.** Change the fact in the state file, then run
+> `scripts/check-release-state-views.sh --write`.
+>
+> It went **stale at three consecutive commissions** while it was hand-written, and
+> `commission-manifest.sh` cites this section as a brief's **`{{MANDATE}}` anchor** — its CHECK 2 verifies
+> that the *heading* exists, not that the prose under it is current — so the staleness was *copied into the
+> next commission*. Everything **outside** the markers (deliverables, guardrails, the historical roll-up)
+> stays hand-written and is **not** under generation.
 
-### ▶ IMMEDIATE NEXT: **Slice 31** — Library Sweep #3, leg 1/3 (SBOM tool: req + AC + design + RED tests)
+### ▶ Immediate next
+
+<!-- BEGIN GENERATED release-state:0.8.20:plan-immediate-next -->
+**IMMEDIATE NEXT: Slice 31** (`SBOM-SPEC`) — Library Sweep #3, leg 1 of 3 — SBOM/dependency-survey tool: requirements + acceptance criteria + design + RED tests. NO code. Carries NO R-20-xx requirement id (the TC-76 precedent)
+
+**Remaining ladder:** 31 → 32 → 33 → 40.<!-- END GENERATED release-state:0.8.20:plan-immediate-next -->
 
 **Specified in full at §3a.** Re-scoped by the HITL on 2026-07-29 (steward `seq-153`). **No dependencies**;
 Slices 0/5/10/15/20/21/22/23/25/30 have all LANDED and the publish precondition (Slice 30) is **SATISFIED**.

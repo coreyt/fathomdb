@@ -288,11 +288,72 @@ def render_status_live_open_count(st):
     return NUMBER_WORDS.get(len(st["decisions"]["unruled"]),
                             str(len(st["decisions"]["unruled"])))
 
+def render_plan_immediate_next(st):
+    """`plan-<release>.md` §9's IMMEDIATE NEXT pointer (TC-89).
+
+    THE MEASURED FAILURE. That pointer was HAND-WRITTEN while this file already
+    owned `next_slice` and already kept it true at every landing, and it went
+    stale at THREE CONSECUTIVE COMMISSIONS — twice inside one session. At the
+    Slice 21 commission it still read "Slice 30" although Slice 30 had landed at
+    9b3ed0e3; it was fixed at 62486a01 only because the Steward happened to read
+    the anchor the manifest cited. Hours later, right after Slice 21 landed, it
+    read "Slice 21".
+
+    WHY IT MATTERS MORE THAN ORDINARY DOC ROT. `scripts/commission-manifest.sh`
+    resolves `## 9. Immediate next slice` as the `{{MANDATE}}` anchor of an
+    orchestrator brief, and its CHECK 2 verifies that the HEADING EXISTS — not
+    that the prose beneath it is current. A heading cannot rot; the prose under
+    it does. So a generated, path-verified brief handed an orchestrator a
+    hand-written pointer at the wrong slice, with the manifest's authority behind
+    it, and the staleness was COPIED INTO THE NEXT COMMISSION. The mitigation
+    that used to sit above it — a blockquote telling the reader to re-verify
+    against `next_slice` — is a NOTE, not a control; this renderer is the control.
+
+    THE FACTS, all three already owned here and all three already updated at
+    every landing: `next_slice`, that slice's ladder entry (`short` + `title`),
+    and `remaining_ladder`. Nothing is inferred and no prose is laundered through
+    the JSON — the surrounding §9 narrative (deliverables, guardrails, the
+    historical roll-up) stays hand-written and OUTSIDE the markers, exactly as
+    the other four views leave their surroundings alone.
+
+    IT REFUSES RATHER THAN GUESSES. `next_slice: null` is a real end-of-release
+    state, and a renderer that emitted "Slice None" would put a FABRICATED
+    pointer in front of the next orchestrator with this gate's authority behind
+    it — the same failure this view exists to close, wearing a different hat. So
+    a non-integer `next_slice`, or one naming a slice the ladder does not carry,
+    raises with the reason and the gate reports it (arm 10e).
+
+    The leading newline is load-bearing for the same CommonMark reason
+    render_handoff_next_step() documents: the BEGIN marker sits on its own line,
+    so the region content starts with the newline that follows it.
+    """
+    nxt = st["next_slice"]
+    if isinstance(nxt, bool) or not isinstance(nxt, int):
+        raise ValueError(
+            "`next_slice` is %r, not a slice number. The plan's IMMEDIATE NEXT pointer "
+            "cannot be rendered from it, and rendering a blank — or the word Slice "
+            "followed by a null — would put a fabricated pointer in front of the next "
+            "orchestrator with this gate's authority behind it. "
+            "If the ladder is finished, remove this view from "
+            "`generated_views` and unfence the region — do not let it render nothing."
+            % (nxt,))
+    by = _by_slice(st)
+    if nxt not in by:
+        raise ValueError(
+            "`next_slice` is %d but the ladder carries no such slice, so the pointer would "
+            "name a slice that does not exist." % nxt)
+    entry = by[nxt]
+    return ("\n**IMMEDIATE NEXT: Slice %d** (`%s`) — %s\n\n**Remaining ladder:** %s."
+            % (nxt, entry["short"], entry["title"],
+               " → ".join(str(n) for n in st["remaining_ladder"])))
+
+
 RENDERERS = {
     "master-ladder-progress":  render_master_ladder_progress,
     "status-unblocks":         render_status_unblocks,
     "status-live-open-count":  render_status_live_open_count,
     "handoff-next-step":       render_handoff_next_step,
+    "plan-immediate-next":     render_plan_immediate_next,
 }
 
 # ---------------------------------------------------------------------------
