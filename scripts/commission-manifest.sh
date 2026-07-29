@@ -40,6 +40,40 @@
 #     keyword rather than by line number (T1d's ban) or by a frozen title string.
 #
 # ---------------------------------------------------------------------------
+# THE DESIGN TIER HAS TWO HALVES: DISCOVERY, AND CITATION (`design_refs`)
+# ---------------------------------------------------------------------------
+# The discovery half is the pair of selectors in scan_design(): a doc whose
+# FILENAME names this release AND this slice, and a doc whose CONTENT mentions a
+# token derived from the ladder entry's own `short`/`title`. Both are measured,
+# and both MISS AN ENTIRE CLASS OF SLICE BY CONSTRUCTION:
+#   * The filename selector hit 1 of the 12 slices in the 0.8.20 ladder.
+#   * `plan-<release>.md` §3 is "frozen at Slice 0", so a RESERVED-GAP slice
+#     minted mid-release by HITL ruling has requirement ids (R-20-CR, R-20-VC,
+#     R-20-SV and their TC-* carries) that appear NOWHERE under dev/design/ —
+#     the design package predates them — and it never got a §3.0 memo of its
+#     own either.
+# The TC-37 vacuous-pass guard therefore hard-failed on three well-designed
+# slices in a row: 21, 22 and 23 (tracked as TC-92 and TC-94).
+#
+# `design_refs` on a ladder entry is the CITATION half. The Steward names the
+# docs; nothing is inferred. Four properties are deliberate:
+#   1. OPTIONAL AND INERT. No key ⇒ byte-for-byte the behaviour that predates
+#      it. It adds a tier; it does not reinterpret the existing one.
+#   2. CHECKED LIKE EVERY OTHER PATH. A curated citation carries the Steward's
+#      authority, so a dead one misleads MORE than a dead scan hit, not less:
+#      CHECK 1 applies with no exemption and the manifest is not emitted.
+#   3. IT REACHES OUTSIDE `dev/design/`. dev/adr/**, dev/interfaces/** — the
+#      walker can never go there and is NOT widened to (that would drag every
+#      unrelated doc into every brief). Out-of-tree docs often carry no
+#      `status:` frontmatter at all, and the row then SAYS there is none rather
+#      than inventing one, exactly as the UNREVIEWED rows refuse to launder.
+#   4. IT IS NEVER BLENDED WITH THE SCAN. Curated rows are labelled CURATED and
+#      kept in their own block, so a reader can always tell a doc somebody chose
+#      from a doc a substring match found.
+# It does NOT weaken the guard: an empty/absent `design_refs` AND an empty scan
+# is still a hard failure.
+#
+# ---------------------------------------------------------------------------
 # HOW UNREVIEWED IS HANDLED (deliberate, and the honest part)
 # ---------------------------------------------------------------------------
 # T2c's backfill was conservative on purpose: most design docs are UNREVIEWED,
@@ -314,6 +348,62 @@ def slice_tokens(entry):
     return tokens
 
 
+def curated_design_refs(entry, state_path, slice_no):
+    """The CITATION half of the design tier: `design_refs` on a ladder entry.
+
+    OPTIONAL. Absent means absent — the caller emits exactly what it emitted
+    before this existed. Present, it is a list of repo-relative paths that the
+    Steward chose for this slice, in the order they should be read.
+
+    Everything about it is validated HERE and fatally, because the failure mode
+    of a silently-dropped curation is that the slice falls straight back into
+    the TC-37 vacuous-pass hard-failure this key was added to fix — with no
+    explanation of why the curation the author wrote did nothing. A typo must
+    say so. Two rules beyond "it is a list of non-empty strings":
+      * REPO-RELATIVE ONLY. Every other cited path in the manifest is relative
+        to the checkout root; an absolute path, or one that climbs out with
+        `..`, would resolve on the author's machine and nowhere else — a
+        citation that passes CHECK 1 for one person only is worse than a dead
+        one, because it goes green.
+      * DE-DUPLICATED, ORDER PRESERVED. A repeated path is the author's slip,
+        not a second reading; printing the row twice would inflate the tier.
+    Existence is NOT checked here: it is checked by CHECK 1 over the emitted
+    citation list, so a curated path fails through the same machinery, with the
+    same message, as every other path the brief names.
+    """
+    if "design_refs" not in entry:
+        return []
+    raw = entry.get("design_refs")
+    where = "ladder entry for Slice %s in `%s`" % (slice_no, state_path)
+    if not isinstance(raw, list):
+        die(["FAIL commission-manifest: `design_refs` in the %s is %s, not a list of"
+             % (where, type(raw).__name__),
+             "  repo-relative paths. A malformed curation must fail loudly: dropping it",
+             "  silently puts the slice back into the TC-37 vacuous-pass failure that",
+             "  `design_refs` exists to fix, with nothing saying why."])
+    refs = []
+    for item in raw:
+        if not isinstance(item, str) or not item.strip():
+            die(["FAIL commission-manifest: `design_refs` in the %s contains %r, which is"
+                 % (where, item),
+                 "  not a non-empty path string."])
+        path = item.strip()
+        if path.startswith("/") or path.startswith("~") or os.path.isabs(path):
+            die(["FAIL commission-manifest: `design_refs` entry `%s` in the %s is ABSOLUTE."
+                 % (path, where),
+                 "  Every cited path in this manifest is relative to the checkout root. An",
+                 "  absolute path resolves on one machine and nowhere else, so CHECK 1 would",
+                 "  go green for its author and dead for everyone the brief is written for."])
+        parts = path.replace("\\", "/").split("/")
+        if ".." in parts:
+            die(["FAIL commission-manifest: `design_refs` entry `%s` in the %s climbs out of"
+                 % (path, where),
+                 "  the repository with `..`. A brief may only cite what the checkout contains."])
+        if path not in refs:
+            refs.append(path)
+    return refs
+
+
 def scan_design(tokens, release, slice_no):
     # Second selector, alongside the token scan: a doc whose FILENAME names this
     # release AND this slice is that slice's own design memo (SLICE-TEMPLATE §3.0
@@ -443,8 +533,9 @@ def emit_publish_gate(m, gate, state_path):
         m.out("      Escalate for the sign-off; never re-decide it yourself.")
 
 
-def build(release, state_path, state, slice_no, entry):
+def build(release, state_path, state, slice_no, entry, curated=None):
     m = Manifest()
+    curated = list(curated or [])
     ladder = {e.get("slice"): e for e in state.get("ladder") or []}
     landed = state.get("landed") or []
     next_slice = state.get("next_slice")
@@ -616,26 +707,85 @@ def build(release, state_path, state, slice_no, entry):
     m.out()
 
     # ---- 6. DESIGN DOCS ({{READING}}) -------------------------------------
+    # TWO PROVENANCES, NEVER BLENDED. CURATED rows were chosen by the Steward in
+    # the state file's `design_refs`; SCANNED rows were discovered by the two
+    # selectors. A reader has to be able to tell them apart, because they carry
+    # different warrants: a curated row is somebody's judgement, a scanned row is
+    # a substring match that may well be incidental.
     m.out("## 6. DESIGN DOCS FOR THIS SLICE   [SLICE-TEMPLATE §1.4 {{READING}}]")
+    if curated:
+        m.out("   TWO PROVENANCES, kept apart. CURATED rows are named by this ladder entry's")
+        m.out("   `design_refs` in the state file — chosen, not discovered — and may sit OUTSIDE")
+        m.out("   `%s/` (e.g. `dev/adr/`, `dev/interfaces/`), where the scan below cannot" % DESIGN_ROOT)
+        m.out("   reach. SCANNED rows were found by the selectors and are listed after them.")
     m.out("   Selected by the slice's OWN tokens from the state file: %s" % ", ".join(tokens))
     m.out("   Status is AS RECORDED in `status:` frontmatter (T2c) — it is NOT a currency claim.")
     m.out("   scripts/lint-design-status.sh proves the PRESENCE of a status, never its TRUTH;")
     m.out("   UNREVIEWED means 'nobody has classified this yet' and the classification is owed")
     m.out("   at TC-50. Rows marked ⚠ unclassified are candidates, NOT design of record.")
-    for _rank, path, status, matched in design:
+    scan_matched = {h[1]: h[3] for h in design}
+    if curated:
+        m.out("  -- CURATED (`design_refs`, hand-cited in the state file) ------------------")
+        for path in curated:
+            # frontmatter_status() answers None for BOTH "no status: field" and
+            # "unreadable/absent file". A missing file is caught by CHECK 1 and
+            # the manifest is never emitted, so the honest wording for the row
+            # that does get printed is the former: say the field is absent
+            # rather than manufacture a classification the doc never made.
+            recorded = frontmatter_status(path)
+            if recorded is None:
+                status_word = "no `status:` field recorded"
+                flag = " ⚠ unclassified (TC-50)"
+            else:
+                status_word = recorded
+                flag = (" ⚠ unclassified (TC-50)"
+                        if recorded.split()[0] in UNCLASSIFIED else "")
+            m.out("  CURATED [%s]%s %s"
+                  % (status_word, flag, m.cite(path, label="design_refs (curated)")))
+            if not path.startswith(DESIGN_ROOT + "/"):
+                m.out("        outside `%s/` — cited BECAUSE the scan cannot reach it."
+                      % DESIGN_ROOT)
+            also = scan_matched.get(path)
+            if also:
+                m.out("        the scan reached it too, on: %s" % ", ".join(also))
+            if os.path.exists(path) and not os.path.isfile(path):
+                m.problems.append(
+                    "FAIL commission-manifest: `design_refs` entry `%s` is a DIRECTORY, not a\n"
+                    "  design document. Cite the file to be read, not the folder it sits in."
+                    % path)
+        m.out("  -- SCANNED (filename + token selectors over `%s/`) ------------------"
+              % DESIGN_ROOT)
+    # A curated doc the scan ALSO reached is reported once, in the curated block,
+    # with its scan hits folded in. Printing it twice would double-count the tier
+    # and make the reader reconcile two rows for one document.
+    scanned = [h for h in design if h[1] not in set(curated)]
+    for _rank, path, status, matched in scanned:
         flag = " ⚠ unclassified (TC-50)" if status.split()[0] in UNCLASSIFIED else ""
         m.out("  [%s]%s %s" % (status, flag, m.cite(path)))
         m.out("        matched: %s" % ", ".join(matched))
-    classified = [h for h in design if h[2].split()[0] not in UNCLASSIFIED]
-    m.out("  -> %d doc(s) matched: %d classified, %d unclassified."
-          % (len(design), len(classified), len(design) - len(classified)))
+    if curated:
+        classified = [h for h in scanned if h[2].split()[0] not in UNCLASSIFIED]
+        m.out("  -> %d curated doc(s) cited; %d further doc(s) matched by the scan: "
+              "%d classified, %d unclassified."
+              % (len(curated), len(scanned), len(classified), len(scanned) - len(classified)))
+    else:
+        classified = [h for h in design if h[2].split()[0] not in UNCLASSIFIED]
+        m.out("  -> %d doc(s) matched: %d classified, %d unclassified."
+              % (len(design), len(classified), len(design) - len(classified)))
     matched_tokens = {t for _r, _p, _s, ms in design for t in ms}
+    # PER-TOKEN, not all-or-nothing: a token nothing mentions is named even when
+    # its neighbours matched, so a slice with one weak incidental hit does not
+    # read like a slice with full coverage. It stays a REPORT — the run exits 0.
     unmatched = [t for t in tokens if t not in matched_tokens]
     if unmatched:
         m.out("  -> NO design doc mentions: %s. That part of the slice has no design of record;"
               % ", ".join(unmatched))
         m.out("     its authority is whatever the plan's rulings/requirements sections say — read")
         m.out("     them there, and do not infer a design that does not exist.")
+        if curated:
+            m.out("     (The %d CURATED doc(s) above were cited by hand and are NOT token-matched, so"
+                  % len(curated))
+            m.out("     read them before concluding the token is genuinely undesigned.)")
     m.out()
 
     # ---- 7. ACCEPTANCE ({{AC_IDS}}) ---------------------------------------
@@ -762,15 +912,24 @@ def generate(release, slice_sel):
     slice_no, entry = pick_slice(state, state_path, slice_sel)
 
     tokens = slice_tokens(entry)
-    if not scan_design(tokens, release, slice_no):
+    # The guard is NOT weakened by `design_refs`: it now asks whether the design
+    # tier is empty by EITHER route. A non-empty curation satisfies it (that is
+    # the whole point — a reserved-gap slice both selectors miss by construction
+    # is still a designed slice), but an empty or absent one leaves the original
+    # hard failure exactly where it was. `design_refs: []` is not a design.
+    curated = curated_design_refs(entry, state_path, slice_no)
+    if not curated and not scan_design(tokens, release, slice_no):
         die(["FAIL commission-manifest: ZERO design docs matched %s Slice %s (tokens: %s)."
              % (release, slice_no, ", ".join(tokens) or "none derived"),
              "  The required-reading list would be EMPTY, so the manifest would brief nobody",
              "  while exiting 0 — this repo's named TC-37 vacuous-pass class. Fix it by",
-             "  authoring/citing the design of record for this slice, or by naming the slice's",
-             "  requirement id in the state file's `short`/`title` so the scan can find it."])
+             "  authoring/citing the design of record for this slice, by naming the slice's",
+             "  requirement id in the state file's `short`/`title` so the scan can find it, or",
+             "  — for a reserved-gap slice whose ids postdate the design package and which both",
+             "  selectors therefore miss by construction — by listing the docs to read in this",
+             "  ladder entry's `design_refs`."])
 
-    m = build(release, state_path, state, slice_no, entry)
+    m = build(release, state_path, state, slice_no, entry, curated)
     paths_ok, anchors_ok, problems = verify(m, release, slice_no)
     if problems:
         problems.append(
