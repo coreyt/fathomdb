@@ -159,16 +159,29 @@ def test_every_component_carries_a_tier_property() -> None:
     `TierMap.classify()` of the manifest that declares the component — which is
     the rule set `AC-SBOM-23` grades for longest-prefix correctness and
     `AC-SBOM-06` proves `run_survey()` consults. Only components with EXACTLY
-    ONE declaring manifest are checked: a package declared by two manifests of
-    different tiers has no single ruled answer in §5.2/§5.3, so demanding one
-    would invent a contract.
+    ONE declaring manifest have their tier VALUE checked: a package declared by
+    two manifests of different tiers has no single ruled answer in §5.2/§5.3, so
+    demanding one would invent a contract.
+
+    A component with NO origin used to be skipped outright, which was codex §9
+    round 6's finding. A `transitive` component legitimately has none — §5.5
+    defines it as one whose name reaches no tracked dependency table — but a
+    `direct` one CANNOT, by that same definition. Silently exempting it let
+    UNTRACKED-MANIFEST LEAKAGE through both this oracle and the discovery
+    boundary: `run_survey()` could read `python/pyproject.toml` (gitignored, the
+    exact case `AC-SBOM-02` exists to prevent), have no tracked path to
+    attribute its dependencies to, emit them originless, and still pass so long
+    as one other component carried an origin. Zero-origin `direct` components
+    are therefore a FAILURE; zero-origin `transitive` ones stay exempt.
     """
     survey = _offline_survey(
         "AC-SBOM-11",
         "every CycloneDX component must carry EXACTLY ONE `fathomdb:tier`"
         f" property whose value is one of {TIER_VOCABULARY!r}, and that value"
         " must EQUAL TierMap.classify(<its declaring manifest>).tier for every"
-        " component declared by exactly one manifest.",
+        " component declared by exactly one manifest. Every `direct` component"
+        " must carry at least one `fathomdb:declared-in` origin — a direct"
+        " package with none means an untracked manifest was read.",
     )
     doc = survey.to_cyclonedx()
 
@@ -198,10 +211,34 @@ def test_every_component_carries_a_tier_property() -> None:
         origins = [
             p["value"] for p in props if p.get("name") == "fathomdb:declared-in"
         ]
+        ref = component.get("bom-ref", component.get("name"))
+
+        if not origins:
+            depth = next(
+                (p["value"] for p in props if p.get("name") == "fathomdb:depth"),
+                None,
+            )
+            assert depth != "direct", (
+                f"{ref}: tagged fathomdb:depth='direct' but carries NO"
+                " `fathomdb:declared-in` origin, so its tier went UNGRADED"
+                " against the tracked tiers.toml. §5.5 makes a component"
+                " `direct` IFF its name appears in a dependency table of a"
+                " TRACKED, non-excluded manifest, so a direct component with no"
+                " declaring manifest is a contradiction — and the way it arises"
+                " is UNTRACKED-MANIFEST LEAKAGE: run_survey() read a file `git"
+                " ls-files` does not report (python/pyproject.toml is the exact"
+                " case AC-SBOM-02 exists to prevent), had no tracked path to"
+                " attribute the dependency to, and emitted it originless."
+                " Exempting these silently let that leak past this oracle AND"
+                " the discovery-boundary checks, which only constrain origins"
+                " that exist. Transitive components with no origin are"
+                " legitimate (§5.5) and remain exempt."
+            )
+            continue
+
         if len(origins) != 1:
             continue
         tier = next(p["value"] for p in props if p.get("name") == "fathomdb:tier")
-        ref = component.get("bom-ref", component.get("name"))
         verdict = tier_map.classify(origins[0])
         assert verdict.action == "tier", (
             f"{ref}: its only declaring manifest {origins[0]!r} is"
