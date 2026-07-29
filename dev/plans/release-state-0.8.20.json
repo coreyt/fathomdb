@@ -224,9 +224,9 @@
       {
         "id": "batched-governed-surface",
         "title": "the batched governed-surface decision — the accumulated Slice 20/25/30 allowlist delta",
-        "gated_at": "after Slice 22 lands (HITL 2026-07-28, steward seq-134 — moved from the stale \"Slice 30 -> Slice 40 boundary\"; Slice 22 may add surface)",
+        "gated_at": "AT THE CLOSE OF SLICE 23 (HITL 2026-07-28, steward seq-140/141 — supersedes seq-134 \"after Slice 22\"). Slice 23 is the LAST unit that can touch the surface: the allowlist is SDK COMMAND NAMES, and neither Slice 31 (dependency sweep) nor DOC-HYGIENE-3 (docs/tooling) can add or remove one, so the delta is FINAL at 23 and deferring the ceremony past them buys nothing. NON-BLOCKING for 31 and DOC-HYGIENE-3, which may proceed while it sits with the HITL; Slice 40 DOES depend on it (AC-079 mints pinned to the allowlist content).",
         "halts_run": false,
-        "source": "plan-0.8.20.md §11 (2026-07-25 rulings, item 2); timing re-ruled at steward seq-134"
+        "source": "plan-0.8.20.md §11 (2026-07-25 rulings, item 2); timing ruled at steward seq-134, re-gated to after Slice 23 at steward seq-140"
       },
       {
         "id": "publish",

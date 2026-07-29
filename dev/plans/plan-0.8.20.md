@@ -457,10 +457,14 @@ ac_002 sandbox oracle · TC-71 role-gated dense arm) at **`77be504b`**, close re
 
 **Remaining ladder, HITL-approved 2026-07-28 (F-36 · steward `seq-129`), SEQUENTIAL — this SUPERSEDES the
 F-35 order (`seq-119`); its leading `30`, `TC-86` and `21` legs are all now landed:**
-**22 → 23 → 31 → DOC-HYGIENE-3 → ⟨batched governed-surface decision⟩ → 40.**
+**22 → 23 → ⟨batched governed-surface decision⟩ → 31 → DOC-HYGIENE-3 → 40.**
 **21** (R-20-CR, landed) and **22** (R-20-VC) are reserved-gap slices in the 20 band; **31** is Library Sweep #3 and
 carries no requirement id (TC-76); **DOC-HYGIENE-3** is cross-cutting and is not a ladder slice. The batched
-surface decision sits **after 22** (22 may add surface via TC-67 / #18), not at the 30 → 40 boundary.
+surface decision is taken **AT THE CLOSE OF SLICE 23** (HITL `seq-141`, superseding `seq-134`/`seq-140`).
+**23 is the LAST unit that can touch the surface:** the allowlist is SDK *command names*, and neither
+Slice 31 (dependency sweep) nor DOC-HYGIENE-3 (docs/tooling) can add or remove one — so the delta is FINAL
+at 23 and deferring the ceremony past them buys nothing while pushing an open gate against Slice 40, which
+mints AC-079 pinned to that file. **Non-blocking for 31 and DOC-HYGIENE-3**; Slice 40 does depend on it.
 Commission each as an **orchestrator** — **NOT** `/goal` (standing ruling `927ffb35` · steward `seq-104`).
 Board of record: `runs/STATUS-0.8.20.md`; open HITL decisions: §11 — the **live** open set is **two**
 (batched governed-surface decision, publish), per `release-state-0.8.20.json` `decisions.unruled`.
