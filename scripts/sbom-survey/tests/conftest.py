@@ -94,6 +94,20 @@ KNOWN_TRANSITIVE_ONLY_CARGO = (
     "serde_derive",
 )
 
+# The NEGATIVE CONTROL for AC-SBOM-10's independent schema oracle.
+#
+# CycloneDX 1.6 makes `type` REQUIRED on every component (the 1.6 component
+# definition is `"required": ["type", "name"]`), so a conforming validator must
+# reject this document. A validator that accepts it is not validating anything,
+# and a clean result from it would prove nothing — which is the whole failure
+# mode AC-SBOM-10 exists to stop.
+KNOWN_INVALID_CYCLONEDX_DOC = {
+    "bomFormat": "CycloneDX",
+    "specVersion": "1.6",
+    "version": 1,
+    "components": [{"name": "component-with-no-type", "version": "1.0.0"}],
+}
+
 
 def purl_type(purl: object) -> str | None:
     """The purl `type` segment (`pkg:<type>/…`), or None if it is not a purl."""
@@ -117,6 +131,84 @@ def require(module: str, criterion: str, behaviour: str):
             f"  REQUIRED BEHAVIOUR: {behaviour}\n"
             f"  import {module!r} raised: {exc!r}"
         )
+
+
+def require_external(module: str, criterion: str, distribution: str, why: str):
+    """Import a THIRD-PARTY oracle module, or FAIL. Never skips.
+
+    Distinct from `require()`: that one imports the code UNDER TEST, and a
+    missing module there is the expected Slice-31 RED. This one imports a
+    module the test grades WITH, and a missing module there means the criterion
+    would go **ungraded**.
+
+    Which is why it must fail rather than skip. `pytest.skip` on a missing
+    oracle is the textbook vacuous green: the suite still reports success while
+    the assertion it was built for silently stopped running. Every distribution
+    reached through this helper is a declared dependency of the mini-project
+    (design §5.7), so its absence is a broken environment, not a licence to
+    pass.
+    """
+    try:
+        return importlib.import_module(module)
+    except Exception as exc:  # noqa: BLE001 - any import failure means "ungraded"
+        pytest.fail(
+            f"{criterion} CANNOT BE GRADED: the independent oracle `{module}` is"
+            " not importable, so the criterion would go UNGRADED.\n"
+            f"  INSTALL: {distribution} — a declared dependency of this"
+            " mini-project (design §5.7).\n"
+            f"  WHY THE ORACLE IS REQUIRED: {why}\n"
+            "  This is a FAILURE and never a skip: an oracle allowed to vanish"
+            " turns the criterion into a vacuous green.\n"
+            f"  import {module!r} raised: {exc!r}"
+        )
+
+
+def independent_cyclonedx_validator(criterion: str):
+    """A CycloneDX 1.6 schema validator that does NOT come from `sbom_survey`.
+
+    Returns `validate(doc) -> str | None` — `None` when `doc` is schema-valid,
+    a diagnostic string otherwise.
+
+    AC-SBOM-10 exists to stop a hand-rolled document that no consumer will
+    validate. Grading it with the implementation's own
+    `sbom_survey.cyclonedx.validate()` is **self-certification**: an
+    implementation whose `validate()` returns `None` unconditionally would pass
+    while emitting invalid JSON (codex §9 round 2, fix-2 finding 1). The oracle
+    is therefore the upstream library's own validator, bound to the normative
+    1.6 schema shipped by the `cyclonedx-python-lib[json-validation]` extra
+    (design §5.7 already declares that dependency for exactly this purpose).
+    """
+    validation = require_external(
+        "cyclonedx.validation.json",
+        criterion,
+        "cyclonedx-python-lib[json-validation]",
+        "AC-SBOM-10 must be graded by a validator INDEPENDENT of the code under"
+        " test; the implementation's own validate() cannot certify itself.",
+    )
+    schema = require_external(
+        "cyclonedx.schema",
+        criterion,
+        "cyclonedx-python-lib[json-validation]",
+        "SchemaVersion.V1_6 selects the normative 1.6 schema the emitted"
+        " document is graded against.",
+    )
+    try:
+        validator = validation.JsonStrictValidator(schema.SchemaVersion.V1_6)
+    except Exception as exc:  # noqa: BLE001 - a validator we cannot build grades nothing
+        pytest.fail(
+            f"{criterion} CANNOT BE GRADED: cyclonedx-python-lib imported, but its"
+            " JSON schema validator could not be constructed — the"
+            " `json-validation` extra (the JSON-schema engine plus the bundled"
+            " normative schemas) is almost certainly missing. Install"
+            " `cyclonedx-python-lib[json-validation]`, per design §5.7."
+            f" Raised: {exc!r}"
+        )
+
+    def validate(doc) -> str | None:
+        problem = validator.validate_str(json.dumps(doc))
+        return None if problem is None else str(problem)
+
+    return validate
 
 
 def run_cli(args: list[str], criterion: str, behaviour: str) -> subprocess.CompletedProcess:

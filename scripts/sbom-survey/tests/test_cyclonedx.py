@@ -9,11 +9,13 @@ from __future__ import annotations
 from urllib.parse import unquote
 
 from conftest import (
+    KNOWN_INVALID_CYCLONEDX_DOC,
     KNOWN_TRANSITIVE_ONLY_CARGO,
     PURL_PREFIX_BY_ECOSYSTEM,
     PURL_PREFIXES,
     REPO_ROOT,
     TIER_VOCABULARY,
+    independent_cyclonedx_validator,
     purl_type,
     require,
 )
@@ -30,6 +32,12 @@ def test_cyclonedx_document_is_schema_valid_and_purl_identified() -> None:
 
     The emitted document validates against the bundled CycloneDX 1.6 JSON
     schema. Hand-rolled JSON that no consumer will validate is not an SBOM.
+
+    The schema verdict comes from an INDEPENDENT validator — the upstream
+    cyclonedx-python-lib one, not `sbom_survey.cyclonedx.validate()` — with a
+    known-invalid negative control proving the oracle actually rejects
+    something (codex §9 round 2). The tool's own validate() is then required to
+    agree with it in both directions rather than to be believed.
 
     Schema validity alone is NOT enough, and asserting only it was the gap
     codex §9 round 1 caught: `name` + `version` satisfy the 1.6 schema, so a
@@ -90,14 +98,50 @@ def test_cyclonedx_document_is_schema_valid_and_purl_identified() -> None:
         f" pypi manifests, so all three must be represented; got {sorted(seen_types)}"
     )
 
+    # --- schema validity, graded by an INDEPENDENT oracle -------------------
+    #
+    # This half used to call `sbom_survey.cyclonedx.validate()` — a function
+    # from the implementation under test — which is self-certification: a
+    # `validate()` that returns None unconditionally passed while the tool
+    # emitted invalid CycloneDX JSON, i.e. exactly the hand-rolled-SBOM failure
+    # this criterion exists to stop (codex §9 round 2, fix-2 finding 1). The
+    # oracle is now the upstream library's own 1.6 schema validator.
+    schema_valid = independent_cyclonedx_validator("AC-SBOM-10")
+
+    # Negative control FIRST — prove the oracle bites before trusting a clean
+    # result from it. An "independent validator" that accepts anything is no
+    # better than the self-certifying one it replaced.
+    assert schema_valid(KNOWN_INVALID_CYCLONEDX_DOC) is not None, (
+        "the independent CycloneDX 1.6 validator ACCEPTED a document whose only"
+        " component carries no `type`, which the 1.6 schema requires. The"
+        " oracle is not validating, so a clean verdict from it proves nothing."
+    )
+
+    problem = schema_valid(doc)
+    assert problem is None, f"CycloneDX 1.6 schema validation failed: {problem}"
+
+    # The tool's own validate() must AGREE with the independent oracle in BOTH
+    # directions. The second assertion is the one that kills a stub: a
+    # `validate()` that returns None unconditionally agrees on the valid
+    # document and is caught here.
     validator_mod = require(
         "sbom_survey.cyclonedx",
         "AC-SBOM-10",
-        "sbom_survey.cyclonedx.validate(doc) must run the CycloneDX 1.6 schema"
-        " validator and return None on success / a diagnostic on failure.",
+        "sbom_survey.cyclonedx.validate(doc) must really run the CycloneDX 1.6"
+        " schema — returning None for a valid document AND a diagnostic for an"
+        " invalid one. It is cross-checked against the independent"
+        " cyclonedx-python-lib validator in both directions.",
     )
-    problem = validator_mod.validate(doc)
-    assert problem is None, f"CycloneDX 1.6 schema validation failed: {problem}"
+    assert validator_mod.validate(doc) is None, (
+        "sbom_survey.cyclonedx.validate() rejected a document the independent"
+        f" CycloneDX 1.6 validator accepts: {validator_mod.validate(doc)}"
+    )
+    assert validator_mod.validate(KNOWN_INVALID_CYCLONEDX_DOC) is not None, (
+        "sbom_survey.cyclonedx.validate() returned None for a document the"
+        " independent CycloneDX 1.6 validator REJECTS — it is not running the"
+        " schema, so it certifies nothing and must never be the oracle for"
+        " this criterion."
+    )
 
 
 def test_every_component_carries_a_tier_property() -> None:

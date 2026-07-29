@@ -78,6 +78,14 @@ def test_fixture_exclusion_is_data_driven_not_hardcoded() -> None:
     code. Proof: load a tier map with the fixture rule REMOVED and the fixture
     manifests must then flow through to tiering (and, having no rule, trip the
     REQ-4 loud failure). A hardcoded special case cannot satisfy this.
+
+    Proving it at `TierMap.classify()` alone is NOT enough, and that was codex
+    §9 round 2's second finding: Slice 32 could make classify() perfectly
+    data-driven and still write `if path.startswith("dev/release/fixtures/")`
+    into `run_survey()`, passing both AC-SBOM-05 and the classify-level
+    assertions while REQ-5's "never by a hardcoded special case in code" went
+    untested where it counts. Both tier maps are therefore driven THROUGH the
+    survey boundary as well.
     """
     tiers_file = PROJECT_ROOT / "tiers.toml"
     tiers = require(
@@ -107,6 +115,46 @@ def test_fixture_exclusion_is_data_driven_not_hardcoded() -> None:
     )
     with pytest.raises(tiers.UntieredManifestError):
         stripped.classify(FIXTURE_PREFIX + "cargo-skew/Cargo.toml")
+
+    # --- and now at the SURVEY BOUNDARY, which is where REQ-5 actually bites -
+    survey_mod = require(
+        "sbom_survey.survey",
+        "AC-SBOM-06",
+        "run_survey(repo_root, *, published, tier_map=…) must take its exclusion"
+        " decisions FROM the injected tier map: with the fixture rule present"
+        " the fixture manifests are excluded; with that one rule removed they"
+        " must reach tiering and raise UntieredManifestError naming a fixture"
+        ' path. A hardcoded path.startswith("dev/release/fixtures/") inside'
+        " run_survey() cannot satisfy both halves.",
+    )
+    registry = require(
+        "sbom_survey.registry",
+        "AC-SBOM-06",
+        "an OfflineSource keeps the survey-boundary run hermetic.",
+    )
+
+    fixtures = _fixture_manifests()
+
+    with_rule = survey_mod.run_survey(
+        REPO_ROOT, published=registry.OfflineSource(), tier_map=full
+    )
+    still_excluded = {e.path for e in with_rule.excluded}
+    missing = sorted(set(fixtures) - still_excluded)
+    assert not missing, (
+        "run_survey() did not honour the INJECTED tier map — these fixture"
+        f" manifests were not excluded: {missing}"
+    )
+
+    with pytest.raises(tiers.UntieredManifestError) as excinfo:
+        survey_mod.run_survey(
+            REPO_ROOT, published=registry.OfflineSource(), tier_map=stripped
+        )
+    assert any(path in str(excinfo.value) for path in fixtures), (
+        "run_survey() with the fixture rule REMOVED must fail loudly, naming a"
+        " fixture manifest (REQ-4). If it excluded them anyway, the exclusion"
+        " lives in CODE rather than in tiers.toml, which is exactly what REQ-5"
+        f" forbids. Error was: {excinfo.value}"
+    )
 
 
 def test_untiered_manifest_raises_untiered_manifest_error() -> None:
