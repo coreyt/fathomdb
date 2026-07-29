@@ -41,6 +41,12 @@
 # NETWORK: the `pip install` step needs PyPI. The survey runs themselves are
 # `--offline` and consult no registry.
 #
+# CWD-INDEPENDENT. Both runs and every provenance probe execute (in subshells)
+# with cwd set to the throwaway work dir, because cwd lands on `sys.path` for
+# `python -c` and `python -m`. Every path handed to them is absolute, so this
+# changes nothing about what is surveyed — only that it cannot matter where you
+# invoked the smoke from. See §6a.
+#
 # USAGE:  bash scripts/sbom-survey/smoke-install-run.sh
 # EXIT:   0 = PASS, non-zero = a real defect (the diagnostic names which one).
 
@@ -155,8 +161,28 @@ OUT_SOURCE="$WORK/out-source"
 #   * and that arrangement is ASSERTED here. Unsetting only ARRANGES for the
 #     right thing; the assertion PROVES it. RUN B's provenance was graded from
 #     the start and RUN A's was not — that asymmetry was the finding.
+#
+# THE PROBE MUST REPLICATE RUN A'S IMPORT ENVIRONMENT, NOT APPROXIMATE IT
+# (codex §9 round 3). `python -c` puts the CURRENT DIRECTORY on `sys.path[0]`
+# (it is `''`), whereas a script executed BY PATH — which is what
+# `$VENV/bin/sbom-survey` is — gets the SCRIPT's directory (`venv/bin`) there
+# and never cwd. An earlier probe therefore graded a stricter, different import
+# environment than the one it certified: run from `scripts/sbom-survey`, it
+# reported a source-tree import that RUN A would never have performed, and the
+# smoke failed before RUN A ever executed. A guard that cries wolf gets ignored,
+# which costs exactly the protection `seq-172` left this script as the only
+# source of.
+#
+# The fix is a NEUTRAL cwd: every probe below, and both runs, execute with cwd
+# set to `$WORK`, which is already asserted to be outside the repo and contains
+# no `sbom_survey`. `--repo`, `--out`, `$CONSOLE` and `$PROJECT` are all absolute,
+# so cwd cannot change what is surveyed or where it is written — only which
+# package would be importable, which is precisely what must not vary. (A neutral
+# cwd is preferred over `python -P` / `PYTHONSAFEPATH=1` because it mirrors the
+# console script's own situation directly and carries no interpreter-version
+# caveat.) `cd` happens in SUBSHELLS so the script's own cwd never moves.
 set +e
-SITE_PACKAGES="$(env -u PYTHONPATH -u PYTHONHOME "$VENV/bin/python" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
+SITE_PACKAGES="$(cd "$WORK" && env -u PYTHONPATH -u PYTHONHOME "$VENV/bin/python" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
 rc=$?
 set -e
 if [ "$rc" -ne 0 ] || [ -z "$SITE_PACKAGES" ]; then
@@ -165,7 +191,7 @@ if [ "$rc" -ne 0 ] || [ -z "$SITE_PACKAGES" ]; then
 fi
 
 set +e
-RESOLVED_A="$(env -u PYTHONPATH -u PYTHONHOME "$VENV/bin/python" -c 'import sbom_survey; print(sbom_survey.__file__)')"
+RESOLVED_A="$(cd "$WORK" && env -u PYTHONPATH -u PYTHONHOME "$VENV/bin/python" -c 'import sbom_survey; print(sbom_survey.__file__)')"
 rc=$?
 set -e
 if [ "$rc" -ne 0 ]; then
@@ -198,11 +224,14 @@ case "$RESOLVED_A" in
 esac
 
 # --- 6b. RUN A — the INSTALLED path, the real entry point -----------------------
-# `env -u PYTHONPATH -u PYTHONHOME` per-invocation: the same scrubbed environment
-# the assertion above was made under, so what was proved is what runs.
+# Same scrubbed environment AND same neutral cwd the assertion above was made
+# under, so what was proved is exactly what runs. RUN A is in fact already
+# cwd-immune (a script run by path never puts cwd on `sys.path`), but it is run
+# from `$WORK` anyway so the probe and the run are not merely equivalent by
+# argument — they are identical by construction.
 echo "smoke: RUN A — installed console script"
 set +e
-env -u PYTHONPATH -u PYTHONHOME "$CONSOLE" --repo "$REPO" --offline --out "$OUT_INSTALLED"
+( cd "$WORK" && env -u PYTHONPATH -u PYTHONHOME "$CONSOLE" --repo "$REPO" --offline --out "$OUT_INSTALLED" )
 rc_a=$?
 set -e
 if [ "$rc_a" -ne 0 ]; then
@@ -226,8 +255,15 @@ fi
 # Without this, RUN B could silently still be the installed copy and the
 # byte-identity check below would be vacuously true. The mirror image of §6a:
 # there the repo must NOT be on the import path, here it must be.
+#
+# Neutral cwd here too, and here it is not merely hygiene: `python -m` DOES put
+# cwd on `sys.path` (unlike a script run by path), so RUN B is genuinely
+# cwd-sensitive. Running probe and run from `$WORK` makes `PYTHONPATH="$PROJECT"`
+# the one and only reason the package is importable — which is the thing being
+# asserted. Run from `scripts/sbom-survey`, cwd would supply the same tree and
+# the assertion would pass for a reason it had not tested.
 set +e
-RESOLVED="$(PYTHONPATH="$PROJECT" "$VENV/bin/python" -c 'import sbom_survey; print(sbom_survey.__file__)')"
+RESOLVED="$(cd "$WORK" && PYTHONPATH="$PROJECT" "$VENV/bin/python" -c 'import sbom_survey; print(sbom_survey.__file__)')"
 rc=$?
 set -e
 if [ "$rc" -ne 0 ]; then
@@ -251,7 +287,7 @@ esac
 # --- 7b. RUN B — the SOURCE-TREE path ------------------------------------------
 echo "smoke: RUN B — source tree via python -m sbom_survey"
 set +e
-PYTHONPATH="$PROJECT" "$VENV/bin/python" -m sbom_survey --repo "$REPO" --offline --out "$OUT_SOURCE"
+( cd "$WORK" && PYTHONPATH="$PROJECT" "$VENV/bin/python" -m sbom_survey --repo "$REPO" --offline --out "$OUT_SOURCE" )
 rc_b=$?
 set -e
 if [ "$rc_b" -ne 0 ]; then
@@ -305,7 +341,7 @@ done
 # `json` (no jq dependency). A survey that found nothing must never PASS.
 set +e
 COMPONENTS="$(
-    "$VENV/bin/python" - "$OUT_INSTALLED/staleness.json" <<'PY'
+    cd "$WORK" && "$VENV/bin/python" - "$OUT_INSTALLED/staleness.json" <<'PY'
 import json
 import sys
 
