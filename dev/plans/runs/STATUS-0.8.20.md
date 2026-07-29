@@ -42,7 +42,7 @@ step 24). Ledger tip **`3264114a`** (steward seq-98).
 | **Slice in flight** | **NONE — Slice 23 LANDED (`30102ecd`, tip `3a6bdd8e`).** R-20-SV closed both legs — the **`fts`/`vector` reject** (`EngineError::WriteValidation`, before any mutation; 9 shipped tests converted, the TC-71 runtime gate PRESERVED for legacy DBs, all three interface docs updated incl. the **overruled** accept-inert precedent) and the **TC-90/TC-91 characterization ONLY — `lib.rs` byte-identical across leg 2**, Steward-verified. **7 codex rounds, 4 fix rounds**, round-6 Steward check-in ruled at `seq-148`. **🔴 ALLOWLIST DELTA ZERO — and FINAL: 23 was the last unit that could move the surface.** Prior: 22 (`572475f2`, §19), 21 (`77be504b`, §18), 30 (`9b3ed0e3`, §17 — publish precondition), 25, 20c. |
 | **Status** | **Slices 0, 5, 10, 15 all COMPLETE and LANDED on `origin/main`** (header table). The keystone landed **R-20-PR + R-20-EAV + `filterable` pre-KNN + TC-33 + TC-34 + Finding-1 (A) + `#[non_exhaustive] SearchFilter`**; codex §9 **terminal-clean**; gates re-verified by the Steward (clippy 0, check 0, (A) pin 1/1, AC-041 3/3). **SCHEMA 24.** |
 | **Unblocks** | <!-- BEGIN GENERATED release-state:0.8.20:status-unblocks -->**Slices 31 are NOW UNBLOCKED** — the Slice 23 landing (R-20-SV) and the Slice 31 re-scope (steward seq-153) (21, 22 and 23 have all LANDED and the publish precondition (Slice 30) is SATISFIED, so Slice 31 — re-scoped by the HITL on 2026-07-29 to the SBOM-tool spec+design+RED-tests leg — is next in the sequential order. 32 depends on 31 and 33 on 32; neither is unblocked yet.) now exists. Slice 30 (H7) depends on 10/15/20/25. **AC-079 is PRE-SIGNED** — the HITL signed off on the accumulated governed-surface delta (Slices 5d + 10b + 15b + 15d) on 2026-07-25 (master F-34), pinned to the content of `src/conformance/governed-surface-allowlist.json`; any diff to that file re-opens it (the T1e pin). Pre-signing is NOT minting: AC-079 is minted and recorded as SIGNED at Slice 40 (§4 #1). **Publish is gated by the separate HITL publish gate, not by this AC.**<!-- END GENERATED release-state:0.8.20:status-unblocks --> |
-| **Immediate next action** | **🔴 THE BATCHED GOVERNED-SURFACE DECISION IS NOW DUE — it is an HITL gate and it is taken at the CLOSE OF SLICE 23** (`seq-141`), which has landed. **Its input is COMPLETE AND FINAL: Slices 22 and 23 BOTH contributed a ZERO delta** (allowlist byte-identical, pin green at 30/5/5, never tripped), and **23 was the last unit that could move the surface** — neither Slice 31 (a dependency sweep cannot add a verb) nor DOC-HYGIENE-3 (docs/tooling) can. So the delta to weigh is **exactly the accumulated Slices 20/25/30 delta, unchanged**, plus the **TC-52 `_comment` re-pin**. **Non-blocking:** Slices 31/32/33 and DOC-HYGIENE-3 may proceed while it sits with the HITL; **Slice 40 depends on it** (AC-079 mints pinned to the allowlist content). **THEN: 31 → 32 → 33 → DOC-HYGIENE-3 → 40** (`seq-153`). **Library Sweep #3 is RE-SCOPED to a TOOL** — an isolated CycloneDX-JSON SBOM + version-diff mini-project under `scripts/`, built across three legs (**31** req/AC/design/RED tests · **32** code · **33** run-and-survey), none carrying an `R-20-xx` id (TC-76 precedent), specified at `plan-0.8.20.md` **§3a**. ⚠ **No leg applies a dependency bump or edits a manifest or lockfile in 0.8.20** — the survey is an **input to 0.8.22**, which now also owns the **`sqlite-vec` 0.1.9** bump (`seq-151`, and it must move **with** the `tc76_vec0_long_metadata_delete.rs` tripwire) and the **six Dependabot advisories** (`seq-152`). **DOC-HYGIENE-3** scope = TC-53 + TC-88 + TC-89 + TC-92 + TC-94 (`seq-137`/`seq-138`); **TC-100 placement is an open HITL call**. **Deferred past 23, now due for the HITL: TC-98** (does `#18`'s one named exception satisfy "one family"). **Commission via `scripts/commission-manifest.sh 0.8.20 31`** — it now supports curated `design_refs` (`d30ef52f`), so a reserved-gap slice no longer hard-fails the TC-37 guard. |
+| **Immediate next action** | **✅ The batched governed-surface decision is SIGNED** (`seq-157`) — cite it, never re-open it. **PUBLISH is now the ONLY unruled decision.** **Sequence: 31 → 32 → 33 → DOC-HYGIENE-3 → 40** (`seq-153`). **Library Sweep #3 is RE-SCOPED to a TOOL** — an isolated CycloneDX-JSON SBOM + version-diff mini-project under `scripts/`, three legs (**31** req/AC/design/RED tests · **32** code · **33** run-and-survey), no `R-20-xx` id on any. **Full spec: `plan-0.8.20.md` §3a.** ⚠ **No leg applies a dependency bump or edits a manifest/lockfile in 0.8.20** — the survey is an input to **0.8.22**, which also owns `sqlite-vec` 0.1.9 (`seq-151`), the six Dependabot advisories (`seq-152`) and the TC-103 error-taxonomy review (`seq-156`). **DOC-HYGIENE-3** = TC-53 + TC-88 + TC-89 + TC-92 + TC-94 + TC-100 (six ids, `seq-155`). **Commission via `scripts/commission-manifest.sh 0.8.20 <slice>`.** |
 
 **Slices 0, 5, 10, 15 close records** are §11 (Slice 5), §12 (Slice 10), §13 (Slice 15b — TC-34 only; the
 registry/EAV/TC-33 remainder that also landed in the keystone `a2022957` is summarised in §8 and in
@@ -144,26 +144,36 @@ Everything else is tracked by **requirement id + TDD test name** per the locked-
 > `seq-106` ruling 5): Memex adapts to 0.8.20's surface and **no confirmation is to be sought**. The rows are
 > retained as the decision record; **do not act on them as open**.
 >
-> **THE LIVE OPEN SET IS EXACTLY <!-- BEGIN GENERATED release-state:0.8.20:status-live-open-count -->FOUR<!-- END GENERATED release-state:0.8.20:status-live-open-count -->** (was TWO until 2026-07-29 — the count is
+> **THE LIVE OPEN SET IS EXACTLY <!-- BEGIN GENERATED release-state:0.8.20:status-live-open-count -->ONE<!-- END GENERATED release-state:0.8.20:status-live-open-count -->** (was TWO until 2026-07-29 — the count is
 > generated from `decisions.unruled`. It went TWO → SIX on 2026-07-29 when four HITL items that had existed
 > only in the ledger and in session transcripts were written INTO the single writer at `seq-150` — **the
-> count grew because the record got honest, not because new work appeared** — then SIX → FOUR later the same
-> day when the HITL ruled **TC-76** (`seq-151`) and **TC-93** (`seq-152`)):
+> count grew because the record got honest, not because new work appeared** — then SIX → **ONE** across that
+> same day as the HITL ruled five of them: `seq-151`, `seq-152`, `seq-155`, `seq-156`, `seq-157`):
 >
-> 1. **Batched governed-surface decision** — 🔴 **DUE NOW.** Taken at the **close of Slice 23** (`seq-141`,
->    superseding `seq-134`/`seq-140`), which LANDED at `30102ecd`. **Input is COMPLETE AND FINAL: Slices 22
->    and 23 both contributed a ZERO delta**, and 23 was the last unit that could move the surface. What is
->    left to weigh is exactly the accumulated **20/25/30** delta, unchanged, plus the **TC-52 `_comment`
->    re-pin**. Non-blocking for 31 / DOC-HYGIENE-3; **Slice 40 depends on it**.
-> 2. **PUBLISH** (Slice 40) — the only **`halts_run: true`** item. HITL prefers publish-after-40 and
->    explicitly deferred (`seq-135`); **not a ruling, and not authorization to bump a manifest or cut a tag**.
-> 3. **TC-98** — does `#18`'s one named exception satisfy "one family"? Deferred past Slice 23 (`seq-143`);
->    **23 has landed, so it is due**. Retrospective about the landed Slice 22.
-> 4. **TC-100 placement** — a sixth id on DOC-HYGIENE-3, whose scope was ruled at five (`seq-137`/`seq-138`).
+> 1. **PUBLISH** (Slice 40) — the only remaining item, and the only **`halts_run: true`** one. HITL prefers
+>    publish-after-40 and explicitly deferred (`seq-135`); **not a ruling, and not authorization to bump a
+>    manifest or cut a tag.**
 >
-> **CLOSED 2026-07-29 — cited, not re-opened:** **`sqlite-vec` 0.1.9 (TC-76)** ruled at **`seq-151`** (hold
-> at `=0.1.7` for 0.8.20; the 0.1.9 bump lands at **0.8.22** with `rusqlite 0.31→0.40`) · **TC-93** ruled at
-> **`seq-152`** (publish with the six advisories open, no Slice 4x; the advisories land at **0.8.22**).
+> **CLOSED 2026-07-29 — cited, never re-opened, never re-confirmed:**
+>
+> - **Batched governed-surface — SIGNED** at **`seq-157`**. The delta: **7 net-new allowlist members = 4
+>   logical verbs** (`erase_source`/`eraseSource` · `read.crossed_boundary_since`/`read.crossedBoundarySince`
+>   · `configure_projections`/`configureProjections` · `read.projections`) plus non-command types;
+>   **`recovery_denylist` UNCHANGED at five** (AC-041 unaffected); `excise_source` stays CLI-only.
+>   **AC-079 mints at Slice 40**, still pinned to this content — any diff re-opens it (T1e). ⚠ **PUBLISH IS
+>   NOT AUTHORIZED BY THIS SIGNATURE.** ⚠ **OWED:** the `_comment` still reads `AWAITING HITL SIGN-OFF, NOT
+>   SIGNED` ×4; the fix needs a coordinated re-issue of `scripts/governed-surface-pin.json` and is **HELD
+>   until Slice 31 lands** (its orchestrator is in flight, briefed to halt-and-escalate on any allowlist
+>   change).
+> - **TC-98 — (a) FOR NOW** at **`seq-156`**. Accept `#18`'s one named exception. Nothing reclassified,
+>   nothing minted, governed surface unchanged. **ACCEPTED, NOT ENDORSED — revisit at 0.8.22 as `TC-103`**,
+>   bundled with the `EngineError` `#[non_exhaustive]` question and the sibling-condition asymmetry.
+> - **`sqlite-vec` 0.1.9 (TC-76)** at **`seq-151`** — hold at `=0.1.7`; the 0.1.9 bump lands at **0.8.22**
+>   with `rusqlite 0.31→0.40`.
+> - **TC-93** at **`seq-152`** — publish with the six advisories open, no Slice 4x; they land at **0.8.22**.
+> - **TC-100 placement** at **`seq-155`** — **joins DOC-HYGIENE-3 as a SIXTH id** (TC-53, TC-88, TC-89,
+>   TC-92, TC-94, **TC-100**); **DoD consequence: DOC-HYGIENE-3 must verify with a before/after citation-set
+>   diff across the landed slices.**
 >
 > Reserved-gap band overflow (`plan-0.8.20.md` §5) still halts. Authorization: master **F-34** · plan §11's
 > 2026-07-25 rulings block. **`seq-106`'s "two stops remain" is HISTORICAL** — it was true of the ladder

@@ -1,7 +1,7 @@
 ---
 name: orchestrator
 description: FathomDB release orchestrator — coordinates TDD implementer subagents working in git worktrees. The main thread plays this role — it plans slices, launches implementers, verifies results from git, runs the codex §9 review gate, and lands slices. It does NOT implement code itself.
-tools: Read, Bash, Grep, Glob, Agent, Task
+tools: Read, Bash, Grep, Glob, Agent, Task, SendMessage
 model: inherit
 color: green
 hooks:
