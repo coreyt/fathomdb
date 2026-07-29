@@ -88,6 +88,27 @@ const VECTOR_EQUIVALENCE_L2_EPSILON: f32 = 1e-5;
 /// tolerated Phase-1 mean-centered `embedding_bin` sign-flip count across all 45
 /// probes. `0` = exact: any single flip ⇒ divergence ⇒ dense refused.
 const VECTOR_EQUIVALENCE_P1_FLIP_FLOOR: u64 = 0;
+
+/// 0.8.20 Slice 22 (TC-68) — `_fathomdb_open_state` key holding the
+/// [`probe_verification_fingerprint`] of the last open at which the
+/// vector-equivalence probe actually RAN and PASSED on this workspace. An open
+/// whose freshly computed fingerprint equals this value reuses that verdict and
+/// performs ZERO probe embeds; anything else re-runs the full probe.
+///
+/// It lives in `_fathomdb_open_state` — the engine's existing open-time
+/// durable-marker KV table (migration step 1) — alongside
+/// [`SEARCH_INDEX_TOKENIZER_REPROJECT_MARKER_KEY`] and
+/// [`EDGE_VECTOR_PRUNE_MARKER_KEY`], which is exactly this shape of state. So
+/// TC-68 adds **no** table, **no** migration step and **no** `SCHEMA_VERSION`
+/// bump: an old DB simply has no row here and re-runs the probe once.
+const VECTOR_EQUIVALENCE_VERDICT_CACHE_KEY: &str = "vector_equivalence_verified_fingerprint";
+
+/// 0.8.20 Slice 22 (TC-68) — recipe tag mixed into every verdict fingerprint.
+/// **Bump it whenever the SET of fingerprint inputs changes.** Every cached
+/// verdict in the field then stops matching and the probe re-runs once per
+/// workspace — the fail-SAFE direction, and the reason a stale recipe can never
+/// silently keep vouching for a narrower check than the current build performs.
+const VECTOR_EQUIVALENCE_FINGERPRINT_RECIPE: &str = "fathomdb-veq-verdict-v1";
 /// Default drain budget for `rebuild_projections` / `rebuild_vec0`. The
 /// rebuild path freezes the scheduler before truncating shadow rows, so
 /// the only outstanding work is whatever workers were mid-flight when
@@ -4005,6 +4026,51 @@ pub struct ProjectionDelta {
     /// True iff nothing was built, dropped, or newly deferred — the whole apply
     /// diffed to a no-op.
     pub unchanged: bool,
+    /// 0.8.20 Slice 22 (R-20-VC / **TC-67**) — **node KINDS, not attribute
+    /// names.** The vector-eligible node kinds present in the corpus that the
+    /// vector writer can NEVER commit, so no `searchable→vector` declaration
+    /// will ever produce an embedding for them.
+    ///
+    /// # Why this field exists — the silence it replaces
+    ///
+    /// [`kind_is_vector_committable`] (Slice 20c fix-2) restricted enrolment to
+    /// the kinds [`resolve_source_type`] maps, because enrolling any other kind
+    /// is a permanent liveness wedge. That fix was correct and is unchanged —
+    /// but it made the exclusion **silent**: the declaration persists, its name
+    /// is pushed onto [`ProjectionDelta::deferred`], and the caller cannot tell
+    /// "waiting on the embedder" (transient) from "this kind will never be
+    /// embedded" (permanent). Per the HITL ruling on TC-67 the remedy is
+    /// option **(c) REPORT** — the vocabulary is NOT grown and the Pack-1 D3
+    /// partition-key lock is NOT touched (`dev/design/0.7.0-vector-quant-pack1.md`).
+    ///
+    /// # Axis, and why the name is what it is
+    ///
+    /// `built` / `dropped` / `deferred` are all lists of **projection attribute
+    /// names**. This one is a list of **node kinds** — a different axis entirely,
+    /// so the name says `kinds` explicitly and is prefixed `vector_` to bind it
+    /// to the dense arm (an unsupported kind is still fully FTS/lexically
+    /// searchable). Sorted and de-duplicated (`SELECT DISTINCT … ORDER BY kind`).
+    ///
+    /// # It is a STATE report, not a diff
+    ///
+    /// Unlike the other three vectors it does not describe what this call
+    /// changed; it describes the corpus as it stands. So it is populated on an
+    /// idempotent re-apply too (where `unchanged == true` and the other three
+    /// are empty), and it deliberately does NOT feed [`ProjectionDelta::unchanged`].
+    /// That is what makes the declare-time residual cheap to live with: to
+    /// refresh the report after writing new kinds, re-apply the same spec — a
+    /// no-op that still returns a current report.
+    ///
+    /// # Independent of the embedder
+    ///
+    /// Computed whenever a `searchable→vector` projection is declared, whether
+    /// or not this session has a live embedder. The vocabulary is static, so
+    /// "this kind can never be embedded" is true in a no-embedder session too —
+    /// and must not be conflated with the Q6a graceful-absent deferral, which is
+    /// transient and is reported through `deferred`.
+    ///
+    /// Empty (never absent) when there is nothing to report.
+    pub vector_unsupported_kinds: Vec<String>,
 }
 
 /// 0.8.20 Slice 5b (R-20-E7) — outcome of
@@ -5873,9 +5939,9 @@ impl Engine {
     ) -> Result<(), EngineError> {
         tx.execute("DELETE FROM search_index_edges WHERE write_cursor = ?1", [cursor])
             .map_err(|_| EngineError::Storage)?;
-        // vec0 rowid is the canonical row's write_cursor.
-        tx.execute("DELETE FROM vector_default WHERE rowid = ?1", [cursor])
-            .map_err(|_| EngineError::Storage)?;
+        // vec0 rowid is the canonical row's write_cursor. TC-76: via the one
+        // vec0-delete primitive ([`delete_vector_partition_row`]).
+        delete_vector_partition_row(tx, cursor).map_err(|_| EngineError::Storage)?;
         tx.execute("DELETE FROM _fathomdb_vector_rows WHERE write_cursor = ?1", [cursor])
             .map_err(|_| EngineError::Storage)?;
         if !keep_terminal {
@@ -9618,8 +9684,10 @@ fn run_pin_and_requantize_pass(
             .map_err(|_| EngineError::Storage)?
         };
 
-        tx.execute("DELETE FROM vector_default WHERE rowid = ?1", params![rowid])
-            .map_err(|_| EngineError::Storage)?;
+        // TC-76: the attr VALUES were read above, so neutralizing them inside
+        // [`delete_vector_partition_row`] cannot lose them; the re-INSERT below
+        // re-binds `attr_vals` verbatim.
+        delete_vector_partition_row(tx, *rowid).map_err(|_| EngineError::Storage)?;
 
         // Slice 10 / G10 — `status` ships the empty-string sentinel (vec0 TEXT
         // metadata is NOT NULL-able).
@@ -13439,8 +13507,9 @@ fn prune_orphaned_edge_vectors(connection: &Connection) -> rusqlite::Result<()> 
         for rowid in vec_rowids {
             if !sidecar.contains(&rowid) {
                 // vec0 rowid IS the canonical write_cursor; delete by rowid (the
-                // proven vec0 delete form, as `prune_edge_projection_shadows`).
-                connection.execute("DELETE FROM vector_default WHERE rowid = ?1", [rowid])?;
+                // proven vec0 delete form, as `prune_edge_projection_shadows`),
+                // through the one TC-76-safe vec0-delete primitive.
+                delete_vector_partition_row(connection, rowid)?;
             }
         }
         connection.execute(
@@ -14733,6 +14802,93 @@ fn actual_vector_attr_columns(conn: &Connection) -> rusqlite::Result<Vec<String>
     Ok(cols)
 }
 
+/// TC-76 (sqlite-vec issue **#99**) — **the** way to delete ONE `vector_default`
+/// row by rowid. Every by-rowid vec0 delete in this crate goes through here.
+///
+/// # The upstream defect this works around
+///
+/// A vec0 plain-TEXT metadata column stores a 16-byte inline view per row: a
+/// 4-byte length plus the first 12 bytes of the value
+/// (`VEC0_METADATA_TEXT_VIEW_DATA_LENGTH`). A value longer than those 12 bytes
+/// ALSO gets a row in the `<tbl>_metadatatext<NN>` shadow table.
+///
+/// In `sqlite-vec` `=0.1.7`, `vec0Update_Delete_ClearMetadata`
+/// (`sqlite-vec.c:8888`) deletes that shadow row (`sqlite-vec.c:8934-8952`) and
+/// then returns `sqlite3_step`'s `SQLITE_DONE` (101) verbatim — it never resets
+/// `rc` to `SQLITE_OK`. `vec0Update_Delete` (`sqlite-vec.c:9027`) reads
+/// `101 != SQLITE_OK` as a failure and aborts the entire `DELETE`. The
+/// INSERT/UPDATE twin of that code (`sqlite-vec.c:8258-8320`) is saved by an
+/// unconditional `rc = sqlite3_blob_close(...)` after its switch, which is why
+/// only DELETE carries the defect — and why the neutralizing `UPDATE` below is a
+/// sound workaround rather than the same bug by another name.
+///
+/// # Why FathomDB is exposed
+///
+/// `vector_default` carries three plain-TEXT metadata columns
+/// ([`vector_partition_create_sql`]): `kind`, `status` and one `attr_<hex>` per
+/// declared `filterable` projection. Only the `attr_*` VALUES are caller-supplied
+/// and unbounded, and Slice 15e stores them marker-encoded (`\x01 || V`), so a
+/// raw attribute value of **12 or more UTF-8 bytes** trips #99 and makes
+/// `erase_source` / `purge` / edge supersession / the open-path orphan sweep fail
+/// with [`EngineError::Storage`], leaving the row AND its shadowed value at rest.
+/// `kind` is bounded to `resolve_source_type`'s locked vocabulary (max 9 bytes)
+/// at every enrolment door via [`kind_is_vector_committable`], and `status` ships
+/// the `''` sentinel — so neither needs neutralizing, and neither is touched.
+///
+/// # The workaround
+///
+/// Blank the `attr_*` columns FIRST. vec0's UPDATE path takes the `n <= 12 &&
+/// prev_n > 12` branch (`sqlite-vec.c:8300-8319`), which deletes the shadow row
+/// AND returns `SQLITE_OK`, then the DELETE no longer has an over-length value to
+/// clear. Measured: the `embedding` bytes and the other metadata columns survive
+/// the metadata-only UPDATE verbatim, and the `_metadatatext<NN>` row is gone —
+/// so this is erasure-COMPLETE, not merely error-suppressing.
+///
+/// Pinned by `tests/tc76_vec0_long_metadata_delete.rs`, whose bare-vec0 test is
+/// the tripwire: it fails once `sqlite-vec` ships a fix for #99, which is the
+/// signal to delete the neutralize step.
+///
+/// A no-op UPDATE (no `attr_*` columns declared — every corpus before a
+/// `filterable` projection exists) is skipped entirely, so the shipped
+/// no-projection path issues the same single `DELETE` it always did.
+fn delete_vector_partition_row(conn: &Connection, rowid: i64) -> rusqlite::Result<usize> {
+    neutralize_vector_partition_attr_values(conn, Some(rowid))?;
+    conn.execute(&format!("DELETE FROM {DEFAULT_VECTOR_PARTITION} WHERE rowid = ?1"), [rowid])
+}
+
+/// TC-76 (sqlite-vec **#99**) — blank every `attr_<hex>` value on `vector_default`
+/// (one row when `rowid` is `Some`, the whole table when `None`) so that a
+/// following `DELETE` never has an over-length TEXT metadata value to clear. See
+/// [`delete_vector_partition_row`] for the mechanism and the evidence.
+///
+/// A pure no-op when no `filterable` projection is declared — which is every
+/// corpus that predates Slice 15e — so the shipped delete paths issue exactly the
+/// statements they always did.
+fn neutralize_vector_partition_attr_values(
+    conn: &Connection,
+    rowid: Option<i64>,
+) -> rusqlite::Result<()> {
+    let attr_cols = actual_vector_attr_columns(conn)?;
+    if attr_cols.is_empty() {
+        return Ok(());
+    }
+    // `attr_cols` are `^attr_[0-9a-f]+$` identifiers derived by
+    // `attr_vec0_column`, never caller text: safe to interpolate.
+    let sets = attr_cols.iter().map(|c| format!("{c}=''")).collect::<Vec<_>>().join(", ");
+    match rowid {
+        Some(rowid) => {
+            conn.execute(
+                &format!("UPDATE {DEFAULT_VECTOR_PARTITION} SET {sets} WHERE rowid = ?1"),
+                [rowid],
+            )?;
+        }
+        None => {
+            conn.execute(&format!("UPDATE {DEFAULT_VECTOR_PARTITION} SET {sets}"), [])?;
+        }
+    }
+    Ok(())
+}
+
 /// 0.8.20 Slice 15e — reconcile the live `vector_default` attribute columns with
 /// the registry's `filterable` set (TC-46: HITL-ratified NON-DESTRUCTIVE reshape,
 /// following the shipped `migrate_vector_partition_pack1_to_pack2` precedent).
@@ -15265,14 +15421,199 @@ fn probe_populate_baseline(
     Ok(())
 }
 
+/// 0.8.20 Slice 22 (TC-68) — one row of the stored probe baseline:
+/// `(probe_ordinal, probe_text, reference_vec, embedder_name, embedder_revision, dim)`.
+type StoredProbeRow = (i64, String, Vec<u8>, String, String, i64);
+
+/// 0.8.20 Slice 22 (TC-68) — length-prefixed field feed for the verdict
+/// fingerprint. The `u64` length prefix makes the concatenation UNAMBIGUOUS: two
+/// different input tuples can never produce the same byte stream by sliding a
+/// delimiter (e.g. name `"ab"` + revision `"c"` vs name `"a"` + revision `"bc"`).
+fn hash_fingerprint_field(hasher: &mut Sha256, bytes: &[u8]) {
+    hasher.update((bytes.len() as u64).to_le_bytes());
+    hasher.update(bytes);
+}
+
+/// 0.8.20 Slice 22 (TC-68) — the **embedder-identity fingerprint** the cached
+/// equivalence verdict is keyed on: a SHA-256 over EVERY input the probe's verdict
+/// depends on. Two opens sharing a fingerprint would, by construction, compute the
+/// same P1/P2 answer, so the second may reuse the first's.
+///
+/// The inputs, and why each is load-bearing:
+///
+/// - **the recipe tag** ([`VECTOR_EQUIVALENCE_FINGERPRINT_RECIPE`]) — bumping it
+///   invalidates every cached verdict in the field at once;
+/// - **`identity.{name, revision, dimension}`** — the nominal embedder. This is
+///   *defence in depth only*: `check_embedder_profile` already REFUSES the open
+///   with `EmbedderIdentityMismatch`/`EmbedderDimensionMismatch` before the probe
+///   is reached, so an identity change is never observed here in practice;
+/// - **the live pinned `mean_vec`** (and whether centering is applied at all) —
+///   this one is NOT optional. P1 quantizes through
+///   `vec_quantize_binary(sign(x − mean_vec))`, so rewriting the pinned mean
+///   changes the verdict *for the same embedder and the same baseline*. A
+///   fingerprint over the identity triple alone would be stale by construction,
+///   because open-time mean-recovery/requantize and the operator `recompute_mean`
+///   verb both rewrite it;
+/// - **the committed probe fixture** — a cached verdict computed over a different
+///   probe set means nothing. (`vector_equivalence_probe_fixture_drift.rs` does
+///   NOT make this redundant: it pins the engine's copy equal to the embedder
+///   crate's copy — it guards COPY drift between two committed files, not the
+///   fixture's content across releases. The stored-baseline completeness check
+///   below does fail closed first on a fixture edit, so this input is belt-and-
+///   braces rather than the only guard; it is one hash of a ~3 KB constant.);
+/// - **both D4 floors** — a verdict that passed under a loose ε must not be
+///   inherited by a build that tightened it;
+/// - **the STORED baseline rows, reference blobs included** — the 0.8.18 fix-2
+///   completeness check pins each row's shape (count, ordinal, text, blob LENGTH,
+///   identity) but not the blob CONTENT, which the re-embed comparison used to
+///   catch. Hashing the blobs keeps that external-tamper closure intact at
+///   negligible cost (~69 KB of SHA-256 against 45 model invocations).
+fn probe_verification_fingerprint(
+    identity: &EmbedderIdentity,
+    mean_vec: Option<&[f32]>,
+    stored: &[StoredProbeRow],
+) -> String {
+    let mut hasher = Sha256::new();
+    hash_fingerprint_field(&mut hasher, VECTOR_EQUIVALENCE_FINGERPRINT_RECIPE.as_bytes());
+    hash_fingerprint_field(&mut hasher, identity.name.as_bytes());
+    hash_fingerprint_field(&mut hasher, identity.revision.as_bytes());
+    hash_fingerprint_field(&mut hasher, &identity.dimension.to_le_bytes());
+    match mean_vec {
+        Some(mean) => {
+            hash_fingerprint_field(&mut hasher, b"mean-centered");
+            hash_fingerprint_field(&mut hasher, &encode_vector_blob(mean));
+        }
+        None => hash_fingerprint_field(&mut hasher, b"un-centered"),
+    }
+    hash_fingerprint_field(&mut hasher, VECTOR_EQUIVALENCE_PROBE_FIXTURE.as_bytes());
+    hash_fingerprint_field(&mut hasher, &VECTOR_EQUIVALENCE_P1_FLIP_FLOOR.to_le_bytes());
+    hash_fingerprint_field(&mut hasher, &VECTOR_EQUIVALENCE_L2_EPSILON.to_le_bytes());
+    hash_fingerprint_field(&mut hasher, &(stored.len() as u64).to_le_bytes());
+    for (ordinal, probe_text, reference_vec, name, revision, dim) in stored {
+        hash_fingerprint_field(&mut hasher, &ordinal.to_le_bytes());
+        hash_fingerprint_field(&mut hasher, probe_text.as_bytes());
+        hash_fingerprint_field(&mut hasher, reference_vec);
+        hash_fingerprint_field(&mut hasher, name.as_bytes());
+        hash_fingerprint_field(&mut hasher, revision.as_bytes());
+        hash_fingerprint_field(&mut hasher, &dim.to_le_bytes());
+    }
+    hasher.finalize().iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// 0.8.20 Slice 22 (TC-68) — is `fingerprint` the fingerprint under which the
+/// probe last RAN and PASSED on this workspace?
+///
+/// Fail-SAFE against ACCIDENT (R-VEQ-4): **every** failure mode answers `false`,
+/// which means "run the probe". A missing `_fathomdb_open_state` table, an absent
+/// row, a non-TEXT value, a truncated or garbled value, a stale fingerprint, any
+/// SQL error — none of them can be mistaken for a pass.
+///
+/// # What a `true` does and does not mean (fix-1, codex §9 round 2 [P1])
+///
+/// `true` means: **the fingerprint inputs are unchanged since *some* engine
+/// recorded a pass.** It does NOT mean "this engine verified this backend", and it
+/// cannot: the fingerprint is a SHA-256 over deterministic, publicly derivable DB
+/// and build inputs, so an actor with write access to the file can compute the
+/// current digest and write it here, skipping the 45-probe verification. This
+/// marker is not — and cannot be — an authenticated attestation; an embedded
+/// local-first engine holds no secret with which to authenticate one, and a salt
+/// would be readable by the same actor.
+///
+/// The same actor also defeats the same arm through the **pre-slice** path, by
+/// re-baselining `_fathomdb_embed_probe`'s `reference_vec` blobs to their drifted
+/// backend's own output — the probe then runs in full and verifies the drifted
+/// backend against itself. Measured by
+/// `tests/tc68_probe_fingerprint_cache.rs::a_forged_stored_baseline_defeats_the_probe_even_when_it_fully_runs`
+/// (marker deleted, all 45 embeds performed, dense still enabled), with the
+/// un-forged control caught.
+///
+/// **That is the same actor, NOT the same cost, and fix-2 struck the claim that it
+/// was.** Forging this marker needs only a publicly computable digest — usually the
+/// value already sitting in the row. Re-baselining additionally needs the target
+/// backend's 45 exact embeddings, encoded into every row. **So the cache IS a
+/// cheaper bypass** for a writer of the database file.
+///
+/// What bounds it is the ruled residual, not this marker. A same-identity backend
+/// drift moves no fingerprint input, so a marker recorded by an **honest** earlier
+/// open already skips the probe and already serves the drifted backend, with no
+/// forgery anywhere
+/// (`residual_same_identity_backend_drift_is_not_caught_on_a_cached_open`). Forgery
+/// adds capability only on an open where no valid marker exists for the *current*
+/// fingerprint — and a digest is valid only for the state it was computed over, so
+/// it stops working at the next change to any fingerprint input.
+///
+/// The equivalence probe is a **correctness self-check against backend drift, not
+/// tamper evidence**; `dense_disabled` is not a tamper signal. Threat model, with
+/// the concession and the bound: §8.4/§8.5 of
+/// `dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`.
+fn probe_verification_is_cached(connection: &Connection, fingerprint: &str) -> bool {
+    connection
+        .query_row(
+            "SELECT value FROM _fathomdb_open_state WHERE key = ?1",
+            [VECTOR_EQUIVALENCE_VERDICT_CACHE_KEY],
+            |row| row.get::<_, String>(0),
+        )
+        .map(|cached| cached == fingerprint)
+        .unwrap_or(false)
+}
+
+/// 0.8.20 Slice 22 (TC-68) — record that the probe RAN and PASSED under
+/// `fingerprint`.
+///
+/// A write failure is deliberately SWALLOWED rather than turned into a verdict
+/// failure. The arm has just been verified, so refusing dense because a marker
+/// could not be persisted (read-only file, disk full) would be a false refusal;
+/// and the consequence of the missing marker is simply that the next open re-runs
+/// the probe — more work, never less. That is the fail-safe direction.
+fn record_probe_verification(connection: &Connection, fingerprint: &str) {
+    let _ = connection.execute(
+        "INSERT INTO _fathomdb_open_state(key, value) VALUES(?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![VECTOR_EQUIVALENCE_VERDICT_CACHE_KEY, fingerprint],
+    );
+}
+
+/// 0.8.20 Slice 22 (TC-68) — drop any cached verdict.
+///
+/// Called on EVERY failure path of the check, so a workspace that could not be
+/// verified never carries a marker a later open might match. A failing verdict is
+/// therefore never cached: the probe re-runs each open until it passes again.
+fn clear_probe_verification(connection: &Connection) {
+    let _ = connection.execute(
+        "DELETE FROM _fathomdb_open_state WHERE key = ?1",
+        [VECTOR_EQUIVALENCE_VERDICT_CACHE_KEY],
+    );
+}
+
 /// 0.8.18 Slice 5 — SUBSEQUENT open: re-embed the 45 probes and assert BOTH
 /// dense-pipeline representations against the stored references — **(P1)** the
 /// mean-centered `embedding_bin` sign-flip count (floor 0, exact) and **(P2)** the
-/// un-centered Phase-2 L2 (within `VECTOR_EQUIVALENCE_L2_EPSILON`). Fail-SAFE
-/// (fix-1 DEFECT #1): a probe embed that panics/errors/returns wrong-dim, a
-/// malformed/missing reference row, an unreadable pinned mean, or a
-/// `vec_quantize_binary`/L2 SQL failure each ⇒ `Err` (cannot verify ⇒ refuse
-/// dense), never a silent skip-and-serve.
+/// un-centered Phase-2 L2 (within `VECTOR_EQUIVALENCE_L2_EPSILON`).
+///
+/// 0.8.20 Slice 22 (TC-68) — this wrapper adds the failure half of the verdict
+/// cache: ANY `Err` from the inner check drops the cached marker, so a workspace
+/// that could not be verified never leaves a stale "verified" marker behind for a
+/// later open to match. (A failing verdict is never *written*; this also clears a
+/// marker left by an earlier, passing open whose fingerprint has since changed.)
+fn probe_check_against_baseline(
+    connection: &Connection,
+    embedder: &dyn Embedder,
+    identity: &EmbedderIdentity,
+    mean_pinned: bool,
+    probes: &[&str],
+) -> Result<(), String> {
+    let outcome =
+        probe_check_against_baseline_inner(connection, embedder, identity, mean_pinned, probes);
+    if outcome.is_err() {
+        clear_probe_verification(connection);
+    }
+    outcome
+}
+
+/// 0.8.18 Slice 5 — the check proper. Fail-SAFE (fix-1 DEFECT #1): a probe embed
+/// that panics/errors/returns wrong-dim, a malformed/missing reference row, an
+/// unreadable pinned mean, or a `vec_quantize_binary`/L2 SQL failure each ⇒ `Err`
+/// (cannot verify ⇒ refuse dense), never a silent skip-and-serve.
 ///
 /// fix-2 (DEFECT #1 residual): BEFORE the divergence check, the STORED baseline is
 /// validated to be EXACTLY the committed probe set — the expected row count, a
@@ -15282,7 +15623,16 @@ fn probe_populate_baseline(
 /// one. This closes the partial-baseline / external-tamper fail-open (a 44-of-45
 /// table, or a re-attributed/mangled row, previously verified only the rows present
 /// or re-embedded a tampered `probe_text` against itself). Any mismatch ⇒ `Err`.
-fn probe_check_against_baseline(
+///
+/// 0.8.20 Slice 22 (TC-68) — the 45 re-embeds are CACHED against
+/// [`probe_verification_fingerprint`]. Note WHERE the cache check sits: after the
+/// mean resolution and after the fix-2 completeness validation, before the
+/// re-embed loop. That split is deliberate — everything cheap keeps running on
+/// EVERY open (so a short, re-attributed, mangled or fixture-mismatched baseline
+/// still fails closed immediately), and only the expensive part, the 45 model
+/// invocations, is skipped. The residual this buys is recorded in
+/// `dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`.
+fn probe_check_against_baseline_inner(
     connection: &Connection,
     embedder: &dyn Embedder,
     identity: &EmbedderIdentity,
@@ -15319,7 +15669,7 @@ fn probe_check_against_baseline(
              FROM _fathomdb_embed_probe ORDER BY probe_ordinal",
         )
         .map_err(|e| format!("could not read the stored probe references: {e}; cannot verify"))?;
-    let stored: Vec<(i64, String, Vec<u8>, String, String, i64)> = stmt
+    let stored: Vec<StoredProbeRow> = stmt
         .query_map([], |row| {
             Ok((
                 row.get::<_, i64>(0)?,
@@ -15395,6 +15745,23 @@ fn probe_check_against_baseline(
         }
     }
 
+    // 0.8.20 Slice 22 (TC-68) — the CACHE gate. Everything above this line ran on
+    // this open and still fails closed; everything below it is the 45 model
+    // invocations that made `Engine::open` cost a flat 45 embeds FOREVER (measured
+    // at `94bb33ef`: 0 with no enrolled kind, 90 on the one-time population open,
+    // 45 on every open thereafter — independent of the enrolled-kind count, since
+    // the probe gate is an `EXISTS` and the body never iterates kinds).
+    //
+    // If the probe already RAN and PASSED under this exact fingerprint, re-running
+    // it is a pure re-computation of a known answer, so the verdict is reused.
+    // Fail-SAFE: `probe_verification_is_cached` answers `false` for every failure
+    // mode — missing table, absent row, garbled value, SQL error — so an
+    // unreadable cache RUNS the probe, it never short-circuits to trusting it.
+    let fingerprint = probe_verification_fingerprint(identity, mean_vec.as_deref(), &stored);
+    if probe_verification_is_cached(connection, &fingerprint) {
+        return Ok(());
+    }
+
     let mut total_flips: u64 = 0;
     let mut max_l2: f32 = 0.0;
     let mut worst_probe: Option<String> = None;
@@ -15440,6 +15807,12 @@ fn probe_check_against_baseline(
              worst probe {probe_hint:?}"
         ));
     }
+
+    // 0.8.20 Slice 22 (TC-68) — the probe RAN and PASSED; record the fingerprint
+    // so the next open with identical inputs need not repeat it. Only a verdict
+    // this engine reached itself is ever written (the failure paths above return
+    // early, and the wrapper clears any prior marker on them).
+    record_probe_verification(connection, &fingerprint);
     Ok(())
 }
 
@@ -15997,22 +16370,35 @@ fn validate_write(
             // `[valid_from, valid_until)`, so a pair with `from >= until` selects
             // no instant at all: the row would be written but no default read
             // could ever return it. Silently accepting that is a trap, so it is a
-            // typed refusal carrying the offending bounds. `InvalidArgument` (not
-            // the message-less `WriteValidation`) is deliberate — a caller has to
-            // be able to tell WHICH pair was rejected, and it already maps to
-            // `InvalidArgumentError` in both bindings.
+            // typed refusal.
+            //
+            // 0.8.20 Slice 22 (R-20-VC) — **decision #18, SETTLED: one family.**
+            // This site used to return `EngineError::InvalidArgument { msg }`
+            // carrying both bounds, which made `validate_write` — ONE function —
+            // reject across TWO error families, so the same `write` call raised
+            // `InvalidArgumentError` for an inverted window and
+            // `WriteValidationError` for a non-integer bound. `dev/design/errors.md`
+            // (status: locked) defines `WriteValidationError` as "malformed typed
+            // write shape" / "the submitted typed write is malformed **before**
+            // schema-sensitive payload checks run" — which is exactly this
+            // boundary — so the code now agrees with the taxonomy of record.
+            // `InvalidArgument` stays the family for caller-argument rejections
+            // OUTSIDE this boundary (see the errors.md 2026-07-28 amendment).
+            //
+            // **The cost, stated:** `WriteValidation` is a UNIT variant and both
+            // bindings map it to a fixed message-less string, so the offending
+            // bounds are no longer recoverable from the error. That is a breaking
+            // behaviour change on a published surface (CHANGELOG 0.8.20) and it is
+            // the diagnostic the prior split existed to preserve. Restoring it
+            // needs a message-carrying `WriteValidation { msg }`, which is a
+            // cross-cutting change across every engine + binding raise site and
+            // both binding payload shapes — its own slice, not this one.
             //
             // Only the PAIR can be empty. A one-sided window is unbounded on the
             // missing side and can never be empty, so it is never refused.
             if let (Some(from), Some(until)) = (valid_from, valid_until) {
                 if from >= until {
-                    return Err(EngineError::InvalidArgument {
-                        msg: format!(
-                            "invalid validity window: valid_from ({from}) must be strictly less \
-                             than valid_until ({until}); the window is half-open \
-                             [valid_from, valid_until), so this pair can never match any instant"
-                        ),
-                    });
+                    return Err(EngineError::WriteValidation);
                 }
             }
             // R-20-E3: `source_id` needs no emptiness check here — `SourceId`
@@ -16305,11 +16691,30 @@ const ROW_OWNED_PROJECTIONS: &[RowOwnedProjection] = &[
 fn erase_row_projections(tx: &Connection, write_cursor: i64) -> rusqlite::Result<u64> {
     let mut deleted: u64 = 0;
     for projection in ROW_OWNED_PROJECTIONS {
-        let sql =
-            format!("DELETE FROM {} WHERE {} = ?1", projection.table, projection.cursor_column);
-        deleted = deleted.saturating_add(tx.execute(&sql, [write_cursor])? as u64);
+        deleted =
+            saturating_add_u64(deleted, delete_row_owned_projection(tx, projection, write_cursor)?);
     }
     Ok(deleted)
+}
+
+/// TC-76 — delete one row-owned projection's rows for one `write_cursor`. The vec0
+/// partition is routed through [`delete_vector_partition_row`] (sqlite-vec `#99`
+/// makes a naked `DELETE` fail whenever a TEXT metadata value spills the 12-byte
+/// inline view); every other table is the plain registry-driven statement.
+fn delete_row_owned_projection(
+    tx: &Connection,
+    projection: &RowOwnedProjection,
+    write_cursor: i64,
+) -> rusqlite::Result<usize> {
+    if projection.table == DEFAULT_VECTOR_PARTITION {
+        return delete_vector_partition_row(tx, write_cursor);
+    }
+    let sql = format!("DELETE FROM {} WHERE {} = ?1", projection.table, projection.cursor_column);
+    tx.execute(&sql, [write_cursor])
+}
+
+fn saturating_add_u64(acc: u64, n: usize) -> u64 {
+    acc.saturating_add(n as u64)
 }
 
 /// 0.8.20 Slice 15d fix-1 finding 2 [P2] — purge the row-owned projections in
@@ -16328,9 +16733,8 @@ fn purge_row_projections_for_cursor_in(
 ) -> rusqlite::Result<u64> {
     let mut deleted: u64 = 0;
     for projection in ROW_OWNED_PROJECTIONS.iter().filter(|p| classes.contains(&p.class)) {
-        let sql =
-            format!("DELETE FROM {} WHERE {} = ?1", projection.table, projection.cursor_column);
-        deleted = deleted.saturating_add(tx.execute(&sql, [write_cursor])? as u64);
+        deleted =
+            saturating_add_u64(deleted, delete_row_owned_projection(tx, projection, write_cursor)?);
     }
     Ok(deleted)
 }
@@ -16343,6 +16747,13 @@ fn truncate_row_projections_in(
 ) -> rusqlite::Result<u64> {
     let mut deleted: u64 = 0;
     for projection in ROW_OWNED_PROJECTIONS.iter().filter(|p| classes.contains(&p.class)) {
+        if projection.table == DEFAULT_VECTOR_PARTITION {
+            // TC-76 (sqlite-vec `#99`) — an unqualified `DELETE FROM vector_default`
+            // still dispatches vec0's per-row delete, so it fails on the FIRST row
+            // whose TEXT metadata spills the 12-byte inline view. Blank the whole
+            // column first.
+            neutralize_vector_partition_attr_values(tx, None)?;
+        }
         let sql = format!("DELETE FROM {}", projection.table);
         deleted = deleted.saturating_add(tx.execute(&sql, [])? as u64);
     }
@@ -17122,6 +17533,18 @@ fn apply_projection_config(
     // registry no longer declares.
     let vector_declared_after = vector_projection_declared(tx).map_err(|_| EngineError::Storage)?;
     let enqueued = if vector_declared_after {
+        // 0.8.20 Slice 22 (R-20-VC / TC-67) — THE REPORT. Scoped to a live dense
+        // -arm declaration (with no `searchable→vector` projection there is
+        // nothing for a kind to be unsupported FOR, so reporting would be noise
+        // on every `filterable`/FTS-only call), but deliberately OUTSIDE the
+        // `dense_arm_live` gate below — see [`unsupported_vector_kinds`].
+        //
+        // Placed AFTER `delta.unchanged` is computed, and it does not feed it:
+        // this is a STATE report, not a diff, so an idempotent re-apply still
+        // carries it (that is also the documented refresh path for the
+        // declare-time residual).
+        delta.vector_unsupported_kinds =
+            unsupported_vector_kinds(tx).map_err(|_| EngineError::Storage)?;
         if dense_arm_live {
             enqueue_declared_vector_backfill(tx).map_err(|_| EngineError::Storage)?
         } else {
@@ -17517,6 +17940,58 @@ fn register_vector_kind(tx: &Connection, kind: &str) -> rusqlite::Result<()> {
 /// This re-enqueues embed work inside ONE live database at the caller's request.
 /// It converts no rows across a version step, and `SCHEMA_VERSION` stays 24
 /// (HITL 2026-07-21; cf. TC-46's in-place vec0 reshape).
+/// 0.8.20 Slice 22 (R-20-VC / **TC-67**) — the ONE scan of "which node kinds in
+/// this corpus are candidates for the dense arm?".
+///
+/// `row_kind IN ('leaf', 'coverage')` is the `index_targets_for_row_kind` vector
+/// -eligibility predicate: `graph` rows are lexically searchable but NEVER
+/// embedded, so they are excluded here on a ROW-KIND axis that has nothing to do
+/// with the `kind` vocabulary — including them would make TC-67 report structural
+/// rows as "unsupported kinds", which is a different (and false) statement.
+///
+/// Extracted so [`enqueue_declared_vector_backfill`] (which enrols the
+/// commit-able half) and [`unsupported_vector_kinds`] (which reports the other
+/// half) partition ONE list rather than running two hand-copied queries that
+/// could drift — the same TC-56 anti-drift discipline that made
+/// [`kind_is_vector_committable`] delegate to [`resolve_source_type`].
+///
+/// `SELECT DISTINCT … ORDER BY kind` gives the caller a sorted, de-duplicated
+/// list for free, which is the reported ordering.
+fn vector_eligible_node_kinds(tx: &Connection) -> rusqlite::Result<Vec<String>> {
+    let mut stmt = tx.prepare(
+        "SELECT DISTINCT kind FROM canonical_nodes
+         WHERE row_kind IN ('leaf', 'coverage')
+         ORDER BY kind",
+    )?;
+    let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+    rows.collect::<rusqlite::Result<Vec<String>>>()
+}
+
+/// 0.8.20 Slice 22 (R-20-VC / **TC-67**) — **the report that replaces the
+/// silence.** The vector-eligible node kinds present in the corpus that
+/// [`kind_is_vector_committable`] excludes, i.e. the exact complement of the set
+/// [`enqueue_declared_vector_backfill`] enrols.
+///
+/// Populates [`ProjectionDelta::vector_unsupported_kinds`]. Read that field's
+/// doc-comment for the naming, the state-not-diff semantics and the residual;
+/// what belongs HERE is the one thing the call SITE decides:
+///
+/// **It is deliberately NOT gated on `dense_arm_live`.** The enrolment it mirrors
+/// is (`apply_projection_config` only calls `enqueue_declared_vector_backfill`
+/// with a live embedder, the Q6a graceful-absent path), but this answer does not
+/// depend on the session: [`resolve_source_type`]'s vocabulary is a compile-time
+/// constant, so "this kind can never be embedded" is equally true with no
+/// embedder attached. Gating it would hide the permanent fact behind the
+/// transient one, which is the very conflation TC-67 exists to end — a
+/// no-embedder caller is exactly the caller who most needs to know that
+/// attaching an embedder later will still not embed these kinds.
+fn unsupported_vector_kinds(tx: &Connection) -> rusqlite::Result<Vec<String>> {
+    Ok(vector_eligible_node_kinds(tx)?
+        .into_iter()
+        .filter(|kind| !kind_is_vector_committable(kind))
+        .collect())
+}
+
 fn enqueue_declared_vector_backfill(tx: &Connection) -> rusqlite::Result<bool> {
     if !vector_projection_declared(tx)? {
         return Ok(false);
@@ -17527,14 +18002,12 @@ fn enqueue_declared_vector_backfill(tx: &Connection) -> rusqlite::Result<bool> {
     // ([`kind_is_vector_committable`], fix-2 / codex §9 [P1]). Enrolling a kind
     // outside `resolve_source_type`'s locked vocabulary wedges the projection
     // worker forever and starves every other kind with it.
-    let kinds: Vec<String> = {
-        let mut stmt = tx.prepare(
-            "SELECT DISTINCT kind FROM canonical_nodes
-             WHERE row_kind IN ('leaf', 'coverage')",
-        )?;
-        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-        rows.collect::<rusqlite::Result<Vec<String>>>()?
-    };
+    //
+    // 0.8.20 Slice 22 (TC-67) — the kinds this filter DROPS are what
+    // [`unsupported_vector_kinds`] reports; both read the same scan through
+    // [`vector_eligible_node_kinds`] so the report can never describe a
+    // different set from the one actually excluded.
+    let kinds = vector_eligible_node_kinds(tx)?;
     for kind in kinds.iter().filter(|kind| kind_is_vector_committable(kind)) {
         register_vector_kind(tx, kind)?;
     }
@@ -18230,7 +18703,7 @@ fn commit_batch(
                         params![cursor, logical_id],
                     )?;
                     for sc in &prior_g0 {
-                        tx.execute("DELETE FROM vector_default WHERE rowid = ?1", [sc])?;
+                        delete_vector_partition_row(&tx, *sc)?;
                         tx.execute(
                             "DELETE FROM _fathomdb_vector_rows WHERE write_cursor = ?1",
                             [sc],
@@ -18266,7 +18739,7 @@ fn commit_batch(
                         params![cursor, from, to, kind],
                     )?;
                     for sc in &prior_g11 {
-                        tx.execute("DELETE FROM vector_default WHERE rowid = ?1", [sc])?;
+                        delete_vector_partition_row(&tx, *sc)?;
                         tx.execute(
                             "DELETE FROM _fathomdb_vector_rows WHERE write_cursor = ?1",
                             [sc],

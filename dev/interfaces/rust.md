@@ -138,6 +138,45 @@ Rust exposes:
 
 `report` is the `OpenReport` owned by `design/engine.md`.
 
+### `OpenReport::dense_disabled` and the cached equivalence verdict (0.8.20 Slice 22, TC-68)
+
+`OpenReport::dense_disabled` / `Engine::dense_disabled()` still mean "the dense arm
+is refusing", and `EngineError::VectorEquivalenceMismatch` plus the
+`Engine::search_text_only` fallback are unchanged. **What changed is when the check
+behind them runs.** The 0.8.18 vector-equivalence self-check used to re-embed its
+45 probes on *every* open; since 0.8.20 the engine caches that verdict against a
+fingerprint of the embedder identity, the pinned `mean_vec`, the probe fixture,
+both divergence floors and the stored reference baseline. An open whose fingerprint
+is unchanged does **zero** probe embeds and reuses the previous verdict. The
+fingerprint is held in one internal marker row — no `SCHEMA_VERSION` bump, no
+migration step, no new public surface.
+
+Read `dense_disabled` accordingly: it reports the arm's status **as verified at the
+last open whose fingerprint differed**, not a fresh re-verification at this open. A
+same-identity backend drift (candle CPU↔CUDA, a rebuilt library or driver) is
+therefore no longer caught per-open — the ruled trade, with the residual and the
+rejected mitigations written up in
+`dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`. An identity
+*change* is unaffected: `EngineOpenError::EmbedderIdentityMismatch` /
+`EmbedderDimensionMismatch` still refuse the open ahead of any cache. An unreadable
+or absent cached verdict runs the probe rather than trusting it, a failing verdict
+is never cached, and a divergence found on a re-run still yields
+`dense_disabled = true` (`R-VEQ-4`, unchanged).
+
+**Scope.** `R-VEQ-4` is a guarantee about **accident** — corruption, truncation, a
+half-written or pre-cache workspace. The self-check is **not** tamper evidence: an
+actor with write access to the database file can rewrite `_fathomdb_embed_probe`'s
+stored references, which defeats the check even when it runs all 45 embeds — exactly
+as it did before the cache existed — or the cached marker, or the corpus and its
+vectors outright. Nothing at rest is authenticated. Do not read `dense_disabled` as
+a tamper signal. **The cache does make one of those routes cheaper**, and that is
+conceded rather than argued away: forging the marker needs only a publicly
+computable digest, where re-authoring the baseline needs the other backend's 45
+exact embeddings. Its bound is the residual above — a same-identity drift is already
+served off an honestly recorded marker, no forgery required. Threat model, the
+measurement, the concession and the bound: §8.3–§8.5 of
+`dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`.
+
 ## Engine-attached instrumentation / control methods
 
 These are public instance methods, not extra top-level SDK verbs:
@@ -210,9 +249,17 @@ drift:
 
 - Both bounds present with `valid_from >= valid_until` describes an
   UNSATISFIABLE half-open window that no instant can ever match. It is refused
-  with `EngineError::InvalidArgument` naming both bounds. Validation runs
-  **before any INSERT**, so the WHOLE batch is rejected. It surfaces as
-  `InvalidArgumentError` in both bindings.
+  with **`EngineError::WriteValidation`**. Validation runs **before any INSERT**,
+  so the WHOLE batch is rejected. It surfaces as `WriteValidationError` in both
+  bindings.
+
+  > **BREAKING (0.8.20 Slice 22, decision #18).** This was
+  > `EngineError::InvalidArgument { msg }` **naming both bounds**, which made
+  > `validate_write` — one function — reject across two error families. It is now
+  > the ONE family the taxonomy of record assigns to that boundary
+  > (`dev/design/errors.md`, 2026-07-28 amendment). **`WriteValidation` is a unit
+  > variant, so the offending bounds are NO LONGER carried in the error.** A
+  > caller that parsed them out must instead validate the pair before calling.
 - A **one-sided** window (exactly one bound present) can never be empty and is
   **never** refused, however extreme its single bound.
 
@@ -308,10 +355,36 @@ Types:
   `as_str` / `from_str_opt` giving the `"ready" | "embedding"` wire spellings.
   0.8.20 Slice 20 (R-20-DR), **PROPOSED, NOT SIGNED**; the only net-new type in
   that slice, which adds ZERO net-new governed commands.
-- `ProjectionDelta { built, dropped, deferred, unchanged }`. Cheap roles
-  (`filterable`, `searchable→FTS`) build same-transaction; `rankable` and the
-  `searchable→vector` sub-target are persisted-but-deferred (reported in
+- `ProjectionDelta { built, dropped, deferred, unchanged, vector_unsupported_kinds }`.
+  Cheap roles (`filterable`, `searchable→FTS`) build same-transaction; `rankable`
+  and the `searchable→vector` sub-target are persisted-but-deferred (reported in
   `deferred`, never an error).
+  `vector_unsupported_kinds: Vec<String>` was added additively by 0.8.20 Slice 22
+  (R-20-VC, `TC-67`); see below.
+- **`ProjectionDelta::vector_unsupported_kinds` — node KINDS, not attribute
+  names** (0.8.20 Slice 22, `TC-67`). The first three vectors list projection
+  attribute names; this one lists the vector-eligible node **kinds** present in
+  the corpus that the vector writer can **never** commit, so no
+  `searchable→vector` declaration will ever produce an embedding for them. Those
+  rows stay fully FTS/lexically searchable. It exists because `deferred` alone
+  could not distinguish *transient* ("no embedder attached this session, or an
+  embed still in flight") from *permanent* ("outside the locked `source_type`
+  vocabulary — never, in any session"): both produced the same `deferred` entry.
+  Sorted, de-duplicated, and **empty rather than absent**.
+  - It is a **STATE report, not a diff**: it does not feed `unchanged`, so an
+    idempotent re-apply returns `unchanged: true` with the three diff vectors
+    empty **and the report populated**.
+  - It is **embedder-independent** — reported identically with and without a live
+    embedder, because the vocabulary is static. Do not read it as the deferral.
+  - It is **OUTPUT-ONLY**: `configure_projections` takes `&[ProjectionSpec]`, so
+    the field has no inbound direction and cannot affect the `read_projections` →
+    `configure_projections` round-trip.
+  - **Residual — it is computed at DECLARE time.** A non-committable kind written
+    *after* the call is not in a delta the caller already holds. To refresh it,
+    re-apply the same spec: an idempotent no-op that returns a current report.
+  - It is **not an error and not a readiness change**: readiness still reaches
+    `Ready` (see the enrolment bullet below), nothing is rejected, and no
+    `projection_failures` row is written.
 
 **Projection-name contract (0.8.20 Slice 15d fix-4).** A projection `name` is an
 app-declared identifier that becomes a SQLite JSON-path key (`$."<name>"`) at
@@ -387,8 +460,11 @@ in Rust, Python and TypeScript:
   `edge_fact` for edge bodies). Rows of ANY other `kind` are accepted and stay
   lexically searchable, but get **no vector** and are not counted as outstanding
   work, so readiness still reaches `Ready`. This is **not** an error condition:
-  the write is not rejected, no typed error is raised, and there is no verb to
-  ask about it — it is the same treatment those kinds had before Slice 20c.
+  the write is not rejected and no typed error is raised.
+  **Since 0.8.20 Slice 22 (`TC-67`) it is no longer silent, either:** the excluded
+  kinds are named in `ProjectionDelta::vector_unsupported_kinds`. Only the
+  reporting changed — the exclusion, the readiness semantics and the absence of an
+  error are exactly as Slice 20c left them.
 - **Idempotent.** Re-applying an already-satisfied declaration re-opens nothing,
   rewinds no watermark, and re-embeds nothing (`ProjectionDelta::unchanged`).
 - **Dropping the last `searchable→vector` declaration turns the dense arm back

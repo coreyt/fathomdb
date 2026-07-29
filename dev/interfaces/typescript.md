@@ -106,8 +106,18 @@ Refusals (the rule is enforced in the engine's `validate_write`, so it is
 identical across Rust / Python / TypeScript and cannot drift):
 
 - Both bounds present with `validFrom >= validUntil` is an UNSATISFIABLE window
-  and rejects with `InvalidArgumentError`. Validation runs before any insert, so
-  the **whole batch** is rejected.
+  and rejects with **`WriteValidationError`**. Validation runs before any insert,
+  so the **whole batch** is rejected.
+
+  > **BREAKING (0.8.20 Slice 22, decision #18).** This rejected with
+  > `InvalidArgumentError` (napi code `FDB_INVALID_ARGUMENT`) **carrying both
+  > bounds in `message`**, while a non-integral bound from the same call rejected
+  > with `WriteValidationError`. Both are now `WriteValidationError` — one family
+  > for the whole write-validation boundary (`dev/design/errors.md`, 2026-07-28
+  > amendment). The envelope is now `FDB_WRITE_VALIDATION` with the fixed message
+  > `"write validation error"` and `data: null`; **the bounds are gone**. A caller
+  > that read them out of `message` must validate the pair before calling.
+  > `InvalidArgumentError` is unchanged for every other use.
 - A **one-sided** window is never refused, however extreme its single bound.
 - A non-integral bound rejects with `WriteValidationError`; the value is never
   truncated or coerced.
@@ -179,8 +189,43 @@ vectorDenseReadiness? }`.
 `fts`/`vector` sub-object flags, not roles. Cheap roles (`filterable`,
 `searchable→FTS`) build same-transaction; `rankable` and the `searchable→vector`
 sub-target are persisted-but-deferred (reported in `ProjectionDelta.deferred`).
-`ProjectionDelta` is `{ built, dropped, deferred, unchanged }`. Field names
+`ProjectionDelta` is
+`{ built, dropped, deferred, unchanged, vectorUnsupportedKinds }`. Field names
 are camelCase per this file's casing rule.
+
+### `vectorUnsupportedKinds` (0.8.20 Slice 22, R-20-VC / TC-67)
+
+`ProjectionDelta.vectorUnsupportedKinds` is a `string[]` of node **kinds** — not
+attribute names. The first three arrays carry projection attribute names; this one
+carries the vector-eligible node kinds present in the corpus that the vector
+writer can **never** commit, so no `searchable→vector` declaration will ever
+produce an embedding for them.
+
+**What it means for your data.** Rows of a reported kind still get **FTS and
+lexical search**; they will simply never participate in dense/vector retrieval —
+in this session or any future one. Your options are to use one of the kinds the
+engine's locked vocabulary maps, or to accept lexical-only retrieval for those
+rows. Waiting is not one of them, which is exactly what the field exists to say:
+before it, "no embedder attached this session" (transient) and "this kind will
+never be embedded" (permanent) both arrived as the same `deferred` entry.
+
+- **Sorted, de-duplicated, and empty (`[]`) rather than absent** — read it
+  unconditionally.
+- **A STATE report, not a diff.** It does not feed `unchanged`, so an idempotent
+  re-apply resolves to `{ unchanged: true }` with `built`/`dropped`/`deferred`
+  empty **and this array populated**.
+- **Embedder-independent.** Identical whether or not the engine was opened with
+  an embedder — the vocabulary is static, so the fact does not depend on the
+  session. Do not read it as the deferral.
+- **Output-only.** `configureProjections` accepts specs, never a delta, so this
+  field has no inbound direction and cannot affect the `read.projections` →
+  `configureProjections` round-trip.
+- **Residual — computed at DECLARE time.** A non-committable kind written *after*
+  the call is not in a delta you already hold. To refresh, re-apply the same spec:
+  an idempotent no-op that returns a current report.
+- **Not an error, not a readiness change.** Nothing is rejected and
+  `vectorDenseReadiness` still reaches `"ready"` — an un-enrolled kind is not
+  outstanding work.
 
 ### `vectorDenseReadiness` (0.8.20 Slice 20, R-20-DR)
 
@@ -329,6 +374,38 @@ surface scope (opt-in only; sha256-verified; visible via
 `OpenReport.embedderEvents`). The default (`useDefaultEmbedder: false`
 or omitted) opens without an embedder; subsequent vector writes reject
 with `EmbedderNotConfiguredError`.
+
+### `denseDisabled` and the cached equivalence verdict (0.8.20 Slice 22, TC-68)
+
+`OpenReport.denseDisabled` / `engine.denseDisabled()` still mean "the dense arm is
+refusing", and the typed query-time `VectorEquivalenceMismatchError` and the
+`searchTextOnly` fallback are unchanged. **What changed is when the check behind
+them runs.** The 0.8.18 vector-equivalence self-check used to re-embed its 45
+probes on *every* open; since 0.8.20 the engine caches that verdict against a
+fingerprint of the embedder identity, the pinned mean vector, the probe fixture,
+the divergence floors and the stored reference baseline. An open whose fingerprint
+is unchanged does **zero** probe embeds — the dominant cost of opening a
+vector-indexed workspace with a live embedder — and reuses the previous verdict.
+
+Read `denseDisabled` accordingly: it reports the arm's status **as verified at the
+last open whose fingerprint differed**, not a fresh re-verification at this open. A
+backend that drifts without changing its declared identity (the same model moved
+between CPU and GPU, or rebuilt against a new library) is therefore no longer
+caught per-open. An identity *change* is unaffected: it still rejects the open with
+`EmbedderIdentityMismatchError`, ahead of any cache. An unreadable or absent cached
+verdict runs the probe rather than trusting it. Full rationale and the residual:
+`dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`.
+
+**Scope.** The self-check guards **accidental** backend drift and a corrupt
+baseline. It is **not** tamper evidence: an actor with write access to the database
+file can rewrite the stored probe baseline — which defeats the check even when it
+runs in full, exactly as it did before the cache — or the cached marker, or the
+vectors themselves. Nothing at rest is authenticated. Do not read `denseDisabled`
+as a tamper signal. **The cache does make one of those routes cheaper** (a forged
+marker needs only a publicly computable digest; re-authoring the baseline needs the
+other backend's 45 exact embeddings), bounded by the residual above: a
+same-identity drift is already served off an honestly recorded marker, no forgery
+required. Threat model, concession and bound: §8.3–§8.5 of the design note above.
 
 `OpenReport` carries four embedder-related fields surfaced by EU-6
 (camelCase per TS convention): `embedderDownloadMs`, `embedderEvents`,

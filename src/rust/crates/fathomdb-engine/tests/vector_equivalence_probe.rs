@@ -199,6 +199,35 @@ fn all_ones_mean_blob() -> Vec<u8> {
     blob
 }
 
+/// 0.8.20 Slice 22 (TC-68) — the `_fathomdb_open_state` key under which the engine
+/// records the fingerprint of the last open at which the probe RAN and PASSED.
+const VEQ_VERDICT_CACHE_KEY: &str = "vector_equivalence_verified_fingerprint";
+
+/// 0.8.20 Slice 22 (TC-68) — drop the cached equivalence verdict, so the NEXT open
+/// actually runs the 45-probe check.
+///
+/// **Why the whole file needs this.** Before TC-68 the probe re-embedded all 45
+/// probes on every single open, so "seed a baseline, then reopen with a drifted
+/// backend" caught the drift immediately. TC-68 caches the verdict against an
+/// embedder-identity fingerprint, and a same-identity backend swap does not move
+/// that fingerprint — so on a *cached* open the drift is **not** caught. That is
+/// the ruled trade (`dev/plans/plan-0.8.20.md` §3 `R-20-VC`), written up in
+/// `dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md` and asserted
+/// as an executable fact by
+/// `tc68_probe_fingerprint_cache.rs::residual_same_identity_backend_drift_is_not_caught_on_a_cached_open`.
+///
+/// The R-VEQ-2/3/4 assertions in THIS file are about what the probe concludes
+/// **when it runs**, and that is unchanged. Clearing the marker puts the workspace
+/// in exactly the state a real fingerprint change produces (a rewritten
+/// `mean_vec`, an edited fixture, a mutated baseline, a recipe bump, or a
+/// workspace that predates TC-68), so each assertion stays live rather than
+/// becoming vacuous.
+fn force_probe_verdict_rerun(path: &std::path::Path) {
+    let conn = rusqlite::Connection::open(path).unwrap();
+    conn.execute("DELETE FROM _fathomdb_open_state WHERE key = ?1", [VEQ_VERDICT_CACHE_KEY])
+        .expect("clear the TC-68 verdict cache");
+}
+
 /// Directly pin (or, with `None`, un-pin) `_fathomdb_embedder_profiles.mean_vec`
 /// for the default profile via a raw connection while the engine is closed. There
 /// is no public test seam to pin the mean without writing ≥256 vector rows; a
@@ -230,6 +259,10 @@ fn seed_bge_references_with_pinned_mean(path: &std::path::Path) {
         .expect("bge session 2 open persists references");
     assert!(!opened.report.dense_disabled, "first registration is never degraded");
     opened.engine.close().expect("close bge session 2");
+
+    // TC-68 — the population open also CACHED its passing verdict. Clear it so the
+    // next open genuinely re-runs the check (see `force_probe_verdict_rerun`).
+    force_probe_verdict_rerun(path);
 }
 
 /// Register a vector kind then persist the 45 UN-centered f32 references with the
@@ -250,6 +283,10 @@ fn seed_references(path: &std::path::Path) {
         .expect("session 2 open persists references");
     assert!(!opened.report.dense_disabled, "first registration is never degraded");
     opened.engine.close().expect("close session 2");
+
+    // TC-68 — the population open also CACHED its passing verdict. Clear it so the
+    // next open genuinely re-runs the check (see `force_probe_verdict_rerun`).
+    force_probe_verdict_rerun(path);
 }
 
 // ---- R-VEQ-1 — probe set persisted at first vector-kind registration ---------
@@ -664,7 +701,9 @@ fn post_open_registration_serves_in_session_and_baselines_at_next_open() {
     drop(conn);
 
     // Session 3 — a divergent same-identity backend is now caught against the
-    // baseline (forward drift detection works after the reopen baseline).
+    // baseline (forward drift detection works after the reopen baseline), on an
+    // open where the probe actually RUNS (TC-68 — see `force_probe_verdict_rerun`).
+    force_probe_verdict_rerun(&path);
     let divergent = Engine::open_with_embedder_for_test(&path, Arc::new(DivergentEmbedder))
         .expect("divergent reopen (degraded)");
     assert!(divergent.report.dense_disabled, "forward drift is caught after the reopen baseline");
@@ -814,6 +853,9 @@ fn upgrade_from_v18_with_kind_and_pinned_mean_establishes_baseline_and_checks() 
     assert!(!same.report.dense_disabled, "same identity-matched backend ⇒ dense served");
     same.engine.close().unwrap();
 
+    // TC-68 — put the workspace back in the "probe actually runs" state before
+    // presenting the divergent backend (see `force_probe_verdict_rerun`).
+    force_probe_verdict_rerun(&path);
     let divergent = Engine::open_with_embedder_for_test(&path, Arc::new(BgeMeanReflectEmbedder))
         .expect("divergent reopen (degraded)");
     assert!(

@@ -8,7 +8,8 @@ use std::error::Error as _;
 use fathomdb_embedder_api::EmbedderIdentity;
 use fathomdb_engine::{
     CorruptionDetail, CorruptionKind, CorruptionLocator, Engine, EngineError, EngineOpenError,
-    OpenStage, RecoveryHint, SoftFallback, SoftFallbackBranch,
+    InitialState, OpenStage, PreparedWrite, RecoveryHint, SoftFallback, SoftFallbackBranch,
+    SourceId,
 };
 use tempfile::TempDir;
 
@@ -194,4 +195,138 @@ fn corruption_detail_source_chain_terminates() {
     };
     let err = EngineOpenError::Corruption(detail);
     assert!(err.source().is_none());
+}
+
+// ---------------------------------------------------------------------------
+// 0.8.20 Slice 22 (R-20-VC) — decision #18: ONE family at the write-validation
+// boundary.
+// ---------------------------------------------------------------------------
+
+/// `dev/design/errors.md` defines `WriteValidationError` as "malformed typed
+/// write shape" / "the submitted typed write is malformed **before**
+/// schema-sensitive payload checks run" — which is exactly what `validate_write`
+/// is. Before this slice ONE of its seven rejection sites (the unsatisfiable
+/// temporal window) returned `EngineError::InvalidArgument { msg }` instead, so
+/// the SAME call could raise `InvalidArgumentError` for an inverted window and
+/// `WriteValidationError` for a non-integer bound.
+///
+/// Decision #18's DoD is literally "one family, tests updated". This pins the
+/// family for every write-SHAPE rejection: `EngineError::WriteValidation`, never
+/// `InvalidArgument`.
+///
+/// **The one documented exception**, asserted below so it can never drift
+/// silently: `validate_write`'s Edge branch delegates to
+/// `reject_unrenderable_edge_epoch`, which still returns
+/// `InvalidArgument { msg }` naming the offending field and bound. That message
+/// is a required contract from TC-33 fix-1 (a codex §9 finding — an unrenderable
+/// epoch renders to `null` on the consolidation wire and silently resurrects an
+/// invalidated edge, so the caller must be told WHICH field). Collapsing it onto
+/// the message-less `WriteValidation` would destroy the diagnostic, so decision
+/// #18 deliberately does not touch it. See the `dev/design/errors.md` 2026-07-28
+/// amendment.
+#[test]
+fn write_validation_boundary_is_exactly_one_error_family() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("one_family.sqlite");
+    let opened = Engine::open(&path).expect("open");
+    let engine = &opened.engine;
+
+    let src = || SourceId::new("test:decision-18").expect("source id");
+    let node = |body: &str, logical: Option<&str>, from: Option<i64>, until: Option<i64>| {
+        PreparedWrite::Node {
+            kind: "doc".to_string(),
+            body: body.to_string(),
+            source_id: src(),
+            logical_id: logical.map(str::to_string),
+            state: InitialState::Active,
+            reason: None,
+            valid_from: from,
+            valid_until: until,
+        }
+    };
+
+    let rejections: Vec<(&str, Result<fathomdb_engine::WriteReceipt, EngineError>)> = vec![
+        ("empty body", engine.write(&[node("   ", None, None, None)])),
+        ("empty logical_id", engine.write(&[node("ok", Some(""), None, None)])),
+        (
+            "record-separator in logical_id",
+            engine.write(&[node("ok", Some("a\u{1e}b"), None, None)]),
+        ),
+        (
+            "inverted validity window",
+            engine.write(&[node("ok", Some("W1"), Some(2000), Some(1000))]),
+        ),
+        (
+            "empty half-open validity window",
+            engine.write(&[node("ok", Some("W2"), Some(1500), Some(1500))]),
+        ),
+    ];
+
+    for (label, result) in rejections {
+        let err = result.expect_err(&format!("{label} must be refused"));
+        assert_eq!(
+            err,
+            EngineError::WriteValidation,
+            "decision #18: `{label}` must be WriteValidation, the ONE write-validation \
+             family — got {err:?}"
+        );
+        assert!(
+            !matches!(err, EngineError::InvalidArgument { .. }),
+            "`{label}` must not use InvalidArgument, which is reserved for caller-argument \
+             rejections OUTSIDE the write-validation boundary"
+        );
+    }
+
+    // THE DOCUMENTED EXCEPTION — an unrenderable edge epoch still raises
+    // `InvalidArgument`, and its message still names the field. Pinned here so a
+    // later "tidy-up" cannot quietly collapse it and lose the TC-33 fix-1
+    // diagnostic without this test going red.
+    let unrenderable = engine.write(&[PreparedWrite::Edge {
+        kind: "link".to_string(),
+        from: "A".to_string(),
+        to: "B".to_string(),
+        source_id: src(),
+        logical_id: Some("E1".to_string()),
+        body: None,
+        t_valid: Some(i64::MAX),
+        t_invalid: None,
+        confidence: None,
+        extractor_model_id: None,
+        temporal_fallback: None,
+    }]);
+    match unrenderable.expect_err("an unrenderable edge epoch must be refused") {
+        EngineError::InvalidArgument { msg } => assert!(
+            msg.contains("t_valid"),
+            "the retained exception must still NAME the offending field (TC-33 fix-1): {msg}"
+        ),
+        other => panic!(
+            "decision #18 must NOT collapse the edge-epoch guard — its message is the \
+             TC-33 fix-1 contract; got {other:?}"
+        ),
+    }
+
+    engine.close().expect("close");
+}
+
+/// `EngineError::InvalidArgument` survives decision #18 — the settlement narrows
+/// WHERE it is used, it does not delete the variant. It remains the message-
+/// carrying family for caller-argument rejections outside the write-validation
+/// boundary (~15 engine sites, plus a live `InvalidArgumentError` /
+/// `FDB_INVALID_ARGUMENT` class in both SDKs). This pins that it still exists and
+/// still carries an actionable message — the property `WriteValidation`, a unit
+/// variant, cannot provide.
+#[test]
+fn invalid_argument_survives_and_still_carries_a_message() {
+    let err = EngineError::InvalidArgument { msg: "depth must be 1-3, got 9".to_string() };
+    let rendered = err.to_string();
+    assert!(rendered.contains("depth must be 1-3"), "Display must carry the message: {rendered}");
+    match err {
+        EngineError::InvalidArgument { msg } => assert!(!msg.is_empty()),
+        other => panic!("expected InvalidArgument, got {other:?}"),
+    }
+    // The contrast decision #18 accepts: WriteValidation is message-less.
+    assert!(
+        !EngineError::WriteValidation.to_string().contains("valid_from"),
+        "WriteValidation is a unit variant and carries no caller-supplied detail"
+    );
 }

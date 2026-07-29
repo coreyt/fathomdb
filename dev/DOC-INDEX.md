@@ -132,6 +132,9 @@ refresh in the closing commit when you touch a doc).
 | `dev/design/vector.md`, `ann-index-vec0.md` | Vector store / vec0 ANN index | 10/15 | (tree) |
 | `dev/design/op-store.md` | Operational mutation store (incl. the Slice 30 `read.collection`/`read.mutations` read-back contract: reader-pool... | 30/33/34 (`read.collection`/`read.mutations`) | 2026-06-06 |
 | `dev/design/engine.md`, `lifecycle.md`, `scheduler.md`, `recovery.md`, `errors.md`, `embedder.md`, `embedder-decision.md`, `release.md`, `perf-gates.md`, `perf-regression-detection.md`, `0.7.0-vector-quant-pack1.md`, `0.7.1-EU-6-FIX-*.md` | Engine/lifecycle/scheduler/recovery/error/embedder/release/perf design notes | per-slice as touched | (tree) |
+| `dev/design/0.8.20-sqlite-vec-99-vec0-delete-probe.md` | Finding — sqlite-vec `vec0` DELETE fails for >12-byte TEXT metadata; engine workaround; remedy is a bump to 0.1.9 | 0.8.20 Slice 22 (R-20-VC leg 4); TC-76 re-open trigger | 2026-07-28 |
+| `dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md` | Cache the 0.8.18 vector-equivalence verdict on an embedder-identity fingerprint so `Engine::open` cost is constant | 0.8.20 Slice 22 (R-20-VC leg 2) | 2026-07-28 |
+| `dev/design/0.8.20-tc67-unsupported-vector-kind-report.md` | `ProjectionDelta.vector_unsupported_kinds` — report node kinds the vector writer can never commit, instead of silence | 0.8.20 Slice 22 (R-20-VC leg 1) | 2026-07-28 |
 
 ## `dev/adr/` — architecture decision records
 

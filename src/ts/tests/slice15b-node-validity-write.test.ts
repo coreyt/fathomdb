@@ -308,19 +308,32 @@ test("TC-34: an unsatisfiable window is a typed refusal, not a silent write", as
   try {
     await assert.rejects(
       () => engine.write([windowed("BAD", "inverted", 2000, 1000)]),
-      InvalidArgumentError,
-      "an inverted window must raise InvalidArgumentError",
+      WriteValidationError,
+      "an inverted window must raise WriteValidationError",
     );
     await assert.rejects(
       () => engine.write([windowed("BAD", "empty", 1500, 1500)]),
-      InvalidArgumentError,
-      "an empty half-open window must raise InvalidArgumentError",
+      WriteValidationError,
+      "an empty half-open window must raise WriteValidationError",
     );
 
     // The refusal rejects the WHOLE batch.
     await assert.rejects(
       () => engine.write([plain("GOOD", "well formed"), windowed("BAD", "inverted", 2000, 1000)]),
-      InvalidArgumentError,
+      WriteValidationError,
+    );
+
+    // 0.8.20 Slice 22 / decision #18 — it must NOT be InvalidArgumentError any
+    // more: the write-validation boundary is ONE family. The bounds are no longer
+    // carried in the message (WriteValidationError is message-less); that
+    // diagnostic loss is deliberate and recorded in the CHANGELOG.
+    await assert.rejects(
+      () => engine.write([windowed("BAD", "inverted", 2000, 1000)]),
+      (err: unknown) => {
+        assert.ok(err instanceof WriteValidationError, "must be WriteValidationError");
+        assert.ok(!(err instanceof InvalidArgumentError), "must not be InvalidArgumentError");
+        return true;
+      },
     );
   } finally {
     await engine.close();

@@ -91,6 +91,9 @@ export interface NativeProjectionDelta {
   dropped: string[];
   deferred: string[];
   unchanged: boolean;
+  // 0.8.20 Slice 22 (R-20-VC / TC-67) — node KINDS (not attribute names) the
+  // vector writer can never commit. Empty, never absent.
+  vectorUnsupportedKinds: string[];
 }
 
 interface NativeSoftFallback {

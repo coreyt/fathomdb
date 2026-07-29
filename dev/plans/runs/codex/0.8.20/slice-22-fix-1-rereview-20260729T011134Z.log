@@ -1,0 +1,3000 @@
+Reading additional input from stdin...
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019fab6d-4eef-7202-810d-296c606c58c2
+--------
+user
+You are the §9 reviewer for FathomDB 0.8.20 Slice 22, fix-1 re-review. Branch orch-0.8.20-s22. Review ONLY the delta a39b865e..73656165 (two commits: d348e4b5, 73656165). Do not re-review the rest of the slice.
+
+CONTEXT. Your own previous round raised exactly one finding, a [P1]: 'Forged TC-68 cache value can skip the probe and fail open' — probe_verification_is_cached trusts any _fathomdb_open_state.value equal to the freshly computed SHA-256, and because every fingerprint input is deterministic and publicly derivable from the database, a writer can forge the digest and skip the 45-probe verification.
+
+THE RESPONSE, which you must now judge. The implementer did NOT attempt cryptographic authentication (no secret exists in an embedded local-first engine; a salt is readable by the same actor). Instead it asserted, and claims to have PROVEN by test, that this is a PRE-EXISTING property rather than a new weakness: an actor who can write the database can equally re-baseline _fathomdb_embed_probe.reference_vec to a drifted backend's own output, so the probe passes on a drifted arm even when it FULLY RUNS with no cache involved. The claimed proof is the test a_forged_stored_baseline_defeats_the_probe_even_when_it_fully_runs, which forges the baseline, DELETES the cache marker, and shows the drifted backend is served; with a control leg (same drift, un-forged baseline, marker cleared) that IS caught.
+
+JUDGE THESE, each explicitly:
+
+1. Does that test actually prove what it claims? Read it. Does it truly delete the marker so the probe runs all 45 embeds? Is the control leg a genuine control — identical except for the forgery? Could it pass for a reason other than the stated one?
+
+2. Is the equivalence argument SOUND? Is forging the stored baseline genuinely available to the same actor and of the same difficulty as forging the cache marker? If the cache marker is materially CHEAPER or MORE available to an attacker than re-baselining, the equivalence fails and this is a real narrowing that documentation cannot close — say so.
+
+3. Verify the claim that NO BEHAVIOUR changed in fix-1: that the only src/rust/crates/fathomdb-engine/src/lib.rs edit is a rustdoc comment, and that the corrected prose is now accurate rather than merely softer.
+
+4. Is the residual honestly documented? Read §5 and the new §8 threat model of dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md. Does it state the boundary plainly, or does it explain the finding away? Flag any remaining over-claim in that file, in CHANGELOG.md, or in dev/interfaces/{rust,python,typescript}.md.
+
+5. State whether your original [P1] is CLOSED, or still open and why.
+
+Also note: the implementer states there is no RED commit because the defect was a false claim in prose, not a behavioural regression, and says so in commit d348e4b5's message. Judge whether that is an acceptable TDD deviation or a gap.
+
+End with an explicit overall verdict line.
+codex
+I’ll re-review only `a39b865e..73656165`, with the FathomDB memory and feedback files first per repo rules, then inspect the exact commits, tests, and docs named in the request.
+exec
+/bin/bash -lc "pwd && rg --files -g 'MEMORY.md' -g 'feedback_*.md' -g 'dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md' -g 'CHANGELOG.md' -g 'src/rust/crates/fathomdb-engine/src/lib.rs' -g 'dev/interfaces/*.md'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22
+ succeeded in 0ms:
+/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22
+scripts/tests/fixtures/removal-detect/clean/CHANGELOG.md
+scripts/tests/fixtures/removal-detect/moved-in-file/CHANGELOG.md
+scripts/tests/fixtures/removal-detect/tests-excluded/CHANGELOG.md
+CHANGELOG.md
+scripts/tests/fixtures/removal-detect/undocumented/CHANGELOG.md
+dev/interfaces/cli.md
+dev/interfaces/wire.md
+dev/interfaces/rust.md
+dev/interfaces/typescript.md
+dev/interfaces/README.md
+dev/interfaces/python.md
+dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md
+src/rust/crates/fathomdb-engine/src/lib.rs
+
+exec
+/bin/bash -lc 'git status --short && git log --oneline --decorate -5 && git diff --stat a39b865e..73656165' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22
+ succeeded in 0ms:
+?? dev/plans/runs/codex/0.8.20/slice-22-fix-1-rereview-20260729T011134Z.log
+?? dev/plans/runs/codex/0.8.20/slice-22-review-20260729T002907Z.log
+?? dev/plans/runs/codex/0.8.20/slice-22-review-round2-targeted-20260729T004445Z.log
+?? output-fix1.json
+?? output-partB.json
+?? output-partC.json
+73656165 (HEAD -> orch-0.8.20-s22) docs(TC-68): fix-1 GREEN — the marker is not engine-authenticated; state the threat model
+d348e4b5 test(TC-68): fix-1 measurement — the PRE-SLICE probe baseline is equally forgeable
+a39b865e docs(TC-67 + TC-76/#274 + X3): the report, the sqlite-vec remedy, and the index
+65017319 test(TC-67): X1 SDK parity — drive the report through BOTH bindings
+423e5f22 fix(TC-67): GREEN — the excluded kinds are REPORTED, by kind, on the delta
+ CHANGELOG.md                                       |   8 +
+ ....20-tc68-equivalence-probe-fingerprint-cache.md | 130 ++++++++-
+ dev/interfaces/python.md                           |   7 +
+ dev/interfaces/rust.md                             |   9 +
+ dev/interfaces/typescript.md                       |   7 +
+ src/rust/crates/fathomdb-engine/src/lib.rs         |  31 ++-
+ .../tests/tc68_probe_fingerprint_cache.rs          | 295 +++++++++++++++++++++
+ 7 files changed, 479 insertions(+), 8 deletions(-)
+
+codex
+The working tree has untracked review artifacts only; I’m not touching them. I’m narrowing the diff to the two requested commits and checking whether the new test and documentation support the claimed closure.
+exec
+/bin/bash -lc "sed -n '1,220p' MEMORY.md" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22
+ exited 2 in 0ms:
+sed: can't read MEMORY.md: No such file or directory
+
+exec
+/bin/bash -lc 'git diff --name-only a39b865e..73656165' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22
+exec
+/bin/bash -lc "rg --files | rg '("'^|/)feedback_.*'"\\.md"'$'"'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22
+ exited 1 in 0ms:
+ succeeded in 0ms:
+CHANGELOG.md
+dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md
+dev/interfaces/python.md
+dev/interfaces/rust.md
+dev/interfaces/typescript.md
+src/rust/crates/fathomdb-engine/src/lib.rs
+src/rust/crates/fathomdb-engine/tests/tc68_probe_fingerprint_cache.rs
+
+exec
+/bin/bash -lc 'git show --stat --oneline --decorate d348e4b5 && git show --stat --oneline --decorate 73656165' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22
+ succeeded in 0ms:
+d348e4b5 test(TC-68): fix-1 measurement — the PRE-SLICE probe baseline is equally forgeable
+ .../tests/tc68_probe_fingerprint_cache.rs          | 295 +++++++++++++++++++++
+ 1 file changed, 295 insertions(+)
+73656165 (HEAD -> orch-0.8.20-s22) docs(TC-68): fix-1 GREEN — the marker is not engine-authenticated; state the threat model
+ CHANGELOG.md                                       |   8 ++
+ ....20-tc68-equivalence-probe-fingerprint-cache.md | 130 ++++++++++++++++++++-
+ dev/interfaces/python.md                           |   7 ++
+ dev/interfaces/rust.md                             |   9 ++
+ dev/interfaces/typescript.md                       |   7 ++
+ src/rust/crates/fathomdb-engine/src/lib.rs         |  31 ++++-
+ 6 files changed, 184 insertions(+), 8 deletions(-)
+
+codex
+`MEMORY.md` and `feedback_*.md` are not present in this checkout, so I’m proceeding with the supplied AGENTS instructions and the diff itself. Next I’m reading the test around the forged-baseline case and the production helper it exercises.
+exec
+/bin/bash -lc 'rg -n "a_forged_stored_baseline|probe_verification_is_cached|reference_vec|open_state|marker|45|probe" src/rust/crates/fathomdb-engine/tests/tc68_probe_fingerprint_cache.rs' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22
+ succeeded in 0ms:
+1://! 0.8.20 Slice 22 (R-20-VC) **TC-68** — the 0.8.18 vector-equivalence probe is
+3://! paying the 45-probe re-embed on every single open.
+6://! `dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`. The probe
+7://! itself is `dev/design/0.8.18-slice-5-vector-equivalence-probe.md` +
+18://! | ONE enrolled kind                 | **90** | **45** | **45** |
+19://! | SIX enrolled kinds                | **90** | **45** | **45** |
+22://! one-time POPULATION open (45 embeds to persist the baseline + 45 more for the
+23://! fix-2 "confirm the just-written baseline" check), and **45** is EVERY open
+25://! (the probe gate is `SELECT EXISTS(...)`, not a count, and the probe body never
+27://! cost is the per-open 45, and that is what TC-68 removes.
+31://! 1. a second/subsequent open whose fingerprint is UNCHANGED does **zero** probe
+33://! 2. an open whose fingerprint CHANGED re-runs the **full** probe;
+35://!    cache falls back to RUNNING the probe (never to trusting it), and a
+48://! codex §9 round 2 raised a `[P1]`: the cached marker is a SHA-256 over
+51://! `_fathomdb_open_state`, and force the early `Ok(())` before the 45-probe
+53://! `a_marker_matching_the_current_state_serves_a_drifted_backend` proves it.
+57://! `a_forged_stored_baseline_defeats_the_probe_even_when_it_fully_runs` shows the
+59://! `_fathomdb_embed_probe.reference_vec` to the drifted backend's own output and
+60://! the probe runs all 45 embeds and PASSES. The check body exercised there is
+62://! diff adds only the cache gate and the recording call), and the marker is
+65://! So the equivalence probe is a **correctness self-check against backend drift,
+68://! marker unforgeable. What the cache *does* narrow is recorded in §6 of the
+70://! `a_replayed_verdict_marker_is_defeated_by_a_mutated_baseline` and
+71://! `a_replayed_verdict_marker_is_defeated_by_a_rewritten_pinned_mean` show a known
+82:const PROBE_IDENTITY_NAME: &str = "fathomdb-probe-test";
+87:/// the only END-TO-END way to change the probe's `mean_vec` fingerprint input.
+91:/// The full committed probe fixture size (`src/vector_equivalence_probes.txt`).
+92:const PROBE_COUNT: u64 = 45;
+94:/// The `_fathomdb_open_state` key under which the engine records the fingerprint
+95:/// of the last open at which the probe RAN and PASSED (mirrors
+96:/// `vector_equivalence_probe.rs`). fix-1 needs to name it: the threat-model tests
+102:/// robustly away from the zero threshold. Mirrors `vector_equivalence_probe.rs`.
+103:fn reference_vector(text: &str) -> Vec<f32> {
+130:        Ok(reference_vector(text))
+136:/// drift" the 0.8.18 probe exists to catch.
+147:        Ok(reference_vector(text).into_iter().map(|x| -x).collect())
+162:        Ok(reference_vector(text))
+196:/// LE-f32 encode a vector into the engine's `reference_vec` blob shape.
+201:/// fix-1 — read the cached verdict marker exactly as an external actor would.
+202:fn read_verdict_marker(path: &std::path::Path) -> Option<String> {
+205:        "SELECT value FROM _fathomdb_open_state WHERE key = ?1",
+212:/// fix-1 — write an arbitrary value into the marker row: the forgery itself.
+213:fn install_verdict_marker(path: &std::path::Path, value: &str) {
+216:        "INSERT INTO _fathomdb_open_state(key, value) VALUES(?1, ?2)
+220:    .expect("install the verdict marker");
+223:/// fix-1 — drop the marker, so the next open runs the pre-slice check path.
+224:fn clear_verdict_marker(path: &std::path::Path) {
+226:    conn.execute("DELETE FROM _fathomdb_open_state WHERE key = ?1", [VEQ_VERDICT_CACHE_KEY])
+227:        .expect("clear the verdict marker");
+230:/// fix-1 — rewrite EVERY stored `reference_vec` to `f(probe_text)`, leaving the
+233:/// shape but never its blob CONTENT, so a hostile writer can re-baseline the probe
+240:                "SELECT probe_ordinal, probe_text, length(reference_vec) \
+241:                 FROM _fathomdb_embed_probe ORDER BY probe_ordinal",
+256:            "UPDATE _fathomdb_embed_probe SET reference_vec = ?1 WHERE probe_ordinal = ?2",
+278:/// Enrol a vector kind under the non-bge probe identity. The probe is gated on a
+279:/// vector kind existing AT open, so this session is probe-inert.
+292:/// Session 1 enrols the kind (probe inert); session 2 populates + confirms (90).
+297:    assert_eq!(embeds, 2 * PROBE_COUNT, "the POPULATION open is 45 persist + 45 confirm");
+306:fn measured_zero_enrolled_kinds_costs_zero_probe_embeds() {
+316:    assert_eq!(first, 0, "no vector kind ⇒ no dense arm to guard ⇒ no probe embeds");
+320:/// The POPULATION open costs 90 (45 persist + 45 confirm) and — the point — that
+325:/// `verified_reopen_performs_zero_probe_embeds`.
+358:    assert_eq!(one_kind_open, 2 * PROBE_COUNT, "population open = 45 persist + 45 confirm");
+359:    assert_eq!(six_kind_open, one_kind_open, "probe cost never scaled with the kind count");
+364:/// **THE TC-68 SIGNAL.** Once the probe has verified this workspace, every later
+365:/// open whose fingerprint is unchanged must do NO probe embeds at all.
+366:/// At `94bb33ef` this is 45 per open, forever.
+368:fn verified_reopen_performs_zero_probe_embeds() {
+379:    assert_eq!(third, 0, "a verified workspace must not re-embed the probe set on reopen");
+385:// ---- acceptance 2 — a CHANGED fingerprint re-runs the full probe -----------
+387:/// The pinned `mean_vec` is a fingerprint input because the probe's P1 check
+390:/// rewritten ⇒ the FULL 45-probe re-run.
+392:fn a_rewritten_pinned_mean_reruns_the_full_probe() {
+397:    // Session 1 — create the bge profile + enrol the kind (probe inert).
+410:    // Session 2 — POPULATION (45 persist + 45 confirm) under mean = 1.0.
+418:    assert_eq!(cached, 0, "unchanged fingerprint ⇒ zero probe embeds");
+430:        "a rewritten mean_vec must re-run the FULL probe, not reuse the cached verdict"
+441:/// tampered `reference_vec` (length preserved, so the shipped completeness check
+442:/// cannot see it) must invalidate the cached verdict, re-run the probe, and be
+446:fn a_tampered_reference_baseline_reruns_the_probe_and_refuses_dense() {
+462:                "SELECT reference_vec FROM _fathomdb_embed_probe WHERE probe_ordinal = 0",
+476:            "UPDATE _fathomdb_embed_probe SET reference_vec = ?1 WHERE probe_ordinal = 0",
+501:// ---- acceptance 3 — fail-SAFE: a bad cache RUNS the probe, never trusts it --
+504:/// a valid verdict must fall back to RUNNING the probe. It must never be treated
+507:fn an_unreadable_cache_entry_falls_back_to_running_the_probe() {
+517:    // Garble every `_fathomdb_open_state` value that is not a known non-probe
+518:    // marker: whatever key TC-68 chose, its cached verdict is now unreadable.
+522:            "UPDATE _fathomdb_open_state SET value = 'not-a-fingerprint'
+536:        "an unreadable cached verdict must RUN the probe, never be trusted"
+543:/// simply re-runs the probe.
+545:fn a_missing_cache_entry_falls_back_to_running_the_probe() {
+554:            "DELETE FROM _fathomdb_open_state
+566:    assert_eq!(after_delete, PROBE_COUNT, "no cached verdict ⇒ run the probe");
+575:/// — the cache narrows WHEN the probe runs, never WHAT it concludes when it does.
+587:            "DELETE FROM _fathomdb_open_state
+602:    assert_eq!(embeds, PROBE_COUNT, "the probe must actually run");
+619:/// because the probe re-ran every time. With the verdict cached against a
+656:// `dev/plans/runs/codex/0.8.20/slice-22-review-round2-targeted-20260729T004445Z.log`.
+659:// forces the probe to be skipped. These four tests establish what that is worth —
+666:/// The 0.8.18 probe re-embeds the 45 committed probes and compares them to the
+670:/// the fix-2 completeness validation sees nothing — and the probe then verifies the
+673:/// The cache is removed from the picture entirely: the marker is DELETED before
+674:/// the open, and the test asserts all 45 embeds actually happen. What runs is the
+676:/// function adds only the cache gate and the `record_probe_verification` call).
+681:fn a_forged_stored_baseline_defeats_the_probe_even_when_it_fully_runs() {
+687:    clear_verdict_marker(&control_path);
+693:    assert_eq!(control_embeds, PROBE_COUNT, "control: the probe must actually run");
+701:    forge_stored_baseline(&path, |text| reference_vector(text).into_iter().map(|x| -x).collect());
+702:    clear_verdict_marker(&path);
+703:    assert_eq!(read_verdict_marker(&path), None, "the cache must play NO part in this leg");
+716:        "PRE-EXISTING: a forged stored baseline defeats the probe on the pre-slice path — \
+717:         the probe is a correctness self-check against backend drift, NOT an integrity \
+726:/// **THE FINDING, as an executable fact.** A marker that matches the current state
+727:/// — however it got there — skips the probe, so a drifted backend is served. On the
+728:/// SAME workspace, with the marker absent, that drift is caught. The marker is
+732:/// Paired with `a_forged_stored_baseline_defeats_the_probe_even_when_it_fully_runs`,
+736:fn a_marker_matching_the_current_state_serves_a_drifted_backend() {
+745:    let digest = read_verdict_marker(&path).expect("a verified workspace carries a marker");
+747:    // Without it, the drift is caught — and the failing open clears the marker
+749:    clear_verdict_marker(&path);
+755:    assert_eq!(caught_embeds, PROBE_COUNT, "no marker ⇒ the probe runs");
+756:    assert!(caught_degraded, "no marker ⇒ the drifted backend is CAUGHT");
+757:    assert_eq!(read_verdict_marker(&path), None, "a failing verdict is never cached");
+760:    install_verdict_marker(&path, &digest);
+766:    assert_eq!(forged_embeds, 0, "a matching marker skips the 45-probe verification");
+769:        "codex §9 round-2 [P1]: a marker matching the current state serves a drifted \
+770:         backend — the marker proves the fingerprint inputs are unchanged since SOME \
+777:/// does not keep the probe skipped — the fingerprint moved, so the probe re-runs
+780:fn a_replayed_verdict_marker_is_defeated_by_a_mutated_baseline() {
+785:    let digest = read_verdict_marker(&path).expect("a verified workspace carries a marker");
+792:                "SELECT reference_vec FROM _fathomdb_embed_probe WHERE probe_ordinal = 0",
+802:            "UPDATE _fathomdb_embed_probe SET reference_vec = ?1 WHERE probe_ordinal = 0",
+807:    install_verdict_marker(&path, &digest);
+811:    assert_eq!(embeds, PROBE_COUNT, "the stale digest cannot keep the probe skipped");
+818:fn a_replayed_verdict_marker_is_defeated_by_a_rewritten_pinned_mean() {
+836:    let digest = read_verdict_marker(&path).expect("a verified workspace carries a marker");
+839:    install_verdict_marker(&path, &digest);
+
+exec
+/bin/bash -lc "sed -n '1,380p' src/rust/crates/fathomdb-engine/tests/tc68_probe_fingerprint_cache.rs" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22
+ succeeded in 0ms:
+//! 0.8.20 Slice 22 (R-20-VC) **TC-68** — the 0.8.18 vector-equivalence probe is
+//! CACHED against an embedder-identity fingerprint, so `Engine::open` stops
+//! paying the 45-probe re-embed on every single open.
+//!
+//! Authority: `dev/plans/plan-0.8.20.md` §3 row `R-20-VC` (TC-68) and
+//! `dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`. The probe
+//! itself is `dev/design/0.8.18-slice-5-vector-equivalence-probe.md` +
+//! `dev/adr/ADR-0.8.18-vector-equivalence-self-check.md` (ACCEPTED, HITL-signed).
+//!
+//! ## MEASURED baseline (this file's characterization tests pin it)
+//!
+//! Taken at `94bb33ef` with a counting embedder, snapshotting `embed` calls
+//! across `Engine::open`:
+//!
+//! | workspace state                   | open 1 | open 2 | open 3 |
+//! |-----------------------------------|--------|--------|--------|
+//! | zero enrolled vector kinds        | 0      | 0      | —      |
+//! | ONE enrolled kind                 | **90** | **45** | **45** |
+//! | SIX enrolled kinds                | **90** | **45** | **45** |
+//!
+//! So both figures in circulation are true, of different opens: **90** is the
+//! one-time POPULATION open (45 embeds to persist the baseline + 45 more for the
+//! fix-2 "confirm the just-written baseline" check), and **45** is EVERY open
+//! thereafter, forever. Cost is already independent of the enrolled-kind count
+//! (the probe gate is `SELECT EXISTS(...)`, not a count, and the probe body never
+//! iterates kinds) — so a test that varies the kind count is VACUOUS. The real
+//! cost is the per-open 45, and that is what TC-68 removes.
+//!
+//! ## The three acceptance points
+//!
+//! 1. a second/subsequent open whose fingerprint is UNCHANGED does **zero** probe
+//!    embeds;
+//! 2. an open whose fingerprint CHANGED re-runs the **full** probe;
+//! 3. fail-SAFE (`R-VEQ-4`, HITL-signed) is untouched — an unreadable/garbled
+//!    cache falls back to RUNNING the probe (never to trusting it), and a
+//!    divergence still yields `dense_disabled`.
+//!
+//! ## The residual, asserted rather than buried
+//!
+//! Caching against a fingerprint means SAME-identity backend drift (candle
+//! CPU↔CUDA, a library/driver change) is no longer caught on every open. That is
+//! the ruled trade, and
+//! `residual_same_identity_backend_drift_is_not_caught_on_a_cached_open` states it
+//! as an executable fact.
+//!
+//! ## fix-1 — the THREAT MODEL, measured rather than asserted
+//!
+//! codex §9 round 2 raised a `[P1]`: the cached marker is a SHA-256 over
+//! deterministic, publicly derivable DB and build inputs, so an actor with write
+//! access to the SQLite file can compute the current digest, write it into
+//! `_fathomdb_open_state`, and force the early `Ok(())` before the 45-probe
+//! verification runs. That is true, and
+//! `a_marker_matching_the_current_state_serves_a_drifted_backend` proves it.
+//!
+//! The question that decides what to DO about it is whether the cache introduced
+//! that exposure or merely restated it. It restated it:
+//! `a_forged_stored_baseline_defeats_the_probe_even_when_it_fully_runs` shows the
+//! SAME actor defeats the SAME arm through the **pre-slice** path — forge
+//! `_fathomdb_embed_probe.reference_vec` to the drifted backend's own output and
+//! the probe runs all 45 embeds and PASSES. The check body exercised there is
+//! byte-identical to the one shipped at the slice baseline `fe85337f` (the TC-68
+//! diff adds only the cache gate and the recording call), and the marker is
+//! deleted first so the cache demonstrably plays no part.
+//!
+//! So the equivalence probe is a **correctness self-check against backend drift,
+//! not an integrity boundary against a hostile writer** — it never was one, and
+//! there is no secret in an embedded local-first engine with which to make the
+//! marker unforgeable. What the cache *does* narrow is recorded in §6 of the
+//! design note and in `residual_…` above. What forging buys is bounded:
+//! `a_replayed_verdict_marker_is_defeated_by_a_mutated_baseline` and
+//! `a_replayed_verdict_marker_is_defeated_by_a_rewritten_pinned_mean` show a known
+//! digest stops working at the next change to any fingerprint input.
+
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+
+use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
+use fathomdb_engine::{Engine, EngineError};
+use tempfile::TempDir;
+
+const DIM: usize = 384;
+const PROBE_IDENTITY_NAME: &str = "fathomdb-probe-test";
+const PROBE_IDENTITY_REV: &str = "veq-tc68";
+
+/// The ONLY identity for which `identity_requires_mean_centering` is true, so it
+/// is the only way to reach the production P1 mean-centred branch — and therefore
+/// the only END-TO-END way to change the probe's `mean_vec` fingerprint input.
+const BGE_NAME: &str = "fathomdb-bge-small-en-v1.5";
+const BGE_REV: &str = "veq-tc68-mc";
+
+/// The full committed probe fixture size (`src/vector_equivalence_probes.txt`).
+const PROBE_COUNT: u64 = 45;
+
+/// The `_fathomdb_open_state` key under which the engine records the fingerprint
+/// of the last open at which the probe RAN and PASSED (mirrors
+/// `vector_equivalence_probe.rs`). fix-1 needs to name it: the threat-model tests
+/// read, delete and re-install that exact row the way an external writer would.
+const VEQ_VERDICT_CACHE_KEY: &str = "vector_equivalence_verified_fingerprint";
+
+/// Deterministic per-text reference vector, every component in `[0.5, 1.5)` —
+/// strictly positive, so the raw 1-bit sign quantization is all-ones and sits
+/// robustly away from the zero threshold. Mirrors `vector_equivalence_probe.rs`.
+fn reference_vector(text: &str) -> Vec<f32> {
+    let mut out = Vec::with_capacity(DIM);
+    for i in 0..DIM {
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325 ^ (i as u64).wrapping_mul(0x0100_0000_01b3);
+        for b in text.bytes() {
+            h ^= u64::from(b);
+            h = h.wrapping_mul(0x0100_0000_01b3);
+        }
+        let frac = (h % 1000) as f32 / 1000.0;
+        out.push(0.5 + frac);
+    }
+    out
+}
+
+/// Faithful backend that COUNTS every `embed` call. The count is the whole point
+/// of this file: TC-68 is a cost claim, and only an actual call count can falsify
+/// it (a log line or a wall-clock timing cannot).
+#[derive(Debug)]
+struct CountingRefEmbedder {
+    calls: Arc<AtomicU64>,
+}
+impl Embedder for CountingRefEmbedder {
+    fn identity(&self) -> EmbedderIdentity {
+        EmbedderIdentity::new(PROBE_IDENTITY_NAME, PROBE_IDENTITY_REV, DIM as u32)
+    }
+    fn embed(&self, text: &str) -> Result<Vector, EmbedderError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Ok(reference_vector(text))
+    }
+}
+
+/// SAME identity, deliberately divergent (negates every component): every P1 sign
+/// flips AND the P2 un-centred L2 is large. This is the "same-identity backend
+/// drift" the 0.8.18 probe exists to catch.
+#[derive(Debug)]
+struct CountingDivergentEmbedder {
+    calls: Arc<AtomicU64>,
+}
+impl Embedder for CountingDivergentEmbedder {
+    fn identity(&self) -> EmbedderIdentity {
+        EmbedderIdentity::new(PROBE_IDENTITY_NAME, PROBE_IDENTITY_REV, DIM as u32)
+    }
+    fn embed(&self, text: &str) -> Result<Vector, EmbedderError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Ok(reference_vector(text).into_iter().map(|x| -x).collect())
+    }
+}
+
+/// Faithful bge-identity backend (mean-centring REQUIRED), counting.
+#[derive(Debug)]
+struct CountingBgeRefEmbedder {
+    calls: Arc<AtomicU64>,
+}
+impl Embedder for CountingBgeRefEmbedder {
+    fn identity(&self) -> EmbedderIdentity {
+        EmbedderIdentity::new(BGE_NAME, BGE_REV, DIM as u32)
+    }
+    fn embed(&self, text: &str) -> Result<Vector, EmbedderError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Ok(reference_vector(text))
+    }
+}
+
+fn db_path(dir: &TempDir) -> std::path::PathBuf {
+    dir.path().join("tc68.sqlite")
+}
+
+fn counter() -> Arc<AtomicU64> {
+    Arc::new(AtomicU64::new(0))
+}
+
+/// A constant mean vector, LE-f32 encoded (`4 * dim` bytes — the engine's
+/// `mean_vec` blob shape).
+fn mean_blob(value: f32) -> Vec<u8> {
+    let mut blob = Vec::with_capacity(DIM * 4);
+    for _ in 0..DIM {
+        blob.extend_from_slice(&value.to_le_bytes());
+    }
+    blob
+}
+
+/// Pin `_fathomdb_embedder_profiles.mean_vec` for the default profile via a raw
+/// connection while the engine is closed (no public seam pins a mean without
+/// writing ≥256 vector rows).
+fn set_pinned_mean(path: &std::path::Path, mean: Vec<u8>) {
+    let conn = rusqlite::Connection::open(path).unwrap();
+    conn.execute(
+        "UPDATE _fathomdb_embedder_profiles SET mean_vec = ?1 WHERE profile = 'default'",
+        rusqlite::params![mean],
+    )
+    .expect("pin mean_vec");
+}
+
+/// LE-f32 encode a vector into the engine's `reference_vec` blob shape.
+fn encode_vector_blob(vector: &[f32]) -> Vec<u8> {
+    vector.iter().flat_map(|x| x.to_le_bytes()).collect()
+}
+
+/// fix-1 — read the cached verdict marker exactly as an external actor would.
+fn read_verdict_marker(path: &std::path::Path) -> Option<String> {
+    let conn = rusqlite::Connection::open(path).unwrap();
+    conn.query_row(
+        "SELECT value FROM _fathomdb_open_state WHERE key = ?1",
+        [VEQ_VERDICT_CACHE_KEY],
+        |row| row.get::<_, String>(0),
+    )
+    .ok()
+}
+
+/// fix-1 — write an arbitrary value into the marker row: the forgery itself.
+fn install_verdict_marker(path: &std::path::Path, value: &str) {
+    let conn = rusqlite::Connection::open(path).unwrap();
+    conn.execute(
+        "INSERT INTO _fathomdb_open_state(key, value) VALUES(?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        rusqlite::params![VEQ_VERDICT_CACHE_KEY, value],
+    )
+    .expect("install the verdict marker");
+}
+
+/// fix-1 — drop the marker, so the next open runs the pre-slice check path.
+fn clear_verdict_marker(path: &std::path::Path) {
+    let conn = rusqlite::Connection::open(path).unwrap();
+    conn.execute("DELETE FROM _fathomdb_open_state WHERE key = ?1", [VEQ_VERDICT_CACHE_KEY])
+        .expect("clear the verdict marker");
+}
+
+/// fix-1 — rewrite EVERY stored `reference_vec` to `f(probe_text)`, leaving the
+/// ordinal, the text, the identity triple and the blob LENGTH untouched. This is
+/// the pre-slice forgery: the 0.8.18 fix-2 completeness validation pins each row's
+/// shape but never its blob CONTENT, so a hostile writer can re-baseline the probe
+/// against whatever their backend currently emits.
+fn forge_stored_baseline(path: &std::path::Path, f: impl Fn(&str) -> Vec<f32>) {
+    let conn = rusqlite::Connection::open(path).unwrap();
+    let rows: Vec<(i64, String, usize)> = {
+        let mut stmt = conn
+            .prepare(
+                "SELECT probe_ordinal, probe_text, length(reference_vec) \
+                 FROM _fathomdb_embed_probe ORDER BY probe_ordinal",
+            )
+            .unwrap();
+        let rows = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? as usize)))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        rows
+    };
+    assert_eq!(rows.len() as u64, PROBE_COUNT, "the baseline must be the full committed set");
+    for (ordinal, text, blob_len) in rows {
+        let blob = encode_vector_blob(&f(&text));
+        assert_eq!(blob.len(), blob_len, "the forgery must preserve the blob length");
+        conn.execute(
+            "UPDATE _fathomdb_embed_probe SET reference_vec = ?1 WHERE probe_ordinal = ?2",
+            rusqlite::params![blob, ordinal],
+        )
+        .expect("forge one reference row");
+    }
+}
+
+/// Open, snapshot the embed-call delta across the open, close. Returns
+/// `(embeds_during_open, dense_disabled)`.
+fn open_count_close(
+    path: &std::path::Path,
+    embedder: Arc<dyn Embedder>,
+    calls: &Arc<AtomicU64>,
+) -> (u64, bool) {
+    let before = calls.load(Ordering::SeqCst);
+    let opened = Engine::open_with_embedder_for_test(path, embedder).expect("open must succeed");
+    let embeds = calls.load(Ordering::SeqCst) - before;
+    let dense_disabled = opened.report.dense_disabled;
+    opened.engine.close().expect("close");
+    (embeds, dense_disabled)
+}
+
+/// Enrol a vector kind under the non-bge probe identity. The probe is gated on a
+/// vector kind existing AT open, so this session is probe-inert.
+fn enrol_kind(path: &std::path::Path, calls: &Arc<AtomicU64>, kind: &str) {
+    let opened = Engine::open_with_embedder_for_test(
+        path,
+        Arc::new(CountingRefEmbedder { calls: calls.clone() }),
+    )
+    .expect("enrolment open");
+    opened.engine.configure_vector_kind_for_test(kind).expect("enrol vector kind");
+    opened.engine.close().expect("close enrolment session");
+}
+
+/// Bring a non-bge workspace to the state "baseline persisted AND verified" —
+/// i.e. exactly the state from which every later open should be free.
+/// Session 1 enrols the kind (probe inert); session 2 populates + confirms (90).
+fn seed_verified_workspace(path: &std::path::Path, calls: &Arc<AtomicU64>) {
+    enrol_kind(path, calls, "note");
+    let (embeds, degraded) =
+        open_count_close(path, Arc::new(CountingRefEmbedder { calls: calls.clone() }), calls);
+    assert_eq!(embeds, 2 * PROBE_COUNT, "the POPULATION open is 45 persist + 45 confirm");
+    assert!(!degraded, "a faithful population open is never degraded");
+}
+
+// ---- characterization: the MEASURED baseline (§ module docs) ----------------
+
+/// A workspace with NO enrolled vector kind pays nothing, on any open. Already
+/// true at `94bb33ef`; pinned so the cache cannot regress it.
+#[test]
+fn measured_zero_enrolled_kinds_costs_zero_probe_embeds() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+    let calls = counter();
+
+    let (first, _) =
+        open_count_close(&path, Arc::new(CountingRefEmbedder { calls: calls.clone() }), &calls);
+    let (second, _) =
+        open_count_close(&path, Arc::new(CountingRefEmbedder { calls: calls.clone() }), &calls);
+
+    assert_eq!(first, 0, "no vector kind ⇒ no dense arm to guard ⇒ no probe embeds");
+    assert_eq!(second, 0, "…and the same on reopen");
+}
+
+/// The POPULATION open costs 90 (45 persist + 45 confirm) and — the point — that
+/// figure does NOT move with the number of enrolled kinds. The plan's DoD sentence
+/// ("open cost independent of enrolled-kind count") is therefore already satisfied
+/// VACUOUSLY at `94bb33ef`; this test exists to say so out loud so nobody mistakes
+/// it for the TC-68 acceptance signal. The real acceptance is
+/// `verified_reopen_performs_zero_probe_embeds`.
+#[test]
+fn measured_population_open_cost_is_flat_in_the_enrolled_kind_count() {
+    let one_dir = TempDir::new().unwrap();
+    let one_path = db_path(&one_dir);
+    let one_calls = counter();
+    enrol_kind(&one_path, &one_calls, "note");
+    let (one_kind_open, _) = open_count_close(
+        &one_path,
+        Arc::new(CountingRefEmbedder { calls: one_calls.clone() }),
+        &one_calls,
+    );
+
+    let many_dir = TempDir::new().unwrap();
+    let many_path = db_path(&many_dir);
+    let many_calls = counter();
+    {
+        let opened = Engine::open_with_embedder_for_test(
+            &many_path,
+            Arc::new(CountingRefEmbedder { calls: many_calls.clone() }),
+        )
+        .expect("enrolment open");
+        for kind in ["note", "email", "article", "paper", "meeting", "todo"] {
+            opened.engine.configure_vector_kind_for_test(kind).expect("enrol vector kind");
+        }
+        opened.engine.close().expect("close");
+    }
+    let (six_kind_open, _) = open_count_close(
+        &many_path,
+        Arc::new(CountingRefEmbedder { calls: many_calls.clone() }),
+        &many_calls,
+    );
+
+    assert_eq!(one_kind_open, 2 * PROBE_COUNT, "population open = 45 persist + 45 confirm");
+    assert_eq!(six_kind_open, one_kind_open, "probe cost never scaled with the kind count");
+}
+
+// ---- acceptance 1 — an unchanged fingerprint costs ZERO --------------------
+
+/// **THE TC-68 SIGNAL.** Once the probe has verified this workspace, every later
+/// open whose fingerprint is unchanged must do NO probe embeds at all.
+/// At `94bb33ef` this is 45 per open, forever.
+#[test]
+fn verified_reopen_performs_zero_probe_embeds() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+    let calls = counter();
+    seed_verified_workspace(&path, &calls);
+
+    let (third, third_degraded) =
+        open_count_close(&path, Arc::new(CountingRefEmbedder { calls: calls.clone() }), &calls);
+    let (fourth, fourth_degraded) =
+        open_count_close(&path, Arc::new(CountingRefEmbedder { calls: calls.clone() }), &calls);
+
+    assert_eq!(third, 0, "a verified workspace must not re-embed the probe set on reopen");
+    assert_eq!(fourth, 0, "…and the cached verdict must persist, not be one-shot");
+
+exec
+/bin/bash -lc 'rg -n "probe_verification_is_cached|_fathomdb_open_state|_fathomdb_embed_probe|reference_vec|fingerprint|TC-68|probe" src/rust/crates/fathomdb-engine/src/lib.rs' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22
+ succeeded in 0ms:
+72:/// 0.8.18 Slice 5 (#5 vector-equivalence probe) — the committed 45-probe fixture
+73:/// (byte-identical to `fathomdb-embedder/tests/fixtures/candle_onnx_equivalence_probes.txt`;
+74:/// a drift-guard test pins the two copies equal). One probe per non-empty line;
+76:const VECTOR_EQUIVALENCE_PROBE_FIXTURE: &str = include_str!("vector_equivalence_probes.txt");
+78:/// 0.8.18 Slice 5 (#5 vector-equivalence probe) — the FROZEN D4 tolerance floor,
+84:/// the 45 probes ⇒ divergence (see [`VECTOR_EQUIVALENCE_P1_FLIP_FLOOR`]).
+89:/// probes. `0` = exact: any single flip ⇒ divergence ⇒ dense refused.
+92:/// 0.8.20 Slice 22 (TC-68) — `_fathomdb_open_state` key holding the
+93:/// [`probe_verification_fingerprint`] of the last open at which the
+94:/// vector-equivalence probe actually RAN and PASSED on this workspace. An open
+95:/// whose freshly computed fingerprint equals this value reuses that verdict and
+96:/// performs ZERO probe embeds; anything else re-runs the full probe.
+98:/// It lives in `_fathomdb_open_state` — the engine's existing open-time
+102:/// TC-68 adds **no** table, **no** migration step and **no** `SCHEMA_VERSION`
+103:/// bump: an old DB simply has no row here and re-runs the probe once.
+104:const VECTOR_EQUIVALENCE_VERDICT_CACHE_KEY: &str = "vector_equivalence_verified_fingerprint";
+106:/// 0.8.20 Slice 22 (TC-68) — recipe tag mixed into every verdict fingerprint.
+107:/// **Bump it whenever the SET of fingerprint inputs changes.** Every cached
+108:/// verdict in the field then stops matching and the probe re-runs once per
+132:/// 0.8.0 Slice 5 (G1) fix-1 — `_fathomdb_open_state` key set, in the SAME
+152:/// 0.8.20 Slice 15c (TC-33) fix-6 — `_fathomdb_open_state` key set once the
+348:    /// 0.8.18 Slice 5 (#5 vector-equivalence probe, R-VEQ-4/6) — degraded-open
+1359:    /// 0.8.18 Slice 5 (#5 vector-equivalence probe, R-VEQ-6) — degraded-open
+1361:    /// committed probes and found a divergence beyond the frozen D4 floor (a
+1366:    /// serviceable. The state is RE-DERIVED at every open (the probe re-runs), so
+1402:    /// `from_id` and `to_id` are probed independently, so one edge contributes 0,
+3595:    /// 0.8.18 Slice 5 (#5 vector-equivalence probe KEYSTONE) — the open-time
+3596:    /// self-check re-embedded the 45 committed probes with the live backend and
+4474:                // 0.8.18 Slice 5 (#5 vector-equivalence probe KEYSTONE) — run the
+4482:                let veq = run_vector_equivalence_probe(
+4579:        // The schema and WAL probes both happen BEFORE `pragma WAL`
+4583:        probe_database_header(&connection)?;
+4584:        probe_open_integrity(&connection)?;
+4585:        probe_wal_sidecar(&path)?;
+4700:        // BEFORE `run_vector_equivalence_probe` (which fires after `open_locked`
+4702:        // probe embeds on the healing open. Another boot reconciliation on the
+4780:            // non-degraded default; the probe runs after this returns.
+4883:    /// same as `rankable`). It mirrors the `run_vector_equivalence_probe` gate:
+4891:    /// fix-1 (codex §9 [P2]) — the `vector_projection_declared` probe below is
+4898:    /// predicate this probe reads, so neither can be undone by a later write.)
+4900:    /// Cost: the registry probe is skipped entirely once the kind is enrolled, so
+4902:    /// declared a vector projection pays two `prepare_cached` `EXISTS` probes per
+4903:    /// batch-row of an unenrolled kind. (Slice 21c / `TC-71` made that probe
+4945:        // projection declared at all — still pays only the probes it paid before
+5010:    /// worst a stale decision costs is one no-op `MIN` probe.
+5364:                    // Internal existence probe: STRICT view — this must see
+5396:                // edge from its nodes and tripped the G8 dangling probe.)
+5930:    /// (`next_pending_projection_jobs`), and the pending-work probe
+6133:    /// 0.8.18 Slice 5 (#5 vector-equivalence probe, R-VEQ-4) — the explicit
+6525:        // 0.8.18 Slice 5 (#5 vector-equivalence probe, R-VEQ-4) — the SINGLE
+6572:        // contract. Run cursor probe + body query inside one read tx
+7405:    /// per-worker probe; proves the standing flag is set on the non-writer
+8366:        // no-vector default path free of the extra probe.
+10386:    /// otherwise. The first call drives the lazy load (cache probe → gated
+10842:    // `AND attr_<hex>=?` and before the FTS arm probes `canonical_attributes`. The
+10899:            // exactly as many hydration probes as before.
+10947:        // probe would be a full scan: there is no index on
+10996:            // at most `TOP_K_BIT_CANDIDATES` hydration probes when nearly every
+11896:    // De-duplicate the requested ids for the IN(...) probe, then re-expand into
+11949:/// (`lib.rs` op-store probes) are a shape oracle only — this is a new statement.
+13098:/// the probe must not: per the G11 (Slice 15) fix-1 note on the probe, the
+13099:/// probe has to see edge bodies left un-projected BELOW the watermark when the
+13235:/// `_fathomdb_vector_kinds` join, so this probe reported permanent pending work
+13271:    // `_fathomdb_projection_terminal` row, so this probe would flag it as
+13282:            // why the probe deliberately looks BELOW the watermark too.
+13363:/// (`SEARCH_INDEX_TOKENIZER_REPROJECT_MARKER_KEY` in `_fathomdb_open_state`)
+13395:            "INSERT INTO _fathomdb_open_state(key, value) VALUES(?1, ?2)
+13416:/// A MISSING `_fathomdb_open_state` table is reported as "complete" (skip the
+13420:/// rejected by the downstream embedder-identity/integrity probes; the reproject
+13425:        "SELECT value FROM _fathomdb_open_state WHERE key = ?1",
+13446:/// A MISSING `_fathomdb_open_state` table is reported as "complete" (skip the
+13453:        "SELECT value FROM _fathomdb_open_state WHERE key = ?1",
+13516:            "INSERT INTO _fathomdb_open_state(key, value) VALUES(?1, ?2)
+13596:            detail: format!("page_count probe failed: {err}"),
+13628:            detail: format!("schema_version probe failed: {err}"),
+13645:            detail: format!("user_version probe failed: {err}"),
+13671:            detail: format!("default embedder profile probe failed: {err}"),
+13719:            "SELECT value FROM _fathomdb_open_state WHERE key = ?1",
+13732:        "INSERT INTO _fathomdb_open_state(key, value) VALUES(?1, ?2)
+14476:fn probe_open_integrity(connection: &Connection) -> Result<(), EngineOpenError> {
+14487:fn probe_database_header(connection: &Connection) -> Result<(), EngineOpenError> {
+14500:fn probe_wal_sidecar(db_path: &Path) -> Result<(), EngineOpenError> {
+15222:/// 0.8.18 Slice 5 (#5 vector-equivalence probe) — parse the committed 45-probe
+15223:/// fixture into an ordered `Vec<&str>` (one probe per non-empty, non-`#`-comment
+15224:/// line). Order is stable so `probe_ordinal` is deterministic across opens.
+15225:fn vector_equivalence_probes() -> Vec<&'static str> {
+15242:/// 0.8.18 Slice 5 — embed one probe under panic isolation. The probe runs at
+15250:fn probe_embed(embedder: &dyn Embedder, text: &str, dimension: usize) -> Option<Vec<f32>> {
+15258:/// 0.8.18 Slice 5 (#5 vector-equivalence probe KEYSTONE) — the open-time
+15265:///  - **First vector-kind registration** (probe table empty): re-embed the 45
+15266:///    committed probes with the LIVE embedder and persist their **UN-centered
+15269:///  - **Subsequent open** (probe table populated): re-embed the 45 probes and
+15282:/// RUN or VERIFY the probe — a probe embed that panics/errors/returns wrong-dim, a
+15288:/// remains the PRIMARY gate; this probe is ADDITIVE-ONLY (R-VEQ-5), but on the
+15292:fn run_vector_equivalence_probe(
+15300:    // No live embedder ⇒ no dense arm to guard (EmbedderChoice::None). The probe
+15304:    // Gate: the probe only engages once the workspace has REGISTERED a vector
+15306:    // committed to vector indexing has no dense arm to guard yet, so the probe
+15308:    // 45-probe re-embed on empty/vector-less workspaces (and inert for the
+15323:    // watchdog/thread-leak bounds), and 45 synchronous probe embeds there would
+15330:    // CPU↔CUDA = 0/17280). See `dev/design/0.8.18-slice-5-vector-equivalence-probe.md`.
+15338:    match probe_populate_or_check(connection, embedder, identity, mean_pinned) {
+15344:/// 0.8.18 Slice 5 — either PERSIST the baseline (probe table empty) or CHECK
+15345:/// against it (probe table populated). `Err(reason)` ⇒ refuse the dense arm
+15347:fn probe_populate_or_check(
+15353:    let probes = vector_equivalence_probes();
+15354:    if probes.is_empty() {
+15355:        // Fail-SAFE: the compiled-in probe fixture is empty ⇒ nothing to verify
+15357:        // non-empty at 45 probes.)
+15359:            "vector-equivalence probe fixture is empty; cannot verify the dense arm".to_string()
+15364:        .query_row("SELECT COUNT(*) FROM _fathomdb_embed_probe", [], |r| r.get(0))
+15365:        .map_err(|e| format!("could not read the probe reference table: {e}; cannot verify"))?;
+15371:        probe_populate_baseline(connection, embedder, identity, &probes)?;
+15372:        probe_check_against_baseline(connection, embedder, identity, mean_pinned, &probes)
+15374:        probe_check_against_baseline(connection, embedder, identity, mean_pinned, &probes)
+15384:fn probe_populate_baseline(
+15388:    probes: &[&str],
+15391:    // Embed ALL probes first; a single failure aborts population (store nothing).
+15392:    let mut rows: Vec<(i64, &str, Vec<f32>)> = Vec::with_capacity(probes.len());
+15393:    for (ordinal, probe) in probes.iter().enumerate() {
+15394:        match probe_embed(embedder, probe, dimension) {
+15395:            Some(vec) => rows.push((ordinal as i64, probe, vec)),
+15398:                    "embedder failed to produce a reference vector for probe {ordinal}; \
+15408:        .map_err(|e| format!("could not open the probe-baseline transaction: {e}"))?;
+15409:    for (ordinal, probe, vec) in &rows {
+15412:            "INSERT OR REPLACE INTO _fathomdb_embed_probe(
+15413:                 probe_ordinal, probe_text, reference_vec,
+15416:            params![ordinal, probe, blob, identity.name, identity.revision, identity.dimension],
+15418:        .map_err(|e| format!("could not persist the probe baseline: {e}"))?;
+15420:    tx.commit().map_err(|e| format!("could not commit the probe baseline: {e}"))?;
+15424:/// 0.8.20 Slice 22 (TC-68) — one row of the stored probe baseline:
+15425:/// `(probe_ordinal, probe_text, reference_vec, embedder_name, embedder_revision, dim)`.
+15428:/// 0.8.20 Slice 22 (TC-68) — length-prefixed field feed for the verdict
+15429:/// fingerprint. The `u64` length prefix makes the concatenation UNAMBIGUOUS: two
+15432:fn hash_fingerprint_field(hasher: &mut Sha256, bytes: &[u8]) {
+15437:/// 0.8.20 Slice 22 (TC-68) — the **embedder-identity fingerprint** the cached
+15438:/// equivalence verdict is keyed on: a SHA-256 over EVERY input the probe's verdict
+15439:/// depends on. Two opens sharing a fingerprint would, by construction, compute the
+15448:///   with `EmbedderIdentityMismatch`/`EmbedderDimensionMismatch` before the probe
+15454:///   fingerprint over the identity triple alone would be stale by construction,
+15457:/// - **the committed probe fixture** — a cached verdict computed over a different
+15458:///   probe set means nothing. (`vector_equivalence_probe_fixture_drift.rs` does
+15471:fn probe_verification_fingerprint(
+15477:    hash_fingerprint_field(&mut hasher, VECTOR_EQUIVALENCE_FINGERPRINT_RECIPE.as_bytes());
+15478:    hash_fingerprint_field(&mut hasher, identity.name.as_bytes());
+15479:    hash_fingerprint_field(&mut hasher, identity.revision.as_bytes());
+15480:    hash_fingerprint_field(&mut hasher, &identity.dimension.to_le_bytes());
+15483:            hash_fingerprint_field(&mut hasher, b"mean-centered");
+15484:            hash_fingerprint_field(&mut hasher, &encode_vector_blob(mean));
+15486:        None => hash_fingerprint_field(&mut hasher, b"un-centered"),
+15488:    hash_fingerprint_field(&mut hasher, VECTOR_EQUIVALENCE_PROBE_FIXTURE.as_bytes());
+15489:    hash_fingerprint_field(&mut hasher, &VECTOR_EQUIVALENCE_P1_FLIP_FLOOR.to_le_bytes());
+15490:    hash_fingerprint_field(&mut hasher, &VECTOR_EQUIVALENCE_L2_EPSILON.to_le_bytes());
+15491:    hash_fingerprint_field(&mut hasher, &(stored.len() as u64).to_le_bytes());
+15492:    for (ordinal, probe_text, reference_vec, name, revision, dim) in stored {
+15493:        hash_fingerprint_field(&mut hasher, &ordinal.to_le_bytes());
+15494:        hash_fingerprint_field(&mut hasher, probe_text.as_bytes());
+15495:        hash_fingerprint_field(&mut hasher, reference_vec);
+15496:        hash_fingerprint_field(&mut hasher, name.as_bytes());
+15497:        hash_fingerprint_field(&mut hasher, revision.as_bytes());
+15498:        hash_fingerprint_field(&mut hasher, &dim.to_le_bytes());
+15503:/// 0.8.20 Slice 22 (TC-68) — is `fingerprint` the fingerprint under which the
+15504:/// probe last RAN and PASSED on this workspace?
+15507:/// which means "run the probe". A missing `_fathomdb_open_state` table, an absent
+15508:/// row, a non-TEXT value, a truncated or garbled value, a stale fingerprint, any
+15513:/// `true` means: **the fingerprint inputs are unchanged since *some* engine
+15515:/// cannot: the fingerprint is a SHA-256 over deterministic, publicly derivable DB
+15517:/// current digest and write it here, skipping the 45-probe verification. This
+15523:/// through the pre-slice path, by re-baselining `_fathomdb_embed_probe`'s
+15524:/// `reference_vec` blobs to their drifted backend's own output — the probe then
+15526:/// `tests/tc68_probe_fingerprint_cache.rs::a_forged_stored_baseline_defeats_the_probe_even_when_it_fully_runs`
+15528:/// un-forged control caught. The equivalence probe is a **correctness self-check
+15530:/// see §8 of `dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`.
+15533:/// computed over, so it stops working at the next change to any fingerprint input.
+15534:fn probe_verification_is_cached(connection: &Connection, fingerprint: &str) -> bool {
+15537:            "SELECT value FROM _fathomdb_open_state WHERE key = ?1",
+15541:        .map(|cached| cached == fingerprint)
+15545:/// 0.8.20 Slice 22 (TC-68) — record that the probe RAN and PASSED under
+15546:/// `fingerprint`.
+15552:/// the probe — more work, never less. That is the fail-safe direction.
+15553:fn record_probe_verification(connection: &Connection, fingerprint: &str) {
+15555:        "INSERT INTO _fathomdb_open_state(key, value) VALUES(?1, ?2)
+15557:        params![VECTOR_EQUIVALENCE_VERDICT_CACHE_KEY, fingerprint],
+15561:/// 0.8.20 Slice 22 (TC-68) — drop any cached verdict.
+15565:/// therefore never cached: the probe re-runs each open until it passes again.
+15566:fn clear_probe_verification(connection: &Connection) {
+15568:        "DELETE FROM _fathomdb_open_state WHERE key = ?1",
+15573:/// 0.8.18 Slice 5 — SUBSEQUENT open: re-embed the 45 probes and assert BOTH
+15578:/// 0.8.20 Slice 22 (TC-68) — this wrapper adds the failure half of the verdict
+15582:/// marker left by an earlier, passing open whose fingerprint has since changed.)
+15583:fn probe_check_against_baseline(
+15588:    probes: &[&str],
+15591:        probe_check_against_baseline_inner(connection, embedder, identity, mean_pinned, probes);
+15593:        clear_probe_verification(connection);
+15598:/// 0.8.18 Slice 5 — the check proper. Fail-SAFE (fix-1 DEFECT #1): a probe embed
+15604:/// validated to be EXACTLY the committed probe set — the expected row count, a
+15605:/// contiguous 0-based `probe_ordinal` per committed probe, each `probe_text` equal
+15606:/// to the committed fixture text at that ordinal, each `reference_vec` a well-formed
+15610:/// or re-embedded a tampered `probe_text` against itself). Any mismatch ⇒ `Err`.
+15612:/// 0.8.20 Slice 22 (TC-68) — the 45 re-embeds are CACHED against
+15613:/// [`probe_verification_fingerprint`]. Note WHERE the cache check sits: after the
+15619:/// `dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`.
+15620:fn probe_check_against_baseline_inner(
+15625:    probes: &[&str],
+15653:            "SELECT probe_ordinal, probe_text, reference_vec, embedder_name, embedder_revision, dim \
+15654:             FROM _fathomdb_embed_probe ORDER BY probe_ordinal",
+15656:        .map_err(|e| format!("could not read the stored probe references: {e}; cannot verify"))?;
+15669:        .map_err(|e| format!("could not read the stored probe references: {e}; cannot verify"))?;
+15673:    // populated or externally-tampered probe table (44 of 45 rows, a gap/dupe in the
+15674:    // ordinals, a mangled reference blob, a mismatched probe_text, or a foreign
+15676:    // the STORED probe_text and compared it to its OWN reference, so a tampered
+15677:    // probe_text verified against itself and a short table verified only the rows
+15682:    // EXACTLY the committed probe set, in order, under the current identity.
+15683:    if stored.len() != probes.len() {
+15685:            "the probe reference table has {} rows but the committed fixture defines {}; \
+15688:            probes.len()
+15691:    for (idx, (ordinal, probe_text, ref_blob, name, revision, dim)) in stored.iter().enumerate() {
+15692:        // Contiguous 0-based ordinals, one per committed probe (no gaps/dupes).
+15695:                "probe reference ordinals are non-contiguous (row {idx} carries ordinal {ordinal}); \
+15700:        // otherwise a tampered probe_text re-embeds and verifies against ITSELF,
+15702:        if probe_text != probes[idx] {
+15704:                "probe reference {ordinal} text does not match the committed fixture; \
+15711:                "probe reference {ordinal} is malformed (len {} != {}); \
+15725:                "probe reference {ordinal} was captured under embedder {name}/{revision}/dim={dim} \
+15733:    // 0.8.20 Slice 22 (TC-68) — the CACHE gate. Everything above this line ran on
+15738:    // the probe gate is an `EXISTS` and the body never iterates kinds).
+15740:    // If the probe already RAN and PASSED under this exact fingerprint, re-running
+15742:    // Fail-SAFE: `probe_verification_is_cached` answers `false` for every failure
+15744:    // unreadable cache RUNS the probe, it never short-circuits to trusting it.
+15745:    let fingerprint = probe_verification_fingerprint(identity, mean_vec.as_deref(), &stored);
+15746:    if probe_verification_is_cached(connection, &fingerprint) {
+15752:    let mut worst_probe: Option<String> = None;
+15754:    for (ordinal, probe_text, ref_blob, _, _, _) in &stored {
+15756:        let reembed = probe_embed(embedder, probe_text, dimension).ok_or_else(|| {
+15758:                "embedder failed/panicked re-embedding probe {ordinal}; \
+15767:            worst_probe = Some(probe_text.clone());
+15777:            format!("vec_quantize_binary SQL failed for probe {ordinal}; cannot verify P1")
+15780:            format!("vec_quantize_binary SQL failed for probe {ordinal}; cannot verify P1")
+15788:        let probe_hint = worst_probe.as_deref().unwrap_or("<unknown>");
+15792:             worst probe {probe_hint:?}"
+15796:    // 0.8.20 Slice 22 (TC-68) — the probe RAN and PASSED; record the fingerprint
+15800:    record_probe_verification(connection, &fingerprint);
+15812:/// Phase-1 path uses, so the probe's bits are byte-equal to the engine's
+16330:            // 0.8.20 Slice 20c — this probe decides whether `notify_new_work` is
+17549:        // extra; the other case pays two cached `EXISTS` probes on a governed call,
+17626:/// scheduler and the pending-work probe join `_fathomdb_vector_kinds` and so no
+17681:/// Conditions 1+2 are the SAME two `prepare_cached` `EXISTS` probes
+17741:/// probes the authorisation opens with. When the authorisation DOES fire, a third
+17754:/// [`run_vector_equivalence_probe`], which is deliberate: on a database whose only
+17756:/// empty, so the probe correctly finds no dense arm to guard and the healing open
+17825:/// leaves that workspace paying exactly the two cached `EXISTS` probes it paid
+17830:/// enrolled after the first probe and `kind_is_vector_indexed` short-circuits
+18041:    // vector. `MIN` first so a no-op apply costs one indexed probe and stops.
+18704:                        // query and the pending-work probe both exclude superseded
+18854:        let mut probe = tx.prepare(
+18874:                    if !probe.exists(params![endpoint])? {
+18913:            "SELECT value FROM _fathomdb_open_state WHERE key = ?1",
+
+exec
+/bin/bash -lc 'git diff a39b865e..73656165 -- src/rust/crates/fathomdb-engine/src/lib.rs' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22
+ succeeded in 0ms:
+diff --git a/src/rust/crates/fathomdb-engine/src/lib.rs b/src/rust/crates/fathomdb-engine/src/lib.rs
+index 61affa3b..013bdda7 100644
+--- a/src/rust/crates/fathomdb-engine/src/lib.rs
++++ b/src/rust/crates/fathomdb-engine/src/lib.rs
+@@ -15503,11 +15503,34 @@ fn probe_verification_fingerprint(
+ /// 0.8.20 Slice 22 (TC-68) — is `fingerprint` the fingerprint under which the
+ /// probe last RAN and PASSED on this workspace?
+ ///
+-/// Fail-SAFE by construction (R-VEQ-4): **every** failure mode answers `false`,
++/// Fail-SAFE against ACCIDENT (R-VEQ-4): **every** failure mode answers `false`,
+ /// which means "run the probe". A missing `_fathomdb_open_state` table, an absent
+-/// row, a non-TEXT value, a truncated or garbled value, any SQL error — none of
+-/// them can be mistaken for a pass. The only `true` is an exact match against a
+-/// value this engine wrote after a verification it performed itself.
++/// row, a non-TEXT value, a truncated or garbled value, a stale fingerprint, any
++/// SQL error — none of them can be mistaken for a pass.
++///
++/// # What a `true` does and does not mean (fix-1, codex §9 round 2 [P1])
++///
++/// `true` means: **the fingerprint inputs are unchanged since *some* engine
++/// recorded a pass.** It does NOT mean "this engine verified this backend", and it
++/// cannot: the fingerprint is a SHA-256 over deterministic, publicly derivable DB
++/// and build inputs, so an actor with write access to the file can compute the
++/// current digest and write it here, skipping the 45-probe verification. This
++/// marker is not — and cannot be — an authenticated attestation; an embedded
++/// local-first engine holds no secret with which to authenticate one, and a salt
++/// would be readable by the same actor.
++///
++/// That is **not a new exposure**. The same actor already defeats the same arm
++/// through the pre-slice path, by re-baselining `_fathomdb_embed_probe`'s
++/// `reference_vec` blobs to their drifted backend's own output — the probe then
++/// runs in full and verifies the drifted backend against itself. Measured by
++/// `tests/tc68_probe_fingerprint_cache.rs::a_forged_stored_baseline_defeats_the_probe_even_when_it_fully_runs`
++/// (marker deleted, all 45 embeds performed, dense still enabled), with the
++/// un-forged control caught. The equivalence probe is a **correctness self-check
++/// against backend drift, not an integrity boundary against a hostile writer**;
++/// see §8 of `dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`.
++///
++/// What forging buys is also bounded: a digest is valid only for the state it was
++/// computed over, so it stops working at the next change to any fingerprint input.
+ fn probe_verification_is_cached(connection: &Connection, fingerprint: &str) -> bool {
+     connection
+         .query_row(
+
+codex
+The production `lib.rs` delta is indeed comment-only in the requested range. I’m now checking the exact test body and then the threat-model docs for over-claims.
+exec
+/bin/bash -lc "sed -n '650,850p' src/rust/crates/fathomdb-engine/tests/tc68_probe_fingerprint_cache.rs" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22
+ succeeded in 0ms:
+    );
+}
+
+// ---- fix-1 (codex §9 round 2 [P1]) — the THREAT MODEL, measured ------------
+//
+// Transcript:
+// `dev/plans/runs/codex/0.8.20/slice-22-review-round2-targeted-20260729T004445Z.log`.
+//
+// The finding is correct as stated: a writer who can compute the current digest
+// forces the probe to be skipped. These four tests establish what that is worth —
+// that the SAME actor already defeated the SAME arm before the cache existed, and
+// that a known digest expires at the next change to any fingerprint input.
+
+/// **THE HYPOTHESIS TEST.** Is the pre-slice design an integrity boundary against
+/// a hostile writer? No — and this is the measurement that says so.
+///
+/// The 0.8.18 probe re-embeds the 45 committed probes and compares them to the
+/// STORED references. Those references live in an ordinary table in the same file.
+/// An actor with write access re-baselines them to their drifted backend's own
+/// output — same ordinals, same texts, same identity triple, same blob lengths, so
+/// the fix-2 completeness validation sees nothing — and the probe then verifies the
+/// drifted backend against itself and PASSES.
+///
+/// The cache is removed from the picture entirely: the marker is DELETED before
+/// the open, and the test asserts all 45 embeds actually happen. What runs is the
+/// check body as shipped at the slice baseline `fe85337f` (the TC-68 diff over that
+/// function adds only the cache gate and the `record_probe_verification` call).
+///
+/// The control leg proves the forgery is what does it: the identical drifted
+/// backend against an UN-forged baseline is caught and refuses dense.
+#[test]
+fn a_forged_stored_baseline_defeats_the_probe_even_when_it_fully_runs() {
+    // -- control: drift alone, with the cache out of the way, IS caught. --------
+    let control_dir = TempDir::new().unwrap();
+    let control_path = db_path(&control_dir);
+    let control_calls = counter();
+    seed_verified_workspace(&control_path, &control_calls);
+    clear_verdict_marker(&control_path);
+    let (control_embeds, control_degraded) = open_count_close(
+        &control_path,
+        Arc::new(CountingDivergentEmbedder { calls: control_calls.clone() }),
+        &control_calls,
+    );
+    assert_eq!(control_embeds, PROBE_COUNT, "control: the probe must actually run");
+    assert!(control_degraded, "control: un-forged baseline + drifted backend ⇒ dense REFUSED");
+
+    // -- the forgery: re-baseline the references to the drifted backend's output.
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+    let calls = counter();
+    seed_verified_workspace(&path, &calls);
+    forge_stored_baseline(&path, |text| reference_vector(text).into_iter().map(|x| -x).collect());
+    clear_verdict_marker(&path);
+    assert_eq!(read_verdict_marker(&path), None, "the cache must play NO part in this leg");
+
+    let before = calls.load(Ordering::SeqCst);
+    let opened = Engine::open_with_embedder_for_test(
+        &path,
+        Arc::new(CountingDivergentEmbedder { calls: calls.clone() }),
+    )
+    .expect("open must succeed");
+    let embeds = calls.load(Ordering::SeqCst) - before;
+
+    assert_eq!(embeds, PROBE_COUNT, "the FULL pre-slice check ran — nothing was skipped");
+    assert!(
+        !opened.report.dense_disabled,
+        "PRE-EXISTING: a forged stored baseline defeats the probe on the pre-slice path — \
+         the probe is a correctness self-check against backend drift, NOT an integrity \
+         boundary against an actor with write access to the database file"
+    );
+    if let Err(EngineError::VectorEquivalenceMismatch { .. }) = opened.engine.search("memory") {
+        panic!("the dense arm must be SERVING — that is the point of this measurement");
+    }
+    opened.engine.close().unwrap();
+}
+
+/// **THE FINDING, as an executable fact.** A marker that matches the current state
+/// — however it got there — skips the probe, so a drifted backend is served. On the
+/// SAME workspace, with the marker absent, that drift is caught. The marker is
+/// therefore not an engine-authenticated attestation; it is a statement that the
+/// fingerprint inputs are unchanged since *some* engine recorded a pass.
+///
+/// Paired with `a_forged_stored_baseline_defeats_the_probe_even_when_it_fully_runs`,
+/// this is the whole argument: both routes are open to exactly the same actor, and
+/// one of them predates the cache.
+#[test]
+fn a_marker_matching_the_current_state_serves_a_drifted_backend() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+    let calls = counter();
+    seed_verified_workspace(&path, &calls);
+
+    // The digest for THIS state. An external actor derives it from the same
+    // public inputs (identity, pinned mean, fixture, floors, stored baseline); the
+    // test simply reads the row, which is the same value by construction.
+    let digest = read_verdict_marker(&path).expect("a verified workspace carries a marker");
+
+    // Without it, the drift is caught — and the failing open clears the marker
+    // again without touching any fingerprint input, so `digest` stays current.
+    clear_verdict_marker(&path);
+    let (caught_embeds, caught_degraded) = open_count_close(
+        &path,
+        Arc::new(CountingDivergentEmbedder { calls: calls.clone() }),
+        &calls,
+    );
+    assert_eq!(caught_embeds, PROBE_COUNT, "no marker ⇒ the probe runs");
+    assert!(caught_degraded, "no marker ⇒ the drifted backend is CAUGHT");
+    assert_eq!(read_verdict_marker(&path), None, "a failing verdict is never cached");
+
+    // Write the digest back — the forgery — and the same drifted backend is served.
+    install_verdict_marker(&path, &digest);
+    let (forged_embeds, forged_degraded) = open_count_close(
+        &path,
+        Arc::new(CountingDivergentEmbedder { calls: calls.clone() }),
+        &calls,
+    );
+    assert_eq!(forged_embeds, 0, "a matching marker skips the 45-probe verification");
+    assert!(
+        !forged_degraded,
+        "codex §9 round-2 [P1]: a marker matching the current state serves a drifted \
+         backend — the marker proves the fingerprint inputs are unchanged since SOME \
+         engine recorded a pass, not that THIS engine verified THIS backend"
+    );
+}
+
+/// What forging buys is bounded in time: a digest is valid only for the state it
+/// was computed over. Re-installing a known digest after mutating a reference blob
+/// does not keep the probe skipped — the fingerprint moved, so the probe re-runs
+/// and catches the mutation.
+#[test]
+fn a_replayed_verdict_marker_is_defeated_by_a_mutated_baseline() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+    let calls = counter();
+    seed_verified_workspace(&path, &calls);
+    let digest = read_verdict_marker(&path).expect("a verified workspace carries a marker");
+
+    // Mutate ONE reference (length preserved) and re-assert the known digest.
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        let blob: Vec<u8> = conn
+            .query_row(
+                "SELECT reference_vec FROM _fathomdb_embed_probe WHERE probe_ordinal = 0",
+                [],
+                |r| r.get(0),
+            )
+            .expect("read reference 0");
+        let flipped: Vec<u8> = blob
+            .chunks_exact(4)
+            .flat_map(|c| (-f32::from_le_bytes([c[0], c[1], c[2], c[3]])).to_le_bytes())
+            .collect();
+        conn.execute(
+            "UPDATE _fathomdb_embed_probe SET reference_vec = ?1 WHERE probe_ordinal = 0",
+            rusqlite::params![flipped],
+        )
+        .expect("mutate reference 0");
+    }
+    install_verdict_marker(&path, &digest);
+
+    let (embeds, degraded) =
+        open_count_close(&path, Arc::new(CountingRefEmbedder { calls: calls.clone() }), &calls);
+    assert_eq!(embeds, PROBE_COUNT, "the stale digest cannot keep the probe skipped");
+    assert!(degraded, "…and the re-run catches the mutated reference (fail-safe, R-VEQ-4)");
+}
+
+/// The same bound on the other end-to-end-reachable fingerprint input: replaying a
+/// known digest across a rewritten pinned `mean_vec` does not buy a skip either.
+#[test]
+fn a_replayed_verdict_marker_is_defeated_by_a_rewritten_pinned_mean() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+    let calls = counter();
+
+    {
+        let opened = Engine::open_with_embedder_for_test(
+            &path,
+            Arc::new(CountingBgeRefEmbedder { calls: calls.clone() }),
+        )
+        .expect("bge enrolment open");
+        opened.engine.configure_vector_kind_for_test("note").expect("enrol vector kind");
+        opened.engine.close().expect("close");
+    }
+    set_pinned_mean(&path, mean_blob(1.0));
+    let (population, _) =
+        open_count_close(&path, Arc::new(CountingBgeRefEmbedder { calls: calls.clone() }), &calls);
+    assert_eq!(population, 2 * PROBE_COUNT, "population open under a pinned mean");
+    let digest = read_verdict_marker(&path).expect("a verified workspace carries a marker");
+
+    set_pinned_mean(&path, mean_blob(0.9));
+    install_verdict_marker(&path, &digest);
+
+    let (embeds, degraded) =
+        open_count_close(&path, Arc::new(CountingBgeRefEmbedder { calls: calls.clone() }), &calls);
+    assert_eq!(embeds, PROBE_COUNT, "a rewritten mean invalidates the replayed digest");
+    assert!(!degraded, "…and a faithful backend still passes the forced re-run");
+}
+
+exec
+/bin/bash -lc 'git show --format=fuller --no-patch d348e4b5 && git show --format=fuller --no-patch 73656165' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22
+ succeeded in 0ms:
+commit d348e4b5c7aa8d88103a94dfdab78af1344b1752
+Author:     Corey Thompson <coreyt@gmail.com>
+AuthorDate: Tue Jul 28 20:00:33 2026 -0500
+Commit:     Corey Thompson <coreyt@gmail.com>
+CommitDate: Tue Jul 28 20:00:33 2026 -0500
+
+    test(TC-68): fix-1 measurement — the PRE-SLICE probe baseline is equally forgeable
+    
+    codex §9 targeted round 2 raised one [P1] against Slice 22:
+    
+      "Forged TC-68 cache value can skip the probe and fail open —
+       probe_verification_is_cached trusts any _fathomdb_open_state.value exactly
+       equal to the freshly computed SHA-256 ... the fingerprint inputs are
+       deterministic/public DB and build inputs, not a secret or engine-authenticated
+       marker, so a writer can forge the current digest and force the early
+       return Ok(()) before the 45-probe verification runs."
+    
+    Transcript:
+    dev/plans/runs/codex/0.8.20/slice-22-review-round2-targeted-20260729T004445Z.log
+    (Risks 1, 3 and 4 came back PASS and are untouched.)
+    
+    The finding is CORRECT as stated. The question it does not settle is whether the
+    cache INTRODUCED that exposure or merely restated a pre-existing one — and that
+    decides whether the answer is code or prose. This commit answers it by
+    measurement rather than by argument. Four tests, all in
+    tests/tc68_probe_fingerprint_cache.rs so the slice's own gate covers them:
+    
+    - a_forged_stored_baseline_defeats_the_probe_even_when_it_fully_runs
+      THE HYPOTHESIS TEST. Re-baseline every _fathomdb_embed_probe.reference_vec to
+      the DRIFTED backend's own output (ordinals, texts, identity triple and blob
+      lengths untouched, so the 0.8.18 fix-2 completeness validation sees nothing),
+      DELETE the cache marker so the cache demonstrably plays no part, and open. The
+      probe runs all 45 embeds and PASSES: dense stays enabled and search does not
+      refuse. The control leg — same drifted backend, un-forged baseline, marker
+      cleared — is CAUGHT, so the forgery is what does it.
+    
+      The check body exercised there is byte-identical to the one shipped at the
+      slice baseline fe85337f: the TC-68 diff over probe_check_against_baseline_inner
+      adds only the cache gate and the record_probe_verification call
+      (git diff fe85337f a39b865e -- lib.rs, hunks @@ -15282 / -15319 / -15395 /
+      -15440). So this is the PRE-SLICE path failing, not the cache.
+    
+    - a_marker_matching_the_current_state_serves_a_drifted_backend
+      The finding itself, made executable. On ONE workspace: marker absent ⇒ the
+      drifted backend is caught (45 embeds, dense_disabled); the same digest written
+      back ⇒ 0 embeds and the drifted backend is served.
+    
+    - a_replayed_verdict_marker_is_defeated_by_a_mutated_baseline
+    - a_replayed_verdict_marker_is_defeated_by_a_rewritten_pinned_mean
+      What forging buys is bounded: a digest is valid only for the state it was
+      computed over, so re-installing a known digest after a reference-blob mutation
+      or a pinned-mean rewrite does not keep the probe skipped.
+    
+    Verdict: the equivalence probe is a correctness self-check against backend
+    drift, NOT an integrity boundary against an actor with write access to the
+    database file — and it never was one. The cache changes WHEN the probe runs, not
+    who can lie to it. The remedy is therefore a documentation correction plus a
+    threat model, which follows in the GREEN commit; no behavioural RED is available
+    because there is no behavioural regression to fail.
+    
+    Claude-Session: https://claude.ai/code/session_013RjME68BUnxzySCxgGU79v
+commit 736561652d319d2fd89aea1cccef94e1d06abb7f
+Author:     Corey Thompson <coreyt@gmail.com>
+AuthorDate: Tue Jul 28 20:04:08 2026 -0500
+Commit:     Corey Thompson <coreyt@gmail.com>
+CommitDate: Tue Jul 28 20:04:08 2026 -0500
+
+    docs(TC-68): fix-1 GREEN — the marker is not engine-authenticated; state the threat model
+    
+    Closes the one codex §9 targeted-round-2 [P1]. Transcript:
+    dev/plans/runs/codex/0.8.20/slice-22-review-round2-targeted-20260729T004445Z.log
+    (Risks 1, 3 and 4 PASS — untouched.)
+    
+    The finding is accepted in full: an actor with write access to the SQLite file
+    can compute the current fingerprint from public inputs, write it into
+    _fathomdb_open_state, and force the early return Ok(()) before the 45-probe
+    verification runs. The preceding test commit measured what that is worth. The
+    remedy is prose, and deliberately so.
+    
+    WHAT WAS FALSE, AND IS NOW CORRECTED
+    
+      probe_verification_is_cached's rustdoc and §5 of the design note both claimed
+      "the only `true` is an exact match against a value THIS ENGINE WROTE AFTER A
+      VERIFICATION IT PERFORMED ITSELF". That is not true and cannot be made true:
+      the engine cannot distinguish its own marker from an identical one. Both sites
+      now say what a `true` actually means — the fingerprint inputs are unchanged
+      since SOME engine recorded a pass.
+    
+    WHY NOT CRYPTOGRAPHY (design note §8.2)
+    
+      Every fingerprint input is derivable from the database file or the shipped
+      binary. A salt or MAC key would live in the same file or binary and be read by
+      the same actor. An embedded local-first engine has no key custodian and no
+      separate trust domain. Any construction here raises the bar for a naive editor
+      only, while leaving a shorter route open — theatre.
+    
+    THE MEASURED FACT THAT SETTLES IT (design note §8.3)
+    
+      a_forged_stored_baseline_defeats_the_probe_even_when_it_fully_runs: re-baseline
+      _fathomdb_embed_probe.reference_vec to the drifted backend's own output, DELETE
+      the marker, open. All 45 embeds run and the probe PASSES — it verified the
+      drifted backend against a baseline that backend supplied. The control (same
+      drift, un-forged baseline, marker cleared) is caught. The check body exercised
+      is byte-identical to the slice baseline fe85337f. So the cache adds NO new
+      attack surface; it changes when the probe runs, not who can lie to it.
+    
+    WHAT THE DOCS NOW SAY
+    
+      - lib.rs: probe_verification_is_cached's contract restated — fail-safe against
+        ACCIDENT (R-VEQ-4 intact), explicitly not an authenticated attestation, with
+        the pre-slice equivalence and the bound on what forging buys;
+      - design note §5: the over-claim replaced, R-VEQ-4 scoped to accident;
+      - design note §8 (NEW): the finding accepted verbatim, why the remedy is not
+        cryptography, the measurement, the boundary stated plainly (in scope:
+        accidental drift + corrupt baseline; OUT of scope: an actor with write access
+        to the file), the time-bound on a forged digest, and §8.5's four hardenings
+        considered and REJECTED — salt/MAC, obfuscation, a DELETE trigger on the
+        probe table (DDL ⇒ migration + SCHEMA_VERSION bump, out of scope, and buys
+        nothing since the forged baseline WANTS the probe to run), and hashing in an
+        input an external writer might forget (none exists that is not already an
+        input; inventing one re-opens the §6.2 non-determinism objection);
+      - CHANGELOG + dev/interfaces/{rust,python,typescript}.md: one compact scope
+        paragraph each — do not read dense_disabled / denseDisabled as a tamper
+        signal.
+    
+    NO CODE BEHAVIOUR CHANGED. No new mechanism was shipped: the correct disposition
+    of a [P1] that restates a pre-existing, unfixable-by-construction property is to
+    say so precisely, not to ship something that looks like a fix.
+    
+    Gates: cargo check --workspace --all-targets 0; cargo clippy --workspace
+    --all-targets 0 with zero warnings; tc68_probe_fingerprint_cache 13/13,
+    vector_equivalence_probe 23/23, vector_equivalence_probe_fixture_drift 1/1;
+    cargo test -p fathomdb-schema 0; governed-surface pin ok (allowlist sha
+    555e6ae7f7d13e537170dbd63eed4a0433a82a0f7bdc03781ec4e0ef7692c02b unchanged);
+    SCHEMA_VERSION still 24; agent-lint-md.sh 0.
+    
+    Claude-Session: https://claude.ai/code/session_013RjME68BUnxzySCxgGU79v
+
+exec
+/bin/bash -lc 'git diff --check a39b865e..73656165' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22
+ succeeded in 0ms:
+exec
+/bin/bash -lc 'git diff --numstat a39b865e..73656165 -- src/rust/crates/fathomdb-engine/src/lib.rs src/rust/crates/fathomdb-engine/tests/tc68_probe_fingerprint_cache.rs' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22
+ succeeded in 0ms:
+27	4	src/rust/crates/fathomdb-engine/src/lib.rs
+295	0	src/rust/crates/fathomdb-engine/tests/tc68_probe_fingerprint_cache.rs
+
+exec
+/bin/bash -lc "sed -n '1,260p' dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22
+ succeeded in 0ms:
+---
+status: ACTIVE
+---
+
+# TC-68 — caching the vector-equivalence probe on an embedder-identity fingerprint
+
+**Slice 22 (R-20-VC), leg 2.** Per `dev/plans/plan-0.8.20.md` §3 row `R-20-VC`:
+*"cache the 0.8.18 equivalence probe against an **embedder-identity fingerprint**
+so `Engine::open` cost is constant again, preserving the guarantee rather than
+weakening it."*
+
+- **Baseline:** `94bb33ef24dade5e0972e8aa0442a711995cd9ed`
+- **Harness:** `src/rust/crates/fathomdb-engine/tests/tc68_probe_fingerprint_cache.rs`
+- **The thing being cached:** `dev/design/0.8.18-slice-5-vector-equivalence-probe.md`
+  and `dev/adr/ADR-0.8.18-vector-equivalence-self-check.md` (ACCEPTED, HITL-SIGNED)
+- **Ledger:** TC-68
+
+> **Read §6 before signing anything off.** This change **narrows** an HITL-signed
+> guarantee. That narrowing is the ruled trade, not an accident, and §6 states
+> exactly what stops being caught. **§8 is the threat model** — what the probe is
+> and, more importantly, what it is not.
+
+---
+
+## 0. Headline, and the correction to the plan's DoD sentence
+
+The plan's acceptance signal reads *"open cost independent of enrolled-kind count,
+with the probe still running on an identity change."*
+
+**The first half was already true at `94bb33ef`, vacuously.** The probe gates on
+
+```sql
+SELECT EXISTS(SELECT 1 FROM _fathomdb_vector_kinds)
+```
+
+(`lib.rs`, `run_vector_equivalence_probe`) — an `EXISTS`, not a `COUNT` — and the
+probe body never iterates enrolled kinds. A test that opens with 1 versus N
+enrolled kinds and compares embed counts passes with **zero code change**.
+
+The real cost, and the real target, is a **flat 45 embeds on every open, forever**,
+once any vector kind is enrolled.
+
+---
+
+## 1. Measured baseline
+
+Method: a counting `Embedder` whose `embed` increments an `AtomicU64`, snapshotted
+across `Engine::open` (before/after, engine closed between opens, no rows written
+so no projection work can pollute the count). Reproduced by
+`measured_zero_enrolled_kinds_costs_zero_probe_embeds` and
+`measured_population_open_cost_is_flat_in_the_enrolled_kind_count`.
+
+| workspace state             | open 1 | open 2 | open 3 |
+| --------------------------- | -----: | -----: | -----: |
+| zero enrolled vector kinds  |      0 |      0 |      — |
+| ONE enrolled kind           | **90** | **45** | **45** |
+| SIX enrolled kinds          | **90** | **45** | **45** |
+
+### 1.1 The ledger says 90; the fixture says 45 — both are right
+
+`VECTOR_EQUIVALENCE_PROBE_FIXTURE` holds **45** probes, and:
+
+- the **one-time population open** costs **90** — `probe_populate_baseline`
+  embeds 45 to persist the un-centered f32 references, and
+  `probe_populate_or_check` then immediately calls `probe_check_against_baseline`,
+  which re-embeds all 45 again. That second pass is the 0.8.18 **fix-2**
+  "confirm the just-written baseline before enabling dense" guard;
+- **every open thereafter** costs **45** — the check path alone.
+
+So "90 synchronous embeds" describes the population open and "45" describes the
+steady state. Neither figure was wrong; they were being quoted about different
+opens.
+
+### 1.2 The population open is deliberately left at 90
+
+TC-68 does not shrink it. The second 45 is tautological *for a deterministic
+embedder* — but it is the 0.8.18 fix-2 guard that a just-written baseline
+round-trips through the **live** embedder, and it happens once per workspace.
+Removing it would trade a signed guarantee for a one-off saving. Out of scope, and
+the wrong direction.
+
+---
+
+## 2. The fingerprint
+
+`probe_verification_fingerprint` is a SHA-256 over length-prefixed fields (the
+`u64` length prefix makes the concatenation unambiguous, so no two distinct input
+tuples can collide by sliding a delimiter).
+
+| input | why it is in |
+| --- | --- |
+| recipe tag `"fathomdb-veq-verdict-v1"` | bumping it invalidates every cached verdict in the field at once |
+| `identity.name`, `identity.revision`, `identity.dimension` | the nominal embedder — **defence in depth only**, see §2.1 |
+| whether mean-centering applies, plus the live pinned `mean_vec` bytes | **load-bearing**, see §2.2 |
+| `VECTOR_EQUIVALENCE_PROBE_FIXTURE` | a verdict computed over a different probe set means nothing, see §2.3 |
+| `VECTOR_EQUIVALENCE_P1_FLIP_FLOOR`, `VECTOR_EQUIVALENCE_L2_EPSILON` | a verdict that passed under a loose ε must not be inherited by a build that tightened it |
+| the stored baseline rows, **reference blobs included** | see §2.4 |
+
+### 2.1 Identity is unreachable, and that is fine
+
+`EmbedderIdentity` is only `{ name, revision, dimension }` — no build id, no
+backend descriptor. It is in the fingerprint for completeness, but it can never be
+observed to change *here*: `check_embedder_profile` runs earlier in the open path
+and **refuses the open outright** with `EmbedderIdentityMismatch` /
+`EmbedderDimensionMismatch` on any drift of the triple. So the plan's "with the
+probe still running on an identity change" is satisfied a fortiori — an identity
+change never gets as far as a cached verdict.
+
+### 2.2 `mean_vec` is not optional
+
+P1 compares `vec_quantize_binary(sign(x − mean_vec))` against the stored
+un-centered references. **Rewriting the pinned mean changes the verdict for the
+same embedder and the same baseline.** `mean_vec` lives on
+`_fathomdb_embedder_profiles` and is rewritten by open-time mean-recovery /
+requantize and by the operator `recompute_mean` verb.
+
+A cache keyed on the identity **triple alone** would therefore be stale by
+construction, and would keep vouching for a P1 answer computed against a mean that
+no longer exists. It is in the fingerprint, and
+`a_rewritten_pinned_mean_reruns_the_full_probe` pins it end to end.
+
+### 2.3 The fixture digest, and why the drift test does not make it redundant
+
+`tests/vector_equivalence_probe_fixture_drift.rs` pins the engine's copy of the
+fixture equal to the embedder crate's copy. That guards **copy** drift between two
+committed files — it does **not** pin the fixture's content across releases, so a
+release that legitimately edits both copies would leave cached verdicts computed
+over the old probe set.
+
+Separately, the fix-2 completeness validation compares each stored `probe_text`
+against the live fixture on **every** open and fails **closed** on a mismatch — so
+a fixture edit would in fact be caught before the cache is consulted (by degrading
+every existing workspace, which is pre-existing 0.8.18 behaviour, not something
+TC-68 introduces).
+
+**Decision: keep the fixture digest anyway.** It costs one hash of a ~3 KB
+compiled-in constant, it makes the fingerprint a self-contained statement of what
+the verdict depended on, and it does not rely on a *second* mechanism happening to
+fail closed first.
+
+### 2.4 The stored baseline blobs — closing a regression before it opens
+
+The fix-2 completeness validation pins each stored row's **shape**: row count,
+contiguous 0-based ordinals, `probe_text` equal to the fixture, `reference_vec`
+length `4 * dim`, and the stored identity triple. It does **not** pin the blob's
+**content** — that was caught implicitly, by the re-embed comparison diverging.
+
+Cache the re-embed away and that closure would silently re-open: an external edit
+that flipped the bytes of a reference vector (preserving its length) would be
+waved through. Hashing the 45 blobs — ~69 KB of SHA-256 against 45 model
+invocations — keeps it intact. `a_tampered_reference_baseline_reruns_the_probe_and_refuses_dense`
+pins it.
+
+---
+
+## 3. Where the gate sits, and what still runs every open
+
+Inside `probe_check_against_baseline_inner`, in order:
+
+1. resolve the live mean (fail-SAFE: unreadable ⇒ refuse dense);
+2. read the stored baseline;
+3. **fix-2 completeness validation** — count, ordinals, texts, blob lengths,
+   identity;
+4. ← **the TC-68 cache gate**;
+5. the 45 re-embeds + P1 flip count + P2 L2;
+6. record the fingerprint.
+
+Steps 1–3 are cheap (SQL reads and string compares, no model invocation) and are
+**deliberately left running on every open**. A short, non-contiguous,
+re-attributed, text-mismatched or wrong-length baseline still fails closed
+immediately. Only step 5 — the 45 model invocations, i.e. essentially all of the
+cost — is skipped.
+
+## 4. Storage — no `SCHEMA_VERSION` bump, no migration step, no new table
+
+The marker is one row in **`_fathomdb_open_state(key TEXT PRIMARY KEY, value TEXT
+NOT NULL)`**, created by migration **step 1** and already the engine's home for
+open-time durable markers: `projection_cursor`,
+`search_index_tokenizer_reproject_complete` (0.8.0 G1 fix-1),
+`tc33_edge_vector_prune_complete` (0.8.20 TC-33 fix-6) and
+`tc33_reserved_write_cursor` (schema step 23) all live there.
+
+Key: `vector_equivalence_verified_fingerprint`. Value: the lowercase hex digest.
+
+This is why TC-68 needs **no** engine-side `CREATE TABLE IF NOT EXISTS` at open
+either (the `ensure_vector_partition` precedent was available but is not needed):
+the table already exists on every migrated DB. A workspace that predates TC-68
+simply has no row, misses, runs the probe once, and records the verdict.
+
+**No schema-drift assertion is affected.** The schema crate's step tests assert
+per-step DDL and index shape; none enumerates `_fathomdb_open_state`'s *rows*.
+`cargo test -p fathomdb-schema` is green.
+
+## 5. Fail-SAFE (`R-VEQ-4`) in the cache path
+
+`R-VEQ-4` — *any inability to run or verify yields `dense_disabled = true`, never
+skip-and-serve* — is HITL-signed and is **not** weakened. It is a guarantee about
+**accident** — corruption, truncation, a half-written file, a workspace that
+predates the cache — not about a hostile writer; §8 draws that line. In the cache
+path:
+
+- **an unreadable cache reads as a MISS, never as a pass.**
+  `probe_verification_is_cached` answers `false` for every failure mode: missing
+  `_fathomdb_open_state` table, absent row, non-TEXT value, garbled or truncated
+  value, a stale fingerprint, any SQL error.
+
+  A `true` means **the fingerprint inputs are unchanged since *some* engine
+  recorded a pass** — not "this engine verified this backend". The engine cannot
+  tell its own marker from an identical one written by anything else, and §8 says
+  why that is neither fixable nor new.
+  (`an_unreadable_cache_entry_falls_back_to_running_the_probe`,
+  `a_missing_cache_entry_falls_back_to_running_the_probe`);
+- **a failing verdict is never cached**, and every `Err` path of the check
+  **clears** any prior marker — so a workspace that could not be verified never
+  leaves one behind for a later open to match
+  (`a_divergence_on_a_rerun_still_disables_dense`);
+- **a divergence found on a re-run still disables dense.** The cache narrows *when*
+  the probe runs, never *what it concludes when it does*;
+- **a cache WRITE failure is swallowed** rather than turned into a refusal. The arm
+  has just been verified, so refusing dense because a marker could not be persisted
+  (read-only file, disk full) would be a false refusal — and the consequence of the
+  missing marker is that the next open re-runs the probe. More work, never less.
+
+---
+
+## 6. THE RESIDUAL — what is no longer caught on every open
+
+**Same-identity backend drift is no longer caught per-open.**
+
+The 0.8.18 probe exists to catch a backend that changed *without* changing the
+declared identity: candle CPU↔CUDA, a library or driver upgrade, a rebuilt ONNX
+runtime. None of those move any fingerprint input — the identity triple is
+unchanged (and would refuse the open if it were not), the mean is unchanged, the
+fixture is unchanged, the stored baseline is unchanged. So the cache **hits**, the
+drifted backend is never asked to embed anything, and the drift is not detected.
+
+It is detected only at the next open whose fingerprint *does* change — a rewritten
+`mean_vec`, a fixture edit, a mutated baseline, or a recipe-tag bump. By
+definition, a pure backend swap is not one of those.
+
+Before TC-68 this drift was caught at the very next open. **After TC-68 it may
+never be caught.** That is a real narrowing of
+`dev/adr/ADR-0.8.18-vector-equivalence-self-check.md`, and it is the ruled trade
+(`dev/plans/plan-0.8.20.md` §3 `R-20-VC`).
+
+It is asserted as an executable fact by
+`residual_same_identity_backend_drift_is_not_caught_on_a_cached_open`, so nobody
+can later read "preserving the guarantee" off the plan and assume it was preserved.
+
+### 6.1 What IS still caught, on every open
+
+- **cross-vendor / identity drift** — refused at open by `check_embedder_profile`,
+  which is and remains the PRIMARY gate (`R-VEQ-5`: the probe is additive);
+- **a partial, non-contiguous, re-attributed, text-mismatched or wrong-length
+  stored baseline** — the fix-2 completeness validation runs before the cache gate;
+- **a mutated reference blob** — via the fingerprint (§2.4);
+- **a rewritten `mean_vec`** — via the fingerprint (§2.2);
+- **an un-runnable embedder** (panics, errors, wrong dimension) on any open that
+  actually runs the probe;
+- **the first-ever verification** of a workspace — population always runs the full
+
+exec
+/bin/bash -lc 'git diff a39b865e..73656165 -- CHANGELOG.md dev/interfaces/rust.md dev/interfaces/python.md dev/interfaces/typescript.md' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22
+ succeeded in 0ms:
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 702b67e8..b2a89a1b 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -317,6 +317,14 @@ AC-050c) gates merges against this invariant.
+   and a divergence found on a re-run still yields `denseDisabled` /
+   `dense_disabled` with the dense arm refusing and the text-only path serving.
+ 
++  *Scope, stated so it is not over-read:* this self-check guards against
++  **accidental** backend drift and a corrupt baseline. It is **not** an integrity
++  boundary against an actor with write access to your database file — such an
++  actor can rewrite the stored probe baseline (which defeats the check even when
++  it runs in full, as it always did), the cached marker, or the corpus and its
++  vectors outright. Unchanged by this release, and now written down: threat model
++  in §8 of `dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`.
++
+   *The cost, stated plainly:* a backend that drifts **without changing its
+   declared identity** — the same embedder name/revision moved between CPU and
+   CUDA, or rebuilt against a new library or driver — is **no longer caught on
+diff --git a/dev/interfaces/python.md b/dev/interfaces/python.md
+index b940aec6..e147c45e 100644
+--- a/dev/interfaces/python.md
++++ b/dev/interfaces/python.md
+@@ -370,6 +370,13 @@ open with `EmbedderIdentityMismatchError`, ahead of any cache. An unreadable or
+ absent cached verdict runs the probe rather than trusting it. Full rationale and
+ the residual: `dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`.
+ 
++**Scope.** The self-check guards **accidental** backend drift and a corrupt
++baseline. It is **not** an integrity boundary against an actor with write access
++to the database file: such an actor can rewrite the stored probe baseline — which
++defeats the check even when it runs in full, exactly as it did before the cache —
++or the cached marker, or the vectors themselves. Do not read `dense_disabled` as a
++tamper signal. Threat model: §8 of the design note above.
++
+ `OpenReport` carries four embedder-related fields surfaced by EU-6:
+ `embedder_download_ms`, `embedder_events`, `embedder_mean_centering_required`,
+ and `embedder_mean_vec_pinned`. Each entry in `embedder_events` is a
+diff --git a/dev/interfaces/rust.md b/dev/interfaces/rust.md
+index 1b0ad73d..30e3493f 100644
+--- a/dev/interfaces/rust.md
++++ b/dev/interfaces/rust.md
+@@ -163,6 +163,15 @@ or absent cached verdict runs the probe rather than trusting it, a failing verdi
+ is never cached, and a divergence found on a re-run still yields
+ `dense_disabled = true` (`R-VEQ-4`, unchanged).
+ 
++**Scope.** `R-VEQ-4` is a guarantee about **accident** — corruption, truncation, a
++half-written or pre-cache workspace. The self-check is **not** an integrity
++boundary against an actor with write access to the database file: such an actor can
++rewrite `_fathomdb_embed_probe`'s stored references, which defeats the check even
++when it runs all 45 embeds — exactly as it did before the cache existed — or the
++cached marker, or the corpus and its vectors outright. Do not read
++`dense_disabled` as a tamper signal. Threat model, with the measurement:
++§8 of `dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`.
++
+ ## Engine-attached instrumentation / control methods
+ 
+ These are public instance methods, not extra top-level SDK verbs:
+diff --git a/dev/interfaces/typescript.md b/dev/interfaces/typescript.md
+index 829fd45c..227f964e 100644
+--- a/dev/interfaces/typescript.md
++++ b/dev/interfaces/typescript.md
+@@ -396,6 +396,13 @@ caught per-open. An identity *change* is unaffected: it still rejects the open w
+ verdict runs the probe rather than trusting it. Full rationale and the residual:
+ `dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`.
+ 
++**Scope.** The self-check guards **accidental** backend drift and a corrupt
++baseline. It is **not** an integrity boundary against an actor with write access to
++the database file: such an actor can rewrite the stored probe baseline — which
++defeats the check even when it runs in full, exactly as it did before the cache —
++or the cached marker, or the vectors themselves. Do not read `denseDisabled` as a
++tamper signal. Threat model: §8 of the design note above.
++
+ `OpenReport` carries four embedder-related fields surfaced by EU-6
+ (camelCase per TS convention): `embedderDownloadMs`, `embedderEvents`,
+ `embedderMeanCenteringRequired`, and `embedderMeanVecPinned`. Each entry
+
+exec
+/bin/bash -lc 'git diff a39b865e..73656165 -- dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22
+ succeeded in 0ms:
+diff --git a/dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md b/dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md
+index 2c187fea..73dc1677 100644
+--- a/dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md
++++ b/dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md
+@@ -17,7 +17,8 @@ weakening it."*
+ 
+ > **Read §6 before signing anything off.** This change **narrows** an HITL-signed
+ > guarantee. That narrowing is the ruled trade, not an accident, and §6 states
+-> exactly what stops being caught.
++> exactly what stops being caught. **§8 is the threat model** — what the probe is
++> and, more importantly, what it is not.
+ 
+ ---
+ 
+@@ -193,13 +194,20 @@ per-step DDL and index shape; none enumerates `_fathomdb_open_state`'s *rows*.
+ ## 5. Fail-SAFE (`R-VEQ-4`) in the cache path
+ 
+ `R-VEQ-4` — *any inability to run or verify yields `dense_disabled = true`, never
+-skip-and-serve* — is HITL-signed and is **not** weakened. In the cache path:
++skip-and-serve* — is HITL-signed and is **not** weakened. It is a guarantee about
++**accident** — corruption, truncation, a half-written file, a workspace that
++predates the cache — not about a hostile writer; §8 draws that line. In the cache
++path:
+ 
+ - **an unreadable cache reads as a MISS, never as a pass.**
+   `probe_verification_is_cached` answers `false` for every failure mode: missing
+   `_fathomdb_open_state` table, absent row, non-TEXT value, garbled or truncated
+-  value, any SQL error. The only `true` is an exact match against a value this
+-  engine wrote after a verification it performed itself.
++  value, a stale fingerprint, any SQL error.
++
++  A `true` means **the fingerprint inputs are unchanged since *some* engine
++  recorded a pass** — not "this engine verified this backend". The engine cannot
++  tell its own marker from an identical one written by anything else, and §8 says
++  why that is neither fixable nor new.
+   (`an_unreadable_cache_entry_falls_back_to_running_the_probe`,
+   `a_missing_cache_entry_falls_back_to_running_the_probe`);
+ - **a failing verdict is never cached**, and every `Err` path of the check
+@@ -299,3 +307,117 @@ probe is inert and no SDK-level assertion about it is possible. The X1 SDK suite
+ FTS-only path, and defer divergence behaviour to the Rust engine suite. TC-68 adds
+ no surface for them to pin, so **no SDK test was added**: a mirror would have been
+ green without exercising anything.
++
++---
++
++## 8. THREAT MODEL — the probe is a self-check, not an integrity boundary
++
++**Added by fix-1**, closing the codex §9 targeted-round-2 `[P1]`
++(`dev/plans/runs/codex/0.8.20/slice-22-review-round2-targeted-20260729T004445Z.log`).
++
++### 8.1 The finding, accepted
++
++> `probe_verification_is_cached` trusts any `_fathomdb_open_state.value` exactly
++> equal to the freshly computed SHA-256. That is fail-safe for absent, corrupt,
++> truncated, non-TEXT or stale values because they miss and run the probe. It is
++> not fail-safe for an attacker-modified row: the fingerprint inputs are
++> deterministic, public DB and build inputs, not a secret or an engine-authenticated
++> marker, so a writer can forge the current digest and force the early
++> `return Ok(())` before the 45-probe verification runs.
++
++**True, and accepted.** `a_marker_matching_the_current_state_serves_a_drifted_backend`
++states it as an executable fact: on one workspace, with the marker absent the
++drifted backend is caught (45 embeds, `dense_disabled`); with the same digest
++written back it is served with 0 embeds.
++
++**§5's original wording was an over-claim and has been corrected.** It read *"the
++only `true` is an exact match against a value **this engine wrote after a
++verification it performed itself**"*. The engine cannot distinguish its own marker
++from an identical one written by anything else. What a `true` actually means is:
++**the fingerprint inputs are unchanged since *some* engine recorded a pass.**
++
++### 8.2 Why the remedy is prose, not cryptography
++
++There is nothing to authenticate the marker *with*. Every fingerprint input —
++identity triple, pinned `mean_vec`, compiled-in fixture, the two floors, the stored
++baseline blobs — is readable from the database file or the shipped binary. A salt
++or MAC key would live in the same file or the same binary and be read by the same
++actor. An embedded local-first engine has no key custodian, no separate trust
++domain and no privileged process. Any construction here would raise the bar for a
++*naive* editor only, while the *same* actor keeps a shorter route open (§8.3) —
++i.e. security theatre.
++
++### 8.3 The measured fact that settles it: the pre-slice path is equally forgeable
++
++`a_forged_stored_baseline_defeats_the_probe_even_when_it_fully_runs`:
++
++1. seed a verified workspace, then rewrite **every** `_fathomdb_embed_probe.reference_vec`
++   to the *drifted* backend's own output. Ordinals, `probe_text`, the identity
++   triple and the blob lengths are untouched, so the 0.8.18 fix-2 completeness
++   validation — which pins row *shape*, never blob *content* — sees nothing;
++2. **delete the cache marker**, so the cache demonstrably plays no part;
++3. open with the drifted backend. All **45** embeds run, and the probe **passes**:
++   it has verified the drifted backend against a baseline the drifted backend
++   itself supplied. Dense stays enabled; `search` does not refuse.
++
++The control leg — identical drifted backend, **un-forged** baseline, marker cleared
++— is caught and refuses dense, so the forgery is what does it.
++
++The code exercised in step 3 is the check body **as shipped at the slice baseline
++`fe85337f`**: `git diff fe85337f a39b865e -- src/rust/crates/fathomdb-engine/src/lib.rs`
++shows the only changes inside `probe_check_against_baseline_inner` are the doc
++comment, a type alias, the cache gate and the `record_probe_verification` call. The
++comparison logic is byte-identical.
++
++**Conclusion: the cache adds no new attack surface.** An actor with write access to
++the SQLite file already had a shorter route — and can in any case rewrite
++`canonical_nodes`, the `vector_default` vec0 rows and
++`_fathomdb_embedder_profiles.mean_vec` directly, which defeats retrieval outright
++without touching the probe at all. The probe was never a boundary against that
++actor; the cache changes *when* it runs, not *who can lie to it*.
++
++### 8.4 The boundary, stated plainly
++
++- **In scope — what the probe catches.** *Accidental* backend drift: the same
++  declared embedder moved CPU↔CUDA, rebuilt against a new library or driver, a
++  re-exported ONNX graph; plus a corrupt, partial or mangled stored baseline. That
++  is the ADR's purpose (`dev/adr/ADR-0.8.18-vector-equivalence-self-check.md`).
++- **In scope — the accident guarantee.** `R-VEQ-4` holds unchanged: every
++  unreadable, absent, garbled or stale cache state runs the probe rather than
++  trusting it (§5).
++- **OUT of scope — an actor with write access to the database file.** They can
++  forge the marker (§8.1), forge the baseline (§8.3), or rewrite the corpus and the
++  vectors. FathomDB's trust boundary is the file: a caller who lets an untrusted
++  party write the database has already lost the dense arm, the lexical arm and the
++  corpus. The equivalence probe is a **correctness self-check, not an integrity
++  boundary**, and must not be cited as one.
++- **What forging buys, bounded.** A digest is valid only for the state it was
++  computed over. `a_replayed_verdict_marker_is_defeated_by_a_mutated_baseline` and
++  `a_replayed_verdict_marker_is_defeated_by_a_rewritten_pinned_mean` show a known
++  digest expires at the next change to any fingerprint input, so a forgery must be
++  re-applied after every legitimate change.
++- **What the cache genuinely narrows** is §6 and only §6: same-identity backend
++  drift is no longer caught per-open. That is the ruled trade, and it is about
++  accident, not attack.
++
++### 8.5 Hardening considered and rejected
++
++- **Salt / MAC / keyed digest.** Rejected: §8.2 — no secret exists to key it with.
++- **Obfuscate the marker (encode it, hide the key name, spread it over rows).**
++  Rejected: costs real complexity, stops nobody who can read the schema, and leaves
++  §8.3's shorter route wide open. Theatre.
++- **A `DELETE`-the-marker trigger on `_fathomdb_embed_probe`,** so an external
++  `UPDATE` of the baseline drops the cached verdict. Rejected twice over: it is DDL,
++  so it needs a migration step and a `SCHEMA_VERSION` bump (explicitly out of scope
++  for this slice), and it buys nothing — §8.3's forgery *wants* the probe to run,
++  because the forged baseline passes it.
++- **Hash the marker together with something an external writer would plausibly
++  forget to update.** Rejected: there is no such input that is not already a
++  fingerprint input, and inventing one (a write counter, a mtime) would make open
++  cost non-deterministic — the same objection that killed the TTL in §6.2 — while
++  still yielding to anyone who reads this file.
++
++Nothing was implemented. The correct disposition of a `[P1]` that turns out to
++restate a pre-existing, unfixable-by-construction property is to **say so
++precisely** — which §8 now does — rather than to ship a mechanism that looks like a
++fix.
+
+exec
+/bin/bash -lc "sed -n '260,430p' dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22
+ succeeded in 0ms:
+- **the first-ever verification** of a workspace — population always runs the full
+  check before dense is enabled.
+
+### 6.2 Mitigations considered and rejected
+
+- **Re-run the probe every Nth open, or on a wall-clock TTL.** Rejected: it makes
+  open cost non-deterministic and unexplainable ("why was *this* open slow?"),
+  restores only a fraction of the coverage, and needs a durable counter/clock that
+  is itself a new correctness surface. It converts a clean "cached ⇒ 0" contract
+  into a probabilistic one.
+- **Cache only the P2 (L2) half and keep re-running P1.** Rejected: both halves
+  need the same 45 embeds, so this saves nothing.
+- **Sample k of the 45 probes per open.** Rejected: the D4 floors are calibrated on
+  the full 45-probe set (P1 floor is exact-zero over all of them), so a sampled run
+  is not the signed check, and `dense_disabled` would stop meaning what the ADR says
+  it means.
+- **Widen `EmbedderIdentity` (or the `Embedder` trait) with a runtime
+  backend/device descriptor** — e.g. `candle-cuda:driver=12.4` — and fold it into
+  the fingerprint. **This is the fix that would genuinely retire the residual**, and
+  it is deliberately NOT implemented here: it is public-surface work on a governed
+  type, it needs HITL sign-off, and it belongs with the batched governed-surface
+  decision the plan places after Slice 22. Recorded for that decision, not taken.
+
+---
+
+## 7. Consumer-visible effect
+
+No public surface changes — no new type, field, method, or error. Two behavioural
+changes a consumer can observe:
+
+1. **`Engine::open` gets cheaper.** A workspace with an enrolled vector kind and a
+   live embedder stops paying 45 embeds per open. With the default bge-small
+   embedder on CPU that is the dominant open cost.
+2. **`OpenReport.dense_disabled` changes meaning slightly.** It used to mean "the
+   probe re-verified the dense arm at *this* open". It now means "the dense arm was
+   verified at the last open whose fingerprint differed, and nothing in the
+   fingerprint has changed since". A caller relying on open-time re-verification to
+   detect a backend swap must force a re-run (rewrite the pinned mean, or clear
+   `_fathomdb_open_state.vector_equivalence_verified_fingerprint`) — or wait for
+   §6.2's descriptor input to be signed.
+
+Neither is reachable from a **default** Python/TypeScript session: without
+`use_default_embedder` / `useDefaultEmbedder` there is no live embedder, so the
+probe is inert and no SDK-level assertion about it is possible. The X1 SDK suites
+(`src/python/tests/test_vector_equivalence_probe.py`,
+`src/ts/tests/vector-equivalence-probe.test.ts`) are, by their own docstrings,
+**surface-parity only** — they pin the error leaf, the `OpenReport` fields and the
+FTS-only path, and defer divergence behaviour to the Rust engine suite. TC-68 adds
+no surface for them to pin, so **no SDK test was added**: a mirror would have been
+green without exercising anything.
+
+---
+
+## 8. THREAT MODEL — the probe is a self-check, not an integrity boundary
+
+**Added by fix-1**, closing the codex §9 targeted-round-2 `[P1]`
+(`dev/plans/runs/codex/0.8.20/slice-22-review-round2-targeted-20260729T004445Z.log`).
+
+### 8.1 The finding, accepted
+
+> `probe_verification_is_cached` trusts any `_fathomdb_open_state.value` exactly
+> equal to the freshly computed SHA-256. That is fail-safe for absent, corrupt,
+> truncated, non-TEXT or stale values because they miss and run the probe. It is
+> not fail-safe for an attacker-modified row: the fingerprint inputs are
+> deterministic, public DB and build inputs, not a secret or an engine-authenticated
+> marker, so a writer can forge the current digest and force the early
+> `return Ok(())` before the 45-probe verification runs.
+
+**True, and accepted.** `a_marker_matching_the_current_state_serves_a_drifted_backend`
+states it as an executable fact: on one workspace, with the marker absent the
+drifted backend is caught (45 embeds, `dense_disabled`); with the same digest
+written back it is served with 0 embeds.
+
+**§5's original wording was an over-claim and has been corrected.** It read *"the
+only `true` is an exact match against a value **this engine wrote after a
+verification it performed itself**"*. The engine cannot distinguish its own marker
+from an identical one written by anything else. What a `true` actually means is:
+**the fingerprint inputs are unchanged since *some* engine recorded a pass.**
+
+### 8.2 Why the remedy is prose, not cryptography
+
+There is nothing to authenticate the marker *with*. Every fingerprint input —
+identity triple, pinned `mean_vec`, compiled-in fixture, the two floors, the stored
+baseline blobs — is readable from the database file or the shipped binary. A salt
+or MAC key would live in the same file or the same binary and be read by the same
+actor. An embedded local-first engine has no key custodian, no separate trust
+domain and no privileged process. Any construction here would raise the bar for a
+*naive* editor only, while the *same* actor keeps a shorter route open (§8.3) —
+i.e. security theatre.
+
+### 8.3 The measured fact that settles it: the pre-slice path is equally forgeable
+
+`a_forged_stored_baseline_defeats_the_probe_even_when_it_fully_runs`:
+
+1. seed a verified workspace, then rewrite **every** `_fathomdb_embed_probe.reference_vec`
+   to the *drifted* backend's own output. Ordinals, `probe_text`, the identity
+   triple and the blob lengths are untouched, so the 0.8.18 fix-2 completeness
+   validation — which pins row *shape*, never blob *content* — sees nothing;
+2. **delete the cache marker**, so the cache demonstrably plays no part;
+3. open with the drifted backend. All **45** embeds run, and the probe **passes**:
+   it has verified the drifted backend against a baseline the drifted backend
+   itself supplied. Dense stays enabled; `search` does not refuse.
+
+The control leg — identical drifted backend, **un-forged** baseline, marker cleared
+— is caught and refuses dense, so the forgery is what does it.
+
+The code exercised in step 3 is the check body **as shipped at the slice baseline
+`fe85337f`**: `git diff fe85337f a39b865e -- src/rust/crates/fathomdb-engine/src/lib.rs`
+shows the only changes inside `probe_check_against_baseline_inner` are the doc
+comment, a type alias, the cache gate and the `record_probe_verification` call. The
+comparison logic is byte-identical.
+
+**Conclusion: the cache adds no new attack surface.** An actor with write access to
+the SQLite file already had a shorter route — and can in any case rewrite
+`canonical_nodes`, the `vector_default` vec0 rows and
+`_fathomdb_embedder_profiles.mean_vec` directly, which defeats retrieval outright
+without touching the probe at all. The probe was never a boundary against that
+actor; the cache changes *when* it runs, not *who can lie to it*.
+
+### 8.4 The boundary, stated plainly
+
+- **In scope — what the probe catches.** *Accidental* backend drift: the same
+  declared embedder moved CPU↔CUDA, rebuilt against a new library or driver, a
+  re-exported ONNX graph; plus a corrupt, partial or mangled stored baseline. That
+  is the ADR's purpose (`dev/adr/ADR-0.8.18-vector-equivalence-self-check.md`).
+- **In scope — the accident guarantee.** `R-VEQ-4` holds unchanged: every
+  unreadable, absent, garbled or stale cache state runs the probe rather than
+  trusting it (§5).
+- **OUT of scope — an actor with write access to the database file.** They can
+  forge the marker (§8.1), forge the baseline (§8.3), or rewrite the corpus and the
+  vectors. FathomDB's trust boundary is the file: a caller who lets an untrusted
+  party write the database has already lost the dense arm, the lexical arm and the
+  corpus. The equivalence probe is a **correctness self-check, not an integrity
+  boundary**, and must not be cited as one.
+- **What forging buys, bounded.** A digest is valid only for the state it was
+  computed over. `a_replayed_verdict_marker_is_defeated_by_a_mutated_baseline` and
+  `a_replayed_verdict_marker_is_defeated_by_a_rewritten_pinned_mean` show a known
+  digest expires at the next change to any fingerprint input, so a forgery must be
+  re-applied after every legitimate change.
+- **What the cache genuinely narrows** is §6 and only §6: same-identity backend
+  drift is no longer caught per-open. That is the ruled trade, and it is about
+  accident, not attack.
+
+### 8.5 Hardening considered and rejected
+
+- **Salt / MAC / keyed digest.** Rejected: §8.2 — no secret exists to key it with.
+- **Obfuscate the marker (encode it, hide the key name, spread it over rows).**
+  Rejected: costs real complexity, stops nobody who can read the schema, and leaves
+  §8.3's shorter route wide open. Theatre.
+- **A `DELETE`-the-marker trigger on `_fathomdb_embed_probe`,** so an external
+  `UPDATE` of the baseline drops the cached verdict. Rejected twice over: it is DDL,
+  so it needs a migration step and a `SCHEMA_VERSION` bump (explicitly out of scope
+  for this slice), and it buys nothing — §8.3's forgery *wants* the probe to run,
+  because the forged baseline passes it.
+- **Hash the marker together with something an external writer would plausibly
+  forget to update.** Rejected: there is no such input that is not already a
+  fingerprint input, and inventing one (a write counter, a mtime) would make open
+  cost non-deterministic — the same objection that killed the TTL in §6.2 — while
+  still yielding to anyone who reads this file.
+
+Nothing was implemented. The correct disposition of a `[P1]` that turns out to
+restate a pre-existing, unfixable-by-construction property is to **say so
+precisely** — which §8 now does — rather than to ship a mechanism that looks like a
+fix.
+
+exec
+/bin/bash -lc "git diff fe85337f..a39b865e -- src/rust/crates/fathomdb-engine/src/lib.rs | sed -n '1,260p'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22
+ succeeded in 0ms:
+diff --git a/src/rust/crates/fathomdb-engine/src/lib.rs b/src/rust/crates/fathomdb-engine/src/lib.rs
+index 7076a6e0..61affa3b 100644
+--- a/src/rust/crates/fathomdb-engine/src/lib.rs
++++ b/src/rust/crates/fathomdb-engine/src/lib.rs
+@@ -88,6 +88,27 @@ const VECTOR_EQUIVALENCE_L2_EPSILON: f32 = 1e-5;
+ /// tolerated Phase-1 mean-centered `embedding_bin` sign-flip count across all 45
+ /// probes. `0` = exact: any single flip ⇒ divergence ⇒ dense refused.
+ const VECTOR_EQUIVALENCE_P1_FLIP_FLOOR: u64 = 0;
++
++/// 0.8.20 Slice 22 (TC-68) — `_fathomdb_open_state` key holding the
++/// [`probe_verification_fingerprint`] of the last open at which the
++/// vector-equivalence probe actually RAN and PASSED on this workspace. An open
++/// whose freshly computed fingerprint equals this value reuses that verdict and
++/// performs ZERO probe embeds; anything else re-runs the full probe.
++///
++/// It lives in `_fathomdb_open_state` — the engine's existing open-time
++/// durable-marker KV table (migration step 1) — alongside
++/// [`SEARCH_INDEX_TOKENIZER_REPROJECT_MARKER_KEY`] and
++/// [`EDGE_VECTOR_PRUNE_MARKER_KEY`], which is exactly this shape of state. So
++/// TC-68 adds **no** table, **no** migration step and **no** `SCHEMA_VERSION`
++/// bump: an old DB simply has no row here and re-runs the probe once.
++const VECTOR_EQUIVALENCE_VERDICT_CACHE_KEY: &str = "vector_equivalence_verified_fingerprint";
++
++/// 0.8.20 Slice 22 (TC-68) — recipe tag mixed into every verdict fingerprint.
++/// **Bump it whenever the SET of fingerprint inputs changes.** Every cached
++/// verdict in the field then stops matching and the probe re-runs once per
++/// workspace — the fail-SAFE direction, and the reason a stale recipe can never
++/// silently keep vouching for a narrower check than the current build performs.
++const VECTOR_EQUIVALENCE_FINGERPRINT_RECIPE: &str = "fathomdb-veq-verdict-v1";
+ /// Default drain budget for `rebuild_projections` / `rebuild_vec0`. The
+ /// rebuild path freezes the scheduler before truncating shadow rows, so
+ /// the only outstanding work is whatever workers were mid-flight when
+@@ -4005,6 +4026,51 @@ pub struct ProjectionDelta {
+     /// True iff nothing was built, dropped, or newly deferred — the whole apply
+     /// diffed to a no-op.
+     pub unchanged: bool,
++    /// 0.8.20 Slice 22 (R-20-VC / **TC-67**) — **node KINDS, not attribute
++    /// names.** The vector-eligible node kinds present in the corpus that the
++    /// vector writer can NEVER commit, so no `searchable→vector` declaration
++    /// will ever produce an embedding for them.
++    ///
++    /// # Why this field exists — the silence it replaces
++    ///
++    /// [`kind_is_vector_committable`] (Slice 20c fix-2) restricted enrolment to
++    /// the kinds [`resolve_source_type`] maps, because enrolling any other kind
++    /// is a permanent liveness wedge. That fix was correct and is unchanged —
++    /// but it made the exclusion **silent**: the declaration persists, its name
++    /// is pushed onto [`ProjectionDelta::deferred`], and the caller cannot tell
++    /// "waiting on the embedder" (transient) from "this kind will never be
++    /// embedded" (permanent). Per the HITL ruling on TC-67 the remedy is
++    /// option **(c) REPORT** — the vocabulary is NOT grown and the Pack-1 D3
++    /// partition-key lock is NOT touched (`dev/design/0.7.0-vector-quant-pack1.md`).
++    ///
++    /// # Axis, and why the name is what it is
++    ///
++    /// `built` / `dropped` / `deferred` are all lists of **projection attribute
++    /// names**. This one is a list of **node kinds** — a different axis entirely,
++    /// so the name says `kinds` explicitly and is prefixed `vector_` to bind it
++    /// to the dense arm (an unsupported kind is still fully FTS/lexically
++    /// searchable). Sorted and de-duplicated (`SELECT DISTINCT … ORDER BY kind`).
++    ///
++    /// # It is a STATE report, not a diff
++    ///
++    /// Unlike the other three vectors it does not describe what this call
++    /// changed; it describes the corpus as it stands. So it is populated on an
++    /// idempotent re-apply too (where `unchanged == true` and the other three
++    /// are empty), and it deliberately does NOT feed [`ProjectionDelta::unchanged`].
++    /// That is what makes the declare-time residual cheap to live with: to
++    /// refresh the report after writing new kinds, re-apply the same spec — a
++    /// no-op that still returns a current report.
++    ///
++    /// # Independent of the embedder
++    ///
++    /// Computed whenever a `searchable→vector` projection is declared, whether
++    /// or not this session has a live embedder. The vocabulary is static, so
++    /// "this kind can never be embedded" is true in a no-embedder session too —
++    /// and must not be conflated with the Q6a graceful-absent deferral, which is
++    /// transient and is reported through `deferred`.
++    ///
++    /// Empty (never absent) when there is nothing to report.
++    pub vector_unsupported_kinds: Vec<String>,
+ }
+ 
+ /// 0.8.20 Slice 5b (R-20-E7) — outcome of
+@@ -5873,9 +5939,9 @@ impl Engine {
+     ) -> Result<(), EngineError> {
+         tx.execute("DELETE FROM search_index_edges WHERE write_cursor = ?1", [cursor])
+             .map_err(|_| EngineError::Storage)?;
+-        // vec0 rowid is the canonical row's write_cursor.
+-        tx.execute("DELETE FROM vector_default WHERE rowid = ?1", [cursor])
+-            .map_err(|_| EngineError::Storage)?;
++        // vec0 rowid is the canonical row's write_cursor. TC-76: via the one
++        // vec0-delete primitive ([`delete_vector_partition_row`]).
++        delete_vector_partition_row(tx, cursor).map_err(|_| EngineError::Storage)?;
+         tx.execute("DELETE FROM _fathomdb_vector_rows WHERE write_cursor = ?1", [cursor])
+             .map_err(|_| EngineError::Storage)?;
+         if !keep_terminal {
+@@ -9618,8 +9684,10 @@ fn run_pin_and_requantize_pass(
+             .map_err(|_| EngineError::Storage)?
+         };
+ 
+-        tx.execute("DELETE FROM vector_default WHERE rowid = ?1", params![rowid])
+-            .map_err(|_| EngineError::Storage)?;
++        // TC-76: the attr VALUES were read above, so neutralizing them inside
++        // [`delete_vector_partition_row`] cannot lose them; the re-INSERT below
++        // re-binds `attr_vals` verbatim.
++        delete_vector_partition_row(tx, *rowid).map_err(|_| EngineError::Storage)?;
+ 
+         // Slice 10 / G10 — `status` ships the empty-string sentinel (vec0 TEXT
+         // metadata is NOT NULL-able).
+@@ -13439,8 +13507,9 @@ fn prune_orphaned_edge_vectors(connection: &Connection) -> rusqlite::Result<()>
+         for rowid in vec_rowids {
+             if !sidecar.contains(&rowid) {
+                 // vec0 rowid IS the canonical write_cursor; delete by rowid (the
+-                // proven vec0 delete form, as `prune_edge_projection_shadows`).
+-                connection.execute("DELETE FROM vector_default WHERE rowid = ?1", [rowid])?;
++                // proven vec0 delete form, as `prune_edge_projection_shadows`),
++                // through the one TC-76-safe vec0-delete primitive.
++                delete_vector_partition_row(connection, rowid)?;
+             }
+         }
+         connection.execute(
+@@ -14733,6 +14802,93 @@ fn actual_vector_attr_columns(conn: &Connection) -> rusqlite::Result<Vec<String>
+     Ok(cols)
+ }
+ 
++/// TC-76 (sqlite-vec issue **#99**) — **the** way to delete ONE `vector_default`
++/// row by rowid. Every by-rowid vec0 delete in this crate goes through here.
++///
++/// # The upstream defect this works around
++///
++/// A vec0 plain-TEXT metadata column stores a 16-byte inline view per row: a
++/// 4-byte length plus the first 12 bytes of the value
++/// (`VEC0_METADATA_TEXT_VIEW_DATA_LENGTH`). A value longer than those 12 bytes
++/// ALSO gets a row in the `<tbl>_metadatatext<NN>` shadow table.
++///
++/// In `sqlite-vec` `=0.1.7`, `vec0Update_Delete_ClearMetadata`
++/// (`sqlite-vec.c:8888`) deletes that shadow row (`sqlite-vec.c:8934-8952`) and
++/// then returns `sqlite3_step`'s `SQLITE_DONE` (101) verbatim — it never resets
++/// `rc` to `SQLITE_OK`. `vec0Update_Delete` (`sqlite-vec.c:9027`) reads
++/// `101 != SQLITE_OK` as a failure and aborts the entire `DELETE`. The
++/// INSERT/UPDATE twin of that code (`sqlite-vec.c:8258-8320`) is saved by an
++/// unconditional `rc = sqlite3_blob_close(...)` after its switch, which is why
++/// only DELETE carries the defect — and why the neutralizing `UPDATE` below is a
++/// sound workaround rather than the same bug by another name.
++///
++/// # Why FathomDB is exposed
++///
++/// `vector_default` carries three plain-TEXT metadata columns
++/// ([`vector_partition_create_sql`]): `kind`, `status` and one `attr_<hex>` per
++/// declared `filterable` projection. Only the `attr_*` VALUES are caller-supplied
++/// and unbounded, and Slice 15e stores them marker-encoded (`\x01 || V`), so a
++/// raw attribute value of **12 or more UTF-8 bytes** trips #99 and makes
++/// `erase_source` / `purge` / edge supersession / the open-path orphan sweep fail
++/// with [`EngineError::Storage`], leaving the row AND its shadowed value at rest.
++/// `kind` is bounded to `resolve_source_type`'s locked vocabulary (max 9 bytes)
++/// at every enrolment door via [`kind_is_vector_committable`], and `status` ships
++/// the `''` sentinel — so neither needs neutralizing, and neither is touched.
++///
++/// # The workaround
++///
++/// Blank the `attr_*` columns FIRST. vec0's UPDATE path takes the `n <= 12 &&
++/// prev_n > 12` branch (`sqlite-vec.c:8300-8319`), which deletes the shadow row
++/// AND returns `SQLITE_OK`, then the DELETE no longer has an over-length value to
++/// clear. Measured: the `embedding` bytes and the other metadata columns survive
++/// the metadata-only UPDATE verbatim, and the `_metadatatext<NN>` row is gone —
++/// so this is erasure-COMPLETE, not merely error-suppressing.
++///
++/// Pinned by `tests/tc76_vec0_long_metadata_delete.rs`, whose bare-vec0 test is
++/// the tripwire: it fails once `sqlite-vec` ships a fix for #99, which is the
++/// signal to delete the neutralize step.
++///
++/// A no-op UPDATE (no `attr_*` columns declared — every corpus before a
++/// `filterable` projection exists) is skipped entirely, so the shipped
++/// no-projection path issues the same single `DELETE` it always did.
++fn delete_vector_partition_row(conn: &Connection, rowid: i64) -> rusqlite::Result<usize> {
++    neutralize_vector_partition_attr_values(conn, Some(rowid))?;
++    conn.execute(&format!("DELETE FROM {DEFAULT_VECTOR_PARTITION} WHERE rowid = ?1"), [rowid])
++}
++
++/// TC-76 (sqlite-vec **#99**) — blank every `attr_<hex>` value on `vector_default`
++/// (one row when `rowid` is `Some`, the whole table when `None`) so that a
++/// following `DELETE` never has an over-length TEXT metadata value to clear. See
++/// [`delete_vector_partition_row`] for the mechanism and the evidence.
++///
++/// A pure no-op when no `filterable` projection is declared — which is every
++/// corpus that predates Slice 15e — so the shipped delete paths issue exactly the
++/// statements they always did.
++fn neutralize_vector_partition_attr_values(
++    conn: &Connection,
++    rowid: Option<i64>,
++) -> rusqlite::Result<()> {
++    let attr_cols = actual_vector_attr_columns(conn)?;
++    if attr_cols.is_empty() {
++        return Ok(());
++    }
++    // `attr_cols` are `^attr_[0-9a-f]+$` identifiers derived by
++    // `attr_vec0_column`, never caller text: safe to interpolate.
++    let sets = attr_cols.iter().map(|c| format!("{c}=''")).collect::<Vec<_>>().join(", ");
++    match rowid {
++        Some(rowid) => {
++            conn.execute(
++                &format!("UPDATE {DEFAULT_VECTOR_PARTITION} SET {sets} WHERE rowid = ?1"),
++                [rowid],
++            )?;
++        }
++        None => {
++            conn.execute(&format!("UPDATE {DEFAULT_VECTOR_PARTITION} SET {sets}"), [])?;
++        }
++    }
++    Ok(())
++}
++
+ /// 0.8.20 Slice 15e — reconcile the live `vector_default` attribute columns with
+ /// the registry's `filterable` set (TC-46: HITL-ratified NON-DESTRUCTIVE reshape,
+ /// following the shipped `migrate_vector_partition_pack1_to_pack2` precedent).
+@@ -15265,14 +15421,161 @@ fn probe_populate_baseline(
+     Ok(())
+ }
+ 
++/// 0.8.20 Slice 22 (TC-68) — one row of the stored probe baseline:
++/// `(probe_ordinal, probe_text, reference_vec, embedder_name, embedder_revision, dim)`.
++type StoredProbeRow = (i64, String, Vec<u8>, String, String, i64);
++
++/// 0.8.20 Slice 22 (TC-68) — length-prefixed field feed for the verdict
++/// fingerprint. The `u64` length prefix makes the concatenation UNAMBIGUOUS: two
++/// different input tuples can never produce the same byte stream by sliding a
++/// delimiter (e.g. name `"ab"` + revision `"c"` vs name `"a"` + revision `"bc"`).
++fn hash_fingerprint_field(hasher: &mut Sha256, bytes: &[u8]) {
++    hasher.update((bytes.len() as u64).to_le_bytes());
++    hasher.update(bytes);
++}
++
++/// 0.8.20 Slice 22 (TC-68) — the **embedder-identity fingerprint** the cached
++/// equivalence verdict is keyed on: a SHA-256 over EVERY input the probe's verdict
++/// depends on. Two opens sharing a fingerprint would, by construction, compute the
++/// same P1/P2 answer, so the second may reuse the first's.
++///
++/// The inputs, and why each is load-bearing:
++///
++/// - **the recipe tag** ([`VECTOR_EQUIVALENCE_FINGERPRINT_RECIPE`]) — bumping it
++///   invalidates every cached verdict in the field at once;
++/// - **`identity.{name, revision, dimension}`** — the nominal embedder. This is
++///   *defence in depth only*: `check_embedder_profile` already REFUSES the open
++///   with `EmbedderIdentityMismatch`/`EmbedderDimensionMismatch` before the probe
++///   is reached, so an identity change is never observed here in practice;
++/// - **the live pinned `mean_vec`** (and whether centering is applied at all) —
++///   this one is NOT optional. P1 quantizes through
++///   `vec_quantize_binary(sign(x − mean_vec))`, so rewriting the pinned mean
++///   changes the verdict *for the same embedder and the same baseline*. A
++///   fingerprint over the identity triple alone would be stale by construction,
++///   because open-time mean-recovery/requantize and the operator `recompute_mean`
++///   verb both rewrite it;
++/// - **the committed probe fixture** — a cached verdict computed over a different
++///   probe set means nothing. (`vector_equivalence_probe_fixture_drift.rs` does
++///   NOT make this redundant: it pins the engine's copy equal to the embedder
++///   crate's copy — it guards COPY drift between two committed files, not the
++///   fixture's content across releases. The stored-baseline completeness check
++///   below does fail closed first on a fixture edit, so this input is belt-and-
++///   braces rather than the only guard; it is one hash of a ~3 KB constant.);
+
+exec
+/bin/bash -lc 'git diff a39b865e..73656165 -- src/rust/crates/fathomdb-engine/tests/tc68_probe_fingerprint_cache.rs' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22
+ succeeded in 0ms:
+diff --git a/src/rust/crates/fathomdb-engine/tests/tc68_probe_fingerprint_cache.rs b/src/rust/crates/fathomdb-engine/tests/tc68_probe_fingerprint_cache.rs
+index 02904a0b..f6dc8ccd 100644
+--- a/src/rust/crates/fathomdb-engine/tests/tc68_probe_fingerprint_cache.rs
++++ b/src/rust/crates/fathomdb-engine/tests/tc68_probe_fingerprint_cache.rs
+@@ -42,6 +42,34 @@
+ //! the ruled trade, and
+ //! `residual_same_identity_backend_drift_is_not_caught_on_a_cached_open` states it
+ //! as an executable fact.
++//!
++//! ## fix-1 — the THREAT MODEL, measured rather than asserted
++//!
++//! codex §9 round 2 raised a `[P1]`: the cached marker is a SHA-256 over
++//! deterministic, publicly derivable DB and build inputs, so an actor with write
++//! access to the SQLite file can compute the current digest, write it into
++//! `_fathomdb_open_state`, and force the early `Ok(())` before the 45-probe
++//! verification runs. That is true, and
++//! `a_marker_matching_the_current_state_serves_a_drifted_backend` proves it.
++//!
++//! The question that decides what to DO about it is whether the cache introduced
++//! that exposure or merely restated it. It restated it:
++//! `a_forged_stored_baseline_defeats_the_probe_even_when_it_fully_runs` shows the
++//! SAME actor defeats the SAME arm through the **pre-slice** path — forge
++//! `_fathomdb_embed_probe.reference_vec` to the drifted backend's own output and
++//! the probe runs all 45 embeds and PASSES. The check body exercised there is
++//! byte-identical to the one shipped at the slice baseline `fe85337f` (the TC-68
++//! diff adds only the cache gate and the recording call), and the marker is
++//! deleted first so the cache demonstrably plays no part.
++//!
++//! So the equivalence probe is a **correctness self-check against backend drift,
++//! not an integrity boundary against a hostile writer** — it never was one, and
++//! there is no secret in an embedded local-first engine with which to make the
++//! marker unforgeable. What the cache *does* narrow is recorded in §6 of the
++//! design note and in `residual_…` above. What forging buys is bounded:
++//! `a_replayed_verdict_marker_is_defeated_by_a_mutated_baseline` and
++//! `a_replayed_verdict_marker_is_defeated_by_a_rewritten_pinned_mean` show a known
++//! digest stops working at the next change to any fingerprint input.
+ 
+ use std::sync::atomic::{AtomicU64, Ordering};
+ use std::sync::Arc;
+@@ -63,6 +91,12 @@ const BGE_REV: &str = "veq-tc68-mc";
+ /// The full committed probe fixture size (`src/vector_equivalence_probes.txt`).
+ const PROBE_COUNT: u64 = 45;
+ 
++/// The `_fathomdb_open_state` key under which the engine records the fingerprint
++/// of the last open at which the probe RAN and PASSED (mirrors
++/// `vector_equivalence_probe.rs`). fix-1 needs to name it: the threat-model tests
++/// read, delete and re-install that exact row the way an external writer would.
++const VEQ_VERDICT_CACHE_KEY: &str = "vector_equivalence_verified_fingerprint";
++
+ /// Deterministic per-text reference vector, every component in `[0.5, 1.5)` —
+ /// strictly positive, so the raw 1-bit sign quantization is all-ones and sits
+ /// robustly away from the zero threshold. Mirrors `vector_equivalence_probe.rs`.
+@@ -159,6 +193,73 @@ fn set_pinned_mean(path: &std::path::Path, mean: Vec<u8>) {
+     .expect("pin mean_vec");
+ }
+ 
++/// LE-f32 encode a vector into the engine's `reference_vec` blob shape.
++fn encode_vector_blob(vector: &[f32]) -> Vec<u8> {
++    vector.iter().flat_map(|x| x.to_le_bytes()).collect()
++}
++
++/// fix-1 — read the cached verdict marker exactly as an external actor would.
++fn read_verdict_marker(path: &std::path::Path) -> Option<String> {
++    let conn = rusqlite::Connection::open(path).unwrap();
++    conn.query_row(
++        "SELECT value FROM _fathomdb_open_state WHERE key = ?1",
++        [VEQ_VERDICT_CACHE_KEY],
++        |row| row.get::<_, String>(0),
++    )
++    .ok()
++}
++
++/// fix-1 — write an arbitrary value into the marker row: the forgery itself.
++fn install_verdict_marker(path: &std::path::Path, value: &str) {
++    let conn = rusqlite::Connection::open(path).unwrap();
++    conn.execute(
++        "INSERT INTO _fathomdb_open_state(key, value) VALUES(?1, ?2)
++         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
++        rusqlite::params![VEQ_VERDICT_CACHE_KEY, value],
++    )
++    .expect("install the verdict marker");
++}
++
++/// fix-1 — drop the marker, so the next open runs the pre-slice check path.
++fn clear_verdict_marker(path: &std::path::Path) {
++    let conn = rusqlite::Connection::open(path).unwrap();
++    conn.execute("DELETE FROM _fathomdb_open_state WHERE key = ?1", [VEQ_VERDICT_CACHE_KEY])
++        .expect("clear the verdict marker");
++}
++
++/// fix-1 — rewrite EVERY stored `reference_vec` to `f(probe_text)`, leaving the
++/// ordinal, the text, the identity triple and the blob LENGTH untouched. This is
++/// the pre-slice forgery: the 0.8.18 fix-2 completeness validation pins each row's
++/// shape but never its blob CONTENT, so a hostile writer can re-baseline the probe
++/// against whatever their backend currently emits.
++fn forge_stored_baseline(path: &std::path::Path, f: impl Fn(&str) -> Vec<f32>) {
++    let conn = rusqlite::Connection::open(path).unwrap();
++    let rows: Vec<(i64, String, usize)> = {
++        let mut stmt = conn
++            .prepare(
++                "SELECT probe_ordinal, probe_text, length(reference_vec) \
++                 FROM _fathomdb_embed_probe ORDER BY probe_ordinal",
++            )
++            .unwrap();
++        let rows = stmt
++            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? as usize)))
++            .unwrap()
++            .collect::<rusqlite::Result<Vec<_>>>()
++            .unwrap();
++        rows
++    };
++    assert_eq!(rows.len() as u64, PROBE_COUNT, "the baseline must be the full committed set");
++    for (ordinal, text, blob_len) in rows {
++        let blob = encode_vector_blob(&f(&text));
++        assert_eq!(blob.len(), blob_len, "the forgery must preserve the blob length");
++        conn.execute(
++            "UPDATE _fathomdb_embed_probe SET reference_vec = ?1 WHERE probe_ordinal = ?2",
++            rusqlite::params![blob, ordinal],
++        )
++        .expect("forge one reference row");
++    }
++}
++
+ /// Open, snapshot the embed-call delta across the open, close. Returns
+ /// `(embeds_during_open, dense_disabled)`.
+ fn open_count_close(
+@@ -548,3 +649,197 @@ fn residual_same_identity_backend_drift_is_not_caught_on_a_cached_open() {
+          it is caught only at the next open whose fingerprint changed"
+     );
+ }
++
++// ---- fix-1 (codex §9 round 2 [P1]) — the THREAT MODEL, measured ------------
++//
++// Transcript:
++// `dev/plans/runs/codex/0.8.20/slice-22-review-round2-targeted-20260729T004445Z.log`.
++//
++// The finding is correct as stated: a writer who can compute the current digest
++// forces the probe to be skipped. These four tests establish what that is worth —
++// that the SAME actor already defeated the SAME arm before the cache existed, and
++// that a known digest expires at the next change to any fingerprint input.
++
++/// **THE HYPOTHESIS TEST.** Is the pre-slice design an integrity boundary against
++/// a hostile writer? No — and this is the measurement that says so.
++///
++/// The 0.8.18 probe re-embeds the 45 committed probes and compares them to the
++/// STORED references. Those references live in an ordinary table in the same file.
++/// An actor with write access re-baselines them to their drifted backend's own
++/// output — same ordinals, same texts, same identity triple, same blob lengths, so
++/// the fix-2 completeness validation sees nothing — and the probe then verifies the
++/// drifted backend against itself and PASSES.
++///
++/// The cache is removed from the picture entirely: the marker is DELETED before
++/// the open, and the test asserts all 45 embeds actually happen. What runs is the
++/// check body as shipped at the slice baseline `fe85337f` (the TC-68 diff over that
++/// function adds only the cache gate and the `record_probe_verification` call).
++///
++/// The control leg proves the forgery is what does it: the identical drifted
++/// backend against an UN-forged baseline is caught and refuses dense.
++#[test]
++fn a_forged_stored_baseline_defeats_the_probe_even_when_it_fully_runs() {
++    // -- control: drift alone, with the cache out of the way, IS caught. --------
++    let control_dir = TempDir::new().unwrap();
++    let control_path = db_path(&control_dir);
++    let control_calls = counter();
++    seed_verified_workspace(&control_path, &control_calls);
++    clear_verdict_marker(&control_path);
++    let (control_embeds, control_degraded) = open_count_close(
++        &control_path,
++        Arc::new(CountingDivergentEmbedder { calls: control_calls.clone() }),
++        &control_calls,
++    );
++    assert_eq!(control_embeds, PROBE_COUNT, "control: the probe must actually run");
++    assert!(control_degraded, "control: un-forged baseline + drifted backend ⇒ dense REFUSED");
++
++    // -- the forgery: re-baseline the references to the drifted backend's output.
++    let dir = TempDir::new().unwrap();
++    let path = db_path(&dir);
++    let calls = counter();
++    seed_verified_workspace(&path, &calls);
++    forge_stored_baseline(&path, |text| reference_vector(text).into_iter().map(|x| -x).collect());
++    clear_verdict_marker(&path);
++    assert_eq!(read_verdict_marker(&path), None, "the cache must play NO part in this leg");
++
++    let before = calls.load(Ordering::SeqCst);
++    let opened = Engine::open_with_embedder_for_test(
++        &path,
++        Arc::new(CountingDivergentEmbedder { calls: calls.clone() }),
++    )
++    .expect("open must succeed");
++    let embeds = calls.load(Ordering::SeqCst) - before;
++
++    assert_eq!(embeds, PROBE_COUNT, "the FULL pre-slice check ran — nothing was skipped");
++    assert!(
++        !opened.report.dense_disabled,
++        "PRE-EXISTING: a forged stored baseline defeats the probe on the pre-slice path — \
++         the probe is a correctness self-check against backend drift, NOT an integrity \
++         boundary against an actor with write access to the database file"
++    );
++    if let Err(EngineError::VectorEquivalenceMismatch { .. }) = opened.engine.search("memory") {
++        panic!("the dense arm must be SERVING — that is the point of this measurement");
++    }
++    opened.engine.close().unwrap();
++}
++
++/// **THE FINDING, as an executable fact.** A marker that matches the current state
++/// — however it got there — skips the probe, so a drifted backend is served. On the
++/// SAME workspace, with the marker absent, that drift is caught. The marker is
++/// therefore not an engine-authenticated attestation; it is a statement that the
++/// fingerprint inputs are unchanged since *some* engine recorded a pass.
++///
++/// Paired with `a_forged_stored_baseline_defeats_the_probe_even_when_it_fully_runs`,
++/// this is the whole argument: both routes are open to exactly the same actor, and
++/// one of them predates the cache.
++#[test]
++fn a_marker_matching_the_current_state_serves_a_drifted_backend() {
++    let dir = TempDir::new().unwrap();
++    let path = db_path(&dir);
++    let calls = counter();
++    seed_verified_workspace(&path, &calls);
++
++    // The digest for THIS state. An external actor derives it from the same
++    // public inputs (identity, pinned mean, fixture, floors, stored baseline); the
++    // test simply reads the row, which is the same value by construction.
++    let digest = read_verdict_marker(&path).expect("a verified workspace carries a marker");
++
++    // Without it, the drift is caught — and the failing open clears the marker
++    // again without touching any fingerprint input, so `digest` stays current.
++    clear_verdict_marker(&path);
++    let (caught_embeds, caught_degraded) = open_count_close(
++        &path,
++        Arc::new(CountingDivergentEmbedder { calls: calls.clone() }),
++        &calls,
++    );
++    assert_eq!(caught_embeds, PROBE_COUNT, "no marker ⇒ the probe runs");
++    assert!(caught_degraded, "no marker ⇒ the drifted backend is CAUGHT");
++    assert_eq!(read_verdict_marker(&path), None, "a failing verdict is never cached");
++
++    // Write the digest back — the forgery — and the same drifted backend is served.
++    install_verdict_marker(&path, &digest);
++    let (forged_embeds, forged_degraded) = open_count_close(
++        &path,
++        Arc::new(CountingDivergentEmbedder { calls: calls.clone() }),
++        &calls,
++    );
++    assert_eq!(forged_embeds, 0, "a matching marker skips the 45-probe verification");
++    assert!(
++        !forged_degraded,
++        "codex §9 round-2 [P1]: a marker matching the current state serves a drifted \
++         backend — the marker proves the fingerprint inputs are unchanged since SOME \
++         engine recorded a pass, not that THIS engine verified THIS backend"
++    );
++}
++
++/// What forging buys is bounded in time: a digest is valid only for the state it
++/// was computed over. Re-installing a known digest after mutating a reference blob
++/// does not keep the probe skipped — the fingerprint moved, so the probe re-runs
++/// and catches the mutation.
++#[test]
++fn a_replayed_verdict_marker_is_defeated_by_a_mutated_baseline() {
++    let dir = TempDir::new().unwrap();
++    let path = db_path(&dir);
++    let calls = counter();
++    seed_verified_workspace(&path, &calls);
++    let digest = read_verdict_marker(&path).expect("a verified workspace carries a marker");
++
++    // Mutate ONE reference (length preserved) and re-assert the known digest.
++    {
++        let conn = rusqlite::Connection::open(&path).unwrap();
++        let blob: Vec<u8> = conn
++            .query_row(
++                "SELECT reference_vec FROM _fathomdb_embed_probe WHERE probe_ordinal = 0",
++                [],
++                |r| r.get(0),
++            )
++            .expect("read reference 0");
++        let flipped: Vec<u8> = blob
++            .chunks_exact(4)
++            .flat_map(|c| (-f32::from_le_bytes([c[0], c[1], c[2], c[3]])).to_le_bytes())
++            .collect();
++        conn.execute(
++            "UPDATE _fathomdb_embed_probe SET reference_vec = ?1 WHERE probe_ordinal = 0",
++            rusqlite::params![flipped],
++        )
++        .expect("mutate reference 0");
++    }
++    install_verdict_marker(&path, &digest);
++
++    let (embeds, degraded) =
++        open_count_close(&path, Arc::new(CountingRefEmbedder { calls: calls.clone() }), &calls);
++    assert_eq!(embeds, PROBE_COUNT, "the stale digest cannot keep the probe skipped");
++    assert!(degraded, "…and the re-run catches the mutated reference (fail-safe, R-VEQ-4)");
++}
++
++/// The same bound on the other end-to-end-reachable fingerprint input: replaying a
++/// known digest across a rewritten pinned `mean_vec` does not buy a skip either.
++#[test]
++fn a_replayed_verdict_marker_is_defeated_by_a_rewritten_pinned_mean() {
++    let dir = TempDir::new().unwrap();
++    let path = db_path(&dir);
++    let calls = counter();
++
++    {
++        let opened = Engine::open_with_embedder_for_test(
++            &path,
++            Arc::new(CountingBgeRefEmbedder { calls: calls.clone() }),
++        )
++        .expect("bge enrolment open");
++        opened.engine.configure_vector_kind_for_test("note").expect("enrol vector kind");
++        opened.engine.close().expect("close");
++    }
++    set_pinned_mean(&path, mean_blob(1.0));
++    let (population, _) =
++        open_count_close(&path, Arc::new(CountingBgeRefEmbedder { calls: calls.clone() }), &calls);
++    assert_eq!(population, 2 * PROBE_COUNT, "population open under a pinned mean");
++    let digest = read_verdict_marker(&path).expect("a verified workspace carries a marker");
++
++    set_pinned_mean(&path, mean_blob(0.9));
++    install_verdict_marker(&path, &digest);
++
++    let (embeds, degraded) =
++        open_count_close(&path, Arc::new(CountingBgeRefEmbedder { calls: calls.clone() }), &calls);
++    assert_eq!(embeds, PROBE_COUNT, "a rewritten mean invalidates the replayed digest");
++    assert!(!degraded, "…and a faithful backend still passes the forced re-run");
++}
+
+codex
+The forged-baseline test structure is doing the important checks: marker deletion is asserted, embed-call delta is asserted at 45, and the drift-only control uses the same divergent embedder with the marker cleared. I’m running the targeted test file to make sure the added executable evidence passes in this checkout.
+exec
+/bin/bash -lc 'cargo test -p fathomdb-engine --test tc68_probe_fingerprint_cache' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22
+ succeeded in 1106ms:
+test measured_zero_enrolled_kinds_costs_zero_probe_embeds ... ok
+test residual_same_identity_backend_drift_is_not_caught_on_a_cached_open ... ok
+test verified_reopen_performs_zero_probe_embeds ... ok
+test a_replayed_verdict_marker_is_defeated_by_a_mutated_baseline ... ok
+test a_replayed_verdict_marker_is_defeated_by_a_rewritten_pinned_mean ... ok
+test an_unreadable_cache_entry_falls_back_to_running_the_probe ... ok
+test a_tampered_reference_baseline_reruns_the_probe_and_refuses_dense ... ok
+test a_missing_cache_entry_falls_back_to_running_the_probe ... ok
+test a_rewritten_pinned_mean_reruns_the_full_probe ... ok
+test a_marker_matching_the_current_state_serves_a_drifted_backend ... ok
+test a_divergence_on_a_rerun_still_disables_dense ... ok
+test measured_population_open_cost_is_flat_in_the_enrolled_kind_count ... ok
+test a_forged_stored_baseline_defeats_the_probe_even_when_it_fully_runs ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.00s
+
+
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-engine/tests/tc68_probe_fingerprint_cache.rs | sed -n '220,260p;681,720p;736,770p'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22
+ succeeded in 0ms:
+   220	    .expect("install the verdict marker");
+   221	}
+   222	
+   223	/// fix-1 — drop the marker, so the next open runs the pre-slice check path.
+   224	fn clear_verdict_marker(path: &std::path::Path) {
+   225	    let conn = rusqlite::Connection::open(path).unwrap();
+   226	    conn.execute("DELETE FROM _fathomdb_open_state WHERE key = ?1", [VEQ_VERDICT_CACHE_KEY])
+   227	        .expect("clear the verdict marker");
+   228	}
+   229	
+   230	/// fix-1 — rewrite EVERY stored `reference_vec` to `f(probe_text)`, leaving the
+   231	/// ordinal, the text, the identity triple and the blob LENGTH untouched. This is
+   232	/// the pre-slice forgery: the 0.8.18 fix-2 completeness validation pins each row's
+   233	/// shape but never its blob CONTENT, so a hostile writer can re-baseline the probe
+   234	/// against whatever their backend currently emits.
+   235	fn forge_stored_baseline(path: &std::path::Path, f: impl Fn(&str) -> Vec<f32>) {
+   236	    let conn = rusqlite::Connection::open(path).unwrap();
+   237	    let rows: Vec<(i64, String, usize)> = {
+   238	        let mut stmt = conn
+   239	            .prepare(
+   240	                "SELECT probe_ordinal, probe_text, length(reference_vec) \
+   241	                 FROM _fathomdb_embed_probe ORDER BY probe_ordinal",
+   242	            )
+   243	            .unwrap();
+   244	        let rows = stmt
+   245	            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? as usize)))
+   246	            .unwrap()
+   247	            .collect::<rusqlite::Result<Vec<_>>>()
+   248	            .unwrap();
+   249	        rows
+   250	    };
+   251	    assert_eq!(rows.len() as u64, PROBE_COUNT, "the baseline must be the full committed set");
+   252	    for (ordinal, text, blob_len) in rows {
+   253	        let blob = encode_vector_blob(&f(&text));
+   254	        assert_eq!(blob.len(), blob_len, "the forgery must preserve the blob length");
+   255	        conn.execute(
+   256	            "UPDATE _fathomdb_embed_probe SET reference_vec = ?1 WHERE probe_ordinal = ?2",
+   257	            rusqlite::params![blob, ordinal],
+   258	        )
+   259	        .expect("forge one reference row");
+   260	    }
+   681	fn a_forged_stored_baseline_defeats_the_probe_even_when_it_fully_runs() {
+   682	    // -- control: drift alone, with the cache out of the way, IS caught. --------
+   683	    let control_dir = TempDir::new().unwrap();
+   684	    let control_path = db_path(&control_dir);
+   685	    let control_calls = counter();
+   686	    seed_verified_workspace(&control_path, &control_calls);
+   687	    clear_verdict_marker(&control_path);
+   688	    let (control_embeds, control_degraded) = open_count_close(
+   689	        &control_path,
+   690	        Arc::new(CountingDivergentEmbedder { calls: control_calls.clone() }),
+   691	        &control_calls,
+   692	    );
+   693	    assert_eq!(control_embeds, PROBE_COUNT, "control: the probe must actually run");
+   694	    assert!(control_degraded, "control: un-forged baseline + drifted backend ⇒ dense REFUSED");
+   695	
+   696	    // -- the forgery: re-baseline the references to the drifted backend's output.
+   697	    let dir = TempDir::new().unwrap();
+   698	    let path = db_path(&dir);
+   699	    let calls = counter();
+   700	    seed_verified_workspace(&path, &calls);
+   701	    forge_stored_baseline(&path, |text| reference_vector(text).into_iter().map(|x| -x).collect());
+   702	    clear_verdict_marker(&path);
+   703	    assert_eq!(read_verdict_marker(&path), None, "the cache must play NO part in this leg");
+   704	
+   705	    let before = calls.load(Ordering::SeqCst);
+   706	    let opened = Engine::open_with_embedder_for_test(
+   707	        &path,
+   708	        Arc::new(CountingDivergentEmbedder { calls: calls.clone() }),
+   709	    )
+   710	    .expect("open must succeed");
+   711	    let embeds = calls.load(Ordering::SeqCst) - before;
+   712	
+   713	    assert_eq!(embeds, PROBE_COUNT, "the FULL pre-slice check ran — nothing was skipped");
+   714	    assert!(
+   715	        !opened.report.dense_disabled,
+   716	        "PRE-EXISTING: a forged stored baseline defeats the probe on the pre-slice path — \
+   717	         the probe is a correctness self-check against backend drift, NOT an integrity \
+   718	         boundary against an actor with write access to the database file"
+   719	    );
+   720	    if let Err(EngineError::VectorEquivalenceMismatch { .. }) = opened.engine.search("memory") {
+   736	fn a_marker_matching_the_current_state_serves_a_drifted_backend() {
+   737	    let dir = TempDir::new().unwrap();
+   738	    let path = db_path(&dir);
+   739	    let calls = counter();
+   740	    seed_verified_workspace(&path, &calls);
+   741	
+   742	    // The digest for THIS state. An external actor derives it from the same
+   743	    // public inputs (identity, pinned mean, fixture, floors, stored baseline); the
+   744	    // test simply reads the row, which is the same value by construction.
+   745	    let digest = read_verdict_marker(&path).expect("a verified workspace carries a marker");
+   746	
+   747	    // Without it, the drift is caught — and the failing open clears the marker
+   748	    // again without touching any fingerprint input, so `digest` stays current.
+   749	    clear_verdict_marker(&path);
+   750	    let (caught_embeds, caught_degraded) = open_count_close(
+   751	        &path,
+   752	        Arc::new(CountingDivergentEmbedder { calls: calls.clone() }),
+   753	        &calls,
+   754	    );
+   755	    assert_eq!(caught_embeds, PROBE_COUNT, "no marker ⇒ the probe runs");
+   756	    assert!(caught_degraded, "no marker ⇒ the drifted backend is CAUGHT");
+   757	    assert_eq!(read_verdict_marker(&path), None, "a failing verdict is never cached");
+   758	
+   759	    // Write the digest back — the forgery — and the same drifted backend is served.
+   760	    install_verdict_marker(&path, &digest);
+   761	    let (forged_embeds, forged_degraded) = open_count_close(
+   762	        &path,
+   763	        Arc::new(CountingDivergentEmbedder { calls: calls.clone() }),
+   764	        &calls,
+   765	    );
+   766	    assert_eq!(forged_embeds, 0, "a matching marker skips the 45-probe verification");
+   767	    assert!(
+   768	        !forged_degraded,
+   769	        "codex §9 round-2 [P1]: a marker matching the current state serves a drifted \
+   770	         backend — the marker proves the fingerprint inputs are unchanged since SOME \
+
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-engine/src/lib.rs | sed -n '15503,15545p'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22
+ succeeded in 0ms:
+ 15503	/// 0.8.20 Slice 22 (TC-68) — is `fingerprint` the fingerprint under which the
+ 15504	/// probe last RAN and PASSED on this workspace?
+ 15505	///
+ 15506	/// Fail-SAFE against ACCIDENT (R-VEQ-4): **every** failure mode answers `false`,
+ 15507	/// which means "run the probe". A missing `_fathomdb_open_state` table, an absent
+ 15508	/// row, a non-TEXT value, a truncated or garbled value, a stale fingerprint, any
+ 15509	/// SQL error — none of them can be mistaken for a pass.
+ 15510	///
+ 15511	/// # What a `true` does and does not mean (fix-1, codex §9 round 2 [P1])
+ 15512	///
+ 15513	/// `true` means: **the fingerprint inputs are unchanged since *some* engine
+ 15514	/// recorded a pass.** It does NOT mean "this engine verified this backend", and it
+ 15515	/// cannot: the fingerprint is a SHA-256 over deterministic, publicly derivable DB
+ 15516	/// and build inputs, so an actor with write access to the file can compute the
+ 15517	/// current digest and write it here, skipping the 45-probe verification. This
+ 15518	/// marker is not — and cannot be — an authenticated attestation; an embedded
+ 15519	/// local-first engine holds no secret with which to authenticate one, and a salt
+ 15520	/// would be readable by the same actor.
+ 15521	///
+ 15522	/// That is **not a new exposure**. The same actor already defeats the same arm
+ 15523	/// through the pre-slice path, by re-baselining `_fathomdb_embed_probe`'s
+ 15524	/// `reference_vec` blobs to their drifted backend's own output — the probe then
+ 15525	/// runs in full and verifies the drifted backend against itself. Measured by
+ 15526	/// `tests/tc68_probe_fingerprint_cache.rs::a_forged_stored_baseline_defeats_the_probe_even_when_it_fully_runs`
+ 15527	/// (marker deleted, all 45 embeds performed, dense still enabled), with the
+ 15528	/// un-forged control caught. The equivalence probe is a **correctness self-check
+ 15529	/// against backend drift, not an integrity boundary against a hostile writer**;
+ 15530	/// see §8 of `dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`.
+ 15531	///
+ 15532	/// What forging buys is also bounded: a digest is valid only for the state it was
+ 15533	/// computed over, so it stops working at the next change to any fingerprint input.
+ 15534	fn probe_verification_is_cached(connection: &Connection, fingerprint: &str) -> bool {
+ 15535	    connection
+ 15536	        .query_row(
+ 15537	            "SELECT value FROM _fathomdb_open_state WHERE key = ?1",
+ 15538	            [VECTOR_EQUIVALENCE_VERDICT_CACHE_KEY],
+ 15539	            |row| row.get::<_, String>(0),
+ 15540	        )
+ 15541	        .map(|cached| cached == fingerprint)
+ 15542	        .unwrap_or(false)
+ 15543	}
+ 15544	
+ 15545	/// 0.8.20 Slice 22 (TC-68) — record that the probe RAN and PASSED under
+
+exec
+/bin/bash -lc "nl -ba dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md | sed -n '194,225p;307,405p'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22
+ succeeded in 0ms:
+   194	## 5. Fail-SAFE (`R-VEQ-4`) in the cache path
+   195	
+   196	`R-VEQ-4` — *any inability to run or verify yields `dense_disabled = true`, never
+   197	skip-and-serve* — is HITL-signed and is **not** weakened. It is a guarantee about
+   198	**accident** — corruption, truncation, a half-written file, a workspace that
+   199	predates the cache — not about a hostile writer; §8 draws that line. In the cache
+   200	path:
+   201	
+   202	- **an unreadable cache reads as a MISS, never as a pass.**
+   203	  `probe_verification_is_cached` answers `false` for every failure mode: missing
+   204	  `_fathomdb_open_state` table, absent row, non-TEXT value, garbled or truncated
+   205	  value, a stale fingerprint, any SQL error.
+   206	
+   207	  A `true` means **the fingerprint inputs are unchanged since *some* engine
+   208	  recorded a pass** — not "this engine verified this backend". The engine cannot
+   209	  tell its own marker from an identical one written by anything else, and §8 says
+   210	  why that is neither fixable nor new.
+   211	  (`an_unreadable_cache_entry_falls_back_to_running_the_probe`,
+   212	  `a_missing_cache_entry_falls_back_to_running_the_probe`);
+   213	- **a failing verdict is never cached**, and every `Err` path of the check
+   214	  **clears** any prior marker — so a workspace that could not be verified never
+   215	  leaves one behind for a later open to match
+   216	  (`a_divergence_on_a_rerun_still_disables_dense`);
+   217	- **a divergence found on a re-run still disables dense.** The cache narrows *when*
+   218	  the probe runs, never *what it concludes when it does*;
+   219	- **a cache WRITE failure is swallowed** rather than turned into a refusal. The arm
+   220	  has just been verified, so refusing dense because a marker could not be persisted
+   221	  (read-only file, disk full) would be a false refusal — and the consequence of the
+   222	  missing marker is that the next open re-runs the probe. More work, never less.
+   223	
+   224	---
+   225	
+   307	FTS-only path, and defer divergence behaviour to the Rust engine suite. TC-68 adds
+   308	no surface for them to pin, so **no SDK test was added**: a mirror would have been
+   309	green without exercising anything.
+   310	
+   311	---
+   312	
+   313	## 8. THREAT MODEL — the probe is a self-check, not an integrity boundary
+   314	
+   315	**Added by fix-1**, closing the codex §9 targeted-round-2 `[P1]`
+   316	(`dev/plans/runs/codex/0.8.20/slice-22-review-round2-targeted-20260729T004445Z.log`).
+   317	
+   318	### 8.1 The finding, accepted
+   319	
+   320	> `probe_verification_is_cached` trusts any `_fathomdb_open_state.value` exactly
+   321	> equal to the freshly computed SHA-256. That is fail-safe for absent, corrupt,
+   322	> truncated, non-TEXT or stale values because they miss and run the probe. It is
+   323	> not fail-safe for an attacker-modified row: the fingerprint inputs are
+   324	> deterministic, public DB and build inputs, not a secret or an engine-authenticated
+   325	> marker, so a writer can forge the current digest and force the early
+   326	> `return Ok(())` before the 45-probe verification runs.
+   327	
+   328	**True, and accepted.** `a_marker_matching_the_current_state_serves_a_drifted_backend`
+   329	states it as an executable fact: on one workspace, with the marker absent the
+   330	drifted backend is caught (45 embeds, `dense_disabled`); with the same digest
+   331	written back it is served with 0 embeds.
+   332	
+   333	**§5's original wording was an over-claim and has been corrected.** It read *"the
+   334	only `true` is an exact match against a value **this engine wrote after a
+   335	verification it performed itself**"*. The engine cannot distinguish its own marker
+   336	from an identical one written by anything else. What a `true` actually means is:
+   337	**the fingerprint inputs are unchanged since *some* engine recorded a pass.**
+   338	
+   339	### 8.2 Why the remedy is prose, not cryptography
+   340	
+   341	There is nothing to authenticate the marker *with*. Every fingerprint input —
+   342	identity triple, pinned `mean_vec`, compiled-in fixture, the two floors, the stored
+   343	baseline blobs — is readable from the database file or the shipped binary. A salt
+   344	or MAC key would live in the same file or the same binary and be read by the same
+   345	actor. An embedded local-first engine has no key custodian, no separate trust
+   346	domain and no privileged process. Any construction here would raise the bar for a
+   347	*naive* editor only, while the *same* actor keeps a shorter route open (§8.3) —
+   348	i.e. security theatre.
+   349	
+   350	### 8.3 The measured fact that settles it: the pre-slice path is equally forgeable
+   351	
+   352	`a_forged_stored_baseline_defeats_the_probe_even_when_it_fully_runs`:
+   353	
+   354	1. seed a verified workspace, then rewrite **every** `_fathomdb_embed_probe.reference_vec`
+   355	   to the *drifted* backend's own output. Ordinals, `probe_text`, the identity
+   356	   triple and the blob lengths are untouched, so the 0.8.18 fix-2 completeness
+   357	   validation — which pins row *shape*, never blob *content* — sees nothing;
+   358	2. **delete the cache marker**, so the cache demonstrably plays no part;
+   359	3. open with the drifted backend. All **45** embeds run, and the probe **passes**:
+   360	   it has verified the drifted backend against a baseline the drifted backend
+   361	   itself supplied. Dense stays enabled; `search` does not refuse.
+   362	
+   363	The control leg — identical drifted backend, **un-forged** baseline, marker cleared
+   364	— is caught and refuses dense, so the forgery is what does it.
+   365	
+   366	The code exercised in step 3 is the check body **as shipped at the slice baseline
+   367	`fe85337f`**: `git diff fe85337f a39b865e -- src/rust/crates/fathomdb-engine/src/lib.rs`
+   368	shows the only changes inside `probe_check_against_baseline_inner` are the doc
+   369	comment, a type alias, the cache gate and the `record_probe_verification` call. The
+   370	comparison logic is byte-identical.
+   371	
+   372	**Conclusion: the cache adds no new attack surface.** An actor with write access to
+   373	the SQLite file already had a shorter route — and can in any case rewrite
+   374	`canonical_nodes`, the `vector_default` vec0 rows and
+   375	`_fathomdb_embedder_profiles.mean_vec` directly, which defeats retrieval outright
+   376	without touching the probe at all. The probe was never a boundary against that
+   377	actor; the cache changes *when* it runs, not *who can lie to it*.
+   378	
+   379	### 8.4 The boundary, stated plainly
+   380	
+   381	- **In scope — what the probe catches.** *Accidental* backend drift: the same
+   382	  declared embedder moved CPU↔CUDA, rebuilt against a new library or driver, a
+   383	  re-exported ONNX graph; plus a corrupt, partial or mangled stored baseline. That
+   384	  is the ADR's purpose (`dev/adr/ADR-0.8.18-vector-equivalence-self-check.md`).
+   385	- **In scope — the accident guarantee.** `R-VEQ-4` holds unchanged: every
+   386	  unreadable, absent, garbled or stale cache state runs the probe rather than
+   387	  trusting it (§5).
+   388	- **OUT of scope — an actor with write access to the database file.** They can
+   389	  forge the marker (§8.1), forge the baseline (§8.3), or rewrite the corpus and the
+   390	  vectors. FathomDB's trust boundary is the file: a caller who lets an untrusted
+   391	  party write the database has already lost the dense arm, the lexical arm and the
+   392	  corpus. The equivalence probe is a **correctness self-check, not an integrity
+   393	  boundary**, and must not be cited as one.
+   394	- **What forging buys, bounded.** A digest is valid only for the state it was
+   395	  computed over. `a_replayed_verdict_marker_is_defeated_by_a_mutated_baseline` and
+   396	  `a_replayed_verdict_marker_is_defeated_by_a_rewritten_pinned_mean` show a known
+   397	  digest expires at the next change to any fingerprint input, so a forgery must be
+   398	  re-applied after every legitimate change.
+   399	- **What the cache genuinely narrows** is §6 and only §6: same-identity backend
+   400	  drift is no longer caught per-open. That is the ruled trade, and it is about
+   401	  accident, not attack.
+   402	
+   403	### 8.5 Hardening considered and rejected
+   404	
+   405	- **Salt / MAC / keyed digest.** Rejected: §8.2 — no secret exists to key it with.
+
+exec
+/bin/bash -lc "nl -ba CHANGELOG.md | sed -n '317,334p'; nl -ba dev/interfaces/rust.md | sed -n '163,176p'; nl -ba dev/interfaces/python.md | sed -n '370,382p'; nl -ba dev/interfaces/typescript.md | sed -n '396,408p'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22
+ succeeded in 0ms:
+   317	  and a divergence found on a re-run still yields `denseDisabled` /
+   318	  `dense_disabled` with the dense arm refusing and the text-only path serving.
+   319	
+   320	  *Scope, stated so it is not over-read:* this self-check guards against
+   321	  **accidental** backend drift and a corrupt baseline. It is **not** an integrity
+   322	  boundary against an actor with write access to your database file — such an
+   323	  actor can rewrite the stored probe baseline (which defeats the check even when
+   324	  it runs in full, as it always did), the cached marker, or the corpus and its
+   325	  vectors outright. Unchanged by this release, and now written down: threat model
+   326	  in §8 of `dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`.
+   327	
+   328	  *The cost, stated plainly:* a backend that drifts **without changing its
+   329	  declared identity** — the same embedder name/revision moved between CPU and
+   330	  CUDA, or rebuilt against a new library or driver — is **no longer caught on
+   331	  every open**. Nothing in the fingerprint moves, so the cached verdict answers
+   332	  and the drifted backend is never re-probed; it is caught only at the next open
+   333	  whose fingerprint does change. If you rely on open-time re-verification to
+   334	  detect such a swap, force a re-run (for example by recomputing the pinned
+   163	is never cached, and a divergence found on a re-run still yields
+   164	`dense_disabled = true` (`R-VEQ-4`, unchanged).
+   165	
+   166	**Scope.** `R-VEQ-4` is a guarantee about **accident** — corruption, truncation, a
+   167	half-written or pre-cache workspace. The self-check is **not** an integrity
+   168	boundary against an actor with write access to the database file: such an actor can
+   169	rewrite `_fathomdb_embed_probe`'s stored references, which defeats the check even
+   170	when it runs all 45 embeds — exactly as it did before the cache existed — or the
+   171	cached marker, or the corpus and its vectors outright. Do not read
+   172	`dense_disabled` as a tamper signal. Threat model, with the measurement:
+   173	§8 of `dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`.
+   174	
+   175	## Engine-attached instrumentation / control methods
+   176	
+   370	absent cached verdict runs the probe rather than trusting it. Full rationale and
+   371	the residual: `dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`.
+   372	
+   373	**Scope.** The self-check guards **accidental** backend drift and a corrupt
+   374	baseline. It is **not** an integrity boundary against an actor with write access
+   375	to the database file: such an actor can rewrite the stored probe baseline — which
+   376	defeats the check even when it runs in full, exactly as it did before the cache —
+   377	or the cached marker, or the vectors themselves. Do not read `dense_disabled` as a
+   378	tamper signal. Threat model: §8 of the design note above.
+   379	
+   380	`OpenReport` carries four embedder-related fields surfaced by EU-6:
+   381	`embedder_download_ms`, `embedder_events`, `embedder_mean_centering_required`,
+   382	and `embedder_mean_vec_pinned`. Each entry in `embedder_events` is a
+   396	verdict runs the probe rather than trusting it. Full rationale and the residual:
+   397	`dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`.
+   398	
+   399	**Scope.** The self-check guards **accidental** backend drift and a corrupt
+   400	baseline. It is **not** an integrity boundary against an actor with write access to
+   401	the database file: such an actor can rewrite the stored probe baseline — which
+   402	defeats the check even when it runs in full, exactly as it did before the cache —
+   403	or the cached marker, or the vectors themselves. Do not read `denseDisabled` as a
+   404	tamper signal. Threat model: §8 of the design note above.
+   405	
+   406	`OpenReport` carries four embedder-related fields surfaced by EU-6
+   407	(camelCase per TS convention): `embedderDownloadMs`, `embedderEvents`,
+   408	`embedderMeanCenteringRequired`, and `embedderMeanVecPinned`. Each entry
+
+codex
+**Findings**
+
+[P1] The equivalence argument is not sound: marker forgery is materially cheaper than re-baselining.  
+The test at [tc68_probe_fingerprint_cache.rs:681](/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22/src/rust/crates/fathomdb-engine/tests/tc68_probe_fingerprint_cache.rs:681) proves that an attacker who can rewrite all 45 `_fathomdb_embed_probe.reference_vec` blobs to the target drifted backend’s exact outputs can defeat the full probe. It does not prove that this is equivalent in capability or cost to writing one cached digest row. The cache-marker attack only needs DB write access plus the current digest, which may already be stored or publicly computable. The baseline attack additionally requires producing the target backend’s 45 exact probe embeddings and encoding/updating every row correctly. That is a materially higher bar.
+
+Because of that, the docs still over-claim at [dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md:372](/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22/dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md:372): “the cache adds no new attack surface.” It does add a cheaper bypass path for a DB writer to skip a check that previously had to run unless the stored baseline was re-authored to match the drifted backend.
+
+**Explicit Judgments**
+
+1. The test does prove the narrow behavioral claim: it deletes the marker via `DELETE FROM _fathomdb_open_state` at [tc68_probe_fingerprint_cache.rs:224](/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22/src/rust/crates/fathomdb-engine/tests/tc68_probe_fingerprint_cache.rs:224), asserts the marker is absent, and asserts 45 embeds ran at [tc68_probe_fingerprint_cache.rs:703](/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22/src/rust/crates/fathomdb-engine/tests/tc68_probe_fingerprint_cache.rs:703) and [tc68_probe_fingerprint_cache.rs:713](/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22/src/rust/crates/fathomdb-engine/tests/tc68_probe_fingerprint_cache.rs:713). The control leg is genuine for “same drift, no baseline forgery”: same divergent embedder, marker cleared, dense refused at [tc68_probe_fingerprint_cache.rs:687](/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22/src/rust/crates/fathomdb-engine/tests/tc68_probe_fingerprint_cache.rs:687). It could not pass merely because the cache skipped the probe.
+
+2. The equivalence argument fails. Same DB-write actor, yes; same difficulty/availability, no. Re-baselining requires target backend outputs; marker forgery does not.
+
+3. No behavior changed in `src/rust/crates/fathomdb-engine/src/lib.rs` in fix-1. The diff is rustdoc-only around `probe_verification_is_cached`, and the corrected prose is more accurate than before: [lib.rs:15513](/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22/src/rust/crates/fathomdb-engine/src/lib.rs:15513) no longer claims “this engine verified this backend.”
+
+4. Residual documentation is much more honest, especially §5 and §8, but it still explains away too much with “no new attack surface.” The changelog and interface docs correctly warn not to treat `dense_disabled` / `denseDisabled` as a tamper signal.
+
+5. My original [P1] is still open. The forged marker remains a cheaper, newly introduced bypass of the 45-probe verification than the pre-existing forged-baseline route.
+
+TDD deviation: not acceptable as closure of this P1. It is acceptable that a docs-only correction has no behavioral RED, but this was not merely false prose; the delta still introduces a cheaper bypass path, and the tests do not disprove that.
+
+Verification run: `cargo test -p fathomdb-engine --test tc68_probe_fingerprint_cache` passed, 13/13.
+
+Overall verdict: **CHANGES REQUESTED — original [P1] remains open.**
+tokens used
+83,202
+**Findings**
+
+[P1] The equivalence argument is not sound: marker forgery is materially cheaper than re-baselining.  
+The test at [tc68_probe_fingerprint_cache.rs:681](/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22/src/rust/crates/fathomdb-engine/tests/tc68_probe_fingerprint_cache.rs:681) proves that an attacker who can rewrite all 45 `_fathomdb_embed_probe.reference_vec` blobs to the target drifted backend’s exact outputs can defeat the full probe. It does not prove that this is equivalent in capability or cost to writing one cached digest row. The cache-marker attack only needs DB write access plus the current digest, which may already be stored or publicly computable. The baseline attack additionally requires producing the target backend’s 45 exact probe embeddings and encoding/updating every row correctly. That is a materially higher bar.
+
+Because of that, the docs still over-claim at [dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md:372](/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22/dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md:372): “the cache adds no new attack surface.” It does add a cheaper bypass path for a DB writer to skip a check that previously had to run unless the stored baseline was re-authored to match the drifted backend.
+
+**Explicit Judgments**
+
+1. The test does prove the narrow behavioral claim: it deletes the marker via `DELETE FROM _fathomdb_open_state` at [tc68_probe_fingerprint_cache.rs:224](/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22/src/rust/crates/fathomdb-engine/tests/tc68_probe_fingerprint_cache.rs:224), asserts the marker is absent, and asserts 45 embeds ran at [tc68_probe_fingerprint_cache.rs:703](/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22/src/rust/crates/fathomdb-engine/tests/tc68_probe_fingerprint_cache.rs:703) and [tc68_probe_fingerprint_cache.rs:713](/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22/src/rust/crates/fathomdb-engine/tests/tc68_probe_fingerprint_cache.rs:713). The control leg is genuine for “same drift, no baseline forgery”: same divergent embedder, marker cleared, dense refused at [tc68_probe_fingerprint_cache.rs:687](/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22/src/rust/crates/fathomdb-engine/tests/tc68_probe_fingerprint_cache.rs:687). It could not pass merely because the cache skipped the probe.
+
+2. The equivalence argument fails. Same DB-write actor, yes; same difficulty/availability, no. Re-baselining requires target backend outputs; marker forgery does not.
+
+3. No behavior changed in `src/rust/crates/fathomdb-engine/src/lib.rs` in fix-1. The diff is rustdoc-only around `probe_verification_is_cached`, and the corrected prose is more accurate than before: [lib.rs:15513](/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22/src/rust/crates/fathomdb-engine/src/lib.rs:15513) no longer claims “this engine verified this backend.”
+
+4. Residual documentation is much more honest, especially §5 and §8, but it still explains away too much with “no new attack surface.” The changelog and interface docs correctly warn not to treat `dense_disabled` / `denseDisabled` as a tamper signal.
+
+5. My original [P1] is still open. The forged marker remains a cheaper, newly introduced bypass of the 45-probe verification than the pre-existing forged-baseline route.
+
+TDD deviation: not acceptable as closure of this P1. It is acceptable that a docs-only correction has no behavioral RED, but this was not merely false prose; the delta still introduces a cheaper bypass path, and the tests do not disprove that.
+
+Verification run: `cargo test -p fathomdb-engine --test tc68_probe_fingerprint_cache` passed, 13/13.
+
+Overall verdict: **CHANGES REQUESTED — original [P1] remains open.**

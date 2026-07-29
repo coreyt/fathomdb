@@ -12,6 +12,36 @@ AC-050c) gates merges against this invariant.
 
 ### Changed — BREAKING
 
+- **An unsatisfiable node validity window is now `WriteValidationError`, not
+  `InvalidArgumentError` (0.8.20, R-20-VC decision #18).** Writing a node with
+  both `valid_from` and `valid_until` present and `valid_from >= valid_until`
+  still fails the whole batch — but with a different error class, and **without
+  the offending bounds**.
+
+  | | before | after |
+  | --- | --- | --- |
+  | Rust | `EngineError::InvalidArgument { msg }` | `EngineError::WriteValidation` |
+  | Python | `InvalidArgumentError`, message naming both bounds | `WriteValidationError`, message `"write validation error"` |
+  | TypeScript | `InvalidArgumentError` (`FDB_INVALID_ARGUMENT`), message naming both bounds | `WriteValidationError` (`FDB_WRITE_VALIDATION`), `data: null` |
+
+  *Why:* the engine's `validate_write` rejected across **two** error families
+  from one function, so the same call raised `InvalidArgumentError` for an
+  inverted window but `WriteValidationError` for a non-integer bound.
+  `dev/design/errors.md` defines `WriteValidationError` as "malformed typed write
+  shape", which is exactly that boundary, so the code now matches the taxonomy.
+
+  *The cost, stated plainly:* `WriteValidation` carries no payload, so **the
+  offending `valid_from` / `valid_until` values are no longer recoverable from
+  the error**. If you parsed them out of the message, validate the pair before
+  calling instead.
+
+  *Unaffected:* `InvalidArgumentError` / `FDB_INVALID_ARGUMENT` is unchanged
+  everywhere else — traversal `depth`, projection-spec and `drop` rejections,
+  `ReadView` misuse. A one-sided window is still never refused. **An unrenderable
+  edge `t_valid` / `t_invalid` epoch also still raises `InvalidArgumentError`
+  naming the offending field**, deliberately: that message is the TC-33 contract
+  that stops a `null`-rendering epoch silently resurrecting an invalidated edge.
+
 - **Multi-document `ingest_with_extractor` batches now require per-entity
   attribution (0.8.20, R-20-E2).** Provenance is taken from the caller's
   `ExtractDocument.source_doc_id`; the model's echo of that field is accepted
@@ -191,7 +221,8 @@ AC-050c) gates merges against this invariant.
     the internal `edge_fact` for edge bodies). Rows of any other `kind` are
     accepted and stay lexically searchable but get no vector, and are not counted
     as outstanding work, so readiness still reaches `"ready"`. This is not an
-    error condition: nothing rejects the write and no new surface reports it.
+    error condition: nothing rejects the write. It is **no longer silent**
+    either — see `vector_unsupported_kinds` below (R-20-VC).
   - **Idempotent.** Re-applying a satisfied declaration rewinds nothing and
     re-embeds nothing.
   - **Reversible.** `drop`ping the last `searchable→vector` declaration turns
@@ -218,12 +249,101 @@ AC-050c) gates merges against this invariant.
   - **Additive**, no schema step (`SCHEMA_VERSION` unchanged), and no data
     migration: this re-enqueues work inside one live database.
 
+- **`ProjectionDelta.vector_unsupported_kinds` — FathomDB now tells you which of
+  your kinds will never get vectors (0.8.20, R-20-VC).**
+  `vector_unsupported_kinds` (Python, Rust), `vectorUnsupportedKinds`
+  (TypeScript). A list of node **kinds** — not attribute names, unlike the
+  `built` / `dropped` / `deferred` lists beside it.
+
+  **Why you want this.** The dense arm covers only the engine's locked `kind`
+  vocabulary (`{email, article, paper, meeting, note, todo, doc}`, plus the
+  internal `edge_fact`). If your domain uses other kinds — an `entity`, an
+  `invoice` — those rows are accepted and stay fully **FTS- and
+  lexically searchable**, but they will **never** get an embedding, in this
+  session or any future one. Until now that exclusion was silent: the
+  declaration came back with the projection's name in `deferred`, which is
+  *also* what you see while you are simply waiting on the embedder. There was
+  no way to tell "not embedded yet" from "never will be", so the honest reading
+  of a deferred projection was "keep waiting" — sometimes forever.
+
+  Now `configure_projections` / `configureProjections` names the kinds:
+
+  - **Sorted, de-duplicated, and empty rather than absent** — read it
+    unconditionally.
+  - **A state report, not a diff.** It does not affect `unchanged`, so an
+    idempotent re-apply comes back `unchanged` **with the report populated** —
+    which is also how you refresh it, since it is computed at declaration time
+    and will not know about kinds you write afterwards.
+  - **The same with or without an embedder.** The vocabulary is static, so a
+    session opened with no embedder still gets the permanent answer. Do not
+    confuse it with the deferral.
+  - **Output-only, and not an error.** `configure_projections` accepts specs,
+    never a delta, so `read.projections` output still re-applies as a no-op.
+    Nothing is rejected, and readiness still reaches `"ready"` — an un-enrolled
+    kind is not outstanding work.
+
+  **Additive**, no new type, no new governed command, no schema step
+  (`SCHEMA_VERSION` unchanged). Your options if a kind is reported: use one of
+  the mapped kinds, or accept lexical-only retrieval for those rows.
+
 - **New public types.** Rust: `SourceId`, `OrphanProvenanceReport`,
   `OrphanProvenanceSource`; `ExciseReport` is no longer behind the `operator`
   feature (it is `erase_source`'s return type). Python: `EraseReport`.
   TypeScript: `EraseReport`. Rust `DenseReadiness` and the TypeScript
   `DenseReadiness` string union (`"ready" | "embedding"`) are the only net-new
   types from R-20-DR; Python surfaces the value as a plain `str | None` field.
+
+### Changed
+
+- **`Engine.open` no longer re-embeds the 45-probe vector-equivalence set on
+  every open (0.8.20, R-20-VC TC-68).** The 0.8.18 self-check's verdict is now
+  cached against an **embedder fingerprint**, so an open whose fingerprint is
+  unchanged performs **zero** probe embeds instead of 45. (Measured on the
+  shipped path: 0 embeds with no enrolled vector kind, **90** on the one-time
+  baseline-population open — 45 to persist plus 45 to confirm — and **45 on every
+  open thereafter**, which is what this removes. The cost never scaled with the
+  number of enrolled kinds.) No public type, field, method or error changes.
+
+  The fingerprint covers the embedder identity, **the live pinned `mean_vec`**
+  (the Phase-1 check quantizes against it, so a rewritten mean changes the
+  verdict), the committed probe fixture, both divergence floors, and the stored
+  reference baseline including its vectors. Any change to any of those re-runs
+  the full probe. It is stored as one internal marker row; **no schema-version
+  bump and no migration** — an existing database simply runs the probe once more
+  and then stops.
+
+  Fail-safe behaviour is unchanged: an unreadable or absent cached verdict
+  **runs** the probe rather than trusting it, a failing verdict is never cached,
+  and a divergence found on a re-run still yields `denseDisabled` /
+  `dense_disabled` with the dense arm refusing and the text-only path serving.
+
+  *Scope, stated so it is not over-read:* this self-check guards against
+  **accidental** backend drift and a corrupt baseline. It is **not** tamper
+  evidence, and `denseDisabled` / `dense_disabled` is not a tamper signal.
+  Nothing in a FathomDB file is authenticated: an actor with write access can
+  rewrite the stored probe baseline (which defeats the check even when it runs in
+  full, exactly as it did before this release), the cached marker, or the corpus
+  and its vectors outright. **Stated without softening: the cache does make one of
+  those routes cheaper.** Forging the marker needs only a digest anyone can
+  compute from the file; re-authoring the baseline needs the other backend's 45
+  exact probe embeddings. So a writer of your database file can now skip the
+  check more easily than before — though the drift it would have caught is, in the
+  steady state, already served without any forgery, because a same-identity swap
+  moves nothing in the fingerprint (see the paragraph below). Threat model, the
+  concession and the bound: §8.4/§8.5 of
+  `dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`.
+
+  *The cost, stated plainly:* a backend that drifts **without changing its
+  declared identity** — the same embedder name/revision moved between CPU and
+  CUDA, or rebuilt against a new library or driver — is **no longer caught on
+  every open**. Nothing in the fingerprint moves, so the cached verdict answers
+  and the drifted backend is never re-probed; it is caught only at the next open
+  whose fingerprint does change. If you rely on open-time re-verification to
+  detect such a swap, force a re-run (for example by recomputing the pinned
+  mean). Identity *changes* are unaffected — they still refuse the open outright,
+  ahead of any cache. Rationale, the inputs in full, and the mitigations
+  considered and rejected:
+  `dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`.
 
 ### Fixed
 

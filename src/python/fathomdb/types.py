@@ -201,6 +201,19 @@ class ProjectionDelta:
     dropped: list[str]
     deferred: list[str]
     unchanged: bool
+    #: 0.8.20 Slice 22 (R-20-VC / TC-67) — node **kinds**, not attribute names:
+    #: the vector-eligible kinds present in the corpus that the vector writer can
+    #: NEVER commit, so no ``searchable→vector`` declaration will ever produce an
+    #: embedding for them. Such rows remain fully FTS/lexically searchable.
+    #:
+    #: This is what distinguishes "``deferred`` because the embedder is still
+    #: working / absent this session" (transient) from "this kind will never be
+    #: embedded" (permanent). It is a STATE report, not a diff: it is populated on
+    #: an idempotent re-apply too (``unchanged=True``), which is also how you
+    #: refresh it after writing new kinds. Empty (never absent) when there is
+    #: nothing to report. Output-only — ``configure_projections`` accepts specs,
+    #: not deltas.
+    vector_unsupported_kinds: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

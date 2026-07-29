@@ -18,8 +18,10 @@ import {
   EmbedderIdentityMismatchError,
   EmbedderNotConfiguredError,
   FathomDbError,
+  InvalidArgumentError,
   KindNotVectorIndexedError,
   VectorError,
+  WriteValidationError,
 } from "../src/errors.js";
 import { freshDbPath } from "./helpers.js";
 
@@ -98,4 +100,44 @@ test("KindNotVectorIndexedError is a distinct leaf under VectorError", () => {
   assert.ok(err instanceof VectorError);
   assert.ok(err instanceof FathomDbError);
   assert.notEqual(KindNotVectorIndexedError, VectorError);
+});
+
+// ---------------------------------------------------------------------------
+// 0.8.20 Slice 22 (R-20-VC) — decision #18: the PAYLOAD cost of one family
+// ---------------------------------------------------------------------------
+
+test("decision #18: an unsatisfiable window crosses the napi envelope as FDB_WRITE_VALIDATION", async () => {
+  // BREAKING BEHAVIOUR CHANGE. It used to cross as `FDB_INVALID_ARGUMENT` with
+  // the offending bounds in `message`. `EngineError::WriteValidation` is a UNIT
+  // variant, so the napi translator emits a fixed message-less envelope
+  // (`CODE_WRITE_VALIDATION`, "write validation error", `data: null`) — the
+  // bounds are no longer recoverable from the error. Recorded in the CHANGELOG.
+  const engine = await Engine.open(freshDbPath(), { useDefaultEmbedder: false });
+  try {
+    await assert.rejects(
+      () =>
+        engine.write([
+          {
+            kind: "doc",
+            body: "ok",
+            logicalId: "W1",
+            sourceId: "ts-test:decision-18",
+            validFrom: 2000,
+            validUntil: 1000,
+          },
+        ]),
+      (err: unknown) => {
+        assert.ok(err instanceof WriteValidationError, "must be WriteValidationError");
+        assert.ok(!(err instanceof InvalidArgumentError), "must not be InvalidArgumentError");
+        // The accepted diagnostic loss, asserted so it cannot regress silently.
+        assert.ok(
+          !/2000/.test((err as Error).message) && !/1000/.test((err as Error).message),
+          `the bounds are NOT carried any more; got ${JSON.stringify((err as Error).message)}`,
+        );
+        return true;
+      },
+    );
+  } finally {
+    await engine.close();
+  }
 });

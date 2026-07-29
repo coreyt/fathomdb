@@ -304,6 +304,9 @@ class Engine:
             dropped=list(delta.dropped),
             deferred=list(delta.deferred),
             unchanged=delta.unchanged,
+            # 0.8.20 Slice 22 (R-20-VC / TC-67) — the typed report that replaces
+            # the silent drop of a kind the vector writer can never commit.
+            vector_unsupported_kinds=list(delta.vector_unsupported_kinds),
         )
 
     def embed(self, text: str) -> list[float]:
