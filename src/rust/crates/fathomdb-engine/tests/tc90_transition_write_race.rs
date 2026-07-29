@@ -121,19 +121,28 @@
 //! |---|---|---|---|---|
 //! | 1 (`..._sql_shape_...`) | two connections, ONE thread, no sleeps | `< 500 ms` | 0 ms | fails instantly by construction — the busy handler is skipped |
 //! | 2 (`..._engine_transition_...`) | blocker held on the calling thread | `< 2 000 ms` | 0 ms | same construction; no `drain` work is outstanding |
-//! | 3 (`..._control_engine_write_...`) | blocker thread holds 900 ms | `>= 450 ms` | ~834 ms | the holder SLEEPS 900 ms, so releasing early is impossible; and the writer's 5 000 ms busy timeout leaves ~4.1 s of slack over a 900 ms hold |
+//! | 3 (`..._control_engine_write_...`) | blocker thread SIGNALS readiness, then holds 900 ms | `>= 450 ms` | 931–937 ms (N = 10); 934–941 ms under a 24-way CPU load | the writer does not start until the blocker has signalled that `BEGIN IMMEDIATE` returned, and the holder then SLEEPS 900 ms; the writer's 5 000 ms busy timeout leaves ~4.1 s of slack |
 //!
 //! Pin 3 is the only one with a thread, and it is the one deliberate call: it is
 //! kept live because it is the load-bearing evidence that TC-57's R1 remedy
 //! transfers (design doc §3.3), and a fix scoped against R-A would otherwise be
-//! reasoning from an ignored test. **If it ever does flake, gate it — do not
-//! widen the bound**, which is the assertion that makes it mean anything.
+//! reasoning from an ignored test.
+//!
+//! Its thread is synchronised by a **readiness channel, not a sleep** (codex §9
+//! round 5 finding 4). The earlier fixed 100 ms sleep only *assumed* the blocker
+//! had won the scheduler; on a loaded box the writer could have started before
+//! the lock was ever taken, and the `>= 450 ms` bound would then have failed on
+//! a correct engine — precisely the kind of target TC-72 says must not be added
+//! to the merge gate. With the signal, pin 3's lock is held for the whole
+//! measured call exactly as pins 1 and 2's are. **If it ever does flake, gate it
+//! — do not widen the bound**, which is the assertion that makes it mean
+//! anything.
 
 use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
 use fathomdb_engine::{Engine, EngineError, InitialState, LifecycleState, PreparedWrite, SourceId};
 use fathomdb_schema::SQLITE_SUFFIX;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
@@ -955,11 +964,27 @@ fn tc90_mechanism_engine_transition_under_held_write_lock_fails_immediately() {
 ///
 /// The blocker releases after [`HOLD`], well inside rusqlite's default 5 000 ms
 /// busy timeout, so the wait is bounded and the test cannot hang.
+///
+/// **The blocker's readiness is SIGNALLED, never slept for** (codex §9 round 5
+/// finding 4). An earlier draft slept a fixed 100 ms and then *assumed* the
+/// blocker had taken the lock. That assumption is a race: on a loaded box the
+/// writer could reach `BEGIN IMMEDIATE` before the blocker ever acquired the
+/// WAL write lock, and then the `elapsed >= HOLD / 2` assertion would fail on a
+/// perfectly correct engine. The blocker now sends on a channel only *after* its
+/// `BEGIN IMMEDIATE` has returned and it has written under the lock, and the
+/// main thread blocks on that before it starts timing. The lock therefore
+/// genuinely **is** held for the whole measured call — the same property the
+/// other two pins get from being single-threaded — so this pin observes the
+/// contention rather than racing for it.
 #[test]
 fn tc90_mechanism_control_engine_write_under_held_write_lock_survives() {
     /// How long the blocker holds the write lock. Must be comfortably under
     /// rusqlite's 5 000 ms default busy timeout so the waiting writer succeeds.
     const HOLD: Duration = Duration::from_millis(900);
+    /// Upper bound on waiting for the blocker's readiness signal. Generous: it
+    /// exists only so a blocker that never starts fails LOUDLY instead of
+    /// hanging the suite. It is not a timing assertion.
+    const READY_TIMEOUT: Duration = Duration::from_secs(30);
 
     let dir = TempDir::new().expect("tempdir");
     let path = dir.path().join(format!("tc90_mech_control{SQLITE_SUFFIX}"));
@@ -973,10 +998,15 @@ fn tc90_mechanism_control_engine_write_under_held_write_lock_survives() {
     engine.write(&[governed_node("tc90-control-seed", "control seed")]).expect("seed");
     engine.drain(60_000).expect("drain");
 
-    let released = Arc::new(Mutex::new(false));
+    // Readiness SIGNAL, not a sleep. `ready_tx` fires only once the blocker's
+    // `BEGIN IMMEDIATE` has returned and it has written under the lock, so when
+    // `recv_timeout` below returns, the WAL write lock IS held. `HOLD` starts at
+    // that same instant, so the writer's wait is bounded below by `HOLD` minus
+    // only the microseconds it takes to reach its own `BEGIN` — no scheduling
+    // race decides whether this pin passes.
+    let (ready_tx, ready_rx) = std::sync::mpsc::channel::<()>();
     let holder = {
         let path = path.clone();
-        let released = Arc::clone(&released);
         std::thread::spawn(move || {
             let blocker = rusqlite::Connection::open(&path).expect("open blocker");
             blocker.execute_batch("BEGIN IMMEDIATE;").expect("blocker takes the write lock");
@@ -987,13 +1017,15 @@ fn tc90_mechanism_control_engine_write_under_held_write_lock_survives() {
                     rusqlite::params![9_999_997_i64, "up_to_date"],
                 )
                 .expect("blocker writes under its lock");
+            // The lock is now HELD. Only now may the writer start.
+            ready_tx.send(()).expect("blocker signals that it holds the write lock");
             std::thread::sleep(HOLD);
             blocker.execute_batch("ROLLBACK;").expect("blocker releases");
-            *released.lock().expect("released lock") = true;
         })
     };
-    // Give the holder time to actually take the lock before the writer starts.
-    std::thread::sleep(Duration::from_millis(100));
+    ready_rx
+        .recv_timeout(READY_TIMEOUT)
+        .expect("the blocker must signal that it HOLDS the write lock before the writer starts");
 
     let started = Instant::now();
     let result = engine.write(&[governed_node("tc90-control-2", "control write")]);
@@ -1009,7 +1041,9 @@ fn tc90_mechanism_control_engine_write_under_held_write_lock_survives() {
     assert!(
         elapsed >= HOLD / 2,
         "and it must have WAITED for the lock ({elapsed:?} < half of {HOLD:?}), which is the \
-         proof the busy handler was consulted rather than skipped"
+         proof the busy handler was consulted rather than skipped. The blocker SIGNALLED that \
+         it held the lock before this call started and then held it for {HOLD:?}, so a short \
+         elapsed here is an engine result, not a lost scheduling race"
     );
 
     let _ = engine.close();

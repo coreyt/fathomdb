@@ -1,6 +1,8 @@
 //! 0.8.20 Slice 23 (R-20-SV, leg 2) — **TC-91 characterization harness.**
 //!
-//! TC-91 (ledger `seq-129`, p2) is two defects that share one mechanism:
+//! TC-91 (ledger `seq-129`, p2) is two defects on the same code path, which this
+//! file HYPOTHESISES — but does **not** establish — share one mechanism (see
+//! "What those numbers DO and DO NOT prove" below, and design doc §5.5.2):
 //!
 //! * **(a)** roughly half of all embeds at baseline are DUPLICATES. It reproduces
 //!   on the ANONYMOUS arm too, so it is not the governed-write race TC-57 fixed,
@@ -63,7 +65,10 @@
 //! cost to zero, not merely reduced it. `probe_calls == 0` is asserted in every
 //! duplicate arm, so the separation is verified rather than assumed.
 //!
-//! ## MEASURED at `94f09d7d` — and (a) turns out to BE (b)
+//! ## MEASURED at `94f09d7d`
+//!
+//! These are the counts. What they do and do not license is the section that
+//! follows the table — in particular they do **not** establish that (a) is (b).
 //!
 //! | arm | shape | runs | ingest duplicates / rows |
 //! |---|---|---|---|
@@ -470,8 +475,9 @@ const MECHANISM_ROWS: usize = 60;
 /// opens its `BEGIN IMMEDIATE` transaction.
 const SPACED_PACE_MS: u64 = 25;
 
-/// **The causal experiment for TC-91 (a): is the duplicate rate caused by the
-/// ENGINE'S OWN WRITER holding the WAL write lock across the worker's commit?**
+/// **The CADENCE experiment for TC-91 (a). The question it is aimed at — is the
+/// duplicate rate caused by the ENGINE'S OWN WRITER holding the WAL write lock
+/// across the worker's commit? — is one it narrows but does not answer.**
 ///
 /// Two arms of the same governed load differing ONLY in write spacing:
 ///
@@ -516,12 +522,15 @@ fn tc91_mechanism_duplicate_rate_versus_write_cadence() {
     );
     assert_eq!(
         spaced.split.ingest_duplicates, 0,
-        "TC-91 (a) MECHANISM: spacing writes to {SPACED_PACE_MS} ms took duplicates from {} to \
-         {} over {MECHANISM_ROWS} identical rows. The variable is write CADENCE — i.e. how often \
-         the engine's own `BEGIN IMMEDIATE` writer holds the WAL write lock across the worker's \
-         DEFERRED commit promotion. If this ever becomes non-zero, a SECOND duplicate source \
-         exists that this experiment does not explain, and the design doc's mechanism section \
-         must be re-opened.",
+        "TC-91 (a) CADENCE SENSITIVITY: spacing writes to {SPACED_PACE_MS} ms took duplicates \
+         from {} to {} over {MECHANISM_ROWS} identical rows. The variable this arm manipulates \
+         is write SPACING; the HYPOTHESISED mechanism it implicates — not one it observes — is \
+         how often the engine's own `BEGIN IMMEDIATE` writer holds the WAL write lock across \
+         the worker's DEFERRED commit promotion. This arm cannot see a worker commit fail, \
+         because `let _ =` (`lib.rs:12711`) discards exactly that signal, so it establishes \
+         neither the identity nor the uniqueness of the source. If this ever becomes non-zero, \
+         the cadence sensitivity itself has changed and the design doc's mechanism section must \
+         be re-opened.",
         tight.split.ingest_duplicates, spaced.split.ingest_duplicates,
     );
 }
