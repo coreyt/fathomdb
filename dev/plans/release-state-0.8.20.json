@@ -272,28 +272,26 @@
     "_comment": "Ruled vs unruled, as of 2026-07-25. Sources of record: dev/plans/runs/STATUS-0.8.20.md §4 (the historical queue banner) and dev/plans/plan-0.8.20.md §11 (the live queue + the 2026-07-24 and 2026-07-25 ruling blocks). Recorded here so the ruled/unruled split has ONE writer; the two prose sections stay exactly as they are.",
     "unruled": [
       {
-        "id": "batched-governed-surface",
-        "title": "the batched governed-surface decision — the accumulated Slice 20/25/30 allowlist delta",
-        "gated_at": "AT THE CLOSE OF SLICE 23 (HITL 2026-07-28, steward seq-140/141 — supersedes seq-134 \"after Slice 22\"). Slice 23 is the LAST unit that can touch the surface: the allowlist is SDK COMMAND NAMES, and neither Slice 31 (dependency sweep) nor DOC-HYGIENE-3 (docs/tooling) can add or remove one, so the delta is FINAL at 23 and deferring the ceremony past them buys nothing. NON-BLOCKING for 31 and DOC-HYGIENE-3, which may proceed while it sits with the HITL; Slice 40 DOES depend on it (AC-079 mints pinned to the allowlist content).",
-        "halts_run": false,
-        "source": "plan-0.8.20.md §11 (2026-07-25 rulings, item 2); timing ruled at steward seq-134, re-gated to after Slice 23 at steward seq-140"
-      },
-      {
         "id": "publish",
         "title": "PUBLISH the 0.8.20 breaking pair (manifests 0.8.9 -> 0.8.20)",
         "gated_at": "Slice 40 — HITL PREFERS option (a) publish-after-40 but explicitly deferred (\"lets see where we are then\"); STILL UNRULED (steward seq-135). A possible pre-publish \"Slice 4x\" for the Dependabot advisories is TC-93.",
         "halts_run": true,
         "source": "plan-0.8.20.md §11 item 3"
-      },
-      {
-        "id": "tc-98-error-family-exception",
-        "title": "TC-98 — does decision #18's ONE named exception (reject_unrenderable_edge_epoch, still returning InvalidArgument { msg }) satisfy R-20-VC's \"one family, tests updated\"?",
-        "gated_at": "DEFERRED by the HITL until after Slice 23 (seq-143); Slice 23 LANDED 30102ecd, so it is NOW DUE. Retrospective about the landed Slice 22, not a forward gate.",
-        "halts_run": false,
-        "source": "steward seq-143 · todos TC-98"
       }
     ],
     "ruled": [
+      {
+        "id": "batched-governed-surface",
+        "ruling": "(a) SIGN AS-IS. The accumulated governed-surface delta is SIGNED: SEVEN net-new allowlist members over the AC-074-signed 0.8.19 set = FOUR logical verbs (erase_source/eraseSource · read.crossed_boundary_since/read.crossedBoundarySince · configure_projections/configureProjections · read.projections), plus the non-command types EraseReport, SourceId, ExciseReport (now always-present), ReadView, BoundaryCrossing, ProjectionSpec/ProjectionDelta/ProjectionRole, ProjectionDestructiveError. recovery_denylist UNCHANGED at the five REQ-054 names (AC-041 unaffected); excise_source stays CLI-only and un-allowlisted. AC-079 mints at Slice 40, still pinned to this content — any diff re-opens the gate (T1e pin). PUBLISH IS NOT AUTHORIZED BY THIS SIGNATURE; it remains a separate hard HITL gate. PROVENANCE: authored by Slices 5d (3685fdb5), 10b (4524ffd2), 15b (35523156), 15d (0d887f85) — slices 20/25/30/21/22/23 each contributed ZERO allowlist bytes, so the common shorthand 'the 20/25/30 delta' is imprecise; plan §11 attributes it correctly. OWED, NOT LOST: the allowlist _comment still reads 'AWAITING HITL SIGN-OFF, NOT SIGNED' ×4; correcting it needs a coordinated re-issue of scripts/governed-surface-pin.json (the gate hashes raw bytes). That re-pin is HELD until Slice 31 lands, because the Slice 31 orchestrator is in flight and was briefed to halt-and-escalate on any allowlist change.",
+        "ruled_on": "2026-07-29",
+        "source": "steward seq-157 · board §4 #1"
+      },
+      {
+        "id": "tc-98-error-family-exception",
+        "ruling": "(a) FOR NOW — accept decision #18's one named exception (reject_unrenderable_edge_epoch keeps InvalidArgument { msg }; the other six validate_write shape rejections keep the message-less unit variant WriteValidation). Nothing is reclassified and no variant is minted, so the governed surface is UNCHANGED — which is why this did not disturb the batched delta. ACCEPTED, NOT ENDORSED: the HITL requires a REVISIT AT 0.8.22 because of the Rust hidden-break shape, bundled with the #[non_exhaustive] question and the sibling-condition asymmetry as TC-103. Blast radius on published clients verified ZERO against the v0.8.9 tag (both code paths absent there); the hidden-break shape is Rust-only and belongs to options (b)/(c), which reclassify, not to (a), which does not.",
+        "ruled_on": "2026-07-29",
+        "source": "steward seq-156 · todos TC-98 → TC-103"
+      },
       {
         "id": "tc-100-placement",
         "ruling": "(a) — TC-100 JOINS DOC-HYGIENE-3 as a SIXTH id (TC-53, TC-88, TC-89, TC-92, TC-94, TC-100), expanding the scope ruled at five in seq-137/seq-138. Basis: all three surviving defects sit in ONE pipeline in scripts/commission-manifest.sh — TC-100 is the match predicate at :425 and TC-94 defect (1) the file-set selection at :415/:192, in the SAME function `scan_design`; TC-94 defect (2) is in `slice_tokens` (:329-347), which feeds it. DoD CONSEQUENCE: DOC-HYGIENE-3 verification MUST include a before/after citation-set diff across the landed slices, because TC-100 and TC-94(1) both change which docs existing slices cite.",
