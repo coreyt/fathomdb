@@ -9,8 +9,14 @@ sbom-survey --describe
 |------|---------|
 | `0`  | survey written |
 | `2`  | a tracked manifest has no tier assignment (an offending path on stderr) |
-| `3`  | a tracked manifest could not be parsed |
+| `3`  | a tracked manifest could not be parsed, or the tier rules could not be read |
 | `1`  | unexpected internal error |
+| `64` | bad command line (`EX_USAGE`) — NOT one of §5.9's ruled codes, on purpose |
+
+§5.9 rules the first four. `64` is added rather than reusing one of them because
+a malformed argument is none of those things, and argparse's own default for a
+usage error is `2` — which would collide head-on with "untiered manifest" and
+make that signal ambiguous for anyone reading exit codes.
 """
 
 from __future__ import annotations
@@ -27,6 +33,7 @@ from .registry import HttpRegistrySource, OfflineSource
 from .report import write_reports
 from .survey import run_survey
 from .tiers import TierRuleFileError, UntieredManifestError, load_tier_map
+from .util import TimestampFormatError, normalize_timestamp
 
 __all__ = ["build_parser", "console_main", "describe", "main"]
 
@@ -34,6 +41,30 @@ EXIT_OK = 0
 EXIT_INTERNAL = 1
 EXIT_UNTIERED = 2
 EXIT_UNPARSEABLE = 3
+
+#: A BAD COMMAND LINE, and deliberately NOT one of §5.9's four ruled codes.
+#:
+#: §5.9 fixes 0 = written, 2 = untiered manifest, 3 = unparseable manifest,
+#: 1 = unexpected internal error. A malformed argument is none of those, and
+#: argparse's own default for a usage error is 2 — which would collide head-on
+#: with "a tracked manifest has no tier assignment" and make `AC-SBOM-21`'s
+#: signal ambiguous for any consumer reading exit codes.
+#:
+#: 64 is `EX_USAGE` from BSD `sysexits.h`, the long-standing convention for
+#: exactly this case: outside the ruled set, so it cannot overload a ruled
+#: meaning, and self-documenting rather than arbitrary. `_Parser` below routes
+#: EVERY argparse usage error here, so the CLI is internally consistent — an
+#: unknown flag and a malformed `--now` report the same way.
+EXIT_USAGE = 64
+
+
+class _Parser(argparse.ArgumentParser):
+    """`argparse.ArgumentParser` whose usage errors exit `EXIT_USAGE`, not 2."""
+
+    def error(self, message: str):  # noqa: D102 - argparse contract
+        self.print_usage(sys.stderr)
+        print(f"{self.prog}: error: {message}", file=sys.stderr)
+        raise SystemExit(EXIT_USAGE)
 
 
 def describe() -> dict:
@@ -52,7 +83,7 @@ def describe() -> dict:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = _Parser(
         prog="sbom-survey",
         description=(
             "CycloneDX 1.6 dependency survey over the manifests tracked on main."
@@ -93,6 +124,15 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
+    # Validate the advertised `--now ISO8601` contract HERE, before any work,
+    # so a typo is a usage error rather than a survey that runs to completion
+    # and writes artifacts disagreeing about when it happened.
+    if args.now is not None:
+        try:
+            normalize_timestamp(args.now, source="--now")
+        except TimestampFormatError as exc:
+            parser.error(str(exc))
+
     if args.describe:
         print(json.dumps(describe(), indent=2, sort_keys=True))
         return EXIT_OK
@@ -130,6 +170,11 @@ def main(argv: list[str] | None = None) -> int:
         # problem, not an internal error (codex §9 round 2 [P1]).
         print(f"sbom-survey: {exc}", file=sys.stderr)
         return EXIT_UNPARSEABLE
+    except TimestampFormatError as exc:
+        # Reachable via SOURCE_DATE_EPOCH, which `--now` validation above does
+        # not cover. Same door, same code.
+        print(f"sbom-survey: {exc}", file=sys.stderr)
+        return EXIT_USAGE
     except ManifestParseError as exc:
         print(f"sbom-survey: {exc}", file=sys.stderr)
         return EXIT_UNPARSEABLE

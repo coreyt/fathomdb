@@ -72,6 +72,24 @@ Consequences worth knowing before Slice 33 runs this:
   guessing a rule set for an unknown repository would be the silent mis-tag REQ-4 exists to prevent.
   The tool exits `3` and names both the file it wanted and the `--tiers` override.
 
+**Timestamps are validated, never substituted.** `--now` and `SOURCE_DATE_EPOCH` both pass through
+one function (`util.parse_timestamp`), and so do `staleness.json`'s `generated` and the CycloneDX
+`metadata.timestamp` — so the two artifacts of a single run cannot disagree about when it happened.
+A malformed value is **rejected** rather than quietly replaced by the default epoch: this value is
+the provenance of the whole run, and §5.6 makes the findings doc's provenance header load-bearing.
+
+| Exit | Meaning |
+|---|---|
+| `0` | survey written |
+| `2` | a tracked manifest has no tier assignment (an offending path on stderr) |
+| `3` | a tracked manifest could not be parsed, or the tier rules could not be read |
+| `1` | unexpected internal error |
+| `64` | bad command line (`EX_USAGE`) — e.g. a malformed `--now` |
+
+§5.9 rules the first four. `64` is deliberately **outside** that set: a bad argument is none of those
+things, and argparse's own default for a usage error is `2`, which would collide head-on with
+"untiered manifest" and make `AC-SBOM-21`'s signal ambiguous for anyone reading exit codes.
+
 ## Running the suite
 
 The mini-project is deliberately **not installed**: `tests/conftest.py` puts `scripts/sbom-survey/`

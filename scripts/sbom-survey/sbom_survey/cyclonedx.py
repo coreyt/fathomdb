@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from cyclonedx.model import Property
@@ -30,6 +29,8 @@ from cyclonedx.model.component import Component, ComponentType
 from cyclonedx.output.json import JsonV1Dot6
 from cyclonedx.schema import SchemaVersion
 from packageurl import PackageURL
+
+from .util import parse_timestamp
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from .survey import Survey
@@ -45,14 +46,16 @@ ROOT_BOM_REF = "fathomdb-repository"
 _SERIAL_NAMESPACE = uuid.UUID("6f0d5c9a-2f27-5b3e-9f2e-0a3b3d4c5e6f")
 
 
-def _timestamp(raw: str) -> datetime:
-    try:
-        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-    except ValueError:  # pragma: no cover - resolve_timestamp normalizes first
-        return datetime(1980, 1, 1, tzinfo=timezone.utc)
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed
+#: NOTE THE ABSENCE OF A LOCAL PARSER HERE.
+#:
+#: This module used to carry its own `_timestamp()` that swallowed a
+#: `ValueError` and returned a hardcoded 1980 epoch. That made a malformed
+#: `--now` produce TWO artifacts from ONE run that disagreed about when the run
+#: happened: `staleness.json` recorded the raw string, this document recorded
+#: the silent fallback (codex §9 round 3 `[P3]`). The stamp is now taken from
+#: `util.parse_timestamp` — the same function `survey.resolve_timestamp` uses —
+#: so there is a SINGLE resolution and a future edit cannot re-open the gap on
+#: one side only. It has no fallback: an unparseable stamp raises.
 
 
 def build_document(survey: Survey) -> tuple[dict[str, Any], str]:
@@ -65,7 +68,9 @@ def build_document(survey: Survey) -> tuple[dict[str, Any], str]:
 
     bom = Bom()
     bom.metadata.component = root
-    bom.metadata.timestamp = _timestamp(survey.timestamp)
+    bom.metadata.timestamp = parse_timestamp(
+        survey.timestamp, source="survey.timestamp"
+    )
     bom.serial_number = uuid.uuid5(
         _SERIAL_NAMESPACE,
         "\n".join(sorted(component.purl for component in survey.components)),

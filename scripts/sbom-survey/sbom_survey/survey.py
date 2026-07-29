@@ -36,7 +36,7 @@ from .parse import npm as npm_parse
 from .parse import python as python_parse
 from .registry import source_kind
 from .tiers import TierMap, load_tier_map
-from .util import make_purl
+from .util import TimestampFormatError, make_purl, normalize_timestamp
 
 __all__ = [
     "ExcludedManifest",
@@ -44,6 +44,7 @@ __all__ = [
     "StalenessRow",
     "Survey",
     "SurveyComponent",
+    "TimestampFormatError",
     "classify_status",
     "resolve_timestamp",
     "run_survey",
@@ -238,26 +239,33 @@ def resolve_timestamp(now: str | None) -> str:
     CLI's default and the in-process default are the same value by
     construction — `argparse` cannot inject a wall-clock `--now` behind the
     survey's back (§5.8 leg 3).
+
+    EVERY branch returns a value that has been through `util.parse_timestamp`,
+    so what `Survey.timestamp` holds is always canonical ISO 8601 — which is
+    what lets `staleness.json` and the CycloneDX document derive their stamps
+    from ONE resolution instead of parsing independently and disagreeing
+    (codex §9 round 3 `[P3]`). A malformed input RAISES `TimestampFormatError`;
+    it is never passed through and never silently replaced.
     """
     if now:
-        return _normalize_timestamp(now)
+        return normalize_timestamp(now, source="--now / run_survey(now=…)")
     epoch = os.environ.get("SOURCE_DATE_EPOCH")
     if epoch:
+        # SOURCE_DATE_EPOCH goes through the same door: it is a timestamp input
+        # like any other, and a junk value there would reopen exactly the same
+        # gap by another route.
         try:
-            return datetime.fromtimestamp(int(epoch), tz=timezone.utc).isoformat()
-        except (TypeError, ValueError):
-            pass
-    return DEFAULT_EPOCH_TIMESTAMP
-
-
-def _normalize_timestamp(raw: str) -> str:
-    try:
-        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-    except ValueError:
-        return raw
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.isoformat()
+            seconds = int(epoch)
+            stamp = datetime.fromtimestamp(seconds, tz=timezone.utc).isoformat()
+        except (TypeError, ValueError, OSError, OverflowError) as exc:
+            raise TimestampFormatError(
+                epoch,
+                "SOURCE_DATE_EPOCH",
+                exc,
+                expected=TimestampFormatError.UNIX_SECONDS,
+            ) from exc
+        return normalize_timestamp(stamp, source="SOURCE_DATE_EPOCH")
+    return normalize_timestamp(DEFAULT_EPOCH_TIMESTAMP, source="the built-in default epoch")
 
 
 # --------------------------------------------------------------------------- #
