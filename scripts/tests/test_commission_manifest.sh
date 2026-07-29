@@ -1116,6 +1116,485 @@ else
   fi
 fi
 
+# ===========================================================================
+# FIFTH PREDICATE (TC-100 + TC-94 defects 1 and 2), arms 12a-12k: the DISCOVERY
+# half selects the RIGHT documents — matched on WHOLE tokens, over the three
+# roots that actually hold design authority, for EVERY leg the ladder entry
+# names including the bare-number ones.
+# ===========================================================================
+# Three measured defects in one selector, all of which make the required-reading
+# list wrong rather than merely short:
+#
+#  TC-100 — SUBSTRING MATCHING. `matched = [t for t in tokens if t in text]` has
+#    no word boundary, so the token `C-1` matches inside `TC-15`, `TC-100`,
+#    `TC-19`… MEASURED on the live repo before this change: 0.8.20 Slice 15 cited
+#    EIGHTEEN documents on that one token, among them
+#    `dev/design/0.8.4-graphrag-sensemaking.md` and four
+#    `fathomdb-memex-overall-roadmap/*` drafts that cannot inform a projection
+#    registry. A brief is a REQUIRED-READING list: padding it spends the
+#    orchestrator's context on documents that cannot help, and — worse — makes a
+#    slice with genuinely thin design coverage look thoroughly supported, which
+#    is the exact condition the TC-37 vacuous-pass guard exists to surface. Short
+#    ids are the hazard: `C-1`, `C-2`, and any `AC-NN`/`TC-NN` that is a prefix
+#    of a longer id.
+#
+#  TC-94 (1) — UNREACHABLE TIERS. `scan_design` walked `dev/design` alone, so
+#    `dev/adr/**` and `dev/interfaces/**` could never appear in a brief AT ANY
+#    STATUS, no matter what was back-linked into them. An ADR is a HIGHER tier of
+#    authority than a design memo (`ADR-0.6.0-error-taxonomy.md` is the ruling
+#    document for decision #18; `ADR-0.8.18-vector-equivalence-self-check.md` is
+#    HITL-SIGNED), and `dev/interfaces/*.md` is the surface AGENTS.md §25 obliges
+#    an error-surface change to update — so the scan was blind to precisely the
+#    strongest evidence. `design_refs` is NOT a fix for this: it is the CITATION
+#    half, it requires a human to have known to curate, and the eight ladder
+#    entries with no curation got nothing.
+#
+#  TC-94 (2) — BARE-NUMBER LEGS ARE INVISIBLE. `slice_tokens` derives tokens by
+#    regex from the ladder entry's own `short`/`title`, and the shapes `#18` and
+#    `#99` match none of its patterns. Two of 0.8.20 Slice 22's four legs
+#    therefore contributed NOTHING to selection and no document could ever be
+#    matched for them.
+#
+# (TC-94 defect (3) as originally filed — "a full token match SUPPRESSES the
+# manifest's own NO-design-doc-mentions warning" — was WITHDRAWN as FALSE at
+# steward `seq-146`, measured: the report is per-token and always has been. Arm
+# 11f already locks that behaviour and is labelled as a lock, not a RED-first
+# test. Nothing here re-opens it.)
+#
+# THE FIXES ARE COUPLED AND THEIR EVIDENCE IS A DIFF. Word-boundary matching
+# SHRINKS the cited set, widening the roots GROWS it, and bare-number tokens grow
+# it again — so "it still exits 0" proves nothing. The before/after citation-set
+# diff across every landed 0.8.20 slice is recorded at
+# `dev/plans/runs/DOC-HYGIENE-3-citation-set-diff.md`; these arms pin the
+# MECHANISM the diff is evidence for.
+
+# --- Arm 12a: a SHORT token must not match inside a LONGER id (TC-100) ------
+# The fixture form of the live Slice-15 defect. `longer-id-only.md` says `TC-15`
+# and `TC-100` and never `C-1` on its own; `genuine-c1.md` states the token. Both
+# were cited before this change — measured RED, and the pair is what makes the
+# arm about BOUNDARIES rather than about matching less.
+setup_fixture
+mutate_state "L[10]['title'] = L[10]['title'] + ' plus the C-1 projection registry'"
+cat >"$FIX/dev/design/longer-id-only.md" <<'EOF'
+---
+status: ACTIVE
+---
+
+# Only ever the longer ids
+
+TC-15 and TC-100 are discussed here. The contract id never appears on its own.
+EOF
+cat >"$FIX/dev/design/genuine-c1.md" <<'EOF'
+---
+status: ACTIVE
+---
+
+# The contract
+
+C-1 is the converged contract id, stated as a whole token.
+EOF
+run_gen 9.9.9 10
+if [ "$RC" -eq 0 ] \
+   && grep -q 'dev/design/genuine-c1.md' <<<"$OUT" \
+   && grep -qE 'matched:.*C-1' <<<"$OUT" \
+   && ! grep -q 'dev/design/longer-id-only.md' <<<"$OUT"; then
+  pass "token matching is WORD-BOUNDED — \`C-1\` matches \`C-1\` and NOT \`TC-15\`/\`TC-100\` (TC-100)"
+else
+  fail "arm 12a (word-boundary token match): rc=$RC out=$OUT"
+fi
+
+# --- Arm 12b: the boundary holds on the trailing side too ------------------
+# `TC-99` must not match inside `TC-990`. Without this, a fix that only guarded
+# the LEADING edge (e.g. prefixing `\b` and stopping) would pass arm 12a.
+setup_fixture
+cat >"$FIX/dev/design/trailing-run-on.md" <<'EOF'
+---
+status: ACTIVE
+---
+
+# A longer id that starts with a shorter one
+
+TC-990 is a different carry entirely, and R-9-B7 is a different requirement.
+EOF
+run_gen 9.9.9 10
+if [ "$RC" -eq 0 ] && ! grep -q 'dev/design/trailing-run-on.md' <<<"$OUT"; then
+  pass "token matching is bounded on BOTH sides — \`TC-99\` does not match inside \`TC-990\`"
+else
+  fail "arm 12b (trailing boundary): rc=$RC out=$OUT"
+fi
+
+# --- Arm 12c: dev/adr/** and dev/interfaces/** are REACHABLE BY THE SCAN ----
+# TC-94 (1). Neither document is curated — there is no `design_refs` here — so
+# they can only appear if the walker reaches them. Measured RED: the walker
+# covered `dev/design` alone, so an ADR could never be cited at any status.
+setup_fixture
+mkdir -p "$FIX/dev/adr" "$FIX/dev/interfaces"
+cat >"$FIX/dev/adr/ADR-9.9.9-widget-authority.md" <<'EOF'
+---
+status: accepted
+---
+
+# ADR-9.9.9 — the ruling document
+
+widget_readiness is DECIDED here; this ADR outranks any design memo.
+EOF
+cat >"$FIX/dev/interfaces/rust.md" <<'EOF'
+# Rust surface
+
+The TC-99 terminal fix changes this surface and must be recorded here.
+EOF
+run_gen 9.9.9 10
+if [ "$RC" -eq 0 ] \
+   && grep -q 'dev/adr/ADR-9.9.9-widget-authority.md' <<<"$OUT" \
+   && grep -q 'dev/interfaces/rust.md' <<<"$OUT" \
+   && ! grep -qE 'CURATED.*(ADR-9.9.9-widget-authority|interfaces/rust)' <<<"$OUT"; then
+  pass "scan roots — an ADR and an interface doc are DISCOVERED (not curated) by the token scan (TC-94 (1))"
+else
+  fail "arm 12c (adr/interfaces reachable): rc=$RC out=$OUT"
+fi
+
+# --- Arm 12c2: ...and the ADR's RECORDED status is reported, not invented ---
+# The scan must read frontmatter outside `dev/design/` exactly as it does inside
+# it, and the interface doc — which carries no frontmatter at all — must say so
+# rather than be laundered into a classification it never made.
+ADR_SCAN_ROW="$(grep -m1 'dev/adr/ADR-9.9.9-widget-authority.md' <<<"$OUT" || true)"
+IFACE_SCAN_ROW="$(grep -m1 'dev/interfaces/rust.md' <<<"$OUT" || true)"
+if grep -q '\[accepted\]' <<<"$ADR_SCAN_ROW" \
+   && grep -qE '\[\(no status:\)\]' <<<"$IFACE_SCAN_ROW"; then
+  pass "scan roots — an out-of-tree doc's recorded status is read, and a missing one is SAID to be missing"
+else
+  fail "arm 12c2 (out-of-tree status honesty): adr=[$ADR_SCAN_ROW] iface=[$IFACE_SCAN_ROW]"
+fi
+
+# --- Arm 12c3: the roots are EXACTLY THREE, not "all of dev/" --------------
+# Widening the walker to the whole tree would drag every unrelated document into
+# every brief — the reason the original author declined to widen it at all. This
+# arm is what keeps the widening bounded: a `dev/plans/` note carrying a live
+# token must NOT be cited.
+setup_fixture
+cat >"$FIX/dev/plans/stray-note.md" <<'EOF'
+# A planning note, not design authority
+
+widget_readiness gets a mention here, in passing.
+EOF
+run_gen 9.9.9 10
+if [ "$RC" -eq 0 ] && ! grep -q 'dev/plans/stray-note.md' <<<"$OUT"; then
+  pass "scan roots are BOUNDED — a token-carrying doc outside the three roots is not cited"
+else
+  fail "arm 12c3 (roots bounded): rc=$RC out=$OUT"
+fi
+
+# --- Arm 12c4: a CURATED out-of-tree doc the scan ALSO reaches prints ONCE --
+# `curated_design_refs` is a separate, hand-cited half and must keep working
+# exactly as it does. The one thing that legitimately changes: a curated ADR the
+# scan can now reach is reported ONCE, in the curated block, with its scan hits
+# folded in — never twice, and never with the now-false claim that the scan
+# cannot reach it.
+setup_fixture
+mkdir -p "$FIX/dev/adr"
+cat >"$FIX/dev/adr/ADR-9.9.9-widget-authority.md" <<'EOF'
+---
+status: accepted
+---
+
+# ADR-9.9.9 — the ruling document
+
+widget_readiness is DECIDED here; this ADR outranks any design memo.
+EOF
+mutate_state "L[10]['design_refs'] = ['dev/adr/ADR-9.9.9-widget-authority.md']"
+run_gen 9.9.9 10
+ADR_ROWS="$(grep -c 'dev/adr/ADR-9.9.9-widget-authority.md' <<<"$OUT" || true)"
+if [ "$RC" -eq 0 ] && [ "$ADR_ROWS" -eq 1 ] \
+   && grep -qE 'CURATED.*ADR-9.9.9-widget-authority' <<<"$OUT" \
+   && grep -q 'the scan reached it too, on: widget_readiness' <<<"$OUT" \
+   && ! grep -q 'cited BECAUSE the scan cannot reach it' <<<"$OUT"; then
+  pass "curation is unchanged — a curated ADR the scan now reaches prints once, with its scan hits folded in"
+else
+  fail "arm 12c4 (curated + scanned ADR): rc=$RC rows=$ADR_ROWS out=$OUT"
+fi
+
+# --- Arm 12d: BARE-NUMBER legs become tokens (TC-94 (2)) -------------------
+# `#18` and `#99` matched none of the token patterns, so two of 0.8.20 Slice 22's
+# four legs contributed nothing to selection at all. Measured RED: the token line
+# never carried them and no document could be matched for them.
+setup_fixture
+mutate_state "L[10]['title'] = L[10]['title'] + ' plus decision #18 and sqlite-vec #99'"
+cat >"$FIX/dev/design/bare-number-leg.md" <<'EOF'
+---
+status: ACTIVE
+---
+
+# The decision the leg depends on
+
+Decision #18 is settled here, and sqlite-vec #99 is the upstream issue.
+EOF
+run_gen 9.9.9 10
+if [ "$RC" -eq 0 ] \
+   && grep -qE "OWN tokens from the state file:.*#18" <<<"$OUT" \
+   && grep -qE "OWN tokens from the state file:.*#99" <<<"$OUT" \
+   && grep -q 'dev/design/bare-number-leg.md' <<<"$OUT" \
+   && grep -qE 'matched:.*#18' <<<"$OUT"; then
+  pass "bare-number legs — \`#18\`/\`#99\` are derived as tokens and select a document (TC-94 (2))"
+else
+  fail "arm 12d (bare-number tokens): rc=$RC out=$OUT"
+fi
+
+# --- Arm 12d2: ...and a bare-number token is bounded too -------------------
+# `#18` must not match inside `#180`. Without this the new pattern would
+# reintroduce TC-100 in a new shape the moment it shipped.
+setup_fixture
+mutate_state "L[10]['title'] = L[10]['title'] + ' plus decision #18'"
+cat >"$FIX/dev/design/bare-number-near-miss.md" <<'EOF'
+---
+status: ACTIVE
+---
+
+# A different issue
+
+Issue #180 is a wholly different thing and must not be dragged in.
+EOF
+run_gen 9.9.9 10
+if [ "$RC" -eq 0 ] && ! grep -q 'dev/design/bare-number-near-miss.md' <<<"$OUT"; then
+  pass "bare-number tokens are bounded — \`#18\` does not match inside \`#180\`"
+else
+  fail "arm 12d2 (bare-number boundary): rc=$RC out=$OUT"
+fi
+
+# --- Arm 12d3: a SINGLE-DIGIT `#N` is NOT a token, and that is measured -----
+# The bare-number pattern requires TWO OR MORE digits, and this arm is the reason
+# why. MEASURED across `dev/design/**`, `dev/adr/**` and `dev/interfaces/**` at
+# the time of the change: word-bounded `#18` occurs in 6 documents (errors.md,
+# the sqlite-vec #99 probe memo, ADR-0.6.0-error-taxonomy.md and all three
+# `dev/interfaces/*.md` surfaces) and `#99` in 3 — every one of them genuinely
+# about that decision or that upstream issue. `#3` occurs in 11 documents and
+# `#1` in 16, none of them about a leg: they are prose ordinals ("item #3").
+#
+# THE COST IS NOT NOISE, IT IS THE GUARD. 0.8.20 Slices 31/32/33 are titled
+# "Library Sweep #3, leg N of 3" — a sweep ordinal, not a design id. Slices 32
+# and 33 have NO design of record yet and correctly HARD-FAIL the TC-37
+# vacuous-pass guard today. A one-digit token would have matched them 11
+# incidental documents apiece and turned that honest hard failure into a brief
+# that looks supported — TC-100's disease, reintroduced by TC-94 (2)'s cure. So
+# the floor of two digits is not a tidiness rule; it is what stops this change
+# from defeating the guard the whole file exists to serve.
+setup_fixture
+mutate_state "L[10]['title'] = L[10]['title'] + ' — Library Sweep #3, leg 1 of 3'"
+cat >"$FIX/dev/design/single-digit-ordinal.md" <<'EOF'
+---
+status: ACTIVE
+---
+
+# A doc with a prose ordinal in it
+
+Item #3 in the list below is unrelated to any slice.
+EOF
+run_gen 9.9.9 10
+if [ "$RC" -eq 0 ] \
+   && ! grep -qE "OWN tokens from the state file:.*#3" <<<"$OUT" \
+   && ! grep -q 'dev/design/single-digit-ordinal.md' <<<"$OUT"; then
+  pass "bare-number tokens need TWO digits — a one-digit \`#3\` ordinal is not a selector"
+else
+  fail "arm 12d3 (single-digit ordinal): rc=$RC out=$OUT"
+fi
+
+# --- Arm 12d4: ...and the TC-37 guard still fires for an undesigned slice ----
+# The direct consequence asserted rather than argued. A slice whose tokens match
+# nothing must still HARD-FAIL even though its title carries a `#N` ordinal that
+# a laxer pattern would have "covered".
+setup_fixture
+perl -0777 -pi -e 's/"short": "R-9-B", "title": "widget_readiness \+ the TC-99 terminal fix"/"short": "SWEEP", "title": "Library Sweep #3, leg 2 of 3"/' \
+  "$FIX/dev/plans/release-state-9.9.9.json"
+rm -f "$FIX/dev/design/9.9.9-slice-10-design.md"
+cat >"$FIX/dev/design/single-digit-ordinal.md" <<'EOF'
+---
+status: ACTIVE
+---
+
+# A doc with a prose ordinal in it
+
+Item #3 in the list below is unrelated to any slice.
+EOF
+run_gen 9.9.9 10
+if [ "$RC" -ne 0 ] && grep -q 'TC-37' <<<"$OUT" && ! grep -q 'COMMISSION MANIFEST' <<<"$OUT"; then
+  pass "vacuity guard — a slice whose only bare number is a one-digit ordinal still HARD-fails (TC-37)"
+else
+  fail "arm 12d4 (ordinal does not defeat the guard): rc=$RC out=$OUT"
+fi
+
+# --- Arm 12e: the LIVE repo — EVERY reported match is a whole-token match ---
+# TC-100 asserted against the shipped state file rather than a fixture, and
+# DERIVED rather than literal (TC-81: a hardcoded "Slice 15 must not cite the
+# GraphRAG memo" is a time bomb that goes red the day the ladder moves). For
+# every slice in the live 0.8.20 ladder, every token the manifest REPORTS in a
+# `matched:` list must occur in that document as a whole token. Measured RED:
+# Slice 15 alone reported 18 documents matched on `C-1` where the file only ever
+# says `TC-15`/`TC-19`/`TC-100`.
+#
+# NON-VACUITY: the check FAILS if it inspected fewer than 20 (doc, token) pairs.
+# A parser that silently matched nothing would otherwise pass green.
+set +e
+BOUND_OUT="$(cd "$REPO_ROOT" && python3 - <<'PYEOF' 2>&1
+import json, re, subprocess, sys
+
+state = json.load(open("dev/plans/release-state-0.8.20.json"))
+# The LANDED slices plus the next one: exactly the set whose manifest is required
+# to generate. A NOT_STARTED slice with no design of record yet HARD-FAILS the
+# TC-37 guard by design (0.8.20 Slices 32/33 do today), and folding that expected
+# hard failure in here would make this arm red for a reason that is not its own.
+slices = sorted({s for s in state["landed"] if isinstance(s, int)}
+                | ({state["next_slice"]} if isinstance(state["next_slice"], int) else set()))
+if len(slices) < 3:
+    print("ERR only %d live slice(s) to check — too few to vouch for anything" % len(slices))
+    raise SystemExit(0)
+
+bad, pairs = [], 0
+for sl in slices:
+    p = subprocess.run(["bash", "scripts/commission-manifest.sh", "0.8.20", str(sl)],
+                       capture_output=True, text=True)
+    if p.returncode != 0:
+        print("ERR slice %s: manifest exited %d" % (sl, p.returncode)); raise SystemExit(0)
+    sec, last = None, None
+    for ln in p.stdout.split("\n"):
+        if ln.startswith("## "):
+            sec = ln[3:].split(".")[0].strip()
+            continue
+        if sec != "6":
+            continue
+        m = re.search(r"`([A-Za-z0-9_./+-]+\.md)`", ln)
+        if m and (ln.startswith("  [") or ln.startswith("  CURATED [")):
+            last = m.group(1)
+            continue
+        if last and ln.strip().startswith("matched:"):
+            toks = [t.strip() for t in ln.split("matched:", 1)[1].split(",") if t.strip()]
+            try:
+                text = open(last, encoding="utf-8", errors="replace").read()
+            except OSError as exc:
+                print("ERR cannot read cited %s: %s" % (last, exc)); raise SystemExit(0)
+            for t in toks:
+                if t.startswith("filename:"):
+                    continue
+                pairs += 1
+                rx = r"(?<![0-9A-Za-z_])" + re.escape(t) + r"(?![0-9A-Za-z_])"
+                if not re.search(rx, text):
+                    bad.append("slice %s: %s reported matched on %r, which occurs "
+                               "only inside a longer id" % (sl, last, t))
+            last = None
+if pairs < 20:
+    print("ERR only %d (doc, token) pair(s) inspected — too few to vouch for anything" % pairs)
+    raise SystemExit(0)
+print("OK %d pair(s) checked, %d spurious" % (pairs, len(bad)))
+for b in bad[:12]:
+    print("  " + b)
+PYEOF
+)"
+BOUND_RC=$?
+set -e
+if [ "$BOUND_RC" -eq 0 ] && grep -q '^OK ' <<<"$BOUND_OUT" && grep -q ', 0 spurious' <<<"$BOUND_OUT"; then
+  pass "real repo — every reported \`matched:\` token occurs as a WHOLE token in the doc it cites ($BOUND_OUT)"
+else
+  fail "arm 12e (live substring matches): rc=$BOUND_RC out=$BOUND_OUT"
+fi
+
+# --- Arm 12f: the LIVE repo — every bare-number leg becomes a token --------
+# TC-94 (2) against the shipped state file, derived from the ladder itself so it
+# follows whatever the ladder says next. Non-vacuity: if NO live ladder entry
+# carries a `#NN` leg the arm FAILS — 0.8.20 Slice 22's `decision #18` and
+# `sqlite-vec #99` are exactly why this exists.
+set +e
+BARE_OUT="$(cd "$REPO_ROOT" && python3 - <<'PYEOF' 2>&1
+import json, re, subprocess
+
+state = json.load(open("dev/plans/release-state-0.8.20.json"))
+live = {s for s in state["landed"] if isinstance(s, int)}
+if isinstance(state["next_slice"], int):
+    live.add(state["next_slice"])
+seen, bad = 0, []
+for e in state["ladder"]:
+    if e["slice"] not in live:
+        continue
+    blob = "%s %s" % (e.get("short") or "", e.get("title") or "")
+    # TWO OR MORE digits: `#3` in "Library Sweep #3" is a prose ordinal, not a
+    # leg, and is deliberately not a token (arms 12d3/12d4).
+    legs = re.findall(r"(?<![0-9A-Za-z_])#[0-9]{2,}(?![0-9A-Za-z_])", blob)
+    if not legs:
+        continue
+    p = subprocess.run(["bash", "scripts/commission-manifest.sh", "0.8.20", str(e["slice"])],
+                       capture_output=True, text=True)
+    if p.returncode != 0:
+        bad.append("slice %s: manifest exited %d" % (e["slice"], p.returncode)); continue
+    line = ""
+    for ln in p.stdout.split("\n"):
+        if "OWN tokens from the state file:" in ln:
+            line = ln; break
+    for leg in legs:
+        seen += 1
+        if leg not in line:
+            bad.append("slice %s: leg %s is not in the token line %r" % (e["slice"], leg, line))
+if seen == 0:
+    print("ERR no live ladder entry carries a bare-number leg — nothing asserted")
+else:
+    print("OK %d bare-number leg(s) checked, %d missing" % (seen, len(bad)))
+for b in bad[:12]:
+    print("  " + b)
+PYEOF
+)"
+BARE_RC=$?
+set -e
+if [ "$BARE_RC" -eq 0 ] && grep -q '^OK ' <<<"$BARE_OUT" && grep -q ', 0 missing' <<<"$BARE_OUT"; then
+  pass "real repo — every bare-number leg in the live ladder reaches the token line ($BARE_OUT)"
+else
+  fail "arm 12f (live bare-number legs): rc=$BARE_RC out=$BARE_OUT"
+fi
+
+# --- Arm 12g: the LIVE repo — the higher-authority tiers are now REACHED ----
+# TC-94 (1) asserted end-to-end. Across the live 0.8.20 ladder, at least one
+# document under `dev/adr/` or `dev/interfaces/` must be reached by the SCAN
+# (not by curation) — otherwise the widening shipped without ever having done
+# anything, which is the shape of change that quietly regresses.
+set +e
+TIER_OUT="$(cd "$REPO_ROOT" && python3 - <<'PYEOF' 2>&1
+import json, re, subprocess
+
+state = json.load(open("dev/plans/release-state-0.8.20.json"))
+live = {s for s in state["landed"] if isinstance(s, int)}
+if isinstance(state["next_slice"], int):
+    live.add(state["next_slice"])
+hits = []
+for e in state["ladder"]:
+    sl = e["slice"]
+    if sl not in live:
+        continue
+    curated = set(e.get("design_refs") or [])
+    p = subprocess.run(["bash", "scripts/commission-manifest.sh", "0.8.20", str(sl)],
+                       capture_output=True, text=True)
+    if p.returncode != 0:
+        print("ERR slice %s: manifest exited %d" % (sl, p.returncode)); raise SystemExit(0)
+    sec = None
+    for ln in p.stdout.split("\n"):
+        if ln.startswith("## "):
+            sec = ln[3:].split(".")[0].strip(); continue
+        if sec != "6" or not ln.startswith("  ["):
+            continue
+        m = re.search(r"`([A-Za-z0-9_./+-]+\.md)`", ln)
+        if not m:
+            continue
+        path = m.group(1)
+        if path.startswith(("dev/adr/", "dev/interfaces/")) and path not in curated:
+            hits.append("slice %s -> %s" % (sl, path))
+print("OK %d scanned higher-tier citation(s)" % len(hits))
+for h in hits[:12]:
+    print("  " + h)
+PYEOF
+)"
+TIER_RC=$?
+set -e
+TIER_N="$(grep -oE '^OK [0-9]+' <<<"$TIER_OUT" | grep -oE '[0-9]+' || true)"
+if [ "$TIER_RC" -eq 0 ] && [ -n "$TIER_N" ] && [ "$TIER_N" -gt 0 ]; then
+  pass "real repo — the scan now reaches $TIER_N dev/adr or dev/interfaces doc(s) it could never reach before"
+else
+  fail "arm 12g (live higher-tier reach): rc=$TIER_RC out=$TIER_OUT"
+fi
+
 # --- Arm 9: the REAL repo — Slice 20 of 0.8.20 (the acceptance criterion) --
 # Every emitted path must resolve. This is the regression half of the pair and
 # the tranche's stated bar.
