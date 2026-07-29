@@ -451,13 +451,14 @@ ac_002 sandbox oracle · TC-71 role-gated dense arm) at **`77be504b`**, close re
 > `release-state-0.8.20.json` `next_slice` before commissioning anything.** Making it a generated view is
 > **TC-89**, placed in DOC-HYGIENE-3.
 
-**➡ IMMEDIATE NEXT: Slice 22** (R-20-VC — vector-arm consumer contract: **TC-67** option (c) *report* ·
-**TC-68** fingerprint-cached equivalence probe · Slice-15b decision **#18** error-family · **sqlite-vec #99**
-`vec0` DELETE probe).
+**➡ IMMEDIATE NEXT: Slice 23** (R-20-SV — the `fts`/`vector` reject ruled 2026-07-24, now unblocked because
+**#18 settled the error family onto `WriteValidation` in Slice 22**, plus the **TC-90/TC-91 characterization
+ONLY, no fix**, `seq-136`). ⚠ **Two HITL items are open first** (`seq-142`): the **`sqlite-vec` 0.1.9** bump
+(TC-76 trigger **FIRED**) and whether **#18**'s one named exception satisfies "one family".
 
 **Remaining ladder, HITL-approved 2026-07-28 (F-36 · steward `seq-129`), SEQUENTIAL — this SUPERSEDES the
 F-35 order (`seq-119`); its leading `30`, `TC-86` and `21` legs are all now landed:**
-**22 → 23 → ⟨batched governed-surface decision⟩ → 31 → DOC-HYGIENE-3 → 40.**
+**23 → ⟨batched governed-surface decision⟩ → 31 → DOC-HYGIENE-3 → 40.**
 **21** (R-20-CR, landed) and **22** (R-20-VC) are reserved-gap slices in the 20 band; **31** is Library Sweep #3 and
 carries no requirement id (TC-76); **DOC-HYGIENE-3** is cross-cutting and is not a ladder slice. The batched
 surface decision is taken **AT THE CLOSE OF SLICE 23** (HITL `seq-141`, superseding `seq-134`/`seq-140`).

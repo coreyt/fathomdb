@@ -7,7 +7,7 @@
   "master": "dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md",
   "schema_version": 24,
   "schema_version_source": "pub const SCHEMA_VERSION in src/rust/crates/fathomdb-schema/src/lib.rs",
-  "landed_verified_at": "dcaa830f",
+  "landed_verified_at": "b32e38ca",
   "landed_verified_how": "each SHA below is the landing merge commit for its slice AND is an ancestor of origin/main (git merge-base --is-ancestor), with the merge subject matching this repo's `merge(0.8.20): Slice[- ]N` landing convention",
   "ladder": [
     {
@@ -84,9 +84,10 @@
         15,
         20
       ],
-      "status": "NOT_STARTED",
-      "sha": null,
-      "reserved_gap": true
+      "status": "LANDED",
+      "sha": "572475f2",
+      "reserved_gap": true,
+      "merge_subject": "merge(0.8.20): Slice 22 COMPLETE — R-20-VC vector-arm consumer contract"
     },
     {
       "slice": 23,
@@ -157,11 +158,11 @@
     20,
     25,
     30,
-    21
+    21,
+    22
   ],
-  "next_slice": 22,
+  "next_slice": 23,
   "remaining_ladder": [
-    22,
     23,
     31,
     40
