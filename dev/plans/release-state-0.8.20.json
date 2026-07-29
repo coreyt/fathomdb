@@ -212,14 +212,14 @@
       {
         "id": "batched-governed-surface",
         "title": "the batched governed-surface decision — the accumulated Slice 20/25/30 allowlist delta",
-        "gated_at": "the Slice 30 -> Slice 40 boundary",
+        "gated_at": "after Slice 22 lands (HITL 2026-07-28, steward seq-134 — moved from the stale \"Slice 30 -> Slice 40 boundary\"; Slice 22 may add surface)",
         "halts_run": false,
-        "source": "plan-0.8.20.md §11 (2026-07-25 rulings, item 2)"
+        "source": "plan-0.8.20.md §11 (2026-07-25 rulings, item 2); timing re-ruled at steward seq-134"
       },
       {
         "id": "publish",
         "title": "PUBLISH the 0.8.20 breaking pair (manifests 0.8.9 -> 0.8.20)",
-        "gated_at": "Slice 40",
+        "gated_at": "Slice 40 — HITL PREFERS option (a) publish-after-40 but explicitly deferred (\"lets see where we are then\"); STILL UNRULED (steward seq-135). A possible pre-publish \"Slice 4x\" for the Dependabot advisories is TC-93.",
         "halts_run": true,
         "source": "plan-0.8.20.md §11 item 3"
       }
@@ -364,6 +364,18 @@
         "ruling": "approach APPROVED as proposed and placed FIRST, ahead of Slice 21 — not deferred to DOC-HYGIENE-3. Two layers: a capture-time redaction wrapper around the codex tee, plus scripts/check-transcript-hygiene.sh dual-homed into agent-test.sh, preflight --landing and an always-on CI job. Redact-never-delete, RED-first with a positive control. Out of scope by ruling: gitignoring transcripts, dropping the codex bypass flag, history rewrite",
         "ruled_on": "2026-07-28",
         "source": "seq-129 · todos TC-86"
+      },
+      {
+        "id": "tc-90-tc-91-placement",
+        "ruling": "(c) CHARACTERIZE-ONLY inside 0.8.20, FIX at 0.8.21 — applies to TC-90 (Engine::transition read-then-upgrade under BEGIN DEFERRED) and TC-91 (baseline duplicate-embed rate + silently discarded worker commit failures). Forecloses adding a fix to Slice 22 or minting a further 20-band slice (TC-77 tripwire). The characterization has NO SLOT yet — that placement is a separate open question.",
+        "ruled_on": "2026-07-28",
+        "source": "steward seq-136"
+      },
+      {
+        "id": "doc-hygiene-3-scope",
+        "ruling": "(a) ABSORB ALL THREE — DOC-HYGIENE-3 scope is TC-53 + TC-88 + TC-89 + TC-92. All four are one class (a fact maintained in two places with nothing checking they agree) with one remedy shape (render from the single writer).",
+        "ruled_on": "2026-07-28",
+        "source": "steward seq-137"
       }
     ]
   },
