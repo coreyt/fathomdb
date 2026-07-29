@@ -227,6 +227,11 @@ EOF
 
 R-9-C and TC-998 are both designed here.
 EOF
+
+  # A base commit, so `git diff --cached` and the index/worktree arms below have
+  # a HEAD to differ from. Without it every path reads as freshly added and
+  # "staged vs unstaged" cannot be posed at all.
+  (cd "$FIX" && git add -A && git commit -qm base)
 }
 
 run_gate() {
@@ -492,6 +497,133 @@ if [ "$RC" -ne 127 ] && [ "$BEFORE" = "$AFTER" ]; then
   pass "read-only — dev/plans/release-state-0.8.20.json is byte-identical after a run"
 else
   fail "arm 12 (read-only): rc=$RC before=$BEFORE after=$AFTER"
+fi
+
+# ===========================================================================
+# codex §9 fix round 1 — `--staged-only` must judge the INDEX, and must not let
+# a DELETION slip past its trigger.
+# ===========================================================================
+
+# --- Arm 13: A STAGED DELETION TRIGGERS THE SWEEP ---------------------------
+# [P2] The trigger scan used `--diff-filter=ACMR`, which EXCLUDES deletions, so a
+# commit that removed the only design document naming a token exited at the
+# early-out and the coverage was deleted straight through the gate. This arm
+# removes the sole design of record for Slice 0's tokens and stages the removal:
+# the gate must both FIRE and FAIL. It exercises the snapshot too — the deleted
+# file is absent from the index, so the sweep sees the loss.
+setup_fixture
+(cd "$FIX" && git rm -q dev/design/widget-design.md)
+run_gate --staged-only --release 9.9.9 --slice 0
+if [ "$RC" -eq 1 ] && grep -qE 'R-9-A|widget_readiness' <<<"$OUT"; then
+  pass "a staged DELETION of the only design doc triggers the sweep and fails"
+else
+  fail "arm 13 (deletion triggers): rc=$RC out=$OUT"
+fi
+
+# --- Arm 14: NO FALSE PASS — an UNSTAGED back-link must not rescue a commit -
+# [P2] The sweep read the WORKING TREE. Under a partial commit that means a
+# staged ladder entry minting a new id passes because the back-link exists only
+# as an unstaged edit — the commit lands with no design of record and the gate
+# says nothing. That is the quiet mode TC-92 exists to stop, arriving through the
+# gate built to stop it.
+setup_fixture
+python3 - "$FIX/dev/plans/release-state-9.9.9.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+s = json.load(open(p))
+for e in s["ladder"]:
+    if e["slice"] == 0:
+        e["title"] = e["title"] + " and the TC-997 leg"
+json.dump(s, open(p, "w"), indent=2)
+PY
+(cd "$FIX" && git add dev/plans/release-state-9.9.9.json)
+# The back-link exists ONLY in the working tree. It is never staged.
+printf '\nTC-997 is designed here too.\n' >>"$FIX/dev/design/widget-design.md"
+run_gate --staged-only --release 9.9.9 --slice 0
+if [ "$RC" -eq 1 ] && grep -q 'TC-997' <<<"$OUT"; then
+  pass "no false PASS — an UNSTAGED back-link does not cover a staged new id"
+else
+  fail "arm 14 (index not worktree, false pass): rc=$RC out=$OUT"
+fi
+
+# --- Arm 14b: NO FALSE BLOCK — an UNSTAGED loss must not refuse a clean commit
+# The other direction, and the one that decides whether the gate survives
+# contact with agents. An unrelated unstaged edit that removes coverage must not
+# refuse a staged commit that is itself clean: a false BLOCK on the active commit
+# path is how seat-path-guard.sh (TC-121) taught two independent agents to route
+# around a guard, and the fallback from a blocked commit is a hand-append.
+setup_fixture
+printf '\ntrivially edited to trigger the gate\n' >>"$FIX/dev/design/gap-leg-design.md"
+(cd "$FIX" && git add dev/design/gap-leg-design.md)
+# Coverage for Slice 0 is destroyed in the WORKING TREE only.
+: >"$FIX/dev/design/widget-design.md"
+run_gate --staged-only --release 9.9.9 --slice 0
+if [ "$RC" -eq 0 ]; then
+  pass "no false BLOCK — an UNSTAGED loss of coverage does not refuse a clean staged commit"
+else
+  fail "arm 14b (index not worktree, false block): rc=$RC out=$OUT"
+fi
+
+# --- Arm 15: THE SNAPSHOT IS TORN DOWN AND THE REPO IS UNTOUCHED -----------
+# The gate materialises the index under mktemp -d. It must leave nothing behind
+# inside the repository and must not disturb the index or the worktree it is
+# gating.
+setup_fixture
+printf '\nedit\n' >>"$FIX/dev/design/gap-leg-design.md"
+(cd "$FIX" && git add dev/design/gap-leg-design.md)
+STATUS_BEFORE="$(cd "$FIX" && git status --porcelain --untracked-files=all)"
+run_gate --staged-only --release 9.9.9 --slice 0
+STATUS_AFTER="$(cd "$FIX" && git status --porcelain --untracked-files=all)"
+# NON-VACUITY: rc=127 (gate absent) also leaves everything alone.
+if [ "$RC" -ne 127 ] && [ "$STATUS_BEFORE" = "$STATUS_AFTER" ]; then
+  pass "the index snapshot leaves the gated repo's index and worktree exactly as found"
+else
+  fail "arm 15 (snapshot hygiene): rc=$RC before=[$STATUS_BEFORE] after=[$STATUS_AFTER]"
+fi
+
+# --- Arm 16: AN UNMERGED INDEX IS ANNOUNCED, NOT REFUSED -------------------
+# Cannot-certify is not the same as a coverage gap. There is no stage 0 to
+# snapshot, so the gate says so LOUDLY and gets out of the way — a merge commit
+# touching dev/design/** must not be blocked by a gate that could not look. This
+# deliberately diverges from check-staged-ledger-sidecars.sh, which exits 2:
+# that gate protects an invariant conflict resolution actively breaks.
+setup_fixture
+(
+  cd "$FIX"
+  git checkout -q -b other
+  printf '\nbranch B version\n' >>dev/design/gap-leg-design.md
+  git commit -qam "B"
+  git checkout -q master 2>/dev/null || git checkout -q main
+  printf '\nbranch A version\n' >>dev/design/gap-leg-design.md
+  git commit -qam "A"
+  git merge other >/dev/null 2>&1 || true
+)
+run_gate --staged-only --release 9.9.9 --slice 0
+UNMERGED="$(cd "$FIX" && git ls-files --unmerged | wc -l)"
+if [ "$UNMERGED" -gt 0 ] && [ "$RC" -eq 0 ] && grep -q 'UNMERGED' <<<"$OUT"; then
+  pass "an UNMERGED index is announced as NOT CHECKED and let through, never refused"
+elif [ "$UNMERGED" -eq 0 ]; then
+  fail "arm 16 (unmerged): the fixture did not reach a conflicted state; arm is vacuous"
+else
+  fail "arm 16 (unmerged): rc=$RC out=$OUT"
+fi
+
+# --- Arm 17: THE GIT_* ENVIRONMENT IS SCRUBBED INSIDE THE SNAPSHOT ---------
+# MEASURED: git exports `GIT_INDEX_FILE=.git/index` — a RELATIVE path — into
+# hooks, and some versions export GIT_DIR. Left set, git inside the snapshot
+# resolves against the REAL repository and the snapshot silently does nothing.
+# This arm reproduces the hook environment and pins that the answer is unchanged.
+setup_fixture
+(cd "$FIX" && git rm -q dev/design/widget-design.md)
+set +e
+OUT="$(cd "$FIX" && GIT_INDEX_FILE=.git/index GIT_DIR=.git \
+        bash ./scripts/check-design-refs.sh --staged-only --release 9.9.9 --slice 0 2>&1)"
+RC=$?
+set -e
+if [ "$RC" -eq 1 ] && grep -qE 'R-9-A|widget_readiness' <<<"$OUT"; then
+  pass "the snapshot still governs with GIT_DIR/GIT_INDEX_FILE exported, as in a real hook"
+else
+  fail "arm 17 (git env scrub): rc=$RC out=$OUT"
 fi
 
 if [ "$FAILED" -gt 0 ]; then

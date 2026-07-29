@@ -80,9 +80,50 @@
 # REFUSES TO RUN if it has changed (TC-37: a gate that cannot run must not report
 # a pass).
 #
-# READ-ONLY, and LOCAL-ONLY. It writes nothing. It is wired into the pre-commit
-# hook and deliberately NOT into `preflight.sh --landing` (every check there is
-# paired with a mirrored CI job, and this one has no mirror) nor into
+# ---------------------------------------------------------------------------
+# `--staged-only` JUDGES THE INDEX, NOT THE WORKING TREE
+# ---------------------------------------------------------------------------
+# A commit-time gate must reason about THE CONTENT THAT WILL BE COMMITTED. This
+# is the same lesson `check-staged-ledger-sidecars.sh` records for TC-88: reading
+# the worktree goes green for the author and red for everyone downstream. Under a
+# PARTIAL COMMIT a worktree read is wrong in both directions:
+#   * FALSE PASS — a staged ladder entry mints an id, and the back-link exists
+#     only as an UNSTAGED edit. The commit lands with no design of record and the
+#     gate said nothing. That is exactly the quiet mode TC-92 is about, arriving
+#     through the gate built to stop it.
+#   * FALSE BLOCK — an unrelated unstaged edit removes coverage, and a clean
+#     staged commit is refused. On the ACTIVE commit path that is the TC-121
+#     hazard: `seat-path-guard.sh` false-positived and two independent agents
+#     learned to route around it.
+#
+# SO THE SWEEP RUNS OVER A SNAPSHOT OF THE INDEX. `git checkout-index --all
+# --prefix` materialises exactly the bytes `git commit` is about to write into a
+# throwaway tree, and the manifest is driven THERE. Measured before it was built,
+# because the whole approach depends on it: `commission-manifest.sh` needs git
+# for one thing only — `cd "$(git rev-parse --show-toplevel)"` — so an empty
+# `git init` in the snapshot is enough, and its output for a real slice is
+# BYTE-IDENTICAL to the worktree run. The manifest is NOT modified; byte-identity
+# is its safety argument and it stays intact. Cost: ~0.26s for 2121 files.
+#
+# THE GIT_* ENVIRONMENT IS SCRUBBED for everything run inside the snapshot.
+# Measured: git exports `GIT_INDEX_FILE=.git/index` — RELATIVE — to hooks, and
+# some versions export `GIT_DIR` too. Left in place, a `git` invocation inside
+# the snapshot would resolve against the real repository and silently undo the
+# whole point.
+#
+# THE RESIDUAL, NAMED RATHER THAN IMPLIED. Two states cannot be certified and are
+# reported LOUDLY and then let through (exit 0), never failed: an UNMERGED index,
+# and a snapshot that cannot be built. This deliberately diverges from
+# `check-staged-ledger-sidecars.sh`, which exits 2 on an unmerged path — that
+# gate protects an invariant which conflict resolution actively breaks, whereas
+# this one is a coverage discipline where a refusal nobody can act on costs more
+# than the miss. A merge commit touching `dev/design/**` must not be blocked by a
+# gate that simply could not look.
+#
+# READ-ONLY, and LOCAL-ONLY. It writes nothing inside the repository (the
+# snapshot lives under `mktemp -d` and is removed on exit). It is wired into the
+# pre-commit hook and deliberately NOT into `preflight.sh --landing` (every check
+# there is paired with a mirrored CI job, and this one has no mirror) nor into
 # `agent-test.sh` nor `.github/**`.
 #
 # Usage:
@@ -90,7 +131,10 @@
 #   scripts/check-design-refs.sh --release 0.8.20     # one release
 #   scripts/check-design-refs.sh --release 0.8.20 --slice 22
 #   scripts/check-design-refs.sh --staged-only        # pre-commit: self-gates
-# Exit: 0 = every declared token has coverage (or a frozen exemption);
+#                                                     # and judges the INDEX
+# Exit: 0 = every declared token has coverage (or a frozen exemption), or
+#           --staged-only found nothing relevant staged, or it announced that it
+#           could not certify this commit (unmerged index / no snapshot);
 #       1 = an uncovered token; 2 = the gate could not run.
 set -euo pipefail
 
@@ -107,8 +151,9 @@ usage:
 
   --release <rel>  restrict to dev/plans/release-state-<rel>.json
   --slice <n>      restrict to one ladder entry (requires --release)
-  --staged-only    exit 0 unless this commit stages a release-state file or a
-                   path under dev/design/ — the pre-commit shape
+  --staged-only    exit 0 unless this commit stages (or DELETES) a release-state
+                   file or a path under dev/design/ — the pre-commit shape. The
+                   sweep then runs over a snapshot of the INDEX, not the worktree.
 USAGE
 }
 
@@ -133,11 +178,58 @@ done
 # wiring, and from TC-121, where a guard that false-positived was routed around
 # by two different agents). The trigger set is exactly the two places a
 # requirement id can be minted or its design of record can move.
+SNAPSHOT=""
+cleanup() {
+  [ -n "$SNAPSHOT" ] || return 0
+  case "$SNAPSHOT" in
+    "${TMPDIR:-/tmp}"/*|/tmp/*) rm -rf "$SNAPSHOT" ;;
+    *) printf 'refusing to remove unexpected temp path: %s\n' "$SNAPSHOT" >&2 ;;
+  esac
+}
+trap cleanup EXIT
+
 if [ "$STAGED_ONLY" -eq 1 ]; then
-  STAGED="$(git diff --cached --name-only --diff-filter=ACMR)"
+  # NO `--diff-filter=ACMR` HERE. Deletions are exactly the case that matters:
+  # a commit that REMOVES the only design document naming a token deletes that
+  # token's coverage, and filtering deletions out of the trigger scan let it
+  # through the early exit untouched. Deleted paths decide only WHETHER to run —
+  # the sweep reads the index snapshot and so never tries to open one.
+  STAGED="$(git diff --cached --name-only)"
   if ! grep -qE '^dev/plans/release-state-.*\.json$|^dev/design/' <<<"$STAGED"; then
     exit 0
   fi
+
+  # CANNOT-CERTIFY #1 — an unmerged index has no stage 0, so there is no single
+  # "content that will be committed" to snapshot. Loud, then out of the way: see
+  # THE RESIDUAL in the header for why this is exit 0 and not a refusal.
+  if git ls-files --unmerged | grep -q .; then
+    printf 'check-design-refs: NOT CHECKED — the index has UNMERGED paths, so the content\n' >&2
+    printf '  that will be committed cannot be snapshotted. Design coverage for this commit\n' >&2
+    printf '  is UNVERIFIED (TC-92). Resolve the conflict and re-run:\n' >&2
+    printf '    scripts/check-design-refs.sh\n' >&2
+    exit 0
+  fi
+
+  SNAPSHOT="$(mktemp -d)"
+  # `:0:` semantics for the whole tree: exactly the bytes `git commit` writes.
+  if ! git checkout-index --all --prefix="$SNAPSHOT/" 2>/dev/null; then
+    printf 'check-design-refs: NOT CHECKED — could not materialise the index into a\n' >&2
+    printf '  snapshot; git checkout-index --all failed. Design coverage for this commit\n' >&2
+    printf '  is UNVERIFIED (TC-92). Re-run against the worktree after committing:\n' >&2
+    printf '    scripts/check-design-refs.sh\n' >&2
+    exit 0
+  fi
+  # The manifest does exactly one git thing: `cd "$(git rev-parse --show-toplevel)"`.
+  # An empty repo satisfies it. `--template=` keeps a user `init.templateDir` (and
+  # its sample hooks) out of a directory this script is about to delete.
+  git init -q --template= "$SNAPSHOT"
+  cd "$SNAPSHOT"
+  # MEASURED: git exports `GIT_INDEX_FILE=.git/index` — a RELATIVE path — to
+  # hooks, and some versions export GIT_DIR. Any of these left set would make git
+  # inside the snapshot resolve against the REAL repository and quietly undo the
+  # snapshot.
+  unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
+        GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_COMMON_DIR GIT_PREFIX
 fi
 
 if ! command -v python3 >/dev/null 2>&1; then
