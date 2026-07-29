@@ -72,6 +72,9 @@
         20
       ],
       "status": "LANDED",
+      "design_refs": [
+        "dev/design/0.8.20-tc57-write-race-characterization.md"
+      ],
       "sha": "77be504b",
       "reserved_gap": true,
       "merge_subject": "merge(0.8.20): Slice 21 COMPLETE — R-20-CR concurrency + test-oracle repair"
@@ -85,6 +88,14 @@
         20
       ],
       "status": "LANDED",
+      "design_refs": [
+        "dev/design/0.7.0-vector-quant-pack1.md",
+        "dev/design/0.8.18-slice-0-vector-equivalence-publish-design.md",
+        "dev/design/errors.md",
+        "dev/design/0.8.20-slice0-erasure-design.md",
+        "dev/design/embedder.md",
+        "dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md"
+      ],
       "sha": "572475f2",
       "reserved_gap": true,
       "merge_subject": "merge(0.8.20): Slice 22 COMPLETE — R-20-VC vector-arm consumer contract"
@@ -97,6 +108,12 @@
         22
       ],
       "status": "NOT_STARTED",
+      "design_refs": [
+        "dev/design/0.8.20-tc57-write-race-characterization.md",
+        "dev/design/errors.md",
+        "dev/design/record-lifecycle-protocol/projection-registry-and-async-embed.md",
+        "dev/adr/ADR-0.6.0-error-taxonomy.md"
+      ],
       "sha": null,
       "merge_subject": null
     },
