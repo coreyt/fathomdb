@@ -64,7 +64,7 @@ by that ruling.
 | **25** | Surrogate minting — governed entities ONLY (R-20-SUR) | 15 | ✅ **LANDED `83b1c818`** — D1 static migration guard + D2 dynamic whole-ladder proof (`NULL → NOT NULL == 0`) + D3 registration-inertness; zero engine source change, SCHEMA stays 24, allowlist byte-identical, pin exit 0. codex §9: 3 fix rounds, halted at the circuit-breaker on a 4th same-family [P2]; residual ACCEPTED by Steward ruling (D2 is row-based ⇒ shape-independent). Residual recorded as **TC-66**. |
 | **30** | **RUBRIC-H7 `can-i-deploy` contract gate (R-20-H7)** | 10,15,20,25 | ✅ **COMPLETE — LANDED `9b3ed0e3`** (merge). **The PUBLISH PRECONDITION is SATISFIED.** 45 C-1 clauses (26 CHECKABLE / 12 cross-repo / 7 prose), **zero failing**; zero engine source; allowlist byte-identical, pin exit 0; SCHEMA stays 24. Seven codex §9 rounds + the fix-6c micro-fix, **every round productive** and the 3-same-finding bound never firing — fix-4 alone found **18 of 26** clauses had a demonstrable false green; fixtures 106 → 276 → **317**. Final [P2] **REFUTED** by Steward test, not accepted as risk. fix-6c review **terminal-clean** (no P1/P2/low). Close record **§17** |
 | **21** | **Concurrency + test-oracle repair (R-20-CR)** — TC-57 · ac_002 oracle · TC-71 | 20 | **COMPLETE — LANDED `77be504b`**. Close record §18 |
-| **22** | **Vector-arm consumer contract (R-20-VC)** — TC-67 (c) · TC-68 · decision #18 · #99 probe | 15,20 | not started — reserved gap, 20 band |
+| **22** | **Vector-arm consumer contract (R-20-VC)** — TC-67 (c) · TC-68 · decision #18 · #99 probe | 15,20 | **COMPLETE — LANDED `572475f2`** (merge). All four legs closed. **SCHEMA stays 24**; governed surface **byte-identical**, `check-governed-surface-pin.sh` **0**, the AC-079 pin **never tripped**; `check-c1-conformance.sh` **0** (26/26) — the Slice-30 publish precondition intact. **`#99` REPRODUCED and was LIVE** — `erase_source`/`purge` errored and left the vec0 row at rest; remediated engine-side. codex §9 **4 rounds**, one [P1], CLOSED. **X1 ran live before the land** (TS 250/250, Py 46/46). Close record **§19** |
 | **31** | **Library Sweep #3** — dependency hygiene, **no requirement id** (TC-76) | — | not started — sequenced after 30 by ruling, no technical dep |
 | 40 | Verification + release readiness (publish-or-hold); **TC-16 determination FIRST** (`seq-118`) | 5,30 | not started |
 
@@ -1436,3 +1436,185 @@ control **0/10** · the three `tc57_mechanism_*` pins **0/3 failures** · OOS-17
    exposure TC-57 closed in `commit_batch`, mitigated only by the pre-emptive `drain()` above it.
 4. **R2 (bounded busy retry) as defence-in-depth** — needs the error path restructured first, since
    `commit_batch`'s `rusqlite::Error` is discarded and there is nothing to branch on.
+
+---
+
+## 19. Slice 22 close — **R-20-VC COMPLETE** (TC-67 · TC-68 · decision #18 · sqlite-vec `#99`)
+
+**LANDED `572475f2`** (merge of `orch-0.8.20-s22` onto `main` @ `0cf2923c`). **SCHEMA stays 24.**
+Governed surface **byte-identical** — `check-governed-surface-pin.sh` exits **0**, the AC-079 pin **never
+tripped**, no re-pin, no allowlist diff. `check-c1-conformance.sh` exits **0** (26/26 checkable) — the
+**Slice-30 publish precondition is intact**.
+
+### The four legs
+
+| Leg | Outcome |
+|---|---|
+| **TC-67** — silent unsupported vector kind | **REPORTED**, per HITL option **(c)**. New additive, output-only `ProjectionDelta.vector_unsupported_kinds` (`Vec<String>` / `string[]`), sorted, de-duplicated, **empty-not-absent**. Vocabulary **NOT grown**; **D3 lock untouched**; **readiness unchanged** and pinned in all three languages |
+| **TC-68** — 45 synchronous embeds on every open | Cached against a fingerprint stored in the **existing** `_fathomdb_open_state` — **no `SCHEMA_VERSION` bump, no migration**. Fail-safe (`R-VEQ-4`) preserved |
+| **#18** — `InvalidArgument` vs `WriteValidation` | `validate_write`'s write-**shape** boundary is **one family** (`WriteValidation`), with **one named, tested exception** |
+| **`#99`** — sqlite-vec `vec0` DELETE | **REPRODUCED, and it was LIVE.** Remediated engine-side; **TC-76 → PROMOTE** |
+
+### The finding that mattered — `#99` was not a hypothetical
+
+Commissioned as a characterization probe that could legitimately come back clean. It did not.
+**`sqlite-vec 0.1.7`'s `vec0Update_Delete_ClearMetadata` leaves `rc` holding `SQLITE_DONE` (101) on
+success and never resets it to `SQLITE_OK`**; the epilogue returns it verbatim and `vec0Update_Delete`
+aborts the whole `DELETE`. The INSERT/UPDATE twin has the identical leak but is rescued by an unconditional
+`sqlite3_blob_close` — **that asymmetry is the entire bug**, and it is also what makes the workaround sound.
+
+Any `vec0` TEXT metadata value over **12 bytes** trips it, which the Slice-15e `filterable` attribute columns
+reach for any caller value of **≥ 12 raw bytes** (the `+1` is Slice 15e's `\x01` present marker). Measured:
+11 bytes → `Ok`; 12 bytes → **`Err(Storage)` from BOTH `erase_source` AND `purge`, with the row left at
+rest**. **A GDPR-erasure verb, failing, in the release that publishes.**
+
+Reachability was bounded and stated: `kind` is unreachable (every enrolment door gates on
+`resolve_source_type`, max 9 bytes), `source_type` is a partition key on different storage, `status` ships
+the `''` sentinel. **`attr_*` values are the sole exposure.** The `attr_ + hex(name)` **column-name** axis
+already exceeds 12 chars for any attribute name of ≥ 4 characters, so the shipped corpus has always
+exercised that shape — which is the evidence that `#99` is about **values**, not names.
+
+**Remediation is engine-side and version-independent:** `delete_vector_partition_row` blanks the `attr_*`
+columns first (taking vec0's `n<=12 && prev_n>12` UPDATE branch, which deletes the shadow row **and**
+returns `SQLITE_OK`), then deletes by `rowid`. Routed through **all six** by-rowid delete sites. Erasure is
+**complete, not merely error-suppressed** — embedding bytes byte-identical, shadow row gone.
+**A tripwire test asserts the upstream defect is STILL PRESENT**, so the workaround cannot silently outlive
+its cause.
+
+**Upstream tracks this as issue `#274`, NOT `#99`.** Determined at the orchestration level (part A had no
+network): **`0.1.8` still carries the defect; `0.1.9` FIXES it**, with upstream's own comment naming the
+issue. Latest stable is `0.1.9`; `0.1.10-*` are alphas. **No dependency bump was taken here** — that is
+**TC-76**'s call, and the tripwire will correctly go RED on it. Design of record:
+`dev/design/0.8.20-sqlite-vec-99-vec0-delete-probe.md` (§7.1 carries the remedy).
+
+### TC-68 — the DoD clause was vacuous, and that was measured, not argued
+
+The plan's DoD said *"open cost independent of enrolled-kind count"*. **That was ALREADY TRUE at baseline
+and vacuously so** — the probe gates on `SELECT EXISTS(SELECT 1 FROM _fathomdb_vector_kinds)`, an EXISTS
+and not a count, and its body never iterates kinds. A test built to that clause would have passed with zero
+code change. Measured with a counting embedder instead:
+
+| workspace | open 1 | open 2 | open 3 |
+|---|---:|---:|---:|
+| zero enrolled kinds | 0 | 0 | — |
+| one enrolled kind | **90** | **45** | **45** |
+| six enrolled kinds | **90** | **45** | **45** |
+
+**Both 45 and 90 are true, of different opens** — 90 is the one-time population open (45 to baseline plus
+45 for the fix-2 confirm pass); 45 is every open thereafter, forever. The honest acceptance is therefore
+*"an open whose fingerprint is unchanged performs **zero** probe embeds; a fingerprint change re-runs the
+full probe"*, and that is what is tested.
+
+Fingerprint inputs: recipe tag · identity triple · mean-centering state **plus the live `mean_vec` bytes**
+· the compiled-in fixture · both D4 floors · **the stored baseline rows including reference blobs**. The
+`mean_vec` and blob inputs are load-bearing, not belt-and-braces: P1 quantizes against the live pinned
+mean, and hashing blob content preserves the 0.8.18 fix-2 external-tamper property that would otherwise
+have silently re-opened.
+
+**The residual, stated and not buried:** a backend that drifts **without changing its declared identity**
+moves no fingerprint input, so the cached verdict answers and the drift is caught only at the next open
+whose fingerprint changed — which a pure backend swap never is. Pinned as an executable fact by
+`residual_same_identity_backend_drift_is_not_caught_on_a_cached_open`. Retiring it (rather than bounding
+it) needs a runtime backend/device descriptor on `EmbedderIdentity` — **described, deliberately NOT
+implemented**, since that is public-surface work. Design of record:
+`dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`.
+
+### Decision #18 — one family, and one exception that a prior review earned
+
+`validate_write`'s write-**shape** boundary is now **one family**: `EngineError::WriteValidation`. This
+follows `dev/adr/ADR-0.6.0-error-taxonomy.md` (accepted) — `WriteValidationError` is one of the per-module
+errors that ADR names, while `InvalidArgument` is a later-minted **direct variant** it never assigned to a
+module — and it makes the code agree with `dev/design/errors.md`, which defines `WriteValidationError` as
+*"malformed typed write shape"*.
+
+**The exception, and why it stands.** The orchestrator's brief asserted `validate_write` had exactly ONE
+`InvalidArgument` site. **The implementer proved that wrong**: a second is reached from the Edge branch via
+`reject_unrenderable_edge_epoch`, and its message is the **TC-33 fix-1 contract from a prior codex §9
+finding** (an unrenderable epoch renders to `null` on the consolidation wire and silently resurrects an
+invalidated edge, so the caller must be told *which* field). Collapsing it would have destroyed a
+diagnostic a review specifically required. It is **not** collapsed; the rule is stated as what is actually
+true — *the write-shape boundary is one family; the edge-epoch range guard is a named exception* — and is
+**pinned in `error_taxonomy.rs` so it cannot drift in either direction**.
+
+⚠ **If "one family" is read as absolute, this is the one item that does not meet it.** Flagged, not buried.
+
+⚠ **BREAKING, on a published surface.** `WriteValidation` is a **unit variant** and both bindings render it
+as a fixed, message-less string, so the unsatisfiable-window refusal **no longer carries the bounds** — the
+exact diagnostic the pre-settlement split existed to preserve. Recorded in `CHANGELOG.md` and all three
+interface docs, and the tests now **assert the bounds are absent** so the loss cannot regress silently.
+`errors.md` also gained `InvalidArgument` in **both** its tables; it was genuinely missing from the locked
+taxonomy of record despite ~15 engine raise sites and a live SDK class in both languages.
+
+### codex §9 — four rounds, all persisted (TC-RUBRIC-7)
+
+| Round | Transcript | Verdict |
+|---|---|---|
+| 1 | `slice-22-review-20260729T002907Z.log` | **TERMINAL-CLEAN** — zero `Review comment:` blocks |
+| 2 | `slice-22-review-round2-targeted-20260729T004445Z.log` | Risks 1/3/4 **PASS**; **1× [P1]** on the TC-68 cache |
+| 3 | `slice-22-fix-1-rereview-20260729T011134Z.log` | **[P1] still OPEN** — the equivalence argument was unsound |
+| 4 | `slice-22-fix-2-rereview-20260729T014025Z.log` | **PASS — [P1] CLOSED** |
+
+**Round 1's clean verdict was not banked.** The transcript showed **zero** occurrences of
+`force_probe_verdict_rerun` — the helper that adjusted 12 shipped equivalence-probe tests once the verdict
+became cached, i.e. the single riskiest change in the slice. **A clean verdict over an unexamined risk is
+not a PASS**, so round 2 was commissioned against four named risks. It found the [P1]. Round 2 then
+confirmed Risk 1 on the merits: no assertion was relaxed, and the helper only restores the pre-cache
+"the probe actually runs" precondition.
+
+**The [P1], and why fix-1 failed.** The cache marker is a SHA-256 over deterministic, publicly derivable
+inputs, so a database writer can forge it and skip the 45-probe verification. fix-1 argued the weakness was
+**pre-existing** — that the same actor could equally re-baseline `_fathomdb_embed_probe` — and **proved that
+by test**. codex accepted the test and **rejected the inference**: re-baselining additionally requires the
+target backend's 45 exact embeddings, correctly encoded. *"That is a materially higher bar."* **codex was
+right**, and the claim *"the cache adds no new attack surface"* was an over-claim.
+
+**fix-2 conceded rather than argued**, struck the claim everywhere, and stated codex's finding as the
+project's own: **the cache does introduce a cheaper bypass.** It then added the bound — a same-identity
+drift moves no fingerprint input, so an attacker gets the same payoff **with no forgery at all** from an
+honestly recorded marker; the forgery's *incremental* value is confined to opens where no valid marker has
+been recorded **or retained**. The implementer **refused to round that to "dominated"** and named the case
+that matters: **the open right after a legitimate fingerprint change** — the only recurring detection
+opportunity the residual left standing, which a forged marker removes. That is the honest severity.
+
+**Verdicts were read from codex's own verdict blocks, never from a `[P1]`/`[P2]` marker tally (TC-87).**
+
+### X1 SDK parity — ran BEFORE the land, live
+
+- **TypeScript** `npm test` — **250 / 250**, rc **0** (241 at Slice 20c; +9 from this slice).
+- **Python** — **46 / 46**, rc **0**, including the **6** TC-67 arms, run against a **wheel built with
+  `maturin build` and installed into a throwaway venv OUTSIDE the repo**. `maturin develop` and
+  `pip install -e` were **never** run; the shared `.venv`'s `fathomdb.pth` was verified **unchanged**
+  (still 2026-07-09) afterwards.
+- ⚠ **Trap, new:** `src/python/pyproject.toml` sets `pythonpath = ["."]`, which prepends the source root
+  and **shadows an installed wheel** — `import fathomdb` then resolves to `src/python/fathomdb/`, which has
+  no native module, and the suite dies at collection with a misleading *"circular import"*. That is a
+  **sys.path artefact, not a code defect**. Run with `-o pythonpath=` from a neutral cwd, or use the
+  fresh-clone-with-inside-venv route.
+
+### Gates at the landing tip
+
+`cargo check --workspace --all-targets` **0** · `cargo clippy --workspace --all-targets` **0, zero
+warnings** · `check-governed-surface-pin.sh` **0** (allowlist sha unchanged) · `check-c1-conformance.sh`
+**0** · `check-ledgers.sh` **0** · `agent-lint-md.sh` **0** · `check-transcript-hygiene.sh` **0** ·
+`SCHEMA_VERSION` **24** · engine suite (default + `--features operator`) **0** · `fathomdb-schema`,
+`fathomdb-query`, `fathomdb-embedder-api` **0**.
+
+⚠ **`ac_029_canonical_writes_complete_under_projection_stall` is a WALL-CLOCK RATIO assertion**
+(P-STALL-TOL 1.5×). It failed once — `baseline=899ms stalled=4.24s` — **while a codex review was running
+concurrently**, and passed **3/3** on a quiet machine. A timing gate measured under load is not evidence
+either way. **Do not run the engine suite alongside a reviewer.**
+
+### Carried out of this slice — for the Steward, not written here
+
+- **`sqlite-vec` → `0.1.9`** is now a concrete, evidenced remedy. **TC-76's re-open trigger has FIRED.**
+- **A message-carrying `WriteValidation { msg }`** — ~14 engine + ~44 binding raise sites and both binding
+  payload shapes. Its own slice, not a rider.
+- **A runtime backend/device descriptor on `EmbedderIdentity`** — the only change that *retires* the TC-68
+  residual rather than bounding it. Public surface; needs sign-off.
+- **Bounded-staleness re-probe** — considered and **deferred**, with the trade recorded: it would partially
+  undo the constant-open-cost property TC-68 was ruled to deliver.
+- **Several engine test targets need `--features operator`** (`excise_source`, `erasure_completeness`,
+  `rebuild_projections`, `erasure_projection_registry`, `check_integrity`, `rebuild_vec0`) or they exit
+  **101 without running**.
+- **`cargo clippy --workspace --all-targets --all-features` cannot work in this repo** — it pulls `objc2`,
+  which hard-errors off Apple platforms. Pre-existing.
