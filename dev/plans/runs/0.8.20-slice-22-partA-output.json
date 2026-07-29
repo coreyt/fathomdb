@@ -1,0 +1,119 @@
+{
+  "phase": "0.8.20-slice-22-partA",
+  "baseline_sha": "fe85337fb7327b5c09349964ba2d1db6b64c5124",
+  "branch": "orch-0.8.20-s22",
+  "head_sha": "94bb33ef24dade5e0972e8aa0442a711995cd9ed",
+  "commits": [
+    "b604fc77: test(TC-76/#99): RED — vec0 DELETE fails for >12-byte TEXT metadata",
+    "980a757a: fix(TC-76/#99): GREEN — one vec0-delete primitive that neutralizes long metadata",
+    "9b54eeb9: docs(TC-76/#99): written finding — REPRODUCES; promote sqlite-vec out of Slice 31",
+    "fed43acd: test(decision-18): RED — validate_write must be ONE error family (WriteValidation)",
+    "94bb33ef: fix(decision-18): GREEN — validate_write's shape boundary is ONE family"
+  ],
+  "findings_addressed": [
+    "LEG 4 (TC-76 / sqlite-vec #99) — probe REPRODUCES and is live in FathomDB. sqlite-vec =0.1.7 `vec0Update_Delete_ClearMetadata` (sqlite-vec.c:8888) deletes the `_metadatatext<NN>` shadow row for a TEXT metadata value longer than the 12-byte inline view and then returns `sqlite3_step`'s SQLITE_DONE (101) verbatim, never resetting `rc` to SQLITE_OK; `vec0Update_Delete` (sqlite-vec.c:9027) reads 101 as an error and aborts the whole DELETE. The INSERT/UPDATE twin (sqlite-vec.c:8258-8320) is rescued by an unconditional `rc = sqlite3_blob_close(...)` after its switch, so only DELETE carries the defect.",
+    "LEG 4 — measured boundaries. Bare vec0: value bytes 1/11/12 delete Ok; 13/64/1024 fail with extended_code 101 and leave the row. Real engine via `erase_source`: raw attribute value 10 bytes -> stored 11 -> Ok; raw 11 -> stored 12 -> Ok; raw 12 -> stored 13 -> Err(Storage), row left; raw 13 -> stored 14 -> Err(Storage). The +1 shift is Slice 15e's `\\x01 || V` present-marker encoding. `purge` fails identically.",
+    "LEG 4 — reachability. `kind` CANNOT exceed 12 bytes in vector_default: every enrolment door (Engine::vector_kind_needs_enrolment lib.rs:4920, enqueue_declared_vector_backfill lib.rs:17538) and the commit itself gate on `kind_is_vector_committable` -> `resolve_source_type`, max 9 bytes. `source_type` is a vec0 PARTITION KEY (different storage, #99 does not apply) with the same <=9-byte domain. `status` ships the '' sentinel. The attr COLUMN-NAME axis is a RED HERRING and this is now stated explicitly: `attr_vec0_column` renders `attr_ + hex(name)`, so any attribute name of >=4 chars already yields a >12-char identifier (e.g. `priority` -> `attr_7072696f72697479`, 20 chars) and the shipped Slice-15e corpus exercises that today. attr VALUES are the sole exposure.",
+    "LEG 4 — remediation. `delete_vector_partition_row` + `neutralize_vector_partition_attr_values` are the single by-rowid vec0 delete primitive; all six delete sites route through it (prune_edge_projection_shadows, run_pin_and_requantize_pass, the open-path orphan sweep, both edge-supersession prunes, and the row-owned projection registry via `delete_row_owned_projection`), and `truncate_row_projections_in` gets the table-wide equivalent. Measured erasure-COMPLETE: the neutralizing UPDATE deletes the `_metadatatext<NN>` shadow row, preserves the `embedding` bytes byte-identically and preserves the other metadata columns. No-op when no `filterable` projection is declared.",
+    "LEG 3 (decision #18) — settled onto `EngineError::WriteValidation` at lib.rs:16009 (unsatisfiable `[valid_from, valid_until)` window). Rationale of record: dev/design/errors.md defines `WriteValidationError` as 'malformed typed write shape' / 'malformed before schema-sensitive payload checks run', which is exactly `validate_write`; STATUS §4 #18 prices this direction at 'one line plus tests to reverse'.",
+    "LEG 3 — the documentation defect in the locked taxonomy of record is FIXED: `EngineError::InvalidArgument` was absent from BOTH the Module-taxonomy table and the Binding-facing class matrix in dev/design/errors.md despite ~15 engine raise sites and a live InvalidArgumentError / FDB_INVALID_ARGUMENT class in both SDKs. Both tables now carry it, under a 2026-07-28 amendment note following the file's existing 2026-05-16 amendment convention."
+  ],
+  "blockers_encountered": [
+    {
+      "id": "B1",
+      "description": "LEG 4's probe was commissioned as a characterization probe that could legitimately come back clean. It did NOT: it went RED against both shipped erasure verbs. Per the brief ('If it DOES go red, then you have found the defect and TDD applies from there') I proceeded to a GREEN fix rather than committing a test that enshrines broken erasure as expected behaviour.",
+      "resolution": "RED committed first (b604fc77), then the engine-side fix (980a757a). The fix is a WORKAROUND for an upstream C defect, not a cure; the durable fix is upstream and is the TC-76 recommendation. A tripwire test asserts the upstream defect is STILL PRESENT, so the workaround cannot outlive its cause silently."
+    },
+    {
+      "id": "B2",
+      "description": "The slice brief's site inventory for decision #18 was INCOMPLETE. It mapped one InvalidArgument site inside validate_write (lib.rs:16009). There is a SECOND, reached from the Edge branch via `reject_unrenderable_edge_epoch` (lib.rs:2159, called at lib.rs:16157-16158), which returns InvalidArgument { msg } naming the offending field and bound. A literal 'one family' collapse would have destroyed that message.",
+      "resolution": "NOT collapsed, deliberately. That message is the TC-33 fix-1 contract (a codex §9 finding: an unrenderable epoch renders to `null` on the consolidation wire and silently resurrects an invalidated edge, so the caller must be told WHICH field). The settled rule is therefore stated honestly as 'the write-SHAPE boundary is one family (WriteValidation); the edge-epoch range guard is a named, tested exception', in dev/design/errors.md and CHANGELOG.md. The exception is now PINNED in tests/error_taxonomy.rs so it cannot drift in either direction. FLAGGED FOR THE ORCHESTRATOR: if the board reads DoD 'one family' as absolute, this is the one item that does not meet it, and the trade is stated above."
+    },
+    {
+      "id": "B3",
+      "description": "`cargo test -p fathomdb-engine --test excise_source` (and erasure_completeness, rebuild_projections, erasure_projection_registry, check_integrity, rebuild_vec0) exit 101 WITHOUT running: those targets require the `operator` feature. A plain-feature run of them is a vacuous non-signal.",
+      "resolution": "Re-run with `--features operator`; all six green. Also ran `cargo clippy -p fathomdb-engine --all-targets --features operator` = rc 0, zero warnings. `cargo clippy --workspace --all-targets --all-features` is NOT usable in this repo (pulls `objc2`, an Apple-only crate, and hard-errors) — pre-existing, unrelated to this branch."
+    },
+    {
+      "id": "B4",
+      "description": "`scripts/agent-lint-md.sh` and `npx tsc` were unavailable in the worktree — no node_modules.",
+      "resolution": "Created two GITIGNORED symlinks INSIDE the worktree, exactly as the linter's own error message instructs: `node_modules -> /home/coreyt/projects/fathomdb/node_modules` and `src/ts/node_modules -> /home/coreyt/projects/fathomdb/src/ts/node_modules`. Both are `git check-ignore` clean, are untracked, and appear in no commit. Nothing outside the worktree was written. Remove them if the orchestrator prefers a pristine worktree."
+    }
+  ],
+  "additional_changes_made_in_scope": [
+    "LEG 4: the finding required a fix, so the engine change is larger than an investigative leg implies — one new primitive plus six re-routed delete sites plus the table-wide truncate path. Every routed site is a mechanical substitution of an identical `DELETE FROM vector_default WHERE rowid = ?1`; no semantics changed.",
+    "LEG 3: dev/design/errors.md is `status: locked`. Amended it (2026-07-28 note) to add InvalidArgument to both tables, state the settled rule, record the accepted diagnostic loss, and record the named exception. This was explicitly in the brief's scope.",
+    "LEG 3: CHANGELOG.md [Unreleased] gained a BREAKING behaviour-change entry with a before/after table per language, the stated diagnostic loss, and the 'unaffected' list.",
+    "LEG 3: dev/interfaces/{rust,python,typescript}.md window-refusal paragraphs updated with a BREAKING callout each.",
+    "NOT DONE, deliberately (scope cap): `Engine::excise_collection_record` (lib.rs:9275 WriteValidation / lib.rs:9282 InvalidArgument) has the same split shape. Left alone. The rule now written into errors.md DOES imply it should collapse; flagged as a follow-up, not changed.",
+    "NOT TOUCHED: configure_projections, apply_projection_config, enqueue_declared_vector_backfill, ProjectionDelta, run_vector_equivalence_probe (LEG 1/2 territory). `configure_projections` is CALLED from the new TC-76 test but not modified.",
+    "SCHEMA_VERSION untouched at 24. No migration step. No governed surface added or removed."
+  ],
+  "agent_verify_result": {
+    "cargo_check_workspace_all_targets": "rc=0, 0 warnings",
+    "cargo_clippy_workspace_all_targets": "rc=0, 0 warnings",
+    "cargo_clippy_engine_features_operator": "rc=0, 0 warnings",
+    "check_governed_surface_pin_sh": "rc=0 — 30 allowlist / 5 core / 5 recovery_denylist, matches the AC-079 pin",
+    "governed_surface_allowlist_sha256": "555e6ae7f7d13e537170dbd63eed4a0433a82a0f7bdc03781ec4e0ef7692c02b (UNCHANGED, matches the pin in the brief)",
+    "rust_targeted_tests": {
+      "tc76_vec0_long_metadata_delete": "rc=0, 5 passed",
+      "error_taxonomy": "rc=0, 15 passed",
+      "slice15b_node_validity_write": "rc=0, 9 passed",
+      "slice15b_search_validity": "rc=0, 8 passed",
+      "tc33_fix1_unrenderable_epoch": "rc=0, 3 passed",
+      "tc33_fix5_iso8601_shape_gate": "rc=0, 8 passed",
+      "tc33_fix2_edge_validity_on_search": "rc=0, 1 passed",
+      "slice10_node_validity": "rc=0, 12 passed",
+      "slice15e_prekn_filterable": "rc=0, 11 passed",
+      "vector_contracts": "rc=0, 7 passed",
+      "erasure_completeness (--features operator)": "rc=0, 10 passed",
+      "excise_source (--features operator)": "rc=0, 6 passed",
+      "erasure_projection_registry (--features operator)": "rc=0, 4 passed",
+      "rebuild_projections (--features operator)": "rc=0, 4 passed",
+      "rebuild_vec0 (--features operator)": "rc=0, 1 passed",
+      "check_integrity (--features operator)": "rc=0, 3 passed",
+      "fathomdb-engine --lib (incl. guard_row_owned_registry)": "rc=0, 6 passed",
+      "regression sweep (erasure_drain_ordering, opp12_lifecycle_verbs, opp12_existence_axis, slice15d_projection_registry, tc33_fix6_edge_vector_prune, eu5b_lockflip, eu5a2_machinery, durability_open_path, projection_runtime)": "all rc=0"
+    },
+    "python_static": "ruff check clean; python -m py_compile clean on both changed files. NOT executed live — no wheel built (per the brief, X1 runs at orchestration level).",
+    "typescript_static": "npx tsc --noEmit from src/ts, clean. NOT executed live — no napi addon built.",
+    "markdown_lint": "scripts/agent-lint-md.sh clean on CHANGELOG.md, dev/design/errors.md, dev/design/0.8.20-sqlite-vec-99-vec0-delete-probe.md and the three dev/interfaces/*.md",
+    "not_used_deliberately": "cargo test --workspace (TC-72 flaky, not a gate) and scripts/agent-test.sh (vacuous aggregate exit, TC-16)"
+  },
+  "next_step_for_orchestrator": {
+    "sqlite_vec_99_verdict_one_sentence": "#99 REPRODUCES and is LIVE — sqlite-vec 0.1.7 aborts any vec0 DELETE whose row carries a TEXT metadata value over 12 bytes, which the 0.8.20 Slice-15e `filterable` attribute columns reach for any caller value of >=12 raw bytes, so both `erase_source` and `purge` returned Err(Storage) and left the row at rest; TC-76 recommendation is PROMOTE — YES, take sqlite-vec out of the Slice 31 dependency-hygiene sweep and settle it as a correctness item before 0.8.20 signs the `filterable` surface, because this is a defect in a GDPR-erasure verb, not hygiene, and the engine-side fix that landed here is a workaround for an upstream `rc` leak, not a cure.",
+    "tc76_first_question_i_could_not_answer": "Whether a sqlite-vec release >= 0.1.8 exists and fixes #99 was NOT determined — no network access in this worktree and out of scope. That answer selects the remedy (bump vs vendor a patched sqlite-vec.c vs upstream a PR vs keep the workaround with the tripwire). Full write-up in dev/design/0.8.20-sqlite-vec-99-vec0-delete-probe.md §7.",
+    "decision_18_family_chosen": "EngineError::WriteValidation — collapsed at lib.rs:16009 as directed. Caveat B2 applies: the second InvalidArgument reachable from validate_write (the edge-epoch range guard) is deliberately NOT collapsed and is now a named, tested exception.",
+    "test_files_touched_by_language": {
+      "rust": [
+        "src/rust/crates/fathomdb-engine/tests/tc76_vec0_long_metadata_delete.rs (NEW, 5 tests)",
+        "src/rust/crates/fathomdb-engine/tests/error_taxonomy.rs (2 new tests + the exception pin)",
+        "src/rust/crates/fathomdb-engine/tests/slice15b_node_validity_write.rs (TC-34 W5 refusals + module doc)"
+      ],
+      "python": [
+        "src/python/tests/test_slice15b_node_validity_write.py",
+        "src/python/tests/test_errors.py"
+      ],
+      "typescript": [
+        "src/ts/tests/slice15b-node-validity-write.test.ts",
+        "src/ts/tests/errors.test.ts",
+        "src/ts/tests/typed-errors.test.ts"
+      ]
+    },
+    "x1_harness_note": "The five Python/TS files above are the live-harness set for X1. They are statically clean (ruff, py_compile, tsc --noEmit) but were NOT executed — no wheel and no napi addon were built from this worktree, per the brief's prohibition on `maturin develop` / `pip install -e` / `scripts/agent-build.sh`.",
+    "ledger_candidate_text": "LEDGER CANDIDATE (do not append — handed to the Steward, not written by me). Title: `EngineError::WriteValidation` is message-less, and 0.8.20 now spends that on a diagnostic it used to carry. Body: decision #18 (Slice 22) collapsed `validate_write`'s unsatisfiable-validity-window refusal from `InvalidArgument { msg }` onto the unit variant `WriteValidation`, which both bindings render as a FIXED, message-less string (`WriteValidationError::new_err(\"write validation error\")` at fathomdb-py/src/lib.rs:200; `CODE_WRITE_VALIDATION` + \"write validation error\" + `data: Null` at fathomdb-napi/src/lib.rs:203-205). The offending `valid_from` / `valid_until` bounds are therefore no longer recoverable from the error by any caller in any language — the exact diagnostic the pre-settlement split existed to preserve, and a BREAKING behaviour change on a published surface. The same debt shows elsewhere: an `erase_source` that fails (see TC-76) surfaces a bare `StorageError` with no actionable message. The fix is a message-carrying `WriteValidation { msg }`, which is NOT a one-line change: it is cross-cutting across ~14 engine raise sites and ~44 binding raise sites and changes BOTH binding payload shapes (Python exception construction and the napi JSON envelope's `data` field), so it is properly its own slice, not a rider on Slice 22. Until it lands, the write-validation boundary trades caller diagnosability for taxonomy consistency, and one refusal (the edge-epoch range guard, TC-33 fix-1) is exempted from the collapse precisely because its message is load-bearing — which is itself the argument that the payload should exist.",
+    "deviations_stated_loudly": [
+      "DEVIATION 1 (LEG 4, scope) — the leg was briefed as investigative and cheap with a written finding as the deliverable. Because the probe went RED against `erase_source` and `purge`, I also landed a fix: a new `delete_vector_partition_row` primitive routed through SIX existing by-rowid vec0 delete sites plus the table-wide truncate path. This is materially more engine change than 'a probe'. Justification: the brief said TDD applies from a red probe, and committing a green test that asserts broken erasure would have enshrined the defect. Every routed site is a mechanical substitution of an identical statement. If the orchestrator would rather ship the finding alone and defer the fix to TC-76, revert 980a757a and invert the two engine-level assertions in tc76_vec0_long_metadata_delete.rs — the RED commit b604fc77 stands on its own.",
+      "DEVIATION 2 (LEG 3, premise) — see blocker B2. The brief's statement that validate_write has exactly one InvalidArgument site is wrong; there are two. I collapsed only the one I was directed to collapse, and made the rule in errors.md and the CHANGELOG say what is actually true rather than what the DoD says literally. If the board wants an absolute 'one family', the follow-up call is whether TC-33 fix-1's field-naming message may be sacrificed — my judgement is no, and that it should wait for a message-carrying WriteValidation instead.",
+      "DEVIATION 3 (commit subjects) — the brief specified `test(TC-76/#99): probe — ...`. Because the probe went red I used the repo's RED/GREEN TDD subjects instead (`test(TC-76/#99): RED — ...` / `fix(TC-76/#99): GREEN — ...`). The docs commit subject follows the brief's shape.",
+      "DEVIATION 4 (tooling) — two gitignored `node_modules` symlinks created inside the worktree so the markdown linter and tsc could run. See blocker B4. Untracked, in no commit, trivially removable."
+    ],
+    "recommended_next_actions": [
+      "Run the codex §9 review on this branch; hand it dev/design/0.8.20-sqlite-vec-99-vec0-delete-probe.md — it will ask why the workaround is sound and §1/§6 answer that from the upstream source.",
+      "Run the X1 live harness over the five Python/TS files listed above (wheel into a throwaway venv OUTSIDE the repo; shared .venv untouched).",
+      "Hand the ledger-candidate text to the Steward. Do NOT let me or any implementer write it.",
+      "Decide on B2 (absolute vs shape-scoped 'one family') before signing the surface.",
+      "Slice 22 legs 1 (TC-67) and 2 (TC-68) are untouched and can land on this same branch."
+    ]
+  }
+}

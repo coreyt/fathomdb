@@ -1,0 +1,177 @@
+{
+  "phase": "0.8.20-slice-22-fix-2",
+  "status": "GREEN",
+  "branch": "orch-0.8.20-s22",
+  "worktree": "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s22",
+  "baseline_at_start": "73656165",
+  "head": "dbc19d030c2bfa1be5fb9ea9634a049c9c5e4f4f",
+  "commits": [
+    {
+      "sha": "4a0ed05d",
+      "kind": "test",
+      "subject": "test(TC-68): fix-2 — pin the BOUND: the honest marker already serves the drift",
+      "files": ["src/rust/crates/fathomdb-engine/tests/tc68_probe_fingerprint_cache.rs"]
+    },
+    {
+      "sha": "dbc19d03",
+      "kind": "docs",
+      "subject": "docs(TC-68): fix-2 GREEN — strike \"no new attack surface\"; the cache IS cheaper",
+      "files": [
+        "CHANGELOG.md",
+        "dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md",
+        "dev/interfaces/rust.md",
+        "dev/interfaces/python.md",
+        "dev/interfaces/typescript.md",
+        "src/rust/crates/fathomdb-engine/src/lib.rs"
+      ]
+    }
+  ],
+  "finding_addressed": {
+    "id": "codex-s22-P1-forged-cache-marker",
+    "round": 2,
+    "transcript": "dev/plans/runs/codex/0.8.20/slice-22-fix-1-rereview-20260729T011134Z.log",
+    "disposition": "CONCEDED IN FULL. The equivalence argument fix-1 drew from a_forged_stored_baseline_defeats_the_probe_even_when_it_fully_runs is withdrawn. The cache IS a cheaper bypass for an actor who can write the database file. No behaviour changed; the remedy is documentation accuracy plus one new executable assertion."
+  },
+  "dominance_claim_3_2": {
+    "held": true,
+    "statement": "A marker legitimately recorded by an honest earlier open survives a same-identity backend swap and still causes the probe to be skipped, so the drifted backend is served with NO forgery involved. The forgery's incremental capability is therefore confined to opens where no valid marker exists for the CURRENT fingerprint.",
+    "verified_against_code": [
+      "probe_verification_fingerprint (src/rust/crates/fathomdb-engine/src/lib.rs:15471) hashes: recipe tag (build const), identity.name/revision/dimension, mean-centering flag + live mean_vec bytes, VECTOR_EQUIVALENCE_PROBE_FIXTURE (build const), the two floors (build consts), and the stored _fathomdb_embed_probe rows. A same-identity backend swap moves none of them: the triple is unchanged by definition (and check_embedder_profile refuses the open outright if it changes), mean_vec/baseline live in the DB and are untouched by swapping backends, the rest are compiled in.",
+      "probe_check_against_baseline_inner consults the cache after the fix-2 completeness validation and before the 45 re-embeds; a hit returns Ok(()) with zero model invocations."
+    ],
+    "proof_test": "src/rust/crates/fathomdb-engine/tests/tc68_probe_fingerprint_cache.rs::residual_same_identity_backend_drift_is_not_caught_on_a_cached_open",
+    "test_strengthened_in_fix_2": "It now reads the marker written by the honest population open BEFORE the drifted open (assert Some), and asserts it is byte-unchanged AFTER (assert_eq against the honest value). No forgery appears anywhere in the test, so the dominance is executable rather than asserted in prose.",
+    "no_new_test_added_because": "The claim was already pinned behaviourally by that test; fix-2 only made the 'honest marker, no forgery' half explicit. The complementary window (forgery on an open with no valid marker) remains pinned by a_marker_matching_the_current_state_serves_a_drifted_backend.",
+    "precision_note": "The window is not only 'fresh databases'. It is three cases, enumerated in design-note §8.5: (1) never verified under the current fingerprint, incl. a pre-TC-68 DB — with the empty-probe-table sub-case where forgery is pointless because probe_populate_or_check baselines against whatever backend is live (pre-existing 0.8.18 behaviour, verified at lib.rs:15366-15375); (2) the open right after a LEGITIMATE fingerprint change (recomputed mean_vec, fixture edit, recipe bump), which an honest open would re-verify and at which the drift WOULD be caught; (3) an open after a failing verdict cleared the marker. Case 2 is the one that matters: it is the only recurring detection opportunity §6 left standing, and a forged marker removes it."
+  },
+  "sentences_struck_and_replacements": [
+    {
+      "file": "dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md",
+      "location": "§8.3 conclusion (was line 372)",
+      "struck": "**Conclusion: the cache adds no new attack surface.** An actor with write access to the SQLite file already had a shorter route — and can in any case rewrite canonical_nodes, the vector_default vec0 rows and _fathomdb_embedder_profiles.mean_vec directly... The probe was never a boundary against that actor; the cache changes *when* it runs, not *who can lie to it*.",
+      "replacement": "\"What this establishes, and all it establishes: the same actor already had a route that defeats the probe while it runs in full. It does NOT establish that the two routes cost the same — see §8.4, which is where fix-1 went wrong.\" plus NEW §8.4 (the cost asymmetry conceded, with codex's own wording quoted and the sentence marked STRUCK) and NEW §8.5 (the bound)."
+    },
+    {
+      "file": "dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md",
+      "location": "§8.3 heading",
+      "struck": "### 8.3 The measured fact that settles it: the pre-slice path is equally forgeable",
+      "replacement": "### 8.3 The measurement: the pre-slice path is forgeable too  ('equally' removed — that was the rejected claim in the heading itself; 'settles it' removed — it settles nothing on its own)"
+    },
+    {
+      "file": "dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md",
+      "location": "§5 (cache-path fail-safe)",
+      "struck": "…and §8 says why that is neither fixable nor new.",
+      "replacement": "…§8 states what that costs: not fixable by construction (§8.2), materially CHEAPER to forge than the pre-slice route (§8.4), and bounded by the ruled residual (§8.5)."
+    },
+    {
+      "file": "dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md",
+      "location": "§8.2 (why not cryptography)",
+      "struck": "…while the *same* actor keeps a shorter route open (§8.3) — i.e. security theatre.",
+      "replacement": "…the same actor reads the salt out of the same file or the same binary, and still has §8.3's route besides. Security theatre. ('shorter route' removed: the marker route, not the baseline route, is the shorter one.)"
+    },
+    {
+      "file": "dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md",
+      "location": "§8.5 obfuscation bullet (now §8.7)",
+      "struck": "…and leaves §8.3's shorter route wide open.",
+      "replacement": "…and leaves §8.3's route wide open besides."
+    },
+    {
+      "file": "dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md",
+      "location": "closing paragraph of §8",
+      "struck": "The correct disposition of a [P1] that turns out to restate a pre-existing, unfixable-by-construction property is to say so precisely…",
+      "replacement": "\"Nothing was implemented. Not because the finding is empty — §8.4 concedes it is not — but because the only candidate that would genuinely bound it (bounded staleness) trades away the property this slice was ruled to deliver, and the mechanism that would genuinely retire it (§6.2's backend descriptor) is governed public surface awaiting an HITL decision. The correct disposition of a [P1] whose honest remedy is out of the slice's scope is to state the exposure precisely, name the remedy, and defer it visibly.\""
+    },
+    {
+      "file": "src/rust/crates/fathomdb-engine/src/lib.rs",
+      "location": "rustdoc on probe_verification_is_cached",
+      "struck": "That is **not a new exposure**. The same actor already defeats the same arm through the pre-slice path…",
+      "replacement": "Same paragraph rewritten: the pre-slice route is stated as SAME ACTOR, NOT SAME COST; 'So the cache IS a cheaper bypass for a writer of the database file'; then the bound (an honestly recorded marker already serves the drift, so forgery adds capability only where no valid marker exists for the current fingerprint) and 'not tamper evidence; dense_disabled is not a tamper signal'. RUSTDOC ONLY — no code behaviour changed."
+    },
+    {
+      "file": "src/rust/crates/fathomdb-engine/tests/tc68_probe_fingerprint_cache.rs",
+      "location": "module docs",
+      "struck": "The question that decides what to DO about it is whether the cache introduced that exposure or merely restated it. It restated it:",
+      "replacement": "New '## fix-2 — the same actor, but NOT the same cost' section: the claim is struck, the cache is conceded to be a cheaper bypass, and the bound is attributed to the residual test."
+    },
+    {
+      "file": "src/rust/crates/fathomdb-engine/tests/tc68_probe_fingerprint_cache.rs",
+      "location": "docstring of a_forged_stored_baseline_defeats_the_probe_even_when_it_fully_runs",
+      "struck": "(implicit) that this test settles the equivalence question",
+      "replacement": "Explicit scope note: it establishes the same actor had a full-run-defeating route; it does NOT establish equal cost. 'fix-1 drew \"the cache adds no new attack surface\" from this test; that inference was wrong and is struck (§8.4).'"
+    },
+    {
+      "file": "src/rust/crates/fathomdb-engine/tests/tc68_probe_fingerprint_cache.rs",
+      "location": "docstring of a_marker_matching_the_current_state_serves_a_drifted_backend",
+      "struck": "Paired with …, this is the whole argument: both routes are open to exactly the same actor, and one of them predates the cache.",
+      "replacement": "…both routes are open to the same actor and one predates the cache — but THIS one is the cheaper route (§8.4), which is why the finding is conceded rather than argued away; its bound is the residual test."
+    },
+    {
+      "file": "CHANGELOG.md",
+      "location": "0.8.20 TC-68 scope paragraph",
+      "struck": "…the stored probe baseline (which defeats the check even when it runs in full, as it always did), the cached marker… Unchanged by this release, and now written down:",
+      "replacement": "Adds: 'Stated without softening: the cache does make one of those routes cheaper.' with the two cost bars, plus the steady-state bound and a pointer to §8.4/§8.5. Keeps the wording codex credited ('not tamper evidence', denseDisabled/dense_disabled is not a tamper signal)."
+    },
+    {
+      "file": "dev/interfaces/rust.md, dev/interfaces/python.md, dev/interfaces/typescript.md",
+      "location": "the TC-68 **Scope.** paragraph in each",
+      "struck": "the 'exactly as it did before the cache' framing, which read as an equivalence claim",
+      "replacement": "Each now says 'Nothing at rest is authenticated', 'The cache does make one of those routes cheaper' with both cost bars in one clause, and the residual bound; the 'do not read dense_disabled/denseDisabled as a tamper signal' sentence codex credited is kept verbatim in substance."
+    }
+  ],
+  "bounded_staleness_verdict": {
+    "recommendation": "AGREE WITH THE ORCHESTRATOR — NOT WORTH IT HERE. Not implemented.",
+    "recorded_at": "dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md §8.7 (first bullet, 'CONSIDERED, NOT TAKEN; deferred with the trade named'), cross-referenced from §6.2",
+    "reasoning": [
+      "It is the ONLY candidate on the hardening list that buys real coverage — it bounds both the forged marker AND the ruled residual to at most N opens / that age, because the drifted backend is eventually asked to embed. That is stated plainly rather than minimised.",
+      "But it partially undoes the property TC-68 was ruled to deliver: constant, predictable Engine::open cost. One open in N pays 45 embeds again and it is not predictable which — the same objection that killed the TTL at §6.2, unchanged by the threat framing.",
+      "It needs durable state (counter or timestamp) plus a tuning constant: new surface and a new correctness question (clock skew, reset counter, what N means for a process that opens once and runs for a week) in a slice scoped not to grow surface.",
+      "It should be decided against §6.2's backend-descriptor fingerprint input, which RETIRES the residual rather than merely bounding it and needs the same HITL governed-surface decision. Deciding them separately would likely ship both."
+    ],
+    "escalation": "None requested. I did not conclude it is cheap and clearly right; I concluded it is a real option whose cost lands on the exact property this slice exists to deliver. Deferred visibly, with the trade written down, for the batched governed-surface decision the plan places after Slice 22."
+  },
+  "tests": {
+    "weakened_or_deleted": "none",
+    "added": "none (no new test function)",
+    "strengthened": [
+      "residual_same_identity_backend_drift_is_not_caught_on_a_cached_open — two new assertions: the honest engine-written marker is present before the drifted open, and byte-unchanged after it."
+    ],
+    "red_commit": "NONE, and stated so in commit 4a0ed05d's message. The defect is a false inference in prose; engine behaviour is correct and unchanged, so no behavioural RED exists. The test commit adds an assertion that was MISSING (and passes), not a failing one. This is the same deviation shape codex accepted for fix-1."
+  },
+  "code_change_needed": false,
+  "gates": {
+    "cargo check --workspace --all-targets": {"rc": 0, "warnings": 0},
+    "cargo clippy --workspace --all-targets": {"rc": 0, "warnings": 0},
+    "cargo fmt --all -- --check": {"rc": 0},
+    "cargo test -p fathomdb-engine --test tc68_probe_fingerprint_cache": {"rc": 0, "result": "13 passed; 0 failed"},
+    "cargo test -p fathomdb-engine --test vector_equivalence_probe": {"rc": 0, "result": "23 passed; 0 failed"},
+    "scripts/check-governed-surface-pin.sh": {"rc": 0, "detail": "30 allowlist / 5 core / 5 recovery_denylist, pinned at 427d2712 under AC-079"},
+    "scripts/check-c1-conformance.sh": {"rc": 0, "detail": "26/26 checkable clauses (publish precondition)"},
+    "sha256 src/conformance/governed-surface-allowlist.json": "555e6ae7f7d13e537170dbd63eed4a0433a82a0f7bdc03781ec4e0ef7692c02b",
+    "SCHEMA_VERSION": 24,
+    "scripts/agent-lint-md.sh": {"rc": 0}
+  },
+  "prohibitions_honoured": {
+    "no_maturin_or_pip_or_agent_build": true,
+    "no_allowlist_or_pin_json_edits": true,
+    "no_c1_contract_or_c1_pin_edits": true,
+    "no_no_verify_push_rebase_reset_amend": true,
+    "no_schema_version_bump_or_migration": true,
+    "no_subagents": true,
+    "no_writes_outside_worktree": true,
+    "no_home_claude_paths_in_tracked_files": true,
+    "untracked_orchestrator_files_untouched": true,
+    "ac_029_projection_runtime_not_run": "not run — wall-clock ratio assertion, deliberately avoided"
+  },
+  "deviations": [
+    {
+      "what": "No new test function was added for §3.2's dominance claim.",
+      "why": "The claim was already pinned by residual_same_identity_backend_drift_is_not_caught_on_a_cached_open; per the mandate ('add a test only if it is not already pinned') I strengthened that test with the two assertions that make the 'honest marker, no forgery' half explicit rather than adding a near-duplicate function. Loud here so the reviewer looks at the strengthened test rather than for a new name."
+    },
+    {
+      "what": "Doc edits reached beyond the four files named in §3.1: also the TC-68 test file's module/function docstrings.",
+      "why": "The struck inference was restated there too ('it restated it'), and leaving it would have left the over-claim standing in the very file codex reads first. Comments/docstrings only — no assertion was changed except the two additive ones above."
+    }
+  ],
+  "blockers": [],
+  "stop_conditions_hit": []
+}
