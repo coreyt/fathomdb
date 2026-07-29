@@ -138,11 +138,11 @@ Everything else is tracked by **requirement id + TDD test name** per the locked-
 > `seq-106` ruling 5): Memex adapts to 0.8.20's surface and **no confirmation is to be sought**. The rows are
 > retained as the decision record; **do not act on them as open**.
 >
-> **THE LIVE OPEN SET IS EXACTLY <!-- BEGIN GENERATED release-state:0.8.20:status-live-open-count -->SIX<!-- END GENERATED release-state:0.8.20:status-live-open-count -->** (was TWO until 2026-07-29 — the count is
-> generated from `decisions.unruled`, and four HITL items that had existed only in the ledger and in session
-> transcripts were written INTO the single writer at `seq-150`, closing the under-reporting the
-> `2026-07-27-A` hand-off §4 warned about. **The count grew because the record got honest, not because new
-> work appeared.**):
+> **THE LIVE OPEN SET IS EXACTLY <!-- BEGIN GENERATED release-state:0.8.20:status-live-open-count -->FOUR<!-- END GENERATED release-state:0.8.20:status-live-open-count -->** (was TWO until 2026-07-29 — the count is
+> generated from `decisions.unruled`. It went TWO → SIX on 2026-07-29 when four HITL items that had existed
+> only in the ledger and in session transcripts were written INTO the single writer at `seq-150` — **the
+> count grew because the record got honest, not because new work appeared** — then SIX → FOUR later the same
+> day when the HITL ruled **TC-76** (`seq-151`) and **TC-93** (`seq-152`)):
 >
 > 1. **Batched governed-surface decision** — 🔴 **DUE NOW.** Taken at the **close of Slice 23** (`seq-141`,
 >    superseding `seq-134`/`seq-140`), which LANDED at `30102ecd`. **Input is COMPLETE AND FINAL: Slices 22
@@ -153,13 +153,15 @@ Everything else is tracked by **requirement id + TDD test name** per the locked-
 >    explicitly deferred (`seq-135`); **not a ruling, and not authorization to bump a manifest or cut a tag**.
 > 3. **TC-98** — does `#18`'s one named exception satisfy "one family"? Deferred past Slice 23 (`seq-143`);
 >    **23 has landed, so it is due**. Retrospective about the landed Slice 22.
-> 4. **`sqlite-vec` 0.1.9 (TC-76)** — **HELD** by the HITL (`seq-143`). Bites at Slice 31 and at publish.
-> 5. **TC-100 placement** — a sixth id on DOC-HYGIENE-3, whose scope was ruled at five (`seq-137`/`seq-138`).
-> 6. **TC-93** — a pre-publish "Slice 4x" for the Dependabot advisories, or publish with them open.
+> 4. **TC-100 placement** — a sixth id on DOC-HYGIENE-3, whose scope was ruled at five (`seq-137`/`seq-138`).
+>
+> **CLOSED 2026-07-29 — cited, not re-opened:** **`sqlite-vec` 0.1.9 (TC-76)** ruled at **`seq-151`** (hold
+> at `=0.1.7` for 0.8.20; the 0.1.9 bump lands at **0.8.22** with `rusqlite 0.31→0.40`) · **TC-93** ruled at
+> **`seq-152`** (publish with the six advisories open, no Slice 4x; the advisories land at **0.8.22**).
 >
 > Reserved-gap band overflow (`plan-0.8.20.md` §5) still halts. Authorization: master **F-34** · plan §11's
 > 2026-07-25 rulings block. **`seq-106`'s "two stops remain" is HISTORICAL** — it was true of the ladder
-> gates then, and items 3-6 are later HITL questions, not a re-opening of it.
+> gates then, and items 3-4 are later HITL questions, not a re-opening of it.
 >
 > *This section is a hand-maintained duplicate of state that lives in three other files — exactly the
 > fan-out DOC-HYGIENE-2's **N2** replaces with a generated ruled/unruled table. **The enumeration above is

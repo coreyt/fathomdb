@@ -261,28 +261,26 @@
         "source": "steward seq-143 · todos TC-98"
       },
       {
-        "id": "sqlite-vec-0-1-9",
-        "title": "TC-76 — take the sqlite-vec 0.1.9 bump before publish, or ship the engine-side workaround? (upstream is #274, NOT #99; 0.1.7 AND 0.1.8 carry it; 0.1.9 fixes it)",
-        "gated_at": "HELD by the HITL (seq-143). Relevant at Slice 31 (Library Sweep #3) and at publish. A bump MUST move together with tests/tc76_vec0_long_metadata_delete.rs, which asserts the upstream defect STILL EXISTS — otherwise a successful upgrade turns the suite red.",
-        "halts_run": false,
-        "source": "steward seq-143 · todos TC-76 / TC-99-VEC0"
-      },
-      {
         "id": "tc-100-placement",
         "title": "TC-100 placement — does the bare-substring token-scan defect (\"C-1\" matches inside \"TC-15\"; Slice 15 cites 18 docs on that token) join DOC-HYGIENE-3?",
         "gated_at": "Open. seq-137/seq-138 ruled DOC-HYGIENE-3 scope at five ids (TC-53, TC-88, TC-89, TC-92, TC-94); a sixth is an HITL call.",
         "halts_run": false,
         "source": "steward seq-146 · todos TC-100"
-      },
-      {
-        "id": "tc-93-dependabot-slice-4x",
-        "title": "TC-93 — insert a pre-publish \"Slice 4x\" resolving the Dependabot advisories (6 open, 2 HIGH on the default branch), or publish with them open?",
-        "gated_at": "Slice 40 / publish. HITL idea recorded at seq-135, undecided. Does NOT overturn the standing \"Dependabot stays out of the sequence\" directive or TC-78.",
-        "halts_run": false,
-        "source": "steward seq-135 · todos TC-93"
       }
     ],
     "ruled": [
+      {
+        "id": "sqlite-vec-0-1-9",
+        "ruling": "(a) — HOLD sqlite-vec at =0.1.7 for 0.8.20; ship the engine-side workaround + the tc76_vec0_long_metadata_delete.rs tripwire. TAKE the 0.1.9 bump at 0.8.22, together with rusqlite 0.31→0.40 (the master already couples them). The bump and the tripwire MUST move together or a successful upgrade turns the suite red.",
+        "ruled_on": "2026-07-29",
+        "source": "steward seq-151 · todos TC-76 / TC-99-VEC0"
+      },
+      {
+        "id": "tc-93-dependabot-slice-4x",
+        "ruling": "(a) — PUBLISH 0.8.20 with the six advisories OPEN; no pre-publish \"Slice 4x\". The standing \"Dependabot stays out of the sequence\" directive and TC-78 both stand. The advisories DO need to land and are PLACED AT 0.8.22 (not a post-publish pico).",
+        "ruled_on": "2026-07-29",
+        "source": "steward seq-152 · todos TC-93"
+      },
       {
         "id": "ac-079-sign-off",
         "ruling": "PRE-SIGNED; minted at Slice 40",
