@@ -276,8 +276,8 @@ def render_handoff_next_step(st):
     therefore sits on its own line and the region content starts with the
     newline that follows it."""
     chain = " → ".join(str(n) for n in st["landed"])
-    return ("\n**The %s ladder is between slices: %s are all LANDED; %d is next.**"
-            % (st["release"], chain, st["next_slice"]))
+    return ("\n**The %s ladder is between slices: %s are all LANDED; %s is next.**"
+            % (st["release"], chain, _slice_str(st["next_slice"])))
 
 # Spelled-out counts, because the sentence this renders into is prose. Beyond
 # the table the numeral is used verbatim rather than inventing a spelling: an
