@@ -264,7 +264,12 @@ else
   fail "arm D: scripts/agent-test.sh does not source scripts/lib/agent-suite-run.sh"
 fi
 
-OTHER_SOURCERS="$(grep -rl 'agent-suite-run.sh' "$REPO_ROOT/scripts" "$REPO_ROOT/dev" 2>/dev/null \
+# --include='*.sh' restricts this to scripts that could actually SOURCE the
+# file (a `.`/`source` statement); otherwise this false-positives on any
+# prose mention of the filename in a doc, JSON witness or markdown record
+# (e.g. this very suite's own closure output.json, which names the file in
+# its rationale).
+OTHER_SOURCERS="$(grep -rl --include='*.sh' 'agent-suite-run.sh' "$REPO_ROOT/scripts" "$REPO_ROOT/dev" 2>/dev/null \
   | grep -v -F "$AGENT_TEST" \
   | grep -v -F "$AGENT_SUITE_RUN_LIB" \
   | grep -v -F "$SCRIPT_DIR/test_agent_test_collect_all.sh" \
