@@ -1,8 +1,8 @@
 ---
 title: Rust Public Interface
-date: 2026-05-12
-target_release: 0.6.0
-desc: Public Rust surface (traits, functions, types, errors) for 0.6.0
+date: 2026-07-29
+target_release: 0.8.20
+desc: Public Rust surface (traits, functions, types, errors) for 0.8.20
 blast_radius: src/rust/crates/fathomdb; design/engine.md; design/bindings.md; design/errors.md; design/lifecycle.md
 status: locked
 ---
@@ -14,7 +14,7 @@ parity rules remain owned by `design/bindings.md`.
 
 ## Support posture
 
-The Rust facade is stable public Rust contract in 0.6.0 and is the
+The Rust facade is the stable public Rust contract and is the
 ground-truth source for engine-side type names. The Python/TypeScript governed
 SDK surface parity set is tested by AC-074 (which supersedes AC-057a's
 five-verb cap). Under the signed Q5 = BIND-RUST
@@ -48,23 +48,26 @@ which binds AC-074 — not a new AC id):
   `IngestWithExtractorReceipt`), and 0.8.8 Slice 5 (EXP-OBS) explain-sidecar types
   (`Explanation`, `QueryTrace`, `PerHitExplain`). 0.8.20 Slice 10b
   (R-20-RV / R-20-NV) adds the read-view / node-validity types (`ReadView`,
-  `BoundaryCrossing`) — **PROPOSED, NOT SIGNED** (see
-  `src/conformance/governed-surface-allowlist.json`). `ReadView` is threaded as a
+  `BoundaryCrossing`) — **HITL-SIGNED 2026-07-29 (steward `seq-157`)**, recorded
+  in `src/conformance/governed-surface-allowlist.json`. `ReadView` is threaded as a
   PARAMETER on the five existing read verbs (`read_get`, `read_get_many`,
   `read_list`, `read_list_filter`, `graph_neighbors`) rather than shipped as five
   `*_with_view` sibling verbs, which is what keeps the delta at two TYPES and zero
   new verb names; `ReadView::default()` is the strict view and reproduces the
   pre-slice read semantics exactly. 0.8.20 Slices 5c/5d (R-20-E3 / R-20-E4) add
   the erasure types `SourceId` and `ExciseReport` (the latter moved out of the
-  operator-gated block — it is `erase_source`'s return type) — **PROPOSED, NOT
-  SIGNED**. Each of those 33 resolves through the facade at compile time
-  (`type_name::<…>()`). The facade ALSO `pub use`s two further additive groups
-  that are **not yet members of the const**: the five Slice 15d (R-20-PR)
-  projection-registry types (`ProjectionSpec`, `ProjectionRole`, `ProjectionFts`,
-  `ProjectionVector`, `ProjectionDelta`) and, from 0.8.20 Slice 20 (R-20-DR), the
-  single readiness enum `DenseReadiness` — both **PROPOSED, NOT SIGNED** (see
-  § "Projection registry" below and
-  `src/conformance/governed-surface-allowlist.json`). The recovery /
+  operator-gated block — it is `erase_source`'s return type) — **HITL-SIGNED
+  2026-07-29 (steward `seq-157`)**. Each of those 33 resolves through the facade
+  at compile time (`type_name::<…>()`). The facade ALSO `pub use`s two further
+  additive groups that are **not yet members of the const**, and their sign-off
+  status DIFFERS — do not read one marker across both. The Slice 15d (R-20-PR)
+  projection-registry types `ProjectionSpec`, `ProjectionRole` and
+  `ProjectionDelta` are **HITL-SIGNED 2026-07-29 (steward `seq-157`)** — the
+  signed delta names exactly those three. Their sub-object types
+  `ProjectionFts` and `ProjectionVector`, and the 0.8.20 Slice 20 (R-20-DR)
+  readiness enum `DenseReadiness`, are **PROPOSED, NOT SIGNED**: none of the
+  three appears in `src/conformance/governed-surface-allowlist.json`.
+  See § "Projection registry" below. The recovery /
   integrity / dump operator-seam report types in § "Recovery / operator seam
   re-exports" are deliberately **excluded** from this allowlist — they are
   CLI-only ergonomic symbols (the Rust analogue of "recovery is CLI-only, not an
@@ -129,7 +132,69 @@ Rust exposes:
 - `Engine::search_explained(...) -> Result<SearchResult, EngineError>` — 0.8.8
   EXP-OBS: same retrieval as `search_reranked`, additionally returning the opt-in
   `Explanation` sidecar (`SearchResult.explanation`); default paths are unchanged.
+- `Engine::search_text_only(&self, query: &str) -> Result<SearchResult, EngineError>`
 - `Engine::close(...) -> Result<(), EngineError>`
+
+### Read verbs
+
+The canonical-row reads take a trailing `&ReadView` (`ReadView::default()` is
+the strict view); the op-store reads do not — they page an append-only log that
+has no existence or validity axis.
+
+- `Engine::read_get`, `Engine::read_get_many` — `&ReadView`
+- `Engine::read_list`, `Engine::read_list_filter` — `&ReadView`
+- `Engine::read_collection`, `Engine::read_mutations` — `(collection, after_id,
+  limit)`, no `ReadView`
+- `Engine::crossed_boundary_since(&self, since: i64, view: &ReadView) ->
+  Result<Vec<BoundaryCrossing>, EngineError>` — 0.8.20 Slice 10b (R-20-NV):
+  which nodes entered or left validity since instant `since` (INTEGER epoch
+  seconds). The one net-new command in that delta, because no existing read
+  verb can express the question.
+
+### Graph verbs
+
+- `Engine::graph_neighbors(&self, ..., view: &ReadView) -> Result<Vec<NodeRecord>, EngineError>`
+- `Engine::search_expand(&self, query: &str, filter: Option<SearchFilter>, depth: u32) ->
+  Result<SearchExpandResult, EngineError>`
+
+### Lifecycle + erasure verbs (0.8.19 Slice 10 / 0.8.20 Slice 5d)
+
+**Governed, allowlisted, and present in all three bindings.** They are not
+recovery verbs — none carries a REQ-054 denylist name — and they are on the
+DEFAULT facade, not behind the `operator` feature.
+
+- `Engine::transition(&self, logical_id: &str, to_state: LifecycleState, reason:
+  Option<String>) -> Result<(), EngineError>` — move a GOVERNED node between
+  existence states per the engine-enforced legal-transition table
+  (`pending→active` promote, `pending→deleted` REJECTED, `active→deleted`
+  soft-delete, `deleted→active` undelete). Promote/undelete CLEAR `reason`;
+  reject/soft-delete SET it. `reason` is advisory and never engine-interpreted.
+  Keys on the bare `logical_id` — the `l:` id space ONLY; any other space is
+  `EngineError::NotLifecycleAddressable`. An illegal move is
+  `EngineError::IllegalTransition { from_state, to_state, legal }`.
+- `Engine::purge(&self, logical_id: &str) -> Result<(), EngineError>` —
+  irreversible hard-erase of a governed node across every row-owned target (all
+  versions, FTS/vector shadows, touching edges cascade-removed). DELETED-FIRST
+  (legal only from `deleted`) and IDEMPOTENT. A SEPARATE verb from `transition`.
+  **There is no restore counterpart on any surface.**
+- `Engine::erase_source(&self, source_id: &str) -> Result<ExciseReport, EngineError>`
+  — 0.8.20 Slice 5d (R-20-E4): erase every canonical row carrying `source_id`
+  plus its row-owned projections, then finish the erasure AT REST (telemetry
+  redaction + WAL truncating checkpoint). The COMPANION to `purge`: `purge`
+  addresses a governed node by `logical_id`, `erase_source` addresses
+  ANONYMOUS content (rows with no `logical_id`) by provenance, which `purge`
+  cannot reach at all. Idempotent. Refuses an empty / whitespace-only /
+  reserved (`_`-prefixed) id with `EngineError::WriteValidation`; the reserved
+  namespace stays reachable only through the CLI `--excise-source` seam.
+  Reports `EngineError::ErasureIncomplete` rather than success when the
+  at-rest step could not complete.
+
+### Projection-registry verbs
+
+- `Engine::configure_projections(...) -> Result<ProjectionDelta, EngineError>`
+- `Engine::read_projections() -> Result<Vec<ProjectionSpec>, EngineError>`
+
+See § "Projection registry" below.
 
 `OpenedEngine` contains:
 
@@ -207,18 +272,83 @@ The Rust workspace also exposes the semver-stable companion crate
 
 ## Caller-visible data shapes
 
-- `WriteReceipt` has exactly one public field: `cursor`
+- `WriteReceipt` exposes `cursor` (the batch high-water `write_cursor`),
+  `row_cursors` (per-row, 1:1 with the batch) and `dangling_edge_endpoints`
 - `SearchResult` exposes `projection_cursor`, which names the terminal
   projection-visible point for the search snapshot
 - hybrid fallback, when present, exposes a typed branch enum whose values are
   owned by `design/retrieval.md`
 - counter/profile/stress payload shapes are owned by `design/lifecycle.md`
 
+### `SearchHit.id` is `IdSpace` (C-2, 0.8.19 / TC-8)
+
+`SearchHit::id` is **`IdSpace`**, not the pre-0.8.19 `write_cursor: u64`. This
+is the single largest consumer-visible break in the 0.8.9 → 0.8.20 span, and it
+is part of the HITL-SIGNED 0.8.19 Slice-10 delta (the allowlist `_comment`
+records the `SearchHit.id` `u64 → IdSpace` retype together with the
+`IdSpace`/`IdSpaceKind` types).
+
+- `IdSpace { space: IdSpaceKind, value: String }` — `value` is the BARE
+  (prefix-stripped) id; `IdSpace::to_prefixed()` (`{prefix}{value}`) reproduces
+  the pre-swap `stable_id` byte-for-byte, which is what made the swap a
+  real-gold-keying no-op.
+- Governed hits are `l:`, doc-seeded hits `h:`, synthetic passages `p:`.
+- **This is the PERMANENT caller-facing identity, not an interim carrier.** The
+  older "interim identity carrier, swaps to `logical_id` at G0" framing is
+  superseded and must not be restated.
+- `SearchHit::write_cursor: u64` survives as ENGINE-INTERNAL positional
+  book-keeping (vector rowid mapping, `state='active'` lookups, RRF reweight
+  keys, telemetry keying, `search_expand` re-resolution). It is reassigned on
+  re-projection, is not cross-session stable, and **the Python/TypeScript
+  bindings do NOT surface it**.
+- Only the `logical` space is lifecycle-addressable: `transition` / `purge`
+  refuse any other space with `EngineError::NotLifecycleAddressable`.
+
+⚠ **Known Rust-facade gap (TC-39 class, documentation-only here).**
+`SearchHit`, `IdSpace` and `IdSpaceKind` are **not** re-exported by the
+`fathomdb` facade and are not members of `GOVERNED_SURFACE_ALLOWLIST`
+(`grep SearchHit fathomdb/src/lib.rs` returns nothing). `SearchResult` IS
+re-exported, so a facade consumer can *reach* the values by field access
+(`result.results[0].id.value`) but cannot NAME the types — it cannot write a
+function signature over a hit, match on `IdSpaceKind`, or call
+`IdSpace::to_prefixed`. The Python and TypeScript bindings do surface both.
+This is recorded, not fixed, by 0.8.20 Slice 39: adding a facade re-export is a
+governed-surface delta and needs its own slice plus a HITL signature.
+
+`SearchHit::source_id: Option<String>` carries the hit's source-document
+provenance — the identifier `Engine::erase_source` consumes — and since TC-31
+(0.8.20) it is populated on EVERY hit path, not just the graph arm.
+
 ## Caller-supplied write shapes
 
 `PreparedWrite` is the caller-supplied input to `Engine::write` and is itself
 governed surface (§ P1), so adding a variant field changes what every binding
-must accept.
+must accept. It is `#[non_exhaustive]`.
+
+### `source_id` is STRUCTURALLY MANDATORY (0.8.20 Slice 5c, R-20-E3)
+
+`PreparedWrite::Node` and `PreparedWrite::Edge` both carry
+**`source_id: SourceId`** — a newtype, not `Option<String>`. The change is a
+TYPE change rather than a validation check on purpose: `Engine::erase_source`
+addresses rows BY `source_id`, so a row written without one is reachable by no
+erasure call, and Rust can make that state **inexpressible**. An
+un-provenanced write is a COMPILE error for facade consumers (proven by
+`fathomdb/tests/ui/`), not a runtime rejection.
+
+- `SourceId::new(id: impl Into<String>) -> Result<SourceId, EngineError>` is
+  the ONLY public constructor. It refuses an empty / whitespace-only id and any
+  id in the engine's reserved `_`-prefixed namespace
+  (`SourceId::ENGINE_PREFIX` = `"_engine:"`, `SourceId::LEGACY_PRE_0_8_20` =
+  `"_legacy:pre-0.8.20"`), both with `EngineError::WriteValidation`.
+- `SourceId` is re-exported on the facade and is part of the HITL-SIGNED
+  Slice-5d allowlist delta. It MUST stay re-exported: without the constructor a
+  facade consumer could not perform a canonical write at all.
+- The bindings have no such type system at the boundary, so Python raises and
+  TypeScript throws `WriteValidation` for a missing/empty/reserved id — the
+  same rule, enforced at the binding.
+- Policy note carried to the publish-facing docs: **`source_id` must not
+  contain personal data.** It is echoed on every `SearchHit` and recorded in
+  the retention-EXEMPT erasure-audit row, so it outlives the rows it names.
 
 ### `PreparedWrite::Node` — world-time validity window (0.8.20 Slice 15b, TC-34)
 
@@ -237,7 +367,8 @@ These are **fields, not a new verb**. The governed *command* surface is
 unchanged and allowlist membership in
 `src/conformance/governed-surface-allowlist.json` is byte-identical; the
 precedent is `PreparedWrite::Edge`, which has carried `t_valid`/`t_invalid` the
-same way since Slice 30. The fields-only delta is **PROPOSED, NOT SIGNED**.
+same way since Slice 30. The fields-only delta is **HITL-SIGNED 2026-07-29
+(steward `seq-157`)**.
 
 Slice 10b (R-20-NV) shipped the `canonical_nodes.valid_from`/`valid_until`
 columns, the `ReadView` validity predicate and `Engine::crossed_boundary_since`
@@ -313,8 +444,17 @@ the read verbs, so search validity is deterministically testable.
 
 ## Projection registry (0.8.20 Slice 15d, R-20-PR / C-1)
 
-**Status: PROPOSED / NOT SIGNED** (tracked in
-`src/conformance/governed-surface-allowlist.json`; AC-079 UNMINTED).
+**Status: HITL-SIGNED 2026-07-29 (steward `seq-157`)** for the two net-new
+commands (`configure_projections`, `read.projections`), the types
+`ProjectionSpec` / `ProjectionRole` / `ProjectionDelta`, and the typed
+`ProjectionDestructiveError` — all recorded in
+`src/conformance/governed-surface-allowlist.json`. **AC-079 remains UNMINTED**
+(it mints at Slice 40); the signature is pinned to that file's content, so any
+diff re-opens the gate (T1e pin).
+
+⚠ **`ProjectionFts`, `ProjectionVector` and `DenseReadiness` are NOT part of
+that signature** — none appears in the allowlist. They remain **PROPOSED, NOT
+SIGNED**.
 
 Two net-new governed methods on `Engine` declare and inspect projections over
 interpretive attributes. The facade re-exports the five supporting
@@ -616,13 +756,22 @@ Re-exported types (canonical spellings, locked 2026-05-12; extended
 
 Engine methods backing these types are owned by `design/recovery.md` and
 listed in `dev/plans/0.6.0-implementation.md` (Phase 10a + Phase 10b-A).
-`PurgeLogicalIdReport` and `RestoreLogicalIdReport` were originally
-forward-referenced for Phase 10b-B; both verbs are deferred to 0.8.0
-(originally 0.7.x per ADR-0.6.0-cli-scope 2026-05-16 amendment;
-re-targeted to 0.8.0 per HITL 2026-05-24 — see `dev/roadmap/0.8.0.md`
-and the deferral note in `design/recovery.md § Logical-id purge and
-restore`). When 0.8.0 re-opens the scope these types land here per
-the same re-export rule.
+
+⚠ **`PurgeLogicalIdReport` / `RestoreLogicalIdReport` — still not shipped, and
+NOT the same thing as `Engine::purge`.** These two report types were
+forward-referenced for a CLI `purge-logical-id` / `restore-logical-id` pair
+(Phase 10b-B, deferred through 0.7.x then 0.8.0). Neither the CLI verbs nor
+the report types exist as of 0.8.20, and neither is planned:
+
+- Logical-id lifecycle landed instead as the **governed SDK** verbs
+  `Engine::transition` and `Engine::purge` (0.8.19 Slice 10, HITL-SIGNED). They
+  are on the DEFAULT facade, return `Result<(), EngineError>`, and produce no
+  report type — so they consume neither of the names above.
+- **There is no restore counterpart on any surface.** `purge` is irreversible
+  by construction; `restore` is also one of the five REQ-054 recovery-denylist
+  names, so it can never be an SDK verb.
+
+Do not read the forward reference above as a scheduled deliverable.
 
 ## Non-presence
 

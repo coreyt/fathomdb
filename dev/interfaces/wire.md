@@ -1,21 +1,21 @@
 ---
 title: Wire Format
-date: 2026-04-24
-target_release: 0.6.0
-desc: On-disk + IPC formats (if any) for 0.6.0; short OK
+date: 2026-07-29
+target_release: 0.8.20
+desc: On-disk + IPC formats (if any) for 0.8.20; short OK
 blast_radius: architecture.md § 5; design/engine.md; design/migrations.md
 status: locked
 ---
 
 # Wire Format
 
-0.6.0 has no standalone IPC wire protocol. The public wire surface is limited
+FathomDB has no standalone IPC wire protocol. The public wire surface is limited
 to the on-disk file layout and the schema-version sentinel used on the open
 path.
 
 ## File layout
 
-The 0.6.0 file set is:
+The file set is:
 
 - `<db-name>.sqlite`
 - `<db-name>.sqlite-wal`
@@ -26,7 +26,8 @@ The authoritative layout owner remains `architecture.md` § 5.
 
 ## Schema-version sentinel
 
-The canonical schema-version sentinel is SQLite `PRAGMA user_version`.
+The canonical schema-version sentinel is SQLite `PRAGMA user_version`. As of
+0.8.20 `fathomdb-schema::SCHEMA_VERSION` is **24** (0.8.9 shipped **15**).
 
 Ownership split:
 
@@ -39,8 +40,14 @@ Ownership split:
 
 - opening a supported pre-current database may auto-migrate and advance
   `PRAGMA user_version`
+- ⚠ **migration step 23 (TC-33) is NOT data-preserving for edges.** It
+  recreates `canonical_edges` with INTEGER `t_valid`/`t_invalid` and type
+  CHECKs; per the HITL ruling of 2026-07-21 there is NO data migration —
+  existing edge rows do not survive and no stored ISO-8601 value is converted.
+  Nodes are unaffected. This is the one on-disk compatibility break in the
+  0.8.9 → 0.8.20 span and must be disclosed wherever upgrade is described.
 - opening a 0.5.x-shaped database hard-errors before partial read/write
-- 0.6.0 does not expose a compatibility reader for 0.5.x layouts
+- there is no compatibility reader for 0.5.x layouts
 
 ## Non-surface
 

@@ -1,8 +1,8 @@
 ---
 title: TypeScript Public Interface
-date: 2026-04-24
-target_release: 0.6.0
-desc: Public TypeScript surface for 0.6.0
+date: 2026-07-29
+target_release: 0.8.20
+desc: Public TypeScript surface for 0.8.20
 blast_radius: src/ts/; design/bindings.md; design/errors.md; design/lifecycle.md; design/engine.md
 status: locked
 ---
@@ -14,13 +14,52 @@ binding parity remains owned by `design/bindings.md`.
 
 ## Runtime surface
 
-The canonical runtime verbs available to TypeScript callers are:
+The **core** runtime verbs available to TypeScript callers are:
 
 - `Engine.open(...)`
 - `engine.write(...)`
 - `engine.search(...)`
 - `engine.close()`
 - `admin.configure(...)`
+
+The full governed set is pinned by
+`src/conformance/governed-surface-allowlist.json`, which `surface.test.ts`
+loads: the core five plus `engine.searchTextOnly`, `engine.embed`, `rerank`,
+the `read.*` namespace (`get`, `getMany`, `collection`, `mutations`, `list`,
+`crossedBoundarySince`, `projections`), the `graph.*` namespace (`neighbors`,
+`searchExpand`), the BYO-LLM verbs (`engine.ingestWithExtractor`,
+`engine.consolidateWithProvider`), `engine.configureProjections`, and the
+lifecycle/erasure verbs below. Verb NAMES are camelCase in TS; the governed
+allowlist entries stay dotted snake_case where the two differ
+(`read.get_many` ↔ `read.getMany`).
+
+### Lifecycle + erasure verbs (0.8.19 Slice 10 / 0.8.20 Slice 5d)
+
+Governed and HITL-SIGNED; **not** recovery verbs (none carries a REQ-054
+denylist name).
+
+- `engine.transition(logicalId: string, toState: LifecycleState, reason?:
+  string | null): Promise<void>` — move a GOVERNED node between existence
+  states per the engine-enforced legal-transition table (`pending→active`
+  promote, `pending→deleted` REJECTED, `active→deleted` soft-delete,
+  `deleted→active` undelete). `LifecycleState` is the exported string union
+  `"pending" | "active" | "deleted" | "purged"`. Keys on the bare `logicalId`
+  — the `l:` id space ONLY; any other throws
+  `NotLifecycleAddressableError`. An illegal move throws
+  `IllegalTransitionError` with `fromState` / `toState` / `legal` (never
+  `from`, which is a reserved word in the Python peer — parity-safe naming, S7).
+- `engine.purge(logicalId: string): Promise<void>` — irreversible hard-erase of
+  a governed node across every row-owned target. DELETED-FIRST and IDEMPOTENT.
+  **No restore counterpart exists on any surface.**
+- `engine.eraseSource(sourceId: string): Promise<EraseReport>` — erase every
+  canonical row carrying `sourceId` plus its row-owned projections, then finish
+  at rest (telemetry redaction + WAL truncation). The COMPANION to `purge`:
+  `eraseSource` reaches ANONYMOUS rows (no `logicalId`) that `purge` cannot.
+  Idempotent. Rejects with `WriteValidationError` for an empty /
+  whitespace-only / reserved (`_`-prefixed) id, and with
+  `ErasureIncompleteError` (with `stage` / `detail`) rather than resolving when
+  the at-rest step did not complete. `EraseReport` is
+  `{ sourceRef, nodesExcised, edgesExcised, projectionsInvalidated }`.
 
 All runtime operations are Promise-returning on the TS surface.
 
@@ -61,11 +100,63 @@ Subscriber attachment is provided by:
 
 ## Caller-visible data shapes
 
-- `WriteReceipt.cursor`
+- `WriteReceipt.cursor`, `WriteReceipt.rowCursors`,
+  `WriteReceipt.danglingEdgeEndpoints`
 - `SearchResult.projectionCursor`
 - `SearchResult.softFallback.branch`
 
 `softFallback.branch` uses the typed values owned by `design/retrieval.md`.
+
+### `SearchHit.id` is `IdSpace` (C-2, 0.8.19 / TC-8)
+
+`SearchHit.id` is the exported **`IdSpace`** interface, not the pre-0.8.19
+`number` `write_cursor`. This is the largest consumer-visible break in the
+0.8.9 → 0.8.20 span and is part of the HITL-SIGNED 0.8.19 Slice-10 delta.
+
+- `IdSpace` is `{ space: string; value: string }`, where `space` is
+  `"logical"` | `"content"` | `"passage"` and `value` is the BARE,
+  prefix-stripped id. `` `${prefix}${value}` `` (`l:` / `h:` / `p:`)
+  reproduces the pre-swap `stableId` byte-for-byte.
+- It is the **PERMANENT** caller-facing identity, not an interim carrier; the
+  older "interim `write_cursor`" framing is superseded.
+- The engine's positional `write_cursor` is **not surfaced** as a hit id.
+  `NodeRecord.writeCursor` still exists but is engine-internal book-keeping,
+  reassigned on re-projection, and is NOT the same carrier.
+- Only `space === "logical"` is lifecycle-addressable by `transition` /
+  `purge`.
+
+`SearchHit.sourceId` (`string | null`) carries the hit's source-document
+provenance — the identifier `engine.eraseSource` consumes — and since TC-31
+(0.8.20) it is populated on EVERY hit path. `SearchHit.ceScore`
+(`number | null`) is the CE score for in-pool reranked hits.
+
+### `sourceId` is MANDATORY on canonical write items (0.8.20 Slice 5c, R-20-E3)
+
+Every **node** and **edge** item passed to `engine.write` must carry a
+`sourceId` (or the snake_case `source_id` fallback, camelCase consulted
+first). `eraseSource` addresses rows BY that id, so a row written without one
+is reachable by no erasure call.
+
+Rust makes the absence inexpressible through the `SourceId` newtype; TypeScript
+has no such guarantee at the N-API boundary, so `json_source_id_required`
+throws a typed **`WriteValidationError`** (`FDB_WRITE_VALIDATION`) for a
+missing, empty, whitespace-only or **reserved** (`_`-prefixed) id — mirroring
+the Python binding exactly.
+
+```typescript
+await engine.write([
+  { kind: "note", body: "…", sourceId: "doc-42" },
+  { kind: "mentions", from: "a", to: "b", sourceId: "doc-42" },
+]);
+```
+
+The engine's reserved namespace (`_engine:*` and the `_legacy:pre-0.8.20`
+migration cohort) is refused here and is reachable only through
+`fathomdb recover --excise-source`.
+
+**Policy: `sourceId` MUST NOT contain personal data.** It is echoed on every
+`SearchHit` and recorded in the retention-EXEMPT erasure-audit row, so it
+outlives the rows it names. Use an opaque document or tenant id.
 
 ## Node write-item validity window (0.8.20 Slice 15b, TC-34)
 
@@ -123,7 +214,8 @@ identical across Rust / Python / TypeScript and cannot drift):
   truncated or coerced.
 
 These are keys on an existing verb, not a new verb: the runtime-verb surface
-above is unchanged. The fields-only delta is **PROPOSED, NOT SIGNED**.
+above is unchanged. The fields-only delta is **HITL-SIGNED 2026-07-29 (steward
+`seq-157`)**.
 
 ## Edge temporal fields (0.8.20 Slice 15c, TC-33)
 
@@ -158,6 +250,15 @@ as **still valid**. A non-integral field rejects with `WriteValidationError` and
 is never coerced — the same `json_i64_alt` validator serves the node window and
 the edge fields, so the old string-accepting `json_str_alt` no longer applies.
 
+> ⚠ **Sign-off status of the TC-33 edge-temporal delta is UNRESOLVED — do not
+> assert either way.** The allowlist `_comment` mentions `t_valid`/`t_invalid`
+> only as the **Slice-30 `PreparedWrite::Edge` PRECEDENT** cited inside the
+> Slice-15b (node-validity) paragraph. There is **no TC-33 sign-off recorded**
+> anywhere in that file, so a mechanical grep that reports these literals as
+> "signed" is reading the precedent, not a signature. Flagged for a
+> Steward/HITL ruling by 0.8.20 Slice 39 (`R-20-DOC`); the marker below is left
+> exactly as the implementing slice wrote it.
+
 **Layering note.** This is the GOVERNED SDK write surface. ISO-8601 survives
 ONLY on the **BYO-LLM extractor wire** (`fathomdb.extract.v1`), where the engine
 normalises each timestamp to epoch seconds with a HARD REJECTION of any value it
@@ -168,7 +269,12 @@ Fields-only delta, **PROPOSED, NOT SIGNED**.
 ## Projection registry (0.8.20 Slice 15d, R-20-PR / C-1)
 
 Two net-new governed verbs declare and inspect projections over interpretive
-attributes. **PROPOSED, NOT SIGNED.**
+attributes. The verbs, the `ProjectionSpec` / `ProjectionRole` /
+`ProjectionDelta` types and the typed `ProjectionDestructiveError` are
+**HITL-SIGNED 2026-07-29 (steward `seq-157`)**. ⚠ The Slice-20 (R-20-DR)
+readiness additions — the exported `DenseReadiness` union and
+`ProjectionSpec.vectorDenseReadiness` — are **NOT** part of that signature and
+remain **PROPOSED, NOT SIGNED**.
 
 - `engine.configureProjections(specs, drop?)` → `Promise<ProjectionDelta>`.
   Declarative, idempotent apply: the engine diffs `specs` against the durable
@@ -383,10 +489,11 @@ Rust, Python and TypeScript:
 
 ## Errors
 
-TypeScript exposes one concrete leaf class per canonical row in
-`design/errors.md`.
+TypeScript exposes one concrete class per canonical row in
+`design/errors.md` — **27** of them as of 0.8.20, 1:1 with the Python set
+below `EngineError`.
 
-Leaf-class examples:
+Class examples:
 
 - `DatabaseLockedError`
 - `CorruptionError`
@@ -398,10 +505,26 @@ Leaf-class examples:
 - `OverloadedError`
 - `ClosingError`
 
+The 0.8.19/0.8.20 additions, all of which the governed verbs above can throw:
+
+- `IllegalTransitionError` (`fromState`, `toState`, `legal`)
+- `NotLifecycleAddressableError` (`idSpace`)
+- `ErasureIncompleteError` (`stage`, `detail`) — note the `Error` suffix; the
+  class is NOT spelled `ErasureIncomplete`
+- `ProjectionDestructiveError` (`name`, `delta`)
+- `VectorEquivalenceMismatchError` (`reason`)
+- `ConsolidatorError`
+
 TypeScript exports one catch-all base class, `FathomDbError`, and every
-concrete leaf class in the `design/errors.md` matrix extends it. Open-time and
-runtime leaf classes remain distinct, but callers can catch `FathomDbError`
-for both.
+concrete class in the `design/errors.md` matrix extends it. Open-time and
+runtime classes remain distinct, but callers can catch `FathomDbError` for
+both. `FathomDbPanicError` extends `Error`, **not** `FathomDbError`, and is
+deliberately outside the catch-all root — it is TS-only (the Python peer is
+PyO3's `PanicException`) and is therefore not one of the 27.
+
+⚠ `WriteValidationError` is **message-less** since decision #18: the envelope
+is `FDB_WRITE_VALIDATION` with the fixed message `"write validation error"` and
+`data: null`, so the offending value is not recoverable from the error.
 
 ## Default embedder
 

@@ -1,15 +1,15 @@
 ---
 title: CLI Public Interface
-date: 2026-05-12
-target_release: 0.6.0
-desc: Public CLI surface for 0.6.0
+date: 2026-07-29
+target_release: 0.8.20
+desc: Public CLI surface for 0.8.20
 blast_radius: src/rust/crates/fathomdb-cli/src/lib.rs; design/recovery.md; design/errors.md
 status: locked
 ---
 
 # CLI Interface
 
-Public CLI surface for the 0.6.0 operator binary. The canonical verb table and
+Public CLI surface for the 0.8.20 operator binary. The canonical verb table and
 recovery semantics are owned by `design/recovery.md`; this file owns concrete
 flag spelling, root command paths, and exit-code classes.
 
@@ -18,7 +18,7 @@ flag spelling, root command paths, and exit-code classes.
 - `fathomdb recover --accept-data-loss <sub-flag>...`
 - `fathomdb doctor <verb> ...`
 
-The CLI is **operator-only**. It does not mirror the SDK five-verb application
+The CLI is **operator-only**. It does not mirror the SDK application
 surface and does not ship `search` / `get` / `list` query verbs.
 
 The 0.8.0 `doctor dump-mutations` verb is **not** an exception to this: it is a
@@ -64,6 +64,8 @@ see that ADR's 2026-06-06 amendment).
 | `dump-profile`    | `fathomdb doctor dump-profile`                                                 | `doctor-check-*`                    |
 | `recompute-mean`  | `fathomdb doctor recompute-mean <db_path> [--json]`                            | `doctor-check-*` = 0 / 70 / 71      |
 | `dump-mutations`  | `fathomdb doctor dump-mutations <collection> [--after-id <n>] [--limit <n>] [--json] <db_path>` | `0 / 70 / 71`      |
+| `warm-cache`      | `fathomdb doctor warm-cache ...` (EU-5b)                                       | `doctor-check-*`                    |
+| `orphan-provenance` | `fathomdb doctor orphan-provenance [--json] <db_path>`                       | `doctor-check-*` = 0 / 65 / 70 / 71 |
 
 `doctor-check-*` means the verb may use the exit-code class set `{0, 65, 70,
 71}` depending on clean/findings/unrecoverable/lock-held outcome.
@@ -77,9 +79,20 @@ application surface). An **empty page** — empty / unknown / unregistered
 collection, or `--after-id` past the end — is a normal absence and exits `0`
 (never `65`/Findings). Exit class set `{0, 70, 71}`.
 
+`orphan-provenance` (0.8.20 Slice 5d / R-20-E8) is a read-only per-`source_id`
+census over the canonical tables. It reports each provenance bucket with its
+row count, how many of those rows are also `logical_id`-addressable, and
+whether the bucket is in the engine's reserved `_`-prefixed namespace. The
+load-bearing field is `unerasable_rows` — canonical rows carrying NEITHER a
+`source_id` (for `erase_source`) NOR a `logical_id` (for `purge`), i.e.
+reachable by no erasure verb. A non-zero count exits `65`
+(`DOCTOR_FOUND_ISSUES`). Rows under `_legacy:pre-0.8.20` are reported but are
+NOT an issue — they are fully erasable through the CLI recovery seam.
+CLI-only; no SDK parity.
+
 ## Recover root
 
-`recover` is the only lossy / non-bit-preserving root in 0.6.0.
+`recover` is the only lossy / non-bit-preserving root.
 
 ```text
 fathomdb recover --accept-data-loss
@@ -87,16 +100,41 @@ fathomdb recover --accept-data-loss
   [--rebuild-vec0]
   [--rebuild-projections]
   [--excise-source <id>]
+  [--excise-collection <name> --excise-record-key <key>]
+  [--json]
+  <db_path>
 ```
 
 Exit class: `recover-*` = 0 / 64 / 70 / 71.
 
+`--excise-collection` and `--excise-record-key` (0.8.20 Slice 5b / R-20-E7) are
+declared with `requires` on each other, so clap rejects either alone. Together
+they erase every append-only-log version of one op-store record key plus its
+latest-state row.
+
+### The CLI is no longer the only erasure route
+
+Since 0.8.20 the SDK ships `purge` (one governed node, by `logical_id`) and
+`erase_source` (every row carrying one provenance) in all three bindings, so an
+embedded consumer with no `fathomdb` binary on `PATH` can discharge a deletion
+obligation without the CLI. Two capabilities stay CLI-only, deliberately:
+
+- `--excise-source` is the ONLY route into the engine's reserved `_`-prefixed
+  provenance namespace (`_engine:*`, `_legacy:pre-0.8.20`). `SourceId::new`
+  refuses those spellings, so the governed verb cannot reach them — a single
+  SDK-reachable call against `_legacy:pre-0.8.20` would wipe every pre-0.8.20
+  anonymous row at once.
+- `--excise-collection` / `--excise-record-key`, which has no SDK peer.
+
+`excise_source` therefore REMAINS deliberately non-allowlisted: it stays the
+recovery seam.
+
 `--accept-data-loss` is declared on the `recover` parser only. `doctor` verbs
 reject it as unknown.
 
-`--rebuild-projections` is the canonical 0.6.0 regenerate workflow for failed
-or stale projections. The docs may refer to "regenerate" as the workflow name,
-but there is no separate `fathomdb regenerate` command in 0.6.0.
+`--rebuild-projections` is the canonical regenerate workflow for failed or
+stale projections. The docs may refer to "regenerate" as the workflow name, but
+there is no separate `fathomdb regenerate` command.
 
 ## Error to exit-code mapping
 
