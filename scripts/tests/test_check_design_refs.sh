@@ -837,6 +837,68 @@ else
   fail "arm 17g (portability): GNU-only construct(s) in $GATE: $GNUISMS"
 fi
 
+# --- Arm 17h: AN UNRESOLVABLE TOPLEVEL REPORTS `NOT CHECKED`, NOT exit 1 ----
+# The self-check's documented failure branch was UNREACHABLE in exactly the
+# circumstance it was written for: under `set -e`, `X="$(abs_dir …)"` exits the
+# script when abs_dir returns nonzero, so the hook got a bare exit 1 with no
+# message — a silent false BLOCK on the commit path.
+#
+# Two cases, because they fail in OPPOSITE directions and one fix must handle
+# both:
+#   (i)  toplevel is a path that does not exist -> abs_dir fails  -> used to ABORT
+#   (ii) toplevel is EMPTY -> `cd ""` succeeds and `pwd -P` returns THE CWD, which
+#        at that point IS the snapshot, so the comparison would match and the
+#        guard would SILENTLY PASS.
+#
+# Driven by shadowing `git` on PATH with a wrapper that rewrites only
+# `rev-parse --show-toplevel`, and only when run inside the hand-built snapshot
+# (identified by its `.git` having no `index` — a real repo's does). Everything
+# else delegates to the real git.
+setup_fixture
+REAL_GIT="$(command -v git)"
+mkdir -p "$TMPROOT/gitstub"
+make_git_stub() {
+  cat >"$TMPROOT/gitstub/git" <<EOF
+#!/usr/bin/env bash
+if [ "\$1" = "rev-parse" ] && [ "\$2" = "--show-toplevel" ] && [ ! -e .git/index ]; then
+  printf '%s' "$1"
+  exit 0
+fi
+exec "$REAL_GIT" "\$@"
+EOF
+  chmod +x "$TMPROOT/gitstub/git"
+}
+
+# (i) a toplevel that does not resolve to a reachable directory
+make_git_stub '/definitely/not/a/real/directory
+'
+(cd "$FIX" && git rm -q dev/design/widget-design.md)
+set +e
+OUT="$(cd "$FIX" && PATH="$TMPROOT/gitstub:$PATH" \
+        bash ./scripts/check-design-refs.sh --staged-only --release 9.9.9 --slice 0 2>&1)"
+RC=$?
+set -e
+if [ "$RC" -eq 0 ] && grep -q 'NOT CHECKED' <<<"$OUT" \
+   && grep -q '/definitely/not/a/real/directory' <<<"$OUT"; then
+  pass "an unresolvable snapshot toplevel reports NOT CHECKED and exits 0, never a bare exit 1"
+else
+  fail "arm 17h(i) (unreachable toplevel): rc=$RC out=$OUT"
+fi
+
+# (ii) an EMPTY toplevel must refuse too — `cd ""` returns the cwd, so without an
+# explicit empty rejection this compares equal to the snapshot and passes.
+make_git_stub ''
+set +e
+OUT="$(cd "$FIX" && PATH="$TMPROOT/gitstub:$PATH" \
+        bash ./scripts/check-design-refs.sh --staged-only --release 9.9.9 --slice 0 2>&1)"
+RC=$?
+set -e
+if [ "$RC" -eq 0 ] && grep -q 'NOT CHECKED' <<<"$OUT"; then
+  pass "an EMPTY snapshot toplevel refuses too — cd \"\" returning the cwd is not a pass"
+else
+  fail "arm 17h(ii) (empty toplevel): rc=$RC out=$OUT"
+fi
+
 # --- Arm 18: THE PRIMARY CHECKOUT'S CONFIG IS UNTOUCHED BY THIS WHOLE SUITE -
 # THE ARM THAT WOULD HAVE CAUGHT TC-128, and it is deliberately scoped to the
 # ENTIRE suite rather than to one gate invocation: the damage was done by a

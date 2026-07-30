@@ -324,9 +324,21 @@ if [ "$STAGED_ONLY" -eq 1 ]; then
   # because both of its inputs failed identically is the same vacuous-green class
   # as the arm-17 that watched a live defect go by, and this is the one guard
   # whose entire job is to prove the toplevel resolved INSIDE the snapshot.
-  abs_dir() { ( cd "$1" 2>/dev/null && pwd -P ); }
-  SNAP_TOP_ABS="$(abs_dir "${SNAP_TOP:-/nonexistent}")"
-  SNAPSHOT_ABS="$(abs_dir "$SNAPSHOT")"
+  # An EMPTY argument is rejected explicitly. `cd ""` SUCCEEDS in bash and
+  # `pwd -P` then returns THE CURRENT DIRECTORY — which right here IS the
+  # snapshot — so an empty toplevel would normalise to the very value it is being
+  # compared against and the guard would silently pass. Measured.
+  abs_dir() { [ -n "$1" ] || return 1; ( cd "$1" 2>/dev/null && pwd -P ); }
+  # NO `:-` DEFAULT, and `|| true` on both. A default of `/nonexistent` was what
+  # turned the empty case into a FAILING `cd`, and under `set -e` a failing
+  # command substitution in an assignment EXITS THE SCRIPT — which made the
+  # `NOT CHECKED` branch below unreachable in exactly the circumstance it was
+  # written for, so the hook got a bare `exit 1` with no message: a silent false
+  # BLOCK on the commit path. Both substitutions must therefore yield the empty
+  # string on failure and let the `-z` tests below decide. Do not reinstate a
+  # default here.
+  SNAP_TOP_ABS="$(abs_dir "$SNAP_TOP" || true)"
+  SNAPSHOT_ABS="$(abs_dir "$SNAPSHOT" || true)"
   # FAIL CLOSED. An empty normalisation means the path was not a reachable
   # directory, so there is nothing to compare — never let empty-equals-empty be a
   # reachable pass.
