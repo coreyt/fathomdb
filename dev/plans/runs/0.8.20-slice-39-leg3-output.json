@@ -1,0 +1,314 @@
+{
+  "phase": "0.8.20 Slice 39 (R-20-DOC) — leg 3, documentation currency",
+  "baseline_sha": "aa01f0d9c3d5cea2a0f4b366bd42d8e3317af66d",
+  "branch": "0.8.20-slice-39-docs",
+  "head_sha": "dd6daa041b3cdcc084e08087bf17db650e9afebc",
+  "commits": [
+    "c8d931d2: docs(0.8.20 Slice 39): docs/ + README currency — 0.8.20 install, mandatory source_id, IdSpace (TC-36)",
+    "393960f3: docs(0.8.20 Slice 39): dev/interfaces currency (TC-39) + stale PROPOSED markers",
+    "82f4f9fc: docs(0.8.20 Slice 39): crate-level rustdoc + stale PROPOSED/WriteValidation doc-comments",
+    "dd6daa04: docs(0.8.20 Slice 39): mark the 0.6.0/0.6.1/0.8.0 release-notes pages as historical"
+  ],
+
+  "gates": {
+    "note": "Every rc below is a REAL captured exit code (rc=$? on the line after the command), re-run at HEAD dd6daa04. scripts/agent-test.sh was NOT used as an aggregate (TC-16: its exit is vacuous — it aborts at test-check-governed-surface-pin, whose git_blob_sha1 provenance arm is red at the pristine baseline; Slice 40's re-mint territory).",
+    "mkdocs build --strict": 0,
+    "bash scripts/agent-lint-md.sh": 0,
+    "cargo check --workspace --all-targets": 0,
+    "cargo clippy --workspace --all-targets": 0,
+    "cargo doc --workspace --no-deps": 0,
+    "cargo test --doc -p fathomdb": 0,
+    "bash scripts/check-governed-surface-pin.sh": 0,
+    "bash scripts/check-license-consistency.sh": 0,
+    "rustdoc_warning_delta": "40 warnings before, 40 after — the two `warning:` line sets diff EMPTY. All 40 are pre-existing private-item intra-doc links (e.g. `vector_unsupported_kinds` -> `resolve_source_type`) plus 2 `unresolved link to P2`. ZERO new rustdoc warnings introduced. Baseline captured at commit c8d931d2's parent state (docs-only changes, so equal to aa01f0d9 for Rust) and re-captured after `rm -rf target/doc`.",
+    "doctest_evidence": "cargo test --doc -p fathomdb: 4 passed / 0 failed. The NEW `no_run` example in the facade crate-level //! compiles (`src/lib.rs - (line 28) - compile ... ok`), and the three pre-existing `compile_fail` governed-surface method-absence proofs still fail to compile as required.",
+    "no_eu7_runs": true,
+    "schema_version_unchanged": "SCHEMA_VERSION stays 24 (fathomdb-schema/src/lib.rs); no migration touched.",
+    "engine_suite_not_run_concurrently": "The only test invocation was `cargo test --doc -p fathomdb`, which compiles doctests for one crate. The engine integration suite (ac_029 wall-clock ratio assertion) was never run."
+  },
+
+  "governed_surface_attestation": {
+    "check_governed_surface_pin_rc": 0,
+    "pin_output": "ok    governed-surface-pin: src/conformance/governed-surface-allowlist.json matches the AC-079 pin (30 allowlist / 5 core / 5 recovery_denylist, pinned at c239908b under AC-079)",
+    "allowlist_json_untouched": "CONFIRMED. `git diff --stat aa01f0d9..HEAD -- src/conformance/` is EMPTY (0 lines). The file was read only.",
+    "forbidden_paths_untouched": "CONFIRMED by `git diff --name-only aa01f0d9..HEAD | grep -E '^(CHANGELOG.md|.*Cargo.toml|src/python/README.md|src/ts/README.md|src/rust/crates/[^/]+/README.md|package.json|.*pyproject.toml|scripts/|\\.github/|src/conformance/|dev/plans/)'` -> NONE. No version field touched anywhere; manifests stay 0.8.9. No tag, no publish, no workflow dispatch, no worktree/branch/rebase/push operation."
+  },
+
+  "dense_readiness_marker_attestation": {
+    "claim": "fathomdb/src/lib.rs's DenseReadiness `PROPOSED / NOT SIGNED` marker was NOT touched.",
+    "evidence": "It was line 46 at baseline and is line 139 at HEAD — the shift is entirely the +93-line consumer-facing `//!` header prepended above it; the line's bytes are unchanged. Verified independently: `DenseReadiness` appears ZERO times in src/conformance/governed-surface-allowlist.json, so the marker is factually correct and flipping it would have published a false sign-off for an unsigned type onto docs.rs at the publish cut."
+  },
+
+  "predicates": {
+    "P1_version_currency": {
+      "how_completeness_was_established": "Did NOT work from the prompt's list. Ran a repo-wide regex sweep `grep -rn '0\\.6\\.0|0\\.6\\.1|0\\.7\\.[0-9]|0\\.8\\.0|0\\.8\\.9|0\\.5\\.|0\\.8\\.1[0-9]' docs/ README.md` at baseline (99 hits across 17 files, EXCLUDING docs/release-notes/), fixed every one, then re-ran the same sweep at HEAD and audited each surviving hit individually.",
+      "sites_fixed": [
+        "docs/index.md — status block (7-12) + release-notes link block (42-48), rewritten to a 0.8.20 pre-1.0-beta status and a Guides/Operations section",
+        "docs/getting-started/index.md — pre-release notice (3-8), 'What ships in 0.6.0' (18-31), 'Use the right SDK' (35-39), 'Deferred for 0.6.0' (41-50); replaced with the 0.8.20 governed verb inventory, a 'Breaking since 0.8.9' list and a 'Known gaps' list",
+        "docs/getting-started/quickstart.md — 5-6 (TS parity ref), 55-61 (0.6.0 open-report caveat, now false: open_report IS surfaced), 180 ('18-leaf taxonomy' — a WRONG COUNT NOT IN THE PROMPT'S P4 LIST)",
+        "docs/install/python.md — 3-5, 20-37 (post-GA/pre-GA headings + `pip install fathomdb==0.6.0` + the `0.6.0-rewrite` clone), 100",
+        "docs/install/typescript.md — 7-12 (TS parity caveat), 24-39 (`npm install fathomdb@0.6.0` + branch checkout), 89",
+        "docs/install/rust.md — 8 ('Phase 10a'), 20-50 (`cargo install fathomdb-cli --version 0.6.0`, two `--branch 0.6.0-rewrite`), 78; ALSO added a Feature flags section and fixed the Verify example (see P2)",
+        "docs/reference/index.md — 3, 14 ('18-leaf' AGAIN — second unlisted count site), 19-21, 23-33 ('Deferred for 0.6.0')",
+        "docs/reference/config.md — 3-5, 7, 81",
+        "docs/reference/errors.md — 9, 105",
+        "docs/reference/cli.md — 3, 8, 128, 134, 158-159, 165 + the whole 'Logical-id verbs (deferred)' section",
+        "docs/reference/python-api.md — 4, 40-47, 492",
+        "docs/reference/typescript-api.md — 4, 8-13, 493-494",
+        "docs/concepts/index.md — 3, 5, 69 (ADR id, left), 71-72, 89, 94-95",
+        "docs/compatibility/index.md — 13 hits; whole file rewritten (see P10)",
+        "docs/embedder.md — 9-11, 163-171 ('Until the vector-equivalence self-check ships' — ALSO STALE, it shipped in 0.8.18 and was fingerprint-CACHED in 0.8.20), 182-202",
+        "docs/guides/index.md — 4",
+        "docs/guides/hybrid-search-filtering.md — 47 ('no real population source in 0.8.0')",
+        "README.md — 3 (whole opening rewritten)",
+        "docs/release-notes/{0.6.0,0.6.1,0.8.0}.md — NOT in the prompt's list. Each opens with a CURRENT-tense status ('Status: pre-release. 0.6.0 is on the 0.6.0-rewrite branch'; 'Status: release-candidate (pre-GA)') and all three sit in the mkdocs nav, so a reader lands on a page telling them the project is at 0.6.0. Each got a historical-archive banner under its H1 rather than a rewrite of the historical record."
+      ],
+      "link_retarget": "Every `github.com/coreyt/fathomdb/{blob,tree}/0.6.0-rewrite/...` URL in docs/ retargeted to `main` (verified zero remaining outside release-notes).",
+      "promise_discipline": "No present-tense 'published to PyPI/crates.io/npm' anywhere. Registry install commands are headed 'Install (once 0.8.20 is published)' and every install page carries a block stating 0.8.20 is NOT published and that publishing is a separate gated step. Pre-1.0 = BETA is stated on index, all three install pages, getting-started, compatibility, README and the facade crate rustdoc; compatibility/index.md explicitly notes that 'GA' in earlier release notes meant release ENGINEERING, not an API-stability promise.",
+      "surviving_hits_audited": "All surviving version strings at HEAD are (a) ADR identifiers (`ADR-0.6.0-vector-identity-embedder-owned`, `ADR-0.6.0-embedder-protocol`, `ADR-0.6.0-cli-scope`), (b) deliberate breaking-change/history references ('Breaking since 0.8.9', 'SCHEMA 24, 0.8.9 shipped 15', 'No 0.5.x compatibility shims'), or (c) inside the release-notes archive pages."
+    },
+
+    "P2_source_id_in_write_examples": {
+      "how_completeness_was_established": "Enumerated every write call in docs/ with `grep -rn 'engine.write(\\[|\\.write(\\[' docs/`, then classified each by PreparedWrite variant against fathomdb-engine/src/lib.rs (PreparedWrite::Node ~3048, ::Edge ~3110) and the two binding enforcers (fathomdb-py `dict_source_id_required`, fathomdb-napi `json_source_id_required`).",
+      "sites_fixed": [
+        "docs/guides/hybrid-search-filtering.md:57,58 (Python) and 74,75 (TS)",
+        "docs/guides/structured-search-hits.md:31 (Python) and 46 (TS)",
+        "docs/guides/retrieve-by-id.md:22 (Python) and 39 (TS)",
+        "docs/reference/python-api.md:49-63 — the normative parameter list, replaced by a full node-key table (kind/body/source_id/logical_id/state/reason/valid_from/valid_until) + an edge-key paragraph + a worked 3-item example",
+        "docs/reference/typescript-api.md:60-73 — same, with the camelCase/snake_case dual-spelling rule",
+        "docs/getting-started/quickstart.md — NOT IN THE PROMPT'S LIST. Step 3 and the 'Full Python program' both wrote `engine.write([])`, which is legal but taught nothing; both now write a real provenanced item, with a note that an EMPTY batch needs no source_id",
+        "docs/install/rust.md — NOT IN THE PROMPT'S LIST. The Verify snippet used `engine.write(&[])` AND had two further defects: `Engine::open` returns `OpenedEngine { engine, report }` (the snippet bound it as if it were an `Engine`) and `write` takes `&self` (the snippet used `let mut`). Rewritten with a full `PreparedWrite::Node` literal including `SourceId::new(...)`."
+      ],
+      "correctly_out_of_scope": "docs/guides/retrieve-by-id.md:63,66,81,84 are `admin_schema` / `op_store` items — a different PreparedWrite variant with no source_id field. Left alone, and the page now says so explicitly so a reader does not think the omission is an error.",
+      "prose_added": "The mandatory-provenance rule, its rationale (a row with no source_id is reachable by no erasure call) and the non-PII policy are now stated in python-api.md, typescript-api.md, quickstart.md, structured-search-hits.md, retrieve-by-id.md, concepts/index.md, dev/interfaces/{rust,python,typescript}.md and the facade + engine crate rustdoc."
+    },
+
+    "P3_TC36_searchhit_id_type": {
+      "how_completeness_was_established": "Grepped docs/ + dev/interfaces/ for `id: int`, `id: number`, `write cursor`, `interim identity carrier`, `interim id carrier`, and read the FULL surrounding block at each hit rather than the cited line (the prompt warned both reference files were edited on 2026-07-20 at 9392dbc5 and the stale lines survived). Code ground truth: `pub id: IdSpace` at fathomdb-engine/src/lib.rs:1596 with the write_cursor field doc at :1597-1603 saying the SDKs do NOT surface it.",
+      "sites_fixed": [
+        "docs/reference/python-api.md:380 — `id: int  # canonical row write_cursor (interim identity carrier)` -> a typed `IdSpace` dataclass + `id: IdSpace`, plus a BREAKING callout",
+        "docs/reference/typescript-api.md:348 — same, as an `IdSpace` interface",
+        "docs/guides/structured-search-hits.md:12 — the prose table row `| id | int | The canonical row's write cursor ... |`. In no prior list.",
+        "docs/reference/python-api.md:342 — collateral: `NodeRecord.write_cursor  # interim id carrier (same column SearchHit.id carries)` -> `engine-internal positional cursor — NOT SearchHit.id`, with an explanatory paragraph",
+        "docs/reference/typescript-api.md:311 — same collateral",
+        "docs/guides/structured-search-hits.md:16 — collateral: `branch` listed only `\"vector\"`/`\"text\"`; now all four (vector / text / text_edge / graph_arm per SoftFallbackBranch, lib.rs:1428-1435) with a Branches subsection",
+        "docs/guides/structured-search-hits.md table — collateral: it omitted `source_id` and `ce_score` entirely; both added",
+        "src/rust/crates/fathomdb-engine/src/lib.rs:1439-1444 — NOT IN THE PROMPT'S LIST. The SearchHit STRUCT-LEVEL doc (distinct from the field doc at 1596) still read \"`id` is the canonical row's `write_cursor` — the **interim** identity carrier ...; it swaps to `logical_id` at the G0 keystone (Slice 15)\". This reaches docs.rs through the engine crate. Corrected."
+      ],
+      "interim_claim_corrected": "The prompt's point that 'interim identity carrier' is itself false is applied everywhere: docs and interface docs now state IdSpace is the PERMANENT caller-facing identity (C-2 / TC-8), and dev/interfaces/rust.md explicitly records that the older 'interim, swaps to logical_id at G0' framing is superseded and must not be restated."
+    },
+
+    "P4_error_class_names": {
+      "how_completeness_was_established": "Enumerated both authoritative sets directly — `grep '^export class' src/ts/src/errors.ts` and `grep '^class .*Error' src/python/fathomdb/_fathomdb.pyi` — and counted. TS: 29 exported classes = 1 base (FathomDbError) + 27 subclasses + FathomDbPanicError (extends Error, not FathomDbError). Python: 28 = 1 base (EngineError) + 27 subclasses. The sets agree at 27. Then diffed the 27 against `grep -rn` over docs/.",
+      "counts_corrected": [
+        "docs/reference/errors.md:4 claimed '20 leaf classes'; its own table listed 21. Both wrong -> 27, with a note that VectorError and EmbedderError are themselves parents so 'leaf' was the wrong word; heading renamed 'Class matrix'.",
+        "docs/reference/python-api.md:475 'plus 20 concrete leaf classes' -> 27",
+        "docs/reference/typescript-api.md:473 'plus 20 concrete leaf classes' -> 27",
+        "docs/reference/typescript-api.md:33 '// ...18 concrete leaf classes' -> 27 (NOT IN THE PROMPT'S LIST — a THIRD wrong number, and a different one)",
+        "docs/reference/index.md:14 '18-leaf error taxonomy' -> 27 (NOT IN THE PROMPT'S LIST)",
+        "docs/getting-started/quickstart.md:180 '18-leaf taxonomy' -> 27 (NOT IN THE PROMPT'S LIST)"
+      ],
+      "erasure_incomplete_misspelling": "Fixed in all three cited files — docs/operations/erasure.md:37, docs/reference/python-api.md:147, docs/reference/typescript-api.md:154 — to `ErasureIncompleteError`, with its `stage`/`detail` payload. docs/ now contains ZERO occurrences of the bare `ErasureIncomplete` (verified). A worked `except ErasureIncompleteError` / `catch (e instanceof ErasureIncompleteError)` pair was added to errors.md and a Python one to erasure.md, so a consumer can now actually write a correct handler for erase_source.",
+      "six_absent_classes_added": [
+        "ErasureIncompleteError (stage, detail)",
+        "IllegalTransitionError (from_state/to_state/legal | fromState/toState/legal)",
+        "NotLifecycleAddressableError (id_space | idSpace)",
+        "ProjectionDestructiveError (name, delta)",
+        "VectorEquivalenceMismatchError (reason)",
+        "ConsolidatorError (no payload)"
+      ],
+      "also_added": "errors.md gained a `WriteValidationError carries no payload (breaking in 0.8.20)` section (decision #18) and its trigger cell now names the four real refusals. The same 6-class list and the message-less note were added to dev/interfaces/python.md and typescript.md.",
+      "note_on_rust_enum": "`EngineError::ErasureIncomplete` (no Error suffix) is the CORRECT Rust variant spelling and appears in dev/interfaces/rust.md deliberately; only the binding CLASS name carries the suffix."
+    },
+
+    "P5_stale_proposed_markers": {
+      "method": "For each marker, extracted the symbols it covers and counted them individually in src/conformance/governed-surface-allowlist.json (read-only). Counts: ReadView 1, BoundaryCrossing 1, SourceId/ExciseReport present in the SIGNED Slice-5d paragraph, ProjectionSpec 1, ProjectionRole 1, ProjectionDelta 1, ProjectionFts 0, ProjectionVector 0, DenseReadiness 0.",
+      "fixed_stale": [
+        "src/rust/crates/fathomdb/src/lib.rs:41 (ReadView + BoundaryCrossing) -> HITL-SIGNED 2026-07-29 (steward seq-157)",
+        "src/rust/crates/fathomdb/tests/governed_surface.rs:81 and :169 -> same",
+        "dev/interfaces/rust.md:51 (ReadView/BoundaryCrossing), :59 (SourceId/ExciseReport), :240 (PreparedWrite::Node fields-only delta), :316 (Projection registry status heading)",
+        "dev/interfaces/python.md:117 (fields-only delta), :157 (projection-registry heading)",
+        "dev/interfaces/typescript.md:126 (fields-only delta), :171 (projection-registry heading)"
+      ],
+      "left_correct_verified_at_head": [
+        "src/rust/crates/fathomdb/src/lib.rs DenseReadiness marker (baseline :46, now :139) — UNTOUCHED",
+        "fathomdb-engine/src/lib.rs baseline :2619/:5984/:6003/:6162 (now :2681/:6053/:6072/:6231 after the +62-line crate doc) — UNTOUCHED",
+        "dev/interfaces/rust.md baseline :272/:356/:474/:570 (now :403/:496/:614/:710) — UNTOUCHED",
+        "dev/interfaces/python.md baseline :496 (now :611) — UNTOUCHED",
+        "dev/interfaces/typescript.md baseline :528 (now :651) — UNTOUCHED"
+      ],
+      "mixed_markers_split_not_flipped": [
+        "dev/interfaces/rust.md:65 — split into prose: ProjectionSpec/ProjectionRole/ProjectionDelta are HITL-SIGNED (1 allowlist hit each, and the signed delta names exactly those three); ProjectionFts/ProjectionVector/DenseReadiness remain PROPOSED, NOT SIGNED (zero hits). The Projection-registry section heading at :316 carries the same two-part statement.",
+        "dev/doc-index/dev.md:19 (rust row) — split three ways: the 15b write-field delta is SIGNED; the 15b fix-2 search-validity `*_view` methods stay PROPOSED/NOT SIGNED (none is in the allowlist); the Slice-20 DenseReadiness/ProjectionFts/ProjectionVector group stays PROPOSED/NOT SIGNED with the zero-hit evidence stated inline.",
+        "dev/doc-index/dev.md:20 (python row) and :21 (typescript row) — same split: SIGNED write-field delta vs PROPOSED search-path `view=`/`view` argument vs PROPOSED `vector_dense_readiness`/`vectorDenseReadiness`."
+      ],
+      "ambiguous_left_and_reported": "dev/interfaces/python.md:152 and typescript.md:166 (t_valid / t_invalid, TC-33 / Slice 15c) are LEFT EXACTLY AS WRITTEN. Independently confirmed the prompt's reading: the allowlist _comment's ONLY mention of those literals is inside the Slice-15b (node-validity) paragraph, citing `PreparedWrite::Edge`'s pre-existing Slice-30 fields as PRECEDENT — there is no TC-33 sign-off recorded anywhere in the file. A blockquote was added ABOVE each marker stating that the status is UNRESOLVED, why a mechanical grep misreads it, and that it is flagged for a Steward/HITL ruling. NEEDS A RULING."
+    },
+
+    "P6_invalidargument_vs_writevalidation": {
+      "method": "Read the actual code path: EngineError::WriteValidation is a UNIT variant (fathomdb-engine/src/lib.rs:3570 in the enum) and the valid_from>=valid_until raise site is `return Err(EngineError::WriteValidation);` at :16418, immediately under a comment that states the cost ('WriteValidation is a UNIT variant ... the offending bounds are no longer recoverable'). Then audited every `InvalidArgument` mention in the engine to separate claims about THIS refusal from claims about other paths.",
+      "fixed": [
+        "fathomdb-engine/src/lib.rs:3087-3088 — PreparedWrite::Node.valid_until. Re-exported at fathomdb/src/lib.rs:51, so this one reaches docs.rs. Now names WriteValidation and adds the breaking-change note that the bounds are no longer carried.",
+        "fathomdb-engine/src/lib.rs:2178 — reject_unrenderable_edge_epoch. Subtle: its OWN refusal really is a value-carrying InvalidArgument (raised ~:2190), so only the 'Mirrors ... the Node branch's valid_from >= valid_until refusal: a typed InvalidArgument naming the offending value' clause was false. Rewritten to keep its own correct claim and state that the two refusals are now deliberately in DIFFERENT families.",
+        "fathomdb-engine/src/lib.rs:2245 — normalize_extractor_timestamp. In no prior list and doubly wrong: it claimed an 'InvalidArgument-carrying-the-offending-value pattern' of a refusal that now carries no value at all. Rewritten to assert its own correct behaviour and to say that BOTH the family and the carry-the-value property differ from the Node branch."
+      ],
+      "left_correct": "~20 other InvalidArgument mentions (traversal depth>3, unrecognised direction/enum spellings, projection-name round-trip rejection, readiness-with-vector=false, ReadView existence flags on the search path) describe different refusals and were NOT touched. dev/interfaces/{rust,python,typescript}.md already said WriteValidationError correctly at rust.md:250 / python.md:98 / typescript.md:108 — confirmed, unchanged."
+    },
+
+    "P7_interfaces_currency_TC39": {
+      "frontmatter": "All five dev/interfaces/*.md advanced from `target_release: 0.6.0` to `0.8.20` with `date: 2026-07-29`. `status: locked` preserved.",
+      "coverage_gaps_closed": {
+        "transition_and_purge": "Absent from ALL FIVE files at baseline despite being shipped, allowlisted governed verbs since 0.8.19 (fathomdb-engine/src/lib.rs:8190 / :8425; _fathomdb.pyi:286 / :292; TS index.ts). Now documented in rust.md, python.md and typescript.md with full signatures, the legal-transition table, the reason-clear/reason-set rule, the deleted-first + idempotent purge rules, the l:-space-only addressing rule, and the typed errors each raises.",
+        "erase_source": "Present only incidentally in rust.md at baseline. Now a first-class entry in all three binding files, with the purge-vs-erase_source distinction, idempotence, the reserved-namespace refusal, and the EraseReport / ExciseReport shape.",
+        "crossed_boundary_since": "Present only at rust.md:243 at baseline. Now listed as a read verb in rust.md with its signature, and named in the governed-set paragraph of python.md and typescript.md.",
+        "source_id": "Appeared only inside unrelated edge-temporal code examples in python.md/typescript.md and NOT AT ALL in rust.md's 'Caller-supplied write shapes' (:217-234). All three files now have a dedicated section: the SourceId newtype and why it is a TYPE change, SourceId::new as the only constructor, the reserved-prefix refusal, the per-binding WriteValidation raise, a worked example, and the non-PII policy.",
+        "IdSpace_and_SearchHit": "Absent from every interface doc at baseline. All three binding files now carry a `SearchHit.id is IdSpace` section: the two fields, the prefix round-trip to the old stable_id, PERMANENT-not-interim, write_cursor is engine-internal and not surfaced, and lifecycle-addressability is logical-space only."
+      },
+      "other_currency": {
+        "cli.md": "target_release 0.8.20; added `warm-cache` and `orphan-provenance` to the doctor table (both shipped, both absent); added `--excise-collection`/`--excise-record-key` and `<db_path>` to the recover synopsis; added an `orphan-provenance` semantics paragraph; added a section recording that the CLI is no longer the only erasure route and exactly which two capabilities remain CLI-only.",
+        "wire.md": "target_release 0.8.20; added SCHEMA_VERSION 24 (0.8.9 shipped 15) to the sentinel section; added the migration-step-23 edge-loss disclosure to the compatibility contract.",
+        "rust.md_extra": "Added the read-verb / graph-verb / projection-verb inventories, corrected `PurgeLogicalIdReport`/`RestoreLogicalIdReport` (still not shipped, NOT the same concept as Engine::purge — the prompt's warning about rust.md:619,623 applied), and recorded the facade re-export gap below."
+      },
+      "not_conflated": "rust.md's PurgeLogicalIdReport / 'Logical-id purge' paragraph is now explicit that it is a DIFFERENT, never-shipped CLI concept and not the governed Engine::purge, and that no restore counterpart exists on any surface.",
+      "AGENTS_md_25_obligation": "Discharged for this slice: dev/interfaces/* and dev/doc-index/dev.md updated in the same commits as the doc-comment changes."
+    },
+
+    "P8_crate_level_rustdoc": {
+      "engine_landing_page": "fathomdb-engine/src/lib.rs:1 was `pub mod lifecycle;` — no crate-level `//!` at all, so the docs.rs landing page was blank. Now has a consumer-facing header: what the runtime is, a 'depend on the fathomdb facade instead' redirect, the four capability bullets (hybrid retrieval / canonical rows + projections / record lifecycle / deletion on request), the mandatory-provenance contract, and a pre-1.0-beta stability note.",
+      "facade_landing_page": "fathomdb/src/lib.rs had 11 `//!` lines. Replaced with a real landing page (what FathomDB is, a do-you-want-this-crate section with an explicit 'No, if you want ANN at very large scale' because vector retrieval is a full scan, a compiling `no_run` example, the mandatory source_id contract, the three deletion verbs, the feature-flag table, and a stability section).",
+      "internal_block_left_internal": "The `//` lines 13-46 (slice numbers, allowlist references, sign-off markers) were NOT converted to `//!`. They remain ordinary comments and never reach docs.rs — publishing internal governance commentary would have been worse than the 11-line page. Only the one stale marker inside that block (line 41) was corrected in place.",
+      "other_crates": [
+        "fathomdb-schema — new `//!`: what it owns, PRAGMA user_version, the one-transaction crash-safety property, and the step-23 non-accretive edge-loss warning",
+        "fathomdb-query — new `//!`: leaf crate, use the facade instead, the filter grammar is deliberately CLOSED and values are always parameter-bound",
+        "fathomdb-embedder-api — new `//!`: the trait seam, why it pulls in no model runtime, the EmbedderIdentity contract, and Axis-E independent versioning",
+        "fathomdb-embedder — new `//!`: internal crate, use the facade to consume / implement fathomdb-embedder-api to extend, the bge-small-en-v1.5 model, the feature gate + per-engine opt-in, and the one network access",
+        "fathomdb-cli — rewrote an existing but Phase-10a-era `//!`: both root verb tables, the operator-only posture, the --json/exit-code contract, that the CLI is not required for deletion on request, and that it enables the `operator` feature"
+      ],
+      "not_given_crate_docs": "fathomdb-py and fathomdb-napi carry `publish = false` in their manifests, so they have no docs.rs landing page. fathomdb-napi already had a `//!` anyway. Left alone.",
+      "overclaim_discipline": "Every capability claim was verified against code before writing (Engine::open returns OpenedEngine, write takes &self, SourceId::new -> Result<_, EngineError>, InitialState: Default, IdSpaceKind: Debug, EngineError/EngineOpenError both impl std::error::Error, SearchFilter and PreparedWrite are #[non_exhaustive]). The facade example is a real doctest and compiles."
+    },
+
+    "P9_gdpr_erasure_representation_sweep": {
+      "plan_read": "dev/plans/plan-0.8.20.md §8 (:432-452) read READ-ONLY; not modified.",
+      "owed_writes_discharged": [
+        "Erasure is now REPRESENTED (the plan's bar: 'MUST NOT be represented as GDPR-erasure-capable until 0.8.20 ships' — it ships). README, docs/concepts, docs/reference/cli, docs/reference/{python,typescript}-api, docs/getting-started/*, docs/guides/*, docs/positions/recovery-surface and dev/interfaces/* now describe purge / erase_source / --excise-source and which addresses what.",
+        "The SDK-vs-CLI line is stated: an embedded consumer with no fathomdb binary on PATH can now discharge a deletion obligation; only the reserved `_`-prefixed namespace and op-store record erasure remain CLI-only.",
+        "The non-PII source_id rule is carried to the WRITE surface (python-api, typescript-api, quickstart, concepts, all three interface docs) and justified on the SURVIVING grounds — an unswept, now retention-EXEMPT audit row is the real exposure — never on 'permanent retention'. docs/operations/erasure.md already carried the corrected rationale and its SUPERSEDED-IN-PART note; I verified the premise is now TRUE in code (ERASURE_AUDIT_COLLECTIONS at fathomdb-engine/src/lib.rs:197 exempts excise_source_audit / excise_record_audit from the sweep) and left that section's argument intact.",
+        "Modesty about reach: docs/operations/erasure.md's 'does not guarantee' list was restructured so the outside-the-boundary set is ENUMERATED rather than implied — safe_export archives, operator backups and snapshots, curated gold / evaluation files, and anything else copied out — each named, with 'has to be re-generated or destroyed separately'. Free-page / COW-filesystem / WAL residue and the reserved-namespace boundary were already there and were kept."
+      ]
+    },
+
+    "P10_compatibility_matrix": {
+      "rewritten": "docs/compatibility/index.md rewritten end-to-end to 0.8.20.",
+      "purge_logical_id_line_fixed": ":92-97 said `purge_logical_id` was 'deferred to 0.7.x'. Replaced: logical-id lifecycle shipped as SDK verbs (transition/purge), and there is NO restore verb on any surface, by design.",
+      "unlisted_finding_platform_matrix": "The old five-platform 'Supported platforms' table was an OVERPROMISE. .github/workflows/release.yml gates BOTH build-python and build-napi to `x86_64-unknown-linux-gnu` only (R-REL-4e); the other four targets are commented out, and check-license-consistency.sh confirms only one npm platform package (@fathomdb/fathomdb-linux-x64-gnu). The table now has a 'Prebuilt in 0.8.20?' column with one yes and four 'build from source', plus the distinction that CI does run the Rust workspace on Windows/macOS runners so source builds are exercised. NOT fixable here — .github/ is Slice 40's territory; this is a documentation-tells-the-truth change only.",
+      "other_content": "Added SCHEMA 24 (from 15) + the migration-step-23 edge-loss caveat; a 7-row 'Breaking changes since 0.8.9' table with a what-to-do column; a pre-1.0-is-beta banner that explicitly de-scopes 0.8.18's 'GA'; open perf gates with speculative closure targets (0.6.1 / Pack 7) removed; a statement that vector retrieval is a full scan with NO ANN index so latency grows with corpus size; and an API-surface-gaps list (no custom embedders, status filter unpopulated, SearchFilter.attributes engine-internal, no restore verb)."
+    }
+  },
+
+  "report_only_not_fixed": [
+    {
+      "id": "RO-1",
+      "item": "src/conformance/governed-surface-allowlist.json `_comment`, Slice-15b paragraph",
+      "detail": "Carries the same false claim P6 fixed in code comments: 'A `valid_from >= valid_until` pair ... is refused with the EXISTING typed `InvalidArgument`/`InvalidArgumentError`'. The code returns the message-less `WriteValidation` (lib.rs:16418). NOT EDITED — the file is byte-pinned under AC-079 (check-governed-surface-pin.sh, pinned at c239908b) and any diff re-opens a signed HITL gate.",
+      "owner": "Slice 40's AC-079 mint is the natural place to correct it."
+    },
+    {
+      "id": "RO-2",
+      "item": "The design doc's claim about the allowlist `_comment` is itself WRONG",
+      "detail": "dev/design/0.8.20-slice-39-publish-facing-documentation.md §4 says the `_comment` 'reads `AWAITING HITL SIGN-OFF, NOT SIGNED`' and that 'that literal is load-bearing for the T1e byte pin'. `grep -c 'AWAITING HITL SIGN-OFF' src/conformance/governed-surface-allowlist.json` returns **0**. The phrase does not appear anywhere in the file — it was superseded by commit c239908b ('TC-52 — record the signature in the allowlist; re-issue the pin'), which is exactly the commit the pin now names. The byte pin is still real; the cited literal is not.",
+      "owner": "Steward — the design doc's §4 bullet should be corrected so nobody preserves a string that does not exist."
+    },
+    {
+      "id": "RO-3",
+      "item": "dev/plans/plan-0.8.20.md:755, :783, :844, :850 — four uncorrected stale PROPOSED/NOT SIGNED markers",
+      "detail": "Confirmed present at HEAD. Also observed: :920 has already been struck through with '~~is PROPOSED / NOT SIGNED~~', so the file is partly reconciled and partly not. Out of bounds.",
+      "owner": "Steward"
+    },
+    {
+      "id": "RO-4",
+      "item": "dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md:763 — stale marker",
+      "detail": "Confirmed present. Out of bounds.",
+      "owner": "Steward"
+    },
+    {
+      "id": "RO-5",
+      "item": "dev/interfaces/python.md and typescript.md — the two AMBIGUOUS t_valid/t_invalid markers",
+      "detail": "Left exactly as written, with an inline blockquote explaining that the allowlist's only mention of those literals is the Slice-30 PreparedWrite::Edge PRECEDENT cited inside the Slice-15b paragraph, and that no TC-33 sign-off is recorded. NEEDS A STEWARD/HITL RULING before anyone flips them.",
+      "owner": "Steward / HITL"
+    },
+    {
+      "id": "RO-6",
+      "item": "src/python/fathomdb/__init__.py:73 — `__version__ = \"0.6.0\"`",
+      "detail": "Confirmed at line 73 exactly. NOT fixed (version fields are Slice 40's). Note the consequence: a consumer reading `fathomdb.__version__` off a published 0.8.20 wheel would be told 0.6.0.",
+      "owner": "Slice 40"
+    },
+    {
+      "id": "RO-7",
+      "item": "⚠ THE POST-PUBLISH SMOKES WILL FAIL AGAINST 0.8.20 — new finding, not in the prompt",
+      "detail": "scripts/release/smoke/smoke-pypi-wheel.sh:54 writes `e.write([{\"kind\": \"doc\", \"body\": \"{}\"}])` and scripts/release/smoke/smoke-npm-package.sh:36 writes `await e.write([{ kind: \"doc\", body: \"{}\" }])`. Neither carries `source_id`, which has been MANDATORY since 0.8.20 Slice 5c — both bindings now raise/throw WriteValidationError on exactly that shape. AC-056's five-operation smoke would therefore fail at step 2 on the published artifact. scripts/** is outside my file set so I did not touch it, and I removed the now-false 'the two scripts diverge in ergonomics only' clause from the quickstart rather than assert a divergence I could not fix.",
+      "owner": "Slice 40 (R-20-PUB) — MUST be fixed before the publish rehearsal, or the rehearsal validates nothing."
+    },
+    {
+      "id": "RO-8",
+      "item": "Rust facade does not re-export SearchHit / IdSpace / IdSpaceKind — new finding",
+      "detail": "`grep -n 'SearchHit\\|IdSpace' src/rust/crates/fathomdb/src/lib.rs src/rust/crates/fathomdb/tests/governed_surface.rs` returns NOTHING. `SearchResult` IS re-exported, so a facade consumer can reach `result.results[0].id.value` by field access but cannot NAME the types — cannot write a function signature over a hit, match on IdSpaceKind, or call IdSpace::to_prefixed. Both bindings surface them. Recorded in dev/interfaces/rust.md as a known gap rather than fixed: adding a facade re-export is a governed-surface delta needing its own slice and a HITL signature.",
+      "owner": "Steward — schedule, or accept and keep documented."
+    },
+    {
+      "id": "RO-9",
+      "item": "dev/interfaces/wire.md has no row in dev/DOC-INDEX.md or dev/doc-index/dev.md",
+      "detail": "`grep -rn 'wire.md' dev/DOC-INDEX.md dev/doc-index/*.md` returns nothing, which violates the doc-index convention stated at the top of dev/doc-index/dev.md ('every path listed below also has its own row in dev/DOC-INDEX.md'). I edited wire.md but did not add index rows: dev/DOC-INDEX.md is not in my file set and the convention requires BOTH files change together.",
+      "owner": "Steward"
+    }
+  ],
+
+  "prompt_citations_found_wrong": [
+    "P4 'Both ship exactly 27 LEAF classes' — the count 27 is right but 'leaf' is not: VectorError and EmbedderError each have a subclass (KindNotVectorIndexedError, EmbedderNotConfiguredError), so 25 are leaves and 27 are classes below the root. docs/reference/errors.md now says so explicitly. Also TS ships a 28th exported subclass-of-Error, FathomDbPanicError, which is deliberately NOT a FathomDbError and has no Python peer (Python uses pyo3_runtime.PanicException) — it is correctly not one of the 27.",
+    "P1's site list was materially short. Additional wrong-version/wrong-count sites found by independent sweep and fixed: docs/getting-started/quickstart.md:180 ('18-leaf'), docs/reference/index.md:14 ('18-leaf'), docs/reference/typescript-api.md:33 ('...18 concrete leaf classes'), docs/embedder.md:163-171 ('Until the vector-equivalence self-check ships (a later release)' — it shipped in 0.8.18 and was fingerprint-cached in 0.8.20), docs/install/rust.md:8 ('Phase 10a'), docs/guides/hybrid-search-filtering.md:47, and all three docs/release-notes/*.md pages.",
+    "P2's site list was short by two: docs/getting-started/quickstart.md (steps 3 and 'Full Python program') and docs/install/rust.md's Verify snippet. The Rust snippet had two FURTHER defects nobody had flagged — it bound `Engine::open`'s result as if it were an `Engine` (it returns `OpenedEngine { engine, report }`, lib.rs:1376/:4260) and used `let mut` for a method that takes `&self` (`pub fn write(&self, ...)`, :4838).",
+    "P3's collateral list was short: docs/reference/typescript-api.md:33's '18 concrete leaf classes' and the missing source_id/ce_score rows in structured-search-hits.md's table were both real, and the SearchHit STRUCT-level doc-comment at fathomdb-engine/src/lib.rs:1439-1444 carried the same 'interim identity carrier ... swaps to logical_id at the G0 keystone' claim as the field doc but was in no list.",
+    "P6 characterised fathomdb-engine/src/lib.rs:2178 (reject_unrenderable_edge_epoch) as a stale site. Half-true and worth stating precisely: that function's OWN refusal really is a value-carrying InvalidArgument, so only its comparison clause to the Node branch was wrong. Fixing the whole sentence to 'WriteValidation' would have introduced a NEW falsehood.",
+    "The design of record (dev/design/0.8.20-slice-39-publish-facing-documentation.md §4) claims the allowlist _comment contains the literal 'AWAITING HITL SIGN-OFF, NOT SIGNED' and that it is load-bearing for the T1e byte pin. Zero occurrences — see RO-2.",
+    "Line numbers cited for the CORRECT-leave engine markers (:2619, :5984, :6003, :6162) all resolved correctly at BASELINE; they shift to :2681, :6053, :6072, :6231 at HEAD purely because of the +62-line engine crate doc. Noting so a reviewer diffing by line number is not misled."
+  ],
+
+  "findings_addressed": [
+    "R-20-DOC acceptance item 6 — no docs/ page instructs installing 0.6.0; every canonical write example includes the mandatory source_id",
+    "R-20-DOC acceptance item 7 — TC-36 closed: no published API doc declares SearchHit.id as int/number",
+    "TC-39 — dev/interfaces/*.md advanced from target_release 0.6.0 and given real coverage of the shipped surface",
+    "plan-0.8.20.md §8 — the GDPR-erasure representation sweep across README and docs/"
+  ],
+
+  "blockers_encountered": [
+    {
+      "id": "B-1",
+      "description": "markdownlint's MD051 anchor slug and mkdocs' heading-id slug DISAGREE for headings containing '->'. `### \\`engine.open_report() -> OpenReport\\`` gets id `engineopen_report-openreport` from mkdocs but `engineopen_report---openreport` from markdownlint. Any intra-page link satisfies exactly one of the two gates.",
+      "resolution": "Dropped the fragment and referred to the section in prose. Both gates rc=0. Worth knowing before anyone adds an anchor link to a signature heading."
+    },
+    {
+      "id": "B-2",
+      "description": "MD007 rejects a 4-space-indented nested bullet under a top-level `- ` item (expects 2), which collides with the surrounding file's continuation-line indentation.",
+      "resolution": "Converted the one nested list in dev/interfaces/rust.md to prose. Same content, no lint conflict."
+    }
+  ],
+
+  "additional_changes_made_in_scope": [
+    "docs/positions/sdk-parity.md — was a 4-line stub and is now the link target for every 'prefer Python' claim I rewrote. Given a factual body: parity is ENFORCED by a single allowlist both conformance suites load; what parity means (same commands, same 27-class taxonomy, same result shapes) and what it does NOT mean (not equal maturity; drain is seconds in Python and ms in TS; Rust is a different consumer contract governed by its own allowlist).",
+    "docs/positions/recovery-surface.md — was a 2-line stub. Given a body stating the five-name denylist and the operator-feature gate, and an 'Erasure is not recovery' section: deletion on request is an application obligation, ships in the SDK, and carries no denylist name.",
+    "docs/operations/index.md and docs/guides/index.md — 'post-GA stub' framing removed; both now index real content.",
+    "docs/reference/cli.md — added an '--excise-source vs the SDK erasure verbs' decision table.",
+    "docs/reference/{python,typescript}-api.md — added `open_report()`/`openReport()` and full `transition`/`purge` entries (previously absent from the reference entirely).",
+    "docs/concepts/index.md — added 'Provenance is mandatory' and an 'Identity' section distinguishing logical_id / SearchHit.id / write_cursor, which is the distinction TC-36 exists to protect."
+  ],
+
+  "not_established": [
+    "Whether 0.8.9 is actually live on crates.io / PyPI / npm right now. The design doc calls 0.8.20 'the first real publish since 0.8.9', which implies yes, but I could not verify from the repo and did not check the network. I therefore wrote NOTHING about any version's registry presence except that 0.8.20 is not published — which is certain, since Slice 40 has not run.",
+    "Exit-code classes for `fathomdb doctor warm-cache` and `recompute-mean` in docs/reference/cli.md. I added the verbs (they were missing) but pointed the exit column at the general exit-code-class section rather than assert specific codes I had not traced through the dispatcher. dev/interfaces/cli.md already asserted `doctor-check-* = 0/70/71` for recompute-mean; I left that as the owning document's claim rather than restate it.",
+    "Whether the mkdocs nav should gain a docs/release-notes/0.8.20.md page. I deliberately did NOT create one: CHANGELOG.md is leg 2's file and was being written concurrently, so a second 0.8.20 narrative authored here could have contradicted it. All 'what changed' links point at the repo CHANGELOG instead. If the Steward wants a site release-notes page, it should be derived from leg 2's CHANGELOG after both legs land."
+  ],
+
+  "agent_verify_result": "pass — all eight required gates rc=0 at HEAD dd6daa04, each captured as a real exit code: mkdocs build --strict 0 · scripts/agent-lint-md.sh 0 · cargo check --workspace --all-targets 0 · cargo clippy --workspace --all-targets 0 (no --features operator, no --all-features) · cargo doc --workspace --no-deps 0 with a byte-identical 40-warning set vs baseline (zero new rustdoc warnings) · cargo test --doc -p fathomdb 0 (4 passed) · scripts/check-governed-surface-pin.sh 0 · scripts/check-license-consistency.sh 0. Zero eu7 runs. SCHEMA stays 24. scripts/agent-test.sh deliberately not used as an aggregate (TC-16 vacuous exit).",
+
+  "next_step_for_orchestrator": "Cherry-pick c8d931d2, 393960f3, 82f4f9fc, dd6daa04 in that order (they are independent by file set: docs/+README, dev/interfaces+dev/doc-index, src/rust doc-comments, docs/release-notes). Then: (1) route RO-7 to Slice 40 as a BLOCKER — both post-publish smoke scripts write an un-provenanced item and will fail WriteValidationError against 0.8.20, so the publish rehearsal would validate nothing; (2) route RO-1 (the allowlist _comment's false InvalidArgument claim) and RO-6 (__init__.py:73 = 0.6.0) to Slice 40; (3) put RO-5 (the two AMBIGUOUS t_valid/t_invalid markers) to the HITL for a ruling — they are annotated in place, not flipped; (4) hand RO-2 (the design doc cites an allowlist literal that does not exist), RO-3/RO-4 (stale plan markers), RO-8 (facade does not re-export SearchHit/IdSpace) and RO-9 (wire.md missing from the doc index) to the Steward. Note for leg 2: docs/ now links to https://github.com/coreyt/fathomdb/blob/main/CHANGELOG.md from index, install/python, install/typescript, getting-started, compatibility and README as the authoritative 'what changed since 0.8.9' source, so the ## 0.8.20 section is now load-bearing for the docs site's promises."
+}

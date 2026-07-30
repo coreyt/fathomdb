@@ -1,0 +1,190 @@
+{
+  "phase": "0.8.20-slice-39-leg1a (R-20-DOC, license leg)",
+  "baseline_sha": "3e9d6d1233784280eefe89c401a92543c3f5e247",
+  "branch": "0.8.20-slice-39-doc",
+  "head_sha": "aa01f0d9c3d5cea2a0f4b366bd42d8e3317af66d",
+  "commits": [
+    "fdc1e8108d3e2b8b0dffbd328c9f829ec84e47cd: fix(0.8.20 Slice 39): license MIT across publishable manifests + ships in every artifact (seq-193)",
+    "aa01f0d9c3d5cea2a0f4b366bd42d8e3317af66d: feat(0.8.20 Slice 39): license-consistency guard + packaged-artifact assertion"
+  ],
+  "findings_addressed": [
+    "Design §5 acceptance 1 — all publishable manifests now read MIT and agree with the repo-root LICENSE.",
+    "Design §5 acceptance 2 — a license file appears in the packaging tool's own file list for ALL TEN published units (7 crates + wheel + 2 npm).",
+    "Design §5 acceptance 3 — scripts/check-license-consistency.sh exists, passes, and fails under a control; scripts/tests/test_check_license_consistency.sh is RED-first with 19 arms.",
+    "npm main package no longer ships dist/tests/** (measured 97 -> 2 files over a stale test-shaped dist; release-shaped build unchanged at 13 -> 14 with LICENSE)."
+  ],
+  "license_type_full_set_and_derivation": {
+    "derivation_method": [
+      "1. Enumerated EVERY tracked manifest: `git ls-files | grep -E '(Cargo\\.toml|package\\.json|pyproject\\.toml|setup\\.py|setup\\.cfg|package-lock\\.json|Cargo\\.lock)$'` -> 27 files.",
+      "2. Cross-checked with a whole-repo `git grep -n -I 'Apache'` (excluding dev/plans/runs, the three lockfiles and Cargo.lock) so a declaration in a non-manifest file could not hide.",
+      "3. Classified each hit as OURS (a project-license declaration) vs THEIRS (a dependency's factual record). A dependency's recorded licence is never ours to change.",
+      "4. Confirmed the publishable crate set against BOTH the manifests (`publish = false` on fathomdb-napi and fathomdb-py) and .github/workflows/release.yml's actual publish steps (T1..T7 = embedder-api, schema, query, embedder, engine, fathomdb, cli), read-only."
+    ],
+    "changed": [
+      "Cargo.toml:30 (`[workspace.package] license`) Apache-2.0 -> MIT — inherited by all 9 members, 7 of them publishable",
+      "src/python/pyproject.toml:11 `license = { text = \"Apache-2.0\" }` -> PEP-639 `license = \"MIT\"` (+ `license-files = [\"LICENSE\"]`)",
+      "src/ts/package.json:5 Apache-2.0 -> MIT",
+      "src/ts/npm/linux-x64-gnu/package.json:5 Apache-2.0 -> MIT",
+      "src/ts/package-lock.json:10 Apache-2.0 -> MIT  (the `\"\"` ROOT entry, EXACTLY ONE LINE)"
+    ],
+    "examined_and_correctly_left_alone": [
+      "package.json (repo root) — `\"private\": true`, no license field. Name is fathomdb-dev-tooling; not published.",
+      "dev/tools/mermaid/package.json — `\"private\": true`, no license field.",
+      "src/ts/package-lock.json:49 and every other dependency entry — node_modules/typescript really IS Apache-2.0. A factual record.",
+      "package-lock.json (repo root) — dev-tooling lock; root entry carries no license field at all.",
+      "deny.toml:9 `allow = [\"Apache-2.0\", \"MIT\", \"Unicode-3.0\"]` — a DEPENDENCY allow-list. Apache-2.0 must stay: our deps are Apache. (Also, confirmed unwired: `grep -rn 'cargo.deny|deny\\.toml' .github/ scripts/` = 0 hits. Not a gate; not cited as one.)",
+      "dev/deps/*.md, dev/corpus-*/**, tests/corpus/corpus-card.md — third-party licence records."
+    ],
+    "non_shipped_project_license_declarations_LEFT_and_REPORTED": [
+      "scripts/sbom-survey/pyproject.toml:29 `license = { text = \"Apache-2.0\" }` — brief-named, not published (seq-172 keeps it out of CI). LEFT as instructed. 0.8.22's business.",
+      "tests/corpus/scripts/generate_synthetic_notes.py:44 `LICENSE_SPDX = \"Apache-2.0\"  # project license; same as the FathomDB repo` — DERIVED BY ME, not in the brief. Now factually wrong post-seq-193.",
+      "tests/corpus/scripts/generate_chain_corpus.py:65 `LICENSE_SPDX = \"Apache-2.0\"  # project license` — same, derived by me.",
+      "tests/corpus/scripts/manifest.json /sources/synthetic_notes `\"license\": \"Apache-2.0\"` — the committed output of the generator above."
+    ],
+    "why_those_three_were_left": "None is on the shipped path (nothing under tests/corpus/ or scripts/sbom-survey/ enters any of the ten published units — verified against every unit's file list). Editing the two generator constants WITHOUT regenerating would put the scripts out of step with the committed, hash-bearing tests/corpus/scripts/manifest.json; regenerating a corpus manifest is well outside a license leg and would perturb corpus provenance records other slices depend on. Disposition matches the brief's own explicit precedent for the one non-shipped hit it named. RECOMMEND: fold all four into the 0.8.22 sbom-survey cleanup as one regeneration.",
+    "shipped_path_predicate": "SATISFIED. No tracked file that enters any of the ten published units declares a license other than MIT — checked against each unit's actual packaging file list, not against a guess about which files ship."
+  },
+  "package_lock_single_line_proof": {
+    "command": "git diff --stat -- src/ts/package-lock.json (pre-commit) / git show fdc1e810 --stat -- src/ts/package-lock.json",
+    "stat": " src/ts/package-lock.json | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)",
+    "hunk": "diff --git a/src/ts/package-lock.json b/src/ts/package-lock.json\n@@ -7,7 +7,7 @@\n     \"\": {\n       \"name\": \"fathomdb\",\n       \"version\": \"0.8.9\",\n-      \"license\": \"Apache-2.0\",\n+      \"license\": \"MIT\",\n       \"devDependencies\": {\n         \"@napi-rs/cli\": \"^2.18.4\",\n         \"@types/node\": \"^26.1.0\",",
+    "dependency_entry_untouched": "`grep -n '\"license\": \"Apache-2.0\"' src/ts/package-lock.json` still returns exactly line 49 (node_modules/typescript). It really is Apache-2.0 and it stays."
+  },
+  "ten_units_packaging_evidence": {
+    "method": "The packaging command's OWN file list, per unit. Never the config that is supposed to cause it.",
+    "crate_fathomdb-embedder-api": "cargo package --list -p fathomdb-embedder-api  rc=0  ->  line `LICENSE`; real .crate sha256 b01cbdea4599629c... == root LICENSE",
+    "crate_fathomdb-schema": "cargo package --list -p fathomdb-schema  rc=0  ->  line `LICENSE`; real .crate sha256 b01cbdea4599629c... == root LICENSE",
+    "crate_fathomdb-query": "cargo package --list -p fathomdb-query  rc=0  ->  line `LICENSE`; real .crate sha256 b01cbdea4599629c... == root LICENSE (tar -xzO of fathomdb-query-0.8.9/LICENSE = 1078 bytes, first line `MIT License`; packaged Cargo.toml carries BOTH `license = \"MIT\"` and `license-file = \"LICENSE\"`, no cargo warning)",
+    "crate_fathomdb-embedder": "cargo package --list -p fathomdb-embedder  rc=0  ->  line `LICENSE`; real .crate sha256 b01cbdea4599629c... == root LICENSE",
+    "crate_fathomdb-engine": "cargo package --list -p fathomdb-engine  rc=0  ->  line `LICENSE`.  BYTE-PROOF NOT OBTAINABLE AT 0.8.9 — see blocker BLK-1. --list is the acceptance method the brief names and it is rc=0; the mechanism is workspace-inherited and identical to the 6 crates that ARE byte-proven.",
+    "crate_fathomdb": "cargo package --list -p fathomdb  rc=0  ->  line `LICENSE`; real .crate sha256 b01cbdea4599629c... == root LICENSE",
+    "crate_fathomdb-cli": "cargo package --list -p fathomdb-cli  rc=0  ->  line `LICENSE`; real .crate sha256 b01cbdea4599629c... == root LICENSE",
+    "wheel": "maturin build (NOT develop) rc=0 -> fathomdb-0.8.9-cp310-abi3-manylinux_2_39_x86_64.whl. zipfile listing entry `fathomdb-0.8.9.dist-info/licenses/LICENSE`, sha256 b01cbdea4599629c... == root LICENSE. METADATA: `Metadata-Version: 2.4`, `License-Expression: MIT`, `License-File: LICENSE`. Wheel was NEVER installed — read as a zip archive, per the prohibition.",
+    "npm_fathomdb": "npm pack --dry-run in src/ts  rc=0  ->  `npm notice 1.1kB LICENSE`, 14 files total. Real `npm pack` tarball: package/LICENSE sha256 b01cbdea4599629c... == root LICENSE.",
+    "npm_@fathomdb/fathomdb-linux-x64-gnu": "npm pack --dry-run in src/ts/npm/linux-x64-gnu  rc=0  ->  `npm notice 1.1kB LICENSE`, 2 files total (the .node is downloaded into that dir by CI at publish time).",
+    "consolidated_run": "PATH=<venv>/bin:$PATH bash scripts/check-license-consistency.sh --with-wheel  rc=0 — all ten units in one run, every line `ok ... ships LICENSE`."
+  },
+  "mechanism_chosen_and_the_measurement_that_justified_it": {
+    "cargo": {
+      "chosen": "(c) tool-native — `[workspace.package] license-file = \"LICENSE\"` + `license-file.workspace = true` on each of the 7 publishable crates.",
+      "measurement": "An INHERITED license-file resolves relative to the WORKSPACE ROOT (not the crate dir). `cargo package --list -p fathomdb-query` listed `LICENSE`; `cargo package --no-verify` produced a tarball whose fathomdb-query-0.8.9/LICENSE is 1078 bytes, sha256-identical to the repo root, and whose packaged Cargo.toml was rewritten to `license-file = \"LICENSE\"`. Repeated for all 7 (6 byte-proven, engine --list-proven; see BLK-1). cargo 1.95.0. No warning emitted for carrying both `license` and `license-file`.",
+      "alternatives_measured_and_rejected": [
+        "(b) symlink per crate: MEASURED WORKING — `src/rust/crates/fathomdb-schema/LICENSE -> ../../../../LICENSE` was dereferenced into the .crate with real 1078-byte content. Rejected anyway: a git checkout without symlink support materialises it as a text stub containing the path, which would publish a LICENSE file whose content is the string `../../../../LICENSE`. The chosen mechanism has no such failure mode.",
+        "(a) a real copy in each of the 7 crate dirs: works, but 7 duplicates that can drift, for zero benefit over (c).",
+        "A literal (non-inherited) `license-file = \"../../../../LICENSE\"` on one crate ALSO worked (listed and packaged as `LICENSE`). CORRECTION TO THE DESIGN/BRIEF: the constraint that `cargo package` refuses paths outside the package root is true of `include`, but NOT of `license-file` — cargo copies a license-file in from outside the root. Rejected only because the inherited form is one line in the workspace instead of a different `../../../../` string per crate."
+      ]
+    },
+    "npm": {
+      "chosen": "A REAL COPY of LICENSE in each npm package dir (src/ts, src/ts/npm/linux-x64-gnu).",
+      "measurement": "npm's automatic license inclusion DOES beat the `files: [\"dist\"]` allowlist — but only for a regular file. A symlink `src/ts/LICENSE -> ../../LICENSE` produced a tarball with NO license entry at all (`tar -tzf` -> `package/LICENSE: Not found in archive`; total files unchanged at 13). Replacing it with a real copy: 14 files, `npm notice 1.1kB LICENSE`, tarball content sha256-identical to root. This is why the guard REQUIRES a regular file and rejects a symlink with a message naming the measurement.",
+      "drift_mitigation": "The guard asserts byte-equality of every copy against the root LICENSE (test arm 10 proves that assertion fires)."
+    },
+    "python": {
+      "chosen": "PEP-639 `license = \"MIT\"` + `license-files = [\"LICENSE\"]`, with a real copy at src/python/LICENSE.",
+      "measurement": "Verified BY BUILDING, per the brief. `maturin build` with maturin 1.13.1 -> Metadata-Version 2.4, License-Expression: MIT, License-File: LICENSE, and .dist-info/licenses/LICENSE byte-identical. PEP 639 forbids `..` in license-files globs, so a copy is unavoidable here (the guard asserts byte-equality and test arm 7 proves the `..` rejection fires)."
+    }
+  },
+  "guard_control_run": {
+    "script": "scripts/check-license-consistency.sh",
+    "tree_state": "clean (git status --porcelain empty) at HEAD aa01f0d9, i.e. AFTER both commits",
+    "break": "python3 -c \"...Cargo.toml.replace('license = \\\"MIT\\\"','license = \\\"Apache-2.0\\\"',1)\"  (the [workspace.package] field)",
+    "command": "bash scripts/check-license-consistency.sh",
+    "rc_when_broken": 1,
+    "output_when_broken": "10 failures — the workspace field itself plus all 9 members whose license inherits from it; `check-license-consistency: 10 failure(s)`",
+    "restore": "git checkout -- Cargo.toml",
+    "rc_when_restored": 0,
+    "tree_after_restore": "`git status --porcelain -- Cargo.toml` empty — byte-identical restore verified",
+    "second_control_run_packaging_half": {
+      "purpose": "Probe whether the packaging half can be defeated by config alone.",
+      "break": "added `exclude = [\"LICENSE\"]` to src/rust/crates/fathomdb-query/Cargo.toml, leaving all declarations valid",
+      "rc": 0,
+      "reading": "NOT a hole: cargo forces the license-file into the tarball regardless of `exclude`, so the artifact really did still ship the license and rc=0 was CORRECT. Reported because it means the cargo declaration half and packaging half cannot be broken independently in the real tree — which is exactly why the fixture suite proves the packaging assertion separately (arms 16-18)."
+    },
+    "fixture_suite": "scripts/tests/test_check_license_consistency.sh — 19 arms, ALL PASS (rc=0). RED-first: arm 1 is a GREEN control fixture (without it the RED arms prove nothing); arms 2-15b each break exactly one thing and grep for that specific diagnostic; arm 12 asserts an Apache-2.0 DEPENDENCY lockfile entry is deliberately LEFT ALONE; arm 16 fires the packaging-specific message off a real `npm pack --dry-run --json` file list; arm 17 asserts the real-repo run emits one `ok crate ... ships LICENSE` per publishable crate (count derived from the workspace manifest, not hardcoded); arm 18 asserts --skip-packaging suppresses exactly those lines so arm 17's evidence is earned.",
+    "defect_the_suite_found_in_my_own_checker": "Arms 3 and 4 initially returned rc=2 instead of rc=1: when the ONLY publishable member failed the license-file check it never reached the `publishable` list, so the 'nothing publishable' environment guard fired and MASKED a real divergence as an environment error. Fixed by counting members DECLARED publishable separately. Without the RED arms this would have shipped."
+  },
+  "guard_registration": {
+    "status": "LIVE — observed executing, not dormant.",
+    "evidence": "AGENT_VERBOSE=1 bash scripts/agent-test.sh  ->  `ok test-check-license-consistency 2684ms` (third suite to run).",
+    "placement": "scripts/agent-test.sh line ~16, immediately after test-verify-release-gates, with the other release-substrate suites.",
+    "BRIEF_CITATION_CORRECTION": "The brief says agent-test.sh aborts at line 123 (run_capped test-actionlint-fixture) and to register before it. IT ABORTS EARLIER. `test-check-governed-surface-pin` (baseline line 51) FAILS: `pin git_blob_sha1 140c0f638d... != 427d2712's blob 93ef3a86... — the provenance claim is false`. Verified PRE-EXISTING: `git stash -u` to the pristine Slice 39 baseline 3e9d6d12 and re-run -> same failure, rc=1. A registration at line 123 would have been unreachable and a vacuous pass. My first attempt WAS at 123 and the run proved it never executed; I moved it and re-ran. The in-file comment records why it must not be moved later.",
+    "NOTE_for_slice_40": "That governed-surface pin failure is a SEPARATE pre-existing item. `scripts/check-governed-surface-pin.sh` itself is rc=0 (it matches the pin recorded at c239908b); it is the TEST SUITE's provenance arm, which re-derives the blob from commit 427d2712, that fails. Slice 40's pin re-mint should close it.",
+    "ci_wiring": "NOT DONE — needs .github/, Slice 40's exclusive territory. HAND-OFF RECEIVER IS NAMED: Slice 40 (R-20-PUB). Suggested job: run `bash scripts/check-license-consistency.sh` always-on (1.1s, no network beyond the cargo index), and `--with-wheel` in the release-preflight job where a Rust build already happens.",
+    "preflight_wiring": "ALSO NOT DONE, deliberately. The sibling check-*.sh gates are wired into `scripts/preflight.sh --landing`; I did not add that because the brief scoped me to shipping the script, and a hard landing gate that shells out to cargo+npm could block a land on an environment fault. Same hand-off to Slice 40 if wanted."
+  },
+  "npm_pack_file_counts_and_dist_tests": {
+    "baseline_as_measured_by_me": {
+      "no dist/ present (fresh worktree)": "1 file (package.json only) — the brief's 83-file figure is only reproducible after a local build",
+      "after the TEST build `tsc -p tsconfig.json` (rootDir '.')": "97 files, of which 84 under dist/tests/ (86%), PLUS the runtime emitted to dist/src/index.js so `main: dist/index.js` was broken",
+      "after the RELEASE build `tsc -p tsconfig.build.json` (rootDir 'src')": "13 files, dist/*.js + dist/*.d.ts, no tests, NO LICENSE"
+    },
+    "BRIEF_CITATION_CORRECTION": "The brief states '83 files, 58 of them dist/tests, ~70%'. I measured 97 / 84 / 86% at this baseline with the test-shaped build, and 13 with the release-shaped build. The DEFECT CLASS is exactly as described; the numbers are not. Also worth recording: .github/workflows/release.yml's publish-npm job runs `npm ci && npx tsc -p tsconfig.build.json` on a FRESH checkout, so the real CI publish path never had dist/tests. The hazard is a LOCAL pack over a stale post-`npm test` tree — real, but not what CI would have shipped.",
+    "fix_applied": "src/ts/package.json `files`: [\"dist\"] -> [\"dist\", \"!dist/tests\", \"!dist/src\"], with a `//files` comment recording the measurement.",
+    "after": {
+      "release-shaped build": "14 files — the same 12 dist/* entries + package.json + LICENSE. Nothing a consumer needs was dropped: dist/index.js (main), dist/index.d.ts (types), all runtime .js and .d.ts, LICENSE. README is Leg 1b's and is not yet present.",
+      "stale test-shaped build": "2 files (LICENSE + package.json) — the mis-layout now fails LOUDLY and obviously instead of publishing 84 compiled tests."
+    },
+    "alternative_considered_and_rejected": "Redirecting the test build's outDir to dist-test/. Rejected: several TS tests compute paths relative to `dist/tests` (e.g. dist/tests -> dist -> src/ts -> src -> src/conformance), so the change would break them; and it leaves `files: [\"dist\"]` structurally able to ship cruft again. The negation is contained and closes the class."
+  },
+  "blockers_encountered": [
+    {
+      "id": "BLK-1",
+      "description": "`cargo package --no-verify -p fathomdb-engine` exits 101: `package fathomdb-engine depends on fathomdb-embedder with feature rerank-cuda but fathomdb-embedder does not have that feature`. crates.io's PUBLISHED fathomdb-embedder 0.8.9 predates that feature, and at the un-bumped 0.8.9 cargo resolves the sibling from the registry rather than the workspace. So a real .crate for the engine cannot be produced on this branch and its LICENSE bytes cannot be tar-verified.",
+      "resolution": "NOT MINE TO FIX and not a license defect. Verified PRE-EXISTING: reproduced identically after `git stash` to the pristine baseline 3e9d6d12. It is version-shaped and disappears at 0.8.20 (tiered publish puts fathomdb-embedder 0.8.20 on the registry before the engine's turn) — which is also why release.yml pre-flights only the three LEAF crates. `cargo package --list -p fathomdb-engine` is rc=0 and DOES list `LICENSE`, and --list is the acceptance method the brief names. FOR SLICE 40: this is a live dependency of the T5 engine publish on T4 having landed first; worth an explicit check in the dry-run rehearsal."
+    },
+    {
+      "id": "BLK-2",
+      "description": "The pinned build backend `maturin>=1.7,<2` cannot build the chosen PEP-639 license form. Measured, not reasoned: `maturin sdist` exits 1 on 1.7.8 AND on 1.8.0 with `TOML parse error ... license-files = [\"LICENSE\"] wanted string or table` (both predate final PEP 639, which changed license-files from a table to a list of globs), and exits 0 on 1.9.0 / 1.10.0 / 1.11.0 / 1.12.0 / 1.13.1.",
+      "resolution": "Raised the floor to `maturin>=1.9,<2` in src/python/pyproject.toml — build-system requires AND the two extras that install maturin for `maturin develop`. This is a build-backend requirement, NOT a project version field, so it does not touch Slice 40's bump. The alternative (keeping the legacy `license = { text = ... }` table) was rejected: it produces no License-Expression and does not ship license text. FOR SLICE 40: confirm PyO3/maturin-action@v1.51.0 resolves maturin >= 1.9 (it installs latest by default, so almost certainly yes, but it is one line in the dry run)."
+    },
+    {
+      "id": "BLK-3",
+      "description": "`scripts/agent-test.sh` aborts at test-check-governed-surface-pin (baseline line 51) under `set -euo pipefail`, EARLIER than the line-123 abort the brief cites. Its pin's `git_blob_sha1` provenance claim against commit 427d2712 is stale.",
+      "resolution": "Pre-existing (reproduced at the pristine baseline). Worked around by registering my suite at line ~16 instead of before 123, and PROVING it executes. Reported rather than fixed — the pin is Slice 40's re-mint territory and the governed surface is explicitly out of my scope."
+    }
+  ],
+  "additional_changes_made_in_scope": [
+    "src/ts/package.json `files` negations (!dist/tests, !dist/src) + a `//files` comment carrying the measurement — the brief required this be fixed or explicitly reasoned about.",
+    "src/python/pyproject.toml maturin floor 1.7 -> 1.9 in three places (build-system.requires + the `test` and `dev` extras) — forced by BLK-2.",
+    "Explanatory comments at each edited site recording WHY (the measurement, not the intention): the workspace license-file rationale, the per-crate inheritance note, the npm symlink finding, the PEP-639 `..` restriction."
+  ],
+  "explicitly_not_touched": [
+    "Every `version` field — manifests stay 0.8.9. src/python/fathomdb/__init__.py:73 still reads `__version__ = \"0.6.0\"`; NOTED FOR SLICE 40, not fixed.",
+    ".github/** — read only (release.yml, to derive the real publish set).",
+    "`categories` on any crate (HITL seq-198). `keywords` are Leg 1b's, not added.",
+    "src/conformance/governed-surface-allowlist.json, CHANGELOG.md, docs/**, dev/interfaces/**, dev/plans/runs/STATUS-0.8.20.md, dev/plans/runs/release-state-0.8.20.json, dev/plans/plan-0.8.20.md, all *.jsonl ledgers.",
+    "No tag. No publish. No `gh workflow run`. No registry credential. No `npm publish`, no `cargo publish` (not even --dry-run), no twine, no `maturin upload`. No `maturin develop`, no `pip install -e`; the built wheel was read as a zip and never installed.",
+    "SCHEMA stays 24. Zero eu7 runs (F-28); no `-- --ignored` anywhere."
+  ],
+  "agent_verify_result": "pass (with one pre-existing, unrelated red — BLK-3)",
+  "gates": {
+    "cargo check --workspace --all-targets": 0,
+    "cargo clippy --workspace --all-targets": 0,
+    "bash scripts/agent-lint-md.sh": 0,
+    "bash scripts/agent-lint.sh": 0,
+    "bash scripts/check-governed-surface-pin.sh": 0,
+    "bash scripts/verify-release-gates.sh": "1 — `GITHUB_REF_NAME is not set; this script must run under a tag push`. ENVIRONMENTAL, not a finding: the script is tag-push-only. Re-run as `GITHUB_REF_NAME=v0.8.9 GITHUB_EVENT_NAME=push RELEASE_GATES_SKIP_GIT_REACH=1` -> rc=0, `release-gate: ok — event=push, axis-W=0.8.9`, which exercises check 5 (every publishable crate has description/license/repository) against my edits. As the brief says, check 4 reads the CURRENT 0.8.9 version and so tests the 0.8.9 CHANGELOG heading; it is not this leg's acceptance test.",
+    "bash scripts/check-license-consistency.sh": 0,
+    "bash scripts/check-license-consistency.sh --with-wheel": 0,
+    "bash scripts/check-license-consistency.sh (CONTROL, license field broken)": 1,
+    "bash scripts/tests/test_check_license_consistency.sh": 0,
+    "bash scripts/agent-test.sh": "AGGREGATE 1 — NOT quoted as a pass; the aggregate is VACUOUS (TC-16 + BLK-3, it aborts at the first failing suite). Per-suite line for my own check: `ok test-check-license-consistency 2684ms`. The abort is `FAIL test-check-governed-surface-pin (exit=1, 4091ms)`, pre-existing at baseline."
+  },
+  "brief_citations_found_to_be_wrong": [
+    "`agent-test.sh aborts at line 123` — it aborts at line 51 (test-check-governed-surface-pin), earlier. Pre-existing at baseline 3e9d6d12. Registering at 123 would have been vacuous; I registered at ~16 and proved execution. (BLK-3)",
+    "`npm pack --dry-run in src/ts currently ships 83 files, 58 of them dist/tests (~70%)` — I measured 1 file on a fresh worktree (no dist/), 97 files / 84 dist/tests (86%) after the test-shaped build, and 13 after the release-shaped build. Defect class correct, numbers not. Also: CI's publish path (`npx tsc -p tsconfig.build.json` on a fresh checkout) never had dist/tests; the hazard is a LOCAL pack over a stale tree.",
+    "`cargo package refuses paths outside the package root ... a repo-root file cannot simply be referenced by a crate` — true for `include`, FALSE for `license-file`. Both a literal `license-file = \"../../../../LICENSE\"` and an inherited workspace `license-file` pull the repo-root file into the tarball as `LICENSE`. This is the mechanism I shipped, and the brief's framing would have steered me away from the best option.",
+    "`npm is reported to auto-include a root LICENSE regardless of the files allowlist — verify that` — VERIFIED WITH A CORRECTION. npm auto-includes a LICENSE from the PACKAGE dir (not the repo root — there is no walk upward), and ONLY when it is a REGULAR FILE. A symlink is silently ignored: zero license entries in the tarball, no warning.",
+    "`the pinned maturin>=1.7,<2 backend` — the pin as written cannot build the PEP-639 form at all (1.7.8 and 1.8.0 both exit 1). Floor raised to >=1.9 (BLK-2).",
+    "`scripts/set-version.sh never touches package-lock.json (grep -c package-lock -> 0)` — CONFIRMED CORRECT, no fix will arrive from there.",
+    "`cargo-deny is not wired anywhere` — CONFIRMED CORRECT (0 hits in .github/ and scripts/). Not cited as a gate."
+  ],
+  "could_not_establish": [
+    "Byte-level content of fathomdb-engine's .crate LICENSE. Only `cargo package --list` (rc=0, lists LICENSE) is available at version 0.8.9 — see BLK-1. Stated rather than glossed. It becomes obtainable once Slice 40 bumps the version.",
+    "Whether maturin 1.9.0 was the FIRST release to accept the final PEP-639 list form. I bisected 1.7.8 / 1.8.0 (fail) and 1.9.0 (pass) and did not test intermediate patch releases (1.8.1-1.8.6). The floor of >=1.9 is therefore SAFE but possibly one minor conservative.",
+    "The wheel's behaviour under a maturin OTHER than 1.13.1 (what the shared venv has) and 1.9.0-1.12.0 (sdist-metadata only). The full wheel build was verified with 1.13.1.",
+    "Whether the two npm LICENSE copies survive a Windows checkout correctly — not testable here. Mitigated structurally: they are regular files, not symlinks, precisely so this is a non-question. The cargo mechanism adds no files at all, so it is Windows-immune by construction.",
+    "shellcheck clean-ness of the two new scripts — shellcheck is not installed here and is not wired into CI or scripts/agent-lint.sh (`grep -n shellcheck` finds only a source directive). `bash scripts/agent-lint.sh` is rc=0."
+  ],
+  "next_step_for_orchestrator": "Run codex §9 on aa01f0d9 (diff vs 3e9d6d12). Cherry-pick both commits (fdc1e810, aa01f0d9) — they are independent of the other Slice 39 legs and touch a disjoint file set (no CHANGELOG.md, no docs/, no dev/interfaces/, no README, no keywords). NOTE THREE THINGS FOR SLICE 40 (R-20-PUB): (1) it is the named receiver for wiring `scripts/check-license-consistency.sh` into CI — suggest always-on plain, plus `--with-wheel` in the release-preflight job; (2) BLK-2 — confirm PyO3/maturin-action@v1.51.0 resolves maturin >= 1.9; (3) BLK-1 — fathomdb-engine cannot be `cargo package`d until the version bump lands, so its dry-run rehearsal must come after. Also for 40: src/python/fathomdb/__init__.py:73 still reads 0.6.0, and the governed-surface pin's `git_blob_sha1` provenance arm (BLK-3) is red at baseline. Leg 1b should add crate/npm READMEs knowing the npm `files` allowlist now carries negations (a README at src/ts/README.md is auto-included by npm like LICENSE — verify with `npm pack --dry-run`, do not assume). 0.8.22 backlog: four non-shipped Apache-2.0 project-license declarations left in place (sbom-survey + two corpus generators + one corpus manifest entry) — fold into one regeneration."
+}

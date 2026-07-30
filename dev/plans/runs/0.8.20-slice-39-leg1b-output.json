@@ -1,0 +1,236 @@
+{
+  "phase": "0.8.20-slice-39-leg1b (R-20-DOC, registry-facing surfaces leg)",
+  "baseline_sha": "aa01f0d9c3d5cea2a0f4b366bd42d8e3317af66d",
+  "branch": "0.8.20-slice-39-doc",
+  "head_sha": "f9cbda88a6313d880787d05defba5293e5806fc6",
+  "commits": [
+    "ea11151a: docs(0.8.20 Slice 39): registry READMEs for 7 crates + both npm packages",
+    "79bcf881: docs(0.8.20 Slice 39): consumer-facing PyPI landing page",
+    "f9cbda88: feat(0.8.20 Slice 39): crate readme + keywords (<=5, <=20 chars; no categories per seq-198)"
+  ],
+  "findings_addressed": [
+    "Design §5 acceptance 5 — every published unit now has a README, proven by the packaging tool's own file list for all NINE README surfaces (7 crates + 2 npm) plus the wheel's METADATA long_description.",
+    "Design §5 acceptance 5 — the PyPI long_description is consumer-facing and every surviving link is publicly reachable; the two dead `../../dev/**` links are gone.",
+    "Design §5 acceptance 5 — every publishable crate carries keywords (5 each, all <=20 chars) and NO crate carries categories."
+  ],
+
+  "per_unit_packaging_evidence": {
+    "method": "The packaging command's OWN file list / the built artifact's OWN metadata, per unit. Never the config that is supposed to cause it. `cargo package --list` was re-run only AFTER the commits — at a dirty tree cargo exits 101 with a dirty-file list rather than a package list, which is a trap: the dirty-file list CONTAINS a line ending in `README.md`, so a careless grep at a dirty tree reads as a pass while rc is 101.",
+
+    "crate_fathomdb": "cargo package --list -p fathomdb  rc=0  ->  14 lines, exactly one `README.md`, exactly one `LICENSE`. Real .crate (`cargo package --no-verify` rc=0): tarball README.md sha256 2fc8de5436669b83 == src/rust/crates/fathomdb/README.md. Packaged Cargo.toml carries `readme = \"README.md\"` + the 5 keywords.",
+    "crate_fathomdb-cli": "cargo package --list -p fathomdb-cli  rc=0  ->  36 lines, `README.md` present. Real .crate rc=0: README sha256 c50adcb2fed253b7 == source.",
+    "crate_fathomdb-embedder": "cargo package --list -p fathomdb-embedder  rc=0  ->  23 lines, `README.md` present. Real .crate rc=0: README sha256 602ac7ce99e7c978 == source.",
+    "crate_fathomdb-embedder-api": "cargo package --list -p fathomdb-embedder-api  rc=0  ->  7 lines, `README.md` present. Real .crate (0.6.1, axis E) rc=0: README sha256 86bc0d2bc05b0ba4 == source.",
+    "crate_fathomdb-engine": "cargo package --list -p fathomdb-engine  rc=0  ->  159 lines, `README.md` present, `LICENSE` present. BYTE-PROOF NOT OBTAINABLE AT 0.8.9 — Leg 1a's BLK-1 reproduces exactly: `cargo package --no-verify -p fathomdb-engine` exits 101 (`failed to select a version for fathomdb-embedder` — the registry's published 0.8.9 predates the `rerank-cuda` feature). --list is the acceptance method the brief names and it is rc=0. Same mechanism (`readme = \"README.md\"`, package-root file) as the six crates that ARE byte-proven.",
+    "crate_fathomdb-query": "cargo package --list -p fathomdb-query  rc=0  ->  8 lines, `README.md` present. Real .crate rc=0: README sha256 d390066c50cf5c6e == source; packaged Cargo.toml shows `readme = \"README.md\"` and the keyword array expanded to 5 entries.",
+    "crate_fathomdb-schema": "cargo package --list -p fathomdb-schema  rc=0  ->  35 lines, `README.md` present. Real .crate rc=0: README sha256 b8239a8233b7d61a == source.",
+
+    "npm_fathomdb": "Release-shaped dist first (`npx tsc -p tsconfig.build.json` rc=0 — NOT tsconfig.json), then `npm pack --dry-run` in src/ts  rc=0  ->  `npm notice 3.8kB README.md`, `npm notice 1.1kB LICENSE`, total files 15 (Leg 1a measured 14 without a README — the delta is exactly the README). Real `npm pack`: package/README.md sha256 dd2c0548739c673d == src/ts/README.md.",
+    "npm_@fathomdb/fathomdb-linux-x64-gnu": "npm pack --dry-run in src/ts/npm/linux-x64-gnu  rc=0  ->  `npm notice 739B README.md`, `npm notice 1.1kB LICENSE`, `npm notice 532B package.json`, total files 3 (was 2). Real `npm pack`: package/README.md sha256 f9bb26d5e0889b9b == source.",
+    "npm_files_allowlist_question_RESOLVED_BY_MEASUREMENT": "The brief said README is BELIEVED to behave like LICENSE against `files: [\"dist\", \"!dist/tests\", \"!dist/src\"]` and told me to verify rather than assume. VERIFIED TRUE: npm auto-includes a package-dir `README.md` past the `files` allowlist, exactly as it does `LICENSE`. NO change to `files` was needed and none was made. Both READMEs are REGULAR FILES, not symlinks — Leg 1a measured that npm silently ignores a symlinked LICENSE, and I did not re-test that for README because the structural mitigation (never use a symlink) makes it a non-question.",
+
+    "wheel": "maturin build (NOT develop) rc=0 -> fathomdb-0.8.9-cp310-abi3-manylinux_2_39_x86_64.whl, built with the shared venv's maturin, written to a scratchpad dir. The wheel was NEVER installed — read as a zip archive per the prohibition. There is no README.md FILE in the wheel and there should not be: for a wheel the landing page IS the METADATA long_description, evidenced below."
+  },
+
+  "wheel_metadata_long_description_evidence": {
+    "read_from": "fathomdb-0.8.9.dist-info/METADATA inside the built .whl, via python zipfile (never installed)",
+    "headers": [
+      "Metadata-Version: 2.4",
+      "Name: fathomdb",
+      "Version: 0.8.9",
+      "Summary: FathomDB Python SDK — PyO3 binding to the fathomdb-engine Rust core",
+      "Requires-Python: >=3.10",
+      "License-Expression: MIT",
+      "License-File: LICENSE",
+      "Description-Content-Type: text/markdown; charset=UTF-8; variant=GFM"
+    ],
+    "body_vs_source": "The METADATA body is `src/python/README.md` VERBATIM plus exactly one trailing newline appended by maturin. Proven, not asserted: `body == src + '\\n'` -> True; unified diff is a single `+` empty line at EOF (README 104 lines, body 105). Body first line = `# FathomDB`.",
+    "link_audit_of_the_rendered_page": {
+      "method": "regex over the METADATA body itself (the bytes PyPI renders), not over the file as authored: markdown inline links + autolinks",
+      "links_found": [
+        "EXTERNAL-URL  https://crates.io/crates/fathomdb   (text: `fathomdb`)",
+        "EXTERNAL-URL  https://github.com/coreyt/fathomdb  (autolink)"
+      ],
+      "relative_paths_found": "NONE. A scan of the body for `../`, `dev/interfaces` and `dev/design` returns zero lines.",
+      "verdict": "NO DEAD LINK SURVIVES. Both surviving targets are publicly reachable URLs. The two 0.8.9 dead links (`../../dev/interfaces/python.md`, `../../dev/design/bindings.md`, neither of which ships in the wheel) are gone.",
+      "note": "`pip install fathomdb`, `npm install fathomdb` and `pip install -e src/python/` appear as CODE, not links, so they cannot render as broken hyperlinks."
+    },
+    "before_after": "Before: 14 lines opening 'This directory is the Python package root for FathomDB.' + 2 dead relative links. After: 104 lines — what FathomDB is, pre-1.0 BETA posture, install + Python floor + abi3 + zero Python deps, a quick start whose write carries the mandatory source_id, a surface tour derived from the actual modules (engine/read/graph/lifecycle/projections/errors), the embedder opt-in and its no-network default, the erasure story, sibling SDKs, and the editable install demoted to a 'building from source' footnote."
+  },
+
+  "keywords_per_crate": {
+    "constraints_applied": "max 5 keywords; each <=20 chars; ASCII alphanumeric/_/-/+ only; must start with an alphanumeric.",
+    "fathomdb": { "keywords": ["database", "embedded", "sqlite", "vector-search", "retrieval"], "count": 5, "max_len": 13 },
+    "fathomdb-engine": { "keywords": ["database", "embedded", "sqlite", "vector-search", "full-text-search"], "count": 5, "max_len": 16 },
+    "fathomdb-schema": { "keywords": ["sqlite", "migrations", "schema", "database", "embedded"], "count": 5, "max_len": 10 },
+    "fathomdb-query": { "keywords": ["sqlite", "fts5", "full-text-search", "query", "search"], "count": 5, "max_len": 16 },
+    "fathomdb-embedder-api": { "keywords": ["embeddings", "embedder", "trait", "vector-search", "plugin"], "count": 5, "max_len": 13 },
+    "fathomdb-embedder": { "keywords": ["embeddings", "embedder", "candle", "onnx", "reranker"], "count": 5, "max_len": 10 },
+    "fathomdb-cli": { "keywords": ["cli", "database", "sqlite", "diagnostics", "embedded"], "count": 5, "max_len": 11 },
+    "cargo_package_rc_that_saw_them": "cargo package --list rc=0 on all 7; cargo package --no-verify rc=0 on 6 of 7 (engine blocked by BLK-1, unrelated).",
+    "MATERIAL_CORRECTION_cargo_does_NOT_validate_keywords": "SEE brief_and_design_citations_found_to_be_wrong item 1. cargo 1.95.0 does NOT validate keywords locally at all. The rc=0 above therefore proves the keywords do not BREAK packaging; it does NOT prove they are registry-valid. The registry-validity claim rests on the independent mechanical check below.",
+    "independent_mechanical_validation": "python3 + tomllib re-read all 7 committed manifests and asserted, per crate: count<=5, every keyword len<=20, every keyword matches ^[A-Za-z0-9][A-Za-z0-9_+-]*$, `readme == \"README.md\"`, and `categories` ABSENT. Result: all 7 print `OK`, script prints `ALL CLEAN`. This is the check that actually earns the acceptance claim, because `cargo package` does not."
+  },
+
+  "categories_confirmation": {
+    "statement": "NO crate carries `categories`. Not one, anywhere.",
+    "evidence_1": "`grep -rn '^categories' Cargo.toml src/rust/crates/*/Cargo.toml` -> rc=1, zero matches (workspace manifest and ALL NINE members, including the two publish=false ones).",
+    "evidence_2": "The tomllib pass above independently asserts `package.categories is None` for each of the 7 publishable crates.",
+    "evidence_3": "No `categories` key was added under `[workspace.package]` either, so nothing can arrive by inheritance.",
+    "rationale_recorded_in_code": "The full seq-198 rationale (server-side-only slug validation, mid-tier, after immutable uploads; re-entered at 0.8.21) is written into src/rust/crates/fathomdb/Cargo.toml next to the keywords, and the other six manifests point at it. So a future contributor adding categories has to read why not first."
+  },
+
+  "readme_key_control_run": {
+    "purpose": "The brief only required the `readme` key. I probed whether declaring it explicitly buys anything over cargo's auto-detection of a package-root README.md — i.e. whether the key is load-bearing or decorative.",
+    "break": "src/rust/crates/fathomdb-query/Cargo.toml: readme = \"README.md\" -> readme = \"READ-ME-NOT-THERE.md\"",
+    "command": "cargo package --no-verify --allow-dirty -p fathomdb-query",
+    "rc": 101,
+    "output": "error: readme `READ-ME-NOT-THERE.md` does not appear to exist (relative to .../fathomdb-query). Please update the readme setting in the manifest at .../Cargo.toml",
+    "reading": "The explicit key IS load-bearing: it converts 'README silently missing from the crates.io page' (the 0.8.9 state on all 7 crates, which auto-detection produced without a murmur) into a LOCAL hard failure. A rename or a move now fails on the machine. This is the one piece of registry metadata in this leg that cargo really does validate locally.",
+    "restore": "git checkout -- src/rust/crates/fathomdb-query/Cargo.toml -> `git status --porcelain` on that path is empty (byte-identical restore verified)."
+  },
+
+  "brief_and_design_citations_found_to_be_wrong": [
+    {
+      "id": "WRONG-1",
+      "severity": "MATERIAL — it is the stated premise of HITL seq-198",
+      "claim": "Brief Task C: 'They are validated LOCALLY by `cargo package`, so a mistake fails before anything leaves the machine — which is exactly why keywords are in scope and `categories` is not.' The design of record §4 says the same thing ('validated locally by `cargo package`, so a mistake fails before anything leaves the machine').",
+      "finding": "FALSE for cargo 1.95.0. `cargo package` performs NO keyword validation whatsoever. Three deliberate controls on fathomdb-query, each run as a real `cargo package --no-verify --allow-dirty` (not just --list):",
+      "controls": [
+        "6 keywords (limit is 5)                     -> rc=0, 'Packaged 8 files'. Also rc=0 under `cargo package --list`.",
+        "a 26-character keyword (limit is 20)        -> rc=0, 'Packaged 8 files'",
+        "a keyword with a space and a '!' (illegal)  -> rc=0, 'Packaged 8 files'"
+      ],
+      "restore": "git checkout -- src/rust/crates/fathomdb-query/Cargo.toml after each; final `git status --porcelain` on that path empty.",
+      "consequence": "Keywords are validated SERVER-SIDE by crates.io at publish, in the same place and at the same moment as categories. The seq-198 distinction between them therefore does NOT hold on the axis the ruling names. It survives on a DIFFERENT axis, and only that one: keyword rules are simple, closed and mechanically checkable offline (<=5, <=20 chars, [A-Za-z0-9][A-Za-z0-9_+-]*), whereas a category must match an opaque server-side taxonomy that cannot be checked without the registry. So the residual risk here is much lower than for categories — but it is not zero for the reason given, and nothing in this repo currently checks it. A bad keyword on tier T5 would wedge the publish AFTER T1-T4 uploaded immutably: precisely the v0.8.9 partial-publish shape.",
+      "what_I_did_about_it": "I did NOT rely on cargo. I wrote and ran an independent tomllib+regex check over all 7 committed manifests asserting count/length/charset/first-char, plus readme and categories-absence. All 7 clean. Evidence under keywords_per_crate.independent_mechanical_validation.",
+      "HAND_OFF": "Slice 40 (R-20-PUB) should add this ~15-line assertion to the release preflight — the natural home is `scripts/verify-release-gates.sh` beside check 5, which already walks every publishable manifest for description/license/repository. I deliberately did NOT add it myself: that file is release-gate substrate and Slice 40's territory, and a concurrent leg could be in it. ALSO WORTH AN HITL LOOK: seq-198's stated premise is wrong, so the ruling deserves re-confirmation on its true basis (mechanically-checkable vs opaque-taxonomy) rather than on 'cargo validates one and not the other'."
+    },
+    {
+      "id": "WRONG-2",
+      "severity": "minor, but it contradicts Leg 1a's closure record",
+      "claim": "Leg 1a's output.json: 'No warning emitted for carrying both `license` and `license-file`.'",
+      "finding": "cargo 1.95.0 DOES warn, on every build/check/clippy/package/maturin invocation, once per crate: `warning: <crate>/Cargo.toml: only one of `license` or `license-file` is necessary. `license` should be used if the package license can be expressed with a standard SPDX expression.` Observed on `cargo check --workspace --all-targets` (rc still 0) and in the maturin build log.",
+      "reading": "Cosmetic, NOT a defect, and NOT mine to fix. Leg 1a's mechanism requires `license-file` (it is what physically copies the repo-root LICENSE into each .crate) and the SPDX `license` field is what crates.io displays, so BOTH are wanted. The warning is cargo being unaware of that use. Flagged only so nobody reads the warning as new breakage introduced by this leg, and so the record is accurate."
+    },
+    {
+      "id": "WRONG-3",
+      "severity": "informational — the brief's numbers were right this time",
+      "claim": "Brief: 'Leg 1a measured 14 files for the release-shaped build; you should see 15 with a README.'",
+      "finding": "CONFIRMED EXACTLY. 14 before, 15 after, the delta being README.md. Recorded because the two prior legs both found the brief's file counts wrong; this one is right."
+    },
+    {
+      "id": "WRONG-4",
+      "severity": "informational",
+      "claim": "Brief: 'agent-test.sh aborts at test-check-governed-surface-pin (~line 51), NOT at line 123.'",
+      "finding": "CONFIRMED. `AGENT_VERBOSE=1 bash scripts/agent-test.sh` -> 7 suites ok, then `FAIL test-check-governed-surface-pin (exit=1, 3999ms)` and the aggregate stops. Aggregate rc=1 and is VACUOUS (TC-16); not quoted as a pass anywhere in this record."
+    },
+    {
+      "id": "WRONG-5",
+      "severity": "informational — a real trap for the next agent",
+      "claim": "Brief: 'crates: `cargo package --list -p <crate>` for each of the 7 -> the README must appear in the list.'",
+      "finding": "TRUE, but only at a CLEAN tree. At a dirty tree `cargo package --list` exits 101 and prints the DIRTY-FILE list instead of the package list — and that dirty-file list contains lines ending in `README.md`. A grep for README against that output reads as a pass while rc is 101. I hit this before committing. Capturing rc on the very next line is what caught it; the brief's own instruction saved the measurement."
+    }
+  ],
+
+  "gates": {
+    "cargo check --workspace --all-targets": 0,
+    "cargo clippy --workspace --all-targets": 0,
+    "bash scripts/agent-lint-md.sh": 0,
+    "bash scripts/agent-lint.sh": 0,
+    "bash scripts/check-license-consistency.sh": 0,
+    "bash scripts/check-license-consistency.sh --with-wheel": 0,
+    "bash scripts/check-governed-surface-pin.sh": 0,
+    "bash scripts/verify-release-gates.sh": "1 bare — `GITHUB_REF_NAME is not set; this script must run under a tag push`. ENVIRONMENTAL (tag-push-only script), same as Leg 1a observed. Re-run as `GITHUB_REF_NAME=v0.8.9 GITHUB_EVENT_NAME=push RELEASE_GATES_SKIP_GIT_REACH=1` -> rc=0, `release-gate: ok — event=push, axis-W=0.8.9`. That run exercises check 5 (every publishable crate has description/license/repository) against my edited manifests.",
+    "npx tsc -p tsconfig.build.json (src/ts, release-shaped)": 0,
+    "maturin build": 0,
+    "bash scripts/agent-test.sh": "AGGREGATE 1 — NOT quoted as a pass; it is VACUOUS (TC-16) and aborts at the first failing suite. Per-suite results are enumerated below."
+  },
+
+  "agent_test_suites_run_individually": {
+    "method": "Every suite `scripts/agent-test.sh` invokes was run on its own and its own rc captured, because the aggregate is vacuous. The four reds below are ALL provably pre-existing: `git diff --name-only 3e9d6d12..HEAD` (the whole branch, both legs) touches NOTHING under .github/, .claude/, dev/agent-tools/ or src/conformance/, which is where all four live.",
+    "green": {
+      "test-set-version": 0, "test-verify-release-gates": 0, "test-check-license-consistency": 0,
+      "test-preflight-landing": 0, "test-check-board-currency": 0, "test-check-ledgers": 0,
+      "test-staged-ledger-sidecar": 0, "test-check-c1-conformance": 0, "test-check-transcript-hygiene": 0,
+      "test-assert-co-tagging": 0, "test-embedder-api-no-drift": 0, "test-smoke-scripts": 0,
+      "test-release-workflow-scope": 0, "test-idempotent-republish": 0, "test-pypi-publish-roundtrip": 0,
+      "test-publish-registry-safety": 0, "test-wait-for-crate-version": 0, "test-npm-inject-optional-deps": 0,
+      "test-lint-md-hard-fail-on-missing-linter": 0, "test-plans-status-frontmatter": 0,
+      "test-lint-plan-anchors": 0, "test-check-release-state-views": 0, "test-commission-manifest": 0,
+      "test-md-generators": 0, "test-cargo-skew": 0, "test-pip-skew": 0
+    },
+    "red_all_pre_existing": [
+      {
+        "suite": "test-check-governed-surface-pin", "rc": 1,
+        "failure": "pin git_blob_sha1 140c0f638d… != 427d2712's blob 93ef3a86… — the provenance claim is false",
+        "status": "KNOWN. This is Leg 1a's BLK-3, unchanged. Note `scripts/check-governed-surface-pin.sh` itself is rc=0; it is the SUITE's provenance arm that is stale. Slice 40's pin re-mint closes it."
+      },
+      {
+        "suite": "test-seat-path-guard", "rc": 1,
+        "failure": "arm 66 (orchestrator) and arm 66 (steward): tools: CHANGED — want 'Read, Bash, Grep, Glob, Agent, Task', got 'Read, Bash, Grep, Glob, Agent, Task, SendMessage'",
+        "status": "NEW OBSERVATION, not previously reported (Leg 1a's aggregate aborted before reaching it). Pre-existing: the branch diff touches no `.claude/**` file. An agent-definition `tools:` list gained `SendMessage` and the guard's pinned expectation was not updated. NOT mine, NOT Slice 40's release scope either — needs an owner."
+      },
+      {
+        "suite": "test-actionlint-fixture", "rc": 1,
+        "failure": "FAIL  publish-rust-t1-embedder-api dry-run branch is not cargo publish --dry-run -p",
+        "status": "NEW OBSERVATION, and the most release-relevant of the four. The suite requires each of the 7 `publish-rust-t*` jobs to contain a literal `cargo publish --dry-run -p `; release.yml now calls `bash scripts/release/cargo-publish-if-new.sh --dry-run <crate>` (the idempotent-republish wrapper) instead. The workflow moved and the guard did not. Pre-existing: the branch diff touches no `.github/**` file. DIRECTLY IN SLICE 40's PATH — this is the dry-run rehearsal surface, and its guard is red today."
+      },
+      {
+        "suite": "test-steward-orient", "rc": 1,
+        "failure": "arm 10 (real repo green) + arm 10 (real byte cap): steward-orient emits 5446 bytes on stdout, cap is 4096",
+        "status": "NEW OBSERVATION. Pre-existing: the branch diff touches nothing under dev/agent-tools/ or the steward-orient script. A budget overrun that grew with repo state, not a code break."
+      }
+    ],
+    "test-rust": {
+      "command": "cargo test --workspace --quiet --no-fail-fast",
+      "first_run_rc": 101,
+      "single_failure": "fathomdb-engine --test slice15e_prekn_filterable :: undeclared_after_concurrent_drop_is_typed_invalidfilter_not_storage_race — 'expected a typed InvalidFilter after the concurrent drop, got Ok(SearchResult{…})' at tests/slice15e_prekn_filterable.rs:1045",
+      "characterisation": "FLAKY, PRE-EXISTING, NOT MINE. (a) Named-test reruns: 3/3 rc=0. (b) Whole-test-binary reruns: rc=0, rc=0, rc=101, rc=0 — reproduces roughly 1 in 4 without any code change between runs, which is the signature of the concurrency race the test is itself trying to observe. (c) It CANNOT be mine by construction: `git diff aa01f0d9..HEAD` is 17 files — 9 new READMEs, 1 rewritten README, 7 Cargo.toml manifests gaining only `readme` and `keywords`. Zero .rs files, zero build-affecting keys, so the test binary is byte-for-byte the baseline's.",
+      "recommendation": "Worth a finding id of its own. A wall-clock/interleaving-dependent assertion that fails ~25% of the time will read as a random red on any future slice's `test-rust` and burn review rounds attributing it."
+    },
+    "test-ts": "NOT RUN, deliberately, and this is a gap I am stating rather than glossing. `npm test` runs `tsc -p tsconfig.json`, which emits the TEST-shaped dist (dist/src/** + dist/tests/**) and would destroy the release-shaped dist that my `npm pack --dry-run` evidence depends on. My change to src/ts is one new markdown file; it cannot affect a TS test. If the orchestrator wants it green, run it AFTER re-reading this record and then re-run `npx tsc -p tsconfig.build.json` to restore the release shape.",
+    "test-ledgerwatch": "NOT RUN — pytest suite under dev/agent-tools/, untouched by this leg."
+  },
+
+  "explicitly_not_touched": [
+    "Every `version` field — manifests stay 0.8.9. Slice 40 owns the bump.",
+    "Any `.rs` file. No `//!` rustdoc added anywhere — that is the docs leg's. No crate does `#![doc = include_str!(\"../README.md\")]`, so none of my READMEs is compiled as a doctest (the Rust example is therefore illustrative; see verification note below).",
+    "CHANGELOG.md, docs/**, dev/interfaces/**, the repo-root README.md.",
+    ".github/** — read only (release.yml, to understand the T1..T7 publish tiers and the actionlint finding).",
+    "src/ts/package.json `files` — NOT edited. Measurement showed the README is auto-included past the allowlist, so no change was warranted; adding one would have been a config edit unsupported by evidence.",
+    "src/conformance/governed-surface-allowlist.json, dev/plans/runs/STATUS-0.8.20.md, dev/plans/runs/release-state-0.8.20.json, dev/plans/plan-0.8.20.md, all *.jsonl ledgers.",
+    "scripts/** — nothing added or edited, including the keyword-validation guard WRONG-1 argues for (handed to Slice 40 rather than dropped into release-gate substrate a concurrent leg may be holding).",
+    "No tag. No publish. No `gh workflow run`. No `.github/workflows/release.yml` dispatch. No registry credential. No `npm publish`, no `cargo publish` (not even --dry-run), no twine, no `maturin upload`. No `maturin develop`, no `pip install -e`. The wheel was written to a scratchpad dir, read as a zip, and never installed.",
+    "SCHEMA stays 24. Zero eu7 runs (F-28); no `-- --ignored` anywhere. No `pgrep -f`/`pkill -f`/`ps | grep` (TC-83). No throwaway `git init` (TC-128) — nothing needed a fixture repo."
+  ],
+
+  "how_the_README_content_was_grounded": {
+    "principle": "Every claim derived from the code, never from docs/ (which is two releases stale — it still announces '0.6.0 pre-release' — and belongs to another leg).",
+    "rust_facade_example": "The `PreparedWrite::Node` literal is copied field-for-field from src/rust/crates/fathomdb/tests/sdk_only_erasure.rs:53 (a passing test), so the 8-field shape and `SourceId::new(...)` are verified, not remembered. `Engine::open` -> `OpenedEngine{ engine, report }` and `engine.close()` checked against fathomdb-engine/src/lib.rs. `.expect()` is used rather than `?` so the snippet needs no error-conversion the reader cannot see.",
+    "python_example": "Write shape from src/python/tests/test_surface.py:309 + the `Engine.write` docstring's 'source_id is MANDATORY'. `Engine.open(path, use_default_embedder=...)` from engine.py:126.",
+    "ts_example": "`Engine.open` / `engine.write` / `engine.search` / `engine.close` signatures from src/ts/src/index.ts; the camelCase/snake_case dual spelling is stated in the `write` doc comment.",
+    "surface_lists": "Enumerated from `grep '^    pub fn '` on the engine, `read.py`/`read.ts` module exports, and `__all__` — not from docs/reference/.",
+    "cli_verb_table_and_exit_codes": "From the clap `DoctorCommand`/`RecoverArgs` definitions and `mod exit_code` in fathomdb-cli/src/lib.rs. The `--accept-data-loss` refusal (`E_RECOVER_REQUIRES_ACCEPT_DATA_LOSS`, exit 70) is quoted from run_recover, not inferred from the flag's presence.",
+    "feature_tables": "From each crate's `[features]` block and the `#[cfg(feature = ...)] pub use` lines. Model names/dimensions are the actual constants: fathomdb-bge-small-en-v1.5 / 384, fathomdb-bge-small-en-v1.5-onnx, nomic-embed-text-v1.5 / 768, fathomdb-ms-marco-TinyBERT-L2-v2.",
+    "schema_no_downgrade_claim": "Verified in code, not assumed: migrate_with_event_sink returns MigrationError::IncompatibleSchemaVersion when the on-disk user_version exceeds SCHEMA_VERSION.",
+    "embedder_identity_claim": "Verified: EngineOpenError::EmbedderIdentityMismatch is raised at open on drift.",
+    "beta_posture": "Every one of the ten surfaces states pre-1.0 = beta explicitly, per the maturity ladder (F-17) and the brief's warning that 0.8.18's 'GA' was release-engineering only.",
+    "claims_I_WALKED_BACK_after_failing_to_verify": [
+      "'Requires Node.js 18 or newer' — src/ts/package.json has NO `engines` field and no doc states a floor. Replaced with 'Built and tested on Node.js 22' (release.yml pins node-version: 22).",
+      "'did this open download 130 MB?' in fathomdb-embedder — I could not source the figure. Replaced with 'did this open hit the network?'.",
+      "'npm resolves for your host automatically' left unqualified — 0.8.18 published only linux-x64-gnu. Qualified with 'platform coverage is still expanding' plus the loader's real behaviour, which IS verified: src/ts/src/platform.ts throws a typed UnsupportedPlatformError rather than segfaulting on a missing .node."
+    ]
+  },
+
+  "could_not_establish": [
+    "Byte-level content of fathomdb-engine's .crate README (and LICENSE). Only `cargo package --list` is available at version 0.8.9 — Leg 1a's BLK-1 reproduces exactly. Becomes obtainable once Slice 40 bumps the version and the tiered publish puts fathomdb-embedder 0.8.20 on the registry ahead of the engine's turn.",
+    "That crates.io will accept these specific keyword STRINGS. Nothing local can establish it (WRONG-1). What IS established: they satisfy every documented rule, checked mechanically. The residual is the registry's own acceptance, which is only observable at a real publish.",
+    "How crates.io / PyPI / npm will RENDER these pages (relative-image handling, table styling, footnote support). No local tool renders a registry page. Mitigated by using only plain GFM — headings, paragraphs, bullets, fenced code, simple tables, absolute links — and by embedding no images at all.",
+    "Whether the wheel long_description renders identically under a maturin other than the shared venv's. Only that one build was performed. `Description-Content-Type: text/markdown; charset=UTF-8; variant=GFM` is set, which is what PyPI keys on.",
+    "The four pre-existing red suites' HISTORY. I established they cannot be caused by this branch (file-set disjointness) but did not bisect when each went red — that would have meant moving worktree HEAD, which the prompt forbids.",
+    "Whether `test-ts` is green. Not run, deliberately, to preserve the release-shaped dist that the npm evidence depends on. Stated as a gap, not implied to be green."
+  ],
+
+  "next_step_for_orchestrator": "Run codex §9 on f9cbda88 (diff vs aa01f0d9). Cherry-pick all three commits (ea11151a, 79bcf881, f9cbda88) — the file set is disjoint from every other Slice 39 leg: nine new READMEs, one rewritten README, and seven Cargo.toml manifests gaining ONLY `readme` and `keywords`. No .rs, no CHANGELOG.md, no docs/**, no dev/interfaces/**, no repo-root README.md, no .github/**, no scripts/**. FOUR THINGS TO CARRY FORWARD: (1) WRONG-1 is the important one — `cargo package` does NOT validate keywords, so HITL seq-198's stated premise is factually wrong; the ruling's OUTCOME still looks right but on a different basis (mechanically-checkable rules vs an opaque server-side taxonomy), and it deserves re-confirmation. Slice 40 should add the ~15-line keyword assertion to `scripts/verify-release-gates.sh` beside check 5. (2) `test-actionlint-fixture` is RED at baseline on `publish-rust-t*` — the guard demands a literal `cargo publish --dry-run -p ` and release.yml now calls `scripts/release/cargo-publish-if-new.sh --dry-run`; that is Slice 40's own dry-run rehearsal surface and its guard is broken. (3) Two more baseline reds nobody had seen because the aggregate aborts early: `test-seat-path-guard` (agent `tools:` gained SendMessage) and `test-steward-orient` (5446 bytes over a 4096 cap) — neither is release scope, both need an owner. (4) `slice15e_prekn_filterable::undeclared_after_concurrent_drop_...` fails ~1 run in 4 with no code change; mint it a finding id before it burns a review round on some future slice."
+}

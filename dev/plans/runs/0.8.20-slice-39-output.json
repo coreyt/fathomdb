@@ -1,0 +1,79 @@
+{
+  "phase": "0.8.20-slice-39 (R-20-DOC) \u2014 publish-facing documentation",
+  "baseline_sha": "3e9d6d1233784280eefe89c401a92543c3f5e247",
+  "branch": "0.8.20-slice-39-doc",
+  "head_sha_before_closure_commit": "0625b8d369e243d02334781341ab086783e63805",
+  "commits": [
+    "fdc1e810 fix(0.8.20 Slice 39): license MIT across publishable manifests + ships in every artifact (seq-193)",
+    "aa01f0d9 feat(0.8.20 Slice 39): license-consistency guard + packaged-artifact assertion",
+    "ea11151a docs(0.8.20 Slice 39): registry READMEs for 7 crates + both npm packages",
+    "79bcf881 docs(0.8.20 Slice 39): consumer-facing PyPI landing page",
+    "f9cbda88 feat(0.8.20 Slice 39): crate readme + keywords (<=5, <=20 chars; no categories per seq-198)",
+    "4a9f467a docs(0.8.20 Slice 39): CHANGELOG 0.8.20 section (15 -> 24) + known issues",
+    "aa61050b docs(0.8.20 Slice 39): closure output.json \u2014 R-20-DOC leg 2 (CHANGELOG)",
+    "c50c8dc6 docs(0.8.20 Slice 39): docs/ + README currency \u2014 0.8.20 install, mandatory source_id, IdSpace (TC-36)",
+    "0a6bb497 docs(0.8.20 Slice 39): dev/interfaces currency (TC-39) + stale PROPOSED markers",
+    "bb1f91e0 docs(0.8.20 Slice 39): crate-level rustdoc + stale PROPOSED/WriteValidation doc-comments",
+    "1bbf9b43 docs(0.8.20 Slice 39): mark the 0.6.0/0.6.1/0.8.0 release-notes pages as historical",
+    "76c3f014 fix(0.8.20 Slice 39 fix-1): binding surfaces name WriteValidation, not InvalidArgument (TC-95)",
+    "91fb2783 fix(0.8.20 Slice 39 fix-1): docs examples reference only symbols the shipped surface exports",
+    "88a96fa7 docs(0.8.20 Slice 39 fix-1): closure output.json \u2014 R-20-DOC fix-1",
+    "0625b8d3 fix(0.8.20 Slice 39 fix-2): docs/embedder.md names EmbedderNotConfiguredError, the shipped class"
+  ],
+  "structure": {
+    "shape": "4 parallel legs + 2 codex fix rounds, consolidated onto one branch and landed as a FAST-FORWARD ref-to-ref push (TC-110). No merge commit was created, so check-board-currency.sh / the always-on board-currency CI job is not triggered and STATUS-0.8.20.md needs no merge SHA.",
+    "leg1a": "license type + license file shipping in all ten units + check-license-consistency.sh guard (worktree fathomdb-slice39)",
+    "leg1b": "registry READMEs x9 + PyPI landing page + readme/keywords keys (same worktree, serialized after 1a)",
+    "leg2": "CHANGELOG 0.8.20 section + Known issues (worktree fathomdb-slice39-changelog, cherry-picked)",
+    "leg3": "docs/ + dev/interfaces + crate rustdoc currency (worktree fathomdb-slice39-docs, cherry-picked)",
+    "fix1": "codex round-1 CONCERN x2 \u2014 binding surfaces + docs examples",
+    "fix2": "codex round-2 CONCERN x1 \u2014 EmbedderNotConfiguredError",
+    "canary": "Leg 1a was the canary; it ran alone to completion and was verified from git before any parallel launch.",
+    "cherry_picks_clean": "both ranges applied with zero conflicts; ALL gates were re-run afterwards (a clean cherry-pick is not a correct one)"
+  },
+  "review": {
+    "reviewer": "codex gpt-5.4, read-only, via dev/agent-tools/codex-nostdin.sh",
+    "rounds": 3,
+    "verdicts": [
+      "round1 1bbf9b43 CONCERN (2 findings)",
+      "round2 88a96fa7 CONCERN (both prior RESOLVED, 1 new)",
+      "round3 0625b8d3 PASS"
+    ],
+    "terminal": "PASS",
+    "cap": "within the \u00a76 bound (3 same-finding / 6 total); no finding recurred",
+    "record": "dev/plans/runs/codex/0.8.20/slice-39-review.md + three .log transcripts",
+    "transcript_hygiene": "scripts/check-transcript-hygiene.sh rc=0; zero TC-86 redactions were needed",
+    "reviewer_limitation": "in all three rounds codex reported git log/show/diff failing in its sandbox with 'bwrap: loopback: Failed RTM_NEWADDR'. It verified current-file truth; the orchestrator verified every diff-shaped claim independently from git."
+  },
+  "gates_at_final_head": {
+    "cargo check --workspace --all-targets": 0,
+    "cargo clippy --workspace --all-targets": 0,
+    "mkdocs build --strict (X2)": 0,
+    "scripts/agent-lint-md.sh": 0,
+    "scripts/check-governed-surface-pin.sh": 0,
+    "scripts/check-license-consistency.sh": 0,
+    "scripts/tests/test_check_license_consistency.sh (19 arms)": 0,
+    "scripts/security/check_removal_changelog.py --base v0.8.9 --head HEAD": 0,
+    "verify-release-gates.sh (GITHUB_REF_NAME=v0.8.9 GITHUB_EVENT_NAME=push RELEASE_GATES_SKIP_GIT_REACH=1)": 0,
+    "CHANGELOG 0.8.20 heading grep (check-4 regex, WS_VERSION=0.8.20)": 0,
+    "CHANGELOG heading control (WS_VERSION=0.8.21 must NOT match)": "1 \u2014 non-vacuous",
+    "license guard CONTROL (workspace license field broken)": "1 \u2014 10 failures; restored rc=0, tree byte-identical",
+    "scripts/agent-test.sh": "AGGREGATE NOT QUOTED AS A PASS \u2014 vacuous per TC-16; it aborts at test-check-governed-surface-pin on a PRE-EXISTING red (reproduced at pristine baseline 3e9d6d12 in the primary checkout)"
+  },
+  "acceptance_evidence": {
+    "ten_units_license": "cargo package --list rc=0 with exactly one LICENSE line for all 7 publishable crates (independently re-run by the orchestrator on the consolidated tree); wheel .dist-info/licenses/LICENSE + License-Expression: MIT; npm pack --dry-run LICENSE in both packages",
+    "nine_readmes": "cargo package --list rc=0 with exactly one README.md line for all 7 crates (orchestrator-verified); npm pack --dry-run 15 files incl. README.md in src/ts",
+    "npm_runtime_intact": "orchestrator re-ran rm -rf dist && npx tsc -p tsconfig.build.json && npm pack --dry-run: LICENSE, dist/index.js (main), dist/index.d.ts (types), 14 files pre-README / 15 post-README, zero dist/tests",
+    "keywords": "present on all 7 publishable crates, <=5 and <=20 chars; ZERO categories anywhere (grep verified)",
+    "eu7_runs": 0,
+    "schema_version": 24
+  },
+  "scope_verified_from_git": {
+    "github_untouched": "git diff --name-only 3e9d6d12..HEAD | grep '^.github/' -> empty",
+    "no_version_field_changed": "diff over all Cargo.toml/package.json/pyproject.toml/package-lock.json shows no version line -> empty",
+    "allowlist_byte_untouched": "governed-surface-allowlist.json absent from the diff; check-governed-surface-pin.sh rc=0 (pinned c239908b)",
+    "dense_readiness_marker": "src/rust/crates/fathomdb/src/lib.rs still carries 'PROPOSED / NOT SIGNED' for DenseReadiness (now line 139, moved only by the new //! header). The ReadView/BoundaryCrossing marker WAS corrected to HITL-SIGNED; the diff shows exactly one such swap.",
+    "boards_and_ledgers_untouched": "STATUS-0.8.20.md, release-state-0.8.20.json, plan-0.8.20.md and all *.jsonl absent from the diff \u2014 the Steward reconciles"
+  },
+  "next_step_for_orchestrator": "Slice 40 (R-20-PUB). See the hand-off block in the final report: license-guard CI wiring, the maturin>=1.9 floor, BLK-1 (fathomdb-engine cannot cargo package until the bump), four pre-existing red agent-test suites including test-actionlint-fixture, and the post-publish smoke scripts that write nodes with no source_id."
+}

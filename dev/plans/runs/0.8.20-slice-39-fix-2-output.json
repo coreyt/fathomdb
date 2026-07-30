@@ -1,0 +1,62 @@
+{
+  "phase": "0.8.20-slice-39-fix-2 (R-20-DOC, codex §9 re-review finding: bare-stem error class name)",
+  "baseline_sha": "88a96fa7762731d9078a1409ff69deff7daf6866",
+  "branch": "0.8.20-slice-39-doc",
+  "head_sha": "0625b8d369e243d02334781341ab086783e63805",
+  "commits": [
+    "0625b8d369e243d02334781341ab086783e63805: fix(0.8.20 Slice 39 fix-2): docs/embedder.md names EmbedderNotConfiguredError, the shipped class"
+  ],
+  "finding_addressed": "codex §9 re-review, medium: docs/embedder.md:6 and :62 named the bare-stem `EmbedderNotConfigured`, which is not a class that exists in either shipped binding. Fixed to the shipped class name `EmbedderNotConfiguredError` at both sites.",
+  "shipped_class_name_verified": {
+    "typescript": "EmbedderNotConfiguredError -- src/ts/src/errors.ts:31 (`export class EmbedderNotConfiguredError extends EmbedderError {}`); also constructed at src/ts/src/errors.ts:287.",
+    "python": "EmbedderNotConfiguredError -- src/python/fathomdb/errors.py:110 (`EmbedderNotConfiguredError = _EmbedderNotConfiguredError`, re-exporting the native class), imported at :36 and listed in __all__ at :188. The native pyo3 exception is defined as `EmbedderNotConfiguredError` in src/rust/crates/fathomdb-py/src/lib.rs:77 (`create_exception!(_fathomdb, EmbedderNotConfiguredError, EmbedderError)`).",
+    "note_on_internal_rust_name": "The internal (non-public-binding) Rust enum variant is `EngineError::EmbedderNotConfigured` (src/rust/crates/fathomdb-engine/src/lib.rs:3631) -- this is the engine-crate error type, not the class a Python/TypeScript consumer catches. Both public binding classes carry the `Error` suffix; docs/reference/errors.md:51 already used the correct suffixed name, confirming the target form."
+  },
+  "sites_changed": [
+    {
+      "file": "docs/embedder.md",
+      "line": 6,
+      "before": "fresh engine has no embedder configured and vector writes fail with `EmbedderNotConfigured` until you either enable the default embedder or supply",
+      "after": "fresh engine has no embedder configured and vector writes fail with `EmbedderNotConfiguredError` until you either enable the default embedder or supply"
+    },
+    {
+      "file": "docs/embedder.md",
+      "line": 62,
+      "before": "If you do not pass the flag, the engine opens normally but has no embedder, and vector writes raise `EmbedderNotConfigured`. This is unchanged from earlier",
+      "after": "If you do not pass the flag, the engine opens normally but has no embedder, and vector writes raise `EmbedderNotConfiguredError`. This is unchanged from earlier"
+    }
+  ],
+  "surrounding_prose_accuracy_check": {
+    "claim_1_fresh_engine_no_embedder": "TRUE -- confirmed by src/rust/crates/fathomdb-engine/src/lib.rs:7667 and :7679, which return EngineError::EmbedderNotConfigured when `self.runtime_embedder` is None; also asserted by fathomdb-engine/tests/eu5a1_plumbing.rs:56-57 and fathomdb-engine/tests/vector_contracts.rs:44.",
+    "claim_2_vector_write_triggers_it": "TRUE -- same call sites are on the vector-write path (dense_upsert-style helpers); test names (`vector write must fail with EmbedderNotConfigured`) and the flush-barrier test at fathomdb-engine/tests/slice20c_flush_barrier.rs:1157/1266 corroborate that a vector write on an unconfigured engine surfaces this error and records no terminal.",
+    "verdict": "No other clause in these two sentences was found false. Only the bare-stem class name was wrong; no further rewrite made."
+  },
+  "scope_confirmation": {
+    "files_touched": ["docs/embedder.md"],
+    "nothing_else_changed": "Confirmed via `git diff` and `git status` before commit: the only tracked-file change staged/committed was the two one-line edits in docs/embedder.md. No other docs, no .github/, no version fields, no governed-surface-allowlist.json, no DenseReadiness marker, no code, no plan/status/ledger files, no src/ts/dist/** were touched. Two untracked leftover files from a prior leg (dev/plans/runs/0.8.20-slice-39-leg1a-output.json, dev/plans/runs/0.8.20-slice-39-leg1b-output.json) were present in the worktree before this task started and were left untouched and unstaged.",
+    "prohibitions_respected": [
+      "No tag, no publish, no gh workflow run, no dispatch of .github/workflows/release.yml, no registry credential, nothing in .github/.",
+      "No version field changes; manifests stay 0.8.9.",
+      "src/conformance/governed-surface-allowlist.json not touched.",
+      "DenseReadiness PROPOSED / NOT SIGNED marker at src/rust/crates/fathomdb/src/lib.rs:139 not touched.",
+      "No code-behaviour change; the internal EngineError::EmbedderNotConfigured Rust variant name was left exactly as-is -- only the docs prose was corrected to the public binding class name.",
+      "dev/plans/plan-0.8.20.md, dev/plans/runs/STATUS-0.8.20.md, dev/plans/runs/release-state-0.8.20.json, and all *.jsonl ledgers untouched.",
+      "src/ts/dist/** untouched.",
+      "No maturin develop / pip install -e, no worktree ops, no branching, no rebase, no push."
+    ]
+  },
+  "gates": [
+    { "gate": "mkdocs build --strict", "exit_code": 0, "evidence": "INFO - Documentation built in 0.22 seconds" },
+    { "gate": "bash scripts/agent-lint-md.sh", "exit_code": 0, "evidence": "clean run, no output" },
+    { "gate": "bash scripts/check-governed-surface-pin.sh", "exit_code": 0, "evidence": "ok governed-surface-pin: src/conformance/governed-surface-allowlist.json matches the AC-079 pin (30 allowlist / 5 core / 5 recovery_denylist, pinned at c239908b under AC-079)" },
+    { "gate": "bash scripts/check-license-consistency.sh", "exit_code": 0, "evidence": "check-license-consistency: OK (MIT); all crates/npm packages ok, wheel is MECHANISM PROXY only (expected without --with-wheel)" }
+  ],
+  "gates_not_run_and_why": [
+    "cargo check --workspace --all-targets / cargo clippy --workspace --all-targets -- not run; only docs/embedder.md (outside src/) was touched, matching the prompt's own carve-out ('you are editing one markdown file, so a full cargo rebuild is not required').",
+    "npm test -- deliberately not run per explicit prohibition (would emit a test-shaped dist/ and destroy the release-shaped npm-pack evidence).",
+    "scripts/agent-test.sh -- deliberately not run; its aggregate exit is documented as VACUOUS (TC-16, pre-existing red at test-check-governed-surface-pin unrelated to this change).",
+    "No eu7 runs performed (F-28); SCHEMA left at 24 (no schema-touching change made)."
+  ],
+  "could_not_establish": "Nothing. Both shipped class names were directly confirmed by reading src/ts/src/errors.ts and src/python/fathomdb/errors.py (plus the pyo3-native definition in src/rust/crates/fathomdb-py/src/lib.rs) before editing; all four required gates ran to a real, quoted exit code of 0.",
+  "blockers": "None."
+}
