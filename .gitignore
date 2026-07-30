@@ -24,6 +24,11 @@
 !.claude/hooks/
 .claude/hooks/*
 !.claude/hooks/seat-path-guard.sh
+# sealed-worktree-guard.sh is shared for the same reason: it is the hook named
+# by .claude/agents/sealed-orchestrator.md's frontmatter, so a fresh clone that
+# spawns that seat must have the file, and scripts/tests/test_sealed_worktree_guard.sh
+# has to be able to find it.
+!.claude/hooks/sealed-worktree-guard.sh
 .claude/settings.local.json
 .local/
 target/
