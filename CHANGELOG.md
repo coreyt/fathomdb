@@ -1183,7 +1183,7 @@ historical marker and intentionally not published (see the 0.7.0 section). See
   tokens) → mean-pool → L2-norm → mean-centering → sign-bit quantization →
   bit-KNN (K=192) → f32 rerank → top-10. Opt in with Python
   `Engine.open(path, use_default_embedder=True)` or TypeScript
-  `engineOpen(path, { useDefaultEmbedder: true })`; default is OFF (no embedder
+  `Engine.open(path, { useDefaultEmbedder: true })`; default is OFF (no embedder
   configured, vector writes fail with `EmbedderNotConfigured` as before).
   Caller-supplied embedders remain available in Rust; custom Python/TS embedder
   bridges are deferred to 0.8.x.

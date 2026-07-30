@@ -49,7 +49,9 @@ To let FathomDB embed documents for you, use the embedder-enabled native binary
 and opt in at open:
 
 ```ts
-const engine = await engineOpen("mydb.sqlite", { useDefaultEmbedder: true });
+import { Engine } from "fathomdb";
+
+const engine = await Engine.open("mydb.sqlite", { useDefaultEmbedder: true });
 ```
 
 This enables the in-process `bge-small-en-v1.5` model and, on first use,

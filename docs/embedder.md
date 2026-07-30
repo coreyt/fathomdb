@@ -48,9 +48,9 @@ pip install "fathomdb[default-embedder]"
 ### TypeScript
 
 ```ts
-import { engineOpen } from "fathomdb";
+import { Engine } from "fathomdb";
 
-const engine = await engineOpen("mydb.sqlite", { useDefaultEmbedder: true });
+const engine = await Engine.open("mydb.sqlite", { useDefaultEmbedder: true });
 console.log(engine.openReport().defaultEmbedder.name); // "fathomdb-bge-small-en-v1.5"
 ```
 
