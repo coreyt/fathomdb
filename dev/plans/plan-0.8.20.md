@@ -470,9 +470,9 @@ to the HITL.
 ### ▶ Immediate next
 
 <!-- BEGIN GENERATED release-state:0.8.20:plan-immediate-next -->
-**IMMEDIATE NEXT: Slice 39** (`R-20-DOC`) — Publish-facing documentation: MIT license reconciliation + a LICENSE that actually ships, the 0.8.20 CHANGELOG section, registry-facing READMEs, docs/ de-stale, dev/interfaces currency, docs.rs doc-comment corrections
+**IMMEDIATE NEXT: Slice 40** (`R-20-PUB`) — verification + release readiness (publish-or-hold)
 
-**Remaining ladder:** 39 → 40.<!-- END GENERATED release-state:0.8.20:plan-immediate-next -->
+**Remaining ladder:** 40.<!-- END GENERATED release-state:0.8.20:plan-immediate-next -->
 
 > ⚠ **This prose block previously described Slice 31 and was inherited verbatim by every brief
 > generated from this anchor.** It carried the line *"Applies no dependency bump. Edits no manifest and
