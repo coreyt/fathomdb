@@ -130,17 +130,43 @@ deferred**. That scope is enumerated here so the orchestrator does not have to r
 ledger. **BASE goes FIRST**: two of its five items were undiagnosed as of this fold-in, and unbounded work
 belongs at the start of a unit that **may not be split**, not discovered at PHASE 4.
 
-| # | Red | Cause | Fix | Status of the cause |
+**All five were diagnosed by a Steward-commissioned read-only pass on 2026-07-30 (`seq-222`). This table
+is the post-diagnosis state; every claim below was re-verified by the Steward from source or from the CI
+logs, not taken from the probe reports.**
+
+| # | Red | Cause | Fix | Status |
 |---|---|---|---|---|
 | 1 | `commission-manifest` | checkout declares no `fetch-depth` ⇒ depth-1; arm 11d recovers a pre-change generator revision from real history, absent in a shallow clone | one line, `fetch-depth: 0` | **PROVEN** (§23.5) |
-| 2 | `verify` | `scripts/bootstrap.sh` ends by running pyright; it reports **7 errors** and the step exits 1 | sync `src/python/fathomdb/_fathomdb.pyi` | **PROVEN** — see below |
-| 3 | `security` | identical: same `bootstrap.sh`, same 7 errors | same as #2 | **PROVEN** — see below |
-| 4 | `rust-macos` | the ~29% lock-holder-interference flake, the same failure as local `test-rust` (TC-72) | **serialise the lock-holder tests** — ⛔ **not a retry** | cause PROVEN (§23.3); fix unwritten |
-| 5 | `rust-windows` | `tc57_worker_side_commit_pressure_governed` | **unknown at fold-in** | ⚠ **NO diagnosis existed** — reported-only since `seq-206` |
+| 2 | `security` | `scripts/bootstrap.sh` ends by running pyright; **7 errors**, step exits 1 | stub sync + `graph.py` | ✅ **predicted GREEN once #2/#3's cause clears** — 8 of 9 ACs pass locally, the one non-pass is environmental (this host forbids unprivileged userns; CI pins ubuntu-22.04 for exactly that). **Zero violations.** |
+| 3 | `verify` | identical bootstrap failure — **but four more reds wait behind it** | stub sync + `graph.py`, then the four below | ⚠ **STILL RED after the stub fix** — see §3a-2 |
+| 4 | `rust-macos` | the ~29% lock-holder-interference flake, same failure as local `test-rust` (TC-72) | **serialise the lock-holder tests** — ⛔ **not a retry** | cause PROVEN (§23.3); fix unwritten. ⚠ Not observed in the diagnosis run (`test-rust` **rc=0**) — absence is not a fix. |
+| 5 | `rust-windows` | ✅ **DIAGNOSED — `TC-91`, not a flake.** `commit_projection_outcomes` (`lib.rs:13878`) opens **DEFERRED** while `commit_batch` (`lib.rs:18706`) opens **IMMEDIATE** — the only `Immediate` site in the engine. Its error is **discarded** (`lib.rs:12780`/`12893`), so failed commits re-embed. | (1) stop discarding the error; (2) open the worker commit `IMMEDIATE` | **HITL-RULED INTO SLICE 40** 2026-07-30. **83/92 = 90.2% fail.** ⛔ Bar: **N=5 consecutive green `rust-windows` runs** |
 
-Also in scope, and not a CI job: **TC-136**, the stale local `_fathomdb.abi3.so`, which resolves only
-through the sanctioned rebuild. ⚠ **It bears on no gate** — that artifact is untracked and CI builds fresh.
-It buys knowledge of `test-python`'s real state, nothing more. Do not let it be mistaken for a CI red.
+⛔ **#5 is Slice 40's long pole.** No local Windows box exists; CI is the only sufficient check at ~10–15
+min/run, non-parallelisable, and **unverifiable before pushing**. At 90.2% failure a single green happens
+by luck ~10% of the time. ⚠ **The defect ships on Linux too** — 105–119 repeat-embeds over 200 rows, i.e.
+roughly every other row embedded twice, on the platform 0.8.20 actually publishes. That is **TC-91(a)**.
+
+✅ **TC-136 is RESOLVED** — the sanctioned rebuild cleared it. `test-python`'s **real** state, measured:
+**rc=0, 863 passed, 6 skipped** with the one SIGBUS-flaky test deselected. It was never 40 failures; it was
+one unrunnable prerequisite. The `.so` is gitignored, so nothing tracked was touched.
+
+### 3a-2. ⚠ What is behind the bootstrap wall — `verify` is NOT one fix away
+
+`agent-verify.sh` is **FOUR** stages, not three: `lint → typecheck → STRICT=1 AC037_LIVE_OPTIONAL=1
+agent-security.sh → test`. It already runs the security battery, in a *different* configuration from the
+`security` job. Measured per-stage: lint **rc=0** · typecheck **rc=1** (the 7) · security-in-verify-mode
+**rc=0** · test **rc=1**. So clearing the seven moves `verify`'s failure from *typecheck* to *test*, where:
+
+| suite | verdict |
+|---|---|
+| `test-check-governed-surface-pin` | **REAL** — 45/46 arms pass; the pin's `git_blob_sha1` provenance claim is stale. Certain red in CI. |
+| `test-actionlint-fixture` | **REAL** — asserts a literal `cargo publish --dry-run -p` that release.yml has **0** occurrences of since `2ae5c640`; the tiers now call `cargo-publish-if-new.sh`. **Red since 0.8.18 and structurally invisible** — it sat behind an already-red suite under the fail-fast harness. |
+| `test-md-generators` | **REAL bug, environment-triggered** — **TC-139**, new, **not on 39.5's baseline list**. CI reachability **UNDETERMINED**. |
+| `test-python` | **FLAKE — OOS-18**, and ⚠ **live on the gate path**: CI's `verify` does not set `FATHOMDB_SKIP_NETWORK_TESTS`. **A second lottery ticket on gate (i)**, alongside #4. |
+
+⚠ **The local red list and the CI red list are not the same list** (TC-139 fires only where matching
+untracked dirs exist). Do not treat either as a superset of the other.
 
 **Three corrections to the record, measured 2026-07-30 by the Steward:**
 
