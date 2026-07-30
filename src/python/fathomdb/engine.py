@@ -189,9 +189,16 @@ class Engine:
 
         Because the window is half-open, ``valid_from >= valid_until`` describes
         a window no instant can satisfy; that pair raises
-        ``InvalidArgumentError`` rather than being silently stored. A
-        non-integer bound raises ``WriteValidationError`` — it is never coerced
-        (``True`` is rejected too, even though ``bool`` subclasses ``int``).
+        ``WriteValidationError`` rather than being silently stored. A
+        non-integer bound raises ``WriteValidationError`` too — it is never
+        coerced (``True`` is rejected too, even though ``bool`` subclasses
+        ``int``). One family for the whole write-validation boundary.
+
+        **BREAKING (0.8.20 Slice 22, decision #18).** The unsatisfiable-window
+        pair used to raise ``InvalidArgumentError`` carrying both bounds. It is
+        now ``WriteValidationError``, and that error is **message-less** — the
+        offending bounds are no longer recoverable from it, so validate the
+        pair before calling.
         """
         receipt = self._native.write(batch or [])
         return WriteReceipt(

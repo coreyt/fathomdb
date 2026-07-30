@@ -737,8 +737,16 @@ export class Engine {
    *
    * Because the window is half-open, `validFrom >= validUntil` describes a
    * window no instant can satisfy; that pair is rejected with
-   * `InvalidArgumentError` rather than silently stored. A non-integer bound
-   * raises `WriteValidationError` — it is never truncated or coerced.
+   * `WriteValidationError` rather than silently stored. A non-integral bound
+   * rejects with `WriteValidationError` too — it is never truncated or
+   * coerced. One family for the whole write-validation boundary.
+   *
+   * **BREAKING (0.8.20 Slice 22, decision #18).** The unsatisfiable-window
+   * pair used to reject with `InvalidArgumentError` (napi code
+   * `FDB_INVALID_ARGUMENT`) carrying both bounds in `message`. It is now
+   * `WriteValidationError` (`FDB_WRITE_VALIDATION`) with the fixed message
+   * `"write validation error"` and `data: null` — the offending bounds are no
+   * longer recoverable from the error, so validate the pair before calling.
    */
   async write(batch: unknown[] = []): Promise<WriteReceipt> {
     validateFfiTree(batch);

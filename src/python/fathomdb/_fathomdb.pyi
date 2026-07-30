@@ -187,8 +187,13 @@ class Engine:
     # validity window in INTEGER epoch SECONDS, half-open
     # [valid_from, valid_until). Absent/None = unbounded on that side, which is
     # the back-compat default (valid at every instant). `valid_from >=
-    # valid_until` raises InvalidArgumentError; a non-integer (including bool)
-    # raises WriteValidationError. See `fathomdb.engine.Engine.write`.
+    # valid_until` raises WriteValidationError, and so does a non-integer
+    # bound (including bool) — ONE family for the whole write-validation
+    # boundary (0.8.20 Slice 22, decision #18; this pair used to raise
+    # InvalidArgumentError carrying both bounds). WriteValidationError is
+    # message-less here, so the offending bounds are NOT recoverable from the
+    # error — validate the pair before calling.
+    # See `fathomdb.engine.Engine.write`.
     def write(self, batch: Iterable[Any]) -> WriteReceipt: ...
     def embed(self, text: str) -> list[float]: ...
     def search(
