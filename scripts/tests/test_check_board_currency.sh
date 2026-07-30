@@ -326,6 +326,178 @@ printf '# STATUS — 0.8.94 fixture\n\nSlice 39: **LANDED %s**.\nSlice 39.5: **L
   "$FOK_39_SHORT" "$FOK_395_SHORT" >"$FRAC_OK_REPO/dev/plans/runs/STATUS-0.8.94.md"
 commit_all "$FRAC_OK_REPO" 'docs: stamp STATUS-0.8.94 both lands'
 
+# ============================================================================
+# TC-133 fixtures — the board/state CROSS-READ (§3a of the SLICE-ID-HARDENING
+# brief, added mid-flight by HITL ruling seq-212 option (b)).
+#
+# ⚠ THIS IS NOT SITE 1. At site 1 the slice-number CAPTURE is wrong. Here the
+# capture is CORRECT, the landing merge IS found, and its SHA IS present in the
+# board file — and the gate still certifies a board whose HAND-WRITTEN rows
+# contradict `dev/plans/release-state-<ver>.json` on every one of them.
+#
+# The real incident: for a long period `dev/plans/runs/STATUS-0.8.20.md` said
+# Slice 39 was NOT_STARTED while `91db34d8` WAS in the file — but only inside
+# the `<!-- BEGIN GENERATED -->` cells. The generated half was carrying the
+# check for the hand-written half, and the always-on CI job passed too.
+# Presence of a SHA is not currency of the row it belongs to.
+#
+# Every fixture below reproduces that shape literally: a matched landing merge,
+# its short SHA present in the board, and a hand-written ladder row that still
+# says "not started". An arm that merely REMOVES the SHA proves nothing new —
+# fixture B (Arm 2) already covers absent-SHA.
+# ============================================================================
+
+# write_state <dir> <ver> <landed-json-array> <ladder-json-array> <remaining-json-array>
+# Writes a minimal, well-formed release-state file. Only the fields the
+# cross-read actually reads are modelled; the real file carries ~20 more.
+write_state() {
+  local dir="$1" ver="$2" landed="$3" ladder="$4" remaining="$5"
+  mkdir -p "$dir/dev/plans"
+  printf '{\n  "release": "%s",\n  "landed": %s,\n  "ladder": %s,\n  "remaining_ladder": %s,\n  "next_slice": 40\n}\n' \
+    "$ver" "$landed" "$ladder" "$remaining" >"$dir/dev/plans/release-state-$ver.json"
+}
+
+# --- Fixture J (TC-133 RECURRENCE): the board CONTRADICTS its own state file --
+# Release 0.8.93. Slice 5 landed via a recognized `merge(0.8.93): Slice 5`
+# subject; the state file records it LANDED with that short SHA; the short SHA
+# IS in the board — inside a GENERATED cell — and the hand-written ladder row
+# still reads `not started`.
+#
+# ⚠ RED-FIRST PROOF: against the UNFIXED checker this fixture exits **0**. The
+# only board predicate is "does the short SHA appear anywhere in the file", and
+# it does. That green is the defect.
+CONTRADICT_REPO="$TMPROOT/contradicting"
+init_repo "$CONTRADICT_REPO"
+mkdir -p "$CONTRADICT_REPO/dev/plans/runs" "$CONTRADICT_REPO/src" "$CONTRADICT_REPO/scripts"
+printf 'fixture\n' >"$CONTRADICT_REPO/src/keep.txt"
+printf '# STATUS — 0.8.93 fixture\n\n## 2. Slice ladder\n\n| Slice | Title | Depends-on | Status |\n|------:|-------|-----------|--------|\n| 5 | fixture slice | — | not started |\n| 40 | fixture tail | 5 | not started |\n\n**Ladder remaining: 40 alone.**\n' \
+  >"$CONTRADICT_REPO/dev/plans/runs/STATUS-0.8.93.md"
+write_state "$CONTRADICT_REPO" 0.8.93 '[]' \
+  '[{"slice": 5, "status": "NOT_STARTED"}, {"slice": 40, "status": "NOT_STARTED"}]' '[5, 40]'
+commit_all "$CONTRADICT_REPO" 'fixture: initial commit'
+git -C "$CONTRADICT_REPO" checkout -q -b slice-5-fixture
+printf 'work\n' >"$CONTRADICT_REPO/src/slice5.txt"
+commit_all "$CONTRADICT_REPO" 'feat: slice 5 work'
+git -C "$CONTRADICT_REPO" checkout -q main
+git -C "$CONTRADICT_REPO" merge -q --no-ff -m 'merge(0.8.93): Slice 5 — fixture land' slice-5-fixture
+CONTRA_SHA="$(git -C "$CONTRADICT_REPO" rev-parse HEAD)"
+CONTRA_SHORT="${CONTRA_SHA:0:8}"
+# The state file is reconciled (Slice 5 LANDED). The board is NOT: its
+# hand-written ladder row is untouched, and the SHA reaches the file only
+# through the generated cell — the exact split that made the incident invisible.
+{
+  printf '# STATUS — 0.8.93 fixture\n\n'
+  printf '## 2. Slice ladder\n\n'
+  printf '| Slice | Title | Depends-on | Status |\n'
+  printf '|------:|-------|-----------|--------|\n'
+  printf '| 5 | fixture slice | — | not started |\n'
+  printf '| 40 | fixture tail | 5 | not started |\n\n'
+  printf '**Ladder remaining: 40 alone.**\n\n'
+  printf -- '<!-- BEGIN GENERATED: fixture-cell -->\n'
+  printf 'Landed: 5 (`%s`).\n' "$CONTRA_SHORT"
+  printf -- '<!-- END GENERATED: fixture-cell -->\n'
+} >"$CONTRADICT_REPO/dev/plans/runs/STATUS-0.8.93.md"
+write_state "$CONTRADICT_REPO" 0.8.93 '[5]' \
+  "$(printf '[{"slice": 5, "status": "LANDED", "sha": "%s"}, {"slice": 40, "status": "NOT_STARTED"}]' "$CONTRA_SHORT")" \
+  '[40]'
+commit_all "$CONTRADICT_REPO" "docs: reconcile release-state-0.8.93 to the Slice 5 land $CONTRA_SHORT"
+
+# --- Fixture K (TC-133 RECURRENCE): `Ladder remaining:` prose disagrees -------
+# Release 0.8.92. Every hand-written ladder row is CURRENT (Slice 5 cites its
+# own landing SHA, no stale marker) — the ONLY contradiction is the prose claim
+# `Ladder remaining: 40 and 41 alone` against `remaining_ladder: [40]`.
+# Separated from fixture J on purpose so each half of the cross-read owns its
+# own red; a single fixture tripping both would let either half rot unnoticed.
+# ⚠ RED-FIRST PROOF: unfixed checker exits 0 (the SHA is cited).
+LADDERPROSE_REPO="$TMPROOT/ladder-prose"
+init_repo "$LADDERPROSE_REPO"
+mkdir -p "$LADDERPROSE_REPO/dev/plans/runs" "$LADDERPROSE_REPO/src" "$LADDERPROSE_REPO/scripts"
+printf 'fixture\n' >"$LADDERPROSE_REPO/src/keep.txt"
+printf '# STATUS — 0.8.92 fixture\n\nSlice 5: not started.\n' \
+  >"$LADDERPROSE_REPO/dev/plans/runs/STATUS-0.8.92.md"
+write_state "$LADDERPROSE_REPO" 0.8.92 '[]' '[{"slice": 5, "status": "NOT_STARTED"}]' '[5, 40]'
+commit_all "$LADDERPROSE_REPO" 'fixture: initial commit'
+git -C "$LADDERPROSE_REPO" checkout -q -b slice-5-fixture
+printf 'work\n' >"$LADDERPROSE_REPO/src/slice5.txt"
+commit_all "$LADDERPROSE_REPO" 'feat: slice 5 work'
+git -C "$LADDERPROSE_REPO" checkout -q main
+git -C "$LADDERPROSE_REPO" merge -q --no-ff -m 'merge(0.8.92): Slice 5 — fixture land' slice-5-fixture
+LP_SHORT="$(git -C "$LADDERPROSE_REPO" rev-parse HEAD)"; LP_SHORT="${LP_SHORT:0:8}"
+{
+  printf '# STATUS — 0.8.92 fixture\n\n'
+  printf '| Slice | Title | Depends-on | Status |\n'
+  printf '|------:|-------|-----------|--------|\n'
+  printf '| 5 | fixture slice | — | **COMPLETE — LANDED `%s`** |\n' "$LP_SHORT"
+  printf '| 40 | fixture tail | 5 | not started |\n\n'
+  printf '**Ladder remaining: 40 and 41 alone**, then the HITL publish gate.\n'
+} >"$LADDERPROSE_REPO/dev/plans/runs/STATUS-0.8.92.md"
+write_state "$LADDERPROSE_REPO" 0.8.92 '[5]' \
+  "$(printf '[{"slice": 5, "status": "LANDED", "sha": "%s"}, {"slice": 40, "status": "NOT_STARTED"}]' "$LP_SHORT")" \
+  '[40]'
+commit_all "$LADDERPROSE_REPO" "docs: stamp STATUS-0.8.92 Slice 5 LANDED $LP_SHORT"
+
+# --- Fixture M (TC-133 policy): the state file EXISTS but is UNPARSEABLE ------
+# Release 0.8.91. Board is fully current. The state file is corrupt. The gate
+# must NOT quietly fall back to the SHA-only predicate: the release declares a
+# single-writer state file and the cross-read cannot vouch for the board
+# without it. Same failure family as the fix-1 vacuous-pass guard.
+# ⚠ RED-FIRST PROOF: unfixed checker exits 0 (it never opens the state file).
+BADSTATE_REPO="$TMPROOT/bad-state"
+init_repo "$BADSTATE_REPO"
+mkdir -p "$BADSTATE_REPO/dev/plans/runs" "$BADSTATE_REPO/dev/plans" "$BADSTATE_REPO/src" "$BADSTATE_REPO/scripts"
+printf 'fixture\n' >"$BADSTATE_REPO/src/keep.txt"
+printf '# STATUS — 0.8.91 fixture\n\nSlice 5: not started.\n' \
+  >"$BADSTATE_REPO/dev/plans/runs/STATUS-0.8.91.md"
+commit_all "$BADSTATE_REPO" 'fixture: initial commit'
+git -C "$BADSTATE_REPO" checkout -q -b slice-5-fixture
+printf 'work\n' >"$BADSTATE_REPO/src/slice5.txt"
+commit_all "$BADSTATE_REPO" 'feat: slice 5 work'
+git -C "$BADSTATE_REPO" checkout -q main
+git -C "$BADSTATE_REPO" merge -q --no-ff -m 'merge(0.8.91): Slice 5 — fixture land' slice-5-fixture
+BS_SHORT="$(git -C "$BADSTATE_REPO" rev-parse HEAD)"; BS_SHORT="${BS_SHORT:0:8}"
+{
+  printf '# STATUS — 0.8.91 fixture\n\n'
+  printf '| Slice | Title | Depends-on | Status |\n'
+  printf '|------:|-------|-----------|--------|\n'
+  printf '| 5 | fixture slice | — | **COMPLETE — LANDED `%s`** |\n' "$BS_SHORT"
+  printf '\n**Ladder remaining: 40 alone.**\n'
+} >"$BADSTATE_REPO/dev/plans/runs/STATUS-0.8.91.md"
+printf '{ this is not json,\n' >"$BADSTATE_REPO/dev/plans/release-state-0.8.91.json"
+commit_all "$BADSTATE_REPO" "docs: stamp STATUS-0.8.91 Slice 5 LANDED $BS_SHORT"
+
+# --- Fixture N (TC-133 regression guard, NOT a recurrence arm) ----------------
+# Release 0.8.90. Board and state file AGREE on every hand-written row and on
+# the `Ladder remaining:` claim. Must exit 0 before AND after the fix, so the
+# cross-read cannot buy its red by failing every board that carries a state
+# file. Also pins the NON-landed row: Slice 40 says `not started` and IS
+# `not started` in the state file — the marker vocabulary must not fire there.
+CROSSOK_REPO="$TMPROOT/cross-ok"
+init_repo "$CROSSOK_REPO"
+mkdir -p "$CROSSOK_REPO/dev/plans/runs" "$CROSSOK_REPO/src" "$CROSSOK_REPO/scripts"
+printf 'fixture\n' >"$CROSSOK_REPO/src/keep.txt"
+printf '# STATUS — 0.8.90 fixture\n\nSlice 5: not started.\n' \
+  >"$CROSSOK_REPO/dev/plans/runs/STATUS-0.8.90.md"
+write_state "$CROSSOK_REPO" 0.8.90 '[]' '[{"slice": 5, "status": "NOT_STARTED"}]' '[5, 40]'
+commit_all "$CROSSOK_REPO" 'fixture: initial commit'
+git -C "$CROSSOK_REPO" checkout -q -b slice-5-fixture
+printf 'work\n' >"$CROSSOK_REPO/src/slice5.txt"
+commit_all "$CROSSOK_REPO" 'feat: slice 5 work'
+git -C "$CROSSOK_REPO" checkout -q main
+git -C "$CROSSOK_REPO" merge -q --no-ff -m 'merge(0.8.90): Slice 5 — fixture land' slice-5-fixture
+CO_SHORT="$(git -C "$CROSSOK_REPO" rev-parse HEAD)"; CO_SHORT="${CO_SHORT:0:8}"
+{
+  printf '# STATUS — 0.8.90 fixture\n\n'
+  printf '| Slice | Title | Depends-on | Status |\n'
+  printf '|------:|-------|-----------|--------|\n'
+  printf '| **5** | fixture slice | — | **COMPLETE — LANDED `%s`** (merge). Carried to the next unit. |\n' "$CO_SHORT"
+  printf '| 40 | fixture tail | 5 | not started |\n\n'
+  printf '**Ladder remaining: 40 alone**, then the HITL publish gate.\n'
+} >"$CROSSOK_REPO/dev/plans/runs/STATUS-0.8.90.md"
+write_state "$CROSSOK_REPO" 0.8.90 '[5]' \
+  "$(printf '[{"slice": 5, "status": "LANDED", "sha": "%s"}, {"slice": 40, "status": "NOT_STARTED"}]' "$CO_SHORT")" \
+  '[40]'
+commit_all "$CROSSOK_REPO" "docs: stamp STATUS-0.8.90 Slice 5 LANDED $CO_SHORT"
+
 run_checker() {
   local dir="$1" checker="${2:-$CHECKER}"
   set +e
@@ -482,6 +654,119 @@ else
   fail "a fully-current fractional board must not be flagged; got rc=$RC, out: $OUT"
 fi
 
+# ===================== TC-133 — the board/state CROSS-READ =====================
+# §3a of the SLICE-ID-HARDENING brief (HITL ruling 2026-07-30, steward seq-212
+# option (b); todos-ledger seq-197). A FIFTH site, independent of site 1.
+
+# --- Arm 12 (TC-133 RECURRENCE): a board that contradicts its own state file ---
+# The landing merge is found, its short SHA IS in the file, and the hand-written
+# ladder row still says `not started`. Pre-fix: rc=0. Post-fix: HARD fail.
+run_checker "$CONTRADICT_REPO"
+if [ "$RC" -ne 0 ]; then
+  pass "TC-133: a board whose hand-written row contradicts release-state HARD-fails"
+else
+  fail "TC-133 RECURRENCE: Slice 5 is LANDED in release-state-0.8.93.json, the board row still says 'not started', and the gate exited 0 because the SHA appears in a GENERATED cell; out: $OUT"
+fi
+# ANTI-VACUITY: the red must be attributable to the cross-read, not to some
+# other predicate happening to trip on this fixture.
+if printf '%s' "$OUT" | grep -q 'TC-133'; then
+  pass "TC-133: the failure is attributed to the board/state cross-read"
+else
+  fail "expected the failure to name TC-133 (the cross-read), not some other predicate; got: $OUT"
+fi
+if printf '%s' "$OUT" | grep -q 'Slice 5'; then
+  pass "TC-133: the failure names the contradicting slice (5)"
+else
+  fail "expected the failure to name Slice 5; got: $OUT"
+fi
+# ANTI-VACUITY: the SHA-presence predicate must still have PASSED here — the
+# short SHA really is in the file. If the gate red were coming from the old
+# "SHA not referenced anywhere" line, this arm would prove nothing new.
+if printf '%s' "$OUT" | grep -q "is not referenced anywhere"; then
+  fail "the pre-existing absent-SHA predicate fired — this fixture must be red ONLY via the cross-read (the SHA $CONTRA_SHORT IS present); out: $OUT"
+else
+  pass "TC-133 anti-vacuity: the absent-SHA predicate did NOT fire (the SHA is present); the red is the cross-read's"
+fi
+# Slice 40 is NOT landed and its row legitimately says `not started` — the
+# marker vocabulary must not fire on a slice the state file agrees is pending.
+if printf '%s' "$OUT" | grep -q 'Slice 40'; then
+  fail "the cross-read flagged Slice 40, which release-state-0.8.93.json agrees is NOT_STARTED; out: $OUT"
+else
+  pass "TC-133 anti-vacuity: a legitimately-pending slice is not flagged"
+fi
+
+# --- Arm 13 (TC-133 RECURRENCE): `Ladder remaining:` prose vs remaining_ladder -
+# Every ladder row is current; the ONLY contradiction is the prose claim.
+# Pre-fix: rc=0. Post-fix: HARD fail.
+run_checker "$LADDERPROSE_REPO"
+if [ "$RC" -ne 0 ]; then
+  pass "TC-133: 'Ladder remaining:' prose that disagrees with remaining_ladder HARD-fails"
+else
+  fail "TC-133 RECURRENCE: the board claims 'Ladder remaining: 40 and 41 alone' while remaining_ladder is [40], and the gate exited 0; out: $OUT"
+fi
+if printf '%s' "$OUT" | grep -q 'remaining_ladder'; then
+  pass "TC-133: the failure names remaining_ladder as the contradicted field"
+else
+  fail "expected the failure to name remaining_ladder; got: $OUT"
+fi
+if printf '%s' "$OUT" | grep -q 'Slice 5'; then
+  fail "Slice 5's row is current and must not be flagged — this arm's red must be the prose claim alone; out: $OUT"
+else
+  pass "TC-133 anti-vacuity: the current ladder row is not flagged by the prose arm"
+fi
+
+# --- Arm 14 (TC-133 policy): state file ABSENT — visible, not silent ----------
+# Live boards exist for releases that predate the single-writer state file
+# (DOC-HYGIENE-2 T2a), so a hard fail there would redden the gate for unrelated
+# boards. The cross-read is SKIPPED — but it must SAY SO, because a silent skip
+# rebuilds the blind spot this item closes. Pre-fix there is no such line at
+# all, so the message assertion is this arm's RED-first proof; the rc is 0 both
+# before and after by design.
+run_checker "$CURRENT_REPO"
+if [ "$RC" -eq 0 ]; then
+  pass "TC-133: a live board with no release-state file is not hard-failed"
+else
+  fail "an absent release-state file must not redden a board; got rc=$RC, out: $OUT"
+fi
+if printf '%s' "$OUT" | grep -q 'cross-read (TC-133) DID NOT RUN'; then
+  pass "TC-133: the skipped cross-read is announced in the output, not silent"
+else
+  fail "TC-133 BLIND SPOT: the cross-read was skipped with no visible notice; out: $OUT"
+fi
+
+# --- Arm 15 (TC-133 policy): state file PRESENT but UNPARSEABLE — HARD fail ---
+# A corrupt state file is not the same as an absent one: the release declares a
+# single writer, so the gate cannot vouch for the board without reading it.
+# Pre-fix: rc=0 (the file is never opened).
+run_checker "$BADSTATE_REPO"
+if [ "$RC" -ne 0 ]; then
+  pass "TC-133: an unparseable release-state file HARD-fails (cannot vouch)"
+else
+  fail "TC-133: a corrupt release-state-0.8.91.json let the board pass on the SHA predicate alone; got rc=0, out: $OUT"
+fi
+if printf '%s' "$OUT" | grep -q 'could not be read as release state'; then
+  pass "TC-133: the unparseable-state failure says what it could not read"
+else
+  fail "expected a failure naming the unreadable release-state file; got: $OUT"
+fi
+
+# --- Arm 16 (TC-133 regression guard, NOT a recurrence arm) -------------------
+# Board and state file agree everywhere. Green before AND after the fix, so the
+# cross-read cannot buy its red by failing every board that carries a state
+# file. The Slice 5 row deliberately contains the words "Carried to the next
+# unit." — a bare `\bnext\b` marker would false-positive here and block a land.
+run_checker "$CROSSOK_REPO"
+if [ "$RC" -eq 0 ]; then
+  pass "TC-133 regression guard: a board that agrees with its state file still exits 0"
+else
+  fail "a consistent board+state pair must not be flagged; got rc=$RC, out: $OUT"
+fi
+if printf '%s' "$OUT" | grep -q 'board/state cross-read (TC-133)'; then
+  pass "TC-133 anti-vacuity: the green run really executed the cross-read (it reports itself)"
+else
+  fail "the cross-read did not report itself on a passing run — it may be inert; out: $OUT"
+fi
+
 # ============================ preflight.sh --landing ============================
 # These arms are the RED-first proof: against the UNMODIFIED preflight.sh they
 # demonstrate the gap (stale board incorrectly clears landing); after the gate
@@ -559,6 +844,27 @@ if printf '%s' "$OUT" | grep -q "board-currency.*Slice 39: landing commit ${FRAC
   pass "--landing surfaces the swallowed integer land as a board-currency HARD fail"
 else
   fail "expected a board-currency HARD line naming Slice 39 / $FRAC_39_SHORT; got: $OUT"
+fi
+
+# --- Arm 12b (TC-133, through the REAL entry point) ---------------------------
+# The cross-read is not usually invoked directly at land time — it runs INSIDE
+# `preflight.sh --landing` and the always-on CI board-currency job, which is
+# exactly why the real incident survived: BOTH of them were green while the
+# board said NOT_STARTED. Five of six codex fix rounds across Slices 32/33 were
+# defects in the verification apparatus rather than the function under test, so
+# the TC-133 recurrence is graded through the real caller as well as directly.
+CONTRADICT_LINKED="$TMPROOT/contradicting-linked"
+git -C "$CONTRADICT_REPO" worktree add -q -b contradicting-landing-fixture "$CONTRADICT_LINKED" >/dev/null 2>&1
+run_preflight "$CONTRADICT_LINKED" --landing
+if [ "$RC" -ne 0 ]; then
+  pass "TC-133 via the real entry point: --landing HARD-fails on a board that contradicts its state file"
+else
+  fail "TC-133 RECURRENCE in preflight --landing: a board saying 'not started' for a LANDED slice cleared landing; got rc=0, out: $OUT"
+fi
+if printf '%s' "$OUT" | grep -q 'board-currency.*TC-133'; then
+  pass "--landing surfaces the board/state contradiction as a board-currency HARD fail"
+else
+  fail "expected a board-currency HARD line naming TC-133; got: $OUT"
 fi
 
 if [ "$FAILED" -gt 0 ]; then
