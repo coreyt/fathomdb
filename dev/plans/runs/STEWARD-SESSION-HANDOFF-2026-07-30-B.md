@@ -66,8 +66,12 @@ no findings, zero fix rounds.
 > - **`rust-windows` / `tc57`** — previously reported-only under `seq-206`, **now in scope to fix**
 > - **`test-python`** (**TC-136**) — resolves only through the sanctioned rebuild
 > - the **`test-rust`/`rust-macos` flake** — fix is **serialising the lock-holder tests**, not a retry
-> - **TC-135** — exclude `dev/plans/runs/codex/` from the orphan-marker scan (**option (a)**, `seq-219`),
->   which unblocks TC-RUBRIC-7
+>
+> ⚠ **TC-135 is NOT in this list.** Its **remedy** is ruled (option (a) — exclude `dev/plans/runs/codex/`
+> from the orphan-marker scan, `seq-219`) but its **placement is UNPLACED and owed to the HITL**
+> (`seq-220`). It is not on 39.5's baseline list, so the fix-everything disposition does not reach it — a
+> Steward inference, corrected. **Until it is placed, TC-RUBRIC-7 stays knowingly unmet and §9 transcripts
+> stay outside the tree.**
 >
 > ⛔ **Slice 40 is materially LARGER than the brief drafted for it, and it stays ONE unit** (`seq-216`).
 > **Fold these into the §3a checkpoint table BEFORE commissioning.**
