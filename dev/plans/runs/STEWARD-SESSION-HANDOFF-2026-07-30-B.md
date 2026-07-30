@@ -35,27 +35,44 @@ over this section.**
 | Manifests | Axis-W **`0.8.9`** everywhere; Axis-E `fathomdb-embedder-api` **`0.6.1`**, version **undecided** |
 | CI on `main` | **RED** — gate (i) not met (§5) |
 
-## 2. ▶ IMMEDIATE: Slice 39.5 is IN FLIGHT
+## 2. ▶ IMMEDIATE: both cross-cutting units are DONE — Slice 40 is next
 
-**A background orchestrator was commissioned at `seq-215`** against
-`dev/plans/runs/0.8.20-slice-39.5-commission-brief.md` (v2), in worktree
-`~/projects/fathomdb-worktrees/slice-39-5`, branch `0.8.20-slice-39.5-harness`, base **`fc4c9032`**.
+✅ **`SLICE-ID-HARDENING` LANDED `2008f529`** (close record **§22**, `seq-214`).
+✅ **"Slice 39.5" / `R-20-HARNESS` LANDED `b6cc8fa6`** (close record **§23**, `seq-218`) — codex §9 PASS,
+no findings, zero fix rounds.
 
-> ### ⚠ YOU CANNOT RESUME THAT AGENT — it belongs to the previous session
+> ### ⭐ 39.5's headline: the hidden-suite yield is effectively ZERO hard defects
 >
-> **Poll it from git**: branch tip, `git rev-list --count main..0.8.20-slice-39.5-harness`, and worktree
-> mtimes. A commissioned orchestrator **returns once and does NOT notify on stall**; one stalled **36 h**
-> unnoticed in this program.
->
-> **If it is dead or has produced nothing after a long silence, re-commission from the same brief** — it is
-> v2, adversarially reviewed, and stands on its own. Do not rewrite it.
->
-> ⚠ **A commit-only stall detector FALSE-POSITIVES on this workload.** The units here work in 13-minute
-> silent stretches. Key any monitor on **worktree write age** (25 min) **and** `pgrep -x codex|cargo`, not
-> on commits alone. The prior session tripped its own detector twice on healthy agents.
+> `seq-202` split that unit out because the never-reached suites could have yielded "zero failures or
+> fifteen". **The answer is zero.** `registered=35 ran=35 passed=31 failed=4` — two are Slice 40's own
+> pre-existing reds, one is a characterised **~29% flake** (`test-rust`, lock-holder interference between
+> sibling tests, matching TC-72), one is `test-python` in the **fourth state** (UNKNOWN-pending-rebuild,
+> never a red). **Slice 40 is materially de-risked.**
 
-**When it lands:** verify from git (never the report), land **fast-forward ref-to-ref** (§7), reconcile the
-board + state file **in the same landing action**, write a close record, then Slice 40.
+---
+
+> ### ⚠ ONE HITL DISPOSITION DECISION IS DUE — READ THIS BEFORE COMMISSIONING SLICE 40
+>
+> `seq-202` and `seq-206` both ruled that disposition of **everything** the baseline surfaces is **one
+> decision taken once the full list exists**, not piecemeal. **The list now exists** (board §23). It
+> comprises: the two Slice-40-owned red suites · the `test-rust`/`rust-macos` flake · `test-python`'s
+> UNKNOWN state · the seven pyright errors blocking `verify`/`security` (**plus the TC-137 lead**) ·
+> `rust-windows`/`tc57` · and the **solved** `commission-manifest` divergence.
+> **All of it bears on publish gate (i), which is NOT met. Surface it; do not decide it.**
+
+**Also settled by 39.5, so do not re-derive:**
+
+- ⚠ **Gate (i)'s denominator is 22, not 23.** PR #167 run `30566757420`: 23 total job runs = 17 success +
+  5 failure + **1 skipped** ⇒ **22 EXECUTED**. The prior Steward's brief said "23 executed / 1 skipped",
+  which is impossible. **Five** failures, not four — `rust-macos` is the same flake as local.
+- ✅ **The `commission-manifest` local↔CI divergence is SOLVED**: that job's checkout declares no
+  `fetch-depth` so it defaults to **depth-1**, and arm 11d recovers a pre-change generator revision from
+  **real git history**, absent in a shallow clone. The mktemp fixture arms **do** pass in CI. One-line fix
+  (`fetch-depth: 0`) — **Slice 40's territory**.
+- ⚠ **The actionlint conversion revealed TWO defects, not one:** **all seven** `publish-rust-t1..t7` tiers
+  fail (only `t1` was ever visible), **and independently** the test's `t4`/`t5` names are **swapped** versus
+  the real jobs — a test that could silently mis-assert publish **order**. Both are Slice 40's; per
+  `seq-211` **the determination is Slice 40's to make**.
 
 ## 3. Slice 40 — ONE unit, structured internally (HITL: do NOT split)
 
