@@ -858,6 +858,360 @@ else
   fi
 fi
 
+# ===========================================================================
+# Arms 11a-11h — SLICE-ID-HARDENING (0.8.20 cross-cutting unit, brief §1b).
+#
+# WHY A DEDICATED FIXTURE AND NOT THE REAL STATE FILE. `release-state-0.8.20.json`
+# carries NO fractional slice id anywhere: `landed` is all ints, `next_slice` is
+# the int 40, every `ladder[].slice` is an int. Against that state every defect
+# below is INERT — `"%d" % 40` == `str(40)` == `_slice_str(40)` == `"40"` — so an
+# arm pointed at the real checkout would be green before the fix and green after
+# it. Vacuous by construction. The whole point of these arms is a state file that
+# carries fractional AND integral-float ids, which is what `frac_fixture` builds.
+#
+# WHAT THE FIXTURE PLANTS, and which call site each value reaches:
+#   landed              [0, 5.0, 10.5]   -> :278 handoff chain (bare str)
+#   remaining_ladder    [20, 30.5, 40.0] -> :168 master ladder (bare str)
+#   unblocked           [20, 30.0]       -> :154 _and_join (bare str), via :264
+#   publish_precondition_slice  30.5     -> :260 by[int(...)] (INDEX truncation)
+#   ladder 30.5 .slice  30.5             -> :263 `Slice %d` (RENDER truncation)
+#   ladder 30.5 .depends_on [5,10.0,20]  -> :265 str(d) (bare str)
+#   sign_off_slice      40.5             -> :233/:242/:248 `Slice %d` (truncation)
+#
+# THE FENCED REGIONS BELOW HOLD THE POST-FIX BYTES, HAND-WRITTEN. They are NOT
+# produced by running the gate with --write: a fixture written by the tool under
+# test and then checked by that same tool agrees with itself whatever the tool
+# does, which is the canary-hashing-nothing failure this release already had
+# once. Writing the expectation out longhand is what makes the diff evidence.
+# ===========================================================================
+
+# The publish-gate sentence with a FRACTIONAL sign_off_slice, longhand — an
+# independent restatement of what the renderer must emit, exactly as gate_facts
+# does for the integral case.
+FRAC_GATE_SENTENCE='**AC-999 is PRE-SIGNED** — the HITL signed off on the accumulated governed-surface delta on 2026-01-02 (master F-99), pinned to the content of `src/conformance/governed-surface-allowlist.json`; any diff to that file re-opens it (the pin). Pre-signing is NOT minting: AC-999 is minted and recorded as SIGNED at Slice 40.5 (§4 #1). **Publish is gated by the separate HITL publish gate, not by this AC.**'
+FRAC_GATE_SENTENCE_NOTPRE='**Publish remains blocked on AC-999**, which is **NOT pre-signed** — the accumulated governed-surface delta still awaits HITL sign-off, and AC-999 is minted and recorded as SIGNED at Slice 40.5 (§4 #1). Publish is additionally gated by the separate HITL publish gate.'
+FRAC_GATE_SENTENCE_MINTED='**AC-999 is MINTED and recorded as SIGNED** at Slice 40.5 (§4 #1), covering the accumulated governed-surface delta. **Publish is gated by the separate HITL publish gate, not by this AC.**'
+
+# Rewrites the baseline fixture into the fractional one. Call AFTER
+# setup_fixture. $1 selects the publish-gate branch (presigned|notpresigned|
+# minted) so all THREE `Slice %d` sites (:233, :242, :248) are reachable — a fix
+# applied to one branch only would leave the other two live.
+frac_fixture() {
+  local mode="${1:-presigned}" sentence
+  case "$mode" in
+    presigned)    sentence="$FRAC_GATE_SENTENCE" ;;
+    notpresigned) sentence="$FRAC_GATE_SENTENCE_NOTPRE" ;;
+    minted)       sentence="$FRAC_GATE_SENTENCE_MINTED" ;;
+    *) printf 'frac_fixture: unknown gate mode %q\n' "$mode" >&2; exit 2 ;;
+  esac
+
+  python3 - "$FIX/dev/plans/release-state-9.9.9.json" "$mode" <<'PY'
+import json, sys
+p, mode = sys.argv[1], sys.argv[2]
+s = json.load(open(p))
+# Two NEW ladder entries whose ids are fractional, sitting alongside their
+# integer neighbours 30 and 40 — which must survive untouched. 10.5 is LANDED so
+# the landed roll-up has to carry it.
+s["ladder"].append({"slice": 10.5, "short": "R-B5", "depends_on": [5],
+                    "status": "LANDED", "sha": "cccc3333"})
+s["ladder"].append({"slice": 30.5, "short": "H7b", "depends_on": [5, 10.0, 20],
+                    "status": "NOT_STARTED", "sha": None})
+s["ladder"].append({"slice": 40.5, "short": "PUB2", "depends_on": [30.5],
+                    "status": "NOT_STARTED", "sha": None})
+# The INTEGER neighbour Slice 30 gets the same integral-float dependency list.
+# Without this, :265's defect is MASKED by :260's: the unfixed gate indexes
+# by[int(30.5)] == by[30] and renders Slice 30's all-integer depends_on, so the
+# bare-str() bug at :265 never shows and its arm would be vacuously green
+# pre-fix. Planted in BOTH entries, :265 is red whichever entry is selected —
+# which is what makes it independent evidence rather than a shadow of :260.
+for _e in s["ladder"]:
+    if _e["slice"] == 30:
+        _e["depends_on"] = [5, 10.0, 20]
+s["landed"]                     = [0, 5.0, 10.5]
+s["remaining_ladder"]           = [20, 30.5, 40.0]
+s["unblocked"]                  = [20, 30.0]
+s["publish_precondition_slice"] = 30.5
+s["next_slice"]                 = 20
+g = s["acceptance"]["publish_gate"]
+g["sign_off_slice"] = 40.5
+if mode == "notpresigned":
+    g["pre_sign_state"] = "NOT_PRE_SIGNED"
+    g.pop("pre_sign", None)
+    g["minted"] = False
+elif mode == "minted":
+    g["minted"] = True
+else:
+    g["minted"] = False
+json.dump(s, open(p, "w"), indent=2)
+PY
+
+  # master §4 — remaining_ladder must render `40`, never `40.0` (:168), and the
+  # landed roll-up must render `5`, never `5.0` (:167, already helper-correct).
+  cat >"$FIX/dev/plans/master.md" <<EOF
+# Master
+
+Prose that is NOT generated and must never be touched.
+
+| Release | Notes |
+|---|---|
+| **9.9.9** | Lead-in prose. **✅ LADDER PROGRESS: ${B_MASTER}Slices 0 (\`aaaa1111\`) · 5 (\`bbbb2222\`) · 10.5 (\`cccc3333\`) are all LANDED on \`origin/main\`; SCHEMA is 42; remaining ladder = 20 → 30.5 → 40.${E_MASTER}** Trailing prose. |
+EOF
+
+  # board §1 — `20 and 30` (:154), the H7b entry selected by 30.5 (:260),
+  # `Slice 30.5` rendered (:263), `5/10/20` (:265), `Slice 40.5` (gate).
+  cat >"$FIX/dev/plans/runs/board.md" <<EOF
+# Board
+
+## 1. Current state
+
+| | |
+|---|---|
+| **Unblocks** | ${B_UNBLOCKS}**Slices 20 and 30 are NOW UNBLOCKED** — R-A (the thing) now exists. Slice 30.5 (H7b) depends on 5/10/20. ${sentence}${E_UNBLOCKS} |
+
+## 4. Open HITL decisions
+
+> **⚠ HISTORICAL QUEUE, NOT THE LIVE OPEN SET.** Rows 1-3 are retained as the
+> decision record; do not act on them as open.
+>
+> **THE LIVE OPEN SET IS EXACTLY ${B_OPEN}TWO${E_OPEN}:** (1) the batched
+> surface decision; and (2) PUBLISH (hard gate).
+
+| # | Decision | Recommendation |
+|---|---|---|
+| 1 | A settled thing | retained as the decision record |
+EOF
+
+  # hand-off — the landed chain must render `5`, never `5.0` (:278).
+  cat >"$FIX/dev/plans/runs/handoff.md" <<EOF
+# Hand-off
+
+## Next step
+
+${B_HANDOFF}
+**The 9.9.9 ladder is between slices: 0 → 5 → 10.5 are all LANDED; 20 is next.**${E_HANDOFF} More prose.
+EOF
+}
+
+# The RENDER, read straight out of the gate's own diff diagnostic.
+#
+# WHY NOT JUST ASSERT rc=0. A green gate prints one `ok` line and nothing else,
+# so a green run carries NO evidence about what was rendered — an assertion of
+# the form "the output does not contain 40.0" is satisfied trivially by a gate
+# that prints nothing at all. That is the same shape as this release's canary
+# that hashed nothing on both sides and compared equal.
+#
+# So each arm below deliberately PERTURBS one byte inside the region it cares
+# about. The gate then reports that region STALE and prints, verbatim, the bytes
+# it rendered from the state file. Those bytes are the evidence, and they are
+# available identically before and after the fix — which is what lets one arm
+# assert the WRONG string pre-fix and the RIGHT string post-fix, positively, in
+# both directions.
+#
+# NON-VACUITY: an empty render, or a run that did not fail, fails the arm.
+#
+# The render is extracted FOR A NAMED VIEW ID, never as "the first render in the
+# output". Against the UNFIXED gate several regions are stale at once, so a
+# positional grep would hand every arm the master-ladder render and each arm
+# would then be asserting about a view it does not own — a verification-apparatus
+# defect of exactly the class that consumed five of six codex fix rounds across
+# Slices 32/33.
+FRAC_RENDER=""
+render_of() {     # $1 = view id; reads $OUT
+  awk -v vid="$1" '
+    index($0, "generated region `" vid "` is STALE") { in_block = 1 }
+    in_block && /RENDERED FROM THE STATE FILE/       { want = 1; next }
+    in_block && want                                 { print; exit }
+  ' <<<"$OUT"
+}
+frac_render() {   # $1 = doc under $FIX, $2 = perl perturbation, $3 = view id, $4 = gate mode
+  setup_fixture
+  frac_fixture "${4:-presigned}"
+  perl -0777 -pi -e "$2" "$FIX/$1"
+  run_gate
+  FRAC_RENDER="$(render_of "$3")"
+}
+
+# --- Arm 11a: the fractional fixture is GREEN end to end -------------------
+# The aggregate. Every arm after this one names ONE call site; this one is what
+# goes red against the unfixed gate for all of them at once, and it is the arm
+# that proves the hand-written expectations are jointly satisfiable.
+setup_fixture
+frac_fixture presigned
+run_gate
+if [ "$RC" -eq 0 ]; then
+  pass "fractional fixture — every fenced region matches its render when the state file carries fractional and integral-float slice ids"
+else
+  fail "arm 11a (fractional fixture green): rc=$RC out=$OUT"
+fi
+
+# --- Arm 11b: :168 — remaining_ladder must not render an integral float ----
+# `str(40.0)` -> "40.0" where the SIBLING renderer on the same field (:369) uses
+# `_slice_str(40.0)` -> "40": the same fact rendered two ways in two documents.
+frac_render "dev/plans/master.md" 's/SCHEMA is 42/SCHEMA is 43/' master-ladder-progress
+if [ "$RC" -ne 0 ] && [ -n "$FRAC_RENDER" ] \
+   && grep -qF 'remaining ladder = 20 → 30.5 → 40.' <<<"$FRAC_RENDER" \
+   && ! grep -qF '40.0' <<<"$FRAC_RENDER"; then
+  pass ":168 — the master ladder renders remaining_ladder through _slice_str (40, never 40.0)"
+else
+  fail "arm 11b (:168 divergent render): rc=$RC rendered=[$FRAC_RENDER]"
+fi
+
+# --- Arm 11c: :278 — the hand-off landed chain, same defect ----------------
+frac_render "dev/plans/runs/handoff.md" 's/is next\./is nextZZ./' handoff-next-step
+if [ "$RC" -ne 0 ] && [ -n "$FRAC_RENDER" ] \
+   && grep -qF 'between slices: 0 → 5 → 10.5 are all LANDED' <<<"$FRAC_RENDER" \
+   && ! grep -qF '5.0' <<<"$FRAC_RENDER"; then
+  pass ":278 — the hand-off landed chain renders through _slice_str (5, never 5.0)"
+else
+  fail "arm 11c (:278 divergent render): rc=$RC rendered=[$FRAC_RENDER]"
+fi
+
+# The board render carries FOUR of the sites at once (:154, :260, :263, :265)
+# plus the publish-gate `Slice %d`. One perturbation, four assertions.
+frac_render "dev/plans/runs/board.md" 's/R-A \(the thing\)/R-A (the thingZZ)/' status-unblocks
+BOARD_RENDER="$FRAC_RENDER"
+BOARD_RC="$RC"
+
+# --- Arm 11d: :260 — by[int(...)] selects the INTEGER NEIGHBOUR's entry ----
+# `by[int(30.5)]` is `by[30]` — the Slice 30 entry, short `H7` — not the Slice
+# 30.5 entry, short `H7b`. The helper's own docstring names exactly this: "never
+# int(), which would collapse a fractional slice onto its integer neighbour and
+# SILENTLY OVERWRITE it". `H7b` in the render is what proves the INDEX was right.
+if [ "$BOARD_RC" -ne 0 ] && [ -n "$BOARD_RENDER" ] \
+   && grep -qF '(H7b) depends on' <<<"$BOARD_RENDER" \
+   && ! grep -qF '(H7) depends on' <<<"$BOARD_RENDER"; then
+  pass ":260 — publish_precondition_slice 30.5 indexes the Slice 30.5 ladder entry (H7b), not Slice 30's (H7)"
+else
+  fail "arm 11d (:260 index truncation): rc=$BOARD_RC rendered=[$BOARD_RENDER]"
+fi
+
+# --- Arm 11e: :263 — the RENDER of pre["slice"], a SECOND defect -----------
+# The brief is explicit that :263's `%d` is fed by `pre["slice"]` (:265), NOT by
+# :260's `int()`. This assertion is on the printed slice id, independent of which
+# entry was selected; arm 11e2 proves the independence by execution.
+if [ "$BOARD_RC" -ne 0 ] && [ -n "$BOARD_RENDER" ] \
+   && grep -qF 'Slice 30.5 (H7b)' <<<"$BOARD_RENDER"; then
+  pass ":263 — pre[\"slice\"] renders as Slice 30.5, not truncated to Slice 30"
+else
+  fail "arm 11e (:263 render truncation): rc=$BOARD_RC rendered=[$BOARD_RENDER]"
+fi
+
+# --- Arm 11e2: :263 and :260 are INDEPENDENT — proven with a mutant --------
+# "Two distinct defects at one site, not one" is a claim, and this repo's rule is
+# that a claim in a gate is graded by execution. The mutant reverts ONLY the
+# render while leaving the index fixed; if the two were one defect the mutant
+# would be indistinguishable from the fixed gate. It renders `Slice 30 (H7b)` —
+# the right entry under the wrong number.
+#
+# NON-VACUITY: if the revert does not apply, the arm FAILS rather than grading
+# nothing.
+MUT_GATE="$TMPROOT/mutant-render-only.sh"
+cp "$GATE" "$MUT_GATE"
+perl -0777 -pi -e 's/_slice_str\(pre\["slice"\]\)/int(pre["slice"])/;
+                   s/Slice \%s \(\%s\) depends on/Slice %d (%s) depends on/' "$MUT_GATE" || true
+if grep -qF 'int(pre["slice"])' "$MUT_GATE" && grep -qF 'Slice %d (%s) depends on' "$MUT_GATE"; then
+  chmod +x "$MUT_GATE"
+  setup_fixture
+  frac_fixture presigned
+  perl -0777 -pi -e 's/R-A \(the thing\)/R-A (the thingZZ)/' "$FIX/dev/plans/runs/board.md"
+  cp "$MUT_GATE" "$FIX/scripts/check-release-state-views.sh"
+  run_gate
+  MUT_RENDER="$(render_of status-unblocks)"
+  if [ "$RC" -ne 0 ] && grep -qF 'Slice 30 (H7b)' <<<"$MUT_RENDER"; then
+    pass ":263 is INDEPENDENT of :260 — a gate with the index fixed but the render reverted emits 'Slice 30 (H7b)', the right entry under the wrong number"
+  else
+    fail "arm 11e2 (:263 mutant): rc=$RC rendered=[$MUT_RENDER]"
+  fi
+else
+  fail "arm 11e2 (:263 mutant): the render-only revert did not apply to the gate — the arm graded nothing"
+fi
+
+# --- Arm 11f: :265 — depends_on renders through the helper -----------------
+# NOT in the brief's measured six. Found by the Duty-3 sweep: `pre["depends_on"]`
+# is a list of SLICE IDS joined with bare `str(d)`.
+if [ "$BOARD_RC" -ne 0 ] && [ -n "$BOARD_RENDER" ] \
+   && grep -qF 'depends on 5/10/20.' <<<"$BOARD_RENDER" \
+   && ! grep -qF '10.0/' <<<"$BOARD_RENDER"; then
+  pass ":265 — depends_on renders through _slice_str (5/10/20, never 5/10.0/20)"
+else
+  fail "arm 11f (:265 divergent render): rc=$BOARD_RC rendered=[$BOARD_RENDER]"
+fi
+
+# --- Arm 11g: :154 — _and_join is a SLICE-ID renderer ----------------------
+# NOT in the brief's measured six either. `_and_join` is only ever called on
+# `st["unblocked"]` (:264), a list of slice ids, and its own docstring examples
+# are slice numbers — yet it rendered them with bare `str(i)`.
+if [ "$BOARD_RC" -ne 0 ] && [ -n "$BOARD_RENDER" ] \
+   && grep -qF '**Slices 20 and 30 are NOW UNBLOCKED**' <<<"$BOARD_RENDER" \
+   && ! grep -qF '30.0' <<<"$BOARD_RENDER"; then
+  pass ":154 — _and_join renders the unblocked slice ids through _slice_str (20 and 30, never 20 and 30.0)"
+else
+  fail "arm 11g (:154 divergent render): rc=$BOARD_RC rendered=[$BOARD_RENDER]"
+fi
+
+# --- Arm 11h: sign_off_slice — ALL THREE publish-gate branches -------------
+# :233 (minted), :242 (pre-signed) and :248 (not pre-signed) each carry their OWN
+# `Slice %d` fed by `int(gate["sign_off_slice"])`. A fix applied to whichever
+# branch the baseline fixture happens to exercise would leave the other two live,
+# so each is driven through its own state — and each is asserted on the rendered
+# bytes, not merely on the exit code.
+for frac_mode in presigned notpresigned minted; do
+  frac_render "dev/plans/runs/board.md" 's/R-A \(the thing\)/R-A (the thingZZ)/' status-unblocks "$frac_mode"
+  if [ "$RC" -ne 0 ] && [ -n "$FRAC_RENDER" ] \
+     && grep -qF 'at Slice 40.5 (§4 #1)' <<<"$FRAC_RENDER" \
+     && ! grep -qF 'at Slice 40 (' <<<"$FRAC_RENDER"; then
+    pass "sign_off_slice 40.5 renders as Slice 40.5 in the $frac_mode publish-gate branch"
+  else
+    fail "arm 11h ($frac_mode branch): rc=$RC rendered=[$FRAC_RENDER]"
+  fi
+  # …and the whole fixture is green once the perturbation is gone.
+  setup_fixture
+  frac_fixture "$frac_mode"
+  run_gate
+  if [ "$RC" -eq 0 ]; then
+    pass "the fractional fixture is green end to end in the $frac_mode publish-gate branch"
+  else
+    fail "arm 11h ($frac_mode green): rc=$RC out=$OUT"
+  fi
+done
+
+# --- Arm 11i: _by_slice must REFUSE a duplicate normalised key -------------
+# The helper's docstring says a collapsed fractional id would "SILENTLY OVERWRITE"
+# its neighbour — but the helper itself had no duplicate guard, so two ladder
+# entries that normalise to the SAME key (30 and 30.0, or 30 and "30") lost one
+# of them without a word. Found by the Duty-3 sweep. Refusing is the only safe
+# answer: which entry wins is dict-insertion order, i.e. state-file line order.
+setup_fixture
+python3 - "$FIX/dev/plans/release-state-9.9.9.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+s = json.load(open(p))
+s["ladder"].append({"slice": 30.0, "short": "IMPOSTOR", "depends_on": [],
+                    "status": "NOT_STARTED", "sha": None})
+json.dump(s, open(p, "w"), indent=2)
+PY
+run_gate
+if [ "$RC" -ne 0 ] && grep -qi 'duplicate' <<<"$OUT" && grep -qF '30' <<<"$OUT"; then
+  pass "_by_slice — two ladder entries collapsing onto one key HARD-fail instead of silently overwriting"
+else
+  fail "arm 11i (duplicate ladder key): rc=$RC out=$OUT"
+fi
+
+# --- Arm 11j: the ALL-INTEGER render is byte-for-byte UNCHANGED ------------
+# The output-neutrality claim, asserted rather than assumed. Every fix above is a
+# no-op on a state file whose ids are all integers — which is what
+# release-state-0.8.20.json is today — so the baseline fixture's regions, written
+# before any of this, must still match byte for byte. Without this arm a "fix"
+# that changed integer rendering would sail through every arm above and churn
+# the real boards.
+setup_fixture
+run_gate
+if [ "$RC" -eq 0 ]; then
+  pass "output-neutrality — the all-integer baseline fixture still renders byte-identically after the fractional-id fixes"
+else
+  fail "arm 11j (all-int neutrality): rc=$RC out=$OUT"
+fi
+
 # --- Arm 9: the CI job is ALWAYS-ON, and reuses the shared script ----------
 # Same reasoning as board-currency / ledger-integrity / plan-anchors: the push
 # that breaks a generated view is a LANDING push, which the docs_only fast path

@@ -1703,9 +1703,14 @@ fi
 # predecessor with no recorded SHA, an unreadable state file) routes to fail(),
 # never to a silent pass. A vacuously-green gate is worse than the bug it was
 # meant to catch, and this repo has been bitten by exactly that before.
-D9D_STATE_FILE="$REPO_ROOT/dev/plans/release-state-0.8.20.json"
-set +e
-D9D_DERIVED="$(python3 -c '
+#
+# THE ORACLE IS A FUNCTION, not an inline heredoc, because arm 13g grades the
+# SAME oracle against a fractional-id state file. An oracle that only ever ran
+# against the all-integer live state could never be shown to be wrong about a
+# fractional one — which is exactly how this arm came to REPLICATE the
+# generator's own int-only assumptions (brief §1c) instead of falsifying them.
+derive_base_from_state() {     # $1 = release-state json path
+  python3 -c '
 import json, sys
 try:
     s = json.load(open(sys.argv[1]))
@@ -1725,7 +1730,12 @@ sha = next((e.get("sha") for e in (s.get("ladder") or []) if e.get("slice") == b
 if not sha:
     print("ERR predecessor Slice %d records no landing sha" % b); raise SystemExit(0)
 print("OK %d %d %s %s" % (t, b, sha, "LANDED" if t in landed else "PENDING"))
-' "$D9D_STATE_FILE" 2>&1)"
+' "$1" 2>&1
+}
+
+D9D_STATE_FILE="$REPO_ROOT/dev/plans/release-state-0.8.20.json"
+set +e
+D9D_DERIVED="$(derive_base_from_state "$D9D_STATE_FILE")"
 D9D_DERIVE_RC=$?
 set -e
 read -r D9D_OK D9D_TARGET D9D_BASE D9D_SHA D9D_TARGET_STATE <<<"$D9D_DERIVED" || true
@@ -1854,6 +1864,235 @@ else
     pass "real repo — every ladder entry carrying \`design_refs\` generates and cites all $C9F_SEEN curated doc(s), ${C9F_CONTRACTS:-0} of them into §4 as contracts"
   else
     fail "arm 9f (live curated citations): seen=$C9F_SEEN contracts=${C9F_CONTRACTS:-0} bad:$C9F_BAD"
+  fi
+fi
+
+# ===========================================================================
+# Arms 13a-13h — SLICE-ID-HARDENING (0.8.20 cross-cutting unit, brief §1a
+# sites 2 and 3, and §4 [DETERMINE] duty 2).
+#
+# WHY A FIXTURE AND NOT THE REAL STATE FILE. `release-state-0.8.20.json` carries
+# NO fractional slice id anywhere — `landed` is all ints, `next_slice` is the int
+# 40, every `ladder[].slice` is an int. Against that state :701's `isinstance`
+# filter is a NO-OP and :497's `%d` truncation NEVER FIRES, because `slice_no` is
+# always an int. An arm pointed at the real checkout is therefore green before
+# the fix and green after it: vacuous by construction. Fractional ids belong in
+# throwaway fixtures, and nowhere near the real ladder or board.
+#
+# ⚠ ONE EXCEPTION, and it is not hypothetical: site 3's neighbour bleed IS LIVE
+# in this checkout. `dev/design/0.8.20-slice-39.5-collect-all-test-harness.md`
+# and `dev/design/0.8.20-slice-39-publish-facing-documentation.md` both exist, and
+# the shipped pattern `slice[-_ ]?0*39(?![0-9])` matches BOTH — so Slice 39's
+# commission cites Slice 39.5's design memo as its own. Arm 13i asserts that on
+# the real checkout.
+# ===========================================================================
+
+# Adds a fractional slice to the fixture ladder, lands it, and plants the design
+# memos the filename selector has to tell apart.
+frac_manifest_fixture() {
+  mutate_state '
+s["ladder"].append({"slice": 10.5, "short": "R-B5",
+                    "title": "widget_readiness fractional leg",
+                    "depends_on": [5], "status": "LANDED", "sha": "cccc3333"})
+s["landed"] = [0, 5, 10.5]
+'
+  # Slice 30 has no token-bearing title, so without a memo of its own it would
+  # hard-fail the TC-37 guard before ever reaching the base-SHA assertion.
+  cat >"$FIX/dev/design/9.9.9-slice-30-design.md" <<'EOF'
+---
+status: ACTIVE
+---
+
+# Slice 30's memo
+
+No token here at all.
+EOF
+
+  # The filename-selector matrix. EVERY ONE of these is deliberately TOKEN-FREE,
+  # so the ONLY route by which any of them can reach a manifest is the
+  # release+slice filename match at :497 — which is what makes each arm below a
+  # measurement of that pattern and of nothing else.
+  for frac_memo in \
+      "9.9.9-slice-10.5-design.md:the fractional slice's OWN memo" \
+      "9.9.9-slice-10x5-design.md:the WILDCARD impostor — an unescaped . matches the x" \
+      "9.9.9-slice-10.5.1-design.md:a LONGER dotted id, a different unit again" \
+      "9.9.9-slice-10.md:slice 10's memo with the id flush against the EXTENSION dot"
+  do
+    cat >"$FIX/dev/design/${frac_memo%%:*}" <<EOF
+---
+status: ACTIVE
+---
+
+# ${frac_memo#*:}
+
+No token here at all.
+EOF
+  done
+}
+
+# --- Arm 13a: site 2 — a fractional LANDED slice is the predecessor --------
+# `landed_nums = sorted({s for s in landed if isinstance(s, int)})` drops a float
+# OUT of the predecessor set, so the base SHA silently skips a whole unit's work
+# and the operator is told to branch from a commit that predates it. That is this
+# repo's named agent-worktree-stale-base trap, printed with the manifest's
+# authority behind it — produced by the tool built to prevent it.
+setup_fixture
+frac_manifest_fixture
+run_gen 9.9.9 30
+if [ "$RC" -eq 0 ] \
+   && grep -qF 'cccc3333' <<<"$(base_line)" \
+   && grep -qF '(Slice 10.5 ' <<<"$(base_line)" \
+   && ! grep -qF 'bbbb2222' <<<"$(base_line)"; then
+  pass "site 2 — Slice 30's base is the FRACTIONAL predecessor Slice 10.5 (cccc3333), not the integer Slice 5 it would fall back to"
+else
+  fail "arm 13a (site 2 base sha): rc=$RC base=[$(base_line)]"
+fi
+
+# --- Arm 13b: site 2 — a fractional slice is recognised as ITSELF LANDED ---
+# The other consequence of the same filter: `slice_no in landed_nums` is False
+# for a landed fractional slice, so the HISTORICAL banner never prints and a
+# regeneration reads as a fresh commission.
+run_gen 9.9.9 10.5
+if [ "$RC" -eq 0 ] && grep -qiE 'HISTORICAL.*Slice 10\.5 is ITSELF LANDED' <<<"$OUT"; then
+  pass "site 2 — regenerating a LANDED fractional slice raises the HISTORICAL banner"
+else
+  fail "arm 13b (site 2 historical banner): rc=$RC out=$(grep -c . <<<"$OUT") lines; banner=[$(grep -i HISTORICAL <<<"$OUT" || true)]"
+fi
+
+# --- Arm 13c: site 2 — the `landed so far` roll-up flags a fractional land --
+# `isinstance(s, int) and s >= slice_no` at the roll-up is the same filter in its
+# third costume: a fractional slice landed at or after the target carries no
+# `⚠ at/after` mark, so the one line that would have warned the reader is silent.
+run_gen 9.9.9 10
+LANDED_LINE="$(grep -m1 '^  landed so far' <<<"$OUT" || true)"
+if [ "$RC" -eq 0 ] && grep -qF '10.5 (cccc3333) ⚠ at/after Slice 10' <<<"$LANDED_LINE"; then
+  pass "site 2 — the landed roll-up marks the fractional Slice 10.5 as at/after the target"
+else
+  fail "arm 13c (site 2 landed roll-up): rc=$RC line=[$LANDED_LINE]"
+fi
+
+# --- Arm 13d: site 3 — an integer slice must not claim its .5 neighbour ----
+# `"%d" % 39.5` and `"%d" % 39` produce the BYTE-IDENTICAL pattern, so the
+# filename selector cannot tell Slice N's memo from Slice N.5's. The manifest
+# then cites another unit's design of record as this slice's required reading —
+# and the TC-37 vacuous-pass guard, which fires only when NOTHING matches, is
+# satisfied by the wrong document.
+run_gen 9.9.9 10
+if [ "$RC" -eq 0 ] \
+   && grep -qF '9.9.9-slice-10-design.md' <<<"$OUT" \
+   && ! grep -qF '9.9.9-slice-10.5-design.md' <<<"$OUT" \
+   && ! grep -qF '9.9.9-slice-10.5.1-design.md' <<<"$OUT"; then
+  pass "site 3 — Slice 10's manifest cites its OWN memo and neither Slice 10.5's nor Slice 10.5.1's"
+else
+  fail "arm 13d (site 3 neighbour bleed): rc=$RC cited 10.5=$(grep -c '9.9.9-slice-10.5-design.md' <<<"$OUT") 10.5.1=$(grep -c '9.9.9-slice-10.5.1-design.md' <<<"$OUT")"
+fi
+
+# --- Arm 13e: [DETERMINE] duty 2 — the WILDCARD case ----------------------
+# The arm the brief says will not exist unless it is deliberately written. The
+# obvious `%d` -> `%s` swap yields `slice[-_ ]?0*10.5(?![0-9])`, in which `.`
+# matches ANY character — so `slice-10x5-design.md` resolves as Slice 10.5's
+# memo. Escaping is what closes it, and escaping alone is NOT sufficient: arm
+# 13f is the case that survives escape-only.
+run_gen 9.9.9 10.5
+if [ "$RC" -eq 0 ] && ! grep -qF '9.9.9-slice-10x5-design.md' <<<"$OUT"; then
+  pass "duty 2 — the slice id is a LITERAL, not a pattern: slice-10x5 is not Slice 10.5's memo"
+else
+  fail "arm 13e (duty 2 wildcard): rc=$RC cited the impostor=$(grep -c '9.9.9-slice-10x5-design.md' <<<"$OUT")"
+fi
+
+# --- Arm 13f: [DETERMINE] duty 2 — the case that survives ESCAPE-ONLY ------
+# `re.escape("10.5")` stops the wildcard but NOT the dotted continuation:
+# `10\.5(?![0-9])` still matches `slice-10.5.1-...` because the character after
+# `10.5` is `.`, which is not a digit. Slice 10.5 would claim Slice 10.5.1's
+# memo. Graded here so a future "simplification" back to escape-only goes red.
+if [ "$RC" -eq 0 ] \
+   && grep -qF '9.9.9-slice-10.5-design.md' <<<"$OUT" \
+   && ! grep -qF '9.9.9-slice-10.5.1-design.md' <<<"$OUT" \
+   && ! grep -qF '9.9.9-slice-10-design.md' <<<"$OUT"; then
+  pass "duty 2 — Slice 10.5 cites its own memo, and neither the longer dotted id 10.5.1 nor its integer neighbour 10"
+else
+  fail "arm 13f (duty 2 dotted continuation): rc=$RC 10.5.1=$(grep -c '9.9.9-slice-10.5.1-design.md' <<<"$OUT") 10=$(grep -c '9.9.9-slice-10-design.md' <<<"$OUT")"
+fi
+
+# --- Arm 13g: the CONTROL that rules out the OBVIOUS boundary fix ----------
+# GREEN before the fix and GREEN after it, BY DESIGN — and RED against the
+# natural first attempt, which is to tighten the trailing guard to `(?![0-9.])`.
+# That candidate rejects `9.9.9-slice-10.md`, where the character after the id is
+# the EXTENSION dot, and the slice loses its own memo: a NEW false negative in a
+# selector whose failure mode is the TC-37 hard stop. Leg 1 measured the same
+# trap on preflight.sh's ERE. What must be rejected is a following DIGIT, or a
+# following `.` that begins a longer id — never a `.` on its own.
+#
+# Its non-vacuity is demonstrated against that candidate, not against the
+# pre-fix tool; see the determination matrix quoted in the closure.
+run_gen 9.9.9 10
+if [ "$RC" -eq 0 ] && grep -qF '9.9.9-slice-10.md' <<<"$OUT"; then
+  pass "duty 2 control — an id flush against the EXTENSION dot (slice-10.md) is still Slice 10's memo"
+else
+  fail "arm 13g (duty 2 extension-dot control): rc=$RC cited=$(grep -c '9.9.9-slice-10.md' <<<"$OUT")"
+fi
+
+# --- Arm 13h: the 9d ORACLE itself, against a FRACTIONAL state file --------
+# Brief §1c. Arm 9d's derivation replicated the generator's own int-only
+# assumptions in TWO places — `isinstance(t, int)` on `next_slice`, which routed
+# a fractional target to ERR and made this suite rc=1 outright, and an
+# `isinstance(n, int)` filter on `landed` semantically identical to :701. An
+# oracle that copies the implementation cannot falsify it. Arm 9d runs against
+# the live all-integer state and therefore cannot show the difference; this arm
+# runs the SAME function against a fractional copy, which is what makes the
+# repair measurable.
+FRAC_STATE="$TMPROOT/frac-release-state.json"
+python3 - "$REPO_ROOT/dev/plans/release-state-0.8.20.json" "$FRAC_STATE" <<'PY'
+import json, sys
+s = json.load(open(sys.argv[1]))
+# A landed fractional unit BETWEEN two landed integers, so the correct
+# predecessor of the fractional target is itself fractional: an oracle that
+# filters floats out of `landed` answers 33, not 33.5.
+s["ladder"].append({"slice": 33.5, "short": "R-20-FRAC", "title": "a landed fractional unit",
+                    "depends_on": [33], "status": "LANDED", "sha": "ffff5555"})
+s["ladder"].append({"slice": 39.5, "short": "R-20-HARNESS", "title": "the fractional target",
+                    "depends_on": [39], "status": "UNBLOCKED", "sha": None})
+s["landed"] = sorted(n for n in s["landed"] if n <= 33) + [33.5]
+s["next_slice"] = 39.5
+json.dump(s, open(sys.argv[2], "w"), indent=2)
+PY
+set +e
+D13H="$(derive_base_from_state "$FRAC_STATE")"
+D13H_RC=$?
+set -e
+if [ "$D13H_RC" -eq 0 ] && [ "$D13H" = "OK 39.5 33.5 ffff5555 PENDING" ]; then
+  pass "arm 9d's oracle accepts a FRACTIONAL next_slice and a FRACTIONAL landed predecessor, and names both without truncating"
+else
+  fail "arm 13h (9d oracle on fractional state): rc=$D13H_RC want=[OK 39.5 33.5 ffff5555 PENDING] got=[$D13H]"
+fi
+
+# --- Arm 13i: site 3 is LIVE IN THIS CHECKOUT, not merely prospective ------
+# Both memos are tracked files at HEAD:
+#   dev/design/0.8.20-slice-39-publish-facing-documentation.md
+#   dev/design/0.8.20-slice-39.5-collect-all-test-harness.md
+# and the shipped pattern matches both for slice_no=39. So the 0.8.20 Slice 39
+# commission cites another unit's design of record as its own required reading.
+# Asserted on the REAL entry point — the generator itself — because five of six
+# codex fix rounds across Slices 32/33 were defects in the verification
+# apparatus rather than in the function under test.
+#
+# NON-VACUITY: if either memo stops existing the arm FAILS rather than passing
+# on an empty premise.
+REAL_39="$REPO_ROOT/dev/design/0.8.20-slice-39-publish-facing-documentation.md"
+REAL_395="$REPO_ROOT/dev/design/0.8.20-slice-39.5-collect-all-test-harness.md"
+if [ ! -f "$REAL_39" ] || [ ! -f "$REAL_395" ]; then
+  fail "arm 13i: the live (39, 39.5) memo pair is gone — re-point this arm at the current pair, do NOT delete it"
+else
+  set +e
+  A13I_OUT="$("$REPO_ROOT/scripts/commission-manifest.sh" 0.8.20 39 2>&1)"
+  A13I_RC=$?
+  set -e
+  if [ "$A13I_RC" -eq 0 ] \
+     && grep -qF '0.8.20-slice-39-publish-facing-documentation.md' <<<"$A13I_OUT" \
+     && ! grep -qF '0.8.20-slice-39.5-collect-all-test-harness.md' <<<"$A13I_OUT"; then
+    pass "real repo — the 0.8.20 Slice 39 manifest cites Slice 39's design memo and NOT Slice 39.5's"
+  else
+    fail "arm 13i (live neighbour bleed): rc=$A13I_RC cited 39.5's memo=$(grep -c '0.8.20-slice-39.5-collect-all-test-harness.md' <<<"$A13I_OUT")"
   fi
 fi
 
