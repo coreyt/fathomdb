@@ -78,7 +78,7 @@ const GOVERNED_SURFACE_ALLOWLIST: &[&str] = &[
     "CounterSnapshot",
     "Subscription",
     // 0.8.20 Slice 10b (R-20-RV / R-20-NV) — the read-view / validity types.
-    // PROPOSED, NOT SIGNED (see the allowlist JSON `_comment`).
+    // HITL-SIGNED 2026-07-29, steward seq-157 (see the allowlist JSON `_comment`).
     "ReadView",
     "BoundaryCrossing",
     // Slice 20 (G5/G6) — graph traversal types
@@ -166,7 +166,7 @@ fn t_074_rust_governed_surface_resolves() {
     let _ = type_name::<fathomdb::SourceId>();
     let _ = type_name::<fathomdb::ExciseReport>();
     // 0.8.20 Slice 10b (R-20-RV / R-20-NV) — read-view / validity types.
-    // PROPOSED, NOT SIGNED.
+    // HITL-SIGNED 2026-07-29, steward seq-157.
     let _ = type_name::<fathomdb::ReadView>();
     let _ = type_name::<fathomdb::BoundaryCrossing>();
 

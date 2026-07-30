@@ -1,14 +1,106 @@
-//! FathomDB facade crate — re-exports the public Rust surface of `fathomdb-engine`.
+//! **FathomDB** — a local-first retrieval and graph-oriented data system for
+//! application and agent workloads.
 //!
-//! The **default** (operator-feature-OFF) surface is the *governed application
-//! surface* (`dev/interfaces/rust.md` § Governed-surface contract): it is
-//! recovery-name-free and raw-SQL-free at the **method** level. The
-//! operator/recovery seam (`rebuild_*`, `excise_source`, `dump_*`,
-//! `trace_source_ref`, `truncate_wal`, `verify_embedder`, `check_integrity`,
-//! `safe_export`, `recompute_mean` + their report types) is gated behind the
-//! `operator` cargo feature, which `fathomdb-cli` enables. Gating, not deletion:
-//! engine behavior is identical with the feature on. See AC-074
-//! (`dev/acceptance.md`) + `dev/design/slice-27-fix1-operator-gate-design.md`.
+//! This is the crate to depend on from Rust. It is a thin facade that
+//! re-exports the public surface of the `fathomdb-engine` runtime, so you get
+//! the supported API without depending on engine internals.
+//!
+//! FathomDB embeds SQLite (FTS5 + `sqlite-vec`) in your process — there is no
+//! server and no sidecar. One `Engine` owns the writer thread, a reader pool,
+//! the projection scheduler and (optionally) an in-process embedder.
+//!
+//! # Do you want this crate?
+//!
+//! - **Yes**, if you want hybrid retrieval — a vector branch and an FTS5 branch
+//!   fused by Reciprocal Rank Fusion — over data you also want to address by a
+//!   stable identity, traverse as a graph, and be able to *delete on request*.
+//! - **No**, if you want a client for a remote database, or an approximate
+//!   nearest-neighbour index at very large scale: vector retrieval here is a
+//!   full scan, so latency grows with corpus size.
+//!
+//! Related crates: `fathomdb-cli` (the operator binary — `doctor` / `recover`),
+//! `fathomdb-embedder-api` (the semver-stable embedder trait, versioned
+//! independently), and `fathomdb-engine` (the runtime this crate re-exports;
+//! prefer this facade).
+//!
+//! # Example
+//!
+//! ```no_run
+//! use fathomdb::{Engine, PreparedWrite, SourceId};
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let opened = Engine::open("./example.fdb")?;
+//! let engine = opened.engine;
+//!
+//! engine.write(&[PreparedWrite::Node {
+//!     kind: "note".into(),
+//!     body: "the sky is blue".into(),
+//!     // Provenance is MANDATORY — see below.
+//!     source_id: SourceId::new("doc-42")?,
+//!     logical_id: Some("note:sky".into()),
+//!     state: Default::default(),
+//!     reason: None,
+//!     valid_from: None,
+//!     valid_until: None,
+//! }])?;
+//!
+//! for hit in engine.search("sky")?.results {
+//!     // `hit.id` is a typed id-space carrier, not a row number.
+//!     println!("{:?} {} {}", hit.id.space, hit.id.value, hit.body);
+//! }
+//!
+//! engine.close()?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! # Provenance is mandatory
+//!
+//! Every canonical node and edge carries a [`SourceId`]. This is a *type*
+//! rather than a validation check on purpose: [`Engine::erase_source`] addresses
+//! rows **by** their `source_id`, so a row written without one could never be
+//! erased on request. [`SourceId::new`] is the only public constructor and
+//! refuses an empty id and the engine's reserved `_`-prefixed namespace, which
+//! makes an un-provenanced write a **compile error** rather than a runtime
+//! surprise.
+//!
+//! Treat a `source_id` as a public identifier: it is echoed on every search hit
+//! and recorded in a retention-exempt erasure-audit row, so keep personal data
+//! out of it.
+//!
+//! # Deletion on request
+//!
+//! Three verbs, differing in what they address, all on the default surface:
+//!
+//! - [`Engine::transition`] — move a governed node between existence states
+//!   (promote, soft-delete, undelete).
+//! - [`Engine::purge`] — irreversibly hard-erase one governed node, addressed by
+//!   its `logical_id`. Deleted-first and idempotent. There is no restore.
+//! - [`Engine::erase_source`] — erase every row carrying one `source_id`,
+//!   including *anonymous* rows that have no `logical_id` and that
+//!   [`Engine::purge`] therefore cannot reach.
+//!
+//! # Feature flags
+//!
+//! - **default** — the *governed application surface*
+//!   (`dev/interfaces/rust.md` § Governed-surface contract): recovery-name-free
+//!   and raw-SQL-free at the **method** level. No method named `recover`,
+//!   `restore`, `repair`, `fix` or `rebuild` resolves.
+//! - **`operator`** — un-gates the operator/recovery seam (`rebuild_*`,
+//!   `excise_source`, `dump_*`, `trace_source_ref`, `truncate_wal`,
+//!   `verify_embedder`, `check_integrity`, `safe_export`, `recompute_mean` and
+//!   their report types). `fathomdb-cli` enables it. Gating, not deletion:
+//!   engine behaviour is identical with the feature on. See AC-074
+//!   (`dev/acceptance.md`) and
+//!   `dev/design/slice-27-fix1-operator-gate-design.md`.
+//!
+//! # Stability
+//!
+//! Pre-1.0, so **beta**: the surface may change between micro releases. The
+//! governed surface is pinned by
+//! `src/conformance/governed-surface-allowlist.json` and any change to it is a
+//! reviewed delta, but that is a change-control promise, not a semver one.
+//! [`PreparedWrite`] and [`SearchFilter`] are `#[non_exhaustive]`.
 
 // The 26 governed application-surface types (`dev/interfaces/rust.md` § 2a) —
 // always present on the default facade.
@@ -38,7 +130,8 @@
 //   and `BoundaryCrossing`, the return shape of `Engine::crossed_boundary_since`.
 //   Threading `ReadView` as a parameter (rather than shipping five `*_with_view`
 //   sibling verbs) is what keeps this delta at TWO TYPES and ZERO new verbs.
-//   PROPOSED / NOT SIGNED — see `src/conformance/governed-surface-allowlist.json`.
+//   HITL-SIGNED 2026-07-29 (steward seq-157) — recorded in
+//   `src/conformance/governed-surface-allowlist.json`.
 // + 1 new type from 0.8.20 Slice 20 (R-20-DR): `DenseReadiness` — the two-member
 //   `{ready, embedding}` READ-METADATA flag the engine hangs off
 //   `ProjectionSpec.vector` (`read.projections` populates it; it is never a

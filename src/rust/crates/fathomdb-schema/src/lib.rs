@@ -1,3 +1,21 @@
+//! **FathomDB schema** — the versioned migration registry and bootstrap.
+//!
+//! An internal leaf crate of the FathomDB workspace. It owns `SCHEMA_VERSION`,
+//! the ordered `MIGRATIONS` table, and the routine that brings an on-disk
+//! SQLite database up to the current version. `fathomdb-engine` calls it on the
+//! open path; **application code should depend on the `fathomdb` facade crate
+//! instead** and never invoke migration directly.
+//!
+//! The on-disk sentinel is SQLite's `PRAGMA user_version`. A migration step is
+//! applied inside one `BEGIN IMMEDIATE` together with the version bump, so a
+//! crash mid-step rolls back and the step re-runs whole.
+//!
+//! ⚠ Most steps are accretive, but not all are. Step 23 (TC-33) recreates
+//! `canonical_edges` with INTEGER epoch-second temporal columns and **does not
+//! migrate the data**: existing edge rows do not survive and no stored ISO-8601
+//! value is converted. Nodes are unaffected. Anything that describes upgrading
+//! an existing workspace must disclose this.
+
 use std::fmt::{Display, Formatter};
 use std::time::Instant;
 

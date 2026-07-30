@@ -1,3 +1,22 @@
+//! **FathomDB embedder** — the built-in embedder implementations behind the
+//! `fathomdb-embedder-api` trait.
+//!
+//! An internal workspace crate. **To use FathomDB, depend on the `fathomdb`
+//! facade crate** and opt into the default embedder at open; you do not need to
+//! name this crate. To write your OWN embedder, implement the trait in
+//! `fathomdb-embedder-api` — which pulls in no model runtime — rather than
+//! depending on this one.
+//!
+//! The default embedder is `bge-small-en-v1.5` (384-dim) running on a pure-Rust
+//! `candle-transformers` BERT in process: no Python, no sidecar. It is gated
+//! behind the `default-embedder` cargo feature so a consumer who never uses it
+//! pays neither the dependency nor the binary-size cost, and it is **opt-in per
+//! engine** at open — a fresh engine has no embedder configured.
+//!
+//! On first use the loader downloads and sha256-verifies the weights into the
+//! platform cache; that is the crate's only network access, and it happens only
+//! when the feature is on and the embedder is opted into.
+
 use std::path::PathBuf;
 
 use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};

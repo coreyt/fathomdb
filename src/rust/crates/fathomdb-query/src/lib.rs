@@ -1,3 +1,15 @@
+//! **FathomDB query** — the JSON-filter AST and its validation surface.
+//!
+//! An internal leaf crate of the FathomDB workspace, kept separate so the
+//! filter grammar can be validated without pulling in the engine. **Application
+//! code should depend on the `fathomdb` facade crate instead**, which exposes
+//! the supported filter types (`Predicate`, `ScalarValue`, `ComparisonOp`,
+//! `SearchFilter`) as governed surface.
+//!
+//! The filter grammar is deliberately **closed** — a fixed set of comparison
+//! operators over an allowlisted set of JSON paths — rather than an open DSL.
+//! Values are always bound as parameterized SQL and never interpolated.
+
 use std::collections::HashSet;
 
 #[derive(Clone, Debug, Eq, PartialEq)]

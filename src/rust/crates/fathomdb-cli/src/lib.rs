@@ -1,11 +1,39 @@
-//! Operator CLI parser + verb runtime for `fathomdb`.
+//! **FathomDB operator CLI** — the `fathomdb` binary: parser plus verb runtime.
 //!
-//! Surface owned by `dev/interfaces/cli.md`. Phase 10a wires the parser
-//! scaffold to real engine seam calls: `doctor check-integrity`,
-//! `doctor safe-export`, `doctor trace`, `recover --rebuild-projections`,
-//! `recover --rebuild-vec0`, and `recover --excise-source` invoke the
-//! corresponding [`fathomdb::Engine`] methods and serialize the typed
-//! report under the per-verb JSON discriminator.
+//! Installing this crate gives you the `fathomdb` command. It is
+//! **operator-only** and deliberately ships no application query surface: there
+//! is no `fathomdb search` / `get` / `list`. Use one of the SDKs
+//! (the `fathomdb` facade crate for Rust, or the Python / TypeScript packages)
+//! to read and write data.
+//!
+//! Two roots:
+//!
+//! - `fathomdb doctor <verb>` — read-only or artifact-producing diagnostics:
+//!   `check-integrity`, `safe-export`, `verify-embedder`, `trace`,
+//!   `dump-schema`, `dump-row-counts`, `dump-profile`, `dump-mutations`,
+//!   `orphan-provenance`, `warm-cache`, `recompute-mean`.
+//! - `fathomdb recover --accept-data-loss <flag>` — the only lossy,
+//!   non-bit-preserving root: `--truncate-wal`, `--rebuild-vec0`,
+//!   `--rebuild-projections`, `--excise-source`, and the
+//!   `--excise-collection` / `--excise-record-key` pair.
+//!
+//! `--json` is the normative machine-readable contract on every verb; exit
+//! codes are a stable class set (`0` clean, `64` data-loss acknowledged, `65`
+//! findings, `66` artifact failure, `70` unrecoverable, `71` lock-held).
+//!
+//! **The CLI is not required for deletion on request.** Since 0.8.20 the SDKs
+//! ship `purge` and `erase_source` themselves. `recover --excise-source`
+//! remains the only route into the engine's reserved `_`-prefixed provenance
+//! namespace, and `--excise-collection` / `--excise-record-key` has no SDK
+//! peer.
+//!
+//! This crate enables the `operator` cargo feature on the `fathomdb` facade,
+//! which is what un-gates the recovery seam it drives.
+//!
+//! Surface owned by `dev/interfaces/cli.md`; verb semantics by
+//! `dev/design/recovery.md`. Each verb invokes the corresponding
+//! [`fathomdb::Engine`] method and serializes the typed report under a per-verb
+//! JSON discriminator.
 
 use std::path::PathBuf;
 
@@ -53,8 +81,8 @@ pub struct Cli {
 
 /// Root command verbs.
 ///
-/// 0.6.0 ships exactly two roots per `dev/interfaces/cli.md` § Roots:
-/// `recover` for lossy operator workflows and `doctor` for diagnostics.
+/// Exactly two roots per `dev/interfaces/cli.md` § Roots: `recover` for lossy
+/// operator workflows and `doctor` for diagnostics.
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Run a lossy / non-bit-preserving recovery workflow.

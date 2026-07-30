@@ -1,3 +1,49 @@
+//! **FathomDB engine** — the runtime core: storage, projections, ingest and
+//! query.
+//!
+//! ⚠ **Most consumers should depend on the [`fathomdb`] facade crate instead.**
+//! `fathomdb` re-exports exactly the governed application surface and gates the
+//! operator/recovery seam behind a cargo feature; this crate is the
+//! implementation and exposes internals the facade deliberately withholds.
+//! Depend on it directly only if you are building FathomDB tooling.
+//!
+//! [`fathomdb`]: https://docs.rs/fathomdb
+//!
+//! # What it does
+//!
+//! One `Engine` owns an embedded SQLite database (FTS5 + `sqlite-vec`), the
+//! single writer thread, a thread-affine reader pool serving DEFERRED-tx
+//! snapshots, the background projection scheduler, and — optionally — an
+//! in-process embedder. There is no server and no sidecar.
+//!
+//! - **Hybrid retrieval.** A vector branch and an FTS5 branch, fused by
+//!   Reciprocal Rank Fusion on ordinal *rank* (never on raw, non-comparable
+//!   scores), with an optional CPU cross-encoder rerank and an optional
+//!   graph-BFS third arm over temporal fact edges.
+//! - **Canonical rows + projections.** Writes land as durable canonical rows;
+//!   FTS, vector and attribute indexes are engine-maintained projections
+//!   rebuildable from them.
+//! - **Record lifecycle.** Transaction-time supersession keyed on `logical_id`,
+//!   an existence axis (`transition` / `purge`), and world-time validity
+//!   windows on nodes plus `t_valid` / `t_invalid` on edges.
+//! - **Deletion on request.** `Engine::erase_source` erases every row carrying a
+//!   provenance id — including anonymous rows `Engine::purge` cannot reach —
+//!   and finishes the erasure at rest.
+//!
+//! # Provenance is mandatory
+//!
+//! `PreparedWrite::Node` and `PreparedWrite::Edge` carry `source_id: SourceId`,
+//! a newtype rather than an `Option<String>`. `Engine::erase_source` addresses
+//! rows **by** `source_id`, so a row written without one could never be erased;
+//! `SourceId::new` is the only public constructor and makes that state
+//! inexpressible.
+//!
+//! # Stability
+//!
+//! Pre-1.0, so **beta**. `SCHEMA_VERSION` is the on-disk contract; migrations
+//! run at open and only there. `PreparedWrite`, `SearchFilter` and
+//! `EngineError` are `#[non_exhaustive]` or documented as additive.
+
 pub mod lifecycle;
 mod pcache2;
 
@@ -1439,10 +1485,12 @@ pub enum SoftFallbackBranch {
 
 /// A single structured search hit (G1 / AC-057a-clean).
 ///
-/// Both retrieval branches emit this shape. `id` is the canonical row's
-/// `write_cursor` — the **interim** identity carrier per
-/// `dev/adr/ADR-0.8.0-canonical-identity-substrate.md`; it swaps to
-/// `logical_id` at the G0 keystone (Slice 15) with no carrier reshape.
+/// Both retrieval branches emit this shape. `id` is a typed [`IdSpace`] — the
+/// **permanent** caller-facing identity since C-2 (0.8.19 / TC-8), NOT the
+/// interim `write_cursor: u64` the pre-0.8.19 releases carried and NOT an
+/// interim carrier awaiting a later swap. The positional `write_cursor` field
+/// below survives as engine-internal book-keeping and the SDK bindings do not
+/// surface it. See the field docs on [`SearchHit::id`] / [`IdSpace`].
 /// `score` is the **G9 RRF-fused** relevance (`Σ 1/(RRF_K + rank)` over the
 /// branches that surfaced this body; higher = more relevant), optionally
 /// recency-reweighted when the dedicated recency flag is on. Raw `vec_distance_l2`
@@ -2173,10 +2221,18 @@ const MAX_RENDERABLE_EPOCH: i64 = 253_402_300_799; // 9999-12-31T23:59:59Z
 ///
 /// Inbound ISO normalisation can never MINT such an epoch (a 4-digit-year ISO
 /// string maxes at 9999), so the governed integer surface is the only ingress —
-/// which is exactly where this guard sits. Mirrors the inbound
-/// [`normalize_extractor_timestamp`] hard-reject and the Node branch's
-/// `valid_from >= valid_until` refusal: a typed [`EngineError::InvalidArgument`]
-/// naming the offending value and the bound, never a silent coercion.
+/// which is exactly where this guard sits. Like the inbound
+/// [`normalize_extractor_timestamp`] hard-reject, it is a typed
+/// [`EngineError::InvalidArgument`] naming the offending value and the bound,
+/// never a silent coercion.
+///
+/// ⚠ It no longer mirrors the `validate_write` Node branch's
+/// `valid_from >= valid_until` refusal: decision #18 (0.8.20 Slice 22) moved
+/// THAT refusal onto the message-less [`EngineError::WriteValidation`] unit
+/// variant, which carries no value at all. The two refusals are deliberately in
+/// different families now — a malformed submitted write SHAPE is
+/// `WriteValidation`; an out-of-domain scalar on this render path stays
+/// `InvalidArgument`. Do not restate them as one pattern.
 fn reject_unrenderable_edge_epoch(field: &str, value: Option<i64>) -> Result<(), EngineError> {
     // TC-33 fix-5 — an explicit numeric MIN/MAX bounds check, NOT a renderability
     // test. `strftime(..., 'unixepoch')` renders a below-`MIN` epoch (e.g.
@@ -2241,8 +2297,14 @@ fn json_type_name(value: &Value) -> &'static str {
 /// `None`/JSON `null`/absent is the ONLY sanctioned way to say "unknown"; it
 /// maps to `Ok(None)` and keeps the NULL-means-still-valid semantic.
 ///
-/// Follows the typed-`InvalidArgument`-carrying-the-offending-value pattern of
-/// the `validate_write` `Node` branch's `valid_from >= valid_until` check.
+/// Refuses with a typed [`EngineError::InvalidArgument`] CARRYING the offending
+/// value, so a caller can see what was rejected.
+///
+/// ⚠ This is NOT the same pattern as the `validate_write` `Node` branch's
+/// `valid_from >= valid_until` check, which that comment used to cite: decision
+/// #18 (0.8.20 Slice 22) moved that refusal onto the message-less
+/// [`EngineError::WriteValidation`] unit variant, which carries **no value at
+/// all**. Both the family AND the carry-the-value property differ.
 fn normalize_extractor_timestamp(
     connection: &Connection,
     field: &str,
@@ -3085,9 +3147,16 @@ pub enum PreparedWrite {
         /// predicate in `ReadView::validity_sql` exactly. Because it is half-open,
         /// a pair with `valid_from >= valid_until` describes an EMPTY window that no
         /// instant can ever satisfy — so [`Engine::write`] refuses it with
-        /// [`EngineError::InvalidArgument`] rather than storing a row that no
+        /// [`EngineError::WriteValidation`] rather than storing a row that no
         /// default read could ever return. A ONE-SIDED window is never empty and is
         /// never refused, however extreme its single bound.
+        ///
+        /// **BREAKING (0.8.20 Slice 22, decision #18).** This refusal used to be
+        /// [`EngineError::InvalidArgument`] NAMING both bounds. It is now the
+        /// message-less `WriteValidation` unit variant — the one family the
+        /// taxonomy of record assigns to a malformed submitted write SHAPE — so
+        /// **the offending bounds are no longer carried in the error**. A caller
+        /// that parsed them out must validate the pair before calling.
         valid_until: Option<i64>,
     },
     Edge {
