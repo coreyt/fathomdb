@@ -146,12 +146,36 @@ def _by_slice(st):
         k = e["slice"]
         if isinstance(k, str):
             k = float(k) if "." in k else int(k)
+        # AND IT REFUSES A COLLISION RATHER THAN TAKING THE LAST WRITER. The
+        # docstring above says a collapsed id would "SILENTLY OVERWRITE" its
+        # neighbour, but nothing here stopped that happening for two ladder
+        # entries that normalise to the SAME key — `30` and `30.0`, or `30` and
+        # `"30"`. Which entry survived was dict-insertion order, i.e. the order
+        # of lines in the state file, and every view downstream then rendered the
+        # survivor's short/title/depends_on under the loser's number. In Python
+        # `30 == 30.0` and `hash(30) == hash(30.0)`, so this is not a hypothetical
+        # shape. A duplicate is a state-file defect and must be reported as one.
+        if k in out:
+            raise ValueError(
+                "the ladder carries TWO entries that resolve to the same slice id %s "
+                "(%r and %r). One would SILENTLY OVERWRITE the other — whichever came "
+                "second in the file — and every view would then render the survivor's "
+                "facts under the loser's number. Give each slice exactly one entry."
+                % (_slice_str(k), out[k].get("slice"), e.get("slice")))
         out[k] = e
     return out
 
 def _and_join(items):
-    """`[20]` -> "20"; `[20, 25]` -> "20 and 25"; `[20, 25, 30]` -> "20, 25 and 30"."""
-    items = [str(i) for i in items]
+    """`[20]` -> "20"; `[20, 25]` -> "20 and 25"; `[20, 25, 30]` -> "20, 25 and 30".
+
+    ITS ITEMS ARE SLICE IDS, so they render through `_slice_str` like every other
+    slice id in this file. Its only caller is `render_status_unblocks` on
+    `st["unblocked"]`, and its own examples above are slice numbers — but it used
+    bare `str()`, so `40.0` reached the board as "40.0" while the sibling
+    renderers on `remaining_ladder` and `next_slice` wrote "40". Not found by the
+    two passes that produced the brief; found by sweeping every path from a slice
+    id to a renderer."""
+    items = [_slice_str(i) for i in items]
     if len(items) <= 1:
         return "".join(items)
     return ", ".join(items[:-1]) + " and " + items[-1]
@@ -165,7 +189,10 @@ def render_master_ladder_progress(st):
     under generation."""
     by = _by_slice(st)
     landed = " · ".join("%s (`%s`)" % (_slice_str(n), by[n]["sha"]) for n in st["landed"])
-    ladder = " → ".join(str(n) for n in st["remaining_ladder"])
+    # `_slice_str`, not `str`: `render_plan_immediate_next` renders THIS SAME
+    # FIELD through the helper, so a bare `str` here put the same fact in two
+    # documents in two shapes (`40.0` here, `40` there).
+    ladder = " → ".join(_slice_str(n) for n in st["remaining_ladder"])
     return ("Slices %s are all LANDED on `origin/main`; SCHEMA is %d; "
             "remaining ladder = %s." % (landed, st["schema_version"], ladder))
 
@@ -229,25 +256,32 @@ def render_publish_gate_sentence(gate):
     would read as settled."""
     ac = gate["ac"]
 
+    # `_slice_str`, NEVER `Slice %d` fed by `int(...)`, in ALL THREE branches.
+    # `int(39.5)` renders "Slice 39" — the board naming a DIFFERENT slice as the
+    # one that signed off, with this gate's authority behind it. Each branch
+    # carries its own copy of the sentence, so a fix applied to one leaves the
+    # other two live; all three are driven by their own arm (11h).
     if gate["minted"]:
-        return ("**%s is MINTED and recorded as %s** at Slice %d (%s), covering %s. "
+        return ("**%s is MINTED and recorded as %s** at Slice %s (%s), covering %s. "
                 "**Publish is gated by %s, not by this AC.**"
-                % (ac, gate["minted_as"], int(gate["sign_off_slice"]), gate["board_ref"],
-                   gate["covers"], gate["publish_gated_by"]))
+                % (ac, gate["minted_as"], _slice_str(gate["sign_off_slice"]),
+                   gate["board_ref"], gate["covers"], gate["publish_gated_by"]))
 
     if gate["pre_sign_state"] == "PRE_SIGNED":
         ps = gate["pre_sign"]
         return ("**%s is PRE-SIGNED** — the %s signed off on %s on %s (%s), pinned to the "
                 "content of `%s`; %s. Pre-signing is NOT minting: %s is minted and recorded "
-                "as %s at Slice %d (%s). **Publish is gated by %s, not by this AC.**"
+                "as %s at Slice %s (%s). **Publish is gated by %s, not by this AC.**"
                 % (ac, ps["by"], gate["covers"], ps["on"], ps["source"], ps["pinned_to"],
-                   ps["reopens_if"], ac, gate["minted_as"], int(gate["sign_off_slice"]),
+                   ps["reopens_if"], ac, gate["minted_as"],
+                   _slice_str(gate["sign_off_slice"]),
                    gate["board_ref"], gate["publish_gated_by"]))
 
     return ("**Publish remains blocked on %s**, which is **NOT pre-signed** — %s still "
-            "awaits HITL sign-off, and %s is minted and recorded as %s at Slice %d (%s). "
+            "awaits HITL sign-off, and %s is minted and recorded as %s at Slice %s (%s). "
             "Publish is additionally gated by %s."
-            % (ac, gate["covers"], ac, gate["minted_as"], int(gate["sign_off_slice"]),
+            % (ac, gate["covers"], ac, gate["minted_as"],
+               _slice_str(gate["sign_off_slice"]),
                gate["board_ref"], gate["publish_gated_by"]))
 
 
@@ -257,12 +291,31 @@ def render_status_unblocks(st):
     by   = _by_slice(st)
     ub   = st["unblocked"]
     src  = st["unblocked_by"]
-    pre  = by[int(st["publish_precondition_slice"])]
+    # THE KEY AS STORED — never `int()`. `by[int(30.5)]` is `by[30]`, so the
+    # renderer silently picked the INTEGER NEIGHBOUR'S ladder entry and printed
+    # its short name, title and dependency list as the fractional slice's own.
+    # That is the exact collapse `_by_slice`'s docstring was written to forbid,
+    # bypassed at the one call site that indexes it (arm 11d).
+    key = st["publish_precondition_slice"]
+    if key not in by:
+        raise ValueError(
+            "`publish_precondition_slice` is %s but the ladder carries no such slice, "
+            "so the board would name a publish precondition that does not exist. "
+            "Fix the state file; do NOT round the id onto a neighbouring slice."
+            % _slice_str(key))
+    pre  = by[key]
     gate = publish_gate_facts(st)
+    # `Slice %s` via `_slice_str`, NOT `Slice %d`. This `%d` is fed by
+    # `pre["slice"]`, NOT by the lookup above — a SECOND, INDEPENDENT defect at
+    # the same site, proven by execution in arm 11e2: a gate with the index fixed
+    # and the render reverted emits `Slice 30 (H7b)`, the right entry under the
+    # wrong number. `depends_on` is a list of slice ids too, and was joined with
+    # bare `str()` (arm 11f) — not in the brief's measured set either.
     return ("**Slices %s are NOW UNBLOCKED** — %s (%s) now exists. "
-            "Slice %d (%s) depends on %s. %s"
+            "Slice %s (%s) depends on %s. %s"
             % (_and_join(ub), src["requirement"], src["gloss"],
-               pre["slice"], pre["short"], "/".join(str(d) for d in pre["depends_on"]),
+               _slice_str(pre["slice"]), pre["short"],
+               "/".join(_slice_str(d) for d in pre["depends_on"]),
                render_publish_gate_sentence(gate)))
 
 
@@ -275,7 +328,10 @@ def render_handoff_next_step(st):
     the sentence would stop the sentence rendering as markdown. The marker
     therefore sits on its own line and the region content starts with the
     newline that follows it."""
-    chain = " → ".join(str(n) for n in st["landed"])
+    # `_slice_str`, not `str`: `render_master_ladder_progress` renders THIS SAME
+    # FIELD through the helper (:167), so a bare `str` here rendered the landed
+    # chain one way in the master and another way in the hand-off.
+    chain = " → ".join(_slice_str(n) for n in st["landed"])
     return ("\n**The %s ladder is between slices: %s are all LANDED; %s is next.**"
             % (st["release"], chain, _slice_str(st["next_slice"])))
 

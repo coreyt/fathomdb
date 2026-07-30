@@ -1709,27 +1709,56 @@ fi
 # against the all-integer live state could never be shown to be wrong about a
 # fractional one — which is exactly how this arm came to REPLICATE the
 # generator's own int-only assumptions (brief §1c) instead of falsifying them.
+#
+# ⛔ AND IT MUST NOT REPLICATE THE GENERATOR'S ASSUMPTIONS. An oracle that copies
+# the implementation cannot falsify it. This one did, in TWO places (brief §1c):
+#
+#   * `isinstance(t, int)` on `next_slice` routed a FRACTIONAL target to
+#     `ERR … not an int` -> fail(), so the arm REJECTED the very input this
+#     unit exists to support. That is what made this suite rc=1 outright while
+#     `Slice 39.5` sat in the ladder.
+#   * `isinstance(n, int)` on `landed` was semantically identical to the
+#     generator's own defect at commission-manifest.sh:701 — filtering a whole
+#     landed unit out of the predecessor set, in the check written to catch
+#     exactly that.
+#
+# Repairing only one of them leaves the other live, so both are stated here, and
+# arm 13h grades this function against a fractional state file where each is
+# independently observable (a fractional target AND a fractional predecessor).
 derive_base_from_state() {     # $1 = release-state json path
   python3 -c '
 import json, sys
+
+
+def sid(n):
+    """Render a slice id. NEVER %d: `"%d" % 39.5` is `"39"`, so an oracle that
+    printed its own finding with %d would report the WRONG SLICE while looking
+    right — the fabricated-pointer failure this suite exists to catch, in the
+    catcher."""
+    return "%g" % n if isinstance(n, float) else str(n)
+
+
 try:
     s = json.load(open(sys.argv[1]))
 except Exception as e:
     print("ERR unreadable state file: %s" % e); raise SystemExit(0)
 t = s.get("next_slice")
-if isinstance(t, bool) or not isinstance(t, int):
-    print("ERR next_slice is %r, not an int — end-of-ladder or malformed. "
+# int OR float — a fractional slice is a legitimate target. `bool` stays
+# excluded because True is an int in Python and would pass as Slice 1.
+if isinstance(t, bool) or not isinstance(t, (int, float)):
+    print("ERR next_slice is %r, not a slice number — end-of-ladder or malformed. "
           "Re-point this arm at a live release; do NOT skip it." % (t,))
     raise SystemExit(0)
-landed = sorted(n for n in (s.get("landed") or []) if isinstance(n, int))
+landed = sorted(n for n in (s.get("landed") or [])
+                if not isinstance(n, bool) and isinstance(n, (int, float)))
 prior = [n for n in landed if n < t]
 if not prior:
-    print("ERR no landed slice strictly below next_slice %d" % t); raise SystemExit(0)
+    print("ERR no landed slice strictly below next_slice %s" % sid(t)); raise SystemExit(0)
 b = prior[-1]
 sha = next((e.get("sha") for e in (s.get("ladder") or []) if e.get("slice") == b), None)
 if not sha:
-    print("ERR predecessor Slice %d records no landing sha" % b); raise SystemExit(0)
-print("OK %d %d %s %s" % (t, b, sha, "LANDED" if t in landed else "PENDING"))
+    print("ERR predecessor Slice %s records no landing sha" % sid(b)); raise SystemExit(0)
+print("OK %s %s %s %s" % (sid(t), sid(b), sha, "LANDED" if t in landed else "PENDING"))
 ' "$1" 2>&1
 }
 
@@ -1756,7 +1785,11 @@ else
   # whose behaviour was intact: the same time-bombed-assertion class (TC-81)
   # this arm exists to stop. Codex §9 [low], accepted and fixed rather than
   # carried.
-  if grep -qiE "HISTORICAL.*Slice $D9D_TARGET is ITSELF LANDED" <<<"$D9D_OUT"; then
+  # The `.` of a fractional target is a REGEX WILDCARD in an ERE, so a bare
+  # interpolation would let `Slice 39x5 is ITSELF LANDED` satisfy an assertion
+  # about Slice 39.5 — the arm carrying the same defect it grades.
+  D9D_TARGET_RE="${D9D_TARGET//./\\.}"
+  if grep -qiE "HISTORICAL.*Slice $D9D_TARGET_RE is ITSELF LANDED" <<<"$D9D_OUT"; then
     D9D_GOT_BANNER=present
   else D9D_GOT_BANNER=absent; fi
   if [ "$D9D_RC" -eq 0 ] \

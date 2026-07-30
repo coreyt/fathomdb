@@ -333,6 +333,33 @@ def load_state(release):
         die(["FAIL commission-manifest: `%s` is not parseable as JSON: %s" % (path, exc)])
 
 
+def slice_str(n):
+    """Render a slice id: 40 -> "40", 39.5 -> "39.5", 40.0 -> "40".
+
+    NEVER `%d`. `"%d" % 39.5` is `"39"`, and a truncated slice id in this file is
+    not a cosmetic defect — it is a manifest confidently naming the WRONG UNIT,
+    which is the fabricated-pointer incident class the whole unit that added this
+    helper was commissioned over. `str()` alone is not enough either: it renders
+    an integral float as `"40.0"`, so the same fact reaches two readers in two
+    shapes. Same contract as check-release-state-views.sh's `_slice_str`.
+    """
+    return "%g" % n if isinstance(n, float) else str(n)
+
+
+def is_slice_num(n):
+    """Is `n` a slice id? int OR float — the HITL may mint a fractional slice
+    (steward seq-202/seq-204). `bool` is excluded because `True` is an `int` in
+    Python and would otherwise be admitted as Slice 1.
+
+    THE MEASURED DEFECT this replaces: `isinstance(s, int)` filtered a fractional
+    slice OUT of the landed set, so the base SHA silently skipped a whole unit's
+    work and told the operator to branch from a commit that predates it — the
+    named agent-worktree-stale-base trap, produced by the tool built to prevent
+    it (arm 13a).
+    """
+    return not isinstance(n, bool) and isinstance(n, (int, float))
+
+
 def pick_slice(state, state_path, sel):
     ladder = state.get("ladder") or []
     known = [e.get("slice") for e in ladder]
@@ -494,7 +521,39 @@ def scan_design(tokens, release, slice_no):
     # writes one per slice). The release is required in the name precisely
     # because `dev/design/slice-30-design.md` is 0.8.0's — pulling it into a
     # 0.8.20 Slice-30 brief would be a wrong citation that still resolves.
-    name_re = re.compile(r"slice[-_ ]?0*%d(?![0-9])" % slice_no, re.I)
+    #
+    # THE SLICE ID IS A LITERAL, NOT A PATTERN, AND ITS TRAILING BOUNDARY REJECTS
+    # A DOTTED CONTINUATION. Three properties, each measured against a candidate
+    # matrix rather than reasoned about, because the two obvious fixes are both
+    # wrong in different directions:
+    #
+    #   `%d` (what shipped)  `"%d" % 39.5` and `"%d" % 39` produce the
+    #       BYTE-IDENTICAL pattern, so a fractional slice matches its integer
+    #       neighbour's memo and vice versa. LIVE IN THIS REPO at the time of the
+    #       fix: `0.8.20-slice-39-…` and `0.8.20-slice-39.5-…` both exist and the
+    #       shipped pattern matched both for slice 39, so Slice 39's commission
+    #       cited Slice 39.5's design of record as its own required reading
+    #       (arms 13d, 13i). 7 of 24 matrix cases wrong.
+    #   `%s` unescaped       yields `0*39.5(?![0-9])`, where `.` matches ANY
+    #       character — `slice-39x5-design.md` resolves as Slice 39.5's memo
+    #       (arm 13e). 6 of 24 wrong.
+    #   escape only          `0*39\.5(?![0-9])` still matches `slice-39.5.1-…`,
+    #       because the character after `39.5` is `.`, not a digit — so 39.5
+    #       claims 39.5.1's memo, and 39 still claims 39.5's (arm 13f).
+    #       4 of 24 wrong. Escaping is NECESSARY BUT NOT SUFFICIENT.
+    #   `(?![0-9.])`         the obvious boundary tighten, and a NEW FALSE
+    #       NEGATIVE: it rejects `9.9.9-slice-10.md`, where the character after
+    #       the id is the EXTENSION dot, so the slice loses its own memo and the
+    #       TC-37 guard hard-stops a slice that IS designed (arm 13g). 2 of 24
+    #       wrong — in the safe-looking direction, which is worse.
+    #
+    # What must be rejected is a following DIGIT, or a following `.` that BEGINS
+    # A LONGER ID — never a `.` on its own. Spelled as two lookaheads rather than
+    # the compact `(?!\.?[0-9])` so each rejection reads as its own rule.
+    # 24 of 24 matrix cases correct.
+    name_re = re.compile(
+        r"slice[-_ ]?0*" + re.escape(slice_str(slice_no)) + r"(?![0-9])(?!\.[0-9])",
+        re.I)
     # Compiled ONCE per run, not once per (document, token) pair: the scan now
     # walks three roots, and re-compiling inside the inner loop would make the
     # cost quadratic in the tier for no benefit.
@@ -698,25 +757,36 @@ def build(release, state_path, state, slice_no, entry, curated=None):
     # The predecessor is the ancestry-maximal choice that still excludes the
     # target itself, so dependencies are CROSS-CHECKED against it instead.
     m.out("## 2. BASE SHA + BRANCH POINT   [LBO 'Branch from tip'; SLICE-TEMPLATE §0]")
-    landed_nums = sorted({s for s in landed if isinstance(s, int)})
+    # `is_slice_num`, NEVER `isinstance(s, int)`. The int-only filter dropped a
+    # FRACTIONAL landed slice out of the predecessor set entirely, so the base
+    # SHA silently skipped a whole unit's work — measured on a fixture with a
+    # landed Slice 10.5, the manifest for Slice 30 printed
+    #   `base sha  bbbb2222  (Slice 5 — the newest LANDED slice STRICTLY BEFORE Slice 30)`
+    # instructing the operator to branch from a commit that predates 10.5. That
+    # is this repo's named agent-worktree-stale-base trap emitted by the tool
+    # written to prevent it, and a confidently printed wrong SHA is precisely
+    # what defeats the human sanity check (arm 13a). The same filter also made
+    # `slice_no in landed_nums` false for a landed fractional slice, suppressing
+    # the HISTORICAL banner (arm 13b).
+    landed_nums = sorted({s for s in landed if is_slice_num(s)})
     prior_landed = [s for s in landed_nums if s < slice_no]
     later_landed = [s for s in landed_nums if s > slice_no]
     base_slice = max(prior_landed) if prior_landed else None
     base_sha = (ladder.get(base_slice) or {}).get("sha") if base_slice is not None else None
     if slice_no in landed_nums:
         m.out("  ⚠ HISTORICAL     Slice %s is ITSELF LANDED (%s), so this is a regeneration:"
-              % (slice_no, (ladder.get(slice_no) or {}).get("sha") or "no sha recorded"))
+              % (slice_str(slice_no), (ladder.get(slice_no) or {}).get("sha") or "no sha recorded"))
         m.out("                   the base below is that slice's PREDECESSOR, never its own merge.")
     if base_sha:
         m.out("  base sha         %s  (Slice %s — the newest LANDED slice STRICTLY BEFORE Slice %s)"
-              % (base_sha, base_slice, slice_no))
+              % (base_sha, slice_str(base_slice), slice_str(slice_no)))
     elif base_slice is not None:
         m.out("  base sha         (Slice %s is the predecessor but records NO landing sha)"
-              % base_slice)
+              % slice_str(base_slice))
         m.out("                   The state file is incomplete: take the branch point from")
         m.out("                   `git log` for that landing and record it in output.json. Do NOT guess.")
     else:
-        m.out("  base sha         (none — NO landed slice precedes Slice %s)" % slice_no)
+        m.out("  base sha         (none — NO landed slice precedes Slice %s)" % slice_str(slice_no))
         # These two cases are MUTUALLY EXCLUSIVE. "No predecessor" means branch
         # from the tip ONLY while the tip is still where this slice was cut. Once
         # later slices have landed, origin/main carries their merges, so printing
@@ -725,9 +795,9 @@ def build(release, state_path, state, slice_no, entry, curated=None):
         # and an operator follows the instruction, not the caveat next to it.
         if later_landed:
             m.out("  ⚠ TIP IS AHEAD   Slice(s) %s landed AFTER this one, so origin/main already"
-                  % ", ".join(str(s) for s in later_landed))
+                  % ", ".join(slice_str(s) for s in later_landed))
             m.out("                   carries work Slice %s never had. There is NO correct automatic"
-                  % slice_no)
+                  % slice_str(slice_no))
             m.out("                   base for this regeneration: do NOT branch from the tip. Recover")
             m.out("                   the point of cut from `git log` and record it in output.json.")
         else:
@@ -738,14 +808,20 @@ def build(release, state_path, state, slice_no, entry, curated=None):
                and (base_slice is None or d > base_slice)]
     if dep_gap:
         m.out("  ⚠ DEP NOT IN BASE dependency Slice(s) %s are LANDED but do NOT sit at or below the"
-              % ", ".join(str(d) for d in dep_gap))
+              % ", ".join(slice_str(d) for d in dep_gap))
         m.out("                   base slice, so the base merge does not contain them. Re-derive the")
         m.out("                   branch point from `git log` before cutting the worktree.")
     m.out("  re-verify        `git rev-parse origin/main` at STEP 0 — a later landing may have")
     m.out("                   advanced the tip since the state file was written.")
+    # `is_slice_num`, not `isinstance(s, int)` — the SAME filter as the base-SHA
+    # computation above, in its third costume. A fractional slice landed at or
+    # after the target carried no `⚠ at/after` mark, so the one line that would
+    # have warned the reader that origin/main already contains work this slice
+    # never had stayed silent (arm 13c).
     m.out("  landed so far    %s" % (", ".join(
-        "%s (%s)%s" % (s, (ladder.get(s) or {}).get("sha") or "no sha",
-                       " ⚠ at/after Slice %s" % slice_no if isinstance(s, int) and s >= slice_no else "")
+        "%s (%s)%s" % (slice_str(s), (ladder.get(s) or {}).get("sha") or "no sha",
+                       " ⚠ at/after Slice %s" % slice_str(slice_no)
+                       if is_slice_num(s) and s >= slice_no else "")
         for s in landed) or "none"))
     m.out("  SCHEMA           %s — %s"
           % (state.get("schema_version"),

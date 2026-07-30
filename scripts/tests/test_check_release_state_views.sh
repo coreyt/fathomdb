@@ -1191,8 +1191,13 @@ s["ladder"].append({"slice": 30.0, "short": "IMPOSTOR", "depends_on": [],
 json.dump(s, open(p, "w"), indent=2)
 PY
 run_gate
-if [ "$RC" -ne 0 ] && grep -qi 'duplicate' <<<"$OUT" && grep -qF '30' <<<"$OUT"; then
-  pass "_by_slice — two ladder entries collapsing onto one key HARD-fail instead of silently overwriting"
+# The message must NAME the collapsed id and the hazard, not merely fail: the
+# operator has to be told WHICH two entries collided, because the survivor is
+# decided by state-file line order and is otherwise invisible.
+if [ "$RC" -ne 0 ] \
+   && grep -qF 'resolve to the same slice id 30' <<<"$OUT" \
+   && grep -qF 'SILENTLY OVERWRITE' <<<"$OUT"; then
+  pass "_by_slice — two ladder entries collapsing onto one key HARD-fail, naming the id, instead of silently overwriting"
 else
   fail "arm 11i (duplicate ladder key): rc=$RC out=$OUT"
 fi
