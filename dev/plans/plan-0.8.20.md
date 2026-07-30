@@ -474,32 +474,40 @@ to the HITL.
 
 **Remaining ladder:** 40.<!-- END GENERATED release-state:0.8.20:plan-immediate-next -->
 
-> ⚠ **This prose block previously described Slice 31 and was inherited verbatim by every brief
-> generated from this anchor.** It carried the line *"Applies no dependency bump. Edits no manifest and
-> no lockfile"*, which directly contradicts the manifest work Slices 39 and 40 must perform. Rewritten
-> 2026-07-30 by the Steward. Slices 31/32/33 have all LANDED; their guardrails are history and are
-> recorded in §3a, not here.
+> ⚠ **STALE TWICE NOW.** This block described Slice 31, was rewritten for Slice 39, and went stale
+> again the moment Slice 39 landed — while `commission-manifest.sh` copies the whole section into every
+> generated brief. Slice 40's brief would have inherited **Slice 39's** mandate. Rewritten 2026-07-30
+> (`seq-205`). ⚠ **If you are reading this and Slice 40 has landed, it is stale a third time** — the
+> generated pointer above is authoritative, this prose is not.
 
-**Slice 39 (`R-20-DOC`) is the immediate next.** Minted 2026-07-30 under the HITL directive to get
-project / `dev/` / `docs/` documentation **not stale**, and the **MIT license ruling** (steward `seq-193`).
-**Depends on Slice 30** (LANDED — the publish precondition is **SATISFIED**).
+---
 
-**Why it precedes Slice 40:** `scripts/verify-release-gates.sh` **check 4 hard-fails** without a CHANGELOG
-heading matching the version, and no `## 0.8.20` section exists. Slice 40's `workflow_dispatch` rehearsal
-therefore **cannot pass** until Slice 39 lands.
+**Slice 39 (`R-20-DOC`) LANDED at `91db34d8`** — MIT license reconciliation, a LICENSE and README that
+ship in all ten published units, and the `## 0.8.20` CHANGELOG heading `verify-release-gates.sh` check 4
+requires. Its guardrails are history; do not inherit them.
 
-**Deliverables.** The four publishable manifests corrected **Apache-2.0 → MIT** to agree with the repo-root
-`LICENSE`; a license file that **actually ships** in all 7 crates, the wheel and both npm packages (none
-does today); a real **`## 0.8.20` CHANGELOG section** — including the `SearchHit.id` `u64`→`IdSpace` break,
-which is absent entirely, and a correction of the false *"Schema version 20 → 21"* line (the real span is
-**15 → 24**); registry-facing **READMEs**; `docs/` de-staled off 0.6.0; `dev/interfaces/*.md` currency
-(**TC-39**); and the docs.rs doc-comments that contradict shipped behaviour.
+**Two CROSS-CUTTING units run before Slice 40** (`seq-204`). Neither is a ladder slice; neither carries a
+slice number or an `R-20-xx` position — the `DOC-HYGIENE-3` / TC-86 precedent.
 
-**Guardrails.** **Changes `license` fields only — never a `version` field**; the `0.8.9 → 0.8.20` bump
-belongs to Slice 40. **Nothing in `.github/`** (Slice 40's exclusive territory this release). Governed
-surface **byte-identical** (`check-governed-surface-pin.sh` exit 0), **SCHEMA stays 24**, **zero eu7 runs**
-(F-28). **Carries no `R-20-xx` requirement id and mints no AC** — gate by test name and by the new
-license-consistency guard.
+1. **`SLICE-ID-HARDENING`** — the six silent-wrong fractional-slice-id sites plus three latent ones, and
+   **recurrence arms** in `test_check_board_currency`, `test_check_release_state_views`,
+   `test_commission_manifest` and `test_preflight_landing`. **The arms are the deliverable**: nothing
+   today would catch the next occurrence, and the `arm 9d` state-derivation check in `scripts/tests/test_commission_manifest.sh`
+   replicates the generator's own `isinstance` filter verbatim, so it would *confirm* the defect rather than catch it.
+2. **"Slice 39.5" (`R-20-HARNESS`)** — name kept in prose, **de-laddered** at `seq-204`. Converts
+   `scripts/agent-test.sh` from fail-fast to **collect-all-then-report** and delivers the **TRUE red list
+   both locally and in CI**. ⚠ Its invariant: continue-on-failure changes *when* the harness stops, not
+   *whether* a failure counts — a run with any failure must still exit non-zero. Design of record:
+   `dev/design/0.8.20-slice-39.5-collect-all-test-harness.md`. ⚠ `commission-manifest.sh` **cannot**
+   generate its brief; it is hand-written, as DOC-HYGIENE-3's was.
+
+> ### ⛔ CI IS RED ON `main` AND HAS BEEN FOR AT LEAST THREE RUNS (`seq-205`)
+>
+> Run `30546942720` (`788b74c1`) ran **23 jobs, 1 skipped**, four failing: **`commission-manifest`,
+> `verify`, `rust-windows`, `security`**. **Publish gate (i) — every `ci.yml` job green — is NOT met.**
+> `verify`/`security` die in bootstrap on seven pre-existing pyright errors; **`rust-windows` fails on
+> `-p fathomdb-engine --test tc57_worker_commit_pressure`, which is named in no ledger, design doc or
+> brief — new and UNOWNED**; and `commission-manifest` fails in CI while its suite is rc=0 locally.
 
 **Then Slice 40 (`R-20-PUB`)** prepares the publish and **STOPS before any tag**. Publish itself remains
 the single unruled HITL decision.

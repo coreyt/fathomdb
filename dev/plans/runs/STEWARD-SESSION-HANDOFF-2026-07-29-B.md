@@ -1,9 +1,31 @@
 ---
-status: ACTIVE
+status: SUPERSEDED
 ---
 
 # FathomDB — Steward Session Hand-off (2026-07-29-B)
 
+> ## ⚠ SUPERSEDED 2026-07-30 by `STEWARD-SESSION-HANDOFF-2026-07-30-A.md`. **Read that one.**
+>
+> Retained as the decision record; **do not act on it as a task list.** What went stale, factually:
+>
+> - **§2 is WRONG.** It says *"Nothing else fires a publish"* besides a `v*` tag. `seq-196` established
+>   that a `workflow_dispatch` with `dry_run=false` publishes for real to all three registries with **no
+>   tag**, and that `verify-release-gates.sh` only warns and continues.
+> - **Slice 39 (`R-20-DOC`) has LANDED** at `91db34d8`. §1 and §3 describe it as un-commissioned.
+> - **The ladder is Slice 40 alone**, and `seq-204` placed **two cross-cutting units ahead of it** —
+>   SLICE-ID-HARDENING and "Slice 39.5" (`R-20-HARNESS`), neither a ladder slice.
+> - **§4 Phase 0 is superseded.** It calls F-30's fix shape *"a hypothesis to test"*; `seq-195` had
+>   already made the determination — the **test** is stale, the workflow is correct.
+> - **§4 omits Phase 0b** — the `seq-198` dispatch guard (a confirmation input plus an **exit 1**, not a
+>   warning) is now owed work at Slice 40.
+> - **§6 is short by one.** `decisions.unruled` holds **three** entries; the third
+>   (`platform-publish-schedule`) was ruled at `seq-203` and is retained only as a tracking row.
+> - **The publish gate has TWO independent conditions** since `seq-202` — a fully green `ci.yml` **and**
+>   explicit HITL approval — and neither is met today: **CI on `main` is RED**.
+> - **§8 traps are short of TC-130, TC-131 and TC-132**, all recorded after this doc was written.
+>
+> ---
+>
 > **Boot:** run **`/steward`**, do its §3 cold-start reading (**start with `scripts/steward-orient.sh`**),
 > then read THIS doc, return a short orientation, and **WAIT for the HITL** before mutating anything.
 > Supersedes `STEWARD-SESSION-HANDOFF-2026-07-29-A.md`, which was written before Slices 31/32/33 and
