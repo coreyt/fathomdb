@@ -51,14 +51,26 @@ no findings, zero fix rounds.
 
 ---
 
-> ### ⚠ ONE HITL DISPOSITION DECISION IS DUE — READ THIS BEFORE COMMISSIONING SLICE 40
+> ### ✅ THE DISPOSITION DECISION IS MADE — `seq-219`, and it ENLARGES Slice 40
 >
-> `seq-202` and `seq-206` both ruled that disposition of **everything** the baseline surfaces is **one
-> decision taken once the full list exists**, not piecemeal. **The list now exists** (board §23). It
-> comprises: the two Slice-40-owned red suites · the `test-rust`/`rust-macos` flake · `test-python`'s
-> UNKNOWN state · the seven pyright errors blocking `verify`/`security` (**plus the TC-137 lead**) ·
-> `rust-windows`/`tc57` · and the **solved** `commission-manifest` divergence.
-> **All of it bears on publish gate (i), which is NOT met. Surface it; do not decide it.**
+> `seq-202`/`seq-206` deferred it until 39.5's list existed. The list exists (board §23) and the **HITL
+> ruled option (b): FIX EVERYTHING — nothing waived, nothing deferred.** *(The Steward recommended (a),
+> fix-what-clears-gate-(i) and waive the rest. Recorded as given.)*
+>
+> **Slice 40's fix scope therefore now also includes:**
+>
+> - the `commission-manifest` **depth-1 checkout** — one-line `fetch-depth: 0`
+> - the **7 pyright errors** blocking `verify`/`security` — **TC-137** is the lead that five are
+>   stub-vs-source drift in the **tracked** `src/python/fathomdb/_fathomdb.pyi` (`dense_disabled`: **11** in
+>   the Rust binding source, **0** in the stub). ⚠ That regeneration clears them is **UNPROVEN**.
+> - **`rust-windows` / `tc57`** — previously reported-only under `seq-206`, **now in scope to fix**
+> - **`test-python`** (**TC-136**) — resolves only through the sanctioned rebuild
+> - the **`test-rust`/`rust-macos` flake** — fix is **serialising the lock-holder tests**, not a retry
+> - **TC-135** — exclude `dev/plans/runs/codex/` from the orphan-marker scan (**option (a)**, `seq-219`),
+>   which unblocks TC-RUBRIC-7
+>
+> ⛔ **Slice 40 is materially LARGER than the brief drafted for it, and it stays ONE unit** (`seq-216`).
+> **Fold these into the §3a checkpoint table BEFORE commissioning.**
 
 **Also settled by 39.5, so do not re-derive:**
 
