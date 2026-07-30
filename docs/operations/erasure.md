@@ -34,9 +34,21 @@ For every canonical row whose `source_id` matches, `erase_source` deletes:
 
 The call **does not report success on a partial erasure.** If the WAL checkpoint
 cannot complete — typically a concurrent reader pinning a snapshot — the verb
-raises `ErasureIncomplete` instead of returning a report. Retry the verb; it is
-idempotent, so a retry after a partial failure is safe and an already-erased
-source is a zero-count success.
+raises **`ErasureIncompleteError`** (Python `fathomdb.errors.ErasureIncompleteError`,
+TypeScript `ErasureIncompleteError`) instead of returning a report. It carries
+`stage` (which step did not complete — e.g. `"wal_checkpoint"` /
+`"telemetry_redaction"`) and `detail`. Retry the verb; it is idempotent, so a
+retry after a partial failure is safe and an already-erased source is a
+zero-count success.
+
+```python
+from fathomdb.errors import ErasureIncompleteError
+
+try:
+    report = engine.erase_source("tenant-a")
+except ErasureIncompleteError as e:
+    log.warning("erasure incomplete at %s: %s — retry", e.stage, e.detail)
+```
 
 Erasure is durable: it survives a close and re-open, because it is a committed
 transaction rather than a cache eviction.
@@ -45,18 +57,22 @@ transaction rather than a cache eviction.
 
 Read this list before making a deletion promise to anyone downstream.
 
-- **It does not erase copies you made.** Anything exported through
-  `safe_export`, replicated, or copied into your own store is outside the
-  engine's reach.
+- **It does not reach anything outside the live database file.** Enumerated,
+  not implied — each of these has to be re-generated or destroyed separately
+  after any erasure:
+  - **`safe_export` archives** produced by `fathomdb doctor safe-export`.
+    They are point-in-time copies and are never revisited by an erasure.
+  - **Operator backups and snapshots**, including anything your host or
+    volume manager took.
+  - **Curated gold / evaluation files** derived from the corpus — fixtures,
+    exported judgement sets, cached embeddings held outside the engine.
+  - Anything else replicated or copied into your own store.
 - **It does not erase filesystem-level remnants.** The verb truncates the WAL,
   but SQLite may still hold the content in free pages inside the main database
   file until they are reused. A `VACUUM` (or restoring into a fresh file) is
   what actually reclaims those pages. On a copy-on-write filesystem, an
   SSD with wear-levelling, or a snapshotted volume, prior versions of the file
   may persist regardless of anything the database does.
-- **It does not erase backups.** Point-in-time backups taken before the erasure
-  still contain the content. Erasure obligations have to be propagated to your
-  backup retention policy separately.
 - **It does not erase the audit record that the erasure happened** — that is
   deliberate; see below.
 - **It does not reach the engine's reserved namespace.** `source_id` values

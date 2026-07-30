@@ -1,16 +1,15 @@
 # TypeScript API
 
 Package: `fathomdb`. Authoritative spec:
-[`dev/interfaces/typescript.md`](https://github.com/coreyt/fathomdb/blob/0.6.0-rewrite/dev/interfaces/typescript.md).
+[`dev/interfaces/typescript.md`](https://github.com/coreyt/fathomdb/blob/main/dev/interfaces/typescript.md).
 
-> **TS SDK parity caveat.** TS first working slice shipped 2026-04-07.
-> The TS surface covers the same five-verb canonical set and the same
-> error taxonomy as Python, but TS is the less-mature SDK in 0.6.0.
-> Prefer Python for production pilots. See
-> [release notes § TypeScript SDK parity](../release-notes/0.6.0.md).
+> **TS SDK parity caveat.** The TS surface covers the same governed
+> command set and the same error taxonomy as Python, but Python remains
+> the more heavily exercised binding. Prefer Python for production
+> pilots. See [SDK parity](../positions/sdk-parity.md).
 
 All runtime operations are Promise-returning. The TS↔Python parity
-matrix is in [`dev/notes/12-TX-parity-matrix.md`](https://github.com/coreyt/fathomdb/blob/0.6.0-rewrite/dev/notes/12-TX-parity-matrix.md).
+matrix is in [`dev/notes/12-TX-parity-matrix.md`](https://github.com/coreyt/fathomdb/blob/main/dev/notes/12-TX-parity-matrix.md).
 
 ## Top-level
 
@@ -18,19 +17,27 @@ matrix is in [`dev/notes/12-TX-parity-matrix.md`](https://github.com/coreyt/fath
 import {
   Engine,
   admin,
+  graph,
+  read,
   type EngineConfig,
   type EngineOpenOptions,
   type WriteReceipt,
+  type EraseReport,
+  type IdSpace,
   type SearchHit,
   type SearchResult,
+  type SearchFilter,
   type SoftFallback,
   type SoftFallbackBranch,
   type CounterSnapshot,
+  type ProjectionSpec,
+  type ProjectionDelta,
+  type ProjectionRole,
   type SubscriberCallback,
   type AttachSubscriberOptions,
   type AdminConfigureOptions,
   FathomDbError,
-  // ...18 concrete leaf classes, see errors reference
+  // ...27 concrete classes below the root, see errors reference
 } from "fathomdb";
 ```
 
@@ -51,26 +58,75 @@ Rejects with a `FathomDbError` subclass on failure:
 `EmbedderIdentityMismatchError`, `EmbedderDimensionMismatchError`.
 See [errors](errors.md).
 
-> **0.6.0 caveat.** The napi-rs binding returns only the engine
-> handle. The structured open report defined in
-> `dev/design/engine.md` is populated on the Rust side but dropped
-> at the binding boundary. Surfacing it defers to **0.6.1** (slice
-> `12-TX-OPENREPORT`).
+The structured open report is available after open via
+`engine.openReport()` (below).
+
+### `engine.openReport() -> OpenReport`
+
+The structured open report defined in `dev/design/engine.md`:
+`migrationVersionReached`, embedder identity confirmation, open-stage
+data, `denseDisabled` / `denseDisabledReason`, and the embedder
+telemetry fields (`embedderDownloadMs`, `embedderEvents`,
+`embedderMeanCenteringRequired`, `embedderMeanVecPinned`).
 
 ### `engine.write(batch?) -> Promise<WriteReceipt>`
 
 Enqueue a batch of canonical rows.
 
-- `batch` (`unknown[]`) — caller-shaped canonical rows. Defaults
-  to `[]`. A node/edge item may carry an optional `logicalId`
-  (`string`): supplying it makes the write a transaction-time
-  **supersession** of the prior active version of that
-  `logicalId` (the prior version is tombstoned and the new one
-  becomes active — invalidate-not-delete). Active-row identity is scoped
-  to `logicalId` alone, so re-ingesting the same `logicalId` with a
-  different `kind` supersedes (it does not create a second active row).
-  Omitting it is a plain insert with a NULL `logicalId` that never
-  collides with other NULLs.
+- `batch` (`unknown[]`) — caller-shaped canonical rows. Defaults to `[]`
+  (a valid, item-less batch).
+
+Every **node** item accepts these keys:
+
+| Key | Type | Required | Meaning |
+| --- | ---- | -------- | ------- |
+| `kind` | `string` | **yes** | record kind |
+| `body` | `string` | **yes** | record body |
+| `sourceId` / `source_id` | `string` | **yes** | provenance — see below |
+| `logicalId` | `string` | no | governed cross-re-ingestion identity |
+| `state` | `string` | no | create-time existence state: `"active"` (default) or `"pending"` |
+| `reason` | `string` | no | advisory cause for `state`; stored verbatim, never interpreted |
+| `validFrom` / `valid_from` | `number` | no | world-time window, INCLUSIVE lower bound, epoch **seconds** UTC |
+| `validUntil` / `valid_until` | `number` | no | world-time window, EXCLUSIVE upper bound, epoch **seconds** UTC |
+
+An **edge** item takes `kind`, `from`, `to`, the same mandatory
+`sourceId`, an optional `logicalId`, and the temporal pair
+`tValid` / `tInvalid` (`number | null`, epoch **seconds** UTC; `null`
+means "still valid"). Both camelCase and snake_case spellings are
+accepted for every dual-spelled key (camelCase is consulted first).
+
+**`sourceId` is MANDATORY (0.8.20).** `eraseSource` addresses rows *by*
+`sourceId`, so a row written without one is reachable by no erasure
+call. A missing, empty, whitespace-only or **reserved** (`_`-prefixed)
+value rejects with `WriteValidationError`. Treat it as a public
+identifier: use an opaque document or tenant id, never personal data —
+see [Erasure](../operations/erasure.md).
+
+**`logicalId`** — supplying it makes the write a transaction-time
+**supersession** of the prior active version of that `logicalId` (the
+prior version is tombstoned and the new one becomes active —
+invalidate-not-delete). Active-row identity is scoped to `logicalId`
+alone, so re-ingesting the same `logicalId` with a different `kind`
+supersedes (it does not create a second active row). Omitting it is a
+plain insert with a NULL `logicalId` that never collides with other
+NULLs.
+
+**Validity window** — half-open `[validFrom, validUntil)`. Omitting both
+binds NULL/NULL (unbounded, the pre-0.8.20 default). Both bounds present
+with `validFrom >= validUntil` is unsatisfiable and rejects with
+`WriteValidationError`; validation runs before any insert, so the whole
+batch is rejected. A one-sided window is never refused. A non-integral
+bound rejects with `WriteValidationError` and is never truncated.
+
+```ts
+const receipt = await engine.write([
+  { kind: "note", body: "hello", sourceId: "doc-42" },
+  { kind: "note", body: "governed", sourceId: "doc-42", logicalId: "note:hello" },
+  { kind: "mentions", from: "note:hello", to: "acme", sourceId: "doc-42",
+    tValid: 1_546_300_800, tInvalid: null },
+]);
+```
+
 - Returns: `WriteReceipt { cursor, rowCursors, danglingEdgeEndpoints }` —
   `cursor` is the batch high-water `write_cursor`; `rowCursors` are the
   per-row `write_cursor`s, 1:1 with the input batch order;
@@ -132,6 +188,39 @@ parallel, possibly-divergent embedder. Rejects with
 embedder (`useDefaultEmbedder: false`). Mirror of the Python
 `engine.embed(text)` (0.8.6 Slice 10 brought it to Py↔TS parity).
 
+### `engine.transition(logicalId, toState, reason?) -> Promise<void>`
+
+**0.8.19.** Move a **governed** node between existence states, per the
+engine-enforced legal-transition table. `toState` is a
+`LifecycleState` (`"pending" | "active" | "deleted" | "purged"`):
+
+| From | To | Effect |
+| ---- | -- | ------ |
+| `pending` | `active` | promote (clears `reason`) |
+| `pending` | `deleted` | **rejected** |
+| `active` | `deleted` | soft-delete (sets `reason`) |
+| `deleted` | `active` | undelete (clears `reason`) |
+
+`reason` is advisory and never interpreted by the engine. Keys on the
+bare `logicalId` — the `logical` (`l:`) id space only; a `content`
+(`h:`) or `passage` (`p:`) id throws `NotLifecycleAddressableError`. An
+illegal move throws `IllegalTransitionError` carrying `fromState`,
+`toState` and `legal`.
+
+### `engine.purge(logicalId: string) -> Promise<void>`
+
+**0.8.19.** Irreversibly hard-erase a governed node across every
+row-owned target — all versions, its FTS/vector shadows, and its
+touching edges (cascade-removed).
+
+**Deleted-first:** legal only from `"deleted"`, otherwise
+`IllegalTransitionError`. **Idempotent:** purging an absent or
+already-purged id is a no-op success. A non-`l:` id throws
+`NotLifecycleAddressableError`.
+
+`purge` addresses one **governed** node. For anonymous content — rows
+written with no `logicalId` — use `eraseSource` below.
+
 ### `engine.eraseSource(sourceId: string) -> Promise<EraseReport>`
 
 **0.8.20.** Erase every canonical row carrying `sourceId`, together with its
@@ -151,8 +240,8 @@ Rejects with `WriteValidationError` for an empty, whitespace-only, or
 **reserved** (`_`-prefixed) `sourceId`. The engine's reserved namespace
 (`_engine:*` substrate and the `_legacy:pre-0.8.20` migration cohort) is
 reachable only through `fathomdb recover --excise-source`. Rejects with
-`ErasureIncomplete` rather than reporting success if the erasure could not be
-completed at rest.
+`ErasureIncompleteError` (carrying `stage` and `detail`) rather than reporting
+success if the erasure could not be completed at rest.
 
 Resolves to an `EraseReport` with `sourceRef`, `nodesExcised`, `edgesExcised`,
 and `projectionsInvalidated`. Mirror of the Python
@@ -308,12 +397,16 @@ interface NodeRecord {
   logicalId: string;
   kind: string;
   body: string;
-  writeCursor: number; // interim id carrier (parity with SearchHit.id)
+  writeCursor: number; // engine-internal positional cursor — NOT SearchHit.id
 }
 ```
 
 Returned by `read.get` / `read.getMany` for an **active** canonical node
 (`superseded_at IS NULL`). Mirrors the Python `NodeRecord`.
+
+`logicalId` is the caller-facing identity here; `writeCursor` is the engine's
+positional book-keeping value, reassigned on re-projection and **not** the same
+carrier as [`SearchHit.id`](#searchhit) (which is a typed `IdSpace`).
 
 ### `OpStoreRow`
 
@@ -344,8 +437,13 @@ interface SearchResult {
 ### `SearchHit`
 
 ```ts
+interface IdSpace {
+  space: string; // "logical" | "content" | "passage"
+  value: string; // the BARE id (id-space prefix stripped)
+}
+
 interface SearchHit {
-  id: number; // canonical row write_cursor (interim identity carrier)
+  id: IdSpace; // typed, non-null, id-space-total hit identity
   kind: string;
   body: string;
   score: number; // G9 RRF-fused relevance (Σ 1/(60+rank)); higher = better
@@ -354,6 +452,17 @@ interface SearchHit {
   ceScore: number | null; // 0.8.5 CE score (sigmoid logit) for in-pool reranked hits
 }
 ```
+
+> **BREAKING since 0.8.9.** `SearchHit.id` was a `number` row cursor. It is now
+> the typed `IdSpace` above — the **permanent** caller-facing identity, not an
+> interim carrier. `space` is `"logical"` for governed rows (prefix `l:`),
+> `"content"` for doc-seeded rows (`h:`), `"passage"` for synthetic passages
+> (`p:`); `value` is the bare id with that prefix stripped, and
+> `` `${prefix}${value}` `` reproduces the pre-0.8.19 `stableId` byte-for-byte.
+> It is stable across sessions and re-ingest, and never participates in ranking.
+> The engine's positional `write_cursor` is internal book-keeping and is **not
+> surfaced by the bindings**. Only `logical`-space ids are lifecycle-addressable
+> by `transition` / `purge`.
 
 `score` is the **G9 RRF-fused** relevance (higher = more relevant), optionally
 recency-reweighted. Raw `vec_distance_l2` (vector) and `bm25()` (text) are fused
@@ -470,8 +579,13 @@ interface SearchExpandResult {
 
 ## Errors
 
-`fathomdb` exports `FathomDbError` (the catch-all base) plus 20
-concrete leaf classes. See [errors reference](errors.md).
+`fathomdb` exports `FathomDbError` (the catch-all base) plus **27**
+concrete classes below it. See [errors reference](errors.md).
+
+The lifecycle / erasure verbs reject with `IllegalTransitionError`,
+`NotLifecycleAddressableError`, `ErasureIncompleteError` and
+`WriteValidationError`; `configureProjections` rejects with
+`ProjectionDestructiveError` and `WriteValidationError`.
 
 Panics in the Rust runtime surface as `FathomDbPanicError` (not a
 `FathomDbError` subclass — panic carriers are deliberately outside
@@ -490,5 +604,6 @@ unchanged. See [Default Embedder → GPU acceleration](../embedder.md#gpu-accele
 - [Quickstart](../getting-started/quickstart.md)
 - [Config knobs](config.md)
 - [Errors](errors.md)
-- Locked spec: [`dev/interfaces/typescript.md`](https://github.com/coreyt/fathomdb/blob/0.6.0-rewrite/dev/interfaces/typescript.md)
-- TS↔Python parity matrix: [`dev/notes/12-TX-parity-matrix.md`](https://github.com/coreyt/fathomdb/blob/0.6.0-rewrite/dev/notes/12-TX-parity-matrix.md)
+- [Erasure](../operations/erasure.md)
+- Locked spec: [`dev/interfaces/typescript.md`](https://github.com/coreyt/fathomdb/blob/main/dev/interfaces/typescript.md)
+- TS↔Python parity matrix: [`dev/notes/12-TX-parity-matrix.md`](https://github.com/coreyt/fathomdb/blob/main/dev/notes/12-TX-parity-matrix.md)

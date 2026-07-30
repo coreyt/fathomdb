@@ -1,8 +1,8 @@
 # Concepts
 
-Mental model for the 0.6.0 public surface. Detailed treatment lives
+Mental model for the 0.8.20 public surface. Detailed treatment lives
 in internal design docs under
-[`dev/design/`](https://github.com/coreyt/fathomdb/tree/0.6.0-rewrite/dev/design);
+[`dev/design/`](https://github.com/coreyt/fathomdb/tree/main/dev/design);
 this page is the consumer-facing overview.
 
 ## Engine lifecycle
@@ -16,7 +16,7 @@ open → write / search / admin.configure / instrumentation → close → proces
    thread-affine workers, the scheduler, the op-store, and the
    embedder pool. Open is the only place migration runs.
 2. **Write / search / configure** — application code calls the
-   five-verb canonical surface. Writes are serialized through the
+   governed verb surface. Writes are serialized through the
    writer thread; reads are served by the reader pool; admin
    configurations apply in write order.
 3. **Close** — `engine.close()` joins the writer thread, drains the
@@ -26,9 +26,9 @@ open → write / search / admin.configure / instrumentation → close → proces
    wheel-on-disk lock cleanup and process exit are the bug signal the
    release smokes watch for (per `feedback_release_verification`).
 
-## Five-verb runtime surface
+## Governed runtime surface
 
-The canonical surface across every binding:
+The **core** five, present in every binding:
 
 - `Engine.open(path, **config)` — open or create a DB.
 - `engine.write(batch)` — enqueue canonical rows.
@@ -37,10 +37,46 @@ The canonical surface across every binding:
 - `admin.configure(engine, name=..., body=...)` — apply a schema /
   embedder / projection configuration.
 
-Engine-attached instrumentation (`drain`, `counters`,
+Around them sit the rest of the governed surface: the `read.*` and
+`graph.*` namespaces, the lifecycle/erasure verbs (`transition`,
+`purge`, `erase_source`), the projection registry
+(`configure_projections`, `read.projections`), the retrieval
+primitives (`search_text_only`, `rerank`, `embed`) and the BYO-LLM
+verbs (`ingest_with_extractor`, `consolidate_with_provider`). The
+membership is pinned by
+`src/conformance/governed-surface-allowlist.json` and asserted by both
+binding test suites.
+
+Engine-attached instrumentation (`open_report`, `drain`, `counters`,
 `set_profiling`, `set_slow_threshold_ms`, subscriber attach) is not
 an additional top-level verb; it is a method namespace on the
 `Engine` handle.
+
+## Provenance is mandatory
+
+Every canonical node and edge carries a **`source_id`** — the
+provenance handle `erase_source` addresses. It is structurally
+mandatory: in Rust an un-provenanced write does not compile
+(`SourceId` has no other constructor), and the Python / TypeScript
+bindings raise `WriteValidationError`. A row without one would be
+reachable by no erasure verb. Treat `source_id` as a public identifier
+and keep personal data out of it — see
+[Erasure](../operations/erasure.md).
+
+## Identity
+
+Three distinct identifiers, deliberately not interchangeable:
+
+- **`logical_id`** — the caller-supplied, cross-re-ingestion identity
+  of a *governed* row. Re-writing the same `logical_id` supersedes the
+  prior active version (invalidate-not-delete). Only `logical_id`-keyed
+  rows are addressable by `transition` / `purge`.
+- **`SearchHit.id`** — a typed `IdSpace` (`{space, value}`) returned by
+  `search`. `space` is `logical` (`l:`), `content` (`h:`) or `passage`
+  (`p:`). Stable across sessions and re-ingest.
+- **`write_cursor`** — the engine's positional book-keeping value. It
+  is reassigned on re-projection, is **not** cross-session stable, and
+  the SDKs no longer surface it as a hit id.
 
 ## Canonical rows and projections
 
@@ -69,7 +105,7 @@ to re-open with a different embedder raises
 Vector identity belongs to the embedder per `ADR-0.6.0-vector-identity-embedder-owned`.
 
 Detailed trait + lifecycle docs: see Rust API docs (`docs.rs/fathomdb-embedder-api` post-publish; pre-GA, see
-[`src/rust/crates/fathomdb-embedder-api/`](https://github.com/coreyt/fathomdb/tree/0.6.0-rewrite/src/rust/crates/fathomdb-embedder-api)).
+[`src/rust/crates/fathomdb-embedder-api/`](https://github.com/coreyt/fathomdb/tree/main/src/rust/crates/fathomdb-embedder-api)).
 
 ## Recovery surface
 
@@ -77,22 +113,27 @@ The CLI exposes two roots:
 
 - `fathomdb doctor <verb>` — read-only or artifact-producing
   diagnostics. `check-integrity`, `safe-export`, `verify-embedder`,
-  `trace`, `dump-schema`, `dump-row-counts`, `dump-profile`.
+  `trace`, `dump-schema`, `dump-row-counts`, `dump-profile`,
+  `dump-mutations`, `orphan-provenance`, `warm-cache`,
+  `recompute-mean`.
 - `fathomdb recover --accept-data-loss <sub-flag>` — the only lossy
   root. `--truncate-wal`, `--rebuild-vec0`, `--rebuild-projections`,
-  `--excise-source <id>`.
+  `--excise-source <id>`, `--excise-collection`/`--excise-record-key`.
 
 Engine errors from the SDK carry recovery hints (notably
 `CorruptionError.recovery_hint_code`); operators dispatch on the
 hint code, not the message.
 
-The CLI is **operator-only** in 0.6.0 — it does not mirror the SDK
-five-verb application surface. There is no `fathomdb search` /
-`get` / `list`.
+The CLI is **operator-only** — it does not mirror the SDK application
+surface. There is no `fathomdb search` / `get` / `list`.
 
-Logical-id verbs (`purge_logical_id`, `restore_logical_id`) are
-deferred to 0.7.x; bulk-delete-by-source for 0.6.0 uses
-`fathomdb recover --accept-data-loss --excise-source <id>`.
+**Erasure does not require the CLI.** Since 0.8.20 the SDK ships
+`purge` (one governed node, by `logical_id`) and `erase_source` (every
+row from one provenance), so an embedded consumer with no `fathomdb`
+binary on `PATH` can discharge a deletion obligation. The CLI seam
+`fathomdb recover --accept-data-loss --excise-source <id>` remains, and
+is the *only* route into the engine's reserved `_`-prefixed provenance
+namespace. See [Erasure](../operations/erasure.md).
 
 ## See also
 
@@ -100,3 +141,4 @@ deferred to 0.7.x; bulk-delete-by-source for 0.6.0 uses
 - [Reference — Errors](../reference/errors.md)
 - [Reference — CLI](../reference/cli.md)
 - [Compatibility](../compatibility/index.md)
+- [Erasure](../operations/erasure.md)

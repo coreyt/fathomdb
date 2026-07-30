@@ -1,37 +1,49 @@
 # Compatibility
 
-Supported platforms, toolchains, and version-alignment policy for
-the 0.6.0 release.
+Supported platforms, toolchains, and version-alignment policy for the
+**0.8.20** release.
+
+> **Pre-1.0 = beta.** FathomDB is on a pre-1.0 line. The surface may
+> change between micro releases, and 0.8.20 carries breaking changes
+> relative to 0.8.9 (see [breaking changes](#breaking-changes-since-089)).
+> "GA" in earlier release notes referred to release *engineering* — a
+> tagged, published artifact — not to an API-stability promise.
 
 ## Supported Python versions
 
-`3.10`, `3.11`, `3.12`. Wheels published for each via the
-`release.yml` `build-python` matrix.
+`3.10`, `3.11`, `3.12`. `requires-python = ">=3.10"`; the wheel build
+targets those three interpreters explicitly.
 
 ## Supported Node versions
 
-Node **18** or later. CI runs on Node **22**.
+Node **18** or later. CI and the release build run on Node **22**.
 
 ## Supported Rust toolchain
 
-Rust **stable**. Specific minimum-supported-rust-version is pinned at
-release time; the `release.yml` toolchain step uses `dtolnay/rust-toolchain@stable`.
+Rust **stable**. There is no declared MSRV; the toolchain step uses
+`dtolnay/rust-toolchain@stable`.
 
-## Supported platforms
+## Prebuilt artifacts — one platform in 0.8.20
 
-Same matrix across Python wheels, napi `.node` binaries, and Rust
-crates (per `release.yml`):
+⚠ **The 0.8.20 wheel and npm platform binary are built for
+`x86_64-unknown-linux-gnu` only.** The other four targets are supported
+in the sense that the code builds and CI exercises them, but the
+release matrix that produces publishable artifacts is deliberately
+gated to one target on this tag; the remaining legs are staged for a
+follow-on release.
 
-| OS      | Architecture           |
-| ------- | ---------------------- |
-| Linux   | `x86_64-unknown-linux-gnu`  |
-| Linux   | `aarch64-unknown-linux-gnu` |
-| macOS   | `x86_64-apple-darwin`       |
-| macOS   | `aarch64-apple-darwin`      |
-| Windows | `x86_64-pc-windows-msvc`    |
+| OS      | Architecture                | Prebuilt in 0.8.20? |
+| ------- | --------------------------- | ------------------- |
+| Linux   | `x86_64-unknown-linux-gnu`  | **yes** (manylinux 2_28) |
+| Linux   | `aarch64-unknown-linux-gnu` | no — build from source |
+| macOS   | `x86_64-apple-darwin`       | no — build from source |
+| macOS   | `aarch64-apple-darwin`      | no — build from source |
+| Windows | `x86_64-pc-windows-msvc`    | no — build from source |
 
-Linux wheels are manylinux 2_28. Other platforms outside this matrix
-are unsupported in 0.6.0.
+CI does run the Rust workspace on Windows and macOS runners, so a
+source build on those platforms is exercised — it is the *published
+binary* that is Linux-only on this tag. Platforms outside this table
+are unsupported.
 
 ## SQLite + sqlite-vec
 
@@ -42,59 +54,86 @@ are unsupported in 0.6.0.
 - Rust + source-build users need a working SQLite + `sqlite-vec`
   available to the loader.
 
+## On-disk schema
+
+`SCHEMA_VERSION` is **24** in 0.8.20 (0.8.9 shipped **15**). Migration
+runs at `Engine.open` and only there.
+
+⚠ **Migration step 23 does not preserve edge data.** The step recreates
+`canonical_edges` so `t_valid` / `t_invalid` are INTEGER epoch seconds
+with type CHECKs. There is **no data migration**: existing edge rows do
+not survive, and no stored ISO-8601 value is converted. Nodes are
+unaffected. If your workspace carries edges you need, **re-ingest them
+after upgrading** rather than relying on an in-place upgrade.
+
 ## Versioning — two axes
 
-`0.6.0` follows two-axis versioning:
+0.8.20 follows two-axis versioning:
 
-- **Axis W (workspace lockstep)** — the six runtime / binding / CLI
-  crates plus the Python and TypeScript packages all carry the same
-  workspace version. `scripts/set-version.sh --check-files` enforces
-  this pre-publish; the pre-push hook runs the check.
+- **Axis W (workspace lockstep)** — the runtime / binding / CLI crates
+  plus the Python and TypeScript packages all carry the same workspace
+  version. `scripts/set-version.sh --check-files` enforces this
+  pre-publish; the pre-push hook runs the check.
 - **Axis E (`fathomdb-embedder-api`)** — the embedder-trait crate is
-  versioned independently per
-  `ADR-0.6.0-embedder-protocol`. Bumping a binding does not force an
-  embedder-api bump.
+  versioned independently per `ADR-0.6.0-embedder-protocol`. Bumping a
+  binding does not force an embedder-api bump.
 
 This decouples embedder-protocol stability from binding cadence.
 
-## 0.5.x compatibility
+## Breaking changes since 0.8.9
 
-**No 0.5.x compatibility shims or migrations.** 0.6.0 is a rewrite.
-Clients on 0.5.x follow a separate migration guide (not provided in
-0.6.0). Do not point 0.6.0 binaries at 0.5.x databases.
+| Change | What to do |
+| ------ | ---------- |
+| `SearchHit.id` is a typed `IdSpace` (`{space, value}`), not an integer row cursor | read `hit.id.space` / `hit.id.value`; the prefixed form reproduces the old `stable_id` |
+| `source_id` is **mandatory** on every canonical node/edge write | add a provenance id to every write item |
+| `write_cursor` is no longer surfaced as a hit id | key on `SearchHit.id` or `logical_id` |
+| Search results are ordered by **RRF fusion**, not union-dedup | re-baseline any pinned result ordering |
+| `valid_from >= valid_until` is refused with a **message-less** `WriteValidationError` (was `InvalidArgumentError` carrying both bounds) | validate the pair before calling |
+| A projection spec with `fts` / `vector` but no `searchable` role is refused | add the role, or name the projection in `drop` |
+| Migration step 23 drops existing edge rows | re-ingest edges after upgrading |
 
-## Performance posture — deferred gates
+The [CHANGELOG](https://github.com/coreyt/fathomdb/blob/main/CHANGELOG.md)
+is the authoritative list.
 
-Four performance ACs are deferred for 0.6.0 (HITL re-confirmed
-2026-05-17 per Phase 12-P decision). Clients evaluating fathomdb for
-perf-sensitive workloads should plan accordingly:
+## 0.5.x / 0.6.x compatibility
 
-| AC      | Surface                          | Closure target |
-| ------- | -------------------------------- | -------------- |
-| AC-012  | text query latency on FTS5 (p50 ≤ 20 ms / p99 ≤ 150 ms) | 0.6.1 (canonical-runner re-measurement) |
-| AC-013  | vector retrieval latency (p50 ≤ 50 ms / p99 ≤ 200 ms)   | Pack 7 (batched-insert vec0)            |
-| AC-019  | mixed-retrieval stress tail                             | Pack 7 (inherits AC-013)                |
-| AC-020  | N=8 concurrent reader scaling (architectural gap)       | Pack 7 vendor-SQLite work                |
+**No 0.5.x compatibility shims or migrations.** Do not point 0.8.x
+binaries at a 0.5.x database. Databases created by 0.6.x–0.8.x migrate
+forward at open, subject to the step-23 edge caveat above.
 
+## Performance posture — open gates
+
+Four performance ACs remain open. Clients evaluating FathomDB for
+perf-sensitive workloads should measure on their own corpus rather than
+relying on a published number.
+
+| AC      | Surface                                                 | Status |
+| ------- | ------------------------------------------------------- | ------ |
+| AC-012  | text query latency on FTS5 (p50 ≤ 20 ms / p99 ≤ 150 ms) | open   |
+| AC-013  | vector retrieval latency (p50 ≤ 50 ms / p99 ≤ 200 ms)   | open   |
+| AC-019  | mixed-retrieval stress tail                             | open (inherits AC-013) |
+| AC-020  | N=8 concurrent reader scaling (architectural)           | open   |
+
+Vector retrieval is a **full scan** over `sqlite-vec` (1-bit sign-quant
+bit-KNN, then an f32 rerank of the shortlist) — **there is no ANN
+index**, so latency grows with corpus size rather than staying flat.
 Engine surfaces these as documented gates, not weakened ones. See
-`dev/test-plan.md` § Current Perf Attribution and
-[release notes — 0.6.0 § Performance gates](../release-notes/0.6.0.md).
+`dev/test-plan.md` § Current Perf Attribution.
 
 ## SDK maturity posture
 
-The Python SDK is the more mature option in 0.6.0; **prefer it for
-production pilots**. The TypeScript SDK shipped its first working
-slice on 2026-04-07 and is functionally covered for the locked
-five-verb surface (see [SDK parity matrix](../reference/typescript-api.md))
-but is the less-mature option. See
-[release notes — 0.6.0 § TypeScript SDK parity](../release-notes/0.6.0.md).
+Both bindings expose the same governed command surface and the same
+27-class error taxonomy. **Python is the more heavily exercised
+binding; prefer it for production pilots.** See
+[SDK parity](../positions/sdk-parity.md).
 
-## API surface deferrals
+## API surface gaps
 
-- `Engine.open` structured open report dropped by both bindings;
-  surfacing defers to 0.6.1 (slice `12-TX-OPENREPORT`).
-- Logical-id verbs (`purge_logical_id`, `restore_logical_id`)
-  deferred to 0.7.x.
-
-See [release notes — 0.6.0](../release-notes/0.6.0.md) for the full
-deferred-items disclosure.
+- **Custom Python / TypeScript embedder implementations** are not
+  exposed; the choice is the built-in default embedder or none.
+- **`SearchFilter.status`** is wired end-to-end but has no population
+  source, so a `status=`-filtered query prunes every row.
+- **`SearchFilter.attributes`** (attribute-equality filtering) is
+  engine-internal in 0.8.20 with no Python / TypeScript exposure.
+- **No restore verb.** `purge` is irreversible by design; there is no
+  `restore_logical_id` on any surface.

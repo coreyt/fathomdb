@@ -6,12 +6,10 @@ fresh engine has no embedder configured and vector writes fail with
 `EmbedderNotConfigured` until you either enable the default embedder or supply
 your own (Rust only, today).
 
-> Status: the default embedder ships in 0.7.1. The real-corpus recall floor was
-> re-derived in the 0.7.2 hardening release: the apparent recall "gap" seen
-> during 0.7.1 scouting was a measurement artifact. The current ANN-fidelity
-> recall@10, measured on the pre-fusion **vector stage** (the SUT the 0.90 floor
-> gates), is **0.896** (95% CI 0.864–0.925, N=7,667) and holds the **0.90 floor
-> under the one-sided CI gate** (`recall_ci_hi ≥ 0.90`) — see
+> Status: shipped and current as of 0.8.20. The ANN-fidelity recall@10,
+> measured on the pre-fusion **vector stage** (the SUT the 0.90 floor gates), is
+> **0.896** (95% CI 0.864–0.925, N=7,667) and holds the **0.90 floor under the
+> one-sided CI gate** (`recall_ci_hi ≥ 0.90`) — see
 > [Caveats](#caveats-and-limitations).
 
 ## What it is
@@ -160,15 +158,34 @@ batching is *slower* than per-document calls (padding overhead with no
 parallelism to amortize it); on GPU, batching wins decisively. A 27-hour CPU
 re-embed becomes minutes.
 
-### Interim cross-backend discipline
+### Cross-backend discipline
 
 Stored vectors are valid only for the exact embedding function that produced
-them — model, revision, **and backend numerics**. Until the vector-equivalence
-self-check ships (the probe-set guard, a later release), follow a **same-backend
-build-and-read** discipline: read an index with the same backend that built it,
-and treat `EmbedderIdentity` (name/revision/dim) as the cheap pre-filter it is —
-it catches a model/revision/dim mismatch but **not** numeric divergence between
-two backends sharing one identity.
+them — model, revision, **and backend numerics**. `EmbedderIdentity`
+(name/revision/dim) is the cheap pre-filter: it catches a model/revision/dim
+mismatch but **not** numeric divergence between two backends sharing one
+identity.
+
+Since 0.8.18 the engine also runs a **vector-equivalence self-check** at open:
+45 pinned probes are compared against a stored reference baseline, and a
+divergence past the floor sets `dense_disabled` so every vector-dependent arm
+refuses at query time with `VectorEquivalenceMismatchError`. The FTS-only path
+(`search_text_only` / `searchTextOnly`) stays serviceable.
+
+⚠ **Since 0.8.20 that verdict is cached.** The engine fingerprints the embedder
+identity, the pinned mean vector, the probe fixture, the divergence floors and
+the stored baseline; an open whose fingerprint is unchanged does **zero** probe
+embeds and reuses the previous verdict. So `dense_disabled` reports the arm's
+status *as verified at the last open whose fingerprint differed*, not a fresh
+per-open re-verification — a same-identity backend drift (CPU↔GPU, a rebuilt
+library or driver) is no longer caught per-open. An identity *change* still
+refuses the open ahead of any cache. **The self-check is not tamper evidence**:
+nothing at rest is authenticated, so an actor with write access to the database
+file can rewrite the baseline, the cached marker, or the vectors. Do not read
+`dense_disabled` as a tamper signal.
+
+A **same-backend build-and-read** discipline therefore remains the conservative
+default: read an index with the same backend that built it.
 
 In practice the divergence for this model is tiny: measured CPU-vs-CUDA cosine
 was **0.99999983** (max per-component Δ ≈ 1.6e-7), and at the 1-bit sign-bit
@@ -179,27 +196,27 @@ it with an enforced, calibrated tolerance.
 
 ## Caveats and limitations
 
-- **Recall — corrected in 0.7.2.** Dev-box scouting during 0.7.1 measured
-  recall@10 around 0.83 over the reference corpus, which looked like it was below
-  the 0.90 floor. The 0.7.2 hardening work showed that 0.83 was a **measurement
-  artifact** (exclude-after-top-10 plus body-string ground truth over a corpus
-  with duplicate bodies), not an engine deficiency. The ANN-fidelity
-  measurement — how faithfully the 1-bit sign-quant index reproduces the same
-  model's exact f32 top-10 — is **recall@10 = 0.896** (95% CI 0.864–0.925) on the
-  real bge-small embedder (N=7,667, K=192, mean-centering), measured on the
-  pre-fusion **vector stage** (the SUT the floor gates). The **0.90 floor holds
-  under the one-sided CI gate** (`recall_ci_hi 0.925 ≥ 0.90`). This is an
-  ANN/quantization-fidelity number, not an IR-relevance number. (An earlier
-  **0.937** figure was measured on the pre-correction `search()` SUT at the 0.7.1
-  anchor; the 0.937→0.896 difference is a vector-stage **measurement-SUT** change,
-  not a fidelity regression, and is **not** caused by embedder pooling — bisected
-  in `dev/plans/runs/0.8.3-eu7-bisect-report.md`.) A full-scale N=1M run remains
-  infeasible on commodity hardware; the N≈7.7k value is treated as a near-upper
-  bound (recall declines slowly with N).
+- **Recall.** The ANN-fidelity measurement — how faithfully the 1-bit
+  sign-quant index reproduces the same model's exact f32 top-10 — is
+  **recall@10 = 0.896** (95% CI 0.864–0.925) on the real bge-small embedder
+  (N=7,667, K=192, mean-centering), measured on the pre-fusion **vector stage**
+  (the SUT the floor gates). The **0.90 floor holds under the one-sided CI
+  gate** (`recall_ci_hi 0.925 ≥ 0.90`). This is an ANN/quantization-fidelity
+  number, **not** an IR-relevance number. (An earlier **0.937** figure was
+  measured on a different, pre-correction `search()` SUT; the 0.937→0.896
+  difference is a measurement-SUT change, not a fidelity regression, and is not
+  caused by embedder pooling. An earlier ~0.83 dev-box figure was a measurement
+  artifact — exclude-after-top-10 plus body-string ground truth over a corpus
+  with duplicate bodies.) A full-scale N=1M run remains infeasible on commodity
+  hardware; the N≈7.7k value is treated as a near-upper bound (recall declines
+  slowly with N).
+- **Retrieval latency grows with corpus size.** There is no ANN index — the
+  vector arm is a full scan. See
+  [compatibility § performance posture](compatibility/index.md).
 - **Topic-drift mean** (see above): pinned on the first 256 docs; reindex to
   refresh.
-- **Custom Python/TypeScript embedders** are deferred to a later release; the
-  0.7.1 binding surface is binary (default-on or none).
+- **Custom Python/TypeScript embedders** are not exposed as of 0.8.20; the
+  binding surface is binary (built-in default embedder, or none).
 
 ## Upgrading an existing workspace
 

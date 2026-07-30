@@ -13,13 +13,21 @@ never returned); a missing or superseded id is a normal `None`/`null`, not an
 error. `read.get_many` returns one slot per requested id, **in request order**,
 with `None`/`null` for any miss.
 
+Canonical node and edge items also require a **`source_id`** (mandatory since
+0.8.20 — see [Erasure](../operations/erasure.md)). The `admin_schema` /
+`op_store` write shapes further down this page are a different item variant and
+do not take one.
+
 ### Python
 
 ```python
 from fathomdb import Engine, read
 
 engine = Engine.open("memory.sqlite")
-engine.write([{"kind": "fact", "body": "the sky is blue", "logical_id": "F1"}])
+engine.write([
+    {"kind": "fact", "body": "the sky is blue",
+     "source_id": "guide-read", "logical_id": "F1"},
+])
 
 record = read.get(engine, "F1")
 print(record.logical_id, record.kind, record.body)  # F1 fact the sky is blue
@@ -36,7 +44,9 @@ engine.close()
 import { Engine, read } from "fathomdb";
 
 const engine = await Engine.open("memory.sqlite");
-await engine.write([{ kind: "fact", body: "the sky is blue", logicalId: "F1" }]);
+await engine.write([
+  { kind: "fact", body: "the sky is blue", sourceId: "guide-read", logicalId: "F1" },
+]);
 
 const record = await read.get(engine, "F1");
 console.log(record?.logicalId, record?.kind, record?.body);

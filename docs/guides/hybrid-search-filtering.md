@@ -44,9 +44,9 @@ The filter prunes the vector branch inside the single phase-1 KNN statement and
 constrains the text branch by the same metadata.
 
 > **`status` caveat.** `status` is wired end-to-end but ships an **empty-string
-> sentinel only** — there is no real population source in 0.8.0 (vec0 TEXT
-> metadata columns cannot be NULL). A `status="open"`-style filter therefore
-> prunes every row until a later slice populates it.
+> sentinel only** — as of 0.8.20 there is still no real population source (vec0
+> TEXT metadata columns cannot be NULL). A `status="open"`-style filter
+> therefore prunes every row until a later release populates it.
 
 ### Python
 
@@ -54,8 +54,10 @@ constrains the text branch by the same metadata.
 from fathomdb import Engine, SearchFilter
 
 engine = Engine.open("memory.sqlite")
-engine.write([{"kind": "note", "body": "alpha retrieval document"}])
-engine.write([{"kind": "doc", "body": "delta retrieval and ranking notes"}])
+engine.write([{"kind": "note", "body": "alpha retrieval document",
+               "source_id": "guide-hybrid"}])
+engine.write([{"kind": "doc", "body": "delta retrieval and ranking notes",
+               "source_id": "guide-hybrid"}])
 engine.drain(timeout_s=30)
 
 # RRF-ranked, unfiltered.
@@ -71,8 +73,12 @@ notes = engine.search("retrieval", SearchFilter(kind="note")).results
 import { Engine } from "fathomdb";
 
 const engine = await Engine.open("memory.sqlite");
-await engine.write([{ kind: "note", body: "alpha retrieval document" }]);
-await engine.write([{ kind: "doc", body: "delta retrieval and ranking notes" }]);
+await engine.write([
+  { kind: "note", body: "alpha retrieval document", sourceId: "guide-hybrid" },
+]);
+await engine.write([
+  { kind: "doc", body: "delta retrieval and ranking notes", sourceId: "guide-hybrid" },
+]);
 await engine.drain(30_000);
 
 // RRF-ranked, unfiltered.

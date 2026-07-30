@@ -1,7 +1,7 @@
 # Python API
 
 Module: `fathomdb`. Authoritative spec:
-[`dev/interfaces/python.md`](https://github.com/coreyt/fathomdb/blob/0.6.0-rewrite/dev/interfaces/python.md).
+[`dev/interfaces/python.md`](https://github.com/coreyt/fathomdb/blob/main/dev/interfaces/python.md).
 
 ## Top-level
 
@@ -9,6 +9,13 @@ Module: `fathomdb`. Authoritative spec:
 from fathomdb import (
     Engine,
     EngineConfig,
+    IdSpace,
+    NodeRecord,
+    OpStoreRow,
+    ProjectionDelta,
+    ProjectionRole,
+    ProjectionSpec,
+    SearchFilter,
     SearchHit,
     SearchResult,
     SoftFallback,
@@ -17,6 +24,8 @@ from fathomdb import (
     CounterSnapshot,
     admin,
     errors,
+    graph,
+    read,
 )
 ```
 
@@ -37,14 +46,16 @@ Raises `EngineError` subclasses on failure: `DatabaseLockedError`,
 `MigrationError`, `EmbedderIdentityMismatchError`,
 `EmbedderDimensionMismatchError`. See [errors](errors.md).
 
-> **0.6.0 caveat.** The PyO3 binding returns only the engine handle.
-> The structured open report
-> (`migration_version_reached`, `embedder_identity_confirmed`, open-
-> stage data) defined in `dev/design/engine.md` is populated on the
-> Rust side but dropped at the binding boundary. Surfacing it defers
-> to **0.6.1** (slice `12-TX-OPENREPORT`). Clients depending on
-> open-report data should pin to 0.6.1 when it ships. See
-> [release notes](../release-notes/0.6.0.md).
+The structured open report is available after open via
+`engine.open_report()` (below).
+
+### `engine.open_report() -> OpenReport`
+
+The structured open report defined in `dev/design/engine.md`:
+`migration_version_reached`, embedder identity confirmation,
+open-stage data, `dense_disabled` / `dense_disabled_reason`, and the
+embedder telemetry fields (`embedder_download_ms`, `embedder_events`,
+`embedder_mean_centering_required`, `embedder_mean_vec_pinned`).
 
 ### `engine.write(batch=None) -> WriteReceipt`
 
@@ -52,15 +63,60 @@ Enqueue a batch of canonical rows. Synchronous; blocks until the
 writer thread has accepted the batch.
 
 - `batch` (`list[Any] | None`) — caller-shaped canonical rows.
-  Defaults to `[]`. A node/edge item may carry an optional
-  `logical_id` (`str`): supplying it makes the write a
-  transaction-time **supersession** of the prior active version of
-  that `logical_id` — the prior version is tombstoned and the
-  new version becomes active (invalidate-not-delete). Active-row
-  identity is scoped to `logical_id` alone, so re-ingesting the same
-  `logical_id` with a different `kind` supersedes (it does not create a
-  second active row). Omitting it (the default) is a plain insert with a
-  NULL `logical_id` and never collides with other NULL rows.
+  Defaults to `[]` (a valid, item-less batch).
+
+Every **node** item accepts these keys:
+
+| Key | Type | Required | Meaning |
+| --- | ---- | -------- | ------- |
+| `kind` | `str` | **yes** | record kind |
+| `body` | `str` | **yes** | record body |
+| `source_id` | `str` | **yes** | provenance — see below |
+| `logical_id` | `str` | no | governed cross-re-ingestion identity |
+| `state` | `str` | no | create-time existence state: `"active"` (default) or `"pending"` |
+| `reason` | `str` | no | advisory cause for `state`; stored verbatim, never interpreted |
+| `valid_from` | `int` | no | world-time window, INCLUSIVE lower bound, epoch **seconds** UTC |
+| `valid_until` | `int` | no | world-time window, EXCLUSIVE upper bound, epoch **seconds** UTC |
+
+An **edge** item takes `kind`, `from`, `to`, the same mandatory
+`source_id`, an optional `logical_id`, and the temporal pair
+`t_valid` / `t_invalid` (`int | None`, epoch **seconds** UTC; `None`
+means "still valid").
+
+**`source_id` is MANDATORY (0.8.20).** `erase_source` addresses rows
+*by* `source_id`, so a row written without one is reachable by no
+erasure call. A missing, empty, whitespace-only or **reserved**
+(`_`-prefixed) value raises `WriteValidationError`. Treat it as a
+public identifier: use an opaque document or tenant id, never personal
+data — see [Erasure](../operations/erasure.md).
+
+**`logical_id`** — supplying it makes the write a transaction-time
+**supersession** of the prior active version of that `logical_id`: the
+prior version is tombstoned and the new version becomes active
+(invalidate-not-delete). Active-row identity is scoped to `logical_id`
+alone, so re-ingesting the same `logical_id` with a different `kind`
+supersedes (it does not create a second active row). Omitting it is a
+plain insert with a NULL `logical_id`, which never collides with other
+NULL rows.
+
+**Validity window** — half-open `[valid_from, valid_until)`. Omitting
+both binds NULL/NULL (unbounded, the pre-0.8.20 default). Both bounds
+present with `valid_from >= valid_until` is unsatisfiable and raises
+`WriteValidationError`; validation runs before any insert, so the whole
+batch is rejected. A one-sided window is never refused. A non-integer
+bound raises `WriteValidationError` and is never coerced (`bool` is
+rejected explicitly).
+
+```python
+receipt = engine.write([
+    {"kind": "note", "body": "hello", "source_id": "doc-42"},
+    {"kind": "note", "body": "governed", "source_id": "doc-42",
+     "logical_id": "note:hello"},
+    {"kind": "mentions", "from": "note:hello", "to": "acme",
+     "source_id": "doc-42", "t_valid": 1_546_300_800, "t_invalid": None},
+])
+```
+
 - Returns: `WriteReceipt(cursor: int, row_cursors: tuple[int, ...],
   dangling_edge_endpoints: int)`. `cursor` advances monotonically across
   writes (the batch high-water cursor); `row_cursors` are the per-row
@@ -126,6 +182,39 @@ parallel, possibly-divergent embedder. Raises
 embedder (`use_default_embedder=False`). Mirrored in TS as
 `engine.embed(text)`.
 
+### `engine.transition(logical_id, to_state, reason=None) -> None`
+
+**0.8.19.** Move a **governed** node between existence states, per the
+engine-enforced legal-transition table:
+
+| From | To | Effect |
+| ---- | -- | ------ |
+| `pending` | `active` | promote (clears `reason`) |
+| `pending` | `deleted` | **rejected** |
+| `active` | `deleted` | soft-delete (sets `reason`) |
+| `deleted` | `active` | undelete (clears `reason`) |
+
+`reason` is advisory and never interpreted by the engine. Keys on the
+bare `logical_id` — the `logical` (`l:`) id space only; a `content`
+(`h:`) or `passage` (`p:`) id raises `NotLifecycleAddressableError`. An
+illegal move (a `purged`/`pending` target, a self-loop, an absent node)
+raises `IllegalTransitionError` carrying `from_state`, `to_state` and
+`legal`.
+
+### `engine.purge(logical_id: str) -> None`
+
+**0.8.19.** Irreversibly hard-erase a governed node across every
+row-owned target — all versions, its FTS/vector shadows, and its
+touching edges (cascade-removed).
+
+**Deleted-first:** legal only from `deleted`, otherwise
+`IllegalTransitionError`. **Idempotent:** purging an absent or
+already-purged id is a no-op success. A non-`l:` id raises
+`NotLifecycleAddressableError`.
+
+`purge` addresses one **governed** node. For anonymous content — rows
+written with no `logical_id` — use `erase_source` below.
+
 ### `engine.erase_source(source_id: str) -> EraseReport`
 
 **0.8.20.** Erase every canonical row carrying `source_id`, together with its
@@ -144,8 +233,9 @@ so an interrupted erasure obligation can be retried without a pre-check.
 Raises `WriteValidationError` for an empty, whitespace-only, or **reserved**
 (`_`-prefixed) `source_id`. The engine's reserved namespace (`_engine:*`
 substrate and the `_legacy:pre-0.8.20` migration cohort) is reachable only
-through `fathomdb recover --excise-source`. Raises `ErasureIncomplete` rather
-than reporting success if the erasure could not be completed at rest.
+through `fathomdb recover --excise-source`. Raises `ErasureIncompleteError`
+(carrying `stage` and `detail`) rather than reporting success if the erasure
+could not be completed at rest.
 
 Returns an `EraseReport` with `source_ref`, `nodes_excised`, `edges_excised`,
 and `projections_invalidated`. Mirrored in TS as `engine.eraseSource(sourceId)`.
@@ -339,11 +429,15 @@ class NodeRecord:
     logical_id: str
     kind: str
     body: str
-    write_cursor: int   # interim id carrier (same column SearchHit.id carries)
+    write_cursor: int   # engine-internal positional cursor — NOT SearchHit.id
 ```
 
 Returned by `read.get` / `read.get_many` for an **active** canonical node
 (`superseded_at IS NULL`). Mirrors the TypeScript `NodeRecord`.
+
+`logical_id` is the caller-facing identity here; `write_cursor` is the engine's
+positional book-keeping value, reassigned on re-projection and **not** the same
+carrier as [`SearchHit.id`](#searchhit) (which is a typed `IdSpace`).
 
 ### `OpStoreRow`
 
@@ -376,8 +470,13 @@ class SearchResult:
 
 ```python
 @dataclass(frozen=True)
+class IdSpace:
+    space: str       # "logical" | "content" | "passage"
+    value: str       # the BARE id (id-space prefix stripped)
+
+@dataclass(frozen=True)
 class SearchHit:
-    id: int          # canonical row write_cursor (interim identity carrier)
+    id: IdSpace      # typed, non-null, id-space-total hit identity
     kind: str
     body: str
     score: float     # G9 RRF-fused relevance (Σ 1/(60+rank)); higher = better
@@ -385,6 +484,17 @@ class SearchHit:
     source_id: str | None = None  # provenance (`erase_source` arg); set on EVERY hit (TC-31)
     ce_score: float | None = None  # 0.8.5 CE score (sigmoid logit) for in-pool reranked hits
 ```
+
+> **BREAKING since 0.8.9.** `SearchHit.id` was an `int` row cursor. It is now
+> the typed `IdSpace` above — the **permanent** caller-facing identity, not an
+> interim carrier. `space` is `"logical"` for governed rows (prefix `l:`),
+> `"content"` for doc-seeded rows (`h:`), `"passage"` for synthetic passages
+> (`p:`); `value` is the bare id with that prefix stripped, and
+> `f"{prefix}{value}"` reproduces the pre-0.8.19 `stable_id` byte-for-byte. It
+> is stable across sessions and re-ingest, and never participates in ranking.
+> The engine's positional `write_cursor` is internal book-keeping and is **not
+> surfaced by the bindings**. Only `logical`-space ids are lifecycle-addressable
+> by `transition` / `purge`.
 
 `score` is the **G9 RRF-fused** relevance (higher = more relevant), optionally
 recency-reweighted. Raw `vec_distance_l2` (vector) and `bm25()` (text) are fused
@@ -472,9 +582,14 @@ Returned by `graph.search_expand`. `all_logical_ids` contains the
 
 ## Errors
 
-`fathomdb.errors` exports `EngineError` (the catch-all base) plus 20
-concrete leaf classes. See [errors reference](errors.md) for the full
+`fathomdb.errors` exports `EngineError` (the catch-all base) plus **27**
+concrete classes below it. See [errors reference](errors.md) for the full
 matrix and recovery-hint codes.
+
+The lifecycle / erasure verbs raise `IllegalTransitionError`,
+`NotLifecycleAddressableError`, `ErasureIncompleteError` and
+`WriteValidationError`; `configure_projections` raises
+`ProjectionDestructiveError` and `WriteValidationError`.
 
 ## Embedder device (GPU)
 
@@ -489,4 +604,5 @@ unchanged. See [Default Embedder → GPU acceleration](../embedder.md#gpu-accele
 - [Quickstart](../getting-started/quickstart.md)
 - [Config knobs](config.md)
 - [Errors](errors.md)
-- Locked spec: [`dev/interfaces/python.md`](https://github.com/coreyt/fathomdb/blob/0.6.0-rewrite/dev/interfaces/python.md)
+- [Erasure](../operations/erasure.md)
+- Locked spec: [`dev/interfaces/python.md`](https://github.com/coreyt/fathomdb/blob/main/dev/interfaces/python.md)

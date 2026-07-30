@@ -4,12 +4,15 @@ The `fathomdb` npm package is a [napi-rs](https://napi.rs/) binding
 over the native Rust runtime. The published package selects a
 platform-tagged `.node` binary at load time.
 
-> **TS SDK parity caveat.** The 0.6.0 TS SDK is not yet at feature
-> parity with the Python SDK. Both bindings cover the same five-verb
-> surface and the same error taxonomy, but the TS package shipped its
-> first working slice on 2026-04-07 and remains the less-mature option.
-> For production pilots, prefer Python. See
-> [release notes § TypeScript SDK parity](../release-notes/0.6.0.md).
+> **0.8.20 is not published yet.** Publishing 0.8.20 to npm is a separate,
+> gated step that has not run. Until it does, use the build-from-source path
+> below. FathomDB is pre-1.0 and the surface is **beta**.
+>
+> **TS SDK parity caveat.** Both bindings expose the same governed command
+> surface (`src/conformance/governed-surface-allowlist.json`) and the same
+> 27-class error taxonomy, but Python remains the more heavily exercised
+> binding. For production pilots, prefer Python. See
+> [SDK parity](../positions/sdk-parity.md).
 
 ## Requirements
 
@@ -21,19 +24,17 @@ platform-tagged `.node` binary at load time.
   - Windows `x86_64-pc-windows-msvc`
 - SQLite + `sqlite-vec` (statically linked into the platform binary).
 
-## Install (post-GA)
+## Install (once 0.8.20 is published)
 
 ```bash
-npm install fathomdb@0.6.0
+npm install fathomdb@0.8.20
 ```
 
-## Install (pre-GA, build from source)
+## Install (current path — build from source)
 
 ```bash
 git clone https://github.com/coreyt/fathomdb
-cd fathomdb
-git checkout 0.6.0-rewrite
-cd src/ts
+cd fathomdb/src/ts
 npm install
 npm run build
 ```
@@ -86,4 +87,4 @@ Expected output: `ok`. See [Quickstart](../getting-started/quickstart.md).
 - [Reference — TypeScript API](../reference/typescript-api.md)
 - [Reference — config](../reference/config.md)
 - [Compatibility](../compatibility/index.md)
-- [Release notes — 0.6.0](../release-notes/0.6.0.md)
+- [CHANGELOG](https://github.com/coreyt/fathomdb/blob/main/CHANGELOG.md)

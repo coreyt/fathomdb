@@ -4,12 +4,15 @@ FathomDB is a local-first retrieval and graph-oriented data system
 designed for application and agent workloads. This site is the public
 documentation source for users, operators, and SDK consumers.
 
-> **Status: 0.6.0 pre-release.** Engine + bindings + release-
-> engineering substrate complete (Phase 11 closed 2026-05-17).
-> Durability harnesses, security fixtures, post-publish smoke, and
-> external-user docs land in Phase 12 before the `v0.6.0` GA tag.
-> See [release notes — 0.6.0](release-notes/0.6.0.md) for what ships
-> and what is deferred.
+> **Status: 0.8.20, pre-1.0 beta.** This site documents the **0.8.20**
+> surface. FathomDB is pre-1.0: the surface is beta and may change
+> between micro releases, and 0.8.20 carries breaking changes relative
+> to 0.8.9 (typed `SearchHit.id`, mandatory `source_id` on canonical
+> writes, RRF ranking). 0.8.20 is **not yet published** to crates.io /
+> PyPI / npm — publishing is a separate, gated step — so the current
+> install path is from source. See
+> [Install](install/python.md) and the
+> [CHANGELOG](https://github.com/coreyt/fathomdb/blob/main/CHANGELOG.md).
 
 ## Start here
 
@@ -39,10 +42,15 @@ documentation source for users, operators, and SDK consumers.
 - [Positions](positions/index.md) — consumer-relevant technical
   positions (SDK parity, recovery surface, tokenizer policy,
   embedder identity).
-- [Release notes — 0.6.0](release-notes/0.6.0.md) — preview + the
-  full deferred-items disclosure.
+- [Release notes](release-notes/0.8.0.md) — historical per-release
+  pages (0.6.0, 0.6.1, 0.8.0). Changes from 0.8.9 onward are recorded
+  in the repo
+  [CHANGELOG](https://github.com/coreyt/fathomdb/blob/main/CHANGELOG.md).
 
-## Post-GA stubs
+## Guides and operations
 
-[Guides](guides/index.md) and [Operations](operations/index.md) are
-post-GA — see release notes for current scope.
+- [Guides](guides/index.md) — hybrid search + filtering, structured
+  search hits, retrieve-by-id.
+- [Operations](operations/index.md) — including
+  [erasure](operations/erasure.md): what `erase_source` / `purge`
+  guarantee and what they do not.

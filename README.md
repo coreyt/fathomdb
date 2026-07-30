@@ -1,6 +1,28 @@
 # FathomDB
 
-FathomDB is a rewrite-in-progress centered on the `0.6.0` design corpus.
+FathomDB is a local-first retrieval and graph-oriented data system for
+application and agent workloads. It embeds SQLite (FTS5 + `sqlite-vec`) and
+ships one engine behind three SDKs — Python, TypeScript and Rust — plus an
+operator CLI.
+
+- Hybrid retrieval: a vector branch and an FTS5 branch fused by Reciprocal Rank
+  Fusion, with an optional CPU cross-encoder rerank and an optional graph-BFS
+  third arm.
+- Governed, allowlisted command surface with a single typed error taxonomy
+  shared 1:1 across the bindings.
+- Bitemporal-ish record model: transaction-time supersession, a world-time
+  validity window on nodes, and edge `t_valid` / `t_invalid`.
+- Lifecycle and erasure verbs in the SDK — `transition`, `purge`,
+  `erase_source` — so a consumer with no CLI on `PATH` can still discharge a
+  deletion obligation.
+- Optional in-process default embedder (`bge-small-en-v1.5`, pure Rust).
+
+**Status: 0.8.20, pre-1.0 beta.** The surface may change between micro
+releases. 0.8.20 has not been published to crates.io / PyPI / npm; publishing
+is a separate, gated step. Licensed **MIT** (see `LICENSE`).
+
+Public documentation: `docs/` (built with `mkdocs build --strict`).
+Changes since 0.8.9: `CHANGELOG.md`.
 
 Repository layout:
 

@@ -1,11 +1,11 @@
 # CLI
 
-Binary: `fathomdb`. Operator-only in 0.6.0; the CLI does **not**
-ship application-surface verbs like `search`, `get`, or `list`. Use
-the SDK for those.
+Binary: `fathomdb`. Operator-only; the CLI does **not** ship
+application-surface verbs like `search`, `get`, or `list`. Use the SDK
+for those.
 
 Authoritative spec:
-[`dev/interfaces/cli.md`](https://github.com/coreyt/fathomdb/blob/0.6.0-rewrite/dev/interfaces/cli.md);
+[`dev/interfaces/cli.md`](https://github.com/coreyt/fathomdb/blob/main/dev/interfaces/cli.md);
 recovery semantics owned by `dev/design/recovery.md`.
 
 ## Roots
@@ -38,6 +38,8 @@ recovery semantics owned by `dev/design/recovery.md`.
 | `dump-profile`    | `fathomdb doctor dump-profile`                                                 | `0` / `65` / `70` / `71` |
 | `dump-mutations`  | `fathomdb doctor dump-mutations <collection> [--after-id <n>] [--limit <n>] [--json] <db_path>` | `0` / `70` / `71` |
 | `orphan-provenance` | `fathomdb doctor orphan-provenance [--json] <db_path>`                        | `0` / `65` / `70` / `71` |
+| `warm-cache`      | `fathomdb doctor warm-cache ...` — pre-fetch + verify the pinned default-embedder weights so the next open runs offline | see [exit-code classes](#exit-code-classes) |
+| `recompute-mean`  | `fathomdb doctor recompute-mean <db_path>` — re-derive and re-pin the corpus mean, re-quantizing every row in one transaction | see [exit-code classes](#exit-code-classes) |
 
 `check-integrity --full` may emit doctor-only finding codes such as
 `E_CORRUPT_INTEGRITY_CHECK`.
@@ -118,6 +120,9 @@ fathomdb recover --accept-data-loss
   [--rebuild-vec0]
   [--rebuild-projections]
   [--excise-source <id>]
+  [--excise-collection <name> --excise-record-key <key>]
+  [--json]
+  <db_path>
 ```
 
 Exit codes: `0` / `64` / `70` / `71`.
@@ -125,18 +130,32 @@ Exit codes: `0` / `64` / `70` / `71`.
 `--accept-data-loss` is declared on the `recover` parser only;
 `doctor` verbs reject it as unknown.
 
-`--rebuild-projections` is the canonical 0.6.0 regenerate workflow
-for failed or stale projections. There is no separate
-`fathomdb regenerate` command.
+`--rebuild-projections` is the canonical regenerate workflow for failed
+or stale projections. There is no separate `fathomdb regenerate`
+command.
 
-### Client workaround — bulk delete by source
+`--excise-collection` and `--excise-record-key` are required together;
+they erase every append-only-log version of one op-store record key
+plus its latest-state row.
 
-Until logical-id verbs land in 0.7.x, the canonical 0.6.0 path for
-deleting all rows from a single ingestion source is:
+### `--excise-source` vs the SDK erasure verbs
+
+Since 0.8.20 the SDK ships its own erasure verbs, so the CLI is no
+longer the only route:
+
+| Need | Use |
+| ---- | --- |
+| erase one **governed** node by `logical_id` | SDK `purge` |
+| erase every row from one **provenance** | SDK `erase_source` |
+| erase inside the engine's reserved `_`-prefixed namespace | `fathomdb recover --excise-source` (CLI only) |
+| erase one op-store record key | `fathomdb recover --excise-collection … --excise-record-key …` (CLI only) |
 
 ```bash
-fathomdb recover --accept-data-loss --excise-source <id> --json
+fathomdb recover --accept-data-loss --excise-source <id> --json ./app.sqlite
 ```
+
+See [Erasure](../operations/erasure.md) for the full boundary — what
+erasure reaches and what it does not.
 
 ## Exit-code classes
 
@@ -151,15 +170,18 @@ fathomdb recover --accept-data-loss --excise-source <id> --json
 
 The full engine-error → exit-code mapping is in the locked spec.
 
-## Logical-id verbs (deferred)
+## Logical-id verbs
 
-`purge_logical_id` and `restore_logical_id` are deferred to **0.7.x**
-(HITL re-confirmed 2026-05-17). The canonical-identity substrate is
-design-only in 0.6.0. See
-[release notes § Logical-id verbs](../release-notes/0.6.0.md).
+Logical-id lifecycle landed as **SDK** verbs, not CLI verbs:
+`transition` (soft-delete / undelete / promote) and `purge`
+(irreversible hard-erase, deleted-first). There is no
+`fathomdb purge-logical-id` command, and **no restore verb of any
+kind** — a purge is not reversible.
+
+See [Python API](python-api.md) / [TypeScript API](typescript-api.md).
 
 ## See also
 
 - [Errors](errors.md)
 - [Install — Rust / CLI](../install/rust.md)
-- Locked spec: [`dev/interfaces/cli.md`](https://github.com/coreyt/fathomdb/blob/0.6.0-rewrite/dev/interfaces/cli.md)
+- Locked spec: [`dev/interfaces/cli.md`](https://github.com/coreyt/fathomdb/blob/main/dev/interfaces/cli.md)

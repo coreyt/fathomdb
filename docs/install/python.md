@@ -1,8 +1,12 @@
 # Install — Python
 
 The `fathomdb` Python SDK is a [PyO3](https://pyo3.rs/) binding over the
-native Rust runtime. Wheels for the GA release will be platform-tagged
-(no source build required on supported platforms).
+native Rust runtime. Published wheels are platform-tagged (no source build
+required on supported platforms).
+
+> **0.8.20 is not published yet.** Publishing 0.8.20 to PyPI is a separate,
+> gated step that has not run. Until it does, use the from-source path below.
+> FathomDB is pre-1.0 and the surface is **beta**.
 
 ## Requirements
 
@@ -17,22 +21,19 @@ native Rust runtime. Wheels for the GA release will be platform-tagged
   extension available to the loader (statically linked into the wheel
   for supported platforms).
 
-## Install (post-GA)
+## Install (once 0.8.20 is published)
 
 ```bash
-pip install fathomdb==0.6.0
+pip install fathomdb==0.8.20
 ```
 
-## Install (pre-GA, from source)
+## Install (current path — from source)
 
-`0.6.0` has not yet been published to PyPI. The current install path is
-editable from the `0.6.0-rewrite` branch using
-[maturin](https://www.maturin.rs/):
+Editable from `main` using [maturin](https://www.maturin.rs/):
 
 ```bash
 git clone https://github.com/coreyt/fathomdb
 cd fathomdb
-git checkout 0.6.0-rewrite
 pip install -e src/python/
 ```
 
@@ -97,4 +98,4 @@ for a richer walkthrough.
 - [Reference — Python API](../reference/python-api.md)
 - [Reference — config](../reference/config.md)
 - [Compatibility](../compatibility/index.md)
-- [Release notes — 0.6.0](../release-notes/0.6.0.md)
+- [CHANGELOG](https://github.com/coreyt/fathomdb/blob/main/CHANGELOG.md)

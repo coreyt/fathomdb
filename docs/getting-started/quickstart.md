@@ -2,19 +2,18 @@
 
 End-to-end walkthrough: install, open a fresh DB, write rows, search,
 inspect counters, close, exit cleanly. Python is the primary language
-(more mature than TS in 0.6.0 — see
-[release notes § TypeScript SDK parity](../release-notes/0.6.0.md));
-TS snippets sit alongside.
+(the more heavily exercised binding — see
+[SDK parity](../positions/sdk-parity.md)); TS snippets sit alongside.
 
 This page covers the same five operations in the same order as the
 post-publish smoke `scripts/release/smoke/smoke-pypi-wheel.sh`
 (AC-056): `Engine.open` → `write` → `search` → `close` → process-
-exit. The two scripts diverge in ergonomics only — the smoke reads
-the DB path from `sys.argv[1]` and uses a one-letter variable name
-for CI; this quickstart hardcodes a relative path and uses
-`engine` for readability, and prints `engine.counters()` as an
-instrumentation example. If the two scripts diverge on the
-**five-operation contract**, treat it as a release-gate blocker.
+exit. The two differ in ergonomics — the smoke reads the DB path from
+`sys.argv[1]` and uses a one-letter variable name for CI; this
+quickstart hardcodes a relative path, uses `engine` for readability,
+and prints `engine.counters()` as an instrumentation example. If they
+diverge on the **five-operation contract**, treat it as a release-gate
+blocker.
 
 ## 1. Install
 
@@ -52,35 +51,41 @@ import { Engine } from "fathomdb";
 const engine = await Engine.open("./quickstart.fdb");
 ```
 
-> **0.6.0 caveat — open report.** Both bindings currently return only
-> the engine handle. The structured open report
-> (`migration_version_reached`, `embedder_identity_confirmed`, open-
-> stage data) defined in `dev/design/engine.md` is populated on the
-> Rust side but dropped at the binding boundary. Surfacing the report
-> defers to **0.6.1** (slice `12-TX-OPENREPORT`). See
-> [release notes § Engine.open structured open report](../release-notes/0.6.0.md).
+The structured open report is available after open via
+`engine.open_report()` / `engine.openReport()`.
 
 ## 3. Write a small batch of canonical rows
 
 `engine.write(batch)` enqueues a batch of canonical rows and returns
 a `WriteReceipt` whose `cursor` advances monotonically.
 
+**`source_id` is mandatory on every canonical node/edge item** (0.8.20).
+It is the provenance handle `erase_source` addresses, so a row written
+without one could never be erased; omitting it raises
+`WriteValidationError`. Use an opaque document/tenant id —
+[never personal data](../operations/erasure.md#source_id-must-not-contain-personal-data).
+
 Python:
 
 ```python
-receipt = engine.write([])
+receipt = engine.write([
+    {"kind": "note", "body": "hello from the quickstart", "source_id": "quickstart"},
+])
 print(receipt.cursor)  # → 1
 ```
 
 TypeScript:
 
 ```ts
-const receipt = await engine.write([]);
+const receipt = await engine.write([
+  { kind: "note", body: "hello from the quickstart", sourceId: "quickstart" },
+]);
 console.log(receipt.cursor); // → 1
 ```
 
-The smoke uses an empty batch — exercising the writer thread and
-op-store wiring is the contract. Real client batches are
+An **empty** batch (`write([])`) is also valid and carries no items, so
+it needs no `source_id` — that is what the release smoke uses to
+exercise the writer thread and op-store wiring. Real client batches are
 caller-shaped canonical rows; see
 [concepts](../concepts/index.md).
 
@@ -96,7 +101,9 @@ Python:
 result = engine.search("hello")
 print(result.projection_cursor)
 print(result.soft_fallback)  # → None if neither branch fell back
-print(result.results)
+for hit in result.results:
+    # hit.id is a typed IdSpace: .space in {"logical", "content", "passage"}
+    print(hit.id.space, hit.id.value, hit.kind, hit.score, hit.source_id)
 ```
 
 TypeScript:
@@ -105,7 +112,10 @@ TypeScript:
 const result = await engine.search("hello");
 console.log(result.projectionCursor);
 console.log(result.softFallback);
-console.log(result.results);
+for (const hit of result.results) {
+  // hit.id is a typed IdSpace: { space, value }
+  console.log(hit.id.space, hit.id.value, hit.kind, hit.score, hit.sourceId);
+}
 ```
 
 ## 5. Inspect counters
@@ -157,7 +167,9 @@ console.log("ok");
 from fathomdb import Engine
 
 engine = Engine.open("./quickstart.fdb")
-engine.write([])
+engine.write([
+    {"kind": "note", "body": "hello from the quickstart", "source_id": "quickstart"},
+])
 result = engine.search("hello")
 print(engine.counters())
 engine.close()
@@ -177,7 +189,9 @@ sequence per AC-056.
 - [Concepts](../concepts/index.md) — engine lifecycle, canonical rows,
   embedder model, recovery surface.
 - [Reference — Python API](../reference/python-api.md) — full surface.
-- [Reference — errors](../reference/errors.md) — 18-leaf taxonomy +
-  recovery hints.
+- [Reference — errors](../reference/errors.md) — the 27-class taxonomy
+  and recovery hints.
 - [Reference — CLI](../reference/cli.md) — operator verbs (`doctor`,
   `recover`).
+- [Erasure](../operations/erasure.md) — `erase_source` / `purge`, and
+  what they do not reach.

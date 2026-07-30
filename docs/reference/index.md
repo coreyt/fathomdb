@@ -1,6 +1,6 @@
 # Reference
 
-Reference for the public 0.6.0 surface. Field spellings and
+Reference for the public 0.8.20 surface. Field spellings and
 type-level details are authoritative in the locked internal interface
 specs (`dev/interfaces/{python,typescript,cli}.md`); this section is
 the client-facing view.
@@ -11,23 +11,25 @@ the client-facing view.
   `admin.configure`, data shapes, instrumentation methods.
 - [CLI](cli.md) — `fathomdb doctor` + `fathomdb recover` verbs, flag
   spelling, exit-code classes, JSON output shape.
-- [Errors](errors.md) — 18-leaf error taxonomy, base class, trigger,
-  recovery hint codes.
+- [Errors](errors.md) — the 27-class error taxonomy, base class,
+  trigger, recovery hint codes.
 - [Config](config.md) — `EngineConfig` knobs (Python snake_case + TS
   camelCase column).
 
-Rust API reference is auto-published to `docs.rs/fathomdb` after the
-crate publishes; pre-GA see
-[`src/rust/crates/fathomdb/`](https://github.com/coreyt/fathomdb/tree/0.6.0-rewrite/src/rust/crates/fathomdb).
+Rust API reference is auto-published to `docs.rs/fathomdb` once the
+crate publishes; until then run `cargo doc --open` or read
+[`src/rust/crates/fathomdb/`](https://github.com/coreyt/fathomdb/tree/main/src/rust/crates/fathomdb).
 
-## Deferred for 0.6.0
+## Known gaps in 0.8.20
 
-The reference reflects the locked surface but the following are
-documented gaps; see [release notes — 0.6.0](../release-notes/0.6.0.md):
+The reference reflects the shipped surface. These are documented gaps:
 
-- `Engine.open` structured open report dropped by both bindings;
-  surfacing defers to 0.6.1.
-- Logical-id verbs (`purge_logical_id`, `restore_logical_id`)
-  deferred to 0.7.x.
-- Performance gates AC-012, AC-013, AC-019, AC-020 deferred; see
+- Performance gates AC-012, AC-013, AC-019, AC-020 remain open; see
   [compatibility § performance posture](../compatibility/index.md).
+- The `SearchFilter.status` field is wired end-to-end but has no
+  population source, so a `status=`-filtered query prunes every row.
+- Custom Python / TypeScript embedder implementations are not exposed;
+  the binding choice is the built-in default embedder or none.
+- `SearchFilter.attributes` (attribute-equality filtering over declared
+  `filterable` projections) is engine-internal in 0.8.20 — it has no
+  Python or TypeScript wire exposure yet.
