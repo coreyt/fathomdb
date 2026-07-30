@@ -27,7 +27,22 @@ resolver = "2"
 # decoupled from axis-W bumps.
 version = "0.8.9"
 edition = "2021"
-license = "Apache-2.0"
+# 0.8.20 Slice 39 (R-20-DOC, HITL seq-193): the project is MIT. The repo-root
+# `LICENSE` is authoritative; this SPDX field and every other publishable
+# manifest must agree with it (asserted by scripts/check-license-consistency.sh).
+license = "MIT"
+# 0.8.20 Slice 39 (R-20-DOC): make the license TEXT ship inside every `.crate`.
+# Measured, not assumed: `cargo package --list` at baseline shipped NO license
+# file for any of the 7 publishable crates. `include = ["../../../../LICENSE"]`
+# cannot reach outside the package root, but an INHERITED `license-file` can —
+# when a crate opts in with `license-file.workspace = true`, cargo resolves this
+# path relative to the WORKSPACE root and copies the file into the packaged
+# tarball as `LICENSE` (the packaged Cargo.toml is rewritten to
+# `license-file = "LICENSE"`). One real file, no per-crate copies to drift, and
+# no symlinks that a non-symlink-capable checkout would materialise as a text
+# stub. Verified with `cargo package --no-verify` + `tar -xzO`: byte-identical
+# to the repo-root LICENSE for all 7 crates.
+license-file = "LICENSE"
 repository = "https://github.com/coreyt/fathomdb"
 rust-version = "1.95"
 

@@ -1,5 +1,14 @@
 [build-system]
-requires = ["maturin>=1.7,<2"]
+# 0.8.20 Slice 39 (R-20-DOC): floor raised 1.7 -> 1.9. MEASURED, not reasoned:
+# with `[project] license-files = ["LICENSE"]` (the final PEP-639 list-of-globs
+# form, which is what puts the license TEXT in the wheel), `maturin sdist`
+# exits 1 on 1.7.8 and on 1.8.0 with
+#   `TOML parse error at line 18 ... license-files = ["LICENSE"] wanted string
+#    or table`
+# (those releases still expect the pre-final table form), and exits 0 on 1.9.0,
+# 1.10.0, 1.11.0, 1.12.0 and 1.13.1. Leaving the floor at 1.7 would let a
+# conforming resolver pick a backend that cannot build this project at all.
+requires = ["maturin>=1.9,<2"]
 build-backend = "maturin"
 
 [project]
@@ -8,11 +17,18 @@ version = "0.8.9"
 description = "FathomDB Python SDK — PyO3 binding to the fathomdb-engine Rust core"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "Apache-2.0" }
+# 0.8.20 Slice 39 (R-20-DOC, HITL seq-193): the project is MIT; the repo-root
+# LICENSE is authoritative. PEP-639 SPDX string form + `license-files`, which
+# is what makes the license TEXT ship in the wheel (`.dist-info/licenses/`).
+# PEP-639 forbids `..` in license-files globs, so `LICENSE` here is a REAL
+# COPY of the repo-root file; scripts/check-license-consistency.sh asserts the
+# copy stays byte-identical.
+license = "MIT"
+license-files = ["LICENSE"]
 dependencies = []
 
 [project.optional-dependencies]
-test = ["pytest>=8", "hypothesis>=6", "maturin>=1.7,<2", "pyyaml>=6", "numpy>=1.24", "scipy>=1.11", "networkx>=3.0"]
+test = ["pytest>=8", "hypothesis>=6", "maturin>=1.9,<2", "pyyaml>=6", "numpy>=1.24", "scipy>=1.11", "networkx>=3.0"]
 lint = ["ruff>=0.6"]
 typecheck = ["pyright>=1.1.380"]
 # numpy is required by the M1 eval harness (eval/m1_baseline.py, eval/m1_baseline_run.py,
@@ -24,7 +40,7 @@ typecheck = ["pyright>=1.1.380"]
 # Personalized-PageRank, scipy as its sparse-linalg backend) and test_m1_ppr.py (Slice 15).
 # They are HARNESS-only CPU deps (NOT linked into the FathomDB library → footprint-invariant
 # safe; design §9). Declared here so a clean `pip install -e src/python[dev]` runs the arm.
-dev = ["pytest>=8", "hypothesis>=6", "ruff>=0.6", "pyright>=1.1.380", "maturin>=1.7,<2", "pyyaml>=6", "numpy>=1.24", "scipy>=1.11", "networkx>=3.0"]
+dev = ["pytest>=8", "hypothesis>=6", "ruff>=0.6", "pyright>=1.1.380", "maturin>=1.9,<2", "pyyaml>=6", "numpy>=1.24", "scipy>=1.11", "networkx>=3.0"]
 
 [tool.maturin]
 manifest-path = "../rust/crates/fathomdb-py/Cargo.toml"
