@@ -361,10 +361,43 @@ STATE_MARKERS = (
 )
 WHOLE_CELL_MARKERS = ("next", "next up", "up next")
 
+# AND IT REFUSES A COLLISION RATHER THAN TAKING THE LAST WRITER. `30` and
+# `30.0` are distinct JSON numbers but `slice_str` renders both as "30" (and in
+# Python `30 == 30.0` and `hash(30) == hash(30.0)`, so this is not a
+# hypothetical shape). A bare `by_slice[key] = entry` kept whichever entry came
+# SECOND in the file — dict-insertion order, i.e. LINE ORDER — and the survivor
+# then answered for the loser in check (c) below: a landed row could be
+# reconciled against the WRONG entry's SHA, or, when the two agree, a malformed
+# state file could be CERTIFIED. That is the same "SILENTLY OVERWRITE" collapse
+# check-release-state-views.sh's `_by_slice` was written to forbid, and it
+# already refuses it; two readers of one file must not disagree about what that
+# file means, so this one refuses it too.
+#
+# It is a HARD fail, not a `bad = True`, because a duplicate is a defect in the
+# STATE FILE, and Leg 3's policy for a present-but-malformed state file is a
+# hard fail (only an ABSENT one is the announced skip above). Exiting also stops
+# the checks below from running against a map that is known to be wrong. Every
+# duplicate is reported first, so one run names them all.
 by_slice = {}
+state_dup = []
 for entry in st["ladder"]:
     if isinstance(entry, dict) and "slice" in entry:
-        by_slice[slice_str(entry["slice"])] = entry
+        key = slice_str(entry["slice"])
+        if key in by_slice:
+            state_dup.append((key, by_slice[key]["slice"], entry["slice"]))
+            continue
+        by_slice[key] = entry
+
+for key, first, second in state_dup:
+    err("STALE  %s: %s carries TWO ladder entries that resolve to the same slice "
+        "id %s (%r and %r). One would SILENTLY OVERWRITE the other — whichever "
+        "came second in the file — so a landed row could be reconciled against "
+        "the WRONG entry's SHA, and every reader of this file would disagree "
+        "with the next about which entry is the slice. Give each slice exactly "
+        "one ladder entry (TC-133)."
+        % (ver, state_path, key, first, second))
+if state_dup:
+    sys.exit(1)
 
 reconciled = 0
 for n in st["landed"]:
