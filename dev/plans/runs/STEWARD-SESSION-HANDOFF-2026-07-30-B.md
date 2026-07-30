@@ -232,6 +232,29 @@ follow-up.
     correctly, without needing to judge whether the action was benign. **A blocked action escalates to the
     Steward — it never routes sideways.** Reinforce this; the guardrail worked.
 
+## 9a. ⚠ TC-137 — the highest-value open lead on the release
+
+**Five of the seven pyright errors that kill CI `verify` and `security` are STUB-vs-SOURCE DRIFT in a
+TRACKED file.** Measured at `59ec30c7` from the primary: `scripts/agent-typecheck.sh` on **unmodified
+`main`** is **rc=1 with exactly seven errors**, and they reproduce **locally** — so this is not a
+CI-environment problem.
+
+- `dense_disabled` / `dense_disabled_reason` / `vector_equivalence_refusal_count` appear **11 / 4 / 2**
+  times in the Rust binding source, and `dense_disabled` appears **ZERO** times in
+  `src/python/fathomdb/_fathomdb.pyi` — the stub pyright reads.
+- That stub is **TRACKED**, so CI reads the identical stale file and fails identically.
+- ⚠ **Do not conflate with TC-136.** `_fathomdb.abi3.so` is **untracked** — its 19-day staleness is a
+  *local* artifact. The `.pyi` is **committed** — it is wrong *in the repository*.
+- ⚠ **Only five of seven have this shape.** `graph.py:153` is an **assignability** error between
+  `fathomdb._fathomdb.IdSpace` and `fathomdb.types.IdSpace`; the seventh is an unexpected `reason`
+  parameter in `test_vector_equivalence_probe.py`. **Do not assume they share a cause.**
+- ⚠ **UNPROVEN:** nobody has regenerated the stub and re-run pyright. *"Regenerating clears five of seven"*
+  is a well-evidenced **hypothesis**.
+
+**Why it matters:** gate (i) needs every executed `ci.yml` job green. `verify` and `security` are two of the
+four reds and both die on exactly these seven. If the hypothesis holds, a stub regeneration clears **two of
+four** and materially advances the gate blocking the first real publish since `v0.8.9`.
+
 ## 10. Standing rules
 
 - **Trust git, not narration.** Verify every "closed / landed / green" against the diff and real exit codes.
