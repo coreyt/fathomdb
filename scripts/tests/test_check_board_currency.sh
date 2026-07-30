@@ -498,6 +498,79 @@ write_state "$CROSSOK_REPO" 0.8.90 '[5]' \
   '[40]'
 commit_all "$CROSSOK_REPO" "docs: stamp STATUS-0.8.90 Slice 5 LANDED $CO_SHORT"
 
+# --- Fixture P (TC-133 FALSE-POSITIVE guard, found by grading a matrix) -------
+# Release 0.8.89. `remaining_ladder` is TWO ids, one of them FRACTIONAL, and the
+# board writes the claim the natural way: `Ladder remaining: 39.5, 40`.
+#
+# ⚠ WHY THIS ARM EXISTS. The first draft of the (d) check cut the claim at the
+# first punctuation mark. Measured against a matrix rather than one example,
+# that read `39.5, 40` as {39.5} — dropping every id after the comma. Against
+# this fixture it would HARD-FAIL a board that is perfectly current, i.e. block
+# a land. (The same cut also truncated `40.5` to `40` at the `.`, which is this
+# unit's own defect class re-introduced by the fix for it.) The claim is now
+# read as an ID LIST. This fixture is green before AND after — it is a guard on
+# the fix, not a recurrence arm.
+COMMA_REPO="$TMPROOT/comma-ladder"
+init_repo "$COMMA_REPO"
+mkdir -p "$COMMA_REPO/dev/plans/runs" "$COMMA_REPO/src" "$COMMA_REPO/scripts"
+printf 'fixture\n' >"$COMMA_REPO/src/keep.txt"
+printf '# STATUS — 0.8.89 fixture\n\nSlice 5: not started.\n' \
+  >"$COMMA_REPO/dev/plans/runs/STATUS-0.8.89.md"
+write_state "$COMMA_REPO" 0.8.89 '[]' '[{"slice": 5, "status": "NOT_STARTED"}]' '[5, 39.5, 40]'
+commit_all "$COMMA_REPO" 'fixture: initial commit'
+git -C "$COMMA_REPO" checkout -q -b slice-5-fixture
+printf 'work\n' >"$COMMA_REPO/src/slice5.txt"
+commit_all "$COMMA_REPO" 'feat: slice 5 work'
+git -C "$COMMA_REPO" checkout -q main
+git -C "$COMMA_REPO" merge -q --no-ff -m 'merge(0.8.89): Slice 5 — fixture land' slice-5-fixture
+CM_SHORT="$(git -C "$COMMA_REPO" rev-parse HEAD)"; CM_SHORT="${CM_SHORT:0:8}"
+{
+  printf '# STATUS — 0.8.89 fixture\n\n'
+  printf '| Slice | Title | Depends-on | Status |\n'
+  printf '|------:|-------|-----------|--------|\n'
+  printf '| 5 | fixture slice | — | **COMPLETE — LANDED `%s`** |\n' "$CM_SHORT"
+  printf '| 39.5 | fixture cross-cutting | 5 | not started |\n'
+  printf '| 40 | fixture tail | 5 | not started |\n\n'
+  printf '**Ladder remaining: 39.5, 40**, then the HITL publish gate.\n'
+} >"$COMMA_REPO/dev/plans/runs/STATUS-0.8.89.md"
+write_state "$COMMA_REPO" 0.8.89 '[5]' \
+  "$(printf '[{"slice": 5, "status": "LANDED", "sha": "%s"}, {"slice": 39.5, "status": "NOT_STARTED"}, {"slice": 40, "status": "NOT_STARTED"}]' "$CM_SHORT")" \
+  '[39.5, 40]'
+commit_all "$COMMA_REPO" "docs: stamp STATUS-0.8.89 Slice 5 LANDED $CM_SHORT"
+
+# --- Fixture Q (TC-133 RECURRENCE, companion to P): the list UNDER-claims -----
+# Release 0.8.88. Identical shape, but the board's claim omits 39.5 while
+# `remaining_ladder` still carries it. The list reader must catch that — proving
+# fixture P's green comes from reading the whole list, not from the check having
+# gone inert on comma-separated claims.
+UNDERCLAIM_REPO="$TMPROOT/underclaim-ladder"
+init_repo "$UNDERCLAIM_REPO"
+mkdir -p "$UNDERCLAIM_REPO/dev/plans/runs" "$UNDERCLAIM_REPO/src" "$UNDERCLAIM_REPO/scripts"
+printf 'fixture\n' >"$UNDERCLAIM_REPO/src/keep.txt"
+printf '# STATUS — 0.8.88 fixture\n\nSlice 5: not started.\n' \
+  >"$UNDERCLAIM_REPO/dev/plans/runs/STATUS-0.8.88.md"
+write_state "$UNDERCLAIM_REPO" 0.8.88 '[]' '[{"slice": 5, "status": "NOT_STARTED"}]' '[5, 39.5, 40]'
+commit_all "$UNDERCLAIM_REPO" 'fixture: initial commit'
+git -C "$UNDERCLAIM_REPO" checkout -q -b slice-5-fixture
+printf 'work\n' >"$UNDERCLAIM_REPO/src/slice5.txt"
+commit_all "$UNDERCLAIM_REPO" 'feat: slice 5 work'
+git -C "$UNDERCLAIM_REPO" checkout -q main
+git -C "$UNDERCLAIM_REPO" merge -q --no-ff -m 'merge(0.8.88): Slice 5 — fixture land' slice-5-fixture
+UC_SHORT="$(git -C "$UNDERCLAIM_REPO" rev-parse HEAD)"; UC_SHORT="${UC_SHORT:0:8}"
+{
+  printf '# STATUS — 0.8.88 fixture\n\n'
+  printf '| Slice | Title | Depends-on | Status |\n'
+  printf '|------:|-------|-----------|--------|\n'
+  printf '| 5 | fixture slice | — | **COMPLETE — LANDED `%s`** |\n' "$UC_SHORT"
+  printf '| 39.5 | fixture cross-cutting | 5 | not started |\n'
+  printf '| 40 | fixture tail | 5 | not started |\n\n'
+  printf '**Ladder remaining: 40 alone**, then the HITL publish gate.\n'
+} >"$UNDERCLAIM_REPO/dev/plans/runs/STATUS-0.8.88.md"
+write_state "$UNDERCLAIM_REPO" 0.8.88 '[5]' \
+  "$(printf '[{"slice": 5, "status": "LANDED", "sha": "%s"}, {"slice": 39.5, "status": "NOT_STARTED"}, {"slice": 40, "status": "NOT_STARTED"}]' "$UC_SHORT")" \
+  '[39.5, 40]'
+commit_all "$UNDERCLAIM_REPO" "docs: stamp STATUS-0.8.88 Slice 5 LANDED $UC_SHORT"
+
 run_checker() {
   local dir="$1" checker="${2:-$CHECKER}"
   set +e
@@ -713,6 +786,33 @@ if printf '%s' "$OUT" | grep -q 'Slice 5'; then
   fail "Slice 5's row is current and must not be flagged — this arm's red must be the prose claim alone; out: $OUT"
 else
   pass "TC-133 anti-vacuity: the current ladder row is not flagged by the prose arm"
+fi
+
+# --- Arm 13b (TC-133 false-positive guard): a comma-separated, FRACTIONAL ------
+# `Ladder remaining: 39.5, 40` claim that AGREES with remaining_ladder must
+# exit 0. The first draft of the claim reader cut at the first punctuation mark
+# and read this as {39.5}, hard-failing a current board — a land-blocking false
+# positive, and a `40.5`->`40` truncation of exactly the class this unit ends.
+run_checker "$COMMA_REPO"
+if [ "$RC" -eq 0 ]; then
+  pass "TC-133: a comma-separated 'Ladder remaining: 39.5, 40' claim that agrees is not flagged"
+else
+  fail "FALSE POSITIVE: a current board whose remaining-ladder claim is a comma-separated list (with a fractional id) was hard-failed; got rc=$RC, out: $OUT"
+fi
+
+# --- Arm 13c (TC-133 RECURRENCE, companion to 13b): the list UNDER-claims -----
+# Same shape, board omits 39.5. Proves 13b's green comes from reading the whole
+# list, not from the claim check having gone inert on comma-separated claims.
+run_checker "$UNDERCLAIM_REPO"
+if [ "$RC" -ne 0 ]; then
+  pass "TC-133: a remaining-ladder claim that omits a fractional id still HARD-fails"
+else
+  fail "TC-133: the board claims 'Ladder remaining: 40 alone' while remaining_ladder is [39.5, 40], and the gate exited 0; out: $OUT"
+fi
+if printf '%s' "$OUT" | grep -q '39\.5'; then
+  pass "TC-133: the claim failure names the omitted fractional id (39.5), not its truncation"
+else
+  fail "expected the failure to name 39.5; got: $OUT"
 fi
 
 # --- Arm 14 (TC-133 policy): state file ABSENT — visible, not silent ----------
