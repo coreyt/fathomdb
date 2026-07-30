@@ -1115,8 +1115,8 @@ done
 # carries NO model: key at all. "__ABSENT__" is the sentinel for that, so a
 # `model:` line APPEARING on the implementer trips this arm too.
 declare -a SEAT_NAME_TOOLS=(
-  "orchestrator|Read, Bash, Grep, Glob, Agent, Task|inherit"
-  "steward|Read, Bash, Grep, Glob, Agent, Task|inherit"
+  "orchestrator|Read, Bash, Grep, Glob, Agent, Task, SendMessage|inherit"
+  "steward|Read, Bash, Grep, Glob, Agent, Task, SendMessage|inherit"
   "implementer|Read, Edit, Write, Bash, Grep, Glob|__ABSENT__"
 )
 for spec in "${SEAT_NAME_TOOLS[@]}"; do
