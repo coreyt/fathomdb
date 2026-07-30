@@ -622,6 +622,233 @@ write_state "$DUPSTATE_REPO" 0.8.87 '[30]' \
   '[40]'
 commit_all "$DUPSTATE_REPO" "docs: stamp STATUS-0.8.87 Slice 30 LANDED $DS_SHORT"
 
+# ============================================================================
+# fix-2 fixtures — two NEW and DISTINCT fail-open paths in the TC-133 cross-read
+# that Leg 3 added. Both are the same failure family as the fix-1 vacuous-pass
+# guard: the gate exits 0 (or is DOWNGRADED to exit 0 by its caller) while being
+# silently wrong, which is the precise defect class this unit exists to close.
+#
+#   FINDING A — a slice listed in `landed` whose `ladder` entry is missing, or
+#     carries no `sha`, made check (c) — the LOAD-BEARING half of the cross-read,
+#     "the hand-written row must cite the slice's own landing SHA" — a NO-OP for
+#     that slice. The construct was `sha = (by_slice.get(key) or {}).get("sha")`
+#     followed by `if sha and sha not in status:`. That is exactly the state-file
+#     INCOMPLETENESS this check exists to catch, and it let the whole gate exit 0
+#     on the strength of the fragile marker regex (b) alone.
+#
+#     ⚠ MEASURED AGAINST THE REAL STATE FILE BEFORE CHOOSING A HARD FAIL. All 14
+#     ids in `landed` in dev/plans/release-state-0.8.20.json (0, 5, 10, 15, 20,
+#     21, 22, 23, 25, 30, 31, 32, 33, 39) have a `ladder` entry AND a non-null
+#     `sha`; zero exceptions. A hard fail therefore does not redden the live
+#     gate. Had any real landed slice legitimately lacked one, this would have
+#     been escalated rather than coded around.
+#
+#   FINDING B — Leg 3 validated KEY PRESENCE but not TYPE, so a state file whose
+#     `landed` / `ladder` / `remaining_ladder` had the wrong type sailed past
+#     validation and blew up in a later loop as an UNPREFIXED Python traceback.
+#     The standalone checker exits non-zero, but `preflight.sh --landing`
+#     converted only `STALE*` lines into HARD failures — every other line became
+#     INFO — so the whole cross-read FAILED OPEN inside the landing gate. See the
+#     preflight arms at the bottom of this file: pre-fix, `--landing` exits 0.
+# ============================================================================
+
+# --- Fixture S (fix-2 Finding A RECURRENCE): landed, but the ladder entry has
+# no `sha`. Release 0.8.86. The board is otherwise IMPECCABLE — one row per
+# slice, the landed row cites the real landing SHA, the `Ladder remaining:`
+# claim agrees — so nothing else in the cross-read can fire. The defect is
+# entirely the state file's: Slice 5 is in `landed` and its ladder entry records
+# `status: LANDED` with NO `sha` key at all.
+#
+# ⚠ RED-FIRST PROOF: against the UNFIXED checker this fixture exits **0**.
+# `(by_slice.get("5") or {}).get("sha")` is None, `if sha and ...` is False, and
+# check (c) never runs — the gate certifies the row without ever reconciling it.
+NOSHA_REPO="$TMPROOT/no-sha"
+init_repo "$NOSHA_REPO"
+mkdir -p "$NOSHA_REPO/dev/plans/runs" "$NOSHA_REPO/src" "$NOSHA_REPO/scripts"
+printf 'fixture\n' >"$NOSHA_REPO/src/keep.txt"
+printf '# STATUS — 0.8.86 fixture\n\nSlice 5: not started.\n' \
+  >"$NOSHA_REPO/dev/plans/runs/STATUS-0.8.86.md"
+write_state "$NOSHA_REPO" 0.8.86 '[]' '[{"slice": 5, "status": "NOT_STARTED"}]' '[5, 40]'
+commit_all "$NOSHA_REPO" 'fixture: initial commit'
+git -C "$NOSHA_REPO" checkout -q -b slice-5-fixture
+printf 'work\n' >"$NOSHA_REPO/src/slice5.txt"
+commit_all "$NOSHA_REPO" 'feat: slice 5 work'
+git -C "$NOSHA_REPO" checkout -q main
+git -C "$NOSHA_REPO" merge -q --no-ff -m 'merge(0.8.86): Slice 5 — fixture land' slice-5-fixture
+NS_SHORT="$(git -C "$NOSHA_REPO" rev-parse HEAD)"; NS_SHORT="${NS_SHORT:0:8}"
+{
+  printf '# STATUS — 0.8.86 fixture\n\n'
+  printf '| Slice | Title | Depends-on | Status |\n'
+  printf '|------:|-------|-----------|--------|\n'
+  printf '| 5 | fixture slice | — | **COMPLETE — LANDED `%s`** |\n' "$NS_SHORT"
+  printf '| 40 | fixture tail | 5 | not started |\n\n'
+  printf '**Ladder remaining: 40 alone**, then the HITL publish gate.\n'
+} >"$NOSHA_REPO/dev/plans/runs/STATUS-0.8.86.md"
+write_state "$NOSHA_REPO" 0.8.86 '[5]' \
+  '[{"slice": 5, "status": "LANDED"}, {"slice": 40, "status": "NOT_STARTED"}]' \
+  '[40]'
+commit_all "$NOSHA_REPO" "docs: stamp STATUS-0.8.86 Slice 5 LANDED $NS_SHORT"
+
+# --- Fixture T (fix-2 Finding A RECURRENCE): landed, but NO ladder entry at all
+# Release 0.8.85. Same shape as S, one rung further: `landed` names Slice 5 and
+# the `ladder` array has no entry for it whatsoever. Kept SEPARATE from S so each
+# half of the completeness predicate owns its own red — a single fixture tripping
+# both would let either half rot unnoticed.
+#
+# ⚠ RED-FIRST PROOF: unfixed checker exits **0**. `by_slice.get("5")` is None,
+# `or {}` swallows it, and check (c) is again a silent no-op. Note the board DOES
+# carry a row for Slice 5, so the pre-existing "has NO row for it" predicate
+# cannot be what makes this arm red.
+NOENTRY_REPO="$TMPROOT/no-ladder-entry"
+init_repo "$NOENTRY_REPO"
+mkdir -p "$NOENTRY_REPO/dev/plans/runs" "$NOENTRY_REPO/src" "$NOENTRY_REPO/scripts"
+printf 'fixture\n' >"$NOENTRY_REPO/src/keep.txt"
+printf '# STATUS — 0.8.85 fixture\n\nSlice 5: not started.\n' \
+  >"$NOENTRY_REPO/dev/plans/runs/STATUS-0.8.85.md"
+write_state "$NOENTRY_REPO" 0.8.85 '[]' '[{"slice": 5, "status": "NOT_STARTED"}]' '[5, 40]'
+commit_all "$NOENTRY_REPO" 'fixture: initial commit'
+git -C "$NOENTRY_REPO" checkout -q -b slice-5-fixture
+printf 'work\n' >"$NOENTRY_REPO/src/slice5.txt"
+commit_all "$NOENTRY_REPO" 'feat: slice 5 work'
+git -C "$NOENTRY_REPO" checkout -q main
+git -C "$NOENTRY_REPO" merge -q --no-ff -m 'merge(0.8.85): Slice 5 — fixture land' slice-5-fixture
+NE_SHORT="$(git -C "$NOENTRY_REPO" rev-parse HEAD)"; NE_SHORT="${NE_SHORT:0:8}"
+{
+  printf '# STATUS — 0.8.85 fixture\n\n'
+  printf '| Slice | Title | Depends-on | Status |\n'
+  printf '|------:|-------|-----------|--------|\n'
+  printf '| 5 | fixture slice | — | **COMPLETE — LANDED `%s`** |\n' "$NE_SHORT"
+  printf '| 40 | fixture tail | 5 | not started |\n\n'
+  printf '**Ladder remaining: 40 alone**, then the HITL publish gate.\n'
+} >"$NOENTRY_REPO/dev/plans/runs/STATUS-0.8.85.md"
+write_state "$NOENTRY_REPO" 0.8.85 '[5]' \
+  '[{"slice": 40, "status": "NOT_STARTED"}]' \
+  '[40]'
+commit_all "$NOENTRY_REPO" "docs: stamp STATUS-0.8.85 Slice 5 LANDED $NE_SHORT"
+
+# --- Fixture U (fix-2 Finding B RECURRENCE): `landed` is present but is NOT a
+# JSON array. Release 0.8.84. The board is fully current; the ONLY defect is
+# `"landed": 5` in the state file.
+#
+# ⚠ RED-FIRST PROOF, AND IT IS TWO-LEVEL. Leg 3's validation asked only `if key
+# not in st`, so a wrong TYPE sails through it and detonates later:
+#   * unfixed CHECKER: rc=1, but the output is a bare
+#     `TypeError: 'int' object is not iterable` traceback with NO `STALE` line.
+#   * unfixed `preflight.sh --landing`: **rc=0**. §7 promoted only `STALE*` lines
+#     to HARD; every traceback line became INFO and the land was CERTIFIED. That
+#     is the fail-open, and it is the arm that matters (Arm 20b below).
+BADTYPE_REPO="$TMPROOT/bad-type-landed"
+init_repo "$BADTYPE_REPO"
+mkdir -p "$BADTYPE_REPO/dev/plans/runs" "$BADTYPE_REPO/src" "$BADTYPE_REPO/scripts"
+printf 'fixture\n' >"$BADTYPE_REPO/src/keep.txt"
+printf '# STATUS — 0.8.84 fixture\n\nSlice 5: not started.\n' \
+  >"$BADTYPE_REPO/dev/plans/runs/STATUS-0.8.84.md"
+write_state "$BADTYPE_REPO" 0.8.84 '[]' '[{"slice": 5, "status": "NOT_STARTED"}]' '[5, 40]'
+commit_all "$BADTYPE_REPO" 'fixture: initial commit'
+git -C "$BADTYPE_REPO" checkout -q -b slice-5-fixture
+printf 'work\n' >"$BADTYPE_REPO/src/slice5.txt"
+commit_all "$BADTYPE_REPO" 'feat: slice 5 work'
+git -C "$BADTYPE_REPO" checkout -q main
+git -C "$BADTYPE_REPO" merge -q --no-ff -m 'merge(0.8.84): Slice 5 — fixture land' slice-5-fixture
+BT_SHORT="$(git -C "$BADTYPE_REPO" rev-parse HEAD)"; BT_SHORT="${BT_SHORT:0:8}"
+{
+  printf '# STATUS — 0.8.84 fixture\n\n'
+  printf '| Slice | Title | Depends-on | Status |\n'
+  printf '|------:|-------|-----------|--------|\n'
+  printf '| 5 | fixture slice | — | **COMPLETE — LANDED `%s`** |\n' "$BT_SHORT"
+  printf '| 40 | fixture tail | 5 | not started |\n\n'
+  printf '**Ladder remaining: 40 alone**, then the HITL publish gate.\n'
+} >"$BADTYPE_REPO/dev/plans/runs/STATUS-0.8.84.md"
+# `landed` is a NUMBER, not an array. Key present -> Leg 3's check passed it.
+write_state "$BADTYPE_REPO" 0.8.84 '5' \
+  "$(printf '[{"slice": 5, "status": "LANDED", "sha": "%s"}, {"slice": 40, "status": "NOT_STARTED"}]' "$BT_SHORT")" \
+  '[40]'
+commit_all "$BADTYPE_REPO" "docs: stamp STATUS-0.8.84 Slice 5 LANDED $BT_SHORT"
+
+# --- Fixture V (fix-2 Finding B RECURRENCE): `ladder` is an array of NUMBERS,
+# not of objects. Release 0.8.83. This is the QUIET half of the type hole and it
+# never raises at all: the `by_slice` builder guarded itself with
+# `isinstance(entry, dict)`, so every non-object entry was SILENTLY DROPPED, the
+# map came out EMPTY, and check (c) then went no-op for every landed slice via
+# Finding A's construct. Two independent fail-opens composing into one green.
+#
+# ⚠ RED-FIRST PROOF: unfixed checker exits **0** — no traceback, no diagnostic,
+# a malformed state file CERTIFIED. This is why "ladder must be a list of
+# OBJECTS" is part of the type validation and not just "ladder must be a list".
+BADLADDER_REPO="$TMPROOT/bad-type-ladder"
+init_repo "$BADLADDER_REPO"
+mkdir -p "$BADLADDER_REPO/dev/plans/runs" "$BADLADDER_REPO/src" "$BADLADDER_REPO/scripts"
+printf 'fixture\n' >"$BADLADDER_REPO/src/keep.txt"
+printf '# STATUS — 0.8.83 fixture\n\nSlice 5: not started.\n' \
+  >"$BADLADDER_REPO/dev/plans/runs/STATUS-0.8.83.md"
+write_state "$BADLADDER_REPO" 0.8.83 '[]' '[{"slice": 5, "status": "NOT_STARTED"}]' '[5, 40]'
+commit_all "$BADLADDER_REPO" 'fixture: initial commit'
+git -C "$BADLADDER_REPO" checkout -q -b slice-5-fixture
+printf 'work\n' >"$BADLADDER_REPO/src/slice5.txt"
+commit_all "$BADLADDER_REPO" 'feat: slice 5 work'
+git -C "$BADLADDER_REPO" checkout -q main
+git -C "$BADLADDER_REPO" merge -q --no-ff -m 'merge(0.8.83): Slice 5 — fixture land' slice-5-fixture
+BL_SHORT="$(git -C "$BADLADDER_REPO" rev-parse HEAD)"; BL_SHORT="${BL_SHORT:0:8}"
+{
+  printf '# STATUS — 0.8.83 fixture\n\n'
+  printf '| Slice | Title | Depends-on | Status |\n'
+  printf '|------:|-------|-----------|--------|\n'
+  printf '| 5 | fixture slice | — | **COMPLETE — LANDED `%s`** |\n' "$BL_SHORT"
+  printf '| 40 | fixture tail | 5 | not started |\n\n'
+  printf '**Ladder remaining: 40 alone**, then the HITL publish gate.\n'
+} >"$BADLADDER_REPO/dev/plans/runs/STATUS-0.8.83.md"
+write_state "$BADLADDER_REPO" 0.8.83 '[5]' '[5, 40]' '[40]'
+commit_all "$BADLADDER_REPO" "docs: stamp STATUS-0.8.83 Slice 5 LANDED $BL_SHORT"
+
+# --- Fixture W (fix-2 Finding B, the GENERAL fail-open): an UNEXPECTED
+# exception anywhere in the cross-read. Release 0.8.82.
+#
+# The state file is well-formed and every type is right, so NONE of the
+# validation added by this fix-round touches this fixture. The board carries a
+# raw 0xFF byte, which is not valid UTF-8, so
+# `open(board_path, encoding="utf-8").read()` raises UnicodeDecodeError — a
+# ValueError, NOT an OSError, so the `except OSError` around that read does not
+# see it. Result: an unprefixed traceback and rc=1.
+#
+# ⚠ THE 0xFF BYTE IS THE POINT AND MUST NOT BE "FIXED". This arm's subject is
+# NOT UnicodeDecodeError; it is the INVARIANT that ANY unanticipated failure of
+# the cross-read HARD-BLOCKS A LAND rather than degrading to INFO. Giving this
+# one exception a bespoke handler would delete the arm and leave the invariant
+# untested for the NEXT unanticipated exception — and codex's finding is
+# explicitly about the general case, not this instance. It is also why the
+# [DETERMINE] locus is preflight.sh (see Arm 22): a `try/except` inside the
+# checker's Python can only ever cover exceptions raised INSIDE that Python, and
+# the checker also fails at the BASH level (a missing lib/board-closed.sh, an
+# unresolvable --tip, an unknown arg -> exit 2) with no STALE line at all.
+#
+# ⚠ RED-FIRST PROOF: unfixed `preflight.sh --landing` exits **0** on this tree.
+BOOM_REPO="$TMPROOT/unexpected-exception"
+init_repo "$BOOM_REPO"
+mkdir -p "$BOOM_REPO/dev/plans/runs" "$BOOM_REPO/src" "$BOOM_REPO/scripts"
+printf 'fixture\n' >"$BOOM_REPO/src/keep.txt"
+printf '# STATUS — 0.8.82 fixture\n\nSlice 5: not started.\n' \
+  >"$BOOM_REPO/dev/plans/runs/STATUS-0.8.82.md"
+write_state "$BOOM_REPO" 0.8.82 '[]' '[{"slice": 5, "status": "NOT_STARTED"}]' '[5, 40]'
+commit_all "$BOOM_REPO" 'fixture: initial commit'
+git -C "$BOOM_REPO" checkout -q -b slice-5-fixture
+printf 'work\n' >"$BOOM_REPO/src/slice5.txt"
+commit_all "$BOOM_REPO" 'feat: slice 5 work'
+git -C "$BOOM_REPO" checkout -q main
+git -C "$BOOM_REPO" merge -q --no-ff -m 'merge(0.8.82): Slice 5 — fixture land' slice-5-fixture
+BM_SHORT="$(git -C "$BOOM_REPO" rev-parse HEAD)"; BM_SHORT="${BM_SHORT:0:8}"
+{
+  printf '# STATUS — 0.8.82 fixture\n\n'
+  printf '| Slice | Title | Depends-on | Status |\n'
+  printf '|------:|-------|-----------|--------|\n'
+  printf '| 5 | fixture slice | \xff | **COMPLETE — LANDED `%s`** |\n' "$BM_SHORT"
+  printf '| 40 | fixture tail | 5 | not started |\n\n'
+  printf '**Ladder remaining: 40 alone**, then the HITL publish gate.\n'
+} >"$BOOM_REPO/dev/plans/runs/STATUS-0.8.82.md"
+write_state "$BOOM_REPO" 0.8.82 '[5]' \
+  "$(printf '[{"slice": 5, "status": "LANDED", "sha": "%s"}, {"slice": 40, "status": "NOT_STARTED"}]' "$BM_SHORT")" \
+  '[40]'
+commit_all "$BOOM_REPO" "docs: stamp STATUS-0.8.82 Slice 5 LANDED $BM_SHORT"
+
 run_checker() {
   local dir="$1" checker="${2:-$CHECKER}"
   set +e
@@ -944,6 +1171,128 @@ else
   fail "expected the failure to quote both offending raw values (30 and 30.0); got: $OUT"
 fi
 
+# --- Arm 18 (fix-2 Finding A RECURRENCE): a landed slice whose ladder entry
+# carries NO `sha` must HARD-fail, not silently disable check (c).
+# Pre-fix: rc=0 — `(by_slice.get(key) or {}).get("sha")` is None and
+# `if sha and sha not in status:` never runs.
+run_checker "$NOSHA_REPO"
+if [ "$RC" -ne 0 ]; then
+  pass "fix-2 A: a slice in \`landed\` whose ladder entry has no \`sha\` HARD-fails"
+else
+  fail "fix-2 A RECURRENCE: release-state-0.8.86.json lists Slice 5 in \`landed\` with no \`sha\`, so the SHA-row check (c) was a NO-OP and the gate exited 0; out: $OUT"
+fi
+if printf '%s' "$OUT" | grep -q 'TC-133'; then
+  pass "fix-2 A: the missing-sha failure is attributed to the cross-read (TC-133)"
+else
+  fail "expected the missing-sha failure to name TC-133; got: $OUT"
+fi
+if printf '%s' "$OUT" | grep -q 'Slice 5'; then
+  pass "fix-2 A: the missing-sha failure names the incomplete slice (5)"
+else
+  fail "expected the missing-sha failure to name Slice 5; got: $OUT"
+fi
+# ANTI-VACUITY: every OTHER cross-read predicate must have passed on this
+# fixture — the board row is current, cites the real landing SHA, and the
+# remaining-ladder claim agrees. If the red came from the marker regex, the
+# absent-row check or the SHA-presence predicate, this arm would prove nothing.
+for wrong_reason in 'still describes it as' 'has NO row for it' 'is not referenced anywhere' 'remaining_ladder'; do
+  if printf '%s' "$OUT" | grep -q "$wrong_reason"; then
+    fail "fix-2 A anti-vacuity: the red came from '$wrong_reason', not from the ladder-sha completeness check; out: $OUT"
+  else
+    pass "fix-2 A anti-vacuity: '$wrong_reason' did not fire — the red is the ladder-sha completeness check's"
+  fi
+done
+
+# --- Arm 19 (fix-2 Finding A RECURRENCE): a landed slice with NO ladder entry
+# at all. Same no-op, one rung further out. Pre-fix: rc=0.
+run_checker "$NOENTRY_REPO"
+if [ "$RC" -ne 0 ]; then
+  pass "fix-2 A: a slice in \`landed\` with no ladder entry at all HARD-fails"
+else
+  fail "fix-2 A RECURRENCE: release-state-0.8.85.json lists Slice 5 in \`landed\` but its ladder has no entry for it, and the gate exited 0; out: $OUT"
+fi
+# Deliberately NOT a bare `grep -q ladder`: the cross-read's own PASSING summary
+# line contains the word "remaining_ladder", so a bare match is vacuously green
+# on the unfixed checker and would prove nothing.
+if printf '%s' "$OUT" | grep -q 'STALE.*Slice 5.*carries no ladder entry'; then
+  pass "fix-2 A: the missing-entry failure names Slice 5 and the absent ladder entry"
+else
+  fail "expected a STALE line naming Slice 5 and its absent ladder entry; got: $OUT"
+fi
+# ANTI-VACUITY: the BOARD carries a row for Slice 5, so the pre-existing
+# "has NO row for it" predicate must NOT be what makes this arm red.
+if printf '%s' "$OUT" | grep -q 'has NO row for it'; then
+  fail "fix-2 A anti-vacuity: the board DOES carry a row for Slice 5 — this red must be the state file's missing ladder entry; out: $OUT"
+else
+  pass "fix-2 A anti-vacuity: the board-row predicate did not fire; the red is the state file's"
+fi
+
+# --- Arm 20 (fix-2 Finding B RECURRENCE): `landed` present but of the WRONG
+# TYPE. The checker's rc is 1 both before and after (the traceback exits 1), so
+# THE RC PROVES NOTHING HERE — the RED-first proof is the MESSAGE assertion: the
+# diagnostic must carry the `STALE` prefix that `preflight.sh --landing`
+# promotes to a HARD failure, and pre-fix it is a bare Python traceback.
+run_checker "$BADTYPE_REPO"
+if [ "$RC" -ne 0 ]; then
+  pass "fix-2 B: a wrong-typed \`landed\` does not let the checker exit 0"
+else
+  fail "a wrong-typed \`landed\` must not pass; got rc=0, out: $OUT"
+fi
+if printf '%s' "$OUT" | grep -q '^STALE'; then
+  pass "fix-2 B: the wrong-type diagnostic carries the STALE prefix preflight promotes to HARD"
+else
+  fail "fix-2 B RECURRENCE: a wrong-typed \`landed\` produced an UNPREFIXED diagnostic (a raw traceback), which preflight --landing downgrades to INFO; out: $OUT"
+fi
+if printf '%s' "$OUT" | grep -q 'not a JSON array'; then
+  pass "fix-2 B: the diagnostic says which key had which wrong type"
+else
+  fail "expected a diagnostic naming the wrong type (not a JSON array); got: $OUT"
+fi
+if printf '%s' "$OUT" | grep -q 'Traceback (most recent call last)'; then
+  fail "fix-2 B: the checker still emitted a raw Python traceback for a malformed state file; out: $OUT"
+else
+  pass "fix-2 B: a malformed state file is reported, not tracebacked"
+fi
+
+# --- Arm 21 (fix-2 Finding B RECURRENCE): `ladder` is a list of NUMBERS. The
+# QUIET half — no exception at all, the non-object entries were silently dropped
+# and check (c) then went no-op via Finding A's construct.
+# Pre-fix: rc=0, a malformed state file CERTIFIED.
+run_checker "$BADLADDER_REPO"
+if [ "$RC" -ne 0 ]; then
+  pass "fix-2 B: a \`ladder\` that is not a list of objects HARD-fails"
+else
+  fail "fix-2 B RECURRENCE: release-state-0.8.83.json's ladder is [5, 40] (numbers); every entry was silently dropped, check (c) went no-op, and the gate CERTIFIED the malformed file with rc=0; out: $OUT"
+fi
+if printf '%s' "$OUT" | grep -q 'not a JSON object'; then
+  pass "fix-2 B: the diagnostic names the ladder entry that is not an object"
+else
+  fail "expected a diagnostic naming the non-object ladder entry; got: $OUT"
+fi
+if printf '%s' "$OUT" | grep -q '^STALE'; then
+  pass "fix-2 B: the non-object-ladder diagnostic carries the STALE prefix"
+else
+  fail "fix-2 B: the non-object-ladder diagnostic must carry the STALE prefix; got: $OUT"
+fi
+
+# --- Arm 22a (fix-2 Finding B, the GENERAL fail-open — CHECKER HALF) ----------
+# PREMISE PIN, green before AND after: for an UNEXPECTED exception the checker
+# exits non-zero with NO `STALE` line. That is the checker behaving correctly —
+# it refuses to vouch — and it is precisely the input on which preflight's §7
+# used to fail open. This arm exists to keep that premise true, so that Arm 22b
+# below is testing what it claims to test. It is NOT a recurrence arm.
+run_checker "$BOOM_REPO"
+if [ "$RC" -ne 0 ]; then
+  pass "fix-2 B premise: an unexpected exception in the cross-read exits the checker non-zero"
+else
+  fail "an unexpected exception must not let the checker exit 0; got rc=0, out: $OUT"
+fi
+if printf '%s' "$OUT" | grep -q '^STALE'; then
+  fail "fix-2 B premise BROKEN: this fixture is supposed to produce an UNPREFIXED failure — re-choose the fixture, Arm 22b is no longer testing the general fail-open; out: $OUT"
+else
+  pass "fix-2 B premise: the unexpected-exception failure carries NO STALE prefix (so only the caller can save the land)"
+fi
+
 # ============================ preflight.sh --landing ============================
 # These arms are the RED-first proof: against the UNMODIFIED preflight.sh they
 # demonstrate the gap (stale board incorrectly clears landing); after the gate
@@ -1042,6 +1391,101 @@ if printf '%s' "$OUT" | grep -q 'board-currency.*TC-133'; then
   pass "--landing surfaces the board/state contradiction as a board-currency HARD fail"
 else
   fail "expected a board-currency HARD line naming TC-133; got: $OUT"
+fi
+
+# ============ fix-2 Finding B — THE FAIL-OPEN IN THE LANDING GATE =============
+# These are the load-bearing arms of fix-2. Everything above grades the CHECKER;
+# these grade the LANDING GATE, which is where the fail-open lived: §7 of
+# preflight.sh promoted only `STALE*` lines to HARD and turned every other line
+# into INFO, so a non-zero rc carrying no STALE line was silently DOWNGRADED and
+# the tree was certified for landing.
+#
+# [DETERMINE] — WHERE THE GENERAL FIX BELONGS. Two candidates were weighed and
+# the choice was made BY EXECUTION, not assertion:
+#   (i)  catch-and-re-emit inside check-board-currency.sh's embedded Python.
+#        REJECTED. Measured: it cannot cover the failures that are NOT raised
+#        inside that Python. `bash scripts/check-board-currency.sh --tip nosuch`
+#        exits 2 printing `check-board-currency: --tip ... does not resolve`; an
+#        unknown arg exits 2 the same way; and the script runs under
+#        `set -euo pipefail` after sourcing scripts/lib/board-closed.sh, so a
+#        missing/broken lib, a failing `git log`, or any future bash-level check
+#        aborts it with no STALE line at all. A Python-level catch leaves every
+#        one of those still downgraded to INFO. It closes the INSTANCE, not the
+#        CLASS codex named.
+#   (ii) harden preflight.sh §7 so a NON-ZERO EXIT is HARD regardless of what
+#        was printed. CHOSEN. It is the more robust invariant, and its blast
+#        radius is in fact the SMALLER of the two: it is additive, it can only
+#        fire on a run that is ALREADY non-zero, and it therefore cannot turn a
+#        green land red. It is also not a new idiom — §8 (ledger-integrity),
+#        §9 (governed-surface-pin), §10 (c1-conformance) and §11
+#        (transcript-hygiene) ALL already carry exactly this anti-fail-open
+#        guard. §7 was the ONE landing sub-gate missing it, because it predates
+#        the idiom. So this REMOVES AN ASYMMETRY rather than inventing an
+#        invariant. (CI needs nothing: the board-currency job fails on any
+#        non-zero exit already; preflight was the only downgrader.)
+# Arms 22b and 22c are the required execution proof: (i) a fixture that fails
+# the cross-read WITH a prefixed diagnostic, and (ii) one that raises an
+# unexpected exception. Both must HARD-fail `--landing`.
+
+# --- Arm 22b (fix-2 Finding B, PREFIXED diagnostic through the real caller) ---
+# A wrong-typed `landed`. Post-fix the checker emits a `STALE` line, so this
+# lands as a HARD via the normal §7 path — proving the type validation's
+# diagnostic really does carry a prefix preflight PROMOTES.
+# ⚠ RED-FIRST PROOF: pre-fix `--landing` exits **0** here. The checker exited 1,
+# every traceback line became INFO, and the land was CERTIFIED.
+BADTYPE_LINKED="$TMPROOT/bad-type-landed-linked"
+git -C "$BADTYPE_REPO" worktree add -q -b bad-type-landing-fixture "$BADTYPE_LINKED" >/dev/null 2>&1
+run_preflight "$BADTYPE_LINKED" --landing
+if [ "$RC" -ne 0 ]; then
+  pass "fix-2 B: --landing HARD-fails on a wrong-typed release-state file"
+else
+  fail "fix-2 B RECURRENCE (THE FAIL-OPEN): check-board-currency.sh exited non-zero on a malformed state file, preflight downgraded every line to INFO, and --landing CERTIFIED the tree with rc=0; out: $OUT"
+fi
+if printf '%s' "$OUT" | grep -qE '^HARD +board-currency: STALE'; then
+  pass "fix-2 B: the wrong-type failure arrives as a HARD board-currency line, not INFO"
+else
+  fail "expected a 'HARD board-currency: STALE ...' line; got: $OUT"
+fi
+
+# --- Arm 22c (fix-2 Finding B, the GENERAL fail-open through the real caller) -
+# An UNEXPECTED exception — nothing this fix-round validates touches this
+# fixture, and the checker still emits NO STALE line (pinned by Arm 22a). The
+# land must STILL be hard-blocked. This is the arm that discriminates between
+# the two [DETERMINE] loci: a Python-level catch-and-re-emit could be made to
+# pass this ONE case, but only by anticipating the exception — the invariant
+# under test is that an UNANTICIPATED failure blocks the land on the strength of
+# the exit code alone.
+# ⚠ RED-FIRST PROOF: pre-fix `--landing` exits **0** here.
+BOOM_LINKED="$TMPROOT/unexpected-exception-linked"
+git -C "$BOOM_REPO" worktree add -q -b boom-landing-fixture "$BOOM_LINKED" >/dev/null 2>&1
+run_preflight "$BOOM_LINKED" --landing
+if [ "$RC" -ne 0 ]; then
+  pass "fix-2 B: --landing HARD-fails when the cross-read dies with an UNPREFIXED, unanticipated failure"
+else
+  fail "fix-2 B RECURRENCE (THE GENERAL FAIL-OPEN): check-board-currency.sh exited non-zero with a bare traceback and --landing certified the tree anyway with rc=0; out: $OUT"
+fi
+if printf '%s' "$OUT" | grep -q 'without reporting a specific'; then
+  pass "fix-2 B: the anti-fail-open guard names itself (checker exited N without a specific defect)"
+else
+  fail "expected the anti-fail-open guard's 'without reporting a specific ...' HARD line; got: $OUT"
+fi
+
+# --- Arm 22d (fix-2 Finding B REGRESSION GUARD, NOT a recurrence arm) ---------
+# The anti-fail-open guard must fire ONLY on a non-zero rc. A tree whose board
+# is current still clears landing, and a tree whose board is genuinely STALE
+# still fails with its OWN diagnostic rather than the generic guard line — if
+# the generic line appeared there, the guard would be masking real diagnostics.
+run_preflight "$CURRENT_LINKED" --landing
+if [ "$RC" -eq 0 ]; then
+  pass "fix-2 B regression guard: the anti-fail-open guard does not fire on a green board-currency run"
+else
+  fail "fix-2 B must not redden a current board; got rc=$RC, out: $OUT"
+fi
+run_preflight "$STALE_LINKED" --landing
+if printf '%s' "$OUT" | grep -q 'without reporting a specific'; then
+  fail "fix-2 B: the generic anti-fail-open line fired on a run that DID report a specific STALE defect — it is masking the real diagnostic; out: $OUT"
+else
+  pass "fix-2 B regression guard: a run with a real STALE diagnostic does not also emit the generic guard line"
 fi
 
 if [ "$FAILED" -gt 0 ]; then
