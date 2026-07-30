@@ -504,6 +504,28 @@ license-consistency guard.
 **Then Slice 40 (`R-20-PUB`)** prepares the publish and **STOPS before any tag**. Publish itself remains
 the single unruled HITL decision.
 
+**Slice 40 additionally carries the DISPATCH GUARD** (HITL 2026-07-30, steward `seq-198` ruling 1).
+`.github/workflows/release.yml` must be hardened so a `workflow_dispatch` with `dry_run=false` **cannot
+publish on one unchecked checkbox**: add a **required confirmation input whose value must literally match
+the version being released**, and make `scripts/verify-release-gates.sh` **exit 1 — not warn** — when a
+dispatch has `dry_run=false` without it. Measured at HEAD: the only thing guarding that path is the
+`dispatch with dry_run=false is an emergency-republish path` warning in `scripts/verify-release-gates.sh`
+(lines 58-61 at the time of the ruling), which **prints and continues**, **and the whole tag-format branch
+is skipped on dispatch** — so the real publish step, the no-dry-run arm
+`bash scripts/release/cargo-publish-if-new.sh fathomdb-embedder-api` in `.github/workflows/release.yml`
+(line 261 at the time of the ruling), is reachable **with no tag at all**. Per the standing rule, this is
+fixed in the repo rather than in brief wording.
+**Slice 40 remains the only slice permitted to touch `.github/` this release.**
+
+⚠ **crates.io `categories` is OUT OF 0.8.20** (`seq-198` ruling 2). Registry **`keywords` STAY in 0.8.20**,
+because `cargo package` validates them **locally** (max 5, each ≤ 20 chars); **`categories` slugs are
+validated SERVER-SIDE ONLY at the real publish**, **mid-tier**, after earlier crates have already uploaded
+**immutably** — the **v0.8.9 partial-publish shape**. `categories` is **re-entered at 0.8.21** (odd ⇒ OOB,
+label-only) so the metadata is ready for the **0.8.22** publish. *Steward note: `seq-198` does not say which
+slice owns the `keywords` edit, and neither Slice 39's deliverables above nor `R-20-PUB` names registry
+metadata today — the ruling drops `categories` from a scope that lived only in the draft Slice-39 brief. If
+`keywords` are to ship at 0.8.20 the owning slice must be named explicitly.*
+
 ---
 
 ### Historical — the landed slices this section used to point at
