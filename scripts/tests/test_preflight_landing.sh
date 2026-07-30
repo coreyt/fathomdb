@@ -269,6 +269,104 @@ else
   fail "hostile-config fixture: primary MUST fail; got rc=0, out: $OUT"
 fi
 
+# --- SLICE-ID-HARDENING: fractional-slice-id plan fixtures --------------------
+# The --expect-closed gate (preflight.sh §5) exists to refuse a spawn whose
+# declared dependency never closed. Two independent ways it said yes anyway:
+#
+#   site 4 — the trailing `[^0-9]` matches the `.` in `Slice 39.5`, so ONE
+#            UNIT'S CLOSED WITNESS SATISFIES ANOTHER'S: `--expect-closed 39` is
+#            cleared by a plan that only ever closed Slice 39.5.
+#   [DETERMINE] duty 1 — `${EXPECT_CLOSED}` is interpolated UNESCAPED into an
+#            ERE, so with `--expect-closed 39.5` the `.` is a WILDCARD and a
+#            plan line reading `Slice 39x5 … CLOSED` clears the gate.
+#
+# These are separately reachable and a fix for one does not fix the other —
+# measured, not reasoned: tightening the trailing class alone still clears
+# `Slice 39x5`, and escaping the value alone still clears `Slice 39.5` for
+# `--expect-closed 39`. Both classes get their own arms, and the alternation has
+# TWO alternatives (`Slice…CLOSED` and `CLOSED…Slice`) which are NOT symmetric —
+# the first ends `[^0-9]`, the second `([^0-9]|$)` — so both are graded.
+#
+# Fixtures live outside the fixture repo (absolute --plan paths) so they cannot
+# dirty it. Fractional ids in throwaway fixtures are IN scope; the prohibition
+# on fractional ids applies to real state, the ladder and the board.
+PLANS="$TMPROOT/plans"
+mkdir -p "$PLANS"
+# ONLY Slice 39.5 is CLOSED. Slice 39 has NO closed witness anywhere.
+printf '# fixture plan\n\n- Slice 39.5 — collect-all harness: CLOSED\n' \
+  >"$PLANS/frac-alt1.md"
+printf '# fixture plan\n\n- CLOSED — Slice 39.5 collect-all harness\n' \
+  >"$PLANS/frac-alt2.md"
+# ONLY a regex-wildcard near-miss. No real Slice 39.5 witness anywhere.
+printf '# fixture plan\n\n- Slice 39x5 — collect-all harness: CLOSED\n' \
+  >"$PLANS/wildcard-alt1.md"
+printf '# fixture plan\n\n- CLOSED — Slice 39x5 collect-all harness\n' \
+  >"$PLANS/wildcard-alt2.md"
+# True positives that must keep clearing the gate.
+printf '# fixture plan\n\n- Slice 39 — TC-86 redact: CLOSED\n' >"$PLANS/true-int.md"
+# A legitimate sentence-final period after an integer id. This is the control
+# that rules OUT the naive fix: swapping the trailing `[^0-9]` for `[^0-9.]`
+# closes site 4 but makes THIS line stop matching — a new false negative in a
+# gate whose failure mode is refusing to spawn. Measured before the fix landed.
+printf '# fixture plan\n\n- CLOSED — Slice 39.\n' >"$PLANS/int-trailing-period.md"
+
+# --- Arm 9 (site 4): a FRACTIONAL neighbour's CLOSED witness must NOT satisfy
+# the INTEGER dependency. RED-first: pre-fix both of these exit 0 ("ok
+# dependency Slice/Phase 39 has a CLOSED witness") on a plan in which Slice 39
+# was never closed at all.
+for alt in alt1 alt2; do
+  run_preflight "$LINKED" --expect-closed 39 --plan "$PLANS/frac-$alt.md"
+  if [ "$RC" -ne 0 ]; then
+    pass "site 4 ($alt): 'Slice 39.5 … CLOSED' does not satisfy --expect-closed 39"
+  else
+    fail "site 4 RECURRENCE ($alt): Slice 39.5's CLOSED witness cleared --expect-closed 39; got rc=0, out: $OUT"
+  fi
+  if printf '%s' "$OUT" | grep -q "^HARD .*Slice/Phase 39 has NO 'CLOSED' block"; then
+    pass "site 4 ($alt): the refusal names the dependency that is not closed"
+  else
+    fail "expected a HARD line naming Slice/Phase 39 as not CLOSED; got: $OUT"
+  fi
+done
+
+# --- Arm 10 ([DETERMINE] duty 1): the interpolated value must be ESCAPED, so
+# the `.` in `39.5` cannot act as a regex wildcard. RED-first: pre-fix both of
+# these exit 0 on a plan whose only witness is the impostor `Slice 39x5`.
+for alt in alt1 alt2; do
+  run_preflight "$LINKED" --expect-closed 39.5 --plan "$PLANS/wildcard-$alt.md"
+  if [ "$RC" -ne 0 ]; then
+    pass "duty 1 ($alt): 'Slice 39x5 … CLOSED' does not satisfy --expect-closed 39.5 (dot is not a wildcard)"
+  else
+    fail "duty 1 RECURRENCE ($alt): the unescaped '.' matched 'x'; got rc=0, out: $OUT"
+  fi
+  if printf '%s' "$OUT" | grep -q "^HARD .*Slice/Phase 39.5 has NO 'CLOSED' block"; then
+    pass "duty 1 ($alt): the refusal names the dependency that is not closed"
+  else
+    fail "expected a HARD line naming Slice/Phase 39.5 as not CLOSED; got: $OUT"
+  fi
+done
+
+# --- Arm 11 (regression guards, NOT recurrence arms): the true positives must
+# keep clearing. Without these, a fix that simply never matches would pass every
+# arm above.
+run_preflight "$LINKED" --expect-closed 39.5 --plan "$PLANS/frac-alt1.md"
+if [ "$RC" -eq 0 ]; then
+  pass "regression guard: a REAL 'Slice 39.5 … CLOSED' witness satisfies --expect-closed 39.5"
+else
+  fail "a genuine fractional CLOSED witness must clear the gate; got rc=$RC, out: $OUT"
+fi
+run_preflight "$LINKED" --expect-closed 39 --plan "$PLANS/true-int.md"
+if [ "$RC" -eq 0 ]; then
+  pass "regression guard: 'Slice 39 … CLOSED' still satisfies --expect-closed 39"
+else
+  fail "an integer CLOSED witness must still clear the gate; got rc=$RC, out: $OUT"
+fi
+run_preflight "$LINKED" --expect-closed 39 --plan "$PLANS/int-trailing-period.md"
+if [ "$RC" -eq 0 ]; then
+  pass "control: a sentence-final 'CLOSED — Slice 39.' still satisfies --expect-closed 39 (rules out the naive [^0-9.] fix)"
+else
+  fail "the naive trailing-class fix regressed a legitimate 'Slice 39.' witness; got rc=$RC, out: $OUT"
+fi
+
 if [ "$FAILED" -gt 0 ]; then
   printf '\n%d test(s) failed\n' "$FAILED" >&2
   exit 1

@@ -219,6 +219,113 @@ commit_all "$NOMATCH_REPO" 'feat: ordinary commit, not a landing merge'
 printf 'even more\n' >>"$NOMATCH_REPO/src/plain.txt"
 commit_all "$NOMATCH_REPO" 'chore: another ordinary commit'
 
+# --- Fixture F (SLICE-ID-HARDENING site 1): FRACTIONAL slice id, collision -----
+# The integer-only capture `Slice[-[:space:]]([0-9]+)` reads `Slice 39.5` as
+# `39`. Because `git log` is newest-first, the NEWER 39.5 merge is processed
+# FIRST and sets SEEN_SLICE[39]; the older, genuinely-distinct `Slice 39` merge
+# is then swallowed by the "superseded intermediate" branch and ITS SHA CHECK
+# NEVER RUNS. The board below cites 39.5's SHA and deliberately NOT 39's, so a
+# correct gate must flag Slice 39 as stale.
+#
+# ⚠ THIS CANNOT BE REPRODUCED AGAINST REAL REPO HISTORY. `release-state-0.8.20.json`
+# carries no fractional id and no `merge(0.8.20): Slice N` subject exists for 39
+# (Slice 39 fast-forwarded at 91db34d8). The harm is PROSPECTIVE, so the arm is
+# built here, in a throwaway fixture. Fractional ids are IN scope for fixtures
+# and OUT of scope for real state, the ladder and the board.
+#
+# ⚠ COMMIT ORDER IS LOAD-BEARING: the 39.5 merge MUST be the NEWER commit. Land
+# them the other way round and SEEN_SLICE[39] is set by the real Slice 39 merge,
+# the collision never fires, and the arm silently proves nothing.
+#
+# Uses release 0.8.96 so its merge subjects cannot collide with any other fixture.
+FRACTIONAL_REPO="$TMPROOT/fractional"
+init_repo "$FRACTIONAL_REPO"
+mkdir -p "$FRACTIONAL_REPO/dev/plans/runs" "$FRACTIONAL_REPO/src" "$FRACTIONAL_REPO/scripts"
+printf 'fixture\n' >"$FRACTIONAL_REPO/src/keep.txt"
+printf '# STATUS — 0.8.96 fixture\n\nSlice 39: not started.\nSlice 39.5: not started.\n' \
+  >"$FRACTIONAL_REPO/dev/plans/runs/STATUS-0.8.96.md"
+commit_all "$FRACTIONAL_REPO" 'fixture: initial commit'
+# OLDER land: the integer slice.
+git -C "$FRACTIONAL_REPO" checkout -q -b slice-39-fixture
+printf 'work 39\n' >"$FRACTIONAL_REPO/src/slice39.txt"
+commit_all "$FRACTIONAL_REPO" 'feat: slice 39 work'
+git -C "$FRACTIONAL_REPO" checkout -q main
+git -C "$FRACTIONAL_REPO" merge -q --no-ff -m 'merge(0.8.96): Slice 39 — fixture integer land' slice-39-fixture
+FRAC_39_SHA="$(git -C "$FRACTIONAL_REPO" rev-parse HEAD)"
+FRAC_39_SHORT="${FRAC_39_SHA:0:8}"
+# NEWER land: the fractional slice. Processed FIRST by the newest-first walk.
+git -C "$FRACTIONAL_REPO" checkout -q -b slice-39-5-fixture
+printf 'work 39.5\n' >"$FRACTIONAL_REPO/src/slice39_5.txt"
+commit_all "$FRACTIONAL_REPO" 'feat: slice 39.5 work'
+git -C "$FRACTIONAL_REPO" checkout -q main
+git -C "$FRACTIONAL_REPO" merge -q --no-ff -m 'merge(0.8.96): Slice 39.5 — fixture fractional land' slice-39-5-fixture
+FRAC_395_SHA="$(git -C "$FRACTIONAL_REPO" rev-parse HEAD)"
+FRAC_395_SHORT="${FRAC_395_SHA:0:8}"
+# Board cites ONLY the fractional land. Slice 39's SHA is deliberately absent —
+# that is the contradiction the gate must catch and, pre-fix, silently did not.
+printf '# STATUS — 0.8.96 fixture\n\nSlice 39: not started.\nSlice 39.5: **LANDED %s**.\n' "$FRAC_395_SHORT" \
+  >"$FRACTIONAL_REPO/dev/plans/runs/STATUS-0.8.96.md"
+commit_all "$FRACTIONAL_REPO" "docs: stamp STATUS-0.8.96 Slice 39.5 LANDED $FRAC_395_SHORT"
+
+# --- Fixture G (SLICE-ID-HARDENING, the FABRICATED POINTER) --------------------
+# Same truncation, different visible consequence: here the board DOES cite the
+# integer Slice 39's land but NOT the fractional 39.5's, so the gate correctly
+# fails either way — and the defect is in WHAT IT PRINTS. Pre-fix the STALE line
+# reports 39.5's SHA under the label `Slice 39`: the gate emitting its own
+# fabricated pointer, which is the incident class this unit was ruled over.
+# Release 0.8.95, again to avoid cross-fixture subject collisions.
+FABRICATED_REPO="$TMPROOT/fabricated"
+init_repo "$FABRICATED_REPO"
+mkdir -p "$FABRICATED_REPO/dev/plans/runs" "$FABRICATED_REPO/src" "$FABRICATED_REPO/scripts"
+printf 'fixture\n' >"$FABRICATED_REPO/src/keep.txt"
+printf '# STATUS — 0.8.95 fixture\n\nSlice 39: not started.\n' \
+  >"$FABRICATED_REPO/dev/plans/runs/STATUS-0.8.95.md"
+commit_all "$FABRICATED_REPO" 'fixture: initial commit'
+git -C "$FABRICATED_REPO" checkout -q -b slice-39-fixture
+printf 'work 39\n' >"$FABRICATED_REPO/src/slice39.txt"
+commit_all "$FABRICATED_REPO" 'feat: slice 39 work'
+git -C "$FABRICATED_REPO" checkout -q main
+git -C "$FABRICATED_REPO" merge -q --no-ff -m 'merge(0.8.95): Slice 39 — fixture integer land' slice-39-fixture
+FAB_39_SHA="$(git -C "$FABRICATED_REPO" rev-parse HEAD)"
+FAB_39_SHORT="${FAB_39_SHA:0:8}"
+printf '# STATUS — 0.8.95 fixture\n\nSlice 39: **LANDED %s**.\n' "$FAB_39_SHORT" \
+  >"$FABRICATED_REPO/dev/plans/runs/STATUS-0.8.95.md"
+commit_all "$FABRICATED_REPO" "docs: stamp STATUS-0.8.95 Slice 39 LANDED $FAB_39_SHORT"
+git -C "$FABRICATED_REPO" checkout -q -b slice-39-5-fixture
+printf 'work 39.5\n' >"$FABRICATED_REPO/src/slice39_5.txt"
+commit_all "$FABRICATED_REPO" 'feat: slice 39.5 work'
+git -C "$FABRICATED_REPO" checkout -q main
+git -C "$FABRICATED_REPO" merge -q --no-ff -m 'merge(0.8.95): Slice 39.5 — fixture fractional land' slice-39-5-fixture
+FAB_395_SHA="$(git -C "$FABRICATED_REPO" rev-parse HEAD)"
+FAB_395_SHORT="${FAB_395_SHA:0:8}"
+# Board deliberately NOT restamped for 39.5.
+
+# --- Fixture H (SLICE-ID-HARDENING regression guard): fractional board CURRENT -
+# Both lands cited. Must exit 0 before AND after the fix — this arm is a
+# regression guard, NOT a recurrence arm, and is labelled as such below.
+FRAC_OK_REPO="$TMPROOT/fractional-ok"
+init_repo "$FRAC_OK_REPO"
+mkdir -p "$FRAC_OK_REPO/dev/plans/runs" "$FRAC_OK_REPO/src" "$FRAC_OK_REPO/scripts"
+printf 'fixture\n' >"$FRAC_OK_REPO/src/keep.txt"
+printf '# STATUS — 0.8.94 fixture\n\nSlice 39: not started.\n' \
+  >"$FRAC_OK_REPO/dev/plans/runs/STATUS-0.8.94.md"
+commit_all "$FRAC_OK_REPO" 'fixture: initial commit'
+git -C "$FRAC_OK_REPO" checkout -q -b slice-39-fixture
+printf 'work 39\n' >"$FRAC_OK_REPO/src/slice39.txt"
+commit_all "$FRAC_OK_REPO" 'feat: slice 39 work'
+git -C "$FRAC_OK_REPO" checkout -q main
+git -C "$FRAC_OK_REPO" merge -q --no-ff -m 'merge(0.8.94): Slice 39 — fixture integer land' slice-39-fixture
+FOK_39_SHORT="$(git -C "$FRAC_OK_REPO" rev-parse HEAD)"; FOK_39_SHORT="${FOK_39_SHORT:0:8}"
+git -C "$FRAC_OK_REPO" checkout -q -b slice-39-5-fixture
+printf 'work 39.5\n' >"$FRAC_OK_REPO/src/slice39_5.txt"
+commit_all "$FRAC_OK_REPO" 'feat: slice 39.5 work'
+git -C "$FRAC_OK_REPO" checkout -q main
+git -C "$FRAC_OK_REPO" merge -q --no-ff -m 'merge(0.8.94): Slice 39.5 — fixture fractional land' slice-39-5-fixture
+FOK_395_SHORT="$(git -C "$FRAC_OK_REPO" rev-parse HEAD)"; FOK_395_SHORT="${FOK_395_SHORT:0:8}"
+printf '# STATUS — 0.8.94 fixture\n\nSlice 39: **LANDED %s**.\nSlice 39.5: **LANDED %s**.\n' \
+  "$FOK_39_SHORT" "$FOK_395_SHORT" >"$FRAC_OK_REPO/dev/plans/runs/STATUS-0.8.94.md"
+commit_all "$FRAC_OK_REPO" 'docs: stamp STATUS-0.8.94 both lands'
+
 run_checker() {
   local dir="$1" checker="${2:-$CHECKER}"
   set +e
@@ -318,6 +425,63 @@ else
   fail "fix-1 must not fail a multi-slice board with real matched lands; got rc=$RC, out: $OUT"
 fi
 
+# --- Arm 9 (SLICE-ID-HARDENING site 1): fractional id must not COLLIDE with its
+# integer neighbour and swallow that neighbour's SHA check.
+# RED-first proof: against the unfixed `([0-9]+)` capture this fixture exits 0
+# (`Slice 39.5` -> `39` -> SEEN_SLICE[39] -> the real `Slice 39` merge is
+# discarded as a "superseded intermediate"), so the gate silently vouches for a
+# board that never cites Slice 39's landing commit.
+run_checker "$FRACTIONAL_REPO"
+if [ "$RC" -ne 0 ]; then
+  pass "site 1: a fractional slice id does not swallow its integer neighbour's SHA check"
+else
+  fail "site 1 RECURRENCE: Slice 39.5 collided onto SEEN_SLICE[39] and Slice 39's stale SHA went unchecked; got rc=0, out: $OUT"
+fi
+if printf '%s' "$OUT" | grep -q "STALE.*Slice 39: landing commit ${FRAC_39_SHORT}"; then
+  pass "site 1: the un-cited INTEGER land (Slice 39) is named with its own SHA"
+else
+  fail "expected a STALE line 'Slice 39: landing commit $FRAC_39_SHORT'; got: $OUT"
+fi
+# ANTI-VACUITY: the fractional land IS cited by the board, so it must NOT be
+# flagged. If both were flagged the arm above could pass for the wrong reason.
+if printf '%s' "$OUT" | grep -q "landing commit ${FRAC_395_SHORT}"; then
+  fail "the CITED fractional land ($FRAC_395_SHORT) must not be flagged stale; out: $OUT"
+else
+  pass "site 1 anti-vacuity: the cited fractional land is not flagged"
+fi
+
+# --- Arm 10 (SLICE-ID-HARDENING): the STALE diagnostic must not FABRICATE a
+# slice pointer. Pre-fix this fixture also exits non-zero — so exit code alone
+# proves nothing here — but the line it prints reads `Slice 39: landing commit
+# <39.5's sha>`, pointing the reader at the wrong unit. The RED-first proof is
+# the message assertion, not the rc.
+run_checker "$FABRICATED_REPO"
+if [ "$RC" -ne 0 ]; then
+  pass "fabricated-pointer fixture: an un-cited fractional land is still flagged"
+else
+  fail "an un-cited fractional land must be flagged; got rc=0, out: $OUT"
+fi
+if printf '%s' "$OUT" | grep -q "STALE.*Slice 39\.5: landing commit ${FAB_395_SHORT}"; then
+  pass "the STALE diagnostic names the REAL slice id (39.5), not its truncation"
+else
+  fail "FABRICATED POINTER: expected 'Slice 39.5: landing commit $FAB_395_SHORT'; got: $OUT"
+fi
+if printf '%s' "$OUT" | grep -q "Slice 39: landing commit ${FAB_395_SHORT}"; then
+  fail "FABRICATED POINTER: 39.5's SHA $FAB_395_SHORT is reported under the label 'Slice 39'; out: $OUT"
+else
+  pass "no STALE line attributes 39.5's SHA to Slice 39"
+fi
+
+# --- Arm 11 (regression guard, NOT a recurrence arm): a board that cites BOTH a
+# fractional land and its integer neighbour still exits 0. Green before and
+# after the fix; present so the fix cannot buy its red by failing everything.
+run_checker "$FRAC_OK_REPO"
+if [ "$RC" -eq 0 ]; then
+  pass "regression guard: a board citing both Slice 39 and Slice 39.5 still exits 0"
+else
+  fail "a fully-current fractional board must not be flagged; got rc=$RC, out: $OUT"
+fi
+
 # ============================ preflight.sh --landing ============================
 # These arms are the RED-first proof: against the UNMODIFIED preflight.sh they
 # demonstrate the gap (stale board incorrectly clears landing); after the gate
@@ -375,6 +539,26 @@ if printf '%s' "$OUT" | grep -q 'board-currency:'; then
   fail "board-currency check must be --landing-only; ran without --landing: $OUT"
 else
   pass "regression guard: board-currency check is inert without --landing"
+fi
+
+# --- Arm 9b (SLICE-ID-HARDENING site 1, through the REAL entry point) ----------
+# check-board-currency.sh is not usually invoked directly at land time — it runs
+# INSIDE `preflight.sh --landing` (and in the always-on CI board-currency job).
+# Five of six codex fix rounds across Slices 32/33 were defects in the
+# verification apparatus rather than the function under test, so the site-1
+# recurrence is graded through the real caller as well as directly.
+FRACTIONAL_LINKED="$TMPROOT/fractional-linked"
+git -C "$FRACTIONAL_REPO" worktree add -q -b fractional-landing-fixture "$FRACTIONAL_LINKED" >/dev/null 2>&1
+run_preflight "$FRACTIONAL_LINKED" --landing
+if [ "$RC" -ne 0 ]; then
+  pass "site 1 via the real entry point: --landing HARD-fails when a fractional id masked a stale integer land"
+else
+  fail "site 1 RECURRENCE in preflight --landing: a board missing Slice 39's SHA cleared landing; got rc=0, out: $OUT"
+fi
+if printf '%s' "$OUT" | grep -q "board-currency.*Slice 39: landing commit ${FRAC_39_SHORT}"; then
+  pass "--landing surfaces the swallowed integer land as a board-currency HARD fail"
+else
+  fail "expected a board-currency HARD line naming Slice 39 / $FRAC_39_SHORT; got: $OUT"
 fi
 
 if [ "$FAILED" -gt 0 ]; then
