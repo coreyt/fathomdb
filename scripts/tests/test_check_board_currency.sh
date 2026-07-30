@@ -571,6 +571,57 @@ write_state "$UNDERCLAIM_REPO" 0.8.88 '[5]' \
   '[39.5, 40]'
 commit_all "$UNDERCLAIM_REPO" "docs: stamp STATUS-0.8.88 Slice 5 LANDED $UC_SHORT"
 
+# --- Fixture R (TC-133 RECURRENCE, fix-1): DUPLICATE ids in the STATE file ----
+# Release 0.8.87. The BOARD is perfectly current — one row per slice, the landed
+# row cites its own landing SHA, the `Ladder remaining:` claim agrees. The defect
+# is entirely inside `release-state-0.8.87.json`: its ladder carries TWO entries
+# for the same slice, written `30` and `30.0`.
+#
+# ⚠ WHY THOSE TWO TOKENS. They are distinct JSON numbers but `slice_str` renders
+# both as "30" (and in Python `30 == 30.0` and `hash(30) == hash(30.0)`), so the
+# cross-read's `by_slice[slice_str(...)] = entry` silently kept whichever entry
+# came SECOND in the file — dict-insertion order, i.e. FILE LINE ORDER. That is
+# the exact "SILENTLY OVERWRITE" collapse this whole unit exists to end, and the
+# sibling reader of the same file, `_by_slice` in check-release-state-views.sh,
+# already REFUSES it. Two readers of one file must not disagree about what it
+# means.
+#
+# ⚠ RED-FIRST PROOF: against the UNFIXED checker this fixture exits **0**. Both
+# entries here carry the SAME sha, so the last-writer-wins map still answers the
+# (c) SHA check correctly and the gate CERTIFIES A MALFORMED STATE FILE — the
+# quiet half of the failure. (The loud half is the same shape with differing
+# shas, where the landed row is then compared against the WRONG entry's SHA.)
+# The fixture is deliberately built on the quiet half: an arm whose red comes
+# from a wrong-SHA diagnostic would also go red for reasons unrelated to the
+# duplicate, and could not distinguish "the guard fired" from "the map happened
+# to pick the other entry".
+DUPSTATE_REPO="$TMPROOT/dup-state"
+init_repo "$DUPSTATE_REPO"
+mkdir -p "$DUPSTATE_REPO/dev/plans/runs" "$DUPSTATE_REPO/src" "$DUPSTATE_REPO/scripts"
+printf 'fixture\n' >"$DUPSTATE_REPO/src/keep.txt"
+printf '# STATUS — 0.8.87 fixture\n\nSlice 30: not started.\n' \
+  >"$DUPSTATE_REPO/dev/plans/runs/STATUS-0.8.87.md"
+write_state "$DUPSTATE_REPO" 0.8.87 '[]' '[{"slice": 30, "status": "NOT_STARTED"}]' '[30, 40]'
+commit_all "$DUPSTATE_REPO" 'fixture: initial commit'
+git -C "$DUPSTATE_REPO" checkout -q -b slice-30-fixture
+printf 'work\n' >"$DUPSTATE_REPO/src/slice30.txt"
+commit_all "$DUPSTATE_REPO" 'feat: slice 30 work'
+git -C "$DUPSTATE_REPO" checkout -q main
+git -C "$DUPSTATE_REPO" merge -q --no-ff -m 'merge(0.8.87): Slice 30 — fixture land' slice-30-fixture
+DS_SHORT="$(git -C "$DUPSTATE_REPO" rev-parse HEAD)"; DS_SHORT="${DS_SHORT:0:8}"
+{
+  printf '# STATUS — 0.8.87 fixture\n\n'
+  printf '| Slice | Title | Depends-on | Status |\n'
+  printf '|------:|-------|-----------|--------|\n'
+  printf '| 30 | fixture slice | — | **COMPLETE — LANDED `%s`** |\n' "$DS_SHORT"
+  printf '| 40 | fixture tail | 30 | not started |\n\n'
+  printf '**Ladder remaining: 40 alone**, then the HITL publish gate.\n'
+} >"$DUPSTATE_REPO/dev/plans/runs/STATUS-0.8.87.md"
+write_state "$DUPSTATE_REPO" 0.8.87 '[30]' \
+  "$(printf '[{"slice": 30, "status": "LANDED", "sha": "%s"}, {"slice": 30.0, "status": "LANDED", "sha": "%s"}, {"slice": 40, "status": "NOT_STARTED"}]' "$DS_SHORT" "$DS_SHORT")" \
+  '[40]'
+commit_all "$DUPSTATE_REPO" "docs: stamp STATUS-0.8.87 Slice 30 LANDED $DS_SHORT"
+
 run_checker() {
   local dir="$1" checker="${2:-$CHECKER}"
   set +e
@@ -865,6 +916,32 @@ if printf '%s' "$OUT" | grep -q 'board/state cross-read (TC-133)'; then
   pass "TC-133 anti-vacuity: the green run really executed the cross-read (it reports itself)"
 else
   fail "the cross-read did not report itself on a passing run — it may be inert; out: $OUT"
+fi
+
+# --- Arm 17 (TC-133 RECURRENCE, fix-1): DUPLICATE slice ids in the state file --
+# The board is current in every respect; the state file's ladder carries `30` and
+# `30.0`. The cross-read's own map collapsed them onto one key and kept the LAST
+# writer, so a landed row could be reconciled against the WRONG entry's SHA —
+# while the sibling `_by_slice` in check-release-state-views.sh already refuses
+# the same collision. A present-but-malformed state file is a HARD fail (only an
+# ABSENT one is the announced skip of Arm 14).
+# Pre-fix: rc=0 (last-writer-wins; both entries carry the same sha, so nothing
+# downstream noticed and the malformed file was CERTIFIED).
+run_checker "$DUPSTATE_REPO"
+if [ "$RC" -ne 0 ]; then
+  pass "TC-133: two ladder entries resolving to the same slice id HARD-fail the cross-read"
+else
+  fail "TC-133 RECURRENCE: release-state-0.8.87.json carries BOTH \`30\` and \`30.0\`, one silently overwrote the other, and the gate exited 0; out: $OUT"
+fi
+if printf '%s' "$OUT" | grep -q 'same slice id 30'; then
+  pass "TC-133: the duplicate-id failure names the colliding slice id"
+else
+  fail "expected the failure to name the colliding slice id 30; got: $OUT"
+fi
+if printf '%s' "$OUT" | grep -q '30 and 30\.0'; then
+  pass "TC-133: the duplicate-id failure quotes BOTH raw values, so the reader can find them"
+else
+  fail "expected the failure to quote both offending raw values (30 and 30.0); got: $OUT"
 fi
 
 # ============================ preflight.sh --landing ============================
