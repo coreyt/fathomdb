@@ -217,12 +217,35 @@ if [ "$LANDING" -eq 1 ]; then
   BOARD_CHECK_OUT="$(bash "$SELF_DIR/check-board-currency.sh" --tip HEAD 2>&1)" || BOARD_CHECK_RC=$?
   BOARD_CHECK_RC="${BOARD_CHECK_RC:-0}"
   if [ "$BOARD_CHECK_RC" -ne 0 ]; then
+    BOARD_SAW_STALE=0
     while IFS= read -r line; do
       case "$line" in
-        STALE*) hard "board-currency: $line" ;;
+        STALE*) hard "board-currency: $line"; BOARD_SAW_STALE=1 ;;
         *)      info "board-currency: $line" ;;
       esac
     done <<<"$BOARD_CHECK_OUT"
+    # Anti-fail-open, as in §8/§9/§10/§11 — and §7 was the ONE landing sub-gate
+    # missing it, because it predates the idiom. A non-zero rc carrying no STALE
+    # line means the checker itself could not run, or died somewhere it did not
+    # anticipate; every such line fell through to `info` above and the tree was
+    # then CERTIFIED FOR LANDING. Measured (fix-2 finding B, arms 22b/22c in
+    # scripts/tests/test_check_board_currency.sh): a release-state file whose
+    # `landed` was a number instead of an array made the cross-read exit 1 with
+    # a bare Python traceback, and `--landing` exited 0 on that tree. So did a
+    # board carrying a byte that is not valid UTF-8. A gate that could not see
+    # its subject is exactly the case where landing on its silence is worst.
+    #
+    # THIS IS THE LOCUS, deliberately, rather than a catch-and-re-emit inside
+    # check-board-currency.sh's embedded Python. A Python-level catch can only
+    # cover what is raised INSIDE that Python; the checker also fails at the
+    # BASH level — an unresolvable `--tip` or an unknown arg exits 2, and it runs
+    # under `set -euo pipefail` after sourcing lib/board-closed.sh, so a missing
+    # lib or a failing `git log` aborts it — all with no STALE line at all. That
+    # closes the instance, not the class. This guard is additive and can only
+    # fire on a run that is ALREADY non-zero, so it cannot turn a green land red.
+    if [ "$BOARD_SAW_STALE" -eq 0 ]; then
+      hard "board-currency: check-board-currency.sh exited $BOARD_CHECK_RC without reporting a specific STALE defect — refusing to certify this tree for landing"
+    fi
   else
     ok "board-currency: live STATUS-0.8.z.md board(s) match git ancestry for this tip"
   fi

@@ -80,7 +80,10 @@
 #   (b) that row does not describe the slice with a not-started / in-flight /
 #       next marker;
 #   (c) that row cites the slice's own `ladder[].sha` — the SHA must be in the
-#       ROW, not merely in the file;
+#       ROW, not merely in the file. Its PRECONDITION is checked too (fix-2):
+#       a slice in `landed` whose `ladder` entry is missing or carries no `sha`
+#       is itself a HARD fail, because otherwise (c) would silently not run for
+#       that slice and (b), the fragile half, would be the only thing left;
 #   (d) every `Ladder remaining:` / `Remaining ladder:` claim names exactly the
 #       ids in `remaining_ladder`.
 # (c) is the load-bearing half and (b) is the fragile half — see the
@@ -93,11 +96,14 @@
 #     (TC-133) DID NOT RUN"). A hard fail would redden the gate for boards of
 #     releases that legitimately predate the single writer; a SILENT skip would
 #     rebuild the exact blind spot this step closes, so it is announced.
-#   * PRESENT BUT UNPARSEABLE (bad JSON, not an object, or missing one of
-#     `landed`/`ladder`/`remaining_ladder`) -> HARD fail. That release DOES
-#     declare a single writer and the gate cannot vouch for the board without
-#     reading it. Same failure family as the fix-1 vacuous-pass guard: never
-#     report ok by default.
+#   * PRESENT BUT UNPARSEABLE -> HARD fail. That release DOES declare a single
+#     writer and the gate cannot vouch for the board without reading it. Same
+#     failure family as the fix-1 vacuous-pass guard: never report ok by
+#     default. "Unparseable" means bad JSON, a top level that is not an object,
+#     a missing `landed`/`ladder`/`remaining_ladder`, one of those three not
+#     being a JSON array, or a `ladder` element that is not a JSON object —
+#     TYPE, not merely key presence (fix-2 finding B; see the validation below
+#     for what a key-only check let through and why it fails OPEN in preflight).
 # Both policies are covered by arms in scripts/tests/test_check_board_currency.sh.
 # ------------------------------------------------------------------------------
 #
@@ -200,6 +206,24 @@ except OSError as exc:
         "cross-read (TC-133) cannot vouch for %s" % (ver, state_path, exc, board_path))
     sys.exit(1)
 
+# VALIDATE THE TYPE, NOT JUST THE KEY (fix-2 finding B). The first draft asked
+# only `if key not in st`, which is a shape check that stops one step short: a
+# file carrying `"landed": 5` PASSED it and then detonated in the loop below as
+# a bare `TypeError: 'int' object is not iterable` — an UNPREFIXED Python
+# traceback. That mattered far beyond tidiness, because the traceback carries no
+# `STALE` prefix and preflight.sh --landing used to promote ONLY `STALE*` lines
+# to HARD (see the anti-fail-open guard now in preflight.sh section 7): the
+# cross-read's failure was DOWNGRADED TO INFO and the land was certified. Every
+# diagnostic this validation raises is re-emitted with the `STALE` prefix by the
+# handler below, which is what makes it a land-blocking failure.
+#
+# `ladder` is validated as a list of OBJECTS, not merely as a list, because the
+# `by_slice` builder below guarded itself with `isinstance(entry, dict)` and so
+# SILENTLY DROPPED every non-object entry. Measured: with `"ladder": [5, 40]`
+# the map came out EMPTY, check (c) then went no-op for every landed slice via
+# the (by_slice.get(key) or {}) construct that finding A closes, and the gate
+# CERTIFIED the malformed file with rc=0 — no exception, no diagnostic. Two
+# independent fail-opens composing into one green.
 try:
     st = json.loads(raw)
     if not isinstance(st, dict):
@@ -207,6 +231,13 @@ try:
     for key in ("landed", "ladder", "remaining_ladder"):
         if key not in st:
             raise ValueError("required key %r is absent" % key)
+        if not isinstance(st[key], list):
+            raise ValueError("required key %r is a %s, not a JSON array"
+                             % (key, type(st[key]).__name__))
+    for idx, entry in enumerate(st["ladder"]):
+        if not isinstance(entry, dict):
+            raise ValueError("ladder[%d] is a %s, not a JSON object"
+                             % (idx, type(entry).__name__))
 except Exception as exc:  # noqa: BLE001 - any malformed state is the same verdict
     err("STALE  %s: %s exists but could not be read as release state (%s) — the "
         "board/state cross-read (TC-133) cannot vouch for %s. A release that "
@@ -378,10 +409,16 @@ WHOLE_CELL_MARKERS = ("next", "next up", "up next")
 # hard fail (only an ABSENT one is the announced skip above). Exiting also stops
 # the checks below from running against a map that is known to be wrong. Every
 # duplicate is reported first, so one run names them all.
+#
+# The entries are known to be OBJECTS by the type validation above — the old
+# `isinstance(entry, dict)` guard here was silently dropping malformed ones
+# instead of reporting them (fix-2 finding B). An entry with no `slice` key is
+# still skipped, because it cannot be keyed at all; a landed slice whose entry
+# went missing that way is caught by the state-completeness check below.
 by_slice = {}
 state_dup = []
 for entry in st["ladder"]:
-    if isinstance(entry, dict) and "slice" in entry:
+    if "slice" in entry:
         key = slice_str(entry["slice"])
         if key in by_slice:
             state_dup.append((key, by_slice[key]["slice"], entry["slice"]))
@@ -399,9 +436,54 @@ for key, first, second in state_dup:
 if state_dup:
     sys.exit(1)
 
+# --- (c-pre) STATE COMPLETENESS: a landed slice MUST carry its landing SHA ----
+# fix-2 finding A. The original construct was
+#     sha = (by_slice.get(key) or {}).get("sha")
+#     if sha and sha not in status:
+# and both halves fail OPEN. When a slice is listed in `landed` but its `ladder`
+# entry is missing, or carries no `sha`, `sha` is None and check (c) — the
+# LOAD-BEARING half of this cross-read, the one that would actually have caught
+# the real Slice 39 incident — silently DOES NOT RUN for that slice. The gate
+# then certifies the hand-written row on the strength of the marker regex (b)
+# alone, which its own comment above calls the fragile half. That is precisely
+# the state-file INCOMPLETENESS this step was added to catch, so it is reported
+# rather than tolerated: `landed` and `ladder[].sha` are two halves of one fact
+# and a release whose single writer has only one of them cannot be vouched for.
+#
+# MEASURED AGAINST THE REAL FILE BEFORE MAKING IT A HARD FAIL: all 14 ids in
+# `landed` in dev/plans/release-state-0.8.20.json (0, 5, 10, 15, 20, 21, 22, 23,
+# 25, 30, 31, 32, 33, 39) have a `ladder` entry AND a non-null `sha`, zero
+# exceptions — so this cannot redden the live gate. Had a real landed slice
+# legitimately lacked one, this would have gone back to the Steward instead.
+#
+# The `sha` must be a NON-EMPTY STRING, not merely truthy-or-present: `sha` is
+# used as `sha not in status`, and a non-string there is either a TypeError
+# (e.g. a number) or a silently wrong answer.
 reconciled = 0
 for n in st["landed"]:
     key = slice_str(n)
+    entry = by_slice.get(key)
+    if entry is None:
+        why = "its `ladder` carries no ladder entry for that id"
+    elif "sha" not in entry:
+        why = "its `ladder` entry carries no `sha` field"
+    elif not isinstance(entry["sha"], str) or not entry["sha"].strip():
+        why = ("its `ladder` entry records sha=%r, which is not a non-empty string"
+               % (entry["sha"],))
+    else:
+        why = None
+    if why is None:
+        sha = entry["sha"]
+    else:
+        sha = None
+        err("STALE  %s Slice %s: %s records it in `landed`, but %s. The SHA-row "
+            "check would then be a silent NO-OP for this slice and the board's "
+            "hand-written row would be certified on the marker regex alone — a "
+            "landed slice and its landing SHA are two halves of one fact, and "
+            "the single writer must carry both (TC-133)"
+            % (ver, key, state_path, why))
+        bad = True
+
     row = rows.get(key)
     if row is None:
         err("STALE  %s Slice %s: %s records it in `landed` but %s's ladder table "
@@ -425,8 +507,12 @@ for n in st["landed"]:
             "Presence of a SHA elsewhere in the file is NOT currency of THIS "
             "row (TC-133)" % (ver, key, state_path, board_path, lineno, hit))
         bad = True
-    sha = (by_slice.get(key) or {}).get("sha")
-    if sha and sha not in status:
+    # `sha` was resolved (and its absence already reported) above — deliberately
+    # NOT re-derived here as `(by_slice.get(key) or {}).get("sha")`, which was
+    # the fix-2 finding-A construct: it made this check evaporate whenever the
+    # state file was incomplete. It is None here only when that incompleteness
+    # has ALREADY been reported as a STALE line, so the gate is red either way.
+    if sha is not None and sha not in status:
         err("STALE  %s Slice %s: %s records landing SHA %s, but the hand-written "
             "ladder row at %s:%d does not cite it (TC-133). A SHA that reaches "
             "the board only through a `<!-- BEGIN GENERATED -->` cell is the "
