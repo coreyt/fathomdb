@@ -1,17 +1,89 @@
 #!/usr/bin/env bash
 # Run unit tests across language surfaces.
+#
+# COLLECT-ALL-THEN-REPORT (0.8.20 R-20-HARNESS, "Slice 39.5"): this script
+# runs EVERY registered suite regardless of individual failures, then prints
+# a summary and exits non-zero iff any suite failed. See
+# scripts/lib/agent-suite-run.sh for the recording wrapper and its header
+# for why it is a separate file from scripts/lib/agent-output.sh (run_capped
+# itself is unchanged and still fail-fast for its four other callers).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/agent-output.sh
 . "$SCRIPT_DIR/lib/agent-output.sh"
+# shellcheck source=lib/agent-suite-run.sh
+. "$SCRIPT_DIR/lib/agent-suite-run.sh"
 cd_repo_root
 
+# ---------------------------------------------------------------------------
+# Arg parsing — BEFORE anything runs. Supports ONLY --exclude-suite=LABEL,
+# repeatable. This is a demonstration/debugging flag for proving the
+# collect-all harness's non-vacuous zero-exit direction (excluding
+# already-owned red suites to show a clean tree exits 0) — it is NEVER read
+# from an environment variable, and it is NEVER a default: every ordinary
+# invocation (`bash scripts/agent-test.sh`, no args) runs every suite.
+# ---------------------------------------------------------------------------
+usage() {
+  cat >&2 <<'USAGE'
+Usage: agent-test.sh [--exclude-suite=LABEL ...]
+
+  --exclude-suite=LABEL   Exclude the suite registered under LABEL from this
+                          run. Repeatable. A demonstration/debugging flag
+                          only, NEVER read from an environment variable and
+                          NEVER a default — every ordinary run executes
+                          every registered suite.
+
+No positional arguments are accepted.
+USAGE
+}
+
+_exclude_args=()
+for _arg in "$@"; do
+  case "$_arg" in
+    --exclude-suite=*)
+      _val="${_arg#--exclude-suite=}"
+      if [ -z "$_val" ]; then
+        usage
+        exit 2
+      fi
+      _exclude_args+=("$_val")
+      ;;
+    *)
+      usage
+      exit 2
+      ;;
+  esac
+done
+unset _arg _val
+
+for _label in "${_exclude_args[@]:-}"; do
+  [ -z "$_label" ] && continue
+  exclude_suite "$_label"
+done
+unset _label
+
+if [ "${#_exclude_args[@]}" -gt 0 ]; then
+  printf '=== EXCLUDED SUITES: %s ===\n' "${_exclude_args[*]}"
+  printf 'EXCLUDED suites were NOT run -- this exit code is NOT a full-tree result.\n'
+fi
+
 # Scripts (bash): set-version.sh two-axis enforcement.
-run_capped test-set-version bash scripts/tests/test_set_version.sh
+run_suite test-set-version bash scripts/tests/test_set_version.sh
+
+# Scripts (bash): 0.8.20 R-20-HARNESS ("Slice 39.5", no ladder slot) —
+# recurrence guard for the collect-all conversion of THIS script: proves
+# run_suite/skip_suite record all four states (PASS/FAIL/SKIP/EXCL), a crash
+# is FAIL never skipped, the summary names every failure, run_capped's
+# return contract is untouched, agent-suite-run.sh is sourced by no other
+# script, and the arg-parse usage errors above exit 2 before any suite
+# runs. RED-first fixtures + real-entry-point arg-parse arms; nothing here
+# writes into this checkout, and no full agent-test.sh run is ever driven
+# to completion by this suite.
+run_suite test-agent-test-collect-all bash scripts/tests/test_agent_test_collect_all.sh
 
 # Scripts (bash): release-time preflight (tag/--check-files/CHANGELOG/metadata).
-run_capped test-verify-release-gates bash scripts/tests/test_verify_release_gates.sh
+run_suite test-verify-release-gates bash scripts/tests/test_verify_release_gates.sh
 
 # Scripts (bash): 0.8.20 Slice 39 (R-20-DOC) — the license type + license-
 # SHIPPING gate (scripts/check-license-consistency.sh). Closes an 0.8.x-long
@@ -22,37 +94,47 @@ run_capped test-verify-release-gates bash scripts/tests/test_verify_release_gate
 # RED-first fixtures under mktemp -d plus two real-repo regression arms; no real
 # manifest, LICENSE or lockfile is ever written.
 #
-# ⚠ REGISTERED HERE DELIBERATELY, NOT AT THE END OF THE `scripts/` BLOCK.
-# Under `set -euo pipefail` this file aborts at the FIRST failing suite, and
-# `test-check-governed-surface-pin` (below) FAILS on the tree as of 0.8.20
-# Slice 39 — its pin's `git_blob_sha1` provenance claim is stale, verified
-# failing at the Slice 39 baseline 3e9d6d12 with no local edits. Anything
-# registered after it is unreachable and would be a vacuous pass. That is a
-# STRICTER constraint than the known TC-16 abort at test-actionlint-fixture:
-# both are downstream of this line. Do not move this entry later without first
-# re-checking where agent-test.sh actually stops.
+# ⚠ HISTORICAL NOTE — why this entry sits here, not at the end of the
+# `scripts/` block. Before 0.8.20 R-20-HARNESS, this file ran under
+# `set -euo pipefail` with BARE `run_capped` calls and aborted at the FIRST
+# failing suite. `test-check-governed-surface-pin` (below) FAILS on the tree
+# as of 0.8.20 Slice 39 — its pin's `git_blob_sha1` provenance claim is
+# stale — so everything registered after it was UNREACHABLE and would have
+# been a vacuous pass; this entry had to sit ahead of that abort point to
+# ever run at all.
+#
+# That abort is GONE: every suite now runs through `run_suite`
+# (scripts/lib/agent-suite-run.sh), which records each outcome and always
+# returns 0, so `set -e` can no longer stop the run partway through — a
+# failing test-check-governed-surface-pin no longer hides anything
+# downstream (test-agent-test-collect-all, right above, proves this: it is
+# registered after several suites and asserts it actually ran). Registration
+# order is therefore now about REPORT READABILITY (grouping related suites,
+# reading top-to-bottom in the summary), not REACHABILITY. This entry is
+# left in its historical position rather than moved, since moving it is not
+# required by anything and the note above records why it was here.
 #
 # CI wiring (.github/) is Slice 40's exclusive territory this release and has
 # been handed to it explicitly.
-run_capped test-check-license-consistency bash scripts/tests/test_check_license_consistency.sh
+run_suite test-check-license-consistency bash scripts/tests/test_check_license_consistency.sh
 
 # Scripts (bash): TC-RUBRIC-5 landing guard — preflight.sh --landing must HARD-fail
 # in the primary checkout and pass in a linked worktree. Builds its own throwaway
 # repo + worktree under mktemp -d; never git-writes into this checkout.
-run_capped test-preflight-landing bash scripts/tests/test_preflight_landing.sh
+run_suite test-preflight-landing bash scripts/tests/test_preflight_landing.sh
 
 # Scripts (bash): status-board-currency-enforcement items 2+3 — the shared
 # scripts/check-board-currency.sh predicate plus its --landing wiring in
 # preflight.sh. Builds its own throwaway repos + worktrees under mktemp -d;
 # never git-writes into this checkout.
-run_capped test-check-board-currency bash scripts/tests/test_check_board_currency.sh
+run_suite test-check-board-currency bash scripts/tests/test_check_board_currency.sh
 
 # Scripts (bash): DOC-HYGIENE-2 T1b — the shared scripts/check-ledgers.sh
 # predicate (sidecar == max(seq); seq contiguous), its --landing wiring in
 # preflight.sh, and a static assertion that its CI job is always-on. Fixture
 # roots are plain dirs under mktemp -d (plus throwaway git repos for the
 # preflight arms); no real .jsonl / .jsonl.seq is ever touched.
-run_capped test-check-ledgers bash scripts/tests/test_check_ledgers.sh
+run_suite test-check-ledgers bash scripts/tests/test_check_ledgers.sh
 
 # Scripts (bash): DOC-HYGIENE-3 TC-88 — scripts/check-staged-ledger-sidecars.sh,
 # the COMMIT-TIME half of the same invariant. check-ledgers.sh reads the WORKING
@@ -62,7 +144,7 @@ run_capped test-check-ledgers bash scripts/tests/test_check_ledgers.sh
 # reads the INDEX and reuses check-ledgers.sh --root over a materialised staged
 # tree, so the two predicates cannot diverge. Fixtures are throwaway git repos
 # under mktemp -d; no real ledger is ever touched.
-run_capped test-staged-ledger-sidecar bash scripts/tests/test_staged_ledger_sidecar.sh
+run_suite test-staged-ledger-sidecar bash scripts/tests/test_staged_ledger_sidecar.sh
 
 # Scripts (bash): DOC-HYGIENE-2 T1e — the shared scripts/check-governed-surface-pin.sh
 # predicate (content hash + member lists + counts + REQ-054 against
@@ -70,7 +152,7 @@ run_capped test-staged-ledger-sidecar bash scripts/tests/test_staged_ledger_side
 # static assertion that its CI job is always-on. Fixtures are COPIES of the
 # allowlist under mktemp -d (plus throwaway git repos for the preflight arms);
 # src/conformance/governed-surface-allowlist.json is never written.
-run_capped test-check-governed-surface-pin bash scripts/tests/test_check_governed_surface_pin.sh
+run_suite test-check-governed-surface-pin bash scripts/tests/test_check_governed_surface_pin.sh
 
 # Scripts (bash): R-20-H7 — the shared scripts/check-c1-conformance.sh predicate
 # (contract content pin + clause-registry bijection + pinned counts + the 26
@@ -79,7 +161,7 @@ run_capped test-check-governed-surface-pin bash scripts/tests/test_check_governe
 # COPIES of the contract, of the pin and of the source root under mktemp -d (plus
 # throwaway git repos for the preflight arms); neither the ratified contract nor
 # the real src/ tree is ever written.
-run_capped test-check-c1-conformance bash scripts/tests/test_check_c1_conformance.sh
+run_suite test-check-c1-conformance bash scripts/tests/test_check_c1_conformance.sh
 
 # Scripts (bash): TC-86 transcript hygiene — the ONE shared agent-state pattern
 # (scripts/lib/agent-state-paths.sh), the capture-time filter folded into
@@ -90,7 +172,7 @@ run_capped test-check-c1-conformance bash scripts/tests/test_check_c1_conformanc
 # PUBLIC repo, which happened once (caught pre-land; reachability in history is
 # ZERO). Dirty fixtures and throwaway repos live under mktemp -d; no real
 # transcript under dev/plans/runs/** is ever written.
-run_capped test-check-transcript-hygiene bash scripts/tests/test_check_transcript_hygiene.sh
+run_suite test-check-transcript-hygiene bash scripts/tests/test_check_transcript_hygiene.sh
 
 # Scripts (bash): agent-seat-hardening ASH-B — the PreToolUse write-path guard
 # .claude/hooks/seat-path-guard.sh, which enforces dev/design/orchestration.md
@@ -99,72 +181,72 @@ run_capped test-check-transcript-hygiene bash scripts/tests/test_check_transcrip
 # asserts that; wiring it is an HITL-gated Phase-2 act. Pure stdin->stdout
 # function under test — the suite feeds synthetic PreToolUse payloads and never
 # touches the filesystem beyond one mktemp -d fixture.
-run_capped test-seat-path-guard bash scripts/tests/test_seat_path_guard.sh
+run_suite test-seat-path-guard bash scripts/tests/test_seat_path_guard.sh
 
 # Scripts (bash): sibling-package co-tagging assert (AC-052). Offline via
 # python3 -m http.server fixture; never hits crates.io.
-run_capped test-assert-co-tagging bash scripts/tests/test_assert_co_tagging.sh
+run_suite test-assert-co-tagging bash scripts/tests/test_assert_co_tagging.sh
 
 # Scripts (bash): Axis-E published-API drift guard (prevents the v0.8.9
 # partial-publish — embedder-api surface moved without an Axis-E bump).
 # Offline via a fixture http router; never hits crates.io.
-run_capped test-embedder-api-no-drift bash scripts/tests/test_verify_embedder_api_no_drift.sh
+run_suite test-embedder-api-no-drift bash scripts/tests/test_verify_embedder_api_no_drift.sh
 
 # Scripts (bash): structural shape of the post-publish smoke scripts.
 # NOT integration — see test header for why behavior is exercised at tag
 # time by the release workflow, not here.
-run_capped test-smoke-scripts bash scripts/tests/test_smoke_scripts.sh
+run_suite test-smoke-scripts bash scripts/tests/test_smoke_scripts.sh
 
 # Scripts (bash): 0.8.18 Slice 20 (#11-full publish) — static release.yml scope
 # assertions (matrix gated to x86_64-linux, tiered ordering, non-latest npm
 # dist-tag). Pure python3+PyYAML parse; never runs the workflow.
-run_capped test-release-workflow-scope bash scripts/tests/test_release_workflow_scope.sh
+run_suite test-release-workflow-scope bash scripts/tests/test_release_workflow_scope.sh
 
 # Scripts (bash): coordinated-publish resilience (R-REL-4b/4c) — REAL npm
 # local-registry round-trip (publish -> query-no-op -> install -> loader) +
 # crates.io SIMULATED (real crates registry infeasible in-harness). node-only.
-run_capped test-idempotent-republish bash scripts/tests/test_idempotent_republish.sh
+run_suite test-idempotent-republish bash scripts/tests/test_idempotent_republish.sh
 
 # Scripts (bash): REAL PyPI round-trip (R-REL-4b) — genuine twine upload to a
 # minimal local index -> query-sees-it -> re-run no-op. Self-provisions twine<6
 # (twine 6 blocks --skip-existing on non-prod repos); SKIPS loudly if it cannot.
-run_capped test-pypi-publish-roundtrip bash scripts/tests/test_pypi_publish_roundtrip.sh
+run_suite test-pypi-publish-roundtrip bash scripts/tests/test_pypi_publish_roundtrip.sh
 
 # Scripts (bash): Fix-1 publish-registry SAFETY — a staging/test run can never
 # publish to prod (npm publish --registry $BASE; twine upload --repository-url).
-run_capped test-publish-registry-safety bash scripts/tests/test_publish_registry_safety.sh
+run_suite test-publish-registry-safety bash scripts/tests/test_publish_registry_safety.sh
 
 # Scripts (bash): poll-for-resolvability guard that replaced the fixed 60s
 # index-propagation sleep (R-REL-4c). Offline fixture http server.
-run_capped test-wait-for-crate-version bash scripts/tests/test_wait_for_crate_version.sh
+run_suite test-wait-for-crate-version bash scripts/tests/test_wait_for_crate_version.sh
 
 # Scripts (bash): publish-time npm optionalDependencies injection (R-REL-4f) —
 # napi per-platform split. Pure filesystem fixture; no registry.
-run_capped test-npm-inject-optional-deps bash scripts/tests/test_npm_inject_optional_deps.sh
+run_suite test-npm-inject-optional-deps bash scripts/tests/test_npm_inject_optional_deps.sh
 
 # actionlint binary present + rejects deliberately-broken fixture.
-run_capped test-actionlint-fixture bash scripts/tests/test_actionlint_fixture.sh
+run_suite test-actionlint-fixture bash scripts/tests/test_actionlint_fixture.sh
 
 # TC-37 recurrence guard: agent-lint-md.sh must HARD-fail (not skip_notice/exit 0)
 # when markdownlint-cli2 is genuinely unresolvable. Builds its own throwaway
 # fixture repo under mktemp -d; never touches this checkout's node_modules.
-run_capped test-lint-md-hard-fail-on-missing-linter bash scripts/tests/test_lint_md_hard_fail_on_missing_linter.sh
+run_suite test-lint-md-hard-fail-on-missing-linter bash scripts/tests/test_lint_md_hard_fail_on_missing_linter.sh
 
 # T3/9: dev/plans/*.md must carry a valid `status:` frontmatter value (recurrence
 # guard for archival banners drifting silently). RED-fixture proven inline.
-run_capped test-plans-status-frontmatter bash scripts/tests/test_plans_status_frontmatter.sh
+run_suite test-plans-status-frontmatter bash scripts/tests/test_plans_status_frontmatter.sh
 
 # T1d: recurrence guard for the ACTIVE-plan line-anchor ban AND — the arm that
 # carries the weight — for the mandatory symbol-existence check. Mutation-proven:
 # stubbing the existence check to always succeed turns this suite red, so a green
 # here is not vacuous. RED fixtures built inline under mktemp -d.
-run_capped test-lint-plan-anchors bash scripts/tests/test_lint_plan_anchors.sh
+run_suite test-lint-plan-anchors bash scripts/tests/test_lint_plan_anchors.sh
 
 # T2a: recurrence guard for the single-writer release-state file and its
 # marker-delimited generated views — regenerate-and-diff, marker well-formedness,
 # the orphan-marker confinement rule, and the TC-37 zero-blocks hard fail. RED
 # fixtures built inline under mktemp -d; also asserts the CI job is always-on.
-run_capped test-check-release-state-views bash scripts/tests/test_check_release_state_views.sh
+run_suite test-check-release-state-views bash scripts/tests/test_check_release_state_views.sh
 
 # T3a: recurrence guard for the stateless Steward cold-start briefing — the
 # <=4096-byte cap, "writes no file", the zero-result hard fail, the release being
@@ -173,14 +255,14 @@ run_capped test-check-release-state-views bash scripts/tests/test_check_release_
 # check-board-currency.sh. Mutation-proven four ways: neutering the zero-result
 # guard reddens 7 arms; narrowing the shared window to `head -n 5`, resolving the
 # worktrees dir as a child, and hardcoding the release each redden their own arm.
-run_capped test-steward-orient bash scripts/tests/test_steward_orient.sh
+run_suite test-steward-orient bash scripts/tests/test_steward_orient.sh
 
 # T3b: recurrence guard for the generated commission manifest — the arms that
 # carry the weight are "a cited path does not exist" and "zero citations
 # emitted" (TC-37), both of which must HARD-fail rather than emit a brief with a
 # dead pointer in it. Also asserts the real 0.8.20 Slice-20 manifest still
 # resolves end to end. RED fixtures built inline under mktemp -d.
-run_capped test-commission-manifest bash scripts/tests/test_commission_manifest.sh
+run_suite test-commission-manifest bash scripts/tests/test_commission_manifest.sh
 
 # Markdown generators (shell): context-clarity.sh / memory-clarity.sh emit
 # gate-compliant markdown. Their output trees (and the dev/plans/runs/** reports
@@ -188,11 +270,11 @@ run_capped test-commission-manifest bash scripts/tests/test_commission_manifest.
 # sees a regenerated report. The Python generators (aggregate / m1_verdict_run /
 # s15a_embedder_probe) are guarded by src/python/tests/test_md_generator_hygiene.py
 # in the pytest step below.
-run_capped test-md-generators bash scripts/tests/test_md_generators.sh
+run_suite test-md-generators bash scripts/tests/test_md_generators.sh
 
 # AC-051a / AC-051b: cross-ecosystem version-skew resolver fixtures.
-run_capped test-cargo-skew bash dev/release/tests/cargo_skew.sh
-run_capped test-pip-skew bash dev/release/tests/pip_skew.sh
+run_suite test-cargo-skew bash dev/release/tests/cargo_skew.sh
+run_suite test-pip-skew bash dev/release/tests/pip_skew.sh
 
 # Rust
 #
@@ -206,7 +288,7 @@ run_capped test-pip-skew bash dev/release/tests/pip_skew.sh
 #   3. `#[ignore]` on the test itself — holds no matter which features are
 #      selected, so `--all-features` still would not run the body.
 # Verify by inspection only (`-- --list --ignored`), never by running it.
-run_capped test-rust cargo test --workspace --quiet --no-fail-fast
+run_suite test-rust cargo test --workspace --quiet --no-fail-fast
 
 # Python
 python_bin=""
@@ -229,13 +311,13 @@ if [ -n "$python_bin" ] && "$python_bin" -c 'import pytest' >/dev/null 2>&1 && [
   # rather than repointing a shared venv. conftest re-checks venv ownership
   # itself; this is the outer half of a belt-and-suspenders pair.
   if [ "$python_bin" = ".venv/bin/python" ]; then
-    run_capped test-python env FATHOMDB_TESTS_ALLOW_REBUILD=1 \
+    run_suite test-python env FATHOMDB_TESTS_ALLOW_REBUILD=1 \
       "$python_bin" -m pytest -q src/python/tests
   else
-    run_capped test-python "$python_bin" -m pytest -q src/python/tests
+    run_suite test-python "$python_bin" -m pytest -q src/python/tests
   fi
 else
-  skip_notice test-python "pytest not installed or no tests dir"
+  skip_suite test-python "pytest not installed or no tests dir"
 fi
 
 # ledgerwatch (dev/agent-tools): pure-stdlib pytest suite, no fathomdb binding
@@ -245,14 +327,21 @@ fi
 # "unfoldable (no id)" bucket that the deleted readme recipe crashed on) would
 # otherwise never have been exercised in CI.
 if [ -n "$python_bin" ] && "$python_bin" -c 'import pytest' >/dev/null 2>&1; then
-  run_capped test-ledgerwatch "$python_bin" -m pytest -q dev/agent-tools/ledgerwatch
+  run_suite test-ledgerwatch "$python_bin" -m pytest -q dev/agent-tools/ledgerwatch
 else
-  skip_notice test-ledgerwatch "pytest not installed"
+  skip_suite test-ledgerwatch "pytest not installed"
 fi
 
 # TypeScript
 if [ -d src/ts/node_modules ]; then
-  run_capped test-ts bash -c 'cd src/ts && npm test --silent'
+  run_suite test-ts bash -c 'cd src/ts && npm test --silent'
 else
-  skip_notice test-ts "src/ts/node_modules not installed"
+  skip_suite test-ts "src/ts/node_modules not installed"
 fi
+
+# Collect-all summary — the deliverable. Prints every suite's outcome (full
+# table on any FAIL or AGENT_VERBOSE=1; a one-line summary otherwise) and
+# exits: 0 iff zero FAILs, 1 if any FAIL, 2 for a harness usage error (an
+# --exclude-suite label that matched no registration). MUST be the last
+# executable line — nothing registered after it could ever run.
+suite_summary_and_exit
