@@ -123,12 +123,46 @@ if [ -n "$WT" ]; then
 fi
 
 # --- 5. Dependency-CLOSED gate ---------------------------------------------------
+# SLICE-ID-HARDENING site 4 + [DETERMINE] duty 1. This gate's entire stated
+# purpose is catching a dependency that is not actually closed, and it had TWO
+# INDEPENDENT ways of saying yes anyway. Both were measured by executing the real
+# grep, not reasoned about, and NEITHER fix subsumes the other:
+#
+#   (a) The interpolated value was UNESCAPED, so with `--expect-closed 39.5` the
+#       `.` was a regex WILDCARD: a plan line reading `Slice 39x5 ... CLOSED`
+#       cleared the gate. Escaping is REQUIRED. (Measured: escaping alone still
+#       leaves (b) wide open.)
+#   (b) The trailing `[^0-9]` matched the `.` in `Slice 39.5`, so ONE UNIT'S
+#       CLOSED WITNESS SATISFIED ANOTHER'S: `--expect-closed 39` was cleared by a
+#       plan in which only Slice 39.5 ever closed. A boundary tighten is
+#       REQUIRED. (Measured: tightening alone still leaves (a) wide open.)
+#
+# The boundary is `([^0-9.]|\.[^0-9])`, NOT the obvious `[^0-9.]`. Measured: the
+# bare `[^0-9.]` closes (b) but introduces a NEW FALSE NEGATIVE — a legitimate
+# sentence-final `CLOSED - Slice 39.` stops matching, and this gate's failure
+# mode is refusing to spawn. What must be rejected is a following DIGIT or a
+# following `.`+DIGIT (i.e. a longer dotted id); a `.` followed by anything else
+# is just punctuation. ERE has no lookahead, so it is spelled out. The second
+# alternative additionally carries `\.?$` because it, unlike the first, can end
+# at end-of-line (the two alternatives are NOT symmetric).
+#
+# Real-state effect, measured across every dev/plans/*.md for slice ids 0-60:
+# exactly ONE behaviour delta, and it is a FALSE POSITIVE REMOVED —
+# 0.7.0-implementation.md:456 `(Phase 0.7.0 GA CLOSED, ...)` was satisfying
+# `--expect-closed 0`, the version dot being read as a boundary. That is site 4's
+# own defect class, live in a tracked file.
+#
+# esc_ere: escape every ERE metacharacter so the value is matched LITERALLY.
+esc_ere() { printf '%s' "$1" | sed -e 's/[][\\.^$*+?(){}|]/\\&/g'; }
 if [ -n "$EXPECT_CLOSED" ]; then
+  EXPECT_CLOSED_RE="$(esc_ere "$EXPECT_CLOSED")"
+  # "not the start of a LONGER slice id": not a digit, and not `.`+digit.
+  ID_END='([^0-9.]|\.[^0-9])'
   if [ -z "$PLAN" ]; then
     hard "--expect-closed $EXPECT_CLOSED given without --plan <file>"
   elif [ ! -f "$PLAN" ]; then
     hard "plan file not found: $PLAN"
-  elif grep -qiE "(Slice|Phase)[^A-Za-z0-9]*${EXPECT_CLOSED}[^0-9].*CLOSED|CLOSED.*(Slice|Phase)[^A-Za-z0-9]*${EXPECT_CLOSED}([^0-9]|$)" "$PLAN"; then
+  elif grep -qiE "(Slice|Phase)[^A-Za-z0-9]*${EXPECT_CLOSED_RE}${ID_END}.*CLOSED|CLOSED.*(Slice|Phase)[^A-Za-z0-9]*${EXPECT_CLOSED_RE}(${ID_END}|\.?$)" "$PLAN"; then
     ok "dependency Slice/Phase $EXPECT_CLOSED has a CLOSED witness in $PLAN"
   else
     hard "dependency Slice/Phase $EXPECT_CLOSED has NO 'CLOSED' block in $PLAN — do not spawn dependents"

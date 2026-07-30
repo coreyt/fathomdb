@@ -18,8 +18,11 @@
 #     2. Walk `git log <tip>` (default tip = HEAD; newest-first, git's default
 #        order) for commits whose subject matches this repo's own landing-merge
 #        convention for that release: `merge(<version>): Slice[- ]<N> ...`.
+#        <N> is a DOTTED slice id, not an integer: `39` and `39.5` are two
+#        DIFFERENT slices and must never collapse onto one key (SLICE-ID-
+#        HARDENING site 1 — see the capture below for the measured consequence).
 #     3. Because the walk is newest-first, the FIRST commit seen for a given
-#        slice number N is that slice's CURRENT (most recent) land — an
+#        slice id N is that slice's CURRENT (most recent) land — an
 #        intermediate/superseded partial merge for the same slice (there can
 #        be more than one across a slice's history) is intentionally NOT
 #        re-checked once a newer one for the same N has been seen; only the
@@ -120,7 +123,26 @@ for board in "$BOARDS_DIR"/STATUS-0.8.*.md; do
     [ -n "$line" ] || continue
     sha="${line%% *}"
     subject="${line#* }"
-    if [[ "$subject" =~ ^merge\(${ver_escaped}\):[[:space:]]Slice[-[:space:]]([0-9]+) ]]; then
+    # Slice id capture: `([0-9]+(\.[0-9]+)*)` followed by a non-digit-or-EOL, NOT
+    # a bare `([0-9]+)`. SLICE-ID-HARDENING site 1: the integer-only capture read
+    # `merge(0.8.20): Slice 39.5 ...` as slice **39** (confirmed by executing the
+    # real bash [[ =~ ]]). Because this walk is newest-first, the NEWER fractional
+    # merge set SEEN_SLICE[39] first and the genuinely-distinct `Slice 39` merge
+    # was then discarded by the superseded-intermediate branch below, so ITS SHA
+    # CHECK NEVER RAN -- a silent wrong answer, exit 0. It also made the STALE
+    # diagnostic print `Slice 39` while quoting 39.5's SHA: a FABRICATED POINTER,
+    # the gate misdirecting the reader to a unit that is not the one at fault.
+    #
+    # The trailing `([^0-9]|$)` (rather than `([^0-9.]|$)`) is deliberate: it
+    # guarantees every subject matching the merge convention still yields SOME
+    # id, so no landing merge can become INVISIBLE to the walk. Invisibility
+    # would be worse than truncation here, because the vacuous-pass guard below
+    # only fires when a board matches ZERO lands -- one silently-dropped merge
+    # among several would restore exactly the silent hole this closes. The
+    # greedy `(\.[0-9]+)*` means a dotted id is always captured WHOLE (measured:
+    # 39 -> `39`, 39.5 -> `39.5`, 39.5.1 -> `39.5.1`, 395 -> `395`), so the two
+    # never collide on one key.
+    if [[ "$subject" =~ ^merge\(${ver_escaped}\):[[:space:]]Slice[-[:space:]]([0-9]+(\.[0-9]+)*)([^0-9]|$) ]]; then
       slice_n="${BASH_REMATCH[1]}"
       if [ -n "${SEEN_SLICE[$slice_n]+x}" ]; then
         continue # superseded intermediate merge for a slice already seen at a newer commit
