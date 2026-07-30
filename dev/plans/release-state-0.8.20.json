@@ -248,7 +248,7 @@
   ],
   "unblocked_by": {
     "requirement": "the Slice 39 landing (91db34d8), then the two cross-cutting units named in `ladder_order`",
-    "gloss": "Slice 40 is the last ladder slice. Ahead of it, off-ladder: SLICE-ID-HARDENING (the fractional-id tooling fixes + recurrence arms, seq-204 ruling 1) and 'Slice 39.5' / R-20-HARNESS (collect-all harness + the true red list local AND CI, seq-204 ruling 2). ⚠ `test_commission_manifest.sh` is locally rc=1 and main's last green was FOUR jobs on the docs-only CI path — commission-manifest, verify and security never ran, so that green is vacuous. Establishing what a clean CI actually is belongs to Slice 39.5."
+    "gloss": "Slice 40 is the last ladder slice. Ahead of it, off-ladder: SLICE-ID-HARDENING (the fractional-id tooling fixes + recurrence arms, seq-204 ruling 1) and 'Slice 39.5' / R-20-HARNESS (collect-all harness + the true red list local AND CI, seq-204 ruling 2). ⚠ CORRECTED at seq-205/seq-209: main's CI is NOT vacuously green, it is RED — the last completed runs concluded failure with 23 jobs executing and only markdownlint skipped, four of them failing (commission-manifest, verify, security, rust-windows). And `test_commission_manifest.sh` is rc=0 LOCALLY (69 PASS) while its CI job fails — a genuine local-to-CI divergence, not a local red. Publish gate (i) (seq-202) is therefore NOT met today. Establishing the true CI red list, and explaining that divergence, belongs to Slice 39.5 (seq-204 ruling 2, seq-206)."
   },
   "publish_precondition_slice": 30,
   "acceptance": {
