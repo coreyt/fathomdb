@@ -1,0 +1,553 @@
+{
+  "unit": "DOC-HYGIENE-3 remainder (cross-cutting; no slice number, no R-20-xx, no AC, no pico label — DOC-HYGIENE-1 precedent, F-33)",
+  "ids_in_scope": [
+    "TC-53",
+    "TC-92"
+  ],
+  "branch": "doc-hygiene-3-remainder",
+  "base_sha": "2671346dff75c92c4486e674886fc2c61cfb096b",
+  "head_sha": "e288ab3c533e3c94f1914c4e111b6aab66dd6340",
+  "commits": [
+    {
+      "sha": "cca1cfcd025fad673c25c0e4b7411cf030193261",
+      "subject": "test(TC-53): RED — ledgerwrite has no shell-substitution residue guard"
+    },
+    {
+      "sha": "67fdff27dd508d4307a3ac8beca76c0cde82b4aa",
+      "subject": "feat(TC-53): GREEN — shell-substitution residue guard in ledgerwrite"
+    },
+    {
+      "sha": "8c8b7c63905ec034a08eaafff8730636775bec1c",
+      "subject": "test(TC-92): RED — nothing requires a design back-link when a requirement id is minted"
+    },
+    {
+      "sha": "788739cb8aba6bf4e940acd0d7326591230f4e7d",
+      "subject": "feat(TC-92): GREEN — check-design-refs.sh + pre-commit wiring at mint time"
+    },
+    {
+      "sha": "796ba732431bd25c4a2a546452e44a7f4cf8547a",
+      "subject": "docs(TC-53): the load-bearing half — single-quote the summary, in dev/steward/README.md"
+    },
+    {
+      "sha": "edcce999d797d30f3811e76251326520a88f0b19",
+      "subject": "fix(TC-92): --staged-only judges the INDEX, and a staged deletion triggers it"
+    },
+    {
+      "sha": "071f4d38a1e6eb3ec25c20fda0fb1d9cb324d18c",
+      "subject": "fix(TC-92): remove the only git write from the snapshot path (TC-128)"
+    },
+    {
+      "sha": "5c3a33325222f894225308c12f6e7999b9b1323b",
+      "subject": "fix(TC-92): portable, fail-closed snapshot self-check (readlink -f was GNU-only)"
+    },
+    {
+      "sha": "460cd012a5cff326f192ce1646af06c6e46a1a7a",
+      "subject": "fix(TC-92): make the snapshot self-check's NOT CHECKED branch reachable"
+    }
+  ],
+  "tests": {
+    "TC-53": {
+      "file": "dev/agent-tools/ledgerwrite/test_ledgerwrite.py",
+      "names": [
+        "test_zero_information_substitution_residue_in_summary_is_refused",
+        "test_ambiguous_shell_metacharacters_warn_but_the_write_proceeds",
+        "test_collapsed_whitespace_warns_because_that_is_what_an_eaten_word_leaves",
+        "test_refusal_message_names_the_override_and_the_requoting_fix",
+        "test_override_flag_permits_an_otherwise_refused_summary",
+        "test_guard_refuses_no_record_in_the_repos_three_real_ledgers",
+        "test_warn_rate_over_the_real_ledgers_stays_low",
+        "test_body_and_field_values_are_guarded_too",
+        "test_dry_run_still_runs_the_guard",
+        "test_control_characters_are_refused"
+      ],
+      "red_evidence": "10 failed / 42 passed at cca1cfcd; two failures were `AttributeError: module 'ledgerwrite' has no attribute 'scan_shell_residue'`, the other eight `assert 0 == 2` on the missing refusal.",
+      "green": "52 passed at 67fdff27."
+    },
+    "TC-92": {
+      "file": "scripts/tests/test_check_design_refs.sh",
+      "arms": [
+        "arm 0  — the real repo is GREEN today (the ratchet floor)",
+        "arm 1  — the report NAMES both frozen exemptions (Slice 20 TC-45, Slice 21 ac_002)",
+        "arm 1b — the exemption table lives in the check and points at TC-92",
+        "arm 2  — non-vacuity: a fully covered slice passes",
+        "arm 3  — a NEW uncovered token FAILS on a LANDED fixture slice, naming slice + token",
+        "arm 3b — the failure names both remedies (back-link, curate design_refs)",
+        "arm 4  — a curated design_ref OUTSIDE the scanned roots provides coverage and is named",
+        "arm 5  — the default sweep covers the whole ladder and fails on the one gap",
+        "arm 6  — the check drives commission-manifest.sh rather than re-deriving tokens",
+        "arm 6b — the check exits 2 when the manifest's whole-token boundary changes under it",
+        "arm 7  — commission-manifest stdout byte-identical to the base commit for all 14 slices",
+        "arm 8  — wired into scripts/hooks/pre-commit",
+        "arm 8b — the hook passes --staged-only; the gate owns the trigger path set (single source)",
+        "arm 9  — CI-inert: absent from .github/**, preflight.sh and agent-test.sh",
+        "arm 10 — --staged-only exits 0 in ~7ms when no relevant path is staged",
+        "arm 11 — no LANDED bypass: the check never reads a ladder status, and a LANDED gap fails",
+        "arm 12 — read-only: release-state-0.8.20.json byte-identical after a run",
+        "arm 13 — a staged DELETION of the only design doc triggers the sweep and fails",
+        "arm 14 — no false PASS: an UNSTAGED back-link does not cover a staged new id",
+        "arm 14b — no false BLOCK: an UNSTAGED loss of coverage does not refuse a clean staged commit",
+        "arm 15 — the index snapshot leaves the gated repo's index and worktree exactly as found",
+        "arm 16 — an UNMERGED index is announced as NOT CHECKED and let through, never refused",
+        "arm 17 — the snapshot still governs with GIT_DIR/GIT_INDEX_FILE exported, as in a real hook",
+        "arm 17 (REBUILT) — a real `git worktree add` + installed hook (absolute GIT_DIR) refuses the commit that deletes coverage",
+        "arm 17b — read-only under an exported absolute GIT_DIR: the gated repo's .git is untouched",
+        "arm 17c — the gate contains NO git write verb (pure grep; never executes the gate)",
+        "arm 17d — the GIT_* scrub follows the last real-repo read (partial-commit temp index correctness)",
+        "arm 17e — the snapshot must resolve to itself before sweeping, or report NOT CHECKED",
+        "arm 18 — CANARY: the primary checkout's git config and core.bare are byte-identical across the whole suite",
+        "arm 17f — the self-check still refuses under a BSD `readlink` (no -f), shadowed on PATH",
+        "arm 17g — the gate contains no GNU-only construct (keeps the audit from being redone by hand)",
+        "arm 17h — an unresolvable (i) or EMPTY (ii) snapshot toplevel reports NOT CHECKED and exits 0, never a bare exit 1"
+      ],
+      "red_evidence": "14 of 17 arms failing at 8c8b7c63 (rc=127, scripts/check-design-refs.sh absent). Arm 7 (byte-identity) and arm 9 (CI-inert) already passed.",
+      "green": "17/17 at 788739cb; 23/23 at edcce999; 28/28 at 071f4d38; 30/30 at 5c3a3332; 32/32 at 460cd012.",
+      "fix_round_red_evidence": "Non-vacuity of the six new arms proven by re-running the suite with GATE_UNDER_TEST pointed at the PRE-FIX gate (`git show 788739cb:scripts/check-design-refs.sh`): arm 13 rc=0 with EMPTY output (the staged deletion never triggered the sweep — finding 1); arm 14 rc=0 printing `9.9.9 Slice 0 (R-9-A) — 3 token(s), 3 matched` (the UNSTAGED back-link silently covered a staged new id — finding 2, false PASS); arm 14b rc=1 (an unstaged loss refused a clean staged commit — finding 2, false BLOCK); arms 16 and 17 also red. Each arm reproduces its finding exactly rather than merely failing."
+    }
+  },
+  "gates": [
+    {
+      "n": 1,
+      "cmd": "python3 -m pytest -q dev/agent-tools/ledgerwrite",
+      "rc": 0,
+      "note": "52 passed"
+    },
+    {
+      "n": 2,
+      "cmd": "python3 -m pytest -q dev/agent-tools/ledgerwatch",
+      "rc": 0,
+      "note": "96 passed (regression: shared conventions)"
+    },
+    {
+      "n": 3,
+      "cmd": "bash scripts/tests/test_check_design_refs.sh",
+      "rc": 0,
+      "note": "32/32 arms"
+    },
+    {
+      "n": 4,
+      "cmd": "bash scripts/tests/test_commission_manifest.sh",
+      "rc": 0
+    },
+    {
+      "n": 5,
+      "cmd": "bash scripts/tests/test_staged_ledger_sidecar.sh",
+      "rc": 0
+    },
+    {
+      "n": 6,
+      "cmd": "bash scripts/tests/test_smoke_scripts.sh",
+      "rc": 0
+    },
+    {
+      "n": 7,
+      "cmd": "bash scripts/tests/test_check_release_state_views.sh",
+      "rc": 0
+    },
+    {
+      "n": 8,
+      "cmd": "bash scripts/check-release-state-views.sh",
+      "rc": 0
+    },
+    {
+      "n": 9,
+      "cmd": "bash scripts/check-ledgers.sh",
+      "rc": 0,
+      "note": "3 ledgers, sidecars agree, seq runs contiguous"
+    },
+    {
+      "n": 10,
+      "cmd": "bash scripts/check-governed-surface-pin.sh",
+      "rc": 0,
+      "note": "governed surface byte-identical, AC-079 pin intact"
+    },
+    {
+      "n": 11,
+      "cmd": "bash scripts/lint-design-status.sh",
+      "rc": 0
+    },
+    {
+      "n": 12,
+      "cmd": "bash scripts/agent-lint-md.sh",
+      "rc": 0,
+      "note": "required `ln -s /home/coreyt/projects/fathomdb/node_modules node_modules` in the worktree (the script's own documented remedy); the symlink was REMOVED afterwards and is not committed"
+    },
+    {
+      "n": 13,
+      "cmd": "ruff check dev/agent-tools/ledgerwrite/",
+      "rc": 0,
+      "note": "ruff resolved at ~/.local/bin/ruff; there is no .venv in this worktree"
+    },
+    {
+      "n": "14a",
+      "cmd": "shellcheck scripts/check-design-refs.sh scripts/tests/test_check_design_refs.sh",
+      "rc": 0,
+      "note": "both files clean. Two SC2016 (info) findings were INTRODUCED by this round's first draft — backtick pairs inside a single-quoted printf — and were FIXED by rewording, not suppressed with a disable directive."
+    },
+    {
+      "n": "14b",
+      "cmd": "shellcheck scripts/hooks/pre-commit",
+      "rc": 1,
+      "note": "PRE-EXISTING at base — SC2086 (info) at `$ruff_bin check $PYFILES`, proven identical by running shellcheck on `git show 2671346d:scripts/hooks/pre-commit`. scripts/hooks/pre-commit was NOT touched in this fix round."
+    },
+    {
+      "n": 15,
+      "cmd": "bash scripts/check-board-currency.sh",
+      "rc": 0
+    },
+    {
+      "n": 16,
+      "cmd": "manifest byte-identity sweep: 14 slices vs base 2671346d",
+      "rc": 0,
+      "note": "all 14 stdout byte-identical, re-verified in round 2. commission-manifest.sh remains unmodified across the whole unit."
+    },
+    {
+      "n": 17,
+      "cmd": "GATE_UNDER_TEST=<pre-fix gate> bash scripts/tests/test_check_design_refs.sh",
+      "rc": 1,
+      "note": "EXPECTED RED, and the point: 6 arms fail against the pre-fix gate, proving the new arms are not vacuous. See tests.TC-92.fix_round_red_evidence."
+    },
+    {
+      "n": 18,
+      "cmd": "end-to-end: stage dev/design/orchestration.md in the real repo, run scripts/check-design-refs.sh --staged-only",
+      "rc": 0,
+      "note": "2.4s over an index snapshot; worktree and index restored afterwards, tree clean."
+    },
+    {
+      "n": 19,
+      "cmd": "CANARY: md5 of $(git rev-parse --git-common-dir)/config + core.bare, before and after the entire gate run",
+      "rc": 0,
+      "note": "byte-identical; core.bare=false throughout, re-verified in round 3."
+    }
+  ],
+  "gates_not_run": [
+    {
+      "cmd": "scripts/agent-test.sh",
+      "why": "its aggregate exit is VACUOUS (TC-16) — it aborts at the known-red actionlint fixture and never reaches the Rust or Python steps. Instructed not to use it for a green claim and not to touch the fixture (Slice 40's)."
+    }
+  ],
+  "tc53": {
+    "refuses_on": [
+      "torn-expansion — an UNCLOSED `$(` or `${`. A substitution that RAN cannot leave one (unterminated is a shell syntax error and the command never executes), so the text is a fragment of a partially-quoted argument.",
+      "empty-parameter-expansion — a literal `${}`. Also a shell syntax error, so it cannot be a surviving literal from a working command line, and it is not prose either.",
+      "control-characters — C0/DEL other than tab and newline: ANSI escape residue from capturing a colourised tool's output. No information, and it corrupts every reader of the JSONL stream.",
+      "residue-only — after stripping whitespace and shell punctuation nothing is left: every word expanded away and only the skeleton remains."
+    ],
+    "warns_on": [
+      "expansion-syntax-survived — `$(`, `${`, `$NAME`, `$0`/`$1`, `$?` or a backtick still present. These SURVIVED, so THIS call was quoted correctly; the warning is that the same text through DOUBLE quotes would have been silently rewritten.",
+      "collapsed-whitespace — an interior run of 2+ spaces. The ONE real-incident shape the tool can see: an eaten code span leaves nothing but the doubled space (steward seq-147 quotes exactly that).",
+      "empty-substitution-skeleton — a literal `$()`, `( )` or `[ ]`.",
+      "unbalanced-backticks — an odd number of backticks, i.e. a torn code span."
+    ],
+    "boundary_rationale": "The refusal set is the intersection of (a) 'cannot plausibly be what any author meant' and (b) zero occurrences across the whole real corpus. The corpus run DECIDED the boundary rather than confirming it: `$()` was drafted as a refusal and was demoted to a warning because TC-53's own summary contains that literal text as prose. `$0 probe`, `~$1.77` and single-quoted code spans are ordinary here and are warn-only for the same reason. Odd-backtick-count was drafted as a refusal (0 in the corpus) and demoted too, because a lone backtick discussing the character itself is plausible and TC-121 is the live precedent for what a false positive costs: seat-path-guard.sh read prose as a write target and two different agents independently routed around it. This tool sits on the active commit path (scripts/hooks/pre-commit via check-staged-ledger-sidecars.sh) and is named by three seat/command definitions, so a false refusal blocks the Steward mid-ruling and the next step is a hand-append to an append-only ledger — strictly worse than the corruption. Every refusal therefore names the single-quoting fix with a copy-pasteable form AND the one override, `--accept-shell-residue`, which writes the record and names the waived classes on stderr. HONESTY NOTE, stated in the docstring, the commit message and the README rather than papered over: the shell expands before ledgerwrite runs, so the guard sees RESIDUE and never INTENT, and NONE of the three measured incidents (seq-95/96, seq-108/109, the one quoted in seq-147) is detectable in-tool. That is why A2 (dev/steward/README.md) is half the fix and not garnish.",
+    "corpus": {
+      "ledgers": [
+        "dev/steward/steward-ledger.jsonl",
+        "dev/todos-and-considerations-ledger.jsonl",
+        "dev/design/record-lifecycle-protocol/OPP-12-sub-ledger.jsonl"
+      ],
+      "records_scanned": 378,
+      "fields_scanned": 450,
+      "false_refusals": 0,
+      "warn_count": 10,
+      "warn_rate": "2.22% of summary/body fields (10/450); 2.65% of records (10/378)",
+      "warn_breakdown": {
+        "expansion-syntax-survived": 8,
+        "collapsed-whitespace": 2,
+        "empty-substitution-skeleton": 1
+      },
+      "encoded_as": "test_guard_refuses_no_record_in_the_repos_three_real_ledgers reads the LIVE ledgers from disk (not a snapshot), so the corpus keeps testing the guard as it grows; test_warn_rate_over_the_real_ledgers_stays_low pins a 10% ceiling as a ratchet."
+    }
+  },
+  "tc92": {
+    "approach": "drive-manifest",
+    "why": "Two reasons, both about risk. (1) commission-manifest.sh's token derivation and design scan live inside a `python3 - <<'PY'` heredoc; extracting them into scripts/lib/ is a real refactor of the single most load-bearing generator in the commissioning path, and the design_refs mechanism's whole safety argument is the byte-identity of its output. Driving the tool instead means commission-manifest.sh is UNMODIFIED, so byte-identity is true by construction rather than by test. (2) The check consumes the manifest's OWN per-token coverage report (`NO design doc mentions: …`, and the `ZERO design docs matched … (tokens: …)` hard-failure), so the two literally cannot disagree about a slice's tokens. TC-100 is the standing proof that the matching rule is subtle. The ONE piece that had to be reproduced — the whole-token boundary, needed to test CURATED documents the manifest's walker never opens — is asserted byte-identical to the manifest's token_re() AT EVERY RUN (LOOKBEHIND/LOOKAHEAD literals), and DESIGN_ROOTS is parsed out of the manifest source rather than restated. If either changes, the check exits 2 instead of answering a different question from the report it consumes (arm 6b).",
+    "predicate": "PER-TOKEN. Every token a ladder entry declares must be whole-token matched by a design document under the manifest's selectors (i), or by one of the entry's curated `design_refs` documents (ii), or carry a frozen exemption (iii).",
+    "predicate_deviation_from_brief": "The brief stated route (ii) as 'the entry carries a non-empty design_refs' — a PER-ENTRY blanket pass. Implemented as PER-TOKEN instead ('a curated doc that NAMES the token'), because the per-entry reading is inconsistent with two other things the brief states as load-bearing. First, the brief's measured baseline names BOTH Slice 20/TC-45 and Slice 21/ac_002 as exemptions; under the per-entry reading Slice 21 already carries a non-empty design_refs, so it would be covered by (ii) and its exemption row would be dead code — an exemption that exempts nothing is a lie in the source. Second, the brief's stated ratchet property is 'a NEW uncovered token goes red immediately, on a landed slice or a future one'; under the per-entry reading a new id minted on any of slices 21, 22, 23, 31, 32 or 33 (all of which carry design_refs today) would never fire — the exact quiet mode TC-92 is about. The per-token rule is the only one under which the brief's own baseline and its own stated purpose are both true. Curation is still a real remedy and is proven so by arm 4: a curated document OUTSIDE the scanned roots that names the token DOES provide coverage, which is the case the manifest's walker can never reach. FLAGGING IT rather than absorbing it silently.",
+    "exemptions": [
+      {
+        "release": "0.8.20",
+        "slice": 20,
+        "token": "TC-45",
+        "justification": "LANDED. TC-45 is the supersession-terminal fix carried by R-20-DR; the dense_readiness design predates the id and the entry carries no design_refs. Curating it is the Steward's edit to the state file (TC-92 remedy (b)); hand-annotating the doc is the superseded 'Requirement traceability' blockquote."
+      },
+      {
+        "release": "0.8.20",
+        "slice": 21,
+        "token": "ac_002",
+        "justification": "LANDED. Slice 21's curated design_ref covers the TC-57 write-race leg and says nothing about the ac_002 oracle replacement — the second shape TC-92 records: one incidental match, honestly reported, easy to read past. Its design of record is the plan's requirements section, not a design memo."
+      }
+    ],
+    "exemption_semantics": "Frozen and individually enumerated inside scripts/check-design-refs.sh with a TC-92 pointer. Anything NOT in the table is a hard failure. Deliberately NOT 'skip LANDED slices' — the check never reads a ladder entry's `status` field at all, so it cannot branch on one (arm 11 asserts both the structural and the behavioural half). A STALE exemption (one whose token has since gained coverage) is reported loudly on stdout and is NEVER fatal, so paying coverage debt can never be the thing that turns the tree red.",
+    "wiring": "scripts/hooks/pre-commit only — the ACTIVE hook (core.hooksPath = scripts/hooks), invoked as `scripts/check-design-refs.sh --staged-only`, placed immediately after the TC-88 sidecar block and mirroring its shape. The trigger set lives in ONE place, the gate's own --staged-only branch: `^dev/plans/release-state-.*\\.json$|^dev/design/`, scanned with NO --diff-filter so DELETIONS trigger it too (codex P2-1). When it fires, the sweep runs over a snapshot of the INDEX built with `git checkout-index --all --prefix` into mktemp -d, with the git environment scrubbed, so it judges the content that will be committed rather than the worktree (codex P2-2). Measured: ~7ms exit 0 when nothing relevant is staged; 2.4s for the full 14-slice sweep when a dev/design path IS staged. Deliberately NOT added to scripts/preflight.sh --landing (every check there is paired with a mirrored CI job and this one has no mirror, and adding the mirror was forbidden), NOT to scripts/agent-test.sh, and nothing under .github/** was modified. Arm 9 pins the CI-inertness.",
+    "manifest_byte_identical": true,
+    "baseline_at_head": "14 slices, 33 declared tokens, 2 exemptions used, 0 gaps — exit 0.",
+    "staged_only_semantics": {
+      "judges": "the INDEX — a `git checkout-index --all --prefix` snapshot under mktemp -d, removed on exit",
+      "trigger": "dev/plans/release-state-*.json or dev/design/**, INCLUDING deletions",
+      "git_env": "GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE, GIT_OBJECT_DIRECTORY, GIT_ALTERNATE_OBJECT_DIRECTORIES, GIT_COMMON_DIR, GIT_PREFIX all unset before the sweep",
+      "cannot_certify": "an unmerged index, or a snapshot that cannot be built: announced loudly as NOT CHECKED, exit 0, never a refusal",
+      "manifest_modified": false,
+      "snapshot_is_made_by": "mkdir + printf only — NO git binary, NO git init (TC-128). Write-safety is structural.",
+      "git_writes_in_the_path": "none; checkout-index writes only inside the mktemp -d snapshot",
+      "self_check": "the snapshot must resolve to itself via a scrubbed read-only rev-parse, else NOT CHECKED + exit 0"
+    }
+  },
+  "not_done": [
+    {
+      "item": "TC-100 (bare-substring / word-boundary token match)",
+      "why": "Explicitly forbidden: placement is an OPEN HITL decision and fixing it changes which docs existing slices cite. The new code REUSES the manifest's existing semantics verbatim by driving the manifest, and where it had to reproduce the boundary it copies the manifest's exact literals and refuses to run if they diverge. NOTE: the manifest at this base commit already implements word-boundary matching in token_re() (TC-100's remedy appears to have landed in the design_refs commit d30ef52f); nothing here changed it either way, and the byte-identity sweep proves it."
+    },
+    {
+      "item": "The twelve remaining hand-written 'Requirement traceability' blockquotes in dev/design/**",
+      "why": "Forbidden — removing them would break commissioning, and curating design_refs to compensate was also forbidden. Left exactly as found. None were added."
+    },
+    {
+      "item": "scripts/agent-test.sh — the new suite is NOT registered there",
+      "why": "Forbidden (CI reaches it; Slice 40's territory). Consequence to record: scripts/tests/test_check_design_refs.sh has no automatic runner. CI does not auto-discover scripts/tests/*, so this is consistent with the unit being local-only, but it does mean the suite runs only when invoked by hand or by a reviewer."
+    },
+    {
+      "item": ".github/** untouched",
+      "why": "Hard guardrail — Slice 40 owns the publish workflow. .github/workflows/ci.yml was read only to confirm CI-inertness; nothing there was edited. `git diff --stat 2671346d..HEAD` shows zero .github paths."
+    },
+    {
+      "item": "dev/plans/release-state-0.8.20.json, plan-0.8.20.md, STATUS-0.8.20.md, master schedules, ledger .jsonl content",
+      "why": "Forbidden — the Steward reconciles those. No ledger was appended to and none was staged, so no .jsonl.seq sidecar question arose (TC-88). Arm 12 asserts the state file is byte-identical after a run."
+    },
+    {
+      "item": "scripts/sbom-survey/**, src/**, engine/**, manifests and lockfiles",
+      "why": "Forbidden. Zero touched; SCHEMA stays 24 and the governed surface is byte-identical (gate 10 exit 0)."
+    },
+    {
+      "item": ".claude/** left alone",
+      "why": "Out of scope even though three agent/command definitions name `ledgerwrite`. CONSEQUENCE WORTH THE STEWARD'S ATTENTION: those definitions still show `--summary \"…\"` in double quotes in at least the shapes they describe; the new hard rule lives only in dev/steward/README.md until someone with .claude/** in scope aligns them."
+    },
+    {
+      "item": "ledgerwrite does not RECORD the override in the written entry",
+      "why": "Considered and rejected as scope: adding a field when --accept-shell-residue is used would be a genuinely better audit trail for an append-only ledger, but it changes the record shape and risks the existing reserved-key/shape tests and any downstream schema expectation. The override is loud on stderr instead. Cheap follow-up if the Steward wants it."
+    },
+    {
+      "item": "--kind and --ref are not guarded",
+      "why": "The brief scoped the guard to --summary, --body and --field values. Both are structured tokens (`decision`, `git:abc123`) whose vocabulary is checked by their readers; guarding them would add warn-noise without adding a catch."
+    },
+    {
+      "item": "scripts/lib/ shared-helper extraction from commission-manifest.sh",
+      "why": "The alternative TC-92 approach. Rejected in favour of drive-manifest — see tc92.why. It remains the cleaner long-term shape if the manifest's internals ever need to be reused by a third caller."
+    },
+    {
+      "item": "the bounded index-vs-worktree divergence FALLBACK described in the fix brief",
+      "why": "Not built, because the preferred route was measurable and available: the manifest runs unmodified inside an index snapshot with byte-identical output at 0.26s. The fallback would have been strictly weaker (it can only detect divergence, not resolve it) and would have added a second code path to maintain."
+    },
+    {
+      "item": "dev/plans/runs/codex/0.8.20/doc-hygiene-3-remainder-review-20260729T230053Z.log not committed",
+      "why": "The orchestrator lands the transcript. It is present and untracked in the worktree, and was not edited."
+    },
+    {
+      "item": "option-2 fallback (index-vs-worktree divergence check, no snapshot) not built",
+      "why": "Option 1 was adopted instead: it keeps the sweep index-exact so codex P2-2 stays fully closed, whereas option 2 degrades to 'cannot certify' in precisely the partial-commit case P2-2 is about. Both are write-safe; option 1 is also exact."
+    }
+  ],
+  "files_changed": [
+    "dev/agent-tools/ledgerwrite/ledgerwrite.py",
+    "dev/agent-tools/ledgerwrite/test_ledgerwrite.py",
+    "dev/steward/README.md",
+    "scripts/check-design-refs.sh",
+    "scripts/hooks/pre-commit",
+    "scripts/tests/fixtures/release-state-9.9.9-design-refs.json",
+    "scripts/tests/test_check_design_refs.sh"
+  ],
+  "escalations": [
+    {
+      "kind": "spec-tension resolved on the merits, FLAGGED not absorbed",
+      "detail": "TC-92 route (ii): the brief's literal wording (per-entry design_refs) contradicts the brief's own measured baseline (both Slice 20 and Slice 21 listed as needed exemptions) and its own stated ratchet property. Implemented per-token. See tc92.predicate_deviation_from_brief. If the Steward prefers the per-entry reading, the change is two lines in scripts/check-design-refs.sh and the Slice 21 exemption row then becomes stale (the check will say so, non-fatally)."
+    },
+    {
+      "kind": "pre-existing finding, NOT fixed",
+      "detail": "shellcheck SC2086 (info) in scripts/hooks/pre-commit at `$ruff_bin check $PYFILES` — the `# shellcheck disable=SC2086` directive one line above sits on the assignment rather than the usage. Present identically at base 2671346d (proven by running shellcheck on the base blob). Not this unit's, and the file is on the commit path so a drive-by fix was not taken."
+    },
+    {
+      "kind": "environment note",
+      "detail": "shellcheck is not installed on this machine (`command -v shellcheck` → not found) and there is no .venv in the worktree. shellcheck was obtained via `pip download shellcheck-py` into the scratchpad and run from there; ruff was taken from ~/.local/bin/ruff. markdownlint required symlinking the primary checkout's node_modules into the worktree — the script's own documented remedy — and the symlink was removed before closure."
+    }
+  ],
+  "review_round": "codex §9 fix round 4 — one [P2], no [P1]. Addressed in 460cd012. Steward ruling seq-190: FIX-4, do not revert; round 5 is terminal.",
+  "codex_review": [
+    {
+      "round": 1,
+      "verdict": "CONCERN — two [P2], no [P1]",
+      "transcript": "dev/plans/runs/codex/0.8.20/doc-hygiene-3-remainder-review-20260729T230053Z.log (left untracked and unedited; the orchestrator lands it)",
+      "drew_no_findings": [
+        "the TC-53 residue guard and its corpus calibration",
+        "the dev/steward/README.md half",
+        "the TC-92 per-token predicate and the frozen exemption ratchet",
+        "commission-manifest byte-identity"
+      ],
+      "findings": [
+        {
+          "id": "P2-1",
+          "title": "Include staged design deletions in the trigger",
+          "where": "scripts/check-design-refs.sh --staged-only trigger scan",
+          "defect": "`git diff --cached --name-only --diff-filter=ACMR` excludes deletions, so a commit that REMOVES the only dev/design/** document mentioning a token hit the early exit and the sweep never ran. Coverage could be deleted through the gate.",
+          "fix": "Dropped the --diff-filter entirely for the trigger scan (the same shape check-staged-ledger-sidecars.sh uses). A deleted path decides only WHETHER to run; the sweep now reads an index snapshot, so it never attempts to open a deleted file. Commented in place so the omission cannot be 'tidied' back in.",
+          "test": "arm 13 — stages `git rm dev/design/widget-design.md` (the sole design of record for Slice 0's two tokens) and requires the gate to both FIRE and FAIL. RED against the pre-fix gate with rc=0 and empty output."
+        },
+        {
+          "id": "P2-2",
+          "title": "Validate the staged snapshot, not the worktree",
+          "where": "scripts/check-design-refs.sh --staged-only sweep",
+          "defect": "The sweep drove commission-manifest.sh against the WORKING TREE while gating the INDEX. Under a partial commit that is wrong in both directions: a staged ladder entry minting an id passes because the back-link exists only as an UNSTAGED edit (silent false PASS — the quiet mode TC-92 exists to stop, arriving through the gate built to stop it), and an unrelated unstaged edit can REFUSE a clean staged commit (false BLOCK on the active commit path — the TC-121 hazard).",
+          "route_taken": "PREFERRED — exact by construction. `git checkout-index --all --prefix` materialises the index into a mktemp -d tree and the manifest is driven there.",
+          "route_rationale": "The brief made this purely empirical, so it was measured BEFORE anything was built. (1) commission-manifest.sh needs git for exactly one thing — `cd \"$(git rev-parse --show-toplevel)\"` at line 125; every other `git log`/`git rev-parse` occurrence in the file is emitted PROSE, not an invocation. (2) An empty `git init -q --template=` inside the snapshot satisfies it, and the manifest's stdout for 0.8.20 Slice 22 run inside the snapshot is BYTE-IDENTICAL to the worktree run. (3) Cost: `git checkout-index --all` = 0.255s for 2121 files / 66M. With all three green there was no reason to take the bounded fallback, so it was not built. commission-manifest.sh is UNMODIFIED and byte-identity is re-verified 14/14. No `git stash` anywhere near the commit path.",
+          "hazard_found_and_closed": "Hooks leak git environment. MEASURED with a probe hook on this machine's git: GIT_DIR is unset but `GIT_INDEX_FILE=.git/index` IS exported, and it is RELATIVE — so a git invocation with cwd inside the snapshot would resolve against the real repository and silently undo the snapshot; some git versions export GIT_DIR too. GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE, GIT_OBJECT_DIRECTORY, GIT_ALTERNATE_OBJECT_DIRECTORIES, GIT_COMMON_DIR and GIT_PREFIX are all unset before the sweep runs. Arm 17 reproduces the hook environment and pins that the verdict is unchanged.",
+          "tests": [
+            "arm 14 (no false PASS)",
+            "arm 14b (no false BLOCK)",
+            "arm 15 (snapshot hygiene)",
+            "arm 16 (unmerged announced, not refused)",
+            "arm 17 (git env scrubbed)"
+          ]
+        }
+      ],
+      "residual_stated_honestly": "Two states cannot be certified and are ANNOUNCED LOUDLY on stderr as NOT CHECKED and then let through (exit 0), never failed: an UNMERGED index (no stage 0 to snapshot) and a snapshot that cannot be built (checkout-index failure). This deliberately DIVERGES from check-staged-ledger-sidecars.sh, which exits 2 on an unmerged path — that gate protects an invariant conflict resolution actively breaks, whereas this one is a coverage discipline where a refusal nobody can act on costs more than the miss, and a merge commit touching dev/design/** must not be blocked by a gate that could not look. It is a considered divergence, not an oversight, and it is written into the script header (THE RESIDUAL, NAMED RATHER THAN IMPLIED) as well as here. No comment anywhere implies index-exactness the code does not have.",
+      "cost": "Full 14-slice sweep over an index snapshot, end-to-end against the real repo with dev/design/orchestration.md staged: 2.4s, exit 0. Unrelated commits still early-exit in ~7ms.",
+      "constraints_respected": "commission-manifest.sh UNMODIFIED (byte-identity re-verified 14/14 vs 2671346d). Nothing touched under .github/**, src/**, engine/**, .claude/**, scripts/agent-test.sh, scripts/preflight.sh, dev/plans/release-state-*.json, plan/board/masters, ledger content, scripts/sbom-survey/**, manifests or lockfiles. No TC-100 work. No traceability blockquotes. The review transcript is left untracked and unedited."
+    },
+    {
+      "round": 2,
+      "verdict": "one [P1], nothing else — not overridable",
+      "transcript": "dev/plans/runs/codex/0.8.20/doc-hygiene-3-remainder-fix-1-rereview-20260729T231321Z.log (untracked, unedited)",
+      "finding": {
+        "id": "P1-1",
+        "title": "Scrub the git env BEFORE `git init`, not after",
+        "defect": "`git init -q --template= \"$SNAPSHOT\"` ran while GIT_DIR was still exported. With GIT_DIR set, git init does NOT create $SNAPSHOT/.git — GIT_DIR wins and git REINITIALISES THE REPOSITORY GIT_DIR NAMES.",
+        "codex_claim_corrected": "codex predicted the gate would BLOCK the commits it certifies. MEASURED: it did not. The verdict stayed correct because commission-manifest.sh's `cd \"$(git rev-parse --show-toplevel)\"` degrades to `cd \"\"`, a bash no-op returning 0, leaving it in the snapshot. The real consequences were (a) a WRITE INTO THE REAL REPOSITORY and (b) the mechanism silently resting on behaviour POSIX leaves unspecified. The P1 is entirely correct; only its predicted symptom differed, and the actual one is worse."
+      },
+      "live_incidents": {
+        "id": "TC-128",
+        "count": 2,
+        "when": [
+          "2026-07-29 18:14:51",
+          "2026-07-29 18:26:28"
+        ],
+        "effect": "The PRIMARY checkout /home/coreyt/projects/fathomdb had .git/config rewritten with `bare = true`. Every work-tree operation there refused with 'fatal: this operation must be run in a work tree' while `git rev-parse HEAD` still resolved — half-alive, not obviously broken. Both repaired with `git config core.bare false`. Blast radius assessed as exactly that one line: refs, remote, branch tracking, identity and core.hooksPath byte-intact, and four uncommitted Steward ledger appends on disk survived.",
+        "attribution": "I CAUSED THE SECOND OCCURRENCE, AND PROBABLY THE FIRST. Both came from running the gate with the real linked worktree's GIT_DIR exported: the 18:26:28 one was a deliberate 'contrast measurement' in which I executed the KNOWN-BUGGY pre-fix gate (edcce999) with GIT_DIR pointed at the real repo, to capture RED evidence. Running a known-destructive-under-condition binary against the live repo to observe the destruction was a bad call; a throwaway fixture would have given the same evidence at zero risk.",
+        "standing_change": "I have not executed any prior revision of the gate since, and will not. All RED evidence for the round-2 arms is grep-only (arm 17c) or was captured before the freeze (arms 17b/17d)."
+      },
+      "route_taken": "Option 1 — hand-build a minimal .git inside $SNAPSHOT with mkdir and printf; NO git binary invoked to create it, and NO `git init` anywhere in the script.",
+      "route_rationale": "Chosen over the option-2 fallback because it keeps codex P2-2 fully closed. Option 2 (compare index vs worktree, and report NOT CHECKED on divergence) creates no snapshot and is safe, but it degrades to 'cannot certify' in exactly the partial-commit case P2-2 is about, so the coverage gap would reopen whenever it matters most. Option 1 keeps the sweep index-exact AND makes the write-safety structural. Measured before adopting: a HEAD, a config with repositoryformatversion 0 and bare false, and empty objects/ and refs/heads/ is all `git rev-parse --show-toplevel` needs, resolving correctly from the snapshot root and from any subdirectory. Chosen over 'reorder the scrub' because ordering makes damage UNLIKELY while removing the write makes it IMPOSSIBLE, and a guard on the commit path must not be able to damage what it guards.",
+      "why_write_safety_is_structural": "The script invokes exactly five git commands and every one is read-only: `git rev-parse --show-toplevel` (twice — once to find the repo root, once scrubbed via `env -u` to prove the snapshot resolves to itself), `git --no-optional-locks diff --cached --name-only`, `git ls-files --unmerged`, and `git checkout-index --all --prefix=` which writes ONLY inside the mktemp -d snapshot. `--no-optional-locks` was added so that even the trigger scan cannot refresh the index stat cache, because a read-only claim with an exception is a claim nobody can rely on. There is no git init, no git config, no git add, no git stash. With no write anywhere in the path, the worst case of a leaked or wrong GIT_* is a WRONG ANSWER FROM A DOCS-HYGIENE GATE — never a damaged repository. Verified by a code-only audit (comments stripped) over the full write-verb list.",
+      "belt_and_braces": "After materialising the snapshot the gate requires `$SNAPSHOT/.git` to exist AND the snapshot's own `git rev-parse --show-toplevel` (run through `env -u`, on the same invocation, so no later edit can separate them) to resolve to $SNAPSHOT itself. Anything else prints NOT CHECKED and exits 0. This removes the dependence on `cd \"\"` being a bash no-op — the accidental correctness that let the defect hide.",
+      "scrub_retained": "The `unset` of the seven GIT_* variables stays, as DEFENCE IN DEPTH rather than as the safety argument, and still sits AFTER the last real-repo read. That ordering is now a CORRECTNESS requirement rather than a safety one: `checkout-index` must see the hook's GIT_INDEX_FILE, because a partial commit (`git commit -- <paths>`) puts the content that will be committed into a TEMPORARY index and names it there (measured: `.git/next-index-*.lock`). Arm 17d pins it.",
+      "arm_17_rebuild": "The predecessor arm 17 PASSED WHILE THE DEFECT WAS LIVE, which is the more serious half of this round. It hand-made `GIT_DIR=.git GIT_INDEX_FILE=.git/index` — both RELATIVE — which is the shape a PLAIN checkout exports and is harmless. A real LINKED-WORKTREE hook exports both as ABSOLUTE, and it is the absolute GIT_DIR that breaks git init. The arm now builds a genuine worktree with `git worktree add`, installs a genuine hook, makes a genuine commit, and asserts NON-VACUITY FIRST: if the captured GIT_DIR is not absolute the arm FAILS rather than passing, because it would be testing the same fiction.",
+      "red_evidence": {
+        "arm_17c": "GREP-ONLY, no execution, safe against any revision. Comments stripped, then the full git write-verb list matched: `edcce999 CODE invokes: git init`; `HEAD invokes: (none)`.",
+        "arm_17b_and_17d": "Captured BEFORE the freeze, against edcce999 in a throwaway fixture: arm 17b `signature changed=YES` (the gate rewrote the gated repository's .git/config); arm 17d `checkout-index=215 unset=231 init=225` — the scrub sat 6 lines too late, after git init.",
+        "arm_17_rebuilt": "HONEST NON-RESULT: it PASSES against edcce999 too, because the verdict genuinely stayed correct via the `cd \"\"` degradation. codex asked for both arms RED; one of them cannot be, and contriving an assertion to force red would be the same vacuous-green disease in reverse. The write-safety arms carry the RED.",
+        "arm_18": "Not run against edcce999 — that would require re-triggering the incident. It is a forward-looking canary."
+      },
+      "freeze_compliance": "Complied with the orchestrator's sequencing: reasoned and rewrote first, re-read the finished script asking only 'can any git invocation here write anything, anywhere?' (answer: a flat no, five read-only calls), and only then exercised the arms. No prior revision of the gate has been executed since the freeze.",
+      "verification_of_the_real_repo": "core.bare = false before and after the full gate run and after a real end-to-end hook-path run; the primary checkout's .git/config md5 byte-identical across both. Arm 18 now asserts this on every future suite run."
+    },
+    {
+      "round": 3,
+      "verdict": "one [P2], no [P1] — the round-2 route change was accepted with no findings",
+      "transcript": "dev/plans/runs/codex/0.8.20/doc-hygiene-3-remainder-fix-2-rereview-20260729T234504Z.log (untracked, unedited)",
+      "finding": {
+        "id": "P2-3",
+        "title": "`readlink -f` is GNU-only and the self-check FAILED OPEN",
+        "where": "scripts/check-design-refs.sh:320 (at 071f4d38)",
+        "defect": "The snapshot self-check compared `readlink -f \"$SNAP_TOP\"` with `readlink -f \"$SNAPSHOT\"`. BSD/macOS readlink has no -f, so BOTH substitutions collapse to the empty string, `\"\" != \"\"` is false, and the guard whose entire job is to prove the toplevel resolved INSIDE the snapshot silently passes. It also sprayed readlink errors into hook output.",
+        "class": "A check that goes green because both of its inputs degraded identically — the same vacuous-green disease as the old arm 17. Third appearance of this class in this unit, which is why the fix was applied beyond the reported line.",
+        "fix": "Replaced with the repo's existing portable idiom, `abs_dir() { ( cd \"$1\" 2>/dev/null && pwd -P ); }`, lifted from scripts/preflight.sh whose comment already explains why not to use readlink -f. AND made to FAIL CLOSED: if either normalised path is empty that is NOT CHECKED + exit 0, so empty-equals-empty is not a reachable pass.",
+        "proof": "Reproduced in isolation with a BSD-behaving readlink stub and genuinely mismatched paths — old idiom: PASSES (fail-open); new idiom: REFUSES. Grep-only RED for arm 17g: `readlink -f` at line 320 of 071f4d38, nothing at HEAD."
+      },
+      "same_class_fixed_in_my_own_arms": "Two round-2 arms — the ones added specifically to catch fail-open — were themselves fail-open on BSD. `admin_signature()` piped GNU `find -printf` into `md5sum`, and the primary-config canary piped `cat` into `md5sum`; with either tool absent both sides hash nothing and compare equal, so the arm passes regardless. Both now use POSIX `cksum` and both assert their raw input was NON-EMPTY before trusting the comparison. Not asked for, but it is the identical defect in the guards meant to catch it.",
+      "portability_audit": {
+        "method": "comments stripped from both files, then matched against readlink -f, grep -P, sed -i, stat -c, date -d, date +%s%N, md5sum, find -printf, realpath, mktemp flags, env -u",
+        "gate": "CLEAN — no GNU-only construct remains. `env -u` is POSIX. `mktemp -d` matches existing repo usage. `git --no-optional-locks` is a git flag (2.15+), not a coreutils one.",
+        "test": "Two GNU dependencies retained, deliberately, because neither can go green over a defect: `find -printf` in admin_listing now FAILS CLOSED via the new non-empty guard, and `date +%s%N` in the timing arm FAILS LOUD (on BSD `%N` stays literal and the arithmetic aborts). The suite is local-only and Linux-only by existing convention; one other repo suite already uses `find -printf`.",
+        "note": "`readlink -f` appears in scripts/preflight.sh only inside the comment that tells you not to use it. Before this fix, scripts/check-design-refs.sh was the ONLY script in scripts/*.sh that actually invoked it."
+      },
+      "new_arms": [
+        "arm 17f (BSD readlink stub on PATH, asserts stub non-vacuity first)",
+        "arm 17g (gate GNU-only list stays empty)"
+      ],
+      "no_git_write_regression": "Re-verified: the gate still contains no git write verb of any kind (arm 17c), and no `git init` has returned."
+    },
+    {
+      "round": 4,
+      "verdict": "one [P2], no [P1]",
+      "transcript": "dev/plans/runs/codex/0.8.20/doc-hygiene-3-remainder-fix-3-rereview-20260729T235354Z.log (untracked, unedited)",
+      "steward_ruling": "seq-190 — FIX-4, do not revert. Round 5 is terminal and unconditional: if the round-5 re-review is not clean on any class at any severity, the --staged-only snapshot is reverted to the option-2 fallback.",
+      "finding": {
+        "id": "P2-4",
+        "title": "Failed normalisation cannot reach the self-check (set -e aborts the assignment)",
+        "where": "scripts/check-design-refs.sh:328 (at 5c3a3332)",
+        "defect": "Under `set -e`, `SNAP_TOP_ABS=\"$(abs_dir …)\"` exits the script when abs_dir returns nonzero, so the documented `NOT CHECKED` + `exit 0` branch was UNREACHABLE in exactly the circumstance it was written for. The hook received a bare `exit 1` with no message — a silent false BLOCK on the commit path.",
+        "verified_independently": "A `set -e` assignment from a failing command substitution dies before the next statement runs (measured, isolated repro). And `|| true` restores reachability with an empty value."
+      },
+      "fix": {
+        "changed_lines": 3,
+        "1": "Dropped the `:-/nonexistent` default (as directed).",
+        "2": "`|| true` on BOTH substitutions — `SNAPSHOT_ABS` was checked, not assumed, and has the identical exposure.",
+        "3": "abs_dir now rejects an empty argument: `[ -n \"$1\" ] || return 1`.",
+        "untouched": "The `-z` guards and the `!=` comparison are byte-for-byte unchanged, as instructed. No neighbouring line, no other arm, nothing else in either file.",
+        "comment": "The adjacent comment now records WHY there is no default, so it does not get reinstated."
+      },
+      "deviation_from_the_prescription_and_why": "The brief authorised exactly two changes: drop the default, and stop the abort. Applied literally, those two alone introduce a FALSE PASS. MEASURED: `cd \"\"` SUCCEEDS in bash and `pwd -P` then returns THE CURRENT DIRECTORY — which at that point IS the snapshot — so an empty toplevel normalises to the very value it is compared against, the `-z` test never fires because the result is non-empty, the comparison matches, and the guard silently passes. The brief's own text anticipated the mechanism ('bash cd \"\" succeeds and returns the cwd') but concluded that empty would 'reach the -z test'; it does not. The third change (abs_dir rejecting empty) is what actually delivers the brief's stated intent, and it keeps the reviewed-clean condition block untouched, which the alternative (adding a raw `-z \"$SNAP_TOP\"` to the condition) would not have. This is the same vacuous-green class the unit has now hit four times, so it was not left for round 5.",
+      "arm": {
+        "name": "arm 17h",
+        "cases": [
+          "(i) toplevel is a path that does not exist",
+          "(ii) toplevel is EMPTY"
+        ],
+        "why_both": "They fail in OPPOSITE directions — (i) used to abort into a false BLOCK, (ii) would become a false PASS — and one fix must handle both.",
+        "mechanism": "Shadows `git` on PATH with a wrapper that rewrites only `rev-parse --show-toplevel`, and only inside the hand-built snapshot (identified by its `.git` having no `index`, which a real repo's does); everything else delegates to the real git.",
+        "red_evidence": "Against 5c3a3332: `FAIL arm 17h(i) (unreachable toplevel): rc=1 out=` and `FAIL arm 17h(ii) (empty toplevel): rc=1 out=`. The EMPTY output is itself the defect — a bare exit 1 with no message."
+      },
+      "no_regression": "Zero git write verbs in the gate (re-verified); no `git init`; the gate remains free of GNU-only constructs."
+    }
+  ],
+  "rebased_onto": "33cd9dae83a583e5d013f4e600ff401cb7135ed1",
+  "orchestrator_closure": {
+    "verdict": "LAND",
+    "review_rounds": 5,
+    "round_5": "TERMINAL-CLEAN — codex: 'I did not identify any actionable correctness issues in the diff.'",
+    "round_history": [
+      "round 1 CONCERN two P2 — staged deletions excluded from the trigger; worktree judged while the index was gated",
+      "round 2 P1 — git init ran before the GIT_* scrub; absolute GIT_DIR from a linked-worktree hook meant no snapshot repo, so the gate blocked the commits it certifies. Fired twice on the primary checkout (TC-128)",
+      "round 3 P2 — readlink -f is GNU-only and failed OPEN (both comparison inputs degraded to empty)",
+      "round 4 P2 — under set -e a failing normalisation exited the script, making the documented NOT CHECKED branch unreachable (fail-CLOSED, the opposite direction)",
+      "round 5 CLEAN"
+    ],
+    "steward_rulings_applied": [
+      "seq-189 — round 4 authorized; pre-committed exit on a fourth degraded-both-sides instance",
+      "seq-190 — fix-4 not revert; round 5 declared the last round unconditionally"
+    ],
+    "gates_after_rebase": {
+      "pytest ledgerwrite": 0,
+      "pytest ledgerwatch": 0,
+      "test_check_design_refs.sh": 0,
+      "test_commission_manifest.sh": 0,
+      "test_staged_ledger_sidecar.sh": 0,
+      "test_smoke_scripts.sh": 0,
+      "test_check_release_state_views.sh": 0,
+      "check-release-state-views.sh": 0,
+      "check-ledgers.sh": 0,
+      "check-governed-surface-pin.sh": 0,
+      "lint-design-status.sh": 0,
+      "check-board-currency.sh": 0,
+      "check-design-refs.sh": 0,
+      "check-transcript-hygiene.sh": 0,
+      "check-c1-conformance.sh": 0,
+      "commission-manifest byte-identity 14/14": 0,
+      "primary .git/config byte-identical": 0
+    },
+    "verified_by_orchestrator_from_git": [
+      "commission-manifest.sh UNMODIFIED by the branch; 14/14 stdout byte-identical against the post-rebase origin/main blob",
+      "zero .jsonl / .jsonl.seq deltas on the branch",
+      "zero forbidden paths (.github, src, engine, .claude, state file, plan, board, preflight.sh, agent-test.sh, sbom-survey, manifests, lockfiles)",
+      "comment-stripped audit: no git write verb in check-design-refs.sh except checkout-index --prefix into the temp snapshot",
+      "clean rebase onto origin/main, every gate re-run after"
+    ]
+  }
+}
