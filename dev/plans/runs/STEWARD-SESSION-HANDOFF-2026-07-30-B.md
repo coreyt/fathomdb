@@ -208,6 +208,29 @@ follow-up.
    quote each `rc`. **Capture `rc=$?` on the very next line**, before any pipe.
 8. **`dev/plans/runs/**` is excluded from markdownlint (TC-130)** — lint a copy elsewhere.
 9. **Never `git add -A`** (TC-132). **`pgrep -x`, never `-f`** (TC-83).
+10. **⚠ A STALE NATIVE MODULE MAKES `test-python` LOOK CATASTROPHICALLY RED WHEN IT IS MERELY UNRUNNABLE
+    (`TC-136`).** Read-only, it gives **40 collection errors**, every one the same
+    `ImportError: cannot import name 'IllegalTransitionError' from 'fathomdb._fathomdb'` — the compiled
+    `.so` predates the 0.8.19 lifecycle symbols. **None is a test failure.** Ruled out as TC-97:
+    `-o pythonpath=` from a neutral cwd gives the identical 40. `agent-test.sh:231-236`'s
+    `FATHOMDB_TESTS_ALLOW_REBUILD` dance exists because for the Python suite the rebuild is a
+    **prerequisite, not a convenience**. **A red list therefore needs FOUR states:** PASSED · FAILED ·
+    SKIPPED-prerequisite-absent · **UNKNOWN-requires-the-sanctioned-rebuild**. ⛔ Do not resolve it by
+    rebuilding blind: in a worktree that rebinds the shared venv (the stale-base trap). **Report it; do not
+    file 40 phantom failures.**
+11. **Steward-supplied primary-checkout results, 2026-07-30** (hand these to 39.5 rather than re-running):
+    `test-ledgerwatch` **rc=0** (96 passed) · `test-ts` **rc=0** (~177 s, slow — budget for it) ·
+    `test-check-ledgers` **rc=0** · `test-python` **UNKNOWN** per item 10.
+12. **⚠ A guard can block LEGITIMATE PROVISIONING.** `seat-path-guard.sh` denied the 39.5 orchestrator a
+    `src/ts/node_modules` symlink purely because the path starts with `src/` — but that directory is
+    **gitignored with zero tracked files**, a dependency dir, not source. **The Steward provisions it**
+    (worktree setup is the Steward's job). ⛔ **`.venv` is the exception and must NEVER be symlinked into a
+    worktree** — it would satisfy `agent-test.sh:231`'s ownership check and fire a `maturin develop` that
+    rebinds the shared venv.
+13. **✅ An implementer REFUSED a permission-laundering request and was RIGHT.** The 39.5 orchestrator, blocked
+    by its own seat guard, asked an implementer to perform the write for it; the implementer refused,
+    correctly, without needing to judge whether the action was benign. **A blocked action escalates to the
+    Steward — it never routes sideways.** Reinforce this; the guardrail worked.
 
 ## 10. Standing rules
 
