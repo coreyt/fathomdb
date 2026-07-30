@@ -1,0 +1,234 @@
+{
+  "phase": "SLICE-ID-HARDENING fix-2 (cross-cutting unit, 0.8.20; no slice number, no R-20-xx id) — two codex §9 [P2] findings, both fail-open paths in the TC-133 cross-read that Leg 3 added",
+  "baseline_sha": "48b45aa3f3d84de307af532ac3c242ff6f02b996",
+  "branch": "0.8.20-slice-id-hardening",
+  "head_sha": "f43eec45",
+  "commits": [
+    {
+      "sha": "ddad1bf5",
+      "kind": "arms (deliberately RED)",
+      "subject": "test(0.8.20 SLICE-ID-HARDENING fix2): RED-first recurrence arms for two fail-open paths in the TC-133 cross-read",
+      "paths": [
+        "scripts/tests/test_check_board_currency.sh"
+      ]
+    },
+    {
+      "sha": "f43eec45",
+      "kind": "fix",
+      "subject": "fix(0.8.20 SLICE-ID-HARDENING fix2): close two fail-open paths in the TC-133 cross-read",
+      "paths": [
+        "scripts/check-board-currency.sh",
+        "scripts/preflight.sh"
+      ]
+    }
+  ],
+  "red_audit_note": "The orchestrator's independent re-run of ddad1bf5 must show `bash scripts/tests/test_check_board_currency.sh` rc=1 with exactly 58 PASS and 15 FAIL. Measured on byte-identical content immediately before the commit. The 15 FAILs partition as: 5 from Arm 18 (landed slice with no ladder sha — 1 recurrence + 1 slice-name + 3 anti-vacuity lines that fire pre-fix only because the fixture's PASSING cross-read summary line contains the words `remaining_ladder`), 1 from Arm 19, 3 from Arm 20 (missing STALE prefix / missing type diagnostic / raw traceback present), 3 from Arm 21, 2 from Arm 22b and 2 from Arm 22c. NO DEVIATION: the arms commit touches only scripts/tests/test_check_board_currency.sh; the fix commit touches only scripts/check-board-currency.sh and scripts/preflight.sh.",
+  "findings_addressed": {
+    "A": {
+      "severity": "P2",
+      "site": "scripts/check-board-currency.sh:428-429 (baseline 48b45aa3)",
+      "statement": "`sha = (by_slice.get(key) or {}).get(\"sha\")` followed by `if sha and sha not in status:` made check (c) — the LOAD-BEARING half of the TC-133 cross-read — a silent NO-OP for any slice listed in `landed` whose `ladder` entry is missing or carries no `sha`. The gate then certified the hand-written row on the strength of check (b), the marker regex the file's own comment calls the fragile half. That is exactly the state-file incompleteness this step was added to catch.",
+      "real_state_measurement": "REQUIRED BY THE BRIEF AND PERFORMED BEFORE CHOOSING THE FIX. Every one of the 14 ids in `landed` in dev/plans/release-state-0.8.20.json — 0, 5, 10, 15, 20, 21, 22, 23, 25, 30, 31, 32, 33, 39 — has a `ladder` entry AND a non-null, non-empty string `sha` (403eb254, 1f8ed8bf, 3cfb3cda, a2022957, 841c307b, 83b1c818, 9b3ed0e3, 77be504b, 572475f2, 30102ecd, d0287620, 31d33293, f02dc5b4, 91db34d8). ZERO landed slices lack one, so a hard fail cannot redden the live gate. Confirmed end-to-end: `bash scripts/check-board-currency.sh` reports `14 landed slice(s) reconciled` and exits 0. The STOP condition was therefore not triggered.",
+      "fix": "The landed-slice loop now resolves the ladder entry FIRST and hard-fails with a specific reason when it is absent, when it carries no `sha` key, or when `sha` is not a non-empty string; check (c) then consumes that resolved value instead of re-deriving it through the `or {}` construct. The non-empty-STRING requirement is deliberate: `sha` is used as `sha not in status`, where a non-string is either a TypeError or a silently wrong answer."
+    },
+    "B": {
+      "severity": "P2",
+      "site": "scripts/check-board-currency.sh:207-209 (baseline 48b45aa3) + scripts/preflight.sh §7",
+      "statement": "Leg 3 validated KEY PRESENCE but not TYPE. A state file whose `landed`/`ladder`/`remaining_ladder` had the wrong type sailed past validation and detonated in a later loop as an UNPREFIXED Python traceback. The standalone checker exits non-zero, but `preflight.sh --landing` promoted only `STALE*` lines to HARD and turned every other line into INFO — so the cross-read's failure was DOWNGRADED and the tree was CERTIFIED FOR LANDING. Measured pre-fix: `preflight.sh --landing` rc=0 on that tree.",
+      "fix_part_1_type_validation": "`landed`, `ladder` and `remaining_ladder` must each be a JSON array, and `ladder` must be an array of OBJECTS. Diagnostics are raised into the existing handler, which emits them with the `STALE` prefix preflight promotes to HARD. The `ladder`-of-objects half is not cosmetic: the map builder guarded itself with `isinstance(entry, dict)`, so `\"ladder\": [5, 40]` silently DROPPED every entry, the map came out EMPTY, and check (c) then evaporated via finding A's construct — two independent fail-opens composing into one green with rc=0, no exception and no diagnostic (Arm 21). That guard has been removed now that the type is validated.",
+      "fix_part_2_general_fail_open": "See `determination` below."
+    }
+  },
+  "determination": {
+    "question": "[DETERMINE] the correct locus for closing the GENERAL fail-open — a future unexpected exception anywhere in the cross-read must surface as a hard failure during landing, never as an unprefixed traceback downgraded to INFO.",
+    "chosen": "(ii) harden scripts/preflight.sh §7 so a NON-ZERO EXIT from check-board-currency.sh is HARD regardless of what it printed.",
+    "rejected": "(i) catch-and-re-emit inside check-board-currency.sh's embedded Python.",
+    "why_rejected_measured": "A Python-level catch can only cover what is raised INSIDE that Python. MEASURED, not asserted, against the shipped script: `bash scripts/check-board-currency.sh --tip nosuchref` exits 2 printing `check-board-currency: --tip nosuchref does not resolve to a commit`, and `bash scripts/check-board-currency.sh --bogus` exits 2 printing `check-board-currency: unknown arg --bogus` — both with ZERO `STALE` lines, i.e. both fully downgraded to INFO by the old §7. The script also runs under `set -euo pipefail` after sourcing scripts/lib/board-closed.sh, so a missing/broken lib, a failing `git log`, or any future bash-level check aborts it the same way. Option (i) closes the INSTANCE codex demonstrated, not the CLASS codex named.",
+    "why_chosen": "It is the more robust invariant AND, contrary to the brief's framing, the SMALLER blast radius of the two: the guard is additive and can only fire on a run that is ALREADY non-zero, so it cannot turn a green land red (pinned by Arm 22d). It is also not a new idiom — preflight §8 (ledger-integrity), §9 (governed-surface-pin), §10 (c1-conformance) and §11 (transcript-hygiene) ALL already carry exactly this anti-fail-open guard, with near-identical wording. §7 was the ONE landing sub-gate missing it, because it predates the idiom; this REMOVES AN ASYMMETRY rather than inventing an invariant. CI needed nothing: the always-on board-currency job fails on any non-zero exit already — preflight was the only downgrader.",
+    "proven_by_execution": [
+      {
+        "case": "(i) fails the cross-read WITH a prefixed diagnostic — fixture U, release 0.8.84, `\"landed\": 5`",
+        "unfixed_landing_rc": 0,
+        "fixed_landing_rc": 1,
+        "fixed_output": "HARD  board-currency: STALE  0.8.84: dev/plans/release-state-0.8.84.json exists but could not be read as release state (required key 'landed' is a int, not a JSON array) — the board/state cross-read (TC-133) cannot vouch for …"
+      },
+      {
+        "case": "(ii) raises an UNEXPECTED exception — fixture W, release 0.8.82, a board carrying a raw 0xFF byte so `open(board, encoding=\"utf-8\").read()` raises UnicodeDecodeError (a ValueError, so the surrounding `except OSError` does not see it)",
+        "unfixed_landing_rc": 0,
+        "fixed_landing_rc": 1,
+        "fixed_output": "INFO  board-currency: UnicodeDecodeError: 'utf-8' codec can't decode byte 0xff in position 130: invalid start byte  /  HARD  board-currency: check-board-currency.sh exited 1 without reporting a specific STALE defect — refusing to certify this tree for landing"
+      }
+    ],
+    "deliberate_non_fix": "The UnicodeDecodeError in fixture W is left UNHANDLED on purpose and is documented as such in the test. Its subject is not that exception; it is the invariant that ANY unanticipated failure hard-blocks a land on the strength of the exit code alone. Giving it a bespoke handler would delete the arm, leave the invariant untested for the next unanticipated exception, and would be widening beyond the two findings codex raised."
+  },
+  "per_arm_rc": [
+    {
+      "arm": "Arm 18 — finding A: slice in `landed`, ladder entry present but with NO `sha` (fixture S, release 0.8.86)",
+      "kind": "recurrence",
+      "surface": "check-board-currency.sh (direct)",
+      "unfixed_rc": 0,
+      "fixed_rc": 1,
+      "note": "The pre-fix green IS the defect: `(by_slice.get(\"5\") or {}).get(\"sha\")` is None, `if sha and ...` is False, check (c) never runs, and the checker prints `ok 0.8.86: … 1 landed slice(s) reconciled`. Board is otherwise impeccable; four anti-vacuity assertions pin that the row-absent, marker, SHA-presence and remaining-ladder predicates all did NOT fire."
+    },
+    {
+      "arm": "Arm 19 — finding A: slice in `landed` with NO ladder entry at all (fixture T, release 0.8.85)",
+      "kind": "recurrence",
+      "surface": "check-board-currency.sh (direct)",
+      "unfixed_rc": 0,
+      "fixed_rc": 1,
+      "note": "The board DOES carry a row for Slice 5, pinned by an anti-vacuity assertion, so the pre-existing `has NO row for it` predicate cannot be the source of the red. The message assertion is deliberately `STALE.*Slice 5.*carries no ladder entry` and NOT a bare `grep -q ladder`: a bare match is vacuously green pre-fix because the passing summary line contains the word `remaining_ladder`."
+    },
+    {
+      "arm": "Arm 20 — finding B: `landed` present but of the wrong TYPE (fixture U, release 0.8.84)",
+      "kind": "recurrence",
+      "surface": "check-board-currency.sh (direct)",
+      "unfixed_rc": 1,
+      "fixed_rc": 1,
+      "note": "THE RC PROVES NOTHING ON THIS ARM AND THE TEST SAYS SO. The red is the MESSAGE: pre-fix the output is a bare `TypeError: 'int' object is not iterable` traceback with no `STALE` prefix — which is precisely what let preflight downgrade it. Three assertions were red pre-fix: STALE prefix present, type named, no raw traceback."
+    },
+    {
+      "arm": "Arm 21 — finding B: `ladder` is an array of NUMBERS, not objects (fixture V, release 0.8.83)",
+      "kind": "recurrence",
+      "surface": "check-board-currency.sh (direct)",
+      "unfixed_rc": 0,
+      "fixed_rc": 1,
+      "note": "The QUIET half of the type hole: no exception at all. `isinstance(entry, dict)` silently dropped both entries, the map came out empty, check (c) went no-op via finding A's construct, and the gate CERTIFIED the malformed file."
+    },
+    {
+      "arm": "Arm 22a — finding B premise pin: an unexpected exception leaves the checker non-zero with NO STALE line (fixture W, release 0.8.82)",
+      "kind": "premise pin (green before AND after; NOT a recurrence arm)",
+      "surface": "check-board-currency.sh (direct)",
+      "unfixed_rc": 1,
+      "fixed_rc": 1,
+      "note": "Exists so Arm 22c is testing what it claims to. Its FAIL text explicitly says: if this ever goes red, re-choose the fixture, because 22c is no longer exercising the general fail-open."
+    },
+    {
+      "arm": "Arm 22b — finding B: the same wrong-typed state file through the REAL caller, `preflight.sh --landing`",
+      "kind": "recurrence (load-bearing)",
+      "surface": "preflight.sh --landing (linked worktree of fixture U)",
+      "unfixed_rc": 0,
+      "fixed_rc": 1,
+      "note": "THIS IS THE FAIL-OPEN. Pre-fix: checker rc=1, every traceback line became INFO, HARD_FAILS stayed empty, the tree was certified for landing. Post-fix it arrives as `HARD board-currency: STALE …` via the normal §7 path, proving the new type diagnostic really does carry a prefix preflight PROMOTES."
+    },
+    {
+      "arm": "Arm 22c — finding B: an UNEXPECTED exception through the REAL caller, `preflight.sh --landing`",
+      "kind": "recurrence (load-bearing; the [DETERMINE] discriminator)",
+      "surface": "preflight.sh --landing (linked worktree of fixture W)",
+      "unfixed_rc": 0,
+      "fixed_rc": 1,
+      "note": "Nothing this fix-round validates touches this fixture and the checker still emits no STALE line, so the land can only be blocked by the exit code itself. Post-fix: `HARD board-currency: check-board-currency.sh exited 1 without reporting a specific STALE defect — refusing to certify this tree for landing`."
+    },
+    {
+      "arm": "Arm 22d — finding B regression guard: the new guard must not fire on a green run, nor mask a run that DID report a specific STALE defect",
+      "kind": "regression guard (green before AND after; NOT a recurrence arm)",
+      "surface": "preflight.sh --landing (current-board and stale-board linked worktrees)",
+      "unfixed_rc": "0 (current board) / 1 (stale board)",
+      "fixed_rc": "0 (current board) / 1 (stale board)",
+      "note": "The stale-board half additionally asserts the generic `without reporting a specific …` line is ABSENT there, so the guard cannot be masking real diagnostics. This is the arm that pins the claim that the guard cannot turn a green land red."
+    }
+  ],
+  "per_arm_rc_measurement_method": "The unfixed checker AND unfixed preflight were extracted with `git show 48b45aa3:scripts/check-board-currency.sh` and `git show 48b45aa3:scripts/preflight.sh` into a scratch directory alongside symlinks to scripts/lib and to the four sibling gates preflight invokes, so the baseline pair runs unmodified. The real fixtures were then driven against BOTH pairs from inside the same throwaway `mktemp -d` repos the committed test builds, with `rc=$?` captured on the very next line. The whole-suite red was ALSO observed directly on the arms commit's byte-identical content: rc=1, 58 PASS / 15 FAIL. The temporary driver was deleted; `git status --porcelain scripts/` is clean of it.",
+  "verification": {
+    "suites": [
+      {
+        "cmd": "bash scripts/tests/test_check_board_currency.sh",
+        "rc": 0,
+        "detail": "73 PASS / 0 FAIL (58 PASS / 15 FAIL at the arms-only commit ddad1bf5)"
+      },
+      {
+        "cmd": "bash scripts/tests/test_preflight_landing.sh",
+        "rc": 0
+      },
+      {
+        "cmd": "bash scripts/tests/test_commission_manifest.sh",
+        "rc": 0
+      },
+      {
+        "cmd": "bash scripts/tests/test_check_release_state_views.sh",
+        "rc": 1,
+        "detail": "PRE-EXISTING AND ENVIRONMENTAL, NOT CAUSED BY THIS UNIT — see `blockers_encountered`. rc=0 once the orchestrator's own UNTRACKED codex review transcripts are held aside."
+      }
+    ],
+    "real_state": [
+      {
+        "cmd": "bash scripts/check-board-currency.sh",
+        "rc": 0,
+        "detail": "`ok 0.8.20: board/state cross-read (TC-133): 14 landed slice(s) reconciled against dev/plans/release-state-0.8.20.json, 3 `Ladder remaining` claim(s) agree with `remaining_ladder`` — the new completeness check ran for all 14 and passed. STOP condition NOT triggered."
+      },
+      {
+        "cmd": "bash scripts/preflight.sh --landing",
+        "rc": 0,
+        "detail": "board-currency green, so the new anti-fail-open guard is inert. STOP condition NOT triggered."
+      },
+      {
+        "cmd": "bash scripts/preflight.sh --worktree /home/coreyt/projects/fathomdb-worktrees/slice-id-hardening",
+        "rc": 0
+      },
+      {
+        "cmd": "bash scripts/commission-manifest.sh --verify-all",
+        "rc": 0
+      },
+      {
+        "cmd": "bash scripts/commission-manifest.sh 0.8.20 40",
+        "rc": 0
+      },
+      {
+        "cmd": "bash scripts/check-release-state-views.sh (bare, never --write)",
+        "rc": 1,
+        "detail": "PRE-EXISTING AND ENVIRONMENTAL — identical cause to the suite above; rc=0 with the untracked codex transcripts held aside. ZERO board churn either way: `git status --porcelain` shows no modification to any dev/plans file, and --write was never run."
+      },
+      {
+        "cmd": "bash scripts/check-governed-surface-pin.sh",
+        "rc": 0
+      }
+    ]
+  },
+  "blockers_encountered": [
+    {
+      "id": "views-checker red from untracked codex transcripts",
+      "severity": "NOT A BLOCKER TO THIS UNIT — reported for the orchestrator's action",
+      "detail": "`bash scripts/check-release-state-views.sh` (bare) and `bash scripts/tests/test_check_release_state_views.sh` (arm 8, 'real repo green') both exit 1 in this worktree with `ORPHAN generated-region marker` / `unterminated generated-region BEGIN marker` against dev/plans/runs/codex/0.8.20/slice-id-hardening-review-20260730T111824-fix1.md. That file is an UNTRACKED codex review transcript written by the orchestrator; it quotes a `<!-- BEGIN GENERATED release-state:` marker, and check-release-state-views.sh enumerates markdown by `os.walk('.')`, which does not distinguish tracked from untracked. PROVEN environmental: with the two untracked codex transcripts temporarily moved aside, both commands exit 0; they were restored immediately and `git status --porcelain dev/plans/runs/codex` is unchanged. Present at the baseline 48b45aa3 for the same reason (the transcripts predate this fix-round). NOT FIXED HERE: scripts/check-release-state-views.sh is explicitly out of this unit's scope, and codex did not raise it."
+    }
+  ],
+  "out_of_scope_reported_not_fixed": [
+    {
+      "id": "UnicodeDecodeError on a non-UTF-8 board or state file",
+      "detail": "`open(path, encoding='utf-8')` in the cross-read raises UnicodeDecodeError, which the surrounding `except OSError` does not catch. Left deliberately unhandled — it is fixture W's subject and the [DETERMINE] discriminator; see `determination.deliberate_non_fix`. Handling it would delete the general-fail-open arm and widen beyond codex's findings. It is now harmless at land time: preflight §7 hard-fails on it."
+    },
+    {
+      "id": "check-board-currency.sh exits 2 with no STALE line on usage errors",
+      "detail": "`--tip <unresolvable>` and an unknown arg both exit 2 with no STALE line. Measured as evidence for the determination; now hard-blocking at land time via the same §7 guard. No change made to the checker for this."
+    },
+    {
+      "id": "a `ladder` entry with no `slice` key",
+      "detail": "Still skipped by the map builder (it cannot be keyed at all). Not a fail-open: a LANDED slice whose entry went missing that way is caught by finding A's new completeness check (Arm 19). Left as-is rather than widening."
+    }
+  ],
+  "scope_discipline": {
+    "files_touched": [
+      "scripts/tests/test_check_board_currency.sh",
+      "scripts/check-board-currency.sh",
+      "scripts/preflight.sh"
+    ],
+    "preflight_sh_authorization": "The brief permits editing scripts/preflight.sh IF AND ONLY IF the Finding-B determination requires it. The determination chose preflight §7 as the locus, on measured grounds (see `determination.why_rejected_measured`), so the edit is within the granted permission. The change is a single additive guard in §7 plus its comment; no other section of preflight.sh was touched.",
+    "untouched_forbidden_surfaces": [
+      "scripts/commission-manifest.sh",
+      "scripts/check-release-state-views.sh",
+      "scripts/tests/test_commission_manifest.sh",
+      "scripts/tests/test_check_release_state_views.sh",
+      "scripts/tests/test_preflight_landing.sh",
+      ".github/**",
+      "src/**",
+      "engine/**",
+      "dev/plans/release-state-0.8.20.json",
+      "dev/plans/plan-0.8.20.md",
+      "dev/plans/runs/STATUS-0.8.20.md",
+      "every ladder and ledger"
+    ],
+    "staging": "explicit paths only on both commits (never `git add -A`, TC-132)",
+    "no_write_flag": "scripts/check-release-state-views.sh --write was NEVER run",
+    "no_git_topology_changes": "no rebase, merge, pull, push, branch, tag, worktree create/move/remove, and no landing"
+  },
+  "agent_verify_result": "pass with one reported environmental red — both codex findings fixed; both RED-first recurrence arm sets measured red against the baseline pair and green after; the [DETERMINE] discharged with its locus argued AND proven by execution on both required cases. Real-state: check-board-currency.sh rc=0 (14 landed slices reconciled), preflight.sh --landing rc=0, preflight.sh --worktree rc=0, commission-manifest.sh --verify-all rc=0, commission-manifest.sh 0.8.20 40 rc=0, check-governed-surface-pin.sh rc=0, test_check_board_currency.sh rc=0, test_preflight_landing.sh rc=0, test_commission_manifest.sh rc=0. check-release-state-views.sh (bare) and test_check_release_state_views.sh are rc=1 ONLY because of the orchestrator's untracked codex review transcripts in the worktree — proven by holding them aside (rc=0) and restoring them; nothing in this unit's diff touches that gate.",
+  "next_step_note": "Ready for the orchestrator's independent red audit of ddad1bf5 (expect rc=1, 58 PASS / 15 FAIL) and the codex §9 re-review of f43eec45. Before treating check-release-state-views.sh as red, remove or relocate the two untracked codex transcripts under dev/plans/runs/codex/0.8.20/ — or decide whether that gate should ignore untracked files, which is a separate question no finding has raised."
+}

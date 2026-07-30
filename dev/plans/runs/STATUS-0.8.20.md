@@ -47,7 +47,7 @@ COMPLETE — LANDED `91db34d8`** (close record §21). **Ladder remaining: 40 alo
 | **Slice in flight** | **NONE.** The most recent land is **Slice 39 (`91db34d8`)** — **R-20-DOC COMPLETE** (MIT reconciled across all four publishable manifests, a LICENSE that actually ships in all 10 published units, the `## 0.8.20` CHANGELOG section; close record §21). Before it: **Library Sweep #3 COMPLETE** (31 `d0287620` · 32 `31d33293` · 33 `f02dc5b4`) and **DOC-HYGIENE-3 COMPLETE** (`fd281358` machinery + `85d44c74` remainder, TC-53/TC-92). **Forward sequence: two cross-cutting units, then Slice 40** — (1) `SLICE-ID-HARDENING`, (2) "Slice 39.5" (`R-20-HARNESS`), then **Slice 40 (`R-20-PUB`)**. **Neither cross-cutting unit is a ladder slice**; neither carries a slice number or an `R-20-xx` ladder position (the `DOC-HYGIENE-3` / TC-86 precedent, `seq-204`) — `next_slice` stays **40**. ⛔ **Slice 34 is CANCELLED and is NOT in this ladder** (`seq-182`; parked at 0.8.21, `seq-183`) — route no work through it. Slice 31's close record (23 RED tests wired into **no gate**, 7 codex rounds / 12 findings / zero repeats, terminal-clean) is **§20**. **SCHEMA stays 24**; governed-surface allowlist byte-identical since 15d, `check-governed-surface-pin.sh` exit 0. Prior: 23 (`30102ecd`), 22 (`572475f2`, §19), 21 (`77be504b`, §18), 30 (`9b3ed0e3`, §17 — publish precondition SATISFIED). |
 | **Status** | **Every ladder slice through 39 is COMPLETE and LANDED on `origin/main`** — 0, 5, 10, 15, 20 (+20c), 21, 22, 23, 25, 30, 31, 32, 33, 39 — plus the non-ladder DOC-HYGIENE-3. **SCHEMA 24.** The **batched governed-surface delta is SIGNED** (HITL, steward `seq-157`); **AC-079 mints into `dev/acceptance.md` at Slice 40** — minting is not signing. **Remaining ladder: 40 alone**, then the separate HITL **PUBLISH** gate — the release's only **`halts_run`** unruled decision. *(`decisions.unruled` holds **THREE** rows but only **TWO live open decisions**: `publish` and the `npm-dist-tag` rider that rides with it. The third, `platform-publish-schedule`, is a **parked tracking row** — it was **RULED at `seq-203`** and is retained only until the 0.8.21 plan exists to carry it — §4.)* |
 | **Unblocks** | <!-- BEGIN GENERATED release-state:0.8.20:status-unblocks -->**Slices 40 are NOW UNBLOCKED** — the Slice 39 landing (91db34d8), then the two cross-cutting units named in `ladder_order` (Slice 40 is the last ladder slice. Ahead of it, off-ladder: SLICE-ID-HARDENING (the fractional-id tooling fixes + recurrence arms, seq-204 ruling 1) and 'Slice 39.5' / R-20-HARNESS (collect-all harness + the true red list local AND CI, seq-204 ruling 2). ⚠ CORRECTED at seq-205/seq-209: main's CI is NOT vacuously green, it is RED — the last completed runs concluded failure with 23 jobs executing and only markdownlint skipped, four of them failing (commission-manifest, verify, security, rust-windows). And `test_commission_manifest.sh` is rc=0 LOCALLY (69 PASS) while its CI job fails — a genuine local-to-CI divergence, not a local red. Publish gate (i) (seq-202) is therefore NOT met today. Establishing the true CI red list, and explaining that divergence, belongs to Slice 39.5 (seq-204 ruling 2, seq-206).) now exists. Slice 30 (H7) depends on 10/15/20/25. **AC-079 is PRE-SIGNED** — the HITL signed off on the accumulated governed-surface delta (Slices 5d + 10b + 15b + 15d) on 2026-07-25 (master F-34), pinned to the content of `src/conformance/governed-surface-allowlist.json`; any diff to that file re-opens it (the T1e pin). Pre-signing is NOT minting: AC-079 is minted and recorded as SIGNED at Slice 40 (§4 #1). **Publish is gated by the separate HITL publish gate, not by this AC.**<!-- END GENERATED release-state:0.8.20:status-unblocks --> |
-| **Immediate next action** | **`SLICE-ID-HARDENING` is COMMISSIONED and in flight** (`seq-210`) — **not** Slice 40. Order (`seq-204`): **(1) `SLICE-ID-HARDENING`** → **(2) "Slice 39.5" (`R-20-HARNESS`)** → **(3) Slice 40 (`R-20-PUB`)**. ⛔ Neither cross-cutting unit is a ladder slice, and `commission-manifest.sh` **cannot generate either brief** (no slice number — DOC-HYGIENE-3 / TC-86 precedent). Briefs of record, all three, in `dev/plans/runs/`: `0.8.20-slice-id-hardening-commission-brief.md`, `0.8.20-slice-39.5-commission-brief.md`, `0.8.20-slice-40-commission-brief.md`. ⚠ **Slice 40's is a SUBSTANCE DRAFT — regenerate it after both units land** (`commission-manifest.sh:701` computes its base SHA and is itself under repair). **Slice 40 STOPS before any tag.** ⚠ **CI on `main` is RED**: publish gate (i) — every job **that executed** green (`seq-202` as amended by `seq-211`) — is **not met**; the four reds are reported by 39.5's CI baseline (`seq-206`), not triaged by Slice 40. Unruled: `publish`, `npm-dist-tag`, TC-133 placement. |
+| **Immediate next action** | **Commission "Slice 39.5" (`R-20-HARNESS`)** — brief `dev/plans/runs/0.8.20-slice-39.5-commission-brief.md`, design of record `dev/design/0.8.20-slice-39.5-collect-all-test-harness.md`. ✅ **`SLICE-ID-HARDENING` COMPLETE — LANDED `2008f529`** (ff, no merge; `seq-214`); close record **§22**. Order (`seq-204`): **(1) ✅** → **(2) 39.5 ← NEXT** → **(3) Slice 40 (`R-20-PUB`)**. ⛔ Neither cross-cutting unit is a ladder slice; `commission-manifest.sh` **cannot generate either brief** (DOC-HYGIENE-3 / TC-86 precedent). ⚠ Slice 40's brief (`0.8.20-slice-40-commission-brief.md`) is a **SUBSTANCE DRAFT — regenerate after 39.5 lands**. **Slice 40 STOPS before any tag.** ⚠ **CI on `main` is RED**: publish gate (i) — every job **that executed** green (`seq-202`/`seq-211`) — **not met**; the reds are 39.5's baseline to report (`seq-206`), not Slice 40's to triage. Unruled: `publish`, `npm-dist-tag`. |
 
 **Slices 0, 5, 10, 15 close records** are §11 (Slice 5), §12 (Slice 10), §13 (Slice 15b — TC-34 only; the
 registry/EAV/TC-33 remainder that also landed in the keystone `a2022957` is summarised in §8 and in
@@ -2045,3 +2045,115 @@ by the Steward. Marked **UNVERIFIED**, not disputed:
   `scripts/sbom-survey/pyproject.toml:29` and the two corpus generators under `tests/corpus/scripts/`
   (changing those without regenerating would desync the committed hash-bearing `manifest.json`).
 - **No version field was touched** — the manifests still read `0.8.9`; **Slice 40 owns the bump.**
+
+---
+
+## 22. `SLICE-ID-HARDENING` close — the fractional-slice-id tooling defects (cross-cutting)
+
+**LANDED `2008f529`** — fast-forward ref-to-ref push, **no merge commit**, off branch
+`0.8.20-slice-id-hardening`, 10 commits, base `7c36b009`. **Not a ladder slice**: no slice number, no
+`R-20-xx` id, no ladder position consumed; `next_slice` stays **40**. Commissioned `seq-210`, scope widened
+mid-flight by HITL ruling `seq-212`, landed `seq-214`. Brief of record
+`dev/plans/runs/0.8.20-slice-id-hardening-commission-brief.md` (v2). Closure
+`dev/plans/runs/0.8.20-slice-id-hardening-output.json` + five per-leg closures.
+
+### 22.1 What it found — every count in the record was wrong, and low
+
+| The record said | Actually found |
+|---|---|
+| `seq-204`: four concrete sites | **five** truncating sites (the fifth: `check-board-currency.sh:130-131` emitting a **fabricated pointer**, printing `Slice 39` for a `39.5` merge — a second, unrecorded defect at site 1) |
+| `seq-204` / `plan-0.8.20.md:492`: "three latent" | **eight** bypasses over **six** state fields in `check-release-state-views.sh` (five truncating, three divergent-render; `:154` and `:265` were in no prior pass) **plus a ninth** — `_by_slice` had no duplicate-key guard, so `30` and `30.0` overwrote by file order, the exact failure its own docstring forbids |
+
+⚠ **`plan-0.8.20.md:492` still says "three latent ones" and is FALSIFIED.** Reported by the unit, not
+edited by it — that file is the Steward's. **Owed.**
+
+### 22.2 ⚠ TWO OF THE SITES WERE LIVE, NOT LATENT — Steward-verified at the pre-land `main`
+
+This unit was not preventive. Both of these were **producing wrong output at exit 0** on `main`:
+
+- **`commission-manifest.sh 0.8.20 39` cited `dev/design/0.8.20-slice-39.5-collect-all-test-harness.md`
+  as Slice 39's required reading** — a neighbour's design memo, presented with the generator's authority.
+  Measured: **1 citation before the fix, 0 after.** This is the TC-37 vacuous-pass-guard defeat, live.
+- **`preflight.sh --expect-closed 0 --plan dev/plans/0.7.0-implementation.md` returned `rc=0`**,
+  reporting *"dependency Slice/Phase 0 has a CLOSED witness"* — because `0.7.0`'s version dot satisfied the
+  `[^0-9]` boundary. **A false green in the gate whose entire stated purpose is refusing to spawn on a
+  dependency that is not closed.** Fixed tool: `rc=1`, *"has NO 'CLOSED' block — do not spawn dependents"*.
+
+### 22.3 TC-133, added mid-flight
+
+Folded in by **HITL ruling `seq-212`** (option (b), over the Steward's recommendation to defer to 0.8.21),
+as a **fifth site, not merged into site 1**: there the slice-number *capture* is wrong; here the capture is
+correct, the merge is found, its SHA is present, and the gate still certified a board whose hand-written
+rows contradicted `release-state-0.8.20.json` on every one of them. The gate now cross-reads the state
+file. It immediately confirmed the Steward's own `seq-207`/`seq-208` reconcile was complete —
+*"14 landed slice(s) reconciled, 3 `Ladder remaining` claim(s) agree with `remaining_ladder`"*.
+
+**Cost of the mid-flight amendment, recorded honestly:** both codex fix rounds were findings in the TC-133
+code and nothing else — round 1 one `[P2]` (duplicate-key last-writer-wins), round 2 two new, distinct
+fail-open paths. Roughly 40 minutes of extra rounds bought a guard the release did not have.
+
+### 22.4 The `[DETERMINE]` duties
+
+1. **`preflight.sh:131`** — escaping is necessary but **not sufficient**; a 16-case matrix over 4
+   candidates. Shipped `([^0-9.]|\.[^0-9])`, because the obvious `[^0-9.]` stops matching a legitimate
+   `CLOSED — Slice 39.` and introduces a **new false negative in a gate that fails by refusing to spawn**.
+2. **`commission-manifest.sh:497`** — `re.escape` alone also insufficient (`39.5` still claims `39.5.1`'s
+   memo); `(?![0-9.])` wrongly rejects a plain `-slice-39.md`. Shipped
+   `re.escape(slice_str(n)) + (?![0-9])(?!\.[0-9])`, 24/24. **The same finding reproduced on a different
+   regex engine — a property of the problem, not of one script.**
+3. **§3a marker detection — FIXED VOCABULARY, not derived**, because there is nothing to derive from: the
+   state file authors only *positive* status, and the one plausible derivation empties out exactly when
+   every slice is landed — i.e. when a board is most likely stale. **It cannot catch** `pending`, `TBD`,
+   `queued`, `blocked on X`, an em-dash, an empty cell, or a stale row in upbeat wording; it **will**
+   false-positive on prose like *"closed while in-flight work was parked"*. `next` is matched whole-cell
+   only, never bare, because a false positive there **hard-blocks a land**. ⚠ **Trust the row-scoped SHA
+   check, not the vocabulary check** — that is the derived half, and the half that would actually have
+   caught the Slice 39 incident. Recorded in the code, not only in the closure.
+
+### 22.5 Verification — Steward-independent, from git
+
+Every arms commit re-run by the **Steward** in throwaway detached checkouts, not taken from the report:
+leg1 **rc=1→0**, leg3/TC-133 **rc=1→0**, fix1 **rc=1→0**, each against the unfixed then the fixed tool,
+with `check-board-currency.sh` staying **rc=0** against the live board throughout. The unit's own audit
+adds leg2 **rc=1 (8/23)** and fix2 **rc=1 (15)**. **All arms run against fractional-id fixtures, never
+against real state** — the real state file carries no fractional id, so a real-state arm could only ever be
+green-on-green.
+
+**Post-rebase gate sweep (trap 17 — a clean rebase is not a correct rebase):** four target suites **rc=0**,
+`test_sealed_worktree_guard` **rc=0**, `check-board-currency` / `check-release-state-views` /
+`check-governed-surface-pin` / `check-c1-conformance` **rc=0**, `commission-manifest --verify-all` **rc=0**,
+`commission-manifest 0.8.20 40` **rc=0**, `cargo check --workspace --all-targets` **rc=0**,
+`cargo clippy --workspace --all-targets` **rc=0**, `preflight.sh --landing` **PASS**.
+**SCHEMA stays 24; governed surface byte-identical; zero board churn.**
+codex §9: CONCERN → fix1 → CONCERN (two new, distinct) → fix2 → **terminal-clean**, two rounds of a
+three-round cap.
+
+### 22.6 Handed back to the Steward — open
+
+- ⚠ **TC-RUBRIC-7 collides with the orphan-marker scan (`TC-135`).** codex quotes a literal
+  generated-region **BEGIN** marker (an HTML comment of the form `BEGIN GENERATED release-state:<release>:<id>`,
+  **deliberately not reproduced verbatim here — see the note below**) into its transcript when it reads the board, and
+  `check-release-state-views.sh` walks `.` including **untracked** files — so persisting a §9 transcript at
+  the required tracked path **reddens the gate** (measured rc=1 on 2 of 3 transcripts). **Landing one would
+  redden `main` permanently.** The unit correctly refused to invent a redaction rule or weaken the scanner;
+  the transcripts are held outside the tree. **Steward ruling owed.**
+- ⚠ **TC-121 fired on prose — a THIRD recorded instance** (the first two were during Slice 33).
+  `seat-path-guard.sh` matched a path string appearing as a JSON *value* inside the closure payload and
+  blocked the write; the unit worked around it rather than softening the guard, correctly. It cost real
+  time at the end of this unit, and the path it matched (`scripts/tests/test_sealed_worktree_guard.sh`)
+  only existed because **the Steward wrote a test source it should have commissioned** (`seq-213`). No new
+  id — appended to **TC-121**.
+- **`plan-0.8.20.md:492`'s "three latent"** — falsified (§22.1). Steward's edit.
+
+> ### 🕮 The Steward reproduced TC-135 while writing this close record
+>
+> The paragraph above originally quoted the marker **verbatim**, and
+> `scripts/check-release-state-views.sh` immediately went **rc=1 — `ORPHAN generated-region marker`** on
+> this very file. That is the same defect the unit reported, triggered by *documenting* it, inside the
+> board the scanner protects. It is now paraphrased instead.
+>
+> **This is the strongest possible evidence that TC-135 is real and needs a mechanical fix, not a
+> discipline note:** the scanner cannot distinguish a marker that DELIMITS a generated region from one
+> that is merely being TALKED ABOUT, so any document that discusses the mechanism — a codex transcript, a
+> close record, a design doc, a hand-off — is a landmine. A rule of "just don't quote it" is exactly the
+> kind of guidance that fails on the next person, and it already failed on the Steward within minutes.

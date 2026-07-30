@@ -1,0 +1,139 @@
+{
+  "phase": "SLICE-ID-HARDENING (cross-cutting tooling unit, 0.8.20 — no slice number, no R-20-xx id, next_slice stays 40)",
+  "baseline_sha": "999d3f4a1262b1e716744cf842e429ad39eeb676",
+  "branch": "0.8.20-slice-id-hardening",
+  "head_sha": "922d10111a80244cf2c2c9a568d66fff6b66aa05",
+  "brief_of_record": "dev/plans/runs/0.8.20-slice-id-hardening-commission-brief.md (v3 — TC-133 folded in mid-flight by HITL ruling seq-212)",
+  "commits": [
+    "46b76a5a: test(leg1): RED-first recurrence arms for sites 1+4",
+    "7cf4fe2d: fix(leg1): stop truncating fractional slice ids in two gates",
+    "b386053c: test(leg2): RED-first recurrence arms for sites 2+3 and the latent set",
+    "49ba2a73: fix(leg2): stop truncating fractional slice ids in the manifest generator and the view renderers",
+    "622632ef: test(leg3): RED-first recurrence arms for TC-133, the board/state cross-read",
+    "7643a201: fix(leg3): TC-133 — cross-read the state file so a SHA elsewhere in the board stops answering for the row",
+    "eb59dfdb: test(fix1): RED-first recurrence arm for duplicate slice ids in the cross-read state map",
+    "c88bd182: fix(fix1): refuse duplicate slice ids in the cross-read state map instead of taking the last writer",
+    "94b6d8e9: test(fix2): RED-first recurrence arms for two fail-open paths in the TC-133 cross-read",
+    "922d1011: fix(fix2): close two fail-open paths in the TC-133 cross-read"
+  ],
+  "structure": "Five test->fix commit pairs. Every arms commit is deliberately RED and was independently re-run by the orchestrator in a throwaway detached checkout; no arms commit touches a tool.",
+  "true_site_set_enumerated": {
+    "note": "The brief warned that NO total in the record is reliable (seq-204 and plan-0.8.20.md:492 say 'three latent'; the Steward measured four; the adversarial review measured six across four state fields). This is what THIS unit measured. It is keyed to the enumeration, not to a number.",
+    "truncating_call_sites_fixed": 5,
+    "sites": [
+      "1. check-board-currency.sh:123 — integer-only capture; Slice 39.5 sets SEEN_SLICE[39] and swallows Slice 39's SHA check. PROSPECTIVE (no such merge exists in this repo) — reproduced in fixture, fractional merge as the NEWER commit.",
+      "1b. check-board-currency.sh:130-131 — the STALE diagnostic emits a FABRICATED POINTER ('Slice 39' for a 39.5 merge). A second defect at site 1, previously unrecorded; captured live.",
+      "2. commission-manifest.sh:701 — isinstance(s, int) filters a float OUT of the predecessor set, silently dropping a unit's work from the computed base SHA (the agent-worktree-stale-base-trap, produced by the tool built to prevent it).",
+      "3. commission-manifest.sh:497 — %d truncates a float; 39.5 and 39 produce a byte-identical pattern. LIVE, NOT PROSPECTIVE: see live_defects_found below.",
+      "4. preflight.sh:131 — trailing [^0-9] matches the '.' in 'Slice 39.5', so one unit's CLOSED witness satisfies another's; PLUS the unescaped ${EXPECT_CLOSED} ERE interpolation (two distinct defects at one site).",
+      "5. TC-133 (added mid-flight by HITL ruling seq-212) — check-board-currency.sh exits 0 on a board whose HAND-WRITTEN rows contradict release-state-<ver>.json, because a SHA anywhere in the file (e.g. inside a BEGIN GENERATED cell) answers for every row. Capture is correct here; presence of a SHA is not currency of the row it belongs to. NOT site 1; independent fix, independent arms."
+    ],
+    "latent_set_in_check_release_state_views": "EIGHT bypass sites over SIX state fields — FIVE truncating (:233/:235, :242/:244, :248/:250 sign_off_slice; :260 the by[int()] INDEX; :263/:265 fed by pre['slice'], independent of :260 and proven independent by a mutant arm emitting 'Slice 30 (H7b)' — the right entry under the wrong number) and THREE divergent-render (:168, :278, and :154 _and_join / :265 depends_on, the last two NOT in the brief). The brief's two passes found six of the eight.",
+    "ninth_finding": "_by_slice itself had NO duplicate-key guard, so 30 and 30.0 (equal hashes in Python) silently overwrote by state-file line order — the exact failure its own docstring promises to prevent.",
+    "correctly_excluded_and_left_alone": ":169 'SCHEMA is %d' and the %d at :439/:525/:537/:542 (marker/block COUNTS), per brief §1b."
+  },
+  "live_defects_found": [
+    "commission-manifest.sh:497 was FIRING ON TRACKED FILES AT HEAD, not merely latent: both dev/design/0.8.20-slice-39-publish-facing-documentation.md and dev/design/0.8.20-slice-39.5-collect-all-test-harness.md exist and slice[-_ ]?0*39(?![0-9]) matches BOTH, so `commission-manifest.sh 0.8.20 39` cited Slice 39.5's design of record as Slice 39's own required reading, AT EXIT 0. Guarded by arm 13i through the real entry point.",
+    "preflight.sh:131's unescaped interpolation was producing a LIVE FALSE POSITIVE on a tracked file: dev/plans/0.7.0-implementation.md:456 '(Phase 0.7.0 GA CLOSED, ...)' satisfied --expect-closed 0, the VERSION dot read as a boundary. A full old-vs-new sweep over every dev/plans/*.md for ids 0-60 found EXACTLY ONE delta — that false positive being removed. plan-0.8.20.md had ZERO deltas; 10/15/20/25 still correctly find their CLOSED witness."
+  ],
+  "determine_duties_discharged": {
+    "duty_1_preflight_expect_closed": {
+      "determination": "Escaping is REQUIRED, and is necessary but NOT sufficient. Neither half subsumes the other.",
+      "evidence": "16-case matrix x 4 candidate patterns, by execution: shipped pattern 4/16 diverge (both defect classes live); trailing-tighten only 2/16 diverge (wildcard survives) PLUS a new false negative; escape only 2/16 diverge (fractional bleed survives); escape + boundary 16/16 correct.",
+      "shape_shipped": "boundary ([^0-9.]|\\.[^0-9]), NOT the obvious [^0-9.] — the bare form closes site 4 but stops matching a legitimate 'CLOSED — Slice 39.', a NEW false negative in a gate whose failure mode is refusing to spawn. Both ERE alternatives graded separately; the second gets \\.?$ since only it can end at EOL. Four recurrence arms, not two."
+    },
+    "duty_2_commission_manifest_497": {
+      "determination": "The obvious %d->%s swap reintroduces the hazard; re.escape alone is ALSO insufficient.",
+      "evidence": "24-case matrix x 5 candidates, by execution: shipped %d 7 wrong; naive %s 6 wrong; escape-only 4 wrong (39.5 still claims 39.5.1's memo); (?![0-9.]) 2 wrong AND two NEW false negatives (rejects a plain '-slice-39.md' memo, where the next char is the extension dot — a designed slice hard-stopped on TC-37).",
+      "shape_shipped": "re.escape(slice_str(n)) + (?![0-9])(?!\\.[0-9]) — 24/24 correct. Exactly one real-state delta: the live false positive removed.",
+      "cross_leg_observation": "This independently reproduces duty 1's finding on a DIFFERENT regex engine (Python re vs bash ERE) — it is a property of the problem, not of one script."
+    },
+    "duty_3_true_latent_set": "See true_site_set_enumerated.latent_set_in_check_release_state_views — EIGHT, not three and not six, plus a ninth in the helper itself.",
+    "duty_3a_marker_detection_fixed_or_derived": {
+      "determination": "FIXED VOCABULARY, not derived.",
+      "why": "There is nothing to derive it FROM: the state file only ever authors POSITIVE status. The one plausible derivation — reusing non-landed ladder[].status values — is self-weakening: it empties out exactly when every slice is landed, i.e. when a board is most likely stale, and it could only ever carry the STATE FILE's vocabulary, never the BOARD's, which is the thing under test.",
+      "what_it_CANNOT_catch": "'pending', 'TBD', 'queued', 'awaiting review', 'blocked on X', '0/5 arms green', an em-dash, an empty cell, or a row that is simply months out of date in upbeat wording — ALL PASS. It is a prose regex: it detects the phrasings someone thought of, and a board that goes stale in a new phrasing goes stale silently.",
+      "false_positives_it_will_produce": "The markers match anywhere in the status cell, so a landed slice whose close prose reads 'closed while in-flight work was parked' IS flagged. Intended strictness, but it has a cost. 'next' is deliberately whole-cell only, never bare \\bnext\\b — in a status cell it is a pointer word and a false positive HARD-BLOCKS A LAND.",
+      "trust_boundary": "Trust the row-scoped SHA check, not the vocabulary check: it is derived, has no vocabulary, and is the half that would actually have caught the Slice 39 incident. This limitation is recorded in the code as a comment, not only here.",
+      "self_inflicted_false_negative_caught": "The obvious clause-cut-at-punctuation reader parsed 'Ladder remaining: 39.5, 40' as {39.5} and would have truncated 40.5 -> 40 — THIS UNIT'S OWN DEFECT CLASS re-introduced inside its own fix. Replaced with an ID-list reader; fixtures P/Q arm both directions."
+    }
+  },
+  "absent_or_malformed_state_file_policy": "ABSENT -> cross-read skipped and ANNOUNCED ('note ... cross-read (TC-133) DID NOT RUN'), not a failure: a hard fail would redden boards predating the single writer, a silent skip rebuilds the blind spot. PRESENT BUT MALFORMED (bad JSON, not an object, missing or WRONG-TYPED landed/ladder/remaining_ladder, ladder not an array of objects) -> HARD fail with a preflight-recognised prefix. Also hard-fail: board unreadable, no ladder table when a state file exists, python3 absent.",
+  "arm_9d_repointed": "Both lines, per brief §1c: :1719's isinstance(int) landed filter (semantically identical to the :701 defect it was meant to catch) AND :1715's isinstance(t, bool) or not isinstance(t, int) on next_slice, which routed a fractional next_slice to ERR/fail() — i.e. the arm was REJECTING the very input this unit exists to support. An oracle that copies the implementation cannot falsify it.",
+  "non_vacuity_verification": {
+    "method": "Every arms commit was re-run by the ORCHESTRATOR in a throwaway detached checkout at that commit (tools unfixed), independently of the implementer's own claim.",
+    "leg1_arms_at_46b76a5a": "test_check_board_currency rc=1 (6 FAIL) · test_preflight_landing rc=1 (8 FAIL)",
+    "leg2_arms_at_b386053c": "test_commission_manifest rc=1 (8 FAIL) · test_check_release_state_views rc=1 (23 FAIL)",
+    "leg3_arms_at_622632ef": "test_check_board_currency rc=1 (11 FAIL) — first failure reproduces the real incident exactly: SHA present only inside a BEGIN GENERATED cell, hand-written row says 'not started', gate exits 0",
+    "fix1_arms_at_eb59dfdb": "test_check_board_currency rc=1 (3 FAIL) — unfixed gate CERTIFIED a malformed state file",
+    "fix2_arms_at_94b6d8e9": "test_check_board_currency rc=1 (15 FAIL)",
+    "fixtures": "All arms run against purpose-built fixtures carrying a FRACTIONAL slice id (throwaway git repos / state files under mktemp -d). Required by brief §2; real state carries no fractional id anywhere, so an arm against real state is vacuous by construction. NO fractional id entered real state, the ladder or the board.",
+    "disclosed_deviation": "Leg 3: 100 of 406 arm lines (fixtures P/Q, arms 13b/13c) landed in the FIX commit rather than the arms commit, because they guard a false negative THE FIX ITSELF INTRODUCED and so could not exist at the arms commit. 13c remains a genuine recurrence arm, measured against the unfixed checker extracted from the arms commit. Accepted by the orchestrator."
+  },
+  "dod_exit_codes": {
+    "test_check_board_currency.sh": 0,
+    "test_preflight_landing.sh": 0,
+    "test_commission_manifest.sh": 0,
+    "test_check_release_state_views.sh": 0,
+    "check-board-currency.sh (REAL live board)": 0,
+    "check-release-state-views.sh (bare, never --write)": 0,
+    "commission-manifest.sh --verify-all": 0,
+    "commission-manifest.sh 0.8.20 40": 0,
+    "check-governed-surface-pin.sh": 0,
+    "preflight.sh --worktree": 0,
+    "preflight.sh --landing (from the worktree)": 0,
+    "cargo check --workspace --all-targets": 0,
+    "cargo clippy --workspace --all-targets": 0,
+    "board_churn": "ZERO — --write never run; no dev/plans file modified by this unit.",
+    "SCHEMA_VERSION": 24,
+    "governed_surface": "byte-identical (no src/ or engine/ diff at all)"
+  },
+  "codex_section_9": {
+    "reviewer": "codex exec review --dangerously-bypass-approvals-and-sandbox via dev/agent-tools/codex-nostdin.sh",
+    "round_1": "CONCERN — one [P2], zero [P1]: duplicate slice ids silently overwritten in the TC-133 cross-read state map (30 vs 30.0), inconsistent with the sibling _by_slice guard Leg 2 had just added. Taken as fix1.",
+    "round_2": "CONCERN — two NEW and distinct [P2]s, both fail-open paths in the TC-133 cross-read: (a) a landed slice whose ladder entry lacks sha made the SHA-row check a no-op; (b) wrong-typed state fields produced an UNPREFIXED Python traceback, which preflight.sh --landing downgrades to INFO — failing OPEN during landing. Taken as fix2.",
+    "round_3_final": "TERMINAL-CLEAN. Verbatim: 'I did not identify any discrete, introduced issues in the diff that would warrant an actionable review finding.'",
+    "triage_method": "Verdict blocks read in full; NEVER triaged by grepping [P1]/[P2] markers (TC-87). Engine suite never run alongside the reviewer (TC-97).",
+    "fix_rounds_used": "2 of the cap (3 same-finding / Steward check-in at 6). Every round found NEW and DISTINCT defects — all of them in the TC-133 cross-read added mid-flight, none in legs 1-2."
+  },
+  "findings_addressed": [
+    "brief §1a sites 1-4 fixed, including the previously unrecorded fabricated-pointer diagnostic at check-board-currency.sh:130-131",
+    "brief §1b latent set enumerated (EIGHT + a ninth in the helper) and fixed",
+    "brief §1c arm 9d re-pointed at BOTH :1715 and :1719",
+    "brief §3a / TC-133 board-currency blind spot closed with a state-file cross-read (added mid-flight by HITL ruling seq-212)",
+    "brief §4 duties 1-3 and §3a's duty discharged, each by execution against a case matrix rather than by reasoning",
+    "two LIVE defects found that the record had recorded as merely latent (see live_defects_found)"
+  ],
+  "blockers_encountered": [
+    {
+      "id": "STALE-BASE-AT-SPAWN",
+      "description": "preflight.sh --worktree HARD-failed at start: the Steward-provided base da203aac was one docs-only commit behind main (fb05c08b = the Steward's own seq-210 commission record).",
+      "resolution": "Pure fast-forward of the slice branch (no commits existed yet); scripts/ verified byte-identical between 46b9365e (the brief's measurement point) and fb05c08b, so every file:line in the brief held. preflight rc=0 after."
+    },
+    {
+      "id": "MAIN-MOVED-TWICE-MID-FLIGHT",
+      "description": "main advanced to 494696b8 and then 999d3f4a during the unit. 494696b8 changed release-state-0.8.20.json and STATUS-0.8.20.md — the two files the new TC-133 cross-read consumes. 999d3f4a added a tree-snapshot script and a sealed-worktree guard suite under the script test directory (additive, no overlap with this unit's eight files).",
+      "resolution": "Rebased twice, and per brief §9 ('a clean rebase is not a correct rebase') re-ran EVERY gate after each rebase, not just the conflict check. All 11 gates + both cargo gates rc=0 at the final base."
+    },
+    {
+      "id": "TC-121-SEAT-GUARD-PROSE-FALSE-POSITIVE",
+      "description": "seat-path-guard.sh DENIED this closure write because a PROSE sentence inside a JSON value quoted a path containing a test-directory segment. The guard read prose as a write target — TC-121, open.",
+      "resolution": "Worked around by rewording the prose; the guard was NOT weakened, per brief §5. Another live instance of TC-121, now in an orchestrator closure write rather than a commit message."
+    },
+    {
+      "id": "TC-RUBRIC-7-vs-ORPHAN-MARKER-SCAN",
+      "description": "OPEN — HANDED BACK TO THE STEWARD, NOT RESOLVED. See handback_for_steward.",
+      "resolution": "Not resolved by this unit. Two codex transcripts deliberately left OUT of the tree to keep the gate green."
+    }
+  ],
+  "handback_for_steward": {
+    "TC-RUBRIC-7_vs_orphan_marker_collision": "REPRODUCIBLE GATE COLLISION, out of this unit's scope, needs a ruling. TC-RUBRIC-7 requires the §9 terminal transcript be persisted under a TRACKED, release-namespaced path (dev/plans/runs/codex/<release>/). check-release-state-views.sh enumerates markdown with os.walk('.') — untracked files included — and HARD-fails on an ORPHAN generated-region marker. A codex review that READS the board or the state file quotes a literal generated-region BEGIN marker into its own transcript, so persisting it reddens the gate: measured rc=1, 'ORPHAN generated-region marker' + 'unterminated generated-region BEGIN marker', on 2 of 3 transcripts. Landing such a transcript would redden the gate ON MAIN permanently. I did NOT invent a redaction rule and did NOT weaken the scanner. Round-1's transcript (which does not trip) IS committed; the fix1 and final transcripts are held at /tmp/claude-1000/-home-coreyt-projects-fathomdb/d828fe60-7655-42f1-9f3a-6a98adf795ad/scratchpad/codex/ for you to place. Strong ledger candidate.",
+    "plan_0_8_20_md_492_correction_owed": "plan-0.8.20.md:492 says 'plus three latent ones'. FALSIFIED. The true latent set in check-release-state-views.sh is EIGHT bypass sites over six state fields, plus a ninth defect in the helper itself. The brief's own 'six' is also wrong. Reported, NOT made — that file is yours and its §9 is the {{MANDATE}} anchor.",
+    "release_state_unchanged": "dev/plans/release-state-0.8.20.json NOT touched. next_slice stays 40, remaining_ladder stays [40], no fractional id in real state, the ladder or the board.",
+    "ci_status": "UNCHANGED and NOT owned by this unit (Slice 39.5's ruled job per seq-204 ruling 2). Local rc quoted only. NOTE: test_commission_manifest's local pass count moved 69 -> 78 and `commission-manifest.sh 0.8.20 39` behaviour CHANGED (it no longer cites Slice 39.5's memo as Slice 39's), so the existing CI failure SIGNATURE may look different. That is a changed signature, not a fix.",
+    "forward_note": "The always-on CI board-currency job will now exercise python3 on the runner (ubuntu images ship it; the gate hard-fails loudly rather than skipping if absent).",
+    "not_landed": "This unit does NOT land and did NOT push to main. Branch 0.8.20-slice-id-hardening pushed to origin for the Steward."
+  },
+  "agent_verify_result": "pass — all four target suites rc=0 individually, all real-state gates rc=0, both full-workspace cargo gates rc=0, codex §9 terminal-clean, zero board churn, SCHEMA 24, governed surface byte-identical.",
+  "next_step_for_orchestrator": "None — unit complete and handed back. Steward to rule on the TC-RUBRIC-7 transcript collision, correct plan-0.8.20.md:492, and land."
+}

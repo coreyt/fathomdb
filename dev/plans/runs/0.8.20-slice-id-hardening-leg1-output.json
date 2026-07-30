@@ -1,0 +1,203 @@
+{
+  "phase": "SLICE-ID-HARDENING leg 1 (cross-cutting unit, 0.8.20; no slice number, no R-20-xx id)",
+  "baseline_sha": "fb05c08b3e2bddca9084cb224dbff59bc0e1f112",
+  "branch": "0.8.20-slice-id-hardening",
+  "head_sha": "2c78faab8e175e65ed6fe1d4a20ab268e04dab94",
+  "commits": [
+    "7e4373f9cc2f5f7f6a7263dae6f4f86ebc3a2d31: test(0.8.20 SLICE-ID-HARDENING leg1): RED-first recurrence arms for sites 1+4",
+    "2c78faab8e175e65ed6fe1d4a20ab268e04dab94: fix(0.8.20 SLICE-ID-HARDENING leg1): stop truncating fractional slice ids in two gates"
+  ],
+  "leg_scope": {
+    "files_owned_and_changed": [
+      "scripts/check-board-currency.sh",
+      "scripts/preflight.sh",
+      "scripts/tests/test_check_board_currency.sh",
+      "scripts/tests/test_preflight_landing.sh"
+    ],
+    "files_outside_leg_touched": [],
+    "note": "Exactly the four files in the leg boundary. Nothing under .github/, src/, engine/, dev/plans/release-state-0.8.20.json, dev/plans/plan-0.8.20.md, dev/plans/runs/STATUS-0.8.20.md, any ledger, or Leg 2's four files was modified. Verified by `git show --stat` on both commits."
+  },
+  "findings_addressed": [
+    "Brief 1a site 1 (check-board-currency.sh:123) FIXED. The capture `Slice[-[:space:]]([0-9]+)` read `merge(0.8.20): Slice 39.5 ...` as slice 39. Because the walk is newest-first, the NEWER fractional merge set SEEN_SLICE[39] first and the genuinely-distinct `Slice 39` merge was then discarded by the superseded-intermediate branch at :125-128, so its SHA check never ran and the gate exited 0. Now `([0-9]+(\\.[0-9]+)*)([^0-9]|$)`.",
+    "Brief 1a site 1, SECOND CONSEQUENCE (the :130-131 STALE diagnostic) FIXED. Pre-fix the gate printed a FABRICATED POINTER, measured verbatim against the unfixed tool: `STALE  0.8.95 Slice 39: landing commit 4f83dcd3 (\"merge(0.8.95): Slice 39.5 - fixture fractional land\")` - 39.5's SHA reported under the label `Slice 39`, misdirecting the reader to a unit that is not the one at fault. Post-fix it reads `Slice 39.5: landing commit 4f83dcd3`. Covered by a dedicated arm asserting BOTH the correct label and the ABSENCE of the truncated one, because the exit code is non-zero either way and therefore proves nothing here.",
+    "Brief 1a site 4 (preflight.sh:131) FIXED. The trailing `[^0-9]` matched the `.` in `Slice 39.5`, so one unit's CLOSED witness satisfied another's: `--expect-closed 39` was cleared by a plan in which only Slice 39.5 ever closed - in the gate whose entire stated purpose is catching a dependency that is not actually closed.",
+    "Brief 4 [DETERMINE] duty 1 (preflight.sh:131 interpolates ${EXPECT_CLOSED} unescaped into an ERE) DISCHARGED - see the `determinations` block below."
+  ],
+  "determinations": [
+    {
+      "duty": "Brief section 4 [DETERMINE] duty 1 - must ${EXPECT_CLOSED} be escaped?",
+      "determination": "YES, escaping is REQUIRED - and it is NECESSARY BUT NOT SUFFICIENT. Escaping alone leaves site 4 open; tightening the trailing boundary alone leaves the wildcard open. Both are required, and they are independent defects, not one defect with two descriptions.",
+      "method": "By EXECUTION, not by reasoning: a 16-case probe matrix (fractional-neighbour bleed x2, regex-wildcard bleed x2, true positives x7, integer/neighbour controls x5) run against FOUR candidate patterns via the real `grep -qiE` on real files. Script: scratchpad determine_ere.sh.",
+      "evidence": {
+        "shipped_pattern": "4 of 16 diverge - BOTH defect classes live (`Slice 39.5 - CLOSED` satisfies ec=39; `Slice 39x5 - CLOSED` satisfies ec=39.5), on both alternatives",
+        "trailing_tighten_only_[^0-9]_to_[^0-9.]": "2 of 16 still diverge - the wildcard bleed SURVIVES, exactly as the brief warned. PLUS it introduces 1 NEW FALSE NEGATIVE: `CLOSED - Slice 39.` stops matching ec=39.",
+        "escape_only": "2 of 16 still diverge - the fractional bleed SURVIVES",
+        "escape_plus_boundary_(shipped_fix)": "16 of 16 correct"
+      },
+      "implemented": "esc_ere() escapes every ERE metacharacter via sed; the boundary is `([^0-9.]|\\.[^0-9])`, NOT the obvious `[^0-9.]`, because the bare form causes the new false negative measured above and this gate's failure mode is REFUSING TO SPAWN. What must be rejected is a following digit, or a following `.`+digit (the start of a LONGER dotted id); a `.` followed by anything else is just punctuation. ERE has no lookahead, so it is spelled out.",
+      "asymmetry_of_the_two_alternatives_graded": "Confirmed and handled. The first alternative ends `[^0-9]` and is followed by `.*CLOSED`, so it can never sit at end-of-line; the second ends `([^0-9]|$)` and can. The fix therefore gives the second alternative `(${ID_END}|\\.?$)` - the extra `\\.?` admits a legitimate sentence-final `CLOSED - Slice 39.` at EOL. BOTH alternatives have their own dedicated red-first arms (alt1/alt2) for BOTH defect classes: four recurrence arms, not two."
+    },
+    {
+      "duty": "Choice of trailing boundary in check-board-currency.sh (not a brief-assigned duty; a design call this leg had to make)",
+      "determination": "Use `([^0-9]|$)`, deliberately keeping `.` INSIDE the permitted follower set, combined with a greedy `(\\.[0-9]+)*` so a dotted id is always captured WHOLE.",
+      "method": "By execution over a 10-subject table of merge subjects.",
+      "evidence": "39 -> `39`, 39.5 -> `39.5`, 39.5.1 -> `39.5.1`, 395 -> `395`, 39.55 -> `39.55`, `Slice-7` -> `7`; `39` and `39.5` land on DISTINCT associative-array keys (measured key set: 39 395 7 1 39.55 40 39.5 39.5.1, count=8).",
+      "rationale": "The stricter `([^0-9.]|$)` would make a degenerate subject INVISIBLE to the walk rather than merely mis-keyed. Invisibility is strictly worse here: the vacuous-pass guard at :143 only fires when a board matches ZERO lands, so one silently-dropped merge among several would restore exactly the silent hole this unit exists to close."
+    }
+  ],
+  "per_arm_rc": [
+    {
+      "arm": "test_check_board_currency.sh Arm 9 - site 1: a fractional id must not collide onto its integer neighbour and swallow that neighbour's SHA check",
+      "fixture": "Fixture F, throwaway git repo, release 0.8.96. merge(0.8.96): Slice 39 lands FIRST, merge(0.8.96): Slice 39.5 lands SECOND (NEWER - load-bearing, since git log is newest-first). Board cites 39.5's SHA and deliberately NOT 39's.",
+      "rc_unfixed": 1,
+      "rc_fixed": 0,
+      "kind": "recurrence",
+      "red_evidence": "FAIL  site 1 RECURRENCE: Slice 39.5 collided onto SEEN_SLICE[39] and Slice 39's stale SHA went unchecked; got rc=0, out: ok    board-currency: no live STATUS-0.8.z.md board contradicts git ancestry",
+      "anti_vacuity_control": "A third assertion requires the CITED fractional land NOT to be flagged, so the arm cannot pass by flagging everything."
+    },
+    {
+      "arm": "test_check_board_currency.sh Arm 10 - the STALE diagnostic must not FABRICATE a slice pointer",
+      "fixture": "Fixture G, throwaway git repo, release 0.8.95. Board cites the integer Slice 39's land but NOT the fractional 39.5's.",
+      "rc_unfixed": 1,
+      "rc_fixed": 0,
+      "kind": "recurrence",
+      "red_evidence": "FAIL  FABRICATED POINTER: expected 'Slice 39.5: landing commit 4f83dcd3'; got: STALE  0.8.95 Slice 39: landing commit 4f83dcd3 (\"merge(0.8.95): Slice 39.5 - fixture fractional land\")",
+      "note": "The checker exits non-zero on this fixture BOTH before and after the fix, so the exit code is NOT the evidence here. The arm asserts the message: it requires the correct label AND requires the absence of the truncated one."
+    },
+    {
+      "arm": "test_check_board_currency.sh Arm 9b - site 1 graded through the REAL entry point, preflight.sh --landing (not just the predicate script)",
+      "fixture": "Fixture F plus a linked worktree of it (fractional-landing-fixture)",
+      "rc_unfixed": 1,
+      "rc_fixed": 0,
+      "kind": "recurrence",
+      "red_evidence": "FAIL  site 1 RECURRENCE in preflight --landing: a board missing Slice 39's SHA cleared landing; got rc=0",
+      "note": "Added because brief section 8 records that five of six codex fix rounds across Slices 32/33 were defects in the VERIFICATION APPARATUS rather than the function under test. check-board-currency.sh is not normally invoked directly at land time; it runs inside preflight --landing and the always-on CI board-currency job."
+    },
+    {
+      "arm": "test_check_board_currency.sh Arm 11 - regression guard: a board citing BOTH a fractional land and its integer neighbour still exits 0",
+      "fixture": "Fixture H, throwaway git repo, release 0.8.94, both SHAs stamped",
+      "rc_unfixed": 0,
+      "rc_fixed": 0,
+      "kind": "regression_guard",
+      "note": "Green before and after BY DESIGN. Explicitly NOT claimed as a recurrence arm; it exists so the fix cannot buy its red by failing everything."
+    },
+    {
+      "arm": "test_preflight_landing.sh Arm 9 alt1 - site 4, first alternative: 'Slice 39.5 ... CLOSED' must not satisfy --expect-closed 39",
+      "fixture": "$TMPROOT/plans/frac-alt1.md - a plan in which ONLY Slice 39.5 is closed and Slice 39 has no CLOSED witness at all",
+      "rc_unfixed": 1,
+      "rc_fixed": 0,
+      "kind": "recurrence",
+      "red_evidence": "FAIL  site 4 RECURRENCE (alt1): Slice 39.5's CLOSED witness cleared --expect-closed 39; got rc=0"
+    },
+    {
+      "arm": "test_preflight_landing.sh Arm 9 alt2 - site 4, SECOND alternative (CLOSED...Slice, the one ending ([^0-9]|$))",
+      "fixture": "$TMPROOT/plans/frac-alt2.md",
+      "rc_unfixed": 1,
+      "rc_fixed": 0,
+      "kind": "recurrence",
+      "red_evidence": "FAIL  site 4 RECURRENCE (alt2): Slice 39.5's CLOSED witness cleared --expect-closed 39; got rc=0"
+    },
+    {
+      "arm": "test_preflight_landing.sh Arm 10 alt1 - [DETERMINE] duty 1, first alternative: 'Slice 39x5 ... CLOSED' must not satisfy --expect-closed 39.5",
+      "fixture": "$TMPROOT/plans/wildcard-alt1.md - a plan whose ONLY witness is the impostor 'Slice 39x5'; no real Slice 39.5 anywhere",
+      "rc_unfixed": 1,
+      "rc_fixed": 0,
+      "kind": "recurrence",
+      "red_evidence": "FAIL  duty 1 RECURRENCE (alt1): the unescaped '.' matched 'x'; got rc=0",
+      "note": "This is the arm the brief warned would not exist unless deliberately written - a fix that only tightens the trailing [^0-9] leaves this case open and no other arm catches it."
+    },
+    {
+      "arm": "test_preflight_landing.sh Arm 10 alt2 - [DETERMINE] duty 1, SECOND alternative",
+      "fixture": "$TMPROOT/plans/wildcard-alt2.md",
+      "rc_unfixed": 1,
+      "rc_fixed": 0,
+      "kind": "recurrence",
+      "red_evidence": "FAIL  duty 1 RECURRENCE (alt2): the unescaped '.' matched 'x'; got rc=0"
+    },
+    {
+      "arm": "test_preflight_landing.sh Arm 11 - regression guards: a REAL 'Slice 39.5 ... CLOSED' satisfies --expect-closed 39.5; a real 'Slice 39 ... CLOSED' satisfies --expect-closed 39",
+      "fixture": "$TMPROOT/plans/frac-alt1.md and $TMPROOT/plans/true-int.md",
+      "rc_unfixed": 0,
+      "rc_fixed": 0,
+      "kind": "regression_guard",
+      "note": "Green before and after BY DESIGN. Without these, a fix that simply never matches anything would pass every recurrence arm above."
+    },
+    {
+      "arm": "test_preflight_landing.sh Arm 11 control - a sentence-final 'CLOSED - Slice 39.' must still satisfy --expect-closed 39",
+      "fixture": "$TMPROOT/plans/int-trailing-period.md",
+      "rc_unfixed": 0,
+      "rc_fixed": 0,
+      "kind": "control_that_rules_out_the_naive_fix",
+      "note": "This control is green against the shipped fix and RED against the OBVIOUS fix. Measured in the determination matrix: candidate `pat_tighten_only` (trailing [^0-9] -> [^0-9.], the natural first attempt) turns this legitimate line into a NO-MATCH, i.e. a new false negative in a gate whose failure mode is refusing to spawn. Its non-vacuity is demonstrated against that candidate rather than against the pre-fix tool."
+    }
+  ],
+  "verification": {
+    "leg_suites": {
+      "scripts/tests/test_check_board_currency.sh": "rc=0 (26 PASS assertions; was rc=1 / 6 red assertions against the unfixed tool)",
+      "scripts/tests/test_preflight_landing.sh": "rc=0 (30 PASS assertions; was rc=1 / 8 red assertions against the unfixed tool)"
+    },
+    "leg2_territory_not_regressed": {
+      "scripts/tests/test_commission_manifest.sh": "rc=0 (69 PASS)",
+      "scripts/tests/test_check_release_state_views.sh": "rc=0 (42 PASS)",
+      "scripts/commission-manifest.sh --verify-all": "rc=0"
+    },
+    "real_state_reverification": {
+      "scripts/check-board-currency.sh": "rc=0 - 'ok board-currency: no live STATUS-0.8.z.md board contradicts git ancestry'",
+      "scripts/preflight.sh (plain)": "rc=0 - {\"preflight\":\"pass\",...,\"hard_fails\":[],\"warnings\":[]}",
+      "scripts/preflight.sh --landing (from this worktree)": "rc=0 - board-currency, ledger-integrity, governed-surface-pin, c1-contract-conformance and transcript-hygiene ALL report ok",
+      "scripts/preflight.sh --worktree <this worktree>": "rc=1 - PRE-EXISTING AND ENVIRONMENTAL, NOT CAUSED BY THIS LEG. See blockers_encountered B1.",
+      "scripts/check-release-state-views.sh (BARE, never --write)": "rc=0, ZERO board churn - `git status --porcelain` is empty after the run",
+      "scripts/tests/test_smoke_scripts.sh": "rc=0"
+    },
+    "expect_closed_behaviour_delta_on_real_files": {
+      "method": "Ran the OLD pattern and the NEW pattern over every dev/plans/*.md and dev/plans/plan-0.8.*.md for slice ids 0-60 and diffed the rc.",
+      "result": "Exactly ONE delta across all real plan files, and it is a FALSE POSITIVE REMOVED, not a true positive lost.",
+      "the_one_delta": "dev/plans/0.7.0-implementation.md:456 `(Phase 0.7.0 GA CLOSED, Wake-assigned at GA).` was satisfying `--expect-closed 0` because the trailing [^0-9] matched the `.` in the VERSION number 0.7.0. That is site 4's own defect class, live in a tracked file. The fixed pattern correctly rejects it.",
+      "plan_0_8_20_specifically": "ZERO deltas. baseline vs fixed rc compared for slices 5/10/15/20/25/30/31/35/39/40 - identical in every case, and 10/15/20/25 still correctly FIND their CLOSED witness (rc=0), so the gate is preserved rather than universally failing."
+    },
+    "not_run_and_why": {
+      "cargo check/clippy --workspace": "Not run - this leg changed no Rust. Brief section 6 baseline (both rc=0 at 46b9365e) is quoted per the task's explicit instruction not to re-derive it.",
+      "scripts/agent-test.sh": "NOT run as an aggregate - exit code is vacuous (TC-16). Suites run individually.",
+      "cargo test --workspace": "NOT run (TC-72, unstable).",
+      "eu7": "NOT run (closed by decision, F-28).",
+      "check-release-state-views.sh --write": "NEVER run.",
+      "shellcheck": "Not installed in this environment; scripts/tests/test_smoke_scripts.sh rc=0 was run instead."
+    }
+  },
+  "blockers_encountered": [
+    {
+      "id": "B1",
+      "severity": "informational-for-orchestrator (does NOT block this leg's work)",
+      "description": "`bash scripts/preflight.sh --worktree /home/coreyt/projects/fathomdb-worktrees/slice-id-hardening` returns rc=1 with 'HARD STALE BASE: worktree HEAD is not current main and main is not its ancestor'. My leg prompt's DoD item 5 expected rc=0. CAUSE: `main` ADVANCED past my baseline while I worked. Baseline given to me was fb05c08b; main is now 7e6ddb8d, two docs-only commits ahead (09d47443 'two HITL rulings - withdraw the TC-16 determination; amend gate (i) (seq-211)' and 7e6ddb8d 'restore steward-orient byte budget; drop the withdrawn seq-195 citation'). My branch is therefore a sibling of main, not a descendant, and section 4's stale-base check correctly says so.",
+      "resolution": "PROVEN pre-existing and not mine: I extracted the UNMODIFIED baseline preflight.sh (`git show fb05c08b:scripts/preflight.sh`) and ran it with the identical arguments - it returns the IDENTICAL rc=1 with the IDENTICAL HARD line. My change touches only section 5 (the --expect-closed gate), which is inert unless --expect-closed is passed; section 4's stale-base check is untouched. Plain `preflight.sh` is rc=0 and `preflight.sh --landing` is rc=0 from this worktree. NOT REBASED - rebasing/landing is the orchestrator's call, not mine, and brief section 9 warns that a clean rebase is not a correct rebase. Both new main commits are docs-only and touch NO file in scripts/, so a cherry-pick of my two commits onto current main should be conflict-free."
+    },
+    {
+      "id": "B2",
+      "severity": "report-only, out of scope by the brief",
+      "description": "Brief section 3 item 1 (TC-133, the board-currency BLIND SPOT from todos-ledger seq-195) is a DIFFERENT defect from site 1 and I did not touch it, as instructed. Recording that I brushed against it: check-board-currency.sh still only requires the landing SHA to appear SOMEWHERE in the board file (`grep -qF \"$short\" \"$board\"`), so a board whose ladder row says a landed slice is NOT_STARTED still exits 0. My fix makes the gate check the RIGHT slice; it does not make it read the board's claims. Placement remains the HITL's call.",
+      "resolution": "Left untouched deliberately. Not fixed, not widened."
+    }
+  ],
+  "additional_changes_made_in_scope": [
+    "check-board-currency.sh header predicate step 2/3: updated to state that <N> is a DOTTED slice id, not an integer, and that 39 and 39.5 are two DIFFERENT slices that must never collapse onto one key. The header is the file's stated contract and would otherwise have documented the defect as the design.",
+    "Inline rationale at both fix sites recording WHY the non-obvious boundary was chosen, with the measured counter-evidence against the obvious alternative, so a future maintainer does not 'simplify' the fix back into the defect."
+  ],
+  "corrections_to_the_record_reported_not_made": [
+    "dev/plans/plan-0.8.20.md:492 says 'plus three latent ones'. Brief section 5 forbids me from editing that file and instructs me to report rather than correct. I did not edit it. NOTE: the latent-set enumeration is Leg 2's duty (check-release-state-views.sh), not mine - I make no claim about the true count.",
+    "Brief section 1a site 4's worked example is CONFIRMED by my own execution ('Slice 39.5 - CLOSED' MATCHES with EXPECT_CLOSED=39; controls 'Slice 40 CLOSED' and 'Slice 395 CLOSED' correctly do not). Brief section 1a site 1's PROSPECTIVE framing is also confirmed: there is no merge(0.8.20): Slice 39 subject in history, so the arm had to be built in a fixture.",
+    "NEW, not previously in the record: brief section 4 duty 1 is understated. The unescaped value is not only exploitable via a hand-crafted 'Slice 39x5' line - it is ALREADY producing a live false positive on a real tracked file (0.7.0-implementation.md:456, `--expect-closed 0`), via the trailing-boundary half of the same defect."
+  ],
+  "scope_discipline": {
+    "governed_surface": "byte-identical - not touched",
+    "schema": "24 - not touched",
+    "manifest_version": "not bumped",
+    "github_workflows": "not touched (Slice 40's exclusive territory)",
+    "release_state_json": "not touched - no fractional id entered real state, the ladder or the board. Fractional ids exist ONLY in throwaway mktemp fixtures, which brief section 2 requires.",
+    "ledgers": "not touched",
+    "git_add_A": "never used - both commits staged explicit paths only (TC-132)",
+    "pins_and_allowlists": "none cleared, none widened, no guard weakened"
+  },
+  "agent_verify_result": "pass - all four target suites rc=0 (26 / 30 / 69 / 42 PASS assertions), commission-manifest --verify-all rc=0, check-board-currency.sh rc=0, check-release-state-views.sh (bare) rc=0 with zero board churn, preflight.sh plain rc=0, preflight.sh --landing rc=0, test_smoke_scripts.sh rc=0. The ONE non-zero real-state rc (preflight --worktree) is proven pre-existing and environmental - see blockers_encountered B1.",
+  "ci_status_note": "CI status is UNCHANGED and NOT OWNED BY ME. Brief section 3 item 3 rules the test_commission_manifest CI-red / local-green divergence to be Slice 39.5's job (seq-204 ruling 2); I did not chase it and quote LOCAL rc only.",
+  "next_step_for_orchestrator": "Leg 1 is complete at 2c78faab. (1) Run the codex section 9 review on this branch - note brief section 7 item 8: read the verdict blocks, never grep [P1]/[P2] markers (TC-87), and never run the engine suite alongside codex (TC-97). (2) BEFORE cherry-picking, note that main moved from fb05c08b to 7e6ddb8d during this leg (two docs-only commits, neither touching scripts/) - the cherry-pick of 7e4373f9 then 2c78faab should be conflict-free, but re-run both leg suites AFTER the pick, since brief section 9 warns a clean rebase is not a correct rebase. (3) Cherry-pick BOTH commits and keep them in order: 7e4373f9 is INTENTIONALLY RED on its own (the red-first arms) and 2c78faab makes it green; picking only the second loses the auditable red, picking only the first lands a red suite. (4) Leg 2 (commission-manifest.sh sites 2+3, check-release-state-views.sh latent set, arm 9d at :1715 AND :1719) is untouched by me and still owed. (5) This closure JSON is left UNTRACKED per orchestration.md section 8, for the orchestrator to promote."
+}

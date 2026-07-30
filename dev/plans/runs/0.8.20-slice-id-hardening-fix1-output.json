@@ -1,0 +1,74 @@
+{
+  "phase": "SLICE-ID-HARDENING fix-1 (cross-cutting unit, 0.8.20; no slice number, no R-20-xx id) — the single codex §9 [P2] finding against Leg 3's cross-read state map",
+  "baseline_sha": "4c924f04923c36c56419add301704975df583806",
+  "branch": "0.8.20-slice-id-hardening",
+  "head_sha": "48b45aa3f3d84de307af532ac3c242ff6f02b996",
+  "commits": [
+    {
+      "sha": "e26cc673",
+      "kind": "arms (RED)",
+      "subject": "test(0.8.20 SLICE-ID-HARDENING fix1): RED-first recurrence arm for duplicate slice ids in the cross-read state map",
+      "paths": ["scripts/tests/test_check_board_currency.sh"]
+    },
+    {
+      "sha": "48b45aa3",
+      "kind": "fix",
+      "subject": "fix(0.8.20 SLICE-ID-HARDENING fix1): refuse duplicate slice ids in the cross-read state map instead of taking the last writer",
+      "paths": ["scripts/check-board-currency.sh"]
+    }
+  ],
+  "red_audit_note": "The orchestrator's independent re-run of e26cc673 must show `bash scripts/tests/test_check_board_currency.sh` rc=1 with exactly 3 FAILs, all of them Arm 17, and each quoting the fixture's silent-wrong green line: `ok    0.8.87: board/state cross-read (TC-133): 1 landed slice(s) reconciled against dev/plans/release-state-0.8.87.json, 1 \\`Ladder remaining\\` claim(s) agree with \\`remaining_ladder\\``. Measured before the commit on byte-identical content. NO DEVIATION: the arms commit touches only scripts/tests/test_check_board_currency.sh and the fix commit touches only scripts/check-board-currency.sh.",
+  "finding_addressed": {
+    "source": "codex §9 review, dev/plans/runs/codex/0.8.20/slice-id-hardening-review-20260730T110553.md",
+    "severity": "P2",
+    "site": "scripts/check-board-currency.sh:364-367 (as of 4c924f04)",
+    "verdict": "CORRECT — accepted and fixed as raised, not widened",
+    "defect": "Leg 3's cross-read built its state map with a bare `by_slice[slice_str(entry[\"slice\"])] = entry`. Two ladder entries that canonicalize to the same id (`30` and `30.0`, or `30` and `\"30\"`) collapse onto one key and the LAST writer silently wins, by state-file line order. The survivor then answers for the loser in check (c): a landed row can be reconciled against the WRONG entry's SHA; when the two entries agree, a malformed state file is CERTIFIED instead.",
+    "why_it_is_this_unit_s_own_defect_class": "`slice_str`'s own docstring exists to stop a fractional id being SILENTLY OVERWRITTEN by its integer neighbour, and Leg 2 already added exactly this duplicate-key guard to the sibling `_by_slice` in scripts/check-release-state-views.sh. The two readers of one file disagreeing about what that file means is the finding."
+  },
+  "fix": {
+    "shape": "Detect the collision BEFORE overwriting `by_slice[key]`, collect every duplicate, report them all, then `sys.exit(1)`.",
+    "consistency_with_sibling": "Matches scripts/check-release-state-views.sh `_by_slice` in behaviour (refuse the collision rather than take the last writer) and in diagnostic style: the message names the release, the state file, the canonical colliding id via `slice_str`, and BOTH offending raw values via `%r` so the reader can find the two lines. The sibling raises ValueError (its house style); this gate is a stderr-diagnostic + exit-code gate, so it errs and exits — same verdict, each in its own idiom.",
+    "hard_fail_rationale": "A duplicate is a defect in the STATE FILE, and Leg 3's stated policy is that a present-but-malformed state file is a HARD fail (only an ABSENT one is the announced skip). Exiting rather than setting `bad = True` also stops the remaining checks running against a map already known to be wrong.",
+    "inertness_against_the_real_state_file": "dev/plans/release-state-0.8.20.json's 15 ladder entries canonicalize to 15 DISTINCT ids (verified directly), so the guard cannot fire against it. `bash scripts/check-board-currency.sh` stays rc=0. No board was edited and no guard was loosened."
+  },
+  "per_arm_rc": [
+    {
+      "arm": "Arm 17 — TC-133 RECURRENCE (fix-1): two ladder entries in the state file resolve to the same slice id",
+      "fixture": "R / DUPSTATE_REPO (release 0.8.87). The BOARD is current in every respect: one table row per slice, the landed row cites its own landing SHA (`merge(0.8.87): Slice 30 — fixture land`), the `Ladder remaining: 40 alone` claim agrees with remaining_ladder=[40]. The ONLY defect is inside release-state-0.8.87.json, whose ladder carries BOTH {\"slice\": 30} and {\"slice\": 30.0}.",
+      "fixture_design_note": "Both duplicate entries carry the SAME sha on purpose. That is the QUIET half of the failure — last-writer-wins still answers check (c) correctly, so the unfixed gate CERTIFIES the malformed file (rc=0). The loud half (differing shas, landed row compared against the wrong SHA) would also redden the unfixed gate, which would make the arm's red unattributable: it could not distinguish 'the guard fired' from 'the map happened to pick the other entry'.",
+      "rc_unfixed": 0,
+      "rc_fixed": 1,
+      "unfixed_output_tail": "ok    0.8.87: board/state cross-read (TC-133): 1 landed slice(s) reconciled against dev/plans/release-state-0.8.87.json, 1 `Ladder remaining` claim(s) agree with `remaining_ladder`  /  ok    board-currency: no live STATUS-0.8.z.md board contradicts git ancestry",
+      "fixed_output_tail": "STALE  0.8.87: dev/plans/release-state-0.8.87.json carries TWO ladder entries that resolve to the same slice id 30 (30 and 30.0). One would SILENTLY OVERWRITE the other — whichever came second in the file — so a landed row could be reconciled against the WRONG entry's SHA, and every reader of this file would disagree with the next about which entry is the slice. Give each slice exactly one ladder entry (TC-133).",
+      "anti_vacuity": "Three assertions, not one: (a) rc != 0; (b) the output contains `same slice id 30`, so the red is the duplicate guard's and not some unrelated predicate's; (c) the output contains `30 and 30.0`, i.e. BOTH raw values are quoted — a diagnostic naming only the canonical id would leave the reader unable to find the two offending lines."
+    }
+  ],
+  "per_arm_rc_measurement_method": "The unfixed checker was extracted with `git show 4c924f04:scripts/check-board-currency.sh` into a scratch path and fixture R was rebuilt byte-for-byte in a throwaway `mktemp -d` git repo, then run against BOTH checkers with `rc=$?` captured on the very next line. The whole-suite red was also observed directly at the arms commit's content: `bash scripts/tests/test_check_board_currency.sh` rc=1 with 3 FAILs, all Arm 17.",
+  "verification": {
+    "suites": [
+      {"cmd": "bash scripts/tests/test_check_board_currency.sh", "rc": 0, "note": "48 PASS, 0 FAIL"},
+      {"cmd": "bash scripts/tests/test_preflight_landing.sh", "rc": 0},
+      {"cmd": "bash scripts/tests/test_commission_manifest.sh", "rc": 0},
+      {"cmd": "bash scripts/tests/test_check_release_state_views.sh", "rc": 0, "note": "the two 'FAIL' string matches in its log are inside PASS lines naming vacuity guards, not failures"}
+    ],
+    "real_state": [
+      {"cmd": "bash scripts/check-board-currency.sh", "rc": 0, "note": "GUARDRAIL HELD — 14 landed slice(s) reconciled against dev/plans/release-state-0.8.20.json, 3 `Ladder remaining` claim(s) agree"},
+      {"cmd": "bash scripts/preflight.sh --landing (from the worktree)", "rc": 0, "note": "warning only: 'tracked source dirty on canonical main' — the untracked leg output JSONs, pre-existing"},
+      {"cmd": "bash scripts/commission-manifest.sh --verify-all", "rc": 0, "note": "0.8.20 next slice 40 (R-20-PUB) — 17 path(s) and 24 anchor(s) verified"},
+      {"cmd": "bash scripts/check-release-state-views.sh (BARE, never --write)", "rc": 0, "note": "5 generated block(s) across 1 release-state file(s) match their render; `git status --short` shows ZERO board churn"},
+      {"cmd": "bash scripts/check-governed-surface-pin.sh", "rc": 0, "note": "30 allowlist / 5 core / 5 recovery_denylist, pinned at c239908b under AC-079 — unchanged"}
+    ]
+  },
+  "blockers_encountered": [],
+  "out_of_scope_reported_not_fixed": [],
+  "scope_discipline": {
+    "files_changed": ["scripts/check-board-currency.sh", "scripts/tests/test_check_board_currency.sh"],
+    "files_deliberately_NOT_changed": "scripts/check-release-state-views.sh was READ (its `_by_slice` guard is the behavioural model for this fix) but NOT edited — its guard already exists. No preflight.sh, no commission-manifest.sh, no other test suite, no .github/, no src/**, no dev/plans/release-state-0.8.20.json, no dev/plans/runs/STATUS-0.8.20.md, no ladder/board/ledger.",
+    "staging": "explicit paths on both commits; never `git add -A` (TC-132).",
+    "widening": "none — only the single raised finding was fixed; nothing codex did not raise was touched."
+  },
+  "agent_verify_result": "pass — all four target suites rc=0; check-board-currency.sh rc=0 against the live board (guard inert on the real state file); preflight.sh --landing rc=0 from the worktree; commission-manifest.sh --verify-all rc=0; check-release-state-views.sh (bare) rc=0 with zero board churn; check-governed-surface-pin.sh rc=0.",
+  "ci_status_note": "CI status is unchanged by this fix and is NOT owned by it. The commission-manifest CI-red / local-green divergence (seq-205) remains Slice 39.5's ruled job (seq-204 ruling 2) and was not chased. Local rc only is quoted above.",
+  "next_step_for_orchestrator": "fix-1 is complete at 48b45aa3f3d84de307af532ac3c242ff6f02b996. For the red audit, check out e26cc673 and run `bash scripts/tests/test_check_board_currency.sh`: expect rc=1 with exactly 3 FAILs, all Arm 17, each quoting the unfixed gate's silent-wrong `ok    0.8.87: ...` line. Then re-run the codex §9 review over 4c924f04..48b45aa3 if a confirming pass is wanted — read the verdict blocks, never grep [P1]/[P2] markers (TC-87), and never run the engine suite alongside the reviewer (TC-97). Nothing here needs a board or state-file edit; the Steward reconciliation owed by this fix is NIL. Not landed, not pushed, not rebased."
+}

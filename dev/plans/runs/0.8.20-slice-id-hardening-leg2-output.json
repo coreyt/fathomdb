@@ -1,0 +1,423 @@
+{
+  "phase": "SLICE-ID-HARDENING leg 2 (cross-cutting unit, 0.8.20; no slice number, no R-20-xx id)",
+  "baseline_sha": "2c78faab8e175e65ed6fe1d4a20ab268e04dab94",
+  "branch": "0.8.20-slice-id-hardening",
+  "head_sha": "0f46191d744f03d16db76851b6f5e3012314b613",
+  "commits": [
+    "3247cd5fcfd841db0d5a5026f55af7f8beb15f30: test(0.8.20 SLICE-ID-HARDENING leg2): RED-first recurrence arms for sites 2+3 and the latent set — INTENTIONALLY RED, both suites exit 1 at this commit",
+    "0f46191d744f03d16db76851b6f5e3012314b613: fix(0.8.20 SLICE-ID-HARDENING leg2): stop truncating fractional slice ids in the manifest generator and the view renderers"
+  ],
+  "leg_scope": {
+    "files_owned_and_changed": [
+      "scripts/commission-manifest.sh",
+      "scripts/check-release-state-views.sh",
+      "scripts/tests/test_commission_manifest.sh",
+      "scripts/tests/test_check_release_state_views.sh"
+    ],
+    "files_outside_leg_touched": [],
+    "note": "Exactly the four files in the leg boundary. Verified by `git show --stat` on both commits: 4 files changed in each. Leg 1's four files (check-board-currency.sh, preflight.sh, test_check_board_currency.sh, test_preflight_landing.sh) are byte-identical to 2c78faab. Nothing under .github/ (Slice 40's territory), src/**, engine/**, dev/plans/release-state-0.8.20.json, dev/plans/plan-0.8.20.md, dev/plans/runs/STATUS-0.8.20.md, dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md, or any ledger was modified."
+  },
+  "findings_addressed": [
+    "Brief §1a site 2 (commission-manifest.sh:701) FIXED. `landed_nums = sorted({s for s in landed if isinstance(s, int)})` filtered a fractional slice OUT of the predecessor set. Measured verbatim against the unfixed tool on a fixture where Slice 10.5 is LANDED: `base sha         bbbb2222  (Slice 5 — the newest LANDED slice STRICTLY BEFORE Slice 30)` — the operator instructed to branch from a commit that predates a whole landed unit. That is the named agent-worktree-stale-base trap, emitted by the tool built to prevent it. Now `is_slice_num(s)`.",
+    "Brief §1a site 2, SECOND CONSEQUENCE: the same filter made `slice_no in landed_nums` False for a landed fractional slice, so the `⚠ HISTORICAL … is ITSELF LANDED` banner never printed and a regeneration read as a fresh commission. Measured RED: banner=[] (empty). Arm 13b.",
+    "Brief §1a site 2, THIRD SITE — NOT previously in the record. The SAME int-only filter appears again at the `landed so far` roll-up (`isinstance(s, int) and s >= slice_no`, formerly :748), so a fractional slice landed at or after the target carried no `⚠ at/after Slice N` mark. Measured RED: `landed so far    0 (aaaa1111), 5 (bbbb2222), 10.5 (cccc3333)` with no warning. Same block, same defect class, in the file I own — fixed rather than left half-repaired. Arm 13c.",
+    "Brief §1a site 3 (commission-manifest.sh:497) FIXED. `re.compile(r\"slice[-_ ]?0*%d(?![0-9])\" % slice_no)` — Python's %d truncates a float, so 39.5 and 39 produce the byte-identical pattern and a fractional slice matches a neighbour's design memo, defeating the TC-37 vacuous-pass guard by satisfying it with the WRONG document. See `determinations` for duty 2.",
+    "Brief §1a site 3 IS LIVE AT HEAD, NOT PROSPECTIVE — this is new to the record. `dev/design/0.8.20-slice-39-publish-facing-documentation.md` and `dev/design/0.8.20-slice-39.5-collect-all-test-harness.md` are BOTH tracked files, and the shipped pattern matched both for slice_no=39. So `scripts/commission-manifest.sh 0.8.20 39` cited Slice 39.5's design of record as Slice 39's own required reading, at exit 0. Arm 13i asserts it through the real entry point on the real checkout.",
+    "Brief §1b — the true latent set of check-release-state-views.sh ENUMERATED, REPORTED and FIXED. See `latent_set_enumeration`. Eight bypass sites plus one latent hole in the helper itself; the brief's two passes found six.",
+    "Brief §1c — arm 9d's oracle no longer replicates the generator's assumptions, at BOTH lines. See `arm_9d_repair`.",
+    "Brief §4 [DETERMINE] duty 2 (the shape of the :497 pattern) DISCHARGED — see `determinations`.",
+    "Brief §4 [DETERMINE] duty 3 (the true latent set) DISCHARGED — see `latent_set_enumeration`."
+  ],
+  "determinations": [
+    {
+      "duty": "Brief §4 [DETERMINE] duty 2 — the correct shape for commission-manifest.sh:497's `name_re`",
+      "determination": "`r\"slice[-_ ]?0*\" + re.escape(slice_str(slice_no)) + r\"(?![0-9])(?!\\.[0-9])\"`. Escaping is REQUIRED and is NECESSARY BUT NOT SUFFICIENT; the obvious boundary tighten `(?![0-9.])` is ALSO wrong, in the more dangerous direction. What must be rejected is a following DIGIT, or a following `.` that BEGINS A LONGER ID — never a `.` on its own, because that `.` is usually the file extension.",
+      "method": "BY EXECUTION, not by reasoning, exactly as the brief demands. A 24-case matrix (11 true positives including real tracked filenames, leading zeros, `_`/space separators and no-separator forms; 3 neighbour-bleed cases; 2 reverse-bleed cases onto longer dotted ids; 3 regex-wildcard cases; 5 integer controls) run against FIVE candidate shapes with the real `re` module. Script: scratchpad determine_name_re.py.",
+      "evidence": {
+        "A_shipped_%d": "17/24 — 7 FALSE POSITIVES. Both bleed classes live: 39 claims 39.5's memo (LIVE on tracked files at HEAD), 39 claims 39.5.1's, 3 claims 3.9's, 39.5 claims 39.5.1's and 39.55's, and the wildcard cases 39x5 and 39-5.",
+        "B_naive_%s_swap": "18/24 — 6 FALSE POSITIVES. Exactly the hazard the brief predicted: `slice-39x5-design.md` still resolves as Slice 39.5's memo, plus every neighbour bleed survives.",
+        "C_escape_only": "20/24 — 4 FALSE POSITIVES SURVIVE. The wildcard closes, the DOTTED CONTINUATION does not: `39\\.5(?![0-9])` still matches `slice-39.5.1-…` because the character after `39.5` is `.`, not a digit; and `39(?![0-9])` still matches `slice-39.5-…`. Escaping alone would have shipped the live defect unchanged.",
+        "D_escape_plus_naive_boundary_(?![0-9.])": "22/24 — and it introduces TWO NEW FALSE NEGATIVES: `9.9.9-slice-39.md` and `9.9.9-slice-39.5.md`, where the character after the id is the EXTENSION dot, stop matching. The slice loses its own design memo and the TC-37 guard HARD-STOPS a slice that IS designed. A false negative here is worse than a false positive because it looks like a correctly-refusing gate.",
+        "E_escape_plus_dotted_boundary_(SHIPPED)": "24/24 correct.",
+        "F_compact_equivalent_(?!\\.?[0-9])": "24/24 correct — behaviourally identical to E. E was shipped because spelling the two rejections separately makes each rule readable."
+      },
+      "leg1_parallel": "Leg 1 reported duty 1 on preflight.sh was UNDERSTATED in the same way — escaping necessary but not sufficient, and the naive boundary tighten introducing a new false negative. That is now measured independently on a second tool with a different regex engine (Python `re` here, ERE there). It is a property of the problem, not of one script.",
+      "real_state_delta_measured": "EXACTLY ONE delta across every ladder entry of every live release-state file, and it is a FALSE POSITIVE REMOVED, not a true positive lost: 0.8.20 slice 39 loses `0.8.20-slice-39.5-collect-all-test-harness.md`. Slice 39 keeps `0.8.20-slice-39-publish-facing-documentation.md`, so the TC-37 guard is not tripped. `--verify-all` rc=0."
+    },
+    {
+      "duty": "Brief §4 [DETERMINE] duty 3 — the TRUE latent set in check-release-state-views.sh",
+      "determination": "NOT six. EIGHT bypass sites across SIX state fields (five truncating, three divergent-render), PLUS one latent hole in `_by_slice` itself, PLUS a deliberately-unchanged loud-fail asymmetry. The brief's own instruction 'do not stop at six and do not assume six' was correct. Full table in `latent_set_enumeration`.",
+      "method": "Whole-file sweep for every path from a slice id to a renderer or an index, cross-checked against the state file's actual field types (`unblocked`, `depends_on`, `remaining_ladder`, `landed`, `next_slice`, `publish_precondition_slice`, `sign_off_slice`, `ladder[].slice` — all slice ids; `schema_version` and the marker/block counts — not). Then a residual grep after the fix, with every survivor classified rather than left unexplained.",
+      "what_the_two_prior_passes_missed": "Both new sites are ONE HOP from a slice-id field rather than at the field itself, which is why a call-site grep found the six and not the eight: `_and_join` (:154) is a generic-looking helper whose only caller passes it slice ids, and `pre[\"depends_on\"]` (:265) reaches the renderer through the `pre` entry rather than off `st` directly."
+    },
+    {
+      "duty": "Design call this leg had to make (not brief-assigned): what to do about `_by_slice`'s missing duplicate-key guard",
+      "determination": "REFUSE, naming the collapsed id and both raw values. Not last-writer-wins, and not first-writer-wins.",
+      "method": "By execution against a fixture that appends a `30.0` entry beside the existing `30`. Pre-fix the gate reported the SURVIVING entry's facts under the loser's number as an ordinary STALE diff, giving the operator no hint that an entry had vanished.",
+      "rationale": "`30 == 30.0` and `hash(30) == hash(30.0)` in Python, so `out[30.0]` overwrites `out[30]` with no error. Which entry survives is dict-insertion order, i.e. the order of lines in the state file — invisible to every reader. The helper's own docstring promises the caller it prevents a 'SILENT OVERWRITE'; it had no guard for the case where the collision is between two ladder entries rather than between a lookup and an entry. A duplicate is a state-file defect and the operator has to be told which two entries collided."
+    }
+  ],
+  "latent_set_enumeration": {
+    "scope": "scripts/check-release-state-views.sh, measured at branch tip 0f46191d (line numbers cited as they stood at baseline 2c78faab, matching the brief).",
+    "headline": "EIGHT bypass sites over SIX state fields — FIVE truncating, THREE divergent-render — plus ONE latent hole in the helper itself. The brief's two passes found six of the eight.",
+    "truncating": [
+      {
+        "site": ":233/:235",
+        "expression": "`Slice %d` fed by `int(gate[\"sign_off_slice\"])` — MINTED branch",
+        "harm": "int(40.5) renders 'Slice 40'. The board names a DIFFERENT slice as the one that signed off, with this gate's authority behind it.",
+        "in_brief": true,
+        "arm": "11h (minted)",
+        "red_evidence": "rendered: '…is MINTED and recorded as SIGNED at Slice 40 (§4 #1)…' for sign_off_slice 40.5"
+      },
+      {
+        "site": ":242/:244",
+        "expression": "`Slice %d` fed by `int(gate[\"sign_off_slice\"])` — PRE_SIGNED branch",
+        "harm": "as above; this is the branch the LIVE state file exercises",
+        "in_brief": true,
+        "arm": "11h (presigned)",
+        "red_evidence": "rendered: '…is minted and recorded as SIGNED at Slice 40 (§4 #1)…' for sign_off_slice 40.5"
+      },
+      {
+        "site": ":248/:250",
+        "expression": "`Slice %d` fed by `int(gate[\"sign_off_slice\"])` — NOT_PRE_SIGNED branch",
+        "harm": "as above",
+        "in_brief": true,
+        "arm": "11h (notpresigned)",
+        "red_evidence": "rendered: '…minted and recorded as SIGNED at Slice 40 (§4 #1)…' for sign_off_slice 40.5",
+        "note": "Three separate copies of the sentence. A fix applied to whichever branch a fixture happens to exercise leaves the other two live, which is why all three are driven by their own state."
+      },
+      {
+        "site": ":260",
+        "expression": "`pre = by[int(st[\"publish_precondition_slice\"])]` — an INDEX, not a render",
+        "harm": "by[int(30.5)] is by[30]: the renderer selects the INTEGER NEIGHBOUR'S ladder entry and prints its short name, title and dependency list as the fractional slice's own. Exactly the collapse `_by_slice`'s docstring forbids, bypassed at the one call site that indexes it.",
+        "in_brief": true,
+        "arm": "11d",
+        "red_evidence": "rendered: 'Slice 30 (H7) depends on 5/10.0/20' — H7 is Slice 30's short; the 30.5 entry's short is H7b"
+      },
+      {
+        "site": ":263/:265",
+        "expression": "`Slice %d` fed by `pre[\"slice\"]`",
+        "harm": "A SECOND, INDEPENDENT defect at the same site — the %d is fed by pre[\"slice\"], not by :260's int(). Fixing the index alone still prints the truncated number.",
+        "in_brief": true,
+        "arm": "11e, and 11e2 which PROVES the independence by execution",
+        "red_evidence": "11e rendered 'Slice 30 (H7)'; 11e2's mutant (index fixed, render reverted) rendered 'Slice 30 (H7b)' — the RIGHT entry under the WRONG number, which is the claim made concrete"
+      }
+    ],
+    "divergent_render": [
+      {
+        "site": ":168",
+        "expression": "`\" → \".join(str(n) for n in st[\"remaining_ladder\"])`",
+        "harm": "str(40.0) -> '40.0' where render_plan_immediate_next (:369) renders THE SAME FIELD through _slice_str -> '40'. The same fact reaches two documents in two shapes.",
+        "in_brief": true,
+        "arm": "11b",
+        "red_evidence": "rendered: 'remaining ladder = 20 → 30.5 → 40.0.'"
+      },
+      {
+        "site": ":278",
+        "expression": "`\" → \".join(str(n) for n in st[\"landed\"])`",
+        "harm": "as above; the sibling on the same field is :167, which already used the helper",
+        "in_brief": true,
+        "arm": "11c",
+        "red_evidence": "rendered: '\\n**The 9.9.9 ladder is between slices: 0 → 5.0 → 10.5 are all LANDED; 20 is next.**'"
+      },
+      {
+        "site": ":154 (inside `_and_join`)",
+        "expression": "`items = [str(i) for i in items]`",
+        "harm": "NOT IN THE BRIEF. `_and_join`'s ONLY caller is render_status_unblocks on `st[\"unblocked\"]`, a list of SLICE IDS, and its own docstring examples are slice numbers — but it renders them with bare str(). It reads as a generic string helper, which is why a call-site sweep for slice-id fields walks past it.",
+        "in_brief": false,
+        "arm": "11g",
+        "red_evidence": "rendered: '**Slices 20 and 30.0 are NOW UNBLOCKED**'"
+      },
+      {
+        "site": ":265",
+        "expression": "`\"/\".join(str(d) for d in pre[\"depends_on\"])`",
+        "harm": "NOT IN THE BRIEF. `depends_on` is a list of SLICE IDS. It reaches the renderer via the `pre` ladder entry rather than off `st` directly, which is the other reason a field-level sweep misses it.",
+        "in_brief": false,
+        "arm": "11f",
+        "red_evidence": "rendered: 'Slice 30 (H7) depends on 5/10.0/20.'",
+        "vacuity_note": "This arm is MASKED by :260 unless the integral float is planted in the INTEGER neighbour's depends_on as well: the unfixed gate indexes by[int(30.5)] == by[30] and renders Slice 30's all-integer list, so the arm would have been vacuously green pre-fix. Caught during the red run and fixed before the arms were committed."
+      }
+    ],
+    "latent_hole_in_the_helper_itself": [
+      {
+        "site": ":139-150 (`_by_slice`)",
+        "expression": "no duplicate-key guard",
+        "harm": "NOT IN THE BRIEF. Two ladder entries normalising to the same key (30 and 30.0, or 30 and \"30\") silently overwrite, decided by state-file line order. Every view downstream then renders the survivor's facts under the loser's number. The helper's docstring names 'SILENTLY OVERWRITE' as the thing it prevents, and did not prevent this shape of it.",
+        "in_brief": false,
+        "arm": "11i",
+        "red_evidence": "pre-fix the gate reported an ordinary STALE diff on status-unblocks with no indication an entry had disappeared; post-fix it refuses with 'the ladder carries TWO entries that resolve to the same slice id 30 (30 and 30.0)'"
+      }
+    ],
+    "correctly_excluded_and_left_alone": [
+      ":169 `SCHEMA is %d` fed `st[\"schema_version\"]` — a schema version, not a slice id (brief agrees)",
+      ":439 / :525 / :537 / :542 `%d` — marker and block COUNTS (brief agrees)",
+      ":306/:362 `str(len(st[\"decisions\"][\"unruled\"]))` — a count",
+      ":148 `int(k)` inside `_by_slice` — the NORMALISER itself, applied only to a string with no `.` in it; this is the helper doing its job",
+      ":352/:418 `render_plan_immediate_next`'s isinstance and ladder-membership checks — already correct at baseline, they accept int OR float"
+    ],
+    "deliberately_not_changed_and_why": [
+      {
+        "site": ":167 `by[n]` (landed) and :422 `entry = by[nxt]`",
+        "observation": "`_by_slice` NORMALISES a string ladder key to int/float, but these lookups use the key AS STORED. A state file storing `landed: [\"5\"]` against `ladder[].slice: 5` therefore raises KeyError.",
+        "classification": "LOUD-FAIL, not silent-wrong — the KeyError is caught at :457 and reported with the reason, and the gate exits 1.",
+        "decision": "NOT changed. Normalising the lookup would turn a loud refusal on a malformed state file into a silent acceptance. Brief §5's standing rule is not to weaken a guard, and this is a guard even though it is an accidental one. Reported here so the choice is on the record rather than an omission."
+      }
+    ]
+  },
+  "arm_9d_repair": {
+    "brief_section": "§1c — the test that would CONFIRM the defect rather than catch it",
+    "both_lines_repaired": true,
+    ":1715": "`if isinstance(t, bool) or not isinstance(t, int):` on `next_slice` routed a fractional target to `ERR … not an int` -> fail(). Measured RED verbatim: `ERR next_slice is 39.5, not an int — end-of-ladder or malformed.` That is the arm REJECTING the very input this unit exists to support, and it is what made the suite rc=1 before de-laddering. Now `isinstance(t, (int, float))`, with bool still excluded because True is an int in Python and would pass as Slice 1.",
+    ":1719": "`landed = sorted(n for n in (s.get(\"landed\") or []) if isinstance(n, int))` — semantically identical to the generator's :701. An oracle that copies the implementation cannot falsify it. Now admits int and float.",
+    "third_repair_not_in_the_brief": "The oracle printed its own findings with `%d` (`print(\"OK %d %d %s %s\" …)` and both ERR paths). `\"%d\" % 39.5` is `\"39\"`, so a repaired oracle would have reported the WRONG SLICE while looking right — the fabricated-pointer failure, in the catcher. Now routed through a slice-id renderer.",
+    "fourth_repair_not_in_the_brief": "Arm 9d's shell half interpolated `$D9D_TARGET` UNESCAPED into a `grep -qiE` pattern, so for a fractional target the `.` is a regex wildcard and `Slice 39x5 is ITSELF LANDED` would have satisfied an assertion about Slice 39.5 — the arm carrying the defect class it grades. Same finding Leg 1 made on preflight.sh's ERE.",
+    "how_the_repair_is_MEASURED_rather_than_asserted": "The derivation was extracted into a shell function `derive_base_from_state` (behaviour-preserving, in the RED commit). Arm 9d calls it on the live all-integer state, where it CANNOT show the difference; new arm 13h calls the SAME function on a fractional copy, where a fractional target and a fractional predecessor are each independently observable. Repairing only :1715 yields `OK 39.5 33 <slice-33-sha> PENDING` and fails 13h; repairing only :1719 still ERRs."
+  },
+  "per_arm_rc": [
+    {
+      "arm": "test_commission_manifest.sh arm 13a — site 2 (:701): a LANDED fractional slice must be the predecessor for the base SHA",
+      "fixture": "$FIX 9.9.9 throwaway repo; ladder gains {slice: 10.5, LANDED, sha cccc3333}, landed=[0,5,10.5]; target Slice 30",
+      "rc_unfixed": 1,
+      "rc_fixed": 0,
+      "kind": "recurrence",
+      "red_evidence": "FAIL  arm 13a (site 2 base sha): rc=0 base=[  base sha         bbbb2222  (Slice 5 — the newest LANDED slice STRICTLY BEFORE Slice 30)] — the stale-base trap printed verbatim, at exit 0",
+      "anti_vacuity_control": "asserts the base line specifically (not the whole manifest, where every landing SHA also appears in the roll-up) AND asserts the ABSENCE of bbbb2222, so the arm cannot pass by matching any SHA"
+    },
+    {
+      "arm": "test_commission_manifest.sh arm 13b — site 2: a LANDED fractional slice raises the HISTORICAL banner",
+      "fixture": "same; target Slice 10.5, which is itself in `landed`",
+      "rc_unfixed": 1,
+      "rc_fixed": 0,
+      "kind": "recurrence",
+      "red_evidence": "FAIL  arm 13b (site 2 historical banner): rc=0 out=106 lines; banner=[] — a regeneration of an already-landed unit read as a fresh commission"
+    },
+    {
+      "arm": "test_commission_manifest.sh arm 13c — site 2's third site: the `landed so far` roll-up flags a fractional land at/after the target",
+      "fixture": "same; target Slice 10",
+      "rc_unfixed": 1,
+      "rc_fixed": 0,
+      "kind": "recurrence",
+      "red_evidence": "FAIL  arm 13c (site 2 landed roll-up): rc=0 line=[  landed so far    0 (aaaa1111), 5 (bbbb2222), 10.5 (cccc3333)] — no `⚠ at/after Slice 10` mark on 10.5"
+    },
+    {
+      "arm": "test_commission_manifest.sh arm 13d — site 3 (:497): an integer slice must not claim its .5 neighbour's memo",
+      "fixture": "same, plus FOUR token-free design memos so the filename selector is the ONLY route any of them can reach a manifest: 9.9.9-slice-10.5-design.md, -10x5-, -10.5.1-, -10.md",
+      "rc_unfixed": 1,
+      "rc_fixed": 0,
+      "kind": "recurrence",
+      "red_evidence": "FAIL  arm 13d (site 3 neighbour bleed): rc=0 cited 10.5=2 10.5.1=1 — Slice 10's brief cited two other units' designs of record"
+    },
+    {
+      "arm": "test_commission_manifest.sh arm 13e — [DETERMINE] duty 2: the WILDCARD case",
+      "fixture": "same; target Slice 10.5 against the impostor 9.9.9-slice-10x5-design.md",
+      "rc_unfixed": 1,
+      "rc_fixed": 0,
+      "kind": "recurrence",
+      "red_evidence": "FAIL  arm 13e (duty 2 wildcard): rc=0 cited the impostor=1",
+      "note": "This is the arm the brief said would not exist unless deliberately written. It is red against BOTH the shipped %d and the naive %s swap, for different reasons."
+    },
+    {
+      "arm": "test_commission_manifest.sh arm 13f — duty 2: the case that survives ESCAPE-ONLY (the dotted continuation)",
+      "fixture": "same; target Slice 10.5 against 9.9.9-slice-10.5.1-design.md and 9.9.9-slice-10-design.md",
+      "rc_unfixed": 1,
+      "rc_fixed": 0,
+      "kind": "recurrence",
+      "red_evidence": "FAIL  arm 13f (duty 2 dotted continuation): rc=0 10.5.1=1 10=1",
+      "note": "Green against candidate C (escape-only) would have been FALSE — measured 4/24 wrong. This arm is what stops a future 'simplification' back to escape-only."
+    },
+    {
+      "arm": "test_commission_manifest.sh arm 13g — CONTROL that rules out the OBVIOUS boundary fix",
+      "fixture": "same; target Slice 10 against 9.9.9-slice-10.md (id flush against the EXTENSION dot)",
+      "rc_unfixed": 0,
+      "rc_fixed": 0,
+      "kind": "control_that_rules_out_the_naive_fix",
+      "note": "Green before and after BY DESIGN, and RED against candidate D `(?![0-9.])` — the natural first attempt — which turns this legitimate memo into a NO-MATCH and hard-stops a designed slice on the TC-37 guard. Its non-vacuity is demonstrated against that candidate in the determination matrix, not against the pre-fix tool. Same shape as Leg 1's sentence-final-period control."
+    },
+    {
+      "arm": "test_commission_manifest.sh arm 13h — brief §1c: arm 9d's OWN oracle, against a fractional state file",
+      "fixture": "$TMPROOT/frac-release-state.json — a copy of the real 0.8.20 state with next_slice 39.5, a LANDED fractional Slice 33.5 (sha ffff5555) between two landed integers, and landed truncated to <=33 plus 33.5",
+      "rc_unfixed": 1,
+      "rc_fixed": 0,
+      "kind": "recurrence",
+      "red_evidence": "FAIL  arm 13h (9d oracle on fractional state): want=[OK 39.5 33.5 ffff5555 PENDING] got=[ERR next_slice is 39.5, not an int — end-of-ladder or malformed. Re-point this arm at a live release; do NOT skip it.]",
+      "note": "The exact-string assertion catches all three repairs at once: :1715 (no ERR), :1719 (predecessor 33.5 not 33), and the %d render (39.5/33.5 not 39/33)."
+    },
+    {
+      "arm": "test_commission_manifest.sh arm 13i — site 3 is LIVE IN THIS CHECKOUT, graded through the REAL entry point",
+      "fixture": "NONE — the real repo. dev/design/0.8.20-slice-39-publish-facing-documentation.md and dev/design/0.8.20-slice-39.5-collect-all-test-harness.md are both tracked at HEAD.",
+      "rc_unfixed": 1,
+      "rc_fixed": 0,
+      "kind": "recurrence",
+      "red_evidence": "FAIL  arm 13i (live neighbour bleed): rc=0 cited 39.5's memo=1 — `commission-manifest.sh 0.8.20 39` cited Slice 39.5's design of record as Slice 39's required reading, at exit 0, on the real checkout",
+      "note": "The ONE arm in this leg that is red against real state. Added because brief §8 records that five of six codex fix rounds across Slices 32/33 were defects in the VERIFICATION APPARATUS rather than the function under test. NON-VACUITY: if either memo stops existing the arm FAILS rather than passing on an empty premise."
+    },
+    {
+      "arm": "test_check_release_state_views.sh arm 11a — the fractional fixture is GREEN end to end",
+      "fixture": "frac_fixture: landed [0, 5.0, 10.5]; remaining_ladder [20, 30.5, 40.0]; unblocked [20, 30.0]; publish_precondition_slice 30.5; ladder gains 10.5/30.5/40.5; sign_off_slice 40.5; depends_on [5, 10.0, 20] on BOTH Slice 30 and Slice 30.5. Fenced regions hold the POST-FIX bytes HAND-WRITTEN.",
+      "rc_unfixed": 1,
+      "rc_fixed": 0,
+      "kind": "recurrence_aggregate",
+      "red_evidence": "three regions STALE at once: master-ladder-progress, status-unblocks, handoff-next-step"
+    },
+    {
+      "arm": "test_check_release_state_views.sh arm 11b — :168 remaining_ladder divergent render",
+      "fixture": "frac_fixture, master.md perturbed by one byte so the gate prints its render",
+      "rc_unfixed": 1,
+      "rc_fixed": 0,
+      "kind": "recurrence",
+      "red_evidence": "rendered=['Slices 0 (`aaaa1111`) · 5 (`bbbb2222`) · 10.5 (`cccc3333`) are all LANDED on `origin/main`; SCHEMA is 42; remaining ladder = 20 → 30.5 → 40.0.']"
+    },
+    {
+      "arm": "test_check_release_state_views.sh arm 11c — :278 landed chain divergent render",
+      "fixture": "frac_fixture, handoff.md perturbed",
+      "rc_unfixed": 1,
+      "rc_fixed": 0,
+      "kind": "recurrence",
+      "red_evidence": "rendered=['\\n**The 9.9.9 ladder is between slices: 0 → 5.0 → 10.5 are all LANDED; 20 is next.**']"
+    },
+    {
+      "arm": "test_check_release_state_views.sh arm 11d — :260 by[int(...)] indexes the INTEGER NEIGHBOUR",
+      "fixture": "frac_fixture, board.md perturbed",
+      "rc_unfixed": 1,
+      "rc_fixed": 0,
+      "kind": "recurrence",
+      "red_evidence": "rendered=['…Slice 30 (H7) depends on 5/10.0/20…'] — H7 is Slice 30's short name; the Slice 30.5 entry's is H7b"
+    },
+    {
+      "arm": "test_check_release_state_views.sh arm 11e — :263 `%d` on pre[\"slice\"]",
+      "fixture": "same board render",
+      "rc_unfixed": 1,
+      "rc_fixed": 0,
+      "kind": "recurrence",
+      "red_evidence": "rendered=['…Slice 30 (H7)…'] for a publish_precondition_slice of 30.5"
+    },
+    {
+      "arm": "test_check_release_state_views.sh arm 11e2 — :263 is INDEPENDENT of :260, proven with a MUTANT",
+      "fixture": "frac_fixture + a mutant gate in which ONLY the render is reverted (`_slice_str(pre[\"slice\"])` -> `int(pre[\"slice\"])`, `Slice %s` -> `Slice %d`) while the index stays fixed",
+      "rc_unfixed": 1,
+      "rc_fixed": 0,
+      "kind": "recurrence_plus_independence_proof",
+      "red_evidence": "pre-fix: 'FAIL arm 11e2 (:263 mutant): the render-only revert did not apply to the gate — the arm graded nothing' (the correct pre-fix answer: there is nothing to revert yet). post-fix the mutant renders 'Slice 30 (H7b)' — the RIGHT entry under the WRONG number, which is the brief's 'two distinct defects at one site' made measurable.",
+      "note": "NON-VACUITY: if the revert does not apply the arm FAILS rather than silently grading nothing."
+    },
+    {
+      "arm": "test_check_release_state_views.sh arm 11f — :265 depends_on divergent render (NOT in the brief)",
+      "fixture": "same board render; the integral float is planted in BOTH ladder entries so :260's truncation cannot mask it",
+      "rc_unfixed": 1,
+      "rc_fixed": 0,
+      "kind": "recurrence",
+      "red_evidence": "rendered=['…Slice 30 (H7) depends on 5/10.0/20…']",
+      "note": "Was VACUOUSLY GREEN pre-fix on the first draft of the fixture — masked by :260 selecting the all-integer Slice 30 entry. Caught during the red run, before the arms were committed."
+    },
+    {
+      "arm": "test_check_release_state_views.sh arm 11g — :154 _and_join divergent render (NOT in the brief)",
+      "fixture": "same board render; unblocked = [20, 30.0]",
+      "rc_unfixed": 1,
+      "rc_fixed": 0,
+      "kind": "recurrence",
+      "red_evidence": "rendered=['**Slices 20 and 30.0 are NOW UNBLOCKED** …']"
+    },
+    {
+      "arm": "test_check_release_state_views.sh arm 11h — sign_off_slice 40.5 in ALL THREE publish-gate branches (:233 / :242 / :248), plus a green end-to-end run per branch",
+      "fixture": "frac_fixture driven through presigned / notpresigned / minted, each with its own longhand expected sentence",
+      "rc_unfixed": 1,
+      "rc_fixed": 0,
+      "kind": "recurrence",
+      "red_evidence": "all three branches rendered 'at Slice 40 (§4 #1)' for sign_off_slice 40.5: presigned '…is minted and recorded as SIGNED at Slice 40 (§4 #1)…'; notpresigned '…minted and recorded as SIGNED at Slice 40 (§4 #1)…'; minted '**AC-999 is MINTED and recorded as SIGNED** at Slice 40 (§4 #1)…'",
+      "note": "Six assertions (three render + three green). Driven per branch because each branch carries its own copy of the sentence."
+    },
+    {
+      "arm": "test_check_release_state_views.sh arm 11i — _by_slice refuses a duplicate normalised key (NOT in the brief)",
+      "fixture": "the ALL-INTEGER baseline fixture plus a 30.0 impostor entry beside the existing 30",
+      "rc_unfixed": 1,
+      "rc_fixed": 0,
+      "kind": "recurrence",
+      "red_evidence": "pre-fix the gate reported an ordinary STALE diff on status-unblocks — the impostor's facts rendered under Slice 30's number with NOTHING saying an entry had been dropped. post-fix: 'the ladder carries TWO entries that resolve to the same slice id 30 (30 and 30.0). One would SILENTLY OVERWRITE the other…'",
+      "assertion_wording_note": "The arm's expected wording was adjusted in the FIX commit (from a bare `grep -qi duplicate` to asserting the collapsed id AND the overwrite hazard by name). The arm was red before the fix for the RIGHT reason (silent overwrite, no refusal); only the expected message text moved. Recorded here rather than left for a reviewer to find in the diff."
+    },
+    {
+      "arm": "test_check_release_state_views.sh arm 11j — OUTPUT-NEUTRALITY control: the all-integer baseline still renders byte-identically",
+      "fixture": "the unmodified all-integer baseline fixture, whose fenced regions were written before any of this work",
+      "rc_unfixed": 0,
+      "rc_fixed": 0,
+      "kind": "control",
+      "note": "Green before and after BY DESIGN, and explicitly NOT claimed as a recurrence arm. Without it, a 'fix' that changed integer rendering would sail through every arm above and churn the real boards — the STOP condition this leg was warned about."
+    }
+  ],
+  "verification": {
+    "leg_suites": {
+      "scripts/tests/test_commission_manifest.sh": "rc=0 (78 PASS; rc=1 with 8 red assertions against the unfixed tools at commit 3247cd5f)",
+      "scripts/tests/test_check_release_state_views.sh": "rc=0 (58 PASS; rc=1 with 15 red assertions against the unfixed gate at commit 3247cd5f)"
+    },
+    "leg1_not_regressed": {
+      "scripts/tests/test_check_board_currency.sh": "rc=0 (26 PASS)",
+      "scripts/tests/test_preflight_landing.sh": "rc=0 (30 PASS)",
+      "note": "Both files byte-identical to Leg 1's 2c78faab — `git diff 2c78faab -- scripts/check-board-currency.sh scripts/preflight.sh scripts/tests/test_check_board_currency.sh scripts/tests/test_preflight_landing.sh` is empty."
+    },
+    "real_state_reverification": {
+      "scripts/commission-manifest.sh --verify-all": "rc=0",
+      "scripts/commission-manifest.sh 0.8.20 40": "rc=0 — '17 path(s) exist, 24 anchor(s) verified to occur, 0 dead'",
+      "scripts/check-release-state-views.sh (BARE, never --write)": "rc=0 — 'ok check-release-state-views: 5 generated block(s) across 1 release-state file(s) match their render'",
+      "scripts/check-board-currency.sh": "rc=0 — 'ok board-currency: no live STATUS-0.8.z.md board contradicts git ancestry'",
+      "scripts/check-governed-surface-pin.sh": "rc=0 — '30 allowlist / 5 core / 5 recovery_denylist, pinned at c239908b under AC-079'",
+      "scripts/tests/test_smoke_scripts.sh": "rc=0"
+    },
+    "zero_board_churn": {
+      "claim": "CONFIRMED. `check-release-state-views.sh` was run BARE and NEVER with --write.",
+      "evidence": "`git status --porcelain` after the run shows only the untracked Leg-1 closure JSON; `git diff --stat` on all five render targets (0.8.6-0.8.16-PROGRAM-SEQUENCING.md, runs/STATUS-0.8.20.md, runs/STEWARD-SESSION-HANDOFF-2026-07-24-A.md, plan-0.8.20.md, release-state-0.8.20.json) is EMPTY, both before and after the commits.",
+      "why_it_holds": "Every fix is a no-op on all-integer state: `\"%d\" % 40` == `str(40)` == `_slice_str(40)` == `\"40\"`, and str(n)/_slice_str(n) agree for every value in landed, remaining_ladder, unblocked and depends_on. The STEWARD-SESSION-HANDOFF-2026-07-24-A.md live render target was not deleted or restructured."
+    },
+    "name_re_behaviour_delta_on_real_files": {
+      "method": "Ran the OLD pattern and the NEW pattern over every *.md under all three DESIGN_ROOTS (dev/design, dev/adr, dev/interfaces), for every ladder entry of every live dev/plans/release-state-*.json, and diffed the matched sets.",
+      "result": "EXACTLY ONE delta, and it is a FALSE POSITIVE REMOVED, not a true positive lost.",
+      "the_one_delta": "0.8.20 slice 39 loses `0.8.20-slice-39.5-collect-all-test-harness.md`. That memo is Slice 39.5's, not Slice 39's; it was being cited as Slice 39's required reading. Slice 39 keeps `0.8.20-slice-39-publish-facing-documentation.md`, so the TC-37 vacuous-pass guard is not tripped and `--verify-all` stays rc=0."
+    },
+    "not_run_and_why": {
+      "cargo check/clippy --workspace": "Not run — this leg changed no Rust. The task's instruction is to quote the §6 baseline (both rc=0 at 46b9365e) rather than re-derive it.",
+      "scripts/agent-test.sh": "NOT run as an aggregate — its exit code is vacuous (TC-16). Suites run individually.",
+      "cargo test --workspace": "NOT run (TC-72, unstable).",
+      "eu7": "NOT run (closed by decision, F-28).",
+      "check-release-state-views.sh --write": "NEVER run.",
+      "scripts/agent-lint-md.sh": "Not run — this leg touched no markdown. dev/plans/runs/** is excluded from markdownlint anyway (TC-130), so a green there proves nothing.",
+      "shellcheck": "not installed in this environment; test_smoke_scripts.sh rc=0 was run instead"
+    }
+  },
+  "blockers_encountered": [],
+  "out_of_scope_reported_not_fixed": [
+    {
+      "id": "TC-133 — the board-currency BLIND SPOT",
+      "status": "NOT TOUCHED, as instructed. Leg 1 already reported brushing against it (its B2). I did not go near check-board-currency.sh at all. Placement remains the HITL's call."
+    },
+    {
+      "id": "test_commission_manifest CI-red / local-green divergence",
+      "status": "NOT CHASED. Ruled to be Slice 39.5's job (seq-204 ruling 2). I quote LOCAL rc only: rc=0, 78 PASS. CI status is UNCHANGED and NOT OWNED BY ME. ⚠ Note for whoever does own it: this leg CHANGED the local pass count (69 -> 78) and changed generator behaviour for `0.8.20 39`, so a pre-existing CI failure signature may look different after this lands. That is a changed signature, not a fix — I make no claim to have explained or resolved the divergence."
+    },
+    {
+      "id": "Re-laddering 39.5 in real state",
+      "status": "NOT DONE. next_slice stays 40, remaining_ladder stays [40], and no fractional id entered real state, the ladder or the board. Fractional ids exist ONLY in mktemp fixtures and in one $TMPROOT copy of the state file, all of which are removed by the suites' EXIT traps."
+    }
+  ],
+  "corrections_to_the_record_reported_not_made": [
+    "dev/plans/plan-0.8.20.md:492 says 'plus **three latent** ones'. Brief §5 forbids editing that file. The measured answer from this leg's Duty-3 sweep is EIGHT bypass sites over six state fields in check-release-state-views.sh (five truncating, three divergent-render), plus one latent hole in `_by_slice` itself — versus the brief's six and the board's three. Reported, not corrected.",
+    "BRIEF §1a SITE 3 IS UNDERSTATED, and this is the most important correction. The brief presents site 3 prospectively; it is LIVE ON TRACKED FILES AT HEAD. `dev/design/0.8.20-slice-39-publish-facing-documentation.md` and `dev/design/0.8.20-slice-39.5-collect-all-test-harness.md` both exist, the shipped pattern matches BOTH for slice_no=39, and `scripts/commission-manifest.sh 0.8.20 39` therefore cited Slice 39.5's design of record as Slice 39's own required reading, at exit 0. The generated Slice 39 commission in the record is affected. Arm 13i now guards it.",
+    "BRIEF §1a SITE 2 HAS A THIRD CALL SITE the record does not name: the `landed so far` roll-up carries the same `isinstance(s, int)` filter, so a fractional slice landed at or after the target loses its `⚠ at/after Slice N` warning. Fixed here because it sits in the same block of the same file this leg owns; reporting it without fixing it would have left site 2 half-repaired.",
+    "BRIEF §1b IS UNDERSTATED BY TWO: `_and_join` (:154) and `pre[\"depends_on\"]` (:265) are both slice-id renderers using bare `str()` and are in neither the brief's six nor `plan-0.8.20.md`'s three. Both are one hop from a slice-id field rather than at the field itself, which is why a call-site grep found six.",
+    "BRIEF §1c IS UNDERSTATED BY TWO: beyond :1715 and :1719, arm 9d's oracle printed its own findings with `%d` (so a repaired oracle would have named the wrong slice), and arm 9d's shell half interpolated the target UNESCAPED into a `grep -qiE` pattern. Both repaired.",
+    "BRIEF §4 DUTY 2 IS CONFIRMED AND SHARPENED: the `re.escape` candidate the brief names as 'obvious' is NECESSARY BUT NOT SUFFICIENT (4 of 24 matrix cases still wrong), and the natural follow-up `(?![0-9.])` introduces TWO NEW FALSE NEGATIVES. This is the same understatement Leg 1 measured on preflight.sh's ERE, now confirmed on a second tool with a different regex engine — it is a property of the problem, not of one script."
+  ],
+  "scope_discipline": {
+    "governed_surface": "byte-identical — not touched; check-governed-surface-pin.sh rc=0",
+    "schema": "24 — not touched",
+    "manifest_version": "not bumped",
+    "github_workflows": "not touched (Slice 40's exclusive territory)",
+    "release_state_json": "not touched — zero diff",
+    "boards_and_render_targets": "zero churn — --write NEVER run; git diff empty on all five",
+    "ledgers": "not touched",
+    "leg1_files": "not touched — byte-identical to 2c78faab",
+    "git_add_A": "never used — both commits staged explicit paths only (TC-132)",
+    "pins_and_allowlists": "none cleared, none widened, no guard weakened; the one change to guard STRENGTH is the new _by_slice duplicate-key refusal, which is strictly stricter"
+  },
+  "agent_verify_result": "pass — all four target suites rc=0 (78 / 58 / 26 / 30 PASS assertions), commission-manifest --verify-all rc=0, commission-manifest 0.8.20 40 rc=0, check-release-state-views.sh (bare) rc=0 with ZERO board churn, check-board-currency.sh rc=0, check-governed-surface-pin.sh rc=0, test_smoke_scripts.sh rc=0. No non-zero rc anywhere in this leg's verification set.",
+  "ci_status_note": "CI status is UNCHANGED and NOT OWNED BY ME. Brief §3 item 3 rules the test_commission_manifest CI-red / local-green divergence to be Slice 39.5's job (seq-204 ruling 2); I did not chase it and quote LOCAL rc only. See out_of_scope_reported_not_fixed for a caveat about the CI failure SIGNATURE changing.",
+  "next_step_for_orchestrator": "Leg 2 is complete at 0f46191d. (1) Run the codex §9 review on this branch — brief §7 item 8: read the VERDICT BLOCKS, never grep [P1]/[P2] markers (TC-87), and never run the engine suite alongside codex (TC-97). (2) Cherry-pick BOTH commits IN ORDER and do not squash: 3247cd5f is INTENTIONALLY RED on its own (the red-first arms) and 0f46191d makes it green; picking only the second loses the auditable red, picking only the first lands two red suites. Leg 1's 7e4373f9 and 2c78faab have the same property. (3) main moved during Leg 1 (fb05c08b -> 7e6ddb8d, docs-only, scripts/ untouched); I did NOT rebase, merge or pull. Re-run all four suites AFTER the pick — brief §9 warns a clean rebase is not a correct rebase. (4) ⚠ TELL THE STEWARD: brief §1a site 3 is LIVE on tracked files, not prospective — the generated 0.8.20 Slice 39 commission cited Slice 39.5's design memo as its own. That is a correction to the record, not just a fix. (5) The true latent set is EIGHT plus one, not three (plan-0.8.20.md:492) and not six (the brief); the Steward reconciles those documents, not me. (6) This closure JSON is left UNTRACKED per orchestration.md §8, for the orchestrator to promote."
+}

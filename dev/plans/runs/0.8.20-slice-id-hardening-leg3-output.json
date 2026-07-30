@@ -1,0 +1,173 @@
+{
+  "phase": "SLICE-ID-HARDENING leg 3 (cross-cutting unit, 0.8.20; no slice number, no R-20-xx id) — §3a / TC-133, the board-currency BLIND SPOT",
+  "baseline_sha": "0f46191d744f03d16db76851b6f5e3012314b613",
+  "branch": "0.8.20-slice-id-hardening",
+  "head_sha": "4b06e4c9e1318533ecc532760408f718662e3c4a",
+  "commits": [
+    "d730e36994e92cea3d148692a1d51c238f3cab2c: test(0.8.20 SLICE-ID-HARDENING leg3): RED-first recurrence arms for TC-133, the board/state cross-read — INTENTIONALLY RED, suite exits 1 at this commit (11 FAIL / 31 PASS), 1 file changed",
+    "4b06e4c9e1318533ecc532760408f718662e3c4a: fix(0.8.20 SLICE-ID-HARDENING leg3): TC-133 — cross-read the state file so a SHA elsewhere in the board stops answering for the row"
+  ],
+  "red_audit_note": "The orchestrator's independent re-run of d730e369 must show `bash scripts/tests/test_check_board_currency.sh` rc=1 with 11 FAILs, all TC-133 arms, and each recurrence fixture reporting the silent-wrong green line 'ok    board-currency: no live STATUS-0.8.z.md board contradicts git ancestry'. Measured before the commit on byte-identical content. ⚠ ONE DEVIATION, DELIBERATE AND DISCLOSED: 100 of the 406 test-file lines (fixtures P/Q + arms 13b/13c) landed in the FIX commit, not the arms commit, because they guard a FALSE NEGATIVE THAT THE FIX ITSELF INTRODUCED (the cut-at-punctuation claim reader) — that defect did not exist at d730e369 and could not have been armed there. Arm 13c is nonetheless a genuine recurrence arm and its rc pair is measured below (rc_unfixed=0 / rc_fixed=1) against the unfixed checker extracted from d730e369.",
+  "leg_scope": {
+    "files_owned_and_changed": [
+      "scripts/check-board-currency.sh",
+      "scripts/tests/test_check_board_currency.sh"
+    ],
+    "files_outside_leg_touched": [],
+    "note": "Exactly the two files in the leg boundary. Verified: `git diff --name-only 0f46191d..HEAD -- scripts/preflight.sh scripts/commission-manifest.sh scripts/check-release-state-views.sh scripts/tests/test_preflight_landing.sh scripts/tests/test_commission_manifest.sh scripts/tests/test_check_release_state_views.sh .github dev/plans/release-state-0.8.20.json dev/plans/plan-0.8.20.md dev/plans/runs/STATUS-0.8.20.md src engine dev/steward` is EMPTY. Legs 1-2's six files are byte-identical to 0f46191d. dev/plans/release-state-0.8.20.json is READ by the new code and was not written. The live board was not touched. No ledger was touched. Staged by explicit path only (TC-132); never `git add -A`."
+  },
+  "findings_addressed": [
+    "TC-133 (§3a, HITL ruling 2026-07-30 / steward seq-212 option (b) / todos-ledger seq-197): scripts/check-board-currency.sh exited 0 on a board whose HAND-WRITTEN rows contradicted dev/plans/release-state-<ver>.json, because the only board predicate was 'does the landing merge's short SHA appear SOMEWHERE in the file'. In the real incident STATUS-0.8.20.md said Slice 39 was NOT_STARTED while 91db34d8 was present — but only inside the two <!-- BEGIN GENERATED --> cells. The generated half was carrying the check for the hand-written half; the always-on CI job passed too. FIXED by a new step 6, the board/state cross-read.",
+    "Step 6 checks four things per live board with a readable state file: (a) every id in `landed` has a row in the board's ladder table; (b) that row carries no not-started / in-flight / next marker; (c) that row cites the slice's own `ladder[].sha` — in the ROW, not merely somewhere in the file; (d) every `Ladder remaining:` / `Remaining ladder:` claim names exactly the ids in `remaining_ladder`.",
+    "Step 6 runs UNCONDITIONALLY, including for a board that already failed steps 3-5. Git ancestry and the single writer are independent questions; reporting only the first would hide the second, which is a large part of how this defect survived.",
+    "SELF-INFLICTED false negative caught before it shipped: the first draft of the (d) claim reader cut the clause at the first punctuation mark. Graded against a matrix (not one example) it read `Ladder remaining: 39.5, 40` as {39.5} — silently dropping every id after the comma — and truncated `40.5` to `40` at the `.`, i.e. re-introduced this very unit's defect class inside the fix for it. Replaced with an ID-LIST reader. Fixtures P (agreeing comma+fractional claim, must stay green) and Q (claim omits 39.5, must go red) pin both directions."
+  ],
+  "determine_marker_detection": {
+    "duty": "§3a [DETERMINE]: whether the not-started / in-flight / next marker detection should be a FIXED VOCABULARY or DERIVED — state the choice and why; then say plainly what a prose regex can and cannot catch.",
+    "determination": "FIXED VOCABULARY, explicitly listed in one place in scripts/check-board-currency.sh (STATE_MARKERS + WHOLE_CELL_MARKERS).",
+    "why_not_derived": [
+      "There is nothing to derive it FROM. dev/plans/release-state-<ver>.json only ever authors POSITIVE status (`ladder[].status` = LANDED / NOT_STARTED); it carries no field enumerating words that mean 'not done'. Deriving the negative set as the complement of the positive one means deriving it from open-ended English — unbounded and unfalsifiable.",
+      "The one plausible derivation — 'reuse the `ladder[].status` values the state file currently assigns to NON-landed slices' — is SELF-WEAKENING: that set empties out exactly when every slice is landed, i.e. at the end of a release, which is precisely when a board is most likely to be stale. A check that evaporates when it matters is the vacuous-pass family the fix-1 guard exists to end.",
+      "It could also only ever contain the STATE FILE's vocabulary, never the BOARD's prose vocabulary — but the board's prose is the thing under test.",
+      "A fixed list is auditable: its gaps are visible in one place, and widening it is a deliberate, reviewable act."
+    ],
+    "vocabulary": {
+      "anywhere_in_the_status_cell": ["not[-_ ]+yet[-_ ]+started", "not[-_ ]+started", "\\bunstarted\\b", "in[-_ ]+flight"],
+      "whole_cell_only": ["next", "next up", "up next"],
+      "why_next_is_whole_cell_only": "A bare \\bnext\\b was REJECTED after grading a matrix. In a status cell 'next' is overwhelmingly a POINTER word ('carried to the next slice', 'closed; next is Slice 40', 'LANDED; the next commission is SLICE-ID-HARDENING') rather than a STATE word, and this gate runs inside `preflight.sh --landing` and the always-on CI job — a false positive here HARD-BLOCKS A LAND. Fixture N's Slice 5 row deliberately reads '… (merge). Carried to the next unit.' and must stay green; it does. Measured cost of the narrowing: a board writing 'next in queue' for a landed slice is NOT caught by (b) — it is caught by (c)."
+    },
+    "what_the_regex_CANNOT_catch": "Any wording not on the list. 'pending', 'TBD', 'queued', 'blocked on X', 'awaiting review', '0/5 arms green', an em-dash, an EMPTY cell, or a row that is simply months out of date while using upbeat words — ALL PASS check (b). It is a prose regex: it detects the phrasings someone thought of, and every board that goes stale in a NEW phrasing goes stale silently as far as (b) is concerned. All of these were run through the matrix and confirmed to pass unflagged.",
+    "what_the_regex_FALSELY_catches": "The state markers match ANYWHERE in the status cell, so a landed slice whose close prose says 'closed while in-flight work was parked', or 'R-20-PR/R-20-EAV/TC-33 not started; now shipped' (a real phrasing, at STATUS-0.8.20.md:316 in a different table), IS flagged. That is the intended strictness — a landed slice's own status cell should not contain those words — but it costs a land-blocking hard failure, so it is stated in the code rather than discovered later.",
+    "which_half_to_trust": "(c) — 'the ladder row must cite the slice's own recorded landing SHA' — is the LOAD-BEARING half: it is derived from the state file, has NO vocabulary at all, and is the check that would actually have caught the real Slice 39 incident. (b) is the FRAGILE half and is documented as such in-code. An over-trusted partial check is how this defect class survives, so the code says outright which half is which.",
+    "scope_is_structural_not_prose": "The check reads only (i) the board's ladder TABLE, located by its own header row `| Slice | … | Status |` plus the markdown delimiter row beneath it, and (ii) `Ladder remaining:` / `Remaining ladder:` claims. Never a section heading, never a whole-file grep. That is what keeps historical close-record prose out of scope (STATUS-0.8.20.md:1002/1011 deliberately retain stale 'NOT STARTED' wording as history) and what keeps OTHER `| 22 | … |` tables out (:316 is an HITL-DECISION row numbered 22 whose text contains 'not started'; reading it as Slice 22's status would be a land-blocking false positive). A duplicate slice id across ladder rows is refused rather than last-writer-wins, mirroring check-release-state-views.sh `_by_slice`."
+  },
+  "absent_or_unparseable_state_file_policy": {
+    "problem": "The gate loops over EVERY live STATUS-0.8.z.md board (the board-discovery loop and the `ver=` derivation), not just 0.8.20. Only 0.8.20 has a dev/plans/release-state-<ver>.json — the single writer arrived with DOC-HYGIENE-2 T2a. A hard fail on absence would redden the real gate for unrelated boards; a silent skip would re-create the blind spot being closed.",
+    "absent": "SKIP the cross-read, and SAY SO. stderr carries: `note   <ver>: no dev/plans/release-state-<ver>.json — the board/state cross-read (TC-133) DID NOT RUN for this board; only the git-ancestry SHA check vouched for it…`. Not a failure. Visible in `preflight.sh --landing` output too (preflight routes non-STALE lines through `info` with a `board-currency:` prefix).",
+    "present_but_unparseable": "HARD fail. 'Unparseable' = not valid JSON, OR not a JSON object, OR missing any of `landed` / `ladder` / `remaining_ladder`, OR unreadable (OSError). Message: `STALE  <ver>: … could not be read as release state (<err>) — the board/state cross-read (TC-133) cannot vouch for <board>`. Rationale: that release DOES declare a single writer, so falling back to the SHA-only predicate would be exactly the silent vacuous pass this step closes — the same family as the fix-1 guard.",
+    "board_unreadable": "HARD fail, same reasoning.",
+    "no_ladder_table_in_a_board_that_HAS_a_state_file": "HARD fail — the cross-read would vouch for nothing.",
+    "no_Ladder_remaining_claim_in_the_board": "Visible `note` line saying that half vouched for nothing; not a failure (the (a)/(b)/(c) checks still ran).",
+    "python3_absent": "HARD fail with an explicit message. python3 embedded in a bash gate is this repo's house style (commission-manifest.sh, check-release-state-views.sh); bash cannot read JSON without inventing a parser.",
+    "arms_covering_this": ["Arm 14 (absent → rc unchanged, notice line is the RED-first proof)", "Arm 15 (unparseable → rc_unfixed=0, rc_fixed=1)"]
+  },
+  "per_arm_rc": [
+    {
+      "arm": "Arm 12 — TC-133 RECURRENCE: board's hand-written ladder row contradicts its own state file",
+      "fixture": "J / CONTRADICT_REPO (release 0.8.93): landing merge `merge(0.8.93): Slice 5 — fixture land` IS matched, its short SHA IS present in the board — inside a `<!-- BEGIN GENERATED -->` cell — and the hand-written ladder row still reads `not started`. release-state-0.8.93.json has landed=[5] with that sha. Deliberately NOT an absent-SHA fixture (fixture B / Arm 2 already covers that).",
+      "rc_unfixed": 0,
+      "rc_fixed": 1,
+      "anti_vacuity": "Asserts the output names TC-133 and Slice 5; asserts the pre-existing 'is not referenced anywhere' predicate did NOT fire (the SHA really is present, so the red is the cross-read's); asserts Slice 40 — legitimately NOT_STARTED in the state file — is NOT flagged."
+    },
+    {
+      "arm": "Arm 12b — the same recurrence graded through the REAL entry point, `preflight.sh --landing`",
+      "fixture": "J via a linked worktree (both real callers — preflight and the always-on CI job — were green during the incident)",
+      "rc_unfixed": 0,
+      "rc_fixed": 1,
+      "anti_vacuity": "Asserts a `board-currency: … TC-133` HARD line, not merely a non-zero rc."
+    },
+    {
+      "arm": "Arm 13 — TC-133 RECURRENCE: `Ladder remaining:` prose disagrees with `remaining_ladder`",
+      "fixture": "K / LADDERPROSE_REPO (release 0.8.92): every ladder row is current and cites its SHA; the ONLY contradiction is `Ladder remaining: 40 and 41 alone` vs remaining_ladder [40].",
+      "rc_unfixed": 0,
+      "rc_fixed": 1,
+      "anti_vacuity": "Asserts the failure names `remaining_ladder`, and asserts Slice 5 is NOT named — the red must be the prose claim alone, so neither half can rot behind the other."
+    },
+    {
+      "arm": "Arm 13b — FALSE-POSITIVE guard (found by grading a matrix): comma-separated, fractional claim that AGREES",
+      "fixture": "P / COMMA_REPO (release 0.8.89): remaining_ladder [39.5, 40], board writes `Ladder remaining: 39.5, 40`. The first draft of the claim reader cut at the first punctuation mark and read this as {39.5}, hard-failing a perfectly current board — a land-blocking false positive.",
+      "rc_unfixed": 0,
+      "rc_fixed": 0,
+      "anti_vacuity": "Guard, not a recurrence arm — green before AND after by design. Its companion is Arm 13c."
+    },
+    {
+      "arm": "Arm 13c — TC-133 RECURRENCE (companion to 13b): the claim UNDER-claims the ladder",
+      "fixture": "Q / UNDERCLAIM_REPO (release 0.8.88): identical shape, board says `Ladder remaining: 40 alone` while remaining_ladder is [39.5, 40].",
+      "rc_unfixed": 0,
+      "rc_fixed": 1,
+      "anti_vacuity": "Asserts the failure names `39.5` (not its truncation `39` or `40`), proving 13b's green comes from reading the WHOLE list rather than from the claim check having gone inert on comma-separated claims."
+    },
+    {
+      "arm": "Arm 14 — absent-state-file policy: skipped, but VISIBLE",
+      "fixture": "CURRENT_REPO (release 0.8.99, no release-state file) — a live board with a matched land and no single-writer state.",
+      "rc_unfixed": 0,
+      "rc_fixed": 0,
+      "anti_vacuity": "rc is 0 both sides BY DESIGN (a hard fail here would redden unrelated boards). The RED-first proof is the message: lines matching `cross-read (TC-133) DID NOT RUN` = 0 against the unfixed tool, 1 against the fixed one. A silent skip would rebuild the blind spot."
+    },
+    {
+      "arm": "Arm 15 — unparseable-state-file policy: HARD fail",
+      "fixture": "M / BADSTATE_REPO (release 0.8.91): board fully current and citing its SHA; dev/plans/release-state-0.8.91.json contains `{ this is not json,`.",
+      "rc_unfixed": 0,
+      "rc_fixed": 1,
+      "anti_vacuity": "Asserts the failure says `could not be read as release state`, i.e. names what it could not read rather than failing generically."
+    },
+    {
+      "arm": "Arm 16 — regression guard: board and state agree everywhere",
+      "fixture": "N / CROSSOK_REPO (release 0.8.90): Slice 5 LANDED with its SHA in the row; Slice 40 NOT_STARTED in BOTH the board and the state file (so the vocabulary must not fire on a legitimately-pending slice); the Slice 5 row deliberately contains the words 'Carried to the next unit.' so a bare \\bnext\\b marker would false-positive here.",
+      "rc_unfixed": 0,
+      "rc_fixed": 0,
+      "anti_vacuity": "Green before AND after, so the cross-read cannot buy its red by failing every board that carries a state file. Additionally asserts the output CONTAINS `board/state cross-read (TC-133)` — i.e. the passing run really executed the cross-read and did not go inert."
+    }
+  ],
+  "per_arm_rc_measurement_method": "The unfixed checker was extracted with `git show d730e369:scripts/check-board-currency.sh` (byte-identical to baseline 0f46191d's) into a scratch path together with its `lib/board-closed.sh`, and each fixture was rebuilt in a throwaway `mktemp -d` git repo and run against BOTH checkers, capturing `rc=$?` on the very next line. The whole-suite red was also observed directly: at d730e369 `bash scripts/tests/test_check_board_currency.sh` is rc=1 with 11 FAILs, every one a TC-133 arm, and every recurrence fixture printing `ok    board-currency: no live STATUS-0.8.z.md board contradicts git ancestry` — the silent-wrong green this item exists to end.",
+  "verification": {
+    "suites_each_rc_quoted_individually": {
+      "bash scripts/tests/test_check_board_currency.sh": 0,
+      "bash scripts/tests/test_preflight_landing.sh": 0,
+      "bash scripts/tests/test_commission_manifest.sh": 0,
+      "bash scripts/tests/test_check_release_state_views.sh": 0
+    },
+    "board_currency_suite_detail": "45 PASS / 0 FAIL at HEAD (42 before fixtures P/Q were added; 31 PASS + 11 FAIL at the arms-only commit d730e369). Legs 1-2 did not regress: test_preflight_landing / test_commission_manifest / test_check_release_state_views are all rc=0 and their sources are byte-identical to 0f46191d.",
+    "real_state_reverification_each_rc_quoted": {
+      "bash scripts/check-board-currency.sh": 0,
+      "bash scripts/preflight.sh --landing (from the worktree)": 0,
+      "bash scripts/commission-manifest.sh --verify-all": 0,
+      "bash scripts/check-release-state-views.sh (BARE, never --write)": 0,
+      "bash scripts/check-governed-surface-pin.sh": 0
+    },
+    "guardrail_the_real_board_must_stay_green": "HELD. `bash scripts/check-board-currency.sh` against the live dev/plans/runs/STATUS-0.8.20.md is rc=0 and now prints: `ok    0.8.20: board/state cross-read (TC-133): 14 landed slice(s) reconciled against dev/plans/release-state-0.8.20.json, 3 `Ladder remaining` claim(s) agree with `remaining_ladder``. All 14 ids in `landed` (0,5,10,15,20,21,22,23,25,30,31,32,33,39) have a ladder row, none carries a marker, and each row cites its own state-file SHA (Slice 20's row cites 841c307b as `20c \\`841c307b\\``). The three claims are at STATUS-0.8.20.md:38, :48 (`Remaining ladder:` word order) and :80, all naming {40} against remaining_ladder [40]. The board was NOT edited and was NOT loosened around.",
+    "zero_board_churn": "`git status --porcelain` after the bare `check-release-state-views.sh` shows only the two untracked prior-leg closure JSONs. No rendered region moved. `--write` was never run.",
+    "preflight_landing_tail": "{\"preflight\":\"pass\",\"main_sha\":\"494696b8d4e3738abb18a77f5eb851470254f652\",\"worktree\":\"\",\"hard_fails\":[],\"warnings\":[]} — with `ok    board-currency: live STATUS-0.8.z.md board(s) match git ancestry for this tip`, `ok    governed-surface-pin`, `ok    c1-contract-conformance`, `ok    ledger-integrity`, `ok    transcript-hygiene`.",
+    "not_run_and_why": [
+      "scripts/agent-test.sh as an aggregate — vacuous exit (TC-16); ending that is Slice 39.5's job.",
+      "cargo test --workspace — TC-72, not a stable signal.",
+      "Anything eu7 — F-28, closed by decision, zero runs.",
+      "cargo clippy/check --workspace — DoD item 6 of the unit-level brief; this leg changed no Rust and the orchestrator holds the unit-level gate. Neither owned file is compiled.",
+      "shellcheck — not installed on this host and not wired into CI; `bash -n` is clean on both owned files."
+    ]
+  },
+  "blockers_encountered": [],
+  "self_inflicted_defects_caught_before_shipping": [
+    {
+      "id": "leg3-FN-1",
+      "description": "The obvious (d) implementation cut the `Ladder remaining:` clause at the first punctuation mark. Graded on a matrix rather than one example, it read `Ladder remaining: 39.5, 40` as {39.5} (comma-separated ladders are the natural way to write a two-slice remainder) and would have truncated `40.5` to `40` at the `.` — this unit's own defect class, re-introduced inside the fix for it.",
+      "resolution": "Replaced with an ID-LIST reader that consumes ids and separators (whitespace, `*`, backtick, `,`, `;`, `&`, `+`, `→`, `->`, `and`) and stops at the first non-id word ('alone', 'then', 'NONE'). Fixtures P and Q added; both directions armed. Matches the brief's warning that both prior legs' one-line [DETERMINE] fixes introduced a new false negative."
+    },
+    {
+      "id": "leg3-FP-1",
+      "description": "A bare `\\bnext\\b` marker — the literal reading of 'next marker' — false-positives on legitimate close prose ('carried to the next slice') in a gate that hard-blocks landing.",
+      "resolution": "Narrowed to whole-cell `next` / `next up` / `up next`, with the narrowing and its cost stated in-code and pinned by fixture N, whose Slice 5 row reads '… Carried to the next unit.' and must stay green."
+    }
+  ],
+  "out_of_scope_reported_not_fixed": [
+    "The check-release-state-views.sh generated cells inside STATUS-0.8.20.md are the mechanism by which the SHA reached the file while the hand-written half stayed wrong. Making the RENDERED half and the HAND-WRITTEN half structurally impossible to disagree (e.g. rendering the ladder table itself) is a real option and is NOT in this leg's scope; the gate now merely detects the disagreement.",
+    "check (b)'s vocabulary gap is real and permanent: 'pending', 'TBD', 'queued', 'blocked on X', an empty cell, and any month-old-but-upbeat wording all pass. Closing it properly needs a positive contract on what a LANDED row must say, not a longer list of what it must not. Reported, not attempted."
+  ],
+  "corrections_to_the_record_reported_not_made": [
+    "None new from this leg. Legs 1-2 already reported the `plan-0.8.20.md:492` 'three latent' correction; leg 3 did not touch dev/plans/plan-0.8.20.md, dev/plans/release-state-0.8.20.json, dev/plans/runs/STATUS-0.8.20.md or any ledger."
+  ],
+  "scope_discipline": {
+    "github_untouched": true,
+    "board_untouched": true,
+    "release_state_json_read_only": true,
+    "ledgers_untouched": true,
+    "legs_1_2_files_byte_identical_to_baseline": true,
+    "staged_by_explicit_path_only": true,
+    "no_worktree_created_moved_or_removed": true,
+    "no_rebase_merge_pull_or_push": true,
+    "verify_red_leg1_checkout_untouched": true
+  },
+  "agent_verify_result": "pass — all four target suites rc=0; check-board-currency.sh rc=0 against the live board; preflight.sh --landing rc=0 from the worktree; commission-manifest.sh --verify-all rc=0; check-release-state-views.sh (bare) rc=0 with zero board churn; check-governed-surface-pin.sh rc=0.",
+  "ci_status_note": "CI status is unchanged by this leg and is NOT owned by it. The `commission-manifest` CI-red / local-green divergence (seq-205) is Slice 39.5's ruled job (seq-204 ruling 2) and was not chased. Local rc only is quoted above. ⚠ Forward-looking, for the orchestrator: the always-on CI `board-currency` job now also runs the cross-read, so it will exercise python3 on the runner — ubuntu images ship it, and the gate hard-fails loudly if it is missing rather than silently skipping.",
+  "next_step_for_orchestrator": "Leg 3 is complete at 4b06e4c9e1318533ecc532760408f718662e3c4a. Run the codex §9 review over 0f46191d..4b06e4c9 (or the whole unit) — read the verdict blocks, never grep [P1]/[P2] markers (TC-87), and never run the engine suite alongside the reviewer (TC-97). For the red audit, check out d730e369 and run `bash scripts/tests/test_check_board_currency.sh`: expect rc=1 / 11 FAIL, all TC-133; note the disclosed deviation under `red_audit_note` (fixtures P/Q + arms 13b/13c guard a false negative the fix itself introduced and therefore live in the fix commit). Nothing here needs a board or state-file edit; the Steward reconciliation owed by this leg is NIL."
+}
