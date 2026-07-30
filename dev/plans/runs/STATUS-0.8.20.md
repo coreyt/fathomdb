@@ -34,7 +34,8 @@ exists on `origin/main`." Both have since LANDED — 20c `841c307b`, 25 `83b1c81
 
 **Last updated:** 2026-07-30. **Library Sweep #3 COMPLETE** — Slices 31 `d0287620` (close record §20), 32
 `31d33293`, 33 `f02dc5b4`. **DOC-HYGIENE-3 COMPLETE** — `fd281358` + `85d44c74`. **Slice 34 was CANCELLED**
-(`seq-182`) and **PARKED at 0.8.21** (`seq-183`) — it is **NOT in this ladder**. **Ladder remaining: 39 → 40.**
+(`seq-182`) and **PARKED at 0.8.21** (`seq-183`) — it is **NOT in this ladder**. **Slice 39 (`R-20-DOC`) is
+COMPLETE — LANDED `91db34d8`** (close record §21). **Ladder remaining: 40 alone.**
 (Prior lands: Slice 23 `30102ecd`, Slice 21 `77be504b` §18, Slice 30 `9b3ed0e3` §17.)
 
 ---
@@ -43,10 +44,10 @@ exists on `origin/main`." Both have since LANDED — 20c `841c307b`, 25 `83b1c81
 
 | | |
 |---|---|
-| **Slice in flight** | **NONE.** The most recent land is **Slice 33 (`f02dc5b4`)** — **Library Sweep #3 COMPLETE** (31 `d0287620` · 32 `31d33293` · 33 `f02dc5b4`). **DOC-HYGIENE-3 is also COMPLETE** (`fd281358` machinery + `85d44c74` remainder, TC-53/TC-92). **Next: Slice 39 (`R-20-DOC`), then Slice 40.** ⛔ **Slice 34 is CANCELLED and is NOT in this ladder** (`seq-182`; parked at 0.8.21, `seq-183`) — route no work through it. Slice 31's close record (23 RED tests wired into **no gate**, 7 codex rounds / 12 findings / zero repeats, terminal-clean) is **§20**. **SCHEMA stays 24**; governed-surface allowlist byte-identical since 15d, `check-governed-surface-pin.sh` exit 0. Prior: 23 (`30102ecd`), 22 (`572475f2`, §19), 21 (`77be504b`, §18), 30 (`9b3ed0e3`, §17 — publish precondition SATISFIED). |
-| **Status** | **Every ladder slice through 33 is COMPLETE and LANDED on `origin/main`** — 0, 5, 10, 15, 20 (+20c), 21, 22, 23, 25, 30, 31, 32, 33 — plus the non-ladder DOC-HYGIENE-3. **SCHEMA 24.** The **batched governed-surface delta is SIGNED** (HITL, steward `seq-157`); **AC-079 mints into `dev/acceptance.md` at Slice 40** — minting is not signing. **Remaining ladder: 39 → 40**, then the separate HITL **PUBLISH** gate — the release's only **`halts_run`** unruled decision. *(`decisions.unruled` currently holds **TWO** items: `publish`, plus the `npm-dist-tag` rider that rides with it — §4.)* |
+| **Slice in flight** | **NONE.** The most recent land is **Slice 39 (`91db34d8`)** — **R-20-DOC COMPLETE** (MIT reconciled across all four publishable manifests, a LICENSE that actually ships in all 10 published units, the `## 0.8.20` CHANGELOG section; close record §21). Before it: **Library Sweep #3 COMPLETE** (31 `d0287620` · 32 `31d33293` · 33 `f02dc5b4`) and **DOC-HYGIENE-3 COMPLETE** (`fd281358` machinery + `85d44c74` remainder, TC-53/TC-92). **Forward sequence: two cross-cutting units, then Slice 40** — (1) `SLICE-ID-HARDENING`, (2) "Slice 39.5" (`R-20-HARNESS`), then **Slice 40 (`R-20-PUB`)**. **Neither cross-cutting unit is a ladder slice**; neither carries a slice number or an `R-20-xx` ladder position (the `DOC-HYGIENE-3` / TC-86 precedent, `seq-204`) — `next_slice` stays **40**. ⛔ **Slice 34 is CANCELLED and is NOT in this ladder** (`seq-182`; parked at 0.8.21, `seq-183`) — route no work through it. Slice 31's close record (23 RED tests wired into **no gate**, 7 codex rounds / 12 findings / zero repeats, terminal-clean) is **§20**. **SCHEMA stays 24**; governed-surface allowlist byte-identical since 15d, `check-governed-surface-pin.sh` exit 0. Prior: 23 (`30102ecd`), 22 (`572475f2`, §19), 21 (`77be504b`, §18), 30 (`9b3ed0e3`, §17 — publish precondition SATISFIED). |
+| **Status** | **Every ladder slice through 39 is COMPLETE and LANDED on `origin/main`** — 0, 5, 10, 15, 20 (+20c), 21, 22, 23, 25, 30, 31, 32, 33, 39 — plus the non-ladder DOC-HYGIENE-3. **SCHEMA 24.** The **batched governed-surface delta is SIGNED** (HITL, steward `seq-157`); **AC-079 mints into `dev/acceptance.md` at Slice 40** — minting is not signing. **Remaining ladder: 40 alone**, then the separate HITL **PUBLISH** gate — the release's only **`halts_run`** unruled decision. *(`decisions.unruled` holds **THREE** rows but only **TWO live open decisions**: `publish` and the `npm-dist-tag` rider that rides with it. The third, `platform-publish-schedule`, is a **parked tracking row** — it was **RULED at `seq-203`** and is retained only until the 0.8.21 plan exists to carry it — §4.)* |
 | **Unblocks** | <!-- BEGIN GENERATED release-state:0.8.20:status-unblocks -->**Slices 40 are NOW UNBLOCKED** — the Slice 39 landing (91db34d8), then the two cross-cutting units named in `ladder_order` (Slice 40 is the last ladder slice. Ahead of it, off-ladder: SLICE-ID-HARDENING (the fractional-id tooling fixes + recurrence arms, seq-204 ruling 1) and 'Slice 39.5' / R-20-HARNESS (collect-all harness + the true red list local AND CI, seq-204 ruling 2). ⚠ `test_commission_manifest.sh` is locally rc=1 and main's last green was FOUR jobs on the docs-only CI path — commission-manifest, verify and security never ran, so that green is vacuous. Establishing what a clean CI actually is belongs to Slice 39.5.) now exists. Slice 30 (H7) depends on 10/15/20/25. **AC-079 is PRE-SIGNED** — the HITL signed off on the accumulated governed-surface delta (Slices 5d + 10b + 15b + 15d) on 2026-07-25 (master F-34), pinned to the content of `src/conformance/governed-surface-allowlist.json`; any diff to that file re-opens it (the T1e pin). Pre-signing is NOT minting: AC-079 is minted and recorded as SIGNED at Slice 40 (§4 #1). **Publish is gated by the separate HITL publish gate, not by this AC.**<!-- END GENERATED release-state:0.8.20:status-unblocks --> |
-| **Immediate next action** | **Commission Slice 40 (`R-20-PUB`) — the FINAL slice.** Slice 39 LANDED `91db34d8` (MIT + LICENSE/README in all 10 units; CHANGELOG `## 0.8.20`). Slice 40: TC-16/F-30 (`seq-195` says the TEST is stale, ≥2 defects), the `seq-198` dispatch guard (exit 1), the pin-provenance arm handed over by 39, manifests + the undecided **Axis-E** call, the broken post-publish smokes, AC-079/AC-080, then the `dry_run=true` rehearsal from `main`. **STOPS before any tag.** Unruled: `publish`, `npm-dist-tag`. |
+| **Immediate next action** | **Commission `SLICE-ID-HARDENING` — NOT Slice 40.** `seq-204` placed **two cross-cutting units ahead of the last ladder slice**, and they run in this order: **(1) `SLICE-ID-HARDENING`** — the six measured silent-wrong fractional-slice-id sites (`check-board-currency.sh:123`, `commission-manifest.sh:701`+`:497`, `preflight.sh:131`) plus the latent `int()`/`%d` call sites in `check-release-state-views.sh` that bypass that file's own `_slice_str`/`_by_slice` helpers; **the recurrence test arms in all four suites are the deliverable**, not the fixes. Brief of record: `dev/plans/runs/0.8.20-slice-id-hardening-commission-brief.md`. **(2) "Slice 39.5" (`R-20-HARNESS`)** — collect-all harness + the TRUE red list **locally AND in CI**; brief `dev/plans/runs/0.8.20-slice-39.5-commission-brief.md`, design of record `dev/design/0.8.20-slice-39.5-collect-all-test-harness.md`. ⛔ **Neither is a ladder slice**; `commission-manifest.sh` **cannot generate either brief** (no slice number — the DOC-HYGIENE-3 / TC-86 precedent). **THEN Slice 40 (`R-20-PUB`)** — TC-16/F-30 (`seq-195`: the TEST is stale, ≥2 defects), the `seq-198` dispatch guard (**exit 1, not warn**), the pin-provenance arm handed over by 39, manifests + the undecided **Axis-E** call, the broken post-publish smokes, AC-079/AC-080, then the `dry_run=true` rehearsal from `main`; substance draft `dev/plans/runs/0.8.20-slice-40-commission-brief.md`, **to be regenerated after the two units land** (`commission-manifest.sh:701` computes its base SHA). **Slice 40 STOPS before any tag.** ⚠ **CI on `main` is RED** — publish gate (i) (`seq-202`) is **not met**; the four failing jobs are reported by 39.5's CI baseline (`seq-206`), not triaged by Slice 40. Unruled: `publish`, `npm-dist-tag`. |
 
 **Slices 0, 5, 10, 15 close records** are §11 (Slice 5), §12 (Slice 10), §13 (Slice 15b — TC-34 only; the
 registry/EAV/TC-33 remainder that also landed in the keystone `a2022957` is summarised in §8 and in
@@ -73,12 +74,14 @@ by that ruling.
 | **31** | **Library Sweep #3, leg 1/3** — SBOM-survey tool: req + AC + design + RED tests, **NO code**; **no requirement id** (TC-76) | — | **COMPLETE — LANDED `d0287620`**. Spec of record `dev/design/0.8.20-slice-31-sbom-survey-tool.md`: requirements, **23 acceptance criteria each bound 1:1 to a named test**, design. Suite `scripts/sbom-survey/tests/` is **23 failed / 0 passed / 0 skipped / 0 errors**, RED by construction and **wired into no gate**. Tier rules derived from `.github/dependabot.yml` rather than re-decided; discovery is `git ls-files`-derived so untracked manifests (the gitignored `/python/`) are structurally out of scope; the 8 `dev/release/fixtures` skew manifests are excluded by **tracked data**, auditably; the published-version lookup sits behind an **injectable seam** so the suite never needs the network and an unknown latest can never render as up-to-date. Slice 33's findings home ruled: `dev/plans/runs/0.8.20-slice-33-library-sweep-3-FINDINGS.md`. **Surfaced en route (TC-106):** `dev/tools/mermaid/package.json` is a tracked npm manifest under **no** configured Dependabot directory. codex §9 **7 rounds / 6 fix rounds**, terminal-clean. Close record **§20** |
 | **32** | **Library Sweep #3, leg 2/3** — implement the SBOM-survey tool against Slice 31's RED tests. **CODE ONLY**; no bump, no manifest or lockfile edit; **no requirement id** (TC-76) | 31 | **COMPLETE — LANDED `31d33293`**. 24/24 GREEN. Governed surface byte-identical; SCHEMA stays 24 |
 | **33** | **Library Sweep #3, leg 3/3** — RUN the tool, produce the dependency survey (**ascertain, never implement**) + the TC-115 install-then-run smoke; **no requirement id** | 32 | **COMPLETE — LANDED `f02dc5b4`**. Survey of record: `dev/plans/runs/0.8.20-slice-33-library-sweep-3-FINDINGS.md`. Output is an **input to 0.8.22**; no bump applied |
-| **39** | **Publish-facing documentation (R-20-DOC)** — **MIT license reconciliation + a LICENSE that actually ships** · the **0.8.20 CHANGELOG section** · registry-facing READMEs · `docs/` de-stale · `dev/interfaces` currency · docs.rs doc-comment corrections | 30 | **NOT_STARTED — the immediate next slice.** ⚠ **The project is MIT** (`seq-193`): the repo-root `LICENSE` (`ff8639e4`) is authoritative and the **four manifests declaring Apache-2.0 are WRONG** — `Cargo.toml:30`, `src/python/pyproject.toml:11`, `src/ts/package.json:5`, `src/ts/npm/linux-x64-gnu/package.json:5` — and must read MIT **before the tag** (crates.io versions are immutable). Today **no artifact ships a LICENSE file at all** (verified via `cargo package --list`, `npm pack --dry-run`, and the built wheel `METADATA`). **Runs BEFORE 40** because `verify-release-gates.sh` check 4 hard-fails without a CHANGELOG heading matching the version |
+| **39** | **Publish-facing documentation (R-20-DOC)** — **MIT license reconciliation + a LICENSE that actually ships** · the **0.8.20 CHANGELOG section** · registry-facing READMEs · `docs/` de-stale · `dev/interfaces` currency · docs.rs doc-comment corrections | 30 | **COMPLETE — LANDED `91db34d8`** (fast-forward ref-to-ref push, **no merge commit** — TC-110). The MIT reconciliation (`seq-193`) is applied across all four publishable manifests and a real LICENSE now ships in all **10** published units, with `scripts/check-license-consistency.sh` as the standing guard; the `## 0.8.20` CHANGELOG section exists, so `verify-release-gates.sh` check 4 can match it. Close record **§21** |
 | 40 | Verification + release readiness (publish-or-hold); **TC-16 determination FIRST** (`seq-118`) · **the DISPATCH GUARD (`seq-198` ruling 1)** — a **required confirmation input on `workflow_dispatch` that must literally match the version**, plus `scripts/verify-release-gates.sh` **exiting 1, not warning**, when a dispatch carries `dry_run=false` without it (today `verify-release-gates.sh:58-61` warns-and-continues **and** skips the tag-format check, leaving the real publish at `release.yml:261` reachable with **no tag**). **Slice 40 is the ONLY slice permitted to touch `.github/` this release** | 5,30,39 | not started |
 
-**Ladder remaining: 39 → 40, run SEQUENTIALLY**, then the separate HITL **PUBLISH** gate (with its
-`npm-dist-tag` rider — §4). Slices
-**0/5/10/15/20/21/22/23/25/30/31/32/33 are all LANDED**, as is the non-ladder **DOC-HYGIENE-3**
+**Ladder remaining: 40 alone**, then the separate HITL **PUBLISH** gate (with its
+`npm-dist-tag` rider — §4). Ahead of Slice 40, off-ladder and in this order: **`SLICE-ID-HARDENING`**, then
+**"Slice 39.5" (`R-20-HARNESS`)** — **neither is a ladder slice** and neither carries a slice number or an
+`R-20-xx` ladder position (`seq-204`). Slices
+**0/5/10/15/20/21/22/23/25/30/31/32/33/39 are all LANDED**, as is the non-ladder **DOC-HYGIENE-3**
 (`fd281358` + `85d44c74`). **TC-86 is DONE (`2956d98d`).** ⛔ **Slice 34 is NOT in this ladder** — it was
 **CANCELLED** at `seq-182` (reversing `seq-178`) and all `#[non_exhaustive]` work is **PARKED at 0.8.21**
 (odd micro ⇒ label-only build) to **publish at 0.8.22** (`seq-183`). The **batched governed-surface decision
@@ -414,9 +417,12 @@ run**, so a reduced-N scouting run silently produces a file that *looks* authori
 
 ## 7. Outstanding worktrees
 
-All Slice 0/5/10/15 worktrees are **reclaimable** — their work is landed on `origin/main`. The next commission
-(**Slice 39, `R-20-DOC`**) cuts a fresh dedicated worktree off a verified `origin/main` tip per
-**TC-RUBRIC-5**. *(The table below is a Slice-0…15 snapshot and has not tracked the 20/21/22/23/25/30/31/32/33
+All Slice 0/5/10/15 worktrees are **reclaimable** — their work is landed on `origin/main`. 🕮 **SUPERSEDED:
+Slice 39 has LANDED (`91db34d8`); the next commission is `SLICE-ID-HARDENING`** (§1). Every commission cuts a
+fresh dedicated worktree off a verified `origin/main` tip per **TC-RUBRIC-5**. ⚠ **Two Slice-39 worktrees are
+still on disk** — `fathomdb-slice39-changelog` and `fathomdb-slice39-docs` — and each carries commits **not
+reachable from `main`** (2 and 4 respectively, measured 2026-07-30). Slice 39 landed as a fast-forward, so
+that is expected pre-squash residue, **but confirm the content landed in `91db34d8` before removing either.** *(The table below is a Slice-0…15 snapshot and has not tracked the 20/21/22/23/25/30/31/32/33
 worktrees — all of those slices have landed, so their worktrees are reclaimable too. Reconcile against a live
 `git worktree list`, never against this table.)*
 
@@ -442,6 +448,10 @@ actual `git worktree list` before removing anything (this table is a snapshot, n
   are immutable. **No artifact ships a LICENSE file today.** Owned by **Slice 39 (R-20-DOC)**, minted into the
   ladder ahead of Slice 40 because `verify-release-gates.sh` check 4 hard-fails without a matching CHANGELOG
   heading.
+  🕮 **EFFECTED — the two present-tense claims above are now FALSE at HEAD** and are retained only as the
+  decision as it was taken. Slice 39 LANDED `91db34d8`: all four manifests read **MIT**, and a LICENSE ships
+  in all **10** published units, with `scripts/check-license-consistency.sh` as the standing guard. Close
+  record **§21**.
 - **2026-07-30 — DOC-HYGIENE-3 COMPLETE** (`fd281358` machinery + `85d44c74` remainder). Six ids closed:
   TC-88, TC-89, TC-94, TC-100, TC-53, TC-92. Cross-cutting, **not** a ladder slice.
 - **2026-07-29 — Slice 34 CANCELLED, then PARKED at 0.8.21** (`seq-182`, reversing `seq-178`; placement
@@ -1898,4 +1908,131 @@ land; round 8 forbidden), `seq-162`. Round 7 closed it and the fallback did not 
   `landed` list) and the master's generated ladder-progress view. Per the Slice 23 precedent (`603af000`) those are the
   Steward's, not the orchestrator's, and this land deliberately left both untouched.
   🕮 **DONE** — reconciled by the Steward; 31/32/33 are all LANDED in the single writer and `next_slice` is
-  now **39**.
+  now **39**. *(Superseded again: Slice 39 has since landed and `next_slice` is now **40** — §21.)*
+
+---
+
+## 21. Slice 39 close — publish-facing documentation (R-20-DOC)
+
+**LANDED `91db34d8`**, off branch `0.8.20-slice-39-doc`, baseline `3e9d6d12`. **17 commits**, landed as a
+**fast-forward ref-to-ref push (TC-110) — there is NO merge commit**, which is why the board-currency gate was
+never triggered and why the landing SHA is an ordinary `docs(…)` commit rather than a `merge(0.8.20): …`
+subject. Verified: `git rev-list --count 3e9d6d12..91db34d8` = **17**. SCHEMA stays **24**
+(`pub const SCHEMA_VERSION: u32 = 24`). Carries requirement id **R-20-DOC**; **mints no AC**.
+
+### 21.1 The license reconciliation — what the diff actually changed
+
+The HITL ruled the project **MIT** at `seq-193`. Confirmed from `git show 91db34d8 -- <manifests>` and re-read at
+HEAD, the four publishable manifests each moved **Apache-2.0 → MIT**:
+
+| Manifest | Before → after | At HEAD |
+|---|---|---|
+| `Cargo.toml` `[workspace.package]` | `license = "Apache-2.0"` → `"MIT"` | `:33` |
+| `src/python/pyproject.toml` `[project]` | `license = { text = "Apache-2.0" }` → `license = "MIT"` | `:26` |
+| `src/ts/package.json` | `"license": "Apache-2.0"` → `"MIT"` | `:5` |
+| `src/ts/npm/linux-x64-gnu/package.json` | `"license": "Apache-2.0"` → `"MIT"` | `:5` |
+
+A **fifth** site moved that the ruling's four-manifest wording does not name: `src/ts/package-lock.json`, the
+`""` **ROOT** entry only — one line, `"license": "Apache-2.0"` → `"MIT"`. Every other `license` key in that
+lockfile is a dependency's own factual record and was left alone.
+
+**Making the text SHIP is a separate change from the SPDX field, and it is the larger half.** Three mechanisms,
+one per ecosystem, all present in the diff:
+
+- **Cargo** — `[workspace.package] license-file = "LICENSE"` (`Cargo.toml:45`) plus an inherited
+  `license-file.workspace = true` on each publishable crate. Verified: **7** crate manifests under
+  `src/rust/crates/*/Cargo.toml` carry that key. **No per-crate LICENSE copy exists** — the one repo-root file
+  is the only Rust-side source.
+- **npm** — a **real copy**: `src/ts/LICENSE` and `src/ts/npm/linux-x64-gnu/LICENSE`, 21 lines each, both
+  net-new in the diff.
+- **Python** — PEP-639 `license-files = ["LICENSE"]` (`src/python/pyproject.toml:27`) plus the real copy
+  `src/python/LICENSE` (21 lines, net-new).
+
+Tracked LICENSE files at HEAD are exactly these four: `LICENSE`, `src/python/LICENSE`, `src/ts/LICENSE`,
+`src/ts/npm/linux-x64-gnu/LICENSE`.
+
+**Two riders inside the same commit**, both visible in the diff and neither implied by the license ruling:
+
+1. `src/python/pyproject.toml` raised the maturin floor **`>=1.7,<2` → `>=1.9,<2`** in `[build-system]` and in
+   the `test` and `dev` extras.
+2. `src/ts/package.json` `files` gained **`!dist/tests`** and **`!dist/src`**.
+
+### 21.2 The guard — a mechanism, not a note
+
+`scripts/check-license-consistency.sh` (**611 lines**, net-new) plus `scripts/tests/test_check_license_consistency.sh`
+(**310 lines**, 19 arms) and a registration line in `scripts/agent-test.sh`. **Steward-re-run at HEAD in the
+primary checkout: rc=0**, emitting one `ok` line per unit — 7 crates + 2 npm packages by real packaging-tool
+output. The **wheel is the one unit the default run does NOT prove**; the script says so itself
+(`~ wheel: MECHANISM PROXY only … Run with --with-wheel to read a real wheel`). So **"a LICENSE ships in all 10
+units" is 9 units proven by tool output plus 1 by mechanism proxy** on the default path.
+
+### 21.3 The CHANGELOG — the reason 39 ran before 40
+
+`CHANGELOG.md:13` at HEAD reads **`## 0.8.20 — 2026-07-30`** — the bare-version heading form
+`verify-release-gates.sh` check 4 requires, which is the whole sequencing rationale for putting 39 ahead of 40.
+Commit `4a9f467a`, **+447/−5**. Its stated schema span **15 → 24** is corroborated: `SCHEMA_VERSION` is **15** at
+`v0.8.9` and **24** at HEAD.
+
+### 21.4 What else shipped
+
+| Leg | Commits | Substance |
+|---|---|---|
+| 1a — license | `fdc1e810`, `aa01f0d9` | §21.1 + §21.2 |
+| 1b — registry surfaces | `ea11151a`, `79bcf881`, `f9cbda88` | 9 net-new READMEs (7 crates + both npm packages, +592), the PyPI landing page (+96/−6), and `readme`/`keywords` keys on all 7 crate manifests — **`categories` deliberately absent per `seq-198` ruling 2** |
+| 2 — CHANGELOG | `4a9f467a`, `aa61050b` | §21.3 |
+| 3 — currency | `c50c8dc6`, `0a6bb497`, `bb1f91e0`, `1bbf9b43` | `docs/` + root README across 24 files (+1010/−347); `dev/interfaces` × 6 files (+502/−70); crate-level rustdoc across all 7 crates (+298/−34); the 0.6.0/0.6.1/0.8.0 release-notes pages marked historical |
+| fix-1 | `76c3f014`, `91fb2783`, `88a96fa7` | binding surfaces name `WriteValidation`, not `InvalidArgument` (TC-95) — this one touched **shipped binding source**: `_fathomdb.pyi`, `engine.py`, `src/ts/src/index.ts` |
+| fix-2 | `0625b8d3` | `docs/embedder.md` names `EmbedderNotConfiguredError`, the shipped class (2 lines) |
+| closure | `0e6fa813`, `91db34d8` | closure records + 3 codex transcripts; then the TC-86 redaction (§21.6) |
+
+### 21.5 codex §9 — three rounds, terminal PASS
+
+Round 1 `1bbf9b43` **CONCERN** (2 findings) → fix-1 → round 2 `88a96fa7` **CONCERN** (both prior resolved, 1 new)
+→ fix-2 → round 3 `0625b8d3` **PASS**. Within the §6 cap; **no finding recurred.** Four transcript artifacts are
+tracked under `dev/plans/runs/codex/0.8.20/`: `slice-39-20260730T045914Z.log`,
+`slice-39-fix-1-rereview-20260730T052714Z.log`, `slice-39-fix-2-rereview-20260730T053751Z.log`, and the promoted
+verdict `slice-39-review.md`.
+
+⚠ **Reviewer limitation, recorded by the orchestrator and not independently re-testable here:** in all three
+rounds codex reported `git log/show/diff` failing inside its sandbox (`bwrap: loopback: Failed RTM_NEWADDR`).
+It verified **current-file truth only**; every diff-shaped claim was verified by the orchestrator from git.
+**UNVERIFIED by the Steward** — the transcripts were not re-read for this close record.
+
+### 21.6 One closure claim did NOT survive its own next commit
+
+The closure commit `0e6fa813` and `dev/plans/runs/0.8.20-slice-39-output.json` both assert
+*"Transcript hygiene rc=0; zero TC-86 redactions were needed."* **That claim was false when written.** The very
+next commit — `91db34d8`, the landing SHA itself — is
+*"TC-86 redact out-of-repo inventory from the round-1 transcript"*, and its diff removes a 36-line out-of-repo
+directory listing from `slice-39-20260730T045914Z.log` (**+20/−36**). Its own message explains why the earlier
+check passed: a standalone `check-transcript-hygiene.sh` run **before `git add`** returns 0 on an **untracked**
+transcript; the honest gate is `preflight.sh --landing` **after** committing. The record is therefore
+self-correcting, but the closure JSON's sentence is **stale and should not be cited**.
+
+### 21.7 Claims from the commit messages NOT corroborated here
+
+Each of these is asserted in a Slice 39 commit message and is **not derivable from the diff**; none was re-run
+by the Steward. Marked **UNVERIFIED**, not disputed:
+
+- **UNVERIFIED** — that `cargo package --list` / `npm pack --dry-run` / the built wheel shipped **no** license
+  file at the `3e9d6d12` baseline. The *post-fix* state is verified (§21.2); the baseline measurement is not.
+- **UNVERIFIED** — "6 of 7 crates byte-verified inside a real `.crate`", and that `fathomdb-engine` cannot be
+  tarballed at 0.8.9 because published `fathomdb-embedder` 0.8.9 lacks `rerank-cuda`. The default
+  `check-license-consistency.sh` run uses `cargo package --list`, which does not build a tarball.
+- **UNVERIFIED** — the maturin sweep (`maturin sdist` exits 1 on 1.7.8/1.8.0, 0 on 1.9.0–1.13.1) that motivates
+  the `>=1.9` floor.
+- **UNVERIFIED** — that npm **silently ignores a LICENSE symlink**, and that packing the stale
+  `tsc -p tsconfig.json` tree shipped 97 files with `main` broken. Both are measurement claims behind the
+  §21.1 riders.
+- **UNVERIFIED** — the CHANGELOG's `### Removed = None` evidence (AC-050c linter rc=0 + an additions-only
+  symbol-set diff).
+
+### 21.8 Handed on to Slice 40
+
+- **CI wiring for `check-license-consistency.sh`** — it is registered in `scripts/agent-test.sh` but **not** in
+  `.github/workflows/ci.yml` and **not** in `preflight.sh --landing`, because `.github/` is Slice 40's exclusive
+  territory this release. Stated explicitly in `aa01f0d9`'s message.
+- **Three non-shipped project-license declarations knowingly left at Apache-2.0** for 0.8.22:
+  `scripts/sbom-survey/pyproject.toml:29` and the two corpus generators under `tests/corpus/scripts/`
+  (changing those without regenerating would desync the committed hash-bearing `manifest.json`).
+- **No version field was touched** — the manifests still read `0.8.9`; **Slice 40 owns the bump.**
