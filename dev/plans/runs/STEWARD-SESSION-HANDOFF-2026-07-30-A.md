@@ -1,6 +1,11 @@
 ---
-status: ACTIVE
+status: SUPERSEDED
 ---
+
+> 🕮 **SUPERSEDED by `STEWARD-SESSION-HANDOFF-2026-07-30-B.md` (steward `seq-216`).**
+> Retained as history and for the reasoning behind items the `-B` hand-off states as settled.
+> The 🕮 annotations inside this file (from `seq-207`–`seq-211`) still carry corrections to its own
+> claims. **`-B` is the current truth.** Do not delete this file.
 
 # FathomDB — Steward Session Hand-off (2026-07-30-A)
 
