@@ -135,11 +135,20 @@ the gate (the **T1e** content pin). **Publish is gated by the SEPARATE HITL publ
 **What is still owed is a MINT, not a signature.** AC-079 is minted into `dev/acceptance.md` and recorded as
 SIGNED at **Slice 40** — see §4 #1 and the §4 CLOSED block.
 
-⚠ **Do not "fix" the allowlist `_comment`.** The JSON's own `_comment` still contains the literal string
-`AWAITING HITL SIGN-OFF, NOT SIGNED` (×4). That is **deliberate**: `check-governed-surface-pin.sh` hashes the
-**raw bytes** of the file, so the prose correction requires a coordinated re-issue of
-`scripts/governed-surface-pin.json`. The literal is load-bearing for the **T1e byte pin** exactly as it stands.
-**It is a stale comment inside a signed artifact, not an open sign-off** — see the OWED item in §4.
+🕮 **CORRECTED 2026-07-30 (steward `seq-207`) — this paragraph was FALSE and is rewritten.** It previously
+said the allowlist `_comment` "still contains the literal `AWAITING HITL SIGN-OFF, NOT SIGNED` (×4)" and that
+a coordinated re-pin was therefore owed. **Measured at HEAD: `grep -c 'AWAITING' ` on
+`src/conformance/governed-surface-allowlist.json` is `0`, and so is `grep -c 'NOT SIGNED'`.** The four
+literals were replaced by `SIGNED: the HITL signed this delta on 2026-07-29 … (steward seq-157)` ×4 at commit
+**`c239908b`** (*"TC-52 — record the signature in the allowlist; re-issue the pin"*), **which re-issued
+`scripts/governed-surface-pin.json` in the same commit.** The coordinated re-pin is **DONE, not owed**, and
+`c239908b` is the currently pinned commit.
+
+⚠ **Do not edit the allowlist `_comment` anyway.** `check-governed-surface-pin.sh` hashes the **raw bytes**,
+so any prose change still requires a coordinated pin re-issue. ⚠ **A SEPARATE and still-unverified claim
+survives:** that the `_comment` asserts the window refusal is `InvalidArgument` while Decision #18 made it
+`WriteValidation`. **Nobody has measured whether shipped code agrees** — that is a Slice-40 *determination
+duty*, not an established contradiction. Do not act on it as fact.
 
 **AC-080 — built and green.** `erasure_completeness` 10/10 asserts the erased body is absent from **every**
 row-owned projection (registry-driven, incl. `search_index_v2`, the table that previously retained the body)
@@ -197,11 +206,11 @@ Everything else is tracked by **requirement id + TDD test name** per the locked-
 >   **`recovery_denylist` UNCHANGED at five** (AC-041 unaffected); `excise_source` stays CLI-only.
 >   **AC-079 mints at Slice 40**, still pinned to this content — any diff re-opens it (T1e). ⚠ **PUBLISH IS
 >   NOT AUTHORIZED BY THIS SIGNATURE** (nor is publish blocked by AC-079 — it is gated by the separate HITL
->   publish gate). ⚠ **OWED, and still owed:** the allowlist `_comment` still reads
->   `AWAITING HITL SIGN-OFF, NOT SIGNED` ×4. That literal is **not** an open sign-off — it is stale prose
->   inside a signed artifact, and it is **deliberately left byte-for-byte alone** because
->   `check-governed-surface-pin.sh` hashes the raw bytes, so correcting it needs a coordinated re-issue of
->   `scripts/governed-surface-pin.json`. **The "HELD until Slice 31 lands" condition is DISCHARGED** — Slice 31
+>   publish gate). 🕮 **CORRECTED 2026-07-30 (`seq-207`): this item is NOT owed — it is DONE.** It read
+>   *"OWED, and still owed: the allowlist `_comment` still reads `AWAITING HITL SIGN-OFF, NOT SIGNED` ×4."*
+>   **Measured at HEAD: that literal occurs ZERO times.** It was replaced by `SIGNED: … (steward seq-157)` ×4
+>   at **`c239908b`**, which re-issued `scripts/governed-surface-pin.json` in the same commit — the
+>   coordinated re-pin this item was waiting on. **The "HELD until Slice 31 lands" condition is DISCHARGED** — Slice 31
 >   landed at `d0287620` and no orchestrator is in flight against the allowlist. The re-pin is now simply
 >   **unscheduled work owed**; its natural home is the **AC-079 mint at Slice 40**, and until then **no agent
 >   may edit that JSON**.
@@ -269,7 +278,7 @@ resolved. Read them as history; do not act on any of them as an instruction.**
 
 | # | Decision | Ledger | Recommendation |
 |---|---|---|---|
-| 7 | **AC-079 governed-surface sign-off** — `erase_source`/`eraseSource`, `EraseReport`, `SourceId`, `ExciseReport` | — | **✅ CLOSED — SIGNED.** ~~"Sign or amend before publish."~~ ~~**Publish is blocked until signed.**~~ **PRE-SIGNED 2026-07-25** (master **F-34**), pinned to the *content* of the allowlist; the **batched governed-surface decision was SIGNED at steward `seq-157`** (2026-07-29). The REQ-037 carve-out (2026-07-12) had already approved `erase_source` as an SDK verb in principle; the signature covers the *exact* symbol set. **Minting into `dev/acceptance.md` still occurs at Slice 40 — minting is not signing.** **Publish is gated by the separate HITL publish gate, not by this AC.** ⚠ The allowlist `_comment` still contains the literal `AWAITING HITL SIGN-OFF, NOT SIGNED`; that is **stale prose inside a signed artifact, not an open sign-off**, and it is **deliberately left byte-for-byte alone** because the T1e pin hashes raw bytes. The coordinated re-pin is owed at the Slice-40 mint; **do not edit that JSON.** |
+| 7 | **AC-079 governed-surface sign-off** — `erase_source`/`eraseSource`, `EraseReport`, `SourceId`, `ExciseReport` | — | **✅ CLOSED — SIGNED.** ~~"Sign or amend before publish."~~ ~~**Publish is blocked until signed.**~~ **PRE-SIGNED 2026-07-25** (master **F-34**), pinned to the *content* of the allowlist; the **batched governed-surface decision was SIGNED at steward `seq-157`** (2026-07-29). The REQ-037 carve-out (2026-07-12) had already approved `erase_source` as an SDK verb in principle; the signature covers the *exact* symbol set. **Minting into `dev/acceptance.md` still occurs at Slice 40 — minting is not signing.** **Publish is gated by the separate HITL publish gate, not by this AC.** 🕮 **CORRECTED 2026-07-30 (`seq-207`):** this cell claimed the allowlist `_comment` "still contains the literal `AWAITING HITL SIGN-OFF, NOT SIGNED`" and that the coordinated re-pin was owed at the Slice-40 mint. **Measured at HEAD: that literal occurs ZERO times** — replaced by `SIGNED: … (steward seq-157)` ×4 at **`c239908b`**, which re-issued the pin in the same commit. **The re-pin is DONE; Slice 40 does not owe it.** **Do not edit that JSON** regardless — the T1e pin hashes raw bytes. |
 | 8 | **Design-text correction** — the `logical_id IS NULL ONLY` backfill rule is right for NODES and **wrong for EDGES** | **TC-26** | **Correct plan §R-20-E8 + v4/v5 prose** to the shipped asymmetry. Code is right; the prose is not. TC-11 unaffected |
 | 9 | **eu7 no-run prohibition is UNENFORCEABLE** — `eu7_real_corpus_ac` had no `#[ignore]` and no env gate; `scripts/agent-test.sh` carried a bare `cargo test --workspace`. Raised on **three consecutive** codex rounds. **GUARD SHIPPED in fix-4** (`eu7_real_corpus_ac.rs:760` `#[ignore]`; `agent-test.sh` can no longer invoke it) — **verified by INSPECTION ONLY, zero eu7 runs**, with a control proving the check was not vacuous | **TC-20** | **✅ CLOSED BY DECISION — no longer a decision, and the follow-on is SUPERSEDED.** ~~"Slice 40 must carry a non-skip witness and opt in with `-- --ignored`."~~ **R-20-EU7 was closed by ruling** (master **F-28** · steward `seq-84`): **ZERO eu7 runs, on any backend, at any N.** The premise that "eu7 IS wanted at Slice 40" is **false** — nothing downstream runs it, so the shipped `#[ignore]` creates **no** vacuous-green hazard. ⛔ **The `#[ignore]` on `eu7_real_corpus_ac` STAYS and must NOT be opted around** — no `-- --ignored`, no env opt-in, no `#[ignore]` removal, by any slice |
 | 10 | **Python X1 was OWED** — 5c's `SourceId` is BREAKING and broke ~50 Python fixtures, swept but **only statically verified** (`py_compile` + `ruff` + AST audit). **DISCHARGED:** the suite has now been executed in an **isolated fresh clone with its own venv** (never the shared `.venv`) ⇒ **`2 failed, 754 passed, 7 skipped`**, and **the identical two tests fail on `origin/main`** — see §11.8. It was exactly this run that caught the fix-4 regression, vindicating the "landing blocker, not a follow-up" call | **TC-22** | **Satisfied.** The two residual failures are **pre-existing** and tracked as **TC-31** (#13) |
