@@ -8,9 +8,130 @@ AC-050c) gates merges against this invariant.
 
 ## [Unreleased]
 
-(rolls into the next cut after 0.8.9.)
+(rolls into the next cut after 0.8.20.)
+
+## 0.8.20 — 2026-07-30
+
+**The first real publish since 0.8.9, and a BREAKING one.** The 0.8.10–0.8.19 work
+landed on `main` as a label-only line (manifests held at `0.8.9`; no tag, no
+artifacts), so **no `0.8.10`–`0.8.19` sections exist** and this one section covers the
+whole `0.8.9 → 0.8.20` span. Schema version **15 → 24**.
+
+### Upgrading from 0.8.9 — read this first
+
+Five things break a working 0.8.9 integration. In descending order of damage:
+
+1. **Every edge row in an existing database is DESTROYED by the upgrade, with no
+   preserving migration path.** Schema migration **step 23** (TC-33) recreates
+   `canonical_edges` with INTEGER temporal columns and **does not migrate the data**:
+   it runs `DELETE FROM search_index_edges` and then `DROP TABLE canonical_edges` —
+   dropping the canonical **source-of-truth** table itself, not merely a derived
+   index. The engine's own migration source states it verbatim: *"NO DATA MIGRATION
+   (HITL 2026-07-21): existing edge rows do NOT survive and no stored ISO-8601 value
+   is converted."* This is a deliberate ruling, not an oversight — the old columns
+   held unvalidated ISO-8601 text that the engine had no safe basis to reinterpret.
+
+   Nodes, node bodies, node FTS rows and node vectors are **unaffected**; only edges
+   are lost. Step 23 is the **only** canonical-data-destroying step in the whole
+   15 → 24 span.
+
+   **Before upgrading: back up the database file, and be prepared to re-ingest every
+   edge.** Migration runs automatically at `Engine.open` and is one-way.
+
+2. **`SearchHit.id` is no longer an integer.** Any code doing `int(hit.id)` or
+   arithmetic on `hit.id` now fails at runtime. See the first *Changed — BREAKING*
+   entry for the exact migration.
+
+3. **`source_id` is mandatory on every canonical write.** A write item without one is
+   refused (a **compile error** on the Rust facade).
+
+4. **Edge `t_valid` / `t_invalid` are INTEGER epoch seconds, not ISO-8601 strings**
+   — on the governed SDK write surface in all three languages.
+
+5. **Rust facade consumers only:** four read verbs gained a **required**
+   `view: &ReadView` parameter, and `EngineError` / `PreparedWrite` gained variants
+   and fields (neither is `#[non_exhaustive]`, so exhaustive matches and struct
+   literals stop compiling).
+
+Schema **15 → 24** is one-way: an engine older than 0.8.20 refuses to open a migrated
+database.
 
 ### Changed — BREAKING
+
+- **`SearchHit.id` is now a typed `IdSpace`, not an integer (0.8.19, OPP-12 C-2 /
+  TC-8).** It used to be the row's positional `write_cursor`; it is now a two-field
+  value carrying the **id space** and the **bare id**. The positional cursor is no
+  longer surfaced to Python or TypeScript at all. **This is the largest
+  consumer-visible break in this release.**
+
+  | | before (0.8.9) | after (0.8.20) |
+  | --- | --- | --- |
+  | Rust | `pub id: u64` | `pub id: IdSpace` (`{ space: IdSpaceKind, value: String }`); the positional cursor moved to a separate `write_cursor: u64` field |
+  | Python | `id: int` | `id: IdSpace` — read `.space` (`"logical"` / `"content"` / `"passage"`) and `.value` |
+  | TypeScript | `id: number` | `id: IdSpace` — `{ space, value }`, `space` typed as the same three strings |
+
+  *Why:* the old id was reassigned on **every** re-projection and re-ingest, so it
+  was never a durable identity — and nothing else on the hit was either. `IdSpace` is
+  cross-session stable and **total** over the three id spaces: governed rows are
+  `logical` (`l:`), doc-seeded rows `content` (`h:`), synthetic passages `passage`
+  (`p:`). Only `logical` ids are lifecycle-addressable, which is precisely what the
+  new `transition` / `purge` verbs consume.
+
+  *Migration, concretely:*
+
+  - **Python.** `int(sh.id)` raises `TypeError` on **every** hit — there is no
+    coercion. Use `sh.id.value` for the bare id and `sh.id.space` for the space. The
+    old prefixed string form is `f"{prefix}{sh.id.value}"` with `l:` / `h:` / `p:`.
+  - **TypeScript.** `hit.id` is an object, so `hit.id.toFixed(…)`, `===` against a
+    number, and use as an index key all break. Use `hit.id.value` / `hit.id.space`.
+  - **Rust.** `IdSpace::to_prefixed()` (and its `Display`) reproduces the pre-swap
+    `stable_id` string **byte-for-byte**, and `IdSpace::parse()` round-trips it — so
+    any keying that was already done on the prefixed string is a true no-op. Code
+    that used the integer directly must move to the new `SearchHit::write_cursor`
+    field, which keeps the old value and the old (unstable) semantics.
+  - **If you kept a map from hit id to source document**, rebuild it from
+    `SearchHit.source_id`, which 0.8.20 populates on **every** hit path (TC-31). The
+    positional cursor is no longer recoverable from a hit in Python or TypeScript, so
+    a cursor-keyed map is not merely broken but unrecoverable.
+
+- **Edge `t_valid` / `t_invalid` are INTEGER epoch seconds, not ISO-8601 strings
+  (0.8.20, TC-33).** On the governed SDK write surface an edge item's
+  `tValid`/`t_valid` and `tInvalid`/`t_invalid` were untyped ISO-8601 **text** with no
+  format validation at all; they are now integer epoch seconds (UTC), validated
+  identically to the node `validFrom`/`validUntil` window. `None`/absent still means
+  "still valid" — that semantic is unchanged. On the Rust facade
+  `PreparedWrite::Edge.t_valid` / `.t_invalid` changed from `Option<String>` to
+  `Option<i64>`.
+
+  *Scope:* ISO-8601 survives **only** on the BYO-LLM extractor wire, where the engine
+  normalises it with hard rejection. Storage now uses the same representation as the
+  write surface, and `typeof` CHECK constraints make a junk value **unstorable**
+  rather than silently accepted.
+
+  *This is the change that costs your edge data on upgrade* — see step 23 in
+  *Upgrading from 0.8.9* above.
+
+- **Rust facade: four read verbs gained a required `view: &ReadView` parameter
+  (0.8.20, R-20-RV).** `Engine::read_get`, `Engine::read_get_many`,
+  `Engine::read_list` and `Engine::graph_neighbors` no longer compile against a
+  0.8.9 call site. **Pass `&ReadView::default()` to get exactly the shipped
+  behaviour** — every `ReadView` field is a relaxation and every default is the
+  strict view. `Engine::search` is unchanged; the view-taking variants are the
+  net-new `search_view` / `search_reranked_view` / `search_text_only_view`.
+
+  **The Python and TypeScript SDKs are NOT source-broken by this**: there `view` is
+  an optional keyword/parameter (`view: ReadView | None = None`), so omitting it is
+  the 0.8.9 behaviour exactly.
+
+- **Rust facade: `EngineError` and `PreparedWrite` grew, and neither is
+  `#[non_exhaustive]`.** `EngineError` gained `Consolidator`, `ErasureIncomplete`,
+  `IllegalTransition`, `NotLifecycleAddressable`, `ProjectionDestructive` and
+  `VectorEquivalenceMismatch`, so an exhaustive `match` stops compiling — add a
+  wildcard arm. `PreparedWrite::Node` gained `state`, `reason`, `valid_from` and
+  `valid_until`, and `PreparedWrite::Edge` changed its temporal field types, so
+  struct-literal construction and exhaustive destructuring must be updated. Python
+  and TypeScript are unaffected (their write items are loose maps and their errors
+  are a class hierarchy, so both additions are additive there).
 
 - **An `fts` or `vector` sub-object without the `searchable` role is now
   REJECTED, not accepted (0.8.20, R-20-SV).** `configure_projections` refuses a
@@ -157,11 +278,16 @@ AC-050c) gates merges against this invariant.
   so sweeping it under cap pressure would silently convert a pending redaction
   into a reported success.
 
-- **Schema version 20 → 21 (0.8.20).** Migration step 21 back-fills legacy
-  NULL provenance (see the `source_id` entry above). The bump is one-way: an
-  engine older than 0.8.20 refuses to open a migrated database.
+- **Schema version 15 → 24.** 0.8.9 shipped `SCHEMA_VERSION = 15`; 0.8.20 ships
+  **24**. Nine migration steps (16–24) run automatically and in order at
+  `Engine.open`. The bump is one-way: an engine older than 0.8.20 refuses to open a
+  migrated database.
 
-  The back-fill predicate is **asymmetric between the two canonical tables**,
+  **Step 23 destroys all edge data** — see *Upgrading from 0.8.9* above. It is the
+  only step in the span that removes canonical rows.
+
+  **Step 21** back-fills legacy NULL provenance (see the `source_id` entry above).
+  Its back-fill predicate is **asymmetric between the two canonical tables**,
   deliberately. On `canonical_nodes` it is
   `source_id IS NULL AND logical_id IS NULL`; on `canonical_edges` it is
   `source_id IS NULL` alone. The `logical_id` gate exists so that a governed
@@ -172,7 +298,86 @@ AC-050c) gates merges against this invariant.
   `logical_id`. Gating edges on `logical_id` would therefore have left legacy
   edges reachable by no erasure verb at all.
 
+  *Ordering note:* steps run in id order, so on an in-place 0.8.9 upgrade the
+  **edge** half of the step-21 back-fill is subsequently discarded by step 23's
+  `DROP TABLE canonical_edges`. The node half is unaffected.
+
 ### Added
+
+- **The projection registry — `configure_projections` / `read.projections`
+  (0.8.20, R-20-PR / OPP-12 C-1).** A declarative way to state which attributes get
+  which index treatment — there was no such mechanism at 0.8.9.
+  Available in Python (`Engine.configure_projections`, `read.projections`),
+  TypeScript (`configureProjections`, `read.projections`) and the Rust facade.
+
+  - A `ProjectionSpec` is `{ name, roles, fts?, fts_tokenizer?, vector?,
+    vector_embedder? }`. `roles` is a **set** drawn from the three
+    `ProjectionRole` members — `filterable`, `rankable`, `searchable`.
+  - `searchable→FTS` and `searchable→vector` are **tier labels, not roles**: the
+    `fts` / `vector` sub-objects *select* a sub-target of `searchable`, they do not
+    *confer* it. (Declaring one without the `searchable` role is refused — see
+    *Changed — BREAKING*.)
+  - `configure_projections` returns a `ProjectionDelta`
+    (`built` / `dropped` / `deferred` / `unchanged` / `vector_unsupported_kinds`).
+    Re-registering an identical set is idempotent and returns `unchanged=True` with
+    empty lists.
+  - A **destructive** change to a live projection — removing a role, swapping a
+    tokenizer or embedder — is refused with the new `ProjectionDestructiveError`
+    unless the caller also names it in `drop`, so an index is never silently
+    rebuilt underneath a running application.
+  - `read.projections` is **net-new in this release**; it did not exist at 0.8.9.
+    Its output re-applies to `configure_projections` as a no-op.
+
+- **`transition` and `purge` — governed record-lifecycle verbs (0.8.19,
+  OPP-12 Phase-1).** Net-new in Python, TypeScript and the Rust facade. They have
+  never appeared in a published section: 0.8.19 was a label-only close.
+
+  - `transition(logical_id, to_state, reason=None)` moves a governed node between
+    **existence** states against an engine-enforced legal-transition table:
+    promote `pending`→`active`, reject `pending`→`deleted`, soft-delete
+    `active`→`deleted`, undelete `deleted`→`active`. Promote/undelete CLEAR
+    `reason`; reject/soft-delete SET it. `reason` is advisory and never
+    engine-interpreted.
+  - `purge(logical_id)` irreversibly hard-erases a governed node across every
+    row-owned target — all versions, FTS and vector shadows, and touching edges by
+    cascade. **DELETED-FIRST**: legal only from `deleted`. It is idempotent, and it
+    is a **separate verb** from `transition` (and not a recovery-denylist name; the
+    REQ-054 five-name denylist is unchanged).
+  - Both key on the **bare `logical_id`** and address the `l:` (Logical) id space
+    **only**. A non-`l:` id raises the new `NotLifecycleAddressableError` (carrying
+    `id_space`); an illegal move raises the new `IllegalTransitionError` (carrying
+    `from_state` / `to_state` / `legal`). Content (`h:`) and passage (`p:`) hits are
+    total-but-not-addressable by design.
+  - The create-time existence state is authorable on a node write item as
+    `state: "pending" | "active"` with an advisory `reason`. `active` is the
+    back-compat default; `deleted` / `purged` are unrepresentable at create time.
+
+- **`ReadView` — an explicit, opt-in relaxation of the default read predicates
+  (0.8.20, R-20-RV / R-20-NV).** `ReadView` carries `include_superseded`,
+  `include_inactive`, `include_out_of_window` and `valid_as_of`. **Every field is a
+  relaxation and every default is the strict view**, so `ReadView()` — and omitting
+  `view=` entirely — reproduces the shipped 0.8.9 read behaviour exactly. Accepted
+  by `read.get`, `read.get_many`, `read.list`, `read.crossed_boundary_since`,
+  `graph.neighbors`, `Engine.search` and `Engine.search_text_only`.
+
+  **In Python and TypeScript the parameter is OPTIONAL, so no existing call site
+  breaks.** On the Rust facade it is required on four verbs — see
+  *Changed — BREAKING*. There is deliberately no `history_as_of`: the view is
+  world-time only.
+
+- **Node validity windows are now authorable, not just queryable (0.8.20, TC-34).**
+  A node write item accepts `valid_from` / `valid_until` (`validFrom` / `validUntil`
+  in TypeScript) as INTEGER epoch **seconds**, forming a HALF-OPEN
+  `[valid_from, valid_until)` world-time window. An omitted bound is unbounded on
+  that side, so omitting both — the default — makes the node valid at every instant,
+  which is the 0.8.9 behaviour. Read it back with a `ReadView`'s `valid_as_of`, or
+  with the new `read.crossed_boundary_since`.
+
+- **`read.crossed_boundary_since(since)` (0.8.20, R-20-NV).** Returns the nodes that
+  crossed a validity boundary in `(since, as_of]` as `BoundaryCrossing` records
+  (`node`, `became_valid_at`, `became_invalid_at`). `since` is an epoch-second
+  instant and the upper bound is the view's own `valid_as_of` (defaulting to now);
+  both are bound parameters, so the answer is deterministic for a fixed pair.
 
 - **`erase_source` / `eraseSource` — provenance-addressed erasure as a
   first-class SDK verb (0.8.20, R-20-E4).** Available in Python, TypeScript and
@@ -333,6 +538,81 @@ AC-050c) gates merges against this invariant.
   `DenseReadiness` string union (`"ready" | "embedding"`) are the only net-new
   types from R-20-DR; Python surfaces the value as a plain `str | None` field.
 
+#### Added earlier in the label-only 0.8.10–0.8.19 line
+
+Everything below shipped on `main` between 0.8.9 and 0.8.20 without a tag, so this
+is its **first published** appearance.
+
+- **The unified `Filter` grammar (0.8.11, `#17`).** One typed, closed contract —
+  `Filter { terms: FilterTerm[] }` with implicit AND — dispatched to two compilation
+  backends: the vec0-metadata pre-KNN `WHERE` for `search`, and `json_extract` over
+  `canonical_nodes.body` for `read.list`, which gained an additive `filter=`
+  parameter. Exactly **five** term variants (`source_type`, `kind`, `created_after`,
+  `status`, `json`); no DSL, no unchecked builders, values always bound as
+  parameters.
+
+  The shipped `SearchFilter` (G10) and `Predicate` dicts (G4) **still work** — they
+  are now sugar that lowers into `Filter`. A `json` term passed to `search` is a
+  typed `InvalidFilterError` rather than a silent post-KNN demotion. Python
+  `fathomdb.filter`; TypeScript `Filter` / `FilterTerm` plus the
+  `filterToSearchFilter` / `searchFilterToFilter` helpers.
+
+- **Consolidation via a BYO-LLM harness (0.8.12, OPP-2).**
+  `Engine.consolidate_with_provider(cmd, axes)` / `consolidateWithProvider` runs a
+  caller-supplied subprocess speaking the `fathomdb.consolidate.v1` protocol over a
+  list of `(subject_logical_id, relation)` clusters and returns a
+  `ConsolidateReceipt`. **Opt-in and off by default** — nothing runs unless you pass
+  a command. Harness failures surface as the new `ConsolidatorError`.
+
+- **Vector-equivalence self-check + a text-only search path (0.8.18).** At open, the
+  engine verifies that the live embedder still agrees with the vectors already at
+  rest (a 45-probe two-stage check). On divergence it opens **degraded** rather than
+  serving silently-wrong dense results: `Engine.dense_disabled` / `denseDisabled` and
+  `dense_disabled_reason` / `denseDisabledReason` report the state,
+  `OpenReport` carries the same two fields, every vector-dependent arm then refuses
+  at query time with the new `VectorEquivalenceMismatchError`, and
+  `vector_equivalence_refusal_count` / `vectorEquivalenceRefusalCount` meters those
+  refusals.
+
+  `Engine.search_text_only(query)` / `searchTextOnly` is the companion: FTS-only, it
+  never embeds the query and **never** raises `VectorEquivalenceMismatchError`, so it
+  stays serviceable on a degraded open.
+
+  *Scope, stated so it is not over-read:* this guards against **accidental** backend
+  drift and a corrupt baseline. It is **not** tamper evidence — nothing in a FathomDB
+  file is authenticated.
+
+- **Ranking-signal fields on the explain sidecar (0.8.16, F9).** `PerHitExplain`
+  gained nullable `importance` and `confidence` (`None` = graceful-absent =
+  ranks neutral). They are visible **only** via `search(..., explain=True)`.
+
+  *Deliberately narrow, and stated so nobody reads a ranking change into it:* the
+  importance/confidence reweight is **off by default with no production toggle** (the
+  only switch is a `#[doc(hidden)]` test seam), so **default ranking is unchanged**.
+  The `importance` scalar has **no Python or TypeScript write path** — the only
+  writer is the Rust `Engine::write_node_importance`, which addresses a row by the
+  positional `write_cursor` that the SDKs no longer surface. In practice a
+  Python/TypeScript consumer will read `importance` as `null` on every hit.
+
+- **Opt-in cross-vendor ONNX embedder backend (0.8.16, Rust consumers only).** A new
+  **non-default** `onnx-embedder` cargo feature on `fathomdb-embedder` (pulling
+  `ort = 2.0.0-rc.10` with `load-dynamic`, plus `tokenizers` and `sha2`) reaches the
+  execution providers candle cannot (ROCm / DirectML / OpenVINO / CUDA), selected at
+  runtime from `FATHOMDB_EMBED_DEVICE`. `default = []` is unchanged, so the shipped
+  wheel, npm package and default crate build are byte-identical without it, and the
+  Python/TypeScript SDKs are unaffected.
+
+- **`embed_batch_cls(texts)` (Python).** Batch CLS-pooled embedding, with the CLS
+  embedder singleton retrying on transient load failure and surfacing the real
+  loader error instead of a generic one.
+
+*Deliberately not announced as an SDK feature:* the 0.8.14 **BM25F / EXP-S**
+multi-index retrieval substrate shipped with "no public Py/TS SDK surface this
+release", and that is still true at 0.8.20 — `bm25f_search` appears nowhere in
+`_fathomdb.pyi` or the TypeScript surface. It is reachable only as
+`fathomdb_engine::Engine::bm25f_search` by a direct Rust consumer of the engine
+crate; a Python or TypeScript consumer has nothing to call.
+
 ### Changed
 
 - **`Engine.open` no longer re-embeds the 45-probe vector-equivalence set on
@@ -446,6 +726,168 @@ AC-050c) gates merges against this invariant.
   untouched (including on the reconciling open — no embedding is ever removed).
   Adding the `searchable` role turns the dense arm on and backfills the rows
   written while it was off.
+
+- **`drain` no longer hangs to its full timeout on an edge whose `edge_fact` kind
+  is not registered (0.8.20, TC-56).** This is a **behaviour change on the shipped,
+  already-published `Engine.drain` surface**, closed as a side effect of the Slice-20
+  projection work rather than raised as its own fix.
+
+  The pending-work probe behind `drain` omitted the scheduler's join against the
+  registered vector kinds on the edge arm, while the scheduler itself carried it. A
+  live canonical edge **with a body** whose `edge_fact` kind was not registered
+  therefore counted as outstanding work the scheduler would never schedule — it never
+  gained a projection terminal, so it was phantom-pending forever and `drain` burned
+  its whole timeout and returned `Err(Scheduler)` / `SchedulerError`. The probe and
+  the scheduler now share one definition, so they cannot drift apart again.
+
+  *Confirmed pre-existing empirically, not by inspection:* a detached checkout at the
+  pre-Slice-20 baseline, using only baseline surfaces, reproduced
+  `drain → Err(Scheduler)` after the full timeout with zero Slice-20 code in the
+  build. `drain` can still time out for other reasons — see *Known issues*.
+
+- **`erase_source` and `purge` no longer fail on rows carrying a long filterable
+  attribute value (0.8.20, TC-76).** An **upstream `sqlite-vec` defect
+  ([#274](https://github.com/asg017/sqlite-vec/issues/274), present in 0.1.7 and
+  0.1.8, fixed in 0.1.9)** makes a vec0 `DELETE` fail when a TEXT metadata column
+  holds 12 or more bytes. FathomDB stores one `attr_*` metadata column per declared
+  `filterable` projection, so an attribute value of 12+ UTF-8 bytes made
+  `erase_source`, `purge`, edge supersession and the open-path orphan sweep fail with
+  `EngineError::Storage` — **leaving the row and its shadowed value at rest**. This
+  broke erasure on real data, not in theory.
+
+  0.8.20 ships an engine-side workaround: the `attr_*` values are blanked by a
+  metadata-only UPDATE first, which takes vec0's shortening branch and removes the
+  shadow row, after which the `DELETE` has no over-length value left to clear. The
+  embedding bytes and the other metadata columns survive verbatim, so this is
+  erasure-**complete**, not error-suppressing. A corpus with no `filterable`
+  projection declared — which is every corpus predating this release — issues exactly
+  the statements it always did. A tripwire test asserts the upstream defect still
+  exists, so the workaround cannot be silently carried past the upstream fix. See
+  *Known issues*.
+
+### Deprecated
+
+Nothing is deprecated in this release. Pre-1.0, 0.8.20 takes its breaks outright
+rather than shipping compatibility shims: for `source_id` in particular a shim would
+have re-opened the very hole the change closes (a row written without provenance is
+reachable by no erasure call at all), so there is deliberately no deprecation window.
+
+### Removed
+
+**None.** No public symbol was removed anywhere across the whole `0.8.9 → 0.8.20`
+span — not from the Rust `fathomdb-engine` facade, not from the Python SDK, not from
+the TypeScript SDK. Verified two ways: the AC-050c removal-detect linter
+(`scripts/security/check_removal_changelog.py --base v0.8.9 --head HEAD`) reports zero
+removals, and a direct symbol-set diff of `v0.8.9..HEAD` over
+`fathomdb-engine/src/lib.rs`, `src/python/fathomdb/**` and `src/ts/src/**` is
+additions-only.
+
+⚠ That linter matches on symbol **names**, so it does not see a **signature** change
+on a same-named symbol. Several of those did happen and they are genuinely breaking —
+they are documented under *Changed — BREAKING* above, not here.
+
+### Security
+
+- **An excised body could survive erasure at rest.** `search_index_v2` stores the
+  body, and the erasure and rebuild paths carried hand-maintained projection lists
+  that had drifted from the actual schema, so before this release an excised body
+  remained in that table. It never surfaced in search results (both read paths gate on
+  `canonical_nodes`), which is exactly why it went unnoticed. The paths are now
+  registry-driven and total.
+- **Erased bytes remained `grep`-able in the write-ahead log**, because a SQLite
+  `DELETE` appends frames rather than rewriting them. Erasure verbs now truncate the
+  WAL, and refuse to report success (raising `ErasureIncomplete`) when they cannot.
+- **The telemetry sink retained erased ids.** Erasure verbs now selectively redact
+  them, leaving unrelated records intact, and raise `ErasureIncomplete` on a sink that
+  cannot be redacted or has been **rotated** — a rotated file is not a redacted file.
+- **Provenance is now structurally mandatory**, so no new row can be written that no
+  erasure verb can reach; `fathomdb doctor orphan-provenance` audits existing
+  databases for rows already in that state.
+- **`excise_collection_record` refuses to address the engine's own erasure
+  bookkeeping**, so an operator cannot destroy the proof of an erasure — or an
+  undischarged redaction obligation — through a normal-looking call. The retention
+  sweep exempts the same collections, for the same reason.
+
+None of these has a CVE. FathomDB is an embedded library with no network surface;
+all five are data-at-rest completeness defects in the erasure path, found by
+auditing it.
+
+### Known issues
+
+Characterized, reproducible and **shipping unfixed** in 0.8.20. Each is listed because
+a consumer can observe it; internal hardening debt and tooling items are deliberately
+excluded.
+
+- **`transition` can fail immediately with an opaque storage error under concurrent
+  writes (TC-90, p1).** `Engine::transition` runs a read-then-upgrade transaction
+  under `BEGIN DEFERRED`, so SQLite refuses the lock upgrade outright instead of
+  waiting. **Reproduces 10/10 under stress**: a plain `SQLITE_BUSY`, the busy handler
+  invoked **zero** times, failing in 0 ms against a 5000 ms timeout — and
+  `transition` never emits a diagnostic code, so the error carries nothing to
+  distinguish it from a permanent storage failure. No `busy_timeout` setting avoids
+  it. **Workaround:** serialise `transition` calls against other writers, or retry on
+  `StorageError`. A fix is scheduled for 0.8.21. (This is the same
+  lock-upgrade shape as the `TC-57` ingest defect fixed above, on a verb that fix did
+  not cover.)
+
+- **A projection worker can fail to persist its work with no signal at all (TC-91,
+  p2).** Projection-worker commit outcomes are discarded (`let _ =
+  commit_projection_outcomes(..)`), so a failure produces **no error, no log and no
+  telemetry**. A caller relying on eventual search or vector freshness gets no
+  indication that it will not arrive. **Workaround:** verify freshness explicitly —
+  `read.projections`' `vector_dense_readiness` and a `drain` barrier — rather than
+  assuming eventual convergence.
+
+- **A rejected validity window no longer tells you which bounds were rejected
+  (TC-95, p2).** `WriteValidation` / `WriteValidationError` is a message-less
+  variant, so a `valid_from >= valid_until` refusal arrives as the static string
+  `"write validation error"` with `data: null`. A Python or TypeScript caller cannot
+  recover the offending values from the error. The same limitation applies to a
+  rejected list of `ProjectionSpec`s: the error does not name which spec was invalid.
+  **Workaround:** validate before calling, or submit one item at a time.
+  Restoring a message-carrying variant is ~14 engine and ~44 binding sites and is its
+  own slice.
+
+- **`drain` can burn its full timeout and return an indistinguishable
+  `SchedulerError` in two known cases (TC-62 / TC-64, p2).** (i) While the projection
+  runtime is frozen — during a `purge`, an erasure, or an operator `rebuild` — the
+  dispatcher will not schedule, so a `drain` issued in that window cannot make
+  progress; there is no distinct error for "frozen" versus "genuinely slow embedding".
+  (ii) A lost-wakeup race in the idle wait: a worker that finishes the last job while
+  the waiter has released its lock notifies before the waiter re-acquires it, so the
+  waiter sleeps out the remaining timeout. Measured on one test across parallel runs:
+  30.19 s / 0.25 s / 0.26 s / 30.15 s. **A short `drain` timeout can therefore fail
+  spuriously.** Both are pre-existing, not introduced by this release.
+
+- **A retention `cap` no longer bounds the physical op-store table (TC-24).** It
+  bounds the **sweepable** rows; the erasure-audit collections and the
+  pending-redaction queue are exempt. See *Changed — BREAKING* for the full rationale.
+  **If you sized `cap` against a physical row count, re-check that assumption.**
+
+- **TypeScript: an absent optional field is `undefined`, not `null` (TC-35).** The
+  napi object codegen **omits** the property entirely for a Rust `Option::None` rather
+  than emitting `null`. The public TypeScript layer manufactures `null` where it
+  wraps a value, but a bare passthrough leaks `undefined`. **Test with `== null` or
+  `?? …`, not `=== null`.**
+
+- **A calendar-impossible date is silently rolled over, not rejected (TC-47, p2).**
+  Timestamp validation uses SQLite `strftime`, which rejects an impossible **month**
+  (`2025-13-01` → NULL) but silently **rolls over** an impossible **day**:
+  `2025-02-30` becomes `2025-03-02`, `2025-04-31` becomes `2025-05-01`. The
+  shape gate checks format, not calendar validity. A BYO-LLM-extracted edge timestamp
+  of Feb 30 is therefore stored as a **different, wrong instant**. The stored value is
+  always a real instant, never NULL, so the "no resurrection via a NULL boundary"
+  property holds — this is wrong-instant, not fail-open. **Workaround:** validate
+  calendar dates before submitting them.
+
+- **The `sqlite-vec` vec0 DELETE defect is worked around, not gone (TC-76, p1).**
+  Upstream [#274](https://github.com/asg017/sqlite-vec/issues/274) is fixed in
+  `sqlite-vec` 0.1.9; 0.8.20 stays pinned at `=0.1.7`, which still carries it, plus
+  the engine-side workaround described under *Fixed*. The erasure paths are correct with
+  the workaround in place and a tripwire test guards it, but the underlying dependency
+  defect is still present in the shipped artifact. If you audit this yourself, note
+  that the correct upstream id is **#274** — earlier FathomDB material cited `#99`,
+  and a search against that number comes back empty and looks reassuring.
 
 ### Documentation
 
