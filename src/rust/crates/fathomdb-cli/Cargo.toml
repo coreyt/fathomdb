@@ -1,6 +1,10 @@
 [package]
 name = "fathomdb-cli"
 description = "FathomDB CLI — operator and diagnostics binary (fathomdb doctor, fathomdb export, ...)."
+# 0.8.20 Slice 39 (R-20-DOC) — see the fathomdb facade manifest for the rationale
+# behind `readme` being explicit and `categories` being absent (HITL seq-198).
+readme = "README.md"
+keywords = ["cli", "database", "sqlite", "diagnostics", "embedded"]
 version.workspace = true
 edition.workspace = true
 license.workspace = true

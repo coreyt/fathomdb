@@ -1,6 +1,10 @@
 [package]
 name = "fathomdb-query"
 description = "FathomDB query layer — JSON-filter AST and validation surface (leaf crate)."
+# 0.8.20 Slice 39 (R-20-DOC) — see the fathomdb facade manifest for the rationale
+# behind `readme` being explicit and `categories` being absent (HITL seq-198).
+readme = "README.md"
+keywords = ["sqlite", "fts5", "full-text-search", "query", "search"]
 version.workspace = true
 edition.workspace = true
 license.workspace = true

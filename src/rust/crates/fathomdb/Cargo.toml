@@ -1,6 +1,16 @@
 [package]
 name = "fathomdb"
 description = "FathomDB facade crate — re-exports the public Rust surface of fathomdb-engine."
+# 0.8.20 Slice 39 (R-20-DOC): the crates.io landing page. Cargo also auto-detects
+# a package-root README.md, but the key is declared explicitly so a rename can
+# never silently publish a crate with no README (the 0.8.9 state on all 7).
+readme = "README.md"
+# 0.8.20 Slice 39 (R-20-DOC, HITL seq-198): `keywords` only — max 5, each <=20
+# chars, validated LOCALLY by `cargo package` so a mistake fails before anything
+# leaves the machine. `categories` are deliberately NOT set anywhere in this
+# workspace: their slugs are validated server-side only, mid-publish, after
+# earlier crates in the tier have already uploaded immutably. Re-entered at 0.8.21.
+keywords = ["database", "embedded", "sqlite", "vector-search", "retrieval"]
 version.workspace = true
 edition.workspace = true
 license.workspace = true
