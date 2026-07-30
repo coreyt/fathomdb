@@ -343,7 +343,7 @@ The measured failure causes, for the record:
 |---|---|
 | `verify`, `security` | **7 pre-existing pyright errors** — `dense_disabled`, `dense_disabled_reason`, `vector_equivalence_refusal_count` unknown on `Engine`/`OpenReport` (`src/python/fathomdb/engine.py:548/552/556/669/670`); `graph.py:153` `fathomdb._fathomdb.IdSpace` not assignable to `fathomdb.types.IdSpace`; `test_vector_equivalence_probe.py:32` no parameter named `reason`. Both jobs die in **"Bootstrap dev tooling"**, before their real work. |
 | `commission-manifest` | at `788b74c1`: **arm 9d**, `next_slice is 39.5, not an int` — now fixed locally, **still red in CI at HEAD** (§6.2). |
-| `rust-windows` | `-p fathomdb-engine --test tc57_worker_commit_pressure` fails. **This is named nowhere** in the ledger, the 39.5 design doc or any brief. **NEW — triage it.** |
+| `rust-windows` | `-p fathomdb-engine --test tc57_worker_commit_pressure` fails. Was named nowhere in the ledger, plans or briefs when found. **⚠ HITL RULED IT INTO SLICE 39.5's CI BASELINE REPORT (`seq-206`) — REPORT IT, do not triage or fix it.** Disposition of everything the baseline surfaces is ONE decision taken once the full list exists. It is still a genuine red on the publish path: gate (i) needs every `ci.yml` job green, so it must eventually pass or be explicitly waived. |
 
 **Consequence:** the record's framing — "CI green can be vacuous, and 39.5 will establish what a real clean
 CI looks like" — understates the position. **CI is not vacuously green; it is loudly red, on four jobs,
@@ -424,8 +424,8 @@ three `seq-198` rulings. **Cite them; never re-open them.**
   says it has **NOT** been classified: *"do not file it under harness artifact until someone has actually
   looked."* **The later record governs.** Slice 39 independently saw it fail ~1 run in 4 with no code
   change. Slice 40 owns the triage.
-- **`rust-windows` / `tc57_worker_commit_pressure`** — **new**, §6.3, unowned.
-- **The 7 pyright errors** blocking `verify` and `security` in CI — pre-existing, unowned, and now
+- **`rust-windows` / `tc57_worker_commit_pressure`** — **new**, §6.3. **OWNED: reported by Slice 39.5's CI baseline (`seq-206`)**, not triaged separately.
+- **The 7 pyright errors** blocking `verify` and `security` in CI — pre-existing. Same disposition: reported by Slice 39.5's CI baseline, fixed by nobody yet, and blocking publish gate (i) until they are.
   gate-relevant because of `seq-202`. 39.5 reports them; **disposition is a separate decision.**
 - **Axis-E version undecided** — `fathomdb-embedder-api` at `0.6.1`; owed at Slice 40 Phase 1.
 - **TC-25** — `sdk_only_erasure.rs` compiles to zero tests under a feature-unified run; **R-20-E4 is
