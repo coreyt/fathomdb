@@ -489,11 +489,26 @@ requires. Its guardrails are history; do not inherit them.
 **Two CROSS-CUTTING units run before Slice 40** (`seq-204`). Neither is a ladder slice; neither carries a
 slice number or an `R-20-xx` position — the `DOC-HYGIENE-3` / TC-86 precedent.
 
-1. **`SLICE-ID-HARDENING`** — the six silent-wrong fractional-slice-id sites plus three latent ones, and
-   **recurrence arms** in `test_check_board_currency`, `test_check_release_state_views`,
-   `test_commission_manifest` and `test_preflight_landing`. **The arms are the deliverable**: nothing
-   today would catch the next occurrence, and the `arm 9d` state-derivation check in `scripts/tests/test_commission_manifest.sh`
+1. **`SLICE-ID-HARDENING`** — **LANDED `2008f529`**; close record `STATUS-0.8.20.md` **§22**. The
+   silent-wrong fractional-slice-id sites, and **recurrence arms** in `test_check_board_currency`,
+   `test_check_release_state_views`, `test_commission_manifest` and `test_preflight_landing`. **The arms
+   are the deliverable**: nothing today would catch the next occurrence, and the `arm 9d`
+   state-derivation check in `scripts/tests/test_commission_manifest.sh`
    replicates the generator's own `isinstance` filter verbatim, so it would *confirm* the defect rather than catch it.
+
+   > ⚠ **The counts this line used to carry were FALSIFIED by the unit's own findings** (§22.1) and are
+   > corrected here rather than silently rewritten. It read *"the six silent-wrong fractional-slice-id
+   > sites plus three latent ones"*. Actually found: **five** truncating sites — the fifth, in
+   > `scripts/check-board-currency.sh`'s per-slice landing-merge matcher, emitting a **fabricated**
+   > pointer (`Slice 39` for a `39.5` merge), a second unrecorded defect at
+   > site 1 — and **eight** bypasses over **six** state fields in `check-release-state-views.sh` (five
+   > truncating, three divergent-render; `:154` and `:265` appeared in no prior pass), **plus a ninth**:
+   > `_by_slice` had no duplicate-key guard, so `30` and `30.0` overwrote by file order — the exact
+   > failure its own docstring forbids. ⚠ **Two of the sites were LIVE, not latent** (§22.2): a generator
+   > citing a neighbour's design memo with the generator's authority, and `preflight.sh --expect-closed`
+   > returning a **false green** in the gate whose entire purpose is refusing to spawn on an unclosed
+   > dependency. **Every count in the prior record was wrong, and low** — do not trust an unmeasured one.
+   > Reconciled by the **Steward** (the unit reported it and correctly did not edit this file), per §22.6.
 2. **"Slice 39.5" (`R-20-HARNESS`)** — name kept in prose, **de-laddered** at `seq-204`. Converts
    `scripts/agent-test.sh` from fail-fast to **collect-all-then-report** and delivers the **TRUE red list
    both locally and in CI**. ⚠ Its invariant: continue-on-failure changes *when* the harness stops, not

@@ -67,11 +67,12 @@ no findings, zero fix rounds.
 > - **`test-python`** (**TC-136**) — resolves only through the sanctioned rebuild
 > - the **`test-rust`/`rust-macos` flake** — fix is **serialising the lock-holder tests**, not a retry
 >
-> ⚠ **TC-135 is NOT in this list.** Its **remedy** is ruled (option (a) — exclude `dev/plans/runs/codex/`
-> from the orphan-marker scan, `seq-219`) but its **placement is UNPLACED and owed to the HITL**
-> (`seq-220`). It is not on 39.5's baseline list, so the fix-everything disposition does not reach it — a
-> Steward inference, corrected. **Until it is placed, TC-RUBRIC-7 stays knowingly unmet and §9 transcripts
-> stay outside the tree.**
+> ⚠ **TC-135 is NOT in this list, and is NOT Slice 40's.** Its **remedy** was ruled at `seq-219` (option
+> (a) — exclude `dev/plans/runs/codex/` from the orphan-marker scan); its **placement is now ruled too:
+> 0.8.21** (HITL 2026-07-30, todos `seq-208`). It is not on 39.5's baseline list, so the fix-everything
+> disposition never reached it — a Steward inference, corrected at `seq-220`. ⛔ **Do not fold it into
+> Slice 40.** **Until it lands at 0.8.21, TC-RUBRIC-7 stays knowingly unmet and §9 transcripts stay
+> outside the tree.**
 >
 > ⛔ **Slice 40 is materially LARGER than the brief drafted for it, and it stays ONE unit** (`seq-216`).
 > **Fold these into the §3a checkpoint table BEFORE commissioning.**
@@ -109,6 +110,7 @@ without split-like naming.
 
 | Checkpoint | Content | Gate before proceeding |
 |---|---|---|
+| **BASE — the five CI reds** | the `seq-219` fix-everything scope (§3a-1 below) | ⛔ **all five reds green, each with a quoted `rc`** — this is what gate (i) is measured on |
 | **A — determination** | PHASE 0 (TC-16/F-30) + PHASE 0b (`seq-198` dispatch guard) | the TC-16 determination **stated with evidence**; arm 10 re-pointed into two arms, not deleted |
 | **B — versions** | PHASE 1 manifests + **the Axis-E call** | ⛔ **STOP and escalate** — Axis-E's version is undecided and is the HITL's |
 | **C — mechanics** | PHASE 2 local dry-run · PHASE 3 parity + the broken smokes | both smokes write no `source_id` and will fail on the real publish |
@@ -120,6 +122,51 @@ without split-like naming.
 `workflow_dispatch` inputs are read from the **default branch only** — so the new confirmation input is not
 dispatchable until after the land. A pre-land dispatch that does not offer it is **not** evidence the guard
 is broken.
+
+### 3a-1. Checkpoint BASE — the `seq-219` fix-everything scope, folded in
+
+The HITL ruled option **(b)**: every item 39.5's baseline surfaced is **fixed — none waived, none
+deferred**. That scope is enumerated here so the orchestrator does not have to reconstruct it from the
+ledger. **BASE goes FIRST**: two of its five items were undiagnosed as of this fold-in, and unbounded work
+belongs at the start of a unit that **may not be split**, not discovered at PHASE 4.
+
+| # | Red | Cause | Fix | Status of the cause |
+|---|---|---|---|---|
+| 1 | `commission-manifest` | checkout declares no `fetch-depth` ⇒ depth-1; arm 11d recovers a pre-change generator revision from real history, absent in a shallow clone | one line, `fetch-depth: 0` | **PROVEN** (§23.5) |
+| 2 | `verify` | `scripts/bootstrap.sh` ends by running pyright; it reports **7 errors** and the step exits 1 | sync `src/python/fathomdb/_fathomdb.pyi` | **PROVEN** — see below |
+| 3 | `security` | identical: same `bootstrap.sh`, same 7 errors | same as #2 | **PROVEN** — see below |
+| 4 | `rust-macos` | the ~29% lock-holder-interference flake, the same failure as local `test-rust` (TC-72) | **serialise the lock-holder tests** — ⛔ **not a retry** | cause PROVEN (§23.3); fix unwritten |
+| 5 | `rust-windows` | `tc57_worker_side_commit_pressure_governed` | **unknown at fold-in** | ⚠ **NO diagnosis existed** — reported-only since `seq-206` |
+
+Also in scope, and not a CI job: **TC-136**, the stale local `_fathomdb.abi3.so`, which resolves only
+through the sanctioned rebuild. ⚠ **It bears on no gate** — that artifact is untracked and CI builds fresh.
+It buys knowledge of `test-python`'s real state, nothing more. Do not let it be mistaken for a CI red.
+
+**Three corrections to the record, measured 2026-07-30 by the Steward:**
+
+1. ⛔ **`_fathomdb.pyi` CANNOT be "regenerated."** Its own docstring says *"Hand-maintained — keep in sync
+   with the binding's `#[pyclass]` / `create_exception!` / `#[pyfunction]` exports"*, and there is **no
+   generator anywhere in `scripts/`**. §9a's *"regenerating the stub"* names an action that does not
+   exist; the work is a **manual sync** against `src/rust/crates/fathomdb-py/src/lib.rs`. It is
+   `src/**` — **implementer seat**.
+2. ✅ **The `verify`/`security` causal link is PROVEN, not hypothesised.** Pulled from the failing CI log
+   of run `30566757420`: both jobs' `Bootstrap dev tooling` step emits the seven errors verbatim and then
+   `##[error]Process completed with exit code 1`. They are one cause, not two coincidences. **And the
+   proof needs no native rebuild** — pyright reads the **stub**, not the `.so` — so **TC-137 is fully
+   independent of TC-136.**
+3. ⚠ **Clearing the seven does NOT make `verify` and `security` green — it makes them RUNNABLE.** `verify`
+   runs `agent-verify.sh` (lint → typecheck → **test**) and `security` runs `STRICT=1 agent-security.sh`;
+   on this tree state **neither has ever executed its real work**. §9a's *"clears two of four"* is
+   optimistic. What it buys is **knowability**. This is the largest remaining unknown on the release.
+
+> ### ⚠ Gate (i) must name WHICH RUN — no single CI run ever executes all 23 jobs
+>
+> `markdownlint` is `if: docs_only == 'true'`; `verify`, `security`, `default-embedder-tests`,
+> `rust-windows`, `rust-macos` and `wheel-size-gate` are all `if: docs_only != 'true'`. So a **docs-only**
+> push skips the seven code jobs and a **code** push skips `markdownlint`. Measured: on `4c943473`
+> (docs-only) the **only** red was `commission-manifest` — a 15-job "green" that proves nothing about the
+> engine. **Gate (i) must be measured on the CI run of Slice 40's own landing commit**, not on whatever
+> docs commit happens to land afterwards. Otherwise the gate is satisfiable by construction.
 
 ### 3b. ⛔ The two irreversible publish paths (`seq-196`)
 
@@ -158,10 +205,13 @@ Read `release-state-0.8.20.json` `decisions.unruled` — **not** board §4, whic
 
 **Unplaced, and owed to the HITL when there is a home:**
 
-- **TC-134** — the "Requirement traceability" work is **per-note triage** (`seq-212`, ruled): strip the
-  linkage sentence, **keep any audit finding**, re-head the remainder. Blanket removal is ruled **out**.
-  *Placement* still unplaced. ⚠ There are **twelve** occurrences, not the eight the record says.
-- **TC-135** — see §6. Needs a ruling.
+**Both now PLACED — this list is empty; keep the entries for the reasoning:**
+
+- **TC-134** — **PLACED at 0.8.21** (`seq-219`). The "Requirement traceability" work is **per-note triage**
+  (`seq-212`, ruled): strip the linkage sentence, **keep any audit finding**, re-head the remainder.
+  Blanket removal is ruled **out**. ⚠ There are **twelve** occurrences, not the eight the record says.
+- **TC-135** — **PLACED at 0.8.21** (HITL 2026-07-30, todos `seq-208`); remedy ruled at `seq-219`. See §6
+  for the defect and for what stays broken until it lands.
 
 ## 5. Publish gate — amended
 
@@ -178,12 +228,14 @@ was unmeetable by construction. **A skipped job is a distinct third state** — 
 `commission-manifest`, and `rust-windows` (`tc57_worker_commit_pressure`). **All four are 39.5's to
 REPORT, not to fix** (`seq-206`) — disposition is **one HITL decision taken once the full list exists**.
 
-## 6. ⚠ Two live tooling defects, both opened today, both needing rulings
+## 6. ⚠ Two live tooling defects — both now RULED, both still live until they land
 
 - **TC-135 — `TC-RUBRIC-7` collides with the orphan-marker scan.** Persisting a codex §9 transcript at its
   **required tracked path** reddens `check-release-state-views.sh`, because the scanner walks the tree
   (**including untracked files**) and **cannot tell a generated-region marker that DELIMITS a region from
   one merely QUOTED**. Measured rc=1 on 2 of 3 transcripts. **Landing one would redden `main` permanently.**
+  ✅ **RULED: remedy = exclude `dev/plans/runs/codex/` from the scan (`seq-219`); placement = **0.8.21**
+  (todos `seq-208`). ⛔ Not Slice 40's — do not fold it in.**
   ⚠ **The prior Steward reproduced this within minutes** by quoting the marker in a close record *while
   describing the hazard*. **Consequence: §9 transcripts are currently held OUT of the tree and TC-RUBRIC-7
   is knowingly unmet.** Do not invent a redaction rule and do not weaken the scanner without a ruling.
