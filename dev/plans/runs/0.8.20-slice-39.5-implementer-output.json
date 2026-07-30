@@ -1,0 +1,161 @@
+{
+  "unit": "R-20-HARNESS (\"Slice 39.5\", no ladder slot; de-laddered seq-204)",
+  "phase": "implementer, this-phase mission only (harness conversion, not the CI/full-baseline red-list report)",
+  "worktree": "/home/coreyt/projects/fathomdb-worktrees/slice-39-5",
+  "branch": "0.8.20-slice-39.5-harness",
+  "base_commit": "fc4c9032",
+  "commits": [
+    {
+      "sha": "ecc3775c",
+      "subject": "test(0.8.20 R-20-HARNESS): RED-first recurrence guard for the collect-all conversion of agent-test.sh",
+      "files": ["scripts/tests/test_agent_test_collect_all.sh"]
+    },
+    {
+      "sha": "3fd507b5",
+      "subject": "feat(0.8.20 R-20-HARNESS): convert agent-test.sh from fail-fast to collect-all-then-report",
+      "files": [
+        "scripts/lib/agent-suite-run.sh",
+        "scripts/agent-test.sh",
+        "scripts/tests/test_actionlint_fixture.sh"
+      ]
+    }
+  ],
+  "head_sha_after_witness_commit": "this witness file is itself committed on top of 3fd507b5; run `git log --oneline -1` on the branch tip for the exact sha",
+  "files_changed": {
+    "new": [
+      "scripts/lib/agent-suite-run.sh",
+      "scripts/tests/test_agent_test_collect_all.sh"
+    ],
+    "modified": [
+      "scripts/agent-test.sh",
+      "scripts/tests/test_actionlint_fixture.sh"
+    ],
+    "untouched_hard_constraint": [
+      "scripts/lib/agent-output.sh (run_capped/skip_notice unchanged; return \"$rc\" contract, output capping and spill file all verified intact)"
+    ]
+  },
+  "design_and_brief_read": [
+    "dev/design/0.8.20-slice-39.5-collect-all-test-harness.md",
+    "dev/plans/runs/0.8.20-slice-39.5-commission-brief.md"
+  ],
+  "mission_scope_note": "Per the direct task instructions for this phase, this implementer converted agent-test.sh to collect-all-then-report and built the recurrence guard. It did NOT run the full baseline red list (local 31/34/35-count enumeration or the CI PR-route red list) -- the orchestrator does that after this commit, per the task's explicit statement ('You do NOT run the full baseline red list -- the orchestrator does that after you commit').",
+  "counts_convention": {
+    "convention_source": "commission-brief §2 reconciliation, unchanged by this unit",
+    "run_capped_call_sites_before": 35,
+    "skip_notice_call_sites_before": 3,
+    "total_bare_call_sites_before": 38,
+    "unconditional_suites_before": 31,
+    "distinct_labels_before": 34,
+    "after_this_unit": {
+      "run_suite_call_sites": 36,
+      "note_on_36": "35 original run_capped sites converted to run_suite, PLUS 1 new run_suite call site registering the new recurrence-guard suite itself (test-agent-test-collect-all) = 36.",
+      "skip_suite_call_sites": 3,
+      "total_recording_call_sites": 39,
+      "unconditional_suites_after": 32,
+      "note_on_32": "31 original unconditional suites + 1 new unconditional suite (test-agent-test-collect-all) = 32.",
+      "distinct_labels_after": 35,
+      "note_on_35": "34 original distinct labels + 1 new distinct label (test-agent-test-collect-all) = 35.",
+      "bare_run_capped_or_skip_notice_call_sites_remaining": 0,
+      "verified_by": "scripts/tests/test_agent_test_collect_all.sh arm C, anchored grep '^[[:space:]]*(run_capped|skip_notice)[[:space:]]' against scripts/agent-test.sh"
+    }
+  },
+  "invariant_proof": {
+    "statement": "A run that had any failure MUST still exit non-zero; a crash is a FAILURE never a skip; the summary names every failure; ordering stays deterministic.",
+    "crash_proof": "arm A drives a real 'kill -9 $$' suite through the real run_suite/run_capped path; recorded state=FAIL rc=137 (128+9), never SKIP.",
+    "multi_failure_naming_proof": "arm A: two simultaneous failures (fake-fail rc=1, fake-crash rc=137) both appear in the 'FAILED SUITES:' line, not just the first.",
+    "non_zero_direction_proof": "arm A: a run containing any failure exits rc=1 (never 0).",
+    "zero_direction_mechanism_proof": "arm A2: excluding the single would-be-failing suite via exclude_suite yields a clean rc=0, and the excluded suite's command is proven to NEVER execute (grep for a sentinel string it would have printed finds nothing). This is the required 'demonstration filter, never a default' proof (AC 2's zero-direction), driven through the real scripts/lib/agent-suite-run.sh.",
+    "run_capped_contract_untouched_proof": "arm B: scripts/lib/agent-output.sh still contains the literal `return \"$rc\"`, AND a driver script that bare-calls run_capped with a failing command (matching the real usage pattern of the four OTHER fail-fast callers) exits with that command's real rc (1), never 0."
+  },
+  "hard_constraint_1_run_capped_seam": {
+    "status": "SATISFIED",
+    "evidence": "git diff on scripts/lib/agent-output.sh is empty (file untouched). scripts/lib/agent-suite-run.sh is a new, separate file, sourced by scripts/agent-test.sh only. run_capped's return \"$rc\", 200-line output cap and spill-file behavior are all byte-identical to baseline.",
+    "subtlety_documented": "run_capped's own body unconditionally re-enables `set -e` before its final `return \"$rc\"`. A caller wrapping the call in `set +e; run_capped ...; rc=$?; set -e` does NOT prevent an abort, because errexit is evaluated against the state active at the moment of `return`, which run_capped itself just reset to ON. Empirically proven (see scratch traces during this session). The working fix, used by run_suite, is the standard errexit exemption: `rc=0; run_capped \"$label\" \"$@\" || rc=$?`. Documented at length in scripts/lib/agent-suite-run.sh's header comment and in test arm B's comment."
+  },
+  "hard_constraint_2_registration_greps": {
+    "status": "SATISFIED",
+    "checked_sites": [
+      "scripts/tests/test_staged_ledger_sidecar.sh:286 (grep 'scripts/tests/test_staged_ledger_sidecar.sh' in agent-test.sh) -- ran the real suite, rc=0",
+      "scripts/tests/test_commission_manifest.sh:2134 -- ran the real suite, rc=0",
+      "scripts/tests/test_check_transcript_hygiene.sh:857 -- ran the real suite, rc=0",
+      "scripts/tests/test_check_c1_conformance.sh:2230 -- ran the real suite, rc=0",
+      "scripts/tests/test_check_design_refs.sh:449 (inverse: agent-test.sh must NOT mention check-design-refs) -- ran the real suite, rc=0; grep -c 'check-design-refs' scripts/agent-test.sh == 0"
+    ],
+    "method": "every run_capped call site was converted via an anchored sed substitution ('^([[:space:]]*)run_capped ' -> '\\1run_suite ') that only rewrites the bare verb, leaving every trailing `bash scripts/tests/<name>.sh` / `bash dev/release/tests/<name>.sh` argument string byte-identical."
+  },
+  "design_deviation_agent_suite_run_lib": {
+    "status": "pre-approved justified deviation per the task prompt",
+    "rationale": "See scripts/lib/agent-suite-run.sh's own header comment: keeps run_capped's contract untouched for its 4 other fail-fast callers, and makes the recording/summary machinery independently unit-testable at the lib level (test arms A/A2/A3/B/D)."
+  },
+  "actionlint_fixture_conversion": {
+    "status": "converted per 'ALSO PERMITTED' instruction; suite stays RED (Slice 40's, .github/ untouched)",
+    "file": "scripts/tests/test_actionlint_fixture.sh",
+    "change": "two `exit 1`-on-first-item loops (napi platform-label loop; publish-rust-t1..t7 dry-run-shape loop) converted to accumulate-then-exit (FIXTURE_FAILED / TIER_FAILED counters), so every failing item surfaces in one run instead of only the first.",
+    "newly_surfaced_finding": "ALL SEVEN publish-rust-t1..t7 tiers now fail the 'dry-run branch is cargo publish --dry-run -p' assertion (previously only t1-embedder-api ever surfaced, because the old loop exited at the first failure). Root cause (reported, NOT fixed, lives in .github/workflows/release.yml which this unit does not touch): the publish-rust-t* jobs no longer inline `cargo publish --dry-run -p <crate>` directly -- they call a wrapper script `bash scripts/release/cargo-publish-if-new.sh --dry-run <crate>` inside an `if [ \"${DRY_RUN}\" = \"true\" ]` guard, so the test's literal-string assertion is stale against the current release.yml shape for ALL tiers, not just t1. Separately (and independently), the test's own tier-name list has t4/t5 swapped relative to the actual job names: the test checks 't4-engine'/'t5-embedder' but the real jobs are 'publish-rust-t4-embedder' / 'publish-rust-t5-engine' (release.yml documents this ordering was deliberately fixed in 0.7.2 PR-4 so embedder resolves on the index before engine depends on it). Both observations are reported here for Slice 40 / the HITL disposition decision; neither was touched.",
+    "measured_output": "PASS actionlint rejects fixture; PASS 4 napi labels; FAIL x7 (t1..t7) dry-run-shape assertion; rc=1 (unchanged red, now fully enumerated instead of truncated at t1)."
+  },
+  "gates": [
+    {
+      "gate": "bash -n on changed shell files",
+      "files": [
+        "scripts/agent-test.sh",
+        "scripts/lib/agent-suite-run.sh",
+        "scripts/tests/test_agent_test_collect_all.sh",
+        "scripts/tests/test_actionlint_fixture.sh"
+      ],
+      "rc": 0
+    },
+    {
+      "gate": "shellcheck",
+      "status": "unavailable in this environment (command not found); gate instructions said 'if available' -- skipped, bash -n substituted as the syntax gate."
+    },
+    {
+      "gate": "bash scripts/tests/test_agent_test_collect_all.sh",
+      "rc": 0,
+      "note": "all arms (A/A2/A3/B/C/D/E) PASS; RED-first evidence captured before scripts/lib/agent-suite-run.sh existed (see red_first_evidence below) and re-confirmed green after implementation."
+    },
+    {
+      "gate": "AGENT_VERBOSE=1 timeout 240 bash scripts/agent-test.sh (bounded non-vacuity smoke)",
+      "rc": 124,
+      "note": "Expected/fine per the task -- timeout-killed mid-way through test-rust (cargo test --workspace). Log (/tmp/smoke.log, 131 lines) shows the run REACHED AND PASSED every suite from test-set-version through test-pip-skew, including: test-check-governed-surface-pin correctly recorded FAIL (exit=1) and the run CONTINUED past it (previously the hard abort point at agent-test.sh:73); test-actionlint-fixture correctly recorded FAIL (exit=1) and the run CONTINUED past it (the second historical known red). This directly proves the historical fail-fast abort is gone: suites registered after both known-red suites (test-check-c1-conformance through test-pip-skew, 16 more suites) all ran and reported ok."
+    },
+    {
+      "gate": "cargo clippy --workspace --all-targets",
+      "rc": 0
+    },
+    {
+      "gate": "cargo check --workspace --all-targets",
+      "rc": 0
+    }
+  ],
+  "red_first_evidence": {
+    "path": "/tmp/claude-1000/-home-coreyt-projects-fathomdb/d828fe60-7655-42f1-9f3a-6a98adf795ad/scratchpad/red-first-evidence.log",
+    "captured_before": "scripts/lib/agent-suite-run.sh existed and before scripts/agent-test.sh was converted",
+    "summary": "9 arms failed (arm C x3: bare run_capped/skip_notice call sites still present, last line was 'fi' not suite_summary_and_exit; arm D x1: agent-test.sh did not yet source agent-suite-run.sh; arm E x5: real agent-test.sh had no arg parsing, so all three usage-error probes ran the full unconverted fail-fast script and were killed by the test's own 20s timeout, rc=124, not 2). Arms A/A2/A3/B were already GREEN at this point because they exercise scripts/lib/agent-suite-run.sh directly once it exists on disk as an untracked file being iterated on -- i.e. the true git-history RED commit (ecc3775c) predates agent-suite-run.sh's existence entirely; the raw pre-lib RED run (all of A/A2/A3/B/C/D/E failing except trivial ones) is preserved in the scratchpad log above.",
+    "final_line": "9 test(s) failed / RC=1"
+  },
+  "worktree_clean_at_finish": true,
+  "assumptions": [
+    "The unmatched --exclude-suite label usage-error check (AC/arm E third sub-case) is checked at the END of suite_summary_and_exit (after every registration has executed), per the design brief's literal wording 'After the run, any --exclude-suite= label that matched NO registration is a harness usage error'. Driving that specific sub-case through the REAL, UNMODIFIED scripts/agent-test.sh entry point would require running the full multi-minute suite (forbidden by this task's own environment rules: 'Do NOT run the full scripts/agent-test.sh to completion'). It is therefore tested at the lib level (arm A3) against the real scripts/lib/agent-suite-run.sh, consistent with arm A's own explicitly-sanctioned methodology ('driving the REAL agent-suite-run.sh ... with fake suites'). The two genuine arg-parse arms (unknown flag, empty --exclude-suite=) ARE driven through the real, full scripts/agent-test.sh entry point and proven fast (exit before any suite runs).",
+    "Manually verified (spot-run, bounded) that four of the six suites whose registration-grep HARD CONSTRAINT 2 names (test_staged_ledger_sidecar.sh, test_commission_manifest.sh, test_check_transcript_hygiene.sh, test_check_c1_conformance.sh) plus the inverse one (test_check_design_refs.sh) still pass rc=0 against the converted agent-test.sh."
+  ],
+  "out_of_bounds_respected": [
+    ".github/** untouched",
+    "dev/plans/plan-0.8.20.md untouched",
+    "dev/plans/runs/STATUS-0.8.20.md untouched",
+    "dev/release-state-0.8.20.json / any release-state file untouched",
+    "the design doc untouched",
+    "no ledger (*.jsonl / *.jsonl.seq) touched",
+    "no version fields / manifests touched",
+    "governed surface untouched",
+    "SCHEMA untouched (stays 24)",
+    "eu7: zero runs, any backend, any N",
+    "no red suite fixed; test_actionlint_fixture.sh and test_check_governed_surface_pin.sh remain red exactly as before, only their reporting granularity changed for the former"
+  ],
+  "next_steps_for_orchestrator": [
+    "Run the full local baseline (all ~32 unconditional / ~35 distinct-label suites) to completion off this commit and produce the true red list, per design doc AC 5 / brief AC 1/2/5.",
+    "Run the CI PR-route full run (design doc AC 7 / brief AC 7) to produce the true CI red list (expect 23 executed / 1 skipped) and confirm the four known reds (commission-manifest, verify, rust-windows tc57_worker_commit_pressure, security) plus report the newly-surfaced actionlint tier findings above.",
+    "codex §9 review of both commits (this implementer did not run codex; that is the reviewer phase per this task's boundaries).",
+    "Consider (for the disposition decision, not this unit) that test_actionlint_fixture.sh's release.yml assertion is stale against the current cargo-publish-if-new.sh wrapper shape for ALL seven tiers, and that its own t4/t5 tier-name pair is swapped relative to current job names -- two distinct, reportable defects revealed by this unit's permitted loop conversion."
+  ]
+}
