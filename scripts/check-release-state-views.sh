@@ -129,8 +129,25 @@ def bad(msg):
 # narrow the region — never to paste the prose into the JSON.
 # ---------------------------------------------------------------------------
 
+def _slice_str(n):
+    """Render a slice id: 40 -> "40", 39.5 -> "39.5". NEVER %d — that would
+    truncate a fractional slice to the wrong slice, which is precisely the
+    fabricated-pointer failure the caller's guard exists to prevent."""
+    return "%g" % n if isinstance(n, float) else str(n)
+
+
 def _by_slice(st):
-    return {int(e["slice"]): e for e in st["ladder"]}
+    """Key by the slice id AS STORED — never int(), which would collapse a
+    fractional slice onto its integer neighbour and SILENTLY OVERWRITE it
+    (39.5 -> 39 clobbers Slice 39). Ints stay ints so existing lookups by
+    literal integer keep working."""
+    out = {}
+    for e in st["ladder"]:
+        k = e["slice"]
+        if isinstance(k, str):
+            k = float(k) if "." in k else int(k)
+        out[k] = e
+    return out
 
 def _and_join(items):
     """`[20]` -> "20"; `[20, 25]` -> "20 and 25"; `[20, 25, 30]` -> "20, 25 and 30"."""
@@ -147,7 +164,7 @@ def render_master_ladder_progress(st):
     reference is a findings-register citation and is deliberately not placed
     under generation."""
     by = _by_slice(st)
-    landed = " · ".join("%d (`%s`)" % (n, by[n]["sha"]) for n in st["landed"])
+    landed = " · ".join("%s (`%s`)" % (_slice_str(n), by[n]["sha"]) for n in st["landed"])
     ladder = " → ".join(str(n) for n in st["remaining_ladder"])
     return ("Slices %s are all LANDED on `origin/main`; SCHEMA is %d; "
             "remaining ladder = %s." % (landed, st["schema_version"], ladder))
@@ -328,7 +345,11 @@ def render_plan_immediate_next(st):
     so the region content starts with the newline that follows it.
     """
     nxt = st["next_slice"]
-    if isinstance(nxt, bool) or not isinstance(nxt, int):
+    # int OR float: the HITL may mint a fractional slice (steward seq-202 named
+    # 'Slice 39.5' as a deliberate one-off). The substantive check is the
+    # ladder-membership test below — integer-ness was only ever a proxy for it.
+    # bool is excluded because True would otherwise pass as 1.
+    if isinstance(nxt, bool) or not isinstance(nxt, (int, float)):
         raise ValueError(
             "`next_slice` is %r, not a slice number. The plan's IMMEDIATE NEXT pointer "
             "cannot be rendered from it, and rendering a blank — or the word Slice "
@@ -340,12 +361,12 @@ def render_plan_immediate_next(st):
     by = _by_slice(st)
     if nxt not in by:
         raise ValueError(
-            "`next_slice` is %d but the ladder carries no such slice, so the pointer would "
-            "name a slice that does not exist." % nxt)
+            "`next_slice` is %s but the ladder carries no such slice, so the pointer would "
+            "name a slice that does not exist." % _slice_str(nxt))
     entry = by[nxt]
-    return ("\n**IMMEDIATE NEXT: Slice %d** (`%s`) — %s\n\n**Remaining ladder:** %s."
-            % (nxt, entry["short"], entry["title"],
-               " → ".join(str(n) for n in st["remaining_ladder"])))
+    return ("\n**IMMEDIATE NEXT: Slice %s** (`%s`) — %s\n\n**Remaining ladder:** %s."
+            % (_slice_str(nxt), entry["short"], entry["title"],
+               " → ".join(_slice_str(n) for n in st["remaining_ladder"])))
 
 
 RENDERERS = {

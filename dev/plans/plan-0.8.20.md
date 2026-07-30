@@ -470,9 +470,9 @@ to the HITL.
 ### ▶ Immediate next
 
 <!-- BEGIN GENERATED release-state:0.8.20:plan-immediate-next -->
-**IMMEDIATE NEXT: Slice 40** (`R-20-PUB`) — verification + release readiness (publish-or-hold)
+**IMMEDIATE NEXT: Slice 39.5** (`R-20-HARNESS`) — Convert the test harness from fail-fast to collect-all-then-report, and produce the TRUE red-suite list. scripts/agent-test.sh has 31 registered suites of which 23 sit after the abort at :73 and have NEVER run in a full pass. DISCOVERY ONLY for the hidden 23 — report them, do not fix them.
 
-**Remaining ladder:** 40.<!-- END GENERATED release-state:0.8.20:plan-immediate-next -->
+**Remaining ladder:** 39.5 → 40.<!-- END GENERATED release-state:0.8.20:plan-immediate-next -->
 
 > ⚠ **This prose block previously described Slice 31 and was inherited verbatim by every brief
 > generated from this anchor.** It carried the line *"Applies no dependency bump. Edits no manifest and

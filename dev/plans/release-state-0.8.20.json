@@ -211,6 +211,20 @@
       "merge_subject": "Slice 39 COMPLETE — R-20-DOC publish-facing documentation (MIT reconciliation + LICENSE/README ship in all 10 units, 0.8.20 CHANGELOG, docs/ de-staled, dev/interfaces currency)"
     },
     {
+      "slice": 39.5,
+      "short": "R-20-HARNESS",
+      "title": "Convert the test harness from fail-fast to collect-all-then-report, and produce the TRUE red-suite list. scripts/agent-test.sh has 31 registered suites of which 23 sit after the abort at :73 and have NEVER run in a full pass. DISCOVERY ONLY for the hidden 23 — report them, do not fix them.",
+      "depends_on": [
+        39
+      ],
+      "status": "NOT_STARTED",
+      "sha": null,
+      "design_refs": [
+        "dev/design/0.8.20-slice-39.5-collect-all-test-harness.md"
+      ],
+      "sequencing_note": "Minted by HITL 2026-07-30 (seq-202) as option (a): a discovery slice ahead of 40 rather than folding the conversion into the publish slice, whose scope would then be unbounded. HITL named it 'Slice 39.5' and stated explicitly that fractional numbering is a ONE-OFF and does NOT become common practice."
+    },
+    {
       "slice": 40,
       "short": "R-20-PUB",
       "title": "verification + release readiness (publish-or-hold)",
@@ -238,13 +252,14 @@
     33,
     39
   ],
-  "next_slice": 40,
+  "next_slice": 39.5,
   "remaining_ladder": [
+    39.5,
     40
   ],
   "ladder_order": "SEQUENTIAL - re-sequenced by HITL 2026-07-29/30. Slices 21/22/23/30/31/32/33 and DOC-HYGIENE-3 have LANDED. Slice 34 (#[non_exhaustive]) was CANCELLED from 0.8.20 (steward seq-182) and PARKED at 0.8.21 (seq-183) - it is NOT in this ladder. The batched governed-surface decision was SIGNED at seq-157. Remaining execution order: 39 (R-20-DOC, publish-facing documentation) -> 40 (R-20-PUB, publish preparation; STOPS before any tag). PUBLISH itself remains the one unruled HITL decision and is a separate gate after 40.",
   "unblocked": [
-    40
+    39.5
   ],
   "unblocked_by": {
     "requirement": "the Slice 39 landing (91db34d8) — R-20-DOC COMPLETE, codex PASS after 3 rounds, preflight --landing rc=0, landed as a clean fast-forward with NO tag",
@@ -298,10 +313,10 @@
     "unruled": [
       {
         "id": "publish",
-        "title": "PUBLISH the 0.8.20 breaking pair (manifests 0.8.9 -> 0.8.20)",
-        "gated_at": "Slice 40 — HITL PREFERS option (a) publish-after-40 but explicitly deferred (\"lets see where we are then\"); STILL UNRULED (steward seq-135). A possible pre-publish \"Slice 4x\" for the Dependabot advisories is TC-93.",
+        "title": "PUBLISH the 0.8.20 breaking pair — now TWO gates (seq-202)",
+        "gated_at": "After Slice 40. TWO INDEPENDENT GATES, neither sufficient alone: (i) every ci.yml job concludes success on the landed commit, AND (ii) explicit HITL approval. Ruled 2026-07-30 (seq-202); HITL noted it may be relaxed later but stands while the line has gone this long unpublished. No conflict with seq-152 — the ci.yml security job runs agent-security.sh, not a Dependabot scan.",
         "halts_run": true,
-        "source": "plan-0.8.20.md §11 item 3"
+        "source": "plan-0.8.20.md §11 item 3; gates tightened at steward seq-202"
       },
       {
         "id": "npm-dist-tag",
@@ -309,6 +324,13 @@
         "gated_at": "Slice 40 / publish. release.yml:21-26 states the label is an HITL confirmation and that publishing PARTIAL coverage under `latest` would serve an incomplete matrix to every consumer. The matrix is gated to x86_64-unknown-linux-gnu (R-REL-4e); macOS/Windows targets are commented out as DEFERRED-TO-FOLLOW-ON (R-REL-4d). Surfaced by the Slice 40 brief review 2026-07-30; unplaced anywhere in 0.8.20 until now.",
         "halts_run": false,
         "source": "steward 2026-07-30 (Slice 40 brief adversarial review)"
+      },
+      {
+        "id": "platform-publish-schedule",
+        "title": "Per-platform publish schedule — when each target joins the publish matrix",
+        "gated_at": "Steward owes a proposal (seq-202 ruling 2). 0.8.20 publishes linux-x64 only. Remaining: aarch64-unknown-linux-gnu, x86_64-apple-darwin, aarch64-apple-darwin, x86_64-pc-windows-msvc — all commented out at release.yml:95-105. The npm dist-tag stays `next` until coverage justifies `latest`.",
+        "halts_run": false,
+        "source": "steward seq-202 ruling 2"
       }
     ],
     "ruled": [

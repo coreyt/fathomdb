@@ -343,8 +343,15 @@ def pick_slice(state, state_path, sel):
         sel = state.get("next_slice")
         if sel is None:
             die(["FAIL commission-manifest: `%s` names no `next_slice`." % state_path])
+    # int OR float: the HITL may mint a fractional slice (steward seq-202 named
+    # "Slice 39.5" as a deliberate one-off). Parse as int when integral so the
+    # ladder-membership comparison below still matches an integer-keyed entry,
+    # and NEVER int() a fraction — 39.5 -> 39 would silently select the WRONG
+    # slice and generate a manifest for a slice the caller did not ask for.
     try:
-        want = int(sel)
+        want = float(sel)
+        if want.is_integer() and "." not in str(sel):
+            want = int(want)
     except (TypeError, ValueError):
         die(["FAIL commission-manifest: slice '%s' is not a number (or the word `next`)." % sel])
     for entry in ladder:
