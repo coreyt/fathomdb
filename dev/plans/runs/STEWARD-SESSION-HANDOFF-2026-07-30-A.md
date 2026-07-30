@@ -9,6 +9,11 @@ status: ACTIVE
 > Supersedes `STEWARD-SESSION-HANDOFF-2026-07-29-B.md`, which was written before Slice 39 landed, before
 > the `seq-196`/`seq-198` publish-trigger and dispatch-guard rulings, and before `seq-202`/`seq-203`/`seq-204`
 > re-shaped the tail. Its §2 ("**Nothing else fires a publish**") is now known to be **FALSE** — see §2 here.
+>
+> 🕮 **THIS DOCUMENT HAS ITSELF BEEN PARTIALLY SUPERSEDED** by steward `seq-207`–`seq-211` (2026-07-30,
+> `80f83bf7` … `09d47443`). Six of its statements were overtaken by rulings and measurements that landed
+> after it was written. **Nothing below has been rewritten or deleted** — the annotations marked 🕮 carry the
+> current truth; where one contradicts the prose it is attached to, the annotation governs.
 
 ## 0. State — do NOT copy numbers out of here
 
@@ -35,6 +40,10 @@ PyPI and npm. Everything below is downstream of that fact.
 
 ## 1. Immediate next action — two cross-cutting units, THEN Slice 40
 
+🕮 **SUPERSEDED — SOMETHING *IS* IN FLIGHT.** `SLICE-ID-HARDENING` was **commissioned at `seq-210`**
+(landed `fb05c08b`) and is running in `~/projects/fathomdb-worktrees/slice-id-hardening`, branch
+`0.8.20-slice-id-hardening`. The sentence below was true when written.
+
 **Nothing is in flight.** `next_slice` is `40`, and **Slice 40 is the only ladder slice left**. But
 `seq-204` placed **two cross-cutting units ahead of it**. Neither is a ladder slice; neither carries a
 slice number or an `R-20-xx` position — the **DOC-HYGIENE-3 / TC-86 precedent**.
@@ -46,6 +55,10 @@ SLICE-ID-HARDENING  →  "Slice 39.5" (R-20-HARNESS)  →  40 (R-20-PUB)  →  [
 The authoritative statement of this ordering is `release-state-0.8.20.json` `ladder_order` and the
 `status-unblocks` generated view on the board. **`dev/plans/plan-0.8.20.md` does not mention either unit**
 — see §6.4, because that omission is load-bearing at commission time.
+
+🕮 **FALSE AT HEAD.** The plan names **both**: `SLICE-ID-HARDENING` at `plan-0.8.20.md:492` and
+"Slice 39.5" / `R-20-HARNESS` at `:497`. §9 was de-staled at `seq-205` (`190c8b8a`). There is no omission
+to plan around at commission time.
 
 ### 1a. SLICE-ID-HARDENING (`seq-204` ruling 1)
 
@@ -154,6 +167,13 @@ broken.
   least **two independent defects** in that fixture and its loop `exit 1`s on the first (`:56`), so only
   `t1` surfaces. ⚠ `seq-185`'s stated basis ("dead since 0.8.14") is the claim `seq-195` refutes — the
   ruling stands, its rationale does not.
+  🕮 **WITHDRAWN AS AN INSTRUCTION — HITL ruling `seq-211`, landed `09d47443` (2026-07-30).** Measured at
+  HEAD, the **first** failure of `test_actionlint_fixture.sh` is the arm at `:54` requiring the literal
+  `cargo publish --dry-run -p` **including its trailing space**, and `grep -c` for that literal in
+  `release.yml` is **0** — every tier delegates to `cargo-publish-if-new.sh --dry-run`, the idempotency
+  guard. The `seq-195` tier-name swap is real but **masked behind it**. Slice 40 now receives the *symptom*
+  and makes the determination itself. ⛔ **One outcome is forbidden regardless: the resolution may not delete
+  or bypass `cargo-publish-if-new.sh`.**
 - **PHASE 0b — harden the dispatch path** (`seq-198`, §2 above). ⚠ **This phase reddens
   `scripts/tests/test_verify_release_gates.sh` arm 10**, whose text is *"dispatch+dry_run=false should not
   fail on otherwise-clean state"*. ⛔ **Do not delete arm 10** — it is the only guard against this phase
@@ -229,6 +249,13 @@ broken.
   (`check-governed-surface-pin.sh` rc=0, pinned `c239908b`). ⚠ **The signed, byte-pinned allowlist
   `_comment` asserts the window refusal is `InvalidArgument`; Decision #18 made it `WriteValidation`** —
   signed prose contradicts shipped code. The coordinated re-pin belongs with the AC-079 mint.
+  🕮 **CORRECTED — the re-pin is DONE, not owed** (steward `seq-208`, landed `1e0173dd`). `grep -c` for
+  `AWAITING` and for `NOT SIGNED` in `src/conformance/governed-surface-allowlist.json` are **both 0**:
+  `c239908b` ("TC-52 — record the signature in the allowlist; re-issue the pin") replaced all four literals
+  with `SIGNED: … (steward seq-157)` ×4 **and re-issued `scripts/governed-surface-pin.json` in the same
+  commit**; `c239908b` is the currently pinned commit. **Slice 40 owes one less obligation.** ⚠ The
+  `InvalidArgument` vs `WriteValidation` half above is **unmeasured** — a Slice-40 *determination duty*, not
+  an established contradiction.
 - ⛔ **`fathomdb/src/lib.rs:139` — the `DenseReadiness` "PROPOSED / NOT SIGNED" marker — is CORRECT. Do not
   touch it.** `DenseReadiness` appears **zero** times in the allowlist and is genuinely unsigned. Slice 39
   correctly flipped only the `ReadView`/`BoundaryCrossing` marker. Changing `:139` publishes a **false
@@ -313,6 +340,13 @@ stale commit `427d2712`, that is red. **Do not confuse them.** ⚠ CI cannot cat
 ⚠ `agent-test.sh` now has **35 `run_capped` call sites / 34 distinct suite labels**. The 39.5 design doc and
 `seq-204` both say **31 suites with 23 after the abort**. **Re-measure before quoting either number.**
 
+🕮 **RESOLVED — and the DESIGN DOC IS CORRECT; the Steward's "correction" was the error** (steward `seq-209`,
+landed `da203aac`). Both counts hold under different conventions: there are 35 call sites / 34 labels, but
+**31 sit at column 0 and are unconditional**; the other 4 are indented inside `if`/`else` guards with
+`skip_notice` branches (`:232`+`:235` are the two arms of one `test-python` conditional, `:248`
+`test-ledgerwatch`, `:255` `test-ts`). 35−4 = **31**; 27−4 = **23** after the abort. ⚠ **The lesson: when two
+records disagree on a count, reconcile the counting CONVENTIONS before declaring either one wrong.**
+
 ### 6.2 `test_commission_manifest` is rc=0 locally but STILL RED IN CI
 
 `seq-204` and the board gloss both say *"`test_commission_manifest` is locally rc=1."* **At HEAD it is
@@ -325,6 +359,11 @@ local↔CI divergence — most likely the shallow default checkout — and **exp
 ### 6.3 CI ON `main` IS RED, AND THE "GREEN" THE RECORD CITES DOES NOT EXIST
 
 > ### ⛔ The publish gate (i) — "every `ci.yml` job concludes `success`" — is NOT met at HEAD
+
+🕮 **GATE (i) HAS SINCE BEEN AMENDED** (HITL ruling `seq-211`, landed `09d47443`) to *"every `ci.yml` job
+**THAT EXECUTED** concludes `success`"* — `markdownlint` is skipped on every non-docs push (`ci.yml:379`,
+`if: needs.changes.outputs.docs_only == 'true'`), so the heading's wording was unmeetable by construction.
+Skipped is a **third state**, neither pass nor failure. **The heading's verdict stands: NOT met at HEAD.**
 
 `seq-204` and the 39.5 design doc both state: *"the green on main at `788b74c1` was FOUR jobs on the
 docs-only path with `commission-manifest`, `verify` and `security` never running."* **Measured with `gh`,
@@ -352,6 +391,11 @@ larger in fact.
 
 ### 6.4 `plan-0.8.20.md` §9's un-generated prose is STALE — and it is the `{{MANDATE}}` anchor
 
+🕮 **BOTH CLAIMS IN THIS SECTION ARE RESOLVED** (steward `seq-205`, landed `190c8b8a`). `plan-0.8.20.md` §9
+was de-staled: it now correctly names Slice 39 as **LANDED** and names **both** cross-cutting units
+(`SLICE-ID-HARDENING` at `plan-0.8.20.md:492`, "Slice 39.5" / `R-20-HARNESS` at `:497`). **The `{{MANDATE}}`
+anchor is safe.** Read the rest of this section as the historical record of the defect, not as a live warning.
+
 The **generated** pointer inside the markers is correct: *"IMMEDIATE NEXT: Slice 40 (`R-20-PUB`) …
 Remaining ladder: 40."* But the hand-written prose **immediately below it, outside the markers**, still
 reads **"Slice 39 (`R-20-DOC`) is the immediate next"** and goes on to describe Slice 39's deliverables as
@@ -366,6 +410,8 @@ is rc=0 and cannot see this. **De-stale §9 before commissioning anything.**
 ⚠ Also: **`plan-0.8.20.md` contains no mention of `39.5`, `R-20-HARNESS` or `SLICE-ID-HARDENING`.** The
 two cross-cutting units exist only in `release-state-0.8.20.json` `ladder_order`, the board's generated
 `status-unblocks` gloss, the design doc and the ledger.
+🕮 **FALSE at HEAD** — `seq-205` (`190c8b8a`) named both units into `plan-0.8.20.md` §9 (`:492`, `:497`);
+see the annotation at the head of §6.4.
 
 ### 6.5 `decisions.unruled` has THREE entries, not two
 
@@ -382,6 +428,12 @@ parked tracking row** — say it that way, and remove the row when the 0.8.21 pl
   noted (i) may be relaxed later but it stands while the line has gone this long unpublished. **No conflict
   with `seq-152`** — the `ci.yml` `security` job runs `agent-security.sh` (AC-036/037/038/050a/050c), not a
   Dependabot advisory scan.
+  🕮 **GATE (i) AMENDED — HITL ruling `seq-211`, landed `09d47443` (2026-07-30): it now reads "every
+  `ci.yml` job THAT EXECUTED concludes `success`."** `markdownlint` is
+  `if: needs.changes.outputs.docs_only == 'true'` (`ci.yml:379`), so it is **skipped on every non-docs
+  push** — both measured full runs show 23 jobs, exactly 1 skipped, and the skip is `markdownlint`; the
+  original wording was **unmeetable by construction**. A skipped job is a distinct **third state**, neither
+  pass nor failure. **This narrows nothing: no executing job may fail.**
 - **0.8.20** publishes **x86_64-linux only**, npm dist-tag **`next`** (`release.yml:28`). CI already *tests*
   Windows and macOS; what is linux-only is the **publish/wheel** matrix at `release.yml:91-105`, where
   aarch64-linux, both darwin targets and win32-x64 sit commented out.
@@ -426,7 +478,8 @@ three `seq-198` rulings. **Cite them; never re-open them.**
   change. Slice 40 owns the triage.
 - **`rust-windows` / `tc57_worker_commit_pressure`** — **new**, §6.3. **OWNED: reported by Slice 39.5's CI baseline (`seq-206`)**, not triaged separately.
 - **The 7 pyright errors** blocking `verify` and `security` in CI — pre-existing. Same disposition: reported by Slice 39.5's CI baseline, fixed by nobody yet, and blocking publish gate (i) until they are.
-  gate-relevant because of `seq-202`. 39.5 reports them; **disposition is a separate decision.**
+  Gate-relevant because of `seq-202` (as amended by `seq-211`): 39.5 reports them; **disposition is a
+  separate decision.**
 - **Axis-E version undecided** — `fathomdb-embedder-api` at `0.6.1`; owed at Slice 40 Phase 1.
 - **TC-25** — `sdk_only_erasure.rs` compiles to zero tests under a feature-unified run; **R-20-E4 is
   unverified at the cut.**
@@ -444,10 +497,18 @@ three `seq-198` rulings. **Cite them; never re-open them.**
   ratified contract. Fixable only by a coordinated **pin re-issue**; take the two together.
 - **The allowlist `_comment` correction** — still owed; the `InvalidArgument`/`WriteValidation`
   contradiction (§3b) belongs with Slice 40's AC-079 mint.
+  🕮 **CORRECTED — NOT owed: DONE at `c239908b`** (steward `seq-208`, landed `1e0173dd`). All four
+  `AWAITING`/`NOT SIGNED` literals were replaced with `SIGNED: … (steward seq-157)` ×4 and the pin was
+  re-issued in the same commit; `grep -c` for both literals is now **0**. Only the **unmeasured**
+  `InvalidArgument`/`WriteValidation` question survives, as a Slice-40 determination duty.
 - **Eight "Requirement traceability" notes** remain in `dev/design/**` from before the `design_refs` fix
   (`d30ef52f`). Removing them is owed. **Do not write new ones.**
 - **Two stale Slice-39 worktrees** — `fathomdb-slice39-changelog`, `fathomdb-slice39-docs`. Slice 39 has
   landed; confirm nothing is unmerged, then remove.
+  🕮 **DONE** in the `seq-207` reconcile (landed `80f83bf7`). `git cherry main <branch>` marked **all six
+  commits `-`** — every patch is already in `main`, they were pre-rebase copies — and the single untracked
+  file in the docs worktree was **byte-identical** to its landed counterpart. **Both worktrees removed; both
+  branches preserved** (`0.8.20-slice-39-changelog`, `0.8.20-slice-39-docs`).
 - **17 open Dependabot PRs** — publish OPEN (`seq-152`), with the TC-78 npm-auth exception (§3b).
 - **Slice 34 (`#[non_exhaustive]`) is CANCELLED** from 0.8.20 (`seq-182`) and **PARKED at 0.8.21**
   (`seq-183`). It is **not in the ladder** — route no work through it.
@@ -520,8 +581,10 @@ Steward holds the loop) — **never `/goal`.** The shape that has worked all rel
 1. **Regenerate the brief** — `scripts/commission-manifest.sh 0.8.20 <slice>`. It hard-fails on a dead
    citation or an empty design tier, so a green manifest is real evidence. ⚠ **It cannot generate a brief
    for either cross-cutting unit** — those are hand-written (§1b).
-2. **Re-verify the `{{MANDATE}}` anchor (plan §9) before briefing.** ⚠ **It is stale right now** — §6.4.
-   The generated pointer is correct; the prose around it is not, and the manifest copies the whole section.
+2. **Re-verify the `{{MANDATE}}` anchor (plan §9) before briefing.** ~~⚠ **It is stale right now** — §6.4.~~
+   🕮 **NO LONGER STALE** — plan §9 was rewritten at `seq-205` (`190c8b8a`) and correctly records Slice 39 as
+   LANDED plus both cross-cutting units. **The step itself stands**: re-verify it every time, because the
+   manifest copies the whole section and it went stale at three consecutive commissions when nobody did.
 3. **Run an adversarial review subagent over every brief before commissioning.** Until TC-131 exists at
    0.8.21 this is the only control on the §5 defect class, and it has caught 100% of it.
 4. **Record the commission in the ledger BEFORE it starts.**
