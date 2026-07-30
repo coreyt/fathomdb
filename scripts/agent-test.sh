@@ -13,6 +13,29 @@ run_capped test-set-version bash scripts/tests/test_set_version.sh
 # Scripts (bash): release-time preflight (tag/--check-files/CHANGELOG/metadata).
 run_capped test-verify-release-gates bash scripts/tests/test_verify_release_gates.sh
 
+# Scripts (bash): 0.8.20 Slice 39 (R-20-DOC) — the license type + license-
+# SHIPPING gate (scripts/check-license-consistency.sh). Closes an 0.8.x-long
+# silent drift: the repo-root LICENSE said MIT, all four publishable manifests
+# said Apache-2.0, and NO artifact carried a license file at all — measured with
+# `cargo package --list` and `npm pack --dry-run`. crates.io versions are
+# IMMUTABLE, so tagging that would have been unfixable rather than merely wrong.
+# RED-first fixtures under mktemp -d plus two real-repo regression arms; no real
+# manifest, LICENSE or lockfile is ever written.
+#
+# ⚠ REGISTERED HERE DELIBERATELY, NOT AT THE END OF THE `scripts/` BLOCK.
+# Under `set -euo pipefail` this file aborts at the FIRST failing suite, and
+# `test-check-governed-surface-pin` (below) FAILS on the tree as of 0.8.20
+# Slice 39 — its pin's `git_blob_sha1` provenance claim is stale, verified
+# failing at the Slice 39 baseline 3e9d6d12 with no local edits. Anything
+# registered after it is unreachable and would be a vacuous pass. That is a
+# STRICTER constraint than the known TC-16 abort at test-actionlint-fixture:
+# both are downstream of this line. Do not move this entry later without first
+# re-checking where agent-test.sh actually stops.
+#
+# CI wiring (.github/) is Slice 40's exclusive territory this release and has
+# been handed to it explicitly.
+run_capped test-check-license-consistency bash scripts/tests/test_check_license_consistency.sh
+
 # Scripts (bash): TC-RUBRIC-5 landing guard — preflight.sh --landing must HARD-fail
 # in the primary checkout and pass in a linked worktree. Builds its own throwaway
 # repo + worktree under mktemp -d; never git-writes into this checkout.
