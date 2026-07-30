@@ -504,7 +504,8 @@ slice number or an `R-20-xx` position — the `DOC-HYGIENE-3` / TC-86 precedent.
 > ### ⛔ CI IS RED ON `main` AND HAS BEEN FOR AT LEAST THREE RUNS (`seq-205`)
 >
 > Run `30546942720` (`788b74c1`) ran **23 jobs, 1 skipped**, four failing: **`commission-manifest`,
-> `verify`, `rust-windows`, `security`**. **Publish gate (i) — every `ci.yml` job green — is NOT met.**
+> `verify`, `rust-windows`, `security`**. **Publish gate (i) — every `ci.yml` job THAT EXECUTED green
+> (`seq-202` as amended by `seq-211`) — is NOT met.**
 > `verify`/`security` die in bootstrap on seven pre-existing pyright errors; **`rust-windows` fails on
 > `-p fathomdb-engine --test tc57_worker_commit_pressure`, which is named in no ledger, design doc or
 > brief — new and UNOWNED**; and `commission-manifest` fails in CI while its suite is rc=0 locally.
