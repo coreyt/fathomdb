@@ -1,5 +1,5 @@
 ---
-status: ACTIVE
+status: SUPERSEDED
 ---
 
 # FathomDB — Steward Session Hand-off (2026-07-29-A)
@@ -7,6 +7,14 @@ status: ACTIVE
 > **Boot:** run **`/steward`**, do its §3 cold-start reading (**start with `scripts/steward-orient.sh`**),
 > then read THIS doc, return a short orientation, and **WAIT for the HITL** before mutating anything.
 > Supersedes `STEWARD-SESSION-HANDOFF-2026-07-27-A.md`.
+>
+> ## ⚠ SUPERSEDED 2026-07-29 by `STEWARD-SESSION-HANDOFF-2026-07-29-B.md`. **Read that one.**
+>
+> Every task listed below has been actioned or ruled. Slices **31, 32, 33** and **DOC-HYGIENE-3** have all
+> LANDED; the remaining ladder is **39 → 40**, not 31 → 40. The batched governed-surface decision was
+> **SIGNED** (`seq-157`), and five of the six open decisions in §3 were ruled the same day — the live open
+> set is now **TWO** (`publish`, `npm-dist-tag`). Retained as the decision record; **do not act on it as a
+> task list**, and do not copy any number out of §0.
 
 ## 0. State — do NOT copy numbers out of here
 

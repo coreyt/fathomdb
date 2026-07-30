@@ -7,8 +7,8 @@
   "master": "dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md",
   "schema_version": 24,
   "schema_version_source": "pub const SCHEMA_VERSION in src/rust/crates/fathomdb-schema/src/lib.rs",
-  "landed_verified_at": "f02dc5b4",
-  "landed_verified_how": "each SHA below is the landing merge commit for its slice AND is an ancestor of origin/main (git merge-base --is-ancestor), with the merge subject matching this repo's `merge(0.8.20): Slice[- ]N` landing convention",
+  "landed_verified_at": "d9c5024d",
+  "landed_verified_how": "each SHA below is the landing merge commit for its slice AND is an ancestor of origin/main (git merge-base --is-ancestor), with the merge subject matching this repo's `merge(0.8.20): Slice[- ]N` landing convention. Re-verified 2026-07-30 at d9c5024d: all 13 landed slice SHAs confirmed ancestors of HEAD via git merge-base --is-ancestor, zero non-ancestors. The prior watermark f02dc5b4 (Slice 33) predated the DOC-HYGIENE-3 remainder landing at 85d44c74 — the landed FACTS were correct throughout; only this verification watermark lagged.",
   "ladder": [
     {
       "slice": 0,
