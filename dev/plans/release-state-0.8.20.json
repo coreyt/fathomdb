@@ -327,10 +327,10 @@
       },
       {
         "id": "platform-publish-schedule",
-        "title": "Per-platform publish schedule — when each target joins the publish matrix",
-        "gated_at": "Steward owes a proposal (seq-202 ruling 2). 0.8.20 publishes linux-x64 only. Remaining: aarch64-unknown-linux-gnu, x86_64-apple-darwin, aarch64-apple-darwin, x86_64-pc-windows-msvc — all commented out at release.yml:95-105. The npm dist-tag stays `next` until coverage justifies `latest`.",
+        "title": "Per-platform publish schedule — RULED at seq-203; retained as a tracking entry",
+        "gated_at": "RULED 2026-07-30 (seq-203). 0.8.20 publishes x86_64-linux only under dist-tag `next`. 0.8.21 wires and greens aarch64-darwin -> x86_64-darwin -> win32-x64 in CI and PUBLISHES NOTHING (odd micro, OOB label-only), with napi 2->3 pulled forward from 0.8.22 so the matrix is validated on the binding version that ships. 0.8.22 publishes those three plus x86_64-linux and FLIPS the npm dist-tag to `latest`. aarch64-linux defers to 0.8.24+ (needs cross-compilation or ARM runners). Kept in the list only until the 0.8.21 plan exists to carry it.",
         "halts_run": false,
-        "source": "steward seq-202 ruling 2"
+        "source": "steward seq-202 ruling 2; scheduled at seq-203"
       }
     ],
     "ruled": [
