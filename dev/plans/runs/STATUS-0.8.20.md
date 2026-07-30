@@ -47,7 +47,7 @@ COMPLETE — LANDED `91db34d8`** (close record §21). **Ladder remaining: 40 alo
 | **Slice in flight** | **NONE.** The most recent land is **Slice 39 (`91db34d8`)** — **R-20-DOC COMPLETE** (MIT reconciled across all four publishable manifests, a LICENSE that actually ships in all 10 published units, the `## 0.8.20` CHANGELOG section; close record §21). Before it: **Library Sweep #3 COMPLETE** (31 `d0287620` · 32 `31d33293` · 33 `f02dc5b4`) and **DOC-HYGIENE-3 COMPLETE** (`fd281358` machinery + `85d44c74` remainder, TC-53/TC-92). **Forward sequence: two cross-cutting units, then Slice 40** — (1) `SLICE-ID-HARDENING`, (2) "Slice 39.5" (`R-20-HARNESS`), then **Slice 40 (`R-20-PUB`)**. **Neither cross-cutting unit is a ladder slice**; neither carries a slice number or an `R-20-xx` ladder position (the `DOC-HYGIENE-3` / TC-86 precedent, `seq-204`) — `next_slice` stays **40**. ⛔ **Slice 34 is CANCELLED and is NOT in this ladder** (`seq-182`; parked at 0.8.21, `seq-183`) — route no work through it. Slice 31's close record (23 RED tests wired into **no gate**, 7 codex rounds / 12 findings / zero repeats, terminal-clean) is **§20**. **SCHEMA stays 24**; governed-surface allowlist byte-identical since 15d, `check-governed-surface-pin.sh` exit 0. Prior: 23 (`30102ecd`), 22 (`572475f2`, §19), 21 (`77be504b`, §18), 30 (`9b3ed0e3`, §17 — publish precondition SATISFIED). |
 | **Status** | **Every ladder slice through 39 is COMPLETE and LANDED on `origin/main`** — 0, 5, 10, 15, 20 (+20c), 21, 22, 23, 25, 30, 31, 32, 33, 39 — plus the non-ladder DOC-HYGIENE-3. **SCHEMA 24.** The **batched governed-surface delta is SIGNED** (HITL, steward `seq-157`); **AC-079 mints into `dev/acceptance.md` at Slice 40** — minting is not signing. **Remaining ladder: 40 alone**, then the separate HITL **PUBLISH** gate — the release's only **`halts_run`** unruled decision. *(`decisions.unruled` holds **THREE** rows but only **TWO live open decisions**: `publish` and the `npm-dist-tag` rider that rides with it. The third, `platform-publish-schedule`, is a **parked tracking row** — it was **RULED at `seq-203`** and is retained only until the 0.8.21 plan exists to carry it — §4.)* |
 | **Unblocks** | <!-- BEGIN GENERATED release-state:0.8.20:status-unblocks -->**Slices 40 are NOW UNBLOCKED** — the Slice 39 landing (91db34d8), then the two cross-cutting units named in `ladder_order` (Slice 40 is the last ladder slice. Ahead of it, off-ladder: SLICE-ID-HARDENING (the fractional-id tooling fixes + recurrence arms, seq-204 ruling 1) and 'Slice 39.5' / R-20-HARNESS (collect-all harness + the true red list local AND CI, seq-204 ruling 2). ⚠ CORRECTED at seq-205/seq-209: main's CI is NOT vacuously green, it is RED — the last completed runs concluded failure with 23 jobs executing and only markdownlint skipped, four of them failing (commission-manifest, verify, security, rust-windows). And `test_commission_manifest.sh` is rc=0 LOCALLY (69 PASS) while its CI job fails — a genuine local-to-CI divergence, not a local red. Publish gate (i) (seq-202) is therefore NOT met today. Establishing the true CI red list, and explaining that divergence, belongs to Slice 39.5 (seq-204 ruling 2, seq-206).) now exists. Slice 30 (H7) depends on 10/15/20/25. **AC-079 is PRE-SIGNED** — the HITL signed off on the accumulated governed-surface delta (Slices 5d + 10b + 15b + 15d) on 2026-07-25 (master F-34), pinned to the content of `src/conformance/governed-surface-allowlist.json`; any diff to that file re-opens it (the T1e pin). Pre-signing is NOT minting: AC-079 is minted and recorded as SIGNED at Slice 40 (§4 #1). **Publish is gated by the separate HITL publish gate, not by this AC.**<!-- END GENERATED release-state:0.8.20:status-unblocks --> |
-| **Immediate next action** | **Commission "Slice 39.5" (`R-20-HARNESS`)** — brief `dev/plans/runs/0.8.20-slice-39.5-commission-brief.md`, design of record `dev/design/0.8.20-slice-39.5-collect-all-test-harness.md`. ✅ **`SLICE-ID-HARDENING` COMPLETE — LANDED `2008f529`** (ff, no merge; `seq-214`); close record **§22**. Order (`seq-204`): **(1) ✅** → **(2) 39.5 ← NEXT** → **(3) Slice 40 (`R-20-PUB`)**. ⛔ Neither cross-cutting unit is a ladder slice; `commission-manifest.sh` **cannot generate either brief** (DOC-HYGIENE-3 / TC-86 precedent). ⚠ Slice 40's brief (`0.8.20-slice-40-commission-brief.md`) is a **SUBSTANCE DRAFT — regenerate after 39.5 lands**. **Slice 40 STOPS before any tag.** ⚠ **CI on `main` is RED**: publish gate (i) — every job **that executed** green (`seq-202`/`seq-211`) — **not met**; the reds are 39.5's baseline to report (`seq-206`), not Slice 40's to triage. Unruled: `publish`, `npm-dist-tag`. |
+| **Immediate next action** | **Commission Slice 40 (`R-20-PUB`) — the FINAL ladder slice.** ⛔ **Regenerate its brief first** (`scripts/commission-manifest.sh 0.8.20 40`). ⛔ **HITL: Slice 40 is NOT to be split** — structure it internally with checkpoints (hand-off `-B` §3a). ✅ Both cross-cutting units are done: `SLICE-ID-HARDENING` **`2008f529`** (§22) and **"Slice 39.5" `b6cc8fa6`** (§23). **⚠ A single HITL DISPOSITION DECISION is now DUE** on everything 39.5's baseline surfaced — that decision is what `seq-202` split the unit out to enable. ⛔ Neither cross-cutting unit is a ladder slice; `commission-manifest.sh` **cannot generate either brief** (DOC-HYGIENE-3 / TC-86 precedent). ⚠ Slice 40's brief (`0.8.20-slice-40-commission-brief.md`) is a **SUBSTANCE DRAFT — regenerate after 39.5 lands**. **Slice 40 STOPS before any tag.** ⚠ **CI on `main` is RED**: publish gate (i) — every job **that executed** green (`seq-202`/`seq-211`) — **not met**; the reds are 39.5's baseline to report (`seq-206`), not Slice 40's to triage. Unruled: `publish`, `npm-dist-tag`. |
 
 **Slices 0, 5, 10, 15 close records** are §11 (Slice 5), §12 (Slice 10), §13 (Slice 15b — TC-34 only; the
 registry/EAV/TC-33 remainder that also landed in the keystone `a2022957` is summarised in §8 and in
@@ -2157,3 +2157,122 @@ three-round cap.
 > that is merely being TALKED ABOUT, so any document that discusses the mechanism — a codex transcript, a
 > close record, a design doc, a hand-off — is a landmine. A rule of "just don't quote it" is exactly the
 > kind of guidance that fails on the next person, and it already failed on the Steward within minutes.
+
+---
+
+## 23. "Slice 39.5" (`R-20-HARNESS`) close — collect-all harness + the true red list (cross-cutting)
+
+**LANDED `b6cc8fa6`** — fast-forward ref-to-ref push, **no merge commit**, off branch
+`0.8.20-slice-39.5-harness`. **Not a ladder slice**; `next_slice` stays **40**. Commissioned `seq-215`,
+landed `seq-218`. Brief `dev/plans/runs/0.8.20-slice-39.5-commission-brief.md` (v2), design of record
+`dev/design/0.8.20-slice-39.5-collect-all-test-harness.md`. Closure
+`dev/plans/runs/0.8.20-slice-39.5-output.json`. **codex §9 PASS, no findings, ZERO fix rounds.**
+
+### 23.1 ⭐ THE HEADLINE — the hidden-suite yield is effectively ZERO hard defects
+
+`seq-202` split this unit out because the 23-or-27 never-reached suites could have yielded "zero failures or
+fifteen", and that unbounded scope could not sit inside Slice 40. **The answer is zero.**
+
+`AGENT_VERBOSE=1 bash scripts/agent-test.sh`, real entry point, **rc=1**:
+`registered=35 ran=35 passed=31 failed=4 skipped=0 excluded=0`
+
+| suite | rc | disposition |
+|---|---|---|
+| `test-check-governed-surface-pin` | 1 | pre-existing, **Slice 40's** (stale provenance commit `427d2712`) |
+| `test-actionlint-fixture` | 1 | pre-existing, **Slice 40's** |
+| `test-rust` | 101 | **newly reached** — characterised **FLAKE ~29%**, not a defect (§23.3) |
+| `test-python` | 3 | **UNKNOWN, not a red** — the fourth state (§23.4) |
+
+**Steward-independent re-run at the landed tip: `passed=32 failed=3`** — the delta is *exactly* `test-rust`,
+which passed. **That is empirical confirmation of the flake characterisation**, not a second opinion.
+
+**Consequence for Slice 40: it is materially de-risked.** No unknown backlog of hard failures is waiting.
+
+### 23.2 The TRUE CI red list — PR #167, run `30566757420`, head `c2728ec8`
+
+`release.yml` was **never dispatched** (the PR route, per brief §3).
+
+> ### ⚠ COUNT CORRECTION — gate (i)'s denominator is **22, not 23**
+>
+> **23 total job runs = 17 success + 5 failure + 1 skipped ⇒ 22 EXECUTED.** Verified from `gh` by the
+> Steward. The commission brief said *"23 executed / 1 skipped"*, which is arithmetically impossible —
+> **a Steward error**. Since `seq-211` made gate (i) read *"every job that **EXECUTED**"*, the denominator
+> matters. Also **five** failures, not the four the record carried.
+
+| job | failing step | verdict |
+|---|---|---|
+| `commission-manifest` | recurrence guard (fixture arms) | ✅ **CAUSE SOLVED — §23.5** |
+| `verify` | **Bootstrap dev tooling** | 7 pyright errors; **real work never runs ⇒ true state UNKNOWN, not green** |
+| `security` | **Bootstrap dev tooling** | same 7; same consequence |
+| `rust-windows` | `cargo test --workspace` | `tc57_worker_side_commit_pressure_governed` — `seq-206`, reported only |
+| `rust-macos` | `cargo test --workspace` | **the same flake as local** — **not** a branch regression |
+
+### 23.3 `test-rust` — characterised, not reported raw
+
+Failure is `t_s34_dump_mutations_lock_held_exits_71`, panicking
+`engine open (lock holder): DatabaseLocked { holder_pid: … }`. The test intends to *be* the lock holder; a
+sibling test in the same binary took the lock first. **Parallel-test interference, not a code defect.**
+Measured **1/6 isolated re-runs, 2/7 including the harness run ≈ 29%**, matching **TC-72**. Not chased, not
+fixed. ⚠ **It reddens CI at random on the publish path** — the correct fix is **serialising the
+lock-holder tests**, not a retry.
+
+### 23.4 `test-python` — the FOURTH report state
+
+Recorded as **UNKNOWN — requires the sanctioned rebuild**, never FAILED. Read-only it emits 40 collection
+errors that are all one stale-artifact `ImportError` (**TC-136**). **Recording it as a red would have put a
+false red into the exact document the HITL disposition decision is made from.**
+
+**Two named holes in the local list, stated as such:** the venv-gated suites cannot be reached from a
+worktree because the only way to satisfy them is the rebind the repo forbids; and `test-python` is
+uninterpretable without a rebuild nobody may perform mid-unit. **A list that names what it could not reach
+beats one that looks complete.**
+
+### 23.5 ✅ The local↔CI divergence is SOLVED
+
+`commission-manifest`'s checkout **declares no `fetch-depth`, so it defaults to depth-1.** Arm 11d recovers
+a pre-change generator revision from the **real repo's git history** (`test_commission_manifest.sh:958`);
+in a depth-1 clone that revision does not exist. ⚠ **The mktemp fixture arms DO pass in CI** — the brief's
+warning not to inherit the blanket "shallow checkout" hypothesis was well-aimed: the hypothesis is right,
+but only for the narrower, correct reason. **One-line fix (`fetch-depth: 0`), in Slice 40's territory,
+left untouched.**
+
+### 23.6 Acceptance evidence
+
+- **AC 2 both directions:** non-zero `rc=1` (§23.1). Zero-direction as a **mechanism** through the real
+  unmodified entry point with one explicit filter: **`rc=0`**, `registered=35 ran=31 passed=31 excluded=4`,
+  with a loud banner. The flag is **argv-only, never env-readable, never a default**; an unmatched label
+  exits 2.
+- **AC 4 crash:** `FAIL test-crash-demo (exit=137)` ⇒ overall **rc=1**, named in `FAILED SUITES:`.
+  137 = 128+9. Registration transient and reverted; **no residue committed** (Steward-verified).
+- **AC 4 timeout — DEFERRED as a gap, not built.** Zero `timeout` matches in either harness file.
+  Recommendation carried: budget from the measured 450 s `test-rust`, and make a timeout record **FAIL,
+  never SKIP**.
+- **AC 6:** `cargo clippy --workspace --all-targets` **rc=0**; `cargo check --workspace --all-targets`
+  **rc=0**. **Post-rebase Steward sweep:** five suites + four gates all **rc=0**; `preflight --landing`
+  **PASS**.
+- **`run_capped`'s shared contract is INTACT** — `scripts/lib/agent-output.sh` **byte-identical** to main;
+  `agent-lint`/`agent-typecheck`/`agent-build`/`agent-lint-md` still call it (5/3/3/9), zero `run_suite`.
+  The collect-all wrapper is confined to `agent-test.sh` + the new `scripts/lib/agent-suite-run.sh`.
+- **TC-135 avoided:** the 2,388-line codex transcript is held **outside** the tree; zero 39.5 transcripts
+  tracked; `check-release-state-views.sh` **rc=0**.
+
+### 23.7 Findings handed to the Steward
+
+1. ⚠ **The permitted actionlint conversion revealed TWO defects, not one.** **All seven**
+   `publish-rust-t1..t7` tiers fail (only `t1` was ever visible) because the jobs call a wrapper instead of
+   inlining `cargo publish --dry-run -p`. **Independently**, the test's `t4`/`t5` names are **swapped**
+   versus the real jobs — a test that could silently mis-assert publish **order**, on the path to the first
+   real publish since `v0.8.9`. **Both are Slice 40's** (`seq-211`: the determination is Slice 40's to
+   make).
+2. **`seat-path-guard` makes legitimate test-environment provisioning under `src/**` unreachable from a
+   coordinating seat** — even a gitignored dependency symlink with zero tracked files. See **TC-121**.
+3. **The `rust-macos`/`test-rust` flake reddens CI at random on the publish path** (§23.3).
+
+### 23.8 ⚠ ONE HITL DECISION IS NOW DUE
+
+`seq-202` and `seq-206` both ruled that disposition of **everything** the baseline surfaces is **one
+decision taken once the full list exists**, not piecemeal. **The list now exists.** It comprises: the two
+Slice-40-owned red suites · the `test-rust`/`rust-macos` flake · `test-python`'s UNKNOWN state · the seven
+pyright errors blocking `verify` and `security` (**and the TC-137 lead that five of them are stub-vs-source
+drift in a tracked file**) · `rust-windows`/`tc57` · and the solved `commission-manifest` divergence. **All
+of it bears on publish gate (i), which is NOT met.**
