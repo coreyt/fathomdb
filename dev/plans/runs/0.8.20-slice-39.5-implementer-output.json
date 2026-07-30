@@ -8,7 +8,9 @@
     {
       "sha": "ecc3775c",
       "subject": "test(0.8.20 R-20-HARNESS): RED-first recurrence guard for the collect-all conversion of agent-test.sh",
-      "files": ["scripts/tests/test_agent_test_collect_all.sh"]
+      "files": [
+        "scripts/tests/test_agent_test_collect_all.sh"
+      ]
     },
     {
       "sha": "3fd507b5",
@@ -18,9 +20,16 @@
         "scripts/agent-test.sh",
         "scripts/tests/test_actionlint_fixture.sh"
       ]
+    },
+    {
+      "sha": "e36315dc",
+      "subject": "fix(0.8.20 R-20-HARNESS): scope arm D's sourcer-scan to shell scripts only",
+      "files": [
+        "scripts/tests/test_agent_test_collect_all.sh"
+      ]
     }
   ],
-  "head_sha_after_witness_commit": "this witness file is itself committed on top of 3fd507b5; run `git log --oneline -1` on the branch tip for the exact sha",
+  "head_sha_after_witness_commit": "e36315dc is the branch tip after this fix; the witness commit itself is 28d97f43, one before it",
   "files_changed": {
     "new": [
       "scripts/lib/agent-suite-run.sh",
@@ -40,7 +49,7 @@
   ],
   "mission_scope_note": "Per the direct task instructions for this phase, this implementer converted agent-test.sh to collect-all-then-report and built the recurrence guard. It did NOT run the full baseline red list (local 31/34/35-count enumeration or the CI PR-route red list) -- the orchestrator does that after this commit, per the task's explicit statement ('You do NOT run the full baseline red list -- the orchestrator does that after you commit').",
   "counts_convention": {
-    "convention_source": "commission-brief §2 reconciliation, unchanged by this unit",
+    "convention_source": "commission-brief \u00a72 reconciliation, unchanged by this unit",
     "run_capped_call_sites_before": 35,
     "skip_notice_call_sites_before": 3,
     "total_bare_call_sites_before": 38,
@@ -155,7 +164,7 @@
   "next_steps_for_orchestrator": [
     "Run the full local baseline (all ~32 unconditional / ~35 distinct-label suites) to completion off this commit and produce the true red list, per design doc AC 5 / brief AC 1/2/5.",
     "Run the CI PR-route full run (design doc AC 7 / brief AC 7) to produce the true CI red list (expect 23 executed / 1 skipped) and confirm the four known reds (commission-manifest, verify, rust-windows tc57_worker_commit_pressure, security) plus report the newly-surfaced actionlint tier findings above.",
-    "codex §9 review of both commits (this implementer did not run codex; that is the reviewer phase per this task's boundaries).",
+    "codex \u00a79 review of both commits (this implementer did not run codex; that is the reviewer phase per this task's boundaries).",
     "Consider (for the disposition decision, not this unit) that test_actionlint_fixture.sh's release.yml assertion is stale against the current cargo-publish-if-new.sh wrapper shape for ALL seven tiers, and that its own t4/t5 tier-name pair is swapped relative to current job names -- two distinct, reportable defects revealed by this unit's permitted loop conversion."
   ]
 }
