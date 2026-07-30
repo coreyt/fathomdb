@@ -470,26 +470,39 @@ to the HITL.
 ### ▶ Immediate next
 
 <!-- BEGIN GENERATED release-state:0.8.20:plan-immediate-next -->
-**IMMEDIATE NEXT: Slice 40** (`R-20-PUB`) — verification + release readiness (publish-or-hold)
+**IMMEDIATE NEXT: Slice 39** (`R-20-DOC`) — Publish-facing documentation: MIT license reconciliation + a LICENSE that actually ships, the 0.8.20 CHANGELOG section, registry-facing READMEs, docs/ de-stale, dev/interfaces currency, docs.rs doc-comment corrections
 
-**Remaining ladder:** 40.<!-- END GENERATED release-state:0.8.20:plan-immediate-next -->
+**Remaining ladder:** 39 → 40.<!-- END GENERATED release-state:0.8.20:plan-immediate-next -->
 
-**Specified in full at §3a.** Re-scoped by the HITL on 2026-07-29 (steward `seq-153`). **No dependencies**;
-Slices 0/5/10/15/20/21/22/23/25/30 have all LANDED and the publish precondition (Slice 30) is **SATISFIED**.
+> ⚠ **This prose block previously described Slice 31 and was inherited verbatim by every brief
+> generated from this anchor.** It carried the line *"Applies no dependency bump. Edits no manifest and
+> no lockfile"*, which directly contradicts the manifest work Slices 39 and 40 must perform. Rewritten
+> 2026-07-30 by the Steward. Slices 31/32/33 have all LANDED; their guardrails are history and are
+> recorded in §3a, not here.
 
-**Deliverables: requirements · acceptance criteria · design · RED tests. NO CODE** — the code is Slice 32,
-and running the tool is Slice 33. **Gate:** codex §9 reviews the req/AC/design and **FIX-*n* is complete
-before close**; there is **no X0-style HITL sign-off** on 31, 32 or 33.
+**Slice 39 (`R-20-DOC`) is the immediate next.** Minted 2026-07-30 under the HITL directive to get
+project / `dev/` / `docs/` documentation **not stale**, and the **MIT license ruling** (steward `seq-193`).
+**Depends on Slice 30** (LANDED — the publish precondition is **SATISFIED**).
 
-**Hard guardrails (§3a).** **Applies no dependency bump. Edits no manifest and no lockfile.** Nothing in
-0.8.20 changes a dependency version — the eventual survey is an **INPUT to 0.8.22**, which owns
-`napi 2→3`, `rusqlite 0.31→0.40 + sqlite-vec`, the `sqlite-vec 0.1.9` bump (`seq-151`) and the six
-Dependabot advisories (`seq-152`). **Carries no `R-20-xx` requirement id** (TC-76 precedent) — gate by TDD
-test name. **Touches no governed surface, no schema, no shipped code:** the allowlist must stay
-**byte-identical** (`check-governed-surface-pin.sh` exit 0) and **SCHEMA stays 24**.
+**Why it precedes Slice 40:** `scripts/verify-release-gates.sh` **check 4 hard-fails** without a CHANGELOG
+heading matching the version, and no `## 0.8.20` section exists. Slice 40's `workflow_dispatch` rehearsal
+therefore **cannot pass** until Slice 39 lands.
 
-**Design input of record:** `dev/plans/prompts/LIBRARY-BUMP-STEWARD.md` §1–2 is the manual loop this tool
-mechanizes; it is the closest thing to a requirements draft already in the repo.
+**Deliverables.** The four publishable manifests corrected **Apache-2.0 → MIT** to agree with the repo-root
+`LICENSE`; a license file that **actually ships** in all 7 crates, the wheel and both npm packages (none
+does today); a real **`## 0.8.20` CHANGELOG section** — including the `SearchHit.id` `u64`→`IdSpace` break,
+which is absent entirely, and a correction of the false *"Schema version 20 → 21"* line (the real span is
+**15 → 24**); registry-facing **READMEs**; `docs/` de-staled off 0.6.0; `dev/interfaces/*.md` currency
+(**TC-39**); and the docs.rs doc-comments that contradict shipped behaviour.
+
+**Guardrails.** **Changes `license` fields only — never a `version` field**; the `0.8.9 → 0.8.20` bump
+belongs to Slice 40. **Nothing in `.github/`** (Slice 40's exclusive territory this release). Governed
+surface **byte-identical** (`check-governed-surface-pin.sh` exit 0), **SCHEMA stays 24**, **zero eu7 runs**
+(F-28). **Carries no `R-20-xx` requirement id and mints no AC** — gate by test name and by the new
+license-consistency guard.
+
+**Then Slice 40 (`R-20-PUB`)** prepares the publish and **STOPS before any tag**. Publish itself remains
+the single unruled HITL decision.
 
 ---
 

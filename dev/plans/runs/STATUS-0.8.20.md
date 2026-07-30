@@ -23,7 +23,8 @@
 gates **re-verified by the Steward** (clippy 0, check 0, (A) pin 1/1, AC-041 3/3). **SCHEMA is now 24** (keystone
 step 24). Ledger tip **`3264114a`** (steward seq-98).
 
-**⚠ Slices 20 and 25 are NOW UNBLOCKED** — they depended on **R-20-PR**, which now exists on `origin/main`.
+*(**HISTORICAL**, 2026-07-24: "Slices 20 and 25 are NOW UNBLOCKED — they depended on **R-20-PR**, which now
+exists on `origin/main`." Both have since LANDED — 20c `841c307b`, 25 `83b1c818`.)*
 
 > **⚠ SUPERSEDED FRAMING — do not act on it.** Earlier revisions of this board described Slice 15 as
 > "PARTIAL / IN PROGRESS (TC-34 only; R-20-PR/R-20-EAV/TC-33 not started)" and Slices 10 and 15 as "not landed."
@@ -31,7 +32,10 @@ step 24). Ledger tip **`3264114a`** (steward seq-98).
 > close records (§11 Slice 5, §12 Slice 10, §13 Slice 15b) are retained **as history**; their "not landed" /
 > "Slice 15 OPEN" banners describe the on-branch state at the time they were written, **not** current truth.
 
-**Last updated:** 2026-07-29 (**Slice 31 LANDED — `d0287620`; Library Sweep #3 leg 1/3 — SBOM-survey tool spec + 23 RED tests**; close record §20. Prior: Slice 23 `30102ecd`, Slice 21 `77be504b` §18, Slice 30 `9b3ed0e3` §17).
+**Last updated:** 2026-07-30. **Library Sweep #3 COMPLETE** — Slices 31 `d0287620` (close record §20), 32
+`31d33293`, 33 `f02dc5b4`. **DOC-HYGIENE-3 COMPLETE** — `fd281358` + `85d44c74`. **Slice 34 was CANCELLED**
+(`seq-182`) and **PARKED at 0.8.21** (`seq-183`) — it is **NOT in this ladder**. **Ladder remaining: 39 → 40.**
+(Prior lands: Slice 23 `30102ecd`, Slice 21 `77be504b` §18, Slice 30 `9b3ed0e3` §17.)
 
 ---
 
@@ -39,10 +43,10 @@ step 24). Ledger tip **`3264114a`** (steward seq-98).
 
 | | |
 |---|---|
-| **Slice in flight** | **NONE — Slice 31 LANDED (`d0287620`).** Library Sweep #3 **leg 1 of 3**: the SBOM/dependency-survey tool's **requirements + 23 acceptance criteria + design + RED tests**. **NO implementation code** (that is Slice 32) and **no survey run** (Slice 33). **23 failed / 0 passed / 0 skipped / 0 errors** — RED by construction, each test failing inside its own body naming its criterion, and wired into **no gate at all** (not CI, not `agent-test.sh`, not `ruff`, not any pytest config), so a permanently-failing suite on `main` turns nothing red. **codex §9: 7 rounds, 12 findings, ZERO repeats** — the same-finding bound of 3 never engaged; round 6 hit the **TC-82 cap** and halted to the Steward, who ruled the rounds productive and authorized **one bounded round 7** with the exit pre-committed (`seq-162`); **round 7 TERMINAL-CLEAN**. **Governed-surface delta ZERO** (blob `93ef3a86` byte-identical, pin exit 0, never tripped); **SCHEMA stays 24**; **no dependency bump, no manifest or lockfile touched**. Prior: 23 (`30102ecd`), 22 (`572475f2`, §19), 21 (`77be504b`, §18), 30 (`9b3ed0e3`, §17 — publish precondition). |
-| **Status** | **Slices 0, 5, 10, 15 all COMPLETE and LANDED on `origin/main`** (header table). The keystone landed **R-20-PR + R-20-EAV + `filterable` pre-KNN + TC-33 + TC-34 + Finding-1 (A) + `#[non_exhaustive] SearchFilter`**; codex §9 **terminal-clean**; gates re-verified by the Steward (clippy 0, check 0, (A) pin 1/1, AC-041 3/3). **SCHEMA 24.** |
-| **Unblocks** | <!-- BEGIN GENERATED release-state:0.8.20:status-unblocks -->**Slices 40 are NOW UNBLOCKED** — the Slice 33 landing (f02dc5b4) — Library Sweep #3 COMPLETE — and the cancellation of Slice 34 (steward seq-182) (Slice 34 (EngineError #[non_exhaustive]) was CANCELLED by the HITL, reversing seq-178: none of the TC-103 error-taxonomy work happens in 0.8.20. The remainder is the DOC-HYGIENE-3 remainder (TC-53 + TC-92, cross-cutting, not a ladder slice) then Slice 40 — TC-16 determination FIRST (seq-118), then the #11-full publish rehearsal, then the AC-079 mint, then the PUBLISH gate, which is the release's only unruled decision.) now exists. Slice 30 (H7) depends on 10/15/20/25. **AC-079 is PRE-SIGNED** — the HITL signed off on the accumulated governed-surface delta (Slices 5d + 10b + 15b + 15d) on 2026-07-25 (master F-34), pinned to the content of `src/conformance/governed-surface-allowlist.json`; any diff to that file re-opens it (the T1e pin). Pre-signing is NOT minting: AC-079 is minted and recorded as SIGNED at Slice 40 (§4 #1). **Publish is gated by the separate HITL publish gate, not by this AC.**<!-- END GENERATED release-state:0.8.20:status-unblocks --> |
-| **Immediate next action** | **Sequence: 40 — the last slice.** **DOC-HYGIENE-3 is COMPLETE** — machinery half `fd281358` (TC-88/89/94/100), remainder `85d44c74` (TC-53/92), five codex rounds to terminal-clean. **Slice 34 (`EngineError #[non_exhaustive]`) was CANCELLED** (`seq-182`, reversing `seq-178`) — **no TC-103 work in 0.8.20**; the whole question moves to **0.9.0 or later**, since 0.8.22 is not a declared consumer break either. **Library Sweep #3 COMPLETE** — 31/32/33 all LANDED (`d0287620`, `31d33293`, `f02dc5b4`); the ONLINE survey of record is at `dev/plans/runs/0.8.20-slice-33-library-sweep-3-FINDINGS.md`. **Slices 31 + 32 LANDED** (`d0287620`, `31d33293`); the SBOM tool is built and 24/24 GREEN. **33** = run it + write the survey (**ascertain, never implement**) + the TC-115 install smoke. **34** = `EngineError` `#[non_exhaustive]`, TC-103(b) pulled back at `seq-178` — adding it is **itself breaking**, and 0.8.20 is the **last breaking venue before 0.9.0**. ⚠ **No leg applies a dependency bump or edits a manifest/lockfile**; the survey is an input to **0.8.22**. ⛔ **The SBOM suite is NOT being wired into CI** (`seq-172`, ruled out — GREEN does not re-open it). **DOC-HYGIENE-3 remainder = TC-53 + TC-92.** **PUBLISH is the only unruled decision.** **Commission via `scripts/commission-manifest.sh 0.8.20 <slice>`.** |
+| **Slice in flight** | **NONE.** The most recent land is **Slice 33 (`f02dc5b4`)** — **Library Sweep #3 COMPLETE** (31 `d0287620` · 32 `31d33293` · 33 `f02dc5b4`). **DOC-HYGIENE-3 is also COMPLETE** (`fd281358` machinery + `85d44c74` remainder, TC-53/TC-92). **Next: Slice 39 (`R-20-DOC`), then Slice 40.** ⛔ **Slice 34 is CANCELLED and is NOT in this ladder** (`seq-182`; parked at 0.8.21, `seq-183`) — route no work through it. Slice 31's close record (23 RED tests wired into **no gate**, 7 codex rounds / 12 findings / zero repeats, terminal-clean) is **§20**. **SCHEMA stays 24**; governed-surface allowlist byte-identical since 15d, `check-governed-surface-pin.sh` exit 0. Prior: 23 (`30102ecd`), 22 (`572475f2`, §19), 21 (`77be504b`, §18), 30 (`9b3ed0e3`, §17 — publish precondition SATISFIED). |
+| **Status** | **Every ladder slice through 33 is COMPLETE and LANDED on `origin/main`** — 0, 5, 10, 15, 20 (+20c), 21, 22, 23, 25, 30, 31, 32, 33 — plus the non-ladder DOC-HYGIENE-3. **SCHEMA 24.** The **batched governed-surface delta is SIGNED** (HITL, steward `seq-157`); **AC-079 mints into `dev/acceptance.md` at Slice 40** — minting is not signing. **Remaining ladder: 39 → 40**, then the separate HITL **PUBLISH** gate — the release's only **`halts_run`** unruled decision. *(`decisions.unruled` currently holds **TWO** items: `publish`, plus the `npm-dist-tag` rider that rides with it — §4.)* |
+| **Unblocks** | <!-- BEGIN GENERATED release-state:0.8.20:status-unblocks -->**Slices 39 are NOW UNBLOCKED** — the Slice 33 landing (f02dc5b4) — Library Sweep #3 COMPLETE — DOC-HYGIENE-3 COMPLETE, and the cancellation of Slice 34 (steward seq-182) (Slice 39 (R-20-DOC) is next: publish-facing documentation — the MIT license reconciliation (seq-193), a LICENSE that actually ships, and the 0.8.20 CHANGELOG section. It runs BEFORE Slice 40 because scripts/verify-release-gates.sh check 4 hard-fails without a CHANGELOG heading matching the version, so Slice 40's workflow_dispatch rehearsal cannot pass until 39 lands. Then Slice 40 (R-20-PUB): the TC-16/F-30 determination FIRST (seq-118 — establish WHICH SIDE is stale, do not assume), the manifest bump including the undecided Axis-E call, local-dry-run, the AC-079 + AC-080 mints, and the #11-full rehearsal dispatched from main AFTER landing. Slice 40 STOPS before any tag. Slice 34 was CANCELLED (seq-182) and parked at 0.8.21 (seq-183) — route no work through it. TWO decisions remain unruled: PUBLISH (halts the run) and the npm dist-tag label (does not).) now exists. Slice 30 (H7) depends on 10/15/20/25. **AC-079 is PRE-SIGNED** — the HITL signed off on the accumulated governed-surface delta (Slices 5d + 10b + 15b + 15d) on 2026-07-25 (master F-34), pinned to the content of `src/conformance/governed-surface-allowlist.json`; any diff to that file re-opens it (the T1e pin). Pre-signing is NOT minting: AC-079 is minted and recorded as SIGNED at Slice 40 (§4 #1). **Publish is gated by the separate HITL publish gate, not by this AC.**<!-- END GENERATED release-state:0.8.20:status-unblocks --> |
+| **Immediate next action** | **Commission Slice 39 (`R-20-DOC`) — publish-facing documentation.** Scope: **MIT license reconciliation + a LICENSE that actually ships**, the **0.8.20 CHANGELOG section**, registry-facing READMEs, `docs/` de-stale, `dev/interfaces` currency, docs.rs doc-comment corrections. ⚠ **LICENSE ruling (`seq-193`): the project is MIT.** The repo-root `LICENSE` (MIT, `ff8639e4`) is authoritative; the **four publishable manifests that declare Apache-2.0 are WRONG** (`Cargo.toml:30`, `src/python/pyproject.toml:11`, `src/ts/package.json:5`, `src/ts/npm/linux-x64-gnu/package.json:5`) and must be corrected to MIT **before the 0.8.20 tag** — crates.io versions are immutable. **39 runs BEFORE 40:** `verify-release-gates.sh` check 4 hard-fails without a CHANGELOG heading matching the version, so the Slice-40 rehearsal cannot pass until 39 lands. **Then Slice 40** — **TC-16 determination FIRST** (`seq-118`), then the #11-full publish rehearsal, then the **AC-079 mint**, then the **PUBLISH** gate. ⛔ **Slice 34 is CANCELLED — route no work through it** (`seq-182`, reversing `seq-178`); all `#[non_exhaustive]` work is **PARKED at 0.8.21** (label-only build) and **publishes at 0.8.22** (`seq-183`). ⛔ **ZERO eu7 runs — any backend, any N** (F-28 · `seq-84`): the `#[ignore]` on `eu7_real_corpus_ac` **stays** and must **NOT** be opted around at Slice 40 or anywhere else. ⛔ **The SBOM suite is NOT being wired into CI** (`seq-172`, ruled out — GREEN does not re-open it). ⚠ **No 0.8.20 slice applies a dependency bump or edits a manifest/lockfile** *(the Slice-39 license-field correction is the one deliberate manifest exception, ruled at `seq-193`)*; the Slice-33 survey (`dev/plans/runs/0.8.20-slice-33-library-sweep-3-FINDINGS.md`) is an input to **0.8.22**. **PUBLISH is the only `halts_run` unruled decision** — `decisions.unruled` also carries the **`npm-dist-tag`** rider (partial platform matrix; see §4), which is decided **with** publish, not separately. **Commission via `scripts/commission-manifest.sh 0.8.20 <slice>`.** |
 
 **Slices 0, 5, 10, 15 close records** are §11 (Slice 5), §12 (Slice 10), §13 (Slice 15b — TC-34 only; the
 registry/EAV/TC-33 remainder that also landed in the keystone `a2022957` is summarised in §8 and in
@@ -67,25 +71,30 @@ by that ruling.
 | **22** | **Vector-arm consumer contract (R-20-VC)** — TC-67 (c) · TC-68 · decision #18 · #99 probe | 15,20 | **COMPLETE — LANDED `572475f2`** (merge). All four legs closed. **SCHEMA stays 24**; governed surface **byte-identical**, `check-governed-surface-pin.sh` **0**, the AC-079 pin **never tripped**; `check-c1-conformance.sh` **0** (26/26) — the Slice-30 publish precondition intact. **`#99` REPRODUCED and was LIVE** — `erase_source`/`purge` errored and left the vec0 row at rest; remediated engine-side. codex §9 **4 rounds**, one [P1], CLOSED. **X1 ran live before the land** (TS 250/250, Py 46/46). Close record **§19** |
 | **23** | **Spec-validation reject + carried-defect characterization (R-20-SV)** — the `fts`/`vector` reject · TC-90/TC-91 characterization | 22 | **COMPLETE — LANDED `30102ecd`** (merge). **Leg 1:** an `fts`/`vector` sub-object without the `searchable` role is now an **INVALID SPEC** rejected with **`EngineError::WriteValidation`** (HITL 2026-07-24, §11 item 4 (b); decision **#18**'s family, NOT re-opened), replacing accept-and-round-trip; validation precedes any mutation, so a mixed valid/invalid request is a total no-op. The **TC-71 runtime gate is preserved** — legacy `{filterable, vector}` rows at rest are unreachable by a configure-time reject, so nine pinned tests were **converted, not deleted**, and a legacy row's only remedies are ADD `searchable` or DROP (re-declaring its valid half alone is `ProjectionDestructive`) — asserted in **all three** languages. `dev/interfaces/{rust,python,typescript}.md` updated incl. the **overruled** accept-inert precedent; `cli.md`/`wire.md` carry no projection surface and were left alone. **Leg 2 — CHARACTERIZATION ONLY, NO FIX** (`seq-136`), engine source **byte-identical**: **TC-90 REPRODUCES**, and the TC-57-shaped protocol **alone would have filed a FALSE NEGATIVE** (paced **0/10** vs stress **10/10**, control 0/10) — the template needed a **stress arm**, and **reproduction, not rate**, is the bar (per-run count did not replicate: 5.9 vs 3.8 per 40). Mechanism captured not assumed: plain **`SQLITE_BUSY` (5)**, NOT 517, in 0 ms, busy handler invoked **zero** times; `BEGIN IMMEDIATE` transfer **measured**. Separate diagnosability defect: `Engine::transition` **never calls `emit_sqlite_internal_error`**, so the code is never produced at all. **TC-91(a)** 52.0 % governed vs 52.5 % anonymous (⇒ not the TC-57 race), falling to 0 as spacing goes 1 ms→25 ms; **(b)** forcing yields 86.4/96 duplicates while `failed` terminals are **0/10 runs** ⇒ terminal-state counting is **structurally blind**. **(a) is NOT proven to be (b), and the reason it cannot be closed by measurement IS (b).** Corrects a stale figure of record: **TC-68 took reopen probe cost to 0, not 45** (measured 0/90/0, 20/20). **Governed-surface delta ZERO** (byte-identical, pin **0**) — **23 was the last unit that could move it**. codex §9 **7 rounds / 4 fix rounds**; a terminal-clean round 1 was **deliberately not banked** (it never engaged the riskiest change) and the targeted re-review found a [P2] + [P3]. Round-6 cap **halted to the Steward**, who ruled round 7 bounded with `#[ignore]` pre-committed as fallback; round 7 **closed it**. **X1 live before land** (TS 251/251, Py 268 passed/2 skipped/0 failed via a throwaway-venv wheel; shared `.venv` verified unrebound) |
 | **31** | **Library Sweep #3, leg 1/3** — SBOM-survey tool: req + AC + design + RED tests, **NO code**; **no requirement id** (TC-76) | — | **COMPLETE — LANDED `d0287620`**. Spec of record `dev/design/0.8.20-slice-31-sbom-survey-tool.md`: requirements, **23 acceptance criteria each bound 1:1 to a named test**, design. Suite `scripts/sbom-survey/tests/` is **23 failed / 0 passed / 0 skipped / 0 errors**, RED by construction and **wired into no gate**. Tier rules derived from `.github/dependabot.yml` rather than re-decided; discovery is `git ls-files`-derived so untracked manifests (the gitignored `/python/`) are structurally out of scope; the 8 `dev/release/fixtures` skew manifests are excluded by **tracked data**, auditably; the published-version lookup sits behind an **injectable seam** so the suite never needs the network and an unknown latest can never render as up-to-date. Slice 33's findings home ruled: `dev/plans/runs/0.8.20-slice-33-library-sweep-3-FINDINGS.md`. **Surfaced en route (TC-106):** `dev/tools/mermaid/package.json` is a tracked npm manifest under **no** configured Dependabot directory. codex §9 **7 rounds / 6 fix rounds**, terminal-clean. Close record **§20** |
-| 40 | Verification + release readiness (publish-or-hold); **TC-16 determination FIRST** (`seq-118`) | 5,30 | not started |
+| **32** | **Library Sweep #3, leg 2/3** — implement the SBOM-survey tool against Slice 31's RED tests. **CODE ONLY**; no bump, no manifest or lockfile edit; **no requirement id** (TC-76) | 31 | **COMPLETE — LANDED `31d33293`**. 24/24 GREEN. Governed surface byte-identical; SCHEMA stays 24 |
+| **33** | **Library Sweep #3, leg 3/3** — RUN the tool, produce the dependency survey (**ascertain, never implement**) + the TC-115 install-then-run smoke; **no requirement id** | 32 | **COMPLETE — LANDED `f02dc5b4`**. Survey of record: `dev/plans/runs/0.8.20-slice-33-library-sweep-3-FINDINGS.md`. Output is an **input to 0.8.22**; no bump applied |
+| **39** | **Publish-facing documentation (R-20-DOC)** — **MIT license reconciliation + a LICENSE that actually ships** · the **0.8.20 CHANGELOG section** · registry-facing READMEs · `docs/` de-stale · `dev/interfaces` currency · docs.rs doc-comment corrections | 30 | **NOT_STARTED — the immediate next slice.** ⚠ **The project is MIT** (`seq-193`): the repo-root `LICENSE` (`ff8639e4`) is authoritative and the **four manifests declaring Apache-2.0 are WRONG** — `Cargo.toml:30`, `src/python/pyproject.toml:11`, `src/ts/package.json:5`, `src/ts/npm/linux-x64-gnu/package.json:5` — and must read MIT **before the tag** (crates.io versions are immutable). Today **no artifact ships a LICENSE file at all** (verified via `cargo package --list`, `npm pack --dry-run`, and the built wheel `METADATA`). **Runs BEFORE 40** because `verify-release-gates.sh` check 4 hard-fails without a CHANGELOG heading matching the version |
+| 40 | Verification + release readiness (publish-or-hold); **TC-16 determination FIRST** (`seq-118`) | 5,30,39 | not started |
 
-**Ladder remaining: 40 → ⟨batched
-governed-surface decision⟩ → 40, run SEQUENTIALLY** (re-sequenced HITL 2026-07-29, steward `seq-153`,
-superseding the `seq-129`/F-36 order; parallel was declined earlier at F-34). Slices
-**0/5/10/15/20/21/22/23/25/30 are all LANDED**. **TC-86 is DONE (`2956d98d`).** **Immediate next: Slice 31**
-— **RE-SCOPED** at `seq-153` to leg 1/3 of Library Sweep #3: the SBOM/dependency-survey tool's
-**req + AC + design + RED tests, NO code**. Specified at `plan-0.8.20.md` **§3a**; no dependencies.
-**32** = code only · **33** = run-and-survey (**ascertain, never implement**; output is an input to
-**0.8.22**). **No leg applies a dependency bump or touches a manifest or lockfile in 0.8.20.**
+**Ladder remaining: 39 → 40, run SEQUENTIALLY**, then the separate HITL **PUBLISH** gate (with its
+`npm-dist-tag` rider — §4). Slices
+**0/5/10/15/20/21/22/23/25/30/31/32/33 are all LANDED**, as is the non-ladder **DOC-HYGIENE-3**
+(`fd281358` + `85d44c74`). **TC-86 is DONE (`2956d98d`).** ⛔ **Slice 34 is NOT in this ladder** — it was
+**CANCELLED** at `seq-182` (reversing `seq-178`) and all `#[non_exhaustive]` work is **PARKED at 0.8.21**
+(odd micro ⇒ label-only build) to **publish at 0.8.22** (`seq-183`). The **batched governed-surface decision
+is no longer a pending ladder stop** — it was **SIGNED** at `seq-157`; only the **AC-079 mint** remains, and
+that happens inside Slice 40. **No 0.8.20 slice applies a dependency bump**; the one deliberate manifest edit
+is Slice 39's Apache-2.0 → MIT license-field correction (`seq-193`).
 
 **Band occupancy (plan §5):** the 20 band holds 21, 22 and 23 — **three of four slots used, one spare**. The
-**30 band** (gaps **31–39**, nine slots) holds **31, 32 and 33** — Library Sweep #3's three legs (`seq-153`)
-— **three of nine used, six spare**. The tripwire stays at band overflow (**TC-77**), *conditionally*: if 21
-or 22 spawns two or more further slices, it returns to the HITL. **Raised unprompted at `seq-153` and NOT
-TRIPPED** — 32 and 33 were spawned by an HITL scope ruling on 31, not by 21 or 22, so the trigger does not
-apply, and neither band has overflowed.
+**30 band** (gaps **31–39**, nine slots) holds **31, 32, 33** — Library Sweep #3's three legs (`seq-153`) —
+**and 39** (R-20-DOC), so **four of nine used, five spare**. *(Slice 34 was minted into this band at `seq-178`
+and then **CANCELLED** at `seq-182`; it does not occupy a slot.)* The tripwire stays at band overflow
+(**TC-77**), *conditionally*: if 21 or 22 spawns two or more further slices, it returns to the HITL. **Raised
+unprompted at `seq-153` and NOT TRIPPED** — 32 and 33 were spawned by an HITL scope ruling on 31, not by 21
+or 22, so the trigger does not apply, and neither band has overflowed.
 
-**Merge discipline (still binding for 20/25).** Slices touching `engine/src/lib.rs` **serialize the merges**
+**Merge discipline (still binding for every remaining slice).** Slices touching `engine/src/lib.rs` **serialize the merges**
 (rebase-then-merge one at a time). **One `maturin develop` at a time** (shared `.venv` mutex) — and **never from
 a worktree**. **Max 3 concurrent worktrees.** Canary the first launch of each new work-type before parallelizing.
 
@@ -100,20 +109,34 @@ reserved to the same initiative** (`:1297`). Highest **defined, non-reserved** A
 
 | AC | Covers | Status |
 |---|---|---|
-| **AC-079** | Governed-surface delta (erasure API) vs the conformance allowlist | **BUILT, ⚠ AWAITING HITL SIGN-OFF — NOT SIGNED** (below) |
+| **AC-079** | Governed-surface delta (erasure API + the accumulated 5d/10b/15b/15d delta) vs the conformance allowlist | **BUILT · ✅ SIGNED** — pre-signed by the HITL 2026-07-25 (master **F-34**) and the batched governed-surface decision **SIGNED at steward `seq-157`** (2026-07-29). **MINTS into `dev/acceptance.md` at Slice 40** — minting is not signing (below) |
 | **AC-080** | Erasure completeness at rest — body absent from every row-owned projection **and** `-wal` bytes | **BUILT, GREEN** (below) |
 | **AC-041** | REQ-054 five-name recovery denylist | **VERIFIED GREEN, denylist UNCHANGED at five** (below) |
 
-**AC-079 — what was built, and what is still owed.** Slice 5d added to the *positive allowlist* in
+**AC-079 — what was built, what was signed, and what is still owed.** Slice 5d added to the *positive allowlist* in
 `src/conformance/governed-surface-allowlist.json`: the command verb **`erase_source` / `eraseSource`**
 (`Engine.erase_source` in Python, `Engine.eraseSource` in TypeScript) plus the non-command types
 **`EraseReport`** (Py + TS), the Rust facade's net-new **`SourceId`** provenance newtype, and **`ExciseReport`**
 moved from the `operator`-gated re-export block to the always-present one (it is `erase_source`'s return type).
 `excise_source` **remains CLI-only** and is deliberately **not** allowlisted — it stays the recovery seam and
 alone may address the engine's reserved `_`-prefixed namespace.
-**The allowlist `_comment` records this delta verbatim as `AWAITING HITL SIGN-OFF, NOT SIGNED`.** It was written
-so the branch is not red, **not** as an approval. `governed_surface` is 3/3 and TS surface tests are green
-*against a proposal*. **Nothing may be published until this is signed** — see §4 #7.
+**✅ SIGNED — this is no longer a proposal, and it does not block publish.** The HITL **pre-signed** the
+accumulated governed-surface delta on **2026-07-25** (master **F-34**), pinned to the *content* of
+`src/conformance/governed-surface-allowlist.json`, and the **batched governed-surface decision was SIGNED at
+steward `seq-157`** (2026-07-29): **seven net-new allowlist members = four logical verbs**
+(`erase_source`/`eraseSource` · `read.crossed_boundary_since`/`read.crossedBoundarySince` ·
+`configure_projections`/`configureProjections` · `read.projections`) plus the non-command types.
+`recovery_denylist` is **UNCHANGED at five** ⇒ AC-041 unaffected. Any diff to the allowlist file **re-opens**
+the gate (the **T1e** content pin). **Publish is gated by the SEPARATE HITL publish gate, not by AC-079.**
+
+**What is still owed is a MINT, not a signature.** AC-079 is minted into `dev/acceptance.md` and recorded as
+SIGNED at **Slice 40** — see §4 #1 and the §4 CLOSED block.
+
+⚠ **Do not "fix" the allowlist `_comment`.** The JSON's own `_comment` still contains the literal string
+`AWAITING HITL SIGN-OFF, NOT SIGNED` (×4). That is **deliberate**: `check-governed-surface-pin.sh` hashes the
+**raw bytes** of the file, so the prose correction requires a coordinated re-issue of
+`scripts/governed-surface-pin.json`. The literal is load-bearing for the **T1e byte pin** exactly as it stands.
+**It is a stale comment inside a signed artifact, not an open sign-off** — see the OWED item in §4.
 
 **AC-080 — built and green.** `erasure_completeness` 10/10 asserts the erased body is absent from **every**
 row-owned projection (registry-driven, incl. `search_index_v2`, the table that previously retained the body)
@@ -123,9 +146,10 @@ row-owned projection (registry-driven, incl. `search_index_v2`, the table that p
 the five REQ-054 names** — `["recover","restore","repair","fix","rebuild"]`. **`erase_source` is not one of
 them**, so the denylist is untouched by this slice.
 
-**Slice 10 minted NO AC.** Its governed-surface delta is recorded as a **PROPOSAL, NOT SIGNED** (§12.5), the same
-shape Slice 5d used. **`AC-079` remains available and unminted** — Slice 5's delta is still awaiting the sign-off
-that would consume it, so Slice 10 did not mint over it. **AC-041 is GREEN on the Slice-10 branch too**, verified
+**Slice 10 minted NO AC.** Its governed-surface delta was recorded at the time as a **PROPOSAL, NOT SIGNED**
+(§12.5), the same shape Slice 5d used. ***That proposal has since been SIGNED*** — `read.crossed_boundary_since`
+/ `read.crossedBoundarySince` are inside the `seq-157` signed set. **`AC-079` remains unminted** — the mint
+happens at Slice 40 — but it is **no longer awaiting a signature**. **AC-041 is GREEN on the Slice-10 branch too**, verified
 **live in both bindings**: `test_no_recovery_surface.py` and `no-recovery-surface.test.ts` ran inside the
 zero-failure suite runs of §12.3. **Denylist unchanged at exactly five.**
 
@@ -144,36 +168,60 @@ Everything else is tracked by **requirement id + TDD test name** per the locked-
 > `seq-106` ruling 5): Memex adapts to 0.8.20's surface and **no confirmation is to be sought**. The rows are
 > retained as the decision record; **do not act on them as open**.
 >
-> **THE LIVE OPEN SET IS EXACTLY <!-- BEGIN GENERATED release-state:0.8.20:status-live-open-count -->ONE<!-- END GENERATED release-state:0.8.20:status-live-open-count -->** (was TWO until 2026-07-29 — the count is
+> **THE LIVE OPEN SET IS EXACTLY <!-- BEGIN GENERATED release-state:0.8.20:status-live-open-count -->TWO<!-- END GENERATED release-state:0.8.20:status-live-open-count -->** (was TWO until 2026-07-29 — the count is
 > generated from `decisions.unruled`. It went TWO → SIX on 2026-07-29 when four HITL items that had existed
 > only in the ledger and in session transcripts were written INTO the single writer at `seq-150` — **the
 > count grew because the record got honest, not because new work appeared** — then SIX → **ONE** across that
-> same day as the HITL ruled five of them: `seq-151`, `seq-152`, `seq-155`, `seq-156`, `seq-157`):
+> same day as the HITL ruled five of them: `seq-151`, `seq-152`, `seq-155`, `seq-156`, `seq-157`; then
+> **ONE → TWO** on 2026-07-30 when the Slice-40 brief review surfaced the npm dist-tag question and it was
+> written into the single writer — again, **the record got honest, no new work appeared**):
 >
-> 1. **PUBLISH** (Slice 40) — the only remaining item, and the only **`halts_run: true`** one. HITL prefers
+> 1. **PUBLISH** (Slice 40) — the substantive item, and the only **`halts_run: true`** one. HITL prefers
 >    publish-after-40 and explicitly deferred (`seq-135`); **not a ruling, and not authorization to bump a
 >    manifest or cut a tag.**
+> 2. **npm dist-tag for the 0.8.20 publish** (Slice 40 / publish, **`halts_run: false`**) — the platform
+>    matrix is **PARTIAL**: gated to `x86_64-unknown-linux-gnu` (**R-REL-4e**), with macOS/Windows targets
+>    commented out as DEFERRED-TO-FOLLOW-ON (**R-REL-4d**). `release.yml:21-26` states the label is an **HITL
+>    confirmation**, because publishing partial coverage under `latest` would serve an incomplete matrix to
+>    every consumer. Surfaced by the Slice-40 brief adversarial review, 2026-07-30; it is a **rider on the
+>    publish gate**, not a separate ladder stop.
 >
-> **CLOSED 2026-07-29 — cited, never re-opened, never re-confirmed:**
+> **CLOSED 2026-07-29/30 — cited, never re-opened, never re-confirmed:**
 >
 > - **Batched governed-surface — SIGNED** at **`seq-157`**. The delta: **7 net-new allowlist members = 4
 >   logical verbs** (`erase_source`/`eraseSource` · `read.crossed_boundary_since`/`read.crossedBoundarySince`
 >   · `configure_projections`/`configureProjections` · `read.projections`) plus non-command types;
 >   **`recovery_denylist` UNCHANGED at five** (AC-041 unaffected); `excise_source` stays CLI-only.
 >   **AC-079 mints at Slice 40**, still pinned to this content — any diff re-opens it (T1e). ⚠ **PUBLISH IS
->   NOT AUTHORIZED BY THIS SIGNATURE.** ⚠ **OWED:** the `_comment` still reads `AWAITING HITL SIGN-OFF, NOT
->   SIGNED` ×4; the fix needs a coordinated re-issue of `scripts/governed-surface-pin.json` and is **HELD
->   until Slice 31 lands** (its orchestrator is in flight, briefed to halt-and-escalate on any allowlist
->   change).
+>   NOT AUTHORIZED BY THIS SIGNATURE** (nor is publish blocked by AC-079 — it is gated by the separate HITL
+>   publish gate). ⚠ **OWED, and still owed:** the allowlist `_comment` still reads
+>   `AWAITING HITL SIGN-OFF, NOT SIGNED` ×4. That literal is **not** an open sign-off — it is stale prose
+>   inside a signed artifact, and it is **deliberately left byte-for-byte alone** because
+>   `check-governed-surface-pin.sh` hashes the raw bytes, so correcting it needs a coordinated re-issue of
+>   `scripts/governed-surface-pin.json`. **The "HELD until Slice 31 lands" condition is DISCHARGED** — Slice 31
+>   landed at `d0287620` and no orchestrator is in flight against the allowlist. The re-pin is now simply
+>   **unscheduled work owed**; its natural home is the **AC-079 mint at Slice 40**, and until then **no agent
+>   may edit that JSON**.
 > - **TC-98 — (a) FOR NOW** at **`seq-156`**. Accept `#18`'s one named exception. Nothing reclassified,
->   nothing minted, governed surface unchanged. **ACCEPTED, NOT ENDORSED — revisit at 0.8.22 as `TC-103`**,
->   bundled with the `EngineError` `#[non_exhaustive]` question and the sibling-condition asymmetry.
+>   nothing minted, governed surface unchanged. **ACCEPTED, NOT ENDORSED — revisit as `TC-103`**: parts (a)
+>   and (c) at **0.8.22**; part (b), the `EngineError` `#[non_exhaustive]` attribute, is **PARKED at 0.8.21**
+>   (built label-only) to **publish at 0.8.22** (`seq-183`). **None of it is 0.8.20 work** (`seq-182`).
 > - **`sqlite-vec` 0.1.9 (TC-76)** at **`seq-151`** — hold at `=0.1.7`; the 0.1.9 bump lands at **0.8.22**
 >   with `rusqlite 0.31→0.40`.
 > - **TC-93** at **`seq-152`** — publish with the six advisories open, no Slice 4x; they land at **0.8.22**.
 > - **TC-100 placement** at **`seq-155`** — **joins DOC-HYGIENE-3 as a SIXTH id** (TC-53, TC-88, TC-89,
 >   TC-92, TC-94, **TC-100**); **DoD consequence: DOC-HYGIENE-3 must verify with a before/after citation-set
->   diff across the landed slices.**
+>   diff across the landed slices.** *(DOC-HYGIENE-3 is now **COMPLETE** — `fd281358` + `85d44c74`.)*
+> - **Slice 34 — CANCELLED** at **`seq-182`** (reversing `seq-178`): **none** of the `EngineError`
+>   `#[non_exhaustive]` / TC-103 work happens in 0.8.20. **PARKED at 0.8.21** at **`seq-183`** — 0.8.21 is an
+>   odd micro ⇒ OOB label-only, so the attribute is **built there and published at 0.8.22**, which thereby
+>   becomes a declared breaking venue. **Slice 34 is not in the ladder; route no work through it.**
+> - **LICENSE — the project is MIT**, at **`seq-193`**. The repo-root `LICENSE` (MIT, `ff8639e4`) is
+>   authoritative; the **four publishable manifests declaring Apache-2.0 are WRONG** (`Cargo.toml:30`,
+>   `src/python/pyproject.toml:11`, `src/ts/package.json:5`, `src/ts/npm/linux-x64-gnu/package.json:5`) and
+>   must read MIT **before the 0.8.20 tag** — crates.io versions are immutable. A LICENSE file must also
+>   actually **ship** in every artifact; today **none** does. Forecloses Apache-2.0 and any publish that
+>   leaves manifest and file disagreeing. **Owned by Slice 39 (R-20-DOC).**
 >
 > Reserved-gap band overflow (`plan-0.8.20.md` §5) still halts. Authorization: master **F-34** · plan §11's
 > 2026-07-25 rulings block. **`seq-106`'s "two stops remain" is HISTORICAL** — it was true of the ladder
@@ -184,22 +232,25 @@ Everything else is tracked by **requirement id + TDD test name** per the locked-
 > hand-written while the count beside it is generated: change `decisions.unruled` and you MUST update both
 > in the same commit,** or the board will name a different number of items than its own count claims.*
 
+🕮 **Rows 1–6 below are the HISTORICAL DECISION RECORD of the 2026-07-19 Slice-0 X0 sign-off. They are all
+resolved. Read them as history; do not act on any of them as an instruction.**
+
 | # | Decision | Recommendation |
 |---|---|---|
-| 1 | **eu7 basis** (F-22) — no-op vs bounded re-baseline | **no-op, conditional on Slice-40 proof** (design §7). **Must be decided on CPU numbers only** — §6 |
+| 1 | **eu7 basis** (F-22) — no-op vs bounded re-baseline | 🕮 **HISTORICAL — SUPERSEDED. DO NOT ACT.** *Original recommendation, retained as the record:* "no-op, conditional on Slice-40 proof (design §7); must be decided on CPU numbers only — §6." **Now CLOSED BY DECISION** (master **F-28** · steward `seq-84`): the basis is **no-op, unconditionally**, and there are **ZERO eu7 runs on any backend at any N**. The "Slice-40 proof" condition is **dead** — Slice 40 must **not** run eu7 |
 | 2 | **`embed_batch_cls` TS parity** (F-22) | **add the TS binding.** Already a documented blind-spot (`napi:709`, `py:2088`); X1 parity is a release gate and this is the first published release since 0.8.9 |
 | 3 | **Erasure-audit durability** (design §2 D-A — **new finding**) | **exempt the audit collection from `enforce_provenance_retention`.** Retention-policy change ⇒ HITL |
 | 4 | **AC id allocation** (§3) | **start at AC-079** |
 | 5 | **Adoption arms** (build ≠ adopt, F-21) | read-modes/registry/readiness **opt-in**; erasure fixes **ship ON**; **`SourceId` is BREAKING — own call** |
-| 6 | **Publish gate** (R-20-PUB) | Out of Slice-0 scope. Separate per-`x.y.z` gate; confirm Memex `0.5.x-successor` co-land readiness |
+| 6 | **Publish gate** (R-20-PUB) | Out of Slice-0 scope. Separate per-`x.y.z` gate — **that half is still true and is the release's one `halts_run` unruled decision** (with the `npm-dist-tag` rider alongside it). 🕮 **The "confirm Memex `0.5.x-successor` co-land readiness" half is CLOSED BY DECISION** (master **F-34** · steward `seq-106` ruling 5): Memex adapts to 0.8.20's surface and **no confirmation is to be sought** |
 
 **Raised by Slice 5** (details in §11.5):
 
 | # | Decision | Ledger | Recommendation |
 |---|---|---|---|
-| 7 | **AC-079 governed-surface sign-off** — `erase_source`/`eraseSource`, `EraseReport`, `SourceId`, `ExciseReport`. Marked **`AWAITING HITL SIGN-OFF, NOT SIGNED`** in the allowlist `_comment` | — | **Sign or amend before publish.** The REQ-037 carve-out (2026-07-12) already approved `erase_source` as an SDK verb in principle; this signs the *exact* symbol set. ~~**Publish is blocked until signed.**~~ **✅ PRE-SIGNED 2026-07-25 (master F-34)** — the HITL signed the accumulated delta, pinned to the allowlist content; minting still occurs at Slice 40, and **publish is gated by the separate HITL publish gate, not by this AC**. See §1 `**Unblocks**`. ⚠ The allowlist `_comment` still reads `AWAITING HITL SIGN-OFF, NOT SIGNED`; correcting that prose would trip the T1e content pin, so it is **deliberately deferred to the batched governed-surface decision** (Slice 30 → 40), where the re-pin happens under HITL sign-off. |
+| 7 | **AC-079 governed-surface sign-off** — `erase_source`/`eraseSource`, `EraseReport`, `SourceId`, `ExciseReport` | — | **✅ CLOSED — SIGNED.** ~~"Sign or amend before publish."~~ ~~**Publish is blocked until signed.**~~ **PRE-SIGNED 2026-07-25** (master **F-34**), pinned to the *content* of the allowlist; the **batched governed-surface decision was SIGNED at steward `seq-157`** (2026-07-29). The REQ-037 carve-out (2026-07-12) had already approved `erase_source` as an SDK verb in principle; the signature covers the *exact* symbol set. **Minting into `dev/acceptance.md` still occurs at Slice 40 — minting is not signing.** **Publish is gated by the separate HITL publish gate, not by this AC.** ⚠ The allowlist `_comment` still contains the literal `AWAITING HITL SIGN-OFF, NOT SIGNED`; that is **stale prose inside a signed artifact, not an open sign-off**, and it is **deliberately left byte-for-byte alone** because the T1e pin hashes raw bytes. The coordinated re-pin is owed at the Slice-40 mint; **do not edit that JSON.** |
 | 8 | **Design-text correction** — the `logical_id IS NULL ONLY` backfill rule is right for NODES and **wrong for EDGES** | **TC-26** | **Correct plan §R-20-E8 + v4/v5 prose** to the shipped asymmetry. Code is right; the prose is not. TC-11 unaffected |
-| 9 | **eu7 no-run prohibition is UNENFORCEABLE** — `eu7_real_corpus_ac` had no `#[ignore]` and no env gate; `scripts/agent-test.sh` carried a bare `cargo test --workspace`. Raised on **three consecutive** codex rounds. **GUARD SHIPPED in fix-4** (`eu7_real_corpus_ac.rs:760` `#[ignore]`; `agent-test.sh` can no longer invoke it) — **verified by INSPECTION ONLY, zero eu7 runs**, with a control proving the check was not vacuous | **TC-20** | **Still a decision:** the shipped `#[ignore]` is the hard gate the HITL asked for, but it creates the *opposite* vacuous-green hazard at Slice 40, where eu7 IS wanted (TC-13 class). **Slice 40 must carry a non-skip witness** and opt in with `-- --ignored` |
+| 9 | **eu7 no-run prohibition is UNENFORCEABLE** — `eu7_real_corpus_ac` had no `#[ignore]` and no env gate; `scripts/agent-test.sh` carried a bare `cargo test --workspace`. Raised on **three consecutive** codex rounds. **GUARD SHIPPED in fix-4** (`eu7_real_corpus_ac.rs:760` `#[ignore]`; `agent-test.sh` can no longer invoke it) — **verified by INSPECTION ONLY, zero eu7 runs**, with a control proving the check was not vacuous | **TC-20** | **✅ CLOSED BY DECISION — no longer a decision, and the follow-on is SUPERSEDED.** ~~"Slice 40 must carry a non-skip witness and opt in with `-- --ignored`."~~ **R-20-EU7 was closed by ruling** (master **F-28** · steward `seq-84`): **ZERO eu7 runs, on any backend, at any N.** The premise that "eu7 IS wanted at Slice 40" is **false** — nothing downstream runs it, so the shipped `#[ignore]` creates **no** vacuous-green hazard. ⛔ **The `#[ignore]` on `eu7_real_corpus_ac` STAYS and must NOT be opted around** — no `-- --ignored`, no env opt-in, no `#[ignore]` removal, by any slice |
 | 10 | **Python X1 was OWED** — 5c's `SourceId` is BREAKING and broke ~50 Python fixtures, swept but **only statically verified** (`py_compile` + `ruff` + AST audit). **DISCHARGED:** the suite has now been executed in an **isolated fresh clone with its own venv** (never the shared `.venv`) ⇒ **`2 failed, 754 passed, 7 skipped`**, and **the identical two tests fail on `origin/main`** — see §11.8. It was exactly this run that caught the fix-4 regression, vindicating the "landing blocker, not a follow-up" call | **TC-22** | **Satisfied.** The two residual failures are **pre-existing** and tracked as **TC-31** (#13) |
 | 11 | **`maturin develop` fires AUTONOMOUSLY** from `src/python/tests/conftest.py::_ensure_test_hooks_binding` — merely running the Python suite from a worktree attempts to rebind the **shared** `.venv`. Observed live in fix-3. **GUARD SHIPPED in fix-4, then CORRECTED in fix-6** — fix-4's env-var guard raised at import time and made the *documented* default path permanently red; fix-6 restates the policy positively as a pure function returning `PROCEED`/`REBUILD`/`DEGRADED`/`CONTRADICTORY` (`src/python/tests/_test_hooks_gate.py`). The load-bearing check is **`venv_belongs_to_source_tree()`** — `maturin develop` may run **only** when the venv prefix lies **inside the repo root** — and **the opt-in env var CANNOT override it**. See **§11.9** | **TC-27** | **RESOLVED** (ledger **seq-48**), closed by tooling (fix-the-tooling, not a be-careful note), and closed **structurally** rather than by an env var. *No damage occurred:* the shared `.venv` was re-verified intact — `/home/coreyt/projects/fathomdb/.venv/.../fathomdb.pth` mtime still **2026-07-09**, still pointing at the **main** repo |
 | 12 | **Pending-redaction queue hardening** — its "a row is removed ONLY when the obligation is discharged" invariant is upheld by **three correct call sites, not structurally**. codex found a defect in this one mechanism on **each** of rounds 1, 2 and 3 | **TC-28** | **Make it structural** (own table with no generic `DELETE` verb, or a trigger). Every known path is now closed but **nothing prevents a fifth.** Deliberately NOT attempted inside a fix round |
@@ -215,9 +266,9 @@ Everything else is tracked by **requirement id + TDD test name** per the locked-
 
 | # | Decision | Ledger | Recommendation |
 |---|---|---|---|
-| 15 | **Node validity has NO write-side authoring verb.** `valid_from`/`valid_until` are **queryable but not settable from any SDK** — the tests author windows via **direct SQL**. **Is R-20-NV met without it?** The read half is complete and closed; the write half does not exist on the governed surface | **TC-34** | **HITL call, not an implementer call.** Either (a) ratify R-20-NV as read-only for 0.8.20 and schedule the authoring verb, or (b) re-open Slice 10 to add it. Note the coupling: an authoring verb is a **governed-surface addition**, so it lands with a delta and a sign-off |
+| 15 | **Node validity has NO write-side authoring verb.** `valid_from`/`valid_until` are **queryable but not settable from any SDK** — the tests author windows via **direct SQL**. **Is R-20-NV met without it?** The read half is complete and closed; the write half does not exist on the governed surface | **TC-34** | 🕮 **✅ RESOLVED — CLOSED at Slice 15b** (option (b)): the authoring path shipped as **optional `valid_from`/`valid_until` fields on the existing node write batch item**, not a new verb, so it added **zero** governed commands (§13). *Original open question, retained as the record:* "HITL call — either (a) ratify R-20-NV as read-only and schedule the authoring verb, or (b) re-open Slice 10 to add it." ⚠ **`TC-34` is a ledger id and has nothing to do with ladder Slice 34**, which was CANCELLED (`seq-182`) |
 | 16 | **TEMPORAL-MODEL SPLIT.** Node validity is **INTEGER epoch**; the shipped edge `t_valid`/`t_invalid` are **ISO-8601 TEXT**. Edges were **deliberately untouched**, and the divergence is **pinned by two tests** so it cannot drift silently | **TC-33** | **Accept long-term, or schedule a unifying slice.** Recorded as a deliberate divergence with an explicit migration note in the step-22 SQL — **not** an accident. Unifying is a breaking migration and belongs in its own slice if wanted |
-| 17 | **Slice-10 governed-surface delta — PROPOSED / NOT SIGNED.** Adds commands `read.crossed_boundary_since` / `read.crossedBoundarySince` and types `ReadView`, `BoundaryCrossing` | — | **Sign or amend before publish**, together with **AC-079** (#7). Recorded exactly as Slice 5d recorded its own. **Recovery denylist UNCHANGED at five; AC-041 GREEN** |
+| 17 | **Slice-10 governed-surface delta.** Adds commands `read.crossed_boundary_since` / `read.crossedBoundarySince` and types `ReadView`, `BoundaryCrossing`. *(Recorded at the time as PROPOSED / NOT SIGNED, exactly as Slice 5d recorded its own.)* | — | **✅ CLOSED — SIGNED** inside the batched governed-surface decision at steward **`seq-157`**, together with **AC-079** (#7). ~~"Sign or amend before publish."~~ **Recovery denylist UNCHANGED at five; AC-041 GREEN** |
 
 Also logged by Slice 10 and **not** requiring a decision: **TC-35** (napi `#[napi(object)]` **OMITS** the property
 for `Option::None` rather than emitting `null` — **measured, not reasoned**; drove the `9a6e4896` shape fix) and
@@ -267,9 +318,20 @@ this repo, and **it recurred during Slice 0** (see §6.2).
 
 ---
 
-## 6. R-20-EU7 baseline
+## 6. R-20-EU7 baseline — **CLOSED BY DECISION; this whole section is HISTORICAL**
 
-### 6.1 Backend constraint — **eu7 is a CPU same-backend gate**
+> 🕮 **⛔ SUPERSEDED — DO NOT ACT ON ANYTHING BELOW AS AN INSTRUCTION.** **R-20-EU7 was closed by ruling**
+> (master **F-28** · steward `seq-84`): **ZERO eu7 runs, on any backend, at any N.** No slice — **Slice 40
+> included** — captures a baseline, re-baselines, tunes `BATCH`, raises the drain timeout, or investigates the
+> throughput shortfall **as 0.8.20 work**. The `#[ignore]` on `eu7_real_corpus_ac` (`:760`) is the enforcement
+> and **STAYS**: it must not be removed, env-gated around, or opted into with `-- --ignored`.
+>
+> Everything in §6.1–§6.3 is the **Slice-0 investigation record** — the backend analysis, the two harness
+> hazards, and the root-caused capture failure. It is retained because the findings are true and were
+> expensive to obtain, and because the closure ruling rests on them. Every sentence phrased as *"Slice 40
+> must…"* or *"Options (Slice 40)…"* describes the plan **as it stood before F-28** and is **dead**.
+
+### 6.1 Backend constraint — **eu7 was a CPU same-backend gate** *(historical)*
 
 | Backend | n=7667 vector-stage recall@10 | CI | vs 0.90 floor (one-sided `ci_hi >= floor`) |
 |---|---|---|---|
@@ -280,13 +342,15 @@ The GPU figure is a **cross-backend artifact**, not a regression (TC-5 re-baseli
 **The HITL GPU-eval mandate does not apply to eu7** — by its own fidelity caveat. A GPU eu7 run would manufacture
 a false regression. **Baseline captured on CPU.**
 
-### 6.2 Two vacuous-green hazards found in the harness (Slice 40 must guard both)
+### 6.2 Two vacuous-green hazards found in the harness *(historical — no slice guards them; nothing runs eu7)*
 
 1. **The documented run command is wrong.** `tests/eu7_real_corpus_ac.rs:85-86` omits the required `operator`
    feature ⇒ **exit 101**. Working: `--features default-embedder,operator`. *Fix the docstring in Slice 5.*
 2. **The corpus is unreachable from a worktree.** `data/corpus-data/` is gitignored (`.gitignore:9`) and lives
    only in the primary checkout (2.1 GB). From a linked worktree the harness **SKIPS and exits 0**.
-   Slice 40 must assert a **non-skip witness**, not merely exit 0.
+   ~~Slice 40 must assert a **non-skip witness**, not merely exit 0.~~ **DEAD (F-28):** the harness is not run
+   at all, so there is no non-skip witness to assert. The `#[ignore]` is the guard, and it is verified **by
+   inspection only** (§11.8).
 
 *(For this capture the corpus was bridged into the orchestration worktree by symlink, excluded locally via
 `.git/info/exclude`; no tracked file changed.)*
@@ -316,13 +380,15 @@ even with the timeout raised.
 Excluded causes: weights cache is **complete** (`config.json` + `tokenizer.json` + `model.safetensors`);
 CPU load was **4.5 of 24 cores**.
 
-**The tension that must be resolved before Slice 40:** §6.1 forbids GPU for comparability, and CPU cannot
-finish ⇒ **R-20-EU7 currently has no runnable path.**
+**The tension as it stood at Slice 0:** §6.1 forbids GPU for comparability, and CPU cannot finish ⇒
+**R-20-EU7 had no runnable path.**
 
-**Options (Slice 40):** **(a)** reduce `BATCH` 256 → 64 (358 s, fits inside 600 s) or make `BATCH`/timeout
-env-tunable — minimal, surgical, **does not change measurement semantics**; **(b)** raise the drain timeout and
-accept a ~12 h CPU run; **(c)** investigate the 7.3× shortfall, which may itself be a real CPU-embed regression.
-**Recommend (a) + (c).**
+🕮 **HOW IT WAS RESOLVED — BY DECISION, NOT BY MEASUREMENT.** ~~"Options (Slice 40): **(a)** reduce `BATCH`
+256 → 64 (358 s, fits inside 600 s) or make `BATCH`/timeout env-tunable; **(b)** raise the drain timeout and
+accept a ~12 h CPU run; **(c)** investigate the 7.3× shortfall. Recommend (a) + (c)."~~ **None of (a)/(b)/(c)
+is 0.8.20 work.** The HITL closed **R-20-EU7 by ruling** (master **F-28** · steward `seq-84`): the basis is
+**no-op** and there are **ZERO eu7 runs, any backend, any N**. Do **not** price a confirming run, and do
+**not** re-derive these options — the no-runnable-path finding is *why* the ruling exists, not a task list.
 
 **Side-effect hazard.** The harness **writes `dev/plans/runs/eu7-latest-measurements.json` into the repo on every
 run**, so a reduced-N scouting run silently produces a file that *looks* authoritative — the n=20 run wrote
@@ -331,7 +397,10 @@ run**, so a reduced-N scouting run silently produces a file that *looks* authori
 ## 7. Outstanding worktrees
 
 All Slice 0/5/10/15 worktrees are **reclaimable** — their work is landed on `origin/main`. The next commission
-(Slice 20) cuts a fresh dedicated worktree off a verified `origin/main` tip per **TC-RUBRIC-5**.
+(**Slice 39, `R-20-DOC`**) cuts a fresh dedicated worktree off a verified `origin/main` tip per
+**TC-RUBRIC-5**. *(The table below is a Slice-0…15 snapshot and has not tracked the 20/21/22/23/25/30/31/32/33
+worktrees — all of those slices have landed, so their worktrees are reclaimable too. Reconcile against a live
+`git worktree list`, never against this table.)*
 
 | Path | Branch | Purpose | State |
 |---|---|---|---|
@@ -348,6 +417,26 @@ actual `git worktree list` before removing anything (this table is a snapshot, n
 
 ## 8. Recent decisions (newest first)
 
+- **2026-07-30 — LICENSE: the project is MIT** (HITL, steward `seq-193`). The repo-root `LICENSE` (MIT,
+  `ff8639e4`) is authoritative; the **four publishable manifests declaring Apache-2.0 are WRONG**
+  (`Cargo.toml:30`, `src/python/pyproject.toml:11`, `src/ts/package.json:5`,
+  `src/ts/npm/linux-x64-gnu/package.json:5`) and must read **MIT before the 0.8.20 tag** — crates.io versions
+  are immutable. **No artifact ships a LICENSE file today.** Owned by **Slice 39 (R-20-DOC)**, minted into the
+  ladder ahead of Slice 40 because `verify-release-gates.sh` check 4 hard-fails without a matching CHANGELOG
+  heading.
+- **2026-07-30 — DOC-HYGIENE-3 COMPLETE** (`fd281358` machinery + `85d44c74` remainder). Six ids closed:
+  TC-88, TC-89, TC-94, TC-100, TC-53, TC-92. Cross-cutting, **not** a ladder slice.
+- **2026-07-29 — Slice 34 CANCELLED, then PARKED at 0.8.21** (`seq-182`, reversing `seq-178`; placement
+  `seq-183`). **No `EngineError` `#[non_exhaustive]` / TC-103 work happens in 0.8.20**, and **Slice 34 is not
+  in the ladder** — route no work through it. 0.8.21 is an odd micro ⇒ OOB label-only, so the attribute is
+  **built at 0.8.21 and published at 0.8.22**, which thereby becomes a declared breaking venue. The scoping
+  study survives as **TC-122**.
+- **2026-07-29 — BATCHED GOVERNED-SURFACE DECISION SIGNED** (HITL, `seq-157`). Seven net-new allowlist
+  members = **four logical verbs** plus non-command types; `recovery_denylist` unchanged at five.
+  **AC-079 mints at Slice 40** — minting is not signing. **PUBLISH is NOT authorized by this signature** and
+  is **not** gated by AC-079. Owed: the allowlist `_comment` re-pin (see §4).
+- **2026-07-29 — Library Sweep #3 COMPLETE** — Slices 31 `d0287620`, 32 `31d33293`, 33 `f02dc5b4`. The survey
+  is an **input to 0.8.22**; **no bump applied, no manifest or lockfile edited** in 0.8.20.
 - **2026-07-24 — Slice 15 KEYSTONE LANDED** at **`a2022957`** (merge, in `origin/main`); ledger tip
   **`3264114a`** (steward seq-98). The full Phase-2 keystone: **R-20-PR** (row-owned projection registry,
   the C-1 co-land) + **R-20-EAV** (EAV / property-FTS via `canonical_attributes`, Slice 15d) + **`filterable`
@@ -369,8 +458,10 @@ actual `git worktree list` before removing anything (this table is a snapshot, n
   Governed-surface delta **PROPOSED / NOT SIGNED**; **no AC minted**. **Zero eu7 runs.** (§12)
 - **2026-07-20 — TC-32 ACCEPTED AS-IS, no behavior change** (HITL). Co-named-entity dedupe is **annotated, not
   fixed** (`e62309e1`). **The erasure guarantee must NOT be stated unconditionally to users while it stands.**
-- **2026-07-20 — Slice 5 LANDED** at **`1f8ed8bf`**, in `origin/main`. **AC-079 is still UNSIGNED and still
-  blocks publish** — landing the code did **not** discharge the sign-off.
+- **2026-07-20 — Slice 5 LANDED** at **`1f8ed8bf`**, in `origin/main`. *(As written then: "AC-079 is still
+  UNSIGNED and still blocks publish — landing the code did not discharge the sign-off.")* 🕮 **SUPERSEDED:**
+  AC-079 was **pre-signed 2026-07-25 (F-34)** and the batched delta **SIGNED at `seq-157`**; **AC-079 does not
+  block publish.**
 - **2026-07-20 — fix-7: the test-hooks probe was NARROWER than the surface it gated** (`7c353ac5`). It checked
   one of three symbols, so a **partial** binding read as "hooks present" and a marked test **failed on a
   missing import instead of skipping**. Now probes all three, fails safe to DEGRADED, and carries a drift guard
@@ -393,8 +484,10 @@ actual `git worktree list` before removing anything (this table is a snapshot, n
   PASS plus four green on-branch gate runs did not substitute for one honest execution.** (§11.7/§11.8)
 - **2026-07-20 — Slice 5 CODE-COMPLETE** on `orch-0.8.20-s5` @ `8e09b950`; **codex §9 terminal PASS** after three
   fix rounds (§11). Proved the **`logical_id IS NULL ONLY` backfill rule wrong for EDGES** (TC-26); shipped the
-  HITL-ruled erasure-audit retention exemption (§4 #3). **Six HITL items owed** (§4 #7–#12) — AC-079 is **NOT
-  signed** and **blocks publish**; main-tree Python X1 is a **landing blocker**.
+  HITL-ruled erasure-audit retention exemption (§4 #3). **Six HITL items owed** (§4 #7–#12) — *as written
+  then,* "AC-079 is **NOT signed** and **blocks publish**"; main-tree Python X1 is a **landing blocker**.
+  🕮 **SUPERSEDED:** AC-079 is **SIGNED** (`seq-157`) and does **not** block publish; the X1 blocker was
+  discharged (§11.8).
 - **2026-07-19 — Slice-0 HITL-SIGNED and landed** at `403eb254`. X0 gate open; slices 5+ authorized.
 - **2026-07-19 — Slice-0 (this board):** eu7 baseline pinned to **CPU same-backend**; TC-RUBRIC-7 transcript path
   pinned; AC allocation recommended from **AC-079** (reserved-id collision found); **four defects found in the v4
@@ -445,6 +538,12 @@ recommendations, not decided here.
 ---
 
 ## 11. Slice 5 close — erasure completeness (R-20-E1…E8)
+
+> 🕮 **HISTORICAL CLOSE RECORD — written while the work was on-branch. Slice 5 LANDED at `1f8ed8bf`
+> (2026-07-20).** Its "**Not landed**" wording below is the on-branch state at the time, not current truth.
+> Its **"AC-079 blocks publish / still NOT SIGNED"** statements are **SUPERSEDED**: AC-079 was pre-signed
+> 2026-07-25 (master **F-34**) and the batched governed-surface delta was **SIGNED at steward `seq-157`**;
+> **publish is gated by the separate HITL publish gate, not by AC-079.**
 
 **Branch `orch-0.8.20-s5`, terminal HEAD `d710721a` + fix-7** — cut from `origin/main` `19b568e2`, rebased onto
 `30ad3524`. **Not landed.** The Steward lands it.
@@ -561,7 +660,8 @@ directly and is healthy (**`2 failed, 766 passed, 7 skipped`**); `cargo test --w
 
 ### 11.5 Owed to the HITL / Steward
 
-In §4 as decisions **#7–#14**, with ledger ids: **AC-079 sign-off** (blocks publish, **still NOT SIGNED**) ·
+In §4 as decisions **#7–#14**, with ledger ids: **AC-079 sign-off** *(recorded then as "blocks publish, still
+NOT SIGNED" — 🕮 **SUPERSEDED: SIGNED at `seq-157`; it does not block publish**)* ·
 **design-text correction** TC-26 · **eu7 guard shape** TC-20 (guard now **shipped**) · **Python X1** TC-22
 (**discharged**, §11.8) · **`maturin develop` conftest guard** TC-27 (**shipped**) · **pending-redaction
 structural hardening** TC-28 · **write/read provenance asymmetry** TC-31 · **entity-dedupe erasure gap** TC-32.
@@ -811,10 +911,11 @@ slice **introduced 4 errors and cleared all 4**; the residual **8 are the pre-ex
 the **hooks-available** environment; the **hook-less default path** shows **1**. They are different environment
 states of the same suite, and are recorded as such rather than one being retconned.
 
-### 12.5 Governed-surface delta — **PROPOSED / NOT SIGNED**
+### 12.5 Governed-surface delta — recorded then as **PROPOSED / NOT SIGNED** *(🕮 since SIGNED)*
 
 Recorded in the same shape Slice 5d used, and for the same reason: the branch is not red, but **that is not an
-approval**.
+approval**. 🕮 **It has since been approved** — this delta is inside the batched governed-surface decision
+**SIGNED at steward `seq-157`** (2026-07-29).
 
 - **Commands added:** `read.crossed_boundary_since` / `read.crossedBoundarySince`
 - **Types added:** `ReadView`, `BoundaryCrossing`
@@ -837,8 +938,9 @@ Transcripts under `dev/plans/runs/codex/0.8.20/` (TC-RUBRIC-7 path), committed w
 
 **§4 #15 (TC-34)** node validity has **no write-side authoring verb** — queryable but not settable from any SDK;
 the tests author windows **via direct SQL**. **Is R-20-NV met without it?** · **§4 #16 (TC-33)** the temporal-model
-split · **§4 #17** the Slice-10 governed-surface delta · and the carried **§4 #7 AC-079 sign-off**, which still
-**blocks publish**. **§4 #14 (TC-32)** is ruled and closed, but its **carry-forward caveat stands: do not state
+split · **§4 #17** the Slice-10 governed-surface delta · and the carried **§4 #7 AC-079 sign-off**, *recorded
+here as blocking publish* — 🕮 **SUPERSEDED: both #17 and #7 were SIGNED at steward `seq-157`, and AC-079 does
+not block publish.** **§4 #14 (TC-32)** is ruled and closed, but its **carry-forward caveat stands: do not state
 the erasure guarantee unconditionally to users** while co-named-entity dedupe stands.
 
 Logged, no decision needed: **TC-35** (napi `#[napi(object)]` omits `None` `Option` properties — measured) and
@@ -939,14 +1041,17 @@ would impose a **full scan × the 192-row pool on EVERY search** to fix a degene
 | **AC-041** | **GREEN**, both bindings; recovery denylist **UNCHANGED at exactly five** |
 | **eu7** | **ZERO runs**, any backend, any N; `eu7_real_corpus_ac` still `#[ignore]`d, attribute untouched |
 
-### 13.4 Governed-surface delta — **PROPOSED / NOT SIGNED**
+### 13.4 Governed-surface delta — recorded then as **PROPOSED / NOT SIGNED** *(🕮 since SIGNED)*
 
 - **Commands added: NONE** from TC-34 — it is **fields only**. **fix-2 Part 2** adds an **optional `view`
   argument to `search`** in **both** bindings.
 - **Types:** `ReadView` **reused** — no new type. `recovery_denylist` **UNCHANGED at exactly five**.
   **AC-041 GREEN.**
-- **`AC-079` remains available and UNMINTED.**
-- Marked **`AWAITING HITL SIGN-OFF, NOT SIGNED`**.
+- **`AC-079` remains UNMINTED** — the mint is at Slice 40.
+- Marked **`AWAITING HITL SIGN-OFF, NOT SIGNED`** in the allowlist `_comment` at the time. 🕮 **The delta is
+  now SIGNED** (steward `seq-157`); the literal string survives in the JSON only because the T1e pin hashes
+  raw bytes — **it is stale prose in a signed artifact, not an open sign-off, and the JSON must not be
+  edited.**
 
 ### 13.5 codex §9 — four rounds, terminal PASS
 
@@ -991,6 +1096,12 @@ transcripts in §13.5. Ledger entries **TC-38…TC-42**. Committed with this clo
 ---
 
 ## 14. Slice 20 close — **PARTIAL** (TC-45 + `dense_readiness` landed; `flush_embeddings()` HELD)
+
+> 🕮 **HISTORICAL CLOSE RECORD — SUPERSEDED by §16.** **Slice 20 is COMPLETE**: the flush-to-readiness barrier
+> shipped at **20c `841c307b`** by REUSING the shipped `drain` (`api-surface.md` **C4**) — **TC-55 =
+> INSTRUMENTATION** (`seq-110`), and **there is no `flush_embeddings()` verb**. The "**SLICE 20 IS NOT
+> COMPLETE**" / "HELD" banners below describe the state at 20b. Likewise the AC-079 "**not signed**" statements
+> in §14.4 are **SUPERSEDED** — the batched governed-surface delta was **SIGNED at steward `seq-157`**.
 
 **Merge `26b237c0`** — *"merge(0.8.20): Slice 20 PARTIAL — TC-45 supersession terminal + R-20-DR
 dense_readiness/atomic-flip"*. Branch `orch-0.8.20-s20`, cut from **`ff4f07a0`**, terminal HEAD **`15c75c57`**.
@@ -1079,8 +1190,9 @@ boundary.
   `GOVERNED_SURFACE_ALLOWLIST` const in `src/rust/crates/fathomdb/tests/governed_surface.rs` — **the same place
   the five Slice-15d `Projection*` types sit**. This follows **existing precedent**; it does **not** set new
   policy.
-- **Flagged as OWED at the AC-079 sign-off.** It is **not** signed and **not** a decision taken. **AC-079 remains
-  unminted** — minting is at Slice 40.
+- **Flagged as OWED at the AC-079 sign-off.** *(As written then: "it is not signed and not a decision taken.")*
+  🕮 **SUPERSEDED — the sign-off happened:** the batched governed-surface delta was **SIGNED at steward
+  `seq-157`**. **AC-079 remains unminted** — minting is at Slice 40, and minting is not signing.
 - **AC-041 untouched:** the recovery denylist is unchanged at exactly five.
 
 ### 14.5 What is HELD, and why — `flush_embeddings()`
@@ -1332,7 +1444,9 @@ Commits: `ddaf7320` (RED) · `da7c5b76` (GREEN) · `e7a4676a` (Leg B + docs) · 
 **LANDED `9b3ed0e3`** (merge, 2026-07-28), off branch `orch-0.8.20-s30`. **Zero engine source** —
 `git diff --name-only main...orch-0.8.20-s30 -- src/` is empty across the whole slice. SCHEMA stays **24**.
 Governed-surface allowlist **byte-identical**, pin exit 0, so **AC-079's pre-sign (F-34) is intact** and the
-batched ceremony still happens once, at the CLOSE of Slice 23 (`seq-141`; was after 22 at `seq-134`, after 23 at `seq-140`).
+batched ceremony still happens once *(scheduled then for the CLOSE of Slice 23 — `seq-141`; was after 22 at
+`seq-134`, after 23 at `seq-140`)*. 🕮 **It has since happened: the batched governed-surface decision was
+SIGNED at steward `seq-157`, 2026-07-29.**
 
 ### 17.1 What shipped
 
@@ -1645,6 +1759,8 @@ either way. **Do not run the engine suite alongside a reviewer.**
 ### Carried out of this slice — for the Steward, not written here
 
 - **`sqlite-vec` → `0.1.9`** is now a concrete, evidenced remedy. **TC-76's re-open trigger has FIRED.**
+  🕮 **RULED since** (`seq-151`): **hold at `=0.1.7` for 0.8.20**; the 0.1.9 bump lands at **0.8.22** with
+  `rusqlite 0.31→0.40`. Not 0.8.20 work.
 - **A message-carrying `WriteValidation { msg }`** — ~14 engine + ~44 binding raise sites and both binding
   payload shapes. Its own slice, not a rider.
 - **A runtime backend/device descriptor on `EmbedderIdentity`** — the only change that *retires* the TC-68
@@ -1763,3 +1879,5 @@ land; round 8 forbidden), `seq-162`. Round 7 closed it and the fallback did not 
 - **Steward reconciliation owed:** `dev/plans/release-state-0.8.20.json` (ladder 31 → LANDED + sha, `next_slice` → 32,
   `landed` list) and the master's generated ladder-progress view. Per the Slice 23 precedent (`603af000`) those are the
   Steward's, not the orchestrator's, and this land deliberately left both untouched.
+  🕮 **DONE** — reconciled by the Steward; 31/32/33 are all LANDED in the single writer and `next_slice` is
+  now **39**.

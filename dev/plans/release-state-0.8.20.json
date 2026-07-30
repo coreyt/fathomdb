@@ -196,6 +196,20 @@
       "merge_subject": "Slice 33 COMPLETE — Library Sweep #3 leg 3/3, the ONLINE survey of record + the TC-115 install-then-run smoke"
     },
     {
+      "slice": 39,
+      "short": "R-20-DOC",
+      "title": "Publish-facing documentation: MIT license reconciliation + a LICENSE that actually ships, the 0.8.20 CHANGELOG section, registry-facing READMEs, docs/ de-stale, dev/interfaces currency, docs.rs doc-comment corrections",
+      "depends_on": [
+        30
+      ],
+      "status": "NOT_STARTED",
+      "sha": null,
+      "sequencing_note": "Minted by the Steward 2026-07-29/30 under the HITL directive to get project/dev/docs documentation not stale, and the MIT license ruling (seq-193). Sequenced BEFORE 40 because verify-release-gates.sh check 4 hard-fails without a CHANGELOG heading matching the version, so the Slice 40 rehearsal cannot pass until this lands.",
+      "design_refs": [
+        "dev/design/0.8.20-slice-39-publish-facing-documentation.md"
+      ]
+    },
+    {
       "slice": 40,
       "short": "R-20-PUB",
       "title": "verification + release readiness (publish-or-hold)",
@@ -222,17 +236,18 @@
     32,
     33
   ],
-  "next_slice": 40,
+  "next_slice": 39,
   "remaining_ladder": [
+    39,
     40
   ],
-  "ladder_order": "SEQUENTIAL — re-sequenced by HITL 2026-07-29 (steward seq-153), superseding the seq-129 order. Execution order: 33 → 34 → DOC-HYGIENE-3 → the batched governed-surface decision (HITL) → 40. Slices 21, 22 and 23 have LANDED; Slice 30, the publish precondition, LANDED 2026-07-28 at 9b3ed0e3. Slice 31 was RE-SCOPED and slices 32/33 MINTED at seq-153: Library Sweep #3 becomes a three-leg build of an SBOM/dependency-survey TOOL (31 spec+design+RED tests, 32 code, 33 run-and-survey) instead of a manual backlog-and-triage sweep, and NONE of the three applies a dependency bump — the survey is an INPUT to 0.8.22. Parallel 20 || 25 was declined earlier (master F-34).",
+  "ladder_order": "SEQUENTIAL - re-sequenced by HITL 2026-07-29/30. Slices 21/22/23/30/31/32/33 and DOC-HYGIENE-3 have LANDED. Slice 34 (#[non_exhaustive]) was CANCELLED from 0.8.20 (steward seq-182) and PARKED at 0.8.21 (seq-183) - it is NOT in this ladder. The batched governed-surface decision was SIGNED at seq-157. Remaining execution order: 39 (R-20-DOC, publish-facing documentation) -> 40 (R-20-PUB, publish preparation; STOPS before any tag). PUBLISH itself remains the one unruled HITL decision and is a separate gate after 40.",
   "unblocked": [
-    40
+    39
   ],
   "unblocked_by": {
-    "requirement": "the Slice 33 landing (f02dc5b4) — Library Sweep #3 COMPLETE — and the cancellation of Slice 34 (steward seq-182)",
-    "gloss": "Slice 34 (EngineError #[non_exhaustive]) was CANCELLED by the HITL, reversing seq-178: none of the TC-103 error-taxonomy work happens in 0.8.20. The remainder is the DOC-HYGIENE-3 remainder (TC-53 + TC-92, cross-cutting, not a ladder slice) then Slice 40 — TC-16 determination FIRST (seq-118), then the #11-full publish rehearsal, then the AC-079 mint, then the PUBLISH gate, which is the release's only unruled decision."
+    "requirement": "the Slice 33 landing (f02dc5b4) — Library Sweep #3 COMPLETE — DOC-HYGIENE-3 COMPLETE, and the cancellation of Slice 34 (steward seq-182)",
+    "gloss": "Slice 39 (R-20-DOC) is next: publish-facing documentation — the MIT license reconciliation (seq-193), a LICENSE that actually ships, and the 0.8.20 CHANGELOG section. It runs BEFORE Slice 40 because scripts/verify-release-gates.sh check 4 hard-fails without a CHANGELOG heading matching the version, so Slice 40's workflow_dispatch rehearsal cannot pass until 39 lands. Then Slice 40 (R-20-PUB): the TC-16/F-30 determination FIRST (seq-118 — establish WHICH SIDE is stale, do not assume), the manifest bump including the undecided Axis-E call, local-dry-run, the AC-079 + AC-080 mints, and the #11-full rehearsal dispatched from main AFTER landing. Slice 40 STOPS before any tag. Slice 34 was CANCELLED (seq-182) and parked at 0.8.21 (seq-183) — route no work through it. TWO decisions remain unruled: PUBLISH (halts the run) and the npm dist-tag label (does not)."
   },
   "publish_precondition_slice": 30,
   "acceptance": {
@@ -286,6 +301,13 @@
         "gated_at": "Slice 40 — HITL PREFERS option (a) publish-after-40 but explicitly deferred (\"lets see where we are then\"); STILL UNRULED (steward seq-135). A possible pre-publish \"Slice 4x\" for the Dependabot advisories is TC-93.",
         "halts_run": true,
         "source": "plan-0.8.20.md §11 item 3"
+      },
+      {
+        "id": "npm-dist-tag",
+        "title": "npm dist-tag for the 0.8.20 publish (platform matrix is PARTIAL: linux-x64-gnu only)",
+        "gated_at": "Slice 40 / publish. release.yml:21-26 states the label is an HITL confirmation and that publishing PARTIAL coverage under `latest` would serve an incomplete matrix to every consumer. The matrix is gated to x86_64-unknown-linux-gnu (R-REL-4e); macOS/Windows targets are commented out as DEFERRED-TO-FOLLOW-ON (R-REL-4d). Surfaced by the Slice 40 brief review 2026-07-30; unplaced anywhere in 0.8.20 until now.",
+        "halts_run": false,
+        "source": "steward 2026-07-30 (Slice 40 brief adversarial review)"
       }
     ],
     "ruled": [
@@ -470,6 +492,12 @@
         "ruling": "(a) ABSORB ALL THREE — DOC-HYGIENE-3 scope is TC-53 + TC-88 + TC-89 + TC-92, AMENDED 2026-07-28 (steward seq-138) to ADD TC-94 (the commission-manifest SELECTOR defects: dev/adr/** and dev/interfaces/** unreachable by construction, bare-number legs invisible to the token regex, and a full token match suppressing the honest \"NO design doc mentions\" warning). All five are one class — a fact maintained in two places with nothing checking they agree — with one remedy shape: render from the single writer instead of maintaining by hand.",
         "ruled_on": "2026-07-28",
         "source": "steward seq-137; amended at steward seq-138"
+      },
+      {
+        "id": "license",
+        "title": "Project license: MIT vs Apache-2.0 (repo LICENSE file disagreed with all 4 publishable manifests)",
+        "ruling": "MIT. The repo-root LICENSE (MIT) is authoritative; the four manifests declaring Apache-2.0 are corrected to MIT before the tag. A LICENSE file must also SHIP in every artifact - none carries one today.",
+        "source": "steward seq-193"
       }
     ]
   },
