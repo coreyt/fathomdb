@@ -1,0 +1,199 @@
+{
+  "unit": "R-20-HARNESS (\"Slice 39.5\") — cross-cutting, 0.8.20. De-laddered at seq-204: no slice number, no ladder position, next_slice stays 40.",
+  "role": "orchestrator closure. The implementer witness is dev/plans/runs/0.8.20-slice-39.5-implementer-output.json.",
+  "branch": "0.8.20-slice-39.5-harness",
+  "head": "c2728ec8",
+  "base": "fcae308e (origin/main at rebase time)",
+  "base_history_note": "Commissioned base was 75b3902f. Preflight HARD-failed STALE BASE because main had advanced. Fast-forwarded to fc4c9032, re-ran preflight (PASS), and after the implementer finished, rebased cleanly onto fcae308e. Both intervening commits are docs/ledger-only. Every gate below was run AFTER the rebase, except cargo clippy/check which the implementer ran pre-rebase against an identical Rust tree (main moved by docs only).",
+  "preflight": "scripts/preflight.sh --worktree ... => rc=0 at fc4c9032 (quoted: worktree HEAD == current main, freshly cut, no stale base).",
+  "landing": "NOT landed. The Steward lands. PR #167 exists ONLY to obtain a CI baseline and is titled DO NOT MERGE.",
+
+  "COUNTS_AND_THEIR_CONVENTIONS": {
+    "warning": "THREE different numbers equal to 31 appear in this record. They are NOT the same quantity. Read the convention beside each.",
+    "31_A_unconditional_suites_on_main": "31 = run_capped call sites at column 0 (unconditional) on main. This is the design doc's '31 registered suites' and AC 1's floor. UNCHANGED as a description of main.",
+    "31_B_passed_count_in_run_A": "31 = the number of suites that PASSED in the full baseline run on this branch (of 35 that ran). Coincidence of value only.",
+    "31_C_ran_count_in_proof_1": "31 = distinct labels minus the 4 exclusions in the AC 2 demonstration (35 - 4). Coincidence of value only.",
+    "main_baseline": {"run_capped_call_sites": 35, "distinct_labels": 34, "unconditional": 31, "conditional": 4, "skip_notice_sites": 3},
+    "this_branch": {"run_suite_call_sites": 36, "distinct_labels": 35, "unconditional": 32, "conditional": 4, "skip_suite_sites": 3},
+    "delta": "+1 in every column: the one new suite this unit added, test-agent-test-collect-all. Nothing else changed the registry.",
+    "why_35_sites_but_34_labels_on_main": "test-python is registered TWICE (agent-test.sh :232 and :235) as a benign mutually-exclusive if/else selecting whether the interpreter is the checkout's own .venv, which authorises the FATHOMDB_TESTS_ALLOW_REBUILD maturin rebuild. Exactly one arm executes per run. NOT merged — merging would destroy the venv-ownership guard.",
+    "design_doc_counts_are_correct": "Confirmed independently at the base: grep -c '^run_capped' = 31, grep -c 'run_capped' = 35. The design doc counted unconditionally-executed suites and is NOT stale. No correction was made to it."
+  },
+
+  "AC_1_every_suite_runs": {
+    "status": "MET",
+    "evidence": "Full run, AGENT_VERBOSE=1, all prerequisites provisioned: registered=35 ran=35 passed=31 failed=4 skipped=0 excluded=0. All 35 distinct labels executed — above the 32-unconditional floor, i.e. the maximum for a fully provisioned checkout.",
+    "proof_the_abort_is_gone": "test-check-governed-surface-pin (the historical abort at agent-test.sh:73) recorded FAIL rc=1 and the run CONTINUED through 24 further suites, including test-rust, test-python, test-ledgerwatch and test-ts which had never run in a full pass."
+  },
+
+  "AC_2_non_zero_and_zero_directions": {
+    "status": "MET",
+    "non_zero_direction": "Full baseline run exited rc=1 with FAILED SUITES: test-check-governed-surface-pin test-actionlint-fixture test-rust test-python.",
+    "zero_direction_is_a_MECHANISM_not_a_clean_tree_green": "A clean-tree green is impossible at this base and was not owed: 4 suites are red/unknown and none may be fixed here.",
+    "zero_direction_proof": "The REAL, UNMODIFIED agent-test.sh invoked once with an explicit named filter: --exclude-suite=test-check-governed-surface-pin --exclude-suite=test-actionlint-fixture --exclude-suite=test-rust --exclude-suite=test-python => rc=0, registered=35 ran=31 passed=31 failed=0 skipped=0 excluded=4, with the loud banner 'EXCLUDED suites were NOT run -- this exit code is NOT a full-tree result.' and 4 EXCL rows.",
+    "the_filter_is_not_a_default": "--exclude-suite=LABEL is argv-only, never read from any environment variable (asserted by a test arm), never defaulted, loud whenever active, and a label matching no registration is a usage error exiting 2."
+  },
+
+  "AC_3_summary_names_every_failure": {
+    "status": "MET",
+    "evidence": "The summary printed all four failing labels on one FAILED SUITES line, plus a per-suite table with STATE/rc/duration for all 35 registered labels in deterministic registration order."
+  },
+
+  "AC_4_crash_is_FAILED_never_skipped": {
+    "status": "MET for crash; TIMEOUT HALF DEFERRED AS A GAP",
+    "crash_proof": "A crashing suite was registered transiently (uncommitted) in the real agent-test.sh and driven through the top-level entry point: 'FAIL test-crash-demo (exit=137, 3ms)' and 'FAIL test-crash-demo rc=137 7ms', totals registered=36 ran=32 passed=31 failed=1 excluded=4, overall rc=1, FAILED SUITES: test-crash-demo. 137 = 128+9 (SIGKILL). The registration was reverted; the tree is clean at c2728ec8 and no test-crash-demo residue is committed.",
+    "permanent_guard": "test_agent_test_collect_all.sh arm A drives a real 'kill -9 $$' through the real wrapper and asserts state FAIL rc=137, never SKIP.",
+    "TIMEOUT_GAP": {
+      "finding": "There is NO timeout mechanism anywhere in the harness. Verified: grep -n timeout on both harness files returns ZERO matches (rc=1). run_capped runs its argv unbounded.",
+      "why_not_built": "Demonstrating a timeout would require ADDING one — net-new unbudgeted scope whose duration must be chosen against test-rust (cargo test --workspace, measured 450s in this very run) and against the ac_029 wall-clock ratio guardrail (TC-97).",
+      "recommendation": "If the HITL wants it, place it as its own unit and set the budget from measurement, not taste: the longest suite measured here is test-rust at 450491ms, second is test-ts at 198131ms. A per-suite timeout below ~15 minutes would make test-rust flaky-by-construction on a cold target dir. A timeout must record FAIL (not SKIP) to preserve the invariant."
+    }
+  },
+
+  "AC_5_TRUE_LOCAL_RED_LIST": {
+    "run": "AGENT_VERBOSE=1 bash scripts/agent-test.sh (no arguments), branch c2728ec8, full run, exit rc=1",
+    "totals_line_verbatim": "registered=35 ran=35 passed=31 failed=4 skipped=0 excluded=0",
+    "states_used": ["PASS", "FAIL", "SKIP (prerequisite absent — a distinct third state)", "EXCL (excluded by explicit flag)", "UNKNOWN (fourth state — see test-python)"],
+    "FAILED": [
+      {"label": "test-check-governed-surface-pin", "rc": 1, "ms": 5143, "owner": "Slice 40 — PRE-EXISTING, not this unit's", "note": "Its provenance arm hardcodes stale commit 427d2712. The pin PREDICATE check-governed-surface-pin.sh is itself rc=0 — do not conflate the suite with the predicate. Independently re-measured by the orchestrator at the base: rc=1."},
+      {"label": "test-actionlint-fixture", "rc": 1, "ms": 35, "owner": "Slice 40 — PRE-EXISTING, not this unit's", "note": "Fix lives in the release workflow, untouchable here. See NEWLY_REVEALED below — its internal fail-fast loops were converted (permitted by design doc section 3) and this changed WHAT IS VISIBLE, not whether it fails."},
+      {"label": "test-rust", "rc": 101, "ms": 450491, "owner": "NEWLY REACHED — never ran in a full pass before this unit", "note": "FLAKY, not a hard red. See FLAKE_CHARACTERISATION."},
+      {"label": "test-python", "rc": 3, "ms": 1671, "owner": "NOT A RED — see UNKNOWN_STATE_test_python", "note": "MUST NOT be recorded as a failure in the disposition decision."}
+    ],
+    "PASSED_31": ["test-set-version", "test-agent-test-collect-all", "test-verify-release-gates", "test-check-license-consistency", "test-preflight-landing", "test-check-board-currency", "test-check-ledgers", "test-staged-ledger-sidecar", "test-check-c1-conformance", "test-check-transcript-hygiene", "test-seat-path-guard", "test-assert-co-tagging", "test-embedder-api-no-drift", "test-smoke-scripts", "test-release-workflow-scope", "test-idempotent-republish", "test-pypi-publish-roundtrip", "test-publish-registry-safety", "test-wait-for-crate-version", "test-npm-inject-optional-deps", "test-lint-md-hard-fail-on-missing-linter", "test-plans-status-frontmatter", "test-lint-plan-anchors", "test-check-release-state-views", "test-steward-orient", "test-commission-manifest", "test-md-generators", "test-cargo-skew", "test-pip-skew", "test-ledgerwatch", "test-ts"],
+    "headline": "Of the ~23 suites that had never run in a full pass, the yield is ONE new failure (test-rust) and it is flaky, not a defect. The hidden-suite yield the HITL sized as 'zero to fifteen' is effectively ZERO hard defects.",
+
+    "FLAKE_CHARACTERISATION_test_rust": {
+      "failing_test": "t_s34_dump_mutations_lock_held_exits_71, in the fathomdb-cli operator_cli integration test, line 719:43",
+      "panic_verbatim": "engine open (lock holder): DatabaseLocked { holder_pid: Some(2889055) }",
+      "mechanism": "Parallel-test interference, NOT a code defect. The test intends to BE the lock holder, but another test in the same binary already held the DB lock, so its own engine open failed. cargo runs tests in one binary concurrently.",
+      "measured_rate": "1 of 6 isolated re-runs of the operator_cli test binary failed (runs 1-4 and 6 rc=0; run 5 rc=101, same test). Including the harness run: 2 of 7 = ~29%.",
+      "consistency_with_TC_72": "Matches TC-72's '~1 in 3 fails on plain main'. Reported as flaky with a measured rate; NOT chased and NOT fixed, per the brief.",
+      "cross_platform": "The SAME test failed on rust-macos in CI on this branch. It is not Linux-specific and it is not caused by this branch."
+    },
+
+    "UNKNOWN_STATE_test_python": {
+      "state": "UNKNOWN — requires the sanctioned maturin rebuild to be meaningful. NOT a failure. Recording it as FAILED would publish a false red into the document the HITL will use to decide disposition.",
+      "orchestrator_measurement": "rc=3 in the worktree. rc=3 is a pytest INTERNAL error, not test failures: '5 errors in 1.38s' plus an INTERNALERROR traceback ending 'TypeError: argument of type type is not iterable' inside hypothesis constants_ast.py:259 (is_local_module_file).",
+      "steward_measurement_primary_checkout": "40 collection errors, 'ImportError: cannot import name IllegalTransitionError from fathomdb._fathomdb' — the compiled native module is STALE, predating the 0.8.19 Phase-1 lifecycle symbols. Confirmed NOT TC-97 pythonpath shadowing (re-run with -o pythonpath= from a neutral cwd gives identical errors).",
+      "why_it_cannot_be_resolved_here": "agent-test.sh:231-236 only authorises FATHOMDB_TESTS_ALLOW_REBUILD=1 (maturin develop) when the interpreter is the checkout's OWN .venv. In a worktree that rebuild REBINDS THE SHARED VIRTUALENV to the worktree source tree — the named agent-worktree-stale-base-trap, which has already cost this program two slices. For the Python suite the rebuild is a PREREQUISITE, not a convenience.",
+      "two_distinct_symptoms": "The stale native-module ImportError (primary checkout) and the hypothesis INTERNALERROR (worktree) are different symptoms. Both mean the same thing: this suite's result is not interpretable without the sanctioned rebuild. Neither was fixed."
+    },
+
+    "NAMED_HOLES_IN_THIS_BASELINE": [
+      "HOLE 1 — venv-gated suites. A worktree baseline cannot satisfy the .venv prerequisite, because the only way to satisfy it is the rebind the repo forbids. In an UNPROVISIONED worktree, test-python, test-ledgerwatch and test-ts degrade to skip_notice (SKIPPED-prerequisite-absent), yielding a red list silently short by three labels. That is why they were provisioned — see PROVISIONING.",
+      "HOLE 2 — test-python is UNKNOWN, not green and not red.",
+      "This list names what it could not reach and why. It is deliberately not presented as complete."
+    ],
+
+    "PROVISIONING_disclosed": {
+      "ts_node_modules": "Symlinked to the primary checkout by the STEWARD (gitignored, zero tracked files). The orchestrator seat was DENIED this write by the seat-path-guard because the path starts with a source-tree segment.",
+      "root_node_modules": "Symlinked at worktree creation (agent-lint-md.sh hard-exits 1 without it).",
+      "pytest": "Provided by prepending the primary checkout's .venv/bin to PATH for the run. NO .venv was created or symlinked in the worktree.",
+      "PROOF_NO_REBUILD_COULD_FIRE": "The worktree has no .venv, so agent-test.sh:213 fell through to 'command -v python3', making python_bin an ABSOLUTE path, which cannot equal the literal '.venv/bin/python' tested at :231. The FATHOMDB_TESTS_ALLOW_REBUILD arm is therefore structurally unreachable, and the rebuild is additionally gated on that same opt-in env var in the test-hooks gate module at line 59. No maturin develop and no editable install ran at any point.",
+      "effect_on_the_report": "Because of this provisioning, test-python, test-ledgerwatch and test-ts EXECUTED rather than being SKIPPED. An unprovisioned worktree would have shown three SKIPs instead."
+    },
+
+    "STEWARD_SUPPLIED_primary_checkout_not_part_of_the_worktree_run": {
+      "note": "Supplied by the Steward from the PRIMARY checkout, read-only. Recorded separately and NOT folded into the worktree totals.",
+      "test-ledgerwatch": "rc=0 (96 passed in 0.35s)",
+      "test-ts": "rc=0 (~177s)",
+      "test-check-ledgers": "rc=0",
+      "test-python": "NOT RUNNABLE — stale native module, see UNKNOWN_STATE_test_python",
+      "corroboration": "The orchestrator's independent worktree run agrees on test-ledgerwatch rc=0 and test-ts rc=0, from a different provisioning path."
+    }
+  },
+
+  "AC_6_workspace_gates": {
+    "cargo_clippy_workspace_all_targets": "rc=0",
+    "cargo_check_workspace_all_targets": "rc=0",
+    "note": "Run by the implementer pre-rebase. main moved only by docs/ledger commits between the two bases, so the Rust tree under test is identical. --all-features is impossible here (objc2) and six engine targets exit 101 without --features operator (TC-97), so the two commanded gates are the correct full-workspace pair."
+  },
+
+  "AC_7_TRUE_CI_RED_LIST": {
+    "route": "PULL REQUEST. ci.yml has NO workflow_dispatch (verified: its trigger block is push:[main] + pull_request: only), so 'gh workflow run CI' cannot fire it. The release workflow DOES have a workflow_dispatch and is one of the two irreversible publish paths — it was NEVER dispatched.",
+    "pr": "#167, titled [DO NOT MERGE — CI BASELINE]. Not merged.",
+    "run": "30566757420, head c2728ec8",
+    "non_vacuity_check": "The diff touches scripts/**, so changes.docs_only = (nonmd == 'false') is FALSE by construction and the heavy path was unlocked. This was NOT a docs_only short-path run.",
+    "JOB_COUNT_CORRECTION": {
+      "measured": "23 total job runs = 17 success + 5 failure + 1 skipped. Therefore 22 EXECUTED and 1 SKIPPED.",
+      "arithmetic": "ci.yml defines 19 jobs; wheel-size-gate is a 5-way matrix, so 18 + 5 = 23 job runs.",
+      "correction": "The brief states this two ways — '23 jobs, 1 skipped' and '23 executed / 1 skipped'. The first is right, the second is off by one. Since publish gate (i) (seq-211) reads 'every job THAT EXECUTED', the gate's denominator is 22, not 23. Recorded so the gate is not evaluated against a wrong denominator.",
+      "skipped_is_a_distinct_third_state": "markdownlint is skipped on every non-docs push by design (its if: condition is docs_only == true). Neither a pass nor a failure."
+    },
+    "FAILED_5": [
+      {"job": "commission-manifest", "failing_step": "Recurrence guard for the generator itself (fixture arms)", "status": "PRE-EXISTING", "cause": "SOLVED — see LOCAL_VS_CI_DIVERGENCE"},
+      {"job": "verify", "failing_step": "Bootstrap dev tooling", "status": "PRE-EXISTING", "cause": "7 pyright errors; dies BEFORE its real work"},
+      {"job": "security", "failing_step": "Bootstrap dev tooling (installs strace for AC-036/AC-037)", "status": "PRE-EXISTING", "cause": "same 7 pyright errors; dies BEFORE its real work"},
+      {"job": "rust-windows", "failing_step": "Run cargo test --workspace --no-fail-fast", "status": "PRE-EXISTING, HITL-ruled into this report (seq-206)", "cause": "tc57_worker_side_commit_pressure_governed panicked in the engine tc57_worker_commit_pressure test at line 337:5. FAILED. 1 passed; 1 failed. Reported, NOT triaged and NOT fixed, per seq-206."},
+      {"job": "rust-macos", "failing_step": "Run cargo test --workspace", "status": "NEW vs main's last completed run — but NOT caused by this branch", "cause": "t_s34_dump_mutations_lock_held_exits_71 panicked in the fathomdb-cli operator_cli test at line 719:43. FAILED. 24 passed; 1 failed. This is the SAME flaky lock-interference test measured locally at ~29%. main's green rust-macos was luck, not health."}
+    ],
+    "SUCCESS_17": ["changes", "default-embedder-tests", "board-currency", "ledger-integrity", "plan-anchors", "governed-surface-pin", "c1-contract-conformance", "transcript-hygiene", "release-state-views", "design-status", "steward-orient", "docs", "wheel-size-gate (linux-x64)", "wheel-size-gate (linux-aarch64)", "wheel-size-gate (darwin-x64)", "wheel-size-gate (darwin-arm64)", "wheel-size-gate (win32-x64)"],
+    "SKIPPED_1": ["markdownlint"],
+    "comparison_to_main": "main's last COMPLETED CI run (30563689281, head 2008f529) was 18 success / 4 failure / 1 skipped = 23 jobs. This branch: 17/5/1. The only delta is rust-macos, explained above as the known flake. This branch introduced no new CI failure.",
+    "publish_gate_i_status": "NOT MET. 5 of 22 executed jobs fail.",
+
+    "LOCAL_VS_CI_DIVERGENCE_commission_manifest_SOLVED": {
+      "symptom": "test_commission_manifest.sh is rc=0 LOCALLY (69 PASS, re-confirmed rc=0 in this unit's full baseline run) but FAILS in CI.",
+      "failing_arms_verbatim": [
+        "FAIL  arm 11d (pre-change generator): no revision of scripts/commission-manifest.sh predates design_refs — cannot prove additivity; do NOT skip this",
+        "FAIL  arm 11i4 (section 4 additivity): no pre-change generator recovered (see arm 11d) — do NOT skip this"
+      ],
+      "root_cause": "The commission-manifest job's actions/checkout@v7 step declares NO fetch-depth, so it defaults to a depth-1 SHALLOW clone. Arm 11d recovers a pre-change revision of the generator from the REAL repo's git history via a 'git show <PRE_SHA>:<generator path>' at test_commission_manifest.sh:958. In a depth-1 clone that revision does not exist, so the arm cannot prove additivity and hard-fails by design. Locally the full history is present and both arms pass.",
+      "correcting_the_brief_hypothesis": "The brief warned against inheriting the shallow-checkout hypothesis because it is 'much less plausible for fixture arms that build throwaway repos under mktemp -d'. That warning was well-aimed: the mktemp fixture arms DO pass in CI. The cause is confined to the two arms that reach into the real repo's git HISTORY. So the hypothesis is confirmed, but only for the correct, narrower reason.",
+      "recommended_fix_NOT_APPLIED": "Add 'with: fetch-depth: 0' to the commission-manifest job's checkout step. That workflow file is Slice 40's exclusive territory and was not touched. Note ci.yml already reasons about this explicitly elsewhere ('No fetch-depth needed: the check reads the working tree only' on design-status) — commission-manifest genuinely needs history and does not request it.",
+      "significance": "This is a suite that is GREEN locally and RED in CI — precisely the class of gap this unit existed to find."
+    },
+
+    "verify_and_security_true_state_is_UNKNOWN": {
+      "measured": "Exactly 7 pyright errors, verbatim tail: '7 errors, 0 warnings, 0 informations'.",
+      "locations": "engine.py at 548:29, 552:29, 556:29, 669:35, 670:42 (5, all 'Cannot access attribute'); graph.py at 153:16 (1, 'Argument of type'); test_vector_equivalence_probe.py at 32:50 (1, 'No parameter named').",
+      "CRITICAL": "Both jobs die in bootstrap BEFORE their real work. Their true state is UNKNOWN, NOT green. Fixing the 7 errors would not make them pass — it would only let them START. Nobody has ever seen these two jobs' real result.",
+      "TC_137_hypothesis_steward_supplied": "The Steward measured the same 7 errors locally on unmodified main via agent-typecheck.sh (rc=1), so this is NOT a CI-environment problem. Hypothesis: the committed type stub is stale — dense_disabled appears 11 times in the Rust binding source and 0 times in the stub. If it holds, regenerating the stub clears FIVE of the seven. STATED AS A HYPOTHESIS, NOT A FACT: the stub was NOT regenerated and pyright was NOT re-run. The other two errors are a different shape and must not be assumed to share the cause — graph.py:153 is an assignability error between two IdSpace types (duplicate-type), and the seventh is an unexpected 'reason' parameter. NOT FIXED — disposition is the HITL's single decision.",
+      "do_not_conflate_with_TC_136": "The compiled native module is UNTRACKED (a local environment artifact). The type stub is COMMITTED (wrong in the repository). Different problems, different owners."
+    }
+  },
+
+  "AC_8_codex_review": {
+    "verdict": "PASS",
+    "findings": "None. Zero fix rounds were required.",
+    "invocation": "codex exec --model gpt-5.4 -c model_reasoning_effort=high --sandbox read-only --cd <worktree>, rc=0",
+    "transcript_location": "HELD OUTSIDE THE TREE per TC-135, at the session scratchpad as codex-review.log (2388 lines). Persisting a codex transcript at its normal tracked path reddens check-release-state-views.sh, because the scanner cannot distinguish a generated-region marker that DELIMITS a region from one merely QUOTED in a transcript. No redaction rule was invented and the scanner was not weakened.",
+    "reviewer_gap_closed_by_the_orchestrator": "codex reported that its sandbox intermittently rejected git ('bwrap: loopback: Failed RTM_NEWADDR'), so it could NOT verify the workflow-directory boundary or the commit-set mapping from history. The orchestrator verified that independently from git: the full diff fcae308e..c2728ec8 returns exactly 5 paths, and a forbidden-path scan for the workflows directory, ledgers, the plan, the board, release-state, design docs and every manifest returns EMPTY."
+  },
+
+  "AC_9_closure": "This file.",
+
+  "BOUNDARY_ATTESTATION": {
+    "files_changed_fcae308e_to_c2728ec8": ["dev/plans/runs/0.8.20-slice-39.5-implementer-output.json", "scripts/agent-test.sh", "scripts/lib/agent-suite-run.sh", "scripts/tests/test_actionlint_fixture.sh", "scripts/tests/test_agent_test_collect_all.sh"],
+    "run_capped_contract": "scripts/lib/agent-output.sh is BYTE-IDENTICAL to main (empty diff). run_capped still returns its rc at line 59. agent-lint.sh, agent-typecheck.sh, agent-build.sh and agent-lint-md.sh still call bare run_capped (5/3/3/9 uses, zero run_suite), so all four remain fail-fast. The collect-all wrapper is confined to agent-test.sh.",
+    "justified_deviation": "The brief says 'the collect-all wrapper lives in agent-test.sh'. It was implemented as a NEW lib, scripts/lib/agent-suite-run.sh, sourced by agent-test.sh ALONE (enforced by test arm D). This preserves the brief's actual invariant — run_capped's contract untouched for its four other callers — while making the machinery unit-testable. Declared loudly rather than silently absorbed.",
+    "nothing_fixed": "No red suite was fixed. The workflows directory is untouched. No manifest, version, SCHEMA (stays 24), governed surface, ledger, plan, board, release-state or design doc touched. eu7: ZERO runs, any backend, any N. Nothing published.",
+    "registration_greps_preserved": "At least six sibling suites assert their own wiring by grepping their script PATH inside agent-test.sh (test_staged_ledger_sidecar.sh:286, test_commission_manifest.sh:2134, test_check_transcript_hygiene.sh:857, test_check_c1_conformance.sh:2230), and test_check_design_refs.sh:449 asserts the INVERSE. The conversion rewrote only the bare verb via an anchored substitution, leaving every path argument byte-identical. All of these suites are PASS in the full baseline run."
+  },
+
+  "NEWLY_REVEALED_by_the_permitted_actionlint_loop_conversion": {
+    "context": "design doc section 3 explicitly PERMITS converting test_actionlint_fixture.sh's internal fail-fast loops, because that conversion is what REVEALS its masked second defect. The suite remains RED and neither defect was fixed.",
+    "finding_1": "ALL SEVEN publish-rust-t1..t7 tiers fail the 'dry-run branch is cargo publish --dry-run -p' assertion. Previously ONLY t1-embedder-api ever surfaced, because the loop exited at the first failure. Cause (reported, not fixed): the publish-rust tier jobs no longer inline 'cargo publish --dry-run -p <crate>'; they call a wrapper, cargo-publish-if-new.sh --dry-run <crate>, inside a DRY_RUN guard. The test's literal-string assertion is stale for ALL tiers, not just t1.",
+    "finding_2": "INDEPENDENT of finding 1: the test's own tier-name list has t4/t5 SWAPPED versus the real job names. The test checks 't4-engine'/'t5-embedder'; the actual jobs are 'publish-rust-t4-embedder' / 'publish-rust-t5-engine'. The release workflow documents that this ordering was deliberately fixed in 0.7.2 PR-4 so the embedder resolves on the index before the engine depends on it.",
+    "significance": "The design doc predicted a second hidden defect behind t1. There were two, and one of them (the swap) points at a test that could have silently mis-asserted the publish ORDER — on the path to the first real publish since v0.8.9.",
+    "owner": "Slice 40. Both fixes live in the release workflow, untouchable here."
+  },
+
+  "RECOMMENDATIONS_for_the_single_HITL_disposition_decision": [
+    "test-rust / rust-macos flake (t_s34_dump_mutations_lock_held_exits_71, ~29% measured): the mechanism is same-binary parallel lock contention. Cheapest correct fix is to serialise the lock-holder tests, NOT a retry. It currently reddens CI at random and will keep doing so on the publish path.",
+    "commission-manifest: add 'with: fetch-depth: 0' to its checkout step. One line, in Slice 40's territory. Clears 1 of the 5 CI reds.",
+    "verify + security: test the TC-137 stub-regeneration hypothesis first — it is cheap and, if it holds, clears 5 of the 7 pyright errors and unblocks 2 of the 5 CI reds. Their real work has still never run, so expect further findings once they START.",
+    "rust-windows (tc57): untouched per seq-206. Must eventually pass or be explicitly waived before 0.8.20 publishes, since gate (i) counts every EXECUTED job.",
+    "test_actionlint_fixture: two distinct defects, not one. Fixing the wrapper-shape assertion without also fixing the t4/t5 swap leaves a test that mis-asserts publish order.",
+    "Harness timeout: no mechanism exists. If wanted, budget it from the measured 450s test-rust, and make a timeout record FAIL, never SKIP."
+  ],
+
+  "GAPS_AND_CAVEATS": [
+    "test-python is UNKNOWN, not measured. Two independent environments produced two different symptoms; both need the sanctioned rebuild.",
+    "verify and security have never executed their real work. Their green/red state is genuinely unknown, and this baseline cannot report it.",
+    "The local red list was produced from a WORKTREE with disclosed provisioning. An unprovisioned worktree yields three SKIPs instead of three results.",
+    "cargo clippy/check were run pre-rebase against an identical Rust tree (main moved by docs only).",
+    "One CI run is one sample. Given a ~29% flake, a single green rust-macos or rust-windows would not prove health."
+  ]
+}
