@@ -3,7 +3,7 @@
 FathomDB can embed your documents for you with a built-in, in-process embedder,
 so you do not have to wire up an embedding model yourself. It is **opt-in**: a
 fresh engine has no embedder configured and vector writes fail with
-`EmbedderNotConfigured` until you either enable the default embedder or supply
+`EmbedderNotConfiguredError` until you either enable the default embedder or supply
 your own (Rust only, today).
 
 > Status: shipped and current as of 0.8.20. The ANN-fidelity recall@10,
@@ -59,7 +59,7 @@ The embedder-enabled native binary is larger; see your platform package notes.
 ### Default OFF
 
 If you do not pass the flag, the engine opens normally but has no embedder, and
-vector writes raise `EmbedderNotConfigured`. This is unchanged from earlier
+vector writes raise `EmbedderNotConfiguredError`. This is unchanged from earlier
 releases. Supplying your own custom embedder is available in the Rust API today;
 custom Python/TypeScript embedders are planned for a later release.
 
