@@ -302,8 +302,23 @@ printf '# fixture plan\n\n- Slice 39x5 — collect-all harness: CLOSED\n' \
   >"$PLANS/wildcard-alt1.md"
 printf '# fixture plan\n\n- CLOSED — Slice 39x5 collect-all harness\n' \
   >"$PLANS/wildcard-alt2.md"
+# The same fractional-neighbour safety property must hold for each accepted
+# LANDED form: local close record, status-first close record, and roll-up.
+printf '# fixture plan\n\n- Slice 39.5 — collect-all harness: LANDED\n' \
+  >"$PLANS/landed-frac-alt1.md"
+printf '# fixture plan\n\n- LANDED — Slice 39.5 collect-all harness\n' \
+  >"$PLANS/landed-frac-alt2.md"
+printf '# fixture plan\n\n**LANDED on main:** Slices 39.5 (`b6cc8fa6`)\n' \
+  >"$PLANS/landed-frac-rollup.md"
 # True positives that must keep clearing the gate.
 printf '# fixture plan\n\n- Slice 39 — TC-86 redact: CLOSED\n' >"$PLANS/true-int.md"
+# `release-state` generated plan roll-ups record landed slices as LANDED, not
+# CLOSED. A landed exact-id dependency is equally a valid closure witness.
+printf '# fixture plan\n\n- Slice 39 — TC-86 redact: LANDED\n' >"$PLANS/landed-int.md"
+# The generated plan roll-up groups ids after its `LANDED` marker. It is the
+# canonical form the gate must recognize for a landed dependency.
+printf '# fixture plan\n\n**LANDED on main:** Slices 30 (`9b3ed0e3`)\n' \
+  >"$PLANS/landed-rollup.md"
 # A legitimate sentence-final period after an integer id. This is the control
 # that rules OUT the naive fix: swapping the trailing `[^0-9]` for `[^0-9.]`
 # closes site 4 but makes THIS line stop matching — a new false negative in a
@@ -321,10 +336,27 @@ for alt in alt1 alt2; do
   else
     fail "site 4 RECURRENCE ($alt): Slice 39.5's CLOSED witness cleared --expect-closed 39; got rc=0, out: $OUT"
   fi
-  if printf '%s' "$OUT" | grep -q "^HARD .*Slice/Phase 39 has NO 'CLOSED' block"; then
+  if printf '%s' "$OUT" | grep -q "^HARD .*Slice/Phase 39 has NO 'CLOSED' or 'LANDED' witness"; then
     pass "site 4 ($alt): the refusal names the dependency that is not closed"
   else
     fail "expected a HARD line naming Slice/Phase 39 as not CLOSED; got: $OUT"
+  fi
+done
+
+# --- Arm 9b: LANDED witnesses must retain Arm 9's exact-id boundary. The
+# gate accepts three LANDED forms, so all three must reject Slice 39.5 when
+# the requested dependency is Slice 39.
+for landed in landed-frac-alt1 landed-frac-alt2 landed-frac-rollup; do
+  run_preflight "$LINKED" --expect-closed 39 --plan "$PLANS/$landed.md"
+  if [ "$RC" -ne 0 ]; then
+    pass "LANDED boundary ($landed): Slice 39.5 does not satisfy --expect-closed 39"
+  else
+    fail "LANDED boundary RECURRENCE ($landed): Slice 39.5 cleared --expect-closed 39; got rc=0, out: $OUT"
+  fi
+  if printf '%s' "$OUT" | grep -q "^HARD .*Slice/Phase 39 has NO 'CLOSED' or 'LANDED' witness"; then
+    pass "LANDED boundary ($landed): the refusal names the dependency that is not closed"
+  else
+    fail "expected a HARD line naming Slice/Phase 39 as not closed or landed; got: $OUT"
   fi
 done
 
@@ -338,7 +370,7 @@ for alt in alt1 alt2; do
   else
     fail "duty 1 RECURRENCE ($alt): the unescaped '.' matched 'x'; got rc=0, out: $OUT"
   fi
-  if printf '%s' "$OUT" | grep -q "^HARD .*Slice/Phase 39.5 has NO 'CLOSED' block"; then
+  if printf '%s' "$OUT" | grep -q "^HARD .*Slice/Phase 39.5 has NO 'CLOSED' or 'LANDED' witness"; then
     pass "duty 1 ($alt): the refusal names the dependency that is not closed"
   else
     fail "expected a HARD line naming Slice/Phase 39.5 as not CLOSED; got: $OUT"
@@ -359,6 +391,18 @@ if [ "$RC" -eq 0 ]; then
   pass "regression guard: 'Slice 39 … CLOSED' still satisfies --expect-closed 39"
 else
   fail "an integer CLOSED witness must still clear the gate; got rc=$RC, out: $OUT"
+fi
+run_preflight "$LINKED" --expect-closed 39 --plan "$PLANS/landed-int.md"
+if [ "$RC" -eq 0 ]; then
+  pass "regression guard: 'Slice 39 … LANDED' satisfies --expect-closed 39"
+else
+  fail "an integer LANDED witness must clear the gate; got rc=$RC, out: $OUT"
+fi
+run_preflight "$LINKED" --expect-closed 30 --plan "$PLANS/landed-rollup.md"
+if [ "$RC" -eq 0 ]; then
+  pass "regression guard: a generated LANDED roll-up satisfies --expect-closed 30"
+else
+  fail "a generated LANDED roll-up must clear the gate; got rc=$RC, out: $OUT"
 fi
 run_preflight "$LINKED" --expect-closed 39 --plan "$PLANS/int-trailing-period.md"
 if [ "$RC" -eq 0 ]; then
