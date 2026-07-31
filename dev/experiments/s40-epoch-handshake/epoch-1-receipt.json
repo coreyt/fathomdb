@@ -1,0 +1,53 @@
+{
+  "epoch": 1,
+  "orchestrator": "/root/epoch1_orchestrator",
+  "implementer": "/root/epoch1_orchestrator/epoch1_implementer",
+  "predecessor_receipt": "epoch-0-receipt.json",
+  "artifacts": [
+    "hello.txt",
+    "world.txt",
+    "hello-world.txt"
+  ],
+  "final_content": "hello world",
+  "verified": true,
+  "artifact_sha256": {
+    "hello.txt": "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03",
+    "world.txt": "e258d248fda94c63753607f7c4494ee0fcbe92f1a76bfdac795c9d84101eb317",
+    "hello-world.txt": "a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447"
+  },
+  "hop_evidence": [
+    {
+      "from": "/root",
+      "to": "/root/epoch1_orchestrator",
+      "payload": "epoch-1-brief.md plus independently verified Epoch 0 receipt and hello artifact"
+    },
+    {
+      "from": "/root/epoch1_orchestrator",
+      "to": "/root/epoch1_orchestrator/epoch1_implementer",
+      "payload": "create world.txt and hello-world.txt exactly, then reply IMPLEMENTED world"
+    },
+    {
+      "from": "/root/epoch1_orchestrator/epoch1_implementer",
+      "to": "/root/epoch1_orchestrator",
+      "payload": "IMPLEMENTED world"
+    },
+    {
+      "from": "/root/epoch1_orchestrator",
+      "to": "/root",
+      "payload": "E1 RECEIPT — implementer /root/epoch1_orchestrator/epoch1_implementer; final result hello world."
+    }
+  ],
+  "message_path": [
+    "Steward→Orchestrator",
+    "Orchestrator→Implementer",
+    "Implementer→Orchestrator",
+    "Orchestrator→Steward"
+  ],
+  "steward_verification": {
+    "verified_by": "/root",
+    "verified_at": "2026-07-31T17:51:00Z",
+    "command": "od -An -tx1 hello.txt world.txt hello-world.txt && sha256sum hello.txt world.txt hello-world.txt",
+    "outcome": "PASS"
+  },
+  "next_action": "Steward verify final result"
+}

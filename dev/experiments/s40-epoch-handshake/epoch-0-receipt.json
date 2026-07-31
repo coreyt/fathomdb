@@ -1,0 +1,47 @@
+{
+  "epoch": 0,
+  "orchestrator": "/root/epoch0_orchestrator",
+  "implementer": "/root/epoch0_orchestrator/epoch0_implementer",
+  "artifact": "hello.txt",
+  "content": "hello",
+  "verified": true,
+  "artifact_sha256": {
+    "hello.txt": "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03"
+  },
+  "hop_evidence": [
+    {
+      "from": "/root",
+      "to": "/root/epoch0_orchestrator",
+      "payload": "epoch-0-brief.md and the constrained hello facilitation task"
+    },
+    {
+      "from": "/root/epoch0_orchestrator",
+      "to": "/root/epoch0_orchestrator/epoch0_implementer",
+      "payload": "create hello.txt exactly, then reply IMPLEMENTED hello"
+    },
+    {
+      "from": "/root/epoch0_orchestrator/epoch0_implementer",
+      "to": "/root/epoch0_orchestrator",
+      "payload": "IMPLEMENTED hello"
+    },
+    {
+      "from": "/root/epoch0_orchestrator",
+      "to": "/root",
+      "payload": "E0 RECEIPT — child /root/epoch0_orchestrator/epoch0_implementer; verification PASS (hello.txt bytes: 68 65 6c 6c 6f 0a)."
+    }
+  ],
+  "message_path": [
+    "Steward→Orchestrator",
+    "Orchestrator→Implementer",
+    "Implementer→Orchestrator",
+    "Orchestrator→Steward"
+  ],
+  "steward_verification": {
+    "verified_by": "/root",
+    "verified_at": "2026-07-31T17:51:00Z",
+    "command": "od -An -tx1 hello.txt",
+    "result": "68 65 6c 6c 6f 0a",
+    "outcome": "PASS before Epoch 1 commission"
+  },
+  "next_action": "Steward verify then commission fresh epoch 1"
+}
