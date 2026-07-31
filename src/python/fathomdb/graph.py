@@ -26,6 +26,7 @@ from fathomdb._fathomdb import search_expand as _native_search_expand
 from fathomdb.read import _to_native_view
 from fathomdb.types import (
     ExpandedNode,
+    IdSpace,
     NodeRecord,
     ReadView,
     SearchExpandResult,
@@ -150,11 +151,13 @@ def search_expand(
     )
     search_hits = [
         SearchHit(
-            id=h.id,
+            id=IdSpace(space=h.id.space, value=h.id.value),
             kind=h.kind,
             body=h.body,
             score=h.score,
             branch=cast(SoftFallbackBranch, h.branch),
+            source_id=h.source_id,
+            ce_score=h.ce_score,
         )
         for h in native_result.search_hits
     ]

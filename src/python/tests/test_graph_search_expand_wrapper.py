@@ -10,6 +10,7 @@ from __future__ import annotations
 import sys
 import types
 from types import SimpleNamespace
+from typing import Any, cast
 
 
 if "fathomdb" not in sys.modules and "fathomdb._fathomdb" not in sys.modules:
@@ -42,7 +43,9 @@ def test_search_expand_maps_idspace_and_search_metadata(monkeypatch) -> None:  #
     native_result = SimpleNamespace(search_hits=[native_hit], expanded=[], all_logical_ids=["graph-hit"])
     monkeypatch.setattr(graph, "_native_search_expand", lambda *args: native_result)
 
-    result = graph.search_expand(SimpleNamespace(_native=object()), "graph contract", depth=1)
+    result = graph.search_expand(
+        cast(Any, SimpleNamespace(_native=object())), "graph contract", depth=1
+    )
 
     hit = result.search_hits[0]
     assert isinstance(hit.id, IdSpace)
