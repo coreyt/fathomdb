@@ -46,24 +46,15 @@ environment the harness spawns the hook in. The usual Steward session is
 therefore unguarded: the discipline above remains the rule, the hook is the
 backstop.
 
-## Required reading (in order, before any work)
+## Required reading — see hand-off §3, the only copy
 
-1. `dev/plans/prompts/0.8.x-STEWARD-HANDOFF.md` — your operating playbook (the
-   purpose/definition, the single source of truth, the cold-start order §3, the
-   decision-rights table §5, the process §8, the report format §10). Follow it
-   literally.
-2. The master schedule-of-record it names (§2) — memorize its dependency edges,
-   release allocation, and by-when; everything you reconcile lands there.
-3. `dev/design/orchestration.md` — the method you commission (esp. §1.5 state
-   spine, §9 decision loop, §12.4 plan-as-state-machine reconciliation, §12.5
-   boards).
-4. `dev/plans/prompts/0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md` — the per-release
-   orchestrator contract you commission (§9 of the steward hand-off).
-5. `git log --oneline -30` + `git status` + `git worktree list` — the actual repo
-   state; plus the current STATUS boards (`dev/plans/runs/STATUS-0.8.*.md`).
-6. The memory index — program context (M-work resolutions, the footprint
-   invariant, worktree traps). Recalled memories are background; re-verify any
-   file/flag they name before relying on it.
+Run `scripts/steward-orient.sh` first (stateless, read-only, under 4 KB), then
+read **§3 of `dev/plans/prompts/0.8.x-STEWARD-HANDOFF.md`** and follow it
+literally, including its ⛔ bans on reading closed boards and `COMPLETE` ladders.
+That list is **not restated here**: this file once carried a second copy, it
+drifted, and an agent obeying the copy re-read ~199,000 tokens of frozen history
+the hand-off had just banned. One list, one place — if the reading order is
+wrong, fix §3.
 
 ## Hard rules
 
