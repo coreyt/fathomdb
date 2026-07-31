@@ -53,13 +53,10 @@ if [ "$FIXTURE_FAILED" -eq 0 ]; then
   printf 'PASS  release.yml carries all 4 canonical napi labels\n'
 fi
 
-# Sibling-dep resolution: cargo publish --dry-run requires every in-workspace
-# dep to be resolvable from the registry. The 0.6.0-rc.1 bootstrap publish
-# (scripts/release/publish-rc1-bootstrap.sh, operator-run) seeds crates.io
-# with all 7 axis-W crates + axis-E embedder-api so subsequent dispatches
-# (rc.2, rc.3, …, GA) can use the canonical `cargo publish --dry-run` gate.
-# Lock that gate in here; forbid the cargo-package workaround that briefly
-# replaced it pre-bootstrap.
+# Determination (Slice 40 B8): this test is stale, not the release workflow.
+# The workflow's helper preserves the idempotency guard that makes rerunning an
+# immutable-registry release safe. The assertion below still expects the
+# superseded direct cargo-publish form and therefore fails at this red point.
 TIER_FAILED=0
 for tier in t1-embedder-api t2-schema t3-query t4-engine t5-embedder t6-facade t7-cli; do
   block=$(awk "/publish-rust-${tier}:/{flag=1} flag; /^  [a-z]/&&!/publish-rust-${tier}:/{if(flag){flag=0}}" "$RELEASE_YML")
