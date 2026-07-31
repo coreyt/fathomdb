@@ -4,6 +4,9 @@
 
 ## ★ IMMEDIATE NEXT STEP
 
+<!-- BEGIN GENERATED release-state:0.8.20:handoff-next-step -->
+**The 0.8.20 ladder is between slices: 0 → 5 → 10 → 15 → 20 → 25 → 30 → 21 → 22 → 23 → 31 → 32 → 33 → 39 are all LANDED; 40 is next.**<!-- END GENERATED release-state:0.8.20:handoff-next-step -->
+
 **Commission Slice 40 (`R-20-PUB`).** Nothing blocks it. It is the final ladder slice of 0.8.20.
 
 ```sh
@@ -43,8 +46,8 @@ A cold start was measured at **~374,000 tokens across 47 files**, ~216,000 of it
 `STATUS-0.8.0.md` alone is 48,824 tokens for a release closed months ago.
 
 **Phase 1 has LANDED.** §3 of `0.8.x-STEWARD-HANDOFF.md` is now liveness-aware: the live board only (per
-`board_is_closed()`), and `status: ACTIVE`/`PROPOSED` ladders only. **Cold start is now ~174,800 tokens
-across 13 files.** You are reading the cheaper version.
+`board_is_closed()`), and `status: ACTIVE`/`PROPOSED` ladders only. **Cold start is now ~153,200 tokens
+across 11 files.** You are reading the cheaper version.
 
 A `steward_cold_start_set` metric was added to `scripts/repo-prune/bin/context-clarity.sh` beside its
 existing `cold_start_orient_set`, with a ratchet ceiling of **180,000** — deliberately just above the

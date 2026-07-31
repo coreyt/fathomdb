@@ -221,8 +221,11 @@ steward_live_filter() { # $1 = item number; stdin paths -> stdout the ones §3 s
           board_is_closed "$f" 2>/dev/null && continue
         fi ;;
       dev/plans/plan-0.8.*.md)
-        if printf '%s' "$body" | grep -qE '`?status:`? *(frontmatter|is )?|status: *(ACTIVE|COMPLETE)'; then
-          head -6 "$f" | grep -qiE '^status: *COMPLETE' && continue
+        # ALLOW-LIST, not a deny-list. Excluding only COMPLETE let SUPERSEDED
+        # ladders (plan-0.8.15, plan-0.8.17) through, so the metric counted 4
+        # where §3 names 2. §3 says ACTIVE or PROPOSED; match that exactly.
+        if printf '%s' "$body" | grep -qE 'status:'; then
+          head -6 "$f" | grep -qiE '^status: *(ACTIVE|PROPOSED)' || continue
         fi ;;
     esac
     printf '%s\n' "$f"

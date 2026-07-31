@@ -1,15 +1,15 @@
 # Steward cold-start budget — RATIFIED
 
 > **Status: RATIFIED by the HITL 2026-07-31** (steward ledger `seq-226`). All six steps approved.
-> ⛔ **Nothing has been executed yet** — approval is recorded, execution is held pending a go.
+> ✅ **Steps 1–3 are DONE** (`e27f4939` + this commit). Steps 4–6 are approved and sequenced, not started.
 >
 > **Ratified order.** Deviating from it needs a new ruling, because two of the constraints are hard:
 >
 > | # | Step | State |
 > |---|---|---|
-> | 1 | Push `5d135bee` · `b842d417` · `88be45a3` | approved · not done |
-> | 2 | `DOC-INDEX.md` row for this file + board/plan pointer to the Slice 40 provenance doc | approved · not done |
-> | 3 | **Phase 1** — §3 liveness-aware; ceiling **180,000**, not 60,000 | approved · not done |
+> | 1 | Push `5d135bee` · `b842d417` · `88be45a3` | ✅ **DONE** |
+> | 2 | `DOC-INDEX.md` row + board pointer to the Slice 40 provenance doc | ✅ **DONE** |
+> | 3 | **Phase 1** — §3 liveness-aware; ceiling **180,000**, not 60,000 | ✅ **LANDED** — 374,473 → 153,188 tok |
 > | 4 | Commission **Slice 40** — its item B6 is TC-139, so the release clears this metric's blocker | approved |
 > | 5 | **Phase 2** — **during** Slice 40's Windows-clock window, not before it | approved |
 > | 6 | **Phase 3** + tighten ceiling to 60,000 — **only after 0.8.20 publishes** | approved |
@@ -39,7 +39,7 @@ alone is 48,824 tokens for a release closed months ago, larger than the live boa
 cannot drift back. Stretch: 40,000.
 
 ⚠ **60,000 is the POST-PUBLISH end state, not the first ceiling.** The ratified ceiling at Phase 1 is
-**180,000** — post-Phase-1 measures ~174,600, and a gate that is red the day it lands gets switched off.
+**180,000** — post-Phase-1 measures ~153,200, and a gate that is red the day it lands gets switched off.
 That is exactly how repo-prune's own metrics ended up unratcheted (§1a Finding 3). The ceiling tightens
 as each phase lands; it does not start at the destination.
 
