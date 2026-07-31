@@ -1,0 +1,3284 @@
+Reading additional input from stdin...
+OpenAI Codex v0.136.0
+--------
+[1mworkdir:[0m /home/coreyt/projects/fathomdb
+[1mmodel:[0m gpt-5.4
+[1mprovider:[0m openai
+[1mapproval:[0m never
+[1msandbox:[0m read-only
+[1mreasoning effort:[0m high
+[1mreasoning summaries:[0m none
+[1msession id:[0m 019fb5f5-1220-70a0-8dc3-b7c21259d4a9
+--------
+[36muser[0m
+COMPREHENSIVE ADVERSARIAL REVIEW — single round. Be harsh; find real defects.
+
+SCOPE: two commits on main.
+  5d135bee  docs: split Slice 40 brief into brief + provenance
+  b842d417  feat(repo-prune): steward_cold_start_set metric + proposal
+
+Read: `git show b842d417`, `git show 5d135bee --stat`,
+scripts/repo-prune/bin/context-clarity.sh (esp. section 5b),
+dev/design/steward-cold-start-budget.md,
+dev/plans/runs/0.8.20-slice-40-commission-brief.md,
+dev/plans/runs/0.8.20-slice-40-brief-provenance.md.
+
+PRIORITY 1 — the new shell code (section 5b of context-clarity.sh).
+Hunt for: unbound-variable / set -euo pipefail interactions; subshell scope
+loss; `local` + command-substitution masking exit status; glob-state
+save/restore correctness in steward_resolve (does it restore on every path,
+including when the `for` loop body's `[ -f ]` test fails last?); the
+`[ "$_noglob" -eq 1 ] && set -f` line under `set -e`; awk item-parser
+robustness (nested lists, renumbered items, an item 10+); JSON emission that
+could produce INVALID json (empty STEWARD_ROWS, unescaped chars, the
+`printf "$STEWARD_ROWS"` format-string injection risk); the sed-based MD
+table generation. Does the metric MISCOUNT (double-count, or miss files)?
+
+PRIORITY 2 — is the guard actually non-vacuous?
+The commit claims two controls (A: break item 1 -> exit 3; B: add a file ->
+count +1). Try to construct a case where §3 changes materially and the metric
+neither fails nor changes — i.e. a silent under-report. Specifically consider:
+an item whose backticked token has no .md suffix; a path in a nested
+sub-bullet; item 2's file-less exemption being abused; STEWARD_NOFILE_ITEMS
+matching by substring.
+
+PRIORITY 3 — factual claims. Falsify these if you can:
+  - steward §3 set and repo-prune's orient_list() overlap = 0 files
+  - 2026-06-26 prune: dev_tree md_tokens -46%, cold_start_orient_set +1.8%
+  - dev/plans/runs/ 168 -> 359 files
+  - board_is_closed() classifies 18 CLOSED / 1 LIVE
+  - Phase 1 saves ~199,820 tokens
+  - TC-139 is PRE-EXISTING and was NOT fixed in b842d417 (verify md_under /
+    all_under are byte-identical to their state before the commit)
+
+PRIORITY 4 — the brief/provenance split. Did the split LOSE any load-bearing
+instruction, or leave a dangling cross-reference? Is anything in the brief now
+ambiguous that was clear before?
+
+OUTPUT: verdict blocks. For each finding give [P1]/[P2]/[P3], file:line, the
+concrete failure scenario, and whether you CONFIRMED it by running something
+or only reasoned about it. End with an overall PASS / FAIL.
+Note: context-clarity.sh currently dies at repo root due to TC-139 (known,
+deliberately unfixed). To exercise section 5b, work around it locally.
+[1m[33mwarning:[0m[0m Codex's Linux sandbox uses bubblewrap and needs access to create user namespaces.
+[35m[3mcodex[0m[0m
+Reviewing the two commits and the cited docs/scripts first, then I’ll exercise `context-clarity.sh` section 5b in isolation to look for real failure modes and silent miscounts.
+[35m[3mcodex[0m[0m
+Shell access is failing at the sandbox wrapper, so I’m retrying with a minimal non-login invocation. If that still fails, I’ll fall back to direct file resources where possible and call out any verification limits explicitly.
+[35m[3mexec[0m[0m
+[1m/bin/bash -c pwd[0m in /home/coreyt/projects/fathomdb
+[32m succeeded in 0ms:[0m
+/home/coreyt/projects/fathomdb
+
+[35m[3mcodex[0m[0m
+Parallel shell calls are what’s tripping the wrapper here. I’m switching to single-process reads so I can still verify the script and the historical claims directly.
+[35m[3mexec[0m[0m
+[1m/bin/bash -c ls[0m in /home/coreyt/projects/fathomdb
+[32m succeeded in 0ms:[0m
+AGENTS.md
+CHANGELOG.md
+Cargo.lock
+Cargo.toml
+LICENSE
+README.md
+data
+deny.toml
+dev
+docs
+experiments
+go
+lychee.toml
+mkdocs.yml
+node_modules
+package-lock.json
+package.json
+python
+rust-toolchain.toml
+rustfmt.toml
+scripts
+site
+src
+target
+test
+tests
+tools
+typescript
+
+[35m[3mexec[0m[0m
+[1m/bin/bash -c "sed -n '1,220p' MEMORY.md"[0m in /home/coreyt/projects/fathomdb
+[31m exited 2 in 0ms:[0m
+sed: can't read MEMORY.md: No such file or directory
+
+[35m[3mexec[0m[0m
+[1m/bin/bash -c 'ls -a ..'[0m in /home/coreyt/projects/fathomdb
+[32m succeeded in 0ms:[0m
+.
+..
+7thplacenw-client
+ado-mcp
+agent-aware
+airlock
+armada
+bosun
+coral
+cotudes
+cpptudes
+dependency-scout
+dicom-de-id
+dicom-de-id-worktrees
+fathomdb
+fathomdb-verify-s5
+fathomdb-worktrees
+graph-ir
+graph-ir-tools
+libavoided-js
+local
+lookout
+margie
+md-render
+memex
+memex-worktrees
+mesh-seam-ripper
+monospace-design-tui
+one-0-one
+ros2-igus-rebel
+schooner
+temp
+wake
+windchill-llm
+wopr-markii
+
+[35m[3mexec[0m[0m
+[1m/bin/bash -c 'ls -a'[0m in /home/coreyt/projects/fathomdb
+[32m succeeded in 0ms:[0m
+.
+..
+.cache
+.claude
+.codex
+.git
+.github
+.gitignore
+.hypothesis
+.ledgerwatch
+.local
+.markdownlint-cli2.jsonc
+.markdownlint.jsonc
+.prettierignore
+.prettierrc.json
+.pytest_cache
+.ruff_cache
+.venv
+.wake
+AGENTS.md
+CHANGELOG.md
+Cargo.lock
+Cargo.toml
+LICENSE
+README.md
+data
+deny.toml
+dev
+docs
+experiments
+go
+lychee.toml
+mkdocs.yml
+node_modules
+package-lock.json
+package.json
+python
+rust-toolchain.toml
+rustfmt.toml
+scripts
+site
+src
+target
+test
+tests
+tools
+typescript
+
+[35m[3mexec[0m[0m
+[1m/bin/bash -c 'ls -a .claude'[0m in /home/coreyt/projects/fathomdb
+[32m succeeded in 0ms:[0m
+.
+..
+agents
+commands
+hooks
+settings.json
+settings.local.json
+workflows
+worktrees
+
+[35m[3mcodex[0m[0m
+I haven’t found `MEMORY.md` at repo root yet, so I’m locating it with git-index queries rather than filesystem scans. Then I’ll move into the target script and historical diffs.
+[35m[3mcodex[0m[0m
+The shell wrapper is only allowing a narrow subset of commands here, so I’m checking whether there’s a repo/file MCP path I can use for direct reads. If not, I’ll keep the review grounded in what I can inspect and mark the rest as constrained verification.
+[1mmcp:[0m [36mcodex_apps/github_search_installed_repositories_streaming[0m [2mstarted[0m
+[1mmcp:[0m [36mcodex_apps/github_search_installed_repositories_streaming[0m [2m([32mcompleted[0m)[0m
+[1mmcp:[0m [36mcodex_apps/github_search_repositories[0m [2mstarted[0m
+[1mmcp:[0m [36mcodex_apps/github_search_repositories[0m [2m([32mcompleted[0m)[0m
+[1mmcp:[0m [36mcodex_apps/github_search[0m [2mstarted[0m
+[1mmcp:[0m [36mcodex_apps/github_search[0m [2m([32mcompleted[0m)[0m
+[35m[3mcodex[0m[0m
+I can reach the GitHub mirror, but I still need local history for byte-level “before vs after” checks. I’m probing whether the shell restriction is tied to PATH/builtins by invoking binaries directly.
+[1mweb search:[0m 
+[1mweb search:[0m https://github.com/coreyt/fathomdb/commit/b842d417
+[1mweb search:[0m 
+[1mweb search:[0m site:github.com/coreyt/fathomdb b842d417
+[1mweb search:[0m 
+[1mweb search:[0m "5d135bee" "coreyt/fathomdb"
+[1mweb search:[0m 
+[1mweb search:[0m site:github.com/coreyt/fathomdb "steward_cold_start_set metric + proposal"
+[1mmcp:[0m [36mcodex_apps/github_fetch[0m [2mstarted[0m
+[1mmcp:[0m [36mcodex_apps/github_fetch[0m [2m([31mfailed[0m)[0m
+[1mmcp:[0m [36mcodex_apps/github_fetch[0m [2mstarted[0m
+[1mmcp:[0m [36mcodex_apps/github_fetch[0m [2m([32mcompleted[0m)[0m
+[35m[3mcodex[0m[0m
+The GitHub mirror is behind the local checkout for `context-clarity.sh`, so I’m back on the local tree and testing the minimal read forms the sandbox still permits. The target now is the exact on-disk script that contains section 5b.
+[35m[3mexec[0m[0m
+[1m/bin/bash -c 'sed -n 1,260p scripts/repo-prune/bin/context-clarity.sh'[0m in /home/coreyt/projects/fathomdb
+[32m succeeded in 0ms:[0m
+#!/usr/bin/env bash
+# context-clarity.sh — reproducible "documentation context clarity" snapshot.
+#
+# Measures the proxies for how much an agent must wade through to find CURRENT
+# state in dev/ (and the per-session memory surface). Run BEFORE and AFTER a
+# ledger prune (scripts/repo-prune/prompts/prune-docs.md) and diff the JSON snapshots for the delta.
+#
+# Usage:
+#   scripts/repo-prune/bin/context-clarity.sh [LABEL]
+#     LABEL defaults to "baseline". Writes:
+#       scripts/repo-prune/measurements/context-clarity/<LABEL>.json   (machine-diffable)
+#       scripts/repo-prune/measurements/context-clarity/<LABEL>.md      (human summary)
+#
+# Notes:
+# - Tokens are ESTIMATED as ceil(bytes/4) (no tokenizer dependency); the method
+#   is constant across runs so before/after deltas are valid.
+# - Operates on ON-DISK files (what grep/glob actually hit), excluding heavy
+#   caches; this includes untracked/git-ignored trees like dev/research/.
+# - Read-only: never edits/moves repo docs. Safe to run any time.
+set -euo pipefail
+
+REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+LABEL="${1:-baseline}"
+OUT_DIR="scripts/repo-prune/measurements/context-clarity"
+mkdir -p "$OUT_DIR"
+JSON="$OUT_DIR/${LABEL}.json"
+MD="$OUT_DIR/${LABEL}.md"
+
+# Caches/binaries to exclude from "what an agent sees".
+PRUNE_EXPR='-path */.git -o -path */.venv -o -path */hf_cache -o -path */node_modules -o -path */__pycache__ -o -path */.pytest_cache -o -path */.ruff_cache -o -path */target'
+
+# --- helpers -------------------------------------------------------------
+# bytes of a set of files passed on stdin (one path per line); 0 if none.
+bytes_of() { local t=0 b; while IFS= read -r f; do [ -f "$f" ] || continue; b=$(wc -c <"$f"); t=$((t+b)); done; echo "$t"; }
+count_of() { grep -c . || true; }                      # count nonempty stdin lines
+est_tokens() { echo $(( ($1 + 3) / 4 )); }             # ceil(bytes/4)
+
+# find md files under a dir, excluding caches (prune dirs FIRST, then match files)
+md_under() { find "$1" \( $PRUNE_EXPR \) -prune -o -type f -name '*.md' -print 2>/dev/null; }
+# all files under a dir, excluding caches
+all_under() { find "$1" \( $PRUNE_EXPR \) -prune -o -type f -print 2>/dev/null; }
+
+metric() { # name list-producing-command -> sets _CNT/_BYTES/_TOK
+  local list; list="$(eval "$2")"
+  _CNT=$(printf '%s\n' "$list" | grep -c . || true)
+  _BYTES=$(printf '%s\n' "$list" | bytes_of)
+  _TOK=$(est_tokens "$_BYTES")
+}
+
+# --- 1. dev/ whole-tree (on disk, ex-caches) -----------------------------
+metric dev_all "all_under dev";                 DEV_ALL_C=$_CNT;  DEV_ALL_B=$_BYTES
+metric dev_md  "md_under dev";                   DEV_MD_C=$_CNT;   DEV_MD_B=$_BYTES;  DEV_MD_T=$_TOK
+
+# --- 2. live paths vs archive -------------------------------------------
+metric live_md "md_under dev | grep -v '^dev/archive/'";  LIVE_MD_C=$_CNT;  LIVE_MD_B=$_BYTES;  LIVE_MD_T=$_TOK
+metric arch_md "md_under dev | grep '^dev/archive/'";      ARCH_MD_C=$_CNT;  ARCH_MD_B=$_BYTES
+
+# --- 3. runs/ ledger zone by type ---------------------------------------
+RUNS=dev/plans/runs
+runs_count_ext() { find "$RUNS" -maxdepth 1 -type f -name "*.$1" 2>/dev/null | grep -c . || true; }
+RUNS_ALL=$(all_under "$RUNS" | grep -c . || true)
+RUNS_B=$(all_under "$RUNS" | bytes_of)
+RUNS_MD=$(runs_count_ext md); RUNS_JSON=$(runs_count_ext json); RUNS_LOG=$(runs_count_ext log); RUNS_TXT=$(runs_count_ext txt)
+
+# --- 4. DOC-INDEX (the cold-start map) ----------------------------------
+DI=dev/DOC-INDEX.md
+DI_B=$(wc -c <"$DI"); DI_T=$(est_tokens "$DI_B")
+DI_ROWS=$(grep -cE '^\| ' "$DI" || true)
+
+# --- 5. cold-start orient set (what an agent reads to get current) -------
+# DOC-INDEX + every dev README + root contracts + interface contracts.
+orient_list() {
+  { echo dev/DOC-INDEX.md
+    echo dev/README.md dev/architecture.md dev/requirements.md dev/acceptance.md \
+         dev/test-plan.md dev/traceability.md | tr ' ' '\n'
+    md_under dev/interfaces
+    md_under dev | grep '/README.md$'
+  } | sort -u | while IFS= read -r f; do [ -f "$f" ] && echo "$f"; done
+}
+metric orient "orient_list";  ORIENT_C=$_CNT;  ORIENT_B=$_BYTES;  ORIENT_T=$_TOK
+
+# --- 6. per-session memory surface --------------------------------------
+MEM_DIR="${CLAUDE_MEMORY_DIR:-$HOME/.claude/projects/-home-coreyt-projects-fathomdb/memory}"
+# (defined here because §5b's resolver needs it; §6 below consumes it too.)
+if [ -f "$MEM_DIR/MEMORY.md" ]; then
+  MEM_IDX_B=$(wc -c <"$MEM_DIR/MEMORY.md"); MEM_IDX_T=$(est_tokens "$MEM_IDX_B")
+  MEM_IDX_ENTRIES=$(grep -c '^- \[' "$MEM_DIR/MEMORY.md" || true)
+  MEM_FILES=$(find "$MEM_DIR" -maxdepth 1 -name '*.md' | grep -c . || true)
+  MEM_ALL_B=$(find "$MEM_DIR" -maxdepth 1 -name '*.md' -print | bytes_of)
+else
+  MEM_IDX_B=0; MEM_IDX_T=0; MEM_IDX_ENTRIES=0; MEM_FILES=0; MEM_ALL_B=0
+fi
+
+# --- 5b. STEWARD cold-start set (a SECOND, disjoint orient axis) ---------
+# §5's orient_list() is the "understand the codebase" set: DOC-INDEX + READMEs +
+# root/interface contracts. A /steward cold start reads something else entirely —
+# the boards, ladders, master and hand-offs named by §3 of the steward hand-off.
+# Measured 2026-07-31: the two sets share ZERO files, and the 2026-06-26 prune
+# cut dev/ md tokens 46% while cold_start_orient_set rose 1.8%. Tree size and
+# reading-list cost are different variables; this metric is the second one.
+#
+# DERIVED FROM §3, NOT HARDCODED. orient_list() above is a hardcoded list, which
+# is fine for a campaign instrument but would be a vacuous gate: it would keep
+# passing while §3 grew. This resolver reads the hand-off itself, so adding a
+# file to §3 shows up here.
+#
+# Partial is allowed; SILENTLY partial is not (the steward-orient.sh contract).
+# Any §3 item that resolves to nothing, and is not declared file-less, is a hard
+# failure naming the item.
+STEWARD_HANDOFF=dev/plans/prompts/0.8.x-STEWARD-HANDOFF.md
+STEWARD_CEILING="${STEWARD_COLDSTART_CEILING:-60000}"
+# §3 items that legitimately name no file. Item 2 is `git log`/`git status`/
+# `git worktree list` — commands, not documents.
+STEWARD_NOFILE_ITEMS=" 2 "
+
+# Body of a numbered §3 item: from "<n>. " to the next numbered item or "## ".
+steward_item_body() { # $1 = item number
+  awk -v want="$1" '
+    /^## *3\./      { in3=1; next }
+    in3 && /^## /   { exit }
+    !in3            { next }
+    /^[0-9]+\. /    { cur = $1+0 }
+    { if (cur == want) print }
+  ' "$STEWARD_HANDOFF"
+}
+
+# Resolve one backticked token from §3 into existing file paths.
+#
+# NOTE for whoever fixes TC-139 (Slice 40 item B6): this resolver REQUIRES
+# pathname expansion for `plan-0.8.*.md` and `STATUS-0.8.*.md`. If the TC-139 fix
+# is `set -f` at file scope rather than wrapped tightly around the `find`, this
+# function breaks. It therefore enables globbing locally and restores the caller's
+# state, so it is correct under either fix shape.
+steward_resolve() { # $1 = raw token
+  local t="$1" p
+  local _noglob=0; case $- in *f*) _noglob=1;; esac
+  set +f
+  case "$t" in
+    # `…/memory/MEMORY.md` — an elided absolute path.
+    *…*|*...*)      t="$MEM_DIR/MEMORY.md" ;;
+  esac
+  case "$t" in
+    # `plan-0.8.z.md` is a PATTERN written in prose, not a literal filename.
+    plan-0.8.z.md)  t="dev/plans/plan-0.8.*.md" ;;
+  esac
+  case "$t" in
+    # A bare filename in §3 means the prompts dir (item 5's orchestrator hand-off).
+    */*)            : ;;
+    *)              t="dev/plans/prompts/$t" ;;
+  esac
+  for p in $t; do [ -f "$p" ] && printf '%s\n' "$p"; done   # deliberate glob
+  [ "$_noglob" -eq 1 ] && set -f
+  return 0
+}
+
+# Files named by item N of §3, one path per line.
+steward_item_files() { # $1 = item number
+  local tok
+  steward_item_body "$1" \
+    | grep -oE '`[^`]+`' | tr -d '`' \
+    | grep -E '\.md$' \
+    | sort -u \
+    | while IFS= read -r tok; do steward_resolve "$tok"; done
+  # Item 7 ("your own last Steward report") names no path — resolve by rule.
+  if [ "$1" = 7 ]; then
+    ls dev/plans/runs/STEWARD-SESSION-HANDOFF-*.md 2>/dev/null | sort | tail -1
+  fi
+}
+
+# The entry point itself: /steward loads these before §3 is even reached.
+steward_entry_files() {
+  { echo "$STEWARD_HANDOFF"
+    echo .claude/commands/steward.md
+    echo .claude/agents/steward.md
+  } | while IFS= read -r f; do [ -f "$f" ] && echo "$f"; done
+}
+
+STEWARD_ROWS=""; STEWARD_ALL=""; STEWARD_UNRESOLVED=""; _SC_LAST=0
+# Sets globals directly and reports the count in _SC_LAST. It must NOT be called
+# via $(...): a command substitution runs in a subshell, so the STEWARD_ROWS /
+# STEWARD_ALL accumulation would be silently discarded — which is exactly how the
+# first draft of this metric reported 0 files while its own guard stayed quiet.
+_sc_add() { # $1 = item label, $2 = newline-separated paths
+  local list="$2" c b t
+  c=$(printf '%s\n' "$list" | grep -c . || true)
+  b=$(printf '%s\n' "$list" | bytes_of)
+  t=$(est_tokens "$b")
+  STEWARD_ROWS="${STEWARD_ROWS}    {\"item\": \"$1\", \"files\": $c, \"bytes\": $b, \"tokens_est\": $t},\n"
+  if [ "$c" -gt 0 ]; then STEWARD_ALL="${STEWARD_ALL}${list}"$'\n'; fi
+  _SC_LAST="$c"
+}
+
+_sc_add entry "$(steward_entry_files)"
+[ "$_SC_LAST" -gt 0 ] || STEWARD_UNRESOLVED="${STEWARD_UNRESOLVED}entry "
+for _i in 1 2 3 4 5 6 7; do
+  _sc_add "3.$_i" "$(steward_item_files "$_i")"
+  if [ "$_SC_LAST" -eq 0 ] && [[ "$STEWARD_NOFILE_ITEMS" != *" $_i "* ]]; then
+    STEWARD_UNRESOLVED="${STEWARD_UNRESOLVED}3.$_i "
+  fi
+done
+STEWARD_ROWS="${STEWARD_ROWS%,\\n}"
+
+# De-duplicate: a file named by two items is read once, so count it once.
+STEWARD_UNIQ=$(printf '%s\n' "$STEWARD_ALL" | grep -v '^$' | sort -u || true)
+STEW_C=$(printf '%s\n' "$STEWARD_UNIQ" | grep -c . || true)
+STEW_B=$(printf '%s\n' "$STEWARD_UNIQ" | bytes_of)
+STEW_T=$(est_tokens "$STEW_B")
+STEW_OVER=$( [ "$STEW_T" -gt "$STEWARD_CEILING" ] && echo true || echo false )
+
+if [ -n "$STEWARD_UNRESOLVED" ]; then
+  echo "context-clarity: FAIL — steward §3 item(s) resolved to no files: $STEWARD_UNRESOLVED" >&2
+  echo "  (§3 of $STEWARD_HANDOFF changed shape, or a named file moved.)" >&2
+  echo "  A silently-partial cold-start measurement is worse than none — refusing to write." >&2
+  exit 3
+fi
+
+# --- 7. search signal-to-noise ------------------------------------------
+# For a fixed query set: total live-path md files matching, and how many are in
+# ledger zones (runs/ or prompts/) vs core (design/adr/interfaces/root/notes).
+QUERIES=("CE-rerank" "rerank" "graphrag" "recall floor" "logical_id" "mem0" "RRF" "GraphRAG")
+SN_ROWS=""
+for q in "${QUERIES[@]}"; do
+  hits=$(grep -rilF "$q" --include='*.md' dev 2>/dev/null | grep -v '^dev/archive/' || true)
+  tot=$(printf '%s\n' "$hits" | grep -c . || true)
+  ledger=$(printf '%s\n' "$hits" | grep -E '^dev/plans/(runs|prompts)/' | grep -c . || true)
+  core=$((tot-ledger))
+  SN_ROWS="${SN_ROWS}    {\"query\": \"$q\", \"total_files\": $tot, \"ledger_zone\": $ledger, \"core\": $core},\n"
+done
+SN_ROWS="${SN_ROWS%,\\n}"
+
+# --- write JSON ----------------------------------------------------------
+GIT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
+STAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+cat >"$JSON" <<EOF
+{
+  "label": "$LABEL",
+  "git_sha": "$GIT_SHA",
+  "captured_utc": "$STAMP",
+  "token_estimate": "ceil(bytes/4)",
+  "dev_tree": { "all_files": $DEV_ALL_C, "all_bytes": $DEV_ALL_B,
+                "md_files": $DEV_MD_C, "md_bytes": $DEV_MD_B, "md_tokens_est": $DEV_MD_T },
+  "live_vs_archive": { "live_md_files": $LIVE_MD_C, "live_md_bytes": $LIVE_MD_B, "live_md_tokens_est": $LIVE_MD_T,
+                       "archive_md_files": $ARCH_MD_C, "archive_md_bytes": $ARCH_MD_B },
+  "runs_zone": { "all_files": $RUNS_ALL, "all_bytes": $RUNS_B,
+                 "md": $RUNS_MD, "json": $RUNS_JSON, "log": $RUNS_LOG, "txt": $RUNS_TXT },
+  "doc_index": { "bytes": $DI_B, "tokens_est": $DI_T, "table_rows": $DI_ROWS },
+  "cold_start_orient_set": { "files": $ORIENT_C, "bytes": $ORIENT_B, "tokens_est": $ORIENT_T },
+  "steward_cold_start_set": { "files": $STEW_C, "bytes": $STEW_B, "tokens_est": $STEW_T,
+                              "ceiling_tokens": $STEWARD_CEILING, "over_ceiling": $STEW_OVER,
+                              "source": "$STEWARD_HANDOFF §3 (derived, not hardcoded)",
+    "items": [
+$(printf "$STEWARD_ROWS")
+    ] },
+  "memory_surface": { "index_bytes": $MEM_IDX_B, "index_tokens_est": $MEM_IDX_T,
+                      "index_entries": $MEM_IDX_ENTRIES, "memory_files": $MEM_FILES, "memory_all_bytes": $MEM_ALL_B },
+  "search_signal_to_noise": [
+$(printf "$SN_ROWS")
+  ]
+}
+
+[35m[3mexec[0m[0m
+[1m/bin/bash -c 'sed -n 261,420p scripts/repo-prune/bin/context-clarity.sh'[0m in /home/coreyt/projects/fathomdb
+[32m succeeded in 0ms:[0m
+EOF
+
+# --- write human summary -------------------------------------------------
+{
+  echo "# Context-clarity snapshot — \`$LABEL\` ($GIT_SHA, $STAMP)"
+  echo
+  echo "Token counts are estimates: ceil(bytes/4). Re-run \`scripts/repo-prune/bin/context-clarity.sh <label>\` and diff JSON for deltas."
+  echo
+  echo "| Metric | Value |"
+  echo "|---|---|"
+  echo "| dev/ files (ex-caches) | $DEV_ALL_C ($DEV_ALL_B bytes) |"
+  echo "| dev/ .md files | $DEV_MD_C ($DEV_MD_B bytes, ~$DEV_MD_T tok) |"
+  echo "| live-path .md (ex archive/) | $LIVE_MD_C ($LIVE_MD_B bytes, ~$LIVE_MD_T tok) |"
+  echo "| archive/ .md | $ARCH_MD_C ($ARCH_MD_B bytes) |"
+  echo "| runs/ zone files | $RUNS_ALL ($RUNS_B bytes); md=$RUNS_MD json=$RUNS_JSON log=$RUNS_LOG txt=$RUNS_TXT |"
+  echo "| DOC-INDEX.md | $DI_B bytes, ~$DI_T tok, $DI_ROWS table rows |"
+  echo "| cold-start orient set | $ORIENT_C files, $ORIENT_B bytes, ~$ORIENT_T tok |"
+  echo "| **steward cold-start set** | **$STEW_C files, $STEW_B bytes, ~$STEW_T tok** (ceiling $STEWARD_CEILING, over=$STEW_OVER) |"
+  echo "| memory MEMORY.md index | $MEM_IDX_B bytes, ~$MEM_IDX_T tok, $MEM_IDX_ENTRIES entries |"
+  echo "| memory/ dir (all .md) | $MEM_FILES files, $MEM_ALL_B bytes |"
+  echo
+  echo "## Steward cold-start set by §3 item (derived from the hand-off, not hardcoded)"
+  echo
+  echo "| §3 item | Files | ~Tokens |"
+  echo "|---|---|---|"
+  printf "$STEWARD_ROWS\n" | sed -n 's/.*"item": "\([^"]*\)", "files": \([0-9]*\), "bytes": [0-9]*, "tokens_est": \([0-9]*\).*/| \1 | \2 | \3 |/p'
+  echo
+  echo "## Search signal-to-noise (live-path .md files matching; ledger = runs/+prompts/)"
+  echo  # MD022/MD058: blank line between the heading and the table below
+  echo "| Query | Total files | Ledger-zone | Core |"
+  echo "|---|---|---|---|"
+  for q in "${QUERIES[@]}"; do
+    hits=$(grep -rilF "$q" --include='*.md' dev 2>/dev/null | grep -v '^dev/archive/' || true)
+    tot=$(printf '%s\n' "$hits" | grep -c . || true)
+    ledger=$(printf '%s\n' "$hits" | grep -E '^dev/plans/(runs|prompts)/' | grep -c . || true)
+    echo "| $q | $tot | $ledger | $((tot-ledger)) |"
+  done
+} >"$MD"
+
+echo "wrote $JSON and $MD"
+cat "$MD"
+
+[35m[3mcodex[0m[0m
+I have the exact local `section 5b` now. Next I’m reading the steward budget/design docs and the two Slice 40 docs, then I’ll cross-check the script’s parsing assumptions against the actual §3 handoff text.
+[35m[3mexec[0m[0m
+[1m/bin/bash -c 'sed -n 1,260p dev/design/steward-cold-start-budget.md'[0m in /home/coreyt/projects/fathomdb
+[32m succeeded in 0ms:[0m
+# Steward cold-start budget — PROPOSAL
+
+**Status: PROPOSAL. Not ratified, schedules nothing, changes no direction.** Ratifying it is the HITL's.
+
+**Problem.** `/steward` → `dev/plans/prompts/0.8.x-STEWARD-HANDOFF.md` §3. Read as written, that list is
+**~366,800 tokens across 45 files**. Read charitably (item 3's parenthetical says "*the* board",
+singular) it is still **~238,200**. Roughly **216,000 of it is closed releases** — `STATUS-0.8.0.md`
+alone is 48,824 tokens for a release closed months ago, larger than the live board.
+
+**Target.** Cold start ≤ **60,000 tokens** with no loss of decision-relevant fact, pinned by a test so it
+cannot drift back. Stretch: 40,000.
+
+---
+
+## 1. What the measurement found
+
+| | ~tokens | note |
+|---|---|---|
+| `steward-orient.sh` output | **955** | already excellent; covers items 2–3, front-loads 7 |
+| item 1 — master | 42,891 | **60 % is the §6 findings ledger** (F-1…F-34) |
+| item 3 — `STATUS-0.8.*.md` glob | 178,264 | 19 files; **18 are CLOSED** |
+| item 4 — `plan-0.8.*.md` glob | 115,525 | 20 files; **17 are `status: COMPLETE`** |
+| items 5–7 | ~29,000 | orchestration, orchestrator handoff, MEMORY, last report |
+
+Two further facts decide the shape of this plan:
+
+1. **The liveness split already exists, machine-readably, on both axes.**
+   - Boards: `scripts/lib/board-closed.sh` exposes `board_is_closed()` — the canonical predicate, already
+     shared by `check-board-currency.sh` and `steward-orient.sh`, already tested. It classifies 18
+     CLOSED / 1 LIVE today.
+   - Ladders: every `plan-0.8.z.md` carries `status:` frontmatter (`COMPLETE` / `ACTIVE` / `PROPOSED`),
+     already linted by `lint-plans-status.sh` and `test_plans_status_frontmatter.sh`.
+
+   So the largest win needs **no new predicate, no file moves, and no rewriting** — only a §3 that
+   consults predicates the repo already trusts.
+
+2. **The live documents are themselves mostly historical.**
+   - `STATUS-0.8.20.md` — **67 %** is §6 (whose own heading reads *"CLOSED BY DECISION; this whole
+     section is HISTORICAL"*) plus **nine** `## N. Slice N close` records. Live orientation is ~15,958
+     of its 48,713 tokens.
+   - The master — **60 %** is the §6 integration-findings ledger. Live sequencing is ~17,000 of 42,891.
+
+---
+
+## 1a. Prior art — `scripts/repo-prune/` (probed 2026-07-31)
+
+A doc/memory prune ran **2026-06-26** with real results: `dev/` −53 % bytes, live `.md` tokens **−51 %**,
+`runs/` 660→168 files. It left durable outputs still in place today: `dev/archive/` (50 files),
+`dev/DOC-INDEX.md`, `dev/experiments-ledger.md`. **This plan should extend it, not duplicate it** — see
+§5 for the verdict. Three probe findings decide how.
+
+**Finding 1 — it measures a different cold start, and the two sets are disjoint.**
+`context-clarity.sh` already emits a `cold_start_orient_set` metric. Its `orient_list()` is
+`DOC-INDEX + dev READMEs + root contracts + dev/interfaces`. That is the *understand-the-codebase* set.
+The steward §3 set is boards, ladders, the master and the hand-offs.
+
+| set | files | overlap |
+|---|---|---|
+| `repo-prune` `orient_list()` | 45 | **0** |
+| steward §3 reading list | 43 | **0** |
+
+**Finding 2 — its own instrument shows the tree-wide prune did not help this axis.**
+
+| metric | baseline `25541d88` | post `bb64a2d4` |
+|---|---|---|
+| `dev_tree.md_tokens_est` | 3,499,334 | 1,883,557 (**−46 %**) |
+| `cold_start_orient_set.tokens_est` | 85,187 | 86,736 (**+1.8 %**) |
+
+Halving the tree left the orient set slightly *worse*. A tree-wide prune does not fix a reading-list
+problem, because the reading list is a **named path through the tree**, not a size property of it.
+
+**Finding 3 — there is no ratchet, and the zone it cleaned has more than fully re-drifted.**
+
+| `dev/plans/runs/` | post-prune 2026-06-26 | today |
+|---|---|---|
+| all files | 168 | **359** |
+| `.md` files | 88 | **187** |
+
+Nothing enforces the gains: no test and no CI job consults `context-clarity.sh`'s metrics. It is a
+**campaign instrument** — run by hand, before and after a prune — not a standing gate. Five weeks
+un-ratcheted returned the zone to worse than double its post-prune size.
+
+**Why it could not have solved this anyway:** every predicate this plan leans on postdates the prune by
+a month — `lint-plans-status.sh` 2026-07-24; `board-closed.sh`, `steward-orient.sh` and
+`release-state-0.8.20.json` all 2026-07-25. The liveness split did not exist on 2026-06-26.
+
+---
+
+## 2. The plan — four phases, each independently shippable
+
+### Phase 0 — pin the budget before changing content
+
+⇒ **Extend `scripts/repo-prune/bin/context-clarity.sh` with a second metric,
+`steward_cold_start_set`.** Do **not** add a parallel `steward-coldstart-cost.sh`: the harness, the
+`ceil(bytes/4)` convention, the baseline/post/DELTA layout and the JSON contract already exist and are
+already correct. A second tool would be a second index — the thing repo-prune's own design note (S3)
+forbids.
+
+The new metric expands §3's list as an agent would, and reports per-item and total cost alongside the
+existing `cold_start_orient_set`. Then add the piece repo-prune never had: a **ratchet** —
+`scripts/tests/test_steward_coldstart_cost.sh`, exiting non-zero above the ceiling, wired into CI at
+Phase 4. That is the one genuinely new contribution to the tooling, and Finding 3 is the argument for
+it.
+
+⚠ **The metric must expand the list from §3 itself, not from a hardcoded copy.** A hardcoded list would
+pass while §3 grew — a vacuous gate, the exact trap `lint-plan-anchors.sh` was written for. Note that
+the existing `orient_list()` *is* hardcoded, which is consistent with a campaign tool but not with a
+gate.
+
+**Cost:** small. **Risk:** none — additive to a tested script.
+
+### Phase 1 — make §3 liveness-aware
+
+One edit to §3. No content moved, no files renamed, no archive.
+
+- **Item 3** — `dev/plans/runs/STATUS-0.8.*.md` → *"the LIVE board, per `board_is_closed()`. Closed
+  boards are the frozen record; open one only when a specific close record is in question."*
+- **Item 4** — *"the `plan-0.8.z.md` ladders that exist"* → *"the ladders with `status: ACTIVE` or
+  `PROPOSED`. `COMPLETE` ladders are historical."*
+
+**Saves ~199,820 tokens** — 82 % of the total problem, for one section edit. Both predicates already
+exist and are already under test. Fully reversible.
+
+**Cost:** trivial. **Risk:** near-zero.
+
+### Phase 2 — let `steward-orient.sh` discharge item 1
+
+`orient.sh` already proves the model: 955 tokens beats 178k because it derives from
+`dev/plans/release-state-<version>.json`, the single writer.
+
+The lever is that **master §4 allocation is already a generated view** — `release-state-0.8.20.json`
+declares `generated_views[0] = {"id": "master-ladder-progress", "file": ".../PROGRAM-SEQUENCING.md",
+"location": "§4 Release allocation …"}`. The allocation the steward is told to "confirm" is already
+machine-derived from the same source `orient.sh` reads.
+
+So: extend `orient.sh` to emit the §4 allocation block, and demote item 1 from *"read the master"* to
+*"§2a edges and §5 by-when on demand; §4 comes from orient."*
+
+**Saves ~42,000.** Requires updating `scripts/tests/test_steward_orient.sh`.
+
+**Cost:** medium. **Risk:** low — additive to a script with an existing test and a hard-fail-on-empty
+contract.
+
+### Phase 3 — split the live documents
+
+⇒ **Run this as a `repo-prune` pass, under its existing contract**, not as a bespoke edit. Specifically
+adopt:
+
+- **R3 two-phase HITL gate** — Phase 1 emits a classification map and **stops** for sign-off; Phase 2
+  executes only after approval. The map goes in `scripts/repo-prune/runs/` beside
+  `doc-prune-CLEANUP-MAP.md`.
+- **R1 verdicts** — CURRENT / REFERENCE / ARCHIVE / DELETE, one per section moved.
+- **S1–S5 safety invariants**, and in particular **S3: no second index**, and **S4: rewrite inbound
+  links in the same change**.
+- ⭐ **The archive-mode rule, which already solves this plan's largest coupling risk.** repo-prune's
+  design note: *"for trees cross-referenced by path (e.g. `dev/plans/prompts/`, ~120 refs) archive
+  **in place** and record stale status in the existing index — never a second index."* The board, the
+  master and `plan-0.8.20.md` are exactly such a tree (§4 risk 4). **Archive in place** — split the
+  file, leave both halves where they are, record status in `DOC-INDEX.md` — rather than relocating into
+  `dev/archive/`.
+- **Distill-before-delete**, and its recorded learnings: never `git add -A` over staged deletions; scan
+  inbound refs before moving anything; one regex is not enough.
+
+Apply the same content pattern used on the Slice 40 brief (`5d135bee`): live instructions in one file,
+historical record in a sibling, **split not deleted**.
+
+| from | live remainder | to |
+|---|---|---|
+| `STATUS-0.8.20.md` §6 + the 9 `Slice N close` sections | ~15,958 | `STATUS-0.8.20-close-records.md` |
+| master §6 findings ledger (F-1…F-34) | ~17,000 | `PROGRAM-FINDINGS.md` |
+
+Also rename the master: **`0.8.6-0.8.16-PROGRAM-SEQUENCING.md` discusses 0.8.17 through 0.8.25.** An
+agent told to read it meets a filename that misdescribes its scope before reading a word.
+
+**Saves ~59,000.** This is the phase that needs HITL sign-off — it moves records, and the mandate rule
+makes record changes yours.
+
+⛔ **Split, do not delete.** The retained-negation prose is partly a deliberate audit trail: the
+`seq-207` correction on the live board exists *because* a false claim was previously acted on. Deleting
+it would destroy the evidence that a guardrail fired. The brief split preserved every retracted claim
+for exactly this reason.
+
+**Cost:** large. **Risk:** highest — see §3.
+
+### Phase 4 — stop new drift at the source
+
+- Close records land in `STATUS-<v>-close-records.md` **from the start** — an orchestrator-contract
+  change, so §11-style sections never accrete on a live board again.
+- Wire `steward-coldstart-cost.sh` into CI so the ceiling is enforced, not aspirational.
+
+**Cost:** small once Phase 3 lands. **Risk:** low.
+
+---
+
+## 3. Budget trajectory
+
+| stage | ~cold-start tokens |
+|---|---|
+| today, literal | 366,800 |
+| today, charitable | 238,200 |
+| after Phase 1 | **~167,000** |
+| after Phase 2 | ~125,000 |
+| after Phase 3 | **~55,000** |
+| ceiling to pin | 60,000 |
+
+Reaching the 40,000 stretch needs `plan-0.8.20.md` (22,389, 31 superseded/stale markers) split the same
+way. Proposed as optional Phase 3b, not load-bearing.
+
+---
+
+## 4. Risks and unknowns — Phase 3 only
+
+Phases 0–2 carry essentially no risk. Phase 3 touches four checked couplings, and they must move
+atomically with the content:
+
+1. ⛔ **Five `generated_views` in `release-state-0.8.20.json` carry `location` strings pointing at
+   §-anchors** — two into `STATUS-0.8.20.md`, one into master §4, one into `plan-0.8.20.md`, one into a
+   dated steward hand-off. Splitting either file invalidates its anchor. `check-release-state-views.sh
+   --write` is the tool; the JSON is the single writer and must be updated in the same commit.
+2. ⚠ **`check-board-currency.sh`** requires every `merge(<version>): Slice <N>` short SHA to appear
+   **literally inside the STATUS board**. If close records move out, that check must follow them or it
+   goes vacuous — and a vacuous board-currency check is how a stale board would stop being detectable.
+3. ⚠ **`lint-plan-anchors.sh`** enforces the line-anchor ban (DOC-HYGIENE-2). A split tempts
+   reintroducing `file:line` pointers between the two halves. Use greppable headings.
+4. ⚠ **12+ scripts reference `STATUS-0.8.*` / `plan-0.8.*` paths** (`preflight.sh`,
+   `commission-manifest.sh`, `check-c1-conformance.sh`, `lint-plans-status.sh`, `corpus-freeze.yml`,
+   and the test suites). **This is why Phase 1 filters rather than archives** — filtering touches no
+   path, and captures 82 % of the win with none of this exposure.
+
+**Unknown, worth one cheap probe before Phase 3:** whether `scripts/repo-prune/` (which carries
+`prune-docs.md`, a `doc-prune-CLEANUP-MAP.md`, and an acceptance-test file) already encodes a
+doc-archival policy this plan should extend rather than duplicate.
+
+---
+
+## 5. Verdict on merging with `repo-prune`
+
+**MERGE — clearly, and in one direction: this work becomes a second axis inside `repo-prune`, not a
+sibling project.** Going it alone would rebuild five things that already exist and are proven
+(measurement harness, before/after layout, classification verdicts, safety invariants, two-phase HITL
+gate) and would violate repo-prune's own S3 by creating a second index of the same documents.
+
+The split of contributions is clean, which is what makes the merge worth doing rather than merely
+tidy:
+
+| `repo-prune` already has | this plan adds |
+|---|---|
+| measurement harness + baseline/post/DELTA layout | the **steward reading-list axis** — zero overlap with its existing orient set (Finding 1) |
+| R1 verdicts · R3 two-phase HITL gate · S1–S5 | the **liveness predicates** — `board_is_closed()`, `status:` frontmatter, `release-state` — none of which existed when it ran (a month later) |
+| archive-in-place rule for path-referenced trees | a **ratchet**: a test + CI gate, so gains survive (Finding 3: `runs/` went 168 → 359 in five weeks, un-gated) |
+| distill-before-delete + recorded learnings | |
+
+**The strongest argument for merging is that repo-prune's own instrument makes this plan's case.** It
+recorded a 46 % tree-wide token cut alongside a **+1.8 %** move on its cold-start metric. That is not a
+failure of the prune — it is evidence that *tree size and reading-list cost are different variables*,
+measured by the same tool, and that only one of them was ever targeted.
+
+**One thing not to inherit:** `orient_list()` is a hardcoded file list. Acceptable for a campaign
+instrument; not acceptable for a gate. The new metric must derive its list from §3.
+
+
+[35m[3mexec[0m[0m
+[1m/bin/bash -c 'sed -n 1,260p dev/plans/prompts/0.8.x-STEWARD-HANDOFF.md'[0m in /home/coreyt/projects/fathomdb
+[32m succeeded in 0ms:[0m
+# FathomDB 0.8.x — Program Steward hand-off
+
+> **Use this as the opening prompt for a Program Steward session** (`/steward` loads it, or paste it). You are the
+> **program-scope keeper** of the 0.8.x release line. Your job is to keep the single schedule-of-record
+> continuously **true to the repository**, reconcile drift, place and sequence cross-cutting work,
+> **commission** the execution you do not perform yourself, and be the **truthful, propose-first interface
+> to the human (HITL)**. You **monitor, reconcile, and commission — you do not implement, and you never
+> hand-drive a release ladder.** Read §3 cold-start before acting.
+
+---
+
+## 1. Purpose & definition — what you are, and are not
+
+**You are the Program Steward.** You own the *fidelity of the schedule-of-record* and the *forward motion
+of the program*: you keep `dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md` (the master) true to what the
+repo is actually doing, reconcile every landed slice / new plan / re-sequencing into it, place
+cross-cutting work (supply-chain, CI integrity, experiment slotting, dependency edges), commission and
+**verify** the execution you do not do yourself, and surface to the HITL — as crisp, diff-ready proposals
+— every decision that is theirs to make. The master must **never silently lie about the repo**: when
+reality moves, the master moves with it (HITL-gated), or you raise it.
+
+**You are NOT:**
+
+- an **implementer** — you write no slice code, no tests, no engine/binding changes;
+- a **release orchestrator** — you never drive a single `plan-0.8.z` ladder slice-by-slice. That is the
+  **orchestrator** role (`/orchestrate`; `0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md`). You **commission and
+  verify** it (§9 — which is also where the **preferred mechanism** is ruled); you do not perform it.
+
+You **subsume the sequencing watchdog** as your **monitoring function** — drift classification and report
+cadence are how you *detect* when the master has stopped matching reality. Watching is one function of
+stewardship, not the whole job. The watchdog's report format lives in **§10** of this document; the drift
+duties themselves are **§4 item 2**, and the dependency edges they are measured against are master **§2a**.
+
+## 2. Your single source of truth
+
+- **Schedule of record (the ONLY one):** `dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md` — the
+  dependency graph (§2a I-1…I-6), the release allocation (§4), the planner-router by-when (§5), and the
+  integration findings (§6). Everything you reconcile lands here.
+- **Live state:** each release's `dev/plans/plan-0.8.z.md` (the ladder) and
+  `dev/plans/runs/STATUS-0.8.z.md` (the board). Per `orchestration.md` §12.4, when a ladder/board and the
+  master disagree, the board records the current pointer and the re-sequencing is reconciled **into the
+  master** in the slice's closing docs commit. Your job is to make that reconciliation actually happen —
+  and to catch it when it doesn't.
+- **Design rationale, NEVER a schedule:** the companion design docs (`planner-router-*`, etc.) are *why*,
+  not *when*. If one is edited with new sequencing intent, that is a **signal to update the master**, not a
+  schedule to follow.
+
+> **Trust git, not narration.** A board, a plan's "Immediate next slice", or a subagent's summary can be
+> ahead of or behind the commits. Verify every "slice closed / item landed / gate green" against the
+> actual diff and the real exit codes before you act on it or record it.
+
+## 3. Cold-start — read these first (in order)
+
+> **Run `scripts/steward-orient.sh` first.** It is a stateless, read-only briefing that prints the live
+> picture in **under 4 KB** and writes nothing — branch / HEAD / dirty count / worktrees **plus orphan
+> checkout dirs**, the live board's **next action verbatim**, **landed slices with their SHAs** and
+> `SCHEMA`, the **last 5 steward-ledger entries**, the **todos ledger folded to latest-per-`id`**, the
+> open-PR count, and the newest `STEWARD-SESSION-HANDOFF-*`. It reads release facts from the single
+> writer `dev/plans/release-state-<version>.json` rather than re-scraping git, derives the release from
+> the **live board's filename** (never a hardcoded version), and **hard-fails naming any section that
+> came back empty** — so it can be partial, but never *silently* partial. It covers items 2-3 below and
+> front-loads item 7; read the rest for the *reasoning* those facts sit inside.
+>
+> The former item 5 pointed at `0.8.x-SEQUENCING-WATCH-HANDOFF.md`, **a file that has never existed in
+> this repository** (`git log --all -- '*SEQUENCING-WATCH-HANDOFF*'` is empty). The pointer is removed
+> rather than restored: its report format is already §10 of this document, and the watchdog duties it
+> named are §1 and §4 item 2.
+
+1. `dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md` — the master (memorize §2a edges, §4 allocation, §5
+   by-when, §6 findings).
+2. `git log --oneline -30` + `git status` + `git worktree list` — the actual repo state. *(Covered by
+   `steward-orient.sh`, which also flags orphan checkout dirs `git worktree list` cannot see.)*
+3. `dev/plans/runs/STATUS-0.8.*.md` — which slices are CLOSED / in-flight. *(The live board's §1 next
+   action is printed verbatim by `steward-orient.sh`; open the board itself for the close records.)*
+4. The `plan-0.8.z.md` ladders that exist — confirm allocation still matches master §4.
+5. `dev/design/orchestration.md` §12.4 (plan-as-state-machine reconciliation) + §12.5 (boards), and
+   `0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md` — the contract you commission.
+6. The memory index (`…/memory/MEMORY.md`) — program context (M-work resolutions, footprint invariant,
+   worktree traps). Recalled memories are background, and reflect what was true when written — re-verify
+   any file/flag they name before relying on it.
+7. Your own last Steward report, if resuming — to compute "since last".
+
+## 4. Responsibilities
+
+1. **Schedule-of-record fidelity.** Reconcile every landed slice / new plan / re-sequencing into the
+   master §4/§5/§6 (`orchestration.md` §12.4). The master never silently lies about the repo.
+2. **Drift detection (the watchdog function).** Diff reality vs the master each pass; classify by the
+   watchdog taxonomy; assign severity; **escalate a physically-hard dependency violation (I-1/I-2/I-4)
+   live**, not in the next report cycle.
+3. **Cross-cutting placement.** Supply-chain (Dependabot), CI integrity, experiment slotting, dependency
+   edges — triage by **footprint** (IN-LIBRARY / CALLER-SIDE-BYO-LLM / OFFLINE-BUILD / EVAL-ONLY),
+   propose a home + diff-ready plan/master edits.
+4. **Commission & verify execution.** Spawn release orchestrators (§9) and mechanical subagents (§7);
+   **verify their output against primary sources** (git, exit codes) before trusting, recording, or
+   committing it.
+5. **HITL interface.** Surface every decision that is the human's — direction, release slot, scope, risk
+   — as a crisp proposal *with a recommendation*. Never decide it yourself.
+6. **Record-keeping & durability.** Keep the decision trail in the **docs** (master, ladders, DOC-INDEX),
+   not just in session context, so the program survives a context reset or a steward handoff.
+
+## 5. Scope of allowable work — the decision-rights line
+
+| Class | Examples | Default |
+|---|---|---|
+| **Observe / verify** | read repo, git, boards, design docs; confirm a claim from git; pull `gh` state | **Autonomous, always** |
+| **Analyze / triage** | footprint-rank alerts; size a migration lift; map an experiment's deps; sequencing-impact | **Autonomous, always** |
+| **Propose** | diff-ready master/ladder edits; placement recommendations; watch/steward reports | **Autonomous, always** (proposing ≠ applying) |
+| **Mutate the repo** | apply doc edits, commit, push | **HITL-gated by default; autonomous *only* under a standing mandate** for a defined unit of work |
+| **Mutate external state** | close/annotate PRs, change repo/CI settings | **HITL-gated by default; autonomous under mandate** |
+| **Change program direction / the record** | pick a release slot, move an item between releases, alter an I-edge, re-sequence | **Always explicit HITL** — propose + recommend; the human decides. Never self-widened, never inside an implied mandate. |
+| **Commission a subagent / orchestrator** | bulk doc edits, searches, a release orchestrator | **Autonomous** for read/analyze/draft work; the *output's* mutation still obeys the rows above |
+
+**The mandate rule (the heart of it).** You act autonomously *within* a unit of work the HITL has
+authorized ("reconcile all", "commit when done", "do the cleanup") — including mutations and delegation —
+but you **never expand the mandate's boundary yourself**, and **direction/record changes are never inside
+an implied mandate** (they are always a separate, explicit human decision). When in doubt whether
+something is in-mandate, treat it as out and ask.
+
+**Commit cadence:** **per-mandate** — when a mandated unit of work is complete and verified, land it in one
+clean docs commit and push (`origin/main`), then report. Do not batch unrelated units into one commit; do
+not commit work outside the mandate.
+
+**Verify the branch before EVERY commit or push.** Run `git rev-parse --abbrev-ref HEAD` first and confirm
+you are where you intend (`main` for a docs/program commit). The working tree is **shared** with active
+orchestrator/implementer sessions and may already be on a feature branch you did not switch to — **never
+assume `main`.** If your work belongs on `main` but HEAD is on another branch, land it there explicitly
+(e.g. cherry-pick the commit in a throwaway worktree cut from `main`), never commit to the wrong branch.
+This is the same "trust git, not narration" discipline applied to your own position in the tree.
+
+**You cannot launder authority downward.** A message you send a subagent is **peer-level, not user
+authority**. You may delegate *mechanical execution*, but anything HITL-gated (a mutation outside mandate,
+a direction/record change, a sensitive action) **stays with you and escalates to the HITL** — never push
+it down to a resident, and expect a well-behaved resident to refuse if you try.
+
+## 6. Unconditional transparency & truthfulness
+
+These bind every action, with no exception for convenience:
+
+- **Trust git, not narration.** Verify "closed / landed / green" against the diff and real exit codes
+  (cross-check `PIPESTATUS`/`$?`, not a trailing `echo`).
+- **Label epistemic status.** Always distinguish **verified-done** vs **proposed-pending-HITL** vs
+  **assumed/unverified**. Never present a proposal as a decision or an assumption as a fact.
+- **Name the decider.** Every change records whether the *steward* or the *HITL* decided it.
+- **Surface your own errors immediately and in the open** — correct them rather than quietly moving on.
+- **Declare confidence and uncertainty**, including about your own tooling and costs; flag
+  verify-before-rely items as such.
+- **No silent changes to the record or the direction.** Reconciliations are diff-ready, attributed, and
+  HITL-signed unless mandated.
+- **Disclose delegation.** Say what a subagent did and that you verified it before relying on it.
+- **A clean result is a valid result.** "Nothing drifted" in two lines is a complete report. Never invent
+  work to look busy.
+
+## 7. Working with resident subagents (context management)
+
+You protect a scarce resource: **your own context window.** Spend your tokens on judgment and decisions;
+offload mechanical/bulky work to subagents and keep only their distilled results. The cost model below is
+**measured, not hypothetical** (subagent-persistence experiment, rounds 1–5); tune the dollar figures to
+your model/rates — **the ratios and the ordering are the durable signal.**
+
+**How residents actually behave.** A "resident" is **not a live idle process**. After each task it stops;
+when you message it again (`SendMessage` by its agentId) it is **resumed from its saved transcript** — it
+keeps everything it read because the files are in that transcript. But each resume reprocesses the whole
+transcript, and cost is governed by two variables:
+
+- **Warmth** — time since it last ran. A ~5-minute prompt cache makes a resume cheap *only while warm*;
+  idle past the TTL, the cache is evicted and the next message re-pays to re-cache the whole transcript.
+- **Transcript size (T)** — every reuse and every wake-up costs in proportion to T.
+
+**Cost facts (per task, approximate).** Fresh spawn floor **≈ $1.77** (boot cost, paid even for a one-line
+task). Warm reuse **≈ $0.15** (small T) to ~$0.28 (large T) — ~6–12× cheaper. Waking a **cold** resident
+re-caches it: ~$0.40 (small T) up to **~$1.93 (T≈60k)** — i.e. **a cold, large resident can cost more to
+wake than a fresh spawn costs to do the whole job.** "Stand-by" only wins if it stays *warm and small*.
+
+**Decision procedure — for each unit of work, in this order (warmth → overlap → size):**
+
+1. **Trivial + you have context headroom** → **do it yourself**. Never pay the $1.77 floor for a one-off.
+2. **A WARM resident (active < ~5 min) already holds the needed context** → **route to it** (cheapest).
+3. **No warm holder, but you expect ≥2 tasks over the same large/context-polluting material** → **spawn
+   ONE resident, load it, and keep it warm** (batch follow-ups back-to-back or ping < 5 min apart). Reuse
+   beats re-spawning from the 2nd task (crossover K=2).
+4. **The only holder is COLD and large, and you need one answer** → **fresh spawn** (cheaper than waking).
+5. **Otherwise** → fresh spawn once, or self.
+
+**Managing residents.**
+
+- **Scope the initial load small** — read only what the expected queries need (a ~9k resident was ~2×
+  cheaper/query and 2.4× cheaper to load than a ~60k one, no fidelity loss).
+- **Do NOT load-big-then-distil.** Producing a summary costs ~a fresh spawn by *any* path (even a resident
+  holding the files pays ~the same to emit one); it amortizes only after ~15–35 reuses. Scope the load
+  instead.
+- **Batch to stay warm** (quick succession ≈ $0.15/query vs ~$0.80 spread out). **Delegate high-output
+  work** so big text lands in the resident's disposable transcript, not permanently in yours.
+- **Retire bloated residents** (≳60k held tokens — reuse/wake costs go superlinear); respawn small with
+  only the distilled context if still needed.
+- **Track each resident** (`id` · context-held · `last_active` warmth · approx `transcript_tokens`);
+  externalize this registry to a status file **only above ~4–6 residents or a long session**, else inline.
+- **Caveats:** ignore wall-clock as a cost/health signal (uncorrelated); expect occasional spurious
+  "security / auto-mode could not evaluate" warnings on resumes (proceed if the result is correct); a
+  resident's first reuse may behave "cold" even at Δt≈0 (one warm-up ping settles it); never build a file
+  to pass notes between agents — `SendMessage` already does it.
+
+## 8. How a Steward session runs — the process
+
+Steps 3–6 repeat per HITL directive or monitoring pass:
+
+1. **Orient (cold-start, §3).** Load the master, git state, boards, the handoffs, memory. If resuming,
+   compute "since last".
+2. **Establish ground truth.** Reconcile any narration against git *before* acting.
+3. **Intake & classify.** Take the HITL directive (or run a watch pass). Classify each unit by the §5
+   decision-rights table; separate *direction* calls (→ HITL) from *execution* (→ autonomous-under-mandate).
+4. **Decide in-thread.** Do the judgment — triage, placement, sequencing impact, recommendation — in your
+   own context. This is what your tokens are *for*. Produce diff-ready proposals.
+5. **Delegate execution.** Hand mechanical/bulk work to a resident subagent (§7) with a precise spec;
+   reuse a warm one when possible. Commission an **orchestrator** (`/orchestrate` — preferred over `/goal`,
+   §9) for release work. **Verify all returned work against primary sources** before trusting it.
+6. **Reconcile, record, report.** Apply edits only under mandate/HITL; keep the master true; one clean
+   docs commit per mandated unit; push when mandated (§5 cadence). Report (§10).
+7. **Context hygiene + (optional) loop.** Offload reading, summarize results compactly, persist state to
+   the docs. Optionally run as a monitoring loop with wake triggers: a slice closing, a new `plan-0.8.z`,
+   a STATUS-board edit, or a commit touching the embedder/substrate/provider paths or the master itself.
+
+## 9. Commissioning a release orchestrator
+
+You do not run releases; you commission them and verify the result.
+
+- **Open** a release by directing an **orchestrator session** against `0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md`
+  + that release's `plan-0.8.z.md`. Confirm prerequisites first (the release's §7), especially worktree
+  hygiene off `$(git rev-parse main)` and MAIN-tree-only maturin/GPU builds
+  (`agent-worktree-stale-base-trap`).
+
+> ### ⚠ THE ORCHESTRATOR IS THE PREFERRED MECHANISM — `/goal` IS NOT (HITL 2026-07-25)
+>
+> **Commission an orchestrator. Do not reach for `/goal complete 0.8.z`.** Both point at the same
+> per-release contract, so this is a ruling about *mechanism*, not about scope — but it is a **standing HITL
+> preference, not a style note**, and it applies to every future Steward.
+>
+> **Use, in this order:**
+>
+> 1. **`/orchestrate <plan>`** (alias `/orch`) — an HITL-opened orchestrator session. **The default.**
+> 2. **A Steward-spawned background orchestrator** — `Agent`, `subagent_type: orchestrator`, briefed
+>    against the same two docs. Ledger precedent seq-51 (0.8.16), seq-72 (0.8.19), seq-81 (0.8.20 Slice-0).
+>    Use when the HITL wants the Steward to hold the loop. **It returns once and does NOT notify on stall**,
+>    so it requires an explicit anti-stall directive and proactive polling from git
+>    (`background-agent-silent-death-proactive-check`: one stalled 36 h unnoticed).
+> 3. **`/goal complete 0.8.z`** — **only on an explicit HITL instruction for that specific run.** Never the
+>    Steward's own choice.
+>
+> **Why the orchestrator wins.** (a) **The guardrails are in the repo, versioned and reviewable** —
+> `/orchestrate` injects §0 preflight, the worktree rules, the codex §9 gate, canary-then-max-3
+> parallelism, and "wait for my acknowledgement"; a built-in carries none of that and its semantics can
+> change under us. (b) **A release ladder is gated, not autonomous.** `/goal` keeps working across turns
+> until a *condition* is judged met — but 0.8.x ladders are punctuated by HITL gates (X0 design sign-off,
+> AC sign-off, publish, any landing outside a standing mandate) that must **stop** the loop, and a
+> run-to-condition loop is the wrong shape for that. The precedent proves the friction: seq-81 had to scope
+> `/goal` to "Slice 0 X0 ONLY (hard stop after)" — fighting the command's nature. (c) **The stopping
+> condition is prose.** "complete 0.8.20" is judged from the transcript; this program's actual definition of
+> done is mechanical (`preflight.sh --landing`, `check-board-currency.sh`, full-workspace clippy+check exit
+> 0, codex §9 terminal-clean) — that is what "trust git, not narration" means at the mechanism level.
+>
+> **Whichever is used, the brief must name where the orchestrator STOPS** — HITL gates never travel down to
+
+[35m[3mexec[0m[0m
+[1m/bin/bash -c "ls dev/plans/runs | sed -n '/slice-40/p'"[0m in /home/coreyt/projects/fathomdb
+[32m succeeded in 0ms:[0m
+0.8.14-slice-40-review-20260706T020546Z.log
+0.8.14-slice-40-review-20260706T020704Z.log
+0.8.14-slice-40-review-20260706T021144Z.md
+0.8.16-slice-40-codex-review-20260708T221843Z.log
+0.8.20-slice-40-brief-provenance.md
+0.8.20-slice-40-commission-brief.md
+0.8.6-slice-40-release-readiness.md
+slice-40-closure.md
+
+[35m[3mexec[0m[0m
+[1m/bin/bash -c 'sed -n 1,260p dev/plans/runs/0.8.20-slice-40-commission-brief.md'[0m in /home/coreyt/projects/fathomdb
+[32m succeeded in 0ms:[0m
+# Slice 40 (`R-20-PUB`) — commission brief
+
+**Status: substance, not yet a commission.** Both blocking cross-cutting units have landed —
+`SLICE-ID-HARDENING` (`2008f529`) and "Slice 39.5" / `R-20-HARNESS` (`b6cc8fa6`). This document is what
+Slice 40 owes and what was measured. To commission: regenerate the manifest with
+`scripts/commission-manifest.sh 0.8.20 40`, pair it with this substance, and run an adversarial review
+subagent over the pair.
+
+Drafting history, retracted claims and claim-by-claim sourcing live in
+`0.8.20-slice-40-brief-provenance.md`. You do not need to read it.
+
+**Two reading rules.**
+
+1. **Line numbers here are hints.** They were measured at `46b9365e` and some have rotted. Locate the
+   real site by grepping the named symbol or string. Where this document and HEAD disagree, HEAD wins.
+2. **Re-measure counts and rates before treating one as a gate.** §14 lists which numbers were
+   Steward-witnessed and which were relayed.
+
+---
+
+## 1. Before you start
+
+**Base.** Regenerate the manifest and take the base SHA from it — but ⛔ **branch from
+`git rev-parse origin/main`, not from the manifest's `base sha`.** The manifest reports the newest
+landed *ladder slice* strictly before 40, which is Slice 39 at `91db34d8`. Two cross-cutting units
+landed after it and carry no slice number, so the generator cannot see them: `SLICE-ID-HARDENING`
+(`2008f529`) and `R-20-HARNESS` (`b6cc8fa6`). Branching from `91db34d8` silently discards both —
+including the collect-all harness this slice needs to see its own red list.
+
+**Scope.** The HITL ruled fix everything (`seq-219`): nothing waived, nothing deferred. Every red in
+§10 is Slice 40's to fix, not to report. The exception list is §12 and it is short.
+
+**Shape.** Slice 40 is one unit and is not to be split (`seq-216`) — no `40a`/`40b`, no new slice ids;
+fractional ids corrupted five tools and were de-laddered at `seq-202`/`seq-204`. Structure it
+internally: report and pause at each checkpoint (§3).
+
+---
+
+## 2. The two irreversible publish paths
+
+> **Published versions cannot be unpublished. crates.io is immutable.**
+
+1. **Pushing a `v*` tag.** `.github/workflows/release.yml` — `on: push: tags: - "v*"`.
+2. **`workflow_dispatch` with the `dry_run` box unchecked.** The else-branch at `release.yml:260-262`
+   calls `bash scripts/release/cargo-publish-if-new.sh fathomdb-embedder-api` **without `--dry-run`**,
+   with `CARGO_REGISTRY_TOKEN` in env. `publish-pypi` and `post-publish-smoke` are both
+   `if: ${{ inputs.dry_run != true }}`, so both also run. `scripts/verify-release-gates.sh:58-61` only
+   `printf`s a warning to stderr and continues — there is no `die` on that branch, and the entire
+   tag-format check sits in the `else` at `:62-77` and is skipped on dispatch.
+
+**The mechanism, and the one thing not to "fix".** `release.yml` declares the `dry_run` boolean input
+with `default: true`, so the checkbox arrives pre-checked; the hazard is a human unchecking it.
+`release.yml:20` reads `DRY_RUN: ${{ inputs.dry_run || 'false' }}`.
+
+⛔ **That `'false'` fallback is correct and must stay.** It governs the tag-push event, where `inputs`
+is empty and a real publish is intended. Flipping it to `|| 'true'` would make a pushed `v*` tag
+resolve `DRY_RUN=true` and silently never publish — a false green on the irreversible path. The
+`seq-198` confirmation input (PHASE 0b) is a **second factor**, not a change to how `DRY_RUN` resolves.
+Neither the `default: true` nor the `|| 'false'` fallback may be touched.
+
+**Landing on `main` does not publish.** There is no `push: branches` trigger in `release.yml` and a
+branch-to-branch push carries no tag (`push.followTags` is unset). Do not balk at pushing to `main` at
+PHASE 7, and never improvise a tag to "complete" the release.
+
+**Any rehearsal is `-f dry_run=true`, with the resolved `DRY_RUN` read out of the run log before any
+`publish-rust-t*` job starts.** ⚠ **That read-out does not exist yet — PHASE 0b builds it.** Nothing in
+`release.yml` prints the value, and GitHub does not render workflow-level `env` in the run log, so
+today the earliest observable point is inside a tier job — after the point this check is meant to
+precede. A control that cannot be read is not a control.
+
+---
+
+## 3. The checkpoint spine
+
+Report and **pause** at each. Phase names below are the only work-step names used in this document.
+
+| Checkpoint | Phases | Gate before proceeding |
+|---|---|---|
+| **BASE** | §4 — the ten fixes | an **observed CI run**, not local green |
+| **A — determination** | PHASE 0, PHASE 0b | TC-16 determination stated with evidence; arm 10 re-pointed into two arms, not deleted |
+| **B — versions** | PHASE 1 | **stop and escalate** — the Axis-E version is the HITL's |
+| **C — mechanics** | PHASE 2, PHASE 3 | both post-publish smokes write no `source_id` and will fail on the real publish |
+| **D — gates + ACs** | PHASE 4, PHASE 5 | mint from AC-079 upward |
+| **E — cut obligations** | PHASE 6 | |
+| **F — land + rehearse** | PHASE 7 | ⛔ **stops before any tag** |
+
+---
+
+## 4. CHECKPOINT BASE — ten fixes, one push
+
+Ruled by the HITL 2026-07-30 (`seq-219` disposition (b) + `seq-223` placements).
+
+### 4.1 Why it is one push
+
+Two CI clocks dominate the schedule and neither can start until the branch is pushed:
+
+- **N=5 consecutive green `rust-windows` runs** (~10–15 min each) — TC-91's acceptance bar.
+- **The first `verify` run to reach its test stage in ~3 weeks** — a discovery event.
+
+⚠ **Both measurements are polluted if either known flake is still live.** With the lock-holder flake
+(~29 %) or the OOS-18 SIGBUS unfixed, a red `rust-windows` or `verify` run cannot be attributed — "the
+TC-91 fix failed" and "a flake fired" become indistinguishable. So both flake fixes land in the same
+push that starts the clocks: everything that can change a CI job's outcome goes in together, then CI is
+observed once, cleanly.
+
+### 4.2 The ten items
+
+Ordered by dependency. TDD (RED first) wherever a test can express the defect.
+
+| # | Change | RED-first | Local verification |
+|---|---|---|---|
+| **B1** | Sync `src/python/fathomdb/_fathomdb.pyi`: the 5 missing `Engine`/`OpenReport` members, `VectorEquivalenceMismatchError.__init__(reason=)`, plus the 4 latent typed-error `__init__`s (TC-140). The stub is hand-maintained — there is no generator | pyright *is* the RED | `agent-typecheck.sh` → 1 error left |
+| **B2** | **TC-138** `graph.py`: convert to the SDK `IdSpace` **and** restore `source_id` + `ce_score` | yes | `agent-typecheck.sh` rc=0 + new test |
+| **B3** | **TC-91**: (a) stop discarding the worker commit error; (b) `commit_projection_outcomes` → `IMMEDIATE` — §4.3 | yes — §4.3, or the fix lands untested | `repeat_embeds` 105 → ~0 on Linux |
+| **B4** | Serialise the lock-holder tests — §4.4 | n/a | `test-rust` green over ≥6 consecutive runs |
+| **B5** | **OOS-18**: route the read-only raw-SQL oracles through a child OS process — §4.5 | the 25/60 → 0/60 arms | 60 isolated + 3 whole-file greens, `rc` quoted — §4.5.4 |
+| **B6** | **TC-139**: stop `$PRUNE_EXPR` glob-expanding in `scripts/repo-prune/bin/context-clarity.sh` — §4.6 | yes | `test-md-generators` rc=0 |
+| **B7** | `test-check-governed-surface-pin`: the **test** hardcodes the superseded commit `427d2712` in its provenance arm — §4.7 | n/a | 89/89 arms (measured: 88 PASS / 1 FAIL), **and** `check-governed-surface-pin.sh` still rc=0 |
+| **B8** | `test-actionlint-fixture` — the TC-16 determination, then the fix (PHASE 0) | n/a | 7/7 tiers |
+| **B9** | `commission-manifest` job: add `fetch-depth: 0` | n/a | ⚠ not locally provable — see below |
+| **B10** | tc57's stale "10 %" doc comment (the code asserts 100 %) | n/a | reading |
+
+⚠ **B9 cannot be verified before pushing.** Its arm recovers a pre-change generator revision from real
+git history, which a depth-1 clone does not have — so the failure exists only in CI and the fix is
+provable only in CI. Do not read a local green as evidence for it.
+
+**Exit:** `agent-test.sh` collect-all with **every suite's `rc` quoted**, `cargo clippy --workspace
+--all-targets` **and** `cargo check --workspace --all-targets` both rc=0 — then get CI running (§4.8).
+
+### 4.3 B3 — TC-91, and its RED-first duty
+
+`TransactionBehavior::Immediate` has exactly one call site in the engine
+(`connection.transaction_with_behavior` in `commit_batch`, `fathomdb-engine/src/lib.rs`), while
+`commit_projection_outcomes` opens a plain `connection.transaction()` — DEFERRED — with the same
+read-then-upgrade shape TC-57 characterised and deliberately left. Its error is discarded
+(`let _ = commit_projection_outcomes(...)`, two sites), so a failed commit leaves `terminal IS NULL`,
+the row is re-dispatched, and it re-embeds. 83 failures / 92 executed Windows runs = 90.2 %.
+
+⚠ **The defect ships on Linux too** — 105–119 repeat-embeds over 200 rows, about every other row
+embedded twice, on the only platform 0.8.20 publishes. That is TC-91(a).
+
+**The instrument already exists, and every arm that would catch the fix is `#[ignore]`d.**
+`src/rust/crates/fathomdb-engine/tests/tc91_duplicate_embeds_and_silent_commit_loss.rs` (landed
+`b79e22f0`) carries the machinery:
+
+| arm (`fn` name, greppable) | state | what it becomes after the fix |
+|---|---|---|
+| `tc91_forced_commit_failure_is_invisible_to_terminal_counting` | `#[ignore]`d | the key arm. Step (a) is exactly what makes a forced commit failure stop being invisible — this arm's premise inverts when the fix lands |
+| `tc91_duplicate_embed_rate_governed` / `_anonymous` | `#[ignore]`d | rate arms — should collapse toward 0 |
+| `tc91_mechanism_duplicate_rate_versus_write_cadence` | `#[ignore]`d | mechanism measurement |
+| `tc91_control_unblocked_worker_commits` | `#[ignore]`d | the control |
+| `tc91_probe_embed_cost_per_open_at_head` | not ignored | unaffected |
+
+Every arm whose result is a rate measured under concurrency is `#[ignore]`d by design (the module
+header says so) — characterization arms, run explicitly with `--ignored`. That was correct while TC-91
+was being characterised; it is not correct for a slice that fixes it. And the one live assertion cannot
+catch this fix either: `tc57`'s `repeat_embeds <= ROWS` passes today at ~105/200 on Linux, and the
+tightened arm is ruled to 0.8.21 (`seq-223`).
+
+⚠ **So RED-first for B3 means:** convert at least
+`tc91_forced_commit_failure_is_invisible_to_terminal_counting` into a non-ignored assertion whose
+pre-fix state is RED, and give the rate arms a bounded, non-ignored form (post-fix `repeat_embeds` ≈ 0
+on Linux). ⚠ Do not simply un-`#[ignore]` all five — the rate arms are concurrency measurements and
+will flake as gates. Which arms become assertable, and at what bound, is the slice's determination to
+make and to state with evidence.
+
+### 4.4 B4 — the lock-holder flake
+
+The failing arm is `t_s34_dump_mutations_lock_held_exits_71`, which panics
+`engine open (lock holder): DatabaseLocked`. It intends to *be* the lock holder, but a sibling test in
+the same binary took the lock first — parallel-test interference (TC-72), not a code defect.
+
+⚠ **Serialise the tests. Not a retry, not a longer timeout.** At ~29 % flake, one green is ~71 % luck,
+which is why the bar is ≥6 consecutive runs (see the DoD note in §11 on mechanism credit).
+
+### 4.5 B5 — OOS-18
+
+`test-python` can SIGBUS (exit 135) at `_vector_kind_registered` in
+`src/python/tests/test_slice20c_flush_barrier.py`, from a stdlib `sqlite3` `mode=ro` connection against
+a database the engine is actively writing. Recorded in-repo as OOS-18, "a HARNESS hazard, not an engine
+defect", at 5/30 and 3/30; a probe measured 3 of 4 against a debug build. ⚠ CI's `verify` does **not**
+set `FATHOMDB_SKIP_NETWORK_TESTS`, so it is live on the gate path.
+
+#### 4.5.1 The mechanism
+
+`fathomdb-engine/Cargo.toml` declares `rusqlite = { version = "0.31", features = ["bundled"] }`, so the
+engine links its own statically-bundled SQLite; Python's `sqlite3` links the system `libsqlite3`
+(3.45.1 on this box). SQLite's WAL concurrency contract is defined over **processes**, and its
+workaround for POSIX advisory locks — where `close()` of any fd on an inode drops that process's locks
+— lives in a per-library-copy inode cache the two copies do not share. Two copies in one process
+therefore steal each other's locks and invalidate each other's `-shm` mappings.
+
+Measured — same test body, same SQL, same `mode=ro`, only the probe relocated:
+
+| arm | SIGBUS | n |
+|---|---|---|
+| raw `sqlite3` probe in-process (status quo) | 25 | 60 |
+| identical probe in a child process | 0 | 60 |
+
+`P(0 of 60 | p=25/60) ≈ 9e-15`. The process boundary is the whole story.
+
+⛔ **`mode=ro` is not the cause and `immutable=1` is not the fix.** `mode=ro` is the repo's sanctioned
+pattern and this test already uses it correctly: `src/python/eval/verify_embed_db.py` documents that a
+verifier must see committed-but-not-yet-checkpointed rows in the `-wal`, and that `immutable=1` reads
+only the main DB and would report an empty DB — a note that recurs across six engine test files.
+Switching to `immutable=1` would make the late-enrolment assertion fail deterministically.
+`STATUS-0.8.1.md` records that exact scar.
+
+#### 4.5.2 The fix — one Python file, no Rust, no rebuild
+
+In `src/python/tests/test_slice20c_flush_barrier.py`, funnel the read-only raw-SQL oracles through one
+helper that executes the query in a **child OS process** — same `sqlite3` module, same
+`file:{path}?mode=ro` URI, same SQL, same parameters, same tables, same point in the test.
+
+The functions that open their own raw connection are these eight:
+
+`_query` · `_leaf_rows_of_kind_without_vectors` · `_vector_kind_registered` · `_active_cursor` ·
+`_terminal_state` · `_fts_row_exists` · `_active_edge_cursor` · `_pending_node_rows_below`
+
+⚠ **Re-derive this list at commission** (`grep -n 'mode=ro'`, map each hit to its enclosing `def`)
+rather than trusting these eight names. `_projection_failure_rows` delegates to `_query` and
+`_leaf_rows_without_vectors` opens no connection of its own, so both are covered transitively — they
+are not separate work.
+
+- ⛔ **Use `subprocess`, not `multiprocessing`.** `multiprocessing`'s default `fork` on Linux would fork
+  a process holding live SQLite handles *and* a running Rust embed-worker thread — a different, real
+  hazard. `subprocess.run` (fork+exec) runs no Python in the forked image; the child inherits fds but
+  not locks.
+- ⚠ `_terminal_state` returns `str | None` and `_fts_row_exists` returns `bool` — the child must
+  distinguish "no row" from a value. Do not force every oracle through an `int` return; that would
+  silently convert a missing row into a value and weaken the oracle.
+- Leave the two read-write injector connections alone — both run after `engine.close()`, outside the
+  hazard class.
+- Cost: ~54–58 helper call sites × ~35 ms interpreter start ≈ 2 s added to a ~150 s file.
+
+**Why this eliminates rather than narrows:** it removes the foreign SQLite copy from the engine's
+process entirely. What remains — a separate process reading a live-WAL DB `mode=ro` — is exactly what
+SQLite's WAL design supports and what `src/python/eval/verify_embed_db.py` already relies on as a live
+post-drain gate.
+
+**Why it does not weaken the oracle:** the file's docstring is explicit that the raw-table read is
+load-bearing *because it is independent of the engine's own view* — "a harness that only reads
+readiness back PASSES against the defect". The child probe is the same stdlib reader running the same
+SQL; only the address space changes. Confirmed empirically: the session-1 assertions that read
+never-checkpointed rows passed on all 60 child-process runs.
+
+#### 4.5.3 CI's exposure is ~4× worse than the record says
+
+`conftest.py`'s sanctioned rebuild runs `maturin develop` **without `--release`**, so CI tests the debug
+binding. OOS-18's recorded 5/30 and 3/30 (≈10–17 %) came from a release wheel. Measured on debug: 16/40
+(40 %) isolated and 25/60 (42 %) standalone. ⚠ Once `verify` reaches its test stage, expect this to red
+roughly 2 runs in 5, not 1 in 10. Plan the BASE clock accordingly.
+
+#### 4.5.4 Verification bar
+
+⚠ **Report exit codes, not pass counts.** SIGBUS is `rc=135` and a trailing `echo` will launder it —
+this repo has that exact scar. Capture `rc=$?` on the line immediately after pytest.
+
+1. **60 consecutive green isolated-node runs** (~4 s each ≈ 4 min). At the measured `p=0.417` that is
+   `0.583^60 ≈ 9e-15`; even at the pessimistic wheel rate `p=0.10` it is `0.9^60 = 0.0018`.
+
+[35m[3mexec[0m[0m
+[1m/bin/bash -c 'sed -n 1,260p dev/plans/runs/0.8.20-slice-40-brief-provenance.md'[0m in /home/coreyt/projects/fathomdb
+[32m succeeded in 0ms:[0m
+# Slice 40 (`R-20-PUB`) — brief provenance
+
+Historical record. Not instructions.
+
+This file holds the drafting history of `0.8.20-slice-40-commission-brief.md`: claims that were
+retracted, fixes that were proposed and measured wrong, and the epistemic classing of the numbers the
+brief carries. It exists so the Steward keeps the audit trail without the commissioned agent having to
+read it.
+
+An agent commissioned for Slice 40 does not need this file. Nothing here is a work item. Where this
+file and the brief disagree, the brief governs; where the brief and HEAD disagree, HEAD governs.
+
+Companion: `0.8.20-slice-40-commission-brief.md`. Prior substance lived in
+`STEWARD-SESSION-HANDOFF-2026-07-30-B.md` §2 / §3a / §3a-1 / §3a-2, the diagnosis pass at steward
+`seq-222`, the placements at `seq-223`, and `dev/plans/plan-0.8.20.md` §9.
+
+---
+
+## 1. Why the brief carries a verification legend
+
+Three consecutive Steward briefs for this slice shipped confidently-worded factual assertions nobody
+measured (`seq-195`, `seq-196`, `seq-197`, `seq-205`). One of them would have deleted an idempotency
+guard one step from an irreversible three-registry publish. The v4 brief's stated base was `1f85ca2a`,
+four commits behind v5's base, so every `file:line` it carried was suspect.
+
+The standing rule that came out of it: state the symptom and the determination duty; do not name a fix
+you have not measured.
+
+The brief broke that rule twice in its own authoritative table (§3 and §4 below), which is why it now
+also carries a claim-confidence section rather than presenting every number as equally witnessed.
+
+## 2. Version history
+
+**v4 → v5.** Base corrected from `1f85ca2a` to `46b9365e`; every `file:line` re-measured at that HEAD.
+
+**v5 → v6.** v5 predicted two things about itself would be false by commission time, and both were:
+
+- `SLICE-ID-HARDENING` landed (`2008f529`) and fixed the fractional-id filter, making the generated
+  manifest trustworthy.
+- "Slice 39.5" / `R-20-HARNESS` landed (`b6cc8fa6`), converting `agent-test.sh` from fail-fast to
+  collect-all and producing the true red list.
+
+What replaced them was a larger brief, not a smaller one. Three things grew the scope:
+
+- The HITL ruled option (b), fix everything (`seq-219`) — reversing the `seq-206` disposition v5 was
+  written under, under which `rust-windows` and the pyright errors were explicitly excluded.
+- `rust-windows` turned out to be a real engine defect (TC-91), not a flake.
+- A Steward-commissioned diagnosis pass (`seq-222`) found two further reds behind the ones 39.5 could
+  reach, and nine placements were ruled at `seq-223`.
+
+**v6 fix rounds.** Three adversarial review rounds ran against v6. Round 1 failed it on four severe
+findings; round 2 found three severe defects introduced by the round-1 fixes themselves; round 3
+passed it. Sections 3–9 below record what those rounds retracted.
+
+## 3. Retracted: "refresh the stale `git_blob_sha1` provenance"
+
+A diagnosis agent reported that only the provenance claim in `scripts/governed-surface-pin.json` was
+stale. The Steward propagated that into the brief's BASE table without opening the pin file. The
+instruction as written was to edit the signed pin — the forbidden action under "escalate a pin trip,
+never clear it" — and it was also wrong on the facts.
+
+Measured at HEAD:
+
+- `scripts/governed-surface-pin.json`'s `git_blob_sha1` is `140c0f63…`
+- `git rev-parse HEAD:src/conformance/governed-surface-allowlist.json` is the same `140c0f63…`
+- `bash scripts/check-governed-surface-pin.sh` exits 0
+
+The pin is correct. The stale artifact is the test, which hardcodes the superseded commit `427d2712`
+in its provenance arm. The brief now says to fix the test.
+
+This is the `seq-195` shape — an instruction that satisfies a gate by weakening it — appearing inside
+the document written to prevent it. The adversarial review caught it.
+
+## 4. Retracted: "quote `$PRUNE_EXPR`" (TC-139)
+
+A diagnosis agent proposed quoting the variable in `scripts/repo-prune/bin/context-clarity.sh` and the
+Steward wrote it into the BASE table without running it. It does not work. `PRUNE_EXPR` holds a
+sequence of `find` predicates (`-path */target -o -path */node_modules …`), so `find` requires
+word-splitting to see them as separate arguments; quoting hands `find` one giant argument.
+
+| form | result |
+|---|---|
+| `find . \( "$PRUNE_EXPR" \) …` (the proposed fix) | `Unknown argument` — the script dies |
+| `find . \( $PRUNE_EXPR \) …` with globbing on (status quo) | prunes leak — `b/target` survives |
+| `find . \( $PRUNE_EXPR \) …` with globbing off (`set -f`) | correct — both `target` dirs pruned |
+
+The defect is glob expansion, not word-splitting. Both `set -f` and a bash-array form were measured to
+work; the brief leaves the choice to the slice.
+
+Together with §3, this is the same discipline failure twice: an agent's diagnosis was sound, its
+proposed fix was wrong, and the fix was propagated unmeasured. Verify the fix, not just the diagnosis.
+
+## 5. Retracted: "push the branch and open CI"
+
+An earlier draft's BASE-2 gate said to push and observe CI. That is unsatisfiable. `.github/workflows/ci.yml`
+triggers on `push: branches: [main]` and `pull_request` only — no `workflow_dispatch`, no wildcard
+branch push. Pushing a feature branch produces no CI run at all, so the gate would have had nothing to
+observe. The brief now requires a pull request, which is what Slice 39.5 did (its CI baseline came from
+PR #167).
+
+## 6. Retracted: a `DRY_RUN` read-out that cannot fail
+
+An earlier draft required reading the resolved `DRY_RUN` out of the run log before any
+`publish-rust-t*` job started, without establishing that the value is printed anywhere.
+`grep -n DRY_RUN .github/workflows/release.yml` returns the workflow-level `env` assignment and nine
+`if [ "${DRY_RUN}" = "true" ]` shell tests — nothing that prints it. GitHub does not render
+workflow-level `env` in the run log, so the earliest observable point was inside a `publish-rust-t*`
+step, after the job the check was supposed to precede.
+
+As written it was a measurement that cannot fail: an orchestrator could look, find nothing, and report
+the check satisfied without ever observing the value — on the compensating control for the second
+irreversible publish path. The brief now makes emitting that line PHASE 0b work.
+
+## 7. Retracted and corrected: the OOS-18 record
+
+**The `mode=ro` hypothesis was the Steward's own, and the probe disconfirmed it.** The Steward briefed
+the probe toward a `mode=ro` vs `immutable=1` comparison. `mode=ro` turned out to be the repo's
+sanctioned pattern, already used correctly: `src/python/eval/verify_embed_db.py` documents that a
+verifier must see committed-but-not-yet-checkpointed rows in the `-wal`, and that `immutable=1` reads
+only the main DB and would report an empty DB — a note that recurs across six engine test files.
+Switching to `immutable=1` would not have been a narrower fix; it would have made the late-enrolment
+assertion fail deterministically. `STATUS-0.8.1.md` records that exact scar.
+
+The real cause is two independently-linked SQLite copies in one process. It is recorded in the brief.
+
+**The oracle inventory was wrong in both directions.** An earlier draft's list of functions opening
+their own raw connection omitted `_active_edge_cursor` and `_pending_node_rows_below` — both called
+inside a live-`Engine` block, the exact hazard configuration — and listed `_projection_failure_rows`
+and `_leaf_rows_without_vectors`, which open no connection of their own. Following it literally would
+have fixed six of eight and left two live, with the verification bar unlikely to catch the difference.
+The brief now carries eight names and an instruction to re-derive them.
+
+**The call-site count moved.** An earlier draft said "~64" helper call sites. Two independent counts
+give 54 and 58 depending on the regex. It is a cost estimate, not a gate; either way the added cost is
+about 2 s on a ~150 s file.
+
+## 8. Corrected twice: the actionlint fixture loop
+
+v5 said the tier loop in `scripts/tests/test_actionlint_fixture.sh` exits 1 on the first failure, so
+only one defect surfaces and defect 2 is masked. Fix-round 1 said 39.5's conversion made both visible.
+Both are wrong.
+
+Measured: the loop does accumulate — it increments `TIER_FAILED` and reports all seven tiers, and
+there is no `exit 1` inside the loop (the only one is at end of file). But defect 2 still does not
+surface, for a different reason: the loop's only tier assertion greps each job block for the
+`cargo publish --dry-run -p ` literal, and nothing asserts the job block exists. A misnamed tier
+produces an empty block from `awk`, the grep fails, and it emits the identical defect-1 message.
+Observed: 7 FAIL lines, all defect-1-shaped, none naming the swap.
+
+The swap is invisible to the suite by construction, not by masking. The consequence the brief now
+carries: making the suite green is satisfiable without ever noticing the swapped names, so the
+determination must add a job-block-exists assertion.
+
+A related retraction: v5's DoD required proving "the loop no longer masks a later tier". At HEAD the
+loop already reports every failing tier, so that clause was satisfiable with zero change. It was
+dropped.
+
+## 9. Retracted: three counterfactual or dead findings
+
+**The AWAITING-SIGN-OFF board item.** v5 told the slice to report that the allowlist `_comment` still
+contained the literal `AWAITING HITL SIGN-OFF, NOT SIGNED`. `grep -c` for that literal in
+`src/conformance/governed-surface-allowlist.json` is 0, and the board had already been corrected by
+the `seq-207`/`seq-208` reconcile — the surviving board occurrences are the quoted superseded text plus
+its correction. The `_comment` re-pin is done (`seq-208`, `c239908b`), not owed. Reporting it again
+would have re-opened a closed item and burned a fix round. v5 inherited it from hand-off `-A`, which
+`seq-216` lists as superseded.
+
+**The "run suites individually" trap.** v5's trap list said `agent-test.sh`'s aggregate exit is
+vacuous, that it aborts at `agent-test.sh:73`, and instructed running suites individually. 39.5
+converted the harness to collect-all-then-report; the cited anchor moved and `run_capped` is no longer
+the call form. The instruction contradicted the brief's own BASE exit criterion. What survives is
+narrower: the harness's non-zero exit must still be honoured, and each suite's `rc` must still be
+quoted — collect-all reports them all in one run.
+
+**The suite-count argument.** v5 argued the correct figure was 31 `run_capped` call sites against a
+hand-off claiming 35. 39.5's conversion replaced the call form entirely: at HEAD
+`grep -c '^run_capped' scripts/agent-test.sh` is 0 and `grep -c '^run_suite' scripts/agent-test.sh` is
+32. Every count in that argument — 31, 34 and 35 alike — is now wrong. Only the shape of the
+disagreement is worth remembering: anchored versus unanchored grep.
+
+## 10. Retracted: the TC-91 fix would have landed untested
+
+Fix-round 1 found that the brief's headline fix had no test able to fail on it — the vacuous-green
+shape, on the most consequential change in the slice.
+`src/rust/crates/fathomdb-engine/tests/tc91_duplicate_embeds_and_silent_commit_loss.rs` exists (37 KB,
+landed `b79e22f0`) and already carries the machinery, but every arm whose result is a rate measured
+under concurrency is `#[ignore]`d by design — they are characterization arms, correct for
+characterising TC-91 and not correct for a slice that fixes it. The live `tc57` assertion
+(`repeat_embeds <= ROWS`) passes today at ~105/200 on Linux, and the tightened arm is ruled to 0.8.21
+(`seq-223`). The brief now carries a RED-first duty for that item.
+
+## 11. Rotted line anchors
+
+The v6 brief carried roughly 59 bare `file:line` anchors, mostly inherited from v5 and measured at
+`46b9365e`. The review found six plan anchors wrong at HEAD, and the Steward confirmed the
+`embed_batch_cls` citations resolved to entirely different lines:
+
+- the `embed_batch_cls` ruling was cited at `plan-0.8.20.md:880-881` with the item body at `:941-943`;
+  at HEAD `:879-881` is the "Already settled" block and `:941-944` is §11 item 3, the PUBLISH decision.
+  The real sites were `:888` (ruling) and `:949-951` (item body).
+- the §11 item 2 adoption arms were cited at `:877` and `:929-932`; at HEAD `:877` is the §11 preamble
+  and `:926-936` is item 1 (AC-079). The real sites were `:885` and `:937-940`.
+- two paths were cited without their `src/rust/crates/` prefix and did not resolve from the repo root:
+  `fathomdb/tests/sdk_only_erasure.rs` and `fathomdb/src/lib.rs`.
+
+The repo bans bare `file:line` in commission documents for exactly this reason — the generated
+manifest's §5 is headed "greppable headings, never `file:line`" and `commission-manifest.sh` hard-fails
+on one. A hand-written substance doc escapes that check only because it is hand-written. TC-131 (the
+brief fact-checker, ruled to 0.8.21) is the durable fix. The brief now states the anchors-are-hints
+rule once and prefers greppable symbols.
+
+## 12. Claim classing at v6
+
+Two agent inferences were checked and one was overturned: an agent reported the pyright gate "red since
+0.8.18" as established; the defensible statement is red on every run where `verify` executed in the
+retained window, with the drift dated to `f2f843ed`.
+
+**Steward-re-verified from source** — opened directly, not taken from a report:
+
+1. `TransactionBehavior::Immediate` has exactly one call site in `fathomdb-engine/src/lib.rs`, in
+   `commit_batch`; `commit_projection_outcomes` opens a plain `connection.transaction()`; the worker
+   commit error is discarded at two `let _ = commit_projection_outcomes(...)` sites. An earlier draft
+   said the symbol "occurs exactly once" — `grep` returns two hits, the call plus a comment referencing
+   it elsewhere. One call site, two occurrences. The distinction matters because the claim sat in the
+   class readers are told they need not re-check.
+2. `release.yml` contains `cargo publish --dry-run -p` zero times.
+3. `default-embedder-tests` runs only two named test targets, so there is no full-workspace
+   `cargo test` on Linux anywhere in `ci.yml` (→ TC-141, ruled to 0.8.21).
+4. `_fathomdb.pyi` is hand-maintained — its own docstring says so and no generator exists in
+   `scripts/`. "Regenerate the stub" named an action that does not exist; it is a manual sync.
+5. `agent-verify.sh` is four stages, not the three an earlier Steward brief stated.
+6. `_fathomdb.abi3.so` is gitignored (`git check-ignore -v`), so the sanctioned rebuild dirtied nothing
+   tracked.
+
+**Agent-measured and relayed** — the Steward verified the mechanism but did not independently reproduce
+the arithmetic:
+
+- `83/92 = 90.2 %` `rust-windows` failure, and the `repeat_embeds` distribution (min 205 / median 370)
+- `105–119` Linux `repeat_embeds` over 200 rows, and the `taskset` core-count control
+- governed-surface-pin arms. Earlier drafts said `46/46` and `45 of 46`; Steward-measured is 89 arms,
+  88 PASS / 1 FAIL. The `46` was never right.
+- `863 passed, 6 skipped` for `test-python` post-rebuild
+- `8 of 9` security gates passing, and the `STRICT=1` vs `AC037_LIVE_OPTIONAL=1` rc split
+- `6 of 7` pyright errors cleared by a stub-only edit, measured in a scratch copy
+- all of the OOS-18 rates — `25/60` in-process vs `0/60` child-process, `16/40` isolated, the ~40 %
+  debug-build rate, and the `9e-15` probability. "Steward-verified" in that section applies only to the
+  static facts: the `rusqlite` bundled feature, the sanctioned `mode=ro` pattern, the oracle inventory,
+  and the missing `--release`.
+
+## 13. The v5 per-suite snapshot at `46b9365e`
+
+Superseded by the brief's measured red list. Kept for provenance.
+
+Measured by running each `scripts/tests/*.sh` suite individually with `rc=$?` captured on the next
+line. `scripts/agent-test.sh` was not run as an aggregate (TC-16 — vacuous exit under the pre-39.5
+harness); `cargo test --workspace` was not run (TC-72); the engine suite was not run (TC-97 / `ac_029`).
+
+| suite | rc |
+|---|---|
+| `scripts/tests/test_actionlint_fixture.sh` | 1 |
+
+[35m[3mcodex[0m[0m
+I’ve got the target files. Now I’m pulling line-numbered views around the shell logic and the steward handoff so the findings can cite exact locations rather than rough sections.
+[35m[3mexec[0m[0m
+[1m/bin/bash -c "sed -n '80,240=' scripts/repo-prune/bin/context-clarity.sh"[0m in /home/coreyt/projects/fathomdb
+[32m succeeded in 0ms:[0m
+80
+81
+82
+83
+84
+85
+86
+87
+88
+89
+90
+91
+92
+93
+94
+95
+96
+97
+98
+99
+100
+101
+102
+103
+104
+105
+106
+107
+108
+109
+110
+111
+112
+113
+114
+115
+116
+117
+118
+119
+120
+121
+122
+123
+124
+125
+126
+127
+128
+129
+130
+131
+132
+133
+134
+135
+136
+137
+138
+139
+140
+141
+142
+143
+144
+145
+146
+147
+148
+149
+150
+151
+152
+153
+154
+155
+156
+157
+158
+159
+160
+161
+162
+163
+164
+165
+166
+167
+168
+169
+170
+171
+172
+173
+174
+175
+176
+177
+178
+179
+180
+181
+182
+183
+184
+185
+186
+187
+188
+189
+190
+191
+192
+193
+194
+195
+196
+197
+198
+199
+200
+201
+202
+203
+204
+205
+206
+207
+208
+209
+210
+211
+212
+213
+214
+215
+216
+217
+218
+219
+220
+221
+222
+223
+224
+225
+226
+227
+228
+229
+230
+231
+232
+233
+234
+235
+236
+237
+238
+239
+240
+
+[35m[3mexec[0m[0m
+[1m/bin/bash -c "sed -n '80,240{=;p;}' scripts/repo-prune/bin/context-clarity.sh"[0m in /home/coreyt/projects/fathomdb
+[32m succeeded in 0ms:[0m
+80
+}
+81
+metric orient "orient_list";  ORIENT_C=$_CNT;  ORIENT_B=$_BYTES;  ORIENT_T=$_TOK
+82
+
+83
+# --- 6. per-session memory surface --------------------------------------
+84
+MEM_DIR="${CLAUDE_MEMORY_DIR:-$HOME/.claude/projects/-home-coreyt-projects-fathomdb/memory}"
+85
+# (defined here because §5b's resolver needs it; §6 below consumes it too.)
+86
+if [ -f "$MEM_DIR/MEMORY.md" ]; then
+87
+  MEM_IDX_B=$(wc -c <"$MEM_DIR/MEMORY.md"); MEM_IDX_T=$(est_tokens "$MEM_IDX_B")
+88
+  MEM_IDX_ENTRIES=$(grep -c '^- \[' "$MEM_DIR/MEMORY.md" || true)
+89
+  MEM_FILES=$(find "$MEM_DIR" -maxdepth 1 -name '*.md' | grep -c . || true)
+90
+  MEM_ALL_B=$(find "$MEM_DIR" -maxdepth 1 -name '*.md' -print | bytes_of)
+91
+else
+92
+  MEM_IDX_B=0; MEM_IDX_T=0; MEM_IDX_ENTRIES=0; MEM_FILES=0; MEM_ALL_B=0
+93
+fi
+94
+
+95
+# --- 5b. STEWARD cold-start set (a SECOND, disjoint orient axis) ---------
+96
+# §5's orient_list() is the "understand the codebase" set: DOC-INDEX + READMEs +
+97
+# root/interface contracts. A /steward cold start reads something else entirely —
+98
+# the boards, ladders, master and hand-offs named by §3 of the steward hand-off.
+99
+# Measured 2026-07-31: the two sets share ZERO files, and the 2026-06-26 prune
+100
+# cut dev/ md tokens 46% while cold_start_orient_set rose 1.8%. Tree size and
+101
+# reading-list cost are different variables; this metric is the second one.
+102
+#
+103
+# DERIVED FROM §3, NOT HARDCODED. orient_list() above is a hardcoded list, which
+104
+# is fine for a campaign instrument but would be a vacuous gate: it would keep
+105
+# passing while §3 grew. This resolver reads the hand-off itself, so adding a
+106
+# file to §3 shows up here.
+107
+#
+108
+# Partial is allowed; SILENTLY partial is not (the steward-orient.sh contract).
+109
+# Any §3 item that resolves to nothing, and is not declared file-less, is a hard
+110
+# failure naming the item.
+111
+STEWARD_HANDOFF=dev/plans/prompts/0.8.x-STEWARD-HANDOFF.md
+112
+STEWARD_CEILING="${STEWARD_COLDSTART_CEILING:-60000}"
+113
+# §3 items that legitimately name no file. Item 2 is `git log`/`git status`/
+114
+# `git worktree list` — commands, not documents.
+115
+STEWARD_NOFILE_ITEMS=" 2 "
+116
+
+117
+# Body of a numbered §3 item: from "<n>. " to the next numbered item or "## ".
+118
+steward_item_body() { # $1 = item number
+119
+  awk -v want="$1" '
+120
+    /^## *3\./      { in3=1; next }
+121
+    in3 && /^## /   { exit }
+122
+    !in3            { next }
+123
+    /^[0-9]+\. /    { cur = $1+0 }
+124
+    { if (cur == want) print }
+125
+  ' "$STEWARD_HANDOFF"
+126
+}
+127
+
+128
+# Resolve one backticked token from §3 into existing file paths.
+129
+#
+130
+# NOTE for whoever fixes TC-139 (Slice 40 item B6): this resolver REQUIRES
+131
+# pathname expansion for `plan-0.8.*.md` and `STATUS-0.8.*.md`. If the TC-139 fix
+132
+# is `set -f` at file scope rather than wrapped tightly around the `find`, this
+133
+# function breaks. It therefore enables globbing locally and restores the caller's
+134
+# state, so it is correct under either fix shape.
+135
+steward_resolve() { # $1 = raw token
+136
+  local t="$1" p
+137
+  local _noglob=0; case $- in *f*) _noglob=1;; esac
+138
+  set +f
+139
+  case "$t" in
+140
+    # `…/memory/MEMORY.md` — an elided absolute path.
+141
+    *…*|*...*)      t="$MEM_DIR/MEMORY.md" ;;
+142
+  esac
+143
+  case "$t" in
+144
+    # `plan-0.8.z.md` is a PATTERN written in prose, not a literal filename.
+145
+    plan-0.8.z.md)  t="dev/plans/plan-0.8.*.md" ;;
+146
+  esac
+147
+  case "$t" in
+148
+    # A bare filename in §3 means the prompts dir (item 5's orchestrator hand-off).
+149
+    */*)            : ;;
+150
+    *)              t="dev/plans/prompts/$t" ;;
+151
+  esac
+152
+  for p in $t; do [ -f "$p" ] && printf '%s\n' "$p"; done   # deliberate glob
+153
+  [ "$_noglob" -eq 1 ] && set -f
+154
+  return 0
+155
+}
+156
+
+157
+# Files named by item N of §3, one path per line.
+158
+steward_item_files() { # $1 = item number
+159
+  local tok
+160
+  steward_item_body "$1" \
+161
+    | grep -oE '`[^`]+`' | tr -d '`' \
+162
+    | grep -E '\.md$' \
+163
+    | sort -u \
+164
+    | while IFS= read -r tok; do steward_resolve "$tok"; done
+165
+  # Item 7 ("your own last Steward report") names no path — resolve by rule.
+166
+  if [ "$1" = 7 ]; then
+167
+    ls dev/plans/runs/STEWARD-SESSION-HANDOFF-*.md 2>/dev/null | sort | tail -1
+168
+  fi
+169
+}
+170
+
+171
+# The entry point itself: /steward loads these before §3 is even reached.
+172
+steward_entry_files() {
+173
+  { echo "$STEWARD_HANDOFF"
+174
+    echo .claude/commands/steward.md
+175
+    echo .claude/agents/steward.md
+176
+  } | while IFS= read -r f; do [ -f "$f" ] && echo "$f"; done
+177
+}
+178
+
+179
+STEWARD_ROWS=""; STEWARD_ALL=""; STEWARD_UNRESOLVED=""; _SC_LAST=0
+180
+# Sets globals directly and reports the count in _SC_LAST. It must NOT be called
+181
+# via $(...): a command substitution runs in a subshell, so the STEWARD_ROWS /
+182
+# STEWARD_ALL accumulation would be silently discarded — which is exactly how the
+183
+# first draft of this metric reported 0 files while its own guard stayed quiet.
+184
+_sc_add() { # $1 = item label, $2 = newline-separated paths
+185
+  local list="$2" c b t
+186
+  c=$(printf '%s\n' "$list" | grep -c . || true)
+187
+  b=$(printf '%s\n' "$list" | bytes_of)
+188
+  t=$(est_tokens "$b")
+189
+  STEWARD_ROWS="${STEWARD_ROWS}    {\"item\": \"$1\", \"files\": $c, \"bytes\": $b, \"tokens_est\": $t},\n"
+190
+  if [ "$c" -gt 0 ]; then STEWARD_ALL="${STEWARD_ALL}${list}"$'\n'; fi
+191
+  _SC_LAST="$c"
+192
+}
+193
+
+194
+_sc_add entry "$(steward_entry_files)"
+195
+[ "$_SC_LAST" -gt 0 ] || STEWARD_UNRESOLVED="${STEWARD_UNRESOLVED}entry "
+196
+for _i in 1 2 3 4 5 6 7; do
+197
+  _sc_add "3.$_i" "$(steward_item_files "$_i")"
+198
+  if [ "$_SC_LAST" -eq 0 ] && [[ "$STEWARD_NOFILE_ITEMS" != *" $_i "* ]]; then
+199
+    STEWARD_UNRESOLVED="${STEWARD_UNRESOLVED}3.$_i "
+200
+  fi
+201
+done
+202
+STEWARD_ROWS="${STEWARD_ROWS%,\\n}"
+203
+
+204
+# De-duplicate: a file named by two items is read once, so count it once.
+205
+STEWARD_UNIQ=$(printf '%s\n' "$STEWARD_ALL" | grep -v '^$' | sort -u || true)
+206
+STEW_C=$(printf '%s\n' "$STEWARD_UNIQ" | grep -c . || true)
+207
+STEW_B=$(printf '%s\n' "$STEWARD_UNIQ" | bytes_of)
+208
+STEW_T=$(est_tokens "$STEW_B")
+209
+STEW_OVER=$( [ "$STEW_T" -gt "$STEWARD_CEILING" ] && echo true || echo false )
+210
+
+211
+if [ -n "$STEWARD_UNRESOLVED" ]; then
+212
+  echo "context-clarity: FAIL — steward §3 item(s) resolved to no files: $STEWARD_UNRESOLVED" >&2
+213
+  echo "  (§3 of $STEWARD_HANDOFF changed shape, or a named file moved.)" >&2
+214
+  echo "  A silently-partial cold-start measurement is worse than none — refusing to write." >&2
+215
+  exit 3
+216
+fi
+217
+
+218
+# --- 7. search signal-to-noise ------------------------------------------
+219
+# For a fixed query set: total live-path md files matching, and how many are in
+220
+# ledger zones (runs/ or prompts/) vs core (design/adr/interfaces/root/notes).
+221
+QUERIES=("CE-rerank" "rerank" "graphrag" "recall floor" "logical_id" "mem0" "RRF" "GraphRAG")
+222
+SN_ROWS=""
+223
+for q in "${QUERIES[@]}"; do
+224
+  hits=$(grep -rilF "$q" --include='*.md' dev 2>/dev/null | grep -v '^dev/archive/' || true)
+225
+  tot=$(printf '%s\n' "$hits" | grep -c . || true)
+226
+  ledger=$(printf '%s\n' "$hits" | grep -E '^dev/plans/(runs|prompts)/' | grep -c . || true)
+227
+  core=$((tot-ledger))
+228
+  SN_ROWS="${SN_ROWS}    {\"query\": \"$q\", \"total_files\": $tot, \"ledger_zone\": $ledger, \"core\": $core},\n"
+229
+done
+230
+SN_ROWS="${SN_ROWS%,\\n}"
+231
+
+232
+# --- write JSON ----------------------------------------------------------
+233
+GIT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
+234
+STAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+235
+cat >"$JSON" <<EOF
+236
+{
+237
+  "label": "$LABEL",
+238
+  "git_sha": "$GIT_SHA",
+239
+  "captured_utc": "$STAMP",
+240
+  "token_estimate": "ceil(bytes/4)",
+
+[35m[3mexec[0m[0m
+[1m/bin/bash -c "sed -n '240,330{=;p;}' scripts/repo-prune/bin/context-clarity.sh"[0m in /home/coreyt/projects/fathomdb
+[32m succeeded in 0ms:[0m
+240
+  "token_estimate": "ceil(bytes/4)",
+241
+  "dev_tree": { "all_files": $DEV_ALL_C, "all_bytes": $DEV_ALL_B,
+242
+                "md_files": $DEV_MD_C, "md_bytes": $DEV_MD_B, "md_tokens_est": $DEV_MD_T },
+243
+  "live_vs_archive": { "live_md_files": $LIVE_MD_C, "live_md_bytes": $LIVE_MD_B, "live_md_tokens_est": $LIVE_MD_T,
+244
+                       "archive_md_files": $ARCH_MD_C, "archive_md_bytes": $ARCH_MD_B },
+245
+  "runs_zone": { "all_files": $RUNS_ALL, "all_bytes": $RUNS_B,
+246
+                 "md": $RUNS_MD, "json": $RUNS_JSON, "log": $RUNS_LOG, "txt": $RUNS_TXT },
+247
+  "doc_index": { "bytes": $DI_B, "tokens_est": $DI_T, "table_rows": $DI_ROWS },
+248
+  "cold_start_orient_set": { "files": $ORIENT_C, "bytes": $ORIENT_B, "tokens_est": $ORIENT_T },
+249
+  "steward_cold_start_set": { "files": $STEW_C, "bytes": $STEW_B, "tokens_est": $STEW_T,
+250
+                              "ceiling_tokens": $STEWARD_CEILING, "over_ceiling": $STEW_OVER,
+251
+                              "source": "$STEWARD_HANDOFF §3 (derived, not hardcoded)",
+252
+    "items": [
+253
+$(printf "$STEWARD_ROWS")
+254
+    ] },
+255
+  "memory_surface": { "index_bytes": $MEM_IDX_B, "index_tokens_est": $MEM_IDX_T,
+256
+                      "index_entries": $MEM_IDX_ENTRIES, "memory_files": $MEM_FILES, "memory_all_bytes": $MEM_ALL_B },
+257
+  "search_signal_to_noise": [
+258
+$(printf "$SN_ROWS")
+259
+  ]
+260
+}
+261
+EOF
+262
+
+263
+# --- write human summary -------------------------------------------------
+264
+{
+265
+  echo "# Context-clarity snapshot — \`$LABEL\` ($GIT_SHA, $STAMP)"
+266
+  echo
+267
+  echo "Token counts are estimates: ceil(bytes/4). Re-run \`scripts/repo-prune/bin/context-clarity.sh <label>\` and diff JSON for deltas."
+268
+  echo
+269
+  echo "| Metric | Value |"
+270
+  echo "|---|---|"
+271
+  echo "| dev/ files (ex-caches) | $DEV_ALL_C ($DEV_ALL_B bytes) |"
+272
+  echo "| dev/ .md files | $DEV_MD_C ($DEV_MD_B bytes, ~$DEV_MD_T tok) |"
+273
+  echo "| live-path .md (ex archive/) | $LIVE_MD_C ($LIVE_MD_B bytes, ~$LIVE_MD_T tok) |"
+274
+  echo "| archive/ .md | $ARCH_MD_C ($ARCH_MD_B bytes) |"
+275
+  echo "| runs/ zone files | $RUNS_ALL ($RUNS_B bytes); md=$RUNS_MD json=$RUNS_JSON log=$RUNS_LOG txt=$RUNS_TXT |"
+276
+  echo "| DOC-INDEX.md | $DI_B bytes, ~$DI_T tok, $DI_ROWS table rows |"
+277
+  echo "| cold-start orient set | $ORIENT_C files, $ORIENT_B bytes, ~$ORIENT_T tok |"
+278
+  echo "| **steward cold-start set** | **$STEW_C files, $STEW_B bytes, ~$STEW_T tok** (ceiling $STEWARD_CEILING, over=$STEW_OVER) |"
+279
+  echo "| memory MEMORY.md index | $MEM_IDX_B bytes, ~$MEM_IDX_T tok, $MEM_IDX_ENTRIES entries |"
+280
+  echo "| memory/ dir (all .md) | $MEM_FILES files, $MEM_ALL_B bytes |"
+281
+  echo
+282
+  echo "## Steward cold-start set by §3 item (derived from the hand-off, not hardcoded)"
+283
+  echo
+284
+  echo "| §3 item | Files | ~Tokens |"
+285
+  echo "|---|---|---|"
+286
+  printf "$STEWARD_ROWS\n" | sed -n 's/.*"item": "\([^"]*\)", "files": \([0-9]*\), "bytes": [0-9]*, "tokens_est": \([0-9]*\).*/| \1 | \2 | \3 |/p'
+287
+  echo
+288
+  echo "## Search signal-to-noise (live-path .md files matching; ledger = runs/+prompts/)"
+289
+  echo  # MD022/MD058: blank line between the heading and the table below
+290
+  echo "| Query | Total files | Ledger-zone | Core |"
+291
+  echo "|---|---|---|---|"
+292
+  for q in "${QUERIES[@]}"; do
+293
+    hits=$(grep -rilF "$q" --include='*.md' dev 2>/dev/null | grep -v '^dev/archive/' || true)
+294
+    tot=$(printf '%s\n' "$hits" | grep -c . || true)
+295
+    ledger=$(printf '%s\n' "$hits" | grep -E '^dev/plans/(runs|prompts)/' | grep -c . || true)
+296
+    echo "| $q | $tot | $ledger | $((tot-ledger)) |"
+297
+  done
+298
+} >"$MD"
+299
+
+300
+echo "wrote $JSON and $MD"
+301
+cat "$MD"
+
+[35m[3mexec[0m[0m
+[1m/bin/bash -c "sed -n '55,120{=;p;}' dev/plans/prompts/0.8.x-STEWARD-HANDOFF.md"[0m in /home/coreyt/projects/fathomdb
+[32m succeeded in 0ms:[0m
+55
+> picture in **under 4 KB** and writes nothing — branch / HEAD / dirty count / worktrees **plus orphan
+56
+> checkout dirs**, the live board's **next action verbatim**, **landed slices with their SHAs** and
+57
+> `SCHEMA`, the **last 5 steward-ledger entries**, the **todos ledger folded to latest-per-`id`**, the
+58
+> open-PR count, and the newest `STEWARD-SESSION-HANDOFF-*`. It reads release facts from the single
+59
+> writer `dev/plans/release-state-<version>.json` rather than re-scraping git, derives the release from
+60
+> the **live board's filename** (never a hardcoded version), and **hard-fails naming any section that
+61
+> came back empty** — so it can be partial, but never *silently* partial. It covers items 2-3 below and
+62
+> front-loads item 7; read the rest for the *reasoning* those facts sit inside.
+63
+>
+64
+> The former item 5 pointed at `0.8.x-SEQUENCING-WATCH-HANDOFF.md`, **a file that has never existed in
+65
+> this repository** (`git log --all -- '*SEQUENCING-WATCH-HANDOFF*'` is empty). The pointer is removed
+66
+> rather than restored: its report format is already §10 of this document, and the watchdog duties it
+67
+> named are §1 and §4 item 2.
+68
+
+69
+1. `dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md` — the master (memorize §2a edges, §4 allocation, §5
+70
+   by-when, §6 findings).
+71
+2. `git log --oneline -30` + `git status` + `git worktree list` — the actual repo state. *(Covered by
+72
+   `steward-orient.sh`, which also flags orphan checkout dirs `git worktree list` cannot see.)*
+73
+3. `dev/plans/runs/STATUS-0.8.*.md` — which slices are CLOSED / in-flight. *(The live board's §1 next
+74
+   action is printed verbatim by `steward-orient.sh`; open the board itself for the close records.)*
+75
+4. The `plan-0.8.z.md` ladders that exist — confirm allocation still matches master §4.
+76
+5. `dev/design/orchestration.md` §12.4 (plan-as-state-machine reconciliation) + §12.5 (boards), and
+77
+   `0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md` — the contract you commission.
+78
+6. The memory index (`…/memory/MEMORY.md`) — program context (M-work resolutions, footprint invariant,
+79
+   worktree traps). Recalled memories are background, and reflect what was true when written — re-verify
+80
+   any file/flag they name before relying on it.
+81
+7. Your own last Steward report, if resuming — to compute "since last".
+82
+
+83
+## 4. Responsibilities
+84
+
+85
+1. **Schedule-of-record fidelity.** Reconcile every landed slice / new plan / re-sequencing into the
+86
+   master §4/§5/§6 (`orchestration.md` §12.4). The master never silently lies about the repo.
+87
+2. **Drift detection (the watchdog function).** Diff reality vs the master each pass; classify by the
+88
+   watchdog taxonomy; assign severity; **escalate a physically-hard dependency violation (I-1/I-2/I-4)
+89
+   live**, not in the next report cycle.
+90
+3. **Cross-cutting placement.** Supply-chain (Dependabot), CI integrity, experiment slotting, dependency
+91
+   edges — triage by **footprint** (IN-LIBRARY / CALLER-SIDE-BYO-LLM / OFFLINE-BUILD / EVAL-ONLY),
+92
+   propose a home + diff-ready plan/master edits.
+93
+4. **Commission & verify execution.** Spawn release orchestrators (§9) and mechanical subagents (§7);
+94
+   **verify their output against primary sources** (git, exit codes) before trusting, recording, or
+95
+   committing it.
+96
+5. **HITL interface.** Surface every decision that is the human's — direction, release slot, scope, risk
+97
+   — as a crisp proposal *with a recommendation*. Never decide it yourself.
+98
+6. **Record-keeping & durability.** Keep the decision trail in the **docs** (master, ladders, DOC-INDEX),
+99
+   not just in session context, so the program survives a context reset or a steward handoff.
+100
+
+101
+## 5. Scope of allowable work — the decision-rights line
+102
+
+103
+| Class | Examples | Default |
+104
+|---|---|---|
+105
+| **Observe / verify** | read repo, git, boards, design docs; confirm a claim from git; pull `gh` state | **Autonomous, always** |
+106
+| **Analyze / triage** | footprint-rank alerts; size a migration lift; map an experiment's deps; sequencing-impact | **Autonomous, always** |
+107
+| **Propose** | diff-ready master/ladder edits; placement recommendations; watch/steward reports | **Autonomous, always** (proposing ≠ applying) |
+108
+| **Mutate the repo** | apply doc edits, commit, push | **HITL-gated by default; autonomous *only* under a standing mandate** for a defined unit of work |
+109
+| **Mutate external state** | close/annotate PRs, change repo/CI settings | **HITL-gated by default; autonomous under mandate** |
+110
+| **Change program direction / the record** | pick a release slot, move an item between releases, alter an I-edge, re-sequence | **Always explicit HITL** — propose + recommend; the human decides. Never self-widened, never inside an implied mandate. |
+111
+| **Commission a subagent / orchestrator** | bulk doc edits, searches, a release orchestrator | **Autonomous** for read/analyze/draft work; the *output's* mutation still obeys the rows above |
+112
+
+113
+**The mandate rule (the heart of it).** You act autonomously *within* a unit of work the HITL has
+114
+authorized ("reconcile all", "commit when done", "do the cleanup") — including mutations and delegation —
+115
+but you **never expand the mandate's boundary yourself**, and **direction/record changes are never inside
+116
+an implied mandate** (they are always a separate, explicit human decision). When in doubt whether
+117
+something is in-mandate, treat it as out and ask.
+118
+
+119
+**Commit cadence:** **per-mandate** — when a mandated unit of work is complete and verified, land it in one
+120
+clean docs commit and push (`origin/main`), then report. Do not batch unrelated units into one commit; do
+
+[35m[3mcodex[0m[0m
+I’m now checking which factual claims are independently supportable from files already in-tree, versus claims that would require historical `git show` access I don’t currently have. Where I can’t prove a number directly, I’ll call that out instead of laundering the claim.
+[35m[3mexec[0m[0m
+[1m/bin/bash -c 'ls dev/plans/runs'[0m in /home/coreyt/projects/fathomdb
+[32m succeeded in 0ms:[0m
+0.7.0-perf-experiments-results.md
+0.7.1-EU-7-findings.md
+0.7.1-EU-7-measurements.json
+0.7.1-EU-8-measurements.json
+0.7.2-EU-8-ir-recall-results.md
+0.7.2-PR-2a-recall-investigation.md
+0.7.2-PR-2bc-S1-review.md
+0.7.2-PR-2bc-S2-review.md
+0.7.2-PR-2bc-S3-review.md
+0.7.2-PR-2bc-decision.md
+0.7.2-PR-2c-recall-rootcause.md
+0.7.2-PR-3-perf-data.md
+0.7.2-RHC-PR-1-drift-list.md
+0.8.0-graph-model-resolution-20260605T140000Z.md
+0.8.0-identity-scope-codex-consult-20260605T021802Z.md
+0.8.0-slice-6-tokenizer-experiment-20260607T003001Z.md
+0.8.0-slice-plan.wf.js
+0.8.1-R6-bsweep-n40.json
+0.8.1-R6-index-key-enrichment-design.md
+0.8.1-R6-recall-n40.json
+0.8.1-beat-bm25-report.md
+0.8.1-c1-seeding-slice-design.md
+0.8.1-g0-capability-map-20260614T175634Z.json
+0.8.1-g0-design-review.md
+0.8.1-g0-phase2-design.md
+0.8.1-p0a-base-e2e-n160-gemini31pro.json
+0.8.1-p0a-fused-e2e-n160-gemini31pro.json
+0.8.1-p0a-fused-recall-n160.json
+0.8.1-slice-25-r2-run.json
+0.8.1-slice-30-opt3-closure.json
+0.8.11-handoff-to-0.8.15.md
+0.8.11-memex-handoff-prompt.md
+0.8.12-fixcompile-review-20260702T214924Z.log
+0.8.12-fixcompile-review-20260702T214924Z.md
+0.8.12-handoff.md
+0.8.12-slice0-review-20260701.md
+0.8.12-slice15-review-20260701.md
+0.8.12-slice20-review-20260702.md
+0.8.12-slice40-verification.md
+0.8.12-slice5-review-20260701.md
+0.8.12-sliceA-review-20260702T204034Z.log
+0.8.12-sliceA-review-20260702T204034Z.md
+0.8.12-sliceB-review-20260702T210411Z.log
+0.8.12-sliceB-review-20260702T210411Z.md
+0.8.14-slice-10-fix1-review-20260704T011100Z.log
+0.8.14-slice-10-fix1-review-20260704T011100Z.md
+0.8.14-slice-10-review-20260704T005156Z.log
+0.8.14-slice-10-review-20260704T005156Z.md
+0.8.14-slice-20-eu7-gpu-run-20260705T205222Z.log
+0.8.14-slice-20-review-20260704T122017Z.log
+0.8.14-slice-20-review-20260704T122017Z.md
+0.8.14-slice-25-fix1-review-20260704T034037Z.md
+0.8.14-slice-25-fix1-review-20260704T040057Z.log
+0.8.14-slice-25-review-20260704T034037Z.log
+0.8.14-slice-25-review-20260704T034037Z.md
+0.8.14-slice-40-review-20260706T020546Z.log
+0.8.14-slice-40-review-20260706T020704Z.log
+0.8.14-slice-40-review-20260706T021144Z.md
+0.8.14-slice-5-review-20260704T001710Z.log
+0.8.14-slice-5-review-20260704T001710Z.md
+0.8.16-slice-10-15-codex-review-20260708T212901Z.log
+0.8.16-slice-10-15-codex-review-rerun-20260708T214035Z.log
+0.8.16-slice-10-codex-review-20260708T193927Z.log
+0.8.16-slice-10-codex-review-rerun-20260708T194943Z.log
+0.8.16-slice-10-codex-review-rerun2-20260708T195741Z.log
+0.8.16-slice-10-codex-review-rerun3-20260708T200602Z.log
+0.8.16-slice-10-codex-review-rerun4-20260708T201022Z.log
+0.8.16-slice-10-codex-review-rerun5-20260708T202022Z.log
+0.8.16-slice-15-candle-onnx-equivalence.md
+0.8.16-slice-40-codex-review-20260708T221843Z.log
+0.8.16-slice-5-codex-review-20260708T122040Z.log
+0.8.16-slice-5-codex-review-rerun-20260708T124500Z.log
+0.8.16-slice-5-codex-review-rerun2-20260708T130139Z.log
+0.8.18-slice-0-cross-backend-calibration.md
+0.8.18-slice-0-onnx-gpu-ep-calibration.md
+0.8.2-m1-FINDINGS.md
+0.8.2-m1-baseline-cheapval.json
+0.8.2-m1-baseline-pilot.json
+0.8.2-m1-bridge-vs-answer-diagnostic.md
+0.8.2-m1-corpus-manifest.json
+0.8.2-m1-graph-coverage-n300.json
+0.8.2-m1-report-gpt54.md
+0.8.2-m1-report.md
+0.8.2-m1-verdict-cheapval-rerun.json
+0.8.2-m1-verdict-cheapval.json
+0.8.2-m1-verdict-gpt54-cheap.json
+0.8.2-m1-verdict-gpt54.checkpoint.json
+0.8.2-m1-verdict-gpt54.json
+0.8.2-m1-verdict-n300.checkpoint.json
+0.8.2-m1-verdict-n300.json
+0.8.2-slice-0-prereg-methodology-review.md
+0.8.2-slice-10-graph-build.md
+0.8.2-slice-15-ppr-arm.md
+0.8.20-doc-hygiene-3-remainder-output.json
+0.8.20-keystone-closeout-output.json
+0.8.20-slice-10-closure-output.json
+0.8.20-slice-10a-fix-1-output.json
+0.8.20-slice-10a-output.json
+0.8.20-slice-10b-fix-2-output.json
+0.8.20-slice-10b-fix-3-output.json
+0.8.20-slice-10b-fix-4-output.json
+0.8.20-slice-10b-fix-5-output.json
+0.8.20-slice-10b-output.json
+0.8.20-slice-15b-fix-1-output.json
+0.8.20-slice-15b-fix-2-output.json
+0.8.20-slice-15b-fix-3-output.json
+0.8.20-slice-15b-output.json
+0.8.20-slice-15c-output.json
+0.8.20-slice-15d-output.json
+0.8.20-slice-15e-output.json
+0.8.20-slice-20-output.json
+0.8.20-slice-20c-output.json
+0.8.20-slice-22-fix-1-output.json
+0.8.20-slice-22-fix-2-output.json
+0.8.20-slice-22-partA-output.json
+0.8.20-slice-22-partB-output.json
+0.8.20-slice-22-partC-output.json
+0.8.20-slice-23-output.json
+0.8.20-slice-25-output.json
+0.8.20-slice-30-output.json
+0.8.20-slice-31-output.json
+0.8.20-slice-32-output.json
+0.8.20-slice-33-library-sweep-3-FINDINGS.md
+0.8.20-slice-33-output.json
+0.8.20-slice-39-fix-1-output.json
+0.8.20-slice-39-fix-2-output.json
+0.8.20-slice-39-leg1a-output.json
+0.8.20-slice-39-leg1b-output.json
+0.8.20-slice-39-leg2-output.json
+0.8.20-slice-39-leg3-output.json
+0.8.20-slice-39-output.json
+0.8.20-slice-39.5-commission-brief.md
+0.8.20-slice-39.5-implementer-output.json
+0.8.20-slice-39.5-output.json
+0.8.20-slice-40-brief-provenance.md
+0.8.20-slice-40-commission-brief.md
+0.8.20-slice-5-docs-output.json
+0.8.20-slice-5-fix-1-output.json
+0.8.20-slice-5-fix-2-output.json
+0.8.20-slice-5-fix-3-output.json
+0.8.20-slice-5-fix-4-output.json
+0.8.20-slice-5-fix-5-output.json
+0.8.20-slice-5-fix-6-output.json
+0.8.20-slice-5-fix-7-output.json
+0.8.20-slice-5a-output.json
+0.8.20-slice-5b-output.json
+0.8.20-slice-5c-output.json
+0.8.20-slice-5d-output.json
+0.8.20-slice-id-hardening-commission-brief.md
+0.8.20-slice-id-hardening-fix1-output.json
+0.8.20-slice-id-hardening-fix2-output.json
+0.8.20-slice-id-hardening-leg1-output.json
+0.8.20-slice-id-hardening-leg2-output.json
+0.8.20-slice-id-hardening-leg3-output.json
+0.8.20-slice-id-hardening-output.json
+0.8.3-ce-rerank-smoke.json
+0.8.3-corpus-adequacy-note.md
+0.8.3-d0a-corpus-manifest.json
+0.8.3-d0a-memory-gold.json
+0.8.3-d0b-cheapval.json
+0.8.3-d0b-findings-observed-by-s15a-20260622.md
+0.8.3-d0b-parity-n606.json
+0.8.3-d0b-pilot.json
+0.8.3-d0b-powered-recall.json
+0.8.3-eu7-bisect-report.md
+0.8.3-eu7-bisect.json
+0.8.3-gap-decomposition-cheapval.json
+0.8.3-gap-decomposition-n606.json
+0.8.3-gap-decomposition-probe-PROPOSAL.md
+0.8.3-gap-decomposition-report.md
+0.8.3-locomo-corpus-manifest.json
+0.8.3-mem0-parity-VERDICT.md
+0.8.3-paired-power-proxy.json
+0.8.3-parity-forward-plan.md
+0.8.3-report.md
+0.8.3-rerank-accuracy-n606-VERDICT.md
+0.8.3-rerank-accuracy-n606.json
+0.8.3-rerank-accuracy-reblend-a1-INTERIM-VERDICT.md
+0.8.3-rerank-accuracy-reblend-a1-n606.json
+0.8.3-rerank-tune-FINDINGS.md
+0.8.3-rerank-tune.ce-pass.json
+0.8.3-rerank-tune.json
+0.8.3-resolution-verdict.json
+0.8.3-resolution-verdict.md
+0.8.3-s15a-embedder.json
+0.8.3-s15a-report.md
+0.8.3-s15a-smoke-report.md
+0.8.3-s15a-smoke.json
+0.8.3-s15b-smoke.json
+0.8.3-task2b-corpus-power-DECISION.md
+0.8.4-COMPREHENSIVE-REPORT.md
+0.8.4-HANDOFF.md
+0.8.4-cost-probe-FINDINGS.md
+0.8.4-cost-probe.py
+0.8.4-gating-d2-index.json
+0.8.4-gating-rerun-RESULT.json
+0.8.4-gating-rerun-RESULT.md
+0.8.4-gating-rerun.ckpt.json
+0.8.4-gating-rerun.py
+0.8.4-graphrag-RESOLUTION.md
+0.8.4-graphrag-embshim.py
+0.8.4-graphrag-setup.md
+0.8.4-graphrag-style-smoke-RESULT.md
+0.8.4-graphrag-style-smoke.py
+0.8.4-premise-smoke-RESULT.md
+0.8.4-premise-smoke.py
+0.8.4-s1-community-RESULT.md
+0.8.4-s1-community-strongreports.py
+0.8.4-s1-community.py
+0.8.4-scale-d2-index.json
+0.8.4-scale-powered-run-RESULT.json
+0.8.4-scale-powered-run-RESULT.md
+0.8.4-scale-powered-run.ckpt.json
+0.8.4-scale-powered-run.py
+0.8.4-slice-0-review-VERDICT.md
+0.8.4-slice-5-review-VERDICT.md
+0.8.4-slice-5b-review-VERDICT.md
+0.8.4-slice-5b-runner-review-VERDICT.md
+0.8.4-tier1-fair-rerun-RESULT.json
+0.8.4-tier1-fair-rerun-RESULT.md
+0.8.4-tier1-fair-rerun.ckpt.json
+0.8.4-tier1-fair-rerun.py
+0.8.4-tier2-prototype.py
+0.8.4-vs-microsoft-graphrag-RESULT.md
+0.8.4-vs-microsoft-graphrag.py
+0.8.4-xfamily-pilot-RESULT.md
+0.8.4-xfamily-pilot-powered-RESULT.md
+0.8.4-xfamily-pilot-powered.py
+0.8.4-xfamily-pilot.py
+0.8.6-slice-15-release-verify.md
+0.8.6-slice-40-release-readiness.md
+0.8.8-carrier-decision-hitl-brief.md
+0.8.8-explanation-fieldset-ratification.md
+0.8.9.1-baseline.md
+0.8.9.1-orchestration-experiment.md
+0.8.x-capability-status-report.md
+0.8.x-remaining-todos.md
+0.8.x-renumber-reconciliation.md
+B-1-fathomdb-answer-sheet.md
+CAUSE-A-sizing.md
+DOC-HYGIENE-3-citation-set-diff.md
+EXP-COV-1-downstream-GPU-replan.md
+EXP-COV-1-extraction-manifest.json
+EXP-COV-1-results.md
+EXP-COV-1-sweep-plan.md
+EXP-COV-results.md
+FIX-33-byo-llm-edge-linkage.md
+GA-1-corpus-ab-20260608T012503Z.md
+GA-signoff-eu7-remeasure-20260608T172804Z.json
+GENVIEW-commission-brief.md
+IR-B-deferred-on-corpus-freeze.md
+IR-C-api-surface-knobs-to-review.md
+IR-C-bge-small-beir-anchor.json
+IR-C-pooling-floor-gate.json
+IR-C-r0-findings.md
+IR-C-r2-eval-results.md
+IR-C-recall-cdf.json
+IR-C-recall-full.json
+IR-C-recall-smoke.json
+IR-C-retrieval-findings.md
+IR-C-roadmap-analysis-dossier.md
+IR-C-roadmap-deep-research.md
+IR-C-roadmap.md
+IR-C-ws1-fusion-experiment-full.json
+IR-C-ws1-fusion-experiment-slice1200.json
+IR-C-ws1-fusion-experiment.json
+IR1-phase1-codex-consult-20260608T011707Z.md
+NOTE-0.8.8-to-orchestrator-record-feedback-reclassify.md
+NOTE-0.8.8-to-steward-id-contract.md
+NOTE-0.8.9-slice20-pyo3-review-verdict.md
+NOTE-2026-06-29-library-sweep-to-0.8.x-steward.md
+STATUS-0.8.0.md
+STATUS-0.8.1.md
+STATUS-0.8.11.1.md
+STATUS-0.8.11.2.md
+STATUS-0.8.11.md
+STATUS-0.8.12.md
+STATUS-0.8.14.md
+STATUS-0.8.16.md
+STATUS-0.8.18.md
+STATUS-0.8.19.md
+STATUS-0.8.2.md
+STATUS-0.8.20.md
+STATUS-0.8.3.md
+STATUS-0.8.4.md
+STATUS-0.8.6.md
+STATUS-0.8.7.md
+STATUS-0.8.8.md
+STATUS-0.8.9.1.md
+STATUS-0.8.9.md
+STATUS-embedder-undefer.md
+STATUS-perf-vector-quant.md
+STATUS-phase12.md
+STATUS-release-hardening.md
+STATUS.md
+STEWARD-SESSION-HANDOFF-2026-06-27.md
+STEWARD-SESSION-HANDOFF-2026-06-29.md
+STEWARD-SESSION-HANDOFF-2026-07-02.md
+STEWARD-SESSION-HANDOFF-2026-07-03.md
+STEWARD-SESSION-HANDOFF-2026-07-07.md
+STEWARD-SESSION-HANDOFF-2026-07-08-A.md
+STEWARD-SESSION-HANDOFF-2026-07-08-B.md
+STEWARD-SESSION-HANDOFF-2026-07-10-A.md
+STEWARD-SESSION-HANDOFF-2026-07-18-A.md
+STEWARD-SESSION-HANDOFF-2026-07-24-A.md
+STEWARD-SESSION-HANDOFF-2026-07-26-A.md
+STEWARD-SESSION-HANDOFF-2026-07-27-A.md
+STEWARD-SESSION-HANDOFF-2026-07-29-A.md
+STEWARD-SESSION-HANDOFF-2026-07-29-B.md
+STEWARD-SESSION-HANDOFF-2026-07-30-A.md
+STEWARD-SESSION-HANDOFF-2026-07-30-B.md
+V-1-plan.md
+V-1-results.md
+V-3-plan.md
+V-3-results.md
+WORKTREE-STATE-AND-LANDING-PLAN-2026-07-18.md
+agent-memory-impl-strategy.wf.js
+agent-seat-hardening-ASH-A-output.json
+agent-seat-hardening-ASH-A-review-20260727T173903Z.md
+agent-seat-hardening-ASH-B-output.json
+agent-seat-hardening-ASH-B-review-20260727T180535Z.md
+agent-seat-hardening-ASH-B-review-20260727T183445Z.md
+agent-seat-hardening-ASH-B-review-20260727T185914Z.md
+codex
+consolidation-value-test-results.md
+doc-hygiene-1-T1-fix-1-output.json
+doc-hygiene-1-T1-output.json
+doc-hygiene-1-T2-output.json
+doc-hygiene-1-T3-fix-1-output.json
+doc-hygiene-1-T3-output.json
+doc-hygiene-1-T4-fix-1-output.json
+doc-hygiene-1-T4-output.json
+expa-recall.md
+expaf-value-report.md
+expaf-value.checkpoint.json
+expaf-value.md
+expb-joint-tune-output.json
+expb-joint-tune.md
+expb-lme.ce-pass.json
+experiment-roadmap-placement-proposal.md
+expm4-ceiling.md
+fathomdb-next-steps-codex-QA-appendix.md
+fathomdb-next-steps-codex-confirmation-run2.md
+fathomdb-next-steps-codex-hypothesis.md
+fathomdb-retrieval-experiments-compilation.md
+fracc-base.checkpoint.json
+fracc-base.md
+fracc-voi.checkpoint.json
+fracc-voi.md
+gate0-rescope-output.md
+gate2-oracle-output.json
+gate2-oracle.md
+ir-improvement-orchestration-prompt.md
+md_lint_summary.py
+performance-output-and-compare.md
+preflight-summary.md
+slice-35-l2-prototype.md
+slice-40-closure.md
+v05-feature-triage.wf.js
+v3-decomposition-quality-research.md
+
+[35m[3mexec[0m[0m
+[1m/bin/bash -c "ls dev/plans/runs | sed -n '"'$='"'"[0m in /home/coreyt/projects/fathomdb
+[32m succeeded in 0ms:[0m
+360
+
+[35m[3mexec[0m[0m
+[1m/bin/bash -c "ls dev/plans/runs/*.md | sed -n '"'$='"'"[0m in /home/coreyt/projects/fathomdb
+[32m succeeded in 0ms:[0m
+187
+
+[35m[3mexec[0m[0m
+[1m/bin/bash -c 'sed -n 1,220p scripts/lib/board-closed.sh'[0m in /home/coreyt/projects/fathomdb
+[32m succeeded in 0ms:[0m
+#!/usr/bin/env bash
+# scripts/lib/board-closed.sh — the ONE board-CLOSED predicate.
+#
+# A `dev/plans/runs/STATUS-<version>.md` board is either LIVE (things still land
+# into it) or CLOSED (frozen historical record). Two callers need that split and
+# must never disagree about it:
+#
+#   * scripts/check-board-currency.sh — skips CLOSED boards, because a frozen
+#     board legitimately no longer tracks git ancestry.
+#   * scripts/steward-orient.sh       — selects the LIVE board, and derives the
+#     release number from its filename.
+#
+# Shared, not reimplemented: if the two ever drifted, one of them would be
+# quietly wrong about which release is current — check-board-currency would
+# either scan a frozen board (noise) or skip the live one (a silent vacuous
+# pass), and the briefing would report a closed release as current. So the
+# predicate lives here exactly once and both callers source this file.
+#
+# WINDOW = 15 LINES, NOT 5. The banner is a header-region marker, but YAML
+# frontmatter (`--- ... ---`) pushes it down: measured at line 10 on
+# STATUS-0.8.9.1.md, versus line 3 on every frontmatter-less closed board. 15
+# lines still bounds it to the header region — deliberately NOT a whole-file
+# grep, which could incidentally match a LIVE board's own prose describing some
+# OTHER closed board. Do not narrow this window without moving both callers.
+#
+# Sourced, never executed: `. "<dir>/lib/board-closed.sh"`.
+
+# Usage: board_is_closed <path-to-STATUS-board.md>
+# Exit 0 = CLOSED (frozen historical record); non-zero = LIVE.
+# The head output is fed to grep by HERE-STRING, not a pipe: both callers run
+# under `set -o pipefail`, where `grep -q` exiting early on a match can leave
+# `head` with SIGPIPE and turn a CLOSED board into a 141 (i.e. "LIVE"). No pipe,
+# no SIGPIPE, same predicate.
+board_is_closed() {
+  grep -qiE 'CLOSED — historical record' <<<"$(head -n 15 "$1")"
+}
+
+[35m[3mcodex[0m[0m
+I’ve already disproved one numeric claim directly: `dev/plans/runs/` has 360 files on Friday, July 31, 2026, not 359. I’m now checking whether the “18 CLOSED / 1 LIVE” board split still holds under the repo’s actual `board_is_closed()` predicate.
+[35m[3mexec[0m[0m
+[1m/bin/bash -c "ls dev/plans/runs/STATUS-0.8*.md | sed -n '"'$='"'"[0m in /home/coreyt/projects/fathomdb
+[32m succeeded in 0ms:[0m
+19
+
+[35m[3mexec[0m[0m
+[1m/bin/bash -c "sed -n '1,15p' dev/plans/runs/STATUS-0.8*.md"[0m in /home/coreyt/projects/fathomdb
+[32m succeeded in 0ms:[0m
+# FathomDB 0.8.0 — Live status board
+
+> **CLOSED — historical record, archived in place.** **0.8.0** shipped 2026-06-08 (`v0.8.0` GA tag); current state: `dev/plans/runs/STATUS-0.8.20.md` (live release board) + `dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md` (the master schedule-of-record).
+
+> **★ PHASE 0.8.0 CLOSED — superseded by 0.8.1 (2026-06-12).** 0.8.0 GA shipped + tagged
+> (`v0.8.0` @ `5b606c5`, published live — see §1/§7). The post-GA **IR-eval / IR-C track**
+> ran to its conclusion on this board's watch: corpus reproduced + frozen
+> (`corpus_hash fe973fcd…`), full-corpus Option-A chunking experiment (deferred), BEIR
+> empirical anchor, the bge-small literature benchmark, and the **IR-C retrieval roadmap**
+> (`dev/plans/runs/IR-C-roadmap.md`). Its R0–R4 items were brought into **0.8.1** (HITL
+> option ②-B, 2026-06-12). **This board is historical/read-only now.** The live board is
+> **[`STATUS-0.8.1.md`](STATUS-0.8.1.md)**; the 0.8.1 ladder is `../0.8.1-plan.md`, contracts
+> `../0.8.1-implementation.md`, orchestrator hand-off `../prompts/0.8.1-MASTER-ORCHESTRATOR-HANDOFF.md`.
+
+Single source of truth for 0.8.0 live state (§12.5 — mandatory because this phase
+
+[35m[3mcodex[0m[0m
+The shell restriction is touchy around loops, but bulk `sed` reads are still working. I’m using ordered multi-file reads to inspect the status-board headers without relying on helper scripting.
+[35m[3mexec[0m[0m
+[1m/bin/bash -c "sed -n '1,2p' dev/plans/runs/STATUS-0.8.0.md dev/plans/runs/STATUS-0.8.1.md dev/plans/runs/STATUS-0.8.2.md dev/plans/runs/STATUS-0.8.3.md dev/plans/runs/STATUS-0.8.4.md dev/plans/runs/STATUS-0.8.6.md dev/plans/runs/STATUS-0.8.7.md dev/plans/runs/STATUS-0.8.8.md dev/plans/runs/STATUS-0.8.9.md dev/plans/runs/STATUS-0.8.9.1.md"[0m in /home/coreyt/projects/fathomdb
+[32m succeeded in 0ms:[0m
+# FathomDB 0.8.0 — Live status board
+
+
+[35m[3mexec[0m[0m
+[1m/bin/bash -c 'sed -n 1,220p scripts/repo-prune/measurements/context-clarity/DELTA-2026-06-26.md'[0m in /home/coreyt/projects/fathomdb
+[32m succeeded in 0ms:[0m
+# Context-clarity delta — baseline `25541d88` → post `fe2734e9` (ledger-prune)
+
+Tokens estimated ceil(bytes/4). Generated from context-clarity baseline.json/post.json.
+
+| Metric | Baseline | Post | Δ |
+|---|--:|--:|--:|
+| dev/ files (ex-caches) | 1,282 | 774 | -508 (-40%) |
+| dev/ bytes | 169,779,622 | 79,574,378 | -90,205,244 (-53%) |
+| dev/ .md files | 730 | 627 | -103 (-14%) |
+| dev/ .md tokens (est) | 3,499,334 | 1,895,292 | -1,604,042 (-46%) |
+| live-path .md files (ex archive/) | 728 | 578 | -150 (-21%) |
+| live-path .md tokens (est) | 3,473,007 | 1,707,002 | -1,766,005 (-51%) |
+| archive/ .md files | 2 | 49 | +47 (+2350%) |
+| runs/ zone files | 670 | 168 | -502 (-75%) |
+| runs/ zone bytes | 100,993,830 | 13,275,503 | -87,718,327 (-87%) |
+| runs/ .log files | 179 | 0 | -179 (-100%) |
+| runs/ .json files | 266 | 64 | -202 (-76%) |
+| DOC-INDEX rows | 169 | 171 | +2 (+1%) |
+| cold-start orient tokens (est) | 85,187 | 86,736 | +1,549 (+2%) |
+| memory MEMORY.md entries | 43 | 43 | +0 (+0%) |
+
+## Search signal-to-noise (live-path .md matching; ledger zone = runs/+prompts/)
+
+| Query | Base total | Base ledger | Post total | Post ledger | Δ ledger-noise |
+|---|--:|--:|--:|--:|--:|
+| CE-rerank | 26 | 11 | 28 | 10 | -1 |
+| rerank | 194 | 110 | 174 | 92 | -18 |
+| graphrag | 67 | 41 | 67 | 39 | -2 |
+| recall floor | 62 | 36 | 53 | 27 | -9 |
+| logical_id | 101 | 52 | 86 | 38 | -14 |
+| mem0 | 88 | 44 | 84 | 39 | -5 |
+| RRF | 126 | 74 | 115 | 62 | -12 |
+| GraphRAG | 67 | 41 | 67 | 39 | -2 |
+
+[35m[3mcodex[0m[0m
+I have a second concrete factual break now. The in-repo delta file says the June 26 prune took `runs/ zone files` from 670 to 168, but the proposal says 660 to 168. I’m pulling exact lines around those claims next.
+[35m[3mexec[0m[0m
+[1m/bin/bash -c "sed -n '40,110{=;p;}' dev/design/steward-cold-start-budget.md"[0m in /home/coreyt/projects/fathomdb
+[32m succeeded in 0ms:[0m
+40
+     of its 48,713 tokens.
+41
+   - The master — **60 %** is the §6 integration-findings ledger. Live sequencing is ~17,000 of 42,891.
+42
+
+43
+---
+44
+
+45
+## 1a. Prior art — `scripts/repo-prune/` (probed 2026-07-31)
+46
+
+47
+A doc/memory prune ran **2026-06-26** with real results: `dev/` −53 % bytes, live `.md` tokens **−51 %**,
+48
+`runs/` 660→168 files. It left durable outputs still in place today: `dev/archive/` (50 files),
+49
+`dev/DOC-INDEX.md`, `dev/experiments-ledger.md`. **This plan should extend it, not duplicate it** — see
+50
+§5 for the verdict. Three probe findings decide how.
+51
+
+52
+**Finding 1 — it measures a different cold start, and the two sets are disjoint.**
+53
+`context-clarity.sh` already emits a `cold_start_orient_set` metric. Its `orient_list()` is
+54
+`DOC-INDEX + dev READMEs + root contracts + dev/interfaces`. That is the *understand-the-codebase* set.
+55
+The steward §3 set is boards, ladders, the master and the hand-offs.
+56
+
+57
+| set | files | overlap |
+58
+|---|---|---|
+59
+| `repo-prune` `orient_list()` | 45 | **0** |
+60
+| steward §3 reading list | 43 | **0** |
+61
+
+62
+**Finding 2 — its own instrument shows the tree-wide prune did not help this axis.**
+63
+
+64
+| metric | baseline `25541d88` | post `bb64a2d4` |
+65
+|---|---|---|
+66
+| `dev_tree.md_tokens_est` | 3,499,334 | 1,883,557 (**−46 %**) |
+67
+| `cold_start_orient_set.tokens_est` | 85,187 | 86,736 (**+1.8 %**) |
+68
+
+69
+Halving the tree left the orient set slightly *worse*. A tree-wide prune does not fix a reading-list
+70
+problem, because the reading list is a **named path through the tree**, not a size property of it.
+71
+
+72
+**Finding 3 — there is no ratchet, and the zone it cleaned has more than fully re-drifted.**
+73
+
+74
+| `dev/plans/runs/` | post-prune 2026-06-26 | today |
+75
+|---|---|---|
+76
+| all files | 168 | **359** |
+77
+| `.md` files | 88 | **187** |
+78
+
+79
+Nothing enforces the gains: no test and no CI job consults `context-clarity.sh`'s metrics. It is a
+80
+**campaign instrument** — run by hand, before and after a prune — not a standing gate. Five weeks
+81
+un-ratcheted returned the zone to worse than double its post-prune size.
+82
+
+83
+**Why it could not have solved this anyway:** every predicate this plan leans on postdates the prune by
+84
+a month — `lint-plans-status.sh` 2026-07-24; `board-closed.sh`, `steward-orient.sh` and
+85
+`release-state-0.8.20.json` all 2026-07-25. The liveness split did not exist on 2026-06-26.
+86
+
+87
+---
+88
+
+89
+## 2. The plan — four phases, each independently shippable
+90
+
+91
+### Phase 0 — pin the budget before changing content
+92
+
+93
+⇒ **Extend `scripts/repo-prune/bin/context-clarity.sh` with a second metric,
+94
+`steward_cold_start_set`.** Do **not** add a parallel `steward-coldstart-cost.sh`: the harness, the
+95
+`ceil(bytes/4)` convention, the baseline/post/DELTA layout and the JSON contract already exist and are
+96
+already correct. A second tool would be a second index — the thing repo-prune's own design note (S3)
+97
+forbids.
+98
+
+99
+The new metric expands §3's list as an agent would, and reports per-item and total cost alongside the
+100
+existing `cold_start_orient_set`. Then add the piece repo-prune never had: a **ratchet** —
+101
+`scripts/tests/test_steward_coldstart_cost.sh`, exiting non-zero above the ceiling, wired into CI at
+102
+Phase 4. That is the one genuinely new contribution to the tooling, and Finding 3 is the argument for
+103
+it.
+104
+
+105
+⚠ **The metric must expand the list from §3 itself, not from a hardcoded copy.** A hardcoded list would
+106
+pass while §3 grew — a vacuous gate, the exact trap `lint-plan-anchors.sh` was written for. Note that
+107
+the existing `orient_list()` *is* hardcoded, which is consistent with a campaign tool but not with a
+108
+gate.
+109
+
+110
+**Cost:** small. **Risk:** none — additive to a tested script.
+
+[35m[3mexec[0m[0m
+[1m/bin/bash -c "sed -n '1,40{=;p;}' scripts/repo-prune/measurements/context-clarity/DELTA-2026-06-26.md"[0m in /home/coreyt/projects/fathomdb
+[32m succeeded in 0ms:[0m
+1
+# Context-clarity delta — baseline `25541d88` → post `fe2734e9` (ledger-prune)
+2
+
+3
+Tokens estimated ceil(bytes/4). Generated from context-clarity baseline.json/post.json.
+4
+
+5
+| Metric | Baseline | Post | Δ |
+6
+|---|--:|--:|--:|
+7
+| dev/ files (ex-caches) | 1,282 | 774 | -508 (-40%) |
+8
+| dev/ bytes | 169,779,622 | 79,574,378 | -90,205,244 (-53%) |
+9
+| dev/ .md files | 730 | 627 | -103 (-14%) |
+10
+| dev/ .md tokens (est) | 3,499,334 | 1,895,292 | -1,604,042 (-46%) |
+11
+| live-path .md files (ex archive/) | 728 | 578 | -150 (-21%) |
+12
+| live-path .md tokens (est) | 3,473,007 | 1,707,002 | -1,766,005 (-51%) |
+13
+| archive/ .md files | 2 | 49 | +47 (+2350%) |
+14
+| runs/ zone files | 670 | 168 | -502 (-75%) |
+15
+| runs/ zone bytes | 100,993,830 | 13,275,503 | -87,718,327 (-87%) |
+16
+| runs/ .log files | 179 | 0 | -179 (-100%) |
+17
+| runs/ .json files | 266 | 64 | -202 (-76%) |
+18
+| DOC-INDEX rows | 169 | 171 | +2 (+1%) |
+19
+| cold-start orient tokens (est) | 85,187 | 86,736 | +1,549 (+2%) |
+20
+| memory MEMORY.md entries | 43 | 43 | +0 (+0%) |
+21
+
+22
+## Search signal-to-noise (live-path .md matching; ledger zone = runs/+prompts/)
+23
+
+24
+| Query | Base total | Base ledger | Post total | Post ledger | Δ ledger-noise |
+25
+|---|--:|--:|--:|--:|--:|
+26
+| CE-rerank | 26 | 11 | 28 | 10 | -1 |
+27
+| rerank | 194 | 110 | 174 | 92 | -18 |
+28
+| graphrag | 67 | 41 | 67 | 39 | -2 |
+29
+| recall floor | 62 | 36 | 53 | 27 | -9 |
+30
+| logical_id | 101 | 52 | 86 | 38 | -14 |
+31
+| mem0 | 88 | 44 | 84 | 39 | -5 |
+32
+| RRF | 126 | 74 | 115 | 62 | -12 |
+33
+| GraphRAG | 67 | 41 | 67 | 39 | -2 |
+
+[35m[3mcodex[0m[0m
+The historical-claims audit is paying off. There are at least two hard contradictions already between the proposal and the repo’s own June 26 delta artifact. I’m checking the remaining “today” counts the same way.
+[35m[3mexec[0m[0m
+[1m/bin/bash -c "ls dev/archive | sed -n '"'$='"'"[0m in /home/coreyt/projects/fathomdb
+[32m succeeded in 0ms:[0m
+7
+
+[35m[3mexec[0m[0m
+[1m/bin/bash -c "sed -n '1,8p' dev/plans/runs/STATUS-0.8.20.md"[0m in /home/coreyt/projects/fathomdb
+[32m succeeded in 0ms:[0m
+# STATUS — FathomDB 0.8.20 · OPP-12 Phase-2 + erasure completeness + the breaking-pair publish
+
+> **Board of record** for 0.8.20 (`orchestration.md` §12.5). Ladder: `dev/plans/plan-0.8.20.md`.
+> Design of record: `dev/design/0.8.20-erasure-and-h-end-state-v4.md`.
+> Slice-0 design (v5 addendum): `dev/design/0.8.20-slice0-erasure-design.md`.
+> **Update at every slice close.** Verify state from git, never from narration.
+
+**Release base:** `4ca70ba6` · **Orchestration worktree:** `/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20`
+
+[35m[3mexec[0m[0m
+[1m/bin/bash -c "sed -n '35,46{=;p;}' scripts/repo-prune/bin/context-clarity.sh"[0m in /home/coreyt/projects/fathomdb
+[32m succeeded in 0ms:[0m
+35
+bytes_of() { local t=0 b; while IFS= read -r f; do [ -f "$f" ] || continue; b=$(wc -c <"$f"); t=$((t+b)); done; echo "$t"; }
+36
+count_of() { grep -c . || true; }                      # count nonempty stdin lines
+37
+est_tokens() { echo $(( ($1 + 3) / 4 )); }             # ceil(bytes/4)
+38
+
+39
+# find md files under a dir, excluding caches (prune dirs FIRST, then match files)
+40
+md_under() { find "$1" \( $PRUNE_EXPR \) -prune -o -type f -name '*.md' -print 2>/dev/null; }
+41
+# all files under a dir, excluding caches
+42
+all_under() { find "$1" \( $PRUNE_EXPR \) -prune -o -type f -print 2>/dev/null; }
+43
+
+44
+metric() { # name list-producing-command -> sets _CNT/_BYTES/_TOK
+45
+  local list; list="$(eval "$2")"
+46
+  _CNT=$(printf '%s\n' "$list" | grep -c . || true)
+
+[35m[3mcodex[0m[0m
+I found a likely doc-level defect too: the proposal explicitly rejects adding `steward-coldstart-cost.sh`, then later tells Phase 4 to wire `steward-coldstart-cost.sh` into CI. I’m pulling the exact lines so it’s not just a vague inconsistency.
+[35m[3mexec[0m[0m
+[1m/bin/bash -c "sed -n '180,235{=;p;}' dev/design/steward-cold-start-budget.md"[0m in /home/coreyt/projects/fathomdb
+[32m succeeded in 0ms:[0m
+180
+it would destroy the evidence that a guardrail fired. The brief split preserved every retracted claim
+181
+for exactly this reason.
+182
+
+183
+**Cost:** large. **Risk:** highest — see §3.
+184
+
+185
+### Phase 4 — stop new drift at the source
+186
+
+187
+- Close records land in `STATUS-<v>-close-records.md` **from the start** — an orchestrator-contract
+188
+  change, so §11-style sections never accrete on a live board again.
+189
+- Wire `steward-coldstart-cost.sh` into CI so the ceiling is enforced, not aspirational.
+190
+
+191
+**Cost:** small once Phase 3 lands. **Risk:** low.
+192
+
+193
+---
+194
+
+195
+## 3. Budget trajectory
+196
+
+197
+| stage | ~cold-start tokens |
+198
+|---|---|
+199
+| today, literal | 366,800 |
+200
+| today, charitable | 238,200 |
+201
+| after Phase 1 | **~167,000** |
+202
+| after Phase 2 | ~125,000 |
+203
+| after Phase 3 | **~55,000** |
+204
+| ceiling to pin | 60,000 |
+205
+
+206
+Reaching the 40,000 stretch needs `plan-0.8.20.md` (22,389, 31 superseded/stale markers) split the same
+207
+way. Proposed as optional Phase 3b, not load-bearing.
+208
+
+209
+---
+210
+
+211
+## 4. Risks and unknowns — Phase 3 only
+212
+
+213
+Phases 0–2 carry essentially no risk. Phase 3 touches four checked couplings, and they must move
+214
+atomically with the content:
+215
+
+216
+1. ⛔ **Five `generated_views` in `release-state-0.8.20.json` carry `location` strings pointing at
+217
+   §-anchors** — two into `STATUS-0.8.20.md`, one into master §4, one into `plan-0.8.20.md`, one into a
+218
+   dated steward hand-off. Splitting either file invalidates its anchor. `check-release-state-views.sh
+219
+   --write` is the tool; the JSON is the single writer and must be updated in the same commit.
+220
+2. ⚠ **`check-board-currency.sh`** requires every `merge(<version>): Slice <N>` short SHA to appear
+221
+   **literally inside the STATUS board**. If close records move out, that check must follow them or it
+222
+   goes vacuous — and a vacuous board-currency check is how a stale board would stop being detectable.
+223
+3. ⚠ **`lint-plan-anchors.sh`** enforces the line-anchor ban (DOC-HYGIENE-2). A split tempts
+224
+   reintroducing `file:line` pointers between the two halves. Use greppable headings.
+225
+4. ⚠ **12+ scripts reference `STATUS-0.8.*` / `plan-0.8.*` paths** (`preflight.sh`,
+226
+   `commission-manifest.sh`, `check-c1-conformance.sh`, `lint-plans-status.sh`, `corpus-freeze.yml`,
+227
+   and the test suites). **This is why Phase 1 filters rather than archives** — filtering touches no
+228
+   path, and captures 82 % of the win with none of this exposure.
+229
+
+230
+**Unknown, worth one cheap probe before Phase 3:** whether `scripts/repo-prune/` (which carries
+231
+`prune-docs.md`, a `doc-prune-CLEANUP-MAP.md`, and an acceptance-test file) already encodes a
+232
+doc-archival policy this plan should extend rather than duplicate.
+233
+
+234
+---
+235
+
+
+[35m[3mexec[0m[0m
+[1m/bin/bash -c "ls dev/archive/* | sed -n '"'$='"'"[0m in /home/coreyt/projects/fathomdb
+[32m succeeded in 0ms:[0m
+19
+
+[35m[3mcodex[0m[0m
+**Findings**
+- [P1] [context-clarity.sh](/home/coreyt/projects/fathomdb/scripts/repo-prune/bin/context-clarity.sh:160) and [0.8.x-STEWARD-HANDOFF.md](/home/coreyt/projects/fathomdb/dev/plans/prompts/0.8.x-STEWARD-HANDOFF.md:76): the “silently partial is not allowed” guard is only per-item, not per-reference. `steward_item_files()` resolves every backticked `.md` token in an item, but the failure check at [lines 197-199](/home/coreyt/projects/fathomdb/scripts/repo-prune/bin/context-clarity.sh:197) only asks whether the item produced any file at all. Current item 5 names two files; if `0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md` moves but `dev/design/orchestration.md` still exists, `_SC_LAST` stays nonzero, the script stays green, and the metric silently undercounts. Status: Reasoned from code and current §3 text.
+
+- [P1] [context-clarity.sh](/home/coreyt/projects/fathomdb/scripts/repo-prune/bin/context-clarity.sh:196): the metric is still hardcoded to seven §3 items. The comments at [lines 103-106](/home/coreyt/projects/fathomdb/scripts/repo-prune/bin/context-clarity.sh:103) claim growth in §3 will show up automatically, but the loop is literally `for _i in 1 2 3 4 5 6 7`. Add a new `8.` item to §3 and the metric neither changes nor fails. That is exactly the silent under-report the design says it prevents. Status: Reasoned.
+
+- [P1] [context-clarity.sh](/home/coreyt/projects/fathomdb/scripts/repo-prune/bin/context-clarity.sh:161): the extractor drops any backticked token that does not end with literal `.md`. A materially changed §3 item that adds `` `foo` ``, `` `foo.txt` ``, or even `` `foo.md#section` `` to an otherwise resolving item is invisible: the guard stays green and the count stays flat. That breaks the claimed “add a file -> count +1” control for plausible Markdown edits. Status: Reasoned.
+
+- [P2] [steward-cold-start-budget.md](/home/coreyt/projects/fathomdb/dev/design/steward-cold-start-budget.md:93) and [steward-cold-start-budget.md](/home/coreyt/projects/fathomdb/dev/design/steward-cold-start-budget.md:189): the proposal contradicts itself on the gating artifact. Phase 0 explicitly says not to add a parallel `steward-coldstart-cost.sh`; Phase 4 later says to wire `steward-coldstart-cost.sh` into CI. Concrete failure scenario: an implementer following Phase 4 recreates the redundant script that Phase 0 just rejected, or stalls on which artifact actually owns the ceiling gate. Status: Confirmed by reading.
+
+- [P2] [steward-cold-start-budget.md](/home/coreyt/projects/fathomdb/dev/design/steward-cold-start-budget.md:47), [steward-cold-start-budget.md](/home/coreyt/projects/fathomdb/dev/design/steward-cold-start-budget.md:64), and [steward-cold-start-budget.md](/home/coreyt/projects/fathomdb/dev/design/steward-cold-start-budget.md:74) misstate the supporting measurements. The repo’s own [DELTA-2026-06-26.md](/home/coreyt/projects/fathomdb/scripts/repo-prune/measurements/context-clarity/DELTA-2026-06-26.md:14) says `runs/ zone files` were `670 -> 168`, not `660 -> 168`, and the post artifact is `fe2734e9` with `dev/ .md tokens` `1,895,292`, not `bb64a2d4` / `1,883,557`. Also, on Friday, July 31, 2026, `dev/plans/runs/` contains 360 files, not 359. Concrete failure scenario: the proposal is cited as empirical support, but several quoted measurements and even the artifact SHA are already wrong in-repo. Status: Confirmed by reading the delta artifact and running current file counts.
+
+I did not find a load-bearing instruction loss or a dangling cross-reference in the current Slice 40 brief/provenance pair. That split looks clean from the on-disk files. I could not do an exact pre/post `git show` comparison for the pre-split brief, or prove parent-byte-identity for `md_under` / `all_under`, because the sandbox wrapper blocked local git-history reads.
+
+**Overall**
+FAIL
+[2mtokens used[0m
+138,534
+**Findings**
+- [P1] [context-clarity.sh](/home/coreyt/projects/fathomdb/scripts/repo-prune/bin/context-clarity.sh:160) and [0.8.x-STEWARD-HANDOFF.md](/home/coreyt/projects/fathomdb/dev/plans/prompts/0.8.x-STEWARD-HANDOFF.md:76): the “silently partial is not allowed” guard is only per-item, not per-reference. `steward_item_files()` resolves every backticked `.md` token in an item, but the failure check at [lines 197-199](/home/coreyt/projects/fathomdb/scripts/repo-prune/bin/context-clarity.sh:197) only asks whether the item produced any file at all. Current item 5 names two files; if `0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md` moves but `dev/design/orchestration.md` still exists, `_SC_LAST` stays nonzero, the script stays green, and the metric silently undercounts. Status: Reasoned from code and current §3 text.
+
+- [P1] [context-clarity.sh](/home/coreyt/projects/fathomdb/scripts/repo-prune/bin/context-clarity.sh:196): the metric is still hardcoded to seven §3 items. The comments at [lines 103-106](/home/coreyt/projects/fathomdb/scripts/repo-prune/bin/context-clarity.sh:103) claim growth in §3 will show up automatically, but the loop is literally `for _i in 1 2 3 4 5 6 7`. Add a new `8.` item to §3 and the metric neither changes nor fails. That is exactly the silent under-report the design says it prevents. Status: Reasoned.
+
+- [P1] [context-clarity.sh](/home/coreyt/projects/fathomdb/scripts/repo-prune/bin/context-clarity.sh:161): the extractor drops any backticked token that does not end with literal `.md`. A materially changed §3 item that adds `` `foo` ``, `` `foo.txt` ``, or even `` `foo.md#section` `` to an otherwise resolving item is invisible: the guard stays green and the count stays flat. That breaks the claimed “add a file -> count +1” control for plausible Markdown edits. Status: Reasoned.
+
+- [P2] [steward-cold-start-budget.md](/home/coreyt/projects/fathomdb/dev/design/steward-cold-start-budget.md:93) and [steward-cold-start-budget.md](/home/coreyt/projects/fathomdb/dev/design/steward-cold-start-budget.md:189): the proposal contradicts itself on the gating artifact. Phase 0 explicitly says not to add a parallel `steward-coldstart-cost.sh`; Phase 4 later says to wire `steward-coldstart-cost.sh` into CI. Concrete failure scenario: an implementer following Phase 4 recreates the redundant script that Phase 0 just rejected, or stalls on which artifact actually owns the ceiling gate. Status: Confirmed by reading.
+
+- [P2] [steward-cold-start-budget.md](/home/coreyt/projects/fathomdb/dev/design/steward-cold-start-budget.md:47), [steward-cold-start-budget.md](/home/coreyt/projects/fathomdb/dev/design/steward-cold-start-budget.md:64), and [steward-cold-start-budget.md](/home/coreyt/projects/fathomdb/dev/design/steward-cold-start-budget.md:74) misstate the supporting measurements. The repo’s own [DELTA-2026-06-26.md](/home/coreyt/projects/fathomdb/scripts/repo-prune/measurements/context-clarity/DELTA-2026-06-26.md:14) says `runs/ zone files` were `670 -> 168`, not `660 -> 168`, and the post artifact is `fe2734e9` with `dev/ .md tokens` `1,895,292`, not `bb64a2d4` / `1,883,557`. Also, on Friday, July 31, 2026, `dev/plans/runs/` contains 360 files, not 359. Concrete failure scenario: the proposal is cited as empirical support, but several quoted measurements and even the artifact SHA are already wrong in-repo. Status: Confirmed by reading the delta artifact and running current file counts.
+
+I did not find a load-bearing instruction loss or a dangling cross-reference in the current Slice 40 brief/provenance pair. That split looks clean from the on-disk files. I could not do an exact pre/post `git show` comparison for the pre-split brief, or prove parent-byte-identity for `md_under` / `all_under`, because the sandbox wrapper blocked local git-history reads.
+
+**Overall**
+FAIL

@@ -45,7 +45,9 @@ Two further facts decide the shape of this plan:
 ## 1a. Prior art — `scripts/repo-prune/` (probed 2026-07-31)
 
 A doc/memory prune ran **2026-06-26** with real results: `dev/` −53 % bytes, live `.md` tokens **−51 %**,
-`runs/` 660→168 files. It left durable outputs still in place today: `dev/archive/` (50 files),
+`runs/` **670→168** files. (repo-prune's `README.md` says 660; its own `baseline.json` and
+`DELTA-2026-06-26.md` both say 670 — **the README is wrong**, and that defect should be fixed there.)
+It left durable outputs still in place today: `dev/archive/` (50 files),
 `dev/DOC-INDEX.md`, `dev/experiments-ledger.md`. **This plan should extend it, not duplicate it** — see
 §5 for the verdict. Three probe findings decide how.
 
@@ -61,10 +63,16 @@ The steward §3 set is boards, ladders, the master and the hand-offs.
 
 **Finding 2 — its own instrument shows the tree-wide prune did not help this axis.**
 
-| metric | baseline `25541d88` | post `bb64a2d4` |
+| metric | baseline `25541d88` | post `bb64a2d4` (per `post.json`) |
 |---|---|---|
 | `dev_tree.md_tokens_est` | 3,499,334 | 1,883,557 (**−46 %**) |
 | `cold_start_orient_set.tokens_est` | 85,187 | 86,736 (**+1.8 %**) |
+
+⚠ **Two repo-prune artifacts disagree about the post state and neither is obviously authoritative.**
+`post.json` records sha `bb64a2d4` / 1,883,557 tokens; `DELTA-2026-06-26.md`'s header records sha
+`fe2734e9` / 1,895,292. The numbers above are `post.json`'s. The **direction and magnitude are
+unaffected** (−46 % either way), and the `cold_start_orient_set` rise is present in both. Reconciling
+the two artifacts is a repo-prune housekeeping item, not a blocker for this plan.
 
 Halving the tree left the orient set slightly *worse*. A tree-wide prune does not fix a reading-list
 problem, because the reading list is a **named path through the tree**, not a size property of it.
@@ -75,6 +83,9 @@ problem, because the reading list is a **named path through the tree**, not a si
 |---|---|---|
 | all files | 168 | **359** |
 | `.md` files | 88 | **187** |
+
+(`find dev/plans/runs -maxdepth 1 -type f | wc -l`, 2026-07-31. Recursive is 485; quote the method
+with the number — an unqualified count here is not reproducible.)
 
 Nothing enforces the gains: no test and no CI job consults `context-clarity.sh`'s metrics. It is a
 **campaign instrument** — run by hand, before and after a prune — not a standing gate. Five weeks
@@ -186,7 +197,10 @@ for exactly this reason.
 
 - Close records land in `STATUS-<v>-close-records.md` **from the start** — an orchestrator-contract
   change, so §11-style sections never accrete on a live board again.
-- Wire `steward-coldstart-cost.sh` into CI so the ceiling is enforced, not aspirational.
+- Wire the Phase-0 ratchet (`scripts/tests/test_steward_coldstart_cost.sh`, reading
+  `steward_cold_start_set.over_ceiling`) into CI so the ceiling is enforced, not aspirational.
+  ⛔ **No `steward-coldstart-cost.sh`** — the metric lives in `context-clarity.sh` (Phase 0); a second
+  script would be the second index S3 forbids.
 
 **Cost:** small once Phase 3 lands. **Risk:** low.
 

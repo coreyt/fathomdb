@@ -110,9 +110,6 @@ fi
 # failure naming the item.
 STEWARD_HANDOFF=dev/plans/prompts/0.8.x-STEWARD-HANDOFF.md
 STEWARD_CEILING="${STEWARD_COLDSTART_CEILING:-60000}"
-# §3 items that legitimately name no file. Item 2 is `git log`/`git status`/
-# `git worktree list` — commands, not documents.
-STEWARD_NOFILE_ITEMS=" 2 "
 
 # Body of a numbered §3 item: from "<n>. " to the next numbered item or "## ".
 steward_item_body() { # $1 = item number
@@ -144,28 +141,75 @@ steward_resolve() { # $1 = raw token
     # `plan-0.8.z.md` is a PATTERN written in prose, not a literal filename.
     plan-0.8.z.md)  t="dev/plans/plan-0.8.*.md" ;;
   esac
+  # A bare filename (item 5's orchestrator hand-off) is SEARCHED across the doc
+  # dirs, not assumed to live in one. Assuming `dev/plans/prompts/` silently
+  # mis-resolved every bare name that lives elsewhere.
   case "$t" in
-    # A bare filename in §3 means the prompts dir (item 5's orchestrator hand-off).
-    */*)            : ;;
-    *)              t="dev/plans/prompts/$t" ;;
+    */*) : ;;
+    *)   local d found=""
+         for d in dev/plans/prompts dev/plans dev/design dev/plans/runs; do
+           [ -f "$d/$t" ] && { found="$d/$t"; break; }
+         done
+         t="${found:-$t}" ;;
   esac
   for p in $t; do [ -f "$p" ] && printf '%s\n' "$p"; done   # deliberate glob
   [ "$_noglob" -eq 1 ] && set -f
   return 0
 }
 
-# Files named by item N of §3, one path per line.
-steward_item_files() { # $1 = item number
-  local tok
+# The item numbers §3 actually contains — NOT a hardcoded 1..7.
+# A first draft hardcoded `for _i in 1 2 3 4 5 6 7` while its comment claimed the
+# metric was derived. Adding an item 8 to §3 then changed nothing and failed
+# nothing: the silent under-report this whole section exists to prevent.
+steward_item_numbers() {
+  awk '
+    /^## *3\./    { in3=1; next }
+    in3 && /^## / { exit }
+    in3 && /^[0-9]+\. / { n=$1+0; if (!(n in seen)) { seen[n]=1; print n } }
+  ' "$STEWARD_HANDOFF"
+}
+
+# Path-like backticked tokens in item N.
+# A token counts as a path if it contains "/" or ends in a document extension.
+# That admits `dev/plans/...md`, `plan-0.8.z.md` and `…/memory/MEMORY.md` while
+# rejecting item 2's `git log --oneline -30` / `git status`. Matching only
+# `\.md$` (the first draft) silently dropped `.json`, extensionless names and
+# `file.md#anchor`.
+# EXECUTABLES ARE EXCLUDED. §3 names `steward-orient.sh` as something to RUN;
+# what enters context is its ~955-token output, not the 8 KB script, and that
+# output is bounded and reported separately. Counting the file would overstate
+# the read and — because §3 names it bare — would also make the resolver guess a
+# directory. Reading cost is documents.
+steward_item_tokens() { # $1 = item number
   steward_item_body "$1" \
     | grep -oE '`[^`]+`' | tr -d '`' \
-    | grep -E '\.md$' \
-    | sort -u \
-    | while IFS= read -r tok; do steward_resolve "$tok"; done
-  # Item 7 ("your own last Steward report") names no path — resolve by rule.
-  if [ "$1" = 7 ]; then
+    | sed 's/#.*$//' \
+    | grep -vE '^git( |$)' \
+    | grep -vE '\.sh$' \
+    | grep -E '/|\.(md|json|ya?ml|toml)$' \
+    | sort -u
+}
+
+# Files named by item N of §3, one path per line.
+# Item bodies that name no path but still imply a read are matched on CONTENT,
+# never on item number — renumbering §3 must not silently drop the rule.
+steward_item_files() { # $1 = item number
+  local tok
+  steward_item_tokens "$1" | while IFS= read -r tok; do steward_resolve "$tok"; done
+  if steward_item_body "$1" | grep -qiE 'last Steward report|your own last'; then
     ls dev/plans/runs/STEWARD-SESSION-HANDOFF-*.md 2>/dev/null | sort | tail -1
   fi
+}
+
+# Tokens in item N that resolved to NOTHING. The guard must be per-REFERENCE,
+# not per-item: item 5 names two files, so an item-level "did it produce any
+# file?" test stays green when one of the two moves, and undercounts in silence.
+steward_item_dead_tokens() { # $1 = item number
+  local tok
+  steward_item_tokens "$1" | while IFS= read -r tok; do
+    [ -z "$(steward_resolve "$tok")" ] && printf '3.%s:%s ' "$1" "$tok"
+  done
+  return 0
 }
 
 # The entry point itself: /steward loads these before §3 is even reached.
@@ -193,11 +237,14 @@ _sc_add() { # $1 = item label, $2 = newline-separated paths
 
 _sc_add entry "$(steward_entry_files)"
 [ "$_SC_LAST" -gt 0 ] || STEWARD_UNRESOLVED="${STEWARD_UNRESOLVED}entry "
-for _i in 1 2 3 4 5 6 7; do
+
+STEWARD_ITEMS="$(steward_item_numbers)"
+[ -n "$STEWARD_ITEMS" ] || STEWARD_UNRESOLVED="${STEWARD_UNRESOLVED}§3-has-no-numbered-items "
+for _i in $STEWARD_ITEMS; do
   _sc_add "3.$_i" "$(steward_item_files "$_i")"
-  if [ "$_SC_LAST" -eq 0 ] && [[ "$STEWARD_NOFILE_ITEMS" != *" $_i "* ]]; then
-    STEWARD_UNRESOLVED="${STEWARD_UNRESOLVED}3.$_i "
-  fi
+  # An item with NO path-like token (item 2 = git commands) legitimately names
+  # no file — derived from the body, not from a hardcoded exemption list.
+  STEWARD_UNRESOLVED="${STEWARD_UNRESOLVED}$(steward_item_dead_tokens "$_i")"
 done
 STEWARD_ROWS="${STEWARD_ROWS%,\\n}"
 
