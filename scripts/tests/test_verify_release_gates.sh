@@ -191,20 +191,34 @@ GITHUB_EVENT_NAME="workflow_dispatch" DRY_RUN="true" \
   && pass "dispatch+dry_run=true skips tag check and passes" \
   || fail "dispatch+dry_run=true should pass on otherwise-clean state"
 
-# 10. workflow_dispatch + dry_run=false: emergency-republish path emits
-#     an explicit warning to stderr but does not fail on clean state.
+# 10. workflow_dispatch + dry_run=false without the typed confirmation must
+#     fail before the emergency-republish path can proceed.
 restore
 printf '# Changelog\n\n## %s\n' "$WS" > "$CL_PATH"
 if out="$(GITHUB_EVENT_NAME="workflow_dispatch" DRY_RUN="false" \
     GITHUB_REF_NAME="phase-11d-release-workflow" "$VRG" 2>&1)"; then
-  printf '%s' "$out" | grep -qi 'emergency-republish' \
-    && pass "dispatch+dry_run=false emits emergency-republish warning" \
-    || fail "dispatch+dry_run=false missing emergency-republish warning; got: $out"
+  fail "dispatch+dry_run=false without confirmation should fail; got: $out"
 else
-  fail "dispatch+dry_run=false should not fail on otherwise-clean state; got: $out"
+  printf '%s' "$out" | grep -qi 'confirm' \
+    && pass "dispatch+dry_run=false without confirmation rejected" \
+    || fail "wrong diagnostic for missing dispatch confirmation; got: $out"
 fi
 
-# 11. workflow_dispatch + dry_run=true + crate metadata broken: still fails.
+# 11. workflow_dispatch + dry_run=false with matching typed confirmation
+#     proceeds and retains its emergency-republish warning.
+restore
+printf '# Changelog\n\n## %s\n' "$WS" > "$CL_PATH"
+if out="$(GITHUB_EVENT_NAME="workflow_dispatch" DRY_RUN="false" \
+    RELEASE_CONFIRM_VERSION="$WS" \
+    GITHUB_REF_NAME="phase-11d-release-workflow" "$VRG" 2>&1)"; then
+  printf '%s' "$out" | grep -qi 'emergency-republish' \
+    && pass "dispatch+dry_run=false with matching confirmation emits emergency-republish warning" \
+    || fail "dispatch+dry_run=false missing emergency-republish warning; got: $out"
+else
+  fail "dispatch+dry_run=false with matching confirmation should pass; got: $out"
+fi
+
+# 12. workflow_dispatch + dry_run=true + crate metadata broken: still fails.
 #     Non-tag gates must keep running on dispatch.
 restore
 printf '# Changelog\n\n## %s\n' "$WS" > "$CL_PATH"

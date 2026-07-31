@@ -53,6 +53,40 @@ if [ "$FIXTURE_FAILED" -eq 0 ]; then
   printf 'PASS  release.yml carries all 4 canonical napi labels\n'
 fi
 
+confirmation_input_block() {
+  awk -v input="$1" '
+    $0 == "      " input ":" { found = 1; in_block = 1; next }
+    in_block && /^      [[:alnum:]_]+:$/ { exit }
+    in_block { print }
+    END { exit !found }
+  ' "$RELEASE_YML"
+}
+
+if confirmation_block="$(confirmation_input_block confirm_release_version)"; then
+  if grep -qE '^[[:space:]]+required:[[:space:]]+true' <<<"$confirmation_block"; then
+    printf 'FAIL  release.yml confirmation input must be optional\n' >&2
+    FIXTURE_FAILED=$((FIXTURE_FAILED + 1))
+  elif grep -qE '^[[:space:]]+default:' <<<"$confirmation_block"; then
+    printf 'FAIL  release.yml confirmation input must not have a default\n' >&2
+    FIXTURE_FAILED=$((FIXTURE_FAILED + 1))
+  else
+    printf 'PASS  release.yml confirmation input is optional and has no default\n'
+  fi
+else
+  printf 'FAIL  release.yml is missing the confirm_release_version input\n' >&2
+  FIXTURE_FAILED=$((FIXTURE_FAILED + 1))
+fi
+
+# Control: dry_run deliberately has a default, proving the input-block parser
+# catches one instead of treating an empty result as a passing absence check.
+if dry_run_block="$(confirmation_input_block dry_run)" \
+  && grep -qE '^[[:space:]]+default:' <<<"$dry_run_block"; then
+  printf 'PASS  confirmation default guard detects the dry_run control default\n'
+else
+  printf 'FAIL  confirmation default guard did not detect dry_run control default\n' >&2
+  FIXTURE_FAILED=$((FIXTURE_FAILED + 1))
+fi
+
 # Determination (Slice 40 B8): this test was stale, not the release workflow.
 # The workflow delegates dry-runs to the idempotency helper, which prevents a
 # rerun from trying to republish an already-published immutable version. Assert
