@@ -109,7 +109,13 @@ fi
 # Any §3 item that resolves to nothing, and is not declared file-less, is a hard
 # failure naming the item.
 STEWARD_HANDOFF=dev/plans/prompts/0.8.x-STEWARD-HANDOFF.md
-STEWARD_CEILING="${STEWARD_COLDSTART_CEILING:-60000}"
+# RATCHET, not the destination. 180,000 is just above the post-Phase-1 measurement
+# (~174,800). The end state is 60,000, reachable only after 0.8.20 publishes and
+# Phase 3 may split the live board (steward ledger seq-226). A ceiling set to the
+# destination on day one is red on day one, and a gate that is red on day one gets
+# switched off — which is how repo-prune's own metrics went unratcheted. Tighten
+# this as each phase lands; never loosen it without a ruling.
+STEWARD_CEILING="${STEWARD_COLDSTART_CEILING:-180000}"
 
 # Body of a numbered §3 item: from "<n>. " to the next numbered item or "## ".
 steward_item_body() { # $1 = item number
@@ -190,12 +196,46 @@ steward_item_tokens() { # $1 = item number
     | sort -u
 }
 
+# Mirror §3's LIVENESS RULE, and only when §3 actually states it.
+#
+# §3 names globs (`STATUS-0.8.*.md`, `plan-0.8.z.md`) and then narrows them in
+# prose — "the LIVE board only", "COMPLETE ladders are historical". Expanding the
+# glob literally measures 19 boards and 20 ladders and reports ~374k forever,
+# so the ratchet would stay red no matter how much reading the instruction
+# actually removed: a gate blind to the fix it exists to reward.
+#
+# The filter is applied ONLY IF the item's own text cites the predicate. If §3
+# reverts to an unfiltered glob, the text stops citing it, the filter switches
+# off, and the number climbs back — the metric tracks the INSTRUCTION, which is
+# the thing that determines what gets read.
+# shellcheck source=scripts/lib/board-closed.sh
+. scripts/lib/board-closed.sh 2>/dev/null || true
+
+steward_live_filter() { # $1 = item number; stdin paths -> stdout the ones §3 says to read
+  local n="$1" body f
+  body="$(steward_item_body "$n")"
+  while IFS= read -r f; do
+    case "$f" in
+      dev/plans/runs/STATUS-0.8.*.md)
+        if printf '%s' "$body" | grep -q 'board_is_closed'; then
+          board_is_closed "$f" 2>/dev/null && continue
+        fi ;;
+      dev/plans/plan-0.8.*.md)
+        if printf '%s' "$body" | grep -qE '`?status:`? *(frontmatter|is )?|status: *(ACTIVE|COMPLETE)'; then
+          head -6 "$f" | grep -qiE '^status: *COMPLETE' && continue
+        fi ;;
+    esac
+    printf '%s\n' "$f"
+  done
+}
+
 # Files named by item N of §3, one path per line.
 # Item bodies that name no path but still imply a read are matched on CONTENT,
 # never on item number — renumbering §3 must not silently drop the rule.
 steward_item_files() { # $1 = item number
   local tok
-  steward_item_tokens "$1" | while IFS= read -r tok; do steward_resolve "$tok"; done
+  steward_item_tokens "$1" | while IFS= read -r tok; do steward_resolve "$tok"; done \
+    | steward_live_filter "$1"
   if steward_item_body "$1" | grep -qiE 'last Steward report|your own last'; then
     ls dev/plans/runs/STEWARD-SESSION-HANDOFF-*.md 2>/dev/null | sort | tail -1
   fi

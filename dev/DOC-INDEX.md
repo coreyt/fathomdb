@@ -77,6 +77,7 @@ refresh in the closing commit when you touch a doc).
 | Path | Purpose | Owning slice / AC | Last-touched |
 |------|---------|-------------------|--------------|
 | `dev/design/README.md` | Design-notes index | — | (tree) |
+| `dev/design/steward-cold-start-budget.md` | Steward cold-start token budget — RATIFIED plan (ledger `seq-226`); §3 liveness filter, `steward_cold_start_set` ratchet, repo-prune merge verdict | — (program hygiene; Phase 3 gated on 0.8.20 publish) | 2026-07-31 |
 | `dev/design/gpu-eval-activities-policy.md` | Policy — repo MUST use the 3090s for eval/embed activities when there is room | 0.8.14 Slice 20 (eu7 policy) | 2026-07-05 |
 | `dev/design/free-threaded-python-value-lift-and-experiments.md` | Free-threaded Python (PEP 703) for FathomDB — value, lift, experiment plan | 0.8.15 ladder (pyo3 dep @ 0.8.8) | 2026-06-27 |
 | `dev/design/0.8.18-slice-20-publish-pipeline.md` | 0.8.18 Slice 20 — #11-full full publish pipeline (implementation design) | 0.8.18 Slice 20 | 2026-07-09 |
