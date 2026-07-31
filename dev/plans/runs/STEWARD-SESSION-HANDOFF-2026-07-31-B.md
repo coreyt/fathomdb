@@ -4,10 +4,10 @@
 
 ## ★ IMMEDIATE NEXT STEP
 
-Slice 40 is commissioned but **E1 is not closed**. Do not begin E2 or alter the
-release record. Commission one fresh, ROLE-SIMULATED E1-continuation orchestrator
-in private full clones only. It must finish the listed E1 evidence and BASE units,
-then return a receipt to the Steward for independent verification.
+Slice 40 is commissioned but **E1 is not closed**. A fresh, ROLE-SIMULATED
+E1-continuation orchestrator is active as of 2026-07-31. Do not begin E2 or alter
+the release record. It is bounded to the listed E1 evidence and BASE units and
+must return a receipt to the Steward for independent verification.
 
 The epoch base is `0f7642cc904186e7a1a7a815340404689a0f5679`. Before every E1
 action and before integration, fetch `origin` in a private clone and re-verify
