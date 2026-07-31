@@ -180,7 +180,7 @@ Everything else is tracked by **requirement id + TDD test name** per the locked-
 > `seq-106` ruling 5): Memex adapts to 0.8.20's surface and **no confirmation is to be sought**. The rows are
 > retained as the decision record; **do not act on them as open**.
 >
-> **THE LIVE OPEN SET IS EXACTLY <!-- BEGIN GENERATED release-state:0.8.20:status-live-open-count -->THREE<!-- END GENERATED release-state:0.8.20:status-live-open-count -->** (was TWO until 2026-07-29 — the count is
+> **THE LIVE OPEN SET IS EXACTLY <!-- BEGIN GENERATED release-state:0.8.20:status-live-open-count -->TWO<!-- END GENERATED release-state:0.8.20:status-live-open-count -->** (was TWO until 2026-07-29 — the count is
 > generated from `decisions.unruled`. It went TWO → SIX on 2026-07-29 when four HITL items that had existed
 > only in the ledger and in session transcripts were written INTO the single writer at `seq-150` — **the
 > count grew because the record got honest, not because new work appeared** — then SIX → **ONE** across that

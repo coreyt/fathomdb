@@ -121,13 +121,36 @@ fi
 # opinion on whether the index sees every entry. Per the standing "fix the
 # tooling, not the actor" rule, that gap is this check.
 #
-# Compares HEADINGS to index entries, not all ids: F-8a/F-8b are sub-findings in
-# the legacy bullet form inside F-8's body and are deliberately not indexed.
+# WHICH IDS MUST BE INDEXED. Not just headings: a first draft of this check
+# reconciled `### F-n` headings only, which exempted EVERY legacy `- **F-n`
+# bullet. F-8a/F-8b genuinely must stay unindexed — they are sub-findings inside
+# F-8's body — but the carve-out was far wider than that, so a top-level finding
+# regressing to bullet form would pass uniqueness, be skipped by reconciliation,
+# and go missing from §6a with the gate green (codex, 2026-07-31).
+#
+# The rule is SUB-finding, not FORM: a bullet id is exempt only if it carries a
+# letter suffix AND its numeric stem has its own heading (F-8a under F-8).
+# Everything else — heading or bullet — must appear in §6a. F-11a has its own
+# heading and is indexed, which this rule preserves.
 index_entries() { awk '/^### 6a\./{f=1;next} f&&/^### /{exit} f&&match($0,/^- \[F-[0-9]+[a-z]*/){print substr($0,RSTART+3,RLENGTH-3)}' "$1"; }
 heading_ids()   { awk 'match($0,/^### F-[0-9]+[a-z]*/){print substr($0,RSTART+4,RLENGTH-4)}' "$1"; }
+bullet_ids()    { awk 'match($0,/^[ \t]*- \*\*F-[0-9]+[a-z]*/){s=substr($0,RSTART,RLENGTH); sub(/^[ \t]*- \*\*/,"",s); print s}' "$1"; }
+# Ids that owe an index entry = headings + bullets that are not sub-findings.
+indexable_ids() {
+  local hd; hd="$(heading_ids "$1")"
+  { printf '%s\n' "$hd"
+    bullet_ids "$1" | while IFS= read -r b; do
+      [ -n "$b" ] || continue
+      case "$b" in
+        *[a-z]) printf '%s\n' "$hd" | grep -qx "${b%[a-z]}" || printf '%s\n' "$b" ;;
+        *)      printf '%s\n' "$b" ;;
+      esac
+    done
+  } | grep -v '^$' | sort -u
+}
 
 IDX="$(index_entries "$FILE")"
-HDS="$(heading_ids "$FILE")"
+HDS="$(indexable_ids "$FILE")"
 N_IDX=$(printf '%s\n' "$IDX" | grep -c . || true)
 N_HDS=$(printf '%s\n' "$HDS" | grep -c . || true)
 
@@ -164,7 +187,7 @@ else
 fi
 
 if [ "$FAIL" -eq 0 ]; then
-  printf 'ok    lint-findings: %s finding ids in %s, all unique; §6a indexes all %s finding sections\n' \
+  printf 'ok    lint-findings: %s finding ids in %s, all unique; §6a indexes all %s indexable finding(s)\n' \
     "$COUNT" "$FILE" "$N_HDS" >&2
 fi
 

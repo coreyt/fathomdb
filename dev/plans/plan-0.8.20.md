@@ -600,9 +600,11 @@ and publish-risk question — **HITL is holding it**. **#18**'s family is alread
 `WriteValidation`, which this slice's reject uses; its one exception is an edge-epoch bounds check on a
 different path — **TC-98, deferred by the HITL until after Slice 23**, and retrospective about Slice 22.
 
-**Remaining ladder AS OF 2026-07-28 — HISTORICAL, every leg but 40 has since landed** (F-36 · steward
-`seq-129`; superseded the F-35 order, `seq-119`). The live remaining ladder is the generated roll-up above:
-**⟨batched governed-surface decision — DUE NOW, HITL⟩ → 31 → 32 → 33 → DOC-HYGIENE-3 → 40** (`seq-153`).
+**HISTORICAL — the 2026-07-28 ladder, retained as the record** (F-36 · steward `seq-129`; superseded the
+F-35 order, `seq-119`). It read **⟨batched governed-surface decision⟩ → 31 → 32 → 33 → DOC-HYGIENE-3 → 40**
+(`seq-153`). ⛔ **Do not read it as live**: every leg but 40 has since landed, and the batched
+governed-surface decision was **SIGNED at `seq-157`** — it is not due. **The live remaining ladder is the
+generated roll-up above, and only that.**
 **21** (R-20-CR, landed) and **22** (R-20-VC) are reserved-gap slices in the 20 band; **31** is Library Sweep #3 and
 carries no requirement id (TC-76); **DOC-HYGIENE-3** is cross-cutting and is not a ladder slice. The batched
 surface decision is taken **AT THE CLOSE OF SLICE 23** (HITL `seq-141`, superseding `seq-134`/`seq-140`).

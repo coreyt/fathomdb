@@ -8,7 +8,7 @@
   "schema_version": 24,
   "schema_version_source": "pub const SCHEMA_VERSION in src/rust/crates/fathomdb-schema/src/lib.rs",
   "landed_verified_at": "91db34d8",
-  "landed_verified_how": "each SHA below is the landing merge commit for its slice AND is an ancestor of origin/main (git merge-base --is-ancestor), with the merge subject matching this repo's `merge(0.8.20): Slice[- ]N` landing convention. Re-verified 2026-07-30 at d9c5024d: all 13 landed slice SHAs confirmed ancestors of HEAD via git merge-base --is-ancestor, zero non-ancestors. The prior watermark f02dc5b4 (Slice 33) predated the DOC-HYGIENE-3 remainder landing at 85d44c74 — the landed FACTS were correct throughout; only this verification watermark lagged.",
+  "landed_verified_how": "each SHA below is the landing merge commit for its slice AND is an ancestor of origin/main (git merge-base --is-ancestor), with the merge subject matching this repo's `merge(0.8.20): Slice[- ]N` landing convention. Re-verified 2026-07-30 at d9c5024d: all 14 landed slice SHAs confirmed ancestors of HEAD via git merge-base --is-ancestor, zero non-ancestors. The prior watermark f02dc5b4 (Slice 33) predated the DOC-HYGIENE-3 remainder landing at 85d44c74 — the landed FACTS were correct throughout; only this verification watermark lagged.",
   "ladder": [
     {
       "slice": 0,
@@ -309,13 +309,6 @@
         "gated_at": "Slice 40 / publish. release.yml:21-26 states the label is an HITL confirmation and that publishing PARTIAL coverage under `latest` would serve an incomplete matrix to every consumer. The matrix is gated to x86_64-unknown-linux-gnu (R-REL-4e); macOS/Windows targets are commented out as DEFERRED-TO-FOLLOW-ON (R-REL-4d). Surfaced by the Slice 40 brief review 2026-07-30; unplaced anywhere in 0.8.20 until now.",
         "halts_run": false,
         "source": "steward 2026-07-30 (Slice 40 brief adversarial review)"
-      },
-      {
-        "id": "platform-publish-schedule",
-        "title": "Per-platform publish schedule — RULED at seq-203; retained as a tracking entry",
-        "gated_at": "RULED 2026-07-30 (seq-203). 0.8.20 publishes x86_64-linux only under dist-tag `next`. 0.8.21 wires and greens aarch64-darwin -> x86_64-darwin -> win32-x64 in CI and PUBLISHES NOTHING (odd micro, OOB label-only), with napi 2->3 pulled forward from 0.8.22 so the matrix is validated on the binding version that ships. 0.8.22 publishes those three plus x86_64-linux and FLIPS the npm dist-tag to `latest`. aarch64-linux defers to 0.8.24+ (needs cross-compilation or ARM runners). Kept in the list only until the 0.8.21 plan exists to carry it.",
-        "halts_run": false,
-        "source": "steward seq-202 ruling 2; scheduled at seq-203"
       }
     ],
     "ruled": [
@@ -506,6 +499,16 @@
         "title": "Project license: MIT vs Apache-2.0 (repo LICENSE file disagreed with all 4 publishable manifests)",
         "ruling": "MIT. The repo-root LICENSE (MIT) is authoritative; the four manifests declaring Apache-2.0 are corrected to MIT before the tag. A LICENSE file must also SHIP in every artifact - none carries one today.",
         "source": "steward seq-193"
+      }
+    ],
+    "ruled_tracking": [
+      {
+        "id": "platform-publish-schedule",
+        "title": "Per-platform publish schedule — RULED at seq-203; retained as a tracking entry",
+        "gated_at": "RULED 2026-07-30 (seq-203). 0.8.20 publishes x86_64-linux only under dist-tag `next`. 0.8.21 wires and greens aarch64-darwin -> x86_64-darwin -> win32-x64 in CI and PUBLISHES NOTHING (odd micro, OOB label-only), with napi 2->3 pulled forward from 0.8.22 so the matrix is validated on the binding version that ships. 0.8.22 publishes those three plus x86_64-linux and FLIPS the npm dist-tag to `latest`. aarch64-linux defers to 0.8.24+ (needs cross-compilation or ARM runners). Kept in the list only until the 0.8.21 plan exists to carry it.",
+        "halts_run": false,
+        "source": "steward seq-202 ruling 2; scheduled at seq-203",
+        "_note": "Moved out of `unruled` 2026-07-31: it was RULED at seq-203 and retained only for tracking, but sitting in `unruled` made check-release-state-views.sh's len(unruled) count it as a live open decision — a laundered green in the generated board banner. Retained here so the tracking is not lost."
       }
     ]
   },

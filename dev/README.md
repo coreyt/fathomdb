@@ -15,7 +15,7 @@ Read these first — this is where the current release actually lives.
   - `plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md` — **master schedule-of-record**
     for the 0.8.x line (despite the filename, it sequences through 0.8.24)
   - `plans/runs/` — per-release boards and run results;
-    `plans/runs/STATUS-0.8.20.md` is the **live board**
+    the **live board** is named by `plans/release-state-*.json`'s `board` key — resolve it there, never hardcode a version (`scripts/steward-orient.sh` prints it)
   - `plans/release-state-<version>.json` — machine state for the release; one
     writer only
   - `plans/prompts/` — commission prompts and hand-offs, incl.
