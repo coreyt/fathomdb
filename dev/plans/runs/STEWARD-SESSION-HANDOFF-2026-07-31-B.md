@@ -4,10 +4,9 @@
 
 ## ★ IMMEDIATE NEXT STEP
 
-Slice 40 is commissioned but **E1 is not closed**. A fresh, ROLE-SIMULATED
-E1-continuation orchestrator is active as of 2026-07-31. Do not begin E2 or alter
-the release record. It is bounded to the listed E1 evidence and BASE units and
-must return a receipt to the Steward for independent verification.
+Slice 40 is commissioned but **E1 is hard-stopped and not closed**. Do not begin
+E2, integrate, push, or alter the release record. Two evidence dispositions need
+Steward/HITL rulings before a fresh E1 continuation can proceed.
 
 The epoch base is `0f7642cc904186e7a1a7a815340404689a0f5679`. Before every E1
 action and before integration, fetch `origin` in a private clone and re-verify
@@ -43,19 +42,30 @@ E1 receipt.
 | B1 | `91a5b81c` | PASS | ready for integration |
 | B2 | `6730faf3` | PASS | ready for integration |
 | B3 | `fbc7d7d0` | PASS after remediation | ready for integration |
-| B4 | `d4928c4d` | CONCERN | no pre-fix RED in 37 trials; A1 mechanism credit is unearned |
-| B5 | `2e6376c3` | PASS | record 60 isolated live-node + 3 whole-file real-binding runs |
+| B4 | `d4928c4d` | CONCERN | controlled pre-fix branch was also green (32 forced-parallel runs); A1 mechanism credit is unearned |
+| B5 | `2e6376c3` | BLOCK | canonical binding lacks `test-hooks`; first whole-file run rc=1 (10 passed, 1 failed) |
 | B6 | `0533eb8d` | PASS | ready for integration |
-| B7–B10, incl. B8b | — | unstarted | implement, TDD, independently review |
+| B7 | `3c92505f` | PASS | ready for integration |
+| B8+B8b | `1ab83b09` | PASS after one P1 repair | ready for integration |
+| B9 | `1880fc9b` | PASS after one P1 repair | CI-only proof still awaits the BASE push |
+| B10 | `c32501a0` | PASS | ready for integration |
 
-For B4, do not claim structural-serialisation credit until either (a) a controlled
-pre-fix RED and required floor are evidenced, or (b) 21 relevant CI greens accrue.
-For B5, private clones cannot load `_fathomdb` and must not rebuild it; arrange the
-real-binding accrual without violating the private-clone/no-`pip install -e` rule.
+**Decision 1 — B4 (HITL):** do not claim structural-serialisation credit. The
+controlled pre-fix experiment removed the serializer and remained green. Rule
+whether to use the 21-relevant-CI-green alternative or another disposition.
+
+**Decision 2 — B5 (HITL):** the structural patch is not accepted. A canonical
+binding whole-file run failed because its `_fathomdb.abi3.so` lacks `test-hooks`;
+the first run was rc=1 (10 passed, 1 failed). Rule a safe, test-hooks-capable
+binding route or provision it. Never rebuild or `pip install -e` from a private
+clone, and do not mutate the shared checkout to manufacture evidence.
 
 E1 has not created an integration branch, rebased, pushed the one BASE change,
 started or observed CI, edited `release-state`, `STATUS`, the master schedule, or
 any ledger. Its pre-push full gates and B9's CI-only proof remain outstanding.
+The private continuation receipt is
+`/tmp/fathomdb-s40-e1-orchestrator-qMnUCj/repo/dev/experiments/s40-e1-continuation-receipt-20260731.md`
+at private commit `18d44ff0`.
 
 ## 3. Authority and hard stops
 
