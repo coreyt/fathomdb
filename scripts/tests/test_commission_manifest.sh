@@ -2226,6 +2226,20 @@ else
   fail "RWW-d: list residual_work must render 'step one step two' without raising; rc=$RC out=$OUT"
 fi
 
+# Arm RWW-e: a list of NULLs must behave as ABSENT, not render "owed: None" --
+# which reads as "nothing owed", the exact inversion this renderer exists to
+# prevent. Sibling of RWW-c; added because the [None] fix shipped without one.
+setup_fixture
+mutate_state "s.setdefault('decisions', {}).setdefault('ruled', []).append(
+    {'id': 'rww-probe', 'title': 'RWW PROBE TITLE', 'ruling': 'r', 'source': 'x',
+     'residual_work': [None, None]})"
+run_gen 9.9.9 10
+if [ "$RC" -eq 0 ] && ! grep -q 'RULED-WITH-WORK' <<<"$OUT" && ! grep -q 'owed: None' <<<"$OUT"; then
+  pass "residual_work=[None,None] is treated as ABSENT (never renders 'owed: None')"
+else
+  fail "RWW-e: an all-null residual_work must not render a row; rc=$RC out=$OUT"
+fi
+
 if [ "$FAILED" -gt 0 ]; then
   printf '\n%d test(s) failed\n' "$FAILED" >&2
   exit 1
