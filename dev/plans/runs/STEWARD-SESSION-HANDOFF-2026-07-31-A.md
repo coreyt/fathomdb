@@ -53,10 +53,14 @@ A `steward_cold_start_set` metric was added to `scripts/repo-prune/bin/context-c
 existing `cold_start_orient_set`, with a ratchet ceiling of **180,000** — deliberately just above the
 current measurement, not at the 60,000 end state. A gate that is red the day it lands gets switched off.
 
-⚠ **The metric cannot run yet.** `context-clarity.sh` dies at repo root on **TC-139**, which is Slice 40's
-item **B6** and is RED-first. It was deliberately left broken so that slice's failing test still fails.
-**Slice 40 clears it as a side effect** — after B6 lands, run
-`bash scripts/repo-prune/bin/context-clarity.sh baseline` and the metric works.
+**TC-139 does NOT block Slice 40. It is Slice 40's WORK, not its precondition.** `context-clarity.sh`
+currently dies at repo root because `$PRUNE_EXPR` glob-expands — that defect is item **B6** on Slice 40's
+own list, and it is **RED-first**, so the slice needs it still broken when it arrives or its failing test
+cannot fail. ⛔ **Do not fix TC-139 before commissioning; doing so erases a TDD item.**
+
+The only thing waiting on it is the new metric, which is program hygiene and gates nothing. After B6
+lands, `bash scripts/repo-prune/bin/context-clarity.sh baseline` starts working. Direction of dependency:
+**Slice 40 → fixes TC-139 → metric runs.** Never the reverse.
 
 Full plan and rationale: `dev/design/steward-cold-start-budget.md` (RATIFIED, ledger `seq-226`).
 **You do not need to read it to commission Slice 40.**

@@ -10,7 +10,7 @@
 > | 1 | Push `5d135bee` · `b842d417` · `88be45a3` | ✅ **DONE** |
 > | 2 | `DOC-INDEX.md` row + board pointer to the Slice 40 provenance doc | ✅ **DONE** |
 > | 3 | **Phase 1** — §3 liveness-aware; ceiling **180,000**, not 60,000 | ✅ **LANDED** — 374,473 → 153,188 tok |
-> | 4 | Commission **Slice 40** — its item B6 is TC-139, so the release clears this metric's blocker | approved |
+> | 4 | Commission **Slice 40** — **not gated on anything**; its item B6 *is* TC-139, so the slice clears the metric's blocker as its own work | approved |
 > | 5 | **Phase 2** — **during** Slice 40's Windows-clock window, not before it | approved |
 > | 6 | **Phase 3** + tighten ceiling to 60,000 — **only after 0.8.20 publishes** | approved |
 >
