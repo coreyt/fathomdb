@@ -56,7 +56,9 @@ current measurement, not at the 60,000 end state. A gate that is red the day it 
 **TC-139 does NOT block Slice 40. It is Slice 40's WORK, not its precondition.** `context-clarity.sh`
 currently dies at repo root because `$PRUNE_EXPR` glob-expands — that defect is item **B6** on Slice 40's
 own list, and it is **RED-first**, so the slice needs it still broken when it arrives or its failing test
-cannot fail. ⛔ **Do not fix TC-139 before commissioning; doing so erases a TDD item.**
+cannot fail. ⛔ **Do not fix TC-139 before commissioning; doing so erases a TDD item.** **Ruled by the HITL
+2026-07-31 — option D, ledger `seq-227`.** That ruling decides *who* fixes it and *when*, not *how*: the
+`set -f` vs bash-array choice stays the slice's call per brief §4.6, and both were measured to work.
 
 The only thing waiting on it is the new metric, which is program hygiene and gates nothing. After B6
 lands, `bash scripts/repo-prune/bin/context-clarity.sh baseline` starts working. Direction of dependency:
