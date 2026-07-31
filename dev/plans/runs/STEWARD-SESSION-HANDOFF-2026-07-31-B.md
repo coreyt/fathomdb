@@ -9,6 +9,13 @@ E2, integrate, push, or alter the release record outside the reconciled
 Linux-first scope. A fresh E1 continuation must first apply the HITL ruling at
 ledger `seq-234`, then resolve B5's already-authorized evidence route.
 
+**Active work (2026-07-31):** one fresh role-simulated E1 continuation
+orchestrator is commissioning a single canary implementer to reconcile the
+Linux-first scope in the CI/release workflow and planning prose. It is bounded:
+no integration, PR, CI accrual, B5 implementation, tag, dispatch, publish, or
+credential action. Its receipt must be independently reviewed before the
+Steward commissions the next E1 step.
+
 The epoch base is `0f7642cc904186e7a1a7a815340404689a0f5679`. Before every E1
 action and before integration, fetch `origin` in a private clone and re-verify
 `BASE=$(git rev-parse origin/main)` is that SHA or a verified descendant. The
