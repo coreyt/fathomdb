@@ -41,8 +41,11 @@ Implementation roots:
 
 Start here:
 
+- Agent instructions: `AGENTS.md` — the canonical operating manual for AI
+  coding agents; read it first if you are one
 - Public docs: `docs/index.md`
-- Internal docs index: `dev/README.md`
+- Internal docs index: `dev/README.md` — and from there the release
+  schedule-of-record and the live board under `dev/plans/`
 - Workspace checks: `scripts/check.sh`
 
 Common commands:
