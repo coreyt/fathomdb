@@ -517,11 +517,18 @@
     "ruled_tracking": [
       {
         "id": "platform-publish-schedule",
-        "title": "Per-platform publish schedule — RULED at seq-203; retained as a tracking entry",
-        "gated_at": "RULED 2026-07-30 (seq-203). 0.8.20 publishes x86_64-linux only under dist-tag `next`. 0.8.21 wires and greens aarch64-darwin -> x86_64-darwin -> win32-x64 in CI and PUBLISHES NOTHING (odd micro, OOB label-only), with napi 2->3 pulled forward from 0.8.22 so the matrix is validated on the binding version that ships. 0.8.22 publishes those three plus x86_64-linux and FLIPS the npm dist-tag to `latest`. aarch64-linux defers to 0.8.24+ (needs cross-compilation or ARM runners). Kept in the list only until the 0.8.21 plan exists to carry it.",
+        "title": "Per-platform publish schedule — amended by HITL at seq-234; retained as a tracking entry",
+        "gated_at": "RULED 2026-07-30 (seq-203), AMENDED 2026-07-31 (seq-234). 0.8.20 publishes x86_64-linux only under dist-tag `next` and validates only Linux native artifacts. 0.8.21 remains an OOB, no-publish release and does not carry macOS/Windows CI or artifact work. 0.8.22 owns the macOS and Windows CI validation and native artifacts, then may publish those three plus x86_64-linux and flip the npm dist-tag to `latest` only after its own HITL decision. aarch64-linux remains deferred to 0.8.24+ (needs cross-compilation or ARM runners).",
         "halts_run": false,
         "source": "steward seq-202 ruling 2; scheduled at seq-203",
         "_note": "Moved out of `unruled` 2026-07-31: it was RULED at seq-203 and retained only for tracking, but sitting in `unruled` made check-release-state-views.sh's len(unruled) count it as a live open decision — a laundered green in the generated board banner. Retained here so the tracking is not lost."
+      },
+      {
+        "id": "linux-first-platform-scope",
+        "title": "0.8.20 Linux-first native support; macOS/Windows deferred",
+        "ruling": "0.8.20 supports and publishes Linux x86_64 native artifacts only. Remove macOS/Windows CI and artifact-generation work from Slice 40; B4 is cancelled for this release. TC-91 remains a Linux-shipping correctness requirement, and its five-consecutive-run acceptance becomes relevant Linux CI proof. macOS/Windows CI validation and native artifacts are deferred to 0.8.22. This does not claim that Cargo source crates are platform-excluded.",
+        "source": "steward seq-234 (HITL 2026-07-31)",
+        "residual_work": "Reconcile the Slice-40 brief, plan, board, master schedule, CI workflow, and release workflow comments. Preserve the B5 evidence route authorized at seq-233 and retain TC-91's Linux proof obligation."
       }
     ]
   },

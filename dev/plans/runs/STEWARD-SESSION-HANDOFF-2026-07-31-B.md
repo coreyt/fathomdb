@@ -5,8 +5,9 @@
 ## ★ IMMEDIATE NEXT STEP
 
 Slice 40 is commissioned but **E1 is hard-stopped and not closed**. Do not begin
-E2, integrate, push, or alter the release record. Two evidence dispositions need
-Steward/HITL rulings before a fresh E1 continuation can proceed.
+E2, integrate, push, or alter the release record outside the reconciled
+Linux-first scope. A fresh E1 continuation must first apply the HITL ruling at
+ledger `seq-234`, then resolve B5's already-authorized evidence route.
 
 The epoch base is `0f7642cc904186e7a1a7a815340404689a0f5679`. Before every E1
 action and before integration, fetch `origin` in a private clone and re-verify
@@ -42,7 +43,7 @@ E1 receipt.
 | B1 | `91a5b81c` | PASS | ready for integration |
 | B2 | `6730faf3` | PASS | ready for integration |
 | B3 | `fbc7d7d0` | PASS after remediation | ready for integration |
-| B4 | `d4928c4d` | CONCERN | controlled pre-fix branch was also green (32 forced-parallel runs); A1 mechanism credit is unearned |
+| B4 | `d4928c4d` | CANCELLED by `seq-234` | macOS/Windows CI and artifact scope move to 0.8.22; do not integrate this patch for 0.8.20 |
 | B5 | `2e6376c3` | BLOCK | canonical binding lacks `test-hooks`; first whole-file run rc=1 (10 passed, 1 failed) |
 | B6 | `0533eb8d` | PASS | ready for integration |
 | B7 | `3c92505f` | PASS | ready for integration |
@@ -50,9 +51,12 @@ E1 receipt.
 | B9 | `1880fc9b` | PASS after one P1 repair | CI-only proof still awaits the BASE push |
 | B10 | `c32501a0` | PASS | ready for integration |
 
-**Decision 1 — B4 (HITL):** do not claim structural-serialisation credit. The
-controlled pre-fix experiment removed the serializer and remained green. Rule
-whether to use the 21-relevant-CI-green alternative or another disposition.
+**Decision 1 — Linux-first scope (HITL):** **RULED at ledger `seq-234`** —
+0.8.20 supports/publishes Linux x86_64 native artifacts only. macOS/Windows CI
+and artifact generation defer to 0.8.22. B4 is cancelled for 0.8.20; do not
+integrate its patch or claim structural-serialisation credit. TC-91 still ships
+on Linux, so its five-consecutive-run acceptance becomes relevant Linux CI
+proof, not a waiver. Cargo source crates are not represented as platform-excluded.
 
 **Decision 2 — B5 (HITL):** **APPROVED at ledger `seq-233`** — provision a safe,
 test-hooks-capable canonical binding route, then perform the required accrual. The
