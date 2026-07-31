@@ -477,6 +477,24 @@ to the HITL.
 > ⚠ Hand-written, this block read **31**, then **39**, then went stale again the moment Slice 39 landed.
 > It is generated now; that class is closed.
 
+### ⚠ RULED-WITH-WORK — a decision can be closed and still owe an action
+
+**`axis-e-version` is RULED (`seq-229`) and therefore no longer appears in `decisions.unruled`, so the
+generated commission manifest no longer names it at all.** The *decision* is closed; the **work is not**.
+Slice 40 still owes, at PHASE 1:
+
+1. run **`bash scripts/release/verify-embedder-api-no-drift.sh`** — ⚠ note the `release/` segment; the
+   Slice 40 brief, this plan, the board and the state file all carried the wrong path until 2026-07-31;
+2. surface **moved** ⇒ bump `fathomdb-embedder-api` to `0.8.20` **by hand** (`scripts/set-version.sh`
+   carries the literal comment `# Skip Axis E (fathomdb-embedder-api).` and will not do it);
+   surface **unmoved** ⇒ leave it at `0.6.1`;
+3. **report which branch fired, with the evidence**, and **proceed** — ⛔ checkpoint B is no longer a stop.
+
+⛔ **Do not infer "absent from the manifest" ⇒ "nothing owed."** This section exists because the manifest
+renders `decisions.unruled` as HALT/GATED and renders `decisions.ruled` only as a count: ruling a decision
+that carries residual work makes that work *less* visible, not more. Surfaced by the Slice 40 manifest+brief
+adversarial review, 2026-07-31.
+
 ---
 
 **Slice 39 (`R-20-DOC`) LANDED at `91db34d8`** — MIT license reconciliation, a LICENSE and README that

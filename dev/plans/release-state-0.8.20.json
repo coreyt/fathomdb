@@ -502,7 +502,7 @@
       {
         "id": "axis-e-version",
         "title": "Axis-E version for `fathomdb-embedder-api` (currently 0.6.1; the workspace bumps to 0.8.20 without it)",
-        "ruling": "CONDITIONAL, decided in advance so PHASE 1 / checkpoint B NO LONGER STOPS THE SLICE. Run `scripts/verify-embedder-api-no-drift.sh`: if the published surface MOVED, bump `fathomdb-embedder-api` to 0.8.20 alongside the workspace; if it did NOT move, leave it at 0.6.1. The slice REPORTS the finding and PROCEEDS - it does not escalate and does not choose. `scripts/set-version.sh` still deliberately skips Axis E, so if the condition fires the bump is applied by hand. What remains at PHASE 1 is WORK (run the check, apply the policy), not a decision.",
+        "ruling": "CONDITIONAL, decided in advance so PHASE 1 / checkpoint B NO LONGER STOPS THE SLICE. Run `scripts/release/verify-embedder-api-no-drift.sh`: if the published surface MOVED, bump `fathomdb-embedder-api` to 0.8.20 alongside the workspace; if it did NOT move, leave it at 0.6.1. The slice REPORTS the finding and PROCEEDS - it does not escalate and does not choose. `scripts/set-version.sh` still deliberately skips Axis E, so if the condition fires the bump is applied by hand. What remains at PHASE 1 is WORK (run the check, apply the policy), not a decision.",
         "source": "steward seq-229 (HITL 2026-07-31); registered as unruled at c73c367a the night before and ruled the next morning"
       }
     ],

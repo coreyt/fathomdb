@@ -205,7 +205,7 @@ Everything else is tracked by **requirement id + TDD test name** per the locked-
 > 3. **Axis-E version for `fathomdb-embedder-api`** (Slice 40 / PHASE 1, **`halts_run: false`**) — registered
 >    into the single writer at `c73c367a` after it was found to live only in the Slice-40 brief, so the
 >    generated commission manifest had emitted nothing for it. ✅ **RULED at `seq-229`** (HITL 2026-07-31),
->    **conditionally**: run `scripts/verify-embedder-api-no-drift.sh`; if the published surface **moved**,
+>    **conditionally**: run `scripts/release/verify-embedder-api-no-drift.sh`; if the published surface **moved**,
 >    bump Axis-E to `0.8.20` with the workspace; if it did **not**, leave it at `0.6.1`. The slice reports
 >    the finding and **proceeds** — ⛔ **checkpoint B is no longer a stop.** **No longer open.**
 >
