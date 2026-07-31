@@ -1034,9 +1034,26 @@ def build(release, state_path, state, slice_no, entry, curated=None):
         if dep.get("status") != "LANDED":
             m.out("  ⛔ NOT COMMISSIONABLE YET — dependency Slice %s is %s, not LANDED."
                   % (d, dep.get("status")))
+    # RULED-WITH-WORK. A decision can be CLOSED and still owe an ACTION. Ruling one
+    # moves it out of `unruled`, so it stops being rendered as a named HALT/GATED row
+    # above and collapses into the bare count below — i.e. ruling a decision that
+    # carries residual work makes that work LESS visible, not more. Any `ruled` entry
+    # carrying a `residual_work` string is therefore rendered by name here.
+    # Found by the Slice 40 manifest+brief adversarial review, 2026-07-31 (round 2):
+    # the first instance (`axis-e-version`) had been patched by hand into ONE prose
+    # section of plan-0.8.20.md, which is the same one-writer/many-copies defect the
+    # same morning's b9a3a296 was written to end. Fix the tooling, not the instance.
+    rww = [d for d in (dec.get("ruled") or []) if (d.get("residual_work") or "").strip()]
+    for d in rww:
+        m.out("  ⚠ RULED-WITH-WORK — %s" % (d.get("title") or d.get("id")))
+        m.out("      the DECISION is closed; the WORK is not. Do NOT infer 'ruled' ⇒ 'nothing owed'.")
+        m.out("      owed: %s" % d.get("residual_work"))
+        m.out("      ruling: %s · source: %s" % (d.get("ruling") or "?", d.get("source") or "?"))
     m.out("  Ruled decisions are CITED, never re-decided or restated: %d ruling(s) recorded in the"
           % len(dec.get("ruled") or []))
     m.out("  state file's `decisions.ruled` with their sources; read them there.")
+    if rww:
+        m.out("  %d of those ruling(s) carry RESIDUAL WORK and are named in full above." % len(rww))
     for label, path, kw in (("hard rules", ORCH, ["hard rules"]),
                             ("scope discipline", SLICE_TEMPLATE, ["scope discipline"]),
                             ("recovery", SLICE_TEMPLATE, ["when something goes wrong"]),

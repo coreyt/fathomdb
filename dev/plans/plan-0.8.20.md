@@ -490,10 +490,17 @@ Slice 40 still owes, at PHASE 1:
    surface **unmoved** ⇒ leave it at `0.6.1`;
 3. **report which branch fired, with the evidence**, and **proceed** — ⛔ checkpoint B is no longer a stop.
 
-⛔ **Do not infer "absent from the manifest" ⇒ "nothing owed."** This section exists because the manifest
-renders `decisions.unruled` as HALT/GATED and renders `decisions.ruled` only as a count: ruling a decision
-that carries residual work makes that work *less* visible, not more. Surfaced by the Slice 40 manifest+brief
-adversarial review, 2026-07-31.
+⛔ **Do not infer "absent from the manifest" ⇒ "nothing owed."**
+
+✅ **This prose is NOT the carrier — the single writer is.** Round 2 of the Slice 40 review (2026-07-31)
+correctly objected that patching this obligation into hand-written narration, three paragraphs under a rule
+declaring outside-marker text *"not a pointer"*, reproduced the very one-writer/many-copies defect
+`b9a3a296` had closed that morning. So the mechanism was fixed instead of the instance:
+`release-state-0.8.20.json`'s `axis-e-version` ruling now carries a **`residual_work`** field, and
+`scripts/commission-manifest.sh` renders every `decisions.ruled` entry carrying one as a named
+**`⚠ RULED-WITH-WORK`** row in manifest §8 — alongside, not as, the HALT rows. Proven non-vacuous: with the
+renderer present and the field absent the manifest named Axis-E **zero** times; with the field it names it
+in full. **The state file is authoritative; this section is narration that may rot.**
 
 ---
 
