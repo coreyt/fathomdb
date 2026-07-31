@@ -204,7 +204,21 @@ else
     || fail "wrong diagnostic for missing dispatch confirmation; got: $out"
 fi
 
-# 11. workflow_dispatch + dry_run=false with matching typed confirmation
+# 11. workflow_dispatch + dry_run=false with a mismatched typed confirmation
+#     must fail rather than accepting any non-empty second factor.
+restore
+printf '# Changelog\n\n## %s\n' "$WS" > "$CL_PATH"
+if out="$(GITHUB_EVENT_NAME="workflow_dispatch" DRY_RUN="false" \
+    RELEASE_CONFIRM_VERSION="9.9.9" \
+    GITHUB_REF_NAME="phase-11d-release-workflow" "$VRG" 2>&1)"; then
+  fail "dispatch+dry_run=false with mismatched confirmation should fail; got: $out"
+else
+  printf '%s' "$out" | grep -qi 'confirm' \
+    && pass "dispatch+dry_run=false with mismatched confirmation rejected" \
+    || fail "wrong diagnostic for mismatched dispatch confirmation; got: $out"
+fi
+
+# 12. workflow_dispatch + dry_run=false with matching typed confirmation
 #     proceeds and retains its emergency-republish warning.
 restore
 printf '# Changelog\n\n## %s\n' "$WS" > "$CL_PATH"
@@ -218,7 +232,7 @@ else
   fail "dispatch+dry_run=false with matching confirmation should pass; got: $out"
 fi
 
-# 12. workflow_dispatch + dry_run=true + crate metadata broken: still fails.
+# 13. workflow_dispatch + dry_run=true + crate metadata broken: still fails.
 #     Non-tag gates must keep running on dispatch.
 restore
 printf '# Changelog\n\n## %s\n' "$WS" > "$CL_PATH"

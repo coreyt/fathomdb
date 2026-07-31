@@ -10,6 +10,9 @@ on:
         description: "Rehearse cargo publish --dry-run + npm --dry-run; PyPI publish + post-publish smoke skipped entirely (no test.pypi slot burn)."
         type: boolean
         default: true
+      confirm_release_version:
+        description: "Required when dry_run is unchecked: type the exact Axis-W version to confirm a real publish."
+        type: string
 
 permissions:
   actions: read
@@ -18,6 +21,7 @@ permissions:
 
 env:
   DRY_RUN: ${{ inputs.dry_run || 'false' }}
+  RELEASE_CONFIRM_VERSION: ${{ inputs.confirm_release_version || '' }}
   # R-REL-4f — npm dist-tag for the 0.8.18 GA capstone. Platform coverage is
   # PARTIAL (linux-x64-gnu only, D5); publishing under `latest` would serve
   # mac/win users an install-incompatible package as the default. So the main
@@ -41,6 +45,8 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0  # need refs/heads/main for HEAD-reach check
+      - name: Print resolved dry-run mode
+        run: echo "DRY_RUN=${DRY_RUN}"
       - name: Install actionlint
         run: |
           curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash \
@@ -51,7 +57,7 @@ jobs:
       - name: Run release gates
         # Runs on push (tag-format + version-axis enforced) and
         # workflow_dispatch (tag check skipped, all other gates enforced;
-        # dispatch with dry_run=false emits an emergency-republish warning).
+        # dry_run=false also needs a matching typed confirmation).
         #
         # RELEASE_GATES_HEAD_REF: actions/checkout fetches all refs under
         # refs/remotes/origin/* but does NOT create a local refs/heads/main
