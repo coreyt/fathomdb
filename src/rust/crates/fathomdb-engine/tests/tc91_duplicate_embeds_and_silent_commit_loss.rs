@@ -161,6 +161,11 @@ const INGEST_MARKER: &str = "tc91marker";
 /// Rows per duplicate-rate arm.
 const ROWS: usize = 200;
 
+/// A bounded tight-cadence sample for the default regression gate. It is large
+/// enough to reproduce the pre-fix defect without turning the gate into a
+/// scheduler measurement suite.
+const GATED_ROWS: usize = 48;
+
 // ---------------------------------------------------------------------------
 // Fixture
 // ---------------------------------------------------------------------------
@@ -428,17 +433,16 @@ fn assert_duplicate_arm(outcome: &DuplicateOutcome) {
     );
 }
 
-/// **TC-91 (a) — GOVERNED arm.** `logical_id: Some(..)`.
+/// **TC-91 (a) — bounded GOVERNED regression.** `logical_id: Some(..)`.
 #[test]
-#[ignore = "TC-91 characterization arm — run explicitly with --ignored; see the design doc"]
 fn tc91_duplicate_embed_rate_governed() {
-    let outcome = run_duplicate_arm("governed", true, ROWS, 1);
+    let outcome = run_duplicate_arm("governed", true, GATED_ROWS, 1);
     assert_duplicate_arm(&outcome);
     assert_eq!(
         outcome.split.ingest_duplicates, 0,
-        "TC-91 (a): {} duplicate embeds over {ROWS} rows ({} distinct rows embedded more than \
-         once) — wasted embed work, invisible to every correctness test because a duplicate \
-         embed produces the right answer twice",
+        "TC-91 (a): {} duplicate embeds over {GATED_ROWS} tight-cadence rows ({} distinct rows \
+         embedded more than once) — the worker transaction must preserve every computed outcome \
+         exactly once",
         outcome.split.ingest_duplicates, outcome.split.ingest_repeated_texts,
     );
 }
@@ -741,20 +745,15 @@ fn run_commit_loss_arm(label: &'static str, blocker: bool) -> CommitLossOutcome 
     outcome
 }
 
-/// **TC-91 (b) — THE BLINDNESS, PROVEN BY FORCING THE FAILURE.**
+/// **TC-91 (b) — forced contention must preserve the computed outcomes.**
 ///
-/// Worker commits are forced to fail by holding the WAL write lock from a second
-/// connection. The assertions are deliberately the wrong way round from a normal
-/// test: they assert that the two counters a future agent would reach for stay at
-/// **zero**, and that the re-embed count is simultaneously **non-zero**.
+/// A second connection holds the WAL write lock while the worker attempts to
+/// commit. The worker must wait through SQLite's busy handler and then commit its
+/// already-computed outcomes, rather than losing them and redispatching rows for
+/// a second embed.
 ///
-/// Passing therefore means: *real work was computed, thrown away, and recomputed,
-/// and the terminal-state census reported a perfectly clean run.* That is the
-/// finding. It is what makes "measure worker risk by counting `'failed'`
-/// terminals" a structurally invalid method rather than merely an imprecise one.
 #[test]
-#[ignore = "TC-91 characterization arm — run explicitly with --ignored; see the design doc"]
-fn tc91_forced_commit_failure_is_invisible_to_terminal_counting() {
+fn tc91_forced_commit_contention_preserves_single_embed() {
     let outcome = run_commit_loss_arm("blocked", true);
 
     assert!(
@@ -763,30 +762,24 @@ fn tc91_forced_commit_failure_is_invisible_to_terminal_counting() {
         outcome.blocked_ms,
         HOLD.as_millis()
     );
-    assert!(
-        outcome.split.ingest_duplicates > 0,
-        "non-vacuity: at least one outcome must have been computed and lost, else there is no \
-         commit failure to be blind to (duplicates={})",
-        outcome.split.ingest_duplicates
-    );
-    assert!(outcome.drain_ok, "the engine must still reach idle — this is a LOSS, not a wedge");
+    assert!(outcome.drain_ok, "the engine must reach idle after the lock is released");
     assert_eq!(
         outcome.census.vector_rows, LOSS_ROWS as i64,
-        "and every row must still land eventually: the harm is wasted work, not data loss"
+        "every row must land after the contention is released"
     );
-
-    // ---- the finding ----
+    assert_eq!(
+        outcome.split.ingest_duplicates, 0,
+        "TC-91 (b): {} computed outcomes were lost during forced write contention and embedded \
+         again; the worker commit must wait and preserve each outcome exactly once",
+        outcome.split.ingest_duplicates,
+    );
     assert_eq!(
         outcome.census.failed_terminals, 0,
-        "TC-91 (b): {} outcomes were discarded by `let _ = commit_projection_outcomes(..)` \
-         (`lib.rs:12711`) and the `'failed'` terminal count is {} — if this ever becomes \
-         NON-zero the blindness has been fixed and this test must be re-read, not re-run",
-        outcome.split.ingest_duplicates, outcome.census.failed_terminals,
+        "a successfully retried worker commit is not an embed failure"
     );
     assert_eq!(
         outcome.census.failure_audit_rows, 0,
-        "TC-91 (b): nor does a discarded commit produce a `projection_failures` audit row — \
-         that arm (`lib.rs:13962-13984`) is reached only by an EMBED failure"
+        "a successfully retried worker commit must not create an embed-failure audit row"
     );
 }
 
