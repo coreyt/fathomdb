@@ -110,8 +110,62 @@ if [ "$COUNT" -eq 0 ]; then
   exit 1
 fi
 
+# --- CHECK 2: §6a index reconciles with the finding bodies ---------------
+#
+# WHY (measured, not hypothetical). On 2026-07-31 a cold-start agent found §6a
+# headed "Findings index (all 35, in file order)" while listing 36 entries, with
+# F-37 and F-38 carrying full bodies and NO index entry, and F-36 carrying no
+# heading at all — it existed only inline in the §4 0.8.20 table row. Three of
+# the register's "stable citation targets" were not citable from the index. The
+# defect was UNDETECTABLE, not un-noticed: check 1 verifies uniqueness and has no
+# opinion on whether the index sees every entry. Per the standing "fix the
+# tooling, not the actor" rule, that gap is this check.
+#
+# Compares HEADINGS to index entries, not all ids: F-8a/F-8b are sub-findings in
+# the legacy bullet form inside F-8's body and are deliberately not indexed.
+index_entries() { awk '/^### 6a\./{f=1;next} f&&/^### /{exit} f&&match($0,/^- \[F-[0-9]+[a-z]*/){print substr($0,RSTART+3,RLENGTH-3)}' "$1"; }
+heading_ids()   { awk 'match($0,/^### F-[0-9]+[a-z]*/){print substr($0,RSTART+4,RLENGTH-4)}' "$1"; }
+
+IDX="$(index_entries "$FILE")"
+HDS="$(heading_ids "$FILE")"
+N_IDX=$(printf '%s\n' "$IDX" | grep -c . || true)
+N_HDS=$(printf '%s\n' "$HDS" | grep -c . || true)
+
+if [ "$N_IDX" -eq 0 ]; then
+  printf 'FAIL %s: §6a findings index matched ZERO entries — the reconciliation vouched for nothing.\n' "$FILE" >&2
+  printf '  Expected `### 6a.` followed by `- [F-n — …](#…)` bullets. Either the section\n' >&2
+  printf '  moved or the entry shape changed; a gate that cannot see its subject must fail\n' >&2
+  printf '  loudly, never report a silent pass (TC-37).\n' >&2
+  FAIL=1
+else
+  MISSING_IDX="$(comm -23 <(printf '%s\n' "$HDS" | sort -u) <(printf '%s\n' "$IDX" | sort -u) | tr '\n' ' ')"
+  MISSING_BODY="$(comm -13 <(printf '%s\n' "$HDS" | sort -u) <(printf '%s\n' "$IDX" | sort -u) | tr '\n' ' ')"
+  if [ -n "${MISSING_IDX// }" ]; then
+    printf 'FAIL %s: finding(s) with a body but NO §6a index entry: %s\n' "$FILE" "$MISSING_IDX" >&2
+    printf '  An id advertised as a stable citation target is not citable if the index\n' >&2
+    printf '  cannot see it. Add the entry; do not delete the body.\n' >&2
+    FAIL=1
+  fi
+  if [ -n "${MISSING_BODY// }" ]; then
+    printf 'FAIL %s: §6a indexes finding(s) with NO body section: %s\n' "$FILE" "$MISSING_BODY" >&2
+    printf '  The index points at nothing. Give the finding a real `### F-n — …` section —\n' >&2
+    printf '  recording it inline in a §4 table cell is what made F-36 uncitable.\n' >&2
+    FAIL=1
+  fi
+  # A stated count is a second source of truth for something already derivable,
+  # and it rotted: "all 35" survived the register reaching 38. Ban it outright.
+  if grep -qE '^### 6a\..*[0-9]' "$FILE"; then
+    printf 'FAIL %s: the §6a heading states a COUNT. Remove it.\n' "$FILE" >&2
+    printf '  A count in the heading is a second source of truth for something the list\n' >&2
+    printf '  already is, and it goes stale silently — "all 35" outlived the register\n' >&2
+    printf '  reaching 38. A heading that cannot be wrong beats one that is currently right.\n' >&2
+    FAIL=1
+  fi
+fi
+
 if [ "$FAIL" -eq 0 ]; then
-  printf 'ok    lint-findings: %s finding ids in %s, all unique\n' "$COUNT" "$FILE" >&2
+  printf 'ok    lint-findings: %s finding ids in %s, all unique; §6a indexes all %s finding sections\n' \
+    "$COUNT" "$FILE" "$N_HDS" >&2
 fi
 
 exit "$FAIL"
