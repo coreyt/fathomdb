@@ -309,6 +309,13 @@
         "gated_at": "Slice 40 / publish. release.yml:21-26 states the label is an HITL confirmation and that publishing PARTIAL coverage under `latest` would serve an incomplete matrix to every consumer. The matrix is gated to x86_64-unknown-linux-gnu (R-REL-4e); macOS/Windows targets are commented out as DEFERRED-TO-FOLLOW-ON (R-REL-4d). Surfaced by the Slice 40 brief review 2026-07-30; unplaced anywhere in 0.8.20 until now.",
         "halts_run": false,
         "source": "steward 2026-07-30 (Slice 40 brief adversarial review)"
+      },
+      {
+        "id": "axis-e-version",
+        "title": "Axis-E version for `fathomdb-embedder-api` (currently 0.6.1; the workspace bumps to 0.8.20 without it)",
+        "gated_at": "Slice 40 / PHASE 1, checkpoint B. `scripts/set-version.sh` carries the literal comment `# Skip Axis E (fathomdb-embedder-api).` and deliberately does not bump it, so the version is chosen by hand or not at all. `scripts/verify-embedder-api-no-drift.sh` runs in the `verify-release` job and FAILS CLOSED if the published surface moved without a bump, so an unmade decision surfaces as a red release gate rather than a question. The Slice 40 brief instructs the orchestrator to determine whether the surface moved and bring a finding plus a recommendation, explicitly NOT to pick (brief PHASE 1 and §12 'does not decide the Axis-E version').",
+        "halts_run": false,
+        "source": "steward 2026-07-31. Registered after codex review of the R1-R12 remediation: the decision existed only in the Slice 40 brief, so `commission-manifest.sh` — which renders `decisions.unruled` into every brief as HALT/GATED — emitted nothing for it, while F-34's superseding note names this array as THE authority for the live open set. The manifest an orchestrator receives therefore did not know the stop existed. halts_run is FALSE because PUBLISH remains the only run-halting decision on record (seq-202/seq-211/seq-223); checkpoint B in the brief is what pauses the slice."
       }
     ],
     "ruled": [

@@ -46,7 +46,7 @@ Anti-patterns (do not violate):
 
 - **Do not spawn an "orchestrator" subagent from inside an orchestrator
   or an implementer** — no *nesting*. The main thread of a session IS
-  that session's orchestrator. (`feedback_orchestrator_thread.md`)
+  that session's orchestrator. (§ 1.1 defines "main thread"; `AGENTS.md` § 7 states the principle.)
   **Scope (chronology).** This bullet and § 10 rule 1 both date to
   `72af7045` (2026-05-17); the `orchestrator` / `steward` agent *types*
   did not exist until `31a73401` (2026-07-02), **46 days later**. Both
@@ -705,7 +705,7 @@ After all sub-phases of a phase family CLOSE (e.g. 11a + 11b + 11c +
    `git worktree list` should show only the main repo;
    `git branch | grep phase-<phase-family>` should be empty.
 
-Per `feedback_file_deletion.md` memory: never `find -delete`. Stray
+⛔ Never `find -delete` when cleaning worktrees — it has no undo and the blast radius is the whole tree. Stray
 sidecar lock files (`*.sqlite.lock`) in WTs are disposable — they
 disappear with `git worktree remove --force`.
 
@@ -927,8 +927,10 @@ The default review is one codex pass per slice on the worktree branch
 ## 15. References
 
 - `AGENTS.md` § 7 — principles (this doc owns mechanics).
-- `MEMORY.md` entries: `feedback_orchestrator_thread.md`,
-  `feedback_orchestrate_releases.md`, `project_orchestration_doc.md`.
+- Memory entries (out-of-repo store; see `AGENTS.md` § 1):
+  `orchestration-execution-traps.md`, `subagent-persistence-orchestration-economics.md`,
+  `steward-delegate-dont-hand-do.md`, `background-agent-silent-death-proactive-check.md`,
+  `codex-unavailable-use-claude-code-review.md`.
 - `dev/plans/prompts/01-orchestrator-resume.md` — Pack-5 resume
   wrapper; § 4 SUPERSEDED by this file, other sections retained as
   Pack-5 historical state.
