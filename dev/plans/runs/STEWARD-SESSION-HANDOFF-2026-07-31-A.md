@@ -83,7 +83,7 @@ Full plan and rationale: `dev/design/steward-cold-start-budget.md` (RATIFIED, le
 ## 4. State of record
 
 - **Ladder:** every slice through 39 is COMPLETE and landed. **40 is the only one left.**
-- **SCHEMA 24.** ⚠ `plan-0.8.20.md` still claims 22 and cites a stale path — a Steward edit, not Slice 40's.
+- **SCHEMA 24**, and `plan-0.8.20.md` now agrees (its §1 row said 22 while its own §11 said 24 — corrected 2026-07-31). The authority is `src/rust/crates/fathomdb-schema/src/lib.rs`; that row has gone stale twice, so read the code, not the plan.
 - **Publish is behind two gates, neither sufficient alone** (`seq-202`, amended `seq-211`, `seq-223`):
   (i) every `ci.yml` job **that executed** concludes `success`, **measured on Slice 40's own landing
   commit**; **and** (ii) explicit HITL approval. **Gate (i) is not met** — five reds, all diagnosed in
