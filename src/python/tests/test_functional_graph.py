@@ -15,7 +15,7 @@ from typing import Any, cast
 import pytest
 
 import fathomdb
-from fathomdb import ExpandedNode, NodeRecord, SearchExpandResult
+from fathomdb import ExpandedNode, IdSpace, NodeRecord, SearchExpandResult
 
 # 0.8.20 (R-20-E3): `source_id` is mandatory on every canonical write.
 _SOURCE_ID = "py-test:functional-graph"
@@ -174,6 +174,29 @@ def test_search_expand_returns_search_expand_result(db_path: str) -> None:
     assert isinstance(result.search_hits, list)
     assert isinstance(result.expanded, list)
     assert isinstance(result.all_logical_ids, list)
+
+    engine.close()
+
+
+def test_search_expand_preserves_sdk_search_hit_contract(db_path: str) -> None:
+    """Graph search hits expose the same typed identity and metadata as search."""
+    engine = open_engine(db_path)
+    engine.write(
+        [
+            _node("GRAPH-HIT", "graph contract distinctive quasar"),
+            _node("GRAPH-NBR", "graph contract neighbor"),
+            _edge("GRAPH-HIT", "GRAPH-NBR", "E-GRAPH-CONTRACT"),
+        ]
+    )
+
+    result = fathomdb.graph.search_expand(engine, "graph contract distinctive quasar", depth=1)
+
+    assert result.search_hits, "expected the distinctive graph-search node to be found"
+    hit = next(hit for hit in result.search_hits if hit.id.value == "GRAPH-HIT")
+    assert isinstance(hit.id, IdSpace)
+    assert hit.id.space == "logical"
+    assert hit.source_id == _SOURCE_ID
+    assert hit.ce_score is None
 
     engine.close()
 
