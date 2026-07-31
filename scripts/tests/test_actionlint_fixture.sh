@@ -77,14 +77,35 @@ else
   FIXTURE_FAILED=$((FIXTURE_FAILED + 1))
 fi
 
-# Control: dry_run deliberately has a default, proving the input-block parser
-# catches one instead of treating an empty result as a passing absence check.
-if dry_run_block="$(confirmation_input_block dry_run)" \
-  && grep -qE '^[[:space:]]+default:' <<<"$dry_run_block"; then
-  printf 'PASS  confirmation default guard detects the dry_run control default\n'
+# The no-default assertion needs a non-vacuous control against the same
+# confirmation input, not the separately-defaulted dry_run input.
+CONFIRMATION_NO_DEFAULT_GUARD="$REPO_ROOT/scripts/release/assert-confirm-release-version-no-default.sh"
+if "$CONFIRMATION_NO_DEFAULT_GUARD" "$RELEASE_YML"; then
+  printf 'PASS  confirmation no-default guard accepts release.yml\n'
 else
-  printf 'FAIL  confirmation default guard did not detect dry_run control default\n' >&2
+  printf 'FAIL  confirmation no-default guard rejected release.yml\n' >&2
   FIXTURE_FAILED=$((FIXTURE_FAILED + 1))
+fi
+
+DEFAULTED_CONFIRMATION_FIXTURE="$(mktemp)"
+trap 'rm -f "$DEFAULTED_CONFIRMATION_FIXTURE"' EXIT
+awk '
+  $0 == "      confirm_release_version:" { in_confirmation = 1 }
+  in_confirmation && !inserted && $0 ~ /^        description:/ {
+    print
+    print "        default: \"unsafe-control\""
+    inserted = 1
+    next
+  }
+  { print }
+  END { exit !inserted }
+' "$RELEASE_YML" > "$DEFAULTED_CONFIRMATION_FIXTURE"
+
+if "$CONFIRMATION_NO_DEFAULT_GUARD" "$DEFAULTED_CONFIRMATION_FIXTURE"; then
+  printf 'FAIL  confirmation no-default guard accepted deliberately-defaulted fixture\n' >&2
+  FIXTURE_FAILED=$((FIXTURE_FAILED + 1))
+else
+  printf 'PASS  confirmation no-default guard rejects deliberately-defaulted fixture\n'
 fi
 
 # Determination (Slice 40 B8): this test was stale, not the release workflow.
