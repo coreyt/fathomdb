@@ -54,11 +54,11 @@ E1 receipt.
 controlled pre-fix experiment removed the serializer and remained green. Rule
 whether to use the 21-relevant-CI-green alternative or another disposition.
 
-**Decision 2 — B5 (HITL):** the structural patch is not accepted. A canonical
-binding whole-file run failed because its `_fathomdb.abi3.so` lacks `test-hooks`;
-the first run was rc=1 (10 passed, 1 failed). Rule a safe, test-hooks-capable
-binding route or provision it. Never rebuild or `pip install -e` from a private
-clone, and do not mutate the shared checkout to manufacture evidence.
+**Decision 2 — B5 (HITL):** **APPROVED at ledger `seq-233`** — provision a safe,
+test-hooks-capable canonical binding route, then perform the required accrual. The
+prior canonical binding whole-file run failed because its `_fathomdb.abi3.so`
+lacks `test-hooks` (rc=1, 10 passed/1 failed). Never rebuild or `pip install -e`
+from a private clone, and do not mutate the shared checkout to manufacture evidence.
 
 E1 has not created an integration branch, rebased, pushed the one BASE change,
 started or observed CI, edited `release-state`, `STATUS`, the master schedule, or
