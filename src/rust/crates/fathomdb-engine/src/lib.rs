@@ -12715,12 +12715,21 @@ fn projection_worker_loop(shared: Arc<ProjectionRuntimeShared>) {
         // wedge into `EngineError::Scheduler` (Finding A). Mirrors the
         // reader pool's `LiveGuard` panic-safety. The local commit tx rolls
         // back on unwind, leaving the connection clean for reuse.
-        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            run_projection_jobs(&shared, &mut connection, &jobs);
-        }))
-        .is_err();
-        if panicked {
-            commit_projection_panic_failures(&shared, &mut connection, &jobs);
+        let projection_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            run_projection_jobs(&shared, &mut connection, &jobs)
+        }));
+        match projection_result {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                eprintln!("projection worker failed to commit outcomes: {error}");
+            }
+            Err(_) => {
+                if let Err(error) =
+                    commit_projection_panic_failures(&shared, &mut connection, &jobs)
+                {
+                    eprintln!("projection worker failed to record panic outcomes: {error}");
+                }
+            }
         }
 
         if let Ok(mut state) = shared.state.lock() {
@@ -12775,9 +12784,9 @@ fn run_projection_jobs(
     shared: &ProjectionRuntimeShared,
     connection: &mut Connection,
     jobs: &[ProjectionJob],
-) {
+) -> rusqlite::Result<()> {
     let outcomes = embed_projection_batch(shared, jobs);
-    let _ = commit_projection_outcomes(connection, &outcomes, shared);
+    commit_projection_outcomes(connection, &outcomes, shared)
 }
 
 /// Embed a whole commit-batch in ONE `embed_batch` call (amortizes per-call
@@ -12882,7 +12891,7 @@ fn commit_projection_panic_failures(
     shared: &ProjectionRuntimeShared,
     connection: &mut Connection,
     jobs: &[ProjectionJob],
-) {
+) -> rusqlite::Result<()> {
     let outcomes: Vec<ProjectionOutcome> = jobs
         .iter()
         .map(|job| ProjectionOutcome::Failure {
@@ -12890,7 +12899,7 @@ fn commit_projection_panic_failures(
             failure_code: "ProjectionPanic",
         })
         .collect();
-    let _ = commit_projection_outcomes(connection, &outcomes, shared);
+    commit_projection_outcomes(connection, &outcomes, shared)
 }
 
 /// PR-9 — ADR-0.6.0-embedder-protocol **Invariant 5**: run one `embed()`
@@ -13875,7 +13884,11 @@ fn commit_projection_outcomes(
     // EU-5f — serialize the whole commit across workers so the at-pin
     // re-quantize sees a totally-ordered history (see `commit_gate`).
     let _gate = shared.commit_gate.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let tx = connection.transaction()?;
+    // Take the WAL write lock before the reads below. A deferred transaction
+    // would need a read-to-write promotion while a concurrent Engine::write
+    // holds its own immediate transaction, which SQLite rejects without
+    // invoking the busy handler and forces the worker to recompute the batch.
+    let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
     // EU-5a2/EU-5f — the live pinned mean. Read once at the top; may pin
     // mid-batch (set to `Some` after a threshold-crossing row below).
     let mut current_mean: Option<Vec<f32>> = if mc {

@@ -1,4 +1,5 @@
-//! 0.8.20 Slice 23 (R-20-SV, leg 2) — **TC-91 characterization harness.**
+//! 0.8.20 Slice 23 characterization and Slice 40 regression coverage for
+//! **TC-91**.
 //!
 //! TC-91 (ledger `seq-129`, p2) is two defects on the same code path, which this
 //! file HYPOTHESISES — but does **not** establish — share one mechanism (see
@@ -9,21 +10,19 @@
 //!   and it did not go away with that fix. Harm class: wasted embed work.
 //!   Invisible to correctness tests, because a duplicate embed produces the right
 //!   answer — twice.
-//! * **(b)** the projection worker's commit is invoked as
-//!   `let _ = commit_projection_outcomes(..)` (`lib.rs:12711` and `lib.rs:12824`).
-//!   A commit failure is dropped with no error, no log and no telemetry.
+//! * **(b)** at the Slice 23 baseline, the projection worker discarded its
+//!   commit result. Slice 40 propagates the result to the worker loop and starts
+//!   the commit transaction with `BEGIN IMMEDIATE`.
 //!
-//! **CHARACTERIZATION ONLY — NO FIX** (steward `seq-136`: the fix lands at
-//! 0.8.21). `src/rust/crates/fathomdb-engine/src/lib.rs` is byte-identical to the
-//! baseline `94f09d7d` in the commit that lands this file. Written
+//! Slice 23 established the characterization at baseline `94f09d7d`. Slice 40
+//! turns the bounded governed-rate and forced-contention arms into regressions;
+//! the remaining timing-sensitive characterization arms stay opt-in. Written
 //! characterization: `dev/design/0.8.20-tc90-tc91-characterization.md`.
 //!
 //! ## The durable point of (b), and why it is the most valuable thing here
 //!
-//! ```text
-//! lib.rs:12711   let _ = commit_projection_outcomes(connection, &outcomes, shared);
-//! lib.rs:12824   let _ = commit_projection_outcomes(connection, &outcomes, shared);
-//! ```
+//! At baseline the two worker paths silently discarded
+//! `commit_projection_outcomes` errors.
 //!
 //! A `'failed'` terminal and a `projection_failures` audit row are written by the
 //! `ProjectionOutcome::Failure` arm (`lib.rs:13962-13984`), which represents an
@@ -32,11 +31,10 @@
 //! sets `pending_scan = true` (`lib.rs:12663`), the dispatcher re-fetches the row
 //! and it is embedded AGAIN.
 //!
-//! Therefore **counting `'failed'` terminal states is STRUCTURALLY INCAPABLE of
-//! seeing this class of failure.** Any future attempt to quantify worker
-//! reliability that way will report a falsely clean number — zero — no matter how
-//! many commits are being lost. [`tc91_forced_commit_failure_is_invisible_to_terminal_counting`]
-//! proves this by forcing the failure and measuring both.
+//! Therefore **counting `'failed'` terminal states was structurally incapable of
+//! seeing this class of failure at baseline.**
+//! [`tc91_forced_commit_contention_preserves_single_embed`] exercises the same
+//! lock shape and requires the remedy to preserve every computed outcome.
 //!
 //! ## The measurement trap that had to be disarmed FIRST
 //!
@@ -75,7 +73,7 @@
 //! | [`tc91_duplicate_embed_rate_governed`] | 200 x 1-row writes, 1 ms apart | 10 | 102-106 / 200 (**52.1 %**) |
 //! | [`tc91_duplicate_embed_rate_anonymous`] | same, `logical_id: None` | 10 | 103-110 / 200 (**52.8 %**) |
 //! | [`tc91_control_unblocked_worker_commits`] | ONE 96-row batch, no concurrent writer | 10 | **0 / 96** |
-//! | [`tc91_forced_commit_failure_is_invisible_to_terminal_counting`] | same batch + held write lock | 10 | 80-96 / 96 |
+//! | forced-contention baseline | same batch + held write lock | 10 | 80-96 / 96 |
 //! | [`tc91_mechanism_duplicate_rate_versus_write_cadence`] | 60 rows, 1 ms vs 25 ms apart | 10 | 31-33 vs **0** |
 //!
 //! Governed and anonymous are indistinguishable, confirming the ledger claim that
@@ -125,16 +123,17 @@
 //! plain `main`, so anything timing-sensitive added to the default profile makes
 //! that worse and must earn its place.
 //!
-//! **`#[ignore]`d — every arm whose result is a RATE measured under concurrency:**
-//! [`tc91_duplicate_embed_rate_governed`], [`tc91_duplicate_embed_rate_anonymous`],
-//! [`tc91_mechanism_duplicate_rate_versus_write_cadence`],
-//! [`tc91_forced_commit_failure_is_invisible_to_terminal_counting`],
-//! [`tc91_control_unblocked_worker_commits`]. Each races a live projection worker
-//! against a live writer; their baseline values are MEASUREMENTS, not merge-gate
-//! invariants. Run them with `--ignored`.
+//! **`#[ignore]`d — timing-characterization arms:**
+//! [`tc91_duplicate_embed_rate_anonymous`],
+//! [`tc91_mechanism_duplicate_rate_versus_write_cadence`], and
+//! [`tc91_control_unblocked_worker_commits`]. They remain measurements, not
+//! merge-gate invariants. Run them with `--ignored`.
 //!
-//! **LIVE in the default profile — one target:**
-//! [`tc91_probe_embed_cost_per_open_at_head`]. It is a measurement too, but it is
+//! **LIVE in the default profile:**
+//! [`tc91_duplicate_embed_rate_governed`] is a bounded 48-row tight-cadence
+//! regression and [`tc91_forced_commit_contention_preserves_single_embed`] holds
+//! a real external WAL write lock. Each asserts exactly zero duplicate embeds.
+//! [`tc91_probe_embed_cost_per_open_at_head`] is a measurement too, but it is
 //! **sequential and deterministic**: three opens of one workspace, one write, every
 //! `drain` awaited to idle, no second thread and no wall-clock assertion anywhere.
 //! Its value comes from a checked-in fixture (`vector_equivalence_probes.txt`) and
@@ -291,8 +290,7 @@ fn count(conn: &rusqlite::Connection, sql: &str) -> i64 {
 }
 
 /// The two counters a future agent would reach for to quantify worker
-/// reliability — and which [`tc91_forced_commit_failure_is_invisible_to_terminal_counting`]
-/// shows cannot see a lost commit.
+/// reliability at the Slice 23 baseline.
 struct TerminalCensus {
     failed_terminals: i64,
     up_to_date_terminals: i64,
@@ -499,7 +497,7 @@ const SPACED_PACE_MS: u64 = 25;
 /// **not**, on its own, establish that TC-91 (a) *is* TC-91 (b): spacing the
 /// writes changes overlap, but nothing in this arm observes a worker commit
 /// failing, because `let _ =` (`lib.rs:12711`) discards exactly that signal. Read
-/// together with [`tc91_forced_commit_failure_is_invisible_to_terminal_counting`]
+/// together with the forced-contention baseline arm
 /// it strongly implicates the engine's own writer; see the module header's
 /// "What those numbers DO and DO NOT prove" for the precise boundary.
 ///
