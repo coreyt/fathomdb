@@ -1,3 +1,7 @@
+---
+status: ACTIVE
+---
+
 # Steward cold-start budget — RATIFIED
 
 > **Status: RATIFIED by the HITL 2026-07-31** (steward ledger `seq-226`). All six steps approved.
