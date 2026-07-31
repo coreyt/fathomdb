@@ -1053,7 +1053,8 @@ def build(release, state_path, state, slice_no, entry, curated=None):
         if isinstance(v, str):
             return v.strip()
         if isinstance(v, (list, tuple)):
-            return " ".join(str(x).strip() for x in v if str(x).strip())
+            return " ".join(str(x).strip() for x in v
+                            if x is not None and str(x).strip())
         return "" if v is None else str(v).strip()
     rww = [d for d in (dec.get("ruled") or []) if _rww_text(d.get("residual_work"))]
     for d in rww:

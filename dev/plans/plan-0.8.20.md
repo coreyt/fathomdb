@@ -556,7 +556,10 @@ the single unruled HITL decision.
 **Slice 40 additionally carries the DISPATCH GUARD** (HITL 2026-07-30, steward `seq-198` ruling 1).
 `.github/workflows/release.yml` must be hardened so a `workflow_dispatch` with `dry_run=false` **cannot
 publish on one unchecked checkbox**: add a **confirmation input whose value must literally match
-the version being released**, and make `scripts/verify-release-gates.sh` **exit 1 — not warn** — when a
+the version being released** — ⛔ **declared optional AND carrying NO `default:`** (a default would
+auto-populate the second factor and restore the one-unchecked-checkbox publish this guard exists to close;
+"optional" forbids `required: true`, it does **not** forbid a default) — and make
+`scripts/verify-release-gates.sh` **exit 1 — not warn** — when a
 dispatch has `dry_run=false` without it. ⚠ **"Required" here means ENFORCED, not `required: true`** —
 **Steward ruling 2026-07-31 (`seq-229`)**, answering the contradiction the Slice 40 brief §5 PHASE 0b
 flagged for a one-sentence ruling. Declare the input **optional in `release.yml`** and enforce it **in the

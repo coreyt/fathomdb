@@ -2215,10 +2215,15 @@ mutate_state "s.setdefault('decisions', {}).setdefault('ruled', []).append(
     {'id': 'rww-probe', 'title': 'RWW PROBE TITLE', 'ruling': 'r', 'source': 'x',
      'residual_work': ['step one', 'step two']})"
 run_gen 9.9.9 10
-if [ "$RC" -eq 0 ] && ! grep -qi 'traceback\|AttributeError' <<<"$OUT"; then
-  pass "non-string residual_work does not crash the generator (always-on CI job)"
+# ⚠ Assert the CONTENT survives, not merely that nothing raised. Proven necessary by a mutant:
+# a `_rww_text` returning '' for every sequence passes an rc-and-no-traceback check green while
+# SILENTLY DROPPING the obligation -- reproducing the very ruled-work-made-invisible defect this
+# renderer exists to prevent. "It did not crash" is not "it worked".
+if [ "$RC" -eq 0 ] && ! grep -qi 'traceback\|AttributeError' <<<"$OUT" \
+   && grep -q 'step one step two' <<<"$OUT"; then
+  pass "non-string residual_work renders its CONTENT and does not crash (always-on CI job)"
 else
-  fail "RWW-d: non-string residual_work crashed or errored; rc=$RC out=$OUT"
+  fail "RWW-d: list residual_work must render 'step one step two' without raising; rc=$RC out=$OUT"
 fi
 
 if [ "$FAILED" -gt 0 ]; then
