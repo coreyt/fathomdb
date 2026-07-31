@@ -12,6 +12,20 @@
 # 1. <= 4096 bytes on stdout. Self-checked: over budget is a HARD failure, not a
 #    silent overrun, because the cap is a promise to the reader's context budget.
 #    Override for experiments only via $STEWARD_ORIENT_BUDGET.
+#    WHERE THE BYTES GO (measured 2026-07-31, 3611 of 4096 — 485 spare, ~12%):
+#    the board's verbatim next-action cell 1632 (45%), the 5 ledger previews 566,
+#    the todos fold 358, landed slices+SHAs 189, everything else ~470. The cap was
+#    breached on 2026-07-31 at 4380 bytes and was brought back under by COMPRESSING,
+#    not by dropping facts or raising the cap: todo ids are run-length folded
+#    (`TC-2..6,9`), `git worktree list`'s column padding is squeezed, the derivable
+#    `state=release-state-<ver>.json` field is gone, and the ledger preview cuts at
+#    96 chars instead of 118. THE STANDING EXPOSURE is that one cell — it is
+#    verbatim by contract and its length is set by whoever writes the board, so a
+#    ~500-byte-longer next action re-breaches the cap. That is board hygiene (keep
+#    §1's next action short), not a number to raise: the suite asserts the cap
+#    independently in arms 0/1/10, so a bigger cap here would only move the failure
+#    into the test. Truncating the cell is likewise not available — arm 1 forces an
+#    over-cap payload THROUGH that cell.
 # 2. WRITES NOTHING. No repo file, no ledger, no cursor, no commit. The only
 #    filesystem touch is one mktemp -d sandbox, removed by an EXIT trap, used as
 #    an ephemeral ledgerwatch --state-dir so the Steward's REAL cursor is never
@@ -68,7 +82,8 @@
 #         `(none)` alongside the resolved path, so a mis-resolved directory is
 #         still visible to the reader.
 #       * dirty-file count: zero is the healthy state on a clean tree.
-#       * the todos fold's `unfoldable (no id)` bucket: zero is fine (and the
+#       * the todos fold's `unfoldable (no id)` bucket, printed `no-id`: zero is
+#         fine (and the
 #         count is always printed, so it can never be confused with "no data").
 # (4) THE BOARD-CLOSED PREDICATE IS SHARED with scripts/check-board-currency.sh
 #     via scripts/lib/board-closed.sh (window = `head -n 15`, NOT 5 — YAML
@@ -163,7 +178,16 @@ if [ "${#WT_LINES[@]}" -eq 0 ]; then
   note_empty "worktrees (git worktree list returned nothing)"
 fi
 add "WORKTREES (${#WT_LINES[@]})"
-for w in "${WT_LINES[@]}"; do add "  $(tilde "$w")"; done
+# `git worktree list` column-pads every path out to the longest one; on this repo
+# that is ~46 bytes of run-on spaces across three lines, spent on an alignment the
+# tilde rewrite below breaks anyway. Squeezing runs of spaces to one loses no
+# field — path, sha and branch are still all three there, space-separated. (A
+# checkout path containing a DOUBLE space would be squeezed too; that path is
+# already unparseable in this non-porcelain listing, so nothing is made worse.)
+for w in "${WT_LINES[@]}"; do
+  while [ "$w" != "${w//  / }" ]; do w="${w//  / }"; done
+  add "  $(tilde "$w")"
+done
 
 # Correction 2: the checkout pool is a SIBLING of the MAIN worktree root.
 # --git-common-dir points at the main .git even from inside a linked worktree,
@@ -236,7 +260,10 @@ schema = d.get("schema_version", "?")
 nxt = d.get("next_slice")
 rem = d.get("remaining_ladder") or []
 
-print(f"RELEASE {ver}  SCHEMA {schema}  board={board.split('/')[-1]}  state={path.split('/')[-1]}")
+# The state file's name is `release-state-<ver>.json` by construction, so printing
+# it spends 32 bytes restating `ver`. The board's name is NOT derivable (it is the
+# thing the release was derived FROM), so it stays.
+print(f"RELEASE {ver}  SCHEMA {schema}  board={board.split('/')[-1]}")
 
 if landed:
     cells = " ".join(f"{e.get('slice')}({e.get('sha') or '?'})" for e in landed)
@@ -317,7 +344,12 @@ for line in last:
     except Exception:
         print("  ?? unparseable entry")
         continue
-    summary = " ".join(str(e.get("summary", "")).split())[:118]
+    # 96, not 118. This preview was ALWAYS a truncation (the entry itself is one
+    # line of dev/steward/steward-ledger.jsonl, which is where the reader goes for
+    # the full text); the only question is where it cuts. Steward summaries are
+    # written headline-first, so 96 still carries the headline sentence, and the
+    # five of them together cost ~110 bytes less of a 4096-byte budget.
+    summary = " ".join(str(e.get("summary", "")).split())[:96]
     print(f"  {e.get('seq', '?')} {e.get('kind', '?')}: {summary}")
 PY
   )"
@@ -349,24 +381,67 @@ except Exception:
 rows = env.get("latest") or []
 print(
     f"TODOS  {env.get('folded_ids', 0)} ids folded from {env.get('entries', 0)} entries · "
-    f"unfoldable (no id): {env.get('unfoldable_no_id', 0)} · malformed: {env.get('malformed', 0)}"
+    f"no-id {env.get('unfoldable_no_id', 0)} · malformed {env.get('malformed', 0)}"
 )
 if not rows:
     print("#EMPTY:todos ledger (folded to zero ids)")
     raise SystemExit(0)
 
 
-def natural(i):
+def split_id(i):
     m = re.search(r"(\d+)$", i)
-    return (re.sub(r"\d+$", "", i), int(m.group(1)) if m else 0)
+    return (i, None) if not m else (i[: m.start()], int(m.group(1)))
+
+
+def natural(i):
+    prefix, num = split_id(i)
+    return (prefix, -1 if num is None else num)
+
+
+# LOSSLESS COMPRESSION, not a truncation. Spelled out in full, one bucket of 91
+# ids costs 577 bytes, 273 of them the string "TC-" repeated. So: emit the shared
+# stem once per run and collapse consecutive numbers into `a..b`. Every id is
+# still exactly reconstructable and the counts are unchanged; the section costs
+# about a quarter of what it did. An id with no trailing number, or with a
+# non-numeric tail (TC-99-VEC0), is passed through verbatim rather than guessed
+# at — it simply forms its own single-member run.
+def compress(ids):
+    groups = []
+    for i in sorted(ids, key=natural):
+        prefix, num = split_id(i)
+        if num is None:
+            groups.append([None, [i]])
+        elif groups and groups[-1][0] == prefix:
+            groups[-1][1].append(num)
+        else:
+            groups.append([prefix, [num]])
+
+    out = []
+    for prefix, items in groups:
+        if prefix is None:
+            out.append(items[0])
+            continue
+        runs, start, end = [], items[0], items[0]
+        for num in items[1:]:
+            if num == end + 1:
+                end = num
+            else:
+                runs.append((start, end))
+                start = end = num
+        runs.append((start, end))
+        # A two-member run is written `a,b`: `a..b` would be a byte longer.
+        out.append(prefix + ",".join(
+            str(a) if a == b else (f"{a},{b}" if b == a + 1 else f"{a}..{b}")
+            for a, b in runs
+        ))
+    return " ".join(out)
 
 
 buckets = {}
 for r in rows:
     buckets.setdefault(str(r.get("status", "?")), []).append(str(r.get("id")))
 for status in sorted(buckets, key=lambda s: (-len(buckets[s]), s)):
-    ids = " ".join(sorted(buckets[status], key=natural))
-    print(f"  {status}({len(buckets[status])}) {ids}")
+    print(f"  {status}({len(buckets[status])}) {compress(buckets[status])}")
 PY
   )"
   TODOS_OUT="$(python3 -c "$TODOS_PY" <<<"$TODOS_RAW")"
