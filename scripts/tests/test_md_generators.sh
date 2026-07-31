@@ -40,8 +40,11 @@ fi
 
 WORK="$(mktemp -d)"
 LABEL="__md_guard_$$"
+GLOB_FIXTURE_A="dev/target"
+GLOB_FIXTURE_B="scripts/target"
 cleanup() {
   rm -rf "$WORK"
+  rmdir "$GLOB_FIXTURE_A" "$GLOB_FIXTURE_B" 2>/dev/null
   rm -f "scripts/repo-prune/measurements/context-clarity/${LABEL}.md" \
         "scripts/repo-prune/measurements/context-clarity/${LABEL}.json" \
         "scripts/repo-prune/measurements/memory-clarity/${LABEL}.md" \
@@ -73,7 +76,15 @@ lint_md() {
 }
 
 # --- context-clarity.sh : read-only over the live repo --------------------
-bash scripts/repo-prune/bin/context-clarity.sh "$LABEL" >/dev/null 2>&1 || true
+# Two target directories make the unquoted `*/target` predicate expand to
+# multiple pathnames before find receives it. The generator must still run.
+mkdir -p "$GLOB_FIXTURE_A" "$GLOB_FIXTURE_B"
+if bash scripts/repo-prune/bin/context-clarity.sh "$LABEL" >/dev/null 2>&1; then
+  printf 'PASS  test-context-clarity-glob-safe\n'
+else
+  printf 'FAIL  test-context-clarity-glob-safe (generator exited nonzero)\n' >&2
+  FAILED=$((FAILED + 1))
+fi
 lint_md test-context-clarity-md "scripts/repo-prune/measurements/context-clarity/${LABEL}.md"
 
 # --- memory-clarity.sh : run against a tiny synthetic memory dir ----------
