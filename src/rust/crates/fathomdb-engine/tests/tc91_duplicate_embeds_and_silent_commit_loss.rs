@@ -99,19 +99,18 @@
 //! is not an oversight:
 //!
 //! > **There is no direct instrumentation of worker commit failures in the
-//! > baseline duplicate arms — because the defect under study is precisely that
-//! > those failures are discarded by `let _ =`.** TC-91 **(b) is the reason
+//! > baseline duplicate arms — because the Slice 23 defect under study discarded
+//! > those failures.** TC-91 **(b) is the reason
 //! > TC-91 (a) cannot be closed by measurement.** The forced-lock experiment
 //! > reproduces the mechanism, but it supplies the lock holder externally; it
 //! > cannot show that every baseline duplicate came from the engine's own writer.
 //!
-//! The supporting code reading is real — `commit_batch` holds `BEGIN IMMEDIATE`
-//! (`lib.rs:18637`, the TC-57 fix) while `commit_projection_outcomes`
-//! (`lib.rs:13809`) is a DEFERRED read-then-upgrade — but it is a reading, and
-//! §0 of the TC-57 characterization is the standing warning about confident
-//! readings on this exact code path. Landing **R-C** (stop discarding the commit
-//! result) is what would convert the hypothesis into a measurement; that is the
-//! main reason R-C is recommended FIRST in the design doc §7.
+//! The supporting code reading is historical: at the Slice 23 baseline,
+//! `commit_batch` held `BEGIN IMMEDIATE` while `commit_projection_outcomes` used
+//! a deferred read-then-upgrade transaction. Slice 40 now starts both governed
+//! writes with `BEGIN IMMEDIATE` and propagates a commit error to the worker loop.
+//! The characterization is still evidence about the baseline mechanism, not an
+//! identity proof for every baseline duplicate.
 //!
 //! In EVERY one of the 50 runs above, `failed_terminals == 0` and
 //! `failure_audit_rows == 0`.
@@ -484,10 +483,9 @@ const SPACED_PACE_MS: u64 = 25;
 /// Two arms of the same governed load differing ONLY in write spacing:
 ///
 /// * **tight** (`pace_ms: 1`) — a write lands roughly every millisecond, which is
-///   also the embed latency, so `commit_projection_outcomes`' DEFERRED promotion
-///   (`lib.rs:13809`, reads at `:13813` / `:13828` before its writes at `:13863`)
-///   frequently lands while `commit_batch`'s `BEGIN IMMEDIATE` (`lib.rs:18637`)
-///   holds the lock.
+///   also the embed latency. At the Slice 23 baseline this made the worker's
+///   deferred commit promotion overlap `commit_batch`'s `BEGIN IMMEDIATE` lock;
+///   Slice 40 no longer uses that promotion path.
 /// * **spaced** (`pace_ms: 25`) — the same rows, the same embedder, the same
 ///   worker; only the overlap is removed.
 ///
@@ -496,8 +494,8 @@ const SPACED_PACE_MS: u64 = 25;
 /// property of the write cadence, not a fixed constant of the scheduler. It does
 /// **not**, on its own, establish that TC-91 (a) *is* TC-91 (b): spacing the
 /// writes changes overlap, but nothing in this arm observes a worker commit
-/// failing, because `let _ =` (`lib.rs:12711`) discards exactly that signal. Read
-/// together with the forced-contention baseline arm
+/// failing in the historical baseline. Read together with the forced-contention
+/// baseline arm,
 /// it strongly implicates the engine's own writer; see the module header's
 /// "What those numbers DO and DO NOT prove" for the precise boundary.
 ///
@@ -528,8 +526,8 @@ fn tc91_mechanism_duplicate_rate_versus_write_cadence() {
          from {} to {} over {MECHANISM_ROWS} identical rows. The variable this arm manipulates \
          is write SPACING; the HYPOTHESISED mechanism it implicates — not one it observes — is \
          how often the engine's own `BEGIN IMMEDIATE` writer holds the WAL write lock across \
-         the worker's DEFERRED commit promotion. This arm cannot see a worker commit fail, \
-         because `let _ =` (`lib.rs:12711`) discards exactly that signal, so it establishes \
+         the worker's historical deferred commit promotion. This arm cannot see a worker \
+         commit fail in the Slice 23 baseline, so it establishes \
          neither the identity nor the uniqueness of the source. If this ever becomes non-zero, \
          the cadence sensitivity itself has changed and the design doc's mechanism section must \
          be re-opened.",
@@ -693,10 +691,11 @@ const HOLD: Duration = Duration::from_millis(1_500);
 ///
 /// The blocker is an ordinary second connection on the same file running `BEGIN
 /// IMMEDIATE`. That is exactly the contention TC-90's mechanism pins characterize,
-/// applied in the opposite direction: `commit_projection_outcomes` (`lib.rs:13809`)
-/// opens rusqlite's DEFERRED default and reads (`lib.rs:13813`, `lib.rs:13828`)
-/// before it writes, so its promotion is refused with plain `SQLITE_BUSY` and the
-/// busy handler is never consulted. `let _ =` then discards the whole thing.
+/// applied in the opposite direction. At the Slice 23 baseline,
+/// `commit_projection_outcomes` opened rusqlite's deferred default and read before
+/// writing, so its promotion was refused with plain `SQLITE_BUSY` and the busy
+/// handler was never consulted. Slice 40 acquires `BEGIN IMMEDIATE` before those
+/// reads and reports an error to the worker loop instead of discarding it.
 ///
 /// `blocker = false` is the CONTROL: identical load, no external lock.
 fn run_commit_loss_arm(label: &'static str, blocker: bool) -> CommitLossOutcome {
