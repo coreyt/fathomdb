@@ -1,6 +1,34 @@
-# Steward cold-start budget — PROPOSAL
+# Steward cold-start budget — RATIFIED
 
-**Status: PROPOSAL. Not ratified, schedules nothing, changes no direction.** Ratifying it is the HITL's.
+> **Status: RATIFIED by the HITL 2026-07-31** (steward ledger `seq-226`). All six steps approved.
+> ⛔ **Nothing has been executed yet** — approval is recorded, execution is held pending a go.
+>
+> **Ratified order.** Deviating from it needs a new ruling, because two of the constraints are hard:
+>
+> | # | Step | State |
+> |---|---|---|
+> | 1 | Push `5d135bee` · `b842d417` · `88be45a3` | approved · not done |
+> | 2 | `DOC-INDEX.md` row for this file + board/plan pointer to the Slice 40 provenance doc | approved · not done |
+> | 3 | **Phase 1** — §3 liveness-aware; ceiling **180,000**, not 60,000 | approved · not done |
+> | 4 | Commission **Slice 40** — its item B6 is TC-139, so the release clears this metric's blocker | approved |
+> | 5 | **Phase 2** — **during** Slice 40's Windows-clock window, not before it | approved |
+> | 6 | **Phase 3** + tighten ceiling to 60,000 — **only after 0.8.20 publishes** | approved |
+>
+> **Why 5 is placed, not merely deferred.** Phase 2 is not technically blocked by Slice 40 — it touches
+> `steward-orient.sh`, not `context-clarity.sh`, and no board. But landing it on `main` mid-flight forces
+> the slice branch to rebase, which restarts the **N=5 consecutive-green `rust-windows` accrual** (a
+> 60–75 min serial floor), and trap 13 requires re-running every gate after a rebase. §4.9 of the Slice 40
+> brief says that clock accrues while checkpoints A–E proceed and not to idle on it. Phase 2 fits that
+> window and cannot touch the slice branch.
+>
+> **Why 6 is a hard dependency.** Phase 3 splits `STATUS-0.8.20.md` — the live board of the release in
+> flight. Five `generated_views` anchor into it, `check-board-currency.sh` requires Slice 40's merge SHA
+> **literally inside** it, and `preflight.sh --landing` §7 enforces the same. Restructuring it during its
+> own release risks a red `main` at the worst moment.
+>
+> ⚠ **Consequence accepted at ratification: Phases 1+2 reach ~125,000, not 60,000.** The live board
+> (48,713) and `plan-0.8.20.md` (22,389) dominate the remainder and neither is touchable mid-release.
+> **60,000 is a post-publish number**, and §3's stated target should be read that way.
 
 **Problem.** `/steward` → `dev/plans/prompts/0.8.x-STEWARD-HANDOFF.md` §3. Read as written, that list is
 **~366,800 tokens across 45 files**. Read charitably (item 3's parenthetical says "*the* board",
@@ -9,6 +37,11 @@ alone is 48,824 tokens for a release closed months ago, larger than the live boa
 
 **Target.** Cold start ≤ **60,000 tokens** with no loss of decision-relevant fact, pinned by a test so it
 cannot drift back. Stretch: 40,000.
+
+⚠ **60,000 is the POST-PUBLISH end state, not the first ceiling.** The ratified ceiling at Phase 1 is
+**180,000** — post-Phase-1 measures ~174,600, and a gate that is red the day it lands gets switched off.
+That is exactly how repo-prune's own metrics ended up unratcheted (§1a Finding 3). The ceiling tightens
+as each phase lands; it does not start at the destination.
 
 ---
 
@@ -215,7 +248,8 @@ for exactly this reason.
 | after Phase 1 | **~167,000** |
 | after Phase 2 | ~125,000 |
 | after Phase 3 | **~55,000** |
-| ceiling to pin | 60,000 |
+| ceiling at Phase 1 (ratified) | **180,000** |
+| ceiling after Phase 3 | 60,000 |
 
 Reaching the 40,000 stretch needs `plan-0.8.20.md` (22,389, 31 superseded/stale markers) split the same
 way. Proposed as optional Phase 3b, not load-bearing.
