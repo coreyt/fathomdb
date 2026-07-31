@@ -575,13 +575,15 @@ jobs:
   # exactly the pushes the docs_only fast path excludes — a rename or a moved
   # design doc landing alongside code. `--verify-all` re-verifies the NEXT slice
   # of every live release-state file, so this job needs no release number of its
-  # own and cannot go stale when the ladder advances. Reads the working tree
-  # only; default depth-1 checkout is sufficient.
+  # own and cannot go stale when the ladder advances. The recurrence-guard
+  # fixture reads generator history, so this job checks out the full history.
   commission-manifest:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
       - name: Every live release's next-slice manifest still resolves (T3b)
         run: bash scripts/commission-manifest.sh --verify-all
       - name: Recurrence guard for the generator itself (fixture arms)
