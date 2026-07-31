@@ -82,6 +82,7 @@ metric orient "orient_list";  ORIENT_C=$_CNT;  ORIENT_B=$_BYTES;  ORIENT_T=$_TOK
 
 # --- 6. per-session memory surface --------------------------------------
 MEM_DIR="${CLAUDE_MEMORY_DIR:-$HOME/.claude/projects/-home-coreyt-projects-fathomdb/memory}"
+# (defined here because §5b's resolver needs it; §6 below consumes it too.)
 if [ -f "$MEM_DIR/MEMORY.md" ]; then
   MEM_IDX_B=$(wc -c <"$MEM_DIR/MEMORY.md"); MEM_IDX_T=$(est_tokens "$MEM_IDX_B")
   MEM_IDX_ENTRIES=$(grep -c '^- \[' "$MEM_DIR/MEMORY.md" || true)
@@ -89,6 +90,129 @@ if [ -f "$MEM_DIR/MEMORY.md" ]; then
   MEM_ALL_B=$(find "$MEM_DIR" -maxdepth 1 -name '*.md' -print | bytes_of)
 else
   MEM_IDX_B=0; MEM_IDX_T=0; MEM_IDX_ENTRIES=0; MEM_FILES=0; MEM_ALL_B=0
+fi
+
+# --- 5b. STEWARD cold-start set (a SECOND, disjoint orient axis) ---------
+# §5's orient_list() is the "understand the codebase" set: DOC-INDEX + READMEs +
+# root/interface contracts. A /steward cold start reads something else entirely —
+# the boards, ladders, master and hand-offs named by §3 of the steward hand-off.
+# Measured 2026-07-31: the two sets share ZERO files, and the 2026-06-26 prune
+# cut dev/ md tokens 46% while cold_start_orient_set rose 1.8%. Tree size and
+# reading-list cost are different variables; this metric is the second one.
+#
+# DERIVED FROM §3, NOT HARDCODED. orient_list() above is a hardcoded list, which
+# is fine for a campaign instrument but would be a vacuous gate: it would keep
+# passing while §3 grew. This resolver reads the hand-off itself, so adding a
+# file to §3 shows up here.
+#
+# Partial is allowed; SILENTLY partial is not (the steward-orient.sh contract).
+# Any §3 item that resolves to nothing, and is not declared file-less, is a hard
+# failure naming the item.
+STEWARD_HANDOFF=dev/plans/prompts/0.8.x-STEWARD-HANDOFF.md
+STEWARD_CEILING="${STEWARD_COLDSTART_CEILING:-60000}"
+# §3 items that legitimately name no file. Item 2 is `git log`/`git status`/
+# `git worktree list` — commands, not documents.
+STEWARD_NOFILE_ITEMS=" 2 "
+
+# Body of a numbered §3 item: from "<n>. " to the next numbered item or "## ".
+steward_item_body() { # $1 = item number
+  awk -v want="$1" '
+    /^## *3\./      { in3=1; next }
+    in3 && /^## /   { exit }
+    !in3            { next }
+    /^[0-9]+\. /    { cur = $1+0 }
+    { if (cur == want) print }
+  ' "$STEWARD_HANDOFF"
+}
+
+# Resolve one backticked token from §3 into existing file paths.
+#
+# NOTE for whoever fixes TC-139 (Slice 40 item B6): this resolver REQUIRES
+# pathname expansion for `plan-0.8.*.md` and `STATUS-0.8.*.md`. If the TC-139 fix
+# is `set -f` at file scope rather than wrapped tightly around the `find`, this
+# function breaks. It therefore enables globbing locally and restores the caller's
+# state, so it is correct under either fix shape.
+steward_resolve() { # $1 = raw token
+  local t="$1" p
+  local _noglob=0; case $- in *f*) _noglob=1;; esac
+  set +f
+  case "$t" in
+    # `…/memory/MEMORY.md` — an elided absolute path.
+    *…*|*...*)      t="$MEM_DIR/MEMORY.md" ;;
+  esac
+  case "$t" in
+    # `plan-0.8.z.md` is a PATTERN written in prose, not a literal filename.
+    plan-0.8.z.md)  t="dev/plans/plan-0.8.*.md" ;;
+  esac
+  case "$t" in
+    # A bare filename in §3 means the prompts dir (item 5's orchestrator hand-off).
+    */*)            : ;;
+    *)              t="dev/plans/prompts/$t" ;;
+  esac
+  for p in $t; do [ -f "$p" ] && printf '%s\n' "$p"; done   # deliberate glob
+  [ "$_noglob" -eq 1 ] && set -f
+  return 0
+}
+
+# Files named by item N of §3, one path per line.
+steward_item_files() { # $1 = item number
+  local tok
+  steward_item_body "$1" \
+    | grep -oE '`[^`]+`' | tr -d '`' \
+    | grep -E '\.md$' \
+    | sort -u \
+    | while IFS= read -r tok; do steward_resolve "$tok"; done
+  # Item 7 ("your own last Steward report") names no path — resolve by rule.
+  if [ "$1" = 7 ]; then
+    ls dev/plans/runs/STEWARD-SESSION-HANDOFF-*.md 2>/dev/null | sort | tail -1
+  fi
+}
+
+# The entry point itself: /steward loads these before §3 is even reached.
+steward_entry_files() {
+  { echo "$STEWARD_HANDOFF"
+    echo .claude/commands/steward.md
+    echo .claude/agents/steward.md
+  } | while IFS= read -r f; do [ -f "$f" ] && echo "$f"; done
+}
+
+STEWARD_ROWS=""; STEWARD_ALL=""; STEWARD_UNRESOLVED=""; _SC_LAST=0
+# Sets globals directly and reports the count in _SC_LAST. It must NOT be called
+# via $(...): a command substitution runs in a subshell, so the STEWARD_ROWS /
+# STEWARD_ALL accumulation would be silently discarded — which is exactly how the
+# first draft of this metric reported 0 files while its own guard stayed quiet.
+_sc_add() { # $1 = item label, $2 = newline-separated paths
+  local list="$2" c b t
+  c=$(printf '%s\n' "$list" | grep -c . || true)
+  b=$(printf '%s\n' "$list" | bytes_of)
+  t=$(est_tokens "$b")
+  STEWARD_ROWS="${STEWARD_ROWS}    {\"item\": \"$1\", \"files\": $c, \"bytes\": $b, \"tokens_est\": $t},\n"
+  if [ "$c" -gt 0 ]; then STEWARD_ALL="${STEWARD_ALL}${list}"$'\n'; fi
+  _SC_LAST="$c"
+}
+
+_sc_add entry "$(steward_entry_files)"
+[ "$_SC_LAST" -gt 0 ] || STEWARD_UNRESOLVED="${STEWARD_UNRESOLVED}entry "
+for _i in 1 2 3 4 5 6 7; do
+  _sc_add "3.$_i" "$(steward_item_files "$_i")"
+  if [ "$_SC_LAST" -eq 0 ] && [[ "$STEWARD_NOFILE_ITEMS" != *" $_i "* ]]; then
+    STEWARD_UNRESOLVED="${STEWARD_UNRESOLVED}3.$_i "
+  fi
+done
+STEWARD_ROWS="${STEWARD_ROWS%,\\n}"
+
+# De-duplicate: a file named by two items is read once, so count it once.
+STEWARD_UNIQ=$(printf '%s\n' "$STEWARD_ALL" | grep -v '^$' | sort -u || true)
+STEW_C=$(printf '%s\n' "$STEWARD_UNIQ" | grep -c . || true)
+STEW_B=$(printf '%s\n' "$STEWARD_UNIQ" | bytes_of)
+STEW_T=$(est_tokens "$STEW_B")
+STEW_OVER=$( [ "$STEW_T" -gt "$STEWARD_CEILING" ] && echo true || echo false )
+
+if [ -n "$STEWARD_UNRESOLVED" ]; then
+  echo "context-clarity: FAIL — steward §3 item(s) resolved to no files: $STEWARD_UNRESOLVED" >&2
+  echo "  (§3 of $STEWARD_HANDOFF changed shape, or a named file moved.)" >&2
+  echo "  A silently-partial cold-start measurement is worse than none — refusing to write." >&2
+  exit 3
 fi
 
 # --- 7. search signal-to-noise ------------------------------------------
@@ -122,6 +246,12 @@ cat >"$JSON" <<EOF
                  "md": $RUNS_MD, "json": $RUNS_JSON, "log": $RUNS_LOG, "txt": $RUNS_TXT },
   "doc_index": { "bytes": $DI_B, "tokens_est": $DI_T, "table_rows": $DI_ROWS },
   "cold_start_orient_set": { "files": $ORIENT_C, "bytes": $ORIENT_B, "tokens_est": $ORIENT_T },
+  "steward_cold_start_set": { "files": $STEW_C, "bytes": $STEW_B, "tokens_est": $STEW_T,
+                              "ceiling_tokens": $STEWARD_CEILING, "over_ceiling": $STEW_OVER,
+                              "source": "$STEWARD_HANDOFF §3 (derived, not hardcoded)",
+    "items": [
+$(printf "$STEWARD_ROWS")
+    ] },
   "memory_surface": { "index_bytes": $MEM_IDX_B, "index_tokens_est": $MEM_IDX_T,
                       "index_entries": $MEM_IDX_ENTRIES, "memory_files": $MEM_FILES, "memory_all_bytes": $MEM_ALL_B },
   "search_signal_to_noise": [
@@ -145,8 +275,15 @@ EOF
   echo "| runs/ zone files | $RUNS_ALL ($RUNS_B bytes); md=$RUNS_MD json=$RUNS_JSON log=$RUNS_LOG txt=$RUNS_TXT |"
   echo "| DOC-INDEX.md | $DI_B bytes, ~$DI_T tok, $DI_ROWS table rows |"
   echo "| cold-start orient set | $ORIENT_C files, $ORIENT_B bytes, ~$ORIENT_T tok |"
+  echo "| **steward cold-start set** | **$STEW_C files, $STEW_B bytes, ~$STEW_T tok** (ceiling $STEWARD_CEILING, over=$STEW_OVER) |"
   echo "| memory MEMORY.md index | $MEM_IDX_B bytes, ~$MEM_IDX_T tok, $MEM_IDX_ENTRIES entries |"
   echo "| memory/ dir (all .md) | $MEM_FILES files, $MEM_ALL_B bytes |"
+  echo
+  echo "## Steward cold-start set by §3 item (derived from the hand-off, not hardcoded)"
+  echo
+  echo "| §3 item | Files | ~Tokens |"
+  echo "|---|---|---|"
+  printf "$STEWARD_ROWS\n" | sed -n 's/.*"item": "\([^"]*\)", "files": \([0-9]*\), "bytes": [0-9]*, "tokens_est": \([0-9]*\).*/| \1 | \2 | \3 |/p'
   echo
   echo "## Search signal-to-noise (live-path .md files matching; ledger = runs/+prompts/)"
   echo  # MD022/MD058: blank line between the heading and the table below
