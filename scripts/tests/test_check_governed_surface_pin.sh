@@ -5,7 +5,7 @@
 #
 # WHAT IS BEING PROTECTED: the HITL PRE-SIGNED the accumulated governed-surface
 # delta of 0.8.20 Slices 5d+10b+15b+15d (AC-079) — pinned to the exact content of
-# src/conformance/governed-surface-allowlist.json as of commit 427d2712 (30
+# src/conformance/governed-surface-allowlist.json as of commit c239908b (30
 # allowlist members, 5 core, recovery_denylist unchanged at the five REQ-054
 # names). A pre-sign keyed to specific content is worth exactly as much as the
 # mechanism that notices when that content moves.
@@ -40,6 +40,10 @@ PREFLIGHT="$REPO_ROOT/scripts/preflight.sh"
 CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
 REAL_FILE="$REPO_ROOT/src/conformance/governed-surface-allowlist.json"
 REAL_PIN="$REPO_ROOT/scripts/governed-surface-pin.json"
+CURRENT_PIN_COMMIT="c239908b"
+# Keep the two fragments separate so this control does not make its own source
+# match the stale full commit identifier it is meant to prohibit.
+STALE_PIN_COMMIT="427d""2712"
 # shellcheck source=lib/c1-conformance-fixture.sh
 . "$SCRIPT_DIR/lib/c1-conformance-fixture.sh"
 
@@ -151,20 +155,35 @@ else
   fail "the real allowlist json no longer matches the pin's sha256 ($REAL_SHA vs $PIN_SHA)"
 fi
 
-# The pin must really be 427d2712's content, which is the whole provenance claim.
+# The pin must really be c239908b's content, which is the whole provenance claim.
 # Skipped (loudly) on a shallow checkout where that commit is unreachable — the
 # hash arms above still carry the assertion, so this is not a vacuous pass.
 PIN_BLOB="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["git_blob_sha1"])' "$REAL_PIN")"
-if git -C "$REPO_ROOT" cat-file -e '427d2712^{commit}' 2>/dev/null; then
-  AT_PIN="$(git -C "$REPO_ROOT" rev-parse '427d2712:src/conformance/governed-surface-allowlist.json')"
+if git -C "$REPO_ROOT" cat-file -e "${CURRENT_PIN_COMMIT}^{commit}" 2>/dev/null; then
+  AT_PIN="$(git -C "$REPO_ROOT" rev-parse "${CURRENT_PIN_COMMIT}:src/conformance/governed-surface-allowlist.json")"
   if [ "$AT_PIN" = "$PIN_BLOB" ]; then
-    pass "the pin's git_blob_sha1 is exactly 427d2712's blob for the allowlist"
+    pass "the pin's git_blob_sha1 is exactly ${CURRENT_PIN_COMMIT}'s blob for the allowlist"
   else
-    fail "pin git_blob_sha1 $PIN_BLOB != 427d2712's blob $AT_PIN — the provenance claim is false"
+    fail "pin git_blob_sha1 $PIN_BLOB != ${CURRENT_PIN_COMMIT}'s blob $AT_PIN — the provenance claim is false"
   fi
 else
-  printf 'SKIP  427d2712 unreachable (shallow checkout) — provenance arm not run\n'
+  printf 'SKIP  %s unreachable (shallow checkout) — provenance arm not run\n' "$CURRENT_PIN_COMMIT"
 fi
+
+# B7 keeps the pin's documented provenance aligned with the actual re-issued
+# pin. A source-level check is deliberate: the pin checker can still return 0
+# while a stale comment or failure message directs a maintainer to the wrong
+# commit. This scan includes this test; STALE_PIN_COMMIT is split above so the
+# control cannot pass merely by excluding itself.
+set +e
+STALE_PIN_REFS="$(grep -R -n -F "$STALE_PIN_COMMIT" "$REPO_ROOT/scripts")"
+STALE_PIN_REFS_RC=$?
+set -e
+case "$STALE_PIN_REFS_RC" in
+  1) pass "no script retains the superseded governed-surface pin provenance" ;;
+  0) fail "scripts retain superseded governed-surface pin provenance: $STALE_PIN_REFS" ;;
+  *) fail "could not scan scripts for superseded governed-surface pin provenance (grep rc=$STALE_PIN_REFS_RC)" ;;
+esac
 
 # =================== Arm 7 (ordered early): unmodified COPY ===================
 # A byte-identical copy at a different path must pass, proving the gate compares
