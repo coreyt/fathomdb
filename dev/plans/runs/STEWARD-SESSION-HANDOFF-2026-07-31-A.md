@@ -90,7 +90,12 @@ Full plan and rationale: `dev/design/steward-cold-start-budget.md` (RATIFIED, le
   (i) every `ci.yml` job **that executed** concludes `success`, **measured on Slice 40's own landing
   commit**; **and** (ii) explicit HITL approval. **Gate (i) is not met** — five reds, all diagnosed in
   brief §10. Slice 40 closing green does **not** open the gate.
-- **Unruled HITL decisions:** `publish`, `npm-dist-tag`. Do not seek them.
+- **Unruled HITL decisions: `publish` alone.** ⛔ **Do not re-transcribe that list here or anywhere** — the
+  single authority is the `unruled` array of `dev/plans/release-state-0.8.20.json`; read it at the moment you
+  need it. This line said "`publish`, `npm-dist-tag`" while the state file held three rows, and the board and
+  the master were wrong in two further ways at the same time. `npm-dist-tag` and `axis-e-version` were both
+  **RULED at `seq-229`** (HITL 2026-07-31), along with eight other pre-approved policies that keep Slice 40
+  from stalling mid-flight — read `seq-229` before commissioning.
 
 ## 5. Open, unowned
 

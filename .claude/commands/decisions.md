@@ -191,10 +191,26 @@ only ever be corrected by a follow-up entry, never repaired.
 with `source` set to the new `seq-N`.
 
 **3. Regenerate and verify.** `scripts/check-release-state-views.sh` must exit 0.
-The board's §1 cell, its §4 live-open **count**, and the master's 0.8.20 row all
-render from the state file — **never hand-edit inside a `GENERATED` marker.**
-This is the whole point of the single writer: closing one decision updates every
-view, so no two documents can disagree about what is open.
+
+⚠ **Know exactly what is and is not generated.** The §4 live-open **count**, the
+master's ladder-progress row, the board's `Unblocks` cell, the plan's
+immediate-next pointer and the hand-off next-step **do** render from the state
+file — **never hand-edit inside a `GENERATED` marker.**
+
+⛔ **The board's §1 cell does NOT render from anything.** Neither does its §4
+enumeration, the session hand-off's §4, or master F-34's prose. **Closing a
+decision therefore does NOT update every view, and
+`check-release-state-views.sh` exiting 0 does NOT mean the documents agree** —
+the fence covers the *count*, not the *list*.
+
+This file asserted the opposite until 2026-07-31 ("no two documents can disagree
+about what is open"), and that false claim is why nobody re-checked when
+`axis-e-version` was registered at `c73c367a`: the generated numeral followed
+TWO → THREE automatically while **four** hand-written copies did not, and the
+check stayed rc=0 the whole time. **Read the open set out of
+`dev/plans/release-state-<version>.json` and correct every prose copy by hand**
+until the list itself is fenced — owed immediately after the 0.8.20 publish
+(master F-34).
 
 **For a session question with no repo home yet** — something raised in
 conversation that was never written down — mint a durable id *first*, then close

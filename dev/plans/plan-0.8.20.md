@@ -527,9 +527,14 @@ the single unruled HITL decision.
 
 **Slice 40 additionally carries the DISPATCH GUARD** (HITL 2026-07-30, steward `seq-198` ruling 1).
 `.github/workflows/release.yml` must be hardened so a `workflow_dispatch` with `dry_run=false` **cannot
-publish on one unchecked checkbox**: add a **required confirmation input whose value must literally match
+publish on one unchecked checkbox**: add a **confirmation input whose value must literally match
 the version being released**, and make `scripts/verify-release-gates.sh` **exit 1 — not warn** — when a
-dispatch has `dry_run=false` without it. Measured at HEAD: the only thing guarding that path is the
+dispatch has `dry_run=false` without it. ⚠ **"Required" here means ENFORCED, not `required: true`** —
+**Steward ruling 2026-07-31 (`seq-229`)**, answering the contradiction the Slice 40 brief §5 PHASE 0b
+flagged for a one-sentence ruling. Declare the input **optional in `release.yml`** and enforce it **in the
+script**: GitHub has no conditional-required input, and the PHASE 7 rehearsal dispatch passes only
+`dry_run`, so `required: true` would block the very rehearsal this slice owes. The enforcement, not the
+YAML flag, is what makes it unskippable. Measured at HEAD: the only thing guarding that path is the
 `dispatch with dry_run=false is an emergency-republish path` warning in `scripts/verify-release-gates.sh`
 (lines 58-61 at the time of the ruling), which **prints and continues**, **and the whole tag-format branch
 is skipped on dispatch** — so the real publish step, the no-dry-run arm

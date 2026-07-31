@@ -302,20 +302,6 @@
         "gated_at": "After Slice 40. TWO INDEPENDENT GATES, neither sufficient alone: (i) every ci.yml job THAT EXECUTED concludes success on the landed commit, AND (ii) explicit HITL approval. Ruled 2026-07-30 (seq-202); HITL noted it may be relaxed later but stands while the line has gone this long unpublished. No conflict with seq-152 — the ci.yml security job runs agent-security.sh, not a Dependabot scan. ⚠ AMENDED 2026-07-30 (HITL, seq-211): gate (i) originally read 'every ci.yml job concludes success', which is UNMEETABLE BY CONSTRUCTION — the markdownlint job is `if: needs.changes.outputs.docs_only == 'true'` (ci.yml:379), so it is SKIPPED on every non-docs push. Both measured full runs (30546942720, 30550762581) show 23 jobs with exactly 1 skipped, and the skip is markdownlint. The gate therefore keys on jobs that EXECUTED; a skipped job is a distinct third state and is neither a pass nor a failure. This narrows nothing in substance — no executing job may fail. ⚠ MEASURED ON: the ci.yml run of Slice 40's own LANDING commit (HITL 2026-07-30, steward seq-223). No single run executes every job — markdownlint is docs_only-gated and seven code jobs are !docs_only-gated — so a docs-only push yields a partial green that proves nothing about the engine. That is not hypothetical: it is how a ~3-week verify/security red stayed invisible, the most recent 'successful' run having SKIPPED both.",
         "halts_run": true,
         "source": "plan-0.8.20.md §11 item 3; gates tightened at steward seq-202"
-      },
-      {
-        "id": "npm-dist-tag",
-        "title": "npm dist-tag for the 0.8.20 publish (platform matrix is PARTIAL: linux-x64-gnu only)",
-        "gated_at": "Slice 40 / publish. release.yml:21-26 states the label is an HITL confirmation and that publishing PARTIAL coverage under `latest` would serve an incomplete matrix to every consumer. The matrix is gated to x86_64-unknown-linux-gnu (R-REL-4e); macOS/Windows targets are commented out as DEFERRED-TO-FOLLOW-ON (R-REL-4d). Surfaced by the Slice 40 brief review 2026-07-30; unplaced anywhere in 0.8.20 until now.",
-        "halts_run": false,
-        "source": "steward 2026-07-30 (Slice 40 brief adversarial review)"
-      },
-      {
-        "id": "axis-e-version",
-        "title": "Axis-E version for `fathomdb-embedder-api` (currently 0.6.1; the workspace bumps to 0.8.20 without it)",
-        "gated_at": "Slice 40 / PHASE 1, checkpoint B. `scripts/set-version.sh` carries the literal comment `# Skip Axis E (fathomdb-embedder-api).` and deliberately does not bump it, so the version is chosen by hand or not at all. `scripts/verify-embedder-api-no-drift.sh` runs in the `verify-release` job and FAILS CLOSED if the published surface moved without a bump, so an unmade decision surfaces as a red release gate rather than a question. The Slice 40 brief instructs the orchestrator to determine whether the surface moved and bring a finding plus a recommendation, explicitly NOT to pick (brief PHASE 1 and §12 'does not decide the Axis-E version').",
-        "halts_run": false,
-        "source": "steward 2026-07-31. Registered after codex review of the R1-R12 remediation: the decision existed only in the Slice 40 brief, so `commission-manifest.sh` — which renders `decisions.unruled` into every brief as HALT/GATED — emitted nothing for it, while F-34's superseding note names this array as THE authority for the live open set. The manifest an orchestrator receives therefore did not know the stop existed. halts_run is FALSE because PUBLISH remains the only run-halting decision on record (seq-202/seq-211/seq-223); checkpoint B in the brief is what pauses the slice."
       }
     ],
     "ruled": [
@@ -506,6 +492,18 @@
         "title": "Project license: MIT vs Apache-2.0 (repo LICENSE file disagreed with all 4 publishable manifests)",
         "ruling": "MIT. The repo-root LICENSE (MIT) is authoritative; the four manifests declaring Apache-2.0 are corrected to MIT before the tag. A LICENSE file must also SHIP in every artifact - none carries one today.",
         "source": "steward seq-193"
+      },
+      {
+        "id": "npm-dist-tag",
+        "title": "npm dist-tag for the 0.8.20 publish (platform matrix is PARTIAL: linux-x64-gnu only)",
+        "ruling": "Publish under a NON-`latest` dist-tag. The platform matrix is PARTIAL - gated to x86_64-unknown-linux-gnu (R-REL-4e), with macOS/Windows commented out as DEFERRED-TO-FOLLOW-ON (R-REL-4d) - and publishing partial coverage under `latest` would serve an incomplete matrix to every consumer. Pre-ruled ahead of the run so it is not a publish-time stop.",
+        "source": "steward seq-229 (HITL 2026-07-31)"
+      },
+      {
+        "id": "axis-e-version",
+        "title": "Axis-E version for `fathomdb-embedder-api` (currently 0.6.1; the workspace bumps to 0.8.20 without it)",
+        "ruling": "CONDITIONAL, decided in advance so PHASE 1 / checkpoint B NO LONGER STOPS THE SLICE. Run `scripts/verify-embedder-api-no-drift.sh`: if the published surface MOVED, bump `fathomdb-embedder-api` to 0.8.20 alongside the workspace; if it did NOT move, leave it at 0.6.1. The slice REPORTS the finding and PROCEEDS - it does not escalate and does not choose. `scripts/set-version.sh` still deliberately skips Axis E, so if the condition fires the bump is applied by hand. What remains at PHASE 1 is WORK (run the check, apply the policy), not a decision.",
+        "source": "steward seq-229 (HITL 2026-07-31); registered as unruled at c73c367a the night before and ruled the next morning"
       }
     ],
     "ruled_tracking": [
