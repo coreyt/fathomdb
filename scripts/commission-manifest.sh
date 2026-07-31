@@ -1043,11 +1043,23 @@ def build(release, state_path, state, slice_no, entry, curated=None):
     # the first instance (`axis-e-version`) had been patched by hand into ONE prose
     # section of plan-0.8.20.md, which is the same one-writer/many-copies defect the
     # same morning's b9a3a296 was written to end. Fix the tooling, not the instance.
-    rww = [d for d in (dec.get("ruled") or []) if (d.get("residual_work") or "").strip()]
+    # `residual_work` is prose, but a future writer numbering a multi-step
+    # obligation will reach for a list — and this generator runs in an ALWAYS-ON
+    # CI job, so a type error here reds CI for every release, not just this one.
+    # Normalise instead of assuming: str passes through, a sequence joins, any
+    # other type stringifies. Never raise. (Caught by the RWW-d fixture arm the
+    # same commit added — the renderer shipped assuming `.strip()` and crashed.)
+    def _rww_text(v):
+        if isinstance(v, str):
+            return v.strip()
+        if isinstance(v, (list, tuple)):
+            return " ".join(str(x).strip() for x in v if str(x).strip())
+        return "" if v is None else str(v).strip()
+    rww = [d for d in (dec.get("ruled") or []) if _rww_text(d.get("residual_work"))]
     for d in rww:
         m.out("  ⚠ RULED-WITH-WORK — %s" % (d.get("title") or d.get("id")))
         m.out("      the DECISION is closed; the WORK is not. Do NOT infer 'ruled' ⇒ 'nothing owed'.")
-        m.out("      owed: %s" % d.get("residual_work"))
+        m.out("      owed: %s" % _rww_text(d.get("residual_work")))
         m.out("      ruling: %s · source: %s" % (d.get("ruling") or "?", d.get("source") or "?"))
     m.out("  Ruled decisions are CITED, never re-decided or restated: %d ruling(s) recorded in the"
           % len(dec.get("ruled") or []))

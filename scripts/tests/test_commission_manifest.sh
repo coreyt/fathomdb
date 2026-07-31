@@ -2157,6 +2157,70 @@ else
   pass "the commission-manifest job is always-on (no if:, no needs:, not docs_only-gated)"
 fi
 
+# --- RULED-WITH-WORK arms ---------------------------------------------------
+# A decision can be CLOSED and still owe an ACTION. Ruling one moves it out of
+# `decisions.unruled`, so it stops rendering as a named HALT/GATED row and
+# collapses into the bare ruled COUNT -- i.e. ruling a decision that carries
+# residual work makes that work LESS visible. `residual_work` on a `ruled` entry
+# restores a named row. Added 2026-07-31 after review round 3 found the renderer
+# had shipped with ZERO coverage: this suite was green before and after the
+# behaviour change, so it vouched for nothing (the brief's own §7.14 -- a check
+# must be proven non-vacuous by a control that FAILS).
+
+# Arm RWW-a: the ABSENT case is the control. Without it, arm RWW-b could pass
+# for an unrelated reason (e.g. the id appearing in some other section).
+setup_fixture
+mutate_state "s.setdefault('decisions', {}).setdefault('ruled', []).append(
+    {'id': 'rww-probe', 'title': 'RWW PROBE TITLE', 'ruling': 'r', 'source': 'x'})"
+run_gen 9.9.9 10
+if [ "$RC" -eq 0 ] && ! grep -q 'RULED-WITH-WORK' <<<"$OUT" && ! grep -q 'RWW PROBE TITLE' <<<"$OUT"; then
+  pass "ruled decision WITHOUT residual_work is not named (the control: absent => silent)"
+else
+  fail "RWW-a: a ruled entry with no residual_work must not render; rc=$RC"
+fi
+
+# Arm RWW-b: the same entry, now carrying residual_work, IS named in full.
+setup_fixture
+mutate_state "s.setdefault('decisions', {}).setdefault('ruled', []).append(
+    {'id': 'rww-probe', 'title': 'RWW PROBE TITLE', 'ruling': 'r', 'source': 'x',
+     'residual_work': 'RWW PROBE OWED STEP'})"
+run_gen 9.9.9 10
+if [ "$RC" -eq 0 ] && grep -q 'RULED-WITH-WORK' <<<"$OUT" \
+   && grep -q 'RWW PROBE TITLE' <<<"$OUT" && grep -q 'RWW PROBE OWED STEP' <<<"$OUT"; then
+  pass "ruled decision WITH residual_work is named in full (title + owed work)"
+else
+  fail "RWW-b: residual_work must render title and owed work; rc=$RC out=$OUT"
+fi
+
+# Arm RWW-c: empty / whitespace-only must behave as ABSENT, not as an empty row.
+for probe in '' '   '; do
+  setup_fixture
+  mutate_state "s.setdefault('decisions', {}).setdefault('ruled', []).append(
+      {'id': 'rww-probe', 'title': 'RWW PROBE TITLE', 'ruling': 'r', 'source': 'x',
+       'residual_work': '$probe'})"
+  run_gen 9.9.9 10
+  if [ "$RC" -eq 0 ] && ! grep -q 'RULED-WITH-WORK' <<<"$OUT"; then
+    pass "residual_work=$(printf '%q' "$probe") is treated as ABSENT (no empty row)"
+  else
+    fail "RWW-c: blank residual_work must not render a row; probe=$(printf '%q' "$probe") rc=$RC"
+  fi
+done
+
+# Arm RWW-d: a WRONG-TYPE value must not crash the generator. `commission-manifest`
+# is an ALWAYS-ON CI job (asserted below), so an AttributeError here reds CI for
+# every release. A list is the natural shape a future writer would reach for when
+# the obligation is a numbered sequence -- which is exactly how it is written today.
+setup_fixture
+mutate_state "s.setdefault('decisions', {}).setdefault('ruled', []).append(
+    {'id': 'rww-probe', 'title': 'RWW PROBE TITLE', 'ruling': 'r', 'source': 'x',
+     'residual_work': ['step one', 'step two']})"
+run_gen 9.9.9 10
+if [ "$RC" -eq 0 ] && ! grep -qi 'traceback\|AttributeError' <<<"$OUT"; then
+  pass "non-string residual_work does not crash the generator (always-on CI job)"
+else
+  fail "RWW-d: non-string residual_work crashed or errored; rc=$RC out=$OUT"
+fi
+
 if [ "$FAILED" -gt 0 ]; then
   printf '\n%d test(s) failed\n' "$FAILED" >&2
   exit 1

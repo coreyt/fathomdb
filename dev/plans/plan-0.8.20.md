@@ -479,9 +479,12 @@ to the HITL.
 
 ### ⚠ RULED-WITH-WORK — a decision can be closed and still owe an action
 
-**`axis-e-version` is RULED (`seq-229`) and therefore no longer appears in `decisions.unruled`, so the
-generated commission manifest no longer names it at all.** The *decision* is closed; the **work is not**.
-Slice 40 still owes, at PHASE 1:
+**`axis-e-version` is RULED (`seq-229`), so it no longer appears in `decisions.unruled` and is no longer
+rendered as a HALT/GATED row.** ✅ **It IS still named in the manifest** — as a `⚠ RULED-WITH-WORK` row,
+via the mechanism described below. *(⚠ This paragraph previously said the manifest "no longer names it at
+all". That was true when written and was made false hours later by the fix below; caught by review round 3.
+It is the third time in one morning this class has bitten — which is the argument for the mechanism, not
+for another careful edit.)* The *decision* is closed; the **work is not**. Slice 40 still owes, at PHASE 1:
 
 1. run **`bash scripts/release/verify-embedder-api-no-drift.sh`** — ⚠ note the `release/` segment; the
    Slice 40 brief, this plan, the board and the state file all carried the wrong path until 2026-07-31;
