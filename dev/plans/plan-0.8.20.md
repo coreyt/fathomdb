@@ -455,17 +455,17 @@ to the HITL.
 
 ## 9. Immediate next slice
 
-> ✅ **THE POINTER BELOW IS A GENERATED VIEW (TC-89, closed in `DOC-HYGIENE-3`).** It is rendered from
-> `release-state-0.8.20.json` — `next_slice`, that slice's ladder `short`/`title`, and `remaining_ladder` —
-> by `scripts/check-release-state-views.sh`, which hard-fails on any drift or hand-edit.
-> **NEVER EDIT INSIDE THE MARKERS.** Change the fact in the state file, then run
-> `scripts/check-release-state-views.sh --write`.
+> ✅ **THIS HEADING — `## 9. Immediate next slice` — IS THE `{{MANDATE}}` ANCHOR, and it is the only one.**
+> It is resolved from the `["immediate next slice"]` role keyword in `scripts/commission-manifest.sh`,
+> whose CHECK 2 verifies that the *heading* exists, never that the prose beneath it is current.
 >
-> It went **stale at three consecutive commissions** while it was hand-written, and
-> `commission-manifest.sh` cites this section as a brief's **`{{MANDATE}}` anchor** — its CHECK 2 verifies
-> that the *heading* exists, not that the prose under it is current — so the staleness was *copied into the
-> next commission*. Everything **outside** the markers (deliverables, guardrails, the historical roll-up)
-> stays hand-written and is **not** under generation.
+> **TWO GENERATED VIEWS carry the whole state of this section** (TC-89, closed in `DOC-HYGIENE-3`; both went
+> stale at three consecutive commissions while hand-written): the **IMMEDIATE NEXT** pointer directly below,
+> and the **LANDED roll-up** in `### Historical`. Both render from `release-state-0.8.20.json` via
+> `scripts/check-release-state-views.sh`, which hard-fails on any drift or hand-edit.
+> **NEVER EDIT INSIDE THE MARKERS** — change the fact in the state file, then run
+> `scripts/check-release-state-views.sh --write`. Everything outside the markers is hand-written narration
+> and is **not** a pointer.
 
 ### ▶ Immediate next
 
@@ -474,11 +474,8 @@ to the HITL.
 
 **Remaining ladder:** 40.<!-- END GENERATED release-state:0.8.20:plan-immediate-next -->
 
-> ⚠ **STALE TWICE NOW.** This block described Slice 31, was rewritten for Slice 39, and went stale
-> again the moment Slice 39 landed — while `commission-manifest.sh` copies the whole section into every
-> generated brief. Slice 40's brief would have inherited **Slice 39's** mandate. Rewritten 2026-07-30
-> (`seq-205`). ⚠ **If you are reading this and Slice 40 has landed, it is stale a third time** — the
-> generated pointer above is authoritative, this prose is not.
+> ⚠ Hand-written, this block read **31**, then **39**, then went stale again the moment Slice 39 landed.
+> It is generated now; that class is closed.
 
 ---
 
@@ -587,18 +584,15 @@ forward backfill, the drop inverse **and** late enrolment, so a fix must re-veri
 loss** — the write is accepted, stays lexically searchable, and is embedded on the next embedder-backed open.
 Documented in `dev/interfaces/{rust,python,typescript}.md` + `CHANGELOG.md`.
 
-**Landed since the Slice-20 narration above:** **Slice 25** at `83b1c818`, **Slice 30** (R-20-H7
-`can-i-deploy` contract-conformance gate) at `9b3ed0e3` — **the publish precondition is SATISFIED** — the
-cross-cutting **⟨TC-86 transcript-hygiene fix⟩** at `0a500de9`, and **Slice 21** (R-20-CR — TC-57 write race ·
-ac_002 sandbox oracle · TC-71 role-gated dense arm) at **`77be504b`**, close record board §18. SCHEMA is **24**.
+<!-- BEGIN GENERATED release-state:0.8.20:plan-landed-roll-up -->
+**LANDED on `origin/main`, in full:** Slices 0 (`403eb254`) · 5 (`1f8ed8bf`) · 10 (`3cfb3cda`) · 15 (`a2022957`) · 20 (`841c307b`) · 25 (`83b1c818`) · 30 (`9b3ed0e3`) · 21 (`77be504b`) · 22 (`572475f2`) · 23 (`30102ecd`) · 31 (`d0287620`) · 32 (`31d33293`) · 33 (`f02dc5b4`) · 39 (`91db34d8`). SCHEMA is 24; remaining ladder = 40.<!-- END GENERATED release-state:0.8.20:plan-landed-roll-up -->
 
-> ⚠ **This pointer is HAND-WRITTEN and has gone stale at two consecutive landings** (`62486a01`, and again
-> here). `scripts/commission-manifest.sh` cites this section as a brief's `{{MANDATE}}` anchor, so a stale
-> pointer is copied into the next commission. **Re-verify it against
-> `release-state-0.8.20.json` `next_slice` before commissioning anything.** Making it a generated view is
-> **TC-89**, placed in DOC-HYGIENE-3.
+Off-ladder landings the roll-up above cannot carry (they hold no slice number): the ⟨TC-86
+transcript-hygiene fix⟩ at `0a500de9`, `DOC-HYGIENE-3` at `85d44c74`, `SLICE-ID-HARDENING` at `2008f529`,
+and `R-20-HARNESS` ("Slice 39.5") at `b6cc8fa6`. **Slice 30 satisfied the publish precondition.**
 
-**➡ IMMEDIATE NEXT: Slice 23** (R-20-SV — the `fts`/`vector` reject ruled 2026-07-24, now unblocked because
+**➡ HISTORICAL — when this narrative was written the next slice was Slice 23**, since landed (R-20-SV —
+the `fts`/`vector` reject ruled 2026-07-24, then unblocked because
 **#18 settled the error family onto `WriteValidation` in Slice 22**, plus the **TC-90/TC-91 characterization
 ONLY, no fix**, `seq-136`). ⚠ **CORRECTION (`seq-143`):** an earlier version of this line said two HITL items were open *first*.
 **Neither gates Slice 23.** `sqlite-vec` 0.1.9 (TC-76, trigger **FIRED**) is a Slice 31 / 0.8.22 dependency
@@ -606,8 +600,8 @@ and publish-risk question — **HITL is holding it**. **#18**'s family is alread
 `WriteValidation`, which this slice's reject uses; its one exception is an edge-epoch bounds check on a
 different path — **TC-98, deferred by the HITL until after Slice 23**, and retrospective about Slice 22.
 
-**Remaining ladder, HITL-approved 2026-07-28 (F-36 · steward `seq-129`), SEQUENTIAL — this SUPERSEDES the
-F-35 order (`seq-119`); its leading `30`, `TC-86` and `21` legs are all now landed:**
+**Remaining ladder AS OF 2026-07-28 — HISTORICAL, every leg but 40 has since landed** (F-36 · steward
+`seq-129`; superseded the F-35 order, `seq-119`). The live remaining ladder is the generated roll-up above:
 **⟨batched governed-surface decision — DUE NOW, HITL⟩ → 31 → 32 → 33 → DOC-HYGIENE-3 → 40** (`seq-153`).
 **21** (R-20-CR, landed) and **22** (R-20-VC) are reserved-gap slices in the 20 band; **31** is Library Sweep #3 and
 carries no requirement id (TC-76); **DOC-HYGIENE-3** is cross-cutting and is not a ladder slice. The batched
@@ -617,8 +611,8 @@ Slice 31 (dependency sweep) nor DOC-HYGIENE-3 (docs/tooling) can add or remove o
 at 23 and deferring the ceremony past them buys nothing while pushing an open gate against Slice 40, which
 mints AC-079 pinned to that file. **Non-blocking for 31 and DOC-HYGIENE-3**; Slice 40 does depend on it.
 Commission each as an **orchestrator** — **NOT** `/goal` (standing ruling `927ffb35` · steward `seq-104`).
-Board of record: `runs/STATUS-0.8.20.md`; open HITL decisions: §11 — the **live** open set is **two**
-(batched governed-surface decision, publish), per `release-state-0.8.20.json` `decisions.unruled`.
+Board of record: `runs/STATUS-0.8.20.md`; open HITL decisions: §11 — the **live** open set is whatever
+`release-state-0.8.20.json` `decisions.unruled` carries, never a count restated here.
 
 > **Fix-round cap for these slices — PRODUCTIVITY predicate (TC-82, HITL-ruled 2026-07-28 — `seq-125`).**
 > **This SUPERSEDES the TC-75 engine amendment (`seq-119`): the predicate is NO LONGER which directory a

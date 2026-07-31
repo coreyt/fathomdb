@@ -425,8 +425,42 @@ def render_plan_immediate_next(st):
                " → ".join(_slice_str(n) for n in st["remaining_ladder"])))
 
 
+def render_plan_landed_roll_up(st):
+    """`plan-<release>.md` §9's LANDED roll-up (TC-89, second site).
+
+    THE MEASURED FAILURE. §9 carried a SECOND hand-written pointer, below the
+    generated IMMEDIATE NEXT block, phrased incrementally ("Landed since the
+    Slice-20 narration above: ..."). Because it named only the slices landed
+    since some earlier narration, every landing made it wrong by omission rather
+    than by contradiction — the quietest possible rot. It named 25, 30, TC-86 and
+    21 while 22, 23, 31, 32, 33 and 39 had all landed, and it went stale at three
+    consecutive commissions, the same count that closed TC-89 for the pointer
+    above it.
+
+    WHY IT MATTERS. `## 9. Immediate next slice` is the `{{MANDATE}}` anchor of
+    every generated commission brief, so a reader who reaches this section is a
+    reader about to commission a slice. Two pointers under one anchor, one
+    generated and one not, is worse than one hand-written pointer: the generated
+    one lends its authority to the stale one.
+
+    ABSOLUTE, NOT INCREMENTAL. It renders the WHOLE landed set from `landed` +
+    each entry's `sha`, so there is no "since when" for a future landing to make
+    silently wrong. The surrounding historical narrative stays hand-written and
+    OUTSIDE the markers.
+
+    The leading newline is load-bearing for the CommonMark reason
+    render_handoff_next_step() documents.
+    """
+    by = _by_slice(st)
+    landed = " · ".join("%s (`%s`)" % (_slice_str(n), by[n]["sha"]) for n in st["landed"])
+    return ("\n**LANDED on `origin/main`, in full:** Slices %s. SCHEMA is %d; remaining ladder = %s."
+            % (landed, st["schema_version"],
+               " → ".join(_slice_str(n) for n in st["remaining_ladder"])))
+
+
 RENDERERS = {
     "master-ladder-progress":  render_master_ladder_progress,
+    "plan-landed-roll-up":     render_plan_landed_roll_up,
     "status-unblocks":         render_status_unblocks,
     "status-live-open-count":  render_status_live_open_count,
     "handoff-next-step":       render_handoff_next_step,

@@ -24,7 +24,7 @@ needs to see its own red list.
 nothing deferred. That **reverses** `seq-206`, under which the CI reds were 39.5's to report. They are
 Slice 40's to **fix**. Nine placements were ruled at `seq-223`.
 
-## 1. The brief is ready, and it is two files
+## 1. The brief is READY as substance, and it is two files
 
 | file | read it? |
 |---|---|
@@ -36,9 +36,11 @@ withdrawn instructions, and postmortems on how earlier drafts of itself were wro
 with every instruction stated once, one numbering system (BASE items `B1`–`B10`, `PHASE 0`–`7`), and stop
 signs cut 81 → 24 so they mark only irreversible or destructive actions.
 
-⚠ **The brief still carries an adversarial-review obligation before it becomes a real commission** — see
-its §14. Until TC-131 exists (ruled to 0.8.21) that review is the only control on the defect class, and
-it has caught 100 % of it across 13 reviews, including two unmeasured fixes and one vacuous green.
+⚠ **The MANIFEST + BRIEF PAIR still owes one adversarial review before this is a real commission** — see
+brief §14. The round-3 pass at `8e1eafb4` covered the brief **text**, which the `5d135bee` split then
+rewrote; the open obligation is over the pair, and the manifest does not exist until you generate it.
+Until TC-131 exists (ruled to 0.8.21) that review is the only control on the defect class, and it has
+caught 100 % of it across 13 reviews, including two unmeasured fixes and one vacuous green.
 
 ## 2. What else changed this session — program hygiene, already landed
 
