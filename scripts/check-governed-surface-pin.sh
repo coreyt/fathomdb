@@ -12,7 +12,7 @@
 # WHAT THIS ENFORCES
 #   The HITL PRE-SIGNED the accumulated governed-surface delta of 0.8.20 Slices
 #   5d + 10b + 15b + 15d (AC-079) — but pinned to the EXACT CONTENT of
-#   src/conformance/governed-surface-allowlist.json as of commit 427d2712:
+#   src/conformance/governed-surface-allowlist.json as of commit c239908b:
 #   30 allowlist members, 5 core, and recovery_denylist unchanged at the five
 #   REQ-054 names. A pre-sign keyed to specific content is worth exactly as much
 #   as the mechanism that notices when that content moves. This is that
@@ -49,7 +49,7 @@
 # PREDICATE — the pinned file must match the pin on ALL of:
 #   (a) CONTENT HASH: sha256 and git blob sha1 of the file's raw bytes equal the
 #       values recorded in the pin. Both are recorded so a reviewer can
-#       reproduce the pin either way (`git rev-parse 427d2712:<file>` gives the
+#       reproduce the pin either way (`git rev-parse c239908b:<file>` gives the
 #       blob sha1 directly).
 #   (b) MEMBER LISTS: `allowlist`, `core` and `recovery_denylist` are compared
 #       element-by-element against the copies stored in the pin, so the failure
@@ -119,7 +119,7 @@ Usage: scripts/$SELF [--file <path>] [--pin <path>]
 
 Fails when src/conformance/governed-surface-allowlist.json diverges from the
 AC-079 pre-signed pin recorded in scripts/governed-surface-pin.json (pinned to
-the file's content as of commit 427d2712). See the header of this script for the
+the file's content as of commit c239908b). See the header of this script for the
 full predicate and for why re-pinning without a fresh HITL sign-off is forbidden.
 
   --file <path>  the governed-surface allowlist to check

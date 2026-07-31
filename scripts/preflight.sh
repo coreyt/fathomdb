@@ -296,7 +296,7 @@ fi
 # Refuse a land that would ship a governed surface the HITL has not signed. The
 # HITL PRE-SIGNED the accumulated delta of 0.8.20 Slices 5d+10b+15b+15d (AC-079)
 # pinned to the exact content of src/conformance/governed-surface-allowlist.json
-# as of 427d2712 — 30 allowlist members, recovery_denylist unchanged at the five
+# as of c239908b — 30 allowlist members, recovery_denylist unchanged at the five
 # REQ-054 names. This gate makes that pin mechanical.
 #
 # The predicate lives in scripts/check-governed-surface-pin.sh (see that file's
