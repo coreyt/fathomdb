@@ -18,8 +18,9 @@ if ! command -v actionlint >/dev/null 2>&1; then
   printf 'SKIP  actionlint not installed (run scripts/bootstrap.sh)\n'
   exit 0
 fi
+ACTIONLINT_BIN="$(command -v actionlint)"
 
-if actionlint "$FIX" >/dev/null 2>&1; then
+if "$ACTIONLINT_BIN" "$FIX" >/dev/null 2>&1; then
   printf 'FAIL  actionlint accepted the deliberately-broken fixture\n' >&2
   exit 1
 fi
@@ -33,7 +34,11 @@ printf 'PASS  actionlint rejects deliberately-broken fixture\n'
 # addon found" at runtime. Slice 40 is Linux-first: lock the sole shipped
 # label and reject the three deferred platform labels so the scope cannot drift.
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-RELEASE_YML="$REPO_ROOT/.github/workflows/release.yml"
+RELEASE_YML="${RELEASE_YML:-$REPO_ROOT/.github/workflows/release.yml}"
+CI_YML="${CI_YML:-$REPO_ROOT/.github/workflows/ci.yml}"
+TS_README="$REPO_ROOT/src/ts/README.md"
+TS_INSTALL_DOC="$REPO_ROOT/docs/install/typescript.md"
+NODE_VERSION_FILE="$REPO_ROOT/.nvmrc"
 
 # 0.8.20 R-20-HARNESS: accumulate-then-exit, not fail-fast-on-first-item.
 # The original loops below `exit 1`ed on the FIRST failing label/tier, which
@@ -165,7 +170,173 @@ if [ "$TIER_FAILED" -eq 0 ]; then
   printf 'PASS  release.yml publish-rust-t1..t7 use cargo-publish-if-new in the shipped order\n'
 fi
 
-FIXTURE_FAILED=$((FIXTURE_FAILED + TIER_FAILED))
+# Every real cargo publish tier must exchange the GitHub OIDC identity for a
+# short-lived crates.io token. Keep this as a structural shell assertion:
+# actionlint remains the workflow YAML validator (AGENTS.md forbids generic
+# YAML parsers as one). A workflow can parse cleanly while silently
+# regressing to a long-lived secret, omitting auth in one tier, or widening a
+# tier's permissions.
+CRATES_OIDC_FAILED=0
+release_job_block() {
+  awk -v job="$1" '
+    $0 == "  " job ":" { in_job = 1 }
+    in_job { print }
+    in_job && /^  [[:alnum:]_-]+:$/ && $0 != "  " job ":" { exit }
+  ' "$RELEASE_YML"
+}
+
+for tier in \
+  publish-rust-t1-embedder-api \
+  publish-rust-t2-schema \
+  publish-rust-t3-query \
+  publish-rust-t4-embedder \
+  publish-rust-t5-engine \
+  publish-rust-t6-facade \
+  publish-rust-t7-cli; do
+  tier_block="$(release_job_block "$tier")"
+  if [ -z "$tier_block" ]; then
+    printf 'FAIL  %s missing from release.yml\n' "$tier" >&2
+    CRATES_OIDC_FAILED=$((CRATES_OIDC_FAILED + 1))
+    continue
+  fi
+  permissions="$(printf '%s\n' "$tier_block" | awk '
+    /^    permissions:$/ { in_permissions = 1; next }
+    in_permissions && /^    [[:alnum:]_-]+:$/ { exit }
+    in_permissions { print }
+  ')"
+  if [ "$permissions" != $'      contents: read\n      id-token: write' ]; then
+    printf 'FAIL  %s must have only contents: read + id-token: write job permissions\n' "$tier" >&2
+    CRATES_OIDC_FAILED=$((CRATES_OIDC_FAILED + 1))
+  fi
+  auth_step="$(printf '%s\n' "$tier_block" | awk '
+    /^      - name: Authenticate with crates.io$/ { in_step = 1 }
+    in_step { print }
+    in_step && /^      - / && $0 !~ /^      - name: Authenticate with crates.io$/ { exit }
+  ')"
+  if ! grep -Fqx '        id: crates_io_auth' <<<"$auth_step" \
+    || ! grep -Fqx '        if: ${{ inputs.dry_run != true }}' <<<"$auth_step" \
+    || ! grep -Fqx '        uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5' <<<"$auth_step"; then
+    printf 'FAIL  %s missing pinned crates.io OIDC auth for real publishes\n' "$tier" >&2
+    CRATES_OIDC_FAILED=$((CRATES_OIDC_FAILED + 1))
+  fi
+  auth_line="$(printf '%s\n' "$tier_block" | awk '/^      - name: Authenticate with crates.io$/ { print NR; exit }')"
+  publish_line="$(printf '%s\n' "$tier_block" | awk '/cargo-publish-if-new\.sh/ { print NR; exit }')"
+  if [ -z "$auth_line" ] || [ -z "$publish_line" ] || [ "$auth_line" -ge "$publish_line" ]; then
+    printf 'FAIL  %s crates.io OIDC auth must occur before cargo-publish-if-new\n' "$tier" >&2
+    CRATES_OIDC_FAILED=$((CRATES_OIDC_FAILED + 1))
+  fi
+  publish_step="$(printf '%s\n' "$tier_block" | awk '
+    /cargo-publish-if-new\.sh/ { in_step = 1 }
+    in_step { print }
+    in_step && /^      - / && $0 !~ /cargo-publish-if-new\.sh/ { exit }
+  ')"
+  if ! grep -Fqx '          CARGO_REGISTRY_TOKEN: ${{ steps.crates_io_auth.outputs.token }}' <<<"$publish_step"; then
+    printf 'FAIL  %s must pass the crates.io OIDC output to cargo-publish-if-new\n' "$tier" >&2
+    CRATES_OIDC_FAILED=$((CRATES_OIDC_FAILED + 1))
+  fi
+  if grep -Fq 'secrets.CARGO_REGISTRY_TOKEN' <<<"$tier_block"; then
+    printf 'FAIL  %s must not use the legacy CARGO_REGISTRY_TOKEN secret\n' "$tier" >&2
+    CRATES_OIDC_FAILED=$((CRATES_OIDC_FAILED + 1))
+  fi
+done
+if [ "$CRATES_OIDC_FAILED" -eq 0 ]; then
+  printf 'PASS  all cargo publish tiers use pinned crates.io OIDC with least-privilege job permissions\n'
+fi
+
+# Node's exact version is part of the release test environment: npm and native
+# N-API behavior must match the locally verified Node 25.9.0, not float on a
+# runner-provided major. Every setup-node use in the two CI entry points must
+# carry that exact pin.
+NODE_PIN_FAILED=0
+setup_node_total=0
+for workflow in "$CI_YML" "$RELEASE_YML"; do
+  setup_node_count="$(grep -c 'uses: actions/setup-node@' "$workflow" || true)"
+  node_pin_count="$(grep -c 'node-version: "25.9.0"' "$workflow" || true)"
+  case "$workflow" in
+    "$CI_YML") expected_setup_node_count=3 ;;
+    "$RELEASE_YML") expected_setup_node_count=4 ;;
+  esac
+  setup_node_total=$((setup_node_total + setup_node_count))
+  if [ "$setup_node_count" -ne "$expected_setup_node_count" ] || [ "$setup_node_count" -ne "$node_pin_count" ]; then
+    printf 'FAIL  %s must have exactly %s setup-node steps, each pinned to Node 25.9.0 (setup-node=%s, pins=%s)\n' \
+      "$workflow" "$expected_setup_node_count" "$setup_node_count" "$node_pin_count" >&2
+    NODE_PIN_FAILED=$((NODE_PIN_FAILED + 1))
+  fi
+  if grep -Fq 'node-version: "22"' "$workflow"; then
+    printf 'FAIL  %s still pins Node 22\n' "$workflow" >&2
+    NODE_PIN_FAILED=$((NODE_PIN_FAILED + 1))
+  fi
+done
+if [ "$setup_node_total" -ne 7 ]; then
+  printf 'FAIL  ci.yml and release.yml must contain exactly seven setup-node steps total (got %s)\n' \
+    "$setup_node_total" >&2
+  NODE_PIN_FAILED=$((NODE_PIN_FAILED + 1))
+fi
+if [ "$NODE_PIN_FAILED" -eq 0 ]; then
+  printf 'PASS  ci.yml and release.yml pin every setup-node step to Node 25.9.0\n'
+fi
+if [ ! -f "$NODE_VERSION_FILE" ] || [ "$(tr -d '\r\n' < "$NODE_VERSION_FILE")" != "25.9.0" ]; then
+  printf 'FAIL  .nvmrc must pin local Node to 25.9.0\n' >&2
+  NODE_PIN_FAILED=$((NODE_PIN_FAILED + 1))
+fi
+if ! grep -Fqx 'Built and tested on Node.js 25.9.0.' "$TS_README"; then
+  printf 'FAIL  TypeScript README must state the exact verified Node 25.9.0 version\n' >&2
+  NODE_PIN_FAILED=$((NODE_PIN_FAILED + 1))
+fi
+if ! grep -Fqx -- '- Node **18** or later (release.yml runs CI on Node 25.9.0).' "$TS_INSTALL_DOC"; then
+  printf 'FAIL  TypeScript install doc must retain the Node 18+ floor and name CI Node 25.9.0\n' >&2
+  NODE_PIN_FAILED=$((NODE_PIN_FAILED + 1))
+fi
+if [ "$NODE_PIN_FAILED" -eq 0 ]; then
+  printf 'PASS  local Node pin and TypeScript docs match Node 25.9.0 without changing the Node 18+ floor\n'
+fi
+
+# Prove the step-order assertion is non-vacuous. This deliberately moves T1's
+# valid auth step below its cargo publish step; actionlint still accepts the
+# fixture, but this guard must reject its unsafe order.
+if [ "${SKIP_CRATES_OIDC_ORDER_CONTROL:-}" != "1" ]; then
+  WRONG_ORDER_FIXTURE="$(mktemp)"
+  awk '
+    /^      - name: Authenticate with crates.io$/ && !moved {
+      auth = $0 "\n"
+      capture = 1
+      moved = 1
+      next
+    }
+    capture && /^      - name: cargo publish / { cargo = 1 }
+    capture && cargo && /^      - name: Wait for crates.io index propagation/ {
+      printf "%s", auth
+      capture = 0
+    }
+    !capture { print }
+    capture && !cargo { auth = auth $0 "\n" }
+    # actionlint correctly rejects a forward step-output reference, so make
+    # this reordered cargo step syntactically independent of auth.
+    capture && cargo && /CARGO_REGISTRY_TOKEN:/ {
+      sub(/steps\.crates_io_auth\.outputs\.token/, "github.token")
+      print
+      next
+    }
+    capture && cargo && !/^      - name: Wait for crates.io index propagation/ { print }
+  ' "$RELEASE_YML" > "$WRONG_ORDER_FIXTURE"
+  if "$ACTIONLINT_BIN" "$WRONG_ORDER_FIXTURE" >/dev/null 2>&1; then
+    if wrong_order_out="$(RELEASE_YML="$WRONG_ORDER_FIXTURE" SKIP_CRATES_OIDC_ORDER_CONTROL=1 bash "$0" 2>&1)"; then
+      printf 'FAIL  crates.io OIDC order guard accepted deliberately wrong-order fixture\n' >&2
+      FIXTURE_FAILED=$((FIXTURE_FAILED + 1))
+    elif grep -Fq 'crates.io OIDC auth must occur before cargo-publish-if-new' <<<"$wrong_order_out"; then
+      printf 'PASS  crates.io OIDC order guard rejects deliberately wrong-order fixture\n'
+    else
+      printf 'FAIL  wrong-order fixture failed without exercising the crates.io OIDC order guard\n%s\n' "$wrong_order_out" >&2
+      FIXTURE_FAILED=$((FIXTURE_FAILED + 1))
+    fi
+  else
+    printf 'FAIL  deliberately wrong-order fixture is not actionlint-valid\n' >&2
+    FIXTURE_FAILED=$((FIXTURE_FAILED + 1))
+  fi
+  rm -f "$WRONG_ORDER_FIXTURE"
+fi
+
+FIXTURE_FAILED=$((FIXTURE_FAILED + TIER_FAILED + CRATES_OIDC_FAILED + NODE_PIN_FAILED))
 if [ "$FIXTURE_FAILED" -gt 0 ]; then
   printf '\n%d assertion(s) failed across the label/tier loops above\n' "$FIXTURE_FAILED" >&2
   exit 1

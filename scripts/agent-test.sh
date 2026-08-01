@@ -91,6 +91,10 @@ run_suite test-agent-test-collect-all bash scripts/tests/test_agent_test_collect
 # Scripts (bash): release-time preflight (tag/--check-files/CHANGELOG/metadata).
 run_suite test-verify-release-gates bash scripts/tests/test_verify_release_gates.sh
 
+# Exact Rust, npm, actionlint, and dispatch-tag alignment between local
+# prework and the release workflow.
+run_suite test-runtime-release-alignment bash scripts/tests/test_runtime_release_alignment.sh
+
 # Scripts (bash): 0.8.20 Slice 39 (R-20-DOC) — the license type + license-
 # SHIPPING gate (scripts/check-license-consistency.sh). Closes an 0.8.x-long
 # silent drift: the repo-root LICENSE said MIT, all four publishable manifests
@@ -246,10 +250,15 @@ run_suite test-npm-inject-optional-deps bash scripts/tests/test_npm_inject_optio
 # actionlint binary present + rejects deliberately-broken fixture.
 run_suite test-actionlint-fixture bash scripts/tests/test_actionlint_fixture.sh
 
+# Go-installed actionlint prefixes its exact version with `v`; bootstrap and
+# agent-lint must normalize that conventional form without accepting drift.
+run_suite test-actionlint-go-install-version bash scripts/tests/test_actionlint_go_install_version.sh
+
 # Local lint preflight must use CI's exact Ruff version rather than reporting a
 # false green from an older environment. Fixture provides only a stale Ruff and
 # asserts the wrapper fails before attempting any other lint leg.
 run_suite test-agent-lint-ruff-version bash scripts/tests/test_agent_lint_ruff_version.sh
+run_suite test-agent-lint-actionlint-version bash scripts/tests/test_agent_lint_actionlint_version.sh
 
 # TC-37 recurrence guard: agent-lint-md.sh must HARD-fail (not skip_notice/exit 0)
 # when markdownlint-cli2 is genuinely unresolvable. Builds its own throwaway

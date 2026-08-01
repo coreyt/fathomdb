@@ -16,12 +16,11 @@ platform-tagged `.node` binary at load time.
 
 ## Requirements
 
-- Node **18** or later (release.yml runs CI on Node 22).
+- Node **18** or later (release.yml runs CI on Node 25.9.0).
 - One of the supported platforms (per `release.yml` matrix):
   - Linux `x86_64-unknown-linux-gnu`
-  - macOS `x86_64-apple-darwin`
-  - macOS `aarch64-apple-darwin`
-  - Windows `x86_64-pc-windows-msvc`
+  - The published npm package has no macOS, Windows, Linux arm64, or Linux
+    musl native package in 0.8.20.
 - SQLite + `sqlite-vec` (statically linked into the platform binary).
 
 ## Install (once 0.8.20 is published)

@@ -68,10 +68,10 @@ else
     fail "default-embedder CI job must allow 60 minutes"
   fi
   if grep -q 'actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e' <<<"$default_embedder_block" && \
-    grep -qE '^[[:space:]]*node-version: "22"[[:space:]]*$' <<<"$default_embedder_block"; then
-    pass "default-embedder CI job pins Node 22"
+    grep -qE '^[[:space:]]*node-version: "25\.9\.0"[[:space:]]*$' <<<"$default_embedder_block"; then
+    pass "default-embedder CI job pins Node 25.9.0"
   else
-    fail "default-embedder CI job must set up pinned Node 22"
+    fail "default-embedder CI job must set up pinned Node 25.9.0"
   fi
   if grep -qE '^[[:space:]]*run: cd src/ts && npm ci[[:space:]]*$' <<<"$default_embedder_block"; then
     pass "default-embedder CI job installs the locked TypeScript dependencies"

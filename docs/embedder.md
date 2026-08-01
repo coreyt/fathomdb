@@ -39,10 +39,11 @@ report = engine.open_report()
 print(report.default_embedder.name)   # "fathomdb-bge-small-en-v1.5"
 ```
 
-Install the embedder extra:
+The published Python wheel already includes the default embedder; there is no
+`default-embedder` extra to install. Install the package normally:
 
 ```bash
-pip install "fathomdb[default-embedder]"
+pip install fathomdb
 ```
 
 ### TypeScript

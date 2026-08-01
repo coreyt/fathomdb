@@ -68,10 +68,10 @@ jobs:
           python-version: "3.12"
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
-          node-version: "22"
+          node-version: "25.9.0"
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
         with:
-          toolchain: stable
+          toolchain: "1.95.0"
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Bootstrap dev tooling
@@ -112,7 +112,7 @@ jobs:
           python-version: "3.12"
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
         with:
-          toolchain: stable
+          toolchain: "1.95.0"
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Bootstrap dev tooling (installs strace for AC-036/AC-037)
         run: bash scripts/bootstrap.sh
@@ -140,7 +140,7 @@ jobs:
           echo "TMPDIR=$TMPDIR" >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
         with:
-          toolchain: stable
+          toolchain: "1.95.0"
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       # H-5: pin third-party actions to commit SHAs. Cache key is
       # runner.os + model identity + HF revision (see
@@ -186,7 +186,7 @@ jobs:
       # assertions in these seven files still run.
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
-          node-version: "22"
+          node-version: "25.9.0"
       - name: Install locked TypeScript test dependencies
         run: cd src/ts && npm ci
       - name: Build native debug TypeScript test binding
@@ -253,7 +253,7 @@ jobs:
           python-version: "3.11"
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
         with:
-          toolchain: stable
+          toolchain: "1.95.0"
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       # Use PyO3/maturin-action (the same SHA as release.yml's build-python)
@@ -321,7 +321,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
-          node-version: "22"
+          node-version: "25.9.0"
       - name: Install markdown tooling (markdownlint-cli2)
         run: npm ci
       - name: markdownlint-cli2 (repo markdown; same config as local + verify)
