@@ -16,12 +16,13 @@ if [ ! -f "$RELEASE_SURFACE_TEST" ]; then
   fail "release-surface TypeScript test must exist"
 else
   if grep -qF 'const rawEngine = loaded.Engine as' "$RELEASE_SURFACE_TEST" && \
-    grep -qF 'const open = rawEngine?.open;' "$RELEASE_SURFACE_TEST" && \
-    grep -qF 'typeof open === "function"' "$RELEASE_SURFACE_TEST" && \
-    grep -qF 'await open(path, { useDefaultEmbedder: true })' "$RELEASE_SURFACE_TEST"; then
-    pass "release-surface default-embedder smoke uses raw Engine.open"
+    grep -qF 'assert.ok(rawEngine,' "$RELEASE_SURFACE_TEST" && \
+    grep -qF 'typeof rawEngine.open === "function"' "$RELEASE_SURFACE_TEST" && \
+    grep -qF 'await rawEngine.open(path, { useDefaultEmbedder: true })' "$RELEASE_SURFACE_TEST" && \
+    ! grep -qF 'const open = rawEngine?.open;' "$RELEASE_SURFACE_TEST"; then
+    pass "release-surface default-embedder smoke invokes raw Engine.open with its receiver"
   else
-    fail "release-surface smoke must assert and invoke raw Engine.open"
+    fail "release-surface smoke must retain the raw Engine receiver when invoking Engine.open"
   fi
   if grep -qF 'loaded.engineOpen' "$RELEASE_SURFACE_TEST"; then
     fail "release-surface raw N-API smoke must not call wrapper-only engineOpen"

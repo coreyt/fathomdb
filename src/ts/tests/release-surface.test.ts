@@ -130,14 +130,14 @@ test("release-equivalent .node Engine.open accepts useDefaultEmbedder: true", as
   const rawEngine = loaded.Engine as {
     open?: (path: string, opts: { useDefaultEmbedder: boolean }) => Promise<unknown>;
   } | undefined;
-  const open = rawEngine?.open;
+  assert.ok(rawEngine, `release .node missing Engine export; got ${Object.keys(loaded).join(", ")}`);
   assert.ok(
-    typeof open === "function",
+    typeof rawEngine.open === "function",
     `release .node missing Engine.open factory; got ${Object.keys(loaded).join(", ")}`,
   );
 
   const path = freshDbPath();
-  const engine = (await open(path, { useDefaultEmbedder: true })) as {
+  const engine = (await rawEngine.open(path, { useDefaultEmbedder: true })) as {
     openReport: () => { defaultEmbedder: { name: string; dimension: number } };
     close: () => Promise<void>;
   };
