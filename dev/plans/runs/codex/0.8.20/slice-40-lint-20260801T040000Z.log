@@ -1,0 +1,1 @@
+The typing syntax migration is compatible with the project's Python 3.10 minimum. Targeted Ruff checks and AP-News/AutoE tests pass.
