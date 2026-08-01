@@ -15,7 +15,7 @@ trap 'rm -rf "$FIX"' EXIT
   mkdir -p scripts/lib .venv/bin
   cp "$REPO_ROOT/scripts/agent-lint.sh" scripts/agent-lint.sh
   cp "$REPO_ROOT/scripts/lib/agent-output.sh" scripts/lib/agent-output.sh
-  printf '#!/usr/bin/env bash\nprintf "ruff 0.15.10\\n"\n' >.venv/bin/ruff
+  printf '#!/usr/bin/env bash\nprintf "ruff 0.16.1\\n"\n' >.venv/bin/ruff
   chmod +x scripts/agent-lint.sh .venv/bin/ruff
   touch README.md
   git add -A
@@ -35,12 +35,12 @@ if [ "$RC" -eq 0 ]; then
   exit 1
 fi
 
-if ! grep -Fq 'Ruff 0.16.1' <<<"$OUT"; then
+if ! grep -Fq 'Ruff 0.15.10' <<<"$OUT"; then
   printf 'FAIL  guard output does not name the required Ruff version\n' >&2
   exit 1
 fi
 
-if ! grep -Fq '0.15.10' <<<"$OUT"; then
+if ! grep -Fq '0.16.1' <<<"$OUT"; then
   printf 'FAIL  guard output does not name the selected Ruff version\n' >&2
   exit 1
 fi

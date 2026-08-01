@@ -7,9 +7,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/lib/agent-output.sh"
 cd_repo_root
 
-# Python preflight: use the exact version proven by CI, so local prework cannot
-# report a false green from an older Ruff that misses newly added diagnostics.
-readonly RUFF_VERSION="0.16.1"
+# Python preflight: use the project's exact pinned version, so local prework
+# cannot report a false green from version drift.
+readonly RUFF_VERSION="0.15.10"
 ruff_bin=""
 if [ -x .venv/bin/ruff ]; then
   ruff_bin=".venv/bin/ruff"
