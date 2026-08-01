@@ -8271,18 +8271,11 @@ impl Engine {
         // (unfrozen so any unprojected row completes) leaves the worker idle; a
         // bare state flip enqueues no new projection work.
         //
-        // 0.8.20 Slice 21a-2 (TC-57) — this comment used to say the worker commits
-        // "via `BEGIN IMMEDIATE`". It does NOT and never did:
-        // `commit_projection_outcomes` opens `connection.transaction()`, i.e.
-        // rusqlite's `BEGIN DEFERRED` default, and reads before it writes. Its
-        // CONCLUSION stands, and in fact more strongly than the original wording
-        // implied — BOTH sides of that contention are read-then-upgrade deferred
-        // transactions, which SQLite refuses to promote WITHOUT consulting the busy
-        // handler (see the `TransactionBehavior::Immediate` note in `commit_batch`).
-        // So the `drain()` below is load-bearing, not belt-and-braces: it is what
-        // keeps this flip's own read-then-upgrade transaction (`:query_row` above
-        // the `UPDATE` below) out of a worker's write window. TC-57's fix is scoped
-        // to `commit_batch`; converting this path is a separate change.
+        // Slice 40 B3 aligns the worker with `commit_batch`:
+        // `commit_projection_outcomes` acquires `BEGIN IMMEDIATE` before its reads.
+        // This drain remains load-bearing because the worker owns a separate
+        // connection while this state flip still reads before its own write; it
+        // keeps that deferred transaction out of the worker's write window.
         self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS)?;
 
         let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
@@ -8393,11 +8386,9 @@ impl Engine {
         drop: &[String],
     ) -> Result<ProjectionDelta, EngineError> {
         self.ensure_open()?;
-        // Settle in-flight async projection work first (same rationale as
-        // `transition`, including the 0.8.20 Slice 21a-2 / TC-57 correction
-        // recorded there: the worker commits on its own connection with a rusqlite
-        // DEFERRED transaction, NOT `BEGIN IMMEDIATE`). A backfill issued while it
-        // holds the write lock would SQLITE_BUSY.
+        // Settle in-flight async projection work first. The worker commits on its
+        // own connection with `BEGIN IMMEDIATE`; a backfill issued in that write
+        // window would SQLITE_BUSY.
         self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS)?;
 
         // 0.8.20 Slice 20c (R-20-DR remainder) — the backfill is gated on a LIVE

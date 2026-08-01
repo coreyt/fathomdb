@@ -30,7 +30,8 @@ printf 'PASS  actionlint rejects deliberately-broken fixture\n'
 # napi-rs only resolves prebuilt binaries by the exact platform-label triples
 # enumerated in src/ts/src/binding.ts; if release.yml uploads under a
 # non-canonical label, install-from-npm silently falls back to "no native
-# addon found" at runtime. Lock the four labels we ship to RC1 here.
+# addon found" at runtime. Slice 40 is Linux-first: lock the sole shipped
+# label and reject the three deferred platform labels so the scope cannot drift.
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 RELEASE_YML="$REPO_ROOT/.github/workflows/release.yml"
 
@@ -43,14 +44,20 @@ RELEASE_YML="$REPO_ROOT/.github/workflows/release.yml"
 # ensures every failing label/tier is reported in one pass.
 FIXTURE_FAILED=0
 
-for label in linux-x64-gnu darwin-x64 darwin-arm64 win32-x64-msvc; do
+for label in linux-x64-gnu; do
   if ! grep -qE "label:[[:space:]]+${label}\$" "$RELEASE_YML"; then
-    printf 'FAIL  release.yml missing canonical napi label: %s\n' "$label" >&2
+    printf 'FAIL  release.yml missing shipped napi label: %s\n' "$label" >&2
+    FIXTURE_FAILED=$((FIXTURE_FAILED + 1))
+  fi
+done
+for label in darwin-x64 darwin-arm64 win32-x64-msvc; do
+  if grep -qE "label:[[:space:]]+${label}\$" "$RELEASE_YML"; then
+    printf 'FAIL  release.yml carries deferred napi label: %s\n' "$label" >&2
     FIXTURE_FAILED=$((FIXTURE_FAILED + 1))
   fi
 done
 if [ "$FIXTURE_FAILED" -eq 0 ]; then
-  printf 'PASS  release.yml carries all 4 canonical napi labels\n'
+  printf 'PASS  release.yml carries only the Linux-first napi label\n'
 fi
 
 confirmation_input_block() {
