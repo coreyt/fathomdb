@@ -304,6 +304,15 @@ done
 setup_fixture
 mkdir -p "$WTDIR/orphan-alpha" "$WTDIR/orphan-beta"
 mkdir -p "$FIX/proj-worktrees/decoy-child"   # the wrong (child) location
+# Keep the filesystem proof in raw paths: this is the sibling contract the
+# fixture establishes, before the briefing compacts a HOME-prefixed display.
+if [ -d "$WTDIR/orphan-alpha" ] && [ -d "$WTDIR/orphan-beta" ] \
+   && [ ! -d "$FIX/proj-worktrees/orphan-alpha" ] \
+   && [ ! -d "$FIX/proj-worktrees/orphan-beta" ]; then
+  pass "arm 7 fixture plants orphan dirs only in the raw sibling worktrees path"
+else
+  fail "arm 7 fixture invalid: raw sibling/orphan layout was not created"
+fi
 run_orient "$FIX"
 if [ "$RC" -eq 0 ] && grep -qF 'orphan-alpha' <<<"$OUT" && grep -qF 'orphan-beta' <<<"$OUT"; then
   pass "orphan checkout dirs in the SIBLING <root>-worktrees/ are found and named"
@@ -317,10 +326,15 @@ if [ -n "$OUT" ] && ! grep -qF 'decoy-child' <<<"$OUT"; then
 else
   fail "arm 7: empty payload, or the child-path decoy was enumerated (resolved as a child)"
 fi
-if grep -qF "$WTDIR" <<<"$OUT"; then
-  pass "the briefing prints the resolved worktrees dir so a wrong path is visible"
+# steward-orient compacts a $HOME-prefixed worktree directory to `~`, which is
+# expected in CI where mktemp commonly lives under $HOME. Derive the expected
+# display with the same substitution while retaining the raw-path fixture proof
+# above, so this arm is independent of the runner's temp-root convention.
+DISPLAY_WTDIR="${WTDIR/#$HOME/\~}"
+if grep -qF "$DISPLAY_WTDIR" <<<"$OUT"; then
+  pass "the briefing prints the resolved worktrees dir in its HOME-compacted display form"
 else
-  fail "arm 7: resolved worktrees dir not printed; out=$OUT"
+  fail "arm 7: resolved worktrees dir not printed as $DISPLAY_WTDIR; out=$OUT"
 fi
 
 # --- Arm 3: ZERO landed slices -> HARD fail naming the section -------------
