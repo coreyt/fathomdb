@@ -31,6 +31,29 @@ lock_root="$(jq -r '.packages[""].version // empty' "$lockfile")"
 runtime_version="$(sed -n 's/^__version__[[:space:]]*=[[:space:]]*"\([^"]*\)"/\1/p' \
   "$REPO_ROOT/src/python/fathomdb/__init__.py")"
 
+lock_package_versions() {
+  awk -v target="$1" '
+    BEGIN { RS = ""; FS = "\n" }
+    {
+      name = ""
+      version = ""
+      for (i = 1; i <= NF; i++) {
+        if ($i ~ /^name = "/) {
+          name = $i
+          sub(/^name = "/, "", name)
+          sub(/"$/, "", name)
+        }
+        if ($i ~ /^version = "/) {
+          version = $i
+          sub(/^version = "/, "", version)
+          sub(/"$/, "", version)
+        }
+      }
+      if (name == target) { print version }
+    }
+  ' "$REPO_ROOT/Cargo.lock"
+}
+
 failed=0
 for label in 'package-lock top-level' 'package-lock root package' 'python runtime'; do
   case "$label" in
@@ -46,6 +69,37 @@ for label in 'package-lock top-level' 'package-lock root package' 'python runtim
     failed=$((failed + 1))
   fi
 done
+
+axis_w_packages=(
+  fathomdb
+  fathomdb-cli
+  fathomdb-embedder
+  fathomdb-engine
+  fathomdb-napi
+  fathomdb-py
+  fathomdb-query
+  fathomdb-schema
+)
+
+for package in "${axis_w_packages[@]}"; do
+  mapfile -t versions < <(lock_package_versions "$package")
+  if [ "${#versions[@]}" -eq 1 ] && [ "${versions[0]}" = "$workspace_version" ]; then
+    printf 'PASS  Cargo.lock %s version matches workspace (%s)\n' "$package" "$workspace_version"
+  else
+    printf 'FAIL  Cargo.lock %s version(s) %s do not match workspace %s\n' \
+      "$package" "${versions[*]:-<missing>}" "$workspace_version" >&2
+    failed=$((failed + 1))
+  fi
+done
+
+mapfile -t axis_e_versions < <(lock_package_versions fathomdb-embedder-api)
+if [ "${#axis_e_versions[@]}" -eq 1 ] && [ "${axis_e_versions[0]}" = '0.6.1' ]; then
+  printf 'PASS  Cargo.lock fathomdb-embedder-api remains Axis E 0.6.1\n'
+else
+  printf 'FAIL  Cargo.lock fathomdb-embedder-api version(s) %s must remain Axis E 0.6.1\n' \
+    "${axis_e_versions[*]:-<missing>}" >&2
+  failed=$((failed + 1))
+fi
 
 [ "$failed" -eq 0 ] || exit 1
 printf 'All release version surfaces match workspace %s\n' "$workspace_version"
