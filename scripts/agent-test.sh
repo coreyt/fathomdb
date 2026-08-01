@@ -14,7 +14,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/lib/agent-output.sh"
 # shellcheck source=lib/agent-suite-run.sh
 . "$SCRIPT_DIR/lib/agent-suite-run.sh"
+# shellcheck source=lib/agent-python-env.sh
+. "$SCRIPT_DIR/lib/agent-python-env.sh"
 cd_repo_root
+use_checkout_venv_python_path "$PWD"
 
 # ---------------------------------------------------------------------------
 # Arg parsing — BEFORE anything runs. Supports ONLY --exclude-suite=LABEL,
