@@ -77,10 +77,40 @@ else
   else
     fail "default-embedder CI job must run npm ci in src/ts"
   fi
-  if grep -qE "^[[:space:]]*run: cd src/ts && RELEASE_SURFACE_TESTS=1 npm test --silent[[:space:]]*$" <<<"$default_embedder_block"; then
-    pass "default-embedder CI job runs the full release-surface TypeScript suite"
+  if grep -qE '^[[:space:]]*run: cd src/ts && npm run build:native:debug[[:space:]]*$' <<<"$default_embedder_block"; then
+    pass "default-embedder CI job builds the native debug binding"
   else
-    fail "default-embedder CI job must run RELEASE_SURFACE_TESTS=1 npm test --silent"
+    fail "default-embedder CI job must run the native debug build"
+  fi
+  if grep -qE '^[[:space:]]*run: cd src/ts && npm exec -- tsc -p tsconfig.json[[:space:]]*$' <<<"$default_embedder_block"; then
+    pass "default-embedder CI job emits the TypeScript test files"
+  else
+    fail "default-embedder CI job must emit TypeScript tests with tsc"
+  fi
+
+  expected_emitted_files=(
+    dist/tests/embedder-event-narrowing.test.js
+    dist/tests/functional-embed.test.js
+    dist/tests/release-surface.test.js
+    dist/tests/slice20c-flush-barrier.test.js
+    dist/tests/tc67-unsupported-vector-kind-report.test.js
+    dist/tests/use-default-embedder.test.js
+  )
+  mapfile -t actual_emitted_files < <(grep -oE 'dist/tests/[[:alnum:]_.-]+\.test\.js' <<<"$default_embedder_block" | sort -u)
+  if [ "${actual_emitted_files[*]}" = "${expected_emitted_files[*]}" ]; then
+    pass "default-embedder CI job runs exactly the six audited emitted TypeScript files"
+  else
+    fail "dedicated emitted TypeScript files drifted: expected [${expected_emitted_files[*]}], got [${actual_emitted_files[*]}]"
+  fi
+  if grep -qE 'RELEASE_SURFACE_TESTS=1[[:space:]]+node[[:space:]]+--test' <<<"$default_embedder_block"; then
+    pass "default-embedder CI job enables release-surface assertions"
+  else
+    fail "default-embedder CI job must run emitted tests with RELEASE_SURFACE_TESTS=1"
+  fi
+  if grep -qE '(^|[[:space:]])npm[[:space:]]+test([[:space:]]|$)' <<<"$default_embedder_block"; then
+    fail "dedicated default-embedder job must not rerun the full npm test suite"
+  else
+    pass "default-embedder CI job does not rerun the generic full npm test suite"
   fi
   if grep -qE 'FATHOMDB_SKIP_NETWORK_TESTS=1[[:space:]]+(npm|bash)' <<<"$default_embedder_block"; then
     fail "dedicated default-embedder test command must not force network tests to skip"
@@ -90,12 +120,16 @@ else
 
   warm_line="$(grep -nF 'Warm BGE embedder cache' <<<"$default_embedder_block" | head -n1 | cut -d: -f1 || true)"
   npm_ci_line="$(grep -nF 'npm ci' <<<"$default_embedder_block" | head -n1 | cut -d: -f1 || true)"
-  npm_test_line="$(grep -nF 'RELEASE_SURFACE_TESTS=1 npm test --silent' <<<"$default_embedder_block" | head -n1 | cut -d: -f1 || true)"
-  if [ -n "$warm_line" ] && [ -n "$npm_ci_line" ] && [ -n "$npm_test_line" ] && \
-    [ "$warm_line" -lt "$npm_ci_line" ] && [ "$npm_ci_line" -lt "$npm_test_line" ]; then
-    pass "cache warm precedes npm ci, which precedes the dedicated full TypeScript run"
+  native_build_line="$(grep -nF 'npm run build:native:debug' <<<"$default_embedder_block" | head -n1 | cut -d: -f1 || true)"
+  tsc_line="$(grep -nF 'npm exec -- tsc -p tsconfig.json' <<<"$default_embedder_block" | head -n1 | cut -d: -f1 || true)"
+  emitted_test_line="$(grep -nF 'RELEASE_SURFACE_TESTS=1 node --test' <<<"$default_embedder_block" | head -n1 | cut -d: -f1 || true)"
+  if [ -n "$warm_line" ] && [ -n "$npm_ci_line" ] && [ -n "$native_build_line" ] && \
+    [ -n "$tsc_line" ] && [ -n "$emitted_test_line" ] && \
+    [ "$warm_line" -lt "$npm_ci_line" ] && [ "$npm_ci_line" -lt "$native_build_line" ] && \
+    [ "$native_build_line" -lt "$tsc_line" ] && [ "$tsc_line" -lt "$emitted_test_line" ]; then
+    pass "cache warm precedes npm ci, native build, tsc, and the targeted emitted TypeScript run"
   else
-    fail "default-embedder ordering must be warm cache -> npm ci -> full TypeScript run"
+    fail "default-embedder ordering must be warm cache -> npm ci -> native build -> tsc -> targeted run"
   fi
 fi
 
