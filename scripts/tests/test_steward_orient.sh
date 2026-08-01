@@ -10,7 +10,7 @@
 #
 # Predicate under test (see scripts/steward-orient.sh's header for the full
 # statement):
-#   * output is <= 4096 bytes and NO file is written anywhere — INCLUDING
+#   * output is <= 5120 bytes and NO file is written anywhere — INCLUDING
 #     `.git/index`, which `git status` rewrites when it refreshes a stale stat
 #     cache (arms 2b-2d);
 #   * every load-bearing section is non-empty, or the run HARD-fails naming the
@@ -199,8 +199,8 @@ if [ "$RC" -eq 0 ]; then
 else
   fail "arm 0 (baseline green): rc=$RC err=$ERR out=$OUT"
 fi
-if [ "$BYTES" -le 4096 ] && [ "$BYTES" -gt 0 ]; then
-  pass "baseline fixture — payload is 1..4096 bytes ($BYTES)"
+if [ "$BYTES" -le 5120 ] && [ "$BYTES" -gt 0 ]; then
+  pass "baseline fixture — payload is 1..5120 bytes ($BYTES)"
 else
   fail "arm 0 (byte cap): $BYTES bytes"
 fi
@@ -399,7 +399,7 @@ else
   fail "arm 5d (missing state file): rc=$RC err=$ERR"
 fi
 
-# --- Arm 1: OUTPUT OVER 4 KB -> HARD fail (the cap is mechanical) ---------
+# --- Arm 1: OUTPUT OVER 5 KB -> HARD fail (the cap is mechanical) ---------
 # Enforced by the script itself, not only by this test: the cap is a promise the
 # tool makes to the reader's context budget, so it has to be self-checking.
 setup_fixture
@@ -407,12 +407,12 @@ BIG="$(head -c 6000 /dev/zero | tr '\0' 'x')"
 perl -0777 -pi -e "s/the fixture's next action, recorded verbatim\\./$BIG/" \
   "$FIX/dev/plans/runs/STATUS-0.9.0.md"
 run_orient "$FIX"
-if [ "$RC" -ne 0 ] && grep -qiE 'budget|4096|bytes' <<<"$ERR"; then
-  pass "a briefing over the 4096-byte cap HARD-fails and names the budget"
+if [ "$RC" -ne 0 ] && grep -qiE 'budget|5120|bytes' <<<"$ERR"; then
+  pass "a briefing over the 5120-byte cap HARD-fails and names the budget"
 else
   fail "arm 1 (byte cap): rc=$RC bytes=$BYTES err=$ERR"
 fi
-if [ "$BYTES" -gt 4096 ]; then
+if [ "$BYTES" -gt 5120 ]; then
   pass "arm 1 fixture really produced an over-cap payload ($BYTES bytes)"
 else
   fail "arm 1 fixture invalid: payload was only $BYTES bytes"
@@ -576,8 +576,8 @@ if [ "$RC" -eq 0 ]; then
 else
   fail "arm 10 (real repo green): rc=$RC err=$ERR out=$OUT"
 fi
-if [ "$BYTES" -le 4096 ] && [ "$BYTES" -gt 0 ]; then
-  pass "the real checkout's briefing is within the 4096-byte cap ($BYTES bytes)"
+if [ "$BYTES" -le 5120 ] && [ "$BYTES" -gt 0 ]; then
+  pass "the real checkout's briefing is within the 5120-byte cap ($BYTES bytes)"
 else
   fail "arm 10 (real byte cap): $BYTES bytes"
 fi

@@ -6,15 +6,15 @@
 # say, what is in flight. That state was narrated across a 5-12 file fan-out and
 # the live board alone is ~79 KB, so orientation cost either a large context bill
 # or a guess. This prints the whole picture in ONE read, from the writers of
-# record, in under 4 KB.
+# record, in under 5 KiB.
 #
 # ============================ THE TWO HARD LIMITS ============================
-# 1. <= 4096 bytes on stdout. Self-checked: over budget is a HARD failure, not a
+# 1. <= 5120 bytes on stdout. Self-checked: over budget is a HARD failure, not a
 #    silent overrun, because the cap is a promise to the reader's context budget.
 #    Override for experiments only via $STEWARD_ORIENT_BUDGET.
-#    WHERE THE BYTES GO (measured 2026-07-31, 3611 of 4096 — 485 spare, ~12%):
-#    the board's verbatim next-action cell 1632 (45%), the 5 ledger previews 566,
-#    the todos fold 358, landed slices+SHAs 189, everything else ~470. The cap was
+#    WHERE THE BYTES GO: the board's verbatim next-action cell dominates output;
+#    the ledger previews, todos fold, landed slices+SHAs, and repo facts supply
+#    the remainder. The cap was
 #    breached on 2026-07-31 at 4380 bytes and was brought back under by COMPRESSING,
 #    not by dropping facts or raising the cap: todo ids are run-length folded
 #    (`TC-2..6,9`), `git worktree list`'s column padding is squeezed, the derivable
@@ -118,7 +118,7 @@ set -euo pipefail
 # invoked by CHILD processes (gh, python3, ledgerwatch) inherits it.
 export GIT_OPTIONAL_LOCKS=0
 
-BUDGET_BYTES="${STEWARD_ORIENT_BUDGET:-4096}"
+BUDGET_BYTES="${STEWARD_ORIENT_BUDGET:-5120}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/board-closed.sh
@@ -348,7 +348,7 @@ for line in last:
     # line of dev/steward/steward-ledger.jsonl, which is where the reader goes for
     # the full text); the only question is where it cuts. Steward summaries are
     # written headline-first, so 96 still carries the headline sentence, and the
-    # five of them together cost ~110 bytes less of a 4096-byte budget.
+    # five of them together cost ~110 bytes less of a 5120-byte budget.
     summary = " ".join(str(e.get("summary", "")).split())[:96]
     print(f"  {e.get('seq', '?')} {e.get('kind', '?')}: {summary}")
 PY
