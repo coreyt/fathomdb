@@ -250,6 +250,10 @@ run_suite test-npm-inject-optional-deps bash scripts/tests/test_npm_inject_optio
 # actionlint binary present + rejects deliberately-broken fixture.
 run_suite test-actionlint-fixture bash scripts/tests/test_actionlint_fixture.sh
 
+# Go-installed actionlint prefixes its exact version with `v`; bootstrap and
+# agent-lint must normalize that conventional form without accepting drift.
+run_suite test-actionlint-go-install-version bash scripts/tests/test_actionlint_go_install_version.sh
+
 # Local lint preflight must use CI's exact Ruff version rather than reporting a
 # false green from an older environment. Fixture provides only a stale Ruff and
 # asserts the wrapper fails before attempting any other lint leg.
