@@ -26,7 +26,15 @@ FAILED=0
 TMPDIR_ROOT="$(mktemp -d)"
 SNAP="$TMPDIR_ROOT/snap"
 mkdir -p "$SNAP"
-trap 'restore; rm -rf "$TMPDIR_ROOT"' EXIT
+TEMP_TAGS=()
+
+cleanup_temp_tags() {
+  for tag in "${TEMP_TAGS[@]}"; do
+    git -C "$REPO_ROOT" tag -d "$tag" >/dev/null 2>&1 || true
+  done
+}
+
+trap 'cleanup_temp_tags; restore; rm -rf "$TMPDIR_ROOT"' EXIT
 
 cp "$CARGO" "$SNAP/Cargo.toml"
 cp "$EMBAPI" "$SNAP/embedder-api.toml"
@@ -278,6 +286,45 @@ else
     && pass "dispatch keeps non-tag gates enforced" \
     || fail "wrong diagnostic on dispatch metadata break; got: $out"
 fi
+
+# 16. workflow_dispatch must be checked out at its canonical tag, not the
+#     branch/ref selected in the GitHub UI. Exercise the real git resolution:
+#     a tag at HEAD passes, while a tag at HEAD^ must fail before publishing.
+CHECKOUT_TEST_ID="${BASHPID:-$$}"
+CHECKOUT_OK_VERSION="0.997.${CHECKOUT_TEST_ID}"
+CHECKOUT_OK_TAG="v${CHECKOUT_OK_VERSION}"
+restore
+bash "$REPO_ROOT/scripts/set-version.sh" --workspace "$CHECKOUT_OK_VERSION" >/dev/null
+printf '# Changelog\n\n## %s\n' "$CHECKOUT_OK_VERSION" > "$CL_PATH"
+git -C "$REPO_ROOT" tag "$CHECKOUT_OK_TAG" HEAD
+TEMP_TAGS+=("$CHECKOUT_OK_TAG")
+if out="$(GITHUB_EVENT_NAME="workflow_dispatch" DRY_RUN="true" \
+    RELEASE_GATES_REQUIRE_TAG_CHECKOUT=1 \
+    RELEASE_DISPATCH_VERSION="$CHECKOUT_OK_VERSION" RELEASE_GATES_TAG="$CHECKOUT_OK_TAG" \
+    GITHUB_REF_NAME="main" "$VRG" 2>&1)"; then
+  pass "dispatch accepts a checkout whose HEAD is the canonical tag"
+else
+  fail "dispatch should accept a canonical-tag checkout; got: $out"
+fi
+
+CHECKOUT_BAD_VERSION="0.996.${CHECKOUT_TEST_ID}"
+CHECKOUT_BAD_TAG="v${CHECKOUT_BAD_VERSION}"
+restore
+bash "$REPO_ROOT/scripts/set-version.sh" --workspace "$CHECKOUT_BAD_VERSION" >/dev/null
+printf '# Changelog\n\n## %s\n' "$CHECKOUT_BAD_VERSION" > "$CL_PATH"
+git -C "$REPO_ROOT" tag "$CHECKOUT_BAD_TAG" HEAD^
+TEMP_TAGS+=("$CHECKOUT_BAD_TAG")
+if out="$(GITHUB_EVENT_NAME="workflow_dispatch" DRY_RUN="true" \
+    RELEASE_GATES_REQUIRE_TAG_CHECKOUT=1 \
+    RELEASE_DISPATCH_VERSION="$CHECKOUT_BAD_VERSION" RELEASE_GATES_TAG="$CHECKOUT_BAD_TAG" \
+    GITHUB_REF_NAME="main" "$VRG" 2>&1)"; then
+  fail "dispatch must reject a UI-selected checkout that differs from its canonical tag; got: $out"
+else
+  printf '%s' "$out" | grep -qi 'checkout mismatch' \
+    && pass "dispatch rejects a checkout whose HEAD differs from the canonical tag" \
+    || fail "wrong diagnostic for a dispatch checkout mismatch; got: $out"
+fi
+restore
 
 # 12. RC version (hyphen in WS_VERSION) + non-existent main ref:
 #     HEAD-on-main check is SKIPPED per HITL 2026-05-17. Gate emits a
