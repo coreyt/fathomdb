@@ -6,9 +6,10 @@
 
 Slice 40 is commissioned but **E1 is hard-stopped and not closed**. Do not begin
 E2, integrate, push, or alter the release record outside the reconciled
-Linux-first scope. The next action is a bounded, design-only B5 continuation:
-the HITL has authorized a materially different trusted test-only verification
-design at ledger `seq-235`; do not repair the rejected CI/source route.
+Linux-first scope. The B5 design-only continuation is terminal-clean at
+`e104d696`; it specifies a materially different trusted test-only verification
+route. **The next action is HITL approval of its specific immutable appliance
+policy before implementation.** Do not repair the rejected CI/source route.
 
 **Latest verified E1 work (2026-07-31):** the Linux-first scope candidate is
 **accepted but unintegrated** at private head `7d2ce9e9` on base `111313b9`.
@@ -62,7 +63,7 @@ E1 receipt.
 | B2 | `6730faf3` | PASS | ready for integration |
 | B3 | `fbc7d7d0` | PASS after remediation | ready for integration |
 | B4 | `d4928c4d` | CANCELLED by `seq-234` | macOS/Windows CI and artifact scope move to 0.8.22; do not integrate this patch for 0.8.20 |
-| B5 | `52108139` private, rejected | CIRCUIT-BREAKER BLOCK; successor authorized at `seq-235` | canonical binding lacks `test-hooks`; CI/source-route guard had three independent P1 containment bypasses. Commission a materially different trusted test-only design; no re-scope or deferral. |
+| B5 | `52108139` private, rejected | design terminal-clean at `e104d696`; implementation waits on appliance-policy approval | canonical binding lacks `test-hooks`; CI/source-route guard had three independent P1 containment bypasses. The approved successor design is `dev/design/0.8.20-b5-trusted-test-only-verification-design.md`; no re-scope or deferral. |
 | B6 | `0533eb8d` | PASS | ready for integration |
 | B7 | `3c92505f` | PASS | ready for integration |
 | B8+B8b | `1ab83b09` | PASS after one P1 repair | ready for integration |

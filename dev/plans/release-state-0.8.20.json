@@ -518,7 +518,7 @@
         "title": "B5 post-circuit-breaker verification design",
         "ruling": "Authorize a materially different trusted test-only verification design. Do not re-scope or defer B5. The rejected CI/source-route candidate remains forbidden after three containment P1 findings, including an actionlint-valid job-level `permissions: write-all` bypass.",
         "source": "steward seq-235 (HITL 2026-07-31)",
-        "residual_work": "Commission a bounded design-only continuation. It must not repair or integrate the rejected CI/source-route candidate, dispatch CI, publish, or advance E2 until independently reviewed."
+        "residual_work": "The terminal-clean design is `dev/design/0.8.20-b5-trusted-test-only-verification-design.md`. HITL must approve a specific immutable appliance policy before implementation. That implementation must not repair or integrate the rejected CI/source-route candidate, dispatch CI, publish, or advance E2 until independently reviewed."
       }
     ],
     "ruled_tracking": [
