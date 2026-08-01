@@ -1255,6 +1255,61 @@ else
   fail "arm 11j (all-int neutrality): rc=$RC out=$OUT"
 fi
 
+# --- Arm 12: the failed release attempt is state-owned and rendered ---------
+# Recovery facts are safety-critical: a hand-written board summary could quietly
+# omit a failed tier, mistake a skipped job for a successful one, or turn the
+# unavailable raw log into a claimed root cause. The state record is therefore
+# rendered through the same byte-exact fence as the ladder facts.
+B_ATTEMPT='<!-- BEGIN GENERATED release-state:9.9.9:release-attempt -->'
+E_ATTEMPT='<!-- END GENERATED release-state:9.9.9:release-attempt -->'
+attempt_fixture() {
+  python3 - "$FIX/dev/plans/release-state-9.9.9.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+s = json.load(open(p))
+s["release_attempt"] = {
+  "tag": {"name": "v9.9.9", "annotated_object": "tag-object", "commit": "target-commit"},
+  "workflow_run": {"id": "123", "url": "https://example.invalid/runs/123", "conclusion": "failure"},
+  "failed_tiers": ["publish-rust-t2-schema", "publish-npm-platform-linux-x64-gnu"],
+  "skipped": ["Rust tiers 3–7", "PyPI", "npm main", "registry smokes", "co-tagging", "GitHub Release"],
+  "registry_boundary": "PyPI and npm 9.9.9 were absent when checked; crates.io state is unknown (not read directly).",
+  "evidence_limit": "The inaccessible job logs prevent asserting the original raw error.",
+  "recovery_remedies": "OIDC and Node/npm workflow changes are recovery remedies, not proven root causes."
+}
+s["generated_views"].append({"id": "release-attempt", "file": "dev/plans/runs/board.md"})
+json.dump(s, open(p, "w"), indent=2)
+PY
+  cat >>"$FIX/dev/plans/runs/board.md" <<EOF
+
+## Recovery record
+
+${B_ATTEMPT}
+placeholder${E_ATTEMPT}
+EOF
+}
+
+setup_fixture
+attempt_fixture
+run_gate --write
+run_gate
+if [ "$RC" -eq 0 ] \
+   && grep -qF 'Annotated tag object `tag-object` resolves to commit `target-commit`' "$FIX/dev/plans/runs/board.md" \
+   && grep -qF 'not proven root causes' "$FIX/dev/plans/runs/board.md"; then
+  pass "release-attempt — state-owned failed-attempt record renders evidence, skips and inference boundary"
+else
+  fail "arm 12 (release-attempt baseline): rc=$RC out=$OUT"
+fi
+
+setup_fixture
+attempt_fixture
+perl -0777 -pi -e 's/target-commit/hand-edited-commit/' "$FIX/dev/plans/runs/board.md"
+run_gate
+if [ "$RC" -ne 0 ] && grep -q 'release-attempt' <<<"$OUT" && grep -q 'is STALE' <<<"$OUT"; then
+  pass "release-attempt — a hand-edited recovery fact inside the board fence HARD-fails"
+else
+  fail "arm 12b (release-attempt drift): rc=$RC out=$OUT"
+fi
+
 # --- Arm 9: the CI job is ALWAYS-ON, and reuses the shared script ----------
 # Same reasoning as board-currency / ledger-integrity / plan-anchors: the push
 # that breaks a generated view is a LANDING push, which the docs_only fast path

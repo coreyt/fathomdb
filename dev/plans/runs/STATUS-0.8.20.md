@@ -51,12 +51,18 @@ COMPLETE — LANDED `91db34d8`** (close record §21). There is no remaining impl
 | **Release gate** | The Slice-30 publish precondition is satisfied. PUBLISH requires both a fully green CI run on the landed state and explicit HITL approval; neither a tag nor a real publish was created by Slice 40. |
 | **Immediate next action** | Hold at the separate explicit HITL **PUBLISH** gate. Do not commission another 0.8.20 implementation slice. |
 
+<!-- BEGIN GENERATED release-state:0.8.20:release-attempt -->
+**Failed release attempt — `v0.8.20`:** Annotated tag object `e8187841b5d96d77ef2b51d0c6553fb94ac8fbd3` resolves to commit `5e3c95ebc3a8494798c3702991132433cb6261d1`. [Release workflow run 30703565058](https://github.com/coreyt/fathomdb/actions/runs/30703565058) concluded **failure**. **Failed tiers:** `publish-rust-t2-schema`, `publish-npm-platform-linux-x64-gnu`. **Skipped:** Rust tiers 3–7; PyPI; npm main package; all registry-install smokes; co-tagging; GitHub Release. **Registry boundary:** PyPI and npm 0.8.20 were absent when checked; crates.io state is unknown because it was not read directly from the registry. **Evidence limit:** The inaccessible job logs prevent asserting the original raw error. **Recovery posture:** The current OIDC and Node/npm workflow changes are recovery remedies, not proven root causes.
+<!-- END GENERATED release-state:0.8.20:release-attempt -->
+
 **HITL platform-scope amendment — `seq-234`, 2026-07-31.** 0.8.20 supports and publishes Linux x86_64 native
 artifacts only. macOS/Windows CI, validation and native-artifact work defer to **0.8.22**; this does not
 platform-exclude Cargo source crates. **B4 is cancelled and deferred to 0.8.22** — do not integrate its private
 patch. TC-91 remains release-blocking on Linux: earn **five consecutive relevant Linux CI TC-91 greens** whose
-Linux `verify` execution actually runs the B3 gate. B5's safe test-hooks-capable canonical binding route remains
-unresolved under `seq-233`; only PUBLISH gate (ii) is still `halts_run`.
+Linux `verify` execution actually runs the B3 gate. B5's independently reviewed canonical test patch is integrated
+patch-equivalently in the recovery candidate and now owes its normal-CI receipt: **60 isolated-node and 3 whole-file
+consecutive runs, each with its immediate pytest exit recorded**. The rejected bespoke B5 CI/source route remains
+forbidden; only PUBLISH gate (ii) is still `halts_run`.
 
 **Slices 0, 5, 10, 15 close records** are §11 (Slice 5), §12 (Slice 10), §13 (Slice 15b — TC-34 only; the
 registry/EAV/TC-33 remainder that also landed in the keystone `a2022957` is summarised in §8 and in

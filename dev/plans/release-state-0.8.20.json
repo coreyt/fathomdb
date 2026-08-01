@@ -244,6 +244,33 @@
   "remaining_ladder": [],
   "ladder_order": "COMPLETE. Slices 0/5/10/15/20/21/22/23/25/30/31/32/33/39/40 are LANDED; Slice 40 landed at 833a2035 after the two prior cross-cutting units, SLICE-ID-HARDENING (2008f529) and R-20-HARNESS (b6cc8fa6). Slice 34 was CANCELLED (seq-182), parked at 0.8.21 (seq-183). There is no further 0.8.20 implementation slice. PUBLISH remains a separate explicit HITL gate and Slice 40 stopped before any tag.",
   "publish_precondition_slice": 30,
+  "release_attempt": {
+    "tag": {
+      "name": "v0.8.20",
+      "annotated_object": "e8187841b5d96d77ef2b51d0c6553fb94ac8fbd3",
+      "commit": "5e3c95ebc3a8494798c3702991132433cb6261d1"
+    },
+    "workflow_run": {
+      "id": "30703565058",
+      "url": "https://github.com/coreyt/fathomdb/actions/runs/30703565058",
+      "conclusion": "failure"
+    },
+    "failed_tiers": [
+      "publish-rust-t2-schema",
+      "publish-npm-platform-linux-x64-gnu"
+    ],
+    "skipped": [
+      "Rust tiers 3–7",
+      "PyPI",
+      "npm main package",
+      "all registry-install smokes",
+      "co-tagging",
+      "GitHub Release"
+    ],
+    "registry_boundary": "PyPI and npm 0.8.20 were absent when checked; crates.io state is unknown because it was not read directly from the registry.",
+    "evidence_limit": "The inaccessible job logs prevent asserting the original raw error.",
+    "recovery_remedies": "The current OIDC and Node/npm workflow changes are recovery remedies, not proven root causes."
+  },
   "acceptance": {
     "highest_defined_non_reserved": "AC-080",
     "reservations": [
@@ -519,7 +546,7 @@
         "title": "B5 evidence standard after appliance-policy reconsideration",
         "ruling": "Strong normal CI evidence is sufficient. This supersedes the external immutable-appliance-policy gate imposed by seq-235. B5 remains required; the rejected bespoke CI/source-route candidate remains forbidden. Complete B5 through the ordinary implementation, independent-review, and normal-CI evidence path rather than treating CI as an adversarial security boundary.",
         "source": "steward seq-237 (HITL 2026-08-01)",
-        "residual_work": "B5 implementation candidate `70a61478` is independently terminal-clean (steward seq-238) and awaits E1 integration. Then obtain ordinary CI evidence for the required 60 isolated plus 3 whole-file runs. Do not revive, repair, or integrate the rejected bespoke CI/source-route guard; do not advance E2 until the Steward independently accepts the resulting E1 receipt."
+        "residual_work": "B5 implementation candidate `70a61478` is independently terminal-clean (steward seq-238). Its patch is integrated in the current recovery candidate: `git cherry -v 08d386e0 5e6cade2` marks every reviewed E1 commit patch-equivalent, and the B5 test file is byte-identical to `70a61478`. Obtain ordinary CI evidence for the required 60 isolated plus 3 whole-file runs. Do not revive, repair, or integrate the rejected bespoke CI/source-route guard; do not advance E2 until the Steward independently accepts the resulting E1 receipt."
       }
     ],
     "ruled_tracking": [
@@ -560,6 +587,13 @@
       "location": "§9 Immediate next slice, `### Historical` - the LANDED roll-up sentence",
       "renders": "every landed slice + its landing SHA, the SCHEMA version, and the remaining ladder",
       "why_it_is_generated": "TC-89 (second site). Section 9 carried a SECOND hand-written pointer below the generated one, phrased INCREMENTALLY - 'Landed since the Slice-20 narration above: Slice 25 ... Slice 30 ... Slice 21' - so each new landing made it wrong BY OMISSION rather than by contradiction, which is the quietest rot there is. Measured at the Slice 40 commission: it omitted slices 22, 23, 31, 32, 33 and 39, and like the pointer above it, it had gone stale at three consecutive commissions. Because '## 9. Immediate next slice' is the {{MANDATE}} anchor, everyone who reads this section is about to commission a slice, and a generated pointer sitting above a hand-written one lends the stale one its authority. RENDERED ABSOLUTE, NEVER INCREMENTAL: the whole landed set, so no future landing has a 'since when' to invalidate. The surrounding historical narrative stays hand-written and OUTSIDE the markers."
+    },
+    {
+      "id": "release-attempt",
+      "file": "dev/plans/runs/STATUS-0.8.20.md",
+      "location": "§1 Current state, immediately after the state table",
+      "renders": "the failed v0.8.20 release attempt: annotated tag and commit, workflow failure, failed tiers, skipped work, registry boundary, and evidence-versus-inference limit",
+      "why_it_is_generated": "A partial publish is safety-critical release state. The tag object is distinct from its commit target; jobs skipped after an upstream failure are neither successes nor unobserved work; and inaccessible logs do not support a claimed raw root cause. Rendering the record from this single writer prevents a later hand summary from dropping a tier, changing an unknown registry state into a claim, or treating remedies as proof."
     }
   ]
 }
