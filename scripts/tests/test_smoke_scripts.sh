@@ -86,6 +86,11 @@ assert_contains "smoke-pypi-wheel: PEP 440 normalization" "$PYPI" \
   'pep440_normalize()'
 assert_contains "smoke-pypi-wheel: open/close exercise" "$PYPI" 'Engine.open'
 assert_contains "smoke-pypi-wheel: close call" "$PYPI" 'e.close()'
+# Canonical writes require provenance. Keep this structural assertion alongside
+# the real-registry smoke contract so a future edit cannot reintroduce a
+# publish-only WriteValidationError.
+assert_contains "smoke-pypi-wheel: write carries source_id" "$PYPI" \
+  '"source_id": "smoke:pypi-wheel"'
 
 check_common "$NPM" "smoke-npm-package"
 assert_contains "smoke-npm-package: fresh npm init" "$NPM" 'npm init -y'
@@ -93,6 +98,10 @@ assert_contains "smoke-npm-package: pinned npm install" "$NPM" \
   'npm install --silent "fathomdb@${VERSION}"'
 assert_contains "smoke-npm-package: Engine.open exercise" "$NPM" 'Engine.open'
 assert_contains "smoke-npm-package: close call" "$NPM" 'await e.close()'
+# TypeScript accepts camelCase at the N-API boundary; the opaque id is the
+# smoke fixture's provenance, not caller content.
+assert_contains "smoke-npm-package: write carries sourceId" "$NPM" \
+  'sourceId: "smoke:npm-package"'
 
 # Run each smoke with a bad version arg — must exit non-zero BEFORE doing
 # any network work, with a usage-shaped diagnostic.

@@ -430,6 +430,8 @@ export interface NativeModule {
   Engine: {
     open(path: string, options?: NativeEngineOpenOptions): Promise<NativeEngine>;
   };
+  /** Module-level CLS-pooled batch embedder (Python: `embed_batch_cls`). */
+  embedBatchCls(texts: string[]): Promise<number[][]>;
   adminConfigure(
     engine: NativeEngine,
     options: NativeAdminConfigureOptions,
