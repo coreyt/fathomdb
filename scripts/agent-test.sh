@@ -372,6 +372,7 @@ fi
 # fail after the native debug build has already run.
 run_suite test-release-surface-repo-root bash scripts/tests/test_release_surface_repo_root.sh
 run_suite test-release-surface-native-api bash scripts/tests/test_release_surface_native_api.sh
+run_suite test-ts-cache-coverage-no-rg bash scripts/tests/test_ts_cache_coverage_split_no_rg.sh
 
 # Collect-all summary — the deliverable. Prints every suite's outcome (full
 # table on any FAIL or AGENT_VERBOSE=1; a one-line summary otherwise) and

@@ -32,7 +32,7 @@ expected_gated_files=(
 )
 mapfile -t actual_gated_files < <(
   cd "$REPO_ROOT"
-  rg -l 'FATHOMDB_SKIP_NETWORK_TESTS' src/ts/tests --glob '*.test.ts' | sort
+  find src/ts/tests -type f -name '*.test.ts' -exec grep -l 'FATHOMDB_SKIP_NETWORK_TESTS' {} + | sort
 )
 if [ "${actual_gated_files[*]}" = "${expected_gated_files[*]}" ]; then
   pass "exactly the six audited TypeScript files honor the network gate"
