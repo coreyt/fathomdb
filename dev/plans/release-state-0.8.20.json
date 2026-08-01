@@ -526,7 +526,7 @@
         "title": "B5 evidence standard after appliance-policy reconsideration",
         "ruling": "Strong normal CI evidence is sufficient. This supersedes the external immutable-appliance-policy gate imposed by seq-235. B5 remains required; the rejected bespoke CI/source-route candidate remains forbidden. Complete B5 through the ordinary implementation, independent-review, and normal-CI evidence path rather than treating CI as an adversarial security boundary.",
         "source": "steward seq-237 (HITL 2026-08-01)",
-        "residual_work": "Commission the bounded B5 test/oracle implementation under the normal Slice-40 controls: RED-first test work, independent adversarial review, and ordinary CI evidence for the required 60 isolated plus 3 whole-file runs. Do not revive, repair, or integrate the rejected bespoke CI/source-route guard; do not advance E2 until the Steward independently accepts the resulting E1 receipt."
+        "residual_work": "B5 implementation candidate `70a61478` is independently terminal-clean (steward seq-238) and awaits E1 integration. Then obtain ordinary CI evidence for the required 60 isolated plus 3 whole-file runs. Do not revive, repair, or integrate the rejected bespoke CI/source-route guard; do not advance E2 until the Steward independently accepts the resulting E1 receipt."
       }
     ],
     "ruled_tracking": [

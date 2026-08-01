@@ -9,9 +9,10 @@ E2, integrate, push, or alter the release record outside the reconciled
 Linux-first scope. The B5 design-only continuation is terminal-clean at
 `e104d696` and its Steward acceptance record landed at `ea43e861`, but the
 appliance route is **SUPERSEDED** by HITL ruling `seq-237`: strong normal CI
-evidence is sufficient. **The next action is commissioning the bounded B5
-test/oracle implementation, then independent review and normal-CI evidence.**
-Do not repair or revive the rejected bespoke CI/source route.
+evidence is sufficient. B5 implementation `70a61478` is independently
+terminal-clean (`seq-238`) and awaits E1 integration. **The next action is the
+ordinary CI 60-isolated + 3-whole-file evidence after integration.** Do not
+repair or revive the rejected bespoke CI/source route.
 
 **Latest verified E1 work (2026-07-31):** the Linux-first scope candidate is
 **accepted but unintegrated** at private head `7d2ce9e9` on base `111313b9`.
@@ -77,7 +78,7 @@ E1 receipt.
 | B2 | `6730faf3` | PASS | ready for integration |
 | B3 | `fbc7d7d0` | PASS after remediation | ready for integration |
 | B4 | `d4928c4d` | CANCELLED by `seq-234` | macOS/Windows CI and artifact scope move to 0.8.22; do not integrate this patch for 0.8.20 |
-| B5 | `52108139` private, rejected | appliance design superseded by `seq-237`; implementation is now authorized under normal Slice-40 controls | canonical binding lacks `test-hooks`; the bespoke CI/source-route guard had three independent P1 containment bypasses and remains forbidden. B5 needs the bounded test/oracle patch, independent review, and normal-CI 60+3 evidence. |
+| B5 | `70a61478` accepted, unintegrated; `52108139` private, rejected | normal-CI implementation terminal-clean at `seq-238` | the candidate isolates all eight live raw `mode=ro` oracles through `subprocess` with a real SQLite regression test. Await E1 integration, then ordinary CI 60+3 evidence; the bespoke CI/source-route guard remains forbidden. |
 | B6 | `0533eb8d` | PASS | ready for integration |
 | B7 | `3c92505f` | PASS | ready for integration |
 | B8+B8b | `1ab83b09` | PASS after one P1 repair | ready for integration |
