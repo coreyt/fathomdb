@@ -9,12 +9,14 @@ E2, integrate, push, or alter the release record outside the reconciled
 Linux-first scope. A fresh E1 continuation must first apply the HITL ruling at
 ledger `seq-234`, then resolve B5's already-authorized evidence route.
 
-**Active work (2026-07-31):** one fresh role-simulated E1 continuation
-orchestrator is commissioning a single canary implementer to reconcile the
-Linux-first scope in the CI/release workflow and planning prose. It is bounded:
-no integration, PR, CI accrual, B5 implementation, tag, dispatch, publish, or
-credential action. Its receipt must be independently reviewed before the
-Steward commissions the next E1 step.
+**Latest verified E1 work (2026-07-31):** the Linux-first scope candidate is
+**accepted but unintegrated** at private head `7d2ce9e9` on base `111313b9`.
+Its RED `50aa0ca5` proves a macOS/Windows `matrix.runner` escape is rejected;
+its GREEN `b286004d` and independent simulated review PASS establish the
+Linux-x86 workflow guard. It made no push, PR, CI accrual, B5 implementation,
+tag, dispatch, publish, or credential action. Receipt:
+`/tmp/fathomdb-s40-e1-linuxfirst-fix2-bioZyf/repo/dev/experiments/s40-e1-linuxfirst-fix2-receipt-20260731.md`.
+The next E1 step is B5's authorized safe canonical test-hooks binding route.
 
 The epoch base is `0f7642cc904186e7a1a7a815340404689a0f5679`. Before every E1
 action and before integration, fetch `origin` in a private clone and re-verify
@@ -57,6 +59,7 @@ E1 receipt.
 | B8+B8b | `1ab83b09` | PASS after one P1 repair | ready for integration |
 | B9 | `1880fc9b` | PASS after one P1 repair | CI-only proof still awaits the BASE push |
 | B10 | `c32501a0` | PASS | ready for integration |
+| Linux-first scope | `7d2ce9e9` | PASS after two bounded guard corrections | accepted but unintegrated; retains Linux x86 release path, cancels B4, and defers macOS/Windows CI/artifacts to 0.8.22 |
 
 **Decision 1 — Linux-first scope (HITL):** **RULED at ledger `seq-234`** —
 0.8.20 supports/publishes Linux x86_64 native artifacts only. macOS/Windows CI
@@ -70,6 +73,14 @@ test-hooks-capable canonical binding route, then perform the required accrual. T
 prior canonical binding whole-file run failed because its `_fathomdb.abi3.so`
 lacks `test-hooks` (rc=1, 10 passed/1 failed). Never rebuild or `pip install -e`
 from a private clone, and do not mutate the shared checkout to manufacture evidence.
+
+**Steward verification of Linux-first candidate:** `git status` clean; base
+ancestry and `git diff --check` passed. The Linux-first guard, release-scope
+test, `actionlint` on both workflows, and release-state-view check each exited
+0. The final independent review PASS transcript is
+`/tmp/fathomdb-s40-linuxfirst-fix2-review-cilL4c/repo/dev/experiments/s40-e1-linuxfirst-fix2-final-independent-review-20260731.md`.
+The fresh private clone lacked `node_modules/.bin/markdownlint-cli2`, so
+`agent-lint.sh` was not treated as executed or green.
 
 E1 has not created an integration branch, rebased, pushed the one BASE change,
 started or observed CI, edited `release-state`, `STATUS`, the master schedule, or
