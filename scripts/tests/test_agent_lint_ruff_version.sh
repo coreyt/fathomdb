@@ -45,8 +45,8 @@ if ! grep -Fq '0.16.1' <<<"$OUT"; then
   exit 1
 fi
 
-if ! grep -Fq 'scripts/bootstrap.sh on the main checkout' <<<"$OUT"; then
-  printf 'FAIL  guard output lacks the main-checkout bootstrap remediation\n' >&2
+if ! grep -Fq 'scripts/bootstrap.sh in a clean non-worktree checkout' <<<"$OUT"; then
+  printf 'FAIL  guard output lacks the clean non-worktree bootstrap remediation\n' >&2
   exit 1
 fi
 

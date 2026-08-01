@@ -18,13 +18,13 @@ elif command -v ruff >/dev/null 2>&1; then
 fi
 
 if [ -z "$ruff_bin" ]; then
-  printf 'FAIL lint-python: Ruff %s is required but not installed. Run scripts/bootstrap.sh on the main checkout.\n' "$RUFF_VERSION" >&2
+  printf 'FAIL lint-python: Ruff %s is required but not installed. Run scripts/bootstrap.sh in a clean non-worktree checkout.\n' "$RUFF_VERSION" >&2
   exit 1
 fi
 
 ruff_version="$("$ruff_bin" --version)"
 if [ "$ruff_version" != "ruff $RUFF_VERSION" ]; then
-  printf 'FAIL lint-python: Ruff %s is required; selected %s. Run scripts/bootstrap.sh on the main checkout.\n' "$RUFF_VERSION" "$ruff_version" >&2
+  printf 'FAIL lint-python: Ruff %s is required; selected %s. Run scripts/bootstrap.sh in a clean non-worktree checkout.\n' "$RUFF_VERSION" "$ruff_version" >&2
   exit 1
 fi
 
