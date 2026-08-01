@@ -10,6 +10,10 @@ on:
         description: "Rehearse cargo publish --dry-run + npm --dry-run; PyPI publish + post-publish smoke skipped entirely (no test.pypi slot burn)."
         type: boolean
         default: true
+      release_version:
+        description: "Required semver version for a recovery dispatch; derives the canonical v-tag for every release consumer."
+        type: string
+        required: true
       confirm_release_version:
         description: "Required when dry_run is unchecked: type the exact Axis-W version to confirm a real publish."
         type: string
@@ -21,6 +25,8 @@ permissions:
 
 env:
   DRY_RUN: ${{ inputs.dry_run || 'false' }}
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.release_version) || github.ref_name }}
+  RELEASE_DISPATCH_VERSION: ${{ inputs.release_version || '' }}
   RELEASE_CONFIRM_VERSION: ${{ inputs.confirm_release_version || '' }}
   # 0.8.20 is Linux-first: platform coverage is PARTIAL (linux-x64-gnu only).
   # Publishing under `latest` would serve unsupported users an
@@ -50,8 +56,8 @@ jobs:
         run: echo "DRY_RUN=${DRY_RUN}"
       - name: Install actionlint
         run: |
-          curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash \
-            | bash -s -- 1.7.7
+          curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash \
+            | bash -s -- 1.7.12
           sudo mv actionlint /usr/local/bin/actionlint
       - name: Validate workflow YAML
         run: actionlint .github/workflows/*.yml
@@ -70,6 +76,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_GATES_HEAD_REF: refs/remotes/origin/main
+          RELEASE_GATES_TAG: ${{ env.RELEASE_TAG }}
+          RELEASE_DISPATCH_VERSION: ${{ env.RELEASE_DISPATCH_VERSION }}
       - name: Axis-E published-API drift guard
         # Catches the v0.8.9 partial-publish class BEFORE any tier uploads:
         # if fathomdb-embedder-api's pinned Axis-E version is already on
@@ -104,7 +112,7 @@ jobs:
           python-version: "3.11"
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
         with:
-          toolchain: stable
+          toolchain: "1.95.0"
           targets: ${{ matrix.target }}
       - uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
@@ -151,7 +159,7 @@ jobs:
           node-version: "25.9.0"
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
         with:
-          toolchain: stable
+          toolchain: "1.95.0"
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Install ts deps
@@ -190,7 +198,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
         with:
-          toolchain: stable
+          toolchain: "1.95.0"
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Verify workspace builds in release mode
         run: cargo build --release --workspace
@@ -238,7 +246,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
         with:
-          toolchain: stable
+          toolchain: "1.95.0"
       - name: Authenticate with crates.io
         id: crates_io_auth
         if: ${{ inputs.dry_run != true }}
@@ -266,7 +274,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
         with:
-          toolchain: stable
+          toolchain: "1.95.0"
       - name: Authenticate with crates.io
         id: crates_io_auth
         if: ${{ inputs.dry_run != true }}
@@ -294,7 +302,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
         with:
-          toolchain: stable
+          toolchain: "1.95.0"
       - name: Authenticate with crates.io
         id: crates_io_auth
         if: ${{ inputs.dry_run != true }}
@@ -328,7 +336,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
         with:
-          toolchain: stable
+          toolchain: "1.95.0"
       - name: Authenticate with crates.io
         id: crates_io_auth
         if: ${{ inputs.dry_run != true }}
@@ -356,7 +364,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
         with:
-          toolchain: stable
+          toolchain: "1.95.0"
       - name: Authenticate with crates.io
         id: crates_io_auth
         if: ${{ inputs.dry_run != true }}
@@ -384,7 +392,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
         with:
-          toolchain: stable
+          toolchain: "1.95.0"
       - name: Authenticate with crates.io
         id: crates_io_auth
         if: ${{ inputs.dry_run != true }}
@@ -413,7 +421,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
         with:
-          toolchain: stable
+          toolchain: "1.95.0"
       - name: Authenticate with crates.io
         id: crates_io_auth
         if: ${{ inputs.dry_run != true }}
@@ -491,15 +499,15 @@ jobs:
       - name: List staged platform package
         working-directory: src/ts/npm/linux-x64-gnu
         run: ls -la
-      # npm OIDC trusted publishing needs npm >= 11.5.1; Node 25.9.0 ships npm
-      # 11.12.1, and npx keeps the publisher on the latest npm. --access
+      # npm OIDC trusted publishing needs npm >= 11.5.1; the exact Node
+      # 25.9.0 toolchain supplies npm 11.12.1 for the publisher. --access
       # public makes the scoped
       # package publishable; --provenance attests the build. Idempotent no-op
       # if this version is already on the registry.
       - name: Publish @fathomdb/fathomdb-linux-x64-gnu
         working-directory: src/ts/npm/linux-x64-gnu
         env:
-          NPM_BIN: "npx npm@latest"
+          NPM_BIN: "npm"
         run: |
           if [ "${DRY_RUN}" = "true" ]; then
             bash "$GITHUB_WORKSPACE/scripts/release/npm-publish-if-new.sh" \
@@ -542,7 +550,7 @@ jobs:
         run: bash scripts/release/npm-inject-optional-deps.sh
       - name: Publish main package to npm (or dry-run rehearsal)
         env:
-          NPM_BIN: "npx npm@latest"
+          NPM_BIN: "npm"
         run: |
           if [ "${DRY_RUN}" = "true" ]; then
             bash "$GITHUB_WORKSPACE/scripts/release/npm-publish-if-new.sh" \
@@ -584,11 +592,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
         if: matrix.smoke == 'crates-cli'
         with:
-          toolchain: stable
+          toolchain: "1.95.0"
       - name: Resolve tag version
         id: ver
         run: |
-          v="${GITHUB_REF_NAME#v}"
+          v="${RELEASE_TAG#v}"
           echo "version=${v}" >> "$GITHUB_OUTPUT"
       - name: Run smoke
         run: bash "scripts/release/smoke/smoke-${{ matrix.smoke }}.sh" "${{ steps.ver.outputs.version }}"
@@ -609,7 +617,7 @@ jobs:
       - name: Resolve tag version
         id: ver
         run: |
-          v="${GITHUB_REF_NAME#v}"
+          v="${RELEASE_TAG#v}"
           echo "version=${v}" >> "$GITHUB_OUTPUT"
       - name: Assert sibling-package co-tagging
         run: bash scripts/release/assert-co-tagging.sh "${{ steps.ver.outputs.version }}"
@@ -631,5 +639,6 @@ jobs:
           path: dist
       - uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2.6.1
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
           files: dist/*
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: ${{ contains(env.RELEASE_TAG, '-') }}

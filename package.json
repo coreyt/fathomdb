@@ -1,5 +1,6 @@
 {
   "name": "fathomdb-dev-tooling",
+  "packageManager": "npm@11.12.1",
   "private": true,
   "description": "Repo-wide dev tooling (markdown lint + link check). Not published. The TypeScript binding lives in src/ts/.",
   "scripts": {

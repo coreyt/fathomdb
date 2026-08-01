@@ -68,18 +68,27 @@ fi
 
 # actionlint — workflow validator. Pinned: yaml.safe_load passes
 # schema-invalid syntax that GitHub silently rejects, so we need a real
-# linter for .github/workflows/*.yml. Version pin matches a recent stable
-# release; bump deliberately, not drifted.
-if ! command -v actionlint >/dev/null 2>&1; then
-  if command -v go >/dev/null 2>&1; then
-    echo "Installing actionlint v1.7.12 via go install..."
-    GO111MODULE=on go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
-    if ! command -v actionlint >/dev/null 2>&1; then
-      echo "actionlint installed under \$GOBIN (default ~/go/bin); add it to PATH" >&2
-      echo "  e.g. export PATH=\"\$(go env GOPATH)/bin:\$PATH\"" >&2
-    fi
-  else
-    echo "actionlint not installed and go toolchain unavailable; install actionlint manually" >&2
-    echo "  see https://github.com/rhysd/actionlint/releases (pin v1.7.12)" >&2
+# linter for .github/workflows/*.yml. A missing or different binary is not a
+# usable bootstrap result: install the exact CI version and verify it.
+readonly ACTIONLINT_VERSION="1.7.12"
+actionlint_bin="$(command -v actionlint || true)"
+actionlint_version=""
+if [ -n "$actionlint_bin" ]; then
+  actionlint_version="$("$actionlint_bin" --version | sed -n '1p')"
+fi
+
+if [ "$actionlint_version" != "$ACTIONLINT_VERSION" ]; then
+  if ! command -v go >/dev/null 2>&1; then
+    echo "actionlint $ACTIONLINT_VERSION is required but go is unavailable; install it manually" >&2
+    echo "  see https://github.com/rhysd/actionlint/releases (pin v$ACTIONLINT_VERSION)" >&2
+    exit 1
   fi
+  echo "Installing actionlint v$ACTIONLINT_VERSION via go install..."
+  GO111MODULE=on go install "github.com/rhysd/actionlint/cmd/actionlint@v$ACTIONLINT_VERSION"
+  actionlint_bin="$(go env GOPATH)/bin/actionlint"
+  if [ ! -x "$actionlint_bin" ] || [ "$("$actionlint_bin" --version | sed -n '1p')" != "$ACTIONLINT_VERSION" ]; then
+    echo "actionlint v$ACTIONLINT_VERSION installation did not produce the required binary" >&2
+    exit 1
+  fi
+  echo "actionlint v$ACTIONLINT_VERSION is installed at $actionlint_bin"
 fi
