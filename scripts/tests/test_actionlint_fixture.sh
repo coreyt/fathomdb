@@ -35,6 +35,10 @@ printf 'PASS  actionlint rejects deliberately-broken fixture\n'
 # label and reject the three deferred platform labels so the scope cannot drift.
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 RELEASE_YML="${RELEASE_YML:-$REPO_ROOT/.github/workflows/release.yml}"
+CI_YML="${CI_YML:-$REPO_ROOT/.github/workflows/ci.yml}"
+TS_README="$REPO_ROOT/src/ts/README.md"
+TS_INSTALL_DOC="$REPO_ROOT/docs/install/typescript.md"
+NODE_VERSION_FILE="$REPO_ROOT/.nvmrc"
 
 # 0.8.20 R-20-HARNESS: accumulate-then-exit, not fail-fast-on-first-item.
 # The original loops below `exit 1`ed on the FIRST failing label/tier, which
@@ -239,6 +243,54 @@ if [ "$CRATES_OIDC_FAILED" -eq 0 ]; then
   printf 'PASS  all cargo publish tiers use pinned crates.io OIDC with least-privilege job permissions\n'
 fi
 
+# Node's exact version is part of the release test environment: npm and native
+# N-API behavior must match the locally verified Node 25.9.0, not float on a
+# runner-provided major. Every setup-node use in the two CI entry points must
+# carry that exact pin.
+NODE_PIN_FAILED=0
+setup_node_total=0
+for workflow in "$CI_YML" "$RELEASE_YML"; do
+  setup_node_count="$(grep -c 'uses: actions/setup-node@' "$workflow" || true)"
+  node_pin_count="$(grep -c 'node-version: "25.9.0"' "$workflow" || true)"
+  case "$workflow" in
+    "$CI_YML") expected_setup_node_count=3 ;;
+    "$RELEASE_YML") expected_setup_node_count=4 ;;
+  esac
+  setup_node_total=$((setup_node_total + setup_node_count))
+  if [ "$setup_node_count" -ne "$expected_setup_node_count" ] || [ "$setup_node_count" -ne "$node_pin_count" ]; then
+    printf 'FAIL  %s must have exactly %s setup-node steps, each pinned to Node 25.9.0 (setup-node=%s, pins=%s)\n' \
+      "$workflow" "$expected_setup_node_count" "$setup_node_count" "$node_pin_count" >&2
+    NODE_PIN_FAILED=$((NODE_PIN_FAILED + 1))
+  fi
+  if grep -Fq 'node-version: "22"' "$workflow"; then
+    printf 'FAIL  %s still pins Node 22\n' "$workflow" >&2
+    NODE_PIN_FAILED=$((NODE_PIN_FAILED + 1))
+  fi
+done
+if [ "$setup_node_total" -ne 7 ]; then
+  printf 'FAIL  ci.yml and release.yml must contain exactly seven setup-node steps total (got %s)\n' \
+    "$setup_node_total" >&2
+  NODE_PIN_FAILED=$((NODE_PIN_FAILED + 1))
+fi
+if [ "$NODE_PIN_FAILED" -eq 0 ]; then
+  printf 'PASS  ci.yml and release.yml pin every setup-node step to Node 25.9.0\n'
+fi
+if [ ! -f "$NODE_VERSION_FILE" ] || [ "$(tr -d '\r\n' < "$NODE_VERSION_FILE")" != "25.9.0" ]; then
+  printf 'FAIL  .nvmrc must pin local Node to 25.9.0\n' >&2
+  NODE_PIN_FAILED=$((NODE_PIN_FAILED + 1))
+fi
+if ! grep -Fqx 'Built and tested on Node.js 25.9.0.' "$TS_README"; then
+  printf 'FAIL  TypeScript README must state the exact verified Node 25.9.0 version\n' >&2
+  NODE_PIN_FAILED=$((NODE_PIN_FAILED + 1))
+fi
+if ! grep -Fqx -- '- Node **18** or later (release.yml runs CI on Node 25.9.0).' "$TS_INSTALL_DOC"; then
+  printf 'FAIL  TypeScript install doc must retain the Node 18+ floor and name CI Node 25.9.0\n' >&2
+  NODE_PIN_FAILED=$((NODE_PIN_FAILED + 1))
+fi
+if [ "$NODE_PIN_FAILED" -eq 0 ]; then
+  printf 'PASS  local Node pin and TypeScript docs match Node 25.9.0 without changing the Node 18+ floor\n'
+fi
+
 # Prove the step-order assertion is non-vacuous. This deliberately moves T1's
 # valid auth step below its cargo publish step; actionlint still accepts the
 # fixture, but this guard must reject its unsafe order.
@@ -284,7 +336,7 @@ if [ "${SKIP_CRATES_OIDC_ORDER_CONTROL:-}" != "1" ]; then
   rm -f "$WRONG_ORDER_FIXTURE"
 fi
 
-FIXTURE_FAILED=$((FIXTURE_FAILED + TIER_FAILED + CRATES_OIDC_FAILED))
+FIXTURE_FAILED=$((FIXTURE_FAILED + TIER_FAILED + CRATES_OIDC_FAILED + NODE_PIN_FAILED))
 if [ "$FIXTURE_FAILED" -gt 0 ]; then
   printf '\n%d assertion(s) failed across the label/tier loops above\n' "$FIXTURE_FAILED" >&2
   exit 1

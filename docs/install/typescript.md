@@ -16,7 +16,7 @@ platform-tagged `.node` binary at load time.
 
 ## Requirements
 
-- Node **18** or later (release.yml runs CI on Node 22).
+- Node **18** or later (release.yml runs CI on Node 25.9.0).
 - One of the supported platforms (per `release.yml` matrix):
   - Linux `x86_64-unknown-linux-gnu`
   - macOS `x86_64-apple-darwin`

@@ -25,7 +25,7 @@ this package: each host triple ships as its own package (for example
 on a matching host. You install `fathomdb` and nothing else. Platform coverage is still expanding —
 if no prebuilt binary matches your host, the loader says so explicitly at import time.
 
-Built and tested on Node.js 22.
+Built and tested on Node.js 25.9.0.
 
 ## Quick start
 
