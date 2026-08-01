@@ -331,7 +331,7 @@ carries **no pico label** (`seq-106`; DOC-HYGIENE-1 precedent, F-33). Execution 
 | **15** | **Projection registry (C-1 co-land) + EAV/property-FTS** (R-20-PR, R-20-EAV) **+ TC-34 node-validity write-side authoring verb + TC-33 temporal-representation harmonisation** *(both folded in by HITL 2026-07-20)* | implementation | 0, 10 |
 | **20** | **`dense_readiness` + `flush_embeddings()`** (R-20-DR) | implementation | 15 |
 | **25** | **Surrogate minting — registry-admitted governed entities ONLY** (R-20-SUR) — ✅ **LANDED `83b1c818`** | implementation | 15 |
-| **30** | **RUBRIC-H7 `can-i-deploy` contract-conformance gate** (R-20-H7) — ⚑ **RUNS FIRST of the remainder** | implementation | 10,15,20,25 |
+| **30** | **RUBRIC-H7 `can-i-deploy` contract-conformance gate** (R-20-H7) — ✅ **Slice 30 COMPLETE AND CLOSED — LANDED `9b3ed0e3`** | implementation | 10,15,20,25 |
 | **21** | **Concurrency + test-oracle repair** (R-20-CR) — TC-57 characterize→fix · ac_002 oracle replacement · TC-71 | implementation | 20 |
 | **22** | **Vector-arm consumer contract** (R-20-VC) — TC-67 (c) · TC-68 fingerprint-cache · decision #18 · sqlite-vec #99 probe | implementation | 15, 20 |
 | **23** | **Spec-validation reject + carried-defect characterization** (R-20-SV) — the `fts`/`vector` reject (ruled 2026-07-24) · TC-90/TC-91 characterization (no fix, `seq-136`) | implementation + investigation | 22 (needs #18's error family settled) |
