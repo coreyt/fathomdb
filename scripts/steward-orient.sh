@@ -360,13 +360,13 @@ for line in last:
     except Exception:
         print("  ?? unparseable entry")
         continue
-    # 80, not 118. This preview was ALWAYS a truncation (the entry itself is one
+    # 48, not 118. This preview was ALWAYS a truncation (the entry itself is one
     # line of dev/steward/steward-ledger.jsonl, which is where the reader goes for
     # the full text); the only question is where it cuts. Steward summaries are
-    # written headline-first, so 80 still carries the headline sentence, and the
-    # five of them together leaves room for the live worktree inventory within the
-    # fixed 5120-byte budget.
-    summary = " ".join(str(e.get("summary", "")).split())[:80]
+    # written headline-first, so 48 still identifies each decision while leaving
+    # durable headroom for a growing live worktree inventory under the fixed
+    # 5120-byte budget.
+    summary = " ".join(str(e.get("summary", "")).split())[:48]
     print(f"  {e.get('seq', '?')} {e.get('kind', '?')}: {summary}")
 PY
   )"
