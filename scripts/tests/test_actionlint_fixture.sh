@@ -18,8 +18,9 @@ if ! command -v actionlint >/dev/null 2>&1; then
   printf 'SKIP  actionlint not installed (run scripts/bootstrap.sh)\n'
   exit 0
 fi
+ACTIONLINT_BIN="$(command -v actionlint)"
 
-if actionlint "$FIX" >/dev/null 2>&1; then
+if "$ACTIONLINT_BIN" "$FIX" >/dev/null 2>&1; then
   printf 'FAIL  actionlint accepted the deliberately-broken fixture\n' >&2
   exit 1
 fi
@@ -33,7 +34,7 @@ printf 'PASS  actionlint rejects deliberately-broken fixture\n'
 # addon found" at runtime. Slice 40 is Linux-first: lock the sole shipped
 # label and reject the three deferred platform labels so the scope cannot drift.
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-RELEASE_YML="$REPO_ROOT/.github/workflows/release.yml"
+RELEASE_YML="${RELEASE_YML:-$REPO_ROOT/.github/workflows/release.yml}"
 
 # 0.8.20 R-20-HARNESS: accumulate-then-exit, not fail-fast-on-first-item.
 # The original loops below `exit 1`ed on the FIRST failing label/tier, which
@@ -165,7 +166,125 @@ if [ "$TIER_FAILED" -eq 0 ]; then
   printf 'PASS  release.yml publish-rust-t1..t7 use cargo-publish-if-new in the shipped order\n'
 fi
 
-FIXTURE_FAILED=$((FIXTURE_FAILED + TIER_FAILED))
+# Every real cargo publish tier must exchange the GitHub OIDC identity for a
+# short-lived crates.io token. Keep this as a structural shell assertion:
+# actionlint remains the workflow YAML validator (AGENTS.md forbids generic
+# YAML parsers as one). A workflow can parse cleanly while silently
+# regressing to a long-lived secret, omitting auth in one tier, or widening a
+# tier's permissions.
+CRATES_OIDC_FAILED=0
+release_job_block() {
+  awk -v job="$1" '
+    $0 == "  " job ":" { in_job = 1 }
+    in_job { print }
+    in_job && /^  [[:alnum:]_-]+:$/ && $0 != "  " job ":" { exit }
+  ' "$RELEASE_YML"
+}
+
+for tier in \
+  publish-rust-t1-embedder-api \
+  publish-rust-t2-schema \
+  publish-rust-t3-query \
+  publish-rust-t4-embedder \
+  publish-rust-t5-engine \
+  publish-rust-t6-facade \
+  publish-rust-t7-cli; do
+  tier_block="$(release_job_block "$tier")"
+  if [ -z "$tier_block" ]; then
+    printf 'FAIL  %s missing from release.yml\n' "$tier" >&2
+    CRATES_OIDC_FAILED=$((CRATES_OIDC_FAILED + 1))
+    continue
+  fi
+  permissions="$(printf '%s\n' "$tier_block" | awk '
+    /^    permissions:$/ { in_permissions = 1; next }
+    in_permissions && /^    [[:alnum:]_-]+:$/ { exit }
+    in_permissions { print }
+  ')"
+  if [ "$permissions" != $'      contents: read\n      id-token: write' ]; then
+    printf 'FAIL  %s must have only contents: read + id-token: write job permissions\n' "$tier" >&2
+    CRATES_OIDC_FAILED=$((CRATES_OIDC_FAILED + 1))
+  fi
+  auth_step="$(printf '%s\n' "$tier_block" | awk '
+    /^      - name: Authenticate with crates.io$/ { in_step = 1 }
+    in_step { print }
+    in_step && /^      - / && $0 !~ /^      - name: Authenticate with crates.io$/ { exit }
+  ')"
+  if ! grep -Fqx '        id: crates_io_auth' <<<"$auth_step" \
+    || ! grep -Fqx '        if: ${{ inputs.dry_run != true }}' <<<"$auth_step" \
+    || ! grep -Fqx '        uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5' <<<"$auth_step"; then
+    printf 'FAIL  %s missing pinned crates.io OIDC auth for real publishes\n' "$tier" >&2
+    CRATES_OIDC_FAILED=$((CRATES_OIDC_FAILED + 1))
+  fi
+  auth_line="$(printf '%s\n' "$tier_block" | awk '/^      - name: Authenticate with crates.io$/ { print NR; exit }')"
+  publish_line="$(printf '%s\n' "$tier_block" | awk '/cargo-publish-if-new\.sh/ { print NR; exit }')"
+  if [ -z "$auth_line" ] || [ -z "$publish_line" ] || [ "$auth_line" -ge "$publish_line" ]; then
+    printf 'FAIL  %s crates.io OIDC auth must occur before cargo-publish-if-new\n' "$tier" >&2
+    CRATES_OIDC_FAILED=$((CRATES_OIDC_FAILED + 1))
+  fi
+  publish_step="$(printf '%s\n' "$tier_block" | awk '
+    /cargo-publish-if-new\.sh/ { in_step = 1 }
+    in_step { print }
+    in_step && /^      - / && $0 !~ /cargo-publish-if-new\.sh/ { exit }
+  ')"
+  if ! grep -Fqx '          CARGO_REGISTRY_TOKEN: ${{ steps.crates_io_auth.outputs.token }}' <<<"$publish_step"; then
+    printf 'FAIL  %s must pass the crates.io OIDC output to cargo-publish-if-new\n' "$tier" >&2
+    CRATES_OIDC_FAILED=$((CRATES_OIDC_FAILED + 1))
+  fi
+  if grep -Fq 'secrets.CARGO_REGISTRY_TOKEN' <<<"$tier_block"; then
+    printf 'FAIL  %s must not use the legacy CARGO_REGISTRY_TOKEN secret\n' "$tier" >&2
+    CRATES_OIDC_FAILED=$((CRATES_OIDC_FAILED + 1))
+  fi
+done
+if [ "$CRATES_OIDC_FAILED" -eq 0 ]; then
+  printf 'PASS  all cargo publish tiers use pinned crates.io OIDC with least-privilege job permissions\n'
+fi
+
+# Prove the step-order assertion is non-vacuous. This deliberately moves T1's
+# valid auth step below its cargo publish step; actionlint still accepts the
+# fixture, but this guard must reject its unsafe order.
+if [ "${SKIP_CRATES_OIDC_ORDER_CONTROL:-}" != "1" ]; then
+  WRONG_ORDER_FIXTURE="$(mktemp)"
+  awk '
+    /^      - name: Authenticate with crates.io$/ && !moved {
+      auth = $0 "\n"
+      capture = 1
+      moved = 1
+      next
+    }
+    capture && /^      - name: cargo publish / { cargo = 1 }
+    capture && cargo && /^      - name: Wait for crates.io index propagation/ {
+      printf "%s", auth
+      capture = 0
+    }
+    !capture { print }
+    capture && !cargo { auth = auth $0 "\n" }
+    # actionlint correctly rejects a forward step-output reference, so make
+    # this reordered cargo step syntactically independent of auth.
+    capture && cargo && /CARGO_REGISTRY_TOKEN:/ {
+      sub(/steps\.crates_io_auth\.outputs\.token/, "github.token")
+      print
+      next
+    }
+    capture && cargo && !/^      - name: Wait for crates.io index propagation/ { print }
+  ' "$RELEASE_YML" > "$WRONG_ORDER_FIXTURE"
+  if "$ACTIONLINT_BIN" "$WRONG_ORDER_FIXTURE" >/dev/null 2>&1; then
+    if wrong_order_out="$(RELEASE_YML="$WRONG_ORDER_FIXTURE" SKIP_CRATES_OIDC_ORDER_CONTROL=1 bash "$0" 2>&1)"; then
+      printf 'FAIL  crates.io OIDC order guard accepted deliberately wrong-order fixture\n' >&2
+      FIXTURE_FAILED=$((FIXTURE_FAILED + 1))
+    elif grep -Fq 'crates.io OIDC auth must occur before cargo-publish-if-new' <<<"$wrong_order_out"; then
+      printf 'PASS  crates.io OIDC order guard rejects deliberately wrong-order fixture\n'
+    else
+      printf 'FAIL  wrong-order fixture failed without exercising the crates.io OIDC order guard\n%s\n' "$wrong_order_out" >&2
+      FIXTURE_FAILED=$((FIXTURE_FAILED + 1))
+    fi
+  else
+    printf 'FAIL  deliberately wrong-order fixture is not actionlint-valid\n' >&2
+    FIXTURE_FAILED=$((FIXTURE_FAILED + 1))
+  fi
+  rm -f "$WRONG_ORDER_FIXTURE"
+fi
+
+FIXTURE_FAILED=$((FIXTURE_FAILED + TIER_FAILED + CRATES_OIDC_FAILED))
 if [ "$FIXTURE_FAILED" -gt 0 ]; then
   printf '\n%d assertion(s) failed across the label/tier loops above\n' "$FIXTURE_FAILED" >&2
   exit 1
