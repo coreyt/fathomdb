@@ -112,41 +112,7 @@ sed: can't read MEMORY.md: No such file or directory
 [35m[3mexec[0m[0m
 [1m/bin/bash -c 'ls -a ..'[0m in /home/coreyt/projects/fathomdb
 [32m succeeded in 0ms:[0m
-.
-..
-7thplacenw-client
-ado-mcp
-agent-aware
-airlock
-armada
-bosun
-coral
-cotudes
-cpptudes
-dependency-scout
-dicom-de-id
-dicom-de-id-worktrees
-fathomdb
-fathomdb-verify-s5
-fathomdb-worktrees
-graph-ir
-graph-ir-tools
-libavoided-js
-local
-lookout
-margie
-md-render
-memex
-memex-worktrees
-mesh-seam-ripper
-monospace-design-tui
-one-0-one
-ros2-igus-rebel
-schooner
-temp
-wake
-windchill-llm
-wopr-markii
+[REDACTED OUT-OF-REPOSITORY DIRECTORY INVENTORY — removed for public transcript hygiene]
 
 [35m[3mexec[0m[0m
 [1m/bin/bash -c 'ls -a'[0m in /home/coreyt/projects/fathomdb
