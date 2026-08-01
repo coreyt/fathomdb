@@ -7,8 +7,8 @@
   "master": "dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md",
   "schema_version": 24,
   "schema_version_source": "pub const SCHEMA_VERSION in src/rust/crates/fathomdb-schema/src/lib.rs",
-  "landed_verified_at": "91db34d8",
-  "landed_verified_how": "each SHA below is the landing merge commit for its slice AND is an ancestor of origin/main (git merge-base --is-ancestor), with the merge subject matching this repo's `merge(0.8.20): Slice[- ]N` landing convention. Re-verified 2026-07-30 at d9c5024d: all 14 landed slice SHAs confirmed ancestors of HEAD via git merge-base --is-ancestor, zero non-ancestors. The prior watermark f02dc5b4 (Slice 33) predated the DOC-HYGIENE-3 remainder landing at 85d44c74 — the landed FACTS were correct throughout; only this verification watermark lagged.",
+  "landed_verified_at": "833a2035",
+  "landed_verified_how": "each SHA below is the landing merge commit for its slice AND is an ancestor of origin/main (git merge-base --is-ancestor), with the merge subject matching this repo's `merge(0.8.20): Slice[- ]N` landing convention. Re-verified 2026-08-01 at 833a2035: all 15 landed slice SHAs confirmed ancestors of HEAD via git merge-base --is-ancestor, zero non-ancestors.",
   "ladder": [
     {
       "slice": 0,
@@ -218,8 +218,9 @@
         5,
         30
       ],
-      "status": "NOT_STARTED",
-      "sha": null
+      "status": "LANDED",
+      "sha": "833a2035",
+      "merge_subject": "merge(0.8.20): Slice 40 release readiness"
     }
   ],
   "landed": [
@@ -236,23 +237,15 @@
     31,
     32,
     33,
-    39
-  ],
-  "next_slice": 40,
-  "remaining_ladder": [
+    39,
     40
   ],
-  "ladder_order": "SEQUENTIAL. Slices 21/22/23/30/31/32/33/39 and DOC-HYGIENE-3 have LANDED (39 at 91db34d8). Slice 34 was CANCELLED (seq-182), parked at 0.8.21 (seq-183). TWO CROSS-CUTTING UNITS run before Slice 40. Neither is a ladder slice, neither carries a slice number or an R-20-xx id — the DOC-HYGIENE-3 / TC-86 precedent (seq-204). (1) SLICE-ID-HARDENING — ✅ COMPLETE, LANDED 2008f529 (fast-forward, no merge commit). Delivered FIVE truncating sites (not the four the brief measured or the record's three) plus TC-133 folded in mid-flight by HITL ruling seq-212, and the latent set in check-release-state-views.sh turned out to be EIGHT bypasses over six state fields plus a ninth (a missing duplicate-key guard in _by_slice). TWO of the sites were LIVE, not latent, and both were verified by the Steward at the pre-land main: commission-manifest.sh was citing Slice 39.5's design memo as Slice 39's required reading at exit 0, and preflight.sh --expect-closed 0 was accepting dev/plans/0.7.0-implementation.md's version dot as a CLOSED witness at exit 0 — a false green in the gate whose whole job is refusing to spawn on an unclosed dependency. Recurrence arms in all four suites, every one proven RED against the unfixed tool and GREEN against the fixed one, all against fractional-id fixtures rather than real state. codex §9 terminal-clean after two productive fix rounds. (2) 'Slice 39.5' (R-20-HARNESS) — ✅ COMPLETE, LANDED b6cc8fa6 (fast-forward, no merge commit). HEADLINE: the hidden-suite yield the HITL sized as 'zero to fifteen' is effectively ZERO hard defects — 31 of 35 labels pass; of the 4 failures two are Slice 40's already-owned reds, one (test-rust) is a characterised ~29% FLAKE from lock-holder interference between sibling tests in one binary, and one (test-python) is UNKNOWN-pending-the-sanctioned-rebuild, a FOURTH report state, never a red. The CI baseline ran as PR #167 (run 30566757420): 23 total job runs, 1 skipped (markdownlint), so 22 EXECUTED, with 5 failures — commission-manifest, verify, security, rust-windows and rust-macos. ⚠ GATE (i)'s DENOMINATOR IS 22, NOT 23. The commission-manifest local-vs-CI divergence is SOLVED: that job's checkout declares no fetch-depth so it defaults to depth-1, and arm 11d recovers a pre-change generator revision from REAL git history which does not exist in a shallow clone; the mktemp fixture arms do pass in CI. One-line fix (fetch-depth: 0), left untouched in Slice 40's territory. Disposition of everything the baseline surfaced is now the single HITL decision seq-202 split this unit out to enable. (was: collect-all harness + the true red list local AND CI, seq-204 ruling 2) — name kept in prose, DE-LADDERED at seq-204 because a fractional ladder id silently corrupted five tools. Converts the test harness from fail-fast to collect-all-then-report and delivers the TRUE red list BOTH locally and in CI. THEN Slice 40 (R-20-PUB), which STOPS before any tag. PUBLISH needs BOTH a fully green CI and explicit HITL approval (seq-202).",
-  "unblocked": [
-    40
-  ],
-  "unblocked_by": {
-    "requirement": "the Slice 39 landing (91db34d8), then the two cross-cutting units named in `ladder_order`",
-    "gloss": "Slice 40 is the last ladder slice. Ahead of it, off-ladder: SLICE-ID-HARDENING (the fractional-id tooling fixes + recurrence arms, seq-204 ruling 1) and 'Slice 39.5' / R-20-HARNESS (collect-all harness + the true red list local AND CI, seq-204 ruling 2). ⚠ CORRECTED at seq-205/seq-209: main's CI is NOT vacuously green, it is RED — the last completed runs concluded failure with 23 jobs executing and only markdownlint skipped, four of them failing (commission-manifest, verify, security, rust-windows). And `test_commission_manifest.sh` is rc=0 LOCALLY (69 PASS) while its CI job fails — a genuine local-to-CI divergence, not a local red. Publish gate (i) (seq-202) is therefore NOT met today. Establishing the true CI red list, and explaining that divergence, belongs to Slice 39.5 (seq-204 ruling 2, seq-206)."
-  },
+  "next_slice": null,
+  "remaining_ladder": [],
+  "ladder_order": "COMPLETE. Slices 0/5/10/15/20/21/22/23/25/30/31/32/33/39/40 are LANDED; Slice 40 landed at 833a2035 after the two prior cross-cutting units, SLICE-ID-HARDENING (2008f529) and R-20-HARNESS (b6cc8fa6). Slice 34 was CANCELLED (seq-182), parked at 0.8.21 (seq-183). There is no further 0.8.20 implementation slice. PUBLISH remains a separate explicit HITL gate and Slice 40 stopped before any tag.",
   "publish_precondition_slice": 30,
   "acceptance": {
-    "highest_defined_non_reserved": "AC-076",
+    "highest_defined_non_reserved": "AC-080",
     "reservations": [
       {
         "ac": "AC-077",
@@ -278,10 +271,10 @@
         "source": "master F-34",
         "pinned_to": "src/conformance/governed-surface-allowlist.json",
         "reopens_if": "any diff to that file re-opens it (the T1e pin)",
-        "provenance": "HITL 2026-07-25 — PRE-SIGNED and pinned to the content of src/conformance/governed-surface-allowlist.json; any diff to that file re-opens the gate (T1e pin). PRE-SIGN IS NOT MINTING: AC-079 is still minted and recorded as SIGNED at Slice 40.",
+        "provenance": "HITL 2026-07-25 — PRE-SIGNED and pinned to the content of src/conformance/governed-surface-allowlist.json; any diff to that file re-opens the gate (T1e pin). PRE-SIGN DID NOT MINT THE AC: AC-079 was minted and recorded as SIGNED at Slice 40.",
         "enforced_by": "scripts/check-governed-surface-pin.sh (the pin), run from scripts/preflight.sh"
       },
-      "minted": false,
+      "minted": true,
       "minted_as": "SIGNED",
       "sign_off_slice": 40,
       "publish_gated_by": "the separate HITL publish gate",
@@ -555,30 +548,11 @@
       "renders": "landed slices + their SHAs, SCHEMA version, remaining ladder"
     },
     {
-      "id": "status-unblocks",
-      "file": "dev/plans/runs/STATUS-0.8.20.md",
-      "location": "§1 Current state — the `**Unblocks**` table row's cell body",
-      "renders": "unblocked slices, what unblocked them, the publish-precondition slice + its dependencies, and the publish gate as THREE distinct facts (pre-sign state + its pin, minting at the sign-off slice, and what actually gates publish) - never one collapsed status word"
-    },
-    {
       "id": "status-live-open-count",
       "file": "dev/plans/runs/STATUS-0.8.20.md",
       "location": "§4 Open HITL decisions — the banner's `THE LIVE OPEN SET IS EXACTLY <N>:` count word",
       "renders": "the number of entries in `decisions.unruled`, spelled out",
       "why_only_the_count": "T2b (DOC-HYGIENE-2). The measured failure was §4 listing >=4 ALREADY-RULED items as still open, i.e. the COUNT of the live open set drifting from the single writer - which is exactly what this region pins. The surrounding sentence is NOT generated, for two reasons, both binding. (1) Its two items are worded in different shapes ('the <label> - <detail>, taken to the HITL **once**, at <gate>' vs '**<label>** (<gate>, hard gate)') and it closes on a findings citation (master F-34), so no template over the fact model reproduces it; only pasting the sentence into this JSON would, and that is the move check-release-state-views.sh explicitly refuses ('widen the fact model or NARROW THE REGION - never paste the prose into the JSON'). (2) CommonMark: a blockquote line whose content BEGINS with `<!--` is an HTML block that swallows the whole line, so a BEGIN marker cannot be placed at the head of this line without changing how it renders. Narrowing keeps the fence in place, byte-exact, and fully reversible. The full ruled/unruled table is emitted by `ledgerwatch <ledger> --project rulings`, and the ruled/unruled FACTS live in `decisions` above; §4's items 1-22 are the historical decision record and are deliberately NOT under generation."
-    },
-    {
-      "id": "handoff-next-step",
-      "file": "dev/plans/runs/STEWARD-SESSION-HANDOFF-2026-07-31-A.md",
-      "location": "★ IMMEDIATE NEXT STEP — the opening next-step sentence",
-      "renders": "landed slices + the next slice"
-    },
-    {
-      "id": "plan-immediate-next",
-      "file": "dev/plans/plan-0.8.20.md",
-      "location": "§9 Immediate next slice — the IMMEDIATE NEXT pointer paragraph",
-      "renders": "the next slice number, that slice's ladder `short` and `title`, and the remaining ladder",
-      "why_it_is_generated": "TC-89 (first site). This pointer was hand-written while this file already owned `next_slice` and already kept it true at every landing, and it went STALE AT THREE CONSECUTIVE COMMISSIONS - twice inside one session (it read 'Slice 30' after Slice 30 landed at 9b3ed0e3, fixed at 62486a01; then 'Slice 21' hours after Slice 21 landed). It is worse than ordinary doc rot because scripts/commission-manifest.sh resolves '## 9. Immediate next slice' as the {{MANDATE}} anchor of an orchestrator brief and its CHECK 2 verifies that the HEADING EXISTS, not that the prose beneath it is current - so the stale pointer was copied into the next commission with the manifest's authority behind it. The interim mitigation was a blockquote telling the reader to re-verify against next_slice; that is a note, not a control. NARROW ON PURPOSE: only the pointer paragraph is fenced. The rest of section 9 - deliverables, guardrails, the historical narrative - is judgement prose that no template over the fact model reproduces, and pasting it into this JSON is the move check-release-state-views.sh explicitly refuses."
     },
     {
       "id": "plan-landed-roll-up",

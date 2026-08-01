@@ -1190,6 +1190,31 @@ if MODE == "verify-all":
              "  The sweep loop never ran, so exiting 0 would vouch for nothing (TC-37)."])
     for sp in states:
         rel = re.sub(r"^dev/plans/release-state-(.*)\.json$", r"\1", sp)
+        try:
+            with open(sp, encoding="utf-8") as fh:
+                state = json.load(fh)
+        except Exception as exc:                              # noqa: BLE001
+            die(["FAIL commission-manifest: `%s` is not readable release state: %s"
+                 % (sp, exc)])
+        if state.get("next_slice") is None:
+            ladder = state.get("ladder")
+            landed = state.get("landed")
+            remaining = state.get("remaining_ladder")
+            if not isinstance(ladder, list) or not isinstance(landed, list) or remaining != []:
+                die(["FAIL commission-manifest: `%s` declares end-of-ladder (`next_slice: null`) "
+                     "but does not carry a list ladder + landed set and `remaining_ladder: []`."
+                     % sp])
+            incomplete = [e.get("slice") for e in ladder
+                          if not isinstance(e, dict) or e.get("status") != "LANDED"]
+            missing = [e.get("slice") for e in ladder
+                       if isinstance(e, dict) and e.get("slice") not in landed]
+            if incomplete or missing:
+                die(["FAIL commission-manifest: `%s` declares end-of-ladder but its ladder is "
+                     "not fully landed (non-LANDED=%s; absent-from-landed=%s)."
+                     % (sp, incomplete or "none", missing or "none")])
+            print("commission-manifest: %s complete ladder — no next-slice manifest to verify."
+                  % rel)
+            continue
         sl, entry, m, paths_ok, anchors_ok = generate(rel, "next")
         print("commission-manifest: %s next slice %s (%s) — %d path(s) and %d anchor(s) verified."
               % (rel, sl, entry.get("short") or "?", paths_ok, anchors_ok))

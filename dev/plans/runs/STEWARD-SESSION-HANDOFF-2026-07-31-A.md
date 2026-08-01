@@ -2,12 +2,15 @@
 
 **Supersedes `STEWARD-SESSION-HANDOFF-2026-07-30-B.md`.**
 
+> **SUPERSEDED — 2026-08-01.** Slice 40 landed at `833a2035`; the 0.8.20 implementation
+> ladder is complete. The commissioning instructions below are retained as historical context only.
+
 ## ★ IMMEDIATE NEXT STEP
 
-<!-- BEGIN GENERATED release-state:0.8.20:handoff-next-step -->
-**The 0.8.20 ladder is between slices: 0 → 5 → 10 → 15 → 20 → 25 → 30 → 21 → 22 → 23 → 31 → 32 → 33 → 39 are all LANDED; 40 is next.**<!-- END GENERATED release-state:0.8.20:handoff-next-step -->
+**The 0.8.20 ladder is complete: Slices 0 → 5 → 10 → 15 → 20 → 25 → 30 → 21 → 22 → 23 → 31 → 32 → 33 → 39 → 40 are all LANDED.**
 
-**Commission Slice 40 (`R-20-PUB`).** Nothing blocks it. It is the final ladder slice of 0.8.20.
+**Do not commission another 0.8.20 implementation slice.** PUBLISH remains a separate explicit HITL gate;
+Slice 40 stopped before any tag.
 
 ```sh
 scripts/commission-manifest.sh 0.8.20 40      # regenerate the manifest

@@ -664,6 +664,33 @@ else
   fail "arm 8d (--verify-all): rc=$RC out=$OUT"
 fi
 
+# --- Arm 8c2: a genuinely complete ladder is verified, not re-commissioned -
+# `next_slice: null` is the explicit end-of-ladder fact. The CI sweep must
+# validate that every ladder entry landed and that the remaining list is empty;
+# trying to generate a fictional next manifest is a false red after the final
+# landing, while accepting a partial ladder would be a false green.
+setup_fixture
+mutate_state "L[10]['status'] = 'LANDED'; L[10]['sha'] = 'dddd5555'
+L[30]['status'] = 'LANDED'; L[30]['sha'] = 'eeee6666'
+s['landed'] = [0, 5, 10, 30]; s['next_slice'] = None; s['remaining_ladder'] = []"
+run_gen --verify-all
+if [ "$RC" -eq 0 ] && grep -q 'complete ladder' <<<"$OUT"; then
+  pass "--verify-all validates an end-of-ladder state without fabricating a next manifest"
+else
+  fail "arm 8c2 (complete ladder): rc=$RC out=$OUT"
+fi
+
+# The converse is load-bearing: null is not a license to skip an unfinished
+# ladder. A remaining entry must turn the always-on sweep red.
+setup_fixture
+mutate_state "s['next_slice'] = None"
+run_gen --verify-all
+if [ "$RC" -ne 0 ] && grep -qi 'end-of-ladder' <<<"$OUT"; then
+  pass "--verify-all rejects a null next_slice when remaining ladder work exists"
+else
+  fail "arm 8c2b (incomplete null ladder): rc=$RC out=$OUT"
+fi
+
 # --- Arm 8d: --verify-all with ZERO state files -> hard FAIL (TC-37) -------
 setup_fixture
 rm -f "$FIX/dev/plans/release-state-9.9.9.json"
@@ -1763,6 +1790,19 @@ print("OK %s %s %s %s" % (sid(t), sid(b), sha, "LANDED" if t in landed else "PEN
 }
 
 D9D_STATE_FILE="$REPO_ROOT/dev/plans/release-state-0.8.20.json"
+D9D_NEXT="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("next_slice"))' "$D9D_STATE_FILE")"
+if [ "$D9D_NEXT" = "None" ]; then
+  set +e
+  D9D_COMPLETE_OUT="$("$REPO_ROOT/scripts/commission-manifest.sh" --verify-all 2>&1)"
+  D9D_COMPLETE_RC=$?
+  set -e
+  if [ "$D9D_COMPLETE_RC" -eq 0 ] \
+     && grep -q '0.8.20 complete ladder' <<<"$D9D_COMPLETE_OUT"; then
+    pass "real repo — complete ladder state is verified without fabricating a next-slice manifest"
+  else
+    fail "arm 9d (complete ladder): rc=$D9D_COMPLETE_RC out=[$D9D_COMPLETE_OUT]"
+  fi
+else
 set +e
 D9D_DERIVED="$(derive_base_from_state "$D9D_STATE_FILE")"
 D9D_DERIVE_RC=$?
@@ -1800,6 +1840,7 @@ else
   else
     fail "arm 9d (real base line, derived target=Slice $D9D_TARGET): rc=$D9D_RC want base=[Slice $D9D_BASE / $D9D_SHA] banner=$D9D_WANT_BANNER; got banner=$D9D_GOT_BANNER line=[$D9D_BASE_LINE]"
   fi
+fi
 fi
 
 # --- Arm 9e: the REAL manifest's pin path is emitted as a CITATION ----------
