@@ -216,7 +216,7 @@ run_suite test-linux-first-platform-scope bash scripts/tests/test_linux_first_pl
 # plus the same full agent-verify gate required locally.
 run_suite test-verify-ci-timeout-budget bash scripts/tests/test_verify_ci_timeout_budget.sh
 
-# Slice 40: generic TypeScript prework skips only the six network-gated arms;
+# Slice 40: generic TypeScript prework skips only the seven network-gated arms;
 # the warmed default-embedder CI job must own their complementary live and
 # release-surface coverage.
 run_suite test-ts-cache-coverage-split bash scripts/tests/test_ts_cache_coverage_split.sh
@@ -358,7 +358,7 @@ fi
 
 # TypeScript
 if [ -d src/ts/node_modules ]; then
-  # The six default-embedder TypeScript arms remain part of this ordinary
+  # The seven default-embedder TypeScript arms remain part of this ordinary
   # prework gate, but skip their live-model bodies here.  CI's
   # default-embedder-tests job owns the same suite after warming the BGE cache
   # and enables its release-surface arm there.

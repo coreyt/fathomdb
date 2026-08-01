@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Static contract for the cache-aware TypeScript test split.  The ordinary
 # agent loop must remain local/preworkable by setting the network skip gate;
-# the default-embedder CI job owns the same six network-gated files after it
+# the default-embedder CI job owns the same seven network-gated files after it
 # has warmed (or deliberately failed to warm) the BGE cache.
 set -euo pipefail
 
@@ -23,6 +23,7 @@ fi
 # network gate.  Keep the set explicit: a new network-gated file must be
 # consciously routed through the dedicated cache-owning CI job too.
 expected_gated_files=(
+  src/ts/tests/embed-batch-cls.test.ts
   src/ts/tests/embedder-event-narrowing.test.ts
   src/ts/tests/functional-embed.test.ts
   src/ts/tests/release-surface.test.ts
@@ -35,12 +36,12 @@ mapfile -t actual_gated_files < <(
   find src/ts/tests -type f -name '*.test.ts' -exec grep -l 'FATHOMDB_SKIP_NETWORK_TESTS' {} + | sort
 )
 if [ "${actual_gated_files[*]}" = "${expected_gated_files[*]}" ]; then
-  pass "exactly the six audited TypeScript files honor the network gate"
+  pass "exactly the seven audited TypeScript files honor the network gate"
 else
   fail "network-gated TypeScript files drifted: expected [${expected_gated_files[*]}], got [${actual_gated_files[*]}]"
 fi
 
-# The generic agent loop owns all TypeScript tests, but must make the six
+# The generic agent loop owns all TypeScript tests, but must make the seven
 # network-dependent arms skip rather than require a live model download.
 if grep -qxE "[[:space:]]*run_suite test-ts env FATHOMDB_SKIP_NETWORK_TESTS=1 bash -c 'cd src/ts && npm test --silent'" "$AGENT_TEST"; then
   pass "generic agent-test routes TypeScript through the network skip gate"
@@ -89,6 +90,7 @@ else
   fi
 
   expected_emitted_files=(
+    dist/tests/embed-batch-cls.test.js
     dist/tests/embedder-event-narrowing.test.js
     dist/tests/functional-embed.test.js
     dist/tests/release-surface.test.js
@@ -98,7 +100,7 @@ else
   )
   mapfile -t actual_emitted_files < <(grep -oE 'dist/tests/[[:alnum:]_.-]+\.test\.js' <<<"$default_embedder_block" | sort -u)
   if [ "${actual_emitted_files[*]}" = "${expected_emitted_files[*]}" ]; then
-    pass "default-embedder CI job runs exactly the six audited emitted TypeScript files"
+    pass "default-embedder CI job runs exactly the seven audited emitted TypeScript files"
   else
     fail "dedicated emitted TypeScript files drifted: expected [${expected_emitted_files[*]}], got [${actual_emitted_files[*]}]"
   fi
