@@ -15,12 +15,16 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 
-_NATIVE_EXTENSION_PRESENT = any(
-    (Path(root) / "fathomdb" / f"_fathomdb{suffix}").exists()
-    for root in sys.path
-    if root
-    for suffix in EXTENSION_SUFFIXES
-)
+def _native_extension_present(search_path: list[str]) -> bool:
+    """Return whether the package selected by ``search_path`` has its extension."""
+    for root in search_path:
+        package_dir = Path(root) / "fathomdb"
+        if (package_dir / "__init__.py").is_file():
+            return any((package_dir / f"_fathomdb{suffix}").exists() for suffix in EXTENSION_SUFFIXES)
+    return False
+
+
+_NATIVE_EXTENSION_PRESENT = _native_extension_present(sys.path)
 _USING_FAKE_NATIVE = (
     "fathomdb" not in sys.modules
     and "fathomdb._fathomdb" not in sys.modules
@@ -79,3 +83,18 @@ def test_fake_native_module_does_not_forge_file_metadata() -> None:
     fake.__file__ = None
     fake.__getattr__ = lambda _name: _Dummy  # type: ignore[attr-defined]
     assert getattr(fake, "__file__", None) is None
+
+
+def test_native_extension_detection_does_not_cross_shadowed_package_roots(tmp_path: Path) -> None:
+    """Only the first importable package root may decide whether to inject a fake."""
+    selected_root = tmp_path / "selected"
+    shadowed_root = tmp_path / "shadowed"
+    selected_package = selected_root / "fathomdb"
+    shadowed_package = shadowed_root / "fathomdb"
+    selected_package.mkdir(parents=True)
+    shadowed_package.mkdir(parents=True)
+    (selected_package / "__init__.py").touch()
+    (shadowed_package / "__init__.py").touch()
+    (shadowed_package / f"_fathomdb{EXTENSION_SUFFIXES[0]}").touch()
+
+    assert not _native_extension_present([str(selected_root), str(shadowed_root)])

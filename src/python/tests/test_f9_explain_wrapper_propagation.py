@@ -28,12 +28,16 @@ from types import SimpleNamespace
 # Inject a permissive fake `fathomdb._fathomdb` before `fathomdb` is imported so
 # `fathomdb/__init__.py` (which does `from fathomdb._fathomdb import ...`) and
 # `fathomdb.engine` load without the built native module.
-_NATIVE_EXTENSION_PRESENT = any(
-    (Path(root) / "fathomdb" / f"_fathomdb{suffix}").exists()
-    for root in sys.path
-    if root
-    for suffix in EXTENSION_SUFFIXES
-)
+def _native_extension_present(search_path: list[str]) -> bool:
+    """Return whether the package selected by ``search_path`` has its extension."""
+    for root in search_path:
+        package_dir = Path(root) / "fathomdb"
+        if (package_dir / "__init__.py").is_file():
+            return any((package_dir / f"_fathomdb{suffix}").exists() for suffix in EXTENSION_SUFFIXES)
+    return False
+
+
+_NATIVE_EXTENSION_PRESENT = _native_extension_present(sys.path)
 _USING_FAKE_NATIVE = (
     "fathomdb" not in sys.modules
     and "fathomdb._fathomdb" not in sys.modules
