@@ -231,11 +231,18 @@ jobs:
   publish-rust-t1-embedder-api:
     runs-on: ubuntu-latest
     needs: all-builds-passed
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
         with:
           toolchain: stable
+      - name: Authenticate with crates.io
+        id: crates_io_auth
+        if: ${{ inputs.dry_run != true }}
+        uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
       - name: cargo publish fathomdb-embedder-api
         run: |
           if [ "${DRY_RUN}" = "true" ]; then
@@ -244,7 +251,7 @@ jobs:
             bash scripts/release/cargo-publish-if-new.sh fathomdb-embedder-api
           fi
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates_io_auth.outputs.token }}
       - name: Wait for crates.io index propagation (poll, not sleep)
         if: ${{ inputs.dry_run != true }}
         run: bash scripts/release/wait-for-crate-version.sh fathomdb-embedder-api
@@ -252,11 +259,18 @@ jobs:
   publish-rust-t2-schema:
     runs-on: ubuntu-latest
     needs: publish-rust-t1-embedder-api
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
         with:
           toolchain: stable
+      - name: Authenticate with crates.io
+        id: crates_io_auth
+        if: ${{ inputs.dry_run != true }}
+        uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
       - name: cargo publish fathomdb-schema
         run: |
           if [ "${DRY_RUN}" = "true" ]; then
@@ -265,7 +279,7 @@ jobs:
             bash scripts/release/cargo-publish-if-new.sh fathomdb-schema
           fi
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates_io_auth.outputs.token }}
       - name: Wait for crates.io index propagation (poll, not sleep)
         if: ${{ inputs.dry_run != true }}
         run: bash scripts/release/wait-for-crate-version.sh fathomdb-schema
@@ -273,11 +287,18 @@ jobs:
   publish-rust-t3-query:
     runs-on: ubuntu-latest
     needs: publish-rust-t2-schema
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
         with:
           toolchain: stable
+      - name: Authenticate with crates.io
+        id: crates_io_auth
+        if: ${{ inputs.dry_run != true }}
+        uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
       - name: cargo publish fathomdb-query
         run: |
           if [ "${DRY_RUN}" = "true" ]; then
@@ -286,7 +307,7 @@ jobs:
             bash scripts/release/cargo-publish-if-new.sh fathomdb-query
           fi
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates_io_auth.outputs.token }}
       - name: Wait for crates.io index propagation (poll, not sleep)
         if: ${{ inputs.dry_run != true }}
         run: bash scripts/release/wait-for-crate-version.sh fathomdb-query
@@ -300,11 +321,18 @@ jobs:
   publish-rust-t4-embedder:
     runs-on: ubuntu-latest
     needs: publish-rust-t3-query
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
         with:
           toolchain: stable
+      - name: Authenticate with crates.io
+        id: crates_io_auth
+        if: ${{ inputs.dry_run != true }}
+        uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
       - name: cargo publish fathomdb-embedder
         run: |
           if [ "${DRY_RUN}" = "true" ]; then
@@ -313,7 +341,7 @@ jobs:
             bash scripts/release/cargo-publish-if-new.sh fathomdb-embedder
           fi
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates_io_auth.outputs.token }}
       - name: Wait for crates.io index propagation (poll, not sleep)
         if: ${{ inputs.dry_run != true }}
         run: bash scripts/release/wait-for-crate-version.sh fathomdb-embedder
@@ -321,11 +349,18 @@ jobs:
   publish-rust-t5-engine:
     runs-on: ubuntu-latest
     needs: publish-rust-t4-embedder
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
         with:
           toolchain: stable
+      - name: Authenticate with crates.io
+        id: crates_io_auth
+        if: ${{ inputs.dry_run != true }}
+        uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
       - name: cargo publish fathomdb-engine
         run: |
           if [ "${DRY_RUN}" = "true" ]; then
@@ -334,7 +369,7 @@ jobs:
             bash scripts/release/cargo-publish-if-new.sh fathomdb-engine
           fi
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates_io_auth.outputs.token }}
       - name: Wait for crates.io index propagation (poll, not sleep)
         if: ${{ inputs.dry_run != true }}
         run: bash scripts/release/wait-for-crate-version.sh fathomdb-engine
@@ -342,11 +377,18 @@ jobs:
   publish-rust-t6-facade:
     runs-on: ubuntu-latest
     needs: publish-rust-t5-engine
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
         with:
           toolchain: stable
+      - name: Authenticate with crates.io
+        id: crates_io_auth
+        if: ${{ inputs.dry_run != true }}
+        uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
       - name: cargo publish fathomdb (facade)
         # facade depends on fathomdb-engine (now T5).
         run: |
@@ -356,7 +398,7 @@ jobs:
             bash scripts/release/cargo-publish-if-new.sh fathomdb
           fi
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates_io_auth.outputs.token }}
       - name: Wait for crates.io index propagation (poll, not sleep)
         if: ${{ inputs.dry_run != true }}
         run: bash scripts/release/wait-for-crate-version.sh fathomdb
@@ -364,11 +406,18 @@ jobs:
   publish-rust-t7-cli:
     runs-on: ubuntu-latest
     needs: publish-rust-t6-facade
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
         with:
           toolchain: stable
+      - name: Authenticate with crates.io
+        id: crates_io_auth
+        if: ${{ inputs.dry_run != true }}
+        uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
       - name: cargo publish fathomdb-cli
         run: |
           if [ "${DRY_RUN}" = "true" ]; then
@@ -377,7 +426,7 @@ jobs:
             bash scripts/release/cargo-publish-if-new.sh fathomdb-cli
           fi
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates_io_auth.outputs.token }}
       - name: Wait for crates.io index propagation (poll, not sleep)
         if: ${{ inputs.dry_run != true }}
         run: bash scripts/release/wait-for-crate-version.sh fathomdb-cli
