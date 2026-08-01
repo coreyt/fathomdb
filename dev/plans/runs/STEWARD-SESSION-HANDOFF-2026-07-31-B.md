@@ -7,9 +7,10 @@
 Slice 40 is commissioned but **E1 is hard-stopped and not closed**. Do not begin
 E2, integrate, push, or alter the release record outside the reconciled
 Linux-first scope. The B5 design-only continuation is terminal-clean at
-`e104d696`; it specifies a materially different trusted test-only verification
-route. **The next action is HITL approval of its specific immutable appliance
-policy before implementation.** Do not repair the rejected CI/source route.
+`e104d696` and its Steward acceptance record landed at `ea43e861`; it specifies
+a materially different trusted test-only verification route. **The next action
+is HITL approval of its specific immutable appliance policy before
+implementation.** Do not repair the rejected CI/source route.
 
 **Latest verified E1 work (2026-07-31):** the Linux-first scope candidate is
 **accepted but unintegrated** at private head `7d2ce9e9` on base `111313b9`.
@@ -27,6 +28,16 @@ accrual, integration, tag, publish, or release-record edit occurred. **HITL
 has now ruled at `seq-235`: authorize a materially different trusted test-only
 verification design; do not re-scope or defer B5.** Terminal review transcript:
 `/tmp/fathomdb-s40-b5-final-review-zpvQ97/b5-ci-route-final-review-52108139.md`.
+
+**B5 successor design (landed):**
+`dev/design/0.8.20-b5-trusted-test-only-verification-design.md` is a rootless,
+no-egress, no-credential appliance, not a CI workflow or source guard. Its
+first review found a digest-only attestation insufficient; the correction at
+`bb662c74` requires a reviewer-resolvable immutable policy, a signed receipt
+binding the candidate SHA and all 63 exit events, and receipt-bound capability
+probes. The re-review is terminal-clean. **Implementation remains blocked until
+the HITL approves the specific policy** — including supervisor identity, image,
+fixed commands/targets, confinement, signing identity, and required probes.
 
 The epoch base is `0f7642cc904186e7a1a7a815340404689a0f5679`. Before every E1
 action and before integration, fetch `origin` in a private clone and re-verify
@@ -63,7 +74,7 @@ E1 receipt.
 | B2 | `6730faf3` | PASS | ready for integration |
 | B3 | `fbc7d7d0` | PASS after remediation | ready for integration |
 | B4 | `d4928c4d` | CANCELLED by `seq-234` | macOS/Windows CI and artifact scope move to 0.8.22; do not integrate this patch for 0.8.20 |
-| B5 | `52108139` private, rejected | design terminal-clean at `e104d696`; implementation waits on appliance-policy approval | canonical binding lacks `test-hooks`; CI/source-route guard had three independent P1 containment bypasses. The approved successor design is `dev/design/0.8.20-b5-trusted-test-only-verification-design.md`; no re-scope or deferral. |
+| B5 | `52108139` private, rejected | design terminal-clean at `e104d696`, accepted at `ea43e861`; implementation waits on appliance-policy approval | canonical binding lacks `test-hooks`; CI/source-route guard had three independent P1 containment bypasses. The approved successor design is `dev/design/0.8.20-b5-trusted-test-only-verification-design.md`; no re-scope or deferral. |
 | B6 | `0533eb8d` | PASS | ready for integration |
 | B7 | `3c92505f` | PASS | ready for integration |
 | B8+B8b | `1ab83b09` | PASS after one P1 repair | ready for integration |
@@ -103,10 +114,10 @@ test, `actionlint` on both workflows, and release-state-view check each exited
 The fresh private clone lacked `node_modules/.bin/markdownlint-cli2`, so
 `agent-lint.sh` was not treated as executed or green.
 
-E1 has not created an integration branch, rebased, pushed the one BASE change,
-started or observed CI, edited `release-state`, `STATUS`, the master schedule, or
-any ledger. Its pre-push full gates and B9's CI-only proof remain outstanding.
-The private continuation receipt is
+No E1 implementation has created an integration branch, rebased, pushed the one
+BASE change, started or observed CI, or advanced the release record. Its
+pre-push full gates and B9's CI-only proof remain outstanding. The private
+continuation receipt is
 `/tmp/fathomdb-s40-e1-orchestrator-qMnUCj/repo/dev/experiments/s40-e1-continuation-receipt-20260731.md`
 at private commit `18d44ff0`.
 
