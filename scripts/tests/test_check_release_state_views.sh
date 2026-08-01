@@ -655,21 +655,30 @@ RE_='<!-- END GENERATED release-state:0.8.20:status-unblocks -->'
 REAL_CELL="$(perl -0777 -ne 'print $1 if /\Q'"$RB"'\E(.*?)\Q'"$RE_"'\E/s' "$REAL_BOARD")"
 REAL_PRESIGN="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["acceptance"]["publish_gate"].get("pre_sign_state",""))' "$REAL_STATE")"
 
+REAL_MINTED="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["acceptance"]["publish_gate"].get("minted",False))' "$REAL_STATE")"
+REAL_NEXT="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("next_slice"))' "$REAL_STATE")"
+
 if [ -n "$REAL_CELL" ]; then
   pass "the real board carries a status-unblocks region to assert against"
+elif [ "$REAL_NEXT" = "None" ]; then
+  pass "end-of-ladder state retires the status-unblocks view instead of rendering an empty unblocks claim"
 else
   fail "arm 8b: no status-unblocks region found in $REAL_BOARD"
 fi
 
 if [ "$REAL_PRESIGN" = "PRE_SIGNED" ]; then
   pass "the real state file records the publish gate as PRE_SIGNED (master F-34)"
-  if ! grep -q 'still unsigned' <<<"$REAL_CELL" \
-     && ! grep -qE 'Publish remains blocked on AC-[0-9]+' <<<"$REAL_CELL"; then
+  if ! grep -q 'still unsigned' <<<"$REAL_BOARD" \
+     && ! grep -qE 'Publish remains blocked on AC-[0-9]+' <<<"$REAL_BOARD"; then
     pass "the real board does NOT claim publish awaits an already-given AC signature"
   else
-    fail "arm 8b: the board restates a PRE-SIGNED gate as unsigned/blocking: $REAL_CELL"
+    fail "arm 8b: the board restates a PRE-SIGNED gate as unsigned/blocking"
   fi
-  if grep -q 'is PRE-SIGNED' <<<"$REAL_CELL" \
+  if [ "$REAL_NEXT" = "None" ] && [ "$REAL_MINTED" = "True" ] \
+     && grep -q 'AC-079 is MINTED and SIGNED' "$REAL_BOARD" \
+     && grep -q 'separate explicit HITL.*PUBLISH.*gate' "$REAL_BOARD"; then
+    pass "end-of-ladder board records the mint and the separate explicit publish gate"
+  elif grep -q 'is PRE-SIGNED' <<<"$REAL_CELL" \
      && grep -q 'Pre-signing is NOT minting' <<<"$REAL_CELL" \
      && grep -qE 'minted and recorded as [A-Z]+ at Slice [0-9]+' <<<"$REAL_CELL" \
      && grep -q 'Publish is gated by the separate HITL publish gate' <<<"$REAL_CELL"; then
@@ -841,8 +850,16 @@ for v in s.get("generated_views") or []:
 REAL_NEXT="$(python3 -c '
 import json, sys
 print(json.load(open(sys.argv[1])).get("next_slice"))' "$REAL_PLAN_STATE")"
-if [ -z "$REAL_PLAN_PATH" ]; then
-  fail "arm 10f: no live release-state file declares a plan-immediate-next view — TC-89's pointer is still hand-written"
+if [ "$REAL_NEXT" = "None" ]; then
+  if [ -z "$REAL_PLAN_PATH" ] \
+     && ! rg -q 'BEGIN GENERATED release-state:0\.8\.20:plan-immediate-next' \
+       "$REPO_ROOT/dev/plans/plan-0.8.20.md"; then
+    pass "real repo — end-of-ladder state retires the generated next-slice pointer instead of fabricating one"
+  else
+    fail "arm 10f: end-of-ladder state must retire plan-immediate-next and its markers; path=$REAL_PLAN_PATH"
+  fi
+elif [ -z "$REAL_PLAN_PATH" ]; then
+  fail "arm 10f: a live next_slice requires a declared plan-immediate-next view — TC-89's pointer is hand-written"
 elif [ ! -f "$REPO_ROOT/$REAL_PLAN_PATH" ]; then
   fail "arm 10f: the declared plan-immediate-next target \`$REAL_PLAN_PATH\` is not a file"
 else
@@ -856,6 +873,27 @@ else
   else
     fail "arm 10f (live plan pointer): next=$REAL_NEXT region=[$REAL_PTR]"
   fi
+fi
+
+# --- Arm 10g: an empty ladder renders as NONE, never as an empty claim -----
+# The final landing is a real state: `remaining_ladder: []`. The master and
+# landed roll-up remain generated, so their rendered prose must say "none";
+# "remaining ladder = ." is grammatically broken and can be misread as a
+# missing fact rather than an explicit complete ladder.
+setup_fixture
+python3 - "$FIX/dev/plans/release-state-9.9.9.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+s = json.load(open(p))
+s["remaining_ladder"] = []
+json.dump(s, open(p, "w"), indent=2)
+PY
+run_gate
+if [ "$RC" -ne 0 ] && grep -qF 'remaining ladder = none.' <<<"$OUT" \
+   && ! grep -qF 'remaining ladder = .' <<<"$OUT"; then
+  pass "end-of-ladder master view renders an explicit remaining ladder = none"
+else
+  fail "arm 10g (empty remaining ladder): rc=$RC out=$OUT"
 fi
 
 # ===========================================================================

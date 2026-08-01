@@ -459,23 +459,16 @@ to the HITL.
 > It is resolved from the `["immediate next slice"]` role keyword in `scripts/commission-manifest.sh`,
 > whose CHECK 2 verifies that the *heading* exists, never that the prose beneath it is current.
 >
-> **TWO GENERATED VIEWS carry the whole state of this section** (TC-89, closed in `DOC-HYGIENE-3`; both went
-> stale at three consecutive commissions while hand-written): the **IMMEDIATE NEXT** pointer directly below,
-> and the **LANDED roll-up** in `### Historical`. Both render from `release-state-0.8.20.json` via
-> `scripts/check-release-state-views.sh`, which hard-fails on any drift or hand-edit.
-> **NEVER EDIT INSIDE THE MARKERS** — change the fact in the state file, then run
-> `scripts/check-release-state-views.sh --write`. Everything outside the markers is hand-written narration
-> and is **not** a pointer.
+> The **LANDED roll-up** in `### Historical` renders from `release-state-0.8.20.json` via
+> `scripts/check-release-state-views.sh`, which hard-fails on any drift or hand-edit. While a next slice
+> exists, its pointer is generated too; at the real end of the ladder `next_slice: null` retires that view
+> rather than fabricating a "Slice None" commission. **NEVER EDIT INSIDE THE REMAINING MARKERS** — change the
+> fact in the state file, then run `scripts/check-release-state-views.sh --write`.
 
-### ▶ Immediate next
+### ▶ Release ladder complete
 
-<!-- BEGIN GENERATED release-state:0.8.20:plan-immediate-next -->
-**IMMEDIATE NEXT: Slice 40** (`R-20-PUB`) — verification + release readiness (publish-or-hold)
-
-**Remaining ladder:** 40.<!-- END GENERATED release-state:0.8.20:plan-immediate-next -->
-
-> ⚠ Hand-written, this block read **31**, then **39**, then went stale again the moment Slice 39 landed.
-> It is generated now; that class is closed.
+**Slice 40 (`R-20-PUB`) LANDED at `833a2035`.** There is no next 0.8.20 implementation slice; the only
+remaining release action is the separate explicit HITL **PUBLISH** gate. Slice 40 stopped before any tag.
 
 ### ⚠ RULED-WITH-WORK — a decision can be closed and still owe an action
 
@@ -626,7 +619,7 @@ loss** — the write is accepted, stays lexically searchable, and is embedded on
 Documented in `dev/interfaces/{rust,python,typescript}.md` + `CHANGELOG.md`.
 
 <!-- BEGIN GENERATED release-state:0.8.20:plan-landed-roll-up -->
-**LANDED on `origin/main`, in full:** Slices 0 (`403eb254`) · 5 (`1f8ed8bf`) · 10 (`3cfb3cda`) · 15 (`a2022957`) · 20 (`841c307b`) · 25 (`83b1c818`) · 30 (`9b3ed0e3`) · 21 (`77be504b`) · 22 (`572475f2`) · 23 (`30102ecd`) · 31 (`d0287620`) · 32 (`31d33293`) · 33 (`f02dc5b4`) · 39 (`91db34d8`). SCHEMA is 24; remaining ladder = 40.<!-- END GENERATED release-state:0.8.20:plan-landed-roll-up -->
+**LANDED on `origin/main`, in full:** Slices 0 (`403eb254`) · 5 (`1f8ed8bf`) · 10 (`3cfb3cda`) · 15 (`a2022957`) · 20 (`841c307b`) · 25 (`83b1c818`) · 30 (`9b3ed0e3`) · 21 (`77be504b`) · 22 (`572475f2`) · 23 (`30102ecd`) · 31 (`d0287620`) · 32 (`31d33293`) · 33 (`f02dc5b4`) · 39 (`91db34d8`) · 40 (`833a2035`). SCHEMA is 24; remaining ladder = none.<!-- END GENERATED release-state:0.8.20:plan-landed-roll-up -->
 
 Off-ladder landings the roll-up above cannot carry (they hold no slice number): the ⟨TC-86
 transcript-hygiene fix⟩ at `0a500de9`, `DOC-HYGIENE-3` at `85d44c74`, `SLICE-ID-HARDENING` at `2008f529`,
