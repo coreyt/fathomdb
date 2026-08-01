@@ -512,6 +512,13 @@
         "ruling": "GRANTED, SCOPED (HITL 2026-07-31). Correcting the `_comment` error-family sentence in `src/conformance/governed-surface-allowlist.json` produces a diff, and the T1e pin hashes raw bytes, so it re-opens the AC-079 pre-signature. The HITL pre-signs that re-opening IN ADVANCE of the determination, so the correction rides with the AC-079 mint at PHASE 5 and does NOT defer to 0.8.21. SCOPE, and it is narrow: the signature covers the `_comment` PROSE ONLY. The governed surface itself - every type, function and error name in the allowlist's arrays - stays BYTE-IDENTICAL. If the determination implies any change to the surface rather than to the comment describing it, that is NOT covered: stop and re-escalate to the Steward.",
         "source": "steward seq-232 (HITL 2026-07-31)",
         "residual_work": "PHASE 5. (1) Determine, against the REAL entry point, whether a `valid_from >= valid_until` window is refused with `InvalidArgument`/`InvalidArgumentError` (what the `_comment` claims) or with `WriteValidation`/`WriteValidationError` (what Decision #18 settled the family onto). (2) Correct the `_comment` to match the shipped behaviour. (3) Re-pin in the SAME change, coordinated with the AC-079 mint. (4) Report the determination with evidence. The signature is granted; the DETERMINATION is still yours to make and to show."
+      },
+      {
+        "id": "b5-verification-design",
+        "title": "B5 post-circuit-breaker verification design",
+        "ruling": "Authorize a materially different trusted test-only verification design. Do not re-scope or defer B5. The rejected CI/source-route candidate remains forbidden after three containment P1 findings, including an actionlint-valid job-level `permissions: write-all` bypass.",
+        "source": "steward seq-235 (HITL 2026-07-31)",
+        "residual_work": "Commission a bounded design-only continuation. It must not repair or integrate the rejected CI/source-route candidate, dispatch CI, publish, or advance E2 until independently reviewed."
       }
     ],
     "ruled_tracking": [

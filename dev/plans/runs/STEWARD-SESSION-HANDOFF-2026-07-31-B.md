@@ -6,8 +6,9 @@
 
 Slice 40 is commissioned but **E1 is hard-stopped and not closed**. Do not begin
 E2, integrate, push, or alter the release record outside the reconciled
-Linux-first scope. A fresh E1 continuation must first apply the HITL ruling at
-ledger `seq-234`, then resolve B5's already-authorized evidence route.
+Linux-first scope. The next action is a bounded, design-only B5 continuation:
+the HITL has authorized a materially different trusted test-only verification
+design at ledger `seq-235`; do not repair the rejected CI/source route.
 
 **Latest verified E1 work (2026-07-31):** the Linux-first scope candidate is
 **accepted but unintegrated** at private head `7d2ce9e9` on base `111313b9`.
@@ -21,9 +22,9 @@ tag, dispatch, publish, or credential action. Receipt:
 actionlint-valid bypasses; the third proves the final private candidate accepts
 job-level `permissions: write-all`. Per the fix-N cap, no fourth same-class
 correction is authorized. No CI dispatch, local binding build/install, B5
-accrual, integration, tag, publish, or release-record edit occurred. The next
-owner is the Steward/HITL: choose a materially different trusted test-only
-verification design or re-scope B5. Terminal review transcript:
+accrual, integration, tag, publish, or release-record edit occurred. **HITL
+has now ruled at `seq-235`: authorize a materially different trusted test-only
+verification design; do not re-scope or defer B5.** Terminal review transcript:
 `/tmp/fathomdb-s40-b5-final-review-zpvQ97/b5-ci-route-final-review-52108139.md`.
 
 The epoch base is `0f7642cc904186e7a1a7a815340404689a0f5679`. Before every E1
@@ -61,7 +62,7 @@ E1 receipt.
 | B2 | `6730faf3` | PASS | ready for integration |
 | B3 | `fbc7d7d0` | PASS after remediation | ready for integration |
 | B4 | `d4928c4d` | CANCELLED by `seq-234` | macOS/Windows CI and artifact scope move to 0.8.22; do not integrate this patch for 0.8.20 |
-| B5 | `52108139` private, rejected | CIRCUIT-BREAKER BLOCK | canonical binding lacks `test-hooks`; CI/source-route guard had three independent P1 containment bypasses; Steward/HITL must select a materially different design or re-scope |
+| B5 | `52108139` private, rejected | CIRCUIT-BREAKER BLOCK; successor authorized at `seq-235` | canonical binding lacks `test-hooks`; CI/source-route guard had three independent P1 containment bypasses. Commission a materially different trusted test-only design; no re-scope or deferral. |
 | B6 | `0533eb8d` | PASS | ready for integration |
 | B7 | `3c92505f` | PASS | ready for integration |
 | B8+B8b | `1ab83b09` | PASS after one P1 repair | ready for integration |
@@ -89,8 +90,9 @@ The final private CI-route candidate `52108139` passes its positive checks but
 an independent actionlint-valid fixture with job-level `permissions: write-all`
 also passes its contract. This is the third containment P1 after the bootstrap
 and secret/environment bypasses. The circuit breaker prohibits a fourth repair;
-do not integrate any B5 CI-route candidate or dispatch it. A new decision is
-required before B5 can proceed.
+do not integrate any B5 CI-route candidate or dispatch it. **HITL ruled at
+`seq-235` to commission a materially different trusted test-only design, not
+to re-scope or defer B5.**
 
 **Steward verification of Linux-first candidate:** `git status` clean; base
 ancestry and `git diff --check` passed. The Linux-first guard, release-scope
