@@ -11,6 +11,7 @@ trap 'rm -rf "$FIX"' EXIT
 mkdir -p "$FIX/scripts/lib" "$FIX/bin"
 cp "$REPO_ROOT/scripts/agent-lint.sh" "$FIX/scripts/agent-lint.sh"
 cp "$REPO_ROOT/scripts/lib/agent-output.sh" "$FIX/scripts/lib/agent-output.sh"
+cp "$REPO_ROOT/scripts/lib/actionlint-version.sh" "$FIX/scripts/lib/actionlint-version.sh"
 printf '#!/usr/bin/env bash\nprintf "1.7.7\\n"\n' >"$FIX/bin/actionlint"
 printf '#!/usr/bin/env bash\nprintf "ruff 0.15.10\\n"\n' >"$FIX/bin/ruff"
 chmod +x "$FIX/scripts/agent-lint.sh" "$FIX/bin/actionlint" "$FIX/bin/ruff"

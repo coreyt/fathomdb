@@ -5,6 +5,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/agent-output.sh
 . "$SCRIPT_DIR/lib/agent-output.sh"
+# shellcheck source=lib/actionlint-version.sh
+. "$SCRIPT_DIR/lib/actionlint-version.sh"
 cd_repo_root
 
 # Python preflight: use the project's exact pinned version, so local prework
@@ -39,7 +41,7 @@ if [ -z "$actionlint_bin" ]; then
   exit 1
 fi
 
-actionlint_version="$("$actionlint_bin" --version | sed -n '1p')"
+actionlint_version="$(read_actionlint_version "$actionlint_bin")"
 if [ "$actionlint_version" != "$ACTIONLINT_VERSION" ]; then
   printf 'FAIL lint-actions: actionlint %s is required; selected %s. Run scripts/bootstrap.sh in a clean non-worktree checkout.\n' "$ACTIONLINT_VERSION" "$actionlint_version" >&2
   exit 1

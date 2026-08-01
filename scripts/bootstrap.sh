@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$(git rev-parse --show-toplevel)"
+# shellcheck source=lib/actionlint-version.sh
+. "$SCRIPT_DIR/lib/actionlint-version.sh"
 
 echo "FathomDB scaffold bootstrap"
 echo "Public docs live in docs/ and build with MkDocs."
@@ -74,7 +77,7 @@ readonly ACTIONLINT_VERSION="1.7.12"
 actionlint_bin="$(command -v actionlint || true)"
 actionlint_version=""
 if [ -n "$actionlint_bin" ]; then
-  actionlint_version="$("$actionlint_bin" --version | sed -n '1p')"
+  actionlint_version="$(read_actionlint_version "$actionlint_bin")"
 fi
 
 if [ "$actionlint_version" != "$ACTIONLINT_VERSION" ]; then
@@ -86,7 +89,7 @@ if [ "$actionlint_version" != "$ACTIONLINT_VERSION" ]; then
   echo "Installing actionlint v$ACTIONLINT_VERSION via go install..."
   GO111MODULE=on go install "github.com/rhysd/actionlint/cmd/actionlint@v$ACTIONLINT_VERSION"
   actionlint_bin="$(go env GOPATH)/bin/actionlint"
-  if [ ! -x "$actionlint_bin" ] || [ "$("$actionlint_bin" --version | sed -n '1p')" != "$ACTIONLINT_VERSION" ]; then
+  if [ ! -x "$actionlint_bin" ] || [ "$(read_actionlint_version "$actionlint_bin")" != "$ACTIONLINT_VERSION" ]; then
     echo "actionlint v$ACTIONLINT_VERSION installation did not produce the required binary" >&2
     exit 1
   fi
