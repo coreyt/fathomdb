@@ -46,8 +46,8 @@ read_workspace_version() {
 # --- Check 1: tag presence + Axis W match -----------------------------------
 # workflow_dispatch fires from a branch ref (refs/heads/...), so there is no
 # v-tag to validate. Skip the tag check on dispatch but keep every other gate;
-# dispatch with dry_run=false is an emergency-republish path that still
-# benefits from --check-files / CHANGELOG / metadata enforcement.
+# dry_run=false is an emergency-republish path that must carry a typed version
+# confirmation as well as --check-files / CHANGELOG / metadata enforcement.
 
 EVENT_NAME="${GITHUB_EVENT_NAME:-push}"
 WS_VERSION="$(read_workspace_version)"
@@ -57,6 +57,9 @@ fi
 
 if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
   if [ "${DRY_RUN:-}" != "true" ]; then
+    if [ "${RELEASE_CONFIRM_VERSION:-}" != "$WS_VERSION" ]; then
+      die "workflow_dispatch with dry_run=false requires confirm_release_version to exactly match Axis-W version '$WS_VERSION'"
+    fi
     printf 'release-gate: WARNING — dispatch with dry_run=false is an emergency-republish path; verify the dispatched ref matches the intended tag manually before approving.\n' >&2
   fi
 else

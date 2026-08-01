@@ -162,6 +162,8 @@ class OpenReport:
     embedder_events: list[EmbedderEvent]
     embedder_mean_centering_required: bool
     embedder_mean_vec_pinned: bool
+    dense_disabled: bool
+    dense_disabled_reason: str | None
 
 class Engine:
     @staticmethod
@@ -220,6 +222,9 @@ class Engine:
     def search_text_only(
         self, query: str, view: ReadView | None = ...
     ) -> SearchResult: ...
+    def dense_disabled(self) -> bool: ...
+    def dense_disabled_reason(self) -> str | None: ...
+    def vector_equivalence_refusal_count(self) -> int: ...
     # 0.8.8 Slice 15 (OPP-9) — opt-in local telemetry capture.
     def enable_telemetry(self, sink_path: str) -> None: ...
     def last_telemetry_query_id(self) -> str | None: ...
@@ -520,6 +525,7 @@ class InvalidArgumentError(EngineError): ...
 # 0.8.18 Slice 5 (#5 vector-equivalence probe) — query-time dense-refusal leaf.
 class VectorEquivalenceMismatchError(EngineError):
     reason: str
+    def __init__(self, *args: Any, reason: str = ...) -> None: ...
 
 # OPP-12 Phase-1 (0.8.19 Slice 10) — lifecycle-verb typed errors. Parity-safe
 # field names (S7): `from_state`/`to_state` (never `from`, a Python keyword).
@@ -527,9 +533,17 @@ class IllegalTransitionError(EngineError):
     from_state: str
     to_state: str
     legal: list[str]
+    def __init__(
+        self,
+        *args: Any,
+        from_state: str = ...,
+        to_state: str = ...,
+        legal: list[str] = ...,
+    ) -> None: ...
 
 class NotLifecycleAddressableError(EngineError):
     id_space: str
+    def __init__(self, *args: Any, id_space: str = ...) -> None: ...
 
 # 0.8.20 Slice 5b (R-20-E5) — an erasure verb deleted its rows but could not
 # complete the erasure at rest (typically a WAL checkpoint blocked by a
@@ -537,6 +551,9 @@ class NotLifecycleAddressableError(EngineError):
 class ErasureIncompleteError(EngineError):
     stage: str
     detail: str
+    def __init__(
+        self, *args: Any, stage: str = ..., detail: str = ...
+    ) -> None: ...
 
 # 0.8.20 Slice 15d (R-20-PR) — `configure_projections` refused a DESTRUCTIVE
 # change to a live projection `name` (a role removal or tokenizer/embedder swap)
@@ -545,3 +562,4 @@ class ErasureIncompleteError(EngineError):
 class ProjectionDestructiveError(EngineError):
     name: str
     delta: str
+    def __init__(self, *args: Any, name: str = ..., delta: str = ...) -> None: ...

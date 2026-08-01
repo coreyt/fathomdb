@@ -331,7 +331,7 @@ carries **no pico label** (`seq-106`; DOC-HYGIENE-1 precedent, F-33). Execution 
 | **15** | **Projection registry (C-1 co-land) + EAV/property-FTS** (R-20-PR, R-20-EAV) **+ TC-34 node-validity write-side authoring verb + TC-33 temporal-representation harmonisation** *(both folded in by HITL 2026-07-20)* | implementation | 0, 10 |
 | **20** | **`dense_readiness` + `flush_embeddings()`** (R-20-DR) | implementation | 15 |
 | **25** | **Surrogate minting — registry-admitted governed entities ONLY** (R-20-SUR) — ✅ **LANDED `83b1c818`** | implementation | 15 |
-| **30** | **RUBRIC-H7 `can-i-deploy` contract-conformance gate** (R-20-H7) — ⚑ **RUNS FIRST of the remainder** | implementation | 10,15,20,25 |
+| **30** | **RUBRIC-H7 `can-i-deploy` contract-conformance gate** (R-20-H7) — ✅ **Slice 30 COMPLETE AND CLOSED — LANDED `9b3ed0e3`** | implementation | 10,15,20,25 |
 | **21** | **Concurrency + test-oracle repair** (R-20-CR) — TC-57 characterize→fix · ac_002 oracle replacement · TC-71 | implementation | 20 |
 | **22** | **Vector-arm consumer contract** (R-20-VC) — TC-67 (c) · TC-68 fingerprint-cache · decision #18 · sqlite-vec #99 probe | implementation | 15, 20 |
 | **23** | **Spec-validation reject + carried-defect characterization** (R-20-SV) — the `fts`/`vector` reject (ruled 2026-07-24) · TC-90/TC-91 characterization (no fix, `seq-136`) | implementation + investigation | 22 (needs #18's error family settled) |
@@ -549,6 +549,11 @@ slice number or an `R-20-xx` position — the `DOC-HYGIENE-3` / TC-86 precedent.
 > `verify`/`security` die in bootstrap on seven pre-existing pyright errors; **`rust-windows` fails on
 > `-p fathomdb-engine --test tc57_worker_commit_pressure`, which is named in no ledger, design doc or
 > brief — new and UNOWNED**; and `commission-manifest` fails in CI while its suite is rc=0 locally.
+>
+> **HITL scope amendment 2026-07-31 (`seq-234`).** 0.8.20 supports and publishes Linux x86_64 native
+> artifacts only; macOS/Windows CI, validation and native-artifact work defer to **0.8.22**. **B4 is cancelled and deferred to 0.8.22**; do not integrate its private serialisation patch. TC-91 remains a
+> Linux-shipping defect: the acceptance is **five consecutive relevant Linux CI TC-91 greens**, not the
+> superseded `rust-windows` accrual. This does not platform-exclude Cargo source crates.
 
 **Then Slice 40 (`R-20-PUB`)** prepares the publish and **STOPS before any tag**. Publish itself remains
 the single unruled HITL decision.

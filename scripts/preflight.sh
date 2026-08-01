@@ -152,17 +152,32 @@ fi
 # `--expect-closed 0`, the version dot being read as a boundary. That is site 4's
 # own defect class, live in a tracked file.
 #
+# A dependency can also be LANDED. The release-state renderer writes its
+# canonical historical roll-up as `LANDED on main: Slices <id> ...`; rejecting
+# that generated record would make an already-landed prerequisite appear open.
+# Keep the same exact-id boundary for both closure states and for singular and
+# plural Slice labels: a neighbouring fractional id must never clear this gate.
+# A closure state must also be a standalone affirmative token. `NOT CLOSED` is
+# not closure, and neither are prefixed words such as `UNCLOSED` or `UNLANDED`.
+# Filter a line carrying a negated state before searching it: a line that says
+# both states is contradictory, not evidence that it is safe to spawn.
+#
 # esc_ere: escape every ERE metacharacter so the value is matched LITERALLY.
 esc_ere() { printf '%s' "$1" | sed -e 's/[][\\.^$*+?(){}|]/\\&/g'; }
 if [ -n "$EXPECT_CLOSED" ]; then
   EXPECT_CLOSED_RE="$(esc_ere "$EXPECT_CLOSED")"
   # "not the start of a LONGER slice id": not a digit, and not `.`+digit.
   ID_END='([^0-9.]|\.[^0-9])'
+  SLICE_LABEL='(Slice|Slices|Phase)'
+  CLOSURE_STATE='(CLOSED|LANDED)'
+  CLOSURE_TOKEN="(^|[^[:alnum:]_])${CLOSURE_STATE}([^[:alnum:]_]|$)"
+  NEGATED_CLOSURE="(^|[^[:alnum:]_])(NOT[[:space:]]+|UN)${CLOSURE_STATE}([^[:alnum:]_]|$)"
+  CLOSURE_WITNESS="${SLICE_LABEL}[^A-Za-z0-9]*${EXPECT_CLOSED_RE}${ID_END}.*${CLOSURE_TOKEN}|${CLOSURE_TOKEN}.*${SLICE_LABEL}[^A-Za-z0-9]*${EXPECT_CLOSED_RE}(${ID_END}|\.?$)"
   if [ -z "$PLAN" ]; then
     hard "--expect-closed $EXPECT_CLOSED given without --plan <file>"
   elif [ ! -f "$PLAN" ]; then
     hard "plan file not found: $PLAN"
-  elif grep -qiE "(Slice|Phase)[^A-Za-z0-9]*${EXPECT_CLOSED_RE}${ID_END}.*(CLOSED|LANDED)|(CLOSED|LANDED).*(Slice|Phase)[^A-Za-z0-9]*${EXPECT_CLOSED_RE}(${ID_END}|\.?$)|(CLOSED|LANDED).*(Slices|Phases).*${EXPECT_CLOSED_RE}${ID_END}" "$PLAN"; then
+  elif grep -viE "$NEGATED_CLOSURE" "$PLAN" | grep -qiE "$CLOSURE_WITNESS"; then
     ok "dependency Slice/Phase $EXPECT_CLOSED has a CLOSED or LANDED witness in $PLAN"
   else
     hard "dependency Slice/Phase $EXPECT_CLOSED has NO 'CLOSED' or 'LANDED' witness in $PLAN — do not spawn dependents"
@@ -296,8 +311,9 @@ fi
 # Refuse a land that would ship a governed surface the HITL has not signed. The
 # HITL PRE-SIGNED the accumulated delta of 0.8.20 Slices 5d+10b+15b+15d (AC-079)
 # pinned to the exact content of src/conformance/governed-surface-allowlist.json
-# as of 427d2712 — 30 allowlist members, recovery_denylist unchanged at the five
-# REQ-054 names. This gate makes that pin mechanical.
+# at the provenance commit recorded in its pin — 30 allowlist members,
+# recovery_denylist unchanged at the five REQ-054 names. This gate makes that
+# pin mechanical.
 #
 # The predicate lives in scripts/check-governed-surface-pin.sh (see that file's
 # header) so preflight and the always-on CI job share ONE implementation and

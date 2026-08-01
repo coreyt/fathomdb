@@ -28,7 +28,11 @@ JSON="$OUT_DIR/${LABEL}.json"
 MD="$OUT_DIR/${LABEL}.md"
 
 # Caches/binaries to exclude from "what an agent sees".
-PRUNE_EXPR='-path */.git -o -path */.venv -o -path */hf_cache -o -path */node_modules -o -path */__pycache__ -o -path */.pytest_cache -o -path */.ruff_cache -o -path */target'
+PRUNE=(
+  -path '*/.git' -o -path '*/.venv' -o -path '*/hf_cache'
+  -o -path '*/node_modules' -o -path '*/__pycache__'
+  -o -path '*/.pytest_cache' -o -path '*/.ruff_cache' -o -path '*/target'
+)
 
 # --- helpers -------------------------------------------------------------
 # bytes of a set of files passed on stdin (one path per line); 0 if none.
@@ -37,9 +41,9 @@ count_of() { grep -c . || true; }                      # count nonempty stdin li
 est_tokens() { echo $(( ($1 + 3) / 4 )); }             # ceil(bytes/4)
 
 # find md files under a dir, excluding caches (prune dirs FIRST, then match files)
-md_under() { find "$1" \( $PRUNE_EXPR \) -prune -o -type f -name '*.md' -print 2>/dev/null; }
+md_under() { find "$1" \( "${PRUNE[@]}" \) -prune -o -type f -name '*.md' -print 2>/dev/null; }
 # all files under a dir, excluding caches
-all_under() { find "$1" \( $PRUNE_EXPR \) -prune -o -type f -print 2>/dev/null; }
+all_under() { find "$1" \( "${PRUNE[@]}" \) -prune -o -type f -print 2>/dev/null; }
 
 metric() { # name list-producing-command -> sets _CNT/_BYTES/_TOK
   local list; list="$(eval "$2")"

@@ -16,7 +16,7 @@ jobs:
   # Docs-only fast-path detector. Computes whether the diff touches ANY
   # non-markdown file. A markdown/docs-only change then runs ONLY the lightweight
   # `markdownlint` job (plus the always-on `docs` mkdocs gate) and skips the heavy
-  # verify / security / embedder / cross-OS / wheel jobs — so a trivial docs edit
+  # verify / security / embedder / wheel jobs — so a trivial docs edit
   # no longer burns the full matrix (and a single md finding no longer reds main
   # via the heavy gate). The md gate itself is PRESERVED on the fast path; this is
   # not a `paths-ignore` drop. paths-filter handles base-ref resolution for both
@@ -45,7 +45,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       # H-5 (pre-0.6.0 security fix): pin third-party actions to commit SHAs.
       # 0.8.9 Slice 1: fetch-depth 0 so the AC-050c removal-detect gate can
@@ -129,7 +129,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Configure per-session TMPDIR
@@ -178,6 +178,32 @@ jobs:
           fi
           # Never fail the job on warm-cache failure — the env gate covers it.
           exit 0
+      # The generic agent loop deliberately sets FATHOMDB_SKIP_NETWORK_TESTS=1
+      # so developers can run its full prework without a live model download.
+      # This cache-owning job runs the complementary live/release TypeScript
+      # coverage only. On a warm failure it inherits the conditional
+      # GITHUB_ENV skip gate above, while non-network and release-surface
+      # assertions in these seven files still run.
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+      - name: Install locked TypeScript test dependencies
+        run: cd src/ts && npm ci
+      - name: Build native debug TypeScript test binding
+        run: cd src/ts && npm run build:native:debug
+      - name: Emit TypeScript test files
+        run: cd src/ts && npm exec -- tsc -p tsconfig.json
+      - name: Default-embedder and release-surface TypeScript tests
+        run: |
+          cd src/ts
+          RELEASE_SURFACE_TESTS=1 node --test \
+            dist/tests/embed-batch-cls.test.js \
+            dist/tests/embedder-event-narrowing.test.js \
+            dist/tests/functional-embed.test.js \
+            dist/tests/release-surface.test.js \
+            dist/tests/slice20c-flush-barrier.test.js \
+            dist/tests/tc67-unsupported-vector-kind-report.test.js \
+            dist/tests/use-default-embedder.test.js
       - name: Network-hitting EU-5b tests (engine)
         run: |
           cargo test -p fathomdb-engine --features default-embedder \
@@ -186,54 +212,6 @@ jobs:
         run: |
           cargo test -p fathomdb-cli --features default-embedder \
             --test cli_warm_cache
-
-  # Platform-sensitive engine code regresses on Windows/macOS often enough
-  # that pre-0.6.0 carried these matrix legs. Keep them.
-  rust-windows:
-    needs: changes
-    if: needs.changes.outputs.docs_only != 'true'
-    runs-on: windows-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - name: Configure per-session TMPDIR
-        shell: bash
-        run: |
-          # Windows resolves temp dir via TMP/TEMP, not TMPDIR.
-          TMP="$RUNNER_TEMP/fathomdb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          mkdir -p "$TMP"
-          echo "TMP=$TMP" >> "$GITHUB_ENV"
-          echo "TEMP=$TMP" >> "$GITHUB_ENV"
-      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
-        with:
-          toolchain: stable
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-      # 0.8.9 Slice 20 (F-9): --no-fail-fast surfaces the FULL set of Windows test
-      # failures in one run rather than stopping at the first. The pyo3 link gate had
-      # masked Windows test execution entirely; once it lifted, failures appear one per
-      # run with a default (fail-fast) invocation. Enumerate them all so the
-      # cross-platform remediation scope is known, not discovered whack-a-mole. (Aligned
-      # with 0.8.9's anti-masking mandate — a first failure must not hide the rest.)
-      - run: cargo test --workspace --no-fail-fast
-
-  rust-macos:
-    needs: changes
-    if: needs.changes.outputs.docs_only != 'true'
-    runs-on: macos-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - name: Configure per-session TMPDIR
-        shell: bash
-        run: |
-          TMPDIR="$RUNNER_TEMP/fathomdb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          mkdir -p "$TMPDIR"
-          echo "TMPDIR=$TMPDIR" >> "$GITHUB_ENV"
-      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
-        with:
-          toolchain: stable
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-      - run: cargo test --workspace
 
   # EU-6 FIX-1 / ADR-0.6.0-default-embedder.md EMB-3 — wheel-size gate.
   #
@@ -246,18 +224,9 @@ jobs:
   #     and recorded in the job summary so accidental dependency creep
   #     on the minimal-deps build path is still visible — but not gated.
   #
-  # Matrix covers all 5 release-target platforms emitted by
-  # `release.yml`'s build-python job: Linux x86_64, Linux aarch64,
-  # macOS x86_64, macOS arm64, Windows x86_64. AC-FIX1-5.
-  #
-  # Baselines: Linux x86_64 measured on the FIX-1 GREEN commit
-  # (with-feature wheel ≈ 6.16 MB; ~20% padding → 7.4 MB). Non-Linux
-  # baselines are seeded at conservative numbers derived from the
-  # Linux measurement; the first CI run will surface the real per-
-  # platform numbers and any baseline that's too low can be bumped
-  # within EMB-3's 20 MB regression budget. BASELINES TO RE-CALIBRATE
-  # IN FIRST CI RUN — bump in a follow-up commit once the first run
-  # emits real `::notice title=wheel-size::` values.
+  # For 0.8.20 the matrix is the shipped x86_64 Linux artifact only.
+  # macOS/Windows native validation and artifacts are deferred to 0.8.22
+  # by the HITL's Linux-first scope ruling (steward seq-234).
   wheel-size-gate:
     needs: changes
     if: needs.changes.outputs.docs_only != 'true'
@@ -275,32 +244,6 @@ jobs:
             # not whip the gate; the 20 MB regression budget on top of
             # this absorbs intentional dependency bumps.
             baseline_bytes: 7400000
-          - runner: ubuntu-latest
-            target: aarch64-unknown-linux-gnu
-            label: linux-aarch64
-            manylinux: "2_28"
-            # Seeded from Linux x86_64 with ~5% padding (aarch64 wheels
-            # are typically near-parity, occasionally a hair larger).
-            # TO RECALIBRATE.
-            baseline_bytes: 7700000
-          - runner: macos-latest
-            target: x86_64-apple-darwin
-            label: darwin-x64
-            # Seeded from Linux x86_64 with ~5% padding (Mach-O vs ELF
-            # overhead is small at this scale). TO RECALIBRATE.
-            baseline_bytes: 7700000
-          - runner: macos-latest
-            target: aarch64-apple-darwin
-            label: darwin-arm64
-            # Seeded from Linux x86_64 with ~5% padding. TO RECALIBRATE.
-            baseline_bytes: 7700000
-          - runner: windows-latest
-            target: x86_64-pc-windows-msvc
-            label: win32-x64
-            # Seeded from Linux x86_64 with ~10% padding (PE/COFF
-            # sections + MSVC runtime imports add a small overhead vs
-            # ELF). TO RECALIBRATE.
-            baseline_bytes: 8000000
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     steps:
@@ -313,13 +256,8 @@ jobs:
           toolchain: stable
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-      # Use PyO3/maturin-action (same SHA as release.yml's build-python)
-      # so the linux-aarch64 leg gets a working cross-toolchain via the
-      # action's container. A bare `maturin build --target
-      # aarch64-unknown-linux-gnu` on ubuntu-latest has no aarch64
-      # sysroot/linker; the action handles that. This also harmonizes
-      # the build path with release.yml.
-      #
+      # Use PyO3/maturin-action (the same SHA as release.yml's build-python)
+      # so the tested wheel follows the release build path exactly.
       # Build the with-feature wheel first — this is the shipped
       # artifact and the GATED build. `--features` REPLACES the
       # pyproject list, so the explicit list here is what gets built
@@ -575,13 +513,15 @@ jobs:
   # exactly the pushes the docs_only fast path excludes — a rename or a moved
   # design doc landing alongside code. `--verify-all` re-verifies the NEXT slice
   # of every live release-state file, so this job needs no release number of its
-  # own and cannot go stale when the ladder advances. Reads the working tree
-  # only; default depth-1 checkout is sufficient.
+  # own and cannot go stale when the ladder advances. The recurrence-guard
+  # fixture reads generator history, so this job checks out the full history.
   commission-manifest:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
       - name: Every live release's next-slice manifest still resolves (T3b)
         run: bash scripts/commission-manifest.sh --verify-all
       - name: Recurrence guard for the generator itself (fixture arms)

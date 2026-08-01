@@ -25,7 +25,7 @@ import re
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Union
+from typing import Union
 
 #: Env override for the corpus root (so a test can point at a tiny fixture and the
 #: orchestrator can relocate the gitignored payload without code edits).
@@ -73,7 +73,7 @@ class AutoQQuestion:
     family: str
     scope: str
     question_text: str
-    question_id: Optional[str] = None
+    question_id: str | None = None
     assertions: tuple[str, ...] = ()
     data_linked: bool = False
 
@@ -93,7 +93,7 @@ def default_corpus_root() -> Path:
     )
 
 
-def corpus_root(override: Optional[_PathLike] = None) -> Path:
+def corpus_root(override: _PathLike | None = None) -> Path:
     """Resolve the corpus root: explicit ``override`` > ``$FATHOMDB_APNEWS_CORPUS_ROOT``
     > :func:`default_corpus_root`."""
     if override is not None:
@@ -104,7 +104,7 @@ def corpus_root(override: Optional[_PathLike] = None) -> Path:
     return default_corpus_root()
 
 
-def load_manifest(root: Optional[_PathLike] = None) -> dict:
+def load_manifest(root: _PathLike | None = None) -> dict:
     """Read and return the parsed ``MANIFEST.json`` for the corpus root."""
     path = corpus_root(root) / MANIFEST_NAME
     if not path.exists():
@@ -143,7 +143,7 @@ def _sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def load_articles(root: Optional[_PathLike] = None, *, verify: bool = True) -> list[Article]:
+def load_articles(root: _PathLike | None = None, *, verify: bool = True) -> list[Article]:
     """Unpack ``raw_data.zip`` into :class:`Article` records (sorted by archive name).
 
     When ``verify`` (default), enforce the corpus-validity guard against the manifest
@@ -238,7 +238,7 @@ def _question_from_item(item: object, bucket: str, family: str, scope: str) -> A
     raise CorpusValidityError(f"unrecognized AutoQ item type {type(item)!r} in bucket {bucket!r}")
 
 
-def load_autoq(root: Optional[_PathLike] = None) -> list[AutoQQuestion]:
+def load_autoq(root: _PathLike | None = None) -> list[AutoQQuestion]:
     """Load the bundled Microsoft AutoQ question sets named by the manifest.
 
     Iterates ``manifest["autoq_questions"]`` (the v1 ``*_text.json`` and v2

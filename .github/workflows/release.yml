@@ -10,6 +10,9 @@ on:
         description: "Rehearse cargo publish --dry-run + npm --dry-run; PyPI publish + post-publish smoke skipped entirely (no test.pypi slot burn)."
         type: boolean
         default: true
+      confirm_release_version:
+        description: "Required when dry_run is unchecked: type the exact Axis-W version to confirm a real publish."
+        type: string
 
 permissions:
   actions: read
@@ -18,13 +21,15 @@ permissions:
 
 env:
   DRY_RUN: ${{ inputs.dry_run || 'false' }}
-  # R-REL-4f — npm dist-tag for the 0.8.18 GA capstone. Platform coverage is
-  # PARTIAL (linux-x64-gnu only, D5); publishing under `latest` would serve
-  # mac/win users an install-incompatible package as the default. So the main
+  RELEASE_CONFIRM_VERSION: ${{ inputs.confirm_release_version || '' }}
+  # 0.8.20 is Linux-first: platform coverage is PARTIAL (linux-x64-gnu only).
+  # Publishing under `latest` would serve unsupported users an
+  # install-incompatible package as the default. So the main
   # `fathomdb` package + the one `@fathomdb/fathomdb-linux-x64-gnu` binary
   # package publish under a NON-`latest` dist-tag. HITL confirms the exact
-  # label; the follow-on orchestrator completes the platform matrix and then
-  # promotes `latest`. (dev/design/0.8.18-slice-20-publish-pipeline.md §U2.)
+  # label. macOS/Windows native artifacts and validation are deferred to 0.8.22;
+  # that release may complete the platform matrix and then promote
+  # `latest`.
   NPM_DIST_TAG: "next"
 
 jobs:
@@ -41,6 +46,8 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0  # need refs/heads/main for HEAD-reach check
+      - name: Print resolved dry-run mode
+        run: echo "DRY_RUN=${DRY_RUN}"
       - name: Install actionlint
         run: |
           curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash \
@@ -51,7 +58,7 @@ jobs:
       - name: Run release gates
         # Runs on push (tag-format + version-axis enforced) and
         # workflow_dispatch (tag check skipped, all other gates enforced;
-        # dispatch with dry_run=false emits an emergency-republish warning).
+        # dry_run=false also needs a matching typed confirmation).
         #
         # RELEASE_GATES_HEAD_REF: actions/checkout fetches all refs under
         # refs/remotes/origin/* but does NOT create a local refs/heads/main
@@ -74,16 +81,12 @@ jobs:
         # Queries crates.io directly (read-only, fail-closed on any error).
         run: bash scripts/release/verify-embedder-api-no-drift.sh
 
-  # Multi-platform Python wheels via PyO3/maturin-action. Produces manylinux,
-  # macOS (x86_64 + arm64), and Windows wheels for Python 3.10-3.12. The
+  # Linux x86_64 Python wheels via PyO3/maturin-action. The
   # working-directory must be `src/python` so maturin reads our pyproject.toml
   # there (manifest-path = ../rust/crates/fathomdb-py/Cargo.toml).
-  # R-REL-4e — the 0.8.18 GA tag's matrix is GATED to x86_64-unknown-linux-gnu
-  # ONLY (D5: critical path = x86_64-linux). The deferred legs below stay
-  # SUPPORTED but OFF the critical path (R-REL-4d) — the follow-on orchestrator
-  # re-enables them by restoring the commented `include:` entries and flipping
-  # NPM_DIST_TAG to `latest`. Do NOT ship a cross-platform leg on THIS tag: an
-  # unreviewed mac/win/aarch64 build could block or ship broken.
+  # The 0.8.20 native-artifact scope is x86_64-unknown-linux-gnu ONLY. macOS
+  # and Windows native artifacts and validation are deferred to 0.8.22; do not
+  # add their matrix entries to this release.
   build-python:
     needs: verify-release
     strategy:
@@ -93,16 +96,6 @@ jobs:
           - runner: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             manylinux: "2_28"
-          # DEFERRED-TO-FOLLOW-ON (R-REL-4d) — re-enable for the full matrix:
-          # - runner: ubuntu-latest
-          #   target: aarch64-unknown-linux-gnu
-          #   manylinux: "2_28"
-          # - runner: macos-latest
-          #   target: x86_64-apple-darwin
-          # - runner: macos-latest
-          #   target: aarch64-apple-darwin
-          # - runner: windows-latest
-          #   target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -139,8 +132,8 @@ jobs:
   # because the platform-label convention lives in the napi-rs CLI, not in
   # us. Binary lands flat at src/ts/fathomdb.<label>.node (NO prebuilds/
   # subdir; that was the pre-0.6.0 layout).
-  # R-REL-4e — gated to x86_64-unknown-linux-gnu (linux-x64-gnu) ONLY for the
-  # 0.8.18 GA tag; deferred napi legs preserved below for the follow-on (R-REL-4d).
+  # The 0.8.20 native-artifact scope is x86_64-unknown-linux-gnu only. macOS
+  # and Windows native artifacts and validation are deferred to 0.8.22.
   build-napi:
     needs: verify-release
     strategy:
@@ -150,16 +143,6 @@ jobs:
           - runner: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             label: linux-x64-gnu
-          # DEFERRED-TO-FOLLOW-ON (R-REL-4d) — re-enable for the full matrix:
-          # - runner: macos-latest
-          #   target: x86_64-apple-darwin
-          #   label: darwin-x64
-          # - runner: macos-latest
-          #   target: aarch64-apple-darwin
-          #   label: darwin-arm64
-          # - runner: windows-latest
-          #   target: x86_64-pc-windows-msvc
-          #   label: win32-x64-msvc
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0

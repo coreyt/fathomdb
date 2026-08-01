@@ -63,6 +63,17 @@ denylist name).
 
 All runtime operations are Promise-returning on the TS surface.
 
+### Module-level CLS batch embedding (0.8.20 Slice 40)
+
+- `embedBatchCls(texts: readonly string[]): Promise<number[][]>` — batch-embed
+  `texts` with the pinned BGE-small default embedder using **CLS pooling** and
+  L2 normalization. The output has one vector per input in input order; `[]`
+  returns `[]` without loading weights. This is deliberately distinct from
+  `engine.embed(text)`, whose engine read path uses Mean pooling. It is the
+  camelCase peer of Python's `embed_batch_cls`; both reject invalid FFI strings
+  and surface `EmbedderNotConfiguredError` when built without the default
+  embedder.
+
 `Engine.open(...)` returns a Promise resolving to the engine handle. The
 structured open report owned by `design/engine.md` is accessible after open
 via `engine.openReport()` (see Engine-attached instrumentation / control

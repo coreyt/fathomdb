@@ -63,6 +63,17 @@ denylist name).
 by `design/engine.md` is accessible after open via `engine.open_report()` (see
 Engine-attached instrumentation / control below).
 
+### Module-level CLS batch embedding (0.8.20 Slice 40)
+
+- `embed_batch_cls(texts: list[str]) -> list[list[float]]` — batch-embed
+  `texts` with the pinned BGE-small default embedder using **CLS pooling** and
+  L2 normalization. The output has one vector per input in input order; `[]`
+  returns `[]` without loading weights. This is deliberately distinct from
+  `engine.embed(text)`, whose engine read path uses Mean pooling. It is the
+  snake_case peer of TypeScript's `embedBatchCls`; both reject invalid FFI
+  strings and raise `EmbedderNotConfiguredError` when built without the default
+  embedder.
+
 `Engine.open(path, *, config=None, **engine_config)` accepts the
 engine-owned knobs from `design/engine.md` in snake_case:
 

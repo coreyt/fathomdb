@@ -319,6 +319,11 @@ printf '# fixture plan\n\n- Slice 39 — TC-86 redact: LANDED\n' >"$PLANS/landed
 # canonical form the gate must recognize for a landed dependency.
 printf '# fixture plan\n\n**LANDED on main:** Slices 30 (`9b3ed0e3`)\n' \
   >"$PLANS/landed-rollup.md"
+# Status words must be affirmative closure witnesses, not merely substrings. A
+# negated or prefixed status must not authorize a dependent spawn.
+printf '# fixture plan\n\n- Slice 39 — NOT CLOSED\n' >"$PLANS/not-closed.md"
+printf '# fixture plan\n\n- Slice 39.5 — UNCLOSED\n' >"$PLANS/unclosed.md"
+printf '# fixture plan\n\n- Slice 39 — UNLANDED\n' >"$PLANS/unlanded.md"
 # A legitimate sentence-final period after an integer id. This is the control
 # that rules OUT the naive fix: swapping the trailing `[^0-9]` for `[^0-9.]`
 # closes site 4 but makes THIS line stop matching — a new false negative in a
@@ -374,6 +379,25 @@ for alt in alt1 alt2; do
     pass "duty 1 ($alt): the refusal names the dependency that is not closed"
   else
     fail "expected a HARD line naming Slice/Phase 39.5 as not CLOSED; got: $OUT"
+  fi
+done
+
+# --- Arm 10b: a status must be an affirmative standalone closure token. These
+# three forms all previously passed because CLOSED/LANDED was matched as a loose
+# substring. Keep both integer and fractional ids covered here; the surrounding
+# arms retain the complete exact-id boundary matrix for affirmative witnesses.
+for negated in 'not-closed:39:NOT CLOSED' 'unclosed:39.5:UNCLOSED' 'unlanded:39:UNLANDED'; do
+  IFS=: read -r fixture expected phrase <<<"$negated"
+  run_preflight "$LINKED" --expect-closed "$expected" --plan "$PLANS/$fixture.md"
+  if [ "$RC" -ne 0 ]; then
+    pass "negation guard ($phrase): does not satisfy --expect-closed $expected"
+  else
+    fail "negation recurrence ($phrase): a non-affirmative status cleared --expect-closed $expected; got rc=0, out: $OUT"
+  fi
+  if printf '%s' "$OUT" | grep -q "^HARD .*Slice/Phase $expected has NO 'CLOSED' or 'LANDED' witness"; then
+    pass "negation guard ($phrase): the refusal names the dependency that is not closed"
+  else
+    fail "negation guard ($phrase): expected a HARD refusal for Slice/Phase $expected; got: $OUT"
   fi
 done
 

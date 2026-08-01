@@ -8271,18 +8271,11 @@ impl Engine {
         // (unfrozen so any unprojected row completes) leaves the worker idle; a
         // bare state flip enqueues no new projection work.
         //
-        // 0.8.20 Slice 21a-2 (TC-57) — this comment used to say the worker commits
-        // "via `BEGIN IMMEDIATE`". It does NOT and never did:
-        // `commit_projection_outcomes` opens `connection.transaction()`, i.e.
-        // rusqlite's `BEGIN DEFERRED` default, and reads before it writes. Its
-        // CONCLUSION stands, and in fact more strongly than the original wording
-        // implied — BOTH sides of that contention are read-then-upgrade deferred
-        // transactions, which SQLite refuses to promote WITHOUT consulting the busy
-        // handler (see the `TransactionBehavior::Immediate` note in `commit_batch`).
-        // So the `drain()` below is load-bearing, not belt-and-braces: it is what
-        // keeps this flip's own read-then-upgrade transaction (`:query_row` above
-        // the `UPDATE` below) out of a worker's write window. TC-57's fix is scoped
-        // to `commit_batch`; converting this path is a separate change.
+        // Slice 40 B3 aligns the worker with `commit_batch`:
+        // `commit_projection_outcomes` acquires `BEGIN IMMEDIATE` before its reads.
+        // This drain remains load-bearing because the worker owns a separate
+        // connection while this state flip still reads before its own write; it
+        // keeps that deferred transaction out of the worker's write window.
         self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS)?;
 
         let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
@@ -8393,11 +8386,9 @@ impl Engine {
         drop: &[String],
     ) -> Result<ProjectionDelta, EngineError> {
         self.ensure_open()?;
-        // Settle in-flight async projection work first (same rationale as
-        // `transition`, including the 0.8.20 Slice 21a-2 / TC-57 correction
-        // recorded there: the worker commits on its own connection with a rusqlite
-        // DEFERRED transaction, NOT `BEGIN IMMEDIATE`). A backfill issued while it
-        // holds the write lock would SQLITE_BUSY.
+        // Settle in-flight async projection work first. The worker commits on its
+        // own connection with `BEGIN IMMEDIATE`; a backfill issued in that write
+        // window would SQLITE_BUSY.
         self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS)?;
 
         // 0.8.20 Slice 20c (R-20-DR remainder) — the backfill is gated on a LIVE
@@ -12715,12 +12706,21 @@ fn projection_worker_loop(shared: Arc<ProjectionRuntimeShared>) {
         // wedge into `EngineError::Scheduler` (Finding A). Mirrors the
         // reader pool's `LiveGuard` panic-safety. The local commit tx rolls
         // back on unwind, leaving the connection clean for reuse.
-        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            run_projection_jobs(&shared, &mut connection, &jobs);
-        }))
-        .is_err();
-        if panicked {
-            commit_projection_panic_failures(&shared, &mut connection, &jobs);
+        let projection_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            run_projection_jobs(&shared, &mut connection, &jobs)
+        }));
+        match projection_result {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                eprintln!("projection worker failed to commit outcomes: {error}");
+            }
+            Err(_) => {
+                if let Err(error) =
+                    commit_projection_panic_failures(&shared, &mut connection, &jobs)
+                {
+                    eprintln!("projection worker failed to record panic outcomes: {error}");
+                }
+            }
         }
 
         if let Ok(mut state) = shared.state.lock() {
@@ -12775,9 +12775,9 @@ fn run_projection_jobs(
     shared: &ProjectionRuntimeShared,
     connection: &mut Connection,
     jobs: &[ProjectionJob],
-) {
+) -> rusqlite::Result<()> {
     let outcomes = embed_projection_batch(shared, jobs);
-    let _ = commit_projection_outcomes(connection, &outcomes, shared);
+    commit_projection_outcomes(connection, &outcomes, shared)
 }
 
 /// Embed a whole commit-batch in ONE `embed_batch` call (amortizes per-call
@@ -12882,7 +12882,7 @@ fn commit_projection_panic_failures(
     shared: &ProjectionRuntimeShared,
     connection: &mut Connection,
     jobs: &[ProjectionJob],
-) {
+) -> rusqlite::Result<()> {
     let outcomes: Vec<ProjectionOutcome> = jobs
         .iter()
         .map(|job| ProjectionOutcome::Failure {
@@ -12890,7 +12890,7 @@ fn commit_projection_panic_failures(
             failure_code: "ProjectionPanic",
         })
         .collect();
-    let _ = commit_projection_outcomes(connection, &outcomes, shared);
+    commit_projection_outcomes(connection, &outcomes, shared)
 }
 
 /// PR-9 — ADR-0.6.0-embedder-protocol **Invariant 5**: run one `embed()`
@@ -13875,7 +13875,11 @@ fn commit_projection_outcomes(
     // EU-5f — serialize the whole commit across workers so the at-pin
     // re-quantize sees a totally-ordered history (see `commit_gate`).
     let _gate = shared.commit_gate.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let tx = connection.transaction()?;
+    // Take the WAL write lock before the reads below. A deferred transaction
+    // would need a read-to-write promotion while a concurrent Engine::write
+    // holds its own immediate transaction, which SQLite rejects without
+    // invoking the busy handler and forces the worker to recompute the batch.
+    let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
     // EU-5a2/EU-5f — the live pinned mean. Read once at the top; may pin
     // mid-batch (set to `Some` after a threshold-crossing row below).
     let mut current_mean: Option<Vec<f32>> = if mc {

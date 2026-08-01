@@ -2156,6 +2156,21 @@ if printf '%s' "$CI_JOB_BLOCK" | grep -qE '^\s*(if|needs):'; then
 else
   pass "the commission-manifest job is always-on (no if:, no needs:, not docs_only-gated)"
 fi
+CI_CHECKOUT_STEP="$(awk '
+  /^[[:space:]]*-[[:space:]]+uses:[[:space:]]+actions\/checkout@/ {
+    in_checkout = 1
+  }
+  in_checkout && /^[[:space:]]*-[[:space:]]+/ \
+    && $0 !~ /^[[:space:]]*-[[:space:]]+uses:[[:space:]]+actions\/checkout@/ {
+    exit
+  }
+  in_checkout { print }
+' <<<"$CI_JOB_BLOCK")"
+if printf '%s' "$CI_CHECKOUT_STEP" | grep -qE '^\s*fetch-depth:\s*0\s*$'; then
+  pass "the commission-manifest checkout step fetches complete Git history for generator recurrence arms"
+else
+  fail "the commission-manifest actions/checkout step must use fetch-depth: 0; its recurrence arm reads generator history"
+fi
 
 # --- RULED-WITH-WORK arms ---------------------------------------------------
 # A decision can be CLOSED and still owe an ACTION. Ruling one moves it out of

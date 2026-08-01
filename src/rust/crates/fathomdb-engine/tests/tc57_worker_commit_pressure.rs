@@ -314,7 +314,7 @@ fn run_load(label: &'static str, governed: bool) -> LoadOutcome {
 /// terminating rows as `failed`, must not accumulate audit rows, and must not be
 /// pushed into a re-embed storm by a writer that now holds the lock from `BEGIN`.
 ///
-/// The `excess_embeds` bound is deliberately generous (10 % of the load): a
+/// The `excess_embeds` bound is deliberately generous (100 % of the load): a
 /// handful of re-embeds is ordinary scheduler behaviour, whereas a systematic
 /// worker-side lockout would show up as tens of percent. The exact number is
 /// printed either way, which is the actual deliverable.

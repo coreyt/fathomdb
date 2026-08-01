@@ -51,14 +51,14 @@ import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from statistics import fmean
-from typing import Any, Literal, Optional, Protocol
+from typing import Any, Literal, Protocol
 
 from eval.d0b_parity_run import project_full_cost
 
 # Reuse the frozen rule's types + the headline metric set — DO NOT redefine them.
 from eval.decision_rule_084 import (
-    BiasControls,
     HEADLINE_METRICS,
+    BiasControls,
     LengthCorroboration,
 )
 
@@ -160,7 +160,7 @@ class JudgmentKey:
         return _CUSTOM_ID_SEP.join([self.question_id, t, c, str(self.run_idx), self.order])
 
     @classmethod
-    def from_custom_id(cls, cid: str) -> "JudgmentKey":
+    def from_custom_id(cls, cid: str) -> JudgmentKey:
         qid, t, c, run_idx, order = cid.split(_CUSTOM_ID_SEP)
         return cls(question_id=qid, pair=(t, c), run_idx=int(run_idx), order=order)
 
@@ -231,13 +231,13 @@ def _coerce_one(value: object) -> Verdict:
     return "ABSENT"
 
 
-def parse_verdict(completion: Optional[str], metrics: tuple[str, ...]) -> dict[str, Verdict]:
+def parse_verdict(completion: str | None, metrics: tuple[str, ...]) -> dict[str, Verdict]:
     """Parse a judge completion into ``{metric: A|B|tie|ABSENT}``.
 
     An empty / ``None`` / unparseable completion → **every** metric ``ABSENT`` (never a
     silent loss or tie); a missing metric or an unparseable value → ``ABSENT`` for that
     metric alone. Tolerant of ```` ```json ```` fences and surrounding prose."""
-    obj: Optional[dict[str, object]] = None
+    obj: dict[str, object] | None = None
     if completion and completion.strip():
         text = completion.strip()
         candidates = [text]
@@ -277,7 +277,7 @@ def run_autoe(
     *,
     n_runs: int,
     metrics: tuple[str, ...] = JUDGE_METRICS,
-    existing: Optional[Mapping[JudgmentKey, Judgment]] = None,
+    existing: Mapping[JudgmentKey, Judgment] | None = None,
 ) -> dict[JudgmentKey, Judgment]:
     """Judge every ``(question, run, order)`` for ``pair`` and return
     ``{JudgmentKey: Judgment}``.
@@ -310,7 +310,7 @@ def run_autoe(
 # --------------------------------------------------------------------------- #
 # 4 — win-rate aggregation → decide_084 input (clustered bootstrap; seed param)
 # --------------------------------------------------------------------------- #
-def _treatment_score(raw: str, order: str) -> Optional[float]:
+def _treatment_score(raw: str, order: str) -> float | None:
     """Normalize a raw A/B/tie verdict to the TREATMENT arm's outcome (1 win / 0.5 tie /
     0 loss), accounting for the order swap; ABSENT → ``None`` (excluded)."""
     if raw == "ABSENT":
@@ -594,7 +594,7 @@ def parse_autoe_batch_output(
         metrics = tuple(str(m) for m in sidecar[cid]["metrics"])
         body = (rec.get("response") or {}).get("body") or {}
         try:
-            content: Optional[str] = body["choices"][0]["message"]["content"]
+            content: str | None = body["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError):
             content = None
         key = JudgmentKey.from_custom_id(str(cid))
@@ -616,7 +616,7 @@ def project_autoe_cost(
     n_pairs: int,
     n_runs: int,
     n_orders: int = 2,
-    context_token_budget: Optional[int] = None,
+    context_token_budget: int | None = None,
     overhead_tokens: int = 60,
 ) -> dict[str, Any]:
     """Project the full priced AutoE run cost from a measured pilot, reusing
