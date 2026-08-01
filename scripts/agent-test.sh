@@ -206,6 +206,10 @@ run_suite test-release-workflow-scope bash scripts/tests/test_release_workflow_s
 # Static assertions here complement actionlint's workflow syntax/schema check.
 run_suite test-linux-first-platform-scope bash scripts/tests/test_linux_first_platform_scope.sh
 
+# Slice 40: the CI verify job must leave enough time for its clean bootstrap
+# plus the same full agent-verify gate required locally.
+run_suite test-verify-ci-timeout-budget bash scripts/tests/test_verify_ci_timeout_budget.sh
+
 # Scripts (bash): coordinated-publish resilience (R-REL-4b/4c) — REAL npm
 # local-registry round-trip (publish -> query-no-op -> install -> loader) +
 # crates.io SIMULATED (real crates registry infeasible in-harness). node-only.
