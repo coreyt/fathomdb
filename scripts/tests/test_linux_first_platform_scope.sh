@@ -90,6 +90,35 @@ else
   fail "brief must preserve the explicit publish gate (ii) stop"
 fi
 
+# Matrix-runner regression fixture. The contract covers literal `runs-on`
+# labels, `${{ matrix.runner }}` routes and their include values, CI artifact
+# target/label values, and release native artifact target/label values. This
+# fixture specifically proves that a macOS or Windows matrix runner cannot hide
+# behind the otherwise-valid `runs-on: ${{ matrix.runner }}` expression.
+if [ "${LINUX_FIRST_SCOPE_MATRIX_FIXTURE:-0}" != "1" ]; then
+  MATRIX_RUNNER_FIXTURE="$SCRIPT_DIR/fixtures/linux_first_matrix_runner_macos_windows.yml"
+  matrix_fixture_root="$(mktemp -d)"
+  trap 'rm -rf "$matrix_fixture_root"' EXIT
+  mkdir -p "$matrix_fixture_root/.github/workflows" \
+    "$matrix_fixture_root/dev/plans/runs" \
+    "$matrix_fixture_root/scripts/tests/fixtures"
+  cp "$CI" "$matrix_fixture_root/.github/workflows/ci.yml"
+  cp "$RELEASE" "$matrix_fixture_root/.github/workflows/release.yml"
+  cp "$BRIEF" "$matrix_fixture_root/dev/plans/runs/"
+  cp "$PLAN" "$matrix_fixture_root/dev/plans/"
+  cp "$MASTER" "$matrix_fixture_root/dev/plans/"
+  cp "$STATUS" "$matrix_fixture_root/dev/plans/runs/"
+  cp "$0" "$matrix_fixture_root/scripts/tests/"
+  cat "$MATRIX_RUNNER_FIXTURE" >> "$matrix_fixture_root/.github/workflows/ci.yml"
+
+  if LINUX_FIRST_SCOPE_MATRIX_FIXTURE=1 \
+    bash "$matrix_fixture_root/scripts/tests/test_linux_first_platform_scope.sh"; then
+    fail "guard accepts macOS/Windows values routed through matrix.runner"
+  else
+    pass "guard rejects macOS/Windows values routed through matrix.runner"
+  fi
+fi
+
 if [ "$FAILED" -gt 0 ]; then
   printf '\n%d test(s) failed\n' "$FAILED" >&2
   exit 1
