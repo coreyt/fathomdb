@@ -21,11 +21,18 @@ else
 fi
 
 compiled_test_dir="$REPO_ROOT/src/ts/dist/tests"
-computed_root="$(realpath -m "$compiled_test_dir/../../../..")"
+computed_root="$(dirname "$(dirname "$(dirname "$(dirname "$compiled_test_dir")")")")"
 if [ "$computed_root" = "$REPO_ROOT" ]; then
   pass "four parents from the emitted TypeScript test directory reach this repository"
 else
   fail "compiled-layout fixture resolved $computed_root, expected $REPO_ROOT"
+fi
+
+calculation_line="$(grep '^computed_root=' "$0")"
+if [[ "$calculation_line" == *realpath* ]]; then
+  fail "release-surface repository-root guard must avoid GNU-only realpath options"
+else
+  pass "release-surface repository-root guard uses portable path traversal"
 fi
 
 if [ "$FAILED" -gt 0 ]; then
