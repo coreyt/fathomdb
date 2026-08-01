@@ -75,6 +75,75 @@ else
   fail "manual dispatch must not build the UI-selected ref; every release checkout needs the canonical tag"
 fi
 
+# v0.8.20 registry recovery is deliberately partial: a dispatch may republish
+# the immutable tag's crates.io and PyPI artifacts while NPM remains untouched.
+# Keep this mode opt-in and version-bound so it cannot silently weaken a later
+# release's all-registry completion contract.
+if grep -A3 '^      recovery_skip_npm:$' "$release" | grep -q 'type: boolean' \
+  && grep -A4 '^      recovery_skip_npm:$' "$release" | grep -q 'default: false' \
+  && grep -Fq 'name: Validate v0.8.20 recovery scope' "$release" \
+  && grep -Fq '[ "$RELEASE_TAG" != "v0.8.20" ]' "$release"; then
+  pass "recovery dispatch opt-in is bound to v0.8.20"
+else
+  fail "recovery dispatch must be an explicit v0.8.20-only opt-in"
+fi
+
+job_block() {
+  awk -v job="$1" '
+    $0 == "  " job ":" { in_job = 1; next }
+    in_job && /^  [[:alnum:]_-]+:$/ { exit }
+    in_job { print }
+  ' "$release"
+}
+
+build_napi_block="$(job_block build-napi)"
+all_builds_block="$(job_block all-builds-passed)"
+t1_block="$(job_block publish-rust-t1-embedder-api)"
+recovery_dispatch_expr="github.event_name == 'workflow_dispatch' && inputs.recovery_skip_npm == true && inputs.release_version == '0.8.20'"
+if grep -Fq "if: \${{ !($recovery_dispatch_expr) }}" <<<"$build_napi_block" \
+  && grep -Fq 'always()' <<<"$all_builds_block" \
+  && grep -Fq "needs.verify-release.result == 'success'" <<<"$all_builds_block" \
+  && grep -Fq "needs.build-python.result == 'success'" <<<"$all_builds_block" \
+  && grep -Fq "needs.build-rust.result == 'success'" <<<"$all_builds_block" \
+  && grep -Fq "$recovery_dispatch_expr) || needs.build-napi.result == 'success'" <<<"$all_builds_block" \
+  && grep -Fq 'all-builds-passed' <<<"$t1_block"; then
+  pass "recovery excludes the N-API build without weakening Python/Rust publish gating"
+else
+  fail "recovery graph must bypass only N-API while T1 stays gated on verify, Python, and Rust"
+fi
+
+npm_platform_block="$(job_block publish-npm-platform-linux-x64-gnu)"
+npm_main_block="$(job_block publish-npm)"
+if grep -Fq "if: \${{ !($recovery_dispatch_expr) }}" <<<"$npm_platform_block" \
+  && grep -Fq "if: \${{ !($recovery_dispatch_expr) }}" <<<"$npm_main_block"; then
+  pass "recovery dispatch explicitly skips both npm publish jobs"
+else
+  fail "recovery dispatch must skip both npm publish jobs"
+fi
+
+smoke_block="$(job_block post-publish-smoke)"
+if grep -Fq 'needs.publish-rust-t7-cli.result == '\''success'\''' <<<"$smoke_block" \
+  && grep -Fq 'needs.publish-pypi.result == '\''success'\''' <<<"$smoke_block" \
+  && grep -Fq "$recovery_dispatch_expr) || needs.publish-npm.result == 'success'" <<<"$smoke_block" \
+  && grep -Fq "fromJSON(($recovery_dispatch_expr) && '[\"crates-cli\",\"pypi-wheel\"]' || '[\"crates-cli\",\"pypi-wheel\",\"npm-package\"]')" <<<"$smoke_block"; then
+  pass "recovery keeps crates and PyPI smokes while omitting npm smoke"
+else
+  fail "recovery dispatch must not let skipped npm block crates/PyPI smoke"
+fi
+
+co_tagging_block="$(job_block co-tagging-assert)"
+github_release_block="$(job_block github-release)"
+partial_record_block="$(job_block record-v0820-partial-registry-recovery)"
+if grep -Fq "if: \${{ inputs.dry_run != true && !($recovery_dispatch_expr) }}" <<<"$co_tagging_block" \
+  && grep -Fq "if: \${{ inputs.dry_run != true && !($recovery_dispatch_expr) }}" <<<"$github_release_block" \
+  && grep -Fq "$recovery_dispatch_expr" <<<"$partial_record_block" \
+  && grep -Fq 'v0.8.20 partial registry recovery' <<<"$partial_record_block" \
+  && grep -Fq 'GITHUB_STEP_SUMMARY' <<<"$partial_record_block"; then
+  pass "recovery skips npm-dependent finalization and records partial state"
+else
+  fail "recovery dispatch must record its partial state instead of completing the release"
+fi
+
 if [ "$FAILED" -gt 0 ]; then
   exit 1
 fi

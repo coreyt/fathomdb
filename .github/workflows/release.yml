@@ -17,6 +17,10 @@ on:
       confirm_release_version:
         description: "Required when dry_run is unchecked: type the exact Axis-W version to confirm a real publish."
         type: string
+      recovery_skip_npm:
+        description: "v0.8.20 recovery only: publish crates.io + PyPI from the immutable tag, but skip npm and leave the release partial."
+        type: boolean
+        default: false
 
 permissions:
   actions: read
@@ -57,6 +61,13 @@ jobs:
           fetch-depth: 0  # need refs/heads/main for HEAD-reach check
       - name: Print resolved dry-run mode
         run: echo "DRY_RUN=${DRY_RUN}"
+      - name: Validate v0.8.20 recovery scope
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.recovery_skip_npm == true }}
+        run: |
+          if [ "$RELEASE_TAG" != "v0.8.20" ]; then
+            echo "recovery_skip_npm is restricted to the immutable v0.8.20 recovery tag" >&2
+            exit 1
+          fi
       - name: Install actionlint
         run: |
           curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash \
@@ -150,6 +161,7 @@ jobs:
   # and Windows native artifacts and validation are deferred to 0.8.22.
   build-napi:
     needs: verify-release
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.recovery_skip_npm == true && inputs.release_version == '0.8.20') }}
     strategy:
       fail-fast: false
       matrix:
@@ -225,6 +237,10 @@ jobs:
   # unrecoverable — 0.6.1 would then have mismatched ecosystem coverage.
   all-builds-passed:
     runs-on: ubuntu-latest
+    # Normal releases require every artifact build. The explicit v0.8.20
+    # recovery dispatch omits only N-API, whose npm artifact is intentionally
+    # not being recovered; verify, Python, and Rust remain hard gates.
+    if: ${{ always() && needs.verify-release.result == 'success' && needs.build-python.result == 'success' && needs.build-rust.result == 'success' && ((github.event_name == 'workflow_dispatch' && inputs.recovery_skip_npm == true && inputs.release_version == '0.8.20') || needs.build-napi.result == 'success') }}
     needs:
       - verify-release
       - build-python
@@ -504,6 +520,7 @@ jobs:
   # Published BEFORE the main package so the optionalDependency resolves.
   publish-npm-platform-linux-x64-gnu:
     runs-on: ubuntu-latest
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.recovery_skip_npm == true && inputs.release_version == '0.8.20') }}
     needs: all-builds-passed
     permissions:
       contents: read
@@ -548,6 +565,7 @@ jobs:
   # under the NON-latest NPM_DIST_TAG while platform coverage is partial.
   publish-npm:
     runs-on: ubuntu-latest
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.recovery_skip_npm == true && inputs.release_version == '0.8.20') }}
     needs:
       - publish-rust-t5-engine
       - publish-npm-platform-linux-x64-gnu
@@ -595,7 +613,7 @@ jobs:
   # enough to make the smoke meaningful, and npm has no comparable staging.
   post-publish-smoke:
     runs-on: ubuntu-latest
-    if: ${{ inputs.dry_run != true }}
+    if: ${{ inputs.dry_run != true && always() && needs.publish-rust-t7-cli.result == 'success' && needs.publish-pypi.result == 'success' && ((github.event_name == 'workflow_dispatch' && inputs.recovery_skip_npm == true && inputs.release_version == '0.8.20') || needs.publish-npm.result == 'success') }}
     needs:
       - publish-rust-t7-cli
       - publish-pypi
@@ -603,10 +621,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        smoke:
-          - crates-cli
-          - pypi-wheel
-          - npm-package
+        smoke: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.recovery_skip_npm == true && inputs.release_version == '0.8.20') && '["crates-cli","pypi-wheel"]' || '["crates-cli","pypi-wheel","npm-package"]') }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0, canonical release tag
         with:
@@ -637,7 +652,7 @@ jobs:
   # happened.
   co-tagging-assert:
     runs-on: ubuntu-latest
-    if: ${{ inputs.dry_run != true }}
+    if: ${{ inputs.dry_run != true && !(github.event_name == 'workflow_dispatch' && inputs.recovery_skip_npm == true && inputs.release_version == '0.8.20') }}
     needs:
       - publish-rust-t7-cli
       - publish-pypi
@@ -659,7 +674,7 @@ jobs:
   # run, so the release is never marked done. Skipped on dry-run.
   github-release:
     runs-on: ubuntu-latest
-    if: ${{ inputs.dry_run != true }}
+    if: ${{ inputs.dry_run != true && !(github.event_name == 'workflow_dispatch' && inputs.recovery_skip_npm == true && inputs.release_version == '0.8.20') }}
     needs:
       - post-publish-smoke
       - co-tagging-assert
@@ -674,3 +689,24 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           files: dist/*
           prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
+
+  # v0.8.20 registry recovery deliberately leaves npm unpublished. This job
+  # is the durable workflow-visible record that crates.io and PyPI recovered
+  # from the immutable tag while npm and release finalization remain pending.
+  record-v0820-partial-registry-recovery:
+    runs-on: ubuntu-latest
+    if: ${{ inputs.dry_run != true && github.event_name == 'workflow_dispatch' && inputs.recovery_skip_npm == true && inputs.release_version == '0.8.20' && always() && needs.publish-rust-t7-cli.result == 'success' && needs.publish-pypi.result == 'success' && needs.post-publish-smoke.result == 'success' }}
+    needs:
+      - publish-rust-t7-cli
+      - publish-pypi
+      - post-publish-smoke
+    steps:
+      - name: Record v0.8.20 partial registry recovery
+        run: |
+          {
+            echo "## v0.8.20 partial registry recovery"
+            echo
+            echo "- crates.io and PyPI publication completed from ${RELEASE_TAG}."
+            echo "- npm publishing, npm smoke, co-tagging, and GitHub Release creation were intentionally skipped."
+            echo "- The release remains partial until npm has a separately approved recovery path."
+          } >> "$GITHUB_STEP_SUMMARY"
