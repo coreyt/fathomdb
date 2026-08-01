@@ -57,8 +57,8 @@
   "ac": "AC-079",
   "covers": "0.8.20 Slices 5d + 10b + 15b + 15d (accumulated governed-surface delta) — SIGNED by the HITL 2026-07-29, steward seq-157",
   "pinned_file": "src/conformance/governed-surface-allowlist.json",
-  "pinned_at_commit": "c239908b97801269f2e901ebaec49e2df6ab8594",
-  "pinned_at_commit_short": "c239908b",
+  "pinned_at_commit": "289f38ed8ad7c34c852f5544346a9fec699b95aa",
+  "pinned_at_commit_short": "289f38ed",
   "git_blob_sha1": "1148ffe4b79bc1c6c05f25ae0fdf036bee699dd5",
   "sha256": "f7a49e97645f4d01ac719515ea658c94384c653d536f62822f8453eb821c6fdb",
   "counts": {

@@ -162,10 +162,10 @@ if [ -n "$EXPECT_CLOSED" ]; then
     hard "--expect-closed $EXPECT_CLOSED given without --plan <file>"
   elif [ ! -f "$PLAN" ]; then
     hard "plan file not found: $PLAN"
-  elif grep -qiE "(Slice|Phase)[^A-Za-z0-9]*${EXPECT_CLOSED_RE}${ID_END}.*(CLOSED|LANDED)|(CLOSED|LANDED).*(Slice|Phase)[^A-Za-z0-9]*${EXPECT_CLOSED_RE}(${ID_END}|\.?$)|(CLOSED|LANDED).*(Slices|Phases).*${EXPECT_CLOSED_RE}${ID_END}" "$PLAN"; then
-    ok "dependency Slice/Phase $EXPECT_CLOSED has a CLOSED or LANDED witness in $PLAN"
+  elif grep -qiE "(Slice|Phase)[^A-Za-z0-9]*${EXPECT_CLOSED_RE}${ID_END}.*CLOSED|CLOSED.*(Slice|Phase)[^A-Za-z0-9]*${EXPECT_CLOSED_RE}(${ID_END}|\.?$)" "$PLAN"; then
+    ok "dependency Slice/Phase $EXPECT_CLOSED has a CLOSED witness in $PLAN"
   else
-    hard "dependency Slice/Phase $EXPECT_CLOSED has NO 'CLOSED' or 'LANDED' witness in $PLAN — do not spawn dependents"
+    hard "dependency Slice/Phase $EXPECT_CLOSED has NO 'CLOSED' block in $PLAN — do not spawn dependents"
   fi
 fi
 
@@ -296,8 +296,9 @@ fi
 # Refuse a land that would ship a governed surface the HITL has not signed. The
 # HITL PRE-SIGNED the accumulated delta of 0.8.20 Slices 5d+10b+15b+15d (AC-079)
 # pinned to the exact content of src/conformance/governed-surface-allowlist.json
-# as of c239908b — 30 allowlist members, recovery_denylist unchanged at the five
-# REQ-054 names. This gate makes that pin mechanical.
+# at the provenance commit recorded in its pin — 30 allowlist members,
+# recovery_denylist unchanged at the five REQ-054 names. This gate makes that
+# pin mechanical.
 #
 # The predicate lives in scripts/check-governed-surface-pin.sh (see that file's
 # header) so preflight and the always-on CI job share ONE implementation and
