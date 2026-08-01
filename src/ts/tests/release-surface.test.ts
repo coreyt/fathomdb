@@ -27,8 +27,7 @@ import { freshDbPath } from "./helpers.js";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // dist/tests/release-surface.test.js → repo root is four levels up
 // (dist/tests → dist → src/ts → src → repo). Resolve dynamically.
-const TS_DIR = resolve(__dirname, "..", "..", "..");
-const REPO_ROOT = resolve(TS_DIR, "..", "..");
+const REPO_ROOT = resolve(__dirname, "..", "..", "..", "..");
 const NAPI_MANIFEST = join(
   REPO_ROOT,
   "src",

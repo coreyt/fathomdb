@@ -367,6 +367,11 @@ else
   skip_suite test-ts "src/ts/node_modules not installed"
 fi
 
+# The release-surface test executes from tsc's `dist/tests` layout. Keep its
+# repository-root calculation pinned independently so its opt-in CI arm cannot
+# fail after the native debug build has already run.
+run_suite test-release-surface-repo-root bash scripts/tests/test_release_surface_repo_root.sh
+
 # Collect-all summary — the deliverable. Prints every suite's outcome (full
 # table on any FAIL or AGENT_VERBOSE=1; a one-line summary otherwise) and
 # exits: 0 iff zero FAILs, 1 if any FAIL, 2 for a harness usage error (an
