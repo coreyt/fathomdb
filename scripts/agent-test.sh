@@ -74,6 +74,9 @@ fi
 # Scripts (bash): set-version.sh two-axis enforcement.
 run_suite test-set-version bash scripts/tests/test_set_version.sh
 
+# Scripts (bash): release-cut fields deliberately outside set-version.sh.
+run_suite test-release-version-surfaces bash scripts/tests/test_release_version_surfaces.sh
+
 # Scripts (bash): 0.8.20 R-20-HARNESS ("Slice 39.5", no ladder slot) —
 # recurrence guard for the collect-all conversion of THIS script: proves
 # run_suite/skip_suite record all four states (PASS/FAIL/SKIP/EXCL), a crash
