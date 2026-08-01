@@ -549,6 +549,11 @@ slice number or an `R-20-xx` position — the `DOC-HYGIENE-3` / TC-86 precedent.
 > `verify`/`security` die in bootstrap on seven pre-existing pyright errors; **`rust-windows` fails on
 > `-p fathomdb-engine --test tc57_worker_commit_pressure`, which is named in no ledger, design doc or
 > brief — new and UNOWNED**; and `commission-manifest` fails in CI while its suite is rc=0 locally.
+>
+> **HITL scope amendment 2026-07-31 (`seq-234`).** 0.8.20 supports and publishes Linux x86_64 native
+> artifacts only; macOS/Windows CI, validation and native-artifact work defer to **0.8.22**. **B4 is cancelled and deferred to 0.8.22**; do not integrate its private serialisation patch. TC-91 remains a
+> Linux-shipping defect: the acceptance is **five consecutive relevant Linux CI TC-91 greens**, not the
+> superseded `rust-windows` accrual. This does not platform-exclude Cargo source crates.
 
 **Then Slice 40 (`R-20-PUB`)** prepares the publish and **STOPS before any tag**. Publish itself remains
 the single unruled HITL decision.

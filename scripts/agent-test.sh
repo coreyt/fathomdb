@@ -202,6 +202,10 @@ run_suite test-smoke-scripts bash scripts/tests/test_smoke_scripts.sh
 # dist-tag). Pure python3+PyYAML parse; never runs the workflow.
 run_suite test-release-workflow-scope bash scripts/tests/test_release_workflow_scope.sh
 
+# Slice 40 / seq-234: Linux x86_64 is the 0.8.20 native-artifact scope.
+# Static assertions here complement actionlint's workflow syntax/schema check.
+run_suite test-linux-first-platform-scope bash scripts/tests/test_linux_first_platform_scope.sh
+
 # Scripts (bash): coordinated-publish resilience (R-REL-4b/4c) — REAL npm
 # local-registry round-trip (publish -> query-no-op -> install -> loader) +
 # crates.io SIMULATED (real crates registry infeasible in-harness). node-only.
