@@ -6,9 +6,9 @@
 //
 // - AC-FIX1-2: writeVectorForTest / configureVectorKindForTest /
 //   forcePanicForTest are NOT present on the loaded native Engine.
-// - AC-FIX1-4: engineOpen(path, { useDefaultEmbedder: true }) succeeds
-//   (network-gated via FATHOMDB_SKIP_NETWORK_TESTS, symmetrical with
-//   EU-5c).
+// - AC-FIX1-4: Engine.open(path, { useDefaultEmbedder: true }) succeeds
+//   through the raw N-API `Engine.open` factory (network-gated via
+//   FATHOMDB_SKIP_NETWORK_TESTS, symmetrical with EU-5c).
 //
 // Gated on RELEASE_SURFACE_TESTS=1; the cargo build is slow. Default
 // `npm test` invocations skip with a clear log line.
@@ -122,21 +122,22 @@ test("release-equivalent .node does not expose test-hooks methods", async () => 
   }
 });
 
-test("release-equivalent .node opens engine with useDefaultEmbedder: true", async () => {
+test("release-equivalent .node Engine.open accepts useDefaultEmbedder: true", async () => {
   if (!releaseSurfaceEnabled()) return;
   if (skipIfNoNetwork()) return;
 
   const { loaded } = buildAndLoadReleaseNative();
-  const engineOpen = loaded.engineOpen as
-    | ((path: string, opts: { useDefaultEmbedder: boolean }) => Promise<unknown>)
-    | undefined;
+  const rawEngine = loaded.Engine as {
+    open?: (path: string, opts: { useDefaultEmbedder: boolean }) => Promise<unknown>;
+  } | undefined;
+  const open = rawEngine?.open;
   assert.ok(
-    typeof engineOpen === "function",
-    `release .node missing engineOpen export; got ${Object.keys(loaded).join(", ")}`,
+    typeof open === "function",
+    `release .node missing Engine.open factory; got ${Object.keys(loaded).join(", ")}`,
   );
 
   const path = freshDbPath();
-  const engine = (await engineOpen!(path, { useDefaultEmbedder: true })) as {
+  const engine = (await open(path, { useDefaultEmbedder: true })) as {
     openReport: () => { defaultEmbedder: { name: string; dimension: number } };
     close: () => Promise<void>;
   };
