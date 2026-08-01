@@ -231,6 +231,11 @@ run_suite test-npm-inject-optional-deps bash scripts/tests/test_npm_inject_optio
 # actionlint binary present + rejects deliberately-broken fixture.
 run_suite test-actionlint-fixture bash scripts/tests/test_actionlint_fixture.sh
 
+# Local lint preflight must use CI's exact Ruff version rather than reporting a
+# false green from an older environment. Fixture provides only a stale Ruff and
+# asserts the wrapper fails before attempting any other lint leg.
+run_suite test-agent-lint-ruff-version bash scripts/tests/test_agent_lint_ruff_version.sh
+
 # TC-37 recurrence guard: agent-lint-md.sh must HARD-fail (not skip_notice/exit 0)
 # when markdownlint-cli2 is genuinely unresolvable. Builds its own throwaway
 # fixture repo under mktemp -d; never touches this checkout's node_modules.
