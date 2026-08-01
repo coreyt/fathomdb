@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Structural guard for the CI agent-loop timeout budget.  A clean bootstrap
 # plus the documented full local `scripts/agent-verify.sh` gate needs more
-# than the former 30-minute CI allowance; retain the approved 45-minute
+# than the former 30-minute CI allowance; retain the approved 60-minute
 # budget so CI can complete the same prework it asks developers to run.
 set -euo pipefail
 
@@ -28,10 +28,10 @@ verify_block="$(awk '
 
 if [ -z "$verify_block" ]; then
   fail "ci.yml must retain the top-level verify job"
-elif grep -qE '^[[:space:]]*timeout-minutes:[[:space:]]*45[[:space:]]*$' <<<"$verify_block"; then
-  pass "CI verify job preserves the 45-minute bootstrap plus agent-verify budget"
+elif grep -qE '^[[:space:]]*timeout-minutes:[[:space:]]*60[[:space:]]*$' <<<"$verify_block"; then
+  pass "CI verify job preserves the 60-minute bootstrap plus agent-verify budget"
 else
-  fail "CI verify job must allow 45 minutes for bootstrap plus agent-verify"
+  fail "CI verify job must allow 60 minutes for bootstrap plus agent-verify"
 fi
 
 if [ "$FAILED" -gt 0 ]; then

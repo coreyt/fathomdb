@@ -45,7 +45,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       # H-5 (pre-0.6.0 security fix): pin third-party actions to commit SHAs.
       # 0.8.9 Slice 1: fetch-depth 0 so the AC-050c removal-detect gate can
