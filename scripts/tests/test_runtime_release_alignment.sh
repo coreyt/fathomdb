@@ -61,6 +61,20 @@ else
   fail "release dispatch must derive preflight, smokes, co-tagging, and GitHub Release from RELEASE_TAG"
 fi
 
+# A manual dispatch defaults to the UI-selected branch unless every checkout
+# explicitly switches to the canonical release tag. Count both the checkout
+# actions and their guarded tag refs so adding a new publish job cannot escape
+# the recovery-path safety boundary.
+checkout_total="$(grep -c 'uses: actions/checkout@' "$release" || true)"
+canonical_checkout_ref='ref: ${{ github.event_name == '\''workflow_dispatch'\'' && format('\''refs/tags/{0}'\'', env.RELEASE_TAG) || github.ref }}'
+canonical_ref_total="$(grep -Fc "$canonical_checkout_ref" "$release" || true)"
+if [ "$checkout_total" -gt 0 ] && [ "$checkout_total" -eq "$canonical_ref_total" ] \
+  && grep -q 'RELEASE_GATES_REQUIRE_TAG_CHECKOUT: "1"' "$release"; then
+  pass "dispatch checks out and verifies the canonical tag in every release job"
+else
+  fail "manual dispatch must not build the UI-selected ref; every release checkout needs the canonical tag"
+fi
+
 if [ "$FAILED" -gt 0 ]; then
   exit 1
 fi

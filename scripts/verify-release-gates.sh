@@ -17,6 +17,7 @@
 #   RELEASE_GATES_CHANGELOG=<path>  Use this CHANGELOG file instead of repo root.
 #   RELEASE_GATES_TAG=<tag>          Canonical release tag supplied by CI.
 #   RELEASE_DISPATCH_VERSION=<semver> workflow_dispatch release_version input.
+#   RELEASE_GATES_REQUIRE_TAG_CHECKOUT=1  Require HEAD to resolve to the tag.
 #
 # Owner: dev/design/release.md § Tiered publish order (entry gate to T1).
 set -euo pipefail
@@ -72,6 +73,14 @@ if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
   fi
   if [ "$DISPATCH_VERSION" != "$WS_VERSION" ]; then
     die "dispatch/workspace version mismatch — release_version is '$DISPATCH_VERSION', Cargo.toml [workspace.package].version is '$WS_VERSION'"
+  fi
+  if [ "${RELEASE_GATES_REQUIRE_TAG_CHECKOUT:-0}" = "1" ]; then
+    tag_commit="$(git -C "$REPO_ROOT" rev-parse --verify "refs/tags/$TAG^{commit}" 2>/dev/null)" \
+      || die "workflow_dispatch canonical tag '$TAG' does not exist or cannot resolve to a commit"
+    head_commit="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+    if [ "$head_commit" != "$tag_commit" ]; then
+      die "workflow_dispatch checkout mismatch — HEAD is '$head_commit', canonical tag '$TAG' is '$tag_commit'"
+    fi
   fi
   if [ "${DRY_RUN:-}" != "true" ]; then
     if [ "${RELEASE_CONFIRM_VERSION:-}" != "$WS_VERSION" ]; then
