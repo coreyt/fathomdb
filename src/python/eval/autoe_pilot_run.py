@@ -51,7 +51,7 @@ import re
 import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Optional, Protocol
+from typing import Any, Protocol
 
 from eval.apnews_corpus import AutoQQuestion
 from eval.autoe_judge import (
@@ -145,7 +145,7 @@ class PilotJudge(Protocol):
 
     def judge_pair(
         self, question: str, answer_a: str, answer_b: str, metrics: tuple[str, ...]
-    ) -> Optional[str]: ...
+    ) -> str | None: ...
 
 
 def family_of(model_id: str) -> str:
@@ -181,7 +181,7 @@ class LLMJudge:
     def __init__(
         self,
         *,
-        family: Optional[str] = None,
+        family: str | None = None,
         max_completion_tokens: int = 64,
         timeout_s: float = 120.0,
         max_retries: int = 4,
@@ -221,11 +221,11 @@ class LLMJudge:
         """Seam over the raw POST (injectable in tests). Returns the urlopen ctx mgr."""
         import urllib.request
 
-        return urllib.request.urlopen(req, timeout=self._timeout)  # noqa: S310
+        return urllib.request.urlopen(req, timeout=self._timeout)
 
     def judge_pair(
         self, question: str, answer_a: str, answer_b: str, metrics: tuple[str, ...]
-    ) -> Optional[str]:
+    ) -> str | None:
         """POST the pairwise-judge prompt and return the raw completion, or ``None``.
 
         ``R2_RUN`` must be ``1`` and the judge env configured (else a loud
@@ -265,7 +265,7 @@ class LLMJudge:
                 with self._open(req) as resp:
                     body = json.loads(resp.read().decode("utf-8"))
                 break
-            except Exception as exc:  # noqa: BLE001 — classify; retry only the transient ones
+            except Exception as exc:
                 if attempt < self._max_retries and _is_retryable(exc):
                     cooldown = _retry_after_seconds(exc)
                     if cooldown is not None:
@@ -333,8 +333,8 @@ def _load_judgments(blob: Mapping[str, Any]) -> dict[JudgmentKey, Judgment]:
 
 
 def _resolve_checkpoint_source(
-    checkpoint_path: Optional[Path], resume: Optional[Path]
-) -> Optional[Path]:
+    checkpoint_path: Path | None, resume: Path | None
+) -> Path | None:
     """The resume source — auto-detected, no manual flag required (mirrors
     :func:`eval.m1_verdict_run._resolve_resume`): an explicit ``--resume`` path
     wins; else this run's own checkpoint sidecar when it already exists; else
@@ -356,7 +356,7 @@ def _judge_resiliently(
     metrics: tuple[str, ...],
     judge_model: str,
     ledger: BudgetLedger,
-    checkpoint_path: Optional[Path],
+    checkpoint_path: Path | None,
     existing: Mapping[JudgmentKey, Judgment],
     cost_state: dict[str, int],
 ) -> dict[JudgmentKey, Judgment]:
@@ -443,7 +443,7 @@ def _sample_questions(questions: Sequence[AutoQQuestion], *, limit: int) -> list
     return out
 
 
-def _make_ledger(max_usd: Optional[float], opening_spent: float = 0.0) -> BudgetLedger:
+def _make_ledger(max_usd: float | None, opening_spent: float = 0.0) -> BudgetLedger:
     """A fresh pilot ledger: opening balance 0, hard cap ``--max-usd`` (or ``inf``
     when unset — track spend, never guard). Output-token projection sized small (the
     judge emits a tiny JSON verdict). ``opening_spent`` restores a resumed total."""
@@ -500,11 +500,11 @@ class _MeteringAnswerer(BaseAnswerer):
     def available(self) -> bool:
         return bool(getattr(self._inner, "available", True))
 
-    def _complete(self, prompt: str, question: str, context: list[str]) -> Optional[str]:
+    def _complete(self, prompt: str, question: str, context: list[str]) -> str | None:
         # Unused: answer() is overridden to delegate to the inner answerer directly.
         raise NotImplementedError  # pragma: no cover
 
-    def answer(self, question: str, context: list[str]) -> Optional[str]:
+    def answer(self, question: str, context: list[str]) -> str | None:
         prompt = self._inner.build_prompt(question, context)
         est_pt = _estimate_tokens(prompt)
         if self._priced:
@@ -540,12 +540,12 @@ def run_pilot(
     k: int = 10,
     seed: int = 0,
     n_boot: int = DEFAULT_N_BOOT,
-    judge_model: Optional[str] = None,
-    answerer_model: Optional[str] = None,
-    projection_n_runs: Optional[int] = None,
-    checkpoint_path: Optional[str | Path] = None,
-    resume: Optional[str | Path] = None,
-    max_usd: Optional[float] = None,
+    judge_model: str | None = None,
+    answerer_model: str | None = None,
+    projection_n_runs: int | None = None,
+    checkpoint_path: str | Path | None = None,
+    resume: str | Path | None = None,
+    max_usd: float | None = None,
     target_questions: int = 100,
     cheap_validate: bool = False,
 ) -> dict[str, Any]:
@@ -793,7 +793,7 @@ def _parse_pair(value: str) -> tuple[str, str]:
     return (parts[0], parts[1])
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     """CLI entry point. Gated by ``R2_RUN=1`` — with ``R2_RUN`` unset it refuses to
     make any real call (prints a blocker and returns non-zero) so importing this
     module and running its unit tests never touches the network or the corpus."""
