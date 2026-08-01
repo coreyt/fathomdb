@@ -28,13 +28,45 @@ fi
 fake_go_bin="$FIX/go-bin"
 fake_gopath="$FIX/go-path"
 mkdir -p "$fake_go_bin" "$fake_gopath/bin"
-printf '#!/usr/bin/env bash\nif [ "$1" = env ] && [ "$2" = GOPATH ]; then\n  printf "%s\\n" "${FAKE_GOPATH:?}"\n  exit 0\nfi\nexit 2\n' >"$fake_go_bin/go"
+printf '#!/usr/bin/env bash\nif [ "$1" = env ] && [ "$2" = GOPATH ]; then\n  printf "%%s\\n" "${FAKE_GOPATH:?}"\n  exit 0\nfi\nexit 2\n' >"$fake_go_bin/go"
 printf '#!/usr/bin/env bash\nprintf "v1.7.12\\n"\n' >"$fake_gopath/bin/actionlint"
 chmod +x "$fake_go_bin/go" "$fake_gopath/bin/actionlint"
 
-resolved_actionlint="$(PATH="$fake_go_bin:/usr/bin:/bin" FAKE_GOPATH="$fake_gopath" find_actionlint_bin)"
+export FAKE_GOPATH="$fake_gopath"
+resolved_actionlint="$(PATH="$fake_go_bin:/usr/bin:/bin" find_actionlint_bin)"
 if [ "$resolved_actionlint" != "$fake_gopath/bin/actionlint" ]; then
   printf 'FAIL  Go-installed actionlint must resolve when GOPATH/bin is absent from PATH\n' >&2
+  exit 1
+fi
+
+# Exercise agent-lint itself under the same split-step condition. Its first
+# real lint command is deliberately made to fail so this fixture proves that
+# the actionlint preflight advanced past resolution without needing a full
+# checkout's lint dependencies.
+lint_fix="$FIX/agent-lint-fixture"
+mkdir -p "$lint_fix/scripts/lib" "$lint_fix/bin" "$lint_fix/go-bin" "$lint_fix/go-path/bin"
+cp "$REPO_ROOT/scripts/agent-lint.sh" "$lint_fix/scripts/agent-lint.sh"
+cp "$REPO_ROOT/scripts/lib/agent-output.sh" "$lint_fix/scripts/lib/agent-output.sh"
+cp "$REPO_ROOT/scripts/lib/actionlint-version.sh" "$lint_fix/scripts/lib/actionlint-version.sh"
+printf '#!/usr/bin/env bash\nprintf "ruff 0.15.10\\n"\n' >"$lint_fix/bin/ruff"
+printf '#!/usr/bin/env bash\nprintf "fake cargo reached\\n" >&2\nexit 7\n' >"$lint_fix/bin/cargo"
+printf '#!/usr/bin/env bash\nif [ "$1" = env ] && [ "$2" = GOPATH ]; then\n  printf "%%s\\n" "${FAKE_GOPATH:?}"\n  exit 0\nfi\nexit 2\n' >"$lint_fix/go-bin/go"
+printf '#!/usr/bin/env bash\nprintf "v1.7.12\\n"\n' >"$lint_fix/go-path/bin/actionlint"
+chmod +x "$lint_fix/scripts/agent-lint.sh" "$lint_fix/bin/ruff" "$lint_fix/bin/cargo" \
+  "$lint_fix/go-bin/go" "$lint_fix/go-path/bin/actionlint"
+(
+  cd "$lint_fix"
+  git init -q
+)
+set +e
+lint_output="$(cd "$lint_fix" && PATH="$lint_fix/go-bin:$lint_fix/bin:/usr/bin:/bin" \
+  FAKE_GOPATH="$lint_fix/go-path" bash scripts/agent-lint.sh 2>&1)"
+lint_status=$?
+set -e
+if [ "$lint_status" -eq 0 ] || ! grep -Fq 'fake cargo reached' <<<"$lint_output" \
+  || grep -Fq 'actionlint 1.7.12 is required but not installed' <<<"$lint_output"; then
+  printf 'FAIL  agent-lint must resolve Go-installed actionlint before its first lint command\n' >&2
+  printf '%s\n' "$lint_output" >&2
   exit 1
 fi
 

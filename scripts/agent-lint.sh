@@ -35,7 +35,7 @@ fi
 # GitHub silently rejects). Match the CI pin before other lints can hide a
 # workflow-tooling mismatch.
 readonly ACTIONLINT_VERSION="1.7.12"
-actionlint_bin="$(command -v actionlint || true)"
+actionlint_bin="$(find_actionlint_bin || true)"
 if [ -z "$actionlint_bin" ]; then
   printf 'FAIL lint-actions: actionlint %s is required but not installed. Run scripts/bootstrap.sh in a clean non-worktree checkout.\n' "$ACTIONLINT_VERSION" >&2
   exit 1

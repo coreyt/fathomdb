@@ -74,7 +74,7 @@ fi
 # linter for .github/workflows/*.yml. A missing or different binary is not a
 # usable bootstrap result: install the exact CI version and verify it.
 readonly ACTIONLINT_VERSION="1.7.12"
-actionlint_bin="$(command -v actionlint || true)"
+actionlint_bin="$(find_actionlint_bin || true)"
 actionlint_version=""
 if [ -n "$actionlint_bin" ]; then
   actionlint_version="$(read_actionlint_version "$actionlint_bin")"
@@ -94,4 +94,10 @@ if [ "$actionlint_version" != "$ACTIONLINT_VERSION" ]; then
     exit 1
   fi
   echo "actionlint v$ACTIONLINT_VERSION is installed at $actionlint_bin"
+fi
+
+# GitHub Actions applies GITHUB_PATH only to later steps. Persist the resolved
+# directory so `agent-verify` can invoke the exact bootstrap-installed binary.
+if [ -n "${GITHUB_PATH:-}" ]; then
+  printf '%s\n' "$(dirname "$actionlint_bin")" >>"$GITHUB_PATH"
 fi
