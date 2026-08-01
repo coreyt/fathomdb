@@ -20,14 +20,29 @@ from __future__ import annotations
 
 import sys
 import types
+from importlib.machinery import EXTENSION_SUFFIXES
+from pathlib import Path
 from types import SimpleNamespace
 
 # --- Isolate from the compiled extension -----------------------------------
 # Inject a permissive fake `fathomdb._fathomdb` before `fathomdb` is imported so
 # `fathomdb/__init__.py` (which does `from fathomdb._fathomdb import ...`) and
 # `fathomdb.engine` load without the built native module.
-if "fathomdb" not in sys.modules and "fathomdb._fathomdb" not in sys.modules:
+_NATIVE_EXTENSION_PRESENT = any(
+    (Path(root) / "fathomdb" / f"_fathomdb{suffix}").exists()
+    for root in sys.path
+    if root
+    for suffix in EXTENSION_SUFFIXES
+)
+_USING_FAKE_NATIVE = (
+    "fathomdb" not in sys.modules
+    and "fathomdb._fathomdb" not in sys.modules
+    and not _NATIVE_EXTENSION_PRESENT
+)
+
+if _USING_FAKE_NATIVE:
     _fake = types.ModuleType("fathomdb._fathomdb")
+    _fake.__file__ = None
 
     class _Dummy:  # stands in for any native symbol imported by name
         pass

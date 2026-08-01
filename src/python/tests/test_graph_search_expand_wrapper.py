@@ -9,12 +9,27 @@ from __future__ import annotations
 
 import sys
 import types
+from importlib.machinery import EXTENSION_SUFFIXES
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
 
-if "fathomdb" not in sys.modules and "fathomdb._fathomdb" not in sys.modules:
+_NATIVE_EXTENSION_PRESENT = any(
+    (Path(root) / "fathomdb" / f"_fathomdb{suffix}").exists()
+    for root in sys.path
+    if root
+    for suffix in EXTENSION_SUFFIXES
+)
+_USING_FAKE_NATIVE = (
+    "fathomdb" not in sys.modules
+    and "fathomdb._fathomdb" not in sys.modules
+    and not _NATIVE_EXTENSION_PRESENT
+)
+
+if _USING_FAKE_NATIVE:
     _fake = types.ModuleType("fathomdb._fathomdb")
+    _fake.__file__ = None
 
     class _Dummy:
         pass
@@ -52,3 +67,15 @@ def test_search_expand_maps_idspace_and_search_metadata(monkeypatch) -> None:  #
     assert hit.id == IdSpace(space="logical", value="graph-hit")
     assert hit.source_id == "source-graph-contract"
     assert hit.ce_score == 0.73
+
+
+def test_fake_native_module_does_not_forge_file_metadata() -> None:
+    """The pure-Python stand-in must not impersonate a file-backed module."""
+    fake = types.ModuleType("fathomdb._fathomdb")
+
+    class _Dummy:
+        pass
+
+    fake.__file__ = None
+    fake.__getattr__ = lambda _name: _Dummy  # type: ignore[attr-defined]
+    assert getattr(fake, "__file__", None) is None
