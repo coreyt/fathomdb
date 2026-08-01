@@ -16,12 +16,15 @@ its GREEN `b286004d` and independent simulated review PASS establish the
 Linux-x86 workflow guard. It made no push, PR, CI accrual, B5 implementation,
 tag, dispatch, publish, or credential action. Receipt:
 `/tmp/fathomdb-s40-e1-linuxfirst-fix2-bioZyf/repo/dev/experiments/s40-e1-linuxfirst-fix2-receipt-20260731.md`.
-**Active work:** one fresh role-simulated E1 B5 orchestrator is commissioning
-one canary in a new private clone for the authorized safe canonical
-test-hooks-capable binding route. It may not manufacture a binding through an
-editable/private-clone install. Its hard stop is genuine live-OOS-18 proof
-(60 isolated-node and 3 whole-file runs with exact rc) or a precise missing
-authority; no integration, CI accrual, or release action is authorized.
+**B5 circuit-breaker (2026-07-31):** the authorized CI/source route is
+**BLOCKED, not accepted**. Three independent containment reviews found distinct
+actionlint-valid bypasses; the third proves the final private candidate accepts
+job-level `permissions: write-all`. Per the fix-N cap, no fourth same-class
+correction is authorized. No CI dispatch, local binding build/install, B5
+accrual, integration, tag, publish, or release-record edit occurred. The next
+owner is the Steward/HITL: choose a materially different trusted test-only
+verification design or re-scope B5. Terminal review transcript:
+`/tmp/fathomdb-s40-b5-final-review-zpvQ97/b5-ci-route-final-review-52108139.md`.
 
 The epoch base is `0f7642cc904186e7a1a7a815340404689a0f5679`. Before every E1
 action and before integration, fetch `origin` in a private clone and re-verify
@@ -58,7 +61,7 @@ E1 receipt.
 | B2 | `6730faf3` | PASS | ready for integration |
 | B3 | `fbc7d7d0` | PASS after remediation | ready for integration |
 | B4 | `d4928c4d` | CANCELLED by `seq-234` | macOS/Windows CI and artifact scope move to 0.8.22; do not integrate this patch for 0.8.20 |
-| B5 | `2e6376c3` | BLOCK | canonical binding lacks `test-hooks`; first whole-file run rc=1 (10 passed, 1 failed) |
+| B5 | `52108139` private, rejected | CIRCUIT-BREAKER BLOCK | canonical binding lacks `test-hooks`; CI/source-route guard had three independent P1 containment bypasses; Steward/HITL must select a materially different design or re-scope |
 | B6 | `0533eb8d` | PASS | ready for integration |
 | B7 | `3c92505f` | PASS | ready for integration |
 | B8+B8b | `1ab83b09` | PASS after one P1 repair | ready for integration |
@@ -78,6 +81,16 @@ test-hooks-capable canonical binding route, then perform the required accrual. T
 prior canonical binding whole-file run failed because its `_fathomdb.abi3.so`
 lacks `test-hooks` (rc=1, 10 passed/1 failed). Never rebuild or `pip install -e`
 from a private clone, and do not mutate the shared checkout to manufacture evidence.
+
+**B5 escalation:** the canonical read-only probe confirms all required hooks are
+absent and the genuine live OOS-18 path exits **1** at its hook assertion
+(`/tmp/fathomdb-s40-b5-canary-a1n7xp/b5-genuine-live-oos18-baseline-red-shared-readonly.log`).
+The final private CI-route candidate `52108139` passes its positive checks but
+an independent actionlint-valid fixture with job-level `permissions: write-all`
+also passes its contract. This is the third containment P1 after the bootstrap
+and secret/environment bypasses. The circuit breaker prohibits a fourth repair;
+do not integrate any B5 CI-route candidate or dispatch it. A new decision is
+required before B5 can proceed.
 
 **Steward verification of Linux-first candidate:** `git status` clean; base
 ancestry and `git diff --check` passed. The Linux-first guard, release-scope
