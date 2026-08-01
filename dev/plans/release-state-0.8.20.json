@@ -518,7 +518,15 @@
         "title": "B5 post-circuit-breaker verification design",
         "ruling": "Authorize a materially different trusted test-only verification design. Do not re-scope or defer B5. The rejected CI/source-route candidate remains forbidden after three containment P1 findings, including an actionlint-valid job-level `permissions: write-all` bypass.",
         "source": "steward seq-235 (HITL 2026-07-31)",
-        "residual_work": "The terminal-clean design is `dev/design/0.8.20-b5-trusted-test-only-verification-design.md`. HITL must approve a specific immutable appliance policy before implementation. That implementation must not repair or integrate the rejected CI/source-route candidate, dispatch CI, publish, or advance E2 until independently reviewed."
+        "superseded_by": "b5-evidence-standard (steward seq-237, HITL 2026-08-01)",
+        "residual_work": "SUPERSEDED: the appliance-policy gate no longer applies. Preserve the rejected CI/source-route exclusion; follow `b5-evidence-standard` for the current B5 evidence route."
+      },
+      {
+        "id": "b5-evidence-standard",
+        "title": "B5 evidence standard after appliance-policy reconsideration",
+        "ruling": "Strong normal CI evidence is sufficient. This supersedes the external immutable-appliance-policy gate imposed by seq-235. B5 remains required; the rejected bespoke CI/source-route candidate remains forbidden. Complete B5 through the ordinary implementation, independent-review, and normal-CI evidence path rather than treating CI as an adversarial security boundary.",
+        "source": "steward seq-237 (HITL 2026-08-01)",
+        "residual_work": "Commission the bounded B5 test/oracle implementation under the normal Slice-40 controls: RED-first test work, independent adversarial review, and ordinary CI evidence for the required 60 isolated plus 3 whole-file runs. Do not revive, repair, or integrate the rejected bespoke CI/source-route guard; do not advance E2 until the Steward independently accepts the resulting E1 receipt."
       }
     ],
     "ruled_tracking": [

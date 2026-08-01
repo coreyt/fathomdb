@@ -7,10 +7,11 @@
 Slice 40 is commissioned but **E1 is hard-stopped and not closed**. Do not begin
 E2, integrate, push, or alter the release record outside the reconciled
 Linux-first scope. The B5 design-only continuation is terminal-clean at
-`e104d696` and its Steward acceptance record landed at `ea43e861`; it specifies
-a materially different trusted test-only verification route. **The next action
-is HITL approval of its specific immutable appliance policy before
-implementation.** Do not repair the rejected CI/source route.
+`e104d696` and its Steward acceptance record landed at `ea43e861`, but the
+appliance route is **SUPERSEDED** by HITL ruling `seq-237`: strong normal CI
+evidence is sufficient. **The next action is commissioning the bounded B5
+test/oracle implementation, then independent review and normal-CI evidence.**
+Do not repair or revive the rejected bespoke CI/source route.
 
 **Latest verified E1 work (2026-07-31):** the Linux-first scope candidate is
 **accepted but unintegrated** at private head `7d2ce9e9` on base `111313b9`.
@@ -25,19 +26,21 @@ actionlint-valid bypasses; the third proves the final private candidate accepts
 job-level `permissions: write-all`. Per the fix-N cap, no fourth same-class
 correction is authorized. No CI dispatch, local binding build/install, B5
 accrual, integration, tag, publish, or release-record edit occurred. **HITL
-has now ruled at `seq-235`: authorize a materially different trusted test-only
-verification design; do not re-scope or defer B5.** Terminal review transcript:
+initially ruled at `seq-235`: authorize a materially different trusted test-only
+verification design; that appliance-policy direction is superseded by `seq-237`.**
+Terminal review transcript:
 `/tmp/fathomdb-s40-b5-final-review-zpvQ97/b5-ci-route-final-review-52108139.md`.
 
-**B5 successor design (landed):**
+**B5 successor design (historical, superseded):**
 `dev/design/0.8.20-b5-trusted-test-only-verification-design.md` is a rootless,
 no-egress, no-credential appliance, not a CI workflow or source guard. Its
 first review found a digest-only attestation insufficient; the correction at
 `bb662c74` requires a reviewer-resolvable immutable policy, a signed receipt
 binding the candidate SHA and all 63 exit events, and receipt-bound capability
-probes. The re-review is terminal-clean. **Implementation remains blocked until
-the HITL approves the specific policy** — including supervisor identity, image,
-fixed commands/targets, confinement, signing identity, and required probes.
+probes. The re-review is terminal-clean. **Do not provision it:** HITL ruling
+`seq-237` replaces its policy gate with ordinary implementation, independent
+review, and normal-CI evidence; it does not permit repairing the rejected
+bespoke CI/source route.
 
 The epoch base is `0f7642cc904186e7a1a7a815340404689a0f5679`. Before every E1
 action and before integration, fetch `origin` in a private clone and re-verify
@@ -74,7 +77,7 @@ E1 receipt.
 | B2 | `6730faf3` | PASS | ready for integration |
 | B3 | `fbc7d7d0` | PASS after remediation | ready for integration |
 | B4 | `d4928c4d` | CANCELLED by `seq-234` | macOS/Windows CI and artifact scope move to 0.8.22; do not integrate this patch for 0.8.20 |
-| B5 | `52108139` private, rejected | design terminal-clean at `e104d696`, accepted at `ea43e861`; implementation waits on appliance-policy approval | canonical binding lacks `test-hooks`; CI/source-route guard had three independent P1 containment bypasses. The approved successor design is `dev/design/0.8.20-b5-trusted-test-only-verification-design.md`; no re-scope or deferral. |
+| B5 | `52108139` private, rejected | appliance design superseded by `seq-237`; implementation is now authorized under normal Slice-40 controls | canonical binding lacks `test-hooks`; the bespoke CI/source-route guard had three independent P1 containment bypasses and remains forbidden. B5 needs the bounded test/oracle patch, independent review, and normal-CI 60+3 evidence. |
 | B6 | `0533eb8d` | PASS | ready for integration |
 | B7 | `3c92505f` | PASS | ready for integration |
 | B8+B8b | `1ab83b09` | PASS after one P1 repair | ready for integration |
@@ -102,9 +105,9 @@ The final private CI-route candidate `52108139` passes its positive checks but
 an independent actionlint-valid fixture with job-level `permissions: write-all`
 also passes its contract. This is the third containment P1 after the bootstrap
 and secret/environment bypasses. The circuit breaker prohibits a fourth repair;
-do not integrate any B5 CI-route candidate or dispatch it. **HITL ruled at
-`seq-235` to commission a materially different trusted test-only design, not
-to re-scope or defer B5.**
+do not integrate any B5 CI-route candidate or dispatch it. **The `seq-235`
+appliance-design ruling is superseded by HITL `seq-237`: strong normal CI
+evidence is sufficient for B5.**
 
 **Steward verification of Linux-first candidate:** `git status` clean; base
 ancestry and `git diff --check` passed. The Linux-first guard, release-scope
