@@ -173,6 +173,25 @@ add "STEWARD ORIENT $(date -u +%Y-%m-%dT%H:%MZ) · stateless · reads only · wr
 add "REPO   branch=$BRANCH head=$HEAD_SHA dirty=$DIRTY  \"$HEAD_SUBJ\""
 
 # -------------------------------------------------------------- WORKTREES ---
+# Resolve the primary root before rendering the worktree inventory. Relative
+# paths preserve every identity while avoiding repeated copies of the same long
+# root path; this is material to the strict 5120-byte cold-start budget when
+# several historical worktrees coexist.
+GIT_COMMON="$(cd "$(git --no-optional-locks rev-parse --git-common-dir)" && pwd)"
+MAIN_ROOT="$(dirname "$GIT_COMMON")"
+WT_DIR="${MAIN_ROOT}-worktrees"
+compact_worktree() {
+  local line="$1" path rest
+  path="${line%% *}"
+  rest="${line#"$path"}"
+  case "$path" in
+    "$MAIN_ROOT") path="." ;;
+    "$MAIN_ROOT"/*) path=".${path#"$MAIN_ROOT"}" ;;
+    "$WT_DIR"/*) path="../$(basename "$WT_DIR")/${path#"$WT_DIR"/}" ;;
+    *) path="$(tilde "$path")" ;;
+  esac
+  printf '%s%s' "$path" "$rest"
+}
 mapfile -t WT_LINES < <(git --no-optional-locks worktree list 2>/dev/null || true)
 if [ "${#WT_LINES[@]}" -eq 0 ]; then
   note_empty "worktrees (git worktree list returned nothing)"
@@ -186,15 +205,12 @@ add "WORKTREES (${#WT_LINES[@]})"
 # already unparseable in this non-porcelain listing, so nothing is made worse.)
 for w in "${WT_LINES[@]}"; do
   while [ "$w" != "${w//  / }" ]; do w="${w//  / }"; done
-  add "  $(tilde "$w")"
+  add "  $(compact_worktree "$w")"
 done
 
 # Correction 2: the checkout pool is a SIBLING of the MAIN worktree root.
 # --git-common-dir points at the main .git even from inside a linked worktree,
 # so this resolves the same pool no matter where the briefing is run from.
-GIT_COMMON="$(cd "$(git --no-optional-locks rev-parse --git-common-dir)" && pwd)"
-MAIN_ROOT="$(dirname "$GIT_COMMON")"
-WT_DIR="${MAIN_ROOT}-worktrees"
 REGISTERED="$(git --no-optional-locks worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' || true)"
 ORPHANS=""
 if [ -d "$WT_DIR" ]; then
@@ -344,12 +360,13 @@ for line in last:
     except Exception:
         print("  ?? unparseable entry")
         continue
-    # 96, not 118. This preview was ALWAYS a truncation (the entry itself is one
+    # 80, not 118. This preview was ALWAYS a truncation (the entry itself is one
     # line of dev/steward/steward-ledger.jsonl, which is where the reader goes for
     # the full text); the only question is where it cuts. Steward summaries are
-    # written headline-first, so 96 still carries the headline sentence, and the
-    # five of them together cost ~110 bytes less of a 5120-byte budget.
-    summary = " ".join(str(e.get("summary", "")).split())[:96]
+    # written headline-first, so 80 still carries the headline sentence, and the
+    # five of them together leaves room for the live worktree inventory within the
+    # fixed 5120-byte budget.
+    summary = " ".join(str(e.get("summary", "")).split())[:80]
     print(f"  {e.get('seq', '?')} {e.get('kind', '?')}: {summary}")
 PY
   )"
