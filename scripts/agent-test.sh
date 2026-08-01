@@ -216,6 +216,11 @@ run_suite test-linux-first-platform-scope bash scripts/tests/test_linux_first_pl
 # plus the same full agent-verify gate required locally.
 run_suite test-verify-ci-timeout-budget bash scripts/tests/test_verify_ci_timeout_budget.sh
 
+# Slice 40: generic TypeScript prework skips only the six network-gated arms;
+# the warmed default-embedder CI job must own their complementary live and
+# release-surface coverage.
+run_suite test-ts-cache-coverage-split bash scripts/tests/test_ts_cache_coverage_split.sh
+
 # Scripts (bash): coordinated-publish resilience (R-REL-4b/4c) — REAL npm
 # local-registry round-trip (publish -> query-no-op -> install -> loader) +
 # crates.io SIMULATED (real crates registry infeasible in-harness). node-only.
@@ -353,7 +358,11 @@ fi
 
 # TypeScript
 if [ -d src/ts/node_modules ]; then
-  run_suite test-ts bash -c 'cd src/ts && npm test --silent'
+  # The six default-embedder TypeScript arms remain part of this ordinary
+  # prework gate, but skip their live-model bodies here.  CI's
+  # default-embedder-tests job owns the same suite after warming the BGE cache
+  # and enables its release-surface arm there.
+  run_suite test-ts env FATHOMDB_SKIP_NETWORK_TESTS=1 bash -c 'cd src/ts && npm test --silent'
 else
   skip_suite test-ts "src/ts/node_modules not installed"
 fi
