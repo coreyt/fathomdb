@@ -16,7 +16,12 @@ its GREEN `b286004d` and independent simulated review PASS establish the
 Linux-x86 workflow guard. It made no push, PR, CI accrual, B5 implementation,
 tag, dispatch, publish, or credential action. Receipt:
 `/tmp/fathomdb-s40-e1-linuxfirst-fix2-bioZyf/repo/dev/experiments/s40-e1-linuxfirst-fix2-receipt-20260731.md`.
-The next E1 step is B5's authorized safe canonical test-hooks binding route.
+**Active work:** one fresh role-simulated E1 B5 orchestrator is commissioning
+one canary in a new private clone for the authorized safe canonical
+test-hooks-capable binding route. It may not manufacture a binding through an
+editable/private-clone install. Its hard stop is genuine live-OOS-18 proof
+(60 isolated-node and 3 whole-file runs with exact rc) or a precise missing
+authority; no integration, CI accrual, or release action is authorized.
 
 The epoch base is `0f7642cc904186e7a1a7a815340404689a0f5679`. Before every E1
 action and before integration, fetch `origin` in a private clone and re-verify
