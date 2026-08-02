@@ -333,6 +333,8 @@ run_suite test-ci-rust-workspace-gate bash scripts/tests/test_ci_rust_workspace_
 #   3. `#[ignore]` on the test itself — holds no matter which features are
 #      selected, so `--all-features` still would not run the body.
 # Verify by inspection only (`-- --list --ignored`), never by running it.
+run_suite test-aarch64-candle-feature-closure bash scripts/tests/test_aarch64_candle_feature_closure.sh
+run_suite test-aarch64-candle-cpu bash scripts/tests/test_aarch64_candle_cpu.sh
 run_suite test-rust bash scripts/test-rust-workspace.sh --serial
 
 # Python
