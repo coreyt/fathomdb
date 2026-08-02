@@ -13,19 +13,26 @@ version: 2
 #     the source of the idna/torch security-alert noise — keeping it uncovered is intentional.
 #   - dev/research/**, data/corpus-data/** requirements*.txt  (eval/corpus fetch artifacts).
 #   - dev/release/fixtures/cargo-skew/**  (intentional mock crates for release-skew tests).
+#
+# Dependabot PR creation is paused during the v0.8.20 registry recovery. Restore
+# automatic updates in a dedicated dependency-maintenance change by removing the
+# five `open-pull-requests-limit: 0` entries below.
 updates:
   - package-ecosystem: "pip"
     directory: "/src/python"
+    open-pull-requests-limit: 0
     schedule:
       interval: "weekly"
 
   - package-ecosystem: "cargo"
     directory: "/"
+    open-pull-requests-limit: 0
     schedule:
       interval: "weekly"
 
   - package-ecosystem: "npm"
     directory: "/src/ts"
+    open-pull-requests-limit: 0
     schedule:
       interval: "weekly"
 
@@ -36,10 +43,12 @@ updates:
   # covers only the TypeScript binding, not the root manifest.
   - package-ecosystem: "npm"
     directory: "/"
+    open-pull-requests-limit: 0
     schedule:
       interval: "weekly"
 
   - package-ecosystem: "github-actions"
     directory: "/"
+    open-pull-requests-limit: 0
     schedule:
       interval: "weekly"
