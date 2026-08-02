@@ -457,8 +457,9 @@ test("late enrolment backfills the rows a no-embedder session stranded", async (
   const warm = await Engine.open(path, { useDefaultEmbedder: true });
   try {
     await warm.write([node("N3", '{"summary":"written before re-applying"}')]);
-    assert.equal(vectorKindRegistered(path), true, "the write LATE-ENROLLED the kind");
     await warm.drain(DRAIN_TIMEOUT_MS);
+    // Read SQLite only after the drain barrier settles the worker commit.
+    assert.equal(vectorKindRegistered(path), true, "the write LATE-ENROLLED the kind");
     assert.equal(await readiness(warm), "ready");
   } finally {
     await warm.close();
