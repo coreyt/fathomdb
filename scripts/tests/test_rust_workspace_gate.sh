@@ -26,6 +26,9 @@ cat >"$FAKE_BIN/cargo" <<'EOF'
 set -euo pipefail
 : "${FAKE_CARGO_ARGS:?}"
 printf '%s\n' "$@" >"$FAKE_CARGO_ARGS"
+if [ -n "${FAKE_CARGO_ENV:-}" ]; then
+  printf '%s\n' "${AGENT_LONG:-unset}" >"$FAKE_CARGO_ENV"
+fi
 exit "${FAKE_CARGO_RC:-0}"
 EOF
 chmod +x "$FAKE_BIN/cargo"
@@ -61,6 +64,20 @@ else
   fail "--serial returned $RUN_RC, expected 0: $(cat "$RUN_OUTPUT")"
 fi
 assert_args --serial test --workspace --quiet --no-fail-fast --jobs 1 -- --test-threads=1
+
+ARGS_FILE="$TMPROOT/serial-long.args"
+ENV_FILE="$TMPROOT/serial-long.env"
+RUN_OUTPUT="$TMPROOT/serial-long.out"
+set +e
+AGENT_LONG=1 PATH="$FAKE_BIN:$PATH" FAKE_CARGO_ARGS="$ARGS_FILE" FAKE_CARGO_ENV="$ENV_FILE" \
+  "$RUNNER" --serial >"$RUN_OUTPUT" 2>&1
+RUN_RC=$?
+set -e
+if [ "$RUN_RC" -eq 0 ] && [ "$(cat "$ENV_FILE")" = "1" ]; then
+  pass "--serial preserves AGENT_LONG for callers that explicitly select the mode"
+else
+  fail "--serial must preserve AGENT_LONG without using it to select a mode"
+fi
 
 run_runner parallel --parallel-report
 if [ "$RUN_RC" -eq 0 ]; then
