@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Run the Rust workspace with an explicit, reviewable concurrency mode.
+# AGENT_LONG may select long-running test variants, but callers must still pass
+# one explicit mode; it never selects serial or parallel execution itself.
 set -euo pipefail
 
 usage() {
@@ -8,6 +10,9 @@ Usage: test-rust-workspace.sh --serial|--parallel-report
 
   --serial           Run the release-gating Rust workspace suite serially.
   --parallel-report  Run the equivalent parallel diagnostic suite.
+
+AGENT_LONG=1 is passed through to Cargo's test processes when callers need
+the broader long-running variants. It does not select a mode.
 USAGE
 }
 

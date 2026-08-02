@@ -97,10 +97,12 @@ jobs:
         run: |
           set +e
           log="$RUNNER_TEMP/rust-workspace-parallel.log"
+          artifact_name="rust-workspace-parallel-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           started_seconds="$(date +%s)"
           bash scripts/test-rust-workspace.sh --parallel-report >"$log" 2>&1
           rc=$?
+          set -e
           ended_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           ended_seconds="$(date +%s)"
           duration_seconds=$((ended_seconds - started_seconds))
@@ -112,10 +114,11 @@ jobs:
             echo "ended_at=${ended_at}"
             echo "duration_seconds=${duration_seconds}"
             echo "log_name=$(basename "$log")"
+            echo "artifact_name=${artifact_name}"
             echo "exit_code=${rc}"
           } >> "$GITHUB_STEP_SUMMARY"
           if [ "$rc" -ne 0 ]; then
-            echo "::warning title=Rust workspace parallel report::parallel run exited ${rc}; inspect rust-workspace-parallel artifact"
+            echo "::warning title=Rust workspace parallel report::parallel run exited ${rc}; inspect artifact=${artifact_name}"
           fi
           exit 0
       - name: Upload parallel Rust workspace report
