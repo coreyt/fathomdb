@@ -15,6 +15,23 @@
       "typescript_green": "4d3ca5bb"
     }
   },
+  "b5_oos18_process_isolation": {
+    "scope": "Reliability-only Python test-harness repair. Every live raw sqlite3 mode=ro scalar oracle in test_slice20c_flush_barrier.py must run in an exec'd child process while preserving its URI, SQL, parameters, and scalar result semantics. No engine, binding, TypeScript, injector, immutable-URI, sleep, or readiness change is in scope.",
+    "red_baseline": {
+      "commit": "83a3a37d6b672ca6ed6045b44929f3390c11e8b4",
+      "command": "AGENT_VERBOSE=1 bash scripts/agent-verify.sh",
+      "environment": "fresh clean clone /tmp/fathomdb-clean-integration-83a3a37d",
+      "immediate_exit_code": 1,
+      "failing_suite_exit_code": 135,
+      "failure": "Fatal Python Bus error in _terminal_state at test_slice20c_flush_barrier.py:176, called while test_a_pending_edge_body_survives_a_full_scan_window_of_node_rows polled the engine's active worker commit.",
+      "evidence_log": "/tmp/fathomdb-integration-83a3a37d-verify-1.log"
+    },
+    "local_control_after_recording": {
+      "command": "PYTHONPATH=/home/coreyt/projects/fathomdb/src/python:/tmp/fathomdb-impl-flush-oracle-process-isolation/src/python/tests /home/coreyt/projects/fathomdb/.venv/bin/python -P -m pytest --import-mode=importlib -o pythonpath='' src/python/tests/test_slice20c_flush_barrier.py -q -k test_a_pending_edge_body_survives_a_full_scan_window_of_node_rows",
+      "immediate_exit_code": 0,
+      "result": "1 passed, 9 deselected in 21.23s. This single non-reproduction is reported as a control only and is not evidence against the clean-clone SIGBUS."
+    }
+  },
   "round": "fix-5 (codex §9 round 4, [P1] + [P2]) — COMPLETE and GREEN. Round 5 of a hard maximum of 6, and the LAST round the mandate authorises. See `fix_5`.",
   "commits": [
     "ddaf732066fdc9404e64b0e246debae8f8168156: test(0.8.20-s20c): RED — the false-ready flush barrier (R-20-DR remainder, C4)",
