@@ -47,8 +47,13 @@ usage() {
 Usage: cargo-publish-if-new.sh [--dry-run] <crate-name>
 
 Publishes <crate-name> to crates.io only if the local Cargo.toml
-version is not already on the registry. --dry-run forwards to
-`cargo publish --dry-run` regardless of registry state.
+version is not already on the registry.
+
+With --dry-run, leaf crates (`fathomdb-embedder-api`, `fathomdb-schema`,
+and `fathomdb-query`) run `cargo publish --dry-run`. Dependent crates
+(`fathomdb-embedder`, `fathomdb-engine`, `fathomdb`, and `fathomdb-cli`)
+are skipped without invoking cargo because their sibling dependencies cannot
+resolve until preceding real tiers reach the registry.
 
 Environment:
   CARGO_REGISTRY_TOKEN  required when not in --dry-run mode

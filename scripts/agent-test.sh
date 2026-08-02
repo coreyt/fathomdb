@@ -95,6 +95,12 @@ run_suite test-verify-release-gates bash scripts/tests/test_verify_release_gates
 # prework and the release workflow.
 run_suite test-runtime-release-alignment bash scripts/tests/test_runtime_release_alignment.sh
 
+# Scripts (bash): offline fake-Cargo coverage for every release Rust tier. The
+# helper executes Cargo dry-runs for the three leaf crates and explicitly skips
+# the four dependent crates whose sibling registry dependencies cannot resolve
+# until real preceding tiers publish.
+run_suite test-cargo-publish-if-new bash scripts/tests/test_cargo_publish_if_new.sh
+
 # Scripts (bash): 0.8.20 Slice 39 (R-20-DOC) — the license type + license-
 # SHIPPING gate (scripts/check-license-consistency.sh). Closes an 0.8.x-long
 # silent drift: the repo-root LICENSE said MIT, all four publishable manifests
