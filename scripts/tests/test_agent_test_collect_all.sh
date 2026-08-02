@@ -255,6 +255,12 @@ else
   fail "arm C: the last executable line of agent-test.sh is NOT suite_summary_and_exit: [$LAST_EXEC_LINE]"
 fi
 
+if grep -qE '^run_suite test-rust bash scripts/test-rust-workspace\.sh --serial$' "$AGENT_TEST"; then
+  pass "arm C: test-rust delegates to the canonical serial workspace runner"
+else
+  fail "arm C: test-rust must delegate to scripts/test-rust-workspace.sh --serial"
+fi
+
 # ============================================================================
 # Arm D: scripts/lib/agent-suite-run.sh is sourced by scripts/agent-test.sh
 # and by NO other script in the repo.
