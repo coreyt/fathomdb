@@ -25,9 +25,10 @@ underlying races, and it does not convert a parallel failure into a pass. The
 parallel reporter preserves that diagnostic distinction until race-hunting is
 completed in its separately scheduled work.
 
-The scope is the Rust `cargo test --workspace` portion of the existing
-cross-language `scripts/agent-test.sh` suite. Python, TypeScript, lint,
-typecheck, security, and the other CI jobs retain their present behaviour.
+The scope is every CI leg that gates a Rust `cargo test --workspace` result:
+the Rust portion of Linux `verify`, `rust-windows`, and `rust-macos`. Python,
+TypeScript, lint, typecheck, security, and the other CI jobs retain their
+present behaviour.
 
 ## 2. Current code and required invariant
 
@@ -38,16 +39,19 @@ cargo test --workspace --quiet --no-fail-fast
 ```
 
 `scripts/agent-verify.sh` runs `agent-test.sh` after lint, typecheck, and
-security. The Linux CI `verify` job invokes `bash scripts/agent-verify.sh`.
-Changing only a workflow command would therefore make local and CI evidence
-different; changing only an ad-hoc local command would leave CI parallel.
+security. Linux CI `verify` invokes `bash scripts/agent-verify.sh`; the
+separate Windows and macOS jobs each invoke Cargo directly. Changing only a
+workflow command would therefore make local and CI evidence different;
+changing only an ad-hoc local command would leave one or more gating OS legs
+parallel.
 
 The invariant is:
 
 > The command used for the gating Rust-workspace result is one canonical,
-> directly executable script. `agent-test.sh`, local release evidence, and the
-> CI `verify` job all reach that same serial invocation. GitHub Actions is
-> confirmation of already-observed local behaviour, never its first proof.
+> directly executable script. `agent-test.sh`, local release evidence, and
+> every gating Rust-workspace CI leg reach that same `--serial` invocation.
+> GitHub Actions is confirmation of already-observed local behaviour, never
+> its first proof.
 
 The serial control is an evidence control, not a claim that the database is
 safe under concurrent application use. It removes Cargo/test-harness
@@ -98,9 +102,22 @@ run_suite test-rust bash scripts/test-rust-workspace.sh --serial
 ```
 
 Consequently, the existing `bash scripts/agent-verify.sh` remains the single
-canonical full gate command locally and in CI. Its collect-all summary records
-the immediate exit code of the serial Rust suite through the existing
+canonical full gate command locally and in Linux CI. Its collect-all summary
+records the immediate exit code of the serial Rust suite through the existing
 `run_suite` wrapper.
+
+The CI legs use the runner as follows:
+
+| Gating leg | Required invocation |
+| --- | --- |
+| Linux `verify` | `agent-verify.sh` → `agent-test.sh` → `test-rust-workspace.sh --serial` |
+| `rust-windows` | `bash scripts/test-rust-workspace.sh --serial` |
+| `rust-macos` | `bash scripts/test-rust-workspace.sh --serial` |
+
+The latter two direct Cargo calls are replaced, not supplemented. The runner
+keeps `--no-fail-fast` in serial mode, so macOS gains full failure enumeration
+instead of retaining its current fail-fast behaviour. There is no current
+authority to leave either OS leg parallel, so no exception is allowed.
 
 ## 4. Local-before-CI evidence protocol
 
@@ -149,8 +166,10 @@ bash scripts/agent-verify.sh
 ```
 
 Because `agent-test.sh` invokes the canonical runner with `--serial`, a failure
-of the Rust-workspace suite remains a normal gate failure. No CI-only serial
-command is permitted.
+of the Rust-workspace suite remains a normal gate failure. `rust-windows` and
+`rust-macos` invoke that same runner explicitly with `--serial`; no gating
+workflow job may retain or add a direct `cargo test --workspace` command. No
+CI-only serial command is permitted.
 
 Add a separate Linux job named `rust-workspace-race-report`. It installs the
 same Rust toolchain/cache as the existing Rust test job, then runs:
@@ -159,13 +178,21 @@ same Rust toolchain/cache as the existing Rust test job, then runs:
 bash scripts/test-rust-workspace.sh --parallel-report
 ```
 
-Its shell step must capture that command's exit code immediately into a log in
-`$RUNNER_TEMP`, publish the log with `actions/upload-artifact` under
-`if: always()`, write the mode, SHA, run attempt, duration, and exit code to
-`$GITHUB_STEP_SUMMARY`, and exit `0` after recording. On a non-zero reporter
-result it emits an Actions warning that names the artifact. This is an explicit
-non-gating reporting contract, not `continue-on-error` ambiguity and not a
-hidden retry.
+Its shell step must redirect the complete combined Cargo stdout/stderr to a
+named log in `$RUNNER_TEMP`, then capture that command's exit code immediately.
+It writes the mode, SHA, run attempt, duration, log name, and exit code to
+`$GITHUB_STEP_SUMMARY`; on a non-zero reporter result it emits an Actions
+warning that names the artifact; only then does it exit `0`. A later step
+uploads that complete log under `if: always()` with the repository's pinned
+action:
+
+```text
+actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+```
+
+The upload's path must be the exact reporter log, not a metadata file that
+merely repeats its exit code. This is an explicit non-gating reporting
+contract, not `continue-on-error` ambiguity and not a hidden retry.
 
 The reporter job must have a finite timeout and use the same `--no-fail-fast`
 scope as the gate. It must not share a test database, temporary directory, or
@@ -194,12 +221,26 @@ reimplement the runner in a helper.
    prove `test-rust` delegates to `test-rust-workspace.sh --serial`, rather
    than retaining a direct `cargo test --workspace` registration.
 3. Add a workflow recurrence test, for example
-   `scripts/tests/test_ci_rust_workspace_gate.sh`, which examines the real
-   `.github/workflows/ci.yml`. It proves `verify` still calls
-   `agent-verify.sh`; the reporter calls the canonical runner in
-   `--parallel-report` mode; its raw exit code is captured before any reporting
-   command; an `if: always()` artifact upload exists; and the reporter's final
-   status is intentionally zero only after the captured result is surfaced.
+   `scripts/tests/test_ci_rust_workspace_gate.sh`, which parses the real
+   `.github/workflows/ci.yml` as YAML rather than searching its text. It proves
+   that `verify` still calls `agent-verify.sh`; that Windows and macOS each
+   invoke the canonical runner with `--serial`; and that no gating job contains
+   a direct `cargo test --workspace` invocation. It also finds the distinct
+   Linux reporter job, verifies its `--parallel-report` runner mode, and
+   verifies an `if: always()` upload step uses
+   `actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a` for the
+   complete reporter log.
+
+   The reporter-shell arm extracts the parsed `run:` body and executes that
+   actual body under a controlled shell fixture: a fake runner returns a
+   distinctive non-zero code and writes known stdout/stderr; `$RUNNER_TEMP` and
+   `$GITHUB_STEP_SUMMARY` are disposable paths. The arm proves all of the
+   following behaviours together: the body enters `set +e` before the runner;
+   the summary receives the distinctive raw code and the log name; the complete
+   stdout/stderr is in the named log; and the body returns `0` only after
+   writing that summary. A misplaced `rc=$?`, an early `set -e`, a pipeline,
+   or an early `exit 0` fails this executed control. `bash -n` remains a syntax
+   check; it is not treated as proof of these semantics.
 4. Register both new shell tests with `agent-test.sh` before the Rust suite so
    the collect-all harness reports their failures. Run actionlint against the
    edited workflow as part of the normal lint gate.
@@ -217,7 +258,8 @@ The change is acceptable only when all of the following are retained:
 - The three consecutive clean-clone `agent-verify` attempts have immediate
   `0` results and readable logs on the exact candidate SHA.
 - A pull-request CI run has every applicable gating job green, including
-  `verify`; the serial Rust suite is visible in its collect-all summary.
+  `verify`, `rust-windows`, and `rust-macos`; the serial Rust suite is visible
+  in Linux's collect-all summary and the direct OS-leg logs.
 - The parallel reporter has executed, its artifact is retrievable, and its
   outcome is recorded separately from the gating result. A reporter red is a
   race observation to triage, not permission to retry the serial gate until it
