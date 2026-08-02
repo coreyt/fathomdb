@@ -48,7 +48,7 @@ mkdir -p "$lint_fix/scripts/lib" "$lint_fix/bin" "$lint_fix/go-bin" "$lint_fix/g
 cp "$REPO_ROOT/scripts/agent-lint.sh" "$lint_fix/scripts/agent-lint.sh"
 cp "$REPO_ROOT/scripts/lib/agent-output.sh" "$lint_fix/scripts/lib/agent-output.sh"
 cp "$REPO_ROOT/scripts/lib/actionlint-version.sh" "$lint_fix/scripts/lib/actionlint-version.sh"
-printf '#!/usr/bin/env bash\nprintf "ruff 0.15.10\\n"\n' >"$lint_fix/bin/ruff"
+printf '#!/usr/bin/env bash\nprintf "ruff 0.15.17\\n"\n' >"$lint_fix/bin/ruff"
 printf '#!/usr/bin/env bash\nprintf "fake cargo reached\\n" >&2\nexit 7\n' >"$lint_fix/bin/cargo"
 printf '#!/usr/bin/env bash\nif [ "$1" = env ] && [ "$2" = GOPATH ]; then\n  printf "%%s\\n" "${FAKE_GOPATH:?}"\n  exit 0\nfi\nexit 2\n' >"$lint_fix/go-bin/go"
 printf '#!/usr/bin/env bash\nprintf "v1.7.12\\n"\n' >"$lint_fix/go-path/bin/actionlint"

@@ -95,6 +95,12 @@ run_suite test-verify-release-gates bash scripts/tests/test_verify_release_gates
 # prework and the release workflow.
 run_suite test-runtime-release-alignment bash scripts/tests/test_runtime_release_alignment.sh
 
+# Scripts (bash): offline fake-Cargo coverage for every release Rust tier. The
+# helper executes Cargo dry-runs for the three leaf crates and explicitly skips
+# the four dependent crates whose sibling registry dependencies cannot resolve
+# until real preceding tiers publish.
+run_suite test-cargo-publish-if-new bash scripts/tests/test_cargo_publish_if_new.sh
+
 # Scripts (bash): 0.8.20 Slice 39 (R-20-DOC) — the license type + license-
 # SHIPPING gate (scripts/check-license-consistency.sh). Closes an 0.8.x-long
 # silent drift: the repo-root LICENSE said MIT, all four publishable manifests
@@ -309,6 +315,12 @@ run_suite test-md-generators bash scripts/tests/test_md_generators.sh
 run_suite test-cargo-skew bash dev/release/tests/cargo_skew.sh
 run_suite test-pip-skew bash dev/release/tests/pip_skew.sh
 
+# Scripts (bash): temporary TC-74 evidence control. The canonical runner owns
+# the exact Cargo invocation, so the local agent loop and every gated Rust CI
+# leg use the same serial mode.
+run_suite test-rust-workspace-gate bash scripts/tests/test_rust_workspace_gate.sh
+run_suite test-ci-rust-workspace-gate bash scripts/tests/test_ci_rust_workspace_gate.sh
+
 # Rust
 #
 # TC-20 invariant: this line must NEVER reach `eu7_real_corpus_ac_validation`,
@@ -321,7 +333,7 @@ run_suite test-pip-skew bash dev/release/tests/pip_skew.sh
 #   3. `#[ignore]` on the test itself — holds no matter which features are
 #      selected, so `--all-features` still would not run the body.
 # Verify by inspection only (`-- --list --ignored`), never by running it.
-run_suite test-rust cargo test --workspace --quiet --no-fail-fast
+run_suite test-rust bash scripts/test-rust-workspace.sh --serial
 
 # Python
 python_bin=""

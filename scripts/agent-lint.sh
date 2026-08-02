@@ -11,7 +11,7 @@ cd_repo_root
 
 # Python preflight: use the project's exact pinned version, so local prework
 # cannot report a false green from version drift.
-readonly RUFF_VERSION="0.15.10"
+readonly RUFF_VERSION="0.15.17"
 ruff_bin=""
 if [ -x .venv/bin/ruff ]; then
   ruff_bin=".venv/bin/ruff"

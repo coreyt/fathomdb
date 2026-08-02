@@ -6,26 +6,20 @@
 # say, what is in flight. That state was narrated across a 5-12 file fan-out and
 # the live board alone is ~79 KB, so orientation cost either a large context bill
 # or a guess. This prints the whole picture in ONE read, from the writers of
-# record, in under 5 KiB.
+# record, in under 4 KB.
 #
 # ============================ THE TWO HARD LIMITS ============================
-# 1. <= 5120 bytes on stdout. Self-checked: over budget is a HARD failure, not a
+# 1. <= 4096 bytes on stdout. Self-checked: over budget is a HARD failure, not a
 #    silent overrun, because the cap is a promise to the reader's context budget.
 #    Override for experiments only via $STEWARD_ORIENT_BUDGET.
-#    WHERE THE BYTES GO: the board's verbatim next-action cell dominates output;
-#    the ledger previews, todos fold, landed slices+SHAs, and repo facts supply
-#    the remainder. The cap was
-#    breached on 2026-07-31 at 4380 bytes and was brought back under by COMPRESSING,
-#    not by dropping facts or raising the cap: todo ids are run-length folded
-#    (`TC-2..6,9`), `git worktree list`'s column padding is squeezed, the derivable
-#    `state=release-state-<ver>.json` field is gone, and the ledger preview cuts at
-#    96 chars instead of 118. THE STANDING EXPOSURE is that one cell — it is
-#    verbatim by contract and its length is set by whoever writes the board, so a
-#    ~500-byte-longer next action re-breaches the cap. That is board hygiene (keep
-#    §1's next action short), not a number to raise: the suite asserts the cap
-#    independently in arms 0/1/10, so a bigger cap here would only move the failure
-#    into the test. Truncating the cell is likewise not available — arm 1 forces an
-#    over-cap payload THROUGH that cell.
+#    Collections are cardinality-bounded: worktrees retain actionable identity
+#    for the current checkout and one locked and detached exception (each
+#    path/branch/SHA), then state exact omitted-row counts plus `git worktree
+#    list` for full follow-up; ledger preview is five headline-first entries; and
+#    todo IDs are losslessly run-folded. THE STANDING EXPOSURE is the board's
+#    next-action cell: it is verbatim by contract and its length is set by its
+#    writer. Keep §1's next action short; do not raise the cap or truncate the
+#    cell — the suite asserts both the cap and verbatim reproduction independently.
 # 2. WRITES NOTHING. No repo file, no ledger, no cursor, no commit. The only
 #    filesystem touch is one mktemp -d sandbox, removed by an EXIT trap, used as
 #    an ephemeral ledgerwatch --state-dir so the Steward's REAL cursor is never
@@ -47,8 +41,9 @@
 #    cache" arm, plus a structural arm that no bare `git` call creeps back in.
 #
 # ========================== WHERE THE FACTS COME FROM ========================
-# LIVE repo facts are read live (branch, HEAD, dirty count, worktrees, orphan
-# checkout dirs, open-PR count). RELEASE facts are NOT re-scraped from git: they
+# LIVE repo facts are read live (branch, HEAD, dirty count, bounded actionable
+# worktrees plus explicit full-list follow-up, orphan checkout dirs, open-PR
+# count). RELEASE facts are NOT re-scraped from git: they
 # are read from `dev/plans/release-state-<version>.json`, the single writer that
 # DOC-HYGIENE-2 T2a landed for landed-slices+SHAs, SCHEMA, and the next slice
 # (kept honest against its rendered views by scripts/check-release-state-views.sh).
@@ -118,7 +113,7 @@ set -euo pipefail
 # invoked by CHILD processes (gh, python3, ledgerwatch) inherits it.
 export GIT_OPTIONAL_LOCKS=0
 
-BUDGET_BYTES="${STEWARD_ORIENT_BUDGET:-5120}"
+BUDGET_BYTES="${STEWARD_ORIENT_BUDGET:-4096}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/board-closed.sh
@@ -166,51 +161,100 @@ tilde() { printf '%s' "${1/#$HOME/\~}"; }
 # ------------------------------------------------------------------- REPO ---
 BRANCH="$(git --no-optional-locks rev-parse --abbrev-ref HEAD 2>/dev/null || printf '?')"
 HEAD_SHA="$(git --no-optional-locks rev-parse --short=8 HEAD 2>/dev/null || printf '?')"
-HEAD_SUBJ="$(git --no-optional-locks log -1 --format=%s 2>/dev/null | cut -c1-58 || printf '?')"
 DIRTY="$(git --no-optional-locks status --porcelain --untracked-files=all | wc -l | tr -d ' ')"
 
-add "STEWARD ORIENT $(date -u +%Y-%m-%dT%H:%MZ) · stateless · reads only · writes nothing"
-add "REPO   branch=$BRANCH head=$HEAD_SHA dirty=$DIRTY  \"$HEAD_SUBJ\""
+add "ORIENT $(date -u +%Y-%m-%dT%H:%MZ) RO"
+add "REPO branch=$BRANCH head=$HEAD_SHA dirty=$DIRTY"
 
 # -------------------------------------------------------------- WORKTREES ---
-# Resolve the primary root before rendering the worktree inventory. Relative
-# paths preserve every identity while avoiding repeated copies of the same long
-# root path; this is material to the strict 5120-byte cold-start budget when
-# several historical worktrees coexist.
-GIT_COMMON="$(cd "$(git --no-optional-locks rev-parse --git-common-dir)" && pwd)"
-MAIN_ROOT="$(dirname "$GIT_COMMON")"
-WT_DIR="${MAIN_ROOT}-worktrees"
-compact_worktree() {
-  local line="$1" path rest
-  path="${line%% *}"
-  rest="${line#"$path"}"
-  case "$path" in
-    "$MAIN_ROOT") path="." ;;
-    "$MAIN_ROOT"/*) path=".${path#"$MAIN_ROOT"}" ;;
-    "$WT_DIR"/*) path="../$(basename "$WT_DIR")/${path#"$WT_DIR"/}" ;;
-    *) path="$(tilde "$path")" ;;
-  esac
-  printf '%s%s' "$path" "$rest"
+# The bounded briefing cannot emit every clean attached checkout: that output
+# grows without limit and evicts the board's verbatim next action. It must not
+# replace the list with an opaque count, though. Preserve the identities a cold
+# start can act on immediately — current, one locked, one detached exception —
+# and state exactly how many rows are omitted with the one on-demand source.
+#
+# Porcelain makes paths with spaces unambiguous. Each record is parsed once; the
+# presentation below is deliberately bounded to three identities regardless of
+# how many ordinary or same-category exception worktrees exist.
+WT_PATHS=()
+WT_HEADS=()
+WT_BRANCHES=()
+WT_LOCKS=()
+wt_path=""
+wt_head=""
+wt_branch=""
+wt_locked=0
+wt_flush() {
+  [ -n "$wt_path" ] || return 0
+  WT_PATHS+=("$wt_path")
+  WT_HEADS+=("$wt_head")
+  WT_BRANCHES+=("${wt_branch:-DETACHED}")
+  WT_LOCKS+=("$wt_locked")
+  wt_path=""
+  wt_head=""
+  wt_branch=""
+  wt_locked=0
 }
-mapfile -t WT_LINES < <(git --no-optional-locks worktree list 2>/dev/null || true)
-if [ "${#WT_LINES[@]}" -eq 0 ]; then
+while IFS= read -r wt_line || [ -n "$wt_line" ]; do
+  case "$wt_line" in
+    'worktree '*) wt_path="${wt_line#worktree }" ;;
+    'HEAD '*)     wt_head="${wt_line#HEAD }" ;;
+    'branch refs/heads/'*) wt_branch="${wt_line#branch refs/heads/}" ;;
+    locked*)      wt_locked=1 ;;
+    '')           wt_flush ;;
+  esac
+done < <(git --no-optional-locks worktree list --porcelain 2>/dev/null || true)
+wt_flush
+
+if [ "${#WT_PATHS[@]}" -eq 0 ]; then
   note_empty "worktrees (git worktree list returned nothing)"
 fi
-add "WORKTREES (${#WT_LINES[@]})"
-# `git worktree list` column-pads every path out to the longest one; on this repo
-# that is ~46 bytes of run-on spaces across three lines, spent on an alignment the
-# tilde rewrite below breaks anyway. Squeezing runs of spaces to one loses no
-# field — path, sha and branch are still all three there, space-separated. (A
-# checkout path containing a DOUBLE space would be squeezed too; that path is
-# already unparseable in this non-porcelain listing, so nothing is made worse.)
-for w in "${WT_LINES[@]}"; do
-  while [ "$w" != "${w//  / }" ]; do w="${w//  / }"; done
-  add "  $(compact_worktree "$w")"
+WT_DETACHED=0
+WT_LOCKED=0
+WT_CURRENT=-1
+for i in "${!WT_PATHS[@]}"; do
+  [ "${WT_BRANCHES[$i]}" = "DETACHED" ] && WT_DETACHED=$((WT_DETACHED + 1))
+  [ "${WT_LOCKS[$i]}" -eq 1 ] && WT_LOCKED=$((WT_LOCKED + 1))
+  [ "${WT_PATHS[$i]}" = "$REPO_ROOT" ] && WT_CURRENT="$i"
+done
+if [ "$WT_CURRENT" -lt 0 ]; then
+  note_empty "current worktree ($REPO_ROOT was absent from git worktree list)"
+fi
+
+WT_LABELS=()
+WT_SHOWN=0
+wt_select() {
+  local idx="$1" label="$2"
+  [ -z "${WT_LABELS[$idx]:-}" ] || return 0
+  WT_LABELS[$idx]="$label"
+  WT_SHOWN=$((WT_SHOWN + 1))
+}
+if [ "$WT_CURRENT" -ge 0 ]; then wt_select "$WT_CURRENT" current; fi
+# One representative per exception category: exact category totals and the
+# omitted-row count below make any unrendered peers explicit rather than silent.
+for i in "${!WT_PATHS[@]}"; do
+  [ "${WT_LOCKS[$i]}" -eq 1 ] || continue
+  wt_select "$i" locked
+  break
+done
+for i in "${!WT_PATHS[@]}"; do
+  [ "${WT_BRANCHES[$i]}" = "DETACHED" ] || continue
+  wt_select "$i" detached
+  break
+done
+WT_OMITTED=$((${#WT_PATHS[@]} - WT_SHOWN))
+add "WORKTREES ${#WT_PATHS[@]} registered; locked=$WT_LOCKED detached=$WT_DETACHED shown=$WT_SHOWN omitted=$WT_OMITTED; details: git worktree list"
+for i in "${!WT_PATHS[@]}"; do
+  [ -n "${WT_LABELS[$i]:-}" ] || continue
+  add "  WT ${WT_LABELS[$i]} path=$(tilde "${WT_PATHS[$i]}") branch=${WT_BRANCHES[$i]} sha=${WT_HEADS[$i]:0:8}"
 done
 
 # Correction 2: the checkout pool is a SIBLING of the MAIN worktree root.
 # --git-common-dir points at the main .git even from inside a linked worktree,
 # so this resolves the same pool no matter where the briefing is run from.
+GIT_COMMON="$(cd "$(git --no-optional-locks rev-parse --git-common-dir)" && pwd)"
+MAIN_ROOT="$(dirname "$GIT_COMMON")"
+WT_DIR="${MAIN_ROOT}-worktrees"
 REGISTERED="$(git --no-optional-locks worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' || true)"
 ORPHANS=""
 if [ -d "$WT_DIR" ]; then
@@ -224,7 +268,7 @@ if [ -d "$WT_DIR" ]; then
     fi
   done
   # Exempt from the zero-result guard: no orphans is the HEALTHY state.
-  add "ORPHAN dirs in $(tilde "$WT_DIR"):${ORPHANS:- (none)}"
+  add "ORPHANS $(tilde "$WT_DIR"):${ORPHANS:- (none)}"
 else
   add "ORPHAN dirs: $(tilde "$WT_DIR") does not exist"
 fi
@@ -325,7 +369,7 @@ if [ -n "$BOARD" ]; then
       note_empty "board next action (the row exists but its cell is empty)"
       add "NEXT ACTION (empty cell)"
     else
-      add "NEXT ACTION (verbatim, $(basename "$BOARD") §1)"
+      add "NEXT ACTION (verbatim)"
       add "  $CELL"
     fi
   fi
@@ -353,7 +397,7 @@ if not rows:
     raise SystemExit(0)
 
 last = rows[-5:]
-print(f"LEDGER last {len(last)} of {len(rows)} — {sys.argv[1].split('/')[-1]}")
+print(f"LEDGER last {len(last)} of {len(rows)}")
 for line in last:
     try:
         e = json.loads(line)
@@ -363,9 +407,8 @@ for line in last:
     # 48, not 118. This preview was ALWAYS a truncation (the entry itself is one
     # line of dev/steward/steward-ledger.jsonl, which is where the reader goes for
     # the full text); the only question is where it cuts. Steward summaries are
-    # written headline-first, so 48 still identifies each decision while leaving
-    # durable headroom for a growing live worktree inventory under the fixed
-    # 5120-byte budget.
+    # written headline-first, so 48 preserves the decision's lead while five
+    # actionable worktree identities and the verbatim next action stay in budget.
     summary = " ".join(str(e.get("summary", "")).split())[:48]
     print(f"  {e.get('seq', '?')} {e.get('kind', '?')}: {summary}")
 PY

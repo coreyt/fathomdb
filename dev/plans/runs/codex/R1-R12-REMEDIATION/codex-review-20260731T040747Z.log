@@ -1,3 +1,22 @@
+=== STEWARD REDACTION (TC-86 transcript hygiene) ===
+219 line(s) redacted in place in this transcript before it was committed.
+WHAT THEY WERE (219 line(s) in 3 block(s)): the OUTPUT of commands
+echoed in this transcript that READ a Claude Code state directory — i.e. the
+CONTENT of that state, not merely its path. The command echoes themselves are
+kept: they are the evidence of what happened, and they are path-only.
+PROJECTS TOUCHED: -home-coreyt-projects-fathomdb
+OWN PROJECT: this content came from THIS repository's own Claude Code state
+directory (-home-coreyt-projects-fathomdb) — this project's own memory store.
+Under the TC-86 threat model (steward seq-130) an own-project PATH is only a
+WARNING, but its CONTENT is still this project's private agent state and does not
+belong in a PUBLIC repository, so it is removed here.
+WHY REMOVED: github.com/coreyt/fathomdb is a PUBLIC repository. Committing
+session transcripts or state contents into it would publish them.
+NO FINDING WAS LOST: no review finding came from the removed lines. Every verdict
+and all reasoning above and below are intact.
+NOT DELETED: each removed line was REPLACED IN PLACE by a marker, so this
+transcript still stands as TC-RUBRIC-7 evidence.
+=== END STEWARD REDACTION ===
 Reading additional input from stdin...
 OpenAI Codex v0.136.0
 --------
@@ -76,212 +95,14 @@ The shell wrapper is failing before the command runs, so I’m retrying with a s
 [35m[3mexec[0m[0m
 [1m/bin/bash -c "sed -n '1,220p' /home/coreyt/.claude/projects/-home-coreyt-projects-fathomdb/memory/MEMORY.md"[0m in /home/coreyt/projects/fathomdb
 [32m succeeded in 0ms:[0m
-# Memory index
-
-- [Agent-harness extracted → ~/projects/agent-aware (2026-07-20)](agent-harness-extracted-to-agent-aware.md) — rubric+harness+stress-test+ledger split out of fathomdb via filter-repo (history preserved); fathomdb origin/main=e34ca7ff (92 files removed, shared tooling COPIED+kept, coordination notice landed); harness build now lives in agent-aware/harness/, NOT fathomdb.
-- [Erasure axis = provenance (source_id), NOT the l:/h: id-space + TC-11 pin must OVERRULE §2(ii)](erasure-axis-is-provenance-excise-source-gap.md) — GDPR runs through `excise_source` ⇒ pin A orthogonal + survives; 3 OPEN defects (misses content-storing `search_index_v2` ⇒ body survives erasure; provenance from the LLM's echo not the caller; NO SDK exposure). Leak is data-at-rest, never surfaces in results ⇒ RED test must assert raw tables. §2(ii) is plainly R2 (no ambiguity) ⇒ pin A is an OVERRULE on the merits, keyed write-time not on "declares-a-natural-key". Doc: dev/design/0.8.20-tc11-h-end-state-and-erasure-axis.md.
-- [0.8.19 COMPLETE + label-only (578fe20b)](0.8.19-complete-opp12-phase1-lifecycle-id.md) — OPP-12 record-lifecycle Phase-1: existence axis + SCHEMA 19→20 (existence cols only) · transition/purge verbs (§9 caught GDPR-erasure leak) · C-2 typed SearchHit.id u64→IdSpace (to_prefixed==prior stable_id ⇒ no gold-remap) · F-23/1a surrogate DEFERRED to 0.8.20 · X1 26/26 GREEN (fresh-clone re-run) · AC-074 HITL-SIGNED (denylist unchanged, JSON-governs) · isolated-worktree landing under shared-checkout contention; next=0.8.20 Phase-2 (TC-11 pin h: end-state first).
-- [0.8.18 COMPLETE + label-only (bce032a0)](0.8.18-complete-vec-equiv-publish.md) — #5 vector-equivalence self-check (SCHEMA 18→19; two-stage P1 flip=0 / P2 L2 ε=1e-5; degraded-open + query-time typed error; DEFECT#4 open-path baseline) + #11-full publish machinery (exercised via staging, publish deferred to 0.8.20); design-review-before-code gate (4 codex rounds); codex-nostdin.sh tooling fix; mandate SPENT; carry TC-5/9/10.
-- [0.8.16 COMPLETE + label-only (8c6b92aa)](0.8.16-complete-f9-onnx.md) — F9 OFF-by-default rankable-forward ranking (SCHEMA 17→18) + opt-in cross-vendor ONNX (zero engine diff, offline export, cosine≡1.0/0-flip); eu7 no-op basis; landed via HITL standing landing mandate; publish deferred.
-- [0.8.14 COMPLETE + label-only (465b43ac)](0.8.14-complete-substrate-recall.md) — EXP-S substrate + F5 BM25F (SCHEMA 15→17); F5 per D8 Option-C override; eu7 closed on D6 no-op; eu7 gate=CPU same-backend (GPU cross-backend artifact 0.833 vs CPU 0.896 → TC-5 floor re-baseline); gpu-rerank merged; §9 PASS via adversarial-subagent fallback. Manifests 0.8.9, no tag/publish.
-
-- [0.8.12 COMPLETE + MERGED (d4cfeec4, label-only)](0.8.12-plan-of-record-location.md) — memory-quality: consolidation #7 opt-in (STAY-OFF), t_invalid rebuild-durable, TS X1; OPP-6 #6 de-prioritized (EXP-COV-1=CEILING-ABSORBED, F-15).
-- [Release DoD requires FULL workspace clippy+check](release-dod-requires-full-workspace-gate.md) — per-crate/feature verify masks cross-crate breaks; run `cargo clippy/check --workspace --all-targets` (both exit 0) before any green claim.
-- [OPP-12 record-lifecycle protocol (Memex⇄FathomDB), RATIFIED both sides](opp12-record-lifecycle-protocol.md) — mechanism/policy seam; 3 axes (existence × superseded_at-currency NOT is_latest × edge-only validity) + projection registry; C-1 hard (EntityTypeSpec drives ProjectionSpec) + C-2 binding (SearchHit.id typed IdSpace, Cause-A id-carrier). 5 docs main:dev/design/record-lifecycle-protocol/ @c3b3d631; enum thread seq 1→13 CLOSED (MEMEX seq-12 agree + applied mirror). DESIGN contract only — schedules nothing / no build (build≠adopt); roadmap TBD ≥0.9.x.
-- [Verify design against code, not just architecture](verify-design-against-code-not-just-architecture.md) — the OPP-12 lifecycle design passed 4 adversarial architecture rounds but was ~90% net-new reading as near-shipped + contradicted shipped/signed mechanisms (superseded_at not is_latest; edge-only validity; engine already owns the async embed worker; no EAV store). Run a code-grounded exists-vs-net-new pass before drafting/committing a design contract.
-- [No Memex ledger response without HITL agreement](no-memex-ledger-response-without-hitl-agreement.md) — never append voice=FATHOM to the memex enum-ledger until HITL approves the content; WRITES only; never push memex.
-- [Shared ledger: full-tail read before every append](shared-ledger-full-tail-read-before-append.md) — voice-filtered ledgerwatch hides other voices; full unfiltered tail read before every append; verify seq contiguous.
-- [Use ledger tools for all ledger ops](use-ledger-tools-for-all-ledger-ops.md) — HITL: ledgerwrite/ledgerwatch for every ledger read/update/watch; ledgerwatch reads .md via --strategy section; ledgerwrite is JSONL-only (corrupts prose) → leverage-ledger updates stay direct Edit, reads via ledgerwatch.
-- [Write responses to the ledger and ADRs](write-responses-to-ledger-and-adrs.md) — HITL: substantive positions/reconciliations go into the ledger + ADR/design records (durable); chat only summarizes + points at commit sha / ledger seq / file.
-- [Steward hand-off filename format](steward-handoff-filename-format.md) — HITL: `STEWARD-SESSION-HANDOFF-YYYY-MM-DD-A.md`; trailing `A` is a sequential alpha (A, B, C…) per same-date hand-off.
-- [Multi-field FTS deferred ≥0.9.x; Memex uses 0.8.x first](multifield-fts-deferred-0.9.x.md) — multi-field/recursive-payload FTS + custom tokenizer NOT in 0.8.x; Memex must use 0.8.x governed FTS+CE+vector+search_expand first.
-- [Don't gate trivial changes on CI](dont-gate-trivial-changes-on-ci.md) — main NOT branch-protected; CI advisory; merge docs/config-only immediately; reserve full CI+Monitor for code/build/CI changes.
-- [0.8.x numbering/publish/governance (renumbered 2026-07-01)](0.8.x-release-numbering-publish-governance-policy.md) — TWO-TIER: x.y.z real (even publishable w/HITL), x.y.z.p pico label-only; '13' forbidden; 0.8.12 memory-quality, EXP-S@0.8.14, ONNX@0.8.16, vec/GA@0.8.18, dispatcher@0.8.15.
-- [Never price a "confirming run" for a settled HITL decision](dont-price-a-confirming-run-for-a-settled-decision.md) — when the HITL rules on a basis, CLOSE it by decision (not measurement) and strip measurement clauses from briefs already issued; "one fast run" becomes 10 runs/3 days and re-opens a closed call. R-20-EU7 @0.8.20 is the instance.
-- [Steward: delegate, don't hand-do](steward-delegate-dont-hand-do.md) — commission subagents for mechanical/edit/investigative work; spend Steward context on judgment + verify-from-git.
-- [Verify the agent's FIX, not just its diagnosis](verify-the-agents-fix-not-just-its-diagnosis.md) — a sound diagnosis arrives with an unmeasured proposed fix in the same confident prose; cost 2 review rounds (pin re-pin + `find` quoting) on 2026-07-30.
-- [Background agents die silently → steward must poll](background-agent-silent-death-proactive-check.md) — a commissioned bg orchestrator stalled 36h w/ NO notification (auto-resume never fired); proactively reconcile from git + task-output mtime + `ps`; give an ANTI-STALL directive; prefer fresh over resurrecting a cold one.
-- [Steward/orchestration tooling ported from memex](steward-orchestration-tooling-ported-from-memex.md) — /steward,/orchestrate,/orch + steward/orchestrator agents + ledgerwrite/ledgerwatch + dev/steward/*; converged (zero memex domain); merged local main 6176055a.
-- [Codex unavailable → /code-review fallback](codex-unavailable-use-claude-code-review.md) — when codex rate-limits/out-of-budget, use local /code-review (not billed ultra) as confirming reviewer; don't stall.
-- [OPP-1/V-3 decomposition verdict → Memex 0.5.5](opp1-v3-decomposition-verdict-adopt-hold-0.5.5.md) — Build-GO met (A2 solve recovers ~75%/83%); solve-and-substitute NOT in run_decomposed; Adopt-HOLD → build solve-loop + freq telemetry in 0.5.5.
-- [1–2M scaling: kernel-first, NOT ANN](1-2M-scaling-kernel-first-not-ann.md) — fast exact-scan kernel (bypass vec0 overhead) + IVF-via-partition-key, not ANN; 1.5s@1M overhead-bound; doc dev/design/1-2M-chunk-scaling-vector-latency-roadmap.md (PROPOSAL). Refines [[gpu-not-retrieval-lever-hnsw-at-0.8.20]].
-- [GPU not the retrieval lever; HNSW=2.x; maturity ladder](gpu-not-retrieval-lever-hnsw-at-0.8.20.md) — brute-force sqlite-vec O(N); HNSW is 2.x (F-16, NOT 0.8.20). Ladder (F-17): pre-1.0=beta; scale 0.9.0 soft→0.9.3 stated→1.0.0 exit-beta→1.1.0 hard; 0.8.18 "GA"=release-engineering only.
-- [Push scope: fathomdb-only](push-scope-fathomdb-only.md) — NEVER push memex/any other repo without a specific per-push directive EACH time; relayed "authorized" never counts.
-- [Guardrail failures → fix the tooling, not the actor](guardrail-failures-fix-tooling-not-people.md) — when something slips a guardrail, fix the repo hook/lint/CI so it can't recur for anyone; don't write a "be careful" note.
-- [Library Bump Steward + Library Sweeps](library-bump-steward-pattern.md) — LBS spawns per-library LBOs in worktrees; recurring label-only pico sweeps; Sweep #1 (0.8.11.1) DONE; majors (napi-3, rusqlite+sqlite-vec)→0.8.20.
-- [Eval-environment operational notes](eval-environment-operational-notes.md) — native import `fathomdb`; agent-build.sh skips python on stale sentinel; priced arms read R2_JUDGE_* via gitignored dev/.env.eval; two GPU-eval wheel-build traps (libcuda bundling, stale .so shadowing).
-- [0.8.11.2 COMPLETE (pico, label-only)](0.8.11.2-launched-autonomous-envelope.md) — Cause-A stable_id+A-1+superseded-node fix, GPU policy v2; deferred V-3→0.5.5, V-7 not started, GPU-rerank on 0.8.14-gpu-rerank.
-- [0.8.11 COMPLETE + MERGED (#122)](0.8.11-complete-planner-router-screening.md) — F-11 closed; results PROVISIONAL (V-1..V-7); EXP-AF KILL; config-carrying tuning is the lever; L2 + #17 filter shipped.
-- [0.8.8 pyo3 fix requires 0.29.0](0.8.8-pyo3-fix-requires-0.29.md) — API migration not lockfile bump; Dependabot #89 0.24.1→0.29.0 (RUSTSEC-2026-0176/0177).
-- [0.8.8 COMPLETE — EXP-OBS explain+telemetry+real-gold](0.8.8-exp-obs-slice5-landed.md) — explain sidecar, opt-in no-egress telemetry, real-gold; verify GREEN; record_feedback reclassify@0.8.11.
-- [Planner-router ladder never ran → folded into 0.8.11 (F-11)](planner-router-experiment-ladder-never-ran.md) — Gate-0/2·EXP-A/M4·EXP-B′·Fr-acc never ran as $0 float; folded into 0.8.11; only EXP-S@0.8.14 left for dispatcher.
-- [Shared checkout branch can be stale](shared-checkout-branch-can-be-stale-vs-session-env.md) — verify `git rev-parse --abbrev-ref HEAD` before every commit/push; release on own worktree off origin/main. Extends [[agent-worktree-stale-base-trap]].
-- [0.8.9.1 — markdown debt→0; prettier corrupts](0.8.9.1-markdown-toolchain-prettier-corrupts.md) — agent-lint-md.sh AST-neutral; prettier REMOVED (corrupts `*`→`_`); don't reintroduce for md.
-- [0.8.9 SHIPPED to unblock Memex; survived partial-publish](0.8.9-publish-staged-tag-held.md) — crates/PyPI/npm; tag-push partial-failed (embedder-api bump missed); recovery + Axis-E drift guard (PR #123).
-- [0.8.9/0.8.9.2 COMPLETE — first green Windows; verify gate honest](0.8.9-verdict-complete-merge-parked.md) — CI-integrity micros; pyo3 mac/win fix; unmasked 4-deep verify-gate masked-failure; main FULLY GREEN.
-- [0.8.6 COMPLETE — Foundations & shippability](0.8.6-complete-foundations-shippability.md) — provider seam OPP-8 + embed Py↔TS parity; masked gates → 0.8.9 CI-integrity closes.
-- [0.8.7 COMPLETE — GPU embedder (OOB)](0.8.7-complete-gpu-embedder.md) — parse_device_request; RTX 3090 (15.6×/93×); CPU↔CUDA 1-bit identical; default CPU byte-identical.
-- [0.8.6∥0.8.7 parallel build — shared .venv mutex](0.8.6-0.8.7-parallel-build-venv-mutex.md) — isolated source, SHARED main-tree build; one maturin develop at a time; 3090s=cuda:0/1, K620=display.
-- [0.8.x portfolio features + experiment tree](0.8.x-portfolio-features-and-experiment-tree.md) — F0–F5/Fg/Fr compose functions; spine EXP-0→EXP-A→EXP-B′; doc dev/design/0.8.x-portfolio-features-and-experiment-tree.md.
-- [0.8.3 Mem0-parity CLOSED — precision is the cause](0.8.3-mem0-parity-closed.md) — cause=retrieval PRECISION (oracle +0.39); lever CE-rerank α=1.0/pool_n=10 (MRR .347→.587); NO embedder swap (keep CLS-corrected bge-small).
-- [Airlock operational notes](airlock-operational-notes.md) — batch BYPASSES quarantine (~50% cheaper); 429+200-empty=drain; GraphRAG→local Qwen $0; gemini reasoning_effort=minimal (never on claude judge); meter via logs/query.log.
-- [Under-performance → characterize, then HITL](characterize-underperformance-then-hitl.md) — on any competitor loss: split real-vs-artifact, name mechanism, enumerate cheap+heavy fixes w/ $, bring to HITL; never accept loss or fork solo.
-- [FathomDB: function over footprint](fathomdb-function-over-footprint-user-spend.md) — function can outweigh small/local/CPU-only; LLMs+GPU are USER-controlled opt-in; footprint invariant = one operating point, not a gate.
-- [Repo MUST use 3090 GPUs for eval/embed when room](repo-must-use-gpu-for-eval-when-3090-room.md) — HITL mandate: eu7 harness/re-embeds/sweeps run on cuda:0/1 when there's compute+mem room (CPU fallback only); 15-93× faster, CPU↔CUDA 1-bit identical (fidelity-safe); exclude K620; verify GPU engaged. Doc dev/design/gpu-eval-activities-policy.md. Distinct from shipped-library default (CPU/opt-in).
-- [Perf tuning = design a sweep, not ad-hoc probes](perf-tuning-design-sweeps-not-adhoc.md) — present a controlled sweep + decision rule; don't improvise one-off timing runs.
-- [Graph arm does NOT beat BM25](graph-arm-doesnt-beat-bm25-pivot.md) — BFS arm ~0 recall; entity co-mingling=length-norm bias; seed from lexical top-K.
-- [0.8.3/0.8.4 corpus adequacy + LOCOMO/AP-News](0.8.3-0.8.4-corpus-adequacy-and-locomo.md) — LME-only underpowers multi_session/temporal/ku; LOCOMO(CC-BY-NC)+AP-News gitignored EVAL-ONLY, never commit payloads.
-- [0.8.3/0.8.4 competitor-PARITY reframe](0.8.3-0.8.4-competitor-parity-reframe.md) — gate = near-parity-or-better vs Mem0(0.8.3)/GraphRAG(0.8.4); surpass-option before sign-off.
-- [Embed completeness + GPU readiness](embed-completeness-and-gpu-readiness.md) — verify coverage via _fathomdb_vector_rows.kind; WAL trap (mode=ro not immutable=1); embedder CPU-pinned; tool eval/verify_embed_db.py.
-- [0.8.1 budget discipline](0.8.1-budget-discipline-cheap-validate-and-ledger.md) — cheap-validate field-population w/ gemini-2.5-flash-lite before ANY priced run; keep running $ tally.
-- [Priced runs need resilience BEFORE spend](priced-runs-need-resilience-before-spend.md) — checkpoint + verified --resume + 429/5xx backoff + completeness guard as hard preconditions; skipping burned ~$15.
-- [Agent worktree stale-base trap](agent-worktree-stale-base-trap.md) — isolation:worktree cuts from stale base + breaks .venv; pre-create+verify from $(git rev-parse main); forbid maturin develop / pip install -e from a worktree.
-- [eu7 recall-floor RESOLVED (one-sided CI)](0.8.0-ga-blocked-recall-corpus.md) — floor 0.90 but gate ONE-SIDED (ci_hi≥floor); eu7=0.896 CI[.864,.925] PASS; cause=vector-stage/SUT not CLS.
-- [eu7 0.937→0.896 = vector-path/SUT, NOT CLS](eu7-0937-0896-bisect-not-cls.md) — embedder src + quant/KNN byte-identical; cause=vector_stage_only SUT; recovery=quant-path.
-- [Recall = fidelity vs relevance (two axes)](fathomdb-recall-fidelity-vs-relevance.md) — 0.90 floor = ANN-quant FIDELITY not IR relevance; eu8 relevance ceiling ≈0.571 (embedder-bound).
-- [Background exit can mask real exit](background-exit-masks-real-exit.md) — trailing echo faked pytest exit 0 over exit-2; read PIPESTATUS/$? of the actual command; collection/import error ≠ code defect.
-- [G0 identity = logical_id alone](g0-identity-scope-logical-id-alone.md) — active-uniqueness = logical_id ALONE on canonical_nodes+edges, reversing compound (logical_id,kind); migration step-12.
-- [Conformance rewrites can be vacuously green](conformance-rewrite-vacuous-green-trap.md) — surface-test rewrite passed but codex found 2×P1; use real dir() minus exclusion set + single shared allowlist; codex §9 load-bearing.
-- [acceptance.md locked; no per-feature ACs](acceptance-md-locked-no-feature-acs.md) — track by G-gap + TDD test names, NOT AC ids; new ACs only at gated slices.
-- [Recovery denylist = five names](recovery-denylist-five-names.md) — {recover,restore,repair,fix,rebuild}; doctor is SDK-absent via allowlist; stays five.
-- [PR-2a GO OVERTURNED — recall was a measurement artifact](pr2a-go-recompute-split.md) — 0.7.2 RESOLVED; floor kept 0.90 (ANN 0.937 not IR); manual doctor kept.
-- [Don't dismiss user-directed subagents](dont-dismiss-user-directed-subagents.md) — unexpected-but-coherent subagent output may be user-directed; treat as a real deliverable.
-- [OOB: creep vs justified deviation](oob-creep-vs-justified-deviation.md) — creep forbidden; justified-deviation required when blocked (smallest change, loud, escalate); protocol SLICE-TEMPLATE §6.
-- [Verify test-assertion claims in slice prompts](slice-prompt-verify-test-claims.md) — read test X IN FULL at baseline before stating "test does/doesn't assert Y" as a guardrail.
-- [Orchestration execution traps](orchestration-execution-traps.md) — don't parallel-batch dependent git ops; verify state from git; codex = PROVEN §9 reviewer via --dangerously-bypass-approvals-and-sandbox; subagent=fallback.
-- [Subagent persistence / orchestration economics](subagent-persistence-orchestration-economics.md) — fresh-spawn ~$1.77, warm ~$0.15-0.28, crossover K=2; resume-from-transcript; study exp/subagent-persistence.
-- [FathomDB consumer agents](fathomdb-consumer-agents.md) — Memex/Hermes/OpenClaw = real local-first agent-memory; SQLite+sqlite-vec/FTS5; define FathomDB's requirement surface.
-- [Release publish gotchas](release-publish-gotchas.md) — pushing a v* tag auto-fires REAL crates/PyPI/npm publish (dry-run first); use set-version.sh; cargo tier embedder→engine.
-- [FathomDB v0.5.x graph lineage](fathomdb-v05-graph-lineage.md) — v0.5.x full doc+graph+KV (nodes/edges); 0.6.0 stripped to 5 verbs; 0.8.0 revives subset; use via git for G5/G8.
-- [Perf/recall gates masked + ac_013b conflation](perf-recall-gates-masked-and-ac013b-conflation.md) — ac_012/013/013b/019/020 AGENT_LONG-gated (vacuously green per-push); ac_013b asserts 0.90 on a SYNTHETIC embedder.
-- [0.8.0: Slices 0..35 CLOSED; GA verify HALTED](fathomdb-080-plan-approved.md) — filter-grammar ACCEPTED (G4↔G10 gap-37, shipped 0.8.11); G0 keystone landed; read.* verbs (logical_id-alone).
+[REDACTED TC-86] 77 line(s) of agent-state CONTENT removed: this block was the OUTPUT of the command echoed above, which read a Claude Code state directory.
 
 [35m[3mcodex[0m[0m
 I have the memory index. Next I’m pulling the exact changed files and their before/after text, then I’ll cross-check the claimed reading order and the gate scripts against actual behavior instead of commit prose.
 [35m[3mexec[0m[0m
 [1m/bin/bash -c "sed -n '1,220p' /home/coreyt/.claude/projects/-home-coreyt-projects-fathomdb/memory/orchestration-execution-traps.md"[0m in /home/coreyt/projects/fathomdb
 [32m succeeded in 0ms:[0m
----
-name: orchestration-execution-traps
-description: "Execution traps when orchestrating fathomdb slices — parallel-batched dependent git ops cascade-cancel; `implementer` type IS now registered; `main` advances under worktrees; codex IS runnable as reviewer (auth+network work) but its bwrap sandbox can't create a netns here, so only `danger-full-access` (no bwrap) works — unblock via an explicit Bash allow-rule, else fall back to an independent adversarial subagent; an implementer's self-declared CLOSED is merged-pending-review — the orchestrator must ALWAYS run codex §9 itself before accepting it (twice agents skipped §9 and the orchestrator §9 then caught a [P1]/[P2])."
-metadata: 
-  node_type: memory
-  type: feedback
-  originSessionId: caaa6b2f-54ab-479b-b20d-e6efe1a1d717
----
-
-When orchestrating 0.7.x release-hardening slices (per [[pr2a-go-recompute-split]] and
-`dev/design/orchestration.md`), two concrete traps cost a lot of churn on 2026-05-31
-during PR-1:
-
-1. **Never batch DEPENDENT tool calls in one parallel message.** The harness runs a
-   message's tool calls concurrently; if one early call errors (e.g. an invented/wrong
-   git SHA, or `cd` into a not-yet-created worktree), EVERY sibling call in that batch
-   is CANCELLED. Whole swaths of intended work (cherry-picks, edits, commits, worktree
-   cleanup) silently never ran. Sequence dependent git/file ops; read each result
-   before issuing the next. Parallel is only safe for genuinely independent calls.
-
-2. **Verify against the repo before narrating.** Do not report a commit/diff/cleanup as
-   done until `git log`/`git diff --name-only`/`git status` confirms it. On 2026-05-31
-   I narrated a full cherry-pick→codex→fix→close→cleanup sequence that had all been
-   cancelled and never existed (HEAD was still at the pre-work commit). Also: a Read
-   returned a transient garbled result once; re-reading returned clean content — don't
-   act on a single suspicious read.
-
-3. **THE USER SPAWNS SLICE AGENTS — the orchestrator does NOT (HITL direction 2026-06-05).**
-   In the 0.8.0 campaign the orchestrator's job for a slice is: author the self-contained
-   prompt (`dev/plans/prompts/0.8.0-slice-<N>.md`) + record state on the board, then **HAND OFF
-   — the human pastes the prompt into a fresh slice agent** (orchestration-continue §2: "the human
-   pastes the slice prompt into a fresh agent"). On 2026-06-05 I tried to dispatch the Slice 31
-   implementer via the Agent tool; the user rejected it: "*I* am the one that spawns slice agents."
-   A reserved-gap slice (e.g. 21, 31) is still a SLICE → the user spawns it. **Do NOT use the Agent
-   tool to spawn a slice/implementer agent.** The orchestrator MAY still spawn read-only helpers it
-   owns — `Explore` for recon, `codex exec` for §9 review. (Earlier in the campaign I spawned
-   implementer subagents for Slice 21 and some fix-N; treat that as superseded — when unsure whether
-   something counts as a slice agent, author + hand off and let the user spawn, don't dispatch.)
-   The `implementer` subagent type IS registered (`.claude/agents/implementer.md`; Tools: Read/Edit/
-   Write/Bash/Grep/Glob, no Agent/Task) — but spawning it is the USER's call, not the orchestrator's.
-
-4. **Parallel sibling slices: `main` can advance under your worktree.** On 2026-06-01,
-   PR-7 was built in a worktree branched from `main@41aa6b2`; while it ran, the sibling
-   PR-6 landed and moved `main` to `ee7ba9f`. A `git merge --ff-only` then failed
-   ("Not possible to fast-forward / diverging"). Always re-check `git rev-parse HEAD`
-   on `main` right before landing — do not assume it's still your baseline. Fix:
-   `git rebase <new-main>` the slice branch, then ff. For disjoint-footprint siblings
-   (PR-6 = engine test + perf-gates.md; PR-7 = fathomdb-cli bin + perf-regression-detection.md)
-   the ONLY rebase conflict is the shared `STATUS-release-hardening.md`; resolve by
-   keeping BOTH slices' own rows (+ union header/pointer-forward), never reverting the
-   first-lander's row. This is the collision plan the slice prompts already specify.
-
-5. **codex IS runnable as the §9 reviewer — the blocker is narrow and fixable (re-diagnosed
-   2026-06-02).** Earlier note said "UNRUNNABLE"; that was too strong. Precise picture:
-   - **Auth + network work.** codex-cli 0.136.0 on PATH, authenticated (ChatGPT tokens),
-     websocket to OpenAI = HTTP 101, project `trusted`. `codex exec -s read-only` even
-     SUCCEEDS as long as the model runs no shell command.
-   - **Layer 1 (codex):** every restricted sandbox mode (`read-only` AND `workspace-write`)
-     blocks network by unsharing the net namespace; this container forbids that
-     (`unshare --net true` → Operation not permitted), so the instant codex execs a shell
-     command (every review does: `git diff`, `rg`) it dies with `bwrap: loopback: Failed
-     RTM_NEWADDR: Operation not permitted`. The ONLY mode that never invokes bwrap is
-     `danger-full-access`.
-   - **Layer 2 (harness):** the Claude Code auto-mode classifier DENIES `-s danger-full-access`
-     / `--dangerously-bypass-approvals-and-sandbox` on the CLI. An **explicit Bash allow-rule**
-     (`Bash(codex exec review:*)` in `.claude/settings.local.json`) takes precedence over
-     the classifier and clears this. Note `codex exec review` exposes `--base/--commit/--uncommitted/
-     --json/--output-schema/-c` and the bypass flag, but NOT `-s` or `-p` (sandbox set via `-c
-     sandbox_mode=` or base config).
-   - **CAVEAT — Claude can't add the rule itself.** Editing `settings.local.json` to add the
-     `codex exec review` allow-rule is itself classifier-DENIED as an "Auto-Mode Bypass" (agent
-     self-granting the perm it was just denied). The rule is a **one-time HUMAN action** (user
-     edits the file or uses `/permissions`). After that, Claude runs reviews freely.
-   - **PROVEN path (2026-06-02, this session):** user added `Bash(codex exec review:*)`, then
-     `codex exec review --commit c99c5ef --dangerously-bypass-approvals-and-sandbox` ran clean
-     (exit 0, no bwrap error), execed git/rg against the diff, and returned two real `[P2]`
-     findings. Long reviews BACKGROUND in the harness — watch the task output file for the verdict.
-     Notably codex caught a denylist narrowing (`doctor` dropped from `{recover,restore,repair,
-     fix,rebuild,doctor}`) that the Slice-0 SUBSTITUTE subagent had MIS-certified as "byte-unchanged"
-     — concrete evidence the real codex reviewer beats the fallback. **codex is now the PRIMARY
-     §9 reviewer; the subagent is the fallback only.**
-   - Alternatives: set `sandbox_mode="danger-full-access"` in base
-     `~/.codex/config.toml` (global blast radius), `codex mcp-server` as an MCP tool (sidesteps
-     the Bash classifier), or grant the container netns capability at launch (most secure, host change).
-   - **Fallback (still valid):** if codex auth/network is ever unavailable, the §9-faithful
-     substitute is a fresh `general-purpose` subagent (independent context, did NOT author the
-     work) on the identical rubric, ending with a `## Verdict:` line; keep the raw codex log
-     beside the promoted verdict and note the substitution on the STATUS board.
-
-6. **An implementer's "CLOSED" is NOT closed until the orchestrator runs §9 itself — twice-confirmed.**
-   Slice agents may merge to `main` and self-declare CLOSED while having **SKIPPED the codex §9 review**
-   (or run only a partial/`--workspace`-masked check). **Slice 27** (2026-06-06): agent merged `485f498`,
-   skipped §9; orchestrator-run §9 found a [P1] (facade re-exported recovery-named methods). **Slice 34**
-   (2026-06-06): agent merged `11bfd16` + wrote a CLOSED `output.json` (honestly flagging "§9 not run as a
-   TODO"), self-verified only; orchestrator-run §9 (`codex exec review --base <slice-baseline>`) found a
-   [P2] (pagination `next_after_id` compared `rows.len()` to the un-clamped `--limit` → silent truncation
-   above the ~1M engine cap) → fix-1 → re-review PASS. **How to apply:** treat any implementer "CLOSED" as
-   *merged-pending-review*; ALWAYS run the independent codex §9 against the slice baseline before accepting
-   it, fold findings into a fix-1 (TDD: RED pin → GREEN → re-review), and only then update the board +
-   memory. Self-verification is not the gate; the independent §9 is (cf. [[conformance-rewrite-vacuous-green-trap]]).
-
-7. **Never run >1 FILE-MUTATING subagent concurrently in the SAME shared checkout (PDS, 2026-06-29).**
-   I launched a ledger/master-reconcile subagent AND an md-hook-fix subagent at the same time, both
-   editing/committing in `/home/coreyt/projects/fathomdb`. They raced on `git switch`/branch state +
-   uncommitted edits: one's commit briefly landed on the wrong branch (`main`), and a mid-flight `git
-   status` showed one agent's edits sitting uncommitted on the *other's* branch. Both RECOVERED only
-   because each was defensively branch-isolated (and one did `git branch -f` + reset main). **Rule:
-   serialize file-mutating subagents, OR give each a pre-created isolated git worktree (cf.
-   [[agent-worktree-stale-base-trap]], [[shared-checkout-branch-can-be-stale-vs-session-env]]).**
-   Read-only subagents (audit/investigate/Explore) may run concurrently. Always verify-from-git after
-   any concurrent run; push explicit branch refs (HEAD-independent), never rely on current HEAD.
-
-8. **A background orchestrator over-applies "relayed authorization never counts" to priced spend and STALLS (PDS, 2026-07-01).** The 0.8.12 orchestrator (bg subagent) refused a PDS-relayed **$20** EXP-COV-1 eval-spend authorization, citing [[push-scope-fathomdb-only]] + a system-reminder — but that rule is scoped to **MEMEX / cross-repo PUSHES** (the 2a1d0cc incident), NOT priced eval spend inside its OWN repo. A bg subagent's ONLY HITL channel is the PDS `SendMessage`, so a categorical relay-refusal means it can never receive ANY decision → it idled at `$0` (and mis-logged the refusal on its STATUS ledger). **How to apply:** (a) when spawning a bg orchestrator that will spend, **PRE-AUTHORIZE the envelope in the SPAWN prompt** with explicit authority framing (as `0.8.11.2` did with its pre-set `$75` pool + auto-proceed), so the relay-distrust reflex never gates it; (b) if it still stalls, re-relay with grounding — the memex-push rule ≠ in-repo priced spend, and PDS `SendMessage` **is** the authoritative channel for a bg subagent; (c) always tell it to do ALL `$0` work + report what's blocked rather than idle. Distinguish **cross-repo-push authority** (genuinely needs per-push HITL, never a relay) from **in-repo eval spend** (a pre-set ceiling relayed by the PDS suffices).
-
-**Why:** these turned a ~15-min docs slice into a long recovery.
-**How to apply:** one dependent git op per Bash call; confirm state from git before
-claiming progress. **For a slice: author the prompt + record the board, then HAND OFF — the
-USER spawns the slice agent (item 3), the orchestrator does not.** The orchestrator's own
-subagents are read-only/review only: `Explore` for recon, `codex exec` for §9. Re-verify the
-agent list / `implementer.md` exists at session start, but spawning a slice/implementer agent is
-the user's action, not yours.
+[REDACTED TC-86] 111 line(s) of agent-state CONTENT removed: this block was the OUTPUT of the command echoed above, which read a Claude Code state directory.
 
 [35m[3mexec[0m[0m
 [1m/bin/bash -c 'git status --short'[0m in /home/coreyt/projects/fathomdb
@@ -291,42 +112,7 @@ the user's action, not yours.
 [35m[3mexec[0m[0m
 [1m/bin/bash -c "sed -n '1,220p' /home/coreyt/.claude/projects/-home-coreyt-projects-fathomdb/memory/verify-the-agents-fix-not-just-its-diagnosis.md"[0m in /home/coreyt/projects/fathomdb
 [32m succeeded in 0ms:[0m
----
-name: verify-the-agents-fix-not-just-its-diagnosis
-description: "A subagent's diagnosis being sound does not make its proposed fix correct — measure the fix before writing it into a brief"
-metadata: 
-  node_type: memory
-  type: feedback
-  originSessionId: 5409a880-7200-41b7-a90a-40c8674c75af
-  modified: 2026-07-30T22:06:58.188Z
----
-
-When a commissioned agent returns a diagnosis **plus a proposed fix**, the two have
-different epistemic status. The diagnosis is usually well-evidenced (the agent ran
-things). The **fix is often a guess it never executed** — and it arrives in the same
-confident prose.
-
-**Why:** this cost two adversarial-review rounds on the 0.8.20 Slice 40 brief
-(2026-07-30), twice in one session:
-
-- An agent reported *"only the provenance claim in `governed-surface-pin.json` is
-  stale."* Written into the fix table as "refresh the stale `git_blob_sha1`" — an
-  instruction to edit a **signed pin**, which is forbidden. Measured: the pin's blob
-  sha **equals** the allowlist blob at HEAD and `check-governed-surface-pin.sh` is
-  rc=0. The pin was correct; the **test** hardcoded a superseded commit.
-- An agent proposed *"quote `$PRUNE_EXPR`"*. Measured: quoting makes `find` die with
-  `Unknown argument` — the variable holds a **sequence of predicates** that requires
-  word-splitting. The real defect was **globbing**; `set -f` or a bash array is the fix.
-
-Both diagnoses were right. Both fixes were wrong. Both were propagated unmeasured
-into the table the brief calls authoritative.
-
-**How to apply:** before a proposed fix enters a brief, plan, or commit, **run it** —
-even a 30-second scratch fixture. Where that is impossible, label it explicitly as
-unverified rather than stating it as the fix. Applies with extra force to anything
-touching a pin, a gate, or an irreversible path. Related:
-[[trust-git-not-narration]], [[verify-design-against-code-not-just-architecture]],
-[[dont-dismiss-user-directed-subagents]].
+[REDACTED TC-86] 31 line(s) of agent-state CONTENT removed: this block was the OUTPUT of the command echoed above, which read a Claude Code state directory.
 
 [35m[3mcodex[0m[0m
 `git status` works in this sandbox, but some git invocations are tripping a wrapper path. I’m switching to explicit `--no-pager` and narrow reads so I can still reconstruct the exact patch and compare pre/post text.

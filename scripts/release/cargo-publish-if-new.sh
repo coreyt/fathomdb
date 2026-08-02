@@ -10,9 +10,10 @@
 #     "already published; skipping" and exit 0 (idempotent no-op).
 #   • otherwise → invoke `cargo publish -p <crate> --token "$CARGO_REGISTRY_TOKEN"`.
 #
-# With --dry-run, the registry check is bypassed and the helper always
-# forwards to `cargo publish --dry-run -p <crate>` — dry runs exercise
-# packaging regardless of registry state.
+# With --dry-run, the registry check is bypassed. The three leaf crates forward
+# to `cargo publish --dry-run -p <crate>`; the four dependency-bearing crates
+# explicitly skip that command because their rewritten sibling dependencies
+# cannot resolve until the real preceding tiers reach the registry.
 #
 # Motivation: axis-W-only patch releases (e.g. 0.6.1, where axis-E
 # fathomdb-embedder-api is held at 0.6.0) would otherwise fail at T1
@@ -46,8 +47,13 @@ usage() {
 Usage: cargo-publish-if-new.sh [--dry-run] <crate-name>
 
 Publishes <crate-name> to crates.io only if the local Cargo.toml
-version is not already on the registry. --dry-run forwards to
-`cargo publish --dry-run` regardless of registry state.
+version is not already on the registry.
+
+With --dry-run, leaf crates (`fathomdb-embedder-api`, `fathomdb-schema`,
+and `fathomdb-query`) run `cargo publish --dry-run`. Dependent crates
+(`fathomdb-embedder`, `fathomdb-engine`, `fathomdb`, and `fathomdb-cli`)
+are skipped without invoking cargo because their sibling dependencies cannot
+resolve until preceding real tiers reach the registry.
 
 Environment:
   CARGO_REGISTRY_TOKEN  required when not in --dry-run mode

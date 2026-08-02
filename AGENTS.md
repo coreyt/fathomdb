@@ -53,7 +53,7 @@ The broader CI gate is `./scripts/check.sh` (adds mkdocs build); the agent-loop 
 ### One-time setup
 
 - Rust toolchain: stable per `rust-version` in `Cargo.toml`. clippy + rustfmt come with rustup defaults.
-- Python dev tooling: `pip install -e 'src/python[dev]'` — installs `pytest`, `hypothesis`, `ruff`, `pyright`. Without a selected Ruff 0.15.10, Python lint fails loudly; Python typecheck/test steps still emit a skip notice and pass without exercising.
+- Python dev tooling: `pip install -e 'src/python[dev]'` — installs `pytest`, `hypothesis`, `ruff`, `pyright`. Without the selected Ruff 0.15.17, Python lint fails loudly; Python typecheck/test steps still emit a skip notice and pass without exercising.
 - TypeScript: `cd src/ts && npm install` if you intend to touch TS. Without this, TS verbs skip.
 - Markdown tooling: `npm install` at repo root — installs `markdownlint-cli2`, and `prettier` which is retained as a devDep for non-markdown use only (§ 3 bans it on `.md`). `cargo install --locked lychee` for link checking (one-time). All wired up by `./scripts/bootstrap.sh`.
 

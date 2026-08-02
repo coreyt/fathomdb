@@ -36,7 +36,7 @@ if [ "$RC" -eq 0 ]; then
   exit 1
 fi
 
-if ! grep -Fq 'Ruff 0.15.10' <<<"$OUT"; then
+if ! grep -Fq 'Ruff 0.15.17' <<<"$OUT"; then
   printf 'FAIL  guard output does not name the required Ruff version\n' >&2
   exit 1
 fi
