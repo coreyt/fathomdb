@@ -1,6 +1,13 @@
 //! 0.8.20 Slice 23 characterization and Slice 40 regression coverage for
 //! **TC-91**.
 //!
+//! ## Current status
+//!
+//! The long baseline narrative below is retained as historical evidence for the
+//! defect. TC-91 now acquires worker writer intent before its reads and reports
+//! exceptional commit failures. The explicit concurrency arms are therefore
+//! acceptance evidence: every arm requires zero duplicate ingest embeds.
+//!
 //! TC-91 (ledger `seq-129`, p2) is two defects on the same code path, which this
 //! file HYPOTHESISES — but does **not** establish — share one mechanism (see
 //! "What those numbers DO and DO NOT prove" below, and design doc §5.5.2):
@@ -451,7 +458,7 @@ fn tc91_duplicate_embed_rate_governed() {
 /// TC-57 fix, so a duplicate rate here cannot be caused by the governed-write
 /// race. If both arms show the same rate, the cause is elsewhere.
 #[test]
-#[ignore = "TC-91 characterization arm — run explicitly with --ignored; see the design doc"]
+#[ignore = "TC-91 acceptance pressure arm — run explicitly with --ignored"]
 fn tc91_duplicate_embed_rate_anonymous() {
     let outcome = run_duplicate_arm("anonymous", false, ROWS, 1);
     assert_duplicate_arm(&outcome);
@@ -502,7 +509,7 @@ const SPACED_PACE_MS: u64 = 25;
 /// `#[ignore]`d with the other concurrency arms; it is a measurement, not a
 /// merge-gate invariant. See the module header's test-profile inventory.
 #[test]
-#[ignore = "TC-91 characterization arm — run explicitly with --ignored; see the design doc"]
+#[ignore = "TC-91 acceptance pressure arm — run explicitly with --ignored"]
 fn tc91_mechanism_duplicate_rate_versus_write_cadence() {
     let tight = run_duplicate_arm("mech_tight", true, MECHANISM_ROWS, 1);
     assert_duplicate_arm(&tight);
@@ -514,11 +521,9 @@ fn tc91_mechanism_duplicate_rate_versus_write_cadence() {
         tight.split.ingest_duplicates, spaced.split.ingest_duplicates
     );
 
-    assert!(
-        tight.split.ingest_duplicates > 0,
-        "non-vacuity: the TIGHT arm must reproduce the duplicate rate, else there is no effect \
-         to explain (duplicates={})",
-        tight.split.ingest_duplicates
+    assert_eq!(
+        tight.split.ingest_duplicates, 0,
+        "TC-91 acceptance: tight writer pressure must not lose worker commits"
     );
     assert_eq!(
         spaced.split.ingest_duplicates, 0,
@@ -778,6 +783,9 @@ fn tc91_forced_commit_contention_preserves_single_embed() {
         outcome.census.failure_audit_rows, 0,
         "a successfully retried worker commit must not create an embed-failure audit row"
     );
+    assert_eq!(outcome.split.ingest_distinct, LOSS_ROWS);
+    assert_eq!(outcome.census.failed_terminals, 0);
+    assert_eq!(outcome.census.failure_audit_rows, 0);
 }
 
 /// **TC-91 (b) CONTROL.** Identical load, no external lock.

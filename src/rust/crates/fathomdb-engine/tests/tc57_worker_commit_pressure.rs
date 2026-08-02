@@ -39,7 +39,8 @@
 //! stay at zero), but on their own they would have been a VACUOUS instrument for
 //! this risk, because the failure mode they measure is a different one.
 //!
-//! **Read `repeat_embeds` as a RELATIVE number, not an absolute one.** MEASURED at
+//! **Historical baseline:** before TC-91, `repeat_embeds` was useful only as a
+//! relative number. MEASURED at
 //! baseline `41a81c17`: ~104 of 200 rows are already embedded twice, on BOTH arms,
 //! including the anonymous arm where zero caller errors occur. That pre-existing
 //! ~50 % duplicate-dispatch rate is unrelated to TC-57 (it is present with no
@@ -318,6 +319,8 @@ fn run_load(label: &'static str, governed: bool) -> LoadOutcome {
 /// handful of re-embeds is ordinary scheduler behaviour, whereas a systematic
 /// worker-side lockout would show up as tens of percent. The exact number is
 /// printed either way, which is the actual deliverable.
+/// TC-91 makes duplicate worker dispatch a correctness regression: every
+/// successful projection outcome must become durable on its first commit.
 #[test]
 fn tc57_worker_side_commit_pressure_governed() {
     let outcome = run_load("governed", true);
@@ -334,14 +337,10 @@ fn tc57_worker_side_commit_pressure_governed() {
     );
     assert_eq!(outcome.failure_audit_rows, 0, "nor into `projection_failures` audit rows");
     assert!(outcome.drain_ok, "drain must still reach idle");
-    assert!(
-        outcome.repeat_embeds <= ROWS,
-        "worker outcomes are being dropped and re-embedded at scale ({} repeat embeds over {} \
-         rows, {} distinct rows repeated) — the caller-side fix has moved the failure onto the \
-         worker",
-        outcome.repeat_embeds,
-        outcome.rows_written,
-        outcome.repeated_texts
+    assert_eq!(
+        outcome.repeat_embeds, 0,
+        "worker outcomes must not be dropped and re-embedded ({} repeats over {} rows, {} texts repeated)",
+        outcome.repeat_embeds, outcome.rows_written, outcome.repeated_texts
     );
 }
 
@@ -368,4 +367,5 @@ fn tc57_worker_side_commit_pressure_anonymous() {
     assert_eq!(outcome.failed_terminals, 0, "no worker-side `failed` terminals");
     assert_eq!(outcome.failure_audit_rows, 0, "no `projection_failures` audit rows");
     assert!(outcome.drain_ok, "drain must still reach idle");
+    assert_eq!(outcome.repeat_embeds, 0, "anonymous worker outcomes must not be re-embedded");
 }

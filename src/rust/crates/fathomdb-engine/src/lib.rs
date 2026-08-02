@@ -56,6 +56,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
+#[cfg(debug_assertions)]
+use std::sync::Barrier;
 use std::sync::Once;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
@@ -447,6 +449,9 @@ struct ProjectionRuntimeShared {
     path: PathBuf,
     embedder: Option<Arc<dyn Embedder>>,
     embedder_identity: EmbedderIdentity,
+    /// Host-owned lifecycle diagnostics for worker failures, which occur on
+    /// background connections rather than through an `Engine` method call.
+    subscribers: Arc<lifecycle::SubscriberRegistry>,
     state: Mutex<ProjectionRuntimeState>,
     state_cvar: Condvar,
     queue: Mutex<VecDeque<ProjectionJob>>,
@@ -578,6 +583,21 @@ struct ProjectionRuntimeShared {
     /// back (no half-recentered corpus). One-shot (cleared on consume).
     #[cfg(debug_assertions)]
     force_recompute_failure: AtomicBool,
+    /// TC-91 — one-shot worker-commit fault seam. `0` is disabled, `1`
+    /// requests a synthetic SQLite busy error, and `2` a rusqlite-layer
+    /// storage error immediately before commit.
+    /// Kept entirely in the runtime and compiled only for tests.
+    #[cfg(debug_assertions)]
+    force_projection_commit_failure: AtomicUsize,
+    /// TC-91 test-only rendezvous after error reporting and before worker
+    /// cleanup. It proves a stop in that window leaves canonical pending work
+    /// for the next open rather than relying on an in-memory retry queue.
+    #[cfg(debug_assertions)]
+    projection_commit_failure_pause: Mutex<Option<(Arc<Barrier>, Arc<Barrier>)>>,
+    /// TC-91 test-only acknowledgement after `stopping` is set and before a
+    /// close joins workers, used with `projection_commit_failure_pause`.
+    #[cfg(debug_assertions)]
+    projection_stop_ack: Mutex<Option<Arc<Barrier>>>,
 }
 
 impl std::fmt::Debug for ProjectionRuntimeShared {
@@ -1222,6 +1242,7 @@ impl ProjectionRuntime {
         embedder: Option<Arc<dyn Embedder>>,
         embedder_identity: EmbedderIdentity,
         mean_already_pinned: bool,
+        subscribers: Arc<lifecycle::SubscriberRegistry>,
     ) -> Self {
         // EU-5b/EU-5f — only allocate the streaming accumulator when the
         // workspace's identity is MC-required AND no mean has been pinned
@@ -1239,6 +1260,7 @@ impl ProjectionRuntime {
             path,
             embedder,
             embedder_identity,
+            subscribers,
             state: Mutex::new(ProjectionRuntimeState::default()),
             state_cvar: Condvar::new(),
             queue: Mutex::new(VecDeque::new()),
@@ -1258,6 +1280,12 @@ impl ProjectionRuntime {
             vector_stage_only_for_test: AtomicBool::new(false),
             #[cfg(debug_assertions)]
             force_recompute_failure: AtomicBool::new(false),
+            #[cfg(debug_assertions)]
+            force_projection_commit_failure: AtomicUsize::new(0),
+            #[cfg(debug_assertions)]
+            projection_commit_failure_pause: Mutex::new(None),
+            #[cfg(debug_assertions)]
+            projection_stop_ack: Mutex::new(None),
         });
 
         let dispatcher_shared = Arc::clone(&shared);
@@ -1324,6 +1352,35 @@ impl ProjectionRuntime {
         }
     }
 
+    #[cfg(debug_assertions)]
+    fn force_next_projection_commit_failure_for_test(&self) {
+        self.shared.force_projection_commit_failure.store(1, Ordering::SeqCst);
+    }
+
+    #[cfg(debug_assertions)]
+    fn force_next_projection_storage_failure_for_test(&self) {
+        self.shared.force_projection_commit_failure.store(2, Ordering::SeqCst);
+    }
+
+    #[cfg(debug_assertions)]
+    fn pause_projection_commit_failure_cleanup_for_test(
+        &self,
+        reported: Arc<Barrier>,
+        release: Arc<Barrier>,
+    ) {
+        *self
+            .shared
+            .projection_commit_failure_pause
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some((reported, release));
+    }
+
+    #[cfg(debug_assertions)]
+    fn acknowledge_projection_stop_for_test(&self, acknowledged: Arc<Barrier>) {
+        *self.shared.projection_stop_ack.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) =
+            Some(acknowledged);
+    }
+
     fn set_embed_timeout_ms_for_test(&self, timeout_ms: u64) {
         self.shared.embed_timeout_ms.store(timeout_ms, Ordering::Relaxed);
     }
@@ -1344,6 +1401,16 @@ impl ProjectionRuntime {
             state.stopping = true;
             state.pending_scan = false;
             self.shared.state_cvar.notify_all();
+        }
+        #[cfg(debug_assertions)]
+        if let Some(acknowledged) = self
+            .shared
+            .projection_stop_ack
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take()
+        {
+            acknowledged.wait();
         }
         if let Ok(mut queue) = self.shared.queue.lock() {
             queue.clear();
@@ -4576,6 +4643,7 @@ impl Engine {
                     runtime_embedder.clone(),
                     embedder_identity.clone(),
                     report.embedder_mean_vec_pinned,
+                    Arc::clone(&subscribers),
                 );
 
                 install_profile_callback(
@@ -7229,6 +7297,43 @@ impl Engine {
     #[doc(hidden)]
     pub fn force_next_commit_failure_for_test(&self) {
         self.force_next_commit_failure.store(true, Ordering::SeqCst);
+    }
+
+    /// Force the next background projection terminal commit to fail with a
+    /// synthetic SQLite busy error. Test-only seam for TC-91 rollback and
+    /// redispatch coverage; it does not affect the caller's write transaction.
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub fn force_next_projection_commit_failure_for_test(&self) {
+        self.projection_runtime.force_next_projection_commit_failure_for_test();
+    }
+
+    /// Force the next background projection terminal commit to fail with a
+    /// rusqlite-layer storage error. Test-only TC-91 diagnostic classifier seam.
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub fn force_next_projection_storage_failure_for_test(&self) {
+        self.projection_runtime.force_next_projection_storage_failure_for_test();
+    }
+
+    /// Pause a worker after a forced projection-commit error was reported and
+    /// before its state cleanup. TC-91 test-only shutdown/reopen rendezvous.
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub fn pause_projection_commit_failure_cleanup_for_test(
+        &self,
+        reported: Arc<Barrier>,
+        release: Arc<Barrier>,
+    ) {
+        self.projection_runtime.pause_projection_commit_failure_cleanup_for_test(reported, release);
+    }
+
+    /// Acknowledge after `Engine::close` marks the projection runtime stopping
+    /// and before it joins workers. TC-91 test-only shutdown rendezvous.
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub fn acknowledge_projection_stop_for_test(&self, acknowledged: Arc<Barrier>) {
+        self.projection_runtime.acknowledge_projection_stop_for_test(acknowledged);
     }
 
     /// Execute an arbitrary SQL statement on the writer connection through
@@ -12706,20 +12811,23 @@ fn projection_worker_loop(shared: Arc<ProjectionRuntimeShared>) {
         // wedge into `EngineError::Scheduler` (Finding A). Mirrors the
         // reader pool's `LiveGuard` panic-safety. The local commit tx rolls
         // back on unwind, leaving the connection clean for reuse.
-        let projection_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let commit_result = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             run_projection_jobs(&shared, &mut connection, &jobs)
-        }));
-        match projection_result {
-            Ok(Ok(())) => {}
-            Ok(Err(error)) => {
-                eprintln!("projection worker failed to commit outcomes: {error}");
-            }
-            Err(_) => {
-                if let Err(error) =
-                    commit_projection_panic_failures(&shared, &mut connection, &jobs)
-                {
-                    eprintln!("projection worker failed to record panic outcomes: {error}");
-                }
+        })) {
+            Ok(result) => result,
+            Err(_) => commit_projection_panic_failures(&shared, &mut connection, &jobs),
+        };
+        if let Err(err) = commit_result {
+            report_projection_commit_failure(&shared, &err);
+            #[cfg(debug_assertions)]
+            if let Some((reported, release)) = shared
+                .projection_commit_failure_pause
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .take()
+            {
+                reported.wait();
+                release.wait();
             }
         }
 
@@ -12891,6 +12999,29 @@ fn commit_projection_panic_failures(
         })
         .collect();
     commit_projection_outcomes(connection, &outcomes, shared)
+}
+
+/// Route a background projection-commit failure through the engine's existing
+/// host subscriber path. A SQLite error retains its stable SQLite code; a
+/// rusqlite-layer error is an engine storage failure rather than a fabricated
+/// SQLite diagnostic.
+fn report_projection_commit_failure(shared: &ProjectionRuntimeShared, err: &rusqlite::Error) {
+    let event = if let Some(code) = sqlite_extended_code_name(err) {
+        lifecycle::Event {
+            phase: lifecycle::Phase::Failed,
+            source: lifecycle::EventSource::SqliteInternal,
+            category: lifecycle::EventCategory::Error,
+            code: Some(code),
+        }
+    } else {
+        lifecycle::Event {
+            phase: lifecycle::Phase::Failed,
+            source: lifecycle::EventSource::Engine,
+            category: lifecycle::EventCategory::Error,
+            code: Some("StorageError"),
+        }
+    };
+    shared.subscribers.dispatch(&event);
 }
 
 /// PR-9 — ADR-0.6.0-embedder-protocol **Invariant 5**: run one `embed()`
@@ -13880,6 +14011,12 @@ fn commit_projection_outcomes(
     // holds its own immediate transaction, which SQLite rejects without
     // invoking the busy handler and forces the worker to recompute the batch.
     let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    // The accumulator is mutable process state coupled to this transaction.
+    // Keep the shared value untouched while building a candidate so rollback
+    // cannot count a vector or consume the pin threshold prematurely.
+    let mut shared_accumulator =
+        shared.mean_accumulator.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut candidate_accumulator = shared_accumulator.clone();
     // EU-5a2/EU-5f — the live pinned mean. Read once at the top; may pin
     // mid-batch (set to `Some` after a threshold-crossing row below).
     let mut current_mean: Option<Vec<f32>> = if mc {
@@ -13901,18 +14038,15 @@ fn commit_projection_outcomes(
                 if terminal_state_for_cursor(&tx, *cursor)?.is_some() {
                     continue;
                 }
-                // EU-5f — feed the streaming accumulator and decide the pin
-                // atomically under the accumulator lock (add -> count ->
-                // take), so exactly one row/worker can cross the threshold.
-                // Only while MC-required and not yet pinned.
+                // Build the threshold decision in the transaction-local
+                // candidate. The shared accumulator changes only after commit.
                 let pin_mean: Option<Vec<f32>> = if mc && current_mean.is_none() {
-                    let mut acc = shared.mean_accumulator.lock().unwrap_or_else(|p| p.into_inner());
-                    match acc.as_mut() {
+                    match candidate_accumulator.as_mut() {
                         Some(a) => {
                             a.add(&decode_vector_blob(bin_blob));
                             if a.count() >= MEAN_VEC_PIN_THRESHOLD {
                                 let mean = a.materialize();
-                                *acc = None;
+                                candidate_accumulator = None;
                                 Some(mean)
                             } else {
                                 None
@@ -14093,7 +14227,22 @@ fn commit_projection_outcomes(
     // mutates `mean_vec` after the initial pin.
 
     advance_projection_cursor(&tx)?;
+    #[cfg(debug_assertions)]
+    match shared.force_projection_commit_failure.swap(0, Ordering::SeqCst) {
+        1 => {
+            return Err(rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
+                Some("forced projection commit failure".to_string()),
+            ));
+        }
+        2 => return Err(rusqlite::Error::InvalidQuery),
+        _ => {}
+    }
     tx.commit()?;
+    // Commit and the accumulator transition become visible together. On every
+    // earlier error the transaction and the local candidate drop, leaving the
+    // runtime state exactly as it was before this attempt.
+    *shared_accumulator = candidate_accumulator;
     // EU-5f — publish MeanVecPinned only after the pin tx is durable, so a
     // rolled-back pin never emits a spurious event.
     if !staged_events.is_empty() {
