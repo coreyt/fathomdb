@@ -3,6 +3,18 @@
   "baseline_sha": "2afd168c",
   "branch": "orch-0.8.20-s20c",
   "head_sha": "30ab62df (my last commit). The BRANCH has since advanced past me — see `branch_state_at_closure`.",
+  "post_slice_flush_barrier_oracle_repair": {
+    "scope": "Reliability-only test-harness repair: the Python and TypeScript late-enrolment parity tests now query the raw SQLite registry only after the existing drain barrier has settled the default-embedder worker commit. No engine behaviour or at-rest oracle changed.",
+    "red_baseline": "The late-enrolment tests already existed at b3e69c4e4bff60e119edf9d9ea2b87b17f054fd0; therefore the RED commit 52d3b8a0 is intentionally empty and records the observed baseline rather than duplicating an existing test.",
+    "red_command": "PYTHONPATH=/tmp/fathomdb-flush-base.YdDXYU/venv/lib/python3.12/site-packages:/tmp/fathomdb-impl-flush-barrier-oracle/src/python/tests /home/coreyt/projects/fathomdb/.venv/bin/python -P -m pytest --import-mode=importlib -o pythonpath='' src/python/tests/test_slice20c_flush_barrier.py -q -k late_enrolment_backfills_rows_a_no_embedder_session_stranded",
+    "red_exit_code": 135,
+    "red_failure": "SIGBUS (Fatal Python error: Bus error) in `_vector_kind_registered`, test_slice20c_flush_barrier.py:142, called by test_late_enrolment_backfills_rows_a_no_embedder_session_stranded at :477 immediately after Engine.write while the default-embedder worker was committing.",
+    "commits": {
+      "red_evidence": "52d3b8a0",
+      "python_green": "48e39c43",
+      "typescript_green": "4d3ca5bb"
+    }
+  },
   "round": "fix-5 (codex §9 round 4, [P1] + [P2]) — COMPLETE and GREEN. Round 5 of a hard maximum of 6, and the LAST round the mandate authorises. See `fix_5`.",
   "commits": [
     "ddaf732066fdc9404e64b0e246debae8f8168156: test(0.8.20-s20c): RED — the false-ready flush barrier (R-20-DR remainder, C4)",
