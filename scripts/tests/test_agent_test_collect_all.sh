@@ -261,6 +261,12 @@ else
   fail "arm C: test-rust must delegate to scripts/test-rust-workspace.sh --serial"
 fi
 
+if grep -qE '^run_suite test-cargo-publish-if-new bash scripts/tests/test_cargo_publish_if_new\.sh$' "$AGENT_TEST"; then
+  pass "arm C: normal agent-test runs cargo publish helper behavior coverage"
+else
+  fail "arm C: agent-test must run test_cargo_publish_if_new.sh"
+fi
+
 # ============================================================================
 # Arm D: scripts/lib/agent-suite-run.sh is sourced by scripts/agent-test.sh
 # and by NO other script in the repo.
