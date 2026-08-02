@@ -42,8 +42,9 @@ else
   exit 1
 fi
 
-CONTRACT="$TMPROOT/workflow-contract.json"
-if ! "$NODE_BIN" - "$WORKFLOW" "$YAML_MODULE" >"$CONTRACT" <<'JS'
+write_contract() {
+  local workflow_path="$1" output_path="$2"
+  "$NODE_BIN" - "$workflow_path" "$YAML_MODULE" >"$output_path" <<'JS'
 const fs = require("fs");
 const [workflowPath, yamlModule] = process.argv.slice(2);
 const workflow = require(yamlModule).load(fs.readFileSync(workflowPath, "utf8"));
@@ -87,19 +88,25 @@ console.log(JSON.stringify({
     && reporterRun.includes("artifact=${artifact_name}")),
 }, null, 2));
 JS
+}
+
+CONTRACT="$TMPROOT/workflow-contract.json"
+if ! write_contract "$WORKFLOW" "$CONTRACT"
 then
   fail "ci.yml did not parse with declared js-yaml tooling"
   exit 1
 fi
 
-contract_value() {
-  "$NODE_BIN" - "$CONTRACT" "$1" <<'JS'
+contract_value_from() {
+  "$NODE_BIN" - "$1" "$2" <<'JS'
 const fs = require("fs");
 const [contractPath, key] = process.argv.slice(2);
 const value = JSON.parse(fs.readFileSync(contractPath, "utf8"))[key];
 process.stdout.write(value === null || value === undefined ? "None" : String(value));
 JS
 }
+
+contract_value() { contract_value_from "$CONTRACT" "$1"; }
 
 assert_true() {
   local key="$1" description="$2"
@@ -120,6 +127,11 @@ if [ "$(contract_value windows_direct_cargo)" = "false" ] && [ "$(contract_value
 else
   fail "a native gating leg retains a direct cargo test --workspace call"
 fi
+if [ "$(contract_value gating_direct_workspace_cargo)" = "false" ]; then
+  pass "every parsed gating Rust-workspace job avoids direct Cargo"
+else
+  fail "a parsed gating Rust-workspace job retains a direct cargo test --workspace call"
+fi
 assert_true reporter_linux "parallel reporter is a distinct Linux job"
 assert_true reporter_timeout "parallel reporter has a finite timeout"
 assert_true upload_always "parallel reporter uploads its log with if: always()"
@@ -139,6 +151,23 @@ if grep -qE '^run_suite test-rust bash scripts/test-rust-workspace\.sh --serial$
   pass "agent-test has no direct workspace Cargo invocation"
 else
   fail "agent-test must delegate every workspace Rust test to the canonical runner"
+fi
+
+MUTATED_WORKFLOW="$TMPROOT/verify-direct-cargo.yml"
+"$NODE_BIN" - "$WORKFLOW" "$YAML_MODULE" "$MUTATED_WORKFLOW" <<'JS'
+const fs = require("fs");
+const [source, yamlModule, destination] = process.argv.slice(2);
+const yaml = require(yamlModule);
+const workflow = yaml.load(fs.readFileSync(source, "utf8"));
+workflow.jobs.verify.steps.push({name: "mutation", run: "cargo test --workspace"});
+fs.writeFileSync(destination, yaml.dump(workflow));
+JS
+MUTATED_CONTRACT="$TMPROOT/verify-direct-cargo-contract.json"
+if write_contract "$MUTATED_WORKFLOW" "$MUTATED_CONTRACT" \
+  && [ "$(contract_value_from "$MUTATED_CONTRACT" gating_direct_workspace_cargo)" = "true" ]; then
+  pass "parsed workflow guard rejects a direct workspace Cargo call injected into verify"
+else
+  fail "parsed workflow guard must detect a direct workspace Cargo call injected into verify"
 fi
 
 REPORTER_BODY="$(contract_value reporter_run)"
