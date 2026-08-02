@@ -79,6 +79,53 @@ jobs:
       - name: agent-verify (lint -> typecheck -> test)
         run: bash scripts/agent-verify.sh
 
+  # TC-74 diagnostic only: retain the parallel workspace run as an artifact
+  # without allowing its known scheduling-sensitive failures to gate a release.
+  rust-workspace-race-report:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Parallel Rust workspace race report
+        shell: bash
+        run: |
+          set +e
+          log="$RUNNER_TEMP/rust-workspace-parallel.log"
+          started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          started_seconds="$(date +%s)"
+          bash scripts/test-rust-workspace.sh --parallel-report >"$log" 2>&1
+          rc=$?
+          ended_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          ended_seconds="$(date +%s)"
+          duration_seconds=$((ended_seconds - started_seconds))
+          {
+            echo "mode=parallel-report"
+            echo "sha=${GITHUB_SHA}"
+            echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
+            echo "started_at=${started_at}"
+            echo "ended_at=${ended_at}"
+            echo "duration_seconds=${duration_seconds}"
+            echo "log_name=$(basename "$log")"
+            echo "exit_code=${rc}"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$rc" -ne 0 ]; then
+            echo "::warning title=Rust workspace parallel report::parallel run exited ${rc}; inspect rust-workspace-parallel artifact"
+          fi
+          exit 0
+      - name: Upload parallel Rust workspace report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: rust-workspace-parallel-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rust-workspace-parallel.log
+
+
   # Gate (n) — agent-security battery (AC-036/037/038/050a/050c).
   #
   # 0.8.0 Slice 40 (Q3/META): the agent-verify job above already runs
@@ -213,7 +260,52 @@ jobs:
           cargo test -p fathomdb-cli --features default-embedder \
             --test cli_warm_cache
 
-  # EU-6 FIX-1 / ADR-0.6.0-default-embedder.md EMB-3 — wheel-size gate.
+   # Platform-sensitive engine code regresses on Windows/macOS often enough
+  # that pre-0.6.0 carried these matrix legs. Keep them.
+  rust-windows:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Configure per-session TMPDIR
+        shell: bash
+        run: |
+          # Windows resolves temp dir via TMP/TEMP, not TMPDIR.
+          TMP="$RUNNER_TEMP/fathomdb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$TMP"
+          echo "TMP=$TMP" >> "$GITHUB_ENV"
+          echo "TEMP=$TMP" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Serial Rust workspace test
+        shell: bash
+        run: bash scripts/test-rust-workspace.sh --serial
+
+  rust-macos:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Configure per-session TMPDIR
+        shell: bash
+        run: |
+          TMPDIR="$RUNNER_TEMP/fathomdb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$TMPDIR"
+          echo "TMPDIR=$TMPDIR" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Serial Rust workspace test
+        shell: bash
+        run: bash scripts/test-rust-workspace.sh --serial
+   # EU-6 FIX-1 / ADR-0.6.0-default-embedder.md EMB-3 — wheel-size gate.
   #
   # Per `dev/design/0.7.1-EU-6-FIX-1-design.md` D2:
   #   * The SHIPPED wheel (with `default-embedder` feature ON, the

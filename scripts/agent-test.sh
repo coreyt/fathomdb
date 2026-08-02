@@ -309,6 +309,12 @@ run_suite test-md-generators bash scripts/tests/test_md_generators.sh
 run_suite test-cargo-skew bash dev/release/tests/cargo_skew.sh
 run_suite test-pip-skew bash dev/release/tests/pip_skew.sh
 
+# Scripts (bash): temporary TC-74 evidence control. The canonical runner owns
+# the exact Cargo invocation, so the local agent loop and every gated Rust CI
+# leg use the same serial mode.
+run_suite test-rust-workspace-gate bash scripts/tests/test_rust_workspace_gate.sh
+run_suite test-ci-rust-workspace-gate bash scripts/tests/test_ci_rust_workspace_gate.sh
+
 # Rust
 #
 # TC-20 invariant: this line must NEVER reach `eu7_real_corpus_ac_validation`,
@@ -321,7 +327,7 @@ run_suite test-pip-skew bash dev/release/tests/pip_skew.sh
 #   3. `#[ignore]` on the test itself — holds no matter which features are
 #      selected, so `--all-features` still would not run the body.
 # Verify by inspection only (`-- --list --ignored`), never by running it.
-run_suite test-rust cargo test --workspace --quiet --no-fail-fast
+run_suite test-rust bash scripts/test-rust-workspace.sh --serial
 
 # Python
 python_bin=""

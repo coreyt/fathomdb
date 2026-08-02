@@ -86,21 +86,22 @@ for mode in --serial --parallel-report; do
   fi
 done
 
-for invalid in '' --serial --serial --unknown; do
-  # The duplicate case is represented by two argv entries below; the other
-  # cases retain their one-argument or zero-argument shape.
-  label="invalid-${invalid:-missing}"
+for invalid_case in missing repeated unknown; do
+  label="invalid-$invalid_case"
   ARGS_FILE="$TMPROOT/$label.args"
   RUN_OUTPUT="$TMPROOT/$label.out"
   set +e
-  if [ "$invalid" = "--serial" ] && [ ! -e "$TMPROOT/duplicate-seen" ]; then
-    : >"$TMPROOT/duplicate-seen"
-    PATH="$FAKE_BIN:$PATH" FAKE_CARGO_ARGS="$ARGS_FILE" "$RUNNER" --serial --serial >"$RUN_OUTPUT" 2>&1
-  elif [ -z "$invalid" ]; then
-    PATH="$FAKE_BIN:$PATH" FAKE_CARGO_ARGS="$ARGS_FILE" "$RUNNER" >"$RUN_OUTPUT" 2>&1
-  else
-    PATH="$FAKE_BIN:$PATH" FAKE_CARGO_ARGS="$ARGS_FILE" "$RUNNER" "$invalid" >"$RUN_OUTPUT" 2>&1
-  fi
+  case "$invalid_case" in
+    missing)
+      PATH="$FAKE_BIN:$PATH" FAKE_CARGO_ARGS="$ARGS_FILE" "$RUNNER" >"$RUN_OUTPUT" 2>&1
+      ;;
+    repeated)
+      PATH="$FAKE_BIN:$PATH" FAKE_CARGO_ARGS="$ARGS_FILE" "$RUNNER" --serial --serial >"$RUN_OUTPUT" 2>&1
+      ;;
+    unknown)
+      PATH="$FAKE_BIN:$PATH" FAKE_CARGO_ARGS="$ARGS_FILE" "$RUNNER" --unknown >"$RUN_OUTPUT" 2>&1
+      ;;
+  esac
   RUN_RC=$?
   set -e
   if [ "$RUN_RC" -eq 2 ] && [ ! -e "$ARGS_FILE" ]; then

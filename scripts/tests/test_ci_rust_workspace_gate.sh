@@ -70,6 +70,7 @@ print(json.dumps({
     "upload_always": upload is not None and upload.get("if") == "always()",
     "upload_pinned": upload is not None and upload.get("uses") == "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
     "upload_path": upload.get("with", {}).get("path") if upload else None,
+    "upload_exact_log": upload is not None and upload.get("with", {}).get("path") == "${{ runner.temp }}/rust-workspace-parallel.log",
 }, sort_keys=True))
 PY
 then
@@ -106,6 +107,7 @@ assert_true reporter_linux "parallel reporter is a distinct Linux job"
 assert_true reporter_timeout "parallel reporter has a finite timeout"
 assert_true upload_always "parallel reporter uploads its log with if: always()"
 assert_true upload_pinned "parallel reporter pins actions/upload-artifact"
+assert_true upload_exact_log "parallel reporter uploads the complete reporter log"
 
 REPORTER_BODY="$(contract_value reporter_run)"
 UPLOAD_PATH="$(contract_value upload_path)"
@@ -117,7 +119,7 @@ else
   SUMMARY="$TMPROOT/summary.md"
   mkdir -p "$FAKE_BIN" "$RUNNER_TEMP"
   cat >"$FAKE_BIN/bash" <<'EOF'
-#!/usr/bin/env bash
+#!/usr/bin/bash
 if [ "$1" = "scripts/test-rust-workspace.sh" ] && [ "$2" = "--parallel-report" ]; then
   printf 'known stdout\n'
   printf 'known stderr\n' >&2
