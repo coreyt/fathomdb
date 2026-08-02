@@ -6,26 +6,19 @@
 # say, what is in flight. That state was narrated across a 5-12 file fan-out and
 # the live board alone is ~79 KB, so orientation cost either a large context bill
 # or a guess. This prints the whole picture in ONE read, from the writers of
-# record, in under 5 KiB.
+# record, in under 4 KB.
 #
 # ============================ THE TWO HARD LIMITS ============================
-# 1. <= 5120 bytes on stdout. Self-checked: over budget is a HARD failure, not a
+# 1. <= 4096 bytes on stdout. Self-checked: over budget is a HARD failure, not a
 #    silent overrun, because the cap is a promise to the reader's context budget.
 #    Override for experiments only via $STEWARD_ORIENT_BUDGET.
-#    WHERE THE BYTES GO: the board's verbatim next-action cell dominates output;
-#    the ledger previews, todos fold, landed slices+SHAs, and repo facts supply
-#    the remainder. The cap was
-#    breached on 2026-07-31 at 4380 bytes and was brought back under by COMPRESSING,
-#    not by dropping facts or raising the cap: todo ids are run-length folded
-#    (`TC-2..6,9`), `git worktree list`'s column padding is squeezed, the derivable
-#    `state=release-state-<ver>.json` field is gone, and the ledger preview cuts at
-#    96 chars instead of 118. THE STANDING EXPOSURE is that one cell — it is
-#    verbatim by contract and its length is set by whoever writes the board, so a
-#    ~500-byte-longer next action re-breaches the cap. That is board hygiene (keep
-#    §1's next action short), not a number to raise: the suite asserts the cap
-#    independently in arms 0/1/10, so a bigger cap here would only move the failure
-#    into the test. Truncating the cell is likewise not available — arm 1 forces an
-#    over-cap payload THROUGH that cell.
+#    Collections are cardinality-bounded: registered worktrees are summarized as
+#    total/detached/locked (the on-demand source remains `git worktree list`), the
+#    ledger preview is five headline-first entries, and todo IDs are losslessly
+#    run-folded. THE STANDING EXPOSURE is the board's next-action cell: it is
+#    verbatim by contract and its length is set by its writer. Keep §1's next
+#    action short; do not raise the cap or truncate the cell — the suite asserts
+#    both the cap and verbatim reproduction independently.
 # 2. WRITES NOTHING. No repo file, no ledger, no cursor, no commit. The only
 #    filesystem touch is one mktemp -d sandbox, removed by an EXIT trap, used as
 #    an ephemeral ledgerwatch --state-dir so the Steward's REAL cursor is never
@@ -118,7 +111,7 @@ set -euo pipefail
 # invoked by CHILD processes (gh, python3, ledgerwatch) inherits it.
 export GIT_OPTIONAL_LOCKS=0
 
-BUDGET_BYTES="${STEWARD_ORIENT_BUDGET:-5120}"
+BUDGET_BYTES="${STEWARD_ORIENT_BUDGET:-4096}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/board-closed.sh
@@ -166,51 +159,30 @@ tilde() { printf '%s' "${1/#$HOME/\~}"; }
 # ------------------------------------------------------------------- REPO ---
 BRANCH="$(git --no-optional-locks rev-parse --abbrev-ref HEAD 2>/dev/null || printf '?')"
 HEAD_SHA="$(git --no-optional-locks rev-parse --short=8 HEAD 2>/dev/null || printf '?')"
-HEAD_SUBJ="$(git --no-optional-locks log -1 --format=%s 2>/dev/null | cut -c1-58 || printf '?')"
 DIRTY="$(git --no-optional-locks status --porcelain --untracked-files=all | wc -l | tr -d ' ')"
 
-add "STEWARD ORIENT $(date -u +%Y-%m-%dT%H:%MZ) · stateless · reads only · writes nothing"
-add "REPO   branch=$BRANCH head=$HEAD_SHA dirty=$DIRTY  \"$HEAD_SUBJ\""
+add "STEWARD ORIENT $(date -u +%Y-%m-%dT%H:%MZ) · read-only"
+add "REPO branch=$BRANCH head=$HEAD_SHA dirty=$DIRTY"
 
 # -------------------------------------------------------------- WORKTREES ---
-# Resolve the primary root before rendering the worktree inventory. Relative
-# paths preserve every identity while avoiding repeated copies of the same long
-# root path; this is material to the strict 5120-byte cold-start budget when
-# several historical worktrees coexist.
-GIT_COMMON="$(cd "$(git --no-optional-locks rev-parse --git-common-dir)" && pwd)"
-MAIN_ROOT="$(dirname "$GIT_COMMON")"
-WT_DIR="${MAIN_ROOT}-worktrees"
-compact_worktree() {
-  local line="$1" path rest
-  path="${line%% *}"
-  rest="${line#"$path"}"
-  case "$path" in
-    "$MAIN_ROOT") path="." ;;
-    "$MAIN_ROOT"/*) path=".${path#"$MAIN_ROOT"}" ;;
-    "$WT_DIR"/*) path="../$(basename "$WT_DIR")/${path#"$WT_DIR"/}" ;;
-    *) path="$(tilde "$path")" ;;
-  esac
-  printf '%s%s' "$path" "$rest"
-}
 mapfile -t WT_LINES < <(git --no-optional-locks worktree list 2>/dev/null || true)
 if [ "${#WT_LINES[@]}" -eq 0 ]; then
   note_empty "worktrees (git worktree list returned nothing)"
 fi
-add "WORKTREES (${#WT_LINES[@]})"
-# `git worktree list` column-pads every path out to the longest one; on this repo
-# that is ~46 bytes of run-on spaces across three lines, spent on an alignment the
-# tilde rewrite below breaks anyway. Squeezing runs of spaces to one loses no
-# field — path, sha and branch are still all three there, space-separated. (A
-# checkout path containing a DOUBLE space would be squeezed too; that path is
-# already unparseable in this non-porcelain listing, so nothing is made worse.)
+WT_DETACHED=0
+WT_LOCKED=0
 for w in "${WT_LINES[@]}"; do
-  while [ "$w" != "${w//  / }" ]; do w="${w//  / }"; done
-  add "  $(compact_worktree "$w")"
+  case "$w" in *'(detached HEAD)'*) WT_DETACHED=$((WT_DETACHED + 1));; esac
+  case "$w" in *' locked') WT_LOCKED=$((WT_LOCKED + 1));; esac
 done
+add "WORKTREES ${#WT_LINES[@]} registered; $WT_DETACHED detached; $WT_LOCKED locked"
 
 # Correction 2: the checkout pool is a SIBLING of the MAIN worktree root.
 # --git-common-dir points at the main .git even from inside a linked worktree,
 # so this resolves the same pool no matter where the briefing is run from.
+GIT_COMMON="$(cd "$(git --no-optional-locks rev-parse --git-common-dir)" && pwd)"
+MAIN_ROOT="$(dirname "$GIT_COMMON")"
+WT_DIR="${MAIN_ROOT}-worktrees"
 REGISTERED="$(git --no-optional-locks worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' || true)"
 ORPHANS=""
 if [ -d "$WT_DIR" ]; then
@@ -360,13 +332,12 @@ for line in last:
     except Exception:
         print("  ?? unparseable entry")
         continue
-    # 48, not 118. This preview was ALWAYS a truncation (the entry itself is one
+    # 80, not 118. This preview was ALWAYS a truncation (the entry itself is one
     # line of dev/steward/steward-ledger.jsonl, which is where the reader goes for
     # the full text); the only question is where it cuts. Steward summaries are
-    # written headline-first, so 48 still identifies each decision while leaving
-    # durable headroom for a growing live worktree inventory under the fixed
-    # 5120-byte budget.
-    summary = " ".join(str(e.get("summary", "")).split())[:48]
+    # written headline-first, so 80 still carries the headline sentence, and the
+    # five of them preserve enough headroom for a changing verbatim next action.
+    summary = " ".join(str(e.get("summary", "")).split())[:80]
     print(f"  {e.get('seq', '?')} {e.get('kind', '?')}: {summary}")
 PY
   )"

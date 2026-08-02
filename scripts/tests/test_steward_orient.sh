@@ -565,7 +565,7 @@ rm -f "$FIX/.git/index.lock"
 # CHILD processes (gh, python3).
 GIT_CALLS_ALL="$(grep -coE '(\$\(|<\()git ' "$GATE" || true)"
 GIT_CALLS_SAFE="$(grep -coE '(\$\(|<\()git --no-optional-locks ' "$GATE" || true)"
-if [ "$GIT_CALLS_ALL" -ge 8 ]; then
+if [ "$GIT_CALLS_ALL" -ge 7 ]; then
   pass "arm 2d precondition: the briefing really does shell out to git ($GIT_CALLS_ALL call sites)"
 else
   fail "arm 2d precondition: found only $GIT_CALLS_ALL git call sites — the count regex has drifted, so this arm proves nothing"
