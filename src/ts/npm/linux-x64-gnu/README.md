@@ -1,4 +1,4 @@
-# @fathomdb/fathomdb-linux-x64-gnu
+# fathomdb-linux-x64-gnu
 
 **You probably want [`fathomdb`](https://www.npmjs.com/package/fathomdb) instead.**
 

@@ -21,7 +21,7 @@ npm install fathomdb
 The package is a thin TypeScript wrapper (ESM, with type declarations) over a native
 [napi-rs](https://napi.rs) binding to the FathomDB Rust engine. The compiled binary is **not** in
 this package: each host triple ships as its own package (for example
-`@fathomdb/fathomdb-linux-x64-gnu`), declared as an optional dependency and resolved automatically
+`fathomdb-linux-x64-gnu`), declared as an optional dependency and resolved automatically
 on a matching host. You install `fathomdb` and nothing else. Version 0.8.20
 publishes only `linux-x64-gnu`; macOS, Windows, Linux arm64, and Linux musl do
 not have an installable native package in this release.

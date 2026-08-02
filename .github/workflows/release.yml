@@ -35,7 +35,7 @@ env:
   # 0.8.20 is Linux-first: platform coverage is PARTIAL (linux-x64-gnu only).
   # Publishing under `latest` would serve unsupported users an
   # install-incompatible package as the default. So the main
-  # `fathomdb` package + the one `@fathomdb/fathomdb-linux-x64-gnu` binary
+  # `fathomdb` package + the one `fathomdb-linux-x64-gnu` binary
   # package publish under a NON-`latest` dist-tag. HITL confirms the exact
   # label. macOS/Windows native artifacts and validation are deferred to 0.8.22;
   # that release may complete the platform matrix and then promote
@@ -512,7 +512,7 @@ jobs:
           skip-existing: true
 
   # --- Tier 8: npm per-platform binary package (R-REL-4f) --------------------
-  # Publishes the ONE platform binary package @fathomdb/fathomdb-linux-x64-gnu
+  # Publishes the ONE platform binary package fathomdb-linux-x64-gnu
   # (0.8.18 critical path = linux-x64-gnu, D5; deferred platforms via the
   # follow-on). It carries os/cpu so npm installs it only on matching hosts,
   # and is wired as an optionalDependency of the thin main `fathomdb` package.
@@ -544,10 +544,10 @@ jobs:
         run: ls -la
       # npm OIDC trusted publishing needs npm >= 11.5.1; the exact Node
       # 25.9.0 toolchain supplies npm 11.12.1 for the publisher. --access
-      # public makes the scoped
-      # package publishable; --provenance attests the build. Idempotent no-op
+      # --access public keeps the platform package public; --provenance attests
+      # the build. Idempotent no-op
       # if this version is already on the registry.
-      - name: Publish @fathomdb/fathomdb-linux-x64-gnu
+      - name: Publish fathomdb-linux-x64-gnu
         working-directory: src/ts/npm/linux-x64-gnu
         env:
           NPM_BIN: "npm"

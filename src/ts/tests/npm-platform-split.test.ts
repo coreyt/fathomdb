@@ -28,10 +28,10 @@ test("npm_platform_split_contract: triple resolution for supported hosts", () =>
   assert.equal(resolveTriple("win32", "x64", false), "win32-x64-msvc");
 });
 
-test("npm_platform_split_contract: platform package name is scoped @fathomdb", () => {
+test("npm_platform_split_contract: platform package name is unscoped", () => {
   assert.equal(
     platformPackageName("linux-x64-gnu"),
-    "@fathomdb/fathomdb-linux-x64-gnu",
+    "fathomdb-linux-x64-gnu",
   );
 });
 
@@ -49,11 +49,11 @@ test("npm_platform_split_contract: unmapped host throws unsupported platform", (
 
 test("npm_platform_split_contract: mac install with skipped linux dep throws at require-time (no segfault)", () => {
   // Simulate a darwin/arm64 host where 0.8.18 published ONLY the linux-x64-gnu
-  // platform package: no local dev `.node`, and `require('@fathomdb/fathomdb-
+  // platform package: no local dev `.node`, and `require('fathomdb-
   // darwin-arm64')` fails MODULE_NOT_FOUND because npm skipped that optionalDep.
   const moduleNotFound = () => {
     const e = new Error(
-      "Cannot find module '@fathomdb/fathomdb-darwin-arm64'",
+      "Cannot find module 'fathomdb-darwin-arm64'",
     ) as Error & { code?: string };
     e.code = "MODULE_NOT_FOUND";
     throw e;
@@ -75,7 +75,7 @@ test("npm_platform_split_contract: mac install with skipped linux dep throws at 
       );
       const msg = (err as Error).message;
       assert.match(msg, /unsupported platform/i);
-      assert.match(msg, /@fathomdb\/fathomdb-darwin-arm64/);
+      assert.match(msg, /fathomdb-darwin-arm64/);
       return true;
     },
   );
@@ -103,7 +103,7 @@ test("npm_platform_split_contract: loads published platform package when install
     isMusl: false,
     loadLocal: () => null,
     requirePackage: (pkg) => {
-      assert.equal(pkg, "@fathomdb/fathomdb-linux-x64-gnu");
+      assert.equal(pkg, "fathomdb-linux-x64-gnu");
       return sentinel;
     },
   });

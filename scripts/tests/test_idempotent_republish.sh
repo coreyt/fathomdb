@@ -11,7 +11,7 @@
 #   • npm  — REAL. A minimal but faithful npm registry (implements the publish
 #     PUT + packument GET + tarball GET HTTP protocol) is stood up in-process.
 #     `npm publish` really uploads the thin main `fathomdb` package AND the
-#     `@fathomdb/fathomdb-linux-x64-gnu` platform package over HTTP through the
+#     `fathomdb-linux-x64-gnu` platform package over HTTP through the
 #     real npm-publish-if-new.sh helper; the tarballs are really stored and
 #     served back with the integrity npm computed. A re-run NO-OPS via the
 #     helper's registry-query path (npm is NOT re-invoked — asserted by a
@@ -212,7 +212,7 @@ NPM_REG="http://127.0.0.1:${NPM_PORT}"
 # test; the loader RESOLUTION logic is what R-REL-4f/the loader owns).
 PLAT_DIR="$WORK_DIR/plat"; mkdir -p "$PLAT_DIR"
 cat >"$PLAT_DIR/package.json" <<'PJ'
-{ "name": "@fathomdb/fathomdb-linux-x64-gnu", "version": "9.9.9",
+{ "name": "fathomdb-linux-x64-gnu", "version": "9.9.9",
   "os": ["linux"], "cpu": ["x64"], "main": "index.js", "files": ["index.js"] }
 PJ
 printf 'module.exports = { __fathomdb_native: "platform-pkg" };\n' >"$PLAT_DIR/index.js"
@@ -225,7 +225,7 @@ MAIN_DIR="$WORK_DIR/main"; mkdir -p "$MAIN_DIR/dist"
 cat >"$MAIN_DIR/package.json" <<'PJ'
 { "name": "fathomdb", "version": "9.9.9", "main": "dist/index.js",
   "files": ["dist"],
-  "optionalDependencies": { "@fathomdb/fathomdb-linux-x64-gnu": "9.9.9" } }
+  "optionalDependencies": { "fathomdb-linux-x64-gnu": "9.9.9" } }
 PJ
 printf 'module.exports = {};\n' >"$MAIN_DIR/dist/index.js"
 cat >"$MAIN_DIR/.npmrc" <<NPMRC
@@ -237,7 +237,7 @@ NPMRC
 if out="$(cd "$PLAT_DIR" && NPM_PUBLISH_IF_NEW_REGISTRY="$NPM_REG" NPM_BIN=npm \
           "$NPM_HELPER" --tag next -- --registry "$NPM_REG" 2>&1)"; then
   if printf '%s' "$out" | grep -q 'linux-x64-gnu@9.9.9' \
-     && grep -q '@fathomdb/fathomdb-linux-x64-gnu' "$PUT_LOG"; then
+     && grep -q 'fathomdb-linux-x64-gnu' "$PUT_LOG"; then
     pass "npm platform pkg REAL publish (real HTTP PUT landed)"
   else
     fail "npm platform publish: out='$out' put='$(cat "$PUT_LOG")'"
@@ -278,7 +278,7 @@ registry=${NPM_REG}
 NPMRC
 printf '{ "name": "consumer", "version": "1.0.0", "private": true }\n' >"$CONSUMER/package.json"
 if ( cd "$CONSUMER" && npm install "fathomdb@9.9.9" --registry "$NPM_REG" >"$TMP/install.log" 2>&1 ); then
-  if [ -f "$CONSUMER/node_modules/@fathomdb/fathomdb-linux-x64-gnu/index.js" ]; then
+  if [ -f "$CONSUMER/node_modules/fathomdb-linux-x64-gnu/index.js" ]; then
     pass "npm install pulls the os/cpu-gated platform package (real extract)"
   else
     fail "npm install: platform package not present after install; log=$(cat "$TMP/install.log")"
