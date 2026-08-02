@@ -139,6 +139,36 @@ def test_ci_wheel_size_matrix_is_linux_first() -> None:
         )
 
 
+def test_ci_default_embedder_typescript_suite_is_pinned_and_serial() -> None:
+    """The heavyweight native TypeScript suite must rebuild locked inputs and
+    run one process at a time, so an independently valid test cannot contend
+    for the same model/SQLite resources with six siblings."""
+
+    data = _load_yaml(CI_YML)
+    steps = data["jobs"]["default-embedder-tests"]["steps"]
+    node_step = next(
+        (step for step in steps if "actions/setup-node" in str(step.get("uses", ""))),
+        None,
+    )
+    assert node_step is not None, "default-embedder-tests must pin Node explicitly"
+    assert node_step.get("with", {}).get("node-version") == "25.9.0"
+
+    runs = [step.get("run", "") for step in steps if isinstance(step.get("run"), str)]
+    assert "cd src/ts && npm ci" in runs, (
+        "default-embedder-tests must install the package-lock before emitting tests"
+    )
+    assert "cd src/ts && npm run build:native:debug" in runs, (
+        "default-embedder-tests must build its native binding from this checkout"
+    )
+    test_run = next(
+        (run for run in runs if "for test_file in" in run),
+        "",
+    )
+    assert 'RELEASE_SURFACE_TESTS=1 node --test "$test_file"' in test_run, (
+        "default-embedder-tests must start one Node test runner per heavyweight native file"
+    )
+
+
 @pytest.mark.parametrize(
     "release_napi_step_match",
     ["build:native"],

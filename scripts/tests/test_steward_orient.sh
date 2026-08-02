@@ -370,10 +370,14 @@ if grep -qE '^WORKTREES 7 registered; locked=1 detached=2 shown=3 omitted=4; det
 else
   fail "arm 7a summary: exact bounded accounting is missing; out=$OUT"
 fi
+# The briefing intentionally compacts paths below $HOME. The fixture may live
+# below $HOME on CI but under /tmp locally, so compare the displayed form while
+# the raw-path checks above continue to establish the sibling-layout contract.
+display_path() { printf '%s' "${1/#$HOME/\~}"; }
 for needle in \
-  "WT current path=$FIX branch=$FIX_BRANCH sha=$FIX_SHA" \
-  "WT locked path=$LOCKED_WT branch=fixture-locked sha=$FIX_SHA" \
-  "WT detached path=$DETACHED_A branch=DETACHED sha=$FIX_SHA"; do
+  "WT current path=$(display_path "$FIX") branch=$FIX_BRANCH sha=$FIX_SHA" \
+  "WT locked path=$(display_path "$LOCKED_WT") branch=fixture-locked sha=$FIX_SHA" \
+  "WT detached path=$(display_path "$DETACHED_A") branch=DETACHED sha=$FIX_SHA"; do
   if grep -qF "$needle" <<<"$OUT"; then
     pass "actionable worktree identity survives: $needle"
   else

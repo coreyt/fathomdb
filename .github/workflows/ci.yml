@@ -246,7 +246,11 @@ jobs:
       - name: Default-embedder and release-surface TypeScript tests
         run: |
           cd src/ts
-          RELEASE_SURFACE_TESTS=1 node --test \
+          # Each file starts a native engine and may load the BGE model. Run a
+          # fresh Node test runner for each file: Node 25's multi-file runner
+          # can retain an exited child's IPC handles, and concurrent children
+          # contend for the same finite runner memory and CPU.
+          for test_file in \
             dist/tests/embed-batch-cls.test.js \
             dist/tests/embedder-event-narrowing.test.js \
             dist/tests/functional-embed.test.js \
@@ -254,6 +258,9 @@ jobs:
             dist/tests/slice20c-flush-barrier.test.js \
             dist/tests/tc67-unsupported-vector-kind-report.test.js \
             dist/tests/use-default-embedder.test.js
+          do
+            RELEASE_SURFACE_TESTS=1 node --test "$test_file"
+          done
       - name: Network-hitting EU-5b tests (engine)
         run: |
           cargo test -p fathomdb-engine --features default-embedder \
