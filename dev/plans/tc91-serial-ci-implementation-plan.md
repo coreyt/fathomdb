@@ -96,9 +96,9 @@ mode must use both Cargo job serialization and libtest thread serialization;
 the parallel mode preserves the current command and returns Cargo's unmodified
 exit status.
 
-Route `scripts/agent-test.sh` through serial mode. Route Linux `verify`,
-`rust-windows`, and `rust-macos` through the same canonical serial path. Keep
-`--no-fail-fast` for all three legs. No CI-only serial command and no direct
+Route `scripts/agent-test.sh` through serial mode, which makes Linux `verify`
+use the same canonical path. B4 cancels native macOS and Windows release legs
+for 0.8.20 and defers them to 0.8.22. No CI-only serial command and no active
 gating workspace Cargo command may remain.
 
 ### B3. Add the non-gating parallel reporter
@@ -116,9 +116,10 @@ each and run `AGENT_VERBOSE=1 bash scripts/agent-verify.sh` once, preserving
 the immediate exit code, timestamps, and log path for every run. Stop on the
 first non-zero result.
 
-Only then open/update the CI candidate. Require the Linux, Windows, and macOS
-serial Rust legs to pass. Retain the parallel reporter log and its return code
-as diagnostic evidence regardless of its result.
+Only then open/update the CI candidate. Require the applicable 0.8.20 Linux
+`verify` gate to pass; B4 keeps native macOS and Windows release work deferred
+to 0.8.22. Retain the parallel reporter log and its return code as diagnostic
+evidence regardless of its result.
 
 ## Cross-cutting constraints
 
@@ -140,6 +141,7 @@ the following exist:
    TC-91 commit, with immediate return codes retained.
 2. The TC-91 implementation has independent-review evidence and green CI.
 3. The serial-runner tests, three clean-clone local `agent-verify` runs, and
-   all three serial Rust CI legs pass at the serial-gate commit.
+   the applicable 0.8.20 Linux `verify` gate pass at the serial-gate commit;
+   B4 keeps native macOS and Windows release work deferred to 0.8.22.
 4. The parallel reporter preserves its complete log and raw return code without
    determining the gate result.

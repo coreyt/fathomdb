@@ -25,10 +25,10 @@ underlying races, and it does not convert a parallel failure into a pass. The
 parallel reporter preserves that diagnostic distinction until race-hunting is
 completed in its separately scheduled work.
 
-The scope is every CI leg that gates a Rust `cargo test --workspace` result:
-the Rust portion of Linux `verify`, `rust-windows`, and `rust-macos`. Python,
-TypeScript, lint, typecheck, security, and the other CI jobs retain their
-present behaviour.
+The scope is the Rust `cargo test --workspace` result gated by Linux `verify`.
+B4 cancels the native macOS and Windows release legs for 0.8.20; they remain
+deferred to 0.8.22. Python, TypeScript, lint, typecheck, security, and the
+other CI jobs retain their present behaviour.
 
 ## 2. Current code and required invariant
 
@@ -39,17 +39,16 @@ cargo test --workspace --quiet --no-fail-fast
 ```
 
 `scripts/agent-verify.sh` runs `agent-test.sh` after lint, typecheck, and
-security. Linux CI `verify` invokes `bash scripts/agent-verify.sh`; the
-separate Windows and macOS jobs each invoke Cargo directly. Changing only a
-workflow command would therefore make local and CI evidence different;
-changing only an ad-hoc local command would leave one or more gating OS legs
-parallel.
+security. Linux CI `verify` invokes `bash scripts/agent-verify.sh`. B4 leaves
+no native macOS or Windows gate active for 0.8.20, so changing the local script
+must remain sufficient to keep local and active CI evidence identical.
 
 The invariant is:
 
 > The command used for the gating Rust-workspace result is one canonical,
 > directly executable script. `agent-test.sh`, local release evidence, and
-> every gating Rust-workspace CI leg reach that same `--serial` invocation.
+> the active Linux gating Rust-workspace CI leg reaches that same `--serial`
+> invocation.
 > GitHub Actions is confirmation of already-observed local behaviour, never
 > its first proof.
 
@@ -111,13 +110,10 @@ The CI legs use the runner as follows:
 | Gating leg | Required invocation |
 | --- | --- |
 | Linux `verify` | `agent-verify.sh` → `agent-test.sh` → `test-rust-workspace.sh --serial` |
-| `rust-windows` | `bash scripts/test-rust-workspace.sh --serial` |
-| `rust-macos` | `bash scripts/test-rust-workspace.sh --serial` |
 
-The latter two direct Cargo calls are replaced, not supplemented. The runner
-keeps `--no-fail-fast` in serial mode, so macOS gains full failure enumeration
-instead of retaining its current fail-fast behaviour. There is no current
-authority to leave either OS leg parallel, so no exception is allowed.
+No native macOS or Windows release leg is active in 0.8.20. The Linux-first
+platform-scope test protects that B4 deferral; native release work resumes in
+0.8.22.
 
 ## 4. Local-before-CI evidence protocol
 
@@ -166,10 +162,9 @@ bash scripts/agent-verify.sh
 ```
 
 Because `agent-test.sh` invokes the canonical runner with `--serial`, a failure
-of the Rust-workspace suite remains a normal gate failure. `rust-windows` and
-`rust-macos` invoke that same runner explicitly with `--serial`; no gating
-workflow job may retain or add a direct `cargo test --workspace` command. No
-CI-only serial command is permitted.
+of the Rust-workspace suite remains a normal gate failure. No active 0.8.20
+gating workflow job may retain or add a direct `cargo test --workspace`
+command. No CI-only serial command is permitted.
 
 Add a separate Linux job named `rust-workspace-race-report`. It installs the
 same Rust toolchain/cache as the existing Rust test job, then runs:
@@ -223,11 +218,11 @@ reimplement the runner in a helper.
 3. Add a workflow recurrence test, for example
    `scripts/tests/test_ci_rust_workspace_gate.sh`, which parses the real
    `.github/workflows/ci.yml` as YAML rather than searching its text. It proves
-   that `verify` still calls `agent-verify.sh`; that Windows and macOS each
-   invoke the canonical runner with `--serial`; and that no gating job contains
-   a direct `cargo test --workspace` invocation. It also finds the distinct
-   Linux reporter job, verifies its `--parallel-report` runner mode, and
-   verifies an `if: always()` upload step uses
+   that `verify` still calls `agent-verify.sh`; that no active gating job
+   contains a direct `cargo test --workspace` invocation; and that the deferred
+   native jobs are absent. It also finds the distinct Linux reporter job,
+   verifies its `--parallel-report` runner mode, and verifies an `if: always()`
+   upload step uses
    `actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a` for the
    complete reporter log.
 
@@ -257,9 +252,9 @@ The change is acceptable only when all of the following are retained:
   green.
 - The three consecutive clean-clone `agent-verify` attempts have immediate
   `0` results and readable logs on the exact candidate SHA.
-- A pull-request CI run has every applicable gating job green, including
-  `verify`, `rust-windows`, and `rust-macos`; the serial Rust suite is visible
-  in Linux's collect-all summary and the direct OS-leg logs.
+- A pull-request CI run has every applicable 0.8.20 gating job green, including
+  Linux `verify`; the serial Rust suite is visible in Linux's collect-all
+  summary. B4 keeps native macOS and Windows release legs deferred to 0.8.22.
 - The parallel reporter has executed, its artifact is retrievable, and its
   outcome is recorded separately from the gating result. A reporter red is a
   race observation to triage, not permission to retry the serial gate until it
@@ -277,8 +272,8 @@ concurrent-drop observation noted with TC-74.
 
 The removal change must first demonstrate, on the intended restored parallel
 command, at least ten consecutive fresh-clone Linux passes and five consecutive
-CI passes on the supported Rust operating-system jobs, with immediate exit
-codes retained. It must also demonstrate that removing the serial flags makes
+Linux CI `verify` passes, with immediate exit codes retained. It must also
+demonstrate that removing the serial flags makes
 the canonical runner's parallel mode the new gating mode, while deleting the
 non-gating reporter rather than leaving two indistinguishable parallel jobs.
 
