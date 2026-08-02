@@ -176,6 +176,14 @@ exist and are already under test. Fully reversible.
 `orient.sh` already proves the model: 955 tokens beats 178k because it derives from
 `dev/plans/release-state-<version>.json`, the single writer.
 
+The 4 KB briefing is not a silent substitute for an unbounded `git worktree list`.
+Its worktree contract is a bounded, actionable view: emit path / branch / SHA for
+the current checkout and one locked and detached exception, report exact locked,
+detached, shown, and omitted counts, and name `git worktree list` as the required
+on-demand follow-up whenever rows were omitted. That preserves a Steward's ability
+to act on live exceptions without allowing repository clutter to displace the
+verbatim next action; the hand-off makes the follow-up step explicit.
+
 The lever is that **master §4 allocation is already a generated view** — `release-state-0.8.20.json`
 declares `generated_views[0] = {"id": "master-ladder-progress", "file": ".../PROGRAM-SEQUENCING.md",
 "location": "§4 Release allocation …"}`. The allocation the steward is told to "confirm" is already
