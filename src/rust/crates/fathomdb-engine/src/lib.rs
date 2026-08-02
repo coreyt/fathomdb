@@ -12818,7 +12818,12 @@ fn projection_worker_loop(shared: Arc<ProjectionRuntimeShared>) {
             Err(_) => commit_projection_panic_failures(&shared, &mut connection, &jobs),
         };
         if let Err(err) = commit_result {
-            report_projection_commit_failure(&shared, &err);
+            // Host subscribers are arbitrary application code. Their panic must
+            // not bypass the mandatory state cleanup below, or the durable
+            // pending row would stay stranded in `in_flight` forever.
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                report_projection_commit_failure(&shared, &err);
+            }));
             #[cfg(debug_assertions)]
             if let Some((reported, release)) = shared
                 .projection_commit_failure_pause

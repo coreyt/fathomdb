@@ -2,42 +2,30 @@
 //!
 //! ## Why this file exists
 //!
-//! The TC-57 fix (`commit_batch` opens `BEGIN IMMEDIATE` instead of rusqlite's
-//! `BEGIN DEFERRED` default, `lib.rs:17764`) removes the CALLER-side promotion.
-//! But the characterization's biggest residual risk
+//! The TC-57 fix removes the caller-side promotion. Historically, the
+//! characterization's biggest residual risk
 //! (`dev/design/0.8.20-tc57-write-race-characterization.md` §7, "What I am unsure
 //! about" item 3) is the *other* direction: `commit_projection_outcomes`
-//! (`lib.rs:13662`, tx at `:13672`) has the SAME read-then-upgrade shape, and
-//! making the engine the write-lock HOLDER more often could *increase*
-//! worker-side promote failures.
+//! had been the worker-side promotion. TC-91 now gives the worker the same
+//! `BEGIN IMMEDIATE` writer intent and reports exceptional commit failures.
 //!
-//! `tc57_governed_write_race.rs` structurally cannot see that: it only observes
-//! `Engine::write`'s return value, and a worker-side commit failure never reaches
-//! the caller. So this file is the second instrument.
+//! `tc57_governed_write_race.rs` observes caller writes; this file retains the
+//! worker pressure instrument and now requires zero duplicate embeds.
 //!
 //! ## What a worker-side commit failure actually looks like — READ THIS
 //!
 //! It is **not** a `'failed'` terminal and **not** a `projection_failures` audit
-//! row. Those two are written by the `ProjectionOutcome::Failure` arm
-//! (`lib.rs:13825-13848`), which represents an **embed** failure. A *commit*
-//! failure is discarded outright:
-//!
-//! ```text
-//! lib.rs:12584   let _ = commit_projection_outcomes(connection, &outcomes, shared);
-//! ```
-//!
-//! The whole transaction rolls back, so no terminal is written, the row keeps
-//! `terminal IS NULL`, the worker loop sets `pending_scan = true`
-//! (`lib.rs:12536`), the dispatcher re-fetches the row and it is **embedded
-//! again**.
+//! row. Those two are written by the `ProjectionOutcome::Failure` arm, which
+//! represents an **embed** failure. A commit failure instead rolls its terminal
+//! transaction back, emits a lifecycle diagnostic, and leaves the canonical row
+//! pending for the normal redispatch path.
 //!
 //! So the sharp instrument is **re-embeds**: every row in this fixture carries a
 //! UNIQUE body, the embedder counts calls PER TEXT, and a text embedded twice is a
-//! row that was dispatched twice — i.e. an outcome that was computed and then
-//! never became durable. The `'failed'` terminal / `projection_failures` counts
+//! row that was dispatched twice. The `'failed'` terminal / `projection_failures` counts
 //! are recorded too (they are the observable the slice brief named, and they must
-//! stay at zero), but on their own they would have been a VACUOUS instrument for
-//! this risk, because the failure mode they measure is a different one.
+//! stay at zero), and TC-91 adds explicit lifecycle-observation coverage for
+//! exceptional commit failures.
 //!
 //! **Historical baseline:** before TC-91, `repeat_embeds` was useful only as a
 //! relative number. MEASURED at
@@ -45,9 +33,8 @@
 //! including the anonymous arm where zero caller errors occur. That pre-existing
 //! ~50 % duplicate-dispatch rate is unrelated to TC-57 (it is present with no
 //! write race at all) and is out of scope here — it is reported, not fixed. What
-//! matters for Part C is whether the fix MOVES that number: measured governed
-//! 105.0 → 106.2 mean over N=5 each, i.e. inside run-to-run spread, so the
-//! caller-side fix does not push failures onto the worker.
+//! matters for the historical Part C comparison only; current assertions require
+//! zero repeats.
 //!
 //! ## Equalized load — why every caller error is retried
 //!
@@ -362,7 +349,7 @@ fn tc57_worker_side_commit_pressure_anonymous() {
     assert_eq!(outcome.rows_lost, 0, "every row must land within {MAX_ATTEMPTS} attempts");
     assert_eq!(
         outcome.caller_errors, 0,
-        "the anonymous arm has no read-then-upgrade window and must never fail"
+        "the anonymous pressure arm must not produce caller write errors"
     );
     assert_eq!(outcome.failed_terminals, 0, "no worker-side `failed` terminals");
     assert_eq!(outcome.failure_audit_rows, 0, "no `projection_failures` audit rows");

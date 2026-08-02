@@ -19,6 +19,18 @@ impl Subscriber for EventSink {
     }
 }
 
+/// Deliberately hostile host callback: the engine must never let a subscriber
+/// panic bypass mandatory projection-worker cleanup.
+struct PanicOnSqliteSubscriber;
+
+impl Subscriber for PanicOnSqliteSubscriber {
+    fn on_event(&self, event: &Event) {
+        if event.source == EventSource::SqliteInternal {
+            panic!("intentional subscriber panic after projection commit failure");
+        }
+    }
+}
+
 struct CountingEmbedder {
     calls: Arc<AtomicUsize>,
 }
@@ -119,6 +131,33 @@ fn tc91_projection_commit_busy_is_reported_and_redispatched() {
         }),
         "the commit error must reach the lifecycle subscriber"
     );
+}
+
+/// A host subscriber panic after an observed worker commit error must not strand
+/// the cursor in `in_flight`: cleanup and durable redispatch remain mandatory.
+#[test]
+fn tc91_subscriber_panic_after_commit_failure_does_not_wedge_redispatch() {
+    let dir = TempDir::new().expect("tempdir");
+    let path = dir.path().join("tc91-subscriber-panic.db");
+    let calls = Arc::new(AtomicUsize::new(0));
+    let opened = Engine::open_with_embedder_for_test(
+        &path,
+        Arc::new(CountingEmbedder { calls: Arc::clone(&calls) }),
+    )
+    .expect("open");
+    let _subscription = opened.engine.subscribe(Arc::new(PanicOnSqliteSubscriber));
+    opened.engine.configure_vector_kind_for_test("doc").expect("configure vector kind");
+
+    opened.engine.force_next_projection_commit_failure_for_test();
+    let receipt = opened.engine.write(&[node()]).expect("caller write remains durable");
+    opened.engine.drain(2_000).expect("subscriber panic must not wedge the worker");
+
+    assert!(opened.engine.has_vector_for_cursor_for_test(receipt.cursor).expect("vector state"));
+    assert_eq!(
+        opened.engine.projection_failure_count_for_test(receipt.cursor).expect("failure audit"),
+        0
+    );
+    assert!(calls.load(Ordering::SeqCst) >= 2, "pending work must be redispatched");
 }
 
 /// A non-SQLite rusqlite error is an engine storage diagnostic, not a synthetic
