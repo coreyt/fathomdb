@@ -509,9 +509,8 @@ def test_late_enrolment_backfills_rows_a_no_embedder_session_stranded(tmp_path) 
     engine = Engine.open(path, use_default_embedder=True)
     try:
         engine.write([_node("N3", '{"summary":"written before re-applying"}')])
-        engine.drain(timeout_s=_DRAIN_TIMEOUT_S)
-        # Read SQLite only after the drain barrier settles the worker commit.
         assert _vector_kind_registered(path), "the write LATE-ENROLLED the kind"
+        engine.drain(timeout_s=_DRAIN_TIMEOUT_S)
         assert _readiness(engine) == "ready"
     finally:
         engine.close()
