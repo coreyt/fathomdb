@@ -77,6 +77,7 @@ console.log(JSON.stringify({
   macos_shell_bash: Boolean(macosStep && macosStep.shell === "bash"),
   windows_direct_cargo: directWorkspaceCargo("rust-windows"),
   macos_direct_cargo: directWorkspaceCargo("rust-macos"),
+  gating_direct_workspace_cargo: ["verify", "rust-windows", "rust-macos"].some(directWorkspaceCargo),
   reporter_linux: reporter["runs-on"] === "ubuntu-latest",
   reporter_timeout: Boolean(reporter["timeout-minutes"]),
   reporter_run: reporterRun,
