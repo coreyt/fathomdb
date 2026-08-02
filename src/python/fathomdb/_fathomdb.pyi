@@ -527,8 +527,8 @@ class InvalidArgumentError(EngineError): ...
 
 # 0.8.18 Slice 5 (#5 vector-equivalence probe) — query-time dense-refusal leaf.
 class VectorEquivalenceMismatchError(EngineError):
-    reason: str
-    def __init__(self, *args: Any, reason: str = ...) -> None: ...
+    reason: str | None
+    def __init__(self, *args: Any, reason: str | None = ...) -> None: ...
 
 # OPP-12 Phase-1 (0.8.19 Slice 10) — lifecycle-verb typed errors. Parity-safe
 # field names (S7): `from_state`/`to_state` (never `from`, a Python keyword).
