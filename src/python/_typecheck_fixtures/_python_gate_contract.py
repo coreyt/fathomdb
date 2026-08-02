@@ -34,6 +34,11 @@ def graph_contract() -> object:
     return _to_search_hit
 
 
-def vector_refusal_contract() -> str:
+def vector_refusal_contract() -> str | None:
     """The typed Python-only constructor accepts the documented reason payload."""
     return VectorEquivalenceMismatchError("vector divergence", reason="P1 flips=3").reason
+
+
+def omitted_vector_refusal_contract() -> str | None:
+    """The native error may omit its optional divergence payload."""
+    return VectorEquivalenceMismatchError("vector divergence").reason
