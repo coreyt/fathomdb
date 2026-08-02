@@ -340,6 +340,7 @@ BEGIN { RE = ENVIRON["TC86_RE"]; OWN = ENVIRON["TC86_OWN"];
         PROJRE = ENVIRON["TC86_PROJRE"]; BARERE = ENVIRON["TC86_BARERE"]
         HOMEABS = ENVIRON["TC86_HOMEABS"]; ROOT1 = ENVIRON["TC86_ROOT1"]
         ROOT2 = ENVIRON["TC86_ROOT2"]; STATUSRE = ENVIRON["TC86_STATUSRE"]
+        ANSIRE = ENVIRON["TC86_ANSIRE"]
         RGCMD = ENVIRON["TC86_RGCMD"]; QUIET = (ENVIRON["TC86_MODE"] == "count")
         # The quote characters are built rather than written: this whole program
         # is a single-quoted shell string, so a literal apostrophe in it would
@@ -560,6 +561,15 @@ AGENT_STATE_CONTENT_MARKER_FMT='[REDACTED TC-86] %d line(s) of agent-state CONTE
 # which makes the prefilter provably non-hiding rather than merely fast.
 AGENT_STATE_EXEC_STATUS_RE='^ (succeeded|exited [0-9]+) in .*:$'
 
+# Older Codex CLI transcripts decorate record markers, command echoes, and
+# status lines with terminal SGR colour escapes. They are presentation only;
+# the block walker removes them for grammar recognition while replaying every
+# original byte until an exposed output block is visibly replaced. Keep this
+# pattern here with the grammar, so the checker prefilter and the shared walker
+# cannot disagree about which rendered status lines are records.
+AGENT_STATE_ANSI_SGR_RE=$'\033\\[[0-9;]*m'
+AGENT_STATE_RENDERED_EXEC_STATUS_RE="^(${AGENT_STATE_ANSI_SGR_RE})* (succeeded|exited [0-9]+) in .*:(${AGENT_STATE_ANSI_SGR_RE})*$"
+
 # The commands whose non-flag arguments are directory targets.
 AGENT_STATE_ENUM_COMMANDS='ls find tree'
 
@@ -585,6 +595,11 @@ AGENT_STATE_OOR_MARKER_FMT='[REDACTED TC-86] %d line(s) removed: this block was 
 # stream or only counts. `emit()` is the only difference between the two.
 AGENT_STATE_BLOCK_WALK_AWK='
     function emit(s) { if (!QUIET) print s }
+    # Parse presentation-free record syntax but emit raw transcript bytes. The
+    # old CLI used SGR around `exec`, its command echo, and the status separator;
+    # making colour significant would falsely certify the exact listing shape
+    # this walk governs.
+    function tc86_plain(s) { gsub(ANSIRE, "", s); return s }
     function flush(   i) {
       if (in_block) {
         # A block is removed when it still holds unredacted lines AND one of:
@@ -636,23 +651,25 @@ AGENT_STATE_BLOCK_WALK_AWK='
       if (in_block) {
         # Top-level record markers END the block. NOT a blank line: real dumps
         # contain blank lines, and stopping at one would leave content behind.
-        if ($0 == "exec" || $0 == "codex") {
-          flush(); emit($0); in_echo = ($0 == "exec"); echobuf = ""; next
+        plain = tc86_plain($0)
+        if (plain == "exec" || plain == "codex") {
+          flush(); emit($0); in_echo = (plain == "exec"); echobuf = ""; next
         }
         nbuf++
         buf[nbuf] = $0
-        if ($0 != "") {
+        if (plain != "") {
           nonblank++
-          if ($0 !~ /^\[REDACTED TC-86\]/) {
+          if (plain !~ /^\[REDACTED TC-86\]/) {
             fresh++
-            if (!tc86_is_cmd_noise($0)) oorfresh++
+            if (!tc86_is_cmd_noise(plain)) oorfresh++
           }
-          if ($0 ~ BARERE && $0 != OWN) foreignnames++
+          if (plain ~ BARERE && plain != OWN) foreignnames++
         }
         next
       }
-      if ($0 == "exec" || $0 == "codex") {
-        in_echo = ($0 == "exec"); echobuf = ""; emit($0); next
+      plain = tc86_plain($0)
+      if (plain == "exec" || plain == "codex") {
+        in_echo = (plain == "exec"); echobuf = ""; emit($0); next
       }
       if (in_echo) {
         # The ECHO is everything between the `exec` marker and the status line.
@@ -662,7 +679,7 @@ AGENT_STATE_BLOCK_WALK_AWK='
         # keeps the original anchoring property that mattered — an OUTPUT line
         # carrying a path (the 0.8.14 log has one, a `sed: read error` message)
         # is inside a block, never an echo, so it cannot start a phantom block.
-        if ($0 ~ STATUSRE) {
+        if (plain ~ STATUSRE) {
           emit($0)
           echo_is_path = (echobuf ~ RE)
           echo_is_oor = (tc86_echo_is_oor(echobuf) > 0)
@@ -676,7 +693,7 @@ AGENT_STATE_BLOCK_WALK_AWK='
           in_echo = 0
           next
         }
-        echobuf = echobuf " " $0
+        echobuf = echobuf " " plain
         emit($0)
         next
       }
@@ -702,6 +719,7 @@ agent_state_block_walk() {
   TC86_PROJRE="$AGENT_STATE_PROJECTS_DIR_RE" TC86_BARERE="$AGENT_STATE_BARE_PROJECT_DIR_RE" \
   TC86_HOMEABS="$AGENT_STATE_OWN_HOME_ABS" TC86_ROOT1="$AGENT_STATE_OWN_PROJECT_ABS" \
   TC86_ROOT2="$AGENT_STATE_OWN_WORKTREES_ABS" TC86_STATUSRE="$AGENT_STATE_EXEC_STATUS_RE" \
+  TC86_ANSIRE="$AGENT_STATE_ANSI_SGR_RE" \
   TC86_ENUMCMDS="$AGENT_STATE_ENUM_COMMANDS" TC86_RGCMD="$AGENT_STATE_ENUM_CONDITIONAL_COMMAND" \
   TC86_CFMT="$AGENT_STATE_CONTENT_MARKER_FMT" TC86_OORFMT="$AGENT_STATE_OOR_MARKER_FMT" \
   TC86_MODE="${TC86_MODE:-redact}" TC86_COUNTFILE="${TC86_COUNTFILE:-/dev/null}" \
