@@ -595,6 +595,15 @@ if [ "$BYTES" -le 5120 ] && [ "$BYTES" -gt 0 ]; then
 else
   fail "arm 10 (real byte cap): $BYTES bytes"
 fi
+# The worktree section must be cardinality-bounded. Printing every registered
+# path makes the supposedly fixed-size briefing grow with stale worktrees and
+# can evict the board's verbatim next action; the on-demand source is still
+# `git worktree list`, while orient reports the actionable population summary.
+if grep -qE '^WORKTREES [0-9]+ registered; [0-9]+ detached; [0-9]+ locked$' <<<"$OUT"; then
+  pass "the real checkout's worktree section is a bounded population summary"
+else
+  fail "arm 10 (worktree boundedness): expected one registered/detached/locked summary line; out=$OUT"
+fi
 if [ "$REAL_BEFORE" = "$REAL_AFTER" ]; then
   pass "the real checkout's porcelain status is unchanged by the briefing"
 else
