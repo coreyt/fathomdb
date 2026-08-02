@@ -50,7 +50,7 @@ const [workflowPath, yamlModule] = process.argv.slice(2);
 const workflow = require(yamlModule).load(fs.readFileSync(workflowPath, "utf8"));
 const jobs = workflow.jobs;
 
-function steps(name) { return jobs[name].steps || []; }
+function steps(name) { return (jobs[name] || {}).steps || []; }
 function runs(name) { return steps(name).filter((step) => step.run).map((step) => step.run); }
 function runStep(name, needle) {
   return steps(name).find((step) => step.run && step.run.includes(needle));
@@ -67,17 +67,10 @@ const upload = reporterSteps.find((step) => (step.uses || "").startsWith("action
 const artifactTemplate = "rust-workspace-parallel-${{ github.run_id }}-${{ github.run_attempt }}";
 const artifactAssignment = 'artifact_name="rust-workspace-parallel-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"';
 
-const windowsStep = runStep("rust-windows", "bash scripts/test-rust-workspace.sh --serial");
-const macosStep = runStep("rust-macos", "bash scripts/test-rust-workspace.sh --serial");
 console.log(JSON.stringify({
   verify_indirect: runs("verify").some((body) => body.includes("bash scripts/agent-verify.sh")),
-  windows_serial: Boolean(windowsStep),
-  macos_serial: Boolean(macosStep),
-  windows_shell_bash: Boolean(windowsStep && windowsStep.shell === "bash"),
-  macos_shell_bash: Boolean(macosStep && macosStep.shell === "bash"),
-  windows_direct_cargo: directWorkspaceCargo("rust-windows"),
-  macos_direct_cargo: directWorkspaceCargo("rust-macos"),
-  gating_direct_workspace_cargo: ["verify", "rust-windows", "rust-macos"].some(directWorkspaceCargo),
+  deferred_native_jobs_absent: !jobs["rust-windows"] && !jobs["rust-macos"],
+  gating_direct_workspace_cargo: ["verify"].some(directWorkspaceCargo),
   reporter_linux: reporter["runs-on"] === "ubuntu-latest",
   reporter_timeout: Boolean(reporter["timeout-minutes"]),
   reporter_run: reporterRun,
@@ -119,19 +112,11 @@ assert_true() {
 }
 
 assert_true verify_indirect "verify retains agent-verify as its indirect serial route"
-assert_true windows_serial "Windows calls the canonical serial runner"
-assert_true macos_serial "macOS calls the canonical serial runner"
-assert_true windows_shell_bash "Windows serial runner step explicitly uses bash"
-assert_true macos_shell_bash "macOS serial runner step explicitly uses bash"
-if [ "$(contract_value windows_direct_cargo)" = "false" ] && [ "$(contract_value macos_direct_cargo)" = "false" ]; then
-  pass "native gating legs contain no direct cargo test --workspace call"
-else
-  fail "a native gating leg retains a direct cargo test --workspace call"
-fi
+assert_true deferred_native_jobs_absent "deferred macOS/Windows jobs are absent from 0.8.20 CI"
 if [ "$(contract_value gating_direct_workspace_cargo)" = "false" ]; then
-  pass "every parsed gating Rust-workspace job avoids direct Cargo"
+  pass "the parsed Linux gating Rust-workspace job avoids direct Cargo"
 else
-  fail "a parsed gating Rust-workspace job retains a direct cargo test --workspace call"
+  fail "the parsed Linux gating Rust-workspace job retains a direct cargo test --workspace call"
 fi
 assert_true reporter_linux "parallel reporter is a distinct Linux job"
 assert_true reporter_timeout "parallel reporter has a finite timeout"
