@@ -21,6 +21,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Literal, cast
 
 from fathomdb._fathomdb import NodeRecord as _NativeNodeRecord
+from fathomdb._fathomdb import SearchHit as _NativeSearchHit
 from fathomdb._fathomdb import graph_neighbors as _native_graph_neighbors
 from fathomdb._fathomdb import search_expand as _native_search_expand
 from fathomdb.read import _to_native_view
@@ -47,6 +48,18 @@ def _to_node_record(native: _NativeNodeRecord) -> NodeRecord:
         kind=native.kind,
         body=native.body,
         write_cursor=native.write_cursor,
+    )
+
+
+def _to_search_hit(native: _NativeSearchHit) -> SearchHit:
+    return SearchHit(
+        id=IdSpace(space=native.id.space, value=native.id.value),
+        kind=native.kind,
+        body=native.body,
+        score=native.score,
+        branch=cast(SoftFallbackBranch, native.branch),
+        source_id=native.source_id,
+        ce_score=native.ce_score,
     )
 
 
@@ -149,18 +162,7 @@ def search_expand(
         created_after,
         status,
     )
-    search_hits = [
-        SearchHit(
-            id=IdSpace(space=h.id.space, value=h.id.value),
-            kind=h.kind,
-            body=h.body,
-            score=h.score,
-            branch=cast(SoftFallbackBranch, h.branch),
-            source_id=h.source_id,
-            ce_score=h.ce_score,
-        )
-        for h in native_result.search_hits
-    ]
+    search_hits = [_to_search_hit(hit) for hit in native_result.search_hits]
     expanded = [
         ExpandedNode(
             node=_to_node_record(e.node),
