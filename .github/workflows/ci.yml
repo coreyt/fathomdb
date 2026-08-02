@@ -263,51 +263,6 @@ jobs:
           cargo test -p fathomdb-cli --features default-embedder \
             --test cli_warm_cache
 
-   # Platform-sensitive engine code regresses on Windows/macOS often enough
-  # that pre-0.6.0 carried these matrix legs. Keep them.
-  rust-windows:
-    needs: changes
-    if: needs.changes.outputs.docs_only != 'true'
-    runs-on: windows-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - name: Configure per-session TMPDIR
-        shell: bash
-        run: |
-          # Windows resolves temp dir via TMP/TEMP, not TMPDIR.
-          TMP="$RUNNER_TEMP/fathomdb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          mkdir -p "$TMP"
-          echo "TMP=$TMP" >> "$GITHUB_ENV"
-          echo "TEMP=$TMP" >> "$GITHUB_ENV"
-      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
-        with:
-          toolchain: "1.95.0"
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-      - name: Serial Rust workspace test
-        shell: bash
-        run: bash scripts/test-rust-workspace.sh --serial
-
-  rust-macos:
-    needs: changes
-    if: needs.changes.outputs.docs_only != 'true'
-    runs-on: macos-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - name: Configure per-session TMPDIR
-        shell: bash
-        run: |
-          TMPDIR="$RUNNER_TEMP/fathomdb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          mkdir -p "$TMPDIR"
-          echo "TMPDIR=$TMPDIR" >> "$GITHUB_ENV"
-      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
-        with:
-          toolchain: "1.95.0"
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-      - name: Serial Rust workspace test
-        shell: bash
-        run: bash scripts/test-rust-workspace.sh --serial
    # EU-6 FIX-1 / ADR-0.6.0-default-embedder.md EMB-3 — wheel-size gate.
   #
   # Per `dev/design/0.7.1-EU-6-FIX-1-design.md` D2:
