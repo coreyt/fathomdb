@@ -19,13 +19,13 @@ fail() { printf 'FAIL  %s\n' "$1" >&2; FAILED=$((FAILED + 1)); }
 # Fixture: a main package + two platform packages.
 mkdir -p "$WORK/main" "$WORK/npm/linux-x64-gnu" "$WORK/npm/darwin-arm64"
 printf '{\n  "name": "fathomdb",\n  "version": "1.2.3",\n  "devDependencies": {"typescript": "^6.0.3"}\n}\n' >"$WORK/main/package.json"
-printf '{"name":"@fathomdb/fathomdb-linux-x64-gnu","version":"1.2.3"}' >"$WORK/npm/linux-x64-gnu/package.json"
-printf '{"name":"@fathomdb/fathomdb-darwin-arm64","version":"1.2.3"}' >"$WORK/npm/darwin-arm64/package.json"
+printf '{"name":"fathomdb-linux-x64-gnu","version":"1.2.3"}' >"$WORK/npm/linux-x64-gnu/package.json"
+printf '{"name":"fathomdb-darwin-arm64","version":"1.2.3"}' >"$WORK/npm/darwin-arm64/package.json"
 
 # 1) Injects one entry per platform dir, pinned to the main version, sorted.
 if out="$(bash "$INJECT" "$WORK/main" "$WORK/npm" 2>&1)"; then
   deps="$(node -e "process.stdout.write(JSON.stringify(require('$WORK/main/package.json').optionalDependencies))")"
-  if [ "$deps" = '{"@fathomdb/fathomdb-darwin-arm64":"1.2.3","@fathomdb/fathomdb-linux-x64-gnu":"1.2.3"}' ]; then
+  if [ "$deps" = '{"fathomdb-darwin-arm64":"1.2.3","fathomdb-linux-x64-gnu":"1.2.3"}' ]; then
     pass "injects one pinned optionalDependency per platform dir (sorted)"
   else
     fail "wrong optionalDependencies: $deps (log: $out)"

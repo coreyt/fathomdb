@@ -1,7 +1,7 @@
 // Native-binding loader. Resolves the running host to a napi-rs triple, then
 // loads the compiled binding from either a local dev build
 // (`fathomdb.<triple>.node`, produced by `napi build --platform`) or the
-// published `@fathomdb/fathomdb-<triple>` platform package. When neither is
+// published `fathomdb-<triple>` platform package. When neither is
 // present, `loadPlatformBinding` throws a clear "unsupported platform" error
 // (R-REL-4f) — never a silent runtime segfault. The platform-resolution logic
 // lives in `./platform.ts` (side-effect-free, unit-tested independently of a
