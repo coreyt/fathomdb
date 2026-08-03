@@ -962,8 +962,11 @@ fi
 # retained without a CLOSED banner, but it must not be currency-checked beside
 # the active 0.8.21 release.
 run_checker "$REPO_ROOT"
-if [ "$RC" -ne 0 ] && grep -q '0.8.21' <<<"$OUT" && ! grep -q 'STALE  0.8.20' <<<"$OUT"; then
-  pass "published 0.8.20 is excluded; only the current 0.8.21 board is checked"
+if [ "$RC" -eq 0 ] \
+   && grep -q '0.8.21' <<<"$OUT" \
+   && grep -q 'canonical release-state SHA ancestry facts were checked instead' <<<"$OUT" \
+   && ! grep -q 'STALE  0.8.20' <<<"$OUT"; then
+  pass "published 0.8.20 is excluded; current 0.8.21 passes on canonical SHA facts"
 else
   fail "current-authority regression: rc=$RC out=$OUT"
 fi
