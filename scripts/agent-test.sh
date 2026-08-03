@@ -77,6 +77,7 @@ run_suite test-set-version bash scripts/tests/test_set_version.sh
 # Scripts (bash): release-cut fields deliberately outside set-version.sh.
 run_suite test-release-version-surfaces bash scripts/tests/test_release_version_surfaces.sh
 run_suite test-platform-capabilities bash scripts/tests/test_platform_capabilities.sh
+run_suite test-public-doc-truth bash scripts/tests/test_public_doc_truth.sh
 
 # Scripts (bash): 0.8.20 R-20-HARNESS ("Slice 39.5", no ladder slot) —
 # recurrence guard for the collect-all conversion of THIS script: proves
