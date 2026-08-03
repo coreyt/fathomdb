@@ -221,6 +221,7 @@ run_suite test-release-workflow-scope bash scripts/tests/test_release_workflow_s
 # Slice 40 / seq-234: Linux x86_64 is the 0.8.20 native-artifact scope.
 # Static assertions here complement actionlint's workflow syntax/schema check.
 run_suite test-linux-first-platform-scope bash scripts/tests/test_linux_first_platform_scope.sh
+run_suite test-linux-aarch64-release-artifacts bash scripts/tests/test_linux_aarch64_release_artifacts.sh
 
 # Slice 40: the CI verify job must leave enough time for its clean bootstrap
 # plus the same full agent-verify gate required locally.

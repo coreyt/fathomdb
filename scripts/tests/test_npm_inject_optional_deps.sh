@@ -55,10 +55,10 @@ else
   pass "no platform packages -> error"
 fi
 
-# 5) The real repo fixture publishes ONLY linux-x64-gnu for 0.8.18.
+# 5) The real repo fixture carries both supported Linux platform packages.
 present="$(ls -d "$REPO_ROOT"/src/ts/npm/*/ 2>/dev/null | xargs -n1 basename | sort | tr '\n' ',' )"
-[ "$present" = "linux-x64-gnu," ] \
-  && pass "0.8.18 committed platform set is linux-x64-gnu only (D5)" \
+[ "$present" = "linux-arm64-gnu,linux-x64-gnu," ] \
+  && pass "committed platform set carries Linux x64 and arm64" \
   || fail "unexpected committed platform set: $present"
 
 if [ "$FAILED" -gt 0 ]; then

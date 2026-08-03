@@ -31,8 +31,8 @@ printf 'PASS  actionlint rejects deliberately-broken fixture\n'
 # napi-rs only resolves prebuilt binaries by the exact platform-label triples
 # enumerated in src/ts/src/binding.ts; if release.yml uploads under a
 # non-canonical label, install-from-npm silently falls back to "no native
-# addon found" at runtime. Slice 40 is Linux-first: lock the sole shipped
-# label and reject the three deferred platform labels so the scope cannot drift.
+# addon found" at runtime. Linux-first ships x64 and AArch64; reject deferred
+# non-Linux labels so the scope cannot drift.
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 RELEASE_YML="${RELEASE_YML:-$REPO_ROOT/.github/workflows/release.yml}"
 CI_YML="${CI_YML:-$REPO_ROOT/.github/workflows/ci.yml}"
@@ -49,7 +49,7 @@ NODE_VERSION_FILE="$REPO_ROOT/.nvmrc"
 # ensures every failing label/tier is reported in one pass.
 FIXTURE_FAILED=0
 
-for label in linux-x64-gnu; do
+for label in linux-x64-gnu linux-arm64-gnu; do
   if ! grep -qE "label:[[:space:]]+${label}\$" "$RELEASE_YML"; then
     printf 'FAIL  release.yml missing shipped napi label: %s\n' "$label" >&2
     FIXTURE_FAILED=$((FIXTURE_FAILED + 1))
@@ -62,7 +62,7 @@ for label in darwin-x64 darwin-arm64 win32-x64-msvc; do
   fi
 done
 if [ "$FIXTURE_FAILED" -eq 0 ]; then
-  printf 'PASS  release.yml carries only the Linux-first napi label\n'
+  printf 'PASS  release.yml carries the supported Linux-first napi labels\n'
 fi
 
 confirmation_input_block() {
@@ -254,7 +254,7 @@ for workflow in "$CI_YML" "$RELEASE_YML"; do
   node_pin_count="$(grep -c 'node-version: "25.9.0"' "$workflow" || true)"
   case "$workflow" in
     "$CI_YML") expected_setup_node_count=3 ;;
-    "$RELEASE_YML") expected_setup_node_count=4 ;;
+    "$RELEASE_YML") expected_setup_node_count=6 ;;
   esac
   setup_node_total=$((setup_node_total + setup_node_count))
   if [ "$setup_node_count" -ne "$expected_setup_node_count" ] || [ "$setup_node_count" -ne "$node_pin_count" ]; then
@@ -267,8 +267,8 @@ for workflow in "$CI_YML" "$RELEASE_YML"; do
     NODE_PIN_FAILED=$((NODE_PIN_FAILED + 1))
   fi
 done
-if [ "$setup_node_total" -ne 7 ]; then
-  printf 'FAIL  ci.yml and release.yml must contain exactly seven setup-node steps total (got %s)\n' \
+if [ "$setup_node_total" -ne 9 ]; then
+  printf 'FAIL  ci.yml and release.yml must contain exactly nine setup-node steps total (got %s)\n' \
     "$setup_node_total" >&2
   NODE_PIN_FAILED=$((NODE_PIN_FAILED + 1))
 fi

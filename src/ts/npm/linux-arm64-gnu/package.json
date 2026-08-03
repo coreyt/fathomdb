@@ -1,0 +1,23 @@
+{
+  "name": "fathomdb-linux-arm64-gnu",
+  "version": "0.8.20",
+  "description": "Prebuilt FathomDB native binding for linux-arm64-gnu (napi-rs). Installed automatically as an optionalDependency of the `fathomdb` package on matching hosts.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/coreyt/fathomdb"
+  },
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "libc": [
+    "glibc"
+  ],
+  "main": "fathomdb.linux-arm64-gnu.node",
+  "files": [
+    "fathomdb.linux-arm64-gnu.node"
+  ]
+}
