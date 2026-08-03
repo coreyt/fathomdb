@@ -875,6 +875,26 @@ else
   fail "expected exit 0 on a current board; got rc=$RC, out: $OUT"
 fi
 
+# The board directory may contain untracked scratch STATUS files. They are not
+# release evidence and must not create a vacuous/stale second board.
+printf '# untracked scratch board\n' >"$CURRENT_REPO/dev/plans/runs/STATUS-0.8.98.md"
+run_checker "$CURRENT_REPO"
+if [ "$RC" -eq 0 ]; then
+  pass "check-board-currency ignores untracked STATUS boards"
+else
+  fail "untracked board changed the currency verdict: rc=$RC, out=$OUT"
+fi
+
+# Current authority regression: the published 0.8.20 board remains intentionally
+# retained without a CLOSED banner, but it must not be currency-checked beside
+# the active 0.8.21 release.
+run_checker "$REPO_ROOT"
+if [ "$RC" -ne 0 ] && grep -q '0.8.21' <<<"$OUT" && ! grep -q 'STALE  0.8.20' <<<"$OUT"; then
+  pass "published 0.8.20 is excluded; only the current 0.8.21 board is checked"
+else
+  fail "current-authority regression: rc=$RC out=$OUT"
+fi
+
 # --- Arm 2: stale board — checker exits non-zero, names the sha ----------------
 run_checker "$STALE_REPO"
 if [ "$RC" -ne 0 ]; then

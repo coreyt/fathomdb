@@ -262,6 +262,16 @@ else
   fail "arm 0b (tracked-only scan): rc=$RC out=$OUT"
 fi
 
+# An untracked state file must be ignored too: only tracked writers can own
+# generated views in this checkout.
+printf '%s\n' '{ not valid JSON' >"$FIX/dev/plans/release-state-8.8.8.json"
+run_gate
+if [ "$RC" -eq 0 ]; then
+  pass "untracked release-state JSON is excluded from discovery"
+else
+  fail "arm 0c (tracked-only state discovery): rc=$RC out=$OUT"
+fi
+
 # --- Arm 1: STALE BLOCK — a hand-edit INSIDE the markers -------------------
 # The primary failure this gate exists to catch: somebody "just fixes" a SHA in
 # the prose and the state file no longer agrees.
@@ -600,7 +610,7 @@ fi
 
 # --- Arm 6: TC-37 vacuous-pass guard — ZERO state files -------------------
 setup_fixture
-rm -f "$FIX/dev/plans/release-state-9.9.9.json"
+git -C "$FIX" rm -q dev/plans/release-state-9.9.9.json
 rm -f "$FIX/dev/plans/master.md" "$FIX/dev/plans/runs/handoff.md" "$FIX/dev/plans/runs/board.md"
 run_gate
 if [ "$RC" -ne 0 ] && grep -q 'ZERO release-state files' <<<"$OUT"; then

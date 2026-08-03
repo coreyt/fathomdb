@@ -138,11 +138,12 @@
 #             board/state contradiction or unreadable state file (TC-133).
 set -euo pipefail
 
-# The CLOSED-board predicate is SHARED with scripts/steward-orient.sh (which
-# selects the live board and derives the release from its filename) so the two
-# cannot drift apart on which release is current. Resolved from this script's
-# own directory BEFORE the cd below, so it works from any cwd.
-_CBC_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib"
+# The legacy CLOSED-banner predicate remains for pre-release-state fixtures and
+# historical boards. A modern checkout delegates current-release selection to
+# release-current.py below, which additionally recognizes a published state as
+# closure even if its retained board predates the CLOSED banner.
+_CBC_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_CBC_LIB_DIR="$_CBC_SCRIPT_DIR/lib"
 # shellcheck source=lib/board-closed.sh
 . "$_CBC_LIB_DIR/board-closed.sh"
 
@@ -597,8 +598,25 @@ CROSS_READ_PY
 
 STALE=0
 
-shopt -s nullglob
-for board in "$BOARDS_DIR"/STATUS-0.8.*.md; do
+# Inputs are tracked paths, never a physical directory walk: stale nested
+# worktrees and scratch boards cannot affect this checkout's currency verdict.
+mapfile -d '' -t TRACKED_BOARDS < <(git ls-files -z -- "$BOARDS_DIR")
+FILTERED_BOARDS=()
+for board in "${TRACKED_BOARDS[@]}"; do
+  case "$(basename "$board")" in STATUS-0.8.*.md) FILTERED_BOARDS+=("$board") ;; esac
+done
+
+# For the canonical board directory, use the same authority as steward-orient.
+# Legacy fixtures and pre-writer historical releases intentionally fall back to
+# the banner predicate when no conforming resolver tuple exists.
+if [ "$BOARDS_DIR" = "dev/plans/runs" ] && CURRENT="$($_CBC_SCRIPT_DIR/release-current.py 2>/dev/null)"; then
+  IFS=$'\t' read -r _CURRENT_VER CURRENT_BOARD _CURRENT_STATE <<<"$CURRENT"
+  if [ -n "$CURRENT_BOARD" ]; then
+    FILTERED_BOARDS=("$CURRENT_BOARD")
+  fi
+fi
+
+for board in "${FILTERED_BOARDS[@]}"; do
   # Closed boards are self-labelled and frozen -- never scanned (see predicate
   # above). The 15-line header window (not 5) and its rationale live in
   # scripts/lib/board-closed.sh, sourced above and shared with steward-orient.sh.

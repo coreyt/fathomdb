@@ -101,7 +101,7 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 MODE="$MODE" QUIET="$QUIET" python3 - <<'PY'
-import glob, json, os, subprocess, sys
+import json, os, subprocess, sys
 
 MODE  = os.environ["MODE"]
 QUIET = os.environ["QUIET"] == "1"
@@ -475,9 +475,8 @@ RENDERERS = {
 }
 
 # ---------------------------------------------------------------------------
-# Discover inputs. State files retain their existing physical-tree discovery;
-# the Markdown confinement scan below is tracked-only so a linked worktree's
-# stale documents are never this checkout's contract.
+# Discover tracked inputs. A stale linked worktree's state or Markdown copy is
+# not this checkout's contract and cannot affect its generated-view verdict.
 # ---------------------------------------------------------------------------
 def tracked(pattern):
     result = subprocess.run(
@@ -489,12 +488,12 @@ def tracked(pattern):
     return sorted(p.decode("utf-8") for p in result.stdout.split(b"\0") if p)
 
 try:
+    state_paths = tracked(":(glob)dev/plans/release-state-*.json")
     markdown_paths = tracked(":(glob)**/*.md")
 except RuntimeError as exc:
     print("FAIL check-release-state-views: cannot list tracked inputs — %s" % exc,
           file=sys.stderr)
     sys.exit(2)
-state_paths = sorted(glob.glob("dev/plans/release-state-*.json"))
 if not state_paths:
     bad("FAIL check-release-state-views: ZERO release-state files discovered under\n"
         "  dev/plans/release-state-*.json. The check loop never ran, so a pass here\n"
