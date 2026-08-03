@@ -47,6 +47,242 @@ def read_lines(path):
         return [ln for ln in fh.read().splitlines() if ln]
 
 
+def todos_open(ledger, summary="open item", kind="todo", status="open"):
+    return call(
+        [
+            ledger,
+            "--profile",
+            "todos",
+            "--open",
+            "--kind",
+            kind,
+            "--summary",
+            summary,
+            "--field",
+            f"status={status}",
+        ]
+    )
+
+
+# --- todos profile ----------------------------------------------------------
+
+
+def test_todos_profile_parallel_opens_allocate_distinct_immutable_ids(tmp_path):
+    ledger = str(tmp_path / "todos.jsonl")
+    script = os.path.join(HERE, "ledgerwrite.py")
+    procs = [
+        subprocess.Popen(
+            [
+                sys.executable,
+                script,
+                ledger,
+                "--profile",
+                "todos",
+                "--open",
+                "--kind",
+                "todo",
+                "--summary",
+                f"open-{i}",
+                "--field",
+                "status=open",
+                "--quiet",
+            ]
+        )
+        for i in range(12)
+    ]
+    assert all(proc.wait() == 0 for proc in procs)
+    records = [json.loads(line) for line in read_lines(ledger)]
+    ids = [record["id"] for record in records]
+    assert len(ids) == len(set(ids)) == 12
+    assert all(lw.TODOS_ID_RE.fullmatch(item_id) for item_id in ids)
+
+
+def test_todos_profile_open_rejects_caller_chosen_or_reused_id(tmp_path):
+    ledger = str(tmp_path / "todos.jsonl")
+    rc, _, err = call(
+        [
+            ledger,
+            "--profile",
+            "todos",
+            "--open",
+            "--kind",
+            "todo",
+            "--summary",
+            "do not reuse IDs",
+            "--field",
+            "id=TC-1",
+            "--field",
+            "status=open",
+        ]
+    )
+    assert rc == 2
+    assert "allocates id" in err
+    assert not os.path.exists(ledger)
+
+
+def test_todos_profile_update_requires_current_expected_seq(tmp_path):
+    ledger = str(tmp_path / "todos.jsonl")
+    rc, out, _ = todos_open(ledger)
+    assert rc == 0
+    opened = json.loads(out)
+    update = [
+        ledger,
+        "--profile",
+        "todos",
+        "--kind",
+        "todo",
+        "--summary",
+        "started",
+        "--field",
+        f"id={opened['id']}",
+        "--field",
+        "status=in-progress",
+        "--expected-prior-seq",
+        str(opened["seq"]),
+    ]
+    assert call(update)[0] == 0
+    stale = update[:-1] + [str(opened["seq"])]
+    rc, _, err = call(stale)
+    assert rc == 2
+    assert "expected prior seq" in err
+
+
+@pytest.mark.parametrize(
+    "kind,status,error",
+    [
+        ("caveat", "in-progress", "kind is immutable"),
+        ("todo", "bogus", "invalid todos status"),
+    ],
+)
+def test_todos_profile_rejects_kind_mutation_and_illegal_status(tmp_path, kind, status, error):
+    ledger = str(tmp_path / "todos.jsonl")
+    rc, out, _ = todos_open(ledger)
+    assert rc == 0
+    opened = json.loads(out)
+    rc, _, err = call(
+        [
+            ledger,
+            "--profile",
+            "todos",
+            "--kind",
+            kind,
+            "--summary",
+            "bad update",
+            "--field",
+            f"id={opened['id']}",
+            "--field",
+            f"status={status}",
+            "--expected-prior-seq",
+            str(opened["seq"]),
+        ]
+    )
+    assert rc == 2
+    assert error in err
+
+
+def test_todos_profile_rejects_illegal_terminal_transition(tmp_path):
+    ledger = str(tmp_path / "todos.jsonl")
+    _, out, _ = todos_open(ledger)
+    opened = json.loads(out)
+    done = [
+        ledger,
+        "--profile",
+        "todos",
+        "--kind",
+        "todo",
+        "--summary",
+        "done",
+        "--field",
+        f"id={opened['id']}",
+        "--field",
+        "status=done",
+        "--expected-prior-seq",
+        str(opened["seq"]),
+    ]
+    assert call(done)[0] == 0
+    rc, _, err = call(
+        [
+            ledger,
+            "--profile",
+            "todos",
+            "--kind",
+            "todo",
+            "--summary",
+            "after terminal",
+            "--field",
+            f"id={opened['id']}",
+            "--field",
+            "status=open",
+            "--expected-prior-seq",
+            "2",
+        ]
+    )
+    assert rc == 2
+    assert "illegal todos status transition" in err
+
+
+def test_todos_profile_rejects_reopening_in_progress_item(tmp_path):
+    ledger = str(tmp_path / "todos.jsonl")
+    _, out, _ = todos_open(ledger)
+    opened = json.loads(out)
+    started = [
+        ledger,
+        "--profile",
+        "todos",
+        "--kind",
+        "todo",
+        "--summary",
+        "started",
+        "--field",
+        f"id={opened['id']}",
+        "--field",
+        "status=in-progress",
+        "--expected-prior-seq",
+        str(opened["seq"]),
+    ]
+    assert call(started)[0] == 0
+    rc, _, err = call(started[:-1] + ["2"] + ["--field", "status=open"])
+    assert rc == 2
+    assert "illegal todos status transition" in err
+
+
+def test_todos_profile_accepts_a_legacy_tc_numeric_id_on_update(tmp_path):
+    ledger = str(tmp_path / "todos.jsonl")
+    rc, _, _ = call(
+        [
+            ledger,
+            "--kind",
+            "todo",
+            "--summary",
+            "legacy open",
+            "--field",
+            "id=TC-42",
+            "--field",
+            "status=open",
+        ]
+    )
+    assert rc == 0
+    rc, out, err = call(
+        [
+            ledger,
+            "--profile",
+            "todos",
+            "--kind",
+            "todo",
+            "--summary",
+            "legacy started",
+            "--field",
+            "id=TC-42",
+            "--field",
+            "status=in-progress",
+            "--expected-prior-seq",
+            "1",
+        ]
+    )
+    assert rc == 0, err
+    assert json.loads(out)["id"] == "TC-42"
+
+
 # --- happy path -------------------------------------------------------------
 
 
