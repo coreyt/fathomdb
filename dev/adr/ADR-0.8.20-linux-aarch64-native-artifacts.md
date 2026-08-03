@@ -30,6 +30,15 @@ wheel and N-API binary on the architecture users run, avoiding unsupported
 cross-compilation assumptions. A branch-runnable no-publish preflight proves
 that path before a merge or release is authorized.
 
+## Verification boundary
+
+An AMD64 Linux checkout can validate the workflow graph, package manifests,
+optional-dependency injection, and—when an appropriate linker and sysroot are
+installed—cross-compilation. It cannot natively execute the AArch64 Python
+wheel, N-API binary, or ARM-specific Candle CPU behavior. Those runtime claims
+require either a native Linux AArch64 host or the `ubuntu-24.04-arm` preflight
+runner. QEMU may supplement those checks but is not equivalent evidence.
+
 ## Consequences
 
 `release.yml` builds and stages both Linux architectures before any publish;
