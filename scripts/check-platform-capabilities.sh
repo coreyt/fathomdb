@@ -23,9 +23,9 @@ loader = (root / 'src/ts/src/platform.ts').read_text()
 for triple, entry in triples.items():
     if triple not in loader:
         raise SystemExit(f'FAIL platform-capabilities: loader triple {triple} is absent from manifest coverage')
-    if entry['status'] not in {'published', 'planned'}:
+    if entry['status'] not in {'published', 'release-ready', 'planned'}:
         raise SystemExit(f'FAIL platform-capabilities: {triple} has invalid status')
-    if entry['status'] == 'published':
+    if entry['status'] in {'published', 'release-ready'}:
         package_dir = entry['package_dir']
         if not package_dir:
             raise SystemExit(f'FAIL platform-capabilities: published {triple} has no package directory')
