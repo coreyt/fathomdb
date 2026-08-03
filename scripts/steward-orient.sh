@@ -50,13 +50,10 @@
 # Re-scraping them here would recreate the exact fan-out this effort removes.
 #
 # ======================= FOUR THINGS THAT ARE LOAD-BEARING ==================
-# (1) THE RELEASE IS DERIVED FROM THE LIVE BOARD FILENAME. A hardcoded `0.8.20`
-#     keeps working right up until 0.8.20 closes, then silently prints "nothing
-#     landed" forever — this repo's TC-37 vacuous-pass class. So: discover every
-#     dev/plans/runs/STATUS-<version>.md, drop the CLOSED ones, take the highest
-#     remaining version, and read release-state-<that version>.json. If no live
-#     board exists, or its state file does not, that is a HARD failure naming the
-#     missing path — never a quiet "nothing landed".
+# (1) THE RELEASE COMES FROM scripts/release-current.py. It validates the tracked
+#     release-state/board pairs and returns exactly one non-CLOSED board. A
+#     hardcoded version, a highest-version tie-break, or an untracked nested
+#     worktree copy would all recreate the ambiguity this briefing exists to end.
 # (2) `<repo-root>-worktrees/` IS A SIBLING OF THE REPO ROOT, NOT A CHILD. It is
 #     resolved from the MAIN worktree's root (via --git-common-dir, so running
 #     this from inside a linked worktree still resolves the same sibling) plus a
@@ -80,10 +77,9 @@
 #       * the todos fold's `unfoldable (no id)` bucket, printed `no-id`: zero is
 #         fine (and the
 #         count is always printed, so it can never be confused with "no data").
-# (4) THE BOARD-CLOSED PREDICATE IS SHARED with scripts/check-board-currency.sh
-#     via scripts/lib/board-closed.sh (window = `head -n 15`, NOT 5 — YAML
-#     frontmatter pushes the banner down). Sharing, not reimplementing, is what
-#     stops the two from disagreeing about which release is current.
+# (4) The resolver uses the same header CLOSED marker as board-currency. Its
+#     result, rather than a local reimplementation, is the release authority for
+#     this briefing.
 #
 # ========================== LEDGERS GO THROUGH ledgerwatch ==================
 # Never a raw `tail` of the .jsonl. Invocations:
@@ -116,8 +112,6 @@ export GIT_OPTIONAL_LOCKS=0
 BUDGET_BYTES="${STEWARD_ORIENT_BUDGET:-4096}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=lib/board-closed.sh
-. "$SCRIPT_DIR/lib/board-closed.sh"
 
 if ! REPO_ROOT="$(git --no-optional-locks rev-parse --show-toplevel 2>/dev/null)"; then
   printf 'steward-orient: not inside a git worktree\n' >&2
@@ -274,34 +268,23 @@ else
 fi
 
 # ---------------------------------------------------------------- RELEASE ---
-# Correction 1: discover the live board, derive the release from its FILENAME.
-LIVE=""
-shopt -s nullglob
-for board in dev/plans/runs/STATUS-*.md; do
-  ver="$(basename "$board" .md | sed -n 's/^STATUS-\([0-9][0-9.]*\)$/\1/p')"
-  [ -n "$ver" ] || continue          # non-standard name (STATUS-phase12.md etc)
-  if board_is_closed "$board"; then continue; fi
-  LIVE+="$ver $board"$'\n'
-done
-shopt -u nullglob
-LIVE="$(printf '%s' "$LIVE" | sed '/^$/d' | sort -V)"
-
+# The resolver is the only current-release selector. Its input is `git ls-files`,
+# so a stale nested worktree cannot become a second authority.
+RESOLVER="$REPO_ROOT/scripts/release-current.py"
 BOARD=""
 VER=""
-if [ -z "$LIVE" ]; then
-  note_empty "live release board (no non-CLOSED dev/plans/runs/STATUS-<version>.md found)"
-  add "RELEASE (no live board found)"
+STATE=""
+if [ ! -x "$RESOLVER" ]; then
+  note_empty "release resolver ($RESOLVER is missing or not executable)"
+  add "RELEASE (resolver unavailable)"
+elif ! CURRENT="$($RESOLVER)"; then
+  note_empty "current release (release-current resolver rejected tracked release metadata)"
+  add "RELEASE (no authoritative current release)"
 else
-  N_LIVE="$(printf '%s\n' "$LIVE" | wc -l | tr -d ' ')"
-  VER="$(printf '%s\n' "$LIVE" | tail -1 | cut -d' ' -f1)"
-  BOARD="$(printf '%s\n' "$LIVE" | tail -1 | cut -d' ' -f2)"
-  if [ "$N_LIVE" -gt 1 ]; then
-    add "NOTE   $N_LIVE live boards; using the highest version"
-  fi
-  STATE="dev/plans/release-state-$VER.json"
-  if [ ! -f "$STATE" ]; then
-    note_empty "release state for the live board — $STATE does not exist"
-    add "RELEASE $VER  board=$(basename "$BOARD")  STATE FILE MISSING: $STATE"
+  IFS=$'\t' read -r VER BOARD STATE <<<"$CURRENT"
+  if [ -z "$VER" ] || [ -z "$BOARD" ] || [ -z "$STATE" ]; then
+    note_empty "current release (release-current resolver returned an incomplete tuple)"
+    add "RELEASE (resolver returned incomplete metadata)"
   else
     if STATE_OUT="$(python3 - "$STATE" "$VER" "$BOARD" <<'PY'
 import json, sys
@@ -330,7 +313,10 @@ if landed:
     print(f"  LANDED {cells}")
 else:
     print("  LANDED (none)")
-    print(f"#EMPTY:landed slices (no ladder entry in {path} has status LANDED)")
+    # A foundation release has a legitimate pre-first-land state. Its explicit
+    # release kind distinguishes that from an accidentally-empty normal ladder.
+    if "foundation" not in str(d.get("release_kind", "")).casefold():
+        print(f"#EMPTY:landed slices (no ladder entry in {path} has status LANDED)")
 
 # The state file also carries a flat `landed` list; if its own two fields
 # disagree, the single writer is internally inconsistent and must say so.
@@ -360,8 +346,26 @@ fi
 if [ -n "$BOARD" ]; then
   ROW="$(grep -m1 -E '^\|[[:space:]]*\*\*Immediate next (action|step)\*\*[[:space:]]*\|' "$BOARD" || true)"
   if [ -z "$ROW" ]; then
-    note_empty "board next action (no '| **Immediate next action** |' row in $BOARD)"
-    add "NEXT ACTION (row not found in $(basename "$BOARD"))"
+    # Foundation boards are intentionally concise: their state writer owns the
+    # current slice, so use that fact rather than inventing a prose row. Older
+    # boards retain the strict verbatim-row contract below.
+    FOUNDATION_NEXT="$(python3 - "$STATE" <<'PY'
+import json, sys
+try:
+    d = json.load(open(sys.argv[1], encoding="utf-8"))
+    if "foundation" in str(d.get("release_kind", "")).casefold() and d.get("next_slice") is not None:
+        print(d["next_slice"])
+except Exception:
+    pass
+PY
+)"
+    if [ -n "$FOUNDATION_NEXT" ]; then
+      add "NEXT ACTION (from release state)"
+      add "  Slice $FOUNDATION_NEXT is current."
+    else
+      note_empty "board next action (no '| **Immediate next action** |' row in $BOARD)"
+      add "NEXT ACTION (row not found in $(basename "$BOARD"))"
+    fi
   else
     CELL="${ROW#*|}"; CELL="${CELL#*|}"; CELL="${CELL%|}"
     CELL="${CELL#"${CELL%%[![:space:]]*}"}"; CELL="${CELL%"${CELL##*[![:space:]]}"}"

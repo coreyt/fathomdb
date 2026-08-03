@@ -40,6 +40,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 GATE="${GATE_UNDER_TEST:-$REPO_ROOT/scripts/steward-orient.sh}"
+RESOLVER="$REPO_ROOT/scripts/release-current.py"
 BOARD_CURRENCY="$REPO_ROOT/scripts/check-board-currency.sh"
 CLOSED_LIB="$REPO_ROOT/scripts/lib/board-closed.sh"
 LEDGERWATCH="$REPO_ROOT/dev/agent-tools/ledgerwatch/ledgerwatch.py"
@@ -74,8 +75,10 @@ BYTES=0
 setup_fixture() {
   rm -rf "$TMPROOT/parent"
   mkdir -p "$FIX/dev/plans/runs" "$FIX/dev/steward" \
-           "$FIX/dev/agent-tools/ledgerwatch" "$WTDIR"
+           "$FIX/dev/agent-tools/ledgerwatch" "$FIX/scripts" "$WTDIR"
   cp "$LEDGERWATCH" "$FIX/dev/agent-tools/ledgerwatch/ledgerwatch.py"
+  cp "$RESOLVER" "$FIX/scripts/release-current.py"
+  chmod +x "$FIX/scripts/release-current.py"
 
   # The live board is 0.9.0 — deliberately NOT the release the real repo is on,
   # so a hardcoded "0.8.20" implementation cannot pass any fixture arm.
@@ -265,7 +268,7 @@ else
   fail "arm 8 fixture invalid: banner at line $CLOSED_BANNER_LINE"
 fi
 run_orient "$FIX"
-if [ "$RC" -ne 0 ] && grep -qiE 'live (release )?board' <<<"$ERR"; then
+if [ "$RC" -ne 0 ] && grep -qiE 'current release|exactly one.*live' <<<"$ERR"; then
   pass "a CLOSED board (banner at line 6-15) is skipped -> zero live boards HARD-fails"
 else
   fail "arm 8 (closed-detector parity): rc=$RC err=$ERR"
@@ -280,7 +283,7 @@ if grep -qF 'head -n 15' "$CLOSED_LIB" \
 else
   fail "arm 8b: the shared predicate lib is missing or has the wrong window"
 fi
-for caller in "$GATE" "$BOARD_CURRENCY"; do
+for caller in "$BOARD_CURRENCY"; do
   if grep -qF 'lib/board-closed.sh' "$caller"; then
     pass "$(basename "$caller") sources the shared board-CLOSED predicate"
   else
@@ -294,6 +297,12 @@ for caller in "$GATE" "$BOARD_CURRENCY"; do
     fail "arm 8b: $(basename "$caller") is missing or still inlines its own CLOSED window"
   fi
 done
+if grep -qF 'release-current.py' "$GATE" \
+   && ! grep -qF 'for board in dev/plans/runs/STATUS-' "$GATE"; then
+  pass "steward-orient delegates current-release selection to the resolver"
+else
+  fail "steward-orient must use release-current.py instead of selecting boards itself"
+fi
 
 # --- Arm 7: worktrees dir is a SIBLING of the repo root (correction 2) -----
 # `<root>-worktrees/` sits BESIDE the repo, not inside it. Resolving it as a

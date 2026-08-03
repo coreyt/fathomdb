@@ -101,7 +101,7 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 MODE="$MODE" QUIET="$QUIET" python3 - <<'PY'
-import glob, json, os, sys
+import glob, json, os, subprocess, sys
 
 MODE  = os.environ["MODE"]
 QUIET = os.environ["QUIET"] == "1"
@@ -475,8 +475,25 @@ RENDERERS = {
 }
 
 # ---------------------------------------------------------------------------
-# Discover state files.
+# Discover inputs. State files retain their existing physical-tree discovery;
+# the Markdown confinement scan below is tracked-only so a linked worktree's
+# stale documents are never this checkout's contract.
 # ---------------------------------------------------------------------------
+def tracked(pattern):
+    result = subprocess.run(
+        ["git", "--no-optional-locks", "ls-files", "-z", "--", pattern],
+        check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    if result.returncode:
+        raise RuntimeError(result.stderr.decode("utf-8", "replace").strip())
+    return sorted(p.decode("utf-8") for p in result.stdout.split(b"\0") if p)
+
+try:
+    markdown_paths = tracked(":(glob)**/*.md")
+except RuntimeError as exc:
+    print("FAIL check-release-state-views: cannot list tracked inputs — %s" % exc,
+          file=sys.stderr)
+    sys.exit(2)
 state_paths = sorted(glob.glob("dev/plans/release-state-*.json"))
 if not state_paths:
     bad("FAIL check-release-state-views: ZERO release-state files discovered under\n"
@@ -584,36 +601,33 @@ for sp in state_paths:
             % (path, vid, sp, have, want, sp))
 
 # ---------------------------------------------------------------------------
-# RULE 3 — orphan-marker scan (the confinement rule).
+# RULE 3 — orphan-marker scan (the confinement rule), over tracked Markdown
+# only. Scanning the physical worktree makes an unrelated stale linked worktree
+# a false owner and violates the single-checkout contract.
 # ---------------------------------------------------------------------------
-PRUNE = {".git", "node_modules", "target", ".venv", "site", "dist", ".cache", ".wake"}
-for root, dirs, files in os.walk("."):
-    dirs[:] = [d for d in dirs if d not in PRUNE]
-    for name in files:
-        if not name.endswith(".md"):
-            continue
-        p = os.path.relpath(os.path.join(root, name), ".")
-        try:
-            with open(p, encoding="utf-8", errors="replace") as fh:
-                text = fh.read()
-        except OSError:
-            continue
-        if MARKER_PREFIX not in text:
-            continue
-        for line in text.split("\n"):
-            k = line.find(MARKER_PREFIX)
-            while k != -1:
-                end = line.find("-->", k)
-                if end == -1:
-                    bad("FAIL %s: unterminated generated-region BEGIN marker." % p)
-                    break
-                marker = line[k:end + 3]
-                if (p, marker) not in declared:
-                    bad("FAIL %s: ORPHAN generated-region marker\n    %s\n"
-                        "  No release-state file declares this view for this file. Generated\n"
-                        "  regions are confined to the locations a state file names; a marker\n"
-                        "  anywhere else is unowned and unchecked." % (p, marker))
-                k = line.find(MARKER_PREFIX, end + 3)
+for p in markdown_paths:
+    try:
+        with open(p, encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+    except OSError:
+        bad("FAIL %s: tracked Markdown input could not be read." % p)
+        continue
+    if MARKER_PREFIX not in text:
+        continue
+    for line in text.split("\n"):
+        k = line.find(MARKER_PREFIX)
+        while k != -1:
+            end = line.find("-->", k)
+            if end == -1:
+                bad("FAIL %s: unterminated generated-region BEGIN marker." % p)
+                break
+            marker = line[k:end + 3]
+            if (p, marker) not in declared:
+                bad("FAIL %s: ORPHAN generated-region marker\n    %s\n"
+                    "  No release-state file declares this view for this file. Generated\n"
+                    "  regions are confined to the locations a state file names; a marker\n"
+                    "  anywhere else is unowned and unchecked." % (p, marker))
+            k = line.find(MARKER_PREFIX, end + 3)
 
 # ---------------------------------------------------------------------------
 # Vacuity guard + report.

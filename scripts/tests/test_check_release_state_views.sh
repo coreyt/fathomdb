@@ -227,6 +227,8 @@ EOF
 ${B_HANDOFF}
 **The 9.9.9 ladder is between slices: 0 → 5 are all LANDED; 10 is next.**${E_HANDOFF} More prose.
 EOF
+
+  (cd "$FIX" && git add -A && git commit -qm 'fixture: tracked baseline')
 }
 
 run_gate() {
@@ -244,6 +246,20 @@ if [ "$RC" -eq 0 ]; then
   pass "baseline fixture — every fenced region matches its render (exit 0)"
 else
   fail "arm 0 (baseline green): rc=$RC out=$OUT"
+fi
+
+# --- Arm 0b: stale nested worktrees are not this checkout's Markdown --------
+# The gate used to walk the physical tree, so an untracked linked-worktree copy
+# under `.claude/worktrees` could contribute an orphan marker and fail the
+# current checkout. Only `git ls-files` inputs are contractual.
+mkdir -p "$FIX/.claude/worktrees/stale/dev/plans/runs"
+printf '%s\n' '<!-- BEGIN GENERATED release-state:9.9.9:unowned -->' \
+  >"$FIX/.claude/worktrees/stale/dev/plans/runs/STATUS-9.9.9.md"
+run_gate
+if [ "$RC" -eq 0 ]; then
+  pass "untracked nested worktree Markdown is excluded from the orphan scan"
+else
+  fail "arm 0b (tracked-only scan): rc=$RC out=$OUT"
 fi
 
 # --- Arm 1: STALE BLOCK — a hand-edit INSIDE the markers -------------------
@@ -542,6 +558,7 @@ cat >"$FIX/dev/plans/stray.md" <<EOF
 ${B_HANDOFF}
 whatever${E_HANDOFF}
 EOF
+(cd "$FIX" && git add dev/plans/stray.md)
 run_gate
 if [ "$RC" -ne 0 ] && grep -q 'ORPHAN generated-region marker' <<<"$OUT"; then
   pass "orphan marker — a generated region outside every declared location HARD-fails"
