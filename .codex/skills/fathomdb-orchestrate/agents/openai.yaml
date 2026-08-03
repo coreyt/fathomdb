@@ -1,0 +1,4 @@
+interface:
+  display_name: "FathomDB Orchestrate"
+  short_description: "Coordinate a FathomDB release ladder."
+  default_prompt: "Orchestrate the specified FathomDB release plan."

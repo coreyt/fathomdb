@@ -8,7 +8,10 @@
 # tests/corpus/corpus-card.md for distribution + license posture.
 /data/corpus-data/
 
-.codex
+# Keep local Codex state out of the repository, except the shared workflows.
+.codex/*
+!.codex/skills/
+!.codex/skills/**
 # .claude/ holds SHARED harness tooling (tracked) alongside per-user/local files
 # (ignored). Ignore the dir's contents by default, then un-ignore the shared
 # agent defs + slash commands. settings.json / settings.local.json and any other
@@ -170,4 +173,3 @@ scripts/sbom-survey/.venv/
 # stops being a reliable signal at exactly the moment Slice 33 is working.
 scripts/sbom-survey/build/
 scripts/sbom-survey/*.egg-info/
-

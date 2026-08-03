@@ -1,0 +1,4 @@
+interface:
+  display_name: "FathomDB Decisions"
+  short_description: "Report live FathomDB HITL decisions."
+  default_prompt: "Enumerate the open FathomDB HITL decisions."

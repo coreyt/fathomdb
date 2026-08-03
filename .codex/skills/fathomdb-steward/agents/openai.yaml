@@ -1,0 +1,4 @@
+interface:
+  display_name: "FathomDB Steward"
+  short_description: "Steward the FathomDB release program."
+  default_prompt: "Act as the FathomDB Program Steward and orient me."
