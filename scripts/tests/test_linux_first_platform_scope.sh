@@ -87,8 +87,13 @@ for workflow in "$CI" "$RELEASE"; do
 
   assert_only_active_values "$workflow" runner '^ubuntu(-[[:alnum:].-]+)?$' \
     "$name matrix runner values are Linux"
-  assert_only_active_values "$workflow" target '^x86_64-unknown-linux-gnu$' \
-    "$name native artifact target values are Linux x86_64 only"
+  if [ "$name" = "ci.yml" ]; then
+    assert_only_active_values "$workflow" target '^x86_64-unknown-linux-gnu$' \
+      "$name native artifact target values remain Linux x86_64 only"
+  else
+    assert_only_active_values "$workflow" target '^(x86_64|aarch64)-unknown-linux-gnu$' \
+      "$name native artifact target values are supported Linux architectures"
+  fi
 done
 
 require_active_values "$CI" target "ci.yml retains an active Linux x86_64 artifact target"
@@ -97,14 +102,16 @@ require_active_values "$RELEASE" target "release.yml retains an active Linux x86
 require_active_values "$RELEASE" label "release.yml retains an active Linux x86_64 native label"
 assert_only_active_values "$CI" label '^linux-x64$' \
   "ci.yml artifact label values are Linux x86_64 only"
-assert_only_active_values "$RELEASE" label '^linux-x64-gnu$' \
-  "release.yml native artifact label values are Linux x86_64 only"
+assert_only_active_values "$RELEASE" label '^linux-(x64|arm64)-gnu$' \
+  "release.yml native artifact label values are supported Linux architectures"
 
 if grep -qE '^[[:space:]]*target:[[:space:]]*x86_64-unknown-linux-gnu[[:space:]]*$' "$RELEASE" && \
-  grep -qE '^[[:space:]]*label:[[:space:]]*linux-x64-gnu[[:space:]]*$' "$RELEASE"; then
-  pass "release retains the Linux x86_64 Python and N-API artifact path"
+  grep -qE '^[[:space:]]*target:[[:space:]]*aarch64-unknown-linux-gnu[[:space:]]*$' "$RELEASE" && \
+  grep -qE '^[[:space:]]*label:[[:space:]]*linux-x64-gnu[[:space:]]*$' "$RELEASE" && \
+  grep -qE '^[[:space:]]*label:[[:space:]]*linux-arm64-gnu[[:space:]]*$' "$RELEASE"; then
+  pass "release retains Linux x86_64 and AArch64 Python and N-API artifact paths"
 else
-  fail "release must retain the Linux x86_64 Python and N-API artifact path"
+  fail "release must retain Linux x86_64 and AArch64 Python and N-API artifact paths"
 fi
 
 for required_job in changes verify security; do

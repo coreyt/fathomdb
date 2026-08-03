@@ -28,14 +28,16 @@ serde_json = { version = "1", optional = true }
 thiserror = { version = "1", optional = true }
 
 # Candle stack + tokenizer for the default `CandleBgeEmbedder` (EU-4).
-# Pinned to candle 0.10 (current stable line) and tokenizers 0.20. Gated
-# under `default-embedder` so the no-feature build closure remains thin
+# FathomDB-maintained Candle 0.10.2 CPU packages retain Candle's Rust crate
+# names while treating CPU F16 matmul as unsupported only on Linux AArch64,
+# where Gemm's F16 backend requires unavailable instructions. Gated under
+# `default-embedder` so the no-feature build closure remains thin
 # (EMB-3 wheel-size gate). `safetensors` is reached transitively via
 # candle-core's re-export per ADR-0.6.0-default-embedder consequences;
 # no direct dep here.
-candle-core         = { version = "0.10", optional = true }
-candle-nn           = { version = "0.10", optional = true }
-candle-transformers = { version = "0.10", optional = true, default-features = false }
+candle-core         = { package = "candle-core-fathomdb", version = "=0.10.2", optional = true }
+candle-nn           = { package = "candle-nn-fathomdb", version = "=0.10.2", optional = true }
+candle-transformers = { package = "candle-transformers-fathomdb", version = "=0.10.2", optional = true, default-features = false }
 tokenizers          = { version = "0.20", optional = true, default-features = false, features = ["onig"] }
 
 # 0.8.16 Slice 10 (ADR-0.8.16-onnx-embedder-backend §2) — cross-vendor ONNX

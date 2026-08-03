@@ -4,7 +4,7 @@
 # (R-REL-4f).
 #
 # Why publish-time injection (the napi-rs idiom) and not a committed field:
-# the `@fathomdb/fathomdb-<triple>` binary packages are published DURING the
+# the unscoped `fathomdb-<triple>` binary packages are published DURING the
 # release, so at dev time they do not exist on the registry. Committing them as
 # `optionalDependencies` would desync `package-lock.json` and break every
 # `npm ci`. Instead the committed package.json is `npm ci`-clean, and this
@@ -14,7 +14,7 @@
 # One entry is injected for EACH platform present under src/ts/npm/<triple>/
 # (each such directory is a package published this release), pinned to the main
 # package's own version. For 0.8.18 only `linux-x64-gnu` exists → only
-# `@fathomdb/fathomdb-linux-x64-gnu` is injected; the follow-on adds more
+# `fathomdb-linux-x64-gnu` is injected; the follow-on adds more
 # platform directories and they are picked up automatically.
 #
 # Usage: npm-inject-optional-deps.sh [<main-package-dir>] [<npm-platform-dir>]

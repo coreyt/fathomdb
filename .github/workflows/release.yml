@@ -32,11 +32,12 @@ env:
   RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.release_version) || github.ref_name }}
   RELEASE_DISPATCH_VERSION: ${{ inputs.release_version || '' }}
   RELEASE_CONFIRM_VERSION: ${{ inputs.confirm_release_version || '' }}
-  # 0.8.20 is Linux-first: platform coverage is PARTIAL (linux-x64-gnu only).
+  # Linux-first platform coverage is partial: x64 and AArch64 glibc are
+  # supported, while macOS, Windows, and musl remain deferred.
   # Publishing under `latest` would serve unsupported users an
   # install-incompatible package as the default. So the main
-  # `fathomdb` package + the one `@fathomdb/fathomdb-linux-x64-gnu` binary
-  # package publish under a NON-`latest` dist-tag. HITL confirms the exact
+  # `fathomdb` package + both Linux binary packages publish under a
+  # NON-`latest` dist-tag. HITL confirms the exact
   # label. macOS/Windows native artifacts and validation are deferred to 0.8.22;
   # that release may complete the platform matrix and then promote
   # `latest`.
@@ -104,12 +105,12 @@ jobs:
         # Queries crates.io directly (read-only, fail-closed on any error).
         run: bash scripts/release/verify-embedder-api-no-drift.sh
 
-  # Linux x86_64 Python wheels via PyO3/maturin-action. The
+  # Native Linux Python wheels via PyO3/maturin-action. The
   # working-directory must be `src/python` so maturin reads our pyproject.toml
   # there (manifest-path = ../rust/crates/fathomdb-py/Cargo.toml).
-  # The 0.8.20 native-artifact scope is x86_64-unknown-linux-gnu ONLY. macOS
-  # and Windows native artifacts and validation are deferred to 0.8.22; do not
-  # add their matrix entries to this release.
+  # Linux x86_64 and AArch64 are the supported native-artifact routes. macOS
+  # and Windows native artifacts and validation remain deferred; do not add
+  # their matrix entries to this release.
   build-python:
     needs: verify-release
     strategy:
@@ -118,6 +119,9 @@ jobs:
         include:
           - runner: ubuntu-latest
             target: x86_64-unknown-linux-gnu
+            manylinux: "2_28"
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
             manylinux: "2_28"
     runs-on: ${{ matrix.runner }}
     steps:
@@ -157,8 +161,8 @@ jobs:
   # because the platform-label convention lives in the napi-rs CLI, not in
   # us. Binary lands flat at src/ts/fathomdb.<label>.node (NO prebuilds/
   # subdir; that was the pre-0.6.0 layout).
-  # The 0.8.20 native-artifact scope is x86_64-unknown-linux-gnu only. macOS
-  # and Windows native artifacts and validation are deferred to 0.8.22.
+  # Linux x86_64 and AArch64 are native build routes. macOS and Windows native
+  # artifacts and validation remain deferred.
   build-napi:
     needs: verify-release
     if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.recovery_skip_npm == true && inputs.release_version == '0.8.20') }}
@@ -169,6 +173,9 @@ jobs:
           - runner: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             label: linux-x64-gnu
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            label: linux-arm64-gnu
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0, canonical release tag
@@ -512,10 +519,9 @@ jobs:
           skip-existing: true
 
   # --- Tier 8: npm per-platform binary package (R-REL-4f) --------------------
-  # Publishes the ONE platform binary package @fathomdb/fathomdb-linux-x64-gnu
-  # (0.8.18 critical path = linux-x64-gnu, D5; deferred platforms via the
-  # follow-on). It carries os/cpu so npm installs it only on matching hosts,
-  # and is wired as an optionalDependency of the thin main `fathomdb` package.
+  # Publishes the Linux x64 platform binary package. It carries os/cpu so npm
+  # installs it only on matching hosts, and is wired as an optionalDependency
+  # of the thin main `fathomdb` package alongside the Linux AArch64 package.
   # Idempotent (npm-publish-if-new.sh) + non-latest dist-tag (NPM_DIST_TAG).
   # Published BEFORE the main package so the optionalDependency resolves.
   publish-npm-platform-linux-x64-gnu:
@@ -544,11 +550,49 @@ jobs:
         run: ls -la
       # npm OIDC trusted publishing needs npm >= 11.5.1; the exact Node
       # 25.9.0 toolchain supplies npm 11.12.1 for the publisher. --access
-      # public makes the scoped
-      # package publishable; --provenance attests the build. Idempotent no-op
+      # --access public keeps the platform package public; --provenance attests
+      # the build. Idempotent no-op
       # if this version is already on the registry.
-      - name: Publish @fathomdb/fathomdb-linux-x64-gnu
+      - name: Publish fathomdb-linux-x64-gnu
         working-directory: src/ts/npm/linux-x64-gnu
+        env:
+          NPM_BIN: "npm"
+        run: |
+          if [ "${DRY_RUN}" = "true" ]; then
+            bash "$GITHUB_WORKSPACE/scripts/release/npm-publish-if-new.sh" \
+              --dry-run --tag "${NPM_DIST_TAG}" -- --access public --provenance
+          else
+            bash "$GITHUB_WORKSPACE/scripts/release/npm-publish-if-new.sh" \
+              --tag "${NPM_DIST_TAG}" -- --access public --provenance
+          fi
+
+  # Linux AArch64 counterpart of the x64 platform package. It is published
+  # before the main package so publish-time optionalDependency injection makes
+  # the matching binary available to Linux ARM64 npm installs.
+  publish-npm-platform-linux-arm64-gnu:
+    runs-on: ubuntu-24.04-arm
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.recovery_skip_npm == true && inputs.release_version == '0.8.20') }}
+    needs: all-builds-passed
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0, canonical release tag
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', env.RELEASE_TAG) || github.ref }}
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "25.9.0"
+          registry-url: "https://registry.npmjs.org"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: napi-linux-arm64-gnu
+          path: src/ts/npm/linux-arm64-gnu
+      - name: List staged platform package
+        working-directory: src/ts/npm/linux-arm64-gnu
+        run: ls -la
+      - name: Publish fathomdb-linux-arm64-gnu
+        working-directory: src/ts/npm/linux-arm64-gnu
         env:
           NPM_BIN: "npm"
         run: |
@@ -569,6 +613,7 @@ jobs:
     needs:
       - publish-rust-t5-engine
       - publish-npm-platform-linux-x64-gnu
+      - publish-npm-platform-linux-arm64-gnu
     permissions:
       contents: read
       id-token: write
@@ -646,6 +691,35 @@ jobs:
       - name: Run smoke
         run: bash "scripts/release/smoke/smoke-${{ matrix.smoke }}.sh" "${{ steps.ver.outputs.version }}"
 
+  # Registry smokes must execute on the architecture served by the newly
+  # published wheel and optional npm platform package, not only on x86_64.
+  post-publish-smoke-aarch64:
+    runs-on: ubuntu-24.04-arm
+    if: ${{ inputs.dry_run != true && !(github.event_name == 'workflow_dispatch' && inputs.recovery_skip_npm == true && inputs.release_version == '0.8.20') }}
+    needs:
+      - publish-rust-t7-cli
+      - publish-pypi
+      - publish-npm
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0, canonical release tag
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', env.RELEASE_TAG) || github.ref }}
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "25.9.0"
+      - name: Resolve tag version
+        id: ver
+        run: |
+          v="${RELEASE_TAG#v}"
+          echo "version=${v}" >> "$GITHUB_OUTPUT"
+      - name: Smoke AArch64 Python wheel
+        run: bash scripts/release/smoke/smoke-pypi-wheel.sh "${{ steps.ver.outputs.version }}"
+      - name: Smoke AArch64 npm package
+        run: bash scripts/release/smoke/smoke-npm-package.sh "${{ steps.ver.outputs.version }}"
+
   # AC-052: sibling triple (fathomdb + fathomdb-embedder + fathomdb-embedder-
   # api) must all exist in the registry at the expected versions after the
   # tier 1..7 publishes complete. Skipped on dry-run since no real publish
@@ -677,6 +751,7 @@ jobs:
     if: ${{ inputs.dry_run != true && !(github.event_name == 'workflow_dispatch' && inputs.recovery_skip_npm == true && inputs.release_version == '0.8.20') }}
     needs:
       - post-publish-smoke
+      - post-publish-smoke-aarch64
       - co-tagging-assert
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
