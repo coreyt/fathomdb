@@ -18,9 +18,8 @@ platform-tagged `.node` binary at load time.
 
 - Node **18** or later (release.yml runs CI on Node 25.9.0).
 - The published `0.8.20` npm package supports Linux
-  `x86_64-unknown-linux-gnu` only. The next versioned release adds Linux
-  `aarch64-unknown-linux-gnu`; macOS, Windows, and Linux musl remain outside
-  the native package matrix.
+  `x86_64-unknown-linux-gnu` only. Other hosts must build from source until a
+  published release explicitly adds them to the native package matrix.
 - SQLite + `sqlite-vec` (statically linked into the platform binary).
 
 ## Install the published package

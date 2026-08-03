@@ -16,9 +16,9 @@ Two consumption paths for Rust users:
 - Rust **stable** toolchain (`rustup default stable`).
 - SQLite headers + a system `sqlite-vec` build, or vendored equivalent
   (the workspace builds `sqlite-vec` from source by default).
-- A platform that matches the
-  [release matrix](../compatibility/index.md): linux x86_64/aarch64,
-  darwin x86_64/arm64, windows x86_64.
+- A Rust-supported target and a working SQLite + `sqlite-vec` build. The
+  published Python and npm native-artifact boundary is Linux
+  `x86_64-unknown-linux-gnu` only; Rust crates compile from source.
 
 ## Install the published crates
 

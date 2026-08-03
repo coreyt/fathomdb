@@ -1,10 +1,9 @@
 # Getting Started
 
-> **Pre-publish notice.** `0.8.20` has **not** been published to
-> crates.io / PyPI / npm; publishing is a separate, gated step. The
-> registry install commands on this site are what will work once it
-> lands — current installs are from source on `main`. FathomDB is
-> pre-1.0 and the surface is **beta**. See the
+> **Published release.** **v0.8.20 is published** to crates.io / PyPI /
+> npm. Native Python and npm artifacts currently cover Linux x86_64/glibc
+> only, and npm installs use its `next` dist-tag. FathomDB is pre-1.0 and
+> the surface is **beta**. See the
 > [CHANGELOG](https://github.com/coreyt/fathomdb/blob/main/CHANGELOG.md)
 > for what changed since 0.8.9.
 
